@@ -10,7 +10,7 @@
 		"format": "biome format --write .",
 		"lint": "biome lint --write ."
 	},
-	"keywords": [],
+	"keywords": ["result", "typescript", "rust", "error handling"],
 	"author": "",
 	"license": "MIT",
 	"devDependencies": {
