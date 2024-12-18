@@ -8,11 +8,8 @@ export type Err<E> = {
 };
 export type Result<T, E> = Ok<T> | Err<E>;
 
-export const Ok = <T, E>(data: T): Result<T, E> => ({ ok: true, data });
-export const Err = <T, E>(error: E): Result<T, E> => ({
-	ok: false,
-	error,
-});
+export const Ok = <T>(data: T): Ok<T> => ({ ok: true, data });
+export const Err = <E>(error: E): Err<E> => ({ ok: false, error });
 
 export function trySync<T, E>({
 	try: operation,
