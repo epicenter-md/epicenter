@@ -8,7 +8,8 @@
 	"scripts": {
 		"build": "tsup src/index.ts --format cjs,esm --dts",
 		"format": "biome format --write .",
-		"lint": "biome lint --write ."
+		"lint": "biome lint --write .",
+		"release": "changeset && pnpm run build && changeset publish"
 	},
 	"keywords": [
 		"result",
