@@ -9,7 +9,7 @@
 		"build": "tsup src/index.ts --format cjs,esm --dts",
 		"format": "biome format --write .",
 		"lint": "biome lint --write .",
-		"release": "changeset && pnpm run build && changeset publish"
+		"release": "pnpm run build && changeset version && changeset publish"
 	},
 	"keywords": [
 		"result",
