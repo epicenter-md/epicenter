@@ -1,21 +1,22 @@
 {
-  "name": "@epicenterhq/result",
-  "version": "0.0.1",
-  "description": "",
-  "main": "dist/index.js",
-  "module": "dist/index.mjs",
-  "types": "dist/index.d.ts",
-  "scripts": {
-    "build": "tsup src/index.ts --format cjs,esm --dts",
-    "lint": "tsc"
-  },
-  "keywords": [],
-  "author": "",
-  "license": "MIT",
-  "devDependencies": {
-    "@biomejs/biome": "^1.9.4",
-    "@changesets/cli": "^2.27.10",
-    "tsup": "^8.3.5",
-    "typescript": "^5.7.2"
-  }
+	"name": "@epicenterhq/result",
+	"version": "0.0.1",
+	"description": "",
+	"main": "dist/index.js",
+	"module": "dist/index.mjs",
+	"types": "dist/index.d.ts",
+	"scripts": {
+		"build": "tsup src/index.ts --format cjs,esm --dts",
+		"format": "biome format --write .",
+		"lint": "biome lint --write ."
+	},
+	"keywords": [],
+	"author": "",
+	"license": "MIT",
+	"devDependencies": {
+		"@biomejs/biome": "^1.9.4",
+		"@changesets/cli": "^2.27.10",
+		"tsup": "^8.3.5",
+		"typescript": "^5.7.2"
+	}
 }
