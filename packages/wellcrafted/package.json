@@ -1,6 +1,6 @@
 {
 	"name": "@epicenterhq/result",
-	"version": "0.0.1",
+	"version": "0.1.0",
 	"description": "",
 	"main": "dist/index.js",
 	"module": "dist/index.mjs",
@@ -10,7 +10,12 @@
 		"format": "biome format --write .",
 		"lint": "biome lint --write ."
 	},
-	"keywords": ["result", "typescript", "rust", "error handling"],
+	"keywords": [
+		"result",
+		"typescript",
+		"rust",
+		"error handling"
+	],
 	"author": "",
 	"license": "MIT",
 	"devDependencies": {
