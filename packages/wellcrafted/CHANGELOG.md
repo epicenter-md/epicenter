@@ -1,5 +1,11 @@
 # @epicenterhq/result
 
+## 0.2.1
+
+### Patch Changes
+
+- fe27e9b: Update ServiceResultFactoryFns type definitions for improved clarity and consistency
+
 ## 0.2.0
 
 ### Minor Changes
