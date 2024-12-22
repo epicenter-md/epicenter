@@ -1,5 +1,16 @@
 # @epicenterhq/result
 
+## 0.2.0
+
+### Minor Changes
+
+- 7b3a558: Create service result factory functions
+
+### Patch Changes
+
+- 5aec8f9: Simplify logic of createServiceResultFactoryFns
+- 42b2163: Extracted /index to /result and reexported
+
 ## 0.1.1
 
 ### Patch Changes
