@@ -1,17 +1,17 @@
 import type { Result } from "./result";
 import { Err, Ok, tryAsync, trySync } from "./result";
 
-type ServiceResultFactoryFns<ErrProps extends Record<string, unknown>> = {
-	Ok: <T>(data: T) => Ok<T>;
-	Err: <Props extends ErrProps>(props: Props) => Err<Props>;
+type ServiceResultFactoryFns<ErrProperties extends Record<string, unknown>> = {
+	Ok: typeof Ok;
+	Err: (props: ErrProperties) => Err<ErrProperties>;
 	trySync: <T>(opts: {
 		try: () => T extends Promise<unknown> ? never : T;
-		catch: (error: unknown) => ErrProps;
-	}) => Result<T, ErrProps>;
+		catch: (error: unknown) => ErrProperties;
+	}) => Result<T, ErrProperties>;
 	tryAsync: <T>(opts: {
 		try: () => Promise<T>;
-		catch: (error: unknown) => ErrProps;
-	}) => Promise<Result<T, ErrProps>>;
+		catch: (error: unknown) => ErrProperties;
+	}) => Promise<Result<T, ErrProperties>>;
 };
 
 export const createServiceResultFactoryFns = <
