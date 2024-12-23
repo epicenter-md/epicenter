@@ -1,5 +1,11 @@
 # @epicenterhq/result
 
+## 0.2.2
+
+### Patch Changes
+
+- c39ff0f: Export service-related functions from index
+
 ## 0.2.1
 
 ### Patch Changes
