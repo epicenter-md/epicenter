@@ -1,5 +1,11 @@
 # @epicenterhq/result
 
+## 0.2.4
+
+### Patch Changes
+
+- 69be638: Fix callback type definitions in MutationFn for improved clarity and consistency
+
 ## 0.2.3
 
 ### Patch Changes
