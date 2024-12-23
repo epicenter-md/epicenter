@@ -1,38 +1,36 @@
 import type { Result } from "./result";
-import { Err, Ok, tryAsync, trySync } from "./result";
+import { Err, tryAsync, trySync } from "./result";
 
-type ServiceResultFactoryFns<ErrProperties extends Record<string, unknown>> = {
-	Ok: typeof Ok;
-	Err: (props: ErrProperties) => Err<ErrProperties>;
+type ServiceErrorFns<ServiceErrorProperties> = {
+	Err: (props: ServiceErrorProperties) => Err<ServiceErrorProperties>;
 	trySync: <T>(opts: {
 		try: () => T extends Promise<unknown> ? never : T;
-		catch: (error: unknown) => ErrProperties;
-	}) => Result<T, ErrProperties>;
+		catch: (error: unknown) => ServiceErrorProperties;
+	}) => Result<T, ServiceErrorProperties>;
 	tryAsync: <T>(opts: {
 		try: () => Promise<T>;
-		catch: (error: unknown) => ErrProperties;
-	}) => Promise<Result<T, ErrProperties>>;
+		catch: (error: unknown) => ServiceErrorProperties;
+	}) => Promise<Result<T, ServiceErrorProperties>>;
 };
 
-export const createServiceResultFactoryFns = <
-	ErrorProps extends Record<string, unknown>,
->(): ServiceResultFactoryFns<ErrorProps> => ({
-	Ok,
+export const createServiceErrorFns = <
+	ServiceErrorProperties extends Record<string, unknown>,
+>(): ServiceErrorFns<ServiceErrorProperties> => ({
 	Err,
 	trySync,
 	tryAsync,
 });
 
-export type QueryFn<I, O, ServiceError> = (
+export type QueryFn<I, O, ServiceErrorProperties> = (
 	input: I,
-) => Promise<Result<O, ServiceError>>;
+) => Promise<Result<O, ServiceErrorProperties>>;
 
-export type MutationFn<I, O, ServiceError> = (
+export type MutationFn<I, O, ServiceErrorProperties> = (
 	input: I,
 	callbacks: {
 		onMutate: (data: O) => void;
 		onSuccess: () => void;
-		onError: (error: ServiceError) => void;
+		onError: (error: ServiceErrorProperties) => void;
 		onSettled: () => void;
 	},
 ) => Promise<void>;
