@@ -1,10 +1,6 @@
 import type { Result } from "./result";
 import { Ok } from "./result";
 
-export type QueryFn<I, O, ServiceErrorProperties> = (
-	input: I,
-) => Promise<Result<O, ServiceErrorProperties>>;
-
 export function createMutation<I, O, ServiceError, TContext = undefined>({
 	mutationFn,
 	onMutate = () => Ok(undefined as TContext),

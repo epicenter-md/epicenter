@@ -1,6 +1,10 @@
 import type { Result } from "./result";
 import { Err, tryAsync, trySync } from "./result";
 
+export type ServiceFn<I, O, ServiceErrorProperties> = (
+	input: I,
+) => Promise<Result<O, ServiceErrorProperties>>;
+
 type ServiceErrorFns<ServiceErrorProperties> = {
 	Err: (props: ServiceErrorProperties) => Err<ServiceErrorProperties>;
 	trySync: <T>(opts: {
