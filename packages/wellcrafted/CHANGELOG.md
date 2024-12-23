@@ -1,5 +1,11 @@
 # @epicenterhq/result
 
+## 0.2.6
+
+### Patch Changes
+
+- 53e8cf2: Make MutationFn callbacks optional
+
 ## 0.2.5
 
 ### Patch Changes
