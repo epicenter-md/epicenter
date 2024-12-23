@@ -30,7 +30,7 @@ export async function tryAsync<T, E>({
 	try: operation,
 	catch: mapError,
 }: {
-	try: () => T extends Promise<unknown> ? T : never;
+	try: () => Promise<T>;
 	catch: (error: unknown) => E;
 }): Promise<Result<T, E>> {
 	try {
