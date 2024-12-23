@@ -28,8 +28,8 @@ export type QueryFn<I, O, ServiceErrorProperties> = (
 export type MutationFn<I, O, ServiceErrorProperties> = (
 	input: I,
 	callbacks: {
-		onMutate: (data: O) => void;
-		onSuccess: () => void;
+		onMutate: (input: I) => void;
+		onSuccess: (output: O) => void;
 		onError: (error: ServiceErrorProperties) => void;
 		onSettled: () => void;
 	},
