@@ -5,9 +5,9 @@ export type QueryFn<I, O, ServiceErrorProperties> = (
 	input: I,
 ) => Promise<Result<O, ServiceErrorProperties>>;
 
-export function createMutation<I, O, ServiceError, TContext>({
+export function createMutation<I, O, ServiceError, TContext = undefined>({
 	mutationFn,
-	onMutate = () => Ok({} as TContext),
+	onMutate = () => Ok(undefined as TContext),
 	onSuccess = () => undefined,
 	onError = () => undefined,
 	onSettled = () => undefined,
