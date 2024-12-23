@@ -1,5 +1,13 @@
 # @epicenterhq/result
 
+## 0.3.1
+
+### Patch Changes
+
+- 0cf54d2: Update first parameter of createMutation for improved clarity
+- 043d624: Add InferOk and InferErr utility types for Result type inference
+- b4a0bc4: Add ServiceFn type and update exports in index.ts
+
 ## 0.3.0
 
 ### Minor Changes
