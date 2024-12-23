@@ -1,5 +1,13 @@
 # @epicenterhq/result
 
+## 0.2.3
+
+### Patch Changes
+
+- 5739f07: Correct type definition for tryAsync function to ensure it always returns a Promise
+- 732009a: Rename and update ServiceResultFactoryFns to ServiceErrorFns for improved clarity and consistency in error handling
+- 6c1b688: Update type definition for tryAsync function to enforce promise return type
+
 ## 0.2.2
 
 ### Patch Changes
