@@ -27,10 +27,14 @@ export type QueryFn<I, O, ServiceErrorProperties> = (
 
 export type MutationFn<I, O, ServiceErrorProperties> = (
 	input: I,
-	callbacks: {
-		onMutate: (input: I) => void;
-		onSuccess: (output: O) => void;
-		onError: (error: ServiceErrorProperties) => void;
-		onSettled: () => void;
+	callbacks?: {
+		onMutate?: (input: I) => Promise<void> | void;
+		onSuccess?: (output: O, input: I) => Promise<void> | void;
+		onError?: (error: ServiceErrorProperties, input: I) => Promise<void> | void;
+		onSettled?: (
+			output: O | undefined,
+			error: ServiceErrorProperties | null,
+			input: I,
+		) => Promise<void> | void;
 	},
 ) => Promise<void>;
