@@ -20,21 +20,3 @@ export const createServiceErrorFns = <
 	trySync,
 	tryAsync,
 });
-
-export type QueryFn<I, O, ServiceErrorProperties> = (
-	input: I,
-) => Promise<Result<O, ServiceErrorProperties>>;
-
-export type MutationFn<I, O, ServiceErrorProperties> = (
-	input: I,
-	callbacks?: {
-		onMutate?: (input: I) => Promise<void> | void;
-		onSuccess?: (output: O, input: I) => Promise<void> | void;
-		onError?: (error: ServiceErrorProperties, input: I) => Promise<void> | void;
-		onSettled?: (
-			output: O | undefined,
-			error: ServiceErrorProperties | null,
-			input: I,
-		) => Promise<void> | void;
-	},
-) => Promise<void>;

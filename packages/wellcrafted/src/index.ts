@@ -1,2 +1,3 @@
-export { Result, Ok, Err, trySync, tryAsync } from "./result";
-export { createServiceErrorFns, MutationFn, QueryFn } from "./services";
+export { Err, Ok, Result, tryAsync, trySync } from "./result";
+export { createMutation, QueryFn } from "./query";
+export { createServiceErrorFns } from "./services";
