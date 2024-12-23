@@ -1,5 +1,11 @@
 # @epicenterhq/result
 
+## 0.2.5
+
+### Patch Changes
+
+- 2bbf651: Make callbacks optional
+
 ## 0.2.4
 
 ### Patch Changes
