@@ -8,4 +8,3 @@ export {
 	tryAsync,
 	trySync,
 } from "./result";
-export { ServiceFn, createServiceErrorFns } from "./services";
