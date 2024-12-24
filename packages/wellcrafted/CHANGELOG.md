@@ -1,5 +1,11 @@
 # @epicenterhq/result
 
+## 0.4.2
+
+### Patch Changes
+
+- 57a88a6: Simplify Result type definition by consolidating Ok and Err types
+
 ## 0.4.1
 
 ### Patch Changes
