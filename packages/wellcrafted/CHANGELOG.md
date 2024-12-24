@@ -1,5 +1,11 @@
 # @epicenterhq/result
 
+## 0.4.1
+
+### Patch Changes
+
+- 35dbcdd: Update mapError to take in Err and spit out Err
+
 ## 0.4.0
 
 ### Minor Changes
