@@ -9,11 +9,11 @@ type ServiceErrorFns<ServiceErrorProperties> = {
 	Err: (props: ServiceErrorProperties) => Err<ServiceErrorProperties>;
 	trySync: <T>(opts: {
 		try: () => T extends Promise<unknown> ? never : T;
-		mapErr: (error: unknown) => ServiceErrorProperties;
+		mapErr: (error: Err<unknown>) => Err<ServiceErrorProperties>;
 	}) => Result<T, ServiceErrorProperties>;
 	tryAsync: <T>(opts: {
 		try: () => Promise<T>;
-		mapErr: (error: unknown) => ServiceErrorProperties;
+		mapErr: (error: Err<unknown>) => Err<ServiceErrorProperties>;
 	}) => Promise<Result<T, ServiceErrorProperties>>;
 };
 

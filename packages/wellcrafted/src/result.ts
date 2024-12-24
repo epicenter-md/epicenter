@@ -28,13 +28,13 @@ export function trySync<T, E>({
 	mapErr,
 }: {
 	try: () => T extends Promise<unknown> ? never : T;
-	mapErr: (error: unknown) => E;
+	mapErr: (error: Err<unknown>) => Err<E>;
 }): Result<T, E> {
 	try {
 		const data = operation();
 		return Ok(data);
 	} catch (error) {
-		return Err(mapErr(error));
+		return mapErr(Err(error));
 	}
 }
 
@@ -43,12 +43,12 @@ export async function tryAsync<T, E>({
 	mapErr,
 }: {
 	try: () => Promise<T>;
-	mapErr: (error: unknown) => E;
+	mapErr: (error: Err<unknown>) => Err<E>;
 }): Promise<Result<T, E>> {
 	try {
 		const data = await operation();
 		return Ok(data);
 	} catch (error) {
-		return Err(mapErr(error));
+		return mapErr(Err(error));
 	}
 }
