@@ -1,5 +1,11 @@
 # @epicenterhq/result
 
+## 0.4.0
+
+### Minor Changes
+
+- 75df94c: Rename catch parameter to mapErr in trySync and tryAsync functions for improved clarity
+
 ## 0.3.2
 
 ### Patch Changes
