@@ -45,5 +45,5 @@ export function createMutation<I, O, ServiceError, TContext = undefined>({
 		onSuccess(output, { input, context });
 		onSettled(result, { input, contextResult });
 	};
-	return { mutate };
+	return mutate;
 }
