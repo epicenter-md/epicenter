@@ -1,14 +1,7 @@
-export type Ok<T> = {
-	ok: true;
-	data: T;
-};
+export type Result<T, E> = { ok: true; data: T } | { ok: false; error: E };
 
-export type Err<E> = {
-	ok: false;
-	error: E;
-};
-
-export type Result<T, E> = Ok<T> | Err<E>;
+export type Ok<T> = Result<T, never>;
+export type Err<E> = Result<never, E>;
 
 export type InferOk<R extends Result<unknown, unknown>> = R extends Ok<infer U>
 	? U
