@@ -1,5 +1,11 @@
 # @epicenterhq/result
 
+## 0.5.1
+
+### Patch Changes
+
+- fe51ba1: Updated generics of trySync and tryAsync again
+
 ## 0.5.0
 
 ### Minor Changes
