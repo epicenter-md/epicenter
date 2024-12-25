@@ -3,14 +3,18 @@ export type Result<T, E> = { ok: true; data: T } | { ok: false; error: E };
 export type Ok<T> = Result<T, never>;
 export type Err<E> = Result<never, E>;
 
-export type InferOk<R extends Result<unknown, unknown>> = R extends Ok<infer U>
-	? U
+export type InferOk<R extends Result<unknown, unknown>> = R extends Result<
+	infer U,
+	never
+>
+	? Ok<U>
 	: never;
 
-export type InferErr<R extends Result<unknown, unknown>> = R extends Err<
-	infer U
+export type InferErr<R extends Result<unknown, unknown>> = R extends Result<
+	never,
+	infer E
 >
-	? U
+	? Err<E>
 	: never;
 
 export const Ok = <T>(data: T): Ok<T> => ({ ok: true, data });

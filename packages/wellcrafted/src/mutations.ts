@@ -1,7 +1,13 @@
 import type { Result } from "./result";
 import { Ok } from "./result";
 
-export function createMutation<I, O, ServiceError, TContext = undefined>({
+export function createMutation<
+	I,
+	O,
+	MutationFnError,
+	OnMutateError,
+	TContext = undefined,
+>({
 	mutationFn,
 	onMutate = () => Ok(undefined as TContext),
 	onSuccess = () => undefined,
@@ -11,18 +17,23 @@ export function createMutation<I, O, ServiceError, TContext = undefined>({
 	mutationFn: (
 		input: I,
 		args: { context: TContext },
-	) => Promise<Result<O, ServiceError>> | Result<O, ServiceError>;
+	) => Promise<Result<O, MutationFnError>> | Result<O, MutationFnError>;
 	onMutate?: (
 		input: I,
-	) => Promise<Result<TContext, ServiceError>> | Result<TContext, ServiceError>;
+	) =>
+		| Promise<Result<TContext, OnMutateError>>
+		| Result<TContext, OnMutateError>;
 	onSuccess?: (output: O, args: { input: I; context: TContext }) => void;
 	onError?: (
-		error: ServiceError,
-		args: { input: I; contextResult: Result<TContext, ServiceError> },
+		error: MutationFnError | OnMutateError,
+		args: {
+			input: I;
+			contextResult: Result<TContext, OnMutateError>;
+		},
 	) => void;
 	onSettled?: (
-		result: Result<O, ServiceError>,
-		args: { input: I; contextResult: Result<TContext, ServiceError> },
+		result: Result<O, MutationFnError | OnMutateError>,
+		args: { input: I; contextResult: Result<TContext, OnMutateError> },
 	) => void;
 }) {
 	const mutate = async (input: I): Promise<void> => {
