@@ -1,6 +1,6 @@
 {
 	"name": "@epicenterhq/result",
-	"version": "0.5.1",
+	"version": "0.5.2",
 	"description": "",
 	"main": "dist/index.js",
 	"module": "dist/index.mjs",

@@ -1,5 +1,11 @@
 # @epicenterhq/result
 
+## 0.5.2
+
+### Patch Changes
+
+- d1d5257: Restore old ok and err behavior
+
 ## 0.5.1
 
 ### Patch Changes
