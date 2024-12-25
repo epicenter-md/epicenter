@@ -1,5 +1,15 @@
 # @epicenterhq/result
 
+## 0.5.0
+
+### Minor Changes
+
+- 344f3d5: Update generics in trySync and tryAsync functions; remove services.ts
+
+### Patch Changes
+
+- 7f49d16: Add OnMutateError generic to createMutation function
+
 ## 0.4.2
 
 ### Patch Changes
