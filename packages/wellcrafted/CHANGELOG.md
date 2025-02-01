@@ -1,5 +1,11 @@
 # @epicenterhq/result
 
+## 0.6.0
+
+### Minor Changes
+
+- 5e6133a: Added new onSuccessLocal, onErrorLocal, onSettledLocal
+
 ## 0.5.2
 
 ### Patch Changes
