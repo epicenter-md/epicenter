@@ -42,20 +42,20 @@ export function createMutation<
 			onSuccess: onSuccessLocal,
 			onError: onErrorLocal,
 			onSettled: onSettledLocal,
-		}: {
-			onSuccess?: (output: O, args: { input: I; context: TContext }) => void;
-			onError?: (
+		}: Partial<{
+			onSuccess: (output: O, args: { input: I; context: TContext }) => void;
+			onError: (
 				error: MutationFnError | OnMutateError,
 				args: {
 					input: I;
 					contextResult: Result<TContext, OnMutateError>;
 				},
 			) => void;
-			onSettled?: (
+			onSettled: (
 				result: Result<O, MutationFnError | OnMutateError>,
 				args: { input: I; contextResult: Result<TContext, OnMutateError> },
 			) => void;
-		},
+		}> = {},
 	): Promise<void> => {
 		const contextResult = await onMutate(input);
 		if (!contextResult.ok) {
