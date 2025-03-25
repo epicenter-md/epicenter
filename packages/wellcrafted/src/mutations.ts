@@ -1,5 +1,5 @@
-import type { Result } from "./result";
-import { Ok } from "./result";
+import type { Result } from "./discriminated";
+import { Ok } from "./discriminated";
 
 export function createMutation<
 	I,
