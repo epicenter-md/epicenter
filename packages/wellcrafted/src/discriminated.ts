@@ -19,6 +19,22 @@ export type Err<E> = { ok: false; error: E };
 export type Result<T, E> = Ok<T> | Err<E>;
 
 /**
+ * Creates a success result
+ * @template T The type of the success data
+ * @param data The success data
+ * @returns An Ok result containing the data
+ */
+export const Ok = <T>(data: T): Ok<T> => ({ ok: true, data });
+
+/**
+ * Creates an error result
+ * @template E The type of the error
+ * @param error The error
+ * @returns An Err result containing the error
+ */
+export const Err = <E>(error: E): Err<E> => ({ ok: false, error });
+
+/**
  * Extracts the success type from a Result type
  * @template R Result type to extract from
  */
@@ -35,22 +51,6 @@ export type InferErr<R extends Result<unknown, unknown>> = R extends Err<
 >
 	? E
 	: never;
-
-/**
- * Creates a success result
- * @template T The type of the success data
- * @param data The success data
- * @returns An Ok result containing the data
- */
-export const Ok = <T>(data: T): Ok<T> => ({ ok: true, data });
-
-/**
- * Creates an error result
- * @template E The type of the error
- * @param error The error
- * @returns An Err result containing the error
- */
-export const Err = <E>(error: E): Err<E> => ({ ok: false, error });
 
 /**
  * Executes a synchronous operation and wraps the result in a Result type
