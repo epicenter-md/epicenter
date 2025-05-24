@@ -1,5 +1,16 @@
 # @epicenterhq/result
 
+## 0.7.0
+
+### Minor Changes
+
+- 0b32ddd: Updates mapErr handling in trySync and tryAsync functions, now automatically wrapping with Err<>
+- 50498bf: Removes discriminated union implementation of result in favor of exclusive (data/error) pattern
+
+### Patch Changes
+
+- 1c4ef64: Make second arg of mutate optional, use Partial Typescript helper
+
 ## 0.6.0
 
 ### Minor Changes
