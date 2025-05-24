@@ -1,5 +1,11 @@
 # @epicenterhq/result
 
+## 0.7.2
+
+### Patch Changes
+
+- b85bd17: Adds "require" to exports for more compatibility
+
 ## 0.7.1
 
 ### Patch Changes
