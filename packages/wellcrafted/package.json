@@ -4,17 +4,13 @@
 	"description": "",
 	"type": "module",
 	"exports": {
-		"./discriminated": {
-			"types": "./dist/discriminated.d.ts",
-			"import": "./dist/discriminated.js"
-		},
-		"./exclusive": {
-			"types": "./dist/exclusive.d.ts",
-			"import": "./dist/exclusive.js"
+		".": {
+			"types": "./dist/result.d.ts",
+			"import": "./dist/result.js"
 		}
 	},
 	"scripts": {
-		"build": "tsup src/discriminated.ts src/exclusive.ts --format esm --dts",
+		"build": "tsup src/index.ts --format esm --dts",
 		"format": "biome format --write .",
 		"lint": "biome lint --write .",
 		"release": "pnpm run build && changeset version && changeset publish"
