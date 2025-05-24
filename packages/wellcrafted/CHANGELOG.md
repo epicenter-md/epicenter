@@ -1,5 +1,11 @@
 # @epicenterhq/result
 
+## 0.7.1
+
+### Patch Changes
+
+- 5cfccdd: Fixes tsup config and entry points
+
 ## 0.7.0
 
 ### Minor Changes
