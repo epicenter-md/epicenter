@@ -2,21 +2,24 @@
 	"name": "@epicenterhq/result",
 	"version": "0.6.0",
 	"description": "",
-	"main": "dist/index.js",
-	"module": "dist/index.mjs",
-	"types": "dist/index.d.ts",
+	"type": "module",
+	"exports": {
+		"./discriminated": {
+			"types": "./dist/discriminated.d.ts",
+			"import": "./dist/discriminated.js"
+		},
+		"./exclusive": {
+			"types": "./dist/exclusive.d.ts",
+			"import": "./dist/exclusive.js"
+		}
+	},
 	"scripts": {
-		"build": "tsup src/index.ts --format cjs,esm --dts",
+		"build": "tsup src/discriminated.ts src/exclusive.ts --format esm --dts",
 		"format": "biome format --write .",
 		"lint": "biome lint --write .",
 		"release": "pnpm run build && changeset version && changeset publish"
 	},
-	"keywords": [
-		"result",
-		"typescript",
-		"rust",
-		"error handling"
-	],
+	"keywords": ["result", "typescript", "rust", "error handling"],
 	"author": "",
 	"license": "MIT",
 	"devDependencies": {
