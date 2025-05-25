@@ -1,5 +1,16 @@
 # @epicenterhq/result
 
+## 0.9.0
+
+### Minor Changes
+
+- c750a55: Adds partitionResults utility function to separate Result objects into success and error arrays
+- 55cfbff: Enhances Result documentation and add extraction utilities
+
+### Patch Changes
+
+- d6d6b6e: Updates TypeScript configuration and package.json exports
+
 ## 0.8.0
 
 ### Minor Changes
