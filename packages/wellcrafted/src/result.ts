@@ -1,51 +1,74 @@
 /**
- * A success result containing data and no error
- * @template T The type of the success data
+ * A success result containing a success value and no error value
+ * @template T The success type
  */
 export type Ok<T> = { data: T; error: null };
 
 /**
- * An error result containing an error and no data
- * @template E The type of the error
+ * An error result containing an error value and no success value
+ * @template E The error type
  */
 export type Err<E> = { error: E; data: null };
 
 /**
- * A discriminated union representing either success (Ok) or failure (Err)
- * @template T The type of the success data
- * @template E The type of the error
+ * A type representing either success (Ok) or failure (Err)
+ * @template T The success type
+ * @template E The error type
+ * @example
+ * ```ts
+ * const result: Result<string, Error> = Ok("success");
+ * const error: Result<string, Error> = Err(new Error("failed"));
+ * ```
  */
 export type Result<T, E> = Ok<T> | Err<E>;
 
 /**
  * Creates a success result
- * @template T The type of the success data
- * @param data The success data
- * @returns An Ok result containing the data
+ * @template T The success type
+ * @param data The success value
+ * @returns An Ok result containing the success value
  */
 export const Ok = <T>(data: T): Ok<T> => ({ data, error: null });
 
 /**
  * Creates an error result
- * @template E The type of the error
- * @param error The error
- * @returns An Err result containing the error
+ * @template E The error type
+ * @param error The error value
+ * @returns An Err result containing the error value
  */
 export const Err = <E>(error: E): Err<E> => ({ error, data: null });
 
 /**
- * Extracts the success type from a Result type
- * @template R Result type to extract from
+ * Extracts the Ok type from a Result type
+ * @template R The Result type to extract from
  */
-export type InferOk<R extends Result<unknown, unknown>> = R extends Ok<infer U>
+export type ExtractOkFromResult<R extends Result<unknown, unknown>> = Extract<
+	R,
+	{ error: null }
+>;
+
+/**
+ * Extracts the Err type from a Result type
+ * @template R The Result type to extract from
+ */
+export type ExtractErrFromResult<R extends Result<unknown, unknown>> = Extract<
+	R,
+	{ data: null }
+>;
+
+/**
+ * Extracts the success type from a Result type
+ * @template R The Result type to extract from
+ */
+export type UnwrapOk<R extends Result<unknown, unknown>> = R extends Ok<infer U>
 	? U
 	: never;
 
 /**
  * Extracts the error type from a Result type
- * @template R Result type to extract from
+ * @template R The Result type to extract from
  */
-export type InferErr<R extends Result<unknown, unknown>> = R extends Err<
+export type UnwrapErr<R extends Result<unknown, unknown>> = R extends Err<
 	infer E
 >
 	? E
@@ -53,8 +76,8 @@ export type InferErr<R extends Result<unknown, unknown>> = R extends Err<
 
 /**
  * Type guard to check if a result is a success (Ok)
- * @template T The type of the success data
- * @template E The type of the error
+ * @template T The success type
+ * @template E The error type
  * @param result The result to check
  * @returns Type predicate indicating if the result is Ok
  */
@@ -64,8 +87,8 @@ export function isOk<T, E>(result: Result<T, E>): result is Ok<T> {
 
 /**
  * Type guard to check if a result is an error (Err)
- * @template T The type of the success data
- * @template E The type of the error
+ * @template T The success type
+ * @template E The error type
  * @param result The result to check
  * @returns Type predicate indicating if the result is Err
  */
@@ -75,12 +98,12 @@ export function isErr<T, E>(result: Result<T, E>): result is Err<E> {
 
 /**
  * Executes a synchronous operation and wraps the result in a Result type
- * @template T The type of the success data
- * @template E The type of the error
+ * @template T The success type
+ * @template E The error type
  * @param options Object containing the operation and error mapping function
  * @param options.try The synchronous operation to execute
  * @param options.mapErr Function to map an unknown error to an Err result
- * @returns A Result containing either the successful data or an error
+ * @returns A Result containing either the success value or an error value
  */
 export function trySync<T, E>({
 	try: operation,
@@ -99,12 +122,12 @@ export function trySync<T, E>({
 
 /**
  * Executes an asynchronous operation and wraps the result in a Result type
- * @template T The type of the success data
- * @template E The type of the error
+ * @template T The success type
+ * @template E The error type
  * @param options Object containing the operation and error mapping function
  * @param options.try The asynchronous operation to execute
  * @param options.mapErr Function to map an unknown error to an Err result
- * @returns A Promise that resolves to a Result containing either the successful data or an error
+ * @returns A Promise that resolves to a Result containing either the success value or an error value
  */
 export async function tryAsync<T, E>({
 	try: operation,
