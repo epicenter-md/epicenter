@@ -5,9 +5,8 @@
 	"type": "module",
 	"exports": {
 		".": {
-			"types": "./dist/index.d.ts",
 			"import": "./dist/index.js",
-			"require": "./dist/index.js"
+			"types": "./dist/index.d.ts"
 		}
 	},
 	"scripts": {
@@ -16,12 +15,7 @@
 		"lint": "biome lint --write .",
 		"release": "pnpm run build && changeset version && changeset publish"
 	},
-	"keywords": [
-		"result",
-		"typescript",
-		"rust",
-		"error handling"
-	],
+	"keywords": ["result", "typescript", "rust", "error handling"],
 	"author": "",
 	"license": "MIT",
 	"devDependencies": {
