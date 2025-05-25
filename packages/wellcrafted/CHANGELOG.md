@@ -1,5 +1,11 @@
 # @epicenterhq/result
 
+## 0.8.0
+
+### Minor Changes
+
+- ff97dbb: Adds partitionResults utility function to separate Result objects into success and error arrays
+
 ## 0.7.2
 
 ### Patch Changes
