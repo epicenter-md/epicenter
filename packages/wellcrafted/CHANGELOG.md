@@ -1,5 +1,11 @@
 # @epicenterhq/result
 
+## 0.9.1
+
+### Patch Changes
+
+- 208a06d: Adds output support for CommonJS
+
 ## 0.9.0
 
 ### Minor Changes
