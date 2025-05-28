@@ -12,7 +12,7 @@
 		"noImplicitOverride": true,
 
 		// /* If transpiling with TypeScript: */
-		"module": "ESNext",
+		"module": "NodeNext",
 		"outDir": "dist",
 		"sourceMap": true,
 
@@ -20,7 +20,7 @@
 		"declaration": true,
 
 		/* If your code doesn't run in the DOM: */
-		"lib": ["es2024"]
+		"lib": ["ESNext"]
 	},
 	"include": ["src/**/*"],
 	"exclude": ["node_modules", "dist"]
