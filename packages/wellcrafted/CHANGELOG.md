@@ -1,5 +1,11 @@
 # @epicenterhq/result
 
+## 0.9.3
+
+### Patch Changes
+
+- f5ac7c1: Adds main, module, and types for improved module resolution to package.json
+
 ## 0.9.2
 
 ### Patch Changes
