@@ -1,6 +1,6 @@
 {
 	"name": "@epicenterhq/result",
-	"version": "0.9.1",
+	"version": "0.9.2",
 	"description": "",
 	"type": "module",
 	"exports": {

@@ -1,5 +1,11 @@
 # @epicenterhq/result
 
+## 0.9.2
+
+### Patch Changes
+
+- 0f9bf08: Updates Typescript module and lib to NodeNext and ESNext
+
 ## 0.9.1
 
 ### Patch Changes
