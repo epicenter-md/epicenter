@@ -1,12 +1,16 @@
 {
 	"name": "@epicenterhq/result",
-	"version": "0.9.3",
+	"version": "0.9.4",
 	"description": "",
 	"type": "module",
 	"main": "./dist/index.js",
 	"module": "./dist/index.mjs",
 	"types": "./dist/index.d.ts",
-	"files": ["dist", "README.md", "LICENSE"],
+	"files": [
+		"dist",
+		"README.md",
+		"LICENSE"
+	],
 	"exports": {
 		".": {
 			"types": "./dist/index.d.ts",
@@ -20,7 +24,12 @@
 		"lint": "biome lint --write .",
 		"release": "pnpm run build && changeset version && changeset publish"
 	},
-	"keywords": ["result", "typescript", "rust", "error handling"],
+	"keywords": [
+		"result",
+		"typescript",
+		"rust",
+		"error handling"
+	],
 	"author": "",
 	"license": "MIT",
 	"devDependencies": {
