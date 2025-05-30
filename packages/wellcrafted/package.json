@@ -4,7 +4,7 @@
 	"description": "",
 	"type": "module",
 	"main": "./dist/index.js",
-	"module": "./dist/index.mjs",
+	"module": "./dist/index.js",
 	"types": "./dist/index.d.ts",
 	"files": [
 		"dist",
@@ -14,12 +14,11 @@
 	"exports": {
 		".": {
 			"types": "./dist/index.d.ts",
-			"import": "./dist/index.js",
-			"require": "./dist/index.cjs"
+			"import": "./dist/index.js"
 		}
 	},
 	"scripts": {
-		"build": "tsup",
+		"build": "tsdown",
 		"format": "biome format --write .",
 		"lint": "biome lint --write .",
 		"release": "pnpm run build && changeset version && changeset publish"
@@ -35,7 +34,7 @@
 	"devDependencies": {
 		"@biomejs/biome": "^1.9.4",
 		"@changesets/cli": "^2.27.10",
-		"tsup": "^8.3.5",
+		"tsdown": "^0.12.5",
 		"typescript": "^5.7.2"
 	}
 }
