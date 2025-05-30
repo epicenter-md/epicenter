@@ -1,5 +1,11 @@
 # @epicenterhq/result
 
+## 0.9.5
+
+### Patch Changes
+
+- d5f209a: Migrates to tsdown
+
 ## 0.9.4
 
 ### Patch Changes
