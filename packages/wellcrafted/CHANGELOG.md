@@ -1,5 +1,11 @@
 # @epicenterhq/result
 
+## 0.10.0
+
+### Minor Changes
+
+- 422f86c: Adds isResult type guard
+
 ## 0.9.5
 
 ### Patch Changes
