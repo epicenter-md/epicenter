@@ -1,5 +1,11 @@
 # @epicenterhq/result
 
+## 0.11.0
+
+### Minor Changes
+
+- 05a04b8: Adds unwrapIfResult function
+
 ## 0.10.0
 
 ### Minor Changes
