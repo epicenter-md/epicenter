@@ -75,6 +75,33 @@ export type UnwrapErr<R extends Result<unknown, unknown>> = R extends Err<
 	: never;
 
 /**
+ * Type guard to check if a value is a valid Result type
+ * @template T The success type
+ * @template E The error type
+ * @param value The value to check
+ * @returns Type predicate indicating if the value is a Result
+ */
+export function isResult<T = unknown, E = unknown>(
+	value: unknown,
+): value is Result<T, E> {
+	const isNonNullObject = typeof value === "object" && value !== null;
+	if (!isNonNullObject) return false;
+
+	const hasDataProperty = "data" in value;
+	const hasErrorProperty = "error" in value;
+	if (!hasDataProperty || !hasErrorProperty) return false;
+
+	const isBothNull = value.data === null && value.error === null;
+	if (isBothNull) return false;
+
+	const isNeitherNull = value.data !== null && value.error !== null;
+	if (isNeitherNull) return false;
+
+	// Exactly one property is null
+	return true;
+}
+
+/**
  * Type guard to check if a result is a success (Ok)
  * @template T The success type
  * @template E The error type
