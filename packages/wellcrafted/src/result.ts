@@ -170,3 +170,49 @@ export async function tryAsync<T, E>({
 		return Err(mapErr(error));
 	}
 }
+
+/**
+ * Unwraps a value that may or may not be a Result type
+ *
+ * If the value is a Result:
+ * - Returns the data if it's an Ok result
+ * - Throws the error if it's an Err result
+ *
+ * If the value is not a Result, returns it as-is.
+ *
+ * This is useful when you have a value that might be wrapped in a Result
+ * and you want to either get the success value or propagate the error by throwing.
+ *
+ * @template T The success/value type
+ * @template E The error type
+ * @param value Either a plain value of type T or a Result<T, E>
+ * @returns The unwrapped value of type T
+ * @throws The error value if the input is an Err result
+ *
+ * @example
+ * ```ts
+ * // With a plain value
+ * const plainValue = "hello";
+ * const result1 = unwrapIfResult(plainValue); // Returns "hello"
+ *
+ * // With an Ok result
+ * const okResult = Ok("success");
+ * const result2 = unwrapIfResult(okResult); // Returns "success"
+ *
+ * // With an Err result
+ * const errResult = Err(new Error("failed"));
+ * const result3 = unwrapIfResult(errResult); // Throws Error("failed")
+ * ```
+ */
+export function unwrapIfResult<T, E>(value: T | Result<T, E>): T {
+	if (isResult(value)) {
+		if (isOk(value)) {
+			return value.data;
+		}
+		// If it's a Result and not Ok, it must be Err
+		throw value.error;
+	}
+
+	// If it's not a Result type, return the value as-is
+	return value;
+}
