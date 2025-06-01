@@ -1,5 +1,15 @@
 # @epicenterhq/result
 
+## 0.12.0
+
+### Minor Changes
+
+- efbe590: Adds `BaseError`, `TaggedError`, `extractErrorMessage`, and comprehensive error handling guide
+
+### Patch Changes
+
+- 3d0539e: Add `declarationMap: true` to tsconfig
+
 ## 0.11.0
 
 ### Minor Changes
