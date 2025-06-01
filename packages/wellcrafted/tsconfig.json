@@ -18,6 +18,7 @@
 
 		/* AND if you're building for a library: */
 		"declaration": true,
+		"declarationMap": true,
 
 		/* If your code doesn't run in the DOM: */
 		"lib": ["ESNext"]
