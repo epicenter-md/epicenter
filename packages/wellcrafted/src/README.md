@@ -4,76 +4,84 @@ A TypeScript implementation of the Result pattern, providing a type-safe way to 
 
 ## Overview
 
-The Result pattern represents either success (Ok) or failure (Err) of an operation. This implementation provides two different approaches:
+The Result pattern represents either success (Ok) or failure (Err data structure) of an operation. This implementation uses the "exclusive" approach where `null` values indicate absence (success has `error: null`, failure has `data: null`).
 
-1. **Discriminated** (`discriminated.ts`): Uses a boolean `ok` property as the discriminant.
-2. **Exclusive** (`exclusive.ts`): Uses `null` values to indicate absence (success has `error: null`, failure has `data: null`).
-
-## Implementations
-
-### Discriminated Union with Boolean Flag
-
-```typescript
-// From discriminated.ts
-type Ok<T> = { ok: true; data: T };
-type Err<E> = { ok: false; error: E };
-type Result<T, E> = Ok<T> | Err<E>;
-```
-
-This implementation follows the common pattern of using a boolean discriminant (`ok`) to distinguish between success and failure cases. TypeScript's discriminated unions work effectively with this pattern.
+## Implementation
 
 ### Exclusive Values with Null
 
 ```typescript
-// From exclusive.ts
+// From result.ts
 type Ok<T> = { data: T; error: null };
 type Err<E> = { error: E; data: null };
 type Result<T, E> = Ok<T> | Err<E>;
 ```
 
-This implementation uses `null` to indicate absence, ensuring that a success result always has `error: null` and a failure result always has `data: null`.
+This implementation uses `null` to indicate absence, ensuring that a success result always has `error: null` and a failure result always has `data: null`. This provides clear type discrimination and excellent TypeScript inference.
+
+## Error Type Naming Convention
+
+Error types should follow the convention of ending with "Error" suffix:
+
+- `ValidationError` - for input validation errors
+- `NetworkError` - for network-related errors
+- `DatabaseError` - for database operation errors
+- `AuthenticationError` - for authentication failures
 
 ## Usage
 
-Both implementations provide similar utility functions:
+The implementation provides utility functions:
 
 - `Ok<T>(data: T)`: Create a success result
-- `Err<E>(error: E)`: Create an error result
-- `trySync<T, E>({ try, mapErr })`: Execute a synchronous operation safely
-- `tryAsync<T, E>({ try, mapErr })`: Execute an asynchronous operation safely
+- `Err<E>(error: E)`: Create an Err data structure containing an error type
+- `isOk(result)`: Type guard to check for success
+- `isErr(result)`: Type guard to check for Err data structure
+- `trySync<T, E>({ try, mapError })`: Execute a synchronous operation safely
+- `tryAsync<T, E>({ try, mapError })`: Execute an asynchronous operation safely
 
-The `discriminated.ts` implementation requires checking the `ok` property:
-
-```typescript
-const result = await fetchData();
-if (result.ok) {
-  // Success case: use result.data
-} else {
-  // Error case: use result.error
-}
-```
-
-The `exclusive.ts` implementation provides type guards:
+### Basic Usage
 
 ```typescript
 const result = await fetchData();
 if (isOk(result)) {
   // Success case: use result.data
 } else {
-  // Error case: use result.error
+  // Err data structure case: use result.error (which contains the error type)
+}
+```
+
+### Safe Operation Execution
+
+```typescript
+// Wrapping a potentially throwing operation
+const result = trySync({
+  try: () => JSON.parse(jsonString),
+  mapError: (error): ValidationError => ({
+    name: "ValidationError",
+    message: `JSON parsing failed: ${extractErrorMessage(error)}`,
+    context: { jsonString },
+    cause: error,
+  }),
+});
+
+if (isErr(result)) {
+  console.error("Parsing failed:", result.error);
+} else {
+  console.log("Parsed successfully:", result.data);
 }
 ```
 
 ## Type Inference
 
-Both implementations provide type inference helpers:
+The implementation provides type inference helpers:
 
-- `InferOk<R>`: Extract the success type from a Result type
-- `InferErr<R>`: Extract the error type from a Result type
+- `UnwrapOk<R>`: Extract the success type from a Result type
+- `UnwrapError<R>`: Extract the error type from a Result type
 
 ## Best Practices
 
-- Use the discriminated union version (with boolean flag) when you need simple conditionals based on `result.ok`
-- Use the exclusive version when you prefer using type guards (`isOk`/`isErr`) for more explicit type narrowing
-- Always handle both success and error cases
-- Use the `trySync` and `tryAsync` functions to safely execute operations that might throw exceptions 
+- Always handle both success and Err data structure cases
+- Use the `trySync` and `tryAsync` functions to safely execute operations that might throw exceptions
+- Follow the error type naming convention with "Error" suffix
+- Include meaningful context in error types for better debugging
+- Use tagged unions for error types to enable exhaustive pattern matching 

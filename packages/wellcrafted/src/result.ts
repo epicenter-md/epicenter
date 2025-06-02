@@ -1,17 +1,28 @@
 /**
- * A success result containing a success value and no error value
+ * Represents the successful outcome of a Result.
+ *
+ * This is the Ok variant, containing a success value of type `T`.
+ * There is no error value present when this variant is used.
  * @template T The success type
  */
 export type Ok<T> = { data: T; error: null };
 
 /**
- * An error result containing an error value and no success value
+ * Represents the error outcome of a Result.
+ *
+ * This is the Err variant, containing an error value of type `E`.
+ * There is no success value present when this variant is used.
+ *
  * @template E The error type
  */
 export type Err<E> = { error: E; data: null };
 
 /**
- * A type representing either success (Ok) or failure (Err)
+ * A type representing either a success (Ok) or an error (Err)
+ *
+ * - The `Ok` variant indicates success and contains a value of type `T`.
+ * - The `Err` variant indicates error and contains an error of type `E`.
+ *
  * @template T The success type
  * @template E The error type
  * @example
@@ -23,7 +34,8 @@ export type Err<E> = { error: E; data: null };
 export type Result<T, E> = Ok<T> | Err<E>;
 
 /**
- * Creates a success result
+ * Constructs an Ok variant, representing a successful Result.
+ *
  * @template T The success type
  * @param data The success value
  * @returns An Ok result containing the success value
@@ -31,7 +43,8 @@ export type Result<T, E> = Ok<T> | Err<E>;
 export const Ok = <T>(data: T): Ok<T> => ({ data, error: null });
 
 /**
- * Creates an error result
+ * Constructs an Err variant, representing an error Result.
+ *
  * @template E The error type
  * @param error The error value
  * @returns An Err result containing the error value
@@ -102,7 +115,7 @@ export function isResult<T = unknown, E = unknown>(
 }
 
 /**
- * Type guard to check if a result is a success (Ok)
+ * Type guard to check if a result is an Ok
  * @template T The success type
  * @template E The error type
  * @param result The result to check
@@ -113,7 +126,7 @@ export function isOk<T, E>(result: Result<T, E>): result is Ok<T> {
 }
 
 /**
- * Type guard to check if a result is an error (Err)
+ * Type guard to check if a result is an Err
  * @template T The success type
  * @template E The error type
  * @param result The result to check
@@ -129,21 +142,21 @@ export function isErr<T, E>(result: Result<T, E>): result is Err<E> {
  * @template E The error type
  * @param options Object containing the operation and error mapping function
  * @param options.try The synchronous operation to execute
- * @param options.mapErr Function to map an unknown error to an Err result
- * @returns A Result containing either the success value or an error value
+ * @param options.mapError Function to map an unknown error to an error value before wrapping it in an Err data structure
+ * @returns A Result containing either the success value or the error value
  */
 export function trySync<T, E>({
 	try: operation,
-	mapErr,
+	mapError,
 }: {
 	try: () => T;
-	mapErr: (error: unknown) => E;
+	mapError: (error: unknown) => E;
 }): Result<T, E> {
 	try {
 		const data = operation();
 		return Ok(data);
 	} catch (error) {
-		return Err(mapErr(error));
+		return Err(mapError(error));
 	}
 }
 
@@ -153,21 +166,21 @@ export function trySync<T, E>({
  * @template E The error type
  * @param options Object containing the operation and error mapping function
  * @param options.try The asynchronous operation to execute
- * @param options.mapErr Function to map an unknown error to an Err result
- * @returns A Promise that resolves to a Result containing either the success value or an error value
+ * @param options.mapError Function to map an unknown error to an error value before wrapping it in an Err data structure
+ * @returns A Promise that resolves to a Result containing either the success value or the error value
  */
 export async function tryAsync<T, E>({
 	try: operation,
-	mapErr,
+	mapError,
 }: {
 	try: () => Promise<T>;
-	mapErr: (error: unknown) => E;
+	mapError: (error: unknown) => E;
 }): Promise<Result<T, E>> {
 	try {
 		const data = await operation();
 		return Ok(data);
 	} catch (error) {
-		return Err(mapErr(error));
+		return Err(mapError(error));
 	}
 }
 

@@ -1,5 +1,5 @@
-import type { Result } from "./discriminated";
-import { Ok } from "./discriminated";
+import type { Result } from "./result.js";
+import { Ok, isErr } from "./result.js";
 
 export function createMutation<
 	I,
@@ -58,7 +58,7 @@ export function createMutation<
 		}> = {},
 	): Promise<void> => {
 		const contextResult = await onMutate(input);
-		if (!contextResult.ok) {
+		if (isErr(contextResult)) {
 			const error = contextResult.error;
 			onError?.(error, { input, contextResult });
 			onErrorLocal?.(error, { input, contextResult });
@@ -68,7 +68,7 @@ export function createMutation<
 		}
 		const context = contextResult.data;
 		const result = await mutationFn(input, { context });
-		if (!result.ok) {
+		if (isErr(result)) {
 			const error = result.error;
 			onError?.(error, { input, contextResult });
 			onErrorLocal?.(error, { input, contextResult });

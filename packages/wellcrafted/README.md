@@ -456,7 +456,7 @@ Always include the function inputs and relevant state in the error context:
 async function updateUser(id: number, data: UserData): Promise<Result<User, DbError>> {
   return await tryAsync({
     try: () => database.updateUser(id, data),
-    mapErr: (error): DbError => ({
+    mapError: (error): DbError => ({
       name: "DbError",
       message: `Failed to update user: ${extractErrorMessage(error)}`,
       context: { 

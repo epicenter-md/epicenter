@@ -11,6 +11,14 @@ This library treats errors as first-class data rather than exceptional control f
 3. **Serializable by Design**: Errors are plain objects that can cross any boundary
 4. **Type-Safe Error Handling**: Full TypeScript support for tagged union error types and recovery patterns
 
+## Terminology
+
+### Key Concepts
+
+- **Error Type**: The actual error value (e.g., `ValidationError`, `NetworkError`) that follows the convention of ending with "Error" suffix
+- **Err Data Structure**: The wrapper `{ error: E; data: null }` that contains an error type in the Result system
+- **Result**: The union type `Ok<T> | Err<E>` that represents either success or failure
+
 ## Tagged Union Error System
 
 ### Why "Tagged" Errors?
@@ -24,6 +32,7 @@ The error system uses **tagged unions** (also called discriminated unions), wher
 
 ```typescript
 // The "name" property is the tag that discriminates between error types
+// Note: Error types follow the convention of ending with "Error" suffix
 type AppError = 
   | { name: "ValidationError"; context: { field: string; value: unknown } }
   | { name: "NetworkError"; context: { url: string; status: number } }
@@ -56,14 +65,15 @@ function handleAppError(error: AppError) {
 Following principles from [Miguel Grinberg's error handling guide](https://blog.miguelgrinberg.com/post/the-ultimate-guide-to-error-handling-in-python), we classify errors by their origin:
 
 #### New Errors
-Errors that your code detects and creates:
+Error types that your code detects and creates:
+
 
 ```typescript
-// Input validation error
+// Input validation error type
 function validateAge(age: unknown): Result<number, ValidationError> {
   if (typeof age !== "number" || age < 0 || age > 150) {
     return Err({
-      name: "ValidationError", // Tag that identifies this as a validation error
+      name: "ValidationError", // Tag that identifies this error type
       message: "Age must be a number between 0 and 150",
       context: { providedAge: age, validRange: [0, 150] },
       cause: null,
@@ -72,11 +82,11 @@ function validateAge(age: unknown): Result<number, ValidationError> {
   return Ok(age);
 }
 
-// Business logic error
+// Business logic error type
 function withdrawFunds(account: Account, amount: number): Result<Account, BusinessError> {
   if (account.balance < amount) {
     return Err({
-      name: "BusinessError", // Tag that identifies this as a business logic error
+      name: "BusinessError", // Tag that identifies this error type
       message: "Insufficient funds for withdrawal",
       context: { 
         accountId: account.id, 
@@ -95,16 +105,16 @@ function withdrawFunds(account: Account, amount: number): Result<Account, Busine
 ```
 
 #### Bubbled-Up Errors
-Errors that your code receives from functions it calls:
+Error types that your code receives from functions it calls:
 
 ```typescript
 import { extractErrorMessage } from "@epicenterhq/result";
 
-// Catching and re-wrapping external errors
+// Catching and re-wrapping external errors into typed error types
 async function saveUserData(user: User): Promise<Result<void, StorageError>> {
   return await tryAsync({
     try: () => database.save(user),
-    mapErr: (error): StorageError => ({
+    mapError: (error): StorageError => ({
       name: "StorageError",
       message: `Failed to save user data: ${extractErrorMessage(error)}`,
       context: { userId: user.id, timestamp: new Date().toISOString() },
@@ -118,7 +128,7 @@ async function saveUserData(user: User): Promise<Result<void, StorageError>> {
 
 #### 1. Recoverable Errors (Handle Locally)
 
-Errors that your current function can meaningfully address:
+Error types that your current function can meaningfully address:
 
 ```typescript
 async function fetchWithRetry<T>(
@@ -130,7 +140,7 @@ async function fetchWithRetry<T>(
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     const result = await tryAsync({
       try: () => fetch(url).then(r => r.json()),
-      mapErr: (error): NetworkError => ({
+      mapError: (error): NetworkError => ({
         name: "NetworkError",
         message: `Request failed (attempt ${attempt}/${maxRetries}): ${extractErrorMessage(error)}`,
         context: { url, attempt, maxRetries },
@@ -150,7 +160,7 @@ async function fetchWithRetry<T>(
     }
   }
   
-  // All retries failed
+  // All retries failed - return Err data structure containing NetworkError type
   return Err({
     name: "NetworkError",
     message: `All ${maxRetries} retry attempts failed`,
@@ -162,10 +172,10 @@ async function fetchWithRetry<T>(
 
 #### 2. Non-Recoverable Errors (Propagate Up)
 
-Errors that should be handled by a higher-level function:
+Error types that should be handled by a higher-level function:
 
 ```typescript
-// Just propagate database errors up - the HTTP handler will deal with them
+// Just propagate database error types up - the HTTP handler will deal with them
 async function getUser(id: number): Promise<Result<User, DbError | ValidationError>> {
   // Validate input
   if (id <= 0) {
@@ -177,7 +187,7 @@ async function getUser(id: number): Promise<Result<User, DbError | ValidationErr
     });
   }
   
-  // Let database errors bubble up unchanged
+  // Let database error types bubble up unchanged
   const result = await database.findUser(id);
   return result; // Result<User, DbError>
 }
@@ -212,14 +222,14 @@ async function handleGetUser(req: Request): Promise<Response> {
 
 #### 3. Transformative Errors (Convert and Propagate)
 
-Errors that need to be converted to a more appropriate type for the calling context:
+Error types that need to be converted to a more appropriate type for the calling context:
 
 ```typescript
 // Low-level database function
 async function executeQuery(sql: string): Promise<Result<any[], DbError>> {
   return await tryAsync({
     try: () => database.query(sql),
-    mapErr: (error): DbError => ({
+    mapError: (error): DbError => ({
       name: "DbError",
       message: `Query execution failed: ${extractErrorMessage(error)}`,
       context: { sql: sql.substring(0, 100) }, // Truncate for logging
@@ -228,7 +238,7 @@ async function executeQuery(sql: string): Promise<Result<any[], DbError>> {
   });
 }
 
-// Higher-level user service transforms DB errors to domain errors
+// Higher-level user service transforms DB error types to domain error types
 async function createUser(userData: UserData): Promise<Result<User, UserServiceError>> {
   const result = await executeQuery(
     "INSERT INTO users (name, email) VALUES (?, ?)",
@@ -236,7 +246,7 @@ async function createUser(userData: UserData): Promise<Result<User, UserServiceE
   );
   
   if (isErr(result)) {
-    // Transform database error to domain-specific error
+    // Transform database error type to domain-specific error type
     return Err({
       name: "UserServiceError",
       message: result.error.message.includes("UNIQUE constraint")
@@ -306,7 +316,7 @@ Add context as errors bubble up through layers:
 async function writeFile(path: string, content: string): Promise<Result<void, StorageError>> {
   return await tryAsync({
     try: () => fs.writeFile(path, content),
-    mapErr: (error): StorageError => ({
+    mapError: (error): StorageError => ({
       name: "StorageError",
       message: `File write failed: ${extractErrorMessage(error)}`,
       context: { path, contentLength: content.length },
@@ -609,7 +619,7 @@ function legacyFunction(input: string): string {
 function safeLegacyFunction(input: string): Result<string, ValidationError> {
   return trySync({
     try: () => legacyFunction(input),
-    mapErr: (error): ValidationError => ({
+    mapError: (error): ValidationError => ({
       name: "ValidationError",
       message: extractErrorMessage(error),
       context: { input },
@@ -653,11 +663,11 @@ function resultToPromise<T, E extends BaseError>(result: Result<T, E>): Promise<
 // Convert Promise to Result (for integrating promise-based libraries)
 async function promiseToResult<T, E extends BaseError>(
   promise: Promise<T>,
-  mapErr: (error: unknown) => E
+  mapError: (error: unknown) => E
 ): Promise<Result<T, E>> {
   return await tryAsync({
     try: () => promise,
-    mapErr,
+    mapError,
   });
 }
 ```
