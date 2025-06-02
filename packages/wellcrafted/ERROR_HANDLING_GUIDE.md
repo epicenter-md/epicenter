@@ -199,22 +199,114 @@ Generator functions lock you into a specific pattern. Direct usage allows for mo
 #### 6. **Plain Objects Are Better**
 Having plain, visible error objects is more transparent and easier to reason about than function-generated abstractions. You can see exactly what you're creating.
 
+### Error Constructor Functions: Another Rejected Approach
+
+You might consider a simpler alternative to generator functions: error constructor functions that just add the `name` property:
+
+```typescript
+export const ClipboardServiceErr = (
+  error: Omit<ClipboardServiceError, 'name'>,
+) => {
+  return Err({
+    name: 'ClipboardServiceError',
+    ...error,
+  });
+};
+
+export function createClipboardServiceExtension(): ClipboardService {
+  return {
+    setClipboardText: (text) =>
+      tryAsync({
+        try: () => navigator.clipboard.writeText(text),
+        mapErr: (error) =>
+          ClipboardServiceErr({
+            message: 'Unable to write to clipboard',
+            context: { text },
+            cause: error,
+          }),
+      }),
+
+    writeTextToCursor: (text) =>
+      trySync({
+        try: () => writeTextToCursor(text),
+        mapErr: (error) =>
+          ClipboardServiceErr({
+            message: 'Unable to paste text to cursor',
+            context: { text },
+            cause: error,
+          }),
+      }),
+  };
+}
+```
+
+While this approach is simpler than the full generator function pattern, it still suffers from several issues that make it less desirable than direct error object creation:
+
+#### **Hidden Implementation Details**
+When you see `ClipboardServiceErr(...)` in your code, you can't immediately know what this function does without examining its implementation. The function could potentially:
+- Add multiple properties beyond just `name`
+- Transform the input in unexpected ways
+- Have side effects like logging
+- Change behavior over time as the implementation evolves
+
+#### **Unnecessary Abstraction Layer**
+The function serves only to add a single property (`name`) to an object. This minimal functionality doesn't justify the abstraction overhead. You're essentially trading one line of clarity for a function call.
+
+#### **Editor Obfuscation**
+In your text editor, when you click on `ClipboardServiceErr`, you navigate to a function definition rather than seeing the actual error structure inline. This breaks the immediate visual connection between the error usage and its shape.
+
+#### **Extra Indentation**
+Constructor functions require an additional function call, which often leads to more indentation levels:
+
+```typescript
+// With constructor function - more indentation
+mapErr: (error) =>
+  ClipboardServiceErr({
+    message: 'Unable to write to clipboard',
+    context: { text },
+    cause: error,
+  }),
+
+// Direct approach - flatter structure  
+mapErr: (error) => ({
+  name: 'ClipboardServiceError',
+  message: 'Unable to write to clipboard',
+  context: { text },
+  cause: error,
+}),
+```
+
+#### **Refactoring Trade-offs**
+Yes, constructor functions make refactoring error names easier (change in one place vs. find-and-replace), but this convenience comes at the cost of:
+- Runtime overhead (function calls)
+- Cognitive overhead (additional abstraction)
+- Debugging complexity (extra stack frame)
+- Code clarity (hidden behavior)
+
+The refactoring benefit is a **worthwhile trade-off** for the increased transparency and simplicity of direct object creation.
+
 ### The Philosophy: Explicit Over Convenient
 
-The decision to omit generator functions aligns with the library's core philosophy:
+Both generator functions and error constructor functions prioritize convenience over explicitness. The direct approach is preferred because:
 
-**Explicit error handling over convenient abstractions.** While generator functions might save a few lines of code, they introduce cognitive overhead and reduce transparency. The current approach prioritizes:
+- **What you see is what you get**: The error object shape is immediately visible
+- **No hidden behavior**: Every property is explicitly declared at the usage site
+- **Simpler mental model**: No functions to understand, just plain object creation
+- **Better inline documentation**: The error structure serves as its own documentation
+- **Minimal abstraction**: Only abstractions that provide significant value are justified
+
+**Explicit error handling over convenient abstractions.** While generator functions and constructor functions might save a few lines of code, they introduce cognitive overhead and reduce transparency. The current approach prioritizes:
 
 - **Clarity**: You can see exactly what error objects are being created
 - **Simplicity**: Fewer abstractions to learn and understand  
-- **Flexibility**: No constraints imposed by generator function signatures
+- **Flexibility**: No constraints imposed by function signatures
 - **Debuggability**: Error creation is traceable and obvious
 
-### Using the Generator Function (If You Want To)
+### Using Alternative Patterns (If You Want To)
 
-The `createTryFns` implementation is included in the library for those who prefer this pattern, but it's not the recommended approach. If you find the generator pattern suits your team's preferences, you can use it, but be aware of the trade-offs discussed above.
+Both the `createTryFns` generator function and error constructor patterns are viable alternatives included in or possible with the library. However, they're not the recommended approach. If you find these patterns suit your team's preferences, you can use them, but be aware of the trade-offs discussed above.
 
-**Recommendation**: Start with the direct `tryAsync`/`trySync` approach. Only consider the generator pattern if you have many similar error handlers and the benefits outweigh the ergonomic costs for your specific use case.
+**Recommendation**: Start with the direct `tryAsync`/`trySync` approach with inline error object creation. Only consider alternative patterns if you have many similar error handlers and the benefits outweigh the ergonomic costs for your specific use case.
 
 ## Error Classification Framework
 
