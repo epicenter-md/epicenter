@@ -58,6 +58,164 @@ function handleAppError(error: AppError) {
 }
 ```
 
+## Design Decision: Why No Generator Function?
+
+While this library provides the foundational `BaseError` structure and `TaggedError` type as an opinionated choice for the framework, you might wonder why there isn't a built-in generator function to simplify the creation of typed error handling functions.
+
+### The BaseError Foundation
+
+The library establishes `BaseError` as the foundation for all error types:
+
+```typescript
+export type BaseError = Readonly<{
+  name: string;
+  message: string;
+  context: Record<string, unknown>;
+  cause: unknown;
+}>;
+
+export type TaggedError<T extends string> = BaseError & {
+  readonly name: T;
+};
+```
+
+This structure is an **opinionated design choice** that provides:
+- **Consistent error shape** across all applications
+- **Serializable error objects** that can cross any boundary
+- **Rich context preservation** for debugging and monitoring
+- **Type-safe discrimination** through the `name` tag
+
+### The Generator Function Experiment
+
+A helper function like `createTryFns` could theoretically simplify error creation:
+
+```typescript
+export function createTryFns<TName extends string>(name: TName) {
+  type TError = TaggedError<TName>;
+  return {
+    trySync: <T>({
+      try: operation,
+      mapErr,
+    }: {
+      try: () => T;
+      mapErr: (error: unknown) => Omit<TError, "name">;
+    }) =>
+      trySync<T, TError>({
+        try: operation,
+        mapErr: (error) => ({
+          ...mapErr(error),
+          name,
+        }),
+      }),
+    tryAsync: <T>({
+      try: operation,
+      mapErr,
+    }: {
+      try: () => Promise<T>;
+      mapErr: (error: unknown) => Omit<TError, "name">;
+    }) =>
+      tryAsync<T, TError>({
+        try: operation,
+        mapErr: (error) => ({ ...mapErr(error), name }),
+      }),
+  };
+}
+```
+
+**Usage example:**
+
+```typescript
+import {
+  type Result,
+  type TaggedError,
+  createTryFns,
+} from '@epicenterhq/result';
+
+export type ClipboardServiceError = TaggedError<'ClipboardServiceError'>;
+export const clipboardService = createTryFns('ClipboardServiceError');
+
+export function createClipboardServiceExtension(): ClipboardService {
+  return {
+    setClipboardText: (text) =>
+      clipboardService.tryAsync({
+        try: () => navigator.clipboard.writeText(text),
+        mapErr: (error) => ({
+          message: 'Unable to write to clipboard',
+          context: { text },
+          cause: error,
+        }),
+      }),
+
+    writeTextToCursor: (text) =>
+      clipboardService.trySync({
+        try: () => writeTextToCursor(text),
+        mapErr: (error) => ({
+          message: 'Unable to paste text to cursor',
+          context: { text },
+          cause: error,
+        }),
+      }),
+  };
+}
+```
+
+### Why This Approach Was Rejected
+
+After multiple attempts at implementing and using generator functions, several ergonomic issues emerged:
+
+#### 1. **Complex Type Inference**
+The generator function creates a layer of indirection that makes TypeScript's type inference less predictable. Users often need to provide explicit type annotations that wouldn't be necessary with direct `tryAsync`/`trySync` usage.
+
+#### 2. **Verbose Function Passing**
+You end up passing around generator functions, which creates gnarly syntax:
+```typescript
+// With generator - passing functions around
+const { tryAsync } = createTryFns('MyError');
+await someFunction(tryAsync);
+
+// Without generator - plain objects are simpler
+await tryAsync({ try: operation, mapError: mapper });
+```
+
+#### 3. **Hidden Error Structure**
+The generator obscures the actual error object structure, making it less clear what the final error will look like. With direct usage, the error shape is explicit and visible.
+
+#### 4. **Import Complexity**
+Generator functions require additional imports and setup:
+```typescript
+// Generator approach - more imports, more setup
+import { createTryFns, type TaggedError } from '@epicenterhq/result';
+export type MyError = TaggedError<'MyError'>;
+export const myErrorHandlers = createTryFns('MyError');
+
+// Direct approach - simpler imports
+import { tryAsync, type TaggedError } from '@epicenterhq/result';
+export type MyError = TaggedError<'MyError'>;
+```
+
+#### 5. **Reduced Flexibility**
+Generator functions lock you into a specific pattern. Direct usage allows for more flexibility in error mapping and handling edge cases.
+
+#### 6. **Plain Objects Are Better**
+Having plain, visible error objects is more transparent and easier to reason about than function-generated abstractions. You can see exactly what you're creating.
+
+### The Philosophy: Explicit Over Convenient
+
+The decision to omit generator functions aligns with the library's core philosophy:
+
+**Explicit error handling over convenient abstractions.** While generator functions might save a few lines of code, they introduce cognitive overhead and reduce transparency. The current approach prioritizes:
+
+- **Clarity**: You can see exactly what error objects are being created
+- **Simplicity**: Fewer abstractions to learn and understand  
+- **Flexibility**: No constraints imposed by generator function signatures
+- **Debuggability**: Error creation is traceable and obvious
+
+### Using the Generator Function (If You Want To)
+
+The `createTryFns` implementation is included in the library for those who prefer this pattern, but it's not the recommended approach. If you find the generator pattern suits your team's preferences, you can use it, but be aware of the trade-offs discussed above.
+
+**Recommendation**: Start with the direct `tryAsync`/`trySync` approach. Only consider the generator pattern if you have many similar error handlers and the benefits outweigh the ergonomic costs for your specific use case.
+
 ## Error Classification Framework
 
 ### By Origin: New vs. Bubbled-Up Errors
