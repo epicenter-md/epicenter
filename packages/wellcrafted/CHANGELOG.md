@@ -1,5 +1,12 @@
 # @epicenterhq/result
 
+## 0.13.0
+
+### Minor Changes
+
+- 0416841: Renames `mapErr` to `mapError`, enhance docs, introduce naming conventions for error suffix
+- a708959: Renames `mapErr` to `mapError`, enhances result and error handling documentation, and introduces naming conventions for error types
+
 ## 0.12.0
 
 ### Minor Changes
