@@ -1,59 +1,108 @@
 /**
- * Represents the successful outcome of a Result.
+ * Represents the successful outcome of an operation, encapsulating the success value.
  *
- * This is the Ok variant, containing a success value of type `T`.
- * There is no error value present when this variant is used.
- * @template T The success type
+ * This is the 'Ok' variant of the `Result` type. It holds a `data` property
+ * of type `T` (the success value) and an `error` property explicitly set to `null`,
+ * signifying no error occurred.
+ *
+ * Use this type in conjunction with `Err<E>` and `Result<T, E>`.
+ *
+ * @template T - The type of the success value contained within.
  */
 export type Ok<T> = { data: T; error: null };
 
 /**
- * Represents the error outcome of a Result.
+ * Represents the failure outcome of an operation, encapsulating the error value.
  *
- * This is the Err variant, containing an error value of type `E`.
- * There is no success value present when this variant is used.
+ * This is the 'Err' variant of the `Result` type. It holds an `error` property
+ * of type `E` (the error value) and a `data` property explicitly set to `null`,
+ * signifying that no success value is present due to the failure.
  *
- * @template E The error type
+ * Use this type in conjunction with `Ok<T>` and `Result<T, E>`.
+ *
+ * @template E - The type of the error value contained within.
  */
 export type Err<E> = { error: E; data: null };
 
 /**
- * A type representing either a success (Ok) or an error (Err)
+ * A type that represents the outcome of an operation that can either succeed or fail.
  *
- * - The `Ok` variant indicates success and contains a value of type `T`.
- * - The `Err` variant indicates error and contains an error of type `E`.
+ * `Result<T, E>` is a discriminated union type with two possible variants:
+ * - `Ok<T>`: Represents a successful outcome, containing a `data` field with the success value of type `T`.
+ *            In this case, the `error` field is `null`.
+ * - `Err<E>`: Represents a failure outcome, containing an `error` field with the error value of type `E`.
+ *            In this case, the `data` field is `null`.
  *
- * @template T The success type
- * @template E The error type
+ * This type promotes explicit error handling by requiring developers to check
+ * the variant of the `Result` before accessing its potential value or error.
+ * It helps avoid runtime errors often associated with implicit error handling (e.g., relying on `try-catch` for all errors).
+ *
+ * @template T - The type of the success value if the operation is successful (held in `Ok<T>`).
+ * @template E - The type of the error value if the operation fails (held in `Err<E>`).
  * @example
  * ```ts
- * const result: Result<string, Error> = Ok("success");
- * const error: Result<string, Error> = Err(new Error("failed"));
+ * function divide(numerator: number, denominator: number): Result<number, string> {
+ *   if (denominator === 0) {
+ *     return Err("Cannot divide by zero");
+ *   }
+ *   return Ok(numerator / denominator);
+ * }
+ *
+ * const result1 = divide(10, 2);
+ * if (isOk(result1)) {
+ *   console.log("Success:", result1.data); // Output: Success: 5
+ * }
+ *
+ * const result2 = divide(10, 0);
+ * if (isErr(result2)) {
+ *   console.error("Failure:", result2.error); // Output: Failure: Cannot divide by zero
+ * }
  * ```
  */
 export type Result<T, E> = Ok<T> | Err<E>;
 
 /**
- * Constructs an Ok variant, representing a successful Result.
+ * Constructs an `Ok<T>` variant, representing a successful outcome.
  *
- * @template T The success type
- * @param data The success value
- * @returns An Ok result containing the success value
+ * This factory function creates the success variant of a `Result`.
+ * It wraps the provided `data` (the success value) and ensures the `error` property is `null`.
+ *
+ * @template T - The type of the success value.
+ * @param data - The success value to be wrapped in the `Ok` variant.
+ * @returns An `Ok<T>` object with the provided data and `error` set to `null`.
+ * @example
+ * ```ts
+ * const successfulResult = Ok("Operation completed successfully");
+ * // successfulResult is { data: "Operation completed successfully", error: null }
+ * ```
  */
 export const Ok = <T>(data: T): Ok<T> => ({ data, error: null });
 
 /**
- * Constructs an Err variant, representing an error Result.
+ * Constructs an `Err<E>` variant, representing a failure outcome.
  *
- * @template E The error type
- * @param error The error value
- * @returns An Err result containing the error value
+ * This factory function creates the error variant of a `Result`.
+ * It wraps the provided `error` (the error value) and ensures the `data` property is `null`.
+ *
+ * @template E - The type of the error value.
+ * @param error - The error value to be wrapped in the `Err` variant. This value represents the specific error that occurred.
+ * @returns An `Err<E>` object with the provided error and `data` set to `null`.
+ * @example
+ * ```ts
+ * const failedResult = Err(new TypeError("Invalid input"));
+ * // failedResult is { error: TypeError("Invalid input"), data: null }
+ * ```
  */
 export const Err = <E>(error: E): Err<E> => ({ error, data: null });
 
 /**
- * Extracts the Ok type from a Result type
- * @template R The Result type to extract from
+ * Utility type to extract the `Ok<T>` variant from a `Result<T, E>` union type.
+ *
+ * If `R` is a `Result` type (e.g., `Result<string, Error>`), this type will resolve
+ * to `Ok<string>`. This can be useful in generic contexts or for type narrowing.
+ *
+ * @template R - The `Result<T, E>` union type from which to extract the `Ok<T>` variant.
+ *             Must extend `Result<unknown, unknown>`.
  */
 export type ExtractOkFromResult<R extends Result<unknown, unknown>> = Extract<
 	R,
@@ -61,8 +110,13 @@ export type ExtractOkFromResult<R extends Result<unknown, unknown>> = Extract<
 >;
 
 /**
- * Extracts the Err type from a Result type
- * @template R The Result type to extract from
+ * Utility type to extract the `Err<E>` variant from a `Result<T, E>` union type.
+ *
+ * If `R` is a `Result` type (e.g., `Result<string, Error>`), this type will resolve
+ * to `Err<Error>`. This can be useful in generic contexts or for type narrowing.
+ *
+ * @template R - The `Result<T, E>` union type from which to extract the `Err<E>` variant.
+ *             Must extend `Result<unknown, unknown>`.
  */
 export type ExtractErrFromResult<R extends Result<unknown, unknown>> = Extract<
 	R,
@@ -70,16 +124,44 @@ export type ExtractErrFromResult<R extends Result<unknown, unknown>> = Extract<
 >;
 
 /**
- * Extracts the success type from a Result type
- * @template R The Result type to extract from
+ * Utility type to extract the success value's type `T` from a `Result<T, E>` type.
+ *
+ * If `R` is an `Ok<T>` variant (or a `Result<T, E>` that could be an `Ok<T>`),
+ * this type resolves to `T`. If `R` can only be an `Err<E>` variant, it resolves to `never`.
+ * This is useful for obtaining the type of the `data` field when you know you have a success.
+ *
+ * @template R - The `Result<T, E>` type from which to extract the success value's type.
+ *             Must extend `Result<unknown, unknown>`.
+ * @example
+ * ```ts
+ * type MyResult = Result<number, string>;
+ * type SuccessValueType = UnwrapOk<MyResult>; // SuccessValueType is number
+ *
+ * type MyErrorResult = Err<string>;
+ * type ErrorValueType = UnwrapOk<MyErrorResult>; // ErrorValueType is never
+ * ```
  */
 export type UnwrapOk<R extends Result<unknown, unknown>> = R extends Ok<infer U>
 	? U
 	: never;
 
 /**
- * Extracts the error type from a Result type
- * @template R The Result type to extract from
+ * Utility type to extract the error value's type `E` from a `Result<T, E>` type.
+ *
+ * If `R` is an `Err<E>` variant (or a `Result<T, E>` that could be an `Err<E>`),
+ * this type resolves to `E`. If `R` can only be an `Ok<T>` variant, it resolves to `never`.
+ * This is useful for obtaining the type of the `error` field when you know you have a failure.
+ *
+ * @template R - The `Result<T, E>` type from which to extract the error value's type.
+ *             Must extend `Result<unknown, unknown>`.
+ * @example
+ * ```ts
+ * type MyResult = Result<number, string>;
+ * type ErrorValueType = UnwrapErr<MyResult>; // ErrorValueType is string
+ *
+ * type MySuccessResult = Ok<number>;
+ * type SuccessValueType = UnwrapErr<MySuccessResult>; // SuccessValueType is never
+ * ```
  */
 export type UnwrapErr<R extends Result<unknown, unknown>> = R extends Err<
 	infer E
@@ -88,11 +170,33 @@ export type UnwrapErr<R extends Result<unknown, unknown>> = R extends Err<
 	: never;
 
 /**
- * Type guard to check if a value is a valid Result type
- * @template T The success type
- * @template E The error type
- * @param value The value to check
- * @returns Type predicate indicating if the value is a Result
+ * Type guard to runtime check if an unknown value is a valid `Result<T, E>`.
+ *
+ * A value is considered a valid `Result` if:
+ * 1. It is a non-null object.
+ * 2. It has both `data` and `error` properties.
+ * 3. Exactly one of `data` or `error` is `null`. The other must be non-`null`.
+ *
+ * This function does not validate the types of `data` or `error` beyond `null` checks.
+ *
+ * @template T - The expected type of the success value if the value is an `Ok` variant (defaults to `unknown`).
+ * @template E - The expected type of the error value if the value is an `Err` variant (defaults to `unknown`).
+ * @param value - The value to check.
+ * @returns `true` if the value conforms to the `Result` structure, `false` otherwise.
+ *          If `true`, TypeScript's type system will narrow `value` to `Result<T, E>`.
+ * @example
+ * ```ts
+ * declare const someValue: unknown;
+ *
+ * if (isResult<string, Error>(someValue)) {
+ *   // someValue is now typed as Result<string, Error>
+ *   if (isOk(someValue)) {
+ *     console.log(someValue.data); // string
+ *   } else {
+ *     console.error(someValue.error); // Error
+ *   }
+ * }
+ * ```
  */
 export function isResult<T = unknown, E = unknown>(
 	value: unknown,
@@ -115,35 +219,91 @@ export function isResult<T = unknown, E = unknown>(
 }
 
 /**
- * Type guard to check if a result is an Ok
- * @template T The success type
- * @template E The error type
- * @param result The result to check
- * @returns Type predicate indicating if the result is Ok
+ * Type guard to runtime check if a `Result<T, E>` is an `Ok<T>` variant.
+ *
+ * This function narrows the type of a `Result` to `Ok<T>` if it represents a successful outcome.
+ * An `Ok<T>` variant is identified by its `error` property being `null`.
+ *
+ * @template T - The success value type.
+ * @template E - The error value type.
+ * @param result - The `Result<T, E>` to check.
+ * @returns `true` if the `result` is an `Ok<T>` variant, `false` otherwise.
+ *          If `true`, TypeScript's type system will narrow `result` to `Ok<T>`.
+ * @example
+ * ```ts
+ * declare const myResult: Result<number, string>;
+ *
+ * if (isOk(myResult)) {
+ *   // myResult is now typed as Ok<number>
+ *   console.log("Success value:", myResult.data); // myResult.data is number
+ * }
+ * ```
  */
 export function isOk<T, E>(result: Result<T, E>): result is Ok<T> {
 	return result.error === null;
 }
 
 /**
- * Type guard to check if a result is an Err
- * @template T The success type
- * @template E The error type
- * @param result The result to check
- * @returns Type predicate indicating if the result is Err
+ * Type guard to runtime check if a `Result<T, E>` is an `Err<E>` variant.
+ *
+ * This function narrows the type of a `Result` to `Err<E>` if it represents a failure outcome.
+ * An `Err<E>` variant is identified by its `error` property being non-`null` (and thus `data` being `null`).
+ *
+ * @template T - The success value type.
+ * @template E - The error value type.
+ * @param result - The `Result<T, E>` to check.
+ * @returns `true` if the `result` is an `Err<E>` variant, `false` otherwise.
+ *          If `true`, TypeScript's type system will narrow `result` to `Err<E>`.
+ * @example
+ * ```ts
+ * declare const myResult: Result<number, string>;
+ *
+ * if (isErr(myResult)) {
+ *   // myResult is now typed as Err<string>
+ *   console.error("Error value:", myResult.error); // myResult.error is string
+ * }
+ * ```
  */
 export function isErr<T, E>(result: Result<T, E>): result is Err<E> {
-	return result.error !== null;
+	return result.error !== null; // Equivalent to result.data === null
 }
 
 /**
- * Executes a synchronous operation and wraps the result in a Result type
- * @template T The success type
- * @template E The error type
- * @param options Object containing the operation and error mapping function
- * @param options.try The synchronous operation to execute
- * @param options.mapError Function to map an unknown error to an error value before wrapping it in an Err data structure
- * @returns A Result containing either the success value or the error value
+ * Executes a synchronous operation and wraps its outcome (success or failure) in a `Result<T, E>`.
+ *
+ * This function attempts to execute the `operation`.
+ * - If `operation` completes successfully, its return value is wrapped in an `Ok<T>` variant.
+ * - If `operation` throws an exception, the caught exception (of type `unknown`) is passed to
+ *   the `mapError` function. `mapError` is responsible for transforming this `unknown`
+ *   exception into a well-typed error value of type `E`. This error value is then wrapped
+ *   in an `Err<E>` variant.
+ *
+ * @template T - The type of the success value returned by the `operation` if it succeeds.
+ * @template E - The type of the error value produced by `mapError` if the `operation` fails.
+ * @param options - An object containing the operation and error mapping function.
+ * @param options.try - The synchronous operation to execute. This function is expected to return a value of type `T`.
+ * @param options.mapError - A function that takes the `unknown` exception caught from `options.try`
+ *                         and transforms it into a specific error value of type `E`. This function
+ *                         is crucial for creating a well-typed error for the `Err<E>` variant.
+ * @returns A `Result<T, E>`: `Ok<T>` if `options.try` succeeds, or `Err<E>` if it throws and `options.mapError` provides an error value.
+ * @example
+ * ```ts
+ * function parseJson(jsonString: string): Result<object, SyntaxError> {
+ *   return trySync({
+ *     try: () => JSON.parse(jsonString),
+ *     mapError: (err: unknown) => {
+ *       if (err instanceof SyntaxError) return err;
+ *       return new SyntaxError("Unknown parsing error");
+ *     }
+ *   });
+ * }
+ *
+ * const validResult = parseJson('{"name":"Result"}'); // Ok<{name: string}>
+ * const invalidResult = parseJson('invalid json');    // Err<SyntaxError>
+ *
+ * if (isOk(validResult)) console.log(validResult.data);
+ * if (isErr(invalidResult)) console.error(invalidResult.error.message);
+ * ```
  */
 export function trySync<T, E>({
 	try: operation,
@@ -161,13 +321,49 @@ export function trySync<T, E>({
 }
 
 /**
- * Executes an asynchronous operation and wraps the result in a Result type
- * @template T The success type
- * @template E The error type
- * @param options Object containing the operation and error mapping function
- * @param options.try The asynchronous operation to execute
- * @param options.mapError Function to map an unknown error to an error value before wrapping it in an Err data structure
- * @returns A Promise that resolves to a Result containing either the success value or the error value
+ * Executes an asynchronous operation (returning a `Promise`) and wraps its outcome in a `Promise<Result<T, E>>`.
+ *
+ * This function attempts to execute the asynchronous `operation`.
+ * - If the `Promise` returned by `operation` resolves successfully, its resolved value is wrapped in an `Ok<T>` variant.
+ * - If the `Promise` returned by `operation` rejects, or if `operation` itself throws an exception synchronously,
+ *   the caught exception/rejection reason (of type `unknown`) is passed to the `mapError` function.
+ *   `mapError` is responsible for transforming this `unknown` error into a well-typed error value of type `E`.
+ *   This error value is then wrapped in an `Err<E>` variant.
+ *
+ * The entire outcome (`Ok<T>` or `Err<E>`) is wrapped in a `Promise`.
+ *
+ * @template T - The type of the success value the `Promise` from `operation` resolves to.
+ * @template E - The type of the error value produced by `mapError` if the `operation` fails or rejects.
+ * @param options - An object containing the asynchronous operation and error mapping function.
+ * @param options.try - The asynchronous operation to execute. This function must return a `Promise<T>`.
+ * @param options.mapError - A function that takes the `unknown` exception/rejection reason caught from `options.try`
+ *                         and transforms it into a specific error value of type `E`. This function
+ *                         is crucial for creating a well-typed error for the `Err<E>` variant.
+ * @returns A `Promise` that resolves to a `Result<T, E>`: `Ok<T>` if `options.try`'s `Promise` resolves,
+ *          or `Err<E>` if it rejects/throws and `options.mapError` provides an error value.
+ * @example
+ * ```ts
+ * async function fetchData(url: string): Promise<Result<Response, Error>> {
+ *   return tryAsync({
+ *     try: async () => fetch(url),
+ *     mapError: (err: unknown) => {
+ *       if (err instanceof Error) return err;
+ *       return new Error("Network request failed");
+ *     }
+ *   });
+ * }
+ *
+ * async function processData() {
+ *   const result = await fetchData("/api/data");
+ *   if (isOk(result)) {
+ *     const response = result.data;
+ *     console.log("Data fetched:", await response.json());
+ *   } else {
+ *     console.error("Fetch error:", result.error.message);
+ *   }
+ * }
+ * processData();
+ * ```
  */
 export async function tryAsync<T, E>({
 	try: operation,
@@ -185,47 +381,64 @@ export async function tryAsync<T, E>({
 }
 
 /**
- * Unwraps a value that may or may not be a Result type
+ * Unwraps a value if it is a `Result`, otherwise returns the value itself.
  *
- * If the value is a Result:
- * - Returns the data if it's an Ok result
- * - Throws the error if it's an Err result
+ * - If `value` is an `Ok<T>` variant, its `data` (the success value) is returned.
+ * - If `value` is an `Err<E>` variant, its `error` (the error value) is thrown.
+ * - If `value` is not a `Result` (i.e., it's already a plain value of type `T`),
+ *   it is returned as-is.
  *
- * If the value is not a Result, returns it as-is.
+ * This function is useful for situations where an operation might return either a
+ * direct value or a `Result` wrapping a value/error, and you want to
+ * uniformly access the value or propagate the error via throwing.
  *
- * This is useful when you have a value that might be wrapped in a Result
- * and you want to either get the success value or propagate the error by throwing.
- *
- * @template T The success/value type
- * @template E The error type
- * @param value Either a plain value of type T or a Result<T, E>
- * @returns The unwrapped value of type T
- * @throws The error value if the input is an Err result
+ * @template T - The type of the success value (if `value` is `Ok<T>`) or the type of the plain value.
+ * @template E - The type of the error value (if `value` is `Err<E>`).
+ * @param value - The value to unwrap. It can be a `Result<T, E>` or a plain value of type `T`.
+ * @returns The success value of type `T` if `value` is `Ok<T>` or if `value` is a plain `T`.
+ * @throws The error value `E` if `value` is an `Err<E>` variant.
  *
  * @example
  * ```ts
- * // With a plain value
- * const plainValue = "hello";
- * const result1 = unwrapIfResult(plainValue); // Returns "hello"
+ * // Example with an Ok variant
+ * const okResult = Ok("success data");
+ * const unwrappedOk = unwrapIfResult(okResult); // "success data"
  *
- * // With an Ok result
- * const okResult = Ok("success");
- * const result2 = unwrapIfResult(okResult); // Returns "success"
+ * // Example with an Err variant
+ * const errResult = Err(new Error("failure"));
+ * try {
+ *   unwrapIfResult(errResult);
+ * } catch (e) {
+ *   console.error(e.message); // "failure"
+ * }
  *
- * // With an Err result
- * const errResult = Err(new Error("failed"));
- * const result3 = unwrapIfResult(errResult); // Throws Error("failed")
+ * // Example with a plain value
+ * const plainValue = "plain data";
+ * const unwrappedPlain = unwrapIfResult(plainValue); // "plain data"
+ *
+ * // Example with a function that might return Result or plain value
+ * declare function mightReturnResult(): string | Result<string, Error>;
+ * const outcome = mightReturnResult();
+ * try {
+ *  const finalValue = unwrapIfResult(outcome); // handles both cases
+ *  console.log("Final value:", finalValue);
+ * } catch (e) {
+ *  console.error("Operation failed:", e);
+ * }
  * ```
  */
 export function unwrapIfResult<T, E>(value: T | Result<T, E>): T {
-	if (isResult(value)) {
+	if (isResult<T, E>(value)) {
 		if (isOk(value)) {
 			return value.data;
 		}
-		// If it's a Result and not Ok, it must be Err
+		// If it's a Result and not Ok, it must be Err.
+		// The type guard isResult<T,E>(value) and isOk(value) already refine the type.
+		// So, 'value' here is known to be Err<E>.
 		throw value.error;
 	}
 
-	// If it's not a Result type, return the value as-is
+	// If it's not a Result type, return the value as-is.
+	// 'value' here is known to be of type T.
 	return value;
 }
