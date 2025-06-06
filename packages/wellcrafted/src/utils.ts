@@ -18,7 +18,9 @@ import { isOk } from "./result.js";
  * // errs = [Err("error")]
  */
 export function partitionResults<T, E>(results: Result<T, E>[]) {
-	return Object.groupBy(results, (result) =>
-		isOk(result) ? "oks" : "errs",
-	) as { oks: Ok<T>[]; errs: Err<E>[] };
+	return {
+		oks: [],
+		errs: [],
+		...Object.groupBy(results, (result) => (isOk(result) ? "oks" : "errs")),
+	} as { oks: Ok<T>[]; errs: Err<E>[] };
 }
