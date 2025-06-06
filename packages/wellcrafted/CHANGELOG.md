@@ -1,5 +1,11 @@
 # @epicenterhq/result
 
+## 0.13.1
+
+### Patch Changes
+
+- 27c88a4: Fixes `partitionResults` function to have default empty oks and errs arrays
+
 ## 0.13.0
 
 ### Minor Changes
