@@ -304,6 +304,18 @@ A core requirement of this library is that all of its data structures, especiall
 
 This library is opinionated in that it provides a clear, recommended path for best practices. We believe that a degree of standardization leads to more maintainable and predictable codebases. However, these opinions are not enforced at a technical level. The core `Result` type is deliberately decoupled from the error system, meaning you are free to use a different error implementation if your project requires it.
 
+## Inspirations and Relationship to Effect-TS
+
+This library's approach is heavily inspired by the powerful concepts pioneered by the **[Effect-TS](https://github.com/Effect-TS/effect)** ecosystem. Effect has indelibly shaped our thinking on how to structure services, handle errors, and compose applications in a type-safe way.
+
+However, this library represents a different set of trade-offs and priorities, based on a few key disagreements with the Effect-TS approach:
+
+1.  **Familiarity Over Novelty**: While we agree that Promises can be a flawed abstraction, we believe the cost of replacing them entirely is too high for most teams. Effect introduces a new, powerful, but unfamiliar execution model based on generators (`yield`), which requires a significant investment to learn. This library chooses to embrace the familiar patterns of `async/await` and Promises, even with their imperfections, to ensure a gentle learning curve. The goal is to provide 80% of the benefit with 20% of the learning curve.
+
+2.  **Simplicity and Lightweight Integration**: We aim for this library to be as lightweight as possible, easy to adopt incrementally, and simple to integrate with other tools. It is not an all-encompassing application framework but rather a focused tool to solve the specific problem of `Result`-based error handling.
+
+That said, the influence of Effect is clear. Functions like `trySync` and `tryAsync` are directly inspired by similar utilities in Effect. The core difference is that we aim to apply these powerful concepts on top of familiar JavaScript primitives, rather than creating a new ecosystem around them. This philosophy also informs our decision to omit an `Option<T>` type, as we believe that native TypeScript features (`T | null`, optional chaining, and nullish coalescing) are "good enough" and more idiomatic for the majority of use cases.
+
 ## FAQ
 
 ### Why `{ data, error }` instead of a boolean flag like `{ ok: boolean, ... }`?
