@@ -91,34 +91,34 @@ A helper function like `createTryFns` could theoretically simplify error creatio
 
 ```typescript
 export function createTryFns<TName extends string>(name: TName) {
-  type TError = TaggedError<TName>;
-  return {
-    trySync: <T>({
-      try: operation,
-      mapErr,
-    }: {
-      try: () => T;
-      mapErr: (error: unknown) => Omit<TError, "name">;
-    }) =>
-      trySync<T, TError>({
-        try: operation,
-        mapErr: (error) => ({
-          ...mapErr(error),
-          name,
-        }),
-      }),
-    tryAsync: <T>({
-      try: operation,
-      mapErr,
-    }: {
-      try: () => Promise<T>;
-      mapErr: (error: unknown) => Omit<TError, "name">;
-    }) =>
-      tryAsync<T, TError>({
-        try: operation,
-        mapErr: (error) => ({ ...mapErr(error), name }),
-      }),
-  };
+	type TError = TaggedError<TName>;
+	return {
+		trySync: <T>({
+			try: operation,
+			mapError,
+		}: {
+			try: () => T;
+			mapError: (error: unknown) => Omit<TError, "name">;
+		}) =>
+			trySync<T, TError>({
+				try: operation,
+				mapError: (error) => ({
+					...mapError(error),
+					name,
+				}),
+			}),
+		tryAsync: <T>({
+			try: operation,
+			mapError,
+		}: {
+			try: () => Promise<T>;
+			mapError: (error: unknown) => Omit<TError, "name">;
+		}) =>
+			tryAsync<T, TError>({
+				try: operation,
+				mapError: (error) => ({ ...mapError(error), name }),
+			}),
+	};
 }
 ```
 
@@ -139,7 +139,7 @@ export function createClipboardServiceExtension(): ClipboardService {
     setClipboardText: (text) =>
       clipboardService.tryAsync({
         try: () => navigator.clipboard.writeText(text),
-        mapErr: (error) => ({
+        mapError: (error) => ({
           message: 'Unable to write to clipboard',
           context: { text },
           cause: error,
@@ -149,7 +149,7 @@ export function createClipboardServiceExtension(): ClipboardService {
     writeTextToCursor: (text) =>
       clipboardService.trySync({
         try: () => writeTextToCursor(text),
-        mapErr: (error) => ({
+        mapError: (error) => ({
           message: 'Unable to paste text to cursor',
           context: { text },
           cause: error,
@@ -218,7 +218,7 @@ export function createClipboardServiceExtension(): ClipboardService {
     setClipboardText: (text) =>
       tryAsync({
         try: () => navigator.clipboard.writeText(text),
-        mapErr: (error) =>
+        mapError: (error) =>
           ClipboardServiceErr({
             message: 'Unable to write to clipboard',
             context: { text },
@@ -229,7 +229,7 @@ export function createClipboardServiceExtension(): ClipboardService {
     writeTextToCursor: (text) =>
       trySync({
         try: () => writeTextToCursor(text),
-        mapErr: (error) =>
+        mapError: (error) =>
           ClipboardServiceErr({
             message: 'Unable to paste text to cursor',
             context: { text },
@@ -260,7 +260,7 @@ Constructor functions require an additional function call, which often leads to 
 
 ```typescript
 // With constructor function - more indentation
-mapErr: (error) =>
+mapError: (error) =>
   ClipboardServiceErr({
     message: 'Unable to write to clipboard',
     context: { text },
@@ -268,7 +268,7 @@ mapErr: (error) =>
   }),
 
 // Direct approach - flatter structure  
-mapErr: (error) => ({
+mapError: (error) => ({
   name: 'ClipboardServiceError',
   message: 'Unable to write to clipboard',
   context: { text },

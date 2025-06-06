@@ -46,34 +46,3 @@ export type BaseError = Readonly<{
 export type TaggedError<T extends string> = BaseError & {
 	readonly name: T;
 };
-
-export function createTryFns<TName extends string>(name: TName) {
-	type TError = TaggedError<TName>;
-	return {
-		trySync: <T>({
-			try: operation,
-			mapErr,
-		}: {
-			try: () => T;
-			mapErr: (error: unknown) => Omit<TError, "name">;
-		}) =>
-			trySync<T, TError>({
-				try: operation,
-				mapErr: (error) => ({
-					...mapErr(error),
-					name,
-				}),
-			}),
-		tryAsync: <T>({
-			try: operation,
-			mapErr,
-		}: {
-			try: () => Promise<T>;
-			mapErr: (error: unknown) => Omit<TError, "name">;
-		}) =>
-			tryAsync<T, TError>({
-				try: operation,
-				mapErr: (error) => ({ ...mapErr(error), name }),
-			}),
-	};
-}
