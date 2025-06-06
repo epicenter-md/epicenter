@@ -292,15 +292,27 @@ A summary of the most important exports from the library.
 
 This library is built on a set of core principles designed to create a robust, predictable, and developer-friendly experience. Understanding these principles will help you get the most out of the library and see why its API is designed the way it is.
 
-### 1. Pragmatism and Ergonomics
+### 1. Embrace JavaScript Primitives
 
-The primary goal of this library is to be as ergonomic as possible. Developer experience is prioritized, even if it means deviating from more dogmatic or "academically pure" patterns. This philosophy is most evident in our choice of the `{ data, error }` shape for the `Result` type, which we believe offers the best developer experience by enabling a clean destructuring workflow that is familiar to many developers.
+A fundamental disagreement we have with some otherwise excellent libraries is the idea that JavaScript's core abstractions need to be completely reinvented. While we have immense respect for the power and type-level ingenuity of ecosystems like Effect-TS, we believe the cost of onboarding developers to an entirely new programming paradigm (like generators for async control flow) is too high for most projects.
 
-### 2. Serialization-First
+This library is built on the philosophy of leaning into JavaScript's native primitives whenever they are "good enough." We prefer to build on the familiar foundations of `async/await`, `Promise`, and standard union types (`T | null`) because they are already well-understood by the vast majority of TypeScript developers. This drastically reduces the learning curve and makes the library easy to adopt incrementally.
+
+We only introduce new abstractions where JavaScript has a clear and significant weakness. In our view, the two biggest pain points in modern TypeScript are:
+1.  **Error Handling**: The imperative nature of `try/catch` and the non-serializable, class-based `Error` object.
+2.  **Data Validation**: Ensuring that `unknown` data conforms to a known type at runtime.
+
+This library provides `Result` to solve the first problem. It intentionally omits an `Option` type because native features like optional chaining (`?.`) and nullish coalescing (`??`) provide excellent and familiar ergonomics for handling optional values.
+
+### 2. Prioritize Ergonomics and Pragmatism
+
+Flowing from the first principle, our API design prioritizes developer experience. This is most evident in our choice of the `{ data, error }` shape for the `Result` type. The ability to destructure `const { data, error } = ...` is a clean, direct, and pragmatic pattern that is already familiar to developers using popular libraries like Supabase and Astro Actions. We chose this pattern for its superior ergonomics, even if other patterns might be considered more "academically pure."
+
+### 3. Serialization-First
 
 A core requirement of this library is that all of its data structures, especially errors, must be reliably serializable. They need to behave identically whether you are passing them between functions, sending them over a network (HTTP), or passing them to a web worker. This is why the library fundamentally avoids classes for its error-handling system and instead promotes plain objects.
 
-### 3. Opinionated yet Flexible
+### 4. Opinionated yet Flexible
 
 This library is opinionated in that it provides a clear, recommended path for best practices. We believe that a degree of standardization leads to more maintainable and predictable codebases. However, these opinions are not enforced at a technical level. The core `Result` type is deliberately decoupled from the error system, meaning you are free to use a different error implementation if your project requires it.
 
