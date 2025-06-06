@@ -49,59 +49,55 @@ if (isOk(result)) {
 
 ## Handling Operation Outcomes
 
-Once you have a `Result`, there are two main patterns for working with it.
+Once you have a `Result`, there are two main patterns for working with it. The best choice depends on your preference for code style and the specific context of your code.
 
-### Pattern 1: Using Type Guards (Recommended for Type Safety)
+### Pattern 1: Destructuring (Preferred)
 
-Using the `isOk()` and `isErr()` type guards is the most type-safe way to handle a `Result`. TypeScript's control flow analysis understands these functions and will correctly narrow the type of your `Result` object within `if/else` blocks.
+This pattern will feel familiar to developers working with modern libraries like Supabase or Astro Actions. You can destructure the `data` and `error` properties directly from the result object and use a simple conditional check on the `error` property.
 
-```ts
-import { isOk, isErr } from "@epicenterhq/result";
-
-const result = divide(10, 0); // This returns an Err variant
-
-if (isOk(result)) {
-  // TypeScript knows `result` is `Ok<number>` here.
-  // `result.error` is `null`.
-  // `result.data` is `number`.
-  const value: number = result.data; // This is safe
-  console.log(value);
-
-} else if (isErr(result)) {
-  // TypeScript knows `result` is `Err<string>` here.
-  // `result.data` is `null`.
-  // `result.error` is `string`.
-  const error: string = result.error; // This is safe
-  console.error(error);
-}
-```
-
-> **Why is this recommended?** This pattern allows TypeScript to do what it does best. Inside the `isOk` block, `result` is treated as `Ok<T>`, and inside the `isErr` block, it's treated as `Err<E>`. This eliminates the need for type assertions or manual null-checking of `data` and `error` properties, preventing a class of common runtime errors.
-
-### Pattern 2: Destructuring
-
-You can also destructure the `data` and `error` properties directly from the result. This pattern can be visually clean but comes with an important caveat regarding type safety.
+This approach is often cleaner and more direct for handling the two possible outcomes.
 
 ```ts
 const { data, error } = divide(10, 2);
 
 if (error) {
   // The `error` exists, so we handle it.
-  // `error` is of type `string | null`.
-  const err: string = error;
-  console.error(err);
+  console.error(`An error occurred: ${error}`);
+  return; // Or handle the error appropriately
+}
+
+// If the error is null, you can safely work with the data.
+// In most modern TypeScript setups, `data` will be correctly inferred as `number`.
+console.log(`The result is: ${data}`);
+```
+
+### Pattern 2: Using Type Guards
+
+In some complex scenarios or with certain TypeScript configurations, the compiler might not be able to perfectly infer the relationship between `data` and `error` when they are destructured into separate variables. In these cases, using the `isOk()` and `isErr()` type guards is a more robust solution. TypeScript's control flow analysis is designed to work flawlessly with this pattern, guaranteeing type safety within each conditional block.
+
+```ts
+import { isOk, isErr } from "@epicenterhq/result";
+
+const result = divide(10, 0); // This returns an Err variant
+
+if (isErr(result)) {
+  // TypeScript *guarantees* that `result` is `Err<string>` here.
+  // The `result.data` property is `null`.
+  // The `result.error` property is `string`.
+  const errorValue = result.error; // string
+  console.error(errorValue);
 
 } else {
-  // The `error` is null, so we can use the data.
-  // `data` is of type `number | null`.
-  const value: number = data; // TypeScript may complain here if strictNullChecks is on
-  console.log(value);
+  // If it's not an error, it must be a success.
+  // TypeScript *guarantees* that `result` is `Ok<number>` here.
+  // The `result.error` property is `null`.
+  // The `result.data` property is `number`.
+  const successValue = result.data; // number
+  console.log(successValue);
 }
 ```
 
-> **The Caveat with Destructuring:** When you destructure, TypeScript analyzes `data` and `error` as separate variables. It often cannot infer the relationship that `data` is non-null *if and only if* `error` is null. As a result, `data` will have the type `T | null` and `error` will have `E | null`, even inside your conditional blocks. This may force you to use non-null assertions (`!`) or perform extra checks, slightly defeating the purpose of a fully type-safe `Result` type.
-
-For maximum type safety and clarity, **we recommend using the `isOk()` and `isErr()` type guards.**
+> **When to use Type Guards:** While destructuring is preferred for its simplicity, reach for `isOk()` and `isErr()` whenever you notice that TypeScript isn't correctly narrowing the type of `data` after an error check. This ensures your code remains fully type-safe without needing manual type assertions.
 
 ## Wrapping Functions That Throw
 
