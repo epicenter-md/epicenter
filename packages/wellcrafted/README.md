@@ -308,11 +308,19 @@ This library provides `Result` to solve the first problem. It intentionally omit
 
 Flowing from the first principle, our API design prioritizes developer experience. This is most evident in our choice of the `{ data, error }` shape for the `Result` type. The ability to destructure `const { data, error } = ...` is a clean, direct, and pragmatic pattern that is already familiar to developers using popular libraries like Supabase and Astro Actions. We chose this pattern for its superior ergonomics, even if other patterns might be considered more "academically pure."
 
-### 3. Serialization-First
+### 3. Lightweight, Zero-Dependency, and Tree-Shakable
+
+This library is designed to be as lightweight as possible. It ships with **zero runtime dependencies**, meaning it won't add any extra weight to your `node_modules` folder or your final bundle.
+
+Every function is exported as a pure, standalone module, making the entire library **tree-shakable**. If you only use the `Result` type and the `isOk` function, the rest of the library's code won't be included in your application's build.
+
+We believe a library should have a focused scope and not be overwhelming. While comprehensive ecosystems like Effect-TS are incredibly powerful, their scope can be daunting. This library aims to solve the specific and critical problem of type-safe error handling without pulling in a large, all-encompassing framework. It's a small tool that does one job well.
+
+### 4. Serialization-First
 
 A core requirement of this library is that all of its data structures, especially errors, must be reliably serializable. They need to behave identically whether you are passing them between functions, sending them over a network (HTTP), or passing them to a web worker. This is why the library fundamentally avoids classes for its error-handling system and instead promotes plain objects.
 
-### 4. Opinionated yet Flexible
+### 5. Opinionated yet Flexible
 
 This library is opinionated in that it provides a clear, recommended path for best practices. We believe that a degree of standardization leads to more maintainable and predictable codebases. However, these opinions are not enforced at a technical level. The core `Result` type is deliberately decoupled from the error system, meaning you are free to use a different error implementation if your project requires it.
 
