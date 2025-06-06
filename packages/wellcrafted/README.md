@@ -1,27 +1,296 @@
-# Lightweight Result & Error Handling Library
+# A Modern Approach to Error Handling in TypeScript
 
-A TypeScript library providing Rust-inspired Result types and a lightweight error handling system designed for serialization across boundaries.
+This library provides a robust, Rust-inspired `Result` type and a lightweight, serializable error handling system for TypeScript. It's designed to help you write more predictable, type-safe, and composable code by making error handling an explicit part of your function signatures.
+
+## Core Idea: The Result Type
+
+The core of the library is the `Result<T, E>` type. Instead of throwing exceptions, functions can return a `Result` object that explicitly represents either a success or a failure.
+
+A `Result` is a discriminated union with two possible variants:
+- **`Ok<T>`**: Represents a successful outcome, containing a `data` field with the success value of type `T`.
+- **`Err<E>`**: Represents a failure outcome, containing an `error` field with the error value of type `E`.
+
+This pattern forces you to acknowledge and handle potential errors at compile time, leading to more resilient applications.
 
 ## Quick Start
 
-Typical usage will be like
-
-```ts
-const { data, error } = await operation();
-// Since you destructured, remember to rewrap data and error values with Ok or Err
-if (error) return Err(error);
-// Do something with data
-return Ok(data);
+### Installation
+```bash
+npm install @epicenterhq/result
 ```
 
-but in cases where type inference breaks and data is inferred as `T | null` instead of `T`, you should use the isErr
+### Basic Usage
+Here's a simple example of a function that returns a `Result`:
 
 ```ts
-const result = await operation();
-if (isErr(result)) return result;
-// Do something with data
-return result
+import { Result, Ok, Err, isOk } from "@epicenterhq/result";
+
+// A function that might fail
+function divide(numerator: number, denominator: number): Result<number, string> {
+  if (denominator === 0) {
+    return Err("Cannot divide by zero");
+  }
+  return Ok(numerator / denominator);
+}
+
+// Handling the result
+const result = divide(10, 2);
+
+if (isOk(result)) {
+  // Within this block, TypeScript knows `result` is of type `Ok<number>`.
+  // We can safely access `result.data`.
+  console.log(`The result is: ${result.data}`);
+} else {
+  // Within this block, TypeScript knows `result` is of type `Err<string>`.
+  // We can safely access `result.error`.
+  console.error(`An error occurred: ${result.error}`);
+}
 ```
+
+## Handling Operation Outcomes
+
+Once you have a `Result`, there are two main patterns for working with it.
+
+### Pattern 1: Using Type Guards (Recommended for Type Safety)
+
+Using the `isOk()` and `isErr()` type guards is the most type-safe way to handle a `Result`. TypeScript's control flow analysis understands these functions and will correctly narrow the type of your `Result` object within `if/else` blocks.
+
+```ts
+import { isOk, isErr } from "@epicenterhq/result";
+
+const result = divide(10, 0); // This returns an Err variant
+
+if (isOk(result)) {
+  // TypeScript knows `result` is `Ok<number>` here.
+  // `result.error` is `null`.
+  // `result.data` is `number`.
+  const value: number = result.data; // This is safe
+  console.log(value);
+
+} else if (isErr(result)) {
+  // TypeScript knows `result` is `Err<string>` here.
+  // `result.data` is `null`.
+  // `result.error` is `string`.
+  const error: string = result.error; // This is safe
+  console.error(error);
+}
+```
+
+> **Why is this recommended?** This pattern allows TypeScript to do what it does best. Inside the `isOk` block, `result` is treated as `Ok<T>`, and inside the `isErr` block, it's treated as `Err<E>`. This eliminates the need for type assertions or manual null-checking of `data` and `error` properties, preventing a class of common runtime errors.
+
+### Pattern 2: Destructuring
+
+You can also destructure the `data` and `error` properties directly from the result. This pattern can be visually clean but comes with an important caveat regarding type safety.
+
+```ts
+const { data, error } = divide(10, 2);
+
+if (error) {
+  // The `error` exists, so we handle it.
+  // `error` is of type `string | null`.
+  const err: string = error;
+  console.error(err);
+
+} else {
+  // The `error` is null, so we can use the data.
+  // `data` is of type `number | null`.
+  const value: number = data; // TypeScript may complain here if strictNullChecks is on
+  console.log(value);
+}
+```
+
+> **The Caveat with Destructuring:** When you destructure, TypeScript analyzes `data` and `error` as separate variables. It often cannot infer the relationship that `data` is non-null *if and only if* `error` is null. As a result, `data` will have the type `T | null` and `error` will have `E | null`, even inside your conditional blocks. This may force you to use non-null assertions (`!`) or perform extra checks, slightly defeating the purpose of a fully type-safe `Result` type.
+
+For maximum type safety and clarity, **we recommend using the `isOk()` and `isErr()` type guards.**
+
+## Wrapping Functions That Throw
+
+What if you're working with a function that throws exceptions, like `JSON.parse` or a network client? This library provides `trySync` and `tryAsync` to safely wrap these operations and convert their outcomes into a `Result`.
+
+### Synchronous Operations with `trySync`
+
+Use `trySync` for synchronous functions that might throw. You provide the operation and a `mapError` function to transform the caught exception into your desired error type.
+
+```ts
+import { trySync, Result } from "@epicenterhq/result";
+
+function parseJson(raw: string): Result<object, Error> {
+  return trySync({
+    try: () => JSON.parse(raw),
+    mapError: (err: unknown) => err as Error, // Map the unknown error to a typed Error
+  });
+}
+
+const result = parseJson('{"key": "value"}'); // Ok<{key: string}>
+const failedResult = parseJson('not json'); // Err<SyntaxError>
+```
+
+### Asynchronous Operations with `tryAsync`
+
+Use `tryAsync` for functions that return a `Promise`. It handles both rejected promises and synchronous throws within the async function.
+
+```ts
+import { tryAsync, Result } from "@epicenterhq/result";
+
+type User = { id: number; name: string };
+type NetworkError = { message: string; statusCode?: number };
+
+async function fetchUser(userId: number): Promise<Result<User, NetworkError>> {
+  return tryAsync({
+    try: async () => {
+      const response = await fetch(`https://api.example.com/users/${userId}`);
+      if (!response.ok) {
+        // You can throw a custom error object
+        throw { message: "Request failed", statusCode: response.status };
+      }
+      return response.json();
+    },
+    mapError: (err: unknown) => err as NetworkError, // Transform the caught error
+  });
+}
+
+const userResult = await fetchUser(1);
+```
+
+## A Serializable, Type-Safe Error System
+
+This library promotes a pattern for defining errors as plain, serializable objects rather than instances of JavaScript's `Error` class.
+
+### Why Plain Objects for Errors?
+
+1.  **Serialization-First**: Plain objects can be easily serialized to JSON (`JSON.stringify`) and transmitted across boundaries (network APIs, IPC, web workers) without losing information, unlike `Error` classes.
+2.  **Type Safety**: Use TypeScript's literal and union types to create a discriminated union of possible errors, allowing `switch` statements to safely narrow down error types.
+3.  **Lightweight**: Avoids the overhead of class instantiation and the complexities of `instanceof` checks.
+4.  **Structured Context**: Easily enforce that all errors carry structured, machine-readable context.
+
+### The Core Error Types
+
+The library provides two simple helper types in `@epicenterhq/result` to build your error system.
+
+```typescript
+// A base for all errors, ensuring they have a consistent shape.
+type BaseError = Readonly<{
+  name: string;        // The error's unique name (acts as the "tag").
+  message: string;     // A human-readable description of the error.
+  context: Record<string, unknown>; // Structured, machine-readable context.
+  cause?: unknown;     // The original error that caused this one, for debugging.
+}>;
+
+// A helper to create a specific, tagged error type.
+type TaggedError<T extends string> = BaseError & {
+  readonly name: T;
+};
+```
+
+### Creating Domain-Specific Errors
+
+You can define a set of possible errors for a specific domain, like a file system service:
+
+```typescript
+// Define your specific error types
+export type FileNotFoundError = TaggedError<"FileNotFoundError">;
+export type PermissionDeniedError = TaggedError<"PermissionDeniedError">;
+export type DiskFullError = TaggedError<"DiskFullError">;
+
+// Create a union of all possible errors for this domain
+export type FileSystemError = FileNotFoundError | PermissionDeniedError | DiskFullError;
+
+// A factory function to create an error
+function createFileNotFoundError(path: string): FileNotFoundError {
+  return {
+    name: "FileNotFoundError",
+    message: `The file at path "${path}" was not found.`,
+    context: { path },
+  };
+}
+```
+
+Because `name` is a unique literal type for each error, TypeScript can use it to discriminate between them in a `switch` statement:
+
+```ts
+function handleError(error: FileSystemError) {
+  switch (error.name) {
+    case "FileNotFoundError":
+      // TypeScript knows `error` is `FileNotFoundError` here.
+      console.error(`Path not found: ${error.context.path}`);
+      break;
+    case "PermissionDeniedError":
+      // TypeScript knows `error` is `PermissionDeniedError` here.
+      console.error("Permission was denied.");
+      break;
+    case "DiskFullError":
+      // ...
+      break;
+  }
+}
+```
+
+### Best Practices for Errors
+
+#### 1. Include Meaningful Context
+Always include function inputs and other relevant state in the `context` object. This is invaluable for logging and debugging.
+
+```typescript
+function createDbError(
+  message: string,
+  query: string,
+  params: unknown[],
+  cause: unknown
+): DbError {
+  return {
+    name: "DbError",
+    message,
+    context: {
+      query,
+      params,
+      timestamp: new Date().toISOString(),
+    },
+    cause,
+  };
+}
+```
+
+#### 2. Handle Errors at the Right Level
+Handle or transform errors where you can add more context or make a recovery decision.
+
+```ts
+async function initializeApp(): Promise<Result<App, FsError | ValidationError>> {
+  const configResult = await readConfig("./config.json");
+
+  // Propagate the file system error directly if config read fails
+  if (isErr(configResult)) {
+    return configResult;
+  }
+
+  // If config is read, but is invalid, return a *different* kind of error
+  const validationResult = validateConfig(configResult.data);
+  if (isErr(validationResult)) {
+    return validationResult;
+  }
+
+  return Ok(new App(validationResult.data));
+}
+```
+
+## API Reference
+
+A summary of the most important exports from the library.
+
+### Types
+- **`Result<T, E>`**: The core union type, representing `Ok<T> | Err<E>`.
+- **`Ok<T>`**: Represents a success. Contains `{ data: T; error: null; }`.
+- **`Err<E>`**: Represents a failure. Contains `{ data: null; error: E; }`.
+- **`BaseError` / `TaggedError<T>`**: Helpers for creating a structured error system.
+
+### Functions
+- **`Ok(data)`**: Creates a success `Result`.
+- **`Err(error)`**: Creates a failure `Result`.
+- **`isOk(result)`**: Type guard. Returns `true` if the result is an `Ok` variant.
+- **`isErr(result)`**: Type guard. Returns `true` if the result is an `Err` variant.
+- **`trySync({ try, mapError })`**: Wraps a synchronous function that may throw.
+- **`tryAsync({ try, mapError })`**: Wraps an asynchronous function that may throw or reject.
+- **`unwrapIfResult(value)`**: Unwraps a `Result`, returning data on `Ok` or throwing on `Err`.
+- **`isResult(value)`**: Type guard. Returns `true` if a value has the shape of a `Result`.
 
 
 ```ts
