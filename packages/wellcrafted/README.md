@@ -4,13 +4,17 @@ This library provides a robust, Rust-inspired `Result` type and a lightweight, s
 
 ## Core Idea: The Result Type
 
-The core of the library is the `Result<T, E>` type. Instead of throwing exceptions, functions can return a `Result` object that explicitly represents either a success or a failure.
+JavaScript's traditional error handling, based on `try...catch` and throwing `Error` objects, has two major drawbacks for modern application development:
+1.  **It's not type-safe**: A function signature `function doSomething(): User` doesn't tell you that it might throw a `NetworkError` or a `ValidationError`. Errors are invisible until they strike at runtime.
+2.  **It's not serialization-friendly**: `Error` class instances lose their prototype chain when sent over the network as JSON, breaking `instanceof` checks.
 
-A `Result` is a discriminated union with two possible variants:
-- **`Ok<T>`**: Represents a successful outcome, containing a `data` field with the success value of type `T`.
-- **`Err<E>`**: Represents a failure outcome, containing an `error` field with the error value of type `E`.
+This library solves these problems with the `Result<T, E>` type. Instead of throwing, functions return a `Result` object that explicitly represents either a success or a failure.
 
-This pattern forces you to acknowledge and handle potential errors at compile time, leading to more resilient applications.
+A `Result` is a union of two "variants":
+- **`Ok<T>`**: Represents a successful outcome, containing a `data` field with the success value. In this variant, the `error` property is always `null`.
+- **`Err<E>`**: Represents a failure outcome, containing an `error` field with the error value. In this variant, the `data` property is always `null`.
+
+This structure allows TypeScript's control-flow analysis to act as if it's a **discriminated union**. By checking if `result.error === null`, TypeScript knows it must be an `Ok` variant and can safely access `result.data`. This makes error handling explicit, type-safe, and predictable.
 
 ## Quick Start
 
@@ -55,18 +59,18 @@ Once you have a `Result`, there are two main patterns for working with it. The b
 
 This pattern will feel familiar to developers working with modern libraries like Supabase or Astro Actions. You can destructure the `data` and `error` properties directly from the result object and use a simple conditional check on the `error` property.
 
-This approach is often cleaner and more direct for handling the two possible outcomes.
+This approach is often cleaner and more direct for handling the two possible outcomes, as it gives you immediate access to the inner `data` and `error` values.
 
 ```ts
 const { data, error } = divide(10, 2);
 
 if (error) {
-  // The `error` exists, so we handle it.
+  // `error` holds the inner error value from the Err variant.
   console.error(`An error occurred: ${error}`);
   return; // Or handle the error appropriately
 }
 
-// If the error is null, you can safely work with the data.
+// If `error` is null, `data` holds the inner success value from the Ok variant.
 // In most modern TypeScript setups, `data` will be correctly inferred as `number`.
 console.log(`The result is: ${data}`);
 ```
