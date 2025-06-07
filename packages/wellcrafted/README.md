@@ -24,30 +24,74 @@ npm install @epicenterhq/result
 ```
 
 ### Basic Usage
-Here's a simple example of a function that returns a `Result`:
+
+These examples show the recommended approach: combining the `Result` type with structured, tagged errors for maximum type safety and clarity.
 
 ```ts
-import { Result, Ok, Err, isOk } from "@epicenterhq/result";
+import { Result, Ok, Err, isOk, type TaggedError } from "@epicenterhq/result";
 
-// A function that might fail
-function divide(numerator: number, denominator: number): Result<number, string> {
+// --- Example 1: A Safe Division Function ---
+
+// 1. Define a specific error for math-related failures
+type MathError = TaggedError<"MathError">;
+
+// 2. Create a function that returns a Result with our structured error
+function divide(numerator: number, denominator: number): Result<number, MathError> {
   if (denominator === 0) {
-    return Err("Cannot divide by zero");
+    return Err({
+      name: "MathError",
+      message: "Cannot divide by zero.",
+      context: { numerator, denominator }
+    });
   }
   return Ok(numerator / denominator);
 }
 
-// Handling the result
-const result = divide(10, 2);
+// 3. Handle the result
+const divisionResult = divide(10, 0);
 
-if (isOk(result)) {
-  // Within this block, TypeScript knows `result` is of type `Ok<number>`.
-  // We can safely access `result.data`.
-  console.log(`The result is: ${result.data}`);
+if (!isOk(divisionResult)) {
+  // `divisionResult.error` is a fully-typed MathError object
+  console.error(`Error (${divisionResult.error.name}): ${divisionResult.error.message}`);
+  console.log("Context:", divisionResult.error.context); // { numerator: 10, denominator: 0 }
+}
+
+// --- Example 2: Parsing a User Object ---
+
+// 1. Define a specific error for parsing failures
+type ParseError = TaggedError<"ParseError">;
+
+// 2. Create a function that returns a Result with our structured error
+function parseUser(json: string): Result<{ name: string }, ParseError> {
+  try {
+    const data = JSON.parse(json);
+    if (typeof data.name !== "string") {
+      return Err({
+        name: "ParseError",
+        message: "User object must have a name property of type string.",
+        context: { receivedValue: data.name },
+      });
+    }
+    return Ok(data);
+  } catch (e) {
+    return Err({
+      name: "ParseError",
+      message: "Invalid JSON provided.",
+      context: { rawString: json },
+      cause: e,
+    });
+  }
+}
+
+// 3. Handle the result
+const userResult = parseUser('{"name": "Alice"}');
+
+if (isOk(userResult)) {
+  console.log(`Welcome, ${userResult.data.name}!`);
 } else {
-  // Within this block, TypeScript knows `result` is of type `Err<string>`.
-  // We can safely access `result.error`.
-  console.error(`An error occurred: ${result.error}`);
+  // `userResult.error` is a fully-typed ParseError object
+  console.error(`Error (${userResult.error.name}): ${userResult.error.message}`);
+  console.log("Context:", userResult.error.context);
 }
 ```
 
