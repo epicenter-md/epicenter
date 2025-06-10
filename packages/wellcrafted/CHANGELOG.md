@@ -1,5 +1,11 @@
 # @epicenterhq/result
 
+## 0.14.0
+
+### Minor Changes
+
+- c5a8d2a: Adds `unwrap` function to extract success value from `Result<T, E>` and throw error for `Err<E>` variant
+
 ## 0.13.1
 
 ### Patch Changes
