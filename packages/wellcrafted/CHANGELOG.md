@@ -1,5 +1,11 @@
 # @epicenterhq/result
 
+## 0.15.0
+
+### Minor Changes
+
+- 95f7704: Renames `unwrapIfResult` function to `resolve`
+
 ## 0.14.0
 
 ### Minor Changes
