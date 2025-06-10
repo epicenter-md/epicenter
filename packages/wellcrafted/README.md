@@ -326,15 +326,24 @@ A summary of the most important exports from the library.
 - **`Err<E>`**: Represents a failure. Contains `{ data: null; error: E; }`.
 - **`BaseError` / `TaggedError<T>`**: Helpers for creating a structured error system.
 
-### Functions
+### Core Result Functions
 - **`Ok(data)`**: Creates a success `Result`.
 - **`Err(error)`**: Creates a failure `Result`.
 - **`isOk(result)`**: Type guard. Returns `true` if the result is an `Ok` variant.
 - **`isErr(result)`**: Type guard. Returns `true` if the result is an `Err` variant.
-- **`trySync({ try, mapError })`**: Wraps a synchronous function that may throw.
-- **`tryAsync({ try, mapError })`**: Wraps an asynchronous function that may throw or reject.
+- **`unwrap(result)`**: Unwraps a `Result`, returning data on `Ok` or throwing error on `Err`.
 - **`resolve(value)`**: Resolves a value that may or may not be a `Result`, returning the final value or throwing on `Err`.
 - **`isResult(value)`**: Type guard. Returns `true` if a value has the shape of a `Result`.
+
+### Async/Sync Wrappers
+- **`trySync({ try, mapError })`**: Wraps a synchronous function that may throw.
+- **`tryAsync({ try, mapError })`**: Wraps an asynchronous function that may throw or reject.
+
+### Error Utilities
+- **`extractErrorMessage(error)`**: Safely extracts a string message from any error value.
+
+### Utility Functions
+- **`partitionResults(results)`**: Partitions an array of Results into separate arrays of `Ok` and `Err` variants.
 
 ## Design Philosophy
 
