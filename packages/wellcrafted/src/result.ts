@@ -381,46 +381,49 @@ export async function tryAsync<T, E>({
 }
 
 /**
- * Unwraps a value if it is a `Result`, otherwise returns the value itself.
+ * Resolves a value that may or may not be wrapped in a `Result`, returning the final value.
  *
- * - If `value` is an `Ok<T>` variant, its `data` (the success value) is returned.
- * - If `value` is an `Err<E>` variant, its `error` (the error value) is thrown.
+ * This function handles the common pattern where a value might be a `Result<T, E>` or a plain `T`:
+ * - If `value` is an `Ok<T>` variant, returns the contained success value.
+ * - If `value` is an `Err<E>` variant, throws the contained error value.
  * - If `value` is not a `Result` (i.e., it's already a plain value of type `T`),
- *   it is returned as-is.
+ *   returns it as-is.
  *
- * This function is useful for situations where an operation might return either a
- * direct value or a `Result` wrapping a value/error, and you want to
- * uniformly access the value or propagate the error via throwing.
+ * This is useful when working with APIs that might return either direct values or Results,
+ * allowing you to normalize them to the actual value or propagate errors via throwing.
+ * 
+ * Use `resolve` when the input might or might not be a Result.
+ * Use `unwrap` when you know the input is definitely a Result.
  *
  * @template T - The type of the success value (if `value` is `Ok<T>`) or the type of the plain value.
  * @template E - The type of the error value (if `value` is `Err<E>`).
- * @param value - The value to unwrap. It can be a `Result<T, E>` or a plain value of type `T`.
- * @returns The success value of type `T` if `value` is `Ok<T>` or if `value` is a plain `T`.
+ * @param value - The value to resolve. Can be a `Result<T, E>` or a plain value of type `T`.
+ * @returns The final value of type `T` if `value` is `Ok<T>` or if `value` is already a plain `T`.
  * @throws The error value `E` if `value` is an `Err<E>` variant.
  *
  * @example
  * ```ts
  * // Example with an Ok variant
  * const okResult = Ok("success data");
- * const unwrappedOk = unwrapIfResult(okResult); // "success data"
+ * const resolved = resolve(okResult); // "success data"
  *
  * // Example with an Err variant
  * const errResult = Err(new Error("failure"));
  * try {
- *   unwrapIfResult(errResult);
+ *   resolve(errResult);
  * } catch (e) {
  *   console.error(e.message); // "failure"
  * }
  *
  * // Example with a plain value
  * const plainValue = "plain data";
- * const unwrappedPlain = unwrapIfResult(plainValue); // "plain data"
+ * const resolved = resolve(plainValue); // "plain data"
  *
  * // Example with a function that might return Result or plain value
  * declare function mightReturnResult(): string | Result<string, Error>;
  * const outcome = mightReturnResult();
  * try {
- *  const finalValue = unwrapIfResult(outcome); // handles both cases
+ *  const finalValue = resolve(outcome); // handles both cases
  *  console.log("Final value:", finalValue);
  * } catch (e) {
  *  console.error("Operation failed:", e);
@@ -434,7 +437,7 @@ export async function tryAsync<T, E>({
  * - If the `Result` is an `Ok<T>` variant, returns the contained success value of type `T`.
  * - If the `Result` is an `Err<E>` variant, throws the contained error value of type `E`.
  *
- * Unlike `unwrapIfResult`, this function expects the input to always be a `Result` type,
+ * Unlike `resolve`, this function expects the input to always be a `Result` type,
  * making it more direct for cases where you know you're working with a `Result`.
  *
  * @template T - The type of the success value contained in the `Ok<T>` variant.
@@ -478,7 +481,7 @@ export function unwrap<T, E>(result: Result<T, E>): T {
 	throw result.error;
 }
 
-export function unwrapIfResult<T, E>(value: T | Result<T, E>): T {
+export function resolve<T, E>(value: T | Result<T, E>): T {
 	if (isResult<T, E>(value)) {
 		if (isOk(value)) {
 			return value.data;

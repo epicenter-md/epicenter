@@ -333,7 +333,7 @@ A summary of the most important exports from the library.
 - **`isErr(result)`**: Type guard. Returns `true` if the result is an `Err` variant.
 - **`trySync({ try, mapError })`**: Wraps a synchronous function that may throw.
 - **`tryAsync({ try, mapError })`**: Wraps an asynchronous function that may throw or reject.
-- **`unwrapIfResult(value)`**: Unwraps a `Result`, returning data on `Ok` or throwing on `Err`.
+- **`resolve(value)`**: Resolves a value that may or may not be a `Result`, returning the final value or throwing on `Err`.
 - **`isResult(value)`**: Type guard. Returns `true` if a value has the shape of a `Result`.
 
 ## Design Philosophy
