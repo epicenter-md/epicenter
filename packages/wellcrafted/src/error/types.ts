@@ -1,3 +1,19 @@
+/**
+ * Base error structure for all errors in the Result system.
+ * 
+ * Provides a consistent structure for error objects that are JSON-serializable
+ * and contain comprehensive debugging information.
+ * 
+ * @example
+ * ```ts
+ * const error: BaseError = {
+ *   name: "DatabaseError",
+ *   message: "Connection failed",
+ *   context: { host: "localhost", port: 5432 },
+ *   cause: originalError
+ * };
+ * ```
+ */
 export type BaseError = Readonly<{
 	name: string;
 	message: string;
