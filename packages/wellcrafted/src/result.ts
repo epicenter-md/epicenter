@@ -427,6 +427,57 @@ export async function tryAsync<T, E>({
  * }
  * ```
  */
+/**
+ * Unwraps a `Result<T, E>`, returning the success value or throwing the error.
+ *
+ * This function extracts the data from a `Result`:
+ * - If the `Result` is an `Ok<T>` variant, returns the contained success value of type `T`.
+ * - If the `Result` is an `Err<E>` variant, throws the contained error value of type `E`.
+ *
+ * Unlike `unwrapIfResult`, this function expects the input to always be a `Result` type,
+ * making it more direct for cases where you know you're working with a `Result`.
+ *
+ * @template T - The type of the success value contained in the `Ok<T>` variant.
+ * @template E - The type of the error value contained in the `Err<E>` variant.
+ * @param result - The `Result<T, E>` to unwrap.
+ * @returns The success value of type `T` if the `Result` is `Ok<T>`.
+ * @throws The error value of type `E` if the `Result` is `Err<E>`.
+ *
+ * @example
+ * ```ts
+ * // Example with an Ok variant
+ * const okResult = Ok("success data");
+ * const value = unwrap(okResult); // "success data"
+ *
+ * // Example with an Err variant
+ * const errResult = Err(new Error("something went wrong"));
+ * try {
+ *   unwrap(errResult);
+ * } catch (error) {
+ *   console.error(error.message); // "something went wrong"
+ * }
+ *
+ * // Usage in a function that returns Result
+ * function divide(a: number, b: number): Result<number, string> {
+ *   if (b === 0) return Err("Division by zero");
+ *   return Ok(a / b);
+ * }
+ *
+ * try {
+ *   const result = unwrap(divide(10, 2)); // 5
+ *   console.log("Result:", result);
+ * } catch (error) {
+ *   console.error("Division failed:", error);
+ * }
+ * ```
+ */
+export function unwrap<T, E>(result: Result<T, E>): T {
+	if (isOk(result)) {
+		return result.data;
+	}
+	throw result.error;
+}
+
 export function unwrapIfResult<T, E>(value: T | Result<T, E>): T {
 	if (isResult<T, E>(value)) {
 		if (isOk(value)) {
