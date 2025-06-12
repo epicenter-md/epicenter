@@ -35,10 +35,10 @@ import * as fs from 'fs/promises';
 type FileError = TaggedError<"FileError">;
 
 async function readConfig(path: string) {
-  return tryAsync({
+  return tryAsync<string, FileError>({
     try: async () => {
       const content = await fs.readFile(path, 'utf-8');
-      return JSON.parse(content);
+      return content;
     },
     mapError: (error) => ({
       name: "FileError",
@@ -71,7 +71,7 @@ console.log("Config loaded:", data); // TypeScript knows data is safe here
 
 JavaScript's traditional error handling, based on `try...catch` and throwing `Error` objects, has two major drawbacks for modern application development:
 1.  **It's not type-safe**: A function signature `function doSomething(): User` doesn't tell you that it might throw a `NetworkError` or a `ValidationError`. Errors are invisible until they strike at runtime.
-2.  **It's not serialization-friendly**: `Error` class instances lose their prototype chain when sent over the network as JSON, breaking `instanceof` checks.
+2.  **It's not serialization-friendly**: `Error` instances lose their prototype chain when crossing serialization boundaries (JSON.stringify/parse, network requests, worker threads), breaking `instanceof` checks.
 
 This library solves these problems with the `Result<T, E>` type. Instead of throwing, functions return a `Result` object that explicitly represents either a success or a failure.
 
