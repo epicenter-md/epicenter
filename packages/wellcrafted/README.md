@@ -442,17 +442,24 @@ When integrating with existing code that throws exceptions (like `JSON.parse`, f
 Use `trySync` for synchronous functions that might throw. You provide the operation and a `mapError` function to transform the caught exception into your desired error type.
 
 ```ts
-import { trySync, Result } from "@epicenterhq/result";
+import { trySync, Result, type TaggedError } from "@epicenterhq/result";
 
-function parseJson(raw: string): Result<object, Error> {
+type ParseError = TaggedError<"ParseError">;
+
+function parseJson(raw: string): Result<object, ParseError> {
   return trySync({
     try: () => JSON.parse(raw),
-    mapError: (err: unknown) => err as Error, // Map the unknown error to a typed Error
+    mapError: (error) => ({
+      name: "ParseError",
+      message: "Failed to parse JSON",
+      context: { raw },
+      cause: error
+    })
   });
 }
 
 const result = parseJson('{"key": "value"}'); // Ok<{key: string}>
-const failedResult = parseJson('not json'); // Err<SyntaxError>
+const failedResult = parseJson('not json'); // Err<ParseError>
 ```
 
 ### Asynchronous Operations with `tryAsync`
@@ -460,10 +467,10 @@ const failedResult = parseJson('not json'); // Err<SyntaxError>
 Use `tryAsync` for functions that return a `Promise`. It handles both rejected promises and synchronous throws within the async function.
 
 ```ts
-import { tryAsync, Result } from "@epicenterhq/result";
+import { tryAsync, Result, type TaggedError } from "@epicenterhq/result";
 
 type User = { id: number; name: string };
-type NetworkError = { message: string; statusCode?: number };
+type NetworkError = TaggedError<"NetworkError">;
 
 async function fetchUser(userId: number): Promise<Result<User, NetworkError>> {
   return tryAsync({
@@ -475,7 +482,12 @@ async function fetchUser(userId: number): Promise<Result<User, NetworkError>> {
       }
       return response.json();
     },
-    mapError: (err: unknown) => err as NetworkError, // Transform the caught error
+    mapError: (error) => ({
+      name: "NetworkError",
+      message: "Failed to fetch user",
+      context: { userId },
+      cause: error
+    })
   });
 }
 
