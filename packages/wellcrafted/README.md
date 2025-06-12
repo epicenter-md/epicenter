@@ -12,9 +12,9 @@ This library provides a robust, Rust-inspired `Result` type and a lightweight, s
 - [Quick Start](#quick-start)
 - [Core Idea: The Result Type](#core-idea-the-result-type)
 - [Installation](#installation)
+- [Handling Operation Outcomes](#handling-operation-outcomes)
 - [Understanding TaggedError](#understanding-taggederror)
 - [Basic Usage](#basic-usage)
-- [Handling Operation Outcomes](#handling-operation-outcomes)
 - [Wrapping Functions That Throw](#wrapping-functions-that-throw)
 - [API Reference](#api-reference)
 - [Design Philosophy](#design-philosophy)
@@ -88,6 +88,60 @@ This structure allows TypeScript's control-flow analysis to act as if it's a **d
 ```bash
 npm install @epicenterhq/result
 ```
+
+---
+
+## Handling Operation Outcomes
+
+Once you have a `Result`, there are two main patterns for working with it. Choose the pattern that best fits your preference for code style and the specific context of your code.
+
+### Pattern 1: Destructuring (Preferred)
+
+This pattern will feel familiar to developers working with modern libraries like Supabase or Astro Actions. You can destructure the `data` and `error` properties directly from the result object and use a simple conditional check on the `error` property.
+
+This approach is often cleaner and more direct for handling the two possible outcomes, as it gives you immediate access to the inner `data` and `error` values.
+
+```ts
+const { data, error } = someOperation();
+
+if (error) {
+  // `error` holds the inner error value from the Err variant.
+  console.error(`An error occurred: ${error.message}`);
+  return; // Or handle the error appropriately
+}
+
+// If `error` is null, `data` holds the inner success value from the Ok variant.
+// In most modern TypeScript setups, `data` will be correctly inferred as the success type.
+console.log(`The result is: ${data}`);
+```
+
+### Pattern 2: Using Type Guards
+
+In some complex scenarios or with certain TypeScript configurations, the compiler might not be able to perfectly infer the relationship between `data` and `error` when they are destructured into separate variables. In these cases, using the `isOk()` and `isErr()` type guards is a more robust solution. TypeScript's control flow analysis is designed to work flawlessly with this pattern, guaranteeing type safety within each conditional block.
+
+```ts
+import { isOk, isErr } from "@epicenterhq/result";
+
+const result = someOperation();
+
+if (isErr(result)) {
+  // TypeScript *guarantees* that `result` is `Err<E>` here.
+  // The `result.data` property is `null`.
+  // The `result.error` property contains the error value.
+  const errorValue = result.error;
+  console.error(errorValue);
+
+} else {
+  // If it's not an error, it must be a success.
+  // TypeScript *guarantees* that `result` is `Ok<T>` here.
+  // The `result.error` property is `null`.
+  // The `result.data` property contains the success value.
+  const successValue = result.data;
+  console.log(successValue);
+}
+```
+
+> **When to use Type Guards:** While destructuring is preferred for its simplicity, reach for `isOk()` and `isErr()` whenever you notice that TypeScript isn't correctly narrowing the type of `data` after an error check. This ensures your code remains fully type-safe without needing manual type assertions.
 
 ---
 
@@ -299,7 +353,7 @@ This structure makes errors **trackable**, **debuggable**, and **type-safe** whi
 
 ## Basic Usage
 
-Now that you understand TaggedError, let's see how to use it with Result types:
+Now that you understand how to handle Result values and the TaggedError structure, let's see complete examples that combine both concepts:
 
 ```ts
 import { Result, Ok, Err, isOk, type TaggedError } from "@epicenterhq/result";
@@ -370,60 +424,6 @@ if (isOk(userResult)) {
   console.log("Context:", userResult.error.context);
 }
 ```
-
----
-
-## Handling Operation Outcomes
-
-Now that you can create Result values with structured errors, let's explore the two main patterns for working with Results in your application code. Choose the pattern that best fits your preference for code style and the specific context of your code.
-
-### Pattern 1: Destructuring (Preferred)
-
-This pattern will feel familiar to developers working with modern libraries like Supabase or Astro Actions. You can destructure the `data` and `error` properties directly from the result object and use a simple conditional check on the `error` property.
-
-This approach is often cleaner and more direct for handling the two possible outcomes, as it gives you immediate access to the inner `data` and `error` values.
-
-```ts
-const { data, error } = divide(10, 2);
-
-if (error) {
-  // `error` holds the inner error value from the Err variant.
-  console.error(`An error occurred: ${error}`);
-  return; // Or handle the error appropriately
-}
-
-// If `error` is null, `data` holds the inner success value from the Ok variant.
-// In most modern TypeScript setups, `data` will be correctly inferred as `number`.
-console.log(`The result is: ${data}`);
-```
-
-### Pattern 2: Using Type Guards
-
-In some complex scenarios or with certain TypeScript configurations, the compiler might not be able to perfectly infer the relationship between `data` and `error` when they are destructured into separate variables. In these cases, using the `isOk()` and `isErr()` type guards is a more robust solution. TypeScript's control flow analysis is designed to work flawlessly with this pattern, guaranteeing type safety within each conditional block.
-
-```ts
-import { isOk, isErr } from "@epicenterhq/result";
-
-const result = divide(10, 0); // This returns an Err variant
-
-if (isErr(result)) {
-  // TypeScript *guarantees* that `result` is `Err<string>` here.
-  // The `result.data` property is `null`.
-  // The `result.error` property is `string`.
-  const errorValue = result.error; // string
-  console.error(errorValue);
-
-} else {
-  // If it's not an error, it must be a success.
-  // TypeScript *guarantees* that `result` is `Ok<number>` here.
-  // The `result.error` property is `null`.
-  // The `result.data` property is `number`.
-  const successValue = result.data; // number
-  console.log(successValue);
-}
-```
-
-> **When to use Type Guards:** While destructuring is preferred for its simplicity, reach for `isOk()` and `isErr()` whenever you notice that TypeScript isn't correctly narrowing the type of `data` after an error check. This ensures your code remains fully type-safe without needing manual type assertions.
 
 ---
 
