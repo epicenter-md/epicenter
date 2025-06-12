@@ -1,8 +1,80 @@
 # A Modern Approach to Error Handling in TypeScript
 
+[![npm version](https://badge.fury.io/js/@epicenterhq%2Fresult.svg)](https://www.npmjs.com/package/@epicenterhq/result)
+[![TypeScript](https://img.shields.io/badge/TypeScript-Ready-blue.svg)](https://www.typescriptlang.org/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Bundle Size](https://img.shields.io/bundlephobia/minzip/@epicenterhq/result)](https://bundlephobia.com/package/@epicenterhq/result)
+
 This library provides a robust, Rust-inspired `Result` type and a lightweight, serializable error handling system for TypeScript. It's designed to help you write more predictable, type-safe, and composable code by making error handling an explicit part of your function signatures.
 
+## Table of Contents
+
+- [Quick Start](#quick-start)
+- [Core Idea: The Result Type](#core-idea-the-result-type)
+- [Installation](#installation)
+- [Basic Usage](#basic-usage)
+- [Understanding TaggedError](#understanding-taggederror)
+- [Handling Operation Outcomes](#handling-operation-outcomes)
+- [Wrapping Functions That Throw](#wrapping-functions-that-throw)
+- [A Serializable, Type-Safe Error System](#a-serializable-type-safe-error-system)
+- [API Reference](#api-reference)
+- [Design Philosophy](#design-philosophy)
+- [FAQ](#faq)
+
+## Quick Start
+
+**30-second example:** Turn unpredictable functions into type-safe operations.
+
+```bash
+npm install @epicenterhq/result
+```
+
+```ts
+import { Result, Ok, Err, type TaggedError } from "@epicenterhq/result";
+
+type ParseError = TaggedError<"ParseError">;
+
+function parseUser(json: string): Result<{ name: string }, ParseError> {
+  try {
+    const data = JSON.parse(json);
+    if (typeof data.name !== "string") {
+      return Err({
+        name: "ParseError",
+        message: "User must have a name property of type string",
+        context: { receivedValue: data.name },
+        cause: undefined
+      });
+    }
+    return Ok(data);
+  } catch (e) {
+    return Err({
+      name: "ParseError", 
+      message: "Invalid JSON provided",
+      context: { rawString: json },
+      cause: e
+    });
+  }
+}
+
+// Handle the result
+const { data, error } = parseUser('{"name": "Alice"}');
+
+if (error) {
+  console.error(`${error.name}: ${error.message}`);
+  console.log("Context:", error.context);
+  return;
+}
+
+console.log(`Welcome, ${data.name}!`); // TypeScript knows data is safe here
+```
+
+**What just happened?** Instead of throwing errors, the function returns a `Result` that explicitly shows success or failure in the type system. No more surprise runtime errors!
+
+---
+
 ## Core Idea: The Result Type
+
+> **💡 TL;DR:** Replace `throw new Error()` with `return Err()` to make errors visible in your function signatures.
 
 JavaScript's traditional error handling, based on `try...catch` and throwing `Error` objects, has two major drawbacks for modern application development:
 1.  **It's not type-safe**: A function signature `function doSomething(): User` doesn't tell you that it might throw a `NetworkError` or a `ValidationError`. Errors are invisible until they strike at runtime.
@@ -16,14 +88,17 @@ A `Result` is a union of two "variants":
 
 This structure allows TypeScript's control-flow analysis to act as if it's a **discriminated union**. By checking if `result.error === null`, TypeScript knows it must be an `Ok` variant and can safely access `result.data`. This makes error handling explicit, type-safe, and predictable.
 
-## Quick Start
+---
 
-### Installation
+## Installation
+
 ```bash
 npm install @epicenterhq/result
 ```
 
-### Basic Usage
+---
+
+## Basic Usage
 
 These examples show the recommended approach: combining the `Result` type with structured, tagged errors for maximum type safety and clarity.
 
@@ -41,7 +116,8 @@ function divide(numerator: number, denominator: number): Result<number, MathErro
     return Err({
       name: "MathError",
       message: "Cannot divide by zero.",
-      context: { numerator, denominator }
+      context: { numerator, denominator },
+      cause: undefined 
     });
   }
   return Ok(numerator / denominator);
@@ -70,6 +146,7 @@ function parseUser(json: string): Result<{ name: string }, ParseError> {
         name: "ParseError",
         message: "User object must have a name property of type string.",
         context: { receivedValue: data.name },
+        cause: undefined
       });
     }
     return Ok(data);
@@ -94,6 +171,114 @@ if (isOk(userResult)) {
   console.log("Context:", userResult.error.context);
 }
 ```
+
+---
+
+## Understanding TaggedError
+
+Every `TaggedError` contains four essential properties that work together to create a robust, debuggable error system:
+
+### The Four Properties
+
+```ts
+type TaggedError<T extends string> = {
+  readonly name: T;                    // 1. The discriminant
+  message: string;                     // 2. Human-readable description  
+  context: Record<string, unknown>;    // 3. Debugging data
+  cause?: unknown;                     // 4. Root cause (optional)
+};
+```
+
+#### 1. **`name`** - The Discriminant (Tagged Field)
+
+This is your error's unique identifier and the key to pattern matching. Use it in `if` statements and `switch` statements to handle different error types:
+
+```ts
+type ValidationError = TaggedError<"ValidationError">;
+type NetworkError = TaggedError<"NetworkError">;
+type FileError = TaggedError<"FileError">;
+
+function handleError(error: ValidationError | NetworkError | FileError) {
+  switch (error.name) {
+    case "ValidationError":
+      // TypeScript knows this is ValidationError
+      console.log("Invalid input:", error.context);
+      break;
+    case "NetworkError": 
+      // TypeScript knows this is NetworkError
+      console.log("Network failed:", error.message);
+      break;
+    case "FileError":
+      // TypeScript knows this is FileError
+      console.log("File issue:", error.context);
+      break;
+  }
+}
+```
+
+#### 2. **`message`** - Human-Readable Text
+
+Pure text description that explains what went wrong. Keep it clear and actionable:
+
+```ts
+return Err({
+  name: "ValidationError",
+  message: "Email address must contain an @ symbol",  // Clear, specific
+  context: { email: userInput },
+  cause: undefined
+});
+```
+
+#### 3. **`context`** - Debugging Data
+
+Include function inputs and any data that would help debug the issue. This is invaluable for logging and troubleshooting:
+
+```ts
+function processUser(id: number, options: UserOptions): Result<User, ProcessError> {
+  return Err({
+    name: "ProcessError",
+    message: "User processing failed",
+    context: {
+      userId: id,           // Function input
+      options,              // Function input  
+      timestamp: new Date().toISOString(),  // Additional context
+      retryCount: 3         // Useful debugging info
+    },
+    cause: undefined
+  });
+}
+```
+
+#### 4. **`cause`** - Root Cause Bubbling
+
+- **For new errors**: Set `cause: undefined`
+- **For wrapping existing errors**: Pass the original error as `cause`
+
+```ts
+// Creating a new error
+return Err({
+  name: "ValidationError",
+  message: "Invalid user data",
+  context: { input },
+  cause: undefined  // New error, no underlying cause
+});
+
+// Wrapping an existing error
+try {
+  await database.save(user);
+} catch (dbError) {
+  return Err({
+    name: "SaveError", 
+    message: "Failed to save user",
+    context: { userId: user.id },
+    cause: dbError  // Bubble up the original database error
+  });
+}
+```
+
+This structure makes errors **trackable**, **debuggable**, and **type-safe** while maintaining clean separation between different failure modes in your application.
+
+---
 
 ## Handling Operation Outcomes
 
@@ -147,6 +332,8 @@ if (isErr(result)) {
 
 > **When to use Type Guards:** While destructuring is preferred for its simplicity, reach for `isOk()` and `isErr()` whenever you notice that TypeScript isn't correctly narrowing the type of `data` after an error check. This ensures your code remains fully type-safe without needing manual type assertions.
 
+---
+
 ## Wrapping Functions That Throw
 
 What if you're working with a function that throws exceptions, like `JSON.parse` or a network client? This library provides `trySync` and `tryAsync` to safely wrap these operations and convert their outcomes into a `Result`.
@@ -196,6 +383,8 @@ async function fetchUser(userId: number): Promise<Result<User, NetworkError>> {
 const userResult = await fetchUser(1);
 ```
 
+---
+
 ## A Serializable, Type-Safe Error System
 
 This library promotes a pattern for defining errors as plain, serializable objects rather than instances of JavaScript's `Error` class.
@@ -240,11 +429,12 @@ export type DiskFullError = TaggedError<"DiskFullError">;
 export type FileSystemError = FileNotFoundError | PermissionDeniedError | DiskFullError;
 
 // A factory function to create an error
-function createFileNotFoundError(path: string): FileNotFoundError {
+function createFileNotFoundError(path: string, cause?: unknown): FileNotFoundError {
   return {
     name: "FileNotFoundError",
     message: `The file at path "${path}" was not found.`,
     context: { path },
+    cause
   };
 }
 ```
@@ -316,17 +506,30 @@ async function initializeApp(): Promise<Result<App, FsError | ValidationError>> 
 }
 ```
 
+---
+
 ## API Reference
 
-A summary of the most important exports from the library.
+### Quick Reference Table
 
-### Types
+| Function | Purpose | Example |
+|----------|---------|---------|
+| `Ok(data)` | Create success result | `Ok("hello")` |
+| `Err(error)` | Create failure result | `Err("failed")` |
+| `isOk(result)` | Check if success | `if (isOk(res)) { ... }` |
+| `isErr(result)` | Check if failure | `if (isErr(res)) { ... }` |
+| `trySync()` | Wrap throwing function | `trySync({ try: () => JSON.parse(str) })` |
+| `tryAsync()` | Wrap async throwing function | `tryAsync({ try: () => fetch(url) })` |
+
+### Detailed API
+
+#### Types
 - **`Result<T, E>`**: The core union type, representing `Ok<T> | Err<E>`.
 - **`Ok<T>`**: Represents a success. Contains `{ data: T; error: null; }`.
 - **`Err<E>`**: Represents a failure. Contains `{ data: null; error: E; }`.
 - **`BaseError` / `TaggedError<T>`**: Helpers for creating a structured error system.
 
-### Core Result Functions
+#### Core Result Functions
 - **`Ok(data)`**: Creates a success `Result`.
 - **`Err(error)`**: Creates a failure `Result`.
 - **`isOk(result)`**: Type guard. Returns `true` if the result is an `Ok` variant.
@@ -335,15 +538,17 @@ A summary of the most important exports from the library.
 - **`resolve(value)`**: Resolves a value that may or may not be a `Result`, returning the final value or throwing on `Err`.
 - **`isResult(value)`**: Type guard. Returns `true` if a value has the shape of a `Result`.
 
-### Async/Sync Wrappers
+#### Async/Sync Wrappers
 - **`trySync({ try, mapError })`**: Wraps a synchronous function that may throw.
 - **`tryAsync({ try, mapError })`**: Wraps an asynchronous function that may throw or reject.
 
-### Error Utilities
+#### Error Utilities
 - **`extractErrorMessage(error)`**: Safely extracts a string message from any error value.
 
-### Utility Functions
+#### Utility Functions
 - **`partitionResults(results)`**: Partitions an array of Results into separate arrays of `Ok` and `Err` variants.
+
+---
 
 ## Design Philosophy
 
@@ -393,6 +598,8 @@ However, this library represents a different set of trade-offs and priorities, b
 
 That said, the influence of Effect is clear. Functions like `trySync` and `tryAsync` are directly inspired by similar utilities in Effect. The core difference is that we aim to apply these powerful concepts on top of familiar JavaScript primitives, rather than creating a new ecosystem around them. This philosophy also informs our decision to omit an `Option<T>` type, as we believe that native TypeScript features (`T | null`, optional chaining, and nullish coalescing) are "good enough" and more idiomatic for the majority of use cases.
 
+---
+
 ## FAQ
 
 ### Why `{ data, error }` instead of a boolean flag like `{ ok: boolean, ... }`?
@@ -432,107 +639,3 @@ A custom `Option<T>` type would add a layer of abstraction that is largely unnec
     ```
 
 These built-in language features provide better ergonomics and are more familiar to JavaScript developers than a custom `Option` type would be. This library focuses on solving for `Result`, where the language does not have a built-in equivalent.
-
-## HTTP Server
-
-```typescript
-// 1. Define the service-wide error
-type HTTPError = ...
-
-// 2. Define the service
-type MyServerService = {
-	// 3. Define the server's query functions, which are pure and just take input and return output or a ServiceError
-	getUserById: (input: { id: number }) => Result<User, HTTPError>;
-
-	// 4. Define the server's mutation functions, which have side effects and take input. They don't return output. They all return void. Instead, they take in callback functions and run them against the input, output, void, or ServiceError throughout the lifetime of the mutation
-	createUser: (input: User) => Result<void, HTTPError>;
-};
-
-// 5. Implement the service
-const createService = (): MyServerService => {
-	// Internal service state
-	const internalState = new Map<number, User>()
-
-	return {
-		getUserById: async ({ id }: { id: number }) => {
-			try {
-				const output = await internalState.get(id)
-				return Ok(output)
-			} catch (error) {
-				return Err(error)
-			}
-		},
-		createUser: async (user: User, { onMutate, onSuccess, onError, onSettled }:
-			{
-				onMutate: (data: User) => void;
-				onSuccess: () => void;
-				onError: (error: HTTPError) => void;
-				onSettled: () => void;
-      }
-		) => {
-			onMutate(user)
-			try {
-				// Mutate the internal state
-				internalState.set(user.id, user)
-				onSuccess()
-			} catch (error) {
-				onError(error)
-			} finally {
-				onSettled()
-			}
-		},
-	}
-}
-```
-
-## TRPC Server
-
-```typescript
-// 1. Define the service-wide error
-type TRPCError = ...
-
-// 2. Define the service
-type MyTRPCService = {
-	// 3. Define the server's query functions, which are pure and just take input and return output or a ServiceError
-	getUserById: (input: { id: number }) => Result<User, TRPCError>;
-
-	// 4. Define the server's mutation functions, which have side effects and take input. They don't return output. They all return void. Instead, they take in callback functions and run them against the input, output, void, or ServiceError throughout the lifetime of the mutation
-	createUser: (input: User) => Result<void, TRPCError>;
-};
-
-// 5. Implement the service
-const createService = (): MyTRPCService => {
-	// Internal service state
-	const internalState = new Map<number, User>()
-
-	return {
-		getUserById: async ({ id }: { id: number }) => {
-			try {
-				const output = await internalState.get(id)
-				return Ok(output)
-			} catch (error) {
-				return Err(error)
-			}
-		},
-		createUser: async (user: User, { onMutate, onSuccess, onError, onSettled }:
-			{
-				onMutate: (data: User) => void;
-				onSuccess: () => void;
-				onError: (error: HTTPError) => void;
-				onSettled: () => void;
-      }
-		) => {
-			onMutate(user)
-			try {
-				// Mutate the internal state
-				internalState.set(user.id, user)
-				onSuccess()
-			} catch (error) {
-				onError(error)
-			} finally {
-				onSettled()
-			}
-		},
-	}
-}
-```
