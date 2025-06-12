@@ -104,7 +104,7 @@ export const Err = <E>(error: E): Err<E> => ({ error, data: null });
 - **`Err<E>`** always has `error: E` and `data: null`  
 - **`Result<T, E>`** is simply `Ok<T> | Err<E>`
 
-This design creates a **discriminated union** where TypeScript can automatically narrow types based on whether `error` is null:
+This design creates a **discriminated union** where the `error` (or `data`) property acts as the discriminant (with literal types `null` vs non-null), allowing TypeScript to automatically narrow types:
 
 ```ts
 function handleResult<T, E>(result: Result<T, E>) {
