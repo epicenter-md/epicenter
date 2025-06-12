@@ -81,6 +81,47 @@ A `Result` is a union of two "variants":
 
 This structure allows TypeScript's control-flow analysis to act as if it's a **discriminated union**. By checking if `result.error === null`, TypeScript knows it must be an `Ok` variant and can safely access `result.data`. This makes error handling explicit, type-safe, and predictable.
 
+### Anatomy of a Result Type
+
+Here's the complete TypeScript implementation - it's simpler than you might think:
+
+```ts
+// The two possible outcomes
+export type Ok<T> = { data: T; error: null };
+export type Err<E> = { error: E; data: null };
+
+// Result is just a union of these two types
+export type Result<T, E> = Ok<T> | Err<E>;
+
+// Helper functions to create each variant
+export const Ok = <T>(data: T): Ok<T> => ({ data, error: null });
+export const Err = <E>(error: E): Err<E> => ({ error, data: null });
+```
+
+**That's it!** The entire foundation is built on this elegant simplicity:
+
+- **`Ok<T>`** always has `data: T` and `error: null`
+- **`Err<E>`** always has `error: E` and `data: null`  
+- **`Result<T, E>`** is simply `Ok<T> | Err<E>`
+
+This design creates a **discriminated union** where TypeScript can automatically narrow types based on whether `error` is null:
+
+```ts
+function handleResult<T, E>(result: Result<T, E>) {
+  if (result.error === null) {
+    // TypeScript knows this is Ok<T>
+    console.log(result.data); // ✅ data is type T
+    // console.log(result.error); // ❌ TypeScript knows this is null
+  } else {
+    // TypeScript knows this is Err<E>  
+    console.log(result.error); // ✅ error is type E
+    // console.log(result.data); // ❌ TypeScript knows this is null
+  }
+}
+```
+
+The beauty is in the transparency - you can see exactly how it works under the hood, yet it provides powerful type safety and ergonomics.
+
 ---
 
 ## Installation
