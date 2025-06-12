@@ -22,52 +22,46 @@ This library provides a robust, Rust-inspired `Result` type and a lightweight, s
 
 ## Quick Start
 
-**30-second example:** Turn unpredictable functions into type-safe operations.
+**30-second example:** Transform throwing async operations into type-safe Results.
 
 ```bash
 npm install @epicenterhq/result
 ```
 
 ```ts
-import { Result, Ok, Err, type TaggedError } from "@epicenterhq/result";
+import { tryAsync, type TaggedError } from "@epicenterhq/result";
+import * as fs from 'fs/promises';
 
-type ParseError = TaggedError<"ParseError">;
+type FileError = TaggedError<"FileError">;
 
-function parseUser(json: string): Result<{ name: string }, ParseError> {
-  try {
-    const data = JSON.parse(json);
-    if (typeof data.name !== "string") {
-      return Err({
-        name: "ParseError",
-        message: "User must have a name property of type string",
-        context: { receivedValue: data.name },
-        cause: undefined
-      });
-    }
-    return Ok(data);
-  } catch (e) {
-    return Err({
-      name: "ParseError", 
-      message: "Invalid JSON provided",
-      context: { rawString: json },
-      cause: e
-    });
-  }
+async function readConfig(path: string) {
+  return tryAsync({
+    try: async () => {
+      const content = await fs.readFile(path, 'utf-8');
+      return JSON.parse(content);
+    },
+    mapError: (error) => ({
+      name: "FileError",
+      message: "Failed to read configuration file",
+      context: { path },
+      cause: error
+    })
+  });
 }
 
 // Handle the result
-const { data, error } = parseUser('{"name": "Alice"}');
+const { data, error } = await readConfig('./config.json');
 
 if (error) {
   console.error(`${error.name}: ${error.message}`);
   console.log("Context:", error.context);
-  return;
+  process.exit(1);
 }
 
-console.log(`Welcome, ${data.name}!`); // TypeScript knows data is safe here
+console.log("Config loaded:", data); // TypeScript knows data is safe here
 ```
 
-**What just happened?** Instead of throwing errors, the function returns a `Result` that explicitly shows success or failure in the type system. No more surprise runtime errors!
+**What just happened?** Instead of letting file operations throw unpredictable errors, `tryAsync` wraps them in a `Result` type that makes success and failure explicit in your function signatures. No more unhandled exceptions!
 
 ---
 
