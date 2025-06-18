@@ -529,6 +529,54 @@ async function fetchUser(userId: number): Promise<Result<User, NetworkError>> {
 const userResult = await fetchUser(1);
 ```
 
+### Type Safety with Generics
+
+When using `trySync` and `tryAsync`, you have two approaches to ensure your `mapError` function returns the correct TaggedError type:
+
+#### Approach 1: Explicit Generics (Recommended)
+
+```ts
+async function readConfig(path: string) {
+  return tryAsync<string, FileError>({  // 👈 Explicitly specify generics
+    try: async () => {
+      const content = await fs.readFile(path, 'utf-8');
+      return content;
+    },
+    mapError: (error) => ({
+      name: "FileError",
+      message: "Failed to read configuration file", 
+      context: { path },
+      cause: error
+    })
+  });
+}
+```
+
+#### Approach 2: Return Type Annotation
+
+```ts
+async function readConfig(path: string) {
+  return tryAsync({
+    try: async () => {
+      const content = await fs.readFile(path, 'utf-8');
+      return content;
+    },
+    mapError: (error): FileError => ({  // 👈 Annotate return type
+      name: "FileError",
+      message: "Failed to read configuration file",
+      context: { path }, 
+      cause: error
+    })
+  });
+}
+```
+
+**Key points:**
+- Both approaches ensure `mapError` returns your exact TaggedError type
+- Avoid using `as const` - always map to proper TaggedError objects
+- Choose explicit generics for clarity, or return type annotation for brevity
+- The important thing is ensuring type safety for your error handling
+
 ---
 
 ## API Reference
