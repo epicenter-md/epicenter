@@ -6,8 +6,8 @@
 	"files": ["dist", "README.md", "LICENSE"],
 	"exports": {
 		"./result": {
-			"types": "./dist/result.d.ts",
-			"import": "./dist/result.js"
+			"types": "./dist/result/index.d.ts",
+			"import": "./dist/result/index.js"
 		},
 		"./error": {
 			"types": "./dist/error/index.d.ts",
