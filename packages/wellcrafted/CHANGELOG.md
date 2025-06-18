@@ -1,4 +1,4 @@
-# @epicenterhq/result
+# wellcrafted
 
 ## 0.15.0
 

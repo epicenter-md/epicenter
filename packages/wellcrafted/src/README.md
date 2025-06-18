@@ -1,8 +1,27 @@
-# Result
+# wellcrafted
 
-A TypeScript implementation of the Result pattern, providing a type-safe way to handle operations that can fail.
+Delightful TypeScript utilities for elegant, type-safe applications.
 
 ## Overview
+
+This library provides delightful TypeScript utilities including:
+
+- **Result Pattern**: Type-safe error handling with `Ok`/`Err` variants (`wellcrafted/result`)
+- **Brand Types**: Nominal typing for creating distinct types from primitives (`wellcrafted/brand`)
+- **Error Utilities**: Structured, serializable error handling (`wellcrafted/error`)
+
+## Modular Imports
+
+```typescript
+// Result handling
+import { Result, Ok, Err, isOk, isErr, trySync, tryAsync } from "wellcrafted/result";
+
+// Error utilities
+import { type TaggedError, extractErrorMessage } from "wellcrafted/error";
+
+// Brand types
+import { type Brand } from "wellcrafted/brand";
+```
 
 The Result pattern represents either success (Ok) or failure (Err data structure) of an operation. This implementation uses the "exclusive" approach where `null` values indicate absence (success has `error: null`, failure has `data: null`).
 

@@ -129,7 +129,7 @@ import {
   type Result,
   type TaggedError,
   createTryFns,
-} from '@epicenterhq/result';
+} from 'wellcrafted/result';
 
 export type ClipboardServiceError = TaggedError<'ClipboardServiceError'>;
 export const clipboardService = createTryFns('ClipboardServiceError');
@@ -184,12 +184,12 @@ The generator obscures the actual error object structure, making it less clear w
 Generator functions require additional imports and setup:
 ```typescript
 // Generator approach - more imports, more setup
-import { createTryFns, type TaggedError } from '@epicenterhq/result';
+import { createTryFns, type TaggedError } from 'wellcrafted/result';
 export type MyError = TaggedError<'MyError'>;
 export const myErrorHandlers = createTryFns('MyError');
 
 // Direct approach - simpler imports
-import { tryAsync, type TaggedError } from '@epicenterhq/result';
+import { tryAsync, type TaggedError } from 'wellcrafted/result';
 export type MyError = TaggedError<'MyError'>;
 ```
 
@@ -358,7 +358,7 @@ function withdrawFunds(account: Account, amount: number): Result<Account, Busine
 Error types that your code receives from functions it calls:
 
 ```typescript
-import { extractErrorMessage } from "@epicenterhq/result";
+import { extractErrorMessage } from "wellcrafted/error";
 
 // Catching and re-wrapping external errors into typed error types
 async function saveUserData(user: User): Promise<Result<void, StorageError>> {
@@ -637,7 +637,7 @@ async function handleSaveDocument(req: Request): Promise<Response> {
 When dealing with multiple independent operations:
 
 ```typescript
-import { partitionResults } from "@epicenterhq/result";
+import { partitionResults } from "wellcrafted/result";
 
 async function processMultipleFiles(paths: string[]): Promise<Result<ProcessedFile[], ProcessingError>> {
   // Process all files in parallel

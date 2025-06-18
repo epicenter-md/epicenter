@@ -1,20 +1,21 @@
 {
-	"name": "@epicenterhq/result",
+	"name": "wellcrafted",
 	"version": "0.15.0",
-	"description": "",
+	"description": "Delightful TypeScript patterns for elegant, type-safe applications",
 	"type": "module",
-	"main": "./dist/index.js",
-	"module": "./dist/index.js",
-	"types": "./dist/index.d.ts",
-	"files": [
-		"dist",
-		"README.md",
-		"LICENSE"
-	],
+	"files": ["dist", "README.md", "LICENSE"],
 	"exports": {
-		".": {
-			"types": "./dist/index.d.ts",
-			"import": "./dist/index.js"
+		"./result": {
+			"types": "./dist/result.d.ts",
+			"import": "./dist/result.js"
+		},
+		"./error": {
+			"types": "./dist/error/index.d.ts",
+			"import": "./dist/error/index.js"
+		},
+		"./brand": {
+			"types": "./dist/brand.d.ts",
+			"import": "./dist/brand.js"
 		}
 	},
 	"scripts": {
@@ -24,10 +25,16 @@
 		"release": "pnpm run build && changeset version && changeset publish"
 	},
 	"keywords": [
-		"result",
 		"typescript",
-		"rust",
-		"error handling"
+		"delightful",
+		"elegant",
+		"type-safe",
+		"well-crafted",
+		"polished",
+		"utilities",
+		"result",
+		"error-handling",
+		"brand-types"
 	],
 	"author": "",
 	"license": "MIT",

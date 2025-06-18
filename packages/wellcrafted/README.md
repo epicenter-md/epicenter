@@ -1,11 +1,13 @@
-# A Modern Approach to Error Handling in TypeScript
+# wellcrafted
 
-[![npm version](https://badge.fury.io/js/@epicenterhq%2Fresult.svg)](https://www.npmjs.com/package/@epicenterhq/result)
+[![npm version](https://badge.fury.io/js/wellcrafted.svg)](https://www.npmjs.com/package/wellcrafted)
 [![TypeScript](https://img.shields.io/badge/TypeScript-Ready-blue.svg)](https://www.typescriptlang.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Bundle Size](https://img.shields.io/bundlephobia/minzip/@epicenterhq/result)](https://bundlephobia.com/package/@epicenterhq/result)
+[![Bundle Size](https://img.shields.io/bundlephobia/minzip/wellcrafted)](https://bundlephobia.com/package/wellcrafted)
 
-This library provides a robust, Rust-inspired `Result` type and a lightweight, serializable error handling system for TypeScript. It's designed to help you write more predictable, type-safe, and composable code by making error handling an explicit part of your function signatures.
+*Delightful TypeScript utilities for elegant, type-safe applications*
+
+This library provides a robust, Rust-inspired `Result` type, elegant brand types, and a lightweight, serializable error handling system for TypeScript. It's designed to help you write more predictable, type-safe, and composable code by making error handling an explicit part of your function signatures.
 
 ## Table of Contents
 
@@ -25,11 +27,12 @@ This library provides a robust, Rust-inspired `Result` type and a lightweight, s
 **30-second example:** Transform throwing async operations into type-safe Results.
 
 ```bash
-npm install @epicenterhq/result
+npm install wellcrafted
 ```
 
 ```ts
-import { tryAsync, type TaggedError } from "@epicenterhq/result";
+import { tryAsync } from "wellcrafted/result";
+import { type TaggedError } from "wellcrafted/error";
 import * as fs from 'fs/promises';
 
 type FileError = TaggedError<"FileError">;
@@ -127,7 +130,7 @@ The beauty is in the transparency - you can see exactly how it works under the h
 ## Installation
 
 ```bash
-npm install @epicenterhq/result
+npm install wellcrafted
 ```
 
 ---
@@ -161,7 +164,7 @@ console.log(`The result is: ${data}`);
 In some complex scenarios or with certain TypeScript configurations, the compiler might not be able to perfectly infer the relationship between `data` and `error` when they are destructured into separate variables. In these cases, using the `isOk()` and `isErr()` type guards is a more robust solution. TypeScript's control flow analysis is designed to work flawlessly with this pattern, guaranteeing type safety within each conditional block.
 
 ```ts
-import { isOk, isErr } from "@epicenterhq/result";
+import { isOk, isErr } from "wellcrafted/result";
 
 const result = someOperation();
 
@@ -397,7 +400,8 @@ This structure makes errors **trackable**, **debuggable**, and **type-safe** whi
 Now that you understand how to handle Result values and the TaggedError structure, let's see complete examples that combine both concepts:
 
 ```ts
-import { Result, Ok, Err, isOk, type TaggedError } from "@epicenterhq/result";
+import { Result, Ok, Err, isOk } from "wellcrafted/result";
+import { type TaggedError } from "wellcrafted/error";
 
 // --- Example 1: A Safe Division Function ---
 
@@ -477,7 +481,8 @@ When integrating with existing code that throws exceptions (like `JSON.parse`, f
 Use `trySync` for synchronous functions that might throw. You provide the operation and a `mapError` function to transform the caught exception into your desired error type.
 
 ```ts
-import { trySync, Result, type TaggedError } from "@epicenterhq/result";
+import { trySync, Result } from "wellcrafted/result";
+import { type TaggedError } from "wellcrafted/error";
 
 type ParseError = TaggedError<"ParseError">;
 
@@ -502,7 +507,8 @@ const failedResult = parseJson('not json'); // Err<ParseError>
 Use `tryAsync` for functions that return a `Promise`. It handles both rejected promises and synchronous throws within the async function.
 
 ```ts
-import { tryAsync, Result, type TaggedError } from "@epicenterhq/result";
+import { tryAsync, Result } from "wellcrafted/result";
+import { type TaggedError } from "wellcrafted/error";
 
 type User = { id: number; name: string };
 type NetworkError = TaggedError<"NetworkError">;
