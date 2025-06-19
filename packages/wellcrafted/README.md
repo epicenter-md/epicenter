@@ -681,11 +681,13 @@ That said, the influence of Effect is clear. Functions like `trySync` and `tryAs
 
 ### Why `{ data, error }` instead of a boolean flag like `{ ok: boolean, ... }`?
 
-Some libraries use a discriminated union with a boolean flag, like `{ ok: true, data: T } | { ok: false, error: E }`. While a valid pattern, we chose the `{ data, error }` shape for two main reasons:
+Some libraries use a boolean flag for their discriminated union, like `{ ok: true, data: T } | { ok: false, error: E }`. While a valid pattern, we chose the `{ data, error }` shape for two main reasons:
 
 1.  **Ergonomics and Familiarity**: The destructuring pattern `const { data, error } = operation()` is clean and will feel familiar to developers using modern libraries like Supabase and Astro Actions. It provides immediate access to the inner values without an extra layer of property access. Checking a boolean flag first (`if (result.ok)`) and then accessing the value (`result.data`) is slightly more verbose.
 
 2.  **Lack of Standardization**: The boolean flag approach isn't standardized. Zod's `.safeParse`, for example, returns `{ success: boolean, ... }`. By adopting the `{ data, error }` pattern, we align with a simple, common, and intuitive structure for handling success and failure states in modern JavaScript.
+
+**Note**: The `{ data, error }` pattern is also a discriminated union—you can use either `data` or `error` as the discriminant key and check if either of them is null. This creates the same type-narrowing benefits as a boolean flag while maintaining cleaner destructuring ergonomics.
 
 ### What's the difference between an `Err` variant and an `error` value?
 
