@@ -585,6 +585,107 @@ async function readConfig(path: string) {
 
 ---
 
+## Partitioning Results
+
+When working with multiple asynchronous operations that return `Result` objects, you'll often need to separate the successful results from the failed ones. The `partitionResults` utility function makes this easy by splitting an array of Results into two separate arrays.
+
+### When to Use `partitionResults`
+
+Use `partitionResults` when you have:
+- Multiple async operations that might fail independently
+- A need to handle all errors collectively
+- Successful results that should be processed together
+
+### Common Pattern: Map → Filter → Partition
+
+This is a typical workflow when processing multiple commands or operations:
+
+```ts
+import { partitionResults } from "wellcrafted/result";
+
+// Example: Processing multiple commands that might fail
+const results = await Promise.all(
+  commands
+    .map((command) => {
+      const config = getCommandConfig(command.id);
+      if (!config) return; // Early return if config missing
+      return executeCommand({ command, config });
+    })
+    .filter((result) => result !== undefined) // Remove undefined values
+);
+
+const { oks, errs } = partitionResults(results);
+
+// Handle all errors at once
+if (errs.length > 0) {
+  const errorMessages = errs.map(({ error }) => error.message).join(', ');
+  showNotification(`${errs.length} operations failed: ${errorMessages}`);
+  return;
+}
+
+return oks.map(ok => ok.data); // Return processed content
+```
+
+### Real-World Example: Batch File Processing
+
+```ts
+import { tryAsync, partitionResults } from "wellcrafted/result";
+import { type TaggedError } from "wellcrafted/error";
+import * as fs from 'fs/promises';
+
+type FileError = TaggedError<"FileError">;
+
+async function processFiles(filePaths: string[]) {
+  // Map each file path to a Result-returning operation
+  const results = await Promise.all(
+    filePaths
+      .map((path) => {
+        if (!path.endsWith('.txt')) return; // Skip non-text files
+        return tryAsync<string, FileError>({
+          try: async () => {
+            const content = await fs.readFile(path, 'utf-8');
+            return content.toUpperCase(); // Process the content
+          },
+          mapError: (error) => ({
+            name: "FileError",
+            message: "Failed to process file",
+            context: { path },
+            cause: error
+          })
+        });
+      })
+      .filter((result) => result !== undefined)
+  );
+
+  const { oks, errs } = partitionResults(results);
+
+  // Report all errors together
+  if (errs.length > 0) {
+    console.error(`Failed to process ${errs.length} files:`);
+    errs.forEach(err => {
+      console.error(`- ${err.error.context.path}: ${err.error.message}`);
+    });
+  }
+
+  // Process successful results
+  if (oks.length > 0) {
+    console.log(`Successfully processed ${oks.length} files`);
+    return oks.map(ok => ok.data); // Return processed content
+  }
+
+  return [];
+}
+```
+
+### Key Benefits
+
+1. **Batch Error Handling**: Instead of stopping at the first error, you can collect all failures and present them together
+2. **Type Safety**: The returned `oks` and `errs` arrays are properly typed as `Ok<T>[]` and `Err<E>[]` respectively
+3. **Clean Separation**: Successful and failed operations are cleanly separated for different handling logic
+4. **Composability**: Works seamlessly with the map → filter → partition pattern for complex data processing
+
+---
+
 ## API Reference
 
 ### Quick Reference Table
@@ -597,6 +698,7 @@ async function readConfig(path: string) {
 | `isErr(result)` | Check if failure | `if (isErr(res)) { ... }` |
 | `trySync()` | Wrap throwing function | `trySync({ try: () => JSON.parse(str) })` |
 | `tryAsync()` | Wrap async throwing function | `tryAsync({ try: () => fetch(url) })` |
+| `partitionResults()` | Split Results into oks/errs | `const { oks, errs } = partitionResults(results)` |
 
 ### Detailed API
 
