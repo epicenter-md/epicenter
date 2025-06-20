@@ -1,9 +1,13 @@
 {
 	"name": "wellcrafted",
-	"version": "0.15.0",
+	"version": "0.16.0",
 	"description": "Delightful TypeScript patterns for elegant, type-safe applications",
 	"type": "module",
-	"files": ["dist", "README.md", "LICENSE"],
+	"files": [
+		"dist",
+		"README.md",
+		"LICENSE"
+	],
 	"exports": {
 		"./result": {
 			"types": "./dist/result/index.d.ts",
