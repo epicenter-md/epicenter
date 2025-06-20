@@ -539,11 +539,14 @@ const userResult = await fetchUser(1);
 
 When using `trySync` and `tryAsync`, you have two approaches to ensure your `mapError` function returns the correct TaggedError type:
 
-#### Approach 1: Explicit Generics (Recommended)
+#### Approach 1: Explicit Generics
+
+Pass the success type and error type as generic parameters. This approach is clear and explicit about the expected types:
 
 ```ts
+// For tryAsync
 async function readConfig(path: string) {
-  return tryAsync<string, FileError>({  // 👈 Explicitly specify generics
+  return tryAsync<string, FileError>({  // 👈 <SuccessType, ErrorType>
     try: async () => {
       const content = await fs.readFile(path, 'utf-8');
       return content;
@@ -556,21 +559,59 @@ async function readConfig(path: string) {
     })
   });
 }
+
+// For trySync
+function parseConfig(content: string) {
+  return trySync<Config, ParseError>({  // 👈 <SuccessType, ErrorType>
+    try: () => {
+      const parsed = JSON.parse(content);
+      validateConfig(parsed); // throws if invalid
+      return parsed as Config;
+    },
+    mapError: (error) => ({
+      name: "ParseError",
+      message: "Invalid configuration format",
+      context: { contentLength: content.length },
+      cause: error
+    })
+  });
+}
 ```
 
-#### Approach 2: Return Type Annotation
+#### Approach 2: Return Type Annotation on mapError
+
+Annotate the return type of the `mapError` function. This approach can be cleaner when generics would format awkwardly:
 
 ```ts
-async function readConfig(path: string) {
+// For tryAsync
+async function saveUser(user: User) {
   return tryAsync({
     try: async () => {
-      const content = await fs.readFile(path, 'utf-8');
-      return content;
+      const result = await db.users.insert(user);
+      return result.id;
     },
-    mapError: (error): FileError => ({  // 👈 Annotate return type
-      name: "FileError",
-      message: "Failed to read configuration file",
-      context: { path }, 
+    mapError: (error): DatabaseError => ({  // 👈 Annotate return type
+      name: "DatabaseError",
+      message: "Failed to save user to database",
+      context: { userId: user.id },
+      cause: error
+    })
+  });
+}
+
+// For trySync
+function validateEmail(email: string) {
+  return trySync({
+    try: () => {
+      if (!email.includes('@')) {
+        throw new Error('Invalid email format');
+      }
+      return email.toLowerCase();
+    },
+    mapError: (error): ValidationError => ({  // 👈 Annotate return type
+      name: "ValidationError",
+      message: "Email validation failed",
+      context: { email },
       cause: error
     })
   });
