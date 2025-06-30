@@ -1,5 +1,12 @@
 # wellcrafted
 
+## 0.16.0
+
+### Minor Changes
+
+- b450bd1: Adds `Brand` type for nominal typing in Typescript
+- 662cd35: Rebrands repo to "wellcrafted" with modular architecture
+
 ## 0.15.0
 
 ### Minor Changes
