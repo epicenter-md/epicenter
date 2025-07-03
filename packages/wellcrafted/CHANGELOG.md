@@ -1,5 +1,11 @@
 # wellcrafted
 
+## 0.16.1
+
+### Patch Changes
+
+- 062ac62: Adds dts to tsdown config, fixes missing types
+
 ## 0.16.0
 
 ### Minor Changes
