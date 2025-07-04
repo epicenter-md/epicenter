@@ -84,19 +84,4 @@ if (isErr(errResult)) {
 3. **Be specific**: `AuthenticationError` vs generic `ServiceError`
 4. **Follow domain boundaries**: `DatabaseError`, `FileSystemError`, etc.
 
-## Migration Notes
-
-### Changes Made
-- `mapErr` → `mapError` in function parameters
-- `UnwrapErr` → `UnwrapError` type utility
-- Updated all documentation to use consistent terminology
-- Fixed imports in mutations.ts to use proper Result API
-- Updated error handling guide with new terminology
-
-### Backward Compatibility
-- Type names remain the same (`Result`, `Ok`, `Err`)
-- Constructor functions remain the same (`Ok()`, `Err()`)
-- Type guards remain the same (`isOk()`, `isErr()`)
-- Only parameter names and type utilities changed
-
 This convention provides clear semantics and helps developers understand the distinction between the error data itself and the data structures that contain it. 
