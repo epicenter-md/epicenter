@@ -208,10 +208,12 @@ Every `TaggedError` contains four essential properties that work together to cre
 type TaggedError<T extends string> = {
   readonly name: T;                    // 1. The discriminant
   message: string;                     // 2. Human-readable description  
-  context: Record<string, unknown>;    // 3. Debugging data
-  cause?: unknown;                     // 4. Root cause (optional)
+  context?: Record<string, unknown>;    // 3. Function inputs & debugging data (optional)
+  cause: unknown;                     // 4. Root cause
 };
 ```
+
+> The `context` property should include the function's input parameters and any relevant variables in the closure. If there are none, then it can be omitted. This creates a complete picture of what data led to the error, making debugging straightforward.
 
 #### 1. **`name`** - The Discriminant (Tagged Field)
 
@@ -253,9 +255,9 @@ return Err({
 });
 ```
 
-#### 3. **`context`** - Debugging Data
+#### 3. **`context`** - Function Inputs & Debugging Data
 
-Include function inputs and any data that would help debug the issue. This is invaluable for logging and troubleshooting:
+The primary purpose of `context` is to capture the function's input parameters, relevant variables in the closure, and additional context.
 
 ```ts
 function processUser(id: number, options: UserOptions): Result<User, ProcessError> {
