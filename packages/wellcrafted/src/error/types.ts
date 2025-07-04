@@ -1,9 +1,9 @@
 /**
  * Base error structure for all errors in the Result system.
- * 
+ *
  * Provides a consistent structure for error objects that are JSON-serializable
  * and contain comprehensive debugging information.
- * 
+ *
  * @example
  * ```ts
  * const error: BaseError = {
@@ -17,7 +17,7 @@
 export type BaseError = Readonly<{
 	name: string;
 	message: string;
-	context: Record<string, unknown>;
+	context?: Record<string, unknown>;
 	cause: unknown;
 }>;
 
@@ -53,6 +53,18 @@ export type BaseError = Readonly<{
  *     });
  *   }
  *   return Ok(input);
+ * }
+ *
+ * // Context is optional - omit when not needed:
+ * function checkAuth(): Result<User, AuthError> {
+ *   if (!isAuthenticated) {
+ *     return Err({
+ *       name: "AuthError",
+ *       message: "User not authenticated",
+ *       cause: null,
+ *     });
+ *   }
+ *   return Ok(currentUser);
  * }
  * ```
  */
