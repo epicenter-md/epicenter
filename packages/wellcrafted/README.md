@@ -349,7 +349,7 @@ function handleError(error: FileSystemError) {
 ### Best Practices for Errors
 
 #### 1. Include Meaningful Context
-Always include function inputs and other relevant state in the `context` object. This is invaluable for logging and debugging.
+The `context` property should **always** start with the function's input parameters. Add any additional debugging information after the inputs. This pattern ensures you can always trace back to the exact data that caused the error.
 
 ```typescript
 function createDbError(
