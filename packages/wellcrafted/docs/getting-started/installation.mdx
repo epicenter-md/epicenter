@@ -1,0 +1,281 @@
+---
+title: 'Installation'
+description: 'Get wellcrafted up and running in your project'
+icon: 'download'
+---
+
+# Installation
+
+wellcrafted is available on npm and works with any TypeScript project. It has zero dependencies and is designed to be lightweight and tree-shakeable.
+
+## Requirements
+
+- **TypeScript**: 4.5 or higher (for template literal types)
+- **Node.js**: 14 or higher (for development)
+- **Module System**: Works with both CommonJS and ES Modules
+
+## Package Manager Installation
+
+<Tabs>
+  <Tab title="npm">
+    ```bash
+    npm install wellcrafted
+    ```
+  </Tab>
+  <Tab title="yarn">
+    ```bash
+    yarn add wellcrafted
+    ```
+  </Tab>
+  <Tab title="pnpm">
+    ```bash
+    pnpm add wellcrafted
+    ```
+  </Tab>
+  <Tab title="bun">
+    ```bash
+    bun add wellcrafted
+    ```
+  </Tab>
+</Tabs>
+
+## TypeScript Configuration
+
+wellcrafted is written in TypeScript and includes all type definitions. For the best experience, ensure your `tsconfig.json` includes:
+
+```json
+{
+  "compilerOptions": {
+    "strict": true,              // Recommended for best type safety
+    "strictNullChecks": true,    // Required for discriminated unions
+    "esModuleInterop": true,     // For clean imports
+    "moduleResolution": "node",  // Standard resolution
+    "lib": ["ES2020"]           // Or higher
+  }
+}
+```
+
+## Importing
+
+wellcrafted uses subpath exports for optimal tree-shaking. Import only what you need:
+
+```typescript
+// Result type utilities
+import { Result, Ok, Err, tryAsync, trySync } from "wellcrafted/result";
+
+// Error utilities  
+import { type TaggedError, extractErrorMessage } from "wellcrafted/error";
+
+// Brand type utilities
+import { type Brand } from "wellcrafted/brand";
+```
+
+<Warning>
+Avoid importing from the package root (`wellcrafted`) as this will import all modules and prevent tree-shaking.
+</Warning>
+
+## Module Systems
+
+### ES Modules (Recommended)
+
+```typescript
+// ES Module syntax (recommended)
+import { Ok, Err } from "wellcrafted/result";
+
+export async function fetchUser(id: string) {
+  try {
+    const user = await api.getUser(id);
+    return Ok(user);
+  } catch (error) {
+    return Err(error);
+  }
+}
+```
+
+### CommonJS
+
+```javascript
+// CommonJS syntax
+const { Ok, Err } = require("wellcrafted/result");
+
+async function fetchUser(id) {
+  try {
+    const user = await api.getUser(id);
+    return Ok(user);
+  } catch (error) {
+    return Err(error);
+  }
+}
+
+module.exports = { fetchUser };
+```
+
+## Bundle Size
+
+wellcrafted is designed to be lightweight:
+
+- **Full library**: ~2KB minified + gzipped
+- **Result module only**: ~0.8KB minified + gzipped
+- **Error module only**: ~0.3KB minified + gzipped
+- **Brand module only**: ~0.1KB minified + gzipped
+
+When using modern bundlers with tree-shaking, you only pay for what you use.
+
+## Framework Integration
+
+wellcrafted works with any JavaScript framework or runtime:
+
+### Next.js
+```typescript
+// app/actions.ts
+"use server";
+
+import { tryAsync } from "wellcrafted/result";
+import { type TaggedError } from "wellcrafted/error";
+
+type ServerError = TaggedError<"ServerError">;
+
+export async function createUser(data: FormData) {
+  return tryAsync<User, ServerError>({
+    try: async () => {
+      // Your server action logic
+    },
+    mapError: (error) => ({
+      name: "ServerError",
+      message: "Failed to create user",
+      context: { timestamp: Date.now() },
+      cause: error
+    })
+  });
+}
+```
+
+### React
+```typescript
+// hooks/useUser.ts
+import { useState, useEffect } from "react";
+import { Result } from "wellcrafted/result";
+import { type TaggedError } from "wellcrafted/error";
+
+type ApiError = TaggedError<"ApiError">;
+
+export function useUser(id: string) {
+  const [result, setResult] = useState<Result<User, ApiError> | null>(null);
+  
+  useEffect(() => {
+    fetchUser(id).then(setResult);
+  }, [id]);
+  
+  return result;
+}
+```
+
+### Express/Node.js
+```typescript
+// routes/users.ts
+import { Router } from "express";
+import { tryAsync } from "wellcrafted/result";
+
+const router = Router();
+
+router.get("/:id", async (req, res) => {
+  const result = await tryAsync({
+    try: () => getUserById(req.params.id),
+    mapError: (error) => ({
+      name: "DatabaseError",
+      message: "Failed to fetch user",
+      context: { userId: req.params.id },
+      cause: error
+    })
+  });
+  
+  if (result.error) {
+    return res.status(500).json({ error: result.error });
+  }
+  
+  res.json(result.data);
+});
+```
+
+## Development Setup
+
+If you're contributing to wellcrafted or want to build from source:
+
+```bash
+# Clone the repository
+git clone https://github.com/wellcrafted-dev/wellcrafted.git
+cd wellcrafted
+
+# Install dependencies
+npm install
+
+# Run tests
+npm test
+
+# Build the library
+npm run build
+
+# Run in watch mode
+npm run dev
+```
+
+## Verification
+
+After installation, you can verify everything is working:
+
+```typescript
+// test-wellcrafted.ts
+import { Ok, Err, isOk } from "wellcrafted/result";
+
+const result = Ok("Hello, wellcrafted!");
+console.log(isOk(result)); // true
+console.log(result.data);   // "Hello, wellcrafted!"
+```
+
+Run with:
+```bash
+npx tsx test-wellcrafted.ts
+```
+
+## Next Steps
+
+Now that you have wellcrafted installed:
+
+<CardGroup>
+  <Card title="Quick Start" icon="rocket" href="/getting-started/quick-start">
+    Learn the basics in 5 minutes
+  </Card>
+  <Card title="Core Concepts" icon="lightbulb" href="/getting-started/core-concepts">
+    Understand the fundamental ideas
+  </Card>
+  <Card title="Examples" icon="code" href="/patterns/real-world">
+    See real-world implementations
+  </Card>
+</CardGroup>
+
+## Troubleshooting
+
+### TypeScript Errors
+
+If you see TypeScript errors, ensure:
+- You're using TypeScript 4.5 or higher
+- `strictNullChecks` is enabled in your tsconfig.json
+- You're importing from the correct subpaths
+
+### Module Resolution Issues
+
+If imports aren't resolving:
+- Check your `moduleResolution` is set to "node" or "bundler"
+- Ensure you're using subpath imports like `wellcrafted/result`
+- Try clearing your node_modules and reinstalling
+
+### Bundle Size Concerns
+
+If your bundle is larger than expected:
+- Ensure you're importing from subpaths, not the root
+- Check that your bundler has tree-shaking enabled
+- Use bundle analyzer tools to verify what's included
+
+<Note>
+Need help? Check our [GitHub issues](https://github.com/wellcrafted-dev/wellcrafted/issues) or start a [discussion](https://github.com/wellcrafted-dev/wellcrafted/discussions).
+</Note>

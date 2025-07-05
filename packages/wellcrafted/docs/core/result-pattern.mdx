@@ -1,0 +1,419 @@
+---
+title: 'Result Pattern Deep Dive'
+description: 'A comprehensive guide to the Result pattern and discriminated unions'
+icon: 'code-branch'
+---
+
+# The Result Pattern: A Deep Dive
+
+The Result pattern is the heart of wellcrafted. This page provides a comprehensive understanding of how it works, why it's designed this way, and how to leverage its full power.
+
+## Understanding the Type System
+
+### The Discriminated Union
+
+At its core, a `Result<T, E>` is a discriminated union of two possible states:
+
+```typescript
+type Result<T, E> = Ok<T> | Err<E>
+```
+
+But what makes this a *discriminated* union? Let's examine the structure:
+
+```typescript
+type Ok<T> = { data: T; error: null };
+type Err<E> = { error: E; data: null };
+```
+
+The key insight is that `null` acts as a literal type that allows TypeScript to discriminate between the two variants:
+
+- When `error` is `null`, TypeScript knows `data` is `T`
+- When `data` is `null`, TypeScript knows `error` is `E`
+
+### Control-Flow Analysis in Action
+
+TypeScript's control-flow analysis understands this pattern deeply:
+
+```typescript
+function processResult<T, E>(result: Result<T, E>) {
+  // At this point, result could be either Ok<T> or Err<E>
+  
+  if (result.error === null) {
+    // TypeScript has narrowed: result is Ok<T>
+    console.log(result.data); // ✅ data is definitely T
+    console.log(result.error); // ✅ error is definitely null
+  } else {
+    // TypeScript has narrowed: result is Err<E>
+    console.log(result.error); // ✅ error is definitely E
+    console.log(result.data); // ✅ data is definitely null
+  }
+}
+```
+
+This isn't just type checking - it's type *narrowing*. TypeScript eliminates impossible states from consideration.
+
+### The Power of Mutual Exclusivity
+
+The design ensures that these states are mutually exclusive:
+
+```typescript
+// This is impossible to construct with our API:
+const invalid = { data: "value", error: "error" }; // ❌ Not a valid Result
+
+// You must use the constructors:
+const valid1 = Ok("value");    // { data: "value", error: null }
+const valid2 = Err("error");    // { data: null, error: "error" }
+```
+
+## Why Not Boolean Discriminators?
+
+You might wonder why we don't use a pattern like:
+
+```typescript
+type Result<T, E> = 
+  | { success: true; value: T }
+  | { success: false; error: E };
+```
+
+Our design has several advantages:
+
+### 1. Direct Property Access
+
+```typescript
+// Our approach
+const { data, error } = result;
+if (error) handleError(error);
+else useData(data);
+
+// Boolean approach
+if (result.success) {
+  useData(result.value); // Extra property access
+} else {
+  handleError(result.error); // Extra property access
+}
+```
+
+### 2. Familiar Destructuring
+
+Modern JavaScript developers are familiar with this pattern from libraries like Supabase:
+
+```typescript
+const { data, error } = await supabase
+  .from('users')
+  .select('*');
+```
+
+### 3. Simplified Mental Model
+
+"If there's an error, handle it; otherwise, use the data" is a natural way to think about operations.
+
+## Advanced Type Narrowing
+
+### Using Type Predicates
+
+While simple null checks work great, we also provide type guard functions:
+
+```typescript
+import { isOk, isErr } from "wellcrafted/result";
+
+function processUser(result: Result<User, ApiError>) {
+  if (isOk(result)) {
+    // result.data is User
+    console.log(`Hello, ${result.data.name}!`);
+  } else {
+    // result.error is ApiError
+    logError(result.error);
+  }
+}
+```
+
+### Exhaustive Pattern Matching
+
+With discriminated unions, TypeScript can ensure you handle all cases:
+
+```typescript
+type AuthError = TaggedError<"AuthError">;
+type NetworkError = TaggedError<"NetworkError">;
+type ValidationError = TaggedError<"ValidationError">;
+
+type AppError = AuthError | NetworkError | ValidationError;
+
+function handleError(error: AppError): string {
+  switch (error.name) {
+    case "AuthError":
+      return "Please log in again";
+    case "NetworkError":
+      return "Check your internet connection";
+    case "ValidationError":
+      return `Invalid ${error.context.field}`;
+    // TypeScript ensures all cases are handled!
+  }
+}
+```
+
+## Working with Results
+
+### Early Returns Pattern
+
+The most common pattern is early return on errors:
+
+```typescript
+async function processOrder(orderId: string): Promise<Result<Order, ProcessingError>> {
+  const orderResult = await fetchOrder(orderId);
+  if (orderResult.error) return orderResult;
+  
+  const validationResult = validateOrder(orderResult.data);
+  if (validationResult.error) return validationResult;
+  
+  const paymentResult = await processPayment(validationResult.data);
+  if (paymentResult.error) return paymentResult;
+  
+  return Ok(paymentResult.data);
+}
+```
+
+### Transforming Results
+
+Sometimes you need to transform the success value:
+
+```typescript
+function getUserName(userId: string): Result<string, UserError> {
+  const userResult = getUser(userId);
+  
+  if (userResult.error) {
+    return userResult; // Propagate the error
+  }
+  
+  return Ok(userResult.data.name); // Transform the success value
+}
+```
+
+### Combining Results
+
+When you have multiple Results to combine:
+
+```typescript
+function validateUserInput(input: {
+  email?: string;
+  age?: string;
+}): Result<ValidatedUser, ValidationError[]> {
+  const errors: ValidationError[] = [];
+  
+  const emailResult = validateEmail(input.email);
+  if (emailResult.error) errors.push(emailResult.error);
+  
+  const ageResult = validateAge(input.age);
+  if (ageResult.error) errors.push(ageResult.error);
+  
+  if (errors.length > 0) {
+    return Err(errors);
+  }
+  
+  return Ok({
+    email: emailResult.data!,
+    age: ageResult.data!
+  });
+}
+```
+
+## Result Pattern Best Practices
+
+### 1. Make Errors Specific
+
+```typescript
+// ❌ Too generic
+type Error = TaggedError<"Error">;
+
+// ✅ Specific and actionable
+type UserNotFoundError = TaggedError<"UserNotFoundError">;
+type InvalidCredentialsError = TaggedError<"InvalidCredentialsError">;
+type SessionExpiredError = TaggedError<"SessionExpiredError">;
+```
+
+### 2. Use Union Types for Multiple Errors
+
+```typescript
+function authenticateUser(
+  credentials: Credentials
+): Result<User, InvalidCredentialsError | UserNotFoundError | SessionExpiredError> {
+  // Implementation
+}
+```
+
+### 3. Propagate Errors Naturally
+
+```typescript
+async function createPost(userId: string, content: string) {
+  // Don't catch and re-throw - just propagate!
+  const userResult = await getUser(userId);
+  if (userResult.error) return userResult;
+  
+  const post = await savePost(userResult.data, content);
+  return post;
+}
+```
+
+### 4. Transform Errors at Boundaries
+
+```typescript
+// Low-level function returns specific error
+async function queryDatabase(sql: string): Result<Row[], DatabaseError> {
+  // ...
+}
+
+// Service layer transforms to domain error
+async function getUser(id: string): Result<User, UserServiceError> {
+  const result = await queryDatabase(`SELECT * FROM users WHERE id = ${id}`);
+  
+  if (result.error) {
+    return Err({
+      name: "UserServiceError",
+      message: "Failed to fetch user",
+      context: { userId: id, originalError: result.error },
+      cause: result.error
+    });
+  }
+  
+  return Ok(transformRowToUser(result.data[0]));
+}
+```
+
+## The Philosophy Behind Results
+
+### Errors as Values
+
+In traditional JavaScript, errors are thrown - they're control flow:
+
+```javascript
+try {
+  const user = getUser(id); // Might throw
+  updateUser(user); // Might throw
+} catch (error) {
+  // What threw? What type is error?
+}
+```
+
+With Results, errors are values - they're data:
+
+```typescript
+const userResult = getUser(id);
+if (userResult.error) {
+  // We know exactly what error this is
+  return userResult;
+}
+
+const updateResult = updateUser(userResult.data);
+if (updateResult.error) {
+  // And what error this is
+  return updateResult;
+}
+```
+
+### Composition Over Exception Handling
+
+Results compose naturally:
+
+```typescript
+const result = await fetchUser(id)
+  .then(r => r.error ? r : validateUser(r.data))
+  .then(r => r.error ? r : saveUser(r.data));
+```
+
+Compare this to try-catch composition:
+
+```javascript
+try {
+  try {
+    const user = await fetchUser(id);
+    try {
+      const validated = validateUser(user);
+      return await saveUser(validated);
+    } catch (saveError) {
+      // Handle save error
+    }
+  } catch (validateError) {
+    // Handle validation error
+  }
+} catch (fetchError) {
+  // Handle fetch error
+}
+```
+
+## Advanced Patterns
+
+### Result Chaining
+
+While wellcrafted doesn't provide built-in chaining methods, you can build them:
+
+```typescript
+class ResultChain<T, E> {
+  constructor(private result: Result<T, E>) {}
+  
+  map<U>(fn: (value: T) => U): ResultChain<U, E> {
+    if (this.result.error) {
+      return new ResultChain(Err(this.result.error));
+    }
+    return new ResultChain(Ok(fn(this.result.data)));
+  }
+  
+  flatMap<U>(fn: (value: T) => Result<U, E>): ResultChain<U, E> {
+    if (this.result.error) {
+      return new ResultChain(Err(this.result.error));
+    }
+    return new ResultChain(fn(this.result.data));
+  }
+  
+  unwrap(): Result<T, E> {
+    return this.result;
+  }
+}
+
+// Usage
+const result = new ResultChain(fetchUser(id))
+  .flatMap(user => validateUser(user))
+  .map(user => user.name)
+  .unwrap();
+```
+
+### Async Result Pipelines
+
+For complex async operations:
+
+```typescript
+async function pipeline<T, E>(
+  initial: T,
+  ...operations: Array<(value: T) => Promise<Result<T, E>>>
+): Promise<Result<T, E>> {
+  let current = Ok(initial);
+  
+  for (const operation of operations) {
+    if (current.error) return current;
+    current = await operation(current.data);
+  }
+  
+  return current;
+}
+
+// Usage
+const result = await pipeline(
+  userData,
+  validateUserData,
+  enrichUserData,
+  saveUserData
+);
+```
+
+## Summary
+
+The Result pattern transforms error handling from an afterthought to a first-class concern in your code. By making errors explicit in function signatures, you:
+
+- Eliminate surprise runtime errors
+- Get compile-time guarantees about error handling
+- Make your code's behavior more predictable
+- Enable better tooling and autocomplete
+
+The discriminated union design with `null` as the discriminant provides the perfect balance of simplicity, performance, and type safety.
+
+<Note>
+Ready to see the Result pattern in action? Check out our [real-world examples](/patterns/real-world) or learn about [error system design](/core/error-system).
+</Note>

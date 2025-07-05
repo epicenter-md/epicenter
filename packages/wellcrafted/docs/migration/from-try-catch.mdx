@@ -1,0 +1,660 @@
+---
+title: 'Migrating from Try-Catch'
+description: 'Transform exception-based code to Result-based error handling'
+icon: 'arrows-rotate'
+---
+
+# Migrating from Try-Catch
+
+This guide helps you transform traditional exception-based code to wellcrafted's Result-based error handling. You'll learn patterns for gradual migration and see common scenarios transformed.
+
+## Why Migrate?
+
+### Problems with Try-Catch
+
+```typescript
+// ❌ Traditional approach - full of issues
+async function processUser(id: string): Promise<User> {
+  try {
+    const user = await fetchUser(id);      // What errors can this throw?
+    const validated = validateUser(user);   // What about this?
+    const saved = await saveUser(validated); // Or this?
+    return saved;
+  } catch (error) {
+    // Is it a network error? Validation error? Database error?
+    // Is it even an Error object?
+    console.error("Something went wrong:", error);
+    throw error; // Lost stack trace, no context
+  }
+}
+```
+
+### Benefits of Results
+
+```typescript
+// ✅ Result-based approach - explicit and type-safe
+async function processUser(
+  id: string
+): Promise<Result<User, NetworkError | ValidationError | DatabaseError>> {
+  const fetchResult = await fetchUser(id);
+  if (fetchResult.error) return fetchResult;
+  
+  const validationResult = validateUser(fetchResult.data);
+  if (validationResult.error) return validationResult;
+  
+  return saveUser(validationResult.data);
+}
+```
+
+Benefits:
+- **Visible error types** in function signatures
+- **Forced error handling** by the type system
+- **Preserved error context** for debugging
+- **Better IntelliSense** and autocomplete
+
+## Migration Strategies
+
+### Strategy 1: Wrap at the Boundaries
+
+Start by wrapping external APIs and third-party code:
+
+```typescript
+import { tryAsync } from "wellcrafted/result";
+import { type TaggedError } from "wellcrafted/error";
+
+// Before: Throwing function
+async function fetchUserOld(id: string): Promise<User> {
+  const response = await fetch(`/api/users/${id}`);
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}`);
+  }
+  return response.json();
+}
+
+// After: Result-returning wrapper
+type ApiError = TaggedError<"ApiError">;
+
+async function fetchUser(id: string): Promise<Result<User, ApiError>> {
+  return tryAsync<User, ApiError>({
+    try: () => fetchUserOld(id),
+    mapError: (error) => ({
+      name: "ApiError",
+      message: "Failed to fetch user",
+      context: { userId: id, endpoint: `/api/users/${id}` },
+      cause: error
+    })
+  });
+}
+```
+
+### Strategy 2: Bottom-Up Transformation
+
+Transform leaf functions first, then work your way up:
+
+```typescript
+// Step 1: Transform the lowest-level function
+function validateEmail(email: string): Result<string, ValidationError> {
+  if (!email.includes('@')) {
+    return Err({
+      name: "ValidationError",
+      message: "Email must contain @ symbol",
+      context: { email },
+      cause: undefined
+    });
+  }
+  return Ok(email.toLowerCase());
+}
+
+// Step 2: Transform functions that use it
+function validateUser(data: unknown): Result<User, ValidationError> {
+  if (!data || typeof data !== 'object') {
+    return Err({
+      name: "ValidationError",
+      message: "Invalid user data",
+      context: { receivedType: typeof data },
+      cause: undefined
+    });
+  }
+  
+  const emailResult = validateEmail((data as any).email);
+  if (emailResult.error) return emailResult;
+  
+  return Ok({
+    email: emailResult.data,
+    // ... other fields
+  } as User);
+}
+```
+
+### Strategy 3: Gradual Function Migration
+
+Migrate one function at a time while maintaining compatibility:
+
+```typescript
+// Original throwing function
+async function saveUserThrowing(user: User): Promise<void> {
+  await db.save(user);
+}
+
+// New Result-based version
+async function saveUser(user: User): Promise<Result<void, DatabaseError>> {
+  return tryAsync({
+    try: () => saveUserThrowing(user),
+    mapError: (error) => ({
+      name: "DatabaseError",
+      message: "Failed to save user",
+      context: { userId: user.id },
+      cause: error
+    })
+  });
+}
+
+// Compatibility wrapper for gradual migration
+async function saveUserCompat(user: User): Promise<void> {
+  const result = await saveUser(user);
+  if (result.error) {
+    throw result.error; // Convert back to exception if needed
+  }
+}
+```
+
+## Common Patterns
+
+### Pattern 1: Simple Try-Catch
+
+```typescript
+// Before
+function parseConfig(json: string): Config {
+  try {
+    const parsed = JSON.parse(json);
+    return validateConfig(parsed);
+  } catch (error) {
+    throw new Error(`Invalid config: ${error.message}`);
+  }
+}
+
+// After
+function parseConfig(json: string): Result<Config, ConfigError> {
+  return trySync<Config, ConfigError>({
+    try: () => {
+      const parsed = JSON.parse(json);
+      return validateConfig(parsed);
+    },
+    mapError: (error) => ({
+      name: "ConfigError",
+      message: "Invalid configuration",
+      context: { rawJson: json.substring(0, 100) },
+      cause: error
+    })
+  });
+}
+```
+
+### Pattern 2: Nested Try-Catch
+
+```typescript
+// Before - nested error handling is messy
+async function processOrder(orderId: string): Promise<Order> {
+  try {
+    const order = await fetchOrder(orderId);
+    try {
+      await validateInventory(order);
+      try {
+        await chargePayment(order);
+        return order;
+      } catch (paymentError) {
+        await refundOrder(order);
+        throw new Error(`Payment failed: ${paymentError.message}`);
+      }
+    } catch (inventoryError) {
+      throw new Error(`Inventory check failed: ${inventoryError.message}`);
+    }
+  } catch (fetchError) {
+    throw new Error(`Order not found: ${fetchError.message}`);
+  }
+}
+
+// After - linear error handling
+async function processOrder(
+  orderId: string
+): Promise<Result<Order, OrderError | InventoryError | PaymentError>> {
+  const orderResult = await fetchOrder(orderId);
+  if (orderResult.error) return orderResult;
+  
+  const inventoryResult = await validateInventory(orderResult.data);
+  if (inventoryResult.error) return inventoryResult;
+  
+  const paymentResult = await chargePayment(orderResult.data);
+  if (paymentResult.error) {
+    await refundOrder(orderResult.data); // Clean up on error
+    return paymentResult;
+  }
+  
+  return Ok(orderResult.data);
+}
+```
+
+### Pattern 3: Error Recovery
+
+```typescript
+// Before - complex recovery logic
+async function fetchWithFallback(url: string): Promise<Data> {
+  try {
+    return await fetchFromPrimary(url);
+  } catch (primaryError) {
+    console.warn("Primary failed, trying secondary:", primaryError);
+    try {
+      return await fetchFromSecondary(url);
+    } catch (secondaryError) {
+      console.warn("Secondary failed, using cache:", secondaryError);
+      try {
+        return await fetchFromCache(url);
+      } catch (cacheError) {
+        throw new Error("All sources failed");
+      }
+    }
+  }
+}
+
+// After - clear fallback chain
+async function fetchWithFallback(url: string): Promise<Result<Data, FetchError>> {
+  // Try primary
+  const primaryResult = await fetchFromPrimary(url);
+  if (primaryResult.data) return primaryResult;
+  
+  console.warn("Primary failed:", primaryResult.error);
+  
+  // Try secondary
+  const secondaryResult = await fetchFromSecondary(url);
+  if (secondaryResult.data) return secondaryResult;
+  
+  console.warn("Secondary failed:", secondaryResult.error);
+  
+  // Try cache
+  const cacheResult = await fetchFromCache(url);
+  if (cacheResult.data) return cacheResult;
+  
+  // All failed - return comprehensive error
+  return Err({
+    name: "FetchError",
+    message: "All data sources failed",
+    context: {
+      url,
+      attempts: [
+        { source: 'primary', error: primaryResult.error },
+        { source: 'secondary', error: secondaryResult.error },
+        { source: 'cache', error: cacheResult.error }
+      ]
+    },
+    cause: undefined
+  });
+}
+```
+
+### Pattern 4: Resource Cleanup
+
+```typescript
+// Before - cleanup in finally block
+async function processFile(path: string): Promise<string> {
+  let file;
+  try {
+    file = await openFile(path);
+    const content = await readContent(file);
+    const processed = await processContent(content);
+    return processed;
+  } catch (error) {
+    throw new Error(`File processing failed: ${error.message}`);
+  } finally {
+    if (file) {
+      await closeFile(file);
+    }
+  }
+}
+
+// After - explicit cleanup
+async function processFile(path: string): Promise<Result<string, FileError>> {
+  const fileResult = await openFile(path);
+  if (fileResult.error) return fileResult;
+  
+  const file = fileResult.data;
+  
+  try {
+    const contentResult = await readContent(file);
+    if (contentResult.error) {
+      await closeFile(file);
+      return contentResult;
+    }
+    
+    const processedResult = await processContent(contentResult.data);
+    if (processedResult.error) {
+      await closeFile(file);
+      return processedResult;
+    }
+    
+    await closeFile(file);
+    return processedResult;
+    
+  } catch (error) {
+    // Ensure cleanup even if closeFile throws
+    try {
+      await closeFile(file);
+    } catch { }
+    
+    return Err({
+      name: "FileError",
+      message: "Unexpected error during file processing",
+      context: { path },
+      cause: error
+    });
+  }
+}
+```
+
+## Step-by-Step Migration Example
+
+Let's migrate a complete user registration flow:
+
+### Before: Exception-Based
+
+```typescript
+class UserService {
+  async register(input: RegistrationInput): Promise<User> {
+    try {
+      // Validate input
+      if (!input.email || !input.email.includes('@')) {
+        throw new Error("Invalid email");
+      }
+      
+      if (!input.password || input.password.length < 8) {
+        throw new Error("Password too short");
+      }
+      
+      // Check if user exists
+      const existing = await this.db.findByEmail(input.email);
+      if (existing) {
+        throw new Error("Email already registered");
+      }
+      
+      // Hash password
+      const hashedPassword = await bcrypt.hash(input.password, 10);
+      
+      // Create user
+      const user = await this.db.createUser({
+        email: input.email,
+        password: hashedPassword
+      });
+      
+      // Send welcome email
+      await this.emailService.sendWelcome(user.email);
+      
+      return user;
+      
+    } catch (error) {
+      console.error("Registration failed:", error);
+      throw error;
+    }
+  }
+}
+```
+
+### After: Result-Based
+
+```typescript
+// Step 1: Define specific error types
+type ValidationError = TaggedError<"ValidationError">;
+type UserExistsError = TaggedError<"UserExistsError">;
+type DatabaseError = TaggedError<"DatabaseError">;
+type EmailError = TaggedError<"EmailError">;
+
+type RegistrationError = 
+  | ValidationError 
+  | UserExistsError 
+  | DatabaseError 
+  | EmailError;
+
+class UserService {
+  async register(
+    input: RegistrationInput
+  ): Promise<Result<User, RegistrationError>> {
+    // Step 2: Validate with Results
+    const validationResult = this.validateRegistration(input);
+    if (validationResult.error) return validationResult;
+    
+    // Step 3: Check existence with Results
+    const existsResult = await this.checkUserExists(input.email);
+    if (existsResult.error) return existsResult;
+    
+    // Step 4: Hash password with error handling
+    const hashResult = await tryAsync<string, DatabaseError>({
+      try: () => bcrypt.hash(input.password, 10),
+      mapError: (error) => ({
+        name: "DatabaseError",
+        message: "Failed to hash password",
+        context: { operation: 'bcrypt.hash' },
+        cause: error
+      })
+    });
+    if (hashResult.error) return hashResult;
+    
+    // Step 5: Create user with error handling
+    const userResult = await this.createUser({
+      email: input.email,
+      password: hashResult.data
+    });
+    if (userResult.error) return userResult;
+    
+    // Step 6: Send email (non-critical, log but don't fail)
+    const emailResult = await this.sendWelcomeEmail(userResult.data.email);
+    if (emailResult.error) {
+      console.warn("Failed to send welcome email:", emailResult.error);
+      // Continue - email failure shouldn't block registration
+    }
+    
+    return Ok(userResult.data);
+  }
+  
+  private validateRegistration(
+    input: RegistrationInput
+  ): Result<RegistrationInput, ValidationError> {
+    if (!input.email?.includes('@')) {
+      return Err({
+        name: "ValidationError",
+        message: "Invalid email address",
+        context: { field: 'email', value: input.email },
+        cause: undefined
+      });
+    }
+    
+    if (!input.password || input.password.length < 8) {
+      return Err({
+        name: "ValidationError",
+        message: "Password must be at least 8 characters",
+        context: { field: 'password' },
+        cause: undefined
+      });
+    }
+    
+    return Ok(input);
+  }
+  
+  private async checkUserExists(
+    email: string
+  ): Result<void, UserExistsError | DatabaseError> {
+    const result = await tryAsync<User | null, DatabaseError>({
+      try: () => this.db.findByEmail(email),
+      mapError: (error) => ({
+        name: "DatabaseError",
+        message: "Failed to check user existence",
+        context: { email, operation: 'findByEmail' },
+        cause: error
+      })
+    });
+    
+    if (result.error) return result;
+    
+    if (result.data) {
+      return Err({
+        name: "UserExistsError",
+        message: "Email already registered",
+        context: { email },
+        cause: undefined
+      });
+    }
+    
+    return Ok(undefined);
+  }
+}
+```
+
+## Testing Migration
+
+### Testing Exception-Based Code
+
+```typescript
+// Before - complex error testing
+describe('UserService', () => {
+  it('should throw on invalid email', async () => {
+    const service = new UserService();
+    
+    await expect(
+      service.register({ email: 'invalid', password: 'password123' })
+    ).rejects.toThrow('Invalid email');
+  });
+  
+  it('should throw on existing user', async () => {
+    const service = new UserService();
+    mockDb.findByEmail.mockResolvedValue({ id: '123' });
+    
+    await expect(
+      service.register({ email: 'test@example.com', password: 'password123' })
+    ).rejects.toThrow('Email already registered');
+  });
+});
+```
+
+### Testing Result-Based Code
+
+```typescript
+// After - explicit error testing
+describe('UserService', () => {
+  it('should return ValidationError for invalid email', async () => {
+    const service = new UserService();
+    
+    const result = await service.register({ 
+      email: 'invalid', 
+      password: 'password123' 
+    });
+    
+    expect(result.error).toBeDefined();
+    expect(result.error?.name).toBe('ValidationError');
+    expect(result.error?.context.field).toBe('email');
+  });
+  
+  it('should return UserExistsError for existing user', async () => {
+    const service = new UserService();
+    mockDb.findByEmail.mockResolvedValue({ id: '123' });
+    
+    const result = await service.register({ 
+      email: 'test@example.com', 
+      password: 'password123' 
+    });
+    
+    expect(result.error).toBeDefined();
+    expect(result.error?.name).toBe('UserExistsError');
+    expect(result.error?.context.email).toBe('test@example.com');
+  });
+  
+  it('should return user on success', async () => {
+    const service = new UserService();
+    mockDb.findByEmail.mockResolvedValue(null);
+    mockDb.createUser.mockResolvedValue({ id: '123', email: 'test@example.com' });
+    
+    const result = await service.register({ 
+      email: 'test@example.com', 
+      password: 'password123' 
+    });
+    
+    expect(result.data).toBeDefined();
+    expect(result.data?.email).toBe('test@example.com');
+    expect(result.error).toBeNull();
+  });
+});
+```
+
+## Best Practices for Migration
+
+### 1. Start Small
+
+Begin with leaf functions that don't depend on other code:
+- Validation functions
+- Parsing functions
+- Simple calculations
+
+### 2. Wrap External APIs
+
+Use `trySync` and `tryAsync` to wrap third-party code:
+- Database queries
+- HTTP requests
+- File system operations
+
+### 3. Define Clear Error Types
+
+Create specific error types for each failure mode:
+```typescript
+// ❌ Too generic
+type Error = TaggedError<"Error">;
+
+// ✅ Specific
+type NetworkTimeoutError = TaggedError<"NetworkTimeoutError">;
+type InvalidCredentialsError = TaggedError<"InvalidCredentialsError">;
+```
+
+### 4. Preserve Error Context
+
+Always include relevant debugging information:
+```typescript
+return Err({
+  name: "DatabaseError",
+  message: "Query failed",
+  context: {
+    query: sql,
+    params,
+    duration: Date.now() - startTime,
+    connection: connectionId
+  },
+  cause: originalError
+});
+```
+
+### 5. Maintain Backwards Compatibility
+
+During migration, provide compatibility wrappers:
+```typescript
+// New Result-based implementation
+async function fetchUserResult(id: string): Promise<Result<User, ApiError>> {
+  // ... implementation
+}
+
+// Compatibility wrapper for existing code
+async function fetchUser(id: string): Promise<User> {
+  const result = await fetchUserResult(id);
+  if (result.error) {
+    throw new Error(result.error.message);
+  }
+  return result.data;
+}
+```
+
+## Summary
+
+Migrating from try-catch to Results is a journey that pays dividends in:
+- **Type safety**: Catch errors at compile time
+- **Clarity**: See all failure modes in signatures
+- **Debugging**: Rich error context
+- **Maintenance**: Easier refactoring and testing
+
+Start small, migrate gradually, and enjoy more reliable code!
+
+<Note>
+Ready to continue your journey? Learn about migrating from [fp-ts](/migration/from-fp-ts), [Effect](/migration/from-effect), or [neverthrow](/migration/from-neverthrow).
+</Note>

@@ -20,7 +20,75 @@
           {
             "group": "Getting Started",
             "pages": [
-              "index"
+              "index",
+              "getting-started/installation",
+              "getting-started/quick-start",
+              "getting-started/core-concepts"
+            ]
+          },
+          {
+            "group": "Core Modules",
+            "pages": [
+              "core/result-pattern",
+              "core/error-system",
+              "core/brand-types",
+              "core/implementation"
+            ]
+          },
+          {
+            "group": "Guides",
+            "pages": [
+              "guides/error-handling",
+              "guides/service-patterns",
+              "guides/async-patterns",
+              "guides/testing",
+              "guides/resilience"
+            ]
+          },
+          {
+            "group": "Patterns",
+            "pages": [
+              "patterns/basic-patterns",
+              "patterns/advanced-patterns",
+              "patterns/framework-integration",
+              "patterns/real-world"
+            ]
+          },
+          {
+            "group": "Migration",
+            "pages": [
+              "migration/from-try-catch",
+              "migration/from-fp-ts",
+              "migration/from-effect",
+              "migration/from-neverthrow"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Modules",
+            "pages": [
+              "api/result",
+              "api/error",
+              "api/brand",
+              "api/utilities"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Philosophy",
+        "groups": [
+          {
+            "group": "Design",
+            "pages": [
+              "philosophy/design-principles",
+              "philosophy/errors-as-data",
+              "philosophy/serialization-first",
+              "philosophy/comparisons"
             ]
           }
         ]

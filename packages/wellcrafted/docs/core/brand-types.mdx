@@ -1,0 +1,430 @@
+---
+title: 'Brand Types'
+description: 'Creating distinct types from primitives for compile-time safety'
+icon: 'fingerprint'
+---
+
+# Brand Types: Nominal Typing in TypeScript
+
+Brand types (also known as opaque types or nominal types) allow you to create distinct types from primitive types, preventing accidental mixing of values that should be semantically different. This is a powerful technique for making illegal states unrepresentable in your type system.
+
+## The Problem with Structural Typing
+
+TypeScript uses structural typing, which means types are compatible if they have the same shape:
+
+```typescript
+// Without brand types - prone to errors
+function transferMoney(fromId: string, toId: string, amount: number) {
+  // ...
+}
+
+const userId = "user_123";
+const orderId = "order_456";
+
+// This compiles but is semantically wrong!
+transferMoney(orderId, userId, 100); // 💥 Accidentally swapped parameters
+```
+
+Both `userId` and `orderId` are just strings, so TypeScript can't catch this mistake.
+
+## Introducing Brand Types
+
+Brand types solve this by creating nominally distinct types:
+
+```typescript
+import { type Brand } from "wellcrafted/brand";
+
+// Create distinct branded types
+type UserId = string & Brand<"UserId">;
+type OrderId = string & Brand<"OrderId">;
+
+function transferMoney(fromId: UserId, toId: UserId, amount: number) {
+  // ...
+}
+
+const userId = "user_123" as UserId;
+const orderId = "order_456" as OrderId;
+
+// Now TypeScript catches the error!
+transferMoney(orderId, userId, 100); // ❌ Type error: OrderId is not assignable to UserId
+```
+
+## How Brand Types Work
+
+The implementation is elegantly simple:
+
+```typescript
+declare const brand: unique symbol;
+export type Brand<T extends string> = { [brand]: T };
+```
+
+This creates a phantom property using a unique symbol that exists only at the type level. The property doesn't exist at runtime, but TypeScript's type system treats each brand as a distinct type.
+
+## Common Use Cases
+
+### 1. Preventing ID Mix-ups
+
+The most common use case is distinguishing between different types of identifiers:
+
+```typescript
+type UserId = string & Brand<"UserId">;
+type ProductId = string & Brand<"ProductId">;
+type OrderId = string & Brand<"OrderId">;
+
+// API functions that are now type-safe
+async function getUser(id: UserId): Promise<User> {
+  return fetch(`/api/users/${id}`).then(r => r.json());
+}
+
+async function getProduct(id: ProductId): Promise<Product> {
+  return fetch(`/api/products/${id}`).then(r => r.json());
+}
+
+// Helper functions to create branded values
+function toUserId(id: string): UserId {
+  return id as UserId;
+}
+
+function toProductId(id: string): ProductId {
+  return id as ProductId;
+}
+```
+
+### 2. Validated Data
+
+Use brands to mark data that has been validated or sanitized:
+
+```typescript
+type SafeHtml = string & Brand<"SafeHtml">;
+type ValidatedEmail = string & Brand<"ValidatedEmail">;
+type SanitizedInput = string & Brand<"SanitizedInput">;
+
+// Only accepts sanitized HTML
+function renderHtml(html: SafeHtml) {
+  element.innerHTML = html; // Safe because type guarantees sanitization
+}
+
+// Sanitization function returns branded type
+function sanitizeHtml(input: string): SafeHtml {
+  // ... sanitization logic ...
+  return sanitized as SafeHtml;
+}
+
+// Usage
+const userInput = "<script>alert('XSS')</script>";
+// renderHtml(userInput); // ❌ Type error - must sanitize first
+renderHtml(sanitizeHtml(userInput)); // ✅ Type-safe
+```
+
+### 3. Units of Measurement
+
+Prevent mixing incompatible units:
+
+```typescript
+type Meters = number & Brand<"Meters">;
+type Feet = number & Brand<"Feet">;
+type Seconds = number & Brand<"Seconds">;
+
+function calculateSpeed(distance: Meters, time: Seconds): number {
+  return distance / time;
+}
+
+const distance = 100 as Meters;
+const wrongUnit = 328 as Feet;
+const time = 10 as Seconds;
+
+calculateSpeed(distance, time); // ✅ Correct
+// calculateSpeed(wrongUnit, time); // ❌ Type error - Feet not assignable to Meters
+```
+
+### 4. Secret Management
+
+Distinguish between sensitive and non-sensitive strings:
+
+```typescript
+type ApiKey = string & Brand<"ApiKey">;
+type DatabasePassword = string & Brand<"DatabasePassword">;
+type PublicKey = string & Brand<"PublicKey">;
+
+function connectToApi(key: ApiKey) {
+  // ...
+}
+
+function connectToDatabase(password: DatabasePassword) {
+  // ...
+}
+
+// Prevents accidentally logging secrets
+function logPublicInfo(info: string | PublicKey) {
+  console.log("Public info:", info);
+}
+
+const apiKey = process.env.API_KEY as ApiKey;
+const dbPass = process.env.DB_PASS as DatabasePassword;
+
+// logPublicInfo(apiKey); // ❌ Type error - prevents accidental secret exposure
+```
+
+## Creating Brand Type Utilities
+
+### Type Guards
+
+Create type guards for runtime validation:
+
+```typescript
+type Email = string & Brand<"Email">;
+
+function isValidEmail(value: string): value is Email {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+}
+
+function sendEmail(to: Email, subject: string) {
+  // Can safely assume 'to' is a valid email
+}
+
+// Usage with validation
+const input = "user@example.com";
+if (isValidEmail(input)) {
+  sendEmail(input, "Welcome!"); // TypeScript knows input is Email here
+}
+```
+
+### Factory Functions
+
+Create factory functions that validate and brand values:
+
+```typescript
+type PositiveNumber = number & Brand<"PositiveNumber">;
+type NonEmptyString = string & Brand<"NonEmptyString">;
+
+function createPositiveNumber(value: number): Result<PositiveNumber, ValidationError> {
+  if (value <= 0) {
+    return Err({
+      name: "ValidationError",
+      message: "Value must be positive",
+      context: { value },
+      cause: undefined
+    });
+  }
+  return Ok(value as PositiveNumber);
+}
+
+function createNonEmptyString(value: string): Result<NonEmptyString, ValidationError> {
+  if (value.trim().length === 0) {
+    return Err({
+      name: "ValidationError",
+      message: "String cannot be empty",
+      context: { value },
+      cause: undefined
+    });
+  }
+  return Ok(value as NonEmptyString);
+}
+```
+
+### Conversion Functions
+
+Sometimes you need to convert between branded types:
+
+```typescript
+type Meters = number & Brand<"Meters">;
+type Kilometers = number & Brand<"Kilometers">;
+
+function metersToKilometers(meters: Meters): Kilometers {
+  return (meters / 1000) as Kilometers;
+}
+
+function kilometersToMeters(km: Kilometers): Meters {
+  return (km * 1000) as Meters;
+}
+```
+
+## Integration with Result Types
+
+Brand types work beautifully with Result types for validated data:
+
+```typescript
+import { Result, Ok, Err } from "wellcrafted/result";
+import { type Brand } from "wellcrafted/brand";
+import { type TaggedError } from "wellcrafted/error";
+
+type UserId = string & Brand<"UserId">;
+type UserIdError = TaggedError<"UserIdError">;
+
+function parseUserId(input: string): Result<UserId, UserIdError> {
+  if (!input.startsWith("user_")) {
+    return Err({
+      name: "UserIdError",
+      message: "User ID must start with 'user_'",
+      context: { input },
+      cause: undefined
+    });
+  }
+  
+  if (input.length !== 12) {
+    return Err({
+      name: "UserIdError",
+      message: "User ID must be exactly 12 characters",
+      context: { input, length: input.length },
+      cause: undefined
+    });
+  }
+  
+  return Ok(input as UserId);
+}
+
+// Usage
+const result = parseUserId("user_abc123");
+if (result.error) {
+  console.error("Invalid user ID:", result.error.message);
+} else {
+  // result.data is typed as UserId
+  await getUser(result.data);
+}
+```
+
+## Best Practices
+
+### 1. Use Descriptive Brand Names
+
+Choose brand names that clearly indicate the type's purpose:
+
+```typescript
+// ❌ Too generic
+type Id = string & Brand<"Id">;
+type Key = string & Brand<"Key">;
+
+// ✅ Specific and clear
+type CustomerId = string & Brand<"CustomerId">;
+type EncryptionKey = string & Brand<"EncryptionKey">;
+```
+
+### 2. Document Brand Invariants
+
+Document what guarantees a branded type provides:
+
+```typescript
+/**
+ * A string that has been validated to be a valid email address.
+ * Guaranteed to:
+ * - Contain exactly one @ symbol
+ * - Have at least one character before and after the @
+ * - Have a domain with at least one dot
+ */
+type ValidatedEmail = string & Brand<"ValidatedEmail">;
+```
+
+### 3. Keep Brands at API Boundaries
+
+Use brands at the edges of your system where validation occurs:
+
+```typescript
+// API endpoint validates and brands input
+async function createUser(request: Request) {
+  const { email, password } = await request.json();
+  
+  const emailResult = validateEmail(email);
+  if (emailResult.error) return badRequest(emailResult.error);
+  
+  const passwordResult = validatePassword(password);
+  if (passwordResult.error) return badRequest(passwordResult.error);
+  
+  // Now we have branded, validated data
+  return userService.create(emailResult.data, passwordResult.data);
+}
+```
+
+### 4. Avoid Over-Branding
+
+Don't brand every string or number - use brands where they prevent real errors:
+
+```typescript
+// ❌ Probably overkill
+type FirstName = string & Brand<"FirstName">;
+type LastName = string & Brand<"LastName">;
+
+// ✅ Prevents real mistakes
+type UserId = string & Brand<"UserId">;
+type OrderId = string & Brand<"OrderId">;
+```
+
+## Advanced Patterns
+
+### Composite Brands
+
+Create complex branded types from simpler ones:
+
+```typescript
+type Latitude = number & Brand<"Latitude">;
+type Longitude = number & Brand<"Longitude">;
+
+type GeoCoordinate = {
+  lat: Latitude;
+  lng: Longitude;
+};
+
+function createCoordinate(lat: number, lng: number): Result<GeoCoordinate, ValidationError> {
+  if (lat < -90 || lat > 90) {
+    return Err({
+      name: "ValidationError",
+      message: "Latitude must be between -90 and 90",
+      context: { lat },
+      cause: undefined
+    });
+  }
+  
+  if (lng < -180 || lng > 180) {
+    return Err({
+      name: "ValidationError",
+      message: "Longitude must be between -180 and 180",
+      context: { lng },
+      cause: undefined
+    });
+  }
+  
+  return Ok({
+    lat: lat as Latitude,
+    lng: lng as Longitude
+  });
+}
+```
+
+### Brand Hierarchies
+
+Sometimes you want brands that are related but distinct:
+
+```typescript
+type Id = string & Brand<"Id">;
+type UserId = Id & Brand<"UserId">;
+type AdminUserId = UserId & Brand<"AdminUserId">;
+
+function deleteUser(id: UserId) {
+  // Can delete any user
+}
+
+function deleteSystem(id: AdminUserId) {
+  // Requires admin user ID
+}
+
+const userId = "user_123" as UserId;
+const adminId = "admin_456" as AdminUserId;
+
+deleteUser(userId); // ✅ Works
+deleteUser(adminId); // ✅ Also works - AdminUserId extends UserId
+// deleteSystem(userId); // ❌ Type error - needs AdminUserId
+```
+
+## Summary
+
+Brand types are a simple yet powerful technique for adding nominal typing to TypeScript:
+
+- **Prevent errors**: Catch ID mix-ups and parameter swapping at compile time
+- **Document guarantees**: Branded types communicate validation and invariants
+- **Zero runtime cost**: Brands exist only in the type system
+- **Composable**: Work seamlessly with Result types and other patterns
+
+Use brand types strategically at API boundaries and for values that are easily confused but semantically different. They're one more tool in your toolkit for making illegal states unrepresentable.
+
+<Note>
+Want to see brand types in practice? Check out the [real-world examples](/patterns/real-world) or learn how they complement the [Result pattern](/core/result-pattern).
+</Note>
