@@ -25,7 +25,7 @@ type Ok<T> = { data: T; error: null };
 type Err<E> = { error: E; data: null };
 ```
 
-The key insight is that `null` acts as a literal type that allows TypeScript to discriminate between the two variants:
+The key insight: **This design creates a discriminated union where the `error` (or `data`) property acts as the discriminant with literal types `null` vs non-`null`**.
 
 - When `error` is `null`, TypeScript knows `data` is `T`
 - When `data` is `null`, TypeScript knows `error` is `E`

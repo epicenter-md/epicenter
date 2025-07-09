@@ -10,6 +10,14 @@ This guide helps you transform traditional exception-based code to wellcrafted's
 
 ## Why Migrate?
 
+### The Fundamental Problems with Try-Catch
+
+JavaScript's traditional error handling has critical flaws:
+
+> **A function signature `function doSomething(): User` doesn't tell you that it might throw a `NetworkError` or a `ValidationError`. Errors are invisible until they strike at runtime.**
+
+Even worse: **Error instances lose their prototype chain when crossing serialization boundaries** (JSON.stringify/parse, network requests, worker threads), breaking `instanceof` checks.
+
 ### Problems with Try-Catch
 
 ```typescript
@@ -24,7 +32,7 @@ async function processUser(id: string): Promise<User> {
     // Is it a network error? Validation error? Database error?
     // Is it even an Error object?
     console.error("Something went wrong:", error);
-    throw error; // Lost stack trace, no context
+    throw error; // Lost stack trace, no context, breaks across boundaries
   }
 }
 ```
@@ -47,10 +55,11 @@ async function processUser(
 ```
 
 Benefits:
-- **Visible error types** in function signatures
+- **Visible error types** in function signatures - replace `throw new Error()` with `return Err()` to make errors explicit
 - **Forced error handling** by the type system
-- **Preserved error context** for debugging
+- **Preserved error context** for debugging - the `context` property captures function inputs and state
 - **Better IntelliSense** and autocomplete
+- **Serialization-safe** - plain objects that work everywhere
 
 ## Migration Strategies
 

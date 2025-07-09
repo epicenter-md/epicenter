@@ -161,32 +161,109 @@ function createFileNotFoundError(path: string, cause?: unknown): FileNotFoundErr
 
 ## Error Factory Pattern
 
-For consistency and reusability, create factory functions for your errors:
+wellcrafted provides a powerful `createTaggedError` factory function that eliminates boilerplate and provides two convenient ways to create errors:
 
 ```typescript
-// Create a generic error factory
-export function createTaggedError<T extends string>(config: {
-  name: T;
-  message: string;
-  context?: Record<string, unknown>;
-  cause?: unknown;
-}): TaggedError<T> {
-  const { name, message, context, cause } = config;
+import { createTaggedError } from "wellcrafted/error";
+
+// Define your error with the factory
+const { NetworkError, NetworkErr } = createTaggedError('NetworkError');
+type NetworkError = ReturnType<typeof NetworkError>;
+
+// Two ways to use it:
+
+// 1. NetworkError: Creates just the error object
+const error = NetworkError({
+  message: 'Connection failed',
+  context: { url: 'https://api.example.com' },
+  cause: undefined
+});
+// Returns: { name: 'NetworkError', message: 'Connection failed', ... }
+
+// 2. NetworkErr: Creates error wrapped in Err result  
+return NetworkErr({
+  message: 'Connection failed',
+  context: { url: 'https://api.example.com' },
+  cause: undefined
+});
+// Returns: Err({ name: 'NetworkError', message: 'Connection failed', ... })
+```
+
+### Key Benefits
+
+1. **No manual `name` field**: The factory automatically sets the error name
+2. **Two convenient functions**: 
+   - `SomeError()` - creates plain error object
+   - `SomeErr()` - creates Err-wrapped error (replaces "Error" suffix with "Err")
+3. **Type inference**: TypeScript automatically infers the error type
+4. **Less boilerplate**: No type assertions or manual object construction
+
+### Real-World Example
+
+```typescript
+// Define your service errors
+const { UserNotFoundError, UserNotFoundErr } = createTaggedError('UserNotFoundError');
+const { ValidationError, ValidationErr } = createTaggedError('ValidationError');
+const { DatabaseError, DatabaseErr } = createTaggedError('DatabaseError');
+
+// Type alias for convenience
+type UserNotFoundError = ReturnType<typeof UserNotFoundError>;
+type ValidationError = ReturnType<typeof ValidationError>;
+type DatabaseError = ReturnType<typeof DatabaseError>;
+
+// In your service functions
+async function getUser(id: string): Promise<Result<User, UserNotFoundError | DatabaseError>> {
+  const dbResult = await database.query(id);
   
-  return {
-    name,
-    message,
-    context,
-    cause
-  };
+  if (dbResult.error) {
+    // Use the Err variant for direct return
+    return DatabaseErr({
+      message: 'Failed to query database',
+      context: { userId: id },
+      cause: dbResult.error
+    });
+  }
+  
+  if (!dbResult.data) {
+    // Use the Err variant for direct return
+    return UserNotFoundErr({
+      message: `User ${id} not found`,
+      context: { userId: id },
+      cause: undefined
+    });
+  }
+  
+  return Ok(dbResult.data);
 }
 
-// Usage
-const error = createTaggedError({
-  name: "ApiError" as const,
-  message: "Failed to fetch user data",
-  context: { endpoint: '/api/users/123' },
-  cause: originalError
+// When you need just the error object (e.g., for throwing)
+function validateEmail(email: string) {
+  if (!email.includes('@')) {
+    // Use the plain error variant
+    throw ValidationError({
+      message: 'Invalid email format',
+      context: { email },
+      cause: undefined
+    });
+  }
+}
+```
+
+### Using in tryAsync/trySync
+
+The factory pattern works seamlessly with error mapping:
+
+```typescript
+const { ApiError, ApiErr } = createTaggedError('ApiError');
+type ApiError = ReturnType<typeof ApiError>;
+
+const result = await tryAsync({
+  try: () => fetch('/api/data').then(r => r.json()),
+  mapError: (error) => ApiError({
+    message: 'Failed to fetch data',
+    context: { endpoint: '/api/data' },
+    cause: error
+  })
 });
 ```
 

@@ -88,6 +88,8 @@ const deserialized = JSON.parse(serialized);
 // Still a valid Result!
 ```
 
+This solves a critical problem: **Error instances lose their prototype chain when crossing serialization boundaries** (JSON.stringify/parse, network requests, worker threads), breaking `instanceof` checks.
+
 This is crucial for:
 - Sending errors over HTTP
 - Storing results in localStorage
@@ -108,7 +110,9 @@ if (error) {
 }
 ```
 
-This pattern is already familiar to developers using modern libraries like Supabase and feels natural in JavaScript.
+> The ability to destructure `const { data, error } = ...` is a clean, direct, and pragmatic pattern that is already familiar to developers using popular libraries like Supabase and Astro Actions.
+
+This pattern is already familiar to developers using modern libraries and feels natural in JavaScript.
 
 ### 4. **Type Safety Through Simplicity**
 
@@ -211,6 +215,10 @@ This implementation embodies our core principles:
 2. **Leverage TypeScript**: Let the type system do the heavy lifting
 3. **Stay Transparent**: No magic, no hidden behavior
 4. **Keep It Simple**: Complexity should be in your business logic, not your tools
+
+> **The beauty is in the transparency** - you can see exactly how it works under the hood, yet it provides powerful type safety and ergonomics.
+
+We only introduce new abstractions where JavaScript has a clear and significant weakness. The Result type addresses the fundamental problem that function signatures don't reveal what errors they might throw.
 
 ## Summary
 

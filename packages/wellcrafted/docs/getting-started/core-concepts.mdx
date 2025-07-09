@@ -33,10 +33,10 @@ try {
 ```
 
 Problems with this approach:
-- **Invisible failure modes**: The function signature doesn't tell you what can go wrong
+- **Invisible failure modes**: A function signature `function doSomething(): User` doesn't tell you that it might throw a `NetworkError` or a `ValidationError`. Errors are invisible until they strike at runtime.
 - **Lost type information**: Caught errors are type `unknown`
 - **Action at a distance**: Errors can bubble up through multiple function calls
-- **Poor serialization**: Error objects don't survive JSON.stringify
+- **Broken serialization**: Error instances lose their prototype chain when crossing serialization boundaries (JSON.stringify/parse, network requests, worker threads), breaking `instanceof` checks.
 
 ### The wellcrafted Approach
 
@@ -87,8 +87,8 @@ type Err<E> = { data: null; error: E }
 
 ### Why This Design?
 
-1. **Discriminated Union**: The `null` values act as discriminants, allowing TypeScript to narrow types perfectly
-2. **Destructuring-Friendly**: The `{ data, error }` pattern is familiar and ergonomic
+1. **Discriminated Union**: This design creates a **discriminated union** where the `error` (or `data`) property acts as the discriminant with literal types `null` vs non-`null`, allowing TypeScript to automatically narrow types
+2. **Destructuring-Friendly**: The ability to destructure `const { data, error } = ...` is a clean, direct, and pragmatic pattern that is already familiar to developers using popular libraries like Supabase and Astro Actions
 3. **Serialization-Safe**: Plain objects survive any serialization boundary
 4. **Zero Magic**: No classes, no prototypes, just objects
 
@@ -117,6 +117,8 @@ type TaggedError<T extends string> = {
   cause?: unknown;                     // Original error, if any
 }
 ```
+
+> The `context` property should include the function's input parameters and any relevant variables in the closure. This creates a complete picture of what data led to the error, making debugging straightforward.
 
 ### The Power of the Tag
 
@@ -230,9 +232,13 @@ async function processMany(ids: string[]) {
 wellcrafted embraces JavaScript's strengths instead of fighting them:
 
 - **Plain objects** instead of classes
-- **Destructuring** instead of method chaining  
+- **Destructuring** instead of method chaining - the familiar `const { data, error } = ...` pattern
 - **Type narrowing** instead of type assertions
 - **async/await** instead of custom control flow
+
+> We only introduce new abstractions where JavaScript has a clear and significant weakness.
+
+The beauty is in the transparency - you can see exactly how it works under the hood, yet it provides powerful type safety and ergonomics.
 
 ## Putting It All Together
 
