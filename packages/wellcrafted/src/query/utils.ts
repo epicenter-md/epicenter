@@ -11,44 +11,89 @@ import { Err, Ok, type Result, resolve } from "../result/index.js";
 import type { QueryOptions } from "@tanstack/query-core";
 
 /**
- * Type definition for the defineQuery function.
+ * Input options for defining a query.
  *
- * This type represents a function that creates a query definition with both reactive
- * and imperative interfaces for data fetching.
+ * Extends TanStack Query's QueryOptions but replaces queryFn with resultQueryFn.
+ * This type represents the configuration for creating a query definition with both
+ * reactive and imperative interfaces for data fetching.
+ *
+ * @template TQueryFnData - The type of data returned by the query function
+ * @template TError - The type of error that can be thrown
+ * @template TData - The type of data returned by the query (after select transform)
+ * @template TQueryKey - The type of the query key
  */
-export type DefineQuery = <
+export type DefineQueryInput<
 	TQueryFnData,
 	TError,
 	TData = TQueryFnData,
 	TQueryKey extends QueryKey = QueryKey,
->(
-	options: Omit<
-		QueryOptions<TQueryFnData, TError, TData, TQueryKey>,
-		"queryFn"
-	> & {
-		queryKey: TQueryKey;
-		resultQueryFn: QueryFunction<Result<TQueryFnData, TError>, TQueryKey>;
-	},
-) => {
+> = Omit<QueryOptions<TQueryFnData, TError, TData, TQueryKey>, "queryFn"> & {
+	queryKey: TQueryKey;
+	resultQueryFn: QueryFunction<Result<TQueryFnData, TError>, TQueryKey>;
+};
+
+/**
+ * Output of defineQuery function.
+ *
+ * Provides both reactive and imperative interfaces for data fetching:
+ * - `options()`: Returns config for use with createQuery() in Svelte components
+ * - `fetchCached()`: Imperatively fetches data (useful for actions/event handlers)
+ *
+ * @template TQueryFnData - The type of data returned by the query function
+ * @template TError - The type of error that can be thrown
+ * @template TData - The type of data returned by the query (after select transform)
+ * @template TQueryKey - The type of the query key
+ */
+export type DefineQueryOutput<
+	TQueryFnData,
+	TError,
+	TData = TQueryFnData,
+	TQueryKey extends QueryKey = QueryKey,
+> = {
 	options: () => QueryOptions<TQueryFnData, TError, TData, TQueryKey>;
 	fetchCached: () => Promise<Result<TData, TError>>;
 };
 
 /**
- * Type definition for the defineMutation function.
+ * Input options for defining a mutation.
  *
- * This type represents a function that creates a mutation definition with both reactive
- * and imperative interfaces for data mutations.
+ * Extends TanStack Query's MutationOptions but replaces mutationFn with resultMutationFn.
+ * This type represents the configuration for creating a mutation definition with both
+ * reactive and imperative interfaces for data mutations.
+ *
+ * @template TData - The type of data returned by the mutation
+ * @template TError - The type of error that can be thrown
+ * @template TVariables - The type of variables passed to the mutation
+ * @template TContext - The type of context data for optimistic updates
  */
-export type DefineMutation = <TData, TError, TVariables, TContext>(
-	options: Omit<
-		MutationOptions<TData, TError, TVariables, TContext>,
-		"mutationFn"
-	> & {
-		mutationKey: MutationKey;
-		resultMutationFn: MutationFunction<Result<TData, TError>, TVariables>;
-	},
-) => {
+export type DefineMutationInput<
+	TData,
+	TError,
+	TVariables,
+	TContext = unknown,
+> = Omit<MutationOptions<TData, TError, TVariables, TContext>, "mutationFn"> & {
+	mutationKey: MutationKey;
+	resultMutationFn: MutationFunction<Result<TData, TError>, TVariables>;
+};
+
+/**
+ * Output of defineMutation function.
+ *
+ * Provides both reactive and imperative interfaces for data mutations:
+ * - `options()`: Returns config for use with createMutation() in Svelte components
+ * - `execute()`: Directly executes the mutation and returns a Result
+ *
+ * @template TData - The type of data returned by the mutation
+ * @template TError - The type of error that can be thrown
+ * @template TVariables - The type of variables passed to the mutation
+ * @template TContext - The type of context data for optimistic updates
+ */
+export type DefineMutationOutput<
+	TData,
+	TError,
+	TVariables,
+	TContext = unknown,
+> = {
 	options: () => MutationOptions<TData, TError, TVariables, TContext>;
 	execute: (variables: TVariables) => Promise<Result<TData, TError>>;
 };
@@ -94,10 +139,7 @@ export type DefineMutation = <TData, TError, TVariables, TContext>(
  * const { data, error } = await userQuery.fetchCached();
  * ```
  */
-export function createQueryFactories(queryClient: QueryClient): {
-	defineQuery: DefineQuery;
-	defineMutation: DefineMutation;
-} {
+export function createQueryFactories(queryClient: QueryClient) {
 	/**
 	 * Creates a query definition that bridges the gap between pure service functions and reactive UI components.
 	 *
@@ -149,20 +191,14 @@ export function createQueryFactories(queryClient: QueryClient): {
 	 * }
 	 * ```
 	 */
-	const defineQuery: DefineQuery = <
+	const defineQuery = <
 		TQueryFnData,
 		TError,
 		TData = TQueryFnData,
 		TQueryKey extends QueryKey = QueryKey,
 	>(
-		options: Omit<
-			QueryOptions<TQueryFnData, TError, TData, TQueryKey>,
-			"queryFn"
-		> & {
-			queryKey: TQueryKey;
-			resultQueryFn: QueryFunction<Result<TQueryFnData, TError>, TQueryKey>;
-		},
-	) => {
+		options: DefineQueryInput<TQueryFnData, TError, TData, TQueryKey>,
+	): DefineQueryOutput<TQueryFnData, TError, TData, TQueryKey> => {
 		const newOptions = {
 			...options,
 			queryFn: async (context: QueryFunctionContext<TQueryKey>) => {
@@ -282,15 +318,9 @@ export function createQueryFactories(queryClient: QueryClient): {
 	 * - Sequential operations that depend on each other
 	 * - Non-component code that needs to trigger mutations
 	 */
-	const defineMutation: DefineMutation = <TData, TError, TVariables, TContext>(
-		options: Omit<
-			MutationOptions<TData, TError, TVariables, TContext>,
-			"mutationFn"
-		> & {
-			mutationKey: MutationKey;
-			resultMutationFn: MutationFunction<Result<TData, TError>, TVariables>;
-		},
-	) => {
+	const defineMutation = <TData, TError, TVariables, TContext = unknown>(
+		options: DefineMutationInput<TData, TError, TVariables, TContext>,
+	): DefineMutationOutput<TData, TError, TVariables, TContext> => {
 		const newOptions = {
 			...options,
 			mutationFn: async (variables: TVariables) => {
