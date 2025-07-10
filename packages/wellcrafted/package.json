@@ -20,6 +20,10 @@
 		"./brand": {
 			"types": "./dist/brand.d.ts",
 			"import": "./dist/brand.js"
+		},
+		"./query": {
+			"types": "./dist/query/index.d.ts",
+			"import": "./dist/query/index.js"
 		}
 	},
 	"scripts": {
@@ -45,7 +49,8 @@
 	"devDependencies": {
 		"@biomejs/biome": "^1.9.4",
 		"@changesets/cli": "^2.27.10",
+		"@tanstack/query-core": "^5.82.0",
 		"tsdown": "^0.12.5",
-		"typescript": "^5.7.2"
+		"typescript": "^5.8.3"
 	}
 }

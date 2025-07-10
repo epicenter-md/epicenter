@@ -14,12 +14,15 @@ importers:
       '@changesets/cli':
         specifier: ^2.27.10
         version: 2.27.10
+      '@tanstack/query-core':
+        specifier: ^5.82.0
+        version: 5.82.0
       tsdown:
         specifier: ^0.12.5
-        version: 0.12.5(typescript@5.7.2)
+        version: 0.12.5(typescript@5.8.3)
       typescript:
-        specifier: ^5.7.2
-        version: 5.7.2
+        specifier: ^5.8.3
+        version: 5.8.3
 
 packages:
 
@@ -265,6 +268,9 @@ packages:
 
   '@rolldown/pluginutils@1.0.0-beta.10-commit.87188ed':
     resolution: {integrity: sha512-IjVRLSxjO7EzlW4S6O8AoWbCkEi1lOpE30G8Xw5ZK/zl39K/KjzsDPc1AwhftepueQnQHJMgZZG9ITEmxcF5/A==}
+
+  '@tanstack/query-core@5.82.0':
+    resolution: {integrity: sha512-JrjoVuaajBQtnoWSg8iaPHaT4mW73lK2t+exxHNOSMqy0+13eKLqJgTKXKImLejQIfdAHQ6Un0njEhOvUtOd5w==}
 
   '@types/node@12.20.55':
     resolution: {integrity: sha512-J8xLz7q2OFulZ2cyGTLE1TbbZcjpno7FaN6zdJNrgAdrJ+DZzh/uFR6YrTb4C+nXakvud8Q4+rbhoIWlYQbUFQ==}
@@ -689,8 +695,8 @@ packages:
       unplugin-unused:
         optional: true
 
-  typescript@5.7.2:
-    resolution: {integrity: sha512-i5t66RHxDvVN40HfDd1PsEThGNnlMCMT3jMUuoh9/0TaqWevNontacunWyN02LA9/fIbEWlcHZcgTKb9QoaLfg==}
+  typescript@5.8.3:
+    resolution: {integrity: sha512-p1diW6TqL9L07nNxvRMM7hMMw4c5XOo/1ibL4aAIGmSAt9slTE1Xgw5KWuof2uTOvCg9BY7ZRi+GaF+7sfgPeQ==}
     engines: {node: '>=14.17'}
     hasBin: true
 
@@ -1001,6 +1007,8 @@ snapshots:
 
   '@rolldown/pluginutils@1.0.0-beta.10-commit.87188ed': {}
 
+  '@tanstack/query-core@5.82.0': {}
+
   '@types/node@12.20.55': {}
 
   ansi-colors@4.1.3: {}
@@ -1252,7 +1260,7 @@ snapshots:
 
   reusify@1.0.4: {}
 
-  rolldown-plugin-dts@0.13.6(rolldown@1.0.0-beta.10-commit.87188ed)(typescript@5.7.2):
+  rolldown-plugin-dts@0.13.6(rolldown@1.0.0-beta.10-commit.87188ed)(typescript@5.8.3):
     dependencies:
       '@babel/generator': 7.27.3
       '@babel/parser': 7.27.3
@@ -1264,7 +1272,7 @@ snapshots:
       get-tsconfig: 4.10.1
       rolldown: 1.0.0-beta.10-commit.87188ed
     optionalDependencies:
-      typescript: 5.7.2
+      typescript: 5.8.3
     transitivePeerDependencies:
       - oxc-resolver
       - supports-color
@@ -1339,7 +1347,7 @@ snapshots:
     dependencies:
       is-number: 7.0.0
 
-  tsdown@0.12.5(typescript@5.7.2):
+  tsdown@0.12.5(typescript@5.8.3):
     dependencies:
       ansis: 4.1.0
       cac: 6.7.14
@@ -1349,19 +1357,19 @@ snapshots:
       empathic: 1.1.0
       hookable: 5.5.3
       rolldown: 1.0.0-beta.10-commit.87188ed
-      rolldown-plugin-dts: 0.13.6(rolldown@1.0.0-beta.10-commit.87188ed)(typescript@5.7.2)
+      rolldown-plugin-dts: 0.13.6(rolldown@1.0.0-beta.10-commit.87188ed)(typescript@5.8.3)
       semver: 7.7.2
       tinyexec: 1.0.1
       tinyglobby: 0.2.14
       unconfig: 7.3.2
     optionalDependencies:
-      typescript: 5.7.2
+      typescript: 5.8.3
     transitivePeerDependencies:
       - oxc-resolver
       - supports-color
       - vue-tsc
 
-  typescript@5.7.2: {}
+  typescript@5.8.3: {}
 
   unconfig@7.3.2:
     dependencies:

@@ -54,10 +54,12 @@ function getUser(id: UserId) { /* ... */ }
 ```
 
 ### 📋 Tagged Errors
-Structured, serializable errors that work everywhere
+Structured, serializable errors with convenient factory functions
 ```typescript
-type ApiError = TaggedError<"ApiError">;
-// Works with JSON, localStorage, postMessage, etc.
+import { createTaggedError } from "wellcrafted/error";
+
+const { ApiError, ApiErr } = createTaggedError("ApiError");
+// ApiError() creates error object, ApiErr() creates Err-wrapped error
 ```
 
 ## Installation
@@ -70,15 +72,16 @@ npm install wellcrafted
 
 ```typescript
 import { tryAsync } from "wellcrafted/result";
-import { type TaggedError } from "wellcrafted/error";
+import { createTaggedError } from "wellcrafted/error";
+
+// Define your error with factory function
+const { ApiError, ApiErr } = createTaggedError("ApiError");
+type ApiError = ReturnType<typeof ApiError>;
 
 // Wrap any throwing operation
-type ApiError = TaggedError<"ApiError">;
-
-const { data, error } = await tryAsync<User, ApiError>({
+const { data, error } = await tryAsync({
   try: () => fetch('/api/user').then(r => r.json()),
-  mapError: (error) => ({
-    name: "ApiError",
+  mapError: (error) => ApiError({
     message: "Failed to fetch user",
     context: { endpoint: '/api/user' },
     cause: error
@@ -202,14 +205,57 @@ const result = await tryAsync({
 ### Service Layer Example
 
 ```typescript
-class UserService {
-  async createUser(input: CreateUserInput): Promise<Result<User, ValidationError | DatabaseError>> {
-    const validation = this.validateUser(input);
-    if (validation.error) return validation;
+import { Result, Ok, tryAsync } from "wellcrafted/result";
+import { createTaggedError } from "wellcrafted/error";
 
-    return this.saveUser(validation.data);
-  }
+// Define service-specific errors
+const { ValidationError, ValidationErr } = createTaggedError("ValidationError");
+const { DatabaseError, DatabaseErr } = createTaggedError("DatabaseError");
+
+type ValidationError = ReturnType<typeof ValidationError>;
+type DatabaseError = ReturnType<typeof DatabaseError>;
+
+// Factory function pattern - no classes!
+export function createUserService(db: Database) {
+  return {
+    async createUser(input: CreateUserInput): Promise<Result<User, ValidationError | DatabaseError>> {
+      // Direct return with Err variant
+      if (!input.email.includes('@')) {
+        return ValidationErr({
+          message: "Invalid email format",
+          context: { field: 'email', value: input.email },
+          cause: undefined
+        });
+      }
+
+      return tryAsync({
+        try: () => db.save(input),
+        mapError: (error) => DatabaseError({
+          message: "Failed to save user",
+          context: { operation: 'createUser', input },
+          cause: error
+        })
+      });
+    },
+
+    async getUser(id: string): Promise<Result<User | null, DatabaseError>> {
+      return tryAsync({
+        try: () => db.findById(id),
+        mapError: (error) => DatabaseError({
+          message: "Failed to fetch user",
+          context: { userId: id },
+          cause: error
+        })
+      });
+    }
+  };
 }
+
+// Export type for the service
+export type UserService = ReturnType<typeof createUserService>;
+
+// Create a live instance (dependency injection at build time)
+export const UserServiceLive = createUserService(databaseInstance);
 ```
 
 ## Why wellcrafted?
@@ -226,6 +272,102 @@ wellcrafted solves these with simple, composable primitives that make errors:
 - **Serializable** across all boundaries
 - **Type-safe** with full TypeScript support
 - **Consistent** with structured error objects
+
+## Service Pattern Best Practices
+
+Based on real-world usage, here's the recommended pattern for creating services with wellcrafted:
+
+### Factory Function Pattern
+
+```typescript
+import { createTaggedError } from "wellcrafted/error";
+
+// 1. Define service-specific errors
+const { RecorderServiceError, RecorderServiceErr } = createTaggedError("RecorderServiceError");
+type RecorderServiceError = ReturnType<typeof RecorderServiceError>;
+
+// 2. Create service with factory function
+export function createRecorderService() {
+  // Private state in closure
+  let isRecording = false;
+  
+  // Return object with methods
+  return {
+    startRecording(): Result<void, RecorderServiceError> {
+      if (isRecording) {
+        return RecorderServiceErr({
+          message: "Already recording",
+          context: { isRecording },
+          cause: undefined
+        });
+      }
+      
+      isRecording = true;
+      return Ok(undefined);
+    },
+    
+    stopRecording(): Result<Blob, RecorderServiceError> {
+      if (!isRecording) {
+        return RecorderServiceErr({
+          message: "Not currently recording", 
+          context: { isRecording },
+          cause: undefined
+        });
+      }
+      
+      isRecording = false;
+      return Ok(new Blob(["audio data"]));
+    }
+  };
+}
+
+// 3. Export type
+export type RecorderService = ReturnType<typeof createRecorderService>;
+
+// 4. Create singleton instance
+export const RecorderServiceLive = createRecorderService();
+```
+
+### Platform-Specific Services
+
+For services that need different implementations per platform:
+
+```typescript
+// types.ts - shared interface
+export type FileService = {
+  readFile(path: string): Promise<Result<string, FileServiceError>>;
+  writeFile(path: string, content: string): Promise<Result<void, FileServiceError>>;
+};
+
+// desktop.ts
+export function createFileServiceDesktop(): FileService {
+  return {
+    async readFile(path) {
+      // Desktop implementation using Node.js APIs
+    },
+    async writeFile(path, content) {
+      // Desktop implementation
+    }
+  };
+}
+
+// web.ts  
+export function createFileServiceWeb(): FileService {
+  return {
+    async readFile(path) {
+      // Web implementation using File API
+    },
+    async writeFile(path, content) {
+      // Web implementation
+    }
+  };
+}
+
+// index.ts - runtime selection
+export const FileServiceLive = typeof window !== 'undefined' 
+  ? createFileServiceWeb()
+  : createFileServiceDesktop();
+```
 
 ## Common Use Cases
 
@@ -321,6 +463,12 @@ function useUser(id: number) {
 - **`trySync(options)`** - Wrap throwing function
 - **`tryAsync(options)`** - Wrap async function
 - **`partitionResults(results)`** - Split array into oks/errs
+
+### Error Functions
+- **`createTaggedError(name)`** - Creates error factory functions
+  - Returns two functions: `{ErrorName}` and `{ErrorName}Err`
+  - The first creates plain error objects
+  - The second creates Err-wrapped errors
 
 ### Types
 - **`Result<T, E>`** - Union of Ok<T> | Err<E>
