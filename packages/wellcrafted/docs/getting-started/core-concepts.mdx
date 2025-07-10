@@ -1,0 +1,352 @@
+---
+title: 'Core Concepts'
+description: 'Understanding the fundamental ideas behind wellcrafted'
+icon: 'lightbulb'
+---
+
+# Core Concepts
+
+wellcrafted is built on a few simple but powerful ideas. Understanding these concepts will help you get the most out of the library and write more reliable TypeScript applications.
+
+## Errors as Values, Not Control Flow
+
+### The Traditional Approach
+
+In traditional JavaScript/TypeScript, errors are handled through exceptions:
+
+```typescript
+// Errors are invisible in the type signature
+async function getUser(id: string): Promise<User> {
+  const user = await db.query(`SELECT * FROM users WHERE id = ?`, [id]);
+  if (!user) {
+    throw new Error("User not found"); // Hidden control flow
+  }
+  return user;
+}
+
+// Callers must remember to catch
+try {
+  const user = await getUser("123");
+} catch (error) {
+  // What type is error? What errors are possible?
+}
+```
+
+Problems with this approach:
+- **Invisible failure modes**: A function signature `function doSomething(): User` doesn't tell you that it might throw a `NetworkError` or a `ValidationError`. Errors are invisible until they strike at runtime.
+- **Lost type information**: Caught errors are type `unknown`
+- **Action at a distance**: Errors can bubble up through multiple function calls
+- **Broken serialization**: Error instances lose their prototype chain when crossing serialization boundaries (JSON.stringify/parse, network requests, worker threads), breaking `instanceof` checks.
+
+### The wellcrafted Approach
+
+With wellcrafted, errors are just data:
+
+```typescript
+// Errors are visible in the type signature
+async function getUser(
+  id: string
+): Promise<Result<User, UserNotFoundError | DatabaseError>> {
+  const result = await db.query(`SELECT * FROM users WHERE id = ?`, [id]);
+  
+  if (!result) {
+    return Err({
+      name: "UserNotFoundError",
+      message: "User not found",
+      context: { userId: id },
+      cause: undefined
+    });
+  }
+  
+  return Ok(result);
+}
+
+// Callers handle errors as data
+const { data: user, error } = await getUser("123");
+if (error) {
+  // TypeScript knows exactly what errors are possible
+  switch (error.name) {
+    case "UserNotFoundError":
+      return show404();
+    case "DatabaseError":
+      return showRetryButton();
+  }
+}
+```
+
+## The Result Pattern
+
+The Result pattern represents operations that can either succeed or fail. It's a discriminated union with two variants:
+
+```typescript
+type Result<T, E> = Ok<T> | Err<E>
+
+type Ok<T> = { data: T; error: null }
+type Err<E> = { data: null; error: E }
+```
+
+### Why This Design?
+
+1. **Discriminated Union**: This design creates a **discriminated union** where the `error` (or `data`) property acts as the discriminant with literal types `null` vs non-`null`, allowing TypeScript to automatically narrow types
+2. **Destructuring-Friendly**: The ability to destructure `const { data, error } = ...` is a clean, direct, and pragmatic pattern that is already familiar to developers using popular libraries like Supabase and Astro Actions
+3. **Serialization-Safe**: Plain objects survive any serialization boundary
+4. **Zero Magic**: No classes, no prototypes, just objects
+
+### Mental Model
+
+Think of Result as a box that contains either:
+- ✅ A success value (Ok)
+- ❌ An error value (Err)
+
+But never both, and never neither. This mutual exclusivity is enforced by the type system.
+
+## Tagged Errors: Structured, Serializable, Type-Safe
+
+Traditional JavaScript errors have problems:
+- They're instances with prototype chains
+- They don't serialize well
+- They can't be discriminated in unions
+
+wellcrafted's TaggedError solves these issues:
+
+```typescript
+type TaggedError<T extends string> = {
+  readonly name: T;                    // Discriminant for TypeScript
+  message: string;                     // Human-readable description
+  context?: Record<string, unknown>;   // Debugging information
+  cause?: unknown;                     // Original error, if any
+}
+```
+
+> The `context` property should include the function's input parameters and any relevant variables in the closure. This creates a complete picture of what data led to the error, making debugging straightforward.
+
+### The Power of the Tag
+
+The `name` field serves as a discriminant, enabling exhaustive pattern matching:
+
+```typescript
+type AuthError = TaggedError<"AuthError">;
+type NetworkError = TaggedError<"NetworkError">;
+type ValidationError = TaggedError<"ValidationError">;
+
+function handleError(error: AuthError | NetworkError | ValidationError) {
+  switch (error.name) {
+    case "AuthError":
+      // TypeScript knows this is AuthError
+      redirectToLogin();
+      break;
+    case "NetworkError":
+      // TypeScript knows this is NetworkError
+      showRetryButton();
+      break;
+    case "ValidationError":
+      // TypeScript knows this is ValidationError
+      highlightInvalidFields(error.context);
+      break;
+    // TypeScript ensures all cases are handled
+  }
+}
+```
+
+## Brand Types: Nominal Typing in a Structural World
+
+TypeScript uses structural typing - types are compatible if they have the same shape. This can lead to errors:
+
+```typescript
+function chargeCard(userId: string, cardId: string, amount: number) {
+  // ...
+}
+
+const user = "user_123";
+const card = "card_456";
+
+// Oops! Swapped the parameters, but TypeScript can't help
+chargeCard(card, user, 100); // 💥 Runtime error
+```
+
+Brand types add nominal typing:
+
+```typescript
+type UserId = string & Brand<"UserId">;
+type CardId = string & Brand<"CardId">;
+
+function chargeCard(userId: UserId, cardId: CardId, amount: number) {
+  // ...
+}
+
+const user = "user_123" as UserId;
+const card = "card_456" as CardId;
+
+// TypeScript catches the error!
+chargeCard(card, user, 100); // ❌ Type error at compile time
+```
+
+## Key Principles
+
+### 1. Make the Implicit Explicit
+
+Hidden behavior is the enemy of reliability. wellcrafted makes everything visible:
+
+- **Errors in signatures**: You can see what can go wrong
+- **Validation state in types**: Validated data has a different type
+- **Semantics in types**: Different IDs have different types
+
+### 2. Fail Fast, Fail Safe
+
+When something goes wrong, you want to know immediately and handle it gracefully:
+
+```typescript
+const result = await fetchUser(id);
+if (result.error) {
+  // Handle error immediately, with full type information
+  return handleError(result.error);
+}
+// From here on, TypeScript knows result.data exists
+```
+
+### 3. Composition Over Complexity
+
+Simple primitives that compose well are better than complex abstractions:
+
+```typescript
+// Compose Results with standard JavaScript
+async function processMany(ids: string[]) {
+  const results = await Promise.all(ids.map(fetchUser));
+  const errors = results.filter(r => r.error !== null);
+  
+  if (errors.length > 0) {
+    return Err({ 
+      name: "BatchError", 
+      message: `Failed to fetch ${errors.length} users`,
+      context: { errors },
+      cause: undefined
+    });
+  }
+  
+  return Ok(results.map(r => r.data!));
+}
+```
+
+### 4. Work With the Language
+
+wellcrafted embraces JavaScript's strengths instead of fighting them:
+
+- **Plain objects** instead of classes
+- **Destructuring** instead of method chaining - the familiar `const { data, error } = ...` pattern
+- **Type narrowing** instead of type assertions
+- **async/await** instead of custom control flow
+
+> We only introduce new abstractions where JavaScript has a clear and significant weakness.
+
+The beauty is in the transparency - you can see exactly how it works under the hood, yet it provides powerful type safety and ergonomics.
+
+## Putting It All Together
+
+Here's how these concepts work together in practice:
+
+```typescript
+import { Result, Ok, Err, tryAsync } from "wellcrafted/result";
+import { type TaggedError } from "wellcrafted/error";
+import { type Brand } from "wellcrafted/brand";
+
+// Brand types for safety
+type UserId = string & Brand<"UserId">;
+type OrderId = string & Brand<"OrderId">;
+
+// Tagged errors for clarity
+type OrderNotFoundError = TaggedError<"OrderNotFoundError">;
+type PaymentError = TaggedError<"PaymentError">;
+type ShippingError = TaggedError<"ShippingError">;
+
+// Result types make errors visible
+async function fulfillOrder(
+  userId: UserId,
+  orderId: OrderId
+): Promise<Result<ShipmentId, OrderNotFoundError | PaymentError | ShippingError>> {
+  // Fetch order with explicit error handling
+  const orderResult = await fetchOrder(orderId);
+  if (orderResult.error) return orderResult;
+  
+  // Verify ownership
+  if (orderResult.data.userId !== userId) {
+    return Err({
+      name: "OrderNotFoundError",
+      message: "Order not found",
+      context: { orderId, userId },
+      cause: undefined
+    });
+  }
+  
+  // Process payment with error transformation
+  const paymentResult = await tryAsync({
+    try: () => paymentGateway.charge(orderResult.data),
+    mapError: (error) => ({
+      name: "PaymentError" as const,
+      message: "Payment processing failed",
+      context: { orderId, amount: orderResult.data.total },
+      cause: error
+    })
+  });
+  
+  if (paymentResult.error) return paymentResult;
+  
+  // Ship order
+  return shipOrder(orderResult.data);
+}
+
+// Usage is clear and type-safe
+const result = await fulfillOrder(userId, orderId);
+if (result.error) {
+  switch (result.error.name) {
+    case "OrderNotFoundError":
+      show404();
+      break;
+    case "PaymentError":
+      showPaymentRetry(result.error.context);
+      break;
+    case "ShippingError":
+      notifySupport(result.error);
+      break;
+  }
+} else {
+  showSuccessMessage(`Shipped! Tracking: ${result.data}`);
+}
+```
+
+## Why These Patterns Matter
+
+### Predictability
+
+When errors are values and types are precise, your code becomes predictable:
+- No surprise exceptions
+- No runtime type confusion  
+- No "undefined is not a function"
+
+### Maintainability
+
+Explicit errors and strong types make code easier to maintain:
+- New team members can see all failure modes
+- Refactoring is safer with compiler assistance
+- Tests can cover all error cases
+
+### Debuggability
+
+Structured errors with context make debugging straightforward:
+- Error context shows exactly what went wrong
+- Serializable errors work in all environments
+- Type information is preserved throughout
+
+## Summary
+
+wellcrafted's core concepts work together to create a more reliable development experience:
+
+1. **Result Pattern**: Makes success and failure explicit in types
+2. **Tagged Errors**: Provides structured, serializable, discriminated errors  
+3. **Brand Types**: Adds semantic meaning to primitive types
+4. **Errors as Values**: Transforms hidden control flow into visible data flow
+
+These patterns aren't just about catching bugs - they're about designing systems where bugs are less likely to occur in the first place.
+
+<Note>
+Ready to apply these concepts? Check out the [Quick Start guide](/getting-started/quick-start) for hands-on examples, or dive into [real-world patterns](/patterns/real-world) to see how these ideas scale.
+</Note>

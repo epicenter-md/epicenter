@@ -1,0 +1,124 @@
+---
+title: Welcome to wellcrafted
+description: 'Delightful TypeScript utilities for elegant, type-safe applications'
+---
+
+import { Card, CardGroup } from '@mintlify/components'
+
+# Welcome to wellcrafted
+
+**Make errors impossible to ignore.** A lightweight TypeScript library that transforms unpredictable exceptions into type-safe, serializable results.
+
+## What is wellcrafted?
+
+wellcrafted is a collection of simple, powerful TypeScript primitives that make your code more predictable, type-safe, and delightful to work with. At its core, it provides a Rust-inspired `Result` type that makes error handling explicit and visible in your function signatures.
+
+<CardGroup>
+  <Card title="Quick Start" icon="rocket" href="/getting-started/quick-start">
+    Get up and running in 30 seconds
+  </Card>
+  <Card title="Core Concepts" icon="lightbulb" href="/getting-started/core-concepts">
+    Understand the fundamental ideas
+  </Card>
+  <Card title="Result Pattern" icon="code-branch" href="/core/result-pattern">
+    Deep dive into the Result type
+  </Card>
+  <Card title="Examples" icon="code" href="/patterns/real-world">
+    See real-world implementations
+  </Card>
+</CardGroup>
+
+## Why wellcrafted?
+
+### The Problem
+
+```typescript
+// Which errors can this throw? 🤷
+async function saveUser(user: User): Promise<void> {
+  await validate(user);      // Throws ValidationError? 
+  await checkPermissions();  // Throws AuthError?
+  await database.save(user); // Throws DatabaseError?
+}
+```
+
+### The Solution
+
+```typescript
+// Every error is visible and typed ✨
+async function saveUser(user: User): Promise<Result<void, ValidationError | AuthError | DatabaseError>> {
+  const validation = await validate(user);
+  if (validation.error) return validation;
+  
+  const auth = await checkPermissions();
+  if (auth.error) return auth;
+  
+  return await database.save(user);
+}
+```
+
+## Core Primitives
+
+<CardGroup>
+  <Card title="Result Type" icon="shield-check">
+    Type-safe error handling with explicit success and failure states
+  </Card>
+  <Card title="Tagged Errors" icon="tags">
+    Structured, serializable errors that work everywhere
+  </Card>
+  <Card title="Brand Types" icon="fingerprint">
+    Create distinct types from primitives for compile-time safety
+  </Card>
+</CardGroup>
+
+## Key Benefits
+
+- **🎯 Explicit Error Handling**: All potential failures are visible in function signatures
+- **📦 Serialization-Safe**: Errors are plain objects that work across all boundaries
+- **✨ Elegant API**: Clean, intuitive patterns that feel natural in TypeScript
+- **🔍 Zero Magic**: The entire core is ~50 lines of code you can understand
+- **🚀 Lightweight**: Zero dependencies, tree-shakeable, less than 2KB minified
+
+## Quick Example
+
+```typescript
+import { tryAsync } from "wellcrafted/result";
+import { type TaggedError } from "wellcrafted/error";
+
+type ApiError = TaggedError<"ApiError">;
+
+const { data, error } = await tryAsync<User, ApiError>({
+  try: () => fetch('/api/user').then(r => r.json()),
+  mapError: (error) => ({
+    name: "ApiError",
+    message: "Failed to fetch user",
+    context: { endpoint: '/api/user' },
+    cause: error
+  })
+});
+
+if (error) {
+  console.error(`${error.name}: ${error.message}`);
+} else {
+  console.log("User:", data);
+}
+```
+
+## Next Steps
+
+<CardGroup>
+  <Card title="Installation" icon="download" href="/getting-started/installation">
+    Install wellcrafted in your project
+  </Card>
+  <Card title="Tutorial" icon="graduation-cap" href="/getting-started/quick-start">
+    Follow our step-by-step guide
+  </Card>
+  <Card title="Migration Guide" icon="arrows-rotate" href="/migration/from-try-catch">
+    Migrate from traditional error handling
+  </Card>
+</CardGroup>
+
+## Philosophy
+
+wellcrafted is built on the principle of making the implicit explicit. Instead of hidden exceptions that can crash your application, errors become data that you can work with using TypeScript's powerful type system.
+
+Learn more about our [design principles](/philosophy/design-principles) and why we believe error handling should be delightful.

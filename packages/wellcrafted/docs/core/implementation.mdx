@@ -1,0 +1,236 @@
+---
+title: 'How It Works'
+description: 'Understanding the implementation details of wellcrafted'
+icon: 'code'
+---
+
+# How It Works: The Core Implementation
+
+> **💡 TL;DR:** Replace `throw new Error()` with `return Err()` to make errors visible in your function signatures.
+
+This page reveals the elegant simplicity behind wellcrafted. Understanding the implementation helps you appreciate why the library is so lightweight and powerful.
+
+## The Complete Implementation
+
+Here's the entire core implementation of the Result type - it's simpler than you might think:
+
+```typescript
+// The two possible outcomes
+export type Ok<T> = { data: T; error: null };
+export type Err<E> = { error: E; data: null };
+
+// Result is just a union of these two types
+export type Result<T, E> = Ok<T> | Err<E>;
+
+// Helper functions to create each variant
+export const Ok = <T>(data: T): Ok<T> => ({ data, error: null });
+export const Err = <E>(error: E): Err<E> => ({ error, data: null });
+```
+
+**That's it!** The entire foundation is built on this elegant simplicity. Let's break down why this design is so powerful.
+
+## The Discriminated Union Pattern
+
+The magic lies in how TypeScript's type system interprets this structure:
+
+- **`Ok<T>`** always has `data: T` and `error: null`
+- **`Err<E>`** always has `error: E` and `data: null`  
+- **`Result<T, E>`** is simply `Ok<T> | Err<E>`
+
+This creates a **discriminated union** where the `error` (or `data`) property acts as the discriminant with literal types `null` vs non-`null`.
+
+### How TypeScript Narrows Types
+
+```typescript
+function handleResult<T, E>(result: Result<T, E>) {
+  if (result.error === null) {
+    // TypeScript knows this is Ok<T>
+    console.log(result.data); // ✅ data is type T
+    // console.log(result.error); // ❌ TypeScript knows this is null
+  } else {
+    // TypeScript knows this is Err<E>  
+    console.log(result.error); // ✅ error is type E
+    // console.log(result.data); // ❌ TypeScript knows this is null
+  }
+}
+```
+
+The beauty is in the mutual exclusivity - TypeScript's control-flow analysis can definitively determine which variant you're dealing with based on a simple null check.
+
+## Why This Design?
+
+### 1. **Zero Runtime Overhead**
+
+The entire implementation compiles down to simple object creation:
+
+```javascript
+// TypeScript
+const success = Ok(42);
+const failure = Err("Something went wrong");
+
+// Compiles to JavaScript
+const success = { data: 42, error: null };
+const failure = { error: "Something went wrong", data: null };
+```
+
+No classes, no prototypes, no complex machinery - just plain objects.
+
+### 2. **Perfect Serialization**
+
+Since Results are plain objects, they serialize perfectly:
+
+```typescript
+const result = Ok({ id: 1, name: "Alice" });
+const serialized = JSON.stringify(result);
+// {"data":{"id":1,"name":"Alice"},"error":null}
+
+const deserialized = JSON.parse(serialized);
+// Still a valid Result!
+```
+
+This solves a critical problem: **Error instances lose their prototype chain when crossing serialization boundaries** (JSON.stringify/parse, network requests, worker threads), breaking `instanceof` checks.
+
+This is crucial for:
+- Sending errors over HTTP
+- Storing results in localStorage
+- Passing data between workers
+- Logging to external services
+
+### 3. **Familiar Destructuring Pattern**
+
+The design enables the elegant destructuring pattern:
+
+```typescript
+const { data, error } = await someOperation();
+
+if (error) {
+  // Handle error
+} else {
+  // Use data
+}
+```
+
+> The ability to destructure `const { data, error } = ...` is a clean, direct, and pragmatic pattern that is already familiar to developers using popular libraries like Supabase and Astro Actions.
+
+This pattern is already familiar to developers using modern libraries and feels natural in JavaScript.
+
+### 4. **Type Safety Through Simplicity**
+
+Because the types are so simple, TypeScript can:
+- Provide perfect IntelliSense
+- Catch errors at compile time
+- Narrow types automatically
+- Work with strict mode without issues
+
+## Comparison with Alternatives
+
+### Boolean Flag Approach
+
+Some libraries use:
+```typescript
+type Result<T, E> = 
+  | { ok: true; value: T }
+  | { ok: false; error: E };
+```
+
+Our approach is superior because:
+- Direct access to `data` and `error` without intermediate properties
+- Cleaner destructuring
+- More intuitive null checks
+
+### Class-Based Approach
+
+Traditional OOP might use:
+```typescript
+class Ok<T> {
+  constructor(public data: T) {}
+}
+class Err<E> {
+  constructor(public error: E) {}
+}
+```
+
+Our approach avoids:
+- Prototype chain complexity
+- `instanceof` checks that break across realms
+- Serialization issues with classes
+- Larger bundle size
+
+## The Power of Transparency
+
+By showing you the complete implementation, we demonstrate:
+
+1. **No Hidden Complexity**: What you see is what you get
+2. **Easy to Understand**: New developers can grasp it immediately  
+3. **Easy to Debug**: Simple objects are simple to inspect
+4. **Easy to Extend**: Build your own utilities on top
+
+## Building on the Foundation
+
+This simple foundation enables powerful patterns:
+
+### Type Guards
+
+```typescript
+export function isOk<T, E>(result: Result<T, E>): result is Ok<T> {
+  return result.error === null;
+}
+
+export function isErr<T, E>(result: Result<T, E>): result is Err<E> {
+  return result.error !== null;
+}
+```
+
+### Wrapping Unsafe Operations
+
+```typescript
+export function trySync<T, E>(config: {
+  try: () => T;
+  mapError: (error: unknown) => E;
+}): Result<T, E> {
+  try {
+    return Ok(config.try());
+  } catch (error) {
+    return Err(config.mapError(error));
+  }
+}
+```
+
+### Result Utilities
+
+```typescript
+export function unwrap<T, E>(result: Result<T, E>): T {
+  if (result.error !== null) {
+    throw result.error;
+  }
+  return result.data;
+}
+```
+
+## The Philosophy Behind the Implementation
+
+This implementation embodies our core principles:
+
+1. **Embrace JavaScript**: We use plain objects, not exotic patterns
+2. **Leverage TypeScript**: Let the type system do the heavy lifting
+3. **Stay Transparent**: No magic, no hidden behavior
+4. **Keep It Simple**: Complexity should be in your business logic, not your tools
+
+> **The beauty is in the transparency** - you can see exactly how it works under the hood, yet it provides powerful type safety and ergonomics.
+
+We only introduce new abstractions where JavaScript has a clear and significant weakness. The Result type addresses the fundamental problem that function signatures don't reveal what errors they might throw.
+
+## Summary
+
+The entire wellcrafted library is built on 6 lines of type definitions and 2 lines of helper functions. This radical simplicity is its greatest strength:
+
+- **Predictable**: No surprises, no edge cases
+- **Performant**: No overhead beyond object creation
+- **Portable**: Works everywhere JavaScript runs
+- **Understandable**: You can hold the entire mental model in your head
+
+When you use wellcrafted, you're not buying into a complex framework - you're adopting a simple pattern that makes your code more reliable and your errors more manageable.
+
+<Note>
+Want to see how this simple foundation enables powerful error handling patterns? Check out the [Result Pattern Deep Dive](/core/result-pattern) or explore [real-world examples](/patterns/real-world).
+</Note>

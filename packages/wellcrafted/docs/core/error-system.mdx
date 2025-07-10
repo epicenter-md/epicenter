@@ -1,0 +1,558 @@
+---
+title: 'Error System Design'
+description: 'Understanding wellcrafted\'s structured, serializable error system'
+icon: 'triangle-exclamation'
+---
+
+# Error System Design
+
+wellcrafted's error system is built on a simple yet powerful principle: **errors should be data, not control flow**. This page explains the design philosophy, implementation details, and best practices for creating robust error handling in your applications.
+
+## The TaggedError Pattern
+
+At the heart of wellcrafted's error system is the `TaggedError` type - a structured, serializable error representation that works seamlessly with TypeScript's type system.
+
+### Why TaggedError?
+
+Traditional JavaScript errors have fundamental problems:
+
+1. **Serialization breaks them**: `JSON.stringify(new Error())` loses the message and stack trace
+2. **No standardization**: Libraries throw strings, Error objects, custom classes, or even undefined
+3. **Prototype chain complexity**: `instanceof` checks fail across different realms (iframes, workers)
+4. **Poor TypeScript integration**: Can't discriminate between different error types in unions
+
+TaggedError solves all these issues:
+
+1. **JSON-serializable**: Plain objects that survive any serialization boundary
+2. **Type-safe discrimination**: The `name` field acts as a discriminant for TypeScript
+3. **Lightweight**: No overhead of class instantiation or prototype chains
+4. **Structured context**: Enforces machine-readable debugging information
+
+## The Four Properties of TaggedError
+
+Every `TaggedError` contains four essential properties that work together to create a robust, debuggable error system:
+
+```typescript
+type TaggedError<T extends string> = {
+  readonly name: T;                    // 1. The discriminant
+  message: string;                     // 2. Human-readable description  
+  context?: Record<string, unknown>;   // 3. Function inputs & debugging data
+  cause?: unknown;                     // 4. Root cause
+};
+```
+
+<Note>
+The `context` property should include the function's input parameters and any relevant variables in the closure. This creates a complete picture of what data led to the error, making debugging straightforward.
+</Note>
+
+### 1. `name` - The Discriminant
+
+This is your error's unique identifier and the key to pattern matching. Use it in `if` statements and `switch` statements to handle different error types:
+
+```typescript
+type ValidationError = TaggedError<"ValidationError">;
+type NetworkError = TaggedError<"NetworkError">;
+type FileError = TaggedError<"FileError">;
+
+function handleError(error: ValidationError | NetworkError | FileError) {
+  switch (error.name) {
+    case "ValidationError":
+      // TypeScript knows this is ValidationError
+      console.log("Invalid input:", error.context);
+      break;
+    case "NetworkError": 
+      // TypeScript knows this is NetworkError
+      console.log("Network failed:", error.message);
+      break;
+    case "FileError":
+      // TypeScript knows this is FileError
+      console.log("File issue:", error.context);
+      break;
+  }
+}
+```
+
+### 2. `message` - Human-Readable Text
+
+Pure text description that explains what went wrong. Keep it clear and actionable:
+
+```typescript
+return Err({
+  name: "ValidationError",
+  message: "Email address must contain an @ symbol",  // Clear, specific
+  context: { email: userInput },
+  cause: undefined
+});
+```
+
+### 3. `context` - Function Inputs & Debugging Data
+
+The primary purpose of `context` is to capture the function's input parameters, relevant variables in the closure, and additional context:
+
+```typescript
+function processUser(id: number, options: UserOptions): Result<User, ProcessError> {
+  return Err({
+    name: "ProcessError",
+    message: "User processing failed",
+    context: {
+      userId: id,           // Function input
+      options,              // Function input  
+      timestamp: new Date().toISOString(),  // Additional context
+      retryCount: 3         // Useful debugging info
+    },
+    cause: undefined
+  });
+}
+```
+
+### 4. `cause` - Root Cause Bubbling
+
+- **For new errors**: Set `cause: undefined`
+- **For wrapping existing errors**: Pass the original error as `cause`
+
+```typescript
+// Creating a new error
+return Err({
+  name: "ValidationError",
+  message: "Invalid user data",
+  context: { input },
+  cause: undefined  // New error, no underlying cause
+});
+
+// Wrapping an existing error
+try {
+  await database.save(user);
+} catch (dbError) {
+  return Err({
+    name: "SaveError", 
+    message: "Failed to save user",
+    context: { userId: user.id },
+    cause: dbError  // Bubble up the original database error
+  });
+}
+```
+
+## Creating Domain-Specific Errors
+
+Define a set of possible errors for each domain in your application:
+
+```typescript
+// Define your specific error types
+export type FileNotFoundError = TaggedError<"FileNotFoundError">;
+export type PermissionDeniedError = TaggedError<"PermissionDeniedError">;
+export type DiskFullError = TaggedError<"DiskFullError">;
+
+// Create a union of all possible errors for this domain
+export type FileSystemError = 
+  | FileNotFoundError 
+  | PermissionDeniedError 
+  | DiskFullError;
+
+// Factory functions to create errors
+function createFileNotFoundError(path: string, cause?: unknown): FileNotFoundError {
+  return {
+    name: "FileNotFoundError",
+    message: `The file at path "${path}" was not found.`,
+    context: { path },
+    cause
+  };
+}
+```
+
+## Error Factory Pattern
+
+wellcrafted provides a powerful `createTaggedError` factory function that eliminates boilerplate and provides two convenient ways to create errors:
+
+```typescript
+import { createTaggedError } from "wellcrafted/error";
+
+// Define your error with the factory
+const { NetworkError, NetworkErr } = createTaggedError('NetworkError');
+type NetworkError = ReturnType<typeof NetworkError>;
+
+// Two ways to use it:
+
+// 1. NetworkError: Creates just the error object
+const error = NetworkError({
+  message: 'Connection failed',
+  context: { url: 'https://api.example.com' },
+  cause: undefined
+});
+// Returns: { name: 'NetworkError', message: 'Connection failed', ... }
+
+// 2. NetworkErr: Creates error wrapped in Err result  
+return NetworkErr({
+  message: 'Connection failed',
+  context: { url: 'https://api.example.com' },
+  cause: undefined
+});
+// Returns: Err({ name: 'NetworkError', message: 'Connection failed', ... })
+```
+
+### Key Benefits
+
+1. **No manual `name` field**: The factory automatically sets the error name
+2. **Two convenient functions**: 
+   - `SomeError()` - creates plain error object
+   - `SomeErr()` - creates Err-wrapped error (replaces "Error" suffix with "Err")
+3. **Type inference**: TypeScript automatically infers the error type
+4. **Less boilerplate**: No type assertions or manual object construction
+
+### Real-World Example
+
+```typescript
+// Define your service errors
+const { UserNotFoundError, UserNotFoundErr } = createTaggedError('UserNotFoundError');
+const { ValidationError, ValidationErr } = createTaggedError('ValidationError');
+const { DatabaseError, DatabaseErr } = createTaggedError('DatabaseError');
+
+// Type alias for convenience
+type UserNotFoundError = ReturnType<typeof UserNotFoundError>;
+type ValidationError = ReturnType<typeof ValidationError>;
+type DatabaseError = ReturnType<typeof DatabaseError>;
+
+// In your service functions
+async function getUser(id: string): Promise<Result<User, UserNotFoundError | DatabaseError>> {
+  const dbResult = await database.query(id);
+  
+  if (dbResult.error) {
+    // Use the Err variant for direct return
+    return DatabaseErr({
+      message: 'Failed to query database',
+      context: { userId: id },
+      cause: dbResult.error
+    });
+  }
+  
+  if (!dbResult.data) {
+    // Use the Err variant for direct return
+    return UserNotFoundErr({
+      message: `User ${id} not found`,
+      context: { userId: id },
+      cause: undefined
+    });
+  }
+  
+  return Ok(dbResult.data);
+}
+
+// When you need just the error object (e.g., for throwing)
+function validateEmail(email: string) {
+  if (!email.includes('@')) {
+    // Use the plain error variant
+    throw ValidationError({
+      message: 'Invalid email format',
+      context: { email },
+      cause: undefined
+    });
+  }
+}
+```
+
+### Using in tryAsync/trySync
+
+The factory pattern works seamlessly with error mapping:
+
+```typescript
+const { ApiError, ApiErr } = createTaggedError('ApiError');
+type ApiError = ReturnType<typeof ApiError>;
+
+const result = await tryAsync({
+  try: () => fetch('/api/data').then(r => r.json()),
+  mapError: (error) => ApiError({
+    message: 'Failed to fetch data',
+    context: { endpoint: '/api/data' },
+    cause: error
+  })
+});
+```
+
+## Serialization Benefits
+
+Unlike JavaScript's Error class, TaggedErrors are plain objects that serialize perfectly:
+
+```typescript
+const error: ValidationError = {
+  name: "ValidationError",
+  message: "Age must be between 0 and 150",
+  context: { 
+    field: "age",
+    value: -5,
+    constraints: { min: 0, max: 150 }
+  },
+  cause: undefined
+};
+
+// Perfect serialization
+const serialized = JSON.stringify(error);
+console.log(serialized);
+// {"name":"ValidationError","message":"Age must be between 0 and 150",...}
+
+// Perfect deserialization
+const deserialized = JSON.parse(serialized);
+// Still a valid TaggedError!
+```
+
+This enables:
+- **API responses**: Send structured errors to clients
+- **Logging**: Store complete error information
+- **Worker communication**: Pass errors between threads
+- **State persistence**: Save errors in localStorage or databases
+
+## Best Practices
+
+### 1. Include Meaningful Context
+
+Always start with the function's input parameters:
+
+```typescript
+function createDbError(
+  message: string,
+  query: string,
+  params: unknown[],
+  cause: unknown
+): DbError {
+  return {
+    name: "DbError",
+    message,
+    context: {
+      query,        // Function input
+      params,       // Function input
+      timestamp: new Date().toISOString(),  // Additional context
+      connectionPool: 'primary'             // Debugging info
+    },
+    cause,
+  };
+}
+```
+
+### 2. Make Errors Specific
+
+Avoid generic error types:
+
+```typescript
+// ❌ Too generic
+type Error = TaggedError<"Error">;
+
+// ✅ Specific and actionable
+type UserNotFoundError = TaggedError<"UserNotFoundError">;
+type InvalidCredentialsError = TaggedError<"InvalidCredentialsError">;
+type SessionExpiredError = TaggedError<"SessionExpiredError">;
+```
+
+### 3. Use Union Types for Function Signatures
+
+Make all possible errors visible:
+
+```typescript
+function authenticateUser(
+  credentials: Credentials
+): Result<User, InvalidCredentialsError | UserNotFoundError | SessionExpiredError> {
+  // Implementation makes it clear what can go wrong
+}
+```
+
+### 4. Handle Errors at the Right Level
+
+Transform errors where you can add context:
+
+```typescript
+async function getUserProfile(userId: string): Result<Profile, UserServiceError> {
+  // Low-level database call
+  const dbResult = await queryDatabase(`SELECT * FROM users WHERE id = ?`, [userId]);
+  
+  if (dbResult.error) {
+    // Transform database error to domain error
+    return Err({
+      name: "UserServiceError",
+      message: "Failed to fetch user profile",
+      context: { 
+        userId,
+        operation: 'getUserProfile'
+      },
+      cause: dbResult.error  // Preserve original error
+    });
+  }
+  
+  return Ok(transformToProfile(dbResult.data));
+}
+```
+
+### 5. Design for Debugging
+
+Structure your errors to answer these questions:
+- **What went wrong?** (message)
+- **Where did it happen?** (name + stack trace in cause)
+- **What data caused it?** (context with inputs)
+- **What was the root cause?** (cause chain)
+
+```typescript
+function processPayment(order: Order, card: Card): Result<Receipt, PaymentError> {
+  const validation = validateCard(card);
+  if (validation.error) {
+    return Err({
+      name: "PaymentError",
+      message: "Payment processing failed",
+      context: {
+        orderId: order.id,
+        amount: order.total,
+        cardLast4: card.number.slice(-4),  // Safe partial info
+        validationError: validation.error.message
+      },
+      cause: validation.error
+    });
+  }
+  // ... rest of implementation
+}
+```
+
+## Error Handling Patterns
+
+### Early Return Pattern
+
+The most common and readable pattern:
+
+```typescript
+async function createOrder(input: OrderInput): Promise<Result<Order, OrderError>> {
+  const userResult = await getUser(input.userId);
+  if (userResult.error) return userResult;
+  
+  const validationResult = validateOrderInput(input);
+  if (validationResult.error) return validationResult;
+  
+  const inventoryResult = await checkInventory(input.items);
+  if (inventoryResult.error) return inventoryResult;
+  
+  // All checks passed, create the order
+  return Ok(await saveOrder({
+    user: userResult.data,
+    items: inventoryResult.data,
+    ...validationResult.data
+  }));
+}
+```
+
+### Error Aggregation
+
+When you need to collect multiple errors:
+
+```typescript
+function validateForm(input: FormInput): Result<ValidatedForm, ValidationError[]> {
+  const errors: ValidationError[] = [];
+  
+  if (!input.email?.includes('@')) {
+    errors.push({
+      name: "ValidationError",
+      message: "Invalid email format",
+      context: { field: 'email', value: input.email },
+      cause: undefined
+    });
+  }
+  
+  if (!input.password || input.password.length < 8) {
+    errors.push({
+      name: "ValidationError",
+      message: "Password must be at least 8 characters",
+      context: { field: 'password' },
+      cause: undefined
+    });
+  }
+  
+  if (errors.length > 0) {
+    return Err(errors);
+  }
+  
+  return Ok(input as ValidatedForm);
+}
+```
+
+### Error Recovery
+
+Implement retry logic with typed errors:
+
+```typescript
+async function fetchWithRetry<T>(
+  url: string,
+  maxRetries = 3
+): Promise<Result<T, NetworkError>> {
+  let lastError: NetworkError | null = null;
+
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    const result = await tryAsync<T, NetworkError>({
+      try: () => fetch(url).then(r => r.json()),
+      mapError: (error) => ({
+        name: "NetworkError",
+        message: `Request failed (attempt ${attempt}/${maxRetries})`,
+        context: { url, attempt, maxRetries },
+        cause: error
+      })
+    });
+
+    if (result.data) return result;
+    
+    lastError = result.error;
+    
+    // Exponential backoff
+    if (attempt < maxRetries) {
+      await new Promise(resolve => 
+        setTimeout(resolve, Math.pow(2, attempt) * 1000)
+      );
+    }
+  }
+
+  return Err(lastError!);
+}
+```
+
+## Integration with Result Type
+
+TaggedErrors are designed to work seamlessly with the Result type:
+
+```typescript
+import { Result, Ok, Err, tryAsync } from "wellcrafted/result";
+import { type TaggedError } from "wellcrafted/error";
+
+type UserNotFoundError = TaggedError<"UserNotFoundError">;
+type DatabaseError = TaggedError<"DatabaseError">;
+
+async function getUser(id: string): Promise<Result<User, UserNotFoundError | DatabaseError>> {
+  const result = await tryAsync<User, DatabaseError>({
+    try: () => database.users.findById(id),
+    mapError: (error) => ({
+      name: "DatabaseError",
+      message: "Database query failed",
+      context: { userId: id, operation: 'findById' },
+      cause: error
+    })
+  });
+  
+  if (result.error) return result;
+  
+  if (!result.data) {
+    return Err({
+      name: "UserNotFoundError",
+      message: `User with ID ${id} not found`,
+      context: { userId: id },
+      cause: undefined
+    });
+  }
+  
+  return Ok(result.data);
+}
+```
+
+## Summary
+
+The TaggedError system transforms error handling from an afterthought to a first-class concern:
+
+- **Structured**: Every error has a consistent shape
+- **Serializable**: Works across all JavaScript boundaries
+- **Type-safe**: Full TypeScript discrimination support
+- **Debuggable**: Rich context for troubleshooting
+- **Composable**: Errors can be wrapped and transformed
+
+By treating errors as data rather than control flow, you gain predictability, testability, and maintainability in your error handling.
+
+<Note>
+Ready to see TaggedErrors in action? Check out the [error handling guide](/guides/error-handling) or explore [real-world patterns](/patterns/real-world).
+</Note>

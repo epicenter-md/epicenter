@@ -1,0 +1,434 @@
+---
+title: 'Service Layer Pattern'
+description: 'Best practices for building services with wellcrafted'
+icon: 'layer-group'
+---
+
+# Service Layer Pattern
+
+This guide shows how to build robust, testable services using wellcrafted's Result types and error handling. We'll use the factory function pattern - no classes needed!
+
+## Core Principles
+
+1. **Factory Functions Over Classes**: Use functions that return objects
+2. **Explicit Error Handling**: All errors visible in function signatures
+3. **Pure Business Logic**: Services contain only business logic, no UI concerns
+4. **Dependency Injection**: Pass dependencies as parameters
+5. **Testability**: Easy to test with mock dependencies
+
+## Basic Service Pattern
+
+Here's the recommended pattern for creating services:
+
+```typescript
+import { Result, Ok, tryAsync } from "wellcrafted/result";
+import { createTaggedError } from "wellcrafted/error";
+
+// 1. Define service-specific errors
+const { UserServiceError, UserServiceErr } = createTaggedError("UserServiceError");
+type UserServiceError = ReturnType<typeof UserServiceError>;
+
+// 2. Create service with factory function
+export function createUserService(db: Database) {
+  // Private state in closure if needed
+  const cache = new Map<string, User>();
+  
+  // Return object with methods
+  return {
+    async getUser(id: string): Promise<Result<User, UserServiceError>> {
+      // Check cache first
+      const cached = cache.get(id);
+      if (cached) return Ok(cached);
+      
+      // Fetch from database
+      const result = await tryAsync({
+        try: () => db.users.findById(id),
+        mapError: (error) => UserServiceError({
+          message: "Failed to fetch user",
+          context: { userId: id },
+          cause: error
+        })
+      });
+      
+      if (result.data) {
+        cache.set(id, result.data);
+      }
+      
+      return result;
+    },
+    
+    async createUser(input: CreateUserInput): Promise<Result<User, UserServiceError>> {
+      // Validation
+      if (!input.email.includes('@')) {
+        return UserServiceErr({
+          message: "Invalid email format",
+          context: { email: input.email },
+          cause: undefined
+        });
+      }
+      
+      // Save to database
+      return tryAsync({
+        try: () => db.users.create(input),
+        mapError: (error) => UserServiceError({
+          message: "Failed to create user",
+          context: { input },
+          cause: error
+        })
+      });
+    },
+    
+    clearCache() {
+      cache.clear();
+    }
+  };
+}
+
+// 3. Export the type
+export type UserService = ReturnType<typeof createUserService>;
+
+// 4. Create live instance with real dependencies
+export const UserServiceLive = createUserService(databaseInstance);
+```
+
+## Service with Multiple Dependencies
+
+Services often need multiple dependencies:
+
+```typescript
+const { PaymentServiceError, PaymentServiceErr } = createTaggedError("PaymentServiceError");
+const { EmailServiceError, EmailServiceErr } = createTaggedError("EmailServiceError");
+
+type PaymentServiceError = ReturnType<typeof PaymentServiceError>;
+type EmailServiceError = ReturnType<typeof EmailServiceError>;
+
+export function createOrderService(
+  db: Database,
+  paymentGateway: PaymentGateway,
+  emailService: EmailService
+) {
+  return {
+    async createOrder(input: OrderInput): Promise<Result<Order, OrderServiceError>> {
+      // 1. Validate inventory
+      const inventoryCheck = await checkInventory(input.items);
+      if (inventoryCheck.error) return inventoryCheck;
+      
+      // 2. Process payment
+      const paymentResult = await tryAsync({
+        try: () => paymentGateway.charge(input.payment),
+        mapError: (error) => PaymentServiceError({
+          message: "Payment processing failed",
+          context: { amount: input.payment.amount },
+          cause: error
+        })
+      });
+      
+      if (paymentResult.error) return paymentResult;
+      
+      // 3. Create order in database
+      const orderResult = await tryAsync({
+        try: () => db.orders.create({
+          ...input,
+          paymentId: paymentResult.data.id
+        }),
+        mapError: (error) => OrderServiceError({
+          message: "Failed to create order",
+          context: { input },
+          cause: error
+        })
+      });
+      
+      if (orderResult.error) {
+        // Rollback payment on failure
+        await paymentGateway.refund(paymentResult.data.id);
+        return orderResult;
+      }
+      
+      // 4. Send confirmation email (don't fail order if email fails)
+      await emailService.sendOrderConfirmation(orderResult.data);
+      
+      return Ok(orderResult.data);
+    }
+  };
+}
+```
+
+## Platform-Specific Services
+
+For services that need different implementations per platform:
+
+```typescript
+// types.ts - Define the interface
+export type NotificationService = {
+  notify(message: string): Promise<Result<void, NotificationServiceError>>;
+  requestPermission(): Promise<Result<boolean, NotificationServiceError>>;
+};
+
+const { NotificationServiceError, NotificationServiceErr } = 
+  createTaggedError("NotificationServiceError");
+  
+type NotificationServiceError = ReturnType<typeof NotificationServiceError>;
+
+// desktop.ts - Desktop implementation
+export function createNotificationServiceDesktop(): NotificationService {
+  return {
+    async notify(message) {
+      return tryAsync({
+        try: () => {
+          // Use native desktop notification API
+          new window.Notification("App Name", { body: message });
+        },
+        mapError: (error) => NotificationServiceError({
+          message: "Failed to show notification",
+          context: { message },
+          cause: error
+        })
+      });
+    },
+    
+    async requestPermission() {
+      // Desktop apps don't need permission
+      return Ok(true);
+    }
+  };
+}
+
+// web.ts - Web implementation
+export function createNotificationServiceWeb(): NotificationService {
+  return {
+    async notify(message) {
+      const permission = await Notification.requestPermission();
+      if (permission !== 'granted') {
+        return NotificationServiceErr({
+          message: "Notification permission denied",
+          context: { permission },
+          cause: undefined
+        });
+      }
+      
+      return tryAsync({
+        try: () => {
+          new Notification("App Name", { body: message });
+        },
+        mapError: (error) => NotificationServiceError({
+          message: "Failed to show notification",
+          context: { message },
+          cause: error
+        })
+      });
+    },
+    
+    async requestPermission() {
+      const permission = await Notification.requestPermission();
+      return Ok(permission === 'granted');
+    }
+  };
+}
+
+// index.ts - Runtime platform detection
+export const NotificationServiceLive = typeof window !== 'undefined' 
+  ? createNotificationServiceWeb()
+  : createNotificationServiceDesktop();
+```
+
+## Service Composition
+
+Services can compose other services:
+
+```typescript
+export function createAppService(
+  userService: UserService,
+  orderService: OrderService,
+  notificationService: NotificationService
+) {
+  return {
+    async purchaseProduct(userId: string, productId: string): Promise<Result<Order, AppServiceError>> {
+      // Get user
+      const userResult = await userService.getUser(userId);
+      if (userResult.error) return userResult;
+      
+      // Create order
+      const orderResult = await orderService.createOrder({
+        userId,
+        productId,
+        payment: userResult.data.defaultPaymentMethod
+      });
+      
+      if (orderResult.error) return orderResult;
+      
+      // Send notification (don't fail purchase if notification fails)
+      await notificationService.notify(
+        `Order ${orderResult.data.id} confirmed!`
+      );
+      
+      return Ok(orderResult.data);
+    }
+  };
+}
+```
+
+## Testing Services
+
+The factory pattern makes services easy to test:
+
+```typescript
+// user-service.test.ts
+import { describe, it, expect } from 'vitest';
+import { createUserService } from './user-service';
+import { Ok, Err } from 'wellcrafted/result';
+
+describe('UserService', () => {
+  it('should create user with valid input', async () => {
+    // Mock database
+    const mockDb = {
+      users: {
+        create: async (input) => ({ id: '123', ...input })
+      }
+    };
+    
+    const service = createUserService(mockDb);
+    const result = await service.createUser({
+      email: 'test@example.com',
+      name: 'Test User'
+    });
+    
+    expect(result).toEqual(Ok({
+      id: '123',
+      email: 'test@example.com',
+      name: 'Test User'
+    }));
+  });
+  
+  it('should reject invalid email', async () => {
+    const mockDb = { users: { create: async () => {} } };
+    const service = createUserService(mockDb);
+    
+    const result = await service.createUser({
+      email: 'invalid-email',
+      name: 'Test User'
+    });
+    
+    expect(result.error).toBeDefined();
+    expect(result.error?.message).toBe('Invalid email format');
+  });
+});
+```
+
+## Best Practices
+
+### 1. One Error Type Per Service
+
+Keep error types focused:
+
+```typescript
+// ✅ Good - specific error type
+const { UserServiceError } = createTaggedError("UserServiceError");
+
+// ❌ Bad - too generic
+const { ServiceError } = createTaggedError("ServiceError");
+```
+
+### 2. Include Context in Errors
+
+Always include relevant debugging information:
+
+```typescript
+return UserServiceErr({
+  message: "Failed to update user",
+  context: {
+    userId,        // Function parameter
+    updates,       // What was being updated
+    timestamp: new Date().toISOString() // When it happened
+  },
+  cause: originalError
+});
+```
+
+### 3. Handle Errors at the Right Level
+
+Transform low-level errors into domain-specific ones:
+
+```typescript
+const dbResult = await tryAsync({
+  try: () => db.query(sql),
+  mapError: (error) => DatabaseError({
+    message: "Database query failed",
+    context: { sql },
+    cause: error
+  })
+});
+
+if (dbResult.error) {
+  // Transform to service-level error
+  return UserServiceErr({
+    message: "Failed to fetch user preferences",
+    context: { userId },
+    cause: dbResult.error
+  });
+}
+```
+
+### 4. Keep Services Pure
+
+Services should only contain business logic:
+
+```typescript
+// ✅ Good - pure business logic
+export function createUserService(db: Database) {
+  return {
+    async getUser(id: string): Promise<Result<User, UserServiceError>> {
+      return tryAsync({
+        try: () => db.users.findById(id),
+        mapError: (error) => UserServiceError({
+          message: "Failed to fetch user",
+          context: { userId: id },
+          cause: error
+        })
+      });
+    }
+  };
+}
+
+// ❌ Bad - UI concerns in service
+export function createUserService(db: Database, toastNotifier: ToastNotifier) {
+  return {
+    async getUser(id: string) {
+      const result = await db.users.findById(id);
+      if (!result) {
+        toastNotifier.error("User not found!"); // UI concern!
+      }
+      return result;
+    }
+  };
+}
+```
+
+### 5. Use the Live Suffix Convention
+
+Follow the naming convention for singleton instances:
+
+```typescript
+// Service factory
+export function createUserService(db: Database) { /* ... */ }
+
+// Type export
+export type UserService = ReturnType<typeof createUserService>;
+
+// Live instance with real dependencies
+export const UserServiceLive = createUserService(databaseInstance);
+
+// Test instance with mocks
+export const UserServiceTest = createUserService(mockDatabase);
+```
+
+## Summary
+
+The factory function pattern with wellcrafted provides:
+
+- **Type Safety**: All errors visible in function signatures
+- **Testability**: Easy dependency injection
+- **Simplicity**: No class boilerplate
+- **Flexibility**: Platform-specific implementations
+- **Composability**: Services can build on each other
+
+By following these patterns, you'll build services that are robust, maintainable, and a joy to work with!

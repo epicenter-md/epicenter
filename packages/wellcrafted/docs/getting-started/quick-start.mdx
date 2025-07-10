@@ -1,0 +1,406 @@
+---
+title: 'Quick Start'
+description: 'Learn wellcrafted in 5 minutes with practical examples'
+icon: 'rocket'
+---
+
+# Quick Start
+
+This guide will get you productive with wellcrafted in just 5 minutes. We'll cover the essential patterns you'll use every day.
+
+## Your First Result
+
+Let's start by replacing a throwing function with a Result-returning one:
+
+```typescript
+import { Result, Ok } from "wellcrafted/result";
+import { createTaggedError } from "wellcrafted/error";
+
+// Define your error with the factory function
+const { ParseError, ParseErr } = createTaggedError("ParseError");
+type ParseError = ReturnType<typeof ParseError>;
+
+// Instead of throwing...
+function parseNumberOld(input: string): number {
+  const num = parseInt(input);
+  if (isNaN(num)) {
+    throw new Error("Invalid number");
+  }
+  return num;
+}
+
+// Return a Result!
+function parseNumber(input: string): Result<number, ParseError> {
+  const num = parseInt(input);
+  
+  if (isNaN(num)) {
+    // Use the Err variant for direct return
+    return ParseErr({
+      message: "Input is not a valid number",
+      context: { input },
+      cause: undefined
+    });
+  }
+  
+  return Ok(num);
+}
+```
+
+## Handling Results
+
+Now let's use our Result-returning function:
+
+```typescript
+const result = parseNumber("42");
+
+// Pattern 1: Destructuring (recommended)
+const { data, error } = result;
+if (error) {
+  console.error(`Error: ${error.message}`);
+  console.log("Invalid input:", error.context.input);
+} else {
+  console.log(`The number is ${data}`);
+}
+
+// Pattern 2: Type guards
+import { isOk, isErr } from "wellcrafted/result";
+
+if (isOk(result)) {
+  console.log(`Success: ${result.data}`);
+} else {
+  console.error(`Failed: ${result.error.message}`);
+}
+```
+
+## Wrapping Existing Code
+
+Most code you work with throws exceptions. Here's how to wrap it:
+
+### Synchronous Functions
+
+```typescript
+import { trySync } from "wellcrafted/result";
+import { createTaggedError } from "wellcrafted/error";
+
+const { JsonError, JsonErr } = createTaggedError("JsonError");
+type JsonError = ReturnType<typeof JsonError>;
+
+function parseJson<T>(text: string): Result<T, JsonError> {
+  return trySync({
+    try: () => JSON.parse(text),
+    mapError: (error) => JsonError({
+      message: "Failed to parse JSON",
+      context: { text: text.substring(0, 100) }, // Truncate for logging
+      cause: error
+    })
+  });
+}
+
+// Usage
+const { data, error } = parseJson<{ name: string }>('{"name": "Alice"}');
+if (error) {
+  console.error("Parse failed:", error.message);
+} else {
+  console.log("Parsed:", data.name); // TypeScript knows data exists!
+}
+```
+
+### Asynchronous Functions
+
+```typescript
+import { tryAsync } from "wellcrafted/result";
+import { createTaggedError } from "wellcrafted/error";
+
+const { ApiError, ApiErr } = createTaggedError("ApiError");
+type ApiError = ReturnType<typeof ApiError>;
+
+interface User {
+  id: number;
+  name: string;
+  email: string;
+}
+
+async function fetchUser(id: number): Promise<Result<User, ApiError>> {
+  return tryAsync({
+    try: async () => {
+      const response = await fetch(`/api/users/${id}`);
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+      return response.json();
+    },
+    mapError: (error) => ApiError({
+      message: "Failed to fetch user",
+      context: { userId: id },
+      cause: error
+    })
+  });
+}
+
+// Usage
+const userResult = await fetchUser(123);
+if (userResult.error) {
+  console.error("API call failed:", userResult.error);
+} else {
+  console.log("User:", userResult.data.name);
+}
+```
+
+## Real-World Example: Form Validation
+
+Here's a complete example showing how Results improve a common task:
+
+```typescript
+import { Result, Ok, Err } from "wellcrafted/result";
+import { type TaggedError } from "wellcrafted/error";
+
+// Define our error types
+type ValidationError = TaggedError<"ValidationError">;
+type SubmissionError = TaggedError<"SubmissionError">;
+
+// Form data interface
+interface SignupForm {
+  email: string;
+  password: string;
+  confirmPassword: string;
+}
+
+// Validation function
+function validateSignupForm(data: unknown): Result<SignupForm, ValidationError> {
+  // Type check
+  if (!data || typeof data !== 'object') {
+    return Err({
+      name: "ValidationError",
+      message: "Invalid form data",
+      context: { receivedType: typeof data },
+      cause: undefined
+    });
+  }
+  
+  const { email, password, confirmPassword } = data as any;
+  
+  // Email validation
+  if (!email || !email.includes('@')) {
+    return Err({
+      name: "ValidationError",
+      message: "Please enter a valid email address",
+      context: { field: 'email', value: email },
+      cause: undefined
+    });
+  }
+  
+  // Password validation
+  if (!password || password.length < 8) {
+    return Err({
+      name: "ValidationError",
+      message: "Password must be at least 8 characters",
+      context: { field: 'password' },
+      cause: undefined
+    });
+  }
+  
+  // Password match validation
+  if (password !== confirmPassword) {
+    return Err({
+      name: "ValidationError",
+      message: "Passwords do not match",
+      context: { field: 'confirmPassword' },
+      cause: undefined
+    });
+  }
+  
+  return Ok({ email, password, confirmPassword });
+}
+
+// Submission function
+async function submitSignup(
+  form: SignupForm
+): Promise<Result<{ userId: string }, SubmissionError>> {
+  return tryAsync({
+    try: async () => {
+      const response = await fetch('/api/signup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(form)
+      });
+      
+      if (!response.ok) {
+        const error = await response.text();
+        throw new Error(error);
+      }
+      
+      return response.json();
+    },
+    mapError: (error) => ({
+      name: "SubmissionError",
+      message: "Failed to create account",
+      context: { email: form.email },
+      cause: error
+    })
+  });
+}
+
+// Using it all together
+async function handleSignup(formData: unknown) {
+  // First, validate the form
+  const validationResult = validateSignupForm(formData);
+  
+  if (validationResult.error) {
+    console.error("Validation failed:", validationResult.error.message);
+    highlightField(validationResult.error.context.field);
+    return;
+  }
+  
+  // Then submit if valid
+  const submissionResult = await submitSignup(validationResult.data);
+  
+  if (submissionResult.error) {
+    console.error("Signup failed:", submissionResult.error.message);
+    showToast("Unable to create account. Please try again.");
+    return;
+  }
+  
+  // Success!
+  console.log("Account created:", submissionResult.data.userId);
+  redirectToDashboard();
+}
+```
+
+## Using Brand Types
+
+Prevent common mistakes with branded types:
+
+```typescript
+import { type Brand } from "wellcrafted/brand";
+
+// Create branded ID types
+type UserId = string & Brand<"UserId">;
+type PostId = string & Brand<"PostId">;
+
+// Functions that require specific types
+async function deletePost(userId: UserId, postId: PostId) {
+  // TypeScript ensures you can't mix up the parameters
+  return api.delete(`/users/${userId}/posts/${postId}`);
+}
+
+// Create branded values
+const userId = "user_123" as UserId;
+const postId = "post_456" as PostId;
+
+// This works
+await deletePost(userId, postId);
+
+// This fails at compile time!
+// await deletePost(postId, userId); // ❌ Type error
+```
+
+## Chaining Operations
+
+Here's how to chain multiple Result-returning operations:
+
+```typescript
+async function processOrder(orderId: string) {
+  // Fetch the order
+  const orderResult = await fetchOrder(orderId);
+  if (orderResult.error) return orderResult;
+  
+  // Validate the order
+  const validationResult = validateOrder(orderResult.data);
+  if (validationResult.error) return validationResult;
+  
+  // Process payment
+  const paymentResult = await processPayment(validationResult.data);
+  if (paymentResult.error) return paymentResult;
+  
+  // Ship the order
+  return shipOrder(paymentResult.data);
+}
+
+// Usage
+const result = await processOrder("order_123");
+if (result.error) {
+  // Handle any error from the chain
+  switch (result.error.name) {
+    case "OrderNotFoundError":
+      show404Page();
+      break;
+    case "ValidationError":
+      showValidationMessage(result.error.message);
+      break;
+    case "PaymentError":
+      showPaymentRetry();
+      break;
+    case "ShippingError":
+      notifyWarehouse(result.error);
+      break;
+  }
+} else {
+  showSuccessMessage("Order processed successfully!");
+}
+```
+
+## What You've Learned
+
+In just 5 minutes, you've learned how to:
+
+✅ Create Result-returning functions  
+✅ Handle Results with destructuring  
+✅ Wrap throwing code with trySync/tryAsync  
+✅ Build type-safe validation  
+✅ Use brand types to prevent errors  
+✅ Chain Result-returning operations  
+
+## Next Steps
+
+<CardGroup>
+  <Card title="Core Concepts" icon="lightbulb" href="/getting-started/core-concepts">
+    Understand the theory behind the patterns
+  </Card>
+  <Card title="Result Pattern Deep Dive" icon="code-branch" href="/core/result-pattern">
+    Master advanced Result techniques
+  </Card>
+  <Card title="Error System" icon="triangle-exclamation" href="/core/error-system">
+    Learn about structured error design
+  </Card>
+  <Card title="Real Examples" icon="laptop-code" href="/patterns/real-world">
+    See production-ready code
+  </Card>
+</CardGroup>
+
+## Quick Reference
+
+```typescript
+// Import what you need
+import { Result, Ok, Err, tryAsync, trySync, isOk, isErr } from "wellcrafted/result";
+import { type TaggedError } from "wellcrafted/error";
+import { type Brand } from "wellcrafted/brand";
+
+// Create Results
+Ok(value)                    // Success
+Err(error)                   // Failure
+
+// Handle Results
+const { data, error } = result;
+if (error) { /* handle */ } else { /* use data */ }
+
+// Wrap unsafe code
+trySync({ try: () => risky(), mapError: (e) => ... })
+tryAsync({ try: async () => risky(), mapError: (e) => ... })
+
+// Create tagged errors
+type MyError = TaggedError<"MyError">;
+const error: MyError = {
+  name: "MyError",
+  message: "Something went wrong",
+  context: { /* debug info */ },
+  cause: originalError
+};
+
+// Create brand types
+type MyId = string & Brand<"MyId">;
+const id = "123" as MyId;
+```
+
+<Note>
+Ready to dive deeper? Check out our [comprehensive guides](/guides/error-handling) or explore [framework integrations](/patterns/framework-integration).
+</Note>
