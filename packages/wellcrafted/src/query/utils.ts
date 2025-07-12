@@ -8,12 +8,12 @@ import type {
 	QueryKey,
 } from "@tanstack/query-core";
 import { Err, Ok, type Result, resolve } from "../result/index.js";
-import type { QueryOptions } from "@tanstack/query-core";
+import type { QueryObserverOptions } from "@tanstack/query-core";
 
 /**
  * Input options for defining a query.
  *
- * Extends TanStack Query's QueryOptions but replaces queryFn with resultQueryFn.
+ * Extends TanStack Query's QueryObserverOptions but replaces queryFn with resultQueryFn.
  * This type represents the configuration for creating a query definition with both
  * reactive and imperative interfaces for data fetching.
  *
@@ -27,7 +27,10 @@ export type DefineQueryInput<
 	TError,
 	TData = TQueryFnData,
 	TQueryKey extends QueryKey = QueryKey,
-> = Omit<QueryOptions<TQueryFnData, TError, TData, TQueryKey>, "queryFn"> & {
+> = Omit<
+	QueryObserverOptions<TQueryFnData, TError, TData, TQueryFnData, TQueryKey>,
+	"queryFn"
+> & {
 	queryKey: TQueryKey;
 	resultQueryFn: QueryFunction<Result<TQueryFnData, TError>, TQueryKey>;
 };
@@ -36,7 +39,7 @@ export type DefineQueryInput<
  * Output of defineQuery function.
  *
  * Provides both reactive and imperative interfaces for data fetching:
- * - `options()`: Returns config for use with createQuery() in Svelte components
+ * - `options()`: Returns config for use with createQuery() in components
  * - `fetchCached()`: Imperatively fetches data (useful for actions/event handlers)
  *
  * @template TQueryFnData - The type of data returned by the query function
@@ -50,7 +53,13 @@ export type DefineQueryOutput<
 	TData = TQueryFnData,
 	TQueryKey extends QueryKey = QueryKey,
 > = {
-	options: () => QueryOptions<TQueryFnData, TError, TData, TQueryKey>;
+	options: () => QueryObserverOptions<
+		TQueryFnData,
+		TError,
+		TData,
+		TQueryFnData,
+		TQueryKey
+	>;
 	fetchCached: () => Promise<Result<TData, TError>>;
 };
 
@@ -206,7 +215,13 @@ export function createQueryFactories(queryClient: QueryClient) {
 				if (result instanceof Promise) result = await result;
 				return resolve(result);
 			},
-		} satisfies QueryOptions<TQueryFnData, TError, TData, TQueryKey>;
+		} satisfies QueryObserverOptions<
+			TQueryFnData,
+			TError,
+			TData,
+			TQueryFnData,
+			TQueryKey
+		>;
 
 		return {
 			/**
