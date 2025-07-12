@@ -1,5 +1,11 @@
 # wellcrafted
 
+## 0.19.1
+
+### Patch Changes
+
+- a4efb1b: Replaces QueryOptions with QueryObserverOptions
+
 ## 0.19.0
 
 ### Minor Changes
