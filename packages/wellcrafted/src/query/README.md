@@ -1,6 +1,10 @@
 # Query Utilities
 
-A factory pattern for creating TanStack Query definitions with built-in Result type handling. This module provides a clean way to organize your data fetching layer in an RPC-like pattern.
+A set of utilities for integrating wellcrafted's Result types with TanStack Query, providing a clean pattern for organizing your data fetching layer.
+
+## Overview
+
+The query utilities solve a common integration challenge: your service functions return `Result<T, E>` types, but TanStack Query expects functions that either return data or throw errors. These utilities bridge that gap while providing two convenient interfaces for each query and mutation.
 
 ## Quick Start
 
