@@ -40,7 +40,7 @@ export type DefineQueryInput<
  *
  * Provides both reactive and imperative interfaces for data fetching:
  * - `options()`: Returns config for use with createQuery() in components
- * - `fetchCached()`: Imperatively fetches data (useful for actions/event handlers)
+ * - `fetch()`: Imperatively fetches data (useful for actions/event handlers)
  *
  * @template TQueryFnData - The type of data returned by the query function
  * @template TError - The type of error that can be thrown
@@ -60,7 +60,7 @@ export type DefineQueryOutput<
 		TQueryFnData,
 		TQueryKey
 	>;
-	fetchCached: () => Promise<Result<TData, TError>>;
+	fetch: () => Promise<Result<TData, TError>>;
 };
 
 /**
@@ -145,7 +145,7 @@ export type DefineMutationOutput<
  * const query = createQuery(userQuery.options());
  *
  * // Or imperatively
- * const { data, error } = await userQuery.fetchCached();
+ * const { data, error } = await userQuery.fetch();
  * ```
  */
 export function createQueryFactories(queryClient: QueryClient) {
@@ -157,7 +157,7 @@ export function createQueryFactories(queryClient: QueryClient) {
 	 *
 	 * ## Why use defineQuery?
 	 *
-	 * 1. **Dual Interface**: Provides both reactive (`.options()`) and imperative (`.fetchCached()`) APIs
+	 * 1. **Dual Interface**: Provides both reactive (`.options()`) and imperative (`.fetch()`) APIs
 	 * 2. **Automatic Error Handling**: Service functions return `Result<T, E>` types which are automatically
 	 *    unwrapped by TanStack Query, giving you proper error states in your components
 	 * 3. **Type Safety**: Full TypeScript support with proper inference for data and error types
@@ -175,7 +175,7 @@ export function createQueryFactories(queryClient: QueryClient) {
 	 *
 	 * @returns Query definition object with two methods:
 	 *   - `options()`: Returns config for use with createQuery() in Svelte components
-	 *   - `fetchCached()`: Imperatively fetches data (useful for actions/event handlers)
+	 * - `fetch()`: Imperatively fetches data (useful for actions/event handlers)
 	 *
 	 * @example
 	 * ```typescript
@@ -193,8 +193,7 @@ export function createQueryFactories(queryClient: QueryClient) {
 	 *
 	 * // Step 2b: Use imperatively in an action
 	 * async function prefetchUser() {
-	 *   const { data, error } = await userQuery.fetchCached();
-	 *   if (error) {
+	 *   const { data, error } = await userQuery.fetch();	 *   if (error) {
 	 *     console.error('Failed to fetch user:', error);
 	 *   }
 	 * }
@@ -242,12 +241,12 @@ export function createQueryFactories(queryClient: QueryClient) {
 			 * @returns Promise that resolves with a Result containing either the data or an error
 			 *
 			 * @example
-			 * const { data, error } = await userQuery.fetchCached();
+			 * const { data, error } = await userQuery.fetch();
 			 * if (error) {
 			 *   console.error('Failed to load user:', error);
 			 * }
 			 */
-			async fetchCached(): Promise<Result<TData, TError>> {
+			async fetch(): Promise<Result<TData, TError>> {
 				try {
 					return Ok(
 						await queryClient.fetchQuery<TQueryFnData, Error, TData, TQueryKey>(

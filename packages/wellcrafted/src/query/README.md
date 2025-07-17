@@ -255,7 +255,7 @@ const query = createQuery(rpc.users.getUser(userId).options());
 // Access: query.data, query.isPending, query.error
 ```
 
-### 2. Imperative Interface (`.execute()` / `.fetchCached()`)
+### 2. Imperative Interface (`.execute()` / `.fetch()`)
 
 Best for event handlers and workflows:
 
@@ -344,7 +344,7 @@ export const orders = {
   placeOrder: defineMutation({
     resultMutationFn: async (orderData: OrderInput) => {
       // Step 1: Validate inventory
-      const inventory = await rpc.inventory.checkAvailability.fetchCached();
+      const inventory = await rpc.inventory.checkAvailability.fetch();
       if (!hasStock(orderData.items, inventory.data)) {
         return Err({ code: 'OUT_OF_STOCK', message: 'Some items are out of stock' });
       }
@@ -399,7 +399,7 @@ describe('User Queries', () => {
       resultQueryFn: () => userService.getUser('1'),
     });
 
-    const result = await userQuery.fetchCached();
+    const result = await userQuery.fetch();
     expect(result.data).toEqual(mockUser);
   });
 });
