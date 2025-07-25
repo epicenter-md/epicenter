@@ -88,7 +88,7 @@ type JsonError = ReturnType<typeof JsonError>;
 function parseJson<T>(text: string): Result<T, JsonError> {
   return trySync({
     try: () => JSON.parse(text),
-    mapError: (error) => JsonError({
+    mapErr: (error) => JsonErr({
       message: "Failed to parse JSON",
       context: { text: text.substring(0, 100) }, // Truncate for logging
       cause: error
@@ -129,7 +129,7 @@ async function fetchUser(id: number): Promise<Result<User, ApiError>> {
       }
       return response.json();
     },
-    mapError: (error) => ApiError({
+    mapErr: (error) => ApiErr({
       message: "Failed to fetch user",
       context: { userId: id },
       cause: error

@@ -81,7 +81,7 @@ type ApiError = ReturnType<typeof ApiError>;
 // Wrap any throwing operation
 const { data, error } = await tryAsync({
   try: () => fetch('/api/user').then(r => r.json()),
-  mapError: (error) => ApiError({
+  mapErr: (error) => ApiErr({
     message: "Failed to fetch user",
     context: { endpoint: '/api/user' },
     cause: error
@@ -182,7 +182,7 @@ if (error) {
 // Synchronous
 const result = trySync({
   try: () => JSON.parse(jsonString),
-  mapError: (error) => ({
+  mapErr: (error) => Err({
     name: "ParseError",
     message: "Invalid JSON",
     context: { input: jsonString },
@@ -193,7 +193,7 @@ const result = trySync({
 // Asynchronous  
 const result = await tryAsync({
   try: () => fetch(url),
-  mapError: (error) => ({
+  mapErr: (error) => Err({
     name: "NetworkError",
     message: "Request failed",
     context: { url },
@@ -230,7 +230,7 @@ export function createUserService(db: Database) {
 
       return tryAsync({
         try: () => db.save(input),
-        mapError: (error) => DatabaseError({
+        mapErr: (error) => DatabaseErr({
           message: "Failed to save user",
           context: { operation: 'createUser', input },
           cause: error
@@ -241,7 +241,7 @@ export function createUserService(db: Database) {
     async getUser(id: string): Promise<Result<User | null, DatabaseError>> {
       return tryAsync({
         try: () => db.findById(id),
-        mapError: (error) => DatabaseError({
+        mapErr: (error) => DatabaseErr({
           message: "Failed to fetch user",
           context: { userId: id },
           cause: error

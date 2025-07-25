@@ -86,7 +86,7 @@ type ApiError = TaggedError<"ApiError">;
 async function fetchUser(id: string): Promise<Result<User, ApiError>> {
   return tryAsync<User, ApiError>({
     try: () => fetchUserOld(id),
-    mapError: (error) => ({
+    mapErr: (error) => Err({
       name: "ApiError",
       message: "Failed to fetch user",
       context: { userId: id, endpoint: `/api/users/${id}` },
@@ -149,7 +149,7 @@ async function saveUserThrowing(user: User): Promise<void> {
 async function saveUser(user: User): Promise<Result<void, DatabaseError>> {
   return tryAsync({
     try: () => saveUserThrowing(user),
-    mapError: (error) => ({
+    mapErr: (error) => Err({
       name: "DatabaseError",
       message: "Failed to save user",
       context: { userId: user.id },
@@ -189,7 +189,7 @@ function parseConfig(json: string): Result<Config, ConfigError> {
       const parsed = JSON.parse(json);
       return validateConfig(parsed);
     },
-    mapError: (error) => ({
+    mapErr: (error) => Err({
       name: "ConfigError",
       message: "Invalid configuration",
       context: { rawJson: json.substring(0, 100) },
@@ -436,7 +436,7 @@ class UserService {
     // Step 4: Hash password with error handling
     const hashResult = await tryAsync<string, DatabaseError>({
       try: () => bcrypt.hash(input.password, 10),
-      mapError: (error) => ({
+      mapErr: (error) => Err({
         name: "DatabaseError",
         message: "Failed to hash password",
         context: { operation: 'bcrypt.hash' },
@@ -491,7 +491,7 @@ class UserService {
   ): Result<void, UserExistsError | DatabaseError> {
     const result = await tryAsync<User | null, DatabaseError>({
       try: () => this.db.findByEmail(email),
-      mapError: (error) => ({
+      mapErr: (error) => Err({
         name: "DatabaseError",
         message: "Failed to check user existence",
         context: { email, operation: 'findByEmail' },

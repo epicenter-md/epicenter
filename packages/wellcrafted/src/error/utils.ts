@@ -4,7 +4,7 @@ import { Err } from "../result/result.js";
 /**
  * Extracts a readable error message from an unknown error value
  *
- * This utility is commonly used in mapError functions when converting
+ * This utility is commonly used in mapErr functions when converting
  * unknown errors to typed error objects in the Result system.
  *
  * @param error - The unknown error to extract a message from
@@ -24,10 +24,10 @@ import { Err } from "../result/result.js";
  * const unknownError = { code: 500, details: "Server error" };
  * const message3 = extractErrorMessage(unknownError); // '{"code":500,"details":"Server error"}'
  *
- * // Used in mapError function
+ * // Used in mapErr function
  * const result = await tryAsync({
  *   try: () => riskyOperation(),
- *   mapError: (error): NetworkError => ({
+ *   mapErr: (error) => Err({
  *     name: "NetworkError",
  *     message: extractErrorMessage(error),
  *     context: { operation: "riskyOperation" },

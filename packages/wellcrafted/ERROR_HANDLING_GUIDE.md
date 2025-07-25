@@ -95,28 +95,28 @@ export function createTryFns<TName extends string>(name: TName) {
 	return {
 		trySync: <T>({
 			try: operation,
-			mapError,
+			mapErr,
 		}: {
 			try: () => T;
-			mapError: (error: unknown) => Omit<TError, "name">;
+			mapErr: (error: unknown) => Omit<TError, "name">;
 		}) =>
 			trySync<T, TError>({
 				try: operation,
-				mapError: (error) => ({
-					...mapError(error),
+				mapErr: (error) => Err({
+					...mapErr(error),
 					name,
 				}),
 			}),
 		tryAsync: <T>({
 			try: operation,
-			mapError,
+			mapErr,
 		}: {
 			try: () => Promise<T>;
-			mapError: (error: unknown) => Omit<TError, "name">;
+			mapErr: (error: unknown) => Omit<TError, "name">;
 		}) =>
 			tryAsync<T, TError>({
 				try: operation,
-				mapError: (error) => ({ ...mapError(error), name }),
+				mapErr: (error) => Err({ ...mapErr(error), name }),
 			}),
 	};
 }
@@ -139,7 +139,7 @@ export function createClipboardServiceExtension(): ClipboardService {
     setClipboardText: (text) =>
       clipboardService.tryAsync({
         try: () => navigator.clipboard.writeText(text),
-        mapError: (error) => ({
+        mapErr: (error) => ({
           message: 'Unable to write to clipboard',
           context: { text },
           cause: error,
@@ -149,7 +149,7 @@ export function createClipboardServiceExtension(): ClipboardService {
     writeTextToCursor: (text) =>
       clipboardService.trySync({
         try: () => writeTextToCursor(text),
-        mapError: (error) => ({
+        mapErr: (error) => ({
           message: 'Unable to paste text to cursor',
           context: { text },
           cause: error,
@@ -174,7 +174,7 @@ const { tryAsync } = createTryFns('MyError');
 await someFunction(tryAsync);
 
 // Without generator - plain objects are simpler
-await tryAsync({ try: operation, mapError: mapper });
+await tryAsync({ try: operation, mapErr: mapper });
 ```
 
 #### 3. **Hidden Error Structure**

@@ -274,26 +274,24 @@ export function isErr<T, E>(result: Result<T, E>): result is Err<E> {
  * This function attempts to execute the `operation`.
  * - If `operation` completes successfully, its return value is wrapped in an `Ok<T>` variant.
  * - If `operation` throws an exception, the caught exception (of type `unknown`) is passed to
- *   the `mapError` function. `mapError` is responsible for transforming this `unknown`
- *   exception into a well-typed error value of type `E`. This error value is then wrapped
- *   in an `Err<E>` variant.
+ *   the `mapErr` function. `mapErr` is responsible for transforming this `unknown`
+ *   exception into an `Err<E>` variant containing a well-typed error value of type `E`.
  *
  * @template T - The type of the success value returned by the `operation` if it succeeds.
- * @template E - The type of the error value produced by `mapError` if the `operation` fails.
+ * @template E - The type of the error value produced by `mapErr` if the `operation` fails.
  * @param options - An object containing the operation and error mapping function.
  * @param options.try - The synchronous operation to execute. This function is expected to return a value of type `T`.
- * @param options.mapError - A function that takes the `unknown` exception caught from `options.try`
- *                         and transforms it into a specific error value of type `E`. This function
- *                         is crucial for creating a well-typed error for the `Err<E>` variant.
- * @returns A `Result<T, E>`: `Ok<T>` if `options.try` succeeds, or `Err<E>` if it throws and `options.mapError` provides an error value.
+ * @param options.mapErr - A function that takes the `unknown` exception caught from `options.try`
+ *                        and transforms it into an `Err<E>` variant containing a specific error value of type `E`.
+ * @returns A `Result<T, E>`: `Ok<T>` if `options.try` succeeds, or `Err<E>` if it throws and `options.mapErr` provides an error variant.
  * @example
  * ```ts
  * function parseJson(jsonString: string): Result<object, SyntaxError> {
  *   return trySync({
  *     try: () => JSON.parse(jsonString),
- *     mapError: (err: unknown) => {
- *       if (err instanceof SyntaxError) return err;
- *       return new SyntaxError("Unknown parsing error");
+ *     mapErr: (err: unknown) => {
+ *       if (err instanceof SyntaxError) return Err(err);
+ *       return Err(new SyntaxError("Unknown parsing error"));
  *     }
  *   });
  * }
@@ -307,16 +305,16 @@ export function isErr<T, E>(result: Result<T, E>): result is Err<E> {
  */
 export function trySync<T, E>({
 	try: operation,
-	mapError,
+	mapErr,
 }: {
 	try: () => T;
-	mapError: (error: unknown) => E;
+	mapErr: (error: unknown) => Err<E>;
 }): Result<T, E> {
 	try {
 		const data = operation();
 		return Ok(data);
 	} catch (error) {
-		return Err(mapError(error));
+		return mapErr(error);
 	}
 }
 
@@ -326,29 +324,29 @@ export function trySync<T, E>({
  * This function attempts to execute the asynchronous `operation`.
  * - If the `Promise` returned by `operation` resolves successfully, its resolved value is wrapped in an `Ok<T>` variant.
  * - If the `Promise` returned by `operation` rejects, or if `operation` itself throws an exception synchronously,
- *   the caught exception/rejection reason (of type `unknown`) is passed to the `mapError` function.
- *   `mapError` is responsible for transforming this `unknown` error into a well-typed error value of type `E`.
- *   This error value is then wrapped in an `Err<E>` variant.
+ *   the caught exception/rejection reason (of type `unknown`) is passed to the `mapErr` function.
+ *   `mapErr` is responsible for transforming this `unknown` error into an `Err<E>` variant containing
+ *   a well-typed error value of type `E`.
  *
  * The entire outcome (`Ok<T>` or `Err<E>`) is wrapped in a `Promise`.
  *
  * @template T - The type of the success value the `Promise` from `operation` resolves to.
- * @template E - The type of the error value produced by `mapError` if the `operation` fails or rejects.
+ * @template E - The type of the error value produced by `mapErr` if the `operation` fails or rejects.
  * @param options - An object containing the asynchronous operation and error mapping function.
  * @param options.try - The asynchronous operation to execute. This function must return a `Promise<T>`.
- * @param options.mapError - A function that takes the `unknown` exception/rejection reason caught from `options.try`
- *                         and transforms it into a specific error value of type `E`. This function
- *                         is crucial for creating a well-typed error for the `Err<E>` variant.
+ * @param options.mapErr - A function that takes the `unknown` exception/rejection reason caught from `options.try`
+ *                        and transforms it into an `Err<E>` variant containing a specific error value of type `E`.
+ *                        This function must return `Err<E>` directly.
  * @returns A `Promise` that resolves to a `Result<T, E>`: `Ok<T>` if `options.try`'s `Promise` resolves,
- *          or `Err<E>` if it rejects/throws and `options.mapError` provides an error value.
+ *          or `Err<E>` if it rejects/throws and `options.mapErr` provides an error variant.
  * @example
  * ```ts
  * async function fetchData(url: string): Promise<Result<Response, Error>> {
  *   return tryAsync({
  *     try: async () => fetch(url),
- *     mapError: (err: unknown) => {
- *       if (err instanceof Error) return err;
- *       return new Error("Network request failed");
+ *     mapErr: (err: unknown) => {
+ *       if (err instanceof Error) return Err(err);
+ *       return Err(new Error("Network request failed"));
  *     }
  *   });
  * }
@@ -367,16 +365,16 @@ export function trySync<T, E>({
  */
 export async function tryAsync<T, E>({
 	try: operation,
-	mapError,
+	mapErr,
 }: {
 	try: () => Promise<T>;
-	mapError: (error: unknown) => E;
+	mapErr: (error: unknown) => Err<E>;
 }): Promise<Result<T, E>> {
 	try {
 		const data = await operation();
 		return Ok(data);
 	} catch (error) {
-		return Err(mapError(error));
+		return mapErr(error);
 	}
 }
 
