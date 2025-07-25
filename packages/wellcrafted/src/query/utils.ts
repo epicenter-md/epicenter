@@ -40,7 +40,8 @@ export type DefineQueryInput<
  *
  * Provides both reactive and imperative interfaces for data fetching:
  * - `options()`: Returns config for use with createQuery() in components
- * - `fetch()`: Imperatively fetches data (useful for actions/event handlers)
+ * - `fetch()`: Always attempts to fetch data (from cache if fresh, network if stale)
+ * - `ensure()`: Guarantees data availability, preferring cached data (recommended for preloaders)
  *
  * @template TQueryFnData - The type of data returned by the query function
  * @template TError - The type of error that can be thrown
@@ -61,6 +62,7 @@ export type DefineQueryOutput<
 		TQueryKey
 	>;
 	fetch: () => Promise<Result<TData, TError>>;
+	ensure: () => Promise<Result<TData, TError>>;
 };
 
 /**
@@ -78,7 +80,7 @@ export type DefineQueryOutput<
 export type DefineMutationInput<
 	TData,
 	TError,
-	TVariables,
+	TVariables = void,
 	TContext = unknown,
 > = Omit<MutationOptions<TData, TError, TVariables, TContext>, "mutationFn"> & {
 	mutationKey: MutationKey;
@@ -100,7 +102,7 @@ export type DefineMutationInput<
 export type DefineMutationOutput<
 	TData,
 	TError,
-	TVariables,
+	TVariables = void,
 	TContext = unknown,
 > = {
 	options: () => MutationOptions<TData, TError, TVariables, TContext>;
@@ -173,9 +175,10 @@ export function createQueryFactories(queryClient: QueryClient) {
 	 * @param options.resultQueryFn - Function that fetches data and returns a Result type
 	 * @param options.* - Any other TanStack Query options (staleTime, refetchInterval, etc.)
 	 *
-	 * @returns Query definition object with two methods:
+	 * @returns Query definition object with three methods:
 	 *   - `options()`: Returns config for use with createQuery() in Svelte components
-	 * - `fetch()`: Imperatively fetches data (useful for actions/event handlers)
+	 *   - `fetch()`: Always attempts to fetch data (from cache if fresh, network if stale)
+	 *   - `ensure()`: Guarantees data availability, preferring cached data (recommended for preloaders)
 	 *
 	 * @example
 	 * ```typescript
@@ -191,9 +194,17 @@ export function createQueryFactories(queryClient: QueryClient) {
 	 * // $query.data is User | undefined
 	 * // $query.error is ApiError | null
 	 *
-	 * // Step 2b: Use imperatively in an action
-	 * async function prefetchUser() {
-	 *   const { data, error } = await userQuery.fetch();	 *   if (error) {
+	 * // Step 2b: Use imperatively in preloaders (recommended)
+	 * export const load = async () => {
+	 *   const { data, error } = await userQuery.ensure();
+	 *   if (error) throw error;
+	 *   return { user: data };
+	 * };
+	 *
+	 * // Step 2c: Use imperatively for explicit refresh
+	 * async function refreshUser() {
+	 *   const { data, error } = await userQuery.fetch();
+	 *   if (error) {
 	 *     console.error('Failed to fetch user:', error);
 	 *   }
 	 * }
@@ -231,16 +242,23 @@ export function createQueryFactories(queryClient: QueryClient) {
 			options: () => newOptions,
 
 			/**
-			 * Fetches data for this query, returning cached data if fresh or refetching if stale/missing.
+			 * Fetches data for this query using queryClient.fetchQuery().
 			 *
-			 * This method is perfect for:
-			 * - Prefetching data before navigation
-			 * - Loading data in response to user actions
-			 * - Accessing query data outside of components
+			 * This method ALWAYS evaluates freshness and will refetch if data is stale.
+			 * It wraps TanStack Query's fetchQuery method, which returns cached data if fresh
+			 * or makes a network request if the data is stale or missing.
+			 *
+			 * **When to use fetch():**
+			 * - When you explicitly want to check data freshness
+			 * - For user-triggered refresh actions
+			 * - When you need the most up-to-date data
+			 *
+			 * **For preloaders, use ensure() instead** - it's more efficient for initial data loading.
 			 *
 			 * @returns Promise that resolves with a Result containing either the data or an error
 			 *
 			 * @example
+			 * // Good for user-triggered refresh
 			 * const { data, error } = await userQuery.fetch();
 			 * if (error) {
 			 *   console.error('Failed to load user:', error);
@@ -250,6 +268,51 @@ export function createQueryFactories(queryClient: QueryClient) {
 				try {
 					return Ok(
 						await queryClient.fetchQuery<TQueryFnData, Error, TData, TQueryKey>(
+							{
+								queryKey: newOptions.queryKey,
+								queryFn: newOptions.queryFn,
+							},
+						),
+					);
+				} catch (error) {
+					return Err(error as TError);
+				}
+			},
+
+			/**
+			 * Ensures data is available for this query using queryClient.ensureQueryData().
+			 *
+			 * This method PRIORITIZES cached data and only calls fetchQuery internally if no cached
+			 * data exists. It wraps TanStack Query's ensureQueryData method, which is perfect for
+			 * guaranteeing data availability with minimal network requests.
+			 *
+			 * **This is the RECOMMENDED method for preloaders** because:
+			 * - It returns cached data immediately if available
+			 * - It updates the query client cache properly
+			 * - It minimizes network requests during navigation
+			 * - It ensures components have data ready when they mount
+			 *
+			 * **When to use ensure():**
+			 * - Route preloaders and data loading functions
+			 * - Initial component data requirements
+			 * - When cached data is acceptable for immediate display
+			 *
+			 * @returns Promise that resolves with a Result containing either the data or an error
+			 *
+			 * @example
+			 * // Perfect for preloaders
+			 * export const load = async () => {
+			 *   const { data, error } = await userQuery.ensure();
+			 *   if (error) {
+			 *     throw error;
+			 *   }
+			 *   return { user: data };
+			 * };
+			 */
+			async ensure(): Promise<Result<TData, TError>> {
+				try {
+					return Ok(
+						await queryClient.ensureQueryData<TQueryFnData, Error, TData, TQueryKey>(
 							{
 								queryKey: newOptions.queryKey,
 								queryFn: newOptions.queryFn,
@@ -332,7 +395,7 @@ export function createQueryFactories(queryClient: QueryClient) {
 	 * - Sequential operations that depend on each other
 	 * - Non-component code that needs to trigger mutations
 	 */
-	const defineMutation = <TData, TError, TVariables, TContext = unknown>(
+	const defineMutation = <TData, TError, TVariables = void, TContext = unknown>(
 		options: DefineMutationInput<TData, TError, TVariables, TContext>,
 	): DefineMutationOutput<TData, TError, TVariables, TContext> => {
 		const newOptions = {
