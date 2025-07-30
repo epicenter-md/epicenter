@@ -1,5 +1,11 @@
 # wellcrafted
 
+## 0.21.2
+
+### Patch Changes
+
+- 851983e: Updates types to include `TData` generics for improved type accuracy
+
 ## 0.21.1
 
 ### Patch Changes
