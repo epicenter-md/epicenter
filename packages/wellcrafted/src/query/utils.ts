@@ -1,14 +1,14 @@
 import type {
+	DefaultError,
 	MutationFunction,
 	MutationKey,
 	MutationOptions,
 	QueryClient,
 	QueryFunction,
-	QueryFunctionContext,
 	QueryKey,
+	QueryObserverOptions,
 } from "@tanstack/query-core";
 import { Err, Ok, type Result, resolve } from "../result/index.js";
-import type { QueryObserverOptions } from "@tanstack/query-core";
 
 /**
  * Input options for defining a query.
@@ -23,12 +23,13 @@ import type { QueryObserverOptions } from "@tanstack/query-core";
  * @template TQueryKey - The type of the query key
  */
 export type DefineQueryInput<
-	TQueryFnData,
-	TError,
+	TQueryFnData = unknown,
+	TError = DefaultError,
 	TData = TQueryFnData,
+	TQueryData = TQueryFnData,
 	TQueryKey extends QueryKey = QueryKey,
 > = Omit<
-	QueryObserverOptions<TQueryFnData, TError, TData, TQueryFnData, TQueryKey>,
+	QueryObserverOptions<TQueryFnData, TError, TData, TQueryData, TQueryKey>,
 	"queryFn"
 > & {
 	queryKey: TQueryKey;
@@ -49,16 +50,17 @@ export type DefineQueryInput<
  * @template TQueryKey - The type of the query key
  */
 export type DefineQueryOutput<
-	TQueryFnData,
-	TError,
+	TQueryFnData = unknown,
+	TError = DefaultError,
 	TData = TQueryFnData,
+	TQueryData = TQueryFnData,
 	TQueryKey extends QueryKey = QueryKey,
 > = {
 	options: () => QueryObserverOptions<
 		TQueryFnData,
 		TError,
 		TData,
-		TQueryFnData,
+		TQueryData,
 		TQueryKey
 	>;
 	fetch: () => Promise<Result<TData, TError>>;
@@ -211,16 +213,23 @@ export function createQueryFactories(queryClient: QueryClient) {
 	 * ```
 	 */
 	const defineQuery = <
-		TQueryFnData,
-		TError,
+		TQueryFnData = unknown,
+		TError = DefaultError,
 		TData = TQueryFnData,
+		TQueryData = TQueryFnData,
 		TQueryKey extends QueryKey = QueryKey,
 	>(
-		options: DefineQueryInput<TQueryFnData, TError, TData, TQueryKey>,
-	): DefineQueryOutput<TQueryFnData, TError, TData, TQueryKey> => {
+		options: DefineQueryInput<
+			TQueryFnData,
+			TError,
+			TData,
+			TQueryData,
+			TQueryKey
+		>,
+	): DefineQueryOutput<TQueryFnData, TError, TData, TQueryData, TQueryKey> => {
 		const newOptions = {
 			...options,
-			queryFn: async (context: QueryFunctionContext<TQueryKey>) => {
+			queryFn: async (context) => {
 				let result = options.resultQueryFn(context);
 				if (result instanceof Promise) result = await result;
 				return resolve(result);
@@ -229,7 +238,7 @@ export function createQueryFactories(queryClient: QueryClient) {
 			TQueryFnData,
 			TError,
 			TData,
-			TQueryFnData,
+			TQueryData,
 			TQueryKey
 		>;
 
@@ -314,7 +323,7 @@ export function createQueryFactories(queryClient: QueryClient) {
 					return Ok(
 						await queryClient.ensureQueryData<
 							TQueryFnData,
-							Error,
+							TError,
 							TData,
 							TQueryKey
 						>({
