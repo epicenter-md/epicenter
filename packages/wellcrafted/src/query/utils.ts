@@ -312,12 +312,15 @@ export function createQueryFactories(queryClient: QueryClient) {
 			async ensure(): Promise<Result<TData, TError>> {
 				try {
 					return Ok(
-						await queryClient.ensureQueryData<TQueryFnData, Error, TData, TQueryKey>(
-							{
-								queryKey: newOptions.queryKey,
-								queryFn: newOptions.queryFn,
-							},
-						),
+						await queryClient.ensureQueryData<
+							TQueryFnData,
+							Error,
+							TData,
+							TQueryKey
+						>({
+							queryKey: newOptions.queryKey,
+							queryFn: newOptions.queryFn,
+						}),
 					);
 				} catch (error) {
 					return Err(error as TError);
