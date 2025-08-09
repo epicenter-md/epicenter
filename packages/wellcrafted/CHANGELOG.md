@@ -1,5 +1,11 @@
 # wellcrafted
 
+## 0.21.3
+
+### Patch Changes
+
+- 2a966f8: Fixes isResult() to allow { data: null, error: null } as valid Ok(null) result
+
 ## 0.21.2
 
 ### Patch Changes
