@@ -175,7 +175,7 @@ export type UnwrapErr<R extends Result<unknown, unknown>> = R extends Err<
  * A value is considered a valid `Result` if:
  * 1. It is a non-null object.
  * 2. It has both `data` and `error` properties.
- * 3. Exactly one of `data` or `error` is `null`. The other must be non-`null`.
+ * 3. At least one of the `data` or `error` channels is `null`. Both being `null` represents `Ok(null)`.
  *
  * This function does not validate the types of `data` or `error` beyond `null` checks.
  *
@@ -208,13 +208,10 @@ export function isResult<T = unknown, E = unknown>(
 	const hasErrorProperty = "error" in value;
 	if (!hasDataProperty || !hasErrorProperty) return false;
 
-	const isBothNull = value.data === null && value.error === null;
-	if (isBothNull) return false;
-
 	const isNeitherNull = value.data !== null && value.error !== null;
 	if (isNeitherNull) return false;
 
-	// Exactly one property is null
+	// At least one channel is null (valid Result)
 	return true;
 }
 
@@ -389,7 +386,7 @@ export async function tryAsync<T, E>({
  *
  * This is useful when working with APIs that might return either direct values or Results,
  * allowing you to normalize them to the actual value or propagate errors via throwing.
- * 
+ *
  * Use `resolve` when the input might or might not be a Result.
  * Use `unwrap` when you know the input is definitely a Result.
  *
