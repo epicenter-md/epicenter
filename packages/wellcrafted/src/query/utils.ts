@@ -63,8 +63,8 @@ export type DefineQueryOutput<
 		TQueryData,
 		TQueryKey
 	>;
-	fetch: () => Promise<Result<TData, TError>>;
-	ensure: () => Promise<Result<TData, TError>>;
+	fetch: () => Promise<Result<TQueryData, TError>>;
+	ensure: () => Promise<Result<TQueryData, TError>>;
 };
 
 /**
@@ -273,15 +273,18 @@ export function createQueryFactories(queryClient: QueryClient) {
 			 *   console.error('Failed to load user:', error);
 			 * }
 			 */
-			async fetch(): Promise<Result<TData, TError>> {
+			async fetch(): Promise<Result<TQueryData, TError>> {
 				try {
 					return Ok(
-						await queryClient.fetchQuery<TQueryFnData, Error, TData, TQueryKey>(
-							{
-								queryKey: newOptions.queryKey,
-								queryFn: newOptions.queryFn,
-							},
-						),
+						await queryClient.fetchQuery<
+							TQueryFnData,
+							TError,
+							TQueryData,
+							TQueryKey
+						>({
+							queryKey: newOptions.queryKey,
+							queryFn: newOptions.queryFn,
+						}),
 					);
 				} catch (error) {
 					return Err(error as TError);
@@ -318,13 +321,13 @@ export function createQueryFactories(queryClient: QueryClient) {
 			 *   return { user: data };
 			 * };
 			 */
-			async ensure(): Promise<Result<TData, TError>> {
+			async ensure(): Promise<Result<TQueryData, TError>> {
 				try {
 					return Ok(
 						await queryClient.ensureQueryData<
 							TQueryFnData,
 							TError,
-							TData,
+							TQueryData,
 							TQueryKey
 						>({
 							queryKey: newOptions.queryKey,
