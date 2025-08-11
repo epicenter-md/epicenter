@@ -475,12 +475,6 @@ function useUser(id: number) {
 - **`TaggedError<T>`** - Structured error type
 - **`Brand<T, B>`** - Branded type wrapper
 
-## Learn More
-
-- 📖 [Full Documentation](https://github.com/your-repo/wellcrafted/wiki)
-- 🚀 [Examples](https://github.com/your-repo/wellcrafted/tree/main/examples)
-- 💬 [Discussions](https://github.com/your-repo/wellcrafted/discussions)
-
 ## License
 
 MIT
