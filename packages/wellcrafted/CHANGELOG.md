@@ -1,5 +1,11 @@
 # wellcrafted
 
+## 0.21.4
+
+### Patch Changes
+
+- e07df18: Fixes QueryClient cache-access functions to return TQueryData instead of TData
+
 ## 0.21.3
 
 ### Patch Changes
