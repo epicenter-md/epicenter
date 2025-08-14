@@ -280,7 +280,7 @@ async function fulfillOrder(
   // Process payment with error transformation
   const paymentResult = await tryAsync({
     try: () => paymentGateway.charge(orderResult.data),
-    mapError: (error) => ({
+    mapErr: (error) => Err({
       name: "PaymentError" as const,
       message: "Payment processing failed",
       context: { orderId, amount: orderResult.data.total },
@@ -347,6 +347,23 @@ wellcrafted's core concepts work together to create a more reliable development 
 
 These patterns aren't just about catching bugs - they're about designing systems where bugs are less likely to occur in the first place.
 
+## See Also
+
+<CardGroup>
+  <Card title="Quick Start Guide" icon="rocket" href="/getting-started/quick-start">
+    Apply these concepts with hands-on examples and real code
+  </Card>
+  <Card title="Real-World Examples" icon="code" href="/patterns/real-world">
+    See how these patterns scale in production applications
+  </Card>
+  <Card title="Result Pattern Deep Dive" icon="code-branch" href="/core/result-pattern">
+    Master the discriminated union that powers wellcrafted
+  </Card>
+  <Card title="Error System Design" icon="triangle-exclamation" href="/core/error-system">
+    Deep dive into TaggedErrors and structured error handling
+  </Card>
+</CardGroup>
+
 <Note>
-Ready to apply these concepts? Check out the [Quick Start guide](/getting-started/quick-start) for hands-on examples, or dive into [real-world patterns](/patterns/real-world) to see how these ideas scale.
+Ready to apply these concepts? Start with the [Quick Start guide](/getting-started/quick-start) for hands-on examples.
 </Note>

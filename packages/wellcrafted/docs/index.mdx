@@ -81,14 +81,14 @@ async function saveUser(user: User): Promise<Result<void, ValidationError | Auth
 ## Quick Example
 
 ```typescript
-import { tryAsync } from "wellcrafted/result";
+import { tryAsync, Err } from "wellcrafted/result";
 import { type TaggedError } from "wellcrafted/error";
 
 type ApiError = TaggedError<"ApiError">;
 
 const { data, error } = await tryAsync<User, ApiError>({
   try: () => fetch('/api/user').then(r => r.json()),
-  mapError: (error) => ({
+  mapErr: (error) => Err({
     name: "ApiError",
     message: "Failed to fetch user",
     context: { endpoint: '/api/user' },
@@ -121,4 +121,21 @@ if (error) {
 
 wellcrafted is built on the principle of making the implicit explicit. Instead of hidden exceptions that can crash your application, errors become data that you can work with using TypeScript's powerful type system.
 
-Learn more about our [design principles](/philosophy/design-principles) and why we believe error handling should be delightful.
+Learn more about our [design principles](/philosophy/design-principles), explore our [production reliability approach](/philosophy/production-reliability), and discover why we believe [developer experience](/philosophy/developer-experience) should be delightful.
+
+## Related Resources
+
+<CardGroup>
+  <Card title="Error System Design" icon="triangle-exclamation" href="/core/error-system">
+    Deep dive into TaggedErrors and structured error handling
+  </Card>
+  <Card title="Brand Types" icon="fingerprint" href="/core/brand-types">
+    Prevent bugs with compile-time type distinctions
+  </Card>
+  <Card title="Service Architecture" icon="layer-group" href="/patterns/service-layer">
+    Production patterns for building robust services
+  </Card>
+  <Card title="Framework Integrations" icon="plug" href="/integrations/svelte-tanstack">
+    Use wellcrafted with your favorite frameworks
+  </Card>
+</CardGroup>

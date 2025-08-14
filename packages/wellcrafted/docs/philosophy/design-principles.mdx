@@ -1,0 +1,333 @@
+---
+title: 'Design Principles'
+description: 'The philosophical foundations behind wellcrafted'
+icon: 'lightbulb'
+---
+
+# Design Principles
+
+> "The best programs are written not by adding features, but by removing them."  
+> — Antoine de Saint-Exupéry (paraphrased)
+
+wellcrafted is built on four core principles that guide every design decision. These aren't abstract ideals—they're practical philosophies proven in 22,824 lines of production TypeScript code.
+
+## 1. Errors as Values, Not Control Flow
+
+### The Problem: Hidden Exceptions
+
+Most JavaScript code treats errors as invisible, exceptional events:
+
+```typescript
+// What can go wrong here? 🤷
+async function saveUser(user: User): Promise<User> {
+  await validateUser(user);     // Throws ValidationError?
+  await checkPermissions();     // Throws AuthError?  
+  await database.save(user);    // Throws DatabaseError?
+  return user;
+}
+
+// Callers are gambling
+try {
+  const savedUser = await saveUser(userData);
+  // Success path - but what could have failed?
+} catch (error) {
+  // Failure path - but which failure? What type?
+  console.error("Something went wrong:", error.message);
+}
+```
+
+**The hidden cost**: Every function call is a potential landmine. Errors can bubble up through multiple layers, crashing your application in production when you least expect it.
+
+### The Solution: Explicit Error Types
+
+wellcrafted makes every possible failure visible in your function signatures:
+
+```typescript
+// Every error is visible and typed ✨
+async function saveUser(
+  user: User
+): Promise<Result<User, ValidationError | AuthError | DatabaseError>> {
+  const validation = await validateUser(user);
+  if (validation.error) return validation;
+  
+  const auth = await checkPermissions();  
+  if (auth.error) return auth;
+  
+  const saved = await database.save(user);
+  if (saved.error) return saved;
+  
+  return Ok(user);
+}
+
+// Callers handle errors as data
+const { data: savedUser, error } = await saveUser(userData);
+if (error) {
+  // TypeScript knows exactly what errors are possible
+  switch (error.name) {
+    case "ValidationError":
+      showValidationMessages(error.context.fields);
+      break;
+    case "AuthError":
+      redirectToLogin();
+      break;
+    case "DatabaseError":
+      showRetryButton();
+      break;
+  }
+} else {
+  // TypeScript knows savedUser exists here
+  console.log("User saved:", savedUser.id);
+}
+```
+
+**Why this works better**:
+- **No surprise exceptions**: You see all failure modes upfront
+- **Type safety**: TypeScript ensures you handle every error case
+- **Debuggable**: Error context shows exactly what went wrong
+- **Serializable**: Errors are plain objects that work everywhere
+
+### The Mental Model Shift
+
+Traditional exception handling asks: "What might go wrong?"
+
+Result types ask: "What are all the possible outcomes?"
+
+This shift from exceptional cases to explicit cases transforms error handling from a defensive afterthought into a core part of your API design.
+
+## 2. Work With the Language, Not Against It
+
+### JavaScript's Hidden Strengths
+
+JavaScript gets a lot of criticism, but it has some genuinely powerful features that wellcrafted embraces:
+
+**Plain Objects**: No classes, no prototypes, no inheritance complexity. Just `{ data, error }` objects that work everywhere.
+
+**Destructuring**: The familiar `const { data, error } = ...` pattern that's already used by Supabase, Astro Actions, and countless other libraries.
+
+**Discriminated Unions**: TypeScript's type system can automatically narrow types based on the `error` property being `null` or non-`null`.
+
+```typescript
+// TypeScript automatically knows the types here
+const result = await fetchUser(id);
+
+if (result.error) {
+  // TypeScript knows: result.error is non-null, result.data is null
+  console.error(result.error.message);
+} else {
+  // TypeScript knows: result.error is null, result.data is User
+  console.log(result.data.name);
+}
+```
+
+### What We Don't Do
+
+**No Method Chaining**: Rust's `.map()` and `.and_then()` are elegant in Rust, but feel foreign in JavaScript. We use standard JavaScript control flow instead.
+
+**No Classes**: Error objects are plain data structures, not class instances that lose their prototype when serialized.
+
+**No Complex Abstractions**: The entire Result core is ~50 lines of code you can read and understand in 5 minutes.
+
+**No Magic**: Every pattern is explicit and visible. No hidden behavior, no surprising transformations.
+
+### The Unix Philosophy for TypeScript
+
+wellcrafted follows the Unix philosophy: do one thing well, and compose with other tools.
+
+- **Result types**: Handle success/failure states
+- **Tagged errors**: Provide structured, discriminated error data  
+- **Brand types**: Add semantic meaning to primitives
+- **tryAsync/trySync**: Bridge between throwing and non-throwing code
+
+Each primitive is simple, but they compose to handle complex scenarios:
+
+```typescript
+// Compose with standard JavaScript patterns
+const results = await Promise.all([
+  tryAsync({ try: () => fetchUser(id1), mapErr: handleUserError }),
+  tryAsync({ try: () => fetchUser(id2), mapErr: handleUserError }),
+  tryAsync({ try: () => fetchUser(id3), mapErr: handleUserError }),
+]);
+
+const errors = results.filter(r => r.error !== null);
+if (errors.length > 0) {
+  return Err({
+    name: "BatchError",
+    message: `Failed to fetch ${errors.length} users`,
+    context: { errors: errors.map(e => e.error) },
+    cause: undefined
+  });
+}
+
+const users = results.map(r => r.data!);
+```
+
+## 3. Make the Implicit Explicit
+
+### Hidden Behavior is the Enemy
+
+The most dangerous code is code that hides its behavior. wellcrafted makes everything visible:
+
+**Visible Failure Modes**: Function signatures show exactly what can go wrong.
+
+```typescript
+// Hidden: What errors can this throw?
+function processPayment(amount: number): Promise<PaymentResult>
+
+// Explicit: You can see every possible outcome
+function processPayment(
+  amount: number
+): Promise<Result<PaymentResult, ValidationError | PaymentError | NetworkError>>
+```
+
+**Visible Side Effects**: Error context shows exactly what data was involved.
+
+```typescript
+// Hidden: Generic error message
+throw new Error("Payment failed");
+
+// Explicit: Rich context for debugging
+return Err({
+  name: "PaymentError", 
+  message: "Payment processing failed",
+  context: {
+    amount,
+    paymentMethodId,
+    userId,
+    attemptTimestamp: new Date().toISOString(),
+    gatewayResponse: response.status
+  },
+  cause: originalError
+});
+```
+
+**Visible Error Flow**: You can trace exactly how errors propagate through your system.
+
+### The Onion Architecture Effect
+
+When errors are explicit, you naturally develop better separation of concerns:
+
+```typescript
+// Service layer: Domain-specific errors
+async function withdrawFunds(
+  account: Account, 
+  amount: number
+): Promise<Result<Transaction, InsufficientFundsError | AccountLockedError>> {
+  // Pure business logic with explicit error types
+}
+
+// API layer: Transform to HTTP responses  
+async function handleWithdraw(req: Request): Promise<Response> {
+  const { data: transaction, error } = await withdrawFunds(account, amount);
+  
+  if (error) {
+    switch (error.name) {
+      case "InsufficientFundsError":
+        return new Response(JSON.stringify(error), { status: 400 });
+      case "AccountLockedError":
+        return new Response(JSON.stringify(error), { status: 403 });
+    }
+  }
+  
+  return new Response(JSON.stringify(transaction));
+}
+```
+
+Each layer handles only the errors it should know about. No leaky abstractions, no generic "something failed" messages.
+
+## 4. Composition Over Complexity
+
+### Simple Primitives, Complex Solutions
+
+wellcrafted provides just enough primitives to handle any error scenario, but no more:
+
+**Result<T, E>**: Represents success or failure
+**TaggedError<T>**: Structured, discriminated error data
+**tryAsync/trySync**: Convert throwing code to Result types
+**Brand<T>**: Add semantic meaning to primitive types
+
+That's it. ~50 lines of core code.
+
+Compare this to enterprise error handling libraries with hundreds of methods, complex inheritance hierarchies, and configuration objects. wellcrafted's simplicity is a feature, not a limitation.
+
+### Real-World Complexity, Simple Tools
+
+The Whispering application demonstrates how simple primitives handle complex real-world scenarios:
+
+- **22,824 lines of TypeScript**
+- **97% code sharing** between desktop and web platforms
+- **Multiple transcription providers** with unified error handling
+- **Complex multi-step workflows** with comprehensive error recovery
+- **Zero runtime crashes** in production
+
+All built with the same simple primitives you get in wellcrafted.
+
+### The Combinatorial Power of Simplicity
+
+When primitives compose well, you get exponential flexibility:
+
+```typescript
+// Error aggregation
+const errors = await Promise.all([
+  validateName(data.name),
+  validateEmail(data.email), 
+  validateAge(data.age)
+]);
+
+// Error transformation  
+const apiError = mapDatabaseError(dbError);
+
+// Error recovery
+const result = await retry(operation, 3);
+
+// Error monitoring
+logStructuredError(error, traceId);
+```
+
+Each pattern is simple, but they combine to handle sophisticated error scenarios without additional framework complexity.
+
+## Why These Principles Matter
+
+### Predictability
+
+When errors are values and behavior is explicit, your code becomes predictable:
+- No surprise exceptions crashing your app
+- No "undefined is not a function" errors
+- No lost error context across serialization boundaries
+
+### Maintainability
+
+Explicit errors and simple primitives make code easier to maintain:
+- New team members can see all failure modes
+- Refactoring is safer with compiler assistance  
+- Error handling patterns are consistent across the codebase
+
+### Debuggability
+
+Structured errors with rich context make debugging straightforward:
+- Error context shows exactly what data caused the problem
+- Error chains preserve the full failure story
+- Serializable errors work in all environments (browser, Node.js, workers)
+
+### Scalability
+
+Simple primitives that compose well scale from scripts to applications:
+- No framework lock-in or vendor dependencies
+- Zero-dependency core that works everywhere
+- Patterns that grow with your application complexity
+
+## Conclusion
+
+wellcrafted's design principles aren't academic abstractions—they're practical philosophies proven in production code. By treating errors as values, working with JavaScript's strengths, making behavior explicit, and favoring composition over complexity, we create code that is:
+
+- **Reliable**: No hidden failure modes or surprise exceptions
+- **Maintainable**: Clear patterns that new developers can understand
+- **Debuggable**: Rich error context that makes problems obvious
+- **Scalable**: Simple primitives that handle complex scenarios
+
+These principles guide every decision in wellcrafted, from the shape of the Result type to the design of the error system. They're not rules to follow blindly, but insights to help you build better, more reliable software.
+
+The next time you're tempted to add a try-catch block or throw an exception, ask yourself: "How can I make this failure explicit and type-safe instead?" That's the wellcrafted way.
+
+---
+
+**Next**: Learn how these principles prevent production failures in [Production Reliability](/philosophy/production-reliability), or see how they improve day-to-day development in [Developer Experience](/philosophy/developer-experience).

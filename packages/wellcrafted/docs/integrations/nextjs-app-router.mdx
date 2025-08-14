@@ -1,0 +1,1235 @@
+---
+title: 'Next.js App Router Integration'
+description: 'Production-ready patterns for using wellcrafted with Next.js App Router'
+icon: 'nextjs'
+---
+
+# Next.js App Router Integration
+
+Learn how to build robust Next.js applications using wellcrafted's Result types with the App Router. This guide covers Server Actions, API routes, form handling, and static generation with type-safe error handling.
+
+## The Problem: Complex Error Handling in Full-Stack Apps
+
+Next.js applications often struggle with inconsistent error handling across different execution contexts:
+
+```tsx
+// Before: Inconsistent error handling patterns
+// API Route
+export async function GET(request: Request) {
+  try {
+    const users = await db.user.findMany();
+    return Response.json(users);
+  } catch (error) {
+    console.error(error);
+    return Response.json({ error: 'Internal Server Error' }, { status: 500 });
+  }
+}
+
+// Server Component
+async function UserList() {
+  try {
+    const response = await fetch('/api/users');
+    if (!response.ok) {
+      throw new Error('Failed to fetch');
+    }
+    const users = await response.json();
+    return <div>{users.map(user => <UserCard key={user.id} user={user} />)}</div>;
+  } catch (error) {
+    return <div>Error: {error.message}</div>;
+  }
+}
+
+// Server Action
+async function createUser(formData: FormData) {
+  try {
+    const name = formData.get('name') as string;
+    if (!name) {
+      throw new Error('Name is required');
+    }
+    await db.user.create({ data: { name } });
+    revalidatePath('/users');
+  } catch (error) {
+    // How do we properly handle and show this error to the user?
+    console.error(error);
+  }
+}
+```
+
+**Problems with this approach:**
+- Different error handling patterns in API routes, Server Components, and Server Actions
+- No type safety for error states
+- Difficult to show meaningful error messages to users
+- Inconsistent error logging and debugging
+- Silent failures in Server Actions
+
+## The Solution: wellcrafted for Full-Stack Type Safety
+
+With wellcrafted, you get consistent error handling across all Next.js execution contexts:
+
+```tsx
+// After: Unified error handling with type safety
+// API Route
+export async function GET() {
+  const { data: users, error } = await userService.getAllUsers();
+  
+  if (error) {
+    return Response.json(
+      { error: error.message, context: error.context },
+      { status: 500 }
+    );
+  }
+  
+  return Response.json(users);
+}
+
+// Server Component  
+async function UserList() {
+  const { data: users, error } = await userService.getAllUsers();
+  
+  if (error) {
+    return <ErrorDisplay error={error} />;
+  }
+  
+  return <div>{users.map(user => <UserCard key={user.id} user={user} />)}</div>;
+}
+
+// Server Action with proper error handling
+async function createUserAction(formData: FormData) {
+  const { data: user, error } = await userService.createUser({
+    name: formData.get('name') as string,
+  });
+  
+  if (error) {
+    return { success: false, error: error.message };
+  }
+  
+  revalidatePath('/users');
+  return { success: true, user };
+}
+```
+
+## Architecture: Services + Server Actions + Components
+
+```
+┌─────────────────┐     ┌─────────────────┐     ┌──────────────┐
+│  React Client   │ --> │ Server Actions  │ --> │   Services   │
+│   Components    │     │   (App Router)  │     │    (Pure)    │
+└─────────────────┘     └─────────────────┘     └──────────────┘
+         ↑                        │
+         └────────────────────────┘
+            Form Actions & Mutations
+            
+┌─────────────────┐     ┌─────────────────┐     ┌──────────────┐
+│ Server Pages/   │ --> │   API Routes    │ --> │   Services   │
+│   Components    │     │   (App Router)  │     │    (Pure)    │
+└─────────────────┘     └─────────────────┘     └──────────────┘
+         ↑                        │
+         └────────────────────────┘
+            Server-Side Rendering
+```
+
+## Services Layer - Shared Across All Contexts
+
+Create services that work in both server and client contexts:
+
+```typescript
+// lib/services/users.ts
+import { Ok, Err, tryAsync, type Result } from 'wellcrafted/result';
+import { createTaggedError } from 'wellcrafted/error';
+import { db } from '../db';
+
+const { UserServiceError, UserServiceErr } = createTaggedError('UserServiceError');
+type UserServiceError = ReturnType<typeof UserServiceError>;
+
+export type User = {
+  id: string;
+  name: string;
+  email: string;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
+export type CreateUserInput = {
+  name: string;
+  email: string;
+};
+
+export async function getAllUsers(): Promise<Result<User[], UserServiceError>> {
+  return tryAsync({
+    try: async () => {
+      const users = await db.user.findMany({
+        orderBy: { createdAt: 'desc' },
+      });
+      return users;
+    },
+    mapErr: (error) => UserServiceErr({
+      message: 'Failed to fetch users from database',
+      context: { operation: 'getAllUsers' },
+      cause: error,
+    }),
+  });
+}
+
+export async function getUserById(id: string): Promise<Result<User, UserServiceError>> {
+  if (!id) {
+    return UserServiceErr({
+      message: 'User ID is required',
+      context: { id },
+      cause: undefined,
+    });
+  }
+
+  return tryAsync({
+    try: async () => {
+      const user = await db.user.findUnique({
+        where: { id },
+      });
+      
+      if (!user) {
+        throw new Error('User not found');
+      }
+      
+      return user;
+    },
+    mapErr: (error) => UserServiceErr({
+      message: error instanceof Error ? error.message : 'Failed to fetch user',
+      context: { userId: id },
+      cause: error,
+    }),
+  });
+}
+
+export async function createUser(input: CreateUserInput): Promise<Result<User, UserServiceError>> {
+  // Validation
+  if (!input.name?.trim()) {
+    return UserServiceErr({
+      message: 'Name is required',
+      context: { input },
+      cause: undefined,
+    });
+  }
+
+  if (!input.email?.includes('@')) {
+    return UserServiceErr({
+      message: 'Valid email is required',
+      context: { input },
+      cause: undefined,
+    });
+  }
+
+  return tryAsync({
+    try: async () => {
+      // Check for existing email
+      const existing = await db.user.findUnique({
+        where: { email: input.email },
+      });
+      
+      if (existing) {
+        throw new Error('Email already exists');
+      }
+      
+      return await db.user.create({
+        data: {
+          name: input.name.trim(),
+          email: input.email.toLowerCase(),
+        },
+      });
+    },
+    mapErr: (error) => UserServiceErr({
+      message: error instanceof Error ? error.message : 'Failed to create user',
+      context: { input },
+      cause: error,
+    }),
+  });
+}
+
+export async function updateUser(id: string, input: Partial<CreateUserInput>): Promise<Result<User, UserServiceError>> {
+  if (!id) {
+    return UserServiceErr({
+      message: 'User ID is required',
+      context: { id, input },
+      cause: undefined,
+    });
+  }
+
+  return tryAsync({
+    try: async () => {
+      const user = await db.user.update({
+        where: { id },
+        data: input,
+      });
+      return user;
+    },
+    mapErr: (error) => UserServiceErr({
+      message: 'Failed to update user',
+      context: { userId: id, input },
+      cause: error,
+    }),
+  });
+}
+
+export async function deleteUser(id: string): Promise<Result<void, UserServiceError>> {
+  if (!id) {
+    return UserServiceErr({
+      message: 'User ID is required',
+      context: { id },
+      cause: undefined,
+    });
+  }
+
+  return tryAsync({
+    try: async () => {
+      await db.user.delete({
+        where: { id },
+      });
+    },
+    mapErr: (error) => UserServiceErr({
+      message: 'Failed to delete user',
+      context: { userId: id },
+      cause: error,
+    }),
+  });
+}
+```
+
+## Server Actions with Proper Error Handling
+
+Server Actions that return structured results:
+
+```typescript
+// lib/actions/users.ts
+'use server';
+
+import { revalidatePath, redirect } from 'next/navigation';
+import * as userService from '../services/users';
+import type { CreateUserInput } from '../services/users';
+
+export type ActionResult<T> = {
+  success: true;
+  data: T;
+} | {
+  success: false;
+  error: string;
+  field?: string; // For field-specific errors
+};
+
+export async function createUserAction(
+  formData: FormData
+): Promise<ActionResult<userService.User>> {
+  const input: CreateUserInput = {
+    name: formData.get('name') as string,
+    email: formData.get('email') as string,
+  };
+
+  const { data: user, error } = await userService.createUser(input);
+
+  if (error) {
+    // Determine if this is a field-specific error
+    const field = error.message.includes('email') ? 'email' : 
+                  error.message.includes('name') ? 'name' : undefined;
+    
+    return {
+      success: false,
+      error: error.message,
+      field,
+    };
+  }
+
+  revalidatePath('/users');
+  return { success: true, data: user };
+}
+
+export async function updateUserAction(
+  id: string,
+  formData: FormData
+): Promise<ActionResult<userService.User>> {
+  const input = {
+    name: formData.get('name') as string,
+    email: formData.get('email') as string,
+  };
+
+  const { data: user, error } = await userService.updateUser(id, input);
+
+  if (error) {
+    return {
+      success: false,
+      error: error.message,
+    };
+  }
+
+  revalidatePath('/users');
+  revalidatePath(`/users/${id}`);
+  return { success: true, data: user };
+}
+
+export async function deleteUserAction(id: string): Promise<ActionResult<void>> {
+  const { error } = await userService.deleteUser(id);
+
+  if (error) {
+    return {
+      success: false,
+      error: error.message,
+    };
+  }
+
+  revalidatePath('/users');
+  redirect('/users');
+}
+```
+
+## Server Components with Error Handling
+
+Server components that handle errors gracefully:
+
+```tsx
+// app/users/page.tsx
+import { Suspense } from 'react';
+import * as userService from '@/lib/services/users';
+import { ErrorDisplay } from '@/components/ErrorDisplay';
+import { UserCard } from '@/components/UserCard';
+import { CreateUserForm } from '@/components/CreateUserForm';
+
+// Loading component
+function UsersLoading() {
+  return (
+    <div className="space-y-4">
+      {Array.from({ length: 3 }).map((_, i) => (
+        <div key={i} className="h-24 bg-gray-200 rounded animate-pulse" />
+      ))}
+    </div>
+  );
+}
+
+// Error boundary for the page
+async function UsersList() {
+  const { data: users, error } = await userService.getAllUsers();
+
+  if (error) {
+    return (
+      <ErrorDisplay
+        title="Failed to load users"
+        message={error.message}
+        context={error.context}
+        retry={{
+          label: "Refresh page",
+          action: () => window.location.reload()
+        }}
+      />
+    );
+  }
+
+  if (users.length === 0) {
+    return (
+      <div className="text-center py-12">
+        <h3 className="text-lg font-medium text-gray-900">No users yet</h3>
+        <p className="mt-2 text-sm text-gray-500">
+          Create your first user to get started.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      {users.map((user) => (
+        <UserCard key={user.id} user={user} />
+      ))}
+    </div>
+  );
+}
+
+export default function UsersPage() {
+  return (
+    <div className="container mx-auto py-8">
+      <div className="flex justify-between items-center mb-8">
+        <h1 className="text-3xl font-bold">Users</h1>
+        <CreateUserForm />
+      </div>
+
+      <Suspense fallback={<UsersLoading />}>
+        <UsersList />
+      </Suspense>
+    </div>
+  );
+}
+```
+
+```tsx
+// app/users/[id]/page.tsx
+import { notFound } from 'next/navigation';
+import * as userService from '@/lib/services/users';
+import { ErrorDisplay } from '@/components/ErrorDisplay';
+import { UserDetails } from '@/components/UserDetails';
+
+interface UserPageProps {
+  params: { id: string };
+}
+
+export default async function UserPage({ params }: UserPageProps) {
+  const { data: user, error } = await userService.getUserById(params.id);
+
+  if (error) {
+    // Handle different error types appropriately
+    if (error.message.includes('not found')) {
+      notFound(); // Triggers Next.js 404 page
+    }
+
+    return (
+      <ErrorDisplay
+        title="Failed to load user"
+        message={error.message}
+        context={error.context}
+      />
+    );
+  }
+
+  return (
+    <div className="container mx-auto py-8">
+      <UserDetails user={user} />
+    </div>
+  );
+}
+
+// Generate metadata with error handling
+export async function generateMetadata({ params }: UserPageProps) {
+  const { data: user, error } = await userService.getUserById(params.id);
+
+  if (error || !user) {
+    return {
+      title: 'User Not Found',
+      description: 'The requested user could not be found.',
+    };
+  }
+
+  return {
+    title: `${user.name} - User Profile`,
+    description: `Profile page for ${user.name} (${user.email})`,
+  };
+}
+```
+
+## API Routes with Structured Error Responses
+
+API routes that return consistent error formats:
+
+```typescript
+// app/api/users/route.ts
+import { NextRequest } from 'next/server';
+import * as userService from '@/lib/services/users';
+
+export async function GET() {
+  const { data: users, error } = await userService.getAllUsers();
+
+  if (error) {
+    return Response.json(
+      {
+        error: error.message,
+        context: error.context,
+        timestamp: new Date().toISOString(),
+      },
+      { status: 500 }
+    );
+  }
+
+  return Response.json({
+    users,
+    timestamp: new Date().toISOString(),
+  });
+}
+
+export async function POST(request: NextRequest) {
+  try {
+    const body = await request.json();
+    const { data: user, error } = await userService.createUser(body);
+
+    if (error) {
+      const statusCode = error.message.includes('required') || 
+                        error.message.includes('email') ? 400 : 500;
+      
+      return Response.json(
+        {
+          error: error.message,
+          context: error.context,
+          timestamp: new Date().toISOString(),
+        },
+        { status: statusCode }
+      );
+    }
+
+    return Response.json(
+      { user, timestamp: new Date().toISOString() },
+      { status: 201 }
+    );
+  } catch (error) {
+    return Response.json(
+      {
+        error: 'Invalid request body',
+        timestamp: new Date().toISOString(),
+      },
+      { status: 400 }
+    );
+  }
+}
+```
+
+```typescript
+// app/api/users/[id]/route.ts
+import { NextRequest } from 'next/server';
+import * as userService from '@/lib/services/users';
+
+interface RouteParams {
+  params: { id: string };
+}
+
+export async function GET(request: NextRequest, { params }: RouteParams) {
+  const { data: user, error } = await userService.getUserById(params.id);
+
+  if (error) {
+    const statusCode = error.message.includes('not found') ? 404 : 500;
+    
+    return Response.json(
+      {
+        error: error.message,
+        context: error.context,
+        timestamp: new Date().toISOString(),
+      },
+      { status: statusCode }
+    );
+  }
+
+  return Response.json({
+    user,
+    timestamp: new Date().toISOString(),
+  });
+}
+
+export async function PUT(request: NextRequest, { params }: RouteParams) {
+  try {
+    const body = await request.json();
+    const { data: user, error } = await userService.updateUser(params.id, body);
+
+    if (error) {
+      const statusCode = error.message.includes('not found') ? 404 : 500;
+      
+      return Response.json(
+        {
+          error: error.message,
+          context: error.context,
+          timestamp: new Date().toISOString(),
+        },
+        { status: statusCode }
+      );
+    }
+
+    return Response.json({
+      user,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error) {
+    return Response.json(
+      {
+        error: 'Invalid request body',
+        timestamp: new Date().toISOString(),
+      },
+      { status: 400 }
+    );
+  }
+}
+
+export async function DELETE(request: NextRequest, { params }: RouteParams) {
+  const { error } = await userService.deleteUser(params.id);
+
+  if (error) {
+    const statusCode = error.message.includes('not found') ? 404 : 500;
+    
+    return Response.json(
+      {
+        error: error.message,
+        context: error.context,
+        timestamp: new Date().toISOString(),
+      },
+      { status: statusCode }
+    );
+  }
+
+  return Response.json(
+    { message: 'User deleted successfully' },
+    { status: 200 }
+  );
+}
+```
+
+## Client Components with Server Actions
+
+Forms that handle Server Action results properly:
+
+```tsx
+// components/CreateUserForm.tsx
+'use client';
+
+import { useState } from 'react';
+import { createUserAction } from '@/lib/actions/users';
+
+export function CreateUserForm() {
+  const [isOpen, setIsOpen] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  async function handleSubmit(formData: FormData) {
+    setIsSubmitting(true);
+    setError(null);
+    setFieldErrors({});
+
+    const result = await createUserAction(formData);
+
+    if (!result.success) {
+      if (result.field) {
+        setFieldErrors({ [result.field]: result.error });
+      } else {
+        setError(result.error);
+      }
+    } else {
+      setIsOpen(false);
+      // Success feedback could be handled here
+    }
+
+    setIsSubmitting(false);
+  }
+
+  return (
+    <>
+      <button
+        onClick={() => setIsOpen(true)}
+        className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700"
+      >
+        Create User
+      </button>
+
+      {isOpen && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center">
+          <div className="bg-white p-6 rounded-lg w-full max-w-md">
+            <h2 className="text-xl font-bold mb-4">Create New User</h2>
+            
+            <form action={handleSubmit} className="space-y-4">
+              <div>
+                <label htmlFor="name" className="block text-sm font-medium mb-1">
+                  Name
+                </label>
+                <input
+                  type="text"
+                  id="name"
+                  name="name"
+                  required
+                  className={`w-full px-3 py-2 border rounded-md ${
+                    fieldErrors.name ? 'border-red-500' : 'border-gray-300'
+                  }`}
+                />
+                {fieldErrors.name && (
+                  <p className="text-red-500 text-sm mt-1">{fieldErrors.name}</p>
+                )}
+              </div>
+
+              <div>
+                <label htmlFor="email" className="block text-sm font-medium mb-1">
+                  Email
+                </label>
+                <input
+                  type="email"
+                  id="email"
+                  name="email"
+                  required
+                  className={`w-full px-3 py-2 border rounded-md ${
+                    fieldErrors.email ? 'border-red-500' : 'border-gray-300'
+                  }`}
+                />
+                {fieldErrors.email && (
+                  <p className="text-red-500 text-sm mt-1">{fieldErrors.email}</p>
+                )}
+              </div>
+
+              {error && (
+                <div className="bg-red-50 border border-red-200 rounded-md p-3">
+                  <p className="text-red-700 text-sm">{error}</p>
+                </div>
+              )}
+
+              <div className="flex justify-end space-x-3">
+                <button
+                  type="button"
+                  onClick={() => setIsOpen(false)}
+                  className="px-4 py-2 text-gray-600 border border-gray-300 rounded-md hover:bg-gray-50"
+                  disabled={isSubmitting}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmitting}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
+                >
+                  {isSubmitting ? 'Creating...' : 'Create User'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+```
+
+## Error Display Components
+
+Reusable components for consistent error handling:
+
+```tsx
+// components/ErrorDisplay.tsx
+import type { UserServiceError } from '@/lib/services/users';
+
+interface ErrorDisplayProps {
+  title?: string;
+  message: string;
+  context?: Record<string, unknown>;
+  retry?: {
+    label: string;
+    action: () => void;
+  };
+  className?: string;
+}
+
+export function ErrorDisplay({ 
+  title = "Something went wrong", 
+  message, 
+  context,
+  retry,
+  className = "" 
+}: ErrorDisplayProps) {
+  return (
+    <div className={`bg-red-50 border border-red-200 rounded-lg p-6 ${className}`}>
+      <div className="flex items-start">
+        <div className="flex-shrink-0">
+          <svg className="h-5 w-5 text-red-400" fill="currentColor" viewBox="0 0 20 20">
+            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+          </svg>
+        </div>
+        
+        <div className="ml-3 flex-1">
+          <h3 className="text-sm font-medium text-red-800">{title}</h3>
+          <p className="mt-1 text-sm text-red-700">{message}</p>
+          
+          {context && (
+            <details className="mt-2">
+              <summary className="text-xs text-red-600 cursor-pointer">
+                Technical details
+              </summary>
+              <pre className="mt-1 text-xs text-red-600 bg-red-100 p-2 rounded overflow-auto">
+                {JSON.stringify(context, null, 2)}
+              </pre>
+            </details>
+          )}
+          
+          {retry && (
+            <div className="mt-3">
+              <button
+                onClick={retry.action}
+                className="bg-red-100 text-red-800 px-3 py-1 rounded text-sm hover:bg-red-200"
+              >
+                {retry.label}
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+```
+
+## Static Generation with Error Handling
+
+Generate static pages with proper error handling:
+
+```tsx
+// app/users/[id]/page.tsx (with static generation)
+import { notFound } from 'next/navigation';
+import * as userService from '@/lib/services/users';
+
+export async function generateStaticParams() {
+  const { data: users, error } = await userService.getAllUsers();
+  
+  if (error) {
+    console.error('Failed to generate static params:', error);
+    return []; // Return empty array on error
+  }
+
+  return users.map((user) => ({
+    id: user.id,
+  }));
+}
+
+interface UserPageProps {
+  params: { id: string };
+}
+
+export default async function UserPage({ params }: UserPageProps) {
+  const { data: user, error } = await userService.getUserById(params.id);
+
+  if (error) {
+    if (error.message.includes('not found')) {
+      notFound();
+    }
+    
+    // For other errors during static generation, we might want to
+    // fallback to ISR or show a generic error page
+    throw new Error(`Failed to load user: ${error.message}`);
+  }
+
+  return (
+    <div className="container mx-auto py-8">
+      <h1 className="text-3xl font-bold mb-4">{user.name}</h1>
+      <p className="text-gray-600 mb-2">Email: {user.email}</p>
+      <p className="text-sm text-gray-500">
+        Created: {user.createdAt.toLocaleDateString()}
+      </p>
+    </div>
+  );
+}
+```
+
+## Middleware with Error Handling
+
+Add request validation and error handling:
+
+```typescript
+// middleware.ts
+import { NextResponse } from 'next/server';
+import type { NextRequest } from 'next/server';
+import { trySync } from 'wellcrafted/result';
+
+export function middleware(request: NextRequest) {
+  // Example: API key validation for API routes
+  if (request.nextUrl.pathname.startsWith('/api/')) {
+    const { data: isValid, error } = trySync({
+      try: () => {
+        const apiKey = request.headers.get('x-api-key');
+        if (!apiKey && request.nextUrl.pathname !== '/api/health') {
+          throw new Error('API key required');
+        }
+        
+        if (apiKey && apiKey !== process.env.API_KEY) {
+          throw new Error('Invalid API key');
+        }
+        
+        return true;
+      },
+      mapErr: (error) => ({
+        name: 'AuthenticationError',
+        message: error instanceof Error ? error.message : 'Authentication failed',
+        context: { path: request.nextUrl.pathname },
+        cause: error,
+      }),
+    });
+
+    if (error) {
+      return NextResponse.json(
+        { 
+          error: error.message,
+          context: error.context 
+        },
+        { status: 401 }
+      );
+    }
+  }
+
+  return NextResponse.next();
+}
+
+export const config = {
+  matcher: '/api/:path*',
+};
+```
+
+## Testing Patterns
+
+Test Next.js components and Server Actions:
+
+```tsx
+// __tests__/users.test.tsx
+import { render, screen } from '@testing-library/react';
+import { vi } from 'vitest';
+import { Ok, Err } from 'wellcrafted/result';
+import UserPage from '../app/users/[id]/page';
+import * as userService from '../lib/services/users';
+
+// Mock the service
+vi.mock('../lib/services/users');
+
+describe('UserPage', () => {
+  it('renders user data when loaded successfully', async () => {
+    const mockUser = {
+      id: '1',
+      name: 'John Doe',
+      email: 'john@example.com',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+    
+    vi.mocked(userService.getUserById).mockResolvedValue(Ok(mockUser));
+
+    const UserPageComponent = await UserPage({ params: { id: '1' } });
+    render(UserPageComponent);
+
+    expect(screen.getByText('John Doe')).toBeInTheDocument();
+    expect(screen.getByText('Email: john@example.com')).toBeInTheDocument();
+  });
+
+  it('shows not found page when user does not exist', async () => {
+    const errorResult = Err({
+      name: 'UserServiceError',
+      message: 'User not found',
+      context: { userId: '1' },
+      cause: undefined,
+    });
+    
+    vi.mocked(userService.getUserById).mockResolvedValue(errorResult);
+
+    // This should trigger notFound() which throws a NEXT_NOT_FOUND error
+    await expect(UserPage({ params: { id: '1' } })).rejects.toThrow('NEXT_NOT_FOUND');
+  });
+});
+```
+
+```typescript
+// __tests__/actions.test.ts
+import { describe, it, expect, vi } from 'vitest';
+import { Ok, Err } from 'wellcrafted/result';
+import { createUserAction } from '../lib/actions/users';
+import * as userService from '../lib/services/users';
+
+vi.mock('../lib/services/users');
+
+describe('createUserAction', () => {
+  it('creates user successfully with valid input', async () => {
+    const mockUser = {
+      id: '1',
+      name: 'John Doe',
+      email: 'john@example.com',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+    
+    vi.mocked(userService.createUser).mockResolvedValue(Ok(mockUser));
+
+    const formData = new FormData();
+    formData.append('name', 'John Doe');
+    formData.append('email', 'john@example.com');
+
+    const result = await createUserAction(formData);
+
+    expect(result).toEqual({
+      success: true,
+      data: mockUser,
+    });
+  });
+
+  it('returns error for invalid input', async () => {
+    const errorResult = Err({
+      name: 'UserServiceError',
+      message: 'Valid email is required',
+      context: { input: { name: 'John', email: 'invalid' } },
+      cause: undefined,
+    });
+    
+    vi.mocked(userService.createUser).mockResolvedValue(errorResult);
+
+    const formData = new FormData();
+    formData.append('name', 'John');
+    formData.append('email', 'invalid');
+
+    const result = await createUserAction(formData);
+
+    expect(result).toEqual({
+      success: false,
+      error: 'Valid email is required',
+      field: 'email',
+    });
+  });
+});
+```
+
+## Environment Setup
+
+Set up your Next.js project:
+
+```json
+// package.json
+{
+  "dependencies": {
+    "next": "^14.0.0",
+    "react": "^18.0.0",
+    "react-dom": "^18.0.0",
+    "wellcrafted": "^1.0.0"
+  },
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "test": "vitest"
+  }
+}
+```
+
+```typescript
+// next.config.js
+/** @type {import('next').NextConfig} */
+const nextConfig = {
+  experimental: {
+    serverActions: true,
+  },
+  typescript: {
+    ignoreBuildErrors: false,
+  },
+};
+
+module.exports = nextConfig;
+```
+
+## Best Practices
+
+### 1. Consistent Error Responses
+
+Always return the same error structure:
+
+```typescript
+// ✅ Good - consistent error format
+type APIErrorResponse = {
+  error: string;
+  context?: Record<string, unknown>;
+  timestamp: string;
+};
+
+// ❌ Bad - inconsistent error formats
+// Sometimes: { message: "Error" }
+// Other times: { error: { details: "Error" } }
+```
+
+### 2. Proper Status Codes
+
+Map service errors to appropriate HTTP status codes:
+
+```typescript
+function getStatusCode(error: UserServiceError): number {
+  if (error.message.includes('not found')) return 404;
+  if (error.message.includes('required') || error.message.includes('invalid')) return 400;
+  if (error.message.includes('unauthorized')) return 401;
+  if (error.message.includes('forbidden')) return 403;
+  return 500; // Internal server error
+}
+```
+
+### 3. Server Action Error Handling
+
+Always return structured results from Server Actions:
+
+```typescript
+// ✅ Good - structured result
+async function serverAction(formData: FormData): Promise<ActionResult<User>> {
+  const { data, error } = await userService.createUser(input);
+  return error 
+    ? { success: false, error: error.message }
+    : { success: true, data };
+}
+
+// ❌ Bad - throwing in Server Actions
+async function serverAction(formData: FormData) {
+  const user = await userService.createUser(input);
+  if (!user) throw new Error('Failed'); // Hard to handle in UI
+}
+```
+
+### 4. Static Generation Fallbacks
+
+Handle errors gracefully during static generation:
+
+```typescript
+export async function generateStaticParams() {
+  const { data: items, error } = await service.getAllItems();
+  
+  if (error) {
+    console.error('Static generation error:', error);
+    return []; // Return empty array, let ISR handle it
+  }
+  
+  return items.map(item => ({ id: item.id }));
+}
+```
+
+## Migration from Pages Router
+
+If migrating from Pages Router, follow these steps:
+
+### 1. Convert API Routes
+
+```typescript
+// Before (Pages Router)
+// pages/api/users.ts
+export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  try {
+    const users = await getUsersFromDB();
+    res.status(200).json(users);
+  } catch (error) {
+    res.status(500).json({ error: 'Internal Server Error' });
+  }
+}
+
+// After (App Router)
+// app/api/users/route.ts
+export async function GET() {
+  const { data: users, error } = await userService.getAllUsers();
+  
+  if (error) {
+    return Response.json({ error: error.message }, { status: 500 });
+  }
+  
+  return Response.json(users);
+}
+```
+
+### 2. Convert getServerSideProps to Server Components
+
+```typescript
+// Before (Pages Router)
+export async function getServerSideProps() {
+  try {
+    const users = await getUsersFromAPI();
+    return { props: { users } };
+  } catch (error) {
+    return { props: { error: error.message } };
+  }
+}
+
+// After (App Router)
+async function UsersPage() {
+  const { data: users, error } = await userService.getAllUsers();
+  
+  if (error) {
+    return <ErrorDisplay error={error} />;
+  }
+  
+  return <UsersList users={users} />;
+}
+```
+
+## Summary
+
+This Next.js App Router integration provides:
+
+- **Unified Error Handling**: Consistent patterns across Server Components, Server Actions, and API routes
+- **Type Safety**: Full TypeScript support with wellcrafted's Result types
+- **Server Action Safety**: Structured returns that prevent runtime errors in forms
+- **Production Ready**: Patterns tested in real applications
+- **Migration Friendly**: Easy to adopt incrementally
+
+The patterns shown scale from simple pages to complex full-stack applications with robust error handling throughout the entire stack.

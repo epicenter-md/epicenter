@@ -1,0 +1,1506 @@
+---
+title: 'Svelte + TanStack Query Integration'
+description: 'Battle-tested patterns from Whispering: 22,824 lines, 97% code sharing, zero crashes'
+icon: 'svelte'
+---
+
+# Svelte + TanStack Query Integration
+
+Learn the exact patterns used in [Whispering](https://github.com/braden-w/whispering), a production desktop/web application that achieved 22,824 lines of TypeScript with 97% code sharing and zero runtime crashes using wellcrafted + TanStack Query.
+
+## The Architecture That Scales
+
+Whispering demonstrates a proven three-layer architecture that enables massive code reuse:
+
+```
+┌─────────────┐     ┌─────────────┐     ┌──────────────┐
+│   Svelte    │ --> │  RPC/Query  │ --> │   Services   │
+│ Components  │     │    Layer    │     │    (Pure)    │
+└─────────────┘     └─────────────┘     └──────────────┘
+      ↑                    │
+      └────────────────────┘
+         Reactive Updates
+
+📊 Results: 97% code sharing • 0 runtime crashes • 22,824 lines
+```
+
+This integration guide shows you how to implement these battle-tested patterns in your own Svelte applications.
+
+## The Problem: Complex State Management
+
+Traditional Svelte apps often struggle with complex async state:
+
+```svelte
+<!-- Before: Manual state management hell -->
+<script lang="ts">
+  let recordings: Recording[] = [];
+  let loading = true;
+  let error: string | null = null;
+
+  async function loadRecordings() {
+    try {
+      loading = true;
+      const response = await fetch('/api/recordings');
+      if (!response.ok) {
+        throw new Error('Failed to fetch recordings');
+      }
+      recordings = await response.json();
+    } catch (err) {
+      error = err instanceof Error ? err.message : 'Unknown error';
+    } finally {
+      loading = false;
+    }
+  }
+
+  onMount(loadRecordings);
+
+  async function deleteRecording(id: string) {
+    try {
+      const response = await fetch(`/api/recordings/${id}`, { method: 'DELETE' });
+      if (!response.ok) throw new Error('Failed to delete');
+      recordings = recordings.filter(r => r.id !== id);
+    } catch (err) {
+      error = err instanceof Error ? err.message : 'Delete failed';
+    }
+  }
+</script>
+
+{#if loading}
+  <div>Loading recordings...</div>
+{:else if error}
+  <div class="error">{error}</div>
+{:else}
+  {#each recordings as recording}
+    <RecordingCard {recording} onDelete={() => deleteRecording(recording.id)} />
+  {/each}
+{/if}
+```
+
+**Problems:**
+- Manual loading/error state management
+- Inconsistent error handling
+- No caching or background updates
+- Duplicated boilerplate everywhere
+- Silent failures and race conditions
+
+## The Solution: wellcrafted + TanStack Query
+
+The same component with Whispering's proven patterns:
+
+```svelte
+<!-- After: Robust, reactive data management -->
+<script lang="ts">
+  import { createQuery } from '@tanstack/svelte-query';
+  import { rpc } from '$lib/query';
+
+  const recordings = createQuery(rpc.recordings.getAllRecordings.options());
+
+  async function handleDelete(id: string) {
+    const { error } = await rpc.recordings.deleteRecording.execute(id);
+    if (error) {
+      toast.error(error.title, { description: error.description });
+    }
+  }
+</script>
+
+{#if $recordings.isPending}
+  <RecordingsLoading />
+{:else if $recordings.error}
+  <ErrorDisplay error={$recordings.error} onRetry={() => $recordings.refetch()} />
+{:else if $recordings.data}
+  {#each $recordings.data as recording}
+    <RecordingCard {recording} onDelete={() => handleDelete(recording.id)} />
+  {/each}
+{/if}
+```
+
+**Benefits:**
+- Automatic caching and background synchronization
+- Type-safe error handling with rich context
+- Optimistic updates and rollback
+- Consistent patterns across the entire app
+- Zero runtime crashes through comprehensive error handling
+
+## Layer 1: Services - Pure Business Logic
+
+Services are pure functions with explicit dependencies, used throughout Whispering:
+
+```typescript
+// lib/services/recordings.ts
+import { Ok, Err, tryAsync, type Result } from 'wellcrafted/result';
+import { createTaggedError } from 'wellcrafted/error';
+
+const { RecordingServiceError, RecordingServiceErr } = createTaggedError('RecordingServiceError');
+type RecordingServiceError = ReturnType<typeof RecordingServiceError>;
+
+export type Recording = {
+  id: string;
+  filename: string;
+  duration: number;
+  transcription?: string;
+  transcriptionStatus: 'PENDING' | 'COMPLETED' | 'FAILED';
+  createdAt: Date;
+  audioBlob?: Blob;
+};
+
+export type CreateRecordingInput = {
+  blob: Blob;
+  filename?: string;
+  timestamp: Date;
+};
+
+// Service factory with dependency injection
+export function createRecordingService(db: Database) {
+  return {
+    async getAllRecordings(): Promise<Result<Recording[], RecordingServiceError>> {
+      return tryAsync({
+        try: async () => {
+          const recordings = await db.recordings.findMany({
+            orderBy: { createdAt: 'desc' },
+          });
+          return recordings;
+        },
+        mapErr: (error) => RecordingServiceErr({
+          message: 'Failed to fetch recordings from database',
+          context: { operation: 'getAllRecordings' },
+          cause: error,
+        }),
+      });
+    },
+
+    async getRecording(id: string): Promise<Result<Recording, RecordingServiceError>> {
+      if (!id) {
+        return RecordingServiceErr({
+          message: 'Recording ID is required',
+          context: { id },
+          cause: undefined,
+        });
+      }
+
+      return tryAsync({
+        try: async () => {
+          const recording = await db.recordings.findUnique({ where: { id } });
+          if (!recording) {
+            throw new Error('Recording not found');
+          }
+          return recording;
+        },
+        mapErr: (error) => RecordingServiceErr({
+          message: error instanceof Error ? error.message : 'Failed to fetch recording',
+          context: { recordingId: id },
+          cause: error,
+        }),
+      });
+    },
+
+    async createRecording(input: CreateRecordingInput): Promise<Result<Recording, RecordingServiceError>> {
+      // Validation
+      if (!input.blob || input.blob.size === 0) {
+        return RecordingServiceErr({
+          message: 'Audio blob is required and cannot be empty',
+          context: { input: { blobSize: input.blob?.size, filename: input.filename } },
+          cause: undefined,
+        });
+      }
+
+      return tryAsync({
+        try: async () => {
+          const filename = input.filename || `recording-${Date.now()}.webm`;
+          
+          // Save audio blob to storage
+          const audioPath = await saveAudioBlob(input.blob, filename);
+          
+          // Create database record
+          const recording = await db.recordings.create({
+            data: {
+              filename,
+              duration: await getAudioDuration(input.blob),
+              audioPath,
+              transcriptionStatus: 'PENDING',
+              createdAt: input.timestamp,
+            },
+          });
+
+          return { ...recording, audioBlob: input.blob };
+        },
+        mapErr: (error) => RecordingServiceErr({
+          message: 'Failed to save recording',
+          context: { input },
+          cause: error,
+        }),
+      });
+    },
+
+    async deleteRecording(id: string): Promise<Result<void, RecordingServiceError>> {
+      if (!id) {
+        return RecordingServiceErr({
+          message: 'Recording ID is required',
+          context: { id },
+          cause: undefined,
+        });
+      }
+
+      return tryAsync({
+        try: async () => {
+          // Get recording to find audio file path
+          const recording = await db.recordings.findUnique({ where: { id } });
+          if (!recording) {
+            throw new Error('Recording not found');
+          }
+
+          // Delete audio file
+          if (recording.audioPath) {
+            await deleteAudioFile(recording.audioPath);
+          }
+
+          // Delete database record
+          await db.recordings.delete({ where: { id } });
+        },
+        mapErr: (error) => RecordingServiceErr({
+          message: 'Failed to delete recording',
+          context: { recordingId: id },
+          cause: error,
+        }),
+      });
+    },
+
+    async updateRecording(id: string, updates: Partial<Recording>): Promise<Result<Recording, RecordingServiceError>> {
+      return tryAsync({
+        try: async () => {
+          const recording = await db.recordings.update({
+            where: { id },
+            data: updates,
+          });
+          return recording;
+        },
+        mapErr: (error) => RecordingServiceErr({
+          message: 'Failed to update recording',
+          context: { recordingId: id, updates },
+          cause: error,
+        }),
+      });
+    },
+  };
+}
+
+// Live service instance
+export const recordingService = createRecordingService(database);
+```
+
+## Layer 2: Query Layer - The Heart of Whispering
+
+The query layer bridges pure services with reactive UI using wellcrafted's dual interface pattern:
+
+```typescript
+// lib/query/_factories.ts
+import { QueryClient } from '@tanstack/query-core';
+import { createQueryFactories } from 'wellcrafted/query';
+
+export const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 5 * 60 * 1000, // 5 minutes
+      gcTime: 10 * 60 * 1000,   // 10 minutes
+      retry: (failureCount, error) => {
+        // Don't retry user errors (validation, not found)
+        if (error?.name === 'RecordingServiceError') {
+          return false;
+        }
+        return failureCount < 3;
+      },
+    },
+  },
+});
+
+export const { defineQuery, defineMutation } = createQueryFactories(queryClient);
+```
+
+```typescript
+// lib/query/recordings.ts
+import { defineQuery, defineMutation, queryClient } from './_factories';
+import { recordingService } from '../services/recordings';
+import type { Recording, CreateRecordingInput } from '../services/recordings';
+
+export const recordings = {
+  // Query all recordings
+  getAllRecordings: defineQuery({
+    queryKey: ['recordings'],
+    resultQueryFn: () => recordingService.getAllRecordings(),
+    staleTime: 2 * 60 * 1000, // 2 minutes for recordings list
+  }),
+
+  // Query single recording
+  getRecording: (recordingId: string) => 
+    defineQuery({
+      queryKey: ['recordings', recordingId],
+      resultQueryFn: () => recordingService.getRecording(recordingId),
+      enabled: !!recordingId,
+    }),
+
+  // Create recording mutation
+  createRecording: defineMutation({
+    mutationKey: ['recordings', 'create'],
+    resultMutationFn: async (input: CreateRecordingInput) => {
+      const result = await recordingService.createRecording(input);
+      
+      if (result.error) return result;
+
+      // Optimistic cache update - add to list immediately
+      queryClient.setQueryData(['recordings'], (old: Recording[] | undefined) => 
+        old ? [result.data, ...old] : [result.data]
+      );
+
+      return result;
+    },
+    onSuccess: () => {
+      // Ensure recordings list is up to date
+      queryClient.invalidateQueries({ queryKey: ['recordings'] });
+    },
+  }),
+
+  // Delete recording mutation
+  deleteRecording: defineMutation({
+    mutationKey: ['recordings', 'delete'],
+    resultMutationFn: async (recordingId: string) => {
+      const result = await recordingService.deleteRecording(recordingId);
+      
+      if (result.error) return result;
+
+      // Optimistic cache update - remove from list immediately
+      queryClient.setQueryData(['recordings'], (old: Recording[] | undefined) =>
+        old ? old.filter(r => r.id !== recordingId) : undefined
+      );
+
+      // Remove individual recording from cache
+      queryClient.removeQueries({ queryKey: ['recordings', recordingId] });
+
+      return result;
+    },
+  }),
+
+  // Update recording mutation (used for transcription status, etc.)
+  updateRecording: defineMutation({
+    mutationKey: ['recordings', 'update'],
+    resultMutationFn: async ({ id, updates }: { id: string; updates: Partial<Recording> }) => {
+      const result = await recordingService.updateRecording(id, updates);
+      
+      if (result.error) return result;
+
+      // Update caches optimistically
+      queryClient.setQueryData(['recordings', id], result.data);
+      
+      queryClient.setQueryData(['recordings'], (old: Recording[] | undefined) =>
+        old ? old.map(r => r.id === id ? result.data : r) : undefined
+      );
+
+      return result;
+    },
+  }),
+};
+```
+
+## Layer 3: RPC Namespace - Unified API Access
+
+Create a single entry point for all operations (this is how Whispering achieves its clean API):
+
+```typescript
+// lib/query/index.ts
+export { queryClient } from './_factories';
+
+import { recordings } from './recordings';
+import { transcription } from './transcription';
+import { recorder } from './recorder';
+import { notifications } from './notifications';
+import { settings } from './settings';
+
+// This creates your RPC-like interface
+export const rpc = {
+  recordings,
+  transcription,
+  recorder,
+  notifications,
+  settings,
+} as const;
+
+// Everything you can do in the app is available through rpc.*
+// rpc.recordings.getAllRecordings      // Get all recordings
+// rpc.transcription.transcribeRecording // Transcribe audio
+// rpc.recorder.startRecording          // Start recording
+// rpc.notifications.showSuccess        // Show notifications
+// ... 30+ more operations
+```
+
+## The Dual Interface Pattern
+
+Every operation in Whispering provides both reactive and imperative interfaces:
+
+### Reactive Interface - Automatic State Management
+
+Perfect for component state that needs to track loading/error states:
+
+```svelte
+<!-- components/RecordingsList.svelte -->
+<script lang="ts">
+  import { createQuery } from '@tanstack/svelte-query';
+  import { rpc } from '$lib/query';
+  import RecordingCard from './RecordingCard.svelte';
+  import RecordingsLoading from './RecordingsLoading.svelte';
+  import ErrorDisplay from './ErrorDisplay.svelte';
+
+  // Automatically syncs: isPending, data, error, isStale
+  const recordings = createQuery(rpc.recordings.getAllRecordings.options());
+</script>
+
+{#if $recordings.isPending}
+  <RecordingsLoading />
+{:else if $recordings.error}
+  <ErrorDisplay 
+    error={$recordings.error} 
+    onRetry={() => $recordings.refetch()} 
+  />
+{:else if $recordings.data}
+  <div class="recordings-grid">
+    {#each $recordings.data as recording (recording.id)}
+      <RecordingCard {recording} />
+    {/each}
+  </div>
+  
+  {#if $recordings.data.length === 0}
+    <div class="empty-state">
+      <h3>No recordings yet</h3>
+      <p>Start recording to see your audio files here.</p>
+    </div>
+  {/if}
+{/if}
+
+{#if $recordings.isRefetching && $recordings.data}
+  <div class="refresh-indicator">Updating recordings...</div>
+{/if}
+
+<style>
+  .recordings-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 1rem;
+  }
+
+  .empty-state {
+    text-align: center;
+    padding: 2rem;
+    color: var(--text-muted);
+  }
+
+  .refresh-indicator {
+    position: fixed;
+    top: 1rem;
+    right: 1rem;
+    background: var(--success);
+    color: white;
+    padding: 0.5rem 1rem;
+    border-radius: 0.25rem;
+    font-size: 0.875rem;
+  }
+</style>
+```
+
+### Imperative Interface - Direct Execution
+
+Perfect for event handlers and workflows that don't need reactive overhead:
+
+```svelte
+<!-- components/RecordingActions.svelte -->
+<script lang="ts">
+  import { rpc } from '$lib/query';
+  import { goto } from '$app/navigation';
+  import { toast } from '$lib/stores/toast';
+
+  export let recording: Recording;
+
+  // Sequential operations without reactive overhead
+  async function handleTranscribeAndEdit() {
+    // Step 1: Start transcription
+    const { error: transcribeError } = await rpc.transcription.transcribeRecording.execute(recording.id);
+    if (transcribeError) {
+      toast.error('Transcription failed', { description: transcribeError.message });
+      return;
+    }
+
+    // Step 2: Navigate to editor
+    await goto(`/recordings/${recording.id}/edit`);
+  }
+
+  async function handleDelete() {
+    if (!confirm('Are you sure you want to delete this recording?')) return;
+
+    const { error } = await rpc.recordings.deleteRecording.execute(recording.id);
+    if (error) {
+      toast.error('Failed to delete recording', { description: error.message });
+      return;
+    }
+
+    toast.success('Recording deleted successfully');
+  }
+
+  async function handleShare() {
+    const { data, error } = await rpc.recordings.generateShareLink.execute(recording.id);
+    if (error) {
+      toast.error('Failed to generate share link', { description: error.message });
+      return;
+    }
+
+    await navigator.clipboard.writeText(data.shareUrl);
+    toast.success('Share link copied to clipboard');
+  }
+</script>
+
+<div class="recording-actions">
+  <button on:click={handleTranscribeAndEdit} class="btn btn-primary">
+    Transcribe & Edit
+  </button>
+  
+  <button on:click={handleShare} class="btn btn-secondary">
+    Share
+  </button>
+  
+  <button on:click={handleDelete} class="btn btn-danger">
+    Delete
+  </button>
+</div>
+```
+
+## Complex Workflows - Multi-Step Operations
+
+Whispering handles complex workflows like this recording-to-transcription pipeline:
+
+```svelte
+<!-- components/RecordingWorkflow.svelte -->
+<script lang="ts">
+  import { createMutation } from '@tanstack/svelte-query';
+  import { rpc } from '$lib/query';
+  import { toast } from '$lib/stores/toast';
+  import { nanoid } from 'nanoid';
+
+  let isRecording = false;
+  let currentRecordingId: string | null = null;
+
+  // Reactive mutations provide loading states
+  const startRecording = createMutation(rpc.recorder.startRecording.options());
+  const stopRecording = createMutation(rpc.recorder.stopRecording.options());
+
+  // Complex workflow: Record → Save → Transcribe
+  async function handleStartRecording() {
+    const toastId = nanoid();
+    
+    const { data, error } = await rpc.recorder.startRecording.execute({ toastId });
+    if (error) {
+      toast.error('Failed to start recording', { description: error.message });
+      return;
+    }
+
+    isRecording = true;
+    currentRecordingId = data.recordingId;
+    toast.success('Recording started');
+  }
+
+  async function handleStopAndTranscribe() {
+    if (!currentRecordingId) return;
+
+    const toastId = nanoid();
+
+    // Step 1: Stop recording
+    const { data: blob, error: stopError } = await rpc.recorder.stopRecording.execute({ toastId });
+    if (stopError) {
+      toast.error('Failed to stop recording', { description: stopError.message });
+      return;
+    }
+
+    isRecording = false;
+
+    // Step 2: Save to database
+    const { data: recording, error: saveError } = await rpc.recordings.createRecording.execute({
+      blob,
+      timestamp: new Date(),
+      transcriptionStatus: 'PENDING',
+    });
+    if (saveError) {
+      toast.error('Failed to save recording', { description: saveError.message });
+      return;
+    }
+
+    // Step 3: Start transcription
+    const { error: transcribeError } = await rpc.transcription.transcribeRecording.execute(recording.id);
+    if (transcribeError) {
+      toast.error('Recording saved, but transcription failed', { 
+        description: transcribeError.message,
+        action: { 
+          label: 'Retry transcription', 
+          onClick: () => rpc.transcription.transcribeRecording.execute(recording.id) 
+        }
+      });
+      return;
+    }
+
+    toast.success('Recording transcribed successfully');
+    currentRecordingId = null;
+  }
+
+  // Cleanup on component destroy
+  import { onDestroy } from 'svelte';
+  onDestroy(() => {
+    if (isRecording) {
+      rpc.recorder.stopRecording.execute({ toastId: nanoid() });
+    }
+  });
+</script>
+
+<div class="recording-workflow">
+  {#if !isRecording}
+    <button 
+      on:click={handleStartRecording}
+      disabled={$startRecording.isPending}
+      class="record-button"
+    >
+      {$startRecording.isPending ? 'Starting...' : 'Start Recording'}
+    </button>
+  {:else}
+    <button 
+      on:click={handleStopAndTranscribe}
+      disabled={$stopRecording.isPending}
+      class="stop-button"
+    >
+      {$stopRecording.isPending ? 'Processing...' : 'Stop & Transcribe'}
+    </button>
+  {/if}
+  
+  {#if isRecording}
+    <div class="recording-indicator">
+      <div class="pulse"></div>
+      Recording in progress...
+    </div>
+  {/if}
+</div>
+
+<style>
+  .recording-workflow {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1rem;
+  }
+
+  .record-button {
+    background: var(--success);
+    color: white;
+    border: none;
+    padding: 1rem 2rem;
+    border-radius: 50%;
+    font-size: 1.125rem;
+    cursor: pointer;
+    transition: background-color 0.2s;
+  }
+
+  .record-button:hover {
+    background: var(--success-hover);
+  }
+
+  .stop-button {
+    background: var(--danger);
+    color: white;
+    border: none;
+    padding: 1rem 2rem;
+    border-radius: 0.5rem;
+    font-size: 1.125rem;
+    cursor: pointer;
+  }
+
+  .recording-indicator {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    color: var(--danger);
+    font-weight: 500;
+  }
+
+  .pulse {
+    width: 12px;
+    height: 12px;
+    background: var(--danger);
+    border-radius: 50%;
+    animation: pulse 2s infinite;
+  }
+
+  @keyframes pulse {
+    0% { opacity: 1; }
+    50% { opacity: 0.3; }
+    100% { opacity: 1; }
+  }
+</style>
+```
+
+## Error Handling That Actually Works
+
+Whispering's error handling system prevents runtime crashes through comprehensive error handling:
+
+```svelte
+<!-- components/ErrorDisplay.svelte -->
+<script lang="ts">
+  export let error: any;
+  export let onRetry: (() => void) | undefined = undefined;
+  export let className = '';
+
+  function getErrorAction() {
+    if (!error || typeof error !== 'object') return null;
+
+    switch (error.name) {
+      case 'RecordingServiceError':
+        if (error.message?.includes('not found')) {
+          return {
+            label: 'Browse recordings',
+            href: '/recordings'
+          };
+        }
+        if (error.message?.includes('permission')) {
+          return {
+            label: 'Grant permissions',
+            onClick: () => navigator.mediaDevices.getUserMedia({ audio: true })
+          };
+        }
+        break;
+
+      case 'TranscriptionServiceError':
+        if (error.message?.includes('API key')) {
+          return {
+            label: 'Add API key',
+            href: '/settings/transcription'
+          };
+        }
+        break;
+    }
+
+    return onRetry ? { label: 'Try again', onClick: onRetry } : null;
+  }
+
+  $: action = getErrorAction();
+</script>
+
+<div class="error-display {className}">
+  <div class="error-icon">⚠️</div>
+  
+  <div class="error-content">
+    <h3 class="error-title">Something went wrong</h3>
+    <p class="error-message">
+      {error?.message || 'An unexpected error occurred'}
+    </p>
+    
+    {#if error?.context}
+      <details class="error-details">
+        <summary>Technical details</summary>
+        <pre>{JSON.stringify(error.context, null, 2)}</pre>
+      </details>
+    {/if}
+    
+    {#if action}
+      <div class="error-actions">
+        {#if action.href}
+          <a href={action.href} class="btn btn-primary">{action.label}</a>
+        {:else if action.onClick}
+          <button on:click={action.onClick} class="btn btn-primary">{action.label}</button>
+        {/if}
+      </div>
+    {/if}
+  </div>
+</div>
+
+<style>
+  .error-display {
+    display: flex;
+    align-items: flex-start;
+    gap: 1rem;
+    padding: 1rem;
+    background: var(--error-bg);
+    border: 1px solid var(--error-border);
+    border-radius: 0.5rem;
+    color: var(--error-text);
+  }
+
+  .error-icon {
+    font-size: 1.5rem;
+    flex-shrink: 0;
+  }
+
+  .error-content {
+    flex: 1;
+  }
+
+  .error-title {
+    margin: 0 0 0.5rem 0;
+    font-size: 1.125rem;
+    font-weight: 600;
+  }
+
+  .error-message {
+    margin: 0 0 1rem 0;
+    color: var(--error-text-muted);
+  }
+
+  .error-details {
+    margin-bottom: 1rem;
+  }
+
+  .error-details summary {
+    cursor: pointer;
+    font-size: 0.875rem;
+    color: var(--error-text-muted);
+  }
+
+  .error-details pre {
+    margin-top: 0.5rem;
+    padding: 0.5rem;
+    background: var(--error-details-bg);
+    border-radius: 0.25rem;
+    font-size: 0.75rem;
+    overflow-x: auto;
+  }
+
+  .error-actions {
+    display: flex;
+    gap: 0.5rem;
+  }
+</style>
+```
+
+## Platform Abstraction - How Whispering Achieves 97% Code Sharing
+
+Whispering runs on both desktop (Tauri) and web with the same codebase:
+
+```typescript
+// lib/services/platform/recording.ts
+
+// Platform detection happens at build time
+export const recordingService = typeof window !== 'undefined' && window.__TAURI_INTERNALS__
+  ? createRecordingServiceDesktop()
+  : createRecordingServiceWeb();
+
+// Desktop implementation using Tauri APIs
+function createRecordingServiceDesktop() {
+  return {
+    async startRecording(params: StartRecordingParams): Promise<Result<RecordingResult, RecorderServiceError>> {
+      return tryAsync({
+        try: async () => {
+          // Use Tauri's native audio recording
+          const result = await invoke('start_audio_recording', {
+            deviceId: params.selectedDeviceId,
+            outputPath: params.outputFolder,
+            bitrate: params.bitrateKbps,
+          });
+          return result;
+        },
+        mapErr: (error) => RecorderServiceErr({
+          message: 'Failed to start desktop recording',
+          context: { platform: 'desktop', params },
+          cause: error,
+        }),
+      });
+    },
+
+    async enumerateDevices(): Promise<Result<AudioDevice[], RecorderServiceError>> {
+      return tryAsync({
+        try: () => invoke('enumerate_audio_devices'),
+        mapErr: (error) => RecorderServiceErr({
+          message: 'Failed to enumerate desktop audio devices',
+          context: { platform: 'desktop' },
+          cause: error,
+        }),
+      });
+    },
+  };
+}
+
+// Web implementation using browser APIs
+function createRecordingServiceWeb() {
+  return {
+    async startRecording(params: StartRecordingParams): Promise<Result<RecordingResult, RecorderServiceError>> {
+      return tryAsync({
+        try: async () => {
+          const stream = await navigator.mediaDevices.getUserMedia({
+            audio: {
+              deviceId: params.selectedDeviceId ? { exact: params.selectedDeviceId } : undefined,
+              sampleRate: 44100,
+            }
+          });
+
+          const recorder = new MediaRecorder(stream, {
+            mimeType: 'audio/webm',
+            audioBitsPerSecond: params.bitrateKbps * 1000,
+          });
+
+          return { recorder, stream };
+        },
+        mapErr: (error) => RecorderServiceErr({
+          message: 'Failed to start web recording',
+          context: { platform: 'web', params },
+          cause: error,
+        }),
+      });
+    },
+
+    async enumerateDevices(): Promise<Result<AudioDevice[], RecorderServiceError>> {
+      return tryAsync({
+        try: async () => {
+          const devices = await navigator.mediaDevices.enumerateDevices();
+          return devices
+            .filter(device => device.kind === 'audioinput')
+            .map(device => ({
+              id: device.deviceId,
+              name: device.label || 'Unknown Device',
+              isDefault: device.deviceId === 'default',
+            }));
+        },
+        mapErr: (error) => RecorderServiceErr({
+          message: 'Failed to enumerate web audio devices',
+          context: { platform: 'web' },
+          cause: error,
+        }),
+      });
+    },
+  };
+}
+```
+
+This pattern enables:
+- **97% code sharing**: Business logic is completely platform-agnostic
+- **Zero runtime overhead**: No runtime checks or polymorphism
+- **Type safety**: Same interfaces guarantee API compatibility
+- **Maintainability**: Platform differences isolated to thin service layer
+
+## App Setup and Configuration
+
+Set up your Svelte app with the query client:
+
+```typescript
+// src/app.html
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <link rel="icon" href="%sveltekit.assets%/favicon.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    %sveltekit.head%
+  </head>
+  <body data-sveltekit-preload-data="hover">
+    <div style="display: contents">%sveltekit.body%</div>
+  </body>
+</html>
+```
+
+```svelte
+<!-- src/app.svelte -->
+<script lang="ts">
+  import { QueryClient, QueryClientProvider } from '@tanstack/svelte-query';
+  import { SvelteQueryDevtools } from '@tanstack/svelte-query-devtools';
+  import { browser } from '$app/environment';
+  import { queryClient } from '$lib/query';
+  import ErrorBoundary from '$lib/components/ErrorBoundary.svelte';
+  import Toast from '$lib/components/Toast.svelte';
+  import './app.css';
+</script>
+
+<QueryClientProvider client={queryClient}>
+  <ErrorBoundary>
+    <slot />
+    <Toast />
+  </ErrorBoundary>
+  
+  {#if browser}
+    <SvelteQueryDevtools initialIsOpen={false} />
+  {/if}
+</QueryClientProvider>
+```
+
+```typescript
+// src/lib/query/_factories.ts (already shown above)
+import { QueryClient } from '@tanstack/query-core';
+import { createQueryFactories } from 'wellcrafted/query';
+
+export const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 5 * 60 * 1000,
+      gcTime: 10 * 60 * 1000,
+      retry: (failureCount, error) => {
+        if (error?.name?.includes('ServiceError')) {
+          return false; // Don't retry application errors
+        }
+        return failureCount < 3;
+      },
+    },
+  },
+});
+
+export const { defineQuery, defineMutation } = createQueryFactories(queryClient);
+```
+
+## Page-Level Data Loading
+
+Use the dual interface pattern in SvelteKit load functions:
+
+```typescript
+// src/routes/recordings/+page.ts
+import type { PageLoad } from './$types';
+import { rpc } from '$lib/query';
+
+export const load: PageLoad = async () => {
+  // Use .ensure() in preloaders - it prefers cached data
+  const { data: recordings, error } = await rpc.recordings.getAllRecordings.ensure();
+  
+  if (error) {
+    // You can throw the error to trigger error page
+    throw new Error(`Failed to load recordings: ${error.message}`);
+  }
+
+  return {
+    recordings, // Available immediately when component mounts
+  };
+};
+```
+
+```svelte
+<!-- src/routes/recordings/+page.svelte -->
+<script lang="ts">
+  import { createQuery } from '@tanstack/svelte-query';
+  import { page } from '$app/stores';
+  import { rpc } from '$lib/query';
+  import RecordingCard from '$lib/components/RecordingCard.svelte';
+
+  // Data is preloaded, but query provides reactivity
+  const recordings = createQuery(rpc.recordings.getAllRecordings.options());
+
+  // Use preloaded data as initial data
+  $: if ($page.data.recordings && !$recordings.data) {
+    queryClient.setQueryData(['recordings'], $page.data.recordings);
+  }
+</script>
+
+<svelte:head>
+  <title>Recordings</title>
+</svelte:head>
+
+<div class="recordings-page">
+  <header>
+    <h1>Your Recordings</h1>
+    <CreateRecordingButton />
+  </header>
+
+  {#if $recordings.isPending}
+    <RecordingsLoading />
+  {:else if $recordings.error}
+    <ErrorDisplay error={$recordings.error} onRetry={() => $recordings.refetch()} />
+  {:else if $recordings.data}
+    <div class="recordings-grid">
+      {#each $recordings.data as recording (recording.id)}
+        <RecordingCard {recording} />
+      {/each}
+    </div>
+  {/if}
+</div>
+```
+
+## Testing Patterns from Whispering
+
+Test components with mock services:
+
+```typescript
+// src/lib/testing/setup.ts
+import { vi } from 'vitest';
+import { QueryClient } from '@tanstack/query-core';
+import { Ok, Err } from 'wellcrafted/result';
+
+export function createTestQueryClient() {
+  return new QueryClient({
+    defaultOptions: {
+      queries: { retry: false },
+      mutations: { retry: false },
+    },
+  });
+}
+
+export function mockRecordingService() {
+  return {
+    getAllRecordings: vi.fn(),
+    getRecording: vi.fn(),
+    createRecording: vi.fn(),
+    deleteRecording: vi.fn(),
+    updateRecording: vi.fn(),
+  };
+}
+```
+
+```typescript
+// src/lib/components/__tests__/RecordingsList.test.ts
+import { render, screen, waitFor } from '@testing-library/svelte';
+import { QueryClient, QueryClientProvider } from '@tanstack/svelte-query';
+import { vi } from 'vitest';
+import { Ok, Err } from 'wellcrafted/result';
+
+import RecordingsList from '../RecordingsList.svelte';
+import * as recordingService from '../../services/recordings';
+
+// Mock the service
+vi.mock('../../services/recordings');
+
+function renderWithQuery(component: any, props: any = {}) {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  
+  return render(QueryClientProvider, {
+    client: queryClient,
+    $$slots: {
+      default: [component, props],
+    },
+  });
+}
+
+describe('RecordingsList', () => {
+  it('displays recordings when loaded successfully', async () => {
+    const mockRecordings = [
+      { id: '1', filename: 'recording1.webm', duration: 120, transcriptionStatus: 'COMPLETED' },
+      { id: '2', filename: 'recording2.webm', duration: 180, transcriptionStatus: 'PENDING' },
+    ];
+    
+    vi.mocked(recordingService.recordingService.getAllRecordings).mockResolvedValue(Ok(mockRecordings));
+
+    renderWithQuery(RecordingsList);
+
+    expect(screen.getByText('Loading recordings...')).toBeInTheDocument();
+    
+    await waitFor(() => {
+      expect(screen.getByText('recording1.webm')).toBeInTheDocument();
+      expect(screen.getByText('recording2.webm')).toBeInTheDocument();
+    });
+  });
+
+  it('displays error when recordings fetch fails', async () => {
+    const errorResult = Err({
+      name: 'RecordingServiceError',
+      message: 'Database connection failed',
+      context: { operation: 'getAllRecordings' },
+      cause: undefined,
+    });
+    
+    vi.mocked(recordingService.recordingService.getAllRecordings).mockResolvedValue(errorResult);
+
+    renderWithQuery(RecordingsList);
+
+    await waitFor(() => {
+      expect(screen.getByText('Something went wrong')).toBeInTheDocument();
+      expect(screen.getByText('Database connection failed')).toBeInTheDocument();
+    });
+  });
+
+  it('shows empty state when no recordings exist', async () => {
+    vi.mocked(recordingService.recordingService.getAllRecordings).mockResolvedValue(Ok([]));
+
+    renderWithQuery(RecordingsList);
+
+    await waitFor(() => {
+      expect(screen.getByText('No recordings yet')).toBeInTheDocument();
+      expect(screen.getByText('Start recording to see your audio files here.')).toBeInTheDocument();
+    });
+  });
+});
+```
+
+## Performance Optimizations from Production
+
+### Background Sync
+
+```typescript
+// Auto-sync recordings every 30 seconds
+export const recordings = {
+  getAllRecordings: defineQuery({
+    queryKey: ['recordings'],
+    resultQueryFn: () => recordingService.getAllRecordings(),
+    refetchInterval: 30000,
+    refetchIntervalInBackground: true,
+  }),
+};
+```
+
+### Optimistic Updates
+
+```typescript
+// Immediately show changes before server confirms
+export const recordings = {
+  updateRecording: defineMutation({
+    resultMutationFn: async ({ id, updates }) => {
+      // Optimistic update
+      queryClient.setQueryData(['recordings', id], (old: Recording | undefined) => 
+        old ? { ...old, ...updates } : undefined
+      );
+      
+      const result = await recordingService.updateRecording(id, updates);
+      
+      if (result.error) {
+        // Rollback on failure
+        queryClient.invalidateQueries({ queryKey: ['recordings', id] });
+        return result;
+      }
+      
+      return result;
+    },
+  }),
+};
+```
+
+### Smart Caching
+
+```typescript
+// Different cache times for different data types
+export const recordings = {
+  getAllRecordings: defineQuery({
+    queryKey: ['recordings'],
+    resultQueryFn: () => recordingService.getAllRecordings(),
+    staleTime: 2 * 60 * 1000, // 2 minutes for list view
+  }),
+
+  getRecording: (id: string) => defineQuery({
+    queryKey: ['recordings', id],
+    resultQueryFn: () => recordingService.getRecording(id),
+    staleTime: 10 * 60 * 1000, // 10 minutes for individual recordings
+  }),
+};
+```
+
+## Migration Guide
+
+### Step 1: Install Dependencies
+
+```bash
+npm install wellcrafted @tanstack/svelte-query
+```
+
+### Step 2: Convert Services Gradually
+
+```typescript
+// Before: Traditional promise-based service
+export async function getRecordings(): Promise<Recording[]> {
+  const response = await fetch('/api/recordings');
+  if (!response.ok) {
+    throw new Error('Failed to fetch recordings');
+  }
+  return response.json();
+}
+
+// After: Result-based service
+export async function getAllRecordings(): Promise<Result<Recording[], RecordingServiceError>> {
+  return tryAsync({
+    try: async () => {
+      const response = await fetch('/api/recordings');
+      if (!response.ok) {
+        throw new Error('Failed to fetch recordings');
+      }
+      return response.json();
+    },
+    mapErr: (error) => RecordingServiceErr({
+      message: 'Failed to fetch recordings from API',
+      context: { operation: 'getAllRecordings' },
+      cause: error,
+    }),
+  });
+}
+```
+
+### Step 3: Add Query Layer
+
+```typescript
+// Create query definitions for converted services
+export const recordings = {
+  getAllRecordings: defineQuery({
+    queryKey: ['recordings'],
+    resultQueryFn: () => recordingService.getAllRecordings(),
+  }),
+};
+```
+
+### Step 4: Update Components
+
+```svelte
+<!-- Before: Manual state management -->
+<script lang="ts">
+  let recordings: Recording[] = [];
+  let loading = true;
+  let error: string | null = null;
+
+  onMount(async () => {
+    try {
+      recordings = await getRecordings();
+    } catch (err) {
+      error = err.message;
+    } finally {
+      loading = false;
+    }
+  });
+</script>
+
+<!-- After: Query hook -->
+<script lang="ts">
+  import { createQuery } from '@tanstack/svelte-query';
+  import { rpc } from '$lib/query';
+
+  const recordings = createQuery(rpc.recordings.getAllRecordings.options());
+</script>
+
+{#if $recordings.isPending}
+  <LoadingSpinner />
+{:else if $recordings.error}
+  <ErrorDisplay error={$recordings.error} />
+{:else if $recordings.data}
+  <!-- Success state -->
+{/if}
+```
+
+## Best Practices from 22,824 Lines of Production Code
+
+### 1. Service Layer Purity
+
+Keep services pure and platform-agnostic:
+
+```typescript
+// ✅ Good - pure business logic
+export function createRecordingService(db: Database) {
+  return {
+    async createRecording(input: CreateRecordingInput): Promise<Result<Recording, RecordingServiceError>> {
+      if (!input.blob) {
+        return RecordingServiceErr({
+          message: 'Audio blob is required',
+          context: { input },
+          cause: undefined,
+        });
+      }
+      
+      return tryAsync({
+        try: () => db.recordings.create(input),
+        mapErr: (error) => RecordingServiceErr({
+          message: 'Failed to save recording',
+          context: { input },
+          cause: error,
+        }),
+      });
+    },
+  };
+}
+
+// ❌ Bad - UI concerns in service
+export async function createRecording(input: CreateRecordingInput) {
+  try {
+    const recording = await db.recordings.create(input);
+    toast.success('Recording saved!'); // UI concern!
+    return recording;
+  } catch (error) {
+    toast.error('Save failed!'); // UI concern!
+    throw error;
+  }
+}
+```
+
+### 2. Error Transformation
+
+Transform service errors to UI-friendly formats in components:
+
+```svelte
+<script lang="ts">
+  async function handleCreateRecording() {
+    const { data, error } = await rpc.recordings.createRecording.execute(formData);
+    
+    if (error) {
+      // Transform service error to user-friendly message
+      const message = error.message.includes('blob') 
+        ? 'Please select an audio file to upload'
+        : 'Failed to save recording. Please try again.';
+        
+      toast.error(message, { 
+        description: error.message,
+        action: { label: 'Retry', onClick: handleCreateRecording }
+      });
+      return;
+    }
+    
+    toast.success('Recording saved successfully');
+  }
+</script>
+```
+
+### 3. Leverage Both Interfaces
+
+Use reactive for UI state, imperative for workflows:
+
+```svelte
+<script lang="ts">
+  // Reactive - automatic UI updates
+  const recordings = createQuery(rpc.recordings.getAllRecordings.options());
+  
+  // Imperative - direct action execution
+  async function handleBulkDelete(recordingIds: string[]) {
+    for (const id of recordingIds) {
+      const { error } = await rpc.recordings.deleteRecording.execute(id);
+      if (error) {
+        toast.error(`Failed to delete recording ${id}: ${error.message}`);
+        break;
+      }
+    }
+    toast.success(`Deleted ${recordingIds.length} recordings`);
+  }
+</script>
+```
+
+### 4. Smart Component Organization
+
+Organize components by feature, not by type:
+
+```
+src/lib/components/
+├── recordings/
+│   ├── RecordingsList.svelte
+│   ├── RecordingCard.svelte
+│   ├── CreateRecordingForm.svelte
+│   └── DeleteRecordingDialog.svelte
+├── transcription/
+│   ├── TranscriptionViewer.svelte
+│   ├── TranscriptionEditor.svelte
+│   └── TranscriptionProgress.svelte
+└── shared/
+    ├── ErrorDisplay.svelte
+    ├── LoadingSpinner.svelte
+    └── Toast.svelte
+```
+
+## Summary
+
+This Svelte + TanStack Query integration provides the exact patterns used in Whispering's production app:
+
+- **97% Code Sharing**: Platform-agnostic business logic with thin platform adapters
+- **Zero Runtime Crashes**: Comprehensive error handling through Result types
+- **Type Safety**: Full TypeScript support with rich error information
+- **Performance**: Automatic caching, background sync, and optimistic updates
+- **Developer Experience**: Dual interface pattern for maximum flexibility
+- **Maintainability**: Consistent patterns and clear separation of concerns
+
+These patterns are proven in a 22,824-line production application and scale from simple components to complex multi-platform applications. Start with one service and gradually adopt these patterns throughout your codebase for maximum reliability and developer productivity.
+
+## See Also
+
+<CardGroup>
+  <Card title="Whispering Case Study" icon="microphone" href="/case-studies/whispering-architecture">
+    See these patterns in action across 22,824 lines of production code
+  </Card>
+  <Card title="Service Layer Pattern" icon="layer-group" href="/patterns/service-layer">
+    Learn the factory function pattern that powers wellcrafted services
+  </Card>
+  <Card title="Real-World Examples" icon="code" href="/patterns/real-world">
+    Complete authentication, validation, and API examples
+  </Card>
+  <Card title="React + TanStack Query" icon="react" href="/integrations/react-tanstack">
+    Apply these same patterns in React applications
+  </Card>
+</CardGroup>

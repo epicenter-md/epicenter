@@ -1,0 +1,1443 @@
+---
+title: 'Node.js + Express API Integration'
+description: 'Production-ready patterns for building robust APIs with wellcrafted'
+icon: 'nodejs'
+---
+
+# Node.js + Express API Integration
+
+Learn how to build robust, type-safe Express APIs using wellcrafted's Result types and error handling. This guide shows production-tested patterns for middleware, route handlers, service layers, and database integration.
+
+## The Problem: Inconsistent API Error Handling
+
+Traditional Express APIs often have inconsistent error handling and no type safety:
+
+```javascript
+// Before: Inconsistent error handling nightmare
+app.get('/api/users/:id', async (req, res) => {
+  try {
+    const user = await User.findById(req.params.id);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    res.json(user);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.post('/api/users', async (req, res) => {
+  try {
+    // Validation errors thrown as exceptions
+    const { error, value } = userSchema.validate(req.body);
+    if (error) {
+      return res.status(400).json({ error: error.details[0].message });
+    }
+    
+    const user = await User.create(value);
+    res.status(201).json(user);
+  } catch (error) {
+    if (error.code === 11000) {
+      return res.status(409).json({ error: 'Email already exists' });
+    }
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.delete('/api/users/:id', async (req, res) => {
+  try {
+    await User.findByIdAndDelete(req.params.id);
+    res.status(204).send();
+  } catch (error) {
+    // What if user doesn't exist? Silent success or error?
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+```
+
+**Problems with this approach:**
+- Inconsistent error response formats across endpoints
+- No type safety for request/response data
+- Exception-based error handling leads to missed edge cases
+- Difficult to debug and maintain
+- Error context is often lost
+- Silent failures and unclear error recovery
+
+## The Solution: wellcrafted for Type-Safe APIs
+
+With wellcrafted, the same API becomes:
+
+```typescript
+// After: Type-safe, consistent error handling
+app.get('/api/users/:id', async (req, res) => {
+  const { data: user, error } = await userService.getUserById(req.params.id);
+  
+  if (error) {
+    return sendErrorResponse(res, error);
+  }
+  
+  res.json({ user, timestamp: new Date().toISOString() });
+});
+
+app.post('/api/users', async (req, res) => {
+  const { data: user, error } = await userService.createUser(req.body);
+  
+  if (error) {
+    return sendErrorResponse(res, error);
+  }
+  
+  res.status(201).json({ user, timestamp: new Date().toISOString() });
+});
+
+app.delete('/api/users/:id', async (req, res) => {
+  const { error } = await userService.deleteUser(req.params.id);
+  
+  if (error) {
+    return sendErrorResponse(res, error);
+  }
+  
+  res.status(204).send();
+});
+```
+
+**Benefits:**
+- Consistent error response format across all endpoints
+- Type-safe request/response handling
+- Rich error context for debugging
+- No missed error cases
+- Clear error recovery patterns
+- Maintainable and scalable codebase
+
+## Architecture: Service-First API Design
+
+```
+┌─────────────────┐     ┌─────────────────┐     ┌──────────────┐
+│ Express Routes  │ --> │   Middleware    │ --> │   Services   │
+│   (HTTP Layer)  │     │  (Validation)   │     │ (Pure Logic) │
+└─────────────────┘     └─────────────────┘     └──────────────┘
+         ↑                        │                       │
+         └────────────────────────┼───────────────────────┘
+              Error Response       │
+              Transformation       ↓
+                            ┌──────────────┐
+                            │   Database   │
+                            │  (Postgres)  │
+                            └──────────────┘
+```
+
+## Layer 1: Services - Pure Business Logic
+
+Create services that handle business logic with comprehensive error handling:
+
+```typescript
+// src/services/users.ts
+import { Ok, Err, tryAsync, type Result } from 'wellcrafted/result';
+import { createTaggedError } from 'wellcrafted/error';
+import { db } from '../db';
+
+const { UserServiceError, UserServiceErr } = createTaggedError('UserServiceError');
+type UserServiceError = ReturnType<typeof UserServiceError>;
+
+export type User = {
+  id: string;
+  email: string;
+  name: string;
+  role: 'user' | 'admin';
+  createdAt: Date;
+  updatedAt: Date;
+};
+
+export type CreateUserInput = {
+  email: string;
+  name: string;
+  password: string;
+  role?: 'user' | 'admin';
+};
+
+export type UpdateUserInput = {
+  email?: string;
+  name?: string;
+  role?: 'user' | 'admin';
+};
+
+export async function getAllUsers(
+  options: { limit?: number; offset?: number } = {}
+): Promise<Result<{ users: User[]; total: number }, UserServiceError>> {
+  const { limit = 20, offset = 0 } = options;
+
+  return tryAsync({
+    try: async () => {
+      const [users, total] = await Promise.all([
+        db.user.findMany({
+          skip: offset,
+          take: limit,
+          orderBy: { createdAt: 'desc' },
+          select: {
+            id: true,
+            email: true,
+            name: true,
+            role: true,
+            createdAt: true,
+            updatedAt: true,
+          },
+        }),
+        db.user.count(),
+      ]);
+
+      return { users, total };
+    },
+    mapErr: (error) => UserServiceErr({
+      message: 'Failed to fetch users from database',
+      context: { limit, offset },
+      cause: error,
+    }),
+  });
+}
+
+export async function getUserById(id: string): Promise<Result<User, UserServiceError>> {
+  if (!id) {
+    return UserServiceErr({
+      message: 'User ID is required',
+      context: { id },
+      cause: undefined,
+    });
+  }
+
+  return tryAsync({
+    try: async () => {
+      const user = await db.user.findUnique({
+        where: { id },
+        select: {
+          id: true,
+          email: true,
+          name: true,
+          role: true,
+          createdAt: true,
+          updatedAt: true,
+        },
+      });
+
+      if (!user) {
+        throw new Error('User not found');
+      }
+
+      return user;
+    },
+    mapErr: (error) => UserServiceErr({
+      message: error instanceof Error ? error.message : 'Failed to fetch user',
+      context: { userId: id },
+      cause: error,
+    }),
+  });
+}
+
+export async function createUser(input: CreateUserInput): Promise<Result<User, UserServiceError>> {
+  // Input validation
+  if (!input.email?.trim()) {
+    return UserServiceErr({
+      message: 'Email is required',
+      context: { input: { ...input, password: '[REDACTED]' } },
+      cause: undefined,
+    });
+  }
+
+  if (!input.email.includes('@')) {
+    return UserServiceErr({
+      message: 'Invalid email format',
+      context: { email: input.email },
+      cause: undefined,
+    });
+  }
+
+  if (!input.name?.trim()) {
+    return UserServiceErr({
+      message: 'Name is required',
+      context: { input: { ...input, password: '[REDACTED]' } },
+      cause: undefined,
+    });
+  }
+
+  if (!input.password || input.password.length < 8) {
+    return UserServiceErr({
+      message: 'Password must be at least 8 characters long',
+      context: { passwordLength: input.password?.length || 0 },
+      cause: undefined,
+    });
+  }
+
+  return tryAsync({
+    try: async () => {
+      // Check for existing email
+      const existingUser = await db.user.findUnique({
+        where: { email: input.email.toLowerCase() },
+      });
+
+      if (existingUser) {
+        throw new Error('Email already exists');
+      }
+
+      // Hash password
+      const hashedPassword = await hashPassword(input.password);
+
+      // Create user
+      const user = await db.user.create({
+        data: {
+          email: input.email.toLowerCase(),
+          name: input.name.trim(),
+          password: hashedPassword,
+          role: input.role || 'user',
+        },
+        select: {
+          id: true,
+          email: true,
+          name: true,
+          role: true,
+          createdAt: true,
+          updatedAt: true,
+        },
+      });
+
+      return user;
+    },
+    mapErr: (error) => UserServiceErr({
+      message: error instanceof Error ? error.message : 'Failed to create user',
+      context: { input: { ...input, password: '[REDACTED]' } },
+      cause: error,
+    }),
+  });
+}
+
+export async function updateUser(id: string, input: UpdateUserInput): Promise<Result<User, UserServiceError>> {
+  if (!id) {
+    return UserServiceErr({
+      message: 'User ID is required',
+      context: { id, input },
+      cause: undefined,
+    });
+  }
+
+  // Validate input if provided
+  if (input.email !== undefined && !input.email.includes('@')) {
+    return UserServiceErr({
+      message: 'Invalid email format',
+      context: { userId: id, email: input.email },
+      cause: undefined,
+    });
+  }
+
+  return tryAsync({
+    try: async () => {
+      // Check if user exists
+      const existingUser = await db.user.findUnique({ where: { id } });
+      if (!existingUser) {
+        throw new Error('User not found');
+      }
+
+      // Check for email conflicts
+      if (input.email && input.email !== existingUser.email) {
+        const emailConflict = await db.user.findUnique({
+          where: { email: input.email.toLowerCase() },
+        });
+        if (emailConflict) {
+          throw new Error('Email already exists');
+        }
+      }
+
+      // Update user
+      const user = await db.user.update({
+        where: { id },
+        data: {
+          ...(input.email && { email: input.email.toLowerCase() }),
+          ...(input.name && { name: input.name.trim() }),
+          ...(input.role && { role: input.role }),
+        },
+        select: {
+          id: true,
+          email: true,
+          name: true,
+          role: true,
+          createdAt: true,
+          updatedAt: true,
+        },
+      });
+
+      return user;
+    },
+    mapErr: (error) => UserServiceErr({
+      message: error instanceof Error ? error.message : 'Failed to update user',
+      context: { userId: id, input },
+      cause: error,
+    }),
+  });
+}
+
+export async function deleteUser(id: string): Promise<Result<void, UserServiceError>> {
+  if (!id) {
+    return UserServiceErr({
+      message: 'User ID is required',
+      context: { id },
+      cause: undefined,
+    });
+  }
+
+  return tryAsync({
+    try: async () => {
+      // Check if user exists
+      const user = await db.user.findUnique({ where: { id } });
+      if (!user) {
+        throw new Error('User not found');
+      }
+
+      // Delete user
+      await db.user.delete({ where: { id } });
+    },
+    mapErr: (error) => UserServiceErr({
+      message: error instanceof Error ? error.message : 'Failed to delete user',
+      context: { userId: id },
+      cause: error,
+    }),
+  });
+}
+
+// Helper function for password hashing
+async function hashPassword(password: string): Promise<string> {
+  const bcrypt = await import('bcrypt');
+  return bcrypt.hash(password, 12);
+}
+```
+
+## Layer 2: Middleware for Request/Response Handling
+
+Create middleware for validation, error handling, and response formatting:
+
+```typescript
+// src/middleware/validation.ts
+import { Request, Response, NextFunction } from 'express';
+import { z } from 'zod';
+import { trySync } from 'wellcrafted/result';
+import { createTaggedError } from 'wellcrafted/error';
+
+const { ValidationError, ValidationErr } = createTaggedError('ValidationError');
+type ValidationError = ReturnType<typeof ValidationError>;
+
+export function validateBody<T>(schema: z.ZodSchema<T>) {
+  return (req: Request, res: Response, next: NextFunction) => {
+    const { data: validData, error } = trySync({
+      try: () => schema.parse(req.body),
+      mapErr: (error) => ValidationErr({
+        message: error instanceof z.ZodError 
+          ? error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')
+          : 'Invalid request body',
+        context: { 
+          body: req.body,
+          errors: error instanceof z.ZodError ? error.errors : undefined,
+        },
+        cause: error,
+      }),
+    });
+
+    if (error) {
+      return sendErrorResponse(res, error);
+    }
+
+    req.body = validData;
+    next();
+  };
+}
+
+export function validateParams<T>(schema: z.ZodSchema<T>) {
+  return (req: Request, res: Response, next: NextFunction) => {
+    const { data: validParams, error } = trySync({
+      try: () => schema.parse(req.params),
+      mapErr: (error) => ValidationErr({
+        message: error instanceof z.ZodError 
+          ? 'Invalid URL parameters'
+          : 'Parameter validation failed',
+        context: { 
+          params: req.params,
+          errors: error instanceof z.ZodError ? error.errors : undefined,
+        },
+        cause: error,
+      }),
+    });
+
+    if (error) {
+      return sendErrorResponse(res, error);
+    }
+
+    req.params = validParams;
+    next();
+  };
+}
+
+export function validateQuery<T>(schema: z.ZodSchema<T>) {
+  return (req: Request, res: Response, next: NextFunction) => {
+    const { data: validQuery, error } = trySync({
+      try: () => schema.parse(req.query),
+      mapErr: (error) => ValidationErr({
+        message: error instanceof z.ZodError 
+          ? 'Invalid query parameters'
+          : 'Query validation failed',
+        context: { 
+          query: req.query,
+          errors: error instanceof z.ZodError ? error.errors : undefined,
+        },
+        cause: error,
+      }),
+    });
+
+    if (error) {
+      return sendErrorResponse(res, error);
+    }
+
+    req.query = validQuery;
+    next();
+  };
+}
+```
+
+```typescript
+// src/middleware/errorHandler.ts
+import { Request, Response, NextFunction } from 'express';
+import type { UserServiceError } from '../services/users';
+import type { ValidationError } from './validation';
+
+type APIError = UserServiceError | ValidationError;
+
+export function sendErrorResponse(res: Response, error: APIError): void {
+  const statusCode = getStatusCode(error);
+  
+  res.status(statusCode).json({
+    success: false,
+    error: {
+      name: error.name,
+      message: error.message,
+      context: error.context,
+    },
+    timestamp: new Date().toISOString(),
+  });
+}
+
+function getStatusCode(error: APIError): number {
+  switch (error.name) {
+    case 'ValidationError':
+      return 400;
+    case 'UserServiceError':
+      if (error.message.includes('not found')) return 404;
+      if (error.message.includes('already exists')) return 409;
+      if (error.message.includes('required') || error.message.includes('invalid')) return 400;
+      return 500;
+    default:
+      return 500;
+  }
+}
+
+// Global error handler for uncaught errors
+export function globalErrorHandler(
+  err: Error,
+  req: Request,
+  res: Response,
+  next: NextFunction
+): void {
+  console.error('Uncaught error:', err);
+  
+  res.status(500).json({
+    success: false,
+    error: {
+      name: 'InternalServerError',
+      message: 'An unexpected error occurred',
+      context: {
+        path: req.path,
+        method: req.method,
+        timestamp: new Date().toISOString(),
+      },
+    },
+    timestamp: new Date().toISOString(),
+  });
+}
+```
+
+## Layer 3: Route Handlers with Type Safety
+
+Create route handlers that use services and middleware:
+
+```typescript
+// src/routes/users.ts
+import { Router } from 'express';
+import { z } from 'zod';
+import * as userService from '../services/users';
+import { validateBody, validateParams, validateQuery } from '../middleware/validation';
+import { sendErrorResponse } from '../middleware/errorHandler';
+
+const router = Router();
+
+// Validation schemas
+const CreateUserSchema = z.object({
+  email: z.string().email(),
+  name: z.string().min(1).max(100),
+  password: z.string().min(8),
+  role: z.enum(['user', 'admin']).optional(),
+});
+
+const UpdateUserSchema = z.object({
+  email: z.string().email().optional(),
+  name: z.string().min(1).max(100).optional(),
+  role: z.enum(['user', 'admin']).optional(),
+}).refine(data => Object.keys(data).length > 0, {
+  message: "At least one field must be provided",
+});
+
+const UserParamsSchema = z.object({
+  id: z.string().uuid(),
+});
+
+const UsersQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(100).default(20),
+  offset: z.coerce.number().int().min(0).default(0),
+});
+
+// GET /api/users - List users with pagination
+router.get('/', 
+  validateQuery(UsersQuerySchema),
+  async (req, res) => {
+    const { limit, offset } = req.query as z.infer<typeof UsersQuerySchema>;
+    
+    const { data, error } = await userService.getAllUsers({ limit, offset });
+    
+    if (error) {
+      return sendErrorResponse(res, error);
+    }
+    
+    res.json({
+      success: true,
+      data: {
+        users: data.users,
+        pagination: {
+          total: data.total,
+          limit,
+          offset,
+          hasMore: offset + limit < data.total,
+        },
+      },
+      timestamp: new Date().toISOString(),
+    });
+  }
+);
+
+// GET /api/users/:id - Get single user
+router.get('/:id',
+  validateParams(UserParamsSchema),
+  async (req, res) => {
+    const { id } = req.params as z.infer<typeof UserParamsSchema>;
+    
+    const { data: user, error } = await userService.getUserById(id);
+    
+    if (error) {
+      return sendErrorResponse(res, error);
+    }
+    
+    res.json({
+      success: true,
+      data: { user },
+      timestamp: new Date().toISOString(),
+    });
+  }
+);
+
+// POST /api/users - Create new user
+router.post('/',
+  validateBody(CreateUserSchema),
+  async (req, res) => {
+    const userData = req.body as z.infer<typeof CreateUserSchema>;
+    
+    const { data: user, error } = await userService.createUser(userData);
+    
+    if (error) {
+      return sendErrorResponse(res, error);
+    }
+    
+    res.status(201).json({
+      success: true,
+      data: { user },
+      timestamp: new Date().toISOString(),
+    });
+  }
+);
+
+// PUT /api/users/:id - Update user
+router.put('/:id',
+  validateParams(UserParamsSchema),
+  validateBody(UpdateUserSchema),
+  async (req, res) => {
+    const { id } = req.params as z.infer<typeof UserParamsSchema>;
+    const updates = req.body as z.infer<typeof UpdateUserSchema>;
+    
+    const { data: user, error } = await userService.updateUser(id, updates);
+    
+    if (error) {
+      return sendErrorResponse(res, error);
+    }
+    
+    res.json({
+      success: true,
+      data: { user },
+      timestamp: new Date().toISOString(),
+    });
+  }
+);
+
+// DELETE /api/users/:id - Delete user
+router.delete('/:id',
+  validateParams(UserParamsSchema),
+  async (req, res) => {
+    const { id } = req.params as z.infer<typeof UserParamsSchema>;
+    
+    const { error } = await userService.deleteUser(id);
+    
+    if (error) {
+      return sendErrorResponse(res, error);
+    }
+    
+    res.status(204).send();
+  }
+);
+
+export default router;
+```
+
+## Database Layer with Error Handling
+
+Create a database wrapper that handles connection errors:
+
+```typescript
+// src/db/index.ts
+import { PrismaClient } from '@prisma/client';
+import { tryAsync, type Result } from 'wellcrafted/result';
+import { createTaggedError } from 'wellcrafted/error';
+
+const { DatabaseError, DatabaseErr } = createTaggedError('DatabaseError');
+type DatabaseError = ReturnType<typeof DatabaseError>;
+
+class Database {
+  private prisma: PrismaClient;
+
+  constructor() {
+    this.prisma = new PrismaClient({
+      log: process.env.NODE_ENV === 'development' ? ['query', 'error'] : ['error'],
+    });
+  }
+
+  async connect(): Promise<Result<void, DatabaseError>> {
+    return tryAsync({
+      try: async () => {
+        await this.prisma.$connect();
+        console.log('Database connected successfully');
+      },
+      mapErr: (error) => DatabaseErr({
+        message: 'Failed to connect to database',
+        context: { 
+          database: process.env.DATABASE_URL?.split('@')[1] || 'unknown',
+        },
+        cause: error,
+      }),
+    });
+  }
+
+  async disconnect(): Promise<Result<void, DatabaseError>> {
+    return tryAsync({
+      try: async () => {
+        await this.prisma.$disconnect();
+        console.log('Database disconnected successfully');
+      },
+      mapErr: (error) => DatabaseErr({
+        message: 'Failed to disconnect from database',
+        context: {},
+        cause: error,
+      }),
+    });
+  }
+
+  async healthCheck(): Promise<Result<{ status: string; timestamp: Date }, DatabaseError>> {
+    return tryAsync({
+      try: async () => {
+        await this.prisma.$queryRaw`SELECT 1`;
+        return {
+          status: 'healthy',
+          timestamp: new Date(),
+        };
+      },
+      mapErr: (error) => DatabaseErr({
+        message: 'Database health check failed',
+        context: { timestamp: new Date().toISOString() },
+        cause: error,
+      }),
+    });
+  }
+
+  get user() {
+    return this.prisma.user;
+  }
+
+  get post() {
+    return this.prisma.post;
+  }
+
+  // Add other models as needed
+}
+
+export const db = new Database();
+
+// Initialize database connection
+export async function initializeDatabase(): Promise<Result<void, DatabaseError>> {
+  return db.connect();
+}
+```
+
+## Application Setup and Error Handling
+
+Set up the Express app with comprehensive error handling:
+
+```typescript
+// src/app.ts
+import express from 'express';
+import cors from 'cors';
+import helmet from 'helmet';
+import rateLimit from 'express-rate-limit';
+import { globalErrorHandler } from './middleware/errorHandler';
+import { initializeDatabase } from './db';
+import userRoutes from './routes/users';
+
+const app = express();
+
+// Security middleware
+app.use(helmet());
+app.use(cors({
+  origin: process.env.ALLOWED_ORIGINS?.split(',') || ['http://localhost:3000'],
+  credentials: true,
+}));
+
+// Rate limiting
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100, // limit each IP to 100 requests per windowMs
+  message: {
+    success: false,
+    error: {
+      name: 'RateLimitError',
+      message: 'Too many requests from this IP, please try again later.',
+    },
+    timestamp: new Date().toISOString(),
+  },
+});
+app.use('/api/', limiter);
+
+// Body parsing
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true }));
+
+// Health check endpoint
+app.get('/health', async (req, res) => {
+  const { data: dbHealth, error } = await db.healthCheck();
+  
+  if (error) {
+    return res.status(503).json({
+      success: false,
+      status: 'unhealthy',
+      services: {
+        database: 'unhealthy',
+        api: 'healthy',
+      },
+      error: error.message,
+      timestamp: new Date().toISOString(),
+    });
+  }
+  
+  res.json({
+    success: true,
+    status: 'healthy',
+    services: {
+      database: 'healthy',
+      api: 'healthy',
+    },
+    timestamp: new Date().toISOString(),
+  });
+});
+
+// API routes
+app.use('/api/users', userRoutes);
+
+// 404 handler
+app.use('*', (req, res) => {
+  res.status(404).json({
+    success: false,
+    error: {
+      name: 'NotFoundError',
+      message: `Route ${req.method} ${req.originalUrl} not found`,
+      context: {
+        method: req.method,
+        path: req.originalUrl,
+      },
+    },
+    timestamp: new Date().toISOString(),
+  });
+});
+
+// Global error handler
+app.use(globalErrorHandler);
+
+export default app;
+```
+
+```typescript
+// src/server.ts
+import app from './app';
+import { initializeDatabase } from './db';
+
+const PORT = process.env.PORT || 3000;
+
+async function startServer() {
+  // Initialize database
+  const { error: dbError } = await initializeDatabase();
+  if (dbError) {
+    console.error('Failed to initialize database:', dbError.message);
+    process.exit(1);
+  }
+
+  // Start server
+  const server = app.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
+    console.log(`Health check: http://localhost:${PORT}/health`);
+  });
+
+  // Graceful shutdown
+  process.on('SIGTERM', () => {
+    console.log('SIGTERM received, shutting down gracefully');
+    server.close(() => {
+      console.log('Process terminated');
+    });
+  });
+
+  process.on('SIGINT', () => {
+    console.log('SIGINT received, shutting down gracefully');
+    server.close(() => {
+      console.log('Process terminated');
+    });
+  });
+}
+
+startServer().catch((error) => {
+  console.error('Failed to start server:', error);
+  process.exit(1);
+});
+```
+
+## Authentication Middleware
+
+Add authentication with proper error handling:
+
+```typescript
+// src/middleware/auth.ts
+import { Request, Response, NextFunction } from 'express';
+import jwt from 'jsonwebtoken';
+import { trySync } from 'wellcrafted/result';
+import { createTaggedError } from 'wellcrafted/error';
+import { sendErrorResponse } from './errorHandler';
+
+const { AuthError, AuthErr } = createTaggedError('AuthError');
+type AuthError = ReturnType<typeof AuthError>;
+
+export interface AuthenticatedRequest extends Request {
+  user: {
+    id: string;
+    email: string;
+    role: 'user' | 'admin';
+  };
+}
+
+export function requireAuth(req: Request, res: Response, next: NextFunction) {
+  const { data: user, error } = trySync({
+    try: () => {
+      const authHeader = req.headers.authorization;
+      if (!authHeader) {
+        throw new Error('Authorization header is required');
+      }
+
+      const token = authHeader.split(' ')[1];
+      if (!token) {
+        throw new Error('Bearer token is required');
+      }
+
+      const decoded = jwt.verify(token, process.env.JWT_SECRET!) as any;
+      return {
+        id: decoded.id,
+        email: decoded.email,
+        role: decoded.role,
+      };
+    },
+    mapErr: (error) => AuthErr({
+      message: error instanceof Error ? error.message : 'Authentication failed',
+      context: {
+        hasAuthHeader: !!req.headers.authorization,
+        userAgent: req.headers['user-agent'],
+        ip: req.ip,
+      },
+      cause: error,
+    }),
+  });
+
+  if (error) {
+    return sendErrorResponse(res, error);
+  }
+
+  (req as AuthenticatedRequest).user = user;
+  next();
+}
+
+export function requireRole(role: 'admin') {
+  return (req: Request, res: Response, next: NextFunction) => {
+    const authReq = req as AuthenticatedRequest;
+    
+    if (!authReq.user) {
+      return sendErrorResponse(res, AuthErr({
+        message: 'Authentication required',
+        context: { requiredRole: role },
+        cause: undefined,
+      }));
+    }
+
+    if (authReq.user.role !== role) {
+      return sendErrorResponse(res, AuthErr({
+        message: `${role} role required`,
+        context: { 
+          userRole: authReq.user.role, 
+          requiredRole: role,
+          userId: authReq.user.id,
+        },
+        cause: undefined,
+      }));
+    }
+
+    next();
+  };
+}
+```
+
+## Testing with wellcrafted Patterns
+
+Test your API endpoints with proper error handling:
+
+```typescript
+// src/__tests__/users.test.ts
+import request from 'supertest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { Ok, Err } from 'wellcrafted/result';
+import app from '../app';
+import * as userService from '../services/users';
+
+// Mock the user service
+vi.mock('../services/users');
+
+describe('Users API', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  describe('GET /api/users', () => {
+    it('returns users with pagination', async () => {
+      const mockUsers = [
+        { id: '1', email: 'test1@example.com', name: 'Test User 1', role: 'user', createdAt: new Date(), updatedAt: new Date() },
+        { id: '2', email: 'test2@example.com', name: 'Test User 2', role: 'admin', createdAt: new Date(), updatedAt: new Date() },
+      ];
+
+      vi.mocked(userService.getAllUsers).mockResolvedValue(Ok({
+        users: mockUsers,
+        total: 2,
+      }));
+
+      const response = await request(app)
+        .get('/api/users')
+        .expect(200);
+
+      expect(response.body).toMatchObject({
+        success: true,
+        data: {
+          users: mockUsers,
+          pagination: {
+            total: 2,
+            limit: 20,
+            offset: 0,
+            hasMore: false,
+          },
+        },
+      });
+    });
+
+    it('handles service errors gracefully', async () => {
+      vi.mocked(userService.getAllUsers).mockResolvedValue(Err({
+        name: 'UserServiceError',
+        message: 'Database connection failed',
+        context: { limit: 20, offset: 0 },
+        cause: new Error('Connection timeout'),
+      }));
+
+      const response = await request(app)
+        .get('/api/users')
+        .expect(500);
+
+      expect(response.body).toMatchObject({
+        success: false,
+        error: {
+          name: 'UserServiceError',
+          message: 'Database connection failed',
+        },
+      });
+    });
+  });
+
+  describe('POST /api/users', () => {
+    it('creates user with valid data', async () => {
+      const newUser = {
+        email: 'new@example.com',
+        name: 'New User',
+        password: 'password123',
+      };
+
+      const createdUser = {
+        id: '3',
+        email: 'new@example.com',
+        name: 'New User',
+        role: 'user' as const,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+
+      vi.mocked(userService.createUser).mockResolvedValue(Ok(createdUser));
+
+      const response = await request(app)
+        .post('/api/users')
+        .send(newUser)
+        .expect(201);
+
+      expect(response.body).toMatchObject({
+        success: true,
+        data: { user: createdUser },
+      });
+    });
+
+    it('validates request body', async () => {
+      const invalidUser = {
+        email: 'invalid-email',
+        name: '',
+        password: '123', // too short
+      };
+
+      const response = await request(app)
+        .post('/api/users')
+        .send(invalidUser)
+        .expect(400);
+
+      expect(response.body).toMatchObject({
+        success: false,
+        error: {
+          name: 'ValidationError',
+        },
+      });
+    });
+
+    it('handles duplicate email error', async () => {
+      const userData = {
+        email: 'existing@example.com',
+        name: 'Test User',
+        password: 'password123',
+      };
+
+      vi.mocked(userService.createUser).mockResolvedValue(Err({
+        name: 'UserServiceError',
+        message: 'Email already exists',
+        context: { input: userData },
+        cause: undefined,
+      }));
+
+      const response = await request(app)
+        .post('/api/users')
+        .send(userData)
+        .expect(409);
+
+      expect(response.body).toMatchObject({
+        success: false,
+        error: {
+          name: 'UserServiceError',
+          message: 'Email already exists',
+        },
+      });
+    });
+  });
+
+  describe('GET /api/users/:id', () => {
+    it('returns user by ID', async () => {
+      const user = {
+        id: '1',
+        email: 'test@example.com',
+        name: 'Test User',
+        role: 'user' as const,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+
+      vi.mocked(userService.getUserById).mockResolvedValue(Ok(user));
+
+      const response = await request(app)
+        .get('/api/users/1')
+        .expect(200);
+
+      expect(response.body).toMatchObject({
+        success: true,
+        data: { user },
+      });
+    });
+
+    it('returns 404 for non-existent user', async () => {
+      vi.mocked(userService.getUserById).mockResolvedValue(Err({
+        name: 'UserServiceError',
+        message: 'User not found',
+        context: { userId: 'non-existent' },
+        cause: undefined,
+      }));
+
+      const response = await request(app)
+        .get('/api/users/non-existent')
+        .expect(404);
+
+      expect(response.body).toMatchObject({
+        success: false,
+        error: {
+          name: 'UserServiceError',
+          message: 'User not found',
+        },
+      });
+    });
+
+    it('validates UUID format', async () => {
+      const response = await request(app)
+        .get('/api/users/invalid-uuid')
+        .expect(400);
+
+      expect(response.body).toMatchObject({
+        success: false,
+        error: {
+          name: 'ValidationError',
+        },
+      });
+    });
+  });
+});
+```
+
+## Environment Configuration
+
+Set up environment configuration with validation:
+
+```typescript
+// src/config/env.ts
+import { z } from 'zod';
+import { trySync } from 'wellcrafted/result';
+import { createTaggedError } from 'wellcrafted/error';
+
+const { ConfigError, ConfigErr } = createTaggedError('ConfigError');
+type ConfigError = ReturnType<typeof ConfigError>;
+
+const EnvSchema = z.object({
+  NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
+  PORT: z.coerce.number().default(3000),
+  DATABASE_URL: z.string().url(),
+  JWT_SECRET: z.string().min(32),
+  ALLOWED_ORIGINS: z.string().optional(),
+  LOG_LEVEL: z.enum(['error', 'warn', 'info', 'debug']).default('info'),
+});
+
+export type Config = z.infer<typeof EnvSchema>;
+
+export function loadConfig() {
+  const { data: config, error } = trySync({
+    try: () => EnvSchema.parse(process.env),
+    mapErr: (error) => ConfigErr({
+      message: error instanceof z.ZodError 
+        ? `Invalid environment configuration: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`
+        : 'Failed to load configuration',
+      context: { 
+        env: process.env.NODE_ENV,
+        errors: error instanceof z.ZodError ? error.errors : undefined,
+      },
+      cause: error,
+    }),
+  });
+
+  if (error) {
+    console.error('Configuration error:', error.message);
+    process.exit(1);
+  }
+
+  return config;
+}
+
+export const config = loadConfig();
+```
+
+## Logging with Context
+
+Add structured logging with error context:
+
+```typescript
+// src/utils/logger.ts
+import winston from 'winston';
+import { config } from '../config/env';
+
+const logger = winston.createLogger({
+  level: config.LOG_LEVEL,
+  format: winston.format.combine(
+    winston.format.timestamp(),
+    winston.format.errors({ stack: true }),
+    winston.format.json()
+  ),
+  transports: [
+    new winston.transports.Console({
+      format: winston.format.combine(
+        winston.format.colorize(),
+        winston.format.simple()
+      ),
+    }),
+  ],
+});
+
+export function logError(error: any, context: Record<string, unknown> = {}) {
+  logger.error({
+    message: error.message || 'Unknown error',
+    error: {
+      name: error.name,
+      stack: error.stack,
+      cause: error.cause,
+    },
+    context,
+    timestamp: new Date().toISOString(),
+  });
+}
+
+export function logInfo(message: string, context: Record<string, unknown> = {}) {
+  logger.info({
+    message,
+    context,
+    timestamp: new Date().toISOString(),
+  });
+}
+
+export { logger };
+```
+
+## Best Practices
+
+### 1. Consistent Error Response Format
+
+Always return the same error structure:
+
+```typescript
+// ✅ Good - consistent format
+{
+  "success": false,
+  "error": {
+    "name": "UserServiceError",
+    "message": "User not found",
+    "context": { "userId": "123" }
+  },
+  "timestamp": "2024-01-01T00:00:00.000Z"
+}
+
+// ❌ Bad - inconsistent formats
+// Sometimes: { "error": "User not found" }
+// Other times: { "message": "Error", "code": 404 }
+```
+
+### 2. Service Layer Purity
+
+Keep services pure and database-focused:
+
+```typescript
+// ✅ Good - pure business logic
+export async function createUser(input: CreateUserInput): Promise<Result<User, UserServiceError>> {
+  if (!input.email?.includes('@')) {
+    return UserServiceErr({
+      message: 'Invalid email format',
+      context: { email: input.email },
+      cause: undefined,
+    });
+  }
+  
+  return tryAsync({
+    try: () => db.user.create({ data: input }),
+    mapErr: (error) => UserServiceErr({
+      message: 'Failed to create user',
+      context: { input },
+      cause: error,
+    }),
+  });
+}
+
+// ❌ Bad - HTTP concerns in service
+export async function createUser(req: Request, res: Response) {
+  try {
+    const user = await db.user.create({ data: req.body });
+    res.status(201).json(user); // HTTP concern!
+  } catch (error) {
+    res.status(500).json({ error: 'Failed' }); // HTTP concern!
+  }
+}
+```
+
+### 3. Input Validation
+
+Validate all inputs at the boundary:
+
+```typescript
+// Use Zod schemas for validation
+const CreateUserSchema = z.object({
+  email: z.string().email(),
+  name: z.string().min(1).max(100),
+  password: z.string().min(8),
+});
+
+// Apply validation middleware before route handler
+router.post('/users', validateBody(CreateUserSchema), async (req, res) => {
+  // req.body is now typed and validated
+});
+```
+
+### 4. Error Context
+
+Always include relevant debugging context:
+
+```typescript
+return UserServiceErr({
+  message: 'Failed to update user',
+  context: {
+    userId: id,
+    updates,
+    timestamp: new Date().toISOString(),
+    operation: 'updateUser',
+  },
+  cause: error,
+});
+```
+
+## Summary
+
+This Node.js + Express integration provides:
+
+- **Type Safety**: Full TypeScript support with wellcrafted's Result types
+- **Consistent Error Handling**: Same error format across all endpoints
+- **Input Validation**: Comprehensive request validation with Zod
+- **Rich Error Context**: Detailed debugging information
+- **Service Layer Pattern**: Pure business logic separated from HTTP concerns
+- **Production Ready**: Health checks, rate limiting, security middleware
+- **Testable Architecture**: Easy to test with mock services
+
+The patterns shown here scale from simple APIs to complex microservices and provide a solid foundation for maintainable, robust backend applications.

@@ -231,7 +231,7 @@ async function submitSignup(
       
       return response.json();
     },
-    mapError: (error) => ({
+    mapErr: (error) => Err({
       name: "SubmissionError",
       message: "Failed to create account",
       context: { email: form.email },
@@ -384,8 +384,8 @@ const { data, error } = result;
 if (error) { /* handle */ } else { /* use data */ }
 
 // Wrap unsafe code
-trySync({ try: () => risky(), mapError: (e) => ... })
-tryAsync({ try: async () => risky(), mapError: (e) => ... })
+trySync({ try: () => risky(), mapErr: (e) => ... })
+tryAsync({ try: async () => risky(), mapErr: (e) => ... })
 
 // Create tagged errors
 type MyError = TaggedError<"MyError">;

@@ -1,0 +1,1574 @@
+---
+title: 'Testing Strategies with wellcrafted'
+description: 'Comprehensive testing patterns for Result-based code and error scenarios'
+icon: 'test-tube'
+---
+
+# Testing Strategies with wellcrafted
+
+Learn how to effectively test applications built with wellcrafted's Result types and error handling. This guide covers unit testing, integration testing, error scenario testing, and type-safe test helpers for maximum reliability.
+
+## The Problem: Testing Complex Error Scenarios
+
+Traditional testing often struggles with comprehensive error coverage:
+
+```typescript
+// Before: Difficult to test all error paths
+describe('UserService', () => {
+  it('should create user', async () => {
+    const mockUser = { id: '1', name: 'John', email: 'john@example.com' };
+    mockDb.create.mockResolvedValue(mockUser);
+    
+    const result = await userService.createUser({ 
+      name: 'John', 
+      email: 'john@example.com' 
+    });
+    
+    expect(result).toEqual(mockUser);
+  });
+
+  it('should handle database error', async () => {
+    mockDb.create.mockRejectedValue(new Error('Connection failed'));
+    
+    try {
+      await userService.createUser({ name: 'John', email: 'john@example.com' });
+      fail('Should have thrown an error');
+    } catch (error) {
+      expect(error.message).toBe('Connection failed');
+    }
+  });
+  
+  // What about validation errors? Network timeouts? 
+  // Permission errors? Duplicate key errors?
+  // Hard to test all scenarios comprehensively
+});
+```
+
+**Problems with this approach:**
+- Inconsistent error testing patterns
+- Easy to miss error scenarios
+- No type safety for error states
+- Difficult to test error transformations
+- Exception-based testing is verbose and error-prone
+
+## The Solution: Comprehensive Result-Based Testing
+
+With wellcrafted, testing becomes systematic and comprehensive:
+
+```typescript
+// After: Systematic testing of all Result scenarios
+describe('UserService', () => {
+  it('should create user successfully', async () => {
+    const input = { name: 'John', email: 'john@example.com' };
+    const expectedUser = { id: '1', ...input, createdAt: new Date() };
+    mockDb.create.mockResolvedValue(expectedUser);
+    
+    const result = await userService.createUser(input);
+    
+    expect(result).toEqual(Ok(expectedUser));
+  });
+
+  it('should return validation error for missing email', async () => {
+    const result = await userService.createUser({ name: 'John', email: '' });
+    
+    expect(result).toEqual(Err({
+      name: 'UserServiceError',
+      message: 'Email is required',
+      context: { input: { name: 'John', email: '' } },
+      cause: undefined,
+    }));
+  });
+
+  it('should return validation error for invalid email', async () => {
+    const result = await userService.createUser({ 
+      name: 'John', 
+      email: 'invalid-email' 
+    });
+    
+    expect(result).toEqual(Err({
+      name: 'UserServiceError',
+      message: 'Invalid email format',
+      context: { email: 'invalid-email' },
+      cause: undefined,
+    }));
+  });
+
+  it('should handle database connection error', async () => {
+    const dbError = new Error('Connection failed');
+    mockDb.create.mockRejectedValue(dbError);
+    
+    const result = await userService.createUser({ 
+      name: 'John', 
+      email: 'john@example.com' 
+    });
+    
+    expect(result).toEqual(Err({
+      name: 'UserServiceError',
+      message: 'Failed to create user',
+      context: { input: { name: 'John', email: 'john@example.com' } },
+      cause: dbError,
+    }));
+  });
+
+  // Easy to add more error scenarios systematically
+});
+```
+
+**Benefits:**
+- Systematic testing of all Result paths
+- Type-safe error assertions
+- Comprehensive error scenario coverage
+- Consistent testing patterns
+- Easy to verify error transformations
+
+## Testing Architecture Layers
+
+Test each layer of your architecture systematically:
+
+```
+┌─────────────────┐     ┌─────────────────┐     ┌──────────────┐
+│   Components    │     │  Query Layer    │     │   Services   │
+│  (Integration)  │ --> │    (Unit)       │ --> │    (Unit)    │
+└─────────────────┘     └─────────────────┘     └──────────────┘
+         ↑                        │                       │
+         └────────────────────────┼───────────────────────┘
+              E2E Tests            │
+                                  ↓
+                            ┌──────────────┐
+                            │  Middleware  │
+                            │    (Unit)    │
+                            └──────────────┘
+```
+
+## Layer 1: Testing Services (Unit Tests)
+
+Services contain pure business logic and are the easiest to test comprehensively:
+
+```typescript
+// src/services/__tests__/users.test.ts
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { Ok, Err } from 'wellcrafted/result';
+import { createUserService } from '../users';
+import type { Database } from '../db';
+
+// Create a mock database type-safely
+const createMockDatabase = (): Database => ({
+  user: {
+    findMany: vi.fn(),
+    findUnique: vi.fn(),
+    create: vi.fn(),
+    update: vi.fn(),
+    delete: vi.fn(),
+    count: vi.fn(),
+  },
+  // ... other models
+});
+
+describe('UserService', () => {
+  let mockDb: Database;
+  let userService: ReturnType<typeof createUserService>;
+
+  beforeEach(() => {
+    mockDb = createMockDatabase();
+    userService = createUserService(mockDb);
+  });
+
+  describe('createUser', () => {
+    const validInput = {
+      name: 'John Doe',
+      email: 'john@example.com',
+      password: 'password123',
+    };
+
+    it('creates user with valid input', async () => {
+      const expectedUser = {
+        id: '1',
+        name: 'John Doe',
+        email: 'john@example.com',
+        role: 'user' as const,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+
+      mockDb.user.findUnique.mockResolvedValue(null); // No existing user
+      mockDb.user.create.mockResolvedValue(expectedUser);
+
+      const result = await userService.createUser(validInput);
+
+      expect(result).toEqual(Ok(expectedUser));
+      expect(mockDb.user.findUnique).toHaveBeenCalledWith({
+        where: { email: 'john@example.com' }
+      });
+      expect(mockDb.user.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          name: 'John Doe',
+          email: 'john@example.com',
+          role: 'user',
+        })
+      });
+    });
+
+    it('returns error for missing name', async () => {
+      const result = await userService.createUser({
+        ...validInput,
+        name: '',
+      });
+
+      expect(result).toEqual(Err({
+        name: 'UserServiceError',
+        message: 'Name is required',
+        context: {
+          input: { ...validInput, name: '', password: '[REDACTED]' }
+        },
+        cause: undefined,
+      }));
+      
+      // Ensure no database calls were made
+      expect(mockDb.user.findUnique).not.toHaveBeenCalled();
+      expect(mockDb.user.create).not.toHaveBeenCalled();
+    });
+
+    it('returns error for invalid email format', async () => {
+      const result = await userService.createUser({
+        ...validInput,
+        email: 'invalid-email',
+      });
+
+      expect(result).toEqual(Err({
+        name: 'UserServiceError',
+        message: 'Invalid email format',
+        context: { email: 'invalid-email' },
+        cause: undefined,
+      }));
+    });
+
+    it('returns error for short password', async () => {
+      const result = await userService.createUser({
+        ...validInput,
+        password: '123',
+      });
+
+      expect(result).toEqual(Err({
+        name: 'UserServiceError',
+        message: 'Password must be at least 8 characters long',
+        context: { passwordLength: 3 },
+        cause: undefined,
+      }));
+    });
+
+    it('returns error for duplicate email', async () => {
+      const existingUser = { id: '2', email: 'john@example.com' };
+      mockDb.user.findUnique.mockResolvedValue(existingUser);
+
+      const result = await userService.createUser(validInput);
+
+      expect(result).toEqual(Err({
+        name: 'UserServiceError',
+        message: 'Email already exists',
+        context: {
+          input: { ...validInput, password: '[REDACTED]' }
+        },
+        cause: expect.any(Error),
+      }));
+      
+      expect(mockDb.user.create).not.toHaveBeenCalled();
+    });
+
+    it('handles database connection error', async () => {
+      const dbError = new Error('Connection timeout');
+      mockDb.user.findUnique.mockRejectedValue(dbError);
+
+      const result = await userService.createUser(validInput);
+
+      expect(result).toEqual(Err({
+        name: 'UserServiceError',
+        message: 'Failed to create user',
+        context: {
+          input: { ...validInput, password: '[REDACTED]' }
+        },
+        cause: dbError,
+      }));
+    });
+
+    it('handles database constraint violation', async () => {
+      const constraintError = new Error('Unique constraint violation');
+      constraintError.code = 'P2002'; // Prisma unique constraint error
+      
+      mockDb.user.findUnique.mockResolvedValue(null);
+      mockDb.user.create.mockRejectedValue(constraintError);
+
+      const result = await userService.createUser(validInput);
+
+      expect(result).toEqual(Err({
+        name: 'UserServiceError',
+        message: 'Failed to create user',
+        context: {
+          input: { ...validInput, password: '[REDACTED]' }
+        },
+        cause: constraintError,
+      }));
+    });
+  });
+
+  describe('getUserById', () => {
+    it('returns user when found', async () => {
+      const user = {
+        id: '1',
+        name: 'John Doe',
+        email: 'john@example.com',
+        role: 'user' as const,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+      
+      mockDb.user.findUnique.mockResolvedValue(user);
+
+      const result = await userService.getUserById('1');
+
+      expect(result).toEqual(Ok(user));
+      expect(mockDb.user.findUnique).toHaveBeenCalledWith({
+        where: { id: '1' },
+        select: expect.objectContaining({
+          id: true,
+          email: true,
+          name: true,
+          role: true,
+          createdAt: true,
+          updatedAt: true,
+        }),
+      });
+    });
+
+    it('returns error for empty ID', async () => {
+      const result = await userService.getUserById('');
+
+      expect(result).toEqual(Err({
+        name: 'UserServiceError',
+        message: 'User ID is required',
+        context: { id: '' },
+        cause: undefined,
+      }));
+      
+      expect(mockDb.user.findUnique).not.toHaveBeenCalled();
+    });
+
+    it('returns error when user not found', async () => {
+      mockDb.user.findUnique.mockResolvedValue(null);
+
+      const result = await userService.getUserById('non-existent');
+
+      expect(result).toEqual(Err({
+        name: 'UserServiceError',
+        message: 'User not found',
+        context: { userId: 'non-existent' },
+        cause: expect.any(Error),
+      }));
+    });
+
+    it('handles database error', async () => {
+      const dbError = new Error('Database connection lost');
+      mockDb.user.findUnique.mockRejectedValue(dbError);
+
+      const result = await userService.getUserById('1');
+
+      expect(result).toEqual(Err({
+        name: 'UserServiceError',
+        message: 'Failed to fetch user',
+        context: { userId: '1' },
+        cause: dbError,
+      }));
+    });
+  });
+
+  describe('updateUser', () => {
+    it('updates user successfully', async () => {
+      const existingUser = {
+        id: '1',
+        email: 'old@example.com',
+        name: 'Old Name',
+        role: 'user' as const,
+      };
+      
+      const updatedUser = {
+        ...existingUser,
+        email: 'new@example.com',
+        name: 'New Name',
+        updatedAt: new Date(),
+      };
+
+      mockDb.user.findUnique
+        .mockResolvedValueOnce(existingUser) // Check user exists
+        .mockResolvedValueOnce(null); // Check email not taken
+      mockDb.user.update.mockResolvedValue(updatedUser);
+
+      const result = await userService.updateUser('1', {
+        email: 'new@example.com',
+        name: 'New Name',
+      });
+
+      expect(result).toEqual(Ok(updatedUser));
+    });
+
+    it('returns error for non-existent user', async () => {
+      mockDb.user.findUnique.mockResolvedValue(null);
+
+      const result = await userService.updateUser('non-existent', {
+        name: 'New Name',
+      });
+
+      expect(result).toEqual(Err({
+        name: 'UserServiceError',
+        message: 'User not found',
+        context: { userId: 'non-existent', updates: { name: 'New Name' } },
+        cause: expect.any(Error),
+      }));
+    });
+
+    it('returns error for email conflict', async () => {
+      const existingUser = { id: '1', email: 'old@example.com' };
+      const conflictUser = { id: '2', email: 'conflict@example.com' };
+
+      mockDb.user.findUnique
+        .mockResolvedValueOnce(existingUser)
+        .mockResolvedValueOnce(conflictUser);
+
+      const result = await userService.updateUser('1', {
+        email: 'conflict@example.com',
+      });
+
+      expect(result).toEqual(Err({
+        name: 'UserServiceError',
+        message: 'Email already exists',
+        context: { userId: '1', updates: { email: 'conflict@example.com' } },
+        cause: expect.any(Error),
+      }));
+    });
+  });
+});
+```
+
+## Layer 2: Testing Query Layer (Unit Tests)
+
+Test the query layer that bridges services with UI components:
+
+```typescript
+// src/query/__tests__/users.test.ts
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { QueryClient } from '@tanstack/query-core';
+import { createQueryFactories } from 'wellcrafted/query';
+import { Ok, Err } from 'wellcrafted/result';
+import * as userService from '../../services/users';
+
+// Mock the user service
+vi.mock('../../services/users');
+
+describe('User Queries', () => {
+  let queryClient: QueryClient;
+  let defineQuery: ReturnType<typeof createQueryFactories>['defineQuery'];
+  let defineMutation: ReturnType<typeof createQueryFactories>['defineMutation'];
+
+  beforeEach(() => {
+    queryClient = new QueryClient({
+      defaultOptions: {
+        queries: { retry: false },
+        mutations: { retry: false },
+      },
+      logger: {
+        log: () => {},
+        warn: () => {},
+        error: () => {},
+      },
+    });
+    
+    ({ defineQuery, defineMutation } = createQueryFactories(queryClient));
+    vi.clearAllMocks();
+  });
+
+  describe('getAllUsers query', () => {
+    it('fetches users successfully', async () => {
+      const mockUsers = [
+        { id: '1', name: 'John', email: 'john@example.com', role: 'user' as const, createdAt: new Date(), updatedAt: new Date() },
+        { id: '2', name: 'Jane', email: 'jane@example.com', role: 'admin' as const, createdAt: new Date(), updatedAt: new Date() },
+      ];
+
+      vi.mocked(userService.getAllUsers).mockResolvedValue(Ok({
+        users: mockUsers,
+        total: 2,
+      }));
+
+      const userQuery = defineQuery({
+        queryKey: ['users'],
+        resultQueryFn: () => userService.getAllUsers(),
+      });
+
+      const result = await userQuery.fetch();
+
+      expect(result).toEqual(Ok({
+        users: mockUsers,
+        total: 2,
+      }));
+    });
+
+    it('handles service error correctly', async () => {
+      const serviceError = {
+        name: 'UserServiceError',
+        message: 'Database connection failed',
+        context: { operation: 'getAllUsers' },
+        cause: new Error('Connection timeout'),
+      };
+
+      vi.mocked(userService.getAllUsers).mockResolvedValue(Err(serviceError));
+
+      const userQuery = defineQuery({
+        queryKey: ['users'],
+        resultQueryFn: () => userService.getAllUsers(),
+      });
+
+      const result = await userQuery.fetch();
+
+      expect(result).toEqual(Err(serviceError));
+    });
+
+    it('uses cached data on subsequent fetches', async () => {
+      const mockUsers = [
+        { id: '1', name: 'John', email: 'john@example.com', role: 'user' as const, createdAt: new Date(), updatedAt: new Date() },
+      ];
+
+      vi.mocked(userService.getAllUsers).mockResolvedValue(Ok({
+        users: mockUsers,
+        total: 1,
+      }));
+
+      const userQuery = defineQuery({
+        queryKey: ['users'],
+        resultQueryFn: () => userService.getAllUsers(),
+        staleTime: 5 * 60 * 1000, // 5 minutes
+      });
+
+      // First fetch
+      await userQuery.fetch();
+      
+      // Second fetch should use cache
+      await userQuery.ensure();
+
+      // Service should only be called once
+      expect(userService.getAllUsers).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('createUser mutation', () => {
+    it('creates user and updates cache', async () => {
+      const newUser = {
+        id: '3',
+        name: 'Bob',
+        email: 'bob@example.com',
+        role: 'user' as const,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+
+      vi.mocked(userService.createUser).mockResolvedValue(Ok(newUser));
+
+      // Set up initial cache data
+      queryClient.setQueryData(['users'], {
+        users: [],
+        total: 0,
+      });
+
+      const createUserMutation = defineMutation({
+        mutationKey: ['users', 'create'],
+        resultMutationFn: async (input: any) => {
+          const result = await userService.createUser(input);
+          
+          if (result.error) return result;
+
+          // Update cache optimistically
+          queryClient.setQueryData(['users'], (old: any) => 
+            old ? {
+              users: [result.data, ...old.users],
+              total: old.total + 1,
+            } : { users: [result.data], total: 1 }
+          );
+
+          return result;
+        },
+      });
+
+      const result = await createUserMutation.execute({
+        name: 'Bob',
+        email: 'bob@example.com',
+        password: 'password123',
+      });
+
+      expect(result).toEqual(Ok(newUser));
+
+      // Check cache was updated
+      const cachedData = queryClient.getQueryData(['users']);
+      expect(cachedData).toEqual({
+        users: [newUser],
+        total: 1,
+      });
+    });
+
+    it('handles creation error without updating cache', async () => {
+      const serviceError = {
+        name: 'UserServiceError',
+        message: 'Email already exists',
+        context: { email: 'existing@example.com' },
+        cause: undefined,
+      };
+
+      vi.mocked(userService.createUser).mockResolvedValue(Err(serviceError));
+
+      // Set up initial cache data
+      const initialData = { users: [], total: 0 };
+      queryClient.setQueryData(['users'], initialData);
+
+      const createUserMutation = defineMutation({
+        mutationKey: ['users', 'create'],
+        resultMutationFn: async (input: any) => {
+          const result = await userService.createUser(input);
+          
+          if (result.error) return result;
+
+          // This should not execute on error
+          queryClient.setQueryData(['users'], (old: any) => 
+            old ? {
+              users: [result.data, ...old.users],
+              total: old.total + 1,
+            } : { users: [result.data], total: 1 }
+          );
+
+          return result;
+        },
+      });
+
+      const result = await createUserMutation.execute({
+        name: 'John',
+        email: 'existing@example.com',
+        password: 'password123',
+      });
+
+      expect(result).toEqual(Err(serviceError));
+
+      // Check cache was not modified
+      const cachedData = queryClient.getQueryData(['users']);
+      expect(cachedData).toEqual(initialData);
+    });
+  });
+
+  describe('error transformation', () => {
+    it('transforms service errors to UI-friendly format', async () => {
+      const serviceError = {
+        name: 'UserServiceError',
+        message: 'Invalid email format',
+        context: { email: 'invalid-email' },
+        cause: undefined,
+      };
+
+      vi.mocked(userService.createUser).mockResolvedValue(Err(serviceError));
+
+      const createUserMutation = defineMutation({
+        mutationKey: ['users', 'create'],
+        resultMutationFn: async (input: any) => {
+          const result = await userService.createUser(input);
+          
+          if (result.error) {
+            // Transform to UI-friendly error
+            return Err({
+              name: 'UIError',
+              message: getUIErrorMessage(result.error),
+              context: result.error.context,
+              cause: result.error,
+            });
+          }
+
+          return result;
+        },
+      });
+
+      const result = await createUserMutation.execute({
+        name: 'John',
+        email: 'invalid-email',
+        password: 'password123',
+      });
+
+      expect(result).toEqual(Err({
+        name: 'UIError',
+        message: 'Please enter a valid email address',
+        context: { email: 'invalid-email' },
+        cause: serviceError,
+      }));
+    });
+  });
+});
+
+function getUIErrorMessage(error: any): string {
+  if (error.message.includes('Invalid email')) {
+    return 'Please enter a valid email address';
+  }
+  if (error.message.includes('already exists')) {
+    return 'A user with this email already exists';
+  }
+  return 'Failed to create user. Please try again.';
+}
+```
+
+## Layer 3: Testing React Components (Integration Tests)
+
+Test components with the query layer integration:
+
+```tsx
+// src/components/__tests__/UserList.test.tsx
+import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { vi } from 'vitest';
+import { Ok, Err } from 'wellcrafted/result';
+import UserList from '../UserList';
+import * as userService from '../../services/users';
+
+vi.mock('../../services/users');
+
+function renderWithQuery(ui: React.ReactElement) {
+  const queryClient = new QueryClient({
+    defaultOptions: {
+      queries: { retry: false },
+      mutations: { retry: false },
+    },
+    logger: {
+      log: () => {},
+      warn: () => {},
+      error: () => {},
+    },
+  });
+  
+  return render(
+    <QueryClientProvider client={queryClient}>
+      {ui}
+    </QueryClientProvider>
+  );
+}
+
+describe('UserList Component', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('displays users when loaded successfully', async () => {
+    const mockUsers = [
+      { id: '1', name: 'John Doe', email: 'john@example.com', role: 'user' as const, createdAt: new Date(), updatedAt: new Date() },
+      { id: '2', name: 'Jane Smith', email: 'jane@example.com', role: 'admin' as const, createdAt: new Date(), updatedAt: new Date() },
+    ];
+
+    vi.mocked(userService.getAllUsers).mockResolvedValue(Ok({
+      users: mockUsers,
+      total: 2,
+    }));
+
+    renderWithQuery(<UserList />);
+
+    // Should show loading state initially
+    expect(screen.getByText('Loading users...')).toBeInTheDocument();
+    
+    // Wait for users to load
+    await waitFor(() => {
+      expect(screen.getByText('John Doe')).toBeInTheDocument();
+      expect(screen.getByText('jane@example.com')).toBeInTheDocument();
+    });
+
+    // Should not show loading or error states
+    expect(screen.queryByText('Loading users...')).not.toBeInTheDocument();
+    expect(screen.queryByText('Failed to load users')).not.toBeInTheDocument();
+  });
+
+  it('displays error when users fetch fails', async () => {
+    const errorResult = Err({
+      name: 'UserServiceError',
+      message: 'Database connection failed',
+      context: { operation: 'getAllUsers' },
+      cause: new Error('Connection timeout'),
+    });
+
+    vi.mocked(userService.getAllUsers).mockResolvedValue(errorResult);
+
+    renderWithQuery(<UserList />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Failed to load users')).toBeInTheDocument();
+      expect(screen.getByText('Database connection failed')).toBeInTheDocument();
+    });
+
+    // Should not show loading or success states
+    expect(screen.queryByText('Loading users...')).not.toBeInTheDocument();
+    expect(screen.queryByText('John Doe')).not.toBeInTheDocument();
+  });
+
+  it('shows empty state when no users exist', async () => {
+    vi.mocked(userService.getAllUsers).mockResolvedValue(Ok({
+      users: [],
+      total: 0,
+    }));
+
+    renderWithQuery(<UserList />);
+
+    await waitFor(() => {
+      expect(screen.getByText('No users yet')).toBeInTheDocument();
+      expect(screen.getByText('Create your first user to get started.')).toBeInTheDocument();
+    });
+  });
+
+  it('allows retrying after error', async () => {
+    const errorResult = Err({
+      name: 'UserServiceError',
+      message: 'Network error',
+      context: {},
+      cause: new Error('Network timeout'),
+    });
+
+    const successResult = Ok({
+      users: [{ id: '1', name: 'John', email: 'john@example.com', role: 'user' as const, createdAt: new Date(), updatedAt: new Date() }],
+      total: 1,
+    });
+
+    vi.mocked(userService.getAllUsers)
+      .mockResolvedValueOnce(errorResult)
+      .mockResolvedValueOnce(successResult);
+
+    renderWithQuery(<UserList />);
+
+    // Wait for error state
+    await waitFor(() => {
+      expect(screen.getByText('Network error')).toBeInTheDocument();
+    });
+
+    // Click retry button
+    const retryButton = screen.getByText('Try Again');
+    fireEvent.click(retryButton);
+
+    // Wait for success state
+    await waitFor(() => {
+      expect(screen.getByText('John')).toBeInTheDocument();
+    });
+
+    expect(userService.getAllUsers).toHaveBeenCalledTimes(2);
+  });
+
+  it('shows refresh indicator during background refetch', async () => {
+    const mockUsers = [
+      { id: '1', name: 'John', email: 'john@example.com', role: 'user' as const, createdAt: new Date(), updatedAt: new Date() },
+    ];
+
+    vi.mocked(userService.getAllUsers).mockResolvedValue(Ok({
+      users: mockUsers,
+      total: 1,
+    }));
+
+    renderWithQuery(<UserList />);
+
+    // Wait for initial load
+    await waitFor(() => {
+      expect(screen.getByText('John')).toBeInTheDocument();
+    });
+
+    // Trigger refetch (this would normally happen via user action or interval)
+    const refreshButton = screen.getByText('Refresh');
+    fireEvent.click(refreshButton);
+
+    // Should show refresh indicator while keeping existing data
+    expect(screen.getByText('Updating users...')).toBeInTheDocument();
+    expect(screen.getByText('John')).toBeInTheDocument(); // Still shows existing data
+  });
+});
+```
+
+## Testing Svelte Components
+
+Test Svelte components with TanStack Query integration:
+
+```typescript
+// src/lib/components/__tests__/UserProfile.test.ts
+import { render, screen, waitFor } from '@testing-library/svelte';
+import { QueryClient, QueryClientProvider } from '@tanstack/svelte-query';
+import { vi } from 'vitest';
+import { Ok, Err } from 'wellcrafted/result';
+import UserProfile from '../UserProfile.svelte';
+import * as userService from '../../services/users';
+
+vi.mock('../../services/users');
+
+function renderWithQuery(component: any, props: any = {}) {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  
+  return render(QueryClientProvider, {
+    client: queryClient,
+    $$slots: {
+      default: [component, props],
+    },
+  });
+}
+
+describe('UserProfile Component', () => {
+  it('displays user profile when loaded successfully', async () => {
+    const mockUser = {
+      id: '1',
+      name: 'John Doe',
+      email: 'john@example.com',
+      role: 'user' as const,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+
+    vi.mocked(userService.getUserById).mockResolvedValue(Ok(mockUser));
+
+    renderWithQuery(UserProfile, { userId: '1' });
+
+    expect(screen.getByText('Loading user...')).toBeInTheDocument();
+    
+    await waitFor(() => {
+      expect(screen.getByText('John Doe')).toBeInTheDocument();
+      expect(screen.getByText('john@example.com')).toBeInTheDocument();
+    });
+  });
+
+  it('displays error when user fetch fails', async () => {
+    const errorResult = Err({
+      name: 'UserServiceError',
+      message: 'User not found',
+      context: { userId: '1' },
+      cause: undefined,
+    });
+
+    vi.mocked(userService.getUserById).mockResolvedValue(errorResult);
+
+    renderWithQuery(UserProfile, { userId: '1' });
+
+    await waitFor(() => {
+      expect(screen.getByText('Failed to load user')).toBeInTheDocument();
+      expect(screen.getByText('User not found')).toBeInTheDocument();
+    });
+  });
+});
+```
+
+## Testing Node.js API Routes
+
+Test Express routes with comprehensive error scenarios:
+
+```typescript
+// src/routes/__tests__/users.test.ts
+import request from 'supertest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { Ok, Err } from 'wellcrafted/result';
+import app from '../../app';
+import * as userService from '../../services/users';
+
+vi.mock('../../services/users');
+
+describe('Users API Routes', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  describe('GET /api/users', () => {
+    it('returns users with pagination', async () => {
+      const mockResult = Ok({
+        users: [
+          { id: '1', name: 'John', email: 'john@example.com', role: 'user' as const, createdAt: new Date(), updatedAt: new Date() },
+          { id: '2', name: 'Jane', email: 'jane@example.com', role: 'admin' as const, createdAt: new Date(), updatedAt: new Date() },
+        ],
+        total: 2,
+      });
+
+      vi.mocked(userService.getAllUsers).mockResolvedValue(mockResult);
+
+      const response = await request(app)
+        .get('/api/users')
+        .expect(200);
+
+      expect(response.body).toMatchObject({
+        success: true,
+        data: {
+          users: expect.arrayContaining([
+            expect.objectContaining({ name: 'John' }),
+            expect.objectContaining({ name: 'Jane' }),
+          ]),
+          pagination: {
+            total: 2,
+            limit: 20,
+            offset: 0,
+            hasMore: false,
+          },
+        },
+        timestamp: expect.any(String),
+      });
+    });
+
+    it('handles service errors with proper status codes', async () => {
+      const errorResult = Err({
+        name: 'UserServiceError',
+        message: 'Database connection failed',
+        context: { operation: 'getAllUsers' },
+        cause: new Error('Connection timeout'),
+      });
+
+      vi.mocked(userService.getAllUsers).mockResolvedValue(errorResult);
+
+      const response = await request(app)
+        .get('/api/users')
+        .expect(500);
+
+      expect(response.body).toMatchObject({
+        success: false,
+        error: {
+          name: 'UserServiceError',
+          message: 'Database connection failed',
+          context: { operation: 'getAllUsers' },
+        },
+        timestamp: expect.any(String),
+      });
+    });
+
+    it('validates query parameters', async () => {
+      const response = await request(app)
+        .get('/api/users?limit=invalid&offset=-1')
+        .expect(400);
+
+      expect(response.body).toMatchObject({
+        success: false,
+        error: {
+          name: 'ValidationError',
+          message: expect.stringContaining('Invalid query'),
+        },
+      });
+    });
+  });
+
+  describe('POST /api/users', () => {
+    it('creates user with valid data', async () => {
+      const userData = {
+        name: 'John Doe',
+        email: 'john@example.com',
+        password: 'password123',
+      };
+
+      const createdUser = {
+        id: '1',
+        name: 'John Doe',
+        email: 'john@example.com',
+        role: 'user' as const,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+
+      vi.mocked(userService.createUser).mockResolvedValue(Ok(createdUser));
+
+      const response = await request(app)
+        .post('/api/users')
+        .send(userData)
+        .expect(201);
+
+      expect(response.body).toMatchObject({
+        success: true,
+        data: { user: createdUser },
+        timestamp: expect.any(String),
+      });
+
+      expect(userService.createUser).toHaveBeenCalledWith(userData);
+    });
+
+    it('validates request body', async () => {
+      const invalidData = {
+        name: '', // Empty name
+        email: 'invalid-email', // Invalid email
+        password: '123', // Too short
+      };
+
+      const response = await request(app)
+        .post('/api/users')
+        .send(invalidData)
+        .expect(400);
+
+      expect(response.body).toMatchObject({
+        success: false,
+        error: {
+          name: 'ValidationError',
+        },
+      });
+    });
+
+    it('handles duplicate email error', async () => {
+      const userData = {
+        name: 'John Doe',
+        email: 'existing@example.com',
+        password: 'password123',
+      };
+
+      const errorResult = Err({
+        name: 'UserServiceError',
+        message: 'Email already exists',
+        context: { input: userData },
+        cause: undefined,
+      });
+
+      vi.mocked(userService.createUser).mockResolvedValue(errorResult);
+
+      const response = await request(app)
+        .post('/api/users')
+        .send(userData)
+        .expect(409);
+
+      expect(response.body).toMatchObject({
+        success: false,
+        error: {
+          name: 'UserServiceError',
+          message: 'Email already exists',
+        },
+      });
+    });
+  });
+
+  describe('Error handling middleware', () => {
+    it('handles uncaught errors gracefully', async () => {
+      // Mock service to throw an uncaught error
+      vi.mocked(userService.getAllUsers).mockImplementation(() => {
+        throw new Error('Uncaught error');
+      });
+
+      const response = await request(app)
+        .get('/api/users')
+        .expect(500);
+
+      expect(response.body).toMatchObject({
+        success: false,
+        error: {
+          name: 'InternalServerError',
+          message: 'An unexpected error occurred',
+          context: {
+            path: '/api/users',
+            method: 'GET',
+          },
+        },
+      });
+    });
+  });
+});
+```
+
+## Test Helpers and Utilities
+
+Create reusable test utilities for consistent testing:
+
+```typescript
+// src/__tests__/helpers/testUtils.ts
+import { QueryClient } from '@tanstack/query-core';
+import { Ok, Err } from 'wellcrafted/result';
+
+// Create test query client with disabled retries
+export function createTestQueryClient() {
+  return new QueryClient({
+    defaultOptions: {
+      queries: { retry: false },
+      mutations: { retry: false },
+    },
+    logger: {
+      log: () => {},
+      warn: () => {},
+      error: () => {},
+    },
+  });
+}
+
+// Type-safe Result assertion helpers
+export const ResultMatchers = {
+  toBeOk: (received: any, expected?: any) => {
+    const pass = received && received.error === null && received.data !== null;
+    
+    if (expected !== undefined) {
+      return {
+        pass: pass && JSON.stringify(received.data) === JSON.stringify(expected),
+        message: () => `Expected ${JSON.stringify(received)} to be Ok(${JSON.stringify(expected)})`,
+      };
+    }
+    
+    return {
+      pass,
+      message: () => `Expected ${JSON.stringify(received)} to be an Ok result`,
+    };
+  },
+
+  toBeErr: (received: any, expected?: any) => {
+    const pass = received && received.data === null && received.error !== null;
+    
+    if (expected !== undefined) {
+      return {
+        pass: pass && JSON.stringify(received.error) === JSON.stringify(expected),
+        message: () => `Expected ${JSON.stringify(received)} to be Err(${JSON.stringify(expected)})`,
+      };
+    }
+    
+    return {
+      pass,
+      message: () => `Expected ${JSON.stringify(received)} to be an Err result`,
+    };
+  },
+};
+
+// Mock factory for common test data
+export const TestDataFactory = {
+  user: (overrides: Partial<User> = {}): User => ({
+    id: '1',
+    name: 'Test User',
+    email: 'test@example.com',
+    role: 'user',
+    createdAt: new Date('2024-01-01'),
+    updatedAt: new Date('2024-01-01'),
+    ...overrides,
+  }),
+
+  userServiceError: (overrides: Partial<UserServiceError> = {}): UserServiceError => ({
+    name: 'UserServiceError',
+    message: 'Test error',
+    context: {},
+    cause: undefined,
+    ...overrides,
+  }),
+
+  createUserInput: (overrides: Partial<CreateUserInput> = {}): CreateUserInput => ({
+    name: 'Test User',
+    email: 'test@example.com',
+    password: 'password123',
+    ...overrides,
+  }),
+};
+
+// Error scenario generators
+export const ErrorScenarios = {
+  networkError: () => new Error('Network request failed'),
+  timeoutError: () => new Error('Request timeout'),
+  validationError: (field: string, value: any) => ({
+    name: 'ValidationError',
+    message: `Invalid ${field}`,
+    context: { [field]: value },
+    cause: undefined,
+  }),
+  notFoundError: (resource: string, id: string) => ({
+    name: 'UserServiceError',
+    message: `${resource} not found`,
+    context: { [`${resource.toLowerCase()}Id`]: id },
+    cause: undefined,
+  }),
+};
+
+// Setup and teardown helpers
+export async function setupTestEnvironment() {
+  // Initialize test database, clear caches, etc.
+}
+
+export async function teardownTestEnvironment() {
+  // Clean up test data, close connections, etc.
+}
+```
+
+```typescript
+// src/__tests__/setup.ts
+import { expect } from 'vitest';
+import { ResultMatchers } from './helpers/testUtils';
+
+// Extend Vitest matchers
+expect.extend(ResultMatchers);
+
+// Global test setup
+beforeEach(() => {
+  // Clear all mocks before each test
+  vi.clearAllMocks();
+});
+```
+
+## Error Scenario Testing Strategies
+
+### 1. Boundary Value Testing
+
+Test edge cases and boundary conditions:
+
+```typescript
+describe('Input validation edge cases', () => {
+  it('handles empty strings', async () => {
+    const result = await userService.createUser({
+      name: '',
+      email: '',
+      password: '',
+    });
+    
+    expect(result).toBeErr({
+      name: 'UserServiceError',
+      message: 'Name is required',
+    });
+  });
+
+  it('handles extremely long inputs', async () => {
+    const longName = 'a'.repeat(1001);
+    const result = await userService.createUser({
+      name: longName,
+      email: 'test@example.com',
+      password: 'password123',
+    });
+    
+    expect(result).toBeErr({
+      name: 'UserServiceError',
+      message: 'Name must be less than 1000 characters',
+    });
+  });
+
+  it('handles special characters in email', async () => {
+    const result = await userService.createUser({
+      name: 'Test User',
+      email: 'test+tag@sub.example.com',
+      password: 'password123',
+    });
+    
+    expect(result).toBeOk();
+  });
+});
+```
+
+### 2. Error Recovery Testing
+
+Test error recovery and retry mechanisms:
+
+```typescript
+describe('Error recovery', () => {
+  it('retries after transient database error', async () => {
+    const transientError = new Error('Connection lost');
+    const user = TestDataFactory.user();
+
+    mockDb.user.findUnique
+      .mockRejectedValueOnce(transientError) // First call fails
+      .mockResolvedValueOnce(null); // Second call succeeds
+    mockDb.user.create.mockResolvedValue(user);
+
+    // Implement retry logic in service
+    const result = await userService.createUserWithRetry({
+      name: 'Test User',
+      email: 'test@example.com',
+      password: 'password123',
+    });
+
+    expect(result).toBeOk(user);
+    expect(mockDb.user.findUnique).toHaveBeenCalledTimes(2);
+  });
+
+  it('gives up after max retries', async () => {
+    const persistentError = new Error('Database unavailable');
+    
+    mockDb.user.findUnique.mockRejectedValue(persistentError);
+
+    const result = await userService.createUserWithRetry({
+      name: 'Test User',
+      email: 'test@example.com',
+      password: 'password123',
+    });
+
+    expect(result).toBeErr({
+      name: 'UserServiceError',
+      message: 'Failed to create user after 3 attempts',
+    });
+    expect(mockDb.user.findUnique).toHaveBeenCalledTimes(3);
+  });
+});
+```
+
+### 3. Concurrent Operation Testing
+
+Test race conditions and concurrent operations:
+
+```typescript
+describe('Concurrent operations', () => {
+  it('handles concurrent user creation with same email', async () => {
+    const userData = {
+      name: 'Test User',
+      email: 'test@example.com',
+      password: 'password123',
+    };
+
+    // Simulate race condition
+    mockDb.user.findUnique
+      .mockResolvedValueOnce(null) // First check: no user exists
+      .mockResolvedValueOnce(null); // Second check: no user exists
+
+    const existingUser = TestDataFactory.user({ email: 'test@example.com' });
+    
+    mockDb.user.create
+      .mockResolvedValueOnce(existingUser) // First creation succeeds
+      .mockRejectedValueOnce(new Error('Unique constraint violation')); // Second fails
+
+    // Run both operations concurrently
+    const [result1, result2] = await Promise.all([
+      userService.createUser(userData),
+      userService.createUser(userData),
+    ]);
+
+    expect(result1).toBeOk(existingUser);
+    expect(result2).toBeErr({
+      name: 'UserServiceError',
+      message: 'Failed to create user',
+    });
+  });
+});
+```
+
+## Performance Testing
+
+Test performance characteristics of Result-based code:
+
+```typescript
+// src/__tests__/performance/users.perf.test.ts
+describe('User Service Performance', () => {
+  it('handles large user datasets efficiently', async () => {
+    const largeUserSet = Array.from({ length: 10000 }, (_, i) => 
+      TestDataFactory.user({ id: String(i), email: `user${i}@example.com` })
+    );
+
+    mockDb.user.findMany.mockResolvedValue(largeUserSet);
+
+    const startTime = performance.now();
+    const result = await userService.getAllUsers({ limit: 10000 });
+    const endTime = performance.now();
+
+    expect(result).toBeOk();
+    expect(endTime - startTime).toBeLessThan(100); // Should complete in <100ms
+  });
+
+  it('maintains performance with error handling overhead', async () => {
+    const iterations = 1000;
+    const userData = TestDataFactory.createUserInput();
+
+    // Test with successful operations
+    mockDb.user.findUnique.mockResolvedValue(null);
+    mockDb.user.create.mockImplementation(() => 
+      Promise.resolve(TestDataFactory.user())
+    );
+
+    const startTime = performance.now();
+    
+    const promises = Array.from({ length: iterations }, () => 
+      userService.createUser(userData)
+    );
+    
+    await Promise.all(promises);
+    
+    const endTime = performance.now();
+    const avgTime = (endTime - startTime) / iterations;
+
+    expect(avgTime).toBeLessThan(5); // Average <5ms per operation
+  });
+});
+```
+
+## Test Configuration
+
+Set up comprehensive test configuration:
+
+```typescript
+// vitest.config.ts
+import { defineConfig } from 'vitest/config';
+
+export default defineConfig({
+  test: {
+    globals: true,
+    environment: 'node',
+    setupFiles: ['./src/__tests__/setup.ts'],
+    coverage: {
+      reporter: ['text', 'json', 'html'],
+      thresholds: {
+        global: {
+          branches: 80,
+          functions: 80,
+          lines: 80,
+          statements: 80,
+        },
+      },
+      exclude: [
+        'node_modules/**',
+        'src/__tests__/**',
+        '**/*.d.ts',
+        '**/*.config.*',
+      ],
+    },
+    testTimeout: 10000,
+    pool: 'threads',
+    poolOptions: {
+      threads: {
+        minThreads: 1,
+        maxThreads: 4,
+      },
+    },
+  },
+});
+```
+
+```json
+// package.json test scripts
+{
+  "scripts": {
+    "test": "vitest",
+    "test:ui": "vitest --ui",
+    "test:coverage": "vitest --coverage",
+    "test:watch": "vitest --watch",
+    "test:e2e": "playwright test",
+    "test:unit": "vitest --config vitest.unit.config.ts",
+    "test:integration": "vitest --config vitest.integration.config.ts"
+  }
+}
+```
+
+## Best Practices Summary
+
+### 1. Test Structure
+
+- **Arrange, Act, Assert**: Clear separation of test phases
+- **One assertion per test**: Focus on single responsibility
+- **Descriptive test names**: Explain what is being tested and expected outcome
+- **Test error cases**: Cover both happy path and error scenarios
+
+### 2. Result Testing Patterns
+
+- **Use type-safe assertions**: Custom matchers for Ok/Err results
+- **Test error transformations**: Verify service errors become UI errors
+- **Test error context**: Ensure debugging information is preserved
+- **Test cache updates**: Verify optimistic updates work correctly
+
+### 3. Mock Strategy
+
+- **Mock at service boundaries**: Mock services, not internal functions
+- **Use factory functions**: Generate consistent test data
+- **Reset mocks**: Clear state between tests
+- **Type-safe mocks**: Ensure mocks match actual interfaces
+
+### 4. Error Scenario Coverage
+
+- **Input validation**: Test all validation rules
+- **Network errors**: Simulate connection failures
+- **Database errors**: Test constraint violations, timeouts
+- **Race conditions**: Test concurrent operations
+- **Resource limits**: Test boundary conditions
+
+### 5. Performance Considerations
+
+- **Measure overhead**: Ensure Result types don't impact performance
+- **Test large datasets**: Verify scalability
+- **Concurrent operations**: Test under load
+- **Memory usage**: Monitor for memory leaks
+
+## Summary
+
+Testing with wellcrafted provides:
+
+- **Systematic Error Testing**: Comprehensive coverage of all error scenarios
+- **Type-Safe Assertions**: Custom matchers for Result types
+- **Consistent Patterns**: Same testing approach across all layers
+- **Rich Error Context**: Detailed debugging information in tests
+- **Performance Confidence**: Verification that error handling doesn't impact performance
+
+The patterns shown here ensure your wellcrafted applications are thoroughly tested and production-ready, with confidence that all error paths are handled correctly.

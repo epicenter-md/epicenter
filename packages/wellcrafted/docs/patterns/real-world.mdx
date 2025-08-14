@@ -1,0 +1,704 @@
+---
+title: 'Real-World Examples'
+description: 'Production-tested patterns and complete examples using wellcrafted'
+icon: 'code'
+---
+
+import { Card, CardGroup } from '@mintlify/components'
+
+# Real-World Examples
+
+See wellcrafted's patterns in action with production-tested examples that demonstrate how the Result pattern, TaggedErrors, and brand types create robust, maintainable applications.
+
+## Complete Examples
+
+<CardGroup>
+  <Card title="Service Layer Architecture" icon="layer-group" href="/patterns/service-layer">
+    Factory function pattern with dependency injection
+  </Card>
+  <Card title="Whispering Case Study" icon="microphone" href="/case-studies/whispering-architecture">
+    22,824-line production app architecture
+  </Card>
+  <Card title="Framework Integrations" icon="plug" href="/integrations/svelte-tanstack">
+    TanStack Query with wellcrafted patterns
+  </Card>
+</CardGroup>
+
+## Essential Patterns
+
+### User Authentication Flow
+
+A complete authentication service showing error propagation and transformation:
+
+```typescript
+import { Result, Ok, tryAsync } from "wellcrafted/result";
+import { createTaggedError } from "wellcrafted/error";
+import { type Brand } from "wellcrafted/brand";
+
+// Brand types for safety
+type UserId = string & Brand<"UserId">;
+type SessionToken = string & Brand<"SessionToken">;
+
+// Service-specific errors
+const { AuthServiceError, AuthServiceErr } = createTaggedError("AuthServiceError");
+type AuthServiceError = ReturnType<typeof AuthServiceError>;
+
+interface AuthenticatedUser {
+  id: UserId;
+  email: string;
+  name: string;
+  isVerified: boolean;
+}
+
+export function createAuthService(
+  db: Database,
+  hashService: HashService,
+  tokenService: TokenService
+) {
+  return {
+    async login(
+      email: string,
+      password: string
+    ): Promise<Result<{ user: AuthenticatedUser; token: SessionToken }, AuthServiceError>> {
+      // Find user by email
+      const userResult = await tryAsync({
+        try: () => db.users.findByEmail(email),
+        mapError: (error) => AuthServiceError({
+          message: "Database error during login",
+          context: { email: email.substring(0, email.indexOf('@')) + '@***' },
+          cause: error
+        })
+      });
+
+      if (userResult.error) return userResult;
+      if (!userResult.data) {
+        return AuthServiceErr({
+          message: "Invalid email or password",
+          context: { email: email.substring(0, email.indexOf('@')) + '@***' },
+          cause: undefined
+        });
+      }
+
+      // Verify password
+      const isValidPassword = await hashService.verify(password, userResult.data.passwordHash);
+      if (!isValidPassword) {
+        return AuthServiceErr({
+          message: "Invalid email or password",
+          context: { email: email.substring(0, email.indexOf('@')) + '@***' },
+          cause: undefined
+        });
+      }
+
+      // Generate session token
+      const tokenResult = await tryAsync({
+        try: () => tokenService.generate(userResult.data.id),
+        mapError: (error) => AuthServiceError({
+          message: "Failed to generate session token",
+          context: { userId: userResult.data.id },
+          cause: error
+        })
+      });
+
+      if (tokenResult.error) return tokenResult;
+
+      return Ok({
+        user: {
+          id: userResult.data.id as UserId,
+          email: userResult.data.email,
+          name: userResult.data.name,
+          isVerified: userResult.data.isVerified
+        },
+        token: tokenResult.data as SessionToken
+      });
+    },
+
+    async validateSession(
+      token: SessionToken
+    ): Promise<Result<AuthenticatedUser, AuthServiceError>> {
+      const validationResult = await tryAsync({
+        try: () => tokenService.validate(token),
+        mapError: (error) => AuthServiceError({
+          message: "Token validation failed",
+          context: { tokenPrefix: token.substring(0, 8) + '...' },
+          cause: error
+        })
+      });
+
+      if (validationResult.error) return validationResult;
+      if (!validationResult.data.isValid) {
+        return AuthServiceErr({
+          message: "Invalid or expired session token",
+          context: { tokenPrefix: token.substring(0, 8) + '...' },
+          cause: undefined
+        });
+      }
+
+      // Fetch current user data
+      const userResult = await tryAsync({
+        try: () => db.users.findById(validationResult.data.userId),
+        mapError: (error) => AuthServiceError({
+          message: "Failed to fetch user data",
+          context: { userId: validationResult.data.userId },
+          cause: error
+        })
+      });
+
+      if (userResult.error) return userResult;
+      if (!userResult.data) {
+        return AuthServiceErr({
+          message: "User no longer exists",
+          context: { userId: validationResult.data.userId },
+          cause: undefined
+        });
+      }
+
+      return Ok({
+        id: userResult.data.id as UserId,
+        email: userResult.data.email,
+        name: userResult.data.name,
+        isVerified: userResult.data.isVerified
+      });
+    }
+  };
+}
+```
+
+### File Upload with Validation
+
+A complete file upload service with size limits, type checking, and progress tracking:
+
+```typescript
+import { Result, Ok, tryAsync, trySync } from "wellcrafted/result";
+import { createTaggedError } from "wellcrafted/error";
+import { type Brand } from "wellcrafted/brand";
+
+// Brand types
+type FileId = string & Brand<"FileId">;
+type UserId = string & Brand<"UserId">;
+
+// Service errors
+const { FileServiceError, FileServiceErr } = createTaggedError("FileServiceError");
+type FileServiceError = ReturnType<typeof FileServiceError>;
+
+interface UploadedFile {
+  id: FileId;
+  originalName: string;
+  size: number;
+  mimeType: string;
+  url: string;
+  uploadedAt: Date;
+}
+
+const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];
+
+export function createFileService(
+  storage: StorageService,
+  db: Database
+) {
+  return {
+    async uploadFile(
+      userId: UserId,
+      file: File,
+      onProgress?: (percent: number) => void
+    ): Promise<Result<UploadedFile, FileServiceError>> {
+      // Validate file size
+      if (file.size > MAX_FILE_SIZE) {
+        return FileServiceErr({
+          message: `File too large. Maximum size is ${MAX_FILE_SIZE / 1024 / 1024}MB`,
+          context: {
+            fileName: file.name,
+            fileSize: file.size,
+            maxSize: MAX_FILE_SIZE
+          },
+          cause: undefined
+        });
+      }
+
+      // Validate file type
+      if (!ALLOWED_TYPES.includes(file.type)) {
+        return FileServiceErr({
+          message: `File type not allowed. Allowed types: ${ALLOWED_TYPES.join(', ')}`,
+          context: {
+            fileName: file.name,
+            fileType: file.type,
+            allowedTypes: ALLOWED_TYPES
+          },
+          cause: undefined
+        });
+      }
+
+      // Generate unique file ID
+      const fileId = crypto.randomUUID() as FileId;
+      const fileKey = `${userId}/${fileId}/${file.name}`;
+
+      // Upload to storage
+      const uploadResult = await tryAsync({
+        try: () => storage.upload(fileKey, file, { onProgress }),
+        mapError: (error) => FileServiceError({
+          message: "Failed to upload file to storage",
+          context: {
+            fileName: file.name,
+            fileSize: file.size,
+            fileKey
+          },
+          cause: error
+        })
+      });
+
+      if (uploadResult.error) return uploadResult;
+
+      // Save metadata to database
+      const metadataResult = await tryAsync({
+        try: () => db.files.create({
+          id: fileId,
+          userId,
+          originalName: file.name,
+          size: file.size,
+          mimeType: file.type,
+          storageKey: fileKey,
+          url: uploadResult.data.url
+        }),
+        mapError: (error) => FileServiceError({
+          message: "Failed to save file metadata",
+          context: { fileId, fileName: file.name },
+          cause: error
+        })
+      });
+
+      if (metadataResult.error) {
+        // Cleanup storage on database failure
+        await storage.delete(fileKey);
+        return metadataResult;
+      }
+
+      return Ok({
+        id: fileId,
+        originalName: file.name,
+        size: file.size,
+        mimeType: file.type,
+        url: uploadResult.data.url,
+        uploadedAt: new Date()
+      });
+    },
+
+    async getFile(
+      fileId: FileId,
+      userId: UserId
+    ): Promise<Result<UploadedFile, FileServiceError>> {
+      const fileResult = await tryAsync({
+        try: () => db.files.findById(fileId),
+        mapError: (error) => FileServiceError({
+          message: "Failed to fetch file metadata",
+          context: { fileId, userId },
+          cause: error
+        })
+      });
+
+      if (fileResult.error) return fileResult;
+      if (!fileResult.data) {
+        return FileServiceErr({
+          message: "File not found",
+          context: { fileId, userId },
+          cause: undefined
+        });
+      }
+
+      // Check ownership
+      if (fileResult.data.userId !== userId) {
+        return FileServiceErr({
+          message: "Access denied",
+          context: { fileId, userId, ownerId: fileResult.data.userId },
+          cause: undefined
+        });
+      }
+
+      return Ok(fileResult.data);
+    }
+  };
+}
+```
+
+### API Route with Error Handling
+
+A complete Next.js API route showing error transformation and response handling:
+
+```typescript
+// app/api/users/[id]/route.ts
+import { NextRequest, NextResponse } from 'next/server';
+import { createUserService } from '@/services/user-service';
+import { createAuthService } from '@/services/auth-service';
+import { isErr } from 'wellcrafted/result';
+import { type Brand } from 'wellcrafted/brand';
+
+type UserId = string & Brand<"UserId">;
+type SessionToken = string & Brand<"SessionToken">;
+
+// Error response helpers
+function errorResponse(message: string, status: number, context?: Record<string, unknown>) {
+  return NextResponse.json(
+    {
+      error: {
+        message,
+        context,
+        timestamp: new Date().toISOString()
+      }
+    },
+    { status }
+  );
+}
+
+export async function GET(
+  request: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  try {
+    // Extract auth token
+    const authHeader = request.headers.get('authorization');
+    if (!authHeader?.startsWith('Bearer ')) {
+      return errorResponse('Missing or invalid authorization header', 401);
+    }
+
+    const token = authHeader.substring(7) as SessionToken;
+    
+    // Validate session
+    const authService = createAuthService();
+    const sessionResult = await authService.validateSession(token);
+    
+    if (isErr(sessionResult)) {
+      const { error } = sessionResult;
+      return errorResponse(
+        'Authentication failed',
+        401,
+        { reason: error.message, errorId: error.name }
+      );
+    }
+
+    // Get requested user
+    const userService = createUserService();
+    const userId = params.id as UserId;
+    const userResult = await userService.getUser(userId);
+    
+    if (isErr(userResult)) {
+      const { error } = userResult;
+      
+      // Transform service errors to HTTP responses
+      switch (error.name) {
+        case 'UserNotFoundError':
+          return errorResponse('User not found', 404, { userId });
+        case 'UserServiceError':
+          return errorResponse(
+            'Failed to fetch user',
+            500,
+            { userId, errorId: error.name }
+          );
+        default:
+          return errorResponse('Internal server error', 500);
+      }
+    }
+
+    // Check authorization (users can only see their own data)
+    if (userResult.data.id !== sessionResult.data.id) {
+      return errorResponse('Access denied', 403, { userId });
+    }
+
+    // Return user data
+    return NextResponse.json({
+      data: {
+        id: userResult.data.id,
+        email: userResult.data.email,
+        name: userResult.data.name,
+        createdAt: userResult.data.createdAt
+      }
+    });
+
+  } catch (error) {
+    // Fallback for any unhandled errors
+    console.error('Unexpected error in GET /api/users/[id]:', error);
+    return errorResponse('Internal server error', 500);
+  }
+}
+```
+
+### Form Validation with Zod Integration
+
+Combining wellcrafted with Zod for comprehensive form validation:
+
+```typescript
+import { z } from 'zod';
+import { Result, Ok, trySync } from "wellcrafted/result";
+import { createTaggedError } from "wellcrafted/error";
+
+// Form validation errors
+const { ValidationError, ValidationErr } = createTaggedError("ValidationError");
+type ValidationError = ReturnType<typeof ValidationError>;
+
+// Zod schemas
+const CreateUserSchema = z.object({
+  email: z.string().email("Invalid email address"),
+  name: z.string().min(2, "Name must be at least 2 characters"),
+  age: z.number().min(18, "Must be 18 or older").max(120, "Invalid age"),
+  terms: z.boolean().refine(val => val === true, "Must accept terms")
+});
+
+type CreateUserInput = z.infer<typeof CreateUserSchema>;
+
+interface ValidatedUser {
+  email: string;
+  name: string;
+  age: number;
+  acceptedTerms: boolean;
+}
+
+export function validateCreateUserForm(
+  input: unknown
+): Result<ValidatedUser, ValidationError> {
+  const validationResult = trySync({
+    try: () => CreateUserSchema.parse(input),
+    mapError: (error) => {
+      if (error instanceof z.ZodError) {
+        const firstIssue = error.issues[0];
+        return ValidationError({
+          message: firstIssue.message,
+          context: {
+            field: firstIssue.path.join('.'),
+            receivedValue: firstIssue.received,
+            allErrors: error.issues.map(issue => ({
+              path: issue.path.join('.'),
+              message: issue.message
+            }))
+          },
+          cause: error
+        });
+      }
+      
+      return ValidationError({
+        message: "Invalid form data",
+        context: { input },
+        cause: error
+      });
+    }
+  });
+
+  if (validationResult.error) return validationResult;
+
+  // Transform to domain object
+  return Ok({
+    email: validationResult.data.email,
+    name: validationResult.data.name,
+    age: validationResult.data.age,
+    acceptedTerms: validationResult.data.terms
+  });
+}
+
+// Usage in a form handler
+async function handleSubmit(formData: unknown) {
+  const validationResult = validateCreateUserForm(formData);
+  
+  if (validationResult.error) {
+    // Show field-specific error
+    const field = validationResult.error.context.field;
+    const message = validationResult.error.message;
+    
+    showFieldError(field as string, message);
+    return;
+  }
+
+  // Proceed with validated data
+  const userService = createUserService();
+  const createResult = await userService.createUser(validationResult.data);
+  
+  if (createResult.error) {
+    showToast("Failed to create user: " + createResult.error.message);
+    return;
+  }
+
+  // Success!
+  redirect(`/users/${createResult.data.id}`);
+}
+```
+
+## Production Architecture Patterns
+
+### Service Composition
+
+How services build on each other in complex applications:
+
+```typescript
+// High-level application service that coordinates multiple domain services
+export function createApplicationService(
+  authService: AuthService,
+  userService: UserService,
+  fileService: FileService,
+  notificationService: NotificationService
+) {
+  return {
+    async updateUserProfile(
+      token: SessionToken,
+      profileData: UpdateProfileInput,
+      avatarFile?: File
+    ): Promise<Result<UpdatedProfile, ApplicationError>> {
+      // 1. Authenticate user
+      const authResult = await authService.validateSession(token);
+      if (authResult.error) return transformAuthError(authResult.error);
+
+      // 2. Upload avatar if provided
+      let avatarUrl: string | undefined;
+      if (avatarFile) {
+        const uploadResult = await fileService.uploadFile(
+          authResult.data.id, 
+          avatarFile
+        );
+        if (uploadResult.error) return transformFileError(uploadResult.error);
+        avatarUrl = uploadResult.data.url;
+      }
+
+      // 3. Update user profile
+      const updateResult = await userService.updateProfile(
+        authResult.data.id,
+        { ...profileData, avatarUrl }
+      );
+      if (updateResult.error) return transformUserError(updateResult.error);
+
+      // 4. Send notification (don't fail the operation if this fails)
+      await notificationService.notify(
+        authResult.data.id,
+        "Profile updated successfully"
+      );
+
+      return Ok({
+        user: updateResult.data,
+        message: "Profile updated successfully"
+      });
+    }
+  };
+}
+```
+
+### Error Boundary Integration
+
+Using wellcrafted with React Error Boundaries:
+
+```typescript
+import React from 'react';
+import { isErr } from 'wellcrafted/result';
+
+interface ErrorBoundaryState {
+  hasError: boolean;
+  error?: Error;
+  errorInfo?: React.ErrorInfo;
+}
+
+export class WellcraftedErrorBoundary extends React.Component<
+  React.PropsWithChildren<{}>,
+  ErrorBoundaryState
+> {
+  constructor(props: React.PropsWithChildren<{}>) {
+    super(props);
+    this.state = { hasError: false };
+  }
+
+  static getDerivedStateFromError(error: Error): ErrorBoundaryState {
+    return {
+      hasError: true,
+      error
+    };
+  }
+
+  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+    this.setState({ errorInfo });
+    
+    // Log structured error information
+    if (error.cause && typeof error.cause === 'object' && 'name' in error.cause) {
+      // This is likely a wellcrafted TaggedError
+      console.error('Wellcrafted error caught by boundary:', {
+        boundaryError: error.message,
+        originalError: error.cause,
+        stack: errorInfo.componentStack
+      });
+    } else {
+      console.error('Unhandled error in React tree:', error, errorInfo);
+    }
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="error-boundary">
+          <h2>Something went wrong</h2>
+          <details>
+            <summary>Error Details</summary>
+            <pre>{this.state.error?.message}</pre>
+            {this.state.errorInfo && (
+              <pre>{this.state.errorInfo.componentStack}</pre>
+            )}
+          </details>
+          <button onClick={() => window.location.reload()}>
+            Reload Page
+          </button>
+        </div>
+      );
+    }
+
+    return this.props.children;
+  }
+}
+
+// Usage with Result-aware components
+function UserProfile({ userId }: { userId: string }) {
+  const [result, setResult] = React.useState<Result<User, UserError>>();
+
+  React.useEffect(() => {
+    async function loadUser() {
+      const userService = createUserService();
+      const userResult = await userService.getUser(userId);
+      setResult(userResult);
+    }
+    loadUser();
+  }, [userId]);
+
+  if (!result) return <LoadingSpinner />;
+
+  if (isErr(result)) {
+    // Handle errors at component level - don't throw
+    return <UserError error={result.error} />;
+  }
+
+  return <UserDetails user={result.data} />;
+}
+```
+
+## Key Takeaways
+
+### 1. Type Safety Throughout
+Every example shows how wellcrafted makes errors visible in function signatures, eliminating surprise runtime failures.
+
+### 2. Systematic Error Handling  
+Errors are transformed at appropriate boundaries - database errors become service errors, service errors become application errors.
+
+### 3. Production-Ready Patterns
+These patterns handle real-world concerns: authentication, validation, file uploads, error boundaries, and service composition.
+
+### 4. Framework Agnostic
+Whether you're using Next.js, React, Svelte, or Node.js, these patterns adapt to any TypeScript environment.
+
+<Note>
+Want to see larger-scale architecture? Check out the [Whispering case study](/case-studies/whispering-architecture) for a 22,000+ line production application, or explore [service layer patterns](/patterns/service-layer) for more architectural guidance.
+</Note>
+
+## Related Resources
+
+<CardGroup>
+  <Card title="Result Pattern Deep Dive" icon="code-branch" href="/core/result-pattern">
+    Master the discriminated union that powers these examples
+  </Card>
+  <Card title="Error System Design" icon="triangle-exclamation" href="/core/error-system">
+    Learn how TaggedErrors create structured, serializable errors
+  </Card>
+  <Card title="Brand Types" icon="fingerprint" href="/core/brand-types">
+    Prevent bugs with compile-time type distinctions
+  </Card>
+  <Card title="Framework Integrations" icon="plug" href="/integrations/svelte-tanstack">
+    See wellcrafted in action with popular frameworks
+  </Card>
+</CardGroup>

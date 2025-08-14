@@ -1,0 +1,637 @@
+---
+title: 'Production Reliability'
+description: 'How explicit error handling prevents production failures'
+icon: 'shield-check'
+---
+
+# Production Reliability
+
+> "In production, every unhandled exception is a potential outage."
+
+Production systems have a different relationship with errors than development environments. In development, you can restart, debug, and iterate quickly. In production, every failure impacts real users, costs money, and damages trust.
+
+wellcrafted's error-handling patterns weren't designed in isolation—they evolved from real production pain points where traditional exception handling fell short.
+
+## The Hidden Cost of Exceptions
+
+### Scenario 1: The Midnight Page
+
+It's 2 AM. Your phone buzzes with an alert: "Payment processing service returning 500 errors." Users can't complete purchases. Revenue is dropping by the minute.
+
+You dig into the logs and find this:
+
+```
+Error: Cannot read property 'id' of undefined
+  at processPayment (payment-service.js:42:18)
+  at handleCheckout (checkout.js:127:25)
+  at Router.post (/api/checkout:15:9)
+```
+
+**What went wrong?** Somewhere in the payment flow, a function returned `undefined` instead of throwing an exception. The calling code assumed success and tried to access `.id` on `undefined`. The error is generic, the stack trace is shallow, and you have no context about what data caused the failure.
+
+**How long to fix?** Hours. You need to reproduce the exact conditions, add logging, deploy, and wait for it to happen again.
+
+### Scenario 2: The Silent Failure
+
+Your dashboard shows green metrics, but users are complaining that their profile updates aren't saving. No error logs, no alerts, no obvious failures.
+
+After investigation, you discover this pattern:
+
+```typescript
+async function updateProfile(userId: string, data: ProfileData) {
+  try {
+    await validateProfileData(data);
+    await database.updateUser(userId, data);
+    // Success! ...or is it?
+  } catch (error) {
+    console.error("Profile update failed:", error.message);
+    // Error logged, but user never sees it
+    // Function returns normally - caller thinks it succeeded
+  }
+}
+```
+
+**What went wrong?** The try-catch block silently swallowed errors. Callers had no way to know that the operation failed. Users saw "Profile updated successfully" while their data was never saved.
+
+**How long to detect?** Days or weeks. Silent failures are the worst kind—they break user trust without triggering your monitoring systems.
+
+### Scenario 3: The Cascade Failure
+
+A third-party API starts returning 429 (rate limit) errors. Your application doesn't handle this gracefully:
+
+```typescript
+async function fetchUserData(id: string) {
+  const response = await fetch(`/api/users/${id}`);
+  return response.json(); // Throws on non-200 status
+}
+
+// Callers throughout the codebase
+try {
+  const user = await fetchUserData(id);
+  // Assume success
+} catch (error) {
+  // Generic error handling
+  throw new Error("User fetch failed");
+}
+```
+
+**What went wrong?** The 429 errors propagated as generic "fetch failed" exceptions throughout your application. Rate limits require specific handling (backoff, retry), but your error system couldn't distinguish between rate limits, network failures, and data errors.
+
+**The cascade effect**: One API's rate limiting brought down multiple features across your application.
+
+## The wellcrafted Approach to Production Reliability
+
+### Scenario 1 Solved: Rich Error Context
+
+```typescript
+type PaymentError = TaggedError<"PaymentError">;
+type ValidationError = TaggedError<"ValidationError">;
+type GatewayError = TaggedError<"GatewayError">;
+
+async function processPayment(
+  order: Order,
+  paymentMethod: PaymentMethod
+): Promise<Result<PaymentResult, PaymentError | ValidationError | GatewayError>> {
+  
+  // Validate payment data
+  const validation = validatePaymentData(order, paymentMethod);
+  if (validation.error) return validation;
+  
+  // Process with payment gateway
+  const { data: result, error } = await tryAsync({
+    try: () => paymentGateway.charge({
+      amount: order.total,
+      currency: order.currency,
+      paymentMethodId: paymentMethod.id,
+      customerId: order.customerId
+    }),
+    mapErr: (error): GatewayError => ({
+      name: "GatewayError",
+      message: "Payment gateway request failed",
+      context: {
+        orderId: order.id,
+        amount: order.total,
+        currency: order.currency,
+        paymentMethodId: paymentMethod.id,
+        customerId: order.customerId,
+        gatewayResponse: error.response?.status,
+        timestamp: new Date().toISOString()
+      },
+      cause: error
+    })
+  });
+  
+  if (error) return Err(error);
+  
+  return Ok(result);
+}
+```
+
+**When this fails at 2 AM**:
+```json
+{
+  "level": "error",
+  "name": "GatewayError", 
+  "message": "Payment gateway request failed",
+  "context": {
+    "orderId": "ord_abc123",
+    "amount": 2999,
+    "currency": "USD", 
+    "paymentMethodId": "pm_xyz789",
+    "customerId": "cus_def456",
+    "gatewayResponse": 402,
+    "timestamp": "2024-03-15T02:14:33.127Z"
+  },
+  "traceId": "trace_ghi012"
+}
+```
+
+**Time to diagnose**: Minutes. You have the exact order, payment method, gateway response, and timing. You can reproduce the failure immediately.
+
+### Scenario 2 Solved: Explicit Success/Failure
+
+```typescript
+async function updateProfile(
+  userId: string,
+  data: ProfileData
+): Promise<Result<Profile, ValidationError | DatabaseError | AuthError>> {
+  
+  // Validate profile data
+  const validation = validateProfileData(data);
+  if (validation.error) return validation;
+  
+  // Check permissions
+  const authCheck = await checkUpdatePermissions(userId);
+  if (authCheck.error) return authCheck;
+  
+  // Update database
+  const { data: updatedProfile, error } = await database.updateUser(userId, data);
+  if (error) {
+    return Err({
+      name: "DatabaseError",
+      message: "Failed to update user profile",
+      context: {
+        userId,
+        updateFields: Object.keys(data),
+        timestamp: new Date().toISOString()
+      },
+      cause: error
+    });
+  }
+  
+  return Ok(updatedProfile);
+}
+
+// API endpoint with explicit error handling
+async function handleProfileUpdate(req: Request): Promise<Response> {
+  const { data: profile, error } = await updateProfile(userId, profileData);
+  
+  if (error) {
+    // Log the detailed error for debugging
+    logger.error("Profile update failed", {
+      error,
+      userId,
+      endpoint: "/api/profile",
+      traceId: req.headers.get("x-trace-id")
+    });
+    
+    // Return appropriate error response to client
+    switch (error.name) {
+      case "ValidationError":
+        return new Response(JSON.stringify({
+          error: "Invalid profile data",
+          details: error.context
+        }), { status: 400 });
+      case "AuthError":
+        return new Response(JSON.stringify({
+          error: "Unauthorized"
+        }), { status: 403 });
+      case "DatabaseError":
+        return new Response(JSON.stringify({
+          error: "Profile update failed"
+        }), { status: 500 });
+    }
+  }
+  
+  return new Response(JSON.stringify(profile));
+}
+```
+
+**What changed**: The calling code *must* handle the error case. TypeScript enforces this—you can't access `profile` without first checking if `error` is null. Silent failures become impossible.
+
+### Scenario 3 Solved: Discriminated Error Types
+
+```typescript
+type ApiError = 
+  | TaggedError<"RateLimitError">
+  | TaggedError<"NetworkError">
+  | TaggedError<"AuthError">
+  | TaggedError<"NotFoundError">;
+
+async function fetchUserData(
+  id: string
+): Promise<Result<User, ApiError>> {
+  
+  return await tryAsync({
+    try: async () => {
+      const response = await fetch(`/api/users/${id}`);
+      
+      if (!response.ok) {
+        switch (response.status) {
+          case 429:
+            throw { type: "rate_limit", retryAfter: response.headers.get("retry-after") };
+          case 401:
+          case 403:
+            throw { type: "auth", status: response.status };
+          case 404:
+            throw { type: "not_found" };
+          default:
+            throw { type: "network", status: response.status };
+        }
+      }
+      
+      return response.json();
+    },
+    mapErr: (error): ApiError => {
+      if (typeof error === "object" && error?.type) {
+        switch (error.type) {
+          case "rate_limit":
+            return {
+              name: "RateLimitError",
+              message: "API rate limit exceeded",
+              context: {
+                userId: id,
+                retryAfter: error.retryAfter,
+                timestamp: new Date().toISOString()
+              },
+              cause: error
+            };
+          case "auth":
+            return {
+              name: "AuthError", 
+              message: "Authentication failed",
+              context: { userId: id, status: error.status },
+              cause: error
+            };
+          case "not_found":
+            return {
+              name: "NotFoundError",
+              message: "User not found",
+              context: { userId: id },
+              cause: error
+            };
+          default:
+            return {
+              name: "NetworkError",
+              message: "Network request failed",
+              context: { userId: id, status: error.status },
+              cause: error
+            };
+        }
+      }
+      
+      return {
+        name: "NetworkError",
+        message: "Unexpected error",
+        context: { userId: id },
+        cause: error
+      };
+    }
+  });
+}
+
+// Now callers can handle each error type appropriately
+async function handleUserRequest(userId: string) {
+  const { data: user, error } = await fetchUserData(userId);
+  
+  if (error) {
+    switch (error.name) {
+      case "RateLimitError":
+        // Specific handling for rate limits
+        const retryAfter = parseInt(error.context.retryAfter || "60");
+        await new Promise(resolve => setTimeout(resolve, retryAfter * 1000));
+        return handleUserRequest(userId); // Retry after delay
+        
+      case "AuthError":
+        // Redirect to login
+        throw new RedirectError("/login");
+        
+      case "NotFoundError":
+        // Show 404 page
+        return notFoundResponse();
+        
+      case "NetworkError":
+        // Show retry button
+        return networkErrorResponse(error);
+    }
+  }
+  
+  return successResponse(user);
+}
+```
+
+**What changed**: Each error type gets appropriate handling. Rate limits trigger retries, auth errors redirect to login, and network errors show retry options. No more cascade failures from generic error handling.
+
+## Production Metrics: Whispering Case Study
+
+Whispering is a production desktop/web application built with wellcrafted patterns. After thousands of hours of user testing and real-world usage:
+
+### Zero Runtime Crashes
+**Traditional approach (before wellcrafted)**:
+- Unhandled promise rejections causing app crashes
+- Generic error boundaries catching everything as "something went wrong"
+- Users losing work due to unexpected exceptions
+
+**wellcrafted approach**:
+- Every operation returns a Result type
+- All error paths explicitly handled
+- Graceful degradation instead of crashes
+
+**Result**: Zero unhandled exceptions in production. When things go wrong, users see helpful error messages with actionable next steps, not blank screens.
+
+### Improved Error Observability
+
+**Traditional logs**:
+```
+[ERROR] TypeError: Cannot read property 'id' of undefined
+[ERROR] Network request failed  
+[ERROR] Validation error
+```
+
+**wellcrafted logs**:
+```json
+{
+  "level": "error",
+  "name": "TranscriptionError",
+  "message": "OpenAI API key invalid",
+  "context": {
+    "provider": "openai",
+    "modelName": "whisper-1", 
+    "audioLengthSeconds": 142,
+    "apiKeyLength": 8,
+    "timestamp": "2024-03-15T14:22:18.193Z"
+  },
+  "traceId": "trace_abc123"
+}
+```
+
+**Impact**: Debugging time reduced from hours to minutes. Error context provides immediate insights into the failure conditions.
+
+### Better User Experience
+
+**Traditional error handling**:
+- Generic "An error occurred" messages
+- No guidance on how to resolve issues
+- Users unable to distinguish between temporary and permanent failures
+
+**wellcrafted error handling**:
+```typescript
+// Real example from Whispering's transcription service
+if (error.name === "AuthError") {
+  return WhisperingErr({
+    title: "🔑 API Key Required",
+    description: "Please enter your OpenAI API key in settings to use Whisper transcription.",
+    action: {
+      type: "link",
+      label: "Add API key",
+      href: "/settings/transcription"
+    }
+  });
+}
+```
+
+**Impact**: Users see specific, actionable error messages that guide them toward resolution.
+
+## Team Collaboration Benefits
+
+### API Contracts That Actually Work
+
+Traditional function signatures hide their failure modes:
+
+```typescript
+// What can go wrong? 🤷
+async function uploadFile(file: File): Promise<UploadResult>
+```
+
+wellcrafted signatures make error handling part of the contract:
+
+```typescript
+// Crystal clear about all possible outcomes
+async function uploadFile(
+  file: File
+): Promise<Result<UploadResult, ValidationError | NetworkError | StorageError>>
+```
+
+**Team impact**: New developers can see exactly what error cases to handle. Code reviews can verify that all error paths are covered. Integration between teams becomes more predictable.
+
+### Self-Documenting Error Handling
+
+```typescript
+// This function tells a story about what can go wrong and why
+async function processPayment(
+  orderId: string,
+  paymentMethod: PaymentMethod
+): Promise<Result<Payment, 
+  | ValidationError     // Invalid payment data
+  | InsufficientFundsError  // Not enough money in account
+  | PaymentGatewayError     // Third-party payment processor failed
+  | FraudCheckError        // Transaction flagged as suspicious
+>> {
+  // Implementation makes the error handling explicit at each step
+  
+  const orderValidation = await validateOrder(orderId);
+  if (orderValidation.error) return orderValidation;
+  
+  const fundsCheck = await checkSufficientFunds(paymentMethod, order.total);
+  if (fundsCheck.error) return fundsCheck;
+  
+  const fraudCheck = await runFraudDetection(order, paymentMethod);
+  if (fraudCheck.error) return fraudCheck;
+  
+  return await chargePaymentMethod(paymentMethod, order.total);
+}
+```
+
+**Team impact**: The function signature serves as comprehensive documentation of all failure modes. New team members can understand the error handling without reading the implementation.
+
+### Exhaustive Error Handling in Code Reviews
+
+TypeScript's discriminated unions ensure exhaustive error handling:
+
+```typescript
+function handleApiError(error: ApiError) {
+  switch (error.name) {
+    case "RateLimitError":
+      return showRetryAfterDelay(error.context.retryAfter);
+    case "AuthError":
+      return redirectToLogin();
+    case "NetworkError":
+      return showNetworkErrorDialog();
+    // TypeScript error if you miss a case!
+  }
+}
+```
+
+**Team impact**: Code reviews can mechanically verify that all error cases are handled. No more "did we handle the timeout case?" discussions—TypeScript enforces completeness.
+
+## The Debugging Advantage
+
+### Error Context That Actually Helps
+
+Traditional errors:
+```
+Error: Request failed
+  at fetch (api.js:23:12)
+  at getUser (user.js:45:8)
+```
+
+wellcrafted errors:
+```json
+{
+  "name": "ApiError",
+  "message": "Failed to fetch user data",
+  "context": {
+    "userId": "user_123",
+    "endpoint": "/api/users/user_123",
+    "requestMethod": "GET",
+    "responseStatus": 503,
+    "responseTime": 5432,
+    "retryAttempt": 2,
+    "maxRetries": 3,
+    "requestHeaders": {
+      "authorization": "Bearer ***",
+      "user-agent": "MyApp/1.2.3"
+    },
+    "timestamp": "2024-03-15T09:31:42.194Z"
+  },
+  "cause": { /* original error */ }
+}
+```
+
+**Debugging impact**: You know exactly what request failed, why it failed, what the user was trying to do, and what retry attempts were made. No guesswork, no "I can't reproduce this" responses.
+
+### Error Chains That Tell the Full Story
+
+```typescript
+// Service layer error
+const databaseError = {
+  name: "DatabaseError",
+  message: "Connection timeout",
+  context: { query: "SELECT * FROM users WHERE id = ?", timeout: 5000 }
+};
+
+// API layer enrichment  
+const apiError = {
+  name: "ApiError",
+  message: "Failed to fetch user",
+  context: { 
+    userId: "user_123",
+    endpoint: "/api/users/user_123",
+    originalError: databaseError 
+  },
+  cause: databaseError
+};
+
+// Application layer enrichment
+const userError = {
+  name: "UserError", 
+  message: "Profile load failed",
+  context: {
+    feature: "profile-page",
+    userId: "user_123",
+    userAgent: "Chrome/91.0",
+    apiError: apiError
+  },
+  cause: apiError
+};
+```
+
+**Debugging impact**: You can trace the error from the database connection timeout, through the API layer, to the specific user action that triggered it. Every layer adds relevant context without losing the original failure details.
+
+## Monitoring and Alerting
+
+### Structured Error Metrics
+
+wellcrafted's consistent error structure enables powerful monitoring:
+
+```typescript
+// Automatic error categorization
+function recordErrorMetrics(error: BaseError) {
+  metrics.increment("errors.total", {
+    errorType: error.name,
+    service: error.context.service,
+    endpoint: error.context.endpoint
+  });
+  
+  // Different alert thresholds for different error types
+  switch (error.name) {
+    case "ValidationError":
+      // High volume expected, alert on unusual spikes
+      metrics.threshold("errors.validation", 100, "5m");
+      break;
+    case "DatabaseError":
+      // Low tolerance, alert immediately  
+      metrics.threshold("errors.database", 1, "1m");
+      break;
+    case "RateLimitError":
+      // Expected during traffic spikes, alert on sustained rates
+      metrics.threshold("errors.rate_limit", 50, "10m");
+      break;
+  }
+}
+```
+
+**Monitoring impact**: Different error types get different treatment. Database errors trigger immediate alerts, while validation errors only alert on unusual patterns.
+
+### Error Rate SLIs (Service Level Indicators)
+
+```typescript
+// Track error rates by category for SLA monitoring
+const errorRateMetrics = {
+  "user_errors": ["ValidationError", "AuthError", "NotFoundError"],
+  "system_errors": ["DatabaseError", "NetworkError", "TimeoutError"], 
+  "external_errors": ["PaymentGatewayError", "EmailServiceError"]
+};
+
+function updateSLI(error: BaseError) {
+  for (const [category, errorTypes] of Object.entries(errorRateMetrics)) {
+    if (errorTypes.includes(error.name)) {
+      metrics.increment(`sli.error_rate.${category}`);
+    }
+  }
+}
+```
+
+**SLA impact**: You can set different reliability targets for different error categories. User errors don't count against system reliability SLAs, but database errors do.
+
+## The Production Reality Check
+
+Production systems taught us that error handling isn't just about catching exceptions—it's about building systems that fail gracefully, provide actionable feedback, and maintain observability under stress.
+
+wellcrafted's patterns emerged from these production lessons:
+
+- **Exceptions hide crucial debugging context** that you need at 3 AM
+- **Silent failures are worse than loud ones** because they break trust without triggering alerts
+- **Generic error handling causes cascade failures** when different error types need different responses
+- **Error messages should guide users toward resolution**, not just report that something broke
+- **Monitoring systems need structured error data** to provide meaningful insights
+
+These aren't theoretical concerns—they're the difference between a system that scales gracefully and one that requires constant manual intervention.
+
+## Conclusion
+
+Production reliability isn't achieved by adding more try-catch blocks or better error logging. It comes from designing systems where failures are explicit, predictable, and actionable.
+
+wellcrafted's error handling patterns provide:
+
+- **Rich error context** that accelerates debugging from hours to minutes
+- **Explicit failure modes** that prevent silent failures and cascade errors  
+- **Structured error data** that enables sophisticated monitoring and alerting
+- **Type-safe error handling** that ensures comprehensive error coverage
+- **User-friendly error messages** that guide toward resolution
+
+The next time you're debugging a production incident at 2 AM, you'll appreciate having error context that shows exactly what went wrong, when, and with what data. That's the difference between reliable systems and systems that just happen to work most of the time.
+
+---
+
+**Related**: Understand the foundational principles in [Design Principles](/philosophy/design-principles), or see how these patterns improve development workflows in [Developer Experience](/philosophy/developer-experience).

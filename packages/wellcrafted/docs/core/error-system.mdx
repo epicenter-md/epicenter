@@ -1,6 +1,6 @@
 ---
 title: 'Error System Design'
-description: 'Understanding wellcrafted\'s structured, serializable error system'
+description: "Understanding wellcrafted's structured, serializable error system"
 icon: 'triangle-exclamation'
 ---
 
@@ -553,6 +553,23 @@ The TaggedError system transforms error handling from an afterthought to a first
 
 By treating errors as data rather than control flow, you gain predictability, testability, and maintainability in your error handling.
 
+## See Also
+
+<CardGroup>
+  <Card title="Result Pattern Deep Dive" icon="code-branch" href="/core/result-pattern">
+    Understand how TaggedErrors work with the Result discriminated union
+  </Card>
+  <Card title="Real-World Examples" icon="code" href="/patterns/real-world">
+    See TaggedErrors in production authentication, validation, and API code
+  </Card>
+  <Card title="Service Layer Pattern" icon="layer-group" href="/patterns/service-layer">
+    Learn error transformation patterns in service architecture
+  </Card>
+  <Card title="Framework Integrations" icon="plug" href="/integrations/svelte-tanstack">
+    Use TaggedErrors with TanStack Query and other frameworks
+  </Card>
+</CardGroup>
+
 <Note>
-Ready to see TaggedErrors in action? Check out the [error handling guide](/guides/error-handling) or explore [real-world patterns](/patterns/real-world).
+Ready to see TaggedErrors in action? Explore our [real-world patterns](/patterns/real-world) or check out the [service layer guide](/patterns/service-layer).
 </Note>

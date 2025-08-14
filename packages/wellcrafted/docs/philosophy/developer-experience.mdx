@@ -1,0 +1,806 @@
+---
+title: 'Developer Experience'
+description: 'How Result types transform the development process'
+icon: 'code'
+---
+
+# Developer Experience
+
+> "The best error handling is the error handling you don't have to think about."
+
+Good developer experience isn't just about clean syntax or helpful error messages. It's about designing systems that make the right thing easy and the wrong thing hard. wellcrafted transforms error handling from a source of bugs into a source of confidence.
+
+## The Mental Model Shift
+
+### From "Catching" to "Handling"
+
+Traditional exception handling puts developers in a defensive mindset:
+
+```typescript
+// Defensive programming: "What might go wrong?"
+try {
+  const user = await getUser(id);
+  try {
+    const profile = await getProfile(user.id);
+    try {
+      const preferences = await getPreferences(profile.id);
+      return buildUserData(user, profile, preferences);
+    } catch (prefError) {
+      // Fallback with partial data?
+      return buildUserData(user, profile, null);
+    }
+  } catch (profileError) {
+    // What do we do here?
+    throw new Error("Profile required");
+  }
+} catch (userError) {
+  // Different error, different handling?
+  throw new Error("User not found");
+}
+```
+
+**The cognitive load**:
+- You're thinking about exceptions, not the actual business logic
+- Each nested try-catch increases mental complexity
+- Error handling patterns are inconsistent across the codebase
+- It's unclear which errors can be recovered from and which can't
+
+Result types shift you to a constructive mindset:
+
+```typescript
+// Constructive programming: "What are all the possible outcomes?"
+async function loadUserData(id: string): Promise<Result<UserData, UserError | ProfileError | PreferencesError>> {
+  const userResult = await getUser(id);
+  if (userResult.error) return userResult;
+  
+  const profileResult = await getProfile(userResult.data.id);
+  if (profileResult.error) return profileResult;
+  
+  const preferencesResult = await getPreferences(profileResult.data.id);
+  if (preferencesResult.error) {
+    // Explicit decision: preferences are optional
+    return Ok(buildUserData(userResult.data, profileResult.data, null));
+  }
+  
+  return Ok(buildUserData(userResult.data, profileResult.data, preferencesResult.data));
+}
+```
+
+**The mental model change**:
+- You're thinking about data flow, not control flow
+- Each step is explicit about what data it needs and what it returns
+- Error handling patterns are consistent throughout your codebase
+- Business logic decisions (like "preferences are optional") are visible in the code
+
+### From "Hoping It Works" to "Knowing It Works"
+
+Exception-based code creates uncertainty:
+
+```typescript
+// What errors can this throw? When? Under what conditions?
+async function processOrder(orderId: string) {
+  const order = await fetchOrder(orderId);          // Throws? What type?
+  await validateOrder(order);                      // Throws? What type?
+  const payment = await processPayment(order);     // Throws? What type?
+  await updateInventory(order.items);              // Throws? What type?
+  await sendConfirmationEmail(order.customerEmail); // Throws? What type?
+  return order;
+}
+```
+
+Result types create certainty:
+
+```typescript
+// Every possible failure is visible and typed
+async function processOrder(
+  orderId: string
+): Promise<Result<Order, 
+  | OrderNotFoundError 
+  | ValidationError 
+  | PaymentError 
+  | InventoryError 
+  | EmailError
+>> {
+  const orderResult = await fetchOrder(orderId);
+  if (orderResult.error) return orderResult;
+  
+  const validationResult = await validateOrder(orderResult.data);
+  if (validationResult.error) return validationResult;
+  
+  const paymentResult = await processPayment(orderResult.data);
+  if (paymentResult.error) return paymentResult;
+  
+  const inventoryResult = await updateInventory(orderResult.data.items);
+  if (inventoryResult.error) return inventoryResult;
+  
+  const emailResult = await sendConfirmationEmail(orderResult.data.customerEmail);
+  if (emailResult.error) {
+    // Business decision: email failure doesn't fail the order
+    console.warn("Failed to send confirmation email:", emailResult.error);
+  }
+  
+  return Ok(orderResult.data);
+}
+```
+
+**The confidence gain**:
+- You know exactly what can go wrong at each step
+- You make explicit decisions about error recovery
+- Business logic is separated from error handling mechanics
+- Future maintainers can understand the error behavior without running the code
+
+## TypeScript Integration That Actually Helps
+
+### Discriminated Unions That Guide You
+
+TypeScript's type system becomes your error-handling assistant:
+
+```typescript
+type ApiResult<T> = Result<T, NetworkError | AuthError | ValidationError>;
+
+async function handleApiCall<T>(result: ApiResult<T>) {
+  if (result.error) {
+    // TypeScript knows result.error is one of the three error types
+    switch (result.error.name) {
+      case "NetworkError":
+        // TypeScript knows this is NetworkError
+        if (result.error.context.status === 429) {
+          return scheduleRetry(result.error.context.retryAfter);
+        }
+        return showNetworkErrorDialog();
+        
+      case "AuthError":
+        // TypeScript knows this is AuthError  
+        return redirectToLogin(result.error.context.returnUrl);
+        
+      case "ValidationError":
+        // TypeScript knows this is ValidationError
+        return highlightValidationErrors(result.error.context.fields);
+        
+      // TypeScript ensures you handle all cases
+    }
+  } else {
+    // TypeScript knows result.data is T here
+    return processSuccessfulResult(result.data);
+  }
+}
+```
+
+**What TypeScript gives you**:
+- **Exhaustive checking**: TypeScript warns if you miss an error case
+- **Type narrowing**: TypeScript knows the exact error type in each branch
+- **Autocompletion**: Your IDE shows the available properties for each error type
+- **Refactoring safety**: Adding new error types causes compilation errors until you handle them
+
+### No More `any` or `unknown` Errors
+
+Traditional exception handling forces you to work with untyped errors:
+
+```typescript
+try {
+  const result = await someAsyncOperation();
+  return result;
+} catch (error) {
+  // error is unknown - you have no type information
+  console.error("Operation failed:", error.message); // Could throw if error.message doesn't exist
+  
+  if (error instanceof NetworkError) {
+    // instanceof checks don't work across serialization boundaries
+    return handleNetworkError(error);
+  }
+  
+  // Generic fallback because you can't know what error types are possible
+  throw new Error("Unknown error occurred");
+}
+```
+
+Result types preserve full type information:
+
+```typescript
+const { data, error } = await someAsyncOperation();
+
+if (error) {
+  // error has full type information - no casting needed
+  switch (error.name) {
+    case "NetworkError":
+      // TypeScript knows the exact shape of NetworkError
+      console.error(`Network request failed: ${error.message}`, {
+        url: error.context.url,
+        status: error.context.status,
+        retryAttempt: error.context.retryAttempt
+      });
+      return handleNetworkError(error);
+      
+    case "ValidationError":
+      // TypeScript knows the exact shape of ValidationError  
+      console.error(`Validation failed: ${error.message}`, {
+        fields: error.context.invalidFields,
+        values: error.context.providedValues
+      });
+      return handleValidationError(error);
+  }
+} else {
+  // data has full type information
+  return processResult(data);
+}
+```
+
+**Type safety benefits**:
+- **No runtime type errors**: You can't access properties that don't exist
+- **Full IntelliSense support**: Your IDE knows exactly what properties are available
+- **Serialization safety**: Error objects work across all boundaries (JSON, workers, network)
+- **Refactoring confidence**: Changing error shapes causes compilation errors everywhere they're used
+
+## IDE Support That Actually Works
+
+### IntelliSense for Error Handling
+
+Your IDE becomes an error-handling guide:
+
+```typescript
+// When you type result.error. your IDE shows:
+result.error.name        // "NetworkError" | "AuthError" | "ValidationError"
+result.error.message     // string
+result.error.context     // varies by error type
+result.error.cause       // unknown
+
+// When you're in a switch statement, your IDE knows the specific type:
+switch (result.error.name) {
+  case "NetworkError":
+    result.error.context.  // IDE shows: url, status, retryAttempt, etc.
+    break;
+  case "AuthError":
+    result.error.context.  // IDE shows: userId, requiredPermission, etc.
+    break;
+}
+```
+
+### Jump-to-Definition for Error Types
+
+Click on any error name to see its definition:
+
+```typescript
+// Click on "PaymentError" to see:
+type PaymentError = TaggedError<"PaymentError"> & {
+  context: {
+    orderId: string;
+    amount: number;
+    paymentMethod: string;
+    gatewayResponse?: string;
+  };
+};
+```
+
+**Navigation benefits**:
+- **Error schema discovery**: You can see exactly what context each error provides
+- **Consistent error handling**: You can see how other parts of the codebase handle the same errors
+- **Error documentation**: Error types serve as their own documentation
+
+### Refactoring with Confidence
+
+When you add a new error type to a union:
+
+```typescript
+// Before: only NetworkError and AuthError
+type ApiError = NetworkError | AuthError;
+
+// After: add RateLimitError
+type ApiError = NetworkError | AuthError | RateLimitError;
+```
+
+TypeScript immediately shows you every place that needs updating:
+
+```typescript
+// Compilation error: switch statement is no longer exhaustive
+function handleApiError(error: ApiError) {
+  switch (error.name) {
+    case "NetworkError":
+      return handleNetworkError(error);
+    case "AuthError":
+      return handleAuthError(error);
+    // TypeScript error: missing case for "RateLimitError"
+  }
+}
+```
+
+**Refactoring safety**:
+- **No missed error cases**: TypeScript finds every location that needs updating
+- **Gradual migration**: You can update one function at a time
+- **Compilation-time verification**: You know your error handling is complete before running any code
+
+## Debugging That Makes Sense
+
+### Error Context That Tells a Story
+
+Traditional stack traces show you where the error occurred, but not why:
+
+```
+Error: Request failed
+  at fetch (http-client.js:45:12)
+  at getUserData (user-service.js:23:8)
+  at loadProfile (profile-page.js:67:15)
+```
+
+**Questions you can't answer**:
+- What user was being loaded?
+- What request URL failed?
+- Was this a timeout, authentication failure, or server error?
+- How many retries were attempted?
+
+wellcrafted errors tell the complete story:
+
+```json
+{
+  "name": "NetworkError",
+  "message": "Failed to fetch user data after 3 retry attempts",
+  "context": {
+    "userId": "user_12345",
+    "requestUrl": "https://api.example.com/users/user_12345",
+    "requestMethod": "GET",
+    "finalStatus": 503,
+    "retryAttempts": 3,
+    "maxRetries": 3,
+    "totalRequestTime": 15432,
+    "lastRetryAt": "2024-03-15T10:23:45.678Z",
+    "userAgent": "MyApp/1.2.3",
+    "sessionId": "session_abc123"
+  },
+  "cause": {
+    "message": "Service Unavailable",
+    "status": 503,
+    "headers": {
+      "retry-after": "120"
+    }
+  }
+}
+```
+
+**Questions you can answer immediately**:
+- Which user? `user_12345`
+- What request? `GET https://api.example.com/users/user_12345`
+- Why did it fail? `503 Service Unavailable`
+- How long did we try? `15.4 seconds with 3 retries`
+- When should we retry? `In 120 seconds`
+
+### Error Chains That Preserve Context
+
+Complex operations create error chains that maintain context at each level:
+
+```typescript
+// Database layer
+const dbError = {
+  name: "DatabaseError",
+  message: "Connection pool exhausted",
+  context: {
+    poolSize: 10,
+    activeConnections: 10,
+    queueLength: 15,
+    query: "SELECT * FROM users WHERE id = $1"
+  }
+};
+
+// Service layer  
+const serviceError = {
+  name: "UserServiceError",
+  message: "Failed to load user data",
+  context: {
+    userId: "user_12345",
+    operation: "loadUserProfile",
+    timestamp: "2024-03-15T10:23:45.678Z"
+  },
+  cause: dbError
+};
+
+// API layer
+const apiError = {
+  name: "ApiError", 
+  message: "User profile request failed",
+  context: {
+    endpoint: "/api/users/user_12345/profile",
+    requestId: "req_xyz789",
+    userId: "user_12345",
+    clientIP: "192.168.1.100"
+  },
+  cause: serviceError
+};
+```
+
+**Debugging workflow**:
+1. **Start at the top**: API request failed for specific user and request
+2. **Drill down**: Service layer shows which operation failed and when
+3. **Find root cause**: Database connection pool exhausted
+4. **Understand impact**: 15 other requests queued, affecting multiple users
+5. **Plan solution**: Scale connection pool or implement circuit breaker
+
+### Source Maps That Actually Help
+
+Because wellcrafted errors are explicit in your code, source maps point to the actual error handling logic:
+
+```typescript
+// Stack trace points to the actual error creation
+async function processPayment(order: Order): Promise<Result<Payment, PaymentError>> {
+  const { data: validation, error } = await validatePayment(order);
+  if (error) return error;
+  
+  const { data: payment, error: paymentError } = await chargeCard(order.total);
+  if (paymentError) {
+    // Source map points here - you can see the exact error creation
+    return Err({
+      name: "PaymentError",
+      message: "Credit card charge failed",
+      context: {
+        orderId: order.id,
+        amount: order.total,
+        cardLast4: order.paymentMethod.last4,
+        gatewayResponse: paymentError.gatewayResponse
+      },
+      cause: paymentError
+    });
+  }
+  
+  return Ok(payment);
+}
+```
+
+**Source map benefits**:
+- **Meaningful stack traces**: Points to business logic, not exception handling
+- **Visible error creation**: You can see exactly where each error type is created
+- **Context creation**: You can see what context is being captured at each error site
+
+## Testing Benefits
+
+### No More Try-Catch in Tests
+
+Traditional exception testing is verbose and unclear:
+
+```typescript
+describe("payment processing", () => {
+  it("should throw PaymentError for invalid card", async () => {
+    // Unclear: what type of error? What error message?
+    await expect(processPayment(invalidOrder)).rejects.toThrow();
+    
+    // More specific, but still awkward
+    try {
+      await processPayment(invalidOrder);
+      fail("Expected error to be thrown");
+    } catch (error) {
+      expect(error).toBeInstanceOf(PaymentError);
+      expect(error.message).toContain("invalid card");
+    }
+  });
+});
+```
+
+Result testing is clear and explicit:
+
+```typescript
+describe("payment processing", () => {
+  it("should return PaymentError for invalid card", async () => {
+    const result = await processPayment(invalidOrder);
+    
+    // Clear and explicit
+    expect(result.error).toBeDefined();
+    expect(result.error?.name).toBe("PaymentError");
+    expect(result.error?.message).toContain("invalid card");
+    expect(result.error?.context.cardLast4).toBe("1234");
+    expect(result.data).toBeNull();
+  });
+  
+  it("should return payment data for valid order", async () => {
+    const result = await processPayment(validOrder);
+    
+    // Success case is equally clear
+    expect(result.error).toBeNull();
+    expect(result.data).toBeDefined();
+    expect(result.data?.amount).toBe(validOrder.total);
+  });
+});
+```
+
+### Testing Both Success and Failure Paths
+
+Result types make it natural to test both outcomes:
+
+```typescript
+describe("user registration", () => {
+  // Test success path
+  it("should create user with valid data", async () => {
+    const result = await registerUser(validUserData);
+    
+    expect(result.error).toBeNull();
+    expect(result.data.id).toBeDefined();
+    expect(result.data.email).toBe(validUserData.email);
+  });
+  
+  // Test each failure path
+  it("should return ValidationError for invalid email", async () => {
+    const result = await registerUser({ ...validUserData, email: "invalid" });
+    
+    expect(result.error?.name).toBe("ValidationError");
+    expect(result.error?.context.field).toBe("email");
+  });
+  
+  it("should return ConflictError for duplicate email", async () => {
+    await registerUser(validUserData); // Create first user
+    const result = await registerUser(validUserData); // Try duplicate
+    
+    expect(result.error?.name).toBe("ConflictError");
+    expect(result.error?.context.email).toBe(validUserData.email);
+  });
+});
+```
+
+**Testing advantages**:
+- **Symmetric success/failure testing**: Both paths use the same assertion patterns
+- **Type-safe test assertions**: TypeScript ensures your test assertions match the actual error types
+- **Clear test intent**: Each test clearly shows which outcome it's verifying
+- **Error context testing**: You can verify that the right context is captured
+
+### Mock and Stub Simplification
+
+Mocking error scenarios becomes straightforward:
+
+```typescript
+// Mock service that returns Result types
+const mockUserService = {
+  async getUser(id: string): Promise<Result<User, UserError>> {
+    if (id === "user_404") {
+      return Err({
+        name: "UserError",
+        message: "User not found",
+        context: { userId: id },
+        cause: undefined
+      });
+    }
+    
+    if (id === "user_500") {
+      return Err({
+        name: "UserError", 
+        message: "Database connection failed",
+        context: { userId: id, errorCode: "DB_TIMEOUT" },
+        cause: undefined
+      });
+    }
+    
+    return Ok({ id, name: "Test User", email: "test@example.com" });
+  }
+};
+
+// Test different error scenarios
+describe("profile page", () => {
+  it("should show 404 page for missing user", async () => {
+    const result = await loadProfilePage("user_404");
+    expect(result.pageType).toBe("not-found");
+  });
+  
+  it("should show error message for system errors", async () => {
+    const result = await loadProfilePage("user_500");
+    expect(result.pageType).toBe("error");
+    expect(result.errorMessage).toContain("connection failed");
+  });
+});
+```
+
+**Mocking benefits**:
+- **Explicit error scenarios**: Each mock clearly defines what error conditions it simulates
+- **Type-safe mocks**: Mock implementations must match the actual Result types
+- **Realistic error context**: Mocks can provide realistic error context for comprehensive testing
+
+## The Learning Curve
+
+### Initial Adjustment Period
+
+Developers coming from exception-based patterns typically go through three phases:
+
+**Phase 1: "This is verbose"** (First week)
+```typescript
+// Feels repetitive at first
+const userResult = await getUser(id);
+if (userResult.error) return userResult;
+
+const profileResult = await getProfile(userResult.data.id);
+if (profileResult.error) return profileResult;
+
+const preferencesResult = await getPreferences(profileResult.data.id);
+if (preferencesResult.error) return preferencesResult;
+```
+
+**Phase 2: "This is explicit"** (Second week)
+```typescript
+// You start to appreciate the clarity
+const userResult = await getUser(id);
+if (userResult.error) {
+  // I know exactly what went wrong and can handle it appropriately
+  return mapUserError(userResult.error);
+}
+
+const profileResult = await getProfile(userResult.data.id);
+if (profileResult.error) {
+  // I can make business decisions about partial failures
+  return buildPartialUserData(userResult.data, null);
+}
+```
+
+**Phase 3: "I can't go back"** (Third week and beyond)
+```typescript
+// You realize the error handling is part of the business logic
+async function loadUserDashboard(userId: string): Promise<Result<Dashboard, DashboardError>> {
+  const userResult = await getUser(userId);
+  if (userResult.error) return mapUserError(userResult.error);
+  
+  // Load dashboard components in parallel
+  const [profileResult, preferencesResult, activityResult] = await Promise.all([
+    getProfile(userId),
+    getPreferences(userId), 
+    getRecentActivity(userId)
+  ]);
+  
+  // Business logic: dashboard works with partial data
+  const dashboard = buildDashboard({
+    user: userResult.data,
+    profile: profileResult.data, // Might be null
+    preferences: preferencesResult.data, // Might be null  
+    activity: activityResult.data // Might be null
+  });
+  
+  return Ok(dashboard);
+}
+```
+
+### Common Patterns That Become Natural
+
+After the adjustment period, these patterns become intuitive:
+
+**Early return for errors**:
+```typescript
+const result = await someOperation();
+if (result.error) return result;
+// Continue with result.data
+```
+
+**Error transformation**:
+```typescript
+const result = await lowLevelOperation();
+if (result.error) {
+  return mapToHighLevelError(result.error);
+}
+```
+
+**Partial failure handling**:
+```typescript
+const results = await Promise.all([required(), optional(), optional()]);
+if (results[0].error) return results[0]; // Required operation failed
+// Continue with partial data from optional operations
+```
+
+**Error aggregation**:
+```typescript
+const errors = results.filter(r => r.error).map(r => r.error);
+if (errors.length > 0) {
+  return Err(createAggregateError(errors));
+}
+```
+
+## Integration with Existing Codebases
+
+### Gradual Migration Strategy
+
+You don't need to rewrite your entire codebase to benefit from wellcrafted patterns:
+
+**Phase 1: New code uses Result types**
+```typescript
+// New functions return Result types
+async function createUser(data: UserData): Promise<Result<User, ValidationError | DatabaseError>> {
+  // Implementation uses Result patterns
+}
+
+// Existing functions keep throwing (for now)
+async function legacyGetUser(id: string): Promise<User> {
+  // Still throws exceptions
+}
+```
+
+**Phase 2: Wrap legacy functions**
+```typescript
+// Create Result-returning wrappers for legacy functions
+async function getUser(id: string): Promise<Result<User, UserError>> {
+  return tryAsync({
+    try: () => legacyGetUser(id),
+    mapErr: (error): UserError => ({
+      name: "UserError",
+      message: extractErrorMessage(error),
+      context: { userId: id },
+      cause: error
+    })
+  });
+}
+```
+
+**Phase 3: Convert high-impact functions**
+```typescript
+// Convert the functions that are called most frequently
+async function authenticateUser(token: string): Promise<Result<User, AuthError>> {
+  // Converted to Result pattern for better error handling
+}
+```
+
+**Phase 4: Replace legacy functions**
+```typescript
+// Eventually replace legacy implementations
+// Old: async function legacyGetUser(id: string): Promise<User>
+// New: async function getUser(id: string): Promise<Result<User, UserError>>
+```
+
+### Interoperability Patterns
+
+wellcrafted works well with existing libraries and frameworks:
+
+**Express.js integration**:
+```typescript
+async function handleUserRequest(req: Request, res: Response) {
+  const { data: user, error } = await getUser(req.params.id);
+  
+  if (error) {
+    switch (error.name) {
+      case "UserNotFoundError":
+        return res.status(404).json({ error: error.message });
+      case "DatabaseError":
+        return res.status(500).json({ error: "Internal server error" });
+    }
+  }
+  
+  res.json(user);
+}
+```
+
+**React component integration**:
+```typescript
+function UserProfile({ userId }: { userId: string }) {
+  const [state, setState] = useState<{
+    data: User | null;
+    error: UserError | null;
+    loading: boolean;
+  }>({ data: null, error: null, loading: true });
+  
+  useEffect(() => {
+    getUser(userId).then(result => {
+      setState({
+        data: result.data,
+        error: result.error,
+        loading: false
+      });
+    });
+  }, [userId]);
+  
+  if (state.loading) return <div>Loading...</div>;
+  if (state.error) return <ErrorDisplay error={state.error} />;
+  return <UserCard user={state.data!} />;
+}
+```
+
+## Conclusion
+
+wellcrafted transforms error handling from a source of bugs into a source of confidence. The developer experience improvements go beyond syntax—they fundamentally change how you think about and work with failure scenarios.
+
+**Mental model benefits**:
+- Shift from defensive exception handling to constructive outcome handling
+- Error handling becomes part of business logic, not an afterthought
+- Confidence in what can go wrong and how to handle it
+
+**TypeScript integration benefits**:
+- Full type information for both success and error cases
+- Exhaustive error handling enforced by the compiler
+- IntelliSense and refactoring support that actually helps
+
+**Debugging and testing benefits**:
+- Rich error context that tells the complete failure story
+- Clear, explicit testing patterns for both success and failure paths
+- Source maps that point to meaningful business logic
+
+The initial learning curve is measured in days, but the productivity and confidence gains last for years. Once you experience error handling that actually helps you write better code, it's hard to go back to hoping exceptions don't happen.
+
+The best part? You're not just writing more reliable code—you're writing code that helps future developers (including yourself) understand and maintain complex error scenarios. That's the difference between error handling that fights you and error handling that works with you.
+
+---
+
+**Related**: Explore the foundational philosophy in [Design Principles](/philosophy/design-principles), or see how these patterns prevent production failures in [Production Reliability](/philosophy/production-reliability).

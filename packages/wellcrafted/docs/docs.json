@@ -36,59 +36,35 @@
             ]
           },
           {
-            "group": "Guides",
+            "group": "Patterns & Examples",
             "pages": [
-              "guides/error-handling",
-              "guides/service-patterns",
-              "guides/async-patterns",
-              "guides/testing",
-              "guides/resilience"
+              "patterns/real-world",
+              "patterns/service-layer",
+              "case-studies/whispering-architecture"
             ]
           },
           {
-            "group": "Patterns",
+            "group": "Framework Integrations",
             "pages": [
-              "patterns/basic-patterns",
-              "patterns/advanced-patterns",
-              "patterns/framework-integration",
-              "patterns/real-world"
+              "integrations/svelte-tanstack",
+              "integrations/react-tanstack",
+              "integrations/nextjs-app-router",
+              "integrations/nodejs-express",
+              "integrations/testing"
+            ]
+          },
+          {
+            "group": "Philosophy",
+            "pages": [
+              "philosophy/design-principles",
+              "philosophy/developer-experience",
+              "philosophy/production-reliability"
             ]
           },
           {
             "group": "Migration",
             "pages": [
-              "migration/from-try-catch",
-              "migration/from-fp-ts",
-              "migration/from-effect",
-              "migration/from-neverthrow"
-            ]
-          }
-        ]
-      },
-      {
-        "tab": "API Reference",
-        "groups": [
-          {
-            "group": "Modules",
-            "pages": [
-              "api/result",
-              "api/error",
-              "api/brand",
-              "api/utilities"
-            ]
-          }
-        ]
-      },
-      {
-        "tab": "Philosophy",
-        "groups": [
-          {
-            "group": "Design",
-            "pages": [
-              "philosophy/design-principles",
-              "philosophy/errors-as-data",
-              "philosophy/serialization-first",
-              "philosophy/comparisons"
+              "migration/from-try-catch"
             ]
           }
         ]
