@@ -1,11 +1,12 @@
 {
 	"name": "@repo/vault-core",
+	"private": true,
 	"version": "0.0.0",
 	"description": "Core package for adapter & MCP functionality",
 	"type": "module",
 	"exports": {
 		".": "./src/index.ts",
-		"./adapters/*": "./src/adapters/index.ts"
+		"./adapters": "./src/adapters/index.ts"
 	},
 	"devDependencies": {
 		"typescript": "catalog:"
