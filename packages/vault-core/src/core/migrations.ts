@@ -94,7 +94,7 @@ export function planToVersion(
 
 /** Drop all tables owned by the importer (best-effort). */
 export async function dropAdapterTables(
-	db: CompatibleDB,
+	db: CompatibleDB<unknown>,
 	importer: Importer,
 ): Promise<void> {
 	// TODO: Use Drizzle metadata to get table names reliably; for now, list keys from schema object.
@@ -109,7 +109,7 @@ export async function dropAdapterTables(
 
 /** Inspect Drizzle migrations table for current version tag (implementation TBD). */
 export async function getCurrentDbMigrationTag(
-	db: CompatibleDB,
+	db: CompatibleDB<unknown>,
 	importer: Importer,
 ): Promise<string | undefined> {
 	// TODO: Query importer.drizzleConfig.migrations?.table (default likely 'drizzle_migrations') to get last applied tag/name.
@@ -119,7 +119,7 @@ export async function getCurrentDbMigrationTag(
 
 /** Apply a sequence of SQL files in order. */
 export async function applySqlPlan(
-	db: CompatibleDB,
+	db: CompatibleDB<unknown>,
 	importer: Importer,
 	plan: MigrationPlan,
 ) {
@@ -135,7 +135,7 @@ export async function applySqlPlan(
 
 /** Mark a migration tag as applied in the Drizzle migrations table (implementation TBD). */
 export async function markApplied(
-	db: CompatibleDB,
+	db: CompatibleDB<unknown>,
 	importer: Importer,
 	toTag: string,
 ) {
@@ -145,7 +145,7 @@ export async function markApplied(
 
 /** Obtain a raw SQL runner from a CompatibleDB. Placeholder until concrete DBs are wired. */
 export function getSqlRunner(
-	_db: CompatibleDB,
+	_db: CompatibleDB<unknown>,
 ): (sql: string) => Promise<void> {
 	// TODO: For libsql: keep a handle to the underlying client and call client.execute(sql)
 	// TODO: For better-sqlite3: use db.exec(sql)

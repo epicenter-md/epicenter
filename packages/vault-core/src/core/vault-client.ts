@@ -1,10 +1,15 @@
-import type { Adapter } from './adapter';
+import type {
+	Adapter,
+	CompatibleDB,
+	EnsureAdaptersOK,
+	JoinedSchema,
+} from './adapter';
 import type { VaultClientConfig } from './config';
-/**
- * VaultClient runs in the app (web/desktop). It holds adapters for type-safety
- * and schema/metadata introspection. It talks to VaultService via RPC (not implemented).
- */
-export class VaultClient<TAdapters extends Adapter[]> {
+export class VaultClient<
+	TDatabase extends CompatibleDB<JoinedSchema<{ adapters: TAdapters }>>,
+	TAdapters extends Adapter[],
+> {
+	private declare readonly _ensureAdaptersOK: EnsureAdaptersOK<TAdapters>;
 	readonly adapters: TAdapters;
 	readonly transport: unknown;
 
@@ -23,6 +28,24 @@ export class VaultClient<TAdapters extends Adapter[]> {
 	): Promise<void> {
 		throw new Error(
 			'VaultClient.importBlob not implemented: provide RPC transport',
+		);
+	}
+
+	/**
+	 * Query the database using a SQL builder function.
+	 * @example
+	 * const result = await client.querySQL((db, tables) =>
+	 * 	db.select().from(tables.users).where(equals(tables.users.id, 1))
+	 * );
+	 */
+	async querySQL(
+		builder: (
+			db: TDatabase,
+			tables: JoinedSchema<this>,
+		) => Pick<TDatabase, '_' | 'select'>,
+	) {
+		throw new Error(
+			'VaultClient.querySQL not implemented: provide RPC transport',
 		);
 	}
 }

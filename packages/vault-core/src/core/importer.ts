@@ -1,4 +1,4 @@
-import { type Type, type } from 'arktype';
+import type { Type } from 'arktype';
 import type { ColumnsSelection } from 'drizzle-orm';
 import type {
 	SQLiteTable,
@@ -33,7 +33,7 @@ export interface Importer<
 	/** User-facing name */
 	name: string;
 	/** Adapter (schema provider) */
-	adapter: Adapter<TID, TSchema>;
+	adapter: Adapter<TID, Extract<keyof TSchema, string>, TSchema>;
 	/** Column descriptions for every table/column */
 	metadata: ColumnDescriptions<TSchema>;
 	/** ArkType schema for parsing/validation */
@@ -69,7 +69,7 @@ export function defineImporter<
 	TParserShape extends Type,
 	TParsed = TParserShape['infer'],
 >(
-	adapter: Adapter<TID, TSchema>,
+	adapter: Adapter<TID, Extract<keyof TSchema, string>, TSchema>,
 	parts: ImporterNodeParts<TID, TSchema, TDatabase, TParserShape, TParsed>,
 ): Importer<TID, TSchema, TDatabase, TParserShape, TParsed> {
 	return {

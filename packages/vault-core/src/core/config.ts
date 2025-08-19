@@ -51,7 +51,7 @@ export interface VaultServiceConfig<
 	 */
 	syncEngine?: SyncEngine;
 	/** Active text codec (markdown/json/etc.) and the conventions. */
-	codec?: Codec;
+	codec?: Codec<string, string>;
 	conventions?: ConventionProfile;
 }
 

@@ -1,6 +1,6 @@
 import type { MigrationConfig } from 'drizzle-orm/migrator';
 import type { SQLiteTable } from 'drizzle-orm/sqlite-core';
-import type { CompatibleDB } from './adapter';
+import type { CompatibleDB, EnsureImportersOK } from './adapter';
 import type { Codec, ConventionProfile } from './codec';
 import { detectPrimaryKey, listColumns, listTables } from './codec';
 import type { VaultServiceConfig } from './config';
@@ -18,9 +18,11 @@ import {
 import type { SyncEngine } from './sync';
 
 export class VaultService<
-	TDatabase extends CompatibleDB,
+	TSchema extends Record<string, SQLiteTable>,
+	TDatabase extends CompatibleDB<TSchema>,
 	TImporters extends Importer[],
 > {
+	private declare readonly _ensureImportersOK: EnsureImportersOK<TImporters>;
 	readonly importers: TImporters;
 	readonly db: TDatabase;
 	readonly migrateFunc: (
@@ -41,8 +43,9 @@ export class VaultService<
 	}
 
 	static async create<
-		TDatabase extends CompatibleDB,
 		TImporters extends Importer[],
+		TDatabase extends CompatibleDB<TSchema>,
+		TSchema extends Record<string, SQLiteTable>,
 	>(config: VaultServiceConfig<TDatabase, TImporters>) {
 		const svc = new VaultService(config);
 		await svc.migrate();
@@ -147,13 +150,7 @@ export class VaultService<
 			throw new Error('No formats/conventions configured');
 		const { codec: configuredCodec, conventions } = this;
 		const adapterId = importer.id;
-		const schema: Record<string, SQLiteTable> =
-			((
-				importer as unknown as { adapter?: { schema: Record<string, unknown> } }
-			)?.adapter?.schema as Record<string, SQLiteTable>) ??
-			(importer as unknown as { schema?: Record<string, SQLiteTable> })
-				.schema ??
-			({} as Record<string, SQLiteTable>);
+		const schema = importer.adapter?.schema;
 
 		// Collect rows per dataset key for a single upsert call
 		const dataset: Record<string, unknown[]> = {};
