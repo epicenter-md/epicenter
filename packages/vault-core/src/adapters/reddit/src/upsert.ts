@@ -1,9 +1,6 @@
-import type {
-	AnySQLiteColumn,
-	BaseSQLiteDatabase,
-	SQLiteTable,
-} from 'drizzle-orm/sqlite-core';
-import type { ParsedRedditExport } from '.';
+import type { CompatibleDB } from '@repo/vault-core';
+import type { AnySQLiteColumn, SQLiteTable } from 'drizzle-orm/sqlite-core';
+import type * as schema from './schema';
 import {
 	reddit_account_gender,
 	reddit_announcements,
@@ -46,8 +43,7 @@ import {
 	reddit_twitter,
 	reddit_user_preferences,
 } from './schema';
-
-// Parser now emits Date objects for all timestamp fields per parseSchema; no extra coercion needed here.
+import type { ParsedRedditExport } from './types';
 
 /**
  * Small utility to chunk arrays for batched inserts to keep statements reasonable.
@@ -129,12 +125,12 @@ async function upsertMany<T>(
  * - We intentionally avoid adding FKs in v1 per export inconsistencies.
  */
 export async function upsertRedditData(
-	db: BaseSQLiteDatabase<'sync' | 'async', Record<string, SQLiteTable>>,
+	db: CompatibleDB<typeof schema>,
 	data: ParsedRedditExport,
 ): Promise<void> {
 	const provider:
-		| BaseSQLiteDatabase<'sync' | 'async', Record<string, SQLiteTable>>
-		| { transaction: (fn: (tx: unknown) => Promise<void>) => Promise<void> } =
+		| { transaction: (fn: (tx: unknown) => Promise<void>) => Promise<void> }
+		| CompatibleDB<typeof schema> =
 		typeof (db as unknown as { transaction?: unknown }).transaction ===
 		'function'
 			? db

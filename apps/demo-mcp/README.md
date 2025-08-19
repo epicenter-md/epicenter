@@ -12,6 +12,52 @@ bun run apps/demo-mcp/src/cli.ts import reddit --file ./export_username_date.zip
 
 This creates a SQLite database at `.data/reddit.db` with your Reddit posts, comments, and other data.
 
+## Plaintext export/import (Markdown)
+
+Export database rows to deterministic plaintext files under `vault/<adapter>/...` using Markdown (with frontmatter):
+
+```bash
+bun run apps/demo-mcp/src/cli.ts export-fs reddit --db ./.data/reddit.db --repo .
+```
+
+Import files from the repo back into the database:
+
+```bash
+bun run apps/demo-mcp/src/cli.ts import-fs reddit --db ./.data/reddit.db --repo .
+```
+
+Notes:
+
+- Files are Markdown only, written under `vault/<adapter>/<table>/<pk...>.md`.
+
+## Try it
+
+1) Import your Reddit export into a local DB
+
+```bash
+bun run apps/demo-mcp/src/cli.ts import reddit --file ./export_username_date.zip --db ./.data/reddit.db
+```
+
+2) Export DB rows to Markdown files in your repo
+
+```bash
+bun run apps/demo-mcp/src/cli.ts export-fs reddit --db ./.data/reddit.db --repo .
+```
+
+You should see Markdown files under `vault/reddit/<table>/...`. To re-import from files into the DB:
+
+```bash
+bun run apps/demo-mcp/src/cli.ts import-fs reddit --db ./.data/reddit.db --repo .
+```
+
+### CLI usage
+
+```bash
+bun run apps/demo-mcp/src/cli.ts --help
+# or
+bun run apps/demo-mcp/src/cli.ts help
+```
+
 ## MCP Integration with Claude Code
 
 Once you have imported your data, you can connect the database to Claude Code for natural language querying.

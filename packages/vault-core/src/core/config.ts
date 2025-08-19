@@ -1,37 +1,76 @@
 import type { MigrationConfig } from 'drizzle-orm/migrator';
 import type { BaseSQLiteDatabase } from 'drizzle-orm/sqlite-core';
 import type { Adapter } from './adapter';
+import type { Codec, ConventionProfile } from './codec';
+import type { Importer } from './importer';
+import type { SyncEngine } from './sync';
 
+// Deprecated: use VaultServiceConfig or VaultClientConfig
 export interface VaultConfig<
 	TDatabase extends BaseSQLiteDatabase<'sync' | 'async', unknown>,
-	TAdapters extends Adapter[],
+	TImporters extends Importer[],
+> {
+	adapters: TImporters;
+	database: TDatabase;
+	migrateFunc: (db: TDatabase, config: MigrationConfig) => Promise<void>;
+}
+
+// Service config: owns DB and Importers
+export interface VaultServiceConfig<
+	TDatabase extends BaseSQLiteDatabase<'sync' | 'async', unknown>,
+	TImporters extends Importer[],
 > {
 	/**
-	 * List of adapters to include
+	 * Importers installed on the service.
 	 *
-	 * @see {Adapter}
+	 * Importers encapsulate end-to-end behavior for a source: parse(blob), validate, upsert(db),
+	 * and also reference an Adapter which carries the Drizzle schema + migrations config.
+	 *
+	 * @see Importer
 	 */
-	adapters: TAdapters;
-
+	importers: TImporters;
 	/**
-	 * Database connection instance
-	 * @example
-	 * import { createClient } from '@libsql/client';
-	 * const client = createClient({ url: dbUrl });
+	 * Database connection instance used by the service.
+	 *
+	 * Example (libsql):
+	 * const client = createClient({ url, authToken });
 	 * const db = drizzle(client);
-	 * ...
-	 * database: db,
 	 */
 	database: TDatabase;
-
 	/**
-	 * Drizzle platform-specific migration function
-	 * @example
+	 * Drizzle platform-specific migration function used to run migrations for each importer.
+	 *
+	 * Example (libsql):
 	 * import { migrate } from 'drizzle-orm/libsql/migrator';
-	 * ...
-	 * migrateFunc: migrate,
-	 * @see {MigrationConfig}
-	 * @todo Implement in-house migration procedure, which doesn't rely on `node:fs`.
+	 * migrate(db, { migrationsFolder: '...' })
 	 */
 	migrateFunc: (db: TDatabase, config: MigrationConfig) => Promise<void>;
+	/**
+	 * A SyncEngine implementation injected by the host.
+	 * Controls DB <-> Filesystem sync flows; keeps Importers/Adapters pure.
+	 */
+	syncEngine?: SyncEngine;
+	/** Active text codec (markdown/json/etc.) and the conventions. */
+	codec?: Codec;
+	conventions?: ConventionProfile;
+}
+
+// Client config: only needs adapters for schema/metadata typing and UI
+export interface VaultClientConfig<TAdapters extends Adapter[]> {
+	/**
+	 * Adapters provide schema (and optional metadata) for type-safety in the client.
+	 *
+	 * The client does not perform database operations; it uses adapters to render UI,
+	 * build queries, and display human-readable table/column info.
+	 *
+	 * @see Adapter
+	 */
+	adapters: TAdapters;
+	/**
+	 * Optional transport configuration placeholder.
+	 *
+	 * The specific RPC transport between client and service is intentionally
+	 * left undefined here; applications should provide their own wiring.
+	 */
+	transport?: unknown;
 }
