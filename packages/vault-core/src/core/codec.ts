@@ -1,13 +1,13 @@
 import type { SQLiteColumn, SQLiteTable } from 'drizzle-orm/sqlite-core';
 
 // Language-level codec (Markdown, JSON, TOML+body, etc.)
-export interface FormatCodec<TID extends string> {
+export interface Codec<TID extends string, TExt extends string> {
 	/** Unique identifier (e.g., 'markdown', 'json', 'toml', 'yaml-md') */
 	id: TID;
 	/** Default file extension without dot
 	 * @example 'md'
 	 */
-	fileExtension: Omit<string, `.${string}`>;
+	fileExtension: TExt;
 	/**
 	 * Parse file text into a flat record. If a free-form body is present,
 	 * codecs should use the reserved key 'body' to carry it.
@@ -24,8 +24,6 @@ export interface FormatCodec<TID extends string> {
 	/** Optional value denormalization after reading (e.g., ISO string -> Date) */
 	denormalize?(value: unknown, columnName: string): unknown;
 }
-
-export type Codec = FormatCodec<string>;
 
 // Runtime view of a Drizzle table
 export type TableEntry = [name: string, table: SQLiteTable];
@@ -97,12 +95,13 @@ export function defaultConvention(): ConventionProfile {
 	};
 }
 
+type NoDotPrefix<T extends string> = T extends `.${string}` ? never : T;
+
 /**
- * defineFormat: identity helper for a single FormatCodec (markdown, json, etc.).
+ * defineFormat: identity helper for a single Codec (markdown, json, etc.).
  */
-export function defineCodec<
-	const TID extends string,
-	F extends FormatCodec<TID>,
->(codec: F): F {
+export function defineCodec<TID extends string, TExt extends string>(
+	codec: Codec<TID, NoDotPrefix<TExt>>,
+) {
 	return codec;
 }

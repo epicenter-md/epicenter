@@ -1,4 +1,4 @@
-import { defineCodec, type FormatCodec } from '../core/codec';
+import { defineCodec } from '../core/codec';
 
 // Very small deterministic Markdown with YAML headers: ---\n<yaml>\n---\n<body?>
 // For now, we do not include a YAML lib; caller will provide headers already normalized.
