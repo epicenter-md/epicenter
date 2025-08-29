@@ -88,7 +88,7 @@ type ApiError = TaggedError<"ApiError">;
 
 const { data, error } = await tryAsync<User, ApiError>({
   try: () => fetch('/api/user').then(r => r.json()),
-  mapErr: (error) => Err({
+  catch: (error) => Err({
     name: "ApiError",
     message: "Failed to fetch user",
     context: { endpoint: '/api/user' },

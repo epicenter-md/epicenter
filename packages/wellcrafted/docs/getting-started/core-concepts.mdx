@@ -280,7 +280,7 @@ async function fulfillOrder(
   // Process payment with error transformation
   const paymentResult = await tryAsync({
     try: () => paymentGateway.charge(orderResult.data),
-    mapErr: (error) => Err({
+    catch: (error) => Err({
       name: "PaymentError" as const,
       message: "Payment processing failed",
       context: { orderId, amount: orderResult.data.total },

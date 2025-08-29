@@ -63,7 +63,7 @@ export function createAuthService(
       // Find user by email
       const userResult = await tryAsync({
         try: () => db.users.findByEmail(email),
-        mapError: (error) => AuthServiceError({
+        catch: (error) => Err( AuthServiceError({
           message: "Database error during login",
           context: { email: email.substring(0, email.indexOf('@')) + '@***' },
           cause: error
@@ -92,7 +92,7 @@ export function createAuthService(
       // Generate session token
       const tokenResult = await tryAsync({
         try: () => tokenService.generate(userResult.data.id),
-        mapError: (error) => AuthServiceError({
+        catch: (error) => Err( AuthServiceError({
           message: "Failed to generate session token",
           context: { userId: userResult.data.id },
           cause: error
@@ -117,7 +117,7 @@ export function createAuthService(
     ): Promise<Result<AuthenticatedUser, AuthServiceError>> {
       const validationResult = await tryAsync({
         try: () => tokenService.validate(token),
-        mapError: (error) => AuthServiceError({
+        catch: (error) => Err( AuthServiceError({
           message: "Token validation failed",
           context: { tokenPrefix: token.substring(0, 8) + '...' },
           cause: error
@@ -136,7 +136,7 @@ export function createAuthService(
       // Fetch current user data
       const userResult = await tryAsync({
         try: () => db.users.findById(validationResult.data.userId),
-        mapError: (error) => AuthServiceError({
+        catch: (error) => Err( AuthServiceError({
           message: "Failed to fetch user data",
           context: { userId: validationResult.data.userId },
           cause: error
@@ -235,7 +235,7 @@ export function createFileService(
       // Upload to storage
       const uploadResult = await tryAsync({
         try: () => storage.upload(fileKey, file, { onProgress }),
-        mapError: (error) => FileServiceError({
+        catch: (error) => Err( FileServiceError({
           message: "Failed to upload file to storage",
           context: {
             fileName: file.name,
@@ -259,7 +259,7 @@ export function createFileService(
           storageKey: fileKey,
           url: uploadResult.data.url
         }),
-        mapError: (error) => FileServiceError({
+        catch: (error) => Err( FileServiceError({
           message: "Failed to save file metadata",
           context: { fileId, fileName: file.name },
           cause: error
@@ -288,7 +288,7 @@ export function createFileService(
     ): Promise<Result<UploadedFile, FileServiceError>> {
       const fileResult = await tryAsync({
         try: () => db.files.findById(fileId),
-        mapError: (error) => FileServiceError({
+        catch: (error) => Err( FileServiceError({
           message: "Failed to fetch file metadata",
           context: { fileId, userId },
           cause: error
@@ -455,7 +455,7 @@ export function validateCreateUserForm(
 ): Result<ValidatedUser, ValidationError> {
   const validationResult = trySync({
     try: () => CreateUserSchema.parse(input),
-    mapError: (error) => {
+    catch: (error) => Err( {
       if (error instanceof z.ZodError) {
         const firstIssue = error.issues[0];
         return ValidationError({

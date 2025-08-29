@@ -162,7 +162,7 @@ export async function getAllUsers(): Promise<Result<User[], UserServiceError>> {
       });
       return users;
     },
-    mapErr: (error) => UserServiceErr({
+    catch: (error) => UserServiceErr({
       message: 'Failed to fetch users from database',
       context: { operation: 'getAllUsers' },
       cause: error,
@@ -191,7 +191,7 @@ export async function getUserById(id: string): Promise<Result<User, UserServiceE
       
       return user;
     },
-    mapErr: (error) => UserServiceErr({
+    catch: (error) => UserServiceErr({
       message: error instanceof Error ? error.message : 'Failed to fetch user',
       context: { userId: id },
       cause: error,
@@ -235,7 +235,7 @@ export async function createUser(input: CreateUserInput): Promise<Result<User, U
         },
       });
     },
-    mapErr: (error) => UserServiceErr({
+    catch: (error) => UserServiceErr({
       message: error instanceof Error ? error.message : 'Failed to create user',
       context: { input },
       cause: error,
@@ -260,7 +260,7 @@ export async function updateUser(id: string, input: Partial<CreateUserInput>): P
       });
       return user;
     },
-    mapErr: (error) => UserServiceErr({
+    catch: (error) => UserServiceErr({
       message: 'Failed to update user',
       context: { userId: id, input },
       cause: error,
@@ -283,7 +283,7 @@ export async function deleteUser(id: string): Promise<Result<void, UserServiceEr
         where: { id },
       });
     },
-    mapErr: (error) => UserServiceErr({
+    catch: (error) => UserServiceErr({
       message: 'Failed to delete user',
       context: { userId: id },
       cause: error,
@@ -924,7 +924,7 @@ export function middleware(request: NextRequest) {
         
         return true;
       },
-      mapErr: (error) => ({
+      catch: (error) => ({
         name: 'AuthenticationError',
         message: error instanceof Error ? error.message : 'Authentication failed',
         context: { path: request.nextUrl.pathname },

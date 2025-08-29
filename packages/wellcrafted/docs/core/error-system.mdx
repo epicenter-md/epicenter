@@ -259,7 +259,7 @@ type ApiError = ReturnType<typeof ApiError>;
 
 const result = await tryAsync({
   try: () => fetch('/api/data').then(r => r.json()),
-  mapErr: (error) => ApiErr({
+  catch: (error) => ApiErr({
     message: 'Failed to fetch data',
     context: { endpoint: '/api/data' },
     cause: error
@@ -480,7 +480,7 @@ async function fetchWithRetry<T>(
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     const result = await tryAsync<T, NetworkError>({
       try: () => fetch(url).then(r => r.json()),
-      mapErr: (error) => Err({
+      catch: (error) => Err({
         name: "NetworkError",
         message: `Request failed (attempt ${attempt}/${maxRetries})`,
         context: { url, attempt, maxRetries },
@@ -518,7 +518,7 @@ type DatabaseError = TaggedError<"DatabaseError">;
 async function getUser(id: string): Promise<Result<User, UserNotFoundError | DatabaseError>> {
   const result = await tryAsync<User, DatabaseError>({
     try: () => database.users.findById(id),
-    mapErr: (error) => Err({
+    catch: (error) => Err({
       name: "DatabaseError",
       message: "Database query failed",
       context: { userId: id, operation: 'findById' },

@@ -68,7 +68,7 @@ export function createOpenaiTranscriptionService() {
           prompt: options.prompt || undefined,
           temperature: options.temperature ? Number.parseFloat(options.temperature) : undefined,
         }),
-        mapErr: (error) => {
+        catch: (error) => {
           if (!(error instanceof OpenAI.APIError)) throw error;
           return Err(error);
         },
@@ -115,7 +115,7 @@ export function createClipboardServiceDesktop(): ClipboardService {
     async setClipboardText(text: string): Promise<Result<void, ClipboardError>> {
       return tryAsync({
         try: () => writeText(text), // Tauri API
-        mapErr: (error) => ClipboardErr({
+        catch: (error) => ClipboardErr({
           message: 'Failed to copy to clipboard',
           context: { text, platform: 'desktop' },
           cause: error,
@@ -131,7 +131,7 @@ export function createClipboardServiceWeb(): ClipboardService {
     async setClipboardText(text: string): Promise<Result<void, ClipboardError>> {
       return tryAsync({
         try: () => navigator.clipboard.writeText(text), // Browser API
-        mapErr: (error) => ClipboardErr({
+        catch: (error) => ClipboardErr({
           message: 'Failed to copy to clipboard',
           context: { text, platform: 'web' },
           cause: error,
@@ -502,7 +502,7 @@ function createDesktopRecorderService() {
       // Use Tauri's native audio device enumeration
       return tryAsync({
         try: () => invoke('enumerate_audio_devices'),
-        mapErr: (error) => RecorderServiceErr({
+        catch: (error) => RecorderServiceErr({
           message: 'Failed to enumerate audio devices through native API',
           context: { platform: 'desktop' },
           cause: error,
@@ -521,7 +521,7 @@ function createWebRecorderService() {
           const devices = await navigator.mediaDevices.enumerateDevices();
           return devices.filter(device => device.kind === 'audioinput');
         },
-        mapErr: (error) => RecorderServiceErr({
+        catch: (error) => RecorderServiceErr({
           message: 'Failed to enumerate audio devices through browser API',
           context: { platform: 'web' },
           cause: error,
@@ -610,7 +610,7 @@ export function createUserService(config: { apiUrl: string }) {
     async getUser(id: string): Promise<Result<User, ApiError>> {
       return tryAsync({
         try: () => fetch(`${config.apiUrl}/users/${id}`).then(r => r.json()),
-        mapErr: (error) => ApiErr({
+        catch: (error) => ApiErr({
           message: 'Failed to fetch user',
           context: { userId: id },
           cause: error,

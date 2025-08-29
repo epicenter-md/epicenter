@@ -81,7 +81,7 @@ type ApiError = ReturnType<typeof ApiError>;
 // Wrap any throwing operation
 const { data, error } = await tryAsync({
   try: () => fetch('/api/user').then(r => r.json()),
-  mapErr: (error) => ApiErr({
+  catch: (error) => ApiErr({
     message: "Failed to fetch user",
     context: { endpoint: '/api/user' },
     cause: error
@@ -182,7 +182,7 @@ if (error) {
 // Synchronous
 const result = trySync({
   try: () => JSON.parse(jsonString),
-  mapErr: (error) => Err({
+  catch: (error) => Err({
     name: "ParseError",
     message: "Invalid JSON",
     context: { input: jsonString },
@@ -193,7 +193,7 @@ const result = trySync({
 // Asynchronous  
 const result = await tryAsync({
   try: () => fetch(url),
-  mapErr: (error) => Err({
+  catch: (error) => Err({
     name: "NetworkError",
     message: "Request failed",
     context: { url },
@@ -230,7 +230,7 @@ export function createUserService(db: Database) {
 
       return tryAsync({
         try: () => db.save(input),
-        mapErr: (error) => DatabaseErr({
+        catch: (error) => DatabaseErr({
           message: "Failed to save user",
           context: { operation: 'createUser', input },
           cause: error
@@ -241,7 +241,7 @@ export function createUserService(db: Database) {
     async getUser(id: string): Promise<Result<User | null, DatabaseError>> {
       return tryAsync({
         try: () => db.findById(id),
-        mapErr: (error) => DatabaseErr({
+        catch: (error) => DatabaseErr({
           message: "Failed to fetch user",
           context: { userId: id },
           cause: error
@@ -257,6 +257,52 @@ export type UserService = ReturnType<typeof createUserService>;
 // Create a live instance (dependency injection at build time)
 export const UserServiceLive = createUserService(databaseInstance);
 ```
+
+## Smart Return Type Narrowing
+
+The `catch` parameter in `trySync` and `tryAsync` enables smart return type narrowing based on your error handling strategy:
+
+### Recovery Pattern (Always Succeeds)
+```typescript
+// When catch always returns Ok<T>, function returns Ok<T>
+const alwaysSucceeds = trySync({
+  try: () => JSON.parse(riskyJson),
+  catch: () => Ok({ fallback: "default" }) // Always recover with fallback
+});
+// alwaysSucceeds: Ok<object> - No error checking needed!
+console.log(alwaysSucceeds.data); // Safe to access directly
+```
+
+### Propagation Pattern (May Fail)
+```typescript
+// When catch can return Err<E>, function returns Result<T, E>  
+const mayFail = trySync({
+  try: () => JSON.parse(riskyJson),
+  catch: (error) => Err(ParseError({ message: "Invalid JSON", cause: error }))
+});
+// mayFail: Result<object, ParseError> - Must check for errors
+if (isOk(mayFail)) {
+  console.log(mayFail.data); // Only safe after checking
+}
+```
+
+### Mixed Strategy (Conditional Recovery)
+```typescript
+const smartParse = trySync({
+  try: () => JSON.parse(input),
+  catch: (error) => {
+    // Recover from empty input
+    if (input.trim() === "") {
+      return Ok({}); // Return Ok<T> for fallback
+    }
+    // Propagate other errors  
+    return Err(ParseError({ message: "Parse failed", cause: error }));
+  }
+});
+// smartParse: Result<object, ParseError> - Mixed handling = Result type
+```
+
+This eliminates unnecessary error checking when you always recover, while still requiring proper error handling when failures are possible.
 
 ## Why wellcrafted?
 

@@ -140,7 +140,7 @@ export async function createUser(data: FormData) {
     try: async () => {
       // Your server action logic
     },
-    mapErr: (error) => Err({
+    catch: (error) => Err({
       name: "ServerError",
       message: "Failed to create user",
       context: { timestamp: Date.now() },
@@ -181,7 +181,7 @@ const router = Router();
 router.get("/:id", async (req, res) => {
   const result = await tryAsync({
     try: () => getUserById(req.params.id),
-    mapErr: (error) => Err({
+    catch: (error) => Err({
       name: "DatabaseError",
       message: "Failed to fetch user",
       context: { userId: req.params.id },

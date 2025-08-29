@@ -160,7 +160,7 @@ export function createRecordingService(db: Database) {
           });
           return recordings;
         },
-        mapErr: (error) => RecordingServiceErr({
+        catch: (error) => RecordingServiceErr({
           message: 'Failed to fetch recordings from database',
           context: { operation: 'getAllRecordings' },
           cause: error,
@@ -185,7 +185,7 @@ export function createRecordingService(db: Database) {
           }
           return recording;
         },
-        mapErr: (error) => RecordingServiceErr({
+        catch: (error) => RecordingServiceErr({
           message: error instanceof Error ? error.message : 'Failed to fetch recording',
           context: { recordingId: id },
           cause: error,
@@ -223,7 +223,7 @@ export function createRecordingService(db: Database) {
 
           return { ...recording, audioBlob: input.blob };
         },
-        mapErr: (error) => RecordingServiceErr({
+        catch: (error) => RecordingServiceErr({
           message: 'Failed to save recording',
           context: { input },
           cause: error,
@@ -256,7 +256,7 @@ export function createRecordingService(db: Database) {
           // Delete database record
           await db.recordings.delete({ where: { id } });
         },
-        mapErr: (error) => RecordingServiceErr({
+        catch: (error) => RecordingServiceErr({
           message: 'Failed to delete recording',
           context: { recordingId: id },
           cause: error,
@@ -273,7 +273,7 @@ export function createRecordingService(db: Database) {
           });
           return recording;
         },
-        mapErr: (error) => RecordingServiceErr({
+        catch: (error) => RecordingServiceErr({
           message: 'Failed to update recording',
           context: { recordingId: id, updates },
           cause: error,
@@ -895,7 +895,7 @@ function createRecordingServiceDesktop() {
           });
           return result;
         },
-        mapErr: (error) => RecorderServiceErr({
+        catch: (error) => RecorderServiceErr({
           message: 'Failed to start desktop recording',
           context: { platform: 'desktop', params },
           cause: error,
@@ -906,7 +906,7 @@ function createRecordingServiceDesktop() {
     async enumerateDevices(): Promise<Result<AudioDevice[], RecorderServiceError>> {
       return tryAsync({
         try: () => invoke('enumerate_audio_devices'),
-        mapErr: (error) => RecorderServiceErr({
+        catch: (error) => RecorderServiceErr({
           message: 'Failed to enumerate desktop audio devices',
           context: { platform: 'desktop' },
           cause: error,
@@ -936,7 +936,7 @@ function createRecordingServiceWeb() {
 
           return { recorder, stream };
         },
-        mapErr: (error) => RecorderServiceErr({
+        catch: (error) => RecorderServiceErr({
           message: 'Failed to start web recording',
           context: { platform: 'web', params },
           cause: error,
@@ -956,7 +956,7 @@ function createRecordingServiceWeb() {
               isDefault: device.deviceId === 'default',
             }));
         },
-        mapErr: (error) => RecorderServiceErr({
+        catch: (error) => RecorderServiceErr({
           message: 'Failed to enumerate web audio devices',
           context: { platform: 'web' },
           cause: error,
@@ -1302,7 +1302,7 @@ export async function getAllRecordings(): Promise<Result<Recording[], RecordingS
       }
       return response.json();
     },
-    mapErr: (error) => RecordingServiceErr({
+    catch: (error) => RecordingServiceErr({
       message: 'Failed to fetch recordings from API',
       context: { operation: 'getAllRecordings' },
       cause: error,
@@ -1381,7 +1381,7 @@ export function createRecordingService(db: Database) {
       
       return tryAsync({
         try: () => db.recordings.create(input),
-        mapErr: (error) => RecordingServiceErr({
+        catch: (error) => RecordingServiceErr({
           message: 'Failed to save recording',
           context: { input },
           cause: error,

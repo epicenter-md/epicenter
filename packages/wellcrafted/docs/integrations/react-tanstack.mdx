@@ -132,7 +132,7 @@ export async function getUser(id: string): Promise<Result<User, UserServiceError
       
       return await response.json();
     },
-    mapErr: (error) => UserServiceErr({
+    catch: (error) => UserServiceErr({
       message: error instanceof Error ? error.message : 'Failed to fetch user',
       context: { userId: id },
       cause: error,
@@ -164,7 +164,7 @@ export async function createUser(input: CreateUserInput): Promise<Result<User, U
       
       return await response.json();
     },
-    mapErr: (error) => UserServiceErr({
+    catch: (error) => UserServiceErr({
       message: 'Failed to create user',
       context: { input },
       cause: error,
@@ -187,7 +187,7 @@ export async function updateUser(user: User): Promise<Result<User, UserServiceEr
       
       return await response.json();
     },
-    mapErr: (error) => UserServiceErr({
+    catch: (error) => UserServiceErr({
       message: 'Failed to update user',
       context: { userId: user.id },
       cause: error,
@@ -750,7 +750,7 @@ export async function getUser(id: string): Promise<Result<User, UserServiceError
       }
       return response.json();
     },
-    mapErr: (error) => UserServiceErr({
+    catch: (error) => UserServiceErr({
       message: error instanceof Error ? error.message : 'Failed to fetch user',
       context: { userId: id },
       cause: error,
@@ -817,7 +817,7 @@ export async function createUser(input: CreateUserInput): Promise<Result<User, U
   
   return tryAsync({
     try: () => api.post('/users', input),
-    mapErr: (error) => UserServiceErr({
+    catch: (error) => UserServiceErr({
       message: 'Failed to create user',
       context: { input },
       cause: error,

@@ -95,28 +95,28 @@ export function createTryFns<TName extends string>(name: TName) {
 	return {
 		trySync: <T>({
 			try: operation,
-			mapErr,
+			catch: catchFn,
 		}: {
 			try: () => T;
-			mapErr: (error: unknown) => Omit<TError, "name">;
+			catch: (error: unknown) => Omit<TError, "name">;
 		}) =>
 			trySync<T, TError>({
 				try: operation,
-				mapErr: (error) => Err({
-					...mapErr(error),
+				catch: (error) => Err({
+					...catchFn(error),
 					name,
 				}),
 			}),
 		tryAsync: <T>({
 			try: operation,
-			mapErr,
+			catch: catchFn,
 		}: {
 			try: () => Promise<T>;
-			mapErr: (error: unknown) => Omit<TError, "name">;
+			catch: (error: unknown) => Omit<TError, "name">;
 		}) =>
 			tryAsync<T, TError>({
 				try: operation,
-				mapErr: (error) => Err({ ...mapErr(error), name }),
+				catch: (error) => Err({ ...catchFn(error), name }),
 			}),
 	};
 }
@@ -139,7 +139,7 @@ export function createClipboardServiceExtension(): ClipboardService {
     setClipboardText: (text) =>
       clipboardService.tryAsync({
         try: () => navigator.clipboard.writeText(text),
-        mapErr: (error) => ({
+        catch: (error) => Err({
           message: 'Unable to write to clipboard',
           context: { text },
           cause: error,
@@ -149,7 +149,7 @@ export function createClipboardServiceExtension(): ClipboardService {
     writeTextToCursor: (text) =>
       clipboardService.trySync({
         try: () => writeTextToCursor(text),
-        mapErr: (error) => ({
+        catch: (error) => Err({
           message: 'Unable to paste text to cursor',
           context: { text },
           cause: error,
@@ -174,7 +174,7 @@ const { tryAsync } = createTryFns('MyError');
 await someFunction(tryAsync);
 
 // Without generator - plain objects are simpler
-await tryAsync({ try: operation, mapErr: mapper });
+await tryAsync({ try: operation, catch: mapper });
 ```
 
 #### 3. **Hidden Error Structure**
@@ -218,7 +218,7 @@ export function createClipboardServiceExtension(): ClipboardService {
     setClipboardText: (text) =>
       tryAsync({
         try: () => navigator.clipboard.writeText(text),
-        mapError: (error) =>
+        catch: (error) => Err(
           ClipboardServiceErr({
             message: 'Unable to write to clipboard',
             context: { text },
@@ -229,7 +229,7 @@ export function createClipboardServiceExtension(): ClipboardService {
     writeTextToCursor: (text) =>
       trySync({
         try: () => writeTextToCursor(text),
-        mapError: (error) =>
+        catch: (error) => Err(
           ClipboardServiceErr({
             message: 'Unable to paste text to cursor',
             context: { text },
@@ -260,7 +260,7 @@ Constructor functions require an additional function call, which often leads to 
 
 ```typescript
 // With constructor function - more indentation
-mapError: (error) =>
+catch: (error) => Err(
   ClipboardServiceErr({
     message: 'Unable to write to clipboard',
     context: { text },
@@ -268,7 +268,7 @@ mapError: (error) =>
   }),
 
 // Direct approach - flatter structure  
-mapError: (error) => ({
+catch: (error) => Err( ({
   name: 'ClipboardServiceError',
   message: 'Unable to write to clipboard',
   context: { text },
@@ -364,7 +364,7 @@ import { extractErrorMessage } from "wellcrafted/error";
 async function saveUserData(user: User): Promise<Result<void, StorageError>> {
   return await tryAsync({
     try: () => database.save(user),
-    mapError: (error): StorageError => ({
+    catch: (error) => StorageErr({
       name: "StorageError",
       message: `Failed to save user data: ${extractErrorMessage(error)}`,
       context: { userId: user.id, timestamp: new Date().toISOString() },
@@ -390,7 +390,7 @@ async function fetchWithRetry<T>(
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     const result = await tryAsync({
       try: () => fetch(url).then(r => r.json()),
-      mapError: (error): NetworkError => ({
+      catch: (error) => NetworkErr({
         name: "NetworkError",
         message: `Request failed (attempt ${attempt}/${maxRetries}): ${extractErrorMessage(error)}`,
         context: { url, attempt, maxRetries },
@@ -479,7 +479,7 @@ Error types that need to be converted to a more appropriate type for the calling
 async function executeQuery(sql: string): Promise<Result<any[], DbError>> {
   return await tryAsync({
     try: () => database.query(sql),
-    mapError: (error): DbError => ({
+    catch: (error) => DbErr({
       name: "DbError",
       message: `Query execution failed: ${extractErrorMessage(error)}`,
       context: { sql: sql.substring(0, 100) }, // Truncate for logging
@@ -566,7 +566,7 @@ Add context as errors bubble up through layers:
 async function writeFile(path: string, content: string): Promise<Result<void, StorageError>> {
   return await tryAsync({
     try: () => fs.writeFile(path, content),
-    mapError: (error): StorageError => ({
+    catch: (error) => StorageErr({
       name: "StorageError",
       message: `File write failed: ${extractErrorMessage(error)}`,
       context: { path, contentLength: content.length },
@@ -869,7 +869,7 @@ function legacyFunction(input: string): string {
 function safeLegacyFunction(input: string): Result<string, ValidationError> {
   return trySync({
     try: () => legacyFunction(input),
-    mapError: (error): ValidationError => ({
+    catch: (error) => ValidationErr({
       name: "ValidationError",
       message: extractErrorMessage(error),
       context: { input },
@@ -913,11 +913,11 @@ function resultToPromise<T, E extends BaseError>(result: Result<T, E>): Promise<
 // Convert Promise to Result (for integrating promise-based libraries)
 async function promiseToResult<T, E extends BaseError>(
   promise: Promise<T>,
-  mapError: (error: unknown) => E
+  catch: (error: unknown) => Err<E>
 ): Promise<Result<T, E>> {
   return await tryAsync({
     try: () => promise,
-    mapError,
+    catch,
   });
 }
 ```

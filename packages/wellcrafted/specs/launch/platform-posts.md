@@ -50,7 +50,7 @@ import { tryAsync } from "wellcrafted";
 // Wrap any async operation
 const { data, error } = await tryAsync({
   try: () => fetch('/api/data'),
-  mapErr: (e) => Err({
+  catch: (e) => Err({
     name: "NetworkError",
     message: "Request failed",
     context: { url: '/api/data' },
@@ -101,7 +101,7 @@ Well Crafted's approach: make errors visible
 async function getUser(): Promise<Result<User, NetworkError>> {
   return tryAsync({
     try: () => fetch(url),
-    mapErr: (e) => Err({ 
+    catch: (e) => Err({ 
       name: "NetworkError",
       message: "Failed", 
       context: { url }

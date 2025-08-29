@@ -88,7 +88,7 @@ type JsonError = ReturnType<typeof JsonError>;
 function parseJson<T>(text: string): Result<T, JsonError> {
   return trySync({
     try: () => JSON.parse(text),
-    mapErr: (error) => JsonErr({
+    catch: (error) => JsonErr({
       message: "Failed to parse JSON",
       context: { text: text.substring(0, 100) }, // Truncate for logging
       cause: error
@@ -129,7 +129,7 @@ async function fetchUser(id: number): Promise<Result<User, ApiError>> {
       }
       return response.json();
     },
-    mapErr: (error) => ApiErr({
+    catch: (error) => ApiErr({
       message: "Failed to fetch user",
       context: { userId: id },
       cause: error
@@ -231,7 +231,7 @@ async function submitSignup(
       
       return response.json();
     },
-    mapErr: (error) => Err({
+    catch: (error) => Err({
       name: "SubmissionError",
       message: "Failed to create account",
       context: { email: form.email },
@@ -384,8 +384,8 @@ const { data, error } = result;
 if (error) { /* handle */ } else { /* use data */ }
 
 // Wrap unsafe code
-trySync({ try: () => risky(), mapErr: (e) => ... })
-tryAsync({ try: async () => risky(), mapErr: (e) => ... })
+trySync({ try: () => risky(), catch: (e) => ... })
+tryAsync({ try: async () => risky(), catch: (e) => ... })
 
 // Create tagged errors
 type MyError = TaggedError<"MyError">;

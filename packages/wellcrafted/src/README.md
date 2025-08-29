@@ -55,8 +55,8 @@ The implementation provides utility functions:
 - `Err<E>(error: E)`: Create an Err data structure containing an error type
 - `isOk(result)`: Type guard to check for success
 - `isErr(result)`: Type guard to check for Err data structure
-- `trySync<T, E>({ try, mapErr })`: Execute a synchronous operation safely
-- `tryAsync<T, E>({ try, mapErr })`: Execute an asynchronous operation safely
+- `trySync<T, E>({ try, catch })`: Execute a synchronous operation safely
+- `tryAsync<T, E>({ try, catch })`: Execute an asynchronous operation safely
 
 ### Basic Usage
 
@@ -75,7 +75,7 @@ if (isOk(result)) {
 // Wrapping a potentially throwing operation
 const result = trySync({
   try: () => JSON.parse(jsonString),
-  mapErr: (error) => Err({
+  catch: (error) => Err({
     name: "ValidationError",
     message: `JSON parsing failed: ${extractErrorMessage(error)}`,
     context: { jsonString },

@@ -43,7 +43,7 @@ export function createUserService(db: Database) {
       // Fetch from database
       const result = await tryAsync({
         try: () => db.users.findById(id),
-        mapError: (error) => UserServiceError({
+        catch: (error) => Err( UserServiceError({
           message: "Failed to fetch user",
           context: { userId: id },
           cause: error
@@ -70,7 +70,7 @@ export function createUserService(db: Database) {
       // Save to database
       return tryAsync({
         try: () => db.users.create(input),
-        mapError: (error) => UserServiceError({
+        catch: (error) => Err( UserServiceError({
           message: "Failed to create user",
           context: { input },
           cause: error
@@ -116,7 +116,7 @@ export function createOrderService(
       // 2. Process payment
       const paymentResult = await tryAsync({
         try: () => paymentGateway.charge(input.payment),
-        mapError: (error) => PaymentServiceError({
+        catch: (error) => Err( PaymentServiceError({
           message: "Payment processing failed",
           context: { amount: input.payment.amount },
           cause: error
@@ -131,7 +131,7 @@ export function createOrderService(
           ...input,
           paymentId: paymentResult.data.id
         }),
-        mapError: (error) => OrderServiceError({
+        catch: (error) => Err( OrderServiceError({
           message: "Failed to create order",
           context: { input },
           cause: error
@@ -178,7 +178,7 @@ export function createNotificationServiceDesktop(): NotificationService {
           // Use native desktop notification API
           new window.Notification("App Name", { body: message });
         },
-        mapError: (error) => NotificationServiceError({
+        catch: (error) => Err( NotificationServiceError({
           message: "Failed to show notification",
           context: { message },
           cause: error
@@ -210,7 +210,7 @@ export function createNotificationServiceWeb(): NotificationService {
         try: () => {
           new Notification("App Name", { body: message });
         },
-        mapError: (error) => NotificationServiceError({
+        catch: (error) => Err( NotificationServiceError({
           message: "Failed to show notification",
           context: { message },
           cause: error
@@ -351,7 +351,7 @@ Transform low-level errors into domain-specific ones:
 ```typescript
 const dbResult = await tryAsync({
   try: () => db.query(sql),
-  mapError: (error) => DatabaseError({
+  catch: (error) => Err( DatabaseError({
     message: "Database query failed",
     context: { sql },
     cause: error
@@ -379,7 +379,7 @@ export function createUserService(db: Database) {
     async getUser(id: string): Promise<Result<User, UserServiceError>> {
       return tryAsync({
         try: () => db.users.findById(id),
-        mapError: (error) => UserServiceError({
+        catch: (error) => Err( UserServiceError({
           message: "Failed to fetch user",
           context: { userId: id },
           cause: error
