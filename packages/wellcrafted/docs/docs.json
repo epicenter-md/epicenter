@@ -1,11 +1,15 @@
 {
   "$schema": "https://mintlify.com/docs.json",
-  "theme": "mint",
+  "theme": "maple",
   "name": "WellCrafted",
   "colors": {
-    "primary": "#2AB673",
-    "light": "#55D799",
-    "dark": "#117866"
+    "primary": "#3B82F6",
+    "light": "#60A5FA",
+    "dark": "#1E40AF"
+  },
+  "font": {
+    "family": "Inter",
+    "source": "https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
   },
   "favicon": "/favicon.svg",
   "logo": {
@@ -18,7 +22,7 @@
         "tab": "Documentation",
         "groups": [
           {
-            "group": "Getting Started",
+            "group": "🚀 Getting Started",
             "pages": [
               "index",
               "getting-started/installation",
@@ -27,7 +31,7 @@
             ]
           },
           {
-            "group": "Core Modules",
+            "group": "⚡ Core",
             "pages": [
               "core/result-pattern",
               "core/error-system",
@@ -36,7 +40,7 @@
             ]
           },
           {
-            "group": "Patterns & Examples",
+            "group": "🛠️ Patterns",
             "pages": [
               "patterns/real-world",
               "patterns/service-layer",
@@ -44,7 +48,7 @@
             ]
           },
           {
-            "group": "Framework Integrations",
+            "group": "🔌 Integrations",
             "pages": [
               "integrations/svelte-tanstack",
               "integrations/react-tanstack",
@@ -54,7 +58,7 @@
             ]
           },
           {
-            "group": "Philosophy",
+            "group": "💭 Philosophy",
             "pages": [
               "philosophy/design-principles",
               "philosophy/developer-experience",
@@ -62,7 +66,7 @@
             ]
           },
           {
-            "group": "Migration",
+            "group": "🔄 Migration",
             "pages": [
               "migration/from-try-catch"
             ]
@@ -83,6 +87,8 @@
     }
   },
   "footer": {
-    "socials": {}
+    "socials": {
+      "github": "https://github.com/wellcrafted-dev/wellcrafted"
+    }
   }
 }

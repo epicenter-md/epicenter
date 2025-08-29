@@ -266,112 +266,120 @@ export function isErr<T, E>(result: Result<T, E>): result is Err<E> {
 }
 
 /**
- * Executes a synchronous operation and wraps its outcome (success or failure) in a `Result<T, E>`.
+ * Executes a synchronous operation and wraps its outcome in a Result type.
  *
- * This function attempts to execute the `operation`.
- * - If `operation` completes successfully, its return value is wrapped in an `Ok<T>` variant.
- * - If `operation` throws an exception, the caught exception (of type `unknown`) is passed to
- *   the `mapErr` function. `mapErr` is responsible for transforming this `unknown`
- *   exception into an `Err<E>` variant containing a well-typed error value of type `E`.
+ * This function attempts to execute the `try` operation:
+ * - If the `try` operation completes successfully, its return value is wrapped in an `Ok<T>` variant.
+ * - If the `try` operation throws an exception, the caught exception (of type `unknown`) is passed to
+ *   the `catch` function, which transforms it into either an `Ok<T>` (recovery) or `Err<E>` (propagation).
  *
- * @template T - The type of the success value returned by the `operation` if it succeeds.
- * @template E - The type of the error value produced by `mapErr` if the `operation` fails.
- * @param options - An object containing the operation and error mapping function.
- * @param options.try - The synchronous operation to execute. This function is expected to return a value of type `T`.
- * @param options.mapErr - A function that takes the `unknown` exception caught from `options.try`
- *                        and transforms it into an `Err<E>` variant containing a specific error value of type `E`.
- * @returns A `Result<T, E>`: `Ok<T>` if `options.try` succeeds, or `Err<E>` if it throws and `options.mapErr` provides an error variant.
+ * The return type is automatically narrowed based on what your catch function returns:
+ * - If catch always returns `Ok<T>`, the function returns `Ok<T>` (guaranteed success)
+ * - If catch can return `Err<E>`, the function returns `Result<T, E>` (may succeed or fail)
+ *
+ * @template T - The success value type
+ * @template E - The error value type (when catch can return errors)
+ * @param options - Configuration object
+ * @param options.try - The operation to execute
+ * @param options.catch - Error handler that transforms caught exceptions into either `Ok<T>` (recovery) or `Err<E>` (propagation)
+ * @returns `Ok<T>` if catch always returns Ok (recovery), otherwise `Result<T, E>` (propagation)
+ *
  * @example
  * ```ts
- * function parseJson(jsonString: string): Result<object, SyntaxError> {
- *   return trySync({
- *     try: () => JSON.parse(jsonString),
- *     mapErr: (err: unknown) => {
- *       if (err instanceof SyntaxError) return Err(err);
- *       return Err(new SyntaxError("Unknown parsing error"));
- *     }
- *   });
- * }
+ * // Returns Ok<string> - guaranteed success since catch always returns Ok
+ * const alwaysOk = trySync({
+ *   try: () => JSON.parse(input),
+ *   catch: () => Ok("fallback") // Always Ok<T>
+ * });
  *
- * const validResult = parseJson('{"name":"Result"}'); // Ok<{name: string}>
- * const invalidResult = parseJson('invalid json');    // Err<SyntaxError>
- *
- * if (isOk(validResult)) console.log(validResult.data);
- * if (isErr(invalidResult)) console.error(invalidResult.error.message);
+ * // Returns Result<object, string> - may fail since catch can return Err
+ * const mayFail = trySync({
+ *   try: () => JSON.parse(input),
+ *   catch: (err) => Err("Parse failed") // Returns Err<E>
+ * });
  * ```
  */
+export function trySync<T>(options: {
+	try: () => T;
+	catch: (error: unknown) => Ok<T>;
+}): Ok<T>;
+
+export function trySync<T, E>(options: {
+	try: () => T;
+	catch: (error: unknown) => Err<E>;
+}): Result<T, E>;
+
 export function trySync<T, E>({
 	try: operation,
-	mapErr,
+	catch: catchFn,
 }: {
 	try: () => T;
-	mapErr: (error: unknown) => Err<E>;
-}): Result<T, E> {
+	catch: (error: unknown) => Ok<T> | Err<E>;
+}): Ok<T> | Result<T, E> {
 	try {
 		const data = operation();
 		return Ok(data);
 	} catch (error) {
-		return mapErr(error);
+		return catchFn(error);
 	}
 }
 
 /**
- * Executes an asynchronous operation (returning a `Promise`) and wraps its outcome in a `Promise<Result<T, E>>`.
+ * Executes an asynchronous operation and wraps its outcome in a Promise<Result>.
  *
- * This function attempts to execute the asynchronous `operation`.
- * - If the `Promise` returned by `operation` resolves successfully, its resolved value is wrapped in an `Ok<T>` variant.
- * - If the `Promise` returned by `operation` rejects, or if `operation` itself throws an exception synchronously,
- *   the caught exception/rejection reason (of type `unknown`) is passed to the `mapErr` function.
- *   `mapErr` is responsible for transforming this `unknown` error into an `Err<E>` variant containing
- *   a well-typed error value of type `E`.
+ * This function attempts to execute the `try` operation:
+ * - If the `try` operation resolves successfully, its resolved value is wrapped in an `Ok<T>` variant.
+ * - If the `try` operation rejects or throws an exception, the caught error (of type `unknown`) is passed to
+ *   the `catch` function, which transforms it into either an `Ok<T>` (recovery) or `Err<E>` (propagation).
  *
- * The entire outcome (`Ok<T>` or `Err<E>`) is wrapped in a `Promise`.
+ * The return type is automatically narrowed based on what your catch function returns:
+ * - If catch always returns `Ok<T>`, the function returns `Promise<Ok<T>>` (guaranteed success)
+ * - If catch can return `Err<E>`, the function returns `Promise<Result<T, E>>` (may succeed or fail)
  *
- * @template T - The type of the success value the `Promise` from `operation` resolves to.
- * @template E - The type of the error value produced by `mapErr` if the `operation` fails or rejects.
- * @param options - An object containing the asynchronous operation and error mapping function.
- * @param options.try - The asynchronous operation to execute. This function must return a `Promise<T>`.
- * @param options.mapErr - A function that takes the `unknown` exception/rejection reason caught from `options.try`
- *                        and transforms it into an `Err<E>` variant containing a specific error value of type `E`.
- *                        This function must return `Err<E>` directly.
- * @returns A `Promise` that resolves to a `Result<T, E>`: `Ok<T>` if `options.try`'s `Promise` resolves,
- *          or `Err<E>` if it rejects/throws and `options.mapErr` provides an error variant.
+ * @template T - The success value type
+ * @template E - The error value type (when catch can return errors)
+ * @param options - Configuration object
+ * @param options.try - The async operation to execute
+ * @param options.catch - Error handler that transforms caught exceptions/rejections into either `Ok<T>` (recovery) or `Err<E>` (propagation)
+ * @returns `Promise<Ok<T>>` if catch always returns Ok (recovery), otherwise `Promise<Result<T, E>>` (propagation)
+ *
  * @example
  * ```ts
- * async function fetchData(url: string): Promise<Result<Response, Error>> {
- *   return tryAsync({
- *     try: async () => fetch(url),
- *     mapErr: (err: unknown) => {
- *       if (err instanceof Error) return Err(err);
- *       return Err(new Error("Network request failed"));
- *     }
- *   });
- * }
+ * // Returns Promise<Ok<Response>> - guaranteed success since catch always returns Ok
+ * const alwaysOk = tryAsync({
+ *   try: async () => fetch(url),
+ *   catch: () => Ok(new Response()) // Always Ok<T>
+ * });
  *
- * async function processData() {
- *   const result = await fetchData("/api/data");
- *   if (isOk(result)) {
- *     const response = result.data;
- *     console.log("Data fetched:", await response.json());
- *   } else {
- *     console.error("Fetch error:", result.error.message);
- *   }
- * }
- * processData();
+ * // Returns Promise<Result<Response, Error>> - may fail since catch can return Err
+ * const mayFail = tryAsync({
+ *   try: async () => fetch(url),
+ *   catch: (err) => Err(new Error("Fetch failed")) // Returns Err<E>
+ * });
  * ```
  */
+export async function tryAsync<T>(options: {
+	try: () => Promise<T>;
+	catch: (error: unknown) => Ok<T>;
+}): Promise<Ok<T>>;
+
+export async function tryAsync<T, E>(options: {
+	try: () => Promise<T>;
+	catch: (error: unknown) => Err<E>;
+}): Promise<Result<T, E>>;
+
 export async function tryAsync<T, E>({
 	try: operation,
-	mapErr,
+	catch: catchFn,
 }: {
 	try: () => Promise<T>;
-	mapErr: (error: unknown) => Err<E>;
-}): Promise<Result<T, E>> {
+	catch: (error: unknown) => Ok<T> | Err<E>;
+}): Promise<Ok<T> | Result<T, E>> {
 	try {
 		const data = await operation();
 		return Ok(data);
 	} catch (error) {
-		return mapErr(error);
+		return catchFn(error);
 	}
 }
 
