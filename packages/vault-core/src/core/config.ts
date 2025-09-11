@@ -3,7 +3,6 @@ import type { BaseSQLiteDatabase } from 'drizzle-orm/sqlite-core';
 import type { Adapter } from './adapter';
 import type { Codec, ConventionProfile } from './codec';
 import type { Importer } from './importer';
-import type { SyncEngine } from './sync';
 
 // Deprecated: use VaultServiceConfig or VaultClientConfig
 export interface VaultConfig<
@@ -16,6 +15,10 @@ export interface VaultConfig<
 }
 
 // Service config: owns DB and Importers
+/**
+ * @deprecated The service/client architecture has been removed from vault-core.
+ * Prefer a pure core API with an injected Drizzle DB and per-call codec injection.
+ */
 export interface VaultServiceConfig<
 	TDatabase extends BaseSQLiteDatabase<'sync' | 'async', unknown>,
 	TImporters extends Importer[],
@@ -45,11 +48,6 @@ export interface VaultServiceConfig<
 	 * migrate(db, { migrationsFolder: '...' })
 	 */
 	migrateFunc: (db: TDatabase, config: MigrationConfig) => Promise<void>;
-	/**
-	 * A SyncEngine implementation injected by the host.
-	 * Controls DB <-> Filesystem sync flows; keeps Importers/Adapters pure.
-	 */
-	syncEngine?: SyncEngine;
 	/** Active text codec (markdown/json/etc.) and the conventions. */
 	codec?: Codec<string, string>;
 	conventions?: ConventionProfile;
