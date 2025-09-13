@@ -5,7 +5,8 @@
 	"type": "module",
 	"exports": {
 		".": "./src/index.ts",
-		"./adapters/*": "./src/adapters/index.ts"
+		"./adapters/*": "./src/adapters/*/index.ts",
+		"./utils/*": "./src/utils/*/index.ts"
 	},
 	"devDependencies": {
 		"typescript": "catalog:"
@@ -17,8 +18,12 @@
 		"check": "echo \"TODO add this in a later commit\""
 	},
 	"dependencies": {
+		"@vanillaes/csv": "^3.0.4",
 		"arktype": "catalog:",
 		"drizzle-kit": "catalog:",
-		"drizzle-orm": "catalog:"
+		"drizzle-orm": "catalog:",
+		"fflate": "^0.8.2",
+		"toml": "^3.0.0",
+		"yaml": "^2.8.1"
 	}
 }
