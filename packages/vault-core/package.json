@@ -18,8 +18,8 @@
 		"check": "echo \"TODO add this in a later commit\""
 	},
 	"dependencies": {
+		"@standard-schema/spec": "^1.0.0",
 		"@vanillaes/csv": "^3.0.4",
-		"arktype": "catalog:",
 		"drizzle-kit": "catalog:",
 		"drizzle-orm": "catalog:",
 		"fflate": "^0.8.2",
