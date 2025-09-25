@@ -1,0 +1,99 @@
+name: Feature Request
+description: Suggest a new feature or enhancement
+labels: ["feature request"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for your feature suggestion! We love hearing ideas from the community.
+
+  - type: textarea
+    id: feature-description
+    attributes:
+      label: Feature Description
+      description: Describe the problem, proposed solution, and use case. Below is a suggested template, but feel free to structure your request however you prefer
+      placeholder: |
+        Please include:
+        - What problem this solves or frustration it addresses
+        - How you'd like it to work
+        - A real-world use case or scenario
+        - Any alternatives you've considered
+        - Mockups or screenshots (drag & drop images)
+        - Links to similar features in other apps
+        - If from Discord, paste the Discord message body here
+      value: |
+        ### Problem:
+
+
+        ### Proposed solution:
+
+
+        ### Use case:
+
+
+        ### Additional details:
+
+    validations:
+      required: true
+
+  - type: dropdown
+    id: platforms
+    attributes:
+      label: Relevant Platforms
+      description: Which platforms would benefit from this feature?
+      multiple: true
+      options:
+        - Mac OS
+        - Windows
+        - Linux
+        - Web
+        - Mobile (iOS/Android)
+        - All Platforms
+    validations:
+      required: true
+
+  - type: dropdown
+    id: priority-request
+    attributes:
+      label: How important is this feature to you?
+      description: Help us understand the priority
+      options:
+        - Nice to have
+        - Would improve my workflow
+        - Important for my use case
+        - Critical for my use case
+      default: 1
+    validations:
+      required: true
+
+  - type: dropdown
+    id: contribution
+    attributes:
+      label: Willing to Contribute?
+      description: Would you be interested in helping implement this feature?
+      options:
+        - "Yes, I can implement this"
+        - "Yes, but I'd need guidance"
+        - "No, but I can test it"
+        - "No"
+      default: 2
+    validations:
+      required: true
+
+  - type: input
+    id: discord-link
+    attributes:
+      label: Discord Link
+      description: If this feature was discussed on Discord, provide the message or thread link (optional)
+      placeholder: https://discord.com/channels/...
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Checklist
+      description: Please confirm the following
+      options:
+        - label: I have searched existing issues and this feature hasn't been requested
+          required: true

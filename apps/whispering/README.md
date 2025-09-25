@@ -36,7 +36,7 @@
 
 Whispering is an open-source speech-to-text application. Press a keyboard shortcut, speak, and your words will transcribe, transform, then copy and paste at the cursor.
 
-I really like hands-free voice dictation. For years, I relied on transcription tools that were *almost* good, but they were all closed-source. Even those claiming to be "local" or "on-device" were still black boxes that left me wondering where my audio really went.
+I really like hands-free voice dictation. For years, I relied on transcription tools that were _almost_ good, but they were all closed-source. Even those claiming to be "local" or "on-device" were still black boxes that left me wondering where my audio really went.
 
 So I built Whispering. It's open-source, local-first, and most importantly, transparent with your data. ​​Your data is stored locally on your device, and your audio goes directly from your machine to a local provider (Whisper C++, Speaches, etc.) or your chosen cloud provider (Groq, OpenAI, ElevenLabs, etc.) without any middleman or vendor lock-in. For me, the features were good enough that I left my paid tools behind (I used Superwhisper and Wispr Flow before).
 
@@ -47,8 +47,9 @@ Productivity apps should be open-source and transparent with your data, but they
 
 > [!NOTE]
 > The terms **Epicenter Whispering** and **Whispering** are interchangeable and refer to the same app.
-> - *Epicenter Whispering* emphasizes the app's place in the larger ecosystem.
-> - *Whispering* may be used for brevity and/or to focus on the standalone app.
+>
+> - _Epicenter Whispering_ emphasizes the app's place in the larger ecosystem.
+> - _Whispering_ may be used for brevity and/or to focus on the standalone app.
 
 Here's an overview:
 
@@ -66,12 +67,12 @@ There are plenty of transcription apps out there, each with their own strengths.
 
 Built with Svelte 5 and Tauri, so it's tiny (~22MB) and starts instantly. The codebase is well-documented and designed to be understood and audited. That way, you know where your audio goes, how it's processed, and what data is stored. And finally, the cost savings. When you cut out the middleman, you pay providers directly:
 
-| Service | Cost per Hour | Light Use (20 min/day) | Moderate Use (1 hr/day) | Heavy Use (3 hr/day) | Traditional Tools |
-|---------|---------------|------------------------|-------------------------|----------------------|-------------------|
-| `whisper-large-v3-turbo` (Groq) | $0.04 | $0.40/month | $1.20/month | $3.60/month | $15-30/month |
-| `whisper-large-v3` (Groq) | $0.111 | $1.11/month | $3.33/month | $9.99/month | $15-30/month |
-| `gpt-4o-mini-transcribe` (OpenAI) | $0.18 | $1.80/month | $5.40/month | $16.20/month | $15-30/month |
-| Local | $0.00 | $0.00/month | $0.00/month | $0.00/month | $15-30/month |
+| Service                           | Cost per Hour | Light Use (20 min/day) | Moderate Use (1 hr/day) | Heavy Use (3 hr/day) | Traditional Tools |
+| --------------------------------- | ------------- | ---------------------- | ----------------------- | -------------------- | ----------------- |
+| `whisper-large-v3-turbo` (Groq)   | $0.04         | $0.40/month            | $1.20/month             | $3.60/month          | $15-30/month      |
+| `whisper-large-v3` (Groq)         | $0.111        | $1.11/month            | $3.33/month             | $9.99/month          | $15-30/month      |
+| `gpt-4o-mini-transcribe` (OpenAI) | $0.18         | $1.80/month            | $5.40/month             | $16.20/month         | $15-30/month      |
+| Local                             | $0.00         | $0.00/month            | $0.00/month             | $0.00/month          | $15-30/month      |
 
 We're hoping that together in the open-source, local-first community, we can build something better than any closed-source alternative. The code is open-source because I believe that fundamental tools shouldn't require trusting a black box. Companies pivot, get acquired, or shut down. But open source is forever. ❤️
 
@@ -86,23 +87,26 @@ Set up Whispering and be ready to transcribe in about two minutes.
 
 #### Download Options
 
-| Architecture | Download | Requirements |
-|-------------|----------|--------------|
+| Architecture      | Download                                                                                                                        | Requirements     |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
 | **Apple Silicon** | [Whispering_7.4.0_aarch64.dmg](https://github.com/epicenter-so/epicenter/releases/download/v7.4.0/Whispering_7.4.0_aarch64.dmg) | M1/M2/M3/M4 Macs |
-| **Intel** | [Whispering_7.4.0_x64.dmg](https://github.com/epicenter-so/epicenter/releases/download/v7.4.0/Whispering_7.4.0_x64.dmg) | Intel-based Macs |
+| **Intel**         | [Whispering_7.4.0_x64.dmg](https://github.com/epicenter-so/epicenter/releases/download/v7.4.0/Whispering_7.4.0_x64.dmg)         | Intel-based Macs |
 
 > [!TIP]
 > **Not sure which Mac you have?** Click the Apple menu → About This Mac. Look for "Chip" or "Processor":
+>
 > - Apple M1/M2/M3/M4 → Use Apple Silicon version
 > - Intel Core → Use Intel version
 
 #### Installation steps:
+
 1. Download the `.dmg` file for your architecture
 2. Open the downloaded file
 3. Drag Whispering to your Applications folder
 4. Open Whispering from Applications
 
 ### Troubleshooting:
+
 - **"Unverified developer" warning:** Right-click the app → Open → Open
 - **"App is damaged" error (Apple Silicon):** Run `xattr -cr /Applications/Whispering.app` in Terminal
 
@@ -113,10 +117,10 @@ Set up Whispering and be ready to transcribe in about two minutes.
 
 #### Download Options
 
-| Installer Type | Download | Description |
-|---------------|----------|-------------|
+| Installer Type    | Download                                                                                                                            | Description                            |
+| ----------------- | ----------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------- |
 | **MSI Installer** | [Whispering_7.4.0_x64_en-US.msi](https://github.com/epicenter-so/epicenter/releases/download/v7.4.0/Whispering_7.4.0_x64_en-US.msi) | Recommended Standard Windows installer |
-| **EXE Installer** | [Whispering_7.4.0_x64-setup.exe](https://github.com/epicenter-so/epicenter/releases/download/v7.4.0/Whispering_7.4.0_x64-setup.exe) | Alternative installer option |
+| **EXE Installer** | [Whispering_7.4.0_x64-setup.exe](https://github.com/epicenter-so/epicenter/releases/download/v7.4.0/Whispering_7.4.0_x64-setup.exe) | Alternative installer option           |
 
 #### Installation
 
@@ -134,15 +138,16 @@ Whispering will appear in your Start Menu when complete.
 
 #### Download Options
 
-| Package Format | Download | Compatible With |
-|---------------|----------|-----------------|
-| **AppImage** | [Whispering_7.4.0_amd64.AppImage](https://github.com/epicenter-so/epicenter/releases/download/v7.4.0/Whispering_7.4.0_amd64.AppImage) | All Linux distributions |
-| **DEB Package** | [Whispering_7.4.0_amd64.deb](https://github.com/epicenter-so/epicenter/releases/download/v7.4.0/Whispering_7.4.0_amd64.deb) | Debian, Ubuntu, Pop!_OS |
-| **RPM Package** | [Whispering-7.4.0-1.x86_64.rpm](https://github.com/epicenter-so/epicenter/releases/download/v7.4.0/Whispering-7.4.0-1.x86_64.rpm) | Fedora, RHEL, openSUSE |
+| Package Format  | Download                                                                                                                              | Compatible With          |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------- | ------------------------ |
+| **AppImage**    | [Whispering_7.4.0_amd64.AppImage](https://github.com/epicenter-so/epicenter/releases/download/v7.4.0/Whispering_7.4.0_amd64.AppImage) | All Linux distributions  |
+| **DEB Package** | [Whispering_7.4.0_amd64.deb](https://github.com/epicenter-so/epicenter/releases/download/v7.4.0/Whispering_7.4.0_amd64.deb)           | Debian, Ubuntu, Pop!\_OS |
+| **RPM Package** | [Whispering-7.4.0-1.x86_64.rpm](https://github.com/epicenter-so/epicenter/releases/download/v7.4.0/Whispering-7.4.0-1.x86_64.rpm)     | Fedora, RHEL, openSUSE   |
 
 #### Quick Install Commands
 
 **AppImage (Universal)**
+
 ```bash
 wget https://github.com/epicenter-so/epicenter/releases/download/v7.4.0/Whispering_7.4.0_amd64.AppImage
 chmod +x Whispering_7.4.0_amd64.AppImage
@@ -150,12 +155,14 @@ chmod +x Whispering_7.4.0_amd64.AppImage
 ```
 
 **Debian/Ubuntu**
+
 ```bash
 wget https://github.com/epicenter-so/epicenter/releases/download/v7.4.0/Whispering_7.4.0_amd64.deb
 sudo dpkg -i Whispering_7.4.0_amd64.deb
 ```
 
 **Fedora/RHEL**
+
 ```bash
 wget https://github.com/epicenter-so/epicenter/releases/download/v7.4.0/Whispering-7.4.0-1.x86_64.rpm
 sudo rpm -i Whispering-7.4.0-1.x86_64.rpm
@@ -196,7 +203,7 @@ Your audio never leaves your device. Works without internet. Free forever.
 **First, download a model (required):**
 
 1. Open Whispering
-2. Click **Settings** (⚙️) → **Transcription** 
+2. Click **Settings** (⚙️) → **Transcription**
 3. Select **Whisper C++** from the dropdown
 4. Choose a model (start with `Small` for good balance of speed and accuracy)
 5. Click **Download** button next to the model
@@ -259,6 +266,7 @@ I personally use Groq for most of my transcriptions because it's incredibly fast
 <summary><strong>Having trouble? Common issues & fixes</strong></summary>
 
 ### Quick Fixes
+
 - **No transcription?** → Double-check API key in Settings
 - **Shortcut not working?** → Bring Whispering to foreground (see macOS section below)
 - **Wrong provider selected?** → Check Settings → Transcription
@@ -271,6 +279,7 @@ I personally use Groq for most of my transcriptions because it's incredibly fast
 This happens due to macOS App Nap, which suspends background apps to save battery.
 
 **Quick fixes:**
+
 1. Use Voice Activated mode for hands-free operation (recommended)
 2. Bring Whispering to the foreground briefly to restore shortcuts
 3. Keep the app window in the foreground (even as a smaller window)
@@ -285,15 +294,18 @@ This happens due to macOS App Nap, which suspends background apps to save batter
 If you accidentally clicked "Don't Allow" when Whispering asked for microphone access, here's how to fix it:
 
 #### 🍎 macOS
+
 1. Open **System Settings** → **Privacy & Security** → **Privacy** → **Microphone**
 2. Find **Whispering** in the list
 3. Toggle the switch to enable microphone access
 4. If Whispering isn't in the list, reinstall the app to trigger the permission prompt again
 
 #### 🪟 Windows
+
 If you accidentally blocked microphone permissions, use the Registry solution:
 
 **Registry Cleanup (Recommended)**
+
 1. Close Whispering
 2. Open Registry Editor (Win+R, type `regedit`)
 3. Use Find (Ctrl+F) to search for "Whispering"
@@ -327,21 +339,25 @@ Take your transcription experience to the next level with these advanced feature
 Choose from multiple transcription providers based on your needs for speed, accuracy, and privacy:
 
 #### 🚀 Groq (Recommended)
+
 - **API Key:** [console.groq.com/keys](https://console.groq.com/keys)
 - **Models:** `whisper-large-v3-turbo` ($0.04/hr), `whisper-large-v3` ($0.111/hr)
 - **Why:** Fastest, cheapest, generous free tier
 
 #### 🎯 OpenAI
+
 - **API Key:** [platform.openai.com/api-keys](https://platform.openai.com/api-keys) ([Enable billing](https://platform.openai.com/settings/organization/billing/overview))
 - **Models:** `whisper-1` ($0.36/hr), `gpt-4o-transcribe` ($0.36/hr), `gpt-4o-mini-transcribe` ($0.18/hr)
 - **Why:** Industry standard
 
 #### 🎙️ ElevenLabs
+
 - **API Key:** [elevenlabs.io/app/settings/api-keys](https://elevenlabs.io/app/settings/api-keys)
 - **Models:** `scribe_v1`, `scribe_v1_experimental`
 - **Why:** High-quality voice AI
 
 #### 🏠 Speaches (Local)
+
 - **API Key:** None needed!
 - **Why:** Complete privacy, offline use, free forever
 
@@ -353,6 +369,7 @@ Choose from multiple transcription providers based on your needs for speed, accu
 Transform your transcriptions automatically with custom AI workflows:
 
 **Quick Example: Format Text**
+
 1. Go to **Transformations** (📚) in the top bar
 2. Click "Create Transformation" → Name it "Format Text"
 3. Add a **Prompt Transform** step:
@@ -368,30 +385,35 @@ Core Principles:
 Formatting Guidelines:
 
 Punctuation & Grammar:
+
 - Add appropriate punctuation (periods, commas, question marks)
 - Correct obvious transcription errors while preserving speaking style
 - Fix run-on sentences by adding natural breaks
 - Maintain conversational tone and personal speaking patterns
 
 Structure & Organization:
+
 - Create paragraph breaks at natural topic transitions
 - Use bullet points or numbered lists when the speaker is listing items
 - Add headings if the content has clear sections
 - Preserve emphasis through italics or bold when the speaker stresses words
 
 Intelligent Corrections:
+
 - Fix homophones (e.g., "there/their/they're")
 - Complete interrupted thoughts when the intention is clear
 - Remove excessive filler words (um, uh) unless they add meaning
 - Correct obvious misspeaks while noting significant ones in [brackets]
 
 Special Handling:
+
 - Technical terms: Research and correct spelling if unclear
 - Names/places: Make best guess and mark uncertain ones with [?]
 - Numbers: Convert spoken numbers to digits when appropriate
 - Time references: Standardize format (e.g., "3 PM" not "three in the afternoon")
 
 Preserve Original Intent:
+
 - Keep colloquialisms and regional expressions
 - Maintain the speaker's level of formality
 - Don't "upgrade" simple language to sound more sophisticated
@@ -399,6 +421,7 @@ Preserve Original Intent:
 
 Output Format:
 Return the formatted text with:
+
 - Clear paragraph breaks
 - Proper punctuation and capitalization
 - Any structural elements (lists, headings) that improve clarity
@@ -406,12 +429,13 @@ Return the formatted text with:
 - Original meaning and voice intact
 
 Remember: You're a translator from spoken to written form, not an editor trying to improve the content. Make it readable while keeping it real.`
-   - User prompt: `Here is the text to format:
 
-<text>{{input}}</text>`
-4. Save and select it in your recording settings
+- User prompt: `Here is the text to format:
+
+<text>{{input}}</text>` 4. Save and select it in your recording settings
 
 **What can transformations do?**
+
 - Fix grammar and punctuation automatically
 - Translate to other languages
 - Convert casual speech to professional writing
@@ -427,21 +451,25 @@ Remember: You're a translator from spoken to written form, not an editor trying 
 You'll need additional API keys for AI transformations. Choose from these providers based on your needs:
 
 #### 🧠 OpenAI
+
 - **API Key:** [platform.openai.com/api-keys](https://platform.openai.com/api-keys)
 - **Models:** `gpt-4o`, `gpt-4o-mini`, `o3-mini` and more
 - **Why:** Most capable, best for complex text transformations
 
 #### 🤖 Anthropic
+
 - **API Key:** [console.anthropic.com/settings/keys](https://console.anthropic.com/settings/keys)
 - **Models:** `claude-opus-4-0`, `claude-sonnet-4-0`, `claude-3-7-sonnet-latest`
 - **Why:** Excellent writing quality, nuanced understanding
 
 #### ✨ Google Gemini
+
 - **API Key:** [aistudio.google.com/app/apikey](https://aistudio.google.com/app/apikey)
 - **Models:** `gemini-2.5-pro`, `gemini-2.5-flash`, `gemini-2.5-flash-lite`
 - **Why:** Free tier available, fast response times
 
 #### ⚡ Groq
+
 - **API Key:** [console.groq.com/keys](https://console.groq.com/keys)
 - **Models:** `llama-3.3-70b-versatile`, `llama-3.1-8b-instant`, `gemma2-9b-it`, and more
 - **Why:** Lightning fast inference, great for real-time transformations
@@ -458,14 +486,17 @@ Hands-free recording that starts when you speak and stops when you're done.
 **Two ways to enable VAD:**
 
 **Option 1: Quick toggle on homepage**
+
 - On the homepage, click the **Voice Activated** tab (next to Manual)
 
 **Option 2: Through settings**
+
 1. Go to **Settings** → **Recording**
 2. Find the **Recording Mode** dropdown
 3. Select **Voice Activated** instead of Manual
 
 **How it works:**
+
 - Press shortcut once → VAD starts listening
 - Speak → Recording begins automatically
 - Stop speaking → Recording stops after a brief pause
@@ -487,7 +518,6 @@ Change the recording shortcut to whatever feels natural:
 
 </details>
 
-
 ## How is my data stored?
 
 Whispering stores as much data as possible locally on your device, including recordings and text transcriptions. This approach ensures maximum privacy and data security. Here's an overview of how data is handled:
@@ -502,7 +532,7 @@ Whispering stores as much data as possible locally on your device, including rec
    - External Large Language Models (LLMs) like OpenAI's GPT-4, Anthropic's Claude, Google's Gemini, or Groq's Llama models
    - Hosted LLMs within your custom workflows for advanced text processing
    - Simple find-and-replace operations for basic text modifications
-   
+
    When using AI-powered transformations, your transcribed text is sent to your chosen LLM provider using your own API key. All transformation configurations, including prompts and step sequences, are stored locally in your settings.
 
 You can change both the transcription and transformation services in the settings to ensure maximum local functionality and privacy.
@@ -552,6 +582,7 @@ Open an issue on [GitHub](https://github.com/epicenter-so/epicenter/issues). I a
 Whispering showcases the power of modern web development as a comprehensive example application:
 
 #### Web and Desktop
+
 - [Svelte 5](https://svelte.dev): The UI reactivity library of choice with cutting-edge runes system
 - [SvelteKit](https://kit.svelte.dev): For routing and static site generation
 - [Tauri](https://tauri.app): The desktop app framework for native performance
@@ -568,6 +599,7 @@ Whispering showcases the power of modern web development as a comprehensive exam
 - [Zapsplat.com](https://www.zapsplat.com): Royalty-free sound effects
 
 #### Browser Extension
+
 - [React](https://reactjs.org): UI library
 - [shadcn/ui](https://ui.shadcn.com): Component library
 - [Chrome API](https://developer.chrome.com/docs/extensions/reference): Extension APIs
@@ -593,11 +625,11 @@ The architecture achieves extensive code reuse through build-time platform detec
 3. Install the necessary dependencies: `bun i`
 
 To run the desktop app and website:
+
 ```bash
 cd apps/whispering
 bun tauri dev
 ```
-
 
 ### Build The Executable Yourself
 
@@ -613,20 +645,20 @@ bun tauri build
 
 Find the executable in `apps/whispering/target/release`
 
-
 ### Contributing
 
 We welcome contributions! Whispering is built with care and attention to clean, maintainable code.
 
 #### Code Style Guidelines
+
 - Follow existing TypeScript and Svelte patterns throughout
 - Use Result types from the [WellCrafted library](https://github.com/wellcrafted-dev/wellcrafted) for all error handling
 - Follow WellCrafted best practices: explicit errors with `Result<T, E>`, structured `TaggedError` objects, and comprehensive error context
 - Study the existing patterns in these key directories:
   - **[Services Architecture](./src/lib/services/README.md)** - Platform-agnostic business logic
-  - **[Query Layer Patterns](./src/lib/query/README.md)** - RPC pattern and reactive state  
+  - **[Query Layer Patterns](./src/lib/query/README.md)** - RPC pattern and reactive state
   - **[Constants Organization](./src/lib/constants/README.md)** - Type-safe configuration
-  
+
 **→ New to the codebase?** Start with the [Architecture Deep Dive](./ARCHITECTURE.md) to understand how everything fits together.
 
 #### Contributing New Adapters
@@ -634,6 +666,7 @@ We welcome contributions! Whispering is built with care and attention to clean, 
 We'd love to expand Whispering's capabilities with more transcription and AI service adapters! Here's how to add a new adapter:
 
 **Overview of the adapter system:**
+
 1. **Transcription services** (`services/transcription/`): Convert audio to text
 2. **Completion services** (`services/completion/`): Power AI transformations in the transformation pipeline
 3. **Query layer** (`query/`): Provides reactive state management and runtime dependency injection
@@ -644,99 +677,105 @@ We'd love to expand Whispering's capabilities with more transcription and AI ser
 Adding a new transcription service involves four main steps:
 
 1. **Create the service implementation** in `src/lib/services/transcription/`:
+
    ```typescript
    // src/lib/services/transcription/your-service.ts
    import { WhisperingErr, type WhisperingError } from '$lib/result';
    import type { Settings } from '$lib/settings';
    import { Err, Ok, tryAsync, type Result } from 'wellcrafted/result';
-   
+
    // Define your models directly in the service file
    export const YOUR_SERVICE_MODELS = [
-     {
-       name: 'model-v1',
-       description: 'Description of what makes this model special',
-       cost: '$0.XX/hour',
-     },
-     {
-       name: 'model-v2',
-       description: 'A faster variant with different trade-offs',
-       cost: '$0.YY/hour',
-     },
+   	{
+   		name: 'model-v1',
+   		description: 'Description of what makes this model special',
+   		cost: '$0.XX/hour',
+   	},
+   	{
+   		name: 'model-v2',
+   		description: 'A faster variant with different trade-offs',
+   		cost: '$0.YY/hour',
+   	},
    ] as const;
-   
+
    export type YourServiceModel = (typeof YOUR_SERVICE_MODELS)[number];
-   
+
    export function createYourServiceTranscriptionService() {
-     return {
-       async transcribe(
-         audioBlob: Blob,
-         options: {
-           prompt: string;
-           temperature: string;
-           outputLanguage: Settings['transcription.outputLanguage'];
-           apiKey: string;
-           modelName: (string & {}) | YourServiceModel['name'];
-           // Add any service-specific options
-         }
-       ): Promise<Result<string, WhisperingError>> {
-         // Validate API key
-         if (!options.apiKey) {
-           return WhisperingErr({
-             title: '🔑 API Key Required',
-             description: 'Please enter your YourService API key in settings.',
-             action: {
-               type: 'link',
-               label: 'Add API key',
-               href: '/settings/transcription',
-             },
-           });
-         }
-         
-         // Make the API call
-         const { data, error } = await tryAsync({
-           try: () => yourServiceClient.transcribe(audioBlob, options),
-           catch: (error) => WhisperingErr({
-             title: '❌ Transcription Failed',
-             description: error.message,
-             action: { type: 'more-details', error },
-           }),
-         });
-         
-         if (error) return Err(error);
-         return Ok(data.text.trim());
-       }
-     };
+   	return {
+   		async transcribe(
+   			audioBlob: Blob,
+   			options: {
+   				prompt: string;
+   				temperature: string;
+   				outputLanguage: Settings['transcription.outputLanguage'];
+   				apiKey: string;
+   				modelName: (string & {}) | YourServiceModel['name'];
+   				// Add any service-specific options
+   			},
+   		): Promise<Result<string, WhisperingError>> {
+   			// Validate API key
+   			if (!options.apiKey) {
+   				return WhisperingErr({
+   					title: '🔑 API Key Required',
+   					description: 'Please enter your YourService API key in settings.',
+   					action: {
+   						type: 'link',
+   						label: 'Add API key',
+   						href: '/settings/transcription',
+   					},
+   				});
+   			}
+
+   			// Make the API call
+   			const { data, error } = await tryAsync({
+   				try: () => yourServiceClient.transcribe(audioBlob, options),
+   				catch: (error) =>
+   					WhisperingErr({
+   						title: '❌ Transcription Failed',
+   						description: error.message,
+   						action: { type: 'more-details', error },
+   					}),
+   			});
+
+   			if (error) return Err(error);
+   			return Ok(data.text.trim());
+   		},
+   	};
    }
-   
-   export const YourServiceTranscriptionServiceLive = createYourServiceTranscriptionService();
+
+   export const YourServiceTranscriptionServiceLive =
+   	createYourServiceTranscriptionService();
    ```
-   
+
    Don't forget to export your service in `src/lib/services/transcription/index.ts`:
+
    ```typescript
    import { YourServiceTranscriptionServiceLive } from './your-service';
-   
+
    export {
-     // ... existing exports
-     YourServiceTranscriptionServiceLive as yourservice,
+   	// ... existing exports
+   	YourServiceTranscriptionServiceLive as yourservice,
    };
    ```
-   
+
    And add the API key field to the settings schema in `src/lib/settings/settings.ts`:
+
    ```typescript
    'apiKeys.yourservice': z.string().default(''),
    ```
 
 2. **Update the service configuration** in `src/lib/constants/transcription/service-config.ts`:
+
    ```typescript
    import { YourServiceIcon } from '@lucide/svelte';
    import {
      YOUR_SERVICE_MODELS,
      type YourServiceModel,
    } from '$lib/services/transcription/your-service';
-   
+
    // Add to the imports at the top
    type TranscriptionModel = OpenAIModel | GroqModel | ElevenLabsModel | YourServiceModel;
-   
+
    // Add to TRANSCRIPTION_SERVICE_IDS
    export const TRANSCRIPTION_SERVICE_IDS = [
      'OpenAI',
@@ -745,7 +784,7 @@ Adding a new transcription service involves four main steps:
      'ElevenLabs',
      'YourService', // Add here
    ] as const;
-   
+
    // Add to TRANSCRIPTION_SERVICES array
    {
      id: 'YourService',
@@ -760,6 +799,7 @@ Adding a new transcription service involves four main steps:
    ```
 
 3. **Wire up the query layer** in `src/lib/query/transcription.ts`:
+
    ```typescript
    // Add to the switch statement in transcribeBlob function
    case 'YourService':
@@ -773,6 +813,7 @@ Adding a new transcription service involves four main steps:
    ```
 
 4. **Update the settings UI** in `src/routes/(config)/settings/transcription/+page.svelte`:
+
    ```svelte
    <!-- Add after other service conditionals -->
    {:else if settings.value['transcription.selectedTranscriptionService'] === 'YourService'}
@@ -793,49 +834,52 @@ Adding a new transcription service involves four main steps:
      <YourServiceApiKeyInput />
    {/if}
    ```
-   
+
    Create the API key input component in `src/lib/components/settings/api-key-inputs/YourServiceApiKeyInput.svelte`:
+
    ```svelte
    <script lang="ts">
-     import { LabeledInput } from '$lib/components/labeled/index.js';
-     import { Button } from '$lib/components/ui/button/index.js';
-     import { settings } from '$lib/stores/settings.svelte';
+   	import { LabeledInput } from '$lib/components/labeled/index.js';
+   	import { Button } from '$lib/components/ui/button/index.js';
+   	import { settings } from '$lib/stores/settings.svelte';
    </script>
-   
+
    <LabeledInput
-     id="yourservice-api-key"
-     label="YourService API Key"
-     type="password"
-     placeholder="Your YourService API Key"
-     value={settings.value['apiKeys.yourservice']}
-     oninput={({ currentTarget: { value } }) => {
-       settings.updateKey('apiKeys.yourservice', value);
-     }}
+   	id="yourservice-api-key"
+   	label="YourService API Key"
+   	type="password"
+   	placeholder="Your YourService API Key"
+   	value={settings.value['apiKeys.yourservice']}
+   	oninput={({ currentTarget: { value } }) => {
+   		settings.updateKey('apiKeys.yourservice', value);
+   	}}
    >
-     {#snippet description()}
-       <p class="text-muted-foreground text-sm">
-         You can find your YourService API key in your <Link
-           href="https://yourservice.com/api-keys"
-           target="_blank"
-           rel="noopener noreferrer"
-         >
-           YourService dashboard
-         </Link>.
-       </p>
-     {/snippet}
+   	{#snippet description()}
+   		<p class="text-muted-foreground text-sm">
+   			You can find your YourService API key in your <Link
+   				href="https://yourservice.com/api-keys"
+   				target="_blank"
+   				rel="noopener noreferrer"
+   			>
+   				YourService dashboard
+   			</Link>.
+   		</p>
+   	{/snippet}
    </LabeledInput>
    ```
-   
+
    And export it from `src/lib/components/settings/index.ts`:
+
    ```typescript
    export { default as YourServiceApiKeyInput } from './api-key-inputs/YourServiceApiKeyInput.svelte';
    ```
-   
+
    Also update `src/lib/constants/transcription/index.ts` to re-export your models:
+
    ```typescript
    export {
-     YOUR_SERVICE_MODELS,
-     type YourServiceModel,
+   	YOUR_SERVICE_MODELS,
+   	type YourServiceModel,
    } from '$lib/services/transcription/your-service';
    ```
 
@@ -844,58 +888,63 @@ Adding a new transcription service involves four main steps:
 AI transformations in Whispering use completion services that can be integrated into transformation workflows. Here's how to add a new AI provider:
 
 1. **Create the completion service** in `src/lib/services/completion/`:
+
    ```typescript
    // src/lib/services/completion/your-provider.ts
    import { WhisperingErr, type WhisperingError } from '$lib/result';
    import { Err, Ok, tryAsync, type Result } from 'wellcrafted/result';
-   
+
    export function createYourProviderCompletionService() {
-     return {
-       async complete(options: {
-         apiKey: string;
-         model: string;
-         systemPrompt: string;
-         userPrompt: string;
-         temperature?: number;
-       }): Promise<Result<string, WhisperingError>> {
-         // Validate API key
-         if (!options.apiKey) {
-           return WhisperingErr({
-             title: '🔑 API Key Required',
-             description: 'Please add your YourProvider API key.',
-           });
-         }
-         
-         // Make the completion request
-         const { data, error } = await tryAsync({
-           try: () => yourProviderClient.complete(options),
-           catch: (error) => WhisperingErr({
-             title: '❌ Completion Failed',
-             description: error.message,
-             action: { type: 'more-details', error },
-           }),
-         });
-         
-         if (error) return Err(error);
-         return Ok(data.text);
-       }
-     };
+   	return {
+   		async complete(options: {
+   			apiKey: string;
+   			model: string;
+   			systemPrompt: string;
+   			userPrompt: string;
+   			temperature?: number;
+   		}): Promise<Result<string, WhisperingError>> {
+   			// Validate API key
+   			if (!options.apiKey) {
+   				return WhisperingErr({
+   					title: '🔑 API Key Required',
+   					description: 'Please add your YourProvider API key.',
+   				});
+   			}
+
+   			// Make the completion request
+   			const { data, error } = await tryAsync({
+   				try: () => yourProviderClient.complete(options),
+   				catch: (error) =>
+   					WhisperingErr({
+   						title: '❌ Completion Failed',
+   						description: error.message,
+   						action: { type: 'more-details', error },
+   					}),
+   			});
+
+   			if (error) return Err(error);
+   			return Ok(data.text);
+   		},
+   	};
    }
-   
-   export const YourProviderCompletionServiceLive = createYourProviderCompletionService();
+
+   export const YourProviderCompletionServiceLive =
+   	createYourProviderCompletionService();
    ```
 
 2. **Register the service** in `src/lib/services/completion/index.ts`:
+
    ```typescript
    import { YourProviderCompletionServiceLive } from './your-provider';
-   
+
    export {
-     // ... existing exports
-     YourProviderCompletionServiceLive as yourprovider,
+   	// ... existing exports
+   	YourProviderCompletionServiceLive as yourprovider,
    };
    ```
 
 3. **Wire up the transformation handler** in `src/lib/query/transformer.ts`:
+
    ```typescript
    // Add a new case in the handleStep function's prompt_transform switch statement
    case 'YourProvider': {
@@ -906,16 +955,17 @@ AI transformations in Whispering use completion services that can be integrated 
          systemPrompt,
          userPrompt,
        });
-   
+
      if (completionError) {
        return Err(completionError.message);
      }
-   
+
      return Ok(completionResponse);
    }
    ```
 
 4. **Add API key to settings** in `src/lib/settings/settings.ts`:
+
    ```typescript
    'apiKeys.yourprovider': z.string().default(''),
    ```
@@ -929,36 +979,37 @@ Always use the `WhisperingErr` helper for user-facing errors:
 ```typescript
 // Good: User-friendly error with action
 return WhisperingErr({
-  title: '⏱️ Rate Limit Reached',
-  description: 'Too many requests. Please try again in a few minutes.',
-  action: {
-    type: 'link',
-    label: 'View rate limits',
-    href: 'https://yourservice.com/rate-limits',
-  },
+	title: '⏱️ Rate Limit Reached',
+	description: 'Too many requests. Please try again in a few minutes.',
+	action: {
+		type: 'link',
+		label: 'View rate limits',
+		href: 'https://yourservice.com/rate-limits',
+	},
 });
 
 // Handle different error types
 if (error.status === 401) {
-  return WhisperingErr({
-    title: '🔑 Invalid API Key',
-    description: 'Your API key appears to be invalid or expired.',
-    action: {
-      type: 'link',
-      label: 'Update API key',
-      href: '/settings/transcription',
-    },
-  });
+	return WhisperingErr({
+		title: '🔑 Invalid API Key',
+		description: 'Your API key appears to be invalid or expired.',
+		action: {
+			type: 'link',
+			label: 'Update API key',
+			href: '/settings/transcription',
+		},
+	});
 }
 
 // Use with tryAsync for automatic error mapping
 const { data, error } = await tryAsync({
-  try: () => apiClient.makeRequest(),
-  catch: (error) => WhisperingErr({
-    title: '❌ Request Failed',
-    description: error.message,
-    action: { type: 'more-details', error },
-  }),
+	try: () => apiClient.makeRequest(),
+	catch: (error) =>
+		WhisperingErr({
+			title: '❌ Request Failed',
+			description: error.message,
+			action: { type: 'more-details', error },
+		}),
 });
 ```
 
@@ -972,24 +1023,25 @@ import { describe, it, expect } from 'vitest';
 import { createYourServiceTranscriptionService } from './your-service';
 
 describe('YourService Transcription', () => {
-  it('should handle missing API key', async () => {
-    const service = createYourServiceTranscriptionService();
-    const result = await service.transcribe(new Blob(), {
-      apiKey: '',
-      // other options
-    });
-    
-    expect(result.error).toBeDefined();
-    expect(result.error?.title).toContain('API Key Required');
-  });
-  
-  // Add more tests
+	it('should handle missing API key', async () => {
+		const service = createYourServiceTranscriptionService();
+		const result = await service.transcribe(new Blob(), {
+			apiKey: '',
+			// other options
+		});
+
+		expect(result.error).toBeDefined();
+		expect(result.error?.title).toContain('API Key Required');
+	});
+
+	// Add more tests
 });
 ```
 
 ##### Example PR Structure
 
 When submitting a PR for a new adapter, include:
+
 - The service implementation with comprehensive error handling
 - All type definitions and constants
 - Query layer integration
@@ -1001,6 +1053,7 @@ When submitting a PR for a new adapter, include:
 We're excited to see what services you'll integrate! Feel free to open an issue first to discuss your adapter idea.
 
 #### Contributing Process
+
 1. Fork the repository
 2. Create a feature branch: `git checkout -b feature/your-feature-name`
 3. Make your changes and commit them
@@ -1008,6 +1061,7 @@ We're excited to see what services you'll integrate! Feel free to open an issue 
 5. Create a pull request
 
 #### Version Bumping
+
 When preparing a new release, use our version bumping script to update all necessary files:
 
 ```bash
@@ -1019,6 +1073,7 @@ bun run bump-version 7.0.1
 ```
 
 This script automatically updates:
+
 - Root `package.json`
 - App `package.json`
 - Tauri configuration (`tauri.conf.json`)
@@ -1027,17 +1082,33 @@ This script automatically updates:
 After running the script, follow the displayed instructions to commit, tag, and push the changes.
 
 #### Good First Issues
+
 - UI/UX improvements and accessibility enhancements
 - Performance optimizations
 - New transcription or transformation service integrations
 
 Feel free to suggest and implement any features that improve usability—I'll do my best to integrate contributions that make Whispering better for everyone.
 
+## Acknowledgments
+
+### Local Transcription
+
+Whispering's local transcription capabilities are powered by amazing open-source projects:
+
+- **[transcribe-rs](https://github.com/cjpais/transcribe-rs)** by [CJ Pais](https://github.com/cjpais) - A unified Rust library providing abstraction over multiple speech-to-text engines (Whisper and Parakeet). This library enables Whispering to seamlessly support different transcription engines with a consistent API.
+
+- **[Handy](https://github.com/cjpais/handy)** by [CJ Pais](https://github.com/cjpais) - The original project that birthed `transcribe-rs`. Handy is a an awesome cross-platform desktop speech-to-text application, and I personally use it especially when developing Whispering locally.
+
+- **[whisper.cpp](https://github.com/ggerganov/whisper.cpp)** by Georgi Gerganov - High-performance C/C++ port of OpenAI's Whisper model that makes local transcription fast and efficient.
+
+Special thanks to [CJ Pais](https://github.com/cjpais) for creating and maintaining essential libraries that make local, privacy-preserving transcription possible in Whispering.
+
 ## Support and Community
 
 ### License
 
 Whispering is released under the [MIT License](LICENSE). Fork it, modify it, build on top of it, make it yours.
+
 ### Support and Feedback
 
 We're built in public, shaped by user feedback. If you encounter any issues or have suggestions for improvements, please open an issue on the [GitHub issues tab](https://github.com/epicenter-so/epicenter/issues). I really appreciate it!

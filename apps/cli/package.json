@@ -19,7 +19,7 @@
 	},
 	"scripts": {
 		"dev": "infisical run -- bun run src/index.ts",
-		"typecheck": "tsc --noEmit"
+		"check": "tsc --noEmit"
 	},
 	"files": ["src", "README.md", "package.json"],
 	"dependencies": {

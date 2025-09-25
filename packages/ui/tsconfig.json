@@ -16,7 +16,8 @@
 		"noImplicitOverride": true,
 
 		/* If transpiling with TypeScript: */
-		"module": "NodeNext",
+		"module": "esnext",
+		"moduleResolution": "bundler",
 		"outDir": "dist",
 		"sourceMap": true,
 
@@ -31,6 +32,18 @@
 		"lib": ["es2022", "dom", "dom.iterable"],
 		"paths": {
 			"#*": ["./src/*"]
-		}
-	}
+		},
+
+		/* Ensure inputs are rooted in src so emitted files map predictably */
+		"rootDir": "src"
+	},
+	/* Ensure we only include actual source files under src */
+	"include": ["src/**/*"],
+	/* Exclude emitted output, build folders, svelte sources and root-level config files */
+	"exclude": [
+		"dist",
+		"node_modules",
+		"eslint.config.js",
+		"prettier.config.ts"
+	]
 }

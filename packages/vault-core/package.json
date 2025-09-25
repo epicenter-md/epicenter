@@ -10,6 +10,12 @@
 	"devDependencies": {
 		"typescript": "catalog:"
 	},
+	"scripts": {
+		"format": "echo 'skip format'",
+		"format:check": "echo 'skip format check'",
+		"lint": "echo 'skip lint'",
+		"check": "echo \"TODO add this in a later commit\""
+	},
 	"dependencies": {
 		"arktype": "catalog:",
 		"drizzle-kit": "catalog:",

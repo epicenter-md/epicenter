@@ -4,7 +4,7 @@ use cpal::{Device, SampleFormat, Stream};
 use serde::Serialize;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{mpsc, Arc, Mutex};
 use std::thread::{self, JoinHandle};
 use tracing::{debug, error, info};
 
@@ -22,66 +22,18 @@ pub struct AudioRecording {
     pub file_path: Option<String>, // Path to the WAV file
 }
 
-/// Minimal wrapper to handle the Stream in its own thread
-/// This is necessary because CPAL streams aren't Send+Sync on macOS
-struct StreamHolder {
-    thread: Option<JoinHandle<()>>,
-    is_recording: Arc<AtomicBool>,
-    should_stop: Arc<AtomicBool>,
-}
-
-impl StreamHolder {
-    fn new<F>(create_stream: F, is_recording: Arc<AtomicBool>) -> Result<Self>
-    where
-        F: FnOnce() -> Result<Stream> + Send + 'static,
-    {
-        let should_stop = Arc::new(AtomicBool::new(false));
-        let should_stop_clone = should_stop.clone();
-
-        // Create and run the stream in its own thread
-        let thread = thread::spawn(move || {
-            // Create the stream in this thread
-            let stream = match create_stream() {
-                Ok(s) => s,
-                Err(e) => {
-                    error!("Failed to create stream in thread: {}", e);
-                    return;
-                }
-            };
-
-            // Keep the stream alive until told to stop
-            while !should_stop_clone.load(Ordering::Acquire) {
-                thread::sleep(std::time::Duration::from_millis(100));
-            }
-            // Stream drops here, which stops it
-            drop(stream);
-        });
-
-        Ok(Self {
-            thread: Some(thread),
-            is_recording,
-            should_stop,
-        })
-    }
-
-    fn stop(&mut self) {
-        self.is_recording.store(false, Ordering::Release);
-        self.should_stop.store(true, Ordering::Release);
-        if let Some(thread) = self.thread.take() {
-            let _ = thread.join();
-        }
-    }
-}
-
-impl Drop for StreamHolder {
-    fn drop(&mut self) {
-        self.stop();
-    }
+/// Simple recorder commands for worker thread communication
+#[derive(Debug)]
+enum RecorderCmd {
+    Start(mpsc::Sender<()>), // Response channel to confirm command processed
+    Stop(mpsc::Sender<()>),  // Response channel to confirm command processed
+    Shutdown,
 }
 
 /// Simplified recorder state
 pub struct RecorderState {
-    stream_holder: Option<StreamHolder>,
+    cmd_tx: Option<mpsc::Sender<RecorderCmd>>,
+    worker_handle: Option<JoinHandle<()>>,
     writer: Option<Arc<Mutex<WavWriter>>>,
     is_recording: Arc<AtomicBool>,
     sample_rate: u32,
@@ -92,7 +44,8 @@ pub struct RecorderState {
 impl RecorderState {
     pub fn new() -> Self {
         Self {
-            stream_holder: None,
+            cmd_tx: None,
+            worker_handle: None,
             writer: None,
             is_recording: Arc::new(AtomicBool::new(false)),
             sample_rate: 0,
@@ -153,28 +106,64 @@ impl RecorderState {
         self.is_recording = Arc::new(AtomicBool::new(false));
         let is_recording = self.is_recording.clone();
 
-        // Create the stream holder with a closure that builds the stream
+        // Create command channel for worker thread
+        let (cmd_tx, cmd_rx) = mpsc::channel();
+
+        // Clone for the worker thread
         let writer_clone = writer.clone();
         let is_recording_clone = is_recording.clone();
 
-        let stream_holder = StreamHolder::new(
-            move || match sample_format {
-                SampleFormat::F32 => {
-                    build_stream_f32(&device, &stream_config, is_recording_clone, writer_clone)
+        // Create the worker thread that owns the stream
+        let worker = thread::spawn(move || {
+            // Build the stream IN this thread (required for macOS)
+            let stream = match build_input_stream(
+                &device,
+                &stream_config,
+                sample_format,
+                is_recording_clone,
+                writer_clone,
+            ) {
+                Ok(s) => s,
+                Err(e) => {
+                    error!("Failed to build stream: {}", e);
+                    return;
                 }
-                SampleFormat::I16 => {
-                    build_stream_i16(&device, &stream_config, is_recording_clone, writer_clone)
+            };
+
+            // Start the stream
+            if let Err(e) = stream.play() {
+                error!("Failed to start stream: {}", e);
+                return;
+            }
+
+            info!("Audio stream started successfully");
+
+            // Keep thread alive by waiting for commands
+            // This blocks but is responsive - no sleeping!
+            loop {
+                match cmd_rx.recv() {
+                    Ok(RecorderCmd::Start(reply_tx)) => {
+                        is_recording.store(true, Ordering::Relaxed);
+                        info!("Recording started");
+                        let _ = reply_tx.send(()); // Confirm command processed
+                    }
+                    Ok(RecorderCmd::Stop(reply_tx)) => {
+                        is_recording.store(false, Ordering::Relaxed);
+                        info!("Recording stopped");
+                        let _ = reply_tx.send(()); // Confirm command processed
+                    }
+                    Ok(RecorderCmd::Shutdown) | Err(_) => {
+                        info!("Shutting down audio worker");
+                        break;
+                    }
                 }
-                SampleFormat::U16 => {
-                    build_stream_u16(&device, &stream_config, is_recording_clone, writer_clone)
-                }
-                _ => Err("Unsupported sample format".to_string()),
-            },
-            is_recording,
-        )?;
+            }
+            // Stream automatically drops here
+        });
 
         // Store everything
-        self.stream_holder = Some(stream_holder);
+        self.cmd_tx = Some(cmd_tx);
+        self.worker_handle = Some(worker);
         self.writer = Some(writer);
         self.sample_rate = sample_rate;
         self.channels = channels;
@@ -188,22 +177,32 @@ impl RecorderState {
         Ok(())
     }
 
-    /// Start recording - just set the flag
+    /// Start recording - send command to worker thread and wait for confirmation
     pub fn start_recording(&mut self) -> Result<()> {
-        if self.stream_holder.is_none() {
+        if let Some(tx) = &self.cmd_tx {
+            let (reply_tx, reply_rx) = mpsc::channel();
+            tx.send(RecorderCmd::Start(reply_tx))
+                .map_err(|e| format!("Failed to send start command: {}", e))?;
+            // Wait for worker thread to confirm the command was processed
+            reply_rx.recv()
+                .map_err(|e| format!("Failed to receive start confirmation: {}", e))?;
+        } else {
             return Err("No recording session initialized".to_string());
         }
-
-        self.is_recording.store(true, Ordering::Release);
-
-        info!("Recording started");
         Ok(())
     }
 
     /// Stop recording - return file info
     pub fn stop_recording(&mut self) -> Result<AudioRecording> {
-        // Stop recording flag first
-        self.is_recording.store(false, Ordering::Release);
+        // Send stop command to worker thread and wait for confirmation
+        if let Some(tx) = &self.cmd_tx {
+            let (reply_tx, reply_rx) = mpsc::channel();
+            tx.send(RecorderCmd::Stop(reply_tx))
+                .map_err(|e| format!("Failed to send stop command: {}", e))?;
+            // Wait for worker thread to confirm the command was processed
+            reply_rx.recv()
+                .map_err(|e| format!("Failed to receive stop confirmation: {}", e))?;
+        }
 
         // Finalize the WAV file and get metadata
         let (sample_rate, channels, duration) = if let Some(writer) = &self.writer {
@@ -235,8 +234,12 @@ impl RecorderState {
 
     /// Cancel recording - stop and delete the file
     pub fn cancel_recording(&mut self) -> Result<()> {
-        // Stop recording
-        self.is_recording.store(false, Ordering::Release);
+        // Send stop command
+        if let Some(tx) = &self.cmd_tx {
+            let (reply_tx, reply_rx) = mpsc::channel();
+            let _ = tx.send(RecorderCmd::Stop(reply_tx));
+            let _ = reply_rx.recv(); // Wait for confirmation but ignore errors during cancel
+        }
 
         // Delete the file if it exists
         if let Some(file_path) = &self.file_path {
@@ -252,12 +255,14 @@ impl RecorderState {
 
     /// Close the recording session
     pub fn close_session(&mut self) -> Result<()> {
-        // Stop recording if active
-        self.is_recording.store(false, Ordering::Release);
+        // Send shutdown command to worker thread
+        if let Some(tx) = self.cmd_tx.take() {
+            let _ = tx.send(RecorderCmd::Shutdown);
+        }
 
-        // Stop and drop the stream holder
-        if let Some(mut holder) = self.stream_holder.take() {
-            holder.stop();
+        // Wait for worker thread to finish
+        if let Some(handle) = self.worker_handle.take() {
+            let _ = handle.join();
         }
 
         // Finalize and drop the writer
@@ -330,8 +335,19 @@ fn get_optimal_config(
         return Err("No supported input configurations".to_string());
     }
 
-    // Try to find mono config with target sample rate
-    for config in &configs {
+    // Filter for supported sample formats only
+    let supported_formats = [SampleFormat::F32, SampleFormat::I16, SampleFormat::U16];
+    let compatible_configs: Vec<_> = configs
+        .iter()
+        .filter(|config| supported_formats.contains(&config.sample_format()))
+        .collect();
+
+    if compatible_configs.is_empty() {
+        return Err("No configurations with supported sample formats (F32, I16, U16)".to_string());
+    }
+
+    // Try to find mono config with target sample rate and supported format
+    for config in &compatible_configs {
         if config.channels() == 1 {
             let min_rate = config.min_sample_rate().0;
             let max_rate = config.max_sample_rate().0;
@@ -342,7 +358,7 @@ fn get_optimal_config(
     }
 
     // Try stereo with target sample rate if mono not available
-    for config in &configs {
+    for config in &compatible_configs {
         let min_rate = config.min_sample_rate().0;
         let max_rate = config.max_sample_rate().0;
         if min_rate <= target_sample_rate && max_rate >= target_sample_rate {
@@ -354,7 +370,7 @@ fn get_optimal_config(
     let mut best_config = None;
     let mut best_diff = u32::MAX;
 
-    for config in &configs {
+    for config in &compatible_configs {
         // Prefer mono
         if config.channels() == 1 {
             let min_rate = config.min_sample_rate().0;
@@ -377,104 +393,77 @@ fn get_optimal_config(
         }
     }
 
-    // Return best config or fall back to default
-    best_config
-        .or_else(|| device.default_input_config().ok())
-        .ok_or_else(|| "Failed to find suitable audio configuration".to_string())
+    // If still no best config, take any compatible config
+    if best_config.is_none() && !compatible_configs.is_empty() {
+        let config = compatible_configs[0];
+        let min_rate = config.min_sample_rate().0;
+        let max_rate = config.max_sample_rate().0;
+        let rate = if min_rate <= target_sample_rate && max_rate >= target_sample_rate {
+            target_sample_rate
+        } else {
+            min_rate // Use minimum rate as fallback
+        };
+        best_config = Some(config.with_sample_rate(cpal::SampleRate(rate)));
+    }
+
+    best_config.ok_or_else(|| "Failed to find suitable audio configuration".to_string())
 }
 
-/// Build stream for f32 samples
-fn build_stream_f32(
+/// Build input stream for any supported sample format
+fn build_input_stream(
     device: &Device,
     config: &cpal::StreamConfig,
+    sample_format: SampleFormat,
     is_recording: Arc<AtomicBool>,
     writer: Arc<Mutex<WavWriter>>,
 ) -> Result<Stream> {
     let err_fn = |err| error!("Audio stream error: {}", err);
 
-    let stream = device
-        .build_input_stream(
-            config,
-            move |data: &[f32], _: &_| {
-                if is_recording.load(Ordering::Acquire) {
-                    if let Ok(mut w) = writer.lock() {
-                        let _ = w.write_samples_f32(data);
+    let stream = match sample_format {
+        SampleFormat::F32 => device
+            .build_input_stream(
+                config,
+                move |data: &[f32], _: &_| {
+                    if is_recording.load(Ordering::Relaxed) {
+                        if let Ok(mut w) = writer.lock() {
+                            let _ = w.write_samples_f32(data);
+                        }
                     }
-                }
-            },
-            err_fn,
-            None,
-        )
-        .map_err(|e| format!("Failed to build stream: {}", e))?;
-
-    // Start the stream immediately
-    stream
-        .play()
-        .map_err(|e| format!("Failed to start stream: {}", e))?;
-
-    Ok(stream)
-}
-
-/// Build stream for i16 samples
-fn build_stream_i16(
-    device: &Device,
-    config: &cpal::StreamConfig,
-    is_recording: Arc<AtomicBool>,
-    writer: Arc<Mutex<WavWriter>>,
-) -> Result<Stream> {
-    let err_fn = |err| error!("Audio stream error: {}", err);
-
-    let stream = device
-        .build_input_stream(
-            config,
-            move |data: &[i16], _: &_| {
-                if is_recording.load(Ordering::Acquire) {
-                    if let Ok(mut w) = writer.lock() {
-                        let _ = w.write_samples_i16(data);
+                },
+                err_fn,
+                None,
+            )
+            .map_err(|e| format!("Failed to build F32 stream: {}", e))?,
+        SampleFormat::I16 => device
+            .build_input_stream(
+                config,
+                move |data: &[i16], _: &_| {
+                    if is_recording.load(Ordering::Relaxed) {
+                        if let Ok(mut w) = writer.lock() {
+                            let _ = w.write_samples_i16(data);
+                        }
                     }
-                }
-            },
-            err_fn,
-            None,
-        )
-        .map_err(|e| format!("Failed to build stream: {}", e))?;
-
-    // Start the stream immediately
-    stream
-        .play()
-        .map_err(|e| format!("Failed to start stream: {}", e))?;
-
-    Ok(stream)
-}
-
-/// Build stream for u16 samples
-fn build_stream_u16(
-    device: &Device,
-    config: &cpal::StreamConfig,
-    is_recording: Arc<AtomicBool>,
-    writer: Arc<Mutex<WavWriter>>,
-) -> Result<Stream> {
-    let err_fn = |err| error!("Audio stream error: {}", err);
-
-    let stream = device
-        .build_input_stream(
-            config,
-            move |data: &[u16], _: &_| {
-                if is_recording.load(Ordering::Acquire) {
-                    if let Ok(mut w) = writer.lock() {
-                        let _ = w.write_samples_u16(data);
+                },
+                err_fn,
+                None,
+            )
+            .map_err(|e| format!("Failed to build I16 stream: {}", e))?,
+        SampleFormat::U16 => device
+            .build_input_stream(
+                config,
+                move |data: &[u16], _: &_| {
+                    if is_recording.load(Ordering::Relaxed) {
+                        if let Ok(mut w) = writer.lock() {
+                            let _ = w.write_samples_u16(data);
+                        }
                     }
-                }
-            },
-            err_fn,
-            None,
-        )
-        .map_err(|e| format!("Failed to build stream: {}", e))?;
-
-    // Start the stream immediately
-    stream
-        .play()
-        .map_err(|e| format!("Failed to start stream: {}", e))?;
+                },
+                err_fn,
+                None,
+            )
+            .map_err(|e| format!("Failed to build U16 stream: {}", e))?,
+        _ => return Err(format!("Unsupported sample format: {:?}", sample_format)),
+    };
 
     Ok(stream)
 }

@@ -8,14 +8,15 @@ use recorder::commands::{
     get_current_recording_id, init_recording_session, start_recording, stop_recording, AppData,
 };
 
-pub mod whisper_cpp;
-use whisper_cpp::transcribe_with_whisper_cpp;
+pub mod transcription;
+use transcription::{transcribe_audio_whisper, transcribe_audio_parakeet};
 
 pub mod windows_path;
 use windows_path::fix_windows_path;
 
 pub mod graceful_shutdown;
 use graceful_shutdown::send_sigint;
+
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 #[tokio::main]
@@ -77,8 +78,8 @@ pub async fn run() {
         start_recording,
         stop_recording,
         cancel_recording,
-        // Whisper transcription
-        transcribe_with_whisper_cpp,
+        transcribe_audio_whisper,
+        transcribe_audio_parakeet,
         send_sigint,
     ]);
 

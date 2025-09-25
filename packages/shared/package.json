@@ -11,6 +11,9 @@
 		"@types/node": "catalog:",
 		"typescript": "catalog:"
 	},
+	"scripts": {
+		"check": "tsc --noEmit"
+	},
 	"dependencies": {
 		"arktype": "catalog:",
 		"@lucide/svelte": "catalog:",
