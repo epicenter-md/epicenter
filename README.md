@@ -7,8 +7,6 @@
   <p align="center">Own your data. Use any model you want. Free and open source ❤️</p>
 </p>
 
-> **🚧 Development Update:** Development on Epicenter will be a bit slower in the coming week while Braden takes some calls and stabilizes a new framework. Updates will resume after!
-
 > **📢 Repository Update:** Whispering has become **Epicenter**! The original repository moved [here](https://github.com/epicenter-so/epicenter/tree/main/apps/whispering). Everything else remains the same—same tools, same philosophy, same team.
 >
 > <details>

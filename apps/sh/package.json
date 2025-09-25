@@ -10,8 +10,7 @@
 		"prepare": "svelte-kit sync || echo ''",
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
 		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
-		"format": "prettier --write .",
-		"lint": "eslint --fix .",
+		"lint": "eslint .",
 		"openapi-ts": "openapi-ts",
 		"deploy": "bun run build && wrangler pages deploy"
 	},

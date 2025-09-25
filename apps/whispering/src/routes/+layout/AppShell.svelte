@@ -22,7 +22,11 @@
 		syncLocalShortcutsWithSettings,
 	} from './register-commands';
 	import { registerOnboarding } from './register-onboarding';
-	import { checkFfmpeg } from './check-ffmpeg';
+	import {
+		checkFfmpegRecordingMethodCompatibility,
+		checkLocalTranscriptionCompatibility,
+		checkCompressionRecommendation,
+	} from './check-ffmpeg';
 	import {
 		registerAccessibilityPermission,
 		registerMicrophonePermission,
@@ -42,7 +46,9 @@
 		window.goto = goto;
 		syncLocalShortcutsWithSettings();
 		resetLocalShortcutsToDefaultIfDuplicates();
-		await checkFfmpeg();
+		await checkFfmpegRecordingMethodCompatibility();
+		await checkLocalTranscriptionCompatibility();
+		await checkCompressionRecommendation();
 		if (window.__TAURI_INTERNALS__) {
 			syncGlobalShortcutsWithSettings();
 			resetGlobalShortcutsToDefaultIfDuplicates();

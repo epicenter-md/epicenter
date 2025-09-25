@@ -1,6 +1,6 @@
 {
 	"name": "@repo/whispering",
-	"version": "7.4.0",
+	"version": "7.5.1",
 	"description": "",
 	"exports": {
 		"./commands": "./src/lib/commands.ts"
@@ -13,8 +13,7 @@
 		"prepare": "svelte-kit sync || echo ''",
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
 		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
-		"format": "prettier --write .",
-		"lint": "eslint --fix .",
+		"lint": "eslint .",
 		"tauri": "tauri",
 		"deploy": "bun run build && wrangler pages deploy"
 	},
@@ -28,15 +27,14 @@
 		"@sveltejs/vite-plugin-svelte": "catalog:",
 		"@tailwindcss/vite": "^4.1.11",
 		"@tauri-apps/cli": "^2.7.1",
-		"eslint": "catalog:",
 		"mode-watcher": "catalog:",
-		"prettier": "catalog:",
 		"svelte": "catalog:",
 		"svelte-check": "catalog:",
 		"svelte-sonner": "catalog:",
 		"tailwindcss": "catalog:",
 		"typescript": "catalog:",
 		"vite": "catalog:",
+		"vite-plugin-devtools-json": "^1.0.0",
 		"wrangler": "^4.29.1"
 	},
 	"type": "module",

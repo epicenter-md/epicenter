@@ -1,0 +1,28 @@
+name: Code quality
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: "package.json"
+      - name: Install dependencies
+        run: bun install
+      - name: Format check
+        run: bun run format:check
+      - name: Lint
+        run: bun run lint
+      - name: Code check
+        run: bun run check

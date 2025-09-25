@@ -1,4 +1,4 @@
-import type { TRANSCRIPTION_SERVICE_IDS } from '$lib/constants/transcription';
+import type { TRANSCRIPTION_SERVICE_IDS } from '$lib/services/transcription/registry';
 import { createTaggedError } from 'wellcrafted/error';
 import type { Result } from 'wellcrafted/result';
 

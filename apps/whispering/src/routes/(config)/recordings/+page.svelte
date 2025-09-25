@@ -61,7 +61,7 @@
 			const value = getValue();
 			if (!value) return '';
 			const date = new Date(value);
-			if (isNaN(date.getTime())) return value;
+			if (Number.isNaN(date.getTime())) return value;
 			try {
 				return format(date, formatString);
 			} catch {
@@ -362,7 +362,7 @@
 </svelte:head>
 
 <main class="flex w-full flex-1 flex-col gap-2 px-4 py-4 sm:px-8 mx-auto">
-	<h1 class="scroll-m=20 text-4xl font-bold tracking-tight lg:text-5xl">
+	<h1 class="scroll-m-20 text-4xl font-bold tracking-tight lg:text-5xl">
 		Recordings
 	</h1>
 	<p class="text-muted-foreground">

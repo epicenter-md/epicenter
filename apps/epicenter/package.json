@@ -1,29 +1,32 @@
 {
-  "name": "epicenter",
-  "type": "module",
-  "version": "0.0.1",
-  "scripts": {
-    "dev": "astro dev",
-    "build": "astro build",
-    "preview": "astro preview",
-    "astro": "astro",
-    "deploy": "bun run build && wrangler pages deploy"
-  },
-  "dependencies": {
-    "@astrojs/svelte": "^7.1.0",
-    "@repo/constants": "workspace:*",
-    "@repo/ui": "workspace:*",
-    "@tailwindcss/vite": "^4.1.11",
-    "arktype": "^2.1.20",
-    "astro": "^5.12.4",
-    "posthog-js": "^1.258.5",
-    "svelte": "^5.37.2",
-    "tailwindcss": "^4.1.11",
-    "typescript": "^5.9.2"
-  },
-  "devDependencies": {
-    "@lucide/astro": "^0.536.0",
-    "@repo/ui": "workspace:*",
-    "@tailwindcss/typography": "^0.5.16"
-  }
+	"name": "epicenter",
+	"type": "module",
+	"version": "0.0.1",
+	"scripts": {
+		"dev": "astro dev",
+		"build": "astro build",
+		"preview": "astro preview",
+		"astro": "astro",
+		"deploy": "bun run build && wrangler pages deploy",
+		"lint": "eslint .",
+		"check": "astro check && svelte-check"
+	},
+	"dependencies": {
+		"@astrojs/check": "^0.9.4",
+		"@astrojs/svelte": "^7.1.0",
+		"@repo/constants": "workspace:*",
+		"@repo/ui": "workspace:*",
+		"@tailwindcss/vite": "^4.1.11",
+		"arktype": "^2.1.20",
+		"astro": "^5.12.4",
+		"posthog-js": "^1.258.5",
+		"svelte": "^5.37.2",
+		"tailwindcss": "^4.1.11",
+		"typescript": "^5.9.2"
+	},
+	"devDependencies": {
+		"@lucide/astro": "^0.536.0",
+		"@repo/ui": "workspace:*",
+		"@tailwindcss/typography": "^0.5.16"
+	}
 }

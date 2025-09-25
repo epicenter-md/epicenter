@@ -12,7 +12,7 @@
       // Format the star count
       const count = data.stargazers_count;
       if (count >= 1000) {
-        stars = (count / 1000).toFixed(1) + 'k';
+        stars = `${(count / 1000).toFixed(1)}k`;
       } else {
         stars = count.toString();
       }

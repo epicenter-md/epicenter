@@ -5,8 +5,7 @@
 		"dev": "infisical export > .dev.vars && wrangler dev",
 		"deploy": "wrangler deploy --minify",
 		"cf-typegen": "wrangler types --env-interface CloudflareBindings",
-		"format": "prettier --write .",
-		"lint": "eslint --fix ."
+		"check": "tsc --noEmit"
 	},
 	"dependencies": {
 		"@hono/trpc-server": "^0.4.0",
@@ -22,8 +21,6 @@
 	"devDependencies": {
 		"@repo/config": "workspace:*",
 		"@repo/constants": "workspace:*",
-		"eslint": "^9.31.0",
-		"prettier": "^3.6.2",
 		"wrangler": "^4.26.1"
 	},
 	"exports": {
