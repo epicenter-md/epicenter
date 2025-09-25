@@ -7,7 +7,7 @@ use transcribe_rs::{
     TranscriptionEngine,
     engines::{
         whisper::{WhisperEngine, WhisperInferenceParams},
-        parakeet::{ParakeetEngine, ParakeetModelParams},
+        parakeet::{ParakeetEngine, ParakeetModelParams, ParakeetInferenceParams, TimestampGranularity},
     },
 };
 
@@ -186,8 +186,13 @@ pub async fn transcribe_audio_parakeet(
             message: format!("Failed to load Parakeet model: {}", e)
         })?;
 
-    // Run transcription - Parakeet doesn't support language selection
-    let result = engine.transcribe_samples(samples, None)
+    let params = ParakeetInferenceParams {
+        timestamp_granularity: TimestampGranularity::Segment,
+        ..Default::default()
+    };
+
+    // Run transcription with optimized parameters
+    let result = engine.transcribe_samples(samples, Some(params))
         .map_err(|e| TranscriptionError::TranscriptionError {
             message: e.to_string(),
         })?;
