@@ -55,7 +55,7 @@
 </WhisperingButton>
 
 <Dialog.Root bind:open={dialogOpen}>
-	<Dialog.Content class="sm:max-w-3xl">
+	<Dialog.Content class="sm:max-w-3xl max-h-[83vh] overflow-y-hidden flex flex-col">
 		<Dialog.Header>
 			<Dialog.Title>
 				{isLocal ? 'Local' : 'Global'} Shortcut Format Guide
@@ -67,7 +67,7 @@
 			</Dialog.Description>
 		</Dialog.Header>
 
-		<div class="flex flex-col gap-4">
+		<div class="flex flex-col gap-4 overflow-y-auto flex-1 rounded-md">
 			<!-- Quick format summary -->
 			<div class="rounded-lg bg-muted p-4">
 				<p class="text-sm">
