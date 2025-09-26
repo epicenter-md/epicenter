@@ -15,10 +15,10 @@
 >
 > - Whispering's evolution beyond transcription required changes to the repository's structure and branding.
 > - Everything else remains the same—same tools, same philosophy, same team.
-> - The original app lives on as [*Epicenter Whispering*](https://github.com/epicenter-so/epicenter/tree/main/apps/whispering), keeping a tight focus on transcription.
-> - This makes room for standalone apps with complementary, but non-transcription-related features (like [*Epicenter Assistant*](https://github.com/epicenter-so/epicenter/tree/main/apps/sh)).
+> - The original app lives on as [_Epicenter Whispering_](https://github.com/epicenter-so/epicenter/tree/main/apps/whispering), keeping a tight focus on transcription.
+> - This makes room for standalone apps with complementary, but non-transcription-related features (like [_Epicenter Assistant_](https://github.com/epicenter-so/epicenter/tree/main/apps/sh)).
 > - The new [root](https://github.com/epicenter-so/epicenter/) of the Epicenter repository contains common files supporting all the apps in the ecosystem.
-> - Note: the old URL [github.com/braden-w/whispering](https://github.com/braden-w/whispering) is now just a thin placeholder redirecting to this rebranded repository.  
+> - Note: the old URL [github.com/braden-w/whispering](https://github.com/braden-w/whispering) is now just a thin placeholder redirecting to this rebranded repository.
 >
 > </details>
 
@@ -95,16 +95,24 @@ Epicenter is an ecosystem of open-source, local-first apps. Our eventual goal is
 
 Our vision is to build a personal workspace where you own your data, choose your models, and replace siloed apps with open, interoperable alternatives. All while preserving authenticity and being free and open source.
 
-
 ## Quick Start
 
-Epicenter will have more apps in the future, but for now, the best way to get started is to run Whispering locally:
+### Option 1: Install Whispering via Homebrew (macOS only)
+
+The fastest way to get started with Epicenter Whispering on macOS:
 
 ```bash
-# Prerequisites: 
+brew install --cask epicenter-whispering
+```
+
+### Option 2: Build from Source (macOS, Windows, Linux)
+
+For development or if you want to build from source on any platform:
+
+```bash
+# Prerequisites:
 # - Install Bun from https://bun.sh (run bun upgrade if there's issues)
 # - Install Rust and Cargo from https://www.rust-lang.org/tools/install (brew install rustup)
-
 
 git clone https://github.com/epicenter-so/epicenter.git
 cd epicenter
