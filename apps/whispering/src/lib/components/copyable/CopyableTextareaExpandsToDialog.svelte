@@ -44,12 +44,15 @@
 		label,
 		/** Number of rows for the preview textarea */
 		rows = 2,
+		/** Whether the dialog trigger is disabled */
+		disabled = false,
 	}: {
 		id: string;
 		title: string;
 		text: string;
 		label: string;
 		rows?: number;
+		disabled?: boolean;
 	} = $props();
 
 	let isDialogOpen = $state(false);
@@ -63,12 +66,13 @@
 			<WhisperingTooltip {id} tooltipContent="View {label}">
 				{#snippet trigger({ tooltipProps, tooltip })}
 					<Textarea
-						{...mergeProps(tooltipProps, dialogTriggerProps)}
-						class="min-h-0 max-h-24 h-full resize-none text-wrap text-left text-sm leading-snug hover:cursor-pointer hover:bg-accent hover:text-accent-foreground w-full"
+						{...mergeProps(tooltipProps, disabled ? {} : dialogTriggerProps)}
+						class="min-h-0 max-h-24 h-full resize-none text-wrap text-left text-sm leading-snug {disabled ? 'cursor-default' : 'hover:cursor-pointer hover:bg-accent hover:text-accent-foreground'} w-full"
 						readonly
 						value={text}
 						style="view-transition-name: {id}"
 						{rows}
+						{disabled}
 					/>
 					<span class="sr-only">
 						{@render tooltip()}

@@ -74,10 +74,10 @@
 	style={viewTransitionName
 		? `view-transition-name: ${viewTransitionName};`
 		: undefined}
-	class={className}
+	class="{className} {disabled || hasCopied ? 'cursor-default' : 'cursor-pointer'}"
 	{size}
 	{variant}
-	{disabled}
+	disabled={disabled || hasCopied}
 >
 	<span class="sr-only">Copy</span>
 	{#if hasCopied}

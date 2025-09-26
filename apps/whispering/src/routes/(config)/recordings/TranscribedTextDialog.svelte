@@ -6,10 +6,12 @@
 		recordingId,
 		transcribedText,
 		rows = 2,
+		disabled = false,
 	}: {
 		recordingId: string;
 		transcribedText: string;
 		rows?: number;
+		disabled?: boolean;
 	} = $props();
 
 	const id = getRecordingTransitionId({
@@ -24,4 +26,5 @@
 	label="transcribed text"
 	text={transcribedText}
 	{rows}
+	{disabled}
 />

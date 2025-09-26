@@ -32,7 +32,7 @@
 	import * as ToggleGroup from '@repo/ui/toggle-group';
 	import { createQuery } from '@tanstack/svelte-query';
 	import type { UnlistenFn } from '@tauri-apps/api/event';
-	import { Loader2Icon } from '@lucide/svelte';
+	import { LoaderIcon } from '@lucide/svelte';
 	import { onDestroy, onMount } from 'svelte';
 	import TranscribedTextDialog from './(config)/recordings/TranscribedTextDialog.svelte';
 
@@ -320,6 +320,7 @@
 							? '...'
 							: latestRecording.transcribedText}
 						rows={1}
+						disabled={latestRecording.transcriptionStatus === 'TRANSCRIBING' || !latestRecording.transcribedText?.trim()}
 					/>
 				</div>
 				<CopyToClipboardButton
@@ -331,10 +332,11 @@
 					})}
 					size="default"
 					variant="secondary"
-					disabled={latestRecording.transcriptionStatus === 'TRANSCRIBING'}
+					disabled={latestRecording.transcriptionStatus === 'TRANSCRIBING' || !latestRecording.transcribedText?.trim()}
+					class="w-10"
 				>
 					{#if latestRecording.transcriptionStatus === 'TRANSCRIBING'}
-						<Loader2Icon class="size-6 animate-spin" />
+						<LoaderIcon class="size-6 animate-spin" />
 					{:else}
 						<ClipboardIcon class="size-6" />
 					{/if}
