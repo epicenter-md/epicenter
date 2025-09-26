@@ -1,9 +1,7 @@
-import { commands } from '$lib/commands';
 import { rpc } from '$lib/query';
 import {
 	type Settings,
 	getDefaultSettings,
-	parseStoredSettings,
 	settingsSchema,
 } from '$lib/settings/settings';
 import { enumerateDevices } from '$lib/services/device-stream';
@@ -41,26 +39,23 @@ export const settings = (() => {
 				console.error('Failed to parse settings JSON:', error.error);
 				return getDefaultSettings();
 			}
-
-			// For schema validation failures, use our progressive validation
+			
+			// For schema validation failures, return defaults
 			if (error.type === 'schema_validation_failed') {
-				return parseStoredSettings(error.value);
+				return getDefaultSettings();
 			}
-
+			
 			// For async validation (shouldn't happen with our schemas)
 			if (error.type === 'schema_validation_async_during_sync') {
 				console.warn('Unexpected async validation for settings');
-				return parseStoredSettings(error.value);
+				return getDefaultSettings();
 			}
 
 			// Fallback - should never reach here
 			return getDefaultSettings();
 		},
 		onUpdateSuccess: () => {
-			rpc.notify.success.execute({
-				title: 'Settings updated!',
-				description: '',
-			});
+			rpc.notify.success.execute({ title: 'Settings updated!', description: '' });
 		},
 		onUpdateError: (err) => {
 			rpc.notify.error.execute({

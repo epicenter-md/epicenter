@@ -94,6 +94,45 @@ export const settingsSchema = z.object({
 		z.ZodDefault<ZodBoolean>
 	>),
 
+	// Individual volume controls for each sound (0.0 to 1.0)
+	...({
+		'sound.volume.manual-start': z.number().min(0).max(1).default(0.5),
+		'sound.volume.manual-stop': z.number().min(0).max(1).default(0.5),
+		'sound.volume.manual-cancel': z.number().min(0).max(1).default(0.5),
+		'sound.volume.cpal-start': z.number().min(0).max(1).default(0.5),
+		'sound.volume.cpal-stop': z.number().min(0).max(1).default(0.5),
+		'sound.volume.cpal-cancel': z.number().min(0).max(1).default(0.5),
+		'sound.volume.vad-start': z.number().min(0).max(1).default(0.5),
+		'sound.volume.vad-capture': z.number().min(0).max(1).default(0.5),
+		'sound.volume.vad-stop': z.number().min(0).max(1).default(0.5),
+		'sound.volume.transcriptionComplete': z.number().min(0).max(1).default(0.5),
+		'sound.volume.transformationComplete': z.number().min(0).max(1).default(0.5),
+	} satisfies Record<
+		`sound.volume.${WhisperingSoundNames | 'cpal-start' | 'cpal-stop' | 'cpal-cancel'}`,
+		z.ZodDefault<z.ZodNumber>
+	>),
+
+	// Global sound volume setting (0.0 to 1.0) - for quick adjustments
+	'sound.volume': z.number().min(0).max(1).default(0.5),
+
+	// Custom sound flags (boolean - true means custom sound exists in IndexedDB)
+	...({
+		'sound.custom.manual-start': z.boolean().default(false),
+		'sound.custom.manual-stop': z.boolean().default(false),
+		'sound.custom.manual-cancel': z.boolean().default(false),
+		'sound.custom.cpal-start': z.boolean().default(false),
+		'sound.custom.cpal-stop': z.boolean().default(false),
+		'sound.custom.cpal-cancel': z.boolean().default(false),
+		'sound.custom.vad-start': z.boolean().default(false),
+		'sound.custom.vad-capture': z.boolean().default(false),
+		'sound.custom.vad-stop': z.boolean().default(false),
+		'sound.custom.transcriptionComplete': z.boolean().default(false),
+		'sound.custom.transformationComplete': z.boolean().default(false),
+	} satisfies Record<
+		`sound.custom.${WhisperingSoundNames | 'cpal-start' | 'cpal-stop' | 'cpal-cancel'}`,
+		z.ZodDefault<z.ZodBoolean>
+	>),
+
 	'transcription.copyToClipboardOnSuccess': z.boolean().default(true),
 	'transcription.writeToCursorOnSuccess': z.boolean().default(true),
 	'transformation.copyToClipboardOnSuccess': z.boolean().default(true),

@@ -40,3 +40,10 @@ export type {
 	TransformationStepRunFailed,
 	TransformationStepRunRunning,
 } from './transformation-runs';
+
+// Custom Sounds
+export type {
+	CustomSound,
+	CustomSoundUpload,
+	CustomSoundMetadata,
+} from './custom-sounds';
