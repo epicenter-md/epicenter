@@ -6,6 +6,7 @@
 	import { SvelteQueryDevtools } from '@tanstack/svelte-query-devtools';
 	import '@repo/ui/app.css';
 	import * as services from '$lib/services';
+	import * as Tooltip from '@repo/ui/tooltip';
 	import AppShell from './+layout/AppShell.svelte';
 
 	let { children } = $props();
@@ -37,9 +38,11 @@
 </svelte:head>
 
 <QueryClientProvider client={queryClient}>
-	<AppShell>
-		{@render children()}
-	</AppShell>
+	<Tooltip.Provider delayDuration={300} skipDelayDuration={150}>
+		<AppShell>
+			{@render children()}
+		</AppShell>
+	</Tooltip.Provider>
 </QueryClientProvider>
 
 <SvelteQueryDevtools client={queryClient} buttonPosition="bottom-left" />
