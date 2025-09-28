@@ -1,6 +1,7 @@
 pub mod commands;
 pub mod recorder;
 pub mod wav_writer;
+pub mod vad;
 
 // Export everything from commands for easy access
 pub use commands::{

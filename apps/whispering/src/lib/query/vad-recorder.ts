@@ -1,10 +1,14 @@
 import type { VadState } from '$lib/constants/audio';
 import { fromTaggedErr } from '$lib/result';
 import * as services from '$lib/services';
-import { enumerateDevices } from '$lib/services/device-stream';
 import { settings } from '$lib/stores/settings.svelte';
 import { Ok } from 'wellcrafted/result';
 import { defineMutation, defineQuery, queryClient } from './_client';
+
+// Dynamically select VAD service based on settings
+function vadService() {
+	return settings.value['recording.vad.useNative'] ? services.nativeVad : services.vad;
+}
 
 const vadRecorderKeys = {
 	all: ['vadRecorder'] as const,
@@ -19,7 +23,7 @@ export const vadRecorder = {
 	getVadState: defineQuery({
 		queryKey: vadRecorderKeys.state,
 		resultQueryFn: () => {
-			const vadState = services.vad.getVadState();
+			const vadState = vadService().getVadState();
 			return Ok(vadState);
 		},
 		initialData: 'IDLE' as VadState,
@@ -28,7 +32,8 @@ export const vadRecorder = {
 	enumerateDevices: defineQuery({
 		queryKey: vadRecorderKeys.devices,
 		resultQueryFn: async () => {
-			const { data, error } = await enumerateDevices();
+			// Now all VAD services have enumerateDevices method
+			const { data, error } = await vadService().enumerateDevices();
 			if (error) {
 				return fromTaggedErr(error, {
 					title: '❌ Failed to enumerate devices',
@@ -49,7 +54,7 @@ export const vadRecorder = {
 			onSpeechEnd: (blob: Blob) => void;
 		}) => {
 			const { data: deviceOutcome, error: startListeningError } =
-				await services.vad.startActiveListening({
+				await vadService().startActiveListening({
 					deviceId: settings.value['recording.navigator.deviceId'],
 					onSpeechStart: () => {
 						invalidateVadState();
@@ -83,7 +88,7 @@ export const vadRecorder = {
 		mutationKey: ['vadRecorder', 'stopActiveListening'] as const,
 		resultMutationFn: async () => {
 			const { data, error: stopListeningError } =
-				await services.vad.stopActiveListening();
+				await vadService().stopActiveListening();
 
 			if (stopListeningError) {
 				return fromTaggedErr(stopListeningError, {

@@ -231,6 +231,65 @@
 					settings.updateKey('recording.navigator.deviceId', selected)
 			}
 		/>
+
+		{#if window.__TAURI_INTERNALS__ && IS_LINUX}
+			<Separator />
+			<div class="flex items-center justify-between">
+				<div class="space-y-1">
+					<label for="native-vad" class="text-sm font-medium">
+						Use Native VAD (Experimental)
+					</label>
+					<p class="text-sm text-muted-foreground">
+						Use Silero VAD for better speech detection on Linux
+					</p>
+				</div>
+				<input
+					id="native-vad"
+					type="checkbox"
+					class="h-4 w-4"
+					checked={settings.value['recording.vad.useNative']}
+					onchange={(e) => {
+						const target = e.target as HTMLInputElement;
+						settings.updateKey('recording.vad.useNative', target.checked);
+						// Force reload to apply the change
+						window.location.reload();
+					}}
+				/>
+			</div>
+
+			{#if settings.value['recording.vad.useNative']}
+				<div class="space-y-2">
+					<label for="vad-sensitivity" class="text-sm font-medium">
+						VAD Sensitivity
+					</label>
+					<div class="flex items-center gap-4">
+						<span class="text-xs text-muted-foreground">More Sensitive</span>
+						<input
+							id="vad-sensitivity"
+							type="range"
+							min="0.1"
+							max="0.9"
+							step="0.1"
+							class="flex-1"
+							value={settings.value['recording.vad.sensitivity']}
+							oninput={(e) => {
+								const target = e.target as HTMLInputElement;
+								settings.updateKey('recording.vad.sensitivity', parseFloat(target.value));
+							}}
+						/>
+						<span class="text-xs text-muted-foreground">Less Sensitive</span>
+						<span class="text-sm font-mono w-12 text-center">
+							{settings.value['recording.vad.sensitivity'].toFixed(1)}
+						</span>
+					</div>
+					<p class="text-xs text-muted-foreground">
+						Lower values detect speech more easily (more false positives).
+						Higher values require clearer speech (fewer false positives).
+						Default: 0.3
+					</p>
+				</div>
+			{/if}
+		{/if}
 	{/if}
 
 	{#if settings.value['recording.mode'] === 'manual' || settings.value['recording.mode'] === 'vad'}

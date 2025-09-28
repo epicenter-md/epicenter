@@ -22,6 +22,6 @@ export type VadState = z.infer<typeof vadStateSchema>;
 
 export const vadStateToIcons = {
 	IDLE: '🎤',
-	LISTENING: '💬',
-	SPEECH_DETECTED: '👂',
+	LISTENING: '👂',
+	SPEECH_DETECTED: '💬',
 } as const satisfies Record<VadState, string>;
