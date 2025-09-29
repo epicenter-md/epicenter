@@ -43,3 +43,12 @@
 </QueryClientProvider>
 
 <SvelteQueryDevtools client={queryClient} buttonPosition="bottom-left" />
+
+<style>
+	/* Override inspector button to bottom-center positioning */
+	:global(#svelte-inspector-host > *) {
+		left: 50% !important;
+		transform: translateX(-50%) !important;
+		right: auto !important;
+	}
+</style>

@@ -15,6 +15,21 @@ const config = {
 	// Consult https://svelte.dev/docs/kit/integrations
 	// for more information about preprocessors
 	preprocess: vitePreprocess(),
+
+	vitePlugin: {
+		inspector:
+			process.env.NODE_ENV !== 'production'
+				? {
+						holdMode: true,
+						showToggleButton: 'always',
+						// Using 'bottom-left' as base position, but CSS overrides in
+						// src/routes/+layout.svelte move it to bottom-center to avoid
+						// conflicts with devtools (bottom-left) and toasts (bottom-right)
+						toggleButtonPos: 'bottom-left',
+						toggleKeyCombo: 'meta-shift',
+					}
+				: false,
+	},
 };
 
 export default config;
