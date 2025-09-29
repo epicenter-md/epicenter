@@ -218,9 +218,15 @@
 				Voice Activated Detection Mode
 			</Alert.Title>
 			<Alert.Description>
-				VAD mode uses the browser's Web Audio API for real-time voice detection.
-				Unlike manual recording, VAD mode cannot use alternative recording
-				methods and must use the browser's MediaRecorder API.
+				VAD mode uses {settings.value['recording.vad.useNative']
+					? 'native Silero VAD for precise voice detection'
+					: 'the browser\'s Web Audio API for real-time voice detection'}.
+				{#if settings.value['recording.vad.useNative']}
+					Native VAD processes audio locally using machine learning models for improved accuracy.
+				{:else}
+					Unlike manual recording, web VAD mode cannot use alternative recording
+					methods and must use the browser's MediaRecorder API.
+				{/if}
 			</Alert.Description>
 		</Alert.Root>
 
