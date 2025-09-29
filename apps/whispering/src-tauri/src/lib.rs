@@ -70,6 +70,7 @@ pub async fn run() {
     // Register command handlers (same for all platforms now)
     let builder = builder.invoke_handler(tauri::generate_handler![
         write_text,
+        press_enter,
         // Audio recorder commands
         get_current_recording_id,
         enumerate_recording_devices,
@@ -166,6 +167,34 @@ async fn write_text(app: tauri::AppHandle, text: String) -> Result<(), String> {
             .write_text(&content)
             .map_err(|e| format!("Failed to restore clipboard: {}", e))?;
     }
+
+    Ok(())
+}
+
+/// Simulates pressing the Enter key
+///
+/// This function simulates pressing the Enter key to trigger actions like submitting
+/// forms or sending messages. It's useful for automating user actions after
+/// transcription completes.
+#[tauri::command]
+async fn press_enter() -> Result<(), String> {
+    let mut enigo = Enigo::new(&Settings::default()).map_err(|e| e.to_string())?;
+
+    // Use virtual key codes for Enter/Return to work with any keyboard layout
+    #[cfg(target_os = "macos")]
+    let enter_key = Key::Other(36); // Virtual key code for Return on macOS
+    #[cfg(target_os = "windows")]
+    let enter_key = Key::Other(0x0D); // VK_RETURN on Windows
+    #[cfg(target_os = "linux")]
+    let enter_key = Key::Return; // Return key on Linux
+
+    // Press and release Enter
+    enigo
+        .key(enter_key, Direction::Press)
+        .map_err(|e| format!("Failed to press Enter key: {}", e))?;
+    enigo
+        .key(enter_key, Direction::Release)
+        .map_err(|e| format!("Failed to release Enter key: {}", e))?;
 
     Ok(())
 }

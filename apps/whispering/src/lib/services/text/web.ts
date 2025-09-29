@@ -35,5 +35,15 @@ export function createTextServiceWeb(): TextService {
 				cause: undefined,
 			});
 		},
+
+		pressEnter: async () => {
+			// In web browsers, we cannot programmatically simulate key presses for security reasons
+			return TextServiceErr({
+				message:
+					'Enter key simulation is not supported in web browsers for security reasons. Please press Enter manually.',
+				context: {},
+				cause: undefined,
+			});
+		},
 	};
 }

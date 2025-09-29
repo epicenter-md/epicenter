@@ -31,5 +31,17 @@ export function createTextServiceDesktop(): TextService {
 						cause: error,
 					}),
 			}),
+
+		pressEnter: () =>
+			tryAsync({
+				try: () => invoke<void>('press_enter'),
+				catch: (error) =>
+					TextServiceErr({
+						message:
+							'There was an error simulating the Enter key press. Please try pressing Enter manually.',
+						context: {},
+						cause: error,
+					}),
+			}),
 	};
 }

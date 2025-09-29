@@ -1,5 +1,6 @@
 import { WHISPERING_RECORDINGS_PATHNAME } from '$lib/constants/app';
 import { settings } from '$lib/stores/settings.svelte';
+import { shouldTriggerEnterOnOver, removeOverFromEnd } from '$lib/utils/transcription-triggers';
 import { Ok } from 'wellcrafted/result';
 import { defineMutation } from './_client';
 import { rpc } from './index';
@@ -42,6 +43,12 @@ export const delivery = {
 			text: string;
 			toastId: string;
 		}) => {
+			// Check if text ends with "Over" to trigger Enter after delivery
+			const shouldPressEnter = shouldTriggerEnterOnOver(text);
+
+			// Remove "Over" from the text if present before delivering
+			const cleanedText = shouldPressEnter ? removeOverFromEnd(text) : text;
+
 			// Track what operations succeeded
 			let copied = false;
 			let written = false;
@@ -51,13 +58,13 @@ export const delivery = {
 				rpc.notify.success.execute({
 					id: toastId,
 					title: '📝 Recording transcribed!',
-					description: text,
+					description: cleanedText,
 					action: {
 						type: 'button',
 						label: 'Copy to clipboard',
 						onClick: async () => {
 							const { error } = await rpc.text.copyToClipboard.execute({
-								text,
+								text: cleanedText,
 							});
 							if (error) {
 								// Report that manual copy attempt failed
@@ -72,7 +79,7 @@ export const delivery = {
 							rpc.notify.success.execute({
 								id: toastId,
 								title: 'Copied transcribed text to clipboard!',
-								description: text,
+								description: cleanedText,
 							});
 						},
 					},
@@ -112,7 +119,7 @@ export const delivery = {
 					rpc.notify.success.execute({
 						id: toastId,
 						title: '📝 Recording transcribed, copied to clipboard, and written to cursor!',
-						description: text,
+						description: cleanedText,
 						action: {
 							type: 'link',
 							label: 'Go to recordings',
@@ -124,7 +131,7 @@ export const delivery = {
 					rpc.notify.success.execute({
 						id: toastId,
 						title: '📝 Recording transcribed and copied to clipboard!',
-						description: text,
+						description: cleanedText,
 						action: {
 							type: 'link',
 							label: 'Go to recordings',
@@ -136,7 +143,7 @@ export const delivery = {
 					rpc.notify.success.execute({
 						id: toastId,
 						title: '📝 Recording transcribed and written to cursor!',
-						description: text,
+						description: cleanedText,
 						action: {
 							type: 'link',
 							label: 'Go to recordings',
@@ -154,7 +161,7 @@ export const delivery = {
 			// Check if user wants to copy to clipboard
 			if (settings.value['transcription.copyToClipboardOnSuccess']) {
 				const { error: copyError } = await rpc.text.copyToClipboard.execute({
-					text,
+					text: cleanedText,
 				});
 				if (!copyError) {
 					copied = true;
@@ -166,7 +173,7 @@ export const delivery = {
 			// Check if user wants to write to cursor (independent of copy)
 			if (settings.value['transcription.writeToCursorOnSuccess']) {
 				const { error: writeError } = await rpc.text.writeToCursor.execute({
-					text,
+					text: cleanedText,
 				});
 				if (!writeError) {
 					written = true;
@@ -177,6 +184,20 @@ export const delivery = {
 
 			// Show appropriate notification
 			showSuccessNotification();
+
+			// Press Enter if "Over" was detected at the end of the original text
+			if (shouldPressEnter) {
+				// Small delay to ensure any clipboard operations complete
+				await new Promise(resolve => setTimeout(resolve, 200));
+
+				const { error: pressEnterError } = await rpc.text.pressEnter.execute(undefined);
+				if (pressEnterError) {
+					// Log the error but don't disrupt the main flow
+					console.warn('Failed to automatically press Enter after "Over" detection:', pressEnterError);
+				} else {
+					console.info('Automatically pressed Enter after detecting and removing "Over" from transcription');
+				}
+			}
 
 			return Ok(undefined);
 		},
