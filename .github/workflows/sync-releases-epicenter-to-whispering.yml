@@ -1,4 +1,4 @@
-name: Sync Releases from epicenter-so/epicenter to braden-w/whispering
+name: Sync Releases from epicenter-md/epicenter to braden-w/whispering
 
 on:
   release:
@@ -32,10 +32,10 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           TAG="${{ steps.get_tag.outputs.tag }}"
-          echo "Fetching release $TAG from epicenter-so/epicenter..."
+          echo "Fetching release $TAG from epicenter-md/epicenter..."
           
           # Get release info
-          RELEASE_JSON=$(gh api repos/epicenter-so/epicenter/releases/tags/$TAG)
+          RELEASE_JSON=$(gh api repos/epicenter-md/epicenter/releases/tags/$TAG)
           
           # Extract fields
           echo "name=$(echo "$RELEASE_JSON" | jq -r '.name')" >> $GITHUB_OUTPUT
@@ -119,5 +119,5 @@ jobs:
           echo "## ✅ Release Synced Successfully" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "- **Tag**: $TAG" >> $GITHUB_STEP_SUMMARY
-          echo "- **Source**: [epicenter-so/epicenter](https://github.com/epicenter-so/epicenter/releases/tag/$TAG)" >> $GITHUB_STEP_SUMMARY
+          echo "- **Source**: [epicenter-md/epicenter](https://github.com/epicenter-md/epicenter/releases/tag/$TAG)" >> $GITHUB_STEP_SUMMARY
           echo "- **Destination**: [braden-w/whispering](https://github.com/braden-w/whispering/releases/tag/$TAG)" >> $GITHUB_STEP_SUMMARY

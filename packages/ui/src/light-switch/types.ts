@@ -3,5 +3,5 @@
 */
 
 export type LightSwitchProps = {
-	variant?: 'outline' | 'ghost';
+	variant?: 'ghost' | 'outline';
 };

@@ -16,6 +16,40 @@
   }
   ```
 
+# Type Co-location Principles
+
+## Never Use Generic Type Buckets
+Don't create generic type files like `$lib/types/models.ts`. This creates unclear dependencies and makes code harder to maintain.
+
+### Bad Pattern
+```typescript
+// $lib/types/models.ts - Generic bucket for unrelated types
+export type LocalModelConfig = { ... };
+export type UserModel = { ... };
+export type SessionModel = { ... };
+```
+
+### Good Pattern
+```typescript
+// $lib/services/transcription/local/types.ts - Co-located with service
+export type LocalModelConfig = { ... };
+
+// $lib/services/user/types.ts - Co-located with user service
+export type UserModel = { ... };
+```
+
+## Co-location Rules
+1. **Service-specific types**: Place in `[service-folder]/types.ts`
+2. **Component-specific types**: Define directly in the component file
+3. **Shared domain types**: Place in the domain folder's `types.ts`
+4. **Cross-domain types**: Only if truly shared across multiple domains, place in `$lib/types/[specific-name].ts`
+
+## Benefits
+- Clear ownership and dependencies
+- Easier refactoring and deletion
+- Better code organization
+- Reduces coupling between unrelated features
+
 # Mutation Pattern Preference
 
 ## In Svelte Files (.svelte)
@@ -121,6 +155,17 @@ When a handler function only calls `.mutate()`, inline it directly:
 5. Please every step of the way just give me a high level explanation of what changes you made
 6. Make every task and code change you do as simple as possible. We want to avoid making any massive or complex changes. Every change should impact as little code as possible. Everything is about simplicity.
 7. Finally, add a review section to the .md file with a summary of the changes you made and any other relevant information.
+
+# Expensive/destructive actions
+1. Always get prior approval before performing expensive/destructive actions (tool calls).
+   - Expensive actions require extended time to complete. Examples: test, build.
+     - Why: Unexpected tests/builds just waste time and tokens. The test results are often innaccurate ("It works!" when it doesn't.)
+   - Destructive actions result in permanant changes to project files. Examples: commit to git, push changes, edit a GitHub PR description.
+      - Why: changes should be verified before adding to permanent project history. Often additional changes are needed.
+2. Instead, you may automatically show a plan for the tool call you would like to make.
+   - Commit messages should follow the conventional commits specification.
+3. Then either the plan will be explicitly approved or changes to the plan will be requested.
+4. Unless otherwise stated, any approval applies only to the plan directly before it. So any future action will require a new plan with associated approval.
 
 
 # Human-Readable Control Flow
@@ -271,6 +316,155 @@ if (error) return Err(error);
   - For simple fire-and-forget operations
   - When you're outside of a function context
   - When integrating with code that expects thrown exceptions
+
+# Rust to TypeScript Error Handling
+
+## Discriminated Union Pattern for Errors
+
+When passing errors from Rust to TypeScript through Tauri commands, use internally-tagged enums to create discriminated unions that TypeScript can handle naturally.
+
+### Rust Error Definition
+
+```rust
+use serde::{Deserialize, Serialize};
+use thiserror::Error;
+
+#[derive(Error, Debug, Serialize, Deserialize)]
+#[serde(tag = "name")]
+pub enum TranscriptionError {
+    #[error("Audio read error: {message}")]
+    AudioReadError { message: String },
+
+    #[error("GPU error: {message}")]
+    GpuError { message: String },
+
+    #[error("Model load error: {message}")]
+    ModelLoadError { message: String },
+
+    #[error("Transcription error: {message}")]
+    TranscriptionError { message: String },
+}
+```
+
+### Key Rust Patterns
+
+1. **Use internally tagged enums**: `#[serde(tag = "name")]` creates a discriminator field
+2. **Follow naming conventions**: Enum variants should be PascalCase
+3. **Include structured data**: Each variant can have fields like `message: String`
+4. **Single-variant enums are okay**: Use when you want consistent error structure
+
+```rust
+// Single-variant enum for consistency
+#[derive(Error, Debug, Serialize, Deserialize)]
+#[serde(tag = "name")]
+enum ArchiveExtractionError {
+    #[error("Archive extraction failed: {message}")]
+    ArchiveExtractionError { message: String },
+}
+```
+
+### TypeScript Error Handling
+
+```typescript
+import { type } from 'arktype';
+
+// Define the error type to match Rust serialization
+const TranscriptionErrorType = type({
+    name: "'AudioReadError' | 'GpuError' | 'ModelLoadError' | 'TranscriptionError'",
+    message: 'string',
+});
+
+// Use in error handling
+const result = await tryAsync({
+    try: () => invoke('transcribe_audio_whisper', params),
+    catch: (unknownError) => {
+        const result = TranscriptionErrorType(unknownError);
+        if (result instanceof type.errors) {
+            // Handle unexpected error shape
+            return WhisperingErr({
+                title: '❌ Unexpected Error',
+                description: extractErrorMessage(unknownError),
+                action: { type: 'more-details', error: unknownError },
+            });
+        }
+
+        const error = result;
+        // Now we have properly typed discriminated union
+        switch (error.name) {
+            case 'ModelLoadError':
+                return WhisperingErr({
+                    title: '🤖 Model Loading Error',
+                    description: error.message,
+                    action: {
+                        type: 'more-details',
+                        error: new Error(error.message),
+                    },
+                });
+
+            case 'GpuError':
+                return WhisperingErr({
+                    title: '🎮 GPU Error',
+                    description: error.message,
+                    action: {
+                        type: 'link',
+                        label: 'Configure settings',
+                        href: '/settings/transcription',
+                    },
+                });
+
+            // Handle other cases...
+        }
+    },
+});
+```
+
+### Serialization Format
+
+The Rust enum serializes to this TypeScript-friendly format:
+
+```json
+// AudioReadError variant
+{ "name": "AudioReadError", "message": "Failed to decode audio file" }
+
+// GpuError variant
+{ "name": "GpuError", "message": "GPU acceleration failed" }
+```
+
+### Best Practices
+
+1. **Consistent error structure**: All errors have the same shape with `name` and `message`
+2. **TypeScript type safety**: Use runtime validation with arktype to ensure type safety
+3. **Exhaustive handling**: Switch statements provide compile-time exhaustiveness checking
+4. **Don't use `content` attribute**: Avoid `#[serde(tag = "name", content = "data")]` as it creates nested structures
+5. **Keep enums private when possible**: Only make public if used across modules
+
+### Anti-Patterns to Avoid
+
+```rust
+// DON'T: External tagging (default behavior)
+#[derive(Serialize)]
+pub enum BadError {
+    ModelLoadError { message: String }
+}
+// Produces: { "ModelLoadError": { "message": "..." } }
+
+// DON'T: Adjacent tagging with content
+#[derive(Serialize)]
+#[serde(tag = "type", content = "data")]
+pub enum BadError {
+    ModelLoadError { message: String }
+}
+// Produces: { "type": "ModelLoadError", "data": { "message": "..." } }
+
+// DON'T: Manual Serialize implementation when derive works
+impl Serialize for MyError {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        // Unnecessary complexity
+    }
+}
+```
+
+This pattern ensures clean, type-safe error handling across the Rust-TypeScript boundary with minimal boilerplate and maximum type safety.
 
 # Styling Best Practices
 
@@ -536,7 +730,7 @@ Whispering now supports direct file uploads! 🎙️
 
 Simply drag and drop (or click to browse) your audio files for instant transcription, with your model of choice.
 
-Free open-source app: https://github.com/epicenter-so/epicenter
+Free open-source app: https://github.com/epicenter-md/epicenter
 ```
 
 ### Bad (AI-Generated Feel)
@@ -552,7 +746,7 @@ Built with the same philosophy of transparency and user control, you pay only ac
 
 Ready to revolutionize your workflow? Try it now!
 
-🔗 GitHub: https://github.com/epicenter-so/epicenter
+🔗 GitHub: https://github.com/epicenter-md/epicenter
 
 #OpenSource #Productivity #Innovation #DeveloperTools #Transcription
 ```
@@ -582,12 +776,12 @@ The component handles web drag-and-drop, but since Whispering is a Tauri desktop
 
 You can see the [full implementation here](link) (note that the code is still somewhat messy by my standards; it is slated for cleanup!).
 
-Whispering is a large, open-source, production Svelte 5 + Tauri app: https://github.com/epicenter-so/epicenter
+Whispering is a large, open-source, production Svelte 5 + Tauri app: https://github.com/epicenter-md/epicenter
 
 Feel free to check it out for more patterns! If you're building Svelte 5 apps and need file uploads, definitely check out shadcn-svelte-extras. Not affiliated, it just saved me hours of implementation time.
 
 Happy to answer any questions about the implementation!
-```
+``` 
 
 ### Bad (Marketing-Focused)
 ```

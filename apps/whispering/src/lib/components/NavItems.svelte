@@ -44,7 +44,7 @@
 		{
 			label: 'View project on GitHub',
 			icon: GithubIcon,
-			href: 'https://github.com/epicenter-so/epicenter',
+			href: 'https://github.com/epicenter-md/epicenter',
 			type: 'anchor',
 			external: true,
 		},

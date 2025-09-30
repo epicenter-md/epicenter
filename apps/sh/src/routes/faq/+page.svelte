@@ -35,7 +35,7 @@
 						</Link>
 						repository that we maintain at
 						<Link
-							href="https://github.com/epicenter-so/opencode"
+							href="https://github.com/epicenter-md/opencode"
 							target="_blank"
 							rel="noopener noreferrer"
 						>
@@ -298,7 +298,7 @@
 		<p class="text-sm text-muted-foreground">
 			Check out the
 			<Link
-				href="https://github.com/epicenter-so/opencode"
+				href="https://github.com/epicenter-md/opencode"
 				target="_blank"
 				rel="noopener noreferrer"
 			>

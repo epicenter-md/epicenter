@@ -35,7 +35,7 @@ Timestamps:
 3:30 Advanced features
 4:30 Tips & tricks
 
-GitHub: https://github.com/epicenter-so/epicenter
+GitHub: https://github.com/epicenter-md/epicenter
 ```
 
 ### For Launch (3-minute Coding Demo) ✅ COMPLETED
@@ -47,7 +47,7 @@ GitHub: https://github.com/epicenter-so/epicenter
 ```
 Watch how I use voice to code faster than typing with Whispering (free, open source) + Claude Code. This setup costs me $0.02/hour and has completely changed how I write code.
 
-GitHub: https://github.com/epicenter-so/epicenter
+GitHub: https://github.com/epicenter-md/epicenter
 
 In this demo:
 - Real-time voice coding with Whispering
@@ -69,7 +69,7 @@ Why voice coding?
 Whispering is 100% free and open source. You bring your own API key and pay providers directly - no $30/month subscriptions.
 
 Try it yourself:
-- Download: https://github.com/epicenter-so/epicenter/releases
+- Download: https://github.com/epicenter-md/epicenter/releases
 - Setup guide: [5-min YouTube video link]
 
 Built with love for developers who want to code faster and type less.

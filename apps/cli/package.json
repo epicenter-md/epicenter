@@ -7,7 +7,7 @@
 	"homepage": "https://epicenter.sh",
 	"repository": {
 		"type": "git",
-		"url": "git+https://github.com/epicenter-so/epicenter.git",
+		"url": "git+https://github.com/epicenter-md/epicenter.git",
 		"directory": "apps/cli"
 	},
 	"keywords": ["epicenter", "cli", "opencode", "ai", "code", "assistant"],
@@ -19,7 +19,7 @@
 	},
 	"scripts": {
 		"dev": "infisical run -- bun run src/index.ts",
-		"typecheck": "tsc --noEmit"
+		"check": "tsc --noEmit"
 	},
 	"files": ["src", "README.md", "package.json"],
 	"dependencies": {

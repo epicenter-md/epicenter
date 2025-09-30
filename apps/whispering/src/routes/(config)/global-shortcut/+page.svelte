@@ -20,7 +20,7 @@
 		<div class="flex flex-col gap-2 md:flex-row">
 			<WhisperingButton
 				tooltipContent="Check out the Chrome Extension"
-				href="https://github.com/epicenter-so/epicenter/releases"
+				href="https://github.com/epicenter-md/epicenter/releases"
 				target="_blank"
 				rel="noopener noreferrer"
 				variant="default"

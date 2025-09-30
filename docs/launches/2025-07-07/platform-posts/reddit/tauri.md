@@ -27,7 +27,7 @@ export const ClipboardServiceLive = window.__TAURI_INTERNALS__
   : createClipboardServiceWeb();     // Browser APIs
 ```
 
-This pattern (detailed in [services/README.md](https://github.com/epicenter-so/epicenter/tree/main/apps/whispering/src/lib/services)) means I write business logic once. The desktop app gets native performance, system tray, global shortcuts—while the web version uses browser APIs. Same UI, same logic, different runtime. Components don't even know which implementation they're using—it's all swapped at build time, so every component works identically on both platforms.
+This pattern (detailed in [services/README.md](https://github.com/epicenter-md/epicenter/tree/main/apps/whispering/src/lib/services)) means I write business logic once. The desktop app gets native performance, system tray, global shortcuts—while the web version uses browser APIs. Same UI, same logic, different runtime. Components don't even know which implementation they're using—it's all swapped at build time, so every component works identically on both platforms.
 
 Some Tauri challenges I solved:
 - Smooth auto-updater experience without annoying users
@@ -40,6 +40,6 @@ The app itself solves a real problem—transcription services charging $30/month
 
 Built with Svelte 5 + Tauri. The combination of Rust backend performance and modern web UI has been fantastic.
 
-GitHub: https://github.com/epicenter-so/epicenter
+GitHub: https://github.com/epicenter-md/epicenter
 
 Happy to dive deep on any Tauri implementation details. What patterns have worked well for your Tauri apps?

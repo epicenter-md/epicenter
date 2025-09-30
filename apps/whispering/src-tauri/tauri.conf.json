@@ -37,13 +37,13 @@
 		}
 	},
 	"productName": "Whispering",
-	"version": "7.4.0",
+	"version": "7.5.1",
 	"identifier": "com.bradenwong.whispering",
 	"plugins": {
 		"updater": {
 			"pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDUwQzE1RjEyRThENzg0OEEKUldTS2hOZm9FbC9CVU1uZ1JLWlluMm1mOHd4N1RWUkNjME9PcHA3Nkg2ek5RMnZyVTVDS2k1QkwK",
 			"endpoints": [
-				"https://github.com/epicenter-so/epicenter/releases/latest/download/latest.json"
+				"https://github.com/epicenter-md/epicenter/releases/latest/download/latest.json"
 			]
 		}
 	},

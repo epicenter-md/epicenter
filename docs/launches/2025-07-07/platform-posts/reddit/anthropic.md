@@ -26,7 +26,7 @@ The video shows me actually coding this way - managing multiple Claude agents, d
 
 Built with Svelte 5 and Tauri so it's tiny and starts instantly. Works on Mac, Windows, Linux.
 
-GitHub: https://github.com/epicenter-so/epicenter
+GitHub: https://github.com/epicenter-md/epicenter
 
 Demo: [Coding workflow](https://www.youtube.com/watch?v=tP1fuFpJt7g&t=8s)
 

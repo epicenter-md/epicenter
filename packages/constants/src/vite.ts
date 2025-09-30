@@ -1,3 +1,4 @@
+/// <reference types="vite/client" />
 import { createApps, createAppUrls } from '#apps';
 import { type } from 'arktype';
 
@@ -22,15 +23,17 @@ export type ViteEnv = typeof viteEnvSchema.infer;
 /**
  * Vite build-time URLs.
  * Uses import.meta.env.MODE for environment detection.
- * 
+ *
  * For use in Vite contexts (client-side applications).
  */
+// @ts-ignore TODO properly assert this
 export const APPS = createApps(import.meta.env.MODE);
 
 /**
  * All application URLs for Vite contexts.
  * Uses import.meta.env.MODE for environment detection.
- * 
+ *
  * Primarily used for CORS configuration in client-side applications.
  */
+// @ts-ignore TODO properly assert this
 export const APP_URLS = createAppUrls(import.meta.env.MODE);

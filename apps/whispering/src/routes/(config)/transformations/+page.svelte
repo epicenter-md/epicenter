@@ -195,7 +195,7 @@
 </svelte:head>
 
 <main class="flex w-full flex-1 flex-col gap-2 px-4 py-4 sm:px-8 mx-auto">
-	<h1 class="scroll-m=20 text-4xl font-bold tracking-tight lg:text-5xl">
+	<h1 class="scroll-m-20 text-4xl font-bold tracking-tight lg:text-5xl">
 		Transformations
 	</h1>
 	<p class="text-muted-foreground">

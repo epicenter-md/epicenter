@@ -15,7 +15,7 @@
 	import VadSelectRecordingDevice from './VadSelectRecordingDevice.svelte';
 	import {
 		isCompressionRecommended,
-		hasRecordingCompatibilityIssue,
+		hasLocalTranscriptionCompatibilityIssue,
 		switchToCpalAt16kHz,
 		RECORDING_COMPATIBILITY_MESSAGE,
 		COMPRESSION_RECOMMENDED_MESSAGE,
@@ -156,7 +156,7 @@
 					</Link>
 				</Alert.Description>
 			</Alert.Root>
-		{:else if hasRecordingCompatibilityIssue() && !data.ffmpegInstalled}
+		{:else if hasLocalTranscriptionCompatibilityIssue({ isFFmpegInstalled: data.ffmpegInstalled })}
 			<Alert.Root class="border-amber-500/20 bg-amber-500/5">
 				<InfoIcon class="size-4 text-amber-600 dark:text-amber-400" />
 				<Alert.Title class="text-amber-600 dark:text-amber-400">

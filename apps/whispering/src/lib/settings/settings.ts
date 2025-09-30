@@ -38,10 +38,10 @@ import {
 import { CommandOrAlt, CommandOrControl } from '$lib/constants/keyboard';
 import { SUPPORTED_LANGUAGES } from '$lib/constants/languages';
 import type { WhisperingSoundNames } from '$lib/constants/sounds';
-import { TRANSCRIPTION_SERVICE_IDS } from '$lib/constants/transcription';
-import type { ElevenLabsModel } from '$lib/services/transcription/elevenlabs';
-import type { GroqModel } from '$lib/services/transcription/groq';
-import type { OpenAIModel } from '$lib/services/transcription/openai';
+import { TRANSCRIPTION_SERVICE_IDS } from '$lib/services/transcription/registry';
+import type { ElevenLabsModel } from '$lib/services/transcription/cloud/elevenlabs';
+import type { GroqModel } from '$lib/services/transcription/cloud/groq';
+import type { OpenAIModel } from '$lib/services/transcription/cloud/openai';
 import { ALWAYS_ON_TOP_VALUES } from '$lib/constants/ui';
 import { asDeviceIdentifier } from '$lib/services/types';
 import {
@@ -51,7 +51,7 @@ import {
 	FFMPEG_DEFAULT_COMPRESSION_OPTIONS,
 } from '$lib/services/recorder/ffmpeg';
 import { type ZodBoolean, type ZodString, z } from 'zod';
-import type { DeepgramModel } from '$lib/services/transcription/deepgram';
+import type { DeepgramModel } from '$lib/services/transcription/cloud/deepgram';
 
 /**
  * The main settings schema that defines all application settings.
@@ -237,6 +237,7 @@ export const settingsSchema = z.object({
 		.string()
 		.default('Systran/faster-distil-whisper-small.en'),
 	'transcription.whispercpp.modelPath': z.string().default(''),
+	'transcription.parakeet.modelPath': z.string().default(''),
 
 	'transformations.selectedTransformationId': z
 		.string()
