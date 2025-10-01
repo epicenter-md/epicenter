@@ -1,4 +1,3 @@
-use tauri::State;
 
 #[derive(serde::Serialize, serde::Deserialize)]
 pub struct PausedPlayers {

@@ -6,7 +6,6 @@ import { Err, Ok } from 'wellcrafted/result';
 import { defineMutation } from './_client';
 import { delivery } from './delivery';
 import { recorder } from './recorder';
-import { rpc } from './';
 import { notify } from './notify';
 import { recordings } from './recordings';
 import { sound } from './sound';
@@ -32,10 +31,7 @@ const startManualRecording = defineMutation({
 			description: 'Setting up your recording environment...',
 		});
 		const { data: deviceAcquisitionOutcome, error: startRecordingError } =
-			(await (async () => {
-				await rpc.media.pauseIfEnabled.execute(undefined);
-				return await recorder.startRecording.execute({ toastId });
-			})());
+			await recorder.startRecording.execute({ toastId });
 
 		if (startRecordingError) {
 			notify.error.execute({ id: toastId, ...startRecordingError });
@@ -107,11 +103,7 @@ const stopManualRecording = defineMutation({
 			description: 'Finalizing your audio capture...',
 		});
 		const { data: blob, error: stopRecordingError } =
-			(await (async () => {
-				const result = await recorder.stopRecording.execute({ toastId });
-				await rpc.media.resumePaused.execute(undefined);
-				return result;
-			})());
+			await recorder.stopRecording.execute({ toastId });
 		if (stopRecordingError) {
 			notify.error.execute({ id: toastId, ...stopRecordingError });
 			return Err(stopRecordingError);
@@ -161,7 +153,6 @@ const startVadRecording = defineMutation({
 			title: '🎙️ Starting voice activated capture',
 			description: 'Your voice activated capture is starting...',
 		});
-		await rpc.media.pauseIfEnabled.execute(undefined);
 		const { data: deviceAcquisitionOutcome, error: startActiveListeningError } =
 			await vadRecorder.startActiveListening.execute({
 				onSpeechStart: () => {
@@ -265,11 +256,7 @@ const stopVadRecording = defineMutation({
 			description: 'Finalizing your voice activated capture...',
 		});
 		const { error: stopVadError } =
-			(await (async () => {
-				const result = await vadRecorder.stopActiveListening.execute(undefined);
-				await rpc.media.resumePaused.execute(undefined);
-				return result;
-			})());
+			await vadRecorder.stopActiveListening.execute(undefined);
 		if (stopVadError) {
 			notify.error.execute({ id: toastId, ...stopVadError });
 			return Err(stopVadError);
@@ -318,11 +305,7 @@ export const commands = {
 				description: 'Cleaning up recording session...',
 			});
 			const { data: cancelRecordingResult, error: cancelRecordingError } =
-				(await (async () => {
-					const result = await recorder.cancelRecording.execute({ toastId });
-					await rpc.media.resumePaused.execute(undefined);
-					return result;
-				})());
+				await recorder.cancelRecording.execute({ toastId });
 			if (cancelRecordingError) {
 				notify.error.execute({ id: toastId, ...cancelRecordingError });
 				return Err(cancelRecordingError);
