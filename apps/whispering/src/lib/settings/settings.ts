@@ -52,7 +52,7 @@ import {
 } from '$lib/services/recorder/ffmpeg';
 import { type ZodBoolean, type ZodString, z } from 'zod';
 import type { DeepgramModel } from '$lib/services/transcription/cloud/deepgram';
-import type { MistralModel } from '$lib/services/transcription/mistral';
+import type { MistralModel } from '$lib/services/transcription/cloud/mistral';
 
 /**
  * The main settings schema that defines all application settings.

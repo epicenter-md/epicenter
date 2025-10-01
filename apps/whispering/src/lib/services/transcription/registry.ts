@@ -28,7 +28,7 @@ import {
 import {
 	MISTRAL_TRANSCRIPTION_MODELS,
 	type MistralModel,
-} from './mistral';
+} from './cloud/mistral';
 
 type TranscriptionModel =
 	| OpenAIModel

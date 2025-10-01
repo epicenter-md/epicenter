@@ -8,13 +8,13 @@ export const MISTRAL_TRANSCRIPTION_MODELS = [
 		name: 'voxtral-mini-latest',
 		description:
 			'API-optimized Voxtral Mini model delivering unparalleled cost and latency efficiency. Supports multilingual transcription with high accuracy.',
-		cost: '$0.06/hour',
+		cost: '$0.12/hour',
 	},
 	{
 		name: 'voxtral-small-latest',
 		description:
 			'Voxtral Small model for higher accuracy and broader language support. Suitable for most transcription needs with a balance of cost and performance.',
-		cost: '$0.12/hour',
+		cost: '$0.24/hour',
 	},
 ] as const;
 

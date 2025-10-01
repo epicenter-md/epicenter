@@ -23,7 +23,7 @@
 	import { DEEPGRAM_TRANSCRIPTION_MODELS } from '$lib/services/transcription/cloud/deepgram';
 	import { ELEVENLABS_TRANSCRIPTION_MODELS } from '$lib/services/transcription/cloud/elevenlabs';
 	import { GROQ_MODELS } from '$lib/services/transcription/cloud/groq';
-	import { MISTRAL_TRANSCRIPTION_MODELS } from '$lib/services/transcription/mistral';
+	import { MISTRAL_TRANSCRIPTION_MODELS } from '$lib/services/transcription/cloud/mistral';
 	import { OPENAI_TRANSCRIPTION_MODELS } from '$lib/services/transcription/cloud/openai';
 	import { settings } from '$lib/stores/settings.svelte';
 	import { CheckIcon, InfoIcon } from '@lucide/svelte';

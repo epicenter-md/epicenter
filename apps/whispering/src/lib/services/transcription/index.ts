@@ -8,7 +8,7 @@ import { ParakeetTranscriptionServiceLive } from './local/parakeet';
 import { DeepgramTranscriptionServiceLive } from './cloud/deepgram';
 import { ElevenlabsTranscriptionServiceLive } from './cloud/elevenlabs';
 import { GroqTranscriptionServiceLive } from './cloud/groq';
-import { MistralTranscriptionServiceLive } from './mistral';
+import { MistralTranscriptionServiceLive } from './cloud/mistral';
 import { OpenaiTranscriptionServiceLive } from './cloud/openai';
 
 // Self-hosted transcription services
