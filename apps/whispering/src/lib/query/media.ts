@@ -23,11 +23,13 @@ export const media = {
             const enabled = settings.value['system.autoPauseMediaDuringRecording'];
             if (!enabled || !IS_MACOS || !window.__TAURI_INTERNALS__) return Ok(undefined);
 
+            console.info('[media] attempting to pause active media...');
             const { data, error } = await invoke<PausedPlayers>('macos_pause_active_media');
             if (error) {
                 console.warn('[media] pause failed', error);
                 return Ok(undefined);
             }
+            console.info('[media] paused players:', data.players);
             pausedPlayers = data.players ?? [];
             return Ok(undefined);
         },
@@ -41,6 +43,7 @@ export const media = {
 
             const players = [...pausedPlayers];
             pausedPlayers = [];
+            console.info('[media] resuming players:', players);
             const { error } = await invoke<void>('macos_resume_media', { players });
             if (error) {
                 console.warn('[media] resume failed', error);

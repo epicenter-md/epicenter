@@ -16,7 +16,7 @@ import { transformations } from './transformations';
 import { transformer } from './transformer';
 import { tray } from './tray';
 import { vadRecorder } from './vad-recorder';
-// import { media } from './media';
+import { media } from './media';
 
 /**
  * Unified namespace for all query operations.
@@ -40,5 +40,5 @@ export const rpc = {
 	transformer,
 	notify,
 	delivery,
-	// media,
+	media,
 };

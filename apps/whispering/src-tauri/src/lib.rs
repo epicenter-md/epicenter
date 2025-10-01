@@ -90,9 +90,9 @@ pub async fn run() {
         // Whisper transcription
         transcribe_with_whisper_cpp,
         send_sigint,
-        // macOS media control (temporarily disabled)
-        // macos_pause_active_media,
-        // macos_resume_media,
+        // macOS media control
+        macos_pause_active_media,
+        macos_resume_media,
     ]);
 
     let app = builder
