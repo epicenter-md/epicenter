@@ -4,6 +4,9 @@ import { vitePreprocess } from '@sveltejs/vite-plugin-svelte';
 /** @type {import('@sveltejs/kit').Config} */
 const config = {
 	kit: {
+		alias: {
+			'#': '../../packages/ui/src',
+		},
 		adapter: adapter({
 			fallback: 'index.html', // SPA fallback for dynamic routes
 		}),
