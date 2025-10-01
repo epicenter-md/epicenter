@@ -106,6 +106,10 @@ pub async fn run() {
 use enigo::{Direction, Enigo, Key, Keyboard, Settings};
 use tauri_plugin_clipboard_manager::ClipboardExt;
 
+// macOS auto pause/resume media stub: guarded by future settings flag.
+// Implementation TBD; this branch intentionally adds no behavior change yet.
+// We will add a Tauri command and UI toggle in follow-ups.
+
 /// Writes text at the cursor position using the clipboard sandwich technique
 ///
 /// This method preserves the user's existing clipboard content by:
