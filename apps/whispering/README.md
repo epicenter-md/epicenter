@@ -883,7 +883,7 @@ Adding a new transcription service involves four main steps:
    export {
    	YOUR_SERVICE_MODELS,
    	type YourServiceModel,
-   } from '$lib/services/transcription/your-service';
+   } from '$lib/services/transcription/cloud/your-service';
    ```
 
 ##### Adding an AI Transformation Adapter
@@ -1021,7 +1021,7 @@ const { data, error } = await tryAsync({
 Create a test file alongside your service:
 
 ```typescript
-// src/lib/services/transcription/your-service.test.ts
+// Example: src/lib/services/transcription/cloud/your-service.test.ts
 import { describe, it, expect } from 'vitest';
 import { createYourServiceTranscriptionService } from './your-service';
 
