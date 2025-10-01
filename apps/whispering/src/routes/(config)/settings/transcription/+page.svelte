@@ -12,7 +12,6 @@
 		ElevenLabsApiKeyInput,
 		GroqApiKeyInput,
 		OpenAiApiKeyInput,
-		DeepgramApiKeyInput,
 		MistralApiKeyInput,
 	} from '$lib/components/settings';
 	import LocalModelSelector from '$lib/components/settings/LocalModelSelector.svelte';
