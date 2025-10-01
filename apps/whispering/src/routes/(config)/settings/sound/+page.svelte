@@ -77,22 +77,6 @@
 
 	<Separator />
 
-	{#if IS_MACOS}
-		<Separator />
-
-		<LabeledSwitch
-			id="sound.autoPauseMediaDuringRecording"
-			label="Auto-pause media during recording"
-			description="Pauses Apple Music and Spotify during recording. macOS may ask for permission to control these apps on first use."
-			bind:checked={
-				() => settings.value['sound.autoPauseMediaDuringRecording'],
-				(v) => settings.updateKey('sound.autoPauseMediaDuringRecording', v)
-			}
-		/>
-	{/if}
-
-	<Separator />
-
 	<LabeledSwitch
 		id="play-sound-transcription"
 		label="Play sound after transcription"
@@ -110,4 +94,21 @@
 			(v) => settings.updateKey('sound.playOn.transformationComplete', v)
 		}
 	/>
+
+	{#if IS_MACOS}
+		<Separator />
+
+		<div class="space-y-2">
+			<h4 class="text-sm font-medium">Media Control</h4>
+			<LabeledSwitch
+				id="sound.autoPauseMediaDuringRecording"
+				label="Auto-pause media during recording"
+				description="Pauses Apple Music and Spotify during recording. macOS may ask for permission to control these apps on first use."
+				bind:checked={
+					() => settings.value['sound.autoPauseMediaDuringRecording'],
+					(v) => settings.updateKey('sound.autoPauseMediaDuringRecording', v)
+				}
+			/>
+		</div>
+	{/if}
 </div>
