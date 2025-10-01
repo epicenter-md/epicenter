@@ -84,6 +84,9 @@ export const settingsSchema = z.object({
 		'sound.playOn.manual-start': z.boolean().default(true),
 		'sound.playOn.manual-stop': z.boolean().default(true),
 		'sound.playOn.manual-cancel': z.boolean().default(true),
+		'sound.playOn.cpal-start': z.boolean().default(true),
+		'sound.playOn.cpal-stop': z.boolean().default(true),
+		'sound.playOn.cpal-cancel': z.boolean().default(true),
 		'sound.playOn.vad-start': z.boolean().default(true),
 		'sound.playOn.vad-capture': z.boolean().default(true),
 		'sound.playOn.vad-stop': z.boolean().default(true),
@@ -108,7 +111,7 @@ export const settingsSchema = z.object({
 		'sound.volume.transcriptionComplete': z.number().min(0).max(1).default(0.5),
 		'sound.volume.transformationComplete': z.number().min(0).max(1).default(0.5),
 	} satisfies Record<
-		`sound.volume.${WhisperingSoundNames | 'cpal-start' | 'cpal-stop' | 'cpal-cancel'}`,
+		`sound.volume.${WhisperingSoundNames}`,
 		z.ZodDefault<z.ZodNumber>
 	>),
 
@@ -129,7 +132,7 @@ export const settingsSchema = z.object({
 		'sound.custom.transcriptionComplete': z.boolean().default(false),
 		'sound.custom.transformationComplete': z.boolean().default(false),
 	} satisfies Record<
-		`sound.custom.${WhisperingSoundNames | 'cpal-start' | 'cpal-stop' | 'cpal-cancel'}`,
+		`sound.custom.${WhisperingSoundNames}`,
 		z.ZodDefault<z.ZodBoolean>
 	>),
 
