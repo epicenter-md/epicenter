@@ -101,6 +101,13 @@ export const settingsSchema = z.object({
 
 	'system.alwaysOnTop': z.enum(ALWAYS_ON_TOP_VALUES).default('Never'),
 
+	/**
+	 * macOS-only: when enabled, Whispering will pause active media players
+	 * (Apple Music, Spotify) at the start of a recording and resume them when
+	 * the recording/transcription completes or is cancelled.
+	 */
+	'system.autoPauseMediaDuringRecording': z.boolean().default(true),
+
 	'database.recordingRetentionStrategy': z
 		.enum(['keep-forever', 'limit-count'])
 		.default('keep-forever'),

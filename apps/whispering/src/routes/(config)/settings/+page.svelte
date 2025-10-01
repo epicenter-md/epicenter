@@ -7,6 +7,7 @@
 	import { Separator } from '@repo/ui/separator';
 	import { ALWAYS_ON_TOP_OPTIONS } from '$lib/constants/ui';
 	import { settings } from '$lib/stores/settings.svelte';
+	import { IS_MACOS } from '$lib/constants/platform/is-macos';
 </script>
 
 <svelte:head>
@@ -108,5 +109,16 @@
 			}
 			placeholder="Select a language"
 		/>
+
+		{#if IS_MACOS}
+			<LabeledSwitch
+				id="system.autoPauseMediaDuringRecording"
+				label="Auto-pause media during recording (macOS)"
+				bind:checked={
+					() => settings.value['system.autoPauseMediaDuringRecording'],
+					(v) => settings.updateKey('system.autoPauseMediaDuringRecording', v)
+				}
+			/>
+		{/if}
 	{/if}
 </div>

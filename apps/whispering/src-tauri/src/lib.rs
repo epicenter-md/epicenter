@@ -17,6 +17,16 @@ use windows_path::fix_windows_path;
 pub mod graceful_shutdown;
 use graceful_shutdown::send_sigint;
 
+#[cfg(target_os = "macos")]
+pub mod macos_media;
+#[cfg(target_os = "macos")]
+use macos_media::{macos_pause_active_media, macos_resume_media};
+
+#[cfg(not(target_os = "macos"))]
+pub mod macos_media;
+#[cfg(not(target_os = "macos"))]
+use macos_media::{macos_pause_active_media, macos_resume_media};
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 #[tokio::main]
 pub async fn run() {
@@ -80,6 +90,9 @@ pub async fn run() {
         // Whisper transcription
         transcribe_with_whisper_cpp,
         send_sigint,
+        // macOS media control
+        macos_pause_active_media,
+        macos_resume_media,
     ]);
 
     let app = builder
