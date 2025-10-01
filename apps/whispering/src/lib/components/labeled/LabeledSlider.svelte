@@ -8,7 +8,7 @@
 		min?: number;
 		max?: number;
 		step?: number;
-		onValueChange: (value: number) => void;
+		onValueChange?: (value: number) => void;
 		description?: string;
 	}
 
@@ -26,7 +26,8 @@
 	const handleInput = (event: Event) => {
 		const target = event.target as HTMLInputElement;
 		const newValue = Number(target.value);
-		onValueChange(newValue);
+		value = newValue;
+		onValueChange?.(newValue);
 	};
 
 	// Calculate percentage for visual fill

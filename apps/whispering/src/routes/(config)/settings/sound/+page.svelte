@@ -233,15 +233,17 @@
 			<LabeledSlider
 				id="sound.volume.global"
 				label="Set All Volumes"
-				value={Math.round(settings.value['sound.volume'] * 100)}
+				bind:value={
+					() => Math.round(settings.value['sound.volume'] * 100),
+					(v) => {
+						settings.updateKey('sound.volume', v / 100);
+						applyGlobalVolume(v);
+					}
+				}
 				min={0}
 				max={100}
 				step={5}
 				description="Quickly set the same volume for all notification sounds"
-				onValueChange={(v) => {
-					settings.updateKey('sound.volume', v / 100);
-					applyGlobalVolume(v);
-				}}
 			/>
 			<Button
 				variant="outline"
@@ -281,12 +283,10 @@
 						<LabeledSwitch
 							id="sound.playOn.{event.key}"
 							label=""
-							checked={settings.value[
-								`sound.playOn.${event.key}` as keyof typeof settings.value
-							] as boolean}
-							onCheckedChange={(v) => {
-								settings.updateKey(`sound.playOn.${event.key}`, v);
-							}}
+							bind:checked={
+								() => settings.value[`sound.playOn.${event.key}` as keyof typeof settings.value] as boolean,
+								(v) => settings.updateKey(`sound.playOn.${event.key}` as keyof typeof settings.value, v as any)
+							}
 						/>
 					</div>
 				</div>
@@ -294,17 +294,13 @@
 				<LabeledSlider
 					id="sound.volume.{event.key}"
 					label="Volume"
-					value={Math.round(
-						(settings.value[
-							`sound.volume.${event.key}` as keyof typeof settings.value
-						] as number) * 100,
-					)}
+					bind:value={
+						() => Math.round((settings.value[`sound.volume.${event.key}` as keyof typeof settings.value] as number) * 100),
+						(v) => settings.updateKey(`sound.volume.${event.key}` as keyof typeof settings.value, (v / 100) as any)
+					}
 					min={0}
 					max={100}
 					step={5}
-					onValueChange={(v) => {
-						settings.updateKey(`sound.volume.${event.key}`, v / 100);
-					}}
 				/>
 
 				<!-- Custom Sound Upload Section -->
