@@ -1,3 +1,4 @@
+import { commands } from '$lib/commands';
 import { rpc } from '$lib/query';
 import {
 	type Settings,
