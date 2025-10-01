@@ -20,7 +20,7 @@ export const media = {
     pauseIfEnabled: defineMutation({
         mutationKey: ['media', 'pauseIfEnabled'] as const,
         resultMutationFn: async () => {
-            const enabled = settings.value['system.autoPauseMediaDuringRecording'];
+            const enabled = settings.value['sound.autoPauseMediaDuringRecording'];
             if (!enabled || !IS_MACOS || !window.__TAURI_INTERNALS__) return Ok(undefined);
 
             console.info('[media] attempting to pause active media...');

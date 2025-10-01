@@ -106,7 +106,7 @@ export const settingsSchema = z.object({
 	 * (Apple Music, Spotify) at the start of a recording and resume them when
 	 * the recording/transcription completes or is cancelled.
 	 */
-	'system.autoPauseMediaDuringRecording': z.boolean().default(true),
+	'sound.autoPauseMediaDuringRecording': z.boolean().default(true),
 
 	'database.recordingRetentionStrategy': z
 		.enum(['keep-forever', 'limit-count'])

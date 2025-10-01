@@ -2,6 +2,7 @@
 	import { LabeledSwitch } from '$lib/components/labeled';
 	import { Separator } from '@repo/ui/separator';
 	import { settings } from '$lib/stores/settings.svelte';
+	import { IS_MACOS } from '$lib/constants/platform';
 </script>
 
 <svelte:head>
@@ -73,6 +74,22 @@
 			(v) => settings.updateKey('sound.playOn.vad-stop', v)
 		}
 	/>
+
+	<Separator />
+
+	{#if IS_MACOS}
+		<Separator />
+
+		<LabeledSwitch
+			id="sound.autoPauseMediaDuringRecording"
+			label="Auto-pause media during recording"
+			description="Pauses Apple Music and Spotify during recording. macOS may ask for permission to control these apps on first use."
+			bind:checked={
+				() => settings.value['sound.autoPauseMediaDuringRecording'],
+				(v) => settings.updateKey('sound.autoPauseMediaDuringRecording', v)
+			}
+		/>
+	{/if}
 
 	<Separator />
 
