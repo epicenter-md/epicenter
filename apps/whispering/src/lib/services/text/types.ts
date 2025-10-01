@@ -20,16 +20,23 @@ export type TextService = {
 	/**
 	 * Writes the provided text at the current cursor position.
 	 * Uses the clipboard sandwich technique to preserve the user's existing clipboard content.
-	 * 
+	 *
 	 * This method:
 	 * 1. Saves the current clipboard
 	 * 2. Writes the text to clipboard
 	 * 3. Simulates paste (Cmd+V on macOS, Ctrl+V elsewhere)
 	 * 4. Restores the original clipboard
-	 * 
+	 *
 	 * @param text The text to write at the cursor position.
 	 */
 	writeToCursor: (
 		text: string,
 	) => MaybePromise<Result<void, TextServiceError | WhisperingError>>;
+
+	/**
+	 * Simulates pressing the Enter key.
+	 * This is useful for automatically submitting forms or sending messages
+	 * after transcription completes.
+	 */
+	pressEnter: () => Promise<Result<void, TextServiceError>>;
 };

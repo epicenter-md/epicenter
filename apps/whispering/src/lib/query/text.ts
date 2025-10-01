@@ -18,4 +18,11 @@ export const text = {
 			return await services.text.writeToCursor(text);
 		},
 	}),
+	pressEnter: defineMutation({
+		mutationKey: ['text', 'pressEnter'],
+		resultMutationFn: async () => {
+			// Simulates pressing the Enter key
+			return await services.text.pressEnter();
+		},
+	}),
 };
