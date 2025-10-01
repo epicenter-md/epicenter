@@ -1,4 +1,3 @@
-import { invoke } from '@tauri-apps/api/core';
 import type {
 	CancelRecordingResult,
 	WhisperingRecordingState,
@@ -7,6 +6,7 @@ import { PLATFORM_TYPE } from '$lib/constants/platform';
 import * as services from '$lib/services';
 import { asShellCommand } from '$lib/services/command';
 import { createPersistedState } from '@repo/svelte-utils';
+import { invoke } from '@tauri-apps/api/core';
 import { join } from '@tauri-apps/api/path';
 import { exists, remove, stat } from '@tauri-apps/plugin-fs';
 import { Child } from '@tauri-apps/plugin-shell';
@@ -677,52 +677,6 @@ export function getFileExtensionFromFfmpegOptions(outputOptions: string) {
 
 	// Default to wav for maximum compatibility
 	return 'wav';
-}
-
-/**
- * Builds a complete FFmpeg compression command string.
- * Creates a command that compresses an input audio file using the specified options.
- *
- * @param inputPath - Path to the input audio file
- * @param compressionOptions - FFmpeg compression options
- * @param outputPath - Path to the output compressed file (optional - will be generated if not provided)
- * @returns Complete FFmpeg compression command string
- *
- * @example
- * buildCompressionCommand('input.wav', '-c:a libopus -b:a 32k -ar 16000 -ac 1')
- * // returns: 'ffmpeg -i "input.wav" -c:a libopus -b:a 32k -ar 16000 -ac 1 "output.opus"'
- */
-export function buildCompressionCommand({
-	inputPath,
-	compressionOptions,
-	outputPath,
-}: {
-	inputPath: string;
-	compressionOptions: string;
-	outputPath?: string;
-}): { command: string; outputPath: string } {
-	// Generate output path if not provided
-	const finalOutputPath =
-		outputPath ||
-		(() => {
-			const extension = getFileExtensionFromFfmpegOptions(compressionOptions);
-			const baseName = inputPath.replace(/\.[^/.]+$/, ''); // Remove existing extension
-			return `${baseName}.${extension}`;
-		})();
-
-	// Build command parts
-	const parts = [
-		'ffmpeg',
-		'-i',
-		`"${inputPath}"`,
-		compressionOptions.trim(),
-		`"${finalOutputPath}"`,
-	].filter((part) => part); // Remove empty strings
-
-	return {
-		command: parts.join(' '),
-		outputPath: finalOutputPath,
-	};
 }
 
 type SignalResult = {

@@ -1,4 +1,8 @@
-import { WhisperingErr, type WhisperingError } from '$lib/result';
+import {
+	WhisperingErr,
+	WhisperingWarningErr,
+	type WhisperingError,
+} from '$lib/result';
 import * as services from '$lib/services';
 import type { Recording } from '$lib/services/db';
 import { settings } from '$lib/stores/settings.svelte';
@@ -7,6 +11,11 @@ import { defineMutation, queryClient } from './_client';
 import { notify } from './notify';
 import { recordings } from './recordings';
 import { rpc } from './';
+import {
+	RECORDING_COMPATIBILITY_MESSAGE,
+	hasLocalTranscriptionCompatibilityIssue,
+} from '../../routes/+layout/check-ffmpeg';
+import { goto } from '$app/navigation';
 
 const transcriptionKeys = {
 	isTranscribing: ['transcription', 'isTranscribing'] as const,
@@ -209,31 +218,70 @@ async function transcribeBlob(
 						},
 					);
 				case 'Deepgram':
-					return await services.transcriptions.deepgram.transcribe(blob, {
-						outputLanguage: settings.value['transcription.outputLanguage'],
-						prompt: settings.value['transcription.prompt'],
-						temperature: settings.value['transcription.temperature'],
-						apiKey: settings.value['apiKeys.deepgram'],
-						modelName: settings.value['transcription.deepgram.model'],
-					});
-				case 'Mistral':
-					return await services.transcriptions.mistral.transcribe(blob, {
-						outputLanguage: settings.value['transcription.outputLanguage'],
-						prompt: settings.value['transcription.prompt'],
-						temperature: settings.value['transcription.temperature'],
-						apiKey: settings.value['apiKeys.mistral'],
-						modelName: settings.value['transcription.mistral.model'],
-					});
-				case 'whispercpp':
-					return await services.transcriptions.whispercpp.transcribe(
+					return await services.transcriptions.deepgram.transcribe(
 						audioToTranscribe,
 						{
 							outputLanguage: settings.value['transcription.outputLanguage'],
 							prompt: settings.value['transcription.prompt'],
 							temperature: settings.value['transcription.temperature'],
+							apiKey: settings.value['apiKeys.deepgram'],
+							modelName: settings.value['transcription.deepgram.model'],
+						},
+					);
+				case 'Mistral':
+					return await services.transcriptions.mistral.transcribe(
+						audioToTranscribe,
+						{
+							outputLanguage: settings.value['transcription.outputLanguage'],
+							prompt: settings.value['transcription.prompt'],
+							temperature: settings.value['transcription.temperature'],
+							apiKey: settings.value['apiKeys.mistral'],
+							modelName: settings.value['transcription.mistral.model'],
+						},
+					);
+				case 'whispercpp': {
+					const { data: isFFmpegInstalled, error: checkFfmpegInstalledError } =
+						await rpc.ffmpeg.checkFfmpegInstalled.ensure();
+					if (checkFfmpegInstalledError) return Err(checkFfmpegInstalledError);
+					if (hasLocalTranscriptionCompatibilityIssue({ isFFmpegInstalled })) {
+						return WhisperingErr({
+							title: 'Recording Settings Incompatible',
+							description: RECORDING_COMPATIBILITY_MESSAGE,
+							action: {
+								type: 'link',
+								label: 'Go to Recording Settings',
+								href: '/settings/recording',
+							},
+						});
+					}
+					return await services.transcriptions.whispercpp.transcribe(
+						audioToTranscribe,
+						{
+							outputLanguage: settings.value['transcription.outputLanguage'],
 							modelPath: settings.value['transcription.whispercpp.modelPath'],
 						},
 					);
+				}
+				case 'parakeet': {
+					const { data: isFFmpegInstalled, error: checkFfmpegInstalledError } =
+						await rpc.ffmpeg.checkFfmpegInstalled.ensure();
+					if (checkFfmpegInstalledError) return Err(checkFfmpegInstalledError);
+					if (hasLocalTranscriptionCompatibilityIssue({ isFFmpegInstalled })) {
+						return WhisperingErr({
+							title: 'Recording Settings Incompatible',
+							description: RECORDING_COMPATIBILITY_MESSAGE,
+							action: {
+								type: 'link',
+								label: 'Go to Recording Settings',
+								href: '/settings/recording',
+							},
+						});
+					}
+					return await services.transcriptions.parakeet.transcribe(
+						audioToTranscribe,
+						{ modelPath: settings.value['transcription.parakeet.modelPath'] },
+					);
+				}
 				default:
 					return WhisperingErr({
 						title: '⚠️ No transcription service selected',

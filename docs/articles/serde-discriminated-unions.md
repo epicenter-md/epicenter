@@ -1,6 +1,6 @@
 # Rust to TypeScript: Discriminated Unions with Serde
 
-https://github.com/epicenter-so/epicenter/blob/dffee1fe126698d7c71ad1fa1f7c528ad417e270/apps/whispering/src/lib/services/transcription/whispercpp.ts
+https://github.com/epicenter-md/epicenter/blob/dffee1fe126698d7c71ad1fa1f7c528ad417e270/apps/whispering/src/lib/services/transcription/whispercpp.ts
 
 I hit an interesting pattern while building error handling in a Tauri app. Rust enums with serde's `tag` and `rename_all` attributes map perfectly to TypeScript discriminated unions, making cross-boundary error handling actually pleasant.
 

@@ -1,21 +1,16 @@
-name: 'Publish Tauri Build to GitHub Releases 🛠️'
+name: Publish Tauri Releases
 
-# This workflow triggers in two ways:
-# 1. Manual trigger via GitHub UI (workflow_dispatch)
-# 2. Automatically when you push a version tag like v7.0.0
 on:
-  workflow_dispatch:
   push:
     tags:
-      # Matches semantic version tags: v1.0.0, v2.1.3, v10.0.0, etc.
-      - 'v[0-9]+.[0-9]+.[0-9]+'
+      - 'v*'  # Trigger on version tags like v7.0.0
 
 jobs:
   publish-tauri:
     # Required permissions to create releases and upload assets
     permissions:
       contents: write
-    
+
     # Build strategy: create separate jobs for each platform
     strategy:
       fail-fast: false  # Continue building other platforms even if one fails
@@ -24,15 +19,15 @@ jobs:
           # macOS Apple Silicon (M1, M2, M3, etc.)
           - platform: 'macos-latest'
             args: '--target aarch64-apple-darwin'
-          
+
           # macOS Intel-based
           - platform: 'macos-latest'
             args: '--target x86_64-apple-darwin'
-          
+
           # Linux (Ubuntu)
           - platform: 'ubuntu-22.04'
             args: ''  # No specific target needed for Linux
-          
+
           # Windows
           - platform: 'windows-latest'
             args: ''  # No specific target needed for Windows
@@ -40,6 +35,11 @@ jobs:
     runs-on: ${{ matrix.platform }}
     steps:
       - uses: actions/checkout@v4
+
+      # macOS specific: Install create-dmg for DMG bundling
+      - name: Install create-dmg (macOS only)
+        if: matrix.platform == 'macos-latest'
+        run: brew install create-dmg
 
       # Ubuntu/Linux specific: Install system dependencies required by Tauri
       - name: install dependencies (ubuntu only)
@@ -53,7 +53,22 @@ jobs:
           # - patchelf: Required for AppImage packaging
           # - libxdo-dev: Keyboard/mouse automation
           # - libasound2-dev: Audio support
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libxdo-dev libasound2-dev
+          # - libopenblas-dev: GPU acceleration support
+          # - libx11-dev: X11 development files for window system interaction
+          # - libxtst-dev: X11 testing extensions for input simulation
+          # - libxrandr-dev: X11 RandR extension for display configuration
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libxdo-dev libasound2-dev libopenblas-dev libx11-dev libxtst-dev libxrandr-dev
+
+      # Linux Vulkan SDK installation
+      - name: Prepare Vulkan SDK for Ubuntu
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          # Add official Vulkan SDK repository
+          wget -qO- https://packages.lunarg.com/lunarg-signing-key-pub.asc | sudo tee /etc/apt/trusted.gpg.d/lunarg.asc
+          # Note: Using "jammy" for Ubuntu 22.04 (not "noble" which is for 24.04)
+          sudo wget -qO /etc/apt/sources.list.d/lunarg-vulkan-1.3.290-jammy.list https://packages.lunarg.com/vulkan/1.3.290/lunarg-vulkan-1.3.290-jammy.list
+          sudo apt update
+          sudo apt install -y vulkan-sdk mesa-vulkan-drivers
 
       # Setup Bun package manager
       - name: setup bun
@@ -61,11 +76,19 @@ jobs:
         with:
           bun-version: latest
 
+      # Windows Vulkan SDK installation
+      - name: Install Vulkan SDK
+        if: matrix.platform == 'windows-latest'
+        uses: humbletim/install-vulkan-sdk@v1.2
+        with:
+          version: 1.4.309.0
+          cache: true
+
       # Setup Node.js for compatibility
       - name: setup node
         uses: actions/setup-node@v4
         with:
-          node-version: lts/*  # Use latest LTS version
+          node-version: lts/*
 
       # Install Rust toolchain required for building Tauri
       - name: install Rust stable
@@ -97,10 +120,10 @@ jobs:
         run: |
           # Look for release notes file matching the tag name (e.g., v7.0.0 -> docs/release-notes/v7.0.0.md)
           RELEASE_FILE="docs/release-notes/${{ github.ref_name }}.md"
-          
+
           if [ -f "$RELEASE_FILE" ]; then
             echo "Found release notes file: $RELEASE_FILE"
-            
+
             # Get full content for GitHub release page
             RELEASE_NOTES=$(cat "$RELEASE_FILE")
           else
@@ -108,7 +131,7 @@ jobs:
             # Fallback message if no release file exists
             RELEASE_NOTES="Whispering ${{ github.ref_name }} is now available. Check GitHub for the full changelog."
           fi
-          
+
           # Save output for use in later steps
           # Using EOF delimiter to handle multi-line content
           echo "RELEASE_NOTES<<EOF" >> $GITHUB_OUTPUT
@@ -118,17 +141,20 @@ jobs:
       # Main Tauri build and release action
       - uses: tauri-apps/tauri-action@v0
         env:
+          # Set CI environment variable to help with DMG bundling
+          CI: true
+
           # Required: GitHub token for creating releases and uploading assets
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          
+
           # Aptabase analytics key
           APTABASE_KEY: ${{ secrets.APTABASE_KEY }}
-          
+
           # Tauri code signing (optional but recommended)
           # These enable automatic updates without security warnings
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          
+
           # macOS code signing and notarization (required for distribution)
           # Without these, macOS users will see security warnings
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
@@ -141,22 +167,74 @@ jobs:
         with:
           # Path to the Tauri project (where tauri.conf.json is located)
           projectPath: 'apps/whispering'
-          
+
           # Use the actual git tag as the release tag (e.g., v7.0.0)
           tagName: ${{ github.ref_name }}
-          
+
           # Release title shown on GitHub
           releaseName: 'Whispering ${{ github.ref_name }}'
-          
+
           # Release description from our processed release notes
           # Full release notes for GitHub release page
           releaseBody: ${{ steps.release_notes.outputs.RELEASE_NOTES }}
-          
+
           # Create as draft so you can review before publishing
           releaseDraft: true
-          
-          # Set to true for beta/RC releases
+
+          # Set to false for beta/RC releases
           prerelease: false
-          
+
           # Platform-specific build arguments (e.g., --target for macOS)
           args: ${{ matrix.args }}
+
+      # Install FUSE for AppImage processing
+      - name: Install FUSE for AppImage processing
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y fuse libfuse2
+
+      # Remove libwayland-client.so from AppImage for better compatibility
+      # This fixes EGL_BAD_PARAMETER errors on Wayland systems (Issues #114, #121)
+      - name: Remove libwayland-client.so from AppImage
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          # Find the AppImage file
+          APPIMAGE_PATH=$(find apps/whispering/src-tauri/target/release/bundle/appimage -name "*.AppImage" | head -1)
+
+          if [ -n "$APPIMAGE_PATH" ]; then
+            echo "Processing AppImage: $APPIMAGE_PATH"
+
+            # Make AppImage executable
+            chmod +x "$APPIMAGE_PATH"
+
+            # Extract using the AppImage itself
+            cd "$(dirname "$APPIMAGE_PATH")"
+            APPIMAGE_NAME=$(basename "$APPIMAGE_PATH")
+            "./$APPIMAGE_NAME" --appimage-extract
+
+            # Remove libwayland-client.so files
+            echo "Removing libwayland-client.so files..."
+            find squashfs-root -name "libwayland-client.so*" -type f -delete
+
+            # List what was removed for verification
+            echo "Files remaining in lib directories:"
+            find squashfs-root -name "lib*" -type d | head -5 | while read dir; do
+              echo "Contents of $dir:"
+              ls "$dir" | grep -E "(wayland|fuse)" || echo "  No wayland/fuse libraries found"
+            done
+
+            # Get appimagetool
+            wget -q https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
+            chmod +x appimagetool-x86_64.AppImage
+
+            # Repackage AppImage with no-appstream to avoid warnings
+            ARCH=x86_64 ./appimagetool-x86_64.AppImage --no-appstream squashfs-root "$APPIMAGE_NAME"
+
+            # Clean up
+            rm -rf squashfs-root appimagetool-x86_64.AppImage
+
+            echo "libwayland-client.so removed from AppImage successfully"
+          else
+            echo "No AppImage found to process"
+          fi

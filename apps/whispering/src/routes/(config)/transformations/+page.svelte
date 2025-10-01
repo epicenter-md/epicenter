@@ -119,6 +119,7 @@
 		schema: z.record(z.string(), z.boolean()),
 	});
 	let pagination = $state<PaginationState>({ pageIndex: 0, pageSize: 10 });
+	let globalFilter = $state('');
 
 	const table = createSvelteTable({
 		getRowId: (originalRow) => originalRow.id,
@@ -158,6 +159,13 @@
 				pagination = updater;
 			}
 		},
+		onGlobalFilterChange: (updater) => {
+			if (typeof updater === 'function') {
+				globalFilter = updater(globalFilter);
+			} else {
+				globalFilter = updater;
+			}
+		},
 		state: {
 			get sorting() {
 				return sorting.value;
@@ -171,21 +179,15 @@
 			get pagination() {
 				return pagination;
 			},
+			get globalFilter() {
+				return globalFilter;
+			},
 		},
 	});
 
 	const selectedTransformationRows = $derived(
 		table.getFilteredSelectedRowModel().rows,
 	);
-
-	const filterQuery = {
-		get value() {
-			return table.getColumn('select')?.getFilterValue() as string;
-		},
-		set value(value) {
-			table.getColumn('select')?.setFilterValue(value);
-		},
-	};
 </script>
 
 <svelte:head>
@@ -193,7 +195,7 @@
 </svelte:head>
 
 <main class="flex w-full flex-1 flex-col gap-2 px-4 py-4 sm:px-8 mx-auto">
-	<h1 class="scroll-m=20 text-4xl font-bold tracking-tight lg:text-5xl">
+	<h1 class="scroll-m-20 text-4xl font-bold tracking-tight lg:text-5xl">
 		Transformations
 	</h1>
 	<p class="text-muted-foreground">
@@ -205,8 +207,7 @@
 			placeholder="Filter transformations..."
 			type="text"
 			class="w-full"
-			value={filterQuery.value}
-			oninput={(e) => (filterQuery.value = e.currentTarget.value)}
+			bind:value={globalFilter}
 		/>
 		{#if selectedTransformationRows.length > 0}
 			<WhisperingButton
@@ -299,7 +300,7 @@
 				{:else}
 					<Table.Row>
 						<Table.Cell colspan={columns.length} class="h-24 text-center">
-							{#if filterQuery.value}
+							{#if globalFilter}
 								No transformations found.
 							{:else}
 								No transformations yet. Click "Create Transformation" to add

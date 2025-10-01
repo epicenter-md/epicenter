@@ -28,7 +28,7 @@ The killer feature for me is voice-activated mode. I use it constantly with Chat
 
 Built with Svelte 5 and Tauri, so it's tiny (\~22MB) and starts instantly. Works on Mac, Windows, and Linux.
 
-GitHub: [https://github.com/epicenter-so/epicenter](https://github.com/epicenter-so/epicenter)
+GitHub: [https://github.com/epicenter-md/epicenter](https://github.com/epicenter-md/epicenter)
 
 [How I use it for coding](https://www.youtube.com/watch?v=tP1fuFpJt7g&t=8s)
 

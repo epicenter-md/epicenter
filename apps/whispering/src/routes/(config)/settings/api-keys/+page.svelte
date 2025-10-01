@@ -8,6 +8,7 @@
 		DeepgramApiKeyInput,
 		OpenAiApiKeyInput,
 		OpenRouterApiKeyInput,
+		DeepgramApiKeyInput,
 	} from '$lib/components/settings';
 	import { Separator } from '@repo/ui/separator';
 </script>
@@ -26,6 +27,7 @@
 	<Separator />
 
 	<OpenAiApiKeyInput />
+	<DeepgramApiKeyInput />
 	<OpenRouterApiKeyInput />
 	<AnthropicApiKeyInput />
 	<GroqApiKeyInput />

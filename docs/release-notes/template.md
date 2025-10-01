@@ -84,4 +84,4 @@ Special thanks to:
 
 ---
 
-**Full changelog**: [Previous version...Current version](https://github.com/epicenter-so/epicenter/compare/vX.X.X...vY.Y.Y)
+**Full changelog**: [Previous version...Current version](https://github.com/epicenter-md/epicenter/compare/vX.X.X...vY.Y.Y)

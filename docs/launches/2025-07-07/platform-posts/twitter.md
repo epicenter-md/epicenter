@@ -8,7 +8,7 @@ Here's how I talk to my computer to build software faster:
 ### Tweet 2 (The Reveal + GitHub Link)
 For my workflow, I use Whispering: a completely free, open-source transcription tool.
 
-GitHub: https://github.com/epicenter-so/epicenter#readme
+GitHub: https://github.com/epicenter-md/epicenter#readme
 
 ### Tweet 3 (The Philosophy)
 I built this for myself and made it open-source from day one.
@@ -29,6 +29,6 @@ No servers. No tracking. Just your voice → your code.
 ### Tweet 5 (Call to Action + More Tech)
 Try the voice coding workflow yourself:
 
-Installation: https://github.com/epicenter-so/epicenter#installation
+Installation: https://github.com/epicenter-md/epicenter#installation
 
 And thank you to the amazing open-source community that made this possible!

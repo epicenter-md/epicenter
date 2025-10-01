@@ -9,10 +9,10 @@
 	label="OpenRouter API Key"
 	type="password"
 	placeholder="Your OpenRouter API Key"
-	value={settings.value['apiKeys.openrouter']}
-	oninput={({ currentTarget: { value } }) => {
-		settings.updateKey('apiKeys.openrouter', value);
-	}}
+	bind:value={
+		() => settings.value['apiKeys.openrouter'],
+		(value) => settings.updateKey('apiKeys.openrouter', value)
+	}
 >
 	{#snippet description()}
 		<p class="text-muted-foreground text-sm">

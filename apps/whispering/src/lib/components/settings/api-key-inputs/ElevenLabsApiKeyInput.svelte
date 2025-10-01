@@ -9,10 +9,10 @@
 	label="ElevenLabs API Key"
 	type="password"
 	placeholder="Your ElevenLabs API Key"
-	value={settings.value['apiKeys.elevenlabs']}
-	oninput={({ currentTarget: { value } }) => {
-		settings.updateKey('apiKeys.elevenlabs', value);
-	}}
+	bind:value={
+		() => settings.value['apiKeys.elevenlabs'],
+		(value) => settings.updateKey('apiKeys.elevenlabs', value)
+	}
 >
 	{#snippet description()}
 		<p class="text-muted-foreground text-sm">

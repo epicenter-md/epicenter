@@ -9,10 +9,10 @@
 	label="Groq API Key"
 	type="password"
 	placeholder="Your Groq API Key"
-	value={settings.value['apiKeys.groq']}
-	oninput={({ currentTarget: { value } }) => {
-		settings.updateKey('apiKeys.groq', value);
-	}}
+	bind:value={
+		() => settings.value['apiKeys.groq'],
+		(value) => settings.updateKey('apiKeys.groq', value)
+	}
 >
 	{#snippet description()}
 		<p class="text-muted-foreground text-sm">

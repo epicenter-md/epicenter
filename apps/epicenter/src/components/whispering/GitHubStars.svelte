@@ -6,13 +6,13 @@
   
   onMount(async () => {
     try {
-      const response = await fetch('https://api.github.com/repos/epicenter-so/epicenter');
+      const response = await fetch('https://api.github.com/repos/epicenter-md/epicenter');
       const data = await response.json();
       
       // Format the star count
       const count = data.stargazers_count;
       if (count >= 1000) {
-        stars = (count / 1000).toFixed(1) + 'k';
+        stars = `${(count / 1000).toFixed(1)}k`;
       } else {
         stars = count.toString();
       }

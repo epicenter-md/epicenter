@@ -21,6 +21,6 @@ The code is 100% open source. You can audit exactly what it does with your data 
 
 I know it's not traditional self-hosting since it uses external APIs, but it gives you the same control and ownership we value here. No SaaS lock-in, transparent costs, and your data stays yours.
 
-GitHub: https://github.com/epicenter-so/epicenter
+GitHub: https://github.com/epicenter-md/epicenter
 
 Anyone else tired of subscription services for basic utilities?

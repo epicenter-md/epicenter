@@ -9,10 +9,10 @@
     label="Deepgram API Key"
     type="password"
     placeholder="Your Deepgram API Key"
-    value={settings.value['apiKeys.deepgram']}
-    oninput={({ currentTarget: { value } }) => {
-        settings.updateKey('apiKeys.deepgram', value);
-    }}
+    bind:value={
+        () => settings.value['apiKeys.deepgram'],
+        (value) => settings.updateKey('apiKeys.deepgram', value)
+    }
 >
     {#snippet description()}
         <p class="text-muted-foreground text-sm">

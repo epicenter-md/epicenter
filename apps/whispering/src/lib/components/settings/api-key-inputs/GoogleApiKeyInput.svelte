@@ -9,10 +9,10 @@
 	label="Google API Key"
 	type="password"
 	placeholder="Your Google API Key"
-	value={settings.value['apiKeys.google']}
-	oninput={({ currentTarget: { value } }) => {
-		settings.updateKey('apiKeys.google', value);
-	}}
+	bind:value={
+		() => settings.value['apiKeys.google'],
+		(value) => settings.updateKey('apiKeys.google', value)
+	}
 >
 	{#snippet description()}
 		<p class="text-muted-foreground text-sm">

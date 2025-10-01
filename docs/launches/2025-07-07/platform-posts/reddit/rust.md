@@ -30,10 +30,10 @@ pub fn is_macos_accessibility_enabled(ask_if_not_allowed: bool) -> Result<bool, 
 }
 ```
 
-The `#[tauri::command]` macro makes it seamless to call this from TypeScript. The full implementation ([accessibility.rs](https://github.com/epicenter-so/epicenter/blob/main/apps/whispering/src-tauri/src/accessibility.rs)) can be found here.
+The `#[tauri::command]` macro makes it seamless to call this from TypeScript. The full implementation ([accessibility.rs](https://github.com/epicenter-md/epicenter/blob/main/apps/whispering/src-tauri/src/accessibility.rs)) can be found here.
 
 Tauri's IPC is blazing fast—the Rust backend handles server-side-like operations, while the frontend stays static and lightweight. We achieved 97% code sharing between desktop and web by using dependency injection at build time.
 
-GitHub: https://github.com/epicenter-so/epicenter
+GitHub: https://github.com/epicenter-md/epicenter
 
 Happy to dive into implementation details or discuss Tauri patterns. Anyone else building desktop apps with Rust?

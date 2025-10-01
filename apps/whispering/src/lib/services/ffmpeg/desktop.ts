@@ -6,10 +6,7 @@ import { writeFile, remove, exists } from '@tauri-apps/plugin-fs';
 import { appDataDir, join } from '@tauri-apps/api/path';
 import { nanoid } from 'nanoid/non-secure';
 import * as services from '$lib/services';
-import {
-	buildCompressionCommand,
-	getFileExtensionFromFfmpegOptions,
-} from '../recorder/ffmpeg';
+import { getFileExtensionFromFfmpegOptions } from '../recorder/ffmpeg';
 import { asShellCommand } from '../command/types';
 
 export function createFfmpegService(): FfmpegService {
@@ -61,7 +58,7 @@ export function createFfmpegService(): FfmpegService {
 						await writeFile(inputPath, inputContents);
 
 						// Build FFmpeg command for compression using the utility function
-						const { command } = buildCompressionCommand({
+						const command = buildCompressionCommand({
 							inputPath,
 							compressionOptions,
 							outputPath,
@@ -121,4 +118,38 @@ export function createFfmpegService(): FfmpegService {
 			});
 		},
 	};
+}
+
+/**
+ * Builds a complete FFmpeg compression command string.
+ * Creates a command that compresses an input audio file using the specified options.
+ *
+ * @param inputPath - Path to the input audio file
+ * @param compressionOptions - FFmpeg compression options
+ * @param outputPath - Path to the output compressed file
+ * @returns Complete FFmpeg compression command string
+ *
+ * @example
+ * buildCompressionCommand({ inputPath: 'input.wav', compressionOptions: '-c:a libopus -b:a 32k', outputPath: 'output.opus' })
+ * // returns: 'ffmpeg -i "input.wav" -c:a libopus -b:a 32k "output.opus"'
+ */
+function buildCompressionCommand({
+	inputPath,
+	compressionOptions,
+	outputPath,
+}: {
+	inputPath: string;
+	compressionOptions: string;
+	outputPath: string;
+}) {
+	// Build command parts
+	const parts = [
+		'ffmpeg',
+		'-i',
+		`"${inputPath}"`,
+		compressionOptions.trim(),
+		`"${outputPath}"`,
+	].filter((part) => part); // Remove empty strings
+
+	return parts.join(' ');
 }

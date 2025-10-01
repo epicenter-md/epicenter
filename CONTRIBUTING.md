@@ -16,7 +16,7 @@ Epicenter is a monorepo containing multiple applications. The main application r
 
 1. **Clone the repository**
    ```bash
-   git clone https://github.com/epicenter-so/epicenter.git
+   git clone https://github.com/epicenter-md/epicenter.git
    cd epicenter
    ```
 

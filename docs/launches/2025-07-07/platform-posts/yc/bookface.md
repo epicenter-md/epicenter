@@ -25,7 +25,7 @@ For anyone who wants to try this —I use Whispering, an open-source transcripti
 
 Launched it today on HN and Reddit. The response has been interesting—people seem more excited about the workflow than the cost savings.
 
-GitHub: https://github.com/epicenter-so/epicenter
+GitHub: https://github.com/epicenter-md/epicenter
 
 Anyone else experimenting with voice-driven development? What's your workflow?
 

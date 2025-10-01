@@ -86,7 +86,7 @@ bunx @epicenter/cli sh --tunnel=ngrok --cors-origins https://epicenter.sh https:
 
 ## How It Works
 
-The Epicenter CLI uses a custom fork of the [sst/opencode](https://github.com/sst/opencode) project, maintained at [`@epicenter/opencode`](https://github.com/epicenter-so/opencode). This fork adds essential CORS (Cross-Origin Resource Sharing) support, allowing epicenter.sh to communicate with your local OpenCode server from the browser without a middleman proxy server.
+The Epicenter CLI uses a custom fork of the [sst/opencode](https://github.com/sst/opencode) project, maintained at [`@epicenter/opencode`](https://github.com/epicenter-md/opencode). This fork adds essential CORS (Cross-Origin Resource Sharing) support, allowing epicenter.sh to communicate with your local OpenCode server from the browser without a middleman proxy server.
 
 ### Key Features
 
@@ -157,5 +157,5 @@ bun run typecheck
 
 ## Related Projects
 
-- [`@epicenter/opencode`](https://github.com/epicenter-so/opencode) - Our fork of OpenCode with CORS support for browser integration
+- [`@epicenter/opencode`](https://github.com/epicenter-md/opencode) - Our fork of OpenCode with CORS support for browser integration
 - [`sst/opencode`](https://github.com/sst/opencode) - Original OpenCode project by SST team

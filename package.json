@@ -1,16 +1,14 @@
 {
 	"name": "epicenter",
+	"type": "module",
 	"private": true,
-	"version": "7.4.0",
+	"version": "7.5.1",
 	"description": "",
 	"keywords": [],
 	"license": "ISC",
 	"author": "",
 	"workspaces": {
-		"packages": [
-			"apps/*",
-			"packages/*"
-		],
+		"packages": ["apps/*", "packages/*"],
 		"catalog": {
 			"@types/node": "^22.15.32",
 			"typescript": "^5.8.3",
@@ -47,8 +45,10 @@
 	"scripts": {
 		"build": "turbo run build",
 		"dev": "turbo run dev",
-		"format": "concurrently \"biome format --write .\" \"turbo run format\"",
-		"lint": "concurrently \"biome lint --write --unsafe .\" \"turbo run lint\"",
+		"format": "turbo format && biome format --write && prettier --write \"**/*.{svelte,astro,html}\"",
+		"format:check": "concurrently --raw \"turbo format:check\" \"biome format\" \"prettier --check \\\"**/*.{svelte,astro,html}\\\"\"",
+		"lint": "concurrently -raw \"turbo run lint\" \"eslint\" \"biome lint\"",
+		"check": "turbo run check",
 		"format-and-lint": "concurrently \"bun run format\" \"bun run lint\"",
 		"bump-version": "bun run scripts/bump-version.ts"
 	},
@@ -56,6 +56,14 @@
 		"@biomejs/biome": "catalog:",
 		"@types/node": "catalog:",
 		"concurrently": "catalog:",
+		"eslint": "^9.32.0",
+		"@eslint/compat": "^1.2.5",
+		"eslint-plugin-svelte": "^3.10.1",
+		"@typescript-eslint/parser": "^8.12.2",
+		"prettier": "^3.6.2",
+		"prettier-plugin-svelte": "^3.4.0",
+		"prettier-plugin-tailwindcss": "^0.6.11",
+		"prettier-plugin-astro": "^0.14.1",
 		"turbo": "catalog:"
 	}
 }

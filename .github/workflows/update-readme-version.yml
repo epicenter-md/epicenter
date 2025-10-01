@@ -40,7 +40,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           # Use a PAT or the default token with proper permissions
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.PAT }}
           # Fetch all history for proper git operations
           fetch-depth: 0
 

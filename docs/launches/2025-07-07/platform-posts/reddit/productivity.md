@@ -22,7 +22,7 @@ The productivity gains are real: zero friction for thought capture, no more forg
 
 The video shows this in action - you can see how seamlessly it fits into any workflow.
 
-GitHub: https://github.com/epicenter-so/epicenter
+GitHub: https://github.com/epicenter-md/epicenter
 
 Demo: https://www.youtube.com/watch?v=tP1fuFpJt7g&t=8s
 

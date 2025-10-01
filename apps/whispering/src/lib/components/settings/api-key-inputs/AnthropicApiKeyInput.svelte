@@ -9,10 +9,10 @@
 	label="Anthropic API Key"
 	type="password"
 	placeholder="Your Anthropic API Key"
-	value={settings.value['apiKeys.anthropic']}
-	oninput={({ currentTarget: { value } }) => {
-		settings.updateKey('apiKeys.anthropic', value);
-	}}
+	bind:value={
+		() => settings.value['apiKeys.anthropic'],
+		(value) => settings.updateKey('apiKeys.anthropic', value)
+	}
 >
 	{#snippet description()}
 		<p class="text-muted-foreground text-sm">

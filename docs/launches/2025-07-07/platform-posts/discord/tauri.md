@@ -26,7 +26,7 @@ Using a services pattern with platform detection at build time, I share ~95% of 
 ```typescript
 window.__TAURI_INTERNALS__ ? desktopImpl() : webImpl()
 ```
-Check out the [services README](https://github.com/epicenter-so/epicenter/tree/main/apps/whispering/src/lib/services) for the full pattern!
+Check out the [services README](https://github.com/epicenter-md/epicenter/tree/main/apps/whispering/src/lib/services) for the full pattern!
 
 GitHub: [link]
 

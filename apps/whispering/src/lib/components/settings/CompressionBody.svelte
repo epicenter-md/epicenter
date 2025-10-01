@@ -136,10 +136,10 @@
 		<LabeledInput
 			id="compression-options-{Math.random().toString(36).substr(2, 9)}"
 			label="Custom Options"
-			value={settings.value['transcription.compressionOptions']}
-			oninput={({ currentTarget: { value } }) => {
-				settings.updateKey('transcription.compressionOptions', value);
-			}}
+			bind:value={
+				() => settings.value['transcription.compressionOptions'],
+				(value) => settings.updateKey('transcription.compressionOptions', value)
+			}
 			placeholder={FFMPEG_DEFAULT_COMPRESSION_OPTIONS}
 			description="FFmpeg compression options. Changes here will be reflected in real-time during transcription."
 		>

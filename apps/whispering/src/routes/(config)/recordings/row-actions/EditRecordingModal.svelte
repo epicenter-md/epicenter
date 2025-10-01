@@ -70,8 +70,8 @@
 	const blobUrlManager = createBlobUrlManager();
 
 	const blobUrl = $derived.by(() => {
-		if (!workingCopy?.blob) return undefined;
-		return blobUrlManager.createUrl(workingCopy.blob);
+		if (!recording?.blob) return undefined;
+		return blobUrlManager.createUrl(recording.blob);
 	});
 
 	function promptUserConfirmLeave() {

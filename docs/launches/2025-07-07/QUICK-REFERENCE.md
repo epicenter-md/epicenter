@@ -20,7 +20,7 @@
 
 
 ## Key Links
-- GitHub: https://github.com/epicenter-so/epicenter
+- GitHub: https://github.com/epicenter-md/epicenter
 - Voice Coding Demo (3 min): https://www.youtube.com/watch?v=tP1fuFpJt7g&t=8s ✅
 - Setup Guide (5 min): [YouTube unlisted - TO BE UPLOADED] 🚨
 - Blog post: [if published]

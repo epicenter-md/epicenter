@@ -8,7 +8,8 @@
 		"db:studio": "infisical run -- drizzle-kit studio",
 		"db:migrate:dev": "infisical run --env=dev -- drizzle-kit migrate",
 		"db:migrate:prod": "infisical run --env=prod -- drizzle-kit migrate",
-		"db:migrate:all": "bun run db:migrate:dev && bun run db:migrate:prod"
+		"db:migrate:all": "bun run db:migrate:dev && bun run db:migrate:prod",
+		"check": "tsc --noEmit"
 	},
 	"dependencies": {
 		"@neondatabase/serverless": "^1.0.1",

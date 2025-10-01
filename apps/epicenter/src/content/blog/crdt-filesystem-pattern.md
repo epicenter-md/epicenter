@@ -223,7 +223,7 @@ The vault pattern isn't always right. Skip it if:
 
 ## Try it yourself
 
-I extracted the core vault pattern into a library: [vault-crdt](https://github.com/epicenter-so/epicenter/vault-crdt). It handles the boring parts (snapshotting, corruption recovery) so you can focus on your app.
+I extracted the core vault pattern into a library: [vault-crdt](https://github.com/epicenter-md/epicenter/vault-crdt). It handles the boring parts (snapshotting, corruption recovery) so you can focus on your app.
 
 Or just steal the ideas. That's why I'm writing this.
 

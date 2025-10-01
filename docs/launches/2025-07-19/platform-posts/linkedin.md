@@ -8,7 +8,7 @@ Simply drag and drop (or click to browse) your audio files for instant transcrip
 
 Used shadcn-svelte-extras' FileDropZone component for web, and Tauri's onDragDropEvent for native desktop support.
 
-https://github.com/epicenter-so/epicenter
+https://github.com/epicenter-md/epicenter
 
 ## Visual
 

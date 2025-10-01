@@ -7,11 +7,23 @@ import {
 	toExtensionNotification,
 } from './types';
 
+/**
+ * Creates a web-based notification service that handles browser notifications
+ * with fallback support for extension-based notifications.
+ * 
+ * @returns {NotificationService} A notification service instance with notify and clear methods
+ */
 export function createNotificationServiceWeb(): NotificationService {
 	// Cache extension detection result
 	let extensionChecked = false;
 	let hasExtension = false;
 
+	/**
+	 * Detects if a browser extension is available for enhanced notification support.
+	 * Results are cached to avoid repeated detection attempts.
+	 * 
+	 * @returns {Promise<boolean>} True if extension is available, false otherwise
+	 */
 	const detectExtension = async (): Promise<boolean> => {
 		if (extensionChecked) return hasExtension;
 
@@ -25,6 +37,13 @@ export function createNotificationServiceWeb(): NotificationService {
 	};
 
 	return {
+		/**
+		 * Sends a notification using the best available method (extension or browser API).
+		 * Automatically handles permission requests and converts unified options to browser format.
+		 * 
+		 * @param {UnifiedNotificationOptions} options - Notification configuration including title, body, and actions
+		 * @returns {Promise<Result<string, NotificationServiceError>>} Success with notification ID or error
+		 */
 		async notify(options: UnifiedNotificationOptions) {
 			const notificationId = options.id ?? nanoid();
 
@@ -92,6 +111,13 @@ export function createNotificationServiceWeb(): NotificationService {
 			return Ok(notificationId);
 		},
 
+		/**
+		 * Clears a notification by ID. Currently a no-op for browser notifications
+		 * as they don't provide a direct clear API.
+		 * 
+		 * @param {string} id - The notification ID to clear
+		 * @returns {Promise<Result<undefined, NotificationServiceError>>} Success or error result
+		 */
 		async clear(id: string) {
 			// Browser notifications don't have a direct clear API
 			// They auto-dismiss or require service worker control
