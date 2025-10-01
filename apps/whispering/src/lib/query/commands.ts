@@ -31,6 +31,9 @@ const startManualRecording = defineMutation({
 			title: '🎙️ Preparing to record...',
 			description: 'Setting up your recording environment...',
 		});
+		// Pause media before starting recording
+		await media.pauseIfEnabled.execute(undefined);
+		
 		const { data: deviceAcquisitionOutcome, error: startRecordingError } =
 			await recorder.startRecording.execute({ toastId });
 
@@ -105,6 +108,9 @@ const stopManualRecording = defineMutation({
 		});
 		const { data: blob, error: stopRecordingError } =
 			await recorder.stopRecording.execute({ toastId });
+		
+		// Resume media after stopping recording
+		await media.resumePaused.execute(undefined);
 		if (stopRecordingError) {
 			notify.error.execute({ id: toastId, ...stopRecordingError });
 			return Err(stopRecordingError);
@@ -154,6 +160,9 @@ const startVadRecording = defineMutation({
 			title: '🎙️ Starting voice activated capture',
 			description: 'Your voice activated capture is starting...',
 		});
+		// Pause media before starting VAD
+		await media.pauseIfEnabled.execute(undefined);
+		
 		const { data: deviceAcquisitionOutcome, error: startActiveListeningError } =
 			await vadRecorder.startActiveListening.execute({
 				onSpeechStart: () => {
@@ -258,6 +267,9 @@ const stopVadRecording = defineMutation({
 		});
 		const { error: stopVadError } =
 			await vadRecorder.stopActiveListening.execute(undefined);
+		
+		// Resume media after stopping VAD
+		await media.resumePaused.execute(undefined);
 		if (stopVadError) {
 			notify.error.execute({ id: toastId, ...stopVadError });
 			return Err(stopVadError);
@@ -307,6 +319,9 @@ export const commands = {
 			});
 			const { data: cancelRecordingResult, error: cancelRecordingError } =
 				await recorder.cancelRecording.execute({ toastId });
+			
+			// Resume media after canceling recording
+			await media.resumePaused.execute(undefined);
 			if (cancelRecordingError) {
 				notify.error.execute({ id: toastId, ...cancelRecordingError });
 				return Err(cancelRecordingError);
