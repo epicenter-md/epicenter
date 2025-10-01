@@ -8,7 +8,6 @@
 		min?: number;
 		max?: number;
 		step?: number;
-		onValueChange?: (value: number) => void;
 		description?: string;
 	}
 
@@ -19,16 +18,8 @@
 		min = 0,
 		max = 100,
 		step = 1,
-		onValueChange,
 		description,
 	}: Props = $props();
-
-	const handleInput = (event: Event) => {
-		const target = event.target as HTMLInputElement;
-		const newValue = Number(target.value);
-		value = newValue;
-		onValueChange?.(newValue);
-	};
 
 	// Calculate percentage for visual fill
 	const percentage = $derived(((value - min) / (max - min)) * 100);
@@ -53,8 +44,7 @@
 					{min}
 					{max}
 					{step}
-					{value}
-					oninput={handleInput}
+					bind:value
 					class="absolute top-0 left-0 w-full h-full opacity-0 cursor-pointer"
 				/>
 				<!-- Custom thumb -->
