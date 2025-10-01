@@ -979,7 +979,7 @@ export function createDbServiceDexie({
 					console.log('🔧 DB: Custom sound saved successfully');
 					return customSound;
 				},
-				mapErr: (error) => {
+				catch: (error) => {
 					console.error('🔧 DB: Failed to save custom sound:', error);
 					return DbServiceErr({
 						message: 'Failed to save custom sound',
@@ -996,7 +996,7 @@ export function createDbServiceDexie({
 					const customSound = await db.customSounds.get(soundId);
 					return customSound ?? null;
 				},
-				mapErr: (error) => DbServiceErr({
+				catch: (error) => DbServiceErr({
 					message: 'Failed to get custom sound',
 					context: { soundId },
 					cause: error,
@@ -1009,7 +1009,7 @@ export function createDbServiceDexie({
 				try: async () => {
 					return await db.customSounds.toArray();
 				},
-				mapErr: (error) => DbServiceErr({
+				catch: (error) => DbServiceErr({
 					message: 'Failed to get all custom sounds',
 					cause: error,
 				}),
@@ -1021,7 +1021,7 @@ export function createDbServiceDexie({
 				try: async () => {
 					await db.customSounds.delete(soundId);
 				},
-				mapErr: (error) => DbServiceErr({
+				catch: (error) => DbServiceErr({
 					message: 'Failed to delete custom sound',
 					context: { soundId },
 					cause: error,
@@ -1038,7 +1038,7 @@ export function createDbServiceDexie({
 					console.log('🔧 DB: Database deleted, will recreate on next access');
 					// The database will be recreated automatically on next access
 				},
-				mapErr: (error) =>
+				catch: (error) =>
 					DbServiceErr({
 						message: 'Failed to reset database',
 						context: {},
@@ -1060,7 +1060,7 @@ export function createDbServiceDexie({
 						uploadedAt: customSound.uploadedAt,
 					};
 				},
-				mapErr: (error) => DbServiceErr({
+				catch: (error) => DbServiceErr({
 					message: 'Failed to get custom sound metadata',
 					context: { soundId },
 					cause: error,
