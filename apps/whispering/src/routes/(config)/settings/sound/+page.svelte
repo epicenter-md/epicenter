@@ -69,20 +69,23 @@
 			label: 'Transformation Complete',
 			description: 'When text transformation finishes',
 		},
-	] as const;
+	] as const satisfies {
+		key: WhisperingSoundNames;
+		label: string;
+		description: string;
+	}[];
 
-	const testSound = (soundKey: string) => {
-		rpc.sound.playSoundIfEnabled.execute(soundKey as WhisperingSoundNames);
+	const testSound = (soundKey: WhisperingSoundNames) => {
+		rpc.sound.playSoundIfEnabled.execute(soundKey);
 	};
 
 	const applyGlobalVolume = (volume: number) => {
 		const volumeDecimal = volume / 100;
 		const updates: Partial<typeof settings.value> = {};
 
-		soundEvents.forEach((event) => {
-			updates[`sound.volume.${event.key}` as keyof typeof settings.value] =
-				volumeDecimal as any;
-		});
+		for (const event of soundEvents) {
+			updates[`sound.volume.${event.key}`] = volumeDecimal;
+		}
 
 		settings.update(updates);
 	};
@@ -120,7 +123,7 @@
 			const now = new Date().toISOString();
 
 			const customSound = {
-				id: soundKey as any, // WhisperingSoundNames
+				id: soundKey, // WhisperingSoundNames
 				serializedAudio: { arrayBuffer, blobType: file.type },
 				fileName: file.name,
 				fileSize: file.size,
@@ -273,9 +276,7 @@
 							variant="outline"
 							size="sm"
 							onclick={() => testSound(event.key)}
-							disabled={!settings.value[
-								`sound.playOn.${event.key}` as keyof typeof settings.value
-							]}
+							disabled={!settings.value[`sound.playOn.${event.key}`]}
 						>
 							<PlayIcon class="mr-2 size-4" />
 							Test
@@ -284,8 +285,8 @@
 							id="sound.playOn.{event.key}"
 							label=""
 							bind:checked={
-								() => settings.value[`sound.playOn.${event.key}` as keyof typeof settings.value] as boolean,
-								(v) => settings.updateKey(`sound.playOn.${event.key}` as keyof typeof settings.value, v as any)
+								() => settings.value[`sound.playOn.${event.key}`] ?? false,
+								(v) => settings.updateKey(`sound.playOn.${event.key}`, v)
 							}
 						/>
 					</div>
@@ -295,8 +296,8 @@
 					id="sound.volume.{event.key}"
 					label="Volume"
 					bind:value={
-						() => Math.round((settings.value[`sound.volume.${event.key}` as keyof typeof settings.value] as number) * 100),
-						(v) => settings.updateKey(`sound.volume.${event.key}` as keyof typeof settings.value, (v / 100) as any)
+						() => Math.round(settings.value[`sound.volume.${event.key}`] * 100),
+						(v) => settings.updateKey(`sound.volume.${event.key}`, v / 100)
 					}
 					min={0}
 					max={100}
@@ -306,7 +307,7 @@
 				<!-- Custom Sound Upload Section -->
 				<div class="space-y-2">
 					<h6 class="text-sm font-medium">Custom Sound</h6>
-					{#if settings.value[`sound.custom.${event.key}` as keyof typeof settings.value]}
+					{#if settings.value[`sound.custom.${event.key}`]}
 						<div class="flex items-center gap-2 p-2 bg-muted rounded">
 							<span class="text-sm flex-1">Custom sound uploaded</span>
 							<Button
