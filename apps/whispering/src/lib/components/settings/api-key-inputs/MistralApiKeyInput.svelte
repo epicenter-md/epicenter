@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { LabeledInput } from '$lib/components/labeled/index.js';
-	import { Button } from '@repo/ui/button';
 	import { settings } from '$lib/stores/settings.svelte';
+	import { Button } from '@repo/ui/button';
 </script>
 
 <LabeledInput
@@ -27,11 +27,11 @@
 			</Button>. Voxtral transcription is priced at <Button
 				variant="link"
 				class="px-0.3 py-0.2 h-fit"
-				href="https://mistral.ai/technology/#pricing"
+				href="https://mistral.ai/pricing#api-pricing"
 				target="_blank"
 				rel="noopener noreferrer"
 			>
-				$0.06/hour
+				$0.12/hour
 			</Button>
 			of audio.
 		</p>
