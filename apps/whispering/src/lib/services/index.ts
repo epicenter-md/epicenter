@@ -10,11 +10,9 @@ import { LocalShortcutManagerLive } from './local-shortcut-manager';
 import { NotificationServiceLive } from './notifications';
 import { OsServiceLive } from './os';
 import { PermissionsServiceLive } from './permissions';
-import {
-	NativeRecorderServiceLive,
-	BrowserRecorderServiceLive,
-	FfmpegRecorderServiceLive,
-} from './recorder';
+import { CpalRecorderServiceLive } from './recorder/cpal';
+import { NavigatorRecorderServiceLive } from './recorder/navigator';
+import { FfmpegRecorderServiceLive } from './recorder/ffmpeg';
 import { PlaySoundServiceLive } from './sound';
 import { TextServiceLive } from './text';
 import { ToastServiceLive } from './toast';
@@ -38,8 +36,8 @@ export {
 	GlobalShortcutManagerLive as globalShortcutManager,
 	LocalShortcutManagerLive as localShortcutManager,
 	NotificationServiceLive as notification,
-	NativeRecorderServiceLive as nativeRecorder,
-	BrowserRecorderServiceLive as browserRecorder,
+	CpalRecorderServiceLive as cpalRecorder,
+	NavigatorRecorderServiceLive as navigatorRecorder,
 	FfmpegRecorderServiceLive as ffmpegRecorder,
 	PermissionsServiceLive as permissions,
 	ToastServiceLive as toast,

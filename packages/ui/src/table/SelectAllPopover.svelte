@@ -60,11 +60,11 @@
 	</DropdownMenu.Root>
 {:else}
 	<Checkbox
-		checked={table.getIsAllPageRowsSelected()}
+		bind:checked={
+			() => table.getIsAllPageRowsSelected(),
+			(value) => table.toggleAllPageRowsSelected(!!value)
+		}
 		indeterminate={isSomeRowsSelected && !table.getIsAllPageRowsSelected()}
 		aria-label="Select all"
-		onCheckedChange={(value) => {
-			table.toggleAllPageRowsSelected(!!value);
-		}}
 	/>
 {/if}

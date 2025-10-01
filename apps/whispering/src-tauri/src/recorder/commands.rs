@@ -1,7 +1,7 @@
 use crate::recorder::recorder::{AudioRecording, RecorderState, Result};
 use std::path::PathBuf;
 use std::sync::Mutex;
-use tauri::{Manager, State};
+use tauri::State;
 use tracing::{debug, info};
 
 /// Application state containing the recorder
@@ -31,40 +31,29 @@ pub async fn enumerate_recording_devices(state: State<'_, AppData>) -> Result<Ve
 pub async fn init_recording_session(
     device_identifier: String,
     recording_id: String,
-    output_folder: Option<String>,
+    output_folder: String,
     sample_rate: Option<u32>,
     state: State<'_, AppData>,
-    app_handle: tauri::AppHandle,
+    _app_handle: tauri::AppHandle,
 ) -> Result<()> {
     info!(
-        "Initializing recording session: device={}, id={}, folder={:?}, sample_rate={:?}",
+        "Initializing recording session: device={}, id={}, folder={}, sample_rate={:?}",
         device_identifier, recording_id, output_folder, sample_rate
     );
 
-    // Determine output directory
-    let recordings_dir = if let Some(folder) = output_folder {
-        // Use user-specified folder
-        let path = PathBuf::from(folder);
-        // Validate the path exists and is a directory
-        if !path.exists() {
-            return Err(format!("Output folder does not exist: {:?}", path));
-        }
-        if !path.is_dir() {
-            return Err(format!("Output path is not a directory: {:?}", path));
-        }
-        path
-    } else {
-        // Use default app data directory
-        let app_data_dir = app_handle
-            .path()
-            .app_data_dir()
-            .map_err(|e| format!("Failed to get app data dir: {}", e))?;
-
-        let default_dir = app_data_dir.join("recordings");
-        std::fs::create_dir_all(&default_dir)
-            .map_err(|e| format!("Failed to create recordings dir: {}", e))?;
-        default_dir
-    };
+    // Use the provided output folder
+    let recordings_dir = PathBuf::from(output_folder);
+    
+    // Create the directory if it doesn't exist
+    if !recordings_dir.exists() {
+        std::fs::create_dir_all(&recordings_dir)
+            .map_err(|e| format!("Failed to create output folder: {}", e))?;
+    }
+    
+    // Validate it's a directory (not a file)
+    if !recordings_dir.is_dir() {
+        return Err(format!("Output path is not a directory: {:?}", recordings_dir));
+    }
 
     // Initialize the session with optional sample rate
     let mut recorder = state

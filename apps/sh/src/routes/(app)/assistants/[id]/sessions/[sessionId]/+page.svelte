@@ -20,7 +20,7 @@
 	import ModelSelector from './_components/session-controls/ModelSelector.svelte';
 	import ModeSelector from './_components/session-controls/ModeSelector.svelte';
 
-	let { data }: { data: PageData } = $props();
+	let { data } = $props();
 	const assistantConfig = $derived(data.assistantConfig);
 	const session = $derived(data.session);
 	const sessionId = $derived(data.sessionId);
@@ -99,11 +99,6 @@
 		toast.info('File upload coming soon!', {
 			description: 'This feature is still being implemented.',
 		});
-	}
-
-	function handleModeChange(mode: string) {
-		messageMode = mode;
-		toast.success(`Switched to ${mode} mode`);
 	}
 </script>
 
@@ -287,8 +282,13 @@
 			<div class="flex items-center gap-2">
 				<ModeSelector
 					{assistantConfig}
-					bind:value={messageMode}
-					onModeChange={handleModeChange}
+					bind:value={
+						() => messageMode,
+						(mode) => {
+							messageMode = mode;
+							toast.success(`Switched to ${mode} mode`);
+						}
+					}
 				/>
 				<ModelSelector {assistantConfig} bind:value={selectedModel} />
 			</div>

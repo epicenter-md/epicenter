@@ -32,7 +32,7 @@
 			variant="outline"
 			size="sm"
 			onclick={() => {
-				settings.resetShortcuts('local');
+				settings.resetLocalShortcuts();
 				rpc.notify.success.execute({
 					title: 'Shortcuts reset',
 					description: 'All local shortcuts have been reset to defaults.',

@@ -44,9 +44,14 @@ import type { GroqModel } from '$lib/services/transcription/groq';
 import type { OpenAIModel } from '$lib/services/transcription/openai';
 import { ALWAYS_ON_TOP_VALUES } from '$lib/constants/ui';
 import { asDeviceIdentifier } from '$lib/services/types';
+import {
+	FFMPEG_DEFAULT_GLOBAL_OPTIONS,
+	FFMPEG_DEFAULT_INPUT_OPTIONS,
+	FFMPEG_DEFAULT_OUTPUT_OPTIONS,
+	FFMPEG_DEFAULT_COMPRESSION_OPTIONS,
+} from '$lib/services/recorder/ffmpeg';
 import { type ZodBoolean, type ZodString, z } from 'zod';
 import type { DeepgramModel } from '$lib/services/transcription/deepgram';
-import { asTemplateString } from '$lib/utils/template';
 
 /**
  * The main settings schema that defines all application settings.
@@ -107,55 +112,56 @@ export const settingsSchema = z.object({
 	// Recording mode settings
 	'recording.mode': z.enum(RECORDING_MODES).default('manual'),
 	/**
-	 * Recording backend to use in desktop app.
-	 * - 'native': Uses Rust audio recording backend (CPAL)
-	 * - 'browser': Uses browser MediaRecorder API even in desktop
+	 * Recording method to use for manual recording in desktop app.
+	 * - 'cpal': Uses Rust audio recording method (CPAL)
+	 * - 'navigator': Uses MediaRecorder API (web standard)
 	 * - 'ffmpeg': Uses FFmpeg command-line tool for recording
 	 */
-	'recording.backend': z
-		.enum(['native', 'browser', 'ffmpeg'])
-		.default('browser'),
+	'recording.method': z.enum(['cpal', 'navigator', 'ffmpeg']).default('cpal'),
+
 	/**
-	 * Device identifier for manual recording.
-	 * Can be either a desktop device identifier or navigator device ID.
-	 * @see DeviceIdentifier
+	 * Device identifiers for each recording method.
+	 * Each method remembers its own selected device.
+	 * Note: VAD always uses navigator, so it shares the same device ID.
 	 */
-	'recording.manual.selectedDeviceId': z
+	'recording.cpal.deviceId': z
+		.string()
+		.nullable()
+		.transform((val) => (val ? asDeviceIdentifier(val) : null))
+		.default(null),
+	'recording.navigator.deviceId': z
+		.string()
+		.nullable()
+		.transform((val) => (val ? asDeviceIdentifier(val) : null))
+		.default(null),
+	'recording.ffmpeg.deviceId': z
 		.string()
 		.nullable()
 		.transform((val) => (val ? asDeviceIdentifier(val) : null))
 		.default(null),
 
-	/**
-	 * Device identifier for VAD recording.
-	 * Always a navigator device ID due to the nature of VAD recording
-	 * (it uses a MediaStream to track voice activity)
-	 * @see DeviceIdentifier
-	 */
-	'recording.vad.selectedDeviceId': z
-		.string()
-		.nullable()
-		.transform((val) => (val ? asDeviceIdentifier(val) : null))
-		.default(null),
-
-	// Browser recording settings (used when browser backend is selected)
+	// Browser recording settings (used when browser method is selected)
 	'recording.navigator.bitrateKbps': z
 		.enum(BITRATE_VALUES_KBPS)
 		.optional()
 		.default(DEFAULT_BITRATE_KBPS),
 
-	// Desktop recording settings
-	'recording.desktop.outputFolder': z.string().nullable().default(null), // null = use app data dir
-	'recording.desktop.sampleRate': z
+	// CPAL (Rust audio library) recording settings
+	'recording.cpal.outputFolder': z.string().nullable().default(null), // null = use app data dir
+	'recording.cpal.sampleRate': z
 		.enum(['16000', '44100', '48000'])
 		.default('16000'),
 
-	// FFmpeg recording settings
-	'recording.ffmpeg.commandTemplate': z
+	// FFmpeg recording settings - split into three customizable parts
+	'recording.ffmpeg.globalOptions': z
 		.string()
-		.nullable()
-		.transform((val) => (val ? asTemplateString(val) : null))
-		.default(null), // null = use default command
+		.default(FFMPEG_DEFAULT_GLOBAL_OPTIONS), // Global FFmpeg options (e.g., "-hide_banner -loglevel warning")
+	'recording.ffmpeg.inputOptions': z
+		.string()
+		.default(FFMPEG_DEFAULT_INPUT_OPTIONS), // Input options (e.g., "-f avfoundation" - platform defaults applied if empty)
+	'recording.ffmpeg.outputOptions': z
+		.string()
+		.default(FFMPEG_DEFAULT_OUTPUT_OPTIONS), // OGG Vorbis optimized for Whisper: 16kHz mono, 64kbps
 
 	'transcription.selectedTranscriptionService': z
 		.enum(TRANSCRIPTION_SERVICE_IDS)
@@ -164,6 +170,11 @@ export const settingsSchema = z.object({
 	'transcription.outputLanguage': z.enum(SUPPORTED_LANGUAGES).default('auto'),
 	'transcription.prompt': z.string().default(''),
 	'transcription.temperature': z.string().default('0.0'),
+	// Audio compression settings
+	'transcription.compressionEnabled': z.boolean().default(false),
+	'transcription.compressionOptions': z
+		.string()
+		.default(FFMPEG_DEFAULT_COMPRESSION_OPTIONS),
 
 	// Service-specific settings
 	'transcription.openai.model': z
@@ -187,13 +198,12 @@ export const settingsSchema = z.object({
 		.string()
 		.default('Systran/faster-distil-whisper-small.en'),
 	'transcription.whispercpp.modelPath': z.string().default(''),
-	'transcription.whispercpp.useGpu': z.boolean().default(true),
 
 	'transformations.selectedTransformationId': z
 		.string()
 		.nullable()
 		.default(null),
-		
+
 	'completion.openrouter.model': z
 		.string()
 		.default('mistralai/mixtral-8x7b')

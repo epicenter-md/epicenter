@@ -21,28 +21,28 @@
 	<LabeledSwitch
 		id="sound.playOn.manual-start"
 		label="Play sound when starting manual recording"
-		checked={settings.value['sound.playOn.manual-start']}
-		onCheckedChange={(v) => {
-			settings.updateKey('sound.playOn.manual-start', v);
-		}}
+		bind:checked={
+			() => settings.value['sound.playOn.manual-start'],
+			(v) => settings.updateKey('sound.playOn.manual-start', v)
+		}
 	/>
 
 	<LabeledSwitch
 		id="sound.playOn.manual-start"
 		label="Play sound when stopping manual recording"
-		checked={settings.value['sound.playOn.manual-stop']}
-		onCheckedChange={(v) => {
-			settings.updateKey('sound.playOn.manual-stop', v);
-		}}
+		bind:checked={
+			() => settings.value['sound.playOn.manual-stop'],
+			(v) => settings.updateKey('sound.playOn.manual-stop', v)
+		}
 	/>
 
 	<LabeledSwitch
 		id="sound.playOn.manual-start"
 		label="Play sound when canceling manual recording"
-		checked={settings.value['sound.playOn.manual-cancel']}
-		onCheckedChange={(v) => {
-			settings.updateKey('sound.playOn.manual-cancel', v);
-		}}
+		bind:checked={
+			() => settings.value['sound.playOn.manual-cancel'],
+			(v) => settings.updateKey('sound.playOn.manual-cancel', v)
+		}
 	/>
 
 	<Separator />
@@ -50,28 +50,28 @@
 	<LabeledSwitch
 		id="sound.playOn.vad-start"
 		label="Play sound when starting vad recording session"
-		checked={settings.value['sound.playOn.vad-start']}
-		onCheckedChange={(v) => {
-			settings.updateKey('sound.playOn.vad-start', v);
-		}}
+		bind:checked={
+			() => settings.value['sound.playOn.vad-start'],
+			(v) => settings.updateKey('sound.playOn.vad-start', v)
+		}
 	/>
 
 	<LabeledSwitch
 		id="sound.playOn.vad-start"
 		label="Play sound vad capture"
-		checked={settings.value['sound.playOn.vad-capture']}
-		onCheckedChange={(v) => {
-			settings.updateKey('sound.playOn.vad-capture', v);
-		}}
+		bind:checked={
+			() => settings.value['sound.playOn.vad-capture'],
+			(v) => settings.updateKey('sound.playOn.vad-capture', v)
+		}
 	/>
 
 	<LabeledSwitch
 		id="sound.playOn.vad-start"
 		label="Play sound when stopping vad recording session"
-		checked={settings.value['sound.playOn.vad-stop']}
-		onCheckedChange={(v) => {
-			settings.updateKey('sound.playOn.vad-stop', v);
-		}}
+		bind:checked={
+			() => settings.value['sound.playOn.vad-stop'],
+			(v) => settings.updateKey('sound.playOn.vad-stop', v)
+		}
 	/>
 
 	<Separator />
@@ -79,18 +79,18 @@
 	<LabeledSwitch
 		id="play-sound-transcription"
 		label="Play sound after transcription"
-		checked={settings.value['sound.playOn.transcriptionComplete']}
-		onCheckedChange={(v) => {
-			settings.updateKey('sound.playOn.transcriptionComplete', v);
-		}}
+		bind:checked={
+			() => settings.value['sound.playOn.transcriptionComplete'],
+			(v) => settings.updateKey('sound.playOn.transcriptionComplete', v)
+		}
 	/>
 
 	<LabeledSwitch
 		id="play-sound-transformation"
 		label="Play sound after transformation"
-		checked={settings.value['sound.playOn.transformationComplete']}
-		onCheckedChange={(v) => {
-			settings.updateKey('sound.playOn.transformationComplete', v);
-		}}
+		bind:checked={
+			() => settings.value['sound.playOn.transformationComplete'],
+			(v) => settings.updateKey('sound.playOn.transformationComplete', v)
+		}
 	/>
 </div>

@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { Button } from '@repo/ui/button';
+	import { Button, buttonVariants } from '@repo/ui/button';
+	import { Link } from '@repo/ui/link';
 	import { Separator } from '@repo/ui/separator';
 	import { rpc } from '$lib/query';
 	import { Layers2Icon, RotateCcw } from '@lucide/svelte';
@@ -34,7 +35,7 @@
 				variant="outline"
 				size="sm"
 				onclick={() => {
-					settings.resetShortcuts('global');
+					settings.resetGlobalShortcuts();
 					rpc.notify.success.execute({
 						title: 'Shortcuts reset',
 						description: 'All global shortcuts have been reset to defaults.',
@@ -61,9 +62,9 @@
 				your computer. This feature is only available in the desktop app or
 				browser extension.
 			</p>
-			<Button href="/desktop-app" variant="default">
+			<Link href="/desktop-app" class={buttonVariants()}>
 				Enable Global Shortcuts
-			</Button>
+			</Link>
 		</div>
 	</div>
 {/if}

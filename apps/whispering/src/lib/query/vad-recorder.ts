@@ -50,7 +50,7 @@ export const vadRecorder = {
 		}) => {
 			const { data: deviceOutcome, error: startListeningError } =
 				await services.vad.startActiveListening({
-					deviceId: settings.value['recording.vad.selectedDeviceId'],
+					deviceId: settings.value['recording.navigator.deviceId'],
 					onSpeechStart: () => {
 						invalidateVadState();
 						onSpeechStart();

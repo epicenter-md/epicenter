@@ -1,14 +1,20 @@
 import type { WhisperingRecordingState } from '$lib/constants/audio';
+import { PLATFORM_TYPE } from '$lib/constants/platform';
 import { fromTaggedErr } from '$lib/result';
 import * as services from '$lib/services';
+import { getDefaultRecordingsFolder } from '$lib/services/recorder';
+import {
+	FFMPEG_DEFAULT_OUTPUT_OPTIONS,
+	FFMPEG_DEFAULT_INPUT_OPTIONS,
+} from '$lib/services/recorder/ffmpeg';
 import { settings } from '$lib/stores/settings.svelte';
-import { Ok, resolve } from 'wellcrafted/result';
+import { Ok } from 'wellcrafted/result';
 import { defineMutation, defineQuery, queryClient } from './_client';
 import { notify } from './notify';
 import { nanoid } from 'nanoid/non-secure';
 
 const recorderKeys = {
-	currentRecordingId: ['recorder', 'currentRecordingId'] as const,
+	recorderState: ['recorder', 'recorderState'] as const,
 	devices: ['recorder', 'devices'] as const,
 	startRecording: ['recorder', 'startRecording'] as const,
 	stopRecording: ['recorder', 'stopRecording'] as const,
@@ -16,7 +22,7 @@ const recorderKeys = {
 } as const;
 
 const invalidateRecorderState = () =>
-	queryClient.invalidateQueries({ queryKey: recorderKeys.currentRecordingId });
+	queryClient.invalidateQueries({ queryKey: recorderKeys.recorderState });
 
 export const recorder = {
 	// Query that enumerates available recording devices with labels
@@ -34,40 +40,21 @@ export const recorder = {
 		},
 	}),
 
-	// Query that returns the raw recording ID (null if not recording)
-	getCurrentRecordingId: defineQuery({
-		queryKey: recorderKeys.currentRecordingId,
-		resultQueryFn: async () => {
-			const { data: recordingId, error: getRecordingIdError } =
-				await recorderService().getCurrentRecordingId();
-			if (getRecordingIdError) {
-				return fromTaggedErr(getRecordingIdError, {
-					title: '❌ Failed to get current recording',
-					action: { type: 'more-details', error: getRecordingIdError },
-				});
-			}
-			return Ok(recordingId);
-		},
-		initialData: null as string | null,
-	}),
-
-	// Query that transforms recording ID to state (RECORDING or IDLE)
+	// Query that returns the recorder state (IDLE or RECORDING)
 	getRecorderState: defineQuery({
-		queryKey: recorderKeys.currentRecordingId, // Same key as getCurrentRecordingId!
+		queryKey: recorderKeys.recorderState,
 		resultQueryFn: async () => {
-			const { data: recordingId, error: getRecordingIdError } =
-				await recorderService().getCurrentRecordingId();
-			if (getRecordingIdError) {
-				return fromTaggedErr(getRecordingIdError, {
+			const { data: state, error: getStateError } =
+				await recorderService().getRecorderState();
+			if (getStateError) {
+				return fromTaggedErr(getStateError, {
 					title: '❌ Failed to get recorder state',
-					action: { type: 'more-details', error: getRecordingIdError },
+					action: { type: 'more-details', error: getStateError },
 				});
 			}
-			return Ok(recordingId);
+			return Ok(state);
 		},
-		select: (state): WhisperingRecordingState =>
-			resolve(state) ? 'RECORDING' : 'IDLE',
-		initialData: null as string | null,
+		initialData: 'IDLE' as WhisperingRecordingState,
 	}),
 
 	startRecording: defineMutation({
@@ -76,36 +63,48 @@ export const recorder = {
 			// Generate a unique recording ID that will serve as the file name
 			const recordingId = nanoid();
 
-			const backend = !window.__TAURI_INTERNALS__
-				? 'browser'
-				: settings.value['recording.backend'];
-
-			// Prepare recording parameters based on which backend we're using
+			// Prepare recording parameters based on which method we're using
 			const baseParams = {
-				selectedDeviceId: settings.value['recording.manual.selectedDeviceId'],
 				recordingId,
 			};
 
+			// Resolve the output folder - use default if null
+			const outputFolder = window.__TAURI_INTERNALS__
+				? (settings.value['recording.cpal.outputFolder'] ??
+					(await getDefaultRecordingsFolder()))
+				: '';
+
+			const paramsMap = {
+				navigator: {
+					...baseParams,
+					method: 'navigator' as const,
+					selectedDeviceId: settings.value['recording.navigator.deviceId'],
+					bitrateKbps: settings.value['recording.navigator.bitrateKbps'],
+				},
+				ffmpeg: {
+					...baseParams,
+					method: 'ffmpeg' as const,
+					selectedDeviceId: settings.value['recording.ffmpeg.deviceId'],
+					globalOptions: settings.value['recording.ffmpeg.globalOptions'],
+					inputOptions: settings.value['recording.ffmpeg.inputOptions'],
+					outputOptions: settings.value['recording.ffmpeg.outputOptions'],
+					outputFolder,
+				},
+				cpal: {
+					...baseParams,
+					method: 'cpal' as const,
+					selectedDeviceId: settings.value['recording.cpal.deviceId'],
+					outputFolder,
+					sampleRate: settings.value['recording.cpal.sampleRate'],
+				},
+			} as const;
+
 			const params =
-				backend === 'browser'
-					? {
-							...baseParams,
-							implementation: 'navigator' as const,
-							bitrateKbps: settings.value['recording.navigator.bitrateKbps'],
-						}
-					: backend === 'ffmpeg'
-						? {
-								...baseParams,
-								implementation: 'ffmpeg' as const,
-								commandTemplate:
-									settings.value['recording.ffmpeg.commandTemplate'],
-							}
-						: {
-								...baseParams,
-								implementation: 'cpal' as const,
-								outputFolder: settings.value['recording.desktop.outputFolder'],
-								sampleRate: settings.value['recording.desktop.sampleRate'],
-							};
+				paramsMap[
+					!window.__TAURI_INTERNALS__
+						? 'navigator'
+						: settings.value['recording.method']
+				];
 
 			const { data: deviceAcquisitionOutcome, error: startRecordingError } =
 				await recorderService().startRecording(params, {
@@ -171,15 +170,13 @@ export const recorder = {
  * Get the appropriate recorder service based on settings and environment
  */
 export function recorderService() {
-	// In browser, always use browser recorder
-	if (!window.__TAURI_INTERNALS__) return services.browserRecorder;
+	// In browser, always use navigator recorder
+	if (!window.__TAURI_INTERNALS__) return services.navigatorRecorder;
 
-	// In desktop, check user preference
-	const backend = settings.value['recording.backend'];
-
-	return {
-		browser: services.browserRecorder,
+	const recorderMap = {
+		navigator: services.navigatorRecorder,
 		ffmpeg: services.ffmpegRecorder,
-		native: services.nativeRecorder,
-	}[backend];
+		cpal: services.cpalRecorder,
+	};
+	return recorderMap[settings.value['recording.method']];
 }

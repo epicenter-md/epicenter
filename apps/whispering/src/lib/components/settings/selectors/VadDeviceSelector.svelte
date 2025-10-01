@@ -9,45 +9,23 @@
 	import { createQuery } from '@tanstack/svelte-query';
 	import { CheckIcon, MicIcon, RefreshCwIcon } from '@lucide/svelte';
 
-	let {
-		mode = 'manual'
-	}: {
-		mode: 'manual' | 'vad'
-	} = $props();
-
 	const combobox = useCombobox();
-	
-	// Setting key is based on mode
-	const settingKey = $derived(
-		mode === 'vad' 
-			? 'recording.vad.selectedDeviceId'
-			: 'recording.manual.selectedDeviceId'
-	) 
-	
-	// Determine which backend to use for device enumeration
-	// VAD always uses browser, manual uses the configured backend
-	const isUsingBrowserBackend = $derived(
-		mode === 'vad' || 
-		!window.__TAURI_INTERNALS__ ||
-		settings.value['recording.backend'] === 'browser'
-	);
-	
+
+	// VAD always uses navigator device ID
+	const settingKey = 'recording.navigator.deviceId';
+
 	const selectedDeviceId = $derived(settings.value[settingKey]);
-	
+
 	const isDeviceSelected = $derived(!!selectedDeviceId);
 
 	const getDevicesQuery = createQuery(() => ({
-		...(isUsingBrowserBackend 
-			? rpc.vadRecorder.enumerateDevices.options()
-			: rpc.recorder.enumerateDevices.options()),
+		...rpc.vadRecorder.enumerateDevices.options(),
 		enabled: combobox.open,
 	}));
 
 	$effect(() => {
 		if (getDevicesQuery.isError) {
-			rpc.notify.warning.execute(
-				getDevicesQuery.error
-			);
+			rpc.notify.warning.execute(getDevicesQuery.error);
 		}
 	});
 </script>
@@ -58,12 +36,13 @@
 			<WhisperingButton
 				{...props}
 				tooltipContent={isDeviceSelected
-					? 'Change recording device'
-					: 'Select a recording device'}
+					? 'Change VAD recording device'
+					: 'Select a VAD recording device'}
 				role="combobox"
 				aria-expanded={combobox.open}
 				variant="ghost"
 				size="icon"
+				class="relative"
 			>
 				{#if isDeviceSelected}
 					<MicIcon class="size-4 text-green-500" />
@@ -73,14 +52,17 @@
 			</WhisperingButton>
 		{/snippet}
 	</Popover.Trigger>
-	<Popover.Content class="w-80 max-w-xl p-0">
+	<Popover.Content class="p-0">
 		<Command.Root loop>
-			<Command.Input placeholder="Select recording device..." />
+			<Command.Input placeholder="Select VAD recording device..." />
 			<Command.Empty>No recording devices found.</Command.Empty>
+			<div class="px-3 py-2 text-xs text-muted-foreground bg-muted/30 border-b">
+				Voice detection uses Web Audio API
+			</div>
 			<Command.Group class="overflow-y-auto max-h-[400px]">
 				{#if getDevicesQuery.isPending}
 					<div class="p-4 text-center text-sm text-muted-foreground">
-						Loading devices...
+						Loading VAD devices...
 					</div>
 				{:else if getDevicesQuery.isError}
 					<div class="p-4 text-center text-sm text-destructive">
@@ -98,34 +80,34 @@
 								);
 								combobox.closeAndFocusTrigger();
 							}}
-							class="flex items-center gap-2 p-2"
 						>
 							<CheckIcon
 								class={cn(
-									'size-4 shrink-0 mx-2',
-									selectedDeviceId !== device.id && 'text-transparent',
+									'mr-2 size-4',
+									selectedDeviceId === device.id ? 'opacity-100' : 'opacity-0',
 								)}
 							/>
-							<div class="flex flex-col min-w-0">
-								<span class="font-medium truncate">
-									{device.label}
-								</span>
-							</div>
+							{device.label}
 						</Command.Item>
 					{/each}
 				{/if}
 			</Command.Group>
-			<Command.Item
-				value="Refresh devices"
-				onSelect={() => {
-					getDevicesQuery.refetch();
-					combobox.closeAndFocusTrigger();
-				}}
-				class="rounded-none p-2 bg-muted/50 text-muted-foreground"
-			>
-				<RefreshCwIcon class="size-4 mx-2.5" />
-				Refresh devices
-			</Command.Item>
+			<Command.Separator />
+			<Command.Group>
+				<Command.Item
+					onSelect={() => {
+						getDevicesQuery.refetch();
+					}}
+				>
+					<RefreshCwIcon
+						class={cn(
+							'mr-2 size-4',
+							getDevicesQuery.isRefetching && 'animate-spin',
+						)}
+					/>
+					Refresh devices
+				</Command.Item>
+			</Command.Group>
 		</Command.Root>
 	</Popover.Content>
 </Popover.Root>

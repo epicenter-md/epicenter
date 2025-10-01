@@ -9,7 +9,7 @@
 	import type { PageData } from './$types';
 	import { goto } from '$app/navigation';
 
-	let { data }: { data: PageData } = $props();
+	let { data } = $props();
 	const isAccessibilityGranted = $derived(data.isAccessibilityGranted);
 
 	async function requestPermissionOrShowGuidance() {

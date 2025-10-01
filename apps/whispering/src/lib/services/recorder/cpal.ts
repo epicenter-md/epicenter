@@ -1,19 +1,21 @@
-import type { CancelRecordingResult } from '$lib/constants/audio';
+import type {
+	CancelRecordingResult,
+	WhisperingRecordingState,
+} from '$lib/constants/audio';
 import { invoke as tauriInvoke } from '@tauri-apps/api/core';
+import { readFile, remove } from '@tauri-apps/plugin-fs';
 import { Err, Ok, type Result, tryAsync } from 'wellcrafted/result';
 import type { Device, DeviceAcquisitionOutcome } from '../types';
 import { asDeviceIdentifier } from '../types';
 import type {
+	CpalRecordingParams,
 	RecorderService,
 	RecorderServiceError,
-	StartRecordingParams,
 } from './types';
 import { RecorderServiceErr } from './types';
-import { readFile } from '@tauri-apps/plugin-fs';
-import { remove } from '@tauri-apps/plugin-fs';
 
 /**
- * Audio recording data returned from the Rust backend
+ * Audio recording data returned from the Rust method
  */
 type AudioRecording = {
 	sampleRate: number;
@@ -22,7 +24,7 @@ type AudioRecording = {
 	filePath?: string;
 };
 
-export function createDesktopRecorderService(): RecorderService {
+export function createCpalRecorderService(): RecorderService {
 	const enumerateDevices = async (): Promise<
 		Result<Device[], RecorderServiceError>
 	> => {
@@ -44,39 +46,34 @@ export function createDesktopRecorderService(): RecorderService {
 	};
 
 	return {
-		getCurrentRecordingId: async (): Promise<
-			Result<string | null, RecorderServiceError>
+		getRecorderState: async (): Promise<
+			Result<WhisperingRecordingState, RecorderServiceError>
 		> => {
-			const { data: recordingId, error: getCurrentRecordingIdError } =
-				await invoke<string | null>('get_current_recording_id');
-			if (getCurrentRecordingIdError)
+			const { data: recordingId, error: getRecorderStateError } = await invoke<
+				string | null
+			>('get_current_recording_id');
+			if (getRecorderStateError)
 				return RecorderServiceErr({
 					message:
-						'We encountered an issue while getting the current recording. This could be because your microphone is being used by another app, your microphone permissions are denied, or the selected recording device is disconnected',
-					context: { error: getCurrentRecordingIdError },
-					cause: getCurrentRecordingIdError,
+						'We encountered an issue while getting the recorder state. This could be because your microphone is being used by another app, your microphone permissions are denied, or the selected recording device is disconnected',
+					context: { error: getRecorderStateError },
+					cause: getRecorderStateError,
 				});
 
-			return Ok(recordingId);
+			return Ok(recordingId ? 'RECORDING' : 'IDLE');
 		},
 
 		enumerateDevices,
 
 		startRecording: async (
-			params: StartRecordingParams,
+			{
+				selectedDeviceId,
+				recordingId,
+				outputFolder,
+				sampleRate,
+			}: CpalRecordingParams,
 			{ sendStatus },
 		): Promise<Result<DeviceAcquisitionOutcome, RecorderServiceError>> => {
-			// CPAL implementation only handles CPAL params
-			if (params.implementation !== 'cpal') {
-				return RecorderServiceErr({
-					message: 'CPAL recorder received non-CPAL parameters',
-					context: { params },
-					cause: undefined,
-				});
-			}
-
-			const { selectedDeviceId, recordingId, outputFolder, sampleRate } =
-				params;
 			const { data: devices, error: enumerateError } = await enumerateDevices();
 			if (enumerateError) return Err(enumerateError);
 
@@ -105,14 +102,15 @@ export function createDesktopRecorderService(): RecorderService {
 					return Ok({
 						outcome: 'fallback',
 						reason: 'no-device-selected',
-						fallbackDeviceId,
+						deviceId: fallbackDeviceId,
 					});
 				}
 
 				// Check if the selected device exists in the devices array
 				const deviceExists = deviceIds.includes(selectedDeviceId);
 
-				if (deviceExists) return Ok({ outcome: 'success' });
+				if (deviceExists)
+					return Ok({ outcome: 'success', deviceId: selectedDeviceId });
 
 				sendStatus({
 					title: '⚠️ Finding a New Microphone',
@@ -123,7 +121,7 @@ export function createDesktopRecorderService(): RecorderService {
 				return Ok({
 					outcome: 'fallback',
 					reason: 'preferred-device-unavailable',
-					fallbackDeviceId,
+					deviceId: fallbackDeviceId,
 				});
 			};
 
@@ -131,11 +129,8 @@ export function createDesktopRecorderService(): RecorderService {
 				acquireDevice();
 			if (acquireDeviceError) return Err(acquireDeviceError);
 
-			// Determine which device name to use based on the outcome
-			const deviceIdentifier =
-				deviceOutcome.outcome === 'success'
-					? selectedDeviceId
-					: deviceOutcome.fallbackDeviceId;
+			// Use the device from the outcome
+			const deviceIdentifier = deviceOutcome.deviceId;
 
 			// Now initialize recording with the chosen device
 			sendStatus({
@@ -154,7 +149,7 @@ export function createDesktopRecorderService(): RecorderService {
 				{
 					deviceIdentifier,
 					recordingId,
-					outputFolder: outputFolder || undefined,
+					outputFolder,
 					sampleRate: sampleRateNum,
 				},
 			);
@@ -204,7 +199,7 @@ export function createDesktopRecorderService(): RecorderService {
 			// Desktop recorder should always write to a file
 			if (!filePath) {
 				return RecorderServiceErr({
-					message: 'Recording file path not provided by backend.',
+					message: 'Recording file path not provided by method.',
 					context: {
 						operation: 'stopRecording',
 						audioRecording,
@@ -317,6 +312,12 @@ export function createDesktopRecorderService(): RecorderService {
 		},
 	};
 }
+
+/**
+ * CPAL recorder service that uses the Rust CPAL method.
+ * This is the CPAL audio recorder for desktop environments.
+ */
+export const CpalRecorderServiceLive = createCpalRecorderService();
 
 async function invoke<T>(command: string, args?: Record<string, unknown>) {
 	return tryAsync({

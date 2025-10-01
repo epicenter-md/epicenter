@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { confirmationDialog } from '$lib/components/ConfirmationDialog.svelte';
 	import { Button } from '@repo/ui/button';
+	import { Link } from '@repo/ui/link';
 	import { Separator } from '@repo/ui/separator';
 	import { rpc } from '$lib/query';
 	import { RotateCcw } from '@lucide/svelte';
@@ -49,16 +50,13 @@
 					{#if v.isOutdated}
 						{@const { latestVersion, currentVersion, latestReleaseUrl } = v}
 						Customize your experience for Whispering {currentVersion} (latest
-						<Button
-							class="px-0"
-							variant="link"
-							size="inline"
+						<Link
 							href={latestReleaseUrl}
 							target="_blank"
 							rel="noopener noreferrer"
 						>
 							{latestVersion}
-						</Button>).
+						</Link>).
 					{:else}
 						{@const { version } = v}
 						Customize your experience for Whispering {version}.

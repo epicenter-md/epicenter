@@ -1,6 +1,6 @@
 <script lang="ts">
   import * as Card from '@repo/ui/card';
-  import { Button } from '@repo/ui/button';
+  import { Link } from '@repo/ui/link';
   
   type Props = {
     emoji: string;
@@ -23,8 +23,8 @@
     <Card.Description class="mb-4">
       {description}
     </Card.Description>
-    <Button href={href} variant="link" class="p-0 h-auto font-medium">
+    <Link href={href}>
       Try it now →
-    </Button>
+    </Link>
   </Card.Content>
 </Card.Root>

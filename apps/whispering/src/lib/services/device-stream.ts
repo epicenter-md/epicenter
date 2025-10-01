@@ -147,7 +147,7 @@ export async function getRecordingStream({
 		if (!getPreferredStreamError) {
 			return Ok({
 				stream: preferredStream,
-				deviceOutcome: { outcome: 'success' },
+				deviceOutcome: { outcome: 'success', deviceId: selectedDeviceId },
 			});
 		}
 
@@ -212,7 +212,7 @@ export async function getRecordingStream({
 			deviceOutcome: {
 				outcome: 'fallback',
 				reason: 'no-device-selected',
-				fallbackDeviceId: fallbackStreamData.deviceId,
+				deviceId: fallbackStreamData.deviceId,
 			},
 		});
 	}
@@ -221,7 +221,7 @@ export async function getRecordingStream({
 		deviceOutcome: {
 			outcome: 'fallback',
 			reason: 'preferred-device-unavailable',
-			fallbackDeviceId: fallbackStreamData.deviceId,
+			deviceId: fallbackStreamData.deviceId,
 		},
 	});
 }

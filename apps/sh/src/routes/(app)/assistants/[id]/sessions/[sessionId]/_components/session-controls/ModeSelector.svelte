@@ -46,13 +46,15 @@
 {:else}
 	<ToggleGroup.Root
 		type="single"
-		{value}
-		onValueChange={(newValue) => {
-			if (newValue) {
-				value = newValue;
-				onModeChange?.(newValue);
+		bind:value={
+			() => value,
+			(newValue) => {
+				if (newValue) {
+					value = newValue;
+					onModeChange?.(newValue);
+				}
 			}
-		}}
+		}
 		class={className}
 	>
 		{#each modes as mode (mode.name)}

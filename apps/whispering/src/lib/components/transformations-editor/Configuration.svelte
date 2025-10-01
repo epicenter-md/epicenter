@@ -135,7 +135,17 @@
 								<LabeledSelect
 									id="step-type"
 									label="Type"
-									selected={step.type}
+									bind:selected={
+										() => step.type,
+										(value) => {
+											transformation = {
+												...transformation,
+												steps: transformation.steps.map((s, i) =>
+													i === index ? { ...s, type: value } : s,
+												),
+											};
+										}
+									}
 									items={TRANSFORMATION_STEP_TYPES.map(
 										(type) =>
 											({
@@ -143,14 +153,6 @@
 												label: TRANSFORMATION_STEP_TYPES_TO_LABELS[type],
 											}) as const,
 									)}
-									onSelectedChange={(value) => {
-										transformation = {
-											...transformation,
-											steps: transformation.steps.map((s, i) =>
-												i === index ? { ...s, type: value } : s,
-											),
-										};
-									}}
 									hideLabel
 									class="h-8"
 									placeholder="Select a step type"
@@ -238,20 +240,22 @@
 											<LabeledSwitch
 												id="find_replace.useRegex"
 												label="Use Regex"
-												checked={step['find_replace.useRegex']}
-												onCheckedChange={(v) => {
-													transformation = {
-														...transformation,
-														steps: transformation.steps.map((s, i) =>
-															i === index
-																? {
-																		...s,
-																		'find_replace.useRegex': v,
-																	}
-																: s,
-														),
-													};
-												}}
+												bind:checked={
+													() => step['find_replace.useRegex'],
+													(v) => {
+														transformation = {
+															...transformation,
+															steps: transformation.steps.map((s, i) =>
+																i === index
+																	? {
+																			...s,
+																			'find_replace.useRegex': v,
+																		}
+																	: s,
+															),
+														};
+													}
+												}
 												description="Enable advanced pattern matching using regular expressions (for power users)"
 											/>
 										</Accordion.Content>
@@ -265,21 +269,23 @@
 										id="prompt_transform.inference.provider"
 										label="Provider"
 										items={INFERENCE_PROVIDER_OPTIONS}
-										selected={step['prompt_transform.inference.provider']}
+										bind:selected={
+											() => step['prompt_transform.inference.provider'],
+											(value) => {
+												transformation = {
+													...transformation,
+													steps: transformation.steps.map((s, i) =>
+														i === index
+															? {
+																	...s,
+																	'prompt_transform.inference.provider': value,
+																}
+															: s,
+													),
+												};
+											}
+										}
 										placeholder="Select a provider"
-										onSelectedChange={(value) => {
-											transformation = {
-												...transformation,
-												steps: transformation.steps.map((s, i) =>
-													i === index
-														? {
-																...s,
-																'prompt_transform.inference.provider': value,
-															}
-														: s,
-												),
-											};
-										}}
 									/>
 
 									{#if step['prompt_transform.inference.provider'] === 'OpenAI'}
@@ -287,96 +293,96 @@
 											id="prompt_transform.inference.provider.OpenAI.model"
 											label="Model"
 											items={OPENAI_INFERENCE_MODEL_OPTIONS}
-											selected={step[
-												'prompt_transform.inference.provider.OpenAI.model'
-											]}
+											bind:selected={
+												() => step['prompt_transform.inference.provider.OpenAI.model'],
+												(value) => {
+													transformation = {
+														...transformation,
+														steps: transformation.steps.map((s, i) =>
+															i === index
+																? {
+																		...s,
+																		'prompt_transform.inference.provider.OpenAI.model':
+																			value,
+																	}
+																: s,
+														),
+													};
+												}
+											}
 											placeholder="Select a model"
-											onSelectedChange={(value) => {
-												transformation = {
-													...transformation,
-													steps: transformation.steps.map((s, i) =>
-														i === index
-															? {
-																	...s,
-																	'prompt_transform.inference.provider.OpenAI.model':
-																		value,
-																}
-															: s,
-													),
-												};
-											}}
 										/>
 									{:else if step['prompt_transform.inference.provider'] === 'Groq'}
 										<LabeledSelect
 											id="prompt_transform.inference.provider.Groq.model"
 											label="Model"
 											items={GROQ_INFERENCE_MODEL_OPTIONS}
-											selected={step[
-												'prompt_transform.inference.provider.Groq.model'
-											]}
+											bind:selected={
+												() => step['prompt_transform.inference.provider.Groq.model'],
+												(value) => {
+													transformation = {
+														...transformation,
+														steps: transformation.steps.map((s, i) =>
+															i === index
+																? {
+																		...s,
+																		'prompt_transform.inference.provider.Groq.model':
+																			value,
+																	}
+																: s,
+														),
+													};
+												}
+											}
 											placeholder="Select a model"
-											onSelectedChange={(value) => {
-												transformation = {
-													...transformation,
-													steps: transformation.steps.map((s, i) =>
-														i === index
-															? {
-																	...s,
-																	'prompt_transform.inference.provider.Groq.model':
-																		value,
-																}
-															: s,
-													),
-												};
-											}}
 										/>
 									{:else if step['prompt_transform.inference.provider'] === 'Anthropic'}
 										<LabeledSelect
 											id="prompt_transform.inference.provider.Anthropic.model"
 											label="Model"
 											items={ANTHROPIC_INFERENCE_MODEL_OPTIONS}
-											selected={step[
-												'prompt_transform.inference.provider.Anthropic.model'
-											]}
+											bind:selected={
+												() => step['prompt_transform.inference.provider.Anthropic.model'],
+												(value) => {
+													transformation = {
+														...transformation,
+														steps: transformation.steps.map((s, i) =>
+															i === index
+																? {
+																		...s,
+																		'prompt_transform.inference.provider.Anthropic.model':
+																			value,
+																	}
+																: s,
+														),
+													};
+												}
+											}
 											placeholder="Select a model"
-											onSelectedChange={(value) => {
-												transformation = {
-													...transformation,
-													steps: transformation.steps.map((s, i) =>
-														i === index
-															? {
-																	...s,
-																	'prompt_transform.inference.provider.Anthropic.model':
-																		value,
-																}
-															: s,
-													),
-												};
-											}}
 										/>
 									{:else if step['prompt_transform.inference.provider'] === 'Google'}
 										<LabeledSelect
 											id="prompt_transform.inference.provider.Google.model"
 											label="Model"
 											items={GOOGLE_INFERENCE_MODEL_OPTIONS}
-											selected={step[
-												'prompt_transform.inference.provider.Google.model'
-											]}
+											bind:selected={
+												() => step['prompt_transform.inference.provider.Google.model'],
+												(value) => {
+													transformation = {
+														...transformation,
+														steps: transformation.steps.map((s, i) =>
+															i === index
+																? {
+																		...s,
+																		'prompt_transform.inference.provider.Google.model':
+																			value,
+																	}
+																: s,
+														),
+													};
+												}
+											}
 											placeholder="Select a model"
-											onSelectedChange={(value) => {
-												transformation = {
-													...transformation,
-													steps: transformation.steps.map((s, i) =>
-														i === index
-															? {
-																	...s,
-																	'prompt_transform.inference.provider.Google.model':
-																		value,
-																}
-															: s,
-													),
-												};
-											}}
 										/>
 									{:else if step['prompt_transform.inference.provider'] === 'OpenRouter'}
 										<LabeledInput

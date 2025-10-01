@@ -13,8 +13,8 @@
 	import { createQuery } from '@tanstack/svelte-query';
 	import {
 		CheckIcon,
-		FilterIcon,
-		FilterXIcon,
+		WandIcon,
+		SparklesIcon,
 		LayersIcon,
 	} from '@lucide/svelte';
 
@@ -69,9 +69,9 @@
 				})}"
 			>
 				{#if selectedTransformation}
-					<FilterIcon class="size-4 text-green-500" />
+					<SparklesIcon class="size-4 text-green-500" />
 				{:else}
-					<FilterXIcon class="size-4 text-amber-500" />
+					<WandIcon class="size-4 text-amber-500" />
 				{/if}
 				{#if !selectedTransformation}
 					<span

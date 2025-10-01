@@ -26,19 +26,19 @@
 	<LabeledSwitch
 		id="transcription.copyToClipboardOnSuccess"
 		label="Copy transcribed text to clipboard"
-		checked={settings.value['transcription.copyToClipboardOnSuccess']}
-		onCheckedChange={(v) => {
-			settings.updateKey('transcription.copyToClipboardOnSuccess', v);
-		}}
+		bind:checked={
+			() => settings.value['transcription.copyToClipboardOnSuccess'],
+			(v) => settings.updateKey('transcription.copyToClipboardOnSuccess', v)
+		}
 	/>
 
 	<LabeledSwitch
 		id="transcription.writeToCursorOnSuccess"
 		label="Paste transcribed text at cursor"
-		checked={settings.value['transcription.writeToCursorOnSuccess']}
-		onCheckedChange={(v) => {
-			settings.updateKey('transcription.writeToCursorOnSuccess', v);
-		}}
+		bind:checked={
+			() => settings.value['transcription.writeToCursorOnSuccess'],
+			(v) => settings.updateKey('transcription.writeToCursorOnSuccess', v)
+		}
 	/>
 
 	<Separator />
@@ -46,19 +46,19 @@
 	<LabeledSwitch
 		id="transformation.copyToClipboardOnSuccess"
 		label="Copy transformed text to clipboard"
-		checked={settings.value['transformation.copyToClipboardOnSuccess']}
-		onCheckedChange={(v) => {
-			settings.updateKey('transformation.copyToClipboardOnSuccess', v);
-		}}
+		bind:checked={
+			() => settings.value['transformation.copyToClipboardOnSuccess'],
+			(v) => settings.updateKey('transformation.copyToClipboardOnSuccess', v)
+		}
 	/>
 
 	<LabeledSwitch
 		id="transformation.writeToCursorOnSuccess"
 		label="Paste transformed text at cursor"
-		checked={settings.value['transformation.writeToCursorOnSuccess']}
-		onCheckedChange={(v) => {
-			settings.updateKey('transformation.writeToCursorOnSuccess', v);
-		}}
+		bind:checked={
+			() => settings.value['transformation.writeToCursorOnSuccess'],
+			(v) => settings.updateKey('transformation.writeToCursorOnSuccess', v)
+		}
 	/>
 
 	<Separator />
@@ -70,10 +70,10 @@
 			{ value: 'keep-forever', label: 'Keep All Recordings' },
 			{ value: 'limit-count', label: 'Keep Limited Number' },
 		] as const}
-		selected={settings.value['database.recordingRetentionStrategy']}
-		onSelectedChange={(selected) => {
-			settings.updateKey('database.recordingRetentionStrategy', selected);
-		}}
+		bind:selected={
+			() => settings.value['database.recordingRetentionStrategy'],
+			(selected) => settings.updateKey('database.recordingRetentionStrategy', selected)
+		}
 		placeholder="Select retention strategy"
 	/>
 
@@ -89,10 +89,10 @@
 				{ value: '50', label: '50 Recordings' },
 				{ value: '100', label: '100 Recordings' },
 			]}
-			selected={settings.value['database.maxRecordingCount']}
-			onSelectedChange={(selected) => {
-				settings.updateKey('database.maxRecordingCount', selected);
-			}}
+			bind:selected={
+				() => settings.value['database.maxRecordingCount'],
+				(selected) => settings.updateKey('database.maxRecordingCount', selected)
+			}
 			placeholder="Select maximum recordings"
 		/>
 	{/if}
@@ -102,10 +102,10 @@
 			id="always-on-top"
 			label="Always On Top"
 			items={ALWAYS_ON_TOP_OPTIONS}
-			selected={settings.value['system.alwaysOnTop']}
-			onSelectedChange={async (selected) => {
-				settings.updateKey('system.alwaysOnTop', selected);
-			}}
+			bind:selected={
+				() => settings.value['system.alwaysOnTop'],
+				(selected) => settings.updateKey('system.alwaysOnTop', selected)
+			}
 			placeholder="Select a language"
 		/>
 	{/if}

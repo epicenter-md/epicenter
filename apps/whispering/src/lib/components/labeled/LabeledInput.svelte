@@ -14,6 +14,7 @@
 		disabled = false,
 		hideLabel = false,
 		description,
+		actionSlot,
 		...restProps
 	}: HTMLInputAttributes & {
 		label: string;
@@ -23,6 +24,10 @@
 		disabled?: boolean;
 		hideLabel?: boolean;
 		description?: string | Snippet;
+		/**
+		 * Optional snippet for rendering an action button (e.g., reset) next to the input.
+		 */
+		actionSlot?: Snippet;
 	} = $props();
 </script>
 
@@ -30,15 +35,19 @@
 	<Label class={cn('text-sm', hideLabel && 'sr-only')} for={id}>
 		{label}
 	</Label>
-	<Input
-		{id}
-		bind:value
-		{placeholder}
-		{type}
-		{disabled}
-		autocomplete="off"
-		{...restProps}
-	/>
+	<div class="flex items-center gap-2">
+		<Input
+			{id}
+			bind:value
+			{placeholder}
+			{type}
+			{disabled}
+			autocomplete="off"
+			class={cn('flex-1', restProps.class)}
+			{...restProps}
+		/>
+		{@render actionSlot?.()}
+	</div>
 	{#if description}
 		{#if typeof description === 'string'}
 			<p class="text-muted-foreground text-sm">{description}</p>

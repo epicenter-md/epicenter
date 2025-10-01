@@ -7,7 +7,6 @@ import { ffmpeg } from './ffmpeg';
 import { notify } from './notify';
 import { recorder } from './recorder';
 import { recordings } from './recordings';
-import { settings } from './settings';
 import { shortcuts } from './shortcuts';
 import { sound } from './sound';
 import { text } from './text';
@@ -40,5 +39,4 @@ export const rpc = {
 	transformer,
 	notify,
 	delivery,
-	settings,
 };

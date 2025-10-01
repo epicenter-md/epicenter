@@ -1,4 +1,4 @@
-import { TIMESLICE_MS } from '$lib/constants/audio';
+import { TIMESLICE_MS, type CancelRecordingResult, type WhisperingRecordingState } from '$lib/constants/audio';
 import { Err, Ok, type Result, tryAsync, trySync } from 'wellcrafted/result';
 import {
 	cleanupRecordingStream,
@@ -6,12 +6,11 @@ import {
 	getRecordingStream,
 } from '../device-stream';
 import type {
+	NavigatorRecordingParams,
 	RecorderService,
 	RecorderServiceError,
-	StartRecordingParams,
 } from './types';
 import { RecorderServiceErr } from './types';
-import type { CancelRecordingResult } from '$lib/constants/audio';
 import type {
 	DeviceIdentifier,
 	DeviceAcquisitionOutcome,
@@ -27,14 +26,14 @@ type ActiveRecording = {
 	recordedChunks: Blob[];
 };
 
-export function createWebRecorderService(): RecorderService {
+export function createNavigatorRecorderService(): RecorderService {
 	let activeRecording: ActiveRecording | null = null;
 
 	return {
-		getCurrentRecordingId: async (): Promise<
-			Result<string | null, RecorderServiceError>
+		getRecorderState: async (): Promise<
+			Result<WhisperingRecordingState, RecorderServiceError>
 		> => {
-			return Ok(activeRecording?.recordingId || null);
+			return Ok(activeRecording ? 'RECORDING' : 'IDLE');
 		},
 
 		enumerateDevices: async () => {
@@ -50,19 +49,9 @@ export function createWebRecorderService(): RecorderService {
 		},
 
 		startRecording: async (
-			params: StartRecordingParams,
+			{ selectedDeviceId, recordingId, bitrateKbps }: NavigatorRecordingParams,
 			{ sendStatus },
 		): Promise<Result<DeviceAcquisitionOutcome, RecorderServiceError>> => {
-			// Navigator implementation only handles navigator params
-			if (params.implementation !== 'navigator') {
-				return RecorderServiceErr({
-					message: 'Navigator recorder received non-navigator parameters',
-					context: { params },
-					cause: undefined,
-				});
-			}
-
-			const { selectedDeviceId, recordingId, bitrateKbps } = params;
 			// Ensure we're not already recording
 			if (activeRecording) {
 				return RecorderServiceErr({
@@ -223,3 +212,9 @@ export function createWebRecorderService(): RecorderService {
 		},
 	};
 }
+
+/**
+ * Navigator recorder service that uses the MediaRecorder API.
+ * Available in both browser and desktop environments.
+ */
+export const NavigatorRecorderServiceLive = createNavigatorRecorderService();

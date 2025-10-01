@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Button } from '@repo/ui/button';
+	import { Button, buttonVariants } from '@repo/ui/button';
 	import { Link } from '@repo/ui/link';
 	import * as Card from '@repo/ui/card';
 	import * as Alert from '@repo/ui/alert';
@@ -103,9 +103,9 @@
 				</Alert.Root>
 
 				<div class="flex gap-3">
-					<Button href="/settings/transcription" class="flex-1">
+					<Link href="/settings/transcription" class={buttonVariants({ class: "flex-1" })}>
 						Continue to Settings
-					</Button>
+					</Link>
 					<Button variant="outline" onclick={() => goto('/')}>
 						Go to Home
 					</Button>
@@ -281,9 +281,9 @@
 
 		{#if ffmpegQuery.data !== true}
 			<Card.Footer>
-				<Button href="/settings/transcription" variant="outline" class="w-full">
+				<Link href="/settings/transcription" class={buttonVariants({ variant: "outline", class: "w-full" })}>
 					Back to Settings
-				</Button>
+				</Link>
 			</Card.Footer>
 		{/if}
 	</Card.Root>

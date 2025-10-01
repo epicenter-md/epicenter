@@ -6,14 +6,6 @@
 	import { rpc } from '$lib/query';
 	import { settings } from '$lib/stores/settings.svelte';
 
-	function handleAnalyticsToggle(checked: boolean) {
-		settings.updateKey('analytics.enabled', checked);
-		
-		// Log the change (will only send if analytics is now enabled)
-		if (checked) {
-			rpc.analytics.logEvent.execute({ type: 'settings_changed', section: 'analytics' });
-		}
-	}
 </script>
 
 <div class="space-y-8">
@@ -50,8 +42,17 @@
 				</div>
 				<Switch
 					id="analytics-toggle"
-					checked={settings.value['analytics.enabled']}
-					onCheckedChange={handleAnalyticsToggle}
+					bind:checked={
+						() => settings.value['analytics.enabled'],
+						(checked) => {
+							settings.updateKey('analytics.enabled', checked);
+							
+							// Log the change (will only send if analytics is now enabled)
+							if (checked) {
+								rpc.analytics.logEvent.execute({ type: 'settings_changed', section: 'analytics' });
+							}
+						}
+					}
 					class="shrink-0"
 				/>
 			</div>

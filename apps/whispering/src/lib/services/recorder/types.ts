@@ -1,4 +1,4 @@
-import type { CancelRecordingResult } from '$lib/constants/audio';
+import type { CancelRecordingResult, WhisperingRecordingState } from '$lib/constants/audio';
 import { createTaggedError } from 'wellcrafted/error';
 import type { Result } from 'wellcrafted/result';
 import type {
@@ -7,7 +7,6 @@ import type {
 	DeviceAcquisitionOutcome,
 	UpdateStatusMessageFn,
 } from '../types';
-import type { TemplateString } from '$lib/utils/template';
 
 /**
  * Base error type for recorder services
@@ -18,7 +17,7 @@ export const { RecorderServiceError, RecorderServiceErr } = createTaggedError(
 export type RecorderServiceError = ReturnType<typeof RecorderServiceError>;
 
 /**
- * Base parameters shared across all implementations
+ * Base parameters shared across all methods
  */
 type BaseRecordingParams = {
 	selectedDeviceId: DeviceIdentifier | null;
@@ -29,8 +28,8 @@ type BaseRecordingParams = {
  * CPAL (native Rust) recording parameters
  */
 export type CpalRecordingParams = BaseRecordingParams & {
-	implementation: 'cpal';
-	outputFolder: string | null;
+	method: 'cpal';
+	outputFolder: string;
 	sampleRate: string;
 };
 
@@ -38,7 +37,7 @@ export type CpalRecordingParams = BaseRecordingParams & {
  * Navigator (MediaRecorder) recording parameters
  */
 export type NavigatorRecordingParams = BaseRecordingParams & {
-	implementation: 'navigator';
+	method: 'navigator';
 	bitrateKbps: string;
 };
 
@@ -46,12 +45,15 @@ export type NavigatorRecordingParams = BaseRecordingParams & {
  * FFmpeg recording parameters
  */
 export type FfmpegRecordingParams = BaseRecordingParams & {
-	implementation: 'ffmpeg';
-	commandTemplate: TemplateString | null;
+	method: 'ffmpeg';
+	globalOptions: string;
+	inputOptions: string;
+	outputOptions: string;
+	outputFolder: string;
 };
 
 /**
- * Discriminated union for recording parameters based on implementation
+ * Discriminated union for recording parameters based on method
  */
 export type StartRecordingParams =
 	| CpalRecordingParams
@@ -59,14 +61,14 @@ export type StartRecordingParams =
 	| FfmpegRecordingParams;
 
 /**
- * Unified recorder service interface that both desktop and web implementations must satisfy
+ * Recorder service interface shared by all methods
  */
 export type RecorderService = {
 	/**
-	 * Get the current recording ID if a recording is in progress
-	 * Returns null if no recording is active
+	 * Get the current recorder state
+	 * Returns 'IDLE' if no recording is active, 'RECORDING' if recording is in progress
 	 */
-	getCurrentRecordingId(): Promise<Result<string | null, RecorderServiceError>>;
+	getRecorderState(): Promise<Result<WhisperingRecordingState, RecorderServiceError>>;
 
 	/**
 	 * Enumerate available recording devices with their labels and identifiers

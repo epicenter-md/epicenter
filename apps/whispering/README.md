@@ -88,8 +88,8 @@ Set up Whispering and be ready to transcribe in about two minutes.
 
 | Architecture | Download | Requirements |
 |-------------|----------|--------------|
-| **Apple Silicon** | [Whispering_7.3.0_aarch64.dmg](https://github.com/epicenter-so/epicenter/releases/download/v7.3.0/Whispering_7.3.0_aarch64.dmg) | M1/M2/M3/M4 Macs |
-| **Intel** | [Whispering_7.3.0_x64.dmg](https://github.com/epicenter-so/epicenter/releases/download/v7.3.0/Whispering_7.3.0_x64.dmg) | Intel-based Macs |
+| **Apple Silicon** | [Whispering_7.4.0_aarch64.dmg](https://github.com/epicenter-so/epicenter/releases/download/v7.4.0/Whispering_7.4.0_aarch64.dmg) | M1/M2/M3/M4 Macs |
+| **Intel** | [Whispering_7.4.0_x64.dmg](https://github.com/epicenter-so/epicenter/releases/download/v7.4.0/Whispering_7.4.0_x64.dmg) | Intel-based Macs |
 
 > [!TIP]
 > **Not sure which Mac you have?** Click the Apple menu → About This Mac. Look for "Chip" or "Processor":
@@ -115,8 +115,8 @@ Set up Whispering and be ready to transcribe in about two minutes.
 
 | Installer Type | Download | Description |
 |---------------|----------|-------------|
-| **MSI Installer** | [Whispering_7.3.0_x64_en-US.msi](https://github.com/epicenter-so/epicenter/releases/download/v7.3.0/Whispering_7.3.0_x64_en-US.msi) | Recommended Standard Windows installer |
-| **EXE Installer** | [Whispering_7.3.0_x64-setup.exe](https://github.com/epicenter-so/epicenter/releases/download/v7.3.0/Whispering_7.3.0_x64-setup.exe) | Alternative installer option |
+| **MSI Installer** | [Whispering_7.4.0_x64_en-US.msi](https://github.com/epicenter-so/epicenter/releases/download/v7.4.0/Whispering_7.4.0_x64_en-US.msi) | Recommended Standard Windows installer |
+| **EXE Installer** | [Whispering_7.4.0_x64-setup.exe](https://github.com/epicenter-so/epicenter/releases/download/v7.4.0/Whispering_7.4.0_x64-setup.exe) | Alternative installer option |
 
 #### Installation
 
@@ -136,29 +136,29 @@ Whispering will appear in your Start Menu when complete.
 
 | Package Format | Download | Compatible With |
 |---------------|----------|-----------------|
-| **AppImage** | [Whispering_7.3.0_amd64.AppImage](https://github.com/epicenter-so/epicenter/releases/download/v7.3.0/Whispering_7.3.0_amd64.AppImage) | All Linux distributions |
-| **DEB Package** | [Whispering_7.3.0_amd64.deb](https://github.com/epicenter-so/epicenter/releases/download/v7.3.0/Whispering_7.3.0_amd64.deb) | Debian, Ubuntu, Pop!_OS |
-| **RPM Package** | [Whispering-7.3.0-1.x86_64.rpm](https://github.com/epicenter-so/epicenter/releases/download/v7.3.0/Whispering-7.3.0-1.x86_64.rpm) | Fedora, RHEL, openSUSE |
+| **AppImage** | [Whispering_7.4.0_amd64.AppImage](https://github.com/epicenter-so/epicenter/releases/download/v7.4.0/Whispering_7.4.0_amd64.AppImage) | All Linux distributions |
+| **DEB Package** | [Whispering_7.4.0_amd64.deb](https://github.com/epicenter-so/epicenter/releases/download/v7.4.0/Whispering_7.4.0_amd64.deb) | Debian, Ubuntu, Pop!_OS |
+| **RPM Package** | [Whispering-7.4.0-1.x86_64.rpm](https://github.com/epicenter-so/epicenter/releases/download/v7.4.0/Whispering-7.4.0-1.x86_64.rpm) | Fedora, RHEL, openSUSE |
 
 #### Quick Install Commands
 
 **AppImage (Universal)**
 ```bash
-wget https://github.com/epicenter-so/epicenter/releases/download/v7.3.0/Whispering_7.3.0_amd64.AppImage
-chmod +x Whispering_7.3.0_amd64.AppImage
-./Whispering_7.3.0_amd64.AppImage
+wget https://github.com/epicenter-so/epicenter/releases/download/v7.4.0/Whispering_7.4.0_amd64.AppImage
+chmod +x Whispering_7.4.0_amd64.AppImage
+./Whispering_7.4.0_amd64.AppImage
 ```
 
 **Debian/Ubuntu**
 ```bash
-wget https://github.com/epicenter-so/epicenter/releases/download/v7.3.0/Whispering_7.3.0_amd64.deb
-sudo dpkg -i Whispering_7.3.0_amd64.deb
+wget https://github.com/epicenter-so/epicenter/releases/download/v7.4.0/Whispering_7.4.0_amd64.deb
+sudo dpkg -i Whispering_7.4.0_amd64.deb
 ```
 
 **Fedora/RHEL**
 ```bash
-wget https://github.com/epicenter-so/epicenter/releases/download/v7.3.0/Whispering-7.3.0-1.x86_64.rpm
-sudo rpm -i Whispering-7.3.0-1.x86_64.rpm
+wget https://github.com/epicenter-so/epicenter/releases/download/v7.4.0/Whispering-7.4.0-1.x86_64.rpm
+sudo rpm -i Whispering-7.4.0-1.x86_64.rpm
 ```
 
 </details>
@@ -784,10 +784,10 @@ Adding a new transcription service involves four main steps:
          label: model.name,
          ...model,
        }))}
-       selected={settings.value['transcription.yourservice.model']}
-       onSelectedChange={(selected) => {
-         settings.updateKey('transcription.yourservice.model', selected);
-       }}
+       bind:selected={
+         () => settings.value['transcription.yourservice.model'],
+         (selected) => settings.updateKey('transcription.yourservice.model', selected)
+       }
        renderOption={renderModelOption}
      />
      <YourServiceApiKeyInput />
@@ -814,15 +814,13 @@ Adding a new transcription service involves four main steps:
    >
      {#snippet description()}
        <p class="text-muted-foreground text-sm">
-         You can find your YourService API key in your <Button
-           variant="link"
-           class="px-0.3 py-0.2 h-fit"
+         You can find your YourService API key in your <Link
            href="https://yourservice.com/api-keys"
            target="_blank"
            rel="noopener noreferrer"
          >
            YourService dashboard
-         </Button>.
+         </Link>.
        </p>
      {/snippet}
    </LabeledInput>

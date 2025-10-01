@@ -1,5 +1,4 @@
-import type { RecordingMode } from '$lib/constants/audio';
-import { fromTaggedErr, fromTaggedError, WhisperingErr } from '$lib/result';
+import { fromTaggedError } from '$lib/result';
 import { DbServiceErr } from '$lib/services/db';
 import { settings } from '$lib/stores/settings.svelte';
 import { nanoid } from 'nanoid/non-secure';
@@ -23,7 +22,7 @@ let manualRecordingStartTime: number | null = null;
 const startManualRecording = defineMutation({
 	mutationKey: ['commands', 'startManualRecording'] as const,
 	resultMutationFn: async () => {
-		await rpc.settings.switchRecordingMode.execute('manual');
+		await settings.switchRecordingMode('manual');
 
 		const toastId = nanoid();
 		notify.loading.execute({
@@ -49,9 +48,10 @@ const startManualRecording = defineMutation({
 				break;
 			}
 			case 'fallback': {
+				const method = settings.value['recording.method'];
 				settings.updateKey(
-					'recording.manual.selectedDeviceId',
-					deviceAcquisitionOutcome.fallbackDeviceId,
+					`recording.${method}.deviceId`,
+					deviceAcquisitionOutcome.deviceId,
 				);
 				switch (deviceAcquisitionOutcome.reason) {
 					case 'no-device-selected': {
@@ -144,7 +144,7 @@ const stopManualRecording = defineMutation({
 const startVadRecording = defineMutation({
 	mutationKey: ['commands', 'startVadRecording'] as const,
 	resultMutationFn: async () => {
-		await rpc.settings.switchRecordingMode.execute('vad');
+		await settings.switchRecordingMode('vad');
 
 		const toastId = nanoid();
 		console.info('Starting voice activated capture');
@@ -205,7 +205,7 @@ const startVadRecording = defineMutation({
 			case 'fallback': {
 				settings.updateKey(
 					'recording.vad.selectedDeviceId',
-					deviceAcquisitionOutcome.fallbackDeviceId,
+					deviceAcquisitionOutcome.deviceId,
 				);
 				switch (deviceAcquisitionOutcome.reason) {
 					case 'no-device-selected': {
@@ -281,13 +281,13 @@ export const commands = {
 	toggleManualRecording: defineMutation({
 		mutationKey: ['commands', 'toggleManualRecording'] as const,
 		resultMutationFn: async () => {
-			const { data: currentRecordingId, error: getRecordingIdError } =
-				await recorder.getCurrentRecordingId.fetch();
-			if (getRecordingIdError) {
-				notify.error.execute(getRecordingIdError);
-				return Err(getRecordingIdError);
+			const { data: recorderState, error: getRecorderStateError } =
+				await recorder.getRecorderState.fetch();
+			if (getRecorderStateError) {
+				notify.error.execute(getRecorderStateError);
+				return Err(getRecorderStateError);
 			}
-			if (currentRecordingId) {
+			if (recorderState === 'RECORDING') {
 				return await stopManualRecording.execute(undefined);
 			}
 			return await startManualRecording.execute(undefined);
@@ -353,6 +353,7 @@ export const commands = {
 	uploadRecordings: defineMutation({
 		mutationKey: ['recordings', 'uploadRecordings'] as const,
 		resultMutationFn: async ({ files }: { files: File[] }) => {
+			await settings.switchRecordingMode('upload');
 			// Partition files into valid and invalid in a single pass
 			const { valid: validFiles, invalid: invalidFiles } = files.reduce<{
 				valid: File[];
@@ -387,7 +388,7 @@ export const commands = {
 				validFiles.map(async (file) => {
 					const arrayBuffer = await file.arrayBuffer();
 					const audioBlob = new Blob([arrayBuffer], { type: file.type });
-					
+
 					// Log file upload event
 					rpc.analytics.logEvent.execute({
 						type: 'file_uploaded',

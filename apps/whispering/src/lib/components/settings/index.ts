@@ -6,7 +6,12 @@ export { default as ElevenLabsApiKeyInput } from './api-key-inputs/ElevenLabsApi
 export { default as GoogleApiKeyInput } from './api-key-inputs/GoogleApiKeyInput.svelte';
 export { default as DeepgramApiKeyInput } from './api-key-inputs/DeepgramApiKeyInput.svelte';
 export { default as OpenRouterApiKeyInput } from './api-key-inputs/OpenRouterApiKeyInput.svelte';
+// Shared components  
+export { default as CompressionBody } from './CompressionBody.svelte';
 // Selector components
-export { default as DeviceSelector } from './selectors/DeviceSelector.svelte';
+export { default as RecordingModeSelector } from './selectors/RecordingModeSelector.svelte';
+export { default as ManualDeviceSelector } from './selectors/ManualDeviceSelector.svelte';
+export { default as VadDeviceSelector } from './selectors/VadDeviceSelector.svelte';
 export { default as TransformationSelector } from './selectors/TransformationSelector.svelte';
 export { default as TranscriptionSelector } from './selectors/TranscriptionSelector.svelte';
+export { default as CompressionSelector } from './selectors/CompressionSelector.svelte';

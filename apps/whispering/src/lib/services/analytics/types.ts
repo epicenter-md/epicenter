@@ -45,6 +45,19 @@ export type Event =
 			error_title: string;
 			error_description?: string;
 	  }
+	// Compression events
+	| {
+			type: 'compression_completed';
+			provider: TranscriptionServiceId;
+			original_size: number;
+			compressed_size: number;
+			compression_ratio: number;
+	  }
+	| {
+			type: 'compression_failed';
+			provider: TranscriptionServiceId;
+			error_message: string;
+	  }
 	// Settings events
 	| { type: 'settings_changed'; section: SettingsSection };
 

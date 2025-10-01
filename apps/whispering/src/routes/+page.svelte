@@ -5,10 +5,12 @@
 	import CopyToClipboardButton from '$lib/components/copyable/CopyToClipboardButton.svelte';
 	import { ClipboardIcon } from '$lib/components/icons';
 	import {
-		DeviceSelector,
 		TranscriptionSelector,
 		TransformationSelector,
+		CompressionSelector,
 	} from '$lib/components/settings';
+	import ManualDeviceSelector from '$lib/components/settings/selectors/ManualDeviceSelector.svelte';
+	import VadDeviceSelector from '$lib/components/settings/selectors/VadDeviceSelector.svelte';
 	import {
 		RECORDING_MODE_OPTIONS,
 		type RecordingMode,
@@ -93,7 +95,6 @@
 		'm4v',
 	] as const;
 
-
 	// Store unlisten function for drag drop events
 	let unlistenDragDrop: UnlistenFn | undefined;
 
@@ -138,10 +139,11 @@
 						return;
 					}
 
-					await rpc.settings.switchRecordingMode.execute('upload');
+					await settings.switchRecordingMode('upload');
 
 					// Convert file paths to File objects using the fs service
-					const { data: files, error } = await services.fs.pathsToFiles(validPaths);
+					const { data: files, error } =
+						await services.fs.pathsToFiles(validPaths);
 
 					if (error) {
 						rpc.notify.error.execute({
@@ -188,12 +190,14 @@
 
 		<ToggleGroup.Root
 			type="single"
-			value={settings.value['recording.mode']}
+			bind:value={
+				() => settings.value['recording.mode'],
+				(mode) => {
+					if (!mode) return;
+					settings.switchRecordingMode(mode);
+				}
+			}
 			class="w-full"
-			onValueChange={async (mode) => {
-				if (!mode) return;
-				await rpc.settings.switchRecordingMode.execute(mode as RecordingMode);
-			}}
 		>
 			{#each availableModes as option}
 				<ToggleGroup.Item
@@ -206,67 +210,75 @@
 			{/each}
 		</ToggleGroup.Root>
 
-		<div class="w-full grid grid-cols-[1fr_auto_1fr] items-end gap-2 pt-1">
-			<!-- Empty left column for centering -->
-			<div></div>
+		<div class="w-full flex justify-center pt-1">
 			{#if settings.value['recording.mode'] === 'manual'}
-				<!-- Center column: Recording button -->
-				<WhisperingButton
-					tooltipContent={getRecorderStateQuery.data === 'IDLE'
-						? 'Start recording'
-						: 'Stop recording'}
-					onclick={commandCallbacks.toggleManualRecording}
-					variant="ghost"
-					class="shrink-0 size-32 sm:size-36 lg:size-40 xl:size-44 transform items-center justify-center overflow-hidden duration-300 ease-in-out"
-				>
-					<span
-						style="filter: drop-shadow(0px 2px 4px rgba(0, 0, 0, 0.5)); view-transition-name: microphone-icon;"
-						class="text-[100px] sm:text-[110px] lg:text-[120px] xl:text-[130px] leading-none"
+				<!-- Container with relative positioning for the button and absolute selectors -->
+				<div class="relative">
+					<!-- Recording button -->
+					<WhisperingButton
+						tooltipContent={getRecorderStateQuery.data === 'IDLE'
+							? 'Start recording'
+							: 'Stop recording'}
+						onclick={commandCallbacks.toggleManualRecording}
+						variant="ghost"
+						class="shrink-0 size-32 sm:size-36 lg:size-40 xl:size-44 transform items-center justify-center overflow-hidden duration-300 ease-in-out"
 					>
-						{recorderStateToIcons[getRecorderStateQuery.data ?? 'IDLE']}
-					</span>
-				</WhisperingButton>
-				<!-- Right column: Selectors -->
-				<div class="flex justify-end items-center gap-1.5 mb-2">
-					{#if getRecorderStateQuery.data === 'RECORDING'}
-						<WhisperingButton
-							tooltipContent="Cancel recording"
-							onclick={commandCallbacks.cancelManualRecording}
-							variant="ghost"
-							size="icon"
-							style="view-transition-name: cancel-icon;"
+						<span
+							style="filter: drop-shadow(0px 2px 4px rgba(0, 0, 0, 0.5)); view-transition-name: microphone-icon;"
+							class="text-[100px] sm:text-[110px] lg:text-[120px] xl:text-[130px] leading-none"
 						>
-							🚫
-						</WhisperingButton>
+							{recorderStateToIcons[getRecorderStateQuery.data ?? 'IDLE']}
+						</span>
+					</WhisperingButton>
+					<!-- Absolutely positioned selectors -->
+					{#if getRecorderStateQuery.data === 'RECORDING'}
+						<div class="absolute -right-12 bottom-4 flex items-center">
+							<WhisperingButton
+								tooltipContent="Cancel recording"
+								onclick={commandCallbacks.cancelManualRecording}
+								variant="ghost"
+								size="icon"
+								style="view-transition-name: cancel-icon;"
+							>
+								🚫
+							</WhisperingButton>
+						</div>
 					{:else}
-						<DeviceSelector mode="manual" />
-						<TranscriptionSelector />
-						<TransformationSelector />
+						<div class="absolute -right-32 bottom-4 flex items-center gap-0.5">
+							<ManualDeviceSelector />
+							<CompressionSelector />
+							<TranscriptionSelector />
+							<TransformationSelector />
+						</div>
 					{/if}
 				</div>
 			{:else if settings.value['recording.mode'] === 'vad'}
-				<!-- Center column: Recording button -->
-				<WhisperingButton
-					tooltipContent={getVadStateQuery.data === 'IDLE'
-						? 'Start voice activated session'
-						: 'Stop voice activated session'}
-					onclick={commandCallbacks.toggleVadRecording}
-					variant="ghost"
-					class="shrink-0 size-32 sm:size-36 lg:size-40 xl:size-44 transform items-center justify-center overflow-hidden duration-300 ease-in-out"
-				>
-					<span
-						style="filter: drop-shadow(0px 2px 4px rgba(0, 0, 0, 0.5)); view-transition-name: microphone-icon;"
-						class="text-[100px] sm:text-[110px] lg:text-[120px] xl:text-[130px] leading-none"
+				<!-- Container with relative positioning for the button and absolute selectors -->
+				<div class="relative">
+					<!-- Recording button -->
+					<WhisperingButton
+						tooltipContent={getVadStateQuery.data === 'IDLE'
+							? 'Start voice activated session'
+							: 'Stop voice activated session'}
+						onclick={commandCallbacks.toggleVadRecording}
+						variant="ghost"
+						class="shrink-0 size-32 sm:size-36 lg:size-40 xl:size-44 transform items-center justify-center overflow-hidden duration-300 ease-in-out"
 					>
-						{vadStateToIcons[getVadStateQuery.data ?? 'IDLE']}
-					</span>
-				</WhisperingButton>
-				<!-- Right column: Selectors -->
-				<div class="flex justify-end items-center gap-1.5 mb-2">
+						<span
+							style="filter: drop-shadow(0px 2px 4px rgba(0, 0, 0, 0.5)); view-transition-name: microphone-icon;"
+							class="text-[100px] sm:text-[110px] lg:text-[120px] xl:text-[130px] leading-none"
+						>
+							{vadStateToIcons[getVadStateQuery.data ?? 'IDLE']}
+						</span>
+					</WhisperingButton>
+					<!-- Absolutely positioned selectors -->
 					{#if getVadStateQuery.data === 'IDLE'}
-						<DeviceSelector mode="vad" />
-						<TranscriptionSelector />
-						<TransformationSelector />
+						<div class="absolute -right-32 bottom-4 flex items-center gap-0.5">
+							<VadDeviceSelector />
+							<CompressionSelector />
+							<TranscriptionSelector />
+							<TransformationSelector />
+						</div>
 					{/if}
 				</div>
 			{:else if settings.value['recording.mode'] === 'upload'}
@@ -290,6 +302,7 @@
 						class="h-32 sm:h-36 lg:h-40 xl:h-44 w-full"
 					/>
 					<div class="flex items-center gap-1.5">
+						<CompressionSelector />
 						<TranscriptionSelector />
 						<TransformationSelector />
 					</div>
@@ -350,7 +363,6 @@
 					tooltipContent="Go to local shortcut in settings"
 					href="/settings/shortcuts/local"
 					variant="link"
-					size="inline"
 				>
 					<kbd
 						class="bg-muted relative rounded px-[0.3rem] py-[0.15rem] font-mono text-sm font-semibold"
@@ -367,7 +379,6 @@
 						tooltipContent="Go to global shortcut in settings"
 						href="/settings/shortcuts/global"
 						variant="link"
-						size="inline"
 					>
 						<kbd
 							class="bg-muted relative rounded px-[0.3rem] py-[0.15rem] font-mono text-sm font-semibold"
@@ -380,14 +391,13 @@
 			{/if}
 			<p class="text-muted-foreground text-center text-sm font-light">
 				{#if !window.__TAURI_INTERNALS__}
-					Tired of switching tabs? 
+					Tired of switching tabs?
 					<WhisperingButton
 						tooltipContent="Get Whispering for desktop"
 						href="https://epicenter.so/whispering"
 						target="_blank"
 						rel="noopener noreferrer"
 						variant="link"
-						size="inline"
 					>
 						Get the native desktop app
 					</WhisperingButton>

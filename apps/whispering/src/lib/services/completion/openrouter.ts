@@ -42,7 +42,7 @@ export function createOpenRouterCompletionService(): CompletionService {
               { role: 'user', content: userPrompt },
             ],
           }),
-        mapErr: (error) => {
+        catch: (error) => {
           // Check if it's NOT an OpenAI API error
           if (!(error instanceof OpenAI.APIError)) {
             // This is an unexpected error type

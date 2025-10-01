@@ -3,6 +3,7 @@ import { Command } from '@tauri-apps/plugin-shell';
 import { tryAsync, Err, Ok } from 'wellcrafted/result';
 import type { CommandService, ShellCommand } from './types';
 import { CommandServiceErr } from './types';
+import { extractErrorMessage } from 'wellcrafted/error';
 
 export function createCommandServiceDesktop(): CommandService {
 	/**
@@ -22,7 +23,7 @@ export function createCommandServiceDesktop(): CommandService {
 					const output = await cmd.execute();
 					return output;
 				},
-				mapErr: (error) =>
+				catch: (error) =>
 					CommandServiceErr({
 						message: 'Failed to execute command',
 						context: { command },
@@ -38,12 +39,24 @@ export function createCommandServiceDesktop(): CommandService {
 			const { data, error } = await tryAsync({
 				try: async () => {
 					const cmd = createPlatformCommand(command);
-					const child = await cmd.spawn();
-					return child;
+
+					// Collect stderr only for error reporting on failure
+					let stderrBuffer = '';
+					cmd.stderr.on('data', (line) => {
+						stderrBuffer += line;
+					});
+
+					cmd.on('close', (data) => {
+						if (data.code !== 0 && stderrBuffer) {
+							console.error(`Command failed with exit code ${data.code}:`, stderrBuffer);
+						}
+					});
+
+					return await cmd.spawn();
 				},
-				mapErr: (error) =>
+				catch: (error) =>
 					CommandServiceErr({
-						message: 'Failed to spawn command',
+						message: `Failed to spawn command: ${extractErrorMessage(error)}`,
 						context: { command },
 						cause: error,
 					}),

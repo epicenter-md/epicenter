@@ -36,20 +36,21 @@ export type UpdateStatusMessageFn = (args: {
  * Device acquisition outcome after attempting to connect to a recording device.
  *
  * This type represents the result of device selection during recording startup.
+ * All outcomes include the deviceId that was ultimately used for recording.
  * When the outcome is 'fallback', appropriate status messages are automatically
  * sent via UpdateStatusMessageFn to inform users about device switching.
  *
  * @example
  * ```typescript
  * // Success: User's preferred device worked
- * { outcome: 'success' }
+ * { outcome: 'success', deviceId: 'preferred-device-id' as DeviceIdentifier }
  *
  * // Fallback: No device selected, used default
  * // Status message: "🔍 No Device Selected" -> "Using your default microphone instead"
  * {
  *   outcome: 'fallback',
  *   reason: 'no-device-selected',
- *   fallbackDeviceId: 'default' as DeviceIdentifier
+ *   deviceId: 'default' as DeviceIdentifier
  * }
  *
  * // Fallback: Preferred device unavailable, used alternative
@@ -57,18 +58,19 @@ export type UpdateStatusMessageFn = (args: {
  * {
  *   outcome: 'fallback',
  *   reason: 'preferred-device-unavailable',
- *   fallbackDeviceId: 'MacBook Pro Microphone' as DeviceIdentifier
+ *   deviceId: 'MacBook Pro Microphone' as DeviceIdentifier
  * }
  * ```
  */
 export type DeviceAcquisitionOutcome =
 	| {
 			outcome: 'success';
+			deviceId: DeviceIdentifier;
 	  }
 	| {
 			outcome: 'fallback';
 			reason: 'no-device-selected' | 'preferred-device-unavailable';
-			fallbackDeviceId: DeviceIdentifier;
+			deviceId: DeviceIdentifier;
 	  };
 
 /**

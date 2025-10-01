@@ -73,15 +73,18 @@
 				<DropdownMenu.Content>
 					{#each columns.filter((c) => c.hideable) as column}
 						<DropdownMenu.CheckboxItem
-							checked={columnVisibility[
-								column.id as keyof typeof columnVisibility
-							] ?? true}
-							onCheckedChange={(checked) => {
-								columnVisibility = {
-									...columnVisibility,
-									[column.id]: checked,
-								};
-							}}
+							bind:checked={
+								() =>
+									columnVisibility[
+										column.id as keyof typeof columnVisibility
+									] ?? true,
+								(checked) => {
+									columnVisibility = {
+										...columnVisibility,
+										[column.id]: checked,
+									};
+								}
+							}
 						>
 							{column.label}
 						</DropdownMenu.CheckboxItem>

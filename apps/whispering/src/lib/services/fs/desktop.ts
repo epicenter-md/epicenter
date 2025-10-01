@@ -1,5 +1,5 @@
 import { readFile } from '@tauri-apps/plugin-fs';
-import { basename } from '@tauri-apps/api/path';
+import { basename, extname } from '@tauri-apps/api/path';
 import { MIME_TYPE_MAP } from '$lib/constants/mime';
 import { tryAsync } from 'wellcrafted/result';
 import type { FsService } from './types';
@@ -8,9 +8,12 @@ import { FsServiceErr } from './types';
 /**
  * Get MIME type from file path (internal helper)
  */
-function getMimeTypeFromPath(filePath: string): string {
-	const ext = filePath.split('.').pop()?.toLowerCase() ?? '';
-	return MIME_TYPE_MAP[ext as keyof typeof MIME_TYPE_MAP] ?? 'application/octet-stream';
+async function getMimeTypeFromPath(filePath: string): Promise<string> {
+	const ext = (await extname(filePath)).toLowerCase();
+	return (
+		MIME_TYPE_MAP[ext as keyof typeof MIME_TYPE_MAP] ??
+		'application/octet-stream'
+	);
 }
 
 export function createFsServiceDesktop(): FsService {
@@ -19,10 +22,10 @@ export function createFsServiceDesktop(): FsService {
 			return tryAsync({
 				try: async () => {
 					const fileBytes = await readFile(path);
-					const mimeType = getMimeTypeFromPath(path);
+					const mimeType = await getMimeTypeFromPath(path);
 					return new Blob([fileBytes], { type: mimeType });
 				},
-				mapErr: (error) =>
+				catch: (error) =>
 					FsServiceErr({
 						message: `Failed to read file as Blob: ${path}`,
 						cause: error,
@@ -35,10 +38,10 @@ export function createFsServiceDesktop(): FsService {
 				try: async () => {
 					const fileBytes = await readFile(path);
 					const fileName = await basename(path);
-					const mimeType = getMimeTypeFromPath(path);
+					const mimeType = await getMimeTypeFromPath(path);
 					return new File([fileBytes], fileName, { type: mimeType });
 				},
-				mapErr: (error) =>
+				catch: (error) =>
 					FsServiceErr({
 						message: `Failed to read file as File: ${path}`,
 						cause: error,
@@ -53,13 +56,13 @@ export function createFsServiceDesktop(): FsService {
 					for (const path of paths) {
 						const fileBytes = await readFile(path);
 						const fileName = await basename(path);
-						const mimeType = getMimeTypeFromPath(path);
+						const mimeType = await getMimeTypeFromPath(path);
 						const file = new File([fileBytes], fileName, { type: mimeType });
 						files.push(file);
 					}
 					return files;
 				},
-				mapErr: (error) =>
+				catch: (error) =>
 					FsServiceErr({
 						message: `Failed to read files: ${paths.join(', ')}`,
 						cause: error,

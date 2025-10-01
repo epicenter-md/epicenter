@@ -58,7 +58,7 @@ Now in the component:
 
 ```svelte
 <script lang="ts">
-  let { data }: { data: PageData } = $props();
+  let { data } = $props();
   const workspace = $derived(data.workspace);
   const sessionId = $derived(data.sessionId);
   

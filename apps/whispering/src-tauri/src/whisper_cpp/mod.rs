@@ -4,21 +4,99 @@ use error::WhisperCppError;
 use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters};
 use std::io::Write;
 
+/// Check if audio is already in whisper-compatible format (16kHz, mono, 16-bit PCM)
 fn is_valid_wav_format(audio_data: &[u8]) -> bool {
-    // Use hound to check WAV format efficiently
     let cursor = std::io::Cursor::new(audio_data);
     
-    match hound::WavReader::new(cursor) {
-        Ok(reader) => {
-            let spec = reader.spec();
-            // Check if it's 16-bit PCM, mono, 16kHz
-            spec.sample_format == hound::SampleFormat::Int &&
-            spec.channels == 1 &&
-            spec.sample_rate == 16000 &&
-            spec.bits_per_sample == 16
-        }
-        Err(_) => false,
+    if let Ok(reader) = hound::WavReader::new(cursor) {
+        let spec = reader.spec();
+        spec.sample_format == hound::SampleFormat::Int &&
+        spec.channels == 1 &&          // Must be mono
+        spec.sample_rate == 16000 &&   // Must be 16kHz
+        spec.bits_per_sample == 16     // Must be 16-bit
+    } else {
+        false
     }
+}
+
+/// Convert audio to whisper-compatible format (16kHz mono PCM WAV) using FFmpeg
+/// 
+/// Whisper models require audio in a specific format:
+/// - Sample rate: 16,000 Hz (not the typical 44.1kHz or 48kHz)
+/// - Channels: Mono (1 channel)  
+/// - Format: 16-bit PCM WAV
+/// 
+/// This function:
+/// 1. Checks if audio is already in the correct format
+/// 2. If not, uses FFmpeg to convert from any format (MP3, M4A, etc.) to the required format
+/// 3. Returns the audio ready for whisper transcription
+fn convert_audio_for_whisper(audio_data: Vec<u8>) -> Result<Vec<u8>, WhisperCppError> {
+    // Skip conversion if already in correct format
+    if is_valid_wav_format(&audio_data) {
+        return Ok(audio_data);
+    }
+    
+    // Create temp files for conversion
+    let mut input_file = tempfile::Builder::new()
+        .suffix(".audio")
+        .tempfile()
+        .map_err(|e| WhisperCppError::AudioReadError {
+            message: format!("Failed to create temp file: {}", e),
+        })?;
+    
+    input_file.write_all(&audio_data).map_err(|e| {
+        WhisperCppError::AudioReadError {
+            message: format!("Failed to write audio data: {}", e),
+        }
+    })?;
+    
+    let output_file = tempfile::Builder::new()
+        .suffix(".wav")
+        .tempfile()
+        .map_err(|e| WhisperCppError::AudioReadError {
+            message: format!("Failed to create output file: {}", e),
+        })?;
+    
+    // Use FFmpeg to convert to whisper-compatible format
+    let output = std::process::Command::new("ffmpeg")
+        .args(&[
+            "-i", &input_file.path().to_string_lossy(),
+            "-ar", "16000",        // 16kHz sample rate
+            "-ac", "1",            // Mono
+            "-c:a", "pcm_s16le",   // 16-bit PCM
+            "-y",                  // Overwrite output
+            &output_file.path().to_string_lossy(),
+        ])
+        .output()
+        .map_err(|e| WhisperCppError::AudioReadError {
+            message: format!("Failed to run ffmpeg: {}", e),
+        })?;
+    
+    if !output.status.success() {
+        return Err(WhisperCppError::AudioReadError {
+            message: format!("FFmpeg conversion failed: {}", String::from_utf8_lossy(&output.stderr)),
+        });
+    }
+    
+    std::fs::read(output_file.path()).map_err(|e| {
+        WhisperCppError::AudioReadError {
+            message: format!("Failed to read converted audio: {}", e),
+        }
+    })
+}
+
+/// Load Whisper model with automatic GPU support based on compiled features
+fn load_whisper_model(model_path: &str) -> Result<WhisperContext, WhisperCppError> {
+    // GPU acceleration is automatically enabled based on compile-time features:
+    // - macOS: Metal + CoreML
+    // - Windows: CUDA + Vulkan  
+    // - Linux: CUDA + Vulkan + HipBLAS
+    // The whisper-rs library automatically selects the best available backend
+    
+    WhisperContext::new_with_params(model_path, WhisperContextParameters::default())
+        .map_err(|e| WhisperCppError::ModelLoadError {
+            message: format!("Failed to load model: {}", e)
+        })
 }
 
 #[tauri::command]
@@ -26,81 +104,20 @@ pub async fn transcribe_with_whisper_cpp(
     audio_data: Vec<u8>,
     model_path: String,
     language: Option<String>,
-    use_gpu: bool,
     prompt: String,
     temperature: f32,
 ) -> Result<String, WhisperCppError> {
-    // Check if conversion is needed
-    let needs_conversion = !is_valid_wav_format(&audio_data);
+    // Convert audio to 16kHz mono format that whisper requires
+    let wav_data = convert_audio_for_whisper(audio_data)?;
     
-    let wav_data = if needs_conversion {
-        // Write input audio to temp file
-        let mut input_file = tempfile::Builder::new()
-            .suffix(".audio")
-            .tempfile()
-            .map_err(|e| WhisperCppError::AudioReadError {
-                message: format!("Failed to create temp input file: {}", e),
-            })?;
-        
-        input_file.write_all(&audio_data).map_err(|e| {
-            WhisperCppError::AudioReadError {
-                message: format!("Failed to write audio data to temp file: {}", e),
-            }
-        })?;
-        
-        // Create temp file for converted audio
-        let output_file = tempfile::Builder::new()
-            .suffix(".wav")
-            .tempfile()
-            .map_err(|e| WhisperCppError::AudioReadError {
-                message: format!("Failed to create temp output file: {}", e),
-            })?;
-        
-        let input_path = input_file.path().to_string_lossy().to_string();
-        let output_path = output_file.path().to_string_lossy().to_string();
-        
-        // Use FFmpeg to convert to 16kHz mono PCM
-        let output = std::process::Command::new("ffmpeg")
-            .args(&[
-                "-i", &input_path,
-                "-ar", "16000",        // 16kHz sample rate
-                "-ac", "1",            // Mono
-                "-c:a", "pcm_s16le",   // 16-bit PCM
-                "-y",                  // Overwrite output
-                &output_path,
-            ])
-            .output()
-            .map_err(|e| WhisperCppError::AudioReadError {
-                message: format!("Failed to run ffmpeg: {}", e),
-            })?;
-        
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(WhisperCppError::AudioReadError {
-                message: format!("FFmpeg conversion failed: {}", stderr),
-            });
-        }
-        
-        // Read the converted file
-        std::fs::read(&output_path).map_err(|e| {
-            WhisperCppError::AudioReadError {
-                message: format!("Failed to read converted audio file: {}", e),
-            }
-        })?
-    } else {
-        // Audio is already in correct format
-        audio_data
-    };
-    
-    // Parse WAV with hound
+    // Parse WAV and extract samples
     let cursor = std::io::Cursor::new(wav_data);
     let mut reader = hound::WavReader::new(cursor).map_err(|e| {
         WhisperCppError::AudioReadError {
-            message: format!("Failed to parse WAV data: {}", e),
+            message: format!("Failed to parse WAV: {}", e),
         }
     })?;
     
-    // Read samples as f32
     let samples: Vec<f32> = reader
         .samples::<i16>()
         .map(|s| s.map(|sample| sample as f32 / 32768.0))
@@ -114,70 +131,55 @@ pub async fn transcribe_with_whisper_cpp(
         return Ok(String::new());
     }
     
-    // Load model
-    let mut params = WhisperContextParameters::default();
-    params.use_gpu = use_gpu;
+    // Load model with automatic GPU acceleration based on compiled features
+    let context = load_whisper_model(&model_path)?;
     
-    let context = WhisperContext::new_with_params(&model_path, params).map_err(|e| {
-        let error_str = e.to_string();
-        if error_str.contains("GPU") || error_str.contains("CUDA") || error_str.contains("Metal") {
-            WhisperCppError::GpuError {
-                message: e.to_string(),
-            }
-        } else {
-            WhisperCppError::ModelLoadError {
-                message: e.to_string(),
-            }
-        }
-    })?;
-    
+    // Create state and configure parameters
     let mut state = context
         .create_state()
         .map_err(|e| WhisperCppError::TranscriptionError {
             message: format!("Failed to create whisper state: {}", e),
         })?;
     
-    // Configure transcription params with hallucination prevention
-    let mut full_params = FullParams::new(SamplingStrategy::Greedy { best_of: 1 });
-    full_params.set_translate(false);
-    full_params.set_no_timestamps(true);
-    full_params.set_temperature(temperature);
+    let mut params = FullParams::new(SamplingStrategy::Greedy { best_of: 1 });
+    params.set_translate(false);
+    params.set_no_timestamps(true);
+    params.set_temperature(temperature);
+    params.set_no_speech_thold(0.2);  // Better silence detection
+    params.set_suppress_nst(true);  // Prevent hallucinations (non-speech tokens)
     
-    // Hallucination prevention parameters
-    full_params.set_no_speech_thold(0.2);  // Lower threshold for better silence detection
-    full_params.set_suppress_non_speech_tokens(true);  // Suppress non-speech tokens
-    
+    // Set language if specified
     if let Some(ref lang) = language {
         if !lang.is_empty() && lang != "auto" {
-            full_params.set_language(Some(lang));
+            params.set_language(Some(lang));
         }
     }
     
+    // Set initial prompt if provided
     if !prompt.trim().is_empty() {
-        full_params.set_initial_prompt(&prompt);
+        params.set_initial_prompt(&prompt);
     }
     
-    // Transcribe
-    state
-        .full(full_params, &samples)
+    // Run transcription
+    state.full(params, &samples)
         .map_err(|e| WhisperCppError::TranscriptionError {
             message: e.to_string(),
         })?;
     
-    // Get text
-    let num_segments = state
-        .full_n_segments()
-        .map_err(|e| WhisperCppError::TranscriptionError {
-            message: format!("Failed to get number of segments: {}", e),
-        })?;
+    // Collect transcribed text from all segments
+    let num_segments = state.full_n_segments();
     
     let mut text = String::new();
     for i in 0..num_segments {
-        text.push_str(&state.full_get_segment_text(i).map_err(|e| {
-            WhisperCppError::TranscriptionError {
+        let segment = state.get_segment(i)
+            .ok_or_else(|| WhisperCppError::TranscriptionError {
+                message: format!("Failed to get segment {}", i),
+            })?;
+        let segment_text = segment.to_str()
+            .map_err(|e| WhisperCppError::TranscriptionError {
                 message: format!("Failed to get segment {} text: {}", i, e),
-            }
-        })?);
+            })?;
+        text.push_str(segment_text);
     }
     
     Ok(text.trim().to_string())

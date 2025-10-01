@@ -88,8 +88,7 @@
           <div class="flex items-center space-x-2">
             <Checkbox
               id={option.id}
-              checked={interests.includes(option.id)}
-              onCheckedChange={(checked) => toggleInterest(option.id, checked)}
+              bind:checked={() => interests.includes(option.id), (checked) => toggleInterest(option.id, checked)}
             />
             <Label for={option.id} class="font-normal cursor-pointer">
               {option.label}

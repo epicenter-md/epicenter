@@ -27,7 +27,7 @@ export function interpolateTemplate(
 	template: TemplateString,
 	variables: Record<string, string | number>,
 ): string {
-	let result = template;
+	let result: string = template;
 
 	for (const [key, value] of Object.entries(variables)) {
 		const pattern = new RegExp(`{{${key}}}`, 'g');

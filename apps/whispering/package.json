@@ -1,6 +1,6 @@
 {
 	"name": "@repo/whispering",
-	"version": "7.3.1",
+	"version": "7.4.0",
 	"description": "",
 	"exports": {
 		"./commands": "./src/lib/commands.ts"
@@ -8,7 +8,7 @@
 	"scripts": {
 		"dev:web": "vite dev",
 		"dev": "bun tauri dev",
-		"build": "vite build",
+		"build": "NODE_ENV=production vite build",
 		"preview": "vite preview",
 		"prepare": "svelte-kit sync || echo ''",
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
