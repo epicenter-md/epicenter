@@ -64,7 +64,7 @@ export function createMistralTranscriptionService() {
 						`recording.${getExtensionFromAudioBlob(audioBlob)}`,
 						{ type: audioBlob.type },
 					),
-				mapErr: (error) =>
+				catch: (error) =>
 					WhisperingErr({
 						title: '📄 File Creation Failed',
 						description:
@@ -91,7 +91,7 @@ export function createMistralTranscriptionService() {
 							? Number.parseFloat(options.temperature)
 							: undefined,
 					}),
-				mapErr: (error) => {
+				catch: (error) => {
 					// Return the error directly for processing
 					return Err(error);
 				},
