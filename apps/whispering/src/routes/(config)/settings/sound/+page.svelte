@@ -1,26 +1,74 @@
 <script lang="ts">
-	import {  LabeledSlider, LabeledSwitch } from '$lib/components/labeled';
-	import { Separator } from '@repo/ui/separator';
-	import { Button } from '@repo/ui/button';
-	import { PlayIcon, UploadIcon, XIcon } from '@lucide/svelte';
-	import { settings } from '$lib/stores/settings.svelte';
+	import { LabeledSlider, LabeledSwitch } from '$lib/components/labeled';
 	import { type WhisperingSoundNames } from '$lib/constants/sounds';
 	import { rpc } from '$lib/query';
-	import { FileDropZone, ACCEPT_AUDIO, MEGABYTE } from '@repo/ui/file-drop-zone';
+	import { settings } from '$lib/stores/settings.svelte';
+	import { PlayIcon, UploadIcon, XIcon } from '@lucide/svelte';
+	import { Button } from '@repo/ui/button';
+	import {
+		ACCEPT_AUDIO,
+		FileDropZone,
+		MEGABYTE,
+	} from '@repo/ui/file-drop-zone';
+	import { Separator } from '@repo/ui/separator';
 
 	// Sound events configuration
 	const soundEvents = [
-		{ key: 'manual-start', label: 'Manual Recording Start', description: 'When you start recording manually' },
-		{ key: 'manual-stop', label: 'Manual Recording Stop', description: 'When you stop recording manually' },
-		{ key: 'manual-cancel', label: 'Manual Recording Cancel', description: 'When you cancel recording manually' },
-		{ key: 'cpal-start', label: 'CPAL Recording Start', description: 'When CPAL recording starts' },
-		{ key: 'cpal-stop', label: 'CPAL Recording Stop', description: 'When CPAL recording stops' },
-		{ key: 'cpal-cancel', label: 'CPAL Recording Cancel', description: 'When CPAL recording is cancelled' },
-		{ key: 'vad-start', label: 'VAD Session Start', description: 'When voice activity detection session begins' },
-		{ key: 'vad-capture', label: 'VAD Capture', description: 'When voice activity is detected and captured' },
-		{ key: 'vad-stop', label: 'VAD Session Stop', description: 'When voice activity detection session ends' },
-		{ key: 'transcriptionComplete', label: 'Transcription Complete', description: 'When audio transcription finishes' },
-		{ key: 'transformationComplete', label: 'Transformation Complete', description: 'When text transformation finishes' },
+		{
+			key: 'manual-start',
+			label: 'Manual Recording Start',
+			description: 'When you start recording manually',
+		},
+		{
+			key: 'manual-stop',
+			label: 'Manual Recording Stop',
+			description: 'When you stop recording manually',
+		},
+		{
+			key: 'manual-cancel',
+			label: 'Manual Recording Cancel',
+			description: 'When you cancel recording manually',
+		},
+		{
+			key: 'cpal-start',
+			label: 'CPAL Recording Start',
+			description: 'When CPAL recording starts',
+		},
+		{
+			key: 'cpal-stop',
+			label: 'CPAL Recording Stop',
+			description: 'When CPAL recording stops',
+		},
+		{
+			key: 'cpal-cancel',
+			label: 'CPAL Recording Cancel',
+			description: 'When CPAL recording is cancelled',
+		},
+		{
+			key: 'vad-start',
+			label: 'VAD Session Start',
+			description: 'When voice activity detection session begins',
+		},
+		{
+			key: 'vad-capture',
+			label: 'VAD Capture',
+			description: 'When voice activity is detected and captured',
+		},
+		{
+			key: 'vad-stop',
+			label: 'VAD Session Stop',
+			description: 'When voice activity detection session ends',
+		},
+		{
+			key: 'transcriptionComplete',
+			label: 'Transcription Complete',
+			description: 'When audio transcription finishes',
+		},
+		{
+			key: 'transformationComplete',
+			label: 'Transformation Complete',
+			description: 'When text transformation finishes',
+		},
 	] as const;
 
 	const testSound = (soundKey: string) => {
@@ -30,11 +78,12 @@
 	const applyGlobalVolume = (volume: number) => {
 		const volumeDecimal = volume / 100;
 		const updates: Partial<typeof settings.value> = {};
-		
-		soundEvents.forEach(event => {
-			updates[`sound.volume.${event.key}` as keyof typeof settings.value] = volumeDecimal as any;
+
+		soundEvents.forEach((event) => {
+			updates[`sound.volume.${event.key}` as keyof typeof settings.value] =
+				volumeDecimal as any;
 		});
-		
+
 		settings.value = { ...settings.value, ...updates };
 	};
 
@@ -79,7 +128,7 @@
 			console.log('🔧 Importing db service...');
 			// Import db service dynamically to avoid circular dependencies
 			const { db } = await import('$lib/services');
-			
+
 			console.log('🔧 Saving to IndexedDB...', customSound);
 			// Save to IndexedDB
 			const { error } = await db.saveCustomSound(customSound);
@@ -99,9 +148,8 @@
 			// Success notification
 			rpc.notify.success.execute({
 				title: 'Custom sound uploaded',
-				description: `Custom sound for ${soundEvents.find(e => e.key === soundKey)?.label} has been saved.`,
+				description: `Custom sound for ${soundEvents.find((e) => e.key === soundKey)?.label} has been saved.`,
 			});
-
 		} catch (error) {
 			console.error('🔧 Custom sound upload failed:', error);
 			rpc.notify.error.execute({
@@ -116,7 +164,7 @@
 		try {
 			// Import db service dynamically to avoid circular dependencies
 			const { db } = await import('$lib/services');
-			
+
 			// Delete from IndexedDB
 			const { error } = await db.deleteCustomSound(soundKey as any); // WhisperingSoundNames
 			if (error) {
@@ -132,9 +180,8 @@
 			// Success notification
 			rpc.notify.success.execute({
 				title: 'Custom sound removed',
-				description: `Reverted to default sound for ${soundEvents.find(e => e.key === soundKey)?.label}.`,
+				description: `Reverted to default sound for ${soundEvents.find((e) => e.key === soundKey)?.label}.`,
 			});
-
 		} catch (error) {
 			rpc.notify.error.execute({
 				title: 'Failed to remove custom sound',
@@ -152,7 +199,7 @@
 			if (error) {
 				throw error;
 			}
-			
+
 			rpc.notify.success.execute({
 				title: 'Database reset',
 				description: 'Database has been reset. Please refresh the page.',
@@ -199,7 +246,11 @@
 					applyGlobalVolume(v);
 				}}
 			/>
-			<Button variant="outline" size="sm" onclick={() => testSound('transcriptionComplete')}>
+			<Button
+				variant="outline"
+				size="sm"
+				onclick={() => testSound('transcriptionComplete')}
+			>
 				<PlayIcon class="mr-2 size-4" />
 				Test
 			</Button>
@@ -219,11 +270,13 @@
 						<p class="text-sm text-muted-foreground">{event.description}</p>
 					</div>
 					<div class="flex items-center gap-2">
-						<Button 
-							variant="outline" 
-							size="sm" 
+						<Button
+							variant="outline"
+							size="sm"
 							onclick={() => testSound(event.key)}
-							disabled={!settings.value[`sound.playOn.${event.key}` as keyof typeof settings.value]}
+							disabled={!settings.value[
+								`sound.playOn.${event.key}` as keyof typeof settings.value
+							]}
 						>
 							<PlayIcon class="mr-2 size-4" />
 							Test
@@ -231,23 +284,35 @@
 						<LabeledSwitch
 							id="sound.playOn.{event.key}"
 							label=""
-							checked={settings.value[`sound.playOn.${event.key}` as keyof typeof settings.value] as boolean}
+							checked={settings.value[
+								`sound.playOn.${event.key}` as keyof typeof settings.value
+							] as boolean}
 							onCheckedChange={(v) => {
-								settings.value = { ...settings.value, [`sound.playOn.${event.key}`]: v };
+								settings.value = {
+									...settings.value,
+									[`sound.playOn.${event.key}`]: v,
+								};
 							}}
 						/>
 					</div>
 				</div>
-				
+
 				<LabeledSlider
 					id="sound.volume.{event.key}"
 					label="Volume"
-					value={Math.round((settings.value[`sound.volume.${event.key}` as keyof typeof settings.value] as number) * 100)}
+					value={Math.round(
+						(settings.value[
+							`sound.volume.${event.key}` as keyof typeof settings.value
+						] as number) * 100,
+					)}
 					min={0}
 					max={100}
 					step={5}
 					onValueChange={(v) => {
-						settings.value = { ...settings.value, [`sound.volume.${event.key}`]: v / 100 };
+						settings.value = {
+							...settings.value,
+							[`sound.volume.${event.key}`]: v / 100,
+						};
 					}}
 				/>
 
@@ -257,8 +322,8 @@
 					{#if settings.value[`sound.custom.${event.key}` as keyof typeof settings.value]}
 						<div class="flex items-center gap-2 p-2 bg-muted rounded">
 							<span class="text-sm flex-1">Custom sound uploaded</span>
-							<Button 
-								variant="outline" 
+							<Button
+								variant="outline"
 								size="sm"
 								onclick={() => removeCustomSound(event.key)}
 							>
