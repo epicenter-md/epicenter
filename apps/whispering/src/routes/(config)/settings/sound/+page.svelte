@@ -84,10 +84,13 @@
 				volumeDecimal as any;
 		});
 
-		settings.value = { ...settings.value, ...updates };
+		settings.update(updates);
 	};
 
-	const handleCustomSoundUpload = async (files: File[], soundKey: string) => {
+	const handleCustomSoundUpload = async (
+		files: File[],
+		soundKey: WhisperingSoundNames,
+	) => {
 		console.log('🔧 Starting custom sound upload:', { files, soundKey });
 		const file = files[0];
 		if (!file) return;
@@ -139,10 +142,7 @@
 
 			console.log('🔧 Updating settings...');
 			// Update settings flag
-			settings.value = {
-				...settings.value,
-				[`sound.custom.${soundKey}`]: true,
-			};
+			settings.updateKey(`sound.custom.${soundKey}`, true);
 
 			console.log('🔧 Custom sound upload successful!');
 			// Success notification
@@ -160,22 +160,19 @@
 		}
 	};
 
-	const removeCustomSound = async (soundKey: string) => {
+	const removeCustomSound = async (soundKey: WhisperingSoundNames) => {
 		try {
 			// Import db service dynamically to avoid circular dependencies
 			const { db } = await import('$lib/services');
 
 			// Delete from IndexedDB
-			const { error } = await db.deleteCustomSound(soundKey as any); // WhisperingSoundNames
+			const { error } = await db.deleteCustomSound(soundKey);
 			if (error) {
 				throw error;
 			}
 
 			// Update settings flag
-			settings.value = {
-				...settings.value,
-				[`sound.custom.${soundKey}`]: false,
-			};
+			settings.updateKey(`sound.custom.${soundKey}`, false);
 
 			// Success notification
 			rpc.notify.success.execute({
@@ -242,7 +239,7 @@
 				step={5}
 				description="Quickly set the same volume for all notification sounds"
 				onValueChange={(v) => {
-					settings.value = { ...settings.value, 'sound.volume': v / 100 };
+					settings.updateKey('sound.volume', v / 100);
 					applyGlobalVolume(v);
 				}}
 			/>
@@ -288,10 +285,7 @@
 								`sound.playOn.${event.key}` as keyof typeof settings.value
 							] as boolean}
 							onCheckedChange={(v) => {
-								settings.value = {
-									...settings.value,
-									[`sound.playOn.${event.key}`]: v,
-								};
+								settings.updateKey(`sound.playOn.${event.key}`, v);
 							}}
 						/>
 					</div>
@@ -309,10 +303,7 @@
 					max={100}
 					step={5}
 					onValueChange={(v) => {
-						settings.value = {
-							...settings.value,
-							[`sound.volume.${event.key}`]: v / 100,
-						};
+						settings.updateKey(`sound.volume.${event.key}`, v / 100);
 					}}
 				/>
 
