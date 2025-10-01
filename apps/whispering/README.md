@@ -676,10 +676,13 @@ We'd love to expand Whispering's capabilities with more transcription and AI ser
 
 Adding a new transcription service involves four main steps:
 
-1. **Create the service implementation** in `src/lib/services/transcription/`:
+1. **Create the service implementation** in the appropriate transcription subdirectory:
+   - **Cloud services**: `src/lib/services/transcription/cloud/` (OpenAI, Groq, Deepgram, ElevenLabs)
+   - **Local services**: `src/lib/services/transcription/local/` (WhisperCpp, Parakeet)
+   - **Self-hosted services**: `src/lib/services/transcription/self-hosted/` (Speaches)
 
    ```typescript
-   // src/lib/services/transcription/your-service.ts
+   // Example: src/lib/services/transcription/cloud/your-service.ts
    import { WhisperingErr, type WhisperingError } from '$lib/result';
    import type { Settings } from '$lib/settings';
    import { Err, Ok, tryAsync, type Result } from 'wellcrafted/result';
@@ -750,7 +753,7 @@ Adding a new transcription service involves four main steps:
    Don't forget to export your service in `src/lib/services/transcription/index.ts`:
 
    ```typescript
-   import { YourServiceTranscriptionServiceLive } from './your-service';
+   import { YourServiceTranscriptionServiceLive } from './cloud/your-service';
 
    export {
    	// ... existing exports
@@ -771,7 +774,7 @@ Adding a new transcription service involves four main steps:
    import {
      YOUR_SERVICE_MODELS,
      type YourServiceModel,
-   } from '$lib/services/transcription/your-service';
+   } from '$lib/services/transcription/cloud/your-service';
 
    // Add to the imports at the top
    type TranscriptionModel = OpenAIModel | GroqModel | ElevenLabsModel | YourServiceModel;
