@@ -114,6 +114,7 @@
 			<LabeledSwitch
 				id="system.autoPauseMediaDuringRecording"
 				label="Auto-pause media during recording (macOS)"
+				description="Pauses Apple Music and Spotify during recording. macOS may ask for permission to control these apps on first use."
 				bind:checked={
 					() => settings.value['system.autoPauseMediaDuringRecording'],
 					(v) => settings.updateKey('system.autoPauseMediaDuringRecording', v)
