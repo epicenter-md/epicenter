@@ -25,18 +25,16 @@
 	{/if}
 {/snippet}
 
-<Tooltip.Provider>
-	<Tooltip.Root>
-		<Tooltip.Trigger {id}>
-			{#snippet child({ props: tooltipProps })}
-				{@render trigger?.({
-					tooltipProps: mergeProps(tooltipProps, restProps),
-					tooltip,
-				})}
-			{/snippet}
-		</Tooltip.Trigger>
-		<Tooltip.Content class="max-w-xs text-center">
-			{@render tooltip()}
-		</Tooltip.Content>
-	</Tooltip.Root>
-</Tooltip.Provider>
+<Tooltip.Root>
+	<Tooltip.Trigger {id}>
+		{#snippet child({ props: tooltipProps })}
+			{@render trigger?.({
+				tooltipProps: mergeProps(tooltipProps, restProps),
+				tooltip,
+			})}
+		{/snippet}
+	</Tooltip.Trigger>
+	<Tooltip.Content class="max-w-xs text-center">
+		{@render tooltip()}
+	</Tooltip.Content>
+</Tooltip.Root>
