@@ -1,16 +1,6 @@
 <script lang="ts">
 	import { Label } from '@repo/ui/label';
 
-	interface Props {
-		id: string;
-		label: string;
-		value: number;
-		min?: number;
-		max?: number;
-		step?: number;
-		description?: string;
-	}
-
 	let {
 		id,
 		label,
@@ -19,7 +9,15 @@
 		max = 100,
 		step = 1,
 		description,
-	}: Props = $props();
+	}: {
+		id: string;
+		label: string;
+		value: number;
+		min?: number;
+		max?: number;
+		step?: number;
+		description?: string;
+	} = $props();
 
 	// Calculate percentage for visual fill
 	const percentage = $derived(((value - min) / (max - min)) * 100);
