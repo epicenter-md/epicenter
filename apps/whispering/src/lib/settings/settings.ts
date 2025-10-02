@@ -98,19 +98,19 @@ export const settingsSchema = z.object({
 		z.ZodDefault<ZodBoolean>
 	>),
 
-	// Individual volume controls for each sound (0.0 to 1.0)
+	// Individual volume controls for each sound (0 to 100)
 	...({
-		'sound.volume.manual-start': z.number().min(0).max(1).default(0.5),
-		'sound.volume.manual-stop': z.number().min(0).max(1).default(0.5),
-		'sound.volume.manual-cancel': z.number().min(0).max(1).default(0.5),
-		'sound.volume.cpal-start': z.number().min(0).max(1).default(0.5),
-		'sound.volume.cpal-stop': z.number().min(0).max(1).default(0.5),
-		'sound.volume.cpal-cancel': z.number().min(0).max(1).default(0.5),
-		'sound.volume.vad-start': z.number().min(0).max(1).default(0.5),
-		'sound.volume.vad-capture': z.number().min(0).max(1).default(0.5),
-		'sound.volume.vad-stop': z.number().min(0).max(1).default(0.5),
-		'sound.volume.transcriptionComplete': z.number().min(0).max(1).default(0.5),
-		'sound.volume.transformationComplete': z.number().min(0).max(1).default(0.5),
+		'sound.volume.manual-start': z.number().min(0).max(100).default(50),
+		'sound.volume.manual-stop': z.number().min(0).max(100).default(50),
+		'sound.volume.manual-cancel': z.number().min(0).max(100).default(50),
+		'sound.volume.cpal-start': z.number().min(0).max(100).default(50),
+		'sound.volume.cpal-stop': z.number().min(0).max(100).default(50),
+		'sound.volume.cpal-cancel': z.number().min(0).max(100).default(50),
+		'sound.volume.vad-start': z.number().min(0).max(100).default(50),
+		'sound.volume.vad-capture': z.number().min(0).max(100).default(50),
+		'sound.volume.vad-stop': z.number().min(0).max(100).default(50),
+		'sound.volume.transcriptionComplete': z.number().min(0).max(100).default(50),
+		'sound.volume.transformationComplete': z.number().min(0).max(100).default(50),
 	} satisfies Record<
 		`sound.volume.${WhisperingSoundNames}`,
 		z.ZodDefault<z.ZodNumber>

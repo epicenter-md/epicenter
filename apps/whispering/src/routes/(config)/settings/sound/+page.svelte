@@ -80,11 +80,10 @@
 	};
 
 	const applyGlobalVolume = (volume: number) => {
-		const volumeDecimal = volume / 100;
 		const updates: Partial<typeof settings.value> = {};
 
 		for (const event of soundEvents) {
-			updates[`sound.volume.${event.key}`] = volumeDecimal;
+			updates[`sound.volume.${event.key}`] = volume;
 		}
 
 		settings.update(updates);
@@ -237,9 +236,9 @@
 				id="sound.volume.global"
 				label="Set All Volumes"
 				bind:value={
-					() => Math.round(settings.value['sound.volume'] * 100),
+					() => settings.value['sound.volume'],
 					(v) => {
-						settings.updateKey('sound.volume', v / 100);
+						settings.updateKey('sound.volume', v);
 						applyGlobalVolume(v);
 					}
 				}
@@ -296,8 +295,8 @@
 					id="sound.volume.{event.key}"
 					label="Volume"
 					bind:value={
-						() => Math.round(settings.value[`sound.volume.${event.key}`] * 100),
-						(v) => settings.updateKey(`sound.volume.${event.key}`, v / 100)
+						() => settings.value[`sound.volume.${event.key}`],
+						(v) => settings.updateKey(`sound.volume.${event.key}`, v)
 					}
 					min={0}
 					max={100}

@@ -11,11 +11,10 @@ export function createPlaySoundServiceDesktop(): PlaySoundService {
 				try: async () => {
 					// Use async audio source resolution (IndexedDB-based)
 					await updateAudioSource(soundName);
-					
+
 					const audioElement = audioElements[soundName];
-					// Apply individual volume setting for this specific sound
-					const individualVolume = settings.value[`sound.volume.${soundName}` as keyof typeof settings.value] as number;
-					audioElement.volume = individualVolume ?? 0.5;
+					// Apply individual volume setting for this specific sound (convert 0-100 to 0-1)
+					audioElement.volume = settings.value[`sound.volume.${soundName}`] / 100;
 					await audioElement.play();
 				},
 				catch: (error) =>
