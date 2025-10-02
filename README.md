@@ -18,7 +18,7 @@
 > - The original app lives on as [*Epicenter Whispering*](https://github.com/epicenter-md/epicenter/tree/main/apps/whispering), keeping a tight focus on transcription.
 > - This makes room for standalone apps with complementary, but non-transcription-related features (like [*Epicenter Assistant*](https://github.com/epicenter-md/epicenter/tree/main/apps/sh)).
 > - The new [root](https://github.com/epicenter-md/epicenter/) of the Epicenter repository contains common files supporting all the apps in the ecosystem.
-> - Note: the old URL [github.com/braden-w/whispering](https://github.com/braden-w/whispering) is now just a thin placeholder redirecting to this rebranded repository.  
+> - Note: the old URL [github.com/braden-w/whispering](https://github.com/braden-w/whispering) is now just a thin placeholder redirecting to this rebranded repository.
 >
 > </details>
 
@@ -95,16 +95,34 @@ Epicenter is an ecosystem of open-source, local-first apps. Our eventual goal is
 
 Our vision is to build a personal workspace where you own your data, choose your models, and replace siloed apps with open, interoperable alternatives. All while preserving authenticity and being free and open source.
 
-
 ## Quick Start
 
-Epicenter will have more apps in the future, but for now, the best way to get started is to run Whispering locally:
+### Install Epicenter Whispering
+
+Our first app in the ecosystem. Choose your installation method:
+
+**macOS (Homebrew)**
+```bash
+brew install --cask epicenter-whispering
+```
+
+**macOS, Windows, Linux (Direct Download)**
+
+Download the installer for your platform from [GitHub Releases](https://github.com/epicenter-md/epicenter/releases/latest):
+- macOS: `.dmg` (Apple Silicon or Intel)
+- Windows: `.msi` or `.exe`
+- Linux: `.AppImage`, `.deb`, or `.rpm`
+
+**→ [Full installation guide and setup instructions](https://github.com/epicenter-md/epicenter/tree/main/apps/whispering#install-whispering)**
+
+### Build from Source
+
+For developers or contributors:
 
 ```bash
-# Prerequisites: 
+# Prerequisites:
 # - Install Bun from https://bun.sh (run bun upgrade if there's issues)
 # - Install Rust and Cargo from https://www.rust-lang.org/tools/install (brew install rustup)
-
 
 git clone https://github.com/epicenter-md/epicenter.git
 cd epicenter

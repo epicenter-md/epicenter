@@ -5,8 +5,9 @@ export { default as AnthropicApiKeyInput } from './api-key-inputs/AnthropicApiKe
 export { default as ElevenLabsApiKeyInput } from './api-key-inputs/ElevenLabsApiKeyInput.svelte';
 export { default as GoogleApiKeyInput } from './api-key-inputs/GoogleApiKeyInput.svelte';
 export { default as DeepgramApiKeyInput } from './api-key-inputs/DeepgramApiKeyInput.svelte';
+export { default as MistralApiKeyInput } from './api-key-inputs/MistralApiKeyInput.svelte';
 export { default as OpenRouterApiKeyInput } from './api-key-inputs/OpenRouterApiKeyInput.svelte';
-// Shared components  
+// Shared components
 export { default as CompressionBody } from './CompressionBody.svelte';
 // Selector components
 export { default as RecordingModeSelector } from './selectors/RecordingModeSelector.svelte';

@@ -228,6 +228,17 @@ async function transcribeBlob(
 							modelName: settings.value['transcription.deepgram.model'],
 						},
 					);
+				case 'Mistral':
+					return await services.transcriptions.mistral.transcribe(
+						audioToTranscribe,
+						{
+							outputLanguage: settings.value['transcription.outputLanguage'],
+							prompt: settings.value['transcription.prompt'],
+							temperature: settings.value['transcription.temperature'],
+							apiKey: settings.value['apiKeys.mistral'],
+							modelName: settings.value['transcription.mistral.model'],
+						},
+					);
 				case 'whispercpp': {
 					const { data: isFFmpegInstalled, error: checkFfmpegInstalledError } =
 						await rpc.ffmpeg.checkFfmpegInstalled.ensure();

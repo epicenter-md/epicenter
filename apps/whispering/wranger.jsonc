@@ -1,6 +1,6 @@
 {
 	"$schema": "node_modules/wrangler/config-schema.json",
-	"name": "whisperings",
+	"name": "whispering",
 	"compatibility_date": "2025-08-13",
 	"pages_build_output_dir": "build",
 	"observability": {

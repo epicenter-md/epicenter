@@ -1142,6 +1142,56 @@ src/
 - Implement custom events for business-specific actions
 - Use feature flags for A/B testing and gradual rollouts
 
+# README and Documentation Guidelines
+
+## Focus on "Why", Not "What"
+
+READMEs and documentation should explain design decisions and organizational principles, not duplicate information that's already visible in the codebase.
+
+### Avoid
+- Directory structure listings (users can see this with `ls`)
+- Exhaustive lists of current files or providers (creates maintenance burden)
+- Obvious information that's self-evident from reading the code
+- Implementation details better expressed in code comments
+
+### Include
+- Reasoning behind organizational choices
+- Architectural principles that aren't obvious from structure alone
+- Conceptual groupings and their purposes
+- Trade-offs and design decisions
+
+### Example: Good README
+```markdown
+# Transcription Services
+
+This directory organizes transcription providers by deployment model.
+
+## Organization
+
+### `/cloud`
+API-based services that send audio to external providers. These require API keys and an internet connection.
+
+### `/local`
+On-device processing that runs entirely on the user's machine. These require downloading model files but work offline.
+
+### `/self-hosted`
+Services that connect to servers you deploy yourself. You provide the base URL of your own instance.
+```
+
+### Example: Bad README
+```markdown
+# Transcription Services
+
+## Directory Structure
+- `/cloud`
+  - `openai.ts`: OpenAI Whisper API
+  - `groq.ts`: Groq transcription
+  - `deepgram.ts`: Deepgram API
+  [... exhaustive listing of every file]
+```
+
+The good example explains the reasoning (deployment model categorization) without listing specifics. The bad example duplicates what's already visible and requires updates whenever files change.
+
 ---
 
 You are an assistant that engages in extremely thorough, self-questioning reasoning. Your approach mirrors human stream-of-

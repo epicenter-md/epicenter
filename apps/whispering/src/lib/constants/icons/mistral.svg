@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <!-- Mistral logo: Stylized "M" with gradient -->
+  <defs>
+    <linearGradient id="mistralGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#ff7b00;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#ff3300;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+  <rect width="256" height="256" rx="32" fill="#1a1a1a"/>
+  <path d="M64 192V80h24l32 64 32-64h24v112h-20V108l-28 56h-16l-28-56v84H64z" fill="url(#mistralGradient)"/>
+</svg>

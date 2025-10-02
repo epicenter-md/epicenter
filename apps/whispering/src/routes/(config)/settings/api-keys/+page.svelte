@@ -4,6 +4,8 @@
 		ElevenLabsApiKeyInput,
 		GoogleApiKeyInput,
 		GroqApiKeyInput,
+		MistralApiKeyInput,
+		DeepgramApiKeyInput,
 		OpenAiApiKeyInput,
 		OpenRouterApiKeyInput,
 		DeepgramApiKeyInput,
@@ -31,4 +33,6 @@
 	<GroqApiKeyInput />
 	<GoogleApiKeyInput />
 	<ElevenLabsApiKeyInput />
+	<DeepgramApiKeyInput />
+	<MistralApiKeyInput />
 </div>

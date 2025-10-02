@@ -85,27 +85,36 @@ Set up Whispering and be ready to transcribe in about two minutes.
 <details>
 <summary><strong>🍎 macOS</strong></summary>
 
-#### Download Options
+#### Option 1: Install via Homebrew (Recommended)
+
+The fastest way to install Whispering on macOS:
+
+```bash
+brew install --cask epicenter-whispering
+```
+
+This automatically handles installation and updates.
+
+#### Option 2: Direct Download
 
 | Architecture      | Download                                                                                                                        | Requirements     |
 | ----------------- | ------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
-| **Apple Silicon** | [Whispering_7.4.0_aarch64.dmg](https://github.com/epicenter-md/epicenter/releases/download/v7.4.0/Whispering_7.4.0_aarch64.dmg) | M1/M2/M3/M4 Macs |
-| **Intel**         | [Whispering_7.4.0_x64.dmg](https://github.com/epicenter-md/epicenter/releases/download/v7.4.0/Whispering_7.4.0_x64.dmg)         | Intel-based Macs |
+| **Apple Silicon** | [Whispering_7.5.1_aarch64.dmg](https://github.com/epicenter-md/epicenter/releases/download/v7.5.1/Whispering_7.5.1_aarch64.dmg) | M1/M2/M3/M4 Macs |
+| **Intel**         | [Whispering_7.5.1_x64.dmg](https://github.com/epicenter-md/epicenter/releases/download/v7.5.1/Whispering_7.5.1_x64.dmg)         | Intel-based Macs |
 
-> [!TIP]
-> **Not sure which Mac you have?** Click the Apple menu → About This Mac. Look for "Chip" or "Processor":
+> **💡 Tip:** Not sure which Mac you have? Click the Apple menu → About This Mac. Look for "Chip" or "Processor":
 >
 > - Apple M1/M2/M3/M4 → Use Apple Silicon version
 > - Intel Core → Use Intel version
 
-#### Installation steps:
+**Installation steps:**
 
 1. Download the `.dmg` file for your architecture
 2. Open the downloaded file
 3. Drag Whispering to your Applications folder
 4. Open Whispering from Applications
 
-### Troubleshooting:
+#### Troubleshooting:
 
 - **"Unverified developer" warning:** Right-click the app → Open → Open
 - **"App is damaged" error (Apple Silicon):** Run `xattr -cr /Applications/Whispering.app` in Terminal
@@ -119,8 +128,8 @@ Set up Whispering and be ready to transcribe in about two minutes.
 
 | Installer Type    | Download                                                                                                                            | Description                            |
 | ----------------- | ----------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------- |
-| **MSI Installer** | [Whispering_7.4.0_x64_en-US.msi](https://github.com/epicenter-md/epicenter/releases/download/v7.4.0/Whispering_7.4.0_x64_en-US.msi) | Recommended Standard Windows installer |
-| **EXE Installer** | [Whispering_7.4.0_x64-setup.exe](https://github.com/epicenter-md/epicenter/releases/download/v7.4.0/Whispering_7.4.0_x64-setup.exe) | Alternative installer option           |
+| **MSI Installer** | [Whispering_7.5.1_x64_en-US.msi](https://github.com/epicenter-md/epicenter/releases/download/v7.5.1/Whispering_7.5.1_x64_en-US.msi) | Recommended Standard Windows installer |
+| **EXE Installer** | [Whispering_7.5.1_x64-setup.exe](https://github.com/epicenter-md/epicenter/releases/download/v7.5.1/Whispering_7.5.1_x64-setup.exe) | Alternative installer option           |
 
 #### Installation
 
@@ -140,32 +149,32 @@ Whispering will appear in your Start Menu when complete.
 
 | Package Format  | Download                                                                                                                              | Compatible With          |
 | --------------- | ------------------------------------------------------------------------------------------------------------------------------------- | ------------------------ |
-| **AppImage**    | [Whispering_7.4.0_amd64.AppImage](https://github.com/epicenter-md/epicenter/releases/download/v7.4.0/Whispering_7.4.0_amd64.AppImage) | All Linux distributions  |
-| **DEB Package** | [Whispering_7.4.0_amd64.deb](https://github.com/epicenter-md/epicenter/releases/download/v7.4.0/Whispering_7.4.0_amd64.deb)           | Debian, Ubuntu, Pop!\_OS |
-| **RPM Package** | [Whispering-7.4.0-1.x86_64.rpm](https://github.com/epicenter-md/epicenter/releases/download/v7.4.0/Whispering-7.4.0-1.x86_64.rpm)     | Fedora, RHEL, openSUSE   |
+| **AppImage**    | [Whispering_7.5.1_amd64.AppImage](https://github.com/epicenter-md/epicenter/releases/download/v7.5.1/Whispering_7.5.1_amd64.AppImage) | All Linux distributions  |
+| **DEB Package** | [Whispering_7.5.1_amd64.deb](https://github.com/epicenter-md/epicenter/releases/download/v7.5.1/Whispering_7.5.1_amd64.deb)           | Debian, Ubuntu, Pop!\_OS |
+| **RPM Package** | [Whispering-7.5.1-1.x86_64.rpm](https://github.com/epicenter-md/epicenter/releases/download/v7.5.1/Whispering-7.5.1-1.x86_64.rpm)     | Fedora, RHEL, openSUSE   |
 
 #### Quick Install Commands
 
 **AppImage (Universal)**
 
 ```bash
-wget https://github.com/epicenter-md/epicenter/releases/download/v7.4.0/Whispering_7.4.0_amd64.AppImage
-chmod +x Whispering_7.4.0_amd64.AppImage
-./Whispering_7.4.0_amd64.AppImage
+wget https://github.com/epicenter-md/epicenter/releases/download/v7.5.1/Whispering_7.5.1_amd64.AppImage
+chmod +x Whispering_7.5.1_amd64.AppImage
+./Whispering_7.5.1_amd64.AppImage
 ```
 
 **Debian/Ubuntu**
 
 ```bash
-wget https://github.com/epicenter-md/epicenter/releases/download/v7.4.0/Whispering_7.4.0_amd64.deb
-sudo dpkg -i Whispering_7.4.0_amd64.deb
+wget https://github.com/epicenter-md/epicenter/releases/download/v7.5.1/Whispering_7.5.1_amd64.deb
+sudo dpkg -i Whispering_7.5.1_amd64.deb
 ```
 
 **Fedora/RHEL**
 
 ```bash
-wget https://github.com/epicenter-md/epicenter/releases/download/v7.4.0/Whispering-7.4.0-1.x86_64.rpm
-sudo rpm -i Whispering-7.4.0-1.x86_64.rpm
+wget https://github.com/epicenter-md/epicenter/releases/download/v7.5.1/Whispering-7.5.1-1.x86_64.rpm
+sudo rpm -i Whispering-7.5.1-1.x86_64.rpm
 ```
 
 </details>
@@ -182,8 +191,7 @@ sudo rpm -i Whispering-7.4.0-1.x86_64.rpm
 
 No installation needed! Works in any modern browser.
 
-> [!NOTE]
-> The web version doesn't have global keyboard shortcuts, but otherwise works great for trying out Whispering before installing.
+> **📝 Note:** The web version doesn't have global keyboard shortcuts, but otherwise works great for trying out Whispering before installing.
 
 </details>
 
@@ -210,8 +218,7 @@ Your audio never leaves your device. Works without internet. Free forever.
 6. Wait for download to complete (may take a few minutes)
 7. Verify the model shows as **activated**
 
-> [!IMPORTANT]
-> You must download a model before you can transcribe.
+> **⚠️ Important:** You must download a model before you can transcribe.
 
 #### Test Your Setup
 
@@ -221,8 +228,7 @@ Your audio never leaves your device. Works without internet. Free forever.
 
 **🎉 Success!** Your words are now in your clipboard. Paste anywhere!
 
-> [!NOTE]
-> Local transcription is slower than cloud options but provides complete privacy. Processing speed depends on your hardware and the model size you chose.
+> **📝 Note:** Local transcription is slower than cloud options but provides complete privacy. Processing speed depends on your hardware and the model size you chose.
 
 </details>
 
@@ -233,8 +239,7 @@ Your audio never leaves your device. Works without internet. Free forever.
 
 I personally use Groq for most of my transcriptions because it's incredibly fast and accurate.
 
-> [!TIP]
-> **Why Groq?** Fastest transcription models, super accurate, generous free tier, and unbeatable pricing (as cheap as $0.04/hour using `whisper-large-v3-turbo`)
+> **💡 Tip:** Why Groq? Fastest transcription models, super accurate, generous free tier, and unbeatable pricing (as cheap as $0.04/hour using `whisper-large-v3-turbo`)
 
 #### Get Your Free API Key
 
@@ -257,8 +262,7 @@ I personally use Groq for most of my transcriptions because it's incredibly fast
 
 **🎉 Success!** Your words are now in your clipboard. Paste anywhere!
 
-> [!NOTE]
-> Cloud transcription requires an internet connection and sends your audio to Groq's servers. Your API key ensures the data goes directly from you to Groq with no middleman.
+> **📝 Note:** Cloud transcription requires an internet connection and sends your audio to Groq's servers. Your API key ensures the data goes directly from you to Groq with no middleman.
 
 </details>
 
@@ -676,10 +680,13 @@ We'd love to expand Whispering's capabilities with more transcription and AI ser
 
 Adding a new transcription service involves four main steps:
 
-1. **Create the service implementation** in `src/lib/services/transcription/`:
+1. **Create the service implementation** in the appropriate transcription subdirectory:
+   - **Cloud services**: `src/lib/services/transcription/cloud/` (OpenAI, Groq, Deepgram, ElevenLabs)
+   - **Local services**: `src/lib/services/transcription/local/` (WhisperCpp, Parakeet)
+   - **Self-hosted services**: `src/lib/services/transcription/self-hosted/` (Speaches)
 
    ```typescript
-   // src/lib/services/transcription/your-service.ts
+   // Example: src/lib/services/transcription/cloud/your-service.ts
    import { WhisperingErr, type WhisperingError } from '$lib/result';
    import type { Settings } from '$lib/settings';
    import { Err, Ok, tryAsync, type Result } from 'wellcrafted/result';
@@ -750,7 +757,7 @@ Adding a new transcription service involves four main steps:
    Don't forget to export your service in `src/lib/services/transcription/index.ts`:
 
    ```typescript
-   import { YourServiceTranscriptionServiceLive } from './your-service';
+   import { YourServiceTranscriptionServiceLive } from './cloud/your-service';
 
    export {
    	// ... existing exports
@@ -764,38 +771,56 @@ Adding a new transcription service involves four main steps:
    'apiKeys.yourservice': z.string().default(''),
    ```
 
-2. **Update the service configuration** in `src/lib/constants/transcription/service-config.ts`:
+2. **Update the service registry** in `src/lib/services/transcription/registry.ts`:
 
    ```typescript
-   import { YourServiceIcon } from '@lucide/svelte';
+   // Add import for your service icon (as SVG)
+   import yourServiceIcon from '$lib/constants/icons/your-service.svg?raw';
+
+   // Add import for your models
    import {
      YOUR_SERVICE_MODELS,
      type YourServiceModel,
-   } from '$lib/services/transcription/your-service';
+   } from './cloud/your-service';
 
-   // Add to the imports at the top
-   type TranscriptionModel = OpenAIModel | GroqModel | ElevenLabsModel | YourServiceModel;
+   // Add to the TranscriptionModel union type
+   type TranscriptionModel =
+     | OpenAIModel
+     | GroqModel
+     | ElevenLabsModel
+     | DeepgramModel
+     | YourServiceModel;
 
-   // Add to TRANSCRIPTION_SERVICE_IDS
+   // Add to TRANSCRIPTION_SERVICE_IDS array
    export const TRANSCRIPTION_SERVICE_IDS = [
-     'OpenAI',
+     'whispercpp',
+     'parakeet',
      'Groq',
-     'speaches',
+     'OpenAI',
      'ElevenLabs',
-     'YourService', // Add here
+     'Deepgram',
+     'speaches',
+     'YourService', // Add your service here
    ] as const;
 
-   // Add to TRANSCRIPTION_SERVICES array
-   {
-     id: 'YourService',
-     name: 'Your Service Name',
-     icon: YourServiceIcon,
-     models: YOUR_SERVICE_MODELS,
-     defaultModel: YOUR_SERVICE_MODELS[0],
-     modelSettingKey: 'transcription.yourservice.model',
-     apiKeyField: 'apiKeys.yourservice',
-     type: 'api',
-   }
+   // Add to TRANSCRIPTION_SERVICES array (in the appropriate section)
+   export const TRANSCRIPTION_SERVICES = [
+     // ... existing services
+     // Add in the cloud services section:
+     {
+       id: 'YourService',
+       name: 'Your Service Name',
+       icon: yourServiceIcon,
+       invertInDarkMode: true, // or false, depending on your icon
+       description: 'Description of what makes your service special',
+       models: YOUR_SERVICE_MODELS,
+       defaultModel: YOUR_SERVICE_MODELS[0],
+       modelSettingKey: 'transcription.yourservice.model',
+       apiKeyField: 'apiKeys.yourservice',
+       location: 'cloud', // or 'local' or 'self-hosted'
+     },
+     // ... rest of services
+   ] as const satisfies SatisfiedTranscriptionService[];
    ```
 
 3. **Wire up the query layer** in `src/lib/query/transcription.ts`:
@@ -872,15 +897,6 @@ Adding a new transcription service involves four main steps:
 
    ```typescript
    export { default as YourServiceApiKeyInput } from './api-key-inputs/YourServiceApiKeyInput.svelte';
-   ```
-
-   Also update `src/lib/constants/transcription/index.ts` to re-export your models:
-
-   ```typescript
-   export {
-   	YOUR_SERVICE_MODELS,
-   	type YourServiceModel,
-   } from '$lib/services/transcription/your-service';
    ```
 
 ##### Adding an AI Transformation Adapter
@@ -1018,7 +1034,7 @@ const { data, error } = await tryAsync({
 Create a test file alongside your service:
 
 ```typescript
-// src/lib/services/transcription/your-service.test.ts
+// Example: src/lib/services/transcription/cloud/your-service.test.ts
 import { describe, it, expect } from 'vitest';
 import { createYourServiceTranscriptionService } from './your-service';
 

@@ -11,17 +11,19 @@
 		DeepgramApiKeyInput,
 		ElevenLabsApiKeyInput,
 		GroqApiKeyInput,
+		MistralApiKeyInput,
 		OpenAiApiKeyInput,
 	} from '$lib/components/settings';
 	import LocalModelSelector from '$lib/components/settings/LocalModelSelector.svelte';
 	import TranscriptionServiceSelect from '$lib/components/settings/TranscriptionServiceSelect.svelte';
-	import { WHISPER_MODELS } from '$lib/services/transcription/local/whispercpp';
-	import { PARAKEET_MODELS } from '$lib/services/transcription/local/parakeet';
 	import { SUPPORTED_LANGUAGES_OPTIONS } from '$lib/constants/languages';
 	import { DEEPGRAM_TRANSCRIPTION_MODELS } from '$lib/services/transcription/cloud/deepgram';
 	import { ELEVENLABS_TRANSCRIPTION_MODELS } from '$lib/services/transcription/cloud/elevenlabs';
 	import { GROQ_MODELS } from '$lib/services/transcription/cloud/groq';
+	import { MISTRAL_TRANSCRIPTION_MODELS } from '$lib/services/transcription/cloud/mistral';
 	import { OPENAI_TRANSCRIPTION_MODELS } from '$lib/services/transcription/cloud/openai';
+	import { PARAKEET_MODELS } from '$lib/services/transcription/local/parakeet';
+	import { WHISPER_MODELS } from '$lib/services/transcription/local/whispercpp';
 	import { settings } from '$lib/stores/settings.svelte';
 	import { CheckIcon, InfoIcon } from '@lucide/svelte';
 	import * as Alert from '@repo/ui/alert';
@@ -31,9 +33,9 @@
 	import { Link } from '@repo/ui/link';
 	import { Separator } from '@repo/ui/separator';
 	import {
+		RECORDING_COMPATIBILITY_MESSAGE,
 		hasLocalTranscriptionCompatibilityIssue,
 		switchToCpalAt16kHz,
-		RECORDING_COMPATIBILITY_MESSAGE,
 	} from '../../../+layout/check-ffmpeg';
 
 	const { data } = $props();
@@ -147,6 +149,35 @@
 			renderOption={renderModelOption}
 		/>
 		<DeepgramApiKeyInput />
+	{:else if settings.value['transcription.selectedTranscriptionService'] === 'Mistral'}
+		<LabeledSelect
+			id="mistral-model"
+			label="Mistral Model"
+			items={MISTRAL_TRANSCRIPTION_MODELS.map((model) => ({
+				value: model.name,
+				label: model.name,
+				...model,
+			}))}
+			bind:selected={
+				() => settings.value['transcription.mistral.model'],
+				(selected) =>
+					settings.updateKey('transcription.mistral.model', selected)
+			}
+			renderOption={renderModelOption}
+		>
+			{#snippet description()}
+				You can find more details about Voxtral speech understanding in the <Button
+					variant="link"
+					class="px-0.3 py-0.2 h-fit"
+					href="https://mistral.ai/news/voxtral/"
+					target="_blank"
+					rel="noopener noreferrer"
+				>
+					Mistral docs
+				</Button>.
+			{/snippet}
+		</LabeledSelect>
+		<MistralApiKeyInput />
 	{:else if settings.value['transcription.selectedTranscriptionService'] === 'ElevenLabs'}
 		<LabeledSelect
 			id="elevenlabs-model"

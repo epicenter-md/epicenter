@@ -11,6 +11,7 @@ import openaiIcon from '$lib/constants/icons/openai.svg?raw';
 import elevenlabsIcon from '$lib/constants/icons/elevenlabs.svg?raw';
 import speachesIcon from '$lib/constants/icons/speaches.svg?raw';
 import deepgramIcon from '$lib/constants/icons/deepgram.svg?raw';
+import mistralIcon from '$lib/constants/icons/mistral.svg?raw';
 import {
 	ELEVENLABS_TRANSCRIPTION_MODELS,
 	type ElevenLabsModel,
@@ -24,12 +25,17 @@ import {
 	DEEPGRAM_TRANSCRIPTION_MODELS,
 	type DeepgramModel,
 } from './cloud/deepgram';
+import {
+	MISTRAL_TRANSCRIPTION_MODELS,
+	type MistralModel,
+} from './cloud/mistral';
 
 type TranscriptionModel =
 	| OpenAIModel
 	| GroqModel
 	| ElevenLabsModel
-	| DeepgramModel;
+	| DeepgramModel
+	| MistralModel;
 
 export const TRANSCRIPTION_SERVICE_IDS = [
 	'whispercpp',
@@ -38,6 +44,7 @@ export const TRANSCRIPTION_SERVICE_IDS = [
 	'OpenAI',
 	'ElevenLabs',
 	'Deepgram',
+	'Mistral',
 	'speaches',
 	// 'owhisper',
 ] as const;
@@ -142,6 +149,18 @@ export const TRANSCRIPTION_SERVICES = [
 		defaultModel: DEEPGRAM_TRANSCRIPTION_MODELS[0],
 		modelSettingKey: 'transcription.deepgram.model',
 		apiKeyField: 'apiKeys.deepgram',
+		location: 'cloud',
+	},
+	{
+		id: 'Mistral',
+		name: 'Mistral AI',
+		icon: mistralIcon,
+		invertInDarkMode: false, // Mistral has colored branding
+		description: 'Advanced Voxtral speech understanding',
+		models: MISTRAL_TRANSCRIPTION_MODELS,
+		defaultModel: MISTRAL_TRANSCRIPTION_MODELS[0],
+		modelSettingKey: 'transcription.mistral.model',
+		apiKeyField: 'apiKeys.mistral',
 		location: 'cloud',
 	},
 	// Self-hosted services
