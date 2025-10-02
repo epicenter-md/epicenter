@@ -42,7 +42,12 @@
 					{min}
 					{max}
 					{step}
-					bind:value
+					bind:value={
+						() => String(value),
+						(v) => {
+							value = Number(v);
+						}
+					}
 					class="absolute top-0 left-0 w-full h-full opacity-0 cursor-pointer"
 				/>
 				<!-- Custom thumb -->
