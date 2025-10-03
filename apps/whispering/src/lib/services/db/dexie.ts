@@ -6,6 +6,8 @@ import Dexie, { type Transaction } from 'dexie';
 import { nanoid } from 'nanoid/non-secure';
 import { createTaggedError, extractErrorMessage } from 'wellcrafted/error';
 import { Err, Ok, type Result, tryAsync } from 'wellcrafted/result';
+import type { WhisperingSoundNames } from '$lib/constants/sounds';
+
 import type {
 	Recording,
 	RecordingsDbSchemaV1,
@@ -22,6 +24,7 @@ import type {
 	TransformationStepRunCompleted,
 	TransformationStepRunFailed,
 	TransformationStepRunRunning,
+	CustomSound,
 } from './models';
 
 export const { DbServiceError, DbServiceErr } =
@@ -34,6 +37,7 @@ class WhisperingDatabase extends Dexie {
 	recordings!: Dexie.Table<RecordingsDbSchemaV5['recordings'], string>;
 	transformations!: Dexie.Table<Transformation, string>;
 	transformationRuns!: Dexie.Table<TransformationRun, string>;
+	customSounds!: Dexie.Table<CustomSound, string>;
 
 	constructor({ DownloadService }: { DownloadService: DownloadService }) {
 		super(DB_NAME);
@@ -284,6 +288,18 @@ class WhisperingDatabase extends Dexie {
 				});
 			});
 
+			// V7: Create custom sounds table
+			this.version(0.7)
+			.stores({
+				recordings: '&id, timestamp, createdAt, updatedAt',
+				transformations: '&id, createdAt, updatedAt',
+				transformationRuns: '&id, transformationId, recordingId, startedAt',
+				customSounds: '&id, uploadedAt, updatedAt',
+			})
+			.upgrade(async (tx) => {
+				console.log('🔧 DB: Upgrading to version 0.7 - creating new customSounds table');
+			});
+	
 		// V6: Change the "subtitle" field to "description"
 		// this.version(5)
 		// 	.stores({
@@ -932,6 +948,124 @@ export function createDbServiceDexie({
 				return Err(updateTransformationStepRunError);
 
 			return Ok(completedRun);
+		},
+		
+		// Custom Sound Methods
+		async saveCustomSound(customSound: CustomSound): Promise<Result<CustomSound, DbServiceError>> {
+			return tryAsync({
+				try: async () => {
+					// console.log('🔧 DB: Attempting to save custom sound:', customSound);
+					// console.log('🔧 DB: Database version:', db.verno);
+					// console.log('🔧 DB: Database name:', db.name);
+					// console.log('🔧 DB: Custom sounds table exists:', !!db.customSounds);
+					// console.log('🔧 DB: All table names:', db.tables.map(t => t.name));
+					
+					// Check if the table schema is correct
+					if (db.customSounds) {
+						console.log('🔧 DB: Custom sounds table schema:', db.customSounds.schema);
+					}
+					
+					// Validate the object has the required id field
+					if (!customSound.id) {
+						throw new Error('CustomSound object missing required id field');
+					}
+					
+					console.log('🔧 DB: About to call put with object:', JSON.stringify({
+						...customSound,
+						serializedAudio: { ...customSound.serializedAudio, arrayBuffer: `[ArrayBuffer ${customSound.serializedAudio.arrayBuffer.byteLength} bytes]` }
+					}, null, 2));
+					
+					await db.customSounds.put(customSound);
+					console.log('🔧 DB: Custom sound saved successfully');
+					return customSound;
+				},
+				mapErr: (error) => {
+					console.error('🔧 DB: Failed to save custom sound:', error);
+					return DbServiceErr({
+						message: 'Failed to save custom sound',
+						context: { soundId: customSound.id },
+						cause: error,
+					});
+				},
+			});
+		},
+
+		async getCustomSound(soundId: WhisperingSoundNames): Promise<Result<CustomSound | null, DbServiceError>> {
+			return tryAsync({
+				try: async () => {
+					const customSound = await db.customSounds.get(soundId);
+					return customSound ?? null;
+				},
+				mapErr: (error) => DbServiceErr({
+					message: 'Failed to get custom sound',
+					context: { soundId },
+					cause: error,
+				}),
+			});
+		},
+
+		async getAllCustomSounds(): Promise<Result<CustomSound[], DbServiceError>> {
+			return tryAsync({
+				try: async () => {
+					return await db.customSounds.toArray();
+				},
+				mapErr: (error) => DbServiceErr({
+					message: 'Failed to get all custom sounds',
+					cause: error,
+				}),
+			});
+		},
+
+		async deleteCustomSound(soundId: WhisperingSoundNames): Promise<Result<void, DbServiceError>> {
+			return tryAsync({
+				try: async () => {
+					await db.customSounds.delete(soundId);
+				},
+				mapErr: (error) => DbServiceErr({
+					message: 'Failed to delete custom sound',
+					context: { soundId },
+					cause: error,
+				}),
+			});
+		},
+
+		// Debug method to reset database
+		async resetDatabase(): Promise<Result<void, DbServiceError>> {
+			return tryAsync({
+				try: async () => {
+					console.log('🔧 DB: Resetting database...');
+					await db.delete();
+					console.log('🔧 DB: Database deleted, will recreate on next access');
+					// The database will be recreated automatically on next access
+				},
+				mapErr: (error) =>
+					DbServiceErr({
+						message: 'Failed to reset database',
+						context: {},
+						cause: error,
+					}),
+			});
+		},
+
+		async getCustomSoundMetadata(soundId: WhisperingSoundNames): Promise<Result<import('./models/custom-sounds').CustomSoundMetadata | null, DbServiceError>> {
+			return tryAsync({
+				try: async () => {
+					const customSound = await db.customSounds.get(soundId);
+					if (!customSound) return null;
+					
+					return {
+						fileName: customSound.fileName,
+						fileSize: customSound.fileSize,
+						blobType: customSound.serializedAudio.blobType,
+						uploadedAt: customSound.uploadedAt,
+					};
+				},
+				mapErr: (error) => DbServiceErr({
+					message: 'Failed to get custom sound metadata',
+					context: { soundId },
+					cause: error,
+				}),
+			});
 		},
 	};
 }
