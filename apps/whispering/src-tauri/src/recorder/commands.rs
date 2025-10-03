@@ -1,4 +1,5 @@
 use crate::recorder::recorder::{AudioRecording, RecorderState, Result};
+use crate::recorder::vad;
 use std::path::PathBuf;
 use std::sync::Mutex;
 use tauri::State;
@@ -111,4 +112,33 @@ pub async fn get_current_recording_id(state: State<'_, AppData>) -> Result<Optio
         .lock()
         .map_err(|e| format!("Failed to lock recorder: {}", e))?;
     Ok(recorder.get_current_recording_id())
+}
+
+// VAD Commands
+#[tauri::command]
+pub async fn start_vad_recording(
+    app: tauri::AppHandle,
+    device_identifier: String,
+    threshold: f32,
+    silence_timeout_ms: Option<u32>,
+) -> Result<()> {
+    info!("Starting VAD recording via command");
+    vad::start_vad_recording(app, device_identifier, threshold, silence_timeout_ms)
+        .await
+        .map_err(|e| format!("VAD error: {}", e))
+}
+
+#[tauri::command]
+pub async fn stop_vad_recording() -> Result<()> {
+    info!("Stopping VAD recording via command");
+    vad::stop_vad_recording()
+        .await
+        .map_err(|e| format!("VAD error: {}", e))
+}
+
+#[tauri::command]
+pub async fn get_vad_state() -> Result<vad::VadState> {
+    vad::get_vad_state()
+        .await
+        .map_err(|e| format!("VAD error: {}", e))
 }

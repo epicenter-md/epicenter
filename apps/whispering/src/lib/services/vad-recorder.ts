@@ -2,7 +2,7 @@ import type { VadState } from '$lib/constants/audio';
 import { MicVAD, utils } from '@ricky0123/vad-web';
 import { createTaggedError, extractErrorMessage } from 'wellcrafted/error';
 import { Err, Ok, tryAsync, trySync } from 'wellcrafted/result';
-import { cleanupRecordingStream, getRecordingStream } from './device-stream';
+import { cleanupRecordingStream, getRecordingStream, enumerateDevices } from './device-stream';
 import type { DeviceIdentifier } from './types';
 
 const { VadRecorderServiceError, VadRecorderServiceErr } = createTaggedError(
@@ -163,6 +163,19 @@ export function createVadService() {
 
 			if (destroyError) return Err(destroyError);
 			return Ok(undefined);
+		},
+
+		// Add device enumeration capability for consistency
+		enumerateDevices: async () => {
+			// Use the web device-stream enumeration
+			const { data, error } = await enumerateDevices();
+			if (error) {
+				return VadRecorderServiceErr({
+					message: 'Failed to enumerate devices',
+					cause: error,
+				});
+			}
+			return Ok(data);
 		},
 	};
 }

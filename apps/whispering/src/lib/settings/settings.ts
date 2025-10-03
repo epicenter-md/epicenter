@@ -164,6 +164,10 @@ export const settingsSchema = z.object({
 		.string()
 		.default(FFMPEG_DEFAULT_OUTPUT_OPTIONS), // OGG Vorbis optimized for Whisper: 16kHz mono, 64kbps
 
+	// VAD settings
+	'recording.vad.useNative': z.boolean().default(false), // Use native VAD instead of web-based VAD
+	'recording.vad.sensitivity': z.number().min(0.1).max(0.9).default(0.3), // VAD sensitivity threshold (lower = more sensitive)
+
 	'transcription.selectedTranscriptionService': z
 		.enum(TRANSCRIPTION_SERVICE_IDS)
 		.default('whispercpp'),
