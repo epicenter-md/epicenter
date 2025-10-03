@@ -142,30 +142,32 @@ async function transcribeBlob(
 			);
 
 		if (compressionError) {
-			// Log compression failure but continue with original blob
-			console.warn(
-				'Audio compression failed, using original audio:',
-				compressionError,
-			);
+			// Notify user of compression failure but continue with original blob
+			notify.warning.execute({
+				title: 'Audio compression failed',
+				description: `${compressionError.message}. Using original audio for transcription.`,
+			});
 			rpc.analytics.logEvent.execute({
 				type: 'compression_failed',
 				provider: selectedService,
 				error_message: compressionError.message,
 			});
 		} else {
-			// Use compressed blob and log success
+			// Use compressed blob and notify user of success
 			audioToTranscribe = compressedBlob;
-			console.log(
-				`Audio compressed successfully: ${blob.size} bytes → ${compressedBlob.size} bytes (${Math.round((1 - compressedBlob.size / blob.size) * 100)}% reduction)`,
+			const compressionRatio = Math.round(
+				(1 - compressedBlob.size / blob.size) * 100,
 			);
+			notify.info.execute({
+				title: 'Audio compressed',
+				description: `Reduced file size by ${compressionRatio}%`,
+			});
 			rpc.analytics.logEvent.execute({
 				type: 'compression_completed',
 				provider: selectedService,
 				original_size: blob.size,
 				compressed_size: compressedBlob.size,
-				compression_ratio: Math.round(
-					(1 - compressedBlob.size / blob.size) * 100,
-				),
+				compression_ratio: compressionRatio,
 			});
 		}
 	}
