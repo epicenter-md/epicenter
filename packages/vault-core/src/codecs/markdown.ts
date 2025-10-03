@@ -5,6 +5,7 @@ import { YAML } from '../utils/format/yaml';
 export const markdownFormat = defineCodec({
 	id: 'markdown',
 	fileExtension: 'md',
+	mimeType: 'text/markdown',
 	parse(text) {
 		return YAML.parse(text);
 	},

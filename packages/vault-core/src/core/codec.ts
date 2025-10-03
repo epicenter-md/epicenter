@@ -8,6 +8,8 @@ export interface Codec<TID extends string, TExt extends string> {
 	 * @example 'md'
 	 */
 	fileExtension: TExt;
+	/** MIME type for file exports (e.g., 'text/markdown', 'application/json') */
+	mimeType: string;
 	/**
 	 * Parse file text into a flat record. If a free-form body is present,
 	 * codecs should use the reserved key 'body' to carry it.
@@ -32,13 +34,7 @@ export type ColumnEntry = [name: string, column: SQLiteColumn];
 // Per-codec convention profile that derives mapping decisions from schema + naming
 export interface ConventionProfile {
 	// compute relative path from table + pk values
-	pathFor(
-		adapterId: string,
-		tableName: string,
-		pkValues: Record<string, unknown>,
-	): string;
-	// map a table name to a dataset key used by Importer.validator/upsert
-	datasetKeyFor(adapterId: string, tableName: string): string;
+	pathFor(adapterId: string, tableName: string, pkValues: string[]): string;
 }
 
 // Helpers
@@ -50,26 +46,24 @@ export function listColumns(table: SQLiteTable): ColumnEntry[] {
 	return Object.entries(table) as ColumnEntry[];
 }
 
-// Best-effort PK detection from Drizzle runtime objects.
-// Falls back to common naming if metadata is absent.
-export function detectPrimaryKey(
-	tableName: string,
-	table: SQLiteTable,
-): string[] | undefined {
+/**
+ * Find primary key columns in a table.
+ *
+ * Due to type-safety in adapter.ts, *all* tables should have a primary key.
+ * @throws if no primary key found
+ */
+export function listPrimaryKeys(tableName: string, table: SQLiteTable) {
 	const cols = listColumns(table);
-	const pkCols: string[] = [];
-	for (const [name, col] of cols) {
-		// Drizzle columns expose some shape at runtime; check common fields defensively.
-		const anyCol = col;
-		if (anyCol.primary === true && !pkCols.includes(name)) {
-			pkCols.push(name);
-		}
+	const pkCols = [];
+	for (const col of cols) {
+		const [, drizzleCol] = col;
+		if (drizzleCol._.isPrimaryKey) pkCols.push(col);
 	}
-	if (pkCols.length > 0) return pkCols;
-	// Heuristic fallback by naming
-	if ('id' in table) return ['id'];
-	if (`${tableName}_id` in table) return [`${tableName}_id`];
-	return undefined;
+
+	if (pkCols.length === 0)
+		throw new Error(`Table ${tableName} has no primary key`);
+
+	return pkCols;
 }
 
 // Choose body column by common names, prefer notNull string-like columns named body/content/text
@@ -80,17 +74,13 @@ export function detectPrimaryKey(
 export function defaultConvention(): ConventionProfile {
 	return {
 		pathFor(adapterId, tableName, pkValues) {
-			const parts = Object.entries(pkValues)
-				.sort(([a], [b]) => a.localeCompare(b))
-				.map(([, v]) => String(v));
+			// Merge PK values with __, sorted by key name for determinism
+			const parts = pkValues
+				.toSorted((a, b) => a.localeCompare(b))
+				.map((v) => String(v));
 			const fileId = parts.length > 0 ? parts.join('__') : 'row';
 			// extension decided by mode at callsite; we return a directory path root here
 			return `vault/${adapterId}/${tableName}/${fileId}`;
-		},
-		datasetKeyFor(adapterId, tableName) {
-			return tableName.startsWith(`${adapterId}_`)
-				? tableName.slice(adapterId.length + 1)
-				: tableName;
 		},
 	};
 }

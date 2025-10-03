@@ -1,1 +1,1 @@
-export * from './src';
+export { redditAdapter } from './src/adapter';

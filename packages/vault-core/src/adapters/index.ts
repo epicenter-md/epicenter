@@ -1,1 +1,1 @@
-export * from './reddit/index';
+export * from './reddit';

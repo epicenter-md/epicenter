@@ -1,44 +1,77 @@
-import type { defineConfig } from 'drizzle-kit';
-import type { LibSQLDatabase } from 'drizzle-orm/libsql';
-import type { BaseSQLiteDatabase, SQLiteTable } from 'drizzle-orm/sqlite-core';
+import type { StandardSchemaV1 } from '@standard-schema/spec';
+import type { ColumnsSelection, InferSelectModel } from 'drizzle-orm';
+import type {
+	SQLiteTable,
+	SubqueryWithSelection,
+} from 'drizzle-orm/sqlite-core';
+import type { CompatibleDB } from './db';
+import type { Ingestor } from './ingestor';
+import type {
+	RequiredTransformTags,
+	Tag4,
+	TransformRegistry,
+	VersionDef,
+} from './migrations';
 
-// Shared types
-type ExtractedResult<T> = T extends BaseSQLiteDatabase<'async', infer R>
-	? R
-	: never;
+/** Column-level metadata */
+export type ColumnInfo = string;
 
-type ResultSet = ExtractedResult<LibSQLDatabase>;
-
-// Represents compatible Drizzle DB types across the codebase
-export type CompatibleDB<TSchema> = BaseSQLiteDatabase<
-	'sync' | 'async',
-	TSchema | ResultSet
->;
-
-export type DrizzleConfig = ReturnType<typeof defineConfig>;
-
+/** Per-table simple column descriptions or rich ColumnInfo for each column. */
 export type ColumnDescriptions<T extends Record<string, SQLiteTable>> = {
 	[K in keyof T]: {
-		[C in keyof T[K]['_']['columns']]: string;
+		[C in keyof T[K]['_']['columns']]: ColumnInfo;
 	};
 };
 
-// --- Schema & table-name helpers -------------------------------------------------
+/** Table metadata in human readable format. */
+export type AdapterMetadata<TSchema extends Record<string, SQLiteTable>> = {
+	[K in keyof TSchema]?: {
+		[C in keyof TSchema[K]['_']['columns']]?: ColumnInfo;
+	};
+};
 
-/** Union of table name literals from the schema's keys. */
-export type SchemaTableNames<TSchema extends Record<string, SQLiteTable>> =
-	Extract<keyof TSchema, string>;
-
-/** Ensure all tables in a schema have names prefixed with the given Adapter ID. */
-// Check that all table names in the schema start with `${TID}_`
-export type SchemaTablesAllPrefixed<
-	TID extends string,
+/** View helper used by adapters for predefined queries (optional). */
+export type View<
+	T extends string,
+	TSelection extends ColumnsSelection,
 	TSchema extends Record<string, SQLiteTable>,
-> = Exclude<SchemaTableNames<TSchema>, `${TID}_${string}`> extends never
-	? 1
-	: 0;
+	TDatabase extends CompatibleDB<TSchema>,
+> = {
+	name: T;
+	definition: (db: TDatabase) => SubqueryWithSelection<TSelection, string>;
+};
 
-// Adapter is schema-only. Importers wire lifecycle, parsing, views, etc.
+// TODO remove once https://github.com/drizzle-team/drizzle-orm/issues/2745 is resolved
+/** Convert `null` properties in a type to `undefined` */
+type NullToUndefined<T> = {
+	[K in keyof T]: T[K] extends null
+		? undefined
+		: T[K] extends (infer U)[]
+			? NullToUndefined<U>[]
+			: Exclude<T[K], null> | ([null] extends [T[K]] ? undefined : never);
+};
+
+/** Translate schema to object, strip prefix of table names */
+/**
+ * Map a prefixed schema record to an object whose keys are the table names with the
+ * adapter prefix removed and whose values are arrays of the inferred row type.
+ *
+ * This represents the natural shape for bulk ingestion: each table produces many rows.
+ *
+ * @example `reddit` ID and `reddit_posts` table become `posts`
+ */
+export type SchemaMappedToObject<
+	TID extends string,
+	TObj extends Record<string, SQLiteTable>,
+> = {
+	[K in keyof TObj as K extends `${TID}_${infer Rest}`
+		? Rest
+		: K]: NullToUndefined<InferSelectModel<TObj[K]>>[];
+};
+
+/**
+ * Unified Adapter: schema + parsing/upsert lifecycle.
+ */
 export interface Adapter<
 	TID extends string = string,
 	TTableNames extends string = string,
@@ -46,181 +79,171 @@ export interface Adapter<
 		string,
 		SQLiteTable
 	>,
+	TVersions extends readonly VersionDef<Tag4>[] = readonly VersionDef<Tag4>[],
+	TPreparsed = unknown,
+	TParsed = unknown,
 > {
 	/** Unique identifier for the adapter (lowercase, no spaces, alphanumeric) */
 	id: TID;
-	/** Database schema */
-	schema: TSchema;
+
+	/** Drizzle schema object. */
+	schema: TID extends string
+		? TSchema
+		: EnsureAllTablesArePrefixedWith<TID, TSchema> extends never
+			? never
+			: EnsureSchemaHasPrimaryKeys<TSchema>;
+
+	/** Adapter metadata for UI/help */
+	metadata?: AdapterMetadata<TSchema>;
+
+	/** Optional predefined views
+	 * Note: to avoid function parameter variance issues in structural assignability,
+	 * we use a base schema shape for the DB parameter rather than the adapter's TSchema.
+	 */
+	views?: {
+		[Alias in string]: View<
+			Alias,
+			ColumnsSelection,
+			Record<string, SQLiteTable>,
+			CompatibleDB<Record<string, SQLiteTable>>
+		>;
+	};
+
+	/** Pipelines for importing new data. Validation/morphing happens via `adapter.validator` */
+	ingestors?: readonly Ingestor<TPreparsed>[];
+
+	/**
+	 * Optional Standard Schema validator for parsed payload (ingest pipeline).
+	 */
+	validator?: StandardSchemaV1<TPreparsed, TParsed>;
+
+	/**
+	 * Authoring-time versions tuple used for JS transform tag alignment checks
+	 * and runtime transform planning.
+	 */
+	versions: TVersions;
+
+	/**
+	 * Transform registry; when provided with 'versions', tag alignment is
+	 * enforced at compile time and verified at runtime.
+	 */
+	transforms: TransformRegistry<RequiredTransformTags<TVersions>>;
 }
 
-// Note: If a generic only appears in a function parameter position, TS won't infer it and will
-// fall back to the constraint (e.g. `object`). These overloads infer the full function type `F` instead.
-type KeysOf<S> = Extract<keyof S, string>;
-type PrefixedAdapter<
-	TID extends string,
-	S extends Record<string, SQLiteTable>,
-> = KeysOf<S> extends `${TID}_${string}` ? Adapter<TID, KeysOf<S>, S> : never;
-
+/**
+ * Define a new adapter where the validator's parsed output must match the schema's InferSelect shape,
+ * where all tables are prefixed and have primary keys, and (optionally) enforce JS transform tag alignment when 'versions' and 'transforms' are provided.
+ */
 export function defineAdapter<
-	TID extends string,
-	S extends Record<string, SQLiteTable>,
->(adapter: () => PrefixedAdapter<TID, S>): () => PrefixedAdapter<TID, S>;
-export function defineAdapter<
-	TID extends string,
-	S extends Record<string, SQLiteTable>,
-	A extends unknown[],
+	const TID extends string,
+	TSchema extends Record<string, SQLiteTable>,
+	TVersions extends readonly VersionDef<Tag4>[] = readonly VersionDef<Tag4>[],
+	TPreparsed = unknown,
+	TParsed = SchemaMappedToObject<TID, TSchema>,
 >(
-	adapter: (...args: A) => PrefixedAdapter<TID, S>,
-): (...args: A) => PrefixedAdapter<TID, S>;
+	adapter: () => PrefixedAdapter<TID, TSchema, TVersions, TPreparsed, TParsed>,
+): () => PrefixedAdapter<TID, TSchema, TVersions, TPreparsed, TParsed>;
+export function defineAdapter<
+	const TID extends string,
+	TSchema extends Record<string, SQLiteTable>,
+	TPreparsed,
+	TVersions extends readonly VersionDef<Tag4>[],
+	TParsed = SchemaMappedToObject<TID, TSchema>,
+	TArgs extends unknown[] = [],
+>(
+	adapter: (
+		...args: TArgs
+	) => PrefixedAdapter<TID, TSchema, TVersions, TPreparsed, TParsed>,
+): (
+	...args: TArgs
+) => PrefixedAdapter<TID, TSchema, TVersions, TPreparsed, TParsed>;
 export function defineAdapter<F extends (...args: unknown[]) => unknown>(
 	adapter: F,
 ): F {
 	return adapter;
 }
 
-// --- Cross-adapter utilities -----------------------------------------------------
-
-/** Get table-name union for a single Adapter-like value (Adapter or { schema }). */
-export type TableNamesOfAdapterLike<T> = T extends { schema: infer S }
-	? S extends Record<string, SQLiteTable>
-		? SchemaTableNames<S>
-		: never
-	: never;
-
-/** Get table-name union for an Importer-like value (has adapter.schema). */
-export type TableNamesOfImporterLike<T> = T extends {
-	adapter: { schema: infer S };
-}
-	? S extends Record<string, SQLiteTable>
-		? SchemaTableNames<S>
-		: never
-	: never;
-
-/** Compute table-name union for any array of Adapters or Importers. */
-export type TableNamesOfMany<T extends readonly unknown[]> =
-	T[number] extends infer E
-		? E extends { schema: Record<string, SQLiteTable> }
-			? TableNamesOfAdapterLike<E>
-			: E extends { adapter: { schema: Record<string, SQLiteTable> } }
-				? TableNamesOfImporterLike<E>
-				: never
+/**
+ * Compile-time detection of whether a table has a primary key.
+ * Produces the table name union if any table is missing a primary key; else never.
+ */
+type TableHasPrimaryKey<TColumns> = {
+	[K in keyof TColumns]: TColumns[K] extends { _: { isPrimaryKey: true } }
+		? K
 		: never;
+}[keyof TColumns] extends never
+	? false
+	: true;
+type EnsureSchemaHasPrimaryKeys<S extends Record<string, SQLiteTable>> = {
+	[K in keyof S]: TableHasPrimaryKey<S[K]> extends false ? never : K & string;
+}[keyof S];
 
-/** Compute collisions (duplicates) of table names across an array of Adapters/Importers. */
-export type TableNameCollisions<
-	T extends readonly unknown[],
-	Acc extends string = never,
-> = T extends readonly [infer H, ...infer R]
-	? H extends
-			| { schema: Record<string, SQLiteTable> }
-			| {
-					adapter: { schema: Record<string, SQLiteTable> };
-			  }
-		?
-				| Extract<TableNamesOfMany<[H]>, TableNamesOfMany<R>>
-				| TableNameCollisions<R>
-		: TableNameCollisions<R>
-	: Acc;
-
-/** Assert there are no duplicate table names; resolves to T when valid, else never. */
-export type NoTableNameCollisions<T extends readonly unknown[]> =
-	TableNameCollisions<T> extends never ? T : never;
-
-/** Ensure all adapters' schemas are correctly prefixed. Returns T when OK, else never. */
-export type AllAdaptersPrefixed<T extends readonly Adapter[]> = Exclude<
-	T[number] extends Adapter<infer ID, infer K, infer S>
-		? SchemaTablesAllPrefixed<ID & string, S & Record<K & string, SQLiteTable>>
-		: 1,
-	1
-> extends never
-	? T
-	: never;
-
-/** Ensure all importers' adapter schemas are correctly prefixed. Returns T when OK, else never. */
-export type AllImportersPrefixed<T extends readonly unknown[]> = Exclude<
-	T[number] extends { id: infer ID; adapter: { schema: infer S } }
-		? SchemaTablesAllPrefixed<ID & string, S & Record<string, SQLiteTable>>
-		: 1,
-	1
-> extends never
-	? T
-	: never;
-
-// Utility to merge a union of schema records into a single record via intersection
-export type UnionToIntersection<U> = (
-	U extends unknown
-		? (k: U) => void
-		: never
-) extends (k: infer I) => void
-	? I
-	: never;
+type KeysOf<S> = Extract<keyof S, string>;
 
 /**
- * Build a joined schema record from:
- * - a VaultService-like object (has `importers`)
- * - a VaultClient-like object (has `adapters`)
- * - an array of Importers (have `adapter.schema`)
- * - an array of Adapters (have `schema`)
+ * Compile time check for table name prefixing
  */
-/**
- * Normalize any schema-like type to a concrete Record<string, SQLiteTable>.
- * - If S is already a schema record, it's returned unchanged.
- * - Otherwise, returns a broad Record<string, SQLiteTable> so downstream
- *   utilities (e.g. JoinedSchema<...>) produce a usable record instead of never
- *   when inputs are unknown/never/empty unions.
- */
-type EnsureSchema<S> = S extends Record<string, SQLiteTable>
-	? S
-	: Record<string, SQLiteTable>;
-export type JoinedSchema<T> = EnsureSchema<
-	T extends { importers: infer I }
-		? UnionToIntersection<
-				SchemaOfMany<I extends readonly unknown[] ? I : never>
-			>
-		: T extends { adapters: infer A }
-			? UnionToIntersection<
-					SchemaOfMany<A extends readonly unknown[] ? A : never>
-				>
-			: T extends readonly unknown[]
-				? UnionToIntersection<SchemaOfMany<T>>
-				: never
+type PrefixedAdapter<
+	TID extends string,
+	Schema extends Record<string, SQLiteTable>,
+	TVersions extends readonly VersionDef<Tag4>[],
+	TPreparsed,
+	TParsed,
+> = Adapter<TID, KeysOf<Schema>, Schema, TVersions, TPreparsed, TParsed> &
+	// If any table names are NOT prefixed with `${TID}_`, attach an impossible property
+	// so TS surfaces a clear, actionable error including the offending keys.
+	(MissingPrefixedTables<TID, Schema> extends never
+		? unknown
+		: {
+				__error__schema_table_prefix_mismatch__: `Expected all tables to start with "${TID}_"`;
+			}) &
+	// If any tables are missing primary keys, surface them similarly
+	(MissingPrimaryKeyTables<Schema> extends never
+		? unknown
+		: {
+				__error__missing_primary_keys__: MissingPrimaryKeyTables<Schema>;
+			});
+
+// Compute the set of schema keys that are NOT prefixed with `${TID}_`
+type MissingPrefixedTables<
+	TID extends string,
+	TSchema extends Record<string, SQLiteTable>,
+> = Exclude<SchemaTableNames<TSchema>, `${TID}_${string}`>;
+
+// Compute the set of tables that do not declare a primary key
+type MissingPrimaryKeyTables<S extends Record<string, SQLiteTable>> = {
+	[K in keyof S]: TableHasPrimaryKey<S[K]> extends false ? K & string : never;
+}[keyof S];
+
+type EnsureAllTablesArePrefixedWith<
+	TID extends string,
+	TSchema extends Record<string, SQLiteTable>,
+> = Exclude<SchemaTableNames<TSchema>, `${TID}_${string}`> extends never
+	? TSchema
+	: never;
+type SchemaTableNames<TSchema extends Record<string, SQLiteTable>> = Extract<
+	keyof TSchema,
+	string
 >;
 
-type SchemaOfAdapterLike<T> = T extends { schema: infer S }
-	? S extends Record<string, SQLiteTable>
-		? S
+/**
+ * Compile-time detection of duplicate adapter IDs in a tuple.
+ * Produces the first duplicate ID union if any; otherwise never.
+ */
+type NoDuplicateAdapter<
+	T extends readonly { id: string }[],
+	Seen extends string = never,
+> = T extends readonly [infer H, ...infer R]
+	? H extends { id: infer ID extends string }
+		? ID extends Seen
+			? ID | NoDuplicateAdapter<Extract<R, readonly { id: string }[]>, Seen>
+			: NoDuplicateAdapter<Extract<R, readonly { id: string }[]>, Seen | ID>
 		: never
 	: never;
-type SchemaOfImporterLike<T> = T extends { adapter: { schema: infer S } }
-	? S extends Record<string, SQLiteTable>
-		? S
-		: never
-	: never;
-type SchemaOfMany<T extends readonly unknown[] | never> = [T] extends [never]
-	? never
-	: T[number] extends infer E
-		? SchemaOfAdapterLike<E> | SchemaOfImporterLike<E>
-		: never;
-
-// Validate arrays of adapters/importers for prefixing and collisions
-export type CheckNoCollisions<T extends readonly unknown[]> =
-	TableNameCollisions<T> extends never ? T : never;
 
 /**
- * Validate an array/tuple of Importers at compile time:
- * - Ensures each importer's adapter schema keys are prefixed with `${ID}_`.
- * - Ensures there are no duplicate table names across all importers.
- * Resolves to T when valid; otherwise resolves to never to surface a type error.
+ * Enforce unique adapter IDs at the type level for tuple literals.
+ * Evaluates to T when no duplicates; else never (surfacing a type error).
  */
-export type EnsureImportersOK<T extends readonly unknown[]> =
-	AllImportersPrefixed<T> extends never ? never : CheckNoCollisions<T>;
-/**
- * Validate an array/tuple of Adapters at compile time:
- * - Ensures each adapter's schema keys are prefixed with `${id}_`.
- * - Ensures there are no duplicate table names across all adapters.
- * Resolves to T when valid; otherwise resolves to never to surface a type error.
- */
-export type EnsureAdaptersOK<T extends readonly unknown[]> =
-	AllAdaptersPrefixed<T & readonly Adapter[]> extends never
-		? never
-		: CheckNoCollisions<T>;
+export type UniqueAdapters<T extends readonly Adapter[]> =
+	NoDuplicateAdapter<T> extends never ? T : never;
