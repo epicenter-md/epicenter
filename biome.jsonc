@@ -55,6 +55,23 @@
 					}
 				}
 			}
+		},
+		{
+			// https://v1.biomejs.dev/internals/language-support/
+			// Also, keep this synced with .vscode/settings.json & .prettierignore
+			"include": [
+				"**/*.html",
+				"**/*.vue",
+				"**/*.svelte",
+				"**/*.astro",
+				"**/*.yaml",
+				"**/*.yml",
+				"**/*.md",
+				"**/*.mdx"
+			],
+			"formatter": {
+				"enabled": false
+			}
 		}
 	]
 }
