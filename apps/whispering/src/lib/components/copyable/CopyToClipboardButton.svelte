@@ -43,7 +43,7 @@
 		class?: string;
 	} & Partial<Pick<Props, 'disabled' | 'variant' | 'size'>> = $props();
 
-	let hasCopied = $state(false);
+	let isInCooldown = $state(false);
 </script>
 
 <WhisperingButton
@@ -53,9 +53,9 @@
 			{ text: textToCopy },
 			{
 				onSuccess: () => {
-					hasCopied = true;
+					isInCooldown = true;
 					setTimeout(() => {
-						hasCopied = false;
+						isInCooldown = false;
 					}, 2000);
 					rpc.notify.success.execute({
 						title: `Copied ${contentDescription} to clipboard!`,
@@ -77,10 +77,10 @@
 	class={className}
 	{size}
 	{variant}
-	{disabled}
+	disabled={disabled || isInCooldown}
 >
 	<span class="sr-only">Copy</span>
-	{#if hasCopied}
+	{#if isInCooldown}
 		{#if copiedContent}
 			{@render copiedContent()}
 		{:else}

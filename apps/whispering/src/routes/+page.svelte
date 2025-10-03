@@ -5,9 +5,9 @@
 	import CopyToClipboardButton from '$lib/components/copyable/CopyToClipboardButton.svelte';
 	import { ClipboardIcon } from '$lib/components/icons';
 	import {
+		CompressionSelector,
 		TranscriptionSelector,
 		TransformationSelector,
-		CompressionSelector,
 	} from '$lib/components/settings';
 	import ManualDeviceSelector from '$lib/components/settings/selectors/ManualDeviceSelector.svelte';
 	import VadDeviceSelector from '$lib/components/settings/selectors/VadDeviceSelector.svelte';
@@ -18,11 +18,12 @@
 		vadStateToIcons,
 	} from '$lib/constants/audio';
 	import { rpc } from '$lib/query';
+	import * as services from '$lib/services';
 	import type { Recording } from '$lib/services/db';
 	import { settings } from '$lib/stores/settings.svelte';
 	import { createBlobUrlManager } from '$lib/utils/blobUrlManager';
 	import { getRecordingTransitionId } from '$lib/utils/getRecordingTransitionId';
-	import * as services from '$lib/services';
+	import { Loader2Icon } from '@lucide/svelte';
 	import {
 		ACCEPT_AUDIO,
 		ACCEPT_VIDEO,
@@ -32,7 +33,6 @@
 	import * as ToggleGroup from '@repo/ui/toggle-group';
 	import { createQuery } from '@tanstack/svelte-query';
 	import type { UnlistenFn } from '@tauri-apps/api/event';
-	import { Loader2Icon } from '@lucide/svelte';
 	import { onDestroy, onMount } from 'svelte';
 	import TranscribedTextDialog from './(config)/recordings/TranscribedTextDialog.svelte';
 
@@ -64,6 +64,10 @@
 		if (!latestRecording.blob) return undefined;
 		return blobUrlManager.createUrl(latestRecording.blob);
 	});
+
+	const hasNoTranscribedText = $derived(
+		!latestRecording.transcribedText?.trim(),
+	);
 
 	const availableModes = $derived(
 		RECORDING_MODE_OPTIONS.filter((mode) => {
@@ -320,6 +324,8 @@
 							? '...'
 							: latestRecording.transcribedText}
 						rows={1}
+						disabled={latestRecording.transcriptionStatus === 'TRANSCRIBING' ||
+							hasNoTranscribedText}
 					/>
 				</div>
 				<CopyToClipboardButton
@@ -331,7 +337,9 @@
 					})}
 					size="default"
 					variant="secondary"
-					disabled={latestRecording.transcriptionStatus === 'TRANSCRIBING'}
+					disabled={latestRecording.transcriptionStatus === 'TRANSCRIBING' ||
+						hasNoTranscribedText}
+					class="w-10"
 				>
 					{#if latestRecording.transcriptionStatus === 'TRANSCRIBING'}
 						<Loader2Icon class="size-6 animate-spin" />
