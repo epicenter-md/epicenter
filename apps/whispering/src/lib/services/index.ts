@@ -19,6 +19,7 @@ import { ToastServiceLive } from './toast';
 import * as transcriptions from './transcription';
 import { TrayIconServiceLive } from './tray';
 import { VadServiceLive } from './vad-recorder';
+import { NativeVadServiceLive } from './native-vad';
 
 /**
  * Unified services object providing consistent access to all services.
@@ -45,4 +46,5 @@ export {
 	PlaySoundServiceLive as sound,
 	transcriptions,
 	VadServiceLive as vad,
+	NativeVadServiceLive as nativeVad,
 };

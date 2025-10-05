@@ -45,6 +45,7 @@ thiserror = "2.0.12"
 hound = "3.5"
 lazy_static = "1.4"
 tempfile = "3.8"
+voice_activity_detector = "0.2.1"
 tauri-plugin-macos-permissions = "2.3.0"
 fix-path-env = { git = "https://github.com/tauri-apps/fix-path-env-rs" }
 transcribe-rs = "0.1.0"
