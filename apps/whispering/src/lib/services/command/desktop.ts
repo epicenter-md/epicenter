@@ -48,7 +48,10 @@ export function createCommandServiceDesktop(): CommandService {
 
 					cmd.on('close', (data) => {
 						if (data.code !== 0 && stderrBuffer) {
-							console.error(`Command failed with exit code ${data.code}:`, stderrBuffer);
+							console.error(
+								`Command failed with exit code ${data.code}:`,
+								stderrBuffer,
+							);
 						}
 					});
 

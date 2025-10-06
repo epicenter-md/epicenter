@@ -1,4 +1,8 @@
-import { TIMESLICE_MS, type CancelRecordingResult, type WhisperingRecordingState } from '$lib/constants/audio';
+import {
+	TIMESLICE_MS,
+	type CancelRecordingResult,
+	type WhisperingRecordingState,
+} from '$lib/constants/audio';
 import { Err, Ok, type Result, tryAsync, trySync } from 'wellcrafted/result';
 import {
 	cleanupRecordingStream,

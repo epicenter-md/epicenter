@@ -99,7 +99,10 @@ export function createMistralTranscriptionService() {
 
 			if (mistralApiError) {
 				// Handle Mistral API errors
-				const errorMessage = mistralApiError instanceof Error ? mistralApiError.message : 'Unknown error occurred';
+				const errorMessage =
+					mistralApiError instanceof Error
+						? mistralApiError.message
+						: 'Unknown error occurred';
 
 				// Check for common HTTP status codes
 				if (

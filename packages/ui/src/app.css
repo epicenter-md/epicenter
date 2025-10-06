@@ -1,9 +1,9 @@
-@import 'tailwindcss';
+@import "tailwindcss";
 /* @import '@fontsource-variable/manrope'; */
 
-@import 'tw-animate-css';
+@import "tw-animate-css";
 
-@import './prose.css';
+@import "./prose.css";
 
 @source "./**/*.{svelte,ts}";
 
@@ -28,7 +28,8 @@
 @custom-variant dark (&:is(.dark *));
 
 :root {
-	--font-sans: 'Manrope Variable', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+	--font-sans: "Manrope Variable", system-ui, -apple-system, BlinkMacSystemFont,
+		"Segoe UI", Roboto, sans-serif;
 	--radius: 0.625rem;
 	--background: oklch(1 0 0);
 	--foreground: oklch(0.129 0.042 264.695);
@@ -65,7 +66,7 @@
 }
 
 .dark {
-	--font-sans: 'Manrope Variable', sans-serif;
+	--font-sans: "Manrope Variable", sans-serif;
 	--background: oklch(0.129 0.042 264.695);
 	--foreground: oklch(0.984 0.003 247.858);
 	--card: oklch(0.208 0.042 265.755);

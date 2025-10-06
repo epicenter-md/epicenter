@@ -15,9 +15,9 @@
 				default: 'border-border bg-card',
 				secondary: 'border-border bg-accent',
 				destructive: 'border-destructive bg-destructive',
-				primary: 'border-primary bg-primary text-primary-foreground'
-			}
-		}
+				primary: 'border-primary bg-primary text-primary-foreground',
+			},
+		},
 	});
 
 	type Variant = VariantProps<typeof style>['variant'];
@@ -31,17 +31,28 @@
 </script>
 
 <script lang="ts">
-	let { text, variant = 'default', onCopy, class: className }: SnippetProps = $props();
+	let {
+		text,
+		variant = 'default',
+		onCopy,
+		class: className,
+	}: SnippetProps = $props();
 </script>
 
 <div class={cn(style({ variant, className: className }))}>
 	{#if typeof text == 'string'}
-		<pre class={cn('overflow-y-auto text-left font-mono text-sm font-light whitespace-nowrap')}>
+		<pre
+			class={cn(
+				'overflow-y-auto text-left font-mono text-sm font-light whitespace-nowrap',
+			)}>
 			{text}
 		</pre>
 	{:else}
 		{#each text as line, i (i)}
-			<pre class={cn('overflow-y-auto text-left font-mono text-sm font-light whitespace-nowrap')}>
+			<pre
+				class={cn(
+					'overflow-y-auto text-left font-mono text-sm font-light whitespace-nowrap',
+				)}>
 			{line}
 		</pre>
 		{/each}

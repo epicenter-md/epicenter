@@ -72,7 +72,8 @@
 		] as const}
 		bind:selected={
 			() => settings.value['database.recordingRetentionStrategy'],
-			(selected) => settings.updateKey('database.recordingRetentionStrategy', selected)
+			(selected) =>
+				settings.updateKey('database.recordingRetentionStrategy', selected)
 		}
 		placeholder="Select retention strategy"
 	/>

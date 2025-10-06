@@ -27,7 +27,7 @@
 		</p>
 
 		<div class="pt-4">
-			<a 
+			<a
 				href="/"
 				class="inline-flex items-center justify-center rounded-md bg-primary px-6 py-3 text-sm font-medium text-primary-foreground shadow hover:bg-primary/90 transition-colors"
 			>

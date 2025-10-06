@@ -1,8 +1,9 @@
 import { createTaggedError } from 'wellcrafted/error';
 import type { Result } from 'wellcrafted/result';
 
-export const { BrowserServiceError, BrowserServiceErr } =
-	createTaggedError('BrowserServiceError');
+export const { BrowserServiceError, BrowserServiceErr } = createTaggedError(
+	'BrowserServiceError',
+);
 type BrowserServiceError = ReturnType<typeof BrowserServiceError>;
 
 export type BrowserService = {

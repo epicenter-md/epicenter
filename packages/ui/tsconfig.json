@@ -40,10 +40,5 @@
 	/* Ensure we only include actual source files under src */
 	"include": ["src/**/*"],
 	/* Exclude emitted output, build folders, svelte sources and root-level config files */
-	"exclude": [
-		"dist",
-		"node_modules",
-		"eslint.config.js",
-		"prettier.config.ts"
-	]
+	"exclude": ["dist", "node_modules", "eslint.config.js", "prettier.config.ts"]
 }

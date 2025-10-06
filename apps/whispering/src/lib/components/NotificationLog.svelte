@@ -130,7 +130,7 @@
 </Popover.Root>
 
 <style>
-   :global([data-slot="popover-content"] [data-sonner-toast]) {
-      position: relative;
-   }
+	:global([data-slot='popover-content'] [data-sonner-toast]) {
+		position: relative;
+	}
 </style>

@@ -95,9 +95,10 @@
 						onSelect={() => {
 							settings.updateKey(
 								'transformations.selectedTransformationId',
-								settings.value['transformations.selectedTransformationId'] === transformation.id
+								settings.value['transformations.selectedTransformationId'] ===
+									transformation.id
 									? null
-									: transformation.id
+									: transformation.id,
 							);
 							combobox.closeAndFocusTrigger();
 						}}

@@ -110,401 +110,528 @@ const ecosystem = [
 ];
 ---
 
-<BaseLayout title="Epicenter: A Database for Your Mind" description="An ecosystem of open-source, local-first apps that share a single memory. No cloud lock-in, no subscriptions, just tools that respect your data.">
-  <main class="bg-background">
-    <!-- Hero Section -->
-    <header class="relative h-screen flex items-center justify-center">
-      <!-- Subtle gradient background -->
-      <div class="absolute inset-0 bg-gradient-to-b from-primary/5 via-background to-background -z-10"></div>
-      
-      <div class="w-full max-w-6xl mx-auto px-6 sm:px-8 md:px-12 text-center">
-        <div>
-          <!-- Main headline -->
-          <h1 class="text-4xl md:text-5xl font-bold text-foreground tracking-tight leading-snug md:leading-snug mb-8">
-            A Database for Your Mind,<br/>
-            Built on Plain Text
-          </h1>
-          
-          <!-- Subheadline -->
-          <p class="text-lg md:text-xl text-muted-foreground max-w-2xl mx-auto leading-relaxed mb-12">
-            One shared context across all your apps. Your transcripts inform your notes. 
-            Your notes guide your AI. Everything connects through a single folder of plain text and SQLite.
-          </p>
-          
-          <!-- CTAs -->
-          <div class="flex flex-col sm:flex-row gap-4 justify-center mb-16">
-            <Button href="https://go.epicenter.so/discord" size="lg" class="font-medium">
-              Join the Discord
-              <ArrowRightIcon class="w-4 h-4" />
-            </Button>
-            <Button href="https://github.com/epicenter-md/epicenter" variant="outline" size="lg" class="font-medium">
-              Explore on GitHub
-            </Button>
-          </div>
-          
-          <!-- Quick value props -->
-          <div class="flex flex-wrap gap-x-8 gap-y-4 justify-center text-sm">
-            <div class="flex items-center gap-2 text-muted-foreground">
-              <CheckIcon class="w-4 h-4 text-success flex-shrink-0" />
-              <span>100% open source</span>
-            </div>
-            <div class="flex items-center gap-2 text-muted-foreground">
-              <CheckIcon class="w-4 h-4 text-success flex-shrink-0" />
-              <span>Local-first</span>
-            </div>
-            <div class="flex items-center gap-2 text-muted-foreground">
-              <CheckIcon class="w-4 h-4 text-success flex-shrink-0" />
-              <span>Plain text & SQLite</span>
-            </div>
-          </div>
-        </div>
-      </div>
-      
-    </header>
+<BaseLayout
+	title="Epicenter: A Database for Your Mind"
+	description="An ecosystem of open-source, local-first apps that share a single memory. No cloud lock-in, no subscriptions, just tools that respect your data."
+>
+	<main class="bg-background">
+		<!-- Hero Section -->
+		<header class="relative h-screen flex items-center justify-center">
+			<!-- Subtle gradient background -->
+			<div
+				class="absolute inset-0 bg-gradient-to-b from-primary/5 via-background to-background -z-10"
+			>
+			</div>
 
-    <!-- Product Showcase -->
-    <section class="py-24 md:py-32 bg-gradient-to-b from-muted/10 via-muted/20 to-muted/10">
-      <div class="max-w-7xl mx-auto px-6">
-        <div class="text-center mb-20">
-          <Badge variant="secondary" class="mb-6 px-4 py-1 text-sm">Available now</Badge>
-          <h2 class="text-3xl md:text-5xl font-bold text-foreground mb-6">
-            Tools that share your memory
-          </h2>
-          <p class="text-xl text-muted-foreground max-w-3xl mx-auto leading-relaxed">
-            Record a meeting in Whispering. Edit the transcript in Obsidian. Query it with your AI. 
-            No copy-pasting, no exports. Your tools share one memory.
-          </p>
-        </div>
-        
-        <div class="grid lg:grid-cols-2 gap-8">
-          {tools.map((tool) => (
-            <Card.Root class="overflow-hidden border-muted/50 shadow-sm hover:shadow-xl hover:border-primary/20 transition-all duration-300 group">
-              <Card.Header class="pb-4">
-                <div class="flex items-start justify-between">
-                  <div class="flex items-start gap-4">
-                    <div class="text-5xl group-hover:scale-110 transition-transform duration-300">{tool.emoji}</div>
-                    <div>
-                      <Card.Title class="text-2xl mb-2">{tool.name}</Card.Title>
-                      <Card.Description class="text-base">{tool.description}</Card.Description>
-                    </div>
-                  </div>
-                </div>
-              </Card.Header>
-              <Card.Content class="py-6">
-                <ul class="space-y-3">
-                  {tool.features.map((feature) => (
-                    <li class="flex items-center gap-3 text-sm">
-                      <div class="p-1 rounded-full bg-success/10 flex-shrink-0">
-                        <CheckIcon class="w-3 h-3 text-success" />
-                      </div>
-                      <span class="text-muted-foreground group-hover:text-foreground transition-colors">{feature}</span>
-                    </li>
-                  ))}
-                </ul>
-              </Card.Content>
-              <Card.Footer class="pt-4 border-t border-muted/50">
-                <Button href={tool.href} variant="secondary" class="w-full group-hover:bg-primary group-hover:text-primary-foreground group-hover:border-primary hover:bg-primary hover:text-primary-foreground hover:border-primary transition-all">
-                  View on GitHub
-                  <ArrowRightIcon class="w-4 h-4 group-hover:translate-x-1 transition-transform" />
-                </Button>
-              </Card.Footer>
-            </Card.Root>
-          ))}
-        </div>
-        
-        <div class="mt-16 text-center">
-          <p class="text-muted-foreground mb-6 text-lg">More tools coming soon</p>
-          <Button href="https://go.epicenter.so/discord" variant="secondary" size="lg" class="shadow-sm hover:shadow-md transition-all">
-            Get early access
-            <ArrowRightIcon class="w-4 h-4" />
-          </Button>
-        </div>
-      </div>
-    </section>
+			<div class="w-full max-w-6xl mx-auto px-6 sm:px-8 md:px-12 text-center">
+				<div>
+					<!-- Main headline -->
+					<h1
+						class="text-4xl md:text-5xl font-bold text-foreground tracking-tight leading-snug md:leading-snug mb-8"
+					>
+						A Database for Your Mind,<br />
+						Built on Plain Text
+					</h1>
 
-    <!-- Core Principles -->
-    <section class="py-24 md:py-32">
-      <div class="max-w-5xl mx-auto px-6">
-        <div class="text-center mb-20">
-          <Badge variant="outline" class="mb-6">Core Philosophy</Badge>
-          <PrinciplesRotatingHeadline client:load />
-          <p class="text-xl text-muted-foreground max-w-2xl mx-auto">
-            We believe your tools should amplify your thinking, not fragment it.
-          </p>
-        </div>
-        
-        <div class="grid lg:grid-cols-2 gap-12">
-          <!-- User Principles -->
-          <div class="group p-8 rounded-2xl bg-card border border-muted/50 hover:border-primary/20 hover:shadow-lg transition-all duration-300">
-            <h3 class="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-8">For you</h3>
-            <div class="space-y-6">
-              {userPrinciples.map((principle) => (
-                <div class="flex items-start gap-4">
-                  <div class="p-3 rounded-xl bg-primary/10 text-primary group-hover:bg-primary/15 transition-colors flex-shrink-0">
-                    <principle.icon class="w-5 h-5" />
-                  </div>
-                  <div>
-                    <h4 class="font-semibold text-lg mb-2 group-hover:text-primary transition-colors">{principle.title}</h4>
-                    <p class="text-muted-foreground leading-relaxed text-sm">{principle.description}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-          
-          <!-- Developer Principles -->
-          <div class="group p-8 rounded-2xl bg-card border border-muted/50 hover:border-primary/20 hover:shadow-lg transition-all duration-300">
-            <h3 class="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-8">For developers</h3>
-            <div class="space-y-6">
-              {developerPrinciples.map((principle) => (
-                <div class="flex items-start gap-4">
-                  <div class="p-3 rounded-xl bg-primary/10 text-primary group-hover:bg-primary/15 transition-colors flex-shrink-0">
-                    <principle.icon class="w-5 h-5" />
-                  </div>
-                  <div>
-                    <h4 class="font-semibold text-lg mb-2 group-hover:text-primary transition-colors">{principle.title}</h4>
-                    <p class="text-muted-foreground leading-relaxed text-sm">{principle.description}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      </div>
-    </section>
+					<!-- Subheadline -->
+					<p
+						class="text-lg md:text-xl text-muted-foreground max-w-2xl mx-auto leading-relaxed mb-12"
+					>
+						One shared context across all your apps. Your transcripts inform
+						your notes. Your notes guide your AI. Everything connects through a
+						single folder of plain text and SQLite.
+					</p>
 
-    
-    <!-- Architecture -->
-    <section class="py-24 relative">
-      <div class="max-w-7xl mx-auto px-6">
-        <div class="text-center mb-12">
-          <h2 class="text-3xl md:text-5xl font-bold text-foreground mb-6">
-            Built different from the ground up
-          </h2>
-          <p class="text-xl text-muted-foreground max-w-2xl mx-auto">
-            One architecture, endless possibilities
-          </p>
-        </div>
-        
-        <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-8 max-w-6xl mx-auto">
-          <!-- One Folder Card -->
-          <div class="group p-8 rounded-2xl bg-card border border-muted/50 hover:border-primary/20 hover:shadow-lg transition-all duration-300">
-            <div class="flex items-start gap-4">
-              <div class="p-3 rounded-xl bg-primary/10 text-primary group-hover:bg-primary/15 transition-colors flex-shrink-0">
-                <FolderOpenIcon class="w-6 h-6" />
-              </div>
-              <div>
-                <h3 class="text-xl font-bold text-foreground mb-3">
-                  One folder. All your data.
-                </h3>
-                <p class="text-muted-foreground leading-relaxed">
-                  Everything lives in a single directory on your machine. Plain text files and SQLite databases you actually own.
-                </p>
-              </div>
-            </div>
-          </div>
-          
-          <!-- Local-first Card -->
-          <div class="group p-8 rounded-2xl bg-card border border-muted/50 hover:border-primary/20 hover:shadow-lg transition-all duration-300">
-            <div class="flex items-start gap-4">
-              <div class="p-3 rounded-xl bg-primary/10 text-primary group-hover:bg-primary/15 transition-colors flex-shrink-0">
-                <HardDriveIcon class="w-6 h-6" />
-              </div>
-              <div>
-                <h3 class="text-xl font-bold text-foreground mb-3">
-                  Local-first by default
-                </h3>
-                <p class="text-muted-foreground leading-relaxed">
-                  Your transcripts, notes, and ideas never leave your machine unless you want them to. No cloud lock-in.
-                </p>
-              </div>
-            </div>
-          </div>
-          
-          <!-- Works with Everything Card -->
-          <div class="group p-8 rounded-2xl bg-card border border-muted/50 hover:border-primary/20 hover:shadow-lg transition-all duration-300 md:col-span-2 lg:col-span-1">
-            <div class="flex items-start gap-4">
-              <div class="p-3 rounded-xl bg-primary/10 text-primary group-hover:bg-primary/15 transition-colors flex-shrink-0">
-                <GitForkIcon class="w-6 h-6" />
-              </div>
-              <div>
-                <h3 class="text-xl font-bold text-foreground mb-3">
-                  Works with tools you already use
-                </h3>
-                <p class="text-muted-foreground leading-relaxed">
-                  Because everything is plain text and SQLite, your entire workspace is compatible with the tools you already love.
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </section>
+					<!-- CTAs -->
+					<div class="flex flex-col sm:flex-row gap-4 justify-center mb-16">
+						<Button
+							href="https://go.epicenter.so/discord"
+							size="lg"
+							class="font-medium"
+						>
+							Join the Discord
+							<ArrowRightIcon class="w-4 h-4" />
+						</Button>
+						<Button
+							href="https://github.com/epicenter-md/epicenter"
+							variant="outline"
+							size="lg"
+							class="font-medium"
+						>
+							Explore on GitHub
+						</Button>
+					</div>
 
+					<!-- Quick value props -->
+					<div class="flex flex-wrap gap-x-8 gap-y-4 justify-center text-sm">
+						<div class="flex items-center gap-2 text-muted-foreground">
+							<CheckIcon class="w-4 h-4 text-success flex-shrink-0" />
+							<span>100% open source</span>
+						</div>
+						<div class="flex items-center gap-2 text-muted-foreground">
+							<CheckIcon class="w-4 h-4 text-success flex-shrink-0" />
+							<span>Local-first</span>
+						</div>
+						<div class="flex items-center gap-2 text-muted-foreground">
+							<CheckIcon class="w-4 h-4 text-success flex-shrink-0" />
+							<span>Plain text & SQLite</span>
+						</div>
+					</div>
+				</div>
+			</div>
+		</header>
 
-    <!-- Ecosystem Section -->
-    <section class="py-24 bg-gradient-to-b from-muted/5 via-background to-muted/5">
-      <div class="max-w-7xl mx-auto px-6">
-        <div class="text-center mb-16">
-          <Badge variant="outline" class="mb-6">Ecosystem</Badge>
-          <h2 class="text-3xl md:text-5xl font-bold text-foreground mb-6">
-            Infinite workflows, zero lock-in
-          </h2>
-          <p class="text-xl text-muted-foreground max-w-3xl mx-auto">
-            Your workspace plays nicely with the tools you already love. Edit in VS Code, search with grep, version control with Git.
-          </p>
-        </div>
-        
-        <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-6 max-w-6xl mx-auto">
-          {ecosystem.map((tool) => (
-            <div class="group p-6 rounded-xl bg-card border border-muted/50 hover:shadow-lg transition-all duration-300 cursor-default">
-              <div class="flex items-start gap-4">
-                <div class="text-4xl group-hover:scale-110 transition-transform duration-300 flex-shrink-0">
-                  {tool.icon}
-                </div>
-                <div>
-                  <h3 class="text-lg font-semibold text-foreground mb-2 group-hover:text-primary transition-colors">
-                    {tool.name}
-                  </h3>
-                  <p class="text-sm text-muted-foreground leading-relaxed">
-                    {tool.description}
-                  </p>
-                </div>
-              </div>
-            </div>
-          ))}
-          
-          <!-- Custom Tool Card -->
-          <div class="group p-6 rounded-xl bg-card border border-muted/50 hover:shadow-lg transition-all duration-300 cursor-default">
-            <div class="flex items-start gap-4">
-              <div class="text-4xl group-hover:scale-110 transition-transform duration-300 flex-shrink-0">
-                ✨
-              </div>
-              <div>
-                <h3 class="text-lg font-semibold text-foreground mb-2 group-hover:text-primary transition-colors">
-                  Your favorite tool
-                </h3>
-                <p class="text-sm text-muted-foreground leading-relaxed">
-                  Plain text and SQLite mean your tools work too. No proprietary formats.
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </section>
+		<!-- Product Showcase -->
+		<section
+			class="py-24 md:py-32 bg-gradient-to-b from-muted/10 via-muted/20 to-muted/10"
+		>
+			<div class="max-w-7xl mx-auto px-6">
+				<div class="text-center mb-20">
+					<Badge variant="secondary" class="mb-6 px-4 py-1 text-sm"
+						>Available now</Badge
+					>
+					<h2 class="text-3xl md:text-5xl font-bold text-foreground mb-6">
+						Tools that share your memory
+					</h2>
+					<p
+						class="text-xl text-muted-foreground max-w-3xl mx-auto leading-relaxed"
+					>
+						Record a meeting in Whispering. Edit the transcript in Obsidian.
+						Query it with your AI. No copy-pasting, no exports. Your tools share
+						one memory.
+					</p>
+				</div>
 
+				<div class="grid lg:grid-cols-2 gap-8">
+					{
+						tools.map((tool) => (
+							<Card.Root class="overflow-hidden border-muted/50 shadow-sm hover:shadow-xl hover:border-primary/20 transition-all duration-300 group">
+								<Card.Header class="pb-4">
+									<div class="flex items-start justify-between">
+										<div class="flex items-start gap-4">
+											<div class="text-5xl group-hover:scale-110 transition-transform duration-300">
+												{tool.emoji}
+											</div>
+											<div>
+												<Card.Title class="text-2xl mb-2">
+													{tool.name}
+												</Card.Title>
+												<Card.Description class="text-base">
+													{tool.description}
+												</Card.Description>
+											</div>
+										</div>
+									</div>
+								</Card.Header>
+								<Card.Content class="py-6">
+									<ul class="space-y-3">
+										{tool.features.map((feature) => (
+											<li class="flex items-center gap-3 text-sm">
+												<div class="p-1 rounded-full bg-success/10 flex-shrink-0">
+													<CheckIcon class="w-3 h-3 text-success" />
+												</div>
+												<span class="text-muted-foreground group-hover:text-foreground transition-colors">
+													{feature}
+												</span>
+											</li>
+										))}
+									</ul>
+								</Card.Content>
+								<Card.Footer class="pt-4 border-t border-muted/50">
+									<Button
+										href={tool.href}
+										variant="secondary"
+										class="w-full group-hover:bg-primary group-hover:text-primary-foreground group-hover:border-primary hover:bg-primary hover:text-primary-foreground hover:border-primary transition-all"
+									>
+										View on GitHub
+										<ArrowRightIcon class="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+									</Button>
+								</Card.Footer>
+							</Card.Root>
+						))
+					}
+				</div>
 
-    <!-- Vision -->
-    <section class="py-24 md:py-32 bg-gradient-to-b from-background via-muted/10 to-background">
-      <div class="max-w-4xl mx-auto px-6 text-center">
-        <h2 class="text-3xl md:text-5xl font-bold text-foreground mb-12">
-          Software for people who think
-        </h2>
-        <div class="space-y-6 text-lg text-muted-foreground leading-relaxed">
-          <p>
-            We're building an alternative to apps that fragment your thinking across a dozen cloud services. 
-            Epicenter is for people who read deeply, write to think, and build to understand.
-          </p>
-          <p>
-            Every tool is open source. Your data stays in plain files you control. 
-            Choose your own models, host your own services, or run everything locally.
-          </p>
-          <p class="text-xl text-foreground font-semibold mt-12">
-            Join us in building tools that amplify human agency.
-          </p>
-        </div>
-        
-        <div class="mt-16 flex flex-col sm:flex-row gap-4 justify-center">
-          <Button href="https://go.epicenter.so/discord" size="lg" class="shadow-sm hover:shadow-md transition-all">
-            Join our Discord
-            <ArrowRightIcon class="w-4 h-4" />
-          </Button>
-          <Button href="https://github.com/epicenter-md/epicenter" variant="outline" size="lg" class="hover:bg-muted/50 transition-all">
-            Contribute on GitHub
-          </Button>
-        </div>
-      </div>
-    </section>
+				<div class="mt-16 text-center">
+					<p class="text-muted-foreground mb-6 text-lg">
+						More tools coming soon
+					</p>
+					<Button
+						href="https://go.epicenter.so/discord"
+						variant="secondary"
+						size="lg"
+						class="shadow-sm hover:shadow-md transition-all"
+					>
+						Get early access
+						<ArrowRightIcon class="w-4 h-4" />
+					</Button>
+				</div>
+			</div>
+		</section>
 
-    <!-- Footer -->
-    <footer class="py-16 border-t border-muted/50">
-      <div class="max-w-7xl mx-auto px-6">
-        <div class="flex flex-col md:flex-row justify-between items-center gap-6">
-          <div class="text-sm text-muted-foreground">
-            © {new Date().getFullYear()} Epicenter. Open source under MIT license.
-          </div>
-          <div class="flex gap-8 text-sm">
-            <a href="https://github.com/epicenter-md/epicenter" class="text-muted-foreground hover:text-foreground transition-colors font-medium">
-              GitHub
-            </a>
-            <a href="https://go.epicenter.so/discord" class="text-muted-foreground hover:text-foreground transition-colors font-medium">
-              Discord
-            </a>
-            <a href="/blog" class="text-muted-foreground hover:text-foreground transition-colors font-medium">
-              Blog
-            </a>
-          </div>
-        </div>
-      </div>
-    </footer>
-  </main>
+		<!-- Core Principles -->
+		<section class="py-24 md:py-32">
+			<div class="max-w-5xl mx-auto px-6">
+				<div class="text-center mb-20">
+					<Badge variant="outline" class="mb-6">Core Philosophy</Badge>
+					<PrinciplesRotatingHeadline client:load />
+					<p class="text-xl text-muted-foreground max-w-2xl mx-auto">
+						We believe your tools should amplify your thinking, not fragment it.
+					</p>
+				</div>
+
+				<div class="grid lg:grid-cols-2 gap-12">
+					<!-- User Principles -->
+					<div
+						class="group p-8 rounded-2xl bg-card border border-muted/50 hover:border-primary/20 hover:shadow-lg transition-all duration-300"
+					>
+						<h3
+							class="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-8"
+						>
+							For you
+						</h3>
+						<div class="space-y-6">
+							{
+								userPrinciples.map((principle) => (
+									<div class="flex items-start gap-4">
+										<div class="p-3 rounded-xl bg-primary/10 text-primary group-hover:bg-primary/15 transition-colors flex-shrink-0">
+											<principle.icon class="w-5 h-5" />
+										</div>
+										<div>
+											<h4 class="font-semibold text-lg mb-2 group-hover:text-primary transition-colors">
+												{principle.title}
+											</h4>
+											<p class="text-muted-foreground leading-relaxed text-sm">
+												{principle.description}
+											</p>
+										</div>
+									</div>
+								))
+							}
+						</div>
+					</div>
+
+					<!-- Developer Principles -->
+					<div
+						class="group p-8 rounded-2xl bg-card border border-muted/50 hover:border-primary/20 hover:shadow-lg transition-all duration-300"
+					>
+						<h3
+							class="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-8"
+						>
+							For developers
+						</h3>
+						<div class="space-y-6">
+							{
+								developerPrinciples.map((principle) => (
+									<div class="flex items-start gap-4">
+										<div class="p-3 rounded-xl bg-primary/10 text-primary group-hover:bg-primary/15 transition-colors flex-shrink-0">
+											<principle.icon class="w-5 h-5" />
+										</div>
+										<div>
+											<h4 class="font-semibold text-lg mb-2 group-hover:text-primary transition-colors">
+												{principle.title}
+											</h4>
+											<p class="text-muted-foreground leading-relaxed text-sm">
+												{principle.description}
+											</p>
+										</div>
+									</div>
+								))
+							}
+						</div>
+					</div>
+				</div>
+			</div>
+		</section>
+
+		<!-- Architecture -->
+		<section class="py-24 relative">
+			<div class="max-w-7xl mx-auto px-6">
+				<div class="text-center mb-12">
+					<h2 class="text-3xl md:text-5xl font-bold text-foreground mb-6">
+						Built different from the ground up
+					</h2>
+					<p class="text-xl text-muted-foreground max-w-2xl mx-auto">
+						One architecture, endless possibilities
+					</p>
+				</div>
+
+				<div class="grid md:grid-cols-2 lg:grid-cols-3 gap-8 max-w-6xl mx-auto">
+					<!-- One Folder Card -->
+					<div
+						class="group p-8 rounded-2xl bg-card border border-muted/50 hover:border-primary/20 hover:shadow-lg transition-all duration-300"
+					>
+						<div class="flex items-start gap-4">
+							<div
+								class="p-3 rounded-xl bg-primary/10 text-primary group-hover:bg-primary/15 transition-colors flex-shrink-0"
+							>
+								<FolderOpenIcon class="w-6 h-6" />
+							</div>
+							<div>
+								<h3 class="text-xl font-bold text-foreground mb-3">
+									One folder. All your data.
+								</h3>
+								<p class="text-muted-foreground leading-relaxed">
+									Everything lives in a single directory on your machine. Plain
+									text files and SQLite databases you actually own.
+								</p>
+							</div>
+						</div>
+					</div>
+
+					<!-- Local-first Card -->
+					<div
+						class="group p-8 rounded-2xl bg-card border border-muted/50 hover:border-primary/20 hover:shadow-lg transition-all duration-300"
+					>
+						<div class="flex items-start gap-4">
+							<div
+								class="p-3 rounded-xl bg-primary/10 text-primary group-hover:bg-primary/15 transition-colors flex-shrink-0"
+							>
+								<HardDriveIcon class="w-6 h-6" />
+							</div>
+							<div>
+								<h3 class="text-xl font-bold text-foreground mb-3">
+									Local-first by default
+								</h3>
+								<p class="text-muted-foreground leading-relaxed">
+									Your transcripts, notes, and ideas never leave your machine
+									unless you want them to. No cloud lock-in.
+								</p>
+							</div>
+						</div>
+					</div>
+
+					<!-- Works with Everything Card -->
+					<div
+						class="group p-8 rounded-2xl bg-card border border-muted/50 hover:border-primary/20 hover:shadow-lg transition-all duration-300 md:col-span-2 lg:col-span-1"
+					>
+						<div class="flex items-start gap-4">
+							<div
+								class="p-3 rounded-xl bg-primary/10 text-primary group-hover:bg-primary/15 transition-colors flex-shrink-0"
+							>
+								<GitForkIcon class="w-6 h-6" />
+							</div>
+							<div>
+								<h3 class="text-xl font-bold text-foreground mb-3">
+									Works with tools you already use
+								</h3>
+								<p class="text-muted-foreground leading-relaxed">
+									Because everything is plain text and SQLite, your entire
+									workspace is compatible with the tools you already love.
+								</p>
+							</div>
+						</div>
+					</div>
+				</div>
+			</div>
+		</section>
+
+		<!-- Ecosystem Section -->
+		<section
+			class="py-24 bg-gradient-to-b from-muted/5 via-background to-muted/5"
+		>
+			<div class="max-w-7xl mx-auto px-6">
+				<div class="text-center mb-16">
+					<Badge variant="outline" class="mb-6">Ecosystem</Badge>
+					<h2 class="text-3xl md:text-5xl font-bold text-foreground mb-6">
+						Infinite workflows, zero lock-in
+					</h2>
+					<p class="text-xl text-muted-foreground max-w-3xl mx-auto">
+						Your workspace plays nicely with the tools you already love. Edit in
+						VS Code, search with grep, version control with Git.
+					</p>
+				</div>
+
+				<div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-6 max-w-6xl mx-auto">
+					{
+						ecosystem.map((tool) => (
+							<div class="group p-6 rounded-xl bg-card border border-muted/50 hover:shadow-lg transition-all duration-300 cursor-default">
+								<div class="flex items-start gap-4">
+									<div class="text-4xl group-hover:scale-110 transition-transform duration-300 flex-shrink-0">
+										{tool.icon}
+									</div>
+									<div>
+										<h3 class="text-lg font-semibold text-foreground mb-2 group-hover:text-primary transition-colors">
+											{tool.name}
+										</h3>
+										<p class="text-sm text-muted-foreground leading-relaxed">
+											{tool.description}
+										</p>
+									</div>
+								</div>
+							</div>
+						))
+					}
+
+					<!-- Custom Tool Card -->
+					<div
+						class="group p-6 rounded-xl bg-card border border-muted/50 hover:shadow-lg transition-all duration-300 cursor-default"
+					>
+						<div class="flex items-start gap-4">
+							<div
+								class="text-4xl group-hover:scale-110 transition-transform duration-300 flex-shrink-0"
+							>
+								✨
+							</div>
+							<div>
+								<h3
+									class="text-lg font-semibold text-foreground mb-2 group-hover:text-primary transition-colors"
+								>
+									Your favorite tool
+								</h3>
+								<p class="text-sm text-muted-foreground leading-relaxed">
+									Plain text and SQLite mean your tools work too. No proprietary
+									formats.
+								</p>
+							</div>
+						</div>
+					</div>
+				</div>
+			</div>
+		</section>
+
+		<!-- Vision -->
+		<section
+			class="py-24 md:py-32 bg-gradient-to-b from-background via-muted/10 to-background"
+		>
+			<div class="max-w-4xl mx-auto px-6 text-center">
+				<h2 class="text-3xl md:text-5xl font-bold text-foreground mb-12">
+					Software for people who think
+				</h2>
+				<div class="space-y-6 text-lg text-muted-foreground leading-relaxed">
+					<p>
+						We're building an alternative to apps that fragment your thinking
+						across a dozen cloud services. Epicenter is for people who read
+						deeply, write to think, and build to understand.
+					</p>
+					<p>
+						Every tool is open source. Your data stays in plain files you
+						control. Choose your own models, host your own services, or run
+						everything locally.
+					</p>
+					<p class="text-xl text-foreground font-semibold mt-12">
+						Join us in building tools that amplify human agency.
+					</p>
+				</div>
+
+				<div class="mt-16 flex flex-col sm:flex-row gap-4 justify-center">
+					<Button
+						href="https://go.epicenter.so/discord"
+						size="lg"
+						class="shadow-sm hover:shadow-md transition-all"
+					>
+						Join our Discord
+						<ArrowRightIcon class="w-4 h-4" />
+					</Button>
+					<Button
+						href="https://github.com/epicenter-md/epicenter"
+						variant="outline"
+						size="lg"
+						class="hover:bg-muted/50 transition-all"
+					>
+						Contribute on GitHub
+					</Button>
+				</div>
+			</div>
+		</section>
+
+		<!-- Footer -->
+		<footer class="py-16 border-t border-muted/50">
+			<div class="max-w-7xl mx-auto px-6">
+				<div
+					class="flex flex-col md:flex-row justify-between items-center gap-6"
+				>
+					<div class="text-sm text-muted-foreground">
+						© {new Date().getFullYear()} Epicenter. Open source under MIT license.
+					</div>
+					<div class="flex gap-8 text-sm">
+						<a
+							href="https://github.com/epicenter-md/epicenter"
+							class="text-muted-foreground hover:text-foreground transition-colors font-medium"
+						>
+							GitHub
+						</a>
+						<a
+							href="https://go.epicenter.so/discord"
+							class="text-muted-foreground hover:text-foreground transition-colors font-medium"
+						>
+							Discord
+						</a>
+						<a
+							href="/blog"
+							class="text-muted-foreground hover:text-foreground transition-colors font-medium"
+						>
+							Blog
+						</a>
+					</div>
+				</div>
+			</div>
+		</footer>
+	</main>
 </BaseLayout>
 
 <style>
-  /* Smooth animations */
-  @keyframes fade-in {
-    from {
-      opacity: 0;
-      transform: translateY(20px);
-    }
-    to {
-      opacity: 1;
-      transform: translateY(0);
-    }
-  }
+	/* Smooth animations */
+	@keyframes fade-in {
+		from {
+			opacity: 0;
+			transform: translateY(20px);
+		}
+		to {
+			opacity: 1;
+			transform: translateY(0);
+		}
+	}
 
-  @keyframes fade-in-scale {
-    from {
-      opacity: 0;
-      transform: scale(0.95);
-    }
-    to {
-      opacity: 1;
-      transform: scale(1);
-    }
-  }
+	@keyframes fade-in-scale {
+		from {
+			opacity: 0;
+			transform: scale(0.95);
+		}
+		to {
+			opacity: 1;
+			transform: scale(1);
+		}
+	}
 
-  header > div > div > * {
-    animation: fade-in 0.8s ease-out forwards;
-    opacity: 0;
-  }
+	header > div > div > * {
+		animation: fade-in 0.8s ease-out forwards;
+		opacity: 0;
+	}
 
-  header h1 { animation-delay: 0ms; }
-  header p { animation-delay: 100ms; }
-  header > div > div > div:nth-of-type(1) { animation-delay: 200ms; }
-  header > div > div > div:nth-of-type(2) { animation-delay: 300ms; }
+	header h1 {
+		animation-delay: 0ms;
+	}
+	header p {
+		animation-delay: 100ms;
+	}
+	header > div > div > div:nth-of-type(1) {
+		animation-delay: 200ms;
+	}
+	header > div > div > div:nth-of-type(2) {
+		animation-delay: 300ms;
+	}
 
-  /* Smooth scroll behavior */
-  @media (prefers-reduced-motion: no-preference) {
-    html {
-      scroll-behavior: smooth;
-    }
-  }
+	/* Smooth scroll behavior */
+	@media (prefers-reduced-motion: no-preference) {
+		html {
+			scroll-behavior: smooth;
+		}
+	}
 
-  /* Success color for checkmarks */
-  .text-success {
-    color: hsl(142, 71%, 45%);
-  }
+	/* Success color for checkmarks */
+	.text-success {
+		color: hsl(142, 71%, 45%);
+	}
 
-  /* Better focus states */
-  :focus-visible {
-    outline: 2px solid hsl(var(--primary));
-    outline-offset: 2px;
-  }
+	/* Better focus states */
+	:focus-visible {
+		outline: 2px solid hsl(var(--primary));
+		outline-offset: 2px;
+	}
 
-  /* Animate sections on scroll */
-  section {
-    animation: fade-in-scale 0.6s ease-out;
-  }
+	/* Animate sections on scroll */
+	section {
+		animation: fade-in-scale 0.6s ease-out;
+	}
 </style>

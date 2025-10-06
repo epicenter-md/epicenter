@@ -59,9 +59,7 @@
 						<Command.Item
 							value={mode.value}
 							onSelect={async () => {
-								await settings.switchRecordingMode(
-									mode.value as RecordingMode,
-								);
+								await settings.switchRecordingMode(mode.value as RecordingMode);
 								combobox.closeAndFocusTrigger();
 							}}
 							class="flex items-center gap-2 px-2 py-2"

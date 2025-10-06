@@ -1,21 +1,17 @@
 {
-    "compilerOptions": {
-        "outDir": "dist",
-        "rootDir": "../../",
-        "module": "ESNext",
-        "target": "ES2022",
-        "moduleResolution": "Bundler",
-        "strict": true,
-        "skipLibCheck": true,
-        "resolveJsonModule": true,
-        "baseUrl": ".",
-        "paths": {
-            "@repo/vault-core": [
-                "../../packages/vault-core/src/index.ts"
-            ]
-        }
-    },
-    "include": [
-        "src/**/*.ts"
-    ]
+	"compilerOptions": {
+		"outDir": "dist",
+		"rootDir": "../../",
+		"module": "ESNext",
+		"target": "ES2022",
+		"moduleResolution": "Bundler",
+		"strict": true,
+		"skipLibCheck": true,
+		"resolveJsonModule": true,
+		"baseUrl": ".",
+		"paths": {
+			"@repo/vault-core": ["../../packages/vault-core/src/index.ts"]
+		}
+	},
+	"include": ["src/**/*.ts"]
 }

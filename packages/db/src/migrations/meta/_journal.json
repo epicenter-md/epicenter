@@ -1,27 +1,27 @@
 {
-  "version": "7",
-  "dialect": "postgresql",
-  "entries": [
-    {
-      "idx": 0,
-      "version": "7",
-      "when": 1753913598966,
-      "tag": "0000_hot_piledriver",
-      "breakpoints": true
-    },
-    {
-      "idx": 1,
-      "version": "7",
-      "when": 1753913636101,
-      "tag": "0001_perfect_sharon_carter",
-      "breakpoints": true
-    },
-    {
-      "idx": 2,
-      "version": "7",
-      "when": 1753913673555,
-      "tag": "0002_wealthy_lady_mastermind",
-      "breakpoints": true
-    }
-  ]
+	"version": "7",
+	"dialect": "postgresql",
+	"entries": [
+		{
+			"idx": 0,
+			"version": "7",
+			"when": 1753913598966,
+			"tag": "0000_hot_piledriver",
+			"breakpoints": true
+		},
+		{
+			"idx": 1,
+			"version": "7",
+			"when": 1753913636101,
+			"tag": "0001_perfect_sharon_carter",
+			"breakpoints": true
+		},
+		{
+			"idx": 2,
+			"version": "7",
+			"when": 1753913673555,
+			"tag": "0002_wealthy_lady_mastermind",
+			"breakpoints": true
+		}
+	]
 }

@@ -17,10 +17,7 @@ import {
 	type ElevenLabsModel,
 } from './cloud/elevenlabs';
 import { GROQ_MODELS, type GroqModel } from './cloud/groq';
-import {
-	OPENAI_TRANSCRIPTION_MODELS,
-	type OpenAIModel,
-} from './cloud/openai';
+import { OPENAI_TRANSCRIPTION_MODELS, type OpenAIModel } from './cloud/openai';
 import {
 	DEEPGRAM_TRANSCRIPTION_MODELS,
 	type DeepgramModel,

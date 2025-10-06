@@ -14,7 +14,11 @@ import type {
 import { settings } from '$lib/stores/settings.svelte';
 import { createTaggedError, extractErrorMessage } from 'wellcrafted/error';
 import { Err, Ok, type Result, isErr } from 'wellcrafted/result';
-import { interpolateTemplate, asTemplateString, type TemplateString } from '$lib/utils/template';
+import {
+	interpolateTemplate,
+	asTemplateString,
+	type TemplateString,
+} from '$lib/utils/template';
 import { defineMutation, queryClient } from './_client';
 import { transformationRunKeys } from './transformation-runs';
 import { transformationsKeys } from './transformations';
@@ -172,11 +176,11 @@ async function handleStep({
 			const provider = step['prompt_transform.inference.provider'];
 			const systemPrompt = interpolateTemplate(
 				asTemplateString(step['prompt_transform.systemPromptTemplate']),
-				{ input }
+				{ input },
 			);
 			const userPrompt = interpolateTemplate(
 				asTemplateString(step['prompt_transform.userPromptTemplate']),
-				{ input }
+				{ input },
 			);
 
 			switch (provider) {
@@ -246,24 +250,25 @@ async function handleStep({
 					return Ok(completion);
 				}
 
-				   case 'OpenRouter': {
-					   const { data: completionResponse, error: completionError } =
-						   await services.completions.openrouter.complete({
-							   apiKey: settings.value['apiKeys.openrouter'],
-							   model: step['prompt_transform.inference.provider.OpenRouter.model'],
-							   systemPrompt,
-							   userPrompt,
-						   });
+				case 'OpenRouter': {
+					const { data: completionResponse, error: completionError } =
+						await services.completions.openrouter.complete({
+							apiKey: settings.value['apiKeys.openrouter'],
+							model:
+								step['prompt_transform.inference.provider.OpenRouter.model'],
+							systemPrompt,
+							userPrompt,
+						});
 
-					   if (completionError) {
-						   return Err(completionError.message);
-					   }
+					if (completionError) {
+						return Err(completionError.message);
+					}
 
-					   return Ok(completionResponse);
-				   }
+					return Ok(completionResponse);
+				}
 
-				   default:
-					   return Err(`Unsupported provider: ${provider}`);
+				default:
+					return Err(`Unsupported provider: ${provider}`);
 			}
 		}
 

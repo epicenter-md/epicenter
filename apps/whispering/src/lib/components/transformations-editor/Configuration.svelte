@@ -294,7 +294,10 @@
 											label="Model"
 											items={OPENAI_INFERENCE_MODEL_OPTIONS}
 											bind:selected={
-												() => step['prompt_transform.inference.provider.OpenAI.model'],
+												() =>
+													step[
+														'prompt_transform.inference.provider.OpenAI.model'
+													],
 												(value) => {
 													transformation = {
 														...transformation,
@@ -318,7 +321,10 @@
 											label="Model"
 											items={GROQ_INFERENCE_MODEL_OPTIONS}
 											bind:selected={
-												() => step['prompt_transform.inference.provider.Groq.model'],
+												() =>
+													step[
+														'prompt_transform.inference.provider.Groq.model'
+													],
 												(value) => {
 													transformation = {
 														...transformation,
@@ -342,7 +348,10 @@
 											label="Model"
 											items={ANTHROPIC_INFERENCE_MODEL_OPTIONS}
 											bind:selected={
-												() => step['prompt_transform.inference.provider.Anthropic.model'],
+												() =>
+													step[
+														'prompt_transform.inference.provider.Anthropic.model'
+													],
 												(value) => {
 													transformation = {
 														...transformation,
@@ -366,7 +375,10 @@
 											label="Model"
 											items={GOOGLE_INFERENCE_MODEL_OPTIONS}
 											bind:selected={
-												() => step['prompt_transform.inference.provider.Google.model'],
+												() =>
+													step[
+														'prompt_transform.inference.provider.Google.model'
+													],
 												(value) => {
 													transformation = {
 														...transformation,
@@ -388,7 +400,9 @@
 										<LabeledInput
 											id="prompt_transform.inference.provider.OpenRouter.model"
 											label="Model"
-											value={step['prompt_transform.inference.provider.OpenRouter.model']}
+											value={step[
+												'prompt_transform.inference.provider.OpenRouter.model'
+											]}
 											oninput={(e) => {
 												transformation = {
 													...transformation,

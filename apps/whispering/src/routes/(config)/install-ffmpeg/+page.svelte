@@ -103,7 +103,10 @@
 				</Alert.Root>
 
 				<div class="flex gap-3">
-					<Link href="/settings/transcription" class={buttonVariants({ class: "flex-1" })}>
+					<Link
+						href="/settings/transcription"
+						class={buttonVariants({ class: 'flex-1' })}
+					>
 						Continue to Settings
 					</Link>
 					<Button variant="outline" onclick={() => goto('/')}>
@@ -281,7 +284,10 @@
 
 		{#if ffmpegQuery.data !== true}
 			<Card.Footer>
-				<Link href="/settings/transcription" class={buttonVariants({ variant: "outline", class: "w-full" })}>
+				<Link
+					href="/settings/transcription"
+					class={buttonVariants({ variant: 'outline', class: 'w-full' })}
+				>
 					Back to Settings
 				</Link>
 			</Card.Footer>

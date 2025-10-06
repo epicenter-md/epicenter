@@ -63,8 +63,9 @@
 		<Card.Header>
 			<Card.Title class="text-xl">MacOS Accessibility</Card.Title>
 			<Card.Description class="leading-7">
-				Follow the steps below to re-enable Whispering in your macOS Accessibility settings. 
-				This often is needed after installing new versions of Whispering due to a macOS bug.
+				Follow the steps below to re-enable Whispering in your macOS
+				Accessibility settings. This often is needed after installing new
+				versions of Whispering due to a macOS bug.
 			</Card.Description>
 		</Card.Header>
 		<Card.Content>

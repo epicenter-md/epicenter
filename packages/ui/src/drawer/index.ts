@@ -26,7 +26,6 @@ export {
 	Header as DrawerHeader,
 	NestedRoot as DrawerNestedRoot,
 	Overlay as DrawerOverlay,
-
 	Portal as DrawerPortal,
 	Title as DrawerTitle,
 	Trigger as DrawerTrigger,

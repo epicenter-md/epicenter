@@ -45,7 +45,7 @@
 		{items}
 		bind:selected={
 			() => selected ?? asDeviceIdentifier(''),
-			(value) => selected = value ? asDeviceIdentifier(value) : null
+			(value) => (selected = value ? asDeviceIdentifier(value) : null)
 		}
 		placeholder="Select a device"
 	/>

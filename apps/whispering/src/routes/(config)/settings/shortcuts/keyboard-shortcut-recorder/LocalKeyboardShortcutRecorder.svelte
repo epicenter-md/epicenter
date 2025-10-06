@@ -56,7 +56,10 @@
 				return;
 			}
 
-			settings.updateKey(`shortcuts.local.${command.id}`, arrayToShortcutString(keyCombination));
+			settings.updateKey(
+				`shortcuts.local.${command.id}`,
+				arrayToShortcutString(keyCombination),
+			);
 
 			rpc.notify.success.execute({
 				title: `Local shortcut set to ${keyCombination}`,

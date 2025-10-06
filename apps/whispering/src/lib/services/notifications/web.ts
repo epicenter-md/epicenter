@@ -10,7 +10,7 @@ import {
 /**
  * Creates a web-based notification service that handles browser notifications
  * with fallback support for extension-based notifications.
- * 
+ *
  * @returns {NotificationService} A notification service instance with notify and clear methods
  */
 export function createNotificationServiceWeb(): NotificationService {
@@ -21,7 +21,7 @@ export function createNotificationServiceWeb(): NotificationService {
 	/**
 	 * Detects if a browser extension is available for enhanced notification support.
 	 * Results are cached to avoid repeated detection attempts.
-	 * 
+	 *
 	 * @returns {Promise<boolean>} True if extension is available, false otherwise
 	 */
 	const detectExtension = async (): Promise<boolean> => {
@@ -40,7 +40,7 @@ export function createNotificationServiceWeb(): NotificationService {
 		/**
 		 * Sends a notification using the best available method (extension or browser API).
 		 * Automatically handles permission requests and converts unified options to browser format.
-		 * 
+		 *
 		 * @param {UnifiedNotificationOptions} options - Notification configuration including title, body, and actions
 		 * @returns {Promise<Result<string, NotificationServiceError>>} Success with notification ID or error
 		 */
@@ -114,7 +114,7 @@ export function createNotificationServiceWeb(): NotificationService {
 		/**
 		 * Clears a notification by ID. Currently a no-op for browser notifications
 		 * as they don't provide a direct clear API.
-		 * 
+		 *
 		 * @param {string} id - The notification ID to clear
 		 * @returns {Promise<Result<undefined, NotificationServiceError>>} Success or error result
 		 */

@@ -35,7 +35,10 @@
 		if (isTransformationActive) {
 			settings.updateKey('transformations.selectedTransformationId', null);
 		} else {
-			settings.updateKey('transformations.selectedTransformationId', transformation.id);
+			settings.updateKey(
+				'transformations.selectedTransformationId',
+				transformation.id,
+			);
 		}
 	}}
 >

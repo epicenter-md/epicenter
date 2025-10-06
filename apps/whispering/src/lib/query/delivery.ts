@@ -111,7 +111,8 @@ export const delivery = {
 					// Both operations succeeded
 					rpc.notify.success.execute({
 						id: toastId,
-						title: '📝 Recording transcribed, copied to clipboard, and written to cursor!',
+						title:
+							'📝 Recording transcribed, copied to clipboard, and written to cursor!',
 						description: text,
 						action: {
 							type: 'link',
@@ -286,7 +287,8 @@ export const delivery = {
 					// Both operations succeeded
 					rpc.notify.success.execute({
 						id: toastId,
-						title: '🔄 Transformation complete, copied to clipboard, and written to cursor!',
+						title:
+							'🔄 Transformation complete, copied to clipboard, and written to cursor!',
 						description: text,
 						action: {
 							type: 'link',

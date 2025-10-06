@@ -9,7 +9,12 @@
 	import { rpc } from '$lib/query';
 	import type { Transformation } from '$lib/services/db';
 	import { createMutation } from '@tanstack/svelte-query';
-	import { HistoryIcon, Loader2Icon, PlayIcon, TrashIcon } from '@lucide/svelte';
+	import {
+		HistoryIcon,
+		Loader2Icon,
+		PlayIcon,
+		TrashIcon,
+	} from '@lucide/svelte';
 	import MarkTransformationActiveButton from './MarkTransformationActiveButton.svelte';
 
 	const updateTransformation = createMutation(

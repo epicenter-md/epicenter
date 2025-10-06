@@ -37,7 +37,10 @@ const cli = yargs(hideBin(process.argv))
 	})
 	.demandCommand(1, 'You need to specify a command')
 	.command(ShCommand)
-	.example('epicenter sh', 'Start local server with cloudflare tunnel and open epicenter.sh in browser')
+	.example(
+		'epicenter sh',
+		'Start local server with cloudflare tunnel and open epicenter.sh in browser',
+	)
 	.example(
 		'epicenter sh --port=8080',
 		'Start server on specific port (defaults to auto-discovered available port)',

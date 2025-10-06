@@ -45,23 +45,33 @@
 	<Alert.Root class="mt-6">
 		<InfoIcon class="h-4 w-4" />
 		<Alert.Title>Prerequisites</Alert.Title>
-		<Alert.Description><p>
-			Make sure you have <code class="text-sm bg-muted px-1 py-0.5 rounded">opencode</code> installed
-			and logged in before running the command below. Install opencode from <Link
-				href="https://opencode.ai/docs/#install"
-				target="_blank"
-				rel="noopener noreferrer"
-				class="font-medium underline underline-offset-4"
-			>
-				opencode.ai
-			</Link> and be sure to run <code class="text-sm bg-muted px-1 py-0.5 rounded">opencode auth login</code> to authenticate as mentioned in the <Link
-				href="https://opencode.ai/docs/#configure"
-				target="_blank"
-				rel="noopener noreferrer"
-				class="font-medium underline underline-offset-4"
-			>
-				docs</Link>.
-		</p></Alert.Description>
+		<Alert.Description
+			><p>
+				Make sure you have <code class="text-sm bg-muted px-1 py-0.5 rounded"
+					>opencode</code
+				>
+				installed and logged in before running the command below. Install opencode
+				from <Link
+					href="https://opencode.ai/docs/#install"
+					target="_blank"
+					rel="noopener noreferrer"
+					class="font-medium underline underline-offset-4"
+				>
+					opencode.ai
+				</Link> and be sure to run
+				<code class="text-sm bg-muted px-1 py-0.5 rounded"
+					>opencode auth login</code
+				>
+				to authenticate as mentioned in the <Link
+					href="https://opencode.ai/docs/#configure"
+					target="_blank"
+					rel="noopener noreferrer"
+					class="font-medium underline underline-offset-4"
+				>
+					docs</Link
+				>.
+			</p></Alert.Description
+		>
 	</Alert.Root>
 
 	<Alert.Root class="mt-4">
