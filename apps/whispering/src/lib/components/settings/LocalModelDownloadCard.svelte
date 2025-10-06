@@ -111,15 +111,26 @@
 				const path = await ensureModelDestinationPath();
 				const isValid = await isModelValid(path);
 
+				// If the model doesn't exist at the expected path, it's not downloaded
 				if (!isValid) {
 					modelState = { type: 'not-downloaded' };
 					return;
 				}
 
-				// Check if this model is active in settings
+				// Model exists at expected path, now check if it's the currently selected model
 				const settingsKey = `transcription.${model.engine}.modelPath` as const;
 				const currentPath = settings.value[settingsKey];
-				const isActive = currentPath === path;
+				
+				// Only consider active if:
+				// 1. Settings path is not empty
+				// 2. Settings path exactly matches this model's expected path
+				// 3. The file at the settings path actually exists (additional safety check)
+				let isActive = false;
+				if (currentPath && currentPath === path) {
+					// Double-check that the file at the settings path actually exists
+					const settingsPathExists = await isModelValid(currentPath);
+					isActive = settingsPathExists;
+				}
 
 				modelState = isActive ? { type: 'active' } : { type: 'ready' };
 			},
