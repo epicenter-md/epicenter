@@ -11,8 +11,13 @@
  */
 
 import type { InferInsertModel } from 'drizzle-orm';
-import { sql } from 'drizzle-orm';
-import type { SQLiteTable } from 'drizzle-orm/sqlite-core';
+import { eq, sql } from 'drizzle-orm';
+import {
+	integer,
+	type SQLiteTable,
+	sqliteTable,
+	text,
+} from 'drizzle-orm/sqlite-core';
 import type { DrizzleDb } from './db';
 
 /** Drizzle migration journal entry (parsed from meta/_journal.json by the host). */
@@ -37,7 +42,7 @@ export type MigrationJournal = {
  */
 export type MigrationPlan = {
 	/** Current DB version tag (if known). */
-	from?: string;
+	from: string | undefined;
 	/** Target version tag (must exist in the journal). */
 	to: string;
 	/** Ordered list of tags to apply to reach the target. */
@@ -56,18 +61,16 @@ export function planToVersion(
 	const order = new Map(journal.entries.map((e, i) => [e.tag, i] as const));
 
 	const targetIdx = order.get(targetTag);
-	if (targetIdx == null) {
+	if (targetIdx === undefined)
 		throw new Error(`Target migration tag not found in journal: ${targetTag}`);
-	}
 
 	const currentIdx = currentTag != null ? (order.get(currentTag) ?? -1) : -1;
 
-	if (currentIdx > targetIdx) {
-		// Downgrade paths are not supported by this planner; hosts can implement if needed.
+	// Downgrade paths are not supported by this planner; hosts can implement if needed.
+	if (currentIdx > targetIdx)
 		throw new Error(
 			`Current tag (${currentTag}) is ahead of target tag (${targetTag}); downgrades are not supported in core planner.`,
 		);
-	}
 
 	const forward = journal.entries
 		.slice(currentIdx + 1, targetIdx + 1)
@@ -461,25 +464,35 @@ export type MigrationExecutor = (
 // ==============================
 
 /** Vault-managed migration tables: SQL schema strings hosts can execute. */
-export const VAULT_MIGRATIONS_SQL = `
+const VAULT_MIGRATIONS_TABLE_NAME = 'vault_migrations';
+const VAULT_MIGRATIONS_SQL = `
 CREATE TABLE IF NOT EXISTS vault_migrations (
   adapter_id TEXT PRIMARY KEY,
   current_tag TEXT NOT NULL,
   updated_at INTEGER NOT NULL
-);
-`;
+);`;
+const VAULT_MIGRATIONS_TABLE = sqliteTable(VAULT_MIGRATIONS_TABLE_NAME, {
+	adapter_id: text('adapter_id').primaryKey(),
+	current_tag: text('current_tag').notNull(),
+	updated_at: integer('updated_at').notNull(),
+});
 
-export const VAULT_MIGRATION_JOURNAL_SQL = `
+const VAULT_MIGRATION_JOURNAL_TABLE_NAME = 'vault_migration_journal';
+const VAULT_MIGRATION_JOURNAL_SQL = `
 CREATE TABLE IF NOT EXISTS vault_migration_journal (
   adapter_id TEXT NOT NULL,
   tag TEXT NOT NULL,
   applied_at INTEGER NOT NULL,
   PRIMARY KEY (adapter_id, tag)
+);`;
+const VAULT_MIGRATION_JOURNAL_TABLE = sqliteTable(
+	VAULT_MIGRATION_JOURNAL_TABLE_NAME,
+	{
+		adapter_id: text('adapter_id').notNull(),
+		tag: text('tag').notNull(),
+		applied_at: integer('applied_at').notNull(),
+	},
 );
-`;
-
-const VAULT_MIGRATIONS_TABLE = 'vault_migrations';
-const VAULT_MIGRATION_JOURNAL_TABLE = 'vault_migration_journal';
 
 export async function ensureVaultLedgerTables(db: DrizzleDb): Promise<void> {
 	await db.run(sql.raw(VAULT_MIGRATIONS_SQL));
@@ -491,9 +504,16 @@ export async function getVaultLedgerTag(
 	adapterId: string,
 ): Promise<string | undefined> {
 	await ensureVaultLedgerTables(db);
-	const row = await db.get<{ current_tag: string | null }>(
-		sql`SELECT current_tag FROM ${sql.raw(VAULT_MIGRATIONS_TABLE)} WHERE adapter_id = ${adapterId}`,
-	);
+	// const row = await db.get<{ current_tag: string | null }>(
+	// 	sql`SELECT current_tag FROM ${sql.raw(VAULT_MIGRATIONS_TABLE_NAME)} WHERE adapter_id = ${adapterId}`,
+	// );
+	const row = await db
+		.select()
+		.from(VAULT_MIGRATIONS_TABLE)
+		.where(eq(VAULT_MIGRATIONS_TABLE.adapter_id, adapterId))
+		.limit(1)
+		.get();
+
 	return row?.current_tag ?? undefined;
 }
 
@@ -504,11 +524,19 @@ async function setVaultLedgerTag(
 ): Promise<void> {
 	await ensureVaultLedgerTables(db);
 	const timestamp = Date.now();
-	await db.run(
-		sql`INSERT INTO ${sql.raw(VAULT_MIGRATIONS_TABLE)} (adapter_id, current_tag, updated_at)
-VALUES (${adapterId}, ${tag}, ${timestamp})
-ON CONFLICT(adapter_id) DO UPDATE SET current_tag = excluded.current_tag, updated_at = excluded.updated_at`,
-	);
+
+	// Upsert semantics: update existing row or insert a new one
+	await db
+		.insert(VAULT_MIGRATIONS_TABLE)
+		.values({
+			adapter_id: adapterId,
+			current_tag: tag,
+			updated_at: timestamp,
+		})
+		.onConflictDoUpdate({
+			target: VAULT_MIGRATIONS_TABLE.adapter_id,
+			set: { current_tag: tag, updated_at: timestamp },
+		});
 }
 
 async function appendVaultLedgerJournal(
@@ -518,37 +546,23 @@ async function appendVaultLedgerJournal(
 ): Promise<void> {
 	await ensureVaultLedgerTables(db);
 	const timestamp = Date.now();
-	await db.run(
-		sql`INSERT INTO ${sql.raw(VAULT_MIGRATION_JOURNAL_TABLE)} (adapter_id, tag, applied_at)
-VALUES (${adapterId}, ${tag}, ${timestamp})
-ON CONFLICT(adapter_id, tag) DO NOTHING`,
-	);
+	await db
+		.insert(VAULT_MIGRATION_JOURNAL_TABLE)
+		.values({
+			adapter_id: adapterId,
+			tag,
+			applied_at: timestamp,
+		})
+		.onConflictDoNothing();
 }
 
 /** Build a pseudo-journal from a versions tuple to reuse planToVersion. */
 export function buildJournalFromVersions<
-	TVersions extends readonly VersionDef<Tag4>[],
+	TVersions extends readonly VersionDef<string>[],
 >(versions: TVersions): MigrationJournal {
 	return {
 		entries: versions.map((v) => ({ tag: v.tag })),
 	};
-}
-
-/** Split a monolithic SQL string into executable statements. */
-function splitSqlText(text: string): string[] {
-	// Prefer explicit drizzle 'statement-breakpoint' markers if present
-	if (text.includes('--> statement-breakpoint')) {
-		return text
-			.split(/-->\s*statement-breakpoint\s*/g)
-			.map((s) => s.trim())
-			.filter((s) => s.length > 0);
-	}
-	// Fallback: split on semicolons at end of statements
-	return text
-		.split(/;\s*(?:\r?\n|$)/g)
-		.map((s) => s.trim())
-		.filter((s) => s.length > 0)
-		.map((s) => (s.endsWith(';') ? s : `${s};`));
 }
 
 /**
@@ -556,11 +570,16 @@ function splitSqlText(text: string): string[] {
  * Forward-only: computes steps from the ledger's current tag to the latest version.
  */
 export async function runStartupSqlMigrations<
-	TId extends string,
-	TVersions extends readonly VersionDef<Tag4>[],
+	TID extends string,
+	/*
+		`defineAdapter` discriminates tags, `Adapter` doesn't, so we don't want to constrain TVersions.
+		Besides, we perform a runtime check on versions, so that is sufficient.
+	*/
+	// TVersions extends readonly VersionDef<Tag4>[],
 >(
-	adapterId: TId,
-	versions: TVersions,
+	adapterId: TID,
+	// versions: TVersions,
+	versions: readonly VersionDef<string>[],
 	db: DrizzleDb,
 	reporter?: ProgressReporter,
 ): Promise<{ applied: string[] }> {
@@ -572,18 +591,22 @@ export async function runStartupSqlMigrations<
 
 	const target = getLatestTag(versions);
 	const current = await getVaultLedgerTag(db, adapterId);
+
 	const plan = planToVersion(
 		buildJournalFromVersions(versions),
 		current,
 		target,
 	);
 
-	reporter?.onStart({ type: 'start', totalSteps: plan.tags.length });
+	const r = reporter;
+	r?.onStart({ type: 'start', totalSteps: plan.tags.length });
 
 	const applied: string[] = [];
 
 	for (let i = 0; i < plan.tags.length; i++) {
 		const tag = plan.tags[i];
+		if (!tag) throw new Error(`Invalid tag at plan index ${i}`);
+
 		const ve = versions.find((v) => v.tag === tag);
 		if (!ve) {
 			const error = new Error(`Version entry not found for tag ${tag}`);
@@ -591,10 +614,10 @@ export async function runStartupSqlMigrations<
 			throw error;
 		}
 
-		const statements = ve.sql.flatMap((chunk) => splitSqlText(chunk));
+		const statements = ve.sql;
 
 		if (statements.length === 0) {
-			reporter?.onStep({
+			r?.onStep({
 				type: 'step',
 				index: i,
 				tag,
@@ -603,14 +626,22 @@ export async function runStartupSqlMigrations<
 			});
 		} else {
 			for (const [idx, statement] of statements.entries()) {
-				reporter?.onStep({
+				const preview = statement.replace(/\s+/g, ' ').slice(0, 120);
+				r?.onStep({
 					type: 'step',
 					index: i,
 					tag,
 					progress: (idx + 1) / statements.length,
-					message: `Applying statement ${idx + 1} of ${statements.length}`,
+					message: `Applying statement ${idx + 1}/${statements.length}: ${preview}...`,
 				});
-				await db.run(sql.raw(statement));
+
+				try {
+					await db.run(sql.raw(statement));
+				} catch (e) {
+					// Hard failure: bubble up with detailed error
+					r?.onError({ type: 'error', error: e });
+					throw e;
+				}
 			}
 		}
 
@@ -619,7 +650,7 @@ export async function runStartupSqlMigrations<
 		applied.push(tag);
 	}
 
-	reporter?.onComplete({ type: 'complete' });
+	r?.onComplete({ type: 'complete' });
 
 	return { applied };
 }
@@ -675,8 +706,13 @@ export function computeForwardTagsFromVersions<
 	sourceTag: string | undefined,
 	targetTag: string,
 ): string[] {
+	// If no sourceTag (no metadata provided), treat the baseline (first version)
+	// as the current tag so we do NOT require a transform for '0000'.
+	const baseline = versions.length > 0 ? versions[0]?.tag : undefined;
+	const current = sourceTag ?? baseline;
+
 	const j = buildJournalFromVersions(versions);
-	return planToVersion(j, sourceTag, targetTag).tags;
+	return planToVersion(j, current, targetTag).tags;
 }
 
 /**
@@ -684,8 +720,8 @@ export function computeForwardTagsFromVersions<
  * The registry must contain a transform for each target tag in the forward plan.
  */
 export async function runDataTransformChain<
-	TID extends string,
-	TVersions extends readonly VersionDef<Tag4>[],
+	TTags extends Tag4,
+	TVersions extends readonly VersionDef<TTags>[],
 	TSchema extends Record<string, SQLiteTable>,
 >(
 	versions: TVersions,
@@ -718,6 +754,8 @@ export async function runDataTransformChain<
 	type RequiredTags = RequiredTransformTags<TVersions>;
 	for (let i = 0; i < plannedTags.length; i++) {
 		const toTag = plannedTags[i];
+		if (!toTag) throw new Error(`Invalid planned tag at index ${i}`);
+
 		const fn = registry[toTag as RequiredTags];
 		if (!fn) {
 			const err = new Error(`Missing transform for target tag ${toTag}`);
@@ -728,6 +766,13 @@ export async function runDataTransformChain<
 			i === 0
 				? (sourceTag ?? previousTagByTarget.get(toTag))
 				: plannedTags[i - 1];
+		if (!fromTag)
+			throw new Error(`Cannot determine fromTag for target tag ${toTag}`);
+		if (!sourceTag)
+			throw new Error(
+				`Transform chain mismatch: expected fromTag ${fromTag} to match sourceTag ${sourceTag}`,
+			);
+
 		acc = await fn(acc, {
 			toTag,
 			fromTag,
@@ -752,40 +797,44 @@ export async function runDataTransformChain<
 	return acc;
 }
 
-function getLatestTag<TVersions extends readonly VersionDef<Tag4>[]>(
+function getLatestTag<TVersions extends readonly VersionDef<string>[]>(
 	versions: TVersions,
 ): TVersions[number]['tag'] {
-	return versions
+	// Return the numerically greatest tag (e.g., '0003' over '0002'/'0000')
+	const sorted = versions
 		.map((v) => [v.tag, Number.parseInt(v.tag, 10)] as const)
-		.sort((a, b) => a[1] - b[1])[0][0];
+		.sort((a, b) => a[1] - b[1]);
+	const result = sorted[sorted.length - 1]?.[0];
+	if (!result)
+		throw new Error('Cannot determine latest tag from versions tuple');
+
+	return result;
 }
 
 // ==============================
 // Version tuple type-safety helpers (authoring-time)
 // ==============================
 
-/** Single decimal digit literal. */
-export type Digit = '0' | '1' | '2' | '3' | '4' | '5' | '6' | '7' | '8' | '9';
+type Digit = '0' | '1' | '2' | '3' | '4' | '5' | '6' | '7' | '8' | '9';
 
 /** Four-digit tag, e.g. '0000', '0001'. */
 export type Tag4 = `${Digit}${Digit}${Digit}${Digit}`;
 
-/** Version definition for adapter-managed migrations (stricter than runtime). */
-export type VersionDef<TTag extends Tag4> = {
+/**
+ * Version definition for adapter-managed migrations (stricter than runtime).
+ *
+ * We aren't using Tag4 here. This is because `Adapter` itself doesn't discriminate,
+ * or else it would cause headaches for anything that uses `Adapter` generically.
+ * `defineAdapter` serves as the dev-time assertion for adapter authors.
+ */
+export type VersionDef<TTag extends string> = {
 	/** Four-digit version tag (e.g., '0001'). Must be unique within the tuple. */
 	tag: TTag;
 	/** Inline array of statements (preferred for environment-agnostic bundles) */
 	sql: string[];
 };
 
-/** Tuple utilities */
-type LastOfTuple<T extends readonly unknown[]> = T extends readonly [
-	...infer _,
-	infer L,
-]
-	? L
-	: never;
-
+/* Tuple utilities */
 type FirstOfTuple<T extends readonly unknown[]> = T extends readonly [
 	infer F,
 	...unknown[],
@@ -794,19 +843,19 @@ type FirstOfTuple<T extends readonly unknown[]> = T extends readonly [
 	: never;
 
 /** Extract the union of tags from a version tuple. */
-export type VersionTags<TVersions extends readonly VersionDef<Tag4>[]> =
+export type VersionTags<TVersions extends readonly VersionDef<string>[]> =
 	TVersions[number]['tag'];
 
 /** First tag from versions tuple. */
-export type FirstTag<TVersions extends readonly VersionDef<Tag4>[]> =
-	FirstOfTuple<TVersions> extends VersionDef<Tag4>
+export type FirstTag<TVersions extends readonly VersionDef<string>[]> =
+	FirstOfTuple<TVersions> extends VersionDef<string>
 		? FirstOfTuple<TVersions>['tag']
 		: never;
 
 /** Tag tuple derived from a VersionDef tuple. */
-export type VersionTagTuple<TVersions extends readonly VersionDef<Tag4>[]> = {
+export type VersionTagTuple<TVersions extends readonly VersionDef<string>[]> = {
 	[K in keyof TVersions]: TVersions[K] extends VersionDef<
-		infer TTag extends Tag4
+		infer TTag extends string
 	>
 		? TTag
 		: never;
@@ -814,11 +863,11 @@ export type VersionTagTuple<TVersions extends readonly VersionDef<Tag4>[]> = {
 
 /** Tuple of required forward transform tags (all tags except the first/baseline). */
 export type RequiredTransformTagTuple<
-	TVersions extends readonly VersionDef<Tag4>[],
-> = TVersions extends readonly [VersionDef<Tag4>, ...infer Rest]
-	? Rest extends readonly VersionDef<Tag4>[]
+	TVersions extends readonly VersionDef<string>[],
+> = TVersions extends readonly [VersionDef<string>, ...infer Rest]
+	? Rest extends readonly VersionDef<string>[]
 		? {
-				[K in keyof Rest]: Rest[K] extends VersionDef<infer Tag extends Tag4>
+				[K in keyof Rest]: Rest[K] extends VersionDef<infer Tag extends string>
 					? Tag
 					: never;
 			}
@@ -830,7 +879,7 @@ export type RequiredTransformTagTuple<
  * all version tags except the first (baseline).
  */
 export type RequiredTransformTags<
-	TVersions extends readonly VersionDef<Tag4>[],
+	TVersions extends readonly VersionDef<string>[],
 > = RequiredTransformTagTuple<TVersions>[number];
 
 /**
@@ -859,7 +908,6 @@ export type DataValidator = (value: unknown) => unknown | Promise<unknown>;
 
 /** Run chain then validate; returns morphed/validated data if no exception is thrown. */
 export async function transformAndValidate<
-	TID extends string,
 	TVersions extends readonly VersionDef<Tag4>[],
 	TSchema extends Record<string, SQLiteTable>,
 >(

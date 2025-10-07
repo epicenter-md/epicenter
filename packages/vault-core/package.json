@@ -5,10 +5,12 @@
 	"type": "module",
 	"exports": {
 		".": "./src/index.ts",
+		"./codecs": "./src/codecs/index.ts",
 		"./adapters/*": "./src/adapters/*/index.ts",
 		"./utils/*": "./src/utils/*/index.ts"
 	},
 	"devDependencies": {
+		"tsx": "^4.20.6",
 		"typescript": "catalog:"
 	},
 	"scripts": {

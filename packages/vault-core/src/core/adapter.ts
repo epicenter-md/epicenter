@@ -7,9 +7,9 @@ import type {
 import type { CompatibleDB } from './db';
 import type { Ingestor } from './ingestor';
 import type {
+	DataTransform,
 	RequiredTransformTags,
 	Tag4,
-	TransformRegistry,
 	VersionDef,
 } from './migrations';
 
@@ -51,7 +51,57 @@ type NullToUndefined<T> = {
 			: Exclude<T[K], null> | ([null] extends [T[K]] ? undefined : never);
 };
 
-/** Translate schema to object, strip prefix of table names */
+type Simplify<T> = { [K in keyof T]: T[K] } & {};
+
+type ColumnHasDefaultValue<TColumn> = TColumn extends {
+	_: {
+		hasDefault: infer HasDefault;
+		hasRuntimeDefault: infer HasRuntimeDefault;
+		isAutoincrement: infer IsAutoincrement;
+	};
+}
+	? HasDefault extends true
+		? true
+		: HasRuntimeDefault extends true
+			? true
+			: IsAutoincrement extends true
+				? true
+				: false
+	: false;
+
+type ColumnKeys<TTable extends SQLiteTable> = Extract<
+	keyof TTable['_']['columns'],
+	string
+>;
+
+type ColumnsWithDefaults<TTable extends SQLiteTable> = {
+	[K in ColumnKeys<TTable>]: ColumnHasDefaultValue<
+		TTable['_']['columns'][K]
+	> extends true
+		? K
+		: never;
+}[ColumnKeys<TTable>];
+
+type ApplyDefaultableColumns<
+	TTable extends SQLiteTable,
+	TRow extends Record<string, unknown>,
+> = Simplify<
+	Omit<TRow, Extract<ColumnsWithDefaults<TTable>, keyof TRow>> & {
+		[K in Extract<ColumnsWithDefaults<TTable>, keyof TRow>]?:
+			| TRow[K]
+			| undefined;
+	}
+>;
+
+// Allow server generated columns (defaults, runtime defaults, autoincrement IDs) to be omitted in validator payloads.
+type TableRowShape<TTable extends SQLiteTable> = NullToUndefined<
+	InferSelectModel<TTable>
+> extends infer Row
+	? Row extends Record<string, unknown>
+		? ApplyDefaultableColumns<TTable, Row>
+		: Row
+	: never;
+
 /**
  * Map a prefixed schema record to an object whose keys are the table names with the
  * adapter prefix removed and whose values are arrays of the inferred row type.
@@ -66,7 +116,13 @@ export type SchemaMappedToObject<
 > = {
 	[K in keyof TObj as K extends `${TID}_${infer Rest}`
 		? Rest
-		: K]: NullToUndefined<InferSelectModel<TObj[K]>>[];
+		: K]: TableRowShape<TObj[K]>[];
+};
+
+type TransformAlignment<TVersions extends readonly VersionDef<Tag4>[]> = {
+	[K in RequiredTransformTags<TVersions>]: DataTransform;
+} & {
+	[K in Exclude<Tag4, RequiredTransformTags<TVersions>>]?: never;
 };
 
 /**
@@ -79,7 +135,8 @@ export interface Adapter<
 		string,
 		SQLiteTable
 	>,
-	TVersions extends readonly VersionDef<Tag4>[] = readonly VersionDef<Tag4>[],
+	TVersions extends
+		readonly VersionDef<string>[] = readonly VersionDef<string>[],
 	TPreparsed = unknown,
 	TParsed = unknown,
 > {
@@ -124,10 +181,10 @@ export interface Adapter<
 	versions: TVersions;
 
 	/**
-	 * Transform registry; when provided with 'versions', tag alignment is
-	 * enforced at compile time and verified at runtime.
+	 * Transform registry for forward data migrations. Alignment with versions is enforced
+	 * when adapters are authored through `defineAdapter`.
 	 */
-	transforms: TransformRegistry<RequiredTransformTags<TVersions>>;
+	transforms: Partial<Record<Tag4, DataTransform>>;
 }
 
 /**
@@ -160,20 +217,30 @@ export function defineAdapter<
 export function defineAdapter<F extends (...args: unknown[]) => unknown>(
 	adapter: F,
 ): F {
-	return adapter;
+	const wrapped = ((...args: Parameters<F>) => {
+		const instance = adapter(...args);
+		validateTransformsAgainstVersions(instance as Adapter);
+		return instance;
+	}) as unknown as F;
+	return wrapped;
 }
 
 /**
  * Compile-time detection of whether a table has a primary key.
- * Produces the table name union if any table is missing a primary key; else never.
+ * Looks for any column with an internal `_.isPrimaryKey === true` flag.
+ * Produces `true` when at least one PK column exists; otherwise `false`.
  */
-type TableHasPrimaryKey<TColumns> = {
-	[K in keyof TColumns]: TColumns[K] extends { _: { isPrimaryKey: true } }
-		? K
-		: never;
-}[keyof TColumns] extends never
-	? false
-	: true;
+type TableHasPrimaryKey<TTable> = TTable extends {
+	_: { columns: infer TCols extends Record<string, unknown> };
+}
+	? {
+			[K in keyof TCols]: TCols[K] extends { _: { isPrimaryKey: true } }
+				? K
+				: never;
+		}[keyof TCols] extends never
+		? false
+		: true
+	: false;
 type EnsureSchemaHasPrimaryKeys<S extends Record<string, SQLiteTable>> = {
 	[K in keyof S]: TableHasPrimaryKey<S[K]> extends false ? never : K & string;
 }[keyof S];
@@ -189,10 +256,9 @@ type PrefixedAdapter<
 	TVersions extends readonly VersionDef<Tag4>[],
 	TPreparsed,
 	TParsed,
-> = Adapter<TID, KeysOf<Schema>, Schema, TVersions, TPreparsed, TParsed> &
-	// If any table names are NOT prefixed with `${TID}_`, attach an impossible property
-	// so TS surfaces a clear, actionable error including the offending keys.
-	(MissingPrefixedTables<TID, Schema> extends never
+> = Adapter<TID, KeysOf<Schema>, Schema, TVersions, TPreparsed, TParsed> & {
+	transforms: TransformAlignment<TVersions>;
+} & (MissingPrefixedTables<TID, Schema> extends never // so TS surfaces a clear, actionable error including the offending keys. // If any table names are NOT prefixed with `${TID}_`, attach an impossible property
 		? unknown
 		: {
 				__error__schema_table_prefix_mismatch__: `Expected all tables to start with "${TID}_"`;
@@ -247,3 +313,24 @@ type NoDuplicateAdapter<
  */
 export type UniqueAdapters<T extends readonly Adapter[]> =
 	NoDuplicateAdapter<T> extends never ? T : never;
+
+function validateTransformsAgainstVersions(adapter: Adapter) {
+	const versions = adapter.versions ?? [];
+	if (!versions.length) return;
+
+	const declaredTags = versions.map((v) => v.tag);
+	const required = declaredTags.slice(1);
+	const transforms = adapter.transforms ?? {};
+	const actual = Object.keys(transforms);
+
+	const missing = required.filter((tag) => !actual.includes(tag));
+	const extras = actual.filter((tag) => !required.includes(tag));
+
+	if (missing.length > 0 || extras.length > 0) {
+		throw new Error(
+			`defineAdapter: adapter '${adapter.id}' transforms do not match versions. ` +
+				`required=[${required.join(',')}] actual=[${actual.join(',')}] ` +
+				`missing=[${missing.join(',')}] extras=[${extras.join(',')}]`,
+		);
+	}
+}

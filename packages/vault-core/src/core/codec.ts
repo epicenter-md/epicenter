@@ -21,10 +21,6 @@ export interface Codec<TID extends string, TExt extends string> {
 	 * frontmatter); others may serialize it as a normal field.
 	 */
 	stringify(rec: Record<string, unknown>): string;
-	/** Optional value normalization before writing (e.g., Date -> ISO string) */
-	normalize?(value: unknown, columnName: string): unknown;
-	/** Optional value denormalization after reading (e.g., ISO string -> Date) */
-	denormalize?(value: unknown, columnName: string): unknown;
 }
 
 // Runtime view of a Drizzle table
@@ -57,7 +53,7 @@ export function listPrimaryKeys(tableName: string, table: SQLiteTable) {
 	const pkCols = [];
 	for (const col of cols) {
 		const [, drizzleCol] = col;
-		if (drizzleCol._.isPrimaryKey) pkCols.push(col);
+		if (drizzleCol.primary) pkCols.push(col);
 	}
 
 	if (pkCols.length === 0)

@@ -9,6 +9,7 @@
  * Host tooling can read this file to pre-populate “source version” selectors, drive
  * transform planning, or display drift warnings (ledger vs. declared versions).
  */
+import { jsonFormat } from '../../codecs';
 import type { Adapter } from '../adapter';
 import type { DrizzleDb } from '../db';
 import { ensureVaultLedgerTables, getVaultLedgerTag } from '../migrations';
@@ -26,7 +27,7 @@ export type MigrationMetadata = {
 	ledgerTag: string | null;
 	latestDeclaredTag: string | null;
 	versions: string[];
-	exportedAt: string;
+	exportedAt: Date;
 };
 
 /**
@@ -72,7 +73,7 @@ export async function createMigrationMetadata(
 		ledgerTag: ledgerTag ?? null,
 		latestDeclaredTag: latestDeclaredTag ?? null,
 		versions: declaredTags,
-		exportedAt: clock().toISOString(),
+		exportedAt: clock(),
 	};
 }
 
@@ -87,7 +88,8 @@ export async function createMigrationMetadataFile(
 ): Promise<{ path: string; file: File; metadata: MigrationMetadata }> {
 	const metadata = await createMigrationMetadata(adapter, db, clock);
 	const file = new File(
-		[JSON.stringify(metadata, null, 4)],
+		// We'll use JSON codec here so that date serialization is consistent
+		[jsonFormat.stringify(metadata)],
 		MIGRATION_META_FILENAME,
 		{ type: 'application/json' },
 	);
