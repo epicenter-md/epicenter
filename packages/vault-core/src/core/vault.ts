@@ -1,3 +1,4 @@
+import { createSelectSchema } from 'drizzle-arktype';
 import type { Adapter, UniqueAdapters } from './adapter';
 import {
 	defaultConvention,
@@ -33,8 +34,11 @@ export function createVault<TAdapters extends readonly Adapter[]>(
 ): Vault<TAdapters> {
 	const db = options.database;
 
+	// Early validation: enforce adapter transform keys exactly match required version tags
+	ensureNoDuplicateAdapterIds(options.adapters);
+
 	// Ensure migrations have been applied before we touch adapter tables.
-	async function ensureMigrationsUpToDate(adapter: Adapter) {
+	async function ensureMigrationsUpToDate(adapter: Adapter, _ctx: string) {
 		const versions = adapter.versions;
 		if (!versions || versions.length === 0) return;
 		await runStartupSqlMigrations(adapter.id, versions, db);
@@ -52,13 +56,14 @@ export function createVault<TAdapters extends readonly Adapter[]>(
 			);
 
 		const result = await validator['~standard'].validate(value);
-		if (result.issues)
+		if (result.issues) {
 			throw new Error(
 				`importData: validation failed for adapter '${adapter.id}': ${result.issues
-					.map((i) => `${i.path ?? ''} ${i.message ?? ''}`.trim())
+					.map((i) => i.message.trim())
 					.join('; ')}`,
 			);
-		return (result as unknown as { value?: unknown }).value ?? value;
+		}
+		return 'value' in result ? result.value : value;
 	}
 
 	/**
@@ -79,6 +84,67 @@ export function createVault<TAdapters extends readonly Adapter[]>(
 	}
 
 	/**
+	 * Build a drizzle-arktype based dataset validator for a given adapter's schema.
+	 * Validates the de-prefixed dataset shape: { [unprefixedTable]: Row[] }.
+	 * Throws with aggregated messages on any row failure and returns morphed rows when available.
+	 */
+	async function createDrizzleArkTypeValidator(adapter: Adapter) {
+		// Precompute per-table select schemas indexed by unprefixed table key
+		const schemas = new Map<string, ReturnType<typeof createSelectSchema>>();
+		for (const [tableName, table] of listTables(adapter.schema)) {
+			// Expect tableName like "<adapterId>_<unprefixed>"; strip "<adapterId>_"
+			const unprefixed = tableName.startsWith(`${adapter.id}_`)
+				? tableName.slice(adapter.id.length + 1)
+				: tableName;
+			const t = createSelectSchema(table);
+			schemas.set(unprefixed, t);
+		}
+
+		return async (value: unknown) => {
+			const ds = (value ?? {}) as Record<string, unknown[]>;
+			const issues: string[] = [];
+			const out: Record<string, unknown[]> = {};
+
+			for (const [key, rows] of Object.entries(ds)) {
+				const typeForTable = schemas.get(key);
+				if (!typeForTable) {
+					issues.push(
+						`unknown table '${key}' for adapter '${adapter.id}' (no schema found)`,
+					);
+					continue;
+				}
+				const validator = typeForTable['~standard'];
+				if (!Array.isArray(rows)) {
+					issues.push(`table '${key}' expected an array`);
+					continue;
+				}
+				const nextRows: unknown[] = [];
+				for (let i = 0; i < rows.length; i++) {
+					const row = rows[i];
+					const res = await validator.validate(row);
+					if (res.issues) {
+						const msgs = res.issues
+							.map((m: { message: string }) => m.message.trim())
+							.join('; ');
+						issues.push(`${key}[${i}]: ${msgs}`);
+					} else {
+						const v = res.value ?? row;
+						nextRows.push(v);
+					}
+				}
+				out[key] = nextRows;
+			}
+
+			if (issues.length) {
+				throw new Error(
+					`importData: drizzle-arktype validation failed for adapter '${adapter.id}': ${issues.join('; ')}`,
+				);
+			}
+			return out;
+		};
+	}
+
+	/**
 	 * Drop all rows from a table by name, then insert all provided rows.
 	 * @throws if table not found in adapter schema
 	 */
@@ -88,11 +154,22 @@ export function createVault<TAdapters extends readonly Adapter[]>(
 	) {
 		const { schema } = adapter;
 		for (const [tableName, rows] of Object.entries(dataset)) {
-			const table = schema[tableName as keyof typeof schema];
-			if (!table)
+			// Try direct lookup first (for prefixed keys like 'test_items')
+			let table = schema[tableName as keyof typeof schema];
+
+			// If not found, try adding adapter prefix (for unprefixed keys like 'items')
+			if (!table) {
+				const prefixedName = `${adapter.id}_${tableName}`;
+				table = schema[prefixedName as keyof typeof schema];
+			}
+
+			// If still not found, throw with helpful error
+			if (!table) {
+				const prefixedName = `${adapter.id}_${tableName}`;
 				throw new Error(
-					`replaceAdapterTables: unknown table ${tableName} for adapter '${adapter.id}'`,
+					`replaceAdapterTables: unknown table '${tableName}' for adapter '${adapter.id}'. Tried '${tableName}' and '${prefixedName}'`,
 				);
+			}
 
 			await db.delete(table);
 			for (const row of rows) {
@@ -119,7 +196,7 @@ export function createVault<TAdapters extends readonly Adapter[]>(
 
 			// Iterate over each adapter
 			for (const adapter of adapters) {
-				await ensureMigrationsUpToDate(adapter);
+				await ensureMigrationsUpToDate(adapter, 'exportData');
 				const { schema } = adapter;
 				const adapterId = adapter.id;
 
@@ -136,8 +213,7 @@ export function createVault<TAdapters extends readonly Adapter[]>(
 						const rec: Record<string, unknown> = {};
 						for (const [k, v] of Object.entries(row)) {
 							if (!tableCols.has(k)) continue;
-							if (v === undefined || v === null) continue;
-							rec[k] = codec.normalize ? codec.normalize(v, k) : v;
+							rec[k] = v;
 						}
 
 						// Compute path using PK values
@@ -162,108 +238,134 @@ export function createVault<TAdapters extends readonly Adapter[]>(
 
 			return files;
 		},
-		async importData(opts: ImportOptions<TAdapters>) {
-			const { adapterID, files, codec } = opts;
-			const adapter = options.adapters.find((a) => a.id === adapterID);
-			if (!adapter)
-				throw new Error(`importData: unknown adapter ID '${adapterID}'`);
+		async importData(opts: ImportOptions) {
+			const { files, codec } = opts;
 
-			await ensureMigrationsUpToDate(adapter);
+			// Group files by detected adapter id and collect per-adapter detected tags from metadata
+			type Group = { files: Array<[string, File]>; detectedTag?: string };
+			const groups = new Map<string, Group>();
 
-			const { schema, id: adapterId } = adapter;
-			// Build one huge object with all data, run validator, then upsert in one call
-
-			// Collect rows per dataset key for a single upsert call
-			const dataset: Record<string, unknown[]> = {};
-			let detectedTag: string | undefined;
+			const knownAdapterIds = new Set(options.adapters.map((a) => a.id));
 
 			for (const [path, input] of files) {
-				const text = await input.text();
-
 				const parts = path.split('/').filter((segment) => segment.length > 0);
-				const metaIndex = parts.indexOf(MIGRATION_META_DIR);
-				// TODO clean this up
-				if (metaIndex !== -1) {
+
+				// Locate any known adapter id segment in the path
+				const adapterIndex = parts.findIndex((p) => knownAdapterIds.has(p));
+				if (adapterIndex === -1) continue; // can't determine adapter; skip
+
+				const adapterIdFromPath = parts[adapterIndex];
+				if (!adapterIdFromPath)
+					throw new Error('unable to determine adapter ID from path');
+
+				// Migration metadata handling; associate detected tag with this adapter group
+				if (parts.includes(MIGRATION_META_DIR)) {
 					try {
-						const parsed = codec.parse(text) as { tag?: string };
-						if (typeof parsed?.tag === 'string') detectedTag = parsed.tag;
+						const text = await input.text();
+						const parsed = codec.parse(text);
+						if (typeof parsed.tag === 'string') {
+							const group = groups.get(adapterIdFromPath) ?? { files: [] };
+							group.detectedTag = parsed.tag;
+							groups.set(adapterIdFromPath, group);
+						}
 					} catch {
 						// ignore malformed metadata
 					}
 					continue;
 				}
 
-				if (parts.length < 2) continue; // No nested paths supported
-
-				const tableName = parts[0];
-
-				// Check that file extension matches codec
-				const file = parts.slice(1).join('/');
-				const dot = file.indexOf('.');
-				if (dot < 0)
-					throw new Error(`importData: file ${path} has no extension`);
-				const ext = file.slice(dot + 1);
-				if (ext !== codec.fileExtension)
-					throw new Error(
-						`importData: file ${path} has wrong extension (expected ${codec.fileExtension})`,
-					);
-
-				// Find matching table in schema
-				const table = schema[tableName as keyof typeof schema];
-				if (!table) throw new Error(`importData: unknown table ${tableName}`);
-
-				// Parse file text into a record
-				const rec = codec.parse(text);
-				const row: Record<string, unknown> = {};
-				const tableCols = new Set(listColumns(table).map(([name]) => name));
-				for (const [k, v] of Object.entries(rec ?? {})) {
-					if (!tableCols.has(k)) continue;
-					row[k] = codec.denormalize ? codec.denormalize(v, k) : v;
-				}
-
-				const key = tableName.slice(adapterId.length + 1);
-
-				// Initialize bucket if needed
-				dataset[key] ??= [];
-
-				const bucket = dataset[key];
-				bucket.push(row);
+				const group = groups.get(adapterIdFromPath) ?? { files: [] };
+				group.files.push([path, input]);
+				groups.set(adapterIdFromPath, group);
 			}
 
-			const pipelineOutput = await runImportPipeline({
-				adapter,
-				dataset,
-				transformsOverride: opts.transforms,
-				versionsOverride: opts.versions,
-				dataValidator: undefined,
-				sourceTag: opts.sourceTag,
-				detectedTag,
-			});
+			// Process each adapter group independently
+			for (const [adapterId, group] of groups) {
+				const adapter = options.adapters.find((a) => a.id === adapterId);
+				if (!adapter) continue; // unknown adapter in bundle; skip
 
-			const schemaValidator = opts.dataValidator;
-			if (!schemaValidator)
-				throw new Error(
-					`importData: dataValidator (drizzle-arktype) is required for adapter '${adapter.id}'`,
-				);
+				await ensureMigrationsUpToDate(adapter, 'importData');
 
-			const validatedDataset = await schemaValidator(pipelineOutput);
-			await replaceAdapterTables(
-				adapter,
-				validatedDataset as Record<string, unknown[]>,
-			);
+				const { schema } = adapter;
+				const dataset: Record<string, unknown[]> = {};
+
+				for (const [path, input] of group.files) {
+					const parts = path.split('/').filter((segment) => segment.length > 0);
+
+					// Recompute indices for this path
+					const aIdx = parts.indexOf(adapterId);
+					if (aIdx === -1) continue;
+					const pathParts = parts.slice(aIdx);
+					if (pathParts.length < 2) continue; // Need adapter/table structure
+
+					const tableName = pathParts[1];
+					if (!tableName)
+						throw new Error(
+							'importData: unable to determine table name from path',
+						);
+
+					// Extension check against codec
+					const dot = path.lastIndexOf('.');
+					if (dot < 0)
+						throw new Error(`importData: file ${path} has no extension`);
+					const ext = path.slice(dot + 1);
+					if (ext !== codec.fileExtension)
+						throw new Error(
+							`importData: file ${path} has wrong extension (expected ${codec.fileExtension})`,
+						);
+
+					// Table lookup
+					const table = schema[tableName as keyof typeof schema];
+					if (!table) throw new Error(`importData: unknown table ${tableName}`);
+
+					// Parse and denormalize row by table columns
+					const text = await input.text();
+					const rec = codec.parse(text);
+					const row: Record<string, unknown> = {};
+					const tableCols = new Set(listColumns(table).map(([name]) => name));
+					for (const [k, v] of Object.entries(rec ?? {})) {
+						if (!tableCols.has(k)) continue;
+						row[k] = v;
+					}
+
+					// Dataset key is unprefixed table name (strip '<adapterId>_')
+					const key = tableName.slice(adapterId.length + 1);
+					dataset[key] ??= [];
+					dataset[key].push(row);
+				}
+
+				// Build required drizzle-arktype validator bound to this adapter's schema
+				const dataValidator = await createDrizzleArkTypeValidator(adapter);
+
+				// Run migrations/transforms pipeline with drizzle-arktype validation (sole validator for import)
+				// We don't want to run the adapter's built-in validator here because it likely won't match the preprocessed shape
+				const validatedDataset = await runImportPipeline({
+					adapter,
+					dataset,
+					transformsOverride: undefined,
+					versionsOverride: undefined,
+					dataValidator,
+					sourceTag: undefined,
+					detectedTag: group.detectedTag,
+				});
+
+				// Replace adapter tables with validated dataset
+				await replaceAdapterTables(adapter, validatedDataset);
+			}
 		},
 		async ingestData(opts: IngestOptions) {
 			const adapter = opts.adapter;
 			const file = opts.file;
 
 			ensureNoDuplicateAdapterIds([adapter]);
-			await ensureMigrationsUpToDate(adapter);
+			await ensureMigrationsUpToDate(adapter, 'ingestData');
 
 			if (!adapter.ingestors || adapter.ingestors.length === 0)
 				throw new Error(
 					`ingestData: adapter '${adapter.id}' has no ingestors configured`,
 				);
 
+			// Catch may be unnecessary, but protects against faulty ingestor implementations
 			const ingestor = adapter.ingestors.find((i) => {
 				try {
 					return i.matches(file);
@@ -271,6 +373,7 @@ export function createVault<TAdapters extends readonly Adapter[]>(
 					return false;
 				}
 			});
+			// If no ingestor matched, throw
 			if (!ingestor)
 				throw new Error(
 					`ingestData: no ingestor matched file '${file.name}' for adapter '${adapter.id}'`,
@@ -280,8 +383,12 @@ export function createVault<TAdapters extends readonly Adapter[]>(
 
 			// Run validation and use morphed value
 			const validated = await runValidation(adapter, dataset);
+
+			// TODO is this necessary or is there a better way?
+			// We might be able to do a runtime-based "on-conflict-replace" insert instead
 			await replaceAdapterTables(
 				adapter,
+				// TODO refine type
 				validated as Record<string, unknown[]>,
 			);
 		},

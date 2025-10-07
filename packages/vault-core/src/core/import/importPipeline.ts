@@ -33,11 +33,11 @@ import { transformAndValidate } from '../migrations';
 export type ImportPipelineInput = {
 	dataset: Record<string, unknown[]>;
 	adapter: Adapter;
-	transformsOverride?: TransformRegistry;
-	versionsOverride?: readonly VersionDef<Tag4>[];
-	dataValidator?: DataValidator;
-	sourceTag?: string;
-	detectedTag?: string;
+	transformsOverride?: TransformRegistry | undefined;
+	versionsOverride?: readonly VersionDef<Tag4>[] | undefined;
+	dataValidator?: DataValidator | undefined;
+	sourceTag?: string | undefined;
+	detectedTag?: string | undefined;
 };
 
 /**
