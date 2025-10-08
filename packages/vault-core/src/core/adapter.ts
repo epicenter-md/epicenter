@@ -196,7 +196,10 @@ export function defineAdapter<
 	TSchema extends Record<string, SQLiteTable>,
 	TVersions extends readonly VersionDef<Tag4>[] = readonly VersionDef<Tag4>[],
 	TPreparsed = unknown,
-	TParsed = SchemaMappedToObject<TID, TSchema>,
+	TParsed extends SchemaMappedToObject<TID, TSchema> = SchemaMappedToObject<
+		TID,
+		TSchema
+	>,
 >(
 	adapter: () => PrefixedAdapter<TID, TSchema, TVersions, TPreparsed, TParsed>,
 ): () => PrefixedAdapter<TID, TSchema, TVersions, TPreparsed, TParsed>;
@@ -205,7 +208,10 @@ export function defineAdapter<
 	TSchema extends Record<string, SQLiteTable>,
 	TPreparsed,
 	TVersions extends readonly VersionDef<Tag4>[],
-	TParsed = SchemaMappedToObject<TID, TSchema>,
+	TParsed extends SchemaMappedToObject<TID, TSchema> = SchemaMappedToObject<
+		TID,
+		TSchema
+	>,
 	TArgs extends unknown[] = [],
 >(
 	adapter: (
