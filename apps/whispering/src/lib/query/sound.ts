@@ -16,7 +16,7 @@ export const sound = {
 		resultMutationFn: async (
 			soundName: WhisperingSoundNames,
 		): Promise<Result<void, PlaySoundServiceError>> => {
-			if (!settings.value[`sound.playOn.${soundName}`]) {
+			if (!(settings.value as any)[`sound.playOn.${soundName}`]) {
 				return Ok(undefined);
 			}
 			return await services.sound.playSound(soundName);

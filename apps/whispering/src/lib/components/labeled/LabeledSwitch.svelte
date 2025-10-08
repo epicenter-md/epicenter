@@ -6,7 +6,8 @@
 	let {
 		id,
 		label,
-		checked = $bindable(),
+		checked = $bindable(false),
+		onCheckedChange,
 		description,
 		disabled = $bindable(),
 	}: {
