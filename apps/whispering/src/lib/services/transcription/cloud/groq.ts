@@ -34,6 +34,7 @@ export function createGroqTranscriptionService() {
 				outputLanguage: Settings['transcription.outputLanguage'];
 				apiKey: string;
 				modelName: (string & {}) | GroqModel['name'];
+				baseURL?: string;
 			},
 		): Promise<Result<string, WhisperingError>> {
 			// Pre-validate API key
@@ -49,7 +50,9 @@ export function createGroqTranscriptionService() {
 				});
 			}
 
+			// Only validate API key format for official Groq endpoint
 			if (
+				!options.baseURL &&
 				!options.apiKey.startsWith('gsk_') &&
 				!options.apiKey.startsWith('xai-')
 			) {
@@ -99,6 +102,7 @@ export function createGroqTranscriptionService() {
 					new Groq({
 						apiKey: options.apiKey,
 						dangerouslyAllowBrowser: true,
+						...(options.baseURL && { baseURL: options.baseURL }),
 					}).audio.transcriptions.create({
 						file,
 						model: options.modelName,
