@@ -15,54 +15,31 @@ const soundSources = {
 	transformationComplete: audioElements.transformationComplete.src,
 } as const;
 
-// AudioContext management
-let audioContext: AudioContext | null = null;
+// Audio buffer cache (keep buffers cached, they're just data)
 const audioBufferCache = new Map<string, AudioBuffer>();
 
-// Get or create a working AudioContext
-function getAudioContext(): AudioContext {
-	// If context doesn't exist or is closed, create a new one
-	if (!audioContext || audioContext.state === 'closed') {
-		console.log('[WebAudio] Creating new AudioContext');
-		audioContext = new AudioContext();
-	}
-	return audioContext;
+// Create a fresh AudioContext (always new, never reuse)
+function createFreshAudioContext(): AudioContext {
+	console.log('[WebAudio] Creating fresh AudioContext');
+	return new AudioContext();
 }
 
-// Ensure AudioContext is in a playable state
-async function ensureAudioContextReady(): Promise<AudioContext> {
-	const context = getAudioContext();
-	
-	// Handle suspended state (common after system sleep or audio routing changes)
-	if (context.state === 'suspended') {
-		console.log('[WebAudio] AudioContext suspended, attempting to resume...');
-		try {
-			await context.resume();
-			console.log('[WebAudio] AudioContext resumed successfully');
-		} catch (error) {
-			console.error('[WebAudio] Failed to resume AudioContext:', error);
-			// If resume fails, create a new context
-			audioContext = new AudioContext();
-			console.log('[WebAudio] Created new AudioContext after resume failure');
-		}
+// Destroy an AudioContext to clean up resources
+async function destroyAudioContext(context: AudioContext): Promise<void> {
+	try {
+		console.log('[WebAudio] Destroying AudioContext');
+		await context.close();
+		console.log('[WebAudio] AudioContext destroyed successfully');
+	} catch (error) {
+		console.error('[WebAudio] Failed to destroy AudioContext:', error);
 	}
-	
-	// Handle running state
-	if (context.state === 'running') {
-		console.log('[WebAudio] AudioContext is ready');
-		return context;
-	}
-	
-	// If we get here, something is wrong - create a new context
-	console.warn('[WebAudio] AudioContext in unexpected state:', context.state);
-	audioContext = new AudioContext();
-	return audioContext;
 }
 
 // Load and decode an audio file
-async function loadAudioBuffer(audioSrc: string): Promise<AudioBuffer> {
+async function loadAudioBuffer(audioSrc: string, context: AudioContext): Promise<AudioBuffer> {
 	// Check cache first
 	if (audioBufferCache.has(audioSrc)) {
+		console.log('[WebAudio] Using cached audio buffer');
 		return audioBufferCache.get(audioSrc)!;
 	}
 
@@ -76,7 +53,6 @@ async function loadAudioBuffer(audioSrc: string): Promise<AudioBuffer> {
 		}
 		
 		const arrayBuffer = await response.arrayBuffer();
-		const context = getAudioContext();
 		const audioBuffer = await context.decodeAudioData(arrayBuffer);
 		
 		// Cache the decoded buffer
@@ -90,32 +66,46 @@ async function loadAudioBuffer(audioSrc: string): Promise<AudioBuffer> {
 	}
 }
 
-// Play a sound using Web Audio API (doesn't register with media controls)
+// Play a sound using Web Audio API with fresh context (create, use, destroy pattern)
 async function playSoundWithWebAudio(audioSrc: string): Promise<void> {
-	console.log('[WebAudio] Playing sound:', audioSrc);
+	console.log('[WebAudio] === Starting fresh audio playback ===');
+	
+	// Step 1: Create a brand new AudioContext
+	const context = createFreshAudioContext();
 	
 	try {
-		// Ensure context is ready
-		const context = await ensureAudioContextReady();
+		// Step 2: Load the audio buffer (uses cache if available)
+		const audioBuffer = await loadAudioBuffer(audioSrc, context);
 		
-		// Load the audio buffer
-		const audioBuffer = await loadAudioBuffer(audioSrc);
-		
-		// Create and play the sound
+		// Step 3: Create and configure the source
 		const source = context.createBufferSource();
 		source.buffer = audioBuffer;
 		source.connect(context.destination);
 		
-		// Add completion handler for the source
-		source.onended = () => {
-			console.log('[WebAudio] Sound playback completed');
-		};
+		// Step 4: Play the sound and wait for it to complete
+		await new Promise<void>((resolve, reject) => {
+			source.onended = () => {
+				console.log('[WebAudio] Sound playback completed');
+				resolve();
+			};
+			
+			source.onerror = (error) => {
+				console.error('[WebAudio] Sound playback error:', error);
+				reject(error);
+			};
+			
+			console.log('[WebAudio] Starting sound playback');
+			source.start();
+		});
 		
-		source.start();
-		console.log('[WebAudio] Sound playback started');
+		// Step 5: Clean up - destroy the AudioContext immediately after playback
+		await destroyAudioContext(context);
+		console.log('[WebAudio] === Fresh audio playback completed and cleaned up ===');
 		
 	} catch (error) {
 		console.error('[WebAudio] Failed to play sound:', error);
+		// Make sure to clean up even on error
+		await destroyAudioContext(context);
 		throw error;
 	}
 }
