@@ -414,6 +414,7 @@ pub async fn transcribe_audio_whisper(
     audio_data: Vec<u8>,
     model_path: String,
     language: Option<String>,
+    model_manager: tauri::State<'_, ModelManager>,
 ) -> Result<String, TranscriptionError> {
     // Convert audio to 16kHz mono format that whisper requires
     let wav_data = convert_audio_for_whisper(audio_data)?;
@@ -426,14 +427,10 @@ pub async fn transcribe_audio_whisper(
         return Ok(String::new());
     }
 
-    // Create Whisper engine using transcribe-rs
-    let mut engine = WhisperEngine::new();
-
-    // Load the model
-    engine.load_model(&PathBuf::from(&model_path))
-        .map_err(|e| TranscriptionError::ModelLoadError {
-            message: format!("Failed to load model: {}", e)
-        })?;
+    // Get or load the model using the persistent model manager
+    let engine_arc = model_manager
+        .get_or_load_whisper(PathBuf::from(&model_path))
+        .map_err(|e| TranscriptionError::ModelLoadError { message: e })?;
 
     // Configure inference parameters
     let mut params = WhisperInferenceParams::default();
@@ -446,14 +443,29 @@ pub async fn transcribe_audio_whisper(
     params.suppress_non_speech_tokens = true;
     params.no_speech_thold = 0.2;
 
-    // Run transcription
-    let result = engine.transcribe_samples(samples, Some(params))
-        .map_err(|e| TranscriptionError::TranscriptionError {
-            message: e.to_string(),
+    // Run transcription with the persistent engine
+    let result = {
+        let mut engine_guard = engine_arc.lock().unwrap();
+        let engine = engine_guard.as_mut().ok_or_else(|| {
+            TranscriptionError::ModelLoadError {
+                message: "Model failed to load".to_string(),
+            }
         })?;
 
-    // Unload model to free memory
-    engine.unload_model();
+        // Extract the WhisperEngine from the enum
+        let whisper_engine = match engine {
+            model_manager::Engine::Whisper(e) => e,
+            _ => return Err(TranscriptionError::ModelLoadError {
+                message: "Expected Whisper engine but got different type".to_string(),
+            }),
+        };
+
+        whisper_engine
+            .transcribe_samples(samples, Some(params))
+            .map_err(|e| TranscriptionError::TranscriptionError {
+                message: e.to_string(),
+            })?
+    };
 
     Ok(result.text.trim().to_string())
 }
@@ -477,7 +489,7 @@ pub async fn transcribe_audio_parakeet(
 
     // Get or load the model using the persistent model manager
     let engine_arc = model_manager
-        .get_or_load_engine(PathBuf::from(&model_path))
+        .get_or_load_parakeet(PathBuf::from(&model_path))
         .map_err(|e| TranscriptionError::ModelLoadError { message: e })?;
 
     let params = ParakeetInferenceParams {
@@ -494,7 +506,15 @@ pub async fn transcribe_audio_parakeet(
             }
         })?;
 
-        engine
+        // Extract the ParakeetEngine from the enum
+        let parakeet_engine = match engine {
+            model_manager::Engine::Parakeet(e) => e,
+            _ => return Err(TranscriptionError::ModelLoadError {
+                message: "Expected Parakeet engine but got different type".to_string(),
+            }),
+        };
+
+        parakeet_engine
             .transcribe_samples(samples, Some(params))
             .map_err(|e| TranscriptionError::TranscriptionError {
                 message: e.to_string(),

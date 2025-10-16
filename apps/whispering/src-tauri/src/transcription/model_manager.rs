@@ -2,10 +2,26 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
 use transcribe_rs::engines::parakeet::{ParakeetEngine, ParakeetModelParams};
+use transcribe_rs::engines::whisper::WhisperEngine;
 use transcribe_rs::TranscriptionEngine;
 
+/// Engine type for managing different transcription engines
+pub enum Engine {
+    Parakeet(ParakeetEngine),
+    Whisper(WhisperEngine),
+}
+
+impl Engine {
+    fn unload(&mut self) {
+        match self {
+            Engine::Parakeet(e) => e.unload_model(),
+            Engine::Whisper(e) => e.unload_model(),
+        }
+    }
+}
+
 pub struct ModelManager {
-    engine: Arc<Mutex<Option<ParakeetEngine>>>,
+    engine: Arc<Mutex<Option<Engine>>>,
     current_model_path: Arc<Mutex<Option<PathBuf>>>,
     last_activity: Arc<Mutex<SystemTime>>,
     idle_timeout: Duration,
@@ -21,7 +37,7 @@ impl ModelManager {
         }
     }
 
-    pub fn get_or_load_engine(&self, model_path: PathBuf) -> Result<Arc<Mutex<Option<ParakeetEngine>>>, String> {
+    pub fn get_or_load_parakeet(&self, model_path: PathBuf) -> Result<Arc<Mutex<Option<Engine>>>, String> {
         let mut engine_guard = self.engine.lock().unwrap();
         let mut current_path_guard = self.current_model_path.lock().unwrap();
 
@@ -31,7 +47,14 @@ impl ModelManager {
             (Some(_), Some(path)) if path != &model_path => {
                 // Different model requested, unload current one
                 if let Some(mut engine) = engine_guard.take() {
-                    engine.unload_model();
+                    engine.unload();
+                }
+                true
+            }
+            (Some(Engine::Whisper(_)), _) => {
+                // Wrong engine type, unload and reload
+                if let Some(mut engine) = engine_guard.take() {
+                    engine.unload();
                 }
                 true
             }
@@ -44,7 +67,47 @@ impl ModelManager {
                 .load_model_with_params(&model_path, ParakeetModelParams::int8())
                 .map_err(|e| format!("Failed to load Parakeet model: {}", e))?;
 
-            *engine_guard = Some(engine);
+            *engine_guard = Some(Engine::Parakeet(engine));
+            *current_path_guard = Some(model_path);
+        }
+
+        // Update last activity
+        *self.last_activity.lock().unwrap() = SystemTime::now();
+
+        Ok(self.engine.clone())
+    }
+
+    pub fn get_or_load_whisper(&self, model_path: PathBuf) -> Result<Arc<Mutex<Option<Engine>>>, String> {
+        let mut engine_guard = self.engine.lock().unwrap();
+        let mut current_path_guard = self.current_model_path.lock().unwrap();
+
+        // Check if we need to load a new model
+        let needs_load = match (&*engine_guard, &*current_path_guard) {
+            (None, _) => true,
+            (Some(_), Some(path)) if path != &model_path => {
+                // Different model requested, unload current one
+                if let Some(mut engine) = engine_guard.take() {
+                    engine.unload();
+                }
+                true
+            }
+            (Some(Engine::Parakeet(_)), _) => {
+                // Wrong engine type, unload and reload
+                if let Some(mut engine) = engine_guard.take() {
+                    engine.unload();
+                }
+                true
+            }
+            _ => false,
+        };
+
+        if needs_load {
+            let mut engine = WhisperEngine::new();
+            engine
+                .load_model(&model_path)
+                .map_err(|e| format!("Failed to load Whisper model: {}", e))?;
+
+            *engine_guard = Some(Engine::Whisper(engine));
             *current_path_guard = Some(model_path);
         }
 
@@ -63,7 +126,7 @@ impl ModelManager {
         if elapsed > self.idle_timeout {
             let mut engine_guard = self.engine.lock().unwrap();
             if let Some(mut engine) = engine_guard.take() {
-                engine.unload_model();
+                engine.unload();
             }
             *self.current_model_path.lock().unwrap() = None;
         }
@@ -72,7 +135,7 @@ impl ModelManager {
     pub fn unload_model(&self) {
         let mut engine_guard = self.engine.lock().unwrap();
         if let Some(mut engine) = engine_guard.take() {
-            engine.unload_model();
+            engine.unload();
         }
         *self.current_model_path.lock().unwrap() = None;
     }
