@@ -238,8 +238,9 @@ export function createDeepgramTranscriptionService({
 			}
 
 			// Extract transcription text
-			const transcript =
-				deepgramResponse.results?.channels?.at(0)?.alternatives?.at(0)?.transcript;
+			const transcript = deepgramResponse.results?.channels
+				?.at(0)
+				?.alternatives?.at(0)?.transcript;
 
 			if (!transcript) {
 				return WhisperingErr({

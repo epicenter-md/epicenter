@@ -342,24 +342,48 @@ export type DbService = {
 	getAllRecordings(): Promise<Result<Recording[], DbServiceError>>;
 	getLatestRecording(): Promise<Result<Recording | null, DbServiceError>>;
 	getTranscribingRecordingIds(): Promise<Result<string[], DbServiceError>>;
-	getRecordingById(id: string): Promise<Result<Recording | null, DbServiceError>>;
-	createRecording(recording: Recording): Promise<Result<Recording, DbServiceError>>;
-	updateRecording(recording: Recording): Promise<Result<Recording, DbServiceError>>;
+	getRecordingById(
+		id: string,
+	): Promise<Result<Recording | null, DbServiceError>>;
+	createRecording(
+		recording: Recording,
+	): Promise<Result<Recording, DbServiceError>>;
+	updateRecording(
+		recording: Recording,
+	): Promise<Result<Recording, DbServiceError>>;
 	deleteRecording(recording: Recording): Promise<Result<void, DbServiceError>>;
-	deleteRecordings(recordingsToDelete: Recording[]): Promise<Result<void, DbServiceError>>;
+	deleteRecordings(
+		recordingsToDelete: Recording[],
+	): Promise<Result<void, DbServiceError>>;
 	cleanupExpiredRecordings(params: {
 		recordingRetentionStrategy: Settings['database.recordingRetentionStrategy'];
 		maxRecordingCount: Settings['database.maxRecordingCount'];
 	}): Promise<Result<void, DbServiceError>>;
 	getAllTransformations(): Promise<Result<Transformation[], DbServiceError>>;
-	getTransformationById(id: string): Promise<Result<Transformation | null, DbServiceError>>;
-	createTransformation(transformation: Transformation): Promise<Result<Transformation, DbServiceError>>;
-	updateTransformation(transformation: Transformation): Promise<Result<Transformation, DbServiceError>>;
-	deleteTransformation(transformation: Transformation): Promise<Result<void, DbServiceError>>;
-	deleteTransformations(transformations: Transformation[]): Promise<Result<void, DbServiceError>>;
-	getTransformationRunById(id: string): Promise<Result<TransformationRun | null, DbServiceError>>;
-	getTransformationRunsByTransformationId(transformationId: string): Promise<Result<TransformationRun[], DbServiceError>>;
-	getTransformationRunsByRecordingId(recordingId: string): Promise<Result<TransformationRun[], DbServiceError>>;
+	getTransformationById(
+		id: string,
+	): Promise<Result<Transformation | null, DbServiceError>>;
+	createTransformation(
+		transformation: Transformation,
+	): Promise<Result<Transformation, DbServiceError>>;
+	updateTransformation(
+		transformation: Transformation,
+	): Promise<Result<Transformation, DbServiceError>>;
+	deleteTransformation(
+		transformation: Transformation,
+	): Promise<Result<void, DbServiceError>>;
+	deleteTransformations(
+		transformations: Transformation[],
+	): Promise<Result<void, DbServiceError>>;
+	getTransformationRunById(
+		id: string,
+	): Promise<Result<TransformationRun | null, DbServiceError>>;
+	getTransformationRunsByTransformationId(
+		transformationId: string,
+	): Promise<Result<TransformationRun[], DbServiceError>>;
+	getTransformationRunsByRecordingId(
+		recordingId: string,
+	): Promise<Result<TransformationRun[], DbServiceError>>;
 	createTransformationRun(params: {
 		transformationId: string;
 		recordingId: string | null;
@@ -708,7 +732,9 @@ export function createDbServiceDexie({
 			return Ok(transformationRun ?? null);
 		},
 
-		getTransformationRunsByTransformationId: async (transformationId: string) => {
+		getTransformationRunsByTransformationId: async (
+			transformationId: string,
+		) => {
 			return tryAsync({
 				try: async () => {
 					const runs = await db.transformationRuns
@@ -721,8 +747,7 @@ export function createDbServiceDexie({
 
 					return runs.sort(
 						(a, b) =>
-							new Date(b.startedAt).getTime() -
-							new Date(a.startedAt).getTime(),
+							new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime(),
 					);
 				},
 				catch: (error) =>
@@ -747,8 +772,7 @@ export function createDbServiceDexie({
 
 					return runs.sort(
 						(a, b) =>
-							new Date(b.startedAt).getTime() -
-							new Date(a.startedAt).getTime(),
+							new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime(),
 					);
 				},
 				catch: (error) =>

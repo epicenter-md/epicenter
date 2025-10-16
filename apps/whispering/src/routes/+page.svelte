@@ -319,7 +319,8 @@
 				<div class="flex-1">
 					<TranscribedTextDialog
 						recordingId={latestRecording.id}
-						transcribedText={latestRecording.transcriptionStatus === 'TRANSCRIBING'
+						transcribedText={latestRecording.transcriptionStatus ===
+						'TRANSCRIBING'
 							? '...'
 							: latestRecording.transcribedText}
 						rows={1}

@@ -8,10 +8,7 @@
 	"license": "ISC",
 	"author": "",
 	"workspaces": {
-		"packages": [
-			"apps/*",
-			"packages/*"
-		],
+		"packages": ["apps/*", "packages/*"],
 		"catalog": {
 			"@types/node": "^22.18.10",
 			"typescript": "^5.8.3",
