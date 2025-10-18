@@ -32,7 +32,7 @@
 	import * as Card from '@repo/ui/card';
 	import { Link } from '@repo/ui/link';
 	import { Separator } from '@repo/ui/separator';
-	import { hasNavigatorLocalTranscriptionIssue } from '../../+layout/check-ffmpeg';
+	import { hasNavigatorLocalTranscriptionIssue } from '../../../+layout/check-ffmpeg';
 
 	const { data } = $props();
 
@@ -500,7 +500,7 @@
 									<li class="flex items-start gap-2">
 										<span
 											class="mt-0.5 block size-1.5 rounded-full bg-muted-foreground/50"
-										/>
+										></span>
 										<span>
 											Download pre-built models from the "Pre-built Models" tab
 										</span>
@@ -508,7 +508,7 @@
 									<li class="flex items-start gap-2">
 										<span
 											class="mt-0.5 block size-1.5 rounded-full bg-muted-foreground/50"
-										/>
+										></span>
 										<span>
 											Or download from{' '}
 											<Link
@@ -523,7 +523,7 @@
 									<li class="flex items-start gap-2">
 										<span
 											class="mt-0.5 block size-1.5 rounded-full bg-muted-foreground/50"
-										/>
+										></span>
 										<span>
 											Parakeet models are directories containing ONNX files
 										</span>
