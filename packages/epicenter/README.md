@@ -70,7 +70,7 @@ const provider = new HocuspocusProvider({
 
 // Run workspace with sync enabled
 const api = await runWorkspace(workspace, {
-  databaseUrl: './users/data/db.sqlite',
+  database: './users/data/db.sqlite',
   storagePath: './users/data',
   yjsDoc: ydoc // Enable Yjs sync (future feature)
 });
@@ -229,7 +229,7 @@ export default blogWorkspace;
 
 // 2. Run the workspace
 const runtime = await runWorkspace(blogWorkspace, {
-  databaseUrl: './blog/data/db.sqlite',
+  database: './blog/data/db.sqlite',
   storagePath: './blog/data'
 });
 

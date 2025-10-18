@@ -2,18 +2,16 @@ import * as Y from 'yjs';
 import type {
 	CellValue,
 	Row,
-	WorkspaceSchema,
 	TableSchema,
 	ValidatedRow,
-	ColumnSchema,
+	WorkspaceSchema
 } from '../core/schema';
 import {
 	type GetRowResult,
 	type RowValidationResult,
 	validateRow,
 } from '../core/validation';
-import { syncYTextToDiff, syncYArrayToDiff } from '../utils/yjs';
-import { is } from 'drizzle-orm';
+import { syncYArrayToDiff, syncYTextToDiff } from '../utils/yjs';
 
 /**
 	* YJS representation of a row

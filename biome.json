@@ -1,34 +1,43 @@
 {
-	"$schema": "https://biomejs.dev/schemas/1.9.4/schema.json",
+	"$schema": "https://biomejs.dev/schemas/2.2.6/schema.json",
 	"vcs": {
 		"enabled": true,
 		"clientKind": "git",
 		"useIgnoreFile": true
 	},
 	"files": {
-		"ignoreUnknown": false,
-		"ignore": [
-			"apps/whispering/src-tauri/**",
-			"apps/whispering/.svelte-kit/**",
-			".plasmo",
-			".DS_Store",
-			".turbo",
-			"build",
-			"dist",
-			"node_modules",
-			"package-lock.json",
-			"pnpm-lock.yaml",
-			"yarn.lock",
-			".astro",
-			".svelte-kit"
+		"ignoreUnknown": true,
+		"includes": [
+			"**",
+			"!apps/whispering/src-tauri/**",
+			"!**/.svelte-kit/**",
+			"!**/.plasmo",
+			"!.DS_Store",
+			"!**/.turbo",
+			"!**/build",
+			"!**/dist",
+			"!**/node_modules",
+			"!package-lock.json",
+			"!pnpm-lock.yaml",
+			"!yarn.lock",
+			"!**/.astro"
 		]
 	},
 	"formatter": {
 		"enabled": true,
 		"indentStyle": "tab"
 	},
-	"organizeImports": {
-		"enabled": true
+	"assist": {
+		"actions": {
+			"source": {
+				"organizeImports": {
+					"level": "on",
+					"options": {
+						"identifierOrder": "natural"
+					}
+				}
+			}
+		}
 	},
 	"linter": {
 		"enabled": true,
@@ -46,7 +55,7 @@
 	},
 	"overrides": [
 		{
-			"include": ["*.svelte"],
+			"includes": ["*.svelte"],
 			"linter": {
 				"rules": {
 					"style": {

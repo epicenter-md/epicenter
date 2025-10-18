@@ -70,6 +70,7 @@
 		"dexie": "^4.0.11",
 		"elevenlabs": "^1.59.0",
 		"groq-sdk": "^0.25.0",
+		"hono": "^4.9.12",
 		"nanoid": "catalog:",
 		"openai": "^5.7.0",
 		"tauri-plugin-macos-permissions-api": "^2.3.0",

@@ -7,7 +7,7 @@ Everything is a workspace. The epicenter is just a workspace that aggregates oth
 ```typescript
 // Before: Two concepts (workspaces and epicenter)
 const workspace = defineWorkspace({...});
-const epicenter = createEpicenter({ workspaces: [...], path: '...', databaseUrl: '...' });
+const epicenter = createEpicenter({ workspaces: [...], path: '...', database: '...' });
 
 // After: One concept (just workspaces)
 const epicenter = defineWorkspace({
@@ -86,7 +86,7 @@ The Epicenter CLI provides the database and storage:
 ```typescript
 // The CLI does this internally:
 const app = await runWorkspace(epicenter, {
-  databaseUrl: './data/app.db',
+  database: './data/app.db',
   storagePath: './data'
 });
 
@@ -179,7 +179,7 @@ import { createEpicenter } from '@epicenter/core';
 
 const epicenter = createEpicenter({
   path: './data',
-  databaseUrl: './data.db',
+  database: './data.db',
   workspaces: [usersWorkspace, postsWorkspace]
 });
 
@@ -200,7 +200,7 @@ const epicenter = defineWorkspace({
 
 // Runtime injection (handled by CLI)
 const app = await runWorkspace(epicenter, {
-  databaseUrl: './data.db',
+  database: './data.db',
   storagePath: './data'
 });
 ```

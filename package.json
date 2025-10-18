@@ -65,5 +65,8 @@
 		"prettier-plugin-tailwindcss": "^0.6.11",
 		"prettier-plugin-astro": "^0.14.1",
 		"turbo": "catalog:"
+	},
+	"dependencies": {
+		"typebox": "^1.0.36"
 	}
 }
