@@ -1,11 +1,4 @@
 import {
-	ACCELERATOR_KEY_CODES,
-	ACCELERATOR_MODIFIER_KEYS,
-	type AcceleratorKeyCode,
-	type AcceleratorModifier,
-	type KeyboardEventSupportedKey,
-} from '$lib/constants/keyboard';
-import {
 	isRegistered as tauriIsRegistered,
 	register as tauriRegister,
 	unregister as tauriUnregister,
@@ -15,6 +8,13 @@ import * as os from '@tauri-apps/plugin-os';
 import type { Brand } from 'wellcrafted/brand';
 import { createTaggedError, extractErrorMessage } from 'wellcrafted/error';
 import { Err, Ok, type Result, tryAsync } from 'wellcrafted/result';
+import {
+	ACCELERATOR_KEY_CODES,
+	ACCELERATOR_MODIFIER_KEYS,
+	type AcceleratorKeyCode,
+	type AcceleratorModifier,
+	type KeyboardEventSupportedKey,
+} from '$lib/constants/keyboard';
 import type { ShortcutTriggerState } from './_shortcut-trigger-state';
 
 const { InvalidAcceleratorError, InvalidAcceleratorErr } = createTaggedError(

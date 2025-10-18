@@ -1,6 +1,6 @@
+import { redirect } from '@sveltejs/kit';
 import * as rpc from '$lib/query';
 import { assistantConfigs } from '$lib/stores/assistant-configs.svelte';
-import { redirect } from '@sveltejs/kit';
 
 import type { PageLoad } from './$types';
 

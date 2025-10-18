@@ -1,6 +1,6 @@
+import { redirect } from '@sveltejs/kit';
 import { authClient } from '$lib/auth-client';
 import * as rpc from '$lib/query';
-import { redirect } from '@sveltejs/kit';
 
 export async function load() {
 	const { data: session, error: getSessionError } =

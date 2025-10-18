@@ -1,11 +1,11 @@
+import { invoke } from '@tauri-apps/api/core';
+import { exists } from '@tauri-apps/plugin-fs';
+import { type } from 'arktype';
+import { extractErrorMessage } from 'wellcrafted/error';
+import { Ok, type Result, tryAsync } from 'wellcrafted/result';
 import { WhisperingErr, type WhisperingError } from '$lib/result';
 import type { Settings } from '$lib/settings';
 import type { WhisperModelConfig } from './types';
-import { Ok, tryAsync, type Result } from 'wellcrafted/result';
-import { invoke } from '@tauri-apps/api/core';
-import { exists } from '@tauri-apps/plugin-fs';
-import { extractErrorMessage } from 'wellcrafted/error';
-import { type } from 'arktype';
 
 /**
  * Pre-built Whisper models available for download from Hugging Face.

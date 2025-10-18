@@ -1,14 +1,14 @@
-import {
-	type KeyboardEventPossibleKey,
-	type KeyboardEventSupportedKey,
-	isSupportedKey,
-	normalizeOptionKeyCharacter,
-} from '$lib/constants/keyboard';
-import { IS_MACOS } from '$lib/constants/platform';
 import { on } from 'svelte/events';
 import type { Brand } from 'wellcrafted/brand';
 import { createTaggedError } from 'wellcrafted/error';
 import { Ok, type Result } from 'wellcrafted/result';
+import {
+	isSupportedKey,
+	type KeyboardEventPossibleKey,
+	type KeyboardEventSupportedKey,
+	normalizeOptionKeyCharacter,
+} from '$lib/constants/keyboard';
+import { IS_MACOS } from '$lib/constants/platform';
 import type { ShortcutTriggerState } from './_shortcut-trigger-state';
 
 /**

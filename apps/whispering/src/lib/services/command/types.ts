@@ -1,7 +1,7 @@
+import type { Child, ChildProcess } from '@tauri-apps/plugin-shell';
+import type { Brand } from 'wellcrafted/brand';
 import { createTaggedError } from 'wellcrafted/error';
 import type { Result } from 'wellcrafted/result';
-import type { Brand } from 'wellcrafted/brand';
-import type { Child, ChildProcess } from '@tauri-apps/plugin-shell';
 
 export const { CommandServiceError, CommandServiceErr } = createTaggedError(
 	'CommandServiceError',

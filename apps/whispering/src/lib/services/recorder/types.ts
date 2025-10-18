@@ -1,13 +1,13 @@
+import { createTaggedError } from 'wellcrafted/error';
+import type { Result } from 'wellcrafted/result';
 import type {
 	CancelRecordingResult,
 	WhisperingRecordingState,
 } from '$lib/constants/audio';
-import { createTaggedError } from 'wellcrafted/error';
-import type { Result } from 'wellcrafted/result';
 import type {
 	Device,
-	DeviceIdentifier,
 	DeviceAcquisitionOutcome,
+	DeviceIdentifier,
 	UpdateStatusMessageFn,
 } from '../types';
 

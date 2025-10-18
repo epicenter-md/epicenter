@@ -1,6 +1,7 @@
 /// <reference types="vite/client" />
-import { createApps, createAppUrls } from '#apps';
+
 import { type } from 'arktype';
+import { createApps, createAppUrls } from '#apps';
 
 /**
  * Vite/client-side constants and utilities

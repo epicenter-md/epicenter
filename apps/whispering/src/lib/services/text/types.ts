@@ -1,6 +1,6 @@
-import type { MaybePromise, WhisperingError } from '$lib/result';
 import { createTaggedError } from 'wellcrafted/error';
 import type { Result } from 'wellcrafted/result';
+import type { MaybePromise, WhisperingError } from '$lib/result';
 
 const { TextServiceError, TextServiceErr } =
 	createTaggedError('TextServiceError');

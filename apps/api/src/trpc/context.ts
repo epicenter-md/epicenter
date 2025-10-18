@@ -1,7 +1,7 @@
-import type { Context } from 'hono';
 import type { CloudflareEnv } from '@repo/constants/cloudflare';
-import type { User, Session } from '../lib/auth';
 import { db } from '@repo/db';
+import type { Context } from 'hono';
+import type { Session, User } from '../lib/auth';
 
 export function createContext(
 	c: Context<{

@@ -15,9 +15,9 @@
  * Example: bun run bump-version 7.0.1
  */
 
+import { exec } from 'node:child_process';
 import * as fs from 'node:fs/promises';
 import { join } from 'node:path';
-import { exec } from 'node:child_process';
 import { promisify } from 'node:util';
 
 const execAsync = promisify(exec);

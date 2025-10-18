@@ -1,19 +1,19 @@
 export type { AcceleratorPossibleKey } from './accelerator/possible-keys';
 
 export {
-	ACCELERATOR_SECTIONS,
-	ACCELERATOR_MODIFIER_KEYS,
 	ACCELERATOR_KEY_CODES,
-	type AcceleratorModifier,
+	ACCELERATOR_MODIFIER_KEYS,
+	ACCELERATOR_SECTIONS,
 	type AcceleratorKeyCode,
+	type AcceleratorModifier,
 } from './accelerator/supported-keys';
 
 export type { KeyboardEventPossibleKey } from './browser/possible-keys';
 
 export {
+	isSupportedKey,
 	KEYBOARD_EVENT_SUPPORTED_KEY_SECTIONS,
 	KEYBOARD_EVENT_SUPPORTED_KEYS,
-	isSupportedKey,
 	type KeyboardEventSupportedKey,
 } from './browser/supported-keys';
 
@@ -22,4 +22,4 @@ export {
 	OPTION_DEAD_KEYS,
 } from './macos-option-key-map';
 
-export { CommandOrControl, CommandOrAlt } from './modifiers';
+export { CommandOrAlt, CommandOrControl } from './modifiers';

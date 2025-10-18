@@ -1,8 +1,8 @@
 import { Select as SelectPrimitive } from 'bits-ui';
 
 import Content from './select-content.svelte';
-import GroupHeading from './select-group-heading.svelte';
 import Group from './select-group.svelte';
+import GroupHeading from './select-group-heading.svelte';
 import Item from './select-item.svelte';
 import Label from './select-label.svelte';
 import ScrollDownButton from './select-scroll-down-button.svelte';

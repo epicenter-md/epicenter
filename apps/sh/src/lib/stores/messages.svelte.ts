@@ -1,3 +1,9 @@
+import type { Accessor } from '@tanstack/svelte-query';
+import { type } from 'arktype';
+import { createSubscriber } from 'svelte/reactivity';
+
+import { createAssistantClient } from '$lib/client/client.gen';
+import * as api from '$lib/client/sdk.gen';
 import type {
 	AssistantMessage,
 	EventMessagePartUpdated,
@@ -7,12 +13,6 @@ import type {
 	Part,
 } from '$lib/client/types.gen';
 import type { AssistantConfig } from '$lib/stores/assistant-configs.svelte';
-import type { Accessor } from '@tanstack/svelte-query';
-
-import { createAssistantClient } from '$lib/client/client.gen';
-import * as api from '$lib/client/sdk.gen';
-import { type } from 'arktype';
-import { createSubscriber } from 'svelte/reactivity';
 
 export type Message = { info: MessageInfo; parts: Part[] };
 

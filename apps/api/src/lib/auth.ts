@@ -1,12 +1,12 @@
+import { APP_URLS, APPS, type CloudflareEnv } from '@repo/constants/cloudflare';
+import { db as createDb } from '@repo/db';
+import { assistantConfig } from '@repo/db/schema';
 import { betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
-import { db as createDb } from '@repo/db';
-import { APPS, APP_URLS, type CloudflareEnv } from '@repo/constants/cloudflare';
 import { anonymous } from 'better-auth/plugins';
 import { eq } from 'drizzle-orm';
-import { assistantConfig } from '@repo/db/schema';
-import { Err, tryAsync } from 'wellcrafted/result';
 import { extractErrorMessage } from 'wellcrafted/error';
+import { Err, tryAsync } from 'wellcrafted/result';
 
 export const auth = (env: CloudflareEnv) => {
 	const db = createDb(env);

@@ -1,11 +1,11 @@
+import { type } from 'arktype';
+import { untrack } from 'svelte';
+import { toast } from 'svelte-sonner';
 import { goto } from '$app/navigation';
 import {
 	assistantConfigs,
 	CreateAssistantParams,
 } from '$lib/stores/assistant-configs.svelte';
-import { type } from 'arktype';
-import { untrack } from 'svelte';
-import { toast } from 'svelte-sonner';
 
 import {
 	FLASH_MESSAGE_PARAMS,

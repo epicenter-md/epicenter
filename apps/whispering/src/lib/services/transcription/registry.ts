@@ -1,31 +1,31 @@
 /**
  * Transcription service configurations
  */
-import type { Settings } from '$lib/settings';
 
+import deepgramIcon from '$lib/constants/icons/deepgram.svg?raw';
+import elevenlabsIcon from '$lib/constants/icons/elevenlabs.svg?raw';
+import ggmlIcon from '$lib/constants/icons/ggml.svg?raw';
 // Import SVG icons as strings
 import groqIcon from '$lib/constants/icons/groq.svg?raw';
-import ggmlIcon from '$lib/constants/icons/ggml.svg?raw';
+import mistralIcon from '$lib/constants/icons/mistral.svg?raw';
 import nvidiaIcon from '$lib/constants/icons/nvidia.svg?raw';
 import openaiIcon from '$lib/constants/icons/openai.svg?raw';
-import elevenlabsIcon from '$lib/constants/icons/elevenlabs.svg?raw';
 import speachesIcon from '$lib/constants/icons/speaches.svg?raw';
-import deepgramIcon from '$lib/constants/icons/deepgram.svg?raw';
-import mistralIcon from '$lib/constants/icons/mistral.svg?raw';
-import {
-	ELEVENLABS_TRANSCRIPTION_MODELS,
-	type ElevenLabsModel,
-} from './cloud/elevenlabs';
-import { GROQ_MODELS, type GroqModel } from './cloud/groq';
-import { OPENAI_TRANSCRIPTION_MODELS, type OpenAIModel } from './cloud/openai';
+import type { Settings } from '$lib/settings';
 import {
 	DEEPGRAM_TRANSCRIPTION_MODELS,
 	type DeepgramModel,
 } from './cloud/deepgram';
 import {
+	ELEVENLABS_TRANSCRIPTION_MODELS,
+	type ElevenLabsModel,
+} from './cloud/elevenlabs';
+import { GROQ_MODELS, type GroqModel } from './cloud/groq';
+import {
 	MISTRAL_TRANSCRIPTION_MODELS,
 	type MistralModel,
 } from './cloud/mistral';
+import { OPENAI_TRANSCRIPTION_MODELS, type OpenAIModel } from './cloud/openai';
 
 type TranscriptionModel =
 	| OpenAIModel

@@ -1,10 +1,9 @@
-import type { App } from '$lib/client/types.gen';
-import type { AssistantConfig } from '$lib/stores/assistant-configs.svelte';
 import type { Accessor } from '@tanstack/svelte-query';
-
+import { Ok } from 'wellcrafted/result';
 import { createAssistantClient } from '$lib/client/client.gen';
 import * as api from '$lib/client/sdk.gen';
-import { Ok } from 'wellcrafted/result';
+import type { App } from '$lib/client/types.gen';
+import type { AssistantConfig } from '$lib/stores/assistant-configs.svelte';
 
 import { defineQuery } from './_client';
 

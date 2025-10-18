@@ -9,9 +9,9 @@ import { nanoid } from 'nanoid/non-secure';
 import { Err, Ok, type Result, tryAsync } from 'wellcrafted/result';
 import type { NotificationService, UnifiedNotificationOptions } from './types';
 import {
-	type NotificationServiceError,
-	NotificationServiceErr,
 	hashNanoidToNumber,
+	NotificationServiceErr,
+	type NotificationServiceError,
 	toTauriNotification,
 } from './types';
 

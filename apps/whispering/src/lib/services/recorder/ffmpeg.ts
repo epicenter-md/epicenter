@@ -1,10 +1,3 @@
-import type {
-	CancelRecordingResult,
-	WhisperingRecordingState,
-} from '$lib/constants/audio';
-import { PLATFORM_TYPE } from '$lib/constants/platform';
-import * as services from '$lib/services';
-import { asShellCommand } from '$lib/services/command';
 import { createPersistedState } from '@repo/svelte-utils';
 import { invoke } from '@tauri-apps/api/core';
 import { join } from '@tauri-apps/api/path';
@@ -13,6 +6,13 @@ import { Child } from '@tauri-apps/plugin-shell';
 import { type } from 'arktype';
 import { extractErrorMessage } from 'wellcrafted/error';
 import { Err, Ok, type Result, tryAsync } from 'wellcrafted/result';
+import type {
+	CancelRecordingResult,
+	WhisperingRecordingState,
+} from '$lib/constants/audio';
+import { PLATFORM_TYPE } from '$lib/constants/platform';
+import * as services from '$lib/services';
+import { asShellCommand } from '$lib/services/command';
 import type {
 	Device,
 	DeviceAcquisitionOutcome,

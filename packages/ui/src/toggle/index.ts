@@ -1,9 +1,10 @@
 import Root from './toggle.svelte';
+
 export {
 	type ToggleSize,
 	type ToggleVariant,
-	toggleVariants,
 	type ToggleVariants,
+	toggleVariants,
 } from './toggle.svelte';
 
 export {

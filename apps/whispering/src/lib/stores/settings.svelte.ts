@@ -1,25 +1,25 @@
+import { createPersistedState } from '@repo/svelte-utils';
+import { nanoid } from 'nanoid/non-secure';
+import { extractErrorMessage } from 'wellcrafted/error';
+import { Ok, partitionResults, type Result } from 'wellcrafted/result';
 import { commands } from '$lib/commands';
+import type { RecordingMode } from '$lib/constants/audio';
 import { rpc } from '$lib/query';
+import { recorderService } from '$lib/query/recorder';
+import * as services from '$lib/services';
+import { enumerateDevices } from '$lib/services/device-stream';
+import type { RecorderServiceError } from '$lib/services/recorder';
+import type { VadRecorderServiceError } from '$lib/services/vad-recorder';
 import {
-	type Settings,
 	getDefaultSettings,
 	parseStoredSettings,
+	type Settings,
 	settingsSchema,
 } from '$lib/settings/settings';
-import { enumerateDevices } from '$lib/services/device-stream';
-import { createPersistedState } from '@repo/svelte-utils';
 import {
 	syncGlobalShortcutsWithSettings,
 	syncLocalShortcutsWithSettings,
 } from '../../routes/+layout/register-commands';
-import { extractErrorMessage } from 'wellcrafted/error';
-import * as services from '$lib/services';
-import { recorderService } from '$lib/query/recorder';
-import type { RecordingMode } from '$lib/constants/audio';
-import type { RecorderServiceError } from '$lib/services/recorder';
-import type { VadRecorderServiceError } from '$lib/services/vad-recorder';
-import { nanoid } from 'nanoid/non-secure';
-import { Ok, partitionResults, type Result } from 'wellcrafted/result';
 
 /**
  * Encapsulated settings object with controlled access.

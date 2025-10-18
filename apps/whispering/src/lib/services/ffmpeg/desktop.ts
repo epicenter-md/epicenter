@@ -1,13 +1,13 @@
-import { IS_WINDOWS } from '$lib/constants/platform';
+import { appDataDir, join } from '@tauri-apps/api/path';
+import { exists, remove, writeFile } from '@tauri-apps/plugin-fs';
+import { nanoid } from 'nanoid/non-secure';
 import { extractErrorMessage } from 'wellcrafted/error';
 import { Err, Ok, tryAsync } from 'wellcrafted/result';
-import { type FfmpegService, FfmpegServiceErr } from './types';
-import { writeFile, remove, exists } from '@tauri-apps/plugin-fs';
-import { appDataDir, join } from '@tauri-apps/api/path';
-import { nanoid } from 'nanoid/non-secure';
+import { IS_WINDOWS } from '$lib/constants/platform';
 import * as services from '$lib/services';
-import { getFileExtensionFromFfmpegOptions } from '../recorder/ffmpeg';
 import { asShellCommand } from '../command/types';
+import { getFileExtensionFromFfmpegOptions } from '../recorder/ffmpeg';
+import { type FfmpegService, FfmpegServiceErr } from './types';
 
 export function createFfmpegService(): FfmpegService {
 	return {

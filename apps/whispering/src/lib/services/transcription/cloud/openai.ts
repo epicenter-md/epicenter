@@ -1,8 +1,8 @@
-import { WhisperingErr, type WhisperingError } from '$lib/result';
-import type { Settings } from '$lib/settings';
-import { getExtensionFromAudioBlob } from '$lib/services/_utils';
 import OpenAI from 'openai';
 import { Err, Ok, type Result, tryAsync, trySync } from 'wellcrafted/result';
+import { WhisperingErr, type WhisperingError } from '$lib/result';
+import { getExtensionFromAudioBlob } from '$lib/services/_utils';
+import type { Settings } from '$lib/settings';
 
 export const OPENAI_TRANSCRIPTION_MODELS = [
 	{

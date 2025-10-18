@@ -1,7 +1,7 @@
-import { readFile } from '@tauri-apps/plugin-fs';
 import { basename, extname } from '@tauri-apps/api/path';
-import { MIME_TYPE_MAP } from '$lib/constants/mime';
+import { readFile } from '@tauri-apps/plugin-fs';
 import { tryAsync } from 'wellcrafted/result';
+import { MIME_TYPE_MAP } from '$lib/constants/mime';
 import type { FsService } from './types';
 import { FsServiceErr } from './types';
 

@@ -1,7 +1,7 @@
+import { Ok, type Result } from 'wellcrafted/result';
 import type { WhisperingRecordingState } from '$lib/constants/audio';
 import { fromTaggedErr, type WhisperingError } from '$lib/result';
 import * as services from '$lib/services';
-import { Ok, type Result } from 'wellcrafted/result';
 import { defineMutation } from './_client';
 
 const setTrayIconKeys = {

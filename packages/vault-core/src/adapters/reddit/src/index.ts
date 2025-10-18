@@ -1,12 +1,12 @@
-import { defineAdapter, type Adapter } from '@repo/vault-core';
+import { type Adapter, defineAdapter } from '@repo/vault-core';
 import type { SQLiteTable } from 'drizzle-orm/sqlite-core';
+import type { RedditAdapterConfig } from './config';
 import drizzleConfig from './drizzle.config';
 import { metadata } from './metadata';
 import { parseRedditExport } from './parse';
 import * as tables from './schema';
 import { upsertRedditData } from './upsert';
 import { parseSchema } from './validation';
-import type { RedditAdapterConfig } from './config';
 
 // Expose all tables from schema module (runtime values only; TS types are erased)
 export const schema = tables;

@@ -1,9 +1,9 @@
-import globals from 'globals';
+import js from '@eslint/js';
+import type { Linter } from 'eslint';
 import prettier from 'eslint-config-prettier';
 import svelte from 'eslint-plugin-svelte';
-import type { Linter } from 'eslint';
+import globals from 'globals';
 import ts from 'typescript-eslint';
-import js from '@eslint/js';
 
 /**
  * Base ESLint configuration that includes Prettier integration and ignore patterns.

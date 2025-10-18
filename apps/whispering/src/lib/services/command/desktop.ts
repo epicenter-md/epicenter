@@ -1,9 +1,9 @@
-import { Command, type ChildProcess } from '@tauri-apps/plugin-shell';
 import { invoke } from '@tauri-apps/api/core';
-import { tryAsync, Err, Ok } from 'wellcrafted/result';
+import { type ChildProcess, Command } from '@tauri-apps/plugin-shell';
+import { extractErrorMessage } from 'wellcrafted/error';
+import { Err, Ok, tryAsync } from 'wellcrafted/result';
 import type { CommandService, ShellCommand } from './types';
 import { CommandServiceErr } from './types';
-import { extractErrorMessage } from 'wellcrafted/error';
 
 export function createCommandServiceDesktop(): CommandService {
 	return {
@@ -20,7 +20,9 @@ export function createCommandServiceDesktop(): CommandService {
 			const { data, error } = await tryAsync({
 				try: async () => {
 					// Rust returns CommandOutput which matches ChildProcess<string> structure
-					const result = await invoke<ChildProcess<string>>('execute_command', { command });
+					const result = await invoke<ChildProcess<string>>('execute_command', {
+						command,
+					});
 					console.log('[TS] execute: completed with code:', result.code);
 					return result;
 				},

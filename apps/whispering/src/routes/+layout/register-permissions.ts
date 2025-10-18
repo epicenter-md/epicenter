@@ -1,8 +1,8 @@
-import { IS_MACOS } from '$lib/constants/platform';
-import * as services from '$lib/services';
 import { nanoid } from 'nanoid/non-secure';
 import { toast } from 'svelte-sonner';
 import { goto } from '$app/navigation';
+import { IS_MACOS } from '$lib/constants/platform';
+import * as services from '$lib/services';
 
 export function registerAccessibilityPermission() {
 	// Only run on macOS desktop

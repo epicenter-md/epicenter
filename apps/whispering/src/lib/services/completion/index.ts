@@ -16,5 +16,5 @@ export type { AnthropicCompletionService } from './anthropic';
 export type { GoogleCompletionService } from './google';
 export type { GroqCompletionService } from './groq';
 export type { OpenaiCompletionService } from './openai';
-export type { CompletionService } from './types';
 export type { OpenRouterCompletionService } from './openrouter';
+export type { CompletionService } from './types';

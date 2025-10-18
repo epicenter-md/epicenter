@@ -1,10 +1,10 @@
-import { Ok, Err, trySync, tryAsync } from 'wellcrafted/result';
-import type { TunnelService } from './types';
-import { TunnelServiceErr } from './types';
-import { spawn, $ } from 'bun';
 import { type } from 'arktype';
 import type { Subprocess } from 'bun';
+import { $, spawn } from 'bun';
 import { extractErrorMessage } from 'wellcrafted/error';
+import { Err, Ok, tryAsync, trySync } from 'wellcrafted/result';
+import type { TunnelService } from './types';
+import { TunnelServiceErr } from './types';
 
 export function createTunnelServiceNgrok(): TunnelService {
 	let currentProcess: Subprocess | null = null;

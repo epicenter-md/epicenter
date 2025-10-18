@@ -1,10 +1,10 @@
-import { WhisperingErr, type WhisperingError } from '$lib/result';
-import type { ParakeetModelConfig } from './types';
-import { Ok, tryAsync, type Result } from 'wellcrafted/result';
 import { invoke } from '@tauri-apps/api/core';
 import { exists, stat } from '@tauri-apps/plugin-fs';
-import { extractErrorMessage } from 'wellcrafted/error';
 import { type } from 'arktype';
+import { extractErrorMessage } from 'wellcrafted/error';
+import { Ok, type Result, tryAsync } from 'wellcrafted/result';
+import { WhisperingErr, type WhisperingError } from '$lib/result';
+import type { ParakeetModelConfig } from './types';
 
 /**
  * Pre-built Parakeet models available for download from GitHub releases.

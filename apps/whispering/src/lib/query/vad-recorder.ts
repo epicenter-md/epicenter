@@ -1,9 +1,9 @@
+import { Ok } from 'wellcrafted/result';
 import type { VadState } from '$lib/constants/audio';
 import { fromTaggedErr } from '$lib/result';
 import * as services from '$lib/services';
 import { enumerateDevices } from '$lib/services/device-stream';
 import { settings } from '$lib/stores/settings.svelte';
-import { Ok } from 'wellcrafted/result';
 import { defineMutation, defineQuery, queryClient } from './_client';
 
 const vadRecorderKeys = {

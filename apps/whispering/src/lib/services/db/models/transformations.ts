@@ -1,3 +1,4 @@
+import { nanoid } from 'nanoid/non-secure';
 import type {
 	ANTHROPIC_INFERENCE_MODELS,
 	GOOGLE_INFERENCE_MODELS,
@@ -5,7 +6,6 @@ import type {
 	INFERENCE_PROVIDERS,
 	OPENAI_INFERENCE_MODELS,
 } from '$lib/constants/inference';
-import { nanoid } from 'nanoid/non-secure';
 
 export const TRANSFORMATION_STEP_TYPES = [
 	'prompt_transform',

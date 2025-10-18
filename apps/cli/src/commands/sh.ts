@@ -1,13 +1,13 @@
+import { basename } from 'node:path';
 import { bootstrap } from '@epicenter/opencode/cli/bootstrap.ts';
 import { Provider } from '@epicenter/opencode/provider/provider.ts';
 import { Server } from '@epicenter/opencode/server/server.ts';
 import { Share } from '@epicenter/opencode/share/share.ts';
 import { Log } from '@epicenter/opencode/util/log.ts';
 import getPort from 'get-port';
-import { basename } from 'node:path';
+import { BrowserServiceLive } from '../services/browser';
 import type { TunnelProvider } from '../services/tunnel';
 import { createTunnelService } from '../services/tunnel';
-import { BrowserServiceLive } from '../services/browser';
 import { cmd } from '../utils/cmd';
 
 const EPICENTER_SH_URL = 'https://epicenter.sh' as const;

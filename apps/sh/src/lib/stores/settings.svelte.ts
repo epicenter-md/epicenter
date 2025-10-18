@@ -1,6 +1,6 @@
-import { Password } from '$lib/utils/port';
 import { createPersistedState } from '@repo/svelte-utils';
 import { type } from 'arktype';
+import { Password } from '$lib/utils/port';
 
 /**
  * Application settings that are persisted across sessions.

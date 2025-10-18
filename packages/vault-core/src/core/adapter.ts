@@ -4,9 +4,9 @@ import type { ColumnsSelection } from 'drizzle-orm';
 import type { LibSQLDatabase } from 'drizzle-orm/libsql';
 import {
 	type BaseSQLiteDatabase,
+	integer,
 	type SQLiteTable,
 	type SubqueryWithSelection,
-	integer,
 	sqliteTable,
 	text,
 } from 'drizzle-orm/sqlite-core';

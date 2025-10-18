@@ -1,7 +1,7 @@
+import { Ok, type Result } from 'wellcrafted/result';
 import * as services from '$lib/services';
 import type { Event } from '$lib/services/analytics/types';
 import { settings } from '$lib/stores/settings.svelte';
-import { Ok, type Result } from 'wellcrafted/result';
 import { defineMutation } from './_client';
 
 const analyticsKeys = {

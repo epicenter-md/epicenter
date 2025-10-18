@@ -1,19 +1,18 @@
 import {
-	pgTable,
-	text,
-	timestamp,
-	unique,
-	primaryKey,
-} from 'drizzle-orm/pg-core';
-import {
 	createInsertSchema,
 	createSelectSchema,
 	createUpdateSchema,
 } from 'drizzle-arktype';
+import {
+	pgTable,
+	primaryKey,
+	text,
+	timestamp,
+	unique,
+} from 'drizzle-orm/pg-core';
 import { customAlphabet } from 'nanoid';
-
-import { user } from './auth';
 import type { EncryptedData } from '../lib/encryption';
+import { user } from './auth';
 
 const generateId = customAlphabet('0123456789abcdefghijklmnopqrstuvwxyz', 12);
 

@@ -1,7 +1,7 @@
-import { WhisperingErr, type WhisperingError } from '$lib/result';
-import type { Settings } from '$lib/settings';
 import { ElevenLabsClient } from 'elevenlabs';
 import { Ok, type Result } from 'wellcrafted/result';
+import { WhisperingErr, type WhisperingError } from '$lib/result';
+import type { Settings } from '$lib/settings';
 
 export const ELEVENLABS_TRANSCRIPTION_MODELS = [
 	{

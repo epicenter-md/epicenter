@@ -1,5 +1,5 @@
-import * as services from '$lib/services';
 import type { Accessor } from '@tanstack/svelte-query';
+import * as services from '$lib/services';
 import { defineQuery } from './_client';
 
 // Define the query key as a constant array

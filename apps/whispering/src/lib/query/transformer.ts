@@ -1,6 +1,8 @@
+import { createTaggedError, extractErrorMessage } from 'wellcrafted/error';
+import { Err, isErr, Ok, type Result } from 'wellcrafted/result';
 import {
-	WhisperingErr,
 	fromTaggedErr,
+	WhisperingErr,
 	type WhisperingError,
 	type WhisperingResult,
 } from '$lib/result';
@@ -12,11 +14,9 @@ import type {
 	TransformationStep,
 } from '$lib/services/db';
 import { settings } from '$lib/stores/settings.svelte';
-import { createTaggedError, extractErrorMessage } from 'wellcrafted/error';
-import { Err, Ok, type Result, isErr } from 'wellcrafted/result';
 import {
-	interpolateTemplate,
 	asTemplateString,
+	interpolateTemplate,
 	type TemplateString,
 } from '$lib/utils/template';
 import { defineMutation, queryClient } from './_client';

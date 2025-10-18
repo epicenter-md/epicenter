@@ -1,6 +1,6 @@
-import type { TRANSCRIPTION_SERVICE_IDS } from '$lib/services/transcription/registry';
 import { createTaggedError } from 'wellcrafted/error';
 import type { Result } from 'wellcrafted/result';
+import type { TRANSCRIPTION_SERVICE_IDS } from '$lib/services/transcription/registry';
 
 const { AnalyticsServiceError, AnalyticsServiceErr } = createTaggedError(
 	'AnalyticsServiceError',

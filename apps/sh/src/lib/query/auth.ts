@@ -1,9 +1,8 @@
+import { APPS } from '@repo/constants/vite';
 import type { BetterFetchResponse } from 'better-auth/client';
-
+import { Err, Ok } from 'wellcrafted/result';
 import { authClient } from '$lib/auth-client';
 import { ShErr } from '$lib/result';
-import { APPS } from '@repo/constants/vite';
-import { Err, Ok } from 'wellcrafted/result';
 
 import { defineMutation, defineQuery, queryClient } from './_client';
 

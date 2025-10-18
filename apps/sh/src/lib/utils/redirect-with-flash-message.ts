@@ -1,6 +1,6 @@
-import { goto } from '$app/navigation';
 import { APPS } from '@repo/constants/vite';
 import { type } from 'arktype';
+import { goto } from '$app/navigation';
 
 /**
  * Unified redirect API with flash message support.

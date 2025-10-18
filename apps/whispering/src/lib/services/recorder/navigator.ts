@@ -1,25 +1,25 @@
+import { Err, Ok, type Result, tryAsync, trySync } from 'wellcrafted/result';
 import {
-	TIMESLICE_MS,
 	type CancelRecordingResult,
+	TIMESLICE_MS,
 	type WhisperingRecordingState,
 } from '$lib/constants/audio';
-import { Err, Ok, type Result, tryAsync, trySync } from 'wellcrafted/result';
 import {
 	cleanupRecordingStream,
 	enumerateDevices,
 	getRecordingStream,
 } from '../device-stream';
 import type {
+	DeviceAcquisitionOutcome,
+	DeviceIdentifier,
+	UpdateStatusMessageFn,
+} from '../types';
+import type {
 	NavigatorRecordingParams,
 	RecorderService,
 	RecorderServiceError,
 } from './types';
 import { RecorderServiceErr } from './types';
-import type {
-	DeviceIdentifier,
-	DeviceAcquisitionOutcome,
-	UpdateStatusMessageFn,
-} from '../types';
 
 type ActiveRecording = {
 	recordingId: string;

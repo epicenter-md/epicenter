@@ -1,11 +1,11 @@
-import { moreDetailsDialog } from '$lib/components/MoreDetailsDialog.svelte';
-import { rpc } from '$lib/query';
-import type { DownloadService } from '$lib/services/download';
-import type { Settings } from '$lib/settings';
 import Dexie, { type Transaction } from 'dexie';
 import { nanoid } from 'nanoid/non-secure';
 import { createTaggedError, extractErrorMessage } from 'wellcrafted/error';
 import { Err, Ok, type Result, tryAsync } from 'wellcrafted/result';
+import { moreDetailsDialog } from '$lib/components/MoreDetailsDialog.svelte';
+import { rpc } from '$lib/query';
+import type { DownloadService } from '$lib/services/download';
+import type { Settings } from '$lib/settings';
 import type {
 	Recording,
 	RecordingsDbSchemaV1,

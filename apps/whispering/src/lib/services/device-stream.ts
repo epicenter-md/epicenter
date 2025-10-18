@@ -1,10 +1,10 @@
-import { WHISPER_RECOMMENDED_MEDIA_TRACK_CONSTRAINTS } from '$lib/constants/audio';
 import { createTaggedError } from 'wellcrafted/error';
 import { Err, isOk, Ok, type Result, tryAsync } from 'wellcrafted/result';
+import { WHISPER_RECOMMENDED_MEDIA_TRACK_CONSTRAINTS } from '$lib/constants/audio';
 import type {
 	Device,
-	DeviceIdentifier,
 	DeviceAcquisitionOutcome,
+	DeviceIdentifier,
 	UpdateStatusMessageFn,
 } from './types';
 import { asDeviceIdentifier } from './types';

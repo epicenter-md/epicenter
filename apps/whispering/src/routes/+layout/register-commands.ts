@@ -1,3 +1,4 @@
+import { partitionResults } from 'wellcrafted/result';
 import { commands } from '$lib/commands';
 import { rpc } from '$lib/query';
 import type { Accelerator } from '$lib/services/global-shortcut-manager';
@@ -7,7 +8,6 @@ import {
 } from '$lib/services/local-shortcut-manager';
 import type { Settings } from '$lib/settings';
 import { settings } from '$lib/stores/settings.svelte';
-import { partitionResults } from 'wellcrafted/result';
 
 /**
  * Synchronizes local keyboard shortcuts with the current settings.

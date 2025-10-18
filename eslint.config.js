@@ -3,10 +3,10 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { includeIgnoreFile } from '@eslint/compat';
 import tsParser from '@typescript-eslint/parser';
-import sveltePlugin from 'eslint-plugin-svelte';
 // eslint.config.js
 // @ts-nocheck
 import { defineConfig } from 'eslint/config';
+import sveltePlugin from 'eslint-plugin-svelte';
 import svelteParser from 'svelte-eslint-parser';
 
 /**

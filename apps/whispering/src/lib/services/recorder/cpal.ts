@@ -1,10 +1,10 @@
+import { invoke as tauriInvoke } from '@tauri-apps/api/core';
+import { readFile, remove } from '@tauri-apps/plugin-fs';
+import { Err, Ok, type Result, tryAsync } from 'wellcrafted/result';
 import type {
 	CancelRecordingResult,
 	WhisperingRecordingState,
 } from '$lib/constants/audio';
-import { invoke as tauriInvoke } from '@tauri-apps/api/core';
-import { readFile, remove } from '@tauri-apps/plugin-fs';
-import { Err, Ok, type Result, tryAsync } from 'wellcrafted/result';
 import type { Device, DeviceAcquisitionOutcome } from '../types';
 import { asDeviceIdentifier } from '../types';
 import type {

@@ -1,9 +1,8 @@
-import { WhisperingErr, type WhisperingError } from '$lib/result';
-import type { Settings } from '$lib/settings';
-import { getExtensionFromAudioBlob } from '$lib/services/_utils';
-import { Err, Ok, type Result, tryAsync, trySync } from 'wellcrafted/result';
-
 import Groq from 'groq-sdk';
+import { Err, Ok, type Result, tryAsync, trySync } from 'wellcrafted/result';
+import { WhisperingErr, type WhisperingError } from '$lib/result';
+import { getExtensionFromAudioBlob } from '$lib/services/_utils';
+import type { Settings } from '$lib/settings';
 
 export const GROQ_MODELS = [
 	{
