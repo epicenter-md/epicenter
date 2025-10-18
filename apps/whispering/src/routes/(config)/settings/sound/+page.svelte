@@ -1,7 +1,171 @@
 <script lang="ts">
-	import { LabeledSwitch } from '$lib/components/labeled';
+	import {  LabeledSlider, LabeledSwitch } from '$lib/components/labeled';
 	import { Separator } from '@repo/ui/separator';
+	import { Button } from '@repo/ui/button';
+	import { PlayIcon, UploadIcon, XIcon } from '@lucide/svelte';
 	import { settings } from '$lib/stores/settings.svelte';
+	import { type WhisperingSoundNames } from '$lib/constants/sounds';
+	import { rpc } from '$lib/query';
+	import { FileDropZone, ACCEPT_AUDIO, MEGABYTE } from '@repo/ui/file-drop-zone';
+
+	// Sound events configuration
+	const soundEvents = [
+		{ key: 'manual-start', label: 'Manual Recording Start', description: 'When you start recording manually' },
+		{ key: 'manual-stop', label: 'Manual Recording Stop', description: 'When you stop recording manually' },
+		{ key: 'manual-cancel', label: 'Manual Recording Cancel', description: 'When you cancel recording manually' },
+		{ key: 'cpal-start', label: 'CPAL Recording Start', description: 'When CPAL recording starts' },
+		{ key: 'cpal-stop', label: 'CPAL Recording Stop', description: 'When CPAL recording stops' },
+		{ key: 'cpal-cancel', label: 'CPAL Recording Cancel', description: 'When CPAL recording is cancelled' },
+		{ key: 'vad-start', label: 'VAD Session Start', description: 'When voice activity detection session begins' },
+		{ key: 'vad-capture', label: 'VAD Capture', description: 'When voice activity is detected and captured' },
+		{ key: 'vad-stop', label: 'VAD Session Stop', description: 'When voice activity detection session ends' },
+		{ key: 'transcriptionComplete', label: 'Transcription Complete', description: 'When audio transcription finishes' },
+		{ key: 'transformationComplete', label: 'Transformation Complete', description: 'When text transformation finishes' },
+	] as const;
+
+	const testSound = (soundKey: string) => {
+		rpc.sound.playSoundIfEnabled.execute(soundKey as WhisperingSoundNames);
+	};
+
+	const applyGlobalVolume = (volume: number) => {
+		const volumeDecimal = volume / 100;
+		const updates: Partial<typeof settings.value> = {};
+		
+		soundEvents.forEach(event => {
+			updates[`sound.volume.${event.key}` as keyof typeof settings.value] = volumeDecimal as any;
+		});
+		
+		settings.value = { ...settings.value, ...updates };
+	};
+
+	const handleCustomSoundUpload = async (files: File[], soundKey: string) => {
+		console.log('🔧 Starting custom sound upload:', { files, soundKey });
+		const file = files[0];
+		if (!file) return;
+
+		// Validate file
+		if (!file.type.startsWith('audio/')) {
+			rpc.notify.error.execute({
+				title: 'Invalid file type',
+				description: 'Please upload an audio file (MP3, WAV, OGG, etc.)',
+			});
+			return;
+		}
+
+		const maxSize = 5 * 1024 * 1024; // 5MB
+		if (file.size > maxSize) {
+			rpc.notify.error.execute({
+				title: 'File too large',
+				description: 'File size must be less than 5MB',
+			});
+			return;
+		}
+
+		try {
+			console.log('🔧 Converting file to ArrayBuffer...');
+			// Convert to persistent format (same as recordings)
+			const arrayBuffer = await file.arrayBuffer();
+			const now = new Date().toISOString();
+
+			const customSound = {
+				id: soundKey as any, // WhisperingSoundNames
+				serializedAudio: { arrayBuffer, blobType: file.type },
+				fileName: file.name,
+				fileSize: file.size,
+				uploadedAt: now,
+				updatedAt: now,
+			};
+
+			console.log('🔧 Importing db service...');
+			// Import db service dynamically to avoid circular dependencies
+			const { db } = await import('$lib/services');
+			
+			console.log('🔧 Saving to IndexedDB...', customSound);
+			// Save to IndexedDB
+			const { error } = await db.saveCustomSound(customSound);
+			if (error) {
+				console.error('🔧 IndexedDB save error:', error);
+				throw error;
+			}
+
+			console.log('🔧 Updating settings...');
+			// Update settings flag
+			settings.value = {
+				...settings.value,
+				[`sound.custom.${soundKey}`]: true,
+			};
+
+			console.log('🔧 Custom sound upload successful!');
+			// Success notification
+			rpc.notify.success.execute({
+				title: 'Custom sound uploaded',
+				description: `Custom sound for ${soundEvents.find(e => e.key === soundKey)?.label} has been saved.`,
+			});
+
+		} catch (error) {
+			console.error('🔧 Custom sound upload failed:', error);
+			rpc.notify.error.execute({
+				title: 'Upload failed',
+				description: 'Failed to save custom sound. Please try again.',
+				action: { type: 'more-details', error },
+			});
+		}
+	};
+
+	const removeCustomSound = async (soundKey: string) => {
+		try {
+			// Import db service dynamically to avoid circular dependencies
+			const { db } = await import('$lib/services');
+			
+			// Delete from IndexedDB
+			const { error } = await db.deleteCustomSound(soundKey as any); // WhisperingSoundNames
+			if (error) {
+				throw error;
+			}
+
+			// Update settings flag
+			settings.value = {
+				...settings.value,
+				[`sound.custom.${soundKey}`]: false,
+			};
+
+			// Success notification
+			rpc.notify.success.execute({
+				title: 'Custom sound removed',
+				description: `Reverted to default sound for ${soundEvents.find(e => e.key === soundKey)?.label}.`,
+			});
+
+		} catch (error) {
+			rpc.notify.error.execute({
+				title: 'Failed to remove custom sound',
+				description: 'Please try again.',
+				action: { type: 'more-details', error },
+			});
+		}
+	};
+
+	// DEBUG: Reset database function
+	const resetDatabase = async () => {
+		try {
+			const { db } = await import('$lib/services');
+			const { error } = await db.resetDatabase();
+			if (error) {
+				throw error;
+			}
+			
+			rpc.notify.success.execute({
+				title: 'Database reset',
+				description: 'Database has been reset. Please refresh the page.',
+			});
+		} catch (error) {
+			console.error('Failed to reset database:', error);
+			rpc.notify.error.execute({
+				title: 'Failed to reset database',
+				description: 'Please try again.',
+				action: { type: 'more-details', error },
+			});
+		}
+	};
 </script>
 
 <svelte:head>
@@ -10,87 +174,127 @@
 
 <div class="space-y-6">
 	<div>
-		<h3 class="text-lg font-medium">Sound</h3>
+		<h3 class="text-lg font-medium">Sound Settings</h3>
 		<p class="text-muted-foreground text-sm">
-			Configure your Whispering sound preferences.
+			Configure notification sounds and volumes.
 		</p>
 	</div>
 
 	<Separator />
 
-	<LabeledSwitch
-		id="sound.playOn.manual-start"
-		label="Play sound when starting manual recording"
-		bind:checked={
-			() => settings.value['sound.playOn.manual-start'],
-			(v) => settings.updateKey('sound.playOn.manual-start', v)
-		}
-	/>
-
-	<LabeledSwitch
-		id="sound.playOn.manual-start"
-		label="Play sound when stopping manual recording"
-		bind:checked={
-			() => settings.value['sound.playOn.manual-stop'],
-			(v) => settings.updateKey('sound.playOn.manual-stop', v)
-		}
-	/>
-
-	<LabeledSwitch
-		id="sound.playOn.manual-start"
-		label="Play sound when canceling manual recording"
-		bind:checked={
-			() => settings.value['sound.playOn.manual-cancel'],
-			(v) => settings.updateKey('sound.playOn.manual-cancel', v)
-		}
-	/>
+	<!-- Global Volume Control -->
+	<div class="space-y-4">
+		<h4 class="text-base font-medium">Global Controls</h4>
+		<div class="flex items-end gap-4">
+			<LabeledSlider
+				id="sound.volume.global"
+				label="Set All Volumes"
+				value={Math.round(settings.value['sound.volume'] * 100)}
+				min={0}
+				max={100}
+				step={5}
+				description="Quickly set the same volume for all notification sounds"
+				onValueChange={(v) => {
+					settings.value = { ...settings.value, 'sound.volume': v / 100 };
+					applyGlobalVolume(v);
+				}}
+			/>
+			<Button variant="outline" size="sm" onclick={() => testSound('transcriptionComplete')}>
+				<PlayIcon class="mr-2 size-4" />
+				Test
+			</Button>
+		</div>
+	</div>
 
 	<Separator />
 
-	<LabeledSwitch
-		id="sound.playOn.vad-start"
-		label="Play sound when starting vad recording session"
-		bind:checked={
-			() => settings.value['sound.playOn.vad-start'],
-			(v) => settings.updateKey('sound.playOn.vad-start', v)
-		}
-	/>
+	<!-- Individual Sound Controls -->
+	<div class="space-y-4">
+		<h4 class="text-base font-medium">Individual Sound Controls</h4>
+		{#each soundEvents as event}
+			<div class="border rounded-lg p-4 space-y-4">
+				<div class="flex items-center justify-between">
+					<div>
+						<h5 class="font-medium">{event.label}</h5>
+						<p class="text-sm text-muted-foreground">{event.description}</p>
+					</div>
+					<div class="flex items-center gap-2">
+						<Button 
+							variant="outline" 
+							size="sm" 
+							onclick={() => testSound(event.key)}
+							disabled={!settings.value[`sound.playOn.${event.key}` as keyof typeof settings.value]}
+						>
+							<PlayIcon class="mr-2 size-4" />
+							Test
+						</Button>
+						<LabeledSwitch
+							id="sound.playOn.{event.key}"
+							label=""
+							checked={settings.value[`sound.playOn.${event.key}` as keyof typeof settings.value] as boolean}
+							onCheckedChange={(v) => {
+								settings.value = { ...settings.value, [`sound.playOn.${event.key}`]: v };
+							}}
+						/>
+					</div>
+				</div>
+				
+				<LabeledSlider
+					id="sound.volume.{event.key}"
+					label="Volume"
+					value={Math.round((settings.value[`sound.volume.${event.key}` as keyof typeof settings.value] as number) * 100)}
+					min={0}
+					max={100}
+					step={5}
+					onValueChange={(v) => {
+						settings.value = { ...settings.value, [`sound.volume.${event.key}`]: v / 100 };
+					}}
+				/>
 
-	<LabeledSwitch
-		id="sound.playOn.vad-start"
-		label="Play sound vad capture"
-		bind:checked={
-			() => settings.value['sound.playOn.vad-capture'],
-			(v) => settings.updateKey('sound.playOn.vad-capture', v)
-		}
-	/>
+				<!-- Custom Sound Upload Section -->
+				<div class="space-y-2">
+					<h6 class="text-sm font-medium">Custom Sound</h6>
+					{#if settings.value[`sound.custom.${event.key}` as keyof typeof settings.value]}
+						<div class="flex items-center gap-2 p-2 bg-muted rounded">
+							<span class="text-sm flex-1">Custom sound uploaded</span>
+							<Button 
+								variant="outline" 
+								size="sm"
+								onclick={() => removeCustomSound(event.key)}
+							>
+								<XIcon class="mr-1 size-3" />
+								Remove
+							</Button>
+						</div>
+					{:else}
+						<FileDropZone
+							accept={ACCEPT_AUDIO}
+							maxFiles={1}
+							maxFileSize={5 * MEGABYTE}
+							onUpload={(files) => handleCustomSoundUpload(files, event.key)}
+							class="h-20"
+						>
+							<div class="flex flex-col items-center gap-1">
+								<UploadIcon class="size-4 text-muted-foreground" />
+								<span class="text-xs text-muted-foreground">
+									Drop audio file or click to browse
+								</span>
+							</div>
+						</FileDropZone>
+					{/if}
+				</div>
+			</div>
+		{/each}
+	</div>
 
-	<LabeledSwitch
-		id="sound.playOn.vad-start"
-		label="Play sound when stopping vad recording session"
-		bind:checked={
-			() => settings.value['sound.playOn.vad-stop'],
-			(v) => settings.updateKey('sound.playOn.vad-stop', v)
-		}
-	/>
-
-	<Separator />
-
-	<LabeledSwitch
-		id="play-sound-transcription"
-		label="Play sound after transcription"
-		bind:checked={
-			() => settings.value['sound.playOn.transcriptionComplete'],
-			(v) => settings.updateKey('sound.playOn.transcriptionComplete', v)
-		}
-	/>
-
-	<LabeledSwitch
-		id="play-sound-transformation"
-		label="Play sound after transformation"
-		bind:checked={
-			() => settings.value['sound.playOn.transformationComplete'],
-			(v) => settings.updateKey('sound.playOn.transformationComplete', v)
-		}
-	/>
+	<!-- DEBUG: Reset Database Button -->
+	<!-- <div class="mt-8 p-4 border border-red-200 rounded-lg bg-red-50">
+		<h4 class="text-sm font-medium text-red-800 mb-2">Debug: Database Reset</h4>
+		<p class="text-xs text-red-600 mb-3">
+			This will delete the entire database and recreate it. Use this if custom sounds aren't saving properly.
+		</p>
+		<Button variant="destructive" size="sm" on:click={resetDatabase}>
+			Reset Database
+		</Button>
+	</div> -->
 </div>
