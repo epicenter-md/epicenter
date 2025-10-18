@@ -143,7 +143,7 @@
     },
     "apps/whispering": {
       "name": "@repo/whispering",
-      "version": "7.5.4",
+      "version": "7.5.5",
       "dependencies": {
         "@anthropic-ai/sdk": "^0.55.0",
         "@aptabase/tauri": "^0.4.1",
