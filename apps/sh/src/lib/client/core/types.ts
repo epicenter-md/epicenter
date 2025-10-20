@@ -5,12 +5,20 @@ import type {
 	QuerySerializerOptions,
 } from './bodySerializer';
 
-export interface Client<
-	RequestFn = never,
+// Broad, editor-friendly defaults so IntelliSense works even when generics
+// aren’t specialized by downstream consumers.
+type AnyRequestFn = (options: any) => Promise<any>;
+type AnyMethodFn = (options: any) => Promise<any>;
+type AnyBuildUrlFn = (
+	options: { url: string } & Record<string, unknown>,
+) => string;
+
+export type Client<
+	RequestFn = AnyRequestFn,
 	Config = unknown,
-	MethodFn = never,
-	BuildUrlFn = never,
-> {
+	MethodFn = AnyMethodFn,
+	BuildUrlFn = AnyBuildUrlFn,
+> = {
 	/**
 	 * Returns the final request URL.
 	 */
@@ -27,9 +35,9 @@ export interface Client<
 	request: RequestFn;
 	setConfig: (config: Config) => Config;
 	trace: MethodFn;
-}
+};
 
-export interface Config {
+export type Config = {
 	/**
 	 * Auth token or a function returning auth token. The resolved value will be
 	 * added to the request payload as defined by its `security` array.
@@ -101,4 +109,4 @@ export interface Config {
 	 * the transformers and returned to the user.
 	 */
 	responseValidator?: (data: unknown) => Promise<unknown>;
-}
+};
