@@ -5,12 +5,12 @@ import type {
 	QuerySerializerOptions,
 } from './bodySerializer';
 
-export interface Client<
+export type Client<
 	RequestFn = never,
 	Config = unknown,
 	MethodFn = never,
 	BuildUrlFn = never,
-> {
+> = {
 	/**
 	 * Returns the final request URL.
 	 */
@@ -27,9 +27,9 @@ export interface Client<
 	request: RequestFn;
 	setConfig: (config: Config) => Config;
 	trace: MethodFn;
-}
+};
 
-export interface Config {
+export type Config = {
 	/**
 	 * Auth token or a function returning auth token. The resolved value will be
 	 * added to the request payload as defined by its `security` array.
@@ -101,4 +101,4 @@ export interface Config {
 	 * the transformers and returned to the user.
 	 */
 	responseValidator?: (data: unknown) => Promise<unknown>;
-}
+};
