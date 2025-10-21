@@ -14,10 +14,7 @@
 		"typescript": "catalog:"
 	},
 	"scripts": {
-		"format": "echo 'skip format'",
-		"format:check": "echo 'skip format check'",
-		"lint": "echo 'skip lint'",
-		"check": "echo \"TODO add this in a later commit\""
+		"check": "tsc --noEmit"
 	},
 	"dependencies": {
 		"@standard-schema/spec": "^1.0.0",
