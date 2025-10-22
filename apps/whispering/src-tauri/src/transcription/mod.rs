@@ -4,6 +4,8 @@ mod model_manager;
 use error::TranscriptionError;
 pub use model_manager::ModelManager;
 use std::path::PathBuf;
+#[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
 use std::io::Write;
 use transcribe_rs::{
     TranscriptionEngine,
@@ -12,6 +14,9 @@ use transcribe_rs::{
         parakeet::{ParakeetInferenceParams, TimestampGranularity},
     },
 };
+
+#[cfg(target_os = "windows")]
+const CREATE_NO_WINDOW: u32 = 0x08000000;
 use rubato::{Resampler, SincFixedIn, SincInterpolationType, SincInterpolationParameters, WindowFunction};
 
 /// Check if audio is already in whisper-compatible format (16kHz, mono, 16-bit PCM)
@@ -337,16 +342,22 @@ fn convert_audio_for_whisper(audio_data: Vec<u8>) -> Result<Vec<u8>, Transcripti
         })?;
 
     // Use FFmpeg to convert to whisper-compatible format
-    let output = std::process::Command::new("ffmpeg")
-        .args(&[
+    let output = {
+        let mut cmd = std::process::Command::new("ffmpeg");
+        cmd.args(&[
             "-i", &input_file.path().to_string_lossy(),
             "-ar", "16000",        // 16kHz sample rate
             "-ac", "1",            // Mono
             "-c:a", "pcm_s16le",   // 16-bit PCM
             "-y",                  // Overwrite output
             &output_file.path().to_string_lossy(),
-        ])
-        .output()
+        ]);
+        #[cfg(target_os = "windows")]
+        {
+            cmd.creation_flags(CREATE_NO_WINDOW);
+        }
+        cmd.output()
+    }
         .map_err(|e| {
             // Check if error is specifically "command not found"
             if e.kind() == std::io::ErrorKind::NotFound {
