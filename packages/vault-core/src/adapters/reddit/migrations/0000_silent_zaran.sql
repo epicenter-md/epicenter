@@ -65,12 +65,10 @@ CREATE TABLE `reddit_comments` (
 	`id` text PRIMARY KEY NOT NULL,
 	`permalink` text NOT NULL,
 	`date` integer NOT NULL,
-	`created_utc` integer NOT NULL,
 	`ip` text,
 	`subreddit` text NOT NULL,
 	`gildings` integer,
 	`link` text NOT NULL,
-	`post_id` text,
 	`parent` text,
 	`body` text,
 	`media` text
@@ -99,38 +97,34 @@ CREATE TABLE `reddit_friends` (
 );
 --> statement-breakpoint
 CREATE TABLE `reddit_gilded_content` (
-	`content_link` text,
+	`content_link` text PRIMARY KEY NOT NULL,
 	`award` text,
 	`amount` text,
 	`date` integer
 );
 --> statement-breakpoint
-CREATE UNIQUE INDEX `reddit_gilded_content_content_award_date_uq` ON `reddit_gilded_content` (`content_link`,`award`,`date`);--> statement-breakpoint
 CREATE TABLE `reddit_gold_received` (
-	`content_link` text,
+	`content_link` text PRIMARY KEY NOT NULL,
 	`gold_received` text,
 	`gilder_username` text,
 	`date` integer
 );
 --> statement-breakpoint
-CREATE UNIQUE INDEX `reddit_gold_received_content_date_uq` ON `reddit_gold_received` (`content_link`,`date`);--> statement-breakpoint
 CREATE TABLE `reddit_hidden_posts` (
 	`id` text PRIMARY KEY NOT NULL,
 	`permalink` text NOT NULL
 );
 --> statement-breakpoint
 CREATE TABLE `reddit_ip_logs` (
-	`date` integer,
+	`date` integer PRIMARY KEY NOT NULL,
 	`ip` text
 );
 --> statement-breakpoint
-CREATE UNIQUE INDEX `reddit_ip_logs_date_ip_uq` ON `reddit_ip_logs` (`date`,`ip`);--> statement-breakpoint
 CREATE TABLE `reddit_linked_identities` (
-	`issuer_id` text,
-	`subject_id` text
+	`issuer_id` text PRIMARY KEY NOT NULL,
+	`subject_id` text NOT NULL
 );
 --> statement-breakpoint
-CREATE UNIQUE INDEX `reddit_linked_identities_issuer_subject_uq` ON `reddit_linked_identities` (`issuer_id`,`subject_id`);--> statement-breakpoint
 CREATE TABLE `reddit_linked_phone_number` (
 	`phone_number` text PRIMARY KEY NOT NULL
 );
@@ -198,7 +192,7 @@ CREATE TABLE `reddit_multireddits` (
 --> statement-breakpoint
 CREATE TABLE `reddit_payouts` (
 	`payout_amount_usd` text,
-	`date` integer,
+	`date` integer PRIMARY KEY NOT NULL,
 	`payout_id` text
 );
 --> statement-breakpoint
@@ -208,7 +202,7 @@ CREATE TABLE `reddit_persona` (
 );
 --> statement-breakpoint
 CREATE TABLE `reddit_poll_votes` (
-	`post_id` text,
+	`post_id` text PRIMARY KEY NOT NULL,
 	`user_selection` text,
 	`text` text,
 	`image_url` text,
@@ -216,7 +210,6 @@ CREATE TABLE `reddit_poll_votes` (
 	`stake_amount` text
 );
 --> statement-breakpoint
-CREATE UNIQUE INDEX `reddit_poll_votes_post_user_uq` ON `reddit_poll_votes` (`post_id`,`user_selection`);--> statement-breakpoint
 CREATE TABLE `reddit_post_headers` (
 	`id` text PRIMARY KEY NOT NULL,
 	`permalink` text NOT NULL,
@@ -237,7 +230,6 @@ CREATE TABLE `reddit_posts` (
 	`id` text PRIMARY KEY NOT NULL,
 	`permalink` text NOT NULL,
 	`date` integer NOT NULL,
-	`created_utc` integer NOT NULL,
 	`ip` text,
 	`subreddit` text NOT NULL,
 	`gildings` integer,
