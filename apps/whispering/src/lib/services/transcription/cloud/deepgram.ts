@@ -113,7 +113,12 @@ export function createDeepgramTranscriptionService({
 			}
 
 			if (options.prompt) {
-				params.append('keywords', options.prompt);
+				const promptParameter = options.modelName
+    					.toLowerCase()
+    					.startsWith('nova-3')
+    					? 'keyterm'
+    					: 'keywords';
+    				params.append(promptParameter, options.prompt);
 			}
 
 			// Send raw audio data directly as recommended by Deepgram docs
