@@ -13,7 +13,7 @@ import { transcription } from './transcription';
 import { transformations } from './transformations';
 import { transformer } from './transformer';
 import { vadRecorder } from './vad-recorder';
-import { analytics } from './analytics';
+import { rpc } from './';
 import { media } from './media';
 
 // Track manual recording start time for duration calculation
@@ -130,7 +130,7 @@ const stopManualRecording = defineMutation({
 			duration = Date.now() - manualRecordingStartTime;
 			manualRecordingStartTime = null; // Reset for next recording
 		}
-        analytics.logEvent.execute({
+        rpc.analytics.logEvent.execute({
 			type: 'manual_recording_completed',
 			blob_size: blob.size,
 			duration,
@@ -182,7 +182,7 @@ const startVadRecording = defineMutation({
 					sound.playSoundIfEnabled.execute('vad-capture');
 
 					// Log VAD recording completion
-            analytics.logEvent.execute({
+            rpc.analytics.logEvent.execute({
 						type: 'vad_recording_completed',
 						blob_size: blob.size,
 						// VAD doesn't track duration by default
