@@ -6,7 +6,7 @@
 	import { SvelteQueryDevtools } from '@tanstack/svelte-query-devtools';
 	import '@repo/ui/app.css';
 	import * as services from '$lib/services';
-	import AppShell from './+layout/AppShell.svelte';
+	import AppShell from '$routes/+layout/AppShell.svelte';
 
 	let { children } = $props();
 

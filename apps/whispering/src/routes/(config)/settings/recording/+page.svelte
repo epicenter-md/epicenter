@@ -17,7 +17,7 @@
 		isCompressionRecommended,
 		COMPRESSION_RECOMMENDED_MESSAGE,
 		hasNavigatorLocalTranscriptionIssue,
-	} from '../../../+layout/check-ffmpeg';
+	} from '$routes/+layout/check-ffmpeg';
 	import { IS_MACOS, IS_LINUX, PLATFORM_TYPE } from '$lib/constants/platform';
 	import { Button } from '@repo/ui/button';
 
@@ -68,7 +68,8 @@
 	);
 
 	const localTranscriptionServiceName = $derived(
-		settings.value['transcription.selectedTranscriptionService'] === 'whispercpp'
+		settings.value['transcription.selectedTranscriptionService'] ===
+			'whispercpp'
 			? 'Whisper C++'
 			: 'Parakeet',
 	);
@@ -178,7 +179,7 @@
 			</Alert.Root>
 		{/if}
 
-		{#if hasNavigatorLocalTranscriptionIssue({ isFFmpegInstalled: data.ffmpegInstalled ?? false })}
+		{#if hasNavigatorLocalTranscriptionIssue( { isFFmpegInstalled: data.ffmpegInstalled ?? false }, )}
 			<Alert.Root class="border-red-500/20 bg-red-500/5">
 				<InfoIcon class="size-4 text-red-600 dark:text-red-400" />
 				<Alert.Title class="text-red-600 dark:text-red-400">
@@ -205,8 +206,8 @@
 						</div>
 						<div class="text-sm">
 							<strong>Option 3:</strong>
-							Switch to a cloud transcription service (OpenAI, Groq, Deepgram,
-							etc.) which work with all recording methods
+							Switch to a cloud transcription service (OpenAI, Groq, Deepgram, etc.)
+							which work with all recording methods
 						</div>
 					</div>
 				</Alert.Description>
