@@ -8,7 +8,7 @@ pub struct PausedPlayers {
 pub async fn macos_pause_active_media() -> Result<PausedPlayers, String> {
     #[cfg(target_os = "macos")]
     {
-        // AppleScript to check state and pause Music and Spotify if playing
+        // AppleScript to check state and pause Music, Spotify, and Books if playing
         let script = r#"
 set pausedPlayers to {}
 
@@ -31,6 +31,18 @@ try
             if player state is playing then
                 pause
                 set end of pausedPlayers to "Spotify"
+            end if
+        end if
+    end tell
+end try
+
+-- Books
+try
+    tell application "Books"
+        if it is running then
+            if player state is playing then
+                pause
+                set end of pausedPlayers to "Books"
             end if
         end if
     end tell
@@ -70,6 +82,11 @@ pub async fn macos_resume_media(players: Vec<String>) -> Result<(), String> {
                 "Spotify" => {
                     script.push_str(
                         "try\n  tell application \"Spotify\"\n    if it is running then play\n  end tell\nend try\n",
+                    );
+                }
+                "Books" => {
+                    script.push_str(
+                        "try\n  tell application \"Books\"\n    if it is running then play\n  end tell\nend try\n",
                     );
                 }
                 _ => {}
