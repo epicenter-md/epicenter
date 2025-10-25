@@ -43,9 +43,7 @@ try
             tell process "Books"
                 -- Check if "Pause" menu item exists (means it's playing)
                 if exists menu item "Pause" of menu "Controls" of menu bar 1 then
-                    tell application "Books" to activate
-                    delay 0.2
-                    keystroke space
+                    click menu item "Pause" of menu "Controls" of menu bar 1
                     set end of pausedPlayers to "Books"
                 end if
             end tell
@@ -91,7 +89,7 @@ pub async fn macos_resume_media(players: Vec<String>) -> Result<(), String> {
                 }
                 "Books" => {
                     script.push_str(
-                        "try\n  tell application \"Books\" to activate\n  delay 0.2\n  tell application \"System Events\"\n    tell process \"Books\"\n      keystroke space\n    end tell\n  end tell\nend try\n",
+                        "try\n  tell application \"System Events\"\n    tell process \"Books\"\n      click menu item \"Play\" of menu \"Controls\" of menu bar 1\n    end tell\n  end tell\nend try\n",
                     );
                 }
                 _ => {}
