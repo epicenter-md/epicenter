@@ -36,14 +36,19 @@ try
     end tell
 end try
 
--- Books
+-- Books (uses UI scripting since it lacks player state API)
 try
-    tell application "Books"
-        if it is running then
-            if player state is playing then
-                pause
-                set end of pausedPlayers to "Books"
-            end if
+    tell application "System Events"
+        if exists process "Books" then
+            tell process "Books"
+                -- Check if "Pause" menu item exists (means it's playing)
+                if exists menu item "Pause" of menu "Controls" of menu bar 1 then
+                    tell application "Books" to activate
+                    delay 0.2
+                    keystroke space
+                    set end of pausedPlayers to "Books"
+                end if
+            end tell
         end if
     end tell
 end try
@@ -86,7 +91,7 @@ pub async fn macos_resume_media(players: Vec<String>) -> Result<(), String> {
                 }
                 "Books" => {
                     script.push_str(
-                        "try\n  tell application \"Books\"\n    if it is running then play\n  end tell\nend try\n",
+                        "try\n  tell application \"Books\" to activate\n  delay 0.2\n  tell application \"System Events\"\n    tell process \"Books\"\n      keystroke space\n    end tell\n  end tell\nend try\n",
                     );
                 }
                 _ => {}
