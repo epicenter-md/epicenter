@@ -128,6 +128,7 @@
 <Toaster
 	offset={16}
 	class="xs:block hidden"
+	style="z-index: 90;"
 	theme={mode.current}
 	{...TOASTER_SETTINGS}
 />
