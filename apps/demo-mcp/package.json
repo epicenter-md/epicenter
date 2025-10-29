@@ -5,13 +5,16 @@
 	"type": "module",
 	"description": "Minimal CLI to import Reddit export ZIP into a local LibSQL DB using the Reddit adapter",
 	"scripts": {
-		"dev": "bun run src/cli.ts import",
-		"import": "bun run src/cli.ts import",
-		"serve": "bun run src/cli.ts serve",
-		"check": "tsc --noEmit"
+		"dev": "bun run src/cli.ts import reddit",
+		"import": "bun run src/cli.ts import reddit",
+		"export-fs": "bun run src/cli.ts export-fs reddit",
+		"import-fs": "bun run src/cli.ts import-fs reddit",
+		"sync": "bun run src/cli.ts sync reddit",
+		"serve": "bun run src/cli.ts serve"
 	},
 	"dependencies": {
 		"@libsql/client": "^0.11.0",
+		"@repo/vault-core": "workspace:*",
 		"drizzle-orm": "catalog:"
 	}
 }
