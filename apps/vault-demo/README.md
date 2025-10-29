@@ -14,10 +14,10 @@ Quick start (Bun)
 - Prerequisite: Bun installed.
 - From repo root:
 
-  ```
-  bun install
-  bun run dev -w apps/vault-demo
-  ```
+```sh
+bun install
+bun run dev --filter=vault-demo
+```
 
 - Open http://localhost:5173
 - Note: The demo uses an in-memory DB with a vault singleton at [apps/vault-demo/src/lib/vault/singleton.ts](apps/vault-demo/src/lib/vault/singleton.ts) so data persists across routes during a single browser session.
