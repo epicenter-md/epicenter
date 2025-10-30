@@ -23,7 +23,9 @@ let manualRecordingStartTime: number | null = null;
 const startManualRecording = defineMutation({
 	mutationKey: ['commands', 'startManualRecording'] as const,
 	resultMutationFn: async () => {
+		console.time('[startup] switchRecordingMode(manual)');
 		await settings.switchRecordingMode('manual');
+		console.timeEnd('[startup] switchRecordingMode(manual)');
 
 		const toastId = nanoid();
 		notify.loading.execute({
@@ -32,10 +34,14 @@ const startManualRecording = defineMutation({
 			description: 'Setting up your recording environment...',
 		});
 		// Pause media before starting recording
+		console.time('[startup] media.pauseIfEnabled');
 		await media.pauseIfEnabled.execute(undefined);
+		console.timeEnd('[startup] media.pauseIfEnabled');
 		
+		console.time('[startup] recorder.startRecording');
 		const { data: deviceAcquisitionOutcome, error: startRecordingError } =
 			await recorder.startRecording.execute({ toastId });
+		console.timeEnd('[startup] recorder.startRecording');
 
 		if (startRecordingError) {
 			notify.error.execute({ id: toastId, ...startRecordingError });

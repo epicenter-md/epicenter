@@ -24,7 +24,9 @@ export const media = {
             if (!enabled || !IS_MACOS || !window.__TAURI_INTERNALS__) return Ok(undefined);
 
             console.info('[media] attempting to pause active media...');
+            console.time('[media] macos_pause_active_media invoke');
             const { data, error } = await invoke<PausedPlayers>('macos_pause_active_media');
+            console.timeEnd('[media] macos_pause_active_media invoke');
             if (error) {
                 console.warn('[media] pause failed', error);
                 return Ok(undefined);
@@ -44,7 +46,9 @@ export const media = {
             const players = [...pausedPlayers];
             pausedPlayers = [];
             console.info('[media] resuming players:', players);
+            console.time('[media] macos_resume_media invoke');
             const { error } = await invoke<void>('macos_resume_media', { players });
+            console.timeEnd('[media] macos_resume_media invoke');
             if (error) {
                 console.warn('[media] resume failed', error);
             }

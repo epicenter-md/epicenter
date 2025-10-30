@@ -38,17 +38,19 @@ end try
 
 -- Books (uses UI scripting since it lacks player state API)
 try
-    tell application "System Events"
-        if exists process "Books" then
-            tell process "Books"
-                -- Check if "Pause" menu item exists (means it's playing)
-                if exists menu item "Pause" of menu "Controls" of menu bar 1 then
-                    click menu item "Pause" of menu "Controls" of menu bar 1
-                    set end of pausedPlayers to "Books"
-                end if
-            end tell
-        end if
-    end tell
+    with timeout of 1 seconds
+        tell application "System Events"
+            if exists process "Books" then
+                tell process "Books"
+                    -- Check if "Pause" menu item exists (means it's playing)
+                    if exists menu item "Pause" of menu "Controls" of menu bar 1 then
+                        click menu item "Pause" of menu "Controls" of menu bar 1
+                        set end of pausedPlayers to "Books"
+                    end if
+                end tell
+            end if
+        end tell
+    end timeout
 end try
 
 return pausedPlayers as string
@@ -89,7 +91,7 @@ pub async fn macos_resume_media(players: Vec<String>) -> Result<(), String> {
                 }
                 "Books" => {
                     script.push_str(
-                        "try\n  tell application \"System Events\"\n    tell process \"Books\"\n      click menu item \"Play\" of menu \"Controls\" of menu bar 1\n    end tell\n  end tell\nend try\n",
+                        "try\n  with timeout of 1 seconds\n    tell application \"System Events\"\n      tell process \"Books\"\n        click menu item \"Play\" of menu \"Controls\" of menu bar 1\n      end tell\n    end tell\n  end timeout\nend try\n",
                     );
                 }
                 _ => {}
