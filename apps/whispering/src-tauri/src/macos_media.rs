@@ -37,21 +37,24 @@ try
 end try
 
 -- Books (uses UI scripting since it lacks player state API)
-try
-    with timeout of 1 seconds
-        tell application "System Events"
-            if exists process "Books" then
-                tell process "Books"
-                    -- Check if "Pause" menu item exists (means it's playing)
-                    if exists menu item "Pause" of menu "Controls" of menu bar 1 then
-                        click menu item "Pause" of menu "Controls" of menu bar 1
-                        set end of pausedPlayers to "Books"
-                    end if
-                end tell
-            end if
-        end tell
-    end timeout
-end try
+-- Fast-path: only check Books if nothing else was paused
+if (count of pausedPlayers) is 0 then
+    try
+        with timeout of 1 seconds
+            tell application "System Events"
+                if exists process "Books" then
+                    tell process "Books"
+                        -- Check if "Pause" menu item exists (means it's playing)
+                        if exists menu item "Pause" of menu "Controls" of menu bar 1 then
+                            click menu item "Pause" of menu "Controls" of menu bar 1
+                            set end of pausedPlayers to "Books"
+                        end if
+                    end tell
+                end if
+            end tell
+        end timeout
+    end try
+end if
 
 return pausedPlayers as string
 "#;
