@@ -5,7 +5,7 @@ import { tryAsync, Ok, Err } from 'wellcrafted/result';
 
 type PausedPlayers = { players: string[] };
 
-let pausedPlayers: string[] = [];
+const pausedPlayersBySession = new Map<string, string[]>();
 
 async function invoke<T>(command: string, args?: Record<string, unknown>) {
     // Prefer dynamic import to avoid bundling on web
@@ -19,10 +19,12 @@ async function invoke<T>(command: string, args?: Record<string, unknown>) {
 export const media = {
     pauseIfEnabled: defineMutation({
         mutationKey: ['media', 'pauseIfEnabled'] as const,
-        resultMutationFn: async () => {
+        resultMutationFn: async ({ sessionId }: { sessionId: string }) => {
             const enabled = settings.value['sound.autoPauseMediaDuringRecording'];
             if (!enabled || !IS_MACOS || !window.__TAURI_INTERNALS__) return Ok(undefined);
 
+            // Fire-and-forget pause; we still await inside this mutation so errors are logged,
+            // but callers should not await this mutation if they want background behavior.
             console.info('[media] attempting to pause active media...');
             console.time('[media] macos_pause_active_media invoke');
             const { data, error } = await invoke<PausedPlayers>('macos_pause_active_media');
@@ -31,20 +33,21 @@ export const media = {
                 console.warn('[media] pause failed', error);
                 return Ok(undefined);
             }
-            console.info('[media] paused players:', data.players);
-            pausedPlayers = data.players ?? [];
+            const players = data.players ?? [];
+            console.info('[media] paused players:', players);
+            pausedPlayersBySession.set(sessionId, players);
             return Ok(undefined);
         },
     }),
 
     resumePaused: defineMutation({
         mutationKey: ['media', 'resumePaused'] as const,
-        resultMutationFn: async () => {
+        resultMutationFn: async ({ sessionId }: { sessionId: string }) => {
             if (!IS_MACOS || !window.__TAURI_INTERNALS__) return Ok(undefined);
-            if (pausedPlayers.length === 0) return Ok(undefined);
+            const players = pausedPlayersBySession.get(sessionId) ?? [];
+            if (players.length === 0) return Ok(undefined);
 
-            const players = [...pausedPlayers];
-            pausedPlayers = [];
+            pausedPlayersBySession.delete(sessionId);
             console.info('[media] resuming players:', players);
             console.time('[media] macos_resume_media invoke');
             const { error } = await invoke<void>('macos_resume_media', { players });

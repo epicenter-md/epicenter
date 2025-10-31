@@ -18,6 +18,7 @@ import { media } from './media';
 
 // Track manual recording start time for duration calculation
 let manualRecordingStartTime: number | null = null;
+let currentMediaSessionId: string | null = null;
 
 // Internal mutations for manual recording
 const startManualRecording = defineMutation({
@@ -34,8 +35,10 @@ const startManualRecording = defineMutation({
 			description: 'Setting up your recording environment...',
 		});
 		// Pause media before starting recording
+		// Background media pause: do not await; track by sessionId for later resume
+		currentMediaSessionId = nanoid();
 		console.time('[startup] media.pauseIfEnabled');
-		await media.pauseIfEnabled.execute(undefined);
+		void media.pauseIfEnabled.execute({ sessionId: currentMediaSessionId });
 		console.timeEnd('[startup] media.pauseIfEnabled');
 		
 		console.time('[startup] recorder.startRecording');
@@ -115,8 +118,11 @@ const stopManualRecording = defineMutation({
 		const { data: blob, error: stopRecordingError } =
 			await recorder.stopRecording.execute({ toastId });
 		
-		// Resume media after stopping recording
-		await media.resumePaused.execute(undefined);
+		// Resume media for this session
+		if (currentMediaSessionId) {
+			await media.resumePaused.execute({ sessionId: currentMediaSessionId });
+			currentMediaSessionId = null;
+		}
 		if (stopRecordingError) {
 			notify.error.execute({ id: toastId, ...stopRecordingError });
 			return Err(stopRecordingError);
@@ -167,7 +173,8 @@ const startVadRecording = defineMutation({
 			description: 'Your voice activated capture is starting...',
 		});
 		// Pause media before starting VAD
-		await media.pauseIfEnabled.execute(undefined);
+		currentMediaSessionId = nanoid();
+		void media.pauseIfEnabled.execute({ sessionId: currentMediaSessionId });
 		
 		const { data: deviceAcquisitionOutcome, error: startActiveListeningError } =
 			await vadRecorder.startActiveListening.execute({
@@ -274,8 +281,11 @@ const stopVadRecording = defineMutation({
 		const { error: stopVadError } =
 			await vadRecorder.stopActiveListening.execute(undefined);
 		
-		// Resume media after stopping VAD
-		await media.resumePaused.execute(undefined);
+		// Resume media for this session
+		if (currentMediaSessionId) {
+			await media.resumePaused.execute({ sessionId: currentMediaSessionId });
+			currentMediaSessionId = null;
+		}
 		if (stopVadError) {
 			notify.error.execute({ id: toastId, ...stopVadError });
 			return Err(stopVadError);
@@ -326,8 +336,11 @@ export const commands = {
 			const { data: cancelRecordingResult, error: cancelRecordingError } =
 				await recorder.cancelRecording.execute({ toastId });
 			
-			// Resume media after canceling recording
-			await media.resumePaused.execute(undefined);
+			// Resume media for this session
+			if (currentMediaSessionId) {
+				await media.resumePaused.execute({ sessionId: currentMediaSessionId });
+				currentMediaSessionId = null;
+			}
 			if (cancelRecordingError) {
 				notify.error.execute({ id: toastId, ...cancelRecordingError });
 				return Err(cancelRecordingError);

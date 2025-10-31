@@ -14,7 +14,7 @@ pub async fn macos_pause_active_media() -> Result<PausedPlayers, String> {
         // Run Music and Spotify checks concurrently with short AppleScript timeouts
         let music_script = r#"
 try
-    with timeout of 0.5 seconds
+    with timeout of 0.2 seconds
         tell application "Music"
             if it is running then
                 if player state is playing then
@@ -30,7 +30,7 @@ return ""
 
         let spotify_script = r#"
 try
-    with timeout of 0.5 seconds
+    with timeout of 0.2 seconds
         tell application "Spotify"
             if it is running then
                 if player state is playing then
