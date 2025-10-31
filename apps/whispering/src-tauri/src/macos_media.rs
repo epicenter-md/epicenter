@@ -11,54 +11,63 @@ pub async fn macos_pause_active_media() -> Result<PausedPlayers, String> {
         use std::time::Instant;
         let start = Instant::now();
         
-        // Check Music first
-        let music_result = run_osascript(r#"
+        // Run Music and Spotify checks concurrently with short AppleScript timeouts
+        let music_script = r#"
 try
-    tell application "Music"
-        if it is running then
-            if player state is playing then
-                pause
-                return "Music"
+    with timeout of 0.5 seconds
+        tell application "Music"
+            if it is running then
+                if player state is playing then
+                    pause
+                    return "Music"
+                end if
             end if
-        end if
-    end tell
+        end tell
+    end timeout
 end try
 return ""
-"#).await;
-        
-        let music_time = start.elapsed();
-        eprintln!("[macos_media] Music check took {:?}", music_time);
-        
-        let mut paused_players = Vec::new();
-        if let Ok(output) = music_result {
-            if !output.trim().is_empty() {
-                paused_players.push(output.trim().to_string());
-            }
-        }
-        
-        // Check Spotify
+"#;
+
+        let spotify_script = r#"
+try
+    with timeout of 0.5 seconds
+        tell application "Spotify"
+            if it is running then
+                if player state is playing then
+                    pause
+                    return "Spotify"
+                end if
+            end if
+        end tell
+    end timeout
+end try
+return ""
+"#;
+
+        let music_start = Instant::now();
         let spotify_start = Instant::now();
-        let spotify_result = run_osascript(r#"
-try
-    tell application "Spotify"
-        if it is running then
-            if player state is playing then
-                pause
-                return "Spotify"
-            end if
-        end if
-    end tell
-end try
-return ""
-"#).await;
-        
-        let spotify_time = spotify_start.elapsed();
-        eprintln!("[macos_media] Spotify check took {:?}", spotify_time);
-        
-        if let Ok(output) = spotify_result {
-            if !output.trim().is_empty() {
-                paused_players.push(output.trim().to_string());
+        let (music_out, spotify_out) = tokio::join!(
+            async {
+                let r = run_osascript(music_script).await;
+                let d = music_start.elapsed();
+                (r, d)
+            },
+            async {
+                let r = run_osascript(spotify_script).await;
+                let d = spotify_start.elapsed();
+                (r, d)
             }
+        );
+
+        eprintln!("[macos_media] Music check took {:?}", music_out.1);
+        eprintln!("[macos_media] Spotify check took {:?}", spotify_out.1);
+
+        let mut paused_players = Vec::new();
+        if let Ok(output) = music_out.0 {
+            if !output.trim().is_empty() { paused_players.push(output.trim().to_string()); }
+        }
+        if let Ok(output) = spotify_out.0 {
+            if !output.trim().is_empty() { paused_players.push(output.trim().to_string()); }
         }
         
         // Only check Books if nothing else was paused
