@@ -8,64 +8,97 @@ pub struct PausedPlayers {
 pub async fn macos_pause_active_media() -> Result<PausedPlayers, String> {
     #[cfg(target_os = "macos")]
     {
-        // AppleScript to check state and pause Music, Spotify, and Books if playing
-        let script = r#"
-set pausedPlayers to {}
-
--- Apple Music
+        use std::time::Instant;
+        let start = Instant::now();
+        
+        // Check Music first
+        let music_result = run_osascript(r#"
 try
     tell application "Music"
         if it is running then
             if player state is playing then
                 pause
-                set end of pausedPlayers to "Music"
+                return "Music"
             end if
         end if
     end tell
 end try
-
--- Spotify
+return ""
+"#).await;
+        
+        let music_time = start.elapsed();
+        eprintln!("[macos_media] Music check took {:?}", music_time);
+        
+        let mut paused_players = Vec::new();
+        if let Ok(output) = music_result {
+            if !output.trim().is_empty() {
+                paused_players.push(output.trim().to_string());
+            }
+        }
+        
+        // Check Spotify
+        let spotify_start = Instant::now();
+        let spotify_result = run_osascript(r#"
 try
     tell application "Spotify"
         if it is running then
             if player state is playing then
                 pause
-                set end of pausedPlayers to "Spotify"
+                return "Spotify"
             end if
         end if
     end tell
 end try
-
--- Books (uses UI scripting since it lacks player state API)
--- Fast-path: only check Books if nothing else was paused
-if (count of pausedPlayers) is 0 then
-    try
-        with timeout of 1 seconds
-            tell application "System Events"
-                if exists process "Books" then
-                    tell process "Books"
-                        -- Check if "Pause" menu item exists (means it's playing)
-                        if exists menu item "Pause" of menu "Controls" of menu bar 1 then
-                            click menu item "Pause" of menu "Controls" of menu bar 1
-                            set end of pausedPlayers to "Books"
-                        end if
-                    end tell
-                end if
-            end tell
-        end timeout
-    end try
-end if
-
-return pausedPlayers as string
-"#;
-
-        match run_osascript(script).await {
-            Ok(output) => {
-                let players = parse_comma_list(&output);
-                Ok(PausedPlayers { players })
+return ""
+"#).await;
+        
+        let spotify_time = spotify_start.elapsed();
+        eprintln!("[macos_media] Spotify check took {:?}", spotify_time);
+        
+        if let Ok(output) = spotify_result {
+            if !output.trim().is_empty() {
+                paused_players.push(output.trim().to_string());
             }
-            Err(e) => Err(format!("Failed to pause media: {}", e)),
         }
+        
+        // Only check Books if nothing else was paused
+        if paused_players.is_empty() {
+            let books_start = Instant::now();
+            let books_result = run_osascript(r#"
+try
+    with timeout of 0.3 seconds
+        tell application "System Events"
+            set booksProcessExists to exists process "Books"
+        end tell
+        if booksProcessExists then
+            tell application "System Events"
+                tell process "Books"
+                    if exists menu item "Pause" of menu "Controls" of menu bar 1 then
+                        click menu item "Pause" of menu "Controls" of menu bar 1
+                        return "Books"
+                    end if
+                end tell
+            end tell
+        end if
+    end timeout
+end try
+return ""
+"#).await;
+            
+            let books_time = books_start.elapsed();
+            eprintln!("[macos_media] Books check took {:?}", books_time);
+            
+            if let Ok(output) = books_result {
+                if !output.trim().is_empty() {
+                    paused_players.push(output.trim().to_string());
+                }
+            }
+        }
+        
+        let total_time = start.elapsed();
+        eprintln!("[macos_media] Total pause took {:?}", total_time);
+        
+        return Ok(PausedPlayers { players: paused_players });
     }
 
     #[cfg(not(target_os = "macos"))]
