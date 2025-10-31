@@ -34,7 +34,8 @@
 			<Button
 				variant="outline"
 				size="sm"
-				onclick={() => {
+				onclick={async () => {
+					await rpc.shortcuts.unregisterAllGlobalShortcuts.execute();
 					settings.resetGlobalShortcuts();
 					rpc.notify.success.execute({
 						title: 'Shortcuts reset',

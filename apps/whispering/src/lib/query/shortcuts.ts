@@ -61,4 +61,9 @@ export const shortcuts = {
 			return await services.globalShortcutManager.unregister(accelerator);
 		},
 	}),
+
+	unregisterAllGlobalShortcuts: defineMutation({
+		mutationKey: ['shortcuts', 'unregisterAllGlobalShortcuts'] as const,
+		resultMutationFn: async () => services.globalShortcutManager.unregisterAll(),
+	}),
 };
