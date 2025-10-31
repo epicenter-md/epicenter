@@ -49,7 +49,6 @@ const startManualRecording = defineMutation({
 
 		switch (deviceAcquisitionOutcome.outcome) {
 			case 'success': {
-				// Record ready
 				notify.success.execute({
 					id: toastId,
 					title: '🎙️ Whispering is recording...',
@@ -139,7 +138,7 @@ const stopManualRecording = defineMutation({
 			duration = Date.now() - manualRecordingStartTime;
 			manualRecordingStartTime = null; // Reset for next recording
 		}
-        rpc.analytics.logEvent.execute({
+		rpc.analytics.logEvent.execute({
 			type: 'manual_recording_completed',
 			blob_size: blob.size,
 			duration,
@@ -192,7 +191,7 @@ const startVadRecording = defineMutation({
 					sound.playSoundIfEnabled.execute('vad-capture');
 
 					// Log VAD recording completion
-            rpc.analytics.logEvent.execute({
+					rpc.analytics.logEvent.execute({
 						type: 'vad_recording_completed',
 						blob_size: blob.size,
 						// VAD doesn't track duration by default

@@ -69,12 +69,10 @@ export const recorder = {
 			};
 
 			// Resolve the output folder - use default if null
-			console.time('[startup] resolveOutputFolder');
 			const outputFolder = window.__TAURI_INTERNALS__
 				? (settings.value['recording.cpal.outputFolder'] ??
 					(await getDefaultRecordingsFolder()))
 				: '';
-			console.timeEnd('[startup] resolveOutputFolder');
 
 			const paramsMap = {
 				navigator: {
@@ -108,7 +106,6 @@ export const recorder = {
 						: settings.value['recording.method']
 				];
 
-			console.info('[startup] recorder method:', params.method);
 			const { data: deviceAcquisitionOutcome, error: startRecordingError } =
 				await recorderService().startRecording(params, {
 					sendStatus: (options) =>
