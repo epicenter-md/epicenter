@@ -1,5 +1,4 @@
 import { rpc } from '$lib/query';
-import { mark } from '$lib/utils/timing';
 import type { ShortcutTriggerState } from './services/_shortcut-trigger-state';
 
 type SatisfiedCommand = {
@@ -14,35 +13,19 @@ export const commands = [
 		id: 'pushToTalk',
 		title: 'Push to talk',
 		on: 'Both',
-		callback: () => {
-			// Mark shortcut start timestamp for end-to-end timing
-			;(window as any).__WHISPERING_SHORTCUT_T0 = performance.now();
-			;(window as any).__WHISPERING_TIMINGS = [];
-			mark('shortcut:pressed', { id: 'pushToTalk' });
-			rpc.commands.toggleManualRecording.execute(undefined);
-		},
+		callback: () => rpc.commands.toggleManualRecording.execute(undefined),
 	},
 	{
 		id: 'toggleManualRecording',
 		title: 'Toggle recording',
 		on: 'Pressed',
-		callback: () => {
-			;(window as any).__WHISPERING_SHORTCUT_T0 = performance.now();
-			;(window as any).__WHISPERING_TIMINGS = [];
-			mark('shortcut:pressed', { id: 'toggleManualRecording' });
-			rpc.commands.toggleManualRecording.execute(undefined);
-		},
+		callback: () => rpc.commands.toggleManualRecording.execute(undefined),
 	},
 	{
 		id: 'startManualRecording',
 		title: 'Start recording',
 		on: 'Pressed',
-		callback: () => {
-			;(window as any).__WHISPERING_SHORTCUT_T0 = performance.now();
-			;(window as any).__WHISPERING_TIMINGS = [];
-			mark('shortcut:pressed', { id: 'startManualRecording' });
-			rpc.commands.startManualRecording.execute(undefined);
-		},
+		callback: () => rpc.commands.startManualRecording.execute(undefined),
 	},
 	{
 		id: 'stopManualRecording',
@@ -60,12 +43,7 @@ export const commands = [
 		id: 'startVadRecording',
 		title: 'Start voice activated recording',
 		on: 'Pressed',
-		callback: () => {
-			;(window as any).__WHISPERING_SHORTCUT_T0 = performance.now();
-			;(window as any).__WHISPERING_TIMINGS = [];
-			mark('shortcut:pressed', { id: 'startVadRecording' });
-			rpc.commands.startVadRecording.execute(undefined);
-		},
+		callback: () => rpc.commands.startVadRecording.execute(undefined),
 	},
 	{
 		id: 'stopVadRecording',

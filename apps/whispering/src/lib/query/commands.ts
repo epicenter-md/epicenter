@@ -24,9 +24,7 @@ let currentMediaSessionId: string | null = null;
 const startManualRecording = defineMutation({
 	mutationKey: ['commands', 'startManualRecording'] as const,
 	resultMutationFn: async () => {
-		console.time('[startup] switchRecordingMode(manual)');
 		await settings.switchRecordingMode('manual');
-		console.timeEnd('[startup] switchRecordingMode(manual)');
 
 		const toastId = nanoid();
 		notify.loading.execute({
@@ -34,21 +32,15 @@ const startManualRecording = defineMutation({
 			title: '🎙️ Preparing to record...',
 			description: 'Setting up your recording environment...',
 		});
-		// Point-in-time mark for UI toast
-		try { (await import('$lib/utils/timing')).mark('ui:toast:prepare'); } catch {}
+		// Show preparing toast
 		// Pause media before starting recording
 		// Background media pause: do not await; track by sessionId for later resume
 		currentMediaSessionId = nanoid();
-		console.time('[startup] media.pauseIfEnabled');
 		void media.pauseIfEnabled.execute({ sessionId: currentMediaSessionId });
-		console.timeEnd('[startup] media.pauseIfEnabled');
 		
-		try { (await import('$lib/utils/timing')).mark('recorder:start:queued'); } catch {}
-		console.time('[startup] recorder.startRecording');
+		// Start recording immediately; media pause runs in background
 		const { data: deviceAcquisitionOutcome, error: startRecordingError } =
 			await recorder.startRecording.execute({ toastId });
-		console.timeEnd('[startup] recorder.startRecording');
-		try { (await import('$lib/utils/timing')).mark('recorder:start:finished'); } catch {}
 
 		if (startRecordingError) {
 			notify.error.execute({ id: toastId, ...startRecordingError });
@@ -57,7 +49,7 @@ const startManualRecording = defineMutation({
 
 		switch (deviceAcquisitionOutcome.outcome) {
 			case 'success': {
-				try { (await import('$lib/utils/timing')).mark('record:ready'); } catch {}
+				// Record ready
 				notify.success.execute({
 					id: toastId,
 					title: '🎙️ Whispering is recording...',
@@ -107,7 +99,6 @@ const startManualRecording = defineMutation({
 		manualRecordingStartTime = Date.now();
 		console.info('Recording started');
 		sound.playSoundIfEnabled.execute('manual-start');
-		try { (await import('$lib/utils/timing')).mark('sound:queued', { sound: 'manual-start' }); } catch {}
 		return Ok(undefined);
 	},
 });

@@ -1,5 +1,4 @@
 import { defineMutation } from './_client';
-import { mark } from '$lib/utils/timing';
 import { settings } from '$lib/stores/settings.svelte';
 import { IS_MACOS } from '$lib/constants/platform/is-macos';
 import { tryAsync, Ok, Err } from 'wellcrafted/result';
@@ -27,19 +26,14 @@ export const media = {
             // Fire-and-forget pause; we still await inside this mutation so errors are logged,
             // but callers should not await this mutation if they want background behavior.
             console.info('[media] attempting to pause active media...');
-            mark('media:pause:begin');
-            console.time('[media] macos_pause_active_media invoke');
             const { data, error } = await invoke<PausedPlayers>('macos_pause_active_media');
-            console.timeEnd('[media] macos_pause_active_media invoke');
             if (error) {
                 console.warn('[media] pause failed', error);
-                mark('media:pause:end', { error: true });
                 return Ok(undefined);
             }
             const players = data.players ?? [];
             console.info('[media] paused players:', players);
             pausedPlayersBySession.set(sessionId, players);
-            mark('media:pause:end', { players });
             return Ok(undefined);
         },
     }),
@@ -53,14 +47,10 @@ export const media = {
 
             pausedPlayersBySession.delete(sessionId);
             console.info('[media] resuming players:', players);
-            mark('media:resume:begin', { players });
-            console.time('[media] macos_resume_media invoke');
             const { error } = await invoke<void>('macos_resume_media', { players });
-            console.timeEnd('[media] macos_resume_media invoke');
             if (error) {
                 console.warn('[media] resume failed', error);
             }
-            mark('media:resume:end');
             return Ok(undefined);
         },
     }),

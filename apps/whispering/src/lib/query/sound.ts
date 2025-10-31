@@ -4,7 +4,6 @@ import type { PlaySoundServiceError } from '$lib/services/sound';
 import { settings } from '$lib/stores/settings.svelte';
 import { Ok, type Result } from 'wellcrafted/result';
 import { defineMutation } from './_client';
-import { mark } from '$lib/utils/timing';
 
 const soundKeys = {
 	all: ['sound'] as const,
@@ -20,10 +19,7 @@ export const sound = {
 			if (!settings.value[`sound.playOn.${soundName}`]) {
 				return Ok(undefined);
 			}
-			mark('sound:begin', { soundName });
-			const result = await services.sound.playSound(soundName);
-			mark('sound:end', { soundName });
-			return result;
+			return await services.sound.playSound(soundName);
 		},
 	}),
 };

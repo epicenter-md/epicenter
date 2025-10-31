@@ -12,7 +12,6 @@ import { Ok } from 'wellcrafted/result';
 import { defineMutation, defineQuery, queryClient } from './_client';
 import { notify } from './notify';
 import { nanoid } from 'nanoid/non-secure';
-import { mark } from '$lib/utils/timing';
 
 const recorderKeys = {
 	recorderState: ['recorder', 'recorderState'] as const,
@@ -110,13 +109,11 @@ export const recorder = {
 				];
 
 			console.info('[startup] recorder method:', params.method);
-			mark('recorder:start:begin', { method: params.method });
 			const { data: deviceAcquisitionOutcome, error: startRecordingError } =
 				await recorderService().startRecording(params, {
 					sendStatus: (options) =>
 						notify.loading.execute({ id: toastId, ...options }),
 				});
-			mark('recorder:start:end', { method: params.method });
 
 			if (startRecordingError) {
 				return fromTaggedErr(startRecordingError, {

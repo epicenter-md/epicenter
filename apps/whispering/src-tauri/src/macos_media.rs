@@ -8,9 +8,6 @@ pub struct PausedPlayers {
 pub async fn macos_pause_active_media() -> Result<PausedPlayers, String> {
     #[cfg(target_os = "macos")]
     {
-        use std::time::Instant;
-        let start = Instant::now();
-        
         // Run Music and Spotify checks concurrently with short AppleScript timeouts
         let music_script = r#"
 try
@@ -44,35 +41,25 @@ end try
 return ""
 "#;
 
-        let music_start = Instant::now();
-        let spotify_start = Instant::now();
         let (music_out, spotify_out) = tokio::join!(
             async {
-                let r = run_osascript(music_script).await;
-                let d = music_start.elapsed();
-                (r, d)
+                run_osascript(music_script).await
             },
             async {
-                let r = run_osascript(spotify_script).await;
-                let d = spotify_start.elapsed();
-                (r, d)
+                run_osascript(spotify_script).await
             }
         );
 
-        eprintln!("[macos_media] Music check took {:?}", music_out.1);
-        eprintln!("[macos_media] Spotify check took {:?}", spotify_out.1);
-
         let mut paused_players = Vec::new();
-        if let Ok(output) = music_out.0 {
+        if let Ok(output) = music_out {
             if !output.trim().is_empty() { paused_players.push(output.trim().to_string()); }
         }
-        if let Ok(output) = spotify_out.0 {
+        if let Ok(output) = spotify_out {
             if !output.trim().is_empty() { paused_players.push(output.trim().to_string()); }
         }
         
         // Only check Books if nothing else was paused
         if paused_players.is_empty() {
-            let books_start = Instant::now();
             let books_result = run_osascript(r#"
 try
     with timeout of 0.3 seconds
@@ -94,19 +81,13 @@ end try
 return ""
 "#).await;
             
-            let books_time = books_start.elapsed();
-            eprintln!("[macos_media] Books check took {:?}", books_time);
-            
             if let Ok(output) = books_result {
                 if !output.trim().is_empty() {
                     paused_players.push(output.trim().to_string());
                 }
             }
         }
-        
-        let total_time = start.elapsed();
-        eprintln!("[macos_media] Total pause took {:?}", total_time);
-        
+
         return Ok(PausedPlayers { players: paused_players });
     }
 
