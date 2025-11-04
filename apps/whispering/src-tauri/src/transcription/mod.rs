@@ -456,7 +456,11 @@ pub async fn transcribe_audio_whisper(
 
     // Run transcription with the persistent engine
     let result = {
-        let mut engine_guard = engine_arc.lock().unwrap();
+        let mut engine_guard = engine_arc.lock().map_err(|e| {
+            TranscriptionError::ModelLoadError {
+                message: format!("Engine mutex poisoned: {}", e),
+            }
+        })?;
         let engine = engine_guard.as_mut().ok_or_else(|| {
             TranscriptionError::ModelLoadError {
                 message: "Model failed to load".to_string(),
@@ -510,7 +514,11 @@ pub async fn transcribe_audio_parakeet(
 
     // Run transcription with the persistent engine
     let result = {
-        let mut engine_guard = engine_arc.lock().unwrap();
+        let mut engine_guard = engine_arc.lock().map_err(|e| {
+            TranscriptionError::ModelLoadError {
+                message: format!("Engine mutex poisoned: {}", e),
+            }
+        })?;
         let engine = engine_guard.as_mut().ok_or_else(|| {
             TranscriptionError::ModelLoadError {
                 message: "Model failed to load".to_string(),
