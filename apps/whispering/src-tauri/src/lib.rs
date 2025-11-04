@@ -27,6 +27,65 @@ use markdown_reader::{count_markdown_files, read_markdown_files};
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 #[tokio::main]
 pub async fn run() {
+    // Set up panic hook to capture crash information before the app exits.
+    // The previous hook is preserved so default panic reporting still occurs.
+    let previous_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |panic_info| {
+        use std::backtrace::Backtrace;
+        use std::io::Write;
+        let payload = panic_info.payload();
+        let location = panic_info
+            .location()
+            .map(|l| format!("{}:{}:{}", l.file(), l.line(), l.column()))
+            .unwrap_or_else(|| "unknown location".to_string());
+        let thread_name = std::thread::current()
+            .name()
+            .unwrap_or("unnamed thread");
+
+        let message = if let Some(s) = payload.downcast_ref::<&str>() {
+            s.to_string()
+        } else if let Some(s) = payload.downcast_ref::<String>() {
+            s.clone()
+        } else {
+            "Unknown panic payload".to_string()
+        };
+
+        let backtrace = Backtrace::force_capture();
+
+        eprintln!(
+            "[panic] thread={} location={} message={}",
+            thread_name, location, message
+        );
+        eprintln!("{}", backtrace);
+
+        #[cfg(target_os = "linux")]
+        {
+            use std::fs::OpenOptions;
+            if let Ok(mut file) = OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open("/tmp/whispering-crash.log")
+            {
+                let timestamp = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_secs())
+                    .unwrap_or(0);
+                let _ = writeln!(
+                    file,
+                    "[{}] thread={} location={} message={}",
+                    timestamp,
+                    thread_name,
+                    location,
+                    message
+                );
+                let _ = writeln!(file, "{}", backtrace);
+                let _ = writeln!(file, "-----");
+            }
+        }
+
+        previous_hook(panic_info);
+    }));
+
     // Fix PATH environment for GUI applications on macOS and Linux
     // This ensures commands like ffmpeg installed via Homebrew are accessible
     let _ = fix_path_env::fix();
@@ -182,4 +241,3 @@ async fn write_text(app: tauri::AppHandle, text: String) -> Result<(), String> {
 
     Ok(())
 }
-

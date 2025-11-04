@@ -427,14 +427,29 @@ pub async fn transcribe_audio_whisper(
     language: Option<String>,
     model_manager: tauri::State<'_, ModelManager>,
 ) -> Result<String, TranscriptionError> {
+    println!(
+        "[Transcription] Starting Whisper transcription: audio_bytes={} model_path={}",
+        audio_data.len(),
+        model_path
+    );
+
     // Convert audio to 16kHz mono format that whisper requires
     let wav_data = convert_audio_for_whisper(audio_data)?;
+    println!(
+        "[Transcription] Audio conversion complete: wav_bytes={}",
+        wav_data.len()
+    );
 
     // Extract samples from WAV
     let samples = extract_samples_from_wav(wav_data)?;
+    println!(
+        "[Transcription] Extracted {} PCM samples for Whisper engine",
+        samples.len()
+    );
 
     // Return early if audio is empty
     if samples.is_empty() {
+        println!("[Transcription] No samples extracted, returning empty transcription");
         return Ok(String::new());
     }
 
@@ -442,6 +457,7 @@ pub async fn transcribe_audio_whisper(
     let engine_arc = model_manager
         .get_or_load_whisper(PathBuf::from(&model_path))
         .map_err(|e| TranscriptionError::ModelLoadError { message: e })?;
+    println!("[Transcription] Whisper model ready: {}", model_path);
 
     // Configure inference parameters
     let mut params = WhisperInferenceParams::default();
@@ -482,7 +498,12 @@ pub async fn transcribe_audio_whisper(
             })?
     };
 
-    Ok(result.text.trim().to_string())
+    let transcript = result.text.trim().to_string();
+    println!(
+        "[Transcription] Whisper transcription complete: characters={}",
+        transcript.len()
+    );
+    Ok(transcript)
 }
 
 #[tauri::command]
@@ -491,14 +512,29 @@ pub async fn transcribe_audio_parakeet(
     model_path: String,
     model_manager: tauri::State<'_, ModelManager>,
 ) -> Result<String, TranscriptionError> {
+    println!(
+        "[Transcription] Starting Parakeet transcription: audio_bytes={} model_path={}",
+        audio_data.len(),
+        model_path
+    );
+
     // Convert audio to 16kHz mono format
     let wav_data = convert_audio_for_whisper(audio_data)?;
+    println!(
+        "[Transcription] Audio conversion complete: wav_bytes={}",
+        wav_data.len()
+    );
 
     // Extract samples from WAV
     let samples = extract_samples_from_wav(wav_data)?;
+    println!(
+        "[Transcription] Extracted {} PCM samples for Parakeet engine",
+        samples.len()
+    );
 
     // Return early if audio is empty
     if samples.is_empty() {
+        println!("[Transcription] No samples extracted, returning empty transcription");
         return Ok(String::new());
     }
 
@@ -506,6 +542,7 @@ pub async fn transcribe_audio_parakeet(
     let engine_arc = model_manager
         .get_or_load_parakeet(PathBuf::from(&model_path))
         .map_err(|e| TranscriptionError::ModelLoadError { message: e })?;
+    println!("[Transcription] Parakeet model ready: {}", model_path);
 
     let params = ParakeetInferenceParams {
         timestamp_granularity: TimestampGranularity::Segment,
@@ -540,5 +577,10 @@ pub async fn transcribe_audio_parakeet(
             })?
     };
 
-    Ok(result.text.trim().to_string())
+    let transcript = result.text.trim().to_string();
+    println!(
+        "[Transcription] Parakeet transcription complete: characters={}",
+        transcript.len()
+    );
+    Ok(transcript)
 }
