@@ -37,9 +37,9 @@
 	/**
 	 * Default counts for seeding mock data
 	 */
-	const MOCK_RECORDING_COUNT = 5000;
-	const MOCK_TRANSFORMATION_COUNT = 50;
-	const MOCK_RUN_COUNT = 500;
+	const MOCK_RECORDING_COUNT = 10;
+	const MOCK_TRANSFORMATION_COUNT = 10;
+	const MOCK_RUN_COUNT = 10;
 
 	const testData = createMigrationTestData();
 	const migrationDialog = createMigrationDialog();
@@ -525,9 +525,7 @@
 
 			return tryAsync({
 				try: async () => {
-					onProgress(
-						'[Migration] Starting recordings migration (IDB → FS)...',
-					);
+					onProgress('[Migration] Starting recordings migration (IDB → FS)...');
 
 					// Get all recordings from source
 					const { data: recordings, error: getError } =
@@ -612,6 +610,10 @@
 								onProgress(
 									`[Migration] ⚠️  Warning: Failed to delete recording ${recording.id} from IndexedDB after migration`,
 								);
+							} else {
+								onProgress(
+									`[Migration] ✓ Deleted recording ${recording.id} from IndexedDB`,
+								);
 							}
 
 							// Success!
@@ -628,9 +630,7 @@
 					const duration = (performance.now() - startTime) / 1000;
 					const successRate = ((succeeded / total) * 100).toFixed(1);
 
-					onProgress(
-						'[Migration] ==========================================',
-					);
+					onProgress('[Migration] ==========================================');
 					onProgress(
 						`[Migration] Recordings migration complete in ${duration.toFixed(2)}s`,
 					);
@@ -638,9 +638,7 @@
 						`[Migration] Total: ${total} | Succeeded: ${succeeded} | Failed: ${failed} | Skipped: ${skipped}`,
 					);
 					onProgress(`[Migration] Success rate: ${successRate}%`);
-					onProgress(
-						'[Migration] ==========================================',
-					);
+					onProgress('[Migration] ==========================================');
 
 					return {
 						total,
@@ -707,9 +705,7 @@
 					let failed = 0;
 					let skipped = 0;
 
-					onProgress(
-						`[Migration] Found ${total} transformations in IndexedDB`,
-					);
+					onProgress(`[Migration] Found ${total} transformations in IndexedDB`);
 					onProgress(`[Migration] Processing in batches of ${BATCH_SIZE}...`);
 
 					// Process in batches
@@ -752,6 +748,10 @@
 								onProgress(
 									`[Migration] ⚠️  Warning: Failed to delete transformation ${transformation.id} from IndexedDB after migration`,
 								);
+							} else {
+								onProgress(
+									`[Migration] ✓ Deleted transformation ${transformation.id} from IndexedDB`,
+								);
 							}
 
 							// Success!
@@ -768,9 +768,7 @@
 					const duration = (performance.now() - startTime) / 1000;
 					const successRate = ((succeeded / total) * 100).toFixed(1);
 
-					onProgress(
-						'[Migration] ==========================================',
-					);
+					onProgress('[Migration] ==========================================');
 					onProgress(
 						`[Migration] Transformations migration complete in ${duration.toFixed(2)}s`,
 					);
@@ -778,9 +776,7 @@
 						`[Migration] Total: ${total} | Succeeded: ${succeeded} | Failed: ${failed} | Skipped: ${skipped}`,
 					);
 					onProgress(`[Migration] Success rate: ${successRate}%`);
-					onProgress(
-						'[Migration] ==========================================',
-					);
+					onProgress('[Migration] ==========================================');
 
 					return {
 						total,
@@ -894,6 +890,10 @@
 								onProgress(
 									`[Migration] ⚠️  Warning: Failed to delete transformation run ${run.id} from IndexedDB after migration`,
 								);
+							} else {
+								onProgress(
+									`[Migration] ✓ Deleted transformation run ${run.id} from IndexedDB`,
+								);
 							}
 
 							// Success!
@@ -910,9 +910,7 @@
 					const duration = (performance.now() - startTime) / 1000;
 					const successRate = ((succeeded / total) * 100).toFixed(1);
 
-					onProgress(
-						'[Migration] ==========================================',
-					);
+					onProgress('[Migration] ==========================================');
 					onProgress(
 						`[Migration] Transformation runs migration complete in ${duration.toFixed(2)}s`,
 					);
@@ -920,9 +918,7 @@
 						`[Migration] Total: ${total} | Succeeded: ${succeeded} | Failed: ${failed} | Skipped: ${skipped}`,
 					);
 					onProgress(`[Migration] Success rate: ${successRate}%`);
-					onProgress(
-						'[Migration] ==========================================',
-					);
+					onProgress('[Migration] ==========================================');
 
 					return {
 						total,
