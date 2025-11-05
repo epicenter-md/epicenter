@@ -55,6 +55,17 @@ export function createFfmpegService(): FfmpegService {
 						const inputContents = new Uint8Array(await blob.arrayBuffer());
 						await writeFile(inputPath, inputContents);
 
+						// Verify file is accessible (forces OS flush on Windows)
+						const { error: verifyError } = await tryAsync({
+							try: () => services.fs.pathToBlob(inputPath),
+							catch: (error) =>
+								FfmpegServiceErr({
+									message: 'Temp file not accessible',
+									cause: error,
+								}),
+						});
+						if (verifyError) throw new Error(verifyError.message);
+
 						// Build FFmpeg command for compression using the utility function
 						const command = buildCompressionCommand({
 							inputPath,
