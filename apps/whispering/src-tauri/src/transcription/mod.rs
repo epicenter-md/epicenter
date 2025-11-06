@@ -3,21 +3,24 @@ mod model_manager;
 
 use error::TranscriptionError;
 pub use model_manager::ModelManager;
-use std::path::PathBuf;
+use log::{debug, error, info, warn};
+use std::io::Write;
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
-use std::io::Write;
+use std::path::PathBuf;
 use transcribe_rs::{
-    TranscriptionEngine,
     engines::{
-        whisper::{WhisperEngine, WhisperInferenceParams},
         parakeet::{ParakeetInferenceParams, TimestampGranularity},
+        whisper::{WhisperEngine, WhisperInferenceParams},
     },
+    TranscriptionEngine,
 };
 
 #[cfg(target_os = "windows")]
 const CREATE_NO_WINDOW: u32 = 0x08000000;
-use rubato::{Resampler, SincFixedIn, SincInterpolationType, SincInterpolationParameters, WindowFunction};
+use rubato::{
+    Resampler, SincFixedIn, SincInterpolationParameters, SincInterpolationType, WindowFunction,
+};
 
 /// Check if audio is already in whisper-compatible format (16kHz, mono, 16-bit PCM)
 fn is_valid_wav_format(audio_data: &[u8]) -> bool {
@@ -28,7 +31,7 @@ fn is_valid_wav_format(audio_data: &[u8]) -> bool {
         spec.sample_format == hound::SampleFormat::Int &&
         spec.channels == 1 &&          // Must be mono
         spec.sample_rate == 16000 &&   // Must be 16kHz
-        spec.bits_per_sample == 16     // Must be 16-bit
+        spec.bits_per_sample == 16 // Must be 16-bit
     } else {
         false
     }
@@ -46,12 +49,15 @@ fn is_valid_wav_format(audio_data: &[u8]) -> bool {
 /// most uncompressed WAV formats. For compressed formats (MP3, M4A, etc.),
 /// FFmpeg is still required.
 fn convert_audio_rust(audio_data: Vec<u8>) -> Result<Vec<u8>, TranscriptionError> {
-    println!("[Rust Audio Conversion] Starting conversion of {} bytes", audio_data.len());
+    debug!(
+        "[Rust Audio Conversion] starting conversion of {} bytes",
+        audio_data.len()
+    );
 
     // Read the input WAV file
     let cursor = std::io::Cursor::new(&audio_data);
     let mut reader = hound::WavReader::new(cursor).map_err(|e| {
-        eprintln!("[Rust Audio Conversion] Failed to parse WAV file: {}", e);
+        error!("[Rust Audio Conversion] failed to parse WAV file: {}", e);
         TranscriptionError::AudioReadError {
             message: format!("Failed to parse WAV file: {}", e),
         }
@@ -61,8 +67,10 @@ fn convert_audio_rust(audio_data: Vec<u8>) -> Result<Vec<u8>, TranscriptionError
     let sample_rate = spec.sample_rate;
     let channels = spec.channels as usize;
 
-    println!("[Rust Audio Conversion] Input format: {} Hz, {} channels, {} bits, {:?} format",
-        sample_rate, channels, spec.bits_per_sample, spec.sample_format);
+    debug!(
+        "[Rust Audio Conversion] input format: {} Hz, {} channels, {} bits, {:?} format",
+        sample_rate, channels, spec.bits_per_sample, spec.sample_format
+    );
 
     // Step 1: Read all samples and convert to f32 (normalized to [-1.0, 1.0])
     let samples_f32: Vec<f32> = match spec.sample_format {
@@ -106,67 +114,88 @@ fn convert_audio_rust(audio_data: Vec<u8>) -> Result<Vec<u8>, TranscriptionError
         }
     };
 
-    println!("[Rust Audio Conversion] Read {} samples", samples_f32.len());
+    debug!(
+        "[Rust Audio Conversion] read {} samples",
+        samples_f32.len()
+    );
 
     // Step 2: Convert channels to mono (if needed)
     let mono_samples: Vec<f32> = if channels == 1 {
         // Already mono, use as-is
-        println!("[Rust Audio Conversion] Audio is already mono");
+        debug!("[Rust Audio Conversion] audio is already mono");
         samples_f32
     } else if channels == 2 {
         // Stereo: average left and right channels
-        println!("[Rust Audio Conversion] Converting stereo to mono by averaging channels");
+        debug!(
+            "[Rust Audio Conversion] converting stereo to mono by averaging channels"
+        );
         samples_f32
             .chunks_exact(2)
             .map(|chunk| (chunk[0] + chunk[1]) / 2.0)
             .collect()
     } else {
         // More than 2 channels: average all channels
-        println!("[Rust Audio Conversion] Converting {} channels to mono by averaging", channels);
+        debug!(
+            "[Rust Audio Conversion] converting {} channels to mono by averaging",
+            channels
+        );
         samples_f32
             .chunks_exact(channels)
             .map(|chunk| chunk.iter().sum::<f32>() / channels as f32)
             .collect()
     };
 
-    println!("[Rust Audio Conversion] Mono samples: {}", mono_samples.len());
+    debug!(
+        "[Rust Audio Conversion] mono samples: {}",
+        mono_samples.len()
+    );
 
     // Step 3: Resample to 16kHz (if needed)
     let resampled: Vec<f32> = if sample_rate != 16000 {
-        println!("[Rust Audio Conversion] Resampling from {} Hz to 16000 Hz", sample_rate);
+        debug!(
+            "[Rust Audio Conversion] resampling from {} Hz to 16000 Hz",
+            sample_rate
+        );
 
         // Calculate resample ratio and expected output length
         let resample_ratio = 16000.0 / sample_rate as f64;
         let expected_output_len = (mono_samples.len() as f64 * resample_ratio).round() as usize;
 
-        println!("[Rust Audio Conversion] Expected output length: {} samples", expected_output_len);
+        debug!(
+            "[Rust Audio Conversion] expected output length: {} samples",
+            expected_output_len
+        );
 
         // Validate sample rate (support down to 2kHz)
         if resample_ratio > 8.0 {
             return Err(TranscriptionError::AudioReadError {
-                message: format!("Sample rate {} Hz is too low (minimum 2000 Hz)", sample_rate),
+                message: format!(
+                    "Sample rate {} Hz is too low (minimum 2000 Hz)",
+                    sample_rate
+                ),
             });
         }
 
         // Calculate resampling parameters (optimized for speech)
         let chunk_size = 1024; // Process in chunks for efficiency
         let params = SincInterpolationParameters {
-            sinc_len: 64,      // Reduced from 256 for better performance (adequate for speech)
-            f_cutoff: 0.95,    // Keep high to preserve speech frequencies
+            sinc_len: 64,   // Reduced from 256 for better performance (adequate for speech)
+            f_cutoff: 0.95, // Keep high to preserve speech frequencies
             interpolation: SincInterpolationType::Linear,
-            oversampling_factor: 128,  // Reduced from 256 (still good quality)
+            oversampling_factor: 128, // Reduced from 256 (still good quality)
             window: WindowFunction::BlackmanHarris2,
         };
 
         // Create resampler (1 channel, fixed input rate)
         let mut resampler = SincFixedIn::<f32>::new(
             resample_ratio,
-            8.0,  // Increased from 2.0 to support down to 2kHz input
+            8.0, // Increased from 2.0 to support down to 2kHz input
             params,
             chunk_size,
             1, // mono
-        ).map_err(|e| {
-            eprintln!("[Rust Audio Conversion] Failed to create resampler: {}", e);
+        )
+        .map_err(|e| {
+            error!("[Rust Audio Conversion] failed to create resampler: {}", e);
             TranscriptionError::AudioReadError {
                 message: format!("Failed to create resampler: {}", e),
             }
@@ -177,7 +206,10 @@ fn convert_audio_rust(audio_data: Vec<u8>) -> Result<Vec<u8>, TranscriptionError
         let mut output_samples = Vec::with_capacity(expected_output_len);
         let mut input_pos = 0;
 
-        println!("[Rust Audio Conversion] Processing in chunks of {} samples", chunk_size);
+        debug!(
+            "[Rust Audio Conversion] processing in chunks of {} samples",
+            chunk_size
+        );
 
         while input_pos < mono_samples.len() {
             // Get the next chunk (pad with zeros if needed for the last chunk)
@@ -194,7 +226,10 @@ fn convert_audio_rust(audio_data: Vec<u8>) -> Result<Vec<u8>, TranscriptionError
 
             // Resample this chunk
             let waves_out = resampler.process(&waves_in, None).map_err(|e| {
-                eprintln!("[Rust Audio Conversion] Resampling failed at position {}: {}", input_pos, e);
+                error!(
+                    "[Rust Audio Conversion] resampling failed at position {}: {}",
+                    input_pos, e
+                );
                 TranscriptionError::AudioReadError {
                     message: format!("Resampling failed: {}", e),
                 }
@@ -209,17 +244,24 @@ fn convert_audio_rust(audio_data: Vec<u8>) -> Result<Vec<u8>, TranscriptionError
         // Truncate to expected length to remove artifacts from zero-padding
         output_samples.truncate(expected_output_len);
 
-        println!("[Rust Audio Conversion] Resampling complete: {} samples -> {} samples (expected: {})",
-            mono_samples.len(), output_samples.len(), expected_output_len);
+        debug!(
+            "[Rust Audio Conversion] resampling complete: {} samples -> {} samples (expected: {})",
+            mono_samples.len(),
+            output_samples.len(),
+            expected_output_len
+        );
         output_samples
     } else {
         // Already at 16kHz
-        println!("[Rust Audio Conversion] Audio is already at 16kHz, skipping resampling");
+        debug!("[Rust Audio Conversion] audio is already at 16kHz, skipping resampling");
         mono_samples
     };
 
     // Step 4: Convert f32 samples to 16-bit PCM
-    println!("[Rust Audio Conversion] Converting {} f32 samples to 16-bit PCM", resampled.len());
+    debug!(
+        "[Rust Audio Conversion] converting {} f32 samples to 16-bit PCM",
+        resampled.len()
+    );
     let pcm_samples: Vec<i16> = resampled
         .iter()
         .map(|&sample| {
@@ -229,7 +271,10 @@ fn convert_audio_rust(audio_data: Vec<u8>) -> Result<Vec<u8>, TranscriptionError
         })
         .collect();
 
-    println!("[Rust Audio Conversion] Converted to {} PCM samples", pcm_samples.len());
+    debug!(
+        "[Rust Audio Conversion] converted to {} PCM samples",
+        pcm_samples.len()
+    );
 
     // Step 5: Write output WAV to memory buffer
     let mut cursor = std::io::Cursor::new(Vec::new());
@@ -248,15 +293,15 @@ fn convert_audio_rust(audio_data: Vec<u8>) -> Result<Vec<u8>, TranscriptionError
         })?;
 
         for sample in pcm_samples {
-            writer.write_sample(sample).map_err(|e| {
-                TranscriptionError::AudioReadError {
+            writer
+                .write_sample(sample)
+                .map_err(|e| TranscriptionError::AudioReadError {
                     message: format!("Failed to write sample: {}", e),
-                }
-            })?;
+                })?;
         }
 
         writer.finalize().map_err(|e| {
-            eprintln!("[Rust Audio Conversion] Failed to finalize WAV: {}", e);
+            error!("[Rust Audio Conversion] failed to finalize WAV: {}", e);
             TranscriptionError::AudioReadError {
                 message: format!("Failed to finalize WAV: {}", e),
             }
@@ -264,7 +309,10 @@ fn convert_audio_rust(audio_data: Vec<u8>) -> Result<Vec<u8>, TranscriptionError
     }
 
     let output_bytes = cursor.into_inner();
-    println!("[Rust Audio Conversion] Successfully converted audio: {} bytes output", output_bytes.len());
+    debug!(
+        "[Rust Audio Conversion] successfully converted audio: {} bytes output",
+        output_bytes.len()
+    );
     Ok(output_bytes)
 }
 
@@ -296,26 +344,34 @@ fn convert_audio_rust(audio_data: Vec<u8>) -> Result<Vec<u8>, TranscriptionError
 /// This approach ensures maximum compatibility: users without FFmpeg can still
 /// transcribe most recordings, while complex formats are handled when FFmpeg is available.
 fn convert_audio_for_whisper(audio_data: Vec<u8>) -> Result<Vec<u8>, TranscriptionError> {
-    println!("[Audio Conversion] Starting 3-tier conversion strategy for {} bytes", audio_data.len());
+    debug!(
+        "[Audio Conversion] starting 3-tier conversion strategy for {} bytes",
+        audio_data.len()
+    );
 
     // Tier 1: Skip conversion if already in correct format (fast path)
     if is_valid_wav_format(&audio_data) {
-        println!("[Audio Conversion] Tier 1: Audio is already in correct format (16kHz mono 16-bit PCM)");
+        debug!(
+            "[Audio Conversion] tier 1: audio is already in correct format (16kHz mono 16-bit PCM)"
+        );
         return Ok(audio_data);
     }
 
-    println!("[Audio Conversion] Tier 1: Audio needs conversion, trying Tier 2 (pure Rust)");
+    debug!("[Audio Conversion] tier 1: audio needs conversion, trying tier 2 (pure Rust)");
 
     // Tier 2: Try pure Rust conversion (no FFmpeg required)
     match convert_audio_rust(audio_data.clone()) {
         Ok(converted) => {
             // Rust conversion succeeded
-            println!("[Audio Conversion] Tier 2: Pure Rust conversion succeeded");
+            debug!("[Audio Conversion] tier 2: pure Rust conversion succeeded");
             return Ok(converted);
         }
         Err(e) => {
             // Log the error but continue to FFmpeg fallback
-            eprintln!("[Audio Conversion] Tier 2: Pure Rust audio conversion failed: {}, falling back to Tier 3 (FFmpeg)", e);
+            warn!(
+                "[Audio Conversion] tier 2: pure Rust audio conversion failed ({}), falling back to tier 3 (FFmpeg)",
+                e
+            );
         }
     }
 
@@ -328,11 +384,11 @@ fn convert_audio_for_whisper(audio_data: Vec<u8>) -> Result<Vec<u8>, Transcripti
             message: format!("Failed to create temp file: {}", e),
         })?;
 
-    input_file.write_all(&audio_data).map_err(|e| {
-        TranscriptionError::AudioReadError {
+    input_file
+        .write_all(&audio_data)
+        .map_err(|e| TranscriptionError::AudioReadError {
             message: format!("Failed to write audio data: {}", e),
-        }
-    })?;
+        })?;
 
     let output_file = tempfile::Builder::new()
         .suffix(".wav")
@@ -373,48 +429,57 @@ fn convert_audio_for_whisper(audio_data: Vec<u8>) -> Result<Vec<u8>, Transcripti
 
     if !output.status.success() {
         return Err(TranscriptionError::AudioReadError {
-            message: format!("FFmpeg conversion failed: {}", String::from_utf8_lossy(&output.stderr)),
+            message: format!(
+                "FFmpeg conversion failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            ),
         });
     }
 
-    std::fs::read(output_file.path()).map_err(|e| {
-        TranscriptionError::AudioReadError {
-            message: format!("Failed to read converted audio: {}", e),
-        }
+    std::fs::read(output_file.path()).map_err(|e| TranscriptionError::AudioReadError {
+        message: format!("Failed to read converted audio: {}", e),
     })
 }
 
 /// Parse WAV data and extract samples as f32 vector
 fn extract_samples_from_wav(wav_data: Vec<u8>) -> Result<Vec<f32>, TranscriptionError> {
-    println!("[Extract Samples] Parsing {} bytes of WAV data", wav_data.len());
+    debug!(
+        "[Extract Samples] parsing {} bytes of WAV data",
+        wav_data.len()
+    );
 
     let cursor = std::io::Cursor::new(wav_data);
     let mut reader = hound::WavReader::new(cursor).map_err(|e| {
-        eprintln!("[Extract Samples] Failed to parse WAV: {}", e);
+        error!("[Extract Samples] failed to parse WAV: {}", e);
         TranscriptionError::AudioReadError {
             message: format!("Failed to parse WAV: {}", e),
         }
     })?;
 
     let spec = reader.spec();
-    println!("[Extract Samples] WAV spec: {} Hz, {} channels, {} bits, {:?} format",
-        spec.sample_rate, spec.channels, spec.bits_per_sample, spec.sample_format);
+    debug!(
+        "[Extract Samples] WAV spec: {} Hz, {} channels, {} bits, {:?} format",
+        spec.sample_rate, spec.channels, spec.bits_per_sample, spec.sample_format
+    );
 
     let samples: Vec<f32> = reader
         .samples::<i16>()
         .map(|s| s.map(|sample| sample as f32 / 32768.0))
         .collect::<Result<Vec<_>, _>>()
         .map_err(|e| {
-            eprintln!("[Extract Samples] Failed to read samples: {}", e);
+            error!("[Extract Samples] failed to read samples: {}", e);
             TranscriptionError::AudioReadError {
                 message: format!("Failed to read samples: {}", e),
             }
         })?;
 
-    println!("[Extract Samples] Extracted {} samples successfully", samples.len());
+    debug!(
+        "[Extract Samples] extracted {} samples successfully",
+        samples.len()
+    );
 
     if samples.is_empty() {
-        eprintln!("[Extract Samples] WARNING: No samples extracted from audio!");
+        warn!("[Extract Samples] no samples extracted from audio");
     }
 
     Ok(samples)
@@ -427,29 +492,29 @@ pub async fn transcribe_audio_whisper(
     language: Option<String>,
     model_manager: tauri::State<'_, ModelManager>,
 ) -> Result<String, TranscriptionError> {
-    println!(
-        "[Transcription] Starting Whisper transcription: audio_bytes={} model_path={}",
+    info!(
+        "[Transcription] starting Whisper transcription: audio_bytes={} model_path={}",
         audio_data.len(),
         model_path
     );
 
     // Convert audio to 16kHz mono format that whisper requires
     let wav_data = convert_audio_for_whisper(audio_data)?;
-    println!(
-        "[Transcription] Audio conversion complete: wav_bytes={}",
+    debug!(
+        "[Transcription] audio conversion complete: wav_bytes={}",
         wav_data.len()
     );
 
     // Extract samples from WAV
     let samples = extract_samples_from_wav(wav_data)?;
-    println!(
-        "[Transcription] Extracted {} PCM samples for Whisper engine",
+    debug!(
+        "[Transcription] extracted {} PCM samples for Whisper engine",
         samples.len()
     );
 
     // Return early if audio is empty
     if samples.is_empty() {
-        println!("[Transcription] No samples extracted, returning empty transcription");
+        warn!("[Transcription] no samples extracted, returning empty transcription");
         return Ok(String::new());
     }
 
@@ -457,7 +522,7 @@ pub async fn transcribe_audio_whisper(
     let engine_arc = model_manager
         .get_or_load_whisper(PathBuf::from(&model_path))
         .map_err(|e| TranscriptionError::ModelLoadError { message: e })?;
-    println!("[Transcription] Whisper model ready: {}", model_path);
+    debug!("[Transcription] Whisper model ready: {}", model_path);
 
     // Configure inference parameters
     let mut params = WhisperInferenceParams::default();
@@ -472,23 +537,26 @@ pub async fn transcribe_audio_whisper(
 
     // Run transcription with the persistent engine
     let result = {
-        let mut engine_guard = engine_arc.lock().map_err(|e| {
-            TranscriptionError::ModelLoadError {
-                message: format!("Engine mutex poisoned: {}", e),
-            }
-        })?;
-        let engine = engine_guard.as_mut().ok_or_else(|| {
-            TranscriptionError::ModelLoadError {
+        let mut engine_guard =
+            engine_arc
+                .lock()
+                .map_err(|e| TranscriptionError::ModelLoadError {
+                    message: format!("Engine mutex poisoned: {}", e),
+                })?;
+        let engine = engine_guard
+            .as_mut()
+            .ok_or_else(|| TranscriptionError::ModelLoadError {
                 message: "Model failed to load".to_string(),
-            }
-        })?;
+            })?;
 
         // Extract the WhisperEngine from the enum
         let whisper_engine = match engine {
             model_manager::Engine::Whisper(e) => e,
-            _ => return Err(TranscriptionError::ModelLoadError {
-                message: "Expected Whisper engine but got different type".to_string(),
-            }),
+            _ => {
+                return Err(TranscriptionError::ModelLoadError {
+                    message: "Expected Whisper engine but got different type".to_string(),
+                })
+            }
         };
 
         whisper_engine
@@ -499,7 +567,7 @@ pub async fn transcribe_audio_whisper(
     };
 
     let transcript = result.text.trim().to_string();
-    println!(
+    info!(
         "[Transcription] Whisper transcription complete: characters={}",
         transcript.len()
     );
@@ -512,29 +580,29 @@ pub async fn transcribe_audio_parakeet(
     model_path: String,
     model_manager: tauri::State<'_, ModelManager>,
 ) -> Result<String, TranscriptionError> {
-    println!(
-        "[Transcription] Starting Parakeet transcription: audio_bytes={} model_path={}",
+    info!(
+        "[Transcription] starting Parakeet transcription: audio_bytes={} model_path={}",
         audio_data.len(),
         model_path
     );
 
     // Convert audio to 16kHz mono format
     let wav_data = convert_audio_for_whisper(audio_data)?;
-    println!(
-        "[Transcription] Audio conversion complete: wav_bytes={}",
+    debug!(
+        "[Transcription] audio conversion complete: wav_bytes={}",
         wav_data.len()
     );
 
     // Extract samples from WAV
     let samples = extract_samples_from_wav(wav_data)?;
-    println!(
-        "[Transcription] Extracted {} PCM samples for Parakeet engine",
+    debug!(
+        "[Transcription] extracted {} PCM samples for Parakeet engine",
         samples.len()
     );
 
     // Return early if audio is empty
     if samples.is_empty() {
-        println!("[Transcription] No samples extracted, returning empty transcription");
+        warn!("[Transcription] no samples extracted, returning empty transcription");
         return Ok(String::new());
     }
 
@@ -542,7 +610,7 @@ pub async fn transcribe_audio_parakeet(
     let engine_arc = model_manager
         .get_or_load_parakeet(PathBuf::from(&model_path))
         .map_err(|e| TranscriptionError::ModelLoadError { message: e })?;
-    println!("[Transcription] Parakeet model ready: {}", model_path);
+    debug!("[Transcription] Parakeet model ready: {}", model_path);
 
     let params = ParakeetInferenceParams {
         timestamp_granularity: TimestampGranularity::Segment,
@@ -551,23 +619,26 @@ pub async fn transcribe_audio_parakeet(
 
     // Run transcription with the persistent engine
     let result = {
-        let mut engine_guard = engine_arc.lock().map_err(|e| {
-            TranscriptionError::ModelLoadError {
-                message: format!("Engine mutex poisoned: {}", e),
-            }
-        })?;
-        let engine = engine_guard.as_mut().ok_or_else(|| {
-            TranscriptionError::ModelLoadError {
+        let mut engine_guard =
+            engine_arc
+                .lock()
+                .map_err(|e| TranscriptionError::ModelLoadError {
+                    message: format!("Engine mutex poisoned: {}", e),
+                })?;
+        let engine = engine_guard
+            .as_mut()
+            .ok_or_else(|| TranscriptionError::ModelLoadError {
                 message: "Model failed to load".to_string(),
-            }
-        })?;
+            })?;
 
         // Extract the ParakeetEngine from the enum
         let parakeet_engine = match engine {
             model_manager::Engine::Parakeet(e) => e,
-            _ => return Err(TranscriptionError::ModelLoadError {
-                message: "Expected Parakeet engine but got different type".to_string(),
-            }),
+            _ => {
+                return Err(TranscriptionError::ModelLoadError {
+                    message: "Expected Parakeet engine but got different type".to_string(),
+                })
+            }
         };
 
         parakeet_engine
@@ -578,7 +649,7 @@ pub async fn transcribe_audio_parakeet(
     };
 
     let transcript = result.text.trim().to_string();
-    println!(
+    info!(
         "[Transcription] Parakeet transcription complete: characters={}",
         transcript.len()
     );

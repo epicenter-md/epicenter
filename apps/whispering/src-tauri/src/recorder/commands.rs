@@ -43,16 +43,19 @@ pub async fn init_recording_session(
 
     // Use the provided output folder
     let recordings_dir = PathBuf::from(output_folder);
-    
+
     // Create the directory if it doesn't exist
     if !recordings_dir.exists() {
         std::fs::create_dir_all(&recordings_dir)
             .map_err(|e| format!("Failed to create output folder: {}", e))?;
     }
-    
+
     // Validate it's a directory (not a file)
     if !recordings_dir.is_dir() {
-        return Err(format!("Output path is not a directory: {:?}", recordings_dir));
+        return Err(format!(
+            "Output path is not a directory: {:?}",
+            recordings_dir
+        ));
     }
 
     // Initialize the session with optional sample rate

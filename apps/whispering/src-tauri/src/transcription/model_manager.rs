@@ -1,3 +1,4 @@
+use log::error;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
@@ -37,11 +38,22 @@ impl ModelManager {
         }
     }
 
-    pub fn get_or_load_parakeet(&self, model_path: PathBuf) -> Result<Arc<Mutex<Option<Engine>>>, String> {
-        let mut engine_guard = self.engine.lock()
-            .map_err(|e| format!("Engine mutex poisoned (likely due to previous panic): {}", e))?;
-        let mut current_path_guard = self.current_model_path.lock()
-            .map_err(|e| format!("Model path mutex poisoned (likely due to previous panic): {}", e))?;
+    pub fn get_or_load_parakeet(
+        &self,
+        model_path: PathBuf,
+    ) -> Result<Arc<Mutex<Option<Engine>>>, String> {
+        let mut engine_guard = self.engine.lock().map_err(|e| {
+            format!(
+                "Engine mutex poisoned (likely due to previous panic): {}",
+                e
+            )
+        })?;
+        let mut current_path_guard = self.current_model_path.lock().map_err(|e| {
+            format!(
+                "Model path mutex poisoned (likely due to previous panic): {}",
+                e
+            )
+        })?;
 
         // Check if we need to load a new model
         let needs_load = match (&*engine_guard, &*current_path_guard) {
@@ -83,11 +95,22 @@ impl ModelManager {
         Ok(self.engine.clone())
     }
 
-    pub fn get_or_load_whisper(&self, model_path: PathBuf) -> Result<Arc<Mutex<Option<Engine>>>, String> {
-        let mut engine_guard = self.engine.lock()
-            .map_err(|e| format!("Engine mutex poisoned (likely due to previous panic): {}", e))?;
-        let mut current_path_guard = self.current_model_path.lock()
-            .map_err(|e| format!("Model path mutex poisoned (likely due to previous panic): {}", e))?;
+    pub fn get_or_load_whisper(
+        &self,
+        model_path: PathBuf,
+    ) -> Result<Arc<Mutex<Option<Engine>>>, String> {
+        let mut engine_guard = self.engine.lock().map_err(|e| {
+            format!(
+                "Engine mutex poisoned (likely due to previous panic): {}",
+                e
+            )
+        })?;
+        let mut current_path_guard = self.current_model_path.lock().map_err(|e| {
+            format!(
+                "Model path mutex poisoned (likely due to previous panic): {}",
+                e
+            )
+        })?;
 
         // Check if we need to load a new model
         let needs_load = match (&*engine_guard, &*current_path_guard) {
@@ -133,7 +156,7 @@ impl ModelManager {
         let last_activity = match self.last_activity.lock() {
             Ok(guard) => *guard,
             Err(e) => {
-                eprintln!(
+                error!(
                     "Last activity mutex poisoned while checking idle unload: {}",
                     e
                 );
@@ -148,7 +171,7 @@ impl ModelManager {
             let mut engine_guard = match self.engine.lock() {
                 Ok(guard) => guard,
                 Err(e) => {
-                    eprintln!("Engine mutex poisoned while unloading idle model: {}", e);
+                    error!("Engine mutex poisoned while unloading idle model: {}", e);
                     return;
                 }
             };
@@ -158,9 +181,7 @@ impl ModelManager {
             if let Ok(mut current_path_guard) = self.current_model_path.lock() {
                 *current_path_guard = None;
             } else {
-                eprintln!(
-                    "Model path mutex poisoned while clearing idle model path after unload"
-                );
+                error!("Model path mutex poisoned while clearing idle model path after unload");
             }
         }
     }
@@ -169,7 +190,7 @@ impl ModelManager {
         let mut engine_guard = match self.engine.lock() {
             Ok(guard) => guard,
             Err(e) => {
-                eprintln!("Engine mutex poisoned while unloading model: {}", e);
+                error!("Engine mutex poisoned while unloading model: {}", e);
                 return;
             }
         };
@@ -179,7 +200,7 @@ impl ModelManager {
         if let Ok(mut current_path_guard) = self.current_model_path.lock() {
             *current_path_guard = None;
         } else {
-            eprintln!("Model path mutex poisoned while clearing model path after unload");
+            error!("Model path mutex poisoned while clearing model path after unload");
         }
     }
 }

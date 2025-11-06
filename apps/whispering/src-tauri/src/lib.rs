@@ -1,6 +1,7 @@
-
+use log::{info, warn};
 use tauri::Manager;
 use tauri_plugin_aptabase::EventTracker;
+use tauri_plugin_log::{Target, TargetKind};
 
 pub mod recorder;
 use recorder::commands::{
@@ -9,7 +10,7 @@ use recorder::commands::{
 };
 
 pub mod transcription;
-use transcription::{transcribe_audio_whisper, transcribe_audio_parakeet, ModelManager};
+use transcription::{transcribe_audio_parakeet, transcribe_audio_whisper, ModelManager};
 
 pub mod windows_path;
 use windows_path::fix_windows_path;
@@ -22,7 +23,6 @@ use command::{execute_command, spawn_command};
 
 pub mod markdown_reader;
 use markdown_reader::{count_markdown_files, read_markdown_files};
-
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 #[tokio::main]
@@ -38,9 +38,7 @@ pub async fn run() {
             .location()
             .map(|l| format!("{}:{}:{}", l.file(), l.line(), l.column()))
             .unwrap_or_else(|| "unknown location".to_string());
-        let thread_name = std::thread::current()
-            .name()
-            .unwrap_or("unnamed thread");
+        let thread_name = std::thread::current().name().unwrap_or("unnamed thread");
 
         let message = if let Some(s) = payload.downcast_ref::<&str>() {
             s.to_string()
@@ -73,10 +71,7 @@ pub async fn run() {
                 let _ = writeln!(
                     file,
                     "[{}] thread={} location={} message={}",
-                    timestamp,
-                    thread_name,
-                    location,
-                    message
+                    timestamp, thread_name, location, message
                 );
                 let _ = writeln!(file, "{}", backtrace);
                 let _ = writeln!(file, "-----");
@@ -89,22 +84,31 @@ pub async fn run() {
     // Fix PATH environment for GUI applications on macOS and Linux
     // This ensures commands like ffmpeg installed via Homebrew are accessible
     let _ = fix_path_env::fix();
-    
+
     // Fix Windows PATH inheritance bug
     // This ensures child processes can find ffmpeg on Windows
     fix_windows_path();
-    
-    let mut builder = tauri::Builder::default();
+
+    let log_plugin = tauri_plugin_log::Builder::new()
+        .level(log::LevelFilter::Info)
+        .level_for("transcription", log::LevelFilter::Debug)
+        .target(Target::new(TargetKind::Stdout))
+        .target(Target::new(TargetKind::LogDir {
+            file_name: Some("whispering".to_string()),
+        }))
+        .build();
+
+    let mut builder = tauri::Builder::default().plugin(log_plugin);
 
     // Try to get APTABASE_KEY from environment, use empty string if not found
     let aptabase_key = option_env!("APTABASE_KEY").unwrap_or("");
 
     // Only add Aptabase plugin if key is not empty
     if !aptabase_key.is_empty() {
-        println!("Aptabase analytics enabled");
+        info!("Aptabase analytics enabled");
         builder = builder.plugin(tauri_plugin_aptabase::Builder::new(aptabase_key).build());
     } else {
-        println!("Warning: APTABASE_KEY not found, analytics disabled");
+        warn!("APTABASE_KEY not found, analytics disabled");
     }
 
     builder = builder
@@ -204,7 +208,7 @@ async fn write_text(app: tauri::AppHandle, text: String) -> Result<(), String> {
 
     // 3. Simulate paste operation using virtual key codes (layout-independent)
     let mut enigo = Enigo::new(&Settings::default()).map_err(|e| e.to_string())?;
-    
+
     // Use virtual key codes for V to work with any keyboard layout
     #[cfg(target_os = "macos")]
     let (modifier, v_key) = (Key::Meta, Key::Other(9)); // Virtual key code for V on macOS
@@ -220,7 +224,7 @@ async fn write_text(app: tauri::AppHandle, text: String) -> Result<(), String> {
     enigo
         .key(v_key, Direction::Press)
         .map_err(|e| format!("Failed to press V key: {}", e))?;
-    
+
     // Release V + modifier (in reverse order for proper cleanup)
     enigo
         .key(v_key, Direction::Release)

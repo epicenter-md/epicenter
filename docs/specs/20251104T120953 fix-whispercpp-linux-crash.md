@@ -56,7 +56,16 @@ Add a panic hook that captures panic information and writes to a log file on Lin
 - Set up before any other initialization
 - Write to `/tmp/whispering-crash.log` on Linux
 - Include timestamp, location, and panic message
-- Use `eprintln!` for immediate console feedback
+- Forward details through the central logging pipeline for consistent diagnostics
+
+### 1.5 Logging Integration (tauri-plugin-log)
+
+Adopt `tauri-plugin-log` so all diagnostics land in stdout and the per-platform log directory.
+
+**Key points**:
+- Register the plugin during app bootstrap with stdout and log-dir targets and sensible rotation defaults
+- Use `log` crate macros (`info!`, `warn!`, `debug!`, `error!`) instead of `println!`
+- Raise the logging level for the transcription module so deep diagnostics stay available without spamming the rest of the app
 
 ### 2. Replace unwrap() Calls
 
@@ -93,16 +102,24 @@ Use `tokio::time::timeout` to wrap the entire transcription operation with a 5-m
 
 1. **apps/whispering/src-tauri/src/lib.rs**
    - Add panic hook with crash logging
+   - Register the log plugin and move existing prints to structured logging
 
 2. **apps/whispering/src-tauri/src/transcription/model_manager.rs**
    - Replace 12 `.unwrap()` calls with proper error handling
    - Add Linux model validation in `get_or_load_whisper()`
    - Add panic guards around `transcribe-rs` calls
+   - Swap `eprintln!` with `log::error!` for poisoned mutex reporting
 
 3. **apps/whispering/src-tauri/src/transcription/mod.rs**
    - Replace 2 `.unwrap()` calls with proper error handling
    - Add timeout to `transcribe_audio_whisper` command
    - Add structured logging throughout transcription pipeline
+
+4. **apps/whispering/src-tauri/Cargo.toml**
+   - Declare `log` and `tauri-plugin-log` dependencies
+
+5. **apps/whispering/src-tauri/capabilities/**/*.json**
+   - Grant the new log capability to windows that need access
 
 ## Testing Strategy
 

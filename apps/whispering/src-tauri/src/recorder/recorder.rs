@@ -184,7 +184,8 @@ impl RecorderState {
             tx.send(RecorderCmd::Start(reply_tx))
                 .map_err(|e| format!("Failed to send start command: {}", e))?;
             // Wait for worker thread to confirm the command was processed
-            reply_rx.recv()
+            reply_rx
+                .recv()
                 .map_err(|e| format!("Failed to receive start confirmation: {}", e))?;
         } else {
             return Err("No recording session initialized".to_string());
@@ -200,7 +201,8 @@ impl RecorderState {
             tx.send(RecorderCmd::Stop(reply_tx))
                 .map_err(|e| format!("Failed to send stop command: {}", e))?;
             // Wait for worker thread to confirm the command was processed
-            reply_rx.recv()
+            reply_rx
+                .recv()
                 .map_err(|e| format!("Failed to receive stop confirmation: {}", e))?;
         }
 
