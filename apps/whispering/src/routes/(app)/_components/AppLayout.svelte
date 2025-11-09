@@ -76,6 +76,9 @@
 	if (window.__TAURI_INTERNALS__) {
 		syncWindowAlwaysOnTopWithRecorderState();
 		syncIconWithRecorderState();
+
+		// Initialize tray icon immediately
+		services.tray.setTrayIcon('IDLE');
 	}
 
 	$effect(() => {
