@@ -3,9 +3,6 @@
   "workspaces": {
     "": {
       "name": "epicenter",
-      "dependencies": {
-        "wellcrafted": "catalog:",
-      },
       "devDependencies": {
         "@biomejs/biome": "^2.3.1",
         "@eslint/compat": "^1.4.0",
@@ -148,7 +145,7 @@
     },
     "apps/whispering": {
       "name": "@repo/whispering",
-      "version": "7.7.0",
+      "version": "7.7.1",
       "dependencies": {
         "@anthropic-ai/sdk": "^0.55.0",
         "@aptabase/tauri": "^0.4.1",
