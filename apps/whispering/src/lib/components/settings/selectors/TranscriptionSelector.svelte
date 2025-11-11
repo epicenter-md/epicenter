@@ -23,9 +23,29 @@
 	} from '@lucide/svelte';
 	import { SvelteSet } from 'svelte/reactivity';
 
-	let { class: className }: { class?: string } = $props();
+	let {
+		class: className,
+		side = 'bottom' as 'top' | 'right' | 'bottom' | 'left',
+		align = 'center' as 'start' | 'center' | 'end',
+		showLabel = false,
+		unstyled = false,
+	}: {
+		class?: string;
+		side?: 'top' | 'right' | 'bottom' | 'left';
+		align?: 'start' | 'center' | 'end';
+		showLabel?: boolean;
+		unstyled?: boolean;
+	} = $props();
 
 	const selectedService = $derived(getSelectedTranscriptionService());
+
+	// Tooltip text - only shows current value
+	const tooltipText = $derived(
+		selectedService ? selectedService.name : 'No service selected',
+	);
+
+	// Label text - only shows setting name
+	const labelText = 'Transcription Model';
 
 	function getSelectedModelNameOrUrl(service: TranscriptionService) {
 		switch (service.location) {
@@ -85,45 +105,84 @@
 <Popover.Root bind:open={combobox.open}>
 	<Popover.Trigger bind:ref={combobox.triggerRef}>
 		{#snippet child({ props })}
-			<WhisperingButton
-				{...props}
-				class={cn('relative', className)}
-				tooltipContent={selectedService
-					? `${selectedService.name}${
-							selectedService.location === 'cloud'
-								? ` - ${getSelectedModelNameOrUrl(selectedService)}`
-								: ''
-						}`
-					: 'Select transcription service'}
-				role="combobox"
-				aria-expanded={combobox.open}
-				variant="ghost"
-				size="icon"
-			>
-				{#if selectedService}
-					<div
-						class={cn(
-							'size-4 flex items-center justify-center [&>svg]:size-full',
-							selectedService.invertInDarkMode &&
-								'dark:[&>svg]:invert dark:[&>svg]:brightness-90',
-							!isTranscriptionServiceConfigured(selectedService) &&
-								'opacity-60',
-						)}
-					>
-						{@html selectedService.icon}
+			{#if unstyled}
+				<button
+					{...props}
+					title={tooltipText}
+					role="combobox"
+					aria-expanded={combobox.open}
+					class={cn(
+						'peer/menu-button outline-hidden ring-sidebar-ring hover:bg-sidebar-accent hover:text-sidebar-accent-foreground flex w-full items-center gap-2 overflow-hidden rounded-md p-2 text-left text-sm transition-[width,height,padding] [&>span:last-child]:truncate [&>svg]:size-4 [&>svg]:shrink-0',
+						'relative',
+						className,
+					)}
+				>
+					<div class="relative shrink-0">
+						{#if selectedService}
+							<div
+								class={cn(
+									'size-4 shrink-0 flex items-center justify-center [&>svg]:size-full',
+									selectedService.invertInDarkMode &&
+										'dark:[&>svg]:invert dark:[&>svg]:brightness-90',
+									!isTranscriptionServiceConfigured(selectedService) &&
+										'opacity-60',
+								)}
+							>
+								{@html selectedService.icon}
+							</div>
+						{:else}
+							<MicIcon class="size-4 shrink-0 text-muted-foreground" />
+						{/if}
+						{#if selectedService && !isTranscriptionServiceConfigured(selectedService)}
+							<span
+								class="absolute -right-1.5 -top-1.5 size-2 rounded-full bg-amber-500 before:absolute before:left-0 before:top-0 before:h-full before:w-full before:rounded-full before:bg-amber-500/50 before:animate-ping"
+							></span>
+						{/if}
 					</div>
-				{:else}
-					<MicIcon class="size-4 text-muted-foreground" />
-				{/if}
-				{#if selectedService && !isTranscriptionServiceConfigured(selectedService)}
-					<span
-						class="absolute -right-0.5 -top-0.5 size-2 rounded-full bg-amber-500 before:absolute before:left-0 before:top-0 before:h-full before:w-full before:rounded-full before:bg-amber-500/50 before:animate-ping"
-					></span>
-				{/if}
-			</WhisperingButton>
+					{#if showLabel}
+						<span class="truncate min-w-0">{labelText}</span>
+					{/if}
+				</button>
+			{:else}
+				<WhisperingButton
+					{...props}
+					class={cn('relative', className)}
+					tooltipContent={tooltipText}
+					role="combobox"
+					aria-expanded={combobox.open}
+					variant="ghost"
+					size={showLabel ? 'default' : 'icon'}
+				>
+					<div class="relative shrink-0">
+						{#if selectedService}
+							<div
+								class={cn(
+									'size-4 shrink-0 flex items-center justify-center [&>svg]:size-full',
+									selectedService.invertInDarkMode &&
+										'dark:[&>svg]:invert dark:[&>svg]:brightness-90',
+									!isTranscriptionServiceConfigured(selectedService) &&
+										'opacity-60',
+								)}
+							>
+								{@html selectedService.icon}
+							</div>
+						{:else}
+							<MicIcon class="size-4 shrink-0 text-muted-foreground" />
+						{/if}
+						{#if selectedService && !isTranscriptionServiceConfigured(selectedService)}
+							<span
+								class="absolute -right-1.5 -top-1.5 size-2 rounded-full bg-amber-500 before:absolute before:left-0 before:top-0 before:h-full before:w-full before:rounded-full before:bg-amber-500/50 before:animate-ping"
+							></span>
+						{/if}
+					</div>
+					{#if showLabel}
+						<span class="truncate min-w-0">{labelText}</span>
+					{/if}
+				</WhisperingButton>
+			{/if}
 		{/snippet}
 	</Popover.Trigger>
-	<Popover.Content class="p-0">
+	<Popover.Content class="p-0" {side} {align}>
 		<Command.Root loop>
 			<Command.Input placeholder="Search services..." class="h-9 text-sm" />
 			<Command.List class="max-h-[40vh]">

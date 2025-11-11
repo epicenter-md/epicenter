@@ -30,11 +30,14 @@
 		FileDropZone,
 		MEGABYTE,
 	} from '@repo/ui/file-drop-zone';
+	import { useSidebar } from '@repo/ui/sidebar';
 	import * as ToggleGroup from '@repo/ui/toggle-group';
 	import { createQuery } from '@tanstack/svelte-query';
 	import type { UnlistenFn } from '@tauri-apps/api/event';
 	import { onDestroy, onMount } from 'svelte';
 	import TranscribedTextDialog from '$lib/components/copyable/TranscribedTextDialog.svelte';
+
+	const sidebar = useSidebar();
 
 	const getRecorderStateQuery = createQuery(
 		rpc.recorder.getRecorderState.options,
@@ -246,6 +249,7 @@
 							</WhisperingButton>
 						</div>
 					{:else}
+						<!-- Quick Settings Controls -->
 						<div class="absolute -right-32 bottom-4 flex items-center gap-0.5">
 							<ManualDeviceSelector />
 							<CompressionSelector />
@@ -274,14 +278,13 @@
 						</span>
 					</WhisperingButton>
 					<!-- Absolutely positioned selectors -->
-					{#if getVadStateQuery.data === 'IDLE'}
-						<div class="absolute -right-32 bottom-4 flex items-center gap-0.5">
-							<VadDeviceSelector />
-							<CompressionSelector />
-							<TranscriptionSelector />
-							<TransformationSelector />
-						</div>
-					{/if}
+					<!-- Quick Settings Controls -->
+					<div class="absolute -right-32 bottom-4 flex items-center gap-0.5">
+						<VadDeviceSelector />
+						<CompressionSelector />
+						<TranscriptionSelector />
+						<TransformationSelector />
+					</div>
 				</div>
 			{:else if settings.value['recording.mode'] === 'upload'}
 				<!-- Full width spanning all columns -->
@@ -303,6 +306,7 @@
 						}}
 						class="h-32 sm:h-36 lg:h-40 xl:h-44 w-full"
 					/>
+					<!-- Quick Settings Controls -->
 					<div class="flex items-center gap-1.5">
 						<CompressionSelector />
 						<TranscriptionSelector />
@@ -359,7 +363,7 @@
 			{/if}
 		</div>
 
-		<NavItems class="xs:flex -mb-2.5 -mt-1 hidden" />
+		<NavItems class="xs:flex -mb-2.5 -mt-1 hidden" pathPrefix="/verticalnav" />
 
 		<div class="xs:flex hidden flex-col items-center gap-3">
 			<p class="text-foreground/75 text-center text-sm">
@@ -415,12 +419,12 @@
 			<p class="text-muted-foreground text-center text-sm">
 				<strong>Dev:</strong> Switch to{' '}
 				<WhisperingButton
-					href="/verticalnav"
+					href="/"
 					variant="link"
 					class="text-sm"
-					tooltipContent="Switch to vertical nav layout"
+					tooltipContent="Switch to topbar layout"
 				>
-					Vertical Nav Layout
+					Topbar Layout
 				</WhisperingButton>
 			</p>
 		</div>

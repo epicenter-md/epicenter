@@ -19,27 +19,28 @@
 	let {
 		class: className,
 		collapsed = false,
-	}: { class?: string; collapsed?: boolean } = $props();
+		pathPrefix = '',
+	}: { class?: string; collapsed?: boolean; pathPrefix?: string } = $props();
 
 	const navItems = [
 		{
 			label: 'Recordings',
 			icon: ListIcon,
 			type: 'anchor',
-			href: '/recordings',
+			href: `${pathPrefix}/recordings`,
 		},
 		{
 			label: 'Transformations',
 			icon: LayersIcon,
 			type: 'anchor',
-			href: '/transformations',
+			href: `${pathPrefix}/transformations`,
 		},
 		{
 			label: 'Settings',
 			icon: SettingsIcon,
 			type: 'anchor',
-			href: '/settings',
-			activePathPrefix: '/settings',
+			href: `${pathPrefix}/settings`,
+			activePathPrefix: `${pathPrefix}/settings`,
 		},
 		{
 			label: 'View project on GitHub',
