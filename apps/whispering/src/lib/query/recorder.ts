@@ -1,14 +1,9 @@
 import { nanoid } from 'nanoid/non-secure';
 import { Ok } from 'wellcrafted/result';
 import type { WhisperingRecordingState } from '$lib/constants/audio';
-import { PLATFORM_TYPE } from '$lib/constants/platform';
-import { fromTaggedErr } from '$lib/result';
+import { fromTaggedErr, WhisperingErr } from '$lib/result';
 import * as services from '$lib/services';
 import { getDefaultRecordingsFolder } from '$lib/services/recorder';
-import {
-	FFMPEG_DEFAULT_INPUT_OPTIONS,
-	FFMPEG_DEFAULT_OUTPUT_OPTIONS,
-} from '$lib/services/recorder/ffmpeg';
 import { settings } from '$lib/stores/settings.svelte';
 import { defineMutation, defineQuery, queryClient } from './_client';
 import { notify } from './notify';
@@ -20,6 +15,12 @@ const recorderKeys = {
 	stopRecording: ['recorder', 'stopRecording'] as const,
 	cancelRecording: ['recorder', 'cancelRecording'] as const,
 } as const;
+
+/**
+ * Module-level state to track the current recording ID.
+ * This ensures the same ID is used from recording start through database save.
+ */
+let currentRecordingId: string | null = null;
 
 const invalidateRecorderState = () =>
 	queryClient.invalidateQueries({ queryKey: recorderKeys.recorderState });
@@ -62,6 +63,9 @@ export const recorder = {
 		resultMutationFn: async ({ toastId }: { toastId: string }) => {
 			// Generate a unique recording ID that will serve as the file name
 			const recordingId = nanoid();
+
+			// Store the recording ID so it can be reused when stopping
+			currentRecordingId = recordingId;
 
 			// Prepare recording parameters based on which method we're using
 			const baseParams = {
@@ -133,13 +137,30 @@ export const recorder = {
 				});
 
 			if (stopRecordingError) {
+				// Reset recording ID on error
+				currentRecordingId = null;
 				return fromTaggedErr(stopRecordingError, {
 					title: '❌ Failed to stop recording',
 					action: { type: 'more-details', error: stopRecordingError },
 				});
 			}
 
-			return Ok(blob);
+			// Retrieve the stored recording ID
+			const recordingId = currentRecordingId;
+
+			// Reset the recording ID now that we've retrieved it
+			currentRecordingId = null;
+
+			if (!recordingId) {
+				return WhisperingErr({
+					title: '❌ Missing recording ID',
+					description:
+						'An internal error occurred: recording ID was not set when stopping the recording.',
+				});
+			}
+
+			// Return both blob and recordingId so they can be used together
+			return Ok({ blob, recordingId });
 		},
 		onSettled: invalidateRecorderState,
 	}),
@@ -152,6 +173,9 @@ export const recorder = {
 					sendStatus: (options) =>
 						notify.loading.execute({ id: toastId, ...options }),
 				});
+
+			// Reset recording ID when canceling
+			currentRecordingId = null;
 
 			if (cancelRecordingError) {
 				return fromTaggedErr(cancelRecordingError, {

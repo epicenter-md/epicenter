@@ -1,6 +1,6 @@
 {
 	"name": "@repo/whispering",
-	"version": "7.5.5",
+	"version": "7.7.1",
 	"description": "",
 	"exports": {
 		"./commands": "./src/lib/commands.ts"
@@ -15,7 +15,7 @@
 		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
 		"lint": "eslint .",
 		"tauri": "tauri",
-		"deploy": "bun run build && wrangler pages deploy"
+		"deploy": "bun run build && wrangler deploy"
 	},
 	"license": "MIT",
 	"devDependencies": {
@@ -35,6 +35,7 @@
 		"typescript": "catalog:",
 		"vite": "catalog:",
 		"vite-plugin-devtools-json": "^1.0.0",
+		"vite-plugin-node-polyfills": "^0.24.0",
 		"wrangler": "^4.29.1"
 	},
 	"type": "module",
@@ -45,6 +46,7 @@
 		"@google/generative-ai": "^0.24.1",
 		"@mistralai/mistralai": "^1.9.18",
 		"@repo/constants": "workspace:*",
+		"@repo/shared": "workspace:*",
 		"@repo/svelte-utils": "workspace:*",
 		"@ricky0123/vad-web": "^0.0.24",
 		"@standard-schema/spec": "^1.0.0",
@@ -70,6 +72,7 @@
 		"date-fns": "catalog:",
 		"dexie": "^4.0.11",
 		"elevenlabs": "^1.59.0",
+		"gray-matter": "^4.0.3",
 		"groq-sdk": "^0.25.0",
 		"nanoid": "catalog:",
 		"openai": "^5.7.0",

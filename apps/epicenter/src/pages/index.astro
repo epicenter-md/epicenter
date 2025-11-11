@@ -65,7 +65,9 @@ const tools = [
 		description:
 			'Fast, minimal transcription that works with local and cloud models',
 		features: ['Choose your model', 'No subscriptions', 'Plain text output'],
-		href: 'https://github.com/epicenter-md/epicenter/tree/main/apps/whispering',
+		githubUrl:
+			'https://github.com/epicenter-md/epicenter/tree/main/apps/whispering',
+		tryNowUrl: 'https://github.com/epicenter-md/epicenter/releases',
 	},
 	{
 		emoji: '💻',
@@ -76,7 +78,8 @@ const tools = [
 			'Secure tunneling',
 			'Query from any device',
 		],
-		href: 'https://github.com/epicenter-md/epicenter/tree/main/apps/sh',
+		githubUrl: 'https://github.com/epicenter-md/epicenter/tree/main/apps/sh',
+		tryNowUrl: 'https://epicenter.sh',
 	},
 ];
 
@@ -238,14 +241,23 @@ const ecosystem = [
 									</ul>
 								</Card.Content>
 								<Card.Footer class="pt-4 border-t border-muted/50">
-									<Button
-										href={tool.href}
-										variant="secondary"
-										class="w-full group-hover:bg-primary group-hover:text-primary-foreground group-hover:border-primary hover:bg-primary hover:text-primary-foreground hover:border-primary transition-all"
-									>
-										View on GitHub
-										<ArrowRightIcon class="w-4 h-4 group-hover:translate-x-1 transition-transform" />
-									</Button>
+									<div class="flex gap-2">
+										<Button
+											href={tool.tryNowUrl}
+											variant="secondary"
+											class="flex-1 group-hover:bg-primary group-hover:text-primary-foreground group-hover:border-primary hover:bg-primary hover:text-primary-foreground hover:border-primary transition-all"
+										>
+											Try Now
+											<ArrowRightIcon class="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+										</Button>
+										<Button
+											href={tool.githubUrl}
+											variant="outline"
+											class="flex-1"
+										>
+											View on GitHub
+										</Button>
+									</div>
 								</Card.Footer>
 							</Card.Root>
 						))

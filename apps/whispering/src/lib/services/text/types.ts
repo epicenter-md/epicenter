@@ -9,6 +9,12 @@ export { TextServiceErr, TextServiceError };
 
 export type TextService = {
 	/**
+	 * Reads text from the system clipboard.
+	 * @returns The text content of the clipboard, or null if empty.
+	 */
+	readFromClipboard: () => Promise<Result<string | null, TextServiceError>>;
+
+	/**
 	 * Copies text to the system clipboard.
 	 * @param text The text to copy to the clipboard.
 	 */

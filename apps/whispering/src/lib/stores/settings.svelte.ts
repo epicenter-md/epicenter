@@ -19,7 +19,7 @@ import {
 import {
 	syncGlobalShortcutsWithSettings,
 	syncLocalShortcutsWithSettings,
-} from '$routes/+layout/register-commands';
+} from '$routes/(app)/_layout-utils/register-commands';
 
 /**
  * Encapsulated settings object with controlled access.

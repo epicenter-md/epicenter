@@ -1,0 +1,1 @@
+export { safeLookup } from './object';

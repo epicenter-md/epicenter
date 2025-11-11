@@ -1,6 +1,6 @@
 [package]
 name = "whispering"
-version = "7.5.5"
+version = "7.7.1"
 description = "A Tauri App"
 authors = ["you"]
 repository = "https://github.com/epicenter-md/epicenter"
@@ -50,6 +50,7 @@ tauri-plugin-macos-permissions = "2.3.0"
 fix-path-env = { git = "https://github.com/tauri-apps/fix-path-env-rs" }
 transcribe-rs = "0.1.0"
 regex = "1"
+rayon = "1.10"
 
 [target.'cfg(unix)'.dependencies]
 nix = { version = "0.29", features = ["signal"] }

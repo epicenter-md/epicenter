@@ -10,12 +10,10 @@ export function createDownloadServiceDesktop(): DownloadService {
 		downloadBlob: async ({ name, blob }) => {
 			const extension = getExtensionFromAudioBlob(blob);
 			const { data: path, error: saveError } = await tryAsync({
-				try: async () => {
-					const path = await save({
+				try: () =>
+					save({
 						filters: [{ name, extensions: [extension] }],
-					});
-					return path;
-				},
+					}),
 				catch: (error) =>
 					DownloadServiceErr({
 						message:

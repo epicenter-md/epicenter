@@ -8,7 +8,7 @@
 	import { useCombobox } from '@repo/ui/hooks';
 	import { settings } from '$lib/stores/settings.svelte';
 	import { cn } from '@repo/ui/utils';
-	import { isCompressionRecommended } from '$routes/+layout/check-ffmpeg';
+	import { isCompressionRecommended } from '$routes/(app)/_layout-utils/check-ffmpeg';
 	import { PackageIcon, SettingsIcon } from '@lucide/svelte';
 
 	let { class: className }: { class?: string } = $props();

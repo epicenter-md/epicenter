@@ -3,7 +3,6 @@ import { exists, remove, writeFile } from '@tauri-apps/plugin-fs';
 import { nanoid } from 'nanoid/non-secure';
 import { extractErrorMessage } from 'wellcrafted/error';
 import { Err, Ok, tryAsync } from 'wellcrafted/result';
-import { IS_WINDOWS } from '$lib/constants/platform';
 import * as services from '$lib/services';
 import { asShellCommand } from '../command/types';
 import { getFileExtensionFromFfmpegOptions } from '../recorder/ffmpeg';
@@ -15,12 +14,11 @@ export function createFfmpegService(): FfmpegService {
 			const { data: shellFfmpegProcess, error: shellFfmpegError } =
 				await tryAsync({
 					try: async () => {
-						const { Command } = await import('@tauri-apps/plugin-shell');
-						const output = await (IS_WINDOWS
-							? Command.create('cmd', ['/c', 'ffmpeg -version'])
-							: Command.create('sh', ['-c', 'ffmpeg -version'])
-						).execute();
-						return output;
+						const { data: result, error: commandError } =
+							await services.command.execute(asShellCommand('ffmpeg -version'));
+
+						if (commandError) throw commandError;
+						return result;
 					},
 					catch: (error) =>
 						FfmpegServiceErr({

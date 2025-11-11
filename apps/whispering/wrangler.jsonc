@@ -1,0 +1,21 @@
+{
+	"$schema": "../../node_modules/wrangler/config-schema.json",
+	"name": "whispering",
+	"compatibility_date": "2025-11-04",
+	// Cloudflare Workers + Assets Configuration
+	// ==========================================
+	// When setting up in Cloudflare dashboard:
+	//
+	// Build command:
+	//   bun ci && bun run build --filter=@repo/whispering
+	//
+	// Deploy command:
+	//   cd apps/whispering && npx wrangler deploy
+	//
+	// Build variables (Advanced settings):
+	//   BUN_VERSION=1.3.0
+	"assets": {
+		"directory": "build",
+		"not_found_handling": "single-page-application"
+	}
+}

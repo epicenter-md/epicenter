@@ -13,8 +13,8 @@ const nodeEnvSchema = type({
 	DATABASE_URL: 'string.url',
 	BETTER_AUTH_URL: 'string.url',
 	BETTER_AUTH_SECRET: 'string',
-	GITHUB_CLIENT_ID: 'string',
-	GITHUB_CLIENT_SECRET: 'string',
+	GH_CLIENT_ID: 'string',
+	GH_CLIENT_SECRET: 'string',
 });
 
 export function validateNodeEnv(env: unknown): NodeEnv {

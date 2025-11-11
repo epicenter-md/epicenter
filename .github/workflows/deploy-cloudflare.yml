@@ -1,0 +1,282 @@
+name: Deploy to Cloudflare Workers
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: '22'
+  BUN_VERSION: 'latest'
+
+jobs:
+  validate:
+    name: Validate Build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'bun'
+
+      - name: Install dependencies
+        run: bun ci
+
+      - name: Run type checking
+        run: |
+          bun run --filter @repo/whispering check
+          bun run --filter epicenter astro check || true
+
+      - name: Run linting
+        run: bun run lint
+
+      - name: Build all packages
+        run: bun run build
+        env:
+          NODE_ENV: production
+
+      - name: Upload Whispering build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: whispering-build
+          path: apps/whispering/build
+          retention-days: 1
+
+      - name: Upload Epicenter build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: epicenter-dist
+          path: apps/epicenter/dist
+          retention-days: 1
+
+  deploy-whispering:
+    name: Deploy Whispering App
+    needs: validate
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      deployments: write
+    environment:
+      name: production-whispering
+      url: ${{ steps.deploy.outputs.deployment-url }}
+    outputs:
+      deployment-url: ${{ steps.deploy.outputs.deployment-url }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install dependencies
+        run: bun ci
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: whispering-build
+          path: apps/whispering/build
+
+      - name: Deploy to Cloudflare Workers
+        id: deploy
+        run: |
+          cd apps/whispering
+
+          # Deploy to production
+          DEPLOYMENT_OUTPUT=$(bunx wrangler deploy 2>&1)
+
+          echo "$DEPLOYMENT_OUTPUT"
+
+          # Extract deployment URL from output (look for workers.dev URL)
+          DEPLOYMENT_URL=$(echo "$DEPLOYMENT_OUTPUT" | grep -oE 'https://[a-zA-Z0-9.-]+\.workers\.dev' | head -1)
+
+          if [ -z "$DEPLOYMENT_URL" ]; then
+            # Fallback to production URL if extraction fails
+            DEPLOYMENT_URL="https://whispering.workers.dev"
+          fi
+
+          echo "deployment-url=$DEPLOYMENT_URL" >> $GITHUB_OUTPUT
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+      - name: Add deployment summary
+        run: |
+          echo "### 🚀 Whispering Deployment" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Status:** ✅ Deployed successfully" >> $GITHUB_STEP_SUMMARY
+          echo "**URL:** ${{ steps.deploy.outputs.deployment-url }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Commit:** \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+
+  deploy-epicenter:
+    name: Deploy Epicenter App
+    needs: validate
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      deployments: write
+    environment:
+      name: production-epicenter
+      url: ${{ steps.deploy.outputs.deployment-url }}
+    outputs:
+      deployment-url: ${{ steps.deploy.outputs.deployment-url }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install dependencies
+        run: bun ci
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: epicenter-dist
+          path: apps/epicenter/dist
+
+      - name: Deploy to Cloudflare Pages
+        id: deploy
+        run: |
+          cd apps/epicenter
+
+          # Deploy to Cloudflare Pages
+          DEPLOYMENT_OUTPUT=$(bunx wrangler pages deploy dist \
+            --project-name=epicenter \
+            --branch=main \
+            --commit-dirty=true \
+            --commit-hash=${{ github.sha }} \
+            --commit-message="${{ github.event.head_commit.message }}" 2>&1)
+
+          echo "$DEPLOYMENT_OUTPUT"
+
+          # Extract deployment URL from output
+          DEPLOYMENT_URL=$(echo "$DEPLOYMENT_OUTPUT" | grep -oE 'https://[a-z0-9-]+\.epicenter\.pages\.dev' | head -1)
+
+          if [ -z "$DEPLOYMENT_URL" ]; then
+            # Fallback to production URL if extraction fails
+            DEPLOYMENT_URL="https://epicenter.pages.dev"
+          fi
+
+          echo "deployment-url=$DEPLOYMENT_URL" >> $GITHUB_OUTPUT
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+      - name: Add deployment summary
+        run: |
+          echo "### 🚀 Epicenter Deployment" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Status:** ✅ Deployed successfully" >> $GITHUB_STEP_SUMMARY
+          echo "**URL:** ${{ steps.deploy.outputs.deployment-url }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Commit:** \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+
+  notify-deployment:
+    name: Notify Deployment Status
+    needs: [deploy-whispering, deploy-epicenter]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Check deployment status
+        id: status
+        run: |
+          if [ "${{ needs.deploy-whispering.result }}" = "success" ] && [ "${{ needs.deploy-epicenter.result }}" = "success" ]; then
+            echo "status=success" >> $GITHUB_OUTPUT
+            echo "emoji=✅" >> $GITHUB_OUTPUT
+            echo "message=Both apps deployed successfully" >> $GITHUB_OUTPUT
+          else
+            echo "status=failure" >> $GITHUB_OUTPUT
+            echo "emoji=❌" >> $GITHUB_OUTPUT
+            echo "message=Deployment failed for one or more apps" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create deployment summary
+        run: |
+          echo "## 📊 Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Status: ${{ steps.status.outputs.emoji }} ${{ steps.status.outputs.message }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| App | Status | URL |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----|--------|-----|" >> $GITHUB_STEP_SUMMARY
+
+          if [ "${{ needs.deploy-whispering.result }}" = "success" ]; then
+            echo "| Whispering | ✅ Success | ${{ needs.deploy-whispering.outputs.deployment-url }} |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| Whispering | ❌ Failed | - |" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          if [ "${{ needs.deploy-epicenter.result }}" = "success" ]; then
+            echo "| Epicenter | ✅ Success | ${{ needs.deploy-epicenter.outputs.deployment-url }} |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| Epicenter | ❌ Failed | - |" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Triggered by:** @${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Commit:** [${{ github.sha }}](${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }})" >> $GITHUB_STEP_SUMMARY
+
+      - name: Send Discord notification
+        if: ${{ secrets.DISCORD_WEBHOOK_URL != '' }}
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: |
+          STATUS_COLOR=$([ "${{ steps.status.outputs.status }}" = "success" ] && echo "3066993" || echo "15158332")
+
+          PAYLOAD=$(cat <<EOF
+          {
+            "embeds": [{
+              "title": "${{ steps.status.outputs.emoji }} Deployment ${{ steps.status.outputs.status }}",
+              "description": "${{ steps.status.outputs.message }}",
+              "color": $STATUS_COLOR,
+              "fields": [
+                {
+                  "name": "Whispering",
+                  "value": "[View deployment](${{ needs.deploy-whispering.outputs.deployment-url || 'Failed' }})",
+                  "inline": true
+                },
+                {
+                  "name": "Epicenter",
+                  "value": "[View deployment](${{ needs.deploy-epicenter.outputs.deployment-url || 'Failed' }})",
+                  "inline": true
+                }
+              ],
+              "footer": {
+                "text": "Commit: ${{ github.sha }}"
+              },
+              "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%S.000Z)"
+            }]
+          }
+          EOF
+          )
+
+          curl -X POST -H "Content-Type: application/json" -d "$PAYLOAD" "$DISCORD_WEBHOOK" || true

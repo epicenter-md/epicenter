@@ -1,12 +1,12 @@
+import { type } from 'arktype';
 import { nanoid } from 'nanoid/non-secure';
-import type {
+import {
 	ANTHROPIC_INFERENCE_MODELS,
 	GOOGLE_INFERENCE_MODELS,
 	GROQ_INFERENCE_MODELS,
 	INFERENCE_PROVIDERS,
 	OPENAI_INFERENCE_MODELS,
 } from '$lib/constants/inference';
-
 export const TRANSFORMATION_STEP_TYPES = [
 	'prompt_transform',
 	'find_replace',
@@ -17,41 +17,53 @@ export const TRANSFORMATION_STEP_TYPES_TO_LABELS = {
 	find_replace: 'Find Replace',
 } as const satisfies Record<(typeof TRANSFORMATION_STEP_TYPES)[number], string>;
 
-export type Transformation = {
-	id: string;
-	title: string;
-	description: string;
-	createdAt: string;
-	updatedAt: string;
+export const TransformationStep = type({
+	id: 'string',
+	// For now, steps don't need titles or descriptions. They can be computed from the type as "Find and Replace" or "Prompt Transform"
+	type: type.enumerated(...TRANSFORMATION_STEP_TYPES),
+	'prompt_transform.inference.provider': type.enumerated(
+		...INFERENCE_PROVIDERS,
+	),
+
+	'prompt_transform.inference.provider.OpenAI.model': type.enumerated(
+		...OPENAI_INFERENCE_MODELS,
+	),
+	'prompt_transform.inference.provider.Groq.model': type.enumerated(
+		...GROQ_INFERENCE_MODELS,
+	),
+	'prompt_transform.inference.provider.Anthropic.model': type.enumerated(
+		...ANTHROPIC_INFERENCE_MODELS,
+	),
+	'prompt_transform.inference.provider.Google.model': type.enumerated(
+		...GOOGLE_INFERENCE_MODELS,
+	),
+	// OpenRouter model is a free string (user can enter any model)
+	'prompt_transform.inference.provider.OpenRouter.model': 'string',
+	'prompt_transform.systemPromptTemplate': 'string',
+	'prompt_transform.userPromptTemplate': 'string',
+	'find_replace.findText': 'string',
+	'find_replace.replaceText': 'string',
+	'find_replace.useRegex': 'boolean',
+});
+
+export type TransformationStep = typeof TransformationStep.infer;
+
+export const Transformation = type({
+	id: 'string',
+	title: 'string',
+	description: 'string',
+	createdAt: 'string',
+	updatedAt: 'string',
 	/**
 	 * It can be one of several types of text transformations:
 	 * - find_replace: Replace text patterns with new text
 	 * - prompt_transform: Use AI to transform text based on prompts
 	 */
-	steps: {
-		id: string;
-		// For now, steps don't need titles or descriptions. They can be computed from the type as "Find and Replace" or "Prompt Transform"
-		type: (typeof TRANSFORMATION_STEP_TYPES)[number];
+	steps: [TransformationStep, '[]'],
+});
 
-		'prompt_transform.inference.provider': (typeof INFERENCE_PROVIDERS)[number];
+export type Transformation = typeof Transformation.infer;
 
-		'prompt_transform.inference.provider.OpenAI.model': (typeof OPENAI_INFERENCE_MODELS)[number];
-		'prompt_transform.inference.provider.Groq.model': (typeof GROQ_INFERENCE_MODELS)[number];
-		'prompt_transform.inference.provider.Anthropic.model': (typeof ANTHROPIC_INFERENCE_MODELS)[number];
-		'prompt_transform.inference.provider.Google.model': (typeof GOOGLE_INFERENCE_MODELS)[number];
-		// OpenRouter model is a free string (user can enter any model)
-		'prompt_transform.inference.provider.OpenRouter.model': string;
-
-		'prompt_transform.systemPromptTemplate': string;
-		'prompt_transform.userPromptTemplate': string;
-
-		'find_replace.findText': string;
-		'find_replace.replaceText': string;
-		'find_replace.useRegex': boolean;
-	}[];
-};
-
-export type TransformationStep = Transformation['steps'][number];
 export type InsertTransformationStep = Omit<
 	TransformationStep,
 	'createdAt' | 'updatedAt'

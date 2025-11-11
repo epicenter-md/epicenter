@@ -11,16 +11,20 @@ export const download = {
 		resultMutationFn: async (
 			recording: Recording,
 		): Promise<Result<void, WhisperingError | DownloadServiceError>> => {
-			if (!recording.blob) {
+			// Fetch audio blob by ID
+			const { data: audioBlob, error: getAudioBlobError } =
+				await services.db.recordings.getAudioBlob(recording.id);
+
+			if (getAudioBlobError) {
 				return WhisperingErr({
-					title: '⚠️ Recording blob not found',
-					description: "Your recording doesn't have a blob to download.",
+					title: '⚠️ Failed to fetch audio',
+					description: `Unable to load audio for recording: ${getAudioBlobError.message}`,
 				});
 			}
 
 			return await services.download.downloadBlob({
 				name: `whispering_recording_${recording.id}`,
-				blob: recording.blob,
+				blob: audioBlob,
 			});
 		},
 	}),

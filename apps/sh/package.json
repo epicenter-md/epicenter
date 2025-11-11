@@ -45,6 +45,7 @@
 	},
 	"dependencies": {
 		"@repo/constants": "workspace:*",
+		"@repo/shared": "workspace:*",
 		"@tanstack/svelte-query": "^6.0.0",
 		"@tanstack/svelte-query-devtools": "^6.0.0",
 		"@trpc/client": "^11.0.3",

@@ -4,6 +4,21 @@ import { TextServiceErr } from './types';
 
 export function createTextServiceWeb(): TextService {
 	return {
+		readFromClipboard: () =>
+			tryAsync({
+				try: async () => {
+					const text = await navigator.clipboard.readText();
+					return text || null;
+				},
+				catch: (error) =>
+					TextServiceErr({
+						message:
+							'There was an error reading from the clipboard using the browser Clipboard API. Please try again.',
+						context: {},
+						cause: error,
+					}),
+			}),
+
 		copyToClipboard: async (text) => {
 			const { error: copyError } = await tryAsync({
 				try: () => navigator.clipboard.writeText(text),

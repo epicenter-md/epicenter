@@ -40,7 +40,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           # Use a PAT or the default token with proper permissions
-          token: ${{ secrets.GITHUB_ACTIONS_PAT }}
+          token: ${{ secrets.GH_ACTIONS_PAT }}
           # Fetch all history for proper git operations
           fetch-depth: 0
 
@@ -69,29 +69,29 @@ jobs:
           
           # Update download links using regex to match semantic version patterns
           # The regex [0-9]\+\.[0-9]\+\.[0-9]\+ matches version numbers like 7.0.0, 10.2.1, etc.
-          
+
           # FIRST: Update URL paths from /releases/download/vX.X.X/ to /releases/download/v{VERSION}/
           # This handles the versioned path structure
           # Example: /releases/download/v7.2.0/ → /releases/download/v7.2.1/
           sed -i "s|/releases/download/v[0-9]\+\.[0-9]\+\.[0-9]\+/|/releases/download/v${VERSION}/|g" "$README_PATH"
-          
-          # SECOND: Update filenames within the URLs and markdown links
-          # macOS downloads
-          # Example: Whispering_7.2.0_aarch64.dmg → Whispering_7.2.1_aarch64.dmg
-          sed -i "s/Whispering_[0-9]\+\.[0-9]\+\.[0-9]\+_aarch64\.dmg/Whispering_${VERSION}_aarch64.dmg/g" "$README_PATH"
-          sed -i "s/Whispering_[0-9]\+\.[0-9]\+\.[0-9]\+_x64\.dmg/Whispering_${VERSION}_x64.dmg/g" "$README_PATH"
-          
-          # Windows downloads
-          # Example: Whispering_7.2.0_x64_en-US.msi → Whispering_7.2.1_x64_en-US.msi
-          sed -i "s/Whispering_[0-9]\+\.[0-9]\+\.[0-9]\+_x64_en-US\.msi/Whispering_${VERSION}_x64_en-US.msi/g" "$README_PATH"
-          sed -i "s/Whispering_[0-9]\+\.[0-9]\+\.[0-9]\+_x64-setup\.exe/Whispering_${VERSION}_x64-setup.exe/g" "$README_PATH"
-          
-          # Linux downloads
-          # Example: Whispering_7.2.0_amd64.AppImage → Whispering_7.2.1_amd64.AppImage
-          sed -i "s/Whispering_[0-9]\+\.[0-9]\+\.[0-9]\+_amd64\.AppImage/Whispering_${VERSION}_amd64.AppImage/g" "$README_PATH"
-          sed -i "s/Whispering_[0-9]\+\.[0-9]\+\.[0-9]\+_amd64\.deb/Whispering_${VERSION}_amd64.deb/g" "$README_PATH"
-          # RPM has a special format with -1 suffix
-          sed -i "s/Whispering-[0-9]\+\.[0-9]\+\.[0-9]\+-1\.x86_64\.rpm/Whispering-${VERSION}-1.x86_64.rpm/g" "$README_PATH"
+
+          # SECOND: Update filenames with platform-suffixed format (Tauri v2)
+          # macOS downloads (include _darwin suffix)
+          # Example: Whispering_7.2.0_aarch64_darwin.dmg → Whispering_7.2.1_aarch64_darwin.dmg
+          sed -i "s/Whispering_[0-9]\+\.[0-9]\+\.[0-9]\+_aarch64_darwin\.dmg/Whispering_${VERSION}_aarch64_darwin.dmg/g" "$README_PATH"
+          sed -i "s/Whispering_[0-9]\+\.[0-9]\+\.[0-9]\+_x64_darwin\.dmg/Whispering_${VERSION}_x64_darwin.dmg/g" "$README_PATH"
+
+          # Windows downloads (include _windows suffix)
+          # Example: Whispering_7.2.0_x64_en-US_windows.msi → Whispering_7.2.1_x64_en-US_windows.msi
+          sed -i "s/Whispering_[0-9]\+\.[0-9]\+\.[0-9]\+_x64_en-US_windows\.msi/Whispering_${VERSION}_x64_en-US_windows.msi/g" "$README_PATH"
+          sed -i "s/Whispering_[0-9]\+\.[0-9]\+\.[0-9]\+_x64-setup_windows\.exe/Whispering_${VERSION}_x64-setup_windows.exe/g" "$README_PATH"
+
+          # Linux downloads (include _linux suffix)
+          # Example: Whispering_7.2.0_amd64_linux.AppImage → Whispering_7.2.1_amd64_linux.AppImage
+          sed -i "s/Whispering_[0-9]\+\.[0-9]\+\.[0-9]\+_amd64_linux\.AppImage/Whispering_${VERSION}_amd64_linux.AppImage/g" "$README_PATH"
+          sed -i "s/Whispering_[0-9]\+\.[0-9]\+\.[0-9]\+_amd64_linux\.deb/Whispering_${VERSION}_amd64_linux.deb/g" "$README_PATH"
+          # RPM has a special format with -1 suffix and _linux suffix
+          sed -i "s/Whispering-[0-9]\+\.[0-9]\+\.[0-9]\+-1\.x86_64_linux\.rpm/Whispering-${VERSION}-1.x86_64_linux.rpm/g" "$README_PATH"
           
           # Show what changed for transparency
           echo "Changes made:"
@@ -113,12 +113,28 @@ jobs:
         run: |
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
-          
+
           git add apps/whispering/README.md
           git commit -m "chore: update README download links to v${{ steps.get_version.outputs.VERSION }}"
-          
-          # Push to main branch (explicitly specify refs/heads/ to avoid ambiguity with tag)
-          git push origin HEAD:refs/heads/main
+
+          # Retry logic to handle race conditions (e.g., when other commits are pushed during workflow)
+          MAX_RETRIES=3
+          for i in $(seq 1 $MAX_RETRIES); do
+            echo "Push attempt $i of $MAX_RETRIES..."
+
+            if git push origin HEAD:refs/heads/main; then
+              echo "✅ Successfully pushed on attempt $i"
+              exit 0
+            fi
+
+            if [ $i -lt $MAX_RETRIES ]; then
+              echo "⚠️ Push failed, pulling latest changes and retrying..."
+              git pull --rebase origin main
+            fi
+          done
+
+          echo "❌ Failed to push after $MAX_RETRIES attempts"
+          exit 1
 
       - name: Summary
         run: |

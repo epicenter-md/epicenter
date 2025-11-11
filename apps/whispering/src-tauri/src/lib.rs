@@ -20,6 +20,9 @@ use graceful_shutdown::send_sigint;
 pub mod command;
 use command::{execute_command, spawn_command};
 
+pub mod markdown_reader;
+use markdown_reader::{count_markdown_files, read_markdown_files};
+
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 #[tokio::main]
@@ -88,6 +91,9 @@ pub async fn run() {
         // Command execution (prevents console window flash on Windows)
         execute_command,
         spawn_command,
+        // Filesystem utilities
+        read_markdown_files,
+        count_markdown_files,
     ]);
 
     let app = builder

@@ -102,7 +102,7 @@ try {
 	await $`cd apps/whispering/src-tauri && cargo update -p whispering`;
 	console.log('✅ Updated Cargo.lock');
 } catch (error) {
-	console.error('❌ Failed to update Cargo.lock:', error.message);
+	console.error('❌ Failed to update Cargo.lock:', extractErrorMessage(error));
 	console.log(
 		'   You may need to run: cd apps/whispering/src-tauri && cargo update -p whispering',
 	);
@@ -122,33 +122,42 @@ try {
 	await $`git commit -m "chore: bump version to ${newVersion}"`;
 	console.log('✅ Committed changes');
 } catch (error) {
-	console.error('❌ Failed to commit changes:', error.message);
+	console.error('❌ Failed to commit changes:', extractErrorMessage(error));
 	process.exit(1);
 }
 
 /**
- * Create git tag with v prefix
+ * Create git tag with v prefix (force overwrite if exists)
  */
 try {
 	console.log('\n🏷️  Creating git tag...');
-	await $`git tag v${newVersion}`;
+	// Force create tag locally (overwrites if exists)
+	await $`git tag -f v${newVersion}`;
 	console.log(`✅ Created tag v${newVersion}`);
 } catch (error) {
-	console.error('❌ Failed to create tag:', error.message);
+	console.error('❌ Failed to create tag:', extractErrorMessage(error));
 	process.exit(1);
 }
 
 /**
  * Push to remote (both commits and tags)
+ * Force push tag to overwrite if it exists on remote
  */
 try {
 	console.log('\n⬆️  Pushing to remote...');
 	await $`git push`;
-	await $`git push --tags`;
+	await $`git push origin v${newVersion} --force`;
 	console.log('✅ Pushed to remote');
 } catch (error) {
-	console.error('❌ Failed to push to remote:', error.message);
+	console.error('❌ Failed to push to remote:', extractErrorMessage(error));
 	process.exit(1);
 }
 
 console.log(`\n🎉 Release ${newVersion} complete!`);
+
+/**
+ * Extract error message from unknown error type
+ */
+function extractErrorMessage(error: unknown): string {
+	return error instanceof Error ? error.message : String(error);
+}

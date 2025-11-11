@@ -1,0 +1,205 @@
+name: PR Preview Builds
+
+# This workflow builds Tauri applications for all platforms when a PR is opened or updated.
+# It automatically cancels previous builds to save CI minutes in two scenarios:
+#
+# 1. When new commits are pushed to the PR (synchronize event):
+#    - Cancels the previous build for the same PR
+#    - Starts a new build with the latest code
+#
+# 2. When the PR is merged or closed:
+#    - Cancels any in-progress builds for that PR
+#    - Runs a lightweight job that triggers the cancellation via concurrency groups
+#
+# How it works:
+# - All workflow runs for the same PR share the same concurrency group (keyed by PR number)
+# - When a new run starts, GitHub Actions automatically cancels previous runs in that group
+# - The 'closed' trigger activates a fast dummy job that joins the concurrency group and triggers cancellation
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, closed]
+
+concurrency:
+  # Group all runs for the same PR together
+  # When a new run starts, previous runs in this group are automatically cancelled
+  group: tauri-build-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  # Lightweight job that runs when PR is closed/merged
+  # Purpose: Trigger concurrency-based cancellation of in-progress builds
+  # This job starts quickly, joins the concurrency group, and causes GitHub to cancel
+  # any running builds for this PR, saving CI minutes
+  cancel-on-close:
+    if: github.event.action == 'closed'
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "PR closed - cancelling in-progress builds via concurrency group"
+
+  # Main build job - runs on PR open and updates, skipped when PR is closed
+  build-preview:
+    if: github.event.action != 'closed'
+    permissions:
+      contents: read
+      pull-requests: write
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: 'macos-latest'
+            args: '--target aarch64-apple-darwin'
+
+          - platform: 'macos-latest'
+            args: '--target x86_64-apple-darwin'
+
+          - platform: 'ubuntu-22.04'
+            args: ''
+
+          - platform: 'windows-latest'
+            args: ''
+
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install create-dmg (macOS only)
+        if: matrix.platform == 'macos-latest'
+        run: brew install create-dmg
+
+      - name: install dependencies (ubuntu only)
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libxdo-dev libasound2-dev libopenblas-dev libx11-dev libxtst-dev libxrandr-dev
+
+      - name: Prepare Vulkan SDK for Ubuntu
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          wget -qO- https://packages.lunarg.com/lunarg-signing-key-pub.asc | sudo tee /etc/apt/trusted.gpg.d/lunarg.asc
+          sudo wget -qO /etc/apt/sources.list.d/lunarg-vulkan-1.3.290-jammy.list https://packages.lunarg.com/vulkan/1.3.290/lunarg-vulkan-1.3.290-jammy.list
+          sudo apt update
+          sudo apt install -y vulkan-sdk mesa-vulkan-drivers
+
+      - name: setup bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install Vulkan SDK
+        if: matrix.platform == 'windows-latest'
+        uses: humbletim/install-vulkan-sdk@v1.2
+        with:
+          version: 1.4.309.0
+          cache: true
+
+      - name: setup node
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+
+      - name: install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './apps/whispering/src-tauri -> target'
+
+      - name: install frontend dependencies
+        run: bun install
+
+      - name: Build frontend
+        run: bun --filter @repo/whispering build
+
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          CI: true
+          APTABASE_KEY: ${{ secrets.APTABASE_KEY }}
+
+          # Code signing for macOS (same as release builds)
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+
+          # Tauri code signing (same as release builds)
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          projectPath: 'apps/whispering'
+          tagName: ''
+          args: ${{ matrix.args }}
+
+      - name: Install FUSE for AppImage processing
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y fuse libfuse2
+
+      - name: Remove libwayland-client.so from AppImage
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          APPIMAGE_PATH=$(find apps/whispering/src-tauri/target/release/bundle/appimage -name "*.AppImage" | head -1)
+
+          if [ -n "$APPIMAGE_PATH" ]; then
+            echo "Processing AppImage: $APPIMAGE_PATH"
+            chmod +x "$APPIMAGE_PATH"
+            cd "$(dirname "$APPIMAGE_PATH")"
+            APPIMAGE_NAME=$(basename "$APPIMAGE_PATH")
+            "./$APPIMAGE_NAME" --appimage-extract
+
+            echo "Removing libwayland-client.so files..."
+            find squashfs-root -name "libwayland-client.so*" -type f -delete
+
+            echo "Files remaining in lib directories:"
+            find squashfs-root -name "lib*" -type d | head -5 | while read dir; do
+              echo "Contents of $dir:"
+              ls "$dir" | grep -E "(wayland|fuse)" || echo "  No wayland/fuse libraries found"
+            done
+
+            wget -q https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
+            chmod +x appimagetool-x86_64.AppImage
+            ARCH=x86_64 ./appimagetool-x86_64.AppImage --no-appstream squashfs-root "$APPIMAGE_NAME"
+            rm -rf squashfs-root appimagetool-x86_64.AppImage
+
+            echo "libwayland-client.so removed from AppImage successfully"
+          else
+            echo "No AppImage found to process"
+          fi
+
+      - name: Set artifact suffix
+        id: artifact
+        shell: bash
+        run: |
+          if [[ "${{ matrix.args }}" == *"aarch64-apple-darwin"* ]]; then
+            echo "suffix=macos-arm64" >> $GITHUB_OUTPUT
+          elif [[ "${{ matrix.args }}" == *"x86_64-apple-darwin"* ]]; then
+            echo "suffix=macos-intel" >> $GITHUB_OUTPUT
+          elif [[ "${{ matrix.platform }}" == "ubuntu-22.04" ]]; then
+            echo "suffix=linux" >> $GITHUB_OUTPUT
+          elif [[ "${{ matrix.platform }}" == "windows-latest" ]]; then
+            echo "suffix=windows" >> $GITHUB_OUTPUT
+          else
+            echo "suffix=unknown" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: whispering-pr${{ github.event.pull_request.number }}-${{ steps.artifact.outputs.suffix }}
+          path: |
+            apps/whispering/src-tauri/target/*/release/bundle/**/*.dmg
+            apps/whispering/src-tauri/target/*/release/bundle/**/*.app
+            apps/whispering/src-tauri/target/release/bundle/**/*.dmg
+            apps/whispering/src-tauri/target/release/bundle/**/*.app
+            apps/whispering/src-tauri/target/release/bundle/**/*.AppImage
+            apps/whispering/src-tauri/target/release/bundle/**/*.deb
+            apps/whispering/src-tauri/target/release/bundle/**/*.exe
+            apps/whispering/src-tauri/target/release/bundle/**/*.msi
+          if-no-files-found: warn

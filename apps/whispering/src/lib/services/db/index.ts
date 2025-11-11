@@ -1,8 +1,7 @@
 import { DownloadServiceLive } from '../download';
-import { createDbServiceDexie } from './dexie';
+import { createDbServiceDesktop } from './desktop';
+import { createDbServiceWeb } from './web';
 
-export type { DbService, DbServiceError } from './dexie';
-export { createDbServiceDexie, DbServiceErr } from './dexie';
 export type {
 	InsertTransformationStep,
 	Recording,
@@ -19,7 +18,9 @@ export {
 	TRANSFORMATION_STEP_TYPES,
 	TRANSFORMATION_STEP_TYPES_TO_LABELS,
 } from './models';
+export type { DbService, DbServiceError } from './types';
+export { DbServiceErr } from './types';
 
-export const DbServiceLive = createDbServiceDexie({
-	DownloadService: DownloadServiceLive,
-});
+export const DbServiceLive = window.__TAURI_INTERNALS__
+	? createDbServiceDesktop({ DownloadService: DownloadServiceLive })
+	: createDbServiceWeb({ DownloadService: DownloadServiceLive });

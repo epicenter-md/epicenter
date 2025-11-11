@@ -4,6 +4,7 @@
 	import CreateAssistantConfigModal from '$lib/components/CreateAssistantConfigModal.svelte';
 	import { assistantConfigs } from '$lib/stores/assistant-configs.svelte';
 	import { useCreateAssistantParams } from '$lib/utils/search-params.svelte';
+	import { safeLookup } from '@repo/shared';
 	import { Button, buttonVariants } from '@repo/ui/button';
 	import * as DropdownMenu from '@repo/ui/dropdown-menu';
 	import * as Table from '@repo/ui/table';
@@ -74,10 +75,7 @@
 					{#each columns.filter((c) => c.hideable) as column}
 						<DropdownMenu.CheckboxItem
 							bind:checked={
-								() =>
-									columnVisibility[
-										column.id as keyof typeof columnVisibility
-									] ?? true,
+								() => safeLookup(columnVisibility, column.id) ?? true,
 								(checked) => {
 									columnVisibility = {
 										...columnVisibility,

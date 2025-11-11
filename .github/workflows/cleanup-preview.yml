@@ -1,0 +1,49 @@
+name: Cleanup Preview Deployment
+
+on:
+  pull_request:
+    types: [closed]
+
+env:
+  BUN_VERSION: 'latest'
+
+jobs:
+  cleanup-preview:
+    name: Delete Preview Worker
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+
+      - name: Delete preview worker
+        run: |
+          cd apps/whispering
+
+          # Create preview name based on PR number
+          PREVIEW_NAME="whispering-pr-${{ github.event.pull_request.number }}"
+
+          echo "Deleting worker: $PREVIEW_NAME"
+
+          # Delete the worker (suppress errors if it doesn't exist)
+          bunx wrangler delete --name "$PREVIEW_NAME" --force || echo "Worker may have already been deleted"
+
+          echo "✅ Cleanup complete for PR #${{ github.event.pull_request.number }}"
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+      - name: Comment on PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: '🧹 Preview deployment cleaned up - worker `whispering-pr-${{ github.event.pull_request.number }}` has been deleted.'
+            });
