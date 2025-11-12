@@ -121,6 +121,36 @@ async function transcribe(
 }
 ```
 
+## 🧩 Utility Wrappers
+
+withRetry — Retry + Timeout for External Calls
+withRetry is a shared utility for wrapping async operations that may fail transiently (e.g., network hiccups, rate limits). It adds retry logic and timeout protection to external API calls, ensuring contributor-safe resilience across services.
+
+Usage:
+import { withRetry } from '$lib/services/completion/utils/withRetry';
+
+const result = await withRetry(() => apiCall(), {
+retries: 2,
+delayMs: 1000,
+timeoutMs: 8000,
+});
+
+Options:
+
+- retries: number of retry attempts (default: 2)
+- delayMs: delay between retries in milliseconds (default: 1000)
+- timeoutMs: max time before aborting the call (default: 8000)
+
+Used in:
+
+- openai.ts
+- groq.ts
+- deepgram.ts
+- elevenlabs.ts
+- mistral.ts
+
+This utility ensures consistent retry behavior across all transcription services without duplicating logic. It’s designed to be pure, testable, and platform-agnostic.
+
 ## Service-Specific Error Types
 
 Each service defines its own `TaggedError` type to represent domain-specific failures. These error types are part of the service's public API and contain all the context needed to understand what went wrong:
@@ -222,9 +252,7 @@ export function createManualRecorderService() {
 		startRecording: async (
 			recordingSettings,
 			{ sendStatus },
-		): Promise<
-			Result<DeviceAcquisitionOutcome, RecorderServiceError>
-		> => {
+		): Promise<Result<DeviceAcquisitionOutcome, RecorderServiceError>> => {
 			if (activeRecording) {
 				return Err({
 					name: 'RecorderServiceError',

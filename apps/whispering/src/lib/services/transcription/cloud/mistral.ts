@@ -2,6 +2,7 @@ import { Mistral } from '@mistralai/mistralai';
 import { Err, Ok, type Result, tryAsync, trySync } from 'wellcrafted/result';
 import { WhisperingErr, type WhisperingError } from '$lib/result';
 import { getExtensionFromAudioBlob } from '$lib/services/_utils';
+import { withRetry } from '$lib/services/completion/utils/withRetry';
 import type { Settings } from '$lib/settings';
 export const MISTRAL_TRANSCRIPTION_MODELS = [
 	{
@@ -78,19 +79,27 @@ export function createMistralTranscriptionService() {
 			// Make the transcription request
 			const { data: transcription, error: mistralApiError } = await tryAsync({
 				try: () =>
-					new Mistral({
-						apiKey: options.apiKey,
-					}).audio.transcriptions.complete({
-						file,
-						model: options.modelName,
-						language:
-							options.outputLanguage !== 'auto'
-								? options.outputLanguage
-								: undefined,
-						temperature: options.temperature
-							? Number.parseFloat(options.temperature)
-							: undefined,
-					}),
+    				withRetry(
+        				() =>
+            				new Mistral({
+            				    apiKey: options.apiKey,
+          					  }).audio.transcriptions.complete({
+          					    file,
+          				      	model: options.modelName,
+                				language:
+                    				options.outputLanguage !== 'auto'
+                        				? options.outputLanguage
+                        				: undefined,
+                				temperature: options.temperature
+                    				? Number.parseFloat(options.temperature)
+                    				: undefined,
+            				}),
+        				{
+           	 				retries: 2,
+            				delayMs: 1000,
+            				timeoutMs: 8000,
+        				}
+    				),
 				catch: (error) => {
 					// Return the error directly for processing
 					return Err(error);

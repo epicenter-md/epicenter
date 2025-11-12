@@ -2,6 +2,7 @@ import Groq from 'groq-sdk';
 import { Err, Ok, type Result, tryAsync, trySync } from 'wellcrafted/result';
 import { WhisperingErr, type WhisperingError } from '$lib/result';
 import { getExtensionFromAudioBlob } from '$lib/services/_utils';
+import { withRetry } from '$lib/services/completion/utils/withRetry';
 import type { Settings } from '$lib/settings';
 
 export const GROQ_MODELS = [
@@ -95,21 +96,29 @@ export function createGroqTranscriptionService() {
 			// Make the transcription request
 			const { data: transcription, error: groqApiError } = await tryAsync({
 				try: () =>
-					new Groq({
-						apiKey: options.apiKey,
-						dangerouslyAllowBrowser: true,
-					}).audio.transcriptions.create({
-						file,
-						model: options.modelName,
-						language:
-							options.outputLanguage === 'auto'
-								? undefined
-								: options.outputLanguage,
-						prompt: options.prompt ? options.prompt : undefined,
-						temperature: options.temperature
-							? Number.parseFloat(options.temperature)
-							: undefined,
-					}),
+					withRetry(
+						() =>
+							new Groq({
+								apiKey: options.apiKey,
+								dangerouslyAllowBrowser: true,
+							}).audio.transcriptions.create({
+								file,
+								model: options.modelName,
+								language:
+									options.outputLanguage === 'auto'
+										? undefined
+										: options.outputLanguage,
+								prompt: options.prompt || undefined,
+								temperature: options.temperature
+									? Number.parseFloat(options.temperature)
+									: undefined,
+							}),
+						{
+							retries: 2,
+							delayMs: 1000,
+							timeoutMs: 8000,
+						},
+					),
 				catch: (error) => {
 					// Check if it's NOT a Groq API error
 					if (!(error instanceof Groq.APIError)) {
