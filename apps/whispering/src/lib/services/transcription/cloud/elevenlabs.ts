@@ -1,6 +1,7 @@
 import { ElevenLabsClient } from 'elevenlabs';
 import { Ok, type Result } from 'wellcrafted/result';
 import { WhisperingErr, type WhisperingError } from '$lib/result';
+import { withRetry } from '$lib/services/completion/utils/withRetry';
 import type { Settings } from '$lib/settings';
 
 export const ELEVENLABS_TRANSCRIPTION_MODELS = [
@@ -62,17 +63,24 @@ export function createElevenLabsTranscriptionService() {
 				}
 
 				// Use the client's speechToText functionality
-				const transcription = await client.speechToText.convert({
-					file: audioBlob,
-					model_id: options.modelName,
-					// Map outputLanguage if not set to 'auto'
-					language_code:
-						options.outputLanguage !== 'auto'
-							? options.outputLanguage
-							: undefined,
-					tag_audio_events: false,
-					diarize: true,
-				});
+				const transcription = await withRetry(
+					() =>
+						client.speechToText.convert({
+							file: audioBlob,
+							model_id: options.modelName,
+							language_code:
+								options.outputLanguage !== 'auto'
+									? options.outputLanguage
+									: undefined,
+							tag_audio_events: false,
+							diarize: true,
+						}),
+					{
+						retries: 2,
+						delayMs: 1000,
+						timeoutMs: 8000,
+					},
+				);
 
 				// Return the transcribed text
 				return Ok(transcription.text.trim());

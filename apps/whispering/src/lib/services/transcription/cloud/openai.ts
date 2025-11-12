@@ -2,6 +2,7 @@ import OpenAI from 'openai';
 import { Err, Ok, type Result, tryAsync, trySync } from 'wellcrafted/result';
 import { WhisperingErr, type WhisperingError } from '$lib/result';
 import { getExtensionFromAudioBlob } from '$lib/services/_utils';
+import { withRetry } from '$lib/services/completion/utils/withRetry';
 import type { Settings } from '$lib/settings';
 
 export const OPENAI_TRANSCRIPTION_MODELS = [
@@ -89,7 +90,7 @@ export function createOpenaiTranscriptionService() {
 						`recording.${getExtensionFromAudioBlob(audioBlob)}`,
 						{ type: audioBlob.type },
 					),
-				catch: (error) =>
+				catch: (_error) =>
 					WhisperingErr({
 						title: '📁 File Creation Failed',
 						description:
@@ -102,21 +103,29 @@ export function createOpenaiTranscriptionService() {
 			// Call OpenAI API
 			const { data: transcription, error: openaiApiError } = await tryAsync({
 				try: () =>
-					new OpenAI({
-						apiKey: options.apiKey,
-						dangerouslyAllowBrowser: true,
-					}).audio.transcriptions.create({
-						file,
-						model: options.modelName,
-						language:
-							options.outputLanguage !== 'auto'
-								? options.outputLanguage
-								: undefined,
-						prompt: options.prompt || undefined,
-						temperature: options.temperature
-							? Number.parseFloat(options.temperature)
-							: undefined,
-					}),
+					withRetry(
+						() =>
+							new OpenAI({
+								apiKey: options.apiKey,
+								dangerouslyAllowBrowser: true,
+							}).audio.transcriptions.create({
+								file,
+								model: options.modelName,
+								language:
+									options.outputLanguage !== 'auto'
+										? options.outputLanguage
+										: undefined,
+								prompt: options.prompt || undefined,
+								temperature: options.temperature
+									? Number.parseFloat(options.temperature)
+									: undefined,
+							}),
+						{
+							retries: 2,
+							delayMs: 1000,
+							timeoutMs: 8000,
+						},
+					),
 				catch: (error) => {
 					// Check if it's NOT an OpenAI API error
 					if (!(error instanceof OpenAI.APIError)) {

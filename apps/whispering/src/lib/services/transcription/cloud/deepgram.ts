@@ -1,6 +1,7 @@
 import { Ok, type Result } from 'wellcrafted/result';
 import { z } from 'zod';
 import { WhisperingErr, type WhisperingError } from '$lib/result';
+import { withRetry } from '$lib/services/completion/utils/withRetry';
 import type { HttpService } from '$lib/services/http';
 import { HttpServiceLive } from '$lib/services/http';
 import type { Settings } from '$lib/settings';
@@ -118,16 +119,23 @@ export function createDeepgramTranscriptionService({
 			}
 
 			// Send raw audio data directly as recommended by Deepgram docs
-			const { data: deepgramResponse, error: postError } =
-				await HttpService.post({
-					url: `https://api.deepgram.com/v1/listen?${params.toString()}`,
-					body: audioBlob, // Send raw audio blob directly
-					headers: {
-						Authorization: `Token ${options.apiKey}`,
-						'Content-Type': audioBlob.type || 'audio/*', // Use the blob's mime type or fallback to audio/*
-					},
-					schema: deepgramResponseSchema,
-				});
+			const { data: deepgramResponse, error: postError } = await withRetry(
+				() =>
+					HttpService.post({
+						url: `https://api.deepgram.com/v1/listen?${params.toString()}`,
+						body: audioBlob,
+						headers: {
+							Authorization: `Token ${options.apiKey}`,
+							'Content-Type': audioBlob.type || 'audio/*',
+						},
+						schema: deepgramResponseSchema,
+					}),
+				{
+					retries: 2,
+					delayMs: 1000,
+					timeoutMs: 8000,
+				},
+			);
 
 			if (postError) {
 				switch (postError.name) {

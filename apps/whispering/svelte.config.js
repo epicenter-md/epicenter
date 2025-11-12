@@ -1,7 +1,4 @@
-// Tauri doesn't have a Node.js server to do proper SSR
-// so we will use adapter-static to prerender the app (SSG)
-// This works for both Tauri and Cloudflare Workers + Assets
-// See: https://v2.tauri.app/start/frontend/sveltekit/ for more info
+import path from 'node:path';
 import staticAdapter from '@sveltejs/adapter-static';
 import { vitePreprocess } from '@sveltejs/vite-plugin-svelte';
 
@@ -9,21 +6,19 @@ import { vitePreprocess } from '@sveltejs/vite-plugin-svelte';
 const config = {
 	kit: {
 		adapter: staticAdapter({
-			fallback: 'index.html', // SPA fallback for dynamic routes
+			fallback: 'index.html',
 		}),
+		alias: {
+			$lib: path.resolve('./src/lib'),
+		},
 	},
 
-	// Consult https://svelte.dev/docs/kit/integrations
-	// for more information about preprocessors
 	preprocess: vitePreprocess(),
 
 	vitePlugin: {
 		inspector: {
 			holdMode: true,
 			showToggleButton: 'always',
-			// Using 'bottom-left' as base position, but CSS overrides in
-			// src/routes/+layout.svelte move it to bottom-center to avoid
-			// conflicts with devtools (bottom-left) and toasts (bottom-right)
 			toggleButtonPos: 'bottom-left',
 			toggleKeyCombo: 'meta-shift',
 		},
