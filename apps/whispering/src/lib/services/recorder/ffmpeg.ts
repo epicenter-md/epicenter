@@ -619,7 +619,7 @@ export function formatDeviceForPlatform(deviceId: string) {
 		case 'macos':
 			return `:${deviceId}`; // macOS uses :deviceName
 		case 'windows':
-			return `audio=${deviceId}`; // Windows uses audio=deviceName
+			return `audio="${deviceId}"`; // Windows DirectShow requires quoted device names
 		case 'linux':
 			return deviceId; // Linux uses device directly
 	}
@@ -651,6 +651,12 @@ export function buildFfmpegCommand({
 	// Apply platform-specific defaults if input options are empty
 	const finalInputOptions = inputOptions.trim() || FFMPEG_DEFAULT_INPUT_OPTIONS;
 
+	// Windows DirectShow uses a special syntax: audio="Device Name"
+	// The quotes are part of the DirectShow parameter, not shell quoting
+	// For other platforms, wrap the device in quotes for shell safety
+	const deviceParam =
+		PLATFORM_TYPE === 'windows' ? formattedDevice : `"${formattedDevice}"`;
+
 	// Build command using template string - much simpler!
 	// Filter out empty parts inline
 	const parts = [
@@ -658,7 +664,7 @@ export function buildFfmpegCommand({
 		globalOptions.trim(),
 		finalInputOptions,
 		'-i',
-		`"${formattedDevice}"`,
+		deviceParam,
 		outputOptions.trim(),
 		`"${outputPath}"`,
 	].filter((part) => part); // Remove empty strings
