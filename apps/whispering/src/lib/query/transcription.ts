@@ -189,6 +189,7 @@ async function transcribeBlob(
 							temperature: settings.value['transcription.temperature'],
 							apiKey: settings.value['apiKeys.openai'],
 							modelName: settings.value['transcription.openai.model'],
+							baseURL: settings.value['apiEndpoints.openai'] || undefined,
 						},
 					);
 				case 'Groq':
@@ -200,6 +201,7 @@ async function transcribeBlob(
 							temperature: settings.value['transcription.temperature'],
 							apiKey: settings.value['apiKeys.groq'],
 							modelName: settings.value['transcription.groq.model'],
+							baseURL: settings.value['apiEndpoints.groq'] || undefined,
 						},
 					);
 				case 'speaches':

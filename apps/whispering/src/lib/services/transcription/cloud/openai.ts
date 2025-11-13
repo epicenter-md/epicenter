@@ -43,6 +43,7 @@ export function createOpenaiTranscriptionService() {
 				outputLanguage: Settings['transcription.outputLanguage'];
 				apiKey: string;
 				modelName: (string & {}) | OpenAIModel['name'];
+				baseURL?: string;
 			},
 		): Promise<Result<string, WhisperingError>> {
 			// Pre-validation: Check API key
@@ -59,7 +60,8 @@ export function createOpenaiTranscriptionService() {
 				});
 			}
 
-			if (!options.apiKey.startsWith('sk-')) {
+			// Only validate API key format for official OpenAI endpoint
+			if (!options.baseURL && !options.apiKey.startsWith('sk-')) {
 				return WhisperingErr({
 					title: '🔑 Invalid API Key Format',
 					description:
@@ -105,6 +107,7 @@ export function createOpenaiTranscriptionService() {
 					new OpenAI({
 						apiKey: options.apiKey,
 						dangerouslyAllowBrowser: true,
+						...(options.baseURL && { baseURL: options.baseURL }),
 					}).audio.transcriptions.create({
 						file,
 						model: options.modelName,
