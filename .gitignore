@@ -36,3 +36,4 @@ yarn-error.log*
 
 # Opencode
 .opencode
+.aider*
