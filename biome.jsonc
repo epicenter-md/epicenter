@@ -1,5 +1,5 @@
 {
-	"$schema": "https://biomejs.dev/schemas/2.3.1/schema.json",
+	"$schema": "https://biomejs.dev/schemas/2.2.6/schema.json",
 	"vcs": {
 		"enabled": true,
 		"clientKind": "git",
@@ -57,14 +57,36 @@
 	},
 	"overrides": [
 		{
+			// https://biomejs.dev/internals/language-support/#linting-html-ish-languages
+			// We can still benefit from Biome's linting in Svelte files, but it currently doesn't read templating/markup
 			"includes": ["*.svelte"],
 			"linter": {
 				"rules": {
 					"style": {
+						// Runes are flagged as "const"-able
 						"useConst": "off",
+						// Biome doesn't enforce unused imports, but it *will* flag imports as "type-only"-able
 						"useImportType": "off"
 					}
 				}
+			}
+		},
+		{
+			// https://biomejs.dev/internals/language-support/
+			// Also, keep this synced with .vscode/settings.json & .prettierignore
+			// Biome _does_ support HTML, but we're just going to use Prettier until Svelte/Astro is supported
+			"includes": [
+				"**/*.html",
+				"**/*.vue",
+				"**/*.svelte",
+				"**/*.astro",
+				"**/*.yaml",
+				"**/*.yml",
+				"**/*.md",
+				"**/*.mdx"
+			],
+			"formatter": {
+				"enabled": false
 			}
 		}
 	]
