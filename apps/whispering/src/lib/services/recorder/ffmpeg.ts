@@ -570,8 +570,8 @@ function parseDevices(output: string): Device[] {
 			}),
 		},
 		windows: {
-			// Windows DirectShow format: "Microphone Name" (audio)
-			regex: /^\s*"(.+?)"\s+\(audio\)/,
+			// Windows DirectShow format: [dshow @ 0x...] "Microphone Name" (audio)
+			regex: /\[dshow[^\]]*\]\s+"(.+?)"\s+\(audio\)/,
 			extractDevice: (match) => ({
 				id: asDeviceIdentifier(match[1]),
 				label: match[1],
