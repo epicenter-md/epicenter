@@ -1,9 +1,7 @@
-import { createPersistedState } from '@repo/svelte-utils';
 import { invoke } from '@tauri-apps/api/core';
 import { join } from '@tauri-apps/api/path';
 import { exists, remove, stat } from '@tauri-apps/plugin-fs';
 import { Child } from '@tauri-apps/plugin-shell';
-import { type } from 'arktype';
 import { extractErrorMessage } from 'wellcrafted/error';
 import { Err, Ok, type Result, tryAsync } from 'wellcrafted/result';
 import type {
@@ -39,13 +37,6 @@ import { RecorderServiceErr } from './types';
  * // User might set: '-hide_banner -loglevel warning'
  */
 export const FFMPEG_DEFAULT_GLOBAL_OPTIONS = '' as const;
-
-// Schema for persisted FFmpeg session state
-// Either a complete session object or null - no individual nullable fields
-const FfmpegSession = type({
-	pid: 'number',
-	outputPath: 'string',
-}).or('null');
 
 /**
  * Default FFmpeg output options optimized for Whisper transcription.
@@ -173,58 +164,9 @@ export const FFMPEG_DEFAULT_DEVICE_IDENTIFIER = asDeviceIdentifier(
 );
 
 export function createFfmpegRecorderService(): RecorderService {
-	// Persisted state - single source of truth
-	const sessionState = createPersistedState({
-		key: 'whispering-ffmpeg-recording-session',
-		schema: FfmpegSession,
-		onParseError: () => null,
-	});
-
-	// Keep the actual Child object in memory for stdin access
-	// This is not persisted because file handles can't be serialized
-	// If the app refreshes, we lose stdin access but can still kill by PID
+	// In-memory recording state - simple and straightforward
 	let activeChild: Child | null = null;
-
-	// Helper to get current Child instance lazily from PID
-	// Returns null if no session is active
-	const getCurrentChild = (): Child | null => {
-		// If we have the active child in memory, use it (has stdin access)
-		if (activeChild) return activeChild;
-		// Otherwise recreate from PID (no stdin access, but can still kill)
-		const session = sessionState.value;
-		return session ? new Child(session.pid) : null;
-	};
-
-	// Helper to clear session and kill any running process
-	const clearSession = async (): Promise<void> => {
-		const session = sessionState.value;
-		if (!session) return;
-
-		// Try to kill the process if it exists
-		await tryAsync({
-			try: async () => {
-				const child = new Child(session.pid);
-				await child.kill();
-				console.log(`Killed FFmpeg process (PID: ${session.pid})`);
-			},
-			catch: (e) => {
-				console.log(
-					`Error terminating FFmpeg process (PID: ${session.pid}): ${extractErrorMessage(e)}`,
-				);
-				return Ok(undefined);
-			},
-		});
-
-		// Clear the session state and active child
-		sessionState.value = null;
-		activeChild = null;
-	};
-
-	// Clear any orphaned process on initialization
-	if (sessionState.value) {
-		console.log('Found orphaned FFmpeg session, cleaning up...');
-		clearSession();
-	}
+	let activeOutputPath: string | null = null;
 
 	const enumerateDevices = async (): Promise<
 		Result<Device[], RecorderServiceError>
@@ -261,7 +203,7 @@ export function createFfmpegRecorderService(): RecorderService {
 		getRecorderState: async (): Promise<
 			Result<WhisperingRecordingState, RecorderServiceError>
 		> => {
-			return Ok(sessionState.value ? 'RECORDING' : 'IDLE');
+			return Ok(activeChild ? 'RECORDING' : 'IDLE');
 		},
 
 		enumerateDevices,
@@ -278,7 +220,17 @@ export function createFfmpegRecorderService(): RecorderService {
 			{ sendStatus },
 		): Promise<Result<DeviceAcquisitionOutcome, RecorderServiceError>> => {
 			// Stop any existing recording
-			await clearSession();
+			if (activeChild) {
+				await tryAsync({
+					try: async () => {
+						await activeChild.kill();
+						console.log('Killed existing FFmpeg process');
+					},
+					catch: () => Ok(undefined),
+				});
+				activeChild = null;
+				activeOutputPath = null;
+			}
 
 			// Enumerate devices to validate selection
 			const { data: devices, error: enumerateError } = await enumerateDevices();
@@ -375,14 +327,9 @@ export function createFfmpegRecorderService(): RecorderService {
 				});
 			}
 
-			// Store the Child object in memory for stdin access
+			// Store the Child object and output path in memory
 			activeChild = process;
-
-			// Store the PID and session info for recovery after refresh
-			sessionState.value = {
-				pid: process.pid,
-				outputPath,
-			};
+			activeOutputPath = outputPath;
 
 			sendStatus({
 				title: '🎙️ Recording',
@@ -395,9 +342,7 @@ export function createFfmpegRecorderService(): RecorderService {
 		stopRecording: async ({
 			sendStatus,
 		}): Promise<Result<Blob, RecorderServiceError>> => {
-			const child = getCurrentChild();
-			const session = sessionState.value;
-			if (!child || !session) {
+			if (!activeChild || !activeOutputPath) {
 				return RecorderServiceErr({
 					message: 'No active recording to stop',
 					cause: undefined,
@@ -409,38 +354,28 @@ export function createFfmpegRecorderService(): RecorderService {
 				description: 'Stopping FFmpeg recording...',
 			});
 
-			// Stop FFmpeg gracefully
+			// Stop FFmpeg gracefully using stdin 'q' (works on all platforms)
 			const { error: stopError } = await tryAsync({
 				try: async () => {
-					// On Windows, SIGINT often fails due to console signal handling issues
-					// FFmpeg supports 'q' on stdin as a graceful quit command
-					// Try stdin 'q' first for better reliability on Windows
-					if (PLATFORM_TYPE === 'windows') {
-						try {
-							await child.write('q\n');
-							// Give FFmpeg time to process the quit command and finalize the file
-							await new Promise((resolve) => setTimeout(resolve, 500));
-						} catch (writeError) {
-							// If stdin write fails, fall through to SIGINT
-							console.log('Failed to write q to stdin, trying SIGINT:', writeError);
-						}
+					// Try stdin 'q' first - FFmpeg's built-in graceful quit
+					try {
+						await activeChild.write('q\n');
+						await new Promise((resolve) => setTimeout(resolve, 1000));
+					} catch (writeError) {
+						console.log('stdin write failed, trying SIGINT:', writeError);
 					}
 
-					// Try SIGINT (works well on Unix, may fail on Windows)
-					const signalResult = await sendSigint(session.pid);
+					// Backup: try SIGINT
+					const signalResult = await sendSigint(activeChild.pid);
 
 					if (!signalResult.success) {
-						// SIGINT failed, wait a bit more then force kill
-						// Give FFmpeg extra time to finish writing on Windows
-						const waitTime = PLATFORM_TYPE === 'windows' ? 1000 : 500;
-						await new Promise((resolve) => setTimeout(resolve, waitTime));
-						await child.kill();
+						// SIGINT failed, wait then force kill
+						await new Promise((resolve) => setTimeout(resolve, 500));
+						await activeChild.kill();
 					} else {
-						// SIGINT succeeded, schedule a backup force kill
+						// SIGINT succeeded, schedule backup force kill
 						setTimeout(() => {
-							child.kill().catch(() => {
-								// Process already exited, expected
-							});
+							activeChild?.kill().catch(() => {});
 						}, 2000);
 					}
 				},
@@ -459,11 +394,11 @@ export function createFfmpegRecorderService(): RecorderService {
 				});
 			}
 
-			const outputPath = session.outputPath;
+			const outputPath = activeOutputPath;
 
-			// Clear the session and active child
-			sessionState.value = null;
+			// Clear state
 			activeChild = null;
+			activeOutputPath = null;
 
 			// Poll for file stabilization
 			const MAX_WAIT_TIME = 3000; // 3 seconds max
@@ -535,8 +470,7 @@ export function createFfmpegRecorderService(): RecorderService {
 		cancelRecording: async ({
 			sendStatus,
 		}): Promise<Result<CancelRecordingResult, RecorderServiceError>> => {
-			const session = sessionState.value;
-			if (!session) {
+			if (!activeChild) {
 				return Ok({ status: 'no-recording' });
 			}
 
@@ -545,11 +479,20 @@ export function createFfmpegRecorderService(): RecorderService {
 				description: 'Stopping FFmpeg recording and cleaning up...',
 			});
 
-			// Store the path before clearing the session
-			const pathToCleanup = session.outputPath;
+			const pathToCleanup = activeOutputPath;
 
-			// Clear the session and kill the process
-			await clearSession();
+			// Kill the process
+			await tryAsync({
+				try: async () => {
+					await activeChild.kill();
+					console.log('Killed FFmpeg process during cancellation');
+				},
+				catch: () => Ok(undefined),
+			});
+
+			// Clear state
+			activeChild = null;
+			activeOutputPath = null;
 
 			// Delete the output file if it exists
 			if (pathToCleanup) {
