@@ -363,11 +363,24 @@ export function createFfmpegRecorderService(): RecorderService {
 				}, delayMs);
 			};
 
-			// Stop FFmpeg gracefully using SIGINT
+			// Stop FFmpeg gracefully
 			const { error: stopError } = await tryAsync({
 				try: async () => {
+					// Try stdin 'q' first (most reliable, especially on Windows)
+					await tryAsync({
+						try: async () => {
+							await activeChild.write('q\n');
+							// Give FFmpeg time to process the quit command
+							await new Promise((resolve) => setTimeout(resolve, 1000));
+						},
+						catch: () => Ok(undefined), // stdin might not be available, continue
+					});
+
+					// Also send SIGINT as backup
 					await sendSigint(activeChild.pid);
-					scheduleBackupKill(2000);
+
+					// Schedule force kill with longer timeout to give FFmpeg time to finalize
+					scheduleBackupKill(5000);
 				},
 				catch: (error) =>
 					RecorderServiceErr({
@@ -391,7 +404,7 @@ export function createFfmpegRecorderService(): RecorderService {
 			activeOutputPath = null;
 
 			// Poll for file stabilization
-			const MAX_WAIT_TIME = 3000; // 3 seconds max
+			const MAX_WAIT_TIME = 6000; // 6 seconds max
 			const POLL_INTERVAL = 100; // Check every 100ms
 			const startTime = Date.now();
 			let lastSize = -1;
