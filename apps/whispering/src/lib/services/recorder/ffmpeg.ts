@@ -354,30 +354,36 @@ export function createFfmpegRecorderService(): RecorderService {
 				description: 'Stopping FFmpeg recording...',
 			});
 
-			// Stop FFmpeg gracefully using stdin 'q' (works on all platforms)
+			// Helper: Schedule backup force kill in case FFmpeg hangs
+			const scheduleBackupKill = (delayMs: number) => {
+				setTimeout(() => {
+					activeChild?.kill().catch(() => {
+						// Expected: process may have already exited gracefully
+					});
+				}, delayMs);
+			};
+
+			// Stop FFmpeg gracefully using stdin 'q' then SIGINT
 			const { error: stopError } = await tryAsync({
 				try: async () => {
 					// Try stdin 'q' first - FFmpeg's built-in graceful quit
-					try {
-						await activeChild.write('q\n');
-						await new Promise((resolve) => setTimeout(resolve, 1000));
-					} catch (writeError) {
-						console.log('stdin write failed, trying SIGINT:', writeError);
-					}
+					await tryAsync({
+						try: async () => {
+							await activeChild.write('q\n');
+							await new Promise((resolve) => setTimeout(resolve, 1000));
+						},
+						catch: (writeError) => {
+							console.log('stdin write failed, trying SIGINT:', writeError);
+							return Ok(undefined);
+						},
+					});
 
 					// Backup: try SIGINT
-					const signalResult = await sendSigint(activeChild.pid);
+					await sendSigint(activeChild.pid);
 
-					if (!signalResult.success) {
-						// SIGINT failed, wait then force kill
-						await new Promise((resolve) => setTimeout(resolve, 500));
-						await activeChild.kill();
-					} else {
-						// SIGINT succeeded, schedule backup force kill
-						setTimeout(() => {
-							activeChild?.kill().catch(() => {});
-						}, 2000);
-					}
+					// Always schedule backup force kill
+					// Actual synchronization happens via file polling below
+					scheduleBackupKill(2000);
 				},
 				catch: (error) =>
 					RecorderServiceErr({
