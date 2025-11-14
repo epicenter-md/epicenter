@@ -180,9 +180,17 @@ export function createFfmpegRecorderService(): RecorderService {
 		onParseError: () => null,
 	});
 
+	// Keep the actual Child object in memory for stdin access
+	// This is not persisted because file handles can't be serialized
+	// If the app refreshes, we lose stdin access but can still kill by PID
+	let activeChild: Child | null = null;
+
 	// Helper to get current Child instance lazily from PID
 	// Returns null if no session is active
 	const getCurrentChild = (): Child | null => {
+		// If we have the active child in memory, use it (has stdin access)
+		if (activeChild) return activeChild;
+		// Otherwise recreate from PID (no stdin access, but can still kill)
 		const session = sessionState.value;
 		return session ? new Child(session.pid) : null;
 	};
@@ -207,8 +215,9 @@ export function createFfmpegRecorderService(): RecorderService {
 			},
 		});
 
-		// Clear the session state
+		// Clear the session state and active child
 		sessionState.value = null;
+		activeChild = null;
 	};
 
 	// Clear any orphaned process on initialization
@@ -366,6 +375,9 @@ export function createFfmpegRecorderService(): RecorderService {
 				});
 			}
 
+			// Store the Child object in memory for stdin access
+			activeChild = process;
+
 			// Store the PID and session info for recovery after refresh
 			sessionState.value = {
 				pid: process.pid,
@@ -449,8 +461,9 @@ export function createFfmpegRecorderService(): RecorderService {
 
 			const outputPath = session.outputPath;
 
-			// Clear the session
+			// Clear the session and active child
 			sessionState.value = null;
+			activeChild = null;
 
 			// Poll for file stabilization
 			const MAX_WAIT_TIME = 3000; // 3 seconds max
