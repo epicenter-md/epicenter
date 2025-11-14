@@ -131,6 +131,27 @@ cd apps/whispering
 bun dev
 ```
 
+### Alternative: Using Nix (Deterministic Development Environment)
+
+If you have [Nix](https://nixos.org/download) installed, you can get a complete, reproducible development environment with all dependencies pre-configured:
+
+```bash
+git clone https://github.com/epicenter-so/epicenter.git
+cd epicenter
+nix run .#dev  # Builds and runs Whispering desktop app
+# OR
+nix run .#web-dev  # Runs web version only
+# OR  
+nix develop  # Enters development shell with all tools available
+```
+
+The Nix flake provides:
+- Complete Rust toolchain with all necessary targets
+- Bun, Node.js, and all build tools
+- All GTK/WebKit system dependencies for Tauri
+- Audio libraries for transcription features
+- Deterministic, reproducible builds across machines
+
 ## Join Us
 
 ## Discord Community
