@@ -221,9 +221,10 @@ export function createFfmpegRecorderService(): RecorderService {
 		): Promise<Result<DeviceAcquisitionOutcome, RecorderServiceError>> => {
 			// Stop any existing recording
 			if (activeChild) {
+				const childToKill = activeChild;
 				await tryAsync({
 					try: async () => {
-						await activeChild.kill();
+						await childToKill.kill();
 						console.log('Killed existing FFmpeg process');
 					},
 					catch: () => Ok(undefined),
@@ -484,12 +485,13 @@ export function createFfmpegRecorderService(): RecorderService {
 				description: 'Stopping FFmpeg recording and cleaning up...',
 			});
 
+			const childToKill = activeChild;
 			const pathToCleanup = activeOutputPath;
 
 			// Kill the process
 			await tryAsync({
 				try: async () => {
-					await activeChild.kill();
+					await childToKill.kill();
 					console.log('Killed FFmpeg process during cancellation');
 				},
 				catch: () => Ok(undefined),
