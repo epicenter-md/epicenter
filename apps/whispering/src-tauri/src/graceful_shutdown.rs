@@ -31,21 +31,35 @@ pub fn send_sigint(pid: u32) -> SignalResult {
     
     #[cfg(windows)]
     {
-        // Windows: Use Ctrl+C event for console processes
-        use windows_sys::Win32::System::Console::{GenerateConsoleCtrlEvent, CTRL_C_EVENT};
-        
+        // Windows: Use TerminateProcess for forceful shutdown
+        // Note: GenerateConsoleCtrlEvent doesn't work with CREATE_NO_WINDOW processes
+        // since they're not attached to a console session. TerminateProcess is more
+        // reliable for processes spawned without a console.
+        use windows_sys::Win32::System::Threading::{OpenProcess, TerminateProcess, PROCESS_TERMINATE};
+        use windows_sys::Win32::Foundation::CloseHandle;
+
         unsafe {
-            let result = GenerateConsoleCtrlEvent(CTRL_C_EVENT, pid);
-            
+            let process_handle = OpenProcess(PROCESS_TERMINATE, 0, pid);
+
+            if process_handle == 0 {
+                return SignalResult {
+                    success: false,
+                    message: format!("Failed to open process {}", pid),
+                };
+            }
+
+            let result = TerminateProcess(process_handle, 1);
+            CloseHandle(process_handle);
+
             if result != 0 {
                 SignalResult {
                     success: true,
-                    message: format!("Ctrl+C event sent to process {}", pid),
+                    message: format!("Process {} terminated", pid),
                 }
             } else {
                 SignalResult {
                     success: false,
-                    message: format!("Failed to send Ctrl+C to process {}", pid),
+                    message: format!("Failed to terminate process {}", pid),
                 }
             }
         }

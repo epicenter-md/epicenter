@@ -129,6 +129,7 @@ pub async fn spawn_command(command: String) -> Result<u32, String> {
 
     let mut cmd = Command::new(&program);
     cmd.args(&args);
+    cmd.stdin(Stdio::piped()); // Enable stdin for graceful shutdown (e.g., FFmpeg 'q' command)
 
     #[cfg(target_os = "windows")]
     {

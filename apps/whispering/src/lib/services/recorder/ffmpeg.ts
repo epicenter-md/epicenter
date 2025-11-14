@@ -354,10 +354,14 @@ export function createFfmpegRecorderService(): RecorderService {
 				description: 'Stopping FFmpeg recording...',
 			});
 
+			// Capture references before clearing state (needed for backup kill closure)
+			const childToKill = activeChild;
+			const outputPath = activeOutputPath;
+
 			// Helper: Schedule backup force kill in case FFmpeg hangs
 			const scheduleBackupKill = (delayMs: number) => {
 				setTimeout(() => {
-					activeChild?.kill().catch(() => {
+					childToKill.kill().catch(() => {
 						// Expected: process may have already exited gracefully
 					});
 				}, delayMs);
@@ -396,8 +400,6 @@ export function createFfmpegRecorderService(): RecorderService {
 						"We couldn't stop the recording properly. Attempting to recover your audio...",
 				});
 			}
-
-			const outputPath = activeOutputPath;
 
 			// Clear state
 			activeChild = null;
