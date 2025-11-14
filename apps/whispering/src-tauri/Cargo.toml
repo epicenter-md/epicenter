@@ -66,6 +66,7 @@ core-foundation-sys =  "0.8.7"
 tauri-plugin-global-shortcut = "2"
 tauri-plugin-single-instance = "2"
 tauri-plugin-updater = "2"
+tauri-plugin-window-state = "2"
 
 [profile.dev]
 incremental = true # Compile your binary in smaller steps.
