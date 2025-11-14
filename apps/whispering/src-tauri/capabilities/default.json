@@ -38,21 +38,41 @@
     {
       "identifier": "fs:scope",
       "allow": [
-        { "path": "**" },
-        { "path": "$APPLOCALDATA/**" },
-        { "path": "$LOCALDATA/**" },
-        { "path": "$APPDATA/**" },
-        { "path": "$HOME/.local/share/**" },
-        { "path": "$HOME/.local/share/com.bradenwong.whispering/**" }
+        {
+          "path": "**"
+        },
+        {
+          "path": "$APPLOCALDATA/**"
+        },
+        {
+          "path": "$LOCALDATA/**"
+        },
+        {
+          "path": "$APPDATA/**"
+        },
+        {
+          "path": "$HOME/.local/share/**"
+        },
+        {
+          "path": "$HOME/.local/share/com.bradenwong.whispering/**"
+        }
       ]
     },
     {
       "identifier": "http:default",
       "allow": [
-        { "url": "http://*" },
-        { "url": "https://*" },
-        { "url": "http://*:*" },
-        { "url": "https://*:*" }
+        {
+          "url": "http://*"
+        },
+        {
+          "url": "https://*"
+        },
+        {
+          "url": "http://*:*"
+        },
+        {
+          "url": "https://*:*"
+        }
       ]
     },
     {
@@ -122,6 +142,7 @@
           ]
         }
       ]
-    }
+    },
+    "log:default"
   ]
 }

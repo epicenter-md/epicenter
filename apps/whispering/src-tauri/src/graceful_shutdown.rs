@@ -14,9 +14,9 @@ pub fn send_sigint(pid: u32) -> SignalResult {
     {
         use nix::sys::signal::{kill, Signal};
         use nix::unistd::Pid;
-        
+
         let process_pid = Pid::from_raw(pid as i32);
-        
+
         match kill(process_pid, Signal::SIGINT) {
             Ok(_) => SignalResult {
                 success: true,
@@ -28,15 +28,15 @@ pub fn send_sigint(pid: u32) -> SignalResult {
             },
         }
     }
-    
+
     #[cfg(windows)]
     {
         // Windows: Use Ctrl+C event for console processes
         use windows_sys::Win32::System::Console::{GenerateConsoleCtrlEvent, CTRL_C_EVENT};
-        
+
         unsafe {
             let result = GenerateConsoleCtrlEvent(CTRL_C_EVENT, pid);
-            
+
             if result != 0 {
                 SignalResult {
                     success: true,

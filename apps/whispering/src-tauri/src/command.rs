@@ -1,5 +1,5 @@
-use std::process::{Command, Stdio};
 use serde::{Deserialize, Serialize};
+use std::process::{Command, Stdio};
 
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
@@ -64,7 +64,10 @@ pub async fn execute_command(command: String) -> Result<CommandOutput, String> {
         return Err("Empty command".to_string());
     }
 
-    println!("[Rust] execute_command: program='{}', args={:?}", program, args);
+    println!(
+        "[Rust] execute_command: program='{}', args={:?}",
+        program, args
+    );
 
     let mut cmd = Command::new(&program);
     cmd.args(&args);
@@ -84,7 +87,10 @@ pub async fn execute_command(command: String) -> Result<CommandOutput, String> {
                 stdout: String::from_utf8_lossy(&output.stdout).to_string(),
                 stderr: String::from_utf8_lossy(&output.stderr).to_string(),
             };
-            println!("[Rust] execute_command: completed with code={:?}", result.code);
+            println!(
+                "[Rust] execute_command: completed with code={:?}",
+                result.code
+            );
             Ok(result)
         }
         Err(e) => {
@@ -125,7 +131,10 @@ pub async fn spawn_command(command: String) -> Result<u32, String> {
         return Err("Empty command".to_string());
     }
 
-    println!("[Rust] spawn_command: program='{}', args={:?}", program, args);
+    println!(
+        "[Rust] spawn_command: program='{}', args={:?}",
+        program, args
+    );
 
     let mut cmd = Command::new(&program);
     cmd.args(&args);

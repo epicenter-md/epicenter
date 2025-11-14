@@ -51,6 +51,8 @@ fix-path-env = { git = "https://github.com/tauri-apps/fix-path-env-rs" }
 transcribe-rs = "0.1.0"
 regex = "1"
 rayon = "1.10"
+log = "0.4"
+tauri-plugin-log = "2"
 
 [target.'cfg(unix)'.dependencies]
 nix = { version = "0.29", features = ["signal"] }
@@ -88,4 +90,3 @@ incremental = true # Compile your binary in smaller steps.
 # opt-level = "s" # Prioritizes small binary size. Use `3` if you prefer speed.
 panic = "abort" # Higher performance by disabling panic handlers.
 strip = true # Ensures debug symbols are removed.
-

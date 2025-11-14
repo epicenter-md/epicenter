@@ -2,7 +2,9 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "transform-clipboard-capability",
   "description": "Capability for transform clipboard window",
-  "windows": ["transform-clipboard"],
+  "windows": [
+    "transform-clipboard"
+  ],
   "permissions": [
     "core:default",
     "core:window:allow-close",
@@ -15,6 +17,7 @@
     "notification:default",
     "notification:allow-is-permission-granted",
     "notification:allow-request-permission",
-    "notification:allow-show"
+    "notification:allow-show",
+    "log:default"
   ]
 }
