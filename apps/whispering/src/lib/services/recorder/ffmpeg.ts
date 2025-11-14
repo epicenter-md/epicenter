@@ -373,7 +373,7 @@ export function createFfmpegRecorderService(): RecorderService {
 					// Try stdin 'q' first (most reliable, especially on Windows)
 					await tryAsync({
 						try: async () => {
-							await activeChild.write('q\n');
+							await childToKill.write('q\n');
 							// Give FFmpeg time to process the quit command
 							await new Promise((resolve) => setTimeout(resolve, 1000));
 						},
@@ -381,7 +381,7 @@ export function createFfmpegRecorderService(): RecorderService {
 					});
 
 					// Also send SIGINT as backup
-					await sendSigint(activeChild.pid);
+					await sendSigint(childToKill.pid);
 
 					// Schedule force kill with longer timeout to give FFmpeg time to finalize
 					scheduleBackupKill(5000);
