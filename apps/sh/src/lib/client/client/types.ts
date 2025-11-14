@@ -89,8 +89,8 @@ export type OptionsLegacyParser<
 	TData = unknown,
 	ThrowOnError extends boolean = boolean,
 	TResponseStyle extends ResponseStyle = 'fields',
-> = TData extends { body?: any }
-	? TData extends { headers?: any }
+> = TData extends { body?: unknown }
+	? TData extends { headers?: unknown }
 		? OmitKeys<
 				RequestOptions<TResponseStyle, ThrowOnError>,
 				'body' | 'headers' | 'url'
@@ -99,7 +99,7 @@ export type OptionsLegacyParser<
 		: OmitKeys<RequestOptions<TResponseStyle, ThrowOnError>, 'body' | 'url'> &
 				Pick<RequestOptions<TResponseStyle, ThrowOnError>, 'headers'> &
 				TData
-	: TData extends { headers?: any }
+	: TData extends { headers?: unknown }
 		? OmitKeys<
 				RequestOptions<TResponseStyle, ThrowOnError>,
 				'headers' | 'url'

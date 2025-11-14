@@ -14,7 +14,7 @@ import {
  * Request initialization options with custom body and headers handling
  */
 type ReqInit = Omit<RequestInit, 'body' | 'headers'> & {
-	body?: any;
+	body?: unknown;
 	headers: ReturnType<typeof mergeHeaders>;
 };
 
@@ -130,7 +130,7 @@ export const createClient = (config: Config = {}): Client => {
 					? getParseAs(response.headers.get('Content-Type'))
 					: opts.parseAs) ?? 'json';
 
-			let data: any;
+			let data: unknown;
 			switch (parseAs) {
 				case 'arrayBuffer':
 				case 'blob':
