@@ -23,43 +23,61 @@
 
 	<Separator />
 
-	<LabeledSwitch
-		id="transcription.copyToClipboardOnSuccess"
-		label="Copy transcribed text to clipboard"
-		bind:checked={
-			() => settings.value['transcription.copyToClipboardOnSuccess'],
-			(v) => settings.updateKey('transcription.copyToClipboardOnSuccess', v)
-		}
-	/>
+	<fieldset class="space-y-3 border-0 p-0">
+		<legend class="text-sm font-semibold text-foreground">
+			Transcription output
+		</legend>
+		<p class="text-sm text-muted-foreground">
+			Applies immediately after an audio transcription finishes.
+		</p>
 
-	<LabeledSwitch
-		id="transcription.writeToCursorOnSuccess"
-		label="Paste transcribed text at cursor"
-		bind:checked={
-			() => settings.value['transcription.writeToCursorOnSuccess'],
-			(v) => settings.updateKey('transcription.writeToCursorOnSuccess', v)
-		}
-	/>
+		<LabeledSwitch
+			id="transcription.copyToClipboardOnSuccess"
+			label="Copy transcribed text to clipboard"
+			bind:checked={
+				() => settings.value['transcription.copyToClipboardOnSuccess'],
+				(v) => settings.updateKey('transcription.copyToClipboardOnSuccess', v)
+			}
+		/>
+
+		<LabeledSwitch
+			id="transcription.writeToCursorOnSuccess"
+			label="Paste transcribed text at cursor"
+			bind:checked={
+				() => settings.value['transcription.writeToCursorOnSuccess'],
+				(v) => settings.updateKey('transcription.writeToCursorOnSuccess', v)
+			}
+		/>
+	</fieldset>
 
 	<Separator />
 
-	<LabeledSwitch
-		id="transformation.copyToClipboardOnSuccess"
-		label="Copy transformed text to clipboard"
-		bind:checked={
-			() => settings.value['transformation.copyToClipboardOnSuccess'],
-			(v) => settings.updateKey('transformation.copyToClipboardOnSuccess', v)
-		}
-	/>
+	<fieldset class="space-y-3 border-0 p-0">
+		<legend class="text-sm font-semibold text-foreground">
+			Transformation output
+		</legend>
+		<p class="text-sm text-muted-foreground">
+			Applies after you run a saved transformation on a transcription.
+		</p>
 
-	<LabeledSwitch
-		id="transformation.writeToCursorOnSuccess"
-		label="Paste transformed text at cursor"
-		bind:checked={
-			() => settings.value['transformation.writeToCursorOnSuccess'],
-			(v) => settings.updateKey('transformation.writeToCursorOnSuccess', v)
-		}
-	/>
+		<LabeledSwitch
+			id="transformation.copyToClipboardOnSuccess"
+			label="Copy transformed text to clipboard"
+			bind:checked={
+				() => settings.value['transformation.copyToClipboardOnSuccess'],
+				(v) => settings.updateKey('transformation.copyToClipboardOnSuccess', v)
+			}
+		/>
+
+		<LabeledSwitch
+			id="transformation.writeToCursorOnSuccess"
+			label="Paste transformed text at cursor"
+			bind:checked={
+				() => settings.value['transformation.writeToCursorOnSuccess'],
+				(v) => settings.updateKey('transformation.writeToCursorOnSuccess', v)
+			}
+		/>
+	</fieldset>
 
 	<Separator />
 
