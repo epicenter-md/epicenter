@@ -10,7 +10,7 @@ use std::io::Write;
 use transcribe_rs::{
     TranscriptionEngine,
     engines::{
-        whisper::{WhisperEngine, WhisperInferenceParams},
+        whisper::WhisperInferenceParams,
         parakeet::{ParakeetInferenceParams, TimestampGranularity},
     },
 };

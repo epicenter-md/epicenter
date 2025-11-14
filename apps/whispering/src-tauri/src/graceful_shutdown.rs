@@ -41,7 +41,7 @@ pub fn send_sigint(pid: u32) -> SignalResult {
         unsafe {
             let process_handle = OpenProcess(PROCESS_TERMINATE, 0, pid);
 
-            if process_handle == 0 {
+            if process_handle.is_null() {
                 return SignalResult {
                     success: false,
                     message: format!("Failed to open process {}", pid),
