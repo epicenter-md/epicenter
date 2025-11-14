@@ -397,21 +397,39 @@ export function createFfmpegRecorderService(): RecorderService {
 				description: 'Stopping FFmpeg recording...',
 			});
 
-			// Send SIGINT for graceful shutdown
-			const { error: killError } = await tryAsync({
+			// Stop FFmpeg gracefully
+			const { error: stopError } = await tryAsync({
 				try: async () => {
+					// On Windows, SIGINT often fails due to console signal handling issues
+					// FFmpeg supports 'q' on stdin as a graceful quit command
+					// Try stdin 'q' first for better reliability on Windows
+					if (PLATFORM_TYPE === 'windows') {
+						try {
+							await child.write('q\n');
+							// Give FFmpeg time to process the quit command and finalize the file
+							await new Promise((resolve) => setTimeout(resolve, 500));
+						} catch (writeError) {
+							// If stdin write fails, fall through to SIGINT
+							console.log('Failed to write q to stdin, trying SIGINT:', writeError);
+						}
+					}
+
+					// Try SIGINT (works well on Unix, may fail on Windows)
 					const signalResult = await sendSigint(session.pid);
 
 					if (!signalResult.success) {
-						// Fall back to SIGKILL if SIGINT fails
+						// SIGINT failed, wait a bit more then force kill
+						// Give FFmpeg extra time to finish writing on Windows
+						const waitTime = PLATFORM_TYPE === 'windows' ? 1000 : 500;
+						await new Promise((resolve) => setTimeout(resolve, waitTime));
 						await child.kill();
 					} else {
-						// Schedule a force kill after 1 second (but don't wait)
+						// SIGINT succeeded, schedule a backup force kill
 						setTimeout(() => {
 							child.kill().catch(() => {
 								// Process already exited, expected
 							});
-						}, 1000);
+						}, 2000);
 					}
 				},
 				catch: (error) =>
@@ -421,7 +439,7 @@ export function createFfmpegRecorderService(): RecorderService {
 					}),
 			});
 
-			if (killError) {
+			if (stopError) {
 				sendStatus({
 					title: '❌ Error Stopping Recording',
 					description:
