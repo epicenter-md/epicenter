@@ -363,26 +363,10 @@ export function createFfmpegRecorderService(): RecorderService {
 				}, delayMs);
 			};
 
-			// Stop FFmpeg gracefully using stdin 'q' then SIGINT
+			// Stop FFmpeg gracefully using SIGINT
 			const { error: stopError } = await tryAsync({
 				try: async () => {
-					// Try stdin 'q' first - FFmpeg's built-in graceful quit
-					await tryAsync({
-						try: async () => {
-							await activeChild.write('q\n');
-							await new Promise((resolve) => setTimeout(resolve, 1000));
-						},
-						catch: (writeError) => {
-							console.log('stdin write failed, trying SIGINT:', writeError);
-							return Ok(undefined);
-						},
-					});
-
-					// Backup: try SIGINT
 					await sendSigint(activeChild.pid);
-
-					// Always schedule backup force kill
-					// Actual synchronization happens via file polling below
 					scheduleBackupKill(2000);
 				},
 				catch: (error) =>
