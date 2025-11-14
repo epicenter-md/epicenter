@@ -1,14 +1,18 @@
 <script lang="ts">
 	import { onNavigate } from '$app/navigation';
+	import { setContext } from 'svelte';
 	import { queryClient } from '$lib/query/_client';
 	import { QueryClientProvider } from '@tanstack/svelte-query';
 	import { SvelteQueryDevtools } from '@tanstack/svelte-query-devtools';
 	import { ModeWatcher, mode } from 'mode-watcher';
 	import { Toaster, type ToasterProps } from 'svelte-sonner';
-	import MigrationDialog from '$lib/components/MigrationDialog.svelte';
+	import MigrationDialog, { migrationDialog } from '$lib/components/MigrationDialog.svelte';
 	import '@repo/ui/app.css';
 
 	let { children } = $props();
+
+	// Provide migrationDialog to child components
+	setContext('migrationDialog', migrationDialog);
 
 	const TOASTER_SETTINGS = {
 		position: 'bottom-right',

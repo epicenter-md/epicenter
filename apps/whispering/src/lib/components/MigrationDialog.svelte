@@ -1084,6 +1084,9 @@
 			set isOpen(value: boolean) {
 				isOpen = value;
 			},
+			openDialog() {
+				isOpen = true;
+			},
 			get hasIndexedDBData() {
 				return counts
 					? counts.indexedDb.recordings > 0 ||
@@ -1240,7 +1243,6 @@
 </script>
 
 <script lang="ts">
-	import { Database } from '@lucide/svelte';
 	import { Button } from '@repo/ui/button';
 	import * as Dialog from '@repo/ui/dialog';
 
@@ -1262,30 +1264,6 @@
 		}
 	}}
 >
-	{#if import.meta.env.DEV || migrationDialog.hasIndexedDBData}
-		<Dialog.Trigger>
-			{#snippet child({ props })}
-				<div class="fixed top-4 right-4 z-50">
-					<Button
-						size="icon"
-						class="rounded-full shadow-lg transition-transform hover:scale-110 relative"
-						aria-label="Open Migration Manager"
-						{...props}
-					>
-						<Database class="h-5 w-5" />
-						{#if migrationDialog.hasIndexedDBData}
-							<span
-								class="absolute -top-0.5 -right-0.5 h-3 w-3 rounded-full bg-amber-500 animate-ping"
-							></span>
-							<span
-								class="absolute -top-0.5 -right-0.5 h-3 w-3 rounded-full bg-amber-500"
-							></span>
-						{/if}
-					</Button>
-				</div>
-			{/snippet}
-		</Dialog.Trigger>
-	{/if}
 	<Dialog.Content class="max-h-[90vh] max-w-3xl overflow-y-auto">
 		<Dialog.Header>
 			<Dialog.Title>Database Migration Manager</Dialog.Title>

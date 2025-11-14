@@ -1,11 +1,13 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import WhisperingButton from '$lib/components/WhisperingButton.svelte';
+	import MigrationDialogTrigger from '$lib/components/MigrationDialogTrigger.svelte';
 	import { GithubIcon } from '$lib/components/icons';
 	import * as DropdownMenu from '@repo/ui/dropdown-menu';
 	import { cn } from '@repo/ui/utils';
 	import { LogicalSize, getCurrentWindow } from '@tauri-apps/api/window';
 	import {
+		Database,
 		LayersIcon,
 		ListIcon,
 		Minimize2Icon,
@@ -13,13 +15,23 @@
 		MoreVerticalIcon,
 		SettingsIcon,
 		SunIcon,
-	} from '@lucide/svelte';
+	} from 'lucide-svelte';
 	import { toggleMode } from 'mode-watcher';
+
+	type MigrationDialog = {
+		hasIndexedDBData: boolean;
+		openDialog: () => void;
+	};
 
 	let {
 		class: className,
 		collapsed = false,
-	}: { class?: string; collapsed?: boolean } = $props();
+		migrationDialog,
+	}: {
+		class?: string;
+		collapsed?: boolean;
+		migrationDialog?: MigrationDialog;
+	} = $props();
 
 	const navItems = [
 		{
@@ -41,6 +53,16 @@
 			href: '/settings',
 			activePathPrefix: '/settings',
 		},
+		...(window.__TAURI_INTERNALS__ &&
+		(import.meta.env.DEV || migrationDialog?.hasIndexedDBData)
+			? ([
+					{
+						label: 'Database Migration Manager',
+						icon: Database,
+						type: 'migration',
+					},
+				] as const)
+			: []),
 		{
 			label: 'View project on GitHub',
 			icon: GithubIcon,
@@ -88,7 +110,11 @@
 		action: () => void;
 	};
 
-	type NavItem = AnchorItem | ButtonItem | ThemeItem;
+	type MigrationItem = BaseNavItem & {
+		type: 'migration';
+	};
+
+	type NavItem = AnchorItem | ButtonItem | ThemeItem | MigrationItem;
 
 	const isItemActive = (item: AnchorItem) => {
 		if (item.external) return false;
@@ -159,6 +185,21 @@
 						</div>
 						<span>{item.label}</span>
 					</DropdownMenu.Item>
+				{:else if item.type === 'migration'}
+					<DropdownMenu.Item
+						onclick={migrationDialog?.openDialog}
+						class="flex items-center gap-2"
+					>
+						<div class="relative size-4">
+							<Icon class="size-4" aria-hidden="true" />
+							{#if migrationDialog?.hasIndexedDBData}
+								<span
+									class="absolute -top-0.5 -right-0.5 h-2 w-2 rounded-full bg-amber-500"
+								></span>
+							{/if}
+						</div>
+						<span>{item.label}</span>
+					</DropdownMenu.Item>
 				{/if}
 			{/each}
 		</DropdownMenu.Content>
@@ -206,6 +247,11 @@
 						class="absolute h-[1.2rem] w-[1.2rem] rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100"
 					/>
 				</WhisperingButton>
+			{:else if item.type === 'migration'}
+				<MigrationDialogTrigger
+					hasIndicator={migrationDialog?.hasIndexedDBData}
+					onclick={migrationDialog?.openDialog}
+				/>
 			{/if}
 		{/each}
 	</nav>

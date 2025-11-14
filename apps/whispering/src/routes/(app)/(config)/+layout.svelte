@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { getContext } from 'svelte';
 	import { commandCallbacks } from '$lib/commands';
 	import NavItems from '$lib/components/NavItems.svelte';
 	import WhisperingButton from '$lib/components/WhisperingButton.svelte';
@@ -23,6 +24,14 @@
 	const getVadStateQuery = createQuery(rpc.vadRecorder.getVadState.options);
 
 	let { children } = $props();
+
+	// Get migrationDialog from context (only available in Tauri)
+	const migrationDialog = window.__TAURI_INTERNALS__
+		? getContext<{
+				hasIndexedDBData: boolean;
+				openDialog: () => void;
+			}>('migrationDialog')
+		: undefined;
 
 	const isMobile = new MediaQuery('(max-width: 640px)');
 </script>
@@ -147,7 +156,11 @@
 				</div>
 			{/if}
 		</div>
-		<NavItems class="-mr-4" collapsed={isMobile.current} />
+		<NavItems
+			class="-mr-4"
+			collapsed={isMobile.current}
+			{migrationDialog}
+		/>
 	</div>
 </header>
 
