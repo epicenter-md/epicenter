@@ -1,9 +1,7 @@
-import { createPersistedState } from '@repo/svelte-utils';
 import { invoke } from '@tauri-apps/api/core';
 import { join } from '@tauri-apps/api/path';
 import { exists, remove, stat } from '@tauri-apps/plugin-fs';
 import { Child } from '@tauri-apps/plugin-shell';
-import { type } from 'arktype';
 import { extractErrorMessage } from 'wellcrafted/error';
 import { Err, Ok, type Result, tryAsync } from 'wellcrafted/result';
 import type {
@@ -39,13 +37,6 @@ import { RecorderServiceErr } from './types';
  * // User might set: '-hide_banner -loglevel warning'
  */
 export const FFMPEG_DEFAULT_GLOBAL_OPTIONS = '' as const;
-
-// Schema for persisted FFmpeg session state
-// Either a complete session object or null - no individual nullable fields
-const FfmpegSession = type({
-	pid: 'number',
-	outputPath: 'string',
-}).or('null');
 
 /**
  * Default FFmpeg output options optimized for Whisper transcription.
@@ -173,49 +164,9 @@ export const FFMPEG_DEFAULT_DEVICE_IDENTIFIER = asDeviceIdentifier(
 );
 
 export function createFfmpegRecorderService(): RecorderService {
-	// Persisted state - single source of truth
-	const sessionState = createPersistedState({
-		key: 'whispering-ffmpeg-recording-session',
-		schema: FfmpegSession,
-		onParseError: () => null,
-	});
-
-	// Helper to get current Child instance lazily from PID
-	// Returns null if no session is active
-	const getCurrentChild = (): Child | null => {
-		const session = sessionState.value;
-		return session ? new Child(session.pid) : null;
-	};
-
-	// Helper to clear session and kill any running process
-	const clearSession = async (): Promise<void> => {
-		const session = sessionState.value;
-		if (!session) return;
-
-		// Try to kill the process if it exists
-		await tryAsync({
-			try: async () => {
-				const child = new Child(session.pid);
-				await child.kill();
-				console.log(`Killed FFmpeg process (PID: ${session.pid})`);
-			},
-			catch: (e) => {
-				console.log(
-					`Error terminating FFmpeg process (PID: ${session.pid}): ${extractErrorMessage(e)}`,
-				);
-				return Ok(undefined);
-			},
-		});
-
-		// Clear the session state
-		sessionState.value = null;
-	};
-
-	// Clear any orphaned process on initialization
-	if (sessionState.value) {
-		console.log('Found orphaned FFmpeg session, cleaning up...');
-		clearSession();
-	}
+	// In-memory recording state - simple and straightforward
+	let activeChild: Child | null = null;
+	let activeOutputPath: string | null = null;
 
 	const enumerateDevices = async (): Promise<
 		Result<Device[], RecorderServiceError>
@@ -252,7 +203,7 @@ export function createFfmpegRecorderService(): RecorderService {
 		getRecorderState: async (): Promise<
 			Result<WhisperingRecordingState, RecorderServiceError>
 		> => {
-			return Ok(sessionState.value ? 'RECORDING' : 'IDLE');
+			return Ok(activeChild ? 'RECORDING' : 'IDLE');
 		},
 
 		enumerateDevices,
@@ -269,7 +220,18 @@ export function createFfmpegRecorderService(): RecorderService {
 			{ sendStatus },
 		): Promise<Result<DeviceAcquisitionOutcome, RecorderServiceError>> => {
 			// Stop any existing recording
-			await clearSession();
+			if (activeChild) {
+				const childToKill = activeChild;
+				await tryAsync({
+					try: async () => {
+						await childToKill.kill();
+						console.log('Killed existing FFmpeg process');
+					},
+					catch: () => Ok(undefined),
+				});
+				activeChild = null;
+				activeOutputPath = null;
+			}
 
 			// Enumerate devices to validate selection
 			const { data: devices, error: enumerateError } = await enumerateDevices();
@@ -366,11 +328,9 @@ export function createFfmpegRecorderService(): RecorderService {
 				});
 			}
 
-			// Store the PID and session info for recovery after refresh
-			sessionState.value = {
-				pid: process.pid,
-				outputPath,
-			};
+			// Store the Child object and output path in memory
+			activeChild = process;
+			activeOutputPath = outputPath;
 
 			sendStatus({
 				title: '🎙️ Recording',
@@ -383,9 +343,7 @@ export function createFfmpegRecorderService(): RecorderService {
 		stopRecording: async ({
 			sendStatus,
 		}): Promise<Result<Blob, RecorderServiceError>> => {
-			const child = getCurrentChild();
-			const session = sessionState.value;
-			if (!child || !session) {
+			if (!activeChild || !activeOutputPath) {
 				return RecorderServiceErr({
 					message: 'No active recording to stop',
 					cause: undefined,
@@ -397,22 +355,48 @@ export function createFfmpegRecorderService(): RecorderService {
 				description: 'Stopping FFmpeg recording...',
 			});
 
-			// Send SIGINT for graceful shutdown
-			const { error: killError } = await tryAsync({
-				try: async () => {
-					const signalResult = await sendSigint(session.pid);
+			// Capture references before clearing state (needed for backup kill closure)
+			const childToKill = activeChild;
+			const outputPath = activeOutputPath;
 
-					if (!signalResult.success) {
-						// Fall back to SIGKILL if SIGINT fails
-						await child.kill();
-					} else {
-						// Schedule a force kill after 1 second (but don't wait)
-						setTimeout(() => {
-							child.kill().catch(() => {
-								// Process already exited, expected
-							});
-						}, 1000);
+			// Helper: Schedule backup force kill in case FFmpeg hangs
+			const scheduleBackupKill = (delayMs: number) => {
+				setTimeout(() => {
+					childToKill.kill().catch(() => {
+						// Expected: process may have already exited gracefully
+					});
+				}, delayMs);
+			};
+
+			// Stop FFmpeg gracefully
+			const { error: stopError } = await tryAsync({
+				try: async () => {
+					// Try stdin 'q' first (most reliable, especially on Windows)
+					const { error: writeError } = await tryAsync({
+						try: async () => {
+							console.log('[DEBUG] Attempting to write q to stdin...');
+							await childToKill.write('q\n');
+							console.log('[DEBUG] Successfully wrote q to stdin');
+							// Give FFmpeg time to process the quit command
+							await new Promise((resolve) => setTimeout(resolve, 1000));
+						},
+						catch: (e) => {
+							console.error('[DEBUG] Failed to write to stdin:', e);
+							return Ok(undefined); // stdin might not be available, continue
+						},
+					});
+
+					if (writeError) {
+						console.log('[DEBUG] stdin write was not available, trying SIGINT');
 					}
+
+					// Also send SIGINT as backup
+					console.log('[DEBUG] Sending SIGINT to PID:', childToKill.pid);
+					await sendSigint(childToKill.pid);
+
+					// Schedule force kill with longer timeout to give FFmpeg time to finalize
+					console.log('[DEBUG] Scheduling backup kill in 5 seconds');
+					scheduleBackupKill(5000);
 				},
 				catch: (error) =>
 					RecorderServiceErr({
@@ -421,7 +405,7 @@ export function createFfmpegRecorderService(): RecorderService {
 					}),
 			});
 
-			if (killError) {
+			if (stopError) {
 				sendStatus({
 					title: '❌ Error Stopping Recording',
 					description:
@@ -429,13 +413,12 @@ export function createFfmpegRecorderService(): RecorderService {
 				});
 			}
 
-			const outputPath = session.outputPath;
-
-			// Clear the session
-			sessionState.value = null;
+			// Clear state
+			activeChild = null;
+			activeOutputPath = null;
 
 			// Poll for file stabilization
-			const MAX_WAIT_TIME = 3000; // 3 seconds max
+			const MAX_WAIT_TIME = 6000; // 6 seconds max
 			const POLL_INTERVAL = 100; // Check every 100ms
 			const startTime = Date.now();
 			let lastSize = -1;
@@ -504,8 +487,7 @@ export function createFfmpegRecorderService(): RecorderService {
 		cancelRecording: async ({
 			sendStatus,
 		}): Promise<Result<CancelRecordingResult, RecorderServiceError>> => {
-			const session = sessionState.value;
-			if (!session) {
+			if (!activeChild) {
 				return Ok({ status: 'no-recording' });
 			}
 
@@ -514,11 +496,21 @@ export function createFfmpegRecorderService(): RecorderService {
 				description: 'Stopping FFmpeg recording and cleaning up...',
 			});
 
-			// Store the path before clearing the session
-			const pathToCleanup = session.outputPath;
+			const childToKill = activeChild;
+			const pathToCleanup = activeOutputPath;
 
-			// Clear the session and kill the process
-			await clearSession();
+			// Kill the process
+			await tryAsync({
+				try: async () => {
+					await childToKill.kill();
+					console.log('Killed FFmpeg process during cancellation');
+				},
+				catch: () => Ok(undefined),
+			});
+
+			// Clear state
+			activeChild = null;
+			activeOutputPath = null;
 
 			// Delete the output file if it exists
 			if (pathToCleanup) {
@@ -570,8 +562,8 @@ function parseDevices(output: string): Device[] {
 			}),
 		},
 		windows: {
-			// Windows DirectShow format: "Microphone Name" (audio)
-			regex: /^\s*"(.+?)"\s+\(audio\)/,
+			// Windows DirectShow format: [dshow @ 0x...] "Microphone Name" (audio)
+			regex: /\[dshow[^\]]*\]\s+"(.+?)"\s+\(audio\)/,
 			extractDevice: (match) => ({
 				id: asDeviceIdentifier(match[1]),
 				label: match[1],
@@ -619,7 +611,7 @@ export function formatDeviceForPlatform(deviceId: string) {
 		case 'macos':
 			return `:${deviceId}`; // macOS uses :deviceName
 		case 'windows':
-			return `audio=${deviceId}`; // Windows uses audio=deviceName
+			return `audio="${deviceId}"`; // Windows DirectShow requires quoted device names
 		case 'linux':
 			return deviceId; // Linux uses device directly
 	}
@@ -651,6 +643,12 @@ export function buildFfmpegCommand({
 	// Apply platform-specific defaults if input options are empty
 	const finalInputOptions = inputOptions.trim() || FFMPEG_DEFAULT_INPUT_OPTIONS;
 
+	// Windows DirectShow uses a special syntax: audio="Device Name"
+	// The quotes are part of the DirectShow parameter, not shell quoting
+	// For other platforms, wrap the device in quotes for shell safety
+	const deviceParam =
+		PLATFORM_TYPE === 'windows' ? formattedDevice : `"${formattedDevice}"`;
+
 	// Build command using template string - much simpler!
 	// Filter out empty parts inline
 	const parts = [
@@ -658,7 +656,7 @@ export function buildFfmpegCommand({
 		globalOptions.trim(),
 		finalInputOptions,
 		'-i',
-		`"${formattedDevice}"`,
+		deviceParam,
 		outputOptions.trim(),
 		`"${outputPath}"`,
 	].filter((part) => part); // Remove empty strings

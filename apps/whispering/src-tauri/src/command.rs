@@ -129,12 +129,15 @@ pub async fn spawn_command(command: String) -> Result<u32, String> {
 
     let mut cmd = Command::new(&program);
     cmd.args(&args);
+    cmd.stdin(Stdio::piped()); // Enable stdin for graceful shutdown (e.g., FFmpeg 'q' command)
 
-    #[cfg(target_os = "windows")]
-    {
-        cmd.creation_flags(CREATE_NO_WINDOW);
-        println!("[Rust] spawn_command: Windows - using CREATE_NO_WINDOW flag");
-    }
+    // TEMPORARY: Disabled CREATE_NO_WINDOW for debugging
+    // This allows us to see the FFmpeg console window and verify stdin 'q' works
+    // #[cfg(target_os = "windows")]
+    // {
+    //     cmd.creation_flags(CREATE_NO_WINDOW);
+    //     println!("[Rust] spawn_command: Windows - using CREATE_NO_WINDOW flag");
+    // }
 
     match cmd.spawn() {
         Ok(child) => {
