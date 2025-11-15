@@ -214,6 +214,10 @@ export const settingsSchema = z.object({
 		.string()
 		.default('mistralai/mixtral-8x7b')
 		.describe('OpenRouter model name'),
+	'completion.custom.baseUrl': z
+		.string()
+		.default('http://localhost:11434/v1')
+		.describe('Base URL for OpenAI-compatible custom endpoints'),
 
 	'apiKeys.openai': z.string().default(''),
 	'apiKeys.anthropic': z.string().default(''),
@@ -223,6 +227,7 @@ export const settingsSchema = z.object({
 	'apiKeys.elevenlabs': z.string().default(''),
 	'apiKeys.mistral': z.string().default(''),
 	'apiKeys.openrouter': z.string().default(''),
+	'apiKeys.custom': z.string().default(''),
 
 	// Analytics settings
 	'analytics.enabled': z.boolean().default(true),

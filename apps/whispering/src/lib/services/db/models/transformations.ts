@@ -39,6 +39,8 @@ export const TransformationStep = type({
 	),
 	// OpenRouter model is a free string (user can enter any model)
 	'prompt_transform.inference.provider.OpenRouter.model': 'string',
+	'prompt_transform.inference.provider.Custom.model': 'string',
+	'prompt_transform.inference.provider.Custom.baseUrl': 'string',
 	'prompt_transform.systemPromptTemplate': 'string',
 	'prompt_transform.userPromptTemplate': 'string',
 	'find_replace.findText': 'string',
@@ -92,6 +94,9 @@ export function generateDefaultTransformationStep(): TransformationStep {
 		'prompt_transform.inference.provider.Google.model': 'gemini-2.5-flash',
 		'prompt_transform.inference.provider.OpenRouter.model':
 			'mistralai/mixtral-8x7b',
+		'prompt_transform.inference.provider.Custom.model': 'gpt-4o-mini',
+		'prompt_transform.inference.provider.Custom.baseUrl':
+			'http://localhost:11434/v1',
 
 		'prompt_transform.systemPromptTemplate': '',
 		'prompt_transform.userPromptTemplate': '',

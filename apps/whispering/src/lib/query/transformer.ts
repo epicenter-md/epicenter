@@ -262,6 +262,31 @@ async function handleStep({
 					return Ok(completionResponse);
 				}
 
+				case 'Custom': {
+					const model =
+						step['prompt_transform.inference.provider.Custom.model']?.trim();
+					const stepBaseUrl =
+						step['prompt_transform.inference.provider.Custom.baseUrl']?.trim();
+					const defaultBaseUrl =
+						settings.value['completion.custom.baseUrl']?.trim();
+					const baseUrl = stepBaseUrl || defaultBaseUrl || '';
+
+					const { data: completionResponse, error: completionError } =
+						await services.completions.custom.complete({
+							apiKey: settings.value['apiKeys.custom'],
+							model,
+							baseUrl,
+							systemPrompt,
+							userPrompt,
+						});
+
+					if (completionError) {
+						return Err(completionError.message);
+					}
+
+					return Ok(completionResponse);
+				}
+
 				default:
 					return Err(`Unsupported provider: ${provider}`);
 			}

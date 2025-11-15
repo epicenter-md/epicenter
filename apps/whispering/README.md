@@ -97,8 +97,8 @@ This automatically handles installation and updates.
 
 #### Option 2: Direct Download
 
-| Architecture      | Download                                                                                                                                        | Requirements     |
-| ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
+| Architecture      | Download                                                                                                                                      | Requirements     |
+| ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
 | **Apple Silicon** | [Whispering_7.7.2_aarch64_darwin.dmg](https://github.com/epicenter-md/epicenter/releases/download/v7.7.2/Whispering_7.7.2_aarch64_darwin.dmg) | M1/M2/M3/M4 Macs |
 | **Intel**         | [Whispering_7.7.2_x64_darwin.dmg](https://github.com/epicenter-md/epicenter/releases/download/v7.7.2/Whispering_7.7.2_x64_darwin.dmg)         | Intel-based Macs |
 
@@ -126,8 +126,8 @@ This automatically handles installation and updates.
 
 #### Download Options
 
-| Installer Type    | Download                                                                                                                                        | Description                            |
-| ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------- |
+| Installer Type    | Download                                                                                                                                            | Description                            |
+| ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------- |
 | **MSI Installer** | [Whispering_7.7.2_x64_en-US_windows.msi](https://github.com/epicenter-md/epicenter/releases/download/v7.7.2/Whispering_7.7.2_x64_en-US_windows.msi) | Recommended Standard Windows installer |
 | **EXE Installer** | [Whispering_7.7.2_x64-setup_windows.exe](https://github.com/epicenter-md/epicenter/releases/download/v7.7.2/Whispering_7.7.2_x64-setup_windows.exe) | Alternative installer option           |
 
@@ -147,8 +147,8 @@ Whispering will appear in your Start Menu when complete.
 
 #### Download Options
 
-| Package Format  | Download                                                                                                                                      | Compatible With          |
-| --------------- | --------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------ |
+| Package Format  | Download                                                                                                                                          | Compatible With          |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------ |
 | **AppImage**    | [Whispering_7.7.2_amd64_linux.AppImage](https://github.com/epicenter-md/epicenter/releases/download/v7.7.2/Whispering_7.7.2_amd64_linux.AppImage) | All Linux distributions  |
 | **DEB Package** | [Whispering_7.7.2_amd64_linux.deb](https://github.com/epicenter-md/epicenter/releases/download/v7.7.2/Whispering_7.7.2_amd64_linux.deb)           | Debian, Ubuntu, Pop!\_OS |
 | **RPM Package** | [Whispering-7.7.2-1.x86_64_linux.rpm](https://github.com/epicenter-md/epicenter/releases/download/v7.7.2/Whispering-7.7.2-1.x86_64_linux.rpm)     | Fedora, RHEL, openSUSE   |
@@ -477,6 +477,13 @@ You'll need additional API keys for AI transformations. Choose from these provid
 - **API Key:** [console.groq.com/keys](https://console.groq.com/keys)
 - **Models:** `llama-3.3-70b-versatile`, `llama-3.1-8b-instant`, `gemma2-9b-it`, and more
 - **Why:** Lightning fast inference, great for real-time transformations
+
+#### 🧩 Custom (OpenAI-Compatible)
+
+- **API Key:** From your provider's settings, if applicable
+- **Base URL:** Any OpenAI-compatible `/v1` endpoint (Ollama, LM Studio, vLLM, etc.)
+- **Models:** Whatever your endpoint exposes
+- **Why:** Point Whispering at any self-hosted or private LLMs you want
 
 </details>
 

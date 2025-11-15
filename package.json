@@ -57,17 +57,18 @@
 	},
 	"devDependencies": {
 		"@biomejs/biome": "^2.3.1",
+		"@eslint/compat": "^1.4.0",
+		"@types/bun": "latest",
 		"@types/node": "catalog:",
+		"@typescript-eslint/parser": "^8.46.0",
 		"concurrently": "catalog:",
 		"eslint": "^9.37.0",
-		"@eslint/compat": "^1.4.0",
 		"eslint-plugin-svelte": "^3.12.4",
-		"@typescript-eslint/parser": "^8.46.0",
 		"prettier": "^3.6.2",
+		"prettier-plugin-astro": "^0.14.1",
 		"prettier-plugin-svelte": "^3.4.0",
 		"prettier-plugin-tailwindcss": "^0.6.11",
-		"prettier-plugin-astro": "^0.14.1",
-		"turbo": "catalog:",
-		"@types/bun": "latest"
+		"svelte-eslint-parser": "^1.4.0",
+		"turbo": "catalog:"
 	}
 }
