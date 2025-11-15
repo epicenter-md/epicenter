@@ -372,19 +372,30 @@ export function createFfmpegRecorderService(): RecorderService {
 			const { error: stopError } = await tryAsync({
 				try: async () => {
 					// Try stdin 'q' first (most reliable, especially on Windows)
-					await tryAsync({
+					const { error: writeError } = await tryAsync({
 						try: async () => {
+							console.log('[DEBUG] Attempting to write q to stdin...');
 							await childToKill.write('q\n');
+							console.log('[DEBUG] Successfully wrote q to stdin');
 							// Give FFmpeg time to process the quit command
 							await new Promise((resolve) => setTimeout(resolve, 1000));
 						},
-						catch: () => Ok(undefined), // stdin might not be available, continue
+						catch: (e) => {
+							console.error('[DEBUG] Failed to write to stdin:', e);
+							return Ok(undefined); // stdin might not be available, continue
+						},
 					});
 
+					if (writeError) {
+						console.log('[DEBUG] stdin write was not available, trying SIGINT');
+					}
+
 					// Also send SIGINT as backup
+					console.log('[DEBUG] Sending SIGINT to PID:', childToKill.pid);
 					await sendSigint(childToKill.pid);
 
 					// Schedule force kill with longer timeout to give FFmpeg time to finalize
+					console.log('[DEBUG] Scheduling backup kill in 5 seconds');
 					scheduleBackupKill(5000);
 				},
 				catch: (error) =>
