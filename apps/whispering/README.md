@@ -128,8 +128,8 @@ This automatically handles installation and updates.
 
 | Installer Type    | Download                                                                                                                                        | Description                            |
 | ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------- |
-| **MSI Installer** | [Whispering_7.7.2_x64_en-US_windows.msi](https://github.com/epicenter-md/epicenter/releases/download/v7.7.2/Whispering_7.7.2_x64_en-US_windows.msi) | Recommended Standard Windows installer |
-| **EXE Installer** | [Whispering_7.7.2_x64-setup_windows.exe](https://github.com/epicenter-md/epicenter/releases/download/v7.7.2/Whispering_7.7.2_x64-setup_windows.exe) | Alternative installer option           |
+| **MSI Installer** | [Whispering_7.7.2_x64_en-US_windows.msi](https://github.com/EpicenterHQ/epicenter/releases/download/v7.7.2/Whispering_7.7.2_x64_en-US.msi) | Recommended Standard Windows installer |
+| **EXE Installer** | [Whispering_7.7.2_x64-setup_windows.exe](https://github.com/EpicenterHQ/epicenter/releases/download/v7.7.2/Whispering_7.7.2_x64-setup.exe) | Alternative installer option           |
 
 #### Installation
 
