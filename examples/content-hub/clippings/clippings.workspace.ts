@@ -77,7 +77,7 @@ export const clippings = defineWorkspace({
 			addedAt: date(),
 			readAt: date({ nullable: true }),
 		},
-		bookClippings: {
+		bookExcerpts: {
 			id: id(),
 			bookId: text(),
 			content: text(),
@@ -407,11 +407,7 @@ export const clippings = defineWorkspace({
 		 * Creates a new book entry. Returns the book ID for use with addBookClipping.
 		 */
 		addBook: defineMutation({
-			input: type({
-				title: 'string',
-				author: 'string',
-				'readAt?': 'string',
-			}),
+			input: db.books.validators.toArktype().pick('title', 'author', 'readAt'),
 			handler: ({ title, author, readAt }) => {
 				const now = DateWithTimezone({
 					date: new Date(),
@@ -425,12 +421,7 @@ export const clippings = defineWorkspace({
 					title,
 					author,
 					addedAt: now,
-					readAt: readAt
-						? DateWithTimezone({
-								date: new Date(readAt),
-								timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-							}).toJSON()
-						: null,
+					readAt: readAt ?? null,
 				});
 
 				return Ok({ bookId });
@@ -438,16 +429,14 @@ export const clippings = defineWorkspace({
 		}),
 
 		/**
-		 * Add a clipping from a book
+		 * Add an excerpt from a book
 		 *
-		 * Creates a new clipping associated with an existing book.
+		 * Creates a new excerpt associated with an existing book.
 		 */
-		addBookClipping: defineMutation({
-			input: type({
-				bookId: 'string',
-				content: 'string',
-				'comment?': 'string',
-			}),
+		addBookExcerpt: defineMutation({
+			input: db.bookExcerpts.validators
+				.toArktype()
+				.pick('bookId', 'content', 'comment'),
 			handler: ({ bookId, content, comment }) => {
 				// Verify the book exists
 				const book = db.books.get(bookId);
@@ -463,7 +452,7 @@ export const clippings = defineWorkspace({
 					timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
 				}).toJSON();
 
-				db.bookClippings.insert({
+				db.bookExcerpts.insert({
 					id: generateId(),
 					bookId,
 					content,
