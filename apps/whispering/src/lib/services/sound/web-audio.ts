@@ -1,7 +1,7 @@
 import { tryAsync } from 'wellcrafted/result';
 import type { PlaySoundService } from '.';
-import { PlaySoundServiceErr } from './types';
 import { audioElements } from './assets';
+import { PlaySoundServiceErr } from './types';
 
 // Map sound names to their source files using existing audioElements
 const soundSources = {
@@ -35,62 +35,60 @@ async function destroyAudioContext(context: AudioContext): Promise<void> {
 }
 
 // Load and decode an audio file
-async function loadAudioBuffer(audioSrc: string, context: AudioContext): Promise<AudioBuffer> {
+async function loadAudioBuffer(
+	audioSrc: string,
+	context: AudioContext,
+): Promise<AudioBuffer> {
 	// Check cache first
-	if (audioBufferCache.has(audioSrc)) {
-		return audioBufferCache.get(audioSrc)!;
+	const cached = audioBufferCache.get(audioSrc);
+	if (cached) {
+		return cached;
 	}
 
-	try {
-		// Fetch the audio file
-		const response = await fetch(audioSrc);
-		if (!response.ok) {
-			throw new Error(`Failed to fetch audio: ${response.statusText}`);
-		}
-		
-		const arrayBuffer = await response.arrayBuffer();
-		const audioBuffer = await context.decodeAudioData(arrayBuffer);
-		
-		// Cache the decoded buffer
-		audioBufferCache.set(audioSrc, audioBuffer);
-		
-		return audioBuffer;
-	} catch (error) {
-		throw error;
+	// Fetch the audio file
+	const response = await fetch(audioSrc);
+	if (!response.ok) {
+		throw new Error(`Failed to fetch audio: ${response.statusText}`);
 	}
+
+	const arrayBuffer = await response.arrayBuffer();
+	const audioBuffer = await context.decodeAudioData(arrayBuffer);
+
+	// Cache the decoded buffer
+	audioBufferCache.set(audioSrc, audioBuffer);
+
+	return audioBuffer;
 }
 
 // Play a sound using Web Audio API with fresh context (create, use, destroy pattern)
 async function playSoundWithWebAudio(audioSrc: string): Promise<void> {
-	
 	// Step 1: Create a brand new AudioContext
 	const context = createFreshAudioContext();
-	
+
 	try {
 		// Step 2: Load the audio buffer (uses cache if available)
 		const audioBuffer = await loadAudioBuffer(audioSrc, context);
-		
+
 		// Step 3: Create and configure the source
 		const source = context.createBufferSource();
 		source.buffer = audioBuffer;
 		source.connect(context.destination);
-		
+
 		// Step 4: Play the sound and wait for it to complete
 		await new Promise<void>((resolve, reject) => {
 			source.onended = () => {
 				resolve();
 			};
-			
+
 			source.onerror = (error) => {
 				reject(error);
 			};
-			
+
 			source.start();
 		});
-		
+
 		// Step 5: Clean up - destroy the AudioContext immediately after playback
 		await destroyAudioContext(context);
-		
 	} catch (error) {
 		console.error('[WebAudio] Failed to play sound:', error);
 		// Make sure to clean up even on error
@@ -108,7 +106,7 @@ export function createPlaySoundServiceWebAudio(): PlaySoundService {
 					if (!audioSrc) {
 						throw new Error(`Unknown sound: ${soundName}`);
 					}
-					
+
 					await playSoundWithWebAudio(audioSrc);
 				},
 				mapErr: (error) => {
