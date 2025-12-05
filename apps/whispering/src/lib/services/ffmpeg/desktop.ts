@@ -1,13 +1,12 @@
-import { IS_WINDOWS } from '$lib/constants/platform';
+import { appDataDir, join } from '@tauri-apps/api/path';
+import { exists, remove, writeFile } from '@tauri-apps/plugin-fs';
+import { nanoid } from 'nanoid/non-secure';
 import { extractErrorMessage } from 'wellcrafted/error';
 import { Err, Ok, tryAsync } from 'wellcrafted/result';
-import { type FfmpegService, FfmpegServiceErr } from './types';
-import { writeFile, remove, exists } from '@tauri-apps/plugin-fs';
-import { appDataDir, join } from '@tauri-apps/api/path';
-import { nanoid } from 'nanoid/non-secure';
 import * as services from '$lib/services';
-import { getFileExtensionFromFfmpegOptions } from '../recorder/ffmpeg';
 import { asShellCommand } from '../command/types';
+import { getFileExtensionFromFfmpegOptions } from '../recorder/ffmpeg';
+import { type FfmpegService, FfmpegServiceErr } from './types';
 
 export function createFfmpegService(): FfmpegService {
 	return {
@@ -15,12 +14,11 @@ export function createFfmpegService(): FfmpegService {
 			const { data: shellFfmpegProcess, error: shellFfmpegError } =
 				await tryAsync({
 					try: async () => {
-						const { Command } = await import('@tauri-apps/plugin-shell');
-						const output = await (IS_WINDOWS
-							? Command.create('cmd', ['/c', 'ffmpeg -version'])
-							: Command.create('sh', ['-c', 'ffmpeg -version'])
-						).execute();
-						return output;
+						const { data: result, error: commandError } =
+							await services.command.execute(asShellCommand('ffmpeg -version'));
+
+						if (commandError) throw commandError;
+						return result;
 					},
 					catch: (error) =>
 						FfmpegServiceErr({
@@ -56,6 +54,17 @@ export function createFfmpegService(): FfmpegService {
 						// Write input blob to temporary file
 						const inputContents = new Uint8Array(await blob.arrayBuffer());
 						await writeFile(inputPath, inputContents);
+
+						// Verify file is accessible (forces OS flush on Windows)
+						const { error: verifyError } = await tryAsync({
+							try: () => services.fs.pathToBlob(inputPath),
+							catch: (error) =>
+								FfmpegServiceErr({
+									message: 'Temp file not accessible',
+									cause: error,
+								}),
+						});
+						if (verifyError) throw new Error(verifyError.message);
 
 						// Build FFmpeg command for compression using the utility function
 						const command = buildCompressionCommand({

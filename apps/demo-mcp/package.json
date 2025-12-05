@@ -7,7 +7,8 @@
 	"scripts": {
 		"dev": "bun run src/cli.ts import",
 		"import": "bun run src/cli.ts import",
-		"serve": "bun run src/cli.ts serve"
+		"serve": "bun run src/cli.ts serve",
+		"check": "tsc --noEmit"
 	},
 	"dependencies": {
 		"@libsql/client": "^0.11.0",

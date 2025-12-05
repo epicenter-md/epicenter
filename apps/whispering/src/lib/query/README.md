@@ -863,6 +863,26 @@ Each feature file typically exports an object with:
 - Helper functions
 - Utility methods
 
+## Actions: Always Return Ok
+
+Actions in the query layer always return `Ok` after handling errors. They notify the user and return success because the action itself executed—error handling is part of that execution.
+
+```typescript
+const startManualRecording = defineMutation({
+	resultMutationFn: async () => {
+		const { error } = await recorder.startRecording.execute();
+		if (error) {
+			notify.error.execute(error); // Notify user
+			return Ok(undefined);         // Action succeeded
+		}
+		notify.success.execute({ title: 'Recording started' });
+		return Ok(undefined);
+	},
+});
+```
+
+Actions are UI-boundary mutations invoked from anywhere: command registry (`/lib/commands.ts`), components, stores, etc. Since they're the end of the operation chain, errors flow sideways through notifications rather than up the call stack.
+
 ## Best Practices
 
 1. Always use Result types - Never throw errors in query/mutation functions

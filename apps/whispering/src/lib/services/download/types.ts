@@ -4,7 +4,7 @@ import type { Result } from 'wellcrafted/result';
 export const { DownloadServiceError, DownloadServiceErr } = createTaggedError(
 	'DownloadServiceError',
 );
-type DownloadServiceError = ReturnType<typeof DownloadServiceError>;
+export type DownloadServiceError = ReturnType<typeof DownloadServiceError>;
 
 export type DownloadService = {
 	downloadBlob: (args: {

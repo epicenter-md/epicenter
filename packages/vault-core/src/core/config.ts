@@ -1,6 +1,6 @@
+import type { MigrationConfig } from 'drizzle-orm/migrator';
 import type { BaseSQLiteDatabase } from 'drizzle-orm/sqlite-core';
 import type { Adapter } from './adapter';
-import type { MigrationConfig } from 'drizzle-orm/migrator';
 
 export interface VaultConfig<
 	TDatabase extends BaseSQLiteDatabase<'sync' | 'async', unknown>,

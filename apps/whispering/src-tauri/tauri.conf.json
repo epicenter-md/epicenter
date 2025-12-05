@@ -8,6 +8,9 @@
 	"bundle": {
 		"active": true,
 		"category": "Productivity",
+		"publisher": "Braden Wong",
+		"copyright": "Copyright © 2025 Braden Wong",
+		"homepage": "https://whispering.epicenter.so",
 		"targets": "all",
 		"icon": [
 			"icons/32x32.png",
@@ -32,18 +35,26 @@
 		},
 		"windows": {
 			"webviewInstallMode": {
-				"type": "downloadBootstrapper"
+				"type": "embedBootstrapper"
+			},
+			"wix": {
+				"fipsCompliant": true,
+				"language": "en-US"
+			},
+			"nsis": {
+				"compression": "bzip2",
+				"installMode": "currentUser"
 			}
 		}
 	},
 	"productName": "Whispering",
-	"version": "7.4.0",
+	"version": "7.8.0",
 	"identifier": "com.bradenwong.whispering",
 	"plugins": {
 		"updater": {
 			"pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDUwQzE1RjEyRThENzg0OEEKUldTS2hOZm9FbC9CVU1uZ1JLWlluMm1mOHd4N1RWUkNjME9PcHA3Nkg2ek5RMnZyVTVDS2k1QkwK",
 			"endpoints": [
-				"https://github.com/epicenter-so/epicenter/releases/latest/download/latest.json"
+				"https://github.com/EpicenterHQ/epicenter/releases/latest/download/latest.json"
 			]
 		}
 	},
@@ -60,7 +71,13 @@
 			}
 		],
 		"security": {
-			"csp": null
+			"csp": null,
+			"assetProtocol": {
+				"enable": true,
+				"scope": [
+					"**"
+				]
+			}
 		}
 	}
 }

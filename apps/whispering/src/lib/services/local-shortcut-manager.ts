@@ -1,15 +1,15 @@
-import {
-	type KeyboardEventPossibleKey,
-	type KeyboardEventSupportedKey,
-	isSupportedKey,
-	normalizeOptionKeyCharacter,
-} from '$lib/constants/keyboard';
-import { IS_MACOS } from '$lib/constants/platform';
 import { on } from 'svelte/events';
 import type { Brand } from 'wellcrafted/brand';
 import { createTaggedError } from 'wellcrafted/error';
 import { Ok, type Result } from 'wellcrafted/result';
-import type { ShortcutTriggerState } from './_shortcut-trigger-state';
+import {
+	isSupportedKey,
+	type KeyboardEventPossibleKey,
+	type KeyboardEventSupportedKey,
+	normalizeOptionKeyCharacter,
+} from '$lib/constants/keyboard';
+import { IS_MACOS } from '$lib/constants/platform';
+import type { ShortcutEventState } from '$lib/commands';
 
 /**
  * Error type for local shortcut service operations.
@@ -27,9 +27,9 @@ export function createLocalShortcutManager() {
 	const shortcuts = new Map<
 		CommandId,
 		{
-			on: ShortcutTriggerState;
+			on: ShortcutEventState[];
 			keyCombination: KeyboardEventSupportedKey[];
-			callback: () => void;
+			callback: (state: ShortcutEventState) => void;
 		}
 	>();
 
@@ -110,9 +110,9 @@ export function createLocalShortcutManager() {
 					// Only trigger callback if shortcut not already active
 					// This is the key anti-spam mechanism: if the shortcut ID is already
 					// in activeShortcuts, we know it's been triggered and should not fire again
-					if (!activeShortcuts.has(id) && (on === 'Both' || on === 'Pressed')) {
+					if (!activeShortcuts.has(id) && on.includes('Pressed')) {
 						activeShortcuts.add(id); // Mark as active BEFORE calling callback
-						callback();
+						callback('Pressed');
 					}
 				}
 			});
@@ -151,9 +151,9 @@ export function createLocalShortcutManager() {
 					{ callback, keyCombination, on },
 				] of shortcuts.entries()) {
 					if (!arraysMatch(pressedKeys, keyCombination)) continue;
-					if (activeShortcuts.has(id) && (on === 'Both' || on === 'Released')) {
+					if (activeShortcuts.has(id) && on.includes('Released')) {
 						e.preventDefault();
-						callback();
+						callback('Released');
 						activeShortcuts.delete(id);
 					}
 				}
@@ -203,8 +203,8 @@ export function createLocalShortcutManager() {
 		}: {
 			id: CommandId;
 			keyCombination: KeyboardEventSupportedKey[];
-			callback: () => void;
-			on: ShortcutTriggerState;
+			callback: (state: ShortcutEventState) => void;
+			on: ShortcutEventState[];
 		}): Promise<Result<void, LocalShortcutServiceError>> {
 			shortcuts.set(id, { keyCombination, callback, on });
 			return Ok(undefined);

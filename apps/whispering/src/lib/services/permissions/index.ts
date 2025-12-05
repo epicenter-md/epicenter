@@ -1,7 +1,7 @@
-import { IS_MACOS } from '$lib/constants/platform';
 import { createTaggedError, extractErrorMessage } from 'wellcrafted/error';
 import type { Result } from 'wellcrafted/result';
 import { Ok, tryAsync } from 'wellcrafted/result';
+import { IS_MACOS } from '$lib/constants/platform';
 
 export const { PermissionsServiceError, PermissionsServiceErr } =
 	createTaggedError('PermissionsServiceError');

@@ -1,4 +1,4 @@
-# @repo/config
+# @epicenter/config
 
 Shared configuration files for Svelte applications in the Whispering monorepo.
 
@@ -15,7 +15,7 @@ This package centralizes these Svelte-specific configurations to ensure consiste
 
 ```bash
 # Add the config package and the tool binaries
-bun add -D @repo/config eslint prettier
+bun add -D @epicenter/config eslint prettier
 ```
 
 The config package includes all the necessary plugins and configurations as dependencies, so you only need to install the main ESLint and Prettier binaries.
@@ -24,7 +24,7 @@ The config package includes all the necessary plugins and configurations as depe
 
 ```js
 // eslint.config.js
-import { base, svelteConfig } from "@repo/config/eslint";
+import { base, svelteConfig } from "@epicenter/config/eslint";
 
 export default [...base, ...svelteConfig];
 ```
@@ -33,7 +33,7 @@ export default [...base, ...svelteConfig];
 
 ```ts
 // prettier.config.ts
-import { prettierConfig } from "@repo/config/prettier";
+import { prettierConfig } from "@epicenter/config/prettier";
 
 export default prettierConfig;
 ```

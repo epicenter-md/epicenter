@@ -1,10 +1,13 @@
-import type { CancelRecordingResult, WhisperingRecordingState } from '$lib/constants/audio';
 import { createTaggedError } from 'wellcrafted/error';
 import type { Result } from 'wellcrafted/result';
 import type {
+	CancelRecordingResult,
+	WhisperingRecordingState,
+} from '$lib/constants/audio';
+import type {
 	Device,
-	DeviceIdentifier,
 	DeviceAcquisitionOutcome,
+	DeviceIdentifier,
 	UpdateStatusMessageFn,
 } from '../types';
 
@@ -68,7 +71,9 @@ export type RecorderService = {
 	 * Get the current recorder state
 	 * Returns 'IDLE' if no recording is active, 'RECORDING' if recording is in progress
 	 */
-	getRecorderState(): Promise<Result<WhisperingRecordingState, RecorderServiceError>>;
+	getRecorderState(): Promise<
+		Result<WhisperingRecordingState, RecorderServiceError>
+	>;
 
 	/**
 	 * Enumerate available recording devices with their labels and identifiers

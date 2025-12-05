@@ -16,7 +16,7 @@ Epicenter is a monorepo containing multiple applications. The main application r
 
 1. **Clone the repository**
    ```bash
-   git clone https://github.com/epicenter-so/epicenter.git
+   git clone https://github.com/EpicenterHQ/epicenter.git
    cd epicenter
    ```
 
@@ -91,6 +91,59 @@ Currently, **Whispering** (`apps/whispering`) is the most mature application and
    ```bash
    git push origin feat/your-feature-name
    ```
+
+## Local Development: Testing the CLI
+
+If you're working on Epicenter's CLI (`packages/epicenter`), you can test it locally without publishing using `bun link`.
+
+### One-Time Setup
+
+Link the package globally from the package directory:
+
+```bash
+cd packages/epicenter
+bun link
+```
+
+This makes the `epicenter` command available globally on your system, pointing to your local development version.
+
+### Using the CLI
+
+Now you can use the `epicenter` command from any directory:
+
+```bash
+# From any example directory
+cd packages/epicenter/examples/basic-workspace
+epicenter --help
+epicenter blog createPost --title "Test Post" --category tech
+epicenter --port 3001
+```
+
+The CLI will use your local development version, so any changes you make to the CLI code will be reflected immediately.
+
+### Alternative: Local CLI Files
+
+Examples also include local `cli.ts` files that you can run directly:
+
+```bash
+cd packages/epicenter/examples/basic-workspace
+bun cli.ts --help
+bun cli.ts blog createPost --title "Test Post" --category tech
+```
+
+This approach is useful for:
+- Learning how to create a CLI programmatically
+- Testing without global installation
+- Understanding the CLI creation API
+
+### Unlinking
+
+When you're done testing, you can unlink the package:
+
+```bash
+cd packages/epicenter
+bun unlink
+```
 
 ## Coding Standards
 

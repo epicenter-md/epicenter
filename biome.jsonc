@@ -1,0 +1,101 @@
+{
+	"$schema": "https://biomejs.dev/schemas/2.3.8/schema.json",
+	"vcs": {
+		"enabled": true,
+		"clientKind": "git",
+		"useIgnoreFile": true
+	},
+	"css": {
+		"parser": {
+			"cssModules": false,
+			"tailwindDirectives": true
+		}
+	},
+	"files": {
+		"ignoreUnknown": true,
+		"includes": [
+			"**",
+			"!.conductor",
+			"!apps/whispering/src-tauri",
+			"!**/.svelte-kit",
+			"!**/.astro",
+			"!**/.turbo",
+			"!**/.plasmo",
+			"!**/node_modules",
+			"!**/build",
+			"!**/dist",
+			"!package-lock.json",
+			"!pnpm-lock.yaml",
+			"!yarn.lock",
+			"!.DS_Store",
+			"!**/*.svelte",
+			"!**/*.astro",
+			"!docs/articles"
+		]
+	},
+	"formatter": {
+		"enabled": true,
+		"indentStyle": "tab"
+	},
+	"assist": {
+		"actions": {
+			"source": {
+				"organizeImports": {
+					"level": "on",
+					"options": {
+						"identifierOrder": "natural"
+					}
+				}
+			}
+		}
+	},
+	"linter": {
+		"enabled": true,
+		"rules": {
+			"recommended": true,
+			"nursery": {
+				"useSortedClasses": "warn"
+			}
+		}
+	},
+	"javascript": {
+		"formatter": {
+			"quoteStyle": "single"
+		}
+	},
+	"overrides": [
+		{
+			// https://biomejs.dev/internals/language-support/#linting-html-ish-languages
+			// We can still benefit from Biome's linting in Svelte files, but it currently doesn't read templating/markup
+			"includes": ["*.svelte"],
+			"linter": {
+				"rules": {
+					"style": {
+						// Runes are flagged as "const"-able
+						"useConst": "off",
+						// Biome doesn't enforce unused imports, but it *will* flag imports as "type-only"-able
+						"useImportType": "off"
+					}
+				}
+			}
+		},
+		{
+			// https://biomejs.dev/internals/language-support/
+			// Also, keep this synced with .vscode/settings.json & .prettierignore
+			// Biome _does_ support HTML, but we're just going to use Prettier until Svelte/Astro is supported
+			"includes": [
+				"**/*.html",
+				"**/*.vue",
+				"**/*.svelte",
+				"**/*.astro",
+				"**/*.yaml",
+				"**/*.yml",
+				"**/*.md",
+				"**/*.mdx"
+			],
+			"formatter": {
+				"enabled": false
+			}
+		}
+	]
+}

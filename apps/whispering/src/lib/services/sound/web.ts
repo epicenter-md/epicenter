@@ -1,5 +1,5 @@
 import { Ok } from 'wellcrafted/result';
-// import { extension } from '@repo/extension';
+// import { extension } from '@epicenter/extension';
 import type { PlaySoundService } from '.';
 import { audioElements } from './assets';
 

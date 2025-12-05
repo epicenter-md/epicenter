@@ -2,15 +2,21 @@
 	import { cn } from '#/utils/utils.js';
 	import { Command as CommandPrimitive } from 'bits-ui';
 
+	export type CommandRootApi = CommandPrimitive.Root;
+
 	let {
-		class: className,
+		api = $bindable(null),
 		ref = $bindable(null),
 		value = $bindable(''),
+		class: className,
 		...restProps
-	}: CommandPrimitive.RootProps = $props();
+	}: CommandPrimitive.RootProps & {
+		api?: CommandRootApi | null;
+	} = $props();
 </script>
 
 <CommandPrimitive.Root
+	bind:this={api}
 	bind:value
 	bind:ref
 	data-slot="command"

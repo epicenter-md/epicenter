@@ -1,3 +1,4 @@
+import type { StandardSchemaV1 } from '@standard-schema/spec';
 import { extractErrorMessage } from 'wellcrafted/error';
 import { Err, tryAsync } from 'wellcrafted/result';
 import type { HttpService } from '.';
@@ -34,7 +35,13 @@ export function createHttpServiceWeb(): HttpService {
 			const parseResult = await tryAsync({
 				try: async () => {
 					const json = await response.json();
-					return schema.parse(json);
+					const result = await schema['~standard'].validate(json);
+					if (result.issues) {
+						throw new Error(
+							result.issues.map((issue) => issue.message).join(', '),
+						);
+					}
+					return result.value as StandardSchemaV1.InferOutput<typeof schema>;
 				},
 				catch: (error) =>
 					ParseErr({

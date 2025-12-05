@@ -1,9 +1,13 @@
 {
-	"name": "@repo/constants",
+	"name": "@epicenter/constants",
+	"private": true,
 	"version": "0.0.1",
 	"type": "module",
 	"imports": {
-		"#*": ["./src/*.ts", "./src/*/index.ts"]
+		"#*": [
+			"./src/*.ts",
+			"./src/*/index.ts"
+		]
 	},
 	"exports": {
 		"./vite": "./src/vite.ts",
@@ -15,8 +19,11 @@
 		"arktype": "catalog:"
 	},
 	"devDependencies": {
-		"@types/node": "^20.11.5",
-		"typescript": "^5.8.3",
+		"@types/node": "catalog:",
+		"typescript": "catalog:",
 		"vite": "catalog:"
+	},
+	"scripts": {
+		"check": "tsc --noEmit"
 	}
 }

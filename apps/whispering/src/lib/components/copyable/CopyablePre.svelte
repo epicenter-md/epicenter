@@ -18,7 +18,7 @@
 </script>
 
 <script lang="ts">
-	import { cn } from '@repo/ui/utils';
+	import { cn } from '@epicenter/ui/utils';
 	import { ClipboardIcon } from '$lib/components/icons';
 	import CopyToClipboardButton from './CopyToClipboardButton.svelte';
 
@@ -37,7 +37,7 @@
 {copyableText}
 	<CopyToClipboardButton
 		class="absolute right-4 top-1/2 -translate-y-1/2"
-		contentDescription={variant === 'code' ? 'code' : 'transcribed text'}
+		contentDescription={variant === 'code' ? 'code' : 'transcript'}
 		textToCopy={copyableText}>
 		<ClipboardIcon class="size-4" />
 	</CopyToClipboardButton>

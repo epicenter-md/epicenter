@@ -1,4 +1,4 @@
-# @repo/svelte-utils
+# @epicenter/svelte-utils
 
 Svelte utilities for synchronizing state with external systems.
 
@@ -13,7 +13,7 @@ This package is part of the Whispering monorepo and is used internally. To use i
 ```json
 {
   "dependencies": {
-    "@repo/svelte-utils": "workspace:*"
+    "@epicenter/svelte-utils": "workspace:*"
   }
 }
 ```
@@ -35,7 +35,7 @@ Creates a persisted state object tied to local storage, accessible through `.val
 #### Usage
 
 ```typescript
-import { createPersistedState } from '@repo/svelte-utils';
+import { createPersistedState } from '@epicenter/svelte-utils';
 import { z } from 'zod';
 
 // Define your schema

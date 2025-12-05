@@ -1,6 +1,3 @@
-import { goto } from '$app/navigation';
-// import { extension } from '@repo/extension';
-import type { WhisperingRecordingState } from '$lib/constants/audio';
 import { Menu, MenuItem } from '@tauri-apps/api/menu';
 import { resolveResource } from '@tauri-apps/api/path';
 import { TrayIcon } from '@tauri-apps/api/tray';
@@ -9,6 +6,9 @@ import { exit } from '@tauri-apps/plugin-process';
 import { createTaggedError } from 'wellcrafted/error';
 // import { commandCallbacks } from '$lib/commands';
 import { type Err, Ok, tryAsync } from 'wellcrafted/result';
+import { goto } from '$app/navigation';
+// import { extension } from '@epicenter/extension';
+import type { WhisperingRecordingState } from '$lib/constants/audio';
 
 const TRAY_ID = 'whispering-tray';
 
@@ -25,7 +25,7 @@ type SetTrayIconService = {
 
 export function createTrayIconWebService(): SetTrayIconService {
 	return {
-		setTrayIcon: async (icon: WhisperingRecordingState) => {
+		setTrayIcon: async (_icon: WhisperingRecordingState) => {
 			// const { error: setRecorderStateError } = await extension.setRecorderState(
 			// 	{ recorderState: icon },
 			// );

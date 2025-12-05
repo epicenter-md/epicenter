@@ -1,7 +1,7 @@
 import {
 	TRANSCRIPTION_SERVICES,
 	type TranscriptionService,
-} from '$lib/constants/transcription';
+} from '$lib/services/transcription/registry';
 import { settings } from '$lib/stores/settings.svelte';
 
 /**

@@ -1,5 +1,5 @@
-import { defineConfig } from 'drizzle-kit';
 import { fileURLToPath } from 'node:url';
+import { defineConfig } from 'drizzle-kit';
 
 // Resolve paths relative to this module so they work regardless of process CWD
 // Migrations live at the adapter root (../migrations), not inside src/

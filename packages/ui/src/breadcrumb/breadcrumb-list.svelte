@@ -1,12 +1,11 @@
 <script lang="ts">
 	import type { HTMLOlAttributes } from 'svelte/elements';
-
 	import { cn, type WithElementRef } from '#/utils/utils.js';
 
 	let {
-		children,
-		class: className,
 		ref = $bindable(null),
+		class: className,
+		children,
 		...restProps
 	}: WithElementRef<HTMLOlAttributes> = $props();
 </script>

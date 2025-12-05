@@ -10,9 +10,9 @@
 		variants: {
 			variant: {
 				default: 'bg-card',
-				secondary: 'bg-secondary/50 border-transparent'
-			}
-		}
+				secondary: 'bg-secondary/50 border-transparent',
+			},
+		},
 	});
 
 	type Variant = VariantProps<typeof style>['variant'];
@@ -43,7 +43,7 @@
 		command,
 		agents = ['npm', 'pnpm', 'yarn', 'bun'],
 		args,
-		agent = $bindable('npm')
+		agent = $bindable('npm'),
 	}: PMCommandProps = $props();
 
 	const cmd = $derived(resolveCommand(agent, command, args));
@@ -52,9 +52,13 @@
 </script>
 
 <div class={cn(style({ variant }), className)}>
-	<div class="border-border flex place-items-center justify-between gap-2 border-b py-1 pr-2">
+	<div
+		class="border-border flex place-items-center justify-between gap-2 border-b py-1 pr-2"
+	>
 		<div class="flex place-items-center gap-2 px-2">
-			<div class="bg-foreground flex size-4 place-items-center justify-center opacity-50">
+			<div
+				class="bg-foreground flex size-4 place-items-center justify-center opacity-50"
+			>
 				<TerminalIcon class="text-background size-3" />
 			</div>
 			<Tabs.Root bind:value={agent}>
@@ -71,7 +75,11 @@
 			<Tooltip.Root>
 				<Tooltip.Trigger>
 					{#snippet child({ props })}
-						<CopyButton {...props} text={commandText} class="size-6 [&_svg]:size-3">
+						<CopyButton
+							{...props}
+							text={commandText}
+							class="size-6 [&_svg]:size-3"
+						>
 							{#snippet icon()}
 								<ClipboardIcon />
 							{/snippet}
@@ -83,7 +91,9 @@
 		</Tooltip.Provider>
 	</div>
 	<div class="no-scrollbar overflow-x-auto p-3">
-		<span class="text-muted-foreground font-mono text-sm leading-none font-light text-nowrap">
+		<span
+			class="text-muted-foreground font-mono text-sm leading-none font-light text-nowrap"
+		>
 			{commandText}
 		</span>
 	</div>

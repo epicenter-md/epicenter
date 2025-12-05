@@ -1,25 +1,23 @@
+import { createPersistedState } from '@epicenter/svelte-utils';
+import { nanoid } from 'nanoid/non-secure';
+import { extractErrorMessage } from 'wellcrafted/error';
+import { Ok, partitionResults, type Result } from 'wellcrafted/result';
 import { commands } from '$lib/commands';
+import type { RecordingMode } from '$lib/constants/audio';
 import { rpc } from '$lib/query';
+import { vadRecorder } from '$lib/query/vad.svelte';
+import { recorderService } from '$lib/query/recorder';
+import type { RecorderServiceError } from '$lib/services/recorder';
+import type { WhisperingError } from '$lib/result';
 import {
-	type Settings,
 	getDefaultSettings,
 	parseStoredSettings,
-	settingsSchema,
+	Settings,
 } from '$lib/settings/settings';
-import { enumerateDevices } from '$lib/services/device-stream';
-import { createPersistedState } from '@repo/svelte-utils';
 import {
 	syncGlobalShortcutsWithSettings,
 	syncLocalShortcutsWithSettings,
-} from '../../routes/+layout/register-commands';
-import { extractErrorMessage } from 'wellcrafted/error';
-import * as services from '$lib/services';
-import { recorderService } from '$lib/query/recorder';
-import type { RecordingMode } from '$lib/constants/audio';
-import type { RecorderServiceError } from '$lib/services/recorder';
-import type { VadRecorderServiceError } from '$lib/services/vad-recorder';
-import { nanoid } from 'nanoid/non-secure';
-import { Ok, partitionResults, type Result } from 'wellcrafted/result';
+} from '$routes/(app)/_layout-utils/register-commands';
 
 /**
  * Encapsulated settings object with controlled access.
@@ -29,7 +27,7 @@ export const settings = (() => {
 	// Private settings instance
 	const _settings = createPersistedState({
 		key: 'whispering-settings',
-		schema: settingsSchema,
+		schema: Settings,
 		onParseError: (error) => {
 			// For empty storage, return defaults
 			if (error.type === 'storage_empty') {
@@ -195,7 +193,7 @@ async function stopAllRecordingModesExcept(modeToKeep: RecordingMode) {
 		},
 		{
 			mode: 'vad' as const,
-			isActive: () => services.vad.getVadState() !== 'IDLE',
+			isActive: () => vadRecorder.state !== 'IDLE',
 			stop: () => rpc.commands.stopVadRecording.execute(),
 		},
 	] satisfies {
@@ -218,7 +216,7 @@ async function stopAllRecordingModesExcept(modeToKeep: RecordingMode) {
 	// Execute all stops in parallel
 	const results: Result<
 		Blob | undefined,
-		RecorderServiceError | VadRecorderServiceError
+		RecorderServiceError | WhisperingError
 	>[] = await Promise.all(stopPromises);
 
 	// Partition results into successes and errors

@@ -1,5 +1,5 @@
 {
-	"name": "@repo/svelte-utils",
+	"name": "@epicenter/svelte-utils",
 	"version": "0.0.1",
 	"private": true,
 	"type": "module",
@@ -13,8 +13,11 @@
 	},
 	"devDependencies": {
 		"@standard-schema/spec": "^1.0.0-beta.3",
-		"svelte": "5.14.4",
-		"@types/node": "^22.15.32",
-		"typescript": "^5.8.3"
+		"svelte": "catalog:",
+		"@types/node": "catalog:",
+		"typescript": "catalog:"
+	},
+	"scripts": {
+		"check": "tsc --noEmit"
 	}
 }

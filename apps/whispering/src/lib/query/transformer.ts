@@ -1,6 +1,8 @@
+import { createTaggedError, extractErrorMessage } from 'wellcrafted/error';
+import { Err, isErr, Ok, type Result } from 'wellcrafted/result';
 import {
-	WhisperingErr,
 	fromTaggedErr,
+	WhisperingErr,
 	type WhisperingError,
 	type WhisperingResult,
 } from '$lib/result';
@@ -12,12 +14,9 @@ import type {
 	TransformationStep,
 } from '$lib/services/db';
 import { settings } from '$lib/stores/settings.svelte';
-import { createTaggedError, extractErrorMessage } from 'wellcrafted/error';
-import { Err, Ok, type Result, isErr } from 'wellcrafted/result';
-import { interpolateTemplate, asTemplateString, type TemplateString } from '$lib/utils/template';
+import { asTemplateString, interpolateTemplate } from '$lib/utils/template';
 import { defineMutation, queryClient } from './_client';
-import { transformationRunKeys } from './transformation-runs';
-import { transformationsKeys } from './transformations';
+import { dbKeys } from './db';
 
 const { TransformServiceError, TransformServiceErr } = createTaggedError(
 	'TransformServiceError',
@@ -76,12 +75,10 @@ export const transformer = {
 			const transformationOutputResult = await getTransformationOutput();
 
 			queryClient.invalidateQueries({
-				queryKey: transformationRunKeys.runsByTransformationId(
-					transformation.id,
-				),
+				queryKey: dbKeys.runs.byTransformationId(transformation.id),
 			});
 			queryClient.invalidateQueries({
-				queryKey: transformationsKeys.byId(transformation.id),
+				queryKey: dbKeys.transformations.byId(transformation.id),
 			});
 
 			return transformationOutputResult;
@@ -103,7 +100,7 @@ export const transformer = {
 			>
 		> => {
 			const { data: recording, error: getRecordingError } =
-				await services.db.getRecordingById(recordingId);
+				await services.db.recordings.getById(recordingId);
 			if (getRecordingError || !recording) {
 				return WhisperingErr({
 					title: '⚠️ Recording not found',
@@ -127,15 +124,13 @@ export const transformer = {
 				});
 
 			queryClient.invalidateQueries({
-				queryKey: transformationRunKeys.runsByRecordingId(recordingId),
+				queryKey: dbKeys.runs.byRecordingId(recordingId),
 			});
 			queryClient.invalidateQueries({
-				queryKey: transformationRunKeys.runsByTransformationId(
-					transformation.id,
-				),
+				queryKey: dbKeys.runs.byTransformationId(transformation.id),
 			});
 			queryClient.invalidateQueries({
-				queryKey: transformationsKeys.byId(transformation.id),
+				queryKey: dbKeys.transformations.byId(transformation.id),
 			});
 
 			return Ok(transformationRun);
@@ -172,11 +167,11 @@ async function handleStep({
 			const provider = step['prompt_transform.inference.provider'];
 			const systemPrompt = interpolateTemplate(
 				asTemplateString(step['prompt_transform.systemPromptTemplate']),
-				{ input }
+				{ input },
 			);
 			const userPrompt = interpolateTemplate(
 				asTemplateString(step['prompt_transform.userPromptTemplate']),
-				{ input }
+				{ input },
 			);
 
 			switch (provider) {
@@ -246,24 +241,56 @@ async function handleStep({
 					return Ok(completion);
 				}
 
-				   case 'OpenRouter': {
-					   const { data: completionResponse, error: completionError } =
-						   await services.completions.openrouter.complete({
-							   apiKey: settings.value['apiKeys.openrouter'],
-							   model: step['prompt_transform.inference.provider.OpenRouter.model'],
-							   systemPrompt,
-							   userPrompt,
-						   });
+				case 'OpenRouter': {
+					const { data: completionResponse, error: completionError } =
+						await services.completions.openrouter.complete({
+							apiKey: settings.value['apiKeys.openrouter'],
+							model:
+								step['prompt_transform.inference.provider.OpenRouter.model'],
+							systemPrompt,
+							userPrompt,
+						});
 
-					   if (completionError) {
-						   return Err(completionError.message);
-					   }
+					if (completionError) {
+						return Err(completionError.message);
+					}
 
-					   return Ok(completionResponse);
-				   }
+					return Ok(completionResponse);
+				}
 
-				   default:
-					   return Err(`Unsupported provider: ${provider}`);
+				case 'Custom': {
+					const model =
+						step['prompt_transform.inference.provider.Custom.model']?.trim();
+
+					// baseUrl is per-step because local LLM setups often have multiple endpoints
+					// (Ollama, LM Studio, llama.cpp) running on different ports
+					const stepBaseUrl =
+						step['prompt_transform.inference.provider.Custom.baseUrl']?.trim();
+					// Fall back to global default from Settings → API Keys → Custom section
+					const defaultBaseUrl =
+						settings.value['completion.custom.baseUrl']?.trim();
+					// Use || so empty string falls back to next value (cleared field = use default)
+					const baseUrl = stepBaseUrl || defaultBaseUrl || '';
+
+					// API key is global because most local endpoints don't require auth
+					const { data: completionResponse, error: completionError } =
+						await services.completions.custom.complete({
+							apiKey: settings.value['apiKeys.custom'],
+							model,
+							baseUrl,
+							systemPrompt,
+							userPrompt,
+						});
+
+					if (completionError) {
+						return Err(completionError.message);
+					}
+
+					return Ok(completionResponse);
+				}
+
+				default:
+					return Err(`Unsupported provider: ${provider}`);
 			}
 		}
 
@@ -304,7 +331,7 @@ async function runTransformation({
 	}
 
 	const { data: transformationRun, error: createTransformationRunError } =
-		await services.db.createTransformationRun({
+		await services.db.runs.create({
 			transformationId: transformation.id,
 			recordingId,
 			input,
@@ -328,12 +355,9 @@ async function runTransformation({
 		const {
 			data: newTransformationStepRun,
 			error: addTransformationStepRunError,
-		} = await services.db.addTransformationStep({
-			run: transformationRun,
-			step: {
-				id: step.id,
-				input: currentInput,
-			},
+		} = await services.db.runs.addStep(transformationRun, {
+			id: step.id,
+			input: currentInput,
 		});
 
 		if (addTransformationStepRunError)
@@ -357,11 +381,11 @@ async function runTransformation({
 			const {
 				data: markedFailedTransformationRun,
 				error: markTransformationRunAndRunStepAsFailedError,
-			} = await services.db.failTransformationAtStepRun({
-				run: transformationRun,
-				stepRunId: newTransformationStepRun.id,
-				error: handleStepResult.error,
-			});
+			} = await services.db.runs.failStep(
+				transformationRun,
+				newTransformationStepRun.id,
+				handleStepResult.error,
+			);
 			if (markTransformationRunAndRunStepAsFailedError)
 				return TransformServiceErr({
 					message: 'Unable to save failed transformation step result',
@@ -379,11 +403,11 @@ async function runTransformation({
 		const handleStepOutput = handleStepResult.data;
 
 		const { error: markTransformationRunStepAsCompletedError } =
-			await services.db.completeTransformationStepRun({
-				run: transformationRun,
-				stepRunId: newTransformationStepRun.id,
-				output: handleStepOutput,
-			});
+			await services.db.runs.completeStep(
+				transformationRun,
+				newTransformationStepRun.id,
+				handleStepOutput,
+			);
 
 		if (markTransformationRunStepAsCompletedError)
 			return TransformServiceErr({
@@ -403,10 +427,7 @@ async function runTransformation({
 	const {
 		data: markedCompletedTransformationRun,
 		error: markTransformationRunAsCompletedError,
-	} = await services.db.completeTransformation({
-		run: transformationRun,
-		output: currentInput,
-	});
+	} = await services.db.runs.complete(transformationRun, currentInput);
 
 	if (markTransformationRunAsCompletedError)
 		return TransformServiceErr({

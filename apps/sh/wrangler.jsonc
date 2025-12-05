@@ -1,9 +1,0 @@
-{
-	"$schema": "node_modules/wrangler/config-schema.json",
-	"name": "epicenter-sh",
-	"compatibility_date": "2025-07-19",
-	"pages_build_output_dir": "build",
-	"observability": {
-		"enabled": true,
-	},
-}

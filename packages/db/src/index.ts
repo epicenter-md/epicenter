@@ -1,1 +1,0 @@
-export { db } from './client';

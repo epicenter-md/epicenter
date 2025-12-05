@@ -1,6 +1,7 @@
-
+use log::{info, warn};
 use tauri::Manager;
 use tauri_plugin_aptabase::EventTracker;
+use tauri_plugin_log::{Target, TargetKind};
 
 pub mod recorder;
 use recorder::commands::{
@@ -8,47 +9,112 @@ use recorder::commands::{
     get_current_recording_id, init_recording_session, start_recording, stop_recording, AppData,
 };
 
-pub mod whisper_cpp;
-use whisper_cpp::transcribe_with_whisper_cpp;
+pub mod transcription;
+use transcription::{transcribe_audio_parakeet, transcribe_audio_whisper, ModelManager};
 
 pub mod windows_path;
 use windows_path::fix_windows_path;
 
+pub mod command;
+use command::{execute_command, spawn_command};
+
+pub mod markdown_reader;
+use markdown_reader::{bulk_delete_files, count_markdown_files, read_markdown_files};
 pub mod graceful_shutdown;
 use graceful_shutdown::send_sigint;
-
-#[cfg(target_os = "macos")]
+// macOS media control (functions are defined for all targets with internal cfg handling)
 pub mod macos_media;
-#[cfg(target_os = "macos")]
-use macos_media::{macos_pause_active_media, macos_resume_media};
-
-#[cfg(not(target_os = "macos"))]
-pub mod macos_media;
-#[cfg(not(target_os = "macos"))]
 use macos_media::{macos_pause_active_media, macos_resume_media};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 #[tokio::main]
 pub async fn run() {
+    // Set up panic hook to capture crash information before the app exits.
+    // The previous hook is preserved so default panic reporting still occurs.
+    let previous_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |panic_info| {
+        use std::backtrace::Backtrace;
+        let payload = panic_info.payload();
+        let location = panic_info
+            .location()
+            .map(|l| format!("{}:{}:{}", l.file(), l.line(), l.column()))
+            .unwrap_or_else(|| "unknown location".to_string());
+        let thread_name = std::thread::current()
+            .name()
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| "unnamed thread".to_string());
+
+        let message = if let Some(s) = payload.downcast_ref::<&str>() {
+            s.to_string()
+        } else if let Some(s) = payload.downcast_ref::<String>() {
+            s.clone()
+        } else {
+            "Unknown panic payload".to_string()
+        };
+
+        let backtrace = Backtrace::force_capture();
+
+        eprintln!(
+            "[panic] thread={} location={} message={}",
+            thread_name, location, message
+        );
+        eprintln!("{}", backtrace);
+
+        // Write crash log to temp directory (works on all platforms)
+        {
+            use std::fs::OpenOptions;
+            use std::io::Write;
+            let crash_log_path = std::env::temp_dir().join("whispering-crash.log");
+            if let Ok(mut file) = OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(&crash_log_path)
+            {
+                let timestamp = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_secs())
+                    .unwrap_or(0);
+                let _ = writeln!(
+                    file,
+                    "[{}] thread={} location={} message={}",
+                    timestamp, thread_name, location, message
+                );
+                let _ = writeln!(file, "{}", backtrace);
+                let _ = writeln!(file, "-----");
+            }
+        }
+
+        previous_hook(panic_info);
+    }));
+
     // Fix PATH environment for GUI applications on macOS and Linux
     // This ensures commands like ffmpeg installed via Homebrew are accessible
     let _ = fix_path_env::fix();
-    
+
     // Fix Windows PATH inheritance bug
     // This ensures child processes can find ffmpeg on Windows
     fix_windows_path();
-    
-    let mut builder = tauri::Builder::default();
+
+    let log_plugin = tauri_plugin_log::Builder::new()
+        .level(log::LevelFilter::Info)
+        .level_for("whispering::transcription", log::LevelFilter::Debug)
+        .target(Target::new(TargetKind::Stdout))
+        .target(Target::new(TargetKind::LogDir {
+            file_name: Some("whispering".to_string()),
+        }))
+        .build();
+
+    let mut builder = tauri::Builder::default().plugin(log_plugin);
 
     // Try to get APTABASE_KEY from environment, use empty string if not found
     let aptabase_key = option_env!("APTABASE_KEY").unwrap_or("");
 
     // Only add Aptabase plugin if key is not empty
     if !aptabase_key.is_empty() {
-        println!("Aptabase analytics enabled");
+        info!("Aptabase analytics enabled");
         builder = builder.plugin(tauri_plugin_aptabase::Builder::new(aptabase_key).build());
     } else {
-        println!("Warning: APTABASE_KEY not found, analytics disabled");
+        warn!("APTABASE_KEY not found, analytics disabled");
     }
 
     builder = builder
@@ -64,7 +130,8 @@ pub async fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_opener::init())
-        .manage(AppData::new());
+        .manage(AppData::new())
+        .manage(ModelManager::new());
 
     #[cfg(desktop)]
     {
@@ -79,6 +146,7 @@ pub async fn run() {
     // Register command handlers (same for all platforms now)
     let builder = builder.invoke_handler(tauri::generate_handler![
         write_text,
+        simulate_enter_keystroke,
         // Audio recorder commands
         get_current_recording_id,
         enumerate_recording_devices,
@@ -87,9 +155,16 @@ pub async fn run() {
         start_recording,
         stop_recording,
         cancel_recording,
-        // Whisper transcription
-        transcribe_with_whisper_cpp,
+        transcribe_audio_whisper,
+        transcribe_audio_parakeet,
         send_sigint,
+        // Command execution (prevents console window flash on Windows)
+        execute_command,
+        spawn_command,
+        // Filesystem utilities
+        read_markdown_files,
+        count_markdown_files,
+        bulk_delete_files,
         // macOS media control
         macos_pause_active_media,
         macos_resume_media,
@@ -119,10 +194,6 @@ pub async fn run() {
 use enigo::{Direction, Enigo, Key, Keyboard, Settings};
 use tauri_plugin_clipboard_manager::ClipboardExt;
 
-// macOS auto pause/resume media stub: guarded by future settings flag.
-// Implementation TBD; this branch intentionally adds no behavior change yet.
-// We will add a Tauri command and UI toggle in follow-ups.
-
 /// Writes text at the cursor position using the clipboard sandwich technique
 ///
 /// This method preserves the user's existing clipboard content by:
@@ -148,7 +219,7 @@ async fn write_text(app: tauri::AppHandle, text: String) -> Result<(), String> {
 
     // 3. Simulate paste operation using virtual key codes (layout-independent)
     let mut enigo = Enigo::new(&Settings::default()).map_err(|e| e.to_string())?;
-    
+
     // Use virtual key codes for V to work with any keyboard layout
     #[cfg(target_os = "macos")]
     let (modifier, v_key) = (Key::Meta, Key::Other(9)); // Virtual key code for V on macOS
@@ -164,7 +235,7 @@ async fn write_text(app: tauri::AppHandle, text: String) -> Result<(), String> {
     enigo
         .key(v_key, Direction::Press)
         .map_err(|e| format!("Failed to press V key: {}", e))?;
-    
+
     // Release V + modifier (in reverse order for proper cleanup)
     enigo
         .key(v_key, Direction::Release)
@@ -186,3 +257,18 @@ async fn write_text(app: tauri::AppHandle, text: String) -> Result<(), String> {
     Ok(())
 }
 
+/// Simulates pressing the Enter/Return key
+///
+/// This is useful for automatically submitting text in chat applications
+/// after transcription has been pasted.
+#[tauri::command]
+async fn simulate_enter_keystroke() -> Result<(), String> {
+    let mut enigo = Enigo::new(&Settings::default()).map_err(|e| e.to_string())?;
+
+    // Use Direction::Click for a combined press+release action
+    enigo
+        .key(Key::Return, Direction::Click)
+        .map_err(|e| format!("Failed to simulate Enter key: {}", e))?;
+
+    Ok(())
+}

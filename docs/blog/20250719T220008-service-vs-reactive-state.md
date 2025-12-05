@@ -84,7 +84,7 @@ Here's the same thing with `createPersistedState`:
 
 ```typescript
 // workspaces.svelte.ts
-import { createPersistedState } from '@repo/svelte-utils';
+import { createPersistedState } from '@epicenter/svelte-utils';
 import { z } from 'zod';
 
 const workspacesSchema = z.array(z.object({

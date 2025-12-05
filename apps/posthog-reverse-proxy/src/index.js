@@ -29,7 +29,7 @@ async function retrieveStatic(request, pathname, ctx) {
 }
 
 export default {
-	async fetch(request, env, ctx) {
+	async fetch(request, _env, ctx) {
 		return handleRequest(request, ctx);
 	},
 };

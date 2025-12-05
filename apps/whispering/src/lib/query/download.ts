@@ -1,8 +1,8 @@
+import type { Result } from 'wellcrafted/result';
 import { WhisperingErr, type WhisperingError } from '$lib/result';
 import * as services from '$lib/services';
 import type { Recording } from '$lib/services/db';
 import type { DownloadServiceError } from '$lib/services/download';
-import type { Result } from 'wellcrafted/result';
 import { defineMutation } from './_client';
 
 export const download = {
@@ -11,16 +11,20 @@ export const download = {
 		resultMutationFn: async (
 			recording: Recording,
 		): Promise<Result<void, WhisperingError | DownloadServiceError>> => {
-			if (!recording.blob) {
+			// Fetch audio blob by ID
+			const { data: audioBlob, error: getAudioBlobError } =
+				await services.db.recordings.getAudioBlob(recording.id);
+
+			if (getAudioBlobError) {
 				return WhisperingErr({
-					title: '⚠️ Recording blob not found',
-					description: "Your recording doesn't have a blob to download.",
+					title: '⚠️ Failed to fetch audio',
+					description: `Unable to load audio for recording: ${getAudioBlobError.message}`,
 				});
 			}
 
 			return await services.download.downloadBlob({
 				name: `whispering_recording_${recording.id}`,
-				blob: recording.blob,
+				blob: audioBlob,
 			});
 		},
 	}),

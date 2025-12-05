@@ -1,4 +1,4 @@
-import { APPS } from '@repo/constants/vite';
+import { APPS } from '@epicenter/constants/vite';
 
 /**
  * URL and pathname constants for the Whispering application

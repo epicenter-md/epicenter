@@ -1,11 +1,4 @@
 import {
-	ACCELERATOR_KEY_CODES,
-	ACCELERATOR_MODIFIER_KEYS,
-	type AcceleratorKeyCode,
-	type AcceleratorModifier,
-	type KeyboardEventSupportedKey,
-} from '$lib/constants/keyboard';
-import {
 	isRegistered as tauriIsRegistered,
 	register as tauriRegister,
 	unregister as tauriUnregister,
@@ -15,7 +8,14 @@ import * as os from '@tauri-apps/plugin-os';
 import type { Brand } from 'wellcrafted/brand';
 import { createTaggedError, extractErrorMessage } from 'wellcrafted/error';
 import { Err, Ok, type Result, tryAsync } from 'wellcrafted/result';
-import type { ShortcutTriggerState } from './_shortcut-trigger-state';
+import {
+	ACCELERATOR_KEY_CODES,
+	ACCELERATOR_MODIFIER_KEYS,
+	type AcceleratorKeyCode,
+	type AcceleratorModifier,
+	type KeyboardEventSupportedKey,
+} from '$lib/constants/keyboard';
+import type { ShortcutEventState } from '$lib/commands';
 
 const { InvalidAcceleratorError, InvalidAcceleratorErr } = createTaggedError(
 	'InvalidAcceleratorError',
@@ -45,8 +45,8 @@ export function createGlobalShortcutManager() {
 			on,
 		}: {
 			accelerator: Accelerator;
-			callback: () => void;
-			on: ShortcutTriggerState;
+			callback: (state: ShortcutEventState) => void;
+			on: ShortcutEventState[];
 		}): Promise<
 			Result<void, InvalidAcceleratorError | GlobalShortcutServiceError>
 		> {
@@ -64,17 +64,8 @@ export function createGlobalShortcutManager() {
 			const { error: registerError } = await tryAsync({
 				try: () =>
 					tauriRegister(accelerator, (event) => {
-						if (on === 'Both') {
-							callback();
-							return;
-						}
-						if (on === 'Pressed' && event.state === 'Pressed') {
-							callback();
-							return;
-						}
-						if (on === 'Released' && event.state === 'Released') {
-							callback();
-							return;
+						if (on.includes(event.state)) {
+							callback(event.state);
 						}
 					}),
 				catch: (error) =>
@@ -216,7 +207,7 @@ export function pressedKeysToTauriAccelerator(
 	const sortedModifiers = sortModifiers(modifiers);
 
 	// Build accelerator
-	const accelerator = [...sortedModifiers, keyCodes[0]].join(
+	const accelerator = [...sortedModifiers, keyCodes.at(0)].join(
 		'+',
 	) as Accelerator;
 

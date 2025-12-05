@@ -10,7 +10,7 @@ Drag and drop any audio/video file for transcription with your model of choice.
 
 ## Tweet 2
 
-GitHub: https://github.com/epicenter-so/epicenter
+GitHub: https://github.com/EpicenterHQ/epicenter
 
 ## Tweet 3
 

@@ -1,4 +1,5 @@
 export type { FfmpegService } from './types';
+
 import { createFfmpegService } from './desktop';
 import { createFfmpegServiceWeb } from './web';
 

@@ -1,5 +1,5 @@
-import { unzipSync } from 'fflate';
 import { parse as csvParse } from 'csv-parse';
+import { unzipSync } from 'fflate';
 import type { ParsedRedditExport } from './index';
 
 /**

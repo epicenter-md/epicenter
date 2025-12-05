@@ -2,7 +2,7 @@ use std::fs::File;
 use std::io::{self, BufWriter, Seek, SeekFrom, Write};
 use std::path::PathBuf;
 use std::time::Instant;
-use tracing::{debug, info};
+use log::{debug, info};
 
 /// WAV file writer that supports progressive writing with header updates
 pub struct WavWriter {
@@ -204,7 +204,7 @@ impl Drop for WavWriter {
         // Ensure headers are updated when the writer is dropped
         if let Err(e) = self.finalize() {
             // Log error but don't panic in drop
-            tracing::error!("Failed to finalize WAV file on drop: {}", e);
+            log::error!("Failed to finalize WAV file on drop: {}", e);
         }
     }
 }

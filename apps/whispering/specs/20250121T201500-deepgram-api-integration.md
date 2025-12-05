@@ -34,7 +34,7 @@ export const HttpServiceLive = window.__TAURI_INTERNALS__
     : WebHttpService;
 ```
 
-#### 2. Deepgram Service (`/lib/services/transcription/deepgram.ts`)
+#### 2. Deepgram Service (`/lib/services/transcription/cloud/deepgram.ts`)
 ```typescript
 interface DeepgramTranscriptionServiceDeps {
     HttpService: HttpService;

@@ -1,0 +1,119 @@
+name: Bug Report
+description: Report a bug or unexpected behavior
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report this bug! Please fill out the form below.
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Bug Description
+      description: Describe the bug, expected behavior, and any additional context. Below is a recommended structure, but feel free to organize however works best
+      placeholder: |
+        Please include:
+        - What went wrong and any error messages
+        - What you expected to happen
+        - Steps to reproduce (1. Go to... 2. Click on... 3. See error)
+        - Screenshots (drag & drop images)
+        - Error logs or console output
+        - Browser/system details if relevant
+        - If from Discord, paste the Discord message body here
+      value: |
+        ### Bug:
+
+
+        ### Expected behavior:
+
+
+        ### Steps to reproduce:
+        1.
+        2.
+        3.
+
+
+        ### Additional context:
+
+    validations:
+      required: true
+
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      description: Which platform are you using?
+      multiple: false
+      options:
+        - Mac OS
+        - Windows
+        - Linux
+        - Web
+        - Mobile (iOS/Android)
+      default: 0
+    validations:
+      required: true
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: Affected Component
+      description: Which part of the application is affected?
+      multiple: true
+      options:
+        - Audio (recording/playback)
+        - UI-App (desktop interface)
+        - UI-Web (web interface)
+        - Backend (API/server)
+        - System (shortcuts/permissions)
+        - API Provider (OpenAI/Groq/etc)
+        - File Upload
+        - Settings
+        - Transcription
+        - Local Models
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Whispering Version
+      description: What version of Whispering are you using?
+      placeholder: e.g., v7.5.0
+    validations:
+      required: true
+
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Severity
+      description: How severe is this bug?
+      options:
+        - Minor (cosmetic issue or minor inconvenience)
+        - Moderate (workaround available)
+        - Major (significant impact, no easy workaround)
+        - Critical (application unusable or data loss)
+      default: 1
+    validations:
+      required: true
+
+  - type: input
+    id: discord-link
+    attributes:
+      label: Discord Link
+      description: If this issue originated from Discord, provide the message or thread link (optional)
+      placeholder: https://discord.com/channels/...
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Checklist
+      description: Please confirm the following
+      options:
+        - label: I have searched existing issues to ensure this hasn't been reported
+          required: true
+        - label: I have included all relevant information above
+          required: true

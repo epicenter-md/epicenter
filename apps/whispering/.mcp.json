@@ -1,8 +1,8 @@
 {
-  "mcpServers": {
-    "svelte-llm": {
-      "type": "sse",
-      "url": "https://svelte-llm.stanislav.garden/mcp/sse"
-    }
-  }
+	"mcpServers": {
+		"svelte-llm": {
+			"type": "sse",
+			"url": "https://svelte-llm.stanislav.garden/mcp/sse"
+		}
+	}
 }

@@ -46,7 +46,7 @@
 </script>
 
 <script lang="ts">
-	import * as AlertDialog from '@repo/ui/alert-dialog';
+	import * as AlertDialog from '@epicenter/ui/alert-dialog';
 </script>
 
 <AlertDialog.Root bind:open={confirmationDialog.isOpen}>

@@ -1,0 +1,52 @@
+{
+	"name": "@epicenter/hq",
+	"version": "0.0.1",
+	"main": "./src/index.ts",
+	"types": "./src/index.ts",
+	"exports": {
+		".": "./src/index.ts",
+		"./cli": "./src/cli/index.ts",
+		"./providers": "./src/providers/index.ts",
+		"./indexes/markdown": "./src/indexes/markdown/index.ts",
+		"./indexes/sqlite": "./src/indexes/sqlite/index.ts"
+	},
+	"bin": {
+		"epicenter": "./src/cli/bin.ts"
+	},
+	"license": "AGPL-3.0",
+	"scripts": {
+		"lint": "eslint .",
+		"check": "tsc --noEmit"
+	},
+	"dependencies": {
+		"mime": "catalog:",
+		"@hocuspocus/provider": "^3.4.0",
+		"@hocuspocus/server": "^3.4.0",
+		"@hono/mcp": "^0.1.5",
+		"@hono/standard-validator": "^0.1.5",
+		"@hono/swagger-ui": "^0.5.2",
+		"@modelcontextprotocol/sdk": "^1.20.1",
+		"@scalar/hono-api-reference": "^0.9.23",
+		"@standard-community/standard-json": "^0.3.5",
+		"@standard-schema/spec": "^1.0.0",
+		"@tursodatabase/database": "^0.3.2",
+		"@types/bun": "catalog:",
+		"arktype": "catalog:",
+		"diff": "^8.0.2",
+		"drizzle-orm": "catalog:",
+		"hono": "catalog:",
+		"hono-openapi": "^1.1.1",
+		"nanoid": "catalog:",
+		"wellcrafted": "catalog:",
+		"y-indexeddb": "^9.0.12",
+		"yargs": "catalog:",
+		"yjs": "^13.6.27"
+	},
+	"devDependencies": {
+		"@types/node": "catalog:",
+		"@types/yargs": "catalog:",
+		"better-sqlite3": "^12.4.1",
+		"drizzle-kit": "catalog:",
+		"typescript": "catalog:"
+	}
+}
