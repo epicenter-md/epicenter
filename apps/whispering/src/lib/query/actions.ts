@@ -1,6 +1,10 @@
 import { nanoid } from 'nanoid/non-secure';
 import { Err, Ok } from 'wellcrafted/result';
-import { fromTaggedError, WhisperingErr } from '$lib/result';
+import {
+	fromTaggedError,
+	WhisperingErr,
+	type WhisperingError,
+} from '$lib/result';
 import { DbServiceErr } from '$lib/services/db';
 import { settings } from '$lib/stores/settings.svelte';
 import * as transformClipboardWindow from '../../routes/transform-clipboard/transformClipboardWindow.tauri';
@@ -8,6 +12,7 @@ import { rpc } from './';
 import { defineMutation } from './_client';
 import { db } from './db';
 import { delivery } from './delivery';
+import { media } from './media';
 import { notify } from './notify';
 import { recorder } from './recorder';
 import { sound } from './sound';
@@ -15,7 +20,6 @@ import { text } from './text';
 import { transcription } from './transcription';
 import { transformer } from './transformer';
 import { vadRecorder } from './vad.svelte';
-import { media } from './media';
 
 /**
  * Application actions. These are mutations at the UI boundary that can be invoked
@@ -219,7 +223,7 @@ const startVadRecording = defineMutation({
 		// Pause media before starting VAD
 		currentMediaSessionId = nanoid();
 		void media.pauseIfEnabled.execute({ sessionId: currentMediaSessionId });
-		
+
 		const { data: deviceAcquisitionOutcome, error: startActiveListeningError } =
 			await vadRecorder.startActiveListening({
 				onSpeechStart: () => {
@@ -255,12 +259,12 @@ const startVadRecording = defineMutation({
 				},
 			});
 		if (startActiveListeningError) {
-			const errAny = startActiveListeningError as any;
+			const error = startActiveListeningError as WhisperingError;
 			notify.error.execute({
 				id: toastId,
-				title: errAny?.title ?? '❌ Failed to start VAD',
+				title: error?.title ?? '❌ Failed to start VAD',
 				description:
-					errAny?.description ??
+					error?.description ??
 					'Voice activity detection could not be started.',
 				action: { type: 'more-details', error: startActiveListeningError },
 			});
@@ -340,12 +344,12 @@ const stopVadRecording = defineMutation({
 			currentMediaSessionId = null;
 		}
 		if (stopVadError) {
-			const errAny = stopVadError as any;
+			const error = stopVadError as WhisperingError;
 			notify.error.execute({
 				id: toastId,
-				title: errAny?.title ?? '❌ Failed to stop VAD',
+				title: error?.title ?? '❌ Failed to stop VAD',
 				description:
-					errAny?.description ??
+					error?.description ??
 					'Voice activity detection could not be stopped.',
 				action: { type: 'more-details', error: stopVadError },
 			});
@@ -449,7 +453,10 @@ export const commands = {
 	toggleVadRecording: defineMutation({
 		mutationKey: ['commands', 'toggleVadRecording'] as const,
 		resultMutationFn: async () => {
-			if (vadRecorder.state === 'LISTENING' || vadRecorder.state === 'SPEECH_DETECTED') {
+			if (
+				vadRecorder.state === 'LISTENING' ||
+				vadRecorder.state === 'SPEECH_DETECTED'
+			) {
 				return await stopVadRecording.execute(undefined);
 			}
 			return await startVadRecording.execute(undefined);

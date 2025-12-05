@@ -6,6 +6,7 @@ import { db } from './db';
 import { delivery } from './delivery';
 import { download } from './download';
 import { ffmpeg } from './ffmpeg';
+import { media } from './media';
 import { notify } from './notify';
 import { recorder } from './recorder';
 import { shortcuts } from './shortcuts';
@@ -14,7 +15,6 @@ import { text } from './text';
 import { transcription } from './transcription';
 import { transformer } from './transformer';
 import { tray } from './tray';
-import { media } from './media';
 
 /**
  * Unified namespace for all query operations.

@@ -30,7 +30,6 @@
  */
 
 import { type } from 'arktype';
-import type { Command } from '$lib/commands';
 import {
 	BITRATES_KBPS,
 	DEFAULT_BITRATE_KBPS,
@@ -38,7 +37,6 @@ import {
 } from '$lib/constants/audio';
 import { CommandOrAlt, CommandOrControl } from '$lib/constants/keyboard';
 import { SUPPORTED_LANGUAGES } from '$lib/constants/languages';
-import type { WhisperingSoundNames } from '$lib/constants/sounds';
 import { ALWAYS_ON_TOP_MODES, LAYOUT_MODES } from '$lib/constants/ui';
 import {
 	FFMPEG_DEFAULT_COMPRESSION_OPTIONS,
