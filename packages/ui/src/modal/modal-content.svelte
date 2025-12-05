@@ -8,20 +8,20 @@
 	import * as Dialog from '#/dialog/index.js';
 	import * as Drawer from '#/drawer/index.js';
 
-	import { useModalSub } from './modal.svelte.js';
+	import { useModalSub } from './modal-state.svelte.js';
 
 	const modal = useModalSub();
 
 	let {
 		children,
-		hideClose = false,
+		showCloseButton = true,
 		ref = $bindable(null),
 		...rest
-	}: DialogContentProps & { hideClose?: boolean } = $props();
+	}: DialogContentProps & { showCloseButton?: boolean } = $props();
 </script>
 
 {#if modal.view === 'desktop'}
-	<Dialog.Content bind:ref {...rest} {hideClose}>
+	<Dialog.Content bind:ref {...rest} {showCloseButton}>
 		{@render children?.()}
 	</Dialog.Content>
 {:else}

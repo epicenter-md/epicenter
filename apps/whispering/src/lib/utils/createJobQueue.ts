@@ -9,7 +9,7 @@ export const createJobQueue = <T extends Promise<unknown>>() => {
 		isProcessing = true;
 
 		while (queue.length > 0) {
-			const job = queue[0];
+			const job = queue.at(0);
 			try {
 				await job;
 			} catch (error) {

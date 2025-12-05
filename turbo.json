@@ -9,7 +9,15 @@
 			"cache": false,
 			"inputs": ["**/*.{ts,tsx,js,jsx,svelte,md,json}"]
 		},
+		"check": {
+			"cache": false,
+			"inputs": ["**/*.{ts,tsx,js,jsx,svelte,md,json}"]
+		},
 		"format": {
+			"cache": false,
+			"inputs": ["**/*.{ts,tsx,js,jsx,svelte,md,json}"]
+		},
+		"format:check": {
 			"cache": false,
 			"inputs": ["**/*.{ts,tsx,js,jsx,svelte,md,json}"]
 		},

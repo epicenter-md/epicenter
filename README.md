@@ -7,9 +7,7 @@
   <p align="center">Own your data. Use any model you want. Free and open source ❤️</p>
 </p>
 
-> **🚧 Development Update:** Development on Epicenter will be a bit slower in the coming week while Braden takes some calls and stabilizes a new framework. Updates will resume after!
-
-> **📢 Repository Update:** Whispering has become **Epicenter**! The original repository moved [here](https://github.com/epicenter-so/epicenter/tree/main/apps/whispering). Everything else remains the same—same tools, same philosophy, same team.
+> **📢 Repository Update:** Whispering has become **Epicenter**! The original repository moved [here](https://github.com/EpicenterHQ/epicenter/tree/main/apps/whispering). Everything else remains the same—same tools, same philosophy, same team.
 >
 > <details>
 > <summary> Full details...
@@ -17,36 +15,36 @@
 >
 > - Whispering's evolution beyond transcription required changes to the repository's structure and branding.
 > - Everything else remains the same—same tools, same philosophy, same team.
-> - The original app lives on as [*Epicenter Whispering*](https://github.com/epicenter-so/epicenter/tree/main/apps/whispering), keeping a tight focus on transcription.
-> - This makes room for standalone apps with complementary, but non-transcription-related features (like [*Epicenter Assistant*](https://github.com/epicenter-so/epicenter/tree/main/apps/sh)).
-> - The new [root](https://github.com/epicenter-so/epicenter/) of the Epicenter repository contains common files supporting all the apps in the ecosystem.
-> - Note: the old URL [github.com/braden-w/whispering](https://github.com/braden-w/whispering) is now just a thin placeholder redirecting to this rebranded repository.  
+> - The original app lives on as [*Epicenter Whispering*](https://github.com/EpicenterHQ/epicenter/tree/main/apps/whispering), keeping a tight focus on transcription.
+> - This makes room for standalone apps with complementary, but non-transcription-related features (like [*Epicenter Assistant*](https://github.com/EpicenterHQ/epicenter/tree/main/apps/sh)).
+> - The new [root](https://github.com/EpicenterHQ/epicenter/) of the Epicenter repository contains common files supporting all the apps in the ecosystem.
+> - Note: the old URL [github.com/braden-w/whispering](https://github.com/braden-w/whispering) is now just a thin placeholder redirecting to this rebranded repository.
 >
 > </details>
 
 <p align="center">
   <!-- GitHub Stars Badge -->
-  <a href="https://github.com/epicenter-so/epicenter" target="_blank">
-    <img alt="GitHub stars" src="https://img.shields.io/github/stars/epicenter-so/epicenter?style=flat-square" />
+  <a href="https://github.com/EpicenterHQ/epicenter" target="_blank">
+    <img alt="GitHub stars" src="https://img.shields.io/github/stars/EpicenterHQ/epicenter?style=flat-square" />
   </a>
   <!-- Latest Version Badge -->
-  <img src="https://img.shields.io/github/v/release/epicenter-so/epicenter?style=flat-square&label=Latest%20Version&color=brightgreen" />
+  <img src="https://img.shields.io/github/v/release/EpicenterHQ/epicenter?style=flat-square&label=Latest%20Version&color=brightgreen" />
   <!-- License Badge -->
   <a href="LICENSE" target="_blank">
-    <img alt="MIT License" src="https://img.shields.io/github/license/epicenter-so/epicenter.svg?style=flat-square" />
+    <img alt="AGPL-3.0 License" src="https://img.shields.io/github/license/EpicenterHQ/epicenter.svg?style=flat-square" />
   </a>
   <!-- Discord Badge -->
   <a href="https://go.epicenter.so/discord" target="_blank">
     <img alt="Discord" src="https://img.shields.io/badge/Discord-Join%20us-5865F2?style=flat-square&logo=discord&logoColor=white" />
   </a>
   <!-- Platform Support Badges -->
-  <a href="https://github.com/epicenter-so/epicenter/releases" target="_blank">
+  <a href="https://github.com/EpicenterHQ/epicenter/releases" target="_blank">
     <img alt="macOS" src="https://img.shields.io/badge/-macOS-black?style=flat-square&logo=apple&logoColor=white" />
   </a>
-  <a href="https://github.com/epicenter-so/epicenter/releases" target="_blank">
+  <a href="https://github.com/EpicenterHQ/epicenter/releases" target="_blank">
     <img alt="Windows" src="https://img.shields.io/badge/-Windows-blue?style=flat-square&logo=windows&logoColor=white" />
   </a>
-  <a href="https://github.com/epicenter-so/epicenter/releases" target="_blank">
+  <a href="https://github.com/EpicenterHQ/epicenter/releases" target="_blank">
     <img alt="Linux" src="https://img.shields.io/badge/-Linux-yellow?style=flat-square&logo=linux&logoColor=white" />
   </a>
 </p>
@@ -77,18 +75,15 @@ Epicenter is an ecosystem of open-source, local-first apps. Our eventual goal is
 <table>
   <tr>
     <td align="center" width="50%">
-      <h3>🎙️ <a href="https://github.com/epicenter-so/epicenter/tree/main/apps/whispering">Epicenter Whispering</a></h3>
+      <h3>🎙️ <a href="https://github.com/EpicenterHQ/epicenter/tree/main/apps/whispering">Epicenter Whispering</a></h3>
       <p>Press shortcut → speak → get text. Desktop transcription that cuts out the middleman. Bring your own API key.</p>
-      <p><strong>→ <a href="https://github.com/epicenter-so/epicenter/tree/main/apps/whispering">View source code</a></strong></p>
+      <p><strong>→ <a href="https://github.com/EpicenterHQ/epicenter/tree/main/apps/whispering">View source code</a></strong></p>
     </td>
     <td align="center" width="50%">
-      <h3>
-        🤖 <a href="https://github.com/epicenter-so/epicenter/tree/main/apps/sh">Epicenter Assistant</a>
-        (currently unstable, waiting for 
-        <a href="https://github.com/sst/opencode/pull/1218">this PR</a> in OpenCode to merge)
-      </h3>
+      <h3>🤖 <a href="https://github.com/EpicenterHQ/epicenter/tree/main/apps/sh">Epicenter Assistant</a></h3>
+      <p><em>Currently being rebuilt.</em></p>
       <p>A local-first assistant you can chat with. It lives in your folder, becoming the access point to everything you've ever written, thought, or built.</p>
-      <p><strong>→ <a href="https://github.com/epicenter-so/epicenter/tree/main/apps/sh">View source code</a></strong></p>
+      <p><strong>→ Track rebuild progress on the <a href="https://github.com/EpicenterHQ/epicenter/tree/rebuild-assistant">rebuild-assistant branch</a></strong></p>
     </td>
   </tr>
 </table>
@@ -97,23 +92,59 @@ Epicenter is an ecosystem of open-source, local-first apps. Our eventual goal is
 
 Our vision is to build a personal workspace where you own your data, choose your models, and replace siloed apps with open, interoperable alternatives. All while preserving authenticity and being free and open source.
 
-
 ## Quick Start
 
-Epicenter will have more apps in the future, but for now, the best way to get started is to run Whispering locally:
+### Install Epicenter Whispering
+
+Our first app in the ecosystem. Choose your installation method:
+
+**macOS (Homebrew)**
+```bash
+brew install --cask whispering
+```
+
+**macOS, Windows, Linux (Direct Download)**
+
+Download the installer for your platform from [GitHub Releases](https://github.com/EpicenterHQ/epicenter/releases/latest):
+- macOS: `.dmg` (Apple Silicon or Intel)
+- Windows: `.msi` or `.exe`
+- Linux: `.AppImage`, `.deb`, or `.rpm`
+
+**→ [Full installation guide and setup instructions](https://github.com/EpicenterHQ/epicenter/tree/main/apps/whispering#install-whispering)**
+
+### Build from Source
+
+For developers or contributors:
 
 ```bash
-# Prerequisites: 
+# Prerequisites:
 # - Install Bun from https://bun.sh (run bun upgrade if there's issues)
 # - Install Rust and Cargo from https://www.rust-lang.org/tools/install (brew install rustup)
 
-
-git clone https://github.com/epicenter-so/epicenter.git
+git clone https://github.com/EpicenterHQ/epicenter.git
 cd epicenter
 bun install  # Will prompt to upgrade if your Bun version is too old
 cd apps/whispering
 bun dev
 ```
+
+### Troubleshooting
+
+If you encounter issues after switching branches or pulling changes (like "render_fn is not a function" errors), run from the repo root:
+
+```bash
+bun clean    # Clears caches and node_modules
+bun install  # Reinstall dependencies
+```
+
+For a complete reset including Rust build artifacts (~10GB, takes longer to rebuild):
+
+```bash
+bun nuke     # Clears everything including Rust target
+bun install
+```
+
+Note: You rarely need `bun nuke` since Cargo handles incremental Rust builds well. Use `bun clean` first; reserve `bun nuke` for when things are truly broken.
 
 ## Join Us
 
@@ -144,7 +175,7 @@ Contributors coordinate and share ideas in our Discord community.
 
 ## License
 
-[MIT](LICENSE). Build on it. Fork it. Make it yours. Please contribute if you can.
+[AGPL-3.0](LICENSE). Build on it. Fork it. Make it yours. Please contribute if you can.
 
 ---
 

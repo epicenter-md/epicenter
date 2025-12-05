@@ -114,7 +114,7 @@ Here's how I refactored my FFmpeg recorder to survive page refreshes:
 
 ```typescript
 import { Child } from '@tauri-apps/plugin-shell';
-import { createPersistedState } from '@repo/svelte-utils';
+import { createPersistedState } from '@epicenter/svelte-utils';
 
 // Store only the PID and metadata
 const sessionState = createPersistedState({

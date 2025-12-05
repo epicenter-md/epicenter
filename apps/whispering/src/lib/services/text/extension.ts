@@ -3,6 +3,20 @@ import { type TextService, TextServiceErr } from './types';
 
 export function createTextServiceExtension(): TextService {
 	return {
+		readFromClipboard: () =>
+			tryAsync({
+				try: async () => {
+					const text = await navigator.clipboard.readText();
+					return text || null;
+				},
+				catch: (error) =>
+					TextServiceErr({
+						message: 'Unable to read from clipboard',
+						context: {},
+						cause: error,
+					}),
+			}),
+
 		copyToClipboard: (text) =>
 			tryAsync({
 				try: () => navigator.clipboard.writeText(text),
@@ -27,6 +41,14 @@ export function createTextServiceExtension(): TextService {
 						context: { text },
 						cause: error,
 					}),
+			}),
+
+		simulateEnterKeystroke: async () =>
+			TextServiceErr({
+				message:
+					'Simulating keystrokes is not supported in browser extensions for security reasons.',
+				context: {},
+				cause: undefined,
 			}),
 	};
 }

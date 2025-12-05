@@ -25,21 +25,19 @@
 </script>
 
 <script lang="ts">
-	import * as Alert from '@repo/ui/alert';
-	import * as Popover from '@repo/ui/popover';
+	import * as Alert from '@epicenter/ui/alert';
+	import * as Popover from '@epicenter/ui/popover';
 	import type { UnifiedNotificationOptions } from '$lib/services/notifications/types';
-	import { ScrollArea } from '@repo/ui/scroll-area';
-	import {
-		AlertCircle,
-		AlertTriangle,
-		CheckCircle2,
-		Info,
-		Loader,
-		LogsIcon,
-	} from '@lucide/svelte';
+	import { ScrollArea } from '@epicenter/ui/scroll-area';
+	import AlertCircle from '@lucide/svelte/icons/alert-circle';
+	import AlertTriangle from '@lucide/svelte/icons/alert-triangle';
+	import CheckCircle2 from '@lucide/svelte/icons/check-circle-2';
+	import Info from '@lucide/svelte/icons/info';
+	import Loader from '@lucide/svelte/icons/loader';
+	import LogsIcon from '@lucide/svelte/icons/file-text';
 	import { mode } from 'mode-watcher';
 	import WhisperingButton from './WhisperingButton.svelte';
-	import { cn } from '@repo/ui/utils';
+	import { cn } from '@epicenter/ui/utils';
 </script>
 
 <Popover.Root bind:open={notificationLog.isOpen}>
@@ -130,7 +128,7 @@
 </Popover.Root>
 
 <style>
-   :global([data-slot="popover-content"] [data-sonner-toast]) {
-      position: relative;
-   }
+	:global([data-slot='popover-content'] [data-sonner-toast]) {
+		position: relative;
+	}
 </style>

@@ -1,23 +1,22 @@
 <script lang="ts">
-	import type { Snippet } from 'svelte';
 	import type { HTMLAnchorAttributes } from 'svelte/elements';
-
+	import type { Snippet } from 'svelte';
 	import { cn, type WithElementRef } from '#/utils/utils.js';
 
 	let {
-		child,
-		children,
+		ref = $bindable(null),
 		class: className,
 		href = undefined,
-		ref = $bindable(null),
+		child,
+		children,
 		...restProps
 	}: WithElementRef<HTMLAnchorAttributes> & {
 		child?: Snippet<[{ props: HTMLAnchorAttributes }]>;
 	} = $props();
 
 	const attrs = $derived({
-		class: cn('hover:text-foreground transition-colors', className),
 		'data-slot': 'breadcrumb-link',
+		class: cn('hover:text-foreground transition-colors', className),
 		href,
 		...restProps,
 	});

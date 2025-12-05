@@ -3,10 +3,9 @@
 */
 
 import * as Avatar from '#/avatar';
-
+import Bubble from './chat-bubble.svelte';
 import BubbleAvatar from './chat-bubble-avatar.svelte';
 import BubbleMessage from './chat-bubble-message.svelte';
-import Bubble from './chat-bubble.svelte';
 import List from './chat-list.svelte';
 
 const BubbleAvatarImage = Avatar.Image;

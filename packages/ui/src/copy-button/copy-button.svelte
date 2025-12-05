@@ -3,7 +3,7 @@
 -->
 
 <script lang="ts">
-	import { Button } from '#/button';
+	import { Button, type ButtonProps } from '#/button';
 	import { UseClipboard } from '#/hooks/use-clipboard.svelte';
 	import { cn } from '#/utils/utils';
 	import CheckIcon from '@lucide/svelte/icons/check';
@@ -35,7 +35,6 @@
 </script>
 
 <Button
-	{...rest}
 	bind:ref
 	{variant}
 	{size}
@@ -48,6 +47,7 @@
 
 		onCopy?.(status);
 	}}
+	{...rest as ButtonProps}
 >
 	{#if clipboard.status === 'success'}
 		<div in:scale={{ duration: animationDuration, start: 0.85 }}>

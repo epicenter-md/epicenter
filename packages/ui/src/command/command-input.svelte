@@ -1,18 +1,18 @@
 <script lang="ts">
-	import { cn } from '#/utils/utils.js';
-	import SearchIcon from '@lucide/svelte/icons/search';
 	import { Command as CommandPrimitive } from 'bits-ui';
+	import SearchIcon from '@lucide/svelte/icons/search';
+	import { cn } from '#/utils/utils.js';
 
 	let {
-		class: className,
 		ref = $bindable(null),
+		class: className,
 		value = $bindable(''),
 		...restProps
 	}: CommandPrimitive.InputProps = $props();
 </script>
 
 <div
-	class="flex h-9 items-center gap-2 border-b px-3"
+	class="flex h-9 items-center gap-2 border-b pe-8 ps-3"
 	data-slot="command-input-wrapper"
 >
 	<SearchIcon class="size-4 shrink-0 opacity-50" />

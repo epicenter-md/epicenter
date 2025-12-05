@@ -2,14 +2,15 @@
 	import { goto } from '$app/navigation';
 	import WhisperingButton from '$lib/components/WhisperingButton.svelte';
 	import { CompressionBody } from '$lib/components/settings';
-	import * as Popover from '@repo/ui/popover';
-	import { Button } from '@repo/ui/button';
-	import { Separator } from '@repo/ui/separator';
-	import { useCombobox } from '@repo/ui/hooks';
+	import * as Popover from '@epicenter/ui/popover';
+	import { Button } from '@epicenter/ui/button';
+	import { Separator } from '@epicenter/ui/separator';
+	import { useCombobox } from '@epicenter/ui/hooks';
 	import { settings } from '$lib/stores/settings.svelte';
-	import { cn } from '@repo/ui/utils';
-	import { isCompressionRecommended } from '../../../../routes/+layout/check-ffmpeg';
-	import { PackageIcon, SettingsIcon } from '@lucide/svelte';
+	import { cn } from '@epicenter/ui/utils';
+	import { isCompressionRecommended } from '$routes/(app)/_layout-utils/check-ffmpeg';
+	import PackageIcon from '@lucide/svelte/icons/package';
+	import SettingsIcon from '@lucide/svelte/icons/settings';
 
 	let { class: className }: { class?: string } = $props();
 

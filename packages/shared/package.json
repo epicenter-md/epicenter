@@ -1,5 +1,5 @@
 {
-	"name": "@repo/shared",
+	"name": "@epicenter/shared",
 	"private": true,
 	"version": "0.0.0",
 	"description": "Shared constants for use Whispering web app, desktop app, and Chrome extension",
@@ -11,9 +11,11 @@
 		"@types/node": "catalog:",
 		"typescript": "catalog:"
 	},
+	"scripts": {
+		"check": "tsc --noEmit"
+	},
 	"dependencies": {
 		"arktype": "catalog:",
-		"@lucide/svelte": "catalog:",
-		"zod": "catalog:"
+		"@lucide/svelte": "catalog:"
 	}
 }

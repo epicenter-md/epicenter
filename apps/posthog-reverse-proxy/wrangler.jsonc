@@ -6,8 +6,8 @@
 	"routes": [
 		{
 			"pattern": "proxy.epicenter.so",
-			"custom_domain": true,
-		},
+			"custom_domain": true
+		}
 	],
-	"port": 8788,
+	"port": 8788
 }

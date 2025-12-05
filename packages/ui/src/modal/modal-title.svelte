@@ -8,7 +8,7 @@
 	import * as Dialog from '#/dialog/index.js';
 	import * as Drawer from '#/drawer/index.js';
 
-	import { useModalSub } from './modal.svelte.js';
+	import { useModalSub } from './modal-state.svelte.js';
 
 	const modal = useModalSub();
 

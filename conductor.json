@@ -1,0 +1,7 @@
+{
+	"scripts": {
+		"setup": "bun install && ln -sf \"$CONDUCTOR_ROOT_PATH/examples/content-hub/.env\" examples/content-hub/.env 2>/dev/null || true",
+		"run": "cd apps/whispering && bun run dev"
+	},
+	"runScriptMode": "nonconcurrent"
+}

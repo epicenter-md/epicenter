@@ -1,32 +1,33 @@
 # Documentation
 
-This directory contains all documentation, resources, and planning materials for the Whispering project.
+This directory contains knowledge articles, guides, and reference materials for the Whispering project.
 
 ## Directory Structure
 
+### `/articles`
+Technical articles and write-ups explaining specific concepts, implementations, or solutions.
+
+### `/architecture`
+High-level architectural documentation and system diagrams.
+
+### `/blog`
+Blog posts and longer-form content.
+
+### `/guides`
+How-to guides for specific tasks or integrations.
+
+### `/patterns`
+Documented coding patterns and best practices used in the codebase.
+
 ### `/assets`
-Static resources used throughout the project documentation.
+Static resources (images, demos) used throughout documentation.
 
-- **`/images`**: Screenshots, demos, and visual assets used in documentation, release notes, and marketing materials
-
-### `/launch`
+### `/launches`
 Launch campaign materials and planning documents.
-
-- **`/demo-videos`**: Video demonstrations of the application
-- **`/planning`**: Strategic planning documents for launches
-- **`/platform-posts`**: Pre-written posts for various social media and community platforms
 
 ### `/release-notes`
 Version release notes used by the CI/CD pipeline.
 
-- Contains release notes for each version (e.g., `v7.0.0.md`)
-- Automatically read by GitHub Actions when creating releases
-- Includes both user-facing summaries and detailed technical changes
+## Note on Specs
 
-### `/specs`
-Technical specifications and implementation plans.
-
-- Temporary planning documents created during feature development
-- Often committed alongside major features for historical reference
-- Provides context in git history for understanding implementation decisions
-- See the [specs README](./specs/README.md) for more details
+Technical specifications and implementation plans now live at `/specs` in the repository root (not in this directory). See the [specs README](/specs/README.md) for details on the planning workflow.

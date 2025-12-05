@@ -1,0 +1,19 @@
+{
+	"name": "@examples/basic-workspace",
+	"version": "0.0.1",
+	"private": true,
+	"type": "module",
+	"scripts": {
+		"dev": "bun cli.ts"
+	},
+	"dependencies": {
+		"@epicenter/hq": "workspace:*",
+		"arktype": "catalog:",
+		"wellcrafted": "catalog:",
+		"yargs": "catalog:"
+	},
+	"devDependencies": {
+		"@types/bun": "catalog:",
+		"@types/yargs": "catalog:"
+	}
+}

@@ -1,11 +1,11 @@
 <script lang="ts">
-	import { cn, type WithoutChild } from '#/utils/utils.js';
 	import { Accordion as AccordionPrimitive } from 'bits-ui';
+	import { cn, type WithoutChild } from '#/utils/utils.js';
 
 	let {
-		children,
-		class: className,
 		ref = $bindable(null),
+		class: className,
+		children,
 		...restProps
 	}: WithoutChild<AccordionPrimitive.ContentProps> = $props();
 </script>

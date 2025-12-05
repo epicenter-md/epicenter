@@ -1,2 +1,2 @@
-export * from './vault';
 export * from './adapter';
+export * from './vault';

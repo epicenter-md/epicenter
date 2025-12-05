@@ -15,12 +15,8 @@
  * Example: bun run bump-version 7.0.1
  */
 
-import * as fs from 'node:fs/promises';
 import { join } from 'node:path';
-import { exec } from 'node:child_process';
-import { promisify } from 'node:util';
-
-const execAsync = promisify(exec);
+import { $ } from 'bun';
 
 /** Extract new version from command line arguments */
 const newVersion = process.argv[2];
@@ -60,7 +56,8 @@ let oldVersion: string | null = null;
  */
 for (const { path, type } of files) {
 	const fullPath = join(process.cwd(), path);
-	const content = await fs.readFile(fullPath, 'utf-8');
+	const file = Bun.file(fullPath);
+	const content = await file.text();
 
 	if (type === 'json') {
 		// Handle JSON files (package.json, tauri.conf.json)
@@ -70,7 +67,7 @@ for (const { path, type } of files) {
 		}
 		json.version = newVersion;
 		// Preserve formatting with tabs and trailing newline
-		await fs.writeFile(fullPath, `${JSON.stringify(json, null, '\t')}\n`);
+		await Bun.write(fullPath, `${JSON.stringify(json, null, '\t')}\n`);
 	} else if (type === 'toml') {
 		// Handle TOML files (Cargo.toml) with regex replacement
 		const versionRegex = /^version\s*=\s*"[\d.]+"/m;
@@ -79,7 +76,7 @@ for (const { path, type } of files) {
 			oldVersion = match[0].match(/"([\d.]+)"/)?.[1] ?? null;
 		}
 		const updated = content.replace(versionRegex, `version = "${newVersion}"`);
-		await fs.writeFile(fullPath, updated);
+		await Bun.write(fullPath, updated);
 	} else if (type === 'ts') {
 		// Handle TypeScript files (versions.ts) with regex replacement
 		const versionRegex = /whispering:\s*'[\d.]+'/;
@@ -91,7 +88,7 @@ for (const { path, type } of files) {
 			versionRegex,
 			`whispering: '${newVersion}'`,
 		);
-		await fs.writeFile(fullPath, updated);
+		await Bun.write(fullPath, updated);
 	}
 
 	console.log(`✅ Updated ${path}`);
@@ -102,26 +99,65 @@ for (const { path, type } of files) {
  */
 try {
 	console.log('\n🔄 Updating Cargo.lock...');
-	const { stderr } = await execAsync(
-		'cd apps/whispering/src-tauri && cargo update -p whispering',
-	);
-	if (stderr && !stderr.includes('Locking')) {
-		console.error(`⚠️  Cargo update warning: ${stderr}`);
-	}
+	await $`cd apps/whispering/src-tauri && cargo update -p whispering`;
 	console.log('✅ Updated Cargo.lock');
 } catch (error) {
-	console.error('❌ Failed to update Cargo.lock:', error.message);
+	console.error('❌ Failed to update Cargo.lock:', extractErrorMessage(error));
 	console.log(
 		'   You may need to run: cd apps/whispering/src-tauri && cargo update -p whispering',
 	);
 }
 
 /**
- * Display summary and next steps
+ * Display summary
  */
 console.log(`\n📦 Version bumped from ${oldVersion} to ${newVersion}`);
-console.log('\nNext steps:');
-console.log('1. Review the changes: git diff');
-console.log(`2. Commit: git commit -am "chore: bump version to ${newVersion}"`);
-console.log(`3. Tag: git tag v${newVersion}`);
-console.log('4. Push: git push && git push --tags');
+
+/**
+ * Commit the version changes
+ */
+try {
+	console.log('\n📝 Committing version changes...');
+	await $`git add -A`;
+	await $`git commit -m "chore: bump version to ${newVersion}"`;
+	console.log('✅ Committed changes');
+} catch (error) {
+	console.error('❌ Failed to commit changes:', extractErrorMessage(error));
+	process.exit(1);
+}
+
+/**
+ * Create git tag with v prefix (force overwrite if exists)
+ */
+try {
+	console.log('\n🏷️  Creating git tag...');
+	// Force create tag locally (overwrites if exists)
+	await $`git tag -f v${newVersion}`;
+	console.log(`✅ Created tag v${newVersion}`);
+} catch (error) {
+	console.error('❌ Failed to create tag:', extractErrorMessage(error));
+	process.exit(1);
+}
+
+/**
+ * Push to remote (both commits and tags)
+ * Force push tag to overwrite if it exists on remote
+ */
+try {
+	console.log('\n⬆️  Pushing to remote...');
+	await $`git push`;
+	await $`git push origin v${newVersion} --force`;
+	console.log('✅ Pushed to remote');
+} catch (error) {
+	console.error('❌ Failed to push to remote:', extractErrorMessage(error));
+	process.exit(1);
+}
+
+console.log(`\n🎉 Release ${newVersion} complete!`);
+
+/**
+ * Extract error message from unknown error type
+ */
+function extractErrorMessage(error: unknown): string {
+	return error instanceof Error ? error.message : String(error);
+}

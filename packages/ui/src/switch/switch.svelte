@@ -1,11 +1,11 @@
 <script lang="ts">
-	import { cn, type WithoutChildrenOrChild } from '#/utils/utils.js';
 	import { Switch as SwitchPrimitive } from 'bits-ui';
+	import { cn, type WithoutChildrenOrChild } from '#/utils/utils.js';
 
 	let {
-		checked = $bindable(false),
-		class: className,
 		ref = $bindable(null),
+		class: className,
+		checked = $bindable(false),
 		...restProps
 	}: WithoutChildrenOrChild<SwitchPrimitive.RootProps> = $props();
 </script>

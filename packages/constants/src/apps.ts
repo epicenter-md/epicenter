@@ -1,7 +1,7 @@
 /**
  * Produces a map of all Epicenter applications with their metadata. Currently only includes the URL,
  * which varies depending on the environment (development or production).
- * 
+ *
  * These URLs are reused in Vite, Node, and Cloudflare to properly access specific app URLs.
  */
 export const createApps = (env: 'development' | 'production') => {
@@ -32,7 +32,7 @@ export const createApps = (env: 'development' | 'production') => {
 
 /**
  * Derives all URLs from createApps and returns them as an array.
- * 
+ *
  * Useful for:
  * - CORS configuration
  * - Security policies

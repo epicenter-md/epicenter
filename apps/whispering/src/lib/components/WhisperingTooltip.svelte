@@ -1,5 +1,5 @@
 <script lang="ts">
-	import * as Tooltip from '@repo/ui/tooltip';
+	import * as Tooltip from '@epicenter/ui/tooltip';
 	import { mergeProps } from 'bits-ui';
 	import type { Snippet } from 'svelte';
 

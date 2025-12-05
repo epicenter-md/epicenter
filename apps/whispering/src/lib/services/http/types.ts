@@ -1,6 +1,6 @@
+import type { StandardSchemaV1 } from '@standard-schema/spec';
 import { createTaggedError } from 'wellcrafted/error';
 import type { Result } from 'wellcrafted/result';
-import type { z } from 'zod';
 
 /**
  * Network-level connection failure that prevents the HTTP request from reaching the server.
@@ -48,7 +48,7 @@ export const ResponseErr = (args: Omit<ResponseError, 'name'>) => ({
 });
 
 /**
- * Failed to parse the response body as valid JSON or validate against the Zod schema.
+ * Failed to parse the response body as valid JSON or validate against the schema.
  *
  * Server returned 2xx status but the response body is malformed JSON or doesn't match
  * the expected schema structure/types.
@@ -69,15 +69,19 @@ export type HttpService = {
 	/**
 	 * Makes a POST request with automatic JSON parsing and schema validation.
 	 *
+	 * Accepts any schema that implements the StandardSchemaV1 interface (Zod, Valibot, ArkType, etc.)
+	 *
 	 * **Error Handling Strategy:**
 	 * 1. **Connection Phase:** Catches network-level failures (ConnectionError)
 	 * 2. **Response Phase:** Validates HTTP status codes (ResponseError)
 	 * 3. **Parse Phase:** Validates JSON structure and schema (ParseError)
 	 */
-	post: <TSchema extends z.ZodTypeAny>(config: {
+	post: <TSchema extends StandardSchemaV1>(config: {
 		url: string;
 		body: BodyInit | FormData;
 		schema: TSchema;
 		headers?: Record<string, string>;
-	}) => Promise<Result<z.infer<TSchema>, HttpServiceError>>;
+	}) => Promise<
+		Result<StandardSchemaV1.InferOutput<TSchema>, HttpServiceError>
+	>;
 };

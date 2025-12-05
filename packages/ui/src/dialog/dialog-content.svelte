@@ -1,22 +1,20 @@
 <script lang="ts">
-	import type { Snippet } from 'svelte';
-
-	import { cn, type WithoutChildrenOrChild } from '#/utils/utils.js';
-	import XIcon from '@lucide/svelte/icons/x';
 	import { Dialog as DialogPrimitive } from 'bits-ui';
-
+	import XIcon from '@lucide/svelte/icons/x';
+	import type { Snippet } from 'svelte';
 	import * as Dialog from './index.js';
+	import { cn, type WithoutChildrenOrChild } from '#/utils/utils.js';
 
 	let {
-		children,
+		ref = $bindable(null),
 		class: className,
 		portalProps,
-		ref = $bindable(null),
+		children,
 		showCloseButton = true,
 		...restProps
 	}: WithoutChildrenOrChild<DialogPrimitive.ContentProps> & {
-		children: Snippet;
 		portalProps?: DialogPrimitive.PortalProps;
+		children: Snippet;
 		showCloseButton?: boolean;
 	} = $props();
 </script>
@@ -27,9 +25,11 @@
 		bind:ref
 		data-slot="dialog-content"
 		class={cn(
-			'bg-background data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 fixed left-[50%] top-[50%] z-50 grid w-full max-w-[calc(100%-2rem)] translate-x-[-50%] translate-y-[-50%] gap-4 rounded-lg border p-6 shadow-lg duration-200 sm:max-w-lg',
+			'bg-background data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 fixed start-[50%] top-[50%] z-50 grid w-full max-w-[calc(100%-2rem)] translate-x-[-50%] translate-y-[-50%] gap-4 rounded-lg border p-6 shadow-lg duration-200 sm:max-w-lg',
+			// Custom: Enable scrolling for dialogs with tall content. max-h limits height to viewport
+			// minus breathing room, overflow-y-auto enables vertical scroll only when needed.
 			'overflow-y-auto max-h-[calc(100vh-2rem)]',
-			// Override to z-40 to ensure that alert-dialogs (which are at z-50) are always on top of dialogs
+			// Custom: Override to z-40 to ensure alert-dialogs (z-50) appear above regular dialogs
 			'z-40',
 			className,
 		)}
@@ -38,7 +38,7 @@
 		{@render children?.()}
 		{#if showCloseButton}
 			<DialogPrimitive.Close
-				class="ring-offset-background focus:ring-ring rounded-xs focus:outline-hidden absolute right-4 top-4 opacity-70 transition-opacity hover:opacity-100 focus:ring-2 focus:ring-offset-2 disabled:pointer-events-none [&_svg:not([class*='size-'])]:size-4 [&_svg]:pointer-events-none [&_svg]:shrink-0"
+				class="ring-offset-background focus:ring-ring rounded-xs focus:outline-hidden absolute end-4 top-4 opacity-70 transition-opacity hover:opacity-100 focus:ring-2 focus:ring-offset-2 disabled:pointer-events-none [&_svg:not([class*='size-'])]:size-4 [&_svg]:pointer-events-none [&_svg]:shrink-0"
 			>
 				<XIcon />
 				<span class="sr-only">Close</span>

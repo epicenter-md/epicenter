@@ -1,25 +1,23 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import WhisperingButton from '$lib/components/WhisperingButton.svelte';
-	import { Badge } from '@repo/ui/badge';
-	import * as Command from '@repo/ui/command';
-	import * as Popover from '@repo/ui/popover';
-	import { useCombobox } from '@repo/ui/hooks';
+	import { Badge } from '@epicenter/ui/badge';
+	import * as Command from '@epicenter/ui/command';
+	import * as Popover from '@epicenter/ui/popover';
+	import { useCombobox } from '@epicenter/ui/hooks';
 	import { rpc } from '$lib/query';
 	import type { Transformation } from '$lib/services/db';
 	import { settings } from '$lib/stores/settings.svelte';
-	import { cn } from '@repo/ui/utils';
+	import { cn } from '@epicenter/ui/utils';
 	import { createTransformationViewTransitionName } from '$lib/utils/createTransformationViewTransitionName';
 	import { createQuery } from '@tanstack/svelte-query';
-	import {
-		CheckIcon,
-		WandIcon,
-		SparklesIcon,
-		LayersIcon,
-	} from '@lucide/svelte';
+	import CheckIcon from '@lucide/svelte/icons/check';
+	import WandIcon from '@lucide/svelte/icons/wand';
+	import SparklesIcon from '@lucide/svelte/icons/sparkles';
+	import LayersIcon from '@lucide/svelte/icons/layers';
 
 	const transformationsQuery = createQuery(
-		rpc.transformations.queries.getAllTransformations.options,
+		rpc.db.transformations.getAll.options,
 	);
 
 	const transformations = $derived(transformationsQuery.data ?? []);
@@ -95,9 +93,10 @@
 						onSelect={() => {
 							settings.updateKey(
 								'transformations.selectedTransformationId',
-								settings.value['transformations.selectedTransformationId'] === transformation.id
+								settings.value['transformations.selectedTransformationId'] ===
+									transformation.id
 									? null
-									: transformation.id
+									: transformation.id,
 							);
 							combobox.closeAndFocusTrigger();
 						}}

@@ -14,7 +14,7 @@
  * - **Flat key structure**: All settings use dot-notation keys (e.g., 'sound.playOn.manual-start')
  *   stored as a single-level object. This simplifies validation and merging.
  *
- * - **Schema with defaults**: Every field in the schema has a `.default()` value,
+ * - **Schema with defaults**: Every field in the schema has a default value,
  *   ensuring we can always produce a valid settings object.
  *
  * - **Progressive validation**: When full validation fails, we attempt partial validation
@@ -29,29 +29,34 @@
  * - Easy to add/remove/rename settings
  */
 
+import { type } from 'arktype';
 import type { Command } from '$lib/commands';
 import {
-	BITRATE_VALUES_KBPS,
+	BITRATES_KBPS,
 	DEFAULT_BITRATE_KBPS,
 	RECORDING_MODES,
 } from '$lib/constants/audio';
 import { CommandOrAlt, CommandOrControl } from '$lib/constants/keyboard';
 import { SUPPORTED_LANGUAGES } from '$lib/constants/languages';
 import type { WhisperingSoundNames } from '$lib/constants/sounds';
-import { TRANSCRIPTION_SERVICE_IDS } from '$lib/constants/transcription';
-import type { ElevenLabsModel } from '$lib/services/transcription/elevenlabs';
-import type { GroqModel } from '$lib/services/transcription/groq';
-import type { OpenAIModel } from '$lib/services/transcription/openai';
-import { ALWAYS_ON_TOP_VALUES } from '$lib/constants/ui';
-import { asDeviceIdentifier } from '$lib/services/types';
+import { ALWAYS_ON_TOP_MODES, LAYOUT_MODES } from '$lib/constants/ui';
 import {
+	FFMPEG_DEFAULT_COMPRESSION_OPTIONS,
 	FFMPEG_DEFAULT_GLOBAL_OPTIONS,
 	FFMPEG_DEFAULT_INPUT_OPTIONS,
 	FFMPEG_DEFAULT_OUTPUT_OPTIONS,
-	FFMPEG_DEFAULT_COMPRESSION_OPTIONS,
 } from '$lib/services/recorder/ffmpeg';
-import { type ZodBoolean, type ZodString, z } from 'zod';
-import type { DeepgramModel } from '$lib/services/transcription/deepgram';
+import type { DeepgramModel } from '$lib/services/transcription/cloud/deepgram';
+import type { ElevenLabsModel } from '$lib/services/transcription/cloud/elevenlabs';
+import type { GroqModel } from '$lib/services/transcription/cloud/groq';
+import type { MistralModel } from '$lib/services/transcription/cloud/mistral';
+import type { OpenAIModel } from '$lib/services/transcription/cloud/openai';
+import { TRANSCRIPTION_SERVICE_IDS } from '$lib/services/transcription/registry';
+import { asDeviceIdentifier, type DeviceIdentifier } from '$lib/services/types';
+
+// Helper to transform device identifiers
+const deviceIdTransform = (val: string | null): DeviceIdentifier | null =>
+	val ? asDeviceIdentifier(val) : null;
 
 /**
  * The main settings schema that defines all application settings.
@@ -79,198 +84,197 @@ import type { DeepgramModel } from '$lib/services/transcription/deepgram';
  *   'transcription.outputLanguage': 'en'
  * };
  */
-export const settingsSchema = z.object({
-	...({
-		'sound.playOn.manual-start': z.boolean().default(true),
-		'sound.playOn.manual-stop': z.boolean().default(true),
-		'sound.playOn.manual-cancel': z.boolean().default(true),
-		'sound.playOn.vad-start': z.boolean().default(true),
-		'sound.playOn.vad-capture': z.boolean().default(true),
-		'sound.playOn.vad-stop': z.boolean().default(true),
-		'sound.playOn.transcriptionComplete': z.boolean().default(true),
-		'sound.playOn.transformationComplete': z.boolean().default(true),
-	} satisfies Record<
-		`sound.playOn.${WhisperingSoundNames}`,
-		z.ZodDefault<ZodBoolean>
-	>),
+export const Settings = type({
+	// Sound settings
+	'sound.playOn.manual-start': 'boolean = true',
+	'sound.playOn.manual-stop': 'boolean = true',
+	'sound.playOn.manual-cancel': 'boolean = true',
+	'sound.playOn.vad-start': 'boolean = true',
+	'sound.playOn.vad-capture': 'boolean = true',
+	'sound.playOn.vad-stop': 'boolean = true',
+	'sound.playOn.transcriptionComplete': 'boolean = true',
+	'sound.playOn.transformationComplete': 'boolean = true',
 
-	'transcription.copyToClipboardOnSuccess': z.boolean().default(true),
-	'transcription.writeToCursorOnSuccess': z.boolean().default(true),
-	'transformation.copyToClipboardOnSuccess': z.boolean().default(true),
-	'transformation.writeToCursorOnSuccess': z.boolean().default(false),
+	'transcription.copyToClipboardOnSuccess': 'boolean = true',
+	'transcription.writeToCursorOnSuccess': 'boolean = true',
+	'transcription.simulateEnterAfterOutput': 'boolean = false',
+	'transformation.copyToClipboardOnSuccess': 'boolean = true',
+	'transformation.writeToCursorOnSuccess': 'boolean = false',
+	'transformation.simulateEnterAfterOutput': 'boolean = false',
 
-	'system.alwaysOnTop': z.enum(ALWAYS_ON_TOP_VALUES).default('Never'),
+	'system.alwaysOnTop': type
+		.enumerated(...ALWAYS_ON_TOP_MODES)
+		.default('Never'),
 
-	'database.recordingRetentionStrategy': z
-		.enum(['keep-forever', 'limit-count'])
+	// UI settings
+	/**
+	 * Navigation layout mode.
+	 * - `sidebar`: Uses the collapsible vertical sidebar. Nav items show on home, hidden on config pages.
+	 * - `nav-items`: Uses inline header navigation. No sidebar, nav items visible on all pages.
+	 */
+	'ui.layoutMode': type.enumerated(...LAYOUT_MODES).default('sidebar'),
+
+	'database.recordingRetentionStrategy': type
+		.enumerated('keep-forever', 'limit-count')
 		.default('keep-forever'),
-	'database.maxRecordingCount': z
-		.string()
-		.regex(/^\d+$/, 'Must be a number')
-		.default('100'),
+	'database.maxRecordingCount': type('string.digits').default('100'),
 
 	// Recording mode settings
-	'recording.mode': z.enum(RECORDING_MODES).default('manual'),
+	'recording.mode': type.enumerated(...RECORDING_MODES).default('manual'),
 	/**
 	 * Recording method to use for manual recording in desktop app.
 	 * - 'cpal': Uses Rust audio recording method (CPAL)
 	 * - 'navigator': Uses MediaRecorder API (web standard)
 	 * - 'ffmpeg': Uses FFmpeg command-line tool for recording
 	 */
-	'recording.method': z.enum(['cpal', 'navigator', 'ffmpeg']).default('cpal'),
+	'recording.method': type
+		.enumerated('cpal', 'navigator', 'ffmpeg')
+		.default('cpal'),
 
 	/**
 	 * Device identifiers for each recording method.
 	 * Each method remembers its own selected device.
 	 * Note: VAD always uses navigator, so it shares the same device ID.
 	 */
-	'recording.cpal.deviceId': z
-		.string()
-		.nullable()
-		.transform((val) => (val ? asDeviceIdentifier(val) : null))
+	'recording.cpal.deviceId': type('string | null')
+		.pipe(deviceIdTransform)
 		.default(null),
-	'recording.navigator.deviceId': z
-		.string()
-		.nullable()
-		.transform((val) => (val ? asDeviceIdentifier(val) : null))
+	'recording.navigator.deviceId': type('string | null')
+		.pipe(deviceIdTransform)
 		.default(null),
-	'recording.ffmpeg.deviceId': z
-		.string()
-		.nullable()
-		.transform((val) => (val ? asDeviceIdentifier(val) : null))
+	'recording.ffmpeg.deviceId': type('string | null')
+		.pipe(deviceIdTransform)
 		.default(null),
 
 	// Browser recording settings (used when browser method is selected)
-	'recording.navigator.bitrateKbps': z
-		.enum(BITRATE_VALUES_KBPS)
-		.optional()
+	'recording.navigator.bitrateKbps': type
+		.enumerated(...BITRATES_KBPS)
 		.default(DEFAULT_BITRATE_KBPS),
 
 	// CPAL (Rust audio library) recording settings
-	'recording.cpal.outputFolder': z.string().nullable().default(null), // null = use app data dir
-	'recording.cpal.sampleRate': z
-		.enum(['16000', '44100', '48000'])
+	'recording.cpal.outputFolder': 'string | null = null', // null = use app data dir
+	'recording.cpal.sampleRate': type
+		.enumerated('16000', '44100', '48000')
 		.default('16000'),
 
 	// FFmpeg recording settings - split into three customizable parts
-	'recording.ffmpeg.globalOptions': z
-		.string()
-		.default(FFMPEG_DEFAULT_GLOBAL_OPTIONS), // Global FFmpeg options (e.g., "-hide_banner -loglevel warning")
-	'recording.ffmpeg.inputOptions': z
-		.string()
-		.default(FFMPEG_DEFAULT_INPUT_OPTIONS), // Input options (e.g., "-f avfoundation" - platform defaults applied if empty)
-	'recording.ffmpeg.outputOptions': z
-		.string()
-		.default(FFMPEG_DEFAULT_OUTPUT_OPTIONS), // OGG Vorbis optimized for Whisper: 16kHz mono, 64kbps
+	'recording.ffmpeg.globalOptions': type('string').default(
+		FFMPEG_DEFAULT_GLOBAL_OPTIONS,
+	), // Global FFmpeg options (e.g., "-hide_banner -loglevel warning")
+	'recording.ffmpeg.inputOptions': type('string').default(
+		FFMPEG_DEFAULT_INPUT_OPTIONS,
+	), // Input options (e.g., "-f avfoundation" - platform defaults applied if empty)
+	'recording.ffmpeg.outputOptions': type('string').default(
+		FFMPEG_DEFAULT_OUTPUT_OPTIONS,
+	), // OGG Vorbis optimized for Whisper: 16kHz mono, 64kbps
 
-	'transcription.selectedTranscriptionService': z
-		.enum(TRANSCRIPTION_SERVICE_IDS)
+	'transcription.selectedTranscriptionService': type
+		.enumerated(...TRANSCRIPTION_SERVICE_IDS)
 		.default('whispercpp'),
 	// Shared settings in transcription
-	'transcription.outputLanguage': z.enum(SUPPORTED_LANGUAGES).default('auto'),
-	'transcription.prompt': z.string().default(''),
-	'transcription.temperature': z.string().default('0.0'),
+	'transcription.outputLanguage': type
+		.enumerated(...SUPPORTED_LANGUAGES)
+		.default('auto'),
+	'transcription.prompt': "string = ''",
+	'transcription.temperature': "string = '0.0'",
 	// Audio compression settings
-	'transcription.compressionEnabled': z.boolean().default(false),
-	'transcription.compressionOptions': z
-		.string()
-		.default(FFMPEG_DEFAULT_COMPRESSION_OPTIONS),
+	'transcription.compressionEnabled': 'boolean = false',
+	'transcription.compressionOptions': type('string').default(
+		FFMPEG_DEFAULT_COMPRESSION_OPTIONS,
+	),
 
 	// Service-specific settings
-	'transcription.openai.model': z
-		.string()
-		.transform((val) => val as (string & {}) | OpenAIModel['name'])
+	'transcription.openai.model': type('string')
+		.pipe((val) => val as (string & {}) | OpenAIModel['name'])
 		.default('gpt-4o-mini-transcribe' satisfies OpenAIModel['name']),
-	'transcription.elevenlabs.model': z
-		.string()
-		.transform((val) => val as (string & {}) | ElevenLabsModel['name'])
+	'transcription.elevenlabs.model': type('string')
+		.pipe((val) => val as (string & {}) | ElevenLabsModel['name'])
 		.default('scribe_v1' satisfies ElevenLabsModel['name']),
-	'transcription.groq.model': z
-		.string()
-		.transform((val) => val as (string & {}) | GroqModel['name'])
+	'transcription.groq.model': type('string')
+		.pipe((val) => val as (string & {}) | GroqModel['name'])
 		.default('whisper-large-v3-turbo' satisfies GroqModel['name']),
-	'transcription.deepgram.model': z
-		.string()
-		.transform((val) => val as (string & {}) | DeepgramModel['name'])
+	'transcription.deepgram.model': type('string')
+		.pipe((val) => val as (string & {}) | DeepgramModel['name'])
 		.default('nova-3' satisfies DeepgramModel['name']),
-	'transcription.speaches.baseUrl': z.string().default('http://localhost:8000'),
-	'transcription.speaches.modelId': z
-		.string()
-		.default('Systran/faster-distil-whisper-small.en'),
-	'transcription.whispercpp.modelPath': z.string().default(''),
+	'transcription.mistral.model': type('string')
+		.pipe((val) => val as (string & {}) | MistralModel['name'])
+		.default('voxtral-mini-latest' satisfies MistralModel['name']),
+	'transcription.speaches.baseUrl': "string = 'http://localhost:8000'",
+	'transcription.speaches.modelId': type('string').default(
+		'Systran/faster-distil-whisper-small.en',
+	),
+	'transcription.whispercpp.modelPath': "string = ''",
+	'transcription.parakeet.modelPath': "string = ''",
 
-	'transformations.selectedTransformationId': z
-		.string()
-		.nullable()
-		.default(null),
+	'transformations.selectedTransformationId': 'string | null = null',
 
-	'completion.openrouter.model': z
-		.string()
-		.default('mistralai/mixtral-8x7b')
-		.describe('OpenRouter model name'),
+	'completion.openrouter.model': "string = 'mistralai/mixtral-8x7b'",
+	// Global default for custom endpoints. Can be overridden per-step in transformations.
+	// Most users have one local LLM server, so this saves re-entering the URL each time.
+	'completion.custom.baseUrl': "string = 'http://localhost:11434/v1'",
 
-	'apiKeys.openai': z.string().default(''),
-	'apiKeys.anthropic': z.string().default(''),
-	'apiKeys.groq': z.string().default(''),
-	'apiKeys.google': z.string().default(''),
-	'apiKeys.deepgram': z.string().default(''),
-	'apiKeys.elevenlabs': z.string().default(''),
-	'apiKeys.openrouter': z.string().default(''),
+	'apiKeys.openai': "string = ''",
+	'apiKeys.anthropic': "string = ''",
+	'apiKeys.groq': "string = ''",
+	'apiKeys.google': "string = ''",
+	'apiKeys.deepgram': "string = ''",
+	'apiKeys.elevenlabs': "string = ''",
+	'apiKeys.mistral': "string = ''",
+	'apiKeys.openrouter': "string = ''",
+	'apiKeys.custom': "string = ''",
+
+	// API endpoint overrides (empty string = use default endpoint)
+	'apiEndpoints.openai': "string = ''",
+	'apiEndpoints.groq': "string = ''",
 
 	// Analytics settings
-	'analytics.enabled': z.boolean().default(true),
+	'analytics.enabled': 'boolean = true',
 
-	...({
-		'shortcuts.local.toggleManualRecording': z.string().nullable().default(' '),
-		'shortcuts.local.startManualRecording': z.string().nullable().default(null),
-		'shortcuts.local.stopManualRecording': z.string().nullable().default(null),
-		'shortcuts.local.cancelManualRecording': z.string().nullable().default('c'),
-		'shortcuts.local.toggleVadRecording': z.string().nullable().default('v'),
-		'shortcuts.local.startVadRecording': z.string().nullable().default(null),
-		'shortcuts.local.stopVadRecording': z.string().nullable().default(null),
-		'shortcuts.local.pushToTalk': z.string().nullable().default('p'),
-	} satisfies Record<
-		`shortcuts.local.${Command['id']}`,
-		z.ZodDefault<z.ZodNullable<ZodString>>
-	>),
+	// Local shortcuts (in-app shortcuts)
+	'shortcuts.local.toggleManualRecording': "string | null = ' '",
+	'shortcuts.local.startManualRecording': 'string | null = null',
+	'shortcuts.local.stopManualRecording': 'string | null = null',
+	'shortcuts.local.cancelManualRecording': "string | null = 'c'",
+	'shortcuts.local.toggleVadRecording': "string | null = 'v'",
+	'shortcuts.local.startVadRecording': 'string | null = null',
+	'shortcuts.local.stopVadRecording': 'string | null = null',
+	'shortcuts.local.pushToTalk': "string | null = 'p'",
+	'shortcuts.local.openTransformationPicker': "string | null = 't'",
+	'shortcuts.local.runTransformationOnClipboard': "string | null = 'r'",
 
-	...({
-		'shortcuts.global.toggleManualRecording': z
-			.string()
-			.nullable()
-			.default(`${CommandOrControl}+Shift+;`),
-		'shortcuts.global.startManualRecording': z
-			.string()
-			.nullable()
-			.default(null),
-		'shortcuts.global.stopManualRecording': z.string().nullable().default(null),
-		'shortcuts.global.cancelManualRecording': z
-			.string()
-			.nullable()
-			.default(`${CommandOrControl}+Shift+'`),
-		'shortcuts.global.toggleVadRecording': z.string().nullable().default(null),
-		'shortcuts.global.startVadRecording': z.string().nullable().default(null),
-		'shortcuts.global.stopVadRecording': z.string().nullable().default(null),
-		'shortcuts.global.pushToTalk': z
-			.string()
-			.nullable()
-			.default(`${CommandOrAlt}+Shift+D`),
-	} satisfies Record<
-		`shortcuts.global.${Command['id']}`,
-		z.ZodDefault<z.ZodNullable<ZodString>>
-	>),
+	// Global shortcuts (system-wide shortcuts)
+	'shortcuts.global.toggleManualRecording': type('string | null').default(
+		`${CommandOrControl}+Shift+;`,
+	),
+	'shortcuts.global.startManualRecording': 'string | null = null',
+	'shortcuts.global.stopManualRecording': 'string | null = null',
+	'shortcuts.global.cancelManualRecording': type('string | null').default(
+		`${CommandOrControl}+Shift+'`,
+	),
+	'shortcuts.global.toggleVadRecording': 'string | null = null',
+	'shortcuts.global.startVadRecording': 'string | null = null',
+	'shortcuts.global.stopVadRecording': 'string | null = null',
+	'shortcuts.global.pushToTalk': type('string | null').default(
+		`${CommandOrAlt}+Shift+D`,
+	),
+	'shortcuts.global.openTransformationPicker': type('string | null').default(
+		`${CommandOrControl}+Shift+X`,
+	),
+	'shortcuts.global.runTransformationOnClipboard': type(
+		'string | null',
+	).default(`${CommandOrControl}+Shift+R`),
 });
 
 /**
- * The TypeScript type for validated settings, inferred from the Zod schema.
+ * The TypeScript type for validated settings, inferred from the Arktype schema.
  * This is the source of truth for all settings throughout the application.
  *
- * @see settingsSchema - The Zod schema that defines this type
+ * @see Settings - The Arktype schema that defines this type
  */
-export type Settings = z.infer<typeof settingsSchema>;
+export type Settings = typeof Settings.infer;
 
 /**
- * Get default settings by parsing an empty object, which will use all the .default() values
+ * Get default settings by parsing an empty object, which will use all the default values
  * defined in the schema.
  *
  * @returns A complete settings object with all default values
@@ -290,7 +294,11 @@ export type Settings = z.infer<typeof settingsSchema>;
  * };
  */
 export function getDefaultSettings(): Settings {
-	const result = settingsSchema.parse({});
+	const result = Settings({});
+	if (result instanceof type.errors) {
+		// This should never happen since all fields have defaults
+		throw new Error(`Failed to get default settings: ${result.summary}`);
+	}
 	return result;
 }
 
@@ -371,13 +379,22 @@ export function parseStoredSettings(storedValue: unknown): Settings {
 			delete migrated['transformation.clipboard.pasteOnSuccess'];
 		}
 
+		// Migrate old navigation boolean settings to new layoutMode enum
+		if ('ui.showSidebar' in migrated || 'ui.showNavItems' in migrated) {
+			const showSidebar = migrated['ui.showSidebar'] ?? true;
+			// If sidebar was enabled, use sidebar mode; otherwise use nav-items mode
+			migrated['ui.layoutMode'] = showSidebar ? 'sidebar' : 'nav-items';
+			delete migrated['ui.showSidebar'];
+			delete migrated['ui.showNavItems'];
+		}
+
 		storedValue = migrated;
 	}
 
 	// First, try to parse the entire value
-	const fullResult = settingsSchema.safeParse(storedValue);
-	if (fullResult.success) {
-		return fullResult.data;
+	const fullResult = Settings(storedValue);
+	if (!(fullResult instanceof type.errors)) {
+		return fullResult;
 	}
 
 	// If it's not an object, return defaults
@@ -385,65 +402,58 @@ export function parseStoredSettings(storedValue: unknown): Settings {
 		return getDefaultSettings();
 	}
 
-	// Create a partial schema where all keys are optional
-	// This allows us to validate incomplete settings objects
-	const partialSchema = settingsSchema.partial();
-
-	// Try parsing with the partial schema
-	const partialResult = partialSchema.safeParse(storedValue);
-
-	if (partialResult.success) {
-		// The partial object is valid, now merge with defaults
-		// This ensures all required keys exist
-		const mergedSettings = {
-			...getDefaultSettings(),
-			...partialResult.data,
-		};
-
-		// Validate the merged result with the full schema
-		// This step ensures the merged object is complete and valid
-		const finalResult = settingsSchema.safeParse(mergedSettings);
-		if (finalResult.success) {
-			return finalResult.data;
-		}
-	}
-
-	// If even partial validation fails, try key-by-key validation
-	// This handles cases where individual values might be invalid
+	// Get defaults and try to merge valid keys
+	const defaults = getDefaultSettings();
 	const validatedSettings: Record<string, unknown> = {};
 
 	// Since settings are flat (one layer deep), we can iterate through stored keys
 	for (const [key, value] of Object.entries(
 		storedValue as Record<string, unknown>,
 	)) {
-		// Create a test object with just this key
-		// This isolates validation to prevent one bad value from invalidating others
-		const testObject = { [key]: value };
-		const testResult = partialSchema.safeParse(testObject);
-
-		if (testResult.success && key in testResult.data) {
-			// This key-value pair is valid, keep it
+		// Check if this key exists in the schema by checking if it's in defaults
+		if (key in defaults) {
+			// Keep the stored value - we'll rely on defaults for invalid values later
 			validatedSettings[key] = value;
 		}
-		// Invalid keys are silently discarded
-		// This includes unknown keys from old versions or corrupted values
+		// Invalid/unknown keys are silently discarded
 	}
 
 	// Merge validated keys with defaults
-	// Defaults fill in any missing required fields
 	const finalSettings = {
-		...getDefaultSettings(),
+		...defaults,
 		...validatedSettings,
 	};
 
 	// Do one final validation to ensure the result is valid
-	// This should always succeed given our approach, but we check to be safe
-	const result = settingsSchema.safeParse(finalSettings);
-	if (result.success) {
-		return result.data;
+	const result = Settings(finalSettings);
+	if (!(result instanceof type.errors)) {
+		return result;
+	}
+
+	// If merge validation fails, try key-by-key validation
+	const keyByKeySettings: Record<string, unknown> = {};
+	for (const [key, value] of Object.entries(validatedSettings)) {
+		// Create a test object with just this key and defaults
+		const testObject = { ...defaults, [key]: value };
+		const testResult = Settings(testObject);
+		if (!(testResult instanceof type.errors)) {
+			// This key-value pair is valid, keep it
+			keyByKeySettings[key] = value;
+		}
+		// Invalid values are silently discarded, will use defaults
+	}
+
+	// Final merge with defaults
+	const keyByKeyFinal = {
+		...defaults,
+		...keyByKeySettings,
+	};
+
+	const keyByKeyResult = Settings(keyByKeyFinal);
+	if (!(keyByKeyResult instanceof type.errors)) {
+		return keyByKeyResult;
 	}
 
 	// If all else fails, return defaults
-	// This ensures the app always has valid settings to work with
-	return getDefaultSettings();
+	return defaults;
 }

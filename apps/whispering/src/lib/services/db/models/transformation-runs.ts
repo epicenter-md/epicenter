@@ -1,32 +1,47 @@
+import { type } from 'arktype';
+
 /**
- * Base properties shared by all transformation step run variants.
+ * Base fields shared by all transformation step run variants.
  */
-type BaseTransformationStepRun = {
-	id: string;
-	stepId: string;
-	startedAt: string;
-	completedAt: string | null;
-	input: string;
-};
+const BaseTransformationStepRun = {
+	id: 'string',
+	stepId: 'string',
+	startedAt: 'string',
+	completedAt: 'string | null',
+	input: 'string',
+} as const;
 
-export type TransformationStepRunRunning = BaseTransformationStepRun & {
-	status: 'running';
-};
+export const TransformationStepRunRunning = type({
+	...BaseTransformationStepRun,
+	status: '"running"',
+});
 
-export type TransformationStepRunCompleted = BaseTransformationStepRun & {
-	status: 'completed';
-	output: string;
-};
+export type TransformationStepRunRunning =
+	typeof TransformationStepRunRunning.infer;
 
-export type TransformationStepRunFailed = BaseTransformationStepRun & {
-	status: 'failed';
-	error: string;
-};
+export const TransformationStepRunCompleted = type({
+	...BaseTransformationStepRun,
+	status: '"completed"',
+	output: 'string',
+});
 
-export type TransformationStepRun =
-	| TransformationStepRunRunning
-	| TransformationStepRunCompleted
-	| TransformationStepRunFailed;
+export type TransformationStepRunCompleted =
+	typeof TransformationStepRunCompleted.infer;
+
+export const TransformationStepRunFailed = type({
+	...BaseTransformationStepRun,
+	status: '"failed"',
+	error: 'string',
+});
+
+export type TransformationStepRunFailed =
+	typeof TransformationStepRunFailed.infer;
+
+export const TransformationStepRun = TransformationStepRunRunning.or(
+	TransformationStepRunCompleted,
+).or(TransformationStepRunFailed);
+
+export type TransformationStepRun = typeof TransformationStepRun.infer;
 
 /**
  * Base properties shared by all transformation run variants.
@@ -36,81 +51,54 @@ export type TransformationStepRun =
  * 2. 'completed' - When all steps have completed successfully
  * 3. 'failed' - If any step fails or an error occurs
  */
-type BaseTransformationRun = {
-	id: string;
-	transformationId: string;
+const BaseTransformationRun = {
+	id: 'string',
+	transformationId: 'string',
 	/**
 	 * Recording id if the transformation is invoked on a recording.
 	 * Null if the transformation is invoked on arbitrary text input.
 	 */
-	recordingId: string | null;
-	startedAt: string;
-	completedAt: string | null;
+	recordingId: 'string | null',
+	startedAt: 'string',
+	completedAt: 'string | null',
 	/**
 	 * Because the recording's transcribedText can change after invoking,
 	 * we store a snapshot of the transcribedText at the time of invoking.
 	 */
-	input: string;
-	stepRuns: TransformationStepRun[];
-};
+	input: 'string',
+	stepRuns: [TransformationStepRun, '[]'],
+} as const;
 
-export type TransformationRunRunning = BaseTransformationRun & {
-	status: 'running';
-};
+export const TransformationRunRunning = type({
+	...BaseTransformationRun,
+	status: '"running"',
+});
 
-export type TransformationRunCompleted = BaseTransformationRun & {
-	status: 'completed';
-	output: string;
-};
+export type TransformationRunRunning = typeof TransformationRunRunning.infer;
 
-export type TransformationRunFailed = BaseTransformationRun & {
-	status: 'failed';
-	error: string;
-};
+export const TransformationRunCompleted = type({
+	...BaseTransformationRun,
+	status: '"completed"',
+	output: 'string',
+});
+
+export type TransformationRunCompleted =
+	typeof TransformationRunCompleted.infer;
+
+export const TransformationRunFailed = type({
+	...BaseTransformationRun,
+	status: '"failed"',
+	error: 'string',
+});
+
+export type TransformationRunFailed = typeof TransformationRunFailed.infer;
 
 /**
  * Represents an execution of a transformation, which can be run on either
  * a recording's transcribed text or arbitrary input text.
  */
-export type TransformationRun =
-	| TransformationRunRunning
-	| TransformationRunCompleted
-	| TransformationRunFailed;
+export const TransformationRun = TransformationRunRunning.or(
+	TransformationRunCompleted,
+).or(TransformationRunFailed);
 
-// Type guards for TransformationRun
-export function isTransformationRunCompleted(
-	run: TransformationRun,
-): run is TransformationRunCompleted {
-	return run.status === 'completed';
-}
-
-export function isTransformationRunFailed(
-	run: TransformationRun,
-): run is TransformationRunFailed {
-	return run.status === 'failed';
-}
-
-export function isTransformationRunRunning(
-	run: TransformationRun,
-): run is TransformationRunRunning {
-	return run.status === 'running';
-}
-
-// Type guards for TransformationStepRun
-export function isTransformationStepRunCompleted(
-	stepRun: TransformationStepRun,
-): stepRun is TransformationStepRunCompleted {
-	return stepRun.status === 'completed';
-}
-
-export function isTransformationStepRunFailed(
-	stepRun: TransformationStepRun,
-): stepRun is TransformationStepRunFailed {
-	return stepRun.status === 'failed';
-}
-
-export function isTransformationStepRunRunning(
-	stepRun: TransformationStepRun,
-): stepRun is TransformationStepRunRunning {
-	return stepRun.status === 'running';
-}
+export type TransformationRun = typeof TransformationRun.infer;

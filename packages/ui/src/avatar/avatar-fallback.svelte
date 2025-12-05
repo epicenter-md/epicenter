@@ -1,14 +1,10 @@
-<!--
-	Installed from @ieedan/shadcn-svelte-extras
--->
-
 <script lang="ts">
-	import { cn } from '#/utils/utils.js';
 	import { Avatar as AvatarPrimitive } from 'bits-ui';
+	import { cn } from '#/utils/utils.js';
 
 	let {
-		class: className,
 		ref = $bindable(null),
+		class: className,
 		...restProps
 	}: AvatarPrimitive.FallbackProps = $props();
 </script>

@@ -6,6 +6,6 @@
 
 // Re-export from audio since these are tied to recording states
 export {
-	recorderStateToIcons,
-	vadStateToIcons,
+	RECORDER_STATE_TO_ICON,
+	VAD_STATE_TO_ICON,
 } from '../audio/recording-states';

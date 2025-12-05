@@ -1,0 +1,40 @@
+{
+	// https://biomejs.dev/internals/language-support/
+	"[json]": {
+		"editor.defaultFormatter": "biomejs.biome"
+	},
+	"[jsonc]": {
+		"editor.defaultFormatter": "biomejs.biome"
+	},
+	"[css]": {
+		"editor.defaultFormatter": "biomejs.biome"
+	},
+	"[javascript]": {
+		"editor.defaultFormatter": "biomejs.biome"
+	},
+	"[typescript]": {
+		"editor.defaultFormatter": "biomejs.biome"
+	},
+	"[svelte]": {
+		"editor.defaultFormatter": "svelte.svelte-vscode",
+		"editor.formatOnSave": true
+	},
+	"[astro]": {
+		"editor.defaultFormatter": "astro-build.astro-vscode",
+		"editor.formatOnSave": true
+	},
+	"[html]": {
+		"editor.defaultFormatter": "esbenp.prettier-vscode",
+		"editor.formatOnSave": true
+	},
+	"editor.codeActionsOnSave": {
+		"source.organizeImports.biome": "always"
+	},
+	"eslint.useFlatConfig": true,
+	"eslint.workingDirectories": [{ "mode": "auto" }],
+	"eslint.validate": ["svelte"],
+	"[markdown]": {
+		"editor.defaultFormatter": "esbenp.prettier-vscode",
+		"editor.formatOnSave": true
+	}
+}

@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+
 /**
  * Minimal CLI to import a Reddit export ZIP into a local LibSQL database.
  * Commands:
@@ -13,14 +14,15 @@
  *   If set, overrides the db URL entirely (e.g., libsql://..., file:/abs/path.db).
  */
 
-import { createClient } from '@libsql/client';
-import type { Adapter } from '@repo/vault-core';
-import { Vault } from '@repo/vault-core';
-import { drizzle } from 'drizzle-orm/libsql';
-import { migrate } from 'drizzle-orm/libsql/migrator';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createClient } from '@libsql/client';
+import type { Adapter } from '@epicenter/vault-core';
+import { Vault } from '@epicenter/vault-core';
+import { drizzle } from 'drizzle-orm/libsql';
+import { migrate } from 'drizzle-orm/libsql/migrator';
+
 // -------------------------------------------------------------
 type CLIArgs = {
 	_: string[]; // positional
@@ -32,14 +34,19 @@ function parseArgs(argv: string[]): CLIArgs {
 	const out: CLIArgs = { _: [] };
 	for (let i = 0; i < argv.length; i++) {
 		const a = argv[i];
+		if (!a) continue; // Skip if somehow undefined
 		if (a === '--file') {
-			out.file = argv[++i];
+			const nextArg = argv[++i];
+			if (nextArg) out.file = nextArg;
 		} else if (a.startsWith('--file=')) {
-			out.file = a.slice('--file='.length);
+			const value = a.slice('--file='.length);
+			if (value) out.file = value;
 		} else if (a === '--db') {
-			out.db = argv[++i];
+			const nextArg = argv[++i];
+			if (nextArg) out.db = nextArg;
 		} else if (a.startsWith('--db=')) {
-			out.db = a.slice('--db='.length);
+			const value = a.slice('--db='.length);
+			if (value) out.db = value;
 		} else if (!a.startsWith('-')) {
 			out._.push(a);
 		}
@@ -129,7 +136,9 @@ async function cmdImport(args: CLIArgs, adapterID: string) {
 	// Initialize Vault (runs migrations implicitly)
 	const vault = await Vault.create({
 		adapters: [adapter],
+		// @ts-expect-error - LibSQLDatabase private properties differ from CompatibleDB but runtime behavior is compatible
 		database: db,
+		// @ts-expect-error - migrate function signature differs but is runtime compatible
 		migrateFunc: migrate,
 	});
 
@@ -179,11 +188,18 @@ async function main() {
 	const argv = process.argv.slice(2);
 	const args = parseArgs(argv);
 
-	const command = args._[0] ?? 'import';
+	const command = args._.at(0) ?? 'import';
 	switch (command) {
 		case 'import':
 			{
 				const adapter = args._[1];
+				if (!adapter) {
+					console.error('Error: Missing adapter argument');
+					console.error(
+						'Usage: bun run src/cli.ts import <adapter> [--file <zip>] [--db <dbPath>]',
+					);
+					process.exit(1);
+				}
 				await cmdImport(args, adapter);
 			}
 			break;

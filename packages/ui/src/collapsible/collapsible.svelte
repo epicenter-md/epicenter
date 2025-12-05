@@ -2,8 +2,8 @@
 	import { Collapsible as CollapsiblePrimitive } from 'bits-ui';
 
 	let {
-		open = $bindable(false),
 		ref = $bindable(null),
+		open = $bindable(false),
 		...restProps
 	}: CollapsiblePrimitive.RootProps = $props();
 </script>

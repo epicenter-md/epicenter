@@ -1,7 +1,19 @@
 import * as services from '$lib/services';
-import { defineMutation } from './_client';
+import { defineMutation, defineQuery } from './_client';
+
+const textKeys = {
+	clipboard: ['text', 'clipboard'] as const,
+	readFromClipboard: ['text', 'readFromClipboard'] as const,
+	copyToClipboard: ['text', 'copyToClipboard'] as const,
+	writeToCursor: ['text', 'writeToCursor'] as const,
+	simulateEnterKeystroke: ['text', 'simulateEnterKeystroke'] as const,
+} as const;
 
 export const text = {
+	readFromClipboard: defineQuery({
+		queryKey: textKeys.readFromClipboard,
+		resultQueryFn: () => services.text.readFromClipboard(),
+	}),
 	copyToClipboard: defineMutation({
 		mutationKey: ['text', 'copyToClipboard'],
 		resultMutationFn: ({ text }: { text: string }) =>
@@ -17,5 +29,9 @@ export const text = {
 			// 4. Restores original clipboard
 			return await services.text.writeToCursor(text);
 		},
+	}),
+	simulateEnterKeystroke: defineMutation({
+		mutationKey: textKeys.simulateEnterKeystroke,
+		resultMutationFn: () => services.text.simulateEnterKeystroke(),
 	}),
 };

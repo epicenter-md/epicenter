@@ -1,0 +1,33 @@
+{
+	"name": "@epicenter/landing",
+	"private": true,
+	"type": "module",
+	"version": "0.0.1",
+	"scripts": {
+		"dev": "astro dev",
+		"build": "astro build",
+		"preview": "astro preview",
+		"astro": "astro",
+		"deploy": "bun run build && wrangler pages deploy",
+		"lint": "eslint .",
+		"check": "astro check && svelte-check"
+	},
+	"dependencies": {
+		"@astrojs/check": "^0.9.4",
+		"@astrojs/svelte": "^7.1.0",
+		"@epicenter/constants": "workspace:*",
+		"@epicenter/ui": "workspace:*",
+		"@tailwindcss/vite": "^4.1.11",
+		"arktype": "catalog:",
+		"astro": "^5.12.4",
+		"posthog-js": "^1.258.5",
+		"svelte": "catalog:",
+		"tailwindcss": "catalog:",
+		"typescript": "catalog:"
+	},
+	"devDependencies": {
+		"@lucide/astro": "^0.536.0",
+		"@epicenter/ui": "workspace:*",
+		"@tailwindcss/typography": "^0.5.16"
+	}
+}

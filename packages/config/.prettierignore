@@ -1,0 +1,34 @@
+# Anything BiomeJS touches
+*.json
+*.jsonc
+*.js
+*.mjs
+*.cjs
+*.ts
+*.d.ts
+*.css
+
+# Dependencies
+node_modules
+
+# Build outputs
+dist
+build
+.svelte-kit
+
+# Generated files
+*.min.js
+*.min.css
+
+# Package manager files
+package-lock.json
+pnpm-lock.yaml
+yarn.lock
+bun.lock
+bun.lockb
+
+# Miscellaneous
+/static/
+
+# Tauri
+src-tauri/

@@ -1,7 +1,8 @@
 import { createTaggedError } from 'wellcrafted/error';
 import type { Result } from 'wellcrafted/result';
 
-export const { FsServiceError, FsServiceErr } = createTaggedError('FsServiceError');
+export const { FsServiceError, FsServiceErr } =
+	createTaggedError('FsServiceError');
 export type FsServiceError = ReturnType<typeof FsServiceError>;
 
 export type FsService = {

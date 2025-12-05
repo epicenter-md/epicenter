@@ -8,7 +8,7 @@
 	import * as Dialog from '#/dialog/index.js';
 	import * as Drawer from '#/drawer/index.js';
 
-	import { useModal } from './modal.svelte.js';
+	import { useModal } from './modal-state.svelte.js';
 
 	let {
 		children,
