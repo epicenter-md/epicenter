@@ -53,6 +53,7 @@
 	import { format } from 'date-fns';
 	import OpenFolderButton from '$lib/components/OpenFolderButton.svelte';
 	import { PATHS } from '$lib/constants/paths';
+	import { settings } from '$lib/stores/settings.svelte';
 
 	/**
 	 * Returns a cell renderer for a date/time column using date-fns format.
@@ -508,8 +509,7 @@
 												},
 												onError: (error) => {
 													rpc.notify.error.execute({
-														title:
-															'Error copying transcripts to clipboard',
+														title: 'Error copying transcripts to clipboard',
 														description: error.message,
 														action: { type: 'more-details', error: error },
 													});
@@ -563,7 +563,13 @@
 				{/if}
 
 				<OpenFolderButton
-					getFolderPath={PATHS.DB.RECORDINGS}
+					getFolderPath={async () => {
+						// Use the configured output folder if set, otherwise use default
+						return (
+							settings.value['recording.cpal.outputFolder'] ??
+							(await PATHS.DB.RECORDINGS())
+						);
+					}}
 					tooltipText="Open recordings folder"
 				/>
 
