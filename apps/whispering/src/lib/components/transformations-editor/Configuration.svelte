@@ -29,6 +29,7 @@
 	import type { Transformation } from '$lib/services/db';
 	import { generateDefaultTransformationStep } from '$lib/services/db';
 	import CopyIcon from '@lucide/svelte/icons/copy';
+	import FolderOpenIcon from '@lucide/svelte/icons/folder-open';
 	import PlusIcon from '@lucide/svelte/icons/plus';
 	import TrashIcon from '@lucide/svelte/icons/trash';
 	import { slide } from 'svelte/transition';
@@ -724,6 +725,140 @@
 										</Accordion.Content>
 									</Accordion.Item>
 								</Accordion.Root>
+							</div>
+						{:else if step.type === 'file_output'}
+							<div class="space-y-6">
+								{#if !window.__TAURI_INTERNALS__}
+									<Alert.Root>
+										<Alert.Title>Desktop Only</Alert.Title>
+										<Alert.Description>
+											File output is only available in the desktop app. This
+											step will be skipped in the web version.
+										</Alert.Description>
+									</Alert.Root>
+								{/if}
+
+								<Field.Field>
+									<Field.Label for="file_output.outputDirectory"
+										>Output Directory</Field.Label
+									>
+									<div class="flex items-center gap-2">
+										<Input
+											id="file_output.outputDirectory"
+											value={step['file_output.outputDirectory']}
+											oninput={(e) => {
+												transformation = {
+													...transformation,
+													steps: transformation.steps.map((s, i) =>
+														i === index
+															? {
+																	...s,
+																	'file_output.outputDirectory':
+																		e.currentTarget.value,
+																}
+															: s,
+													),
+												};
+											}}
+											placeholder="/path/to/output/folder"
+											class="flex-1"
+										/>
+										{#if window.__TAURI_INTERNALS__}
+											<WhisperingButton
+												tooltipContent="Browse for folder"
+												variant="outline"
+												size="icon"
+												onclick={async () => {
+													const { open } = await import(
+														'@tauri-apps/plugin-dialog'
+													);
+													const selected = await open({
+														directory: true,
+														multiple: false,
+														title: 'Select Output Folder',
+													});
+													if (selected) {
+														transformation = {
+															...transformation,
+															steps: transformation.steps.map((s, i) =>
+																i === index
+																	? {
+																			...s,
+																			'file_output.outputDirectory': selected,
+																		}
+																	: s,
+															),
+														};
+													}
+												}}
+											>
+												<FolderOpenIcon class="size-4" />
+											</WhisperingButton>
+										{/if}
+									</div>
+									<Field.Description>
+										The folder where output files will be saved
+									</Field.Description>
+								</Field.Field>
+
+								<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+									<Field.Field>
+										<Field.Label for="file_output.filenameTemplate"
+											>Filename Template</Field.Label
+										>
+										<Input
+											id="file_output.filenameTemplate"
+											value={step['file_output.filenameTemplate']}
+											oninput={(e) => {
+												transformation = {
+													...transformation,
+													steps: transformation.steps.map((s, i) =>
+														i === index
+															? {
+																	...s,
+																	'file_output.filenameTemplate':
+																		e.currentTarget.value,
+																}
+															: s,
+													),
+												};
+											}}
+											placeholder={`{{date}}-{{time}}-transcription`}
+										/>
+										<Field.Description>
+											Use {`{{date}}`}, {`{{time}}`}, {`{{timestamp}}`},
+											{`{{recording_title}}`}, {`{{transformation_title}}`}
+										</Field.Description>
+									</Field.Field>
+
+									<Field.Field>
+										<Field.Label for="file_output.fileExtension"
+											>File Extension</Field.Label
+										>
+										<Input
+											id="file_output.fileExtension"
+											value={step['file_output.fileExtension']}
+											oninput={(e) => {
+												transformation = {
+													...transformation,
+													steps: transformation.steps.map((s, i) =>
+														i === index
+															? {
+																	...s,
+																	'file_output.fileExtension':
+																		e.currentTarget.value,
+																}
+															: s,
+													),
+												};
+											}}
+											placeholder="md"
+										/>
+										<Field.Description>
+											Without the leading dot (e.g., txt, md)
+										</Field.Description>
+									</Field.Field>
+								</div>
 							</div>
 						{/if}
 					</Card.Content>

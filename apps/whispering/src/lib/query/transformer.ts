@@ -15,6 +15,7 @@ import type {
 	TransformationStep,
 } from '$lib/services/db';
 import { settings } from '$lib/stores/settings.svelte';
+import { sanitizeFilename } from '$lib/utils/filename';
 import { asTemplateString, interpolateTemplate } from '$lib/utils/template';
 import { defineMutation, queryClient } from './_client';
 import { dbKeys } from './db';
@@ -116,6 +117,7 @@ export const transformer = {
 					input: recording.transcribedText,
 					transformation,
 					recordingId,
+					recordingTitle: recording.title,
 				});
 
 			if (transformationRunError)
@@ -142,9 +144,14 @@ export const transformer = {
 async function handleStep({
 	input,
 	step,
+	context,
 }: {
 	input: string;
 	step: TransformationStep;
+	context?: {
+		recordingTitle?: string;
+		transformationTitle?: string;
+	};
 }): Promise<Result<string, string>> {
 	switch (step.type) {
 		case 'find_replace': {
@@ -295,6 +302,76 @@ async function handleStep({
 			}
 		}
 
+		case 'file_output': {
+			if (!window.__TAURI_INTERNALS__) {
+				console.warn(
+					'file_output step is only supported on desktop; skipping',
+				);
+				return Ok(input);
+			}
+
+			const outputDirectory = step['file_output.outputDirectory'];
+			const filenameTemplate = step['file_output.filenameTemplate'];
+			const fileExtension = step['file_output.fileExtension'];
+
+			if (!outputDirectory.trim()) {
+				return Err('Output directory not configured for file_output step');
+			}
+
+			const now = new Date();
+			const dateStr = now.toISOString().slice(0, 10);
+			const timeStr = now.toTimeString().slice(0, 8).replace(/:/g, '');
+			const timestampStr = `${dateStr}T${timeStr}`;
+
+			const variables = {
+				date: dateStr,
+				time: timeStr,
+				timestamp: timestampStr,
+				recording_title: context?.recordingTitle ?? 'untitled',
+				transformation_title: context?.transformationTitle ?? 'transformation',
+			};
+
+			const filename = interpolateTemplate(
+				asTemplateString(filenameTemplate),
+				variables,
+			);
+
+			const sanitizedFilename = sanitizeFilename(filename);
+
+			const { join } = await import('@tauri-apps/api/path');
+			const { writeTextFile, mkdir } = await import('@tauri-apps/plugin-fs');
+
+			try {
+				await mkdir(outputDirectory, { recursive: true });
+			} catch (mkdirError) {
+				const errMsg = extractErrorMessage(mkdirError);
+				if (!errMsg.toLowerCase().includes('already exists')) {
+					return Err(`Failed to create output directory: ${errMsg}`);
+				}
+			}
+
+			const ext = fileExtension.trim()
+				? fileExtension.startsWith('.')
+					? fileExtension
+					: `.${fileExtension}`
+				: '';
+			const filePath = await join(
+				outputDirectory,
+				`${sanitizedFilename}${ext}`,
+			);
+
+			try {
+				await writeTextFile(filePath, input);
+			} catch (writeError) {
+				return Err(
+					`Failed to write file "${sanitizedFilename}${ext}": ${extractErrorMessage(writeError)}`,
+				);
+			}
+
+			console.log(`[file_output] Wrote: ${filePath}`);
+			return Ok(input);
+		}
+
 		default:
 			return Err(`Unsupported step type: ${step.type}`);
 	}
@@ -304,10 +381,12 @@ async function runTransformation({
 	input,
 	transformation,
 	recordingId,
+	recordingTitle,
 }: {
 	input: string;
 	transformation: Transformation;
 	recordingId: string | null;
+	recordingTitle?: string;
 }): Promise<
 	Result<
 		TransformationRunCompleted | TransformationRunFailed,
@@ -365,6 +444,10 @@ async function runTransformation({
 		const handleStepResult = await handleStep({
 			input: currentInput,
 			step,
+			context: {
+				recordingTitle,
+				transformationTitle: transformation.title,
+			},
 		});
 
 		if (isErr(handleStepResult)) {
