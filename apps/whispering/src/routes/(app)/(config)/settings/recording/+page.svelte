@@ -21,6 +21,7 @@
 	} from '$routes/(app)/_layout-utils/check-ffmpeg';
 	import { IS_MACOS, IS_LINUX, PLATFORM_TYPE } from '$lib/constants/platform';
 	import { Button } from '@epicenter/ui/button';
+	import MicTest from './MicTest.svelte';
 
 	const { data } = $props();
 
@@ -314,6 +315,11 @@
 					settings.updateKey('recording.navigator.deviceId', selected)
 			}
 		/>
+	{/if}
+
+	<!-- Microphone Test -->
+	{#if settings.value['recording.mode'] === 'manual' || settings.value['recording.mode'] === 'vad'}
+		<MicTest />
 	{/if}
 
 	{#if settings.value['recording.mode'] === 'manual' || settings.value['recording.mode'] === 'vad'}
