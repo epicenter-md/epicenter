@@ -1,5 +1,6 @@
 import { nanoid } from 'nanoid/non-secure';
 import { Ok } from 'wellcrafted/result';
+import type { SupportedLanguage } from '$lib/constants/languages';
 import { WhisperingErr } from '$lib/result';
 import { DbServiceErr } from '$lib/services/db';
 import { settings } from '$lib/stores/settings.svelte';
@@ -580,6 +581,14 @@ export const commands = {
 		},
 		onError: (error) => {
 			notify.error.execute(error);
+		},
+	}),
+
+	setOutputLanguage: defineMutation({
+		mutationKey: ['commands', 'setOutputLanguage'] as const,
+		mutationFn: async ({ language }: { language: SupportedLanguage }) => {
+			settings.updateKey('transcription.outputLanguage', language);
+			return Ok(undefined);
 		},
 	}),
 };

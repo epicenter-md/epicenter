@@ -96,6 +96,24 @@ export const commands = [
 		callback: () =>
 			rpc.commands.runTransformationOnClipboard.execute(undefined),
 	},
+	{
+		id: 'setOutputLanguageEn',
+		title: 'Set output language to English',
+		on: ['Pressed'],
+		callback: () => rpc.commands.setOutputLanguage.execute({ language: 'en' }),
+	},
+	{
+		id: 'setOutputLanguageJa',
+		title: 'Set output language to Japanese',
+		on: ['Pressed'],
+		callback: () => rpc.commands.setOutputLanguage.execute({ language: 'ja' }),
+	},
+	{
+		id: 'setOutputLanguageZh',
+		title: 'Set output language to Chinese',
+		on: ['Pressed'],
+		callback: () => rpc.commands.setOutputLanguage.execute({ language: 'zh' }),
+	},
 ] as const satisfies SatisfiedCommand[];
 
 export type Command = (typeof commands)[number];

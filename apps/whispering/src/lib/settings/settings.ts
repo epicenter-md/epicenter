@@ -241,6 +241,9 @@ export const Settings = type({
 	'shortcuts.local.pushToTalk': "string | null = 'p'",
 	'shortcuts.local.openTransformationPicker': "string | null = 't'",
 	'shortcuts.local.runTransformationOnClipboard': "string | null = 'r'",
+	'shortcuts.local.setOutputLanguageEn': 'string | null = null',
+	'shortcuts.local.setOutputLanguageJa': 'string | null = null',
+	'shortcuts.local.setOutputLanguageZh': 'string | null = null',
 
 	// Global shortcuts (system-wide shortcuts)
 	'shortcuts.global.toggleManualRecording': type('string | null').default(
@@ -263,6 +266,15 @@ export const Settings = type({
 	'shortcuts.global.runTransformationOnClipboard': type(
 		'string | null',
 	).default(`${CommandOrControl}+Shift+R`),
+	'shortcuts.global.setOutputLanguageEn': type('string | null').default(
+		'Shift+F1',
+	),
+	'shortcuts.global.setOutputLanguageJa': type('string | null').default(
+		'Shift+F2',
+	),
+	'shortcuts.global.setOutputLanguageZh': type('string | null').default(
+		'Shift+F3',
+	),
 });
 
 /**
