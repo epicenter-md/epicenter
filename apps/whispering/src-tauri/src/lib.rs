@@ -207,8 +207,16 @@ use tauri_plugin_clipboard_manager::ClipboardExt;
 ///
 /// This approach is faster than typing character-by-character and preserves
 /// the user's clipboard, making it ideal for inserting transcribed text.
+///
+/// # Arguments
+/// * `text` - The text to paste at the cursor
+/// * `use_ctrl_shift_v` - On Linux, use Ctrl+Shift+V instead of Ctrl+V (for terminals)
 #[tauri::command]
-async fn write_text(app: tauri::AppHandle, text: String) -> Result<(), String> {
+async fn write_text(
+    app: tauri::AppHandle,
+    text: String,
+    use_ctrl_shift_v: bool,
+) -> Result<(), String> {
     // 1. Save current clipboard content
     let original_clipboard = app.clipboard().read_text().ok();
 
@@ -225,24 +233,34 @@ async fn write_text(app: tauri::AppHandle, text: String) -> Result<(), String> {
 
     // Use virtual key codes for V to work with any keyboard layout
     #[cfg(target_os = "macos")]
-    let (modifier, v_key) = (Key::Meta, Key::Other(9)); // Virtual key code for V on macOS
+    let (modifier, v_key, use_shift) = (Key::Meta, Key::Other(9), false); // Virtual key code for V on macOS
     #[cfg(target_os = "windows")]
-    let (modifier, v_key) = (Key::Control, Key::Other(0x56)); // VK_V on Windows
+    let (modifier, v_key, use_shift) = (Key::Control, Key::Other(0x56), false); // VK_V on Windows
     #[cfg(target_os = "linux")]
-    let (modifier, v_key) = (Key::Control, Key::Unicode('v')); // Fallback for Linux
+    let (modifier, v_key, use_shift) = (Key::Control, Key::Unicode('v'), use_ctrl_shift_v); // Configurable for Linux
 
-    // Press modifier + V
+    // Press modifier (and optionally Shift) + V
     enigo
         .key(modifier, Direction::Press)
         .map_err(|e| format!("Failed to press modifier key: {}", e))?;
+    if use_shift {
+        enigo
+            .key(Key::Shift, Direction::Press)
+            .map_err(|e| format!("Failed to press Shift key: {}", e))?;
+    }
     enigo
         .key(v_key, Direction::Press)
         .map_err(|e| format!("Failed to press V key: {}", e))?;
 
-    // Release V + modifier (in reverse order for proper cleanup)
+    // Release V + (optionally Shift) + modifier (in reverse order for proper cleanup)
     enigo
         .key(v_key, Direction::Release)
         .map_err(|e| format!("Failed to release V key: {}", e))?;
+    if use_shift {
+        enigo
+            .key(Key::Shift, Direction::Release)
+            .map_err(|e| format!("Failed to release Shift key: {}", e))?;
+    }
     enigo
         .key(modifier, Direction::Release)
         .map_err(|e| format!("Failed to release modifier key: {}", e))?;

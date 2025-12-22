@@ -4,6 +4,7 @@
 	import * as Select from '@epicenter/ui/select';
 	import { Switch } from '@epicenter/ui/switch';
 	import { createMutation, createQuery } from '@tanstack/svelte-query';
+	import { IS_LINUX } from '$lib/constants/platform';
 	import {
 		ALWAYS_ON_TOP_MODE_OPTIONS,
 		LAYOUT_MODE_OPTIONS,
@@ -112,6 +113,20 @@
 						/>
 						<Field.Label for="transcription.simulateEnterAfterOutput">
 							Press Enter after pasting transcript
+						</Field.Label>
+					</Field.Field>
+				{/if}
+				{#if IS_LINUX && window.__TAURI_INTERNALS__ && (settings.value['transcription.writeToCursorOnSuccess'] || settings.value['transformation.writeToCursorOnSuccess'])}
+					<Field.Field orientation="horizontal">
+						<Switch
+							id="system.linux.useCtrlShiftV"
+							bind:checked={
+								() => settings.value['system.linux.useCtrlShiftV'],
+								(v) => settings.updateKey('system.linux.useCtrlShiftV', v)
+							}
+						/>
+						<Field.Label for="system.linux.useCtrlShiftV">
+							Use Ctrl+Shift+V to paste (for terminals)
 						</Field.Label>
 					</Field.Field>
 				{/if}

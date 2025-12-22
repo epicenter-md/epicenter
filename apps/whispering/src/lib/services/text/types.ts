@@ -31,9 +31,11 @@ export type TextService = {
 	 * 4. Restores the original clipboard
 	 *
 	 * @param text The text to write at the cursor position.
+	 * @param options Optional configuration for the paste operation.
 	 */
 	writeToCursor: (
 		text: string,
+		options?: { useCtrlShiftV?: boolean },
 	) => MaybePromise<Result<void, TextServiceError | WhisperingError>>;
 
 	/**
