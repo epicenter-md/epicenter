@@ -25,7 +25,7 @@ export function createTextServiceExtension(): TextService {
 					}),
 			}),
 
-		writeToCursor: (text) =>
+		writeToCursor: (text, _options) =>
 			tryAsync({
 				try: async () => {
 					// Copy to clipboard and insert at cursor

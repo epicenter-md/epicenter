@@ -105,6 +105,12 @@ export const Settings = type({
 	'system.alwaysOnTop': type
 		.enumerated(...ALWAYS_ON_TOP_MODES)
 		.default('Never'),
+	/**
+	 * Linux paste shortcut configuration.
+	 * - false: Use Ctrl+V (default, works in most applications)
+	 * - true: Use Ctrl+Shift+V (required for terminals and some Linux apps)
+	 */
+	'system.linux.useCtrlShiftV': 'boolean = false',
 
 	// UI settings
 	/**

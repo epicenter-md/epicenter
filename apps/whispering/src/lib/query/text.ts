@@ -1,4 +1,5 @@
 import * as services from '$lib/services';
+import { settings } from '$lib/stores/settings.svelte';
 import { defineMutation, defineQuery } from './_client';
 
 const textKeys = {
@@ -25,9 +26,11 @@ export const text = {
 			// writeToCursor handles everything internally:
 			// 1. Saves current clipboard
 			// 2. Writes text to clipboard
-			// 3. Simulates paste
+			// 3. Simulates paste (with Ctrl+Shift+V on Linux if configured)
 			// 4. Restores original clipboard
-			return await services.text.writeToCursor(text);
+			return await services.text.writeToCursor(text, {
+				useCtrlShiftV: settings.value['system.linux.useCtrlShiftV'],
+			});
 		},
 	}),
 	simulateEnterKeystroke: defineMutation({

@@ -35,7 +35,7 @@ export function createTextServiceWeb(): TextService {
 			return Ok(undefined);
 		},
 
-		writeToCursor: async (text) => {
+		writeToCursor: async (text, _options) => {
 			// In web browsers, we cannot programmatically paste for security reasons
 			// We can copy the text to clipboard but the user must manually paste with Cmd/Ctrl+V
 			await navigator.clipboard.writeText(text);

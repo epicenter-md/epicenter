@@ -29,9 +29,13 @@ export function createTextServiceDesktop(): TextService {
 					}),
 			}),
 
-		writeToCursor: async (text) =>
+		writeToCursor: async (text, options) =>
 			tryAsync({
-				try: () => invoke<void>('write_text', { text }),
+				try: () =>
+					invoke<void>('write_text', {
+						text,
+						useCtrlShiftV: options?.useCtrlShiftV ?? false,
+					}),
 				catch: (error) =>
 					TextServiceErr({
 						message:
