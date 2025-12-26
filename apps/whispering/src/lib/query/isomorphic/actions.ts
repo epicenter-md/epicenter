@@ -569,7 +569,7 @@ export const commands = {
 				return Ok(undefined);
 			}
 
-			sound.playSoundIfEnabled.execute('transformationComplete');
+			sound.playSoundIfEnabled.execute('transformation-complete');
 
 			await delivery.deliverTransformationResult.execute({
 				text: output,
@@ -673,7 +673,7 @@ async function processRecordingPipeline({
 		return;
 	}
 
-	sound.playSoundIfEnabled.execute('transcriptionComplete');
+	sound.playSoundIfEnabled.execute('transcription-complete');
 
 	await delivery.deliverTranscriptionResult.execute({
 		text: transcribedText,
@@ -745,7 +745,7 @@ async function processRecordingPipeline({
 		return;
 	}
 
-	sound.playSoundIfEnabled.execute('transformationComplete');
+	sound.playSoundIfEnabled.execute('transformation-complete');
 
 	await delivery.deliverTransformationResult.execute({
 		text: transformationRun.output,

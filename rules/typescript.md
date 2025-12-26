@@ -12,6 +12,21 @@
   const filtered = items.filter((x): x is NonNullable<typeof x> => x !== undefined);
   ```
 - When moving components to new locations, always update relative imports to absolute imports (e.g., change `import Component from '../Component.svelte'` to `import Component from '$lib/components/Component.svelte'`)
+- Prefer `satisfies` over inline type annotations for object literals. This preserves literal types and provides better inference while still ensuring type safety:
+  ```typescript
+  // Good - preserves literal types, better inference
+  const customSound = {
+    id: soundId,
+    serializedAudio: { arrayBuffer, blobType: file.type },
+  } satisfies CustomSound;
+
+  // Avoid - widens types unnecessarily
+  const customSound: CustomSound = {
+    id: soundId,
+    serializedAudio: { arrayBuffer, blobType: file.type },
+  };
+  ```
+  Use grep pattern `const \w+: \w+ = \{` to find violations.
 - When functions are only used in the return statement of a factory/creator function, use object method shorthand syntax instead of defining them separately. For example, instead of:
   ```typescript
   function myFunction() {

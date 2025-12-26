@@ -79,7 +79,7 @@
 						});
 					},
 					onSuccess: (transcribedText) => {
-						rpc.sound.playSoundIfEnabled.execute('transcriptionComplete');
+						rpc.sound.playSoundIfEnabled.execute('transcription-complete');
 
 						rpc.delivery.deliverTranscriptionResult.execute({
 							text: transcribedText,

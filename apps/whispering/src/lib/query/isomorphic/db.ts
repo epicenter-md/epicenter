@@ -1,5 +1,6 @@
 import type { Accessor } from '@tanstack/svelte-query';
 import { Err, Ok } from 'wellcrafted/result';
+import { SOUND_NAMES, type SoundName } from '$lib/constants/sounds';
 import { defineMutation, defineQuery, queryClient } from '$lib/query/client';
 import { services } from '$lib/services';
 import type {
@@ -28,6 +29,9 @@ export const dbKeys = {
 		byTransformationId: (id: string) =>
 			['db', 'runs', 'transformationId', id] as const,
 		byRecordingId: (id: string) => ['db', 'runs', 'recordingId', id] as const,
+	},
+	sounds: {
+		all: ['db', 'sounds'] as const,
 	},
 };
 
@@ -340,6 +344,60 @@ export const db = {
 					});
 				}
 
+				return Ok(undefined);
+			},
+		}),
+	},
+
+	/**
+	 * Custom sound operations
+	 */
+	sounds: {
+		/**
+		 * Get all custom sounds as blobs.
+		 * Uses Promise.all for parallel loading of all sound files.
+		 * Returns a record mapping sound names to blobs (null if no custom sound).
+		 */
+		getAll: defineQuery({
+			queryKey: dbKeys.sounds.all,
+			queryFn: async () => {
+				const results = Object.fromEntries(
+					await Promise.all(
+						SOUND_NAMES.map(async (soundName) => {
+							const { data, error } = await services.db.sounds.get(soundName);
+							if (error) return [soundName, null] as const;
+							return [soundName, data] as const;
+						}),
+					),
+				) as Record<SoundName, Blob | null>;
+				return Ok(results);
+			},
+		}),
+
+		save: defineMutation({
+			mutationKey: ['db', 'sounds', 'save'] as const,
+			mutationFn: async ({
+				soundId,
+				file,
+			}: {
+				soundId: SoundName;
+				file: File;
+			}) => {
+				const { error } = await services.db.sounds.save(soundId, file);
+				if (error) return Err(error);
+
+				queryClient.invalidateQueries({ queryKey: dbKeys.sounds.all });
+				return Ok(undefined);
+			},
+		}),
+
+		delete: defineMutation({
+			mutationKey: ['db', 'sounds', 'delete'] as const,
+			mutationFn: async (soundId: SoundName) => {
+				const { error } = await services.db.sounds.delete(soundId);
+				if (error) return Err(error);
+
+				queryClient.invalidateQueries({ queryKey: dbKeys.sounds.all });
 				return Ok(undefined);
 			},
 		}),

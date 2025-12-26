@@ -31,7 +31,6 @@ export {
 } from './transformation-steps';
 // Transformations
 export type { TransformationV1, TransformationV2 } from './transformations';
-export {
-	generateDefaultTransformation,
-	Transformation,
-} from './transformations';
+export { generateDefaultTransformation, Transformation } from './transformations';
+// Custom Sounds
+export type { CustomSound } from './custom-sounds';

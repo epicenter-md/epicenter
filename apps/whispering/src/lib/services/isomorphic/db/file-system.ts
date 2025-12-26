@@ -6,11 +6,14 @@ import {
 	readDir,
 	readTextFile,
 	remove,
+	rename,
+	writeFile,
 	writeTextFile,
 } from '@tauri-apps/plugin-fs';
 import { type } from 'arktype';
 import matter from 'gray-matter';
 import mime from 'mime';
+import { nanoid } from 'nanoid/non-secure';
 import { extractErrorMessage } from 'wellcrafted/error';
 import { Ok, tryAsync } from 'wellcrafted/result';
 import { PATHS } from '$lib/constants/paths';
@@ -355,17 +358,14 @@ export function createFileSystemDb(): DbService {
 				return tryAsync({
 					try: async () => {
 						const recordingsPath = await PATHS.DB.RECORDINGS();
-						const audioFile = await findAudioFile(recordingsPath, recordingId);
+						const audioPath = await findAudioFile(recordingsPath, recordingId);
 
-						if (!audioFile) {
+						if (!audioPath) {
 							throw new Error(
 								`Audio file not found for recording ${recordingId}`,
 							);
 						}
 
-						const audioPath = await join(recordingsPath, audioFile);
-
-						// Use existing fsService.pathToBlob utility
 						const { data: blob, error } =
 							await FsServiceLive.pathToBlob(audioPath);
 						if (error) throw error;
@@ -383,15 +383,14 @@ export function createFileSystemDb(): DbService {
 				return tryAsync({
 					try: async () => {
 						const recordingsPath = await PATHS.DB.RECORDINGS();
-						const audioFile = await findAudioFile(recordingsPath, recordingId);
+						const audioPath = await findAudioFile(recordingsPath, recordingId);
 
-						if (!audioFile) {
+						if (!audioPath) {
 							throw new Error(
 								`Audio file not found for recording ${recordingId}`,
 							);
 						}
 
-						const audioPath = await join(recordingsPath, audioFile);
 						const assetUrl = convertFileSrc(audioPath);
 
 						// Return the URL as-is from convertFileSrc()
@@ -827,7 +826,6 @@ export function createFileSystemDb(): DbService {
 						const runsPath = await PATHS.DB.TRANSFORMATION_RUNS();
 
 						const now = new Date().toISOString();
-						const { nanoid } = await import('nanoid/non-secure');
 						const newTransformationStepRun = {
 							id: nanoid(),
 							stepId: step.id,
@@ -837,10 +835,10 @@ export function createFileSystemDb(): DbService {
 							status: 'running',
 						} as const;
 
-						const updatedRun: TransformationRun = {
+						const updatedRun = {
 							...run,
 							stepRuns: [...run.stepRuns, newTransformationStepRun],
-						};
+						} satisfies TransformationRun;
 
 						// Update .md file
 						const mdContent = matter.stringify('', updatedRun);
@@ -910,7 +908,7 @@ export function createFileSystemDb(): DbService {
 
 						const now = new Date().toISOString();
 
-						const updatedRun: TransformationRun = {
+						const updatedRun = {
 							...run,
 							stepRuns: run.stepRuns.map((stepRun) => {
 								if (stepRun.id === stepRunId) {
@@ -923,7 +921,7 @@ export function createFileSystemDb(): DbService {
 								}
 								return stepRun;
 							}),
-						};
+						} satisfies TransformationRun;
 
 						// Update .md file
 						const mdContent = matter.stringify('', updatedRun);
@@ -1023,36 +1021,89 @@ export function createFileSystemDb(): DbService {
 				});
 			},
 		},
+
+		sounds: {
+			async get(soundId) {
+				return tryAsync({
+					try: async () => {
+						const soundsPath = await PATHS.DB.CUSTOM_SOUNDS();
+
+						const dirExists = await exists(soundsPath);
+						if (!dirExists) return null;
+
+						const audioPath = await findAudioFile(soundsPath, soundId);
+						if (!audioPath) return null;
+
+						const { data: blob, error } =
+							await FsServiceLive.pathToBlob(audioPath);
+						if (error) throw error;
+
+						return blob;
+					},
+					catch: (error) =>
+						DbServiceErr({
+							message: `Error getting custom sound from file system (soundId: ${soundId}): ${extractErrorMessage(error)}`,
+						}),
+				});
+			},
+
+			async save(soundId, file) {
+				return tryAsync({
+					try: async () => {
+						const soundsPath = await PATHS.DB.CUSTOM_SOUNDS();
+						await mkdir(soundsPath, { recursive: true });
+
+						// Delete any existing audio file for this soundId
+						const existingAudioPath = await findAudioFile(soundsPath, soundId);
+						if (existingAudioPath) {
+							await remove(existingAudioPath);
+						}
+
+						// Write audio file
+						const extension = mime.getExtension(file.type) ?? 'bin';
+						const audioPath = await join(
+							soundsPath,
+							`${soundId}.${extension}`,
+						);
+						const arrayBuffer = await file.arrayBuffer();
+						await writeFile(audioPath, new Uint8Array(arrayBuffer));
+					},
+					catch: (error) =>
+						DbServiceErr({
+							message: `Error saving custom sound to file system (soundId: ${soundId}): ${extractErrorMessage(error)}`,
+						}),
+				});
+			},
+
+			async delete(soundId) {
+				return tryAsync({
+					try: async () => {
+						const soundsPath = await PATHS.DB.CUSTOM_SOUNDS();
+						const audioPath = await findAudioFile(soundsPath, soundId);
+						if (audioPath) {
+							await remove(audioPath);
+						}
+					},
+					catch: (error) =>
+						DbServiceErr({
+							message: `Error deleting custom sound from file system (soundId: ${soundId}): ${extractErrorMessage(error)}`,
+						}),
+				});
+			},
+		},
 	};
 }
 
 /**
- * Helper function to find audio file by ID.
- * Reads directory once and finds the matching file by ID prefix.
- * This is much faster than checking every possible extension.
+ * Find audio file by ID in a directory.
+ * Reads directory once and finds the file matching `{id}.{ext}` where ext is not `.md`.
+ * Returns the full path to the audio file, or null if not found.
  */
 async function findAudioFile(dir: string, id: string): Promise<string | null> {
 	const files = await readDir(dir);
 	const audioFile = files.find(
 		(f) => f.name.startsWith(`${id}.`) && !f.name.endsWith('.md'),
 	);
-	return audioFile?.name ?? null;
-}
-
-/**
- * Rename/move a file atomically.
- * This is a wrapper around Tauri's fs plugin.
- */
-async function rename(oldPath: string, newPath: string): Promise<void> {
-	const { rename: tauriRename } = await import('@tauri-apps/plugin-fs');
-	await tauriRename(oldPath, newPath);
-}
-
-/**
- * Write a file from ArrayBuffer.
- * This is a wrapper around Tauri's fs plugin.
- */
-async function writeFile(path: string, data: Uint8Array): Promise<void> {
-	const { writeFile: tauriWriteFile } = await import('@tauri-apps/plugin-fs');
-	await tauriWriteFile(path, data);
+	if (!audioFile) return null;
+	return join(dir, audioFile.name);
 }

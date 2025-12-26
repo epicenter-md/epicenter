@@ -5,7 +5,7 @@ import { desktopServices } from '$lib/services';
 
 export const ffmpeg = {
 	checkFfmpegInstalled: defineQuery({
-		queryKey: ['ffmpeg.checkInstalled'],
+		queryKey: ['ffmpeg', 'checkInstalled'],
 		queryFn: async () => {
 			const { data, error } = await desktopServices.ffmpeg.checkInstalled();
 			if (error) {

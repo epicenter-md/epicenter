@@ -63,7 +63,7 @@
 								return;
 							}
 
-							rpc.sound.playSoundIfEnabled.execute('transformationComplete');
+							rpc.sound.playSoundIfEnabled.execute('transformation-complete');
 
 							rpc.delivery.deliverTransformationResult.execute({
 								text: transformationRun.output,

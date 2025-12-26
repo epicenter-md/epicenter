@@ -1,12 +1,13 @@
 import Dexie, { type Transaction } from 'dexie';
 import { nanoid } from 'nanoid/non-secure';
-import { extractErrorMessage } from 'wellcrafted/error';
+import { createTaggedError, extractErrorMessage } from 'wellcrafted/error';
 import { Err, Ok, tryAsync } from 'wellcrafted/result';
 import { moreDetailsDialog } from '$lib/components/MoreDetailsDialog.svelte';
 import { rpc } from '$lib/query';
 import type { DownloadService } from '$lib/services/isomorphic/download';
 import type { Settings } from '$lib/settings';
 import type {
+	CustomSound,
 	Recording,
 	RecordingsDbSchemaV1,
 	RecordingsDbSchemaV2,
@@ -33,6 +34,7 @@ class WhisperingDatabase extends Dexie {
 	recordings!: Dexie.Table<RecordingsDbSchemaV5['recordings'], string>;
 	transformations!: Dexie.Table<Transformation, string>;
 	transformationRuns!: Dexie.Table<TransformationRun, string>;
+	customSounds!: Dexie.Table<CustomSound, string>;
 
 	constructor({ DownloadService }: { DownloadService: DownloadService }) {
 		super(DB_NAME);
@@ -278,7 +280,7 @@ class WhisperingDatabase extends Dexie {
 									// Convert V4 (Recording with blob) to V5 (RecordingStoredInIndexedDB)
 									const { blob, ...recordWithoutBlob } = record;
 									const serializedAudio = blob
-										? await blobToSerializedAudio(blob)
+										? (await blobToSerializedAudio(blob)).data ?? undefined
 										: undefined;
 									return {
 										...recordWithoutBlob,
@@ -341,36 +343,18 @@ class WhisperingDatabase extends Dexie {
 					},
 				});
 			});
+
+		// V7: Add customSounds table for custom notification sounds
+		this.version(0.7).stores({
+			recordings: '&id, timestamp, createdAt, updatedAt',
+			transformations: '&id, createdAt, updatedAt',
+			transformationRuns: '&id, transformationId, recordingId, startedAt',
+			customSounds: '&id',
+		});
 	}
 }
 
 // const downloadIndexedDbBlobWithToast = useDownloadIndexedDbBlobWithToast();
-
-/**
- * Convert Blob to serialized format for IndexedDB storage.
- * Returns null if conversion fails.
- */
-async function blobToSerializedAudio(
-	blob: Blob,
-): Promise<SerializedAudio | undefined> {
-	const arrayBuffer = await blob.arrayBuffer().catch((error) => {
-		console.error('Error getting array buffer from blob', blob, error);
-		return undefined;
-	});
-
-	if (!arrayBuffer) return undefined;
-
-	return { arrayBuffer, blobType: blob.type };
-}
-
-/**
- * Convert serialized audio back to Blob for use in the application.
- */
-function serializedAudioToBlob(serializedAudio: SerializedAudio): Blob {
-	return new Blob([serializedAudio.arrayBuffer], {
-		type: serializedAudio.blobType,
-	});
-}
 
 /**
  * Cache for audio object URLs to avoid recreating them.
@@ -459,13 +443,31 @@ export function createDbServiceWeb({
 					? paramsOrParamsArray
 					: [paramsOrParamsArray];
 
-				const dbRecordings: RecordingsDbSchemaV5['recordings'][] =
-					await Promise.all(
-						paramsArray.map(async ({ recording, audio }) => ({
-							...recording,
-							serializedAudio: await blobToSerializedAudio(audio),
-						})),
-					);
+				const dbRecordingsResults = await Promise.all(
+					paramsArray.map(async ({ recording, audio }) => {
+						const { data: serializedAudio, error } =
+							await blobToSerializedAudio(audio);
+						if (error) return { error };
+						return {
+							data: {
+								...recording,
+								serializedAudio,
+							} satisfies RecordingsDbSchemaV5['recordings'],
+						};
+					}),
+				);
+
+				// Check for any serialization errors
+				const firstError = dbRecordingsResults.find((r) => r.error)?.error;
+				if (firstError) {
+					return DbServiceErr({
+						message: `Error serializing audio for recording: ${firstError.message}`,
+					});
+				}
+
+				const dbRecordings = dbRecordingsResults.map(
+					(r) => r.data as RecordingsDbSchemaV5['recordings'],
+				);
 
 				return tryAsync({
 					try: async () => {
@@ -856,10 +858,10 @@ export function createDbServiceWeb({
 					status: 'running',
 				} satisfies TransformationStepRunRunning;
 
-				const updatedRun: TransformationRun = {
+				const updatedRun = {
 					...run,
 					stepRuns: [...run.stepRuns, newTransformationStepRun],
-				};
+				} satisfies TransformationRun;
 
 				const { error: addStepRunToTransformationRunError } = await tryAsync({
 					try: () => db.transformationRuns.put(updatedRun),
@@ -878,24 +880,24 @@ export function createDbServiceWeb({
 				const now = new Date().toISOString();
 
 				// Create the failed transformation run
-				const failedRun: TransformationRunFailed = {
+				const failedRun = {
 					...run,
 					status: 'failed',
 					completedAt: now,
 					error,
 					stepRuns: run.stepRuns.map((stepRun) => {
 						if (stepRun.id === stepRunId) {
-							const failedStepRun: TransformationStepRunFailed = {
+							const failedStepRun = {
 								...stepRun,
 								status: 'failed',
 								completedAt: now,
 								error,
-							};
+							} satisfies TransformationStepRunFailed;
 							return failedStepRun;
 						}
 						return stepRun;
 					}),
-				};
+				} satisfies TransformationRunFailed;
 
 				const { error: updateTransformationStepRunError } = await tryAsync({
 					try: () => db.transformationRuns.put(failedRun),
@@ -914,21 +916,21 @@ export function createDbServiceWeb({
 				const now = new Date().toISOString();
 
 				// Create updated transformation run with the new step runs
-				const updatedRun: TransformationRun = {
+				const updatedRun = {
 					...run,
 					stepRuns: run.stepRuns.map((stepRun) => {
 						if (stepRun.id === stepRunId) {
-							const completedStepRun: TransformationStepRunCompleted = {
+							const completedStepRun = {
 								...stepRun,
 								status: 'completed',
 								completedAt: now,
 								output,
-							};
+							} satisfies TransformationStepRunCompleted;
 							return completedStepRun;
 						}
 						return stepRun;
 					}),
-				};
+				} satisfies TransformationRun;
 
 				const { error: updateTransformationStepRunError } = await tryAsync({
 					try: () => db.transformationRuns.put(updatedRun),
@@ -947,12 +949,12 @@ export function createDbServiceWeb({
 				const now = new Date().toISOString();
 
 				// Create the completed transformation run
-				const completedRun: TransformationRunCompleted = {
+				const completedRun = {
 					...run,
 					status: 'completed',
 					completedAt: now,
 					output,
-				};
+				} satisfies TransformationRunCompleted;
 
 				const { error: updateTransformationStepRunError } = await tryAsync({
 					try: () => db.transformationRuns.put(completedRun),
@@ -1001,5 +1003,83 @@ export function createDbServiceWeb({
 				});
 			},
 		}, // End of runs namespace
+
+		sounds: {
+			async get(soundId) {
+				return tryAsync({
+					try: async () => {
+						const customSound = await db.customSounds.get(soundId);
+						if (!customSound) return null;
+
+						return serializedAudioToBlob(customSound.serializedAudio);
+					},
+					catch: (error) =>
+						DbServiceErr({
+							message: `Error getting custom sound from Dexie (soundId: ${soundId}): ${extractErrorMessage(error)}`,
+						}),
+				});
+			},
+
+			async save(soundId, file) {
+				const { data: serializedAudio, error: serializeError } =
+					await blobToSerializedAudio(file);
+				if (serializeError) {
+					return DbServiceErr({
+						message: `Error serializing custom sound (soundId: ${soundId}): ${serializeError.message}`,
+					});
+				}
+
+				return tryAsync({
+					try: async () => {
+						const customSound = {
+							id: soundId,
+							serializedAudio,
+						} satisfies CustomSound;
+						await db.customSounds.put(customSound);
+					},
+					catch: (error) =>
+						DbServiceErr({
+							message: `Error saving custom sound to Dexie (soundId: ${soundId}): ${extractErrorMessage(error)}`,
+						}),
+				});
+			},
+
+			async delete(soundId) {
+				return tryAsync({
+					try: () => db.customSounds.delete(soundId),
+					catch: (error) =>
+						DbServiceErr({
+							message: `Error deleting custom sound from Dexie (soundId: ${soundId}): ${extractErrorMessage(error)}`,
+						}),
+				});
+			},
+		},
 	};
+}
+
+const { BlobSerializationErr } = createTaggedError('BlobSerializationError');
+
+/**
+ * Convert Blob to serialized format for IndexedDB storage.
+ */
+async function blobToSerializedAudio(blob: Blob) {
+	return tryAsync({
+		try: async () => {
+			const arrayBuffer = await blob.arrayBuffer();
+			return { arrayBuffer, blobType: blob.type } satisfies SerializedAudio;
+		},
+		catch: (error) =>
+			BlobSerializationErr({
+				message: `Failed to serialize blob to ArrayBuffer: ${extractErrorMessage(error)}`,
+			}),
+	});
+}
+
+/**
+ * Convert serialized audio back to Blob for use in the application.
+ */
+function serializedAudioToBlob(serializedAudio: SerializedAudio): Blob {
+	return new Blob([serializedAudio.arrayBuffer], {
+		type: serializedAudio.blobType,
+	});
 }

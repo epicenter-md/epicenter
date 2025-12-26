@@ -14,7 +14,7 @@ const createNotifyMutation = (
 		mutationFn: async (
 			options: Omit<UnifiedNotificationOptions, 'variant'>,
 		) => {
-			const fullOptions: UnifiedNotificationOptions = { ...options, variant };
+			const fullOptions = { ...options, variant } satisfies UnifiedNotificationOptions;
 
 			// Log in dev mode
 			if (dev) {

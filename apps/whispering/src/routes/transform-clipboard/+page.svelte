@@ -135,7 +135,7 @@
 						return;
 					}
 
-					rpc.sound.playSoundIfEnabled.execute('transformationComplete');
+					rpc.sound.playSoundIfEnabled.execute('transformation-complete');
 
 					await rpc.delivery.deliverTransformationResult.execute({
 						text: output,

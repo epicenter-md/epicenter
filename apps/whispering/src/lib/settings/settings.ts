@@ -36,6 +36,8 @@ import {
 	RECORDING_MODES,
 } from '$lib/constants/audio';
 import { CommandOrAlt, CommandOrControl } from '$lib/constants/keyboard';
+import type { SoundName } from '$lib/constants/sounds';
+import type { Command } from '$lib/commands';
 import { SUPPORTED_LANGUAGES } from '$lib/constants/languages';
 import { ALWAYS_ON_TOP_MODES, LAYOUT_MODES } from '$lib/constants/ui';
 import {
@@ -83,15 +85,51 @@ const deviceIdTransform = (val: string | null): DeviceIdentifier | null =>
  * };
  */
 export const Settings = type({
-	// Sound settings
-	'sound.playOn.manual-start': 'boolean = true',
-	'sound.playOn.manual-stop': 'boolean = true',
-	'sound.playOn.manual-cancel': 'boolean = true',
-	'sound.playOn.vad-start': 'boolean = true',
-	'sound.playOn.vad-capture': 'boolean = true',
-	'sound.playOn.vad-stop': 'boolean = true',
-	'sound.playOn.transcriptionComplete': 'boolean = true',
-	'sound.playOn.transformationComplete': 'boolean = true',
+	// Sound settings - playOn toggles
+	...({
+		'sound.playOn.manual-start': 'boolean = true',
+		'sound.playOn.manual-stop': 'boolean = true',
+		'sound.playOn.manual-cancel': 'boolean = true',
+		'sound.playOn.cpal-start': 'boolean = true',
+		'sound.playOn.cpal-stop': 'boolean = true',
+		'sound.playOn.cpal-cancel': 'boolean = true',
+		'sound.playOn.vad-start': 'boolean = true',
+		'sound.playOn.vad-capture': 'boolean = true',
+		'sound.playOn.vad-stop': 'boolean = true',
+		'sound.playOn.transcription-complete': 'boolean = true',
+		'sound.playOn.transformation-complete': 'boolean = true',
+	} as const satisfies Record<`sound.playOn.${SoundName}`, string>),
+
+	// Sound settings - volume (0.0 to 1.0)
+	'sound.volume': 'number = 0.5', // Global volume control
+	...({
+		'sound.volume.manual-start': 'number = 0.5',
+		'sound.volume.manual-stop': 'number = 0.5',
+		'sound.volume.manual-cancel': 'number = 0.5',
+		'sound.volume.cpal-start': 'number = 0.5',
+		'sound.volume.cpal-stop': 'number = 0.5',
+		'sound.volume.cpal-cancel': 'number = 0.5',
+		'sound.volume.vad-start': 'number = 0.5',
+		'sound.volume.vad-capture': 'number = 0.5',
+		'sound.volume.vad-stop': 'number = 0.5',
+		'sound.volume.transcription-complete': 'number = 0.5',
+		'sound.volume.transformation-complete': 'number = 0.5',
+	} as const satisfies Record<`sound.volume.${SoundName}`, string>),
+
+	// Sound settings - custom sound flags
+	...({
+		'sound.custom.manual-start': 'boolean = false',
+		'sound.custom.manual-stop': 'boolean = false',
+		'sound.custom.manual-cancel': 'boolean = false',
+		'sound.custom.cpal-start': 'boolean = false',
+		'sound.custom.cpal-stop': 'boolean = false',
+		'sound.custom.cpal-cancel': 'boolean = false',
+		'sound.custom.vad-start': 'boolean = false',
+		'sound.custom.vad-capture': 'boolean = false',
+		'sound.custom.vad-stop': 'boolean = false',
+		'sound.custom.transcription-complete': 'boolean = false',
+		'sound.custom.transformation-complete': 'boolean = false',
+	} as const satisfies Record<`sound.custom.${SoundName}`, string>),
 
 	'transcription.copyToClipboardOnSuccess': 'boolean = true',
 	'transcription.writeToCursorOnSuccess': 'boolean = true',
@@ -212,15 +250,17 @@ export const Settings = type({
 	// Most users have one local LLM server, so this saves re-entering the URL each time.
 	'completion.custom.baseUrl': "string = 'http://localhost:11434/v1'",
 
-	'apiKeys.openai': "string = ''",
-	'apiKeys.anthropic': "string = ''",
-	'apiKeys.groq': "string = ''",
-	'apiKeys.google': "string = ''",
-	'apiKeys.deepgram': "string = ''",
-	'apiKeys.elevenlabs': "string = ''",
-	'apiKeys.mistral': "string = ''",
-	'apiKeys.openrouter': "string = ''",
-	'apiKeys.custom': "string = ''",
+	...({
+		'apiKeys.openai': "string = ''",
+		'apiKeys.anthropic': "string = ''",
+		'apiKeys.groq': "string = ''",
+		'apiKeys.google': "string = ''",
+		'apiKeys.deepgram': "string = ''",
+		'apiKeys.elevenlabs': "string = ''",
+		'apiKeys.mistral': "string = ''",
+		'apiKeys.openrouter': "string = ''",
+		'apiKeys.custom': "string = ''",
+	} as const satisfies Record<`apiKeys.${string}`, string>),
 
 	// API endpoint overrides (empty string = use default endpoint)
 	'apiEndpoints.openai': "string = ''",
@@ -230,38 +270,45 @@ export const Settings = type({
 	'analytics.enabled': 'boolean = true',
 
 	// Local shortcuts (in-app shortcuts)
-	'shortcuts.local.toggleManualRecording': "string | null = ' '",
-	'shortcuts.local.startManualRecording': 'string | null = null',
-	'shortcuts.local.stopManualRecording': 'string | null = null',
-	'shortcuts.local.cancelManualRecording': "string | null = 'c'",
-	'shortcuts.local.toggleVadRecording': "string | null = 'v'",
-	'shortcuts.local.startVadRecording': 'string | null = null',
-	'shortcuts.local.stopVadRecording': 'string | null = null',
-	'shortcuts.local.pushToTalk': "string | null = 'p'",
-	'shortcuts.local.openTransformationPicker': "string | null = 't'",
-	'shortcuts.local.runTransformationOnClipboard': "string | null = 'r'",
+	...({
+		'shortcuts.local.toggleManualRecording': "string | null = ' '",
+		'shortcuts.local.startManualRecording': 'string | null = null',
+		'shortcuts.local.stopManualRecording': 'string | null = null',
+		'shortcuts.local.cancelManualRecording': "string | null = 'c'",
+		'shortcuts.local.toggleVadRecording': "string | null = 'v'",
+		'shortcuts.local.startVadRecording': 'string | null = null',
+		'shortcuts.local.stopVadRecording': 'string | null = null',
+		'shortcuts.local.pushToTalk': "string | null = 'p'",
+		'shortcuts.local.openTransformationPicker': "string | null = 't'",
+		'shortcuts.local.runTransformationOnClipboard': "string | null = 'r'",
+	} as const satisfies Record<`shortcuts.local.${Command['id']}`, string>),
 
 	// Global shortcuts (system-wide shortcuts)
-	'shortcuts.global.toggleManualRecording': type('string | null').default(
-		`${CommandOrControl}+Shift+;`,
-	),
-	'shortcuts.global.startManualRecording': 'string | null = null',
-	'shortcuts.global.stopManualRecording': 'string | null = null',
-	'shortcuts.global.cancelManualRecording': type('string | null').default(
-		`${CommandOrControl}+Shift+'`,
-	),
-	'shortcuts.global.toggleVadRecording': 'string | null = null',
-	'shortcuts.global.startVadRecording': 'string | null = null',
-	'shortcuts.global.stopVadRecording': 'string | null = null',
-	'shortcuts.global.pushToTalk': type('string | null').default(
-		`${CommandOrAlt}+Shift+D`,
-	),
-	'shortcuts.global.openTransformationPicker': type('string | null').default(
-		`${CommandOrControl}+Shift+X`,
-	),
-	'shortcuts.global.runTransformationOnClipboard': type(
-		'string | null',
-	).default(`${CommandOrControl}+Shift+R`),
+	...({
+		'shortcuts.global.toggleManualRecording': type('string | null').default(
+			`${CommandOrControl}+Shift+;`,
+		),
+		'shortcuts.global.startManualRecording': 'string | null = null',
+		'shortcuts.global.stopManualRecording': 'string | null = null',
+		'shortcuts.global.cancelManualRecording': type('string | null').default(
+			`${CommandOrControl}+Shift+'`,
+		),
+		'shortcuts.global.toggleVadRecording': 'string | null = null',
+		'shortcuts.global.startVadRecording': 'string | null = null',
+		'shortcuts.global.stopVadRecording': 'string | null = null',
+		'shortcuts.global.pushToTalk': type('string | null').default(
+			`${CommandOrAlt}+Shift+D`,
+		),
+		'shortcuts.global.openTransformationPicker': type('string | null').default(
+			`${CommandOrControl}+Shift+X`,
+		),
+		'shortcuts.global.runTransformationOnClipboard': type(
+			'string | null',
+		).default(`${CommandOrControl}+Shift+R`),
+	} as const satisfies Record<
+		`shortcuts.global.${Command['id']}`,
+		string | unknown
+	>),
 });
 
 /**
