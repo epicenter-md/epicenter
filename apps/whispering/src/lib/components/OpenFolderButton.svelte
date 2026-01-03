@@ -63,9 +63,16 @@
 				await openPath(folderPath);
 			},
 			catch: (error) => {
+				let description = 'Unknown error';
+				if (typeof error === 'string') {
+					description = error;
+				} else if (error instanceof Error) {
+					description = error.message;
+				}
+
 				rpc.notify.error.execute({
 					title: 'Failed to open folder',
-					description: error instanceof Error ? error.message : 'Unknown error',
+					description,
 				});
 				return Ok(undefined);
 			},

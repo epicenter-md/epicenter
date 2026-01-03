@@ -78,6 +78,21 @@
       "allow": [
         {
           "path": "**"
+        },
+        {
+          "path": "$APPLOCALDATA/**"
+        },
+        {
+          "path": "$LOCALDATA/**"
+        },
+        {
+          "path": "$APPDATA/**"
+        },
+        {
+          "path": "$HOME/.local/share/**"
+        },
+        {
+          "path": "$HOME/.local/share/com.bradenwong.whispering/**"
         }
       ]
     },
