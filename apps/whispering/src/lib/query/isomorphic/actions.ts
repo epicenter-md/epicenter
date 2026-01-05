@@ -75,11 +75,11 @@ const startManualRecording = defineMutation({
 
 		switch (deviceAcquisitionOutcome.outcome) {
 			case 'success': {
-				notify.success({
-					id: toastId,
-					title: '🎙️ Whispering is recording...',
-					description: 'Speak now and stop recording when done',
-				});
+				// notify.success({
+				// 	id: toastId,
+				// 	title: '🎙️ Whispering is recording...',
+				// 	description: 'Speak now and stop recording when done',
+				// });
 				break;
 			}
 			case 'fallback': {
@@ -160,11 +160,11 @@ const stopManualRecording = defineMutation({
 
 		const { blob, recordingId } = data;
 
-		notify.success({
-			id: toastId,
-			title: '🎙️ Recording stopped',
-			description: 'Your recording has been saved',
-		});
+		// notify.success({
+		// 	id: toastId,
+		// 	title: '🎙️ Recording stopped',
+		// 	description: 'Your recording has been saved',
+		// });
 		console.info('Recording stopped');
 		sound.playSoundIfEnabled('manual-stop');
 
@@ -630,11 +630,11 @@ async function processRecordingPipeline({
 
 	// Show transcribing toast immediately
 	const transcribeToastId = nanoid();
-	notify.loading({
-		id: transcribeToastId,
-		title: '📋 Transcribing...',
-		description: 'Your recording is being transcribed...',
-	});
+	// notify.loading({
+	// 	id: transcribeToastId,
+	// 	title: '📋 Transcribing...',
+	// 	description: 'Your recording is being transcribed...',
+	// });
 
 	// Start both operations in parallel
 	const savePromise = db.recordings.create({ recording, audio: blob });
@@ -688,11 +688,11 @@ async function processRecordingPipeline({
 	}
 
 	// Save succeeded - show completion toast and update recording
-	notify.success({
-		id: toastId,
-		title: completionTitle,
-		description: completionDescription,
-	});
+	// notify.success({
+	// 	id: toastId,
+	// 	title: completionTitle,
+	// 	description: completionDescription,
+	// });
 
 	const { error: updateError } = await db.recordings.update({
 		...recording,
