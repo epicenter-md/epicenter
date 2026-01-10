@@ -23,7 +23,6 @@
 	import { IS_MACOS, IS_LINUX, PLATFORM_TYPE } from '$lib/constants/platform';
 	import { Button } from '@epicenter/ui/button';
 	import { Input } from '@epicenter/ui/input';
-	import { DEBOUNCE_TIME_MS } from '$lib/constants/app';
 
 	const { data } = $props();
 
@@ -94,20 +93,6 @@
 	);
 
 	let vadPauseMs = $state(settings.value['recording.vad.pauseMs']);
-	let vadPauseSaveTimer: ReturnType<typeof setTimeout> | null = null;
-
-	function debounceVadPauseSave(value: string) {
-		vadPauseMs = value;
-
-		if (vadPauseSaveTimer) {
-			clearTimeout(vadPauseSaveTimer);
-		}
-
-		vadPauseSaveTimer = setTimeout(() => {
-			settings.updateKey('recording.vad.pauseMs', String(value));
-			vadPauseSaveTimer = null;
-		}, DEBOUNCE_TIME_MS);
-	}
 
 </script>
 
@@ -339,7 +324,8 @@
 					max="10000"
 					step="250"
 					autocomplete="off"
-					bind:value={() => vadPauseMs, (value) => debounceVadPauseSave(value)}
+					bind:value={vadPauseMs}
+					onchange={() => settings.updateKey('recording.vad.pauseMs', String(vadPauseMs))}
 				/>
 				<Field.Description>
 					How long VAD waits during silence before ending a segment.
