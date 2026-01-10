@@ -105,12 +105,28 @@ function createVadRecorder() {
 			const { stream, deviceOutcome } = streamResult;
 			_currentStream = stream;
 
+			// Get pause buffer from settings in ms
+			const pauseBufferMsRaw = Number.parseInt(
+				settings.value['recording.vad.pauseMs'],
+				10,
+			);
+			const pauseBufferMs = Number.isFinite(pauseBufferMsRaw)
+				? pauseBufferMsRaw
+				: 1400;
+
 			// Create VAD with the validated stream
 			const { data: newVad, error: initializeVadError } = await tryAsync({
 				try: () =>
 					MicVAD.new({
 						stream,
 						submitUserSpeechOnPause: true,
+						// Use configured pause buffer duration translated from ms to frames; 
+						// TODO: Switch to redemptionMS directly instead of redemptionFrames after upgrading to vad-web v0.0.27 or above
+						redemptionFrames: utils.minFramesForTargetMS(
+							pauseBufferMs,
+							512,
+							16000,
+						),
 						onSpeechStart: () => {
 							_state = 'SPEECH_DETECTED';
 							onSpeechStart();
