@@ -35,7 +35,7 @@ export const workspaces = {
 	/**
 	 * List all workspaces from the registry.
 	 *
-	 * Returns workspace GUIDs with minimal metadata. For full schema details,
+	 * Returns workspace GUIDs with minimal metadata. For full definition details,
 	 * use getWorkspace() which loads from the workspace Y.Doc.
 	 */
 	listWorkspaces: defineQuery({
@@ -44,7 +44,7 @@ export const workspaces = {
 			const guids = registry.getWorkspaceIds();
 
 			// Return minimal workspace info (just GUIDs)
-			// Full schema is loaded lazily when navigating to the workspace
+			// Full definition is loaded lazily when navigating to the workspace
 			const workspaces = guids.map((id) => ({
 				id,
 				// Use GUID as placeholder name/slug until we have metadata in registry
@@ -61,8 +61,8 @@ export const workspaces = {
 	/**
 	 * Get a single workspace by GUID.
 	 *
-	 * Uses the "empty schema" pattern: creates a client with empty schema,
-	 * lets persistence load the real schema, then extracts it.
+	 * Uses the "empty definition" pattern: creates a client with empty definition,
+	 * lets persistence load the real definition, then extracts it.
 	 */
 	getWorkspace: (workspaceId: string) =>
 		defineQuery({
@@ -80,7 +80,7 @@ export const workspaces = {
 				await head.whenSynced;
 				const epoch = head.getEpoch();
 
-				// Create client with empty schema - persistence loads the real one
+				// Create client with empty definition - persistence loads the real one
 				const client = createWorkspaceClient(
 					{
 						id: workspaceId,
@@ -96,7 +96,7 @@ export const workspaces = {
 				await client.whenSynced;
 
 				// Extract definition and clean up
-				const definition = extractSchemaFromYDoc(client.ydoc, workspaceId);
+				const definition = extractDefinitionFromYDoc(client.ydoc, workspaceId);
 				await client.destroy();
 
 				return Ok(definition);
@@ -109,7 +109,7 @@ export const workspaces = {
 	 * 1. Generates a GUID for the workspace
 	 * 2. Adds the GUID to the registry
 	 * 3. Creates a head doc (epoch starts at 0)
-	 * 4. Creates the workspace doc with initial schema
+	 * 4. Creates the workspace doc with initial definition
 	 */
 	createWorkspace: defineMutation({
 		mutationKey: ['workspaces', 'create'],
@@ -204,15 +204,15 @@ export const workspaces = {
 	}),
 
 	// ───────────────────────────────────────────────────────────────────────────
-	// Schema Modification (Temporary stubs - will be refactored)
+	// Definition Modification (Temporary stubs - will be refactored)
 	// In the new architecture, these should modify the live workspace client,
 	// not the query layer. For now, they're stubs to keep the UI working.
 	// ───────────────────────────────────────────────────────────────────────────
 
 	/**
-	 * Add a table to a workspace schema.
+	 * Add a table to a workspace definition.
 	 *
-	 * TODO: This should modify the live workspace client's Y.Doc schema,
+	 * TODO: This should modify the live workspace client's Y.Doc,
 	 * not go through the query layer.
 	 */
 	addTable: defineMutation({
@@ -232,7 +232,7 @@ export const workspaces = {
 	}),
 
 	/**
-	 * Remove a table from a workspace schema.
+	 * Remove a table from a workspace definition.
 	 */
 	removeTable: defineMutation({
 		mutationKey: ['workspaces', 'removeTable'],
@@ -246,7 +246,7 @@ export const workspaces = {
 	}),
 
 	/**
-	 * Add a KV entry to a workspace schema.
+	 * Add a KV entry to a workspace definition.
 	 */
 	addKvEntry: defineMutation({
 		mutationKey: ['workspaces', 'addKvEntry'],
@@ -264,7 +264,7 @@ export const workspaces = {
 	}),
 
 	/**
-	 * Remove a KV entry from a workspace schema.
+	 * Remove a KV entry from a workspace definition.
 	 */
 	removeKvEntry: defineMutation({
 		mutationKey: ['workspaces', 'removeKvEntry'],
