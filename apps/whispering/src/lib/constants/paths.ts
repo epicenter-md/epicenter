@@ -34,6 +34,12 @@ export const PATHS = {
 			const dir = await appDataDir();
 			return await join(dir, 'models', 'moonshine');
 		},
+		/** Directory for Canary model files (supports language selection) */
+		async CANARY() {
+			const { appDataDir, join } = await import('@tauri-apps/api/path');
+			const dir = await appDataDir();
+			return await join(dir, 'models', 'canary');
+		},
 	},
 
 	/**

@@ -1,7 +1,9 @@
+mod canary;
 mod error;
 mod model_manager;
 
 use error::TranscriptionError;
+pub use canary::CanaryEngine;
 pub use model_manager::ModelManager;
 use log::{debug, error, info, warn};
 use std::io::Write;
@@ -802,4 +804,108 @@ pub async fn transcribe_audio_moonshine(
     Err(TranscriptionError::TranscriptionError {
         message: "Moonshine is not available on Windows due to build compatibility issues. Please use Parakeet for local transcription.".to_string(),
     })
+}
+
+/// Transcribe audio using Canary-1B-v2 with language support
+///
+/// This is the KEY feature that enables forcing transcription in a specific language.
+/// Unlike Parakeet which auto-detects language, Canary accepts a language parameter.
+///
+/// # Arguments
+/// * `audio_data` - Raw audio bytes (WAV format)
+/// * `model_path` - Path to the Canary model directory
+/// * `language` - Target language code (e.g., "fr" for French, "en" for English)
+/// * `model_manager` - Tauri state for managing model lifecycle
+///
+/// # Example
+/// ```typescript
+/// const text = await invoke('transcribe_audio_canary', {
+///     audioData: audioBytes,
+///     modelPath: '/path/to/canary',
+///     language: 'fr',  // Force French output!
+/// });
+/// ```
+#[tauri::command]
+pub async fn transcribe_audio_canary(
+    audio_data: Vec<u8>,
+    model_path: String,
+    language: Option<String>,
+    model_manager: tauri::State<'_, ModelManager>,
+) -> Result<String, TranscriptionError> {
+    let language = language.unwrap_or_else(|| "fr".to_string());
+
+    info!(
+        "[Transcription] starting Canary transcription: audio_bytes={} model_path={} language={}",
+        audio_data.len(),
+        model_path,
+        language
+    );
+
+    // Convert audio to 16kHz mono format
+    let wav_data = convert_audio_for_whisper(audio_data)?;
+    debug!(
+        "[Transcription] audio conversion complete: wav_bytes={}",
+        wav_data.len()
+    );
+
+    // Extract samples from WAV
+    let samples = extract_samples_from_wav(wav_data)?;
+    debug!(
+        "[Transcription] extracted {} PCM samples for Canary engine",
+        samples.len()
+    );
+
+    // Return early if audio is empty
+    if samples.is_empty() {
+        warn!("[Transcription] no samples extracted, returning empty transcription");
+        return Ok(String::new());
+    }
+
+    // Get or load the Canary model
+    let engine_arc = model_manager
+        .get_or_load_canary(PathBuf::from(&model_path))
+        .map_err(|e| TranscriptionError::ModelLoadError { message: e })?;
+    debug!("[Transcription] Canary model ready: {}", model_path);
+
+    // Run transcription with the persistent engine
+    let result = {
+        let mut engine_guard = engine_arc.lock().unwrap_or_else(|poisoned| {
+            warn!(
+                "[Transcription] Engine mutex was poisoned from previous panic, clearing state to force reload..."
+            );
+            let mut recovered = poisoned.into_inner();
+            *recovered = None;
+            recovered
+        });
+        let engine = engine_guard
+            .as_mut()
+            .ok_or_else(|| TranscriptionError::ModelLoadError {
+                message: "Model not loaded (may have been cleared after previous error). Please try again.".to_string(),
+            })?;
+
+        // Extract the CanaryEngine from the enum
+        let canary_engine = match engine {
+            model_manager::Engine::Canary(e) => e,
+            _ => {
+                return Err(TranscriptionError::ModelLoadError {
+                    message: "Expected Canary engine but got different type".to_string(),
+                })
+            }
+        };
+
+        // Transcribe with language parameter - THE KEY FEATURE!
+        canary_engine
+            .transcribe(samples, &language)
+            .map_err(|e| TranscriptionError::TranscriptionError {
+                message: e.to_string(),
+            })?
+    };
+
+    let transcript = result.trim().to_string();
+    info!(
+        "[Transcription] Canary transcription complete: characters={} language={}",
+        transcript.len(),
+        language
+    );
+    Ok(transcript)
 }

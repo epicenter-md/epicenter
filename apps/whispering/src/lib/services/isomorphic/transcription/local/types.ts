@@ -131,12 +131,32 @@ export type MoonshineModelConfig = BaseModelConfig & {
 };
 
 /**
+ * Configuration for Canary models using native Rust ONNX inference.
+ * Canary supports language selection, unlike Parakeet!
+ */
+export type CanaryModelConfig = BaseModelConfig & {
+	engine: 'canary';
+	/** Name of the directory where model files will be stored */
+	directoryName: string;
+	/** Array of files that make up the model */
+	files: readonly {
+		/** URL to download this file from */
+		url: string;
+		/** Filename to save this file as */
+		filename: string;
+		/** Size of this individual file in bytes */
+		sizeBytes: number;
+	}[];
+};
+
+/**
  * Union type for all supported local model configurations.
  */
 export type LocalModelConfig =
 	| WhisperModelConfig
 	| ParakeetModelConfig
-	| MoonshineModelConfig;
+	| MoonshineModelConfig
+	| CanaryModelConfig;
 
 /**
  * Checks if a model file size is valid (at least 90% of expected size).

@@ -39,6 +39,7 @@ type TranscriptionModel =
 export const TRANSCRIPTION_SERVICE_IDS = [
 	'whispercpp',
 	'parakeet',
+	'canary',
 	'moonshine',
 	'Groq',
 	'OpenAI',
@@ -105,6 +106,15 @@ export const TRANSCRIPTION_SERVICES = [
 		invertInDarkMode: false,
 		description: 'NVIDIA NeMo model for fast local transcription',
 		modelPathField: 'transcription.parakeet.modelPath',
+		location: 'local',
+	},
+	{
+		id: 'canary',
+		name: 'Canary',
+		icon: nvidiaIcon,
+		invertInDarkMode: false,
+		description: 'NVIDIA NeMo model with language support (French, English, etc.)',
+		modelPathField: 'transcription.canary.modelPath',
 		location: 'local',
 	},
 	// Moonshine is not available on Windows due to MSVC runtime library conflicts
@@ -261,6 +271,11 @@ export const TRANSCRIPTION_SERVICE_CAPABILITIES = {
 		supportsPrompt: false,
 		supportsTemperature: false,
 		supportsLanguage: false,
+	},
+	canary: {
+		supportsPrompt: false,
+		supportsTemperature: false,
+		supportsLanguage: true, // KEY FEATURE: Canary supports language selection!
 	},
 	moonshine: {
 		supportsPrompt: false,

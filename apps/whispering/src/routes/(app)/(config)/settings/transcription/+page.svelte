@@ -20,6 +20,7 @@
 	import { OPENAI_TRANSCRIPTION_MODELS } from '$lib/services/isomorphic/transcription/cloud/openai';
 	import { MOONSHINE_MODELS } from '$lib/services/isomorphic/transcription/local/moonshine';
 	import { PARAKEET_MODELS } from '$lib/services/isomorphic/transcription/local/parakeet';
+	import { CANARY_MODELS } from '$lib/services/isomorphic/transcription/local/canary';
 	import { WHISPER_MODELS } from '$lib/services/isomorphic/transcription/local/whispercpp';
 	import { TRANSCRIPTION_SERVICE_CAPABILITIES } from '$lib/services/isomorphic/transcription/registry';
 	import { settings } from '$lib/stores/settings.svelte';
@@ -759,6 +760,130 @@
 							<Alert.Description>
 								You're using the Browser API recording method, which produces
 								compressed audio that requires FFmpeg for Moonshine
+								transcription.
+								<div class="mt-3 space-y-3">
+									<div class="text-sm">
+										<strong>Option 1:</strong>
+										<Link href="/settings/recording"
+											>Switch to CPAL recording</Link
+										>
+										for direct compatibility with local transcription
+									</div>
+									<div class="text-sm">
+										<strong>Option 2:</strong>
+										<Link href="/install-ffmpeg">Install FFmpeg</Link>
+										to keep using Browser API recording
+									</div>
+									<div class="text-sm">
+										<strong>Option 3:</strong>
+										Switch to a cloud transcription service (OpenAI, Groq, Deepgram,
+										etc.) which work with all recording methods
+									</div>
+								</div>
+							</Alert.Description>
+						</Alert.Root>
+					{/if}
+				{/if}
+			</div>
+		{:else if settings.value['transcription.selectedTranscriptionService'] === 'canary'}
+			<div class="space-y-4">
+				<!-- Canary Model Selector Component -->
+				{#if window.__TAURI_INTERNALS__}
+					<LocalModelSelector
+						models={CANARY_MODELS}
+						title="Canary Model"
+						description="Canary-1B-v2 is an NVIDIA NeMo multilingual model supporting French, English, German, and Spanish. Unlike Parakeet, Canary allows you to specify the target language."
+						fileSelectionMode="directory"
+						bind:value={
+							() => settings.value['transcription.canary.modelPath'],
+							(v) => settings.updateKey('transcription.canary.modelPath', v)
+						}
+					>
+						{#snippet prebuiltFooter()}
+							<p class="text-sm text-muted-foreground">
+								Models are downloaded from{' '}
+								<Link
+									href="https://huggingface.co/nvidia/canary-1b"
+									target="_blank"
+									rel="noopener noreferrer"
+								>
+									Hugging Face
+								</Link>
+								{' '}and stored in your app data directory. Canary uses ONNX
+								models with encoder-decoder architecture optimized for
+								multilingual transcription (~1GB total).
+							</p>
+						{/snippet}
+
+						{#snippet manualInstructions()}
+							<Card.Root class="bg-muted/50">
+								<Card.Content class="p-4">
+									<h4 class="mb-2 text-sm font-medium">
+										Getting Canary Models
+									</h4>
+									<ul class="space-y-2 text-sm text-muted-foreground">
+										<li class="flex items-start gap-2">
+											<span
+												class="mt-0.5 block size-1.5 rounded-full bg-muted-foreground/50"
+											/>
+											<span>
+												Download pre-built models from the "Pre-built Models"
+												tab
+											</span>
+										</li>
+										<li class="flex items-start gap-2">
+											<span
+												class="mt-0.5 block size-1.5 rounded-full bg-muted-foreground/50"
+											/>
+											<span>
+												Or download from{' '}
+												<Link
+													href="https://huggingface.co/nvidia/canary-1b"
+													target="_blank"
+													rel="noopener noreferrer"
+												>
+													NVIDIA Canary on Hugging Face
+												</Link>
+											</span>
+										</li>
+										<li class="flex items-start gap-2">
+											<span
+												class="mt-0.5 block size-1.5 rounded-full bg-muted-foreground/50"
+											/>
+											<span>
+												Canary models are directories containing encoder.onnx,
+												decoder.onnx, and tokenizer files
+											</span>
+										</li>
+									</ul>
+									<div
+										class="mt-3 rounded border border-blue-500/20 bg-blue-500/5 p-3"
+									>
+										<p
+											class="text-xs font-medium text-blue-600 dark:text-blue-400"
+										>
+											Multilingual Support
+										</p>
+										<p class="mt-1 text-xs text-muted-foreground">
+											Canary supports French, English, German, and Spanish.
+											Select your target language in the Output Language
+											dropdown below.
+										</p>
+									</div>
+								</Card.Content>
+							</Card.Root>
+						{/snippet}
+					</LocalModelSelector>
+
+					{#if hasNavigatorLocalTranscriptionIssue( { isFFmpegInstalled: data.ffmpegInstalled ?? false }, )}
+						<Alert.Root class="border-red-500/20 bg-red-500/5">
+							<InfoIcon class="size-4 text-red-600 dark:text-red-400" />
+							<Alert.Title class="text-red-600 dark:text-red-400">
+								Browser API Recording Requires FFmpeg
+							</Alert.Title>
+							<Alert.Description>
+								You're using the Browser API recording method, which produces
+								compressed audio that requires FFmpeg for Canary
 								transcription.
 								<div class="mt-3 space-y-3">
 									<div class="text-sm">
