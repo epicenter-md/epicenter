@@ -5,7 +5,7 @@ import { Ok, tryAsync } from 'wellcrafted/result';
 
 const WINDOW_LABEL = 'recording-indicator';
 const WINDOW_WIDTH = 200;
-const WINDOW_HEIGHT = 44;
+const WINDOW_HEIGHT = 65; // Increased for debug panel
 
 let windowInstance: WebviewWindow | null = null;
 let readyUnlisten: UnlistenFn | null = null;

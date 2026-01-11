@@ -208,10 +208,10 @@
 	</div>
 </div>
 
-<!-- Debug info (comment out for production) -->
-<!-- <div class="debug">
+<!-- Debug info - VISIBLE FOR DEBUGGING -->
+<div class="debug">
 	{debugInfo} | Events: {eventCount} | Level: {audioLevel.toFixed(2)} | Time: {elapsedSeconds}s
-</div> -->
+</div>
 
 <style>
 	:global(html, body) {
@@ -227,7 +227,7 @@
 		top: 0;
 		left: 0;
 		right: 0;
-		bottom: 0;
+		height: 44px; /* Fixed height for pill, leaving room for debug */
 		display: flex;
 		align-items: center;
 		justify-content: center;
@@ -347,19 +347,24 @@
 		50% { opacity: 0.3; }
 	}
 
-	/* Debug overlay */
+	/* Debug overlay - HIGHLY VISIBLE */
 	.debug {
 		position: fixed;
 		bottom: 0;
 		left: 0;
 		right: 0;
-		background: rgba(0, 0, 0, 0.8);
-		color: #0f0;
+		height: 18px;
+		background: #ff0000;
+		color: #fff;
 		font-family: monospace;
-		font-size: 8px;
+		font-size: 9px;
+		font-weight: bold;
 		padding: 2px 4px;
 		white-space: nowrap;
 		overflow: hidden;
+		z-index: 9999;
+		display: flex;
+		align-items: center;
 	}
 
 	/* Reduced motion support */
