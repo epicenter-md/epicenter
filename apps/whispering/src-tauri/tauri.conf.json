@@ -44,12 +44,7 @@
 			},
 			"nsis": {
 				"compression": "bzip2",
-				"installMode": "currentUser",
-				"oneClick": false,
-				"allowDowngrades": true,
-				"perMachine": false,
-				"startMenuFolder": "Whispering",
-				"installerIcon": "icons/icon.ico"
+				"installMode": "currentUser"
 			}
 		}
 	},
