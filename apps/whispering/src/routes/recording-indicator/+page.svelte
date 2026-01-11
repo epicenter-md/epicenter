@@ -65,13 +65,11 @@
 		debugInfo = 'onMount started';
 
 		try {
-			// Fix transparency issue on Windows by disabling shadow
+			// Note: Shadow is already disabled via window creation options (shadow: false)
+			// in recordingIndicatorWindow.tauri.ts - no need to call setShadow here
 			log('Getting webview window...');
 			const webview = getCurrentWebviewWindow();
 			log('Webview window:', webview.label);
-
-			await webview.setShadow(false);
-			log('Shadow disabled');
 
 			// Signal that we're ready to receive events
 			log('Emitting recording-indicator-ready...');
