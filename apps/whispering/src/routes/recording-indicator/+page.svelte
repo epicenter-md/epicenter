@@ -3,9 +3,11 @@
 	import { emit, listen, type UnlistenFn } from '@tauri-apps/api/event';
 	import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
 
-	// Debug logging
+	// Debug logging - stores logs for display
 	const DEBUG = true;
 	function log(...args: unknown[]) {
+		const msg = args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ');
+		logLines = [...logLines.slice(-9), msg]; // Keep last 10 lines
 		if (DEBUG) console.log('[RecordingIndicator]', ...args);
 	}
 
@@ -15,6 +17,7 @@
 	let recordingState = $state<'recording' | 'processing' | 'idle'>('recording');
 	let waveformBars = $state<number[]>(new Array(16).fill(0.15));
 	let debugInfo = $state('initializing...');
+	let logLines = $state<string[]>([]);
 	let eventCount = $state(0);
 
 	// Internal timer (self-contained, no dependency on events)
@@ -73,8 +76,12 @@
 
 			// Signal that we're ready to receive events
 			log('Emitting recording-indicator-ready...');
-			await emit('recording-indicator-ready');
-			log('Ready event emitted');
+			try {
+				await emit('recording-indicator-ready');
+				log('Ready event emitted');
+			} catch (emitErr) {
+				log('ERROR emit:', String(emitErr));
+			}
 
 			// Start the internal timer immediately
 			log('Starting timer...');
@@ -86,44 +93,56 @@
 
 			// Listen for audio level updates
 			log('Setting up audio-level-update listener...');
-			unlistenFns.push(
-				await listen<{ level: number }>('audio-level-update', (event) => {
-					eventCount++;
-					audioLevel = event.payload.level;
-					updateTargetLevels(audioLevel);
-					if (eventCount % 20 === 0) {
-						log('Audio level event #' + eventCount + ':', event.payload.level.toFixed(3));
-					}
-				}),
-			);
-			log('audio-level-update listener ready');
+			try {
+				unlistenFns.push(
+					await listen<{ level: number }>('audio-level-update', (event) => {
+						eventCount++;
+						audioLevel = event.payload.level;
+						updateTargetLevels(audioLevel);
+						if (eventCount % 20 === 0) {
+							log('Audio #' + eventCount + ': ' + event.payload.level.toFixed(3));
+						}
+					}),
+				);
+				log('audio-level-update listener ready');
+			} catch (listenErr) {
+				log('ERROR listen audio:', String(listenErr));
+			}
 
 			// Listen for reset events (when window is shown again)
-			log('Setting up recording-indicator-reset listener...');
-			unlistenFns.push(
-				await listen('recording-indicator-reset', () => {
-					log('Reset event received');
-					resetTimer();
-					recordingState = 'recording';
-				}),
-			);
-			log('recording-indicator-reset listener ready');
+			log('Setting up reset listener...');
+			try {
+				unlistenFns.push(
+					await listen('recording-indicator-reset', () => {
+						log('Reset event received');
+						resetTimer();
+						recordingState = 'recording';
+					}),
+				);
+				log('reset listener ready');
+			} catch (listenErr) {
+				log('ERROR listen reset:', String(listenErr));
+			}
 
 			// Listen for state updates
-			log('Setting up recording-state-update listener...');
-			unlistenFns.push(
-				await listen<{ state: 'recording' | 'processing' | 'idle' }>(
-					'recording-state-update',
-					(event) => {
-						log('State update received:', event.payload.state);
-						recordingState = event.payload.state;
-						if (event.payload.state === 'processing') {
-							stopTimer();
-						}
-					},
-				),
-			);
-			log('recording-state-update listener ready');
+			log('Setting up state listener...');
+			try {
+				unlistenFns.push(
+					await listen<{ state: 'recording' | 'processing' | 'idle' }>(
+						'recording-state-update',
+						(event) => {
+							log('State:', event.payload.state);
+							recordingState = event.payload.state;
+							if (event.payload.state === 'processing') {
+								stopTimer();
+							}
+						},
+					),
+				);
+				log('state listener ready');
+			} catch (listenErr) {
+				log('ERROR listen state:', String(listenErr));
+			}
 
 			debugInfo = 'ready, waiting for events...';
 			log('=== onMount COMPLETE ===');
@@ -206,9 +225,14 @@
 	</div>
 </div>
 
-<!-- Debug info - VISIBLE FOR DEBUGGING -->
-<div class="debug">
-	{debugInfo} | Events: {eventCount} | Level: {audioLevel.toFixed(2)} | Time: {elapsedSeconds}s
+<!-- Debug log panel - VISIBLE FOR DEBUGGING -->
+<div class="debug-panel">
+	<div class="debug-header">Events: {eventCount} | Level: {audioLevel.toFixed(2)} | Time: {elapsedSeconds}s</div>
+	<div class="debug-logs">
+		{#each logLines as line}
+			<div class="log-line">{line}</div>
+		{/each}
+	</div>
 </div>
 
 <style>
@@ -345,24 +369,43 @@
 		50% { opacity: 0.3; }
 	}
 
-	/* Debug overlay - HIGHLY VISIBLE */
-	.debug {
+	/* Debug log panel - HIGHLY VISIBLE */
+	.debug-panel {
 		position: fixed;
-		bottom: 0;
+		top: 46px;
 		left: 0;
 		right: 0;
-		height: 18px;
-		background: #ff0000;
-		color: #fff;
+		bottom: 0;
+		background: #1a1a2e;
+		color: #0f0;
 		font-family: monospace;
 		font-size: 9px;
-		font-weight: bold;
 		padding: 2px 4px;
+		overflow-y: auto;
+		z-index: 9999;
+		border-top: 1px solid #333;
+	}
+
+	.debug-header {
+		background: #ff0000;
+		color: #fff;
+		padding: 2px 4px;
+		font-weight: bold;
+		margin: -2px -4px 4px -4px;
+	}
+
+	.debug-logs {
+		display: flex;
+		flex-direction: column;
+		gap: 1px;
+	}
+
+	.log-line {
 		white-space: nowrap;
 		overflow: hidden;
-		z-index: 9999;
-		display: flex;
-		align-items: center;
+		text-overflow: ellipsis;
+		padding: 1px 0;
+		border-bottom: 1px solid #333;
 	}
 
 	/* Reduced motion support */
