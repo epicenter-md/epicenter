@@ -883,7 +883,8 @@
 							</Alert.Title>
 							<Alert.Description>
 								You're using the Browser API recording method, which produces
-								compressed audio that requires FFmpeg for Canary transcription.
+								compressed audio that requires FFmpeg for Canary
+								transcription.
 								<div class="mt-3 space-y-3">
 									<div class="text-sm">
 										<strong>Option 1:</strong>

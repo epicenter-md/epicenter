@@ -7,8 +7,8 @@
 //! Unlike Parakeet which auto-detects language, Canary accepts a language
 //! parameter via task tokens to force output in a specific language.
 
-use log::{debug, error, info, warn};
-use ndarray::{Array1, Array2, Array3, Array4, Axis};
+use log::{debug, info, warn};
+use ndarray::{Array1, Array2, Array3, Array4, IxDyn};
 use ort::session::{builder::GraphOptimizationLevel, Session};
 use ort::value::Value;
 use std::collections::HashMap;
@@ -179,7 +179,7 @@ impl CanaryEncoder {
     /// Input: audio_signal [batch, features, time], length [batch]
     /// Output: encoder_embeddings [batch, seq_len, hidden], encoder_mask [batch, seq_len]
     pub fn encode(
-        &self,
+        &mut self,
         audio_features: Array3<f32>,
         lengths: Array1<i64>,
     ) -> Result<(Array3<f32>, Array2<i64>), TranscriptionError> {
@@ -189,11 +189,11 @@ impl CanaryEncoder {
             lengths.shape()
         );
 
-        let audio_value = Value::from_array(audio_features.view())
+        let audio_value = Value::from_array(audio_features)
             .map_err(|e| TranscriptionError::TranscriptionError {
                 message: format!("Failed to create audio input: {}", e),
             })?;
-        let length_value = Value::from_array(lengths.view())
+        let length_value = Value::from_array(lengths)
             .map_err(|e| TranscriptionError::TranscriptionError {
                 message: format!("Failed to create length input: {}", e),
             })?;
@@ -208,35 +208,49 @@ impl CanaryEncoder {
         })?;
 
         // Extract outputs
-        let encoder_embeddings = outputs
+        let emb_output = outputs
             .get("encoder_embeddings")
             .ok_or_else(|| TranscriptionError::TranscriptionError {
                 message: "Missing encoder_embeddings output".to_string(),
-            })?
-            .try_extract_tensor::<f32>()
+            })?;
+        let (emb_shape, emb_data) = emb_output.try_extract_tensor::<f32>()
             .map_err(|e| TranscriptionError::TranscriptionError {
                 message: format!("Failed to extract encoder_embeddings: {}", e),
-            })?
-            .into_dimensionality::<ndarray::Ix3>()
-            .map_err(|e| TranscriptionError::TranscriptionError {
-                message: format!("Invalid encoder_embeddings shape: {}", e),
-            })?
-            .to_owned();
+            })?;
+        let emb_dims: Vec<usize> = emb_shape.iter().map(|&d| d as usize).collect();
+        let encoder_embeddings = ndarray::ArrayViewD::from_shape(
+            IxDyn(&emb_dims),
+            emb_data
+        ).map_err(|e| TranscriptionError::TranscriptionError {
+            message: format!("Failed to create encoder_embeddings array: {}", e),
+        })?
+        .into_dimensionality::<ndarray::Ix3>()
+        .map_err(|e| TranscriptionError::TranscriptionError {
+            message: format!("Invalid encoder_embeddings shape: {}", e),
+        })?
+        .to_owned();
 
-        let encoder_mask = outputs
+        let mask_output = outputs
             .get("encoder_mask")
             .ok_or_else(|| TranscriptionError::TranscriptionError {
                 message: "Missing encoder_mask output".to_string(),
-            })?
-            .try_extract_tensor::<i64>()
+            })?;
+        let (mask_shape, mask_data) = mask_output.try_extract_tensor::<i64>()
             .map_err(|e| TranscriptionError::TranscriptionError {
                 message: format!("Failed to extract encoder_mask: {}", e),
-            })?
-            .into_dimensionality::<ndarray::Ix2>()
-            .map_err(|e| TranscriptionError::TranscriptionError {
-                message: format!("Invalid encoder_mask shape: {}", e),
-            })?
-            .to_owned();
+            })?;
+        let mask_dims: Vec<usize> = mask_shape.iter().map(|&d| d as usize).collect();
+        let encoder_mask = ndarray::ArrayViewD::from_shape(
+            IxDyn(&mask_dims),
+            mask_data
+        ).map_err(|e| TranscriptionError::TranscriptionError {
+            message: format!("Failed to create encoder_mask array: {}", e),
+        })?
+        .into_dimensionality::<ndarray::Ix2>()
+        .map_err(|e| TranscriptionError::TranscriptionError {
+            message: format!("Invalid encoder_mask shape: {}", e),
+        })?
+        .to_owned();
 
         debug!(
             "[Canary] Encoder output: embeddings {:?}, mask {:?}",
@@ -273,21 +287,10 @@ impl CanaryDecoder {
                 message: format!("Failed to load decoder model: {}", e),
             })?;
 
-        // Get decoder_mems input shape to determine num_layers and hidden_dim
+        // Default values for Canary-1B-v2
         // Shape: [num_layers, batch, seq_len, hidden_dim]
-        let mut num_layers = 8; // Default for Canary-1B
-        let mut hidden_dim = 1024; // Default
-
-        for input in session.inputs.iter() {
-            if input.name == "decoder_mems" {
-                if let Some(dims) = &input.input_type.tensor_dimensions() {
-                    if dims.len() >= 4 {
-                        num_layers = dims[0] as usize;
-                        hidden_dim = dims[3] as usize;
-                    }
-                }
-            }
-        }
+        let num_layers = 8; // Default for Canary-1B
+        let hidden_dim = 1024; // Default
 
         info!(
             "[Canary] Decoder loaded: {} layers, {} hidden dim",
@@ -320,7 +323,7 @@ impl CanaryDecoder {
 
     /// Decode with language parameter
     pub fn decode(
-        &self,
+        &mut self,
         encoder_embeddings: &Array3<f32>,
         encoder_mask: &Array2<i64>,
         language: &str,
@@ -366,19 +369,19 @@ impl CanaryDecoder {
             };
 
             // Run decoder
-            let input_ids_value = Value::from_array(input_ids.view())
+            let input_ids_value = Value::from_array(input_ids)
                 .map_err(|e| TranscriptionError::TranscriptionError {
                     message: format!("Failed to create input_ids: {}", e),
                 })?;
-            let encoder_emb_value = Value::from_array(encoder_embeddings.view())
+            let encoder_emb_value = Value::from_array(encoder_embeddings.clone())
                 .map_err(|e| TranscriptionError::TranscriptionError {
                     message: format!("Failed to create encoder_embeddings input: {}", e),
                 })?;
-            let encoder_mask_value = Value::from_array(encoder_mask.view())
+            let encoder_mask_value = Value::from_array(encoder_mask.clone())
                 .map_err(|e| TranscriptionError::TranscriptionError {
                     message: format!("Failed to create encoder_mask input: {}", e),
                 })?;
-            let decoder_mems_value = Value::from_array(decoder_mems.view())
+            let decoder_mems_value = Value::from_array(decoder_mems.clone())
                 .map_err(|e| TranscriptionError::TranscriptionError {
                     message: format!("Failed to create decoder_mems input: {}", e),
                 })?;
@@ -395,32 +398,57 @@ impl CanaryDecoder {
             })?;
 
             // Get logits and new decoder state
-            let logits = outputs
+            let logits_output = outputs
                 .get("logits")
                 .ok_or_else(|| TranscriptionError::TranscriptionError {
                     message: "Missing logits output".to_string(),
-                })?
-                .try_extract_tensor::<f32>()
+                })?;
+            let (logits_shape, logits_data) = logits_output.try_extract_tensor::<f32>()
                 .map_err(|e| TranscriptionError::TranscriptionError {
                     message: format!("Failed to extract logits: {}", e),
                 })?;
+            let logits_dims: Vec<usize> = logits_shape.iter().map(|&d| d as usize).collect();
+            let logits = ndarray::ArrayViewD::from_shape(
+                IxDyn(&logits_dims),
+                logits_data
+            ).map_err(|e| TranscriptionError::TranscriptionError {
+                message: format!("Failed to create logits array: {}", e),
+            })?
+            .into_dimensionality::<ndarray::Ix3>()
+            .map_err(|e| TranscriptionError::TranscriptionError {
+                message: format!("Invalid logits shape: {}", e),
+            })?
+            .to_owned();
 
-            let decoder_hidden_states = outputs
+            let hidden_output = outputs
                 .get("decoder_hidden_states")
                 .ok_or_else(|| TranscriptionError::TranscriptionError {
                     message: "Missing decoder_hidden_states output".to_string(),
-                })?
-                .try_extract_tensor::<f32>()
+                })?;
+            let (hidden_shape, hidden_data) = hidden_output.try_extract_tensor::<f32>()
                 .map_err(|e| TranscriptionError::TranscriptionError {
                     message: format!("Failed to extract decoder_hidden_states: {}", e),
                 })?;
+            let hidden_dims: Vec<usize> = hidden_shape.iter().map(|&d| d as usize).collect();
+            let decoder_hidden_states = ndarray::ArrayViewD::from_shape(
+                IxDyn(&hidden_dims),
+                hidden_data
+            ).map_err(|e| TranscriptionError::TranscriptionError {
+                message: format!("Failed to create decoder_hidden_states array: {}", e),
+            })?
+            .into_dimensionality::<ndarray::Ix4>()
+            .map_err(|e| TranscriptionError::TranscriptionError {
+                message: format!("Invalid decoder_hidden_states shape: {}", e),
+            })?
+            .to_owned();
 
             // Get next token (greedy decoding - argmax of last position)
-            let logits_last = logits.slice(ndarray::s![0, -1, ..]);
+            let seq_len = logits.shape()[1];
+            let logits_last = logits.slice(ndarray::s![0, seq_len - 1, ..]);
             let next_token = logits_last
                 .iter()
                 .enumerate()
-                .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap())
+                .max_by(|(_, a): &(usize, &f32), (_, b): &(usize, &f32)| a.partial_cmp(b).unwrap())
                 .map(|(idx, _)| idx as i64)
                 .unwrap_or(TOKEN_END_OF_TEXT);
 
@@ -433,12 +461,7 @@ impl CanaryDecoder {
             tokens.push(next_token);
 
             // Update decoder memory
-            decoder_mems = decoder_hidden_states
-                .into_dimensionality::<ndarray::Ix4>()
-                .map_err(|e| TranscriptionError::TranscriptionError {
-                    message: format!("Invalid decoder_hidden_states shape: {}", e),
-                })?
-                .to_owned();
+            decoder_mems = decoder_hidden_states;
         }
 
         // Return only the generated tokens (skip task prefix)
@@ -527,7 +550,7 @@ impl CanaryEngine {
     ///
     /// # Returns
     /// Transcribed text in the specified language
-    pub fn transcribe(&self, samples: Vec<f32>, language: &str) -> Result<String, TranscriptionError> {
+    pub fn transcribe(&mut self, samples: Vec<f32>, language: &str) -> Result<String, TranscriptionError> {
         info!(
             "[Canary] Transcribing {} samples with language '{}'",
             samples.len(),

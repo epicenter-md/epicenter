@@ -113,8 +113,7 @@ export const TRANSCRIPTION_SERVICES = [
 		name: 'Canary',
 		icon: nvidiaIcon,
 		invertInDarkMode: false,
-		description:
-			'NVIDIA NeMo model with language support (French, English, etc.)',
+		description: 'NVIDIA NeMo model with language support (French, English, etc.)',
 		modelPathField: 'transcription.canary.modelPath',
 		location: 'local',
 	},
