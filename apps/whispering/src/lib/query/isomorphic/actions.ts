@@ -63,6 +63,14 @@ const startManualRecording = defineMutation({
 			description: 'Setting up your recording environment...',
 		});
 
+		// Show the recording indicator overlay FIRST (desktop only)
+		// This ensures the window is ready to receive events before recording starts
+		if (window.__TAURI_INTERNALS__) {
+			await recordingIndicatorWindow.show().catch((error) => {
+				console.warn('Failed to show recording indicator:', error);
+			});
+		}
+
 		const { data: deviceAcquisitionOutcome, error: startRecordingError } =
 			await recorder.startRecording({ toastId });
 
@@ -70,6 +78,10 @@ const startManualRecording = defineMutation({
 		isRecordingOperationBusy = false;
 
 		if (startRecordingError) {
+			// Hide the recording indicator if recording failed
+			if (window.__TAURI_INTERNALS__) {
+				recordingIndicatorWindow.hide().catch(() => {});
+			}
 			notify.error({ id: toastId, ...startRecordingError });
 			return Ok(undefined);
 		}
@@ -125,13 +137,6 @@ const startManualRecording = defineMutation({
 		manualRecordingStartTime = Date.now();
 		console.info('Recording started');
 		sound.playSoundIfEnabled('manual-start');
-
-		// Show the recording indicator overlay (desktop only)
-		if (window.__TAURI_INTERNALS__) {
-			recordingIndicatorWindow.show().catch((error) => {
-				console.warn('Failed to show recording indicator:', error);
-			});
-		}
 
 		return Ok(undefined);
 	},
