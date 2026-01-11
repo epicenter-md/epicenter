@@ -6,10 +6,12 @@
  * 2. Multiple mirrors - Automatic failover to fastest mirror
  * 3. Buffered writes - Reduce I/O overhead by buffering chunks
  * 4. Connection pooling - Reuse connections for multiple chunks
+ * 5. Proper logging via Tauri plugin for debugging
  */
 
 import { fetch } from '@tauri-apps/plugin-http';
 import { writeFile, remove } from '@tauri-apps/plugin-fs';
+import { info, warn, error, debug } from '@tauri-apps/plugin-log';
 
 // HuggingFace mirrors for better geographic coverage
 const HUGGINGFACE_MIRRORS: readonly string[] = [
@@ -87,10 +89,13 @@ async function findFastestMirror(url: string): Promise<string> {
 	// Sort by latency and return the fastest
 	results.sort((a, b) => a.latency - b.latency);
 
-	console.log('Mirror latency test results:', results);
+	await info(`Mirror latency test results: ${JSON.stringify(results)}`);
 
 	// Return the fastest mirror that responded
 	const fastest = results.find(r => r.latency < Infinity);
+	if (!fastest) {
+		await warn('All mirrors failed latency test, using default');
+	}
 	return fastest?.mirror ?? DEFAULT_MIRROR;
 }
 
@@ -127,6 +132,8 @@ async function downloadRange(
 	end: number,
 	onProgress: (downloaded: number) => void
 ): Promise<Uint8Array> {
+	await debug(`Downloading range: ${start}-${end} (${Math.round((end - start) / 1_000_000)}MB)`);
+
 	const response = await fetch(url, {
 		headers: {
 			Range: `bytes=${start}-${end}`,
@@ -134,6 +141,7 @@ async function downloadRange(
 	});
 
 	if (!response.ok && response.status !== 206) {
+		await error(`Range request failed: ${response.status} for ${start}-${end}`);
 		throw new Error(`Range request failed: ${response.status}`);
 	}
 
@@ -156,6 +164,7 @@ async function downloadRange(
 
 	// Combine all chunks into single array
 	const totalLength = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
+	await debug(`Range ${start}-${end} complete: ${totalLength} bytes in ${chunks.length} chunks`);
 	const result = new Uint8Array(totalLength);
 	let offset = 0;
 	for (const chunk of chunks) {
@@ -177,6 +186,8 @@ async function downloadFileParallel(
 ): Promise<void> {
 	const chunkSize = CHUNK_SIZE_MB * 1024 * 1024;
 	const numChunks = Math.ceil(totalSize / chunkSize);
+
+	await info(`Starting parallel download: ${Math.round(totalSize / 1_000_000)}MB in ${numChunks} chunks of ${CHUNK_SIZE_MB}MB each`);
 
 	// Create array to hold all chunks in order
 	const chunks: (Uint8Array | null)[] = new Array(numChunks).fill(null);
@@ -219,26 +230,42 @@ async function downloadFileParallel(
 	// Process chunks in batches of PARALLEL_CONNECTIONS
 	for (let i = 0; i < ranges.length; i += PARALLEL_CONNECTIONS) {
 		const batch = ranges.slice(i, i + PARALLEL_CONNECTIONS);
+		const batchNum = Math.floor(i / PARALLEL_CONNECTIONS) + 1;
+		const totalBatches = Math.ceil(ranges.length / PARALLEL_CONNECTIONS);
+		await info(`Processing batch ${batchNum}/${totalBatches} (chunks ${i + 1}-${Math.min(i + PARALLEL_CONNECTIONS, ranges.length)}/${ranges.length})`);
 		await Promise.all(batch.map(downloadChunk));
+		await debug(`Batch ${batchNum} complete. Total downloaded: ${Math.round(totalDownloaded / 1_000_000)}MB`);
 	}
 
 	// Verify all chunks downloaded
 	if (chunks.some(c => c === null)) {
+		const failedIndices = chunks.map((c, idx) => c === null ? idx : -1).filter(idx => idx >= 0);
+		await error(`Download failed: chunks ${failedIndices.join(', ')} are null`);
 		throw new Error('Some chunks failed to download');
 	}
 
 	// Combine all chunks and write to file
+	await info(`All chunks downloaded. Combining ${numChunks} chunks into final file...`);
 	const totalLength = chunks.reduce((sum, chunk) => sum + (chunk?.length ?? 0), 0);
+	await debug(`Allocating ${Math.round(totalLength / 1_000_000)}MB buffer for final data`);
+
 	const finalData = new Uint8Array(totalLength);
 	let offset = 0;
-	for (const chunk of chunks) {
+	for (let i = 0; i < chunks.length; i++) {
+		const chunk = chunks[i];
 		if (chunk) {
 			finalData.set(chunk, offset);
 			offset += chunk.length;
 		}
+		// Log progress every 10 chunks to avoid spam
+		if (i % 10 === 0 || i === chunks.length - 1) {
+			await debug(`Combining chunks: ${i + 1}/${chunks.length}`);
+		}
 	}
 
+	await info(`Writing ${Math.round(totalLength / 1_000_000)}MB to ${filePath}...`);
 	await writeFile(filePath, finalData);
+	await info(`File write complete: ${filePath}`);
 }
 
 /**
@@ -310,11 +337,14 @@ async function downloadFileSequential(
 
 	// Validate download
 	if (downloadedBytes < totalSize * 0.9) {
+		await error(`Download incomplete: received ${Math.round(downloadedBytes / 1_000_000)}MB but expected ${Math.round(totalSize / 1_000_000)}MB`);
 		await remove(filePath);
 		throw new Error(
 			`Download incomplete: received ${Math.round(downloadedBytes / 1_000_000)}MB but expected ${Math.round(totalSize / 1_000_000)}MB`
 		);
 	}
+
+	await info(`Sequential download complete: ${Math.round(downloadedBytes / 1_000_000)}MB written to ${filePath}`);
 }
 
 /**
@@ -350,7 +380,7 @@ export async function downloadFileOptimized(
 	if (url.includes('huggingface.co')) {
 		const fastestMirror = await findFastestMirror(url);
 		downloadUrl = getMirrorUrl(url, fastestMirror);
-		console.log(`Using mirror: ${fastestMirror}`);
+		await info(`Using mirror: ${fastestMirror}`);
 	}
 
 	// Check if file is large enough for parallel download
@@ -361,7 +391,7 @@ export async function downloadFileOptimized(
 		const { supports, totalSize } = await supportsRangeRequests(downloadUrl);
 
 		if (supports && totalSize > 0) {
-			console.log(`Using parallel download (${PARALLEL_CONNECTIONS} connections) for ${Math.round(totalSize / 1_000_000)}MB file`);
+			await info(`Using parallel download (${PARALLEL_CONNECTIONS} connections) for ${Math.round(totalSize / 1_000_000)}MB file`);
 
 			await downloadFileParallel(
 				downloadUrl,
@@ -377,7 +407,7 @@ export async function downloadFileOptimized(
 	}
 
 	// Fallback to sequential download with buffering
-	console.log('Using sequential download with buffering');
+	await info('Using sequential download with buffering');
 
 	await downloadFileSequential(
 		downloadUrl,
