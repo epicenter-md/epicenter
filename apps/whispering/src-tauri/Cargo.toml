@@ -55,7 +55,7 @@ log = "0.4"
 tauri-plugin-log = "2"
 
 # Canary-1B-v2 support (native ONNX inference with language parameter)
-ort = { version = "2.0", features = ["download-binaries"] }
+ort = { version = "2.0.0-rc.9", features = ["download-binaries"] }
 ndarray = "0.16"
 
 [target.'cfg(unix)'.dependencies]
