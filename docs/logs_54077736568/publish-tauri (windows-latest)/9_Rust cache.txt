@@ -1,0 +1,57 @@
+﻿2026-01-11T14:29:05.0975520Z ##[group]Run swatinem/rust-cache@v2
+2026-01-11T14:29:05.0975832Z with:
+2026-01-11T14:29:05.0976040Z   workspaces: ./apps/whispering/src-tauri -> target
+2026-01-11T14:29:05.0976305Z   prefix-key: v0-rust
+2026-01-11T14:29:05.0976471Z   add-job-id-key: true
+2026-01-11T14:29:05.0976680Z   add-rust-environment-hash-key: true
+2026-01-11T14:29:05.0976911Z   cache-targets: true
+2026-01-11T14:29:05.0977084Z   cache-all-crates: false
+2026-01-11T14:29:05.0977285Z   cache-workspace-crates: false
+2026-01-11T14:29:05.0977484Z   save-if: true
+2026-01-11T14:29:05.0977644Z   cache-provider: github
+2026-01-11T14:29:05.0977820Z   cache-bin: true
+2026-01-11T14:29:05.0977981Z   lookup-only: false
+2026-01-11T14:29:05.0978152Z env:
+2026-01-11T14:29:05.0978312Z   CARGO_HOME: C:\Users\runneradmin\.cargo
+2026-01-11T14:29:05.0978543Z   CARGO_INCREMENTAL: 0
+2026-01-11T14:29:05.0978718Z   CARGO_TERM_COLOR: always
+2026-01-11T14:29:05.0978900Z ##[endgroup]
+2026-01-11T14:29:07.6070321Z ##[group]Cache Configuration
+2026-01-11T14:29:07.6071319Z Cache Provider:
+2026-01-11T14:29:07.6071795Z     github
+2026-01-11T14:29:07.6072349Z Workspaces:
+2026-01-11T14:29:07.6079022Z     D:\a\epicenter\epicenter\apps\whispering\src-tauri
+2026-01-11T14:29:07.6079748Z Cache Paths:
+2026-01-11T14:29:07.6080208Z     C:\Users\runneradmin\.cargo\bin
+2026-01-11T14:29:07.6080841Z     C:\Users\runneradmin\.cargo\.crates.toml
+2026-01-11T14:29:07.6081481Z     C:\Users\runneradmin\.cargo\.crates2.json
+2026-01-11T14:29:07.6082056Z     C:\Users\runneradmin\.cargo\registry
+2026-01-11T14:29:07.6082586Z     C:\Users\runneradmin\.cargo\git
+2026-01-11T14:29:07.6083464Z     D:\a\epicenter\epicenter\apps\whispering\src-tauri\target
+2026-01-11T14:29:07.6084126Z Restore Key:
+2026-01-11T14:29:07.6084531Z     v0-rust-publish-tauri-Windows_NT-x64-7a6c70a5
+2026-01-11T14:29:07.6084978Z Cache Key:
+2026-01-11T14:29:07.6085394Z     v0-rust-publish-tauri-Windows_NT-x64-7a6c70a5-1de37cc0
+2026-01-11T14:29:07.6085870Z .. Prefix:
+2026-01-11T14:29:07.6086216Z   - v0-rust-publish-tauri-Windows_NT-x64
+2026-01-11T14:29:07.6086817Z .. Environment considered:
+2026-01-11T14:29:07.6087567Z   - Rust Version: 1.92.0 x86_64-pc-windows-msvc (ded5c06cf21d2b93bffd5d884aa6e96934ee4234)
+2026-01-11T14:29:07.6088250Z   - CARGO_HOME
+2026-01-11T14:29:07.6088537Z   - CARGO_INCREMENTAL
+2026-01-11T14:29:07.6088846Z   - CARGO_TERM_COLOR
+2026-01-11T14:29:07.6089178Z .. Lockfiles considered:
+2026-01-11T14:29:07.6089722Z   - D:\a\epicenter\epicenter\apps\whispering\src-tauri\Cargo.lock
+2026-01-11T14:29:07.6090684Z   - D:\a\epicenter\epicenter\apps\whispering\src-tauri\Cargo.toml
+2026-01-11T14:29:07.6091438Z ##[endgroup]
+2026-01-11T14:29:07.6091601Z 
+2026-01-11T14:29:07.6092164Z ... Restoring cache ...
+2026-01-11T14:29:07.9358769Z Cache hit for: v0-rust-publish-tauri-Windows_NT-x64-7a6c70a5-1de37cc0
+2026-01-11T14:29:09.1963922Z Received 67108864 of 673790128 (10.0%), 63.1 MBs/sec
+2026-01-11T14:29:10.2296416Z Received 234881024 of 673790128 (34.9%), 109.4 MBs/sec
+2026-01-11T14:29:11.3833928Z Received 402653184 of 673790128 (59.8%), 120.0 MBs/sec
+2026-01-11T14:29:12.3910643Z Received 570425344 of 673790128 (84.7%), 129.2 MBs/sec
+2026-01-11T14:29:13.1895368Z Received 673790128 of 673790128 (100.0%), 128.3 MBs/sec
+2026-01-11T14:29:13.1899226Z Cache Size: ~643 MB (673790128 B)
+2026-01-11T14:29:13.1941404Z [command]"C:\Program Files\Git\usr\bin\tar.exe" -xf D:/a/_temp/dbbc8910-e91e-4687-93e0-e638ac3d803b/cache.tzst -P -C D:/a/epicenter/epicenter --force-local --use-compress-program "zstd -d"
+2026-01-11T14:29:26.3619489Z Cache restored successfully
+2026-01-11T14:29:26.4414230Z Restored from cache key "v0-rust-publish-tauri-Windows_NT-x64-7a6c70a5-1de37cc0" full match: true.

@@ -1,0 +1,34 @@
+﻿2026-01-11T14:28:40.5365364Z Current runner version: '2.330.0'
+2026-01-11T14:28:40.5405477Z ##[group]Runner Image Provisioner
+2026-01-11T14:28:40.5406583Z Hosted Compute Agent
+2026-01-11T14:28:40.5407147Z Version: 20251211.462
+2026-01-11T14:28:40.5407670Z Commit: 6cbad8c2bb55d58165063d031ccabf57e2d2db61
+2026-01-11T14:28:40.5408254Z Build Date: 2025-12-11T16:28:49Z
+2026-01-11T14:28:40.5408842Z Worker ID: {697f7fa3-7983-4b14-8316-2310d58cf692}
+2026-01-11T14:28:40.5409390Z ##[endgroup]
+2026-01-11T14:28:40.5409837Z ##[group]Operating System
+2026-01-11T14:28:40.5410334Z Microsoft Windows Server 2025
+2026-01-11T14:28:40.5410820Z 10.0.26100
+2026-01-11T14:28:40.5411166Z Datacenter
+2026-01-11T14:28:40.5411580Z ##[endgroup]
+2026-01-11T14:28:40.5411992Z ##[group]Runner Image
+2026-01-11T14:28:40.5412399Z Image: windows-2025
+2026-01-11T14:28:40.5413014Z Version: 20260105.172.1
+2026-01-11T14:28:40.5414041Z Included Software: https://github.com/actions/runner-images/blob/win25/20260105.172/images/windows/Windows2025-Readme.md
+2026-01-11T14:28:40.5415904Z Image Release: https://github.com/actions/runner-images/releases/tag/win25%2F20260105.172
+2026-01-11T14:28:40.5416658Z ##[endgroup]
+2026-01-11T14:28:40.5417532Z ##[group]GITHUB_TOKEN Permissions
+2026-01-11T14:28:40.5419334Z Contents: write
+2026-01-11T14:28:40.5419754Z Metadata: read
+2026-01-11T14:28:40.5420500Z ##[endgroup]
+2026-01-11T14:28:40.5422614Z Secret source: Actions
+2026-01-11T14:28:40.5423227Z Prepare workflow directory
+2026-01-11T14:28:40.5739698Z Prepare all required actions
+2026-01-11T14:28:40.5799289Z Getting action download info
+2026-01-11T14:28:41.0206941Z Download action repository 'actions/checkout@v4' (SHA:34e114876b0b11c390a56381ad16ebd13914f8d5)
+2026-01-11T14:28:41.1302059Z Download action repository 'oven-sh/setup-bun@v2' (SHA:b7a1c7ccf290d58743029c4f6903da283811b979)
+2026-01-11T14:28:42.0719559Z Download action repository 'actions/setup-node@v4' (SHA:49933ea5288caeca8642d1e84afbd3f7d6820020)
+2026-01-11T14:28:42.2163747Z Download action repository 'dtolnay/rust-toolchain@stable' (SHA:4be9e76fd7c4901c61fb841f559994984270fce7)
+2026-01-11T14:28:42.6582454Z Download action repository 'swatinem/rust-cache@v2' (SHA:779680da715d629ac1d338a641029a2f4372abb5)
+2026-01-11T14:28:43.5310226Z Download action repository 'tauri-apps/tauri-action@v0' (SHA:73fb865345c54760d875b94642314f8c0c894afa)
+2026-01-11T14:28:44.8762375Z Complete job name: publish-tauri (windows-latest)

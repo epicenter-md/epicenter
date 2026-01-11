@@ -265,37 +265,34 @@ async function downloadFileParallel(
 		throw new Error('Some chunks failed to download');
 	}
 
-	// Combine all chunks and write to file
+	// Write chunks progressively to avoid blocking UI
+	// Instead of combining 859MB in memory then writing all at once (blocks for 30+ min),
+	// we write each ~50MB chunk separately with yields between writes
 	await info(
-		`All chunks downloaded. Combining ${numChunks} chunks into final file...`,
-	);
-	const totalLength = chunks.reduce(
-		(sum, chunk) => sum + (chunk?.length ?? 0),
-		0,
-	);
-	await debug(
-		`Allocating ${Math.round(totalLength / 1_000_000)}MB buffer for final data`,
+		`All ${numChunks} chunks downloaded. Writing to file progressively...`,
 	);
 
-	const finalData = new Uint8Array(totalLength);
-	let offset = 0;
+	// Create empty file first
+	await writeFile(filePath, new Uint8Array());
+
+	let writtenBytes = 0;
 	for (let i = 0; i < chunks.length; i++) {
 		const chunk = chunks[i];
 		if (chunk) {
-			finalData.set(chunk, offset);
-			offset += chunk.length;
-		}
-		// Log progress every 10 chunks to avoid spam
-		if (i % 10 === 0 || i === chunks.length - 1) {
-			await debug(`Combining chunks: ${i + 1}/${chunks.length}`);
+			await info(
+				`Writing chunk ${i + 1}/${chunks.length} (${Math.round(chunk.length / 1_000_000)}MB)...`,
+			);
+			await writeFile(filePath, chunk, { append: true });
+			writtenBytes += chunk.length;
+
+			// Yield to event loop every chunk to keep UI responsive
+			await new Promise((resolve) => setTimeout(resolve, 10));
 		}
 	}
 
 	await info(
-		`Writing ${Math.round(totalLength / 1_000_000)}MB to ${filePath}...`,
+		`File write complete: ${Math.round(writtenBytes / 1_000_000)}MB written to ${filePath}`,
 	);
-	await writeFile(filePath, finalData);
-	await info(`File write complete: ${filePath}`);
 }
 
 /**

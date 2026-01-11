@@ -1,0 +1,989 @@
+﻿2026-01-11T14:31:40.9520010Z ##[group]Run tauri-apps/tauri-action@v0
+2026-01-11T14:31:40.9520369Z with:
+2026-01-11T14:31:40.9520562Z   projectPath: apps/whispering
+2026-01-11T14:31:40.9520775Z   tagName: v99.0.0-canary
+2026-01-11T14:31:40.9520989Z   releaseName: Whispering v99.0.0-canary
+2026-01-11T14:31:40.9521391Z   releaseBody: Whispering v99.0.0-canary is now available. Check GitHub for the full changelog.
+2026-01-11T14:31:40.9521797Z   releaseDraft: true
+2026-01-11T14:31:40.9521978Z   prerelease: false
+2026-01-11T14:31:40.9522144Z   includeDebug: false
+2026-01-11T14:31:40.9522322Z   includeRelease: true
+2026-01-11T14:31:40.9522509Z   includeUpdaterJson: true
+2026-01-11T14:31:40.9522731Z   updaterJsonKeepUniversal: false
+2026-01-11T14:31:40.9522941Z   isGitea: false
+2026-01-11T14:31:40.9523122Z   uploadPlainBinary: false
+2026-01-11T14:31:40.9523331Z   generateReleaseNotes: false
+2026-01-11T14:31:40.9523532Z env:
+2026-01-11T14:31:40.9523694Z   CARGO_HOME: C:\Users\runneradmin\.cargo
+2026-01-11T14:31:40.9523933Z   CARGO_INCREMENTAL: 0
+2026-01-11T14:31:40.9524142Z   CARGO_TERM_COLOR: always
+2026-01-11T14:31:40.9524323Z   CACHE_ON_FAILURE: false
+2026-01-11T14:31:40.9524515Z   CI: true
+2026-01-11T14:31:40.9525351Z   GITHUB_TOKEN: ***
+2026-01-11T14:31:40.9525533Z   APTABASE_KEY: 
+2026-01-11T14:31:40.9525709Z   TAURI_SIGNING_PRIVATE_KEY: 
+2026-01-11T14:31:40.9525933Z   TAURI_SIGNING_PRIVATE_KEY_PASSWORD: 
+2026-01-11T14:31:40.9526152Z   APPLE_CERTIFICATE: 
+2026-01-11T14:31:40.9526334Z   APPLE_CERTIFICATE_PASSWORD: 
+2026-01-11T14:31:40.9526542Z   APPLE_SIGNING_IDENTITY: 
+2026-01-11T14:31:40.9526721Z   APPLE_ID: 
+2026-01-11T14:31:40.9526869Z   APPLE_PASSWORD: 
+2026-01-11T14:31:40.9527027Z   APPLE_TEAM_ID: 
+2026-01-11T14:31:40.9527188Z ##[endgroup]
+2026-01-11T14:31:41.1434614Z running npm [ 'run', 'tauri', 'build' ]
+2026-01-11T14:31:42.0029913Z npm warn config ignoring workspace config at D:\a\epicenter\epicenter\apps\whispering/.npmrc
+2026-01-11T14:31:42.0763688Z 
+2026-01-11T14:31:42.0764662Z > @epicenter/whispering@7.11.0 tauri
+2026-01-11T14:31:42.0765194Z > tauri build
+2026-01-11T14:31:42.0765360Z 
+2026-01-11T14:31:44.1471680Z         Info Looking up installed tauri packages to check mismatched versions...
+2026-01-11T14:31:50.1852056Z      Running beforeBuildCommand `bun run build`
+2026-01-11T14:31:50.2115153Z $ NODE_ENV=production vite build
+2026-01-11T14:31:51.6589301Z [36mvite v7.2.7 [32mbuilding ssr environment for production...[36m[39m
+2026-01-11T14:31:51.7247435Z transforming...
+2026-01-11T14:31:52.3570737Z 2:31:52 PM [vite-plugin-svelte] src/routes/(app)/(config)/settings/transcription/+page.svelte:586:11 Self-closing HTML tags for non-void elements are ambiguous — use `<span ...></span>` rather than `<span ... />`
+2026-01-11T14:31:52.3573117Z https://svelte.dev/e/element_invalid_self_closing_tag
+2026-01-11T14:31:52.3577647Z 584:                   <ul class="space-y-2 text-sm text-muted-foreground">
+2026-01-11T14:31:52.3578393Z 585:                     <li class="flex items-start gap-2">
+2026-01-11T14:31:52.3578884Z 586:                       <span
+2026-01-11T14:31:52.3581016Z                              ^
+2026-01-11T14:31:52.3581839Z 587:                         class="mt-0.5 block size-1.5 rounded-full bg-muted-foreground/50"
+2026-01-11T14:31:52.3582539Z 588:                       />
+2026-01-11T14:31:52.3583916Z 2:31:52 PM [vite-plugin-svelte] src/routes/(app)/(config)/settings/transcription/+page.svelte:595:11 Self-closing HTML tags for non-void elements are ambiguous — use `<span ...></span>` rather than `<span ... />`
+2026-01-11T14:31:52.3584776Z https://svelte.dev/e/element_invalid_self_closing_tag
+2026-01-11T14:31:52.3585090Z 593:                     </li>
+2026-01-11T14:31:52.3585385Z 594:                     <li class="flex items-start gap-2">
+2026-01-11T14:31:52.3585675Z 595:                       <span
+2026-01-11T14:31:52.3585898Z                              ^
+2026-01-11T14:31:52.3586276Z 596:                         class="mt-0.5 block size-1.5 rounded-full bg-muted-foreground/50"
+2026-01-11T14:31:52.3589872Z 597:                       />
+2026-01-11T14:31:52.3590961Z 2:31:52 PM [vite-plugin-svelte] src/routes/(app)/(config)/settings/transcription/+page.svelte:610:11 Self-closing HTML tags for non-void elements are ambiguous — use `<span ...></span>` rather than `<span ... />`
+2026-01-11T14:31:52.3591821Z https://svelte.dev/e/element_invalid_self_closing_tag
+2026-01-11T14:31:52.3592129Z 608:                     </li>
+2026-01-11T14:31:52.3592413Z 609:                     <li class="flex items-start gap-2">
+2026-01-11T14:31:52.3592710Z 610:                       <span
+2026-01-11T14:31:52.3593029Z                              ^
+2026-01-11T14:31:52.3593767Z 611:                         class="mt-0.5 block size-1.5 rounded-full bg-muted-foreground/50"
+2026-01-11T14:31:52.3594278Z 612:                       />
+2026-01-11T14:31:52.3595298Z 2:31:52 PM [vite-plugin-svelte] src/routes/(app)/(config)/settings/transcription/+page.svelte:694:11 Self-closing HTML tags for non-void elements are ambiguous — use `<span ...></span>` rather than `<span ... />`
+2026-01-11T14:31:52.3596149Z https://svelte.dev/e/element_invalid_self_closing_tag
+2026-01-11T14:31:52.3596558Z 692:                   <ul class="space-y-2 text-sm text-muted-foreground">
+2026-01-11T14:31:52.3596946Z 693:                     <li class="flex items-start gap-2">
+2026-01-11T14:31:52.3597234Z 694:                       <span
+2026-01-11T14:31:52.3597446Z                              ^
+2026-01-11T14:31:52.3597813Z 695:                         class="mt-0.5 block size-1.5 rounded-full bg-muted-foreground/50"
+2026-01-11T14:31:52.3598151Z 696:                       />
+2026-01-11T14:31:52.3599129Z 2:31:52 PM [vite-plugin-svelte] src/routes/(app)/(config)/settings/transcription/+page.svelte:703:11 Self-closing HTML tags for non-void elements are ambiguous — use `<span ...></span>` rather than `<span ... />`
+2026-01-11T14:31:52.3599957Z https://svelte.dev/e/element_invalid_self_closing_tag
+2026-01-11T14:31:52.3600245Z 701:                     </li>
+2026-01-11T14:31:52.3600529Z 702:                     <li class="flex items-start gap-2">
+2026-01-11T14:31:52.3600803Z 703:                       <span
+2026-01-11T14:31:52.3601020Z                              ^
+2026-01-11T14:31:52.3601378Z 704:                         class="mt-0.5 block size-1.5 rounded-full bg-muted-foreground/50"
+2026-01-11T14:31:52.3601932Z 705:                       />
+2026-01-11T14:31:52.3602941Z 2:31:52 PM [vite-plugin-svelte] src/routes/(app)/(config)/settings/transcription/+page.svelte:718:11 Self-closing HTML tags for non-void elements are ambiguous — use `<span ...></span>` rather than `<span ... />`
+2026-01-11T14:31:52.3603771Z https://svelte.dev/e/element_invalid_self_closing_tag
+2026-01-11T14:31:52.3604060Z 716:                     </li>
+2026-01-11T14:31:52.3604328Z 717:                     <li class="flex items-start gap-2">
+2026-01-11T14:31:52.3604608Z 718:                       <span
+2026-01-11T14:31:52.3604808Z                              ^
+2026-01-11T14:31:52.3605176Z 719:                         class="mt-0.5 block size-1.5 rounded-full bg-muted-foreground/50"
+2026-01-11T14:31:52.3605515Z 720:                       />
+2026-01-11T14:31:52.3606860Z 2:31:52 PM [vite-plugin-svelte] src/routes/(app)/(config)/settings/transcription/+page.svelte:826:11 Self-closing HTML tags for non-void elements are ambiguous — use `<span ...></span>` rather than `<span ... />`
+2026-01-11T14:31:52.3608286Z https://svelte.dev/e/element_invalid_self_closing_tag
+2026-01-11T14:31:52.3608822Z 824:                   <ul class="space-y-2 text-sm text-muted-foreground">
+2026-01-11T14:31:52.3609198Z 825:                     <li class="flex items-start gap-2">
+2026-01-11T14:31:52.3609476Z 826:                       <span
+2026-01-11T14:31:52.3609678Z                              ^
+2026-01-11T14:31:52.3610046Z 827:                         class="mt-0.5 block size-1.5 rounded-full bg-muted-foreground/50"
+2026-01-11T14:31:52.3610374Z 828:                       />
+2026-01-11T14:31:52.3612050Z 2:31:52 PM [vite-plugin-svelte] src/routes/(app)/(config)/settings/transcription/+page.svelte:835:11 Self-closing HTML tags for non-void elements are ambiguous — use `<span ...></span>` rather than `<span ... />`
+2026-01-11T14:31:52.3612870Z https://svelte.dev/e/element_invalid_self_closing_tag
+2026-01-11T14:31:52.3613181Z 833:                     </li>
+2026-01-11T14:31:52.3613445Z 834:                     <li class="flex items-start gap-2">
+2026-01-11T14:31:52.3614073Z 835:                       <span
+2026-01-11T14:31:52.3614281Z                              ^
+2026-01-11T14:31:52.3614640Z 836:                         class="mt-0.5 block size-1.5 rounded-full bg-muted-foreground/50"
+2026-01-11T14:31:52.3614982Z 837:                       />
+2026-01-11T14:31:52.3616163Z 2:31:52 PM [vite-plugin-svelte] src/routes/(app)/(config)/settings/transcription/+page.svelte:850:11 Self-closing HTML tags for non-void elements are ambiguous — use `<span ...></span>` rather than `<span ... />`
+2026-01-11T14:31:52.3617016Z https://svelte.dev/e/element_invalid_self_closing_tag
+2026-01-11T14:31:52.3617309Z 848:                     </li>
+2026-01-11T14:31:52.3617578Z 849:                     <li class="flex items-start gap-2">
+2026-01-11T14:31:52.3617866Z 850:                       <span
+2026-01-11T14:31:52.3618093Z                              ^
+2026-01-11T14:31:52.3618443Z 851:                         class="mt-0.5 block size-1.5 rounded-full bg-muted-foreground/50"
+2026-01-11T14:31:52.3618771Z 852:                       />
+2026-01-11T14:31:53.1773992Z 2:31:53 PM [vite-plugin-svelte] src/routes/(app)/(config)/settings/shortcuts/keyboard-shortcut-recorder/GlobalKeyboardShortcutRecorder.svelte:31:2 This reference only captures the initial value of `pressedKeys`. Did you mean to reference it inside a closure instead?
+2026-01-11T14:31:53.1776027Z https://svelte.dev/e/state_referenced_locally
+2026-01-11T14:31:53.1776442Z 29: 
+2026-01-11T14:31:53.1776844Z 30:   const keyRecorder = createKeyRecorder({
+2026-01-11T14:31:53.1777368Z 31:     pressedKeys,
+2026-01-11T14:31:53.1777705Z                    ^
+2026-01-11T14:31:53.1778348Z 32:     onRegister: async (keyCombination: KeyboardEventSupportedKey[]) => {
+2026-01-11T14:31:53.1779020Z 33:       if (shortcutValue) {
+2026-01-11T14:31:53.1882349Z 2:31:53 PM [vite-plugin-svelte] src/routes/(app)/(config)/settings/shortcuts/keyboard-shortcut-recorder/LocalKeyboardShortcutRecorder.svelte:31:2 This reference only captures the initial value of `pressedKeys`. Did you mean to reference it inside a closure instead?
+2026-01-11T14:31:53.1884836Z https://svelte.dev/e/state_referenced_locally
+2026-01-11T14:31:53.1885250Z 29: 
+2026-01-11T14:31:53.1885599Z 30:   const keyRecorder = createKeyRecorder({
+2026-01-11T14:31:53.1886026Z 31:     pressedKeys,
+2026-01-11T14:31:53.1886306Z                    ^
+2026-01-11T14:31:53.1886844Z 32:     onRegister: async (keyCombination: KeyboardEventSupportedKey[]) => {
+2026-01-11T14:31:53.1887541Z 33:       const { error: unregisterError } =
+2026-01-11T14:31:53.6672687Z 2:31:53 PM [vite-plugin-svelte] src/routes/(app)/(config)/settings/shortcuts/keyboard-shortcut-recorder/KeyboardShortcutRecorder.svelte:35:26 This reference only captures the initial value of `rawKeyCombination`. Did you mean to reference it inside a derived instead?
+2026-01-11T14:31:53.6675510Z https://svelte.dev/e/state_referenced_locally
+2026-01-11T14:31:53.6676164Z 33:   let isPopoverOpen = $state(false);
+2026-01-11T14:31:53.6677442Z 34:   let isManualMode = $state(false);
+2026-01-11T14:31:53.6678549Z 35:   let manualValue = $state(rawKeyCombination ?? '');
+2026-01-11T14:31:53.6679226Z                                                 ^
+2026-01-11T14:31:53.6679696Z 36: 
+2026-01-11T14:31:53.6680016Z 37:   $effect(() => {
+2026-01-11T14:31:54.3947196Z 2:31:54 PM [vite-plugin-svelte] src/lib/components/settings/selectors/TranscriptionSelector.svelte:57:2 This reference only captures the initial value of `selectedService`. Did you mean to reference it inside a closure instead?
+2026-01-11T14:31:54.3949471Z https://svelte.dev/e/state_referenced_locally
+2026-01-11T14:31:54.3949943Z 55:   // Track which services are expanded
+2026-01-11T14:31:54.3950380Z 56:   let expandedServices = new SvelteSet(
+2026-01-11T14:31:54.3950860Z 57:     selectedService ? [selectedService.id] : [],
+2026-01-11T14:31:54.3951272Z                        ^
+2026-01-11T14:31:54.3951531Z 58:   );
+2026-01-11T14:31:54.3951764Z 59: 
+2026-01-11T14:31:54.3953513Z 2:31:54 PM [vite-plugin-svelte] src/lib/components/settings/selectors/TranscriptionSelector.svelte:57:21 This reference only captures the initial value of `selectedService`. Did you mean to reference it inside a closure instead?
+2026-01-11T14:31:54.3955208Z https://svelte.dev/e/state_referenced_locally
+2026-01-11T14:31:54.3955778Z 55:   // Track which services are expanded
+2026-01-11T14:31:54.3956338Z 56:   let expandedServices = new SvelteSet(
+2026-01-11T14:31:54.3956942Z 57:     selectedService ? [selectedService.id] : [],
+2026-01-11T14:31:54.3957441Z                                           ^
+2026-01-11T14:31:54.3957801Z 58:   );
+2026-01-11T14:31:54.3958067Z 59: 
+2026-01-11T14:31:54.4519128Z 2:31:54 PM [vite-plugin-svelte] D:/a/epicenter/epicenter/packages/ui/src/file-drop-zone/file-drop-zone.svelte:28:5 This reference only captures the initial value of `maxFiles`. Did you mean to reference it inside a closure instead?
+2026-01-11T14:31:54.4521130Z https://svelte.dev/e/state_referenced_locally
+2026-01-11T14:31:54.4521666Z 26:   }: FileDropZoneProps = $props();
+2026-01-11T14:31:54.4522012Z 27: 
+2026-01-11T14:31:54.4522459Z 28:   if (maxFiles !== undefined && fileCount === undefined) {
+2026-01-11T14:31:54.4523282Z                   ^
+2026-01-11T14:31:54.4523609Z 29:     console.warn(
+2026-01-11T14:31:54.4524358Z 30:       'Make sure to provide FileDropZone with `fileCount` when using the `maxFiles` prompt',
+2026-01-11T14:31:54.4526336Z 2:31:54 PM [vite-plugin-svelte] D:/a/epicenter/epicenter/packages/ui/src/file-drop-zone/file-drop-zone.svelte:28:31 This reference only captures the initial value of `fileCount`. Did you mean to reference it inside a closure instead?
+2026-01-11T14:31:54.4527965Z https://svelte.dev/e/state_referenced_locally
+2026-01-11T14:31:54.4528548Z 26:   }: FileDropZoneProps = $props();
+2026-01-11T14:31:54.4529439Z 27: 
+2026-01-11T14:31:54.4529865Z 28:   if (maxFiles !== undefined && fileCount === undefined) {
+2026-01-11T14:31:54.4530395Z                                              ^
+2026-01-11T14:31:54.4530813Z 29:     console.warn(
+2026-01-11T14:31:54.4531556Z 30:       'Make sure to provide FileDropZone with `fileCount` when using the `maxFiles` prompt',
+2026-01-11T14:31:54.4615494Z 2:31:54 PM [vite-plugin-svelte] D:/a/epicenter/epicenter/packages/ui/src/copy-button/copy-button.svelte:27:5 This reference only captures the initial value of `size`. Did you mean to reference it inside a closure instead?
+2026-01-11T14:31:54.4616526Z https://svelte.dev/e/state_referenced_locally
+2026-01-11T14:31:54.4616808Z 25: 
+2026-01-11T14:31:54.4617134Z 26:   // this way if the user passes text then the button will be the default size
+2026-01-11T14:31:54.4617557Z 27:   if (size === 'icon' && children) {
+2026-01-11T14:31:54.4617829Z               ^
+2026-01-11T14:31:54.4618044Z 28:     size = 'default';
+2026-01-11T14:31:54.4618279Z 29:   }
+2026-01-11T14:31:54.4620079Z 2:31:54 PM [vite-plugin-svelte] D:/a/epicenter/epicenter/packages/ui/src/copy-button/copy-button.svelte:27:24 This reference only captures the initial value of `children`. Did you mean to reference it inside a closure instead?
+2026-01-11T14:31:54.4622463Z https://svelte.dev/e/state_referenced_locally
+2026-01-11T14:31:54.4622776Z 25: 
+2026-01-11T14:31:54.4623113Z 26:   // this way if the user passes text then the button will be the default size
+2026-01-11T14:31:54.4623491Z 27:   if (size === 'icon' && children) {
+2026-01-11T14:31:54.4623752Z                                      ^
+2026-01-11T14:31:54.4623983Z 28:     size = 'default';
+2026-01-11T14:31:54.4624503Z 29:   }
+2026-01-11T14:31:54.4625411Z 2:31:54 PM [vite-plugin-svelte] D:/a/epicenter/epicenter/packages/ui/src/copy-button/copy-button.svelte:31:38 This reference only captures the initial value of `copyFn`. Did you mean to reference it inside a closure instead?
+2026-01-11T14:31:54.4626298Z https://svelte.dev/e/state_referenced_locally
+2026-01-11T14:31:54.4626590Z 29:   }
+2026-01-11T14:31:54.4626799Z 30: 
+2026-01-11T14:31:54.4627165Z 31:   const clipboard = new UseClipboard({ copyFn });
+2026-01-11T14:31:54.4627475Z                                                  ^
+2026-01-11T14:31:54.4627704Z 32: </script>
+2026-01-11T14:31:54.4627848Z 33: 
+2026-01-11T14:31:54.4756111Z 2:31:54 PM [vite-plugin-svelte] D:/a/epicenter/epicenter/packages/ui/src/toggle-group/toggle-group.svelte:27:2 This reference only captures the initial value of `variant`. Did you mean to reference it inside a closure instead?
+2026-01-11T14:31:54.4758327Z https://svelte.dev/e/state_referenced_locally
+2026-01-11T14:31:54.4759081Z 25: 
+2026-01-11T14:31:54.4759472Z 26:   setToggleGroupCtx({
+2026-01-11T14:31:54.4759906Z 27:     variant,
+2026-01-11T14:31:54.4760271Z                ^
+2026-01-11T14:31:54.4760620Z 28:     size,
+2026-01-11T14:31:54.4760934Z 29:   });
+2026-01-11T14:31:54.4762571Z 2:31:54 PM [vite-plugin-svelte] D:/a/epicenter/epicenter/packages/ui/src/toggle-group/toggle-group.svelte:28:2 This reference only captures the initial value of `size`. Did you mean to reference it inside a closure instead?
+2026-01-11T14:31:54.4764711Z https://svelte.dev/e/state_referenced_locally
+2026-01-11T14:31:54.4765242Z 26:   setToggleGroupCtx({
+2026-01-11T14:31:54.4765590Z 27:     variant,
+2026-01-11T14:31:54.4765853Z 28:     size,
+2026-01-11T14:31:54.4766136Z             ^
+2026-01-11T14:31:54.4766387Z 29:   });
+2026-01-11T14:31:54.4766641Z 30: </script>
+2026-01-11T14:32:02.8326161Z [33m"default" is imported from external module "vite-plugin-node-polyfills/shims/global" but never used in "../../node_modules/.bun/svelte@5.45.8/node_modules/svelte/src/internal/server/renderer.js".[39m
+2026-01-11T14:32:02.8328338Z [32m✓[39m 1857 modules transformed.
+2026-01-11T14:32:02.8755377Z [33mExport "rpc" of module "src/lib/query/isomorphic/index.ts" was reexported through module "src/lib/query/index.ts" while both modules are dependencies of each other and will end up in different chunks by current Rollup settings. This scenario is not well supported at the moment as it will produce a circular dependency between chunks and will likely lead to broken execution order.
+2026-01-11T14:32:02.8759414Z Either change the import in "src/lib/components/UpdateDialog.svelte" to point directly to the exporting module or reconfigure "output.manualChunks" to ensure these modules end up in the same chunk.[39m
+2026-01-11T14:32:02.8764004Z [33mExport "rpc" of module "src/lib/query/isomorphic/index.ts" was reexported through module "src/lib/query/index.ts" while both modules are dependencies of each other and will end up in different chunks by current Rollup settings. This scenario is not well supported at the moment as it will produce a circular dependency between chunks and will likely lead to broken execution order.
+2026-01-11T14:32:02.8766825Z Either change the import in "src/routes/(app)/_layout-utils/alwaysOnTop.svelte.ts" to point directly to the exporting module or reconfigure "output.manualChunks" to ensure these modules end up in the same chunk.[39m
+2026-01-11T14:32:02.8770487Z [33mExport "rpc" of module "src/lib/query/isomorphic/index.ts" was reexported through module "src/lib/query/index.ts" while both modules are dependencies of each other and will end up in different chunks by current Rollup settings. This scenario is not well supported at the moment as it will produce a circular dependency between chunks and will likely lead to broken execution order.
+2026-01-11T14:32:02.8777016Z Either change the import in "src/routes/(app)/_layout-utils/syncIconWithRecorderState.svelte.ts" to point directly to the exporting module or reconfigure "output.manualChunks" to ensure these modules end up in the same chunk.[39m
+2026-01-11T14:32:02.8784257Z [33mExport "rpc" of module "src/lib/query/isomorphic/index.ts" was reexported through module "src/lib/query/index.ts" while both modules are dependencies of each other and will end up in different chunks by current Rollup settings. This scenario is not well supported at the moment as it will produce a circular dependency between chunks and will likely lead to broken execution order.
+2026-01-11T14:32:02.8788378Z Either change the import in "src/routes/(app)/_components/AppLayout.svelte" to point directly to the exporting module or reconfigure "output.manualChunks" to ensure these modules end up in the same chunk.[39m
+2026-01-11T14:32:02.8808376Z [33mExport "rpc" of module "src/lib/query/isomorphic/index.ts" was reexported through module "src/lib/query/index.ts" while both modules are dependencies of each other and will end up in different chunks by current Rollup settings. This scenario is not well supported at the moment as it will produce a circular dependency between chunks and will likely lead to broken execution order.
+2026-01-11T14:32:02.8813159Z Either change the import in "src/routes/(app)/(config)/+layout.svelte" to point directly to the exporting module or reconfigure "output.manualChunks" to ensure these modules end up in the same chunk.[39m
+2026-01-11T14:32:02.8818260Z [33mExport "rpc" of module "src/lib/query/isomorphic/index.ts" was reexported through module "src/lib/query/index.ts" while both modules are dependencies of each other and will end up in different chunks by current Rollup settings. This scenario is not well supported at the moment as it will produce a circular dependency between chunks and will likely lead to broken execution order.
+2026-01-11T14:32:02.8826148Z Either change the import in "src/routes/(app)/(config)/settings/+layout.svelte" to point directly to the exporting module or reconfigure "output.manualChunks" to ensure these modules end up in the same chunk.[39m
+2026-01-11T14:32:02.8830583Z [33mExport "services" of module "src/lib/services/isomorphic/index.ts" was reexported through module "src/lib/services/index.ts" while both modules are dependencies of each other and will end up in different chunks by current Rollup settings. This scenario is not well supported at the moment as it will produce a circular dependency between chunks and will likely lead to broken execution order.
+2026-01-11T14:32:02.8833110Z Either change the import in "src/routes/(app)/+page.svelte" to point directly to the exporting module or reconfigure "output.manualChunks" to ensure these modules end up in the same chunk.[39m
+2026-01-11T14:32:02.8835329Z [33mExport "rpc" of module "src/lib/query/isomorphic/index.ts" was reexported through module "src/lib/query/index.ts" while both modules are dependencies of each other and will end up in different chunks by current Rollup settings. This scenario is not well supported at the moment as it will produce a circular dependency between chunks and will likely lead to broken execution order.
+2026-01-11T14:32:02.8837308Z Either change the import in "src/routes/(app)/+page.svelte" to point directly to the exporting module or reconfigure "output.manualChunks" to ensure these modules end up in the same chunk.[39m
+2026-01-11T14:32:02.8839760Z [33mExport "rpc" of module "src/lib/query/isomorphic/index.ts" was reexported through module "src/lib/query/index.ts" while both modules are dependencies of each other and will end up in different chunks by current Rollup settings. This scenario is not well supported at the moment as it will produce a circular dependency between chunks and will likely lead to broken execution order.
+2026-01-11T14:32:02.8842661Z Either change the import in "src/lib/components/settings/selectors/ManualDeviceSelector.svelte" to point directly to the exporting module or reconfigure "output.manualChunks" to ensure these modules end up in the same chunk.[39m
+2026-01-11T14:32:02.8844976Z [33mExport "rpc" of module "src/lib/query/isomorphic/index.ts" was reexported through module "src/lib/query/index.ts" while both modules are dependencies of each other and will end up in different chunks by current Rollup settings. This scenario is not well supported at the moment as it will produce a circular dependency between chunks and will likely lead to broken execution order.
+2026-01-11T14:32:02.8847813Z Either change the import in "src/lib/components/settings/selectors/TransformationSelector.svelte" to point directly to the exporting module or reconfigure "output.manualChunks" to ensure these modules end up in the same chunk.[39m
+2026-01-11T14:32:02.8851513Z [33mExport "services" of module "src/lib/services/isomorphic/index.ts" was reexported through module "src/lib/services/index.ts" while both modules are dependencies of each other and will end up in different chunks by current Rollup settings. This scenario is not well supported at the moment as it will produce a circular dependency between chunks and will likely lead to broken execution order.
+2026-01-11T14:32:02.8853685Z Either change the import in "src/routes/(app)/(config)/install-ffmpeg/+page.svelte" to point directly to the exporting module or reconfigure "output.manualChunks" to ensure these modules end up in the same chunk.[39m
+2026-01-11T14:32:02.8855930Z [33mExport "desktopRpc" of module "src/lib/query/desktop/index.ts" was reexported through module "src/lib/query/index.ts" while both modules are dependencies of each other and will end up in different chunks by current Rollup settings. This scenario is not well supported at the moment as it will produce a circular dependency between chunks and will likely lead to broken execution order.
+2026-01-11T14:32:02.8858118Z Either change the import in "src/routes/(app)/(config)/install-ffmpeg/+page.svelte" to point directly to the exporting module or reconfigure "output.manualChunks" to ensure these modules end up in the same chunk.[39m
+2026-01-11T14:32:02.8861513Z [33mExport "rpc" of module "src/lib/query/isomorphic/index.ts" was reexported through module "src/lib/query/index.ts" while both modules are dependencies of each other and will end up in different chunks by current Rollup settings. This scenario is not well supported at the moment as it will produce a circular dependency between chunks and will likely lead to broken execution order.
+2026-01-11T14:32:02.8864156Z Either change the import in "src/routes/(app)/(config)/recordings/LatestTransformationRunOutputByRecordingId.svelte" to point directly to the exporting module or reconfigure "output.manualChunks" to ensure these modules end up in the same chunk.[39m
+2026-01-11T14:32:02.8868076Z [33mExport "rpc" of module "src/lib/query/isomorphic/index.ts" was reexported through module "src/lib/query/index.ts" while both modules are dependencies of each other and will end up in different chunks by current Rollup settings. This scenario is not well supported at the moment as it will produce a circular dependency between chunks and will likely lead to broken execution order.
+2026-01-11T14:32:02.8870421Z Either change the import in "src/routes/(app)/(config)/recordings/RenderAudioUrl.svelte" to point directly to the exporting module or reconfigure "output.manualChunks" to ensure these modules end up in the same chunk.[39m
+2026-01-11T14:32:02.8873283Z [33mExport "services" of module "src/lib/services/isomorphic/index.ts" was reexported through module "src/lib/services/index.ts" while both modules are dependencies of each other and will end up in different chunks by current Rollup settings. This scenario is not well supported at the moment as it will produce a circular dependency between chunks and will likely lead to broken execution order.
+2026-01-11T14:32:02.8875442Z Either change the import in "src/routes/(app)/(config)/recordings/RenderAudioUrl.svelte" to point directly to the exporting module or reconfigure "output.manualChunks" to ensure these modules end up in the same chunk.[39m
+2026-01-11T14:32:02.8877685Z [33mExport "rpc" of module "src/lib/query/isomorphic/index.ts" was reexported through module "src/lib/query/index.ts" while both modules are dependencies of each other and will end up in different chunks by current Rollup settings. This scenario is not well supported at the moment as it will produce a circular dependency between chunks and will likely lead to broken execution order.
+2026-01-11T14:32:02.8880568Z Either change the import in "src/routes/(app)/(config)/recordings/row-actions/EditRecordingModal.svelte" to point directly to the exporting module or reconfigure "output.manualChunks" to ensure these modules end up in the same chunk.[39m
+2026-01-11T14:32:02.8883748Z [33mExport "services" of module "src/lib/services/isomorphic/index.ts" was reexported through module "src/lib/services/index.ts" while both modules are dependencies of each other and will end up in different chunks by current Rollup settings. This scenario is not well supported at the moment as it will produce a circular dependency between chunks and will likely lead to broken execution order.
+2026-01-11T14:32:02.8886002Z Either change the import in "src/routes/(app)/(config)/recordings/row-actions/EditRecordingModal.svelte" to point directly to the exporting module or reconfigure "output.manualChunks" to ensure these modules end up in the same chunk.[39m
+2026-01-11T14:32:02.8888878Z [33mExport "rpc" of module "src/lib/query/isomorphic/index.ts" was reexported through module "src/lib/query/index.ts" while both modules are dependencies of each other and will end up in different chunks by current Rollup settings. This scenario is not well supported at the moment as it will produce a circular dependency between chunks and will likely lead to broken execution order.
+2026-01-11T14:32:02.8891060Z Either change the import in "src/routes/(app)/(config)/recordings/row-actions/TransformationPicker.svelte" to point directly to the exporting module or reconfigure "output.manualChunks" to ensure these modules end up in the same chunk.[39m
+2026-01-11T14:32:02.8893346Z [33mExport "rpc" of module "src/lib/query/isomorphic/index.ts" was reexported through module "src/lib/query/index.ts" while both modules are dependencies of each other and will end up in different chunks by current Rollup settings. This scenario is not well supported at the moment as it will produce a circular dependency between chunks and will likely lead to broken execution order.
+2026-01-11T14:32:02.8896142Z Either change the import in "src/routes/(app)/(config)/recordings/row-actions/ViewTransformationRunsDialog.svelte" to point directly to the exporting module or reconfigure "output.manualChunks" to ensure these modules end up in the same chunk.[39m
+2026-01-11T14:32:02.8899013Z [33mExport "rpc" of module "src/lib/query/isomorphic/index.ts" was reexported through module "src/lib/query/index.ts" while both modules are dependencies of each other and will end up in different chunks by current Rollup settings. This scenario is not well supported at the moment as it will produce a circular dependency between chunks and will likely lead to broken execution order.
+2026-01-11T14:32:02.8901884Z Either change the import in "src/routes/(app)/(config)/recordings/row-actions/RecordingRowActions.svelte" to point directly to the exporting module or reconfigure "output.manualChunks" to ensure these modules end up in the same chunk.[39m
+2026-01-11T14:32:02.8905416Z [33mExport "rpc" of module "src/lib/query/isomorphic/index.ts" was reexported through module "src/lib/query/index.ts" while both modules are dependencies of each other and will end up in different chunks by current Rollup settings. This scenario is not well supported at the moment as it will produce a circular dependency between chunks and will likely lead to broken execution order.
+2026-01-11T14:32:02.8908587Z Either change the import in "src/routes/(app)/(config)/recordings/+page.svelte" to point directly to the exporting module or reconfigure "output.manualChunks" to ensure these modules end up in the same chunk.[39m
+2026-01-11T14:32:02.8912094Z [33mExport "desktopRpc" of module "src/lib/query/desktop/index.ts" was reexported through module "src/lib/query/index.ts" while both modules are dependencies of each other and will end up in different chunks by current Rollup settings. This scenario is not well supported at the moment as it will produce a circular dependency between chunks and will likely lead to broken execution order.
+2026-01-11T14:32:02.8914674Z Either change the import in "src/routes/(app)/(config)/settings/+page.svelte" to point directly to the exporting module or reconfigure "output.manualChunks" to ensure these modules end up in the same chunk.[39m
+2026-01-11T14:32:02.8916946Z [33mExport "rpc" of module "src/lib/query/isomorphic/index.ts" was reexported through module "src/lib/query/index.ts" while both modules are dependencies of each other and will end up in different chunks by current Rollup settings. This scenario is not well supported at the moment as it will produce a circular dependency between chunks and will likely lead to broken execution order.
+2026-01-11T14:32:02.8920163Z Either change the import in "src/routes/(app)/(config)/settings/+page.svelte" to point directly to the exporting module or reconfigure "output.manualChunks" to ensure these modules end up in the same chunk.[39m
+2026-01-11T14:32:02.8922582Z [33mExport "rpc" of module "src/lib/query/isomorphic/index.ts" was reexported through module "src/lib/query/index.ts" while both modules are dependencies of each other and will end up in different chunks by current Rollup settings. This scenario is not well supported at the moment as it will produce a circular dependency between chunks and will likely lead to broken execution order.
+2026-01-11T14:32:02.8924950Z Either change the import in "src/routes/(app)/(config)/settings/analytics/+page.svelte" to point directly to the exporting module or reconfigure "output.manualChunks" to ensure these modules end up in the same chunk.[39m
+2026-01-11T14:32:02.8927234Z [33mExport "rpc" of module "src/lib/query/isomorphic/index.ts" was reexported through module "src/lib/query/index.ts" while both modules are dependencies of each other and will end up in different chunks by current Rollup settings. This scenario is not well supported at the moment as it will produce a circular dependency between chunks and will likely lead to broken execution order.
+2026-01-11T14:32:02.8929562Z Either change the import in "src/routes/(app)/(config)/settings/recording/DesktopOutputFolder.svelte" to point directly to the exporting module or reconfigure "output.manualChunks" to ensure these modules end up in the same chunk.[39m
+2026-01-11T14:32:02.8931847Z [33mExport "rpc" of module "src/lib/query/isomorphic/index.ts" was reexported through module "src/lib/query/index.ts" while both modules are dependencies of each other and will end up in different chunks by current Rollup settings. This scenario is not well supported at the moment as it will produce a circular dependency between chunks and will likely lead to broken execution order.
+2026-01-11T14:32:02.8934008Z Either change the import in "src/routes/(app)/(config)/settings/recording/FfmpegCommandBuilder.svelte" to point directly to the exporting module or reconfigure "output.manualChunks" to ensure these modules end up in the same chunk.[39m
+2026-01-11T14:32:02.8936303Z [33mExport "rpc" of module "src/lib/query/isomorphic/index.ts" was reexported through module "src/lib/query/index.ts" while both modules are dependencies of each other and will end up in different chunks by current Rollup settings. This scenario is not well supported at the moment as it will produce a circular dependency between chunks and will likely lead to broken execution order.
+2026-01-11T14:32:02.8938725Z Either change the import in "src/routes/(app)/(config)/settings/recording/ManualSelectRecordingDevice.svelte" to point directly to the exporting module or reconfigure "output.manualChunks" to ensure these modules end up in the same chunk.[39m
+2026-01-11T14:32:02.8941277Z [33mExport "desktopRpc" of module "src/lib/query/desktop/index.ts" was reexported through module "src/lib/query/index.ts" while both modules are dependencies of each other and will end up in different chunks by current Rollup settings. This scenario is not well supported at the moment as it will produce a circular dependency between chunks and will likely lead to broken execution order.
+2026-01-11T14:32:02.8943809Z Either change the import in "src/routes/(app)/(config)/settings/recording/+page.ts" to point directly to the exporting module or reconfigure "output.manualChunks" to ensure these modules end up in the same chunk.[39m
+2026-01-11T14:32:02.8946078Z [33mExport "desktopRpc" of module "src/lib/query/desktop/index.ts" was reexported through module "src/lib/query/index.ts" while both modules are dependencies of each other and will end up in different chunks by current Rollup settings. This scenario is not well supported at the moment as it will produce a circular dependency between chunks and will likely lead to broken execution order.
+2026-01-11T14:32:02.8948209Z Either change the import in "src/routes/(app)/(config)/settings/shortcuts/global/+page.svelte" to point directly to the exporting module or reconfigure "output.manualChunks" to ensure these modules end up in the same chunk.[39m
+2026-01-11T14:32:02.8950490Z [33mExport "rpc" of module "src/lib/query/isomorphic/index.ts" was reexported through module "src/lib/query/index.ts" while both modules are dependencies of each other and will end up in different chunks by current Rollup settings. This scenario is not well supported at the moment as it will produce a circular dependency between chunks and will likely lead to broken execution order.
+2026-01-11T14:32:02.8953251Z Either change the import in "src/routes/(app)/(config)/settings/shortcuts/global/+page.svelte" to point directly to the exporting module or reconfigure "output.manualChunks" to ensure these modules end up in the same chunk.[39m
+2026-01-11T14:32:02.8955546Z [33mExport "rpc" of module "src/lib/query/isomorphic/index.ts" was reexported through module "src/lib/query/index.ts" while both modules are dependencies of each other and will end up in different chunks by current Rollup settings. This scenario is not well supported at the moment as it will produce a circular dependency between chunks and will likely lead to broken execution order.
+2026-01-11T14:32:02.8957860Z Either change the import in "src/routes/(app)/(config)/settings/shortcuts/local/+page.svelte" to point directly to the exporting module or reconfigure "output.manualChunks" to ensure these modules end up in the same chunk.[39m
+2026-01-11T14:32:02.8961303Z [33mExport "desktopRpc" of module "src/lib/query/desktop/index.ts" was reexported through module "src/lib/query/index.ts" while both modules are dependencies of each other and will end up in different chunks by current Rollup settings. This scenario is not well supported at the moment as it will produce a circular dependency between chunks and will likely lead to broken execution order.
+2026-01-11T14:32:02.8963697Z Either change the import in "src/routes/(app)/(config)/settings/shortcuts/keyboard-shortcut-recorder/GlobalKeyboardShortcutRecorder.svelte" to point directly to the exporting module or reconfigure "output.manualChunks" to ensure these modules end up in the same chunk.[39m
+2026-01-11T14:32:02.8966178Z [33mExport "rpc" of module "src/lib/query/isomorphic/index.ts" was reexported through module "src/lib/query/index.ts" while both modules are dependencies of each other and will end up in different chunks by current Rollup settings. This scenario is not well supported at the moment as it will produce a circular dependency between chunks and will likely lead to broken execution order.
+2026-01-11T14:32:02.8969103Z Either change the import in "src/routes/(app)/(config)/settings/shortcuts/keyboard-shortcut-recorder/GlobalKeyboardShortcutRecorder.svelte" to point directly to the exporting module or reconfigure "output.manualChunks" to ensure these modules end up in the same chunk.[39m
+2026-01-11T14:32:02.8971553Z [33mExport "rpc" of module "src/lib/query/isomorphic/index.ts" was reexported through module "src/lib/query/index.ts" while both modules are dependencies of each other and will end up in different chunks by current Rollup settings. This scenario is not well supported at the moment as it will produce a circular dependency between chunks and will likely lead to broken execution order.
+2026-01-11T14:32:02.8974551Z Either change the import in "src/routes/(app)/(config)/settings/shortcuts/keyboard-shortcut-recorder/LocalKeyboardShortcutRecorder.svelte" to point directly to the exporting module or reconfigure "output.manualChunks" to ensure these modules end up in the same chunk.[39m
+2026-01-11T14:32:02.8976994Z [33mExport "rpc" of module "src/lib/query/isomorphic/index.ts" was reexported through module "src/lib/query/index.ts" while both modules are dependencies of each other and will end up in different chunks by current Rollup settings. This scenario is not well supported at the moment as it will produce a circular dependency between chunks and will likely lead to broken execution order.
+2026-01-11T14:32:02.8979466Z Either change the import in "src/routes/(app)/(config)/settings/shortcuts/keyboard-shortcut-recorder/ShortcutTable.svelte" to point directly to the exporting module or reconfigure "output.manualChunks" to ensure these modules end up in the same chunk.[39m
+2026-01-11T14:32:02.8982098Z [33mExport "desktopRpc" of module "src/lib/query/desktop/index.ts" was reexported through module "src/lib/query/index.ts" while both modules are dependencies of each other and will end up in different chunks by current Rollup settings. This scenario is not well supported at the moment as it will produce a circular dependency between chunks and will likely lead to broken execution order.
+2026-01-11T14:32:02.8985022Z Either change the import in "src/lib/components/settings/CompressionBody.svelte" to point directly to the exporting module or reconfigure "output.manualChunks" to ensure these modules end up in the same chunk.[39m
+2026-01-11T14:32:02.8987736Z [33mExport "desktopRpc" of module "src/lib/query/desktop/index.ts" was reexported through module "src/lib/query/index.ts" while both modules are dependencies of each other and will end up in different chunks by current Rollup settings. This scenario is not well supported at the moment as it will produce a circular dependency between chunks and will likely lead to broken execution order.
+2026-01-11T14:32:02.8990486Z Either change the import in "src/routes/(app)/(config)/settings/transcription/+page.ts" to point directly to the exporting module or reconfigure "output.manualChunks" to ensure these modules end up in the same chunk.[39m
+2026-01-11T14:32:02.8993340Z [33mExport "rpc" of module "src/lib/query/isomorphic/index.ts" was reexported through module "src/lib/query/index.ts" while both modules are dependencies of each other and will end up in different chunks by current Rollup settings. This scenario is not well supported at the moment as it will produce a circular dependency between chunks and will likely lead to broken execution order.
+2026-01-11T14:32:02.8995536Z Either change the import in "src/routes/(app)/(config)/transformations/CreateTransformationButton.svelte" to point directly to the exporting module or reconfigure "output.manualChunks" to ensure these modules end up in the same chunk.[39m
+2026-01-11T14:32:02.8998046Z [33mExport "rpc" of module "src/lib/query/isomorphic/index.ts" was reexported through module "src/lib/query/index.ts" while both modules are dependencies of each other and will end up in different chunks by current Rollup settings. This scenario is not well supported at the moment as it will produce a circular dependency between chunks and will likely lead to broken execution order.
+2026-01-11T14:32:02.9000393Z Either change the import in "src/routes/(app)/(config)/transformations/EditTransformationModal.svelte" to point directly to the exporting module or reconfigure "output.manualChunks" to ensure these modules end up in the same chunk.[39m
+2026-01-11T14:32:02.9002878Z [33mExport "rpc" of module "src/lib/query/isomorphic/index.ts" was reexported through module "src/lib/query/index.ts" while both modules are dependencies of each other and will end up in different chunks by current Rollup settings. This scenario is not well supported at the moment as it will produce a circular dependency between chunks and will likely lead to broken execution order.
+2026-01-11T14:32:02.9005087Z Either change the import in "src/routes/(app)/(config)/transformations/TransformationRowActions.svelte" to point directly to the exporting module or reconfigure "output.manualChunks" to ensure these modules end up in the same chunk.[39m
+2026-01-11T14:32:02.9007403Z [33mExport "rpc" of module "src/lib/query/isomorphic/index.ts" was reexported through module "src/lib/query/index.ts" while both modules are dependencies of each other and will end up in different chunks by current Rollup settings. This scenario is not well supported at the moment as it will produce a circular dependency between chunks and will likely lead to broken execution order.
+2026-01-11T14:32:02.9009496Z Either change the import in "src/routes/(app)/(config)/transformations/+page.svelte" to point directly to the exporting module or reconfigure "output.manualChunks" to ensure these modules end up in the same chunk.[39m
+2026-01-11T14:32:02.9011767Z [33mExport "rpc" of module "src/lib/query/isomorphic/index.ts" was reexported through module "src/lib/query/index.ts" while both modules are dependencies of each other and will end up in different chunks by current Rollup settings. This scenario is not well supported at the moment as it will produce a circular dependency between chunks and will likely lead to broken execution order.
+2026-01-11T14:32:02.9013846Z Either change the import in "src/lib/components/OpenFolderButton.svelte" to point directly to the exporting module or reconfigure "output.manualChunks" to ensure these modules end up in the same chunk.[39m
+2026-01-11T14:32:02.9016602Z [33mExport "rpc" of module "src/lib/query/isomorphic/index.ts" was reexported through module "src/lib/query/index.ts" while both modules are dependencies of each other and will end up in different chunks by current Rollup settings. This scenario is not well supported at the moment as it will produce a circular dependency between chunks and will likely lead to broken execution order.
+2026-01-11T14:32:02.9019314Z Either change the import in "src/routes/(app)/(config)/transformations/new/+page.svelte" to point directly to the exporting module or reconfigure "output.manualChunks" to ensure these modules end up in the same chunk.[39m
+2026-01-11T14:32:02.9022034Z [33mExport "rpc" of module "src/lib/query/isomorphic/index.ts" was reexported through module "src/lib/query/index.ts" while both modules are dependencies of each other and will end up in different chunks by current Rollup settings. This scenario is not well supported at the moment as it will produce a circular dependency between chunks and will likely lead to broken execution order.
+2026-01-11T14:32:02.9024867Z Either change the import in "src/lib/components/transformations-editor/Test.svelte" to point directly to the exporting module or reconfigure "output.manualChunks" to ensure these modules end up in the same chunk.[39m
+2026-01-11T14:32:02.9027185Z [33mExport "rpc" of module "src/lib/query/isomorphic/index.ts" was reexported through module "src/lib/query/index.ts" while both modules are dependencies of each other and will end up in different chunks by current Rollup settings. This scenario is not well supported at the moment as it will produce a circular dependency between chunks and will likely lead to broken execution order.
+2026-01-11T14:32:02.9029305Z Either change the import in "src/lib/components/transformations-editor/Editor.svelte" to point directly to the exporting module or reconfigure "output.manualChunks" to ensure these modules end up in the same chunk.[39m
+2026-01-11T14:32:02.9033078Z [33mExport "rpc" of module "src/lib/query/isomorphic/index.ts" was reexported through module "src/lib/query/index.ts" while both modules are dependencies of each other and will end up in different chunks by current Rollup settings. This scenario is not well supported at the moment as it will produce a circular dependency between chunks and will likely lead to broken execution order.
+2026-01-11T14:32:02.9037420Z Either change the import in "src/lib/components/transformations-editor/Runs.svelte" to point directly to the exporting module or reconfigure "output.manualChunks" to ensure these modules end up in the same chunk.[39m
+2026-01-11T14:32:02.9040058Z [33mExport "rpc" of module "src/lib/query/isomorphic/index.ts" was reexported through module "src/lib/query/index.ts" while both modules are dependencies of each other and will end up in different chunks by current Rollup settings. This scenario is not well supported at the moment as it will produce a circular dependency between chunks and will likely lead to broken execution order.
+2026-01-11T14:32:02.9042266Z Either change the import in "src/lib/utils/createCopyFn.ts" to point directly to the exporting module or reconfigure "output.manualChunks" to ensure these modules end up in the same chunk.[39m
+2026-01-11T14:32:02.9044504Z [33mExport "rpc" of module "src/lib/query/isomorphic/index.ts" was reexported through module "src/lib/query/index.ts" while both modules are dependencies of each other and will end up in different chunks by current Rollup settings. This scenario is not well supported at the moment as it will produce a circular dependency between chunks and will likely lead to broken execution order.
+2026-01-11T14:32:02.9046564Z Either change the import in "src/routes/transform-clipboard/+page.svelte" to point directly to the exporting module or reconfigure "output.manualChunks" to ensure these modules end up in the same chunk.[39m
+2026-01-11T14:32:02.9048819Z [33mExport "rpc" of module "src/lib/query/isomorphic/index.ts" was reexported through module "src/lib/query/index.ts" while both modules are dependencies of each other and will end up in different chunks by current Rollup settings. This scenario is not well supported at the moment as it will produce a circular dependency between chunks and will likely lead to broken execution order.
+2026-01-11T14:32:02.9050927Z Either change the import in "src/lib/components/TransformationPickerBody.svelte" to point directly to the exporting module or reconfigure "output.manualChunks" to ensure these modules end up in the same chunk.[39m
+2026-01-11T14:32:03.1806543Z rendering chunks...
+2026-01-11T14:32:04.1957815Z [36mvite v7.2.7 [32mbuilding client environment for production...[36m[39m
+2026-01-11T14:32:04.2082458Z transforming...
+2026-01-11T14:32:04.7011351Z 2:32:04 PM [vite-plugin-svelte] src/routes/(app)/(config)/settings/transcription/+page.svelte:586:11 Self-closing HTML tags for non-void elements are ambiguous — use `<span ...></span>` rather than `<span ... />`
+2026-01-11T14:32:04.7013069Z https://svelte.dev/e/element_invalid_self_closing_tag
+2026-01-11T14:32:04.7013802Z 584:                   <ul class="space-y-2 text-sm text-muted-foreground">
+2026-01-11T14:32:04.7014950Z 585:                     <li class="flex items-start gap-2">
+2026-01-11T14:32:04.7015531Z 586:                       <span
+2026-01-11T14:32:04.7015931Z                              ^
+2026-01-11T14:32:04.7016702Z 587:                         class="mt-0.5 block size-1.5 rounded-full bg-muted-foreground/50"
+2026-01-11T14:32:04.7017393Z 588:                       />
+2026-01-11T14:32:04.7019404Z 2:32:04 PM [vite-plugin-svelte] src/routes/(app)/(config)/settings/transcription/+page.svelte:595:11 Self-closing HTML tags for non-void elements are ambiguous — use `<span ...></span>` rather than `<span ... />`
+2026-01-11T14:32:04.7020787Z https://svelte.dev/e/element_invalid_self_closing_tag
+2026-01-11T14:32:04.7021328Z 593:                     </li>
+2026-01-11T14:32:04.7021915Z 594:                     <li class="flex items-start gap-2">
+2026-01-11T14:32:04.7022504Z 595:                       <span
+2026-01-11T14:32:04.7023409Z                              ^
+2026-01-11T14:32:04.7024161Z 596:                         class="mt-0.5 block size-1.5 rounded-full bg-muted-foreground/50"
+2026-01-11T14:32:04.7024715Z 597:                       />
+2026-01-11T14:32:04.7026441Z 2:32:04 PM [vite-plugin-svelte] src/routes/(app)/(config)/settings/transcription/+page.svelte:610:11 Self-closing HTML tags for non-void elements are ambiguous — use `<span ...></span>` rather than `<span ... />`
+2026-01-11T14:32:04.7027929Z https://svelte.dev/e/element_invalid_self_closing_tag
+2026-01-11T14:32:04.7028473Z 608:                     </li>
+2026-01-11T14:32:04.7028971Z 609:                     <li class="flex items-start gap-2">
+2026-01-11T14:32:04.7029478Z 610:                       <span
+2026-01-11T14:32:04.7029857Z                              ^
+2026-01-11T14:32:04.7030501Z 611:                         class="mt-0.5 block size-1.5 rounded-full bg-muted-foreground/50"
+2026-01-11T14:32:04.7031115Z 612:                       />
+2026-01-11T14:32:04.7032963Z 2:32:04 PM [vite-plugin-svelte] src/routes/(app)/(config)/settings/transcription/+page.svelte:694:11 Self-closing HTML tags for non-void elements are ambiguous — use `<span ...></span>` rather than `<span ... />`
+2026-01-11T14:32:04.7034481Z https://svelte.dev/e/element_invalid_self_closing_tag
+2026-01-11T14:32:04.7035576Z 692:                   <ul class="space-y-2 text-sm text-muted-foreground">
+2026-01-11T14:32:04.7036281Z 693:                     <li class="flex items-start gap-2">
+2026-01-11T14:32:04.7036803Z 694:                       <span
+2026-01-11T14:32:04.7037177Z                              ^
+2026-01-11T14:32:04.7037862Z 695:                         class="mt-0.5 block size-1.5 rounded-full bg-muted-foreground/50"
+2026-01-11T14:32:04.7038489Z 696:                       />
+2026-01-11T14:32:04.7040369Z 2:32:04 PM [vite-plugin-svelte] src/routes/(app)/(config)/settings/transcription/+page.svelte:703:11 Self-closing HTML tags for non-void elements are ambiguous — use `<span ...></span>` rather than `<span ... />`
+2026-01-11T14:32:04.7041919Z https://svelte.dev/e/element_invalid_self_closing_tag
+2026-01-11T14:32:04.7042462Z 701:                     </li>
+2026-01-11T14:32:04.7042983Z 702:                     <li class="flex items-start gap-2">
+2026-01-11T14:32:04.7043859Z 703:                       <span
+2026-01-11T14:32:04.7044251Z                              ^
+2026-01-11T14:32:04.7044928Z 704:                         class="mt-0.5 block size-1.5 rounded-full bg-muted-foreground/50"
+2026-01-11T14:32:04.7045571Z 705:                       />
+2026-01-11T14:32:04.7047451Z 2:32:04 PM [vite-plugin-svelte] src/routes/(app)/(config)/settings/transcription/+page.svelte:718:11 Self-closing HTML tags for non-void elements are ambiguous — use `<span ...></span>` rather than `<span ... />`
+2026-01-11T14:32:04.7049038Z https://svelte.dev/e/element_invalid_self_closing_tag
+2026-01-11T14:32:04.7049600Z 716:                     </li>
+2026-01-11T14:32:04.7050121Z 717:                     <li class="flex items-start gap-2">
+2026-01-11T14:32:04.7050660Z 718:                       <span
+2026-01-11T14:32:04.7051031Z                              ^
+2026-01-11T14:32:04.7051713Z 719:                         class="mt-0.5 block size-1.5 rounded-full bg-muted-foreground/50"
+2026-01-11T14:32:04.7052342Z 720:                       />
+2026-01-11T14:32:04.7054177Z 2:32:04 PM [vite-plugin-svelte] src/routes/(app)/(config)/settings/transcription/+page.svelte:826:11 Self-closing HTML tags for non-void elements are ambiguous — use `<span ...></span>` rather than `<span ... />`
+2026-01-11T14:32:04.7056015Z https://svelte.dev/e/element_invalid_self_closing_tag
+2026-01-11T14:32:04.7056773Z 824:                   <ul class="space-y-2 text-sm text-muted-foreground">
+2026-01-11T14:32:04.7057489Z 825:                     <li class="flex items-start gap-2">
+2026-01-11T14:32:04.7058022Z 826:                       <span
+2026-01-11T14:32:04.7058400Z                              ^
+2026-01-11T14:32:04.7059391Z 827:                         class="mt-0.5 block size-1.5 rounded-full bg-muted-foreground/50"
+2026-01-11T14:32:04.7060056Z 828:                       />
+2026-01-11T14:32:04.7061979Z 2:32:04 PM [vite-plugin-svelte] src/routes/(app)/(config)/settings/transcription/+page.svelte:835:11 Self-closing HTML tags for non-void elements are ambiguous — use `<span ...></span>` rather than `<span ... />`
+2026-01-11T14:32:04.7063653Z https://svelte.dev/e/element_invalid_self_closing_tag
+2026-01-11T14:32:04.7064203Z 833:                     </li>
+2026-01-11T14:32:04.7064739Z 834:                     <li class="flex items-start gap-2">
+2026-01-11T14:32:04.7065313Z 835:                       <span
+2026-01-11T14:32:04.7065722Z                              ^
+2026-01-11T14:32:04.7066428Z 836:                         class="mt-0.5 block size-1.5 rounded-full bg-muted-foreground/50"
+2026-01-11T14:32:04.7067113Z 837:                       />
+2026-01-11T14:32:04.7069111Z 2:32:04 PM [vite-plugin-svelte] src/routes/(app)/(config)/settings/transcription/+page.svelte:850:11 Self-closing HTML tags for non-void elements are ambiguous — use `<span ...></span>` rather than `<span ... />`
+2026-01-11T14:32:04.7070668Z https://svelte.dev/e/element_invalid_self_closing_tag
+2026-01-11T14:32:04.7071175Z 848:                     </li>
+2026-01-11T14:32:04.7071682Z 849:                     <li class="flex items-start gap-2">
+2026-01-11T14:32:04.7072193Z 850:                       <span
+2026-01-11T14:32:04.7072570Z                              ^
+2026-01-11T14:32:04.7073253Z 851:                         class="mt-0.5 block size-1.5 rounded-full bg-muted-foreground/50"
+2026-01-11T14:32:04.7073845Z 852:                       />
+2026-01-11T14:32:05.6070175Z 2:32:05 PM [vite-plugin-svelte] src/routes/(app)/(config)/settings/shortcuts/keyboard-shortcut-recorder/GlobalKeyboardShortcutRecorder.svelte:31:2 This reference only captures the initial value of `pressedKeys`. Did you mean to reference it inside a closure instead?
+2026-01-11T14:32:05.6071408Z https://svelte.dev/e/state_referenced_locally
+2026-01-11T14:32:05.6071684Z 29: 
+2026-01-11T14:32:05.6071950Z 30:   const keyRecorder = createKeyRecorder({
+2026-01-11T14:32:05.6072219Z 31:     pressedKeys,
+2026-01-11T14:32:05.6072415Z                    ^
+2026-01-11T14:32:05.6073071Z 32:     onRegister: async (keyCombination: KeyboardEventSupportedKey[]) => {
+2026-01-11T14:32:05.6073465Z 33:       if (shortcutValue) {
+2026-01-11T14:32:05.6164545Z 2:32:05 PM [vite-plugin-svelte] src/routes/(app)/(config)/settings/shortcuts/keyboard-shortcut-recorder/LocalKeyboardShortcutRecorder.svelte:31:2 This reference only captures the initial value of `pressedKeys`. Did you mean to reference it inside a closure instead?
+2026-01-11T14:32:05.6165893Z https://svelte.dev/e/state_referenced_locally
+2026-01-11T14:32:05.6166285Z 29: 
+2026-01-11T14:32:05.6166633Z 30:   const keyRecorder = createKeyRecorder({
+2026-01-11T14:32:05.6166904Z 31:     pressedKeys,
+2026-01-11T14:32:05.6167094Z                    ^
+2026-01-11T14:32:05.6167470Z 32:     onRegister: async (keyCombination: KeyboardEventSupportedKey[]) => {
+2026-01-11T14:32:05.6167873Z 33:       const { error: unregisterError } =
+2026-01-11T14:32:06.5264761Z 2:32:06 PM [vite-plugin-svelte] src/routes/(app)/(config)/settings/shortcuts/keyboard-shortcut-recorder/KeyboardShortcutRecorder.svelte:35:26 This reference only captures the initial value of `rawKeyCombination`. Did you mean to reference it inside a derived instead?
+2026-01-11T14:32:06.5265955Z https://svelte.dev/e/state_referenced_locally
+2026-01-11T14:32:06.5266290Z 33:   let isPopoverOpen = $state(false);
+2026-01-11T14:32:06.5266589Z 34:   let isManualMode = $state(false);
+2026-01-11T14:32:06.5266931Z 35:   let manualValue = $state(rawKeyCombination ?? '');
+2026-01-11T14:32:06.5267247Z                                                 ^
+2026-01-11T14:32:06.5267491Z 36: 
+2026-01-11T14:32:06.5267659Z 37:   $effect(() => {
+2026-01-11T14:32:07.4651263Z 2:32:07 PM [vite-plugin-svelte] D:/a/epicenter/epicenter/packages/ui/src/toggle-group/toggle-group.svelte:27:2 This reference only captures the initial value of `variant`. Did you mean to reference it inside a closure instead?
+2026-01-11T14:32:07.4653729Z https://svelte.dev/e/state_referenced_locally
+2026-01-11T14:32:07.4654162Z 25: 
+2026-01-11T14:32:07.4654470Z 26:   setToggleGroupCtx({
+2026-01-11T14:32:07.4654791Z 27:     variant,
+2026-01-11T14:32:07.4655071Z                ^
+2026-01-11T14:32:07.4655336Z 28:     size,
+2026-01-11T14:32:07.4655585Z 29:   });
+2026-01-11T14:32:07.4657116Z 2:32:07 PM [vite-plugin-svelte] D:/a/epicenter/epicenter/packages/ui/src/toggle-group/toggle-group.svelte:28:2 This reference only captures the initial value of `size`. Did you mean to reference it inside a closure instead?
+2026-01-11T14:32:07.4658658Z https://svelte.dev/e/state_referenced_locally
+2026-01-11T14:32:07.4659161Z 26:   setToggleGroupCtx({
+2026-01-11T14:32:07.4659494Z 27:     variant,
+2026-01-11T14:32:07.4659784Z 28:     size,
+2026-01-11T14:32:07.4660065Z             ^
+2026-01-11T14:32:07.4660333Z 29:   });
+2026-01-11T14:32:07.4660583Z 30: </script>
+2026-01-11T14:32:07.4780110Z 2:32:07 PM [vite-plugin-svelte] D:/a/epicenter/epicenter/packages/ui/src/file-drop-zone/file-drop-zone.svelte:28:5 This reference only captures the initial value of `maxFiles`. Did you mean to reference it inside a closure instead?
+2026-01-11T14:32:07.4781498Z https://svelte.dev/e/state_referenced_locally
+2026-01-11T14:32:07.4782033Z 26:   }: FileDropZoneProps = $props();
+2026-01-11T14:32:07.4782430Z 27: 
+2026-01-11T14:32:07.4782887Z 28:   if (maxFiles !== undefined && fileCount === undefined) {
+2026-01-11T14:32:07.4783389Z                   ^
+2026-01-11T14:32:07.4783713Z 29:     console.warn(
+2026-01-11T14:32:07.4784464Z 30:       'Make sure to provide FileDropZone with `fileCount` when using the `maxFiles` prompt',
+2026-01-11T14:32:07.4786501Z 2:32:07 PM [vite-plugin-svelte] D:/a/epicenter/epicenter/packages/ui/src/file-drop-zone/file-drop-zone.svelte:28:31 This reference only captures the initial value of `fileCount`. Did you mean to reference it inside a closure instead?
+2026-01-11T14:32:07.4787465Z https://svelte.dev/e/state_referenced_locally
+2026-01-11T14:32:07.4787786Z 26:   }: FileDropZoneProps = $props();
+2026-01-11T14:32:07.4788012Z 27: 
+2026-01-11T14:32:07.4788628Z 28:   if (maxFiles !== undefined && fileCount === undefined) {
+2026-01-11T14:32:07.4788971Z                                              ^
+2026-01-11T14:32:07.4789214Z 29:     console.warn(
+2026-01-11T14:32:07.4789627Z 30:       'Make sure to provide FileDropZone with `fileCount` when using the `maxFiles` prompt',
+2026-01-11T14:32:07.5650714Z 2:32:07 PM [vite-plugin-svelte] src/lib/components/settings/selectors/TranscriptionSelector.svelte:57:2 This reference only captures the initial value of `selectedService`. Did you mean to reference it inside a closure instead?
+2026-01-11T14:32:07.5652454Z https://svelte.dev/e/state_referenced_locally
+2026-01-11T14:32:07.5652791Z 55:   // Track which services are expanded
+2026-01-11T14:32:07.5653134Z 56:   let expandedServices = new SvelteSet(
+2026-01-11T14:32:07.5653466Z 57:     selectedService ? [selectedService.id] : [],
+2026-01-11T14:32:07.5653741Z                        ^
+2026-01-11T14:32:07.5654003Z 58:   );
+2026-01-11T14:32:07.5654256Z 59: 
+2026-01-11T14:32:07.5655307Z 2:32:07 PM [vite-plugin-svelte] src/lib/components/settings/selectors/TranscriptionSelector.svelte:57:21 This reference only captures the initial value of `selectedService`. Did you mean to reference it inside a closure instead?
+2026-01-11T14:32:07.5656349Z https://svelte.dev/e/state_referenced_locally
+2026-01-11T14:32:07.5656750Z 55:   // Track which services are expanded
+2026-01-11T14:32:07.5657374Z 56:   let expandedServices = new SvelteSet(
+2026-01-11T14:32:07.5657977Z 57:     selectedService ? [selectedService.id] : [],
+2026-01-11T14:32:07.5658540Z                                           ^
+2026-01-11T14:32:07.5659019Z 58:   );
+2026-01-11T14:32:07.5675288Z 59: 
+2026-01-11T14:32:07.7027764Z 2:32:07 PM [vite-plugin-svelte] D:/a/epicenter/epicenter/packages/ui/src/copy-button/copy-button.svelte:27:5 This reference only captures the initial value of `size`. Did you mean to reference it inside a closure instead?
+2026-01-11T14:32:07.7029114Z https://svelte.dev/e/state_referenced_locally
+2026-01-11T14:32:07.7029624Z 25: 
+2026-01-11T14:32:07.7030063Z 26:   // this way if the user passes text then the button will be the default size
+2026-01-11T14:32:07.7030537Z 27:   if (size === 'icon' && children) {
+2026-01-11T14:32:07.7030819Z               ^
+2026-01-11T14:32:07.7031037Z 28:     size = 'default';
+2026-01-11T14:32:07.7031269Z 29:   }
+2026-01-11T14:32:07.7032703Z 2:32:07 PM [vite-plugin-svelte] D:/a/epicenter/epicenter/packages/ui/src/copy-button/copy-button.svelte:27:24 This reference only captures the initial value of `children`. Did you mean to reference it inside a closure instead?
+2026-01-11T14:32:07.7033790Z https://svelte.dev/e/state_referenced_locally
+2026-01-11T14:32:07.7034104Z 25: 
+2026-01-11T14:32:07.7034489Z 26:   // this way if the user passes text then the button will be the default size
+2026-01-11T14:32:07.7034949Z 27:   if (size === 'icon' && children) {
+2026-01-11T14:32:07.7035244Z                                      ^
+2026-01-11T14:32:07.7035533Z 28:     size = 'default';
+2026-01-11T14:32:07.7035760Z 29:   }
+2026-01-11T14:32:07.7036818Z 2:32:07 PM [vite-plugin-svelte] D:/a/epicenter/epicenter/packages/ui/src/copy-button/copy-button.svelte:31:38 This reference only captures the initial value of `copyFn`. Did you mean to reference it inside a closure instead?
+2026-01-11T14:32:07.7037857Z https://svelte.dev/e/state_referenced_locally
+2026-01-11T14:32:07.7038144Z 29:   }
+2026-01-11T14:32:07.7038299Z 30: 
+2026-01-11T14:32:07.7038586Z 31:   const clipboard = new UseClipboard({ copyFn });
+2026-01-11T14:32:07.7038951Z                                                  ^
+2026-01-11T14:32:07.7039279Z 32: </script>
+2026-01-11T14:32:07.7039485Z 33: 
+2026-01-11T14:32:25.4992617Z [32m✓[39m 5063 modules transformed.
+2026-01-11T14:32:25.5925004Z [33mExport "rpc" of module "src/lib/query/isomorphic/index.ts" was reexported through module "src/lib/query/index.ts" while both modules are dependencies of each other and will end up in different chunks by current Rollup settings. This scenario is not well supported at the moment as it will produce a circular dependency between chunks and will likely lead to broken execution order.
+2026-01-11T14:32:25.5930300Z Either change the import in "src/routes/(app)/(config)/settings/analytics/+page.svelte" to point directly to the exporting module or reconfigure "output.manualChunks" to ensure these modules end up in the same chunk.[39m
+2026-01-11T14:32:25.5941317Z [33mExport "rpc" of module "src/lib/query/isomorphic/index.ts" was reexported through module "src/lib/query/index.ts" while both modules are dependencies of each other and will end up in different chunks by current Rollup settings. This scenario is not well supported at the moment as it will produce a circular dependency between chunks and will likely lead to broken execution order.
+2026-01-11T14:32:25.5945870Z Either change the import in "src/routes/(app)/(config)/settings/shortcuts/local/+page.svelte" to point directly to the exporting module or reconfigure "output.manualChunks" to ensure these modules end up in the same chunk.[39m
+2026-01-11T14:32:25.5951167Z [33mExport "desktopRpc" of module "src/lib/query/desktop/index.ts" was reexported through module "src/lib/query/index.ts" while both modules are dependencies of each other and will end up in different chunks by current Rollup settings. This scenario is not well supported at the moment as it will produce a circular dependency between chunks and will likely lead to broken execution order.
+2026-01-11T14:32:25.5963288Z Either change the import in "src/lib/components/settings/CompressionBody.svelte" to point directly to the exporting module or reconfigure "output.manualChunks" to ensure these modules end up in the same chunk.[39m
+2026-01-11T14:32:25.5971667Z [33mExport "desktopRpc" of module "src/lib/query/desktop/index.ts" was reexported through module "src/lib/query/index.ts" while both modules are dependencies of each other and will end up in different chunks by current Rollup settings. This scenario is not well supported at the moment as it will produce a circular dependency between chunks and will likely lead to broken execution order.
+2026-01-11T14:32:25.5984777Z Either change the import in "src/routes/(app)/_layout-utils/check-ffmpeg.ts" to point directly to the exporting module or reconfigure "output.manualChunks" to ensure these modules end up in the same chunk.[39m
+2026-01-11T14:32:25.5989418Z [33mExport "rpc" of module "src/lib/query/isomorphic/index.ts" was reexported through module "src/lib/query/index.ts" while both modules are dependencies of each other and will end up in different chunks by current Rollup settings. This scenario is not well supported at the moment as it will produce a circular dependency between chunks and will likely lead to broken execution order.
+2026-01-11T14:32:25.5993338Z Either change the import in "src/routes/(app)/(config)/transformations/new/+page.svelte" to point directly to the exporting module or reconfigure "output.manualChunks" to ensure these modules end up in the same chunk.[39m
+2026-01-11T14:32:25.5997491Z [33mExport "rpc" of module "src/lib/query/isomorphic/index.ts" was reexported through module "src/lib/query/index.ts" while both modules are dependencies of each other and will end up in different chunks by current Rollup settings. This scenario is not well supported at the moment as it will produce a circular dependency between chunks and will likely lead to broken execution order.
+2026-01-11T14:32:25.6000746Z Either change the import in "src/lib/utils/createCopyFn.ts" to point directly to the exporting module or reconfigure "output.manualChunks" to ensure these modules end up in the same chunk.[39m
+2026-01-11T14:32:25.6003305Z [33mExport "rpc" of module "src/lib/query/isomorphic/index.ts" was reexported through module "src/lib/query/index.ts" while both modules are dependencies of each other and will end up in different chunks by current Rollup settings. This scenario is not well supported at the moment as it will produce a circular dependency between chunks and will likely lead to broken execution order.
+2026-01-11T14:32:25.6005640Z Either change the import in "src/routes/transform-clipboard/+page.svelte" to point directly to the exporting module or reconfigure "output.manualChunks" to ensure these modules end up in the same chunk.[39m
+2026-01-11T14:32:25.6007895Z [33mExport "rpc" of module "src/lib/query/isomorphic/index.ts" was reexported through module "src/lib/query/index.ts" while both modules are dependencies of each other and will end up in different chunks by current Rollup settings. This scenario is not well supported at the moment as it will produce a circular dependency between chunks and will likely lead to broken execution order.
+2026-01-11T14:32:25.6009994Z Either change the import in "src/lib/components/TransformationPickerBody.svelte" to point directly to the exporting module or reconfigure "output.manualChunks" to ensure these modules end up in the same chunk.[39m
+2026-01-11T14:32:25.6012649Z [33mExport "rpc" of module "src/lib/query/isomorphic/index.ts" was reexported through module "src/lib/query/index.ts" while both modules are dependencies of each other and will end up in different chunks by current Rollup settings. This scenario is not well supported at the moment as it will produce a circular dependency between chunks and will likely lead to broken execution order.
+2026-01-11T14:32:25.6016265Z Either change the import in "src/routes/(app)/(config)/+layout.svelte" to point directly to the exporting module or reconfigure "output.manualChunks" to ensure these modules end up in the same chunk.[39m
+2026-01-11T14:32:25.6020595Z [33mExport "rpc" of module "src/lib/query/isomorphic/index.ts" was reexported through module "src/lib/query/index.ts" while both modules are dependencies of each other and will end up in different chunks by current Rollup settings. This scenario is not well supported at the moment as it will produce a circular dependency between chunks and will likely lead to broken execution order.
+2026-01-11T14:32:25.6024461Z Either change the import in "src/routes/(app)/(config)/settings/+layout.svelte" to point directly to the exporting module or reconfigure "output.manualChunks" to ensure these modules end up in the same chunk.[39m
+2026-01-11T14:32:25.6028427Z [33mExport "desktopRpc" of module "src/lib/query/desktop/index.ts" was reexported through module "src/lib/query/index.ts" while both modules are dependencies of each other and will end up in different chunks by current Rollup settings. This scenario is not well supported at the moment as it will produce a circular dependency between chunks and will likely lead to broken execution order.
+2026-01-11T14:32:25.6032213Z Either change the import in "src/routes/(app)/(config)/settings/shortcuts/global/+page.svelte" to point directly to the exporting module or reconfigure "output.manualChunks" to ensure these modules end up in the same chunk.[39m
+2026-01-11T14:32:25.6036327Z [33mExport "rpc" of module "src/lib/query/isomorphic/index.ts" was reexported through module "src/lib/query/index.ts" while both modules are dependencies of each other and will end up in different chunks by current Rollup settings. This scenario is not well supported at the moment as it will produce a circular dependency between chunks and will likely lead to broken execution order.
+2026-01-11T14:32:25.6040324Z Either change the import in "src/routes/(app)/(config)/settings/shortcuts/global/+page.svelte" to point directly to the exporting module or reconfigure "output.manualChunks" to ensure these modules end up in the same chunk.[39m
+2026-01-11T14:32:25.6044410Z [33mExport "services" of module "src/lib/services/isomorphic/index.ts" was reexported through module "src/lib/services/index.ts" while both modules are dependencies of each other and will end up in different chunks by current Rollup settings. This scenario is not well supported at the moment as it will produce a circular dependency between chunks and will likely lead to broken execution order.
+2026-01-11T14:32:25.6048430Z Either change the import in "src/routes/(app)/(config)/install-ffmpeg/+page.svelte" to point directly to the exporting module or reconfigure "output.manualChunks" to ensure these modules end up in the same chunk.[39m
+2026-01-11T14:32:25.6052455Z [33mExport "desktopRpc" of module "src/lib/query/desktop/index.ts" was reexported through module "src/lib/query/index.ts" while both modules are dependencies of each other and will end up in different chunks by current Rollup settings. This scenario is not well supported at the moment as it will produce a circular dependency between chunks and will likely lead to broken execution order.
+2026-01-11T14:32:25.6056280Z Either change the import in "src/routes/(app)/(config)/install-ffmpeg/+page.svelte" to point directly to the exporting module or reconfigure "output.manualChunks" to ensure these modules end up in the same chunk.[39m
+2026-01-11T14:32:25.6060696Z [33mExport "desktopRpc" of module "src/lib/query/desktop/index.ts" was reexported through module "src/lib/query/index.ts" while both modules are dependencies of each other and will end up in different chunks by current Rollup settings. This scenario is not well supported at the moment as it will produce a circular dependency between chunks and will likely lead to broken execution order.
+2026-01-11T14:32:25.6064490Z Either change the import in "src/routes/(app)/(config)/settings/recording/+page.ts" to point directly to the exporting module or reconfigure "output.manualChunks" to ensure these modules end up in the same chunk.[39m
+2026-01-11T14:32:25.6068394Z [33mExport "rpc" of module "src/lib/query/isomorphic/index.ts" was reexported through module "src/lib/query/index.ts" while both modules are dependencies of each other and will end up in different chunks by current Rollup settings. This scenario is not well supported at the moment as it will produce a circular dependency between chunks and will likely lead to broken execution order.
+2026-01-11T14:32:25.6072299Z Either change the import in "src/routes/(app)/(config)/settings/recording/DesktopOutputFolder.svelte" to point directly to the exporting module or reconfigure "output.manualChunks" to ensure these modules end up in the same chunk.[39m
+2026-01-11T14:32:25.6076083Z [33mExport "rpc" of module "src/lib/query/isomorphic/index.ts" was reexported through module "src/lib/query/index.ts" while both modules are dependencies of each other and will end up in different chunks by current Rollup settings. This scenario is not well supported at the moment as it will produce a circular dependency between chunks and will likely lead to broken execution order.
+2026-01-11T14:32:25.6080009Z Either change the import in "src/routes/(app)/(config)/settings/recording/FfmpegCommandBuilder.svelte" to point directly to the exporting module or reconfigure "output.manualChunks" to ensure these modules end up in the same chunk.[39m
+2026-01-11T14:32:25.6083913Z [33mExport "rpc" of module "src/lib/query/isomorphic/index.ts" was reexported through module "src/lib/query/index.ts" while both modules are dependencies of each other and will end up in different chunks by current Rollup settings. This scenario is not well supported at the moment as it will produce a circular dependency between chunks and will likely lead to broken execution order.
+2026-01-11T14:32:25.6087555Z Either change the import in "src/routes/(app)/(config)/settings/recording/ManualSelectRecordingDevice.svelte" to point directly to the exporting module or reconfigure "output.manualChunks" to ensure these modules end up in the same chunk.[39m
+2026-01-11T14:32:25.6091284Z [33mExport "rpc" of module "src/lib/query/isomorphic/index.ts" was reexported through module "src/lib/query/index.ts" while both modules are dependencies of each other and will end up in different chunks by current Rollup settings. This scenario is not well supported at the moment as it will produce a circular dependency between chunks and will likely lead to broken execution order.
+2026-01-11T14:32:25.6094931Z Either change the import in "src/routes/(app)/(config)/settings/recording/VadSelectRecordingDevice.svelte" to point directly to the exporting module or reconfigure "output.manualChunks" to ensure these modules end up in the same chunk.[39m
+2026-01-11T14:32:25.6099585Z [33mExport "rpc" of module "src/lib/query/isomorphic/index.ts" was reexported through module "src/lib/query/index.ts" while both modules are dependencies of each other and will end up in different chunks by current Rollup settings. This scenario is not well supported at the moment as it will produce a circular dependency between chunks and will likely lead to broken execution order.
+2026-01-11T14:32:25.6103311Z Either change the import in "src/routes/(app)/(config)/transformations/CreateTransformationButton.svelte" to point directly to the exporting module or reconfigure "output.manualChunks" to ensure these modules end up in the same chunk.[39m
+2026-01-11T14:32:25.6107431Z [33mExport "rpc" of module "src/lib/query/isomorphic/index.ts" was reexported through module "src/lib/query/index.ts" while both modules are dependencies of each other and will end up in different chunks by current Rollup settings. This scenario is not well supported at the moment as it will produce a circular dependency between chunks and will likely lead to broken execution order.
+2026-01-11T14:32:25.6111234Z Either change the import in "src/routes/(app)/(config)/transformations/EditTransformationModal.svelte" to point directly to the exporting module or reconfigure "output.manualChunks" to ensure these modules end up in the same chunk.[39m
+2026-01-11T14:32:25.6115403Z [33mExport "rpc" of module "src/lib/query/isomorphic/index.ts" was reexported through module "src/lib/query/index.ts" while both modules are dependencies of each other and will end up in different chunks by current Rollup settings. This scenario is not well supported at the moment as it will produce a circular dependency between chunks and will likely lead to broken execution order.
+2026-01-11T14:32:25.6119638Z Either change the import in "src/routes/(app)/(config)/transformations/TransformationRowActions.svelte" to point directly to the exporting module or reconfigure "output.manualChunks" to ensure these modules end up in the same chunk.[39m
+2026-01-11T14:32:25.6123589Z [33mExport "rpc" of module "src/lib/query/isomorphic/index.ts" was reexported through module "src/lib/query/index.ts" while both modules are dependencies of each other and will end up in different chunks by current Rollup settings. This scenario is not well supported at the moment as it will produce a circular dependency between chunks and will likely lead to broken execution order.
+2026-01-11T14:32:25.6127188Z Either change the import in "src/routes/(app)/(config)/transformations/+page.svelte" to point directly to the exporting module or reconfigure "output.manualChunks" to ensure these modules end up in the same chunk.[39m
+2026-01-11T14:32:25.6131145Z [33mExport "desktopRpc" of module "src/lib/query/desktop/index.ts" was reexported through module "src/lib/query/index.ts" while both modules are dependencies of each other and will end up in different chunks by current Rollup settings. This scenario is not well supported at the moment as it will produce a circular dependency between chunks and will likely lead to broken execution order.
+2026-01-11T14:32:25.6134727Z Either change the import in "src/routes/(app)/(config)/settings/+page.svelte" to point directly to the exporting module or reconfigure "output.manualChunks" to ensure these modules end up in the same chunk.[39m
+2026-01-11T14:32:25.6139156Z [33mExport "rpc" of module "src/lib/query/isomorphic/index.ts" was reexported through module "src/lib/query/index.ts" while both modules are dependencies of each other and will end up in different chunks by current Rollup settings. This scenario is not well supported at the moment as it will produce a circular dependency between chunks and will likely lead to broken execution order.
+2026-01-11T14:32:25.6142905Z Either change the import in "src/routes/(app)/(config)/settings/+page.svelte" to point directly to the exporting module or reconfigure "output.manualChunks" to ensure these modules end up in the same chunk.[39m
+2026-01-11T14:32:25.6146911Z [33mExport "desktopRpc" of module "src/lib/query/desktop/index.ts" was reexported through module "src/lib/query/index.ts" while both modules are dependencies of each other and will end up in different chunks by current Rollup settings. This scenario is not well supported at the moment as it will produce a circular dependency between chunks and will likely lead to broken execution order.
+2026-01-11T14:32:25.6151063Z Either change the import in "src/routes/(app)/(config)/settings/shortcuts/keyboard-shortcut-recorder/GlobalKeyboardShortcutRecorder.svelte" to point directly to the exporting module or reconfigure "output.manualChunks" to ensure these modules end up in the same chunk.[39m
+2026-01-11T14:32:25.6155480Z [33mExport "rpc" of module "src/lib/query/isomorphic/index.ts" was reexported through module "src/lib/query/index.ts" while both modules are dependencies of each other and will end up in different chunks by current Rollup settings. This scenario is not well supported at the moment as it will produce a circular dependency between chunks and will likely lead to broken execution order.
+2026-01-11T14:32:25.6160128Z Either change the import in "src/routes/(app)/(config)/settings/shortcuts/keyboard-shortcut-recorder/GlobalKeyboardShortcutRecorder.svelte" to point directly to the exporting module or reconfigure "output.manualChunks" to ensure these modules end up in the same chunk.[39m
+2026-01-11T14:32:25.6164843Z [33mExport "rpc" of module "src/lib/query/isomorphic/index.ts" was reexported through module "src/lib/query/index.ts" while both modules are dependencies of each other and will end up in different chunks by current Rollup settings. This scenario is not well supported at the moment as it will produce a circular dependency between chunks and will likely lead to broken execution order.
+2026-01-11T14:32:25.6169810Z Either change the import in "src/routes/(app)/(config)/settings/shortcuts/keyboard-shortcut-recorder/LocalKeyboardShortcutRecorder.svelte" to point directly to the exporting module or reconfigure "output.manualChunks" to ensure these modules end up in the same chunk.[39m
+2026-01-11T14:32:25.6172700Z [33mExport "rpc" of module "src/lib/query/isomorphic/index.ts" was reexported through module "src/lib/query/index.ts" while both modules are dependencies of each other and will end up in different chunks by current Rollup settings. This scenario is not well supported at the moment as it will produce a circular dependency between chunks and will likely lead to broken execution order.
+2026-01-11T14:32:25.6175003Z Either change the import in "src/routes/(app)/(config)/settings/shortcuts/keyboard-shortcut-recorder/ShortcutTable.svelte" to point directly to the exporting module or reconfigure "output.manualChunks" to ensure these modules end up in the same chunk.[39m
+2026-01-11T14:32:25.6177697Z [33mExport "rpc" of module "src/lib/query/isomorphic/index.ts" was reexported through module "src/lib/query/index.ts" while both modules are dependencies of each other and will end up in different chunks by current Rollup settings. This scenario is not well supported at the moment as it will produce a circular dependency between chunks and will likely lead to broken execution order.
+2026-01-11T14:32:25.6179733Z Either change the import in "src/routes/(app)/+page.svelte" to point directly to the exporting module or reconfigure "output.manualChunks" to ensure these modules end up in the same chunk.[39m
+2026-01-11T14:32:25.6181939Z [33mExport "services" of module "src/lib/services/isomorphic/index.ts" was reexported through module "src/lib/services/index.ts" while both modules are dependencies of each other and will end up in different chunks by current Rollup settings. This scenario is not well supported at the moment as it will produce a circular dependency between chunks and will likely lead to broken execution order.
+2026-01-11T14:32:25.6184158Z Either change the import in "src/routes/(app)/+page.svelte" to point directly to the exporting module or reconfigure "output.manualChunks" to ensure these modules end up in the same chunk.[39m
+2026-01-11T14:32:25.6186319Z [33mExport "desktopRpc" of module "src/lib/query/desktop/index.ts" was reexported through module "src/lib/query/index.ts" while both modules are dependencies of each other and will end up in different chunks by current Rollup settings. This scenario is not well supported at the moment as it will produce a circular dependency between chunks and will likely lead to broken execution order.
+2026-01-11T14:32:25.6188439Z Either change the import in "src/routes/(app)/(config)/settings/transcription/+page.ts" to point directly to the exporting module or reconfigure "output.manualChunks" to ensure these modules end up in the same chunk.[39m
+2026-01-11T14:32:25.6190698Z [33mExport "rpc" of module "src/lib/query/isomorphic/index.ts" was reexported through module "src/lib/query/index.ts" while both modules are dependencies of each other and will end up in different chunks by current Rollup settings. This scenario is not well supported at the moment as it will produce a circular dependency between chunks and will likely lead to broken execution order.
+2026-01-11T14:32:25.6192858Z Either change the import in "src/lib/components/settings/selectors/ManualDeviceSelector.svelte" to point directly to the exporting module or reconfigure "output.manualChunks" to ensure these modules end up in the same chunk.[39m
+2026-01-11T14:32:25.6204464Z [33mExport "rpc" of module "src/lib/query/isomorphic/index.ts" was reexported through module "src/lib/query/index.ts" while both modules are dependencies of each other and will end up in different chunks by current Rollup settings. This scenario is not well supported at the moment as it will produce a circular dependency between chunks and will likely lead to broken execution order.
+2026-01-11T14:32:25.6207096Z Either change the import in "src/lib/components/settings/selectors/TransformationSelector.svelte" to point directly to the exporting module or reconfigure "output.manualChunks" to ensure these modules end up in the same chunk.[39m
+2026-01-11T14:32:25.6209815Z [33mExport "rpc" of module "src/lib/query/isomorphic/index.ts" was reexported through module "src/lib/query/index.ts" while both modules are dependencies of each other and will end up in different chunks by current Rollup settings. This scenario is not well supported at the moment as it will produce a circular dependency between chunks and will likely lead to broken execution order.
+2026-01-11T14:32:25.6212397Z Either change the import in "src/lib/components/settings/selectors/VadDeviceSelector.svelte" to point directly to the exporting module or reconfigure "output.manualChunks" to ensure these modules end up in the same chunk.[39m
+2026-01-11T14:32:25.6214710Z [33mExport "rpc" of module "src/lib/query/isomorphic/index.ts" was reexported through module "src/lib/query/index.ts" while both modules are dependencies of each other and will end up in different chunks by current Rollup settings. This scenario is not well supported at the moment as it will produce a circular dependency between chunks and will likely lead to broken execution order.
+2026-01-11T14:32:25.6217357Z Either change the import in "src/routes/(app)/(config)/recordings/LatestTransformationRunOutputByRecordingId.svelte" to point directly to the exporting module or reconfigure "output.manualChunks" to ensure these modules end up in the same chunk.[39m
+2026-01-11T14:32:25.6219774Z [33mExport "rpc" of module "src/lib/query/isomorphic/index.ts" was reexported through module "src/lib/query/index.ts" while both modules are dependencies of each other and will end up in different chunks by current Rollup settings. This scenario is not well supported at the moment as it will produce a circular dependency between chunks and will likely lead to broken execution order.
+2026-01-11T14:32:25.6221871Z Either change the import in "src/routes/(app)/(config)/recordings/RenderAudioUrl.svelte" to point directly to the exporting module or reconfigure "output.manualChunks" to ensure these modules end up in the same chunk.[39m
+2026-01-11T14:32:25.6224376Z [33mExport "services" of module "src/lib/services/isomorphic/index.ts" was reexported through module "src/lib/services/index.ts" while both modules are dependencies of each other and will end up in different chunks by current Rollup settings. This scenario is not well supported at the moment as it will produce a circular dependency between chunks and will likely lead to broken execution order.
+2026-01-11T14:32:25.6226519Z Either change the import in "src/routes/(app)/(config)/recordings/RenderAudioUrl.svelte" to point directly to the exporting module or reconfigure "output.manualChunks" to ensure these modules end up in the same chunk.[39m
+2026-01-11T14:32:25.6228769Z [33mExport "rpc" of module "src/lib/query/isomorphic/index.ts" was reexported through module "src/lib/query/index.ts" while both modules are dependencies of each other and will end up in different chunks by current Rollup settings. This scenario is not well supported at the moment as it will produce a circular dependency between chunks and will likely lead to broken execution order.
+2026-01-11T14:32:25.6230971Z Either change the import in "src/routes/(app)/(config)/recordings/row-actions/EditRecordingModal.svelte" to point directly to the exporting module or reconfigure "output.manualChunks" to ensure these modules end up in the same chunk.[39m
+2026-01-11T14:32:25.6233331Z [33mExport "services" of module "src/lib/services/isomorphic/index.ts" was reexported through module "src/lib/services/index.ts" while both modules are dependencies of each other and will end up in different chunks by current Rollup settings. This scenario is not well supported at the moment as it will produce a circular dependency between chunks and will likely lead to broken execution order.
+2026-01-11T14:32:25.6236121Z Either change the import in "src/routes/(app)/(config)/recordings/row-actions/EditRecordingModal.svelte" to point directly to the exporting module or reconfigure "output.manualChunks" to ensure these modules end up in the same chunk.[39m
+2026-01-11T14:32:25.6240984Z [33mExport "rpc" of module "src/lib/query/isomorphic/index.ts" was reexported through module "src/lib/query/index.ts" while both modules are dependencies of each other and will end up in different chunks by current Rollup settings. This scenario is not well supported at the moment as it will produce a circular dependency between chunks and will likely lead to broken execution order.
+2026-01-11T14:32:25.6245332Z Either change the import in "src/routes/(app)/(config)/recordings/row-actions/TransformationPicker.svelte" to point directly to the exporting module or reconfigure "output.manualChunks" to ensure these modules end up in the same chunk.[39m
+2026-01-11T14:32:25.6248856Z [33mExport "rpc" of module "src/lib/query/isomorphic/index.ts" was reexported through module "src/lib/query/index.ts" while both modules are dependencies of each other and will end up in different chunks by current Rollup settings. This scenario is not well supported at the moment as it will produce a circular dependency between chunks and will likely lead to broken execution order.
+2026-01-11T14:32:25.6251143Z Either change the import in "src/routes/(app)/(config)/recordings/row-actions/ViewTransformationRunsDialog.svelte" to point directly to the exporting module or reconfigure "output.manualChunks" to ensure these modules end up in the same chunk.[39m
+2026-01-11T14:32:25.6253495Z [33mExport "rpc" of module "src/lib/query/isomorphic/index.ts" was reexported through module "src/lib/query/index.ts" while both modules are dependencies of each other and will end up in different chunks by current Rollup settings. This scenario is not well supported at the moment as it will produce a circular dependency between chunks and will likely lead to broken execution order.
+2026-01-11T14:32:25.6256408Z Either change the import in "src/routes/(app)/(config)/recordings/row-actions/RecordingRowActions.svelte" to point directly to the exporting module or reconfigure "output.manualChunks" to ensure these modules end up in the same chunk.[39m
+2026-01-11T14:32:25.6258752Z [33mExport "rpc" of module "src/lib/query/isomorphic/index.ts" was reexported through module "src/lib/query/index.ts" while both modules are dependencies of each other and will end up in different chunks by current Rollup settings. This scenario is not well supported at the moment as it will produce a circular dependency between chunks and will likely lead to broken execution order.
+2026-01-11T14:32:25.6260822Z Either change the import in "src/routes/(app)/(config)/recordings/+page.svelte" to point directly to the exporting module or reconfigure "output.manualChunks" to ensure these modules end up in the same chunk.[39m
+2026-01-11T14:32:25.6263103Z [33mExport "rpc" of module "src/lib/query/isomorphic/index.ts" was reexported through module "src/lib/query/index.ts" while both modules are dependencies of each other and will end up in different chunks by current Rollup settings. This scenario is not well supported at the moment as it will produce a circular dependency between chunks and will likely lead to broken execution order.
+2026-01-11T14:32:25.6265130Z Either change the import in "src/lib/components/UpdateDialog.svelte" to point directly to the exporting module or reconfigure "output.manualChunks" to ensure these modules end up in the same chunk.[39m
+2026-01-11T14:32:25.6267348Z [33mExport "rpc" of module "src/lib/query/isomorphic/index.ts" was reexported through module "src/lib/query/index.ts" while both modules are dependencies of each other and will end up in different chunks by current Rollup settings. This scenario is not well supported at the moment as it will produce a circular dependency between chunks and will likely lead to broken execution order.
+2026-01-11T14:32:25.6269550Z Either change the import in "src/routes/(app)/_layout-utils/alwaysOnTop.svelte.ts" to point directly to the exporting module or reconfigure "output.manualChunks" to ensure these modules end up in the same chunk.[39m
+2026-01-11T14:32:25.6271800Z [33mExport "rpc" of module "src/lib/query/isomorphic/index.ts" was reexported through module "src/lib/query/index.ts" while both modules are dependencies of each other and will end up in different chunks by current Rollup settings. This scenario is not well supported at the moment as it will produce a circular dependency between chunks and will likely lead to broken execution order.
+2026-01-11T14:32:25.6273879Z Either change the import in "src/routes/(app)/_layout-utils/check-for-updates.ts" to point directly to the exporting module or reconfigure "output.manualChunks" to ensure these modules end up in the same chunk.[39m
+2026-01-11T14:32:25.6276435Z [33mExport "rpc" of module "src/lib/query/isomorphic/index.ts" was reexported through module "src/lib/query/index.ts" while both modules are dependencies of each other and will end up in different chunks by current Rollup settings. This scenario is not well supported at the moment as it will produce a circular dependency between chunks and will likely lead to broken execution order.
+2026-01-11T14:32:25.6278549Z Either change the import in "src/routes/(app)/_layout-utils/check-indexeddb-migration.ts" to point directly to the exporting module or reconfigure "output.manualChunks" to ensure these modules end up in the same chunk.[39m
+2026-01-11T14:32:25.6280793Z [33mExport "rpc" of module "src/lib/query/isomorphic/index.ts" was reexported through module "src/lib/query/index.ts" while both modules are dependencies of each other and will end up in different chunks by current Rollup settings. This scenario is not well supported at the moment as it will produce a circular dependency between chunks and will likely lead to broken execution order.
+2026-01-11T14:32:25.6282961Z Either change the import in "src/routes/(app)/_layout-utils/syncIconWithRecorderState.svelte.ts" to point directly to the exporting module or reconfigure "output.manualChunks" to ensure these modules end up in the same chunk.[39m
+2026-01-11T14:32:25.6285366Z [33mExport "desktopRpc" of module "src/lib/query/desktop/index.ts" was reexported through module "src/lib/query/index.ts" while both modules are dependencies of each other and will end up in different chunks by current Rollup settings. This scenario is not well supported at the moment as it will produce a circular dependency between chunks and will likely lead to broken execution order.
+2026-01-11T14:32:25.6287510Z Either change the import in "src/routes/(app)/_layout-utils/syncIconWithRecorderState.svelte.ts" to point directly to the exporting module or reconfigure "output.manualChunks" to ensure these modules end up in the same chunk.[39m
+2026-01-11T14:32:25.6289795Z [33mExport "rpc" of module "src/lib/query/isomorphic/index.ts" was reexported through module "src/lib/query/index.ts" while both modules are dependencies of each other and will end up in different chunks by current Rollup settings. This scenario is not well supported at the moment as it will produce a circular dependency between chunks and will likely lead to broken execution order.
+2026-01-11T14:32:25.6291898Z Either change the import in "src/routes/(app)/_layout-utils/register-onboarding.ts" to point directly to the exporting module or reconfigure "output.manualChunks" to ensure these modules end up in the same chunk.[39m
+2026-01-11T14:32:25.6294146Z [33mExport "rpc" of module "src/lib/query/isomorphic/index.ts" was reexported through module "src/lib/query/index.ts" while both modules are dependencies of each other and will end up in different chunks by current Rollup settings. This scenario is not well supported at the moment as it will produce a circular dependency between chunks and will likely lead to broken execution order.
+2026-01-11T14:32:25.6296592Z Either change the import in "src/routes/(app)/_components/AppLayout.svelte" to point directly to the exporting module or reconfigure "output.manualChunks" to ensure these modules end up in the same chunk.[39m
+2026-01-11T14:32:25.6299183Z [33mExport "services" of module "src/lib/services/isomorphic/index.ts" was reexported through module "src/lib/services/index.ts" while both modules are dependencies of each other and will end up in different chunks by current Rollup settings. This scenario is not well supported at the moment as it will produce a circular dependency between chunks and will likely lead to broken execution order.
+2026-01-11T14:32:25.6301276Z Either change the import in "src/routes/(app)/_components/AppLayout.svelte" to point directly to the exporting module or reconfigure "output.manualChunks" to ensure these modules end up in the same chunk.[39m
+2026-01-11T14:32:25.6303568Z [33mExport "services" of module "src/lib/services/isomorphic/index.ts" was reexported through module "src/lib/services/index.ts" while both modules are dependencies of each other and will end up in different chunks by current Rollup settings. This scenario is not well supported at the moment as it will produce a circular dependency between chunks and will likely lead to broken execution order.
+2026-01-11T14:32:25.6305616Z Either change the import in "src/routes/(app)/+layout.svelte" to point directly to the exporting module or reconfigure "output.manualChunks" to ensure these modules end up in the same chunk.[39m
+2026-01-11T14:32:25.6307792Z [33mExport "rpc" of module "src/lib/query/isomorphic/index.ts" was reexported through module "src/lib/query/index.ts" while both modules are dependencies of each other and will end up in different chunks by current Rollup settings. This scenario is not well supported at the moment as it will produce a circular dependency between chunks and will likely lead to broken execution order.
+2026-01-11T14:32:25.6309784Z Either change the import in "src/routes/(app)/+layout.svelte" to point directly to the exporting module or reconfigure "output.manualChunks" to ensure these modules end up in the same chunk.[39m
+2026-01-11T14:32:25.6312981Z [33mExport "rpc" of module "src/lib/query/isomorphic/index.ts" was reexported through module "src/lib/query/index.ts" while both modules are dependencies of each other and will end up in different chunks by current Rollup settings. This scenario is not well supported at the moment as it will produce a circular dependency between chunks and will likely lead to broken execution order.
+2026-01-11T14:32:25.6317093Z Either change the import in "src/lib/components/transformations-editor/Test.svelte" to point directly to the exporting module or reconfigure "output.manualChunks" to ensure these modules end up in the same chunk.[39m
+2026-01-11T14:32:25.6321752Z [33mExport "rpc" of module "src/lib/query/isomorphic/index.ts" was reexported through module "src/lib/query/index.ts" while both modules are dependencies of each other and will end up in different chunks by current Rollup settings. This scenario is not well supported at the moment as it will produce a circular dependency between chunks and will likely lead to broken execution order.
+2026-01-11T14:32:25.6325911Z Either change the import in "src/lib/components/transformations-editor/Editor.svelte" to point directly to the exporting module or reconfigure "output.manualChunks" to ensure these modules end up in the same chunk.[39m
+2026-01-11T14:32:25.6330228Z [33mExport "rpc" of module "src/lib/query/isomorphic/index.ts" was reexported through module "src/lib/query/index.ts" while both modules are dependencies of each other and will end up in different chunks by current Rollup settings. This scenario is not well supported at the moment as it will produce a circular dependency between chunks and will likely lead to broken execution order.
+2026-01-11T14:32:25.6334571Z Either change the import in "src/lib/components/transformations-editor/Runs.svelte" to point directly to the exporting module or reconfigure "output.manualChunks" to ensure these modules end up in the same chunk.[39m
+2026-01-11T14:32:25.6339262Z [33mExport "rpc" of module "src/lib/query/isomorphic/index.ts" was reexported through module "src/lib/query/index.ts" while both modules are dependencies of each other and will end up in different chunks by current Rollup settings. This scenario is not well supported at the moment as it will produce a circular dependency between chunks and will likely lead to broken execution order.
+2026-01-11T14:32:25.6343158Z Either change the import in "src/lib/components/OpenFolderButton.svelte" to point directly to the exporting module or reconfigure "output.manualChunks" to ensure these modules end up in the same chunk.[39m
+2026-01-11T14:32:26.0065368Z [33m../../node_modules/.bun/gray-matter@4.0.3/node_modules/gray-matter/lib/engines.js (43:13): Use of eval in "../../node_modules/.bun/gray-matter@4.0.3/node_modules/gray-matter/lib/engines.js" is strongly discouraged as it poses security risks and may cause issues with minification.[39m
+2026-01-11T14:32:26.2946502Z [33m../../node_modules/.bun/onnxruntime-web@1.14.0/node_modules/onnxruntime-web/dist/ort-web.min.js (6:62546): Use of eval in "../../node_modules/.bun/onnxruntime-web@1.14.0/node_modules/onnxruntime-web/dist/ort-web.min.js" is strongly discouraged as it poses security risks and may cause issues with minification.[39m
+2026-01-11T14:32:26.4027493Z rendering chunks...
+2026-01-11T14:32:27.4204112Z [33m[plugin vite:reporter] 
+2026-01-11T14:32:27.4472306Z (!) D:/a/epicenter/epicenter/node_modules/.bun/@tauri-apps+api@2.9.1/node_modules/@tauri-apps/api/path.js is dynamically imported by D:/a/epicenter/epicenter/apps/whispering/src/lib/constants/paths.ts, D:/a/epicenter/epicenter/apps/whispering/src/lib/constants/paths.ts, D:/a/epicenter/epicenter/apps/whispering/src/lib/constants/paths.ts, D:/a/epicenter/epicenter/apps/whispering/src/lib/constants/paths.ts, D:/a/epicenter/epicenter/apps/whispering/src/lib/constants/paths.ts, D:/a/epicenter/epicenter/apps/whispering/src/lib/constants/paths.ts, D:/a/epicenter/epicenter/apps/whispering/src/lib/constants/paths.ts, D:/a/epicenter/epicenter/apps/whispering/src/lib/constants/paths.ts, D:/a/epicenter/epicenter/apps/whispering/src/lib/constants/paths.ts, D:/a/epicenter/epicenter/apps/whispering/src/lib/constants/paths.ts, D:/a/epicenter/epicenter/apps/whispering/src/lib/constants/paths.ts, D:/a/epicenter/epicenter/apps/whispering/src/lib/constants/paths.ts, D:/a/epicenter/epicenter/apps/whispering/src/routes/(app)/+page.svelte but also statically imported by D:/a/epicenter/epicenter/apps/whispering/src/lib/components/settings/LocalModelDownloadCard.svelte, D:/a/epicenter/epicenter/apps/whispering/src/lib/components/settings/LocalModelSelector.svelte, D:/a/epicenter/epicenter/apps/whispering/src/lib/components/settings/selectors/TranscriptionSelector.svelte, D:/a/epicenter/epicenter/apps/whispering/src/lib/services/desktop/ffmpeg.ts, D:/a/epicenter/epicenter/apps/whispering/src/lib/services/desktop/fs.ts, D:/a/epicenter/epicenter/apps/whispering/src/lib/services/desktop/recorder/ffmpeg.ts, D:/a/epicenter/epicenter/apps/whispering/src/lib/services/desktop/tray.ts, D:/a/epicenter/epicenter/apps/whispering/src/routes/(app)/(config)/settings/recording/FfmpegCommandBuilder.svelte, D:/a/epicenter/epicenter/node_modules/.bun/@tauri-apps+plugin-fs@2.4.4/node_modules/@tauri-apps/plugin-fs/dist-js/index.js, dynamic import will not move module into another chunk.
+2026-01-11T14:32:27.4486485Z [39m
+2026-01-11T14:32:27.4487049Z [33m[plugin vite:reporter] 
+2026-01-11T14:32:27.4567378Z (!) D:/a/epicenter/epicenter/node_modules/.bun/@tauri-apps+plugin-fs@2.4.4/node_modules/@tauri-apps/plugin-fs/dist-js/index.js is dynamically imported by D:/a/epicenter/epicenter/apps/whispering/src/lib/services/isomorphic/db/file-system.ts, D:/a/epicenter/epicenter/apps/whispering/src/lib/services/isomorphic/db/file-system.ts but also statically imported by D:/a/epicenter/epicenter/apps/whispering/src/lib/components/settings/LocalModelDownloadCard.svelte, D:/a/epicenter/epicenter/apps/whispering/src/lib/components/settings/LocalModelSelector.svelte, D:/a/epicenter/epicenter/apps/whispering/src/lib/services/desktop/ffmpeg.ts, D:/a/epicenter/epicenter/apps/whispering/src/lib/services/desktop/fs.ts, D:/a/epicenter/epicenter/apps/whispering/src/lib/services/desktop/recorder/cpal.ts, D:/a/epicenter/epicenter/apps/whispering/src/lib/services/desktop/recorder/ffmpeg.ts, D:/a/epicenter/epicenter/apps/whispering/src/lib/services/isomorphic/db/file-system.ts, D:/a/epicenter/epicenter/apps/whispering/src/lib/services/isomorphic/download/desktop.ts, D:/a/epicenter/epicenter/apps/whispering/src/lib/services/isomorphic/transcription/local/canary.ts, D:/a/epicenter/epicenter/apps/whispering/src/lib/services/isomorphic/transcription/local/moonshine.ts, D:/a/epicenter/epicenter/apps/whispering/src/lib/services/isomorphic/transcription/local/parakeet.ts, D:/a/epicenter/epicenter/apps/whispering/src/lib/services/isomorphic/transcription/local/whispercpp.ts, D:/a/epicenter/epicenter/apps/whispering/src/lib/utils/parallel-download.ts, dynamic import will not move module into another chunk.
+2026-01-11T14:32:27.4816049Z [39m
+2026-01-11T14:32:27.4915197Z [33m[plugin vite:reporter] 
+2026-01-11T14:32:27.5150107Z (!) D:/a/epicenter/epicenter/node_modules/.bun/nanoid@5.1.6/node_modules/nanoid/non-secure/index.js is dynamically imported by D:/a/epicenter/epicenter/apps/whispering/src/lib/services/isomorphic/db/file-system.ts but also statically imported by D:/a/epicenter/epicenter/apps/whispering/src/lib/components/MigrationDialog.svelte, D:/a/epicenter/epicenter/apps/whispering/src/lib/query/isomorphic/actions.ts, D:/a/epicenter/epicenter/apps/whispering/src/lib/query/isomorphic/recorder.ts, D:/a/epicenter/epicenter/apps/whispering/src/lib/query/isomorphic/transformer.ts, D:/a/epicenter/epicenter/apps/whispering/src/lib/services/desktop/ffmpeg.ts, D:/a/epicenter/epicenter/apps/whispering/src/lib/services/isomorphic/db/models/transformation-steps.ts, D:/a/epicenter/epicenter/apps/whispering/src/lib/services/isomorphic/db/models/transformations.ts, D:/a/epicenter/epicenter/apps/whispering/src/lib/services/isomorphic/db/web.ts, D:/a/epicenter/epicenter/apps/whispering/src/lib/services/isomorphic/notifications/desktop.ts, D:/a/epicenter/epicenter/apps/whispering/src/lib/services/isomorphic/notifications/web.ts, D:/a/epicenter/epicenter/apps/whispering/src/lib/services/isomorphic/toast.ts, D:/a/epicenter/epicenter/apps/whispering/src/lib/stores/settings.svelte.ts, D:/a/epicenter/epicenter/apps/whispering/src/routes/(app)/(config)/recordings/+page.svelte, D:/a/epicenter/epicenter/apps/whispering/src/routes/(app)/(config)/recordings/row-actions/RecordingRowActions.svelte, D:/a/epicenter/epicenter/apps/whispering/src/routes/(app)/(config)/recordings/row-actions/TransformationPicker.svelte, D:/a/epicenter/epicenter/apps/whispering/src/routes/(app)/(config)/settings/recording/FfmpegCommandBuilder.svelte, D:/a/epicenter/epicenter/apps/whispering/src/routes/(app)/_layout-utils/register-permissions.ts, D:/a/epicenter/epicenter/apps/whispering/src/routes/transform-clipboard/+page.svelte, dynamic import will not move module into another chunk.
+2026-01-11T14:32:27.5237271Z [39m
+2026-01-11T14:32:27.5494324Z [33m[plugin vite:reporter] 
+2026-01-11T14:32:27.5731955Z (!) D:/a/epicenter/epicenter/node_modules/.bun/@tauri-apps+plugin-shell@2.3.3/node_modules/@tauri-apps/plugin-shell/dist-js/index.js is dynamically imported by D:/a/epicenter/epicenter/apps/whispering/src/lib/services/desktop/command.ts but also statically imported by D:/a/epicenter/epicenter/apps/whispering/src/lib/services/desktop/recorder/ffmpeg.ts, dynamic import will not move module into another chunk.
+2026-01-11T14:32:27.5826401Z [39m
+2026-01-11T14:32:28.0691210Z computing gzip size...
+2026-01-11T14:32:28.1613274Z [2m.svelte-kit/output/client/[22m[32m_app/version.json                                                                                         [39m[1m[2m    0.03 kB[22m[1m[22m[2m │ gzip:   0.05 kB[22m
+2026-01-11T14:32:28.1615906Z [2m.svelte-kit/output/client/[22m[32m_app/immutable/assets/sound_ex_machina_Button_Blip.Dn-O9tMD.mp3                                           [39m[1m[2m    7.99 kB[22m[1m[22m
+2026-01-11T14:32:28.1618221Z [2m.svelte-kit/output/client/[22m[32m_app/immutable/assets/zapsplat_household_alarm_clock_button_press_12967.EVrB84z2.mp3                      [39m[1m[2m    8.24 kB[22m[1m[22m
+2026-01-11T14:32:28.1620693Z [2m.svelte-kit/output/client/[22m[32m_app/immutable/assets/zapsplat_household_alarm_clock_large_snooze_button_press_002_12969.KDAq_YGQ.mp3     [39m[1m[2m   11.36 kB[22m[1m[22m
+2026-01-11T14:32:28.1623071Z [2m.svelte-kit/output/client/[22m[32m_app/immutable/assets/zapsplat_household_alarm_clock_large_snooze_button_press_001_12968.BFP5WLhc.mp3     [39m[1m[2m   13.61 kB[22m[1m[22m
+2026-01-11T14:32:28.1625613Z [2m.svelte-kit/output/client/[22m[32m_app/immutable/assets/zapsplat_multimedia_ui_notification_classic_bell_synth_success_107505.DPVaNW9n.mp3  [39m[1m[2m   20.91 kB[22m[1m[22m
+2026-01-11T14:32:28.1628108Z [2m.svelte-kit/output/client/[22m[32m_app/immutable/assets/zapsplat_multimedia_notification_alert_ping_bright_chime_001_93276.CjDHi2l_.mp3     [39m[1m[2m   28.85 kB[22m[1m[22m
+2026-01-11T14:32:28.1630257Z [2m.svelte-kit/output/client/[22m[32m.vite/manifest.json                                                                                       [39m[1m[2m   45.60 kB[22m[1m[22m[2m │ gzip:   5.10 kB[22m
+2026-01-11T14:32:28.1632958Z [2m.svelte-kit/output/client/[22m[35m_app/immutable/assets/index.CV-KWLNP.css                                                                  [39m[1m[2m    0.29 kB[22m[1m[22m[2m │ gzip:   0.15 kB[22m
+2026-01-11T14:32:28.1635348Z [2m.svelte-kit/output/client/[22m[35m_app/immutable/assets/index.iXTFhwRq.css                                                                  [39m[1m[2m    0.41 kB[22m[1m[22m[2m │ gzip:   0.22 kB[22m
+2026-01-11T14:32:28.1637383Z [2m.svelte-kit/output/client/[22m[35m_app/immutable/assets/OpenFolderButton.BUKjZNL4.css                                                       [39m[1m[2m    5.05 kB[22m[1m[22m[2m │ gzip:   0.96 kB[22m
+2026-01-11T14:32:28.1640138Z [2m.svelte-kit/output/client/[22m[35m_app/immutable/assets/0.BYeOJkNM.css                                                                      [39m[1m[2m  140.66 kB[22m[1m[22m[2m │ gzip:  22.60 kB[22m
+2026-01-11T14:32:28.1642212Z [2m.svelte-kit/output/client/[22m[36m_app/immutable/chunks/DVifwb59.js                                                                         [39m[1m[2m    0.04 kB[22m[1m[22m[2m │ gzip:   0.06 kB[22m
+2026-01-11T14:32:28.1644593Z [2m.svelte-kit/output/client/[22m[36m_app/immutable/chunks/DsnmJJEf.js                                                                         [39m[1m[2m    0.07 kB[22m[1m[22m[2m │ gzip:   0.08 kB[22m
+2026-01-11T14:32:28.1646560Z [2m.svelte-kit/output/client/[22m[36m_app/immutable/chunks/DENl-bZf.js                                                                         [39m[1m[2m    0.07 kB[22m[1m[22m[2m │ gzip:   0.09 kB[22m
+2026-01-11T14:32:28.1648046Z [2m.svelte-kit/output/client/[22m[36m_app/immutable/entry/start.CB1vnq9O.js                                                                    [39m[1m[2m    0.08 kB[22m[1m[22m[2m │ gzip:   0.09 kB[22m
+2026-01-11T14:32:28.1649492Z [2m.svelte-kit/output/client/[22m[36m_app/immutable/chunks/D2WO0TW0.js                                                                         [39m[1m[2m    0.13 kB[22m[1m[22m[2m │ gzip:   0.13 kB[22m
+2026-01-11T14:32:28.1651113Z [2m.svelte-kit/output/client/[22m[36m_app/immutable/chunks/B9GgAMux.js                                                                         [39m[1m[2m    0.15 kB[22m[1m[22m[2m │ gzip:   0.14 kB[22m
+2026-01-11T14:32:28.1652223Z [33m
+2026-01-11T14:32:28.1652583Z (!) Some chunks are larger than 500 kB after minification. Consider:
+2026-01-11T14:32:28.1653221Z - Using dynamic import() to code-split the application
+2026-01-11T14:32:28.1653993Z - Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
+2026-01-11T14:32:28.1654811Z - Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.[39m
+2026-01-11T14:32:28.1655788Z [2m.svelte-kit/output/client/[22m[36m_app/immutable/chunks/Aq65-32M.js                                                                         [39m[1m[2m    0.24 kB[22m[1m[22m[2m │ gzip:   0.21 kB[22m
+2026-01-11T14:32:28.1656979Z [2m.svelte-kit/output/client/[22m[36m_app/immutable/chunks/qa0y2wJ4.js                                                                         [39m[1m[2m    0.25 kB[22m[1m[22m[2m │ gzip:   0.21 kB[22m
+2026-01-11T14:32:28.1658137Z [2m.svelte-kit/output/client/[22m[36m_app/immutable/nodes/16.Bx4kVrsa.js                                                                       [39m[1m[2m    0.31 kB[22m[1m[22m[2m │ gzip:   0.22 kB[22m
+2026-01-11T14:32:28.1659296Z [2m.svelte-kit/output/client/[22m[36m_app/immutable/chunks/BJnxnoxM.js                                                                         [39m[1m[2m    0.34 kB[22m[1m[22m[2m │ gzip:   0.24 kB[22m
+2026-01-11T14:32:28.1660457Z [2m.svelte-kit/output/client/[22m[36m_app/immutable/chunks/Ru-RS2zw.js                                                                         [39m[1m[2m    0.35 kB[22m[1m[22m[2m │ gzip:   0.26 kB[22m
+2026-01-11T14:32:28.1661602Z [2m.svelte-kit/output/client/[22m[36m_app/immutable/chunks/Cfqab_jo.js                                                                         [39m[1m[2m    0.37 kB[22m[1m[22m[2m │ gzip:   0.28 kB[22m
+2026-01-11T14:32:28.1662749Z [2m.svelte-kit/output/client/[22m[36m_app/immutable/chunks/peHHClay.js                                                                         [39m[1m[2m    0.40 kB[22m[1m[22m[2m │ gzip:   0.28 kB[22m
+2026-01-11T14:32:28.1663899Z [2m.svelte-kit/output/client/[22m[36m_app/immutable/chunks/CbCBNH2S.js                                                                         [39m[1m[2m    0.44 kB[22m[1m[22m[2m │ gzip:   0.32 kB[22m
+2026-01-11T14:32:28.1665236Z [2m.svelte-kit/output/client/[22m[36m_app/immutable/chunks/UVTGBFYG.js                                                                         [39m[1m[2m    0.44 kB[22m[1m[22m[2m │ gzip:   0.33 kB[22m
+2026-01-11T14:32:28.1666377Z [2m.svelte-kit/output/client/[22m[36m_app/immutable/chunks/BbYmIZzi.js                                                                         [39m[1m[2m    0.45 kB[22m[1m[22m[2m │ gzip:   0.33 kB[22m
+2026-01-11T14:32:28.1667526Z [2m.svelte-kit/output/client/[22m[36m_app/immutable/chunks/-5UsVnZ1.js                                                                         [39m[1m[2m    0.47 kB[22m[1m[22m[2m │ gzip:   0.34 kB[22m
+2026-01-11T14:32:28.1668682Z [2m.svelte-kit/output/client/[22m[36m_app/immutable/chunks/vEN6qkYe.js                                                                         [39m[1m[2m    0.48 kB[22m[1m[22m[2m │ gzip:   0.35 kB[22m
+2026-01-11T14:32:28.1669835Z [2m.svelte-kit/output/client/[22m[36m_app/immutable/chunks/BKwWWy-t.js                                                                         [39m[1m[2m    0.50 kB[22m[1m[22m[2m │ gzip:   0.37 kB[22m
+2026-01-11T14:32:28.1671207Z [2m.svelte-kit/output/client/[22m[36m_app/immutable/chunks/B2Z5JCW0.js                                                                         [39m[1m[2m    0.51 kB[22m[1m[22m[2m │ gzip:   0.37 kB[22m
+2026-01-11T14:32:28.1672370Z [2m.svelte-kit/output/client/[22m[36m_app/immutable/chunks/CQXplsoz.js                                                                         [39m[1m[2m    0.52 kB[22m[1m[22m[2m │ gzip:   0.31 kB[22m
+2026-01-11T14:32:28.1673859Z [2m.svelte-kit/output/client/[22m[36m_app/immutable/chunks/BMOsIrM8.js                                                                         [39m[1m[2m    0.53 kB[22m[1m[22m[2m │ gzip:   0.34 kB[22m
+2026-01-11T14:32:28.1675004Z [2m.svelte-kit/output/client/[22m[36m_app/immutable/chunks/BUnQoApv.js                                                                         [39m[1m[2m    0.53 kB[22m[1m[22m[2m │ gzip:   0.37 kB[22m
+2026-01-11T14:32:28.1676139Z [2m.svelte-kit/output/client/[22m[36m_app/immutable/chunks/BL9vhuBK.js                                                                         [39m[1m[2m    0.53 kB[22m[1m[22m[2m │ gzip:   0.38 kB[22m
+2026-01-11T14:32:28.1677282Z [2m.svelte-kit/output/client/[22m[36m_app/immutable/chunks/DWBJvu0y.js                                                                         [39m[1m[2m    0.54 kB[22m[1m[22m[2m │ gzip:   0.38 kB[22m
+2026-01-11T14:32:28.1678453Z [2m.svelte-kit/output/client/[22m[36m_app/immutable/chunks/VUaPxDMp.js                                                                         [39m[1m[2m    0.56 kB[22m[1m[22m[2m │ gzip:   0.39 kB[22m
+2026-01-11T14:32:28.1679600Z [2m.svelte-kit/output/client/[22m[36m_app/immutable/chunks/CsAAn257.js                                                                         [39m[1m[2m    0.58 kB[22m[1m[22m[2m │ gzip:   0.41 kB[22m
+2026-01-11T14:32:28.1680747Z [2m.svelte-kit/output/client/[22m[36m_app/immutable/chunks/CXS60tNp.js                                                                         [39m[1m[2m    0.59 kB[22m[1m[22m[2m │ gzip:   0.39 kB[22m
+2026-01-11T14:32:28.1681898Z [2m.svelte-kit/output/client/[22m[36m_app/immutable/chunks/S0uk5XLW.js                                                                         [39m[1m[2m    0.59 kB[22m[1m[22m[2m │ gzip:   0.40 kB[22m
+2026-01-11T14:32:28.1683047Z [2m.svelte-kit/output/client/[22m[36m_app/immutable/chunks/C8tGa6YQ.js                                                                         [39m[1m[2m    0.60 kB[22m[1m[22m[2m │ gzip:   0.40 kB[22m
+2026-01-11T14:32:28.1684186Z [2m.svelte-kit/output/client/[22m[36m_app/immutable/chunks/CsTtgZ-m.js                                                                         [39m[1m[2m    0.60 kB[22m[1m[22m[2m │ gzip:   0.39 kB[22m
+2026-01-11T14:32:28.1685462Z [2m.svelte-kit/output/client/[22m[36m_app/immutable/chunks/D5rZ2I6S.js                                                                         [39m[1m[2m    0.61 kB[22m[1m[22m[2m │ gzip:   0.41 kB[22m
+2026-01-11T14:32:28.1686604Z [2m.svelte-kit/output/client/[22m[36m_app/immutable/chunks/DU0hdzU7.js                                                                         [39m[1m[2m    0.65 kB[22m[1m[22m[2m │ gzip:   0.42 kB[22m
+2026-01-11T14:32:28.1687748Z [2m.svelte-kit/output/client/[22m[36m_app/immutable/chunks/DEjsVLv_.js                                                                         [39m[1m[2m    0.70 kB[22m[1m[22m[2m │ gzip:   0.45 kB[22m
+2026-01-11T14:32:28.1689089Z [2m.svelte-kit/output/client/[22m[36m_app/immutable/chunks/DaqVU2IQ.js                                                                         [39m[1m[2m    0.71 kB[22m[1m[22m[2m │ gzip:   0.42 kB[22m
+2026-01-11T14:32:28.1690269Z [2m.svelte-kit/output/client/[22m[36m_app/immutable/chunks/BHxtTZhJ.js                                                                         [39m[1m[2m    0.72 kB[22m[1m[22m[2m │ gzip:   0.28 kB[22m
+2026-01-11T14:32:28.1691906Z [2m.svelte-kit/output/client/[22m[36m_app/immutable/chunks/CGv5qmwJ.js                                                                         [39m[1m[2m    0.75 kB[22m[1m[22m[2m │ gzip:   0.42 kB[22m
+2026-01-11T14:32:28.1693075Z [2m.svelte-kit/output/client/[22m[36m_app/immutable/chunks/DL6CL6Ro.js                                                                         [39m[1m[2m    0.77 kB[22m[1m[22m[2m │ gzip:   0.45 kB[22m
+2026-01-11T14:32:28.1694353Z [2m.svelte-kit/output/client/[22m[36m_app/immutable/chunks/DmGwB6_g.js                                                                         [39m[1m[2m    0.79 kB[22m[1m[22m[2m │ gzip:   0.44 kB[22m
+2026-01-11T14:32:28.1695501Z [2m.svelte-kit/output/client/[22m[36m_app/immutable/chunks/BmGxo1fL.js                                                                         [39m[1m[2m    0.80 kB[22m[1m[22m[2m │ gzip:   0.44 kB[22m
+2026-01-11T14:32:28.1696696Z [2m.svelte-kit/output/client/[22m[36m_app/immutable/chunks/ZB6tmK4l.js                                                                         [39m[1m[2m    0.85 kB[22m[1m[22m[2m │ gzip:   0.53 kB[22m
+2026-01-11T14:32:28.1697843Z [2m.svelte-kit/output/client/[22m[36m_app/immutable/chunks/CeQq-vtG.js                                                                         [39m[1m[2m    0.85 kB[22m[1m[22m[2m │ gzip:   0.49 kB[22m
+2026-01-11T14:32:28.1699003Z [2m.svelte-kit/output/client/[22m[36m_app/immutable/chunks/58hLDjmE.js                                                                         [39m[1m[2m    0.88 kB[22m[1m[22m[2m │ gzip:   0.53 kB[22m
+2026-01-11T14:32:28.1700146Z [2m.svelte-kit/output/client/[22m[36m_app/immutable/chunks/DGVc3d2_.js                                                                         [39m[1m[2m    0.93 kB[22m[1m[22m[2m │ gzip:   0.50 kB[22m
+2026-01-11T14:32:28.1701287Z [2m.svelte-kit/output/client/[22m[36m_app/immutable/chunks/B2qeERrW.js                                                                         [39m[1m[2m    1.02 kB[22m[1m[22m[2m │ gzip:   0.59 kB[22m
+2026-01-11T14:32:28.1702459Z [2m.svelte-kit/output/client/[22m[36m_app/immutable/chunks/D-ji3hW3.js                                                                         [39m[1m[2m    1.05 kB[22m[1m[22m[2m │ gzip:   0.52 kB[22m
+2026-01-11T14:32:28.1703610Z [2m.svelte-kit/output/client/[22m[36m_app/immutable/chunks/C1vcYHb5.js                                                                         [39m[1m[2m    1.09 kB[22m[1m[22m[2m │ gzip:   0.65 kB[22m
+2026-01-11T14:32:28.1704756Z [2m.svelte-kit/output/client/[22m[36m_app/immutable/chunks/BxAe5AOY.js                                                                         [39m[1m[2m    1.13 kB[22m[1m[22m[2m │ gzip:   0.63 kB[22m
+2026-01-11T14:32:28.1705975Z [2m.svelte-kit/output/client/[22m[36m_app/immutable/chunks/CkWqJry9.js                                                                         [39m[1m[2m    1.20 kB[22m[1m[22m[2m │ gzip:   0.73 kB[22m
+2026-01-11T14:32:28.1707105Z [2m.svelte-kit/output/client/[22m[36m_app/immutable/chunks/PPVm8Dsz.js                                                                         [39m[1m[2m    1.23 kB[22m[1m[22m[2m │ gzip:   0.71 kB[22m
+2026-01-11T14:32:28.1708248Z [2m.svelte-kit/output/client/[22m[36m_app/immutable/nodes/1.CQBmHUar.js                                                                        [39m[1m[2m    1.33 kB[22m[1m[22m[2m │ gzip:   0.72 kB[22m
+2026-01-11T14:32:28.1709573Z [2m.svelte-kit/output/client/[22m[36m_app/immutable/chunks/DSa3NDde.js                                                                         [39m[1m[2m    1.38 kB[22m[1m[22m[2m │ gzip:   0.66 kB[22m
+2026-01-11T14:32:28.1710742Z [2m.svelte-kit/output/client/[22m[36m_app/immutable/chunks/DoPxh5Zm.js                                                                         [39m[1m[2m    1.57 kB[22m[1m[22m[2m │ gzip:   0.67 kB[22m
+2026-01-11T14:32:28.1712074Z [2m.svelte-kit/output/client/[22m[36m_app/immutable/nodes/18.OglymxzZ.js                                                                       [39m[1m[2m    1.57 kB[22m[1m[22m[2m │ gzip:   0.87 kB[22m
+2026-01-11T14:32:28.1713219Z [2m.svelte-kit/output/client/[22m[36m_app/immutable/chunks/C6C0_b98.js                                                                         [39m[1m[2m    1.58 kB[22m[1m[22m[2m │ gzip:   0.80 kB[22m
+2026-01-11T14:32:28.1714475Z [2m.svelte-kit/output/client/[22m[36m_app/immutable/chunks/Dlj-yLMM.js                                                                         [39m[1m[2m    1.64 kB[22m[1m[22m[2m │ gzip:   0.57 kB[22m
+2026-01-11T14:32:28.1715625Z [2m.svelte-kit/output/client/[22m[36m_app/immutable/nodes/5.ClsfC11j.js                                                                        [39m[1m[2m    1.74 kB[22m[1m[22m[2m │ gzip:   0.97 kB[22m
+2026-01-11T14:32:28.1716774Z [2m.svelte-kit/output/client/[22m[36m_app/immutable/chunks/KgNXB6wm.js                                                                         [39m[1m[2m    1.77 kB[22m[1m[22m[2m │ gzip:   0.93 kB[22m
+2026-01-11T14:32:28.1718281Z [2m.svelte-kit/output/client/[22m[36m_app/immutable/chunks/ll87aFw1.js                                                                         [39m[1m[2m    1.79 kB[22m[1m[22m[2m │ gzip:   1.03 kB[22m
+2026-01-11T14:32:28.1720358Z [2m.svelte-kit/output/client/[22m[36m_app/immutable/chunks/DQBabX-a.js                                                                         [39m[1m[2m    1.85 kB[22m[1m[22m[2m │ gzip:   0.85 kB[22m
+2026-01-11T14:32:28.1722363Z [2m.svelte-kit/output/client/[22m[36m_app/immutable/chunks/C7fOUmWP.js                                                                         [39m[1m[2m    1.94 kB[22m[1m[22m[2m │ gzip:   0.78 kB[22m
+2026-01-11T14:32:28.1723630Z [2m.svelte-kit/output/client/[22m[36m_app/immutable/chunks/adVjvqxu.js                                                                         [39m[1m[2m    1.95 kB[22m[1m[22m[2m │ gzip:   0.94 kB[22m
+2026-01-11T14:32:28.1724782Z [2m.svelte-kit/output/client/[22m[36m_app/immutable/chunks/DjE69MYA.js                                                                         [39m[1m[2m    2.02 kB[22m[1m[22m[2m │ gzip:   0.91 kB[22m
+2026-01-11T14:32:28.1725945Z [2m.svelte-kit/output/client/[22m[36m_app/immutable/nodes/22.B4WnnlkO.js                                                                       [39m[1m[2m    2.11 kB[22m[1m[22m[2m │ gzip:   0.90 kB[22m
+2026-01-11T14:32:28.1727100Z [2m.svelte-kit/output/client/[22m[36m_app/immutable/nodes/8.ymAmyj_q.js                                                                        [39m[1m[2m    2.23 kB[22m[1m[22m[2m │ gzip:   1.16 kB[22m
+2026-01-11T14:32:28.1728473Z [2m.svelte-kit/output/client/[22m[36m_app/immutable/chunks/BTMjnQkj.js                                                                         [39m[1m[2m    2.28 kB[22m[1m[22m[2m │ gzip:   0.97 kB[22m
+2026-01-11T14:32:28.1729870Z [2m.svelte-kit/output/client/[22m[36m_app/immutable/chunks/BY3GRiHe.js                                                                         [39m[1m[2m    2.45 kB[22m[1m[22m[2m │ gzip:   1.15 kB[22m
+2026-01-11T14:32:28.1731015Z [2m.svelte-kit/output/client/[22m[36m_app/immutable/chunks/BF83JlDZ.js                                                                         [39m[1m[2m    2.50 kB[22m[1m[22m[2m │ gzip:   0.79 kB[22m
+2026-01-11T14:32:28.1732331Z [2m.svelte-kit/output/client/[22m[36m_app/immutable/chunks/D3QtW3RK.js                                                                         [39m[1m[2m    2.52 kB[22m[1m[22m[2m │ gzip:   1.06 kB[22m
+2026-01-11T14:32:28.1733478Z [2m.svelte-kit/output/client/[22m[36m_app/immutable/chunks/D5WlNec4.js                                                                         [39m[1m[2m    2.85 kB[22m[1m[22m[2m │ gzip:   1.34 kB[22m
+2026-01-11T14:32:28.1734617Z [2m.svelte-kit/output/client/[22m[36m_app/immutable/chunks/Cy_pOCjO.js                                                                         [39m[1m[2m    3.00 kB[22m[1m[22m[2m │ gzip:   1.48 kB[22m
+2026-01-11T14:32:28.1735772Z [2m.svelte-kit/output/client/[22m[36m_app/immutable/nodes/17.Bt9IQxZO.js                                                                       [39m[1m[2m    3.12 kB[22m[1m[22m[2m │ gzip:   1.57 kB[22m
+2026-01-11T14:32:28.1737724Z [2m.svelte-kit/output/client/[22m[36m_app/immutable/chunks/DL7UkdqP.js                                                                         [39m[1m[2m    3.20 kB[22m[1m[22m[2m │ gzip:   0.92 kB[22m
+2026-01-11T14:32:28.1738868Z [2m.svelte-kit/output/client/[22m[36m_app/immutable/nodes/23.CaxIZHGf.js                                                                       [39m[1m[2m    3.23 kB[22m[1m[22m[2m │ gzip:   1.62 kB[22m
+2026-01-11T14:32:28.1740003Z [2m.svelte-kit/output/client/[22m[36m_app/immutable/chunks/B736YeBY.js                                                                         [39m[1m[2m    3.38 kB[22m[1m[22m[2m │ gzip:   1.36 kB[22m
+2026-01-11T14:32:28.1741164Z [2m.svelte-kit/output/client/[22m[36m_app/immutable/nodes/14.CSBf0AGt.js                                                                       [39m[1m[2m    3.54 kB[22m[1m[22m[2m │ gzip:   1.04 kB[22m
+2026-01-11T14:32:28.1742312Z [2m.svelte-kit/output/client/[22m[36m_app/immutable/chunks/CG_PWw1p.js                                                                         [39m[1m[2m    3.72 kB[22m[1m[22m[2m │ gzip:   1.07 kB[22m
+2026-01-11T14:32:28.1743466Z [2m.svelte-kit/output/client/[22m[36m_app/immutable/nodes/7.C_GbHoGn.js                                                                        [39m[1m[2m    3.98 kB[22m[1m[22m[2m │ gzip:   1.67 kB[22m
+2026-01-11T14:32:28.1744615Z [2m.svelte-kit/output/client/[22m[36m_app/immutable/chunks/e6pC_DwU.js                                                                         [39m[1m[2m    4.52 kB[22m[1m[22m[2m │ gzip:   1.47 kB[22m
+2026-01-11T14:32:28.1745759Z [2m.svelte-kit/output/client/[22m[36m_app/immutable/chunks/CO0gRJOf.js                                                                         [39m[1m[2m    4.61 kB[22m[1m[22m[2m │ gzip:   2.20 kB[22m
+2026-01-11T14:32:28.1746923Z [2m.svelte-kit/output/client/[22m[36m_app/immutable/chunks/ram6CRop.js                                                                         [39m[1m[2m    5.35 kB[22m[1m[22m[2m │ gzip:   2.03 kB[22m
+2026-01-11T14:32:28.1748059Z [2m.svelte-kit/output/client/[22m[36m_app/immutable/nodes/4.BAOPoa29.js                                                                        [39m[1m[2m    5.44 kB[22m[1m[22m[2m │ gzip:   2.41 kB[22m
+2026-01-11T14:32:28.1749517Z [2m.svelte-kit/output/client/[22m[36m_app/immutable/nodes/10.DJmPu7zt.js                                                                       [39m[1m[2m    5.51 kB[22m[1m[22m[2m │ gzip:   2.23 kB[22m
+2026-01-11T14:32:28.1750668Z [2m.svelte-kit/output/client/[22m[36m_app/immutable/chunks/CCVtUGfC.js                                                                         [39m[1m[2m    5.67 kB[22m[1m[22m[2m │ gzip:   2.29 kB[22m
+2026-01-11T14:32:28.1752076Z [2m.svelte-kit/output/client/[22m[36m_app/immutable/chunks/DNYGPHLC.js                                                                         [39m[1m[2m    5.81 kB[22m[1m[22m[2m │ gzip:   2.49 kB[22m
+2026-01-11T14:32:28.1753224Z [2m.svelte-kit/output/client/[22m[36m_app/immutable/nodes/19.C6IHGIjo.js                                                                       [39m[1m[2m    6.18 kB[22m[1m[22m[2m │ gzip:   1.28 kB[22m
+2026-01-11T14:32:28.1754359Z [2m.svelte-kit/output/client/[22m[36m_app/immutable/chunks/C06Xcf-U.js                                                                         [39m[1m[2m    7.01 kB[22m[1m[22m[2m │ gzip:   2.53 kB[22m
+2026-01-11T14:32:28.1755485Z [2m.svelte-kit/output/client/[22m[36m_app/immutable/chunks/DZSWu5WP.js                                                                         [39m[1m[2m    7.15 kB[22m[1m[22m[2m │ gzip:   2.56 kB[22m
+2026-01-11T14:32:28.1756621Z [2m.svelte-kit/output/client/[22m[36m_app/immutable/nodes/3.DLwXgpYg.js                                                                        [39m[1m[2m    7.16 kB[22m[1m[22m[2m │ gzip:   2.74 kB[22m
+2026-01-11T14:32:28.1757882Z [2m.svelte-kit/output/client/[22m[36m_app/immutable/nodes/13.DF3ch7Q-.js                                                                       [39m[1m[2m    7.23 kB[22m[1m[22m[2m │ gzip:   2.24 kB[22m
+2026-01-11T14:32:28.1759033Z [2m.svelte-kit/output/client/[22m[36m_app/immutable/chunks/Dh66EGR7.js                                                                         [39m[1m[2m    8.16 kB[22m[1m[22m[2m │ gzip:   2.79 kB[22m
+2026-01-11T14:32:28.1760181Z [2m.svelte-kit/output/client/[22m[36m_app/immutable/chunks/RedivjyA.js                                                                         [39m[1m[2m    8.63 kB[22m[1m[22m[2m │ gzip:   2.55 kB[22m
+2026-01-11T14:32:28.1761332Z [2m.svelte-kit/output/client/[22m[36m_app/immutable/chunks/BS8WCwP6.js                                                                         [39m[1m[2m    9.87 kB[22m[1m[22m[2m │ gzip:   3.66 kB[22m
+2026-01-11T14:32:28.1762472Z [2m.svelte-kit/output/client/[22m[36m_app/immutable/chunks/B2_NIXuD.js                                                                         [39m[1m[2m    9.99 kB[22m[1m[22m[2m │ gzip:   3.20 kB[22m
+2026-01-11T14:32:28.1763634Z [2m.svelte-kit/output/client/[22m[36m_app/immutable/entry/app.i1w9tjq5.js                                                                      [39m[1m[2m   13.47 kB[22m[1m[22m[2m │ gzip:   4.41 kB[22m
+2026-01-11T14:32:28.1764776Z [2m.svelte-kit/output/client/[22m[36m_app/immutable/nodes/9.D50SlJ_Q.js                                                                        [39m[1m[2m   14.38 kB[22m[1m[22m[2m │ gzip:   4.91 kB[22m
+2026-01-11T14:32:28.1765919Z [2m.svelte-kit/output/client/[22m[36m_app/immutable/nodes/21.Ch6J2UUs.js                                                                       [39m[1m[2m   17.58 kB[22m[1m[22m[2m │ gzip:   5.90 kB[22m
+2026-01-11T14:32:28.1767075Z [2m.svelte-kit/output/client/[22m[36m_app/immutable/chunks/CnWf7xwi.js                                                                         [39m[1m[2m   19.92 kB[22m[1m[22m[2m │ gzip:   6.71 kB[22m
+2026-01-11T14:32:28.1768217Z [2m.svelte-kit/output/client/[22m[36m_app/immutable/nodes/12.DQDSFbYn.js                                                                       [39m[1m[2m   20.02 kB[22m[1m[22m[2m │ gzip:   5.63 kB[22m
+2026-01-11T14:32:28.1769630Z [2m.svelte-kit/output/client/[22m[36m_app/immutable/nodes/6.Z5gcvZnE.js                                                                        [39m[1m[2m   22.47 kB[22m[1m[22m[2m │ gzip:   7.96 kB[22m
+2026-01-11T14:32:28.1770771Z [2m.svelte-kit/output/client/[22m[36m_app/immutable/chunks/mGHzijGy.js                                                                         [39m[1m[2m   23.66 kB[22m[1m[22m[2m │ gzip:   6.85 kB[22m
+2026-01-11T14:32:28.1772084Z [2m.svelte-kit/output/client/[22m[36m_app/immutable/nodes/0.D5UxfaRq.js                                                                        [39m[1m[2m   25.77 kB[22m[1m[22m[2m │ gzip:   9.63 kB[22m
+2026-01-11T14:32:28.1773232Z [2m.svelte-kit/output/client/[22m[36m_app/immutable/chunks/Bm1QLgbG.js                                                                         [39m[1m[2m   26.36 kB[22m[1m[22m[2m │ gzip:   9.71 kB[22m
+2026-01-11T14:32:28.1774372Z [2m.svelte-kit/output/client/[22m[36m_app/immutable/chunks/DEhkbEEc.js                                                                         [39m[1m[2m   28.08 kB[22m[1m[22m[2m │ gzip:  11.04 kB[22m
+2026-01-11T14:32:28.1775506Z [2m.svelte-kit/output/client/[22m[36m_app/immutable/chunks/BL_eIzS5.js                                                                         [39m[1m[2m   28.11 kB[22m[1m[22m[2m │ gzip:   7.84 kB[22m
+2026-01-11T14:32:28.1776663Z [2m.svelte-kit/output/client/[22m[36m_app/immutable/chunks/DguXB68U.js                                                                         [39m[1m[2m   32.94 kB[22m[1m[22m[2m │ gzip:   9.91 kB[22m
+2026-01-11T14:32:28.1777923Z [2m.svelte-kit/output/client/[22m[36m_app/immutable/chunks/C27U4xB3.js                                                                         [39m[1m[2m   34.07 kB[22m[1m[22m[2m │ gzip:   8.75 kB[22m
+2026-01-11T14:32:28.1779063Z [2m.svelte-kit/output/client/[22m[36m_app/immutable/chunks/Bhd1RMQ-.js                                                                         [39m[1m[2m   34.28 kB[22m[1m[22m[2m │ gzip:  10.52 kB[22m
+2026-01-11T14:32:28.1780194Z [2m.svelte-kit/output/client/[22m[36m_app/immutable/chunks/6c82RQUR.js                                                                         [39m[1m[2m   34.88 kB[22m[1m[22m[2m │ gzip:  13.34 kB[22m
+2026-01-11T14:32:28.1781328Z [2m.svelte-kit/output/client/[22m[36m_app/immutable/nodes/11.BOb_eUvP.js                                                                       [39m[1m[2m   35.70 kB[22m[1m[22m[2m │ gzip:  11.03 kB[22m
+2026-01-11T14:32:28.1782475Z [2m.svelte-kit/output/client/[22m[36m_app/immutable/nodes/15.b6C-cyiX.js                                                                       [39m[1m[2m   36.45 kB[22m[1m[22m[2m │ gzip:  10.31 kB[22m
+2026-01-11T14:32:28.1783621Z [2m.svelte-kit/output/client/[22m[36m_app/immutable/chunks/DdLlvnub.js                                                                         [39m[1m[2m   38.88 kB[22m[1m[22m[2m │ gzip:  12.17 kB[22m
+2026-01-11T14:32:28.1784758Z [2m.svelte-kit/output/client/[22m[36m_app/immutable/nodes/20.BVcOyBR2.js                                                                       [39m[1m[2m   61.92 kB[22m[1m[22m[2m │ gzip:  16.91 kB[22m
+2026-01-11T14:32:28.1785887Z [2m.svelte-kit/output/client/[22m[36m_app/immutable/chunks/CSGFvg2x.js                                                                         [39m[1m[2m   68.15 kB[22m[1m[22m[2m │ gzip:  19.72 kB[22m
+2026-01-11T14:32:28.1787028Z [2m.svelte-kit/output/client/[22m[36m_app/immutable/chunks/3ktBJoHV.js                                                                         [39m[1m[2m   96.39 kB[22m[1m[22m[2m │ gzip:  27.53 kB[22m
+2026-01-11T14:32:28.1788244Z [2m.svelte-kit/output/client/[22m[36m_app/immutable/nodes/2.ZZdc_w6u.js                                                                        [39m[1m[2m  100.03 kB[22m[1m[22m[2m │ gzip:  32.79 kB[22m
+2026-01-11T14:32:28.1789535Z [2m.svelte-kit/output/client/[22m[36m_app/immutable/chunks/DFjI8itG.js                                                                         [39m[1m[2m  124.78 kB[22m[1m[22m[2m │ gzip:  39.61 kB[22m
+2026-01-11T14:32:28.1790690Z [2m.svelte-kit/output/client/[22m[36m_app/immutable/chunks/C6Uz1frT.js                                                                         [39m[1m[33m3,567.68 kB[39m[22m[2m │ gzip: 670.88 kB[22m
+2026-01-11T14:32:28.1791365Z [32m✓ built in 23.97s[39m
+2026-01-11T14:32:28.8202581Z [2m.svelte-kit/output/server/[22m[32m_app/immutable/assets/sound_ex_machina_Button_Blip.Dn-O9tMD.mp3                                           [39m[1m[2m  7.99 kB[22m[1m[22m
+2026-01-11T14:32:28.8205264Z [2m.svelte-kit/output/server/[22m[32m_app/immutable/assets/zapsplat_household_alarm_clock_button_press_12967.EVrB84z2.mp3                      [39m[1m[2m  8.24 kB[22m[1m[22m
+2026-01-11T14:32:28.8207702Z [2m.svelte-kit/output/server/[22m[32m_app/immutable/assets/zapsplat_household_alarm_clock_large_snooze_button_press_002_12969.KDAq_YGQ.mp3     [39m[1m[2m 11.36 kB[22m[1m[22m
+2026-01-11T14:32:28.8210206Z [2m.svelte-kit/output/server/[22m[32m_app/immutable/assets/zapsplat_household_alarm_clock_large_snooze_button_press_001_12968.BFP5WLhc.mp3     [39m[1m[2m 13.61 kB[22m[1m[22m
+2026-01-11T14:32:28.8212741Z [2m.svelte-kit/output/server/[22m[32m_app/immutable/assets/zapsplat_multimedia_ui_notification_classic_bell_synth_success_107505.DPVaNW9n.mp3  [39m[1m[2m 20.91 kB[22m[1m[22m
+2026-01-11T14:32:28.8215514Z [2m.svelte-kit/output/server/[22m[32m_app/immutable/assets/zapsplat_multimedia_notification_alert_ping_bright_chime_001_93276.CjDHi2l_.mp3     [39m[1m[2m 28.85 kB[22m[1m[22m
+2026-01-11T14:32:28.8220890Z [2m.svelte-kit/output/server/[22m[32m.vite/manifest.json                                                                                       [39m[1m[2m 37.32 kB[22m[1m[22m
+2026-01-11T14:32:28.8224638Z [2m.svelte-kit/output/server/[22m[35m_app/immutable/assets/index.CV-KWLNP.css                                                                  [39m[1m[2m  0.29 kB[22m[1m[22m
+2026-01-11T14:32:28.8227519Z [2m.svelte-kit/output/server/[22m[35m_app/immutable/assets/index.iXTFhwRq.css                                                                  [39m[1m[2m  0.41 kB[22m[1m[22m
+2026-01-11T14:32:28.8230624Z [2m.svelte-kit/output/server/[22m[35m_app/immutable/assets/OpenFolderButton.CntrDe9B.css                                                       [39m[1m[2m  5.01 kB[22m[1m[22m
+2026-01-11T14:32:28.8233220Z [2m.svelte-kit/output/server/[22m[35m_app/immutable/assets/_layout.DsQB8Jkt.css                                                                [39m[1m[2m140.63 kB[22m[1m[22m
+2026-01-11T14:32:28.8235548Z [2m.svelte-kit/output/server/[22m[36mentries/pages/_layout.ts.js                                                                               [39m[1m[2m  0.04 kB[22m[1m[22m
+2026-01-11T14:32:28.8238475Z [2m.svelte-kit/output/server/[22m[36mchunks/false.js                                                                                           [39m[1m[2m  0.05 kB[22m[1m[22m
+2026-01-11T14:32:28.8240097Z [2m.svelte-kit/output/server/[22m[36mchunks/html.js                                                                                            [39m[1m[2m  0.14 kB[22m[1m[22m
+2026-01-11T14:32:28.8242438Z [2m.svelte-kit/output/server/[22m[36mentries/pages/(app)/(config)/settings/recording/_page.ts.js                                               [39m[1m[2m  0.27 kB[22m[1m[22m
+2026-01-11T14:32:28.8244440Z [2m.svelte-kit/output/server/[22m[36mentries/pages/(app)/(config)/settings/transcription/_page.ts.js                                           [39m[1m[2m  0.27 kB[22m[1m[22m
+2026-01-11T14:32:28.8246531Z [2m.svelte-kit/output/server/[22m[36minternal.js                                                                                               [39m[1m[2m  0.33 kB[22m[1m[22m
+2026-01-11T14:32:28.8248348Z [2m.svelte-kit/output/server/[22m[36mentries/pages/(app)/(config)/settings/shortcuts/_page.svelte.js                                           [39m[1m[2m  0.38 kB[22m[1m[22m
+2026-01-11T14:32:28.8249429Z [2m.svelte-kit/output/server/[22m[36mchunks/sr-only-styles.js                                                                                  [39m[1m[2m  0.41 kB[22m[1m[22m
+2026-01-11T14:32:28.8250428Z [2m.svelte-kit/output/server/[22m[36mchunks/state.svelte.js                                                                                    [39m[1m[2m  0.42 kB[22m[1m[22m
+2026-01-11T14:32:28.8251369Z [2m.svelte-kit/output/server/[22m[36mchunks/index3.js                                                                                          [39m[1m[2m  0.43 kB[22m[1m[22m
+2026-01-11T14:32:28.8252322Z [2m.svelte-kit/output/server/[22m[36mchunks/createCopyFn.js                                                                                    [39m[1m[2m  0.57 kB[22m[1m[22m
+2026-01-11T14:32:28.8253284Z [2m.svelte-kit/output/server/[22m[36mchunks/environment.js                                                                                     [39m[1m[2m  0.62 kB[22m[1m[22m
+2026-01-11T14:32:28.8254308Z [2m.svelte-kit/output/server/[22m[36mchunks/card-footer.js                                                                                     [39m[1m[2m  0.66 kB[22m[1m[22m
+2026-01-11T14:32:28.8255477Z [2m.svelte-kit/output/server/[22m[36mchunks/client.js                                                                                          [39m[1m[2m  0.68 kB[22m[1m[22m
+2026-01-11T14:32:28.8256412Z [2m.svelte-kit/output/server/[22m[36mchunks/card.js                                                                                            [39m[1m[2m  0.68 kB[22m[1m[22m
+2026-01-11T14:32:28.8257373Z [2m.svelte-kit/output/server/[22m[36mchunks/field-content.js                                                                                   [39m[1m[2m  0.69 kB[22m[1m[22m
+2026-01-11T14:32:28.8258596Z [2m.svelte-kit/output/server/[22m[36mchunks/field-group.js                                                                                     [39m[1m[2m  0.75 kB[22m[1m[22m
+2026-01-11T14:32:28.8259700Z [2m.svelte-kit/output/server/[22m[36mchunks/hidden-input.js                                                                                    [39m[1m[2m  0.92 kB[22m[1m[22m
+2026-01-11T14:32:28.8261050Z [2m.svelte-kit/output/server/[22m[36mchunks/useQueryClient.js                                                                                  [39m[1m[2m  0.93 kB[22m[1m[22m
+2026-01-11T14:32:28.8262070Z [2m.svelte-kit/output/server/[22m[36mchunks/kbd.js                                                                                             [39m[1m[2m  0.96 kB[22m[1m[22m
+2026-01-11T14:32:28.8263021Z [2m.svelte-kit/output/server/[22m[36mchunks/TranscriptDialog.js                                                                                [39m[1m[2m  0.98 kB[22m[1m[22m
+2026-01-11T14:32:28.8264095Z [2m.svelte-kit/output/server/[22m[36mentries/pages/(app)/(config)/macos-enable-accessibility/_page.ts.js                                       [39m[1m[2m  1.02 kB[22m[1m[22m
+2026-01-11T14:32:28.8265137Z [2m.svelte-kit/output/server/[22m[36mchunks/utils2.js                                                                                          [39m[1m[2m  1.05 kB[22m[1m[22m
+2026-01-11T14:32:28.8266093Z [2m.svelte-kit/output/server/[22m[36mchunks/CopyablePre.js                                                                                     [39m[1m[2m  1.08 kB[22m[1m[22m
+2026-01-11T14:32:28.8267506Z [2m.svelte-kit/output/server/[22m[36mchunks/utils.js                                                                                           [39m[1m[2m  1.15 kB[22m[1m[22m
+2026-01-11T14:32:28.8268469Z [2m.svelte-kit/output/server/[22m[36mchunks/textarea.js                                                                                        [39m[1m[2m  1.21 kB[22m[1m[22m
+2026-01-11T14:32:28.8269430Z [2m.svelte-kit/output/server/[22m[36mchunks/tooltip-provider.js                                                                                [39m[1m[2m  1.25 kB[22m[1m[22m
+2026-01-11T14:32:28.8270685Z [2m.svelte-kit/output/server/[22m[36mchunks/check.js                                                                                           [39m[1m[2m  1.43 kB[22m[1m[22m
+2026-01-11T14:32:28.8272306Z [2m.svelte-kit/output/server/[22m[36mchunks/index.js                                                                                           [39m[1m[2m  1.44 kB[22m[1m[22m
+2026-01-11T14:32:28.8273912Z [2m.svelte-kit/output/server/[22m[36mchunks/circle.js                                                                                          [39m[1m[2m  1.46 kB[22m[1m[22m
+2026-01-11T14:32:28.8274956Z [2m.svelte-kit/output/server/[22m[36mchunks/chevron-down.js                                                                                    [39m[1m[2m  1.46 kB[22m[1m[22m
+2026-01-11T14:32:28.8275935Z [2m.svelte-kit/output/server/[22m[36mentries/pages/_error.svelte.js                                                                            [39m[1m[2m  1.48 kB[22m[1m[22m
+2026-01-11T14:32:28.8277106Z [2m.svelte-kit/output/server/[22m[36mchunks/check-ffmpeg.js                                                                                    [39m[1m[2m  1.50 kB[22m[1m[22m
+2026-01-11T14:32:28.8278301Z [2m.svelte-kit/output/server/[22m[36mchunks/Icon.js                                                                                            [39m[1m[2m  1.53 kB[22m[1m[22m
+2026-01-11T14:32:28.8279415Z [2m.svelte-kit/output/server/[22m[36mchunks/arrow-left.js                                                                                      [39m[1m[2m  1.54 kB[22m[1m[22m
+2026-01-11T14:32:28.8280365Z [2m.svelte-kit/output/server/[22m[36mchunks/search.js                                                                                          [39m[1m[2m  1.56 kB[22m[1m[22m
+2026-01-11T14:32:28.8281341Z [2m.svelte-kit/output/server/[22m[36mchunks/circle-check-big.js                                                                                [39m[1m[2m  1.62 kB[22m[1m[22m
+2026-01-11T14:32:28.8282967Z [2m.svelte-kit/output/server/[22m[36mchunks/rotate-ccw.js                                                                                      [39m[1m[2m  1.64 kB[22m[1m[22m
+2026-01-11T14:32:28.8285007Z [2m.svelte-kit/output/server/[22m[36mchunks/field.js                                                                                           [39m[1m[2m  1.65 kB[22m[1m[22m
+2026-01-11T14:32:28.8286267Z [2m.svelte-kit/output/server/[22m[36mchunks/download.js                                                                                        [39m[1m[2m  1.67 kB[22m[1m[22m
+2026-01-11T14:32:28.8287442Z [2m.svelte-kit/output/server/[22m[36mchunks/link.js                                                                                            [39m[1m[2m  1.70 kB[22m[1m[22m
+2026-01-11T14:32:28.8288680Z [2m.svelte-kit/output/server/[22m[36mchunks/mic.js                                                                                             [39m[1m[2m  1.71 kB[22m[1m[22m
+2026-01-11T14:32:28.8289929Z [2m.svelte-kit/output/server/[22m[36mchunks/mode.js                                                                                            [39m[1m[2m  1.74 kB[22m[1m[22m
+2026-01-11T14:32:28.8291144Z [2m.svelte-kit/output/server/[22m[36mchunks/external-link.js                                                                                   [39m[1m[2m  1.77 kB[22m[1m[22m
+2026-01-11T14:32:28.8292321Z [2m.svelte-kit/output/server/[22m[36mchunks/pencil.js                                                                                          [39m[1m[2m  1.83 kB[22m[1m[22m
+2026-01-11T14:32:28.8293276Z [2m.svelte-kit/output/server/[22m[36mchunks/folder-open.js                                                                                     [39m[1m[2m  1.90 kB[22m[1m[22m
+2026-01-11T14:32:28.8294245Z [2m.svelte-kit/output/server/[22m[36mchunks/refresh-cw.js                                                                                      [39m[1m[2m  1.91 kB[22m[1m[22m
+2026-01-11T14:32:28.8295540Z [2m.svelte-kit/output/server/[22m[36mchunks/display-labels.js                                                                                  [39m[1m[2m  1.95 kB[22m[1m[22m
+2026-01-11T14:32:28.8296626Z [2m.svelte-kit/output/server/[22m[36mentries/pages/(app)/(config)/settings/shortcuts/_layout.svelte.js                                         [39m[1m[2m  1.99 kB[22m[1m[22m
+2026-01-11T14:32:28.8297758Z [2m.svelte-kit/output/server/[22m[36mentries/pages/(app)/(config)/settings/shortcuts/local/_page.svelte.js                                     [39m[1m[2m  2.06 kB[22m[1m[22m
+2026-01-11T14:32:28.8299191Z [2m.svelte-kit/output/server/[22m[36mchunks/dialog-trigger.js                                                                                  [39m[1m[2m  2.16 kB[22m[1m[22m
+2026-01-11T14:32:28.8300519Z [2m.svelte-kit/output/server/[22m[36mchunks/input.js                                                                                           [39m[1m[2m  2.20 kB[22m[1m[22m
+2026-01-11T14:32:28.8301718Z [2m.svelte-kit/output/server/[22m[36mchunks/layers.js                                                                                          [39m[1m[2m  2.23 kB[22m[1m[22m
+2026-01-11T14:32:28.8302657Z [2m.svelte-kit/output/server/[22m[36mchunks/clone.js                                                                                           [39m[1m[2m  2.32 kB[22m[1m[22m
+2026-01-11T14:32:28.8303600Z [2m.svelte-kit/output/server/[22m[36mchunks/card-title.js                                                                                      [39m[1m[2m  2.33 kB[22m[1m[22m
+2026-01-11T14:32:28.8304822Z [2m.svelte-kit/output/server/[22m[36mchunks/settings.js                                                                                        [39m[1m[2m  2.34 kB[22m[1m[22m
+2026-01-11T14:32:28.8305765Z [2m.svelte-kit/output/server/[22m[36mchunks/badge.js                                                                                           [39m[1m[2m  2.34 kB[22m[1m[22m
+2026-01-11T14:32:28.8306693Z [2m.svelte-kit/output/server/[22m[36mchunks/field-label.js                                                                                     [39m[1m[2m  2.42 kB[22m[1m[22m
+2026-01-11T14:32:28.8307634Z [2m.svelte-kit/output/server/[22m[36mchunks/field-set.js                                                                                       [39m[1m[2m  2.47 kB[22m[1m[22m
+2026-01-11T14:32:28.8308841Z [2m.svelte-kit/output/server/[22m[36mchunks/ChromeWebStore.js                                                                                  [39m[1m[2m  2.60 kB[22m[1m[22m
+2026-01-11T14:32:28.8309804Z [2m.svelte-kit/output/server/[22m[36mchunks/label.js                                                                                           [39m[1m[2m  3.03 kB[22m[1m[22m
+2026-01-11T14:32:28.8310752Z [2m.svelte-kit/output/server/[22m[36mchunks/viewTransitions.js                                                                                 [39m[1m[2m  3.24 kB[22m[1m[22m
+2026-01-11T14:32:28.8311710Z [2m.svelte-kit/output/server/[22m[36mchunks/separator.js                                                                                       [39m[1m[2m  3.27 kB[22m[1m[22m
+2026-01-11T14:32:28.8312823Z [2m.svelte-kit/output/server/[22m[36mchunks/table-row.js                                                                                       [39m[1m[2m  3.54 kB[22m[1m[22m
+2026-01-11T14:32:28.8313857Z [2m.svelte-kit/output/server/[22m[36mentries/pages/(app)/(config)/global-shortcut/_page.svelte.js                                              [39m[1m[2m  3.90 kB[22m[1m[22m
+2026-01-11T14:32:28.8314892Z [2m.svelte-kit/output/server/[22m[36mchunks/progress.js                                                                                        [39m[1m[2m  3.94 kB[22m[1m[22m
+2026-01-11T14:32:28.8315897Z [2m.svelte-kit/output/server/[22m[36mchunks/createMutation.svelte.js                                                                           [39m[1m[2m  4.26 kB[22m[1m[22m
+2026-01-11T14:32:28.8316981Z [2m.svelte-kit/output/server/[22m[36mentries/pages/(app)/(config)/transformations/new/_page.svelte.js                                          [39m[1m[2m  4.45 kB[22m[1m[22m
+2026-01-11T14:32:28.8318112Z [2m.svelte-kit/output/server/[22m[36mentries/pages/transform-clipboard/_page.svelte.js                                                         [39m[1m[2m  5.24 kB[22m[1m[22m
+2026-01-11T14:32:28.8319660Z [2m.svelte-kit/output/server/[22m[36mentries/pages/(app)/(config)/settings/shortcuts/global/_page.svelte.js                                    [39m[1m[2m  5.29 kB[22m[1m[22m
+2026-01-11T14:32:28.8320716Z [2m.svelte-kit/output/server/[22m[36mchunks/exports.js                                                                                         [39m[1m[2m  5.52 kB[22m[1m[22m
+2026-01-11T14:32:28.8321803Z [2m.svelte-kit/output/server/[22m[36mchunks/copy-button.js                                                                                     [39m[1m[2m  6.09 kB[22m[1m[22m
+2026-01-11T14:32:28.8322821Z [2m.svelte-kit/output/server/[22m[36mchunks/TransformationPickerBody.js                                                                        [39m[1m[2m  6.11 kB[22m[1m[22m
+2026-01-11T14:32:28.8323895Z [2m.svelte-kit/output/server/[22m[36mentries/pages/(app)/(config)/settings/_layout.svelte.js                                                   [39m[1m[2m  6.17 kB[22m[1m[22m
+2026-01-11T14:32:28.8324994Z [2m.svelte-kit/output/server/[22m[36mentries/pages/(app)/(config)/desktop-app/_page.svelte.js                                                  [39m[1m[2m  7.19 kB[22m[1m[22m
+2026-01-11T14:32:28.8326050Z [2m.svelte-kit/output/server/[22m[36mchunks/MistralApiKeyInput.js                                                                              [39m[1m[2m  7.31 kB[22m[1m[22m
+2026-01-11T14:32:28.8327059Z [2m.svelte-kit/output/server/[22m[36mchunks/OpenAiApiKeyInput.js                                                                               [39m[1m[2m  8.58 kB[22m[1m[22m
+2026-01-11T14:32:28.8328152Z [2m.svelte-kit/output/server/[22m[36mentries/pages/(app)/(config)/macos-enable-accessibility/_page.svelte.js                                   [39m[1m[2m  8.61 kB[22m[1m[22m
+2026-01-11T14:32:28.8329246Z [2m.svelte-kit/output/server/[22m[36mchunks/switch.js                                                                                          [39m[1m[2m  8.75 kB[22m[1m[22m
+2026-01-11T14:32:28.8330205Z [2m.svelte-kit/output/server/[22m[36mchunks/CompressionBody.js                                                                                 [39m[1m[2m  9.43 kB[22m[1m[22m
+2026-01-11T14:32:28.8331205Z [2m.svelte-kit/output/server/[22m[36mchunks/TextPreviewDialog.js                                                                               [39m[1m[2m  9.58 kB[22m[1m[22m
+2026-01-11T14:32:28.8332254Z [2m.svelte-kit/output/server/[22m[36mentries/pages/(app)/(config)/settings/api-keys/_page.svelte.js                                            [39m[1m[2m  9.68 kB[22m[1m[22m
+2026-01-11T14:32:28.8333412Z [2m.svelte-kit/output/server/[22m[36mchunks/OpenRouterApiKeyInput.js                                                                           [39m[1m[2m 10.02 kB[22m[1m[22m
+2026-01-11T14:32:28.8334490Z [2m.svelte-kit/output/server/[22m[36mentries/pages/(app)/(config)/settings/analytics/_page.svelte.js                                           [39m[1m[2m 10.44 kB[22m[1m[22m
+2026-01-11T14:32:28.8335528Z [2m.svelte-kit/output/server/[22m[36mchunks/index6.js                                                                                          [39m[1m[2m 12.87 kB[22m[1m[22m
+2026-01-11T14:32:28.8336483Z [2m.svelte-kit/output/server/[22m[36mchunks/checkbox.js                                                                                        [39m[1m[2m 12.87 kB[22m[1m[22m
+2026-01-11T14:32:28.8337435Z [2m.svelte-kit/output/server/[22m[36mchunks/index5.js                                                                                          [39m[1m[2m 13.51 kB[22m[1m[22m
+2026-01-11T14:32:28.8338613Z [2m.svelte-kit/output/server/[22m[36mentries/pages/(app)/(config)/_layout.svelte.js                                                            [39m[1m[2m 14.51 kB[22m[1m[22m
+2026-01-11T14:32:28.8339816Z [2m.svelte-kit/output/server/[22m[36mchunks/tabs-trigger.js                                                                                    [39m[1m[2m 15.22 kB[22m[1m[22m
+2026-01-11T14:32:28.8340868Z [2m.svelte-kit/output/server/[22m[36mentries/pages/(app)/(config)/settings/sound/_page.svelte.js                                               [39m[1m[2m 16.76 kB[22m[1m[22m
+2026-01-11T14:32:28.8342014Z [2m.svelte-kit/output/server/[22m[36mremote-entry.js                                                                                           [39m[1m[2m 18.85 kB[22m[1m[22m
+2026-01-11T14:32:28.8342962Z [2m.svelte-kit/output/server/[22m[36mchunks/createQuery.js                                                                                     [39m[1m[2m 20.06 kB[22m[1m[22m
+2026-01-11T14:32:28.8343960Z [2m.svelte-kit/output/server/[22m[36mchunks/ConfirmationDialog.js                                                                              [39m[1m[2m 22.25 kB[22m[1m[22m
+2026-01-11T14:32:28.8345017Z [2m.svelte-kit/output/server/[22m[36mentries/pages/(app)/(config)/install-ffmpeg/_page.svelte.js                                               [39m[1m[2m 23.74 kB[22m[1m[22m
+2026-01-11T14:32:28.8346047Z [2m.svelte-kit/output/server/[22m[36mchunks/internal.js                                                                                        [39m[1m[2m 29.97 kB[22m[1m[22m
+2026-01-11T14:32:28.8347015Z [2m.svelte-kit/output/server/[22m[36mchunks/tooltip.svelte.js                                                                                  [39m[1m[2m 33.21 kB[22m[1m[22m
+2026-01-11T14:32:28.8347976Z [2m.svelte-kit/output/server/[22m[36mchunks/shared.js                                                                                          [39m[1m[2m 33.25 kB[22m[1m[22m
+2026-01-11T14:32:28.8348902Z [2m.svelte-kit/output/server/[22m[36mchunks/index2.js                                                                                          [39m[1m[2m 33.43 kB[22m[1m[22m
+2026-01-11T14:32:28.8349867Z [2m.svelte-kit/output/server/[22m[36mentries/pages/(app)/_page.svelte.js                                                                       [39m[1m[2m 33.65 kB[22m[1m[22m
+2026-01-11T14:32:28.8350868Z [2m.svelte-kit/output/server/[22m[36mentries/pages/_layout.svelte.js                                                                           [39m[1m[2m 34.12 kB[22m[1m[22m
+2026-01-11T14:32:28.8351835Z [2m.svelte-kit/output/server/[22m[36mchunks/Runs.js                                                                                            [39m[1m[2m 37.37 kB[22m[1m[22m
+2026-01-11T14:32:28.8353651Z [2m.svelte-kit/output/server/[22m[36mchunks/ShortcutTable.js                                                                                   [39m[1m[2m 38.71 kB[22m[1m[22m
+2026-01-11T14:32:28.8354707Z [2m.svelte-kit/output/server/[22m[36mentries/pages/(app)/(config)/transformations/_page.svelte.js                                              [39m[1m[2m 40.89 kB[22m[1m[22m
+2026-01-11T14:32:28.8355800Z [2m.svelte-kit/output/server/[22m[36mentries/pages/(app)/(config)/settings/_page.svelte.js                                                     [39m[1m[2m 44.26 kB[22m[1m[22m
+2026-01-11T14:32:28.8357286Z [2m.svelte-kit/output/server/[22m[36mchunks/Github.js                                                                                          [39m[1m[2m 47.30 kB[22m[1m[22m
+2026-01-11T14:32:28.8358244Z [2m.svelte-kit/output/server/[22m[36mchunks/events.js                                                                                          [39m[1m[2m 52.58 kB[22m[1m[22m
+2026-01-11T14:32:28.8359186Z [2m.svelte-kit/output/server/[22m[36mchunks/command-item.js                                                                                    [39m[1m[2m 58.87 kB[22m[1m[22m
+2026-01-11T14:32:28.8360133Z [2m.svelte-kit/output/server/[22m[36mchunks/index7.js                                                                                          [39m[1m[2m 60.36 kB[22m[1m[22m
+2026-01-11T14:32:28.8361101Z [2m.svelte-kit/output/server/[22m[36mentries/pages/(app)/_layout.svelte.js                                                                     [39m[1m[2m 60.45 kB[22m[1m[22m
+2026-01-11T14:32:28.8362317Z [2m.svelte-kit/output/server/[22m[36mentries/pages/(app)/(config)/settings/recording/_page.svelte.js                                           [39m[1m[2m 75.26 kB[22m[1m[22m
+2026-01-11T14:32:28.8363382Z [2m.svelte-kit/output/server/[22m[36mchunks/toast-state.svelte.js                                                                              [39m[1m[2m 76.81 kB[22m[1m[22m
+2026-01-11T14:32:28.8364395Z [2m.svelte-kit/output/server/[22m[36mchunks/VadDeviceSelector.js                                                                               [39m[1m[2m 77.36 kB[22m[1m[22m
+2026-01-11T14:32:28.8365450Z [2m.svelte-kit/output/server/[22m[36mentries/pages/(app)/(config)/recordings/_page.svelte.js                                                   [39m[1m[2m 83.50 kB[22m[1m[22m
+2026-01-11T14:32:28.8366504Z [2m.svelte-kit/output/server/[22m[36mchunks/OpenFolderButton.js                                                                                [39m[1m[2m 98.62 kB[22m[1m[22m
+2026-01-11T14:32:28.8367576Z [2m.svelte-kit/output/server/[22m[36mentries/pages/(app)/(config)/settings/transcription/_page.svelte.js                                       [39m[1m[2m137.73 kB[22m[1m[22m
+2026-01-11T14:32:28.8368619Z [2m.svelte-kit/output/server/[22m[36mindex.js                                                                                                  [39m[1m[2m146.32 kB[22m[1m[22m
+2026-01-11T14:32:28.8369533Z [2m.svelte-kit/output/server/[22m[36mchunks/Editor.js                                                                                          [39m[1m[2m148.56 kB[22m[1m[22m
+2026-01-11T14:32:28.8370461Z [2m.svelte-kit/output/server/[22m[36mchunks/button.js                                                                                          [39m[1m[2m269.45 kB[22m[1m[22m
+2026-01-11T14:32:28.8371392Z [2m.svelte-kit/output/server/[22m[36mchunks/index4.js                                                                                          [39m[1m[2m462.03 kB[22m[1m[22m
+2026-01-11T14:32:28.8371975Z [32m✓ built in 37.15s[39m
+2026-01-11T14:32:28.8372135Z 
+2026-01-11T14:32:28.8372337Z Run npm run preview to preview your production build locally.
+2026-01-11T14:32:28.8587802Z 
+2026-01-11T14:32:28.8588993Z > Using @sveltejs/adapter-static
+2026-01-11T14:32:29.5739858Z   Wrote site to "build"
+2026-01-11T14:32:29.5740909Z   ✔ done
+2026-01-11T14:32:34.3657407Z [1m[92m    Updating[0m crates.io index
+2026-01-11T14:33:02.1385189Z [1m[92m   Compiling[0m ort-sys v2.0.0-rc.10
+2026-01-11T14:33:02.1446253Z [1m[92m   Compiling[0m whispering v7.11.0 (D:\a\epicenter\epicenter\apps\whispering\src-tauri)
+2026-01-11T14:33:11.7787539Z [1m[92m   Compiling[0m ort v2.0.0-rc.10
+2026-01-11T14:33:15.9413560Z [1m[92m   Compiling[0m transcribe-rs v0.2.1
+2026-01-11T14:33:27.4604076Z [1m[93mwarning[0m[1m[97m: constant `TOKEN_UNKNOWN` is never used[0m
+2026-01-11T14:33:27.4604736Z   [1m[96m--> [0msrc\transcription\canary.rs:59:7
+2026-01-11T14:33:27.4605137Z    [1m[96m|[0m
+2026-01-11T14:33:27.4605534Z [1m[96m59[0m [1m[96m|[0m const TOKEN_UNKNOWN: i64 = 0;
+2026-01-11T14:33:27.4605979Z    [1m[96m|[0m       [1m[93m^^^^^^^^^^^^^[0m
+2026-01-11T14:33:27.4606295Z    [1m[96m|[0m
+2026-01-11T14:33:27.4606812Z    [1m[96m= [0m[1m[97mnote[0m: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+2026-01-11T14:33:27.4607180Z 
+2026-01-11T14:33:27.4607511Z [1m[93mwarning[0m[1m[97m: constant `DEFAULT_LANGUAGE` is never used[0m
+2026-01-11T14:33:27.4608025Z   [1m[96m--> [0msrc\transcription\canary.rs:62:7
+2026-01-11T14:33:27.4608353Z    [1m[96m|[0m
+2026-01-11T14:33:27.4608756Z [1m[96m62[0m [1m[96m|[0m const DEFAULT_LANGUAGE: &str = "fr";
+2026-01-11T14:33:27.4609201Z    [1m[96m|[0m       [1m[93m^^^^^^^^^^^^^^^^[0m
+2026-01-11T14:33:27.4609421Z 
+2026-01-11T14:33:27.4654027Z [1m[93mwarning[0m[1m[97m: field `token_to_id` is never read[0m
+2026-01-11T14:33:27.4655987Z   [1m[96m--> [0msrc\transcription\canary.rs:69:5
+2026-01-11T14:33:27.4656802Z    [1m[96m|[0m
+2026-01-11T14:33:27.4657589Z [1m[96m68[0m [1m[96m|[0m pub struct CanaryVocab {
+2026-01-11T14:33:27.4658144Z    [1m[96m|[0m            [1m[96m-----------[0m [1m[96mfield in this struct[0m
+2026-01-11T14:33:27.4658759Z [1m[96m69[0m [1m[96m|[0m     token_to_id: HashMap<String, i64>,
+2026-01-11T14:33:27.4659204Z    [1m[96m|[0m     [1m[93m^^^^^^^^^^^[0m
+2026-01-11T14:33:27.4659410Z 
+2026-01-11T14:33:27.4659709Z [1m[93mwarning[0m[1m[97m: field `model_path` is never read[0m
+2026-01-11T14:33:27.4660204Z    [1m[96m--> [0msrc\transcription\canary.rs:477:5
+2026-01-11T14:33:27.4660549Z     [1m[96m|[0m
+2026-01-11T14:33:27.4660907Z [1m[96m473[0m [1m[96m|[0m pub struct CanaryEngine {
+2026-01-11T14:33:27.4661422Z     [1m[96m|[0m            [1m[96m------------[0m [1m[96mfield in this struct[0m
+2026-01-11T14:33:27.4661826Z [1m[96m...[0m
+2026-01-11T14:33:27.4662196Z [1m[96m477[0m [1m[96m|[0m     model_path: PathBuf,
+2026-01-11T14:33:27.4662584Z     [1m[96m|[0m     [1m[93m^^^^^^^^^^[0m
+2026-01-11T14:33:27.4662782Z 
+2026-01-11T14:33:27.4663086Z [1m[93mwarning[0m[1m[97m: constant `SAMPLE_RATE` is never used[0m
+2026-01-11T14:33:27.4663585Z    [1m[96m--> [0msrc\transcription\canary.rs:593:15
+2026-01-11T14:33:27.4663907Z     [1m[96m|[0m
+2026-01-11T14:33:27.4664318Z [1m[96m593[0m [1m[96m|[0m         const SAMPLE_RATE: usize = 16000;
+2026-01-11T14:33:27.4664773Z     [1m[96m|[0m               [1m[93m^^^^^^^^^^^[0m
+2026-01-11T14:33:27.4664992Z 
+2026-01-11T14:33:27.4665278Z [1m[93mwarning[0m[1m[97m: constant `N_FFT` is never used[0m
+2026-01-11T14:33:27.4665749Z    [1m[96m--> [0msrc\transcription\canary.rs:594:15
+2026-01-11T14:33:27.4666018Z     [1m[96m|[0m
+2026-01-11T14:33:27.4666329Z [1m[96m594[0m [1m[96m|[0m         const N_FFT: usize = 512;
+2026-01-11T14:33:27.4666679Z     [1m[96m|[0m               [1m[93m^^^^^[0m
+2026-01-11T14:33:27.4666860Z 
+2026-01-11T14:33:27.4667175Z [1m[93mwarning[0m[1m[97m: function `get_supported_languages` is never used[0m
+2026-01-11T14:33:27.4667617Z    [1m[96m--> [0msrc\transcription\canary.rs:647:8
+2026-01-11T14:33:27.4667885Z     [1m[96m|[0m
+2026-01-11T14:33:27.4669085Z [1m[96m647[0m [1m[96m|[0m pub fn get_supported_languages() -> Vec<(&'static str, &'static str)> {
+2026-01-11T14:33:27.4669595Z     [1m[96m|[0m        [1m[93m^^^^^^^^^^^^^^^^^^^^^^^[0m
+2026-01-11T14:33:27.4669795Z 
+2026-01-11T14:34:55.9807143Z [1m[93mwarning[0m: `whispering` (lib) generated 7 warnings
+2026-01-11T14:34:58.8026242Z [1m[92m    Finished[0m `release` profile [optimized] target(s) in 2m 28s
+2026-01-11T14:34:58.8656708Z        Built application at: D:\a\epicenter\epicenter\apps\whispering\src-tauri\target\release\whispering.exe
+2026-01-11T14:34:58.8702735Z         Info Patching binary "D:\\a\\epicenter\\epicenter\\apps\\whispering\\src-tauri\\target\\release\\whispering.exe" for type msi
+2026-01-11T14:34:58.9217706Z         Info Verifying wix package
+2026-01-11T14:34:58.9226748Z  Downloading https://github.com/wixtoolset/wix3/releases/download/wix3141rtm/wix314-binaries.zip
+2026-01-11T14:34:59.4531750Z         Info validating hash
+2026-01-11T14:34:59.5389153Z         Info extracting WIX
+2026-01-11T14:35:00.0620189Z         Info Target: x64
+2026-01-11T14:35:00.0627625Z  Downloading https://go.microsoft.com/fwlink/p/?LinkId=2124703
+2026-01-11T14:35:00.2164171Z      Running candle for "D:\\a\\epicenter\\epicenter\\apps\\whispering\\src-tauri\\target\\release\\wix\\x64\\main.wxs"
+2026-01-11T14:35:03.9929883Z      Running light to produce D:\a\epicenter\epicenter\apps\whispering\src-tauri\target\release\bundle\msi\Whispering_7.11.0_x64_en-US.msi
+2026-01-11T14:35:14.3865120Z         Info Patching binary "D:\\a\\epicenter\\epicenter\\apps\\whispering\\src-tauri\\target\\release\\whispering.exe" for type nsis
+2026-01-11T14:35:14.4386617Z         Info Verifying NSIS package
+2026-01-11T14:35:14.4387568Z  Downloading https://github.com/tauri-apps/binary-releases/releases/download/nsis-3.11/nsis-3.11.zip
+2026-01-11T14:35:14.7740676Z         Info validating hash
+2026-01-11T14:35:14.7754879Z         Info extracting NSIS
+2026-01-11T14:35:14.9679475Z  Downloading https://github.com/tauri-apps/nsis-tauri-utils/releases/download/nsis_tauri_utils-v0.5.2/nsis_tauri_utils.dll
+2026-01-11T14:35:15.2412060Z         Info validating hash
+2026-01-11T14:35:15.2420803Z         Info Target: x64
+2026-01-11T14:35:15.2432888Z  Downloading https://go.microsoft.com/fwlink/p/?LinkId=2124703
+2026-01-11T14:35:15.3889528Z      Running makensis to produce D:\a\epicenter\epicenter\apps\whispering\src-tauri\target\release\bundle\nsis\Whispering_7.11.0_x64-setup.exe
+2026-01-11T14:35:19.3744960Z     Finished 2 bundles at:
+2026-01-11T14:35:19.3745718Z         D:\a\epicenter\epicenter\apps\whispering\src-tauri\target\release\bundle\msi\Whispering_7.11.0_x64_en-US.msi
+2026-01-11T14:35:19.3746749Z         D:\a\epicenter\epicenter\apps\whispering\src-tauri\target\release\bundle\nsis\Whispering_7.11.0_x64-setup.exe
+2026-01-11T14:35:19.3747385Z 
+2026-01-11T14:35:19.4962038Z Looking for artifacts in:
+2026-01-11T14:35:19.4962710Z D:\a\epicenter\epicenter\apps\whispering\src-tauri\target\release\bundle\msi\Whispering_7.11.0_x64_en-US.msi
+2026-01-11T14:35:19.4963506Z D:\a\epicenter\epicenter\apps\whispering\src-tauri\target\release\bundle\msi\Whispering_7.11.0_x64_en-US.msi.sig
+2026-01-11T14:35:19.4964491Z D:\a\epicenter\epicenter\apps\whispering\src-tauri\target\release\bundle\msi\Whispering_7.11.0_x64_en-US.msi.zip
+2026-01-11T14:35:19.4965370Z D:\a\epicenter\epicenter\apps\whispering\src-tauri\target\release\bundle\msi\Whispering_7.11.0_x64_en-US.msi.zip.sig
+2026-01-11T14:35:19.4966133Z D:\a\epicenter\epicenter\apps\whispering\src-tauri\target\release\bundle\nsis\Whispering_7.11.0_x64-setup.exe
+2026-01-11T14:35:19.4966883Z D:\a\epicenter\epicenter\apps\whispering\src-tauri\target\release\bundle\nsis\Whispering_7.11.0_x64-setup.exe.sig
+2026-01-11T14:35:19.4967651Z D:\a\epicenter\epicenter\apps\whispering\src-tauri\target\release\bundle\nsis\Whispering_7.11.0_x64-setup.nsis.zip
+2026-01-11T14:35:19.4968448Z D:\a\epicenter\epicenter\apps\whispering\src-tauri\target\release\bundle\nsis\Whispering_7.11.0_x64-setup.nsis.zip.sig
+2026-01-11T14:35:19.4969191Z Found artifacts:
+2026-01-11T14:35:19.4969666Z D:\a\epicenter\epicenter\apps\whispering\src-tauri\target\release\bundle\msi\Whispering_7.11.0_x64_en-US.msi
+2026-01-11T14:35:19.4970392Z D:\a\epicenter\epicenter\apps\whispering\src-tauri\target\release\bundle\nsis\Whispering_7.11.0_x64-setup.exe
+2026-01-11T14:35:19.5213077Z Looking for a draft release with tag v99.0.0-canary...
+2026-01-11T14:35:19.9324652Z Found draft release with tag v99.0.0-canary on the release list.
+2026-01-11T14:35:20.1014592Z Deleting existing Whispering_7.11.0_x64_en-US.msi...
+2026-01-11T14:35:20.3278412Z Uploading Whispering_7.11.0_x64_en-US.msi...
+2026-01-11T14:35:22.2505675Z Deleting existing Whispering_7.11.0_x64-setup.exe...
+2026-01-11T14:35:22.4892518Z Uploading Whispering_7.11.0_x64-setup.exe...
+2026-01-11T14:35:23.6304889Z Signature not found for the updater JSON. Skipping upload...

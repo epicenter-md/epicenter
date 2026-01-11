@@ -1,0 +1,14 @@
+﻿2026-01-11T14:28:49.7863401Z ##[group]Run oven-sh/setup-bun@v2
+2026-01-11T14:28:49.7863746Z with:
+2026-01-11T14:28:49.7863927Z   bun-version-file: package.json
+2026-01-11T14:28:49.7864149Z   no-cache: false
+2026-01-11T14:28:49.7864303Z ##[endgroup]
+2026-01-11T14:28:50.0551162Z Obtained version 1.3.3 from package.json
+2026-01-11T14:28:50.4552224Z Cache hit for: g8WSTzYim2C3g2bxanhdmfR21E4=
+2026-01-11T14:28:51.5140024Z Received 38224608 of 38224608 (100.0%), 45.0 MBs/sec
+2026-01-11T14:28:51.5142813Z Cache Size: ~36 MB (38224608 B)
+2026-01-11T14:28:51.5173332Z [command]"C:\Program Files\Git\usr\bin\tar.exe" -xf D:/a/_temp/eaa41535-7e17-48db-a655-d1fec0629f91/cache.tzst -P -C D:/a/epicenter/epicenter --force-local --use-compress-program "zstd -d"
+2026-01-11T14:28:51.7965793Z Cache restored successfully
+2026-01-11T14:28:51.8021049Z [command]C:\Users\runneradmin\.bun\bin\bun.exe --revision
+2026-01-11T14:28:53.2120939Z 1.3.3+274e01c73
+2026-01-11T14:28:53.2152413Z Using a cached version of Bun: 1.3.3+274e01c73

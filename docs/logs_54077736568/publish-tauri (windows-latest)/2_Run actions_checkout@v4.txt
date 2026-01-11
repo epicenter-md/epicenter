@@ -1,0 +1,76 @@
+﻿2026-01-11T14:28:44.9929682Z ##[group]Run actions/checkout@v4
+2026-01-11T14:28:44.9931359Z with:
+2026-01-11T14:28:44.9931595Z   ref: refs/tags/v99.0.0-canary
+2026-01-11T14:28:44.9931831Z   repository: Daradaal/epicenter
+2026-01-11T14:28:44.9932278Z   token: ***
+2026-01-11T14:28:44.9932454Z   ssh-strict: true
+2026-01-11T14:28:44.9932629Z   ssh-user: git
+2026-01-11T14:28:44.9932808Z   persist-credentials: true
+2026-01-11T14:28:44.9933033Z   clean: true
+2026-01-11T14:28:44.9933203Z   sparse-checkout-cone-mode: true
+2026-01-11T14:28:44.9933423Z   fetch-depth: 1
+2026-01-11T14:28:44.9933586Z   fetch-tags: false
+2026-01-11T14:28:44.9933771Z   show-progress: true
+2026-01-11T14:28:44.9933938Z   lfs: false
+2026-01-11T14:28:44.9934081Z   submodules: false
+2026-01-11T14:28:44.9934251Z   set-safe-directory: true
+2026-01-11T14:28:44.9934769Z ##[endgroup]
+2026-01-11T14:28:45.1529412Z Syncing repository: Daradaal/epicenter
+2026-01-11T14:28:45.1530747Z ##[group]Getting Git version info
+2026-01-11T14:28:45.1531059Z Working directory is 'D:\a\epicenter\epicenter'
+2026-01-11T14:28:45.2210278Z [command]"C:\Program Files\Git\bin\git.exe" version
+2026-01-11T14:28:45.3791625Z git version 2.52.0.windows.1
+2026-01-11T14:28:45.3841321Z ##[endgroup]
+2026-01-11T14:28:45.3860166Z Temporarily overriding HOME='D:\a\_temp\fd18c2de-4352-42fa-973e-d09ee705e72c' before making global git config changes
+2026-01-11T14:28:45.3860859Z Adding repository directory to the temporary git global config as a safe directory
+2026-01-11T14:28:45.3871435Z [command]"C:\Program Files\Git\bin\git.exe" config --global --add safe.directory D:\a\epicenter\epicenter
+2026-01-11T14:28:45.4202825Z Deleting the contents of 'D:\a\epicenter\epicenter'
+2026-01-11T14:28:45.4208608Z ##[group]Initializing the repository
+2026-01-11T14:28:45.4219233Z [command]"C:\Program Files\Git\bin\git.exe" init D:\a\epicenter\epicenter
+2026-01-11T14:28:45.4706953Z Initialized empty Git repository in D:/a/epicenter/epicenter/.git/
+2026-01-11T14:28:45.4754375Z [command]"C:\Program Files\Git\bin\git.exe" remote add origin https://github.com/Daradaal/epicenter
+2026-01-11T14:28:45.5074628Z ##[endgroup]
+2026-01-11T14:28:45.5075049Z ##[group]Disabling automatic garbage collection
+2026-01-11T14:28:45.5084947Z [command]"C:\Program Files\Git\bin\git.exe" config --local gc.auto 0
+2026-01-11T14:28:45.5373284Z ##[endgroup]
+2026-01-11T14:28:45.5387656Z ##[group]Setting up auth
+2026-01-11T14:28:45.5388150Z [command]"C:\Program Files\Git\bin\git.exe" config --local --name-only --get-regexp core\.sshCommand
+2026-01-11T14:28:45.5680630Z [command]"C:\Program Files\Git\bin\git.exe" submodule foreach --recursive "sh -c \"git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :\""
+2026-01-11T14:28:46.4397704Z [command]"C:\Program Files\Git\bin\git.exe" config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-01-11T14:28:46.4775004Z [command]"C:\Program Files\Git\bin\git.exe" submodule foreach --recursive "sh -c \"git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :\""
+2026-01-11T14:28:47.0253058Z [command]"C:\Program Files\Git\bin\git.exe" config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-01-11T14:28:47.0543254Z [command]"C:\Program Files\Git\bin\git.exe" submodule foreach --recursive "git config --local --show-origin --name-only --get-regexp remote.origin.url"
+2026-01-11T14:28:47.5658330Z [command]"C:\Program Files\Git\bin\git.exe" config --local http.https://github.com/.extraheader "AUTHORIZATION: basic ***"
+2026-01-11T14:28:47.5952837Z ##[endgroup]
+2026-01-11T14:28:47.5953234Z ##[group]Fetching the repository
+2026-01-11T14:28:47.5965122Z [command]"C:\Program Files\Git\bin\git.exe" -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +refs/tags/v99.0.0-canary:refs/tags/v99.0.0-canary
+2026-01-11T14:28:49.2178161Z From https://github.com/Daradaal/epicenter
+2026-01-11T14:28:49.2181223Z  * [new tag]         v99.0.0-canary -> v99.0.0-canary
+2026-01-11T14:28:49.2370629Z ##[endgroup]
+2026-01-11T14:28:49.2371199Z ##[group]Determining the checkout info
+2026-01-11T14:28:49.2372882Z ##[endgroup]
+2026-01-11T14:28:49.2383130Z [command]"C:\Program Files\Git\bin\git.exe" sparse-checkout disable
+2026-01-11T14:28:49.2722136Z [command]"C:\Program Files\Git\bin\git.exe" config --local --unset-all extensions.worktreeConfig
+2026-01-11T14:28:49.3000779Z ##[group]Checking out the ref
+2026-01-11T14:28:49.3010757Z [command]"C:\Program Files\Git\bin\git.exe" checkout --progress --force refs/tags/v99.0.0-canary
+2026-01-11T14:28:49.6802880Z Note: switching to 'refs/tags/v99.0.0-canary'.
+2026-01-11T14:28:49.6803309Z 
+2026-01-11T14:28:49.6803657Z You are in 'detached HEAD' state. You can look around, make experimental
+2026-01-11T14:28:49.6804351Z changes and commit them, and you can discard any commits you make in this
+2026-01-11T14:28:49.6805015Z state without impacting any branches by switching back to a branch.
+2026-01-11T14:28:49.6805428Z 
+2026-01-11T14:28:49.6805668Z If you want to create a new branch to retain commits you create, you may
+2026-01-11T14:28:49.6806259Z do so (now or later) by using -c with the switch command. Example:
+2026-01-11T14:28:49.6806595Z 
+2026-01-11T14:28:49.6806741Z   git switch -c <new-branch-name>
+2026-01-11T14:28:49.6806990Z 
+2026-01-11T14:28:49.6807111Z Or undo this operation with:
+2026-01-11T14:28:49.6807360Z 
+2026-01-11T14:28:49.6807475Z   git switch -
+2026-01-11T14:28:49.6807662Z 
+2026-01-11T14:28:49.6809239Z Turn off this advice by setting config variable advice.detachedHead to false
+2026-01-11T14:28:49.6809729Z 
+2026-01-11T14:28:49.6809991Z HEAD is now at fe81a1f chore: enable DEV MODE - Windows only builds
+2026-01-11T14:28:49.6854460Z ##[endgroup]
+2026-01-11T14:28:49.7200523Z [command]"C:\Program Files\Git\bin\git.exe" log -1 --format=%H
+2026-01-11T14:28:49.7462208Z fe81a1f0acb353e2f84c4b3815a7c8807b9acedd

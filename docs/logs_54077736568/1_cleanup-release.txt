@@ -1,0 +1,57 @@
+﻿2026-01-11T14:28:35.6505809Z Current runner version: '2.330.0'
+2026-01-11T14:28:35.6532901Z ##[group]Runner Image Provisioner
+2026-01-11T14:28:35.6533698Z Hosted Compute Agent
+2026-01-11T14:28:35.6534341Z Version: 20251211.462
+2026-01-11T14:28:35.6534936Z Commit: 6cbad8c2bb55d58165063d031ccabf57e2d2db61
+2026-01-11T14:28:35.6535625Z Build Date: 2025-12-11T16:28:49Z
+2026-01-11T14:28:35.6536270Z Worker ID: {61c93124-30f6-4f41-bc20-636af2a597a5}
+2026-01-11T14:28:35.6537057Z ##[endgroup]
+2026-01-11T14:28:35.6537552Z ##[group]Operating System
+2026-01-11T14:28:35.6538092Z Ubuntu
+2026-01-11T14:28:35.6538619Z 24.04.3
+2026-01-11T14:28:35.6539033Z LTS
+2026-01-11T14:28:35.6539463Z ##[endgroup]
+2026-01-11T14:28:35.6540381Z ##[group]Runner Image
+2026-01-11T14:28:35.6540963Z Image: ubuntu-24.04
+2026-01-11T14:28:35.6541463Z Version: 20260105.202.1
+2026-01-11T14:28:35.6542527Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260105.202/images/ubuntu/Ubuntu2404-Readme.md
+2026-01-11T14:28:35.6544090Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260105.202
+2026-01-11T14:28:35.6545210Z ##[endgroup]
+2026-01-11T14:28:35.6546194Z ##[group]GITHUB_TOKEN Permissions
+2026-01-11T14:28:35.6548700Z Contents: write
+2026-01-11T14:28:35.6549290Z Metadata: read
+2026-01-11T14:28:35.6550062Z ##[endgroup]
+2026-01-11T14:28:35.6552410Z Secret source: Actions
+2026-01-11T14:28:35.6553474Z Prepare workflow directory
+2026-01-11T14:28:35.6906404Z Prepare all required actions
+2026-01-11T14:28:35.7005489Z Complete job name: cleanup-release
+2026-01-11T14:28:35.7817572Z ##[group]Run TAG="v99.0.0-canary"
+2026-01-11T14:28:35.7818729Z [36;1mTAG="v99.0.0-canary"[0m
+2026-01-11T14:28:35.7819528Z [36;1mecho "Cleaning up assets for release: $TAG"[0m
+2026-01-11T14:28:35.7820519Z [36;1m[0m
+2026-01-11T14:28:35.7820985Z [36;1m# Get release ID[0m
+2026-01-11T14:28:35.7822282Z [36;1mRELEASE_ID=$(gh api repos/Daradaal/epicenter/releases/tags/$TAG --jq '.id' 2>/dev/null || echo "")[0m
+2026-01-11T14:28:35.7823383Z [36;1m[0m
+2026-01-11T14:28:35.7823913Z [36;1mif [ -n "$RELEASE_ID" ]; then[0m
+2026-01-11T14:28:35.7824602Z [36;1m  echo "Found release ID: $RELEASE_ID"[0m
+2026-01-11T14:28:35.7825220Z [36;1m  [0m
+2026-01-11T14:28:35.7825694Z [36;1m  # Get all assets and delete them[0m
+2026-01-11T14:28:35.7826737Z [36;1m  ASSETS=$(gh api repos/Daradaal/epicenter/releases/$RELEASE_ID/assets --jq '.[].id' 2>/dev/null || echo "")[0m
+2026-01-11T14:28:35.7827719Z [36;1m  [0m
+2026-01-11T14:28:35.7828179Z [36;1m  for ASSET_ID in $ASSETS; do[0m
+2026-01-11T14:28:35.7828955Z [36;1m    echo "Deleting asset: $ASSET_ID"[0m
+2026-01-11T14:28:35.7830079Z [36;1m    gh api -X DELETE repos/Daradaal/epicenter/releases/assets/$ASSET_ID || true[0m
+2026-01-11T14:28:35.7831026Z [36;1m  done[0m
+2026-01-11T14:28:35.7831450Z [36;1m  [0m
+2026-01-11T14:28:35.7831964Z [36;1m  echo "Cleanup complete"[0m
+2026-01-11T14:28:35.7832589Z [36;1melse[0m
+2026-01-11T14:28:35.7833166Z [36;1m  echo "No existing release found for $TAG, skipping cleanup"[0m
+2026-01-11T14:28:35.7833914Z [36;1mfi[0m
+2026-01-11T14:28:35.8521162Z shell: /usr/bin/bash -e {0}
+2026-01-11T14:28:35.8522288Z env:
+2026-01-11T14:28:35.8523279Z   GITHUB_TOKEN: ***
+2026-01-11T14:28:35.8523809Z ##[endgroup]
+2026-01-11T14:28:35.8747494Z Cleaning up assets for release: v99.0.0-canary
+2026-01-11T14:28:36.2143496Z Found release ID: {"message":"Not Found","documentation_url":"https://docs.github.com/rest/releases/releases#get-a-release-by-tag-name","status":"404"}
+2026-01-11T14:28:36.2735698Z Cleanup complete
+2026-01-11T14:28:36.2851816Z Cleaning up orphan processes
