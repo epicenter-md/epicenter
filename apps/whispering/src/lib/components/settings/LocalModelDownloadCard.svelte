@@ -151,10 +151,16 @@
 	});
 
 	async function refreshStatus() {
+		// Don't interfere with ongoing download - prevents race condition on first click
+		if (modelState.type === 'downloading') return;
+
 		await tryAsync({
 			try: async () => {
 				const path = await ensureModelDestinationPath();
 				const isValid = await isModelValid(path);
+
+				// Double-check we're not downloading (async operation could have started)
+				if (modelState.type === 'downloading') return;
 
 				if (!isValid) {
 					modelState = { type: 'not-downloaded' };
@@ -169,6 +175,8 @@
 				modelState = isActive ? { type: 'active' } : { type: 'ready' };
 			},
 			catch: () => {
+				// Don't reset if downloading
+				if (modelState.type === 'downloading') return Ok(undefined);
 				modelState = { type: 'not-downloaded' };
 				return Ok(undefined);
 			},
@@ -184,12 +192,11 @@
 			try: async () => {
 				const path = await ensureModelDestinationPath();
 
-				// Check if already exists
-				await refreshStatus();
-				if (modelState.type === 'ready' || modelState.type === 'active') {
-					if (modelState.type === 'ready') {
-						await activateModel();
-					}
+				// Check if model already exists (without calling refreshStatus to avoid race condition)
+				const alreadyValid = await isModelValid(path);
+				if (alreadyValid) {
+					await activateModel();
+					modelState = { type: 'active' };
 					toast.success('Model already downloaded and activated');
 					return;
 				}
