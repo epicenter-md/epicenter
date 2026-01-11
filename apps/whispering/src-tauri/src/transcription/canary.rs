@@ -56,16 +56,13 @@ const TOKEN_NO_ITN: i64 = 9;
 const TOKEN_NO_TIMESTAMP: i64 = 11;
 const TOKEN_NO_DIARIZE: i64 = 13;
 const TOKEN_END_OF_TEXT: i64 = 3;
-const TOKEN_UNKNOWN: i64 = 0;
-
-/// Default language (French)
-const DEFAULT_LANGUAGE: &str = "fr";
 
 /// Maximum sequence length for decoding
 const MAX_SEQUENCE_LENGTH: usize = 1024;
 
 /// Canary vocabulary loaded from vocab.txt
 pub struct CanaryVocab {
+    #[allow(dead_code)] // Reserved for future encoder use
     token_to_id: HashMap<String, i64>,
     id_to_token: HashMap<i64, String>,
     language_to_id: HashMap<String, i64>,
@@ -474,6 +471,7 @@ pub struct CanaryEngine {
     encoder: CanaryEncoder,
     decoder: CanaryDecoder,
     vocab: CanaryVocab,
+    #[allow(dead_code)] // Reserved for model info/debugging
     model_path: PathBuf,
 }
 
@@ -589,9 +587,7 @@ impl CanaryEngine {
     /// Compute mel-spectrogram features from audio samples
     /// This is a simplified implementation - production should use nemo128.onnx
     fn compute_features(&self, samples: &[f32]) -> Result<Array3<f32>, TranscriptionError> {
-        // Parameters for NeMo-style mel spectrogram
-        const SAMPLE_RATE: usize = 16000;
-        const N_FFT: usize = 512;
+        // Parameters for NeMo-style mel spectrogram (16kHz audio)
         const HOP_LENGTH: usize = 160; // 10ms at 16kHz
         const N_MELS: usize = 128;
         const WIN_LENGTH: usize = 400; // 25ms at 16kHz
@@ -644,6 +640,7 @@ impl CanaryEngine {
 }
 
 /// Supported languages for Canary-1B-v2
+#[allow(dead_code)] // Public API for future UI integration
 pub fn get_supported_languages() -> Vec<(&'static str, &'static str)> {
     vec![
         ("fr", "French"),

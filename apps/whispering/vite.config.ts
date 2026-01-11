@@ -19,6 +19,42 @@ export default defineConfig(async () => ({
 			},
 		}),
 	],
+	build: {
+		// Chunk splitting configuration to reduce bundle sizes
+		rollupOptions: {
+			output: {
+				manualChunks: (id: string) => {
+					// AI SDKs - split each into separate chunks
+					if (id.includes('node_modules/openai')) return 'vendor-openai';
+					if (id.includes('node_modules/@anthropic-ai')) return 'vendor-anthropic';
+					if (id.includes('node_modules/@google/generative-ai')) return 'vendor-google-ai';
+					if (id.includes('node_modules/@mistralai')) return 'vendor-mistral';
+					if (id.includes('node_modules/groq-sdk')) return 'vendor-groq';
+					if (id.includes('node_modules/elevenlabs')) return 'vendor-elevenlabs';
+
+					// Voice Activity Detection (includes ONNX runtime)
+					if (id.includes('node_modules/@ricky0123/vad')) return 'vendor-vad';
+					if (id.includes('node_modules/onnxruntime')) return 'vendor-onnx';
+
+					// Tauri plugins - group together
+					if (id.includes('node_modules/@tauri-apps')) return 'vendor-tauri';
+
+					// UI and utilities
+					if (id.includes('node_modules/bits-ui')) return 'vendor-ui';
+					if (id.includes('node_modules/@tanstack')) return 'vendor-tanstack';
+
+					// Database
+					if (id.includes('node_modules/dexie')) return 'vendor-dexie';
+
+					// Markdown and content
+					if (id.includes('node_modules/marked')) return 'vendor-marked';
+					if (id.includes('node_modules/gray-matter')) return 'vendor-gray-matter';
+				},
+			},
+		},
+		// Increase warning limit slightly (some chunks will still be ~500KB)
+		chunkSizeWarningLimit: 600,
+	},
 	// Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
 	//
 	// 1. prevent vite from obscuring rust errors
