@@ -1,38 +1,51 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
 	import { emit, listen, type UnlistenFn } from '@tauri-apps/api/event';
-	import '@epicenter/ui/app.css';
+	import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
+
+	// Debug logging
+	const DEBUG = true;
+	function log(...args: unknown[]) {
+		if (DEBUG) console.log('[RecordingIndicator]', ...args);
+	}
 
 	// State
 	let audioLevel = $state(0);
 	let elapsedSeconds = $state(0);
 	let recordingState = $state<'recording' | 'processing' | 'idle'>('recording');
 	let waveformBars = $state<number[]>(new Array(16).fill(0.15));
+	let debugInfo = $state('initializing...');
+	let eventCount = $state(0);
 
 	// Internal timer (self-contained, no dependency on events)
 	let timerInterval: ReturnType<typeof setInterval> | null = null;
 	let startTime: number | null = null;
 
-	// Animation frame for smooth waveform
-	let animationFrameId: number | null = null;
+	// Animation interval for smooth waveform (using setInterval, not requestAnimationFrame)
+	let animationInterval: ReturnType<typeof setInterval> | null = null;
 	let targetLevels: number[] = new Array(16).fill(0.15);
 
 	// Event listeners
 	let unlistenFns: UnlistenFn[] = [];
 
 	function startTimer() {
+		log('startTimer called');
 		startTime = Date.now();
 		elapsedSeconds = 0;
 
 		// Update timer every second
 		timerInterval = setInterval(() => {
 			if (startTime) {
-				elapsedSeconds = Math.floor((Date.now() - startTime) / 1000);
+				const newSeconds = Math.floor((Date.now() - startTime) / 1000);
+				elapsedSeconds = newSeconds;
+				log('Timer tick:', newSeconds);
 			}
 		}, 1000);
+		log('Timer interval started');
 	}
 
 	function stopTimer() {
+		log('stopTimer called');
 		if (timerInterval) {
 			clearInterval(timerInterval);
 			timerInterval = null;
@@ -41,56 +54,94 @@
 	}
 
 	function resetTimer() {
+		log('resetTimer called');
 		stopTimer();
 		elapsedSeconds = 0;
 		startTimer();
 	}
 
 	onMount(async () => {
-		// Signal that we're ready to receive events
-		await emit('recording-indicator-ready');
+		log('=== onMount START ===');
+		debugInfo = 'onMount started';
 
-		// Start the internal timer immediately
-		startTimer();
+		try {
+			// Fix transparency issue on Windows by disabling shadow
+			log('Getting webview window...');
+			const webview = getCurrentWebviewWindow();
+			log('Webview window:', webview.label);
 
-		// Listen for audio level updates
-		unlistenFns.push(
-			await listen<{ level: number }>('audio-level-update', (event) => {
-				audioLevel = event.payload.level;
-				updateTargetLevels(audioLevel);
-			}),
-		);
+			await webview.setShadow(false);
+			log('Shadow disabled');
 
-		// Listen for reset events (when window is shown again)
-		unlistenFns.push(
-			await listen('recording-indicator-reset', () => {
-				resetTimer();
-				recordingState = 'recording';
-			}),
-		);
+			// Signal that we're ready to receive events
+			log('Emitting recording-indicator-ready...');
+			await emit('recording-indicator-ready');
+			log('Ready event emitted');
 
-		// Listen for state updates
-		unlistenFns.push(
-			await listen<{ state: 'recording' | 'processing' | 'idle' }>(
-				'recording-state-update',
-				(event) => {
-					recordingState = event.payload.state;
-					if (event.payload.state === 'processing') {
-						stopTimer();
+			// Start the internal timer immediately
+			log('Starting timer...');
+			startTimer();
+
+			// Start animation loop (using setInterval for consistency)
+			log('Starting animation...');
+			startAnimation();
+
+			// Listen for audio level updates
+			log('Setting up audio-level-update listener...');
+			unlistenFns.push(
+				await listen<{ level: number }>('audio-level-update', (event) => {
+					eventCount++;
+					audioLevel = event.payload.level;
+					updateTargetLevels(audioLevel);
+					if (eventCount % 20 === 0) {
+						log('Audio level event #' + eventCount + ':', event.payload.level.toFixed(3));
 					}
-				},
-			),
-		);
+				}),
+			);
+			log('audio-level-update listener ready');
 
-		// Start animation loop
-		startAnimation();
+			// Listen for reset events (when window is shown again)
+			log('Setting up recording-indicator-reset listener...');
+			unlistenFns.push(
+				await listen('recording-indicator-reset', () => {
+					log('Reset event received');
+					resetTimer();
+					recordingState = 'recording';
+				}),
+			);
+			log('recording-indicator-reset listener ready');
+
+			// Listen for state updates
+			log('Setting up recording-state-update listener...');
+			unlistenFns.push(
+				await listen<{ state: 'recording' | 'processing' | 'idle' }>(
+					'recording-state-update',
+					(event) => {
+						log('State update received:', event.payload.state);
+						recordingState = event.payload.state;
+						if (event.payload.state === 'processing') {
+							stopTimer();
+						}
+					},
+				),
+			);
+			log('recording-state-update listener ready');
+
+			debugInfo = 'ready, waiting for events...';
+			log('=== onMount COMPLETE ===');
+		} catch (error) {
+			log('ERROR in onMount:', error);
+			debugInfo = 'ERROR: ' + String(error);
+		}
 	});
 
 	onDestroy(() => {
+		log('onDestroy called');
 		unlistenFns.forEach((fn) => fn());
 		stopTimer();
-		if (animationFrameId) {
-			cancelAnimationFrame(animationFrameId);
+		if (animationInterval) {
+			clearInterval(animationInterval);
+			animationInterval = null;
 		}
 	});
 
@@ -106,7 +157,8 @@
 	}
 
 	function startAnimation() {
-		function animate() {
+		// Use setInterval instead of requestAnimationFrame for consistency
+		animationInterval = setInterval(() => {
 			// Smooth interpolation towards target values
 			waveformBars = waveformBars.map((current, i) => {
 				const target = targetLevels[i];
@@ -115,10 +167,8 @@
 				const speed = diff > 0 ? 0.3 : 0.1;
 				return current + diff * speed;
 			});
-
-			animationFrameId = requestAnimationFrame(animate);
-		}
-		animate();
+		}, 50); // ~20fps
+		log('Animation interval started');
 	}
 
 	function formatTime(seconds: number): string {
@@ -157,6 +207,11 @@
 		{/if}
 	</div>
 </div>
+
+<!-- Debug info (comment out for production) -->
+<!-- <div class="debug">
+	{debugInfo} | Events: {eventCount} | Level: {audioLevel.toFixed(2)} | Time: {elapsedSeconds}s
+</div> -->
 
 <style>
 	:global(html, body) {
@@ -290,6 +345,21 @@
 	@keyframes blink {
 		0%, 100% { opacity: 1; }
 		50% { opacity: 0.3; }
+	}
+
+	/* Debug overlay */
+	.debug {
+		position: fixed;
+		bottom: 0;
+		left: 0;
+		right: 0;
+		background: rgba(0, 0, 0, 0.8);
+		color: #0f0;
+		font-family: monospace;
+		font-size: 8px;
+		padding: 2px 4px;
+		white-space: nowrap;
+		overflow: hidden;
 	}
 
 	/* Reduced motion support */
