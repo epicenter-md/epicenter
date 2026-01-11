@@ -5,7 +5,10 @@
 		type LocalModelConfig,
 	} from '$lib/services/isomorphic/transcription/local/types';
 	import { settings } from '$lib/stores/settings.svelte';
-	import { downloadFileOptimized, formatSpeed } from '$lib/utils/parallel-download';
+	import {
+		downloadFileOptimized,
+		formatSpeed,
+	} from '$lib/utils/parallel-download';
 	import CheckIcon from '@lucide/svelte/icons/check';
 	import Download from '@lucide/svelte/icons/download';
 	import { Spinner } from '@epicenter/ui/spinner';
@@ -14,12 +17,7 @@
 	import { Button } from '@epicenter/ui/button';
 	import { Progress } from '@epicenter/ui/progress';
 	import { join } from '@tauri-apps/api/path';
-	import {
-		exists,
-		mkdir,
-		remove,
-		stat,
-	} from '@tauri-apps/plugin-fs';
+	import { exists, mkdir, remove, stat } from '@tauri-apps/plugin-fs';
 	import { toast } from 'svelte-sonner';
 	import { extractErrorMessage } from 'wellcrafted/error';
 	import { Ok, tryAsync } from 'wellcrafted/result';
@@ -283,7 +281,9 @@
 				const path = await ensureModelDestinationPath();
 				if (await exists(path)) {
 					const isDirectory =
-						model.engine === 'parakeet' || model.engine === 'moonshine' || model.engine === 'canary';
+						model.engine === 'parakeet' ||
+						model.engine === 'moonshine' ||
+						model.engine === 'canary';
 					await remove(path, { recursive: isDirectory });
 				}
 
@@ -337,7 +337,9 @@
 				<div class="flex flex-col items-end">
 					<span class="text-sm font-medium">{modelState.progress}%</span>
 					{#if modelState.speed}
-						<span class="text-xs text-muted-foreground">{formatSpeed(modelState.speed)}</span>
+						<span class="text-xs text-muted-foreground"
+							>{formatSpeed(modelState.speed)}</span
+						>
 					{/if}
 				</div>
 			</div>

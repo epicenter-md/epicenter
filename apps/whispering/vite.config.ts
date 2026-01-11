@@ -31,11 +31,14 @@ export default defineConfig(async () => ({
 					// AI SDKs - these are large, standalone, and loaded on-demand
 					// They have no interdependencies with the app's module graph
 					if (id.includes('node_modules/openai')) return 'vendor-openai';
-					if (id.includes('node_modules/@anthropic-ai')) return 'vendor-anthropic';
-					if (id.includes('node_modules/@google/generative-ai')) return 'vendor-google-ai';
+					if (id.includes('node_modules/@anthropic-ai'))
+						return 'vendor-anthropic';
+					if (id.includes('node_modules/@google/generative-ai'))
+						return 'vendor-google-ai';
 					if (id.includes('node_modules/@mistralai')) return 'vendor-mistral';
 					if (id.includes('node_modules/groq-sdk')) return 'vendor-groq';
-					if (id.includes('node_modules/elevenlabs')) return 'vendor-elevenlabs';
+					if (id.includes('node_modules/elevenlabs'))
+						return 'vendor-elevenlabs';
 
 					// ONNX runtime - very large (~500KB), isolated dependency
 					if (id.includes('node_modules/onnxruntime')) return 'vendor-onnx';

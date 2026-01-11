@@ -9,25 +9,25 @@
  * 5. Proper logging via Tauri plugin for debugging
  */
 
+import { remove, writeFile } from '@tauri-apps/plugin-fs';
 import { fetch } from '@tauri-apps/plugin-http';
-import { writeFile, remove } from '@tauri-apps/plugin-fs';
-import { info, warn, error, debug } from '@tauri-apps/plugin-log';
+import { debug, error, info, warn } from '@tauri-apps/plugin-log';
 
 // HuggingFace mirrors for better geographic coverage
 const HUGGINGFACE_MIRRORS: readonly string[] = [
-	'https://huggingface.co',           // Original (US/EU)
-	'https://hf-mirror.com',            // China mirror
-	'https://huggingface.co',           // Fallback to original
+	'https://huggingface.co', // Original (US/EU)
+	'https://hf-mirror.com', // China mirror
+	'https://huggingface.co', // Fallback to original
 ] as const;
 
 const DEFAULT_MIRROR = 'https://huggingface.co';
 
 // Configuration
-const PARALLEL_CONNECTIONS = 4;        // Number of parallel downloads for large files
-const CHUNK_SIZE_MB = 50;              // Size of each chunk in MB
-const BUFFER_SIZE_KB = 512;            // Buffer size before writing to disk (KB)
-const LARGE_FILE_THRESHOLD_MB = 100;   // Files larger than this use parallel download
-const MIRROR_TEST_TIMEOUT_MS = 3000;   // Timeout for mirror speed test
+const PARALLEL_CONNECTIONS = 4; // Number of parallel downloads for large files
+const CHUNK_SIZE_MB = 50; // Size of each chunk in MB
+const BUFFER_SIZE_KB = 512; // Buffer size before writing to disk (KB)
+const LARGE_FILE_THRESHOLD_MB = 100; // Files larger than this use parallel download
+const MIRROR_TEST_TIMEOUT_MS = 3000; // Timeout for mirror speed test
 
 interface DownloadProgress {
 	downloadedBytes: number;
@@ -57,7 +57,10 @@ async function testMirrorLatency(url: string): Promise<number> {
 
 	try {
 		const controller = new AbortController();
-		const timeoutId = setTimeout(() => controller.abort(), MIRROR_TEST_TIMEOUT_MS);
+		const timeoutId = setTimeout(
+			() => controller.abort(),
+			MIRROR_TEST_TIMEOUT_MS,
+		);
 
 		const response = await fetch(testUrl, {
 			method: 'HEAD',
@@ -83,7 +86,7 @@ async function findFastestMirror(url: string): Promise<string> {
 			const testUrl = getMirrorUrl(url, mirror);
 			const latency = await testMirrorLatency(testUrl);
 			return { mirror, latency };
-		})
+		}),
 	);
 
 	// Sort by latency and return the fastest
@@ -92,7 +95,7 @@ async function findFastestMirror(url: string): Promise<string> {
 	await info(`Mirror latency test results: ${JSON.stringify(results)}`);
 
 	// Return the fastest mirror that responded
-	const fastest = results.find(r => r.latency < Infinity);
+	const fastest = results.find((r) => r.latency < Infinity);
 	if (!fastest) {
 		await warn('All mirrors failed latency test, using default');
 	}
@@ -102,7 +105,9 @@ async function findFastestMirror(url: string): Promise<string> {
 /**
  * Check if server supports Range requests
  */
-async function supportsRangeRequests(url: string): Promise<{ supports: boolean; totalSize: number }> {
+async function supportsRangeRequests(
+	url: string,
+): Promise<{ supports: boolean; totalSize: number }> {
 	try {
 		const response = await fetch(url, { method: 'HEAD' });
 
@@ -130,9 +135,11 @@ async function downloadRange(
 	url: string,
 	start: number,
 	end: number,
-	onProgress: (downloaded: number) => void
+	onProgress: (downloaded: number) => void,
 ): Promise<Uint8Array> {
-	await debug(`Downloading range: ${start}-${end} (${Math.round((end - start) / 1_000_000)}MB)`);
+	await debug(
+		`Downloading range: ${start}-${end} (${Math.round((end - start) / 1_000_000)}MB)`,
+	);
 
 	const response = await fetch(url, {
 		headers: {
@@ -164,7 +171,9 @@ async function downloadRange(
 
 	// Combine all chunks into single array
 	const totalLength = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
-	await debug(`Range ${start}-${end} complete: ${totalLength} bytes in ${chunks.length} chunks`);
+	await debug(
+		`Range ${start}-${end} complete: ${totalLength} bytes in ${chunks.length} chunks`,
+	);
 	const result = new Uint8Array(totalLength);
 	let offset = 0;
 	for (const chunk of chunks) {
@@ -182,12 +191,14 @@ async function downloadFileParallel(
 	url: string,
 	filePath: string,
 	totalSize: number,
-	onProgress: ProgressCallback
+	onProgress: ProgressCallback,
 ): Promise<void> {
 	const chunkSize = CHUNK_SIZE_MB * 1024 * 1024;
 	const numChunks = Math.ceil(totalSize / chunkSize);
 
-	await info(`Starting parallel download: ${Math.round(totalSize / 1_000_000)}MB in ${numChunks} chunks of ${CHUNK_SIZE_MB}MB each`);
+	await info(
+		`Starting parallel download: ${Math.round(totalSize / 1_000_000)}MB in ${numChunks} chunks of ${CHUNK_SIZE_MB}MB each`,
+	);
 
 	// Create array to hold all chunks in order
 	const chunks: (Uint8Array | null)[] = new Array(numChunks).fill(null);
@@ -203,7 +214,11 @@ async function downloadFileParallel(
 	}
 
 	// Download chunks in parallel batches
-	const downloadChunk = async (range: { index: number; start: number; end: number }) => {
+	const downloadChunk = async (range: {
+		index: number;
+		start: number;
+		end: number;
+	}) => {
 		const chunk = await downloadRange(
 			url,
 			range.start,
@@ -220,7 +235,7 @@ async function downloadFileParallel(
 					speed,
 					currentMirror: url,
 				});
-			}
+			},
 		);
 
 		chunks[range.index] = chunk;
@@ -232,22 +247,35 @@ async function downloadFileParallel(
 		const batch = ranges.slice(i, i + PARALLEL_CONNECTIONS);
 		const batchNum = Math.floor(i / PARALLEL_CONNECTIONS) + 1;
 		const totalBatches = Math.ceil(ranges.length / PARALLEL_CONNECTIONS);
-		await info(`Processing batch ${batchNum}/${totalBatches} (chunks ${i + 1}-${Math.min(i + PARALLEL_CONNECTIONS, ranges.length)}/${ranges.length})`);
+		await info(
+			`Processing batch ${batchNum}/${totalBatches} (chunks ${i + 1}-${Math.min(i + PARALLEL_CONNECTIONS, ranges.length)}/${ranges.length})`,
+		);
 		await Promise.all(batch.map(downloadChunk));
-		await debug(`Batch ${batchNum} complete. Total downloaded: ${Math.round(totalDownloaded / 1_000_000)}MB`);
+		await debug(
+			`Batch ${batchNum} complete. Total downloaded: ${Math.round(totalDownloaded / 1_000_000)}MB`,
+		);
 	}
 
 	// Verify all chunks downloaded
-	if (chunks.some(c => c === null)) {
-		const failedIndices = chunks.map((c, idx) => c === null ? idx : -1).filter(idx => idx >= 0);
+	if (chunks.some((c) => c === null)) {
+		const failedIndices = chunks
+			.map((c, idx) => (c === null ? idx : -1))
+			.filter((idx) => idx >= 0);
 		await error(`Download failed: chunks ${failedIndices.join(', ')} are null`);
 		throw new Error('Some chunks failed to download');
 	}
 
 	// Combine all chunks and write to file
-	await info(`All chunks downloaded. Combining ${numChunks} chunks into final file...`);
-	const totalLength = chunks.reduce((sum, chunk) => sum + (chunk?.length ?? 0), 0);
-	await debug(`Allocating ${Math.round(totalLength / 1_000_000)}MB buffer for final data`);
+	await info(
+		`All chunks downloaded. Combining ${numChunks} chunks into final file...`,
+	);
+	const totalLength = chunks.reduce(
+		(sum, chunk) => sum + (chunk?.length ?? 0),
+		0,
+	);
+	await debug(
+		`Allocating ${Math.round(totalLength / 1_000_000)}MB buffer for final data`,
+	);
 
 	const finalData = new Uint8Array(totalLength);
 	let offset = 0;
@@ -263,7 +291,9 @@ async function downloadFileParallel(
 		}
 	}
 
-	await info(`Writing ${Math.round(totalLength / 1_000_000)}MB to ${filePath}...`);
+	await info(
+		`Writing ${Math.round(totalLength / 1_000_000)}MB to ${filePath}...`,
+	);
 	await writeFile(filePath, finalData);
 	await info(`File write complete: ${filePath}`);
 }
@@ -275,7 +305,7 @@ async function downloadFileSequential(
 	url: string,
 	filePath: string,
 	expectedSize: number,
-	onProgress: ProgressCallback
+	onProgress: ProgressCallback,
 ): Promise<void> {
 	const response = await fetch(url);
 
@@ -337,20 +367,27 @@ async function downloadFileSequential(
 
 	// Validate download
 	if (downloadedBytes < totalSize * 0.9) {
-		await error(`Download incomplete: received ${Math.round(downloadedBytes / 1_000_000)}MB but expected ${Math.round(totalSize / 1_000_000)}MB`);
+		await error(
+			`Download incomplete: received ${Math.round(downloadedBytes / 1_000_000)}MB but expected ${Math.round(totalSize / 1_000_000)}MB`,
+		);
 		await remove(filePath);
 		throw new Error(
-			`Download incomplete: received ${Math.round(downloadedBytes / 1_000_000)}MB but expected ${Math.round(totalSize / 1_000_000)}MB`
+			`Download incomplete: received ${Math.round(downloadedBytes / 1_000_000)}MB but expected ${Math.round(totalSize / 1_000_000)}MB`,
 		);
 	}
 
-	await info(`Sequential download complete: ${Math.round(downloadedBytes / 1_000_000)}MB written to ${filePath}`);
+	await info(
+		`Sequential download complete: ${Math.round(downloadedBytes / 1_000_000)}MB written to ${filePath}`,
+	);
 }
 
 /**
  * Combine multiple Uint8Arrays into one
  */
-function combineBuffers(buffers: Uint8Array[], totalLength: number): Uint8Array {
+function combineBuffers(
+	buffers: Uint8Array[],
+	totalLength: number,
+): Uint8Array {
 	const result = new Uint8Array(totalLength);
 	let offset = 0;
 	for (const buf of buffers) {
@@ -373,7 +410,7 @@ export async function downloadFileOptimized(
 	url: string,
 	filePath: string,
 	expectedSizeBytes: number,
-	onProgress: (progress: number, speed?: number) => void
+	onProgress: (progress: number, speed?: number) => void,
 ): Promise<void> {
 	// Find fastest mirror (only for HuggingFace URLs)
 	let downloadUrl = url;
@@ -391,16 +428,20 @@ export async function downloadFileOptimized(
 		const { supports, totalSize } = await supportsRangeRequests(downloadUrl);
 
 		if (supports && totalSize > 0) {
-			await info(`Using parallel download (${PARALLEL_CONNECTIONS} connections) for ${Math.round(totalSize / 1_000_000)}MB file`);
+			await info(
+				`Using parallel download (${PARALLEL_CONNECTIONS} connections) for ${Math.round(totalSize / 1_000_000)}MB file`,
+			);
 
 			await downloadFileParallel(
 				downloadUrl,
 				filePath,
 				totalSize,
 				(progress) => {
-					const percent = Math.round((progress.downloadedBytes / progress.totalBytes) * 100);
+					const percent = Math.round(
+						(progress.downloadedBytes / progress.totalBytes) * 100,
+					);
 					onProgress(percent, progress.speed);
-				}
+				},
 			);
 			return;
 		}
@@ -414,9 +455,11 @@ export async function downloadFileOptimized(
 		filePath,
 		expectedSizeBytes,
 		(progress) => {
-			const percent = Math.round((progress.downloadedBytes / progress.totalBytes) * 100);
+			const percent = Math.round(
+				(progress.downloadedBytes / progress.totalBytes) * 100,
+			);
 			onProgress(percent, progress.speed);
-		}
+		},
 	);
 }
 
