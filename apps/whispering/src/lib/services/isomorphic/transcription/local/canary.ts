@@ -15,7 +15,6 @@ import type { CanaryModelConfig } from './types';
  * - decoder-model.int8.onnx (~170 MB)
  * - vocab.txt (208 KB)
  * - config.json (68 B)
- * - nemo128.onnx (141 KB) - audio preprocessor
  */
 export const CANARY_MODELS = [
 	{
@@ -47,11 +46,8 @@ export const CANARY_MODELS = [
 				filename: 'config.json',
 				sizeBytes: 68,
 			},
-			{
-				url: 'https://huggingface.co/istupakov/canary-1b-v2-onnx/resolve/main/nemo128.onnx',
-				filename: 'nemo128.onnx',
-				sizeBytes: 141_000,
-			},
+			// Note: nemo128.onnx (audio preprocessor) is not available in this HuggingFace repo.
+			// The Rust implementation uses a simplified mel-spectrogram computation instead.
 		],
 	},
 ] as const satisfies readonly CanaryModelConfig[];
