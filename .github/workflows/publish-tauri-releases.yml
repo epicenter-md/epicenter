@@ -55,17 +55,20 @@ jobs:
       fail-fast: false  # Continue building other platforms even if one fails
       matrix:
         include:
-          # macOS Apple Silicon (M1, M2, M3, etc.)
-          - platform: 'macos-latest'
-            args: '--target aarch64-apple-darwin'
-
-          # macOS Intel-based
-          - platform: 'macos-latest'
-            args: '--target x86_64-apple-darwin'
-
-          # Linux (Ubuntu)
-          - platform: 'ubuntu-22.04'
-            args: ''  # No specific target needed for Linux
+          # DEV MODE: Only Windows enabled for faster iteration
+          # Uncomment below for full release builds:
+          #
+          # # macOS Apple Silicon (M1, M2, M3, etc.)
+          # - platform: 'macos-latest'
+          #   args: '--target aarch64-apple-darwin'
+          #
+          # # macOS Intel-based
+          # - platform: 'macos-latest'
+          #   args: '--target x86_64-apple-darwin'
+          #
+          # # Linux (Ubuntu)
+          # - platform: 'ubuntu-22.04'
+          #   args: ''  # No specific target needed for Linux
 
           # Windows
           - platform: 'windows-latest'
