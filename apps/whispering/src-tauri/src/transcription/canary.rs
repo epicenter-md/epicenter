@@ -11,7 +11,9 @@ use log::{debug, info, warn};
 use ndarray::{Array1, Array2, Array3, Array4, IxDyn};
 use ort::session::{builder::GraphOptimizationLevel, Session};
 use ort::value::Value;
+use rustfft::{num_complex::Complex, FftPlanner};
 use std::collections::HashMap;
+use std::f32::consts::PI;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -286,7 +288,7 @@ impl CanaryDecoder {
 
         // Default values for Canary-1B-v2
         // Shape: [num_layers, batch, seq_len, hidden_dim]
-        let num_layers = 8; // Default for Canary-1B
+        let num_layers = 10; // Canary-1B-v2 has 10 decoder layers
         let hidden_dim = 1024; // Default
 
         info!(
@@ -584,13 +586,22 @@ impl CanaryEngine {
         Ok(text)
     }
 
-    /// Compute mel-spectrogram features from audio samples
-    /// This is a simplified implementation - production should use nemo128.onnx
+    /// Compute mel-spectrogram features from audio samples using proper FFT
+    ///
+    /// Implements the NeMo-style preprocessing:
+    /// 1. STFT with Hann window
+    /// 2. Power spectrum computation
+    /// 3. Mel filterbank application
+    /// 4. Log compression
     fn compute_features(&self, samples: &[f32]) -> Result<Array3<f32>, TranscriptionError> {
-        // Parameters for NeMo-style mel spectrogram (16kHz audio)
-        const HOP_LENGTH: usize = 160; // 10ms at 16kHz
+        // NeMo parameters for 16kHz audio
+        const SAMPLE_RATE: usize = 16000;
+        const N_FFT: usize = 512;
+        const HOP_LENGTH: usize = 160;  // 10ms
+        const WIN_LENGTH: usize = 400;  // 25ms
         const N_MELS: usize = 128;
-        const WIN_LENGTH: usize = 400; // 25ms at 16kHz
+        const F_MIN: f32 = 0.0;
+        const F_MAX: f32 = 8000.0;  // Nyquist for 16kHz
 
         // Calculate number of frames
         let n_frames = (samples.len().saturating_sub(WIN_LENGTH)) / HOP_LENGTH + 1;
@@ -601,30 +612,76 @@ impl CanaryEngine {
             });
         }
 
-        // Simplified mel-spectrogram computation
-        // For production, this should be replaced with proper STFT + mel filterbank
-        // or use the nemo128.onnx preprocessor
+        info!("[Canary] Computing mel-spectrogram: {} samples -> {} frames", samples.len(), n_frames);
+
+        // Create Hann window
+        let window: Vec<f32> = (0..WIN_LENGTH)
+            .map(|i| 0.5 * (1.0 - (2.0 * PI * i as f32 / (WIN_LENGTH - 1) as f32).cos()))
+            .collect();
+
+        // Create mel filterbank
+        let mel_filterbank = create_mel_filterbank(N_FFT, SAMPLE_RATE, N_MELS, F_MIN, F_MAX);
+
+        // Setup FFT
+        let mut planner = FftPlanner::<f32>::new();
+        let fft = planner.plan_fft_forward(N_FFT);
+
         let mut features = Array3::<f32>::zeros((1, N_MELS, n_frames));
 
         for frame_idx in 0..n_frames {
             let start = frame_idx * HOP_LENGTH;
             let end = (start + WIN_LENGTH).min(samples.len());
 
-            // Simple energy in mel bands (placeholder)
-            // Real implementation needs FFT + mel filterbank
-            let frame_samples = &samples[start..end];
-            let energy: f32 = frame_samples.iter().map(|x| x * x).sum::<f32>() / frame_samples.len() as f32;
-            let log_energy = (energy + 1e-10).ln();
+            // Create windowed frame with zero-padding
+            let mut fft_buffer: Vec<Complex<f32>> = vec![Complex::new(0.0, 0.0); N_FFT];
+            for (i, &sample) in samples[start..end].iter().enumerate() {
+                let windowed = sample * window.get(i).copied().unwrap_or(0.0);
+                fft_buffer[i] = Complex::new(windowed, 0.0);
+            }
 
+            // Perform FFT in-place
+            fft.process(&mut fft_buffer);
+
+            // Compute power spectrum (only need first half + 1 for real input)
+            let n_freq_bins = N_FFT / 2 + 1;
+            let power_spectrum: Vec<f32> = fft_buffer[..n_freq_bins]
+                .iter()
+                .map(|c| c.norm_sqr())
+                .collect();
+
+            // Apply mel filterbank and log compression
             for mel_idx in 0..N_MELS {
-                // Distribute energy across mel bands with some variation
-                let mel_weight = 1.0 - (mel_idx as f32 / N_MELS as f32 - 0.5).abs();
-                features[[0, mel_idx, frame_idx]] = log_energy * mel_weight;
+                let mel_energy: f32 = power_spectrum
+                    .iter()
+                    .zip(&mel_filterbank[mel_idx])
+                    .map(|(p, w)| p * w)
+                    .sum();
+
+                // Log compression with floor to avoid log(0)
+                features[[0, mel_idx, frame_idx]] = (mel_energy.max(1e-10)).ln();
+            }
+        }
+
+        // Normalize features (zero mean, unit variance per mel bin)
+        for mel_idx in 0..N_MELS {
+            let mut sum = 0.0f32;
+            let mut sum_sq = 0.0f32;
+            for frame_idx in 0..n_frames {
+                let v = features[[0, mel_idx, frame_idx]];
+                sum += v;
+                sum_sq += v * v;
+            }
+            let mean = sum / n_frames as f32;
+            let variance = (sum_sq / n_frames as f32) - mean * mean;
+            let std = variance.sqrt().max(1e-5);
+
+            for frame_idx in 0..n_frames {
+                features[[0, mel_idx, frame_idx]] = (features[[0, mel_idx, frame_idx]] - mean) / std;
             }
         }
 
         debug!(
-            "[Canary] Computed features: shape {:?}",
+            "[Canary] Computed mel-spectrogram: shape {:?}",
             features.shape()
         );
 
@@ -637,6 +694,74 @@ impl CanaryEngine {
         // The Session will be dropped when CanaryEngine is dropped
         // This method exists for API consistency with other engines
     }
+}
+
+/// Create mel filterbank matrix for converting power spectrum to mel scale
+///
+/// Creates triangular mel filters as per the HTK mel-scale formula:
+/// mel(f) = 2595 * log10(1 + f/700)
+///
+/// # Arguments
+/// * `n_fft` - FFT size
+/// * `sample_rate` - Audio sample rate in Hz
+/// * `n_mels` - Number of mel bands
+/// * `f_min` - Minimum frequency in Hz
+/// * `f_max` - Maximum frequency in Hz
+///
+/// # Returns
+/// 2D vector [n_mels][n_fft/2+1] of filterbank weights
+fn create_mel_filterbank(
+    n_fft: usize,
+    sample_rate: usize,
+    n_mels: usize,
+    f_min: f32,
+    f_max: f32,
+) -> Vec<Vec<f32>> {
+    let n_freq_bins = n_fft / 2 + 1;
+
+    // Convert Hz to mel scale
+    let hz_to_mel = |hz: f32| -> f32 { 2595.0 * (1.0 + hz / 700.0).log10() };
+    let mel_to_hz = |mel: f32| -> f32 { 700.0 * (10.0_f32.powf(mel / 2595.0) - 1.0) };
+
+    let mel_min = hz_to_mel(f_min);
+    let mel_max = hz_to_mel(f_max);
+
+    // Create n_mels + 2 points evenly spaced in mel scale
+    let mel_points: Vec<f32> = (0..=n_mels + 1)
+        .map(|i| mel_min + (mel_max - mel_min) * i as f32 / (n_mels + 1) as f32)
+        .collect();
+
+    // Convert mel points back to Hz and then to FFT bin indices
+    let hz_points: Vec<f32> = mel_points.iter().map(|&m| mel_to_hz(m)).collect();
+    let bin_points: Vec<usize> = hz_points
+        .iter()
+        .map(|&hz| ((hz * n_fft as f32 / sample_rate as f32).floor() as usize).min(n_freq_bins - 1))
+        .collect();
+
+    // Create triangular filters
+    let mut filterbank = vec![vec![0.0f32; n_freq_bins]; n_mels];
+
+    for mel_idx in 0..n_mels {
+        let left = bin_points[mel_idx];
+        let center = bin_points[mel_idx + 1];
+        let right = bin_points[mel_idx + 2];
+
+        // Rising slope (left to center)
+        for bin in left..=center {
+            if center != left {
+                filterbank[mel_idx][bin] = (bin - left) as f32 / (center - left) as f32;
+            }
+        }
+
+        // Falling slope (center to right)
+        for bin in center..=right {
+            if right != center {
+                filterbank[mel_idx][bin] = (right - bin) as f32 / (right - center) as f32;
+            }
+        }
+    }
+
+    filterbank
 }
 
 /// Supported languages for Canary-1B-v2
