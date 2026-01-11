@@ -9,7 +9,10 @@
  * - We need continuous analysis even when user is in another application
  */
 
-import { emit } from '@tauri-apps/api/event';
+import { emit, emitTo } from '@tauri-apps/api/event';
+
+// Debug counter
+let emitCount = 0;
 
 type AudioAnalyserState = {
 	audioContext: AudioContext | null;
@@ -109,17 +112,23 @@ function analyseAndEmit(): void {
 	}
 
 	const level = calculateAudioLevel();
+	emitCount++;
 
-	// Emit audio level for the recording indicator
-	emit('audio-level-update', { level }).catch(() => {
-		// Ignore emit errors (window might be closed)
+	// Log every 20th emit for debugging
+	if (emitCount % 20 === 0) {
+		console.log(`[AudioAnalyser] Emit #${emitCount}, level: ${level.toFixed(3)}`);
+	}
+
+	// Emit audio level directly to the recording indicator window
+	emitTo('recording-indicator', 'audio-level-update', { level }).catch((err) => {
+		// Window might not exist yet, ignore silently
+		if (emitCount === 1) {
+			console.warn('[AudioAnalyser] emitTo error (first):', err);
+		}
 	});
 
-	// Emit elapsed time
-	if (state.startTime) {
-		const elapsedSeconds = Math.floor((Date.now() - state.startTime) / 1000);
-		emit('recording-time-update', { seconds: elapsedSeconds }).catch(() => {});
-	}
+	// Also emit with regular emit for any other listeners
+	emit('audio-level-update', { level }).catch(() => {});
 }
 
 /**
