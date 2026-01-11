@@ -144,6 +144,19 @@
 				log('ERROR listen state:', String(listenErr));
 			}
 
+			// Listen for analyser start event (debug)
+			log('Setting up analyser-started listener...');
+			try {
+				unlistenFns.push(
+					await listen('audio-analyser-started', () => {
+						log('*** ANALYSER STARTED ***');
+					}),
+				);
+				log('analyser-started listener ready');
+			} catch (listenErr) {
+				log('ERROR listen analyser:', String(listenErr));
+			}
+
 			debugInfo = 'ready, waiting for events...';
 			log('=== onMount COMPLETE ===');
 		} catch (error) {

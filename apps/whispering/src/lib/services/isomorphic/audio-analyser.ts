@@ -58,11 +58,16 @@ export async function startAudioAnalysis(stream: MediaStream): Promise<void> {
 
 		state.isRunning = true;
 		state.startTime = Date.now();
+		emitCount = 0; // Reset counter
 
 		// Start the analysis loop with setInterval (works even when window not visible)
 		state.intervalId = setInterval(analyseAndEmit, UPDATE_INTERVAL_MS);
 
 		console.info('[AudioAnalyser] Started monitoring audio levels');
+
+		// Notify recording indicator that analyser has started
+		emitTo('recording-indicator', 'audio-analyser-started', { timestamp: Date.now() }).catch(() => {});
+		emit('audio-analyser-started', { timestamp: Date.now() }).catch(() => {});
 	} catch (error) {
 		console.error('[AudioAnalyser] Failed to start:', error);
 		await stopAudioAnalysis();
