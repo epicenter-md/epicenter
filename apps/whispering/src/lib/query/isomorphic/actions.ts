@@ -6,6 +6,7 @@ import { DbServiceErr } from '$lib/services/isomorphic/db';
 import { settings } from '$lib/stores/settings.svelte';
 import { vadRecorder } from '$lib/stores/vad-recorder.svelte';
 import * as transformClipboardWindow from '$routes/transform-clipboard/transformClipboardWindow.tauri';
+import * as recordingIndicatorWindow from '$routes/recording-indicator/recordingIndicatorWindow.tauri';
 import { rpc } from '..';
 import { db } from './db';
 import { delivery } from './delivery';
@@ -124,6 +125,14 @@ const startManualRecording = defineMutation({
 		manualRecordingStartTime = Date.now();
 		console.info('Recording started');
 		sound.playSoundIfEnabled('manual-start');
+
+		// Show the recording indicator overlay (desktop only)
+		if (window.__TAURI_INTERNALS__) {
+			recordingIndicatorWindow.show().catch((error) => {
+				console.warn('Failed to show recording indicator:', error);
+			});
+		}
+
 		return Ok(undefined);
 	},
 });
@@ -159,6 +168,13 @@ const stopManualRecording = defineMutation({
 		}
 
 		const { blob, recordingId } = data;
+
+		// Hide the recording indicator overlay (desktop only)
+		if (window.__TAURI_INTERNALS__) {
+			recordingIndicatorWindow.hide().catch((error) => {
+				console.warn('Failed to hide recording indicator:', error);
+			});
+		}
 
 		notify.success({
 			id: toastId,
@@ -389,6 +405,14 @@ export const commands = {
 					// Session cleanup is now handled internally by the recorder service
 					// Reset start time if recording was cancelled
 					manualRecordingStartTime = null;
+
+					// Hide the recording indicator overlay (desktop only)
+					if (window.__TAURI_INTERNALS__) {
+						recordingIndicatorWindow.hide().catch((error) => {
+							console.warn('Failed to hide recording indicator:', error);
+						});
+					}
+
 					notify.success({
 						id: toastId,
 						title: '✅ All Done!',
