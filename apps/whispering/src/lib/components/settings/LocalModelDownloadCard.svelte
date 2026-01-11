@@ -76,6 +76,15 @@
 				}
 				return await join(moonshineModelsDir, model.directoryName);
 			}
+			case 'canary': {
+				// Canary models are stored in a directory (multi-file ONNX model)
+				const canaryModelsDir = await PATHS.MODELS.CANARY();
+				// Ensure directory exists
+				if (!(await exists(canaryModelsDir))) {
+					await mkdir(canaryModelsDir, { recursive: true });
+				}
+				return await join(canaryModelsDir, model.directoryName);
+			}
 		}
 	}
 
@@ -101,7 +110,8 @@
 				return true;
 			}
 			case 'parakeet':
-			case 'moonshine': {
+			case 'moonshine':
+			case 'canary': {
 				if (!(await exists(path))) return false;
 				// For multi-file models, path must be a directory containing all files
 				const { data: dirStats } = await tryAsync({
@@ -248,7 +258,8 @@
 						break;
 					}
 					case 'parakeet':
-					case 'moonshine': {
+					case 'moonshine':
+					case 'canary': {
 						// Multiple file downloads for multi-file models
 						const totalBytes = model.sizeBytes;
 						let downloadedBytes = 0;
@@ -311,7 +322,7 @@
 				const path = await ensureModelDestinationPath();
 				if (await exists(path)) {
 					const isDirectory =
-						model.engine === 'parakeet' || model.engine === 'moonshine';
+						model.engine === 'parakeet' || model.engine === 'moonshine' || model.engine === 'canary';
 					await remove(path, { recursive: isDirectory });
 				}
 
