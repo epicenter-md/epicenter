@@ -39,11 +39,17 @@
 			},
 			"wix": {
 				"fipsCompliant": true,
-				"language": "en-US"
+				"language": "en-US",
+				"upgradeCode": "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
 			},
 			"nsis": {
 				"compression": "bzip2",
-				"installMode": "currentUser"
+				"installMode": "currentUser",
+				"oneClick": false,
+				"allowDowngrades": true,
+				"perMachine": false,
+				"startMenuFolder": "Whispering",
+				"installerIcon": "icons/icon.ico"
 			}
 		}
 	},
