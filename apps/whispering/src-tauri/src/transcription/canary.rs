@@ -9,7 +9,8 @@
 
 use log::{debug, error, info, warn};
 use ndarray::{Array1, Array2, Array3, Array4, Axis};
-use ort::{GraphOptimizationLevel, Session};
+use ort::session::{builder::GraphOptimizationLevel, Session};
+use ort::value::Value;
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -188,15 +189,19 @@ impl CanaryEncoder {
             lengths.shape()
         );
 
-        let inputs = ort::inputs![
-            "audio_signal" => audio_features.view(),
-            "length" => lengths.view(),
-        ]
-        .map_err(|e| TranscriptionError::TranscriptionError {
-            message: format!("Failed to create encoder inputs: {}", e),
-        })?;
+        let audio_value = Value::from_array(audio_features.view())
+            .map_err(|e| TranscriptionError::TranscriptionError {
+                message: format!("Failed to create audio input: {}", e),
+            })?;
+        let length_value = Value::from_array(lengths.view())
+            .map_err(|e| TranscriptionError::TranscriptionError {
+                message: format!("Failed to create length input: {}", e),
+            })?;
 
-        let outputs = self.session.run(inputs).map_err(|e| {
+        let outputs = self.session.run(ort::inputs![
+            "audio_signal" => audio_value,
+            "length" => length_value,
+        ]).map_err(|e| {
             TranscriptionError::TranscriptionError {
                 message: format!("Encoder inference failed: {}", e),
             }
@@ -361,17 +366,29 @@ impl CanaryDecoder {
             };
 
             // Run decoder
-            let inputs = ort::inputs![
-                "input_ids" => input_ids.view(),
-                "encoder_embeddings" => encoder_embeddings.view(),
-                "encoder_mask" => encoder_mask.view(),
-                "decoder_mems" => decoder_mems.view(),
-            ]
-            .map_err(|e| TranscriptionError::TranscriptionError {
-                message: format!("Failed to create decoder inputs: {}", e),
-            })?;
+            let input_ids_value = Value::from_array(input_ids.view())
+                .map_err(|e| TranscriptionError::TranscriptionError {
+                    message: format!("Failed to create input_ids: {}", e),
+                })?;
+            let encoder_emb_value = Value::from_array(encoder_embeddings.view())
+                .map_err(|e| TranscriptionError::TranscriptionError {
+                    message: format!("Failed to create encoder_embeddings input: {}", e),
+                })?;
+            let encoder_mask_value = Value::from_array(encoder_mask.view())
+                .map_err(|e| TranscriptionError::TranscriptionError {
+                    message: format!("Failed to create encoder_mask input: {}", e),
+                })?;
+            let decoder_mems_value = Value::from_array(decoder_mems.view())
+                .map_err(|e| TranscriptionError::TranscriptionError {
+                    message: format!("Failed to create decoder_mems input: {}", e),
+                })?;
 
-            let outputs = self.session.run(inputs).map_err(|e| {
+            let outputs = self.session.run(ort::inputs![
+                "input_ids" => input_ids_value,
+                "encoder_embeddings" => encoder_emb_value,
+                "encoder_mask" => encoder_mask_value,
+                "decoder_mems" => decoder_mems_value,
+            ]).map_err(|e| {
                 TranscriptionError::TranscriptionError {
                     message: format!("Decoder inference failed: {}", e),
                 }
