@@ -5,12 +5,7 @@ import type { CompletionService } from './types';
 import { CompletionServiceErr } from './types';
 
 export const GoogleCompletionServiceLive: CompletionService = {
-	complete: async ({
-		apiKey,
-		model: modelName,
-		systemPrompt,
-		userPrompt,
-	}) => {
+	complete: async ({ apiKey, model: modelName, systemPrompt, userPrompt }) => {
 		const combinedPrompt = `${systemPrompt}\n${userPrompt}`;
 		const { data: completion, error: completionError } = await tryAsync({
 			try: async () => {

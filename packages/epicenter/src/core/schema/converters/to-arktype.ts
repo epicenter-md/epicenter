@@ -10,13 +10,13 @@
  * infer ObjectType with composition methods available.
  */
 
-import type { StandardSchemaV1 } from '../standard/types';
 import { type Type, type } from 'arktype';
 import type { ObjectType } from 'arktype/internal/variants/object.ts';
+import { isNullableFieldSchema } from '../fields/nullability';
 import type {
 	BooleanFieldSchema,
-	FieldSchema,
 	DateFieldSchema,
+	FieldSchema,
 	IdFieldSchema,
 	IntegerFieldSchema,
 	JsonFieldSchema,
@@ -29,8 +29,8 @@ import type {
 	YtextFieldSchema,
 } from '../fields/types';
 import type { DateWithTimezoneString } from '../runtime/date-with-timezone';
-import { isNullableFieldSchema } from '../fields/nullability';
 import { DATE_WITH_TIMEZONE_STRING_REGEX } from '../runtime/regex';
+import type { StandardSchemaV1 } from '../standard/types';
 
 /**
  * Maps a FieldSchema to its corresponding arktype Type.

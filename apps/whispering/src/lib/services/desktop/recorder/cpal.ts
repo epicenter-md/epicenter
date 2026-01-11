@@ -145,8 +145,7 @@ export const CpalRecorderServiceLive: RecorderService = {
 			});
 		};
 
-		const { data: deviceOutcome, error: acquireDeviceError } =
-			acquireDevice();
+		const { data: deviceOutcome, error: acquireDeviceError } = acquireDevice();
 		if (acquireDeviceError) return Err(acquireDeviceError);
 
 		// Use the device from the outcome
@@ -238,9 +237,7 @@ export const CpalRecorderServiceLive: RecorderService = {
 			title: '🔄 Closing Session',
 			description: 'Cleaning up recording resources...',
 		});
-		const { error: closeError } = await invoke<void>(
-			'close_recording_session',
-		);
+		const { error: closeError } = await invoke<void>('close_recording_session');
 		if (closeError) {
 			// Log but don't fail the stop operation
 			console.error('Failed to close recording session:', closeError);
@@ -306,9 +303,7 @@ export const CpalRecorderServiceLive: RecorderService = {
 			title: '🔄 Closing Session',
 			description: 'Cleaning up recording resources...',
 		});
-		const { error: closeError } = await invoke<void>(
-			'close_recording_session',
-		);
+		const { error: closeError } = await invoke<void>('close_recording_session');
 		if (closeError) {
 			// Log but don't fail the cancel operation
 			console.error('Failed to close recording session:', closeError);

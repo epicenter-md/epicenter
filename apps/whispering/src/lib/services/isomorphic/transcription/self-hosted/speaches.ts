@@ -23,11 +23,9 @@ export const SpeachesTranscriptionServiceLive = {
 		const formData = new FormData();
 		formData.append(
 			'file',
-			new File(
-				[audioBlob],
-				`recording.${getAudioExtension(audioBlob.type)}`,
-				{ type: audioBlob.type },
-			),
+			new File([audioBlob], `recording.${getAudioExtension(audioBlob.type)}`, {
+				type: audioBlob.type,
+			}),
 		);
 		formData.append('model', options.modelId);
 		if (options.outputLanguage !== 'auto') {
@@ -158,4 +156,5 @@ export const SpeachesTranscriptionServiceLive = {
 	},
 };
 
-export type SpeachesTranscriptionService = typeof SpeachesTranscriptionServiceLive;
+export type SpeachesTranscriptionService =
+	typeof SpeachesTranscriptionServiceLive;

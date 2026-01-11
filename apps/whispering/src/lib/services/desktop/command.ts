@@ -4,7 +4,7 @@ import type { Brand } from 'wellcrafted/brand';
 import { createTaggedError, extractErrorMessage } from 'wellcrafted/error';
 import { Err, Ok, tryAsync } from 'wellcrafted/result';
 
-export const { CommandServiceError, CommandServiceErr} = createTaggedError(
+export const { CommandServiceError, CommandServiceErr } = createTaggedError(
 	'CommandServiceError',
 );
 export type CommandServiceError = ReturnType<typeof CommandServiceError>;

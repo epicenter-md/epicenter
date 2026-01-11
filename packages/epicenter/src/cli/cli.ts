@@ -1,5 +1,5 @@
 import yargs from 'yargs';
-import type { ActionContracts, ActionContract } from '../core/actions';
+import type { ActionContract, ActionContracts } from '../core/actions';
 import { isActionContract } from '../core/actions';
 import type { StandardJSONSchemaV1 } from '../core/schema';
 import type { BoundWorkspaceClient } from '../core/workspace/contract';

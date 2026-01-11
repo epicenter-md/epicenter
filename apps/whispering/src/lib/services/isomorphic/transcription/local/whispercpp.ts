@@ -229,4 +229,5 @@ export const WhisperCppTranscriptionServiceLive = {
 	},
 };
 
-export type WhisperCppTranscriptionService = typeof WhisperCppTranscriptionServiceLive;
+export type WhisperCppTranscriptionService =
+	typeof WhisperCppTranscriptionServiceLive;

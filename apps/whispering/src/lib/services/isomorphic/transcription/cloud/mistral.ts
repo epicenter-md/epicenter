@@ -120,10 +120,7 @@ export const MistralTranscriptionServiceLive = {
 				});
 			}
 
-			if (
-				errorMessage.includes('429') ||
-				errorMessage.includes('rate limit')
-			) {
+			if (errorMessage.includes('429') || errorMessage.includes('rate limit')) {
 				return WhisperingErr({
 					title: '⏱️ Rate Limit Reached',
 					description: 'Too many requests. Please try again later.',
@@ -131,10 +128,7 @@ export const MistralTranscriptionServiceLive = {
 				});
 			}
 
-			if (
-				errorMessage.includes('413') ||
-				errorMessage.includes('too large')
-			) {
+			if (errorMessage.includes('413') || errorMessage.includes('too large')) {
 				return WhisperingErr({
 					title: '📦 Audio File Too Large',
 					description:
@@ -163,4 +157,5 @@ export const MistralTranscriptionServiceLive = {
 	},
 };
 
-export type MistralTranscriptionService = typeof MistralTranscriptionServiceLive;
+export type MistralTranscriptionService =
+	typeof MistralTranscriptionServiceLive;

@@ -248,4 +248,5 @@ export const DeepgramTranscriptionServiceLive = {
 	},
 };
 
-export type DeepgramTranscriptionService = typeof DeepgramTranscriptionServiceLive;
+export type DeepgramTranscriptionService =
+	typeof DeepgramTranscriptionServiceLive;

@@ -93,8 +93,7 @@ export const commands = [
 		id: 'runTransformationOnClipboard',
 		title: 'Run transformation on clipboard',
 		on: ['Pressed'],
-		callback: () =>
-			rpc.commands.runTransformationOnClipboard(undefined),
+		callback: () => rpc.commands.runTransformationOnClipboard(undefined),
 	},
 ] as const satisfies SatisfiedCommand[];
 

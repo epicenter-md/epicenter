@@ -192,4 +192,5 @@ export const ParakeetTranscriptionServiceLive = {
 	},
 };
 
-export type ParakeetTranscriptionService = typeof ParakeetTranscriptionServiceLive;
+export type ParakeetTranscriptionService =
+	typeof ParakeetTranscriptionServiceLive;
