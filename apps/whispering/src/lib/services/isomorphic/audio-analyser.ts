@@ -3,6 +3,10 @@
  *
  * Provides real-time audio level monitoring using Web Audio API's AnalyserNode.
  * Used for the recording indicator overlay to visualize voice input.
+ *
+ * IMPORTANT: Uses setInterval instead of requestAnimationFrame because:
+ * - requestAnimationFrame is throttled/paused when window is not visible
+ * - We need continuous analysis even when user is in another application
  */
 
 import { emit } from '@tauri-apps/api/event';
@@ -11,7 +15,7 @@ type AudioAnalyserState = {
 	audioContext: AudioContext | null;
 	analyser: AnalyserNode | null;
 	source: MediaStreamAudioSourceNode | null;
-	animationFrameId: number | null;
+	intervalId: ReturnType<typeof setInterval> | null;
 	isRunning: boolean;
 	startTime: number | null;
 };
@@ -20,14 +24,14 @@ const state: AudioAnalyserState = {
 	audioContext: null,
 	analyser: null,
 	source: null,
-	animationFrameId: null,
+	intervalId: null,
 	isRunning: false,
 	startTime: null,
 };
 
-// Throttle interval for emitting audio levels (ms)
-const EMIT_INTERVAL = 50; // ~20fps for smooth animation
-let lastEmitTime = 0;
+// Update interval for emitting audio levels (ms)
+// ~20fps for smooth animation
+const UPDATE_INTERVAL_MS = 50;
 
 /**
  * Start monitoring audio levels from a MediaStream
@@ -52,8 +56,8 @@ export async function startAudioAnalysis(stream: MediaStream): Promise<void> {
 		state.isRunning = true;
 		state.startTime = Date.now();
 
-		// Start the analysis loop
-		analyseLoop();
+		// Start the analysis loop with setInterval (works even when window not visible)
+		state.intervalId = setInterval(analyseAndEmit, UPDATE_INTERVAL_MS);
 
 		console.info('[AudioAnalyser] Started monitoring audio levels');
 	} catch (error) {
@@ -68,9 +72,9 @@ export async function startAudioAnalysis(stream: MediaStream): Promise<void> {
 export async function stopAudioAnalysis(): Promise<void> {
 	state.isRunning = false;
 
-	if (state.animationFrameId !== null) {
-		cancelAnimationFrame(state.animationFrameId);
-		state.animationFrameId = null;
+	if (state.intervalId !== null) {
+		clearInterval(state.intervalId);
+		state.intervalId = null;
 	}
 
 	if (state.source) {
@@ -96,36 +100,26 @@ export async function stopAudioAnalysis(): Promise<void> {
 }
 
 /**
- * Main analysis loop - calculates audio level and emits events
+ * Analyse audio level and emit events
+ * Called by setInterval for consistent updates regardless of window visibility
  */
-function analyseLoop(): void {
+function analyseAndEmit(): void {
 	if (!state.isRunning || !state.analyser) {
 		return;
 	}
 
-	const now = performance.now();
+	const level = calculateAudioLevel();
 
-	// Throttle emissions to reduce overhead
-	if (now - lastEmitTime >= EMIT_INTERVAL) {
-		const level = calculateAudioLevel();
+	// Emit audio level for the recording indicator
+	emit('audio-level-update', { level }).catch(() => {
+		// Ignore emit errors (window might be closed)
+	});
 
-		// Emit audio level for the recording indicator
-		emit('audio-level-update', { level }).catch(() => {
-			// Ignore emit errors (window might be closed)
-		});
-
-		// Emit elapsed time
-		if (state.startTime) {
-			const elapsedSeconds = Math.floor((Date.now() - state.startTime) / 1000);
-			emit('recording-time-update', { seconds: elapsedSeconds }).catch(
-				() => {},
-			);
-		}
-
-		lastEmitTime = now;
+	// Emit elapsed time
+	if (state.startTime) {
+		const elapsedSeconds = Math.floor((Date.now() - state.startTime) / 1000);
+		emit('recording-time-update', { seconds: elapsedSeconds }).catch(() => {});
 	}
-
-	state.animationFrameId = requestAnimationFrame(analyseLoop);
 }
 
 /**
