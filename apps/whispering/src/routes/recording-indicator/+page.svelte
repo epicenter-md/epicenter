@@ -1,24 +1,12 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
 	import { emit, listen, type UnlistenFn } from '@tauri-apps/api/event';
-	import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
-
-	// Debug logging - stores logs for display
-	const DEBUG = true;
-	function log(...args: unknown[]) {
-		const msg = args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ');
-		logLines = [...logLines.slice(-9), msg]; // Keep last 10 lines
-		if (DEBUG) console.log('[RecordingIndicator]', ...args);
-	}
 
 	// State
 	let audioLevel = $state(0);
 	let elapsedSeconds = $state(0);
 	let recordingState = $state<'recording' | 'processing' | 'idle'>('recording');
 	let waveformBars = $state<number[]>(new Array(16).fill(0.15));
-	let debugInfo = $state('initializing...');
-	let logLines = $state<string[]>([]);
-	let eventCount = $state(0);
 
 	// Internal timer (self-contained, no dependency on events)
 	let timerInterval: ReturnType<typeof setInterval> | null = null;
@@ -32,23 +20,17 @@
 	let unlistenFns: UnlistenFn[] = [];
 
 	function startTimer() {
-		log('startTimer called');
 		startTime = Date.now();
 		elapsedSeconds = 0;
 
-		// Update timer every second
 		timerInterval = setInterval(() => {
 			if (startTime) {
-				const newSeconds = Math.floor((Date.now() - startTime) / 1000);
-				elapsedSeconds = newSeconds;
-				log('Timer tick:', newSeconds);
+				elapsedSeconds = Math.floor((Date.now() - startTime) / 1000);
 			}
 		}, 1000);
-		log('Timer interval started');
 	}
 
 	function stopTimer() {
-		log('stopTimer called');
 		if (timerInterval) {
 			clearInterval(timerInterval);
 			timerInterval = null;
@@ -57,116 +39,56 @@
 	}
 
 	function resetTimer() {
-		log('resetTimer called');
 		stopTimer();
 		elapsedSeconds = 0;
 		startTimer();
 	}
 
 	onMount(async () => {
-		log('=== onMount START ===');
-		debugInfo = 'onMount started';
-
 		try {
-			// Note: Shadow is already disabled via window creation options (shadow: false)
-			// in recordingIndicatorWindow.tauri.ts - no need to call setShadow here
-			log('Getting webview window...');
-			const webview = getCurrentWebviewWindow();
-			log('Webview window:', webview.label);
-
 			// Signal that we're ready to receive events
-			log('Emitting recording-indicator-ready...');
-			try {
-				await emit('recording-indicator-ready');
-				log('Ready event emitted');
-			} catch (emitErr) {
-				log('ERROR emit:', String(emitErr));
-			}
+			await emit('recording-indicator-ready');
 
 			// Start the internal timer immediately
-			log('Starting timer...');
 			startTimer();
 
-			// Start animation loop (using setInterval for consistency)
-			log('Starting animation...');
+			// Start animation loop
 			startAnimation();
 
 			// Listen for audio level updates
-			log('Setting up audio-level-update listener...');
-			try {
-				unlistenFns.push(
-					await listen<{ level: number }>('audio-level-update', (event) => {
-						eventCount++;
-						audioLevel = event.payload.level;
-						updateTargetLevels(audioLevel);
-						if (eventCount % 20 === 0) {
-							log('Audio #' + eventCount + ': ' + event.payload.level.toFixed(3));
-						}
-					}),
-				);
-				log('audio-level-update listener ready');
-			} catch (listenErr) {
-				log('ERROR listen audio:', String(listenErr));
-			}
+			unlistenFns.push(
+				await listen<{ level: number }>('audio-level-update', (event) => {
+					audioLevel = event.payload.level;
+					updateTargetLevels(audioLevel);
+				}),
+			);
 
 			// Listen for reset events (when window is shown again)
-			log('Setting up reset listener...');
-			try {
-				unlistenFns.push(
-					await listen('recording-indicator-reset', () => {
-						log('Reset event received');
-						resetTimer();
-						recordingState = 'recording';
-					}),
-				);
-				log('reset listener ready');
-			} catch (listenErr) {
-				log('ERROR listen reset:', String(listenErr));
-			}
+			unlistenFns.push(
+				await listen('recording-indicator-reset', () => {
+					resetTimer();
+					recordingState = 'recording';
+				}),
+			);
 
 			// Listen for state updates
-			log('Setting up state listener...');
-			try {
-				unlistenFns.push(
-					await listen<{ state: 'recording' | 'processing' | 'idle' }>(
-						'recording-state-update',
-						(event) => {
-							log('State:', event.payload.state);
-							recordingState = event.payload.state;
-							if (event.payload.state === 'processing') {
-								stopTimer();
-							}
-						},
-					),
-				);
-				log('state listener ready');
-			} catch (listenErr) {
-				log('ERROR listen state:', String(listenErr));
-			}
-
-			// Listen for analyser start event (debug)
-			log('Setting up analyser-started listener...');
-			try {
-				unlistenFns.push(
-					await listen('audio-analyser-started', () => {
-						log('*** ANALYSER STARTED ***');
-					}),
-				);
-				log('analyser-started listener ready');
-			} catch (listenErr) {
-				log('ERROR listen analyser:', String(listenErr));
-			}
-
-			debugInfo = 'ready, waiting for events...';
-			log('=== onMount COMPLETE ===');
+			unlistenFns.push(
+				await listen<{ state: 'recording' | 'processing' | 'idle' }>(
+					'recording-state-update',
+					(event) => {
+						recordingState = event.payload.state;
+						if (event.payload.state === 'processing') {
+							stopTimer();
+						}
+					},
+				),
+			);
 		} catch (error) {
-			log('ERROR in onMount:', error);
-			debugInfo = 'ERROR: ' + String(error);
+			console.error('Error in recording indicator mount:', error);
 		}
 	});
 
 	onDestroy(() => {
-		log('onDestroy called');
 		unlistenFns.forEach((fn) => fn());
 		stopTimer();
 		if (animationInterval) {
@@ -187,7 +109,6 @@
 	}
 
 	function startAnimation() {
-		// Use setInterval instead of requestAnimationFrame for consistency
 		animationInterval = setInterval(() => {
 			// Smooth interpolation towards target values
 			waveformBars = waveformBars.map((current, i) => {
@@ -198,7 +119,6 @@
 				return current + diff * speed;
 			});
 		}, 50); // ~20fps
-		log('Animation interval started');
 	}
 
 	function formatTime(seconds: number): string {
@@ -238,31 +158,15 @@
 	</div>
 </div>
 
-<!-- Debug log panel - VISIBLE FOR DEBUGGING -->
-<div class="debug-panel">
-	<div class="debug-header">Events: {eventCount} | Level: {audioLevel.toFixed(2)} | Time: {elapsedSeconds}s</div>
-	<div class="debug-logs">
-		{#each logLines as line}
-			<div class="log-line">{line}</div>
-		{/each}
-	</div>
-</div>
 
 <style>
-	:global(html, body) {
-		margin: 0;
-		padding: 0;
-		background: transparent !important;
-		overflow: hidden;
-	}
-
 	/* Main container - floating pill design */
 	.indicator {
 		position: fixed;
 		top: 0;
 		left: 0;
 		right: 0;
-		height: 44px; /* Fixed height for pill, leaving room for debug */
+		height: 44px;
 		display: flex;
 		align-items: center;
 		justify-content: center;
@@ -380,45 +284,6 @@
 	@keyframes blink {
 		0%, 100% { opacity: 1; }
 		50% { opacity: 0.3; }
-	}
-
-	/* Debug log panel - HIGHLY VISIBLE */
-	.debug-panel {
-		position: fixed;
-		top: 46px;
-		left: 0;
-		right: 0;
-		bottom: 0;
-		background: #1a1a2e;
-		color: #0f0;
-		font-family: monospace;
-		font-size: 9px;
-		padding: 2px 4px;
-		overflow-y: auto;
-		z-index: 9999;
-		border-top: 1px solid #333;
-	}
-
-	.debug-header {
-		background: #ff0000;
-		color: #fff;
-		padding: 2px 4px;
-		font-weight: bold;
-		margin: -2px -4px 4px -4px;
-	}
-
-	.debug-logs {
-		display: flex;
-		flex-direction: column;
-		gap: 1px;
-	}
-
-	.log-line {
-		white-space: nowrap;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		padding: 1px 0;
-		border-bottom: 1px solid #333;
 	}
 
 	/* Reduced motion support */

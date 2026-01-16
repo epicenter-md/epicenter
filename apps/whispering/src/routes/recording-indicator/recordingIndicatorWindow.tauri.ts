@@ -4,8 +4,8 @@ import { currentMonitor } from '@tauri-apps/api/window';
 import { Ok, tryAsync } from 'wellcrafted/result';
 
 const WINDOW_LABEL = 'recording-indicator';
-const WINDOW_WIDTH = 350; // Wider for log messages
-const WINDOW_HEIGHT = 200; // Tall for debug log panel
+const WINDOW_WIDTH = 180;
+const WINDOW_HEIGHT = 44; // Exactement la hauteur de l'indicateur
 
 let windowInstance: WebviewWindow | null = null;
 let readyUnlisten: UnlistenFn | null = null;
