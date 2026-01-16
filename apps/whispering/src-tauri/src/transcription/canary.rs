@@ -16,8 +16,22 @@ use std::collections::HashMap;
 use std::f32::consts::PI;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use super::error::TranscriptionError;
+
+/// Simple pseudo-random number generator for dither
+/// Uses xorshift64 algorithm - fast and good enough for audio dither
+static RAND_STATE: AtomicU64 = AtomicU64::new(0x853c49e6748fea9b);
+
+fn rand_simple() -> f32 {
+    let mut state = RAND_STATE.load(Ordering::Relaxed);
+    state ^= state << 13;
+    state ^= state >> 7;
+    state ^= state << 17;
+    RAND_STATE.store(state, Ordering::Relaxed);
+    (state as f32) / (u64::MAX as f32)
+}
 
 /// Language code to token ID mapping for Canary-1B-v2
 /// These are extracted from vocab.txt
@@ -588,25 +602,30 @@ impl CanaryEngine {
 
     /// Compute mel-spectrogram features from audio samples using proper FFT
     ///
-    /// Implements the NeMo-style preprocessing:
-    /// 1. STFT with Hann window
-    /// 2. Power spectrum computation
-    /// 3. Mel filterbank application
-    /// 4. Log compression
+    /// Implements the NeMo-style preprocessing matching nemo128.onnx:
+    /// 1. Add small dither for numerical stability
+    /// 2. STFT with Hann window (centered)
+    /// 3. Power spectrum computation
+    /// 4. Mel filterbank application
+    /// 5. Log compression
+    /// 6. Per-feature normalization (zero mean, unit variance)
     fn compute_features(&self, samples: &[f32]) -> Result<Array3<f32>, TranscriptionError> {
-        // NeMo parameters for 16kHz audio
+        // NeMo parameters for 16kHz audio (matching nemo128.onnx)
         const SAMPLE_RATE: usize = 16000;
         const N_FFT: usize = 512;
-        const HOP_LENGTH: usize = 160;  // 10ms
-        const WIN_LENGTH: usize = 400;  // 25ms
+        const HOP_LENGTH: usize = 160;  // 10ms -> ~100 frames/second
+        const WIN_LENGTH: usize = 320;  // 20ms (NeMo default, not 25ms)
         const N_MELS: usize = 128;
         const F_MIN: f32 = 0.0;
         const F_MAX: f32 = 8000.0;  // Nyquist for 16kHz
+        const DITHER: f32 = 1e-5;   // Small noise for numerical stability
+        const LOG_FLOOR: f32 = 1e-10;
 
-        // Calculate number of frames
-        let n_frames = (samples.len().saturating_sub(WIN_LENGTH)) / HOP_LENGTH + 1;
+        // Calculate number of frames matching nemo128: ceil(samples / hop_length) + 1
+        // nemo128 uses centered frames with padding
+        let n_frames = (samples.len() + HOP_LENGTH - 1) / HOP_LENGTH + 1;
 
-        if n_frames == 0 {
+        if samples.is_empty() {
             return Err(TranscriptionError::TranscriptionError {
                 message: "Audio too short for feature extraction".to_string(),
             });
@@ -614,36 +633,50 @@ impl CanaryEngine {
 
         info!("[Canary] Computing mel-spectrogram: {} samples -> {} frames", samples.len(), n_frames);
 
-        // Create Hann window
-        let window: Vec<f32> = (0..WIN_LENGTH)
-            .map(|i| 0.5 * (1.0 - (2.0 * PI * i as f32 / (WIN_LENGTH - 1) as f32).cos()))
+        // Add dither for numerical stability (prevents log(0) issues)
+        let samples_with_dither: Vec<f32> = samples.iter()
+            .map(|&s| s + DITHER * (2.0 * rand_simple() - 1.0))
             .collect();
 
-        // Create mel filterbank
-        let mel_filterbank = create_mel_filterbank(N_FFT, SAMPLE_RATE, N_MELS, F_MIN, F_MAX);
+        // Pad samples for centered frames (half window on each side)
+        let pad_length = WIN_LENGTH / 2;
+        let mut padded_samples = vec![0.0f32; pad_length];
+        padded_samples.extend_from_slice(&samples_with_dither);
+        padded_samples.extend(vec![0.0f32; pad_length + HOP_LENGTH]); // Extra padding for last frames
+
+        // Create Hann window (periodic version for STFT)
+        let window: Vec<f32> = (0..WIN_LENGTH)
+            .map(|i| 0.5 * (1.0 - (2.0 * PI * i as f32 / WIN_LENGTH as f32).cos()))
+            .collect();
+
+        // Create mel filterbank with proper frequency mapping
+        let mel_filterbank = create_mel_filterbank_nemo(N_FFT, SAMPLE_RATE, N_MELS, F_MIN, F_MAX);
 
         // Setup FFT
         let mut planner = FftPlanner::<f32>::new();
         let fft = planner.plan_fft_forward(N_FFT);
 
         let mut features = Array3::<f32>::zeros((1, N_MELS, n_frames));
+        let n_freq_bins = N_FFT / 2 + 1;
 
         for frame_idx in 0..n_frames {
-            let start = frame_idx * HOP_LENGTH;
-            let end = (start + WIN_LENGTH).min(samples.len());
+            let center = frame_idx * HOP_LENGTH;
+            let start = center;
+            let end = (start + WIN_LENGTH).min(padded_samples.len());
 
-            // Create windowed frame with zero-padding
+            // Create windowed frame with zero-padding to N_FFT
             let mut fft_buffer: Vec<Complex<f32>> = vec![Complex::new(0.0, 0.0); N_FFT];
-            for (i, &sample) in samples[start..end].iter().enumerate() {
-                let windowed = sample * window.get(i).copied().unwrap_or(0.0);
-                fft_buffer[i] = Complex::new(windowed, 0.0);
+            for (i, idx) in (start..end).enumerate() {
+                if idx < padded_samples.len() && i < WIN_LENGTH {
+                    let windowed = padded_samples[idx] * window[i];
+                    fft_buffer[i] = Complex::new(windowed, 0.0);
+                }
             }
 
             // Perform FFT in-place
             fft.process(&mut fft_buffer);
 
-            // Compute power spectrum (only need first half + 1 for real input)
-            let n_freq_bins = N_FFT / 2 + 1;
+            // Compute power spectrum (magnitude squared)
             let power_spectrum: Vec<f32> = fft_buffer[..n_freq_bins]
                 .iter()
                 .map(|c| c.norm_sqr())
@@ -658,25 +691,27 @@ impl CanaryEngine {
                     .sum();
 
                 // Log compression with floor to avoid log(0)
-                features[[0, mel_idx, frame_idx]] = (mel_energy.max(1e-10)).ln();
+                features[[0, mel_idx, frame_idx]] = (mel_energy.max(LOG_FLOOR)).ln();
             }
         }
 
-        // Normalize features (zero mean, unit variance per mel bin)
+        // Normalize features per mel bin (zero mean, unit variance)
+        // This matches NeMo's "per_feature" normalization
         for mel_idx in 0..N_MELS {
-            let mut sum = 0.0f32;
-            let mut sum_sq = 0.0f32;
+            let mut sum = 0.0f64;
+            let mut sum_sq = 0.0f64;
             for frame_idx in 0..n_frames {
-                let v = features[[0, mel_idx, frame_idx]];
+                let v = features[[0, mel_idx, frame_idx]] as f64;
                 sum += v;
                 sum_sq += v * v;
             }
-            let mean = sum / n_frames as f32;
-            let variance = (sum_sq / n_frames as f32) - mean * mean;
+            let mean = sum / n_frames as f64;
+            let variance = (sum_sq / n_frames as f64) - mean * mean;
             let std = variance.sqrt().max(1e-5);
 
             for frame_idx in 0..n_frames {
-                features[[0, mel_idx, frame_idx]] = (features[[0, mel_idx, frame_idx]] - mean) / std;
+                let normalized = (features[[0, mel_idx, frame_idx]] as f64 - mean) / std;
+                features[[0, mel_idx, frame_idx]] = normalized as f32;
             }
         }
 
@@ -696,10 +731,10 @@ impl CanaryEngine {
     }
 }
 
-/// Create mel filterbank matrix for converting power spectrum to mel scale
+/// Create mel filterbank matrix for NeMo-style preprocessing
 ///
-/// Creates triangular mel filters as per the HTK mel-scale formula:
-/// mel(f) = 2595 * log10(1 + f/700)
+/// Uses floating-point frequency mapping for smoother filters,
+/// matching the behavior of nemo128.onnx preprocessor.
 ///
 /// # Arguments
 /// * `n_fft` - FFT size
@@ -710,7 +745,7 @@ impl CanaryEngine {
 ///
 /// # Returns
 /// 2D vector [n_mels][n_fft/2+1] of filterbank weights
-fn create_mel_filterbank(
+fn create_mel_filterbank_nemo(
     n_fft: usize,
     sample_rate: usize,
     n_mels: usize,
@@ -719,7 +754,7 @@ fn create_mel_filterbank(
 ) -> Vec<Vec<f32>> {
     let n_freq_bins = n_fft / 2 + 1;
 
-    // Convert Hz to mel scale
+    // HTK mel scale conversion functions
     let hz_to_mel = |hz: f32| -> f32 { 2595.0 * (1.0 + hz / 700.0).log10() };
     let mel_to_hz = |mel: f32| -> f32 { 700.0 * (10.0_f32.powf(mel / 2595.0) - 1.0) };
 
@@ -731,32 +766,29 @@ fn create_mel_filterbank(
         .map(|i| mel_min + (mel_max - mel_min) * i as f32 / (n_mels + 1) as f32)
         .collect();
 
-    // Convert mel points back to Hz and then to FFT bin indices
+    // Convert mel points back to Hz
     let hz_points: Vec<f32> = mel_points.iter().map(|&m| mel_to_hz(m)).collect();
-    let bin_points: Vec<usize> = hz_points
-        .iter()
-        .map(|&hz| ((hz * n_fft as f32 / sample_rate as f32).floor() as usize).min(n_freq_bins - 1))
+
+    // Convert Hz to FFT bin indices (floating point for smoother interpolation)
+    let fft_freqs: Vec<f32> = (0..n_freq_bins)
+        .map(|i| i as f32 * sample_rate as f32 / n_fft as f32)
         .collect();
 
-    // Create triangular filters
+    // Create triangular filters with proper interpolation
     let mut filterbank = vec![vec![0.0f32; n_freq_bins]; n_mels];
 
     for mel_idx in 0..n_mels {
-        let left = bin_points[mel_idx];
-        let center = bin_points[mel_idx + 1];
-        let right = bin_points[mel_idx + 2];
+        let f_left = hz_points[mel_idx];
+        let f_center = hz_points[mel_idx + 1];
+        let f_right = hz_points[mel_idx + 2];
 
-        // Rising slope (left to center)
-        for bin in left..=center {
-            if center != left {
-                filterbank[mel_idx][bin] = (bin - left) as f32 / (center - left) as f32;
-            }
-        }
-
-        // Falling slope (center to right)
-        for bin in center..=right {
-            if right != center {
-                filterbank[mel_idx][bin] = (right - bin) as f32 / (right - center) as f32;
+        for (bin_idx, &freq) in fft_freqs.iter().enumerate() {
+            if freq >= f_left && freq <= f_center && f_center > f_left {
+                // Rising slope
+                filterbank[mel_idx][bin_idx] = (freq - f_left) / (f_center - f_left);
+            } else if freq > f_center && freq <= f_right && f_right > f_center {
+                // Falling slope
+                filterbank[mel_idx][bin_idx] = (f_right - freq) / (f_right - f_center);
             }
         }
     }
