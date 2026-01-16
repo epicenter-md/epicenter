@@ -76,6 +76,16 @@ const TOKEN_END_OF_TEXT: i64 = 3;
 /// Maximum sequence length for decoding
 const MAX_SEQUENCE_LENGTH: usize = 1024;
 
+/// Audio sample rate expected by Canary
+const SAMPLE_RATE: usize = 16000;
+
+/// Maximum chunk duration in seconds for optimal Canary transcription
+/// Canary was trained on 30-40 second segments; longer audio causes repetitions
+const MAX_CHUNK_DURATION_SECS: f32 = 30.0;
+
+/// Overlap between chunks in seconds to avoid cutting words mid-sentence
+const CHUNK_OVERLAP_SECS: f32 = 0.5;
+
 /// Canary vocabulary loaded from vocab.txt
 pub struct CanaryVocab {
     #[allow(dead_code)] // Reserved for future encoder use
@@ -482,6 +492,61 @@ impl CanaryDecoder {
     }
 }
 
+/// Split audio samples into chunks for chunked inference
+///
+/// This is critical for long audio files because Canary was trained on
+/// 30-40 second segments. Longer audio causes the decoder to lose attention
+/// and produce repetitive text.
+///
+/// # Arguments
+/// * `samples` - Audio samples (16kHz, mono, normalized to [-1, 1])
+///
+/// # Returns
+/// Vector of audio chunks, each up to MAX_CHUNK_DURATION_SECS long
+fn split_audio_into_chunks(samples: &[f32]) -> Vec<Vec<f32>> {
+    let max_chunk_samples = (MAX_CHUNK_DURATION_SECS * SAMPLE_RATE as f32) as usize;
+    let overlap_samples = (CHUNK_OVERLAP_SECS * SAMPLE_RATE as f32) as usize;
+
+    // If audio fits in one chunk, return as-is
+    if samples.len() <= max_chunk_samples {
+        return vec![samples.to_vec()];
+    }
+
+    let total_duration = samples.len() as f32 / SAMPLE_RATE as f32;
+    info!(
+        "[Canary] Audio is {:.1}s, splitting into ~30s chunks for optimal transcription",
+        total_duration
+    );
+
+    let mut chunks = Vec::new();
+    let mut start = 0;
+
+    while start < samples.len() {
+        let end = (start + max_chunk_samples).min(samples.len());
+        chunks.push(samples[start..end].to_vec());
+
+        // Move start forward, accounting for overlap
+        let step = max_chunk_samples.saturating_sub(overlap_samples);
+        if step == 0 {
+            break; // Safety: avoid infinite loop
+        }
+
+        start += step;
+
+        // If remaining audio is very short, it's already included in the last chunk
+        if samples.len().saturating_sub(start) < overlap_samples {
+            break;
+        }
+    }
+
+    info!(
+        "[Canary] Split audio into {} chunks",
+        chunks.len()
+    );
+
+    chunks
+}
+
 /// Complete Canary engine combining encoder and decoder
 pub struct CanaryEngine {
     encoder: CanaryEncoder,
@@ -558,6 +623,9 @@ impl CanaryEngine {
 
     /// Transcribe audio samples with language parameter
     ///
+    /// Uses chunked inference for long audio (>30s) to avoid decoder degradation.
+    /// Canary was trained on 30-40 second segments; longer audio causes repetitions.
+    ///
     /// # Arguments
     /// * `samples` - Audio samples as f32 (16kHz, mono, normalized to [-1, 1])
     /// * `language` - Target language code (e.g., "fr", "en", "de")
@@ -565,8 +633,10 @@ impl CanaryEngine {
     /// # Returns
     /// Transcribed text in the specified language
     pub fn transcribe(&mut self, samples: Vec<f32>, language: &str) -> Result<String, TranscriptionError> {
+        let total_duration = samples.len() as f32 / SAMPLE_RATE as f32;
         info!(
-            "[Canary] Transcribing {} samples with language '{}'",
+            "[Canary] Transcribing {:.1}s of audio ({} samples) with language '{}'",
+            total_duration,
             samples.len(),
             language
         );
@@ -575,10 +645,55 @@ impl CanaryEngine {
             return Ok(String::new());
         }
 
+        // Split audio into chunks for optimal transcription quality
+        let chunks = split_audio_into_chunks(&samples);
+
+        if chunks.len() == 1 {
+            // Single chunk: direct transcription
+            return self.transcribe_chunk(&chunks[0], language);
+        }
+
+        // Multiple chunks: transcribe each and concatenate
+        let mut transcriptions = Vec::with_capacity(chunks.len());
+
+        for (i, chunk) in chunks.iter().enumerate() {
+            let chunk_duration = chunk.len() as f32 / SAMPLE_RATE as f32;
+            info!(
+                "[Canary] Transcribing chunk {}/{} ({:.1}s)",
+                i + 1,
+                chunks.len(),
+                chunk_duration
+            );
+
+            let chunk_text = self.transcribe_chunk(chunk, language)?;
+            if !chunk_text.is_empty() {
+                transcriptions.push(chunk_text);
+            }
+        }
+
+        // Join transcriptions with space
+        let full_text = transcriptions.join(" ");
+
+        info!(
+            "[Canary] Chunked transcription complete: {} characters from {} chunks",
+            full_text.len(),
+            chunks.len()
+        );
+
+        Ok(full_text)
+    }
+
+    /// Transcribe a single audio chunk (internal method)
+    ///
+    /// This handles the actual transcription of a chunk that fits within
+    /// Canary's optimal input length (~30 seconds).
+    fn transcribe_chunk(&mut self, samples: &[f32], language: &str) -> Result<String, TranscriptionError> {
+        if samples.is_empty() {
+            return Ok(String::new());
+        }
+
         // Convert samples to mel-spectrogram features
-        // For now, we'll use a simplified approach
-        // In production, this should use nemo128.onnx preprocessor
-        let features = self.compute_features(&samples)?;
+        let features = self.compute_features(samples)?;
 
         // Encode
         let lengths = Array1::from_vec(vec![features.shape()[2] as i64]);
@@ -595,7 +710,7 @@ impl CanaryEngine {
         // Convert to text
         let text = self.vocab.decode(&token_ids);
 
-        info!("[Canary] Transcription complete: {} characters", text.len());
+        debug!("[Canary] Chunk transcription: {} characters", text.len());
 
         Ok(text)
     }
@@ -611,7 +726,7 @@ impl CanaryEngine {
     /// 6. Per-feature normalization (zero mean, unit variance)
     fn compute_features(&self, samples: &[f32]) -> Result<Array3<f32>, TranscriptionError> {
         // NeMo parameters for 16kHz audio (matching nemo128.onnx)
-        const SAMPLE_RATE: usize = 16000;
+        // SAMPLE_RATE is defined as a module constant (16000)
         const N_FFT: usize = 512;
         const HOP_LENGTH: usize = 160;  // 10ms -> ~100 frames/second
         const WIN_LENGTH: usize = 320;  // 20ms (NeMo default, not 25ms)
@@ -849,5 +964,42 @@ mod tests {
         assert_eq!(TOKEN_START_OF_CONTEXT, 7);
         assert_eq!(TOKEN_START_OF_TRANSCRIPT, 4);
         assert_eq!(TOKEN_END_OF_TEXT, 3);
+    }
+
+    #[test]
+    fn test_audio_chunking_short_audio() {
+        // Short audio (10 seconds) should not be split
+        let samples: Vec<f32> = vec![0.0; SAMPLE_RATE * 10]; // 10 seconds
+        let chunks = split_audio_into_chunks(&samples);
+        assert_eq!(chunks.len(), 1);
+        assert_eq!(chunks[0].len(), samples.len());
+    }
+
+    #[test]
+    fn test_audio_chunking_long_audio() {
+        // Long audio (90 seconds) should be split into ~3 chunks
+        let samples: Vec<f32> = vec![0.0; SAMPLE_RATE * 90]; // 90 seconds
+        let chunks = split_audio_into_chunks(&samples);
+
+        // Should have multiple chunks
+        assert!(chunks.len() >= 3, "Expected at least 3 chunks, got {}", chunks.len());
+
+        // Each chunk should be at most MAX_CHUNK_DURATION_SECS
+        let max_samples = (MAX_CHUNK_DURATION_SECS * SAMPLE_RATE as f32) as usize;
+        for (i, chunk) in chunks.iter().enumerate() {
+            assert!(
+                chunk.len() <= max_samples,
+                "Chunk {} has {} samples, expected <= {}",
+                i, chunk.len(), max_samples
+            );
+        }
+    }
+
+    #[test]
+    fn test_audio_chunking_exact_boundary() {
+        // Audio exactly at chunk boundary (30 seconds)
+        let samples: Vec<f32> = vec![0.0; (MAX_CHUNK_DURATION_SECS * SAMPLE_RATE as f32) as usize];
+        let chunks = split_audio_into_chunks(&samples);
+        assert_eq!(chunks.len(), 1);
     }
 }
