@@ -41,11 +41,12 @@
 					action: { type: 'more-details', error: unregisterError },
 				});
 			}
-			const { error: registerError } =
-				await rpc.localShortcuts.registerCommand({
+			const { error: registerError } = await rpc.localShortcuts.registerCommand(
+				{
 					command,
 					keyCombination,
-				});
+				},
+			);
 
 			if (registerError) {
 				rpc.notify.error({

@@ -1,0 +1,29 @@
+﻿2026-01-11T14:31:40.8474976Z ##[group]Run TAG="v99.0.0-canary"
+2026-01-11T14:31:40.8475416Z [36;1mTAG="v99.0.0-canary"[0m
+2026-01-11T14:31:40.8475914Z [36;1m# Look for release notes file matching the tag name (e.g., v7.0.0 -> docs/release-notes/v7.0.0.md)[0m
+2026-01-11T14:31:40.8476440Z [36;1mRELEASE_FILE="docs/release-notes/$TAG.md"[0m
+2026-01-11T14:31:40.8476720Z [36;1m[0m
+2026-01-11T14:31:40.8476893Z [36;1mif [ -f "$RELEASE_FILE" ]; then[0m
+2026-01-11T14:31:40.8477399Z [36;1m  echo "Found release notes file: $RELEASE_FILE"[0m
+2026-01-11T14:31:40.8477677Z [36;1m[0m
+2026-01-11T14:31:40.8477893Z [36;1m  # Get full content for GitHub release page[0m
+2026-01-11T14:31:40.8478190Z [36;1m  RELEASE_NOTES=$(cat "$RELEASE_FILE")[0m
+2026-01-11T14:31:40.8478439Z [36;1melse[0m
+2026-01-11T14:31:40.8478710Z [36;1m  echo "No release notes file found at $RELEASE_FILE, using fallback"[0m
+2026-01-11T14:31:40.8479107Z [36;1m  # Fallback message if no release file exists[0m
+2026-01-11T14:31:40.8479559Z [36;1m  RELEASE_NOTES="Whispering $TAG is now available. Check GitHub for the full changelog."[0m
+2026-01-11T14:31:40.8480007Z [36;1mfi[0m
+2026-01-11T14:31:40.8480152Z [36;1m[0m
+2026-01-11T14:31:40.8480340Z [36;1m# Save output for use in later steps[0m
+2026-01-11T14:31:40.8480646Z [36;1m# Using EOF delimiter to handle multi-line content[0m
+2026-01-11T14:31:40.8480970Z [36;1mecho "RELEASE_NOTES<<EOF" >> $GITHUB_OUTPUT[0m
+2026-01-11T14:31:40.8481270Z [36;1mecho "$RELEASE_NOTES" >> $GITHUB_OUTPUT[0m
+2026-01-11T14:31:40.8481540Z [36;1mecho "EOF" >> $GITHUB_OUTPUT[0m
+2026-01-11T14:31:40.8493100Z shell: C:\Program Files\Git\bin\bash.EXE --noprofile --norc -e -o pipefail {0}
+2026-01-11T14:31:40.8493471Z env:
+2026-01-11T14:31:40.8493659Z   CARGO_HOME: C:\Users\runneradmin\.cargo
+2026-01-11T14:31:40.8493899Z   CARGO_INCREMENTAL: 0
+2026-01-11T14:31:40.8494085Z   CARGO_TERM_COLOR: always
+2026-01-11T14:31:40.8494273Z   CACHE_ON_FAILURE: false
+2026-01-11T14:31:40.8494463Z ##[endgroup]
+2026-01-11T14:31:40.9303084Z No release notes file found at docs/release-notes/v99.0.0-canary.md, using fallback

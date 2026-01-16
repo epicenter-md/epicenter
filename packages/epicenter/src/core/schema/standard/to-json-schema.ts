@@ -1,7 +1,7 @@
-import type { StandardJSONSchemaV1 } from './types';
 import type { JsonSchema } from 'arktype';
 import { Ok, trySync } from 'wellcrafted/result';
 import { ARKTYPE_JSON_SCHEMA_FALLBACK } from './arktype-fallback';
+import type { StandardJSONSchemaV1 } from './types';
 
 /**
  * Safely convert a Standard JSON Schema to JSON Schema with graceful error handling.

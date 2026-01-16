@@ -5,6 +5,10 @@
 		type LocalModelConfig,
 	} from '$lib/services/isomorphic/transcription/local/types';
 	import { settings } from '$lib/stores/settings.svelte';
+	import {
+		downloadFileOptimized,
+		formatSpeed,
+	} from '$lib/utils/parallel-download';
 	import CheckIcon from '@lucide/svelte/icons/check';
 	import Download from '@lucide/svelte/icons/download';
 	import { Spinner } from '@epicenter/ui/spinner';
@@ -13,14 +17,7 @@
 	import { Button } from '@epicenter/ui/button';
 	import { Progress } from '@epicenter/ui/progress';
 	import { join } from '@tauri-apps/api/path';
-	import {
-		exists,
-		mkdir,
-		remove,
-		stat,
-		writeFile,
-	} from '@tauri-apps/plugin-fs';
-	import { fetch } from '@tauri-apps/plugin-http';
+	import { exists, mkdir, remove, stat } from '@tauri-apps/plugin-fs';
 	import { toast } from 'svelte-sonner';
 	import { extractErrorMessage } from 'wellcrafted/error';
 	import { Ok, tryAsync } from 'wellcrafted/result';
@@ -33,7 +30,7 @@
 
 	type ModelState =
 		| { type: 'not-downloaded' }
-		| { type: 'downloading'; progress: number }
+		| { type: 'downloading'; progress: number; speed?: number }
 		| { type: 'ready' }
 		| { type: 'active' };
 
@@ -76,6 +73,15 @@
 				}
 				return await join(moonshineModelsDir, model.directoryName);
 			}
+			case 'canary': {
+				// Canary models are stored in a directory (multi-file ONNX model)
+				const canaryModelsDir = await PATHS.MODELS.CANARY();
+				// Ensure directory exists
+				if (!(await exists(canaryModelsDir))) {
+					await mkdir(canaryModelsDir, { recursive: true });
+				}
+				return await join(canaryModelsDir, model.directoryName);
+			}
 		}
 	}
 
@@ -101,7 +107,8 @@
 				return true;
 			}
 			case 'parakeet':
-			case 'moonshine': {
+			case 'moonshine':
+			case 'canary': {
 				if (!(await exists(path))) return false;
 				// For multi-file models, path must be a directory containing all files
 				const { data: dirStats } = await tryAsync({
@@ -142,10 +149,16 @@
 	});
 
 	async function refreshStatus() {
+		// Don't interfere with ongoing download - prevents race condition on first click
+		if (modelState.type === 'downloading') return;
+
 		await tryAsync({
 			try: async () => {
 				const path = await ensureModelDestinationPath();
 				const isValid = await isModelValid(path);
+
+				// Double-check we're not downloading (async operation could have started)
+				if (modelState.type === 'downloading') return;
 
 				if (!isValid) {
 					modelState = { type: 'not-downloaded' };
@@ -160,6 +173,8 @@
 				modelState = isActive ? { type: 'active' } : { type: 'ready' };
 			},
 			catch: () => {
+				// Don't reset if downloading
+				if (modelState.type === 'downloading') return Ok(undefined);
 				modelState = { type: 'not-downloaded' };
 				return Ok(undefined);
 			},
@@ -173,82 +188,33 @@
 
 		await tryAsync({
 			try: async () => {
-				const downloadFileContent = async (
-					url: string,
-					sizeBytes: number,
-					filePath: string,
-					onProgress: (progress: number) => void,
-				): Promise<void> => {
-					const response = await fetch(url);
-					if (!response.ok) {
-						throw new Error(`Failed to download: ${response.status}`);
-					}
-
-					const contentLength = response.headers.get('content-length');
-					const totalBytes = contentLength
-						? Number.parseInt(contentLength, 10)
-						: sizeBytes;
-
-					const reader = response.body?.getReader();
-					if (!reader) {
-						throw new Error('Failed to read response body');
-					}
-
-					// Create or truncate the file first
-					await writeFile(filePath, new Uint8Array());
-
-					let downloadedBytes = 0;
-
-					while (true) {
-						const { done, value } = await reader.read();
-						if (done) break;
-
-						// Write each chunk directly to disk using append mode
-						await writeFile(filePath, value, { append: true });
-
-						downloadedBytes += value.length;
-						const progress = Math.round((downloadedBytes / totalBytes) * 100);
-						onProgress(progress);
-					}
-
-					// Validate download completeness
-					if (downloadedBytes < totalBytes) {
-						await remove(filePath);
-						const downloadedMB = Math.round(downloadedBytes / 1_000_000);
-						const expectedMB = Math.round(totalBytes / 1_000_000);
-						throw new Error(
-							`Download incomplete: received ${downloadedMB}MB but expected ${expectedMB}MB. Please check your network connection and try again.`,
-						);
-					}
-				};
-
 				const path = await ensureModelDestinationPath();
 
-				// Check if already exists
-				await refreshStatus();
-				if (modelState.type === 'ready' || modelState.type === 'active') {
-					if (modelState.type === 'ready') {
-						await activateModel();
-					}
+				// Check if model already exists (without calling refreshStatus to avoid race condition)
+				const alreadyValid = await isModelValid(path);
+				if (alreadyValid) {
+					await activateModel();
+					modelState = { type: 'active' };
 					toast.success('Model already downloaded and activated');
 					return;
 				}
 
 				switch (model.engine) {
 					case 'whispercpp': {
-						// Single file download for Whisper
-						await downloadFileContent(
+						// Single file download for Whisper - use optimized parallel download
+						await downloadFileOptimized(
 							model.file.url,
-							model.sizeBytes,
 							path,
-							(progress) => {
-								modelState = { type: 'downloading', progress };
+							model.sizeBytes,
+							(progress, speed) => {
+								modelState = { type: 'downloading', progress, speed };
 							},
 						);
 						break;
 					}
 					case 'parakeet':
-					case 'moonshine': {
+					case 'moonshine':
+					case 'canary': {
 						// Multiple file downloads for multi-file models
 						const totalBytes = model.sizeBytes;
 						let downloadedBytes = 0;
@@ -256,21 +222,25 @@
 						// Create directory for model files
 						await mkdir(path, { recursive: true });
 
+						// Download files - large files get parallel download automatically
 						for (const file of model.files) {
 							const filePath = await join(path, file.filename);
-							await downloadFileContent(
+							const fileStartBytes = downloadedBytes;
+
+							await downloadFileOptimized(
 								file.url,
-								file.sizeBytes,
 								filePath,
-								(fileProgress) => {
+								file.sizeBytes,
+								(fileProgress, speed) => {
 									const overallProgress = Math.round(
-										((downloadedBytes + (file.sizeBytes * fileProgress) / 100) /
+										((fileStartBytes + (file.sizeBytes * fileProgress) / 100) /
 											totalBytes) *
 											100,
 									);
 									modelState = {
 										type: 'downloading',
 										progress: overallProgress,
+										speed,
 									};
 								},
 							);
@@ -311,7 +281,9 @@
 				const path = await ensureModelDestinationPath();
 				if (await exists(path)) {
 					const isDirectory =
-						model.engine === 'parakeet' || model.engine === 'moonshine';
+						model.engine === 'parakeet' ||
+						model.engine === 'moonshine' ||
+						model.engine === 'canary';
 					await remove(path, { recursive: isDirectory });
 				}
 
@@ -360,9 +332,16 @@
 
 	<div class="flex items-center gap-2">
 		{#if modelState.type === 'downloading'}
-			<div class="flex items-center gap-2 min-w-[120px]">
+			<div class="flex items-center gap-2 min-w-[160px]">
 				<Spinner />
-				<span class="text-sm font-medium">{modelState.progress}%</span>
+				<div class="flex flex-col items-end">
+					<span class="text-sm font-medium">{modelState.progress}%</span>
+					{#if modelState.speed}
+						<span class="text-xs text-muted-foreground"
+							>{formatSpeed(modelState.speed)}</span
+						>
+					{/if}
+				</div>
 			</div>
 		{:else if modelState.type === 'ready'}
 			<Button size="sm" variant="outline" onclick={activateModel}>

@@ -276,6 +276,18 @@ async function transcribeBlob(
 						},
 					);
 				}
+				case 'canary': {
+					// Canary-1B-v2 with language support (French, English, etc.)
+					// KEY FEATURE: Unlike Parakeet, Canary accepts a language parameter!
+					const outputLang = settings.value['transcription.outputLanguage'];
+					return await services.transcriptions.canary.transcribe(
+						audioToTranscribe,
+						{
+							modelPath: settings.value['transcription.canary.modelPath'],
+							language: outputLang === 'auto' ? 'fr' : outputLang,
+						},
+					);
+				}
 				default:
 					return WhisperingErr({
 						title: '⚠️ No transcription service selected',

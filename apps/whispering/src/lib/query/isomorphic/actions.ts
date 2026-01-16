@@ -6,6 +6,7 @@ import { DbServiceErr } from '$lib/services/isomorphic/db';
 import { settings } from '$lib/stores/settings.svelte';
 import { vadRecorder } from '$lib/stores/vad-recorder.svelte';
 import * as transformClipboardWindow from '$routes/transform-clipboard/transformClipboardWindow.tauri';
+import * as recordingIndicatorWindow from '$routes/recording-indicator/recordingIndicatorWindow.tauri';
 import { rpc } from '..';
 import { db } from './db';
 import { delivery } from './delivery';
@@ -62,6 +63,14 @@ const startManualRecording = defineMutation({
 			description: 'Setting up your recording environment...',
 		});
 
+		// Show the recording indicator overlay FIRST (desktop only)
+		// This ensures the window is ready to receive events before recording starts
+		if (window.__TAURI_INTERNALS__) {
+			await recordingIndicatorWindow.show().catch((error) => {
+				console.warn('Failed to show recording indicator:', error);
+			});
+		}
+
 		const { data: deviceAcquisitionOutcome, error: startRecordingError } =
 			await recorder.startRecording({ toastId });
 
@@ -69,6 +78,10 @@ const startManualRecording = defineMutation({
 		isRecordingOperationBusy = false;
 
 		if (startRecordingError) {
+			// Hide the recording indicator if recording failed
+			if (window.__TAURI_INTERNALS__) {
+				recordingIndicatorWindow.hide().catch(() => {});
+			}
 			notify.error({ id: toastId, ...startRecordingError });
 			return Ok(undefined);
 		}
@@ -124,6 +137,7 @@ const startManualRecording = defineMutation({
 		manualRecordingStartTime = Date.now();
 		console.info('Recording started');
 		sound.playSoundIfEnabled('manual-start');
+
 		return Ok(undefined);
 	},
 });
@@ -145,8 +159,9 @@ const stopManualRecording = defineMutation({
 			description: 'Finalizing your audio capture...',
 		});
 
-		const { data, error: stopRecordingError } =
-			await recorder.stopRecording({ toastId });
+		const { data, error: stopRecordingError } = await recorder.stopRecording({
+			toastId,
+		});
 
 		// Release mutex after the actual stop operation completes
 		// This allows new recordings to start while pipeline runs
@@ -158,6 +173,13 @@ const stopManualRecording = defineMutation({
 		}
 
 		const { blob, recordingId } = data;
+
+		// Hide the recording indicator overlay (desktop only)
+		if (window.__TAURI_INTERNALS__) {
+			recordingIndicatorWindow.hide().catch((error) => {
+				console.warn('Failed to hide recording indicator:', error);
+			});
+		}
 
 		notify.success({
 			id: toastId,
@@ -388,6 +410,14 @@ export const commands = {
 					// Session cleanup is now handled internally by the recorder service
 					// Reset start time if recording was cancelled
 					manualRecordingStartTime = null;
+
+					// Hide the recording indicator overlay (desktop only)
+					if (window.__TAURI_INTERNALS__) {
+						recordingIndicatorWindow.hide().catch((error) => {
+							console.warn('Failed to hide recording indicator:', error);
+						});
+					}
+
 					notify.success({
 						id: toastId,
 						title: '✅ All Done!',

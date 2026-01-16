@@ -1,8 +1,4 @@
 import type {
-	StandardSchemaV1,
-	StandardSchemaWithJSONSchema,
-} from '../../../core/schema/standard/types';
-import type {
 	ColumnBuilderBase,
 	ColumnBuilderBaseConfig,
 	ColumnDataType,
@@ -21,6 +17,10 @@ import type {
 	DateWithTimezone as DateWithTimezoneType,
 } from '../../../core/schema';
 import { DateWithTimezone, generateId } from '../../../core/schema';
+import type {
+	StandardSchemaV1,
+	StandardSchemaWithJSONSchema,
+} from '../../../core/schema/standard/types';
 
 /**
  * Type helper that composes Drizzle column modifiers based on options

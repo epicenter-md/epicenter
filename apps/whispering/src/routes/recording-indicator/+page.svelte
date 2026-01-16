@@ -1,0 +1,299 @@
+<script lang="ts">
+	import { onMount, onDestroy } from 'svelte';
+	import { emit, listen, type UnlistenFn } from '@tauri-apps/api/event';
+
+	// State
+	let audioLevel = $state(0);
+	let elapsedSeconds = $state(0);
+	let recordingState = $state<'recording' | 'processing' | 'idle'>('recording');
+	let waveformBars = $state<number[]>(new Array(16).fill(0.15));
+
+	// Internal timer (self-contained, no dependency on events)
+	let timerInterval: ReturnType<typeof setInterval> | null = null;
+	let startTime: number | null = null;
+
+	// Animation interval for smooth waveform (using setInterval, not requestAnimationFrame)
+	let animationInterval: ReturnType<typeof setInterval> | null = null;
+	let targetLevels: number[] = new Array(16).fill(0.15);
+
+	// Event listeners
+	let unlistenFns: UnlistenFn[] = [];
+
+	function startTimer() {
+		startTime = Date.now();
+		elapsedSeconds = 0;
+
+		timerInterval = setInterval(() => {
+			if (startTime) {
+				elapsedSeconds = Math.floor((Date.now() - startTime) / 1000);
+			}
+		}, 1000);
+	}
+
+	function stopTimer() {
+		if (timerInterval) {
+			clearInterval(timerInterval);
+			timerInterval = null;
+		}
+		startTime = null;
+	}
+
+	function resetTimer() {
+		stopTimer();
+		elapsedSeconds = 0;
+		startTimer();
+	}
+
+	onMount(async () => {
+		try {
+			// Signal that we're ready to receive events
+			await emit('recording-indicator-ready');
+
+			// Start the internal timer immediately
+			startTimer();
+
+			// Start animation loop
+			startAnimation();
+
+			// Listen for audio level updates
+			unlistenFns.push(
+				await listen<{ level: number }>('audio-level-update', (event) => {
+					audioLevel = event.payload.level;
+					updateTargetLevels(audioLevel);
+				}),
+			);
+
+			// Listen for reset events (when window is shown again)
+			unlistenFns.push(
+				await listen('recording-indicator-reset', () => {
+					resetTimer();
+					recordingState = 'recording';
+				}),
+			);
+
+			// Listen for state updates
+			unlistenFns.push(
+				await listen<{ state: 'recording' | 'processing' | 'idle' }>(
+					'recording-state-update',
+					(event) => {
+						recordingState = event.payload.state;
+						if (event.payload.state === 'processing') {
+							stopTimer();
+						}
+					},
+				),
+			);
+		} catch (error) {
+			console.error('Error in recording indicator mount:', error);
+		}
+	});
+
+	onDestroy(() => {
+		unlistenFns.forEach((fn) => fn());
+		stopTimer();
+		if (animationInterval) {
+			clearInterval(animationInterval);
+			animationInterval = null;
+		}
+	});
+
+	function updateTargetLevels(level: number) {
+		// Create organic-looking waveform based on audio level
+		const amplifiedLevel = Math.min(1, level * 1.5);
+		targetLevels = targetLevels.map((_, i) => {
+			const centerDistance = Math.abs(i - 7.5) / 8;
+			const baseHeight = Math.max(0.12, amplifiedLevel * (1 - centerDistance * 0.6));
+			const variance = (Math.random() - 0.5) * 0.35 * amplifiedLevel;
+			return Math.max(0.1, Math.min(1, baseHeight + variance));
+		});
+	}
+
+	function startAnimation() {
+		animationInterval = setInterval(() => {
+			// Smooth interpolation towards target values
+			waveformBars = waveformBars.map((current, i) => {
+				const target = targetLevels[i];
+				const diff = target - current;
+				// Faster rise, slower fall for natural feel
+				const speed = diff > 0 ? 0.3 : 0.1;
+				return current + diff * speed;
+			});
+		}, 50); // ~20fps
+	}
+
+	function formatTime(seconds: number): string {
+		const mins = Math.floor(seconds / 60);
+		const secs = seconds % 60;
+		return `${mins}:${secs.toString().padStart(2, '0')}`;
+	}
+
+	// Derive visual state
+	const isRecording = $derived(recordingState === 'recording');
+	const isProcessing = $derived(recordingState === 'processing');
+</script>
+
+<div class="indicator" class:processing={isProcessing}>
+	<!-- Recording dot with pulse effect -->
+	<div class="recording-dot" class:active={isRecording}>
+		<div class="dot-inner"></div>
+	</div>
+
+	<!-- Waveform visualization -->
+	<div class="waveform">
+		{#each waveformBars as height, i}
+			<div
+				class="bar"
+				style="height: {Math.round(height * 100)}%"
+			></div>
+		{/each}
+	</div>
+
+	<!-- Timer -->
+	<div class="timer">
+		{#if isProcessing}
+			<span class="processing-text">...</span>
+		{:else}
+			<span class="time">{formatTime(elapsedSeconds)}</span>
+		{/if}
+	</div>
+</div>
+
+
+<style>
+	/* Main container - floating pill design */
+	.indicator {
+		position: fixed;
+		top: 0;
+		left: 0;
+		right: 0;
+		height: 44px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		gap: 10px;
+		padding: 0 14px;
+
+		/* Solid dark background for Windows compatibility */
+		background: linear-gradient(
+			135deg,
+			rgba(24, 24, 32, 0.97) 0%,
+			rgba(18, 18, 24, 0.98) 100%
+		);
+
+		/* Subtle border for definition */
+		border: 1px solid rgba(255, 255, 255, 0.08);
+		border-radius: 22px;
+
+		/* Soft glow effect */
+		box-shadow:
+			0 4px 20px -2px rgba(0, 0, 0, 0.5),
+			0 0 0 1px rgba(255, 255, 255, 0.04) inset,
+			0 1px 0 rgba(255, 255, 255, 0.06) inset;
+
+		/* Smooth state transitions */
+		transition: all 0.25s ease;
+	}
+
+	.indicator.processing {
+		background: linear-gradient(
+			135deg,
+			rgba(30, 30, 40, 0.97) 0%,
+			rgba(22, 22, 30, 0.98) 100%
+		);
+	}
+
+	/* Recording indicator dot */
+	.recording-dot {
+		position: relative;
+		width: 10px;
+		height: 10px;
+		flex-shrink: 0;
+	}
+
+	.dot-inner {
+		width: 100%;
+		height: 100%;
+		background: #ef4444;
+		border-radius: 50%;
+		box-shadow: 0 0 8px 2px rgba(239, 68, 68, 0.5);
+		transition: all 0.2s ease;
+	}
+
+	.recording-dot.active .dot-inner {
+		animation: pulse-dot 1.2s ease-in-out infinite;
+	}
+
+	@keyframes pulse-dot {
+		0%, 100% {
+			transform: scale(1);
+			opacity: 1;
+			box-shadow: 0 0 8px 2px rgba(239, 68, 68, 0.5);
+		}
+		50% {
+			transform: scale(0.85);
+			opacity: 0.8;
+			box-shadow: 0 0 12px 4px rgba(239, 68, 68, 0.6);
+		}
+	}
+
+	/* Waveform visualization */
+	.waveform {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		gap: 2px;
+		height: 22px;
+		flex: 1;
+		max-width: 90px;
+	}
+
+	.bar {
+		width: 3px;
+		min-height: 3px;
+		background: linear-gradient(
+			to top,
+			rgba(148, 163, 184, 0.5) 0%,
+			rgba(226, 232, 240, 0.9) 100%
+		);
+		border-radius: 1.5px;
+		transition: height 0.06s ease-out;
+		will-change: height;
+	}
+
+	/* Timer display */
+	.timer {
+		font-family: 'SF Mono', 'Consolas', 'Monaco', monospace;
+		font-size: 12px;
+		font-weight: 600;
+		letter-spacing: 0.3px;
+		color: rgba(226, 232, 240, 0.9);
+		min-width: 32px;
+		text-align: right;
+		flex-shrink: 0;
+	}
+
+	.time {
+		font-variant-numeric: tabular-nums;
+	}
+
+	.processing-text {
+		animation: blink 1s ease-in-out infinite;
+		color: rgba(148, 163, 184, 0.8);
+	}
+
+	@keyframes blink {
+		0%, 100% { opacity: 1; }
+		50% { opacity: 0.3; }
+	}
+
+	/* Reduced motion support */
+	@media (prefers-reduced-motion: reduce) {
+		.recording-dot.active .dot-inner,
+		.processing-text {
+			animation: none;
+		}
+		.bar {
+			transition: none;
+		}
+	}
+</style>

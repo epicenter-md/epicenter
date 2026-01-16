@@ -8,9 +8,9 @@ import type { ActionContracts } from '../actions';
 import type { Provider } from '../provider.node';
 import type { WorkspaceSchema } from '../schema';
 import {
+	type ActionsContext,
 	type AnyWorkspaceConfig,
 	validateWorkspaceConfig,
-	type ActionsContext,
 } from './config.shared';
 
 // Re-export shared types

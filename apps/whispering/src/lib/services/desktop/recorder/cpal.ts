@@ -18,6 +18,13 @@ import {
 	type Device,
 	type DeviceAcquisitionOutcome,
 } from '$lib/services/types';
+import {
+	startAudioAnalysis,
+	stopAudioAnalysis,
+} from '$lib/services/isomorphic/audio-analyser';
+
+// Store the analysis stream so we can clean it up
+let analysisStream: MediaStream | null = null;
 
 /**
  * Audio recording data returned from the Rust method
@@ -145,8 +152,7 @@ export const CpalRecorderServiceLive: RecorderService = {
 			});
 		};
 
-		const { data: deviceOutcome, error: acquireDeviceError } =
-			acquireDevice();
+		const { data: deviceOutcome, error: acquireDeviceError } = acquireDevice();
 		if (acquireDeviceError) return Err(acquireDeviceError);
 
 		// Use the device from the outcome
@@ -192,6 +198,31 @@ export const CpalRecorderServiceLive: RecorderService = {
 					'Unable to start recording. Please check your microphone and try again.',
 			});
 
+		// Start audio analysis for the recording indicator visualization
+		// CPAL handles the actual recording, but we need a parallel MediaStream for level analysis
+		sendStatus({
+			title: '📊 Starting Audio Analysis',
+			description: 'Setting up voice visualization...',
+		});
+		try {
+			// Get the device label from our device list to find it via getUserMedia
+			const deviceLabel = devices.find((d) => d.id === deviceIdentifier)?.label;
+
+			// Try to get a MediaStream for the same device for audio analysis
+			const constraints: MediaStreamConstraints = {
+				audio: deviceLabel
+					? { deviceId: { ideal: deviceIdentifier } }
+					: true,
+			};
+
+			analysisStream = await navigator.mediaDevices.getUserMedia(constraints);
+			await startAudioAnalysis(analysisStream);
+			console.log('[CpalRecorder] Audio analysis started for visualization');
+		} catch (analysisError) {
+			// Don't fail the recording if analysis fails - it's just for visualization
+			console.warn('[CpalRecorder] Could not start audio analysis:', analysisError);
+		}
+
 		return Ok(deviceOutcome);
 	},
 
@@ -204,6 +235,13 @@ export const CpalRecorderServiceLive: RecorderService = {
 	stopRecording: async ({
 		sendStatus,
 	}): Promise<Result<Blob, RecorderServiceError>> => {
+		// Stop audio analysis first
+		await stopAudioAnalysis();
+		if (analysisStream) {
+			analysisStream.getTracks().forEach((track) => track.stop());
+			analysisStream = null;
+		}
+
 		const { data: audioRecording, error: stopRecordingError } =
 			await invoke<AudioRecording>('stop_recording');
 		if (stopRecordingError) {
@@ -238,9 +276,7 @@ export const CpalRecorderServiceLive: RecorderService = {
 			title: '🔄 Closing Session',
 			description: 'Cleaning up recording resources...',
 		});
-		const { error: closeError } = await invoke<void>(
-			'close_recording_session',
-		);
+		const { error: closeError } = await invoke<void>('close_recording_session');
 		if (closeError) {
 			// Log but don't fail the stop operation
 			console.error('Failed to close recording session:', closeError);
@@ -258,6 +294,13 @@ export const CpalRecorderServiceLive: RecorderService = {
 	cancelRecording: async ({
 		sendStatus,
 	}): Promise<Result<CancelRecordingResult, RecorderServiceError>> => {
+		// Stop audio analysis first
+		await stopAudioAnalysis();
+		if (analysisStream) {
+			analysisStream.getTracks().forEach((track) => track.stop());
+			analysisStream = null;
+		}
+
 		// Check current state first
 		const { data: recordingId, error: getRecordingIdError } = await invoke<
 			string | null
@@ -306,9 +349,7 @@ export const CpalRecorderServiceLive: RecorderService = {
 			title: '🔄 Closing Session',
 			description: 'Cleaning up recording resources...',
 		});
-		const { error: closeError } = await invoke<void>(
-			'close_recording_session',
-		);
+		const { error: closeError } = await invoke<void>('close_recording_session');
 		if (closeError) {
 			// Log but don't fail the cancel operation
 			console.error('Failed to close recording session:', closeError);

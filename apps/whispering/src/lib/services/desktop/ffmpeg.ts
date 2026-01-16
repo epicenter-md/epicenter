@@ -22,9 +22,7 @@ export const FfmpegServiceLive = {
 			await tryAsync({
 				try: async () => {
 					const { data: result, error: commandError } =
-						await CommandServiceLive.execute(
-							asShellCommand('ffmpeg -version'),
-						);
+						await CommandServiceLive.execute(asShellCommand('ffmpeg -version'));
 
 					if (commandError) throw commandError;
 					return result;

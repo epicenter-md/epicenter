@@ -1,0 +1,27 @@
+﻿2026-01-11T14:28:35.6504755Z Current runner version: '2.330.0'
+2026-01-11T14:28:35.6532833Z ##[group]Runner Image Provisioner
+2026-01-11T14:28:35.6533692Z Hosted Compute Agent
+2026-01-11T14:28:35.6534336Z Version: 20251211.462
+2026-01-11T14:28:35.6534932Z Commit: 6cbad8c2bb55d58165063d031ccabf57e2d2db61
+2026-01-11T14:28:35.6535621Z Build Date: 2025-12-11T16:28:49Z
+2026-01-11T14:28:35.6536266Z Worker ID: {61c93124-30f6-4f41-bc20-636af2a597a5}
+2026-01-11T14:28:35.6537053Z ##[endgroup]
+2026-01-11T14:28:35.6537548Z ##[group]Operating System
+2026-01-11T14:28:35.6538089Z Ubuntu
+2026-01-11T14:28:35.6538616Z 24.04.3
+2026-01-11T14:28:35.6539030Z LTS
+2026-01-11T14:28:35.6539460Z ##[endgroup]
+2026-01-11T14:28:35.6540370Z ##[group]Runner Image
+2026-01-11T14:28:35.6540958Z Image: ubuntu-24.04
+2026-01-11T14:28:35.6541459Z Version: 20260105.202.1
+2026-01-11T14:28:35.6542521Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260105.202/images/ubuntu/Ubuntu2404-Readme.md
+2026-01-11T14:28:35.6543869Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260105.202
+2026-01-11T14:28:35.6545204Z ##[endgroup]
+2026-01-11T14:28:35.6546189Z ##[group]GITHUB_TOKEN Permissions
+2026-01-11T14:28:35.6548678Z Contents: write
+2026-01-11T14:28:35.6549286Z Metadata: read
+2026-01-11T14:28:35.6550054Z ##[endgroup]
+2026-01-11T14:28:35.6552388Z Secret source: Actions
+2026-01-11T14:28:35.6553466Z Prepare workflow directory
+2026-01-11T14:28:35.6906363Z Prepare all required actions
+2026-01-11T14:28:35.7005442Z Complete job name: cleanup-release

@@ -21,7 +21,7 @@
 		],
 		"longDescription": "Seamlessly integrate speech-to-text transcriptions anywhere on your desktop. Powered by OpenAI's Whisper API.",
 		"shortDescription": "Press shortcut → speak → get text. Free and open source ❤️",
-		"createUpdaterArtifacts": true,
+		"createUpdaterArtifacts": false,
 		"macOS": {
 			"entitlements": "entitlements.plist",
 			"hardenedRuntime": true,
@@ -39,7 +39,8 @@
 			},
 			"wix": {
 				"fipsCompliant": true,
-				"language": "en-US"
+				"language": "en-US",
+				"upgradeCode": "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
 			},
 			"nsis": {
 				"compression": "bzip2",

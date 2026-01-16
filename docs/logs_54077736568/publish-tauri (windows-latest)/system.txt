@@ -1,0 +1,8 @@
+2026-01-11T14:28:38.0000000Z Evaluating publish-tauri.if
+2026-01-11T14:28:38.0000000Z Evaluating: success()
+2026-01-11T14:28:38.0000000Z Result: true
+2026-01-11T14:28:38.0000000Z Requested labels: windows-latest
+2026-01-11T14:28:38.0000000Z Job defined at: Daradaal/epicenter/.github/workflows/publish-tauri-releases.yml@refs/tags/v99.0.0-canary
+2026-01-11T14:28:38.0000000Z Waiting for a runner to pick up this job...
+2026-01-11T14:28:38.0020000Z Job is about to start running on the hosted runner: GitHub Actions 1000000490
+2026-01-11T14:28:38.0020000Z Job is waiting for a hosted runner to come online.

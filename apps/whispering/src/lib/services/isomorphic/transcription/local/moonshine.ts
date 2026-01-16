@@ -264,4 +264,5 @@ export const MoonshineTranscriptionServiceLive = {
 	},
 };
 
-export type MoonshineTranscriptionService = typeof MoonshineTranscriptionServiceLive;
+export type MoonshineTranscriptionService =
+	typeof MoonshineTranscriptionServiceLive;

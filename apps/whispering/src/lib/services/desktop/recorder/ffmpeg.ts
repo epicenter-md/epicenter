@@ -378,8 +378,9 @@ export const FfmpegRecorderServiceLive: RecorderService = {
 
 		// Use command service to spawn FFmpeg process
 		// This will now throw if FFmpeg exits immediately with an error
-		const { data: process, error: startError } =
-			await CommandServiceLive.spawn(asShellCommand(command));
+		const { data: process, error: startError } = await CommandServiceLive.spawn(
+			asShellCommand(command),
+		);
 
 		if (startError) {
 			// The spawn function already caught the FFmpeg error and extracted the message

@@ -54,6 +54,14 @@ rayon = "1.10"
 log = "0.4"
 tauri-plugin-log = "2"
 
+# Canary-1B-v2 support (native ONNX inference with language parameter)
+ort = { version = "2.0.0-rc.9", features = ["download-binaries"] }
+ndarray = "0.16"
+rustfft = "6.2"  # For mel-spectrogram STFT computation
+
+[dev-dependencies]
+env_logger = "0.11"
+
 [target.'cfg(unix)'.dependencies]
 nix = { version = "0.29", features = ["signal"] }
 

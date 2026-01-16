@@ -1,0 +1,29 @@
+﻿2026-01-11T14:28:35.7817540Z ##[group]Run TAG="v99.0.0-canary"
+2026-01-11T14:28:35.7818714Z [36;1mTAG="v99.0.0-canary"[0m
+2026-01-11T14:28:35.7819523Z [36;1mecho "Cleaning up assets for release: $TAG"[0m
+2026-01-11T14:28:35.7820514Z [36;1m[0m
+2026-01-11T14:28:35.7820981Z [36;1m# Get release ID[0m
+2026-01-11T14:28:35.7822240Z [36;1mRELEASE_ID=$(gh api repos/Daradaal/epicenter/releases/tags/$TAG --jq '.id' 2>/dev/null || echo "")[0m
+2026-01-11T14:28:35.7823378Z [36;1m[0m
+2026-01-11T14:28:35.7823908Z [36;1mif [ -n "$RELEASE_ID" ]; then[0m
+2026-01-11T14:28:35.7824598Z [36;1m  echo "Found release ID: $RELEASE_ID"[0m
+2026-01-11T14:28:35.7825217Z [36;1m  [0m
+2026-01-11T14:28:35.7825691Z [36;1m  # Get all assets and delete them[0m
+2026-01-11T14:28:35.7826733Z [36;1m  ASSETS=$(gh api repos/Daradaal/epicenter/releases/$RELEASE_ID/assets --jq '.[].id' 2>/dev/null || echo "")[0m
+2026-01-11T14:28:35.7827715Z [36;1m  [0m
+2026-01-11T14:28:35.7828176Z [36;1m  for ASSET_ID in $ASSETS; do[0m
+2026-01-11T14:28:35.7828856Z [36;1m    echo "Deleting asset: $ASSET_ID"[0m
+2026-01-11T14:28:35.7830070Z [36;1m    gh api -X DELETE repos/Daradaal/epicenter/releases/assets/$ASSET_ID || true[0m
+2026-01-11T14:28:35.7831021Z [36;1m  done[0m
+2026-01-11T14:28:35.7831447Z [36;1m  [0m
+2026-01-11T14:28:35.7831960Z [36;1m  echo "Cleanup complete"[0m
+2026-01-11T14:28:35.7832586Z [36;1melse[0m
+2026-01-11T14:28:35.7833162Z [36;1m  echo "No existing release found for $TAG, skipping cleanup"[0m
+2026-01-11T14:28:35.7833911Z [36;1mfi[0m
+2026-01-11T14:28:35.8521115Z shell: /usr/bin/bash -e {0}
+2026-01-11T14:28:35.8522273Z env:
+2026-01-11T14:28:35.8523270Z   GITHUB_TOKEN: ***
+2026-01-11T14:28:35.8523805Z ##[endgroup]
+2026-01-11T14:28:35.8747447Z Cleaning up assets for release: v99.0.0-canary
+2026-01-11T14:28:36.2143415Z Found release ID: {"message":"Not Found","documentation_url":"https://docs.github.com/rest/releases/releases#get-a-release-by-tag-name","status":"404"}
+2026-01-11T14:28:36.2735587Z Cleanup complete

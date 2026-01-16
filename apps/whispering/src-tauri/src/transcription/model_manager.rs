@@ -9,6 +9,8 @@ use transcribe_rs::engines::parakeet::{ParakeetEngine, ParakeetModelParams};
 use transcribe_rs::engines::whisper::WhisperEngine;
 use transcribe_rs::TranscriptionEngine;
 
+use super::canary::CanaryEngine;
+
 /// Engine type for managing different transcription engines
 pub enum Engine {
     #[cfg(not(target_os = "windows"))]
@@ -16,6 +18,8 @@ pub enum Engine {
     Parakeet(ParakeetEngine),
     #[cfg(not(target_os = "windows"))]
     Moonshine(MoonshineEngine),
+    /// Canary-1B-v2 with language support (works on all platforms)
+    Canary(CanaryEngine),
 }
 
 impl Engine {
@@ -26,6 +30,7 @@ impl Engine {
             Engine::Whisper(e) => e.unload_model(),
             #[cfg(not(target_os = "windows"))]
             Engine::Moonshine(e) => e.unload_model(),
+            Engine::Canary(e) => e.unload(),
         }
     }
 }
@@ -244,6 +249,63 @@ impl ModelManager {
         _variant: &str,
     ) -> Result<Arc<Mutex<Option<Engine>>>, String> {
         Err("Moonshine is not available on Windows due to build compatibility issues. Please use Parakeet for local transcription.".to_string())
+    }
+
+    /// Load Canary-1B-v2 model with language support
+    /// Works on all platforms (Windows, macOS, Linux)
+    pub fn get_or_load_canary(
+        &self,
+        model_path: PathBuf,
+    ) -> Result<Arc<Mutex<Option<Engine>>>, String> {
+        let mut engine_guard = self.engine.lock().map_err(|e| {
+            format!(
+                "Engine mutex poisoned (likely due to previous panic): {}",
+                e
+            )
+        })?;
+        let mut current_path_guard = self.current_model_path.lock().map_err(|e| {
+            format!(
+                "Model path mutex poisoned (likely due to previous panic): {}",
+                e
+            )
+        })?;
+
+        // Check if we need to load a new model
+        let needs_load = match (&*engine_guard, &*current_path_guard) {
+            (None, _) => true,
+            (Some(_), Some(path)) if path != &model_path => {
+                // Different model requested, unload current one
+                if let Some(mut engine) = engine_guard.take() {
+                    engine.unload();
+                }
+                true
+            }
+            (Some(Engine::Canary(_)), _) => false, // Already have Canary loaded
+            _ => {
+                // Wrong engine type, unload and reload
+                if let Some(mut engine) = engine_guard.take() {
+                    engine.unload();
+                }
+                true
+            }
+        };
+
+        if needs_load {
+            let engine = CanaryEngine::load(&model_path)
+                .map_err(|e| format!("Failed to load Canary model: {}", e))?;
+
+            *engine_guard = Some(Engine::Canary(engine));
+            *current_path_guard = Some(model_path);
+        }
+
+        // Update last activity
+        let mut last_activity_guard = self
+            .last_activity
+            .lock()
+            .map_err(|e| format!("Last activity mutex poisoned: {}", e))?;
+        *last_activity_guard = SystemTime::now();
+
+        Ok(self.engine.clone())
     }
 
     pub fn unload_if_idle(&self) {

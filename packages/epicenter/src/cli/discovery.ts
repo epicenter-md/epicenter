@@ -1,7 +1,7 @@
 import { stat } from 'node:fs/promises';
 import { dirname, join, parse, resolve } from 'node:path';
-import type { ProjectDir } from '../core/types';
 import type { ActionContracts } from '../core/actions';
+import type { ProjectDir } from '../core/types';
 import type { BoundWorkspaceClient } from '../core/workspace/contract';
 
 type AnyWorkspaceClient = BoundWorkspaceClient<string, ActionContracts>;

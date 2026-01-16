@@ -7,6 +7,7 @@ import { GroqTranscriptionServiceLive } from './cloud/groq';
 import { MistralTranscriptionServiceLive } from './cloud/mistral';
 import { OpenaiTranscriptionServiceLive } from './cloud/openai';
 // Local transcription services
+import { CanaryTranscriptionServiceLive } from './local/canary';
 import { MoonshineTranscriptionServiceLive } from './local/moonshine';
 import { ParakeetTranscriptionServiceLive } from './local/parakeet';
 import { WhisperCppTranscriptionServiceLive } from './local/whispercpp';
@@ -17,6 +18,7 @@ import { SpeachesTranscriptionServiceLive } from './self-hosted/speaches';
 export {
 	WhisperCppTranscriptionServiceLive as whispercpp,
 	ParakeetTranscriptionServiceLive as parakeet,
+	CanaryTranscriptionServiceLive as canary,
 	MoonshineTranscriptionServiceLive as moonshine,
 	DeepgramTranscriptionServiceLive as deepgram,
 	ElevenlabsTranscriptionServiceLive as elevenlabs,

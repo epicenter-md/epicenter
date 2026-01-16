@@ -10,6 +10,10 @@ import {
 	enumerateDevices,
 	getRecordingStream,
 } from '$lib/services/isomorphic/device-stream';
+import {
+	startAudioAnalysis,
+	stopAudioAnalysis,
+} from '$lib/services/isomorphic/audio-analyser';
 import type {
 	DeviceAcquisitionOutcome,
 	DeviceIdentifier,
@@ -119,6 +123,11 @@ export const NavigatorRecorderServiceLive: RecorderService = {
 		// Start recording
 		mediaRecorder.start(TIMESLICE_MS);
 
+		// Start audio level analysis for the recording indicator
+		startAudioAnalysis(stream).catch((error) => {
+			console.warn('[NavigatorRecorder] Failed to start audio analysis:', error);
+		});
+
 		// Return the device acquisition outcome
 		return Ok(deviceOutcome);
 	},
@@ -159,8 +168,9 @@ export const NavigatorRecorderServiceLive: RecorderService = {
 				}),
 		});
 
-		// Always clean up the stream
+		// Always clean up the stream and audio analysis
 		cleanupRecordingStream(recording.stream);
+		await stopAudioAnalysis();
 
 		if (stopError) return Err(stopError);
 
@@ -189,8 +199,9 @@ export const NavigatorRecorderServiceLive: RecorderService = {
 		// Stop the recorder
 		recording.mediaRecorder.stop();
 
-		// Clean up the stream
+		// Clean up the stream and audio analysis
 		cleanupRecordingStream(recording.stream);
+		await stopAudioAnalysis();
 
 		sendStatus({
 			title: '✨ Cancelled',

@@ -1,6 +1,6 @@
-import type { StandardJSONSchemaV1 } from '../core/schema';
 import type { JsonSchema } from 'arktype';
 import type { Argv } from 'yargs';
+import type { StandardJSONSchemaV1 } from '../core/schema';
 import { generateJsonSchema } from '../core/schema';
 
 // =============================================================================

@@ -1,0 +1,32 @@
+﻿2026-01-11T14:29:26.4852392Z ##[group]Run bun install
+2026-01-11T14:29:26.4852723Z [36;1mbun install[0m
+2026-01-11T14:29:26.4988941Z shell: C:\Program Files\PowerShell\7\pwsh.EXE -command ". '{0}'"
+2026-01-11T14:29:26.4989267Z env:
+2026-01-11T14:29:26.4989466Z   CARGO_HOME: C:\Users\runneradmin\.cargo
+2026-01-11T14:29:26.4989730Z   CARGO_INCREMENTAL: 0
+2026-01-11T14:29:26.4989945Z   CARGO_TERM_COLOR: always
+2026-01-11T14:29:26.4990156Z   CACHE_ON_FAILURE: false
+2026-01-11T14:29:26.4990353Z ##[endgroup]
+2026-01-11T14:29:31.5922706Z bun install v1.3.3 (274e01c7)
+2026-01-11T14:29:31.6220933Z Resolving dependencies
+2026-01-11T14:29:32.2120155Z Resolved, downloaded and extracted [202]
+2026-01-11T14:30:55.5523860Z Saved lockfile
+2026-01-11T14:30:55.5641774Z 
+2026-01-11T14:30:55.5642307Z + @biomejs/biome@2.3.10
+2026-01-11T14:30:55.5642745Z + @eslint/compat@1.4.1
+2026-01-11T14:30:55.5643075Z + @types/bun@1.3.5
+2026-01-11T14:30:55.5643486Z + @types/node@22.19.2 (v25.0.6 available)
+2026-01-11T14:30:55.5644264Z + @typescript-eslint/parser@8.49.0
+2026-01-11T14:30:55.5644788Z + concurrently@9.2.1
+2026-01-11T14:30:55.5645085Z + eslint@9.39.1
+2026-01-11T14:30:55.5645535Z + eslint-plugin-svelte@3.13.1 (v3.14.0 available)
+2026-01-11T14:30:55.5646012Z + jsrepo@3.0.8
+2026-01-11T14:30:55.5646300Z + prettier@3.7.4
+2026-01-11T14:30:55.5646664Z + prettier-plugin-astro@0.14.1
+2026-01-11T14:30:55.5647152Z + prettier-plugin-svelte@3.4.0 (v3.4.1 available)
+2026-01-11T14:30:55.5647657Z + prettier-plugin-tailwindcss@0.6.14
+2026-01-11T14:30:55.5648099Z + svelte-eslint-parser@1.4.1
+2026-01-11T14:30:55.5648402Z + turbo@2.6.3
+2026-01-11T14:30:55.5649356Z + arktype@2.1.29
+2026-01-11T14:30:55.5649581Z 
+2026-01-11T14:30:55.5649813Z 2471 packages installed [83.97s]
