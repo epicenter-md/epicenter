@@ -20,7 +20,7 @@ impl AppData {
 #[tauri::command]
 pub async fn enumerate_recording_devices(state: State<'_, AppData>) -> Result<Vec<String>> {
     debug!("Enumerating recording devices");
-    let recorder = state
+    let mut recorder = state
         .recorder
         .lock()
         .map_err(|e| format!("Failed to lock recorder: {}", e))?;
