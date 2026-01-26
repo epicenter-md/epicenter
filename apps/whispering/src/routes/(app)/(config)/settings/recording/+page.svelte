@@ -91,9 +91,6 @@
 	const isUsingFfmpegMethod = $derived(
 		settings.value['recording.method'] === 'ffmpeg',
 	);
-
-	let vadPauseMs = $state(settings.value['recording.vad.pauseMs']);
-
 </script>
 
 <svelte:head>
@@ -324,8 +321,10 @@
 					max="10000"
 					step="250"
 					autocomplete="off"
-					bind:value={vadPauseMs}
-					onchange={() => settings.updateKey('recording.vad.pauseMs', String(vadPauseMs))}
+					bind:value={
+						() => settings.value['recording.vad.pauseMs'],
+						(v) => settings.updateKey('recording.vad.pauseMs', v)
+					}
 				/>
 				<Field.Description>
 					How long VAD waits during silence before ending a segment.
