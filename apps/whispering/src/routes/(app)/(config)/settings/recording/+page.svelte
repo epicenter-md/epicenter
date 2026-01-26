@@ -319,15 +319,19 @@
 					type="number"
 					min="0"
 					max="10000"
-					step="250"
+					step="100"
 					autocomplete="off"
+					placeholder="1400 (default)"
 					bind:value={
 						() => settings.value['recording.vad.pauseMs'],
 						(v) => settings.updateKey('recording.vad.pauseMs', v)
 					}
 				/>
 				<Field.Description>
-					How long VAD waits during silence before ending a segment.
+					Override how long VAD waits during silence before ending a segment.
+					Lower values may cause premature cutoffs and unstable behavior whereas
+					higher values will delay the end of a segment. Values between 1000ms
+					and 3000ms are recommended.
 				</Field.Description>
 			</Field.Field>
 		{/if}

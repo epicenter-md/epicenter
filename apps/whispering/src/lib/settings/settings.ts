@@ -129,7 +129,7 @@ export const Settings = type({
 		.enumerated('cpal', 'navigator', 'ffmpeg')
 		.default('cpal'),
 	// VAD settings
-	'recording.vad.pauseMs': type('string.digits').default('1400'),
+	'recording.vad.pauseMs': type('string.digits').default(''),
 
 	/**
 	 * Device identifiers for each recording method.
