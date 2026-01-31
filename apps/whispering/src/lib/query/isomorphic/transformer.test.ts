@@ -16,10 +16,7 @@ describe('applySimplePunctuation', () => {
 				input: 'Question mark at start',
 				expected: '? at start',
 			},
-			{
-				input: 'Line one new line Line two',
-				expected: 'Line one\n Line two',
-			},
+
 			{
 				input: 'Capitalized Period works',
 				expected: 'Capitalized. works',
@@ -31,6 +28,14 @@ describe('applySimplePunctuation', () => {
 			{
 				input: 'No punctuation here',
 				expected: 'No punctuation here',
+			},
+			{
+				input: 'The commander gave a command',
+				expected: 'The commander gave a command',
+			},
+			{
+				input: 'Line one new line Line two',
+				expected: 'Line one\nLine two',
 			}
 		];
 
