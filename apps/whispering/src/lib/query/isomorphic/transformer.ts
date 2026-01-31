@@ -18,6 +18,7 @@ import type {
 import { settings } from '$lib/stores/settings.svelte';
 import { asTemplateString, interpolateTemplate } from '$lib/utils/template';
 import { dbKeys } from './db';
+import { applySimplePunctuation } from './transformation-logic';
 
 const { TransformServiceError, TransformServiceErr } = createTaggedError(
 	'TransformServiceError',
@@ -139,7 +140,7 @@ export const transformer = {
 	}),
 };
 
-async function handleStep({
+export async function handleStep({
 	input,
 	step,
 }: {
@@ -293,6 +294,10 @@ async function handleStep({
 				default:
 					return Err(`Unsupported provider: ${provider}`);
 			}
+		}
+
+		case 'simple_punctuation': {
+			return Ok(applySimplePunctuation(input));
 		}
 
 		default:
