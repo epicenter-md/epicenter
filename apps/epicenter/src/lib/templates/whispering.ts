@@ -6,7 +6,13 @@
  * Epicenter workspace.
  */
 
-import { id, select, table, text, type WorkspaceDefinition } from '@epicenter/hq';
+import {
+	id,
+	select,
+	table,
+	text,
+	type WorkspaceDefinition,
+} from '@epicenter/hq';
 
 export const WHISPERING_TEMPLATE = {
 	id: 'epicenter.whispering',

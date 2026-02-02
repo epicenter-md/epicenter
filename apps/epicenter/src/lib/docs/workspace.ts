@@ -1,4 +1,7 @@
-import { createWorkspace, type WorkspaceDefinition } from '@epicenter/hq/dynamic';
+import {
+	createWorkspace,
+	type WorkspaceDefinition,
+} from '@epicenter/hq/dynamic';
 import { workspacePersistence } from './workspace-persistence';
 
 /**

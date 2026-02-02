@@ -46,7 +46,11 @@
 				onclick={() =>
 					createWorkspaceDialog.open({
 						onConfirm: async ({ name, id }) => {
-							const result = await createWorkspace.mutateAsync({ name, id, template: null });
+							const result = await createWorkspace.mutateAsync({
+								name,
+								id,
+								template: null,
+							});
 							await invalidateAll();
 							// Navigate using the workspace ID
 							goto(`/workspaces/${result.id}`);

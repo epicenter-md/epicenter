@@ -33,14 +33,14 @@
 
 	// Fields is now an array - map to [id, field] pairs for backwards compat with template
 	const columns = $derived(
-		tableFields
-			? (tableFields.map((f) => [f.id, f]) as [string, Field][])
-			: [],
+		tableFields ? (tableFields.map((f) => [f.id, f]) as [string, Field][]) : [],
 	);
 
 	// Get actual table data from the YJS-backed client
 	const tableHelper = $derived(
-		tableId && data.client?.tables ? data.client.tables.get(tableId) : undefined,
+		tableId && data.client?.tables
+			? data.client.tables.get(tableId)
+			: undefined,
 	);
 
 	const rows = $derived.by(() => {

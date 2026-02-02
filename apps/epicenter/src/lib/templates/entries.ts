@@ -25,7 +25,11 @@ export const ENTRIES_TEMPLATE = {
 			fields: [
 				id(),
 				text({ id: 'title', name: 'Title', description: 'Entry title' }),
-				text({ id: 'content', name: 'Content', description: 'Entry body text' }),
+				text({
+					id: 'content',
+					name: 'Content',
+					description: 'Entry body text',
+				}),
 				tags({ id: 'type', name: 'Type', description: 'Entry type/category' }),
 				tags({ id: 'tags', name: 'Tags', description: 'Additional tags' }),
 			],

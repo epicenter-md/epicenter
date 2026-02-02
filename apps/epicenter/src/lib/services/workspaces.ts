@@ -106,10 +106,7 @@ export async function createWorkspaceDefinition(
 	await mkdir(workspacesDir, { recursive: true });
 
 	// Write definition JSON
-	await writeTextFile(
-		definitionPath,
-		JSON.stringify(definition, null, '\t'),
-	);
+	await writeTextFile(definitionPath, JSON.stringify(definition, null, '\t'));
 
 	// Create data folder
 	await mkdir(dataFolderPath, { recursive: true });

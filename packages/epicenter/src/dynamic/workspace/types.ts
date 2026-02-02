@@ -204,4 +204,3 @@ export type WorkspaceClientBuilder<
 		extensions: TExtensions,
 	): WorkspaceClient<TTableDefinitions, TKvFields, TExtensions>;
 };
-

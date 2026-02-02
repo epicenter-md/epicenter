@@ -1,6 +1,6 @@
 import { error } from '@sveltejs/kit';
-import { getWorkspace } from '$lib/services/workspaces';
 import { createWorkspaceClient } from '$lib/docs/workspace';
+import { getWorkspace } from '$lib/services/workspaces';
 import type { LayoutLoad } from './$types';
 
 /**
@@ -26,7 +26,9 @@ export const load: LayoutLoad = async ({ params }) => {
 	const client = createWorkspaceClient(definition);
 	await client.whenSynced;
 
-	console.log(`[Layout] Loaded workspace: ${definition.name} (${definition.id})`);
+	console.log(
+		`[Layout] Loaded workspace: ${definition.name} (${definition.id})`,
+	);
 
 	return {
 		/** The workspace definition. */
