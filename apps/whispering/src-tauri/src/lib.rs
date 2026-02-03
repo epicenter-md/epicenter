@@ -26,6 +26,9 @@ use graceful_shutdown::send_sigint;
 pub mod macos_media;
 use macos_media::{macos_pause_active_media, macos_resume_media};
 
+pub mod dictation_hooks;
+use dictation_hooks::{epicenter_dictation_hooks_start, epicenter_dictation_hooks_stop};
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 #[tokio::main]
 pub async fn run() {
@@ -168,6 +171,9 @@ pub async fn run() {
         // macOS media control
         macos_pause_active_media,
         macos_resume_media,
+        // Epicenter local dictation hooks (~/.epicenter/local.yml)
+        epicenter_dictation_hooks_start,
+        epicenter_dictation_hooks_stop,
     ]);
 
     let app = builder

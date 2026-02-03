@@ -1,0 +1,12 @@
+{
+  "dictation_hooks": [
+    {
+      "name": "gather",
+      "status_command": ["gather", "status", "--json"],
+      "json_key": "muted",
+      "do_toggle_when_value": false,
+      "on_start_dictation": ["gather", "mute", "--json"],
+      "on_stop_dictation": ["gather", "unmute", "--json"]
+    }
+  ]
+}

@@ -12,6 +12,7 @@ import { rpc } from './';
 import { defineMutation } from './_client';
 import { db } from './db';
 import { delivery } from './delivery';
+import { runOnStartDictation, runOnStopDictation } from './dictation-hooks';
 import { media } from './media';
 import { notify } from './notify';
 import { recorder } from './recorder';
@@ -58,6 +59,10 @@ const startManualRecording = defineMutation({
 			return Ok(undefined);
 		}
 		isRecordingOperationBusy = true;
+		// Fire media pause and dictation hooks as early as possible (in parallel with mode switch).
+		currentMediaSessionId = nanoid();
+		void media.pauseIfEnabled.execute({ sessionId: currentMediaSessionId });
+		void runOnStartDictation(currentMediaSessionId);
 
 		await settings.switchRecordingMode('manual');
 
@@ -67,9 +72,6 @@ const startManualRecording = defineMutation({
 			title: '🎙️ Preparing to record...',
 			description: 'Setting up your recording environment...',
 		});
-		// Background media pause: do not await; track by sessionId for later resume
-		currentMediaSessionId = nanoid();
-		void media.pauseIfEnabled.execute({ sessionId: currentMediaSessionId });
 
 		const { data: deviceAcquisitionOutcome, error: startRecordingError } =
 			await recorder.startRecording.execute({ toastId });
@@ -161,10 +163,12 @@ const stopManualRecording = defineMutation({
 		// This allows new recordings to start while pipeline runs
 		isRecordingOperationBusy = false;
 
-		// Resume media for this session
-		if (currentMediaSessionId) {
-			await media.resumePaused.execute({ sessionId: currentMediaSessionId });
-			currentMediaSessionId = null;
+		// Resume media and run dictation hooks stop for this session
+		const sessionId = currentMediaSessionId;
+		currentMediaSessionId = null;
+		if (sessionId) {
+			await media.resumePaused.execute({ sessionId });
+			await runOnStopDictation(sessionId);
 		}
 		if (stopRecordingError) {
 			notify.error.execute({ id: toastId, ...stopRecordingError });
@@ -211,6 +215,11 @@ const stopManualRecording = defineMutation({
 const startVadRecording = defineMutation({
 	mutationKey: ['commands', 'startVadRecording'] as const,
 	resultMutationFn: async () => {
+		// Fire media pause and dictation hooks as early as possible (in parallel with mode switch).
+		currentMediaSessionId = nanoid();
+		void media.pauseIfEnabled.execute({ sessionId: currentMediaSessionId });
+		void runOnStartDictation(currentMediaSessionId);
+
 		await settings.switchRecordingMode('vad');
 
 		const toastId = nanoid();
@@ -220,9 +229,6 @@ const startVadRecording = defineMutation({
 			title: '🎙️ Starting voice activated capture',
 			description: 'Your voice activated capture is starting...',
 		});
-		// Pause media before starting VAD
-		currentMediaSessionId = nanoid();
-		void media.pauseIfEnabled.execute({ sessionId: currentMediaSessionId });
 
 		const { data: deviceAcquisitionOutcome, error: startActiveListeningError } =
 			await vadRecorder.startActiveListening({
@@ -338,10 +344,12 @@ const stopVadRecording = defineMutation({
 			description: 'Finalizing your voice activated capture...',
 		});
 		const { error: stopVadError } = await vadRecorder.stopActiveListening();
-		// Resume media for this session
-		if (currentMediaSessionId) {
-			await media.resumePaused.execute({ sessionId: currentMediaSessionId });
-			currentMediaSessionId = null;
+		// Resume media and run dictation hooks stop for this session
+		const sessionId = currentMediaSessionId;
+		currentMediaSessionId = null;
+		if (sessionId) {
+			await media.resumePaused.execute({ sessionId });
+			await runOnStopDictation(sessionId);
 		}
 		if (stopVadError) {
 			const error = stopVadError as WhisperingError;
@@ -413,10 +421,12 @@ export const commands = {
 			// Release mutex after the actual cancel operation completes
 			isRecordingOperationBusy = false;
 
-			// Resume media for this session
-			if (currentMediaSessionId) {
-				await media.resumePaused.execute({ sessionId: currentMediaSessionId });
-				currentMediaSessionId = null;
+			// Resume media and run dictation hooks stop for this session
+			const sessionId = currentMediaSessionId;
+			currentMediaSessionId = null;
+			if (sessionId) {
+				await media.resumePaused.execute({ sessionId });
+				await runOnStopDictation(sessionId);
 			}
 			if (cancelRecordingError) {
 				notify.error.execute({ id: toastId, ...cancelRecordingError });
