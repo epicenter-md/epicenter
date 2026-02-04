@@ -40,12 +40,8 @@ fn log_file_path() -> Option<PathBuf> {
     epicenter_dir().map(|d| d.join("dictation_hooks.log"))
 }
 
-/// Append a line to ~/.epicenter/dictation_hooks.log (ISO timestamp, 3 fractional seconds). Never fails the main flow.
-fn log_to_file(line: &str) {
-    log_to_file_timed(line, None);
-}
-
-/// Like log_to_file but prefix with elapsed ms since session start for timing debug (e.g. "+1234ms").
+/// Append a line to ~/.epicenter/dictation_hooks.log (ISO timestamp, 3 fractional seconds).
+/// Optional elapsed_ms prefixes the line for timing debug (e.g. "+1234ms"). Never fails the main flow.
 fn log_to_file_timed(line: &str, elapsed_ms: Option<u128>) {
     let path = match log_file_path() {
         Some(p) => p,
