@@ -1,5 +1,7 @@
-import type { SQLiteColumn, SQLiteTable } from 'drizzle-orm/sqlite-core';
+import type { AnyColumn } from 'drizzle-orm';
+
 import type { ColumnDescriptions } from './adapter';
+import type { AnyTable } from './db';
 
 export type ReadableColumnInfo = {
 	name: string;
@@ -18,11 +20,11 @@ export type ReadableTableInfo = {
  *
  * When metadata is provided, matching table/column descriptions are included under `description`.
  */
-export function readableSchemaInfo<TSchema extends Record<string, SQLiteTable>>(
+export function readableSchemaInfo<TSchema extends Record<string, AnyTable>>(
 	schema: TSchema,
 	metadata?: ColumnDescriptions<TSchema>,
 ): ReadableTableInfo[] {
-	const tables = Object.entries(schema) as [string, SQLiteTable][];
+	const tables = Object.entries<AnyTable>(schema);
 	return tables.map(([name, table]) => ({
 		name,
 		columns: readableTableInfo(
@@ -33,10 +35,10 @@ export function readableSchemaInfo<TSchema extends Record<string, SQLiteTable>>(
 }
 
 function readableTableInfo(
-	table: SQLiteTable,
+	table: AnyTable,
 	tableMetadata?: Record<string, string>,
 ) {
-	const columns = Object.entries(table) as [string, SQLiteColumn][];
+	const columns = Object.entries<AnyColumn>(table._.columns);
 	return columns.map(([name, col]) =>
 		readableColumnInfo(name, col, tableMetadata?.[name]),
 	);
@@ -44,7 +46,7 @@ function readableTableInfo(
 
 function readableColumnInfo(
 	name: string,
-	column: SQLiteColumn,
+	column: AnyColumn,
 	description?: string,
 ): ReadableColumnInfo {
 	// Add other fields here we wish to expose
@@ -52,6 +54,6 @@ function readableColumnInfo(
 		name,
 		type: column.dataType,
 		nullable: !column.notNull,
-	} as const;
+	};
 	return description !== undefined ? { ...base, description } : base;
 }

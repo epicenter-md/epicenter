@@ -1,6 +1,18 @@
 /**
  * defineTable() builder for creating versioned table definitions.
  *
+ * **Versioning patterns:**
+ * - **Shorthand**: `defineTable(schema)` — single version, no migration yet
+ * - **Field presence**: `if (!('field' in row))` — simple two-version cases only
+ * - **Asymmetric `_v`**: No `_v` on v1, add on v2+ — recommended default (less ceremony upfront)
+ * - **Symmetric `_v`**: Include `_v: '"1"'` from start — clean switch statements (must include `_v` in all writes)
+ *
+ * Most tables never need versioning, so asymmetric `_v` (start simple, add `_v` only when needed)
+ * is the recommended default. Use symmetric `_v` when you know a table will evolve and want
+ * consistent migration code. Use field presence for unambiguous two-version cases.
+ *
+ * See `.agents/skills/static-workspace-api/SKILL.md` for detailed comparison table.
+ *
  * @example
  * ```typescript
  * import { defineTable } from 'epicenter/static';
@@ -9,13 +21,24 @@
  * // Shorthand for single version
  * const users = defineTable(type({ id: 'string', email: 'string' }));
  *
- * // Builder pattern for multiple versions
+ * // Builder pattern for multiple versions (asymmetric _v — recommended)
+ * const posts = defineTable()
+ *   .version(type({ id: 'string', title: 'string' }))
+ *   .version(type({ id: 'string', title: 'string', views: 'number', _v: '"2"' }))
+ *   .migrate((row) => {
+ *     if (!('_v' in row)) return { ...row, views: 0, _v: '2' };
+ *     return row;
+ *   });
+ *
+ * // Or with _v from the start (symmetric switch)
  * const posts = defineTable()
  *   .version(type({ id: 'string', title: 'string', _v: '"1"' }))
  *   .version(type({ id: 'string', title: 'string', views: 'number', _v: '"2"' }))
  *   .migrate((row) => {
- *     if (row._v === '1') return { ...row, views: 0, _v: '2' as const };
- *     return row;
+ *     switch (row._v) {
+ *       case '1': return { ...row, views: 0, _v: '2' };
+ *       case '2': return row;
+ *     }
  *   });
  * ```
  */
@@ -86,12 +109,24 @@ export function defineTable<TSchema extends StandardSchemaV1>(
  *
  * @example
  * ```typescript
+ * // Asymmetric _v (recommended) — add _v only when you need a second version
  * const posts = defineTable()
  *   .version(type({ id: 'string', title: 'string' }))
- *   .version(type({ id: 'string', title: 'string', views: 'number' }))
+ *   .version(type({ id: 'string', title: 'string', views: 'number', _v: '"2"' }))
  *   .migrate((row) => {
- *     if (!('views' in row)) return { ...row, views: 0 };
+ *     if (!('_v' in row)) return { ...row, views: 0, _v: '2' };
  *     return row;
+ *   });
+ *
+ * // Symmetric _v — include _v from the start for clean switch statements
+ * const posts = defineTable()
+ *   .version(type({ id: 'string', title: 'string', _v: '"1"' }))
+ *   .version(type({ id: 'string', title: 'string', views: 'number', _v: '"2"' }))
+ *   .migrate((row) => {
+ *     switch (row._v) {
+ *       case '1': return { ...row, views: 0, _v: '2' };
+ *       case '2': return row;
+ *     }
  *   });
  * ```
  */

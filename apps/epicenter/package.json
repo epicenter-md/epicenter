@@ -22,6 +22,7 @@
 		"@tauri-apps/plugin-fs": "^2.4.1",
 		"@tauri-apps/plugin-opener": "^2.3.1",
 		"@tauri-apps/plugin-sql": "~2",
+		"@y-sweet/client": "^0.9.1",
 		"arktype": "catalog:",
 		"bits-ui": "catalog:",
 		"mode-watcher": "catalog:",

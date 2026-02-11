@@ -1,6 +1,6 @@
 import { WebsocketProvider } from 'y-websocket';
-import { defineExports, type ExtensionFactory } from '../core/extension';
-import type { KvDefinitionMap, TableDefinitionMap } from '../core/schema';
+import { defineExports, type ExtensionFactory } from '../dynamic/extension';
+import type { KvField, TableDefinition } from '../dynamic/schema';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // MULTI-DEVICE SYNC ARCHITECTURE
@@ -135,25 +135,18 @@ export type WebsocketSyncConfig = {
  *
  * @example Single extension (browser to local server)
  * ```typescript
- * import { defineWorkspace, createClient } from '@epicenter/hq';
+ * import { createWorkspace } from '@epicenter/hq/dynamic';
  * import { websocketSync } from '@epicenter/hq/extensions/websocket-sync';
  *
  * // Browser connects to its own local Elysia server
- * const definition = defineWorkspace({
- *   tables: { ... },
- *   kv: {},
+ * const workspace = createWorkspace(definition).withExtensions({
+ *   sync: websocketSync({ url: 'ws://localhost:3913/sync' }),
  * });
- *
- * const client = createClient('blog', { epoch })
- *   .withDefinition(definition)
- *   .withExtensions({
- *     sync: websocketSync({ url: 'ws://localhost:3913/sync' }),
- *   });
  * ```
  *
  * @example Multi-extension (phone connecting to all nodes)
  * ```typescript
- * import { defineWorkspace, createClient } from '@epicenter/hq';
+ * import { createWorkspace } from '@epicenter/hq/dynamic';
  * import { websocketSync } from '@epicenter/hq/extensions/websocket-sync';
  *
  * const SYNC_NODES = {
@@ -163,45 +156,32 @@ export type WebsocketSyncConfig = {
  * } as const;
  *
  * // Phone browser connects to ALL available sync nodes
- * const definition = defineWorkspace({
- *   tables: { ... },
- *   kv: {},
+ * const workspace = createWorkspace(definition).withExtensions({
+ *   // Create an extension for each sync node
+ *   syncDesktop: websocketSync({ url: SYNC_NODES.desktop }),
+ *   syncLaptop: websocketSync({ url: SYNC_NODES.laptop }),
+ *   syncCloud: websocketSync({ url: SYNC_NODES.cloud }),
  * });
- *
- * const client = createClient('blog', { epoch })
- *   .withDefinition(definition)
- *   .withExtensions({
- *     // Create an extension for each sync node
- *     syncDesktop: websocketSync({ url: SYNC_NODES.desktop }),
- *     syncLaptop: websocketSync({ url: SYNC_NODES.laptop }),
- *     syncCloud: websocketSync({ url: SYNC_NODES.cloud }),
- *   });
  * ```
  *
  * @example Server-to-server sync (Elysia servers syncing with each other)
  * ```typescript
- * // In your Elysia server configuration
- * // Desktop server connects to laptop and cloud as a CLIENT
+ * import { createWorkspace } from '@epicenter/hq/dynamic';
+ * import { websocketSync } from '@epicenter/hq/extensions/websocket-sync';
  *
+ * // Desktop server connects to laptop and cloud as a CLIENT
  * const SYNC_NODES = {
  *   laptop: 'ws://laptop.my-tailnet.ts.net:3913/sync',
  *   cloud: 'wss://sync.myapp.com/sync',
  * } as const;
  *
- * const definition = defineWorkspace({
- *   tables: { ... },
- *   kv: {},
+ * const workspace = createWorkspace(definition).withExtensions({
+ *   // Server acts as both:
+ *   // 1. A sync server (via createSyncPlugin in server.ts)
+ *   // 2. A sync client connecting to other servers
+ *   syncToLaptop: websocketSync({ url: SYNC_NODES.laptop }),
+ *   syncToCloud: websocketSync({ url: SYNC_NODES.cloud }),
  * });
- *
- * const client = createClient('blog', { epoch })
- *   .withDefinition(definition)
- *   .withExtensions({
- *     // Server acts as both:
- *     // 1. A sync server (via createSyncPlugin in server.ts)
- *     // 2. A sync client connecting to other servers
- *     syncToLaptop: websocketSync({ url: SYNC_NODES.laptop }),
- *     syncToCloud: websocketSync({ url: SYNC_NODES.cloud }),
- *   });
  * ```
  *
  * @example Direct usage with y-websocket (no Epicenter client)
@@ -223,11 +203,9 @@ export type WebsocketSyncConfig = {
  * ```
  */
 export function websocketSync<
-	TTableDefinitionMap extends TableDefinitionMap,
-	TKvDefinitionMap extends KvDefinitionMap,
->(
-	config: WebsocketSyncConfig,
-): ExtensionFactory<TTableDefinitionMap, TKvDefinitionMap> {
+	TTableDefinitions extends readonly TableDefinition[],
+	TKvFields extends readonly KvField[],
+>(config: WebsocketSyncConfig): ExtensionFactory<TTableDefinitions, TKvFields> {
 	return ({ ydoc }) => {
 		const provider = new WebsocketProvider(
 			config.url,

@@ -6,7 +6,8 @@
 
 import type { StandardSchemaV1 } from '@standard-schema/spec';
 import type * as Y from 'yjs';
-import type { Lifecycle } from '../core/lifecycle.js';
+import type { Actions } from '../shared/actions.js';
+import type { Lifecycle } from '../shared/lifecycle.js';
 
 // ════════════════════════════════════════════════════════════════════════════
 // TABLE RESULT TYPES - Building Blocks
@@ -23,8 +24,15 @@ export type InvalidRowResult = {
 	row: unknown;
 };
 
-/** A row that was not found. */
-export type NotFoundResult = { status: 'not_found'; id: string };
+/**
+ * A row that was not found.
+ * Includes `row: undefined` so row can always be destructured regardless of status.
+ */
+export type NotFoundResult = {
+	status: 'not_found';
+	id: string;
+	row: undefined;
+};
 
 // ════════════════════════════════════════════════════════════════════════════
 // TABLE RESULT TYPES - Composed Types
@@ -47,6 +55,12 @@ export type DeleteResult =
 	| { status: 'deleted' }
 	| { status: 'not_found_locally' };
 
+/** Result of updating a single row */
+export type UpdateResult<TRow> =
+	| { status: 'updated'; row: TRow }
+	| NotFoundResult
+	| InvalidRowResult;
+
 // ════════════════════════════════════════════════════════════════════════════
 // KV RESULT TYPES
 // ════════════════════════════════════════════════════════════════════════════
@@ -59,7 +73,7 @@ export type KvGetResult<TValue> =
 			errors: readonly StandardSchemaV1.Issue[];
 			value: unknown;
 	  }
-	| { status: 'not_found' };
+	| { status: 'not_found'; value: undefined };
 
 /** Change event for KV observation */
 export type KvChange<TValue> =
@@ -147,6 +161,13 @@ export type TableBatchTransaction<TRow extends { id: string }> = {
 /** Helper for a single table */
 export type TableHelper<TRow extends { id: string }> = {
 	// ═══════════════════════════════════════════════════════════════════════
+	// PARSE
+	// ═══════════════════════════════════════════════════════════════════════
+
+	/** Parse unknown input against the table schema and migrate to latest version. Injects `id` into the input. Does not write. */
+	parse(id: string, input: unknown): RowResult<TRow>;
+
+	// ═══════════════════════════════════════════════════════════════════════
 	// WRITE (always writes latest schema shape)
 	// ═══════════════════════════════════════════════════════════════════════
 
@@ -166,7 +187,7 @@ export type TableHelper<TRow extends { id: string }> = {
 	/** Get all valid rows (skips invalid). */
 	getAllValid(): TRow[];
 
-	/** Get all invalid rows (for debugging/repair). */
+	/** Get all invalid rows with storage keys (for debugging/repair). */
 	getAllInvalid(): InvalidRowResult[];
 
 	// ═══════════════════════════════════════════════════════════════════════
@@ -178,6 +199,13 @@ export type TableHelper<TRow extends { id: string }> = {
 
 	/** Find first row matching predicate (only valid rows). */
 	find(predicate: (row: TRow) => boolean): TRow | undefined;
+
+	// ═══════════════════════════════════════════════════════════════════════
+	// UPDATE
+	// ═══════════════════════════════════════════════════════════════════════
+
+	/** Partial update a row by ID. Fetches current, merges partial, and saves. */
+	update(id: string, partial: Partial<Omit<TRow, 'id'>>): UpdateResult<TRow>;
 
 	// ═══════════════════════════════════════════════════════════════════════
 	// DELETE
@@ -226,12 +254,18 @@ export type TableHelper<TRow extends { id: string }> = {
 // ════════════════════════════════════════════════════════════════════════════
 
 /** Map of table definitions (uses `any` to allow variance in generic parameters) */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type TableDefinitions = Record<string, TableDefinition<any>>;
+export type TableDefinitions = Record<
+	string,
+	// biome-ignore lint/suspicious/noExplicitAny: variance-friendly map type
+	TableDefinition<any>
+>;
 
 /** Map of KV definitions (uses `any` to allow variance in generic parameters) */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type KvDefinitions = Record<string, KvDefinition<any>>;
+export type KvDefinitions = Record<
+	string,
+	// biome-ignore lint/suspicious/noExplicitAny: variance-friendly map type
+	KvDefinition<any>
+>;
 
 /** Tables helper object with all table helpers */
 export type TablesHelper<TTableDefinitions extends TableDefinitions> = {
@@ -280,51 +314,131 @@ export type KvHelper<TKvDefinitions extends KvDefinitions> = {
 	): () => void;
 };
 
-/** Workspace definition created by defineWorkspace() */
+/**
+ * Workspace definition created by defineWorkspace().
+ *
+ * This is a pure data structure for composability and type inference.
+ * Pass to createWorkspace() to instantiate.
+ */
 export type WorkspaceDefinition<
+	TId extends string,
+	TTableDefinitions extends TableDefinitions = Record<string, never>,
+	TKvDefinitions extends KvDefinitions = Record<string, never>,
+> = {
+	id: TId;
+	tables?: TTableDefinitions;
+	kv?: TKvDefinitions;
+};
+
+/**
+ * A workspace client with actions attached via `.withActions()`.
+ *
+ * This is an intersection of the base `WorkspaceClient` and `{ actions: TActions }`.
+ * It is terminal — no more builder methods are available after `.withActions()`.
+ */
+export type WorkspaceClientWithActions<
+	TId extends string,
+	TTableDefs extends TableDefinitions,
+	TKvDefs extends KvDefinitions,
+	TExtensions extends ExtensionMap,
+	TActions extends Actions,
+> = WorkspaceClient<TId, TTableDefs, TKvDefs, TExtensions> & {
+	actions: TActions;
+};
+
+/**
+ * Builder returned by createWorkspace() that IS a client AND has .withExtensions() and .withActions().
+ *
+ * This uses Object.assign to merge the base client with the builder methods,
+ * allowing direct use: `createWorkspace(...).tables.posts.set(...)` or
+ * chaining: `createWorkspace(...).withExtensions({ sqlite })`.
+ */
+export type WorkspaceClientBuilder<
 	TId extends string,
 	TTableDefinitions extends TableDefinitions,
 	TKvDefinitions extends KvDefinitions,
-> = {
-	id: TId;
-	tableDefinitions: TTableDefinitions;
-	kvDefinitions: TKvDefinitions;
-
+> = WorkspaceClient<
+	TId,
+	TTableDefinitions,
+	TKvDefinitions,
+	Record<string, never>
+> & {
 	/**
-	 * Create a workspace client. Synchronous - returns immediately.
+	 * Add extensions to the workspace client.
 	 *
-	 * Capabilities are schema-generic and will receive this workspace's
-	 * specific table/kv types when called.
+	 * Extensions receive typed access to ydoc, tables, and kv.
+	 * They must return a Lifecycle object (via defineExports).
+	 *
+	 * @param extensions - Map of extension factories
+	 * @returns Workspace client with extensions accessible via `.extensions`
 	 */
-	create<TCapabilities extends CapabilityMap = {}>(
-		capabilities?: TCapabilities,
-	): WorkspaceClient<TId, TTableDefinitions, TKvDefinitions, TCapabilities>;
+	withExtensions<TExtensions extends ExtensionMap>(
+		extensions: TExtensions,
+	): WorkspaceClient<TId, TTableDefinitions, TKvDefinitions, TExtensions> & {
+		/** Attach actions to the client. Terminal — no more builder methods after this. */
+		withActions<TActions extends Actions>(
+			factory: (
+				client: WorkspaceClient<
+					TId,
+					TTableDefinitions,
+					TKvDefinitions,
+					TExtensions
+				>,
+			) => TActions,
+		): WorkspaceClientWithActions<
+			TId,
+			TTableDefinitions,
+			TKvDefinitions,
+			TExtensions,
+			TActions
+		>;
+	};
+
+	/** Attach actions to the client. Terminal — no more builder methods after this. */
+	withActions<TActions extends Actions>(
+		factory: (
+			client: WorkspaceClient<
+				TId,
+				TTableDefinitions,
+				TKvDefinitions,
+				Record<string, never>
+			>,
+		) => TActions,
+	): WorkspaceClientWithActions<
+		TId,
+		TTableDefinitions,
+		TKvDefinitions,
+		Record<string, never>,
+		TActions
+	>;
 };
 
 // ════════════════════════════════════════════════════════════════════════════
-// CAPABILITY TYPES
+// EXTENSION TYPES
 // ════════════════════════════════════════════════════════════════════════════
 
 /**
- * Context passed to capability factory functions.
+ * Context passed to extension factory functions.
  *
- * Capabilities receive typed access to the workspace's Y.Doc and helpers,
+ * Extensions receive typed access to the workspace's Y.Doc and helpers,
  * allowing them to attach persistence, sync, or other functionality with
  * full type safety.
  *
  * The generic parameters are bound at the workspace level - when you call
- * `workspace.create({ myCapability })`, the context is typed with the
- * workspace's specific table and KV definitions.
+ * `createWorkspace(...).withExtensions({ myExtension })`, the context is typed
+ * with the workspace's specific table and KV definitions.
  *
  * @typeParam TTableDefinitions - Map of table definitions for this workspace
  * @typeParam TKvDefinitions - Map of KV definitions for this workspace
  */
-export type CapabilityContext<
+export type ExtensionContext<
 	TTableDefinitions extends TableDefinitions = TableDefinitions,
 	TKvDefinitions extends KvDefinitions = KvDefinitions,
 > = {
 	/** The underlying Y.Doc instance */
 	ydoc: Y.Doc;
+	/** Workspace identifier */
+	id: string;
 	/** Typed table helpers for the workspace */
 	tables: TablesHelper<TTableDefinitions>;
 	/** Typed KV helper for the workspace */
@@ -332,17 +446,17 @@ export type CapabilityContext<
 };
 
 /**
- * Factory function that creates a capability with lifecycle hooks.
+ * Factory function that creates an extension with lifecycle hooks.
  *
- * All capabilities MUST return an object that satisfies the {@link Lifecycle} protocol:
- * - `whenSynced`: Promise that resolves when the capability is ready
+ * All extensions MUST return an object that satisfies the {@link Lifecycle} protocol:
+ * - `whenSynced`: Promise that resolves when the extension is ready
  * - `destroy`: Cleanup function called when the workspace is destroyed
  *
- * Use {@link defineExports} from `core/lifecycle.ts` to easily create compliant exports.
+ * Use {@link defineExports} from `shared/lifecycle.ts` to easily create compliant exports.
  *
- * @example Simple capability (works with any workspace)
+ * @example Simple extension (works with any workspace)
  * ```typescript
- * const persistence: CapabilityFactory = ({ ydoc }) => {
+ * const persistence: ExtensionFactory = ({ ydoc }) => {
  *   const provider = new IndexeddbPersistence(ydoc.guid, ydoc);
  *   return defineExports({
  *     provider,
@@ -352,72 +466,90 @@ export type CapabilityContext<
  * };
  * ```
  *
- * @example Capability bound to specific workspace types
+ * @example Extension bound to specific workspace types
  * ```typescript
- * const logger: CapabilityFactory<MyTables, MyKv> = ({ tables }) => {
+ * const logger: ExtensionFactory<MyTables, MyKv> = ({ tables }) => {
  *   // tables is fully typed as TablesHelper<MyTables>
  *   tables.posts.getAll(); // ← autocomplete works!
  *   return defineExports();
  * };
  * ```
  *
- * @typeParam TTableDefinitions - Table definitions this capability accepts (defaults to any)
- * @typeParam TKvDefinitions - KV definitions this capability accepts (defaults to any)
- * @typeParam TExports - The exports returned by this capability (must extend Lifecycle)
+ * @typeParam TTableDefinitions - Table definitions this extension accepts (defaults to any)
+ * @typeParam TKvDefinitions - KV definitions this extension accepts (defaults to any)
+ * @typeParam TExports - The exports returned by this extension (must extend Lifecycle)
  */
-export type CapabilityFactory<
+export type ExtensionFactory<
 	TTableDefinitions extends TableDefinitions = TableDefinitions,
 	TKvDefinitions extends KvDefinitions = KvDefinitions,
 	TExports extends Lifecycle = Lifecycle,
-> = (context: CapabilityContext<TTableDefinitions, TKvDefinitions>) => TExports;
+> = (context: ExtensionContext<TTableDefinitions, TKvDefinitions>) => TExports;
 
 /**
- * Map of capability factories.
+ * Map of extension factories.
  *
- * Each capability must return a `Lifecycle` (with `whenSynced` and `destroy`).
- * Use `defineExports()` from `core/lifecycle.ts` to easily create compliant returns:
+ * Each extension must return a `Lifecycle` (with `whenSynced` and `destroy`).
+ * Use `defineExports()` from `shared/lifecycle.ts` to easily create compliant returns:
  *
  * ```typescript
  * import { defineExports } from 'epicenter';
  *
- * const myCapability = () => defineExports({
+ * const myExtension = () => defineExports({
  *   db: createDatabase(),
  *   destroy: () => db.close(),
  * });
  * // Returns: { db, whenSynced: Promise.resolve(), destroy: closeFn }
  * ```
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type CapabilityMap = Record<string, (...args: any[]) => Lifecycle>;
+export type ExtensionMap = Record<
+	string,
+	// biome-ignore lint/suspicious/noExplicitAny: extension factories are variadic
+	(...args: any[]) => Lifecycle
+>;
 
 /**
- * Infer exports from a capability map.
+ * Infer exports from an extension map.
  *
- * Capabilities return `Lifecycle & CustomExports` via `defineExports()`.
- * This type extracts the full return type of each capability.
+ * Extensions return `Lifecycle & CustomExports` via `defineExports()`.
+ * This type extracts the full return type of each extension.
  *
- * @typeParam TCapabilities - The capability map to infer exports from
+ * @typeParam TExtensions - The extension map to infer exports from
  */
-export type InferCapabilityExports<TCapabilities extends CapabilityMap> = {
-	[K in keyof TCapabilities]: ReturnType<TCapabilities[K]>;
+export type InferExtensionExports<TExtensions extends ExtensionMap> = {
+	[K in keyof TExtensions]: ReturnType<TExtensions[K]>;
 };
 
-/** The workspace client returned by workspace.create() */
+/** The workspace client returned by createWorkspace() */
 export type WorkspaceClient<
 	TId extends string,
 	TTableDefinitions extends TableDefinitions,
 	TKvDefinitions extends KvDefinitions,
-	TCapabilities extends CapabilityMap,
+	TExtensions extends ExtensionMap,
 > = {
+	/** Workspace identifier */
 	id: TId;
+	/** The underlying Y.Doc instance */
 	ydoc: Y.Doc;
+	/** Typed table helpers */
 	tables: TablesHelper<TTableDefinitions>;
+	/** Typed KV helper */
 	kv: KvHelper<TKvDefinitions>;
-	capabilities: InferCapabilityExports<TCapabilities>;
+	/** Workspace definitions for introspection */
+	definitions: { tables: TTableDefinitions; kv: TKvDefinitions };
+	/** Extension exports */
+	extensions: InferExtensionExports<TExtensions>;
 
 	/** Cleanup all resources */
 	destroy(): Promise<void>;
 
 	/** Async dispose support */
 	[Symbol.asyncDispose](): Promise<void>;
+};
+
+/**
+ * Type alias for any workspace client (used for duck-typing in CLI/server).
+ * Includes optional actions property since clients may or may not have actions attached.
+ */
+export type AnyWorkspaceClient = WorkspaceClient<any, any, any, any> & {
+	actions?: Actions;
 };

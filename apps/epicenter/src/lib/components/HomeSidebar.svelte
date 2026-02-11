@@ -4,13 +4,21 @@
 	import * as Sidebar from '@epicenter/ui/sidebar';
 	import { rpc } from '$lib/query';
 	import { createWorkspaceDialog } from '$lib/components/CreateWorkspaceDialog.svelte';
+	import { addStaticWorkspaceDialog } from '$lib/components/AddStaticWorkspaceDialog.svelte';
 	import FolderIcon from '@lucide/svelte/icons/folder';
 	import FolderOpenIcon from '@lucide/svelte/icons/folder-open';
+	import DatabaseIcon from '@lucide/svelte/icons/database';
 	import PlusIcon from '@lucide/svelte/icons/plus';
 
 	const workspaces = createQuery(() => rpc.workspaces.listWorkspaces.options);
+	const staticWorkspaces = createQuery(
+		() => rpc.staticWorkspaces.listStaticWorkspaces.options,
+	);
 	const createWorkspace = createMutation(
 		() => rpc.workspaces.createWorkspace.options,
+	);
+	const addStaticWorkspace = createMutation(
+		() => rpc.staticWorkspaces.addStaticWorkspace.options,
 	);
 	const openDirectoryMutation = createMutation(
 		() => rpc.workspaces.openWorkspacesDirectory.options,
@@ -46,7 +54,11 @@
 				onclick={() =>
 					createWorkspaceDialog.open({
 						onConfirm: async ({ name, id }) => {
-							const result = await createWorkspace.mutateAsync({ name, id });
+							const result = await createWorkspace.mutateAsync({
+								name,
+								id,
+								template: null,
+							});
 							await invalidateAll();
 							// Navigate using the workspace ID
 							goto(`/workspaces/${result.id}`);
@@ -80,6 +92,55 @@
 							<Sidebar.MenuItem>
 								<span class="text-muted-foreground px-2 py-1 text-xs">
 									No workspaces yet
+								</span>
+							</Sidebar.MenuItem>
+						{/each}
+					{/if}
+				</Sidebar.Menu>
+			</Sidebar.GroupContent>
+		</Sidebar.Group>
+
+		<Sidebar.Separator />
+
+		<Sidebar.Group>
+			<Sidebar.GroupLabel>Static Workspaces</Sidebar.GroupLabel>
+			<Sidebar.GroupAction
+				title="Add static workspace"
+				onclick={() =>
+					addStaticWorkspaceDialog.open({
+						onConfirm: async ({ id, name }) => {
+							await addStaticWorkspace.mutateAsync({ id, name });
+							goto(`/workspaces/static/${id}`);
+						},
+					})}
+			>
+				<PlusIcon />
+				<span class="sr-only">Add Static Workspace</span>
+			</Sidebar.GroupAction>
+			<Sidebar.GroupContent>
+				<Sidebar.Menu>
+					{#if staticWorkspaces.isPending}
+						<Sidebar.MenuItem>
+							<span class="text-muted-foreground px-2 py-1 text-xs">
+								Loading...
+							</span>
+						</Sidebar.MenuItem>
+					{:else if staticWorkspaces.data}
+						{#each staticWorkspaces.data as workspace (workspace.id)}
+							<Sidebar.MenuItem>
+								<Sidebar.MenuButton>
+									{#snippet child({ props })}
+										<a href="/workspaces/static/{workspace.id}" {...props}>
+											<DatabaseIcon />
+											<span>{workspace.name ?? workspace.id}</span>
+										</a>
+									{/snippet}
+								</Sidebar.MenuButton>
+							</Sidebar.MenuItem>
+						{:else}
+							<Sidebar.MenuItem>
+								<span class="text-muted-foreground px-2 py-1 text-xs">
+									No static workspaces
 								</span>
 							</Sidebar.MenuItem>
 						{/each}

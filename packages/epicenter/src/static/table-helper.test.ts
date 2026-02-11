@@ -4,7 +4,7 @@ import * as Y from 'yjs';
 import {
 	YKeyValueLww,
 	type YKeyValueLwwEntry,
-} from '../core/utils/y-keyvalue-lww.js';
+} from '../shared/y-keyvalue/y-keyvalue-lww.js';
 import { defineTable } from './define-table.js';
 import { createTableHelper } from './table-helper.js';
 
@@ -218,6 +218,85 @@ describe('createTableHelper', () => {
 
 			const found = helper.find(() => true);
 			expect(found).toEqual({ id: '2', name: 'Valid' });
+		});
+	});
+
+	describe('update operations', () => {
+		test('update merges partial data correctly', () => {
+			const { ykv } = setup();
+			const definition = defineTable(
+				type({ id: 'string', name: 'string', age: 'number' }),
+			);
+			const helper = createTableHelper(ykv, definition);
+
+			helper.set({ id: '1', name: 'Alice', age: 25 });
+			const result = helper.update('1', { age: 30 });
+
+			expect(result.status).toBe('updated');
+			if (result.status === 'updated') {
+				expect(result.row).toEqual({ id: '1', name: 'Alice', age: 30 });
+			}
+
+			// Verify the row is actually saved
+			const getResult = helper.get('1');
+			expect(getResult.status).toBe('valid');
+			if (getResult.status === 'valid') {
+				expect(getResult.row).toEqual({ id: '1', name: 'Alice', age: 30 });
+			}
+		});
+
+		test('update returns not_found for missing rows', () => {
+			const { ykv } = setup();
+			const definition = defineTable(type({ id: 'string', name: 'string' }));
+			const helper = createTableHelper(ykv, definition);
+
+			const result = helper.update('nonexistent', { name: 'Bob' });
+
+			expect(result.status).toBe('not_found');
+			if (result.status === 'not_found') {
+				expect(result.id).toBe('nonexistent');
+			}
+		});
+
+		test('update returns invalid for corrupted data', () => {
+			const { ykv, yarray } = setup();
+			const definition = defineTable(type({ id: 'string', name: 'string' }));
+			const helper = createTableHelper(ykv, definition);
+
+			// Insert invalid data directly
+			yarray.push([{ key: '1', val: { id: '1', name: 123 }, ts: 0 }]); // name should be string
+
+			const result = helper.update('1', { name: 'Valid' });
+
+			expect(result.status).toBe('invalid');
+			if (result.status === 'invalid') {
+				expect(result.id).toBe('1');
+				expect(result.errors.length).toBeGreaterThan(0);
+				expect(result.row).toEqual({ id: '1', name: 123 });
+			}
+		});
+
+		test('update preserves id field (cannot be changed)', () => {
+			const { ykv } = setup();
+			const definition = defineTable(type({ id: 'string', name: 'string' }));
+			const helper = createTableHelper(ykv, definition);
+
+			helper.set({ id: '1', name: 'Alice' });
+
+			// TypeScript prevents passing `id` in partial due to Omit<TRow, 'id'>
+			// But we can test that even if someone bypasses TypeScript, the id is preserved
+			const result = helper.update('1', { name: 'Bob' } as Partial<
+				Omit<{ id: string; name: string }, 'id'>
+			>);
+
+			expect(result.status).toBe('updated');
+			if (result.status === 'updated') {
+				expect(result.row.id).toBe('1'); // ID is preserved
+				expect(result.row.name).toBe('Bob');
+			}
+
+			// Verify the row still exists at the original ID
+			expect(helper.has('1')).toBe(true);
 		});
 	});
 

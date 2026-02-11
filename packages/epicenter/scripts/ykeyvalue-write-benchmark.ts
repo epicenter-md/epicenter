@@ -4,14 +4,17 @@
  * Run: bun packages/epicenter/scripts/ykeyvalue-write-benchmark.ts
  */
 import * as Y from 'yjs';
-import { YKeyValue } from '../src/core/utils/y-keyvalue';
+import {
+	YKeyValueLww,
+	type YKeyValueLwwEntry,
+} from '../src/shared/y-keyvalue/y-keyvalue-lww';
 
 type Row = { id: string; name: string; value: number };
 
 function benchmarkYKeyValue(rowCount: number, updateCount: number) {
 	const doc = new Y.Doc();
-	const yarray = doc.getArray<{ key: string; val: Row }>('table');
-	const kv = new YKeyValue(yarray);
+	const yarray = doc.getArray<YKeyValueLwwEntry<Row>>('table');
+	const kv = new YKeyValueLww(yarray);
 
 	// Seed with rows
 	console.log(`\nSeeding ${rowCount.toLocaleString()} rows...`);

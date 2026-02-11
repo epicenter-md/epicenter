@@ -1,80 +1,116 @@
-import { stat } from 'node:fs/promises';
-import { dirname, join, parse, resolve } from 'node:path';
-import type { WorkspaceDoc } from '../core/docs/workspace-doc';
-import type { ProjectDir } from '../core/types';
+import { join, resolve } from 'node:path';
+import type { ProjectDir } from '../shared/types';
+import type { AnyWorkspaceClient } from '../static/types';
 
-type AnyWorkspaceDoc = WorkspaceDoc<any, any, any>;
+// ═══════════════════════════════════════════════════════════════════════════
+// EXPORTED TYPES
+// ═══════════════════════════════════════════════════════════════════════════
 
-export async function findProjectDir(
-	startDir: string = process.cwd(),
-): Promise<ProjectDir | null> {
-	let current = resolve(startDir);
-	const root = parse(current).root;
+export type { AnyWorkspaceClient };
 
-	while (current !== root) {
-		const configPath = join(current, 'epicenter.config.ts');
+export type WorkspaceResolution =
+	| { status: 'found'; projectDir: ProjectDir; client: AnyWorkspaceClient }
+	| { status: 'ambiguous'; configs: string[] }
+	| { status: 'not_found' };
 
-		if (await fileExists(configPath)) {
-			return current as ProjectDir;
+// ═══════════════════════════════════════════════════════════════════════════
+// MAIN ENTRY POINT
+// ═══════════════════════════════════════════════════════════════════════════
+
+const CONFIG_FILENAME = 'epicenter.config.ts';
+
+/**
+ * Resolve and load a workspace from a directory.
+ *
+ * 1. Checks for config in the given directory
+ * 2. If not found, checks subdirectories for ambiguity detection
+ * 3. Loads and validates the client if found
+ */
+export async function resolveWorkspace(
+	dir: string = process.cwd(),
+): Promise<WorkspaceResolution> {
+	const baseDir = resolve(dir);
+	const configPath = join(baseDir, CONFIG_FILENAME);
+
+	// Check for config in the specified directory
+	if (await Bun.file(configPath).exists()) {
+		const client = await loadClientFromPath(configPath);
+		return { status: 'found', projectDir: baseDir as ProjectDir, client };
+	}
+
+	// No config in target dir - check subdirs for helpful error message
+	const glob = new Bun.Glob(`*/**/${CONFIG_FILENAME}`);
+	const configs: string[] = [];
+	for await (const path of glob.scan({ cwd: baseDir, onlyFiles: true })) {
+		configs.push(path);
+	}
+	configs.sort();
+
+	if (configs.length > 0) {
+		return { status: 'ambiguous', configs };
+	}
+
+	return { status: 'not_found' };
+}
+
+/**
+ * Check if a directory contains an epicenter config.
+ */
+export async function hasConfig(dir: string): Promise<boolean> {
+	return Bun.file(join(resolve(dir), CONFIG_FILENAME)).exists();
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// INTERNAL HELPERS
+// ═══════════════════════════════════════════════════════════════════════════
+
+async function loadClientFromPath(
+	configPath: string,
+): Promise<AnyWorkspaceClient> {
+	const module = await import(Bun.pathToFileURL(configPath).href);
+
+	// New convention: export default createWorkspaceClient({...})
+	if (module.default !== undefined) {
+		const client = module.default;
+		if (isWorkspaceClient(client)) {
+			return client;
 		}
-
-		current = dirname(current);
-	}
-
-	return null;
-}
-
-async function fileExists(path: string): Promise<boolean> {
-	try {
-		const stats = await stat(path);
-		return stats.isFile();
-	} catch {
-		return false;
-	}
-}
-
-export async function loadClients(
-	projectDir: ProjectDir,
-): Promise<AnyWorkspaceDoc[]> {
-	const configPath = join(projectDir, 'epicenter.config.ts');
-
-	if (!(await fileExists(configPath))) {
 		throw new Error(
-			`No epicenter.config.ts found at ${configPath}\n` +
-				`Create a config file that exports an array of workspace clients.`,
+			`Default export in ${CONFIG_FILENAME} is not a WorkspaceClient.\n` +
+				`Expected: export default createWorkspaceClient({...})\n` +
+				`Got: ${typeof client}`,
 		);
 	}
 
-	const module = await import(configPath);
-	const clients = module.default;
-
-	if (!Array.isArray(clients)) {
-		throw new Error(
-			`epicenter.config.ts must export an array of workspace clients as default export.`,
-		);
-	}
+	// Fallback: support old convention of named exports (for migration)
+	const exports = Object.entries(module);
+	const clients = exports.filter(([, value]) => isWorkspaceClient(value));
 
 	if (clients.length === 0) {
-		throw new Error(`epicenter.config.ts exported an empty array of clients.`);
+		throw new Error(
+			`No WorkspaceClient found in ${CONFIG_FILENAME}.\n` +
+				`Expected: export default createWorkspaceClient({...})`,
+		);
 	}
 
-	for (const client of clients) {
-		if (!isWorkspaceDoc(client)) {
-			throw new Error(
-				`Invalid client in epicenter.config.ts. Expected WorkspaceDoc with workspaceId and contracts properties.`,
-			);
-		}
+	if (clients.length > 1) {
+		const names = clients.map(([name]) => name).join(', ');
+		throw new Error(
+			`Multiple WorkspaceClient exports found: ${names}\n` +
+				`Epicenter supports one workspace per config. Use: export default createWorkspaceClient({...})`,
+		);
 	}
 
-	return clients;
+	return clients[0]![1] as AnyWorkspaceClient;
 }
 
-function isWorkspaceDoc(value: unknown): value is AnyWorkspaceDoc {
+function isWorkspaceClient(value: unknown): value is AnyWorkspaceClient {
 	return (
 		typeof value === 'object' &&
 		value !== null &&
-		'workspaceId' in value &&
+		'id' in value &&
 		'tables' in value &&
-		typeof (value as Record<string, unknown>).workspaceId === 'string'
+		'definitions' in value &&
+		typeof (value as Record<string, unknown>).id === 'string'
 	);
 }

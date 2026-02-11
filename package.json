@@ -63,8 +63,8 @@
 		"lint:check": "concurrently -raw \"eslint\" \"biome lint\"",
 		"typecheck": "turbo run typecheck",
 		"bump-version": "bun run scripts/bump-version.ts",
-		"clean": "rm -rf .turbo node_modules apps/*/.svelte-kit apps/*/dist apps/*/node_modules packages/*/.svelte-kit packages/*/dist packages/*/node_modules examples/*/node_modules",
-		"nuke": "bun clean && rm -rf apps/whispering/src-tauri/target"
+		"clean": "bun run scripts/clean.ts",
+		"nuke": "bun run scripts/clean.ts --nuke"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "catalog:",

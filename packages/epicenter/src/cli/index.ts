@@ -1,2 +1,6 @@
 export { createCLI } from './cli';
-export { findProjectDir, loadClients } from './discovery';
+export {
+	type AnyWorkspaceClient,
+	resolveWorkspace,
+	type WorkspaceResolution,
+} from './discovery';

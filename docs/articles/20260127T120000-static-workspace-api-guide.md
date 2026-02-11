@@ -104,11 +104,11 @@ const client = workspace.create({
 	},
 });
 
-// Access capabilities after creation
-client.capabilities.sqlite.db.query('SELECT * FROM posts');
+// Access extensions after creation
+client.extensions.sqlite.db.query('SELECT * FROM posts');
 ```
 
-Capabilities receive typed access to the workspace's Y.Doc and helpers. They must return a `Lifecycle` object (with `whenSynced` and `destroy`). Use `defineExports()` from `core/lifecycle.ts` to easily create compliant returns.
+Extensions receive typed access to the workspace's Y.Doc and helpers. They must return a `Lifecycle` object (with `whenSynced` and `destroy`). Use `defineExports()` from `core/lifecycle.ts` to easily create compliant returns.
 
 ### Layer 3: createTables / createKv - Bring Your Own Y.Doc
 
@@ -334,19 +334,19 @@ You can observe an entire table or an entire KV key, but not individual fields. 
 
 If you need field-level reactivity, that's a higher-level concern handled by your UI framework (React/Svelte/etc). Typically you read the data once, subscribe to table changes, and let your UI reactivity handle updates.
 
-## Capability Lifecycle
+## Extension Lifecycle
 
-Capabilities receive a `CapabilityContext` with typed access to the workspace:
+Extensions receive an `ExtensionContext` with typed access to the workspace:
 
 ```typescript
-type CapabilityContext = {
+type ExtensionContext = {
 	ydoc: Y.Doc;
 	tables: TablesHelper<TTableDefinitions>;
 	kv: KvHelper<TKvDefinitions>;
 };
 ```
 
-Each capability factory must return a `Lifecycle` object:
+Each extension factory must return a `Lifecycle` object:
 
 ```typescript
 type Lifecycle = {
@@ -374,13 +374,13 @@ const persistence = ({ ydoc }) => {
 - `whenSynced: Promise.resolve()` (or your custom promise)
 - `destroy` (or your custom cleanup)
 
-Capabilities are schema-generic by default. If you need typed access, add generic parameters:
+Extensions are schema-generic by default. If you need typed access, add generic parameters:
 
 ```typescript
 type MyTables = typeof workspace.tableDefinitions;
 type MyKv = typeof workspace.kvDefinitions;
 
-const logger: CapabilityFactory<MyTables, MyKv> = ({ tables }) => {
+const logger: ExtensionFactory<MyTables, MyKv> = ({ tables }) => {
 	// tables is fully typed—autocomplete works for all your tables
 	tables.posts.getAll();
 	return defineExports();
@@ -397,18 +397,18 @@ const client = workspace.create({ persistence, sync });
 // Can use tables/kv immediately
 client.tables.posts.set({ id: '1', title: 'Hello', views: 0, _v: '2' });
 
-// But capabilities might still be initializing
-console.log(client.capabilities.persistence); // Exists
-console.log(client.capabilities.sync); // Exists
+// But extensions might still be initializing
+console.log(client.extensions.persistence); // Exists
+console.log(client.extensions.sync); // Exists
 ```
 
-If a capability needs time to initialize (connecting to a server, opening a database), it signals readiness with `whenSynced`:
+If an extension needs time to initialize (connecting to a server, opening a database), it signals readiness with `whenSynced`:
 
 ```typescript
-await client.capabilities.sync.whenSynced; // Wait for connection
+await client.extensions.sync.whenSynced; // Wait for connection
 ```
 
-This pattern lets your UI render immediately while capabilities initialize in the background.
+This pattern lets your UI render immediately while extensions initialize in the background.
 
 ## Bringing Your Own Y.Doc
 

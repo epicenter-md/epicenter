@@ -208,7 +208,7 @@ Consolidated two overlapping abstractions (`WorkspaceClient` and `WorkspaceDoc`)
 - Added `extensionFactories` and `onSync` parameters to `createWorkspaceDoc`
 - Added `extensions`, `whenSynced`, `destroy`, `[Symbol.asyncDispose]` to return object
 - Moved extension types (`ExtensionContext`, `ExtensionFactory`, etc.) from extension.ts
-- `ExtensionContext` is now flattened: `{ ydoc, workspaceId, epoch, tables, kv, extensionId }`
+- `ExtensionContext` is now flattened: `{ ydoc, workspaceId, tables, kv, extensionId }`
 
 **workspace.ts**:
 
@@ -251,7 +251,7 @@ type ExtensionContext = { workspaceDoc: WorkspaceDoc; extensionId: string };
 
 ```typescript
 type WorkspaceDoc = { ydoc, workspaceId, epoch, tables, kv, extensions, whenSynced, destroy, getSchema, ... };
-type ExtensionContext = { ydoc, workspaceId, epoch, tables, kv, extensionId, ... };
+type ExtensionContext = { ydoc, workspaceId, tables, kv, extensionId, ... };
 // Extension: ({ ydoc, tables }) => { ... }
 ```
 

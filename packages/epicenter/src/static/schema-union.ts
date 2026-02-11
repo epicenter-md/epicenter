@@ -27,9 +27,9 @@ import type { StandardSchemaV1 } from '@standard-schema/spec';
  * // result.value is { id: '1', title: 'Hello' }
  * ```
  */
-export function createUnionSchema<TSchemas extends readonly StandardSchemaV1[]>(
-	schemas: TSchemas,
-) {
+export function createUnionSchema<
+	const TSchemas extends readonly StandardSchemaV1[],
+>(schemas: TSchemas) {
 	return {
 		'~standard': {
 			version: 1,

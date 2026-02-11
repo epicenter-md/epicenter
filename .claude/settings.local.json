@@ -132,7 +132,8 @@
 			"Bash(git add:*)",
 			"Bash(git commit:*)",
 			"Bash(bun run tsc:*)",
-			"Bash(bun run typecheck:*)"
+			"Bash(bun run typecheck:*)",
+			"Bash(bun test:*)"
 		],
 		"deny": [],
 		"ask": [],

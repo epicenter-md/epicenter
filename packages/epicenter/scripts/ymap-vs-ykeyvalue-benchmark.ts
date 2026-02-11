@@ -10,7 +10,10 @@
  */
 
 import * as Y from 'yjs';
-import { YKeyValue } from '../src/core/utils/y-keyvalue';
+import {
+	YKeyValueLww,
+	type YKeyValueLwwEntry,
+} from '../src/shared/y-keyvalue/y-keyvalue-lww';
 
 type BenchmarkResult = {
 	name: string;
@@ -48,13 +51,11 @@ function benchmarkScenario(
 	const ymapTime = performance.now() - ymapStart;
 	const ymapBytes = Y.encodeStateAsUpdate(ymapDoc).byteLength;
 
-	// YKeyValue benchmark
+	// YKeyValueLww benchmark
 	const ykvDoc = new Y.Doc();
-	const yarray = ykvDoc.getArray<{
-		key: string;
-		val: { value: string; count: number };
-	}>('kv');
-	const ykv = new YKeyValue(yarray);
+	const yarray =
+		ykvDoc.getArray<YKeyValueLwwEntry<{ value: string; count: number }>>('kv');
+	const ykv = new YKeyValueLww(yarray);
 
 	const ykvStart = performance.now();
 	for (let update = 0; update < updatesPerKey; update++) {

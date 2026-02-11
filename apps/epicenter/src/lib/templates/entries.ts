@@ -9,24 +9,37 @@
  * - tags: additional tagging
  */
 
-import { id, table, tags, text } from '@epicenter/hq';
+import {
+	id,
+	table,
+	tags,
+	text,
+	type WorkspaceDefinition,
+} from '@epicenter/hq/dynamic';
 
 export const ENTRIES_TEMPLATE = {
 	id: 'epicenter.entries',
 	name: 'Entries',
-	tables: {
-		entries: table({
+	description: '',
+	icon: null,
+	tables: [
+		table({
+			id: 'entries',
 			name: 'Entries',
 			icon: '📝',
 			description: 'General-purpose content entries',
-			fields: {
-				id: id(),
-				title: text({ name: 'Title', description: 'Entry title' }),
-				content: text({ name: 'Content', description: 'Entry body text' }),
-				type: tags({ name: 'Type', description: 'Entry type/category' }),
-				tags: tags({ name: 'Tags', description: 'Additional tags' }),
-			},
+			fields: [
+				id(),
+				text({ id: 'title', name: 'Title', description: 'Entry title' }),
+				text({
+					id: 'content',
+					name: 'Content',
+					description: 'Entry body text',
+				}),
+				tags({ id: 'type', name: 'Type', description: 'Entry type/category' }),
+				tags({ id: 'tags', name: 'Tags', description: 'Additional tags' }),
+			],
 		}),
-	},
-	kv: {},
-} as const;
+	],
+	kv: [],
+} as const satisfies WorkspaceDefinition;

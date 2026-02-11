@@ -7,14 +7,23 @@
  * import { createTables, defineTable } from 'epicenter/static';
  * import { type } from 'arktype';
  *
+ * // Shorthand for single version
+ * const users = defineTable(type({ id: 'string', email: 'string' }));
+ *
+ * // Builder pattern for multiple versions with migration (use _v discriminant)
  * const posts = defineTable()
- *   .version(type({ id: 'string', title: 'string' }))
- *   .migrate((row) => row);
+ *   .version(type({ id: 'string', title: 'string', _v: '"1"' }))
+ *   .version(type({ id: 'string', title: 'string', views: 'number', _v: '"2"' }))
+ *   .migrate((row) => {
+ *     if (row._v === '1') return { ...row, views: 0, _v: '2' };
+ *     return row;
+ *   });
  *
  * const ydoc = new Y.Doc({ guid: 'my-doc' });
- * const tables = createTables(ydoc, { posts });
+ * const tables = createTables(ydoc, { users, posts });
  *
- * tables.posts.set({ id: '1', title: 'Hello' });
+ * tables.users.set({ id: '1', email: 'test@example.com' });
+ * tables.posts.set({ id: '1', title: 'Hello', views: 0, _v: '2' });
  * ```
  */
 
@@ -22,7 +31,8 @@ import type * as Y from 'yjs';
 import {
 	YKeyValueLww,
 	type YKeyValueLwwEntry,
-} from '../core/utils/y-keyvalue-lww.js';
+} from '../shared/y-keyvalue/y-keyvalue-lww.js';
+import { TableKey } from '../shared/ydoc-keys.js';
 import { createTableHelper } from './table-helper.js';
 import type {
 	InferTableRow,
@@ -50,7 +60,7 @@ export function createTables<TTableDefinitions extends TableDefinitions>(
 
 	for (const [name, definition] of Object.entries(definitions)) {
 		// Each table gets its own Y.Array for isolation
-		const yarray = ydoc.getArray<YKeyValueLwwEntry<unknown>>(`table:${name}`);
+		const yarray = ydoc.getArray<YKeyValueLwwEntry<unknown>>(TableKey(name));
 		const ykv = new YKeyValueLww(yarray);
 
 		helpers[name] = createTableHelper(ykv, definition);

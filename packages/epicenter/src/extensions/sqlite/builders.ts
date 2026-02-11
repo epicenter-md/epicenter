@@ -13,8 +13,8 @@ import {
 } from 'drizzle-orm/sqlite-core';
 import type { Static, TSchema } from 'typebox';
 import { Compile } from 'typebox/compile';
-import type { DateTimeString } from '../../core/schema';
-import { generateId } from '../../core/schema';
+import type { DateTimeString } from '../../dynamic/schema';
+import { generateId } from '../../dynamic/schema';
 
 /**
  * Type helper that composes Drizzle column modifiers based on options.

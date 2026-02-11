@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { type } from 'arktype';
-import { standardSchemaToJsonSchema } from '../core/schema/standard/to-json-schema';
+import { standardSchemaToJsonSchema } from '../shared/standard-schema/to-json-schema';
 import { jsonSchemaToYargsOptions } from './json-schema-to-yargs';
 
 describe('jsonSchemaToYargsOptions', () => {

@@ -13,7 +13,7 @@ import { notify } from './notify';
 import { recorder } from './recorder';
 import { sound } from './sound';
 import { text } from './text';
-import { transcription } from './transcription';
+import { transcribeBlob, transcription } from './transcription';
 import { transformer } from './transformer';
 
 /**
@@ -628,28 +628,7 @@ async function processRecordingPipeline({
 		transcriptionStatus: 'UNPROCESSED',
 	} as const;
 
-	const { error: createRecordingError } = await db.recordings.create({
-		recording,
-		audio: blob,
-	});
-
-	if (createRecordingError) {
-		notify.error({
-			id: toastId,
-			title:
-				'❌ Your recording was captured but could not be saved to the database.',
-			description: createRecordingError.message,
-			action: { type: 'more-details', error: createRecordingError },
-		});
-		return;
-	}
-
-	notify.success({
-		id: toastId,
-		title: completionTitle,
-		description: completionDescription,
-	});
-
+	// Show transcribing toast immediately
 	const transcribeToastId = nanoid();
 	notify.loading({
 		id: transcribeToastId,
@@ -657,10 +636,23 @@ async function processRecordingPipeline({
 		description: 'Your recording is being transcribed...',
 	});
 
+	// Start both operations in parallel
+	const savePromise = db.recordings.create({ recording, audio: blob });
+	const transcribePromise = transcribeBlob(blob);
+
+	// Await transcription first (latency-critical path)
 	const { data: transcribedText, error: transcribeError } =
-		await transcription.transcribeRecording(recording);
+		await transcribePromise;
 
 	if (transcribeError) {
+		// Transcription failed - still check save for proper cleanup
+		const { error: saveError } = await savePromise;
+		if (!saveError) {
+			await db.recordings.update({
+				...recording,
+				transcriptionStatus: 'FAILED',
+			});
+		}
 		if (transcribeError.name === 'WhisperingError') {
 			notify.error({ id: transcribeToastId, ...transcribeError });
 			return;
@@ -674,12 +666,47 @@ async function processRecordingPipeline({
 		return;
 	}
 
+	// Transcription succeeded - deliver text immediately (don't wait for save)
 	sound.playSoundIfEnabled('transcriptionComplete');
-
 	await delivery.deliverTranscriptionResult({
 		text: transcribedText,
 		toastId: transcribeToastId,
 	});
+
+	// Now check save result (best-effort)
+	const { error: saveError } = await savePromise;
+	if (saveError) {
+		notify.warning({
+			id: toastId,
+			title: '⚠️ Recording not saved',
+			description:
+				'Your text was delivered but the recording was not saved to history.',
+			action: { type: 'more-details', error: saveError },
+		});
+		// Can't update recording since it wasn't saved - skip transformation too
+		return;
+	}
+
+	// Save succeeded - show completion toast and update recording
+	notify.success({
+		id: toastId,
+		title: completionTitle,
+		description: completionDescription,
+	});
+
+	const { error: updateError } = await db.recordings.update({
+		...recording,
+		transcribedText,
+		transcriptionStatus: 'DONE',
+	});
+
+	if (updateError) {
+		notify.warning({
+			title: '⚠️ Unable to save transcription',
+			description: "Transcription completed but couldn't save to database",
+			action: { type: 'more-details', error: updateError },
+		});
+	}
 
 	// Determine if we need to chain to transformation
 	const transformationId =

@@ -273,19 +273,20 @@ const myExtension: ExtensionFactory = ({ tables, kv, schema }) => {
 };
 ```
 
-### Extension needing raw access (rare)
+### Extension needing Y.js access (rare)
 
 ```typescript
 const advancedExtension: ExtensionFactory = ({ tables, ydoc }) => {
 	// Bulk operation in single transaction
 	ydoc.transact(() => {
-		const rawTable = tables.raw.get('posts');
-		// Direct Y.Map manipulation...
+		const posts = tables.posts;
+		// Operations within transaction...
 	});
 
-	// Custom observation pattern
-	tables.posts.raw.observeDeep((events) => {
-		// Fine-grained YJS events...
+	// For fine-grained Y.js events, use ydoc directly
+	const yarray = ydoc.getArray('posts');
+	yarray.observeDeep((events) => {
+		// Y.js-level events...
 	});
 };
 ```

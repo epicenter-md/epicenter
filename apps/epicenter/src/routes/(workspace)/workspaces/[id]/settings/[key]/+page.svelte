@@ -6,7 +6,7 @@
 	import { Button } from '@epicenter/ui/button';
 	import { rpc } from '$lib/query';
 	import { createQuery } from '@tanstack/svelte-query';
-	import { isNullableFieldSchema, type KvFieldSchema } from '@epicenter/hq';
+	import { isNullableField, type KvField } from '@epicenter/hq/dynamic';
 	import TriangleAlertIcon from '@lucide/svelte/icons/triangle-alert';
 	import SearchXIcon from '@lucide/svelte/icons/search-x';
 
@@ -20,12 +20,13 @@
 
 	const kvSchema = $derived.by(() => {
 		if (!settingKey || !workspace.data?.kv) return undefined;
-		return workspace.data.kv[settingKey] as KvFieldSchema | undefined;
+		// kv is an array now - find by id
+		return workspace.data.kv.find((f) => f.id === settingKey) as
+			| KvField
+			| undefined;
 	});
 
-	const isNullable = $derived(
-		kvSchema ? isNullableFieldSchema(kvSchema) : false,
-	);
+	const isNullable = $derived(kvSchema ? isNullableField(kvSchema) : false);
 </script>
 
 <div class="space-y-6">

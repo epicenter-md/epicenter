@@ -1,7 +1,7 @@
 import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { Ok, tryAsync, trySync } from 'wellcrafted/result';
-import type { AbsolutePath } from '../../core/types';
+import type { AbsolutePath } from '../../shared/types';
 import type { MarkdownExtensionError } from './markdown';
 
 /**

@@ -1,7 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 import { type } from 'arktype';
 import * as Y from 'yjs';
-import { defineExports } from '../core/lifecycle.js';
+import { defineExports } from '../shared/lifecycle.js';
+import { createWorkspace } from './create-workspace.js';
 import { defineKv } from './define-kv.js';
 import { defineTable } from './define-table.js';
 import { defineWorkspace } from './define-workspace.js';
@@ -11,38 +12,28 @@ describe('defineWorkspace', () => {
 		const workspace = defineWorkspace({
 			id: 'test-app',
 			tables: {
-				posts: defineTable()
-					.version(type({ id: 'string', title: 'string' }))
-					.migrate((row) => row),
+				posts: defineTable(type({ id: 'string', title: 'string' })),
 			},
 			kv: {
-				theme: defineKv()
-					.version(type({ mode: "'light' | 'dark'" }))
-					.migrate((v) => v),
+				theme: defineKv(type({ mode: "'light' | 'dark'" })),
 			},
 		});
 
 		expect(workspace.id).toBe('test-app');
-		expect(workspace.tableDefinitions).toHaveProperty('posts');
-		expect(workspace.kvDefinitions).toHaveProperty('theme');
+		expect(workspace.tables).toHaveProperty('posts');
+		expect(workspace.kv).toHaveProperty('theme');
 	});
 
-	test('workspace.create() returns client with tables and kv', () => {
-		const workspace = defineWorkspace({
+	test('createWorkspace() returns client with tables and kv', () => {
+		const client = createWorkspace({
 			id: 'test-app',
 			tables: {
-				posts: defineTable()
-					.version(type({ id: 'string', title: 'string' }))
-					.migrate((row) => row),
+				posts: defineTable(type({ id: 'string', title: 'string' })),
 			},
 			kv: {
-				theme: defineKv()
-					.version(type({ mode: "'light' | 'dark'" }))
-					.migrate((v) => v),
+				theme: defineKv(type({ mode: "'light' | 'dark'" })),
 			},
 		});
-
-		const client = workspace.create();
 
 		expect(client.id).toBe('test-app');
 		expect(client.ydoc).toBeInstanceOf(Y.Doc);
@@ -51,21 +42,15 @@ describe('defineWorkspace', () => {
 	});
 
 	test('client.tables and client.kv work correctly', () => {
-		const workspace = defineWorkspace({
+		const client = createWorkspace({
 			id: 'test-app',
 			tables: {
-				posts: defineTable()
-					.version(type({ id: 'string', title: 'string' }))
-					.migrate((row) => row),
+				posts: defineTable(type({ id: 'string', title: 'string' })),
 			},
 			kv: {
-				theme: defineKv()
-					.version(type({ mode: "'light' | 'dark'" }))
-					.migrate((v) => v),
+				theme: defineKv(type({ mode: "'light' | 'dark'" })),
 			},
 		});
-
-		const client = workspace.create();
 
 		// Use tables
 		client.tables.posts.set({ id: '1', title: 'Hello' });
@@ -78,18 +63,9 @@ describe('defineWorkspace', () => {
 		expect(themeResult.status).toBe('valid');
 	});
 
-	test('workspace.create() with capabilities', () => {
-		const workspace = defineWorkspace({
-			id: 'test-app',
-			tables: {
-				posts: defineTable()
-					.version(type({ id: 'string', title: 'string' }))
-					.migrate((row) => row),
-			},
-		});
-
-		// Mock capability with custom exports - uses defineExports for lifecycle
-		const mockCapability = (_context: {
+	test('createWorkspace().withExtensions() adds extensions', () => {
+		// Mock extension with custom exports - uses defineExports for lifecycle
+		const mockExtension = (_context: {
 			ydoc: Y.Doc;
 			tables: unknown;
 			kv: unknown;
@@ -98,26 +74,22 @@ describe('defineWorkspace', () => {
 				customMethod: () => 'hello',
 			});
 
-		const client = workspace.create({
-			mock: mockCapability,
-		});
-
-		expect(client.capabilities.mock).toBeDefined();
-		expect(client.capabilities.mock.customMethod()).toBe('hello');
-	});
-
-	test('capability exports are fully typed', () => {
-		const workspace = defineWorkspace({
+		const client = createWorkspace({
 			id: 'test-app',
 			tables: {
-				posts: defineTable()
-					.version(type({ id: 'string', title: 'string' }))
-					.migrate((row) => row),
+				posts: defineTable(type({ id: 'string', title: 'string' })),
 			},
+		}).withExtensions({
+			mock: mockExtension,
 		});
 
-		// Capability with rich exports - defineExports fills in whenSynced/destroy
-		const persistenceCapability = () =>
+		expect(client.extensions.mock).toBeDefined();
+		expect(client.extensions.mock.customMethod()).toBe('hello');
+	});
+
+	test('extension exports are fully typed', () => {
+		// Extension with rich exports - defineExports fills in whenSynced/destroy
+		const persistenceExtension = () =>
 			defineExports({
 				db: {
 					query: (sql: string) => sql.toUpperCase(),
@@ -126,65 +98,66 @@ describe('defineWorkspace', () => {
 				stats: { writes: 0, reads: 0 },
 			});
 
-		// Another capability with different exports
-		const syncCapability = () =>
+		// Another extension with different exports
+		const syncExtension = () =>
 			defineExports({
 				connect: (url: string) => `connected to ${url}`,
 				disconnect: () => 'disconnected',
 				status: 'idle' as 'idle' | 'syncing' | 'synced',
 			});
 
-		const client = workspace.create({
-			persistence: persistenceCapability,
-			sync: syncCapability,
+		const client = createWorkspace({
+			id: 'test-app',
+			tables: {
+				posts: defineTable(type({ id: 'string', title: 'string' })),
+			},
+		}).withExtensions({
+			persistence: persistenceExtension,
+			sync: syncExtension,
 		});
 
-		// Test persistence capability exports are typed
-		const queryResult = client.capabilities.persistence.db.query('SELECT');
+		// Test persistence extension exports are typed
+		const queryResult = client.extensions.persistence.db.query('SELECT');
 		expect(queryResult).toBe('SELECT');
 
-		const execResult = client.capabilities.persistence.db.execute('INSERT');
+		const execResult = client.extensions.persistence.db.execute('INSERT');
 		expect(execResult.rows).toEqual(['INSERT']);
 
-		expect(client.capabilities.persistence.stats.writes).toBe(0);
+		expect(client.extensions.persistence.stats.writes).toBe(0);
 
-		// Test sync capability exports are typed
-		const connectResult = client.capabilities.sync.connect('ws://localhost');
+		// Test sync extension exports are typed
+		const connectResult = client.extensions.sync.connect('ws://localhost');
 		expect(connectResult).toBe('connected to ws://localhost');
 
-		expect(client.capabilities.sync.disconnect()).toBe('disconnected');
-		expect(client.capabilities.sync.status).toBe('idle');
+		expect(client.extensions.sync.disconnect()).toBe('disconnected');
+		expect(client.extensions.sync.status).toBe('idle');
 
 		// Type assertions (these would fail to compile if types were wrong)
 		const _queryType: string = queryResult;
 		const _connectType: string = connectResult;
 		const _statusType: 'idle' | 'syncing' | 'synced' =
-			client.capabilities.sync.status;
+			client.extensions.sync.status;
 		void _queryType;
 		void _connectType;
 		void _statusType;
 	});
 
 	test('client.destroy() cleans up', async () => {
-		const workspace = defineWorkspace({
-			id: 'test-app',
-			tables: {
-				posts: defineTable()
-					.version(type({ id: 'string', title: 'string' }))
-					.migrate((row) => row),
-			},
-		});
-
 		let destroyed = false;
-		const mockCapability = () =>
+		const mockExtension = () =>
 			defineExports({
 				destroy: async () => {
 					destroyed = true;
 				},
 			});
 
-		const client = workspace.create({
-			mock: mockCapability,
+		const client = createWorkspace({
+			id: 'test-app',
+			tables: {
+				posts: defineTable(type({ id: 'string', title: 'string' })),
+			},
+		}).withExtensions({
+			mock: mockExtension,
 		});
 
 		await client.destroy();
@@ -196,11 +169,61 @@ describe('defineWorkspace', () => {
 			id: 'empty-app',
 		});
 
-		const client = workspace.create();
+		const client = createWorkspace(workspace);
 
 		expect(client.id).toBe('empty-app');
-		expect(Object.keys(client.tables)).toHaveLength(0);
+		expect(Object.keys(client.definitions.tables)).toHaveLength(0);
 		// KV always has methods (get, set, delete, observe), but no keys are defined
 		expect(client.kv.get).toBeDefined();
+	});
+
+	test('createWorkspace with direct config (without defineWorkspace)', () => {
+		const client = createWorkspace({
+			id: 'direct-app',
+			tables: {
+				posts: defineTable(type({ id: 'string', title: 'string' })),
+			},
+		});
+
+		expect(client.id).toBe('direct-app');
+		expect(client.tables.posts).toBeDefined();
+
+		client.tables.posts.set({ id: '1', title: 'Direct' });
+		const result = client.tables.posts.get('1');
+		expect(result.status).toBe('valid');
+	});
+
+	test('createWorkspace client is usable before withExtensions', () => {
+		const client = createWorkspace({
+			id: 'builder-app',
+			tables: {
+				posts: defineTable(type({ id: 'string', title: 'string' })),
+			},
+		});
+
+		client.tables.posts.set({ id: '1', title: 'Before Extensions' });
+		const result = client.tables.posts.get('1');
+		expect(result.status).toBe('valid');
+		expect(typeof client.withExtensions).toBe('function');
+	});
+
+	test('withExtensions shares same ydoc', () => {
+		const baseClient = createWorkspace({
+			id: 'shared-doc-app',
+			tables: {
+				posts: defineTable(type({ id: 'string', title: 'string' })),
+			},
+		});
+
+		baseClient.tables.posts.set({ id: '1', title: 'Original' });
+		const clientWithExt = baseClient.withExtensions({});
+
+		expect(clientWithExt.ydoc).toBe(baseClient.ydoc);
+
+		const result = clientWithExt.tables.posts.get('1');
+		expect(result.status).toBe('valid');
+		if (result.status === 'valid') {
+			expect(result.row.title).toBe('Original');
+		}
 	});
 });

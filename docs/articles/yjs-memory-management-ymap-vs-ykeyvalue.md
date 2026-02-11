@@ -1,5 +1,7 @@
 # Memory Management in Yjs: Y.Map vs YKeyValue
 
+> **Important**: The YKeyValue advantage described here only applies when `gc: true` (the default). With `gc: false` (needed for version history/snapshots), Y.Map is actually more efficient. See [YKeyValue vs Y.Map: Quick Decision Guide](./ykeyvalue-vs-ymap-decision-guide.md) for the full comparison.
+
 Yjs is a CRDT library that enables real-time collaboration. But there's a subtle issue that can cause your app to consume unbounded memory over time: Y.Map retains all historical values for each key.
 
 ## The Problem: Y.Map's Unbounded Growth

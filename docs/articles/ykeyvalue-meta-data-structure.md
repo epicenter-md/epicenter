@@ -141,6 +141,10 @@ Not every Yjs data structure maps directly to what you'd reach for in non-collab
 
 YKeyValue is a meta structure: a map interface built on array primitives. It's uglier internally, but the results speak for themselves. 271 bytes vs 524,985 bytes isn't a minor optimization—it's the difference between a practical collaborative app and an unusable one.
 
+## Update (2026-02-01): GC Setting Is the Hidden Variable
+
+The benchmarks in this article assume `gc: true` (the default). **With `gc: false`, Y.Map is actually 2x more efficient than YKeyValue** because YKeyValue's tombstones can't be merged. See [YKeyValue vs Y.Map: Quick Decision Guide](./ykeyvalue-vs-ymap-decision-guide.md) for the full comparison.
+
 ## Update (2026-01-08): When Y.Map Actually Works Better
 
 After extensive benchmarking, we discovered that Y.Map's storage overhead is often acceptable for **realistic workloads**:

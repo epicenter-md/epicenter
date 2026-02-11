@@ -5,7 +5,7 @@
  * for scoping browser tab/window/group IDs to specific devices.
  */
 
-import { generateId } from '@epicenter/hq';
+import { generateId } from '@epicenter/hq/dynamic';
 import { storage } from '@wxt-dev/storage';
 
 // ─────────────────────────────────────────────────────────────────────────────

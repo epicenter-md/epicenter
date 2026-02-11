@@ -18,7 +18,11 @@ This works, but it destroys the CRDT element identity. Every element becomes "ne
 `updateYArrayFromArray` computes the minimal element-level differences between the current Y.Array content and the target array, then applies only the necessary insertions and deletions:
 
 ```typescript
-import { updateYArrayFromArray } from '@epicenter/hq';
+// NOTE: updateYArrayFromArray is not currently exported from @epicenter/hq
+// This function may be available in @epicenter/hq/dynamic or as a utility
+// For now, implement the diff logic directly or check the dynamic module
+
+import { updateYArrayFromArray } from '@epicenter/hq/dynamic';
 
 const yarray = ydoc.getArray('tags');
 yarray.push(['typescript', 'javascript']);
@@ -64,6 +68,7 @@ const post = db.tables.posts.get(postId);
 const tagsArray = post.row.tags; // This is a Y.Array<string>
 
 // Sync with minimal diff operations
+import { updateYArrayFromArray } from '@epicenter/hq/dynamic';
 updateYArrayFromArray(tagsArray, frontmatter.tags);
 
 // Now the Y.Array matches the file metadata, and changes

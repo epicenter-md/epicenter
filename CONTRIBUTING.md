@@ -157,30 +157,10 @@ This makes the `epicenter` command available globally on your system, pointing t
 Now you can use the `epicenter` command from any directory:
 
 ```bash
-# From any example directory
-cd packages/epicenter/examples/basic-workspace
 epicenter --help
-epicenter blog createPost --title "Test Post" --category tech
-epicenter --port 3001
 ```
 
 The CLI will use your local development version, so any changes you make to the CLI code will be reflected immediately.
-
-### Alternative: Local CLI Files
-
-Examples also include local `cli.ts` files that you can run directly:
-
-```bash
-cd packages/epicenter/examples/basic-workspace
-bun cli.ts --help
-bun cli.ts blog createPost --title "Test Post" --category tech
-```
-
-This approach is useful for:
-
-- Learning how to create a CLI programmatically
-- Testing without global installation
-- Understanding the CLI creation API
 
 ### Unlinking
 

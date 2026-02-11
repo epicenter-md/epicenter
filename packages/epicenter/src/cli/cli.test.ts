@@ -1,12 +1,12 @@
 import { describe, expect, test } from 'bun:test';
 import { type } from 'arktype';
 import yargs from 'yargs';
-import { type Actions, defineMutation, defineQuery } from '../core/actions';
+import { defineMutation, defineQuery } from '../shared/actions';
 import { buildActionCommands } from './command-builder';
 
 describe('CLI command registration', () => {
 	test('registers flat action commands with yargs', () => {
-		const actions: Actions = {
+		const actions = {
 			ping: defineQuery({
 				handler: () => 'pong',
 			}),
@@ -30,7 +30,7 @@ describe('CLI command registration', () => {
 	});
 
 	test('registers nested commands with top-level parent', () => {
-		const actions: Actions = {
+		const actions = {
 			posts: {
 				list: defineQuery({
 					handler: () => [],
@@ -52,7 +52,7 @@ describe('CLI command registration', () => {
 	});
 
 	test('command handlers are accessible', () => {
-		const actions: Actions = {
+		const actions = {
 			ping: defineQuery({
 				handler: () => 'pong',
 			}),
@@ -75,7 +75,7 @@ describe('CLI command registration', () => {
 	test('parses flat command options correctly', async () => {
 		let capturedArgs: Record<string, unknown> | null = null;
 
-		const actions: Actions = {
+		const actions = {
 			create: defineMutation({
 				input: type({ title: 'string', 'count?': 'number' }),
 				handler: ({ title, count }) => {
@@ -102,7 +102,7 @@ describe('CLI command registration', () => {
 	});
 
 	test('buildActionCommands returns correct command paths', () => {
-		const actions: Actions = {
+		const actions = {
 			ping: defineQuery({ handler: () => 'pong' }),
 			posts: {
 				list: defineQuery({ handler: () => [] }),

@@ -2,8 +2,8 @@ import { writeFileSync } from 'node:fs';
 import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import * as Y from 'yjs';
-import { defineExports, type ExtensionContext } from '../../core/extension';
-import type { KvDefinitionMap, TableDefinitionMap } from '../../core/schema';
+import { defineExports, type ExtensionContext } from '../../dynamic/extension';
+import type { KvField, TableDefinition } from '../../dynamic/schema';
 
 /**
  * Configuration for the persistence extension.
@@ -26,20 +26,14 @@ export type PersistenceConfig = {
  *
  * @example
  * ```typescript
- * import { defineWorkspace, createClient } from '@epicenter/hq';
+ * import { createWorkspace } from '@epicenter/hq/dynamic';
  * import { persistence } from '@epicenter/hq/extensions/persistence';
  * import { join } from 'node:path';
- *
- * const definition = defineWorkspace({
- *   tables: { ... },
- *   kv: {},
- * });
  *
  * const projectDir = '/my/project';
  * const epicenterDir = join(projectDir, '.epicenter');
  *
- * const client = createClient('blog', { epoch })
- *   .withDefinition(definition)
+ * const workspace = createWorkspace({ name: 'Blog', tables: {...} })
  *   .withExtensions({
  *     persistence: (ctx) => persistence(ctx, {
  *       filePath: join(epicenterDir, 'persistence', `${ctx.id}.yjs`),
@@ -48,10 +42,10 @@ export type PersistenceConfig = {
  * ```
  */
 export const persistence = <
-	TTableDefinitionMap extends TableDefinitionMap,
-	TKvDefinitionMap extends KvDefinitionMap,
+	TTableDefinitions extends readonly TableDefinition[],
+	TKvFields extends readonly KvField[],
 >(
-	{ ydoc }: ExtensionContext<TTableDefinitionMap, TKvDefinitionMap>,
+	{ ydoc }: ExtensionContext<TTableDefinitions, TKvFields>,
 	{ filePath }: PersistenceConfig,
 ) => {
 	// Track async initialization via whenSynced

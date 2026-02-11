@@ -1,118 +1,96 @@
 # Epicenter CLI
 
-Start your Epicenter server from the command line.
+Manage workspace data and start the sync server.
 
-## What This Does
-
-The CLI starts an HTTP server that exposes your workspace tables via REST API and WebSocket sync.
+## Command Structure
 
 ```bash
-epicenter [--port 3913]
+epicenter <table> <action>  # table operations (e.g., posts list)
+epicenter kv <action>       # key-value operations
+epicenter tables            # list table names
+epicenter serve             # start HTTP/WebSocket server
 ```
 
-Running `epicenter` without arguments starts the server on the default port (3913).
-
-## How It Works
-
-### 1. Define Your Workspace
-
-```typescript
-import { defineWorkspace, id, text, boolean } from '@epicenter/hq';
-
-const blogWorkspace = defineWorkspace({
-	id: 'blog',
-	tables: {
-		posts: {
-			id: id(),
-			title: text(),
-			published: boolean({ default: false }),
-		},
-	},
-});
-```
-
-### 2. Create an Epicenter Config
-
-In your project root, create `epicenter.config.ts`:
-
-```typescript
-import { sqliteProvider } from '@epicenter/hq';
-import { blogWorkspace } from './workspaces/blog';
-
-const blogClient = await blogWorkspace
-	.withProviders({ sqlite: sqliteProvider })
-	.create();
-
-export default [blogClient];
-```
-
-### 3. Start the Server
+## Table Commands
 
 ```bash
-epicenter
+epicenter users list              # list all rows
+epicenter users list --all        # include invalid rows
+epicenter users get <id>          # get row by id
+epicenter users set '<json>'      # create/replace row
+epicenter users update <id> --name "New"  # partial update
+epicenter users delete <id>       # delete row
+epicenter users clear             # delete all rows
+epicenter users count             # count rows
 ```
 
-This starts the server with:
+## KV Commands
 
-- REST API at `/workspaces/{workspace}/tables/{table}`
-- WebSocket sync at `/workspaces/{workspace}/sync`
-- OpenAPI docs at `/openapi`
-
-## CLI Options
-
-| Option      | Description               | Default |
-| ----------- | ------------------------- | ------- |
-| `--port`    | Port to run the server on | 3913    |
-| `--help`    | Show help                 |         |
-| `--version` | Show version              |         |
-
-## Writing Custom Actions
-
-The CLI doesn't map actions to commands. Instead, write regular functions that use your client and expose them however you prefer:
-
-```typescript
-// actions.ts
-import { blogClient } from './epicenter.config';
-
-export function createPost(title: string) {
-	const id = generateId();
-	blogClient.tables.posts.upsert({ id, title, published: false });
-	return { id };
-}
-
-export function publishPost(id: string) {
-	blogClient.tables.posts.update({ id, published: true });
-}
+```bash
+epicenter kv get <key>            # get value
+epicenter kv set <key> <value>    # set value
+epicenter kv delete <key>         # delete key
 ```
 
-Then expose via HTTP endpoints, MCP server, or your own CLI:
+## Input Methods
 
-```typescript
-// Custom CLI script
-const [command, ...args] = process.argv.slice(2);
-if (command === 'create') createPost(args[0]);
-if (command === 'publish') publishPost(args[0]);
+```bash
+# Inline JSON
+epicenter users set '{"id":"1","name":"Alice"}'
+
+# From file
+epicenter users set --file user.json
+epicenter users set @user.json
+
+# From stdin
+cat user.json | epicenter users set
+
+# Flag-based update
+epicenter users update abc123 --name "Bob" --active true
 ```
 
-## Testing
+## Output Formats
 
-Test your configuration programmatically:
-
-```typescript
-import { createCLI } from '@epicenter/hq/cli';
-
-const clients = await loadClients();
-const cli = createCLI(clients);
-await cli.run(['--port', '8080']);
+```bash
+epicenter users list                  # pretty JSON (TTY)
+epicenter users list | jq             # compact JSON (pipe)
+epicenter users list --format json    # force JSON
+epicenter users list --format jsonl   # JSON lines
 ```
 
-## File Organization
+## Server
 
-- `bin.ts`: Entry point for CLI executable
-- `cli.ts`: Core CLI creation logic
-- `discovery.ts`: Config file discovery and loading
-- `index.ts`: Public API exports
+```bash
+epicenter serve              # default port 3913
+epicenter serve --port 8080  # custom port
+```
 
-## Philosophy
+Exposes REST API and WebSocket sync.
 
-The CLI is intentionally simple: it just starts a server. Business logic belongs in your application code, not in CLI commands. Use the REST API or WebSocket sync to interact with your data.
+## Working Directory
+
+By default, Epicenter looks for `epicenter.config.ts` in the current directory.
+
+Use `-C` or `--dir` to run from a different directory:
+
+```bash
+epicenter -C apps/blog posts list
+epicenter --dir apps/shop products get abc123
+```
+
+If no config is found in the current directory but configs exist in subdirectories, Epicenter shows a helpful message:
+
+```
+No epicenter.config.ts found in current directory.
+
+Found configs in subdirectories:
+  - apps/blog/epicenter.config.ts
+  - apps/shop/epicenter.config.ts
+
+Use -C <dir> to specify which project:
+  epicenter -C apps/blog <command>
+```
+
+## Multiple Workspaces
+
+For multiple workspaces, use separate directories with their own `epicenter.config.ts` files.

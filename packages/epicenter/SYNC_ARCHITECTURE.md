@@ -138,8 +138,8 @@ Phone has no local server, so it connects directly to all available sync nodes:
 
 ```typescript
 // phone/src/workspace.ts
-import { defineWorkspace } from '@epicenter/hq';
-import { createWebsocketSyncProvider } from '@epicenter/hq/providers/websocket-sync';
+import { defineWorkspace } from '@epicenter/hq/dynamic';
+import { websocketSync } from '@epicenter/hq/extensions/websocket-sync';
 import { SYNC_NODES } from './config/sync-nodes';
 
 export const blogWorkspace = defineWorkspace({
@@ -149,9 +149,9 @@ export const blogWorkspace = defineWorkspace({
 	},
 	providers: {
 		// Connect to ALL sync nodes for maximum resilience
-		syncDesktop: createWebsocketSyncProvider({ url: SYNC_NODES.desktop }),
-		syncLaptop: createWebsocketSyncProvider({ url: SYNC_NODES.laptop }),
-		syncCloud: createWebsocketSyncProvider({ url: SYNC_NODES.cloud }),
+		syncDesktop: websocketSync({ url: SYNC_NODES.desktop }),
+		syncLaptop: websocketSync({ url: SYNC_NODES.laptop }),
+		syncCloud: websocketSync({ url: SYNC_NODES.cloud }),
 	},
 	actions: ({ tables }) => ({
 		/* ... */
@@ -165,8 +165,8 @@ Browser connects to its own local server (localhost). The server handles cross-d
 
 ```typescript
 // desktop/browser/src/workspace.ts
-import { defineWorkspace } from '@epicenter/hq';
-import { createWebsocketSyncProvider } from '@epicenter/hq/providers/websocket-sync';
+import { defineWorkspace } from '@epicenter/hq/dynamic';
+import { websocketSync } from '@epicenter/hq/extensions/websocket-sync';
 import { SYNC_NODES } from './config/sync-nodes';
 
 export const blogWorkspace = defineWorkspace({
@@ -177,7 +177,7 @@ export const blogWorkspace = defineWorkspace({
 	providers: {
 		// Browser only needs to connect to its local server
 		// The server handles syncing with other devices
-		sync: createWebsocketSyncProvider({ url: SYNC_NODES.localhost }),
+		sync: websocketSync({ url: SYNC_NODES.localhost }),
 	},
 	actions: ({ tables }) => ({
 		/* ... */
@@ -194,8 +194,8 @@ The server acts as BOTH:
 
 ```typescript
 // desktop/server/src/workspace.ts
-import { defineWorkspace } from '@epicenter/hq';
-import { createWebsocketSyncProvider } from '@epicenter/hq/providers/websocket-sync';
+import { defineWorkspace } from '@epicenter/hq/dynamic';
+import { websocketSync } from '@epicenter/hq/extensions/websocket-sync';
 import { SYNC_NODES } from './config/sync-nodes';
 
 export const blogWorkspace = defineWorkspace({
@@ -206,8 +206,8 @@ export const blogWorkspace = defineWorkspace({
 	providers: {
 		// Connect to OTHER sync nodes (not itself!)
 		// Desktop connects to: laptop + cloud
-		syncToLaptop: createWebsocketSyncProvider({ url: SYNC_NODES.laptop }),
-		syncToCloud: createWebsocketSyncProvider({ url: SYNC_NODES.cloud }),
+		syncToLaptop: websocketSync({ url: SYNC_NODES.laptop }),
+		syncToCloud: websocketSync({ url: SYNC_NODES.cloud }),
 	},
 	actions: ({ tables }) => ({
 		/* ... */
@@ -219,8 +219,8 @@ export const blogWorkspace = defineWorkspace({
 
 ```typescript
 // laptop/server/src/workspace.ts
-import { defineWorkspace } from '@epicenter/hq';
-import { createWebsocketSyncProvider } from '@epicenter/hq/providers/websocket-sync';
+import { defineWorkspace } from '@epicenter/hq/dynamic';
+import { websocketSync } from '@epicenter/hq/extensions/websocket-sync';
 import { SYNC_NODES } from './config/sync-nodes';
 
 export const blogWorkspace = defineWorkspace({
@@ -230,8 +230,8 @@ export const blogWorkspace = defineWorkspace({
 	},
 	providers: {
 		// Laptop connects to: desktop + cloud
-		syncToDesktop: createWebsocketSyncProvider({ url: SYNC_NODES.desktop }),
-		syncToCloud: createWebsocketSyncProvider({ url: SYNC_NODES.cloud }),
+		syncToDesktop: websocketSync({ url: SYNC_NODES.desktop }),
+		syncToCloud: websocketSync({ url: SYNC_NODES.cloud }),
 	},
 	actions: ({ tables }) => ({
 		/* ... */
@@ -245,7 +245,7 @@ Cloud server typically only accepts connections (doesn't initiate):
 
 ```typescript
 // cloud/src/workspace.ts
-import { defineWorkspace } from '@epicenter/hq';
+import { defineWorkspace } from '@epicenter/hq/dynamic';
 
 export const blogWorkspace = defineWorkspace({
 	id: 'blog',
@@ -306,16 +306,17 @@ export const blogWorkspace = defineWorkspace({
 Each device should also use local persistence:
 
 ```typescript
-import { setupPersistence } from '@epicenter/hq/providers/persistence';
+import { persistence } from '@epicenter/hq/extensions/persistence';
+import { websocketSync } from '@epicenter/hq/extensions/websocket-sync';
 
 const workspace = defineWorkspace({
 	id: 'blog',
 	providers: {
 		// Local persistence (IndexedDB in browser, filesystem in Node.js)
-		persistence: setupPersistence,
+		persistence,
 
 		// Network sync
-		sync: createWebsocketSyncProvider({ url: SYNC_NODES.desktop }),
+		sync: websocketSync({ url: SYNC_NODES.desktop }),
 	},
 });
 ```
@@ -377,13 +378,13 @@ console.log(Y.encodeStateVector(doc));
 
 ## Summary
 
-| Component                       | Purpose                                     |
-| ------------------------------- | ------------------------------------------- |
-| **SYNC_NODES**                  | Constant defining all sync endpoints        |
-| **createWebsocketSyncProvider** | Creates a provider for one sync node        |
-| **Multi-provider**              | Connect to multiple nodes simultaneously    |
-| **Server-to-server**            | Servers sync with each other as clients     |
-| **Tailscale**                   | Private network for device-to-device access |
-| **setupPersistence**            | Local persistence for offline support       |
+| Component            | Purpose                                     |
+| -------------------- | ------------------------------------------- |
+| **SYNC_NODES**       | Constant defining all sync endpoints        |
+| **websocketSync**    | Creates a provider for one sync node        |
+| **Multi-provider**   | Connect to multiple nodes simultaneously    |
+| **Server-to-server** | Servers sync with each other as clients     |
+| **Tailscale**        | Private network for device-to-device access |
+| **persistence**      | Local persistence for offline support       |
 
 The architecture scales from "just my devices on Tailscale" to "add a cloud server later" without fundamental changes. Start simple and add providers as needed.

@@ -32,10 +32,10 @@ import type { Tab, TabGroup, Window } from './epicenter/browser.schema';
  * tables.tabs.delete({ id: TabId(123) });
  */
 export function createBrowserConverters(deviceId: string) {
-	// ID constructors
-	const TabId = (tabId: number) => `${deviceId}_${tabId}` as const;
-	const WindowId = (windowId: number) => `${deviceId}_${windowId}` as const;
-	const GroupId = (groupId: number) => `${deviceId}_${groupId}` as const;
+	// ID constructors (static API uses plain strings for IDs)
+	const TabId = (tabId: number): string => `${deviceId}_${tabId}`;
+	const WindowId = (windowId: number): string => `${deviceId}_${windowId}`;
+	const GroupId = (groupId: number): string => `${deviceId}_${groupId}`;
 
 	return {
 		// ID constructors
@@ -52,7 +52,7 @@ export function createBrowserConverters(deviceId: string) {
 				window_id: WindowId(tab.windowId),
 				url: tab.url ?? '',
 				title: tab.title ?? '',
-				fav_icon_url: tab.favIconUrl ?? null,
+				fav_icon_url: tab.favIconUrl ?? undefined,
 				index: tab.index,
 				pinned: tab.pinned,
 				active: tab.active,
@@ -65,9 +65,9 @@ export function createBrowserConverters(deviceId: string) {
 				group_id:
 					tab.groupId !== undefined && tab.groupId !== -1
 						? GroupId(tab.groupId)
-						: null,
+						: undefined,
 				opener_tab_id:
-					tab.openerTabId !== undefined ? TabId(tab.openerTabId) : null,
+					tab.openerTabId !== undefined ? TabId(tab.openerTabId) : undefined,
 				incognito: tab.incognito ?? false,
 			};
 		},
@@ -95,7 +95,7 @@ export function createBrowserConverters(deviceId: string) {
 				device_id: deviceId,
 				group_id: group.id,
 				window_id: WindowId(group.windowId),
-				title: group.title ?? null,
+				title: group.title ?? undefined,
 				color: group.color ?? 'grey',
 				collapsed: group.collapsed ?? false,
 			};

@@ -41,12 +41,19 @@ Every piece of data lives in a `Y.Doc`, which provides conflict-free merging, re
 ┌─────────────────────────────────────────────────────────────┐
 │                      Y.Doc (CRDT)                            │
 │  ┌───────────────────────────────────────────────────────┐  │
-│  │ Y.Map('tables')                                        │  │
-│  │   ├── posts: Y.Map<id, Y.Map<field, value>>           │  │
-│  │   ├── users: Y.Map<id, Y.Map<field, value>>           │  │
-│  │   └── ...                                              │  │
+│  │ Y.Array('table:posts')  <- LWW entries per table      │  │
+│  │   └── { key: id, val: { fields... }, ts: number }     │  │
+│  │                                                        │  │
+│  │ Y.Array('table:users')  <- Another table              │  │
+│  │   └── { key: id, val: { fields... }, ts: number }     │  │
+│  │                                                        │  │
+│  │ Y.Array('kv')  <- Settings as LWW entries             │  │
+│  │   └── { key: name, val: value, ts: number }           │  │
 │  └───────────────────────────────────────────────────────┘  │
 └─────────────────────────────────────────────────────────────┘
+
+Note: Schema definitions are stored in static JSON files, NOT in Y.Doc.
+This keeps Y.Docs lean and focused on data only.
 ```
 
 ### Three-Layer Data Flow
@@ -892,7 +899,7 @@ The WebSocket sync extension enables real-time Y.Doc synchronization using the y
 
 ```typescript
 import { createClient } from '@epicenter/hq';
-import { createWebsocketSyncProvider } from '@epicenter/hq/providers/websocket-sync';
+import { createWebsocketSyncProvider } from '@epicenter/hq/extensions/websocket-sync';
 
 const client = createClient(definition.id)
 	.withDefinition(definition)
@@ -1209,7 +1216,7 @@ type ProviderPaths = {
 ```typescript
 import { setupPersistence } from '@epicenter/hq/providers';
 import { sqliteProvider, markdownProvider } from '@epicenter/hq';
-import { createWebsocketSyncProvider } from '@epicenter/hq/providers/websocket-sync';
+import { createWebsocketSyncProvider } from '@epicenter/hq/extensions/websocket-sync';
 
 providers: {
   // Filesystem persistence (Node.js) or IndexedDB (browser)

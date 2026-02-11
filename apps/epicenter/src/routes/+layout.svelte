@@ -4,12 +4,12 @@
 	import { ModeWatcher, mode } from 'mode-watcher';
 	import { Toaster, type ToasterProps } from 'svelte-sonner';
 	import '@epicenter/ui/app.css';
+	import AddStaticWorkspaceDialog from '$lib/components/AddStaticWorkspaceDialog.svelte';
 	import CreateTableDialog from '$lib/components/CreateTableDialog.svelte';
 	import CreateSettingDialog from '$lib/components/CreateSettingDialog.svelte';
 	import CreateWorkspaceDialog from '$lib/components/CreateWorkspaceDialog.svelte';
 	import EditWorkspaceDialog from '$lib/components/EditWorkspaceDialog.svelte';
 	import ConfirmationDialog from '$lib/components/ConfirmationDialog.svelte';
-	import { registry } from '$lib/docs/registry';
 
 	let { children } = $props();
 
@@ -27,15 +27,10 @@
 </svelte:head>
 
 <QueryClientProvider client={queryClient}>
-	{#await registry.whenSynced}
-		<div class="flex h-screen items-center justify-center">
-			<div class="text-muted-foreground">Loading...</div>
-		</div>
-	{:then}
-		{@render children?.()}
-	{/await}
+	{@render children?.()}
 </QueryClientProvider>
 
+<AddStaticWorkspaceDialog />
 <CreateTableDialog />
 <CreateSettingDialog />
 <CreateWorkspaceDialog />

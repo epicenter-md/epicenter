@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { type } from 'arktype';
 import * as Y from 'yjs';
-import type { YKeyValueLwwEntry } from '../core/utils/y-keyvalue-lww.js';
+import type { YKeyValueLwwEntry } from '../shared/y-keyvalue/y-keyvalue-lww.js';
 import { createTables } from './create-tables.js';
 import { defineTable } from './define-table.js';
 
@@ -9,9 +9,7 @@ describe('createTables', () => {
 	test('set and get a row', () => {
 		const ydoc = new Y.Doc();
 		const tables = createTables(ydoc, {
-			posts: defineTable()
-				.version(type({ id: 'string', title: 'string' }))
-				.migrate((row) => row),
+			posts: defineTable(type({ id: 'string', title: 'string' })),
 		});
 
 		tables.posts.set({ id: '1', title: 'Hello' });
@@ -26,9 +24,7 @@ describe('createTables', () => {
 	test('get returns not_found for missing row', () => {
 		const ydoc = new Y.Doc();
 		const tables = createTables(ydoc, {
-			posts: defineTable()
-				.version(type({ id: 'string', title: 'string' }))
-				.migrate((row) => row),
+			posts: defineTable(type({ id: 'string', title: 'string' })),
 		});
 
 		const result = tables.posts.get('nonexistent');
@@ -38,9 +34,7 @@ describe('createTables', () => {
 	test('getAll returns all rows', () => {
 		const ydoc = new Y.Doc();
 		const tables = createTables(ydoc, {
-			posts: defineTable()
-				.version(type({ id: 'string', title: 'string' }))
-				.migrate((row) => row),
+			posts: defineTable(type({ id: 'string', title: 'string' })),
 		});
 
 		tables.posts.set({ id: '1', title: 'First' });
@@ -53,9 +47,7 @@ describe('createTables', () => {
 	test('getAllValid returns only valid rows', () => {
 		const ydoc = new Y.Doc();
 		const tables = createTables(ydoc, {
-			posts: defineTable()
-				.version(type({ id: 'string', title: 'string' }))
-				.migrate((row) => row),
+			posts: defineTable(type({ id: 'string', title: 'string' })),
 		});
 
 		tables.posts.set({ id: '1', title: 'Valid' });
@@ -68,9 +60,9 @@ describe('createTables', () => {
 	test('filter returns matching rows', () => {
 		const ydoc = new Y.Doc();
 		const tables = createTables(ydoc, {
-			posts: defineTable()
-				.version(type({ id: 'string', title: 'string', published: 'boolean' }))
-				.migrate((row) => row),
+			posts: defineTable(
+				type({ id: 'string', title: 'string', published: 'boolean' }),
+			),
 		});
 
 		tables.posts.set({ id: '1', title: 'Draft', published: false });
@@ -84,9 +76,7 @@ describe('createTables', () => {
 	test('find returns first matching row', () => {
 		const ydoc = new Y.Doc();
 		const tables = createTables(ydoc, {
-			posts: defineTable()
-				.version(type({ id: 'string', title: 'string' }))
-				.migrate((row) => row),
+			posts: defineTable(type({ id: 'string', title: 'string' })),
 		});
 
 		tables.posts.set({ id: '1', title: 'First' });
@@ -99,9 +89,7 @@ describe('createTables', () => {
 	test('delete removes a row', () => {
 		const ydoc = new Y.Doc();
 		const tables = createTables(ydoc, {
-			posts: defineTable()
-				.version(type({ id: 'string', title: 'string' }))
-				.migrate((row) => row),
+			posts: defineTable(type({ id: 'string', title: 'string' })),
 		});
 
 		tables.posts.set({ id: '1', title: 'Hello' });
@@ -115,9 +103,7 @@ describe('createTables', () => {
 	test('delete returns not_found_locally for missing row', () => {
 		const ydoc = new Y.Doc();
 		const tables = createTables(ydoc, {
-			posts: defineTable()
-				.version(type({ id: 'string', title: 'string' }))
-				.migrate((row) => row),
+			posts: defineTable(type({ id: 'string', title: 'string' })),
 		});
 
 		const result = tables.posts.delete('nonexistent');
@@ -127,9 +113,7 @@ describe('createTables', () => {
 	test('count returns number of rows', () => {
 		const ydoc = new Y.Doc();
 		const tables = createTables(ydoc, {
-			posts: defineTable()
-				.version(type({ id: 'string', title: 'string' }))
-				.migrate((row) => row),
+			posts: defineTable(type({ id: 'string', title: 'string' })),
 		});
 
 		expect(tables.posts.count()).toBe(0);
@@ -143,9 +127,7 @@ describe('createTables', () => {
 	test('clear removes all rows', () => {
 		const ydoc = new Y.Doc();
 		const tables = createTables(ydoc, {
-			posts: defineTable()
-				.version(type({ id: 'string', title: 'string' }))
-				.migrate((row) => row),
+			posts: defineTable(type({ id: 'string', title: 'string' })),
 		});
 
 		tables.posts.set({ id: '1', title: 'First' });
@@ -201,10 +183,10 @@ describe('migration scenarios', () => {
 				)
 				.migrate((row) => {
 					if (row._v === '1') {
-						return { ...row, views: 0, author: null, _v: '3' as const };
+						return { ...row, views: 0, author: null, _v: '3' };
 					}
 					if (row._v === '2') {
-						return { ...row, author: null, _v: '3' as const };
+						return { ...row, author: null, _v: '3' };
 					}
 					return row;
 				}),

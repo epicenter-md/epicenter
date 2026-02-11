@@ -80,7 +80,7 @@ function benchmarkBadPattern(gc: boolean, operations: number): BenchmarkResult {
 	const recordIds = Array.from({ length: 100 }, (_, i) => `record-${i}`);
 
 	for (let i = 0; i < operations; i++) {
-		const recordId = recordIds[Math.floor(Math.random() * recordIds.length)];
+		const recordId = recordIds[Math.floor(Math.random() * recordIds.length)]!;
 
 		// BAD: Create a brand new Y.Map every time we "update" a record
 		const newRecord = new Y.Map();
@@ -124,7 +124,7 @@ function benchmarkGoodPattern(
 	const recordIds = Array.from({ length: 100 }, (_, i) => `record-${i}`);
 
 	for (let i = 0; i < operations; i++) {
-		const recordId = recordIds[Math.floor(Math.random() * recordIds.length)];
+		const recordId = recordIds[Math.floor(Math.random() * recordIds.length)]!;
 
 		// GOOD: Get existing Y.Map or create once, then update fields
 		let record = root.get(recordId) as Y.Map<unknown> | undefined;
@@ -171,7 +171,7 @@ function benchmarkFlatPattern(
 	const recordIds = Array.from({ length: 100 }, (_, i) => `record-${i}`);
 
 	for (let i = 0; i < operations; i++) {
-		const recordId = recordIds[Math.floor(Math.random() * recordIds.length)];
+		const recordId = recordIds[Math.floor(Math.random() * recordIds.length)]!;
 
 		// FLAT: Use composite keys instead of nested Y.Maps
 		root.set(`${recordId}:name`, `Name ${i}`);

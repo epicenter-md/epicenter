@@ -1,8 +1,8 @@
 import { mkdir, readdir } from 'node:fs/promises';
 import path from 'node:path';
 import * as Y from 'yjs';
-import type { ExtensionContext } from '../../core/extension';
-import type { KvDefinitionMap, TableDefinitionMap } from '../../core/schema';
+import type { ExtensionContext } from '../../dynamic/extension';
+import type { KvField, TableDefinition } from '../../dynamic/schema';
 
 const SNAPSHOT_EXTENSION = '.ysnap';
 const METADATA_EXTENSION = '.json';
@@ -35,20 +35,9 @@ export type LocalRevisionHistoryConfig = {
 	/**
 	 * Base directory for workspace storage.
 	 *
-	 * Snapshots are saved to `{directory}/{workspaceId}/{epoch}/snapshots/`.
+	 * Snapshots are saved to `{directory}/{workspaceId}/snapshots/`.
 	 */
 	directory: string;
-
-	/**
-	 * The epoch number for this workspace.
-	 *
-	 * Snapshots are stored in the epoch folder structure:
-	 * `{directory}/{workspaceId}/{epoch}/snapshots/`
-	 *
-	 * This ensures snapshots are isolated per-epoch and can be deleted
-	 * atomically when an epoch is removed.
-	 */
-	epoch: number;
 
 	/**
 	 * Debounce interval in milliseconds for auto-saving on Y.Doc changes.
@@ -76,86 +65,67 @@ export type LocalRevisionHistoryConfig = {
  *
  * **Platform**: Node.js/Desktop (Tauri, Electron, Bun)
  *
- * **Storage**: `{directory}/{workspaceId}/{epoch}/snapshots/{timestamp}.ysnap`
+ * **Storage**: `{directory}/{workspaceId}/snapshots/{timestamp}.ysnap`
  *
  * @example Basic usage
  * ```typescript
- * import { defineWorkspace, createClient } from '@epicenter/hq';
+ * import { createWorkspace } from '@epicenter/hq/dynamic';
  * import { localRevisionHistory } from '@epicenter/hq/extensions/revision-history';
  *
- * const definition = defineWorkspace({
- *   tables: { ... },
- *   kv: {},
+ * const workspace = createWorkspace(definition).withExtensions({
+ *   persistence,
+ *   revisions: (ctx) => localRevisionHistory(ctx, {
+ *     directory: './workspaces',
+ *     maxVersions: 50,
+ *   }),
  * });
  *
- * const client = createClient('blog', { epoch })
- *   .withDefinition(definition)
- *   .withExtensions({
- *     persistence,
- *     revisions: (ctx) => localRevisionHistory(ctx, {
- *       directory: './workspaces',
- *       epoch: 0,  // Snapshots saved to ./workspaces/{id}/0/snapshots/
- *       maxVersions: 50,
- *     }),
- *   });
- *
  * // Save a version manually (bypasses debounce)
- * client.extensions.revisions.save('Before refactor');
+ * workspace.extensions.revisions.save('Before refactor');
  *
  * // List all versions
- * const versions = await client.extensions.revisions.list();
+ * const versions = await workspace.extensions.revisions.list();
  *
  * // View a historical version (read-only)
- * const oldDoc = await client.extensions.revisions.view(5);
+ * const oldDoc = await workspace.extensions.revisions.view(5);
  * console.log(oldDoc.getText('content').toString());
  *
  * // Restore to a version (copies data to current doc)
- * await client.extensions.revisions.restore(5);
+ * await workspace.extensions.revisions.restore(5);
  * ```
  *
  * @example Custom debounce interval
  * ```typescript
- * const client = createClient('blog', { epoch })
- *   .withDefinition(definition)
- *   .withExtensions({
- *     revisions: (ctx) => localRevisionHistory(ctx, {
- *       directory: './workspaces',
- *       epoch: 0,
- *       debounceMs: 5000,  // Save 5 seconds after last change
- *     }),
- *   });
+ * const workspace = createWorkspace(definition).withExtensions({
+ *   revisions: (ctx) => localRevisionHistory(ctx, {
+ *     directory: './workspaces',
+ *     debounceMs: 5000,  // Save 5 seconds after last change
+ *   }),
+ * });
  * ```
  *
  * @example Google Docs-style slider UI
  * ```typescript
- * const versions = await client.extensions.revisions.list();
+ * const versions = await workspace.extensions.revisions.list();
  *
  * // Scrub through versions
  * async function onSliderChange(index: number) {
- *   const previewDoc = await client.extensions.revisions.view(index);
+ *   const previewDoc = await workspace.extensions.revisions.view(index);
  *   // Render previewDoc in read-only mode
  * }
  *
  * // Restore when user clicks "Restore"
  * async function onRestore(index: number) {
- *   await client.extensions.revisions.restore(index);
+ *   await workspace.extensions.revisions.restore(index);
  * }
  * ```
  */
 export async function localRevisionHistory<
-	TTableDefinitionMap extends TableDefinitionMap,
-	TKvDefinitionMap extends KvDefinitionMap,
+	TTableDefinitions extends readonly TableDefinition[],
+	TKvFields extends readonly KvField[],
 >(
-	{
-		ydoc,
-		workspaceId: id,
-	}: ExtensionContext<TTableDefinitionMap, TKvDefinitionMap>,
-	{
-		directory,
-		epoch,
-		debounceMs = 1000,
-		maxVersions,
-	}: LocalRevisionHistoryConfig,
+	{ ydoc, id }: ExtensionContext<TTableDefinitions, TKvFields>,
+	{ directory, debounceMs = 1000, maxVersions }: LocalRevisionHistoryConfig,
 ) {
 	// CRITICAL: Snapshots require gc: false
 	if (ydoc.gc) {
@@ -165,8 +135,8 @@ export async function localRevisionHistory<
 		);
 	}
 
-	// Storage: {directory}/{workspaceId}/{epoch}/snapshots/
-	const snapshotDir = path.join(directory, id, String(epoch), 'snapshots');
+	// Storage: {directory}/{workspaceId}/snapshots/
+	const snapshotDir = path.join(directory, id, 'snapshots');
 
 	// Ensure directory exists
 	await mkdir(snapshotDir, { recursive: true });

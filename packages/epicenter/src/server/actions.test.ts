@@ -1,17 +1,20 @@
 import { describe, expect, test } from 'bun:test';
 import { type } from 'arktype';
-import { type Actions, defineMutation, defineQuery } from '../core/actions';
+import { defineMutation, defineQuery } from '../shared/actions';
 import { collectActionPaths, createActionsRouter } from './actions';
+
+// Mock client for closure-based actions
+const mockClient = { id: 'test' };
 
 describe('createActionsRouter', () => {
 	test('creates routes for flat actions', async () => {
-		const actions: Actions = {
+		const actions = {
 			ping: defineQuery({
 				handler: () => 'pong',
 			}),
 		};
 
-		const app = createActionsRouter({ actions });
+		const app = createActionsRouter({ client: mockClient, actions });
 		const response = await app.handle(new Request('http://test/actions/ping'));
 		const body = await response.json();
 
@@ -20,7 +23,7 @@ describe('createActionsRouter', () => {
 	});
 
 	test('creates routes for nested actions', async () => {
-		const actions: Actions = {
+		const actions = {
 			posts: {
 				list: defineQuery({
 					handler: () => ['post1', 'post2'],
@@ -28,7 +31,7 @@ describe('createActionsRouter', () => {
 			},
 		};
 
-		const app = createActionsRouter({ actions });
+		const app = createActionsRouter({ client: mockClient, actions });
 		const response = await app.handle(
 			new Request('http://test/actions/posts/list'),
 		);
@@ -39,13 +42,13 @@ describe('createActionsRouter', () => {
 	});
 
 	test('query actions respond to GET requests', async () => {
-		const actions: Actions = {
+		const actions = {
 			getStatus: defineQuery({
 				handler: () => ({ status: 'ok' }),
 			}),
 		};
 
-		const app = createActionsRouter({ actions });
+		const app = createActionsRouter({ client: mockClient, actions });
 		const response = await app.handle(
 			new Request('http://test/actions/getStatus', { method: 'GET' }),
 		);
@@ -55,7 +58,7 @@ describe('createActionsRouter', () => {
 
 	test('mutation actions respond to POST requests', async () => {
 		let called = false;
-		const actions: Actions = {
+		const actions = {
 			doSomething: defineMutation({
 				handler: () => {
 					called = true;
@@ -64,7 +67,7 @@ describe('createActionsRouter', () => {
 			}),
 		};
 
-		const app = createActionsRouter({ actions });
+		const app = createActionsRouter({ client: mockClient, actions });
 		const response = await app.handle(
 			new Request('http://test/actions/doSomething', { method: 'POST' }),
 		);
@@ -76,8 +79,8 @@ describe('createActionsRouter', () => {
 	});
 
 	test('mutation actions accept JSON body input', async () => {
-		let capturedInput: { title: string } | null = null;
-		const actions: Actions = {
+		let capturedInput: unknown = null;
+		const actions = {
 			create: defineMutation({
 				input: type({ title: 'string' }),
 				handler: (input) => {
@@ -87,7 +90,7 @@ describe('createActionsRouter', () => {
 			}),
 		};
 
-		const app = createActionsRouter({ actions });
+		const app = createActionsRouter({ client: mockClient, actions });
 		const response = await app.handle(
 			new Request('http://test/actions/create', {
 				method: 'POST',
@@ -103,14 +106,14 @@ describe('createActionsRouter', () => {
 	});
 
 	test('validates input and returns 422 for invalid data', async () => {
-		const actions: Actions = {
+		const actions = {
 			create: defineMutation({
 				input: type({ title: 'string', count: 'number' }),
 				handler: ({ title, count }) => ({ title, count }),
 			}),
 		};
 
-		const app = createActionsRouter({ actions });
+		const app = createActionsRouter({ client: mockClient, actions });
 		const response = await app.handle(
 			new Request('http://test/actions/create', {
 				method: 'POST',
@@ -123,7 +126,7 @@ describe('createActionsRouter', () => {
 	});
 
 	test('async handlers work correctly', async () => {
-		const actions: Actions = {
+		const actions = {
 			asyncQuery: defineQuery({
 				handler: async () => {
 					await new Promise((resolve) => setTimeout(resolve, 10));
@@ -132,7 +135,7 @@ describe('createActionsRouter', () => {
 			}),
 		};
 
-		const app = createActionsRouter({ actions });
+		const app = createActionsRouter({ client: mockClient, actions });
 		const response = await app.handle(
 			new Request('http://test/actions/asyncQuery'),
 		);
@@ -143,13 +146,17 @@ describe('createActionsRouter', () => {
 	});
 
 	test('supports custom base path', async () => {
-		const actions: Actions = {
+		const actions = {
 			test: defineQuery({
 				handler: () => 'ok',
 			}),
 		};
 
-		const app = createActionsRouter({ actions, basePath: '/api' });
+		const app = createActionsRouter({
+			client: mockClient,
+			actions,
+			basePath: '/api',
+		});
 		const response = await app.handle(new Request('http://test/api/test'));
 		const body = await response.json();
 
@@ -158,7 +165,7 @@ describe('createActionsRouter', () => {
 	});
 
 	test('deeply nested actions create correct routes', async () => {
-		const actions: Actions = {
+		const actions = {
 			api: {
 				v1: {
 					users: {
@@ -170,7 +177,7 @@ describe('createActionsRouter', () => {
 			},
 		};
 
-		const app = createActionsRouter({ actions });
+		const app = createActionsRouter({ client: mockClient, actions });
 		const response = await app.handle(
 			new Request('http://test/actions/api/v1/users/list'),
 		);
@@ -183,7 +190,7 @@ describe('createActionsRouter', () => {
 
 describe('collectActionPaths', () => {
 	test('collects flat action paths', () => {
-		const actions: Actions = {
+		const actions = {
 			ping: defineQuery({ handler: () => 'pong' }),
 			sync: defineMutation({ handler: () => {} }),
 		};
@@ -196,7 +203,7 @@ describe('collectActionPaths', () => {
 	});
 
 	test('collects nested action paths', () => {
-		const actions: Actions = {
+		const actions = {
 			posts: {
 				list: defineQuery({ handler: () => [] }),
 				create: defineMutation({ handler: () => {} }),
@@ -215,7 +222,7 @@ describe('collectActionPaths', () => {
 	});
 
 	test('handles deeply nested actions', () => {
-		const actions: Actions = {
+		const actions = {
 			api: {
 				v1: {
 					users: {

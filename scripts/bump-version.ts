@@ -59,36 +59,46 @@ for (const { path, type } of files) {
 	const file = Bun.file(fullPath);
 	const content = await file.text();
 
-	if (type === 'json') {
-		// Handle JSON files (package.json, tauri.conf.json)
-		const json = JSON.parse(content);
-		if (!oldVersion && json.version) {
-			oldVersion = json.version;
+	switch (type) {
+		case 'json': {
+			// Handle JSON files (package.json, tauri.conf.json)
+			const json = JSON.parse(content);
+			if (!oldVersion && json.version) {
+				oldVersion = json.version;
+			}
+			json.version = newVersion;
+			// Preserve formatting with tabs and trailing newline
+			await Bun.write(fullPath, `${JSON.stringify(json, null, '\t')}\n`);
+			break;
 		}
-		json.version = newVersion;
-		// Preserve formatting with tabs and trailing newline
-		await Bun.write(fullPath, `${JSON.stringify(json, null, '\t')}\n`);
-	} else if (type === 'toml') {
-		// Handle TOML files (Cargo.toml) with regex replacement
-		const versionRegex = /^version\s*=\s*"[\d.]+"/m;
-		const match = content.match(versionRegex);
-		if (match && !oldVersion) {
-			oldVersion = match[0].match(/"([\d.]+)"/)?.[1] ?? null;
+		case 'toml': {
+			// Handle TOML files (Cargo.toml) with regex replacement
+			const versionRegex = /^version\s*=\s*"[\d.]+"/m;
+			const match = content.match(versionRegex);
+			if (match && !oldVersion) {
+				oldVersion = match[0].match(/"([\d.]+)"/)?.[1] ?? null;
+			}
+			const updated = content.replace(
+				versionRegex,
+				`version = "${newVersion}"`,
+			);
+			await Bun.write(fullPath, updated);
+			break;
 		}
-		const updated = content.replace(versionRegex, `version = "${newVersion}"`);
-		await Bun.write(fullPath, updated);
-	} else if (type === 'ts') {
-		// Handle TypeScript files (versions.ts) with regex replacement
-		const versionRegex = /whispering:\s*'[\d.]+'/;
-		const match = content.match(versionRegex);
-		if (match && !oldVersion) {
-			oldVersion = match[0].match(/'([\d.]+)'/)?.[1] ?? null;
+		case 'ts': {
+			// Handle TypeScript files (versions.ts) with regex replacement
+			const versionRegex = /whispering:\s*'[\d.]+'/;
+			const match = content.match(versionRegex);
+			if (match && !oldVersion) {
+				oldVersion = match[0].match(/'([\d.]+)'/)?.[1] ?? null;
+			}
+			const updated = content.replace(
+				versionRegex,
+				`whispering: '${newVersion}'`,
+			);
+			await Bun.write(fullPath, updated);
+			break;
 		}
-		const updated = content.replace(
-			versionRegex,
-			`whispering: '${newVersion}'`,
-		);
-		await Bun.write(fullPath, updated);
 	}
 
 	console.log(`✅ Updated ${path}`);

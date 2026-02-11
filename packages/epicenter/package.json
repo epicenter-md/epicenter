@@ -5,30 +5,24 @@
 	"types": "./src/index.ts",
 	"exports": {
 		".": "./src/index.ts",
+		"./dynamic": "./src/dynamic/index.ts",
 		"./static": "./src/static/index.ts",
-		"./node": "./src/core/workspace/node.ts",
+		"./node": "./src/dynamic/workspace/node.ts",
+		"./extensions": {
+			"node": "./src/extensions/index.ts",
+			"default": "./src/extensions/index.ts"
+		},
 		"./extensions/persistence": {
 			"browser": "./src/extensions/persistence/index.browser.ts",
 			"node": "./src/extensions/persistence/index.node.ts",
 			"default": "./src/extensions/persistence/index.node.ts"
 		},
-		"./extensions/persistence/web": "./src/extensions/persistence/web.ts",
-		"./extensions/persistence/desktop": "./src/extensions/persistence/desktop.ts",
 		"./extensions/websocket-sync": "./src/extensions/websocket-sync.ts",
-		"./extensions/markdown": {
-			"node": "./src/extensions/markdown/index.ts",
-			"default": "./src/extensions/markdown/index.ts"
-		},
-		"./extensions/sqlite": {
-			"node": "./src/extensions/sqlite/index.ts",
-			"default": "./src/extensions/sqlite/index.ts"
-		},
-		"./extensions/revision-history": {
-			"node": "./src/extensions/revision-history/index.ts",
-			"default": "./src/extensions/revision-history/index.ts"
-		},
+		"./extensions/y-sweet-sync": "./src/extensions/y-sweet-sync.ts",
 		"./cli": "./src/cli/index.ts",
-		"./server": "./src/server/index.ts"
+		"./server": "./src/server/index.ts",
+		"./ingest": "./src/ingest/index.ts",
+		"./ingest/reddit": "./src/ingest/reddit/index.ts"
 	},
 	"bin": {
 		"epicenter": "./src/cli/bin.ts"
@@ -39,6 +33,9 @@
 		"typecheck": "tsc --noEmit"
 	},
 	"dependencies": {
+		"@y-sweet/client": "^0.6.3",
+		"@y-sweet/sdk": "^0.6.3",
+		"fflate": "^0.8.2",
 		"tinybase": "^5.4.2",
 		"@ark/json-schema": "^0.0.4",
 		"@elysiajs/openapi": "^1.4.11",

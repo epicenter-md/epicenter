@@ -120,7 +120,11 @@ export const transcription = {
 	}),
 };
 
-async function transcribeBlob(
+/**
+ * Transcribe an audio blob directly without any database operations.
+ * Use this when you need parallel execution and will handle DB updates separately.
+ */
+export async function transcribeBlob(
 	blob: Blob,
 ): Promise<Result<string, WhisperingError>> {
 	const selectedService =

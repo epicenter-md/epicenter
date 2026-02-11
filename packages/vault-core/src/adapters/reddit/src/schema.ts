@@ -9,10 +9,9 @@ import {
  * Core content tables
  */
 export const reddit_posts = sqliteTable('reddit_posts', {
-	id: text('id').primaryKey(),
+	id: text('id').primaryKey().notNull(),
 	permalink: text('permalink').notNull(),
 	date: integer('date', { mode: 'timestamp' }).notNull(),
-	created_utc: integer('created_utc', { mode: 'timestamp' }).notNull(),
 	ip: text('ip'),
 	subreddit: text('subreddit').notNull(),
 	gildings: integer('gildings'),
@@ -22,7 +21,7 @@ export const reddit_posts = sqliteTable('reddit_posts', {
 });
 
 export const reddit_post_headers = sqliteTable('reddit_post_headers', {
-	id: text('id').primaryKey(),
+	id: text('id').primaryKey().notNull(),
 	permalink: text('permalink').notNull(),
 	date: integer('date', { mode: 'timestamp' }).notNull(),
 	ip: text('ip'),
@@ -32,22 +31,20 @@ export const reddit_post_headers = sqliteTable('reddit_post_headers', {
 });
 
 export const reddit_comments = sqliteTable('reddit_comments', {
-	id: text('id').primaryKey(),
+	id: text('id').primaryKey().notNull(),
 	permalink: text('permalink').notNull(),
 	date: integer('date', { mode: 'timestamp' }).notNull(),
-	created_utc: integer('created_utc', { mode: 'timestamp' }).notNull(),
 	ip: text('ip'),
 	subreddit: text('subreddit').notNull(),
 	gildings: integer('gildings'),
 	link: text('link').notNull(),
-	post_id: text('post_id'),
 	parent: text('parent'),
 	body: text('body'),
 	media: text('media'),
 });
 
 export const reddit_comment_headers = sqliteTable('reddit_comment_headers', {
-	id: text('id').primaryKey(),
+	id: text('id').primaryKey().notNull(),
 	permalink: text('permalink').notNull(),
 	date: integer('date', { mode: 'timestamp' }).notNull(),
 	ip: text('ip'),
@@ -61,29 +58,29 @@ export const reddit_comment_headers = sqliteTable('reddit_comment_headers', {
  * Votes, saves, visibility
  */
 export const reddit_post_votes = sqliteTable('reddit_post_votes', {
-	id: text('id').primaryKey(),
+	id: text('id').primaryKey().notNull(),
 	permalink: text('permalink').notNull(),
 	direction: text('direction').notNull(), // up/down/none
 });
 
 export const reddit_comment_votes = sqliteTable('reddit_comment_votes', {
-	id: text('id').primaryKey(),
+	id: text('id').primaryKey().notNull(),
 	permalink: text('permalink').notNull(),
 	direction: text('direction').notNull(),
 });
 
 export const reddit_saved_posts = sqliteTable('reddit_saved_posts', {
-	id: text('id').primaryKey(),
+	id: text('id').primaryKey().notNull(),
 	permalink: text('permalink').notNull(),
 });
 
 export const reddit_saved_comments = sqliteTable('reddit_saved_comments', {
-	id: text('id').primaryKey(),
+	id: text('id').primaryKey().notNull(),
 	permalink: text('permalink').notNull(),
 });
 
 export const reddit_hidden_posts = sqliteTable('reddit_hidden_posts', {
-	id: text('id').primaryKey(),
+	id: text('id').primaryKey().notNull(),
 	permalink: text('permalink').notNull(),
 });
 
@@ -91,7 +88,7 @@ export const reddit_hidden_posts = sqliteTable('reddit_hidden_posts', {
  * Messaging
  */
 export const reddit_message_headers = sqliteTable('reddit_message_headers', {
-	id: text('id').primaryKey(),
+	id: text('id').primaryKey().notNull(),
 	permalink: text('permalink').notNull(),
 	thread_id: text('thread_id'),
 	date: integer('date', { mode: 'timestamp' }),
@@ -101,7 +98,7 @@ export const reddit_message_headers = sqliteTable('reddit_message_headers', {
 });
 
 export const reddit_messages = sqliteTable('reddit_messages', {
-	id: text('id').primaryKey(),
+	id: text('id').primaryKey().notNull(),
 	permalink: text('permalink').notNull(),
 	thread_id: text('thread_id'),
 	date: integer('date', { mode: 'timestamp' }),
@@ -115,7 +112,7 @@ export const reddit_messages = sqliteTable('reddit_messages', {
 export const reddit_messages_archive_headers = sqliteTable(
 	'reddit_messages_archive_headers',
 	{
-		id: text('id').primaryKey(),
+		id: text('id').primaryKey().notNull(),
 		permalink: text('permalink').notNull(),
 		thread_id: text('thread_id'),
 		date: integer('date', { mode: 'timestamp' }),
@@ -126,7 +123,7 @@ export const reddit_messages_archive_headers = sqliteTable(
 );
 
 export const reddit_messages_archive = sqliteTable('reddit_messages_archive', {
-	id: text('id').primaryKey(),
+	id: text('id').primaryKey().notNull(),
 	permalink: text('permalink').notNull(),
 	thread_id: text('thread_id'),
 	date: integer('date', { mode: 'timestamp' }),
@@ -141,7 +138,7 @@ export const reddit_messages_archive = sqliteTable('reddit_messages_archive', {
  * Chat
  */
 export const reddit_chat_history = sqliteTable('reddit_chat_history', {
-	message_id: text('message_id').primaryKey(),
+	message_id: text('message_id').primaryKey().notNull(),
 	created_at: integer('created_at', { mode: 'timestamp' }),
 	updated_at: integer('updated_at', { mode: 'timestamp' }),
 	username: text('username'),
@@ -179,32 +176,27 @@ export const reddit_birthdate = sqliteTable('reddit_birthdate', {
 });
 
 export const reddit_user_preferences = sqliteTable('reddit_user_preferences', {
-	preference: text('preference').primaryKey(),
+	preference: text('preference').primaryKey().notNull(),
 	value: text('value'),
 });
 
 export const reddit_linked_identities = sqliteTable(
 	'reddit_linked_identities',
 	{
-		issuer_id: text('issuer_id'),
-		subject_id: text('subject_id'),
+		issuer_id: text('issuer_id').primaryKey().notNull(),
+		subject_id: text('subject_id').notNull(),
 	},
-	(t) => ({
-		uq_issuer_subject: uniqueIndex(
-			'reddit_linked_identities_issuer_subject_uq',
-		).on(t.issuer_id, t.subject_id),
-	}),
 );
 
 export const reddit_linked_phone_number = sqliteTable(
 	'reddit_linked_phone_number',
 	{
-		phone_number: text('phone_number').primaryKey(),
+		phone_number: text('phone_number').primaryKey().notNull(),
 	},
 );
 
 export const reddit_twitter = sqliteTable('reddit_twitter', {
-	username: text('username').primaryKey(),
+	username: text('username').primaryKey().notNull(),
 });
 
 /**
@@ -213,26 +205,26 @@ export const reddit_twitter = sqliteTable('reddit_twitter', {
 export const reddit_approved_submitter_subreddits = sqliteTable(
 	'reddit_approved_submitter_subreddits',
 	{
-		subreddit: text('subreddit').primaryKey(),
+		subreddit: text('subreddit').primaryKey().notNull(),
 	},
 );
 
 export const reddit_moderated_subreddits = sqliteTable(
 	'reddit_moderated_subreddits',
 	{
-		subreddit: text('subreddit').primaryKey(),
+		subreddit: text('subreddit').primaryKey().notNull(),
 	},
 );
 
 export const reddit_subscribed_subreddits = sqliteTable(
 	'reddit_subscribed_subreddits',
 	{
-		subreddit: text('subreddit').primaryKey(),
+		subreddit: text('subreddit').primaryKey().notNull(),
 	},
 );
 
 export const reddit_multireddits = sqliteTable('reddit_multireddits', {
-	id: text('id').primaryKey(),
+	id: text('id').primaryKey().notNull(),
 	display_name: text('display_name'),
 	date: integer('date', { mode: 'timestamp' }),
 	description: text('description'),
@@ -249,7 +241,7 @@ export const reddit_multireddits = sqliteTable('reddit_multireddits', {
  */
 export const reddit_purchases = sqliteTable('reddit_purchases', {
 	processor: text('processor'),
-	transaction_id: text('transaction_id').primaryKey(),
+	transaction_id: text('transaction_id').primaryKey().notNull(),
 	product: text('product'),
 	date: integer('date', { mode: 'timestamp' }),
 	cost: text('cost'),
@@ -259,7 +251,7 @@ export const reddit_purchases = sqliteTable('reddit_purchases', {
 
 export const reddit_subscriptions = sqliteTable('reddit_subscriptions', {
 	processor: text('processor'),
-	subscription_id: text('subscription_id').primaryKey(),
+	subscription_id: text('subscription_id').primaryKey().notNull(),
 	product: text('product'),
 	product_id: text('product_id'),
 	product_name: text('product_name'),
@@ -272,7 +264,7 @@ export const reddit_payouts = sqliteTable(
 	'reddit_payouts',
 	{
 		payout_amount_usd: text('payout_amount_usd'),
-		date: integer('date', { mode: 'timestamp' }),
+		date: integer('date', { mode: 'timestamp' }).primaryKey().notNull(),
 		payout_id: text('payout_id'),
 	},
 	(t) => ({
@@ -284,14 +276,14 @@ export const reddit_payouts = sqliteTable(
 );
 
 export const reddit_stripe = sqliteTable('reddit_stripe', {
-	stripe_account_id: text('stripe_account_id').primaryKey(),
+	stripe_account_id: text('stripe_account_id').primaryKey().notNull(),
 });
 
 /**
  * Misc content and utility
  */
 export const reddit_announcements = sqliteTable('reddit_announcements', {
-	announcement_id: text('announcement_id').primaryKey(),
+	announcement_id: text('announcement_id').primaryKey().notNull(),
 	sent_at: integer('sent_at', { mode: 'timestamp' }),
 	read_at: integer('read_at', { mode: 'timestamp' }),
 	from_id: text('from_id'),
@@ -302,7 +294,7 @@ export const reddit_announcements = sqliteTable('reddit_announcements', {
 });
 
 export const reddit_drafts = sqliteTable('reddit_drafts', {
-	id: text('id').primaryKey(),
+	id: text('id').primaryKey().notNull(),
 	title: text('title'),
 	body: text('body'),
 	kind: text('kind'),
@@ -323,69 +315,37 @@ export const reddit_friends = sqliteTable('reddit_friends', {
 	note: text('note'),
 });
 
-export const reddit_gilded_content = sqliteTable(
-	'reddit_gilded_content',
-	{
-		content_link: text('content_link'),
-		award: text('award'),
-		amount: text('amount'),
-		date: integer('date', { mode: 'timestamp' }),
-	},
-	(t) => ({
-		uq_content_award_date: uniqueIndex(
-			'reddit_gilded_content_content_award_date_uq',
-		).on(t.content_link, t.award, t.date),
-	}),
-);
+export const reddit_gilded_content = sqliteTable('reddit_gilded_content', {
+	content_link: text('content_link').primaryKey().notNull(),
+	award: text('award'),
+	amount: text('amount'),
+	date: integer('date', { mode: 'timestamp' }),
+});
 
-export const reddit_gold_received = sqliteTable(
-	'reddit_gold_received',
-	{
-		content_link: text('content_link'),
-		gold_received: text('gold_received'),
-		gilder_username: text('gilder_username'),
-		date: integer('date', { mode: 'timestamp' }),
-	},
-	(t) => ({
-		uq_content_date: uniqueIndex('reddit_gold_received_content_date_uq').on(
-			t.content_link,
-			t.date,
-		),
-	}),
-);
+export const reddit_gold_received = sqliteTable('reddit_gold_received', {
+	content_link: text('content_link').primaryKey().notNull(),
+	gold_received: text('gold_received'),
+	gilder_username: text('gilder_username'),
+	date: integer('date', { mode: 'timestamp' }),
+});
 
-export const reddit_ip_logs = sqliteTable(
-	'reddit_ip_logs',
-	{
-		date: integer('date', { mode: 'timestamp' }),
-		ip: text('ip'),
-	},
-	(t) => ({
-		uq_date_ip: uniqueIndex('reddit_ip_logs_date_ip_uq').on(t.date, t.ip),
-	}),
-);
+export const reddit_ip_logs = sqliteTable('reddit_ip_logs', {
+	date: integer('date', { mode: 'timestamp' }).primaryKey().notNull(),
+	ip: text('ip'),
+});
 
 export const reddit_persona = sqliteTable('reddit_persona', {
 	persona_inquiry_id: text('persona_inquiry_id').primaryKey(),
 });
 
-export const reddit_poll_votes = sqliteTable(
-	'reddit_poll_votes',
-	{
-		post_id: text('post_id'),
-		user_selection: text('user_selection'),
-		text: text('text'),
-		image_url: text('image_url'),
-		is_prediction: text('is_prediction'),
-		stake_amount: text('stake_amount'),
-	},
-	(t) => ({
-		uq_post_user: uniqueIndex('reddit_poll_votes_post_user_uq').on(
-			t.post_id,
-			t.user_selection,
-		),
-	}),
-);
+export const reddit_poll_votes = sqliteTable('reddit_poll_votes', {
+	post_id: text('post_id').primaryKey().notNull(),
+	user_selection: text('user_selection'),
+	text: text('text'),
+	image_url: text('image_url'),
+	is_prediction: text('is_prediction'),
+	stake_amount: text('stake_amount'),
+});
 
 export const reddit_scheduled_posts = sqliteTable('reddit_scheduled_posts', {
 	scheduled_post_id: text('scheduled_post_id').primaryKey(),

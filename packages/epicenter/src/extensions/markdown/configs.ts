@@ -49,13 +49,26 @@ import path from 'node:path';
 import { type } from 'arktype';
 import filenamify from 'filenamify';
 import { Ok, type Result } from 'wellcrafted/result';
-import type { FieldMap, Row } from '../../core/schema';
-import { tableToArktype } from '../../core/schema';
+import type { Field, Row } from '../../dynamic/schema';
+import { tableToArktype } from '../../dynamic/schema';
 import { MarkdownExtensionErr, type MarkdownExtensionError } from './markdown';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Core Types
 // ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Field array type alias for serializer generics.
+ * Using readonly array matches the TableDefinition.fields type.
+ */
+type Fields = readonly Field[];
+
+/**
+ * Row type that guarantees an `id` property exists.
+ * Row<TFields> alone doesn't guarantee `.id` when TFields is a generic parameter,
+ * so we intersect with `{ id: string }` to make destructuring work.
+ */
+type RowWithId<TFields extends Fields> = Row<TFields> & { id: string };
 
 /**
  * Base parsed result that all parseFilename functions must return.
@@ -66,18 +79,18 @@ export type ParsedFilename = { id: string };
 /**
  * A serializer defines how to encode rows to markdown files and decode them back.
  *
- * @typeParam TFieldMap - The fields schema being serialized
+ * @typeParam TFields - The fields array being serialized
  * @typeParam TParsed - Additional data extracted from filename beyond `id`
  */
 export type MarkdownSerializer<
-	TFieldMap extends FieldMap,
+	TFields extends Fields,
 	TParsed extends ParsedFilename = ParsedFilename,
 > = {
 	/**
 	 * Encode: Convert a row to markdown file format.
 	 * Returns frontmatter object, body string, and filename.
 	 */
-	serialize: (params: { row: Row<TFieldMap>; fields: TFieldMap }) => {
+	serialize: (params: { row: RowWithId<TFields>; fields: TFields }) => {
 		frontmatter: Record<string, unknown>;
 		body: string;
 		filename: string;
@@ -104,8 +117,8 @@ export type MarkdownSerializer<
 			body: string;
 			filename: string;
 			parsed: TParsed;
-			fields: TFieldMap;
-		}) => Result<Row<TFieldMap>, MarkdownExtensionError>;
+			fields: TFields;
+		}) => Result<RowWithId<TFields>, MarkdownExtensionError>;
 	};
 };
 
@@ -124,7 +137,7 @@ export type MarkdownSerializer<
  * })
  * ```
  */
-export type TableMarkdownConfig<TFieldMap extends FieldMap = FieldMap> = {
+export type TableMarkdownConfig<TFields extends Fields = Fields> = {
 	/**
 	 * WHERE files go. Resolved relative to workspace directory.
 	 * @default table.name (e.g., "posts" table -> "./posts/")
@@ -136,7 +149,7 @@ export type TableMarkdownConfig<TFieldMap extends FieldMap = FieldMap> = {
 	 * @default Default serializer (all fields to frontmatter, {id}.md filename)
 	 */
 	// biome-ignore lint/suspicious/noExplicitAny: TParsed is only needed for internal type flow between parseFilename and fromContent. Consumers do not care about the specific parsed type, so we use any to accept serializers with any TParsed.
-	serializer?: MarkdownSerializer<TFieldMap, any>;
+	serializer?: MarkdownSerializer<TFields, any>;
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -151,7 +164,7 @@ export type TableMarkdownConfig<TFieldMap extends FieldMap = FieldMap> = {
  * - `TParsed` is captured for use in deserialize step
  */
 type SerializerBuilderWithParser<
-	TFieldMap extends FieldMap,
+	TFields extends Fields,
 	TFilename extends string,
 	TParsed extends ParsedFilename,
 > = {
@@ -161,12 +174,12 @@ type SerializerBuilderWithParser<
 	 * The filename return type is constrained to match the parser's input type.
 	 */
 	serialize(
-		serializeFn: (params: { row: Row<TFieldMap>; fields: TFieldMap }) => {
+		serializeFn: (params: { row: RowWithId<TFields>; fields: TFields }) => {
 			frontmatter: Record<string, unknown>;
 			body: string;
 			filename: TFilename;
 		},
-	): SerializerBuilderWithSerialize<TFieldMap, TFilename, TParsed>;
+	): SerializerBuilderWithSerialize<TFields, TFilename, TParsed>;
 };
 
 /**
@@ -177,7 +190,7 @@ type SerializerBuilderWithParser<
  * - `TFilename` is available for the filename parameter
  */
 type SerializerBuilderWithSerialize<
-	TFieldMap extends FieldMap,
+	TFields extends Fields,
 	TFilename extends string,
 	TParsed extends ParsedFilename,
 > = {
@@ -192,9 +205,9 @@ type SerializerBuilderWithSerialize<
 			body: string;
 			filename: TFilename;
 			parsed: TParsed;
-			fields: TFieldMap;
-		}) => Result<Row<TFieldMap>, MarkdownExtensionError>,
-	): MarkdownSerializer<TFieldMap, TParsed>;
+			fields: TFields;
+		}) => Result<RowWithId<TFields>, MarkdownExtensionError>,
+	): MarkdownSerializer<TFields, TParsed>;
 };
 
 /**
@@ -248,7 +261,7 @@ type SerializerBuilderWithSerialize<
  *   });
  * ```
  */
-export function defineSerializer<TFieldMap extends FieldMap>(): {
+export function defineSerializer<TFields extends Fields>(): {
 	/**
 	 * Step 1: Define how to parse filenames to extract structured data.
 	 *
@@ -257,12 +270,12 @@ export function defineSerializer<TFieldMap extends FieldMap>(): {
 	 */
 	parseFilename<TFilename extends string, TParsed extends ParsedFilename>(
 		parseFilenameFn: (filename: TFilename) => TParsed | undefined,
-	): SerializerBuilderWithParser<TFieldMap, TFilename, TParsed>;
+	): SerializerBuilderWithParser<TFields, TFilename, TParsed>;
 } {
 	return {
 		parseFilename<TFilename extends string, TParsed extends ParsedFilename>(
 			parseFilenameFn: (filename: TFilename) => TParsed | undefined,
-		): SerializerBuilderWithParser<TFieldMap, TFilename, TParsed> {
+		): SerializerBuilderWithParser<TFields, TFilename, TParsed> {
 			return {
 				serialize(serializeFn) {
 					return {
@@ -271,11 +284,11 @@ export function defineSerializer<TFieldMap extends FieldMap>(): {
 								serialize: serializeFn,
 								deserialize: {
 									parseFilename: parseFilenameFn as MarkdownSerializer<
-										TFieldMap,
+										TFields,
 										TParsed
 									>['deserialize']['parseFilename'],
 									fromContent: deserializeFn as MarkdownSerializer<
-										TFieldMap,
+										TFields,
 										TParsed
 									>['deserialize']['fromContent'],
 								},
@@ -310,8 +323,8 @@ export function defineSerializer<TFieldMap extends FieldMap>(): {
  * })
  * ```
  */
-export function defaultSerializer(): MarkdownSerializer<FieldMap> {
-	return defineSerializer<FieldMap>()
+export function defaultSerializer(): MarkdownSerializer<Fields> {
+	return defineSerializer<Fields>()
 		.parseFilename((filename: `${string}.md`) => {
 			const id = path.basename(filename, '.md');
 			return { id };
@@ -338,7 +351,7 @@ export function defaultSerializer(): MarkdownSerializer<FieldMap> {
 				});
 			}
 
-			return Ok(result);
+			return Ok(result as RowWithId<Fields>);
 		});
 }
 
@@ -383,10 +396,10 @@ export type BodyFieldSerializerOptions = {
 export function bodyFieldSerializer(
 	bodyField: string,
 	options: BodyFieldSerializerOptions = {},
-): MarkdownSerializer<FieldMap> {
+): MarkdownSerializer<Fields> {
 	const { stripNulls = true, filenameField = 'id' } = options;
 
-	return defineSerializer<FieldMap>()
+	return defineSerializer<Fields>()
 		.parseFilename((filename: `${string}.md`) => {
 			const id = path.basename(filename, '.md');
 			return { id };
@@ -435,7 +448,7 @@ export function bodyFieldSerializer(
 				[filenameField]: rowId,
 				[bodyField]: body,
 				...(validatedFrontmatter as Record<string, unknown>),
-			} as Row<FieldMap>;
+			} as RowWithId<Fields>;
 
 			return Ok(row);
 		});
@@ -508,13 +521,10 @@ export type DomainTitleFilenameSerializerOptions = {
 export function titleFilenameSerializer(
 	titleField: string,
 	options: TitleFilenameSerializerOptions = {},
-): MarkdownSerializer<
-	FieldMap,
-	ParsedFilename & { titleFromFilename: string }
-> {
+): MarkdownSerializer<Fields, ParsedFilename & { titleFromFilename: string }> {
 	const { stripNulls = true, maxTitleLength = 80 } = options;
 
-	return defineSerializer<FieldMap>()
+	return defineSerializer<Fields>()
 		.parseFilename((filename: `${string}-${string}.md`) => {
 			const basename = path.basename(filename, '.md');
 			const lastDashIndex = basename.lastIndexOf('-');
@@ -573,7 +583,7 @@ export function titleFilenameSerializer(
 				});
 			}
 
-			return Ok(result);
+			return Ok(result as RowWithId<Fields>);
 		});
 }
 
@@ -640,7 +650,7 @@ export function domainTitleFilenameSerializer(
 	titleField: string,
 	options: DomainTitleFilenameSerializerOptions = {},
 ): MarkdownSerializer<
-	FieldMap,
+	Fields,
 	ParsedFilename & { domainFromFilename: string; titleFromFilename: string }
 > {
 	const {
@@ -649,7 +659,7 @@ export function domainTitleFilenameSerializer(
 		maxDomainLength = 30,
 	} = options;
 
-	return defineSerializer<FieldMap>()
+	return defineSerializer<Fields>()
 		.parseFilename((filename: `${string} - ${string}-${string}.md`) => {
 			const basename = path.basename(filename, '.md');
 
@@ -734,6 +744,6 @@ export function domainTitleFilenameSerializer(
 				});
 			}
 
-			return Ok(result as Row<FieldMap>);
+			return Ok(result as RowWithId<Fields>);
 		});
 }

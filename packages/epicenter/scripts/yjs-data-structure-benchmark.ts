@@ -65,8 +65,6 @@ type PlainRow = {
 	active: boolean;
 };
 
-const COLUMNS = ['id', 'name', 'age', 'email', 'active'] as const;
-
 function createPlainRow(id: string, suffix = ''): PlainRow {
 	return {
 		id,
@@ -77,7 +75,7 @@ function createPlainRow(id: string, suffix = ''): PlainRow {
 	};
 }
 
-function createYMapRow(doc: Y.Doc, id: string, suffix = ''): Y.Map<unknown> {
+function createYMapRow(_doc: Y.Doc, id: string, suffix = ''): Y.Map<unknown> {
 	const row = new Y.Map<unknown>();
 	row.set('id', id);
 	row.set('name', `User ${id}${suffix}`);
@@ -214,15 +212,20 @@ function benchmarkMapPlain(
 		doc.transact(() => {
 			for (let i = 0; i < CONFIG.NUM_ROWS; i++) {
 				const existing = ymap.get(`row-${i}`)!;
-				if (strategy === 'single-column') {
-					ymap.set(`row-${i}`, singleColumnUpdate(existing));
-				} else if (strategy === 'full-row') {
-					ymap.set(`row-${i}`, fullRowUpdate(existing));
-				} else {
-					// mixed: 70% single, 30% full
-					const updateFn =
-						Math.random() < 0.7 ? singleColumnUpdate : fullRowUpdate;
-					ymap.set(`row-${i}`, updateFn(existing));
+				switch (strategy) {
+					case 'single-column':
+						ymap.set(`row-${i}`, singleColumnUpdate(existing));
+						break;
+					case 'full-row':
+						ymap.set(`row-${i}`, fullRowUpdate(existing));
+						break;
+					default: {
+						// mixed: 70% single, 30% full
+						const updateFn =
+							Math.random() < 0.7 ? singleColumnUpdate : fullRowUpdate;
+						ymap.set(`row-${i}`, updateFn(existing));
+						break;
+					}
 				}
 			}
 		});
@@ -291,14 +294,19 @@ function benchmarkArrayPlain(
 			for (let i = 0; i < CONFIG.NUM_ROWS; i++) {
 				const existing = yarray.get(i);
 				yarray.delete(i, 1);
-				if (strategy === 'single-column') {
-					yarray.insert(i, [singleColumnUpdate(existing)]);
-				} else if (strategy === 'full-row') {
-					yarray.insert(i, [fullRowUpdate(existing)]);
-				} else {
-					const updateFn =
-						Math.random() < 0.7 ? singleColumnUpdate : fullRowUpdate;
-					yarray.insert(i, [updateFn(existing)]);
+				switch (strategy) {
+					case 'single-column':
+						yarray.insert(i, [singleColumnUpdate(existing)]);
+						break;
+					case 'full-row':
+						yarray.insert(i, [fullRowUpdate(existing)]);
+						break;
+					default: {
+						const updateFn =
+							Math.random() < 0.7 ? singleColumnUpdate : fullRowUpdate;
+						yarray.insert(i, [updateFn(existing)]);
+						break;
+					}
 				}
 			}
 		});
@@ -366,23 +374,13 @@ function benchmarkMapYMap(
 		doc.transact(() => {
 			for (let i = 0; i < CONFIG.NUM_ROWS; i++) {
 				const row = ymap.get(`row-${i}`)!;
-				if (strategy === 'single-column') {
-					// Only update age - creates 1 tombstone
-					row.set('age', (row.get('age') as number) + 1);
-				} else if (strategy === 'full-row') {
-					// Update all columns - creates 5 tombstones (one per column)
-					row.set('name', (row.get('name') as string) + '!');
-					row.set('age', (row.get('age') as number) + 1);
-					row.set(
-						'email',
-						(row.get('email') as string).replace('@', '+updated@'),
-					);
-					row.set('active', !(row.get('active') as boolean));
-				} else {
-					// mixed
-					if (Math.random() < 0.7) {
+				switch (strategy) {
+					case 'single-column':
+						// Only update age - creates 1 tombstone
 						row.set('age', (row.get('age') as number) + 1);
-					} else {
+						break;
+					case 'full-row':
+						// Update all columns - creates 5 tombstones (one per column)
 						row.set('name', (row.get('name') as string) + '!');
 						row.set('age', (row.get('age') as number) + 1);
 						row.set(
@@ -390,7 +388,21 @@ function benchmarkMapYMap(
 							(row.get('email') as string).replace('@', '+updated@'),
 						);
 						row.set('active', !(row.get('active') as boolean));
-					}
+						break;
+					default:
+						// mixed
+						if (Math.random() < 0.7) {
+							row.set('age', (row.get('age') as number) + 1);
+						} else {
+							row.set('name', (row.get('name') as string) + '!');
+							row.set('age', (row.get('age') as number) + 1);
+							row.set(
+								'email',
+								(row.get('email') as string).replace('@', '+updated@'),
+							);
+							row.set('active', !(row.get('active') as boolean));
+						}
+						break;
 				}
 			}
 		});
@@ -458,20 +470,11 @@ function benchmarkArrayYMap(
 		doc.transact(() => {
 			for (let i = 0; i < CONFIG.NUM_ROWS; i++) {
 				const row = yarray.get(i);
-				if (strategy === 'single-column') {
-					row.set('age', (row.get('age') as number) + 1);
-				} else if (strategy === 'full-row') {
-					row.set('name', (row.get('name') as string) + '!');
-					row.set('age', (row.get('age') as number) + 1);
-					row.set(
-						'email',
-						(row.get('email') as string).replace('@', '+updated@'),
-					);
-					row.set('active', !(row.get('active') as boolean));
-				} else {
-					if (Math.random() < 0.7) {
+				switch (strategy) {
+					case 'single-column':
 						row.set('age', (row.get('age') as number) + 1);
-					} else {
+						break;
+					case 'full-row':
 						row.set('name', (row.get('name') as string) + '!');
 						row.set('age', (row.get('age') as number) + 1);
 						row.set(
@@ -479,7 +482,20 @@ function benchmarkArrayYMap(
 							(row.get('email') as string).replace('@', '+updated@'),
 						);
 						row.set('active', !(row.get('active') as boolean));
-					}
+						break;
+					default:
+						if (Math.random() < 0.7) {
+							row.set('age', (row.get('age') as number) + 1);
+						} else {
+							row.set('name', (row.get('name') as string) + '!');
+							row.set('age', (row.get('age') as number) + 1);
+							row.set(
+								'email',
+								(row.get('email') as string).replace('@', '+updated@'),
+							);
+							row.set('active', !(row.get('active') as boolean));
+						}
+						break;
 				}
 			}
 		});

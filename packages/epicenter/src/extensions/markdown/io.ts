@@ -3,7 +3,7 @@ import { join, resolve } from 'node:path';
 import { type } from 'arktype';
 import { createTaggedError, extractErrorMessage } from 'wellcrafted/error';
 import { Ok, type Result, tryAsync } from 'wellcrafted/result';
-import type { AbsolutePath } from '../../core/types';
+import type { AbsolutePath } from '../../shared/types';
 
 export const { MarkdownOperationError, MarkdownOperationErr } =
 	createTaggedError('MarkdownOperationError');

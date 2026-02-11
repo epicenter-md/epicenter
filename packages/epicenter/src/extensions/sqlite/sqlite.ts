@@ -3,17 +3,14 @@ import path from 'node:path';
 import { Database } from '@tursodatabase/database/compat';
 import { sql } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/better-sqlite3';
-import { getTableConfig } from 'drizzle-orm/sqlite-core';
+import { getTableConfig, type SQLiteTable } from 'drizzle-orm/sqlite-core';
 import { extractErrorMessage } from 'wellcrafted/error';
 import { tryAsync } from 'wellcrafted/result';
-import { ExtensionErr, ExtensionError } from '../../core/errors';
-import { defineExports, type ExtensionContext } from '../../core/extension';
-import type {
-	KvDefinitionMap,
-	Row,
-	TableDefinitionMap,
-} from '../../core/schema';
-import { convertTableDefinitionsToDrizzle } from '../../core/schema/converters/to-drizzle';
+import { defineExports, type ExtensionContext } from '../../dynamic/extension';
+import type { Id, KvField, Row, TableDefinition } from '../../dynamic/schema';
+import { Id as createId } from '../../dynamic/schema';
+import { convertTableDefinitionsToDrizzle } from '../../dynamic/schema/converters/to-drizzle';
+import { ExtensionErr, ExtensionError } from '../../shared/errors';
 import { createIndexLogger } from '../error-logger';
 
 const DEFAULT_DEBOUNCE_MS = 100;
@@ -62,19 +59,14 @@ export type SqliteConfig = {
  *
  * @example
  * ```typescript
- * import { defineWorkspace, createClient, id, text, table } from '@epicenter/hq';
+ * import { createWorkspace } from '@epicenter/hq/dynamic';
+ * import { sqlite } from '@epicenter/hq/extensions/sqlite';
  * import { join } from 'node:path';
- *
- * const definition = defineWorkspace({
- *   tables: { posts: table({ name: 'Posts', fields: { id: id(), title: text() } }) },
- *   kv: {},
- * });
  *
  * const projectDir = '/my/project';
  * const epicenterDir = join(projectDir, '.epicenter');
  *
- * const client = createClient('blog', { epoch })
- *   .withDefinition(definition)
+ * const workspace = createWorkspace({ name: 'Blog', tables: {...} })
  *   .withExtensions({
  *     sqlite: (ctx) => sqlite(ctx, {
  *       dbPath: join(epicenterDir, 'sqlite', `${ctx.id}.db`),
@@ -83,19 +75,16 @@ export type SqliteConfig = {
  *   });
  *
  * // Query with Drizzle:
- * const posts = await client.extensions.sqlite.db
+ * const posts = await workspace.extensions.sqlite.db
  *   .select()
- *   .from(client.extensions.sqlite.posts);
+ *   .from(workspace.extensions.sqlite.posts);
  * ```
  */
 export const sqlite = async <
-	TTableDefinitionMap extends TableDefinitionMap,
-	TKvDefinitionMap extends KvDefinitionMap,
+	TTableDefinitions extends readonly TableDefinition[],
+	TKvFields extends readonly KvField[],
 >(
-	{
-		workspaceId: id,
-		tables,
-	}: ExtensionContext<TTableDefinitionMap, TKvDefinitionMap>,
+	{ id, tables }: ExtensionContext<TTableDefinitions, TKvFields>,
 	config: SqliteConfig,
 ) => {
 	const { dbPath, logsDir, debounceMs = DEFAULT_DEBOUNCE_MS } = config;
@@ -131,7 +120,7 @@ export const sqlite = async <
 	 * Uses Drizzle's getTableConfig API for schema introspection.
 	 */
 	async function recreateTables() {
-		for (const drizzleTable of Object.values(drizzleTables)) {
+		for (const drizzleTable of Object.values(drizzleTables) as SQLiteTable[]) {
 			const tableConfig = getTableConfig(drizzleTable);
 
 			// Drop existing table to handle schema changes
@@ -172,7 +161,10 @@ export const sqlite = async <
 		await recreateTables();
 
 		// Insert all valid rows from YJS into SQLite
-		for (const [tableName, drizzleTable] of Object.entries(drizzleTables)) {
+		for (const [tableName, drizzleTable] of Object.entries(drizzleTables) as [
+			string,
+			SQLiteTable,
+		][]) {
 			const table = tables.get(tableName);
 			const rows = table.getAllValid();
 
@@ -244,7 +236,10 @@ export const sqlite = async <
 	await recreateTables();
 
 	// Insert all valid rows from YJS into SQLite
-	for (const [tableName, drizzleTable] of Object.entries(drizzleTables)) {
+	for (const [tableName, drizzleTable] of Object.entries(drizzleTables) as [
+		string,
+		SQLiteTable,
+	][]) {
 		const table = tables.get(tableName);
 		const rows = table.getAllValid();
 
@@ -301,17 +296,19 @@ export const sqlite = async <
 
 					for (const [tableName, drizzleTable] of Object.entries(
 						drizzleTables,
-					)) {
+					) as [string, SQLiteTable][]) {
 						const table = tables.get(tableName);
 						const rows = await sqliteDb.select().from(drizzleTable);
 						for (const row of rows) {
 							// Cast is safe: Drizzle schema is derived from workspace definition
-							table.upsert(
-								row as Row<
-									TTableDefinitionMap[keyof TTableDefinitionMap &
-										string]['fields']
-								>,
-							);
+							// Convert string id to branded Id type
+							const rowWithBrandedId = {
+								...row,
+								id: createId((row as { id: string }).id),
+							} as Row<TTableDefinitions[number]['fields']> & {
+								id: Id;
+							};
+							table.upsert(rowWithBrandedId);
 						}
 					}
 

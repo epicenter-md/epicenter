@@ -12,7 +12,7 @@ This specification describes how to store workspace configurations (schema, meta
 
 The current architecture stores workspace configs as JSON files:
 
-- `workspaces/blog.json` → `{ id, slug, name, tables, kv, sync }`
+- `workspaces/blog/definition.json` → `{ id, name, tables, kv, ... }`
 
 This creates issues:
 
@@ -308,20 +308,12 @@ If Y.Doc has fields not in code schema:
 
 ### One-Time Migration
 
-1. Scan existing `workspaces/*.json` files
-2. For each workspace:
+1. Scan existing workspace directories in `workspaces/`
+2. For each workspace with `definition.json`:
    - Create Head Y.Doc with epoch: 0
    - Create Data Y.Doc with schema + empty tables
    - Add to user's Registry Y.Doc
 3. Import existing Y.Doc data files (if any)
-
-### Coexistence Period (Optional)
-
-Could support both file-based and Y.Doc-based during transition:
-
-- Read from Y.Doc if exists
-- Fall back to JSON file
-- Eventually remove file support
 
 ## Critical YJS Semantics (Must Understand)
 

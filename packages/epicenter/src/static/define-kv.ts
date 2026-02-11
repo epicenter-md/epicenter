@@ -1,6 +1,18 @@
 /**
  * defineKv() builder for creating versioned KV definitions.
  *
+ * **Versioning patterns:**
+ * - **Shorthand**: `defineKv(schema)` — single version, no migration yet
+ * - **Field presence**: `if (!('field' in value))` — simple two-version cases only
+ * - **Asymmetric `_v`**: No `_v` on v1, add on v2+ — recommended default (less ceremony upfront)
+ * - **Symmetric `_v`**: Include `_v: '"1"'` from start — clean switch statements (must include `_v` in all writes)
+ *
+ * Most KV stores never need versioning, so asymmetric `_v` (start simple, add `_v` only when needed)
+ * is the recommended default. Use symmetric `_v` when you know a store will evolve and want
+ * consistent migration code. Use field presence for unambiguous two-version cases.
+ *
+ * See `.agents/skills/static-workspace-api/SKILL.md` for detailed comparison table.
+ *
  * @example
  * ```typescript
  * import { defineKv } from 'epicenter/static';
@@ -9,13 +21,24 @@
  * // Shorthand for single version
  * const sidebar = defineKv(type({ collapsed: 'boolean', width: 'number' }));
  *
- * // Builder pattern for multiple versions
+ * // Builder pattern for multiple versions (asymmetric _v — recommended)
  * const theme = defineKv()
  *   .version(type({ mode: "'light' | 'dark'" }))
- *   .version(type({ mode: "'light' | 'dark' | 'system'", fontSize: 'number' }))
+ *   .version(type({ mode: "'light' | 'dark' | 'system'", fontSize: 'number', _v: '"2"' }))
  *   .migrate((v) => {
- *     if (!('fontSize' in v)) return { ...v, fontSize: 14 };
+ *     if (!('_v' in v)) return { ...v, fontSize: 14, _v: '2' };
  *     return v;
+ *   });
+ *
+ * // Or with _v from the start (symmetric switch)
+ * const theme = defineKv()
+ *   .version(type({ mode: "'light' | 'dark'", _v: '"1"' }))
+ *   .version(type({ mode: "'light' | 'dark' | 'system'", fontSize: 'number', _v: '"2"' }))
+ *   .migrate((v) => {
+ *     switch (v._v) {
+ *       case '1': return { mode: v.mode, fontSize: 14, _v: '2' };
+ *       case '2': return v;
+ *     }
  *   });
  * ```
  */
@@ -81,12 +104,24 @@ export function defineKv<TSchema extends StandardSchemaV1>(
  *
  * @example
  * ```typescript
+ * // Asymmetric _v (recommended) — add _v only when you need a second version
  * const theme = defineKv()
  *   .version(type({ mode: "'light' | 'dark'" }))
- *   .version(type({ mode: "'light' | 'dark' | 'system'", fontSize: 'number' }))
+ *   .version(type({ mode: "'light' | 'dark' | 'system'", fontSize: 'number', _v: '"2"' }))
  *   .migrate((v) => {
- *     if (!('fontSize' in v)) return { ...v, fontSize: 14 };
+ *     if (!('_v' in v)) return { ...v, fontSize: 14, _v: '2' };
  *     return v;
+ *   });
+ *
+ * // Symmetric _v — include _v from the start for clean switch statements
+ * const theme = defineKv()
+ *   .version(type({ mode: "'light' | 'dark'", _v: '"1"' }))
+ *   .version(type({ mode: "'light' | 'dark' | 'system'", fontSize: 'number', _v: '"2"' }))
+ *   .migrate((v) => {
+ *     switch (v._v) {
+ *       case '1': return { mode: v.mode, fontSize: 14, _v: '2' };
+ *       case '2': return v;
+ *     }
  *   });
  * ```
  */

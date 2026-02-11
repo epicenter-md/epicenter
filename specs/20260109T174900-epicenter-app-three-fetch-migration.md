@@ -6,7 +6,7 @@
 
 ## Problem
 
-The `apps/epicenter` app stores workspace schemas as JSON files (`AppLocalData/workspaces/{id}.json`) and creates clients directly without following the three-fetch protocol documented in `packages/epicenter/src/core/docs/README.md`.
+The `apps/epicenter` app stores workspace schemas as JSON files (`AppLocalData/workspaces/{id}/definition.json`) and creates clients directly without following the three-fetch protocol documented in `packages/epicenter/src/core/docs/README.md`.
 
 Current flow (broken):
 

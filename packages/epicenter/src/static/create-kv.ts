@@ -7,15 +7,23 @@
  * import { createKv, defineKv } from 'epicenter/static';
  * import { type } from 'arktype';
  *
+ * // Shorthand for single version
+ * const sidebar = defineKv(type({ collapsed: 'boolean', width: 'number' }));
+ *
+ * // Builder pattern for multiple versions with migration (use _v discriminant)
  * const theme = defineKv()
- *   .version(type({ mode: "'light' | 'dark'" }))
- *   .migrate((v) => v);
+ *   .version(type({ mode: "'light' | 'dark'", _v: '"1"' }))
+ *   .version(type({ mode: "'light' | 'dark' | 'system'", fontSize: 'number', _v: '"2"' }))
+ *   .migrate((v) => {
+ *     if (v._v === '1') return { ...v, fontSize: 14, _v: '2' };
+ *     return v;
+ *   });
  *
  * const ydoc = new Y.Doc({ guid: 'my-doc' });
- * const kv = createKv(ydoc, { theme });
+ * const kv = createKv(ydoc, { sidebar, theme });
  *
- * kv.set('theme', { mode: 'dark' });
- * const result = kv.get('theme');
+ * kv.set('sidebar', { collapsed: false, width: 300 });
+ * kv.set('theme', { mode: 'system', fontSize: 16, _v: '2' });
  * ```
  */
 
@@ -25,7 +33,8 @@ import {
 	YKeyValueLww,
 	type YKeyValueLwwChange,
 	type YKeyValueLwwEntry,
-} from '../core/utils/y-keyvalue-lww.js';
+} from '../shared/y-keyvalue/y-keyvalue-lww.js';
+import { KV_KEY } from '../shared/ydoc-keys.js';
 import type {
 	InferKvValue,
 	KvBatchTransaction,
@@ -50,7 +59,7 @@ export function createKv<TKvDefinitions extends KvDefinitions>(
 	definitions: TKvDefinitions,
 ): KvHelper<TKvDefinitions> {
 	// All KV values share a single YKeyValueLww store
-	const yarray = ydoc.getArray<YKeyValueLwwEntry<unknown>>('kv');
+	const yarray = ydoc.getArray<YKeyValueLwwEntry<unknown>>(KV_KEY);
 	const ykv = new YKeyValueLww(yarray);
 
 	/**
@@ -84,7 +93,7 @@ export function createKv<TKvDefinitions extends KvDefinitions>(
 
 			const raw = ykv.get(key);
 			if (raw === undefined) {
-				return { status: 'not_found' };
+				return { status: 'not_found', value: undefined };
 			}
 			return parseValue(raw, definition);
 		},
@@ -125,20 +134,25 @@ export function createKv<TKvDefinitions extends KvDefinitions>(
 				const change = changes.get(key);
 				if (!change) return;
 
-				if (change.action === 'delete') {
-					callback({ type: 'delete' }, transaction);
-				} else {
-					// For add or update, parse and migrate the new value
-					const parsed = parseValue(change.newValue, definition);
-					if (parsed.status === 'valid') {
-						callback(
-							{ type: 'set', value: parsed.value } as Parameters<
-								typeof callback
-							>[0],
-							transaction,
-						);
+				switch (change.action) {
+					case 'delete':
+						callback({ type: 'delete' }, transaction);
+						break;
+					case 'add':
+					case 'update': {
+						// Parse and migrate the new value
+						const parsed = parseValue(change.newValue, definition);
+						if (parsed.status === 'valid') {
+							callback(
+								{ type: 'set', value: parsed.value } as Parameters<
+									typeof callback
+								>[0],
+								transaction,
+							);
+						}
+						// Skip callback for invalid values (could add an error callback if needed)
+						break;
 					}
-					// Skip callback for invalid values (could add an error callback if needed)
 				}
 			};
 

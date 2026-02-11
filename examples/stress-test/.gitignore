@@ -1,4 +1,0 @@
-# Epicenter system folder (runtime data)
-.epicenter/*
-# But track workspace definitions (source code)
-!.epicenter/workspaces/

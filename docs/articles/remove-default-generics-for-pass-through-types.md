@@ -8,7 +8,7 @@ Consider a type used as an intermediate in generic function signatures:
 
 ```typescript
 // Type with defaults
-type CapabilityContext<
+type ExtensionContext<
 	TTableDefinitionMap extends TableDefinitionMap = TableDefinitionMap,
 	TKvSchema extends KvSchema = KvSchema,
 > = {
@@ -17,12 +17,12 @@ type CapabilityContext<
 };
 ```
 
-When a capability function uses this type, it's easy to forget the second generic:
+When an extension function uses this type, it's easy to forget the second generic:
 
 ```typescript
 // Bug: TKvSchema defaults to KvSchema, breaking type inference chain
 export const sqlite = async <TTableDefinitionMap extends TableDefinitionMap>(
-  context: CapabilityContext<TTableDefinitionMap>,  // Missing TKvSchema!
+  context: ExtensionContext<TTableDefinitionMap>,  // Missing TKvSchema!
   config: SqliteConfig,
 ) => { ... }
 ```
@@ -39,12 +39,12 @@ A "pass-through type" is one that:
 
 ```typescript
 // Pass-through: always inside another generic function
-function capability<TSchema, TKv>(
-  context: CapabilityContext<TSchema, TKv>  // Pass-through usage
+function extension<TSchema, TKv>(
+  context: ExtensionContext<TSchema, TKv>  // Pass-through usage
 ) { ... }
 
 // NOT pass-through: used standalone with concrete types
-const ctx: CapabilityContext<MySchema, MyKv> = ...;  // Direct usage
+const ctx: ExtensionContext<MySchema, MyKv> = ...;  // Direct usage
 ```
 
 ## The Solution: Remove Defaults from Pass-Through Types
@@ -53,7 +53,7 @@ For types that should always receive their generics from an outer scope, remove 
 
 ```typescript
 // No defaults - forces explicit type parameters
-type CapabilityContext<
+type ExtensionContext<
 	TTableDefinitionMap extends TableDefinitionMap,
 	TKvSchema extends KvSchema,
 > = {
@@ -65,9 +65,9 @@ type CapabilityContext<
 Now the buggy code fails to compile:
 
 ```typescript
-// Error: Generic type 'CapabilityContext' requires 2 type argument(s)
+// Error: Generic type 'ExtensionContext' requires 2 type argument(s)
 export const sqlite = async <TTableDefinitionMap extends TableDefinitionMap>(
-  context: CapabilityContext<TTableDefinitionMap>,  // Compile error!
+  context: ExtensionContext<TTableDefinitionMap>,  // Compile error!
   config: SqliteConfig,
 ) => { ... }
 ```
@@ -80,7 +80,7 @@ export const sqlite = async <
   TTableDefinitionMap extends TableDefinitionMap,
   TKvSchema extends KvSchema,
 >(
-  context: CapabilityContext<TTableDefinitionMap, TKvSchema>,
+  context: ExtensionContext<TTableDefinitionMap, TKvSchema>,
   config: SqliteConfig,
 ) => { ... }
 ```
@@ -109,9 +109,9 @@ Remove default generic parameters when:
 2. **Type chain must be preserved**: The generic represents specific schema/config that shouldn't be lost
 3. **Accidental omission is a bug**: Forgetting the generic parameter indicates a real error
 
-## Real Example: Capability System
+## Real Example: Extension System
 
-In a capability system where contexts flow workspace schemas to capability functions:
+In an extension system where contexts flow workspace schemas to extension functions:
 
 ```typescript
 // Workspace defines specific schemas
@@ -120,17 +120,15 @@ const workspace = defineWorkspace({
 	kv: { theme: text() },
 });
 
-// Capability receives context with those schemas
-workspace.create({
-	capabilities: {
-		// The capability MUST receive the full schema types
-		// Defaults would silently lose type information
-		sqlite: (ctx) => sqlite(ctx, config),
-	},
+// Extension receives context with those schemas
+createWorkspace(workspace).withExtensions({
+	// The extension MUST receive the full schema types
+	// Defaults would silently lose type information
+	sqlite: (ctx) => sqlite(ctx, config),
 });
 ```
 
-Without defaults on `CapabilityContext`, TypeScript ensures every capability properly declares and passes through both `TTableDefinitionMap` and `TKvSchema`.
+Without defaults on `ExtensionContext`, TypeScript ensures every extension properly declares and passes through both `TTableDefinitionMap` and `TKvSchema`.
 
 ## Summary
 

@@ -6,7 +6,7 @@
 	import * as DropdownMenu from '@epicenter/ui/dropdown-menu';
 	import { Button } from '@epicenter/ui/button';
 	import { Badge } from '@epicenter/ui/badge';
-	import { isNullableFieldSchema, type FieldSchema } from '@epicenter/hq';
+	import { isNullableField, type Field } from '@epicenter/hq/dynamic';
 	import PlusIcon from '@lucide/svelte/icons/plus';
 	import EllipsisIcon from '@lucide/svelte/icons/ellipsis';
 	import TrashIcon from '@lucide/svelte/icons/trash-2';
@@ -19,23 +19,28 @@
 
 	const tableId = $derived(page.params.tableId);
 
-	const definition = $derived(data.client?.getDefinition());
+	// Definition comes from the layout loader
+	const definition = $derived(data.definition);
 
 	const tableEntry = $derived.by(() => {
 		if (!tableId || !definition?.tables) return undefined;
-		return definition.tables[tableId];
+		// tables is an array now - find by id
+		return definition.tables.find((t) => t.id === tableId);
 	});
 
 	const tableFields = $derived(tableEntry?.fields);
 	const tableName = $derived(tableEntry?.name ?? tableId);
 
+	// Fields is now an array - map to [id, field] pairs for backwards compat with template
 	const columns = $derived(
-		tableFields ? (Object.entries(tableFields) as [string, FieldSchema][]) : [],
+		tableFields ? (tableFields.map((f) => [f.id, f]) as [string, Field][]) : [],
 	);
 
 	// Get actual table data from the YJS-backed client
 	const tableHelper = $derived(
-		tableId && data.client?.tables ? data.client.tables[tableId] : undefined,
+		tableId && data.client?.tables
+			? data.client.tables.get(tableId)
+			: undefined,
 	);
 
 	const rows = $derived.by(() => {
@@ -59,7 +64,7 @@
 				</Empty.Description>
 			</Empty.Header>
 			<Empty.Content>
-				<Button variant="outline" href="/workspaces/{data.client.id}">
+				<Button variant="outline" href="/workspaces/{data.definition.id}">
 					Back to workspace
 				</Button>
 			</Empty.Content>
@@ -193,7 +198,7 @@
 						</Table.Header>
 						<Table.Body>
 							{#each columns as [columnName, schema] (columnName)}
-								{@const isNullable = isNullableFieldSchema(schema)}
+								{@const isNullable = isNullableField(schema)}
 								{@const hasDefault = 'default' in schema}
 								<Table.Row>
 									<Table.Cell class="font-mono text-sm">{columnName}</Table.Cell

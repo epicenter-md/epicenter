@@ -78,15 +78,27 @@ console.log(
 	tablesB.set('posts', postsB);
 
 	console.log('Before sync:');
-	console.log('  Doc A tables.posts:', tablesA.get('posts')?.toJSON());
-	console.log('  Doc B tables.posts:', tablesB.get('posts')?.toJSON());
+	console.log(
+		'  Doc A tables.posts:',
+		(tablesA.get('posts') as Y.Map<unknown>)?.toJSON(),
+	);
+	console.log(
+		'  Doc B tables.posts:',
+		(tablesB.get('posts') as Y.Map<unknown>)?.toJSON(),
+	);
 
 	// Sync
 	syncDocs(docA, docB);
 
 	console.log('\nAfter sync:');
-	console.log('  Doc A tables.posts:', tablesA.get('posts')?.toJSON());
-	console.log('  Doc B tables.posts:', tablesB.get('posts')?.toJSON());
+	console.log(
+		'  Doc A tables.posts:',
+		(tablesA.get('posts') as Y.Map<unknown>)?.toJSON(),
+	);
+	console.log(
+		'  Doc B tables.posts:',
+		(tablesB.get('posts') as Y.Map<unknown>)?.toJSON(),
+	);
 
 	// Check what survived
 	const postsAfterSync = tablesA.get('posts') as Y.Map<unknown>;
@@ -188,15 +200,27 @@ console.log(
 	}
 
 	console.log('\nBefore sync:');
-	console.log('  Doc A posts:', tablesA.get('posts')?.toJSON());
-	console.log('  Doc B posts:', tablesB.get('posts')?.toJSON());
+	console.log(
+		'  Doc A posts:',
+		(tablesA.get('posts') as Y.Map<unknown>)?.toJSON(),
+	);
+	console.log(
+		'  Doc B posts:',
+		(tablesB.get('posts') as Y.Map<unknown>)?.toJSON(),
+	);
 
 	// Sync
 	syncDocs(docA, docB);
 
 	console.log('\nAfter sync:');
-	console.log('  Doc A posts:', tablesA.get('posts')?.toJSON());
-	console.log('  Doc B posts:', tablesB.get('posts')?.toJSON());
+	console.log(
+		'  Doc A posts:',
+		(tablesA.get('posts') as Y.Map<unknown>)?.toJSON(),
+	);
+	console.log(
+		'  Doc B posts:',
+		(tablesB.get('posts') as Y.Map<unknown>)?.toJSON(),
+	);
 
 	const winner = (tablesA.get('posts') as Y.Map<unknown>)?.get('createdBy');
 	console.log(

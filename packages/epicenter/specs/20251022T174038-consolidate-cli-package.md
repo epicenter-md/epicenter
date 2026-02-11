@@ -3,6 +3,7 @@
 ## Problem
 
 Currently we have two packages:
+
 - `@epicenter/hq` - Main library with bin entry at `src/cli/bin.ts`
 - `@epicenter/cli` - Separate CLI package that re-exports `@epicenter/hq/cli`
 
@@ -11,6 +12,7 @@ This creates duplication and maintenance overhead. Both packages have nearly ide
 ## Goal
 
 Consolidate into a single `@epicenter/hq` package that serves three purposes:
+
 1. TypeScript library for importing Epicenter functionality
 2. CLI tool (replacing `@epicenter/cli`)
 3. Project template support (for `bun create epicenter`)
@@ -45,35 +47,39 @@ Consolidate into a single `@epicenter/hq` package that serves three purposes:
 ### 1. Keep @epicenter/hq package.json bin entry
 
 The current `bin` entry is already correct:
+
 ```json
 {
-  "bin": {
-    "epicenter": "./src/cli/bin.ts"
-  }
+	"bin": {
+		"epicenter": "./src/cli/bin.ts"
+	}
 }
 ```
 
 ### 2. Update examples
 
 Change examples from direct file paths to package reference:
+
 - `packages/epicenter/examples/basic-workspace/package.json`
 - `packages/epicenter/examples/e2e-tests/package.json`
 
 From:
+
 ```json
 {
-  "scripts": {
-    "cli": "bun ../../packages/epicenter/src/cli/bin.ts"
-  }
+	"scripts": {
+		"cli": "bun ../../packages/epicenter/src/cli/bin.ts"
+	}
 }
 ```
 
 To:
+
 ```json
 {
-  "scripts": {
-    "cli": "epicenter"
-  }
+	"scripts": {
+		"cli": "epicenter"
+	}
 }
 ```
 
@@ -84,6 +90,7 @@ Remove the entire `@epicenter/cli` package directory.
 ### 4. Update documentation
 
 Update any references from `@epicenter/cli` to `@epicenter/hq` in:
+
 - README files
 - Documentation
 - Examples
@@ -93,31 +100,36 @@ Update any references from `@epicenter/cli` to `@epicenter/hq` in:
 After consolidation, users can:
 
 **Install globally:**
+
 ```bash
 bun install -g @epicenter/hq
 epicenter
 ```
 
 **Use with bunx (no installation):**
+
 ```bash
 bunx @epicenter/hq
 bunx @epicenter/hq pages createPage --title "My Post"
 ```
 
 **Local project installation:**
+
 ```bash
 bun add -D @epicenter/hq
 bunx epicenter
 ```
 
 **Library usage (unchanged):**
+
 ```typescript
-import { defineEpicenter } from '@epicenter/hq';
+import { defineEpicenter } from '@epicenter/hq/dynamic';
 ```
 
 ### Future: bun create support
 
 To add `bun create epicenter` support later, we would:
+
 1. Create `packages/epicenter/templates/` directory with project templates
 2. Add `bun-create` section to package.json
 3. Provide scaffolding for new Epicenter projects
@@ -129,7 +141,7 @@ This is out of scope for this consolidation but the structure enables it.
 1. Install `@epicenter/hq` in a test project
 2. Run `bunx epicenter --help`
 3. Run `epicenter` in example projects
-4. Verify library imports work: `import { defineEpicenter } from '@epicenter/hq'`
+4. Verify library imports work: `import { defineEpicenter } from '@epicenter/hq/dynamic'`
 5. Verify CLI generation works: `import { createCLI } from '@epicenter/hq/cli'`
 
 ## Review
@@ -157,24 +169,28 @@ Successfully consolidated `@epicenter/cli` into `@epicenter/hq`. The package now
 ### Package Structure
 
 `@epicenter/hq` now handles:
-- **Library usage**: `import { defineEpicenter } from '@epicenter/hq'`
+
+- **Library usage**: `import { defineEpicenter } from '@epicenter/hq/dynamic'`
 - **CLI tool**: `bunx @epicenter/hq` or global install
 - **Programmatic CLI**: `import { createCLI } from '@epicenter/hq/cli'`
 
 ### Usage Patterns
 
 **Global installation:**
+
 ```bash
 bun install -g @epicenter/hq
 epicenter
 ```
 
 **Direct execution:**
+
 ```bash
 bunx @epicenter/hq
 ```
 
 **Local CLI file (examples):**
+
 ```bash
 bun cli.ts blog createPost --title "Hello"
 ```

@@ -14,7 +14,7 @@ It's structured in three layers. Start at the top, drop down when you need contr
 ├────────────────────────────────────────────────┤
 │  defineWorkspace() → workspace.create()        │ ← Most apps
 │  ↓ Result: WorkspaceClient                     │
-│  { tables, kv, capabilities, ydoc }            │
+│  { tables, kv, extensions, ydoc }               │
 ├────────────────────────────────────────────────┤
 │  createTables(ydoc, {...})                     │ ← Need control
 │  createKv(ydoc, {...})                         │
@@ -47,26 +47,27 @@ For most apps, just call `workspace.create()` and you're done. It's synchronous,
 
 ## If You Need More
 
-### Capabilities
+### Extensions
 
 When you need extensibility (persistence, sync, databases) without baking it into the core:
 
 ```typescript
-const client = workspace.create({
-	persistence: ({ ydoc }) => {
-		const provider = new IndexeddbPersistence(ydoc.guid, ydoc);
-		return defineExports({
-			provider,
-			destroy: () => provider.destroy(),
-		});
-	},
-});
+const client = createWorkspace({ id: 'my-app', tables: { posts } })
+	.withExtensions({
+		persistence: ({ ydoc }) => {
+			const provider = new IndexeddbPersistence(ydoc.guid, ydoc);
+			return defineExports({
+				provider,
+				destroy: () => provider.destroy(),
+			});
+		},
+	});
 
-await client.capabilities.persistence.whenSynced;
+await client.extensions.persistence.whenSynced;
 client.tables.posts.set({ id: '1', title: 'Hello' });
 ```
 
-Capabilities get typed access to ydoc, tables, and kv. They must return a Lifecycle object (whenSynced and destroy). Use `defineExports()` from `core/lifecycle.ts` to easily comply.
+Extensions get typed access to ydoc, tables, and kv. They must return a Lifecycle object (whenSynced and destroy). Use `defineExports()` from `shared/lifecycle.ts` to easily comply.
 
 ### Lower-Level APIs
 

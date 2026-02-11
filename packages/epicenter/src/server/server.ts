@@ -1,7 +1,6 @@
 import { openapi } from '@elysiajs/openapi';
 import { Elysia } from 'elysia';
-import type { Actions } from '../core/actions';
-import type { WorkspaceDoc } from '../core/docs/workspace-doc';
+import type { AnyWorkspaceClient } from '../static/types';
 import { collectActionPaths, createActionsRouter } from './actions';
 import { createSyncPlugin } from './sync';
 import { createTablesPlugin } from './tables';
@@ -10,10 +9,7 @@ export const DEFAULT_PORT = 3913;
 
 export type ServerOptions = {
 	port?: number;
-	actions?: Actions;
 };
-
-type AnyWorkspaceDoc = WorkspaceDoc<any, any, any>;
 
 /**
  * Create an HTTP server that exposes workspace clients as REST APIs and WebSocket sync.
@@ -27,18 +23,11 @@ type AnyWorkspaceDoc = WorkspaceDoc<any, any, any>;
  *
  * @example
  * ```typescript
- * import { defineWorkspace, createClient, id, text, table } from '@epicenter/hq';
+ * import { createWorkspace } from '@epicenter/hq/static';
  *
- * const definition = defineWorkspace({
- *   tables: { posts: table({ name: 'Posts', fields: { id: id(), title: text() } }) },
- *   kv: {},
- * });
+ * const workspace = createWorkspace(definition).withExtensions({ ... });
  *
- * const client = createClient('blog', { epoch })
- *   .withDefinition(definition)
- *   .withExtensions({ ... });
- *
- * const server = createServer(client, { port: 3913 });
+ * const server = createServer(workspace, { port: 3913 });
  * server.start();
  *
  * // Access endpoints:
@@ -48,15 +37,15 @@ type AnyWorkspaceDoc = WorkspaceDoc<any, any, any>;
  * ```
  */
 function createServer(
-	client: AnyWorkspaceDoc,
+	client: AnyWorkspaceClient,
 	options?: ServerOptions,
 ): ReturnType<typeof createServerInternal>;
 function createServer(
-	clients: AnyWorkspaceDoc[],
+	clients: AnyWorkspaceClient[],
 	options?: ServerOptions,
 ): ReturnType<typeof createServerInternal>;
 function createServer(
-	clientOrClients: AnyWorkspaceDoc | AnyWorkspaceDoc[],
+	clientOrClients: AnyWorkspaceClient | AnyWorkspaceClient[],
 	options?: ServerOptions,
 ): ReturnType<typeof createServerInternal> {
 	const clients = Array.isArray(clientOrClients)
@@ -66,18 +55,19 @@ function createServer(
 }
 
 function createServerInternal(
-	clients: AnyWorkspaceDoc[],
+	clients: AnyWorkspaceClient[],
 	options?: ServerOptions,
 ) {
-	const workspaces: Record<string, AnyWorkspaceDoc> = {};
+	const workspaces: Record<string, AnyWorkspaceClient> = {};
 
 	for (const client of clients) {
-		workspaces[client.workspaceId] = client;
+		workspaces[client.id] = client;
 	}
 
-	const actionPaths = options?.actions
-		? collectActionPaths(options.actions)
-		: [];
+	// Read actions from the first client
+	const firstClient = clients[0];
+	const actions = firstClient?.actions;
+	const actionPaths = actions ? collectActionPaths(actions) : [];
 
 	const baseApp = new Elysia()
 		.use(
@@ -99,8 +89,8 @@ function createServerInternal(
 		)
 		.use(createTablesPlugin(workspaces));
 
-	const appWithActions = options?.actions
-		? baseApp.use(createActionsRouter({ actions: options.actions }))
+	const appWithActions = actions
+		? baseApp.use(createActionsRouter({ client: firstClient, actions }))
 		: baseApp;
 
 	const app = appWithActions.get('/', () => ({
@@ -135,7 +125,7 @@ function createServerInternal(
 			console.log('Available Workspaces:\n');
 			for (const [workspaceId, client] of Object.entries(workspaces)) {
 				console.log(`  ${workspaceId}`);
-				for (const tableName of Object.keys(client.tables.definitions)) {
+				for (const tableName of Object.keys(client.definitions.tables)) {
 					console.log(`    tables/${tableName}`);
 				}
 				console.log(`    sync (WebSocket)`);

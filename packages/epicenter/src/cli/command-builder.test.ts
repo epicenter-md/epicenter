@@ -1,11 +1,11 @@
 import { describe, expect, test } from 'bun:test';
 import { type } from 'arktype';
-import { type Actions, defineMutation, defineQuery } from '../core/actions';
+import { defineMutation, defineQuery } from '../shared/actions';
 import { buildActionCommands } from './command-builder';
 
 describe('buildActionCommands', () => {
 	test('builds command from simple action without input', () => {
-		const actions: Actions = {
+		const actions = {
 			getAll: defineQuery({
 				handler: () => [],
 			}),
@@ -21,7 +21,7 @@ describe('buildActionCommands', () => {
 	});
 
 	test('builds command from action with input schema', () => {
-		const actions: Actions = {
+		const actions = {
 			create: defineMutation({
 				input: type({ title: 'string' }),
 				handler: ({ title }) => ({ id: '1', title }),
@@ -37,7 +37,7 @@ describe('buildActionCommands', () => {
 	});
 
 	test('builds commands from nested actions', () => {
-		const actions: Actions = {
+		const actions = {
 			posts: {
 				getAll: defineQuery({
 					handler: () => [],
@@ -59,7 +59,7 @@ describe('buildActionCommands', () => {
 	});
 
 	test('builds commands from deeply nested actions', () => {
-		const actions: Actions = {
+		const actions = {
 			api: {
 				v1: {
 					posts: {
@@ -78,7 +78,7 @@ describe('buildActionCommands', () => {
 	});
 
 	test('uses description from action when provided', () => {
-		const actions: Actions = {
+		const actions = {
 			sync: defineMutation({
 				description: 'Sync data from external source',
 				handler: () => {},
@@ -91,7 +91,7 @@ describe('buildActionCommands', () => {
 	});
 
 	test('builder contains yargs options for input schema', () => {
-		const actions: Actions = {
+		const actions = {
 			create: defineMutation({
 				input: type({
 					title: 'string',
@@ -114,7 +114,7 @@ describe('buildActionCommands', () => {
 	});
 
 	test('handles mixed flat and nested actions', () => {
-		const actions: Actions = {
+		const actions = {
 			ping: defineQuery({
 				handler: () => 'pong',
 			}),

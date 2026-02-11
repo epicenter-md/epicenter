@@ -18,8 +18,8 @@ The key difference from running scripts:
 ## Quick Start
 
 ```typescript
-import { defineWorkspace, createServer, id, text } from '@epicenter/hq';
-import { sqliteProvider } from '@epicenter/hq';
+import { defineWorkspace, createServer, id, text } from '@epicenter/hq/dynamic';
+import { sqlite } from '@epicenter/hq/extensions';
 
 // 1. Define workspace
 const blogWorkspace = defineWorkspace({
@@ -30,9 +30,7 @@ const blogWorkspace = defineWorkspace({
 });
 
 // 2. Create client
-const blogClient = await blogWorkspace
-	.withProviders({ sqlite: sqliteProvider })
-	.create();
+const blogClient = await blogWorkspace.withProviders({ sqlite }).create();
 
 // 3. Create and start server
 const server = createServer(blogClient, { port: 3913 });
@@ -93,12 +91,8 @@ await server.destroy(); // Stop server and cleanup all clients
 ## Multiple Workspaces
 
 ```typescript
-const blogClient = await blogWorkspace
-	.withProviders({ sqlite: sqliteProvider })
-	.create();
-const authClient = await authWorkspace
-	.withProviders({ sqlite: sqliteProvider })
-	.create();
+const blogClient = await blogWorkspace.withProviders({ sqlite }).create();
+const authClient = await authWorkspace.withProviders({ sqlite }).create();
 
 // Pass array of clients
 const server = createServer([blogClient, authClient], { port: 3913 });
@@ -127,9 +121,7 @@ Routes are namespaced by workspace ID:
 
 ```typescript
 {
-	await using client = await blogWorkspace
-		.withProviders({ sqlite: sqliteProvider })
-		.create();
+	await using client = await blogWorkspace.withProviders({ sqlite }).create();
 
 	client.tables.posts.upsert({ id: '1', title: 'Hello' });
 	// Client disposed when block exits
@@ -143,9 +135,7 @@ Routes are namespaced by workspace ID:
 ### Use Server (HTTP Wrapper)
 
 ```typescript
-const client = await blogWorkspace
-	.withProviders({ sqlite: sqliteProvider })
-	.create();
+const client = await blogWorkspace.withProviders({ sqlite }).create();
 
 const server = createServer(client, { port: 3913 });
 server.start();
@@ -161,7 +151,7 @@ Use the HTTP API instead of creating another client:
 ```typescript
 // DON'T: Create another client (storage conflict!)
 {
-	await using client = await blogWorkspace.withProviders({ ... }).create();
+	await using client = await blogWorkspace.withProviders({ sqlite }).create();
 	client.tables.posts.upsert({ ... });
 }
 
