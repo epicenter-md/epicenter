@@ -22,6 +22,7 @@
 	import { TRANSCRIPTION_SERVICE_ID_TO_LABEL } from '$lib/services/isomorphic/transcription/registry';
 	import { IS_MACOS, IS_LINUX, PLATFORM_TYPE } from '$lib/constants/platform';
 	import { Button } from '@epicenter/ui/button';
+	import { Input } from '@epicenter/ui/input';
 
 	const { data } = $props();
 
@@ -310,6 +311,29 @@
 						settings.updateKey('recording.navigator.deviceId', selected)
 				}
 			/>
+
+			<Field.Field>
+				<Field.Label for="vad-pause-buffer">VAD Pause Buffer (ms)</Field.Label>
+				<Input
+					id="vad-pause-buffer"
+					type="number"
+					min="0"
+					max="10000"
+					step="100"
+					autocomplete="off"
+					placeholder="1400 (default)"
+					bind:value={
+						() => settings.value['recording.vad.pauseMs'],
+						(v) => settings.updateKey('recording.vad.pauseMs', v)
+					}
+				/>
+				<Field.Description>
+					Override how long VAD waits during silence before ending a segment.
+					Lower values may cause premature cutoffs and unstable behavior whereas
+					higher values will delay the end of a segment. Values between 1000ms
+					and 3000ms are recommended.
+				</Field.Description>
+			</Field.Field>
 		{/if}
 
 		{#if settings.value['recording.mode'] === 'manual' || settings.value['recording.mode'] === 'vad'}
