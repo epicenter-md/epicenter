@@ -16,18 +16,29 @@ import { IS_WINDOWS } from '$lib/constants/platform';
 import type { Settings } from '$lib/settings';
 import {
 	DEEPGRAM_TRANSCRIPTION_MODELS,
+	MAX_FILE_SIZE_MB as DEEPGRAM_MAX_FILE_SIZE_MB,
 	type DeepgramModel,
 } from './cloud/deepgram';
 import {
 	ELEVENLABS_TRANSCRIPTION_MODELS,
+	MAX_FILE_SIZE_MB as ELEVENLABS_MAX_FILE_SIZE_MB,
 	type ElevenLabsModel,
 } from './cloud/elevenlabs';
-import { GROQ_MODELS, type GroqModel } from './cloud/groq';
 import {
+	GROQ_MODELS,
+	MAX_FILE_SIZE_MB as GROQ_MAX_FILE_SIZE_MB,
+	type GroqModel,
+} from './cloud/groq';
+import {
+	MAX_FILE_SIZE_MB as MISTRAL_MAX_FILE_SIZE_MB,
 	MISTRAL_TRANSCRIPTION_MODELS,
 	type MistralModel,
 } from './cloud/mistral';
-import { OPENAI_TRANSCRIPTION_MODELS, type OpenAIModel } from './cloud/openai';
+import {
+	MAX_FILE_SIZE_MB as OPENAI_MAX_FILE_SIZE_MB,
+	OPENAI_TRANSCRIPTION_MODELS,
+	type OpenAIModel,
+} from './cloud/openai';
 
 type TranscriptionModel =
 	| OpenAIModel
@@ -57,6 +68,7 @@ type BaseTranscriptionService = {
 	icon: string; // SVG string
 	invertInDarkMode: boolean; // Whether to invert the icon in dark mode
 	description?: string;
+	maxFileSizeMB: number; // Maximum file size in megabytes
 };
 
 type CloudTranscriptionService = BaseTranscriptionService & {
@@ -96,6 +108,7 @@ export const TRANSCRIPTION_SERVICES = [
 					description: 'Fast local transcription with no internet required',
 					modelPathField: 'transcription.whispercpp.modelPath',
 					location: 'local',
+					maxFileSizeMB: 500,
 				} as const,
 			]),
 	{
@@ -106,6 +119,7 @@ export const TRANSCRIPTION_SERVICES = [
 		description: 'NVIDIA NeMo model for fast local transcription',
 		modelPathField: 'transcription.parakeet.modelPath',
 		location: 'local',
+		maxFileSizeMB: 500,
 	},
 	// Moonshine is not available on Windows due to MSVC runtime library conflicts
 	// between tokenizers/esaxx-rs (static CRT) and ort (dynamic CRT)
@@ -120,6 +134,7 @@ export const TRANSCRIPTION_SERVICES = [
 					description: 'Efficient ONNX model by UsefulSensors',
 					modelPathField: 'transcription.moonshine.modelPath',
 					location: 'local',
+					maxFileSizeMB: 500,
 				} as const,
 			]),
 	// Cloud services (API-based)
@@ -134,6 +149,7 @@ export const TRANSCRIPTION_SERVICES = [
 		modelSettingKey: 'transcription.groq.model',
 		apiKeyField: 'apiKeys.groq',
 		location: 'cloud',
+		maxFileSizeMB: GROQ_MAX_FILE_SIZE_MB,
 	},
 	{
 		id: 'OpenAI',
@@ -146,6 +162,7 @@ export const TRANSCRIPTION_SERVICES = [
 		modelSettingKey: 'transcription.openai.model',
 		apiKeyField: 'apiKeys.openai',
 		location: 'cloud',
+		maxFileSizeMB: OPENAI_MAX_FILE_SIZE_MB,
 	},
 	{
 		id: 'ElevenLabs',
@@ -158,6 +175,7 @@ export const TRANSCRIPTION_SERVICES = [
 		modelSettingKey: 'transcription.elevenlabs.model',
 		apiKeyField: 'apiKeys.elevenlabs',
 		location: 'cloud',
+		maxFileSizeMB: ELEVENLABS_MAX_FILE_SIZE_MB,
 	},
 	{
 		id: 'Deepgram',
@@ -170,6 +188,7 @@ export const TRANSCRIPTION_SERVICES = [
 		modelSettingKey: 'transcription.deepgram.model',
 		apiKeyField: 'apiKeys.deepgram',
 		location: 'cloud',
+		maxFileSizeMB: DEEPGRAM_MAX_FILE_SIZE_MB,
 	},
 	{
 		id: 'Mistral',
@@ -182,6 +201,7 @@ export const TRANSCRIPTION_SERVICES = [
 		modelSettingKey: 'transcription.mistral.model',
 		apiKeyField: 'apiKeys.mistral',
 		location: 'cloud',
+		maxFileSizeMB: MISTRAL_MAX_FILE_SIZE_MB,
 	},
 	// Self-hosted services
 	{
@@ -192,6 +212,7 @@ export const TRANSCRIPTION_SERVICES = [
 		description: 'Self-hosted transcription server',
 		serverUrlField: 'transcription.speaches.baseUrl',
 		location: 'self-hosted',
+		maxFileSizeMB: 100,
 	},
 	// {
 	// 	id: 'owhisper',
@@ -298,3 +319,17 @@ export const TRANSCRIPTION_SERVICE_CAPABILITIES = {
 		supportsLanguage: true,
 	},
 } as const satisfies Record<TranscriptionServiceId, ServiceCapabilities>;
+
+/**
+ * Get the maximum file size in bytes for a transcription service.
+ * Returns the limit for the specified service, or undefined if service not found.
+ *
+ * @param serviceId - The transcription service ID
+ * @returns Maximum file size in bytes, or undefined
+ */
+export function getServiceMaxFileSize(
+	serviceId: TranscriptionServiceId,
+): number | undefined {
+	const service = TRANSCRIPTION_SERVICES.find((s) => s.id === serviceId);
+	return service ? service.maxFileSizeMB * 1024 * 1024 : undefined;
+}

@@ -16,6 +16,10 @@
 	} from '$lib/constants/audio';
 	import { getShortcutDisplayLabel } from '$lib/constants/keyboard';
 	import { rpc } from '$lib/query';
+	import {
+		getServiceMaxFileSize,
+		TRANSCRIPTION_SERVICE_ID_TO_LABEL,
+	} from '$lib/services/isomorphic/transcription/registry';
 	import { vadRecorder } from '$lib/stores/vad-recorder.svelte';
 	import { desktopServices, services } from '$lib/services';
 	import { settings } from '$lib/stores/settings.svelte';
@@ -50,6 +54,12 @@
 	}));
 
 	const blobUrl = $derived(audioPlaybackUrlQuery.data);
+
+	const currentServiceMaxFileSize = $derived(
+		getServiceMaxFileSize(
+			settings.value['transcription.selectedTranscriptionService'],
+		) ?? 25 * MEGABYTE, // fallback to 25MB if service not found
+	);
 
 	const availableModes = $derived(
 		RECORDING_MODE_OPTIONS.filter((mode) => {
@@ -272,16 +282,28 @@
 			<FileDropZone
 				accept="{ACCEPT_AUDIO}, {ACCEPT_VIDEO}"
 				maxFiles={10}
-				maxFileSize={25 * MEGABYTE}
+				maxFileSize={currentServiceMaxFileSize}
 				onUpload={(files) => {
 					if (files.length > 0) {
 						rpc.commands.uploadRecordings({ files });
 					}
 				}}
 				onFileRejected={({ file, reason }) => {
+					let description = `${file.name}: ${reason}`;
+
+					// Add helpful context for file size rejections
+					if (reason === 'Maximum file size exceeded') {
+						const serviceName =
+							TRANSCRIPTION_SERVICE_ID_TO_LABEL[
+								settings.value['transcription.selectedTranscriptionService']
+							];
+						const limitMB = (currentServiceMaxFileSize / MEGABYTE).toFixed(0);
+						description = `${file.name} exceeds the ${limitMB}MB limit for ${serviceName}. Try a different service or compress the file.`;
+					}
+
 					rpc.notify.error({
 						title: '❌ File rejected',
-						description: `${file.name}: ${reason}`,
+						description,
 					});
 				}}
 				class="h-32 sm:h-36 lg:h-40 xl:h-44 w-full"

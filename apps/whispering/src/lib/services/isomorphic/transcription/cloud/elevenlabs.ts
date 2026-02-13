@@ -26,6 +26,8 @@ export const ELEVENLABS_TRANSCRIPTION_MODELS = [
 
 export type ElevenLabsModel = (typeof ELEVENLABS_TRANSCRIPTION_MODELS)[number];
 
+export const MAX_FILE_SIZE_MB = 1000 as const; // ElevenLabs allows files up to 1GB
+
 export const ElevenlabsTranscriptionServiceLive = {
 	transcribe: async (
 		audioBlob: Blob,
@@ -57,7 +59,6 @@ export const ElevenlabsTranscriptionServiceLive = {
 
 			// Check file size
 			const blobSizeInMb = audioBlob.size / (1024 * 1024);
-			const MAX_FILE_SIZE_MB = 1000; // ElevenLabs allows files up to 1GB
 
 			if (blobSizeInMb > MAX_FILE_SIZE_MB) {
 				return WhisperingErr({

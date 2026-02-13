@@ -23,7 +23,7 @@ export const GROQ_MODELS = [
 
 export type GroqModel = (typeof GROQ_MODELS)[number];
 
-const MAX_FILE_SIZE_MB = 25 as const;
+export const MAX_FILE_SIZE_MB = 25 as const;
 
 export const GroqTranscriptionServiceLive = {
 	async transcribe(

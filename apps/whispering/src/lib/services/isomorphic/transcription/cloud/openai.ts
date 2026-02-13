@@ -34,7 +34,7 @@ export const OPENAI_TRANSCRIPTION_MODELS = [
 
 export type OpenAIModel = (typeof OPENAI_TRANSCRIPTION_MODELS)[number];
 
-const MAX_FILE_SIZE_MB = 25 as const;
+export const MAX_FILE_SIZE_MB = 25 as const;
 
 export const OpenaiTranscriptionServiceLive = {
 	async transcribe(

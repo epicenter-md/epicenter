@@ -42,7 +42,7 @@ export const DEEPGRAM_TRANSCRIPTION_MODELS = [
 
 export type DeepgramModel = (typeof DEEPGRAM_TRANSCRIPTION_MODELS)[number];
 
-const MAX_FILE_SIZE_MB = 500 as const; // Deepgram supports larger files
+export const MAX_FILE_SIZE_MB = 500 as const; // Deepgram supports larger files
 
 // Schema for Deepgram API response
 const DeepgramResponse = type({
