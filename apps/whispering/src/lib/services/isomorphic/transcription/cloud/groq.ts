@@ -1,5 +1,6 @@
 import { fetch as tauriFetch } from '@tauri-apps/plugin-http';
 import Groq from 'groq-sdk';
+import { extractErrorMessage } from 'wellcrafted/error';
 import { Err, Ok, type Result, tryAsync, trySync } from 'wellcrafted/result';
 import { WhisperingErr, type WhisperingError } from '$lib/result';
 import { getAudioExtension } from '$lib/services/isomorphic/transcription/utils';
@@ -127,13 +128,15 @@ export const GroqTranscriptionServiceLive = {
 						: undefined,
 				}),
 			catch: (error) => {
-				// Check if it's NOT a Groq API error
-				if (!(error instanceof Groq.APIError)) {
-					// This is an unexpected error type
-					throw error;
+				if (error instanceof Groq.APIError) {
+					return Err(error);
 				}
-				// Return the error directly
-				return Err(error);
+				// Non-APIError (e.g. network error, tauriFetch failure) - wrap it
+				return WhisperingErr({
+					title: 'Transcription Request Failed',
+					description: extractErrorMessage(error),
+					action: { type: 'more-details', error },
+				});
 			},
 		});
 
