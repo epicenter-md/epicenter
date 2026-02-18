@@ -17,6 +17,67 @@ import {
 } from '$routes/(app)/_layout-utils/register-commands';
 
 /**
+ * Syncs settings to the portable/data directory settings file via Tauri commands.
+ * This ensures settings travel with the app when running from a USB drive.
+ * Runs asynchronously and silently ignores errors to avoid blocking the UI.
+ */
+function syncSettingsToFile(settingsValue: Settings) {
+	if (!window.__TAURI_INTERNALS__) return;
+	import('@tauri-apps/api/core').then(({ invoke }) => {
+		invoke('write_portable_settings', {
+			settingsJson: JSON.stringify(settingsValue),
+		}).catch((err) => {
+			console.warn('Failed to sync settings to file:', err);
+		});
+	});
+}
+
+/**
+ * Loads settings from the portable/data directory settings file on startup.
+ * If a settings file exists and localStorage is empty, seeds localStorage
+ * so the app picks up portable settings from the USB drive.
+ */
+function initPortableSettings() {
+	if (!window.__TAURI_INTERNALS__) return;
+
+	const SETTINGS_KEY = 'whispering-settings';
+	const existingSettings = window.localStorage.getItem(SETTINGS_KEY);
+
+	// If localStorage already has settings, sync them to file and return
+	if (existingSettings) {
+		import('@tauri-apps/api/core').then(({ invoke }) => {
+			invoke('write_portable_settings', {
+				settingsJson: existingSettings,
+			}).catch((err) => {
+				console.warn('Failed to write existing settings to file:', err);
+			});
+		});
+		return;
+	}
+
+	// No localStorage settings - try to load from file (portable mode)
+	import('@tauri-apps/api/core').then(({ invoke }) => {
+		invoke<string | null>('read_portable_settings').then((fileSettings) => {
+			if (fileSettings) {
+				window.localStorage.setItem(SETTINGS_KEY, fileSettings);
+				// Trigger a storage event so createPersistedState picks it up
+				window.dispatchEvent(
+					new StorageEvent('storage', {
+						key: SETTINGS_KEY,
+						newValue: fileSettings,
+					}),
+				);
+			}
+		}).catch((err) => {
+			console.warn('Failed to read portable settings:', err);
+		});
+	});
+}
+
+// Initialize portable settings sync before creating the persisted state
+initPortableSettings();
+
+/**
  * Encapsulated settings object with controlled access.
  * Provides read-only access to settings values and methods for controlled mutations.
  */
@@ -50,6 +111,10 @@ export const settings = (() => {
 
 			// Fallback - should never reach here
 			return getDefaultSettings();
+		},
+		onUpdateSuccess: (newValue) => {
+			// Sync settings to the data directory file whenever settings change
+			syncSettingsToFile(newValue as Settings);
 		},
 		onUpdateError: (err) => {
 			rpc.notify.error({

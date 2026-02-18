@@ -1,13 +1,36 @@
 /**
  * Centralized path constants for the Whispering desktop app.
  *
- * All paths are absolute and resolve relative to the platform-specific app data directory:
+ * In portable mode (when a `portable` or `portable.txt` file exists next to the
+ * executable), all paths resolve relative to `{exe_dir}/data/`.
+ *
+ * In normal mode, paths resolve relative to the platform-specific app data directory:
  * - macOS: `~/Library/Application Support/com.bradenwong.whispering/`
  * - Windows: `%APPDATA%/com.bradenwong.whispering/`
  * - Linux: `~/.config/com.bradenwong.whispering/`
  *
  * Methods are async because they use Tauri's path APIs which require dynamic imports.
  */
+
+/** Cached base directory to avoid repeated Tauri IPC calls */
+let _baseDirCache: string | null = null;
+
+/**
+ * Returns the base data directory for the application.
+ *
+ * Uses the Rust `get_data_dir` command which automatically handles portable mode
+ * detection. The result is cached after the first call.
+ *
+ * @returns Absolute path to the base data directory
+ */
+async function getBaseDir(): Promise<string> {
+	if (_baseDirCache) return _baseDirCache;
+
+	const { invoke } = await import('@tauri-apps/api/core');
+	_baseDirCache = await invoke<string>('get_data_dir');
+	return _baseDirCache;
+}
+
 export const PATHS = {
 	/**
 	 * Paths to local ML model directories.
@@ -18,20 +41,20 @@ export const PATHS = {
 	MODELS: {
 		/** Directory for Whisper C++ model files (e.g., ggml-base.bin, ggml-large-v3.bin) */
 		async WHISPER() {
-			const { appDataDir, join } = await import('@tauri-apps/api/path');
-			const dir = await appDataDir();
+			const { join } = await import('@tauri-apps/api/path');
+			const dir = await getBaseDir();
 			return await join(dir, 'models', 'whisper');
 		},
 		/** Directory for Parakeet model files */
 		async PARAKEET() {
-			const { appDataDir, join } = await import('@tauri-apps/api/path');
-			const dir = await appDataDir();
+			const { join } = await import('@tauri-apps/api/path');
+			const dir = await getBaseDir();
 			return await join(dir, 'models', 'parakeet');
 		},
 		/** Directory for Moonshine model files */
 		async MOONSHINE() {
-			const { appDataDir, join } = await import('@tauri-apps/api/path');
-			const dir = await appDataDir();
+			const { join } = await import('@tauri-apps/api/path');
+			const dir = await getBaseDir();
 			return await join(dir, 'models', 'moonshine');
 		},
 	},
@@ -94,8 +117,8 @@ export const PATHS = {
 		 * ```
 		 */
 		async RECORDINGS() {
-			const { appDataDir, join } = await import('@tauri-apps/api/path');
-			const dir = await appDataDir();
+			const { join } = await import('@tauri-apps/api/path');
+			const dir = await getBaseDir();
 			return await join(dir, 'recordings');
 		},
 
@@ -119,8 +142,8 @@ export const PATHS = {
 		 * ```
 		 */
 		async RECORDING_MD(id: string) {
-			const { appDataDir, join } = await import('@tauri-apps/api/path');
-			const dir = await appDataDir();
+			const { join } = await import('@tauri-apps/api/path');
+			const dir = await getBaseDir();
 			return await join(dir, 'recordings', `${id}.md`);
 		},
 
@@ -142,8 +165,8 @@ export const PATHS = {
 		 * ```
 		 */
 		async RECORDING_AUDIO(id: string, extension: string) {
-			const { appDataDir, join } = await import('@tauri-apps/api/path');
-			const dir = await appDataDir();
+			const { join } = await import('@tauri-apps/api/path');
+			const dir = await getBaseDir();
 			return await join(dir, 'recordings', `${id}.${extension}`);
 		},
 
@@ -178,8 +201,8 @@ export const PATHS = {
 		 * ```
 		 */
 		async RECORDING_FILE(filename: string) {
-			const { appDataDir, join } = await import('@tauri-apps/api/path');
-			const dir = await appDataDir();
+			const { join } = await import('@tauri-apps/api/path');
+			const dir = await getBaseDir();
 			return await join(dir, 'recordings', filename);
 		},
 
@@ -212,8 +235,8 @@ export const PATHS = {
 		 * ```
 		 */
 		async TRANSFORMATIONS() {
-			const { appDataDir, join } = await import('@tauri-apps/api/path');
-			const dir = await appDataDir();
+			const { join } = await import('@tauri-apps/api/path');
+			const dir = await getBaseDir();
 			return await join(dir, 'transformations');
 		},
 
@@ -235,8 +258,8 @@ export const PATHS = {
 		 * ```
 		 */
 		async TRANSFORMATION_MD(id: string) {
-			const { appDataDir, join } = await import('@tauri-apps/api/path');
-			const dir = await appDataDir();
+			const { join } = await import('@tauri-apps/api/path');
+			const dir = await getBaseDir();
 			return await join(dir, 'transformations', `${id}.md`);
 		},
 
@@ -269,8 +292,8 @@ export const PATHS = {
 		 * ```
 		 */
 		async TRANSFORMATION_RUNS() {
-			const { appDataDir, join } = await import('@tauri-apps/api/path');
-			const dir = await appDataDir();
+			const { join } = await import('@tauri-apps/api/path');
+			const dir = await getBaseDir();
 			return await join(dir, 'transformation-runs');
 		},
 
@@ -293,9 +316,17 @@ export const PATHS = {
 		 * ```
 		 */
 		async TRANSFORMATION_RUN_MD(id: string) {
-			const { appDataDir, join } = await import('@tauri-apps/api/path');
-			const dir = await appDataDir();
+			const { join } = await import('@tauri-apps/api/path');
+			const dir = await getBaseDir();
 			return await join(dir, 'transformation-runs', `${id}.md`);
 		},
+	},
+
+	/**
+	 * Returns the base data directory.
+	 * Useful for getting the root directory for temp files, settings, etc.
+	 */
+	async BASE_DIR() {
+		return await getBaseDir();
 	},
 };

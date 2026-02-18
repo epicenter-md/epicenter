@@ -26,6 +26,9 @@ use command::{execute_command, spawn_command};
 pub mod markdown_reader;
 use markdown_reader::{bulk_delete_files, count_markdown_files, read_markdown_files};
 
+pub mod portable;
+use portable::{get_data_dir, is_portable_mode, read_portable_settings, write_portable_settings};
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 #[tokio::main]
 pub async fn run() {
@@ -171,6 +174,11 @@ pub async fn run() {
         read_markdown_files,
         count_markdown_files,
         bulk_delete_files,
+        // Portable mode
+        get_data_dir,
+        is_portable_mode,
+        read_portable_settings,
+        write_portable_settings,
     ]);
 
     let app = builder
