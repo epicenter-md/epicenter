@@ -1,8 +1,9 @@
-import { appDataDir, join } from '@tauri-apps/api/path';
+import { join } from '@tauri-apps/api/path';
 import { exists, remove, writeFile } from '@tauri-apps/plugin-fs';
 import { nanoid } from 'nanoid/non-secure';
 import { createTaggedError, extractErrorMessage } from 'wellcrafted/error';
 import { Err, Ok, tryAsync } from 'wellcrafted/result';
+import { PATHS } from '$lib/constants/paths';
 import { asShellCommand, CommandServiceLive } from './command';
 import { FsServiceLive } from './fs';
 import { getFileExtensionFromFfmpegOptions } from './recorder/ffmpeg';
@@ -50,7 +51,7 @@ export const FfmpegServiceLive = {
 			try: async () => {
 				// Generate unique filenames for temporary files
 				const sessionId = nanoid();
-				const tempDir = await appDataDir();
+				const tempDir = await PATHS.BASE_DIR();
 				const inputPath = await join(
 					tempDir,
 					`compression_input_${sessionId}.wav`,

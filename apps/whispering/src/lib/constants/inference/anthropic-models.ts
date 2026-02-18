@@ -1,18 +1,26 @@
 /**
  * Anthropic inference model constants
- * @see https://docs.anthropic.com/en/docs/about-claude/models/overview#model-aliases
+ * @see https://platform.claude.com/docs/en/about-claude/models/overview
  */
 
 export const ANTHROPIC_INFERENCE_MODELS = [
-	// Claude 4.5 models (latest generation - recommended)
-	'claude-sonnet-4-5-20250929',
-	'claude-sonnet-4-5', // alias for latest Sonnet 4.5
-	'claude-haiku-4-5-20251001',
-	'claude-haiku-4-5', // alias for latest Haiku 4.5
-	'claude-opus-4-1-20250805',
-	'claude-opus-4-1', // alias for latest Opus 4.1
+	// Claude 4.6 models (latest generation - recommended)
+	'claude-opus-4-6', // Latest and most intelligent model
+	'claude-sonnet-4-6', // Best speed/intelligence balance
 
-	// Claude 4 models (legacy but still available)
+	// Claude 4.5 models
+	'claude-haiku-4-5-20251001',
+	'claude-haiku-4-5', // alias - fastest model
+	'claude-sonnet-4-5-20250929',
+	'claude-sonnet-4-5', // alias
+	'claude-opus-4-5-20251101',
+	'claude-opus-4-5', // alias
+
+	// Claude 4.1 models (legacy)
+	'claude-opus-4-1-20250805',
+	'claude-opus-4-1', // alias
+
+	// Claude 4 models (legacy)
 	'claude-sonnet-4-20250514',
 	'claude-sonnet-4-0', // alias
 	'claude-opus-4-20250514',

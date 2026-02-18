@@ -5,19 +5,22 @@
 
 export const GROQ_INFERENCE_MODELS = [
 	// Production models
-	'gemma2-9b-it',
-	'meta-llama/llama-guard-4-12b',
 	'llama-3.3-70b-versatile',
 	'llama-3.1-8b-instant',
+	'meta-llama/llama-guard-4-12b',
+	'openai/gpt-oss-120b',
+	'openai/gpt-oss-20b',
+
 	// Preview models
-	'deepseek-r1-distill-llama-70b',
 	'meta-llama/llama-4-maverick-17b-128e-instruct',
 	'meta-llama/llama-4-scout-17b-16e-instruct',
-	'meta-llama/llama-prompt-guard-2-22m',
-	'meta-llama/llama-prompt-guard-2-86m',
-	'mistral-saba-24bqwen-qwq-32b',
+	'moonshotai/kimi-k2-instruct-0905',
+	'qwen/qwen-3-32b',
+
+	// Legacy (kept for backward compatibility with saved transformations)
+	'gemma2-9b-it',
+	'deepseek-r1-distill-llama-70b',
 	'qwen-qwq-32b',
-	'qwen/qwen3-32b',
 ] as const;
 
 export const GROQ_INFERENCE_MODEL_OPTIONS = GROQ_INFERENCE_MODELS.map(

@@ -115,9 +115,9 @@ export function generateDefaultTransformationStep(): TransformationStep {
 		id: nanoid(),
 		type: 'prompt_transform',
 		'prompt_transform.inference.provider': 'Google',
-		'prompt_transform.inference.provider.OpenAI.model': 'gpt-4o',
+		'prompt_transform.inference.provider.OpenAI.model': 'gpt-5.2',
 		'prompt_transform.inference.provider.Groq.model': 'llama-3.3-70b-versatile',
-		'prompt_transform.inference.provider.Anthropic.model': 'claude-sonnet-4-0',
+		'prompt_transform.inference.provider.Anthropic.model': 'claude-sonnet-4-6',
 		'prompt_transform.inference.provider.Google.model': 'gemini-2.5-flash',
 		'prompt_transform.inference.provider.OpenRouter.model':
 			'mistralai/mixtral-8x7b',

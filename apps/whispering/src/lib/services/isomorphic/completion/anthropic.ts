@@ -18,7 +18,7 @@ export function createAnthropicCompletionService(): CompletionService {
 						model,
 						system: systemPrompt,
 						messages: [{ role: 'user', content: userPrompt }],
-						max_tokens: 1024,
+						max_tokens: 16384,
 					}),
 				catch: (error) => {
 					// Check if it's NOT an Anthropic API error
