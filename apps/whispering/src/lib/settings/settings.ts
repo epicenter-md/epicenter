@@ -227,7 +227,7 @@ export const Settings = type({
 	'apiEndpoints.groq': "string = ''",
 
 	// Linux Wayland: use ydotool for key simulation instead of enigo
-	'system.useYdotool': 'boolean = true',
+	'system.useYdotool': 'boolean = false',
 
 	// Analytics settings
 	'analytics.enabled': 'boolean = true',
