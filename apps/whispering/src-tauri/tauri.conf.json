@@ -75,7 +75,10 @@
 			"assetProtocol": {
 				"enable": true,
 				"scope": [
-					"**"
+					"**",
+					"$APPLOCALDATA/**",
+					"$APPDATA/**",
+					"$HOME/.local/share/com.bradenwong.whispering/**"
 				]
 			}
 		}

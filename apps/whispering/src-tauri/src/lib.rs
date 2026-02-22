@@ -208,7 +208,7 @@ use tauri_plugin_clipboard_manager::ClipboardExt;
 /// This approach is faster than typing character-by-character and preserves
 /// the user's clipboard, making it ideal for inserting transcribed text.
 #[tauri::command]
-async fn write_text(app: tauri::AppHandle, text: String) -> Result<(), String> {
+async fn write_text(app: tauri::AppHandle, text: String, use_ydotool: Option<bool>) -> Result<(), String> {
     // 1. Save current clipboard content
     let original_clipboard = app.clipboard().read_text().ok();
 
@@ -220,32 +220,38 @@ async fn write_text(app: tauri::AppHandle, text: String) -> Result<(), String> {
     // Small delay to ensure clipboard is updated
     tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
 
-    // 3. Simulate paste operation using virtual key codes (layout-independent)
-    let mut enigo = Enigo::new(&Settings::default()).map_err(|e| e.to_string())?;
-
-    // Use virtual key codes for V to work with any keyboard layout
-    #[cfg(target_os = "macos")]
-    let (modifier, v_key) = (Key::Meta, Key::Other(9)); // Virtual key code for V on macOS
-    #[cfg(target_os = "windows")]
-    let (modifier, v_key) = (Key::Control, Key::Other(0x56)); // VK_V on Windows
+    // 3. Simulate paste operation (Ctrl+V / Cmd+V)
     #[cfg(target_os = "linux")]
-    let (modifier, v_key) = (Key::Control, Key::Unicode('v')); // Fallback for Linux
+    if use_ydotool.unwrap_or(false) {
+        let result = std::process::Command::new("ydotool")
+            .args(["key", "ctrl+v"])
+            .status();
+        match result {
+            Ok(status) if status.success() => {}
+            Ok(status) => tracing::warn!("ydotool key exited with: {}", status),
+            Err(e) => tracing::warn!("ydotool not available: {}", e),
+        }
+    } else {
+        let mut enigo = Enigo::new(&Settings::default()).map_err(|e| e.to_string())?;
+        let (modifier, v_key) = (Key::Control, Key::Unicode('v'));
+        enigo.key(modifier, Direction::Press).map_err(|e| format!("Failed to press modifier key: {}", e))?;
+        enigo.key(v_key, Direction::Press).map_err(|e| format!("Failed to press V key: {}", e))?;
+        enigo.key(v_key, Direction::Release).map_err(|e| format!("Failed to release V key: {}", e))?;
+        enigo.key(modifier, Direction::Release).map_err(|e| format!("Failed to release modifier key: {}", e))?;
+    }
 
-    // Press modifier + V
-    enigo
-        .key(modifier, Direction::Press)
-        .map_err(|e| format!("Failed to press modifier key: {}", e))?;
-    enigo
-        .key(v_key, Direction::Press)
-        .map_err(|e| format!("Failed to press V key: {}", e))?;
-
-    // Release V + modifier (in reverse order for proper cleanup)
-    enigo
-        .key(v_key, Direction::Release)
-        .map_err(|e| format!("Failed to release V key: {}", e))?;
-    enigo
-        .key(modifier, Direction::Release)
-        .map_err(|e| format!("Failed to release modifier key: {}", e))?;
+    #[cfg(not(target_os = "linux"))]
+    {
+        let mut enigo = Enigo::new(&Settings::default()).map_err(|e| e.to_string())?;
+        #[cfg(target_os = "macos")]
+        let (modifier, v_key) = (Key::Meta, Key::Other(9));
+        #[cfg(target_os = "windows")]
+        let (modifier, v_key) = (Key::Control, Key::Other(0x56));
+        enigo.key(modifier, Direction::Press).map_err(|e| format!("Failed to press modifier key: {}", e))?;
+        enigo.key(v_key, Direction::Press).map_err(|e| format!("Failed to press V key: {}", e))?;
+        enigo.key(v_key, Direction::Release).map_err(|e| format!("Failed to release V key: {}", e))?;
+        enigo.key(modifier, Direction::Release).map_err(|e| format!("Failed to release modifier key: {}", e))?;
+    }
 
     // Small delay to ensure paste completes
     tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
@@ -265,13 +271,21 @@ async fn write_text(app: tauri::AppHandle, text: String) -> Result<(), String> {
 /// This is useful for automatically submitting text in chat applications
 /// after transcription has been pasted.
 #[tauri::command]
-async fn simulate_enter_keystroke() -> Result<(), String> {
-    let mut enigo = Enigo::new(&Settings::default()).map_err(|e| e.to_string())?;
-
-    // Use Direction::Click for a combined press+release action
-    enigo
-        .key(Key::Return, Direction::Click)
-        .map_err(|e| format!("Failed to simulate Enter key: {}", e))?;
+async fn simulate_enter_keystroke(use_ydotool: Option<bool>) -> Result<(), String> {
+    #[cfg(target_os = "linux")]
+    if use_ydotool.unwrap_or(false) {
+        let ydotool_result = std::process::Command::new("ydotool")
+            .args(["key", "Return"])
+            .status();
+        if ydotool_result.is_ok() && ydotool_result.unwrap().success() {
+            return Ok(());
+        }
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let mut enigo = Enigo::new(&Settings::default()).map_err(|e| e.to_string())?;
+        enigo.key(Key::Return, Direction::Click).map_err(|e| format!("Failed to simulate Enter key: {}", e))?;
+    }
 
     Ok(())
 }

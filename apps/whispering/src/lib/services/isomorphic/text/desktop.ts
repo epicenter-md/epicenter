@@ -5,7 +5,9 @@ import { tryAsync } from 'wellcrafted/result';
 import type { TextService } from './types';
 import { TextServiceErr } from './types';
 
-export function createTextServiceDesktop(): TextService {
+export function createTextServiceDesktop(deps: {
+	getUseYdotool: () => boolean;
+}): TextService {
 	return {
 		readFromClipboard: () =>
 			tryAsync({
@@ -30,7 +32,11 @@ export function createTextServiceDesktop(): TextService {
 
 		writeToCursor: async (text) =>
 			tryAsync({
-				try: () => invoke<void>('write_text', { text }),
+				try: () =>
+					invoke<void>('write_text', {
+						text,
+						useYdotool: deps.getUseYdotool(),
+					}),
 				catch: (error) =>
 					TextServiceErr({
 						message: `There was an error writing the text. Please try pasting manually with Cmd/Ctrl+V. ${extractErrorMessage(error)}`,
@@ -39,7 +45,10 @@ export function createTextServiceDesktop(): TextService {
 
 		simulateEnterKeystroke: () =>
 			tryAsync({
-				try: () => invoke<void>('simulate_enter_keystroke'),
+				try: () =>
+					invoke<void>('simulate_enter_keystroke', {
+						useYdotool: deps.getUseYdotool(),
+					}),
 				catch: (error) =>
 					TextServiceErr({
 						message: `There was an error simulating the Enter keystroke. Please press Enter manually. ${extractErrorMessage(error)}`,
