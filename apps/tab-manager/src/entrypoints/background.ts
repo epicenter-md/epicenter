@@ -28,8 +28,8 @@ import { indexeddbPersistence } from '@epicenter/hq/extensions/sync/web';
 import { Ok, tryAsync } from 'wellcrafted/result';
 import { defineBackground } from 'wxt/utils/define-background';
 import type { Transaction } from 'yjs';
+import { type ChatRequest, createChatEngine } from '$lib/ai/engine';
 import { startCommandConsumer } from '$lib/commands/consumer';
-import { createChatEngine, type ChatRequest } from '$lib/ai/engine';
 import {
 	generateDefaultDeviceName,
 	getBrowserName,

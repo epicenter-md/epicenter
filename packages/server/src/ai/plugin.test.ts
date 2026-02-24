@@ -86,9 +86,7 @@ describe('createAIPlugin', () => {
 
 	test('route is reachable through Elysia prefix mount', async () => {
 		const app = new Elysia().use(
-			new Elysia({ prefix: '/ai' }).use(
-				createAIPlugin(),
-			),
+			new Elysia({ prefix: '/ai' }).use(createAIPlugin()),
 		);
 
 		const response = await app.handle(
