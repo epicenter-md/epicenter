@@ -12,6 +12,7 @@
 	import RefreshCwIcon from '@lucide/svelte/icons/refresh-cw';
 	import { Spinner } from '@epicenter/ui/spinner';
 	import { Badge } from '@epicenter/ui/badge';
+	import { createDeviceChangeListener } from '$lib/services/isomorphic/device-change.svelte';
 
 	const combobox = useCombobox();
 
@@ -50,6 +51,19 @@
 		...rpc.recorder.enumerateDevices.options,
 		enabled: combobox.open,
 	}));
+
+	const deviceChangeListener = createDeviceChangeListener();
+
+	// Auto-refresh device list when devices change (web only - desktop uses polling)
+	// Note: TanStack Query already fetches when enabled becomes true, so no manual refetch needed
+	$effect(() => {
+		if (combobox.open) {
+			deviceChangeListener.subscribe();
+		}
+		return () => {
+			deviceChangeListener.unsubscribe();
+		};
+	});
 
 	$effect(() => {
 		if (getDevicesQuery.isError) {
@@ -159,7 +173,12 @@
 											: 'opacity-0',
 									)}
 								/>
-								<span class="flex-1 text-sm">{device.label}</span>
+								<span class="flex-1 text-sm">
+									{device.label}
+									{#if device.id === 'default'}
+										<Badge variant="secondary" class="ml-2 text-xs">Auto</Badge>
+									{/if}
+								</span>
 							</Command.Item>
 						{/each}
 					{/if}

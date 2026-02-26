@@ -136,13 +136,13 @@ export const Settings = type({
 	 */
 	'recording.cpal.deviceId': type('string | null')
 		.pipe(deviceIdTransform)
-		.default(null),
+		.default('default'),
 	'recording.navigator.deviceId': type('string | null')
 		.pipe(deviceIdTransform)
-		.default(null),
+		.default('default'),
 	'recording.ffmpeg.deviceId': type('string | null')
 		.pipe(deviceIdTransform)
-		.default(null),
+		.default('default'),
 
 	// Browser recording settings (used when browser method is selected)
 	'recording.navigator.bitrateKbps': type

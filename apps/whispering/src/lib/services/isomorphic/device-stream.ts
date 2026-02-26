@@ -61,10 +61,18 @@ export async function enumerateDevices(): Promise<
 				(device) => device.kind === 'audioinput',
 			);
 			// On Web: Return Device objects with both ID and label
-			return audioInputDevices.map((device) => ({
+			const deviceList = audioInputDevices.map((device) => ({
 				id: asDeviceIdentifier(device.deviceId),
 				label: device.label,
 			}));
+
+			// Prepend "System Default" as the first option
+			deviceList.unshift({
+				id: asDeviceIdentifier('default'),
+				label: 'System Default',
+			});
+
+			return deviceList;
 		},
 		catch: (error) =>
 			DeviceStreamServiceErr({
@@ -89,11 +97,17 @@ async function getStreamForDeviceIdentifier(
 	return tryAsync({
 		try: async () => {
 			// On Web: deviceIdentifier IS the deviceId, use it directly
+			// Special case: if deviceIdentifier is "default", omit deviceId to use system default
+			const audioConstraints =
+				deviceIdentifier === 'default'
+					? WHISPER_RECOMMENDED_MEDIA_TRACK_CONSTRAINTS
+					: {
+							...WHISPER_RECOMMENDED_MEDIA_TRACK_CONSTRAINTS,
+							deviceId: { exact: deviceIdentifier },
+						};
+
 			const stream = await navigator.mediaDevices.getUserMedia({
-				audio: {
-					...WHISPER_RECOMMENDED_MEDIA_TRACK_CONSTRAINTS,
-					deviceId: { exact: deviceIdentifier },
-				},
+				audio: audioConstraints,
 			});
 			return stream;
 		},

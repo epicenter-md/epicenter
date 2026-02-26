@@ -57,11 +57,14 @@ impl RecorderState {
     /// List available recording devices by name
     pub fn enumerate_devices(&self) -> Result<Vec<String>> {
         let host = cpal::default_host();
-        let devices = host
+        let mut devices: Vec<String> = host
             .input_devices()
             .map_err(|e| format!("Failed to get input devices: {}", e))?
             .filter_map(|device| device.name().ok())
             .collect();
+
+        // Prepend "default" as the first option (uses OS system default)
+        devices.insert(0, "default".to_string());
 
         Ok(devices)
     }

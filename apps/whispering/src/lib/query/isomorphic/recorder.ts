@@ -37,8 +37,21 @@ export const recorder = {
 					serviceError: error,
 				});
 			}
-			return Ok(data);
+			// Transform "default" device ID to user-friendly "System Default" label
+			const devicesWithLabels = data.map((device) => {
+				if (device.id === 'default') {
+					return {
+						...device,
+						label: 'System Default',
+					};
+				}
+				return device;
+			});
+			return Ok(devicesWithLabels);
 		},
+		// Poll for device changes on desktop (no native devicechange event in Tauri)
+		// On web, we use the devicechange event listener in components
+		refetchInterval: window.__TAURI_INTERNALS__ ? 3000 : false,
 	}),
 
 	// Query that returns the recorder state (IDLE or RECORDING)
