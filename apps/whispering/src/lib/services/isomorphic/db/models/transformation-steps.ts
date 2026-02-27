@@ -13,7 +13,7 @@ import {
  * The current version of the TransformationStep schema.
  * Increment this when adding new fields or making breaking changes.
  */
-const CURRENT_TRANSFORMATION_STEP_VERSION = 2 as const;
+const CURRENT_TRANSFORMATION_STEP_VERSION = 3 as const;
 
 // ============================================================================
 // VERSION 1 (FROZEN)
@@ -56,7 +56,7 @@ export const TransformationStepV1 = type({
 export type TransformationStepV1 = typeof TransformationStepV1.infer;
 
 // ============================================================================
-// VERSION 2 (CURRENT)
+// VERSION 2 (FROZEN)
 // ============================================================================
 
 /**
@@ -82,6 +82,20 @@ export const TransformationStepV2 = TransformationStepV1.merge({
 export type TransformationStepV2 = typeof TransformationStepV2.infer;
 
 // ============================================================================
+// VERSION 3 (CURRENT)
+// ============================================================================
+
+/**
+ * V3: Added 'simple_punctuation' type support.
+ * Structure is identical to V2, just bumped version number to track schema evolution.
+ */
+export const TransformationStepV3 = TransformationStepV2.merge({
+	version: '3',
+});
+
+export type TransformationStepV3 = typeof TransformationStepV3.infer;
+
+// ============================================================================
 // MIGRATING VALIDATOR
 // ============================================================================
 
@@ -89,21 +103,27 @@ export type TransformationStepV2 = typeof TransformationStepV2.infer;
  * TransformationStep validator with automatic migration.
  * Accepts V1 or V2 and always outputs V2.
  */
-export const TransformationStep = TransformationStepV1.or(
-	TransformationStepV2,
-).pipe((step): TransformationStepV2 => {
+export const TransformationStep = TransformationStepV1.or(TransformationStepV2)
+	.or(TransformationStepV3)
+	.pipe((step): TransformationStepV3 => {
 	if (step.version === 1) {
 		return {
 			...step,
-			version: 2,
+			version: 3,
 			'prompt_transform.inference.provider.Custom.model': '',
 			'prompt_transform.inference.provider.Custom.baseUrl': '',
+		};
+	}
+	if (step.version === 2) {
+		return {
+			...step,
+			version: 3,
 		};
 	}
 	return step;
 });
 
-export type TransformationStep = TransformationStepV2;
+export type TransformationStep = TransformationStepV3;
 
 // ============================================================================
 // FACTORY FUNCTION
