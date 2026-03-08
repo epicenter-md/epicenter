@@ -75,7 +75,15 @@ export function createPlaySoundServiceDesktop(): PlaySoundService {
 			}));
 			const osList = await invoke<{ id: string; name: string; path: string }[]>(
 				'list_system_sounds',
-			).catch(() => [] as { id: string; name: string; path: string }[]);
+			).catch((err) => {
+				console.warn('[sound] list_system_sounds failed:', err);
+				return [] as { id: string; name: string; path: string }[];
+			});
+			console.info(
+				'[sound] listAvailableSounds: %d OS sounds (8 bundled + %d system)',
+				8 + osList.length,
+				osList.length,
+			);
 			const osSounds = osList.map((s) => ({
 				id: s.id as SoundId,
 				name: s.name,

@@ -4,7 +4,12 @@
 	import * as Select from '@epicenter/ui/select';
 	import { Switch } from '@epicenter/ui/switch';
 	import PlayIcon from '@lucide/svelte/icons/play';
-	import type { WhisperingSoundNames } from '$lib/constants/sounds';
+	import {
+		WHISPERING_SOUND_NAMES,
+		type WhisperingSoundNames,
+	} from '$lib/constants/sounds';
+	import { getAllBundledSounds } from '$lib/services/sound';
+	import type { AvailableSound } from '$lib/services/sound';
 	import { rpc } from '$lib/query';
 	import { settings } from '$lib/state/settings.svelte';
 	import { createQuery } from '@tanstack/svelte-query';
@@ -13,9 +18,24 @@
 	const availableSoundsQuery = createQuery(() => rpc.sound.listAvailableSounds.options);
 	const previewMutation = createMutation(() => rpc.sound.previewSound.options);
 
-	const availableSounds = $derived(
-		availableSoundsQuery.data?.data ?? [],
-	);
+	/** All sounds for dropdowns: from query (bundled + OS on desktop), or fallback to all 8 bundled. */
+	const allAvailableSounds = $derived.by(() => {
+		// WellCrafted unwraps Result<T,E> so query.data is T (the array), not the Result
+		const fromQuery = availableSoundsQuery.data;
+		if (fromQuery && fromQuery.length > 0) return fromQuery;
+		return getAllBundledSounds().map((s) => ({
+			id: s.id,
+			name: s.name,
+			source: 'bundled' as const,
+			eventTypes: [...WHISPERING_SOUND_NAMES],
+			description: s.description,
+		}));
+	});
+
+	/** Every event shows the same full list so you can assign any sound to any event. */
+	function soundsForEvent(_eventName: WhisperingSoundNames): AvailableSound[] {
+		return allAvailableSounds;
+	}
 
 	const eventLabels: Record<WhisperingSoundNames, string> = {
 		'manual-start': 'Play sound when starting manual recording',
@@ -40,10 +60,6 @@
 		transcriptionComplete: 'sound.transcriptionComplete',
 		transformationComplete: 'sound.transformationComplete',
 	} as const satisfies Record<WhisperingSoundNames, WorkspaceSettingKey>;
-
-	function soundsForEvent(eventName: WhisperingSoundNames) {
-		return availableSounds.filter((s) => s.eventTypes.includes(eventName));
-	}
 
 	function selectedSoundLabel(eventName: WhisperingSoundNames): string {
 		const key = `sound.selectedSound.${eventName}` as any;
@@ -93,42 +109,40 @@
 						<Field.Label for="sound.playOn.{eventName}" class="flex-1 min-w-0">
 							{eventLabels[eventName as WhisperingSoundNames]}
 						</Field.Label>
-						{#if availableSoundsQuery.isSuccess && sounds.length > 0}
-							<div class="flex items-center gap-1 shrink-0">
-								<Select.Root
-									type="single"
-									bind:value={() => settings.get(`sound.selectedSound.${eventName}` as any) as string,
-										(v) => v != null && updateSelectedSound(eventName as WhisperingSoundNames, v)}
-								>
-									<Select.Trigger id="sound-select-{eventName}" class="w-40">
-										{selectedSoundLabel(eventName as WhisperingSoundNames)}
-									</Select.Trigger>
-									<Select.Content>
-										{#each sounds as sound (sound.id)}
-											<Select.Item
-												value={sound.id}
-												label={sound.source === 'os' ? `${sound.name} (system)` : sound.name}
-											>
-												{sound.name}
-												{#if sound.source === 'os'}
-													<span class="text-muted-foreground text-xs"> (system)</span>
-												{/if}
-											</Select.Item>
-										{/each}
-									</Select.Content>
-								</Select.Root>
-								<Button
-									variant="ghost"
-									size="icon"
-									class="shrink-0"
-									onclick={() => previewSound(settings.get(`sound.selectedSound.${eventName}` as any) as string)}
-									disabled={previewMutation.isPending}
-									tooltip="Preview sound"
-								>
-									<PlayIcon class="size-4" />
-								</Button>
-							</div>
-						{/if}
+						<div class="flex items-center gap-1 shrink-0">
+							<Select.Root
+								type="single"
+								bind:value={() => settings.get(`sound.selectedSound.${eventName}` as any) as string,
+									(v) => v != null && updateSelectedSound(eventName as WhisperingSoundNames, v)}
+							>
+								<Select.Trigger id="sound-select-{eventName}" class="w-40">
+									{selectedSoundLabel(eventName as WhisperingSoundNames)}
+								</Select.Trigger>
+								<Select.Content>
+									{#each sounds as sound (sound.id)}
+										<Select.Item
+											value={sound.id}
+											label={sound.source === 'os' ? `${sound.name} (system)` : sound.name}
+										>
+											{sound.name}
+											{#if sound.source === 'os'}
+												<span class="text-muted-foreground text-xs"> (system)</span>
+											{/if}
+										</Select.Item>
+									{/each}
+								</Select.Content>
+							</Select.Root>
+							<Button
+								variant="ghost"
+								size="icon"
+								class="shrink-0"
+								onclick={() => previewSound(settings.get(`sound.selectedSound.${eventName}` as any) as string)}
+								disabled={previewMutation.isPending}
+								tooltip="Preview sound"
+							>
+								<PlayIcon class="size-4" />
+							</Button>
+						</div>
 					</Field.Field>
 				{/each}
 			</Field.Group>
@@ -153,42 +167,40 @@
 						<Field.Label for="sound.playOn.{eventName}" class="flex-1 min-w-0">
 							{eventLabels[eventName as WhisperingSoundNames]}
 						</Field.Label>
-						{#if availableSoundsQuery.isSuccess && sounds.length > 0}
-							<div class="flex items-center gap-1 shrink-0">
-								<Select.Root
-									type="single"
-									bind:value={() => settings.get(`sound.selectedSound.${eventName}` as any) as string,
-										(v) => v != null && updateSelectedSound(eventName as WhisperingSoundNames, v)}
-								>
-									<Select.Trigger id="sound-select-{eventName}" class="w-40">
-										{selectedSoundLabel(eventName as WhisperingSoundNames)}
-									</Select.Trigger>
-									<Select.Content>
-										{#each sounds as sound (sound.id)}
-											<Select.Item
-												value={sound.id}
-												label={sound.source === 'os' ? `${sound.name} (system)` : sound.name}
-											>
-												{sound.name}
-												{#if sound.source === 'os'}
-													<span class="text-muted-foreground text-xs"> (system)</span>
-												{/if}
-											</Select.Item>
-										{/each}
-									</Select.Content>
-								</Select.Root>
-								<Button
-									variant="ghost"
-									size="icon"
-									class="shrink-0"
-									onclick={() => previewSound(settings.get(`sound.selectedSound.${eventName}` as any) as string)}
-									disabled={previewMutation.isPending}
-									tooltip="Preview sound"
-								>
-									<PlayIcon class="size-4" />
-								</Button>
-							</div>
-						{/if}
+						<div class="flex items-center gap-1 shrink-0">
+							<Select.Root
+								type="single"
+								bind:value={() => settings.get(`sound.selectedSound.${eventName}` as any) as string,
+									(v) => v != null && updateSelectedSound(eventName as WhisperingSoundNames, v)}
+							>
+								<Select.Trigger id="sound-select-{eventName}" class="w-40">
+									{selectedSoundLabel(eventName as WhisperingSoundNames)}
+								</Select.Trigger>
+								<Select.Content>
+									{#each sounds as sound (sound.id)}
+										<Select.Item
+											value={sound.id}
+											label={sound.source === 'os' ? `${sound.name} (system)` : sound.name}
+										>
+											{sound.name}
+											{#if sound.source === 'os'}
+												<span class="text-muted-foreground text-xs"> (system)</span>
+											{/if}
+										</Select.Item>
+									{/each}
+								</Select.Content>
+							</Select.Root>
+							<Button
+								variant="ghost"
+								size="icon"
+								class="shrink-0"
+								onclick={() => previewSound(settings.get(`sound.selectedSound.${eventName}` as any) as string)}
+								disabled={previewMutation.isPending}
+								tooltip="Preview sound"
+							>
+								<PlayIcon class="size-4" />
+							</Button>
+						</div>
 					</Field.Field>
 				{/each}
 			</Field.Group>
@@ -213,42 +225,42 @@
 						<Field.Label for="play-sound-{eventName}" class="flex-1 min-w-0">
 							{eventLabels[eventName as WhisperingSoundNames]}
 						</Field.Label>
-						{#if availableSoundsQuery.isSuccess && sounds.length > 0}
-							<div class="flex items-center gap-1 shrink-0">
-								<Select.Root
-									type="single"
-									bind:value={() => settings.get(`sound.selectedSound.${eventName}` as any) as string,
-										(v) => v != null && updateSelectedSound(eventName as WhisperingSoundNames, v)}
-								>
-									<Select.Trigger id="sound-select-{eventName}" class="w-40">
-										{selectedSoundLabel(eventName as WhisperingSoundNames)}
-									</Select.Trigger>
-									<Select.Content>
-										{#each sounds as sound (sound.id)}
-											<Select.Item
-												value={sound.id}
-												label={sound.source === 'os' ? `${sound.name} (system)` : sound.name}
-											>
-												{sound.name}
-												{#if sound.source === 'os'}
-													<span class="text-muted-foreground text-xs"> (system)</span>
-												{/if}
-											</Select.Item>
-										{/each}
-									</Select.Content>
-								</Select.Root>
-								<Button
-									variant="ghost"
-									size="icon"
-									class="shrink-0"
-									onclick={() => previewSound(settings.get(`sound.selectedSound.${eventName}` as any) as string)}
-									disabled={previewMutation.isPending}
-									tooltip="Preview sound"
-								>
-									<PlayIcon class="size-4" />
-								</Button>
-							</div>
-						{/if}
+						<div class="flex items-center gap-1 shrink-0">
+							<Select.Root
+								type="single"
+								bind:value={() => settings.get(`sound.selectedSound.${eventName}` as any) as string,
+									(v) => v != null && updateSelectedSound(eventName as WhisperingSoundNames, v)}
+							>
+								<Select.Trigger id="sound-select-{eventName}" class="w-40">
+									{selectedSoundLabel(eventName as WhisperingSoundNames)}
+								</Select.Trigger>
+								<Select.Content>
+									{#each sounds as sound (sound.id)}
+										<Select.Item
+											value={sound.id}
+											label={sound.source === 'os' ? `${sound.name} (system)` : sound.name}
+										>
+											{sound.name}
+											{#if sound.source === 'os'}
+												<span class="text-muted-foreground text-xs"> (system)</span>
+											{/if}
+										</Select.Item>
+									{/each}
+								</Select.Content>
+							</Select.Root>
+							<Button
+								variant="ghost"
+								size="icon"
+								class="shrink-0"
+								onclick={() => previewSound(settings.get(`sound.selectedSound.${eventName}` as any) as string)}
+								disabled={previewMutation.isPending}
+								tooltip="Preview sound"
+							>
+								<PlayIcon class="size-4" />
+							</Button>
+						</div>
+					</Field.Field>
+				{/each}
 					</Field.Field>
 				{/each}
 			</Field.Group>

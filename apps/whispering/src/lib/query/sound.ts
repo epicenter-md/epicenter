@@ -1,11 +1,11 @@
-import { Ok, type Result } from 'wellcrafted/result';
+import { Ok, type Result, tryAsync } from 'wellcrafted/result';
 import type { WhisperingSoundNames } from '$lib/constants/sounds';
 import { defineMutation, defineQuery } from '$lib/query/client';
 import { services } from '$lib/services';
-import type {
-	AvailableSound,
+import {
+	type AvailableSound,
+	type SoundId,
 	SoundError,
-	SoundId,
 } from '$lib/services/sound';
 import { settings } from '$lib/state/settings.svelte';
 
@@ -55,8 +55,12 @@ export const sound = {
 			const urlResult = await services.sound.getSoundUrl(soundId);
 			if (urlResult.error || !urlResult.data) return Ok(undefined);
 			const audio = new Audio(urlResult.data);
-			await audio.play();
-			return Ok(undefined);
+			return tryAsync({
+				try: async () => {
+					await audio.play();
+				},
+				catch: (error) => SoundError.Play({ cause: error }),
+			});
 		},
 	}),
 };
