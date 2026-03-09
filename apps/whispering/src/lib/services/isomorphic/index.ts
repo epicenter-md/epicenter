@@ -1,5 +1,6 @@
 import { AnalyticsServiceLive } from './analytics';
 import * as completions from './completion';
+import { ConfigExportService } from './config-export';
 import { DbServiceLive } from './db';
 import { DownloadServiceLive } from './download';
 import { LocalShortcutManagerLive } from './local-shortcut-manager';
@@ -19,6 +20,7 @@ export const services = {
 	analytics: AnalyticsServiceLive,
 	text: TextServiceLive,
 	completions,
+	configExport: ConfigExportService.create({ db: DbServiceLive }),
 	db: DbServiceLive,
 	download: DownloadServiceLive,
 	localShortcutManager: LocalShortcutManagerLive,

@@ -10,6 +10,7 @@
 	} from '$lib/constants/ui';
 	import { desktopRpc, rpc } from '$lib/query';
 	import { settings } from '$lib/state/settings.svelte';
+	import ImportExportConfig from '$lib/components/settings/ImportExportConfig.svelte';
 
 	const retentionItems = [
 		{ value: 'keep-forever', label: 'Keep All Recordings' },
@@ -276,5 +277,9 @@
 				{/each}
 			</RadioGroup.Root>
 		</Field.Set>
+
+		<Field.Separator />
+
+		<ImportExportConfig />
 	</Field.Group>
 </Field.Set>
