@@ -1,7 +1,8 @@
 import type { KeyboardEventSupportedKey } from '$lib/constants/keyboard';
 import type { PressedKeys } from '$lib/utils/createPressedKeys.svelte';
+import { setRecordingMode } from '$lib/services/isomorphic/local-shortcut-manager';
 
-const CAPTURE_WINDOW_MS = 300; // Time to wait for additional keys in a combination
+const CAPTURE_WINDOW_MS = 600; // Increased from 300ms for complex shortcuts
 
 /**
  * Creates a keyboard shortcut recorder that captures key combinations
@@ -32,7 +33,17 @@ export function createKeyRecorder({
 	// State
 	let isListening = $state(false);
 	const capturedKeys = new Set<KeyboardEventSupportedKey>();
+	let capturedKeysArray = $state<KeyboardEventSupportedKey[]>([]); // For UI preview
 	let captureWindowTimer: NodeJS.Timeout | null = null;
+
+	// Sync array with set for reactive UI
+	$effect(() => {
+		if (isListening) {
+			capturedKeysArray = Array.from(capturedKeys);
+		} else {
+			capturedKeysArray = [];
+		}
+	});
 
 	// Helper: Clear the capture window timer
 	function clearCaptureTimer() {
@@ -48,6 +59,7 @@ export function createKeyRecorder({
 
 		clearCaptureTimer();
 		isListening = false;
+		setRecordingMode(false);
 
 		// Convert Set to Array for registration
 		const combination = Array.from(capturedKeys);
@@ -94,20 +106,26 @@ export function createKeyRecorder({
 		get isListening() {
 			return isListening;
 		},
+		get capturedKeys() {
+			return capturedKeysArray;
+		},
 		start() {
 			isListening = true;
 			capturedKeys.clear();
 			clearCaptureTimer();
+			setRecordingMode(true);
 		},
 		stop() {
 			isListening = false;
 			capturedKeys.clear();
 			clearCaptureTimer();
+			setRecordingMode(false);
 		},
 		clear() {
 			isListening = false;
 			capturedKeys.clear();
 			clearCaptureTimer();
+			setRecordingMode(false);
 			onClear();
 		},
 		register: onRegister,

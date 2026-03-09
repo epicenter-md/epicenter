@@ -43,6 +43,21 @@ const shortcuts = new Map<
 >();
 
 /**
+ * Global flag to track if we're currently recording a keyboard shortcut.
+ * When true, all local shortcuts are disabled to prevent interference.
+ */
+let isRecordingShortcut = false;
+
+/**
+ * Set the recording mode state. When recording is enabled, local shortcuts
+ * will not fire, allowing users to record any key combination without
+ * triggering existing shortcuts.
+ */
+export function setRecordingMode(recording: boolean) {
+	isRecordingShortcut = recording;
+}
+
+/**
  * Type representing the local shortcut manager instance.
  * Provides methods to:
  * - Listen for keyboard events and trigger registered shortcuts
@@ -276,6 +291,9 @@ function arraysMatch(a: string[], b: string[]) {
  * This prevents keyboard shortcuts from interfering with text input.
  */
 function isTypingInInput(): boolean {
+	// Prevent shortcuts when recording
+	if (isRecordingShortcut) return true;
+
 	const activeElement = document.activeElement;
 	if (!activeElement) return false;
 

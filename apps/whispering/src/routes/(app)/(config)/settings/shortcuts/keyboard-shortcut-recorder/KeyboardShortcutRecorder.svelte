@@ -155,8 +155,13 @@
 								aria-live="polite"
 							>
 								<div class="flex flex-col items-center gap-1 px-4 py-2">
-									<p class="text-sm font-medium">Press key combination</p>
-									<p class="text-xs text-muted-foreground">Esc to cancel</p>
+									{#if keyRecorder.capturedKeys.length > 0}
+										<Kbd.Root>{keyRecorder.capturedKeys.map(k => getShortcutDisplayLabel(k)).join('+')}</Kbd.Root>
+										<p class="text-xs text-muted-foreground">Release all keys or wait...</p>
+									{:else}
+										<p class="text-sm font-medium">Press key combination</p>
+										<p class="text-xs text-muted-foreground">Esc to cancel</p>
+									{/if}
 								</div>
 							</div>
 						{/if}
