@@ -1,5 +1,5 @@
+import { gg } from '@leftium/gg';
 import { Ok } from 'wellcrafted/result';
-import { dev } from '$app/environment';
 import { notificationLog } from '$lib/components/NotificationLog.svelte';
 import { defineMutation } from '$lib/query/client';
 import { services } from '$lib/services';
@@ -16,25 +16,22 @@ const createNotifyMutation = (
 		) => {
 			const fullOptions: UnifiedNotificationOptions = { ...options, variant };
 
-			// Log in dev mode
-			if (dev) {
-				switch (variant) {
-					case 'error':
-						console.error('[Notify]', fullOptions);
-						break;
-					case 'warning':
-						console.warn('[Notify]', fullOptions);
-						break;
-					case 'info':
-						console.info('[Notify]', fullOptions);
-						break;
-					case 'loading':
-						console.info('[Notify]', fullOptions);
-						break;
-					case 'success':
-						console.log('[Notify]', fullOptions);
-						break;
-				}
+			switch (variant) {
+				case 'error':
+					gg(fullOptions).ns('[Notify]').error();
+					break;
+				case 'warning':
+					gg(fullOptions).ns('[Notify]').warn();
+					break;
+				case 'info':
+					gg(fullOptions).ns('[Notify]').info();
+					break;
+				case 'loading':
+					gg(fullOptions).ns('[Notify]').info();
+					break;
+				case 'success':
+					gg(fullOptions).ns('[Notify]');
+					break;
 			}
 
 			// Add to notification log
@@ -52,7 +49,7 @@ const createNotifyMutation = (
 				const { error: notifyError } =
 					await services.notification.notify(fullOptions);
 				if (notifyError) {
-					console.error('[Notify] OS notification error:', notifyError);
+					gg('OS notification error:', notifyError).ns('[Notify]').error();
 				}
 			}
 
@@ -110,8 +107,8 @@ const createNotifyMutation = (
  *   - Loading states are temporary and would create notification spam
  *   - Toasts can be updated in-place using the same ID
  *
- * - **Dev logging**: In development mode, notifications are logged to console
- *   with appropriate log levels (error, warn, info, etc.)
+ * - **Logging**: Notifications are logged via `gg()` with appropriate
+ *   log levels (error, warn, info, etc.)
  *
  * - **Notification log**: All notifications are stored in a log for debugging
  *   and user history via `notificationLog.addLog()`

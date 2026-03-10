@@ -1,3 +1,4 @@
+import { gg } from '@leftium/gg';
 import { nanoid } from 'nanoid/non-secure';
 import { Ok } from 'wellcrafted/result';
 import { defineMutation } from '$lib/query/client';
@@ -48,7 +49,7 @@ const startManualRecording = defineMutation({
 	mutationFn: async () => {
 		// Prevent concurrent recording operations
 		if (isRecordingOperationBusy) {
-			console.info('Recording operation already in progress, ignoring start');
+			gg('Recording operation already in progress, ignoring start').info();
 			return Ok(undefined);
 		}
 		isRecordingOperationBusy = true;
@@ -122,7 +123,7 @@ const startManualRecording = defineMutation({
 		}
 		// Track start time for duration calculation
 		manualRecordingStartTime = Date.now();
-		console.info('Recording started');
+		gg('Recording started').info();
 		sound.playSoundIfEnabled('manual-start');
 		return Ok(undefined);
 	},
@@ -133,7 +134,7 @@ const stopManualRecording = defineMutation({
 	mutationFn: async () => {
 		// Prevent concurrent recording operations
 		if (isRecordingOperationBusy) {
-			console.info('Recording operation already in progress, ignoring stop');
+			gg('Recording operation already in progress, ignoring stop').info();
 			return Ok(undefined);
 		}
 		isRecordingOperationBusy = true;
@@ -165,7 +166,7 @@ const stopManualRecording = defineMutation({
 			title: '🎙️ Recording stopped',
 			description: 'Your recording has been saved',
 		});
-		console.info('Recording stopped');
+		gg('Recording stopped').info();
 		sound.playSoundIfEnabled('manual-stop');
 
 		// Log manual recording completion
@@ -201,7 +202,7 @@ const startVadRecording = defineMutation({
 		await settings.switchRecordingMode('vad');
 
 		const toastId = nanoid();
-		console.info('Starting voice activated capture');
+		gg('Starting voice activated capture').info();
 		notify.loading({
 			id: toastId,
 			title: '🎙️ Starting voice activated capture',
@@ -222,7 +223,7 @@ const startVadRecording = defineMutation({
 						title: '🎙️ Voice activated speech captured',
 						description: 'Your voice activated speech has been captured.',
 					});
-					console.info('Voice activated speech captured');
+					gg('Voice activated speech captured').info();
 					sound.playSoundIfEnabled('vad-capture');
 
 					// Log VAD recording completion
@@ -303,7 +304,7 @@ const stopVadRecording = defineMutation({
 	mutationKey: ['commands', 'stopVadRecording'] as const,
 	mutationFn: async () => {
 		const toastId = nanoid();
-		console.info('Stopping voice activated capture');
+		gg('Stopping voice activated capture').info();
 		notify.loading({
 			id: toastId,
 			title: '⏸️ Stopping voice activated capture...',
@@ -353,9 +354,7 @@ export const commands = {
 		mutationFn: async () => {
 			// Prevent concurrent recording operations
 			if (isRecordingOperationBusy) {
-				console.info(
-					'Recording operation already in progress, ignoring cancel',
-				);
+				gg('Recording operation already in progress, ignoring cancel').info();
 				return Ok(undefined);
 			}
 			isRecordingOperationBusy = true;
@@ -395,7 +394,7 @@ export const commands = {
 						description: 'Recording cancelled successfully',
 					});
 					sound.playSoundIfEnabled('manual-cancel');
-					console.info('Recording cancelled');
+					gg('Recording cancelled').info();
 					break;
 				}
 			}

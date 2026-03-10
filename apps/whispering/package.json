@@ -49,6 +49,7 @@
 		"@epicenter/svelte-utils": "workspace:*",
 		"@epicenter/workspace": "workspace:*",
 		"@google/generative-ai": "^0.24.1",
+		"@leftium/gg": "0.0.54",
 		"@mistralai/mistralai": "^1.9.18",
 		"@ricky0123/vad-web": "^0.0.24",
 		"@standard-schema/spec": "catalog:",

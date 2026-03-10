@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { GgConsole } from '@leftium/gg';
 	import { QueryClientProvider } from '@tanstack/svelte-query';
 	import { SvelteQueryDevtools } from '@tanstack/svelte-query-devtools';
 	import { ModeWatcher, mode } from 'mode-watcher';
@@ -53,6 +54,7 @@
 />
 <ModeWatcher defaultMode="dark" track={false} />
 <SvelteQueryDevtools client={queryClient} buttonPosition="bottom-right" />
+<GgConsole />
 
 <style>
 	/* Override inspector button to bottom-center, above sidebar (z-10).
