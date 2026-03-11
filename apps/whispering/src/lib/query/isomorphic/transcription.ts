@@ -163,10 +163,10 @@ export async function transcribeBlob(
 			const compressionRatio = Math.round(
 				(1 - compressedBlob.size / blob.size) * 100,
 			);
-			notify.info({
-				title: 'Audio compressed',
-				description: `Reduced file size by ${compressionRatio}%`,
-			});
+			// notify.info({
+			// 	title: 'Audio compressed',
+			// 	description: `Reduced file size by ${compressionRatio}%`,
+			// });
 			rpc.analytics.logEvent({
 				type: 'compression_completed',
 				provider: selectedService,
