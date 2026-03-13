@@ -6,9 +6,11 @@
 	import EllipsisIcon from '@lucide/svelte/icons/ellipsis';
 	import FileTextIcon from '@lucide/svelte/icons/file-text';
 	import FolderIcon from '@lucide/svelte/icons/folder';
+	import LockIcon from '@lucide/svelte/icons/lock';
 	import PencilIcon from '@lucide/svelte/icons/pencil';
 	import PlusIcon from '@lucide/svelte/icons/plus';
 	import TrashIcon from '@lucide/svelte/icons/trash-2';
+	import UnlockIcon from '@lucide/svelte/icons/unlock';
 	import type { Folder, FolderId } from '$lib/workspace';
 
 	let {
@@ -78,6 +80,16 @@
 		clearTimeout(closeTimer);
 	}
 
+	function lockSidebar() {
+		clearTimeout(closeTimer);
+		peeking = false;
+		sidebar.setOpen(true);
+	}
+
+	function unlockSidebar() {
+		sidebar.setOpen(false);
+	}
+
 	$effect(() => {
 		if (sidebar.open) peeking = false;
 	});
@@ -88,7 +100,8 @@
 	<button
 		class="peek-zone"
 		onmouseenter={startPeek}
-		title="Hover to peek"
+		onclick={lockSidebar}
+		title="Hover to peek, click to lock open"
 		aria-label="Open sidebar"
 	>
 		<div class="peek-zone-indicator" />
@@ -106,7 +119,27 @@
 		<Sidebar.Header>
 			<div class="flex items-center justify-between px-2 py-1">
 				<span class="text-sm font-semibold">Honeycrisp</span>
-				<Sidebar.Trigger />
+				{#if sidebar.open}
+					<Button
+						variant="ghost"
+						size="icon"
+						class="size-7"
+						onclick={unlockSidebar}
+						tooltip="Unlock sidebar"
+					>
+						<UnlockIcon class="size-4" />
+					</Button>
+				{:else if peeking}
+					<Button
+						variant="ghost"
+						size="icon"
+						class="size-7"
+						onclick={lockSidebar}
+						tooltip="Lock sidebar to keep it open"
+					>
+						<LockIcon class="size-4" />
+					</Button>
+				{/if}
 			</div>
 			<div class="px-2 pb-1">
 				<Sidebar.Input
