@@ -95,10 +95,10 @@ export const honeycrisp = defineWorkspace({
 	id: 'epicenter.honeycrisp' as const,
 	tables: { folders: foldersTable, notes: notesTable },
 	kv: {
-		selectedFolderId: defineKv(FolderId.or(type('null'))),
-		selectedNoteId: defineKv(NoteId.or(type('null'))),
-		sortBy: defineKv(type("'dateEdited' | 'dateCreated' | 'title'")),
-		sidebarCollapsed: defineKv(type('boolean')),
+		selectedFolderId: defineKv(FolderId.or(type('null')), null),
+		selectedNoteId: defineKv(NoteId.or(type('null')), null),
+		sortBy: defineKv(type("'dateEdited' | 'dateCreated' | 'title'"), 'dateEdited'),
+		sidebarCollapsed: defineKv(type('boolean'), false),
 	},
 });
 

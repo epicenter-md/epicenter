@@ -31,13 +31,9 @@
 		folders = workspaceClient.tables.folders.getAllValid();
 		notes = workspaceClient.tables.notes.getAllValid();
 
-		const kvFolderId = workspaceClient.kv.get('selectedFolderId');
-		selectedFolderId = kvFolderId.status === 'valid' ? kvFolderId.value : null;
-
-		const kvNoteId = workspaceClient.kv.get('selectedNoteId');
-		selectedNoteId = kvNoteId.status === 'valid' ? kvNoteId.value : null;
-		const kvSortBy = workspaceClient.kv.get('sortBy');
-		sortBy = kvSortBy.status === 'valid' ? kvSortBy.value : 'dateEdited';
+		selectedFolderId = workspaceClient.kv.get('selectedFolderId');
+		selectedNoteId = workspaceClient.kv.get('selectedNoteId');
+		sortBy = workspaceClient.kv.get('sortBy');
 
 		const unsubFolders = workspaceClient.tables.folders.observe(() => {
 			folders = workspaceClient.tables.folders.getAllValid();
