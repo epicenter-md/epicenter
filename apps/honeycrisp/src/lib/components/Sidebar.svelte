@@ -2,7 +2,6 @@
 	import { Button } from '@epicenter/ui/button';
 	import * as DropdownMenu from '@epicenter/ui/dropdown-menu';
 	import * as Sidebar from '@epicenter/ui/sidebar';
-	import { useSidebar } from '@epicenter/ui/sidebar';
 	import EllipsisIcon from '@lucide/svelte/icons/ellipsis';
 	import FileTextIcon from '@lucide/svelte/icons/file-text';
 	import FolderIcon from '@lucide/svelte/icons/folder';
@@ -58,9 +57,9 @@
 		editingName = '';
 	}
 
-	// ─── Peek (Notion-style hover-to-reveal) ────────────────────────────────
+	// ─── Peek (hover-to-reveal) ─────────────────────────────────────────────
 
-	const sidebar = useSidebar();
+	const sidebar = Sidebar.useSidebar();
 	let peeking = $state(false);
 	let closeTimer: ReturnType<typeof setTimeout>;
 
@@ -90,6 +89,12 @@
 		sidebar.setOpen(false);
 	}
 
+	// Clean up pending timer on destroy
+	$effect(() => {
+		return () => clearTimeout(closeTimer);
+	});
+
+	// Reset peek when sidebar opens via keyboard shortcut or other external means
 	$effect(() => {
 		if (sidebar.open) peeking = false;
 	});
@@ -109,7 +114,7 @@
 {/if}
 
 <div
-	class="sidebar-peek-wrapper"
+	class="sidebar-peek-scope"
 	class:is-peeking={peeking && !sidebar.open && !sidebar.isMobile}
 >
 	<Sidebar.Root
@@ -298,13 +303,18 @@
 		opacity: 0.6;
 	}
 
+	/* Transparent to flex layout so SidebarProvider's flex row isn't broken */
+	.sidebar-peek-scope {
+		display: contents;
+	}
+
 	/* Smooth 300ms ease-out for both open and close */
-	.sidebar-peek-wrapper :global([data-slot='sidebar-gap']) {
+	.sidebar-peek-scope :global([data-slot='sidebar-gap']) {
 		transition-duration: 300ms !important;
 		transition-timing-function: ease-out !important;
 	}
 
-	.sidebar-peek-wrapper :global([data-slot='sidebar-container']) {
+	.sidebar-peek-scope :global([data-slot='sidebar-container']) {
 		transition-duration: 300ms !important;
 		transition-timing-function: ease-out !important;
 	}
