@@ -26,11 +26,11 @@
  * ```
  */
 
-import { generateId } from '@epicenter/workspace';
 import { getDeviceId } from '$lib/device/device-id';
 import {
 	type Bookmark,
 	type BookmarkId,
+	generateBookmarkId,
 	type Tab,
 	workspaceClient,
 } from '$lib/workspace';
@@ -81,7 +81,7 @@ function createBookmarkState() {
 				if (!tab.url) return;
 				const deviceId = await getDeviceId();
 				workspaceClient.tables.bookmarks.set({
-					id: generateId() as string as BookmarkId,
+					id: generateBookmarkId(),
 					url: tab.url,
 					title: tab.title || 'Untitled',
 					favIconUrl: tab.favIconUrl,

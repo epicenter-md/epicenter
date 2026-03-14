@@ -1,0 +1,6 @@
+# Commercially relevant code — requires @braden-w review
+# These paths contain the sync server and protocol (dual-licensed commercially).
+
+/apps/api/              @braden-w
+/packages/sync/         @braden-w
+/packages/sync-client/  @braden-w

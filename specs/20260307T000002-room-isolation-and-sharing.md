@@ -5,6 +5,8 @@
 **Author**: AI-assisted
 **Supersedes**: `20260307T000001-org-scoped-rooms.md`
 
+> **Update (2026-03-13):** DO names now include a type segment: `user:{userId}:{type}:{name}` where `{type}` is `workspace` or `document`. The room key examples below use the original format `user:{userId}:{roomName}`. See `20260313T201800-do-naming-convention.md`.
+
 ## Overview
 
 User-scoped room keys (`user:{userId}:{roomName}`) for document isolation, with a `room_access` table as the single source of truth for shared access. No roles — all shared users are editors. Org membership can populate `room_access` rows in the future, but is never the room key itself.

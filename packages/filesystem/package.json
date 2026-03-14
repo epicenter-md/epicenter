@@ -12,7 +12,10 @@
 	},
 	"dependencies": {
 		"@epicenter/workspace": "workspace:*",
+		"@libsql/client": "^0.14.0",
+		"@libsql/client-wasm": "^0.14.0",
 		"arktype": "catalog:",
+		"drizzle-orm": "^0.38.3",
 		"just-bash": "^2.9.7",
 		"prosemirror-markdown": "^1.13.4",
 		"y-prosemirror": "^1.3.7",

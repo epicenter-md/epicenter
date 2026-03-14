@@ -6,7 +6,7 @@ import { DbError } from '$lib/services/db';
 import { settings } from '$lib/state/settings.svelte';
 import { vadRecorder } from '$lib/state/vad-recorder.svelte';
 import * as transformClipboardWindow from '$routes/transform-clipboard/transformClipboardWindow.tauri';
-import { rpc } from '..';
+import { rpc } from '$lib/query';
 import { db } from './db';
 import { delivery } from './delivery';
 import { notify } from './notify';

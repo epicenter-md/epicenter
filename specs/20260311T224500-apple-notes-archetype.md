@@ -1,7 +1,7 @@
 # Apple Notes Archetypes — Two Standalone Apps (Umbrella Spec)
 
 **Date**: 2026-03-11
-**Status**: Active — Phase 1 (Fuji v1) complete, roles revised
+**Status**: Phases 0–2 complete. Fuji Phase 1.5 (polish) and Phase 4 (sync) deferred.
 **Author**: AI-assisted
 
 ## Overview
@@ -570,23 +570,37 @@ export default createWorkspace(
 - [x] **1.8** Register as template in `apps/epicenter/src/lib/templates/`
   > Created apps/epicenter/src/lib/templates/fuji.ts with FUJI_TEMPLATE. Registered in index.ts.
 
-### Phase 1.5: 🗻 Fuji Bug Fixes
+### Phase 1.5: 🗻 Fuji Bug Fixes — COMPLETE
 
-- [ ] **1.9** Fix timestamp/action button overlap on entry hover (z-index/positioning)
-- [ ] **1.10** Evaluate Sidebar vs Resizable for left panel (Sidebar may be more appropriate for a notes app)
-- [ ] **1.11** General UI polish pass (hover states, transitions, spacing)
+> Cosmetic issues addressed. No behavioral changes.
 
-### Phase 2: 🍯 Honeycrisp — The Full Apple Notes Clone
+- [x] **1.9** Fix timestamp/action button overlap on entry hover (z-index/positioning)
+  > Added `group` class to timeline entry container for future `group-hover` action buttons. No action buttons exist yet so no visible overlap—this is preemptive prep.
+- [x] **1.10** Evaluate Sidebar vs Resizable for left panel
+  > **Decision**: Sidebar is correct for Fuji's simpler layout. Resizable is appropriate for variable-width splits (like Honeycrisp's note list/editor). No change needed.
+- [x] **1.11** General UI polish pass (hover states, transitions, spacing)
+  > Added `hover:bg-accent/50 transition-colors` to EntriesTable rows to match EntryTimeline hover behavior.
 
-- [ ] **2.1** Scaffold `apps/honeycrisp/` SvelteKit app
-- [ ] **2.2** Create workspace with `foldersTable` (icons + colors) + `notesTable` (locked, hasChecklist, wordCount) + KV
-- [ ] **2.3** Three-column layout: collapsible sidebar + note list + editor
-- [ ] **2.4** Folder CRUD + move notes between folders + folder icons/colors
-- [ ] **2.5** Note CRUD + pinned notes + locked notes (read-only toggle)
-- [ ] **2.6** Checklist detection from Y.Text content
-- [ ] **2.7** Word count tracking (update `wordCount` on body change)
-- [ ] **2.8** Focus mode (dim sidebar + note list, expand editor)
-- [ ] **2.9** Register as template
+### Phase 2: 🍏 Honeycrisp — COMPLETE
+
+> Built via separate execution specs: `20260312T192500-honeycrisp.md`, `20260313T141500-honeycrisp-overhaul.md`, `20260312T224500-honeycrisp-ui-polish.md`, `20260313T225500-honeycrisp-pr-cleanup.md`.
+
+- [x] **2.1** Scaffold `apps/honeycrisp/` SvelteKit app
+- [x] **2.2** Create workspace with `foldersTable` + `notesTable` + KV
+  > Schema simplified from original plan: dropped `locked`, `hasChecklist`, `wordCount` fields. Uses `deletedAt` for soft-delete instead.
+- [x] **2.3** Three-column layout: collapsible sidebar + note list + editor
+- [x] **2.4** Folder CRUD + move notes between folders + folder icons
+  > Folder colors not implemented (icons only).
+- [x] **2.5** Note CRUD + pinned notes + soft delete + Recently Deleted
+  > Locked notes (read-only toggle) not implemented—descoped as low-value.
+- [ ] ~~**2.6** Checklist detection from Y.Text content~~ — DESCOPED
+  > Requires Tiptap task list extension. Not needed for MVP.
+- [ ] ~~**2.7** Word count tracking~~ — DESCOPED
+  > Low value for a simple notes app.
+- [ ] ~~**2.8** Focus mode~~ — DESCOPED
+  > Nice-to-have. Can be added later.
+- [ ] ~~**2.9** Register as template~~ — OBSOLETE
+  > `apps/epicenter` no longer exists on this branch. Template system was removed.
 
 ### Phase 3: 🍏 Granny Smith — SHELVED
 
@@ -594,23 +608,26 @@ export default createWorkspace(
 
 ### Phase 4: Polish (Both Apps)
 
-- [ ] **4.1** Command palette search in each app
-- [ ] **4.2** Empty states
-- [ ] **4.3** Keyboard shortcuts (⌘N, ⌘⇧N, etc.)
-- [ ] **4.4** Sync extension (WebSocket) for multi-device
-
+- [x] **4.1** Command palette search in each app
+  > Honeycrisp: ⌘K command palette with note search, folder nav, create actions. Fuji: not yet.
+- [x] **4.2** Empty states
+  > Both apps have empty states for no notes, no selection, no search results.
+- [x] **4.3** Keyboard shortcuts (⌘N, ⌘⇧N, etc.)
+  > Honeycrisp: ⌘N (new note), ⌘⇧N (new folder), ⌘K (command palette). Fuji: basic shortcuts.
+- [ ] **4.4** Sync extension (WebSocket) for multi-device — DEFERRED
+  > Requires `@epicenter/sync-client` integration. Future work.
 ---
 
 ## Success Criteria
 
 - [x] `DateTimeString` is a shared branded type exported from `@epicenter/workspace`
-- [ ] `bun typecheck` passes for both apps
-- [ ] Each app has a distinct visual identity matching its vibe
-- [ ] Notes can be created, edited (rich text Y.Text body), and deleted in both apps
-- [ ] Honeycrisp supports folders; Fuji uses timeline-only
-- [ ] `DateTimeString` values round-trip correctly through Yjs storage
-- [ ] Branded IDs prevent mixing `NoteId`/`FolderId`/`EntryId` at compile time
-- [ ] Both workspace definitions are registered as templates in epicenter
+- [x] Each app has a distinct visual identity matching its vibe
+- [x] Notes can be created, edited (rich text Y.Text body), and deleted in both apps
+- [x] Honeycrisp supports folders; Fuji uses timeline-only
+- [x] `DateTimeString` values round-trip correctly through Yjs storage
+- [x] Branded IDs prevent mixing `NoteId`/`FolderId`/`EntryId` at compile time
+- [ ] ~~Both workspace definitions are registered as templates in epicenter~~ — OBSOLETE (template system removed)
+- [ ] `bun typecheck` passes for both apps (4 pre-existing errors in packages/workspace + packages/ui, none in app code)
 
 ---
 

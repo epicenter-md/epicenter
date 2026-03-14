@@ -11,6 +11,9 @@ import type * as Y from 'yjs';
 import type { Actions } from '../shared/actions.js';
 import type { CombinedStandardSchema } from '../shared/standard-schema/types.js';
 import type { DocumentContext, Extension, MaybePromise } from './lifecycle.js';
+import type { ContentMode } from '../timeline/entries.js';
+import type { SheetBinding } from '../timeline/richtext.js';
+import type { Timeline } from '../timeline/timeline.js';
 
 // Re-export JSON types for consumers
 export type { JsonObject, JsonValue } from 'wellcrafted/json';
@@ -84,16 +87,6 @@ export type UpdateResult<TRow> =
 // ════════════════════════════════════════════════════════════════════════════
 // KV RESULT TYPES
 // ════════════════════════════════════════════════════════════════════════════
-
-/** Result of getting a KV value */
-export type KvGetResult<TValue> =
-	| { status: 'valid'; value: TValue }
-	| {
-			status: 'invalid';
-			errors: readonly StandardSchemaV1.Issue[];
-			value: unknown;
-	  }
-	| { status: 'not_found'; value: undefined };
 
 /** Change event for KV observation */
 export type KvChange<TValue> =
@@ -251,39 +244,85 @@ export type StringKeysOf<TRow> = {
  */
 export type ClaimedDocumentColumns<
 	TDocuments extends Record<string, DocumentConfig>,
-> =
-	| TDocuments[keyof TDocuments]['guid']
-	| TDocuments[keyof TDocuments]['updatedAt'];
+> = TDocuments[keyof TDocuments]['guid'];
 
 /**
  * A handle to an open content Y.Doc, returned by `documents.open()`.
  *
- * All operations are scoped to this specific document. Content methods
- * (read, write) are synchronous because the Y.Doc is already open.
- * Exports are a property, not a function, because they belong to this doc.
+ * All operations are scoped to this specific document. Timeline-backed
+ * read/write methods are exposed directly on the handle.
+ *
+ * @example
+ * ```typescript
+ * const handle = await documents.open(id);
+ * handle.read();            // read from timeline (always string)
+ * handle.write('hello');    // write to timeline (always text mode)
+ * handle.asText();          // Y.Text for editor binding (converts if needed)
+ * handle.asRichText();      // Y.XmlFragment for richtext binding (converts if needed)
+ * handle.asSheet();         // Sheet columns/rows (converts if needed)
+ * handle.mode;              // current content mode
+ * handle.timeline;          // escape hatch for advanced ops
+ * ```
  */
 export type DocumentHandle = {
-	/** The raw Y.Doc — escape hatch for custom operations (timelines, binary, sheets). */
 	ydoc: Y.Doc;
 
-	/** Read the document's text content (from `ydoc.getText('content')`). */
+	/** Current content mode, or undefined if timeline is empty. */
+	readonly mode: ContentMode | undefined;
+
+	/** Read current content as string. Always succeeds. Text/richtext/sheet all flatten. */
 	read(): string;
 
-	/** Replace the document's text content. */
+	/** Replace text content. If current mode is text, replaces in-place. Otherwise pushes new text entry. */
 	write(text: string): void;
 
 	/**
-	 * Per-doc extension exports, keyed by extension name.
+	 * Get current content as Y.Text for editor binding.
 	 *
-	 * Each key corresponds to a document extension registered via
-	 * `withDocumentExtension()`. The value is that extension's `exports` object.
+	 * If already text mode, returns the existing Y.Text. If the timeline is
+	 * empty, creates a new text entry. If the current entry is a different mode,
+	 * converts the content and pushes a new text entry.
 	 *
-	 * @example
-	 * ```typescript
-	 * const handle = await documents.open(guid);
-	 * await handle.exports.persistence?.clearData?.();
+	 * All conversions always succeed—no content type can fail to convert to
+	 * another. Richtext→text is lossy (strips formatting).
+	 *
+	 * ```
+	 * DocumentHandle
+	 * ├── mode              → 'text' | 'richtext' | 'sheet' | undefined
+	 * ├── read()            → string           (always works, flattens any mode)
+	 * ├── write(text)       → void             (always works, text mode)
+	 * ├── asText()          → Y.Text           (converts if needed, editor binding)
+	 * ├── asRichText()      → Y.XmlFragment    (converts if needed, Tiptap binding)
+	 * ├── asSheet()         → SheetBinding     (converts if needed, spreadsheet)
+	 * ├── timeline          → Timeline         (escape hatch for advanced ops)
+	 * ├── batch(fn)         → void             (wraps ydoc.transact)
+	 * ├── ydoc              → Y.Doc            (escape hatch)
+	 * └── exports           → Record           (extension exports)
 	 * ```
 	 */
+	asText(): Y.Text;
+
+	/**
+	 * Get current content as Y.XmlFragment for richtext editor binding.
+	 *
+	 * If already richtext mode, returns the existing Y.XmlFragment. If empty,
+	 * creates a new richtext entry. If different mode, converts and pushes.
+	 */
+	asRichText(): Y.XmlFragment;
+
+	/**
+	 * Get current content as sheet columns/rows for spreadsheet binding.
+	 *
+	 * If already sheet mode, returns existing columns and rows. If empty,
+	 * creates a new sheet entry. If different mode, converts (parsed as CSV).
+	 */
+	asSheet(): SheetBinding;
+
+	/** Direct access to the timeline for advanced operations. */
+	timeline: Timeline;
+	/** Batch mutations into a single Yjs transaction. */
+	batch(fn: () => void): void;
+	/** Per-doc extension exports. */
 	exports: Record<string, Record<string, unknown>>;
 };
 
@@ -299,7 +338,7 @@ export type DocumentHandle = {
  * @example
  * ```typescript
  * const handle = await documents.open(row);
- * handle.ydoc.getText('body').insert(0, 'hello');
+ * handle.write('hello');
  * // updatedAt on the row is bumped automatically
  *
  * const text = handle.read();
@@ -388,31 +427,49 @@ export type DocumentsHelper<TTableDefinitions extends TableDefinitions> = {
 // ════════════════════════════════════════════════════════════════════════════
 
 /**
- * A KV definition created by `defineKv(schema)` or `defineKv(v1, v2, ...).migrate(fn)`
+ * A KV definition created by `defineKv(schema, defaultValue)`.
  *
- * @typeParam TVersions - Tuple of schema versions
+ * ## KV vs Tables: Different Data, Different Strategy
+ *
+ * Tables accumulate rows that must survive schema changes—migration is mandatory.
+ * Each row carries a `_v` version discriminant, and `defineTable(v1, v2).migrate(fn)`
+ * transforms old rows to the latest shape on read.
+ *
+ * KV stores hold scalar preferences (toggles, font sizes, selected options) where
+ * resetting to default is acceptable. There is no `_v` field, no migration function,
+ * and no version history. When a KV schema changes, either:
+ * - The old value still validates (e.g., widening an enum)—no action needed
+ * - The old value fails validation—`defaultValue` is returned automatically
+ *
+ * ## The `defaultValue` Contract
+ *
+ * `defaultValue` is returned whenever `get()` cannot produce a valid value:
+ * - **Key missing** — the value has never been set (initial state)
+ * - **Validation fails** — the stored value doesn't match the current schema
+ *
+ * The default is never written to storage. It exists only at read time, which
+ * avoids polluting CRDT history and prevents initialization races on multi-device sync.
+ *
+ * @typeParam TSchema - The schema for this KV entry
+ *
+ * @example
+ * ```typescript
+ * // Scalar preference — resets to 'light' if stored value is invalid
+ * const theme = defineKv(type("'light' | 'dark' | 'system'"), 'light');
+ *
+ * // Boolean toggle — resets to false if missing or corrupt
+ * const sidebar = defineKv(type('boolean'), false);
+ * ```
  */
-export type KvDefinition<TVersions extends readonly CombinedStandardSchema[]> =
-	{
-		schema: CombinedStandardSchema<
-			unknown,
-			StandardSchemaV1.InferOutput<TVersions[number]>
-		>;
-		migrate: (
-			value: StandardSchemaV1.InferOutput<TVersions[number]>,
-		) => StandardSchemaV1.InferOutput<LastSchema<TVersions>>;
-	};
+export type KvDefinition<TSchema extends CombinedStandardSchema> = {
+	schema: TSchema;
+	defaultValue: StandardSchemaV1.InferOutput<TSchema>;
+};
 
 /** Extract the value type from a KvDefinition */
 export type InferKvValue<T> =
-	T extends KvDefinition<infer V>
-		? StandardSchemaV1.InferOutput<LastSchema<V>>
-		: never;
-
-/** Extract the version union type from a KvDefinition */
-export type InferKvVersionUnion<T> =
-	T extends KvDefinition<infer V>
-		? StandardSchemaV1.InferOutput<V[number]>
+	T extends KvDefinition<infer TSchema>
+		? StandardSchemaV1.InferOutput<TSchema>
 		: never;
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -735,27 +792,102 @@ export type TablesHelper<TTableDefinitions extends TableDefinitions> = {
 	>;
 };
 
-/** KV helper with dictionary-style access */
+/**
+ * KV helper with dictionary-style access to typed key-value entries.
+ *
+ * All methods are keyed by the string keys defined in the workspace's `kv` map.
+ * Values are validated against their schema on read; invalid or missing values
+ * silently fall back to `defaultValue` (see {@link KvDefinition} for the full contract).
+ *
+ * @example
+ * ```typescript
+ * // Read — always returns T, never undefined
+ * const fontSize = client.kv.get('theme.fontSize');
+ *
+ * // Write — value is type-checked against the key's schema
+ * client.kv.set('theme.fontSize', 16);
+ *
+ * // React to changes
+ * const unsub = client.kv.observe('theme.fontSize', (change) => {
+ *   if (change.type === 'set') console.log('New size:', change.value);
+ * });
+ * ```
+ */
 export type KvHelper<TKvDefinitions extends KvDefinitions> = {
-	/** Get a value by key (validates + migrates). */
+	/**
+	 * Get a KV value by key.
+	 *
+	 * Always returns a valid `T`—never `undefined`, never a discriminated union.
+	 * The return value depends on the state of the underlying Yjs store:
+	 *
+	 * - **Stored + valid**: returns the stored value as-is
+	 * - **Stored + invalid**: returns `defaultValue` (schema mismatch, corrupt data)
+	 * - **Missing**: returns `defaultValue` (key never set)
+	 *
+	 * This is intentionally simpler than table `get()`, which returns a
+	 * `{ status, row }` discriminated union. KV entries are scalar preferences
+	 * where falling back to a sensible default is always acceptable.
+	 */
 	get<K extends keyof TKvDefinitions & string>(
 		key: K,
-	): KvGetResult<InferKvValue<TKvDefinitions[K]>>;
+	): InferKvValue<TKvDefinitions[K]>;
 
-	/** Set a value by key (always latest schema). */
+	/**
+	 * Set a KV value by key.
+	 *
+	 * Writes the value to the Yjs doc via LWW (last-writer-wins) semantics.
+	 * No runtime validation—TypeScript enforces the correct type at compile time.
+	 * The value is immediately visible to local `get()` calls and propagated
+	 * to all connected peers via Yjs sync.
+	 */
 	set<K extends keyof TKvDefinitions & string>(
 		key: K,
 		value: InferKvValue<TKvDefinitions[K]>,
 	): void;
 
-	/** Delete a value by key. */
+	/**
+	 * Delete a KV value by key.
+	 *
+	 * After deletion, `get()` returns `defaultValue` until a new value is set.
+	 * The delete is propagated to all connected peers via Yjs sync.
+	 */
 	delete<K extends keyof TKvDefinitions & string>(key: K): void;
 
-	/** Watch for changes to a key. Returns unsubscribe function. */
+	/**
+	 * Watch for changes to a single KV key. Returns an unsubscribe function.
+	 *
+	 * The callback fires with `{ type: 'set', value }` when the key is written
+	 * or `{ type: 'delete' }` when it's removed. Invalid values (schema mismatch)
+	 * are silently skipped—the callback only fires for valid state transitions.
+	 *
+	 * @param key - The KV key to observe
+	 * @param callback - Receives the change event and the Yjs transaction
+	 * @returns Unsubscribe function
+	 */
 	observe<K extends keyof TKvDefinitions & string>(
 		key: K,
 		callback: (
 			change: KvChange<InferKvValue<TKvDefinitions[K]>>,
+			transaction: unknown,
+		) => void,
+	): () => void;
+
+	/**
+	 * Watch for changes to any KV key. Returns unsubscribe function.
+	 *
+	 * Fires once per Y.Transaction with all changed keys batched into a single Map.
+	 * Invalid values and unknown keys are skipped. Only valid, parsed changes
+	 * are included in the callback.
+	 *
+	 * Useful for bulk reactivity (e.g., syncing all settings to a SvelteMap)
+	 * without registering per-key observers.
+	 *
+	 * @param callback - Receives a Map of changed keys to their KvChange, plus the transaction
+	 * @returns Unsubscribe function
+	 */
+	observeAll(
+		callback: (
+			changes: Map<keyof TKvDefinitions & string, KvChange<unknown>>,
 			transaction: unknown,
 		) => void,
 	): () => void;

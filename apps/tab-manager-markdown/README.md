@@ -14,7 +14,7 @@ This app acts as a **peer client** alongside the tab-manager browser extension:
 │  • Writes to Y.Doc  │
 └──────────┬──────────┘
            │
-           │ ws://localhost:3913/workspaces/tab-manager/sync
+           │ ws://localhost:3913/workspaces/epicenter.tab-manager/sync
            │
            ▼
 ┌─────────────────────┐
@@ -22,7 +22,7 @@ This app acts as a **peer client** alongside the tab-manager browser extension:
 │   (packages/server) │
 └──────────┬──────────┘
            │
-           │ ws://localhost:3913/workspaces/tab-manager/sync
+           │ ws://localhost:3913/workspaces/epicenter.tab-manager/sync
            │
            ▼
 ┌─────────────────────┐
@@ -91,7 +91,7 @@ You should see:
 ```
 Tab Manager Markdown Exporter starting...
 ✓ Connected to sync server at ws://localhost:3913
-✓ Workspace: tab-manager
+✓ Workspace: epicenter.tab-manager
 ✓ Listening for tab changes...
 ✓ Exporting to ./markdown/devices/
 ```

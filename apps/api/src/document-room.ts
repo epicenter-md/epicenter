@@ -69,14 +69,12 @@ export class DocumentRoom extends BaseSyncRoom {
 
 	/** Reconstruct a past doc state from a snapshot. Returns full state as binary update. */
 	async getSnapshot(snapshotId: number): Promise<Uint8Array | null> {
-		const rows = this.ctx.storage.sql
+		const [row] = this.ctx.storage.sql
 			.exec('SELECT snapshot FROM snapshots WHERE id = ?', snapshotId)
 			.toArray();
-		if (rows.length === 0) return null;
+		if (!row) return null;
 
-		const snap = Y.decodeSnapshot(
-			new Uint8Array(rows[0]!.snapshot as ArrayBuffer),
-		);
+		const snap = Y.decodeSnapshot(new Uint8Array(row.snapshot as ArrayBuffer));
 		const restoredDoc = Y.createDocFromSnapshot(this.doc, snap);
 		return Y.encodeStateAsUpdateV2(restoredDoc);
 	}

@@ -42,6 +42,12 @@
  */
 
 import * as Y from 'yjs';
+import { createTimeline, readEntry } from '../timeline/timeline.js';
+import { serializeSheetToCsv } from '../timeline/sheet.js';
+import {
+	xmlFragmentToPlaintext,
+	populateFragmentFromText,
+} from '../timeline/richtext.js';
 import {
 	defineExtension,
 	type Extension,
@@ -91,31 +97,113 @@ type DocEntry = {
 /**
  * Create a lightweight handle wrapping an open Y.Doc and its resolved extensions.
  *
- * Handles are cheap (4 properties). The Y.Doc underneath is the expensive
+ * Handles are cheap (8 properties). The Y.Doc underneath is the expensive
  * shared resource. Calling `open()` twice returns fresh handles backed
  * by the same cached Y.Doc.
  *
- * The `exports` property on the handle surfaces the resolved extensions map
- * (each entry is `Extension<T>` with `whenReady`/`destroy` alongside custom exports).
+ * Timeline-backed content methods are exposed directly on the handle.
  */
 function makeHandle(
 	ydoc: Y.Doc,
 	// biome-ignore lint/suspicious/noExplicitAny: runtime storage uses wide type
 	extensions: Record<string, Extension<any>>,
 ): DocumentHandle {
+	const tl = createTimeline(ydoc);
+
 	return {
 		ydoc,
-		exports: extensions,
+		get mode() {
+			return tl.currentMode;
+		},
 		read() {
-			return ydoc.getText('content').toString();
+			return tl.readAsString();
 		},
 		write(text: string) {
-			const ytext = ydoc.getText('content');
-			ydoc.transact(() => {
-				ytext.delete(0, ytext.length);
-				ytext.insert(0, text);
-			});
+			if (tl.currentMode === 'text') {
+				const ytext = tl.currentEntry?.get('content') as Y.Text;
+				ydoc.transact(() => {
+					ytext.delete(0, ytext.length);
+					ytext.insert(0, text);
+				});
+			} else {
+				ydoc.transact(() => tl.pushText(text));
+			}
 		},
+		asText() {
+			const validated = readEntry(tl.currentEntry);
+			switch (validated.mode) {
+				case 'text':
+					return validated.content;
+				case 'empty':
+					ydoc.transact(() => tl.pushText(''));
+					return (readEntry(tl.currentEntry) as { mode: 'text'; content: Y.Text }).content;
+				case 'richtext': {
+					const plaintext = xmlFragmentToPlaintext(validated.content);
+					ydoc.transact(() => tl.pushText(plaintext));
+					return (readEntry(tl.currentEntry) as { mode: 'text'; content: Y.Text }).content;
+				}
+				case 'sheet': {
+					const csv = serializeSheetToCsv(validated.columns, validated.rows);
+					ydoc.transact(() => tl.pushText(csv));
+					return (readEntry(tl.currentEntry) as { mode: 'text'; content: Y.Text }).content;
+				}
+			}
+		},
+		asRichText() {
+			const validated = readEntry(tl.currentEntry);
+			switch (validated.mode) {
+				case 'richtext':
+					return validated.content;
+				case 'empty':
+					ydoc.transact(() => tl.pushRichtext());
+					return (readEntry(tl.currentEntry) as { mode: 'richtext'; content: Y.XmlFragment }).content;
+				case 'text': {
+					const plaintext = validated.content.toString();
+					ydoc.transact(() => {
+						const rtEntry = tl.pushRichtext();
+						const fragment = rtEntry.get('content') as Y.XmlFragment;
+						populateFragmentFromText(fragment, plaintext);
+					});
+					return (readEntry(tl.currentEntry) as { mode: 'richtext'; content: Y.XmlFragment }).content;
+				}
+				case 'sheet': {
+					const csv = serializeSheetToCsv(validated.columns, validated.rows);
+					ydoc.transact(() => {
+						const rtEntry = tl.pushRichtext();
+						const fragment = rtEntry.get('content') as Y.XmlFragment;
+						populateFragmentFromText(fragment, csv);
+					});
+					return (readEntry(tl.currentEntry) as { mode: 'richtext'; content: Y.XmlFragment }).content;
+				}
+			}
+		},
+		asSheet() {
+			const validated = readEntry(tl.currentEntry);
+			switch (validated.mode) {
+				case 'sheet':
+					return { columns: validated.columns, rows: validated.rows };
+				case 'empty':
+					ydoc.transact(() => tl.pushSheet());
+					return readEntry(tl.currentEntry) as { mode: 'sheet'; columns: Y.Map<Y.Map<string>>; rows: Y.Map<Y.Map<string>> };
+				case 'text': {
+					const plaintext = validated.content.toString();
+					ydoc.transact(() => tl.pushSheetFromCsv(plaintext));
+					const entry = readEntry(tl.currentEntry) as { mode: 'sheet'; columns: Y.Map<Y.Map<string>>; rows: Y.Map<Y.Map<string>> };
+					return { columns: entry.columns, rows: entry.rows };
+				}
+				case 'richtext': {
+					const plaintext = xmlFragmentToPlaintext(validated.content);
+					ydoc.transact(() => tl.pushSheetFromCsv(plaintext));
+					const entry = readEntry(tl.currentEntry) as { mode: 'sheet'; columns: Y.Map<Y.Map<string>>; rows: Y.Map<Y.Map<string>> };
+					return { columns: entry.columns, rows: entry.rows };
+				}
+			}
+		},
+		timeline: tl,
+		batch(fn: () => void) {
+			ydoc.transact(fn);
+		},
+		exports: extensions,
 	};
 }
 

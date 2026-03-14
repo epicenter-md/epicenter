@@ -195,21 +195,18 @@ The trade-off is you must handle all versions yourself, but TypeScript helps ens
 
 ## KV Storage
 
-KV stores use the same versioning pattern but don't need a `_v` discriminator. KV values are small objects where field presence is unambiguous:
+KV stores don't use versioning or migration. They use validate-or-default semantics—if stored data fails validation, it falls back to the default value:
 
 ```typescript
-const theme = defineKv('theme')
-	.version(type({ mode: "'light' | 'dark'" }))
-	.version(type({ mode: "'light' | 'dark' | 'system'", fontSize: 'number' }))
-	.migrate((v) => {
-		if (!('fontSize' in v)) return { ...v, fontSize: 14 };
-		return v;
-	});
+const fontSize = defineKv(type('number'), 14);
+const mode = defineKv(type("'light' | 'dark' | 'system'"), 'light');
 
 // Usage
-kv.theme.set({ mode: 'dark', fontSize: 16 });
-const theme = kv.theme.get(); // Always returns v2 shape
+client.kv.set('fontSize', 16);
+client.kv.get('fontSize'); // 16 (valid) or 14 (invalid/missing)
 ```
+
+This works because KV stores hold preferences, not accumulated data. Widening an enum (`'light' | 'dark'` to `'light' | 'dark' | 'system'`) still validates old data. Narrowing a type resets to the default—acceptable for a preference.
 
 ## Reads Are Pure
 
@@ -258,10 +255,10 @@ YKeyValue uses an append-and-cleanup pattern that keeps memory bounded regardles
 
 ## Summary
 
-1. Define schemas with `.version()` for each schema evolution
+1. Define table schemas with `.version()` for each schema evolution
 2. Provide a `.migrate()` function that normalizes any version to latest
 3. Tables require a `_v` number discriminant on every version (enforced by the type system)
-4. KV stores can use field presence checks or `_v` — both work
-5. Data is validated and migrated on read, not in storage
+4. KV stores use `defineKv(schema, defaultValue)` with validate-or-default semantics (no migration)
+5. Table data is validated and migrated on read, not in storage
 
-This approach eliminates "CRDT migration hell" by embracing row-level atomicity and lazy migration. Your app always sees the latest schema shape, regardless of when the underlying data was written.
+This approach eliminates "CRDT migration hell" by embracing row-level atomicity and lazy migration. Tables always see the latest schema shape, regardless of when the underlying data was written. KV stores take a simpler path—validate or reset to default.

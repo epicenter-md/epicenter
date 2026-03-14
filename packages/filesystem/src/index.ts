@@ -1,8 +1,6 @@
 // Content (document layer)
 export {
-	type ContentHelpers,
 	type ContentMode,
-	createContentHelpers,
 	type SheetEntry,
 } from './content/index.js';
 
@@ -46,3 +44,16 @@ export {
 	FileTree,
 	validateName,
 } from './tree/index.js';
+
+// Extensions
+export {
+	createSqliteIndex,
+	type SearchResult,
+	type SqliteIndex,
+	type SqliteIndexOptions,
+} from './extensions/sqlite-index/index.js';
+export {
+	generateDDL,
+	generateCreateIndexSQL,
+	generateCreateTableSQL,
+} from './extensions/sqlite-index/ddl.js';

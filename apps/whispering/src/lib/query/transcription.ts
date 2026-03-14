@@ -4,7 +4,7 @@ import { WhisperingErr, type WhisperingError } from '$lib/result';
 import { desktopServices, services } from '$lib/services';
 import type { Recording } from '$lib/services/db';
 import { settings } from '$lib/state/settings.svelte';
-import { rpc } from '..';
+import { rpc } from '$lib/query';
 import { db } from './db';
 import { notify } from './notify';
 

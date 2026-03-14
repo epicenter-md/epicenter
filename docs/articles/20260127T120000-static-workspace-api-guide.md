@@ -37,10 +37,8 @@ const posts = defineTable()
 		return row;
 	});
 
-// Define KV stores (same pattern, single key-value pair)
-const theme = defineKv()
-	.version(type({ mode: "'light' | 'dark'" }))
-	.migrate((v) => v);
+// Define KV stores (simple schema + default)
+const theme = defineKv(type("'light' | 'dark'"), 'light');
 
 // Define the workspace (pure schema definitions, no side effects)
 const workspace = defineWorkspace({
@@ -262,24 +260,15 @@ posts.batch((tx) => {
 
 ## Key-Value Stores
 
-KV stores follow the same versioning pattern:
+KV stores use `defineKv(schema, defaultValue)`. No versioning, no migration—invalid data falls back to the default:
 
 ```typescript
-const theme = defineKv()
-	.version(type({ mode: "'light' | 'dark'" }))
-	.version(type({ mode: "'light' | 'dark' | 'system'", fontSize: 'number' }))
-	.migrate((v) => {
-		if (!('fontSize' in v)) return { ...v, fontSize: 14 };
-		return v;
-	});
+const mode = defineKv(type("'light' | 'dark' | 'system'"), 'light');
+const fontSize = defineKv(type('number'), 14);
 
 // Set and get
-client.kv.set('theme', { mode: 'dark', fontSize: 16 });
-const result = client.kv.get('theme');
-
-if (result.status === 'valid') {
-	console.log(result.value.mode); // 'light' | 'dark' | 'system'
-}
+client.kv.set('mode', 'dark');
+const current = client.kv.get('mode'); // 'dark' (valid) or 'light' (invalid/missing)
 
 // Batch operations
 client.kv.batch((tx) => {

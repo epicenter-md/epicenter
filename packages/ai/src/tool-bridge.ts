@@ -81,10 +81,10 @@ export type ActionNames<T extends Actions> = {
  *   (notably Anthropic) reject schemas missing those fields.
  * - **`outputSchema`** — Enables server-side output validation. TanStack AI's
  *   `executeToolCalls` validates results against this when present.
- * - **`needsApproval`** — **Critical for the approval flow.** The server's
- *   `executeToolCalls` checks this to decide whether to send an
+ * - **`needsApproval`** — Present on all mutations. Queries never need approval.
+ *   The server's `executeToolCalls` checks this to decide whether to send an
  *   `APPROVAL_REQUESTED` event or a direct `TOOL_CALL` event. Without it,
- *   mutations auto-execute with no approval dialog.
+ *   actions auto-execute with no approval dialog.
  * - **`metadata`** — Pass-through `Record<string, unknown>` for server-side
  *   routing, logging, or future TanStack AI features.
  *
@@ -96,6 +96,8 @@ export type ActionNames<T extends Actions> = {
  */
 export type ToolDefinitionPayload = {
 	name: string;
+	/** Short, human-readable display name for UI surfaces and MCP annotations. */
+	title?: string;
 	description: string;
 	inputSchema?: NormalizedJsonSchema;
 	outputSchema?: JSONSchema;
@@ -120,9 +122,7 @@ export type ToolDefinitionPayload = {
  *
  * @example
  * ```ts
- * const tools = actionsToClientTools(workspace.actions, {
- *   requireApprovalForMutations: true,
- * });
+ * const tools = actionsToClientTools(workspace.actions);
  *
  * // Use locally in ChatClient
  * const chat = createChat({ tools, connection: ... });
@@ -133,18 +133,13 @@ export type ToolDefinitionPayload = {
  */
 export function actionsToClientTools<TActions extends Actions>(
 	actions: TActions,
-	options?: { requireApprovalForMutations?: boolean },
 ): (AnyClientTool & { name: ActionNames<TActions> })[] {
-	const requireApprovalForMutations =
-		options?.requireApprovalForMutations ?? false;
-
 	return [...iterateActions(actions)].map(([action, path]) => ({
 		__toolSide: 'client' as const,
 		name: path.join(ACTION_NAME_SEPARATOR) as ActionNames<TActions>,
 		description: action.description ?? `${action.type}: ${path.join('.')}`,
 		...(action.input && { inputSchema: action.input }),
-		...(requireApprovalForMutations &&
-			action.type === 'mutation' && { needsApproval: true }),
+		...(action.type === 'mutation' && { needsApproval: true }),
 		execute: async (args: unknown) => (action.input ? action(args) : action()),
 	}));
 }
@@ -184,8 +179,9 @@ export function toToolDefinitions(
 		...(tool.outputSchema && {
 			outputSchema: tool.outputSchema as JSONSchema,
 		}),
-		...('needsApproval' in tool &&
-			tool.needsApproval && { needsApproval: true }),
+		...(tool.needsApproval && {
+			needsApproval: true,
+		}),
 		...('metadata' in tool &&
 			tool.metadata && { metadata: tool.metadata as Record<string, unknown> }),
 	}));

@@ -207,6 +207,24 @@ yarray.push([sameItem]); // Different Y.Map instance internally
 
 Any concurrent edits to the "moved" item are lost because you deleted the original.
 
+### 6. Accessing Raw Y.Doc Shared Types for Document Content
+
+Document Y.Docs use a timeline model (`Y.Array('timeline')` with nested typed entries). Never access raw shared types on the ydoc directly—use the handle methods:
+
+```typescript
+// BAD: bypasses the timeline
+const ytext = handle.ydoc.getText('content');
+
+// GOOD: use handle methods (timeline-backed)
+handle.read();        // string I/O
+handle.write('hello');
+handle.asText();      // Y.Text for editor binding
+handle.asRichText();  // Y.XmlFragment for richtext binding
+handle.asSheet();     // SheetBinding for spreadsheet binding
+```
+
+See the **workspace-api** skill for the full `DocumentHandle` API.
+
 ## Debugging Tips
 
 ### Inspect Document State

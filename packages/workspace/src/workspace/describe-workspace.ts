@@ -43,6 +43,7 @@ export type SchemaDescriptor = {
 export type ActionDescriptor = {
 	path: string[];
 	type: 'query' | 'mutation';
+	title?: string;
 	description?: string;
 	input?: TSchema;
 };
@@ -119,6 +120,7 @@ export function describeWorkspace(
 			actions.push({
 				path,
 				type: action.type,
+				...(action.title !== undefined && { title: action.title }),
 				...(action.description !== undefined && {
 					description: action.description,
 				}),

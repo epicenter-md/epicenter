@@ -31,6 +31,44 @@ type Db = NodePgDatabase<typeof schema>;
 type Auth = ReturnType<typeof createAuth>;
 type Session = Auth['$Infer']['Session'];
 
+/**
+ * Create a queue for fire-and-forget promises that run after the HTTP response.
+ *
+ * Route handlers push promises into the queue via `push()`. The middleware's
+ * `finally` block calls `drain()` inside `executionCtx.waitUntil()` to keep
+ * the worker alive until all promises settle. Cleanup (e.g. closing the DB
+ * connection) is chained by the caller via `.then()`.
+ *
+ * @example
+ * ```typescript
+ * const afterResponse = createAfterResponseQueue();
+ * c.set('afterResponse', afterResponse);
+ * // ... await next() ...
+ * c.executionCtx.waitUntil(afterResponse.drain().then(() => client.end()));
+ * ```
+ */
+function createAfterResponseQueue() {
+	/**
+	 * Tracked promises whose resolution values are intentionally ignored.
+	 * `unknown` is the semantic contract for fire-and-forget: we track these
+	 * promises to completion via `Promise.allSettled`, but never inspect what
+	 * they resolve to.
+	 */
+	const promises: Promise<unknown>[] = [];
+	return {
+		/** Enqueue a fire-and-forget promise to run after the response is sent. */
+		push(promise: Promise<unknown>) {
+			promises.push(promise);
+		},
+		/** Settle all queued promises. Returns a single promise suitable for `executionCtx.waitUntil()`. */
+		drain() {
+			return Promise.allSettled(promises);
+		},
+	};
+}
+
+type AfterResponseQueue = ReturnType<typeof createAfterResponseQueue>;
+
 export type Env = {
 	Bindings: Cloudflare.Env;
 	Variables: {
@@ -38,6 +76,7 @@ export type Env = {
 		auth: Auth;
 		user: Session['user'];
 		session: Session['session'];
+		afterResponse: AfterResponseQueue;
 	};
 };
 
@@ -55,7 +94,7 @@ export const BASE_AUTH_CONFIG = {
 			trustedProviders: ['google', 'email-password'],
 		},
 	},
-} as const;
+};
 
 /** Creates a Better Auth instance using an already-connected Drizzle instance. */
 function createAuth(db: Db, env: Env['Bindings']) {
@@ -164,15 +203,28 @@ const factory = createFactory<Env>({
 		// Layer 1: Database — per-request pg.Client lifecycle (connect/end).
 		// Uses Client (not Pool) because Hyperdrive IS the connection pool.
 		app.use('*', async (c, next) => {
+			// 1. Create a fresh pg connection and afterResponse queue for this request.
 			const client = new pg.Client({
 				connectionString: c.env.HYPERDRIVE.connectionString,
 			});
+			const afterResponse = createAfterResponseQueue();
 			try {
+				// 2. Connect and expose db + queue to downstream handlers.
 				await client.connect();
 				c.set('db', drizzle(client, { schema }));
+				c.set('afterResponse', afterResponse);
+
+				// 3. Run the route handler. Handlers push fire-and-forget
+				//    promises (e.g. upsertDoInstance) into afterResponse.
 				await next();
 			} finally {
-				c.executionCtx.waitUntil(client.end());
+				// 4. The response has already left — Hono streams it during `await next()`.
+				//    But the fire-and-forget promises are still in-flight. CF Workers
+				//    would kill the isolate as soon as the response finishes, so we use
+				//    `waitUntil()` to keep it alive. `drain()` settles every queued
+				//    promise via `Promise.allSettled`, then `.then()` closes the pg
+				//    connection — guaranteeing the client outlives all its queries.
+				c.executionCtx.waitUntil(afterResponse.drain().then(() => client.end()));
 			}
 		});
 
@@ -258,7 +310,7 @@ app.post(
 // ---------------------------------------------------------------------------
 
 /**
- * DO name namespacing: `user:{userId}:{workspace|document}`
+ * DO name namespacing: `user:{userId}:{type}:{name}`
  *
  * We use user-scoped DO names (Google Docs model) rather than org-scoped names
  * (Vercel/Supabase model). Each user gets their own DO instance per workspace.
@@ -285,16 +337,66 @@ app.post(
  * a tenant prefix added at the routing layer, not embedded in the app's data model.
  */
 
-/** Get a WorkspaceRoom DO stub for the authenticated user's workspace. */
+/** Get a WorkspaceRoom DO stub and its DO name for the authenticated user's workspace. */
 function getWorkspaceStub(c: Context<Env>) {
-	const doName = `user:${c.var.user.id}:${c.req.param('workspace')}`;
-	return c.env.WORKSPACE_ROOM.get(c.env.WORKSPACE_ROOM.idFromName(doName));
+	const doName = `user:${c.var.user.id}:workspace:${c.req.param('workspace')}`;
+	return {
+		stub: c.env.WORKSPACE_ROOM.get(c.env.WORKSPACE_ROOM.idFromName(doName)),
+		doName,
+	};
 }
 
-/** Get a DocumentRoom DO stub for the authenticated user's document. */
+/** Get a DocumentRoom DO stub and its DO name for the authenticated user's document. */
 function getDocumentStub(c: Context<Env>) {
-	const doName = `user:${c.var.user.id}:${c.req.param('document')}`;
-	return c.env.DOCUMENT_ROOM.get(c.env.DOCUMENT_ROOM.idFromName(doName));
+	const doName = `user:${c.var.user.id}:document:${c.req.param('document')}`;
+	return {
+		stub: c.env.DOCUMENT_ROOM.get(c.env.DOCUMENT_ROOM.idFromName(doName)),
+		doName,
+	};
+}
+
+/**
+ * Fire-and-forget upsert for DO instance tracking.
+ *
+ * Records that a user accessed a DO, optionally updating storage bytes.
+ * Uses INSERT ON CONFLICT so the first access creates the row and
+ * subsequent accesses update `lastAccessedAt` (and `storageBytes` when
+ * provided). Errors are caught and logged—this is best-effort telemetry,
+ * not billing authority.
+ */
+function upsertDoInstance(
+	db: Db,
+	params: {
+		userId: string;
+		doType: schema.DoType;
+		resourceName: string;
+		doName: string;
+		storageBytes?: number;
+	},
+) {
+	const now = new Date();
+	return db
+		.insert(schema.durableObjectInstance)
+		.values({
+			userId: params.userId,
+			doType: params.doType,
+			resourceName: params.resourceName,
+			doName: params.doName,
+			storageBytes: params.storageBytes ?? null,
+			lastAccessedAt: now,
+			storageMeasuredAt: params.storageBytes != null ? now : null,
+		})
+		.onConflictDoUpdate({
+			target: schema.durableObjectInstance.doName,
+			set: {
+				lastAccessedAt: now,
+				...(params.storageBytes != null && {
+					storageBytes: params.storageBytes,
+					storageMeasuredAt: now,
+				}),
+			},
+		})
+		.catch((e) => console.error('[do-tracking] upsert failed:', e));
 }
 
 app.get(
@@ -304,14 +406,31 @@ app.get(
 		tags: ['workspaces'],
 	}),
 	async (c) => {
-		const stub = getWorkspaceStub(c);
+		const { stub, doName } = getWorkspaceStub(c);
 
 		if (c.req.header('upgrade') === 'websocket') {
+			c.var.afterResponse.push(
+				upsertDoInstance(c.var.db, {
+					userId: c.var.user.id,
+					doType: 'workspace',
+					resourceName: c.req.param('workspace'),
+					doName,
+				}),
+			);
 			return stub.fetch(c.req.raw);
 		}
 
-		const update = await stub.getDoc();
-		return new Response(update, {
+		const { data, storageBytes } = await stub.getDoc();
+		c.var.afterResponse.push(
+			upsertDoInstance(c.var.db, {
+				userId: c.var.user.id,
+				doType: 'workspace',
+				resourceName: c.req.param('workspace'),
+				doName,
+				storageBytes,
+			}),
+		);
+		return new Response(data, {
 			headers: { 'content-type': 'application/octet-stream' },
 		});
 	},
@@ -329,8 +448,18 @@ app.post(
 			return c.body('Payload too large', 413);
 		}
 
-		const stub = getWorkspaceStub(c);
-		const diff = await stub.sync(body);
+		const { stub, doName } = getWorkspaceStub(c);
+		const { diff, storageBytes } = await stub.sync(body);
+
+		c.var.afterResponse.push(
+			upsertDoInstance(c.var.db, {
+				userId: c.var.user.id,
+				doType: 'workspace',
+				resourceName: c.req.param('workspace'),
+				doName,
+				storageBytes,
+			}),
+		);
 
 		if (!diff) return c.body(null, 304);
 		return new Response(diff, {
@@ -350,14 +479,31 @@ app.get(
 		tags: ['documents'],
 	}),
 	async (c) => {
-		const stub = getDocumentStub(c);
+		const { stub, doName } = getDocumentStub(c);
 
 		if (c.req.header('upgrade') === 'websocket') {
+			c.var.afterResponse.push(
+				upsertDoInstance(c.var.db, {
+					userId: c.var.user.id,
+					doType: 'document',
+					resourceName: c.req.param('document'),
+					doName,
+				}),
+			);
 			return stub.fetch(c.req.raw);
 		}
 
-		const update = await stub.getDoc();
-		return new Response(update, {
+		const { data, storageBytes } = await stub.getDoc();
+		c.var.afterResponse.push(
+			upsertDoInstance(c.var.db, {
+				userId: c.var.user.id,
+				doType: 'document',
+				resourceName: c.req.param('document'),
+				doName,
+				storageBytes,
+			}),
+		);
+		return new Response(data, {
 			headers: { 'content-type': 'application/octet-stream' },
 		});
 	},
@@ -375,8 +521,18 @@ app.post(
 			return c.body('Payload too large', 413);
 		}
 
-		const stub = getDocumentStub(c);
-		const diff = await stub.sync(body);
+		const { stub, doName } = getDocumentStub(c);
+		const { diff, storageBytes } = await stub.sync(body);
+
+		c.var.afterResponse.push(
+			upsertDoInstance(c.var.db, {
+				userId: c.var.user.id,
+				doType: 'document',
+				resourceName: c.req.param('document'),
+				doName,
+				storageBytes,
+			}),
+		);
 
 		if (!diff) return c.body(null, 304);
 		return new Response(diff, {
@@ -394,7 +550,7 @@ app.post(
 	}),
 	sValidator('json', type({ label: 'string | null' })),
 	async (c) => {
-		const stub = getDocumentStub(c);
+		const { stub } = getDocumentStub(c);
 		const { label } = c.req.valid('json');
 		const result = await stub.saveSnapshot(label ?? undefined);
 		return c.json(result);
@@ -408,7 +564,7 @@ app.get(
 		tags: ['documents', 'snapshots'],
 	}),
 	async (c) => {
-		const stub = getDocumentStub(c);
+		const { stub } = getDocumentStub(c);
 		const snapshots = await stub.listSnapshots();
 		return c.json(snapshots);
 	},
@@ -422,7 +578,7 @@ app.get(
 	}),
 	sValidator('param', type({ document: 'string', id: 'string.numeric' })),
 	async (c) => {
-		const stub = getDocumentStub(c);
+		const { stub } = getDocumentStub(c);
 		const { id } = c.req.valid('param');
 		const data = await stub.getSnapshot(Number(id));
 		if (!data) return c.body('Snapshot not found', 404);
@@ -441,7 +597,7 @@ app.post(
 	}),
 	sValidator('param', type({ document: 'string', id: 'string.numeric' })),
 	async (c) => {
-		const stub = getDocumentStub(c);
+		const { stub } = getDocumentStub(c);
 		const { id } = c.req.valid('param');
 		const ok = await stub.applySnapshot(Number(id));
 		if (!ok) return c.json({ error: 'Snapshot not found' }, 404);

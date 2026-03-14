@@ -132,6 +132,7 @@ describe('computeInitialMessages', () => {
 		const { initialMessages } = setup();
 
 		expect(initialMessages.length).toBeGreaterThanOrEqual(1);
+		// biome-ignore lint/style/noNonNullAssertion: length asserted above
 		const decoded = decodeSyncMessage(initialMessages[0]!);
 		expect(decoded.type).toBe('step1');
 	});
@@ -145,6 +146,7 @@ describe('computeInitialMessages', () => {
 		const initialMessages = computeInitialMessages({ doc, awareness });
 
 		expect(initialMessages).toHaveLength(1);
+		// biome-ignore lint/style/noNonNullAssertion: length asserted above
 		expect(decodeMessageType(initialMessages[0]!)).toBe(MESSAGE_TYPE.SYNC);
 	});
 
@@ -156,7 +158,9 @@ describe('computeInitialMessages', () => {
 		const initialMessages = computeInitialMessages({ doc, awareness });
 
 		expect(initialMessages).toHaveLength(2);
+		// biome-ignore lint/style/noNonNullAssertion: length asserted above
 		expect(decodeMessageType(initialMessages[0]!)).toBe(MESSAGE_TYPE.SYNC);
+		// biome-ignore lint/style/noNonNullAssertion: length asserted above
 		expect(decodeMessageType(initialMessages[1]!)).toBe(MESSAGE_TYPE.AWARENESS);
 	});
 });
@@ -180,6 +184,7 @@ describe('registerConnection', () => {
 		);
 
 		expect(ws.sent.length).toBeGreaterThan(sentBefore);
+		// biome-ignore lint/style/noNonNullAssertion: length asserted above
 		expect(decodeMessageType(ws.sent[ws.sent.length - 1]!)).toBe(
 			MESSAGE_TYPE.SYNC,
 		);
@@ -226,8 +231,10 @@ describe('applyMessage — SYNC', () => {
 		const result = applyMessage({ data: step1Message, room, connection });
 
 		expect(result.error).toBeNull();
+		// biome-ignore lint/style/noNonNullAssertion: error is null, so data is non-null
 		expect(result.data!.response).toBeDefined();
 
+		// biome-ignore lint/style/noNonNullAssertion: error is null, so data is non-null
 		const decoded = decodeSyncMessage(result.data!.response!);
 		expect(decoded.type).toBe('step2');
 	});
@@ -244,6 +251,7 @@ describe('applyMessage — SYNC', () => {
 		const result = applyMessage({ data: step2Message, room, connection });
 
 		expect(result.error).toBeNull();
+		// biome-ignore lint/style/noNonNullAssertion: error is null, so data is non-null
 		expect(result.data!.response).toBeUndefined();
 		expect(doc.getMap('data').get('client-key')).toBe('client-value');
 	});
@@ -259,10 +267,12 @@ describe('applyMessage — SYNC', () => {
 		});
 		sourceDoc.getMap('data').set('incremental', 'update-value');
 
+		// biome-ignore lint/style/noNonNullAssertion: updateV2 handler fires synchronously from .set() above
 		const updateMessage = encodeSyncUpdate({ update: capturedUpdate! });
 		const result = applyMessage({ data: updateMessage, room, connection });
 
 		expect(result.error).toBeNull();
+		// biome-ignore lint/style/noNonNullAssertion: error is null, so data is non-null
 		expect(result.data!.response).toBeUndefined();
 		expect(doc.getMap('data').get('incremental')).toBe('update-value');
 	});
@@ -292,10 +302,13 @@ describe('applyMessage — AWARENESS', () => {
 		const result = applyMessage({ data: message, room, connection });
 
 		expect(result.error).toBeNull();
+		// biome-ignore lint/style/noNonNullAssertion: error is null, so data is non-null
 		expect(result.data!.broadcast).toBeDefined();
+		// biome-ignore lint/style/noNonNullAssertion: error is null and broadcast asserted above
 		expect(decodeMessageType(result.data!.broadcast!)).toBe(
 			MESSAGE_TYPE.AWARENESS,
 		);
+		// biome-ignore lint/style/noNonNullAssertion: error is null, so data is non-null
 		expect(result.data!.persistAttachment).toBe(true);
 	});
 
@@ -332,8 +345,10 @@ describe('applyMessage — QUERY_AWARENESS', () => {
 		const result = applyMessage({ data: message, room, connection });
 
 		expect(result.error).toBeNull();
-		expect(result.data?.response).toBeDefined();
-		expect(decodeMessageType(result.data?.response!)).toBe(
+		// biome-ignore lint/style/noNonNullAssertion: error is null, so data is non-null
+		expect(result.data!.response).toBeDefined();
+		// biome-ignore lint/style/noNonNullAssertion: error is null and response asserted above
+		expect(decodeMessageType(result.data!.response!)).toBe(
 			MESSAGE_TYPE.AWARENESS,
 		);
 	});
@@ -355,6 +370,7 @@ describe('applyMessage — QUERY_AWARENESS', () => {
 		const result = applyMessage({ data: message, room, connection });
 
 		expect(result.error).toBeNull();
+		// biome-ignore lint/style/noNonNullAssertion: error is null, so data is non-null
 		expect(result.data!.response).toBeUndefined();
 	});
 });
@@ -372,6 +388,7 @@ describe('applyMessage — error handling', () => {
 		const result = applyMessage({ data: malformed, room, connection });
 
 		expect(result.error).not.toBeNull();
+		// biome-ignore lint/style/noNonNullAssertion: error is non-null (asserted above)
 		expect(result.error!.message).toContain(
 			'Failed to decode WebSocket message',
 		);
@@ -386,6 +403,7 @@ describe('applyMessage — error handling', () => {
 
 		// Unknown types return empty effects array with no error
 		expect(result.error).toBeNull();
+		// biome-ignore lint/style/noNonNullAssertion: error is null, so data is non-null
 		expect(result.data!.response).toBeUndefined();
 	});
 });
@@ -469,6 +487,7 @@ describe('multi-client broadcast', () => {
 		});
 		sourceDoc.getMap('data').set('from-client-a', 'hello');
 
+		// biome-ignore lint/style/noNonNullAssertion: updateV2 handler fires synchronously from .set() above
 		const updateMessage = encodeSyncUpdate({ update: capturedUpdate! });
 		applyMessage({ data: updateMessage, room, connection: connection1 });
 
@@ -476,8 +495,10 @@ describe('multi-client broadcast', () => {
 		expect(ws2.sent.length).toBeGreaterThan(ws2SentBefore);
 
 		// The forwarded message should be a SYNC message
-		const lastSent = ws2.sent[ws2.sent.length - 1]!;
-		expect(decodeMessageType(lastSent)).toBe(MESSAGE_TYPE.SYNC);
+		// biome-ignore lint/style/noNonNullAssertion: length asserted above
+		expect(decodeMessageType(ws2.sent[ws2.sent.length - 1]!)).toBe(
+			MESSAGE_TYPE.SYNC,
+		);
 
 		// Client A's ws should NOT have received it (echo prevention)
 		expect(ws1.sent.length).toBe(ws1SentBefore);
@@ -504,6 +525,7 @@ describe('multi-client broadcast', () => {
 		});
 
 		// The broadcast field should be set for the DO to distribute
+		// biome-ignore lint/style/noNonNullAssertion: error is null, so data is non-null
 		expect(result.data!.broadcast).toBeDefined();
 
 		// The awareness state should be applied to the shared instance
@@ -532,6 +554,7 @@ describe('full handshake convergence', () => {
 		const clientDoc = new Y.Doc();
 
 		// Step 1: Client receives server's SyncStep1 (from initialMessages)
+		// biome-ignore lint/style/noNonNullAssertion: setup() always returns at least one message
 		const serverStep1 = initialMessages[0]!;
 		const decoded = decodeSyncMessage(serverStep1);
 		expect(decoded.type).toBe('step1');
@@ -541,9 +564,11 @@ describe('full handshake convergence', () => {
 		const result = applyMessage({ data: clientStep1, room, connection });
 
 		expect(result.error).toBeNull();
+		// biome-ignore lint/style/noNonNullAssertion: error is null, so data is non-null
 		expect(result.data!.response).toBeDefined();
 
 		// Step 3: Client applies server's SyncStep2 response
+		// biome-ignore lint/style/noNonNullAssertion: error is null and response asserted above
 		const decodedStep2 = decodeSyncMessage(result.data!.response!);
 		expect(decodedStep2.type).toBe('step2');
 		if (decodedStep2.type === 'step2') {
@@ -578,9 +603,11 @@ describe('full handshake convergence', () => {
 		// Client sends SyncStep1 to server → gets SyncStep2 back
 		const clientStep1 = encodeSyncStep1({ doc: clientDoc });
 		const result1 = applyMessage({ data: clientStep1, room, connection });
+		// biome-ignore lint/style/noNonNullAssertion: error is null, so data is non-null
 		expect(result1.data!.response).toBeDefined();
 
 		// Client applies server's diff
+		// biome-ignore lint/style/noNonNullAssertion: error is null and response asserted above
 		const serverDiff = decodeSyncMessage(result1.data!.response!);
 		if (serverDiff.type === 'step2') {
 			Y.applyUpdateV2(clientDoc, serverDiff.update, 'server');

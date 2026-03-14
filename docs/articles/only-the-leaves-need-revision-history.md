@@ -22,7 +22,7 @@ Metadata Y.Doc (gc: true, always loaded)
     └── { key: 'theme', val: 'dark', ts: ... }
 
 Content Y.Doc (gc: false, loaded on demand)          ← one per file
-└── Y.Text('content')    or    Y.XmlFragment('content')
+└── Y.Array('timeline')  →  [{ type: 'text', content: Y.Text }]
 ```
 
 The metadata doc is a single document containing all your structural data: file names, parent IDs, timestamps, settings. It's small and always in memory. Garbage collection is on, so tombstones from updates get merged into a few bytes.

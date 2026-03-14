@@ -331,8 +331,8 @@ export const redditWorkspace = defineWorkspace({
 
 	kv: {
 		// Singleton values from CSV files
-		statistics: defineKv(type('Record<string, string> | null')),
-		preferences: defineKv(type('Record<string, string> | null')),
+		statistics: defineKv(type('Record<string, string> | null'), null),
+		preferences: defineKv(type('Record<string, string> | null'), null),
 	},
 });
 

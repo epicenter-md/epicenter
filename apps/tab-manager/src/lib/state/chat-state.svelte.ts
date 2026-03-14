@@ -35,7 +35,6 @@
  * ```
  */
 
-import { generateId } from '@epicenter/workspace';
 import {
 	ChatClient,
 	type ChatClientState,
@@ -51,13 +50,16 @@ import {
 	PROVIDER_MODELS,
 	type Provider,
 } from '$lib/ai/providers';
-import { TAB_MANAGER_SYSTEM_PROMPT } from '$lib/ai/system-prompt';
+import { buildDeviceConstraints, TAB_MANAGER_SYSTEM_PROMPT } from '$lib/ai/system-prompt';
 import { toUiMessage } from '$lib/ai/ui-message';
+import { getDeviceId } from '$lib/device/device-id';
 import { remoteServerUrl } from '$lib/state/settings.svelte';
 import {
 	type ChatMessageId,
 	type Conversation,
 	type ConversationId,
+	generateChatMessageId,
+	generateConversationId,
 	workspaceClient,
 	workspaceDefinitions,
 	workspaceTools,
@@ -82,9 +84,6 @@ const DEFAULT_STREAM_STATE: StreamState = {
 // ─────────────────────────────────────────────────────────────────────────────
 // State Factory
 // ─────────────────────────────────────────────────────────────────────────────
-
-/** Generate a new branded ConversationId from a random ID. */
-const generateConversationId = () => generateId() as string as ConversationId;
 
 function createAiChatState() {
 	// ── Conversation List (Y.Doc-backed) ──────────────────────────────
@@ -157,6 +156,11 @@ function createAiChatState() {
 
 	/** Per-conversation ChatClient instances. Plain Map — not read in templates. */
 	const clients = new Map<ConversationId, ChatClient>();
+	/** Per-conversation timeout IDs for stuck 'submitted' status recovery. */
+	const submittedTimers = new Map<ConversationId, ReturnType<typeof setTimeout>>();
+
+	/** Seconds to wait for the server to begin streaming before timing out. */
+	const SUBMITTED_TIMEOUT_MS = 60_000;
 
 	/** Per-conversation handle projections (reactive — read in templates). */
 	const handles = new SvelteMap<
@@ -185,7 +189,7 @@ function createAiChatState() {
 				() => `${remoteServerUrl.current}/ai/chat`,
 				async () => {
 					const conv = conversations.find((c) => c.id === conversationId);
-					const systemPrompt = conv?.systemPrompt ?? TAB_MANAGER_SYSTEM_PROMPT;
+					const deviceId = await getDeviceId();
 					return {
 						credentials: 'include',
 						body: {
@@ -193,7 +197,12 @@ function createAiChatState() {
 								provider: conv?.provider ?? DEFAULT_PROVIDER,
 								model: conv?.model ?? DEFAULT_MODEL,
 								conversationId,
-								systemPrompts: [systemPrompt],
+								// Device constraints first (immutable), then base/custom prompt.
+								// Constraints stay even if the conversation overrides the prompt.
+								systemPrompts: [
+									buildDeviceConstraints(deviceId),
+									conv?.systemPrompt ?? TAB_MANAGER_SYSTEM_PROMPT,
+								],
 								tools: workspaceDefinitions,
 							},
 						},
@@ -201,19 +210,62 @@ function createAiChatState() {
 				},
 			),
 			onMessagesChange: (msgs) => {
-				messageStore.set(conversationId, msgs);
+				// Shallow-clone every message and part to break reference identity.
+				// TanStack AI's StreamProcessor mutates tool-call parts in place
+				// (output, state, approval) but creates new objects for text parts.
+				// SvelteMap stores raw values without deep proxying, so Svelte 5's
+				// fine-grained reactivity can't detect in-place mutations on parts.
+				// Fresh references ensure keyed {#each} blocks propagate changes
+				// to $derived() in child components (isRunning, isApprovalRequested).
+				messageStore.set(
+					conversationId,
+					msgs.map((m) => ({ ...m, parts: m.parts.map((p) => ({ ...p })) })),
+				);
 			},
 			onLoadingChange: (isLoading) => {
+				console.log('[ai-chat] loading:', isLoading, 'conversation:', conversationId);
 				const current = streamStore.get(conversationId) ?? DEFAULT_STREAM_STATE;
 				streamStore.set(conversationId, { ...current, isLoading });
 			},
 			onErrorChange: (error) => {
+				if (error) console.warn('[ai-chat] error:', error.message, 'conversation:', conversationId);
 				const current = streamStore.get(conversationId) ?? DEFAULT_STREAM_STATE;
 				streamStore.set(conversationId, { ...current, error });
 			},
 			onStatusChange: (status) => {
+				console.log('[ai-chat] status:', status, 'conversation:', conversationId);
 				const current = streamStore.get(conversationId) ?? DEFAULT_STREAM_STATE;
 				streamStore.set(conversationId, { ...current, status });
+
+				// Clear any existing submitted-timeout when status changes.
+				const existingTimer = submittedTimers.get(conversationId);
+				if (existingTimer) {
+					clearTimeout(existingTimer);
+					submittedTimers.delete(conversationId);
+				}
+
+				// Start a timeout when entering 'submitted' — if the server
+				// never begins streaming, auto-stop and surface an error.
+				if (status === 'submitted') {
+					const timer = setTimeout(() => {
+						submittedTimers.delete(conversationId);
+						const latest = (streamStore.get(conversationId) ?? DEFAULT_STREAM_STATE).status;
+						if (latest !== 'submitted') return;
+
+						console.warn('[ai-chat] timeout: no response within 60 s, stopping', conversationId);
+						const c = clients.get(conversationId);
+						if (c) c.stop();
+						streamStore.set(conversationId, {
+							isLoading: false,
+							error: new Error('Request timed out. The AI did not respond within 60 seconds.'),
+							status: 'error',
+						});
+					}, SUBMITTED_TIMEOUT_MS);
+					submittedTimers.set(conversationId, timer);
+				}
+			},
+			onError: (error) => {
+				console.error('[ai-chat] stream error:', error.message, 'conversation:', conversationId);
 			},
 			onFinish: (message) => {
 				workspaceClient.tables.chatMessages.set({
@@ -358,7 +410,7 @@ function createAiChatState() {
 
 			sendMessage(content: string) {
 				if (!content.trim()) return;
-				const userMessageId = generateId() as string as ChatMessageId;
+				const userMessageId = generateChatMessageId();
 
 				// Send to client FIRST so isLoading=true before the
 				// Y.Doc observer fires refreshFromDoc (which skips
@@ -401,6 +453,30 @@ function createAiChatState() {
 
 			stop() {
 				client.stop();
+			},
+
+			/**
+			 * Respond to a tool approval request.
+			 *
+			 * Called when the user clicks [Allow], [Always Allow], or [Deny]
+			 * on a mutation tool call in the chat. Delegates to ChatClient's
+			 * `addToolApprovalResponse`, which sends the response back to the
+			 * server to resume or cancel tool execution.
+			 *
+			 * @param approvalId - The `part.approval.id` from the ToolCallPart
+			 * @param approved - `true` to allow execution, `false` to deny
+			 *
+			 * @example
+			 * ```typescript
+			 * // User clicks "Allow"
+			 * handle.approveToolCall(part.approval.id, true);
+			 *
+			 * // User clicks "Deny"
+			 * handle.approveToolCall(part.approval.id, false);
+			 * ```
+			 */
+			approveToolCall(approvalId: string, approved: boolean) {
+				void client.addToolApprovalResponse({ id: approvalId, approved });
 			},
 
 			rename(title: string) {

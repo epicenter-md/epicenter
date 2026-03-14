@@ -28,7 +28,7 @@ function setup() {
 	const tagsTable = defineTable(
 		type({ id: 'string', name: 'string', _v: '1' }),
 	);
-	const themeDef = defineKv(type({ mode: "'light' | 'dark'" }));
+	const themeDef = defineKv(type({ mode: "'light' | 'dark'" }), { mode: 'light' });
 
 	const definition = defineWorkspace({
 		id: 'test-workspace',

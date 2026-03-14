@@ -5,7 +5,7 @@
 	import { Input } from '@epicenter/ui/input';
 	import { Spinner } from '@epicenter/ui/spinner';
 	import { authState } from '$lib/state/auth.svelte';
-	import { reconnectSync } from '$lib/workspace';
+	import { workspaceClient } from '$lib/workspace';
 
 	const isSignUp = $derived(authState.mode === 'sign-up');
 	const isBusy = $derived(authState.status === 'signing-in');
@@ -17,7 +17,7 @@
 		const { error } = isSignUp
 			? await authState.signUp()
 			: await authState.signIn();
-		if (!error) reconnectSync();
+		if (!error) workspaceClient.extensions.sync.reconnect();
 	}}
 	class="w-full max-w-xs"
 >
@@ -42,7 +42,7 @@
 			disabled={isBusy}
 			onclick={async () => {
 				const { error } = await authState.signInWithGoogle();
-				if (!error) reconnectSync();
+				if (!error) workspaceClient.extensions.sync.reconnect();
 			}}
 		>
 			<svg class="size-4" viewBox="0 0 24 24" aria-hidden="true">

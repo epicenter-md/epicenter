@@ -458,7 +458,7 @@ When a schema, builder, or configuration is only used once in a test, inline it 
 test('creates workspace with tables', () => {
 	const posts = defineTable(type({ id: 'string', title: 'string', _v: '1' }));
 
-	const theme = defineKv(type({ mode: "'light' | 'dark'", _v: '1' }));
+	const theme = defineKv(type("'light' | 'dark'"), 'light');
 
 	const workspace = defineWorkspace({
 		id: 'test-app',
@@ -480,7 +480,7 @@ test('creates workspace with tables', () => {
 			posts: defineTable(type({ id: 'string', title: 'string', _v: '1' })),
 		},
 		kv: {
-			theme: defineKv(type({ mode: "'light' | 'dark'", _v: '1' })),
+			theme: defineKv(type("'light' | 'dark'"), 'light'),
 		},
 	});
 
@@ -670,20 +670,37 @@ This makes type boundaries visible and intentional, without forcing awkward para
 
 Every `defineTable()` schema MUST use branded ID types for the `id` field and all string foreign keys. Never use plain `'string'` for table IDs.
 
-For tables that use arktype schemas, define the brand as a type + arktype pipe pair:
+For tables that use arktype schemas, follow the three-part pattern:
 
 ```typescript
-export type ConversationId = string & Brand<'ConversationId'>;
-export const ConversationId = type('string').pipe(
-	(s): ConversationId => s as ConversationId,
-);
+// 1. TYPE — extends Id, not string (enables single-cast in generator)
+export type SavedTabId = Id & Brand<'SavedTabId'>;
+
+// 2. VALIDATOR — zero-cost type assertion for schema composition
+export const SavedTabId = type('string').as<SavedTabId>();
+
+// 3. GENERATOR — wraps generateId() so the cast lives in one place
+export const generateSavedTabId = (): SavedTabId =>
+	generateId() as SavedTabId;
 ```
 
-Then use directly in the schema: `id: ConversationId` and for optional FKs: `'parentId?': ConversationId.or('undefined')`.
+Use directly in the schema: `id: SavedTabId` and for optional FKs: `'parentId?': SavedTabId.or('undefined')`.
 
-When generating IDs with `generateId()` (which returns `Id`, a different brand), cast through string: `generateId() as string as ConversationId`.
+At call sites, use the generator—never the double-cast:
 
-See the `static-workspace-api` skill for the full pattern and rules.
+```typescript
+// Good
+const id = generateSavedTabId();
+
+// Bad — scattered casts
+const id = generateId() as string as SavedTabId;
+```
+
+The `generate*` prefix means "new ID from scratch." The `create*` prefix means "assemble from inputs" (e.g., `createTabCompositeId(deviceId, tabId)`).
+
+Not every branded type needs all three parts. `DeviceId` is set from an external source (no generator). Path types like `AbsolutePath` need only the type.
+
+See the `workspace-api` skill for the full workspace file structure and rules.
 
 # Extract Coupled `let` State Into Sub-Factories
 

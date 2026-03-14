@@ -1,6 +1,7 @@
 # Migrate Filesystem Package to Document Binding API
 
 > **Note**: The `.docs` access pattern described here was replaced by `client.documents` — see specs/20260221T204200-documents-top-level-namespace.md
+> **Content model note**: The "two content access paths" design described in this spec's review section is superseded by `specs/20260313T224500-unify-document-content-model.md`. The dual model (handle Y.Text vs filesystem timeline) causes silent data loss and is being unified on the timeline model.
 
 **Date**: 2026-02-19
 **Status**: Complete

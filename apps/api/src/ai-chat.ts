@@ -3,6 +3,7 @@ import {
 	type AnyTextAdapter,
 	chat,
 	type ModelMessage,
+	type Tool,
 	toServerSentEventsResponse,
 } from '@tanstack/ai';
 import { ANTHROPIC_MODELS, createAnthropicChat } from '@tanstack/ai-anthropic';
@@ -45,7 +46,7 @@ export const aiChatHandlers = factory.createHandlers(
 	sValidator('json', aiChatBody),
 	async (c) => {
 		const { messages, data } = c.req.valid('json');
-		const { provider, ...options } = data;
+		const { provider, tools, ...options } = data;
 
 		let adapter: AnyTextAdapter;
 		switch (data.provider) {
@@ -70,6 +71,7 @@ export const aiChatHandlers = factory.createHandlers(
 			adapter,
 			messages: messages as Array<ModelMessage>,
 			...options,
+			tools: tools as Array<Tool> | undefined,
 			abortController,
 		});
 

@@ -23,6 +23,7 @@ describe('describeWorkspace', () => {
 		const posts = defineTable(type({ id: 'string', title: 'string', _v: '1' }));
 		const settings = defineKv(
 			type({ theme: "'light' | 'dark'", fontSize: 'number' }),
+			{ theme: 'light', fontSize: 14 },
 		);
 
 		const client = createWorkspace({
@@ -142,7 +143,7 @@ describe('describeWorkspace', () => {
 
 	test('JSON.stringify(descriptor) succeeds (no circular refs)', () => {
 		const posts = defineTable(type({ id: 'string', title: 'string', _v: '1' }));
-		const settings = defineKv(type({ theme: "'light' | 'dark'" }));
+		const settings = defineKv(type({ theme: "'light' | 'dark'" }), { theme: 'light' });
 
 		const client = createWorkspace({
 			id: 'stringify-test',
@@ -214,5 +215,51 @@ describe('describeWorkspace', () => {
 			'type',
 			'object',
 		);
+	});
+
+	test('title appears in action descriptors', () => {
+		const client = createWorkspace({
+			id: 'metadata-test',
+			tables: {
+				posts: defineTable(type({ id: 'string', title: 'string', _v: '1' })),
+			},
+		}).withActions((c) => ({
+			posts: {
+				getAll: defineQuery({
+					title: 'List Posts',
+					description: 'Get all posts',
+					handler: () => c.tables.posts.getAllValid(),
+				}),
+				delete: defineMutation({
+					title: 'Delete Post',
+					description: 'Delete a post by ID',
+					input: Type.Object({ id: Type.String() }),
+					handler: ({ id }) => {
+						c.tables.posts.delete(id);
+					},
+				}),
+				create: defineMutation({
+					description: 'Create a post (no title)',
+					handler: () => {},
+				}),
+			},
+		}));
+
+		const descriptor = describeWorkspace(client);
+
+		const getAllAction = descriptor.actions.find(
+			(a) => a.path.join('.') === 'posts.getAll',
+		);
+		expect(getAllAction?.title).toBe('List Posts');
+
+		const deleteAction = descriptor.actions.find(
+			(a) => a.path.join('.') === 'posts.delete',
+		);
+		expect(deleteAction?.title).toBe('Delete Post');
+
+		const createAction = descriptor.actions.find(
+			(a) => a.path.join('.') === 'posts.create',
+		);
+		expect(createAction?.title).toBeUndefined();
 	});
 });

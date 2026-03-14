@@ -68,9 +68,14 @@ export type Folder = InferTableRow<typeof foldersTable>;
  * has a title auto-populated from the first line of content, a preview for the
  * list view, and can be pinned to appear at the top of the note list.
  *
- * The Y.Text document (`body`) provides collaborative rich-text editing. The
- * document GUID matches the note `id` for 1:1 mapping. Updates to the document
- * automatically touch `updatedAt`.
+ * v2 adds `deletedAt` for soft delete — notes move to "Recently Deleted"
+ * instead of being permanently destroyed. The field is `undefined` for active
+ * notes and a `DateTimeString` for deleted ones. Also adds optional `wordCount`
+ * (computed on each editor update, `undefined` for legacy notes).
+ *
+ * The Y.XmlFragment document (`body`) provides collaborative rich-text editing.
+ * The document GUID matches the note `id` for 1:1 mapping. Updates to the
+ * document automatically touch `updatedAt`.
  */
 const notesTable = defineTable(
 	type({
@@ -83,10 +88,31 @@ const notesTable = defineTable(
 		updatedAt: DateTimeString,
 		_v: '1',
 	}),
-).withDocument('body', {
-	guid: 'id',
-	onUpdate: () => ({ updatedAt: dateTimeStringNow() }),
-});
+	type({
+		id: NoteId,
+		'folderId?': FolderId.or('undefined'),
+		title: 'string',
+		preview: 'string',
+		pinned: 'boolean',
+		'deletedAt?': DateTimeString.or('undefined'),
+		'wordCount?': 'number | undefined',
+		createdAt: DateTimeString,
+		updatedAt: DateTimeString,
+		_v: '2',
+	}),
+)
+	.migrate((row) => {
+		switch (row._v) {
+			case 1:
+				return { ...row, deletedAt: undefined, _v: 2 };
+			case 2:
+				return row;
+		}
+	})
+	.withDocument('body', {
+		guid: 'id',
+		onUpdate: () => ({ updatedAt: dateTimeStringNow() }),
+	});
 export type Note = InferTableRow<typeof notesTable>;
 
 // ─── Workspace ────────────────────────────────────────────────────────────────
@@ -95,10 +121,10 @@ export const honeycrisp = defineWorkspace({
 	id: 'epicenter.honeycrisp' as const,
 	tables: { folders: foldersTable, notes: notesTable },
 	kv: {
-		selectedFolderId: defineKv(FolderId.or(type('null'))),
-		selectedNoteId: defineKv(NoteId.or(type('null'))),
-		sortBy: defineKv(type("'dateEdited' | 'dateCreated' | 'title'")),
-		sidebarCollapsed: defineKv(type('boolean')),
+		selectedFolderId: defineKv(FolderId.or(type('null')), null),
+		selectedNoteId: defineKv(NoteId.or(type('null')), null),
+		sortBy: defineKv(type("'dateEdited' | 'dateCreated' | 'title'"), 'dateEdited'),
+		sidebarCollapsed: defineKv(type('boolean'), false),
 	},
 });
 

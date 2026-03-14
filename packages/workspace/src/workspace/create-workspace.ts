@@ -82,6 +82,27 @@ async function destroyLifo(
 }
 
 /**
+ * Start all cleanups immediately in LIFO order without awaiting between them.
+ *
+ * Used in the sync builder error path where we can't await. Every cleanup is
+ * invoked before the throw propagates—async portions settle in the background.
+ * Rejections are observed (logged) so they don't become unhandled.
+ */
+function startDestroyLifo(
+	cleanups: (() => MaybePromise<void>)[],
+): void {
+	for (let i = cleanups.length - 1; i >= 0; i--) {
+		try {
+			Promise.resolve(cleanups[i]?.()).catch((err) => {
+				console.error('Extension cleanup error during rollback:', err);
+			});
+		} catch (err) {
+			console.error('Extension cleanup error during rollback:', err);
+		}
+	}
+}
+
+/**
  * Create a workspace client with chainable extension support.
  *
  * The returned client IS directly usable (no extensions required) AND supports
@@ -296,16 +317,7 @@ export function createWorkspace<
 					},
 				);
 			} catch (err) {
-				// Fire-and-forget: withExtension is sync so we can't await
-				destroyLifo(state.extensionCleanups).then((errors) => {
-					if (errors.length > 0) {
-						console.error(
-							'Extension cleanup errors during factory failure:',
-							errors,
-						);
-					}
-				});
-
+				startDestroyLifo(state.extensionCleanups);
 				throw err;
 			}
 		}

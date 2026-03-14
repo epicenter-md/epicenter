@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Discord Community
+    url: https://go.epicenter.so/discord
+    about: Ask questions, share ideas, or get help from the community
+  - name: Contributing Guide
+    url: https://github.com/EpicenterHQ/epicenter/blob/main/CONTRIBUTING.md
+    about: Read the contributing guide before opening your first PR

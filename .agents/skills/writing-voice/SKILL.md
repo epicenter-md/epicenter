@@ -195,3 +195,9 @@ When the user provides example text or tone guidance, match it:
 - If they give 5 sentences, don't write 5 paragraphs
 - If they use direct statements, don't add narrative fluff
 - Match their energy, not a template
+
+## Financial Language
+
+Epicenter's primary goal is not to make money. Vision and mission come first. Financial sustainability exists to fund more open-source development and sponsor contributors—it's a means, not the point.
+
+When writing about how the project sustains itself, be cautious with language that sounds like a pitch deck. Avoid "revenue," "monetization," "ARR," dollar-figure valuations, and other tech bro jargon. Say "financial sustainability" or "sustaining the project" instead. Name companies like Grafana or Bitwarden as references, but drop the dollar figures—otherwise it reads as if we're chasing their numbers rather than explaining our approach.

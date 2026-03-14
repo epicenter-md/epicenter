@@ -391,7 +391,7 @@ function createAuthState() {
 		 * @example
 		 * ```typescript
 		 * onMount(() => {
-		 *     return authState.onExternalSignIn(() => reconnectSync());
+		 *     return authState.onExternalSignIn(() => workspaceClient.extensions.sync.reconnect());
 		 * });
 		 * ```
 		 */

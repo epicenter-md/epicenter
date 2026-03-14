@@ -39,6 +39,7 @@ Web apps (Cloudflare Workers) deploy **together in one workflow** because deploy
 |---|---|---|
 | `ci.format.yml` | Push, pull requests | Runs `bun run lint:check` and `bun run typecheck`. |
 | `ci.autofix.yml` | Push, pull requests | Runs `bun run format` and commits fixes back via autofix-ci. |
+| `ci.cla.yml` | Pull requests, issue comments | Enforces CLA signing via [contributor-assistant](https://github.com/contributor-assistant/github-action). Stores signatures in `signatures/cla.json`. |
 
 ### Automation
 

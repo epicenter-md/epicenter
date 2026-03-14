@@ -42,6 +42,7 @@ const noteDefinition = defineTable(
 
 const settingsDefinition = defineKv(
 	type({ theme: "'light' | 'dark'", fontSize: 'number' }),
+	{ theme: 'light', fontSize: 14 },
 );
 
 function generateId(index: number): string {
@@ -371,7 +372,7 @@ describe('KV benchmarks', () => {
 	test('repeated set on same key (10,000 times)', () => {
 		const ydoc = new Y.Doc();
 		const kv = createKv(ydoc, {
-			counter: defineKv(type({ value: 'number' })),
+			counter: defineKv(type({ value: 'number' }), { value: 0 }),
 		});
 
 		const { durationMs } = measureTime(() => {
@@ -384,16 +385,13 @@ describe('KV benchmarks', () => {
 		console.log(`Average per set: ${(durationMs / 10_000).toFixed(4)}ms`);
 
 		const result = kv.get('counter');
-		expect(result.status).toBe('valid');
-		if (result.status === 'valid') {
-			expect(result.value.value).toBe(9_999);
-		}
+		expect(result).toEqual({ value: 9_999 });
 	});
 
 	test('set + get alternating (10,000 cycles)', () => {
 		const ydoc = new Y.Doc();
 		const kv = createKv(ydoc, {
-			counter: defineKv(type({ value: 'number' })),
+			counter: defineKv(type({ value: 'number' }), { value: 0 }),
 		});
 
 		const { durationMs } = measureTime(() => {
@@ -410,7 +408,7 @@ describe('KV benchmarks', () => {
 	test('set + delete cycle (1,000 times)', () => {
 		const ydoc = new Y.Doc();
 		const kv = createKv(ydoc, {
-			counter: defineKv(type({ value: 'number' })),
+			counter: defineKv(type({ value: 'number' }), { value: 0 }),
 		});
 
 		const { durationMs } = measureTime(() => {
@@ -422,7 +420,7 @@ describe('KV benchmarks', () => {
 
 		console.log(`Set + Delete 1,000 cycles: ${durationMs.toFixed(2)}ms`);
 		console.log(`Average per cycle: ${(durationMs / 1_000).toFixed(4)}ms`);
-		expect(kv.get('counter').status).toBe('not_found');
+		expect(kv.get('counter')).toEqual({ value: 0 });
 	});
 });
 

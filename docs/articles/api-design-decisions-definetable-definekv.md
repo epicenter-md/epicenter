@@ -192,23 +192,23 @@ We don't enforce either. The single `.migrate()` function receives any version a
 
 Both work. We give you the flexibility to choose.
 
-## Symmetry: Tables and KV
+## Deliberate Asymmetry: Tables vs KV
 
-We deliberately made Tables and KV APIs symmetric:
+Tables and KV intentionally have different versioning APIs:
 
 ```typescript
-// Tables
-defineTable('posts').version(...).migrate(...)
+// Tables — versioning + migration (rows accumulate, schema changes must preserve data)
+defineTable(v1Schema, v2Schema).migrate(fn)
 createTables(ydoc, { posts })
-tables.posts.get()
+tables.posts.get('1')
 
-// KV
-defineKv('theme').version(...).migrate(...)
+// KV — validate-or-default (preferences reset gracefully)
+defineKv(schema, defaultValue)
 createKv(ydoc, { theme })
-kv.theme.get()
+kv.get('theme')
 ```
 
-Same pattern, same mental model. Learn one, use both.
+Tables accumulate rows that must survive schema changes—migration is mandatory. KV stores hold single preferences where resetting to the default is acceptable. This asymmetry is deliberate: borrowing table migration machinery for KV conflates two fundamentally different data lifecycles.
 
 ## Summary
 

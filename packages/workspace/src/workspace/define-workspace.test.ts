@@ -27,7 +27,7 @@ describe('defineWorkspace', () => {
 				posts: defineTable(type({ id: 'string', title: 'string', _v: '1' })),
 			},
 			kv: {
-				theme: defineKv(type({ mode: "'light' | 'dark'" })),
+				theme: defineKv(type({ mode: "'light' | 'dark'" }), { mode: 'light' }),
 			},
 		});
 
@@ -43,7 +43,7 @@ describe('defineWorkspace', () => {
 				posts: defineTable(type({ id: 'string', title: 'string', _v: '1' })),
 			},
 			kv: {
-				theme: defineKv(type({ mode: "'light' | 'dark'" })),
+				theme: defineKv(type({ mode: "'light' | 'dark'" }), { mode: 'light' }),
 			},
 		});
 
@@ -60,7 +60,7 @@ describe('defineWorkspace', () => {
 				posts: defineTable(type({ id: 'string', title: 'string', _v: '1' })),
 			},
 			kv: {
-				theme: defineKv(type({ mode: "'light' | 'dark'" })),
+				theme: defineKv(type({ mode: "'light' | 'dark'" }), { mode: 'light' }),
 			},
 		});
 
@@ -72,7 +72,7 @@ describe('defineWorkspace', () => {
 		// Use KV
 		client.kv.set('theme', { mode: 'dark' });
 		const themeResult = client.kv.get('theme');
-		expect(themeResult.status).toBe('valid');
+		expect(themeResult).toEqual({ mode: 'dark' });
 	});
 
 	test('createWorkspace().withExtension() adds extensions', () => {

@@ -261,6 +261,9 @@ The client already creates content Y.Docs with `gc: false` (`create-document.ts`
 
 ## Room key namespacing decision
 
+> **Update (2026-03-13):** DO names now include a type segment: `user:{userId}:{type}:{name}` where `{type}` is `workspace` or `document`. The user-scoped decision and org-scoping rationale below are unchanged. See `20260313T201800-do-naming-convention.md`.
+
+
 We keep user-scoped room keys: `user:{userId}:{workspaceId}`. We evaluated two alternatives and rejected both.
 
 ### Alternative 1: Org-scoped (`org:{orgId}:{workspaceId}`)

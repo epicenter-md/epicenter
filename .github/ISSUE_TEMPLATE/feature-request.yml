@@ -22,16 +22,11 @@ body:
         - Links to similar features in other apps
         - If from Discord, paste the Discord message body here
       value: |
-        ### Problem:
+        ### Problem / use case:
 
 
         ### Proposed solution:
 
-
-        ### Use case:
-
-
-        ### Additional details:
 
     validations:
       required: true
@@ -70,7 +65,7 @@ body:
     id: contribution
     attributes:
       label: Willing to Contribute?
-      description: Would you be interested in helping implement this feature?
+      description: Would you be interested in helping implement this feature? First-time contributors sign a one-time CLA—see CONTRIBUTING.md for details.
       options:
         - "Yes, I can implement this"
         - "Yes, but I'd need guidance"

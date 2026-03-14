@@ -3,6 +3,7 @@
 	import * as Drawer from '@epicenter/ui/drawer';
 	import ZapIcon from '@lucide/svelte/icons/zap';
 	import AiChat from '$lib/components/chat/AiChat.svelte';
+	import TrustSettings from '$lib/components/chat/TrustSettings.svelte';
 	import { authState } from '$lib/state/auth.svelte';
 
 	let { open = $bindable(false) }: { open: boolean } = $props();
@@ -11,13 +12,16 @@
 <Drawer.Root bind:open direction="bottom" shouldScaleBackground={false}>
 	<Drawer.Content class="max-h-[80vh]">
 		<Drawer.Header class="text-left">
-			<Drawer.Title>AI Chat</Drawer.Title>
+			<div class="flex items-center justify-between">
+				<Drawer.Title>AI Chat</Drawer.Title>
+				<TrustSettings />
+			</div>
 			<Drawer.Description class="sr-only">
 				Chat with AI about your tabs
 			</Drawer.Description>
 		</Drawer.Header>
 		{#if authState.status === 'signed-in'}
-			<div class="h-[400px] px-4 pb-4"><AiChat /></div>
+			<div class="h-[clamp(300px,50vh,600px)] px-4 pb-4"><AiChat /></div>
 		{:else}
 			<div
 				class="flex flex-col items-center justify-center gap-3 h-[200px] px-4 pb-4"

@@ -13,10 +13,10 @@ Metadata Y.Doc (gc: true, always loaded)
 │   └── { id: 'def', name: 'index.ts', size: 512, updatedAt: ... }
 
 Content Y.Doc 'abc' (gc: false, loaded on demand)
-└── Y.Text('content')  →  "# API Reference\n..."
+└── Y.Array('timeline')  →  [{ type: 'text', content: Y.Text('# API Reference\n...') }]
 
 Content Y.Doc 'def' (gc: false, loaded on demand)
-└── Y.Text('content')  →  "export function main() {..."
+└── Y.Array('timeline')  →  [{ type: 'text', content: Y.Text('export function main() {...') }]
 ```
 
 A user opens `api.md` and starts typing. Content doc `abc` gets updated, but the files table row still has the same name, same size, same `updatedAt`. No observer fires. Persistence doesn't save. The UI doesn't reflect the edit. The reference doesn't propagate change events.

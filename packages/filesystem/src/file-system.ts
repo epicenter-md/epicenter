@@ -1,9 +1,10 @@
-import type { Documents, TableHelper } from '@epicenter/workspace';
-import type { IFileSystem } from 'just-bash';
 import {
-	type ContentHelpers,
-	createContentHelpers,
-} from './content/content.js';
+	type Documents,
+	parseSheetFromCsv,
+	readEntry,
+	type TableHelper,
+} from '@epicenter/workspace';
+import type { IFileSystem } from 'just-bash';
 import { FS_ERRORS } from './errors.js';
 import type { FileId } from './ids.js';
 import { posixResolve } from './path.js';
@@ -20,13 +21,13 @@ function FileSystem<T extends IFileSystem>(fs: T): T {
  * Create a POSIX-like virtual filesystem backed by Yjs CRDTs.
  *
  * Thin orchestrator that delegates metadata operations to {@link FileTree}
- * and content I/O to {@link ContentHelpers} (backed by a
+ * and content I/O to document handles (backed by a
  * {@link Documents}). Every method applies `cwd` via
  * {@link posixResolve}, then calls the appropriate sub-service.
  *
  * The returned object satisfies the `IFileSystem` interface from `just-bash`,
  * which allows this virtual filesystem to be used as a drop-in backend for
- * shell emulation — while also exposing extra members (`content`, `index`,
+ * shell emulation — while also exposing extra members (`index`,
  * `lookupId`, `destroy`) that aren't part of `IFileSystem`.
  *
  * **No symlinks** — `symlink`, `link`, and `readlink` always throw ENOSYS.
@@ -45,12 +46,8 @@ export function createYjsFileSystem(
 	cwd: string = '/',
 ) {
 	const tree = new FileTree(filesTable);
-	const content = createContentHelpers(contentDocuments);
 
 	return FileSystem({
-		/** Content I/O operations — exposed for direct content reads/writes by UI layers. */
-		content,
-
 		/** Reactive file-system indexes for path lookups and parent-child queries. */
 		get index(): FileTree['index'] {
 			return tree.index;
@@ -160,16 +157,13 @@ export function createYjsFileSystem(
 			if (id === null) throw FS_ERRORS.ENOENT(abs);
 			const row = tree.getRow(id, abs);
 			if (row.type === 'folder') throw FS_ERRORS.EISDIR(abs);
-			return content.read(id);
+			const handle = await contentDocuments.open(id);
+			return handle.read();
 		},
 
 		async readFileBuffer(path) {
-			const abs = posixResolve(cwd, path);
-			const id = tree.resolveId(abs);
-			if (id === null) throw FS_ERRORS.ENOENT(abs);
-			const row = tree.getRow(id, abs);
-			if (row.type === 'folder') throw FS_ERRORS.EISDIR(abs);
-			return content.readBuffer(id);
+			const text = await this.readFile(path);
+			return new TextEncoder().encode(text);
 		},
 
 		// ═══════════════════════════════════════════════════════════════════════
@@ -187,14 +181,33 @@ export function createYjsFileSystem(
 
 			if (!id) {
 				const { parentId, name } = tree.parsePath(abs);
-				const size =
-					typeof data === 'string'
-						? new TextEncoder().encode(data).byteLength
-						: data.byteLength;
+				const textData =
+					typeof data === 'string' ? data : new TextDecoder().decode(data);
+				const size = new TextEncoder().encode(textData).byteLength;
 				id = tree.create({ name, parentId, type: 'file', size });
 			}
 
-			const size = await content.write(id, data);
+			const textData =
+				typeof data === 'string' ? data : new TextDecoder().decode(data);
+			const handle = await contentDocuments.open(id);
+			const validated = readEntry(handle.timeline.currentEntry);
+
+			let size: number;
+			if (validated.mode === 'sheet') {
+				handle.batch(() => {
+					validated.columns.forEach((_, key) => {
+						validated.columns.delete(key);
+					});
+					validated.rows.forEach((_, key) => {
+						validated.rows.delete(key);
+					});
+					parseSheetFromCsv(textData, validated.columns, validated.rows);
+				});
+				size = new TextEncoder().encode(textData).byteLength;
+			} else {
+				handle.write(textData);
+				size = new TextEncoder().encode(textData).byteLength;
+			}
 			tree.touch(id, size);
 		},
 
@@ -208,11 +221,16 @@ export function createYjsFileSystem(
 			const row = tree.getRow(id, abs);
 			if (row.type === 'folder') throw FS_ERRORS.EISDIR(abs);
 
-			const newSize = await content.append(id, text);
-			if (newSize === null) {
+			const handle = await contentDocuments.open(id);
+			const validated = readEntry(handle.timeline.currentEntry);
+
+			if (validated.mode !== 'text') {
 				await this.writeFile(path, data);
 				return;
 			}
+
+			handle.batch(() => validated.content.insert(validated.content.length, text));
+			const newSize = new TextEncoder().encode(validated.content.toString()).byteLength;
 			tree.touch(id, newSize);
 		},
 
@@ -302,23 +320,9 @@ export function createYjsFileSystem(
 					);
 				}
 			} else {
-				const srcBuffer = await content.readBuffer(srcId);
-				const srcText = await content.read(srcId);
-				if (srcText === '' && srcBuffer.length === 0) {
-					await this.writeFile(resolvedDest, '');
-				} else {
-					// Check if content is binary by comparing text encoding roundtrip
-					const textBytes = new TextEncoder().encode(srcText);
-					const isBinary =
-						srcBuffer.length > 0 &&
-						(srcBuffer.length !== textBytes.length ||
-							!srcBuffer.every((b, i) => b === textBytes[i]));
-					if (isBinary) {
-						await this.writeFile(resolvedDest, srcBuffer);
-					} else {
-						await this.writeFile(resolvedDest, srcText);
-					}
-				}
+				const handle = await contentDocuments.open(srcId);
+				const srcText = handle.read();
+				await this.writeFile(resolvedDest, srcText);
 			}
 		},
 

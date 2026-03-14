@@ -17,7 +17,10 @@ import {
 	defineQuery,
 	defineTable,
 	defineWorkspace,
+	generateId,
+	type Id,
 	type InferTableRow,
+	iterateActions,
 } from '@epicenter/workspace';
 import { createSyncExtension } from '@epicenter/workspace/extensions/sync';
 import { broadcastChannelSync } from '@epicenter/workspace/extensions/sync/broadcast-channel';
@@ -26,19 +29,11 @@ import { type } from 'arktype';
 import Type from 'typebox';
 import type { Brand } from 'wellcrafted/brand';
 import type { JsonValue } from 'wellcrafted/json';
+import { Ok, tryAsync, trySync } from 'wellcrafted/result';
 import { getDeviceId } from '$lib/device/device-id';
 import { authState } from '$lib/state/auth.svelte';
 import { serverUrl } from '$lib/state/settings.svelte';
-import {
-	executeActivateTab,
-	executeCloseTabs,
-	executeGroupTabs,
-	executeMuteTabs,
-	executeOpenTab,
-	executePinTabs,
-	executeReloadTabs,
-	executeSaveTabs,
-} from '$lib/tab-actions';
+import { findDuplicateGroups, groupTabsByDomain } from '$lib/utils/tab-helpers';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Chrome API Sentinel Constants
@@ -74,17 +69,32 @@ export const TAB_GROUP_ID_NONE = -1;
  * Prevents accidental mixing with other string IDs (conversation, tab, etc.).
  */
 export type DeviceId = string & Brand<'DeviceId'>;
-export const DeviceId = type('string').pipe((s): DeviceId => s as DeviceId);
+export const DeviceId = type('string').as<DeviceId>();
 
 /**
  * Branded saved tab ID — nanoid generated when a tab is explicitly saved.
  *
  * Prevents accidental mixing with composite tab IDs or other string IDs.
  */
-export type SavedTabId = string & Brand<'SavedTabId'>;
-export const SavedTabId = type('string').pipe(
-	(s): SavedTabId => s as SavedTabId,
-);
+export type SavedTabId = Id & Brand<'SavedTabId'>;
+export const SavedTabId = type('string').as<SavedTabId>();
+/**
+ * Generate a unique {@link SavedTabId} for a newly saved tab.
+ *
+ * Wraps `generateId()` with the branded cast so call sites never
+ * need a manual cast.
+ *
+ * @example
+ * ```typescript
+ * workspaceClient.tables.savedTabs.set({
+ *   id: generateSavedTabId(),
+ *   url: tab.url,
+ *   title: tab.title || 'Untitled',
+ *   // …remaining fields
+ * });
+ * ```
+ */
+export const generateSavedTabId = (): SavedTabId => generateId() as SavedTabId;
 
 /**
  * Branded bookmark ID — nanoid generated when a URL is bookmarked.
@@ -92,10 +102,25 @@ export const SavedTabId = type('string').pipe(
  * Unlike {@link SavedTabId}, bookmarks persist indefinitely—opening a
  * bookmarked URL does NOT delete the record.
  */
-export type BookmarkId = string & Brand<'BookmarkId'>;
-export const BookmarkId = type('string').pipe(
-	(s): BookmarkId => s as BookmarkId,
-);
+export type BookmarkId = Id & Brand<'BookmarkId'>;
+export const BookmarkId = type('string').as<BookmarkId>();
+/**
+ * Generate a unique {@link BookmarkId} for a newly created bookmark.
+ *
+ * Wraps `generateId()` with the branded cast so call sites never
+ * need a manual cast.
+ *
+ * @example
+ * ```typescript
+ * workspaceClient.tables.bookmarks.set({
+ *   id: generateBookmarkId(),
+ *   url: tab.url,
+ *   title: tab.title || 'Untitled',
+ *   // …remaining fields
+ * });
+ * ```
+ */
+export const generateBookmarkId = (): BookmarkId => generateId() as BookmarkId;
 
 /**
  * Branded conversation ID — nanoid generated when a chat conversation is created.
@@ -103,20 +128,59 @@ export const BookmarkId = type('string').pipe(
  * Used as the primary key for conversations and as a foreign key in chat messages.
  * Prevents accidental mixing with message IDs or other string IDs.
  */
-export type ConversationId = string & Brand<'ConversationId'>;
-export const ConversationId = type('string').pipe(
-	(s): ConversationId => s as ConversationId,
-);
+export type ConversationId = Id & Brand<'ConversationId'>;
+export const ConversationId = type('string').as<ConversationId>();
+/**
+ * Generate a unique {@link ConversationId} for a new chat conversation.
+ *
+ * Wraps `generateId()` with the branded cast so call sites never
+ * need a manual cast.
+ *
+ * @example
+ * ```typescript
+ * const id = generateConversationId();
+ * workspaceClient.tables.conversations.set({
+ *   id,
+ *   title: 'New Chat',
+ *   provider: DEFAULT_PROVIDER,
+ *   model: DEFAULT_MODEL,
+ *   createdAt: Date.now(),
+ *   updatedAt: Date.now(),
+ *   // …remaining fields
+ * });
+ * ```
+ */
+export const generateConversationId = (): ConversationId =>
+	generateId() as ConversationId;
 
 /**
  * Branded chat message ID — nanoid generated when a message is created.
  *
  * Prevents accidental mixing with conversation IDs or other string IDs.
  */
-export type ChatMessageId = string & Brand<'ChatMessageId'>;
-export const ChatMessageId = type('string').pipe(
-	(s): ChatMessageId => s as ChatMessageId,
-);
+export type ChatMessageId = Id & Brand<'ChatMessageId'>;
+export const ChatMessageId = type('string').as<ChatMessageId>();
+/**
+ * Generate a unique {@link ChatMessageId} for a new chat message.
+ *
+ * Wraps `generateId()` with the branded cast so call sites never
+ * need a manual cast.
+ *
+ * @example
+ * ```typescript
+ * const userMessageId = generateChatMessageId();
+ * workspaceClient.tables.chatMessages.set({
+ *   id: userMessageId,
+ *   conversationId,
+ *   role: 'user',
+ *   parts: [{ type: 'text', content }],
+ *   createdAt: Date.now(),
+ *   // …remaining fields
+ * });
+ * ```
+ */
+export const generateChatMessageId = (): ChatMessageId =>
+	generateId() as ChatMessageId;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Composite ID Types
@@ -128,9 +192,7 @@ export const ChatMessageId = type('string').pipe(
  * Prevents accidental mixing with plain strings, window IDs, or group IDs.
  */
 export type TabCompositeId = string & Brand<'TabCompositeId'>;
-export const TabCompositeId = type('string').pipe(
-	(s): TabCompositeId => s as TabCompositeId,
-);
+export const TabCompositeId = type('string').as<TabCompositeId>();
 
 /**
  * Device-scoped composite window ID: `${deviceId}_${windowId}`.
@@ -138,9 +200,7 @@ export const TabCompositeId = type('string').pipe(
  * Prevents accidental mixing with plain strings, tab IDs, or group IDs.
  */
 export type WindowCompositeId = string & Brand<'WindowCompositeId'>;
-export const WindowCompositeId = type('string').pipe(
-	(s): WindowCompositeId => s as WindowCompositeId,
-);
+export const WindowCompositeId = type('string').as<WindowCompositeId>();
 
 /**
  * Device-scoped composite group ID: `${deviceId}_${groupId}`.
@@ -148,9 +208,7 @@ export const WindowCompositeId = type('string').pipe(
  * Prevents accidental mixing with plain strings, tab IDs, or window IDs.
  */
 export type GroupCompositeId = string & Brand<'GroupCompositeId'>;
-export const GroupCompositeId = type('string').pipe(
-	(s): GroupCompositeId => s as GroupCompositeId,
-);
+export const GroupCompositeId = type('string').as<GroupCompositeId>();
 
 /**
  * Create a device-scoped composite tab ID: `${deviceId}_${tabId}`.
@@ -248,6 +306,21 @@ export function parseGroupId(
 	const result = parseCompositeIdInternal(compositeId);
 	if (!result) return null;
 	return { deviceId: result.deviceId, groupId: result.nativeId };
+}
+
+/**
+ * Extract the native tab ID (number) from a composite tab ID string.
+ *
+ * Composite format: `${deviceId}_${tabId}`. Returns the number portion.
+ * Returns `undefined` if the composite ID doesn't belong to this device.
+ */
+function nativeTabId(
+	compositeId: string,
+	deviceId: DeviceId,
+): number | undefined {
+	const parsed = parseTabId(compositeId as TabCompositeId);
+	if (!parsed || parsed.deviceId !== deviceId) return undefined;
+	return parsed.tabId;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -476,6 +549,25 @@ const chatMessagesTable = defineTable(
 );
 export type ChatMessage = InferTableRow<typeof chatMessagesTable>;
 
+/**
+ * Tool trust — per-tool approval preferences for AI chat.
+ *
+ * Each row represents a user's trust decision for a specific destructive tool.
+ * Tools not in this table default to 'ask' (show approval UI). Users can
+ * escalate to 'always' (auto-approve) via the inline approval buttons.
+ *
+ * The `id` is the tool name (e.g. 'tabs_close') — the same string used
+ * in action paths and tool definitions.
+ */
+const toolTrustTable = defineTable(
+	type({
+		id: 'string',
+		trust: "'ask' | 'always'",
+		_v: '1',
+	}),
+);
+export type ToolTrust = InferTableRow<typeof toolTrustTable>;
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Workspace Client
 // ─────────────────────────────────────────────────────────────────────────────
@@ -490,7 +582,7 @@ export type ChatMessage = InferTableRow<typeof chatMessagesTable>;
  */
 export const workspaceClient = createWorkspace(
 	defineWorkspace({
-		id: 'tab-manager',
+		id: 'epicenter.tab-manager',
 		tables: {
 			devices: devicesTable,
 			tabs: tabsTable,
@@ -500,6 +592,7 @@ export const workspaceClient = createWorkspace(
 			bookmarks: bookmarksTable,
 			conversations: conversationsTable,
 			chatMessages: chatMessagesTable,
+			toolTrust: toolTrustTable,
 		},
 	}),
 )
@@ -515,6 +608,7 @@ export const workspaceClient = createWorkspace(
 	.withActions(({ tables }) => ({
 		tabs: {
 			search: defineQuery({
+				title: 'Search Tabs',
 				description:
 					'Search tabs by URL or title match. Returns matching tabs across all devices, optionally scoped to one device.',
 				input: Type.Object({
@@ -544,6 +638,7 @@ export const workspaceClient = createWorkspace(
 			}),
 
 			list: defineQuery({
+				title: 'List Tabs',
 				description:
 					'List all open tabs. Optionally filter by device or window.',
 				input: Type.Object({
@@ -574,39 +669,59 @@ export const workspaceClient = createWorkspace(
 			}),
 
 			close: defineMutation({
+				title: 'Close Tabs',
 				description: 'Close one or more tabs by their composite IDs.',
 				input: Type.Object({
 					tabIds: Type.Array(Type.String()),
 				}),
 				handler: async ({ tabIds }) => {
 					const deviceId = await getDeviceId();
-					return executeCloseTabs(tabIds, deviceId);
+					const nativeIds = toNativeIds(tabIds, deviceId);
+					await tryAsync({
+						try: () => browser.tabs.remove(nativeIds),
+						catch: () => Ok(undefined),
+					});
+					return { closedCount: nativeIds.length };
 				},
 			}),
 
 			open: defineMutation({
+				title: 'Open Tab',
 				description: 'Open a new tab with the given URL on the current device.',
 				input: Type.Object({
 					url: Type.String(),
 					windowId: Type.Optional(Type.String()),
 				}),
-				handler: async ({ url, windowId }) => {
-					return executeOpenTab(url, windowId);
+				handler: async ({ url }) => {
+					const { data: tab, error } = await tryAsync({
+						try: () => browser.tabs.create({ url }),
+						catch: () => Ok(undefined),
+					});
+					if (error || !tab) return { tabId: String(-1) };
+					return { tabId: String(tab.id ?? -1) };
 				},
 			}),
 
 			activate: defineMutation({
+				title: 'Activate Tab',
 				description: 'Activate (focus) a specific tab by its composite ID.',
 				input: Type.Object({
 					tabId: Type.String(),
 				}),
 				handler: async ({ tabId }) => {
 					const deviceId = await getDeviceId();
-					return executeActivateTab(tabId, deviceId);
+					const id = nativeTabId(tabId, deviceId);
+					if (id === undefined) return { activated: false };
+					const { error } = await tryAsync({
+						try: () => browser.tabs.update(id, { active: true }),
+						catch: () => Ok(undefined),
+					});
+					return { activated: !error };
 				},
 			}),
 
 			save: defineMutation({
+				title: 'Save Tabs',
 				description: 'Save tabs for later. Optionally close them after saving.',
 				input: Type.Object({
 					tabIds: Type.Array(Type.String()),
@@ -614,16 +729,49 @@ export const workspaceClient = createWorkspace(
 				}),
 				handler: async ({ tabIds, close }) => {
 					const deviceId = await getDeviceId();
-					return executeSaveTabs(
-						tabIds,
-						close ?? false,
-						deviceId,
-						tables.savedTabs,
+					const nativeIds = toNativeIds(tabIds, deviceId);
+
+					// Fetch all tabs in parallel
+					const results = await Promise.allSettled(
+						nativeIds.map((id) => browser.tabs.get(id)),
 					);
+
+					const validTabs = results.flatMap((r) => {
+						if (r.status !== 'fulfilled' || !r.value.url) return [];
+						return [{ ...r.value, url: r.value.url }];
+					});
+
+					// Sync writes to Y.Doc
+					for (const tab of validTabs) {
+						tables.savedTabs.set({
+							id: generateSavedTabId(),
+							url: tab.url,
+							title: tab.title || 'Untitled',
+							favIconUrl: tab.favIconUrl,
+							pinned: tab.pinned ?? false,
+							sourceDeviceId: deviceId,
+							savedAt: Date.now(),
+							_v: 1,
+						});
+					}
+
+					// Batch close if requested
+					if (close) {
+						const idsToClose = validTabs
+							.map((t) => t.id)
+							.filter((id) => id !== undefined);
+						await tryAsync({
+							try: () => browser.tabs.remove(idsToClose),
+							catch: () => Ok(undefined),
+						});
+					}
+
+					return { savedCount: validTabs.length };
 				},
 			}),
 
 			group: defineMutation({
+				title: 'Group Tabs',
 				description: 'Group tabs together with an optional title and color.',
 				input: Type.Object({
 					tabIds: Type.Array(Type.String()),
@@ -632,11 +780,31 @@ export const workspaceClient = createWorkspace(
 				}),
 				handler: async ({ tabIds, title, color }) => {
 					const deviceId = await getDeviceId();
-					return executeGroupTabs(tabIds, deviceId, title, color);
+					const nativeIds = toNativeIds(tabIds, deviceId);
+
+					const { data: groupId, error: groupError } = await tryAsync({
+						try: () =>
+							browser.tabs.group({ tabIds: nativeIds as [number, ...number[]] }),
+						catch: () => Ok(undefined),
+					});
+					if (groupError || groupId === undefined) return { groupId: String(-1) };
+
+					if (title || color) {
+						const updateProps: Browser.tabGroups.UpdateProperties = {};
+						if (title) updateProps.title = title;
+						if (color) updateProps.color = color as `${Browser.tabGroups.Color}`;
+						await tryAsync({
+							try: () => browser.tabGroups.update(groupId as number, updateProps),
+							catch: () => Ok(undefined),
+						});
+					}
+
+					return { groupId: String(groupId) };
 				},
 			}),
 
 			pin: defineMutation({
+				title: 'Pin Tabs',
 				description: 'Pin or unpin tabs.',
 				input: Type.Object({
 					tabIds: Type.Array(Type.String()),
@@ -644,11 +812,18 @@ export const workspaceClient = createWorkspace(
 				}),
 				handler: async ({ tabIds, pinned }) => {
 					const deviceId = await getDeviceId();
-					return executePinTabs(tabIds, pinned, deviceId);
+					const nativeIds = toNativeIds(tabIds, deviceId);
+					const results = await Promise.allSettled(
+						nativeIds.map((id) => browser.tabs.update(id, { pinned })),
+					);
+					return {
+						pinnedCount: results.filter((r) => r.status === 'fulfilled').length,
+					};
 				},
 			}),
 
 			mute: defineMutation({
+				title: 'Mute Tabs',
 				description: 'Mute or unmute tabs.',
 				input: Type.Object({
 					tabIds: Type.Array(Type.String()),
@@ -656,24 +831,127 @@ export const workspaceClient = createWorkspace(
 				}),
 				handler: async ({ tabIds, muted }) => {
 					const deviceId = await getDeviceId();
-					return executeMuteTabs(tabIds, muted, deviceId);
+					const nativeIds = toNativeIds(tabIds, deviceId);
+					const results = await Promise.allSettled(
+						nativeIds.map((id) => browser.tabs.update(id, { muted })),
+					);
+					return { mutedCount: results.filter((r) => r.status === 'fulfilled').length };
 				},
 			}),
 
 			reload: defineMutation({
+				title: 'Reload Tabs',
 				description: 'Reload one or more tabs.',
 				input: Type.Object({
 					tabIds: Type.Array(Type.String()),
 				}),
 				handler: async ({ tabIds }) => {
 					const deviceId = await getDeviceId();
-					return executeReloadTabs(tabIds, deviceId);
+					const nativeIds = toNativeIds(tabIds, deviceId);
+					const results = await Promise.allSettled(
+						nativeIds.map((id) => browser.tabs.reload(id)),
+					);
+					return {
+						reloadedCount: results.filter((r) => r.status === 'fulfilled').length,
+					};
+				},
+			}),
+
+			findDuplicates: defineQuery({
+				title: 'Find Duplicate Tabs',
+				description:
+					'Find tabs with the same normalized URL. Returns groups of duplicates across the current device.',
+				input: Type.Object({}),
+				handler: async () => {
+					const deviceId = await getDeviceId();
+					const deviceTabs = tables.tabs.filter(
+						(tab) => tab.deviceId === deviceId,
+					);
+					const groups = findDuplicateGroups(deviceTabs);
+					return {
+						duplicates: [...groups].map(([url, tabs]) => ({
+							url,
+							tabs: tabs.map((t) => ({
+								id: t.id,
+								title: t.title ?? '(untitled)',
+							})),
+						})),
+					};
+				},
+			}),
+
+			dedup: defineMutation({
+				title: 'Remove Duplicate Tabs',
+				description:
+					'Close duplicate tabs, keeping the first occurrence of each URL. Only affects tabs on the current device.',
+				input: Type.Object({}),
+				handler: async () => {
+					const deviceId = await getDeviceId();
+					const deviceTabs = tables.tabs.filter(
+						(tab) => tab.deviceId === deviceId,
+					);
+					const groups = findDuplicateGroups(deviceTabs);
+					const toClose = [...groups.values()].flatMap((group) =>
+						group.slice(1).map((t) => t.id),
+					);
+					if (toClose.length === 0) return { closedCount: 0 };
+					const nativeIds = toNativeIds(toClose, deviceId);
+					await tryAsync({
+						try: () => browser.tabs.remove(nativeIds),
+						catch: () => Ok(undefined),
+					});
+					return { closedCount: nativeIds.length };
+				},
+			}),
+
+			groupByDomain: defineMutation({
+				title: 'Group Tabs by Domain',
+				description:
+					'Create Chrome tab groups based on website domain for domains with 2+ tabs. Only affects tabs on the current device.',
+				input: Type.Object({}),
+				handler: async () => {
+					const deviceId = await getDeviceId();
+					const deviceTabs = tables.tabs.filter(
+						(tab) => tab.deviceId === deviceId,
+					);
+					const domains = groupTabsByDomain(deviceTabs);
+
+					const groupOps = [...domains.entries()]
+						.filter(([, tabs]) => tabs.length >= 2)
+						.map(([domain, tabs]) => {
+							const nativeIds = toNativeIds(
+								tabs.map((t) => t.id),
+								deviceId,
+							);
+							return nativeIds.length >= 2
+								? { domain, nativeIds }
+								: null;
+						})
+						.filter((op) => op !== null);
+
+					const results = await Promise.allSettled(
+						groupOps.map(async ({ domain, nativeIds }) => {
+							const groupId = await browser.tabs.group({
+								tabIds: nativeIds as [number, ...number[]],
+							});
+							await browser.tabGroups.update(groupId, {
+								title: domain,
+							});
+						}),
+					);
+
+					return {
+						groupedCount: results.filter(
+							(r) => r.status === 'fulfilled',
+						).length,
+					};
 				},
 			}),
 		},
 
 		windows: {
 			list: defineQuery({
+				title: 'List Windows',
 				description:
 					'List all browser windows with their tab counts. Optionally filter by device.',
 				input: Type.Object({
@@ -701,6 +979,7 @@ export const workspaceClient = createWorkspace(
 
 		devices: {
 			list: defineQuery({
+				title: 'List Devices',
 				description:
 					'List all synced devices with their names, browsers, and online status.',
 				input: Type.Object({}),
@@ -720,6 +999,7 @@ export const workspaceClient = createWorkspace(
 
 		domains: {
 			count: defineQuery({
+				title: 'Count Domains',
 				description:
 					'Count open tabs grouped by domain (e.g. youtube.com: 5, github.com: 3). Optionally filter by device.',
 				input: Type.Object({
@@ -733,12 +1013,11 @@ export const workspaceClient = createWorkspace(
 					const counts = new Map<string, number>();
 					for (const tab of matched) {
 						if (!tab.url) continue;
-						try {
-							const domain = new URL(tab.url).hostname;
-							counts.set(domain, (counts.get(domain) ?? 0) + 1);
-						} catch {
-							// Skip tabs with invalid URLs (e.g. chrome:// pages)
-						}
+						const { data: domain } = trySync({
+							try: () => new URL(tab.url!).hostname,
+							catch: () => Ok(undefined),
+						});
+						if (domain) counts.set(domain, (counts.get(domain) ?? 0) + 1);
 					}
 					const domains = Array.from(counts.entries())
 						.map(([domain, count]) => ({ domain, count }))
@@ -756,11 +1035,24 @@ export type WorkspaceTools = typeof workspaceTools;
 export type WorkspaceActionName = WorkspaceTools[number]['name'];
 
 /**
- * Reconnect the sync extension with fresh auth credentials.
+ * Lookup map from tool name to human-readable title.
  *
- * Call after sign-in so the WebSocket reconnects with a valid token,
- * or after sign-out to disconnect.
+ * Used by `ToolCallPart.svelte` to display action titles instead of
+ * deriving names from underscore-separated tool names.
  */
-export function reconnectSync() {
-	workspaceClient.extensions.sync.reconnect();
+export const workspaceToolTitles: Record<string, string> = Object.fromEntries(
+	[...iterateActions(workspaceClient.actions)]
+		.filter(([action]) => action.title !== undefined)
+		.map(([action, path]) => [path.join('_'), action.title!]),
+);
+
+/**
+ * Batch-resolve composite tab IDs to native Chrome tab IDs.
+ *
+ * Filters out IDs that don't belong to the given device.
+ */
+function toNativeIds(tabIds: string[], deviceId: DeviceId): number[] {
+	return tabIds
+		.map((id) => nativeTabId(id, deviceId))
+		.filter((id) => id !== undefined);
 }

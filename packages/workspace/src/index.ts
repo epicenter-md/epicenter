@@ -69,6 +69,31 @@ export { generateGuid, generateId, Id as createId } from './shared/id';
 
 export type { DateIsoString, TimezoneId } from './shared/datetime-string';
 export { DateTimeString, dateTimeStringNow } from './shared/datetime-string';
+
+// ════════════════════════════════════════════════════════════════════════════
+// TIMELINE
+// ════════════════════════════════════════════════════════════════════════════
+
+export type {
+	ContentMode,
+	RichTextEntry,
+	SheetBinding,
+	SheetEntry,
+	TextEntry,
+	TimelineEntry,
+	ValidatedEntry,
+} from './timeline';
+export {
+	computeMidpoint,
+	createTimeline,
+	generateInitialOrders,
+	parseSheetFromCsv,
+	populateFragmentFromText,
+	readEntry,
+	serializeSheetToCsv,
+	xmlFragmentToPlaintext,
+	type Timeline,
+} from './timeline';
 // ════════════════════════════════════════════════════════════════════════════
 // Y.DOC STORAGE KEYS
 // ════════════════════════════════════════════════════════════════════════════
@@ -141,7 +166,6 @@ export type {
 	KvChange,
 	KvDefinition,
 	KvDefinitions,
-	KvGetResult,
 	KvHelper,
 	NotFoundResult,
 	RowResult,

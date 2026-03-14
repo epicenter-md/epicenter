@@ -13,6 +13,8 @@ Rename `:room` to `:workspace` on workspace routes and `:document` on document r
 - wrangler.jsonc bindings — no migration needed
 - sync-client URLs/comments — they reference the local server's `/rooms/` path
 
+> **Update (2026-03-13):** DO names were subsequently updated to include a type segment: `user:{userId}:{type}:{name}`. The rename from `:room` to `:workspace`/`:document` described here was a prerequisite. See `20260313T201800-do-naming-convention.md`.
+
 ## DO Safety
 
 `idFromName()` hashes the string value, not the variable name. The DO lookup key `user:${userId}:${workspace}` produces the same string as `user:${userId}:${room}` when the value is identical. Zero migration needed.

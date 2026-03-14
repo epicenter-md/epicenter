@@ -126,6 +126,8 @@ type ActionConfig<
 	TInput extends TSchema | undefined = TSchema | undefined,
 	TOutput = unknown,
 > = {
+	/** Short, human-readable display name for UI surfaces (e.g. 'Close Tabs'). Falls back to path-derived name if omitted. */
+	title?: string;
 	description?: string;
 	input?: TInput;
 	handler: ActionHandler<TInput, TOutput>;
@@ -140,6 +142,8 @@ type ActionConfig<
  */
 type ActionMeta<TInput extends TSchema | undefined = TSchema | undefined> = {
 	type: 'query' | 'mutation';
+	/** Short, human-readable display name for UI surfaces (e.g. 'Close Tabs'). Falls back to path-derived name if omitted. */
+	title?: string;
 	description?: string;
 	input?: TInput;
 };

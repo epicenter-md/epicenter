@@ -87,10 +87,11 @@ type SyncRoomConfig = {
  * before calling RPC methods or forwarding fetch. The DO itself does not
  * re-validate — it trusts the Worker boundary.
  *
- * DO names are user-scoped: the Worker prefixes `user:{userId}:` to the
- * client-provided workspace or document name before calling `idFromName()`.
+ * DO names are user-scoped: the Worker constructs
+ * `user:{userId}:{type}:{name}` before calling `idFromName()`, where
+ * `{type}` is `workspace` or `document`.
  * This ensures each user's data is isolated in separate DO instances, even
- * if multiple users create workspaces with the same name (e.g., "tab-manager").
+ * if multiple users create workspaces with the same name (e.g., "epicenter.tab-manager").
  *
  * We chose user-scoped DO names (Google Docs model) over org-scoped names
  * (Vercel/Supabase model) because most workspaces hold personal data.
@@ -241,7 +242,7 @@ export class BaseSyncRoom extends DurableObject {
 	 *    maps to 304).
 	 * 3. Otherwise returns the binary diff the client is missing.
 	 */
-	async sync(body: Uint8Array): Promise<Uint8Array | null> {
+	async sync(body: Uint8Array): Promise<{ diff: Uint8Array | null; storageBytes: number }> {
 		const { stateVector: clientSV, update } = decodeSyncRequest(body);
 
 		if (update.byteLength > 0) {
@@ -249,11 +250,11 @@ export class BaseSyncRoom extends DurableObject {
 		}
 
 		const serverSV = Y.encodeStateVector(this.doc);
-		if (stateVectorsEqual(serverSV, clientSV)) {
-			return null;
-		}
+		const diff = stateVectorsEqual(serverSV, clientSV)
+			? null
+			: Y.encodeStateAsUpdateV2(this.doc, clientSV);
 
-		return Y.encodeStateAsUpdateV2(this.doc, clientSV);
+		return { diff, storageBytes: this.ctx.storage.sql.databaseSize };
 	}
 
 	/**
@@ -263,8 +264,16 @@ export class BaseSyncRoom extends DurableObject {
 	 * this with `Y.applyUpdateV2` to hydrate their local doc before opening a
 	 * WebSocket, reducing the initial sync payload size.
 	 */
-	async getDoc(): Promise<Uint8Array> {
-		return Y.encodeStateAsUpdateV2(this.doc);
+	async getDoc(): Promise<{ data: Uint8Array; storageBytes: number }> {
+		return {
+			data: Y.encodeStateAsUpdateV2(this.doc),
+			storageBytes: this.ctx.storage.sql.databaseSize,
+		};
+	}
+
+	/** Delete all storage for this DO. Used for cleanup of renamed/orphaned rooms. */
+	async deleteStorage(): Promise<void> {
+		await this.ctx.storage.deleteAll();
 	}
 
 	// --- WebSocket lifecycle ---

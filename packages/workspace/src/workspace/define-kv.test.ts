@@ -1,207 +1,66 @@
 /**
  * defineKv Tests
  *
- * Covers shorthand and variadic KV definitions, including versioned migration strategies.
- * The suite ensures KV schemas remain compatible with validation and gradual schema evolution.
+ * Verifies that `defineKv(schema, defaultValue)` produces correct KvDefinitions
+ * with validate-or-default semantics. No migration—invalid data falls back to default.
  *
  * Key behaviors:
- * - KV schemas validate both simple and versioned value shapes.
- * - Migrations convert legacy values into the current schema.
+ * - Schema validates values correctly
+ * - Default value is stored on the definition
+ * - Primitive and object schemas both work
  */
 
-import { describe, expect, test } from 'bun:test';
+import { expect, test } from 'bun:test';
 import { type } from 'arktype';
 import { defineKv } from './define-kv.js';
 
-describe('defineKv', () => {
-	describe('shorthand syntax', () => {
-		test('creates valid KV definition with direct schema', () => {
-			const theme = defineKv(type({ mode: "'light' | 'dark'" }));
+test('creates valid KV definition with object schema', () => {
+	const theme = defineKv(type({ mode: "'light' | 'dark'" }), { mode: 'light' });
 
-			// Verify schema validates correctly
-			const result = theme.schema['~standard'].validate({ mode: 'dark' });
-			expect(result).not.toHaveProperty('issues');
-		});
+	const result = theme.schema['~standard'].validate({ mode: 'dark' });
+	expect(result).not.toHaveProperty('issues');
+});
 
-		test('shorthand migrate returns the same value reference', () => {
-			const sidebar = defineKv(type({ collapsed: 'boolean', width: 'number' }));
-
-			const value = { collapsed: true, width: 300 };
-			expect(sidebar.migrate(value)).toBe(value);
-		});
-
-		test('shorthand produces equivalent validation to variadic pattern', () => {
-			const schema = type({ collapsed: 'boolean', width: 'number' });
-
-			const shorthand = defineKv(schema);
-			const variadic = defineKv(schema);
-
-			// Both should validate the same data
-			const testValue = { collapsed: true, width: 300 };
-			const shorthandResult = shorthand.schema['~standard'].validate(testValue);
-			const variadicResult = variadic.schema['~standard'].validate(testValue);
-
-			expect(shorthandResult).not.toHaveProperty('issues');
-			expect(variadicResult).not.toHaveProperty('issues');
-		});
+test('stores the default value on the definition', () => {
+	const sidebar = defineKv(type({ collapsed: 'boolean', width: 'number' }), {
+		collapsed: false,
+		width: 300,
 	});
 
-	describe('variadic syntax', () => {
-		test('creates valid KV definition with single version', () => {
-			const theme = defineKv(type({ mode: "'light' | 'dark'" }));
+	expect(sidebar.defaultValue).toEqual({ collapsed: false, width: 300 });
+});
 
-			const result = theme.schema['~standard'].validate({ mode: 'light' });
-			expect(result).not.toHaveProperty('issues');
-		});
+test('primitive schema validates correctly', () => {
+	const fontSize = defineKv(type('number'), 0);
 
-		test('creates KV definition with multiple versions that validates both', () => {
-			const theme = defineKv(
-				type({ mode: "'light' | 'dark'" }),
-				type({ mode: "'light' | 'dark' | 'system'", fontSize: 'number' }),
-			).migrate((v) => {
-				if (!('fontSize' in v)) return { ...v, fontSize: 14 };
-				return v;
-			});
+	const result = fontSize.schema['~standard'].validate(14);
+	expect(result).not.toHaveProperty('issues');
+	expect(fontSize.defaultValue).toBe(0);
+});
 
-			// V1 data should validate
-			const v1Result = theme.schema['~standard'].validate({ mode: 'dark' });
-			expect(v1Result).not.toHaveProperty('issues');
+test('boolean schema validates correctly', () => {
+	const enabled = defineKv(type('boolean'), true);
 
-			// V2 data should validate
-			const v2Result = theme.schema['~standard'].validate({
-				mode: 'system',
-				fontSize: 16,
-			});
-			expect(v2Result).not.toHaveProperty('issues');
-		});
+	const valid = enabled.schema['~standard'].validate(false);
+	expect(valid).not.toHaveProperty('issues');
 
-		test('migrate function upgrades old values to latest version', () => {
-			const theme = defineKv(
-				type({ mode: "'light' | 'dark'" }),
-				type({ mode: "'light' | 'dark'", fontSize: 'number' }),
-			).migrate((v) => {
-				if (!('fontSize' in v)) return { ...v, fontSize: 14 };
-				return v;
-			});
+	const invalid = enabled.schema['~standard'].validate('not-a-boolean');
+	expect(invalid).toHaveProperty('issues');
+});
 
-			const migrated = theme.migrate({ mode: 'dark' });
-			expect(migrated).toEqual({ mode: 'dark', fontSize: 14 });
-		});
-	});
+test('rejects invalid data', () => {
+	const theme = defineKv(type({ mode: "'light' | 'dark'" }), { mode: 'light' });
 
-	describe('schema patterns', () => {
-		test('primitive value (not recommended but supported)', () => {
-			const fontSize = defineKv(type('number'));
+	const result = theme.schema['~standard'].validate({ mode: 'invalid' });
+	expect(result).toHaveProperty('issues');
+});
 
-			const result = fontSize.schema['~standard'].validate(14);
-			expect(result).not.toHaveProperty('issues');
-			expect(fontSize.migrate(14)).toBe(14);
-		});
+test('string enum schema validates correctly', () => {
+	const mode = defineKv(type("'light' | 'dark' | 'system'"), 'light');
 
-		test('object with _v discriminant (organic upgrade path)', () => {
-			const theme = defineKv(
-				type({ mode: "'light' | 'dark'" }),
-				type({
-					mode: "'light' | 'dark' | 'system'",
-					fontSize: 'number',
-					_v: '2',
-				}),
-			).migrate((v) => {
-				if (!('_v' in v)) return { mode: v.mode, fontSize: 14, _v: 2 };
-				return v;
-			});
+	const valid = mode.schema['~standard'].validate('system');
+	expect(valid).not.toHaveProperty('issues');
 
-			// Both versions should validate
-			const v1Result = theme.schema['~standard'].validate({
-				mode: 'dark',
-			});
-			expect(v1Result).not.toHaveProperty('issues');
-
-			const v2Result = theme.schema['~standard'].validate({
-				mode: 'system',
-				fontSize: 16,
-				_v: 2,
-			});
-			expect(v2Result).not.toHaveProperty('issues');
-
-			// Migrate v1 to v2
-			const migrated = theme.migrate({ mode: 'dark' });
-			expect(migrated).toEqual({ mode: 'dark', fontSize: 14, _v: 2 });
-		});
-
-		test('object without _v discriminant (field presence detection)', () => {
-			const theme = defineKv(
-				type({ mode: "'light' | 'dark'" }),
-				type({ mode: "'light' | 'dark' | 'system'", fontSize: 'number' }),
-			).migrate((v) => {
-				if (!('fontSize' in v)) return { ...v, fontSize: 14 };
-				return v;
-			});
-
-			// Both versions should validate
-			const v1Result = theme.schema['~standard'].validate({
-				mode: 'dark',
-			});
-			expect(v1Result).not.toHaveProperty('issues');
-
-			const v2Result = theme.schema['~standard'].validate({
-				mode: 'system',
-				fontSize: 16,
-			});
-			expect(v2Result).not.toHaveProperty('issues');
-
-			// Migrate v1 to v2
-			const migrated = theme.migrate({ mode: 'dark' });
-			expect(migrated).toEqual({ mode: 'dark', fontSize: 14 });
-		});
-
-		test('object with _v discriminant from start (symmetric switch)', () => {
-			const theme = defineKv(
-				type({ mode: "'light' | 'dark'", _v: '1' }),
-				type({
-					mode: "'light' | 'dark' | 'system'",
-					fontSize: 'number',
-					_v: '2',
-				}),
-			).migrate((v) => {
-				switch (v._v) {
-					case 1:
-						return { mode: v.mode, fontSize: 14, _v: 2 };
-					case 2:
-						return v;
-				}
-			});
-
-			// V1 data should validate
-			const v1Result = theme.schema['~standard'].validate({
-				mode: 'dark',
-				_v: 1,
-			});
-			expect(v1Result).not.toHaveProperty('issues');
-
-			// V2 data should validate
-			const v2Result = theme.schema['~standard'].validate({
-				mode: 'system',
-				fontSize: 16,
-				_v: 2,
-			});
-			expect(v2Result).not.toHaveProperty('issues');
-
-			// Migrate v1 to v2
-			const migrated = theme.migrate({ mode: 'dark', _v: 1 });
-			expect(migrated).toEqual({ mode: 'dark', fontSize: 14, _v: 2 });
-
-			// V2 passes through unchanged
-			const alreadyLatest = theme.migrate({
-				mode: 'system',
-				fontSize: 16,
-				_v: 2,
-			});
-			expect(alreadyLatest).toEqual({
-				mode: 'system',
-				fontSize: 16,
-				_v: 2,
-			});
-		});
-	});
+	const invalid = mode.schema['~standard'].validate('neon');
+	expect(invalid).toHaveProperty('issues');
 });

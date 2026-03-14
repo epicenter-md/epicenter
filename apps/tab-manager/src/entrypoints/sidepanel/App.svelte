@@ -15,13 +15,13 @@
 	import { authState } from '$lib/state/auth.svelte';
 	import { browserState } from '$lib/state/browser-state.svelte';
 	import { unifiedViewState } from '$lib/state/unified-view-state.svelte';
-	import { reconnectSync } from '$lib/workspace';
+	import { workspaceClient } from '$lib/workspace';
 
 	// Auth initialization — check cached session on mount, react to external token changes
 	onMount(() => {
 		authState.checkSession();
 		const unsubExternalSignIn = authState.onExternalSignIn(() =>
-			reconnectSync(),
+			workspaceClient.extensions.sync.reconnect(),
 		);
 
 		const onVisibilityChange = () => {

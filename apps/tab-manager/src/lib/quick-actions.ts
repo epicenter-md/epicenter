@@ -3,8 +3,7 @@
  *
  * Each action has a label, description, icon, and execute function.
  * Dangerous actions show a confirmation dialog before executing.
- * Actions read from {@link browserState} and call Chrome APIs via
- * the existing `actions.ts` helpers.
+ * Actions read from {@link browserState} and call Chrome APIs.
  *
  * @example
  * ```typescript
@@ -17,15 +16,12 @@
  */
 
 import { confirmationDialog } from '@epicenter/ui/confirmation-dialog';
-import ArchiveIcon from '@lucide/svelte/icons/archive';
-import ArrowDownAZIcon from '@lucide/svelte/icons/arrow-down-a-z';
 import CopyMinusIcon from '@lucide/svelte/icons/copy-minus';
-import GlobeIcon from '@lucide/svelte/icons/globe';
 import GroupIcon from '@lucide/svelte/icons/group';
 import type { Component } from 'svelte';
+import { Ok, tryAsync } from 'wellcrafted/result';
 import { browserState } from '$lib/state/browser-state.svelte';
-import { savedTabState } from '$lib/state/saved-tab-state.svelte';
-import { getDomain } from '$lib/utils/format';
+import { findDuplicateGroups, groupTabsByDomain } from '$lib/utils/tab-helpers';
 import type { TabCompositeId } from '$lib/workspace';
 import { parseTabId } from '$lib/workspace';
 
@@ -49,41 +45,12 @@ export type QuickAction = {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Normalize a URL for duplicate comparison.
- *
- * Strips trailing slash, query params, and hash to treat
- * `https://github.com/foo` and `https://github.com/foo?ref=bar#readme`
- * as the same page.
+ * Batch-resolve composite tab IDs to native Chrome tab IDs.
  */
-function normalizeUrl(url: string): string {
-	try {
-		const parsed = new URL(url);
-		return parsed.origin + parsed.pathname.replace(/\/$/, '');
-	} catch {
-		return url;
-	}
-}
-
-/**
- * Find groups of tabs with the same normalized URL.
- *
- * Returns only groups with 2+ tabs (actual duplicates).
- * Within each group, tabs are ordered by their original array position.
- */
-function findDuplicates(): Map<string, { tabId: string; title: string }[]> {
-	const byUrl = new Map<string, { tabId: string; title: string }[]>();
-
-	for (const window of browserState.windows) {
-		for (const tab of browserState.tabsByWindow(window.id)) {
-			if (!tab.url) continue;
-			const normalized = normalizeUrl(tab.url);
-			const group = byUrl.get(normalized) ?? [];
-			group.push({ tabId: tab.id, title: tab.title ?? 'Untitled' });
-			byUrl.set(normalized, group);
-		}
-	}
-
-	return new Map([...byUrl].filter(([, group]) => group.length > 1));
+function compositeToNativeIds(compositeIds: TabCompositeId[]): number[] {
+	return compositeIds
+		.map((id) => parseTabId(id)?.tabId)
+		.filter((id) => id !== undefined);
 }
 
 /**
@@ -91,24 +58,6 @@ function findDuplicates(): Map<string, { tabId: string; title: string }[]> {
  */
 function getAllTabs() {
 	return browserState.windows.flatMap((w) => browserState.tabsByWindow(w.id));
-}
-
-/**
- * Get unique domains from all open tabs.
- */
-function getUniqueDomains(): Map<string, string[]> {
-	const byDomain = new Map<string, string[]>();
-
-	for (const tab of getAllTabs()) {
-		if (!tab.url) continue;
-		const domain = getDomain(tab.url);
-		if (!domain) continue;
-		const ids = byDomain.get(domain) ?? [];
-		ids.push(tab.id);
-		byDomain.set(domain, ids);
-	}
-
-	return byDomain;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -123,7 +72,7 @@ const dedupAction: QuickAction = {
 	keywords: ['dedup', 'duplicate', 'remove', 'close', 'clean'],
 	dangerous: true,
 	execute() {
-		const dupes = findDuplicates();
+		const dupes = findDuplicateGroups(getAllTabs());
 		if (dupes.size === 0) return;
 
 		const totalDuplicates = [...dupes.values()].reduce(
@@ -131,9 +80,8 @@ const dedupAction: QuickAction = {
 			0,
 		);
 
-		// Collect the tab IDs to close (all but the first in each group)
 		const toClose = [...dupes.values()].flatMap((group) =>
-			group.slice(1).map((t) => t.tabId),
+			group.slice(1).map((t) => t.id as TabCompositeId),
 		);
 
 		confirmationDialog.open({
@@ -141,46 +89,13 @@ const dedupAction: QuickAction = {
 			description: `Found ${totalDuplicates} duplicate tab${totalDuplicates === 1 ? '' : 's'} across ${dupes.size} URL${dupes.size === 1 ? '' : 's'}. Close them?`,
 			confirm: { text: 'Close Duplicates', variant: 'destructive' },
 			async onConfirm() {
-				for (const tabId of toClose) {
-					try {
-						const parsed = parseTabId(tabId as TabCompositeId);
-						if (parsed) {
-							await browser.tabs.remove(parsed.tabId);
-						}
-					} catch {
-						// Tab may already be closed
-					}
-				}
+				const nativeIds = compositeToNativeIds(toClose);
+				await tryAsync({
+					try: () => browser.tabs.remove(nativeIds),
+					catch: () => Ok(undefined),
+				});
 			},
 		});
-	},
-};
-
-const sortAction: QuickAction = {
-	id: 'sort',
-	label: 'Sort Tabs by Title',
-	description: 'Sort tabs alphabetically within each window',
-	icon: ArrowDownAZIcon,
-	keywords: ['sort', 'alphabetical', 'order', 'organize'],
-	async execute() {
-		for (const window of browserState.windows) {
-			const tabs = browserState.tabsByWindow(window.id);
-			const sorted = [...tabs].sort((a, b) =>
-				(a.title ?? '').localeCompare(b.title ?? ''),
-			);
-
-			for (let i = 0; i < sorted.length; i++) {
-				const tab = sorted[i];
-				if (!tab) continue;
-				const parsed = parseTabId(tab.id as TabCompositeId);
-				if (!parsed) continue;
-				try {
-					await browser.tabs.move(parsed.tabId, { index: i });
-				} catch {
-					// Tab may not exist
-				}
-			}
-		}
 	},
 };
 
@@ -191,96 +106,27 @@ const groupByDomainAction: QuickAction = {
 	icon: GroupIcon,
 	keywords: ['group', 'domain', 'organize', 'categorize'],
 	async execute() {
-		const domains = getUniqueDomains();
+		const allTabs = getAllTabs();
+		const domains = groupTabsByDomain(allTabs);
 
-		for (const [domain, tabIds] of domains) {
-			if (tabIds.length < 2) continue;
+		const groupOps = [...domains.entries()]
+			.filter(([, tabs]) => tabs.length >= 2)
+			.map(([domain, tabs]) => {
+				const nativeIds = compositeToNativeIds(
+					tabs.map((t) => t.id as TabCompositeId),
+				);
+				return nativeIds.length >= 2 ? { domain, nativeIds } : null;
+			})
+			.filter((op) => op !== null);
 
-			const nativeIds = tabIds
-				.map((id) => {
-					const parsed = parseTabId(id as TabCompositeId);
-					return parsed?.tabId;
-				})
-				.filter((id): id is number => id !== undefined);
-
-			if (nativeIds.length < 2) continue;
-
-			try {
+		await Promise.allSettled(
+			groupOps.map(async ({ domain, nativeIds }) => {
 				const groupId = await browser.tabs.group({
 					tabIds: nativeIds as [number, ...number[]],
 				});
 				await browser.tabGroups.update(groupId, { title: domain });
-			} catch {
-				// Grouping may fail
-			}
-		}
-	},
-};
-
-const saveAllAction: QuickAction = {
-	id: 'save-all',
-	label: 'Save All Tabs',
-	description: 'Save all open tabs for later and close them',
-	icon: ArchiveIcon,
-	keywords: ['save', 'all', 'close', 'stash', 'park'],
-	dangerous: true,
-	execute() {
-		const allTabs = getAllTabs();
-		if (allTabs.length === 0) return;
-
-		confirmationDialog.open({
-			title: 'Save All Tabs',
-			description: `Save and close ${allTabs.length} tab${allTabs.length === 1 ? '' : 's'}?`,
-			confirm: { text: 'Save & Close All', variant: 'destructive' },
-			async onConfirm() {
-				for (const tab of allTabs) {
-					if (!tab.url) continue;
-					await savedTabState.actions.save(tab);
-				}
-			},
-		});
-	},
-};
-
-const closeByDomainAction: QuickAction = {
-	id: 'close-by-domain',
-	label: 'Close Tabs by Domain',
-	description: 'Close all tabs from a specific domain',
-	icon: GlobeIcon,
-	keywords: ['close', 'domain', 'website', 'remove'],
-	execute() {
-		// This action needs a domain picker—for now it closes tabs from the most common domain
-		const domains = getUniqueDomains();
-		if (domains.size === 0) return;
-
-		// Find the domain with the most tabs
-		let topDomain = '';
-		let topCount = 0;
-		for (const [domain, ids] of domains) {
-			if (ids.length > topCount) {
-				topDomain = domain;
-				topCount = ids.length;
-			}
-		}
-
-		const tabIds = domains.get(topDomain) ?? [];
-
-		confirmationDialog.open({
-			title: `Close ${topDomain} Tabs`,
-			description: `Close ${topCount} tab${topCount === 1 ? '' : 's'} from ${topDomain}?`,
-			confirm: { text: 'Close Tabs', variant: 'destructive' },
-			async onConfirm() {
-				for (const tabId of tabIds) {
-					const parsed = parseTabId(tabId as TabCompositeId);
-					if (!parsed) continue;
-					try {
-						await browser.tabs.remove(parsed.tabId);
-					} catch {
-						// Tab may already be closed
-					}
-				}
-			},
-		});
+			}),
+		);
 	},
 };
 
@@ -289,10 +135,4 @@ const closeByDomainAction: QuickAction = {
  *
  * Actions are ordered by expected frequency of use.
  */
-export const quickActions: QuickAction[] = [
-	dedupAction,
-	groupByDomainAction,
-	sortAction,
-	closeByDomainAction,
-	saveAllAction,
-];
+export const quickActions: QuickAction[] = [dedupAction, groupByDomainAction];

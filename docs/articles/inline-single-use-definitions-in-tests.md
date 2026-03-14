@@ -10,7 +10,7 @@ AI coding assistants and many developers default to extracting every definition:
 test('creates workspace with tables', () => {
   const posts = defineTable(type({ id: 'string', title: 'string', _v: '1' }));
 
-  const theme = defineKv(type({ mode: "'light' | 'dark'", _v: '1' }));
+  const theme = defineKv(type({ mode: "'light' | 'dark'" }), { mode: 'light' });
 
   const workspace = defineWorkspace({
     id: 'test-app',
@@ -42,7 +42,7 @@ test('creates workspace with tables', () => {
       posts: defineTable(type({ id: 'string', title: 'string', _v: '1' })),
     },
     kv: {
-      theme: defineKv(type({ mode: "'light' | 'dark'", _v: '1' })),
+      theme: defineKv(type({ mode: "'light' | 'dark'" }), { mode: 'light' }),
     },
   });
 
@@ -75,7 +75,7 @@ Self-contained test setup is easier to duplicate and tweak for variations. You c
 Extract to a variable when:
 
 - **Used multiple times**: If `posts` is referenced twice in the same test, extract it
-- **Need to call methods on the result**: Testing `posts.versions.length` or `posts.migrate()` requires a variable
+- **Need to call methods on the result**: Testing `posts.versions.length` or intermediate builder steps requires a variable
 - **Shared across tests**: In a `beforeEach` or shared test fixture
 - **Exceeds readability threshold**: If inline would be 15-20+ lines, consider extracting
 
