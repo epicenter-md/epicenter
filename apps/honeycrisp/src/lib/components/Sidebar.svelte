@@ -90,13 +90,13 @@
 <!-- Peek hover zone: thin strip on left edge when sidebar is collapsed -->
 {#if !sidebar.open && !sidebar.isMobile && !peeking}
 	<button
-		class="peek-zone"
+		class="group fixed left-0 top-0 z-50 flex h-full w-1.5 items-center border-none bg-transparent p-0"
 		onmouseenter={startPeek}
 		onclick={lockSidebar}
 		title="Hover to peek, click to lock open"
 		aria-label="Open sidebar"
 	>
-		<div class="peek-zone-indicator" />
+		<div class="mx-auto h-8 w-[3px] rounded-full bg-border opacity-0 transition-opacity duration-150 group-hover:opacity-60" />
 	</button>
 {/if}
 
@@ -298,53 +298,20 @@
 </AlertDialog.Root>
 
 <style>
-	/* Peek zone: thin fixed strip on left edge */
-	.peek-zone {
-		position: fixed;
-		left: 0;
-		top: 0;
-		z-index: 50;
-		display: flex;
-		align-items: center;
-		width: 0.375rem;
-		height: 100%;
-		padding: 0;
-		border: none;
-		background: transparent;
-		cursor: pointer;
-	}
+	/* :global() overrides for sidebar internals — can't be expressed with Tailwind */
 
-	.peek-zone-indicator {
-		margin: 0 auto;
-		height: 2rem;
-		width: 0.1875rem;
-		border-radius: 9999px;
-		background: var(--color-border);
-		opacity: 0;
-		transition: opacity 150ms;
-	}
-
-	.peek-zone:hover .peek-zone-indicator {
-		opacity: 0.6;
-	}
-
-	/* Transparent to flex layout so SidebarProvider's flex row isn't broken */
 	.sidebar-peek-scope {
 		display: contents;
 	}
 
-	/* Smooth 300ms ease-out for both open and close */
 	.sidebar-peek-scope :global([data-slot='sidebar-gap']) {
-		transition-duration: 300ms !important;
-		transition-timing-function: ease-out !important;
+		transition: width 300ms ease-out !important;
 	}
 
 	.sidebar-peek-scope :global([data-slot='sidebar-container']) {
-		transition-duration: 300ms !important;
-		transition-timing-function: ease-out !important;
+		transition: inset-inline-start 300ms ease-out, width 300ms ease-out !important;
 	}
 
-	/* When peeking, slide sidebar on-screen and push content over */
 	.is-peeking :global([data-slot='sidebar-gap']) {
 		width: var(--sidebar-width) !important;
 	}
