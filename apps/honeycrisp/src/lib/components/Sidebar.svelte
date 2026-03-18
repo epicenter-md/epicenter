@@ -76,33 +76,97 @@
 		sidebar.setOpen(false);
 	}
 
+	// ─── Grab handle (drag-to-peek) ─────────────────────────────────────────
+
+	let dragging = $state(false);
+	let dragStartX = $state(0);
+	let dragCurrentX = $state(0);
+	let wasDragged = $state(false);
+
+	const SIDEBAR_WIDTH_PX = 256; // 16rem
+	const LOCK_THRESHOLD = SIDEBAR_WIDTH_PX * 0.5;
+	const TAP_THRESHOLD = 5;
+
+	let dragDistance = $derived(Math.max(0, dragCurrentX - dragStartX));
+	let dragFraction = $derived(
+		dragging && wasDragged ? Math.min(1, dragDistance / SIDEBAR_WIDTH_PX) : 0,
+	);
+
+	function handlePointerDown(e: PointerEvent) {
+		(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+		dragStartX = e.clientX;
+		dragCurrentX = e.clientX;
+		dragging = true;
+		wasDragged = false;
+	}
+
+	function handlePointerMove(e: PointerEvent) {
+		if (!dragging) return;
+		if (sidebar.isMobile) return;
+		dragCurrentX = e.clientX;
+		if (Math.abs(dragCurrentX - dragStartX) > TAP_THRESHOLD) {
+			wasDragged = true;
+		}
+	}
+
+	function handlePointerUp() {
+		if (!dragging) return;
+		const shouldLock = wasDragged && dragDistance >= LOCK_THRESHOLD;
+		dragging = false;
+		dragCurrentX = dragStartX;
+
+		if (!wasDragged) {
+			if (sidebar.isMobile) {
+				sidebar.toggle();
+			} else {
+				lockSidebar();
+			}
+		} else if (shouldLock) {
+			lockSidebar();
+		}
+	}
+
+	function handlePointerCancel() {
+		dragging = false;
+		dragCurrentX = dragStartX;
+	}
+
 	// Clean up pending timer on destroy
 	$effect(() => {
 		return () => clearTimeout(closeTimer);
 	});
 
-	// Reset peek when sidebar opens via keyboard shortcut or other external means
+	// Reset peek/drag when sidebar opens via keyboard shortcut or other external means
 	$effect(() => {
-		if (sidebar.open) peeking = false;
+		if (sidebar.open) {
+			peeking = false;
+			dragging = false;
+		}
 	});
 </script>
 
-<!-- Peek hover zone: thin strip on left edge when sidebar is collapsed -->
-{#if !sidebar.open && !sidebar.isMobile && !peeking}
+<!-- Grab handle: visible strip on left edge when sidebar is collapsed -->
+{#if (sidebar.isMobile ? !sidebar.openMobile : !sidebar.open && !peeking)}
 	<button
-		class="group fixed left-0 top-0 z-50 flex h-full w-1.5 items-center border-none bg-transparent p-0"
+		class="fixed left-0 top-0 z-50 flex h-full w-3 items-center justify-center
+		       touch-none select-none border-none bg-transparent p-0 md:w-2"
 		onmouseenter={startPeek}
-		onclick={lockSidebar}
-		title="Hover to peek, click to lock open"
+		onpointerdown={handlePointerDown}
+		onpointermove={handlePointerMove}
+		onpointerup={handlePointerUp}
+		onpointercancel={handlePointerCancel}
 		aria-label="Open sidebar"
 	>
-		<div class="mx-auto h-8 w-[3px] rounded-full bg-border opacity-0 transition-opacity duration-150 group-hover:opacity-60" />
+		<div class="h-14 w-2 rounded-full bg-muted-foreground/50 shadow-sm transition-opacity
+		            duration-150 active:opacity-100 md:h-8 md:w-1 md:bg-border md:opacity-40 md:shadow-none md:hover:opacity-80" />
 	</button>
 {/if}
 
 <div
 	class="sidebar-peek-scope"
 	class:is-peeking={peeking && !sidebar.open && !sidebar.isMobile}
+	class:is-dragging={dragging && wasDragged && !sidebar.open}
+	style:--drag-offset="{dragFraction * SIDEBAR_WIDTH_PX}px"
 >
 	<Sidebar.Root
 		onmouseenter={cancelClose}
@@ -318,5 +382,16 @@
 
 	.is-peeking :global([data-slot='sidebar-container']) {
 		inset-inline-start: 0 !important;
+	}
+
+	/* During drag: disable transitions, follow pointer directly */
+	.is-dragging :global([data-slot='sidebar-gap']) {
+		width: var(--drag-offset) !important;
+		transition: none !important;
+	}
+
+	.is-dragging :global([data-slot='sidebar-container']) {
+		inset-inline-start: calc(-1 * (var(--sidebar-width) - var(--drag-offset))) !important;
+		transition: none !important;
 	}
 </style>
