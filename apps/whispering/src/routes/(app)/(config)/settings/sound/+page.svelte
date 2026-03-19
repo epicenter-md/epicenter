@@ -1,7 +1,14 @@
 <script lang="ts">
 	import * as Field from '@epicenter/ui/field';
 	import { Switch } from '@epicenter/ui/switch';
+	import { audioElements } from '$lib/services/sound/assets';
 	import { workspaceSettings } from '$lib/state/workspace-settings.svelte';
+
+	function previewVolume(volume: number) {
+		const sound = new Audio(audioElements['manual-start'].src);
+		sound.volume = volume / 100;
+		sound.play();
+	}
 </script>
 
 <svelte:head> <title>Sound Settings - Whispering</title> </svelte:head>
@@ -13,6 +20,29 @@
 	</Field.Description>
 	<Field.Separator />
 	<Field.Group>
+		<Field.Field>
+			<Field.Label for="sound.volume">Volume</Field.Label>
+			<Field.Description>
+				Adjust the volume for all sound effects ({workspaceSettings.get('sound.volume')}%).
+			</Field.Description>
+			<input
+				id="sound.volume"
+				type="range"
+				min="0"
+				max="100"
+				step="1"
+				value={workspaceSettings.get('sound.volume')}
+				oninput={(e) =>
+					workspaceSettings.set(
+						'sound.volume',
+						Number(e.currentTarget.value),
+					)}
+			onchange={(e) => previewVolume(Number(e.currentTarget.value))}
+				class="w-full accent-primary"
+			/>
+		</Field.Field>
+
+		<Field.Separator />
 		<Field.Set>
 			<Field.Legend variant="label">Manual Recording Sounds</Field.Legend>
 			<Field.Description>

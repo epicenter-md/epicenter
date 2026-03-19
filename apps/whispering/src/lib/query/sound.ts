@@ -2,6 +2,7 @@ import { Ok, type Result } from 'wellcrafted/result';
 import type { WhisperingSoundNames } from '$lib/constants/sounds';
 import { defineMutation } from '$lib/query/client';
 import { services } from '$lib/services';
+import { audioElements } from '$lib/services/sound/assets';
 import type { SoundError } from '$lib/services/sound';
 import { workspaceSettings } from '$lib/state/workspace-settings.svelte';
 
@@ -30,6 +31,8 @@ export const sound = {
 			if (!workspaceSettings.get(soundSettingKeyMap[soundName])) {
 				return Ok(undefined);
 			}
+			audioElements[soundName].volume =
+				workspaceSettings.get('sound.volume') / 100;
 			return await services.sound.playSound(soundName);
 		},
 	}),

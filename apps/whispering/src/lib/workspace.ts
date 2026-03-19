@@ -167,6 +167,7 @@ const transformationStepRuns = defineTable(
  * Manual = user-initiated recording. VAD = voice activity detection.
  */
 const sound = {
+	'sound.volume': defineKv(type('number'), 100),
 	'sound.manualStart': defineKv(type('boolean'), true),
 	'sound.manualStop': defineKv(type('boolean'), true),
 	'sound.manualCancel': defineKv(type('boolean'), true),
