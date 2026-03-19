@@ -1,9 +1,22 @@
 ---
 name: tauri
 description: Tauri path handling, cross-platform file operations, and API usage. Use when working with file paths in Tauri frontend code, accessing filesystem APIs, or handling platform differences in desktop apps.
+metadata:
+  author: epicenter
+  version: '1.0'
 ---
 
 # Tauri Path Handling
+
+## When to Apply This Skill
+
+Use this pattern when you need to:
+
+- Build file paths in Tauri frontend code running in the webview.
+- Choose correctly between `@tauri-apps/api/path` and Node/Bun `path` APIs.
+- Replace manual slash concatenation with `join()`, `dirname()`, and related helpers.
+- Handle cross-platform filesystem behavior for desktop apps.
+- Combine Tauri path APIs with `@tauri-apps/plugin-fs` operations.
 
 ## Context Detection
 

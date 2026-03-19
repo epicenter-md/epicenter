@@ -6,12 +6,10 @@
 import { computeMidpoint } from '@epicenter/workspace';
 import type * as Y from 'yjs';
 
-// Re-export CSV helpers from workspace (canonical location)
+// Re-export ordering helpers from workspace (canonical location)
 export {
 	computeMidpoint,
 	generateInitialOrders,
-	parseSheetFromCsv,
-	serializeSheetToCsv,
 } from '@epicenter/workspace';
 
 /**

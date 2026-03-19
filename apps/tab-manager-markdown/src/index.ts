@@ -25,7 +25,7 @@ import { createMarkdownPersistenceExtension } from './markdown-persistence-exten
 console.log('Tab Manager Markdown Exporter starting...');
 
 const client = createWorkspace(definition)
-	.withExtension(
+	.withWorkspaceExtension(
 		'persistence',
 		createMarkdownPersistenceExtension({
 			outputDir: './markdown/devices',

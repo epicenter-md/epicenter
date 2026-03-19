@@ -1,11 +1,24 @@
 ---
 name: better-auth-best-practices
 description: Configure Better Auth server and client, set up database adapters, manage sessions, add plugins, and handle environment variables. Use when users mention Better Auth, betterauth, auth.ts, or need to set up TypeScript authentication with email/password, OAuth, or plugin configuration.
+metadata:
+  author: epicenter
+  version: '1.0'
 ---
 
 # Better Auth Integration Guide
 
 **Always consult [better-auth.com/docs](https://better-auth.com/docs) for code examples and latest API.**
+
+## When to Apply This Skill
+
+Use this pattern when you need to:
+
+- Configure Better Auth server/client setup in TypeScript projects.
+- Wire environment variables, database adapters, and CLI migrations.
+- Set up sessions, cookie cache strategy, and security/rate-limit options.
+- Add and configure Better Auth plugins plus corresponding client plugins.
+- Troubleshoot common Better Auth model, schema, and storage pitfalls.
 
 ---
 

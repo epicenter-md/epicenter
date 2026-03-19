@@ -1,13 +1,15 @@
 <script lang="ts">
 	import type { FileId } from '@epicenter/filesystem';
-	import * as Command from '@epicenter/ui/command';
+	import {
+		CommandPalette,
+		type CommandPaletteItem,
+	} from '@epicenter/ui/command-palette';
 	import { getFileIcon } from '$lib/fs/file-icons';
 	import { fsState } from '$lib/fs/fs-state.svelte';
 
 	let open = $state(false);
 	let searchQuery = $state('');
 	let debouncedQuery = $state('');
-
 
 	// ── Collect all files recursively (only when palette is open) ────
 	type FileEntry = { id: FileId; name: string; parentDir: string };
@@ -25,11 +27,7 @@
 					const fullPath = fsState.getPathForId(childId) ?? '';
 					const lastSlash = fullPath.lastIndexOf('/');
 					const parentDir = lastSlash > 0 ? fullPath.slice(1, lastSlash) : '';
-					files.push({
-						id: childId,
-						name: row.name,
-						parentDir,
-					});
+					files.push({ id: childId, name: row.name, parentDir });
 				} else if (row.type === 'folder') {
 					collect(childId);
 				}
@@ -77,44 +75,35 @@
 		return [...startsWith, ...includes].slice(0, 50);
 	});
 
-	// ── Handlers ─────────────────────────────────────────────────────
-	function handleSelect(id: FileId) {
-		fsState.actions.selectFile(id);
-		open = false;
-	}
+	// ── Convert filtered files to palette items ─────────────────────
+	const fileItems = $derived<CommandPaletteItem[]>(
+		filteredFiles.map((file) => ({
+			id: file.id,
+			label: file.name,
+			description: file.parentDir || undefined,
+			icon: getFileIcon(file.name),
+			group: 'Files',
+			onSelect: () => fsState.actions.selectFile(file.id),
+		})),
+	);
+</script>
 
-	function handleKeydown(e: KeyboardEvent) {
+<svelte:window
+	onkeydown={(e) => {
 		if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
 			e.preventDefault();
 			open = !open;
 		}
-	}
-</script>
+	}}
+/>
 
-<svelte:window onkeydown={handleKeydown} />
-
-<Command.Dialog
+<CommandPalette
+	items={fileItems}
 	bind:open
+	bind:value={searchQuery}
+	shouldFilter={false}
+	placeholder="Search files..."
+	emptyMessage="No files found."
 	title="Search Files"
 	description="Search for a file by name"
-	shouldFilter={false}
->
-	<Command.Input placeholder="Search files..." bind:value={searchQuery} />
-	<Command.List>
-		<Command.Empty>No files found.</Command.Empty>
-		<Command.Group heading="Files">
-			{#each filteredFiles as file (file.id)}
-				<Command.Item value={file.id} onSelect={() => handleSelect(file.id)}>
-					{@const Icon = getFileIcon(file.name)}
-					<Icon class="h-4 w-4 shrink-0 text-muted-foreground" />
-					<span>{file.name}</span>
-					{#if file.parentDir}
-						<span class="ml-auto text-xs truncate text-muted-foreground">
-							{file.parentDir}
-						</span>
-					{/if}
-				</Command.Item>
-			{/each}
-		</Command.Group>
-	</Command.List>
-</Command.Dialog>
+/>

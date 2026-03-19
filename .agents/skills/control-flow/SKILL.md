@@ -1,11 +1,25 @@
 ---
 name: control-flow
 description: Human-readable control flow patterns for early returns, guard clauses, and linearizing nested logic. Use when refactoring nested conditionals, replacing try-catch with linear flow, or restructuring decision logic.
+metadata:
+  author: epicenter
+  version: '1.0'
 ---
 
 # Human-Readable Control Flow
 
 When refactoring complex control flow, mirror natural human reasoning patterns:
+
+> **Related Skills**: See `refactoring` for systematic code audit methodology including branch collapsing and caller counting.
+
+## When to Apply This Skill
+
+Use this pattern when you need to:
+
+- Refactor nested conditionals into linear guard-clause control flow.
+- Replace mixed `throw`/`return` try-catch logic with readable early returns.
+- Name booleans and branches to read like natural human reasoning.
+- Restructure handlers so failure paths are explicit before the happy path.
 
 1. **Ask the human question first**: "Can I use what I already have?" -> early return for happy path
 2. **Assess the situation**: "What's my current state and what do I need to do?" -> clear, mutually exclusive conditions

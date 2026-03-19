@@ -1,23 +1,16 @@
-export type {
-	ContentMode,
-	RichTextEntry,
-	SheetEntry,
-	TextEntry,
-	TimelineEntry,
-} from './entries.js';
 export { computeMidpoint, generateInitialOrders } from '../shared/fractional-index.js';
+export { populateFragmentFromMarkdown } from './richtext.js';
 export {
 	parseSheetFromCsv,
 	serializeSheetToCsv,
+	type SheetBinding,
 } from './sheet.js';
 export {
 	createTimeline,
-	readEntry,
+	type ContentType,
+	type RichTextEntry,
+	type SheetEntry,
+	type TextEntry,
 	type Timeline,
-	type ValidatedEntry,
+	type TimelineEntry,
 } from './timeline.js';
-export {
-	xmlFragmentToPlaintext,
-	populateFragmentFromText,
-	type SheetBinding,
-} from './richtext.js';

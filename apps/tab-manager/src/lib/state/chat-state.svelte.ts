@@ -551,7 +551,7 @@ function createAiChatState() {
 
 	// ── Observers ────────────────────────────────────────────────────
 
-	workspaceClient.tables.conversations.observe(() => {
+	const _unobserveConversations = workspaceClient.tables.conversations.observe(() => {
 		conversations = readAllConversations();
 		reconcileHandles();
 	});
@@ -567,7 +567,7 @@ function createAiChatState() {
 		}
 	});
 
-	workspaceClient.tables.chatMessages.observe(() => {
+	const _unobserveChatMessages = workspaceClient.tables.chatMessages.observe(() => {
 		refreshFromDoc(activeConversationId);
 	});
 

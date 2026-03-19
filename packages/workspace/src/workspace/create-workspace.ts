@@ -43,14 +43,16 @@ import { createDocuments } from './create-document.js';
 import { createKv } from './create-kv.js';
 import { createTables } from './create-tables.js';
 import {
-	type DocumentContext,
 	defineExtension,
+	destroyLifo,
 	type MaybePromise,
+	startDestroyLifo,
 } from './lifecycle.js';
 import type {
 	AwarenessDefinitions,
 	BaseRow,
 	DocumentConfig,
+	DocumentContext,
 	DocumentExtensionRegistration,
 	Documents,
 	DocumentsHelper,
@@ -63,44 +65,6 @@ import type {
 	WorkspaceDefinition,
 } from './types.js';
 
-/**
- * Run cleanups in LIFO order (last registered = first destroyed).
- * Continues on error and returns accumulated errors.
- */
-async function destroyLifo(
-	cleanups: (() => MaybePromise<void>)[],
-): Promise<unknown[]> {
-	const errors: unknown[] = [];
-	for (let i = cleanups.length - 1; i >= 0; i--) {
-		try {
-			await cleanups[i]?.();
-		} catch (err) {
-			errors.push(err);
-		}
-	}
-	return errors;
-}
-
-/**
- * Start all cleanups immediately in LIFO order without awaiting between them.
- *
- * Used in the sync builder error path where we can't await. Every cleanup is
- * invoked before the throw propagates—async portions settle in the background.
- * Rejections are observed (logged) so they don't become unhandled.
- */
-function startDestroyLifo(
-	cleanups: (() => MaybePromise<void>)[],
-): void {
-	for (let i = cleanups.length - 1; i >= 0; i--) {
-		try {
-			Promise.resolve(cleanups[i]?.()).catch((err) => {
-				console.error('Extension cleanup error during rollback:', err);
-			});
-		} catch (err) {
-			console.error('Extension cleanup error during rollback:', err);
-		}
-	}
-}
 
 /**
  * Create a workspace client with chainable extension support.
@@ -258,6 +222,17 @@ export function createWorkspace<
 			batch(fn: () => void): void {
 				ydoc.transact(fn);
 			},
+			/**
+			 * Apply a binary Y.js update to the underlying document.
+			 *
+			 * Use this to hydrate the workspace from a persisted snapshot (e.g. a `.yjs`
+			 * file on disk) without exposing the raw Y.Doc to consumer code.
+			 *
+			 * @param update - A Uint8Array produced by `Y.encodeStateAsUpdate()` or equivalent
+			 */
+			loadSnapshot(update: Uint8Array): void {
+				Y.applyUpdate(ydoc, update);
+			},
 			whenReady,
 			destroy,
 			[Symbol.asyncDispose]: destroy,
@@ -331,27 +306,19 @@ export function createWorkspace<
 				TExports extends Record<string, unknown>,
 			>(
 				key: TKey,
-				factory: (
-					context: ExtensionContext<
-						TId,
-						TTableDefinitions,
-						TKvDefinitions,
-						TAwarenessDefinitions,
-						TExtensions
-					>,
-				) => TExports & {
+				factory: (context: { ydoc: Y.Doc; whenReady: Promise<void> }) => TExports & {
 					whenReady?: Promise<unknown>;
 					destroy?: () => MaybePromise<void>;
 				},
 			) {
-				// Register for document Y.Docs (fires lazily at documents.open() time)
+				// Sugar: register for both scopes with the same factory.
+				// The factory only receives SharedExtensionContext (ydoc + whenReady),
+				// which is a structural subset of both ExtensionContext and DocumentContext.
 				documentExtensionRegistrations.push({
 					key,
-					factory:
-						factory as unknown as DocumentExtensionRegistration['factory'],
+					factory,
 					tags: [],
 				});
-				// Register for workspace Y.Doc (fires now, synchronously)
 				return applyWorkspaceExtension(key, factory);
 			},
 

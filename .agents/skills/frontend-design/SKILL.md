@@ -1,12 +1,25 @@
 ---
 name: frontend-design
 description: Create distinctive, production-grade frontend interfaces with high design quality. Use this skill when the user asks to build web components, pages, artifacts, posters, or applications (examples include websites, landing pages, dashboards, React components, HTML/CSS layouts, or when styling/beautifying any web UI). Generates creative, polished code and UI design that avoids generic AI aesthetics.
+metadata:
+  author: epicenter
+  version: '1.0'
 license: Complete terms in LICENSE.txt
 ---
 
 This skill guides creation of distinctive, production-grade frontend interfaces that avoid generic "AI slop" aesthetics. Implement real working code with exceptional attention to aesthetic details and creative choices.
 
 The user provides frontend requirements: a component, page, application, or interface to build. They may include context about the purpose, audience, or technical constraints.
+
+## When to Apply This Skill
+
+Use this pattern when you need to:
+
+- Build or redesign a frontend component, page, or full interface.
+- Define and execute a strong aesthetic direction before coding.
+- Produce polished UI with intentional typography, color, motion, and composition.
+- Avoid generic, repetitive AI-style design choices.
+- Match implementation complexity to the chosen visual direction.
 
 ## Design Thinking
 

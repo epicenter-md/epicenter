@@ -10,7 +10,10 @@
  * <Icon class="h-4 w-4" />
  * ```
  */
-import { FileCode, File as FileIcon, FileJson, FileText } from 'lucide-svelte';
+import FileCode from '@lucide/svelte/icons/file-code';
+import FileIcon from '@lucide/svelte/icons/file';
+import FileJson from '@lucide/svelte/icons/file-json';
+import FileText from '@lucide/svelte/icons/file-text';
 
 const EXTENSION_ICONS: Record<string, typeof FileIcon> = {
 	'.md': FileText,

@@ -1,6 +1,9 @@
 ---
 name: arktype
 description: Arktype patterns for discriminated unions using .merge() and .or(), spread key syntax, and type composition. Use when building union types, combining base schemas with variants, or defining command/event schemas with arktype.
+metadata:
+  author: epicenter
+  version: '1.0'
 ---
 
 # Arktype Discriminated Unions

@@ -151,7 +151,7 @@
 						}
 
 						if (files.length > 0) {
-							await rpc.commands.uploadRecordings({ files });
+							await rpc.actions.uploadRecordings({ files });
 						}
 					},
 				);
@@ -181,12 +181,12 @@
 			{
 				mode: 'manual' as const,
 				isActive: () => recorderState === 'RECORDING',
-				stop: () => rpc.commands.stopManualRecording(),
+				stop: () => rpc.actions.stopManualRecording(),
 			},
 			{
 				mode: 'vad' as const,
 				isActive: () => vadRecorder.state !== 'IDLE',
-				stop: () => rpc.commands.stopVadRecording(),
+				stop: () => rpc.actions.stopVadRecording(),
 			},
 		] satisfies {
 			mode: RecordingMode;
@@ -345,7 +345,7 @@
 				maxFileSize={25 * MEGABYTE}
 				onUpload={async (files) => {
 					if (files.length > 0) {
-						await rpc.commands.uploadRecordings({ files });
+					await rpc.actions.uploadRecordings({ files });
 					}
 				}}
 				onFileRejected={({ file, reason }) => {

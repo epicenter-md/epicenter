@@ -283,10 +283,10 @@ export type SheetEntry = {
 export type TimelineEntry = TextEntry | RichTextEntry | BinaryEntry | SheetEntry;
 ```
 
-Updated `ContentMode`:
+Updated `ContentType`:
 
 ```typescript
-export type ContentMode = TimelineEntry['type']; // 'text' | 'richtext' | 'binary' | 'sheet'
+export type ContentType = TimelineEntry['type']; // 'text' | 'richtext' | 'binary' | 'sheet'
 ```
 
 ### Column Definition (Type-Level Documentation)
@@ -430,7 +430,7 @@ In `packages/filesystem/src/content-ops.ts`:
 
 ```typescript
 // After existing text/binary handling:
-if (typeof data === 'string' && tl.currentMode === 'sheet') {
+if (typeof data === 'string' && tl.currentType === 'sheet') {
   // Writing a string to a sheet file: parse as CSV, update in place
   const columns = tl.currentEntry!.get('columns') as Y.Map<Y.Map<string>>;
   const rows = tl.currentEntry!.get('rows') as Y.Map<Y.Map<string>>;
@@ -512,7 +512,7 @@ All open questions have been resolved through implementation discussion.
 ### Phase 1: Types and Sheet Helpers
 
 - [ ] **1.1** Add `RowId`, `ColumnId` branded types and generator functions to `types.ts`
-- [ ] **1.2** Add `SheetEntry` type to `types.ts`, update `TimelineEntry` union and `ContentMode`
+- [ ] **1.2** Add `SheetEntry` type to `types.ts`, update `TimelineEntry` union and `ContentType`
 - [ ] **1.3** Add `ColumnDefinition` type (type-level documentation, not enforced at runtime)
 - [ ] **1.4** Create `sheet-helpers.ts` with `serializeSheetToCsv` and `parseSheetFromCsv`
 - [ ] **1.5** Add CSV escaping/parsing per RFC 4180 (hand-rolled, handle commas, quotes, newlines in cell values)

@@ -245,7 +245,7 @@ This migration is deferred to Phase 2. Phase 1 (opensidian fix) doesn't need it 
 
 ### Empty document (no timeline entries)
 
-1. Brand new file, timeline is empty, `currentMode === undefined`
+1. Brand new file, timeline is empty, `currentType === undefined`
 2. `fs.content.read()` → `readAsString()` returns `''` (correct)
 3. `fs.content.write(id, 'hello')` → pushes a text entry (correct)
 

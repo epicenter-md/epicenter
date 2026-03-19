@@ -8,6 +8,18 @@ metadata:
 
 # Yjs CRDT Patterns
 
+> **Related Skills**: See `workspace-api` for the workspace abstraction built on Yjs.
+
+## When to Apply This Skill
+
+Use this pattern when you need to:
+
+- Design collaborative data models with Y.Map, Y.Array, or Y.Text.
+- Handle conflict-prone updates with single-writer keys or nested maps.
+- Implement drag-and-drop reordering with fractional indexing.
+- Optimize Yjs storage for high-churn key-value workloads.
+- Review boundaries to prevent raw Yjs type leaks into consumer code.
+
 ## Core Concepts
 
 ### Shared Types
@@ -207,23 +219,72 @@ yarray.push([sameItem]); // Different Y.Map instance internally
 
 Any concurrent edits to the "moved" item are lost because you deleted the original.
 
-### 6. Accessing Raw Y.Doc Shared Types for Document Content
+### 6. Working with Raw Y.js Types Outside Their Owning Module
 
-Document Y.Docs use a timeline model (`Y.Array('timeline')` with nested typed entries). Never access raw shared types on the ydoc directly—use the handle methods:
+Y.js shared types (`Y.Map`, `Y.Text`, `Y.XmlFragment`, `Y.Array`) are implementation details that should stay behind typed APIs. When consumer code reaches through an abstraction to manipulate raw shared types, it creates coupling that's hard to change later.
+
+**The pattern**: If a module returns Y.js shared types for editor binding (e.g., `handle.asText()` returns `Y.Text`), that's intentional—the consumer needs the live CRDT reference. But if consumer code is *constructing*, *casting*, or *mutating* Y.js types that the owning module should encapsulate, that's a leak.
 
 ```typescript
-// BAD: bypasses the timeline
-const ytext = handle.ydoc.getText('content');
+// BAD: consumer reaches through handle to do raw Y.Text mutation
+const entry = handle.currentEntry;
+if (entry?.type === 'text') {
+    handle.batch(() => entry.content.insert(entry.content.length, text));
+}
 
-// GOOD: use handle methods (timeline-backed)
-handle.read();        // string I/O
-handle.write('hello');
-handle.asText();      // Y.Text for editor binding
-handle.asRichText();  // Y.XmlFragment for richtext binding
-handle.asSheet();     // SheetBinding for spreadsheet binding
+// GOOD: timeline owns the append operation
+handle.append(text);
 ```
 
-See the **workspace-api** skill for the full `DocumentHandle` API.
+```typescript
+// BAD: consumer constructs Y.Maps to call an internal CSV helper
+import { parseSheetFromCsv } from '@epicenter/workspace';
+const columns = new Y.Map<Y.Map<string>>();
+const rows = new Y.Map<Y.Map<string>>();
+parseSheetFromCsv(csv, columns, rows);
+
+// GOOD: use the handle's write method, which encapsulates CSV parsing
+handle.write(csv);  // mode-aware, handles sheet internally
+```
+
+### How to Spot Abstraction Leaks
+
+These are code smell indicators that Y.js internals are leaking:
+
+- **Type assertions**: `as Y.Map`, `as Y.Text`, `as Y.XmlFragment` outside the owning module means someone is working with untyped data and forcing it into shape. The typed API is incomplete.
+- **Mode branching**: `if (entry.type === 'text') ... else if (entry.type === 'sheet')` in consumer code means the consumer knows about internal content modes that the abstraction should handle.
+- **Raw mutations in batch callbacks**: `handle.batch(() => ytext.insert(...))` means the consumer is doing CRDT operations that should be a method on the handle.
+- **Internal helper re-exports**: Functions that take `Y.Map<Y.Map<string>>` parameters on a public API force consumers to have raw Y.js references to call them.
+- **`ydoc.getArray()`/`ydoc.getMap()` outside infrastructure**: Consumer code accessing the raw Y.Doc to read/write data bypasses the table/kv/timeline APIs.
+
+### The Boundary Rule
+
+Three layers, each with clear Y.js exposure:
+
+```
+┌──────────────────────────────────────────────────────┐
+│  Consumer Code (apps, features)                      │
+│  • Uses handle.read(), handle.write(), tables.*.set()│
+│  • MAY bind to Y.Text/Y.XmlFragment from as*()      │
+│  • NEVER constructs Y.js types                       │
+│  • NEVER casts to Y.js types                         │
+│  • NEVER calls .insert()/.delete() on raw types      │
+├──────────────────────────────────────────────────────┤
+│  Format Bridges (markdown, sheet converters)          │
+│  • Accepts Y.js types as parameters (they're bridges)│
+│  • Converts between Y.js ↔ string/JSON               │
+│  • Lives close to the owning module                   │
+├──────────────────────────────────────────────────────┤
+│  Timeline / Table / KV Internals                      │
+│  • Constructs and manages Y.js shared types           │
+│  • Owns the Y.Doc layout (array keys, map structure)  │
+│  • Exposes typed APIs that hide the CRDT details      │
+└──────────────────────────────────────────────────────┘
+```
+
+When reviewing code, ask: "Could this consumer do its job with only the typed API?" If yes and it's using raw Y.js types instead, that's a leak worth fixing.
+
+See the article `docs/articles/yjs-abstraction-leaks-cost-more-than-the-abstraction.md` for the full pattern with real examples.
 
 ## Debugging Tips
 

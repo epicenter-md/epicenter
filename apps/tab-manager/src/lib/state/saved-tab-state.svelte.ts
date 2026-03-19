@@ -59,7 +59,7 @@ function createSavedTabState() {
 
 	// Re-read on every Y.Doc change — observer fires when persistence
 	// loads and on any subsequent remote/local modification.
-	workspaceClient.tables.savedTabs.observe(() => {
+	const _unobserveSavedTabs = workspaceClient.tables.savedTabs.observe(() => {
 		tabs = readAll();
 	});
 

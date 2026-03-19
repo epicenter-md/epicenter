@@ -3,7 +3,7 @@ import {
 	type SyncProvider,
 	type SyncStatus,
 } from '@epicenter/sync-client';
-import type { ExtensionFactory } from '../workspace/types';
+import type { SharedExtensionContext } from '../workspace/types';
 
 /**
  * Sync extension configuration.
@@ -12,83 +12,63 @@ import type { ExtensionFactory } from '../workspace/types';
  * - **Open**: Just `url` — no auth (localhost, Tailscale, LAN)
  * - **Authenticated**: `url` + `getToken` — dynamic token refresh
  *
- * The `url` callback returns an HTTP base URL. The sync provider derives the
- * WebSocket URL automatically (`https:` → `wss:`, `http:` → `ws:`).
+ * The `url` callback receives the Y.Doc's GUID (workspace GUID for workspace scope,
+ * content doc GUID for document scope). The sync provider derives the WebSocket URL
+ * automatically (`https:` → `wss:`, `http:` → `ws:`).
  *
  * Chain last in the extension chain. Persistence loads local state first,
  * BroadcastChannel handles instant cross-tab sync, then WebSocket connects
  * for cross-device sync. The sync extension waits for all prior extensions
  * via `context.whenReady` before connecting.
  *
- * @example Recommended: persistence + BroadcastChannel + WebSocket
+ * @example Recommended: persistence + BroadcastChannel + WebSocket (both scopes)
  * ```typescript
  * import { indexeddbPersistence } from '@epicenter/workspace/extensions/sync/web';
  * import { broadcastChannelSync } from '@epicenter/workspace/extensions/sync/broadcast-channel';
  * import { createSyncExtension } from '@epicenter/workspace/extensions/sync';
  *
+ * const sync = createSyncExtension({
+ *   url: (docId) => `http://localhost:3913/rooms/${docId}`,
+ * });
+ *
  * createWorkspace(definition)
  *   .withExtension('persistence', indexeddbPersistence)
  *   .withExtension('broadcast', broadcastChannelSync)
- *   .withExtension('sync', createSyncExtension({
- *     url: (id) => `http://localhost:3913/rooms/${id}`,
- *   }))
+ *   .withWorkspaceExtension('sync', sync.workspace)  // syncs workspace Y.Doc with awareness
+ *   .withDocumentExtension('sync', sync.document)     // syncs each content Y.Doc
  * ```
  *
  * @example Authenticated mode (cloud)
  * ```typescript
- * createWorkspace(definition)
- *   .withExtension('persistence', indexeddbPersistence)
- *   .withExtension('broadcast', broadcastChannelSync)
- *   .withExtension('sync', createSyncExtension({
- *     url: (id) => `https://sync.epicenter.so/rooms/${id}`,
- *     getToken: async (workspaceId) => {
- *       const res = await fetch('/api/sync/token', {
- *         method: 'POST',
- *         body: JSON.stringify({ workspaceId }),
- *       });
- *       return (await res.json()).token;
- *     },
- *   }))
+ * const sync = createSyncExtension({
+ *   url: (docId) => `https://sync.epicenter.so/rooms/${docId}`,
+ *   getToken: async (docId) => {
+ *     const res = await fetch('/api/sync/token', {
+ *       method: 'POST',
+ *       body: JSON.stringify({ docId }),
+ *     });
+ *     return (await res.json()).token;
+ *   },
+ * });
  * ```
  */
 export type SyncExtensionConfig = {
-	/** HTTP base URL for the room. The WebSocket URL is derived automatically. */
-	url: (workspaceId: string) => string;
+	/**
+	 * HTTP base URL for the room. Receives the Y.Doc's GUID.
+	 *
+	 * At workspace scope, this is the workspace ID. At document scope,
+	 * this is the content Y.Doc's GUID (unique per document).
+	 */
+	url: (docId: string) => string;
 
 	/**
 	 * Token fetcher for authenticated mode. Called on each connect/reconnect.
 	 * The same token is used for both WebSocket (`?token=` query param) and
 	 * HTTP snapshot (`Authorization: Bearer` header).
 	 */
-	getToken?: (workspaceId: string) => Promise<string | undefined>;
+	getToken?: (docId: string) => Promise<string | undefined>;
 };
 
-/**
- * Creates a sync extension that connects after prior extensions are ready.
- *
- * Uses WebSocket for cross-device real-time sync. For same-browser cross-tab
- * sync, use `broadcastChannelSync` — it provides sub-millisecond local sync
- * without a server round-trip.
- *
- * Lifecycle:
- * - **Waits for prior extensions**: `context.whenReady` resolves when all previously
- *   chained extensions (persistence, BroadcastChannel, etc.) are ready. The provider
- *   connects only after local state is loaded, ensuring an accurate state vector for
- *   the initial sync.
- * - **`whenReady`**: Resolves when the connection is initiated (after prior extensions).
- *   The UI renders from local state immediately — connection status is reactive via
- *   `provider`.
- *
- * @example Recommended: persistence + BroadcastChannel + WebSocket
- * ```typescript
- * createWorkspace(definition)
- *   .withExtension('persistence', indexeddbPersistence)
- *   .withExtension('broadcast', broadcastChannelSync)
- *   .withExtension('sync', createSyncExtension({
- *     url: (id) => `http://localhost:3913/rooms/${id}`,
- *   }))
- * ```
- */
 /** Exports available on `client.extensions.sync` after registration. */
 export type SyncExtensionExports = {
 	/** Current connection status. Shorthand for `provider.status`. */
@@ -101,25 +81,50 @@ export type SyncExtensionExports = {
 	reconnect(): void;
 };
 
+/**
+ * Creates a sync extension that connects after prior extensions are ready.
+ *
+ * Syncs any Y.Doc (workspace or content) via WebSocket. Register with
+ * `withExtension` to sync both the workspace Y.Doc and every content Y.Doc:
+ *
+ * ```typescript
+ * createWorkspace(definition)
+ *   .withExtension('persistence', indexeddbPersistence)
+ *   .withExtension('broadcast', broadcastChannelSync)
+ *   .withExtension('sync', createSyncExtension({
+ *     url: (docId) => `http://localhost:3913/rooms/${docId}`,
+ *   }))
+ * ```
+ *
+ * The `url` callback receives the Y.Doc's GUID—the workspace ID at workspace
+ * scope, or the content doc's unique GUID at document scope. Each Y.Doc gets
+ * its own WebSocket connection to its own room on the sync server.
+ *
+ * Lifecycle:
+ * - Waits for prior extensions (`whenReady`) before connecting, so local state
+ *   is loaded first (accurate state vector for the initial sync handshake).
+ * - `whenReady` resolves when the connection is initiated. The UI renders from
+ *   local state immediately; connection status is reactive via `provider`.
+ */
 export function createSyncExtension(
 	config: SyncExtensionConfig,
-): ExtensionFactory<SyncExtensionExports> {
-	return ({ ydoc, awareness, whenReady: priorReady }) => {
-		const workspaceId = ydoc.guid;
-
-		const resolvedBaseUrl = config.url(workspaceId);
+): (context: SharedExtensionContext) => SyncExtensionExports & {
+	whenReady: Promise<unknown>;
+	destroy: () => void;
+} {
+	return ({ ydoc, whenReady: priorReady }) => {
+		const docId = ydoc.guid;
+		const resolvedBaseUrl = config.url(docId);
 		const wsUrl = resolvedBaseUrl
 			.replace(/^https:/, 'wss:')
 			.replace(/^http:/, 'ws:');
 
-		// Build provider — defer connection until prior extensions are ready
 		const provider: SyncProvider = createSyncProvider({
 			doc: ydoc,
 			url: wsUrl,
 			getToken: config.getToken
-				? () => config.getToken!(workspaceId)
+				? () => config.getToken!(docId)
 				: undefined,
-			awareness: awareness.raw,
 		});
 
 		// Wait for all prior extensions (persistence, etc.) then connect.
@@ -140,9 +145,7 @@ export function createSyncExtension(
 			 * Force an immediate disconnect + reconnect.
 			 *
 			 * Call after auth state changes (sign-in/sign-out) so the WebSocket
-			 * reconnects with a fresh token from `getToken`. The supervisor loop
-			 * calls `getToken()` fresh on each connection attempt, so a simple
-			 * disconnect/connect cycle is sufficient.
+			 * reconnects with a fresh token from `getToken`.
 			 */
 			reconnect() {
 				provider.disconnect();

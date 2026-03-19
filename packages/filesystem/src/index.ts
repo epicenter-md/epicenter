@@ -1,6 +1,6 @@
 // Content (document layer)
 export {
-	type ContentMode,
+	type ContentType,
 	type SheetEntry,
 } from './content/index.js';
 
@@ -14,11 +14,9 @@ export { createYjsFileSystem, type YjsFileSystem } from './file-system.js';
 export {
 	markdownSchema,
 	parseFrontmatter,
-	parseSheetFromCsv,
 	reorderColumn,
 	reorderRow,
 	serializeMarkdownWithFrontmatter,
-	serializeSheetToCsv,
 	serializeXmlFragmentToMarkdown,
 	updateYMapFromRecord,
 	updateYXmlFragmentFromString,

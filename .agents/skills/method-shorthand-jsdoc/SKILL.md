@@ -10,6 +10,8 @@ metadata:
 
 When factory functions have helper functions that are only used by returned methods, move them INTO the return object using method shorthand. This ensures JSDoc comments are properly passed through to consumers.
 
+> **Related Skills**: See `factory-function-composition` for the four-zone factory anatomy and the `this` decision rule.
+
 ## The Problem
 
 You write a factory function with a well-documented helper:

@@ -1,26 +1,42 @@
 /**
- * Lifecycle protocol for providers and extensions.
+ * Lifecycle primitives for workspace and document extensions.
  *
- * This module defines the shared lifecycle contract that all providers (doc-level)
- * and extensions (workspace-level) must satisfy. The protocol enables:
+ * This module defines:
  *
- * - **Async initialization tracking**: `whenReady` lets UI render gates wait for readiness
- * - **Resource cleanup**: `destroy` ensures connections, observers, and handles are released
+ * - **`Lifecycle`** — The base `{ whenReady, destroy }` contract all extensions satisfy
+ * - **`Extension<T>`** — Resolved form: custom exports + required lifecycle hooks
+ * - **`defineExtension()`** — Normalizes raw factory returns into `Extension<T>`
+ * - **`destroyLifo()` / `startDestroyLifo()`** — LIFO teardown for ordered cleanup
  *
  * ## Architecture
+ *
+ * Extensions are registered at two scopes—workspace and document—with a shared
+ * subset for dual-scope registration:
  *
  * ```
  * ┌─────────────────────────────────────────────────────────────────┐
  * │  Lifecycle (base protocol)                                      │
  * │    { whenReady, destroy }                                       │
  * └─────────────────────────────────────────────────────────────────┘
+ *          │
+ *          ▼
+ * ┌─────────────────────────────────────────────────────────────────┐
+ * │  Extension<T> (resolved form)                                   │
+ * │    T & { whenReady: Promise<void>, destroy: () => void }        │
+ * └─────────────────────────────────────────────────────────────────┘
  *          │                                    │
  *          ▼                                    ▼
  * ┌──────────────────────────┐    ┌──────────────────────────────┐
- * │  Providers (doc-level)   │    │  Extensions (workspace-level) │
- * │  return Lifecycle & T    │    │  return flat { T, whenReady?, │
- * │  directly                │    │    destroy? }                  │
+ * │  Workspace extensions    │    │  Document extensions          │
+ * │  ExtensionContext         │    │  DocumentContext              │
+ * │  (tables, kv, awareness) │    │  (timeline, ydoc)             │
  * └──────────────────────────┘    └──────────────────────────────┘
+ *          │                                    │
+ *          └────────────┬─────────────────────┘
+ *                       ▼
+ *          SharedExtensionContext
+ *          { ydoc, whenReady }
+ *          (used by withExtension)
  * ```
  *
  * ## Usage
@@ -28,34 +44,25 @@
  * Factory functions are **always synchronous**. Async initialization is tracked
  * via the returned `whenReady` promise, not the factory itself.
  *
- * **Extensions** return a flat object with custom exports + optional lifecycle hooks:
- *
  * ```typescript
  * // Extension with exports and cleanup
- * const withCleanup: ExtensionFactory = ({ ydoc }) => {
- *   const db = new Database(':memory:');
- *   return {
- *     db,
- *     destroy: () => db.close(),
- *   };
- * };
- * ```
- *
- * **Providers** return `Lifecycle` (or `Lifecycle & T`) directly:
- *
- * ```typescript
- * // Provider with async initialization
- * const persistence: ProviderFactory = ({ ydoc }) => {
+ * const persistence: ExtensionFactory = ({ ydoc }) => {
  *   const provider = new IndexeddbPersistence(ydoc.guid, ydoc);
  *   return {
+ *     provider,
  *     whenReady: provider.whenReady,
  *     destroy: () => provider.destroy(),
  *   };
  * };
+ *
+ * // Lifecycle-only extension (no custom exports)
+ * const broadcast = ({ ydoc }) => {
+ *   const channel = new BroadcastChannel(ydoc.guid);
+ *   return { destroy: () => channel.close() };
+ * };
  * ```
  */
 
-import type * as Y from 'yjs';
 
 /**
  * A value that may be synchronous or wrapped in a Promise.
@@ -213,71 +220,53 @@ export function defineExtension<T extends Record<string, unknown>>(
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// DOCUMENT CONTEXT — Passed to document extension factories
+// LIFO CLEANUP — Shared teardown primitives for extensions and documents
 // ════════════════════════════════════════════════════════════════════════════
 
 /**
- * Context passed to document extension factories registered via `withDocumentExtension()`.
+ * Run cleanups in LIFO order (last registered = first destroyed).
+ * Continues on error and returns accumulated errors.
  *
- * Minimal context: the content Y.Doc, workspace ID, and chain state
- * (composite whenReady + prior extensions). Intentionally lean — fields
- * like `tableName` and `tags` are omitted until a real consumer needs them.
+ * Used by both `createWorkspace()` and `createDocuments()` to tear down
+ * extensions in reverse creation order. Call sites handle the returned
+ * errors array in their own way (throw, log, or rethrow).
  *
- * ```typescript
- * .withDocumentExtension('persistence', ({ ydoc }) => { ... })
- * .withDocumentExtension('sync', ({ id, ydoc, whenReady }) => { ... })
- * ```
- *
- * Extensions are optional because tag-filtered extensions may be skipped for certain
- * document types. Factories should guard access with optional chaining.
- *
- * Does NOT include `destroy` or `[Symbol.asyncDispose]` — factories return
- * their own lifecycle hooks, they don't control the document's.
- *
- * @typeParam TDocExtensions - Accumulated document extension exports from prior
- *   `.withDocumentExtension()` calls. Defaults to `Record<string, unknown>` so
- *   `DocumentExtensionRegistration` can store factories with the wide type.
- *
- * @example
- * ```typescript
- * .withDocumentExtension('sync', ({ id, ydoc, whenReady, extensions }) => {
- *   const path = `${id}/${ydoc.guid}.yjs`;
- *
- *   // Access prior document extension exports + lifecycle directly
- *   await extensions.persistence?.whenReady;
- *   extensions.persistence?.clearData();
- *
- *   // Composite: await ALL prior doc extensions
- *   await whenReady;
- * })
- * ```
+ * @param cleanups - Array of cleanup functions to run in reverse order
+ * @returns Array of errors caught during cleanup (empty if all succeeded)
  */
-export type DocumentContext<
-	TDocExtensions extends Record<string, unknown> = Record<string, unknown>,
-> = {
-	/** The workspace identifier. Matches ExtensionContext.id. */
-	id: string;
-	/** The content Y.Doc being created. */
-	ydoc: Y.Doc;
-	/** Composite whenReady of all PRIOR document extensions' results. */
-	whenReady: Promise<void>;
-	/**
-	 * Typed access to prior document extensions (resolved form with lifecycle hooks).
-	 *
-	 * Each entry is optional because tag-filtered extensions may be skipped.
-	 * Factories should guard access with optional chaining.
-	 *
-	 * @example
-	 * ```typescript
-	 * await extensions.persistence?.whenReady;
-	 * extensions.persistence?.clearData();
-	 * ```
-	 */
-	extensions: {
-		[K in keyof TDocExtensions]?: Extension<
-			TDocExtensions[K] extends Record<string, unknown>
-				? TDocExtensions[K]
-				: Record<string, never>
-		>;
-	};
-};
+export async function destroyLifo(
+	cleanups: (() => MaybePromise<void>)[],
+): Promise<unknown[]> {
+	const errors: unknown[] = [];
+	for (let i = cleanups.length - 1; i >= 0; i--) {
+		try {
+			await cleanups[i]?.();
+		} catch (err) {
+			errors.push(err);
+		}
+	}
+	return errors;
+}
+
+/**
+ * Start all cleanups immediately in LIFO order without awaiting between them.
+ *
+ * Used in the sync builder error path where we can't await. Every cleanup is
+ * invoked before the throw propagates—async portions settle in the background.
+ * Rejections are observed (logged) so they don't become unhandled.
+ *
+ * @param cleanups - Array of cleanup functions to invoke in reverse order
+ */
+export function startDestroyLifo(
+	cleanups: (() => MaybePromise<void>)[],
+): void {
+	for (let i = cleanups.length - 1; i >= 0; i--) {
+		try {
+			Promise.resolve(cleanups[i]?.()).catch((err) => {
+				console.error('Extension cleanup error during rollback:', err);
+			});
+		} catch (err) {
+			console.error('Extension cleanup error during rollback:', err);
+		}
+	}
+}

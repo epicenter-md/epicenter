@@ -1,6 +1,9 @@
 ---
 name: progress-summary
 description: This skill should be used when the user asks questions like "can you summarize", "what happened", "what did we do", "what's the situation", "where are we at", "explain what's going on", "give me an overview", "what's been done", "tell me about this", "walk me through what happened", or any question asking to understand the current state of work or changes. Provides conversational, PR-style summaries with visual diagrams.
+metadata:
+  author: epicenter
+  version: '1.0'
 ---
 
 # Progress Summary

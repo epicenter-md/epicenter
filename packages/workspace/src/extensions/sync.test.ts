@@ -10,7 +10,6 @@
  */
 import { describe, expect, test } from 'bun:test';
 import type { SyncProvider } from '@epicenter/sync-client';
-import { Awareness } from 'y-protocols/awareness';
 import * as Y from 'yjs';
 import { createSyncExtension } from './sync';
 
@@ -27,12 +26,11 @@ type SyncExtensionFactoryClient = Parameters<
 >[0];
 
 /** Create a minimal mock context for the sync extension factory. */
-function createMockClient(ydoc: Y.Doc) {
+function createMockContext(ydoc: Y.Doc): SyncExtensionFactoryClient {
 	return {
 		ydoc,
-		awareness: { raw: new Awareness(ydoc) },
 		whenReady: Promise.resolve(),
-	} as unknown as SyncExtensionFactoryClient; // Minimal mock — only properties the sync extension accesses are provided
+	};
 }
 
 describe('createSyncExtension', () => {
@@ -45,7 +43,7 @@ describe('createSyncExtension', () => {
 			});
 
 			const result = factory(
-				createMockClient(ydoc),
+				createMockContext(ydoc),
 			) as unknown as SyncExtensionResult;
 
 			const provider = result.provider;
@@ -67,7 +65,7 @@ describe('createSyncExtension', () => {
 			});
 
 			const result = factory(
-				createMockClient(ydoc),
+				createMockContext(ydoc),
 			) as unknown as SyncExtensionResult;
 
 			result.reconnect();
@@ -87,7 +85,7 @@ describe('createSyncExtension', () => {
 			});
 
 			const result = factory(
-				createMockClient(ydoc),
+				createMockContext(ydoc),
 			) as unknown as SyncExtensionResult;
 
 			const provider = result.provider;
@@ -105,7 +103,7 @@ describe('createSyncExtension', () => {
 		});
 
 		const result = factory(
-			createMockClient(ydoc),
+			createMockContext(ydoc),
 		) as unknown as SyncExtensionResult;
 
 		expect(result.provider).toBeDefined();
@@ -129,7 +127,6 @@ describe('createSyncExtension', () => {
 
 		const result = factory({
 			ydoc,
-			awareness: { raw: new Awareness(ydoc) },
 			whenReady: clientWhenReady.then(() => {
 				order.push('client-ready');
 			}),

@@ -42,7 +42,9 @@
 		"typebox": "catalog:",
 		"wellcrafted": "catalog:",
 		"y-indexeddb": "catalog:",
-		"y-protocols": "catalog:"
+		"y-protocols": "catalog:",
+		"remark-parse": "^11.0.0",
+		"unified": "^11.0.5"
 	},
 	"peerDependencies": {
 		"yjs": "catalog:"

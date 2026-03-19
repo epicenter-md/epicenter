@@ -74,7 +74,7 @@ handle.timeline.pushText('hi');
 - `packages/workspace/src/content/entry-types.ts`:
   - Delete `BinaryEntry` type.
   - Remove `BinaryEntry` from `TimelineEntry` union.
-  - `ContentMode` automatically narrows to `'text' | 'richtext' | 'sheet'`.
+  - `ContentType` automatically narrows to `'text' | 'richtext' | 'sheet'`.
 
 - `packages/workspace/src/content/timeline.ts`:
   - Delete `pushBinary()` method from `Timeline` type and implementation.
@@ -87,7 +87,7 @@ handle.timeline.pushText('hi');
 - `packages/filesystem/src/content/content.ts`:
   - Remove `readBuffer()` method from `ContentHelpers` type and implementation.
   - Remove `Uint8Array` branch from `write()` (it only handles binary).
-  - Remove binary branch from `append()` (the `else if (tl.currentMode === 'binary')` case).
+  - Remove binary branch from `append()` (the `else if (tl.currentType === 'binary')` case).
 
 - `packages/filesystem/src/content/entry-types.ts` — Remove `BinaryEntry` re-export.
 

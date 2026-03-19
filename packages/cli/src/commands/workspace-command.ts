@@ -19,7 +19,6 @@ import {
 	resolveWantedItems,
 } from 'jsrepo';
 import type { Argv, CommandModule } from 'yargs';
-import * as Y from 'yjs';
 import type { DiscoveredWorkspace } from '../discovery';
 import { loadClientFromPath } from '../discovery';
 import { formatYargsOptions, output, outputError } from '../format-output';
@@ -381,7 +380,7 @@ function buildWorkspaceExportCommand(home: string) {
 
 			if (await Bun.file(dataPath).exists()) {
 				const data = await Bun.file(dataPath).arrayBuffer();
-				Y.applyUpdate(client.ydoc, new Uint8Array(data));
+				client.loadSnapshot(new Uint8Array(data));
 			}
 
 			const result: Record<string, unknown[]> = {};

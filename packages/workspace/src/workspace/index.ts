@@ -71,11 +71,11 @@ export {
 export { ExtensionError } from '../shared/errors.js';
 // Lifecycle protocol
 export type {
-	DocumentContext,
 	Extension,
 	Lifecycle,
 	MaybePromise,
-} from './lifecycle.js';
+	} from './lifecycle.js';
+export type { DocumentContext } from './types.js';
 
 // ════════════════════════════════════════════════════════════════════════════
 // Y.DOC STORAGE KEYS
@@ -98,6 +98,8 @@ export { defineWorkspace } from './define-workspace.js';
 // ════════════════════════════════════════════════════════════════════════════
 
 export { createWorkspace } from './create-workspace.js';
+// Document origin sentinel (for filtering auto-bumps in table observers)
+export { DOCUMENTS_ORIGIN } from './create-document.js';
 
 // ════════════════════════════════════════════════════════════════════════════
 // Lower-Level APIs (Bring Your Own Y.Doc)
@@ -138,6 +140,7 @@ export type {
 	// Base row type
 	BaseRow,
 	// Document types
+	DocumentClient,
 	DocumentConfig,
 	DocumentHandle,
 	Documents,
@@ -145,6 +148,7 @@ export type {
 	// Extension types
 	ExtensionContext,
 	ExtensionFactory,
+	SharedExtensionContext,
 	GetResult,
 	InferAwarenessValue,
 	InferKvValue,
@@ -166,6 +170,7 @@ export type {
 	TableDefinitions,
 	// Helper types
 	TableHelper,
+	TransactionMeta,
 	TablesHelper,
 	UpdateResult,
 	// Result types - building blocks

@@ -65,23 +65,23 @@ function createNotesState() {
 	// Observers fire on Y.Doc changes (local + remote). They wholesale-replace
 	// the $state arrays — same pattern as tab-manager's saved-tab-state.
 
-	workspaceClient.tables.folders.observe(() => {
+	const _unobserveFolders = workspaceClient.tables.folders.observe(() => {
 		folders = readFolders();
 	});
 
-	workspaceClient.tables.notes.observe(() => {
+	const _unobserveNotes = workspaceClient.tables.notes.observe(() => {
 		allNotes = readNotes();
 	});
 
-	workspaceClient.kv.observe('selectedFolderId', (change) => {
+	const _unobserveSelectedFolder = workspaceClient.kv.observe('selectedFolderId', (change) => {
 		selectedFolderId = change.type === 'set' ? change.value : null;
 	});
 
-	workspaceClient.kv.observe('selectedNoteId', (change) => {
+	const _unobserveSelectedNote = workspaceClient.kv.observe('selectedNoteId', (change) => {
 		selectedNoteId = change.type === 'set' ? change.value : null;
 	});
 
-	workspaceClient.kv.observe('sortBy', (change) => {
+	const _unobserveSortBy = workspaceClient.kv.observe('sortBy', (change) => {
 		sortBy = change.type === 'set' ? change.value : 'dateEdited';
 	});
 

@@ -1,4 +1,4 @@
-import { commands } from './actions';
+import { actions } from './actions';
 import { analytics } from './analytics';
 import { db } from './db';
 import { delivery } from './delivery';
@@ -20,7 +20,7 @@ export { desktopRpc } from './desktop';
 export const rpc = {
 	analytics,
 	text,
-	commands,
+	actions,
 	db,
 	download,
 	recorder,

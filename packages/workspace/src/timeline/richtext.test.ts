@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import * as Y from 'yjs';
 import {
+	populateFragmentFromMarkdown,
 	populateFragmentFromText,
 	xmlFragmentToPlaintext,
 } from './richtext.js';
@@ -125,40 +126,34 @@ describe('populateFragmentFromText', () => {
 // pushRichtext on Timeline
 // ════════════════════════════════════════════════════════════════════════════
 
-describe('createTimeline - pushRichtext', () => {
+describe('createTimeline - asRichText', () => {
 	function setup() {
 		return createTimeline(new Y.Doc());
 	}
 
-	test('pushRichtext creates entry with type richtext', () => {
+	test('asRichText on empty timeline creates richtext entry', () => {
 		const tl = setup();
-		const entry = tl.pushRichtext();
-		expect(entry.get('type')).toBe('richtext');
+		tl.asRichText();
+		expect(tl.currentType).toBe('richtext');
 	});
 
-	test('pushRichtext creates XmlFragment and frontmatter', () => {
+	test('asRichText returns XmlFragment', () => {
 		const tl = setup();
-		const entry = tl.pushRichtext();
-		expect(entry.get('content')).toBeInstanceOf(Y.XmlFragment);
-		expect(entry.get('frontmatter')).toBeInstanceOf(Y.Map);
+		const fragment = tl.asRichText();
+		expect(fragment).toBeInstanceOf(Y.XmlFragment);
 	});
 
-	test('pushRichtext sets createdAt', () => {
+	test('richtext entry has createdAt', () => {
 		const tl = setup();
-		const entry = tl.pushRichtext();
-		expect(entry.get('createdAt')).toBeTypeOf('number');
+		tl.asRichText();
+		const entry = tl.currentEntry;
+		if (!entry) throw new Error('expected richtext');
+		expect(entry.createdAt).toBeTypeOf('number');
 	});
 
-	test('currentMode returns richtext after pushRichtext', () => {
+	test('read extracts plaintext from richtext entry', () => {
 		const tl = setup();
-		tl.pushRichtext();
-		expect(tl.currentMode).toBe('richtext');
-	});
-
-	test('readAsString extracts plaintext from richtext entry', () => {
-		const tl = setup();
-		const entry = tl.pushRichtext();
-		const fragment = entry.get('content') as Y.XmlFragment;
+		const fragment = tl.asRichText();
 
 		const p = new Y.XmlElement('paragraph');
 		const t = new Y.XmlText();
@@ -166,12 +161,155 @@ describe('createTimeline - pushRichtext', () => {
 		p.insert(0, [t]);
 		fragment.insert(0, [p]);
 
-		expect(tl.readAsString()).toBe('Hello from richtext');
+		expect(tl.read()).toBe('Hello from richtext');
 	});
 
-	test('readAsString on empty richtext returns empty string', () => {
+	test('read on empty richtext returns empty string', () => {
 		const tl = setup();
-		tl.pushRichtext();
-		expect(tl.readAsString()).toBe('');
+		tl.asRichText();
+		expect(tl.read()).toBe('');
+	});
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// populateFragmentFromMarkdown
+// ════════════════════════════════════════════════════════════════════════════
+
+describe('populateFragmentFromMarkdown', () => {
+	test('heading with bold text', () => {
+		const fragment = createDocFragment();
+		populateFragmentFromMarkdown(fragment, '# Hello **world**');
+
+		const children = fragment.toArray();
+		expect(children.length).toBe(1);
+
+		const heading = children[0] as Y.XmlElement;
+		expect(heading.nodeName).toBe('heading');
+		expect(heading.getAttribute('level')).toBe('1');
+
+		const textNodes = heading.toArray();
+		expect(textNodes.length).toBe(2);
+		expect((textNodes[0] as Y.XmlText).toDelta()).toEqual([{ insert: 'Hello ' }]);
+		const boldText = textNodes[1] as Y.XmlText;
+		expect(boldText.toDelta()).toEqual([
+			{ insert: 'world', attributes: { bold: true } },
+		]);
+	});
+
+	test('paragraph with mixed formatting', () => {
+		const fragment = createDocFragment();
+		populateFragmentFromMarkdown(fragment, 'Some **bold** and *italic* text');
+
+		const para = fragment.toArray()[0] as Y.XmlElement;
+		expect(para.nodeName).toBe('paragraph');
+
+		const runs = para.toArray() as Y.XmlText[];
+		expect(runs.length).toBe(5);
+		expect(runs[0].toString()).toBe('Some ');
+		expect(runs[1].toDelta()).toEqual([{ insert: 'bold', attributes: { bold: true } }]);
+		expect(runs[2].toString()).toBe(' and ');
+		expect(runs[3].toDelta()).toEqual([{ insert: 'italic', attributes: { italic: true } }]);
+		expect(runs[4].toString()).toBe(' text');
+	});
+
+	test('link preserves href', () => {
+		const fragment = createDocFragment();
+		populateFragmentFromMarkdown(fragment, '[click here](https://example.com)');
+
+		const para = fragment.toArray()[0] as Y.XmlElement;
+		const linkText = para.toArray()[0] as Y.XmlText;
+		expect(linkText.toDelta()[0].insert).toBe('click here');
+		expect(linkText.toDelta()).toEqual([
+			{ insert: 'click here', attributes: { link: { href: 'https://example.com' } } },
+		]);
+	});
+
+	test('code block with language', () => {
+		const fragment = createDocFragment();
+		populateFragmentFromMarkdown(fragment, '```typescript\nconst x = 1;\n```');
+
+		const codeBlock = fragment.toArray()[0] as Y.XmlElement;
+		expect(codeBlock.nodeName).toBe('codeBlock');
+		expect(codeBlock.getAttribute('language')).toBe('typescript');
+		expect((codeBlock.toArray()[0] as Y.XmlText).toString()).toBe('const x = 1;');
+	});
+
+	test('blockquote containing paragraph', () => {
+		const fragment = createDocFragment();
+		populateFragmentFromMarkdown(fragment, '> A quoted paragraph');
+
+		const bq = fragment.toArray()[0] as Y.XmlElement;
+		expect(bq.nodeName).toBe('blockquote');
+		const inner = bq.toArray()[0] as Y.XmlElement;
+		expect(inner.nodeName).toBe('paragraph');
+		expect((inner.toArray()[0] as Y.XmlText).toString()).toBe('A quoted paragraph');
+	});
+
+	test('bullet list', () => {
+		const fragment = createDocFragment();
+		populateFragmentFromMarkdown(fragment, '- item 1\n- item 2');
+
+		const list = fragment.toArray()[0] as Y.XmlElement;
+		expect(list.nodeName).toBe('bulletList');
+		const items = list.toArray() as Y.XmlElement[];
+		expect(items.length).toBe(2);
+		expect(items[0].nodeName).toBe('listItem');
+		expect(items[1].nodeName).toBe('listItem');
+	});
+
+	test('ordered list', () => {
+		const fragment = createDocFragment();
+		populateFragmentFromMarkdown(fragment, '1. first\n2. second');
+
+		const list = fragment.toArray()[0] as Y.XmlElement;
+		expect(list.nodeName).toBe('orderedList');
+	});
+
+	test('inline code', () => {
+		const fragment = createDocFragment();
+		populateFragmentFromMarkdown(fragment, 'Use `foo()` here');
+
+		const para = fragment.toArray()[0] as Y.XmlElement;
+		const runs = para.toArray() as Y.XmlText[];
+		expect(runs[0].toString()).toBe('Use ');
+		expect(runs[1].toDelta()).toEqual([{ insert: 'foo()', attributes: { code: true } }]);
+		expect(runs[2].toString()).toBe(' here');
+	});
+
+	test('horizontal rule', () => {
+		const fragment = createDocFragment();
+		populateFragmentFromMarkdown(fragment, 'Above\n\n---\n\nBelow');
+
+		const children = fragment.toArray() as Y.XmlElement[];
+		expect(children.length).toBe(3);
+		expect(children[0].nodeName).toBe('paragraph');
+		expect(children[1].nodeName).toBe('horizontalRule');
+		expect(children[2].nodeName).toBe('paragraph');
+	});
+
+	test('nested bold+italic', () => {
+		const fragment = createDocFragment();
+		populateFragmentFromMarkdown(fragment, '***bold and italic***');
+
+		const para = fragment.toArray()[0] as Y.XmlElement;
+		const text = para.toArray()[0] as Y.XmlText;
+		expect(text.toDelta()).toEqual([
+			{ insert: 'bold and italic', attributes: { bold: true, italic: true } },
+		]);
+	});
+
+	test('multi-block document', () => {
+		const fragment = createDocFragment();
+		populateFragmentFromMarkdown(
+			fragment,
+			'# Title\n\nA paragraph.\n\n> A quote\n\n- item',
+		);
+
+		const children = fragment.toArray() as Y.XmlElement[];
+		expect(children.length).toBe(4);
+		expect(children[0].nodeName).toBe('heading');
+		expect(children[1].nodeName).toBe('paragraph');
+		expect(children[2].nodeName).toBe('blockquote');
+		expect(children[3].nodeName).toBe('bulletList');
 	});
 });

@@ -45,6 +45,10 @@ function createFsState() {
 	const expandedIds = new SvelteSet<FileId>();
 	let focusedId = $state<FileId | null>(null);
 
+	// ── Inline editing state ──────────────────────────────────────────
+	let inlineCreate = $state<{ parentId: FileId | null; type: 'file' | 'folder' } | null>(null);
+	let renamingId = $state<FileId | null>(null);
+
 	// ── rAF-coalesced observer ────────────────────────────────────────
 	let pendingBump = false;
 	const unobserve = ws.tables.files.observe(() => {
@@ -109,6 +113,12 @@ function createFsState() {
 		get focusedId() {
 			return focusedId;
 		},
+		get inlineCreate() {
+			return inlineCreate;
+		},
+		get renamingId() {
+			return renamingId;
+		},
 
 		expandedIds,
 		fs,
@@ -144,6 +154,62 @@ function createFsState() {
 				if (fs.index.getIdByPath(p) === id) return p;
 			}
 			return null;
+		},
+
+		// ── Inline editing actions ────────────────────────────────
+
+		/**
+		 * Begin inline creation. Shows an input in the tree at the target location.
+		 * If a folder is focused, creates inside it. If a file is focused, creates as sibling.
+		 * If nothing is focused, creates at root.
+		 */
+		startCreate(type: 'file' | 'folder') {
+			renamingId = null;
+			const focused = focusedId ?? activeFileId;
+			if (!focused) {
+				inlineCreate = { parentId: null, type };
+				return;
+			}
+			const row = state.getRow(focused);
+			if (row?.type === 'folder') {
+				expandedIds.add(focused);
+				inlineCreate = { parentId: focused, type };
+			} else if (row?.parentId) {
+				inlineCreate = { parentId: row.parentId, type };
+			} else {
+				inlineCreate = { parentId: null, type };
+			}
+		},
+
+		cancelCreate() {
+			inlineCreate = null;
+		},
+
+		async confirmCreate(name: string) {
+			if (!name.trim() || !inlineCreate) return;
+			const { parentId, type } = inlineCreate;
+			inlineCreate = null;
+			if (type === 'file') {
+				await state.actions.createFile(parentId, name.trim());
+			} else {
+				await state.actions.createFolder(parentId, name.trim());
+			}
+		},
+
+		startRename(id: FileId) {
+			inlineCreate = null;
+			renamingId = id;
+		},
+
+		cancelRename() {
+			renamingId = null;
+		},
+
+		async confirmRename(newName: string) {
+			if (!newName.trim() || !renamingId) return;
+			const id = renamingId;
+			renamingId = null;
+			await state.actions.rename(id, newName.trim());
 		},
 
 		actions: {

@@ -4,35 +4,9 @@
 	import * as Tooltip from '@epicenter/ui/tooltip';
 	import { toast } from 'svelte-sonner';
 	import { fsState } from '$lib/fs/fs-state.svelte';
-	import CreateDialog from './CreateDialog.svelte';
 	import DeleteConfirmation from './DeleteConfirmation.svelte';
-	import RenameDialog from './RenameDialog.svelte';
 
-	let createDialogOpen = $state(false);
-	let createDialogMode = $state<'file' | 'folder'>('file');
 	let deleteDialogOpen = $state(false);
-	let renameDialogOpen = $state(false);
-
-	function openCreateFile() {
-		createDialogMode = 'file';
-		createDialogOpen = true;
-	}
-
-	function openCreateFolder() {
-		createDialogMode = 'folder';
-		createDialogOpen = true;
-	}
-
-	function openRename() {
-		if (!fsState.activeFileId) return;
-		renameDialogOpen = true;
-	}
-
-	function openDelete() {
-		if (!fsState.activeFileId) return;
-		deleteDialogOpen = true;
-	}
-
 	let seeding = $state(false);
 
 	async function loadSampleData() {
@@ -48,7 +22,7 @@
 			);
 			await fs.writeFile(
 				'/docs/api.md',
-				'# API Reference\n\n## YjsFileSystem\n\nThe main filesystem class.\n\n### Methods\n\n- `writeFile(path, content)` — Create or overwrite a file\n- `mkdir(path)` — Create a directory\n- `rm(path, opts)` — Remove a file or directory\n- `mv(from, to)` — Move or rename\n',
+				'# API Reference\n\n## YjsFileSystem\n\nThe main filesystem class.\n\n### Methods\n\n- `writeFile(path, content)` \u2014 Create or overwrite a file\n- `mkdir(path)` \u2014 Create a directory\n- `rm(path, opts)` \u2014 Remove a file or directory\n- `mv(from, to)` \u2014 Move or rename\n',
 			);
 			await fs.writeFile(
 				'/docs/guide.md',
@@ -79,7 +53,12 @@
 		<Tooltip.Root>
 			<Tooltip.Trigger>
 				{#snippet child({ props })}
-					<Button {...props} variant="ghost" size="sm" onclick={openCreateFile}>
+					<Button
+						{...props}
+						variant="ghost"
+						size="sm"
+						onclick={() => fsState.actions.startCreate('file')}
+					>
 						New File
 					</Button>
 				{/snippet}
@@ -89,7 +68,12 @@
 		<Tooltip.Root>
 			<Tooltip.Trigger>
 				{#snippet child({ props })}
-					<Button {...props} variant="ghost" size="sm" onclick={openCreateFolder}>
+					<Button
+						{...props}
+						variant="ghost"
+						size="sm"
+						onclick={() => fsState.actions.startCreate('folder')}
+					>
 						New Folder
 					</Button>
 				{/snippet}
@@ -104,7 +88,9 @@
 						{...props}
 						variant="ghost"
 						size="sm"
-						onclick={openRename}
+						onclick={() => {
+							if (fsState.activeFileId) fsState.actions.startRename(fsState.activeFileId);
+						}}
 						disabled={!fsState.activeFileId}
 					>
 						Rename
@@ -120,7 +106,9 @@
 						{...props}
 						variant="ghost"
 						size="sm"
-						onclick={openDelete}
+						onclick={() => {
+							if (fsState.activeFileId) deleteDialogOpen = true;
+						}}
 						disabled={!fsState.activeFileId}
 					>
 						Delete
@@ -150,6 +138,4 @@
 	</div>
 </Tooltip.Provider>
 
-<CreateDialog bind:open={createDialogOpen} mode={createDialogMode} />
-<RenameDialog bind:open={renameDialogOpen} />
 <DeleteConfirmation bind:open={deleteDialogOpen} />

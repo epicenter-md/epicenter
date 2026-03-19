@@ -42,16 +42,13 @@
  */
 
 import * as Y from 'yjs';
-import { createTimeline, readEntry } from '../timeline/timeline.js';
-import { serializeSheetToCsv } from '../timeline/sheet.js';
-import {
-	xmlFragmentToPlaintext,
-	populateFragmentFromText,
-} from '../timeline/richtext.js';
+import { createTimeline } from '../timeline/timeline.js';
 import {
 	defineExtension,
+	destroyLifo,
 	type Extension,
 	type MaybePromise,
+	startDestroyLifo,
 } from './lifecycle.js';
 import type {
 	BaseRow,
@@ -95,119 +92,6 @@ type DocEntry = {
 };
 
 /**
- * Create a lightweight handle wrapping an open Y.Doc and its resolved extensions.
- *
- * Handles are cheap (8 properties). The Y.Doc underneath is the expensive
- * shared resource. Calling `open()` twice returns fresh handles backed
- * by the same cached Y.Doc.
- *
- * Timeline-backed content methods are exposed directly on the handle.
- */
-function makeHandle(
-	ydoc: Y.Doc,
-	// biome-ignore lint/suspicious/noExplicitAny: runtime storage uses wide type
-	extensions: Record<string, Extension<any>>,
-): DocumentHandle {
-	const tl = createTimeline(ydoc);
-
-	return {
-		ydoc,
-		get mode() {
-			return tl.currentMode;
-		},
-		read() {
-			return tl.readAsString();
-		},
-		write(text: string) {
-			if (tl.currentMode === 'text') {
-				const ytext = tl.currentEntry?.get('content') as Y.Text;
-				ydoc.transact(() => {
-					ytext.delete(0, ytext.length);
-					ytext.insert(0, text);
-				});
-			} else {
-				ydoc.transact(() => tl.pushText(text));
-			}
-		},
-		asText() {
-			const validated = readEntry(tl.currentEntry);
-			switch (validated.mode) {
-				case 'text':
-					return validated.content;
-				case 'empty':
-					ydoc.transact(() => tl.pushText(''));
-					return (readEntry(tl.currentEntry) as { mode: 'text'; content: Y.Text }).content;
-				case 'richtext': {
-					const plaintext = xmlFragmentToPlaintext(validated.content);
-					ydoc.transact(() => tl.pushText(plaintext));
-					return (readEntry(tl.currentEntry) as { mode: 'text'; content: Y.Text }).content;
-				}
-				case 'sheet': {
-					const csv = serializeSheetToCsv(validated.columns, validated.rows);
-					ydoc.transact(() => tl.pushText(csv));
-					return (readEntry(tl.currentEntry) as { mode: 'text'; content: Y.Text }).content;
-				}
-			}
-		},
-		asRichText() {
-			const validated = readEntry(tl.currentEntry);
-			switch (validated.mode) {
-				case 'richtext':
-					return validated.content;
-				case 'empty':
-					ydoc.transact(() => tl.pushRichtext());
-					return (readEntry(tl.currentEntry) as { mode: 'richtext'; content: Y.XmlFragment }).content;
-				case 'text': {
-					const plaintext = validated.content.toString();
-					ydoc.transact(() => {
-						const rtEntry = tl.pushRichtext();
-						const fragment = rtEntry.get('content') as Y.XmlFragment;
-						populateFragmentFromText(fragment, plaintext);
-					});
-					return (readEntry(tl.currentEntry) as { mode: 'richtext'; content: Y.XmlFragment }).content;
-				}
-				case 'sheet': {
-					const csv = serializeSheetToCsv(validated.columns, validated.rows);
-					ydoc.transact(() => {
-						const rtEntry = tl.pushRichtext();
-						const fragment = rtEntry.get('content') as Y.XmlFragment;
-						populateFragmentFromText(fragment, csv);
-					});
-					return (readEntry(tl.currentEntry) as { mode: 'richtext'; content: Y.XmlFragment }).content;
-				}
-			}
-		},
-		asSheet() {
-			const validated = readEntry(tl.currentEntry);
-			switch (validated.mode) {
-				case 'sheet':
-					return { columns: validated.columns, rows: validated.rows };
-				case 'empty':
-					ydoc.transact(() => tl.pushSheet());
-					return readEntry(tl.currentEntry) as { mode: 'sheet'; columns: Y.Map<Y.Map<string>>; rows: Y.Map<Y.Map<string>> };
-				case 'text': {
-					const plaintext = validated.content.toString();
-					ydoc.transact(() => tl.pushSheetFromCsv(plaintext));
-					const entry = readEntry(tl.currentEntry) as { mode: 'sheet'; columns: Y.Map<Y.Map<string>>; rows: Y.Map<Y.Map<string>> };
-					return { columns: entry.columns, rows: entry.rows };
-				}
-				case 'richtext': {
-					const plaintext = xmlFragmentToPlaintext(validated.content);
-					ydoc.transact(() => tl.pushSheetFromCsv(plaintext));
-					const entry = readEntry(tl.currentEntry) as { mode: 'sheet'; columns: Y.Map<Y.Map<string>>; rows: Y.Map<Y.Map<string>> };
-					return { columns: entry.columns, rows: entry.rows };
-				}
-			}
-		},
-		timeline: tl,
-		batch(fn: () => void) {
-			ydoc.transact(fn);
-		},
-		exports: extensions,
-	};
-}
-
-/**
  * Configuration for `createDocuments()`.
  *
  * @typeParam TRow - The row type of the bound table
@@ -234,13 +118,6 @@ export type CreateDocumentsConfig<TRow extends BaseRow> = {
 	 * Used for tag matching against document extension registrations.
 	 */
 	documentTags?: readonly string[];
-
-	/**
-	 * Called when a row is deleted from the table.
-	 * Receives the GUID of the associated document.
-	 * Default: close (free memory, preserve persisted data).
-	 */
-	onRowDeleted?: (documents: Documents<TRow>, guid: string) => void;
 };
 
 /**
@@ -267,60 +144,39 @@ export function createDocuments<TRow extends BaseRow>(
 		ydoc: workspaceYdoc,
 		documentExtensions = [],
 		documentTags = [],
-		onRowDeleted,
 	} = config;
 
 	const openDocuments = new Map<string, DocEntry>();
 
 	/**
-	 * Extract the GUID from a row or use the string directly.
-	 */
-	function resolveGuid(input: TRow | string): string {
-		if (typeof input === 'string') return input;
-		return String(input[guidKey]);
-	}
-
-	/**
 	 * Set up the table observer for row deletion cleanup.
-	 * Fires the `onRowDeleted` callback when a row is deleted.
+	 * Closes the associated document when a row is deleted from the table.
+	 *
+	 * When guidKey is 'id' (common case), the document GUID is the row ID,
+	 * so a direct Map lookup finds it. When guidKey is a different column,
+	 * the row is already deleted so we can't reverse-map row ID → GUID.
+	 * The fallback check (openDocuments.has(deletedId)) only catches the
+	 * case where the GUID happens to equal the row ID.
 	 */
 	const unobserveTable = tableHelper.observe((changedIds) => {
-		for (const id of changedIds) {
-			const result = tableHelper.get(id);
+		for (const deletedId of changedIds) {
+			const result = tableHelper.get(deletedId);
 			if (result.status !== 'not_found') continue;
+			if (!openDocuments.has(deletedId)) continue;
 
-			// Row was deleted — find the matching open document by searching
-			// all open documents where the guid matches. For most tables, the
-			// guid IS the row id, but it could be a different column.
-			for (const [guid] of openDocuments) {
-				// Check if this guid corresponds to the deleted row.
-				// Since we can't reverse-map guid→rowId without scanning,
-				// we check if the deleted row ID matches any open doc's guid
-				// OR if the guid key IS 'id' (common case).
-				if (guid === id || guidKey === 'id') {
-					const targetGuid = guidKey === 'id' ? id : guid;
-					if (!openDocuments.has(targetGuid)) continue;
-
-					if (onRowDeleted) {
-						onRowDeleted(documents, targetGuid);
-					} else {
-						// Default: close (free memory, preserve data)
-						documents.close(targetGuid);
-					}
-					break;
-				}
-			}
+			documents.close(deletedId);
 		}
 	});
 
 	const documents: Documents<TRow> = {
 		async open(input: TRow | string): Promise<DocumentHandle> {
-			const guid = resolveGuid(input);
+			const guid = typeof input === 'string' ? input : String(input[guidKey]);
 
 			const existing = openDocuments.get(guid);
 			if (existing) return existing.whenReady;
 
 			const contentYdoc = new Y.Doc({ guid, gc: false });
+			const timeline = createTimeline(contentYdoc);
 
 			// Filter document extensions by tag matching:
 			// - No tags on extension → fire for all documents (universal)
@@ -345,6 +201,7 @@ export function createDocuments<TRow extends BaseRow>(
 					const ctx = {
 						id,
 						ydoc: contentYdoc,
+						timeline,
 						whenReady:
 							whenReadyPromises.length === 0
 								? Promise.resolve()
@@ -360,25 +217,7 @@ export function createDocuments<TRow extends BaseRow>(
 					whenReadyPromises.push(resolved.whenReady);
 				}
 			} catch (err) {
-				// LIFO cleanup of accumulated extensions
-				const errors: unknown[] = [];
-				for (let i = destroys.length - 1; i >= 0; i--) {
-					try {
-						const result = destroys[i]?.();
-						if (result instanceof Promise) {
-							result.catch(() => {}); // Fire and forget in sync context
-						}
-					} catch (cleanupErr) {
-						errors.push(cleanupErr);
-					}
-				}
-
-				if (errors.length > 0) {
-					console.error(
-						'Extension cleanup errors during factory failure:',
-						errors,
-					);
-				}
+				startDestroyLifo(destroys);
 
 				contentYdoc.destroy();
 				throw err;
@@ -410,29 +249,29 @@ export function createDocuments<TRow extends BaseRow>(
 			const unobserve = () => contentYdoc.off('update', updateHandler);
 
 			// Cache entry SYNCHRONOUSLY before any promise resolution
+			const compositeWhenReady: Promise<void> =
+				whenReadyPromises.length === 0
+					? Promise.resolve()
+					: Promise.all(whenReadyPromises).then(() => {});
+			const handle = Object.assign(timeline, {
+				id,
+				timeline,
+				extensions: resolvedExtensions,
+				whenReady: compositeWhenReady,
+			}) as DocumentHandle;
 			const whenReady =
 				whenReadyPromises.length === 0
-					? Promise.resolve(makeHandle(contentYdoc, resolvedExtensions))
-					: Promise.all(whenReadyPromises)
-							.then(() => makeHandle(contentYdoc, resolvedExtensions))
+					? Promise.resolve(handle)
+					: compositeWhenReady.then(() => handle)
 							.catch(async (err) => {
-								// If any provider's whenReady rejects, clean up everything (LIFO)
-								const errors: unknown[] = [];
-								for (let i = destroys.length - 1; i >= 0; i--) {
-									try {
-										await destroys[i]?.();
-									} catch (cleanupErr) {
-										errors.push(cleanupErr);
-									}
-								}
+							const errors = await destroyLifo(destroys);
+							unobserve();
+							contentYdoc.destroy();
+							openDocuments.delete(guid);
 
-								unobserve();
-								contentYdoc.destroy();
-								openDocuments.delete(guid);
-
-								if (errors.length > 0) {
-									console.error('Document extension cleanup errors:', errors);
-								}
+							if (errors.length > 0) {
+								console.error('Document extension cleanup errors:', errors);
+							}
 								throw err;
 							});
 
@@ -446,7 +285,7 @@ export function createDocuments<TRow extends BaseRow>(
 		},
 
 		async close(input: TRow | string): Promise<void> {
-			const guid = resolveGuid(input);
+			const guid = typeof input === 'string' ? input : String(input[guidKey]);
 			const entry = openDocuments.get(guid);
 			if (!entry) return;
 
@@ -455,16 +294,9 @@ export function createDocuments<TRow extends BaseRow>(
 			openDocuments.delete(guid);
 			entry.unobserve();
 
-			// Destroy in LIFO order (reverse creation), continue on error
-			const errors: unknown[] = [];
-			const extensions = Object.values(entry.extensions);
-			for (let i = extensions.length - 1; i >= 0; i--) {
-				try {
-					await extensions[i]?.destroy();
-				} catch (err) {
-					errors.push(err);
-				}
-			}
+			const errors = await destroyLifo(
+				Object.values(entry.extensions).map((e) => e.destroy),
+			);
 
 			entry.ydoc.destroy();
 
@@ -482,15 +314,9 @@ export function createDocuments<TRow extends BaseRow>(
 			for (const [, entry] of entries) {
 				entry.unobserve();
 
-				const errors: unknown[] = [];
-				const extensions = Object.values(entry.extensions);
-				for (let i = extensions.length - 1; i >= 0; i--) {
-					try {
-						await extensions[i]?.destroy();
-					} catch (err) {
-						errors.push(err);
-					}
-				}
+				const errors = await destroyLifo(
+					Object.values(entry.extensions).map((e) => e.destroy),
+				);
 
 				entry.ydoc.destroy();
 

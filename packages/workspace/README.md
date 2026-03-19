@@ -1479,7 +1479,7 @@ await client.destroy(); // Cleanup resources
 
 ### Document Content Model
 
-> Tables with `.withDocument()` create per-row content Y.Docs backed by a **timeline model** (`Y.Array('timeline')`) supporting text, richtext, and sheet content. Use `handle.read()`/`.write()` for simple string I/O, `handle.asText()` for Y.Text editor binding, `handle.asRichText()` for Y.XmlFragment richtext binding, and `handle.asSheet()` for spreadsheet binding. The `as*()` methods automatically convert between content modes—all conversions are infallible.
+> Tables with `.withDocument()` create per-row content Y.Docs backed by a **timeline model** (`Y.Array('timeline')`) supporting text, richtext, and sheet content. Use `handle.read()`/`.writeText()` for simple string I/O, `handle.asText()` for Y.Text editor binding, `handle.asRichText()` for Y.XmlFragment richtext binding, and `handle.asSheet()` for spreadsheet binding. The `as*()` methods automatically convert between content modes—all conversions are infallible.
 
 
 ### Column Schemas

@@ -10,6 +10,8 @@ metadata:
 
 This skill helps you apply factory function patterns for clean dependency injection and function composition in TypeScript.
 
+> **Related Skills**: See `method-shorthand-jsdoc` for when to move helpers into the return object. See `refactoring` for caller counting and inlining single-use extractions.
+
 ## When to Apply This Skill
 
 Use this pattern when you see:

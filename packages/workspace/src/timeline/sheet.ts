@@ -2,6 +2,12 @@ import * as Y from 'yjs';
 import { generateId } from '../shared/id.js';
 import { generateInitialOrders } from '../shared/fractional-index.js';
 
+/** The result of binding a sheet—columns and rows Y.Maps. */
+export type SheetBinding = {
+	columns: Y.Map<Y.Map<string>>;
+	rows: Y.Map<Y.Map<string>>;
+};
+
 /**
  * Escape a CSV field value per RFC 4180.
  * Fields containing commas, quotes, or newlines are wrapped in quotes.
@@ -99,10 +105,10 @@ function parseCsvRows(csv: string): string[][] {
  * 4. For each row, read cell values by column ID (empty string for missing)
  * 5. Escape values containing commas, quotes, or newlines (RFC 4180)
  */
-export function serializeSheetToCsv(
-	columns: Y.Map<Y.Map<string>>,
-	rows: Y.Map<Y.Map<string>>,
-): string {
+export function serializeSheetToCsv({
+	columns,
+	rows,
+}: SheetBinding): string {
 	// Collect and sort columns by order
 	const columnEntries: Array<{
 		id: string;
@@ -168,8 +174,7 @@ export function serializeSheetToCsv(
  */
 export function parseSheetFromCsv(
 	csv: string,
-	columns: Y.Map<Y.Map<string>>,
-	rows: Y.Map<Y.Map<string>>,
+	{ columns, rows }: SheetBinding,
 ): void {
 	// Handle empty input
 	if (!csv || csv.trim() === '') {

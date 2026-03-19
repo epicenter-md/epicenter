@@ -1,7 +1,7 @@
 <script lang="ts">
 	import type { FileId } from '@epicenter/filesystem';
 	import * as Tabs from '@epicenter/ui/tabs';
-	import { X } from 'lucide-svelte';
+	import XIcon from '@lucide/svelte/icons/x';
 	import { fsState } from '$lib/fs/fs-state.svelte';
 
 	const hasOpenFiles = $derived(fsState.openFileIds.length > 0);
@@ -54,7 +54,7 @@
 							onclick={(e) => handleClose(e, fileId)}
 							aria-label="Close {row.name}"
 						>
-							<X class="h-3 w-3" />
+							<XIcon class="h-3 w-3" />
 						</button>
 					</Tabs.Trigger>
 				{/if}

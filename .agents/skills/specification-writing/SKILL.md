@@ -1,6 +1,9 @@
 ---
 name: specification-writing
 description: Write technical specifications that give agents enough context to implement features while leaving room for autonomous research and decision-making. Use when planning features, documenting architecture decisions, or creating implementation guides.
+metadata:
+  author: epicenter
+  version: '1.0'
 ---
 
 # Specification Writing
@@ -10,6 +13,16 @@ Follow [writing-voice](../writing-voice/SKILL.md) for prose sections.
 A specification gives an agent (or human) the context they need to implement a feature autonomously. The goal is NOT to describe everything exhaustively; it's to provide enough initial context that the implementer can do their own research and make informed decisions.
 
 > **Note**: This guide uses `[PLACEHOLDER]` markers for content you must fill in. Code blocks show templates; replace all bracketed content with your feature's details.
+
+## When to Apply This Skill
+
+Use this pattern when you need to:
+
+- Plan a feature with a spec that enables autonomous implementation.
+- Document research findings, trade-offs, and design rationale.
+- Define phased implementation tasks with trackable checkboxes.
+- Capture open questions and recommendations without over-prescribing.
+- Lay out architecture with tables/diagrams instead of wall-of-prose plans.
 
 ## The Core Philosophy
 

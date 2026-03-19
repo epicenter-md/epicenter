@@ -9,7 +9,7 @@
 	import ZapIcon from '@lucide/svelte/icons/zap';
 	import { onMount } from 'svelte';
 	import AiDrawer from '$lib/components/AiDrawer.svelte';
-	import CommandPalette from '$lib/components/CommandPalette.svelte';
+	import { CommandPalette } from '$lib/components/command-palette';
 	import SyncStatusIndicator from '$lib/components/SyncStatusIndicator.svelte';
 	import UnifiedTabList from '$lib/components/tabs/UnifiedTabList.svelte';
 	import { authState } from '$lib/state/auth.svelte';

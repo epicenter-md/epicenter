@@ -447,7 +447,7 @@ describe('createTableHelper', () => {
 			);
 			const helper = createTableHelper(ykv, definition);
 
-			const changes: Set<string>[] = [];
+			const changes: ReadonlySet<string>[] = [];
 			const unsubscribe = helper.observe((changedIds) => {
 				changes.push(changedIds);
 			});

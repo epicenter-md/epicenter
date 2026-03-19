@@ -10,6 +10,8 @@ metadata:
 
 Type-safe schema definitions for tables and KV stores.
 
+> **Related Skills**: See `yjs` for Yjs CRDT patterns and shared types.
+
 ## When to Apply This Skill
 
 - Defining a new table or KV store with `defineTable()` or `defineKv()`

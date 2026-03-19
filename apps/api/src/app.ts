@@ -588,21 +588,21 @@ app.get(
 	},
 );
 
-app.post(
-	'/documents/:document/snapshots/:id/apply',
+app.delete(
+	'/documents/:document/snapshots/:id',
 	describeRoute({
-		description:
-			'Apply a past snapshot state into the current document (CRDT forward-merge)',
+		description: 'Delete a document snapshot',
 		tags: ['documents', 'snapshots'],
 	}),
 	sValidator('param', type({ document: 'string', id: 'string.numeric' })),
 	async (c) => {
-		const { stub } = getDocumentStub(c);
+		const stub = getDocumentStub(c);
 		const { id } = c.req.valid('param');
-		const ok = await stub.applySnapshot(Number(id));
-		if (!ok) return c.json({ error: 'Snapshot not found' }, 404);
+		const deleted = await stub.deleteSnapshot(Number(id));
+		if (!deleted) return c.body('Snapshot not found', 404);
 		return c.body(null, 204);
 	},
 );
+
 
 export default app;

@@ -21,7 +21,7 @@ import type * as Y from 'yjs';
  * createWorkspace(definition)
  *   .withExtension('persistence', indexeddbPersistence)
  *   .withExtension('broadcast', broadcastChannelSync)
- *   .withExtension('sync', createSyncExtension({
+ *   .withWorkspaceExtension('sync', createSyncExtension({
  *     url: (id) => `http://localhost:3913/rooms/${id}`,
  *   }))
  * ```

@@ -12,7 +12,7 @@
 const ydoc = await this.store.ensure(fileId);
 const timeline = getTimeline(ydoc);           // ydoc.getArray('timeline')
 const current = getCurrentEntry(timeline);     // timeline.get(timeline.length - 1)
-const mode = getEntryMode(current);            // current.get('type')
+const mode = getEntryType(current);            // current.get('type')
 ```
 
 Tests are worse — they reach through `(content as any).store.ensure(id)` then call `getTimeline(ydoc).length` just to assert timeline didn't grow.
@@ -34,7 +34,7 @@ export type Timeline = {
   /** The most recent entry, or undefined if empty. O(1). */
   readonly currentEntry: Y.Map<any> | undefined;
   /** Content mode of the current entry, or undefined if empty. */
-  readonly currentMode: ContentMode | undefined;
+  readonly currentType: ContentType | undefined;
   /** Append a new text entry. Returns the Y.Map. */
   pushText(content: string): Y.Map<any>;
   /** Append a new binary entry. Returns the Y.Map. */
@@ -53,15 +53,15 @@ export function createTimeline(ydoc: Y.Doc): Timeline {
     return timeline.get(timeline.length - 1);
   }
 
-  function currentMode(): ContentMode | undefined {
+  function currentType(): ContentType | undefined {
     const entry = currentEntry();
-    return entry ? (entry.get('type') as ContentMode) : undefined;
+    return entry ? (entry.get('type') as ContentType) : undefined;
   }
 
   return {
     get length() { return timeline.length; },
     get currentEntry() { return currentEntry(); },
-    get currentMode() { return currentMode(); },
+    get currentType() { return currentType(); },
 
     pushText(content: string): Y.Map<any> {
       const entry = new Y.Map();
@@ -84,7 +84,7 @@ export function createTimeline(ydoc: Y.Doc): Timeline {
     readAsString(): string {
       const entry = currentEntry();
       if (!entry) return '';
-      switch (entry.get('type') as ContentMode) {
+      switch (entry.get('type') as ContentType) {
         case 'text':
           return (entry.get('content') as Y.Text).toString();
         case 'richtext':
@@ -97,7 +97,7 @@ export function createTimeline(ydoc: Y.Doc): Timeline {
     readAsBuffer(): Uint8Array {
       const entry = currentEntry();
       if (!entry) return new Uint8Array();
-      switch (entry.get('type') as ContentMode) {
+      switch (entry.get('type') as ContentType) {
         case 'text':
           return new TextEncoder().encode((entry.get('content') as Y.Text).toString());
         case 'richtext':
@@ -110,7 +110,7 @@ export function createTimeline(ydoc: Y.Doc): Timeline {
 }
 ```
 
-The old free functions (`getTimeline`, `getCurrentEntry`, `getEntryMode`, `pushTextEntry`, `pushBinaryEntry`, `readEntryAsString`, `readEntryAsBuffer`) are deleted entirely. `createTimeline` is the only export.
+The old free functions (`getTimeline`, `getCurrentEntry`, `getEntryType`, `pushTextEntry`, `pushBinaryEntry`, `readEntryAsString`, `readEntryAsBuffer`) are deleted entirely. `createTimeline` is the only export.
 
 ### ContentOps refactored
 
@@ -141,7 +141,7 @@ export class ContentOps {
     const tl = createTimeline(ydoc);
 
     if (typeof data === 'string') {
-      if (tl.currentMode === 'text') {
+      if (tl.currentType === 'text') {
         const ytext = tl.currentEntry!.get('content') as Y.Text;
         ydoc.transact(() => {
           ytext.delete(0, ytext.length);
@@ -161,10 +161,10 @@ export class ContentOps {
     const ydoc = await this.store.ensure(fileId);
     const tl = createTimeline(ydoc);
 
-    if (tl.currentMode === 'text') {
+    if (tl.currentType === 'text') {
       const ytext = tl.currentEntry!.get('content') as Y.Text;
       ydoc.transact(() => ytext.insert(ytext.length, data));
-    } else if (tl.currentMode === 'binary') {
+    } else if (tl.currentType === 'binary') {
       const existing = new TextDecoder().decode(tl.currentEntry!.get('content') as Uint8Array);
       ydoc.transact(() => tl.pushText(existing + data));
     } else {
@@ -173,7 +173,7 @@ export class ContentOps {
 
     // Re-read after mutation
     const updated = createTimeline(ydoc);
-    if (updated.currentMode === 'text') {
+    if (updated.currentType === 'text') {
       return new TextEncoder().encode(
         (updated.currentEntry!.get('content') as Y.Text).toString(),
       ).byteLength;
@@ -240,7 +240,7 @@ async function getTimelineLength(fs: YjsFileSystem, path: string): Promise<numbe
 - `content-doc-store.ts` — doesn't use timeline helpers at all
 - `file-tree.ts` — metadata only, no content awareness
 - `yjs-file-system.ts` — delegates to `ContentOps`, doesn't touch timeline helpers
-- `types.ts` — `ContentMode`, `TimelineEntry` types stay as-is
+- `types.ts` — `ContentType`, `TimelineEntry` types stay as-is
 - `index.ts` — no timeline-helpers re-exports exist today
 
 ---
@@ -282,7 +282,7 @@ async function getTimelineLength(fs: YjsFileSystem, path: string): Promise<numbe
 - [ ] `timeline-helpers.ts` exports only `createTimeline` and the `Timeline` type
 - [ ] `ContentOps` imports nothing from timeline-helpers except `createTimeline`
 - [ ] No file in the codebase calls `ydoc.getArray('timeline')` directly
-- [ ] No file imports `getTimeline`, `getCurrentEntry`, `getEntryMode`, `pushTextEntry`, `pushBinaryEntry`, `readEntryAsString`, or `readEntryAsBuffer`
+- [ ] No file imports `getTimeline`, `getCurrentEntry`, `getEntryType`, `pushTextEntry`, `pushBinaryEntry`, `readEntryAsString`, or `readEntryAsBuffer`
 - [ ] All existing tests pass with no behavior changes
 - [ ] `bun run typecheck` passes
 

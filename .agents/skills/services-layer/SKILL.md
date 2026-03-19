@@ -10,6 +10,8 @@ metadata:
 
 This skill documents how to implement services in the Whispering architecture. Services are pure, isolated business logic with no UI dependencies that return `Result<T, E>` types for error handling.
 
+> **Related Skills**: See `error-handling` for trySync/tryAsync patterns. See `define-errors` for error variant factories. See `query-layer` for consuming services with TanStack Query.
+
 ## When to Apply This Skill
 
 Use this pattern when you need to:

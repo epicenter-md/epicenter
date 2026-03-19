@@ -8,6 +8,16 @@ metadata:
 
 # Elysia.js Patterns (v1.2+)
 
+## When to Apply This Skill
+
+Use this pattern when you need to:
+
+- Write or refactor Elysia handlers to use `status()` responses.
+- Define per-status response schemas for Eden Treaty type safety.
+- Migrate handlers away from `set.status` plus error-object returns.
+- Compose Elysia plugins/guards for shared auth and route behavior.
+- Choose between `return status(...)` and `throw status(...)` by control-flow context.
+
 ## The `status()` Helper (ALWAYS use this)
 
 **Never use `set.status` + return object.** Always destructure `status` from the handler context and use it for all non-200 responses. This gives you:

@@ -153,7 +153,7 @@ export function createSqliteIndex(options: SqliteIndexOptions = {}) {
 		const client = createClient({ url: ':memory:' });
 		let db: LibSQLDatabase<typeof schema>;
 		let syncTimeout: ReturnType<typeof setTimeout> | null = null;
-		let rebuilding = false;
+		let pendingIds = new Set<string>();
 		let unobserve: (() => void) | null = null;
 
 		// ── Async initialization ──────────────────────────────────────
@@ -179,83 +179,228 @@ export function createSqliteIndex(options: SqliteIndexOptions = {}) {
 			await rebuild();
 
 			// Observe ongoing table mutations
-			unobserve = filesTable.observe(() => scheduleSync());
+			unobserve = filesTable.observe((changedIds) => scheduleSync(changedIds));
 		})();
 
 		// ── Debounced sync ────────────────────────────────────────────
-		function scheduleSync() {
+		function scheduleSync(changedIds: Set<string>) {
+			for (const id of changedIds) pendingIds.add(id);
 			if (syncTimeout) clearTimeout(syncTimeout);
 			syncTimeout = setTimeout(() => {
 				syncTimeout = null;
-				void rebuild();
+				const ids = pendingIds;
+				pendingIds = new Set();
+				void syncRows(ids);
 			}, debounceMs);
 		}
 
-		// ── Full rebuild ──────────────────────────────────────────────
+		// ── Full rebuild ──────────────────────────────────────────
 		async function rebuild(): Promise<void> {
-			if (rebuilding) return;
-			rebuilding = true;
+			const rows = filesTable.getAllValid();
+			const paths = computePaths(rows);
 
-			try {
-				const rows = filesTable.getAllValid();
-				const paths = computePaths(rows);
-
-				// Read content for files (skip folders)
-				const contentMap = new Map<string, string | null>();
-				for (const row of rows) {
-					if (row.type === 'folder') {
-						contentMap.set(row.id, null);
-						continue;
-					}
-					try {
-						const handle = await contentDocs.open(row.id);
-						const text = handle.read();
-						contentMap.set(row.id, text || null);
-					} catch {
-						contentMap.set(row.id, null);
-					}
+			// Read content for files (skip folders)
+			const contentMap = new Map<string, string | null>();
+			for (const row of rows) {
+				if (row.type === 'folder') {
+					contentMap.set(row.id, null);
+					continue;
 				}
+				try {
+					const handle = await contentDocs.open(row.id);
+					const text = handle.read();
+					contentMap.set(row.id, text || null);
+				} catch {
+					contentMap.set(row.id, null);
+				}
+			}
 
-				// Build batch: nuke + reinsert in a single transaction
-				const statements: InStatement[] = [
-					'DELETE FROM files_fts',
-					'DELETE FROM files',
-				];
+			// Build batch: nuke + reinsert in a single transaction
+			const statements: InStatement[] = [
+				'DELETE FROM files_fts',
+				'DELETE FROM files',
+			];
 
-				for (const row of rows) {
-					const path = paths.get(row.id) ?? null;
-					const content = contentMap.get(row.id) ?? null;
+			for (const row of rows) {
+				const path = paths.get(row.id) ?? null;
+				const content = contentMap.get(row.id) ?? null;
 
-					statements.push({
-						sql: `INSERT INTO files
-							(id, name, parent_id, type, path, size, created_at, updated_at, trashed_at, content)
-							VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-						args: [
-							row.id,
-							row.name,
-							row.parentId,
-							row.type,
-							path,
-							row.size,
-							row.createdAt,
-							row.updatedAt,
-							row.trashedAt,
-							content,
-						],
+				statements.push({
+					sql: `INSERT INTO files
+						(id, name, parent_id, type, path, size, created_at, updated_at, trashed_at, content)
+						VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+					args: [
+						row.id,
+						row.name,
+						row.parentId,
+						row.type,
+						path,
+						row.size,
+						row.createdAt,
+						row.updatedAt,
+						row.trashedAt,
+						content,
+					],
+				});
+
+				// Insert into FTS — use empty string for null content
+				// so the file name is still searchable
+				statements.push({
+					sql: 'INSERT INTO files_fts (file_id, name, content) VALUES (?, ?, ?)',
+					args: [row.id, row.name, content ?? ''],
+				});
+			}
+
+			// libSQL batch executes all statements in a single transaction
+			await client.batch(statements, 'write');
+		}
+
+		// ── Surgical sync ────────────────────────────────────────
+
+		async function syncRows(changedIds: Set<string>): Promise<void> {
+			const statements: InStatement[] = [];
+
+			// Classify changed rows
+			const folderIds: string[] = [];
+			const fileIds: string[] = [];
+			const deletedIds: string[] = [];
+
+			for (const id of changedIds) {
+				const result = filesTable.get(id);
+				if (result.status !== 'valid') {
+					deletedIds.push(id);
+				} else if (result.row.type === 'folder') {
+					folderIds.push(id);
+				} else {
+					fileIds.push(id);
+				}
+			}
+
+			// Process deletes
+			for (const id of deletedIds) {
+				statements.push({
+					sql: 'DELETE FROM files_fts WHERE file_id = ?',
+					args: [id],
+				});
+				statements.push({
+					sql: 'DELETE FROM files WHERE id = ?',
+					args: [id],
+				});
+			}
+
+			// Process folders first (path cascading must precede file processing)
+			for (const id of folderIds) {
+				const result = filesTable.get(id);
+				if (result.status !== 'valid') continue;
+				const row = result.row;
+				const path = computePathForRow(id, filesTable);
+
+				// Query current path from SQLite before mutation
+				const oldResult = await client.execute({
+					sql: 'SELECT path FROM files WHERE id = ?',
+					args: [id],
+				});
+				const oldPath = oldResult.rows[0]?.path as string | null | undefined;
+
+				// DELETE + INSERT the folder
+				statements.push({
+					sql: 'DELETE FROM files_fts WHERE file_id = ?',
+					args: [id],
+				});
+				statements.push({
+					sql: 'DELETE FROM files WHERE id = ?',
+					args: [id],
+				});
+				statements.push({
+					sql: `INSERT INTO files
+						(id, name, parent_id, type, path, size, created_at, updated_at, trashed_at, content)
+						VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+					args: [
+						row.id,
+						row.name,
+						row.parentId,
+						row.type,
+						path,
+						row.size,
+						row.createdAt,
+						row.updatedAt,
+						row.trashedAt,
+						null,
+					],
+				});
+				statements.push({
+					sql: 'INSERT INTO files_fts (file_id, name, content) VALUES (?, ?, ?)',
+					args: [row.id, row.name, ''],
+				});
+
+				// Cascade: if folder path changed, update all descendant paths
+				if (oldPath != null && path != null && oldPath !== path) {
+					const descendants = await client.execute({
+						sql: "SELECT id, path FROM files WHERE path LIKE ? || '/%'",
+						args: [oldPath],
 					});
 
-					// Insert into FTS — use empty string for null content
-					// so the file name is still searchable
-					statements.push({
-						sql: 'INSERT INTO files_fts (file_id, name, content) VALUES (?, ?, ?)',
-						args: [row.id, row.name, content ?? ''],
-					});
+					for (const desc of descendants.rows) {
+						const descId = desc.id as string;
+						const descOldPath = desc.path as string;
+						const descNewPath = path + descOldPath.slice(oldPath.length);
+						statements.push({
+							sql: 'UPDATE files SET path = ? WHERE id = ?',
+							args: [descNewPath, descId],
+						});
+					}
+				}
+			}
+
+			// Process files
+			for (const id of fileIds) {
+				const result = filesTable.get(id);
+				if (result.status !== 'valid') continue;
+				const row = result.row;
+				const path = computePathForRow(id, filesTable);
+
+				let content: string | null = null;
+				try {
+					const handle = await contentDocs.open(row.id);
+					const text = handle.read();
+					content = text || null;
+				} catch {
+					content = null;
 				}
 
-				// libSQL batch executes all statements in a single transaction
+				statements.push({
+					sql: 'DELETE FROM files_fts WHERE file_id = ?',
+					args: [id],
+				});
+				statements.push({
+					sql: 'DELETE FROM files WHERE id = ?',
+					args: [id],
+				});
+				statements.push({
+					sql: `INSERT INTO files
+						(id, name, parent_id, type, path, size, created_at, updated_at, trashed_at, content)
+						VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+					args: [
+						row.id,
+						row.name,
+						row.parentId,
+						row.type,
+						path,
+						row.size,
+						row.createdAt,
+						row.updatedAt,
+						row.trashedAt,
+						content,
+					],
+				});
+				statements.push({
+					sql: 'INSERT INTO files_fts (file_id, name, content) VALUES (?, ?, ?)',
+					args: [row.id, row.name, content ?? ''],
+				});
+			}
+
+			if (statements.length > 0) {
 				await client.batch(statements, 'write');
-			} finally {
-				rebuilding = false;
 			}
 		}
 
@@ -371,4 +516,45 @@ function computePaths(rows: FileRow[]): Map<string, string> {
 	}
 
 	return paths;
+}
+
+/**
+ * Compute a materialized POSIX path for a single row by walking its parentId chain.
+ *
+ * Uses `filesTable.get()` for each hop instead of bulk reads. Returns `null`
+ * only when the target row itself doesn't exist. Cycles and orphans fall back
+ * to root-level `/{name}`, matching the behavior of {@link computePaths}.
+ */
+function computePathForRow(
+	id: string,
+	filesTable: TableHelper<FileRow>,
+): string | null {
+	const visited = new Set<string>();
+
+	function walk(currentId: string): string | null {
+		if (visited.has(currentId)) return null;
+		visited.add(currentId);
+
+		const result = filesTable.get(currentId);
+		if (result.status !== 'valid') return null;
+
+		const row = result.row;
+
+		if (row.parentId === null) {
+			return `/${row.name}`;
+		}
+
+		// Guard against unreasonably deep trees
+		if (visited.size > MAX_PATH_DEPTH) return null;
+
+		const parentPath = walk(row.parentId);
+		if (parentPath === null) {
+			// Orphan or cycle — treat as root-level
+			return `/${row.name}`;
+		}
+
+		return `${parentPath}/${row.name}`;
+	}
+
+	return walk(id);
 }

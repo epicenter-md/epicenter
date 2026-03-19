@@ -595,13 +595,13 @@ export const workspaceClient = createWorkspace(
 			toolTrust: toolTrustTable,
 		},
 	}),
-)
+			)
 	.withExtension('persistence', indexeddbPersistence)
 	.withExtension('broadcast', broadcastChannelSync)
 	.withExtension(
 		'sync',
 		createSyncExtension({
-			url: (workspaceId) => `${serverUrl.current}/workspaces/${workspaceId}`,
+			url: (docId) => `${serverUrl.current}/workspaces/${docId}`,
 			getToken: async () => authState.token,
 		}),
 	)

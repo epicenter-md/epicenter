@@ -8,8 +8,6 @@ export {
 	yMapToRecord,
 } from './markdown.js';
 export {
-	parseSheetFromCsv,
 	reorderColumn,
 	reorderRow,
-	serializeSheetToCsv,
 } from './sheet.js';

@@ -24,7 +24,7 @@ Added to `packages/epicenter/src/filesystem/types.ts`:
 
 ```typescript
 /** Content modes supported by timeline entries */
-export type ContentMode = 'text' | 'richtext' | 'binary';
+export type ContentType = 'text' | 'richtext' | 'binary';
 
 /**
  * Timeline entry shapes -- a discriminated union on 'type'.
@@ -51,7 +51,7 @@ New file: `packages/epicenter/src/filesystem/timeline-helpers.ts`
 
 ```typescript
 import * as Y from 'yjs';
-import type { ContentMode } from './types.js';
+import type { ContentType } from './types.js';
 
 /** Get the timeline array from a content doc. */
 export function getTimeline(ydoc: Y.Doc): Y.Array<Y.Map<any>> {
@@ -67,8 +67,8 @@ export function getCurrentEntry(
 }
 
 /** Get the content mode of an entry. */
-export function getEntryMode(entry: Y.Map<any>): ContentMode {
-	return entry.get('type') as ContentMode;
+export function getEntryType(entry: Y.Map<any>): ContentType {
+	return entry.get('type') as ContentType;
 }
 
 /** Create and append a new text entry. Returns the new Y.Map. */
@@ -116,7 +116,7 @@ export function pushRichTextEntry(
 
 /** Read an entry's content as a string (for readFile). */
 export function readEntryAsString(entry: Y.Map<any>): string {
-	switch (getEntryMode(entry)) {
+	switch (getEntryType(entry)) {
 		case 'text':
 			return (entry.get('content') as Y.Text).toString();
 		case 'richtext':
@@ -129,7 +129,7 @@ export function readEntryAsString(entry: Y.Map<any>): string {
 
 /** Read an entry's content as Uint8Array (for readFileBuffer). */
 export function readEntryAsBuffer(entry: Y.Map<any>): Uint8Array {
-	switch (getEntryMode(entry)) {
+	switch (getEntryType(entry)) {
 		case 'text':
 			return new TextEncoder().encode(
 				(entry.get('content') as Y.Text).toString(),
@@ -189,7 +189,7 @@ const timeline = getTimeline(ydoc);
 const current = getCurrentEntry(timeline);
 
 if (typeof data === 'string') {
-	if (current && getEntryMode(current) === 'text') {
+	if (current && getEntryType(current) === 'text') {
 		// Same-mode text: edit existing Y.Text in place (timeline doesn't grow)
 		const ytext = current.get('content') as Y.Text;
 		ydoc.transact(() => {
@@ -215,11 +215,11 @@ const current = getCurrentEntry(timeline);
 const content =
 	typeof data === 'string' ? data : new TextDecoder().decode(data);
 
-if (current && getEntryMode(current) === 'text') {
+if (current && getEntryType(current) === 'text') {
 	// Incremental append to existing Y.Text
 	const ytext = current.get('content') as Y.Text;
 	ydoc.transact(() => ytext.insert(ytext.length, content));
-} else if (current && getEntryMode(current) === 'binary') {
+} else if (current && getEntryType(current) === 'binary') {
 	// Binary entry: decode existing, concat, push new text entry
 	const existing = new TextDecoder().decode(
 		current.get('content') as Uint8Array,
@@ -244,7 +244,7 @@ const srcDoc = this.store.ensure(srcId);
 const entry = getCurrentEntry(getTimeline(srcDoc));
 if (!entry) {
 	await this.writeFile(destPath, '');
-} else if (getEntryMode(entry) === 'binary') {
+} else if (getEntryType(entry) === 'binary') {
 	await this.writeFile(destPath, entry.get('content') as Uint8Array);
 } else {
 	await this.writeFile(destPath, readEntryAsString(entry));
@@ -306,7 +306,7 @@ function migrateContentDoc(ydoc: Y.Doc): void {
 
 **Phase 1: Types and Helpers** (`types.ts` + `timeline-helpers.ts`)
 
-- Add `ContentMode`, `TextEntry`, `RichTextEntry`, `BinaryEntry`, `TimelineEntry` types
+- Add `ContentType`, `TextEntry`, `RichTextEntry`, `BinaryEntry`, `TimelineEntry` types
 - Create `timeline-helpers.ts` with all helper functions
 - No behavioral changes yet
 

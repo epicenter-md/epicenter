@@ -1,10 +1,14 @@
 ---
 name: typescript
 description: TypeScript code style, type co-location, naming conventions (including acronym casing), test organization, and arktype patterns. Use when writing TypeScript code, defining types, naming variables/functions, organizing tests, or working with arktype schemas.
+metadata:
+  author: epicenter
+  version: '1.0'
 ---
 
 # TypeScript Guidelines
 
+> **Related Skills**: See `arktype` for runtime type validation patterns. See `typebox` for TypeBox schema patterns. See `testing` for test file conventions.
 ## Core Rules
 
 - Always use `type` instead of `interface` in TypeScript.

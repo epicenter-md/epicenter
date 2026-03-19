@@ -33,7 +33,6 @@
  */
 
 import { SvelteMap } from 'svelte/reactivity';
-import type { Transaction } from 'yjs';
 import {
 	generateDefaultDeviceName,
 	getBrowserName,
@@ -318,22 +317,24 @@ function createBrowserState() {
 		const state = windowStates.get(compositeId);
 		if (!state) return;
 
-		// Deactivate previous active tab(s) in this window only
-		for (const [tabId, tab] of state.tabs) {
-			if (tab.active) {
-				const updated = { ...tab, active: false };
-				state.tabs.set(tabId, updated);
+		workspaceClient.batch(() => {
+			// Deactivate previous active tab(s) in this window only
+			for (const [tabId, tab] of state.tabs) {
+				if (tab.active) {
+					const updated = { ...tab, active: false };
+					state.tabs.set(tabId, updated);
+					tables.tabs.set(updated);
+				}
+			}
+
+			// Activate the new tab
+			const tab = state.tabs.get(activeInfo.tabId);
+			if (tab) {
+				const updated = { ...tab, active: true };
+				state.tabs.set(activeInfo.tabId, updated);
 				tables.tabs.set(updated);
 			}
-		}
-
-		// Activate the new tab
-		const tab = state.tabs.get(activeInfo.tabId);
-		if (tab) {
-			const updated = { ...tab, active: true };
-			state.tabs.set(activeInfo.tabId, updated);
-			tables.tabs.set(updated);
-		}
+		});
 	});
 
 	// ── Attach / Detach ──────────────────────────────────────────────────
@@ -414,24 +415,26 @@ function createBrowserState() {
 	browser.windows.onFocusChanged.addListener((windowId) => {
 		if (!deviceId) return;
 
-		for (const [id, state] of windowStates) {
-			if (state.window.focused) {
-				const updated = { ...state.window, focused: false };
-				windowStates.set(id, { ...state, window: updated });
-				tables.windows.set(updated);
+		workspaceClient.batch(() => {
+			for (const [id, state] of windowStates) {
+				if (state.window.focused) {
+					const updated = { ...state.window, focused: false };
+					windowStates.set(id, { ...state, window: updated });
+					tables.windows.set(updated);
+				}
 			}
-		}
 
-		// WINDOW_ID_NONE means all windows lost focus (e.g. user clicked desktop)
-		if (windowId !== browser.windows.WINDOW_ID_NONE) {
-			const compositeId = createWindowCompositeId(deviceId, windowId);
-			const state = windowStates.get(compositeId);
-			if (state) {
-				const updated = { ...state.window, focused: true };
-				windowStates.set(compositeId, { ...state, window: updated });
-				tables.windows.set(updated);
+			// WINDOW_ID_NONE means all windows lost focus (e.g. user clicked desktop)
+			if (windowId !== browser.windows.WINDOW_ID_NONE) {
+				const compositeId = createWindowCompositeId(deviceId, windowId);
+				const state = windowStates.get(compositeId);
+				if (state) {
+					const updated = { ...state.window, focused: true };
+					windowStates.set(compositeId, { ...state, window: updated });
+					tables.windows.set(updated);
+				}
 			}
-		}
+		});
 	});
 
 	// ── Tab Group Event Listeners (Chrome only) ──────────────────────────
@@ -459,8 +462,7 @@ function createBrowserState() {
 	// Only remote-origin changes (transaction.origin !== null) trigger Chrome
 	// API calls. Local writes (origin === null) are our own → skip.
 
-	tables.tabs.observe((changedIds, txn) => {
-		const transaction = txn as Transaction;
+	const _unobserveTabs = tables.tabs.observe((changedIds, transaction) => {
 		for (const id of changedIds) {
 			const result = tables.tabs.get(id);
 			switch (result.status) {
@@ -469,7 +471,7 @@ function createBrowserState() {
 					void (async () => {
 						if (transaction.origin === null) return;
 						if (!deviceId) return;
-						const parsed = parseTabId(id as TabCompositeId);
+						const parsed = parseTabId(id);
 						if (!parsed || parsed.deviceId !== deviceId) return;
 
 						try {
@@ -507,8 +509,7 @@ function createBrowserState() {
 		}
 	});
 
-	tables.windows.observe((changedIds, txn) => {
-		const transaction = txn as Transaction;
+	const _unobserveWindows = tables.windows.observe((changedIds, transaction) => {
 		for (const id of changedIds) {
 			const result = tables.windows.get(id);
 			switch (result.status) {
@@ -516,7 +517,7 @@ function createBrowserState() {
 					void (async () => {
 						if (transaction.origin === null) return;
 						if (!deviceId) return;
-						const parsed = parseWindowId(id as WindowCompositeId);
+						const parsed = parseWindowId(id);
 						if (!parsed || parsed.deviceId !== deviceId) return;
 
 						try {
@@ -554,15 +555,14 @@ function createBrowserState() {
 	});
 
 	if (browser.tabGroups) {
-		tables.tabGroups.observe((changedIds, txn) => {
-			const transaction = txn as Transaction;
+		const _unobserveTabGroups = tables.tabGroups.observe((changedIds, transaction) => {
 			for (const id of changedIds) {
 				const result = tables.tabGroups.get(id);
 				if (result.status === 'not_found') {
 					void (async () => {
 						if (transaction.origin === null) return;
 						if (!deviceId) return;
-						const parsed = parseGroupId(id as GroupCompositeId);
+						const parsed = parseGroupId(id);
 						if (!parsed || parsed.deviceId !== deviceId) return;
 
 						try {

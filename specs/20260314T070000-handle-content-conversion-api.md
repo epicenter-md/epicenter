@@ -551,7 +551,7 @@ asText(): Result<Y.Text, ContentConversionError> {
    - **Resolved**: Inside. User preference for simpler mental model—everything happens in one place. Verified via Yjs docs: no functional difference between inside vs outside. Creating inside the transaction is equally correct.
 
 4. **Should we add a `mode` getter to the handle?**
-   - **Resolved**: Yes. Cheap passthrough to `tl.currentMode`.
+   - **Resolved**: Yes. Cheap passthrough to `tl.currentType`.
 
 ## Success Criteria
 

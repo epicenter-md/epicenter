@@ -1,6 +1,9 @@
 ---
 name: better-auth-security-best-practices
 description: Configure rate limiting, manage auth secrets, set up CSRF protection, define trusted origins, secure sessions and cookies, encrypt OAuth tokens, track IP addresses, and implement audit logging for Better Auth. Use when users need to secure their auth setup, prevent brute force attacks, or harden a Better Auth deployment.
+metadata:
+  author: epicenter
+  version: '1.0'
 ---
 
 ## Secret Management

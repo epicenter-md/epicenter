@@ -11,6 +11,15 @@ metadata:
 
 Review files for compliance with Web Interface Guidelines.
 
+## When to Apply This Skill
+
+Use this pattern when you need to:
+
+- Audit UI code against Web Interface Guidelines.
+- Review a site for accessibility, UX, or design best-practice compliance.
+- Return terse `file:line` findings from a guidelines-driven review.
+- Re-check interfaces using the latest upstream guideline rules before reporting.
+
 ## How It Works
 
 1. Fetch the latest guidelines from the source URL below

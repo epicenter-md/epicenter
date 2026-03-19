@@ -8,6 +8,16 @@ metadata:
 
 # Error Handling with wellcrafted trySync and tryAsync
 
+## When to Apply This Skill
+
+Use this pattern when you need to:
+
+- Replace recoverable `try-catch` blocks with `trySync` or `tryAsync`.
+- Handle fallback success paths via `Ok(...)` and propagate failures with `Err(...)`.
+- Wrap caught exceptions as `cause` for typed domain error constructors.
+- Refactor nested error branches into immediate-return linear control flow.
+- Convert handler failures into HTTP status responses with explicit guards.
+
 ## Use trySync/tryAsync Instead of try-catch for Graceful Error Handling
 
 When handling errors that can be gracefully recovered from, use `trySync` (for synchronous code) or `tryAsync` (for asynchronous code) from wellcrafted instead of traditional try-catch blocks. This provides better type safety and explicit error handling.

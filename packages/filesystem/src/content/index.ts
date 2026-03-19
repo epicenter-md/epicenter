@@ -1,5 +1,5 @@
 export type {
-	ContentMode,
+	ContentType,
 	RichTextEntry,
 	SheetEntry,
 	TextEntry,

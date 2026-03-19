@@ -37,7 +37,7 @@ function createToolTrustState() {
 	const trustMap = new SvelteMap<string, TrustLevel>(readAllTrust());
 
 	// Keep reactive state in sync with Y.Doc changes (local + remote)
-	workspaceClient.tables.toolTrust.observe(() => {
+	const _unobserveToolTrust = workspaceClient.tables.toolTrust.observe(() => {
 		const fresh = readAllTrust();
 		// Clear and repopulate to trigger Svelte reactivity
 		trustMap.clear();

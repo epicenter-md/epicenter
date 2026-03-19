@@ -1,11 +1,22 @@
 ---
 name: monorepo
 description: Monorepo script commands and conventions for this codebase. Use when running builds, tests, formatting, linting, or type checking.
+metadata:
+  author: epicenter
+  version: '1.0'
 ---
 
 # Script Commands
 
 The monorepo uses consistent script naming conventions:
+
+## When to Apply This Skill
+
+Use this pattern when you need to:
+
+- Run formatting, linting, or type-check scripts in this monorepo.
+- Choose between auto-fix commands and `:check` CI-only variants.
+- Verify final changes with the repo-standard `bun typecheck` workflow.
 
 | Command            | Purpose                                        | When to use |
 | ------------------ | ---------------------------------------------- | ----------- |

@@ -168,10 +168,10 @@ DocumentHandle
 
 ### Phase 1: Move timeline into workspace
 
-- [x] **1.1** Create `packages/workspace/src/content/entry-types.ts` — move all entry types and `ContentMode` from filesystem
+- [x] **1.1** Create `packages/workspace/src/content/entry-types.ts` — move all entry types and `ContentType` from filesystem
 - [x] **1.2** Create `packages/workspace/src/content/sheet-csv.ts` — move `serializeSheetToCsv`, `parseSheetFromCsv`, and helpers from filesystem's `formats/sheet.ts`. Replace `generateColumnId()`/`generateRowId()` with `generateId()`.
 - [x] **1.3** Create `packages/workspace/src/content/timeline.ts` — move `createTimeline` from filesystem. Update imports to local entry-types and sheet-csv.
-- [x] **1.4** Create `packages/workspace/src/content/index.ts` — export `createTimeline`, `Timeline`, entry types, `ContentMode`, CSV helpers.
+- [x] **1.4** Create `packages/workspace/src/content/index.ts` — export `createTimeline`, `Timeline`, entry types, `ContentType`, CSV helpers.
 - [x] **1.5** Export from `packages/workspace/src/index.ts` — add content module exports.
 - [x] **1.6** Update filesystem to re-export from workspace — `packages/filesystem/src/content/` re-exports `createTimeline`, entry types from `@epicenter/workspace`. Delete moved files. Update `formats/sheet.ts` to import CSV helpers from workspace (keep reorder functions local).
 
