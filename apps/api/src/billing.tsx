@@ -51,7 +51,7 @@ billing.get('/', async (c) => {
 	const q = c.req.query();
 	const flashKey = Object.keys(q).find((k) => k in FLASH_MESSAGES);
 	const flash = q.error
-		? { type: 'error' as const, message: decodeURIComponent(q.error!) }
+		? { type: 'error' as const, message: decodeURIComponent(q.error) }
 		: flashKey
 			? FLASH_MESSAGES[flashKey]
 			: undefined;
@@ -119,8 +119,8 @@ billing.get('/', async (c) => {
 			/>
 
 			<section class="mb-10">
-				<h2 class="text-lg font-medium mb-3">Plans</h2>
-				<div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+				<h2 class="mb-3 font-medium text-lg">Plans</h2>
+				<div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
 					{mainPlans.map((plan) => (
 						<PlanCard
 							plan={plan}
@@ -137,15 +137,15 @@ billing.get('/', async (c) => {
 				<form method="post" action="/billing/top-up">
 					<button
 						type="submit"
-						class="py-2.5 px-5 rounded-lg text-sm font-medium bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 transition-colors"
+						class="rounded-lg border border-zinc-700 bg-zinc-800 px-5 py-2.5 font-medium text-sm text-zinc-200 transition-colors hover:bg-zinc-700"
 					>
-						Buy {PLANS[PLAN_IDS.creditTopUp].credits.overage!.billingUnits} credits —
-					${PLANS[PLAN_IDS.creditTopUp].credits.overage!.amount}
+						Buy {PLANS[PLAN_IDS.creditTopUp].credits.overage?.billingUnits} credits —
+					${PLANS[PLAN_IDS.creditTopUp].credits.overage?.amount}
 					</button>
 				</form>
 				<a
 					href="/billing/portal"
-					class="inline-flex items-center py-2.5 px-5 rounded-lg text-sm font-medium bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 transition-colors"
+					class="inline-flex items-center rounded-lg border border-zinc-700 bg-zinc-800 px-5 py-2.5 font-medium text-sm text-zinc-200 transition-colors hover:bg-zinc-700"
 				>
 					Manage billing
 				</a>
@@ -268,13 +268,13 @@ billing.post('/top-up', async (c) => {
 billing.get('/success', (c) => {
 	return c.html(
 		<Layout title="Payment successful" redirectAfter={[3, '/billing']}>
-			<div class="text-center py-20">
-				<div class="text-4xl mb-4">✓</div>
-				<h2 class="text-xl font-semibold mb-2">Payment successful</h2>
-				<p class="text-zinc-400 mb-6">Your account has been updated.</p>
+			<div class="py-20 text-center">
+				<div class="mb-4 text-4xl">✓</div>
+				<h2 class="mb-2 font-semibold text-xl">Payment successful</h2>
+				<p class="mb-6 text-zinc-400">Your account has been updated.</p>
 				<a
 					href="/billing"
-					class="inline-flex py-2.5 px-5 rounded-lg text-sm font-medium bg-emerald-600 hover:bg-emerald-500 text-white transition-colors"
+					class="inline-flex rounded-lg bg-emerald-600 px-5 py-2.5 font-medium text-sm text-white transition-colors hover:bg-emerald-500"
 				>
 					Back to billing
 				</a>
@@ -319,21 +319,21 @@ function Layout({
 					.credit-fill { background: #10b981; height: 100%; transition: width 0.3s; border-radius: 6px; }
 				`}</style>
 			</head>
-			<body class="bg-zinc-950 text-zinc-100 min-h-screen">
-				<div class="max-w-4xl mx-auto px-6 py-12">
+			<body class="min-h-screen bg-zinc-950 text-zinc-100">
+				<div class="mx-auto max-w-4xl px-6 py-12">
 					<header class="mb-10">
-						<h1 class="text-2xl font-semibold tracking-tight">Billing</h1>
-						<p class="text-zinc-400 mt-1 text-sm">
+						<h1 class="font-semibold text-2xl tracking-tight">Billing</h1>
+						<p class="mt-1 text-sm text-zinc-400">
 							Manage your plan, credits, and payment methods.
 						</p>
 					</header>
 
 					{flash && (
 						<div
-							class={`mb-6 px-4 py-3 rounded-lg text-sm ${
+							class={`mb-6 rounded-lg px-4 py-3 text-sm ${
 								flash.type === 'success'
-									? 'bg-emerald-950 text-emerald-200 border border-emerald-800'
-									: 'bg-red-950 text-red-200 border border-red-800'
+									? 'border border-emerald-800 bg-emerald-950 text-emerald-200'
+									: 'border border-red-800 bg-red-950 text-red-200'
 							}`}
 						>
 							{flash.message}
@@ -360,13 +360,13 @@ function CreditBalance({
 		included > 0 ? Math.min(100, Math.round((balance / included) * 100)) : 0;
 	return (
 		<section class="mb-10">
-			<h2 class="text-lg font-medium mb-3">Credits</h2>
-			<div class="bg-zinc-900 rounded-xl p-5 border border-zinc-800">
-				<div class="flex items-baseline justify-between mb-3">
-					<span class="text-2xl font-semibold tabular-nums">
+			<h2 class="mb-3 font-medium text-lg">Credits</h2>
+			<div class="rounded-xl border border-zinc-800 bg-zinc-900 p-5">
+				<div class="mb-3 flex items-baseline justify-between">
+					<span class="font-semibold text-2xl tabular-nums">
 						{balance.toLocaleString()}
 					</span>
-					<span class="text-zinc-400 text-sm">
+					<span class="text-sm text-zinc-400">
 						of {included.toLocaleString()} included
 					</span>
 				</div>
@@ -374,7 +374,7 @@ function CreditBalance({
 					<div class="credit-fill" style={`width: ${pct}%`} />
 				</div>
 				{resetsAt && (
-					<p class="text-zinc-500 text-xs mt-2">Resets {resetsAt}</p>
+					<p class="mt-2 text-xs text-zinc-500">Resets {resetsAt}</p>
 				)}
 			</div>
 		</section>
@@ -403,22 +403,22 @@ function PlanCard({
 
 	return (
 		<div
-			class={`rounded-xl border p-5 flex flex-col ${
+			class={`flex flex-col rounded-xl border p-5 ${
 				isCurrent
 					? 'border-emerald-700 bg-emerald-950/30'
 					: 'border-zinc-800 bg-zinc-900'
 			}`}
 		>
-			<h3 class="text-lg font-semibold">{plan.name}</h3>
-			<p class="text-2xl font-bold mt-1">{formatPrice(plan.price)}</p>
-			<p class="text-zinc-400 text-sm mt-1">{formatCredits(creditItem)}</p>
-			<p class="text-zinc-500 text-xs mt-0.5">{formatOverage(creditItem)}</p>
+			<h3 class="font-semibold text-lg">{plan.name}</h3>
+			<p class="mt-1 font-bold text-2xl">{formatPrice(plan.price)}</p>
+			<p class="mt-1 text-sm text-zinc-400">{formatCredits(creditItem)}</p>
+			<p class="mt-0.5 text-xs text-zinc-500">{formatOverage(creditItem)}</p>
 			<div class="mt-auto pt-4">
 				{isCurrent ? (
 					<button
 						type="button"
 						disabled
-						class="w-full py-2 px-4 rounded-lg text-sm font-medium bg-zinc-800 text-zinc-500 cursor-not-allowed"
+						class="w-full cursor-not-allowed rounded-lg bg-zinc-800 px-4 py-2 font-medium text-sm text-zinc-500"
 					>
 						Current plan
 					</button>
@@ -427,10 +427,10 @@ function PlanCard({
 						<input type="hidden" name="planId" value={plan.id} />
 						<button
 							type="submit"
-							class={`w-full py-2 px-4 rounded-lg text-sm font-medium transition-colors ${
+							class={`w-full rounded-lg px-4 py-2 font-medium text-sm transition-colors ${
 								eligibility === 'upgrade'
-									? 'bg-emerald-600 hover:bg-emerald-500 text-white'
-									: 'bg-zinc-700 hover:bg-zinc-600 text-zinc-200'
+									? 'bg-emerald-600 text-white hover:bg-emerald-500'
+									: 'bg-zinc-700 text-zinc-200 hover:bg-zinc-600'
 							}`}
 						>
 							{buttonLabel}
@@ -460,8 +460,8 @@ function SubscriptionSection({
 
 	return (
 		<section class="mb-10">
-			<h2 class="text-lg font-medium mb-3">Subscription</h2>
-			<div class="bg-zinc-900 rounded-xl p-5 border border-zinc-800">
+			<h2 class="mb-3 font-medium text-lg">Subscription</h2>
+			<div class="rounded-xl border border-zinc-800 bg-zinc-900 p-5">
 				{isCanceled ? (
 					<div class="flex items-center justify-between">
 						<div>
@@ -471,7 +471,7 @@ function SubscriptionSection({
 									subscription.expiresAt ?? subscription.currentPeriodEnd,
 								)}
 							</p>
-							<p class="text-zinc-500 text-xs mt-0.5">
+							<p class="mt-0.5 text-xs text-zinc-500">
 								You'll lose access to paid features after this date.
 							</p>
 						</div>
@@ -479,7 +479,7 @@ function SubscriptionSection({
 							<input type="hidden" name="planId" value={subscription.planId} />
 							<button
 								type="submit"
-								class="py-2 px-4 rounded-lg text-sm font-medium bg-emerald-600 hover:bg-emerald-500 text-white transition-colors"
+								class="rounded-lg bg-emerald-600 px-4 py-2 font-medium text-sm text-white transition-colors hover:bg-emerald-500"
 							>
 								Keep plan
 							</button>
@@ -492,7 +492,7 @@ function SubscriptionSection({
 								{subscription.plan?.name ?? subscription.planId} plan—active
 							</p>
 							{subscription.currentPeriodEnd && (
-								<p class="text-zinc-500 text-xs mt-0.5">
+								<p class="mt-0.5 text-xs text-zinc-500">
 									Renews {formatDate(subscription.currentPeriodEnd)}
 								</p>
 							)}
@@ -501,7 +501,7 @@ function SubscriptionSection({
 							<input type="hidden" name="planId" value={subscription.planId} />
 							<button
 								type="submit"
-								class="py-2 px-4 rounded-lg text-sm font-medium bg-zinc-700 hover:bg-red-900 hover:text-red-200 text-zinc-300 transition-colors"
+								class="rounded-lg bg-zinc-700 px-4 py-2 font-medium text-sm text-zinc-300 transition-colors hover:bg-red-900 hover:text-red-200"
 							>
 								Cancel plan
 							</button>
