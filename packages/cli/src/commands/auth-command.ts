@@ -85,7 +85,7 @@ function buildLoginCommand(home: string) {
 
 			const api = createAuthApi(serverUrl);
 
-			let response;
+			let response: any;
 			try {
 				response = await api.signInWithEmail(email, password);
 			} catch (err) {

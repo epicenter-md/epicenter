@@ -261,8 +261,6 @@
 						</div>
 					</Field.Field>
 				{/each}
-					</Field.Field>
-				{/each}
 			</Field.Group>
 		</Field.Set>
 	</Field.Group>

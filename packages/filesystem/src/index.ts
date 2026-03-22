@@ -1,7 +1,7 @@
 // Content (document layer)
-export {
-	type ContentType,
-	type SheetEntry,
+export type {
+	ContentType,
+	SheetEntry,
 } from './content/index.js';
 
 // Errors

@@ -50,8 +50,8 @@ billing.get('/', async (c) => {
 
 	const q = c.req.query();
 	const flashKey = Object.keys(q).find((k) => k in FLASH_MESSAGES);
-	const flash = q['error']
-		? { type: 'error' as const, message: decodeURIComponent(q['error']!) }
+	const flash = q.error
+		? { type: 'error' as const, message: decodeURIComponent(q.error!) }
 		: flashKey
 			? FLASH_MESSAGES[flashKey]
 			: undefined;
@@ -416,6 +416,7 @@ function PlanCard({
 			<div class="mt-auto pt-4">
 				{isCurrent ? (
 					<button
+						type="button"
 						disabled
 						class="w-full py-2 px-4 rounded-lg text-sm font-medium bg-zinc-800 text-zinc-500 cursor-not-allowed"
 					>
@@ -549,6 +550,6 @@ async function parsePlanId(c: {
 	req: { parseBody: () => Promise<Record<string, unknown>> };
 }) {
 	const body = await c.req.parseBody();
-	const planId = body['planId'];
+	const planId = body.planId;
 	return typeof planId === 'string' ? planId : undefined;
 }
