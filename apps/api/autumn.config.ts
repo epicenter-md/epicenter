@@ -1,22 +1,19 @@
 import { feature, item, plan } from 'atmn';
+import { FEATURE_IDS, PLAN_IDS, PLANS } from './src/billing-plans';
 
 // ---------------------------------------------------------------------------
-// Single metered feature for all AI usage — cost varies per model at runtime
+// Features
 // ---------------------------------------------------------------------------
 
 export const aiUsage = feature({
-	id: 'ai_usage',
+	id: FEATURE_IDS.aiUsage,
 	name: 'AI Usage',
 	type: 'metered',
 	consumable: true,
 });
 
-// ---------------------------------------------------------------------------
-// Credit system — 1:1 mapping, actual cost determined at runtime
-// ---------------------------------------------------------------------------
-
 export const aiCredits = feature({
-	id: 'ai_credits',
+	id: FEATURE_IDS.aiCredits,
 	name: 'AI Credits',
 	type: 'credit_system',
 	creditSchema: [{ meteredFeatureId: aiUsage.id, creditCost: 1 }],
@@ -26,73 +23,73 @@ export const aiCredits = feature({
 // Plans
 // ---------------------------------------------------------------------------
 
-/** Free — auto-assigned to every new customer. 50 credits/month. */
+const f = PLANS[PLAN_IDS.free];
 export const free = plan({
-	id: 'free',
-	name: 'Free',
-	group: 'main',
-	autoEnable: true,
+	id: PLAN_IDS.free,
+	name: f.name,
+	group: f.group,
+	autoEnable: f.autoEnable,
 	items: [
 		item({
 			featureId: aiCredits.id,
-			included: 50,
-			reset: { interval: 'month' },
+			included: f.credits.included,
+			reset: { interval: f.credits.reset },
 		}),
 	],
 });
 
-/** Pro — $20/month, 2000 credits + usage-based overage at $1/100 credits. */
+const p = PLANS[PLAN_IDS.pro];
 export const pro = plan({
-	id: 'pro',
-	name: 'Pro',
-	group: 'main',
-	price: { amount: 20, interval: 'month' },
+	id: PLAN_IDS.pro,
+	name: p.name,
+	group: p.group,
+	price: p.price!,
 	items: [
 		item({
 			featureId: aiCredits.id,
-			included: 2000,
+			included: p.credits.included,
 			price: {
-				amount: 1,
-				billingUnits: 100,
-				billingMethod: 'usage_based',
-				interval: 'month',
+				amount: p.credits.overage.amount,
+				billingUnits: p.credits.overage.billingUnits,
+				billingMethod: p.credits.overage.billingMethod,
+				interval: p.credits.reset,
 			},
 		}),
 	],
 });
 
-/** Max — $100/month, 15000 credits + usage-based overage at $0.50/100 credits. */
+const m = PLANS[PLAN_IDS.max];
 export const max = plan({
-	id: 'max',
-	name: 'Max',
-	group: 'main',
-	price: { amount: 100, interval: 'month' },
+	id: PLAN_IDS.max,
+	name: m.name,
+	group: m.group,
+	price: m.price!,
 	items: [
 		item({
 			featureId: aiCredits.id,
-			included: 15000,
+			included: m.credits.included,
 			price: {
-				amount: 0.5,
-				billingUnits: 100,
-				billingMethod: 'usage_based',
-				interval: 'month',
+				amount: m.credits.overage.amount,
+				billingUnits: m.credits.overage.billingUnits,
+				billingMethod: m.credits.overage.billingMethod,
+				interval: m.credits.reset,
 			},
 		}),
 	],
 });
 
-/** One-time credit top-up add-on. 500 credits for $5. */
+const t = PLANS[PLAN_IDS.creditTopUp];
 export const creditTopUp = plan({
-	id: 'credit_top_up',
-	name: 'Credit Top-Up',
-	addOn: true,
+	id: PLAN_IDS.creditTopUp,
+	name: t.name,
+	addOn: t.addOn,
 	items: [
 		item({
 			featureId: aiCredits.id,
 			price: {
-				amount: 5,
-				billingUnits: 500,
-				billingMethod: 'prepaid',
+				amount: t.credits.overage!.amount,
+				billingUnits: t.credits.overage!.billingUnits,
+				billingMethod: t.credits.overage!.billingMethod,
 				interval: 'month',
 			},
 		}),

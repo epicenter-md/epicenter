@@ -6,7 +6,6 @@ import {
 } from '@better-auth/oauth-provider';
 import { sValidator } from '@hono/standard-validator';
 import { type } from 'arktype';
-import { autumn } from 'autumn-js/better-auth';
 import { type BetterAuthOptions, betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { customSession } from 'better-auth/plugins';
@@ -19,6 +18,7 @@ import { cors } from 'hono/cors';
 import { createFactory } from 'hono/factory';
 import { describeRoute } from 'hono-openapi';
 import pg from 'pg';
+import { APPS } from '@epicenter/constants/apps';
 import { aiChatHandlers } from './ai-chat';
 import {
 	renderConsentPage,
@@ -216,11 +216,11 @@ function bytesToBase64(bytes: Uint8Array): string {
 }
 
 /** Creates a Better Auth instance using an already-connected Drizzle instance. */
-function createAuth({ db, env }: { db: Db; env: Env['Bindings'] }) {
+function createAuth({ db, env, baseURL }: { db: Db; env: Env['Bindings']; baseURL: string }) {
 	return betterAuth({
 		...BASE_AUTH_CONFIG,
 		database: drizzleAdapter(db, { provider: 'pg' }),
-		baseURL: env.BASE_URL,
+		baseURL,
 		secret: env.BETTER_AUTH_SECRET,
 		socialProviders: {
 			google: {
@@ -277,7 +277,6 @@ function createAuth({ db, env }: { db: Db; env: Env['Bindings'] }) {
 					},
 				],
 			}),
-			autumn({ secretKey: env.AUTUMN_SECRET_KEY, customerScope: 'user' }),
 		],
 		session: {
 			expiresIn: 60 * 60 * 24 * 7,
@@ -297,9 +296,8 @@ function createAuth({ db, env }: { db: Db; env: Env['Bindings'] }) {
 		},
 		trustedOrigins: (request) => {
 			const origins = [
-				'https://*.epicenter.so',
-				'https://epicenter.so',
 				'tauri://localhost',
+				...Object.values(APPS).flatMap((a) => [a.url, `http://localhost:${a.port}`]),
 			];
 			const origin = request?.headers.get('origin');
 			if (origin?.startsWith('chrome-extension://')) {
@@ -324,16 +322,19 @@ function createAuth({ db, env }: { db: Db; env: Env['Bindings'] }) {
 
 const factory = createFactory<Env>({
 	initApp: (app) => {
-		// CORS — skip WebSocket upgrades (101 response headers are immutable)
+		// CORS — skip WebSocket upgrades (101 response headers are immutable).
+		// Allowed origins derived from APPS so adding an app automatically allows it.
+		const allowedOrigins = new Set([
+			'tauri://localhost',
+			...Object.values(APPS).flatMap((a) => [a.url, `http://localhost:${a.port}`]),
+		]);
 		app.use('*', async (c, next) => {
 			if (c.req.header('upgrade') === 'websocket') return next();
 			return cors({
 				origin: (origin) => {
 					if (!origin) return origin;
-					if (origin === 'https://epicenter.so') return origin;
-					if (origin.endsWith('.epicenter.so') && origin.startsWith('https://'))
-						return origin;
-					if (origin === 'tauri://localhost') return origin;
+					if (allowedOrigins.has(origin)) return origin;
+					if (origin.startsWith('chrome-extension://')) return origin;
 					return undefined;
 				},
 				credentials: true,
@@ -374,7 +375,7 @@ const factory = createFactory<Env>({
 
 		// Layer 2: Auth — pure, reads db from context.
 		app.use('*', async (c, next) => {
-			c.set('auth', createAuth({ db: c.var.db, env: c.env }));
+			c.set('auth', createAuth({ db: c.var.db, env: c.env, baseURL: new URL(c.req.url).origin }));
 			await next();
 		});
 	},

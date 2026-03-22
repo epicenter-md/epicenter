@@ -12,7 +12,7 @@
 	"scripts": {
 		"test": "bun test",
 		"typecheck": "tsc --noEmit",
-		"dev:local": "wrangler dev",
+		"dev:local": "infisical export --path=/api --format=dotenv > .dev.vars && wrangler dev",
 		"dev:remote": "infisical run --watch --path=/api -- wrangler dev",
 		"deploy": "wrangler deploy",
 		"typegen": "wrangler types",

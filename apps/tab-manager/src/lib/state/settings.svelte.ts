@@ -20,20 +20,18 @@
  * ```
  */
 
-import { createApps } from '@epicenter/constants/apps';
+import { APP_URLS } from '@epicenter/constants/vite';
 import { type } from 'arktype';
 import { createStorageState } from './storage-state.svelte';
 
-const DEFAULT_SERVER_URL = createApps('production').API.URL;
-
 /** Reactive local server URL. */
 export const serverUrl = createStorageState('local:serverUrl', {
-	fallback: DEFAULT_SERVER_URL,
+	fallback: APP_URLS.API,
 	schema: type('string'),
 });
 
 /** Reactive remote server URL (AI, auth, keys). */
 export const remoteServerUrl = createStorageState('local:remoteServerUrl', {
-	fallback: DEFAULT_SERVER_URL,
+	fallback: APP_URLS.API,
 	schema: type('string'),
 });

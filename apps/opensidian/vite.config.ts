@@ -1,3 +1,4 @@
+import { APPS } from '@epicenter/constants/apps';
 import { sveltekit } from '@sveltejs/kit/vite';
 import tailwindcss from '@tailwindcss/vite';
 import { defineConfig } from 'vite';
@@ -15,6 +16,8 @@ export default defineConfig({
 		exclude: ['@libsql/libsql-wasm-experimental'],
 	},
 	server: {
+		port: APPS.OPENSIDIAN.port,
+		strictPort: true,
 		headers: {
 			// Required for SharedArrayBuffer (used by @libsql WASM worker)
 			'Cross-Origin-Opener-Policy': 'same-origin',

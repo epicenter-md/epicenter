@@ -13,6 +13,7 @@ import { createOpenaiChat, OPENAI_CHAT_MODELS } from '@tanstack/ai-openai';
 import { type } from 'arktype';
 import { createFactory } from 'hono/factory';
 import { defineErrors } from 'wellcrafted/error';
+import { FEATURE_IDS } from './billing-plans';
 import type { Env } from './app';
 import { createAutumn } from './autumn';
 import { MODEL_CREDITS } from './model-costs';
@@ -73,7 +74,7 @@ export const aiChatHandlers = factory.createHandlers(
 		const autumn = createAutumn(c.env);
 		const { allowed, balance } = await autumn.check({
 			customerId: c.var.user.id,
-			featureId: 'ai_usage',
+			featureId: FEATURE_IDS.aiUsage,
 			requiredBalance: credits,
 			sendEvent: true,
 			withPreview: true,
@@ -135,7 +136,7 @@ export const aiChatHandlers = factory.createHandlers(
 			c.var.afterResponse.push(
 				autumn.track({
 					customerId: c.var.user.id,
-					featureId: 'ai_usage',
+					featureId: FEATURE_IDS.aiUsage,
 					value: -credits,
 				}),
 			);

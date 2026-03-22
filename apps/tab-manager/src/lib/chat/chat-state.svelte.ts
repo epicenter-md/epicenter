@@ -600,9 +600,7 @@ function createAiChatState() {
 
 	// ── Active Conversation ──────────────────────────────────────────
 
-	let activeConversationId = $state<ConversationId>(
-		(conversations[0]?.id ?? '') as ConversationId,
-	);
+	let activeConversationId = $state<ConversationId>('' as ConversationId);
 
 	// ── Observers ────────────────────────────────────────────────────────────
 

@@ -1,16 +1,14 @@
-import { createApps } from '@epicenter/constants/apps';
+import { APP_URLS } from '@epicenter/constants/vite';
 import { createAuthState } from '@epicenter/svelte/auth-state';
 import { base64ToBytes } from '@epicenter/workspace/shared/crypto';
 import workspace from '$lib/workspace';
-
-const API_URL = createApps('production').API.URL;
 
 export { tokenStore } from './token-store';
 
 import { tokenStore } from './token-store';
 
 export const authState = createAuthState({
-	baseURL: API_URL,
+	baseURL: APP_URLS.API,
 	storagePrefix: 'honeycrisp',
 	tokenStore,
 	async onSignedIn(encryptionKey) {

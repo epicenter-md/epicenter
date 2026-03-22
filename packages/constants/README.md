@@ -1,57 +1,51 @@
 # @epicenter/constants
 
-Shared URLs, ports, and version info for the Epicenter monorepo. Each runtime context gets its own subpath export so bundlers only pull in what they need and types resolve correctly.
+Shared URLs, ports, and version info for the Epicenter monorepo. Each runtime context gets its own subpath export so bundlers only pull in what they need.
+
+## Single source of truth
+
+All app metadata lives in `APPS` inside `src/apps.ts`:
+
+```typescript
+export const APPS = {
+  API:   { port: 8787, url: 'https://api.epicenter.so' },
+  SH:    { port: 5173, url: 'https://epicenter.sh' },
+  AUDIO: { port: 1420, url: 'https://whispering.epicenter.so' },
+} as const;
+```
+
+Everything else is derived from this.
 
 ## Exports
 
-### `@epicenter/constants/apps`
-
-Runtime-agnostic factory. Dev URLs are derived from `PORTS` (see below) so there is a single source of truth for port numbers.
-
-```typescript
-import { createApps } from '@epicenter/constants/apps';
-
-// Browser extension that always talks to production:
-const API_URL = createApps('production').API.URL;
-
-// Server that reads env at startup:
-const apps = createApps(process.env.NODE_ENV === 'production' ? 'production' : 'development');
-```
-
-`createApps` returns URLs for three apps:
-
-| Key     | Production                        | Development              |
-|---------|-----------------------------------|--------------------------|
-| `API`   | `https://api.epicenter.so`        | `http://localhost:8787`  |
-| `SH`    | `https://epicenter.sh`            | `http://localhost:5173`  |
-| `AUDIO` | `https://whispering.epicenter.so` | `http://localhost:1420`  |
-
-### `@epicenter/constants/ports`
-
-Dev server port numbers. Import in vite configs to keep ports in sync with `createApps` URLs.
-
-```typescript
-import { PORTS } from '@epicenter/constants/ports';
-
-export default defineConfig({
-  server: { port: PORTS.AUDIO, strictPort: true },
-});
-```
-
-| Key     | Port   |
-|---------|--------|
-| `API`   | `8787` |
-| `SH`   | `5173` |
-| `AUDIO` | `1420` |
-
 ### `@epicenter/constants/vite`
 
-Pre-evaluated for Vite apps. Calls `createApps` with `import.meta.env.MODE` at build time so consumers get a plain object.
+For Vite-bundled apps (SvelteKit, Tauri, WXT). Auto-detects dev vs prod via `import.meta.env.MODE`.
 
 ```typescript
-import { APPS } from '@epicenter/constants/vite';
+import { APP_URLS } from '@epicenter/constants/vite';
 
-const whisperingUrl = APPS.AUDIO.URL;
+const apiUrl = APP_URLS.API;
+// dev:  'http://localhost:8787'
+// prod: 'https://api.epicenter.so'
+```
+
+### `@epicenter/constants/apps`
+
+For non-Vite contexts (Cloudflare Workers, CLI scripts). Use `APPS` directly.
+
+```typescript
+import { APPS } from '@epicenter/constants/apps';
+
+// CORS origins:
+const prodOrigins = Object.values(APPS).map(a => a.url);
+const devOrigins = Object.values(APPS).map(a => `http://localhost:${a.port}`);
+
+// Dev server port:
+server: { port: APPS.AUDIO.port, strictPort: true }
+
+// CLI tool — always local:
+const baseURL = `http://localhost:${APPS.API.port}`;
 ```
 
 ### `@epicenter/constants/versions`
@@ -64,6 +58,5 @@ import { VERSION } from '@epicenter/constants/versions';
 
 ## Adding a new app
 
-1. Add a port entry to `PORTS` in `src/ports.ts`.
-2. Add a corresponding app entry in `createApps` in `src/apps.ts`—TypeScript will error if the keys don't match.
-3. Every subpath export picks it up automatically.
+1. Add an entry to `APPS` in `src/apps.ts` with `port` and `url`.
+2. Every export picks it up automatically — TypeScript enforces completeness.

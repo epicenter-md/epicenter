@@ -1,4 +1,4 @@
-import { PORTS } from '@epicenter/constants/ports';
+import { APPS } from '@epicenter/constants/apps';
 import { sveltekit } from '@sveltejs/kit/vite';
 import tailwindcss from '@tailwindcss/vite';
 import { defineConfig } from 'vite';
@@ -18,7 +18,7 @@ export default defineConfig(async () => ({
 	clearScreen: false,
 	// 2. tauri expects a fixed port, fail if that port is not available
 	server: {
-		port: PORTS.AUDIO,
+		port: APPS.AUDIO.port,
 		strictPort: true,
 		host: host || false,
 		hmr: host

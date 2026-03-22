@@ -77,6 +77,36 @@ API keys for AI providers are environment secrets (`wrangler secret put`). They 
 
 ## Development
 
+### Local Postgres setup
+
+The API needs a local PostgreSQL instance for development. The connection string is configured in `wrangler.jsonc` under the Hyperdrive `localConnectionString`.
+
+```bash
+brew install postgresql
+brew services start postgresql
+
+# Homebrew creates a role matching your macOS username. Create the postgres role and database:
+psql -d postgres -c "CREATE ROLE postgres WITH LOGIN SUPERUSER PASSWORD 'postgres';"
+psql -U postgres -c "CREATE DATABASE epicenter;"
+
+# Push the schema
+bun run db:push:local
+```
+
+### How database URLs work
+
+There are three layers, each with a different URL source:
+
+| Layer | Source | Used by |
+|---|---|---|
+| Local dev (runtime) | `wrangler.jsonc` Hyperdrive `localConnectionString` | `bun dev:local` (wrangler) |
+| Local dev (drizzle-kit) | `DATABASE_URL` from `.dev.vars` (generated from Infisical dev env) | `db:push:local`, `db:studio:local` |
+| Remote | `DATABASE_URL` injected by `infisical run` | `db:push:remote`, `db:studio:remote` |
+
+`dev:local` regenerates `.dev.vars` from Infisical's dev environment on every run. Infisical dev has `DATABASE_URL` set to the local Postgres URL, so `.dev.vars` always points to local. The `:remote` scripts use `infisical run` which injects the production `DATABASE_URL` at runtime without touching `.dev.vars`.
+
+### Running the server
+
 ```bash
 bun dev:local        # Local dev server (uses local Postgres)
 bun dev:remote       # Dev with remote secrets via Infisical
@@ -85,14 +115,15 @@ bun run typecheck    # Type check
 bun test             # Run tests
 ```
 
-### Database
+### Database commands
 
 ```bash
 bun run auth:generate    # Generate Better Auth schema
 bun run db:generate      # Generate Drizzle migrations
 bun run db:push:local    # Push schema to local Postgres
 bun run db:push:remote   # Push schema to remote (via Infisical)
-bun run db:studio:local  # Open Drizzle Studio
+bun run db:studio:local  # Open Drizzle Studio (local)
+bun run db:studio:remote # Open Drizzle Studio (remote, via Infisical)
 ```
 
 See `wrangler.jsonc` for Durable Object bindings, KV namespaces, and Hyperdrive (Postgres connection pool) configuration.

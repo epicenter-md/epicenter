@@ -7,14 +7,12 @@
  * `workspace.whenReady` resolves.
  */
 
-import { createApps } from '@epicenter/constants/apps';
+import { APP_URLS } from '@epicenter/constants/vite';
 import { tokenStore } from '$lib/auth/token-store';
 import { createWorkspace } from '@epicenter/workspace';
 import { createSyncExtension } from '@epicenter/workspace/extensions/sync';
 import { indexeddbPersistence } from '@epicenter/workspace/extensions/sync/web';
 import { honeycrisp } from './schema';
-
-const API_URL = createApps('production').API.URL;
 
 const workspace = createWorkspace(honeycrisp)
 	.withEncryption({})
@@ -22,7 +20,7 @@ const workspace = createWorkspace(honeycrisp)
 	.withExtension(
 		'sync',
 		createSyncExtension({
-			url: (workspaceId) => `${API_URL}/workspaces/${workspaceId}`,
+			url: (workspaceId) => `${APP_URLS.API}/workspaces/${workspaceId}`,
 			getToken: async () => tokenStore.get(),
 		}),
 	);

@@ -1,15 +1,19 @@
 /// <reference types="vite/client" />
 
-import { createApps } from '#apps';
+import { APPS, type AppId } from '#apps';
 
 /**
- * Vite build-time URLs.
+ * Flat URL strings resolved at Vite build time.
  *
- * Uses `import.meta.env.MODE` for environment detection. Any mode other than
- * `'production'` resolves to development URLs—safe default for local dev,
- * preview, and test builds.
+ * `import.meta.env.MODE` is statically replaced by Vite:
+ * - `vite dev`   → `'development'` → `http://localhost:<port>`
+ * - `vite build` → `'production'`  → production URLs
  */
-const mode =
-	import.meta.env.MODE === 'production' ? 'production' : 'development';
+const isDev = import.meta.env.MODE !== 'production';
 
-export const APPS = createApps(mode);
+export const APP_URLS = Object.fromEntries(
+	Object.entries(APPS).map(([id, app]) => [
+		id,
+		isDev ? `http://localhost:${app.port}` : app.url,
+	]),
+) as { readonly [K in AppId]: string };

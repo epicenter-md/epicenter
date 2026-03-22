@@ -1,40 +1,21 @@
-import { type AppId, PORTS } from '#ports';
-
-type AppConfig = {
-	URL: string;
-};
-
 /**
- * Produces a map of all Epicenter applications with their metadata. Currently only includes the URL,
- * which varies depending on the environment (development or production).
+ * Single source of truth for all Epicenter app URLs and ports.
  *
- * Dev ports are derived from {@link PORTS} so there is a single source of truth—changing a port in
- * `ports.ts` updates every URL and vite config automatically.
+ * Each app declares its dev port and production URL. Everything else
+ * is derived from this map.
  *
- * These URLs are reused in Vite, Node, and Cloudflare to properly access specific app URLs.
+ * To add an app: add an entry here. TypeScript enforces that every
+ * consumer picks it up automatically.
  */
-export const createApps = (env: 'development' | 'production') => {
-	const isDev = env === 'development';
-	return {
-		/**
-		 * Main API service for the application ecosystem (includes auth)
-		 */
-		API: {
-			URL: isDev ? `http://localhost:${PORTS.API}` : 'https://api.epicenter.so',
-		},
-		/**
-		 * Main epicenter.sh web application
-		 */
-		SH: {
-			URL: isDev ? `http://localhost:${PORTS.SH}` : 'https://epicenter.sh',
-		},
-		/**
-		 * Whispering audio transcription application
-		 */
-		AUDIO: {
-			URL: isDev
-				? `http://localhost:${PORTS.AUDIO}`
-				: 'https://whispering.epicenter.so',
-		},
-	} as const satisfies Record<AppId, AppConfig>;
-};
+
+export const APPS = {
+	API: { port: 8787, url: 'https://api.epicenter.so' },
+	SH: { port: 5173, url: 'https://epicenter.sh' },
+	AUDIO: { port: 1420, url: 'https://whispering.epicenter.so' },
+	FUJI: { port: 5174, url: 'https://fuji.epicenter.so' },
+	HONEYCRISP: { port: 5175, url: 'https://honeycrisp.epicenter.so' },
+	OPENSIDIAN: { port: 5176, url: 'https://opensidian.epicenter.so' },
+	ZHONGWEN: { port: 8888, url: 'https://zhongwen.epicenter.so' },
+} as const;
+
+export type AppId = keyof typeof APPS;

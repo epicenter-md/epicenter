@@ -1,9 +1,9 @@
 import { Hono } from 'hono';
 import { csrf } from 'hono/csrf';
 import { Err, tryAsync } from 'wellcrafted/result';
-import { aiCredits, creditTopUp, free, max, pro } from '../autumn.config';
 import type { Env } from './app';
 import { createAutumn } from './autumn';
+import { FEATURE_IDS, MAIN_PLAN_IDS, PLAN_IDS, PLANS } from './billing-plans';
 
 const billing = new Hono<Env>();
 
@@ -12,9 +12,6 @@ billing.use(csrf());
 // ---------------------------------------------------------------------------
 // Constants & types
 // ---------------------------------------------------------------------------
-
-/** Main plan IDs in display order—derived from autumn.config.ts, not hand-maintained. */
-const MAIN_PLAN_IDS = [free.id, pro.id, max.id] as const;
 
 const FLASH_MESSAGES: Record<
 	string,
@@ -91,7 +88,7 @@ billing.get('/', async (c) => {
 
 	const [customer, plansResult] = data;
 
-	const creditBalance = customer.balances[aiCredits.id];
+	const creditBalance = customer.balances[FEATURE_IDS.aiCredits];
 	const currentBalance = creditBalance?.remaining ?? 0;
 	const includedCredits = creditBalance?.granted ?? 50;
 	const resetsAt = creditBalance?.nextResetAt
@@ -142,7 +139,8 @@ billing.get('/', async (c) => {
 						type="submit"
 						class="py-2.5 px-5 rounded-lg text-sm font-medium bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 transition-colors"
 					>
-						Buy 500 credits — $5
+						Buy {PLANS[PLAN_IDS.creditTopUp].credits.overage!.billingUnits} credits —
+					${PLANS[PLAN_IDS.creditTopUp].credits.overage!.amount}
 					</button>
 				</form>
 				<a
@@ -251,7 +249,7 @@ billing.post('/top-up', async (c) => {
 		try: () =>
 			createAutumn(c.env).billing.attach({
 				customerId: c.var.user.id,
-				planId: creditTopUp.id,
+				planId: PLAN_IDS.creditTopUp,
 				successUrl: new URL('/billing/success', c.req.url).toString(),
 			}),
 		catch: (e) => Err(e instanceof Error ? e : new Error(String(e))),
