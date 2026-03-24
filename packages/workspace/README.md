@@ -854,6 +854,7 @@ const client = createWorkspace(definition)
 			url: 'ws://localhost:3913/rooms/{id}',
 		}),
 	);
+````
 
 The `{id}` placeholder is replaced with the workspace ID automatically.
 
