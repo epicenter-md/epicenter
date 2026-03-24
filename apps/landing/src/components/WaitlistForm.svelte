@@ -70,7 +70,7 @@
 		} finally {
 			isSubmitting = false;
 		}
-	}} class={cn('space-y-6', className)}
+	}} class={cn('space-y-6', className)}>
 		<div>
 			<Label for="email">Email</Label>
 			<Input

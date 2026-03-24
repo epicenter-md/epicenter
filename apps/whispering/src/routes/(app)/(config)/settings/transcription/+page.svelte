@@ -717,6 +717,7 @@
 												>moonshine-base-en</code
 											>). The variant (tiny/base) determines model architecture.
 										</p>
+									</div>
 								</Card.Content>
 							</Card.Root>
 						{/snippet}

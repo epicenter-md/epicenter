@@ -26,6 +26,9 @@ use command::{execute_command, spawn_command};
 pub mod markdown_reader;
 use markdown_reader::{bulk_delete_files, count_markdown_files, read_markdown_files};
 
+pub mod system_sounds;
+use system_sounds::list_system_sounds;
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 #[tokio::main]
 pub async fn run() {
@@ -171,6 +174,7 @@ pub async fn run() {
         read_markdown_files,
         count_markdown_files,
         bulk_delete_files,
+        list_system_sounds,
     ]);
 
     let app = builder

@@ -1,0 +1,26 @@
+{
+	"/": [],
+	"/api/vault/counts": [
+		"src/routes/api/vault/counts/+server.ts"
+	],
+	"/api/vault/export": [
+		"src/routes/api/vault/export/+server.ts"
+	],
+	"/api/vault/import": [
+		"src/routes/api/vault/import/+server.ts"
+	],
+	"/api/vault/ingest": [
+		"src/routes/api/vault/ingest/+server.ts"
+	],
+	"/dashboard": [],
+	"/entities": [],
+	"/entities/[id]": [],
+	"/import-export": [],
+	"/import-export/export": [
+		"src/routes/import-export/export/+server.ts"
+	],
+	"/notes": [],
+	"/notes/new": [],
+	"/notes/[id]": [],
+	"/reddit-upload": []
+}

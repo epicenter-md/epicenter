@@ -10,6 +10,17 @@ import cancelSoundSrc from './zapsplat_multimedia_click_button_short_sharp_73510
 import transformationCompleteSoundSrc from './zapsplat_multimedia_notification_alert_ping_bright_chime_001_93276.mp3';
 import transcriptionCompleteSoundSrc from './zapsplat_multimedia_ui_notification_classic_bell_synth_success_107505.mp3';
 
+export const bundledSoundUrls: Record<WhisperingSoundNames, string> = {
+	'manual-start': startManualSoundSrc,
+	'manual-cancel': cancelSoundSrc,
+	'manual-stop': stopManualSoundSrc,
+	'vad-start': startVadSoundSrc,
+	'vad-capture': captureVadSoundSrc,
+	'vad-stop': stopVadSoundSrc,
+	transcriptionComplete: transcriptionCompleteSoundSrc,
+	transformationComplete: transformationCompleteSoundSrc,
+};
+
 export const audioElements = {
 	'manual-start': new Audio(startManualSoundSrc),
 	'manual-cancel': new Audio(cancelSoundSrc),

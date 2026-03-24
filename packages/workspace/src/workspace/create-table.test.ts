@@ -12,8 +12,8 @@
 import { describe, expect, test } from 'bun:test';
 import { type } from 'arktype';
 import * as Y from 'yjs';
-import {
-	type YKeyValueLwwEntry,
+import type {
+	YKeyValueLwwEntry,
 	} from '../shared/y-keyvalue/y-keyvalue-lww.js';
 import { createEncryptedYkvLww } from '../shared/y-keyvalue/y-keyvalue-lww-encrypted.js';
 import { defineTable } from './define-table.js';

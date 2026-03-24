@@ -1,0 +1,29 @@
+{
+	"/(home)": [
+		"src/routes/+layout.ts",
+		"src/routes/+layout.ts"
+	],
+	"/": [
+		"src/routes/+layout.ts"
+	],
+	"/(workspace)/workspaces/static/[id]": [
+		"src/routes/(workspace)/workspaces/static/[id]/+layout.ts",
+		"src/routes/+layout.ts",
+		"src/routes/(workspace)/workspaces/static/[id]/+layout.ts",
+		"src/routes/+layout.ts"
+	],
+	"/(workspace)/workspaces/[id]": [
+		"src/routes/(workspace)/workspaces/[id]/+layout.ts",
+		"src/routes/+layout.ts",
+		"src/routes/(workspace)/workspaces/[id]/+layout.ts",
+		"src/routes/+layout.ts"
+	],
+	"/(workspace)/workspaces/[id]/settings/[key]": [
+		"src/routes/(workspace)/workspaces/[id]/+layout.ts",
+		"src/routes/+layout.ts"
+	],
+	"/(workspace)/workspaces/[id]/tables/[tableId]": [
+		"src/routes/(workspace)/workspaces/[id]/+layout.ts",
+		"src/routes/+layout.ts"
+	]
+}

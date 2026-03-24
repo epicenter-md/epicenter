@@ -1,6 +1,6 @@
-import {
-	type Documents,
-	type TableHelper,
+import type {
+	Documents,
+	TableHelper,
 } from '@epicenter/workspace';
 import type { IFileSystem } from 'just-bash';
 import { FS_ERRORS } from './errors.js';

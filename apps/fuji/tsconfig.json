@@ -3,4 +3,5 @@
 	"compilerOptions": {
 		"checkJs": true,
 		"types": ["bun-types"]
+	}
 }

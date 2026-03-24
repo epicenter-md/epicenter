@@ -175,6 +175,21 @@ const sound = {
 	'sound.vadStop': defineKv(type('boolean'), true),
 	'sound.transcriptionComplete': defineKv(type('boolean'), true),
 	'sound.transformationComplete': defineKv(type('boolean'), true),
+
+	'sound.selectedSound.manual-start': defineKv(type('string'), 'bundled:manual-start'),
+	'sound.selectedSound.manual-stop': defineKv(type('string'), 'bundled:manual-stop'),
+	'sound.selectedSound.manual-cancel': defineKv(type('string'), 'bundled:manual-cancel'),
+	'sound.selectedSound.vad-start': defineKv(type('string'), 'bundled:vad-start'),
+	'sound.selectedSound.vad-capture': defineKv(type('string'), 'bundled:vad-capture'),
+	'sound.selectedSound.vad-stop': defineKv(type('string'), 'bundled:vad-stop'),
+	'sound.selectedSound.transcriptionComplete': defineKv(
+		type('string'),
+		'bundled:transcriptionComplete',
+	),
+	'sound.selectedSound.transformationComplete': defineKv(
+		type('string'),
+		'bundled:transformationComplete',
+	),
 } as const;
 
 /**

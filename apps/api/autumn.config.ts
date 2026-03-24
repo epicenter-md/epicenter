@@ -43,7 +43,7 @@ export const pro = plan({
 	id: PLAN_IDS.pro,
 	name: p.name,
 	group: p.group,
-	price: p.price!,
+	price: p.price ?? { amount: 0, interval: 'month' },
 	items: [
 		item({
 			featureId: aiCredits.id,
@@ -63,7 +63,7 @@ export const max = plan({
 	id: PLAN_IDS.max,
 	name: m.name,
 	group: m.group,
-	price: m.price!,
+	price: m.price ?? { amount: 0, interval: 'month' },
 	items: [
 		item({
 			featureId: aiCredits.id,
@@ -87,9 +87,9 @@ export const creditTopUp = plan({
 		item({
 			featureId: aiCredits.id,
 			price: {
-				amount: t.credits.overage!.amount,
-				billingUnits: t.credits.overage!.billingUnits,
-				billingMethod: t.credits.overage!.billingMethod,
+				amount: t.credits.overage?.amount,
+				billingUnits: t.credits.overage?.billingUnits,
+				billingMethod: t.credits.overage?.billingMethod,
 				interval: 'month',
 			},
 		}),
