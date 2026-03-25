@@ -8,24 +8,44 @@ import { NotificationError, toBrowserNotification } from './types';
  * with fallback support for extension-based notifications.
  */
 export function createNotificationServiceWeb(): NotificationService {
-	// Cache extension detection result
-	let extensionChecked = false;
-	let hasExtension = false;
+	// Cache the in-flight detection promise so concurrent callers all await the
+	// same result rather than each racing to set up their own listener/timeout.
+	let extensionDetectionPromise: Promise<boolean> | null = null;
 
 	/**
 	 * Detects if a browser extension is available for enhanced notification support.
-	 * Results are cached to avoid repeated detection attempts.
+	 * Uses a per-request nonce and origin check to prevent spoofing by other page scripts.
+	 * The result is cached as a promise—concurrent calls all share the same one.
 	 */
-	const detectExtension = async (): Promise<boolean> => {
-		if (extensionChecked) return hasExtension;
+	const detectExtension = (): Promise<boolean> => {
+		if (extensionDetectionPromise) return extensionDetectionPromise;
 
-		// TODO: Implement real extension detection
-		// This would involve sending a ping message to the extension
-		// and waiting for a response with a timeout
-		// For now, always use browser API
-		hasExtension = false;
-		extensionChecked = true;
-		return hasExtension;
+		extensionDetectionPromise = new Promise<boolean>((resolve) => {
+			const nonce = nanoid();
+			const origin = window.location.origin;
+
+			const timer = setTimeout(() => {
+				window.removeEventListener('message', onPong);
+				resolve(false);
+			}, 200);
+
+			function onPong(event: MessageEvent) {
+				if (
+					event.origin === origin &&
+					event.data?.type === 'whispering-extension-pong' &&
+					event.data?.nonce === nonce
+				) {
+					clearTimeout(timer);
+					window.removeEventListener('message', onPong);
+					resolve(true);
+				}
+			}
+
+			window.addEventListener('message', onPong);
+			window.postMessage({ type: 'whispering-extension-ping', nonce }, origin);
+		});
+
+		return extensionDetectionPromise;
 	};
 
 	return {
