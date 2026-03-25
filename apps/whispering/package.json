@@ -7,7 +7,7 @@
 		"./commands": "./src/lib/commands.ts"
 	},
 	"scripts": {
-		"dev:web": "vite dev",
+		"dev:web": "bun --bun vite dev",
 		"dev": "bun tauri dev --config '{\"identifier\": \"com.bradenwong.whispering.dev\"}'",
 		"build": "NODE_ENV=production bun --bun vite build",
 		"preview": "vite preview",
