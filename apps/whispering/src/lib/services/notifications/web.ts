@@ -19,11 +19,27 @@ export function createNotificationServiceWeb(): NotificationService {
 	const detectExtension = async (): Promise<boolean> => {
 		if (extensionChecked) return hasExtension;
 
-		// TODO: Implement real extension detection
-		// This would involve sending a ping message to the extension
-		// and waiting for a response with a timeout
-		// For now, always use browser API
-		hasExtension = false;
+		hasExtension = await new Promise<boolean>((resolve) => {
+			const timer = setTimeout(() => {
+				window.removeEventListener('message', onPong);
+				resolve(false);
+			}, 200);
+
+			function onPong(event: MessageEvent) {
+				if (
+					event.source === window &&
+					event.data?.type === 'whispering-extension-pong'
+				) {
+					clearTimeout(timer);
+					window.removeEventListener('message', onPong);
+					resolve(true);
+				}
+			}
+
+			window.addEventListener('message', onPong);
+			window.postMessage({ type: 'whispering-extension-ping' }, '*');
+		});
+
 		extensionChecked = true;
 		return hasExtension;
 	};
