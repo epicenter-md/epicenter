@@ -8,7 +8,7 @@
 	},
 	"scripts": {
 		"dev": "bun --bun vite dev",
-		"build": "NODE_ENV=production vite build",
+		"build": "NODE_ENV=production bun --bun vite build",
 		"preview": "bun --bun vite preview",
 		"prepare": "svelte-kit sync || echo ''",
 		"typecheck": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json"
