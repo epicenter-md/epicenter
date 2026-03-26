@@ -143,7 +143,7 @@
 	--color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
 	--color-sidebar-border: var(--sidebar-border);
 	--color-sidebar-ring: var(--sidebar-ring);
-	/* Custom breakpoints xxs = 196px and xs = 320px */
+	/* Custom breakpoints (approx. xxs ≈ 196px, xs ≈ 320px at 16px root font-size) */
 	--breakpoint-xxs: 12.25rem; 
 	--breakpoint-xs: 20rem;
 }
