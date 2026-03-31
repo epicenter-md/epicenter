@@ -308,7 +308,6 @@
 		},
 		onRowSelectionChange: (updater) => {
 			if (typeof updater === 'function') {
-			  console.log(rowSelection.current)
 				rowSelection.current = updater(rowSelection.current);
 			} else {
 				rowSelection.current = updater;
