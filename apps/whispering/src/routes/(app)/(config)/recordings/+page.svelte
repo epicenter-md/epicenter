@@ -287,9 +287,9 @@
 		getPaginationRowModel: getPaginationRowModel(),
 		onSortingChange: (updater) => {
 			if (typeof updater === 'function') {
-				sorting.value = updater(sorting.value);
+				sorting.current = updater(sorting.current);
 			} else {
-				sorting.value = updater;
+				sorting.current = updater;
 			}
 		},
 		onColumnFiltersChange: (updater) => {
@@ -301,16 +301,17 @@
 		},
 		onColumnVisibilityChange: (updater) => {
 			if (typeof updater === 'function') {
-				columnVisibility.value = updater(columnVisibility.value);
+				columnVisibility.current = updater(columnVisibility.current);
 			} else {
-				columnVisibility.value = updater;
+				columnVisibility.current = updater;
 			}
 		},
 		onRowSelectionChange: (updater) => {
 			if (typeof updater === 'function') {
-				rowSelection.value = updater(rowSelection.value);
+			  console.log(rowSelection.current)
+				rowSelection.current = updater(rowSelection.current);
 			} else {
-				rowSelection.value = updater;
+				rowSelection.current = updater;
 			}
 		},
 		onPaginationChange: (updater) => {
@@ -329,16 +330,16 @@
 		},
 		state: {
 			get sorting() {
-				return sorting.value;
+				return sorting.current;
 			},
 			get columnFilters() {
 				return columnFilters;
 			},
 			get columnVisibility() {
-				return columnVisibility.value;
+				return columnVisibility.current;
 			},
 			get rowSelection() {
-				return rowSelection.value;
+				return rowSelection.current;
 			},
 			get pagination() {
 				return pagination;
