@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { tick } from 'svelte';
 	import { terminalState } from '$lib/state/terminal-state.svelte';
 
 	let value = $state('');
@@ -8,6 +9,10 @@
 		const cmd = value;
 		value = '';
 		await terminalState.exec(cmd);
+		if (terminalState.open) {
+			await tick();
+			inputEl?.focus();
+		}
 	}
 
 	function handleKeydown(e: KeyboardEvent) {
