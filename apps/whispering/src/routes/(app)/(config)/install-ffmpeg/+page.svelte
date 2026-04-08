@@ -5,9 +5,9 @@
 	import * as Card from '@epicenter/ui/card';
 	import * as Kbd from '@epicenter/ui/kbd';
 	import { Link } from '@epicenter/ui/link';
+	import { Separator } from '@epicenter/ui/separator';
 	import { Snippet } from '@epicenter/ui/snippet';
 	import { Spinner } from '@epicenter/ui/spinner';
-	import { Separator } from '@epicenter/ui/separator';
 	import * as Tabs from '@epicenter/ui/tabs';
 	import ArrowLeftIcon from '@lucide/svelte/icons/arrow-left';
 	import CheckCircleIcon from '@lucide/svelte/icons/check-circle';

@@ -18,7 +18,9 @@ describe('createCLI', () => {
 		const errorSpy = spyOn(console, 'error').mockImplementation(() => {});
 
 		// exitProcess(false) makes yargs throw instead of calling process.exit
-		await expect(cli.run([])).rejects.toThrow('Not enough non-option arguments');
+		await expect(cli.run([])).rejects.toThrow(
+			'Not enough non-option arguments',
+		);
 
 		const errorOutput = errorSpy.mock.calls.flat().join(' ');
 		expect(errorOutput).toContain('epicenter');

@@ -22,9 +22,9 @@
  * ```
  */
 
+import { fromKv } from '@epicenter/svelte';
 import { workspace } from '$lib/client';
 import type { FolderId, NoteId } from '$lib/workspace';
-import { fromKv } from '@epicenter/svelte';
 import { foldersState } from './folders.svelte';
 import { notesState } from './notes.svelte';
 
@@ -44,7 +44,9 @@ function createViewState() {
 		let result =
 			selectedFolderId.current === null
 				? notesState.notes
-				: notesState.notes.filter((n) => n.folderId === selectedFolderId.current);
+				: notesState.notes.filter(
+						(n) => n.folderId === selectedFolderId.current,
+					);
 		if (searchQuery.trim()) {
 			const q = searchQuery.trim().toLowerCase();
 			result = result.filter(
@@ -64,8 +66,8 @@ function createViewState() {
 	/** Human-readable name for the current folder (used as NoteList title). */
 	const folderName = $derived(
 		selectedFolderId.current
-			? (foldersState.folders.find((f) => f.id === selectedFolderId.current)?.name ??
-					'Notes')
+			? (foldersState.folders.find((f) => f.id === selectedFolderId.current)
+					?.name ?? 'Notes')
 			: 'All Notes',
 	);
 

@@ -17,13 +17,7 @@
  */
 
 import { createHash } from 'node:crypto';
-import {
-	mkdir,
-	readdir,
-	readFile,
-	rm,
-	writeFile,
-} from 'node:fs/promises';
+import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
 	createWorkspace,
@@ -31,12 +25,16 @@ import {
 	generateId,
 } from '@epicenter/workspace';
 import { Type } from 'typebox';
-import { defineErrors, extractErrorMessage, type InferErrors } from 'wellcrafted/error';
+import {
+	defineErrors,
+	extractErrorMessage,
+	type InferErrors,
+} from 'wellcrafted/error';
 import { Ok, tryAsync } from 'wellcrafted/result';
+import { skillsDefinition } from './definition.js';
 import { parseSkillMd } from './parse.js';
 import { serializeSkillMd } from './serialize.js';
 import type { Skill } from './tables.js';
-import { skillsDefinition } from './definition.js';
 
 const DirInput = Type.Object({ dir: Type.String() });
 
@@ -131,11 +129,7 @@ export function createSkillsWorkspace() {
 					// future imports on any machine get the same id
 					if (skillId !== parsedSkill.id) {
 						const updatedMd = serializeSkillMd(skill, instructions);
-						await writeFile(
-							join(skillPath, 'SKILL.md'),
-							updatedMd,
-							'utf-8',
-						);
+						await writeFile(join(skillPath, 'SKILL.md'), updatedMd, 'utf-8');
 					}
 
 					const instructionsHandle =
@@ -168,9 +162,7 @@ export function createSkillsWorkspace() {
 								});
 
 								const contentHandle =
-									await client.documents.references.content.open(
-										refId,
-									);
+									await client.documents.references.content.open(refId);
 								contentHandle.write(refContent);
 							}),
 						);
@@ -215,15 +207,9 @@ export function createSkillsWorkspace() {
 							await Promise.all(
 								refs.map(async (ref) => {
 									const contentHandle =
-										await client.documents.references.content.open(
-											ref.id,
-										);
+										await client.documents.references.content.open(ref.id);
 									const content = contentHandle.read();
-									await writeFile(
-										join(refsDir, ref.path),
-										content,
-										'utf-8',
-									);
+									await writeFile(join(refsDir, ref.path), content, 'utf-8');
 								}),
 							);
 						}

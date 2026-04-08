@@ -142,7 +142,9 @@ function createUnifiedViewState() {
 		}
 
 		// Default: substring includes
-		const q = searchCaseSensitive.current ? searchQuery : searchQuery.toLowerCase();
+		const q = searchCaseSensitive.current
+			? searchQuery
+			: searchQuery.toLowerCase();
 		const v = searchCaseSensitive.current ? value : value.toLowerCase();
 		return v.includes(q);
 	}

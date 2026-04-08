@@ -10,7 +10,6 @@
 		saveTransformationWithSteps,
 	} from '$lib/state/transformations.svelte';
 
-
 	let transformation = $state(generateDefaultTransformation());
 	let steps = $state<TransformationStep[]>([]);
 </script>

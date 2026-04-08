@@ -25,7 +25,6 @@ const nanoid15 = customAlphabet(ALPHABET, 15);
  */
 export type Id = string & Brand<'Id'>;
 
-
 /**
  * Create a branded Id from an arbitrary string.
  *

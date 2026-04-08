@@ -36,7 +36,8 @@
 				break;
 			}
 			case 'F2': {
-				if (skillsState.selectedSkillId) renamingSkillId = skillsState.selectedSkillId;
+				if (skillsState.selectedSkillId)
+					renamingSkillId = skillsState.selectedSkillId;
 				break;
 			}
 			case 'Delete':
@@ -45,7 +46,8 @@
 				if (selected) {
 					confirmationDialog.open({
 						title: `Delete ${selected.name}?`,
-						description: 'This will delete the skill and all its references. This action cannot be undone.',
+						description:
+							'This will delete the skill and all its references. This action cannot be undone.',
 						confirm: { text: 'Delete', variant: 'destructive' },
 						onConfirm: () => skillsState.deleteSkill(selected.id),
 					});
@@ -60,11 +62,18 @@
 	<Empty.Root class="border-0">
 		<Empty.Header>
 			<Empty.Title>No skills yet</Empty.Title>
-			<Empty.Description>Use the toolbar to create a new skill</Empty.Description>
+			<Empty.Description
+				>Use the toolbar to create a new skill</Empty.Description
+			>
 		</Empty.Header>
 	</Empty.Root>
 {:else}
-	<div role="listbox" aria-label="Skills" tabindex={0} onkeydown={handleKeydown}>
+	<div
+		role="listbox"
+		aria-label="Skills"
+		tabindex={0}
+		onkeydown={handleKeydown}
+	>
 		{#each skillsState.skills as skill (skill.id)}
 			{#if renamingSkillId === skill.id}
 				<InlineNameInput
@@ -86,4 +95,3 @@
 		{/each}
 	</div>
 {/if}
-

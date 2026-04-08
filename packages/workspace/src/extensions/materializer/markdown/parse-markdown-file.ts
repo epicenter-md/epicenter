@@ -19,7 +19,8 @@ import { YAML } from 'bun';
  * Returns `null` if the file doesn't contain valid `---` delimited frontmatter.
  */
 
-const FRONTMATTER_PATTERN = /^---[ \t]*\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n|$)/;
+const FRONTMATTER_PATTERN =
+	/^---[ \t]*\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n|$)/;
 
 export function parseMarkdownFile(content: string): {
 	frontmatter: Record<string, unknown>;

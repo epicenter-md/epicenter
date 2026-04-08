@@ -15,13 +15,13 @@ import { WhisperCppTranscriptionServiceLive } from './local/whispercpp';
 import { SpeachesTranscriptionServiceLive } from './self-hosted/speaches';
 
 export {
-	WhisperCppTranscriptionServiceLive as whispercpp,
-	ParakeetTranscriptionServiceLive as parakeet,
-	MoonshineTranscriptionServiceLive as moonshine,
 	DeepgramTranscriptionServiceLive as deepgram,
 	ElevenlabsTranscriptionServiceLive as elevenlabs,
 	GroqTranscriptionServiceLive as groq,
 	MistralTranscriptionServiceLive as mistral,
+	MoonshineTranscriptionServiceLive as moonshine,
 	OpenaiTranscriptionServiceLive as openai,
+	ParakeetTranscriptionServiceLive as parakeet,
 	SpeachesTranscriptionServiceLive as speaches,
+	WhisperCppTranscriptionServiceLive as whispercpp,
 };

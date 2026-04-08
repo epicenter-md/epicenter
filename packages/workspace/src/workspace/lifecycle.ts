@@ -152,7 +152,7 @@ export type Extension<
 	 * Semantics vs `dispose()`:
 	 * - `dispose()` releases resources but **keeps data** (normal cleanup)
 	 * - `clearLocalData()` **wipes data** but does not release resources
- *
+	 *
 	 * The framework calls `clearLocalData()` during `workspace.clearLocalData()`
 	 * in LIFO order.
 	 * Extensions without persistent state should omit this (leave `undefined`).

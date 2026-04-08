@@ -17,8 +17,9 @@
  * transformationSteps.delete(stepId);
  * ```
  */
-import { nanoid } from 'nanoid/non-secure';
+
 import { fromTable } from '@epicenter/svelte';
+import { nanoid } from 'nanoid/non-secure';
 import { workspace } from '$lib/client';
 
 /** Transformation step row type inferred from the workspace table schema. */

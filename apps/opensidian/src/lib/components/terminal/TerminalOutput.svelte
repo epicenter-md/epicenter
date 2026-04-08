@@ -17,7 +17,9 @@
 		<pre class="whitespace-pre-wrap text-foreground">{entry.stdout}</pre>
 	{/if}
 	{#if entry.stderr}
-		<pre class="whitespace-pre-wrap text-destructive"><span class="sr-only">Error: </span>{entry.stderr}</pre>
+		<pre
+			class="whitespace-pre-wrap text-destructive"
+		><span class="sr-only">Error: </span>{entry.stderr}</pre>
 	{/if}
 	{#if entry.exitCode !== 0}
 		<Badge variant="destructive" class="font-mono">exit {entry.exitCode}</Badge>

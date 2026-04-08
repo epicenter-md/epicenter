@@ -18,10 +18,14 @@
  * transformations.delete(id);
  * ```
  */
-import { nanoid } from 'nanoid/non-secure';
+
 import { fromTable } from '@epicenter/svelte';
+import { nanoid } from 'nanoid/non-secure';
 import { workspace } from '$lib/client';
-import { transformationSteps, type TransformationStep } from './transformation-steps.svelte';
+import {
+	type TransformationStep,
+	transformationSteps,
+} from './transformation-steps.svelte';
 
 /** Transformation row type inferred from the workspace table schema. */
 export type Transformation = ReturnType<
@@ -33,7 +37,10 @@ function createTransformations() {
 
 	// Memoize sorted array with $derived for referential stability.
 	const sorted = $derived(
-		map.values().toArray().sort((a, b) => a.title.localeCompare(b.title)),
+		map
+			.values()
+			.toArray()
+			.sort((a, b) => a.title.localeCompare(b.title)),
 	);
 
 	return {

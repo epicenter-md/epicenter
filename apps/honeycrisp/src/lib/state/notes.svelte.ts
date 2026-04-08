@@ -21,8 +21,8 @@
  * ```
  */
 
-import { dateTimeStringNow, generateId } from '@epicenter/workspace';
 import { fromTable } from '@epicenter/svelte';
+import { dateTimeStringNow, generateId } from '@epicenter/workspace';
 import { workspace } from '$lib/client';
 import type { FolderId, Note, NoteId } from '$lib/workspace';
 import { foldersState } from './folders.svelte';

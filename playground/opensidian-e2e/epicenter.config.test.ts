@@ -15,10 +15,9 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { mkdir, rm } from 'node:fs/promises';
 import { join } from 'node:path';
-import { generateId } from '@epicenter/workspace';
+import { createWorkspace, generateId } from '@epicenter/workspace';
 import { toMarkdown } from '@epicenter/workspace/extensions/materializer/markdown';
 import { filesystemPersistence } from '@epicenter/workspace/extensions/persistence/sqlite';
-import { createWorkspace } from '@epicenter/workspace';
 import { opensidianDefinition } from 'opensidian/workspace';
 import { pushFromMarkdown } from './push-from-markdown';
 

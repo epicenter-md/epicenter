@@ -510,9 +510,7 @@ function getTableJsonSchema(
 ): Record<string, unknown> {
 	const tableDef = context.definitions.tables[tableName];
 	if (tableDef === null || tableDef === undefined) {
-		throw new Error(
-			`SQLite mirror definition for "${tableName}" is missing.`,
-		);
+		throw new Error(`SQLite mirror definition for "${tableName}" is missing.`);
 	}
 
 	// Table definitions may wrap the schema in a { schema } property or be

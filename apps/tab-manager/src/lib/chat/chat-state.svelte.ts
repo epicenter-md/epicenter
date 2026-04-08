@@ -29,10 +29,10 @@
  */
 
 import { AiChatHttpError } from '@epicenter/constants/ai-chat-errors';
+import { fromTable } from '@epicenter/svelte';
 import { createAiChatFetch } from '@epicenter/svelte-utils/auth';
 import { createChat, fetchServerSentEvents } from '@tanstack/ai-svelte';
 import { SvelteMap } from 'svelte/reactivity';
-import { fromTable } from '@epicenter/svelte';
 import type { JsonValue } from 'wellcrafted/json';
 import {
 	AVAILABLE_PROVIDERS,
@@ -46,8 +46,8 @@ import {
 	TAB_MANAGER_SYSTEM_PROMPT,
 } from '$lib/chat/system-prompt';
 import { toUiMessage } from '$lib/chat/ui-message';
-import { getDeviceId } from '$lib/device/device-id';
 import { auth, workspace, workspaceAiTools } from '$lib/client';
+import { getDeviceId } from '$lib/device/device-id';
 import {
 	type ChatMessageId,
 	type Conversation,
@@ -65,7 +65,10 @@ function createAiChatState() {
 
 	const conversationsMap = fromTable(workspace.tables.conversations);
 	const conversations = $derived(
-		conversationsMap.values().toArray().sort((a, b) => b.updatedAt - a.updatedAt),
+		conversationsMap
+			.values()
+			.toArray()
+			.sort((a, b) => b.updatedAt - a.updatedAt),
 	);
 
 	/**
@@ -159,7 +162,7 @@ function createAiChatState() {
 									buildDeviceConstraints(deviceId),
 									metadata?.systemPrompt ?? TAB_MANAGER_SYSTEM_PROMPT,
 								],
-							tools: workspaceAiTools.definitions,
+								tools: workspaceAiTools.definitions,
 							},
 						},
 					};
@@ -267,18 +270,24 @@ function createAiChatState() {
 			 * UI should show an upgrade prompt when true.
 			 */
 			get isCreditsExhausted() {
-				return chat.error instanceof AiChatHttpError
-					&& chat.error.detail.name === 'InsufficientCredits';
+				return (
+					chat.error instanceof AiChatHttpError &&
+					chat.error.detail.name === 'InsufficientCredits'
+				);
 			},
 
 			get isUnauthorized() {
-				return chat.error instanceof AiChatHttpError
-					&& chat.error.detail.name === 'Unauthorized';
+				return (
+					chat.error instanceof AiChatHttpError &&
+					chat.error.detail.name === 'Unauthorized'
+				);
 			},
 
 			get isModelRestricted() {
-				return chat.error instanceof AiChatHttpError
-					&& chat.error.detail.name === 'ModelRequiresPaidPlan';
+				return (
+					chat.error instanceof AiChatHttpError &&
+					chat.error.detail.name === 'ModelRequiresPaidPlan'
+				);
 			},
 
 			// ── Ephemeral UI state ──

@@ -64,7 +64,6 @@
 			editorState.detach();
 		};
 	});
-
 </script>
 
 <div

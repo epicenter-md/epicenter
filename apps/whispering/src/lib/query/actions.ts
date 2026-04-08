@@ -3,13 +3,13 @@ import { Ok } from 'wellcrafted/result';
 import { rpc } from '$lib/query';
 import { defineMutation } from '$lib/query/client';
 import { WhisperingErr } from '$lib/result';
-import { DbError } from '$lib/services/db';
 import { services } from '$lib/services';
-import { recordings } from '$lib/state/recordings.svelte';
-import { transformations } from '$lib/state/transformations.svelte';
+import { DbError } from '$lib/services/db';
 import { deviceConfig } from '$lib/state/device-config.svelte';
-import { vadRecorder } from '$lib/state/vad-recorder.svelte';
+import { recordings } from '$lib/state/recordings.svelte';
 import { settings } from '$lib/state/settings.svelte';
+import { transformations } from '$lib/state/transformations.svelte';
+import { vadRecorder } from '$lib/state/vad-recorder.svelte';
 import * as transformClipboardWindow from '$routes/transform-clipboard/transformClipboardWindow.tauri';
 import { delivery } from './delivery';
 import { notify } from './notify';
@@ -86,7 +86,7 @@ const startManualRecording = defineMutation({
 				break;
 			}
 			case 'fallback': {
-				const method = deviceConfig.get("recording.method");
+				const method = deviceConfig.get('recording.method');
 				deviceConfig.set(
 					`recording.${method}.deviceId`,
 					deviceAcquisitionOutcome.deviceId,
@@ -261,7 +261,7 @@ const startVadRecording = defineMutation({
 			}
 			case 'fallback': {
 				deviceConfig.set(
-					"recording.navigator.deviceId",
+					'recording.navigator.deviceId',
 					deviceAcquisitionOutcome.deviceId,
 				);
 				switch (deviceAcquisitionOutcome.reason) {
@@ -494,9 +494,7 @@ export const actions = {
 		mutationKey: ['commands', 'runTransformationOnClipboard'] as const,
 		mutationFn: async () => {
 			// Get selected transformation from settings
-			const transformationId = settings.get(
-				'transformation.selectedId',
-			);
+			const transformationId = settings.get('transformation.selectedId');
 
 			if (!transformationId) {
 				return WhisperingErr({
@@ -632,7 +630,10 @@ async function processRecordingPipeline({
 
 	// Save metadata to workspace (instant) and audio blob to DbService (async)
 	recordings.set(recording);
-	const saveAudioPromise = services.db.recordings.create({ recording, audio: blob });
+	const saveAudioPromise = services.db.recordings.create({
+		recording,
+		audio: blob,
+	});
 	const transcribePromise = transcribeBlob(blob);
 
 	// Await transcription first (latency-critical path)

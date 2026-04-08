@@ -63,7 +63,9 @@ export function createAuthCommand(home: string) {
 								await sessions.save(serverUrl, tokenData, sessionData);
 
 								const displayName =
-									sessionData.user?.name ?? sessionData.user?.email ?? serverUrl;
+									sessionData.user?.name ??
+									sessionData.user?.email ??
+									serverUrl;
 								console.log(`✓ Logged in as ${displayName}`);
 								return;
 							}
@@ -72,14 +74,20 @@ export function createAuthCommand(home: string) {
 								case 'authorization_pending':
 									continue;
 								case 'slow_down':
-								interval += 5_000;
+									interval += 5_000;
 									continue;
 								case 'expired_token':
-									throw new Error('Device code expired — please run login again');
+									throw new Error(
+										'Device code expired — please run login again',
+									);
 								case 'access_denied':
-									throw new Error('Authorization denied — you rejected the request');
+									throw new Error(
+										'Authorization denied — you rejected the request',
+									);
 								default:
-									throw new Error(tokenData.error_description ?? tokenData.error);
+									throw new Error(
+										tokenData.error_description ?? tokenData.error,
+									);
 							}
 						}
 						throw new Error('Device code expired — please run login again');

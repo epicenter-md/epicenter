@@ -48,15 +48,15 @@
 				break;
 			}
 			case 'self-hosted':
-			return deviceConfig.get('transcription.speaches.baseUrl');
+				return deviceConfig.get('transcription.speaches.baseUrl');
 			case 'local': {
 				switch (service.id) {
 					case 'whispercpp':
-					return deviceConfig.get('transcription.whispercpp.modelPath');
+						return deviceConfig.get('transcription.whispercpp.modelPath');
 					case 'parakeet':
-					return deviceConfig.get('transcription.parakeet.modelPath');
+						return deviceConfig.get('transcription.parakeet.modelPath');
 					case 'moonshine':
-					return deviceConfig.get('transcription.moonshine.modelPath');
+						return deviceConfig.get('transcription.moonshine.modelPath');
 				}
 				break;
 			}

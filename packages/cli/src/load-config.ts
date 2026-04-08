@@ -66,9 +66,7 @@ export async function loadConfig(targetDir: string): Promise<LoadConfigResult> {
 		const hint = hasDefault
 			? `\nFound a default export—use a named export instead:\n  export const myApp = createMyWorkspace()`
 			: `\nExport createWorkspace() results as named exports:\n  export const myApp = createMyWorkspace()`;
-		throw new Error(
-			`No workspace clients found in ${CONFIG_FILENAME}.${hint}`,
-		);
+		throw new Error(`No workspace clients found in ${CONFIG_FILENAME}.${hint}`);
 	}
 
 	return { configDir, clients };

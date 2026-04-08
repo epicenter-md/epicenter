@@ -12,8 +12,8 @@
 	import { transformationSteps } from '$lib/state/transformation-steps.svelte';
 	import {
 		saveTransformationWithSteps,
-		transformations,
 		type Transformation,
+		transformations,
 	} from '$lib/state/transformations.svelte';
 	import MarkTransformationActiveButton from './MarkTransformationActiveButton.svelte';
 

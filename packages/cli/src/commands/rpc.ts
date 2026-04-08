@@ -171,7 +171,9 @@ export const rpcCommand = defineCommand({
 			}
 
 			if (!argv.action) {
-				throw new Error('Missing required argument: action (e.g. epicenter rpc tabs.list)');
+				throw new Error(
+					'Missing required argument: action (e.g. epicenter rpc tabs.list)',
+				);
 			}
 
 			const targetPeer = await waitForPeer(
@@ -192,8 +194,17 @@ export const rpcCommand = defineCommand({
 			}
 
 			const skipKeys = new Set([
-				'_', '$0', 'action', 'dir', 'C', 'workspace', 'w',
-				'format', 'peer', 'timeout', 'peers',
+				'_',
+				'$0',
+				'action',
+				'dir',
+				'C',
+				'workspace',
+				'w',
+				'format',
+				'peer',
+				'timeout',
+				'peers',
 			]);
 			let input: Record<string, unknown> | undefined;
 			for (const [key, value] of Object.entries(argv)) {

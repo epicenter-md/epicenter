@@ -74,7 +74,7 @@ export { ExtensionError } from '../shared/errors.js';
 export type {
 	Extension,
 	MaybePromise,
-	} from './lifecycle.js';
+} from './lifecycle.js';
 export type { DocumentContext } from './types.js';
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -97,9 +97,9 @@ export { defineWorkspace } from './define-workspace.js';
 // Workspace Creation
 // ════════════════════════════════════════════════════════════════════════════
 
-export { createWorkspace } from './create-workspace.js';
 // Document origin sentinel (for filtering auto-bumps in table observers)
 export { DOCUMENTS_ORIGIN } from './create-document.js';
+export { createWorkspace } from './create-workspace.js';
 
 // ════════════════════════════════════════════════════════════════════════════
 // Introspection
@@ -140,7 +140,6 @@ export type {
 	// Extension types
 	ExtensionContext,
 	ExtensionFactory,
-	SharedExtensionContext,
 	GetResult,
 	InferAwarenessValue,
 	InferKvValue,
@@ -156,6 +155,7 @@ export type {
 	NotFoundResult,
 	// Result types - composed
 	RowResult,
+	SharedExtensionContext,
 	// Definition types
 	TableDefinition,
 	// Map types

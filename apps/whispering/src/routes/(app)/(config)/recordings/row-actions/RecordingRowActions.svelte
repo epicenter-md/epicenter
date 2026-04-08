@@ -14,10 +14,10 @@
 	import { createMutation } from '@tanstack/svelte-query';
 	import { nanoid } from 'nanoid/non-secure';
 	import { rpc } from '$lib/query';
-	import { createCopyFn } from '$lib/utils/createCopyFn';
-	import { recordingActions } from '$lib/utils/recording-actions';
 	import { recordings } from '$lib/state/recordings.svelte';
 	import { transformationRuns } from '$lib/state/transformation-runs.svelte';
+	import { createCopyFn } from '$lib/utils/createCopyFn';
+	import { recordingActions } from '$lib/utils/recording-actions';
 	import { viewTransition } from '$lib/utils/viewTransitions';
 	import EditRecordingModal from './EditRecordingModal.svelte';
 	import TransformationPicker from './TransformationPicker.svelte';
@@ -33,7 +33,9 @@
 
 	let { recordingId }: { recordingId: string } = $props();
 
-	const latestRun = $derived(transformationRuns.getLatestByRecordingId(recordingId));
+	const latestRun = $derived(
+		transformationRuns.getLatestByRecordingId(recordingId),
+	);
 
 	const recording = $derived(recordings.get(recordingId));
 </script>

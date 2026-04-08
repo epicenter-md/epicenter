@@ -215,7 +215,7 @@
 								class="flex items-center justify-center py-8 text-muted-foreground"
 							>
 								<p class="text-sm">
-							{#if searchQuery}
+									{#if searchQuery}
 										No entries match your search.
 									{:else}
 										No entries yet. Click + to create one.

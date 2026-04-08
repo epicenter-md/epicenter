@@ -17,7 +17,10 @@
 	}
 
 	/** Properties are JSONB—model/provider are custom keys we send via autumn.check(). */
-	function prop(event: { properties: Record<string, never> }, key: string): string {
+	function prop(
+		event: { properties: Record<string, never> },
+		key: string,
+	): string {
 		return (event.properties as Record<string, string>)[key] ?? '—';
 	}
 </script>
@@ -46,16 +49,16 @@
 			{#each events.data.list as event}
 				<Table.Row>
 					<Table.Cell class="text-xs text-muted-foreground whitespace-nowrap">
-					{formatTimestamp(event.timestamp)}
+						{formatTimestamp(event.timestamp)}
 					</Table.Cell>
 					<Table.Cell class="font-mono text-xs">
-					{prop(event, 'model')}
+						{prop(event, 'model')}
 					</Table.Cell>
 					<Table.Cell class="text-xs text-muted-foreground">
-					{prop(event, 'provider')}
+						{prop(event, 'provider')}
 					</Table.Cell>
 					<Table.Cell class="text-right tabular-nums">
-					{event.value}
+						{event.value}
 					</Table.Cell>
 				</Table.Row>
 			{/each}

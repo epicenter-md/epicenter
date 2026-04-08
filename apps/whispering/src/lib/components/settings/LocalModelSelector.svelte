@@ -2,6 +2,7 @@
 	import { Button } from '@epicenter/ui/button';
 	import * as Card from '@epicenter/ui/card';
 	import { Input } from '@epicenter/ui/input';
+	import { toast } from '@epicenter/ui/sonner';
 	import * as Tabs from '@epicenter/ui/tabs';
 	import FolderOpen from '@lucide/svelte/icons/folder-open';
 	import Paperclip from '@lucide/svelte/icons/paperclip';
@@ -10,7 +11,6 @@
 	import { open } from '@tauri-apps/plugin-dialog';
 	import { readDir } from '@tauri-apps/plugin-fs';
 	import type { Snippet } from 'svelte';
-	import { toast } from '@epicenter/ui/sonner';
 	import { extractErrorMessage } from 'wellcrafted/error';
 	import { Ok, tryAsync } from 'wellcrafted/result';
 	import type { LocalModelConfig } from '$lib/services/transcription/local/types';

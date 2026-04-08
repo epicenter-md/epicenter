@@ -1,13 +1,11 @@
 <script lang="ts">
 	import type { FileId } from '@epicenter/filesystem';
-	import { Button } from '@epicenter/ui/button';
+	import { Button, buttonVariants } from '@epicenter/ui/button';
 	import * as Tabs from '@epicenter/ui/tabs';
 	import XIcon from '@lucide/svelte/icons/x';
-	import { buttonVariants } from '@epicenter/ui/button';
 	import GithubIcon from '$lib/components/icons/GithubIcon.svelte';
-	import { fsState } from '$lib/state/fs-state.svelte';
 	import SyncStatusIndicator from '$lib/components/SyncStatusIndicator.svelte';
-
+	import { fsState } from '$lib/state/fs-state.svelte';
 </script>
 
 <div class="flex items-center border-b">
@@ -21,7 +19,7 @@
 				class="w-full justify-start overflow-x-auto rounded-none border-0 bg-transparent p-0"
 			>
 				{#each fsState.openFileIds as fileId (fileId)}
-				{@const row = fsState.getFile(fileId)}
+					{@const row = fsState.getFile(fileId)}
 					{#if row}
 						<Tabs.Trigger
 							value={fileId}
@@ -33,7 +31,7 @@
 								variant="ghost"
 								size="icon-xs"
 								class="absolute right-1 top-1/2 -translate-y-1/2 opacity-50 hover:opacity-100"
-							onclick={(e: MouseEvent) => { e.stopPropagation(); e.preventDefault(); fsState.closeFile(fileId); }}
+								onclick={(e: MouseEvent) => { e.stopPropagation(); e.preventDefault(); fsState.closeFile(fileId); }}
 								aria-label="Close {row.name}"
 							>
 								<XIcon aria-hidden="true" class="size-3" />

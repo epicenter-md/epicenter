@@ -18,13 +18,13 @@ import {
 	createCliUnlock,
 	createSessionStore,
 	resolveEpicenterHome,
-	} from '@epicenter/cli';
+} from '@epicenter/cli';
 import { createWorkspace, defineMutation } from '@epicenter/workspace';
+import { prepareMarkdownFiles } from '@epicenter/workspace/extensions/materializer/markdown';
 import { filesystemPersistence } from '@epicenter/workspace/extensions/persistence/sqlite';
 import { createSyncExtension } from '@epicenter/workspace/extensions/sync/websocket';
-import { prepareMarkdownFiles } from '@epicenter/workspace/extensions/materializer/markdown';
-import Type from 'typebox';
 import { opensidianDefinition } from 'opensidian/workspace';
+import Type from 'typebox';
 import { createOpensidianMaterializer } from './materializer';
 
 const SERVER_URL = process.env.EPICENTER_SERVER ?? 'https://api.epicenter.so';

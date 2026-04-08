@@ -9,8 +9,8 @@
 import { ConsentPage } from './consent-page';
 import { DevicePage } from './device-page';
 import { AuthLayout } from './layout';
-import { SignedInPage } from './signed-in-page';
 import { SignInPage } from './sign-in-page';
+import { SignedInPage } from './signed-in-page';
 
 export function renderSignInPage() {
 	return (

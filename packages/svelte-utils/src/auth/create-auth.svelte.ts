@@ -149,7 +149,10 @@ export type AuthClient = {
 	 * if (error) submitError = error.message;
 	 * ```
 	 */
-	signInWithSocialRedirect(options: { provider: string; callbackURL: string }): Promise<Result<undefined, AuthError>>;
+	signInWithSocialRedirect(options: {
+		provider: string;
+		callbackURL: string;
+	}): Promise<Result<undefined, AuthError>>;
 
 	fetch: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 };
@@ -293,7 +296,11 @@ export function createAuth({
 		if (state.data) {
 			const user = normalizeUser(state.data.user);
 			const token = state.data.session.token;
-			const authenticated = { token, user, encryptionKeys: state.data.encryptionKeys };
+			const authenticated = {
+				token,
+				user,
+				encryptionKeys: state.data.encryptionKeys,
+			};
 			session.current = authenticated;
 			onLogin?.(authenticated);
 		} else {
@@ -362,7 +369,6 @@ export function createAuth({
 				isBusy = false;
 			}
 		},
-
 
 		async signInWithSocialPopup() {
 			if (!socialTokenProvider) {

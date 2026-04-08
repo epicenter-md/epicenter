@@ -18,9 +18,9 @@ import type { Result } from 'wellcrafted/result';
  * if (error) return; // already toasted
  * ```
  */
-export function toastOnError<
-	TResult extends Result<unknown, AnyTaggedError>,
->(result: TResult): TResult {
+export function toastOnError<TResult extends Result<unknown, AnyTaggedError>>(
+	result: TResult,
+): TResult {
 	if (result.error) {
 		toast.error(result.error.message);
 	}

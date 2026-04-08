@@ -63,8 +63,7 @@ export function withWorkspaceOptions<T>(y: Argv<T>) {
 		.option('workspace', {
 			type: 'string',
 			alias: 'w',
-			description:
-				'Workspace ID (required if config has multiple workspaces)',
+			description: 'Workspace ID (required if config has multiple workspaces)',
 		})
 		.options(formatYargsOptions());
 }

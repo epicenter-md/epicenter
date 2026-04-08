@@ -7,9 +7,7 @@
 
 	let { recordingId }: { recordingId: string } = $props();
 
-	const runs = $derived(
-		transformationRuns.getByRecordingId(recordingId),
-	);
+	const runs = $derived(transformationRuns.getByRecordingId(recordingId));
 
 	let isOpen = $state(false);
 </script>

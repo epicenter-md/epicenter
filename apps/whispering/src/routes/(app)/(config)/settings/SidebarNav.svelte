@@ -1,8 +1,8 @@
 <script lang="ts">
-	import { Button } from '@epicenter/ui/button';
 	import { APPS } from '@epicenter/constants/apps';
-	import ExternalLinkIcon from '@lucide/svelte/icons/external-link';
+	import { Button } from '@epicenter/ui/button';
 	import { cn } from '@epicenter/ui/utils';
+	import ExternalLinkIcon from '@lucide/svelte/icons/external-link';
 	import { cubicInOut } from 'svelte/easing';
 	import { crossfade } from 'svelte/transition';
 	import { page } from '$app/state';

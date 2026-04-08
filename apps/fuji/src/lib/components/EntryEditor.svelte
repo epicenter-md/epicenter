@@ -3,22 +3,27 @@
 	import ArrowLeftIcon from '@lucide/svelte/icons/arrow-left';
 	import { baseKeymap, toggleMark } from 'prosemirror-commands';
 	import {
-		inputRules,
-		wrappingInputRule,
-		textblockTypeInputRule,
-		smartQuotes,
-		emDash,
 		ellipsis,
+		emDash,
+		inputRules,
+		smartQuotes,
+		textblockTypeInputRule,
+		wrappingInputRule,
 	} from 'prosemirror-inputrules';
 	import { keymap } from 'prosemirror-keymap';
 	import { Schema } from 'prosemirror-model';
-	import { addListNodes, splitListItem, liftListItem, sinkListItem } from 'prosemirror-schema-list';
 	import { schema as basicSchema } from 'prosemirror-schema-basic';
+	import {
+		addListNodes,
+		liftListItem,
+		sinkListItem,
+		splitListItem,
+	} from 'prosemirror-schema-list';
 	import { EditorState, Plugin } from 'prosemirror-state';
 	import { Decoration, DecorationSet, EditorView } from 'prosemirror-view';
 	import 'prosemirror-view/style/prosemirror.css';
-	import { ySyncPlugin, yUndoPlugin, undo, redo } from 'y-prosemirror';
 	import { format } from 'date-fns';
+	import { redo, undo, ySyncPlugin, yUndoPlugin } from 'y-prosemirror';
 	import type * as Y from 'yjs';
 	import type { Entry } from '$lib/workspace';
 	import TagInput from './TagInput.svelte';
@@ -32,7 +37,12 @@
 		entry: Entry;
 		ytext: Y.Text;
 		onUpdate: (
-			updates: Partial<{ title: string; subtitle: string; type: string[]; tags: string[] }>,
+			updates: Partial<{
+				title: string;
+				subtitle: string;
+				type: string[];
+				tags: string[];
+			}>,
 		) => void;
 		onBack: () => void;
 	} = $props();
@@ -88,9 +98,9 @@
 						'Mod-Shift-z': redo,
 						'Mod-b': toggleMark(schema.marks.strong!),
 						'Mod-i': toggleMark(schema.marks.em!),
-						'Enter': splitListItem(schema.nodes.list_item!),
+						Enter: splitListItem(schema.nodes.list_item!),
 						'Mod-]': sinkListItem(schema.nodes.list_item!),
-						'Tab': sinkListItem(schema.nodes.list_item!),
+						Tab: sinkListItem(schema.nodes.list_item!),
 						'Mod-[': liftListItem(schema.nodes.list_item!),
 						'Shift-Tab': liftListItem(schema.nodes.list_item!),
 					}),
@@ -102,15 +112,16 @@
 							ellipsis,
 							textblockTypeInputRule(
 								/^(#{1,3})\s$/,
-							schema.nodes.heading!,
+								schema.nodes.heading!,
 								(match) => ({ level: match[1]!.length }),
 							),
 							wrappingInputRule(/^\s*([-+*])\s$/, schema.nodes.bullet_list!),
 							wrappingInputRule(
 								/^(\d+)\.\s$/,
-							schema.nodes.ordered_list!,
+								schema.nodes.ordered_list!,
 								(match) => ({ order: +match[1]! }),
-								(match, node) => node.childCount + node.attrs.order === +match[1]!,
+								(match, node) =>
+									node.childCount + node.attrs.order === +match[1]!,
 							),
 							wrappingInputRule(/^\s*>\s$/, schema.nodes.blockquote!),
 							textblockTypeInputRule(/^```$/, schema.nodes.code_block!),
@@ -119,7 +130,8 @@
 				],
 			}),
 			attributes: {
-				class: 'prose prose-sm dark:prose-invert max-w-none focus:outline-none min-h-full',
+				class:
+					'prose prose-sm dark:prose-invert max-w-none focus:outline-none min-h-full',
 			},
 		});
 
@@ -193,7 +205,8 @@
 	>
 		<span>
 			Created {format(parseDateTime(entry.createdAt), 'MMM d \u00b7 h:mm a')}
-			\u00b7 Updated {format(parseDateTime(entry.updatedAt), 'MMM d \u00b7 h:mm a')}
+			\u00b7 Updated
+			{format(parseDateTime(entry.updatedAt), 'MMM d \u00b7 h:mm a')}
 		</span>
 	</div>
 </div>

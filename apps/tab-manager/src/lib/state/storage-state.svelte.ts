@@ -186,7 +186,9 @@ export function createStorageState<TSchema extends StandardSchemaV1>(
 		 */
 		watch(callback: (value: T) => void): () => void {
 			externalWatchers.add(callback);
-			return () => { externalWatchers.delete(callback); };
+			return () => {
+				externalWatchers.delete(callback);
+			};
 		},
 	};
 }

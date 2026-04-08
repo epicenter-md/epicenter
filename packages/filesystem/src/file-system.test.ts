@@ -391,8 +391,6 @@ async function getTimelineLength(
 }
 
 describe('timeline content storage', () => {
-
-
 	test('text append (appendFile on text entry)', async () => {
 		const { fs, ws } = setup();
 		const documents = ws.documents.files.content;
@@ -402,7 +400,6 @@ describe('timeline content storage', () => {
 		// Append to text should not grow timeline
 		expect(await getTimelineLength(fs, documents, '/log.txt')).toBe(1);
 	});
-
 
 	test('Uint8Array writes are treated as text (no mode switch)', async () => {
 		const { fs, ws } = setup();
@@ -426,14 +423,12 @@ describe('timeline content storage', () => {
 		expect(await getTimelineLength(fs, documents, '/file.txt')).toBe(1);
 	});
 
-
 	test('readFileBuffer returns correct bytes for text entry', async () => {
 		const { fs } = setup();
 		await fs.writeFile('/file.txt', 'hello');
 		const buf = await fs.readFileBuffer('/file.txt');
 		expect(buf).toEqual(new TextEncoder().encode('hello'));
 	});
-
 });
 
 describe('sheet file support', () => {
@@ -447,7 +442,7 @@ describe('sheet file support', () => {
 		const handle = await documents.open(fileId);
 		handle.batch(() => {
 			handle.write('Name,Age\nAlice,30\n');
-		handle.asSheet();
+			handle.asSheet();
 		});
 		expect(await fs.readFile('/data.csv')).toBe('Name,Age\nAlice,30\n');
 	});
@@ -462,7 +457,7 @@ describe('sheet file support', () => {
 		const handle = await documents.open(fileId);
 		handle.batch(() => {
 			handle.write('A,B\n1,2\n');
-		handle.asSheet();
+			handle.asSheet();
 		});
 		await fs.writeFile('/data.csv', 'X,Y\n3,4\n');
 		expect(await fs.readFile('/data.csv')).toBe('X,Y\n3,4\n');

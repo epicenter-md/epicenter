@@ -1,6 +1,6 @@
 import { env } from 'cloudflare:workers';
-import { type } from 'arktype';
 import type { EncryptionKeys } from '@epicenter/workspace';
+import { type } from 'arktype';
 
 /**
  * Validated shape of a single keyring entry.
@@ -117,7 +117,8 @@ async function deriveUserKey(
 /** Convert bytes to a base64 string suitable for JSON transport. */
 function bytesToBase64(bytes: Uint8Array): string {
 	let binary = '';
-	for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]!);
+	for (let i = 0; i < bytes.length; i++)
+		binary += String.fromCharCode(bytes[i]!);
 	return btoa(binary);
 }
 

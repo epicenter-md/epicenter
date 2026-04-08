@@ -1,8 +1,8 @@
 <script lang="ts">
+	import { Toaster } from '@epicenter/ui/sonner';
 	import { QueryClientProvider } from '@tanstack/svelte-query';
 	import { SvelteQueryDevtools } from '@tanstack/svelte-query-devtools';
 	import { ModeWatcher } from 'mode-watcher';
-	import { Toaster } from '@epicenter/ui/sonner';
 	import { onNavigate } from '$app/navigation';
 	import { queryClient } from '$lib/query/client';
 	import '@epicenter/ui/app.css';

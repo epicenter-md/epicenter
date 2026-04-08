@@ -1,18 +1,18 @@
 #!/usr/bin/env node
 
-import { spawnSync } from "node:child_process";
-import { fileURLToPath } from "node:url";
+import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 
-const isBun = typeof Bun !== "undefined";
+const isBun = typeof Bun !== 'undefined';
 
 if (!isBun) {
-	const bunCheck = spawnSync("bun", ["--version"], { stdio: "ignore" });
+	const bunCheck = spawnSync('bun', ['--version'], { stdio: 'ignore' });
 
 	if (bunCheck.status === 0) {
 		const result = spawnSync(
-			"bun",
+			'bun',
 			[fileURLToPath(import.meta.url), ...process.argv.slice(2)],
-			{ stdio: "inherit" },
+			{ stdio: 'inherit' },
 		);
 		process.exit(result.status ?? 1);
 	}
@@ -27,4 +27,4 @@ Then run this command again. Learn more: https://bun.sh`);
 	process.exit(1);
 }
 
-await import("../src/bin.ts");
+await import('../src/bin.ts');

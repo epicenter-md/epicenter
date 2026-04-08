@@ -44,7 +44,9 @@
 		class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"
 	>
 		<SectionHeader.Root class="space-y-0.5">
-			<SectionHeader.Title level={2} class="text-2xl font-bold tracking-tight">Settings</SectionHeader.Title>
+			<SectionHeader.Title level={2} class="text-2xl font-bold tracking-tight"
+				>Settings</SectionHeader.Title
+			>
 			<SectionHeader.Description>
 				{#await versionPromise}
 					Customize your Whispering experience.

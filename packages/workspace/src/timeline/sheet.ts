@@ -1,6 +1,6 @@
 import * as Y from 'yjs';
-import { generateId } from '../shared/id.js';
 import { generateInitialOrders } from '../shared/fractional-index.js';
+import { generateId } from '../shared/id.js';
 
 /** The result of binding a sheet—columns and rows Y.Maps. */
 export type SheetBinding = {
@@ -105,10 +105,7 @@ function parseCsvRows(csv: string): string[][] {
  * 4. For each row, read cell values by column ID (empty string for missing)
  * 5. Escape values containing commas, quotes, or newlines (RFC 4180)
  */
-export function serializeSheetToCsv({
-	columns,
-	rows,
-}: SheetBinding): string {
+export function serializeSheetToCsv({ columns, rows }: SheetBinding): string {
 	// Collect and sort columns by order
 	const columnEntries: Array<{
 		id: string;

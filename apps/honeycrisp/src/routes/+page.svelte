@@ -3,12 +3,12 @@
 	import { SidebarProvider } from '@epicenter/ui/sidebar';
 	import type { DocumentHandle } from '@epicenter/workspace';
 	import type * as Y from 'yjs';
+	import { workspace } from '$lib/client';
 	import CommandPalette from '$lib/components/CommandPalette.svelte';
 	import NoteList from '$lib/components/NoteList.svelte';
 	import HoneycripSidebar from '$lib/components/Sidebar.svelte';
 	import HoneycripEditor from '$lib/editor/Editor.svelte';
 	import { foldersState, notesState, viewState } from '$lib/state';
-	import { workspace } from '$lib/client';
 
 	// ─── Document Handle ────────────────────────────────────────────────────
 

@@ -10,10 +10,10 @@
 
 // Protocol (encode/decode for WS messages and HTTP sync requests)
 export {
+	type DecodedRpcMessage,
 	decodeMessageType,
 	decodeRpcMessage,
 	decodeRpcPayload,
-	type DecodedRpcMessage,
 	decodeSyncMessage,
 	decodeSyncRequest,
 	decodeSyncStatus,

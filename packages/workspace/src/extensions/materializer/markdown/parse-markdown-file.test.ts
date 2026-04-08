@@ -62,7 +62,8 @@ describe('parseMarkdownFile', () => {
 	});
 
 	test('handles CRLF line endings', () => {
-		const content = '---\r\nid: abc\r\ntitle: Hello\r\n---\r\n\r\nSome body content\r\n';
+		const content =
+			'---\r\nid: abc\r\ntitle: Hello\r\n---\r\n\r\nSome body content\r\n';
 		const result = parseMarkdownFile(content);
 		expect(result).not.toBeNull();
 		expect(result!.frontmatter).toEqual({ id: 'abc', title: 'Hello' });
@@ -107,7 +108,8 @@ describe('parseMarkdownFile', () => {
 	});
 
 	test('strips UTF-8 BOM before parsing', () => {
-		const content = '\uFEFF---\nid: abc\ntitle: Hello\n---\n\nSome body content\n';
+		const content =
+			'\uFEFF---\nid: abc\ntitle: Hello\n---\n\nSome body content\n';
 		const result = parseMarkdownFile(content);
 		expect(result).not.toBeNull();
 		expect(result!.frontmatter).toEqual({ id: 'abc', title: 'Hello' });

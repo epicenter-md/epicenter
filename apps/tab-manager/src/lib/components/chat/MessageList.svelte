@@ -62,7 +62,11 @@
 		{#each messages as message (message.id)}
 			<Chat.Bubble variant={message.role === 'user' ? 'sent' : 'received'}>
 				<Chat.BubbleMessage>
-					<MessageParts parts={message.parts} {onApproveToolCall} {onDenyToolCall} />
+					<MessageParts
+						parts={message.parts}
+						{onApproveToolCall}
+						{onDenyToolCall}
+					/>
 				</Chat.BubbleMessage>
 			</Chat.Bubble>
 		{/each}

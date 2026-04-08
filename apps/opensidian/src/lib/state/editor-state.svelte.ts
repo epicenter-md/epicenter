@@ -1,9 +1,14 @@
-import { Compartment, type EditorState as CMEditorState, type Extension, type Text } from '@codemirror/state';
+import {
+	type EditorState as CMEditorState,
+	Compartment,
+	type Extension,
+	type Text,
+} from '@codemirror/state';
 import { EditorView } from '@codemirror/view';
 import { createPersistedState } from '@epicenter/svelte';
 import { Vim, vim } from '@replit/codemirror-vim';
-import { yUndoManagerKeymap } from 'y-codemirror.next';
 import { type } from 'arktype';
+import { yUndoManagerKeymap } from 'y-codemirror.next';
 
 // ── Persisted preferences ───────────────────────────────────────
 
@@ -184,6 +189,5 @@ function createEditorState() {
 		},
 	};
 }
-
 
 export const editorState = createEditorState();

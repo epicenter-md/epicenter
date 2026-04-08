@@ -18,7 +18,6 @@
 	}}
 />
 
-
 <Command.Dialog bind:open>
 	<Command.Input placeholder="Search notes..." />
 	<Command.List>

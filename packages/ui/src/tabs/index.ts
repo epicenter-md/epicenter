@@ -4,13 +4,13 @@ import List from './tabs-list.svelte';
 import Trigger from './tabs-trigger.svelte';
 
 export {
-	Root,
 	Content,
+	Content as TabsContent,
 	List,
-	Trigger,
+	List as TabsList,
+	Root,
 	//
 	Root as Tabs,
-	Content as TabsContent,
-	List as TabsList,
+	Trigger,
 	Trigger as TabsTrigger,
 };

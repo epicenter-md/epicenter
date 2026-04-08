@@ -72,12 +72,12 @@
 				{/snippet}
 			</DropdownMenu.Trigger>
 			<DropdownMenu.Content align="start" side="right" class="w-40">
-			<DropdownMenu.Item
-				onclick={() => {
+				<DropdownMenu.Item
+					onclick={() => {
 					isEditing = true;
 					editingName = folder.name;
 				}}
-			>
+				>
 					<PencilIcon class="mr-2 size-4" />
 					Rename
 				</DropdownMenu.Item>

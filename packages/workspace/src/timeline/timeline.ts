@@ -356,7 +356,8 @@ export function createTimeline(ydoc: Y.Doc): Timeline {
 		asSheet(): SheetBinding {
 			const entry = this.currentEntry;
 			if (!entry) return ydoc.transact(() => pushSheet());
-			if (entry.type === 'sheet') return { columns: entry.columns, rows: entry.rows };
+			if (entry.type === 'sheet')
+				return { columns: entry.columns, rows: entry.rows };
 			// Convert from text or richtext → read as string, push as sheet
 			const plaintext = this.read();
 			return ydoc.transact(() => {

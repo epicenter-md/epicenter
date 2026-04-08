@@ -35,9 +35,13 @@ function createRecordings() {
 	// Without this, every access creates a new array → TanStack Table's $derived
 	// sees "new data" → updates internal $state → re-triggers $derived → infinite loop.
 	const sorted = $derived(
-		map.values().toArray().sort(
-			(a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime(),
-		),
+		map
+			.values()
+			.toArray()
+			.sort(
+				(a, b) =>
+					new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime(),
+			),
 	);
 
 	return {

@@ -36,8 +36,7 @@
 			title: 'Select Recording Output Folder',
 		});
 
-		if (selected)
-			deviceConfig.set('recording.cpal.outputFolder', selected);
+		if (selected) deviceConfig.set('recording.cpal.outputFolder', selected);
 	}
 
 	async function openOutputFolder() {

@@ -16,11 +16,7 @@ import {
 	OPENSIDIAN_SYSTEM_PROMPT,
 } from '$lib/chat/system-prompt';
 import { toUiMessage } from '$lib/chat/ui-message';
-import {
-	auth,
-	workspace,
-	workspaceAiTools,
-} from '$lib/client';
+import { auth, workspace, workspaceAiTools } from '$lib/client';
 import { skillState } from '$lib/state/skill-state.svelte';
 import {
 	type ChatMessageId,
@@ -122,7 +118,7 @@ function createAiChatState() {
 									})),
 								),
 							].filter(Boolean),
-						tools: workspaceAiTools.definitions,
+							tools: workspaceAiTools.definitions,
 						},
 					},
 				}),
@@ -207,18 +203,24 @@ function createAiChatState() {
 			},
 
 			get isCreditsExhausted() {
-				return chat.error instanceof AiChatHttpError
-					&& chat.error.detail.name === 'InsufficientCredits';
+				return (
+					chat.error instanceof AiChatHttpError &&
+					chat.error.detail.name === 'InsufficientCredits'
+				);
 			},
 
 			get isUnauthorized() {
-				return chat.error instanceof AiChatHttpError
-					&& chat.error.detail.name === 'Unauthorized';
+				return (
+					chat.error instanceof AiChatHttpError &&
+					chat.error.detail.name === 'Unauthorized'
+				);
 			},
 
 			get isModelRestricted() {
-				return chat.error instanceof AiChatHttpError
-					&& chat.error.detail.name === 'ModelRequiresPaidPlan';
+				return (
+					chat.error instanceof AiChatHttpError &&
+					chat.error.detail.name === 'ModelRequiresPaidPlan'
+				);
 			},
 
 			sendMessage(content: string) {

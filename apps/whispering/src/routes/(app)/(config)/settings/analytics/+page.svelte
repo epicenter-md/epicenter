@@ -12,7 +12,9 @@
 	<!-- Page Header -->
 	<SectionHeader.Root>
 		<div class="flex items-center gap-3">
-			<SectionHeader.Title level={3} class="text-xl tracking-tight">Analytics</SectionHeader.Title>
+			<SectionHeader.Title level={3} class="text-xl tracking-tight"
+				>Analytics</SectionHeader.Title
+			>
 			{#if settings.get('analytics.enabled')}
 				<Badge
 					variant="outline"

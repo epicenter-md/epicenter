@@ -23,9 +23,7 @@
 		pressedKeys: PressedKeys;
 	} = $props();
 
-	const shortcutValue = $derived(
-		settings.get(`shortcut.${command.id}`),
-	);
+	const shortcutValue = $derived(settings.get(`shortcut.${command.id}`));
 
 	const keyRecorder = createKeyRecorder({
 		pressedKeys,

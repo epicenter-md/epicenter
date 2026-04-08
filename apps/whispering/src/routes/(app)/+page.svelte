@@ -9,8 +9,8 @@
 	} from '@epicenter/ui/file-drop-zone';
 	import * as Kbd from '@epicenter/ui/kbd';
 	import { Link } from '@epicenter/ui/link';
-	import * as ToggleGroup from '@epicenter/ui/toggle-group';
 	import * as SectionHeader from '@epicenter/ui/section-header';
+	import * as ToggleGroup from '@epicenter/ui/toggle-group';
 	import { createQuery } from '@tanstack/svelte-query';
 	import type { UnlistenFn } from '@tauri-apps/api/event';
 	import { nanoid } from 'nanoid/non-secure';
@@ -37,9 +37,9 @@
 	import { services } from '$lib/services';
 	import { desktopServices } from '$lib/services/desktop';
 	import { deviceConfig } from '$lib/state/device-config.svelte';
-	import { vadRecorder } from '$lib/state/vad-recorder.svelte';
-	import { settings } from '$lib/state/settings.svelte';
 	import { recordings } from '$lib/state/recordings.svelte';
+	import { settings } from '$lib/state/settings.svelte';
+	import { vadRecorder } from '$lib/state/vad-recorder.svelte';
 	import { viewTransition } from '$lib/utils/viewTransitions';
 
 	const getRecorderStateQuery = createQuery(
@@ -48,8 +48,7 @@
 	const latestRecording = $derived(recordings.sorted[0]);
 
 	const audioPlaybackUrlQuery = createQuery(() => ({
-		...rpc.audio.getPlaybackUrl(() => latestRecording?.id ?? '')
-			.options,
+		...rpc.audio.getPlaybackUrl(() => latestRecording?.id ?? '').options,
 		enabled: !!latestRecording?.id,
 	}));
 
@@ -400,7 +399,6 @@
 			{/if}
 		</div>
 	{/if}
-
 
 	<div class="xs:flex hidden flex-col items-center gap-3">
 		{#if settings.get('recording.mode') === 'manual'}

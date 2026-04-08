@@ -153,8 +153,8 @@ client.tables.posts.<span class="text-amber-300">set</span>({ id: <span class="t
 					<p
 						class="text-lg md:text-xl text-muted-foreground max-w-2xl mx-auto leading-relaxed mb-12"
 					>
-						One folder of plain text and SQLite on your machine. Every tool
-						we build shares this memory. It's open, tweakable, and yours.
+						One folder of plain text and SQLite on your machine. Every tool we
+						build shares this memory. It's open, tweakable, and yours.
 					</p>
 
 					<!-- CTAs -->
@@ -295,31 +295,45 @@ client.tables.posts.<span class="text-amber-300">set</span>({ id: <span class="t
 		<section class="py-24 md:py-32">
 			<div class="max-w-4xl mx-auto px-6">
 				<div class="text-center mb-16">
-					<Badge variant="secondary" class="mb-6 px-4 py-1 text-sm">Quick Start</Badge>
+					<Badge variant="secondary" class="mb-6 px-4 py-1 text-sm"
+						>Quick Start</Badge
+					>
 					<h2 class="text-3xl md:text-5xl font-bold text-foreground mb-6">
 						From zero to workspace in 30 seconds
 					</h2>
 				</div>
 
 				<div class="space-y-4">
-					<div class="rounded-2xl bg-zinc-950 border border-zinc-800 overflow-hidden">
-						<div class="flex items-center gap-2 px-4 py-3 border-b border-zinc-800">
+					<div
+						class="rounded-2xl bg-zinc-950 border border-zinc-800 overflow-hidden"
+					>
+						<div
+							class="flex items-center gap-2 px-4 py-3 border-b border-zinc-800"
+						>
 							<div class="w-3 h-3 rounded-full bg-zinc-700"></div>
 							<div class="w-3 h-3 rounded-full bg-zinc-700"></div>
 							<div class="w-3 h-3 rounded-full bg-zinc-700"></div>
 							<span class="ml-2 text-xs text-zinc-500 font-mono">terminal</span>
 						</div>
-						<pre class="p-6 overflow-x-auto"><code class="text-sm font-mono text-zinc-100"><span class="text-zinc-500">$</span> bun add @epicenter/workspace</code></pre>
+						<pre
+							class="p-6 overflow-x-auto"
+						><code class="text-sm font-mono text-zinc-100"><span class="text-zinc-500">$</span> bun add @epicenter/workspace</code></pre>
 					</div>
 
-					<div class="rounded-2xl bg-zinc-950 border border-zinc-800 overflow-hidden">
-						<div class="flex items-center gap-2 px-4 py-3 border-b border-zinc-800">
+					<div
+						class="rounded-2xl bg-zinc-950 border border-zinc-800 overflow-hidden"
+					>
+						<div
+							class="flex items-center gap-2 px-4 py-3 border-b border-zinc-800"
+						>
 							<div class="w-3 h-3 rounded-full bg-zinc-700"></div>
 							<div class="w-3 h-3 rounded-full bg-zinc-700"></div>
 							<div class="w-3 h-3 rounded-full bg-zinc-700"></div>
 							<span class="ml-2 text-xs text-zinc-500 font-mono">app.ts</span>
 						</div>
-						<pre class="p-6 overflow-x-auto"><code class="text-sm font-mono text-zinc-100" set:html={quickstartCodeHtml} /></pre>
+						<pre
+							class="p-6 overflow-x-auto"
+						><code class="text-sm font-mono text-zinc-100" set:html={quickstartCodeHtml} /></pre>
 					</div>
 				</div>
 			</div>
@@ -551,23 +565,48 @@ client.tables.posts.<span class="text-amber-300">set</span>({ id: <span class="t
 
 				<div class="space-y-6">
 					<div class="p-8 rounded-2xl bg-card border border-muted/50">
-						<h3 class="text-lg font-semibold text-foreground mb-3">How is this different from Obsidian?</h3>
-						<p class="text-muted-foreground leading-relaxed">Obsidian is a Markdown editor with sync. Epicenter is a local-first storage substrate—multiple apps share the same CRDT-backed data folder. Your notes, transcripts, and chat histories all live together and sync conflict-free.</p>
+						<h3 class="text-lg font-semibold text-foreground mb-3">
+							How is this different from Obsidian?
+						</h3>
+						<p class="text-muted-foreground leading-relaxed">
+							Obsidian is a Markdown editor with sync. Epicenter is a
+							local-first storage substrate—multiple apps share the same
+							CRDT-backed data folder. Your notes, transcripts, and chat
+							histories all live together and sync conflict-free.
+						</p>
 					</div>
 
 					<div class="p-8 rounded-2xl bg-card border border-muted/50">
-						<h3 class="text-lg font-semibold text-foreground mb-3">Is my data encrypted?</h3>
-						<p class="text-muted-foreground leading-relaxed">Encryption is opt-in per workspace. When enabled, Epicenter uses XChaCha20-Poly1305 for data and HKDF-SHA256 for key derivation. The sync server is a relay—it never sees your content.</p>
+						<h3 class="text-lg font-semibold text-foreground mb-3">
+							Is my data encrypted?
+						</h3>
+						<p class="text-muted-foreground leading-relaxed">
+							Encryption is opt-in per workspace. When enabled, Epicenter uses
+							XChaCha20-Poly1305 for data and HKDF-SHA256 for key derivation.
+							The sync server is a relay—it never sees your content.
+						</p>
 					</div>
 
 					<div class="p-8 rounded-2xl bg-card border border-muted/50">
-						<h3 class="text-lg font-semibold text-foreground mb-3">Can I self-host?</h3>
-						<p class="text-muted-foreground leading-relaxed">Yes. The sync server is open source and runs on Cloudflare Workers or any WebSocket-compatible host. You can also run entirely offline—sync is optional.</p>
+						<h3 class="text-lg font-semibold text-foreground mb-3">
+							Can I self-host?
+						</h3>
+						<p class="text-muted-foreground leading-relaxed">
+							Yes. The sync server is open source and runs on Cloudflare Workers
+							or any WebSocket-compatible host. You can also run entirely
+							offline—sync is optional.
+						</p>
 					</div>
 
 					<div class="p-8 rounded-2xl bg-card border border-muted/50">
-						<h3 class="text-lg font-semibold text-foreground mb-3">What happens if I stop using Epicenter?</h3>
-						<p class="text-muted-foreground leading-relaxed">Your data is plain text and SQLite files on your disk. Open them with any text editor, query them with any SQLite tool. No export needed—the files are the product.</p>
+						<h3 class="text-lg font-semibold text-foreground mb-3">
+							What happens if I stop using Epicenter?
+						</h3>
+						<p class="text-muted-foreground leading-relaxed">
+							Your data is plain text and SQLite files on your disk. Open them
+							with any text editor, query them with any SQLite tool. No export
+							needed—the files are the product.
+						</p>
 					</div>
 				</div>
 			</div>
@@ -598,22 +637,22 @@ client.tables.posts.<span class="text-amber-300">set</span>({ id: <span class="t
 				</div>
 
 				<div class="mt-16 flex flex-col sm:flex-row gap-4 justify-center">
-				<Button
-					href="https://github.com/EpicenterHQ/epicenter"
-					size="lg"
-					class="shadow-sm hover:shadow-md transition-all"
-				>
-					Contribute on GitHub
-					<ArrowRightIcon class="w-4 h-4" />
-				</Button>
-				<Button
-					href="https://go.epicenter.so/discord"
-					variant="outline"
-					size="lg"
-					class="hover:bg-muted/50 transition-all"
-				>
-					Join our Discord
-				</Button>
+					<Button
+						href="https://github.com/EpicenterHQ/epicenter"
+						size="lg"
+						class="shadow-sm hover:shadow-md transition-all"
+					>
+						Contribute on GitHub
+						<ArrowRightIcon class="w-4 h-4" />
+					</Button>
+					<Button
+						href="https://go.epicenter.so/discord"
+						variant="outline"
+						size="lg"
+						class="hover:bg-muted/50 transition-all"
+					>
+						Join our Discord
+					</Button>
 				</div>
 			</div>
 		</section>

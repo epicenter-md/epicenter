@@ -2,9 +2,9 @@ import Root from './kbd.svelte';
 import Group from './kbd-group.svelte';
 
 export {
-	Root,
 	Group,
+	Group as KbdGroup,
+	Root,
 	//
 	Root as Kbd,
-	Group as KbdGroup,
 };

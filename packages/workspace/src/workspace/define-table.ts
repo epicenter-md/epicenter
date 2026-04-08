@@ -256,11 +256,11 @@ function attachDocumentBuilder<
 				...def,
 				documents: {
 					...def.documents,
-				[name]: {
-					guid: config.guid,
-					onUpdate: config.onUpdate,
-					awareness: config.awareness,
-				},
+					[name]: {
+						guid: config.guid,
+						onUpdate: config.onUpdate,
+						awareness: config.awareness,
+					},
 				},
 			});
 		},

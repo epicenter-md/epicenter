@@ -37,9 +37,7 @@ function createSampleDataLoader() {
 				toast.success('Loaded sample data');
 			} catch (err) {
 				toast.error(
-					err instanceof Error
-						? err.message
-						: 'Failed to load sample data',
+					err instanceof Error ? err.message : 'Failed to load sample data',
 				);
 				console.error(err);
 			} finally {

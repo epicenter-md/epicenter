@@ -1,7 +1,11 @@
-import { defineErrors, extractErrorMessage, type InferErrors } from 'wellcrafted/error';
-import { Err, Ok, tryAsync, trySync, type Result } from 'wellcrafted/result';
-import type { DbService } from '$lib/services/db/types';
+import {
+	defineErrors,
+	extractErrorMessage,
+	type InferErrors,
+} from 'wellcrafted/error';
+import { Err, Ok, type Result, tryAsync, trySync } from 'wellcrafted/result';
 import type { workspace } from '$lib/client';
+import type { DbService } from '$lib/services/db/types';
 
 const MIGRATION_KEY = 'whispering:db-migration';
 export type DbMigrationState = 'pending' | 'done';
@@ -128,9 +132,13 @@ export async function migrateDatabaseToWorkspace({
 		}
 	}
 
-	onProgress(`Recordings done: ${result.recordings.migrated} migrated, ${result.recordings.skipped} skipped, ${result.recordings.failed} failed`);
+	onProgress(
+		`Recordings done: ${result.recordings.migrated} migrated, ${result.recordings.skipped} skipped, ${result.recordings.failed} failed`,
+	);
 
-	onProgress(`Migrating ${transformations.length} transformations (${result.steps.total} steps)...`);
+	onProgress(
+		`Migrating ${transformations.length} transformations (${result.steps.total} steps)...`,
+	);
 
 	for (const transformation of transformations) {
 		trySync({
@@ -212,8 +220,12 @@ export async function migrateDatabaseToWorkspace({
 		}
 	}
 
-	onProgress(`Transformations done: ${result.transformations.migrated} migrated, ${result.transformations.skipped} skipped, ${result.transformations.failed} failed`);
-	onProgress(`Steps done: ${result.steps.migrated} migrated, ${result.steps.skipped} skipped, ${result.steps.failed} failed`);
+	onProgress(
+		`Transformations done: ${result.transformations.migrated} migrated, ${result.transformations.skipped} skipped, ${result.transformations.failed} failed`,
+	);
+	onProgress(
+		`Steps done: ${result.steps.migrated} migrated, ${result.steps.skipped} skipped, ${result.steps.failed} failed`,
+	);
 
 	return Ok(result);
 }

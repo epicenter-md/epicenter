@@ -2,10 +2,10 @@
 	import { Badge } from '@epicenter/ui/badge';
 	import { Button } from '@epicenter/ui/button';
 	import * as Card from '@epicenter/ui/card';
+	import { toast } from '@epicenter/ui/sonner';
 	import ArrowLeft from '@lucide/svelte/icons/arrow-left';
 	import CheckIcon from '@lucide/svelte/icons/check';
 	import SettingsIcon from '@lucide/svelte/icons/settings';
-	import { toast } from '@epicenter/ui/sonner';
 	import { goto } from '$app/navigation';
 	import { desktopServices } from '$lib/services/desktop';
 	import { asShellCommand } from '$lib/services/desktop/command';

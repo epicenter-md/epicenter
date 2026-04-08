@@ -17,16 +17,16 @@ import {
 	type SyncMessageType,
 } from '@epicenter/sync';
 import * as decoding from 'lib0/decoding';
-import { tryAsync } from 'wellcrafted/result';
 import type { Result } from 'wellcrafted/result';
+import { tryAsync } from 'wellcrafted/result';
 import {
 	applyAwarenessUpdate,
 	encodeAwarenessUpdate,
 	removeAwarenessStates,
 } from 'y-protocols/awareness';
 import type { DefaultRpcMap, RpcActionMap } from '../../rpc/types.js';
+import { type Actions, isAction } from '../../shared/actions.js';
 import type { SharedExtensionContext } from '../../workspace/types.js';
-import { isAction, type Actions } from '../../shared/actions.js';
 import { broadcastChannelSync } from './broadcast-channel.js';
 
 // ============================================================================
@@ -229,7 +229,9 @@ export function createSyncExtension(config: SyncExtensionConfig): (
 } {
 	return ({ ydoc: doc, awareness: ctxAwareness, whenReady: priorReady }) => {
 		const docId = doc.guid;
-		const getToken = config.getToken ? () => config.getToken!(docId) : undefined;
+		const getToken = config.getToken
+			? () => config.getToken!(docId)
+			: undefined;
 
 		const awareness = ctxAwareness.raw;
 

@@ -8,4 +8,7 @@ import { createWorkspace } from '@epicenter/workspace';
 import { indexeddbPersistence } from '@epicenter/workspace/extensions/persistence/indexeddb';
 import { whisperingDefinition } from './workspace/definition';
 
-export const workspace = createWorkspace(whisperingDefinition).withExtension('persistence', indexeddbPersistence);
+export const workspace = createWorkspace(whisperingDefinition).withExtension(
+	'persistence',
+	indexeddbPersistence,
+);

@@ -11,10 +11,13 @@ import { type } from 'arktype';
 import { createStorageState } from './storage-state.svelte';
 
 /** Whether search matching is case-sensitive. */
-export const searchCaseSensitive = createStorageState('local:search.caseSensitive', {
-	fallback: false,
-	schema: type('boolean'),
-});
+export const searchCaseSensitive = createStorageState(
+	'local:search.caseSensitive',
+	{
+		fallback: false,
+		schema: type('boolean'),
+	},
+);
 
 /** Whether the search query is interpreted as a regular expression. */
 export const searchRegex = createStorageState('local:search.regex', {

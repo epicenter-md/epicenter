@@ -1,7 +1,7 @@
 /** @module @epicenter/cli — Public API for the Epicenter CLI package. */
 
-export { createAuthApi, type AuthApi } from './auth/api';
-export { createSessionStore, type AuthSession } from './auth/store';
+export { type AuthApi, createAuthApi } from './auth/api';
+export { type AuthSession, createSessionStore } from './auth/store';
 export { createCLI, resolveEpicenterHome } from './cli';
 export { createCliUnlock } from './extensions';
-export { loadConfig, type LoadConfigResult } from './load-config';
+export { type LoadConfigResult, loadConfig } from './load-config';

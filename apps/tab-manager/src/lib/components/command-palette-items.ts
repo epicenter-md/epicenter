@@ -18,6 +18,7 @@
 
 import type { CommandPaletteItem } from '@epicenter/ui/command-palette';
 import { confirmationDialog } from '@epicenter/ui/confirmation-dialog';
+import { toastOnError } from '@epicenter/ui/sonner';
 import ArchiveIcon from '@lucide/svelte/icons/archive';
 import ArrowDownAZIcon from '@lucide/svelte/icons/arrow-down-a-z';
 import CopyMinusIcon from '@lucide/svelte/icons/copy-minus';
@@ -27,7 +28,6 @@ import { Ok, tryAsync } from 'wellcrafted/result';
 import { browserState } from '$lib/state/browser-state.svelte';
 import { savedTabState } from '$lib/state/saved-tab-state.svelte';
 import { findDuplicateGroups, groupTabsByDomain } from '$lib/utils/tab-helpers';
-import { toastOnError } from '@epicenter/ui/sonner';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -37,9 +37,7 @@ import { toastOnError } from '@epicenter/ui/sonner';
  * Get all tabs across all windows as a flat array.
  */
 function getAllTabs() {
-	return browserState.windows.flatMap((w) =>
-		browserState.tabsByWindow(w.id),
-	);
+	return browserState.windows.flatMap((w) => browserState.tabsByWindow(w.id));
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -131,7 +129,9 @@ export const items: CommandPaletteItem[] = [
 		async onSelect() {
 			for (const window of browserState.windows) {
 				const tabs = browserState.tabsByWindow(window.id);
-				const sorted = [...tabs].sort((a, b) => (a.title ?? '').localeCompare(b.title ?? ''));
+				const sorted = [...tabs].sort((a, b) =>
+					(a.title ?? '').localeCompare(b.title ?? ''),
+				);
 
 				for (let i = 0; i < sorted.length; i++) {
 					const tab = sorted[i];
@@ -197,7 +197,9 @@ export const items: CommandPaletteItem[] = [
 				async onConfirm() {
 					const tabsWithUrls = allTabs.filter((tab) => tab.url);
 					await Promise.allSettled(
-						tabsWithUrls.map((tab) => savedTabState.save(tab).then(toastOnError)),
+						tabsWithUrls.map((tab) =>
+							savedTabState.save(tab).then(toastOnError),
+						),
 					);
 				},
 			});

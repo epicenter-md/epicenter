@@ -2,6 +2,7 @@
 	import { Badge } from '@epicenter/ui/badge';
 	import { Button } from '@epicenter/ui/button';
 	import { Progress } from '@epicenter/ui/progress';
+	import { toast } from '@epicenter/ui/sonner';
 	import { Spinner } from '@epicenter/ui/spinner';
 	import CheckIcon from '@lucide/svelte/icons/check';
 	import Download from '@lucide/svelte/icons/download';
@@ -15,7 +16,6 @@
 		writeFile,
 	} from '@tauri-apps/plugin-fs';
 	import { fetch } from '@tauri-apps/plugin-http';
-	import { toast } from '@epicenter/ui/sonner';
 	import { extractErrorMessage } from 'wellcrafted/error';
 	import { Ok, tryAsync } from 'wellcrafted/result';
 	import { PATHS } from '$lib/constants/paths';
@@ -318,8 +318,8 @@
 				// Clear settings if this was the active model
 				const settingsKey = `transcription.${model.engine}.modelPath` as const;
 
-			if (deviceConfig.get(settingsKey) === path) {
-				deviceConfig.set(settingsKey, '');
+				if (deviceConfig.get(settingsKey) === path) {
+					deviceConfig.set(settingsKey, '');
 				}
 
 				modelState = { type: 'not-downloaded' };

@@ -16,12 +16,12 @@ import type {
 	TransformationRunCompleted,
 	TransformationRunFailed,
 	TransformationRunRunning,
-	} from '$lib/services/db';
+} from '$lib/services/db';
 import { deviceConfig } from '$lib/state/device-config.svelte';
 import { recordings } from '$lib/state/recordings.svelte';
 import type { TransformationStep } from '$lib/state/transformation-steps.svelte';
 import { transformationSteps } from '$lib/state/transformation-steps.svelte';
-	import type { Transformation } from '$lib/state/transformations.svelte';
+import type { Transformation } from '$lib/state/transformations.svelte';
 import { asTemplateString, interpolateTemplate } from '$lib/utils/template';
 
 /**
@@ -30,16 +30,46 @@ import { asTemplateString, interpolateTemplate } from '$lib/utils/template';
  * Custom is handled separately because it has per-step baseUrl logic.
  */
 const STANDARD_PROVIDER_CONFIG = {
-	OpenAI: { service: services.completions.openai, apiKeyPath: 'apiKeys.openai', modelKey: 'openaiModel' },
-	Groq: { service: services.completions.groq, apiKeyPath: 'apiKeys.groq', modelKey: 'groqModel' },
-	Anthropic: { service: services.completions.anthropic, apiKeyPath: 'apiKeys.anthropic', modelKey: 'anthropicModel' },
-	Google: { service: services.completions.google, apiKeyPath: 'apiKeys.google', modelKey: 'googleModel' },
-	OpenRouter: { service: services.completions.openrouter, apiKeyPath: 'apiKeys.openrouter', modelKey: 'openrouterModel' },
-} as const satisfies Record<string, {
-	service: { complete: (opts: { apiKey: string; model: string; systemPrompt: string; userPrompt: string }) => Promise<Result<string, { message: string }>> };
-	apiKeyPath: Parameters<typeof deviceConfig.get>[0];
-	modelKey: keyof TransformationStep;
-}>;
+	OpenAI: {
+		service: services.completions.openai,
+		apiKeyPath: 'apiKeys.openai',
+		modelKey: 'openaiModel',
+	},
+	Groq: {
+		service: services.completions.groq,
+		apiKeyPath: 'apiKeys.groq',
+		modelKey: 'groqModel',
+	},
+	Anthropic: {
+		service: services.completions.anthropic,
+		apiKeyPath: 'apiKeys.anthropic',
+		modelKey: 'anthropicModel',
+	},
+	Google: {
+		service: services.completions.google,
+		apiKeyPath: 'apiKeys.google',
+		modelKey: 'googleModel',
+	},
+	OpenRouter: {
+		service: services.completions.openrouter,
+		apiKeyPath: 'apiKeys.openrouter',
+		modelKey: 'openrouterModel',
+	},
+} as const satisfies Record<
+	string,
+	{
+		service: {
+			complete: (opts: {
+				apiKey: string;
+				model: string;
+				systemPrompt: string;
+				userPrompt: string;
+			}) => Promise<Result<string, { message: string }>>;
+		};
+		apiKeyPath: Parameters<typeof deviceConfig.get>[0];
+		modelKey: keyof TransformationStep;
+	}
+>;
 
 export const TransformError = defineErrors({
 	InvalidInput: ({ message }: { message: string }) => ({ message }),
@@ -132,7 +162,9 @@ export const transformer = {
 				});
 			}
 
-			const steps = transformationSteps.getByTransformationId(transformation.id);
+			const steps = transformationSteps.getByTransformationId(
+				transformation.id,
+			);
 
 			const { data: transformationRun, error: transformationRunError } =
 				await runTransformation({
@@ -177,7 +209,8 @@ async function handleStep({
 		}
 
 		case 'prompt_transform': {
-			const { inferenceProvider, systemPromptTemplate, userPromptTemplate } = step;
+			const { inferenceProvider, systemPromptTemplate, userPromptTemplate } =
+				step;
 			const systemPrompt = interpolateTemplate(
 				asTemplateString(systemPromptTemplate),
 				{ input },
@@ -191,7 +224,9 @@ async function handleStep({
 			if (inferenceProvider === 'Custom') {
 				const model = step.customModel?.trim();
 				const stepBaseUrl = step.customBaseUrl?.trim();
-				const defaultBaseUrl = deviceConfig.get('completion.custom.baseUrl')?.trim();
+				const defaultBaseUrl = deviceConfig
+					.get('completion.custom.baseUrl')
+					?.trim();
 				const baseUrl = stepBaseUrl || defaultBaseUrl || '';
 
 				const { data, error } = await services.completions.custom.complete({

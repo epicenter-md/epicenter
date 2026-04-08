@@ -1,11 +1,12 @@
 <script lang="ts">
 	import * as Card from '@epicenter/ui/card';
-	import { Skeleton } from '@epicenter/ui/skeleton';
 	import * as Empty from '@epicenter/ui/empty';
+	import { Skeleton } from '@epicenter/ui/skeleton';
 	import * as Table from '@epicenter/ui/table';
 	import { createQuery } from '@tanstack/svelte-query';
 	import { FEATURE_IDS } from '$lib/constants';
 	import { usageQueryOptions } from '$lib/query/billing';
+
 	const usage = createQuery(() =>
 		usageQueryOptions({
 			range: '30d',
@@ -57,7 +58,9 @@
 			<Empty.Root class="py-4 border-0">
 				<Empty.Content>
 					<Empty.Title>No usage data yet</Empty.Title>
-					<Empty.Description>Your most-used models will appear here.</Empty.Description>
+					<Empty.Description
+						>Your most-used models will appear here.</Empty.Description
+					>
 				</Empty.Content>
 			</Empty.Root>
 		{:else}
@@ -73,7 +76,7 @@
 						<Table.Row>
 							<Table.Cell class="font-mono text-xs">{model}</Table.Cell>
 							<Table.Cell class="text-right tabular-nums">
-						{(credits as number).toLocaleString()}
+								{(credits as number).toLocaleString()}
 							</Table.Cell>
 						</Table.Row>
 					{/each}

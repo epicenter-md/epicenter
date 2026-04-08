@@ -18,8 +18,8 @@
 	import AiChat from './chat/AiChat.svelte';
 	import ContentPanel from './editor/ContentPanel.svelte';
 	import StatusBar from './editor/StatusBar.svelte';
-	import SearchPanel from './search/SearchPanel.svelte';
 	import SidebarHeader from './SidebarHeader.svelte';
+	import SearchPanel from './search/SearchPanel.svelte';
 	import TerminalPanel from './terminal/TerminalPanel.svelte';
 	import FileTree from './tree/FileTree.svelte';
 
@@ -38,7 +38,8 @@
 		onboarded = true;
 		sampleDataLoader.load().then(() => {
 			const readme = fsState.walkTree((id, row) => {
-				if (row.type === 'file' && row.name === 'README.md') return { collect: id, descend: false };
+				if (row.type === 'file' && row.name === 'README.md')
+					return { collect: id, descend: false };
 				return { descend: true };
 			});
 			if (readme[0]) fsState.selectFile(readme[0]);

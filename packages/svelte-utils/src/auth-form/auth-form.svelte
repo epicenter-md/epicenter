@@ -5,7 +5,11 @@
 	import { Spinner } from '@epicenter/ui/spinner';
 	import type { AuthClient } from '../auth/create-auth.svelte.js';
 
-	let { auth, syncNoun, onSocialSignIn }: {
+	let {
+		auth,
+		syncNoun,
+		onSocialSignIn,
+	}: {
 		/** The auth client instance from `createAuth()`. */
 		auth: AuthClient;
 		/** Noun describing what gets synced, e.g. "tabs" or "notes". */

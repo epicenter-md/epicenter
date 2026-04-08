@@ -1,14 +1,14 @@
 <script lang="ts">
 	import type { FileId } from '@epicenter/filesystem';
+	import { Button } from '@epicenter/ui/button';
 	import { confirmationDialog } from '@epicenter/ui/confirmation-dialog';
 	import * as Empty from '@epicenter/ui/empty';
+	import { Spinner } from '@epicenter/ui/spinner';
 	import * as TreeView from '@epicenter/ui/tree-view';
 	import { fsState } from '$lib/state/fs-state.svelte';
+	import { sampleDataLoader } from '$lib/utils/load-sample-data.svelte';
 	import FileTreeItem from './FileTreeItem.svelte';
 	import InlineNameInput from './InlineNameInput.svelte';
-	import { Button } from '@epicenter/ui/button';
-	import { Spinner } from '@epicenter/ui/spinner';
-	import { sampleDataLoader } from '$lib/utils/load-sample-data.svelte';
 
 	/**
 	 * Flat list of visible item IDs in visual order.
@@ -140,14 +140,29 @@
 	<Empty.Root class="border-0">
 		<Empty.Header>
 			<Empty.Title>No files yet</Empty.Title>
-			<Empty.Description>Create files or load sample data to get started</Empty.Description>
+			<Empty.Description
+				>Create files or load sample data to get started</Empty.Description
+			>
 		</Empty.Header>
-		<Button variant="outline" size="sm" onclick={() => sampleDataLoader.load()} disabled={sampleDataLoader.seeding}>
-			{#if sampleDataLoader.seeding}<Spinner class="size-3.5" />{:else}Load Sample Data{/if}
+		<Button
+			variant="outline"
+			size="sm"
+			onclick={() => sampleDataLoader.load()}
+			disabled={sampleDataLoader.seeding}
+		>
+			{#if sampleDataLoader.seeding}
+				<Spinner class="size-3.5" />
+			{:else}
+				Load Sample Data
+			{/if}
 		</Button>
 	</Empty.Root>
 {:else}
-	<TreeView.Root tabindex={0} aria-label="File explorer" onkeydown={handleKeydown}>
+	<TreeView.Root
+		tabindex={0}
+		aria-label="File explorer"
+		onkeydown={handleKeydown}
+	>
 		{#each fsState.rootChildIds as childId (childId)}
 			<FileTreeItem id={childId} />
 		{/each}

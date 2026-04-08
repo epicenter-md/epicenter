@@ -5,8 +5,8 @@
  */
 
 import { join } from 'node:path';
-import { output, outputError } from '../util/format-output';
 import { defineCommand } from '../util/command';
+import { output, outputError } from '../util/format-output';
 
 // ─── Init ────────────────────────────────────────────────────────────────────
 
@@ -39,68 +39,68 @@ const GITIGNORE_TEMPLATE = `# Epicenter runtime data (persistence, SQLite, logs)
  * ```
  */
 export const initCommand = defineCommand({
-		command: 'init',
-		describe: 'Initialize a new Epicenter project',
-		builder: (y) =>
-			y.option('dir', {
-				type: 'string',
-				default: '.',
-				alias: 'C',
-				description: 'Directory to initialize (default: current directory)',
-			}),
-		handler: async (argv: any) => {
-			const dir = argv.dir as string;
-			const created: string[] = [];
-			const skipped: string[] = [];
+	command: 'init',
+	describe: 'Initialize a new Epicenter project',
+	builder: (y) =>
+		y.option('dir', {
+			type: 'string',
+			default: '.',
+			alias: 'C',
+			description: 'Directory to initialize (default: current directory)',
+		}),
+	handler: async (argv: any) => {
+		const dir = argv.dir as string;
+		const created: string[] = [];
+		const skipped: string[] = [];
 
-			try {
-				// epicenter.config.ts
-				const configPath = join(dir, 'epicenter.config.ts');
-				if (await Bun.file(configPath).exists()) {
-					skipped.push('epicenter.config.ts');
-				} else {
-					await Bun.write(configPath, CONFIG_TEMPLATE);
-					created.push('epicenter.config.ts');
-				}
-
-				// package.json
-				const pkgPath = join(dir, 'package.json');
-				if (await Bun.file(pkgPath).exists()) {
-					skipped.push('package.json');
-				} else {
-					const pkg = {
-						name: 'epicenter-project',
-						private: true,
-						dependencies: {
-							'@epicenter/workspace': 'latest',
-						},
-					};
-					await Bun.write(pkgPath, JSON.stringify(pkg, null, 2) + '\n');
-					created.push('package.json');
-				}
-
-				// .gitignore — append if exists, create if not
-				const gitignorePath = join(dir, '.gitignore');
-				if (await Bun.file(gitignorePath).exists()) {
-					const existing = await Bun.file(gitignorePath).text();
-					if (existing.includes('.epicenter/')) {
-						skipped.push('.gitignore');
-					} else {
-						await Bun.write(
-							gitignorePath,
-							existing.trimEnd() + '\n\n' + GITIGNORE_TEMPLATE,
-						);
-						created.push('.gitignore (appended)');
-					}
-				} else {
-					await Bun.write(gitignorePath, GITIGNORE_TEMPLATE);
-					created.push('.gitignore');
-				}
-
-				output({ created, skipped });
-			} catch (err) {
-				outputError(err instanceof Error ? err.message : String(err));
-				process.exitCode = 1;
+		try {
+			// epicenter.config.ts
+			const configPath = join(dir, 'epicenter.config.ts');
+			if (await Bun.file(configPath).exists()) {
+				skipped.push('epicenter.config.ts');
+			} else {
+				await Bun.write(configPath, CONFIG_TEMPLATE);
+				created.push('epicenter.config.ts');
 			}
-		},
-	});
+
+			// package.json
+			const pkgPath = join(dir, 'package.json');
+			if (await Bun.file(pkgPath).exists()) {
+				skipped.push('package.json');
+			} else {
+				const pkg = {
+					name: 'epicenter-project',
+					private: true,
+					dependencies: {
+						'@epicenter/workspace': 'latest',
+					},
+				};
+				await Bun.write(pkgPath, JSON.stringify(pkg, null, 2) + '\n');
+				created.push('package.json');
+			}
+
+			// .gitignore — append if exists, create if not
+			const gitignorePath = join(dir, '.gitignore');
+			if (await Bun.file(gitignorePath).exists()) {
+				const existing = await Bun.file(gitignorePath).text();
+				if (existing.includes('.epicenter/')) {
+					skipped.push('.gitignore');
+				} else {
+					await Bun.write(
+						gitignorePath,
+						existing.trimEnd() + '\n\n' + GITIGNORE_TEMPLATE,
+					);
+					created.push('.gitignore (appended)');
+				}
+			} else {
+				await Bun.write(gitignorePath, GITIGNORE_TEMPLATE);
+				created.push('.gitignore');
+			}
+
+			output({ created, skipped });
+		} catch (err) {
+			outputError(err instanceof Error ? err.message : String(err));
+			process.exitCode = 1;
+		}
+	},
+});

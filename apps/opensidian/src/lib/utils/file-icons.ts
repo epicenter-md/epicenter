@@ -10,8 +10,9 @@
  * <Icon class="h-4 w-4" />
  * ```
  */
-import FileCode from '@lucide/svelte/icons/file-code';
+
 import FileIcon from '@lucide/svelte/icons/file';
+import FileCode from '@lucide/svelte/icons/file-code';
 import FileJson from '@lucide/svelte/icons/file-json';
 import FileText from '@lucide/svelte/icons/file-text';
 

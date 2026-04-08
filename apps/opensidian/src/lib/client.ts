@@ -1,4 +1,3 @@
-import { actionsToAiTools } from '@epicenter/workspace/ai';
 import { APP_URLS } from '@epicenter/constants/vite';
 import { createSqliteIndex, createYjsFileSystem } from '@epicenter/filesystem';
 import { createSkillsWorkspace } from '@epicenter/skills';
@@ -8,6 +7,7 @@ import {
 	defineMutation,
 	defineQuery,
 } from '@epicenter/workspace';
+import { actionsToAiTools } from '@epicenter/workspace/ai';
 import { indexeddbPersistence } from '@epicenter/workspace/extensions/persistence/indexeddb';
 import {
 	createSyncExtension,

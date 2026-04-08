@@ -6,7 +6,7 @@
 	import { createMutation, createQuery } from '@tanstack/svelte-query';
 	import { ALWAYS_ON_TOP_MODE_OPTIONS } from '$lib/constants/ui';
 	import { rpc } from '$lib/query';
-import { desktopRpc } from '$lib/query/desktop';
+	import { desktopRpc } from '$lib/query/desktop';
 	import { settings } from '$lib/state/settings.svelte';
 
 	const retentionItems = [
@@ -24,9 +24,8 @@ import { desktopRpc } from '$lib/query/desktop';
 	];
 
 	const retentionLabel = $derived(
-		retentionItems.find(
-			(i) => i.value === settings.get('retention.strategy'),
-		)?.label,
+		retentionItems.find((i) => i.value === settings.get('retention.strategy'))
+			?.label,
 	);
 
 	const maxRecordingLabel = $derived(
@@ -236,6 +235,5 @@ import { desktopRpc } from '$lib/query/desktop';
 				</Select.Root>
 			</Field.Field>
 		{/if}
-
 	</Field.Group>
 </Field.Set>

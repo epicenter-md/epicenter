@@ -1,13 +1,16 @@
-export { computeMidpoint, generateInitialOrders } from '../shared/fractional-index.js';
+export {
+	computeMidpoint,
+	generateInitialOrders,
+} from '../shared/fractional-index.js';
 export { populateFragmentFromMarkdown } from './richtext.js';
 export {
 	parseSheetFromCsv,
-	serializeSheetToCsv,
 	type SheetBinding,
+	serializeSheetToCsv,
 } from './sheet.js';
 export {
-	createTimeline,
 	type ContentType,
+	createTimeline,
 	type RichTextEntry,
 	type SheetEntry,
 	type TextEntry,

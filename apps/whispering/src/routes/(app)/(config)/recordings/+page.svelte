@@ -9,10 +9,10 @@
 	import { CopyButton } from '@epicenter/ui/copy-button';
 	import * as DropdownMenu from '@epicenter/ui/dropdown-menu';
 	import * as Empty from '@epicenter/ui/empty';
-	import * as SectionHeader from '@epicenter/ui/section-header';
 	import { Input } from '@epicenter/ui/input';
 	import { Label } from '@epicenter/ui/label';
 	import * as Modal from '@epicenter/ui/modal';
+	import * as SectionHeader from '@epicenter/ui/section-header';
 	import * as Table from '@epicenter/ui/table';
 	import { SelectAllPopover, SortableTableHeader } from '@epicenter/ui/table';
 	import { Textarea } from '@epicenter/ui/textarea';
@@ -52,7 +52,7 @@
 	import { PATHS } from '$lib/constants/paths';
 	import { rpc } from '$lib/query';
 	import { services } from '$lib/services';
-	import { recordings, type Recording } from '$lib/state/recordings.svelte';
+	import { type Recording, recordings } from '$lib/state/recordings.svelte';
 	import { createCopyFn } from '$lib/utils/createCopyFn';
 	import { recordingActions } from '$lib/utils/recording-actions';
 	import LatestTransformationRunOutputByRecordingId from './LatestTransformationRunOutputByRecordingId.svelte';
@@ -189,14 +189,14 @@
 							title: 'Delete recording',
 							description: 'Are you sure you want to delete this recording?',
 							confirm: { text: 'Delete', variant: 'destructive' },
-									onConfirm: () => {
-										services.db.recordings.revokeAudioUrl(row.original.id);
-										recordings.delete(row.original.id);
-										rpc.notify.success({
-											title: 'Deleted recording!',
-											description: 'Your recording has been deleted.',
-										});
-									},
+							onConfirm: () => {
+								services.db.recordings.revokeAudioUrl(row.original.id);
+								recordings.delete(row.original.id);
+								rpc.notify.success({
+									title: 'Deleted recording!',
+									description: 'Your recording has been deleted.',
+								});
+							},
 						});
 					},
 				});
@@ -565,7 +565,7 @@
 								bind:checked={() => column.getIsVisible(),
 									(value) => column.toggleVisibility(!!value)}
 							>
-							{(column.columnDef.meta as { label?: string })?.label ?? column.id}
+								{(column.columnDef.meta as { label?: string })?.label ?? column.id}
 							</DropdownMenu.CheckboxItem>
 						{/each}
 					</DropdownMenu.Content>

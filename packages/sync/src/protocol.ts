@@ -438,7 +438,9 @@ export function decodeSyncStatus(data: Uint8Array): number {
 	const decoder = decoding.createDecoder(data);
 	const messageType = decoding.readVarUint(decoder);
 	if (messageType !== MESSAGE_TYPE.SYNC_STATUS) {
-		throw new Error(`Expected SYNC_STATUS message (${MESSAGE_TYPE.SYNC_STATUS}), got ${messageType}`);
+		throw new Error(
+			`Expected SYNC_STATUS message (${MESSAGE_TYPE.SYNC_STATUS}), got ${messageType}`,
+		);
 	}
 	return decoding.readVarUint(decoder);
 }
@@ -564,7 +566,9 @@ export function decodeRpcMessage(data: Uint8Array): DecodedRpcMessage {
 	const decoder = decoding.createDecoder(data);
 	const messageType = decoding.readVarUint(decoder);
 	if (messageType !== MESSAGE_TYPE.RPC) {
-		throw new Error(`Expected RPC message (${MESSAGE_TYPE.RPC}), got ${messageType}`);
+		throw new Error(
+			`Expected RPC message (${MESSAGE_TYPE.RPC}), got ${messageType}`,
+		);
 	}
 
 	return decodeRpcPayload(decoder);
@@ -580,9 +584,7 @@ export function decodeRpcMessage(data: Uint8Array): DecodedRpcMessage {
  * @param decoder - A lib0 decoder positioned after the message-type varint
  * @returns Decoded RPC message with type discriminator
  */
-export function decodeRpcPayload(
-	decoder: decoding.Decoder,
-): DecodedRpcMessage {
+export function decodeRpcPayload(decoder: decoding.Decoder): DecodedRpcMessage {
 	const rpcType = decoding.readVarUint(decoder);
 
 	switch (rpcType) {
@@ -593,7 +595,14 @@ export function decodeRpcPayload(
 			const action = decoding.readVarString(decoder);
 			const jsonBytes = decoding.readVarUint8Array(decoder);
 			const input = JSON.parse(new TextDecoder().decode(jsonBytes));
-			return { type: 'request', requestId, targetClientId, requesterClientId, action, input };
+			return {
+				type: 'request',
+				requestId,
+				targetClientId,
+				requesterClientId,
+				action,
+				input,
+			};
 		}
 		case RPC_TYPE.RESPONSE: {
 			const requestId = decoding.readVarUint(decoder);

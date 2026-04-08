@@ -22,7 +22,10 @@
 		}),
 	);
 
-	function update(field: 'name' | 'description' | 'license' | 'compatibility', value: string) {
+	function update(
+		field: 'name' | 'description' | 'license' | 'compatibility',
+		value: string,
+	) {
 		skillsState.updateSkill(skill.id, {
 			[field]: value || undefined,
 		});
@@ -34,7 +37,8 @@
 		<h3 class="text-sm font-medium text-muted-foreground">Skill Metadata</h3>
 		{#if errors.length > 0}
 			<Badge variant="destructive">
-				{errors.length} error{errors.length > 1 ? 's' : ''}
+				{errors.length}
+				error{errors.length > 1 ? 's' : ''}
 			</Badge>
 		{/if}
 	</div>
@@ -50,7 +54,9 @@
 					class="font-mono text-sm"
 				/>
 			</Field.Content>
-			<Field.Description>Lowercase, hyphens only (1–64 chars)</Field.Description>
+			<Field.Description
+				>Lowercase, hyphens only (1–64 chars)</Field.Description
+			>
 		</Field.Field>
 
 		<Field.Field>
@@ -76,7 +82,9 @@
 				class="resize-none"
 			/>
 		</Field.Content>
-		<Field.Description>{skill.description.length}/1024 characters</Field.Description>
+		<Field.Description
+			>{skill.description.length}/1024 characters</Field.Description
+		>
 	</Field.Field>
 
 	<Field.Field>
@@ -88,7 +96,9 @@
 				placeholder="Claude Code, OpenCode, Cursor..."
 			/>
 		</Field.Content>
-		<Field.Description>Which agents/tools this skill targets (optional, ≤500 chars)</Field.Description>
+		<Field.Description
+			>Which agents/tools this skill targets (optional, ≤500 chars)</Field.Description
+		>
 	</Field.Field>
 
 	{#if errors.length > 0}

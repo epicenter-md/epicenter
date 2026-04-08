@@ -190,9 +190,15 @@ export const fs = createYjsFileSystem(workspace.tables.files, workspace.document
 			<!-- Row 1: Edits → Y.Doc → IndexedDB -->
 			<div class="flex items-center gap-3">
 				<Badge variant="outline" class="px-3 py-1.5">Your edits</Badge>
-				<ArrowRight aria-hidden="true" class="text-muted-foreground size-4 shrink-0" />
+				<ArrowRight
+					aria-hidden="true"
+					class="text-muted-foreground size-4 shrink-0"
+				/>
 				<Badge variant="default" class="px-3 py-1.5">Y.Doc (CRDT)</Badge>
-				<ArrowRight aria-hidden="true" class="text-muted-foreground size-4 shrink-0" />
+				<ArrowRight
+					aria-hidden="true"
+					class="text-muted-foreground size-4 shrink-0"
+				/>
 				<Badge variant="outline" class="px-3 py-1.5">IndexedDB</Badge>
 			</div>
 
@@ -219,14 +225,24 @@ export const fs = createYjsFileSystem(workspace.tables.files, workspace.document
 	<section>
 		<h2 class="text-2xl font-semibold tracking-tight">The entire data layer</h2>
 		<p class="text-muted-foreground mt-3 leading-relaxed">
-			The data layer is a handful of files under <code class="bg-muted rounded px-1.5 py-0.5 font-mono text-sm">src/lib/workspace/</code> and <code class="bg-muted rounded px-1.5 py-0.5 font-mono text-sm">src/lib/client.ts</code>:
+			The data layer is a handful of files under
+			<code class="bg-muted rounded px-1.5 py-0.5 font-mono text-sm"
+				>src/lib/workspace/</code
+			>
+			and
+			<code class="bg-muted rounded px-1.5 py-0.5 font-mono text-sm"
+				>src/lib/client.ts</code
+			>:
 		</p>
 		<Card.Root class="mt-6 overflow-hidden">
 			<!-- File header bar -->
 			<Card.Header class="border-b px-4 py-2">
 				<div class="flex items-center justify-between">
 					<div class="flex items-center gap-2">
-						<FileText aria-hidden="true" class="text-muted-foreground size-3.5" />
+						<FileText
+							aria-hidden="true"
+							class="text-muted-foreground size-3.5"
+						/>
 						<span class="font-mono text-sm">client.ts</span>
 					</div>
 					<div class="flex items-center gap-2">
@@ -284,7 +300,10 @@ export const fs = createYjsFileSystem(workspace.tables.files, workspace.document
 				<Card.Root>
 					<Card.Header>
 						<div class="flex items-center gap-2">
-							<capability.icon aria-hidden="true" class="text-muted-foreground size-4" />
+							<capability.icon
+								aria-hidden="true"
+								class="text-muted-foreground size-4"
+							/>
 							<Card.Title class="text-base">{capability.title}</Card.Title>
 						</div>
 						<Card.Description class="leading-relaxed">

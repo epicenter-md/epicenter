@@ -1,17 +1,17 @@
 <script lang="ts">
+	import { fromKv, fromTable } from '@epicenter/svelte';
 	import { Button } from '@epicenter/ui/button';
 	import { SidebarProvider } from '@epicenter/ui/sidebar';
 	import type { DocumentHandle } from '@epicenter/workspace';
 	import { dateTimeStringNow, generateId } from '@epicenter/workspace';
-	import { fromKv, fromTable } from '@epicenter/svelte';
 	import ClockIcon from '@lucide/svelte/icons/clock';
 	import TableIcon from '@lucide/svelte/icons/table-2';
 	import type * as Y from 'yjs';
+	import { workspace } from '$lib/client';
 	import EntriesTable from '$lib/components/EntriesTable.svelte';
 	import EntryEditor from '$lib/components/EntryEditor.svelte';
 	import EntryTimeline from '$lib/components/EntryTimeline.svelte';
 	import FujiSidebar from '$lib/components/FujiSidebar.svelte';
-	import { workspace } from '$lib/client';
 	import type { Entry, EntryId } from '$lib/workspace';
 
 	// ─── Reactive State ────────────────────────────────────────────────────────────
@@ -32,7 +32,9 @@
 	// ─── Derived State ───────────────────────────────────────────────────────────
 
 	const selectedEntry = $derived(
-		selectedEntryId.current ? entries.get(selectedEntryId.current) ?? null : null,
+		selectedEntryId.current
+			? (entries.get(selectedEntryId.current) ?? null)
+			: null,
 	);
 
 	/** Entries filtered by sidebar type/tag filters. */
@@ -51,7 +53,7 @@
 
 	// ─── Actions ─────────────────────────────────────────────────────────────────
 
-function createEntry() {
+	function createEntry() {
 		const id = generateId() as unknown as EntryId;
 		workspace.tables.entries.set({
 			id,
@@ -65,7 +67,6 @@ function createEntry() {
 		});
 		selectedEntryId.current = id;
 	}
-
 
 	// ─── Document Handle (Y.Text) ────────────────────────────────────────────────
 
@@ -95,7 +96,8 @@ function createEntry() {
 	});
 </script>
 
-<svelte:window onkeydown={(event) => {
+<svelte:window
+	onkeydown={(event) => {
 	const isInputFocused =
 		event.target instanceof HTMLInputElement ||
 		event.target instanceof HTMLTextAreaElement ||
@@ -111,7 +113,8 @@ function createEntry() {
 		event.preventDefault();
 		selectedEntryId.current = null;
 	}
-}} />
+}}
+/>
 
 <SidebarProvider>
 	<FujiSidebar

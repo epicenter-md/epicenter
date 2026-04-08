@@ -116,13 +116,15 @@ export const FFMPEG_SMALLEST_COMPRESSION_OPTIONS =
  * @example
  * const command = `ffmpeg ${FFMPEG_DEFAULT_INPUT_OPTIONS} -i device output.wav`;
  */
-export const FFMPEG_DEFAULT_INPUT_OPTIONS = ({
-	macos: '-f avfoundation',
-	windows: '-f dshow',
-	linux: '-f alsa',
-	ios: '',
-	android: '',
-} as const satisfies Record<OsType, string>)[PLATFORM_TYPE];
+export const FFMPEG_DEFAULT_INPUT_OPTIONS = (
+	{
+		macos: '-f avfoundation',
+		windows: '-f dshow',
+		linux: '-f alsa',
+		ios: '',
+		android: '',
+	} as const satisfies Record<OsType, string>
+)[PLATFORM_TYPE];
 
 /**
  * Platform-specific command to enumerate available audio recording devices.
@@ -141,13 +143,15 @@ export const FFMPEG_DEFAULT_INPUT_OPTIONS = ({
  * const command = asShellCommand(FFMPEG_ENUMERATE_DEVICES_COMMAND);
  * const result = await services.command.execute(command);
  */
-export const FFMPEG_ENUMERATE_DEVICES_COMMAND = ({
-	macos: 'ffmpeg -f avfoundation -list_devices true -i ""',
-	windows: 'ffmpeg -list_devices true -f dshow -i dummy',
-	linux: 'arecord -l',
-	ios: '',
-	android: '',
-} as const satisfies Record<OsType, string>)[PLATFORM_TYPE];
+export const FFMPEG_ENUMERATE_DEVICES_COMMAND = (
+	{
+		macos: 'ffmpeg -f avfoundation -list_devices true -i ""',
+		windows: 'ffmpeg -list_devices true -f dshow -i dummy',
+		linux: 'arecord -l',
+		ios: '',
+		android: '',
+	} as const satisfies Record<OsType, string>
+)[PLATFORM_TYPE];
 
 /**
  * Default audio device identifier for the current platform.
@@ -168,13 +172,15 @@ export const FFMPEG_ENUMERATE_DEVICES_COMMAND = ({
  * const deviceId = selectedDeviceId ?? FFMPEG_DEFAULT_DEVICE_IDENTIFIER;
  */
 export const FFMPEG_DEFAULT_DEVICE_IDENTIFIER = asDeviceIdentifier(
-	({
-		macos: '0',
-		windows: 'default',
-		linux: 'default',
-		ios: 'default',
-		android: 'default',
-	} as const satisfies Record<OsType, string>)[PLATFORM_TYPE],
+	(
+		{
+			macos: '0',
+			windows: 'default',
+			linux: 'default',
+			ios: 'default',
+			android: 'default',
+		} as const satisfies Record<OsType, string>
+	)[PLATFORM_TYPE],
 );
 
 // Persisted state - single source of truth

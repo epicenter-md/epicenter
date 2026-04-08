@@ -196,7 +196,6 @@ export function createEncryptedYkvLww<T>(
 	/** Active encryption state. `undefined` = passthrough mode. */
 	let encryption: EncryptionState | undefined;
 
-
 	if (initialKeyring) {
 		if (initialKeyring.size === 0)
 			throw new Error('Keyring must contain at least one key');
@@ -254,10 +253,7 @@ export function createEncryptedYkvLww<T>(
 		entry: YKeyValueLwwEntry<EncryptedBlob | T>,
 	): YKeyValueLwwEntry<T> | undefined => {
 		if (!isEncryptedBlob(entry.val)) return { ...entry, val: entry.val as T }; // Plaintext — nothing to decrypt
-		const json = tryDecryptBlob(
-			entry.val,
-			textEncoder.encode(key),
-		);
+		const json = tryDecryptBlob(entry.val, textEncoder.encode(key));
 		if (json !== undefined) return { ...entry, val: JSON.parse(json) as T };
 		if (!encryption) return undefined; // No key loaded yet — skip silently, activateEncryption() will catch up
 

@@ -190,7 +190,10 @@ export class YKeyValueLww<T> {
 	private changeHandlers: Set<YKeyValueLwwChangeHandler<T>> = new Set();
 
 	/** Stored observer reference for cleanup in dispose(). */
-	private _observer!: (event: Y.YArrayEvent<YKeyValueLwwEntry<T>>, transaction: Y.Transaction) => void;
+	private _observer!: (
+		event: Y.YArrayEvent<YKeyValueLwwEntry<T>>,
+		transaction: Y.Transaction,
+	) => void;
 
 	/**
 	 * Last timestamp used for monotonic clock.
@@ -540,7 +543,7 @@ export class YKeyValueLww<T> {
 		// If already pending delete, no-op
 		if (this.pendingDeletes.has(key)) return;
 
-			if (!this._map.has(key) && !wasPending) return;
+		if (!this._map.has(key) && !wasPending) return;
 
 		this.pendingDeletes.add(key);
 		this.deleteEntryByKey(key);

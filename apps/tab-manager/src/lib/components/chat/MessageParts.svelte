@@ -32,7 +32,11 @@
 			{@html DOMPurify.sanitize(marked.parse(part.content, { breaks: true, gfm: true }) as string)}
 		</div>
 	{:else if part.type === 'tool-call'}
-		<ToolCallPart part={part as TanStackToolCallPart<WorkspaceTools>} {onApproveToolCall} {onDenyToolCall} />
+		<ToolCallPart
+			part={part as TanStackToolCallPart<WorkspaceTools>}
+			{onApproveToolCall}
+			{onDenyToolCall}
+		/>
 	{:else if part.type === 'tool-result'}
 		<ToolResultPart part={part as ToolResultPartType} />
 	{:else if part.type === 'thinking'}

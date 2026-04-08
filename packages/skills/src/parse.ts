@@ -50,7 +50,10 @@ function splitFrontmatter(content: string) {
 export function parseSkillMd(
 	name: string,
 	content: string,
-): { skill: Omit<Skill, 'id'> & { id: string | undefined }; instructions: string } {
+): {
+	skill: Omit<Skill, 'id'> & { id: string | undefined };
+	instructions: string;
+} {
 	const { frontmatter, body } = splitFrontmatter(content);
 
 	// Extract id from metadata.id, then strip it so it doesn't pollute the metadata column
@@ -66,7 +69,12 @@ export function parseSkillMd(
 			string,
 			unknown
 		>;
-		if (typeof rawId === 'string' && rawId.length > 0 && rawId.trim() === rawId && !rawId.includes(':')) {
+		if (
+			typeof rawId === 'string' &&
+			rawId.length > 0 &&
+			rawId.trim() === rawId &&
+			!rawId.includes(':')
+		) {
 			parsedId = rawId;
 		}
 		// Only keep metadata if there are remaining keys after stripping id

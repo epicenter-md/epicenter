@@ -326,4 +326,3 @@ export const assetRelations = relations(asset, ({ one }) => ({
 		references: [user.id],
 	}),
 }));
-

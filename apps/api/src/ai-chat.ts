@@ -1,3 +1,4 @@
+import { AiChatError } from '@epicenter/constants/ai-chat-errors';
 import { sValidator } from '@hono/standard-validator';
 import {
 	type AnyTextAdapter,
@@ -11,7 +12,6 @@ import { createGeminiChat, GeminiTextModels } from '@tanstack/ai-gemini';
 import { createOpenaiChat, OPENAI_CHAT_MODELS } from '@tanstack/ai-openai';
 import { type } from 'arktype';
 import { createFactory } from 'hono/factory';
-import { AiChatError } from '@epicenter/constants/ai-chat-errors';
 import type { Env } from './app';
 import { createAutumn } from './autumn';
 import { FEATURE_IDS, PLAN_IDS } from './billing-plans';
@@ -33,7 +33,6 @@ const chatOptions = type({
 	'conversationId?': 'string | undefined',
 	'tools?': 'object[] | undefined',
 });
-
 
 const aiChatBody = type({
 	messages: 'object[] >= 1',

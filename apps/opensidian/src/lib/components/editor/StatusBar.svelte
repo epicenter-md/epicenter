@@ -67,7 +67,9 @@
 		</Tooltip.Provider>
 
 		{#if editorState.vimEnabled}
-			<span class="font-mono text-[10px] font-medium uppercase tracking-wider">vim</span>
+			<span class="font-mono text-[10px] font-medium uppercase tracking-wider"
+				>vim</span
+			>
 		{/if}
 
 		<Popover.Root bind:open={popoverOpen}>
@@ -87,8 +89,8 @@
 				</div>
 				{#if editorState.vimEnabled}
 					<p class="text-xs text-muted-foreground">
-						Browser extensions like Vimium can intercept Escape and break
-						vim keybindings\u2014disable them for this site if keys aren't working.
+						Browser extensions like Vimium can intercept Escape and break vim
+						keybindings\u2014disable them for this site if keys aren't working.
 					</p>
 				{/if}
 				<div class="flex items-center justify-between">
@@ -96,7 +98,12 @@
 					<LightSwitch variant="ghost" />
 				</div>
 				<div class="border-t pt-3">
-					<Button variant="ghost" size="sm" class="w-full justify-start" href="/about">
+					<Button
+						variant="ghost"
+						size="sm"
+						class="w-full justify-start"
+						href="/about"
+					>
 						About Opensidian
 					</Button>
 				</div>

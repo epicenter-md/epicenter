@@ -6,19 +6,11 @@
  * no encryption, no WebSocket sync.
  */
 
-import { createChat, fetchServerSentEvents } from '@tanstack/ai-svelte';
 import { APP_URLS } from '@epicenter/constants/vite';
 import { fromTable } from '@epicenter/svelte';
+import { createChat, fetchServerSentEvents } from '@tanstack/ai-svelte';
 import { SvelteMap } from 'svelte/reactivity';
 import type { JsonValue } from 'wellcrafted/json';
-import { auth, workspace } from '$lib/client';
-import {
-	type ChatMessageId,
-	type Conversation,
-	type ConversationId,
-	generateChatMessageId,
-	generateConversationId,
-} from '$lib/workspace';
 import {
 	DEFAULT_MODEL,
 	DEFAULT_PROVIDER,
@@ -27,6 +19,14 @@ import {
 } from '$lib/chat/providers';
 import { ZHONGWEN_SYSTEM_PROMPT } from '$lib/chat/system-prompt';
 import { toUiMessage } from '$lib/chat/ui-message';
+import { auth, workspace } from '$lib/client';
+import {
+	type ChatMessageId,
+	type Conversation,
+	type ConversationId,
+	generateChatMessageId,
+	generateConversationId,
+} from '$lib/workspace';
 
 const asChatMessageId = (id: string) => id as ChatMessageId;
 
@@ -37,7 +37,10 @@ function createChatState() {
 
 	const conversationsMap = fromTable(workspace.tables.conversations);
 	const conversations = $derived(
-		conversationsMap.values().toArray().sort((a, b) => b.updatedAt - a.updatedAt),
+		conversationsMap
+			.values()
+			.toArray()
+			.sort((a, b) => b.updatedAt - a.updatedAt),
 	);
 
 	/** Returns the ID to activate — either the first existing conversation or a newly created default. */
@@ -210,9 +213,7 @@ function createChatState() {
 			reload() {
 				const lastMessage = chat.messages.at(-1);
 				if (lastMessage?.role === 'assistant') {
-					workspace.tables.chatMessages.delete(
-						asChatMessageId(lastMessage.id),
-					);
+					workspace.tables.chatMessages.delete(asChatMessageId(lastMessage.id));
 				}
 				void chat.reload();
 			},

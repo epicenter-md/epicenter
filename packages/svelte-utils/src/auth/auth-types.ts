@@ -33,7 +33,6 @@ export const AuthSession = type({
 
 export type AuthSession = typeof AuthSession.infer;
 
-
 /** Extract a numeric HTTP status code from an untyped error object. */
 export function readStatusCode(error: unknown): number | undefined {
 	if (typeof error !== 'object' || error === null) return undefined;

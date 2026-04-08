@@ -37,9 +37,13 @@
 		disabled={handle.isLoading}
 	/>
 	{#if handle.isLoading}
-		<Button type="button" variant="outline" onclick={() => handle.stop()}>Stop</Button>
+		<Button type="button" variant="outline" onclick={() => handle.stop()}
+			>Stop</Button
+		>
 	{:else}
 		<Button type="submit" disabled={!handle.inputValue.trim()}>Send</Button>
 	{/if}
 </form>
-<p class="px-4 pb-2 text-xs text-muted-foreground">Enter to send, Shift+Enter for new line</p>
+<p class="px-4 pb-2 text-xs text-muted-foreground">
+	Enter to send, Shift+Enter for new line
+</p>

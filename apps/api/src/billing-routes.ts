@@ -13,8 +13,6 @@ import { type } from 'arktype';
 import { Hono } from 'hono';
 import type { Env } from './app';
 import { createAutumn } from './autumn';
-import { ANNUAL_PLANS, FEATURE_IDS, PLAN_IDS, PLANS } from './billing-plans';
-import { MODEL_CREDITS } from './model-costs';
 import type {
 	AggregateResponse,
 	AttachResponse,
@@ -24,6 +22,8 @@ import type {
 	PortalResponse,
 	PreviewResponse,
 } from './billing-contract';
+import { ANNUAL_PLANS, FEATURE_IDS, PLAN_IDS, PLANS } from './billing-plans';
+import { MODEL_CREDITS } from './model-costs';
 
 const billingRoutes = new Hono<Env>();
 
@@ -218,7 +218,6 @@ billingRoutes.post('/upgrade', sValidator('json', attachSchema), async (c) => {
 
 // ── Cancel subscription ──────────────────────────────────────────────────
 
-
 /**
  * POST /billing/cancel
  *
@@ -237,26 +236,21 @@ billingRoutes.post('/cancel', sValidator('json', planIdSchema), async (c) => {
 
 // ── Uncancel ─────────────────────────────────────────────────────────────
 
-
 /**
  * POST /billing/uncancel
  *
  * Reverse a pending cancellation.
  */
-billingRoutes.post(
-	'/uncancel',
-	sValidator('json', planIdSchema),
-	async (c) => {
-		const autumn = createAutumn(c.env);
-		const { planId } = c.req.valid('json');
-		const result = await autumn.billing.update({
-			customerId: c.var.user.id,
-			planId,
-			cancelAction: 'uncancel',
-		});
-		return c.json(result);
-	},
-);
+billingRoutes.post('/uncancel', sValidator('json', planIdSchema), async (c) => {
+	const autumn = createAutumn(c.env);
+	const { planId } = c.req.valid('json');
+	const result = await autumn.billing.update({
+		customerId: c.var.user.id,
+		planId,
+		cancelAction: 'uncancel',
+	});
+	return c.json(result);
+});
 
 // ── Top-up ───────────────────────────────────────────────────────────────
 

@@ -11,9 +11,8 @@
 	import { onDestroy } from 'svelte';
 	import { rpc } from '$lib/query';
 	import { services } from '$lib/services';
-	import { recordings, type Recording } from '$lib/state/recordings.svelte';
+	import { type Recording, recordings } from '$lib/state/recordings.svelte';
 	import { recordingActions } from '$lib/utils/recording-actions';
-
 
 	let { recording }: { recording: Recording } = $props();
 
@@ -209,8 +208,8 @@
 			<Button variant="outline" onclick={() => promptUserConfirmLeave()}>
 				Close
 			</Button>
-		<Button
-			onclick={() => {
+			<Button
+				onclick={() => {
 				recordings.set($state.snapshot(workingCopy));
 				rpc.notify.success({
 					title: 'Updated recording!',
@@ -218,10 +217,10 @@
 				});
 				isDialogOpen = false;
 			}}
-			disabled={!isWorkingCopyDirty}
-		>
-			Save
-		</Button>
+				disabled={!isWorkingCopyDirty}
+			>
+				Save
+			</Button>
 		</Modal.Footer>
 	</Modal.Content>
 </Modal.Root>

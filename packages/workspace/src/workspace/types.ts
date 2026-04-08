@@ -139,7 +139,6 @@ export type InferTableRow<T> = T extends {
 	? TLatest
 	: never;
 
-
 // ════════════════════════════════════════════════════════════════════════════
 // DOCUMENT CONFIG TYPES
 // ════════════════════════════════════════════════════════════════════════════
@@ -1159,10 +1158,12 @@ export type WorkspaceClientBuilder<
 		TDocExports extends Record<string, unknown>,
 	>(
 		key: K,
-		factory: (context: DocumentContext<TDocExtensions> & {
-			tableName: keyof TTableDefinitions & string;
-			documentName: AllDocumentNames<TTableDefinitions>;
-		}) =>
+		factory: (
+			context: DocumentContext<TDocExtensions> & {
+				tableName: keyof TTableDefinitions & string;
+				documentName: AllDocumentNames<TTableDefinitions>;
+			},
+		) =>
 			| (TDocExports & {
 					whenReady?: Promise<unknown>;
 					dispose?: () => MaybePromise<void>;
@@ -1214,7 +1215,6 @@ export type WorkspaceClientBuilder<
 		TActions & TNewActions
 	>;
 };
-
 
 // ════════════════════════════════════════════════════════════════════════════
 // EXTENSION TYPES

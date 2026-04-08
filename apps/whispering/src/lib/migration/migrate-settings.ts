@@ -7,9 +7,10 @@
  *
  * @see specs/20260313T163000-settings-data-migration.md
  */
-import { deviceConfig } from '$lib/state/device-config.svelte';
-import { workspace } from '$lib/client';
+
 import { Ok, tryAsync, trySync } from 'wellcrafted/result';
+import { workspace } from '$lib/client';
+import { deviceConfig } from '$lib/state/device-config.svelte';
 
 // ── Migration state ──────────────────────────────────────────────────────────
 
@@ -17,7 +18,9 @@ const MIGRATION_STATE_KEY = 'whispering:settings-migration';
 type MigrationState = 'completed' | 'not-needed';
 
 function getMigrationState(): MigrationState | null {
-	return window.localStorage.getItem(MIGRATION_STATE_KEY) as MigrationState | null;
+	return window.localStorage.getItem(
+		MIGRATION_STATE_KEY,
+	) as MigrationState | null;
 }
 
 function setMigrationState(state: MigrationState): void {
@@ -49,7 +52,9 @@ export async function migrateOldSettings(): Promise<void> {
 
 	// Read old blobs before any async work
 	const oldSettingsRaw = window.localStorage.getItem('whispering-settings');
-	const oldDeviceConfigRaw = window.localStorage.getItem('whispering-device-config');
+	const oldDeviceConfigRaw = window.localStorage.getItem(
+		'whispering-device-config',
+	);
 
 	// No old data at all — fresh install
 	if (!oldSettingsRaw && !oldDeviceConfigRaw) {
@@ -73,7 +78,10 @@ export async function migrateOldSettings(): Promise<void> {
 	const { error: readyError } = await tryAsync({
 		try: () => workspace.whenReady,
 		catch: (err) => {
-			console.warn('[settings-migration] workspace.whenReady failed, aborting:', err);
+			console.warn(
+				'[settings-migration] workspace.whenReady failed, aborting:',
+				err,
+			);
 			return Ok(undefined);
 		},
 	});
@@ -121,7 +129,10 @@ export async function migrateOldSettings(): Promise<void> {
 				const raw = oldDeviceConfig?.[newKey] ?? oldSettings?.[oldKey];
 				if (raw === undefined || raw === null) return;
 
-				(deviceConfig.set as (key: string, value: unknown) => void)(newKey, raw);
+				(deviceConfig.set as (key: string, value: unknown) => void)(
+					newKey,
+					raw,
+				);
 			},
 			catch: (err) => {
 				console.warn(`[settings-migration] device key "${oldKey}":`, err);

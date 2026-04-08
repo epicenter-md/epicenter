@@ -2,7 +2,7 @@
 	import type { Command } from '$lib/commands';
 	import type { KeyboardEventSupportedKey } from '$lib/constants/keyboard';
 	import { rpc } from '$lib/query';
-import { desktopRpc } from '$lib/query/desktop';
+	import { desktopRpc } from '$lib/query/desktop';
 	import {
 		type Accelerator,
 		pressedKeysToTauriAccelerator,

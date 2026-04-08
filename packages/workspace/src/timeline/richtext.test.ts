@@ -189,7 +189,9 @@ describe('populateFragmentFromMarkdown', () => {
 
 		const textNodes = heading.toArray();
 		expect(textNodes.length).toBe(2);
-		expect((textNodes[0] as Y.XmlText).toDelta()).toEqual([{ insert: 'Hello ' }]);
+		expect((textNodes[0] as Y.XmlText).toDelta()).toEqual([
+			{ insert: 'Hello ' },
+		]);
 		const boldText = textNodes[1] as Y.XmlText;
 		expect(boldText.toDelta()).toEqual([
 			{ insert: 'world', attributes: { bold: true } },
@@ -206,9 +208,13 @@ describe('populateFragmentFromMarkdown', () => {
 		const runs = para.toArray() as Y.XmlText[];
 		expect(runs.length).toBe(5);
 		expect(runs[0].toString()).toBe('Some ');
-		expect(runs[1].toDelta()).toEqual([{ insert: 'bold', attributes: { bold: true } }]);
+		expect(runs[1].toDelta()).toEqual([
+			{ insert: 'bold', attributes: { bold: true } },
+		]);
 		expect(runs[2].toString()).toBe(' and ');
-		expect(runs[3].toDelta()).toEqual([{ insert: 'italic', attributes: { italic: true } }]);
+		expect(runs[3].toDelta()).toEqual([
+			{ insert: 'italic', attributes: { italic: true } },
+		]);
 		expect(runs[4].toString()).toBe(' text');
 	});
 
@@ -220,7 +226,10 @@ describe('populateFragmentFromMarkdown', () => {
 		const linkText = para.toArray()[0] as Y.XmlText;
 		expect(linkText.toDelta()[0].insert).toBe('click here');
 		expect(linkText.toDelta()).toEqual([
-			{ insert: 'click here', attributes: { link: { href: 'https://example.com' } } },
+			{
+				insert: 'click here',
+				attributes: { link: { href: 'https://example.com' } },
+			},
 		]);
 	});
 
@@ -231,7 +240,9 @@ describe('populateFragmentFromMarkdown', () => {
 		const codeBlock = fragment.toArray()[0] as Y.XmlElement;
 		expect(codeBlock.nodeName).toBe('codeBlock');
 		expect(codeBlock.getAttribute('language')).toBe('typescript');
-		expect((codeBlock.toArray()[0] as Y.XmlText).toString()).toBe('const x = 1;');
+		expect((codeBlock.toArray()[0] as Y.XmlText).toString()).toBe(
+			'const x = 1;',
+		);
 	});
 
 	test('blockquote containing paragraph', () => {
@@ -242,7 +253,9 @@ describe('populateFragmentFromMarkdown', () => {
 		expect(bq.nodeName).toBe('blockquote');
 		const inner = bq.toArray()[0] as Y.XmlElement;
 		expect(inner.nodeName).toBe('paragraph');
-		expect((inner.toArray()[0] as Y.XmlText).toString()).toBe('A quoted paragraph');
+		expect((inner.toArray()[0] as Y.XmlText).toString()).toBe(
+			'A quoted paragraph',
+		);
 	});
 
 	test('bullet list', () => {
@@ -272,7 +285,9 @@ describe('populateFragmentFromMarkdown', () => {
 		const para = fragment.toArray()[0] as Y.XmlElement;
 		const runs = para.toArray() as Y.XmlText[];
 		expect(runs[0].toString()).toBe('Use ');
-		expect(runs[1].toDelta()).toEqual([{ insert: 'foo()', attributes: { code: true } }]);
+		expect(runs[1].toDelta()).toEqual([
+			{ insert: 'foo()', attributes: { code: true } },
+		]);
 		expect(runs[2].toString()).toBe(' here');
 	});
 

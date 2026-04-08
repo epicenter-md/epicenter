@@ -10,11 +10,8 @@
  * API's auth factory.
  */
 
-import type {
-	Session,
-	User,
-} from 'better-auth';
 import type { EncryptionKeys } from '@epicenter/workspace';
+import type { Session, User } from 'better-auth';
 
 /**
  * Canonical `/auth/get-session` response for Epicenter clients.

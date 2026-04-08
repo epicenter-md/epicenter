@@ -56,7 +56,8 @@ function createMockTransformation(index: number): Transformation {
 			step['find_replace.findText'] = `find-${stepIndex}`;
 			step['find_replace.replaceText'] = `replace-${stepIndex}`;
 		} else {
-			step['prompt_transform.systemPromptTemplate'] = `System prompt for step ${stepIndex}`;
+			step['prompt_transform.systemPromptTemplate'] =
+				`System prompt for step ${stepIndex}`;
 			step['prompt_transform.userPromptTemplate'] = `Transform: {{input}}`;
 		}
 		return step;
@@ -109,7 +110,10 @@ export function createMigrationTestData() {
 				);
 			}
 
-			const totalSteps = transformations.reduce((sum, t) => sum + t.steps.length, 0);
+			const totalSteps = transformations.reduce(
+				(sum, t) => sum + t.steps.length,
+				0,
+			);
 			onProgress(
 				`✅ Seed complete: ${recordings.length} recordings, ${transformations.length} transformations (${totalSteps} steps)`,
 			);

@@ -57,4 +57,3 @@ export function defineWorkspace<
 		awareness: config.awareness,
 	};
 }
-

@@ -17,7 +17,6 @@ import {
 	encodeAwarenessUpdate,
 } from 'y-protocols/awareness';
 import * as Y from 'yjs';
-import { RpcError } from './rpc-errors';
 import {
 	decodeMessageType,
 	decodeRpcMessage,
@@ -37,6 +36,7 @@ import {
 	RPC_TYPE,
 	SYNC_MESSAGE_TYPE,
 } from './protocol';
+import { RpcError } from './rpc-errors';
 
 // ============================================================================
 // MESSAGE_TYPE Constants

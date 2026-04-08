@@ -12,7 +12,6 @@
 		saveTransformationWithSteps,
 	} from '$lib/state/transformations.svelte';
 
-
 	let isModalOpen = $state(false);
 	let transformation = $state(generateDefaultTransformation());
 	let steps = $state<TransformationStep[]>([]);

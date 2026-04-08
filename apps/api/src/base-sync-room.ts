@@ -242,7 +242,9 @@ export class BaseSyncRoom extends DurableObject {
 	 *    maps to 304).
 	 * 3. Otherwise returns the binary diff the client is missing.
 	 */
-	async sync(body: Uint8Array): Promise<{ diff: Uint8Array | null; storageBytes: number }> {
+	async sync(
+		body: Uint8Array,
+	): Promise<{ diff: Uint8Array | null; storageBytes: number }> {
 		const { stateVector: clientSV, update } = decodeSyncRequest(body);
 
 		if (update.byteLength > 0) {

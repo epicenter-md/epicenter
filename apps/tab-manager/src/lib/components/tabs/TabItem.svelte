@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { Button } from '@epicenter/ui/button';
 	import * as Item from '@epicenter/ui/item';
+	import { toastOnError } from '@epicenter/ui/sonner';
 	import * as Tooltip from '@epicenter/ui/tooltip';
 	import { cn } from '@epicenter/ui/utils';
 	import ArchiveIcon from '@lucide/svelte/icons/archive';
@@ -13,11 +14,13 @@
 	import VolumeXIcon from '@lucide/svelte/icons/volume-x';
 	import XIcon from '@lucide/svelte/icons/x';
 	import { bookmarkState } from '$lib/state/bookmark-state.svelte';
-	import { browserState, type BrowserTab } from '$lib/state/browser-state.svelte';
+	import {
+		type BrowserTab,
+		browserState,
+	} from '$lib/state/browser-state.svelte';
 	import { savedTabState } from '$lib/state/saved-tab-state.svelte';
 	import { getDomain } from '$lib/utils/format';
 	import TabFavicon from './TabFavicon.svelte';
-	import { toastOnError } from '@epicenter/ui/sonner';
 
 	let { tab }: { tab: BrowserTab } = $props();
 
@@ -163,7 +166,9 @@
 						bookmarkState.toggle(tab).then(toastOnError);
 					}}
 				>
-					<StarIcon class={isBookmarked ? 'fill-amber-500 text-amber-500' : ''} />
+					<StarIcon
+						class={isBookmarked ? 'fill-amber-500 text-amber-500' : ''}
+					/>
 				</Button>
 
 				<Button

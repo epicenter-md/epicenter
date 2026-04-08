@@ -94,7 +94,9 @@ describe('serializeSheetToCsv', () => {
 		row.set('col1', 'Smith, John');
 		rows.set('row1', row);
 
-		expect(serializeSheetToCsv({ columns, rows })).toBe('Name\n"Smith, John"\n');
+		expect(serializeSheetToCsv({ columns, rows })).toBe(
+			'Name\n"Smith, John"\n',
+		);
 	});
 
 	test('escapes double quotes in cell values', () => {
@@ -109,7 +111,9 @@ describe('serializeSheetToCsv', () => {
 		row.set('col1', 'Say "hello"');
 		rows.set('row1', row);
 
-		expect(serializeSheetToCsv({ columns, rows })).toBe('Name\n"Say ""hello"""\n');
+		expect(serializeSheetToCsv({ columns, rows })).toBe(
+			'Name\n"Say ""hello"""\n',
+		);
 	});
 
 	test('escapes newlines in cell values', () => {
@@ -124,7 +128,9 @@ describe('serializeSheetToCsv', () => {
 		row.set('col1', 'Line 1\nLine 2');
 		rows.set('row1', row);
 
-		expect(serializeSheetToCsv({ columns, rows })).toBe('Text\n"Line 1\nLine 2"\n');
+		expect(serializeSheetToCsv({ columns, rows })).toBe(
+			'Text\n"Line 1\nLine 2"\n',
+		);
 	});
 
 	test('header-only (columns but no rows) returns just header line', () => {

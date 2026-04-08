@@ -2,7 +2,7 @@ import {
 	type AiChatError,
 	AiChatHttpError,
 } from '@epicenter/constants/ai-chat-errors';
-import { tryAsync, Ok } from 'wellcrafted/result';
+import { Ok, tryAsync } from 'wellcrafted/result';
 
 /**
  * Wrap an authenticated fetch client to read structured error bodies

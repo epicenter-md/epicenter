@@ -27,7 +27,7 @@ import { csvSchemas, type TableName } from './csv-schemas.js';
 import { type ParsedRedditData, parseRedditZip } from './parse.js';
 import { type RedditWorkspace, redditWorkspace } from './workspace.js';
 
-export { redditWorkspace, type RedditWorkspace };
+export { type RedditWorkspace, redditWorkspace };
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES

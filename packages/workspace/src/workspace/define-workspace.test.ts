@@ -367,15 +367,12 @@ describe('defineWorkspace', () => {
 		createWorkspace({
 			id: 'full-context-test',
 			tables: { posts: tableDef },
-		}).withExtension(
-			'inspector',
-			({ ydoc, whenReady }) => {
-				// SharedExtensionContext only has ydoc + whenReady
-				expect(ydoc).toBeDefined();
-				expect(whenReady).toBeInstanceOf(Promise);
-				return {};
-			},
-		);
+		}).withExtension('inspector', ({ ydoc, whenReady }) => {
+			// SharedExtensionContext only has ydoc + whenReady
+			expect(ydoc).toBeDefined();
+			expect(whenReady).toBeInstanceOf(Promise);
+			return {};
+		});
 	});
 
 	test('dispose runs in reverse order (LIFO)', async () => {

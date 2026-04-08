@@ -81,9 +81,7 @@ export async function syncLocalShortcutsWithSettings() {
 	const results = await Promise.all(
 		commands
 			.map((command) => {
-				const keyCombination = settings.get(
-					getLocalShortcutKey(command.id),
-				);
+				const keyCombination = settings.get(getLocalShortcutKey(command.id));
 				if (!keyCombination) {
 					return rpc.localShortcuts.unregisterCommand({
 						commandId: command.id as CommandId,
@@ -116,7 +114,7 @@ export async function syncGlobalShortcutsWithSettings() {
 	const commandsWithAccelerators = commands
 		.map((command) => {
 			const accelerator = deviceConfig.get(
-				getGlobalShortcutKey(command.id)
+				getGlobalShortcutKey(command.id),
 			) as Accelerator | null;
 			if (!accelerator) return null;
 			return { command, accelerator };

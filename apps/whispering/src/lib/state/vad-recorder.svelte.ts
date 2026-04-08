@@ -85,7 +85,9 @@ function createVadRecorder() {
 			console.log('Starting VAD recording');
 
 			// Get device ID from settings
-			const configuredDeviceId = deviceConfig.get('recording.navigator.deviceId');
+			const configuredDeviceId = deviceConfig.get(
+				'recording.navigator.deviceId',
+			);
 			const deviceId = configuredDeviceId
 				? asDeviceIdentifier(configuredDeviceId)
 				: null;

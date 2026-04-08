@@ -29,16 +29,18 @@ import type { Skill } from './tables.js';
  */
 export function serializeSkillMd(skill: Skill, instructions: string): string {
 	// Merge skill.id into metadata so it survives round-trips through disk
-	const existingMetadata = (skill.metadata !== undefined
-		? JSON.parse(skill.metadata)
-		: {}) as Record<string, string>;
+	const existingMetadata = (
+		skill.metadata !== undefined ? JSON.parse(skill.metadata) : {}
+	) as Record<string, string>;
 	const metadataWithId = { id: skill.id, ...existingMetadata };
 
 	const fm = {
 		name: skill.name,
 		description: skill.description,
 		...(skill.license !== undefined && { license: skill.license }),
-		...(skill.compatibility !== undefined && { compatibility: skill.compatibility }),
+		...(skill.compatibility !== undefined && {
+			compatibility: skill.compatibility,
+		}),
 		metadata: metadataWithId,
 		...(skill.allowedTools !== undefined && {
 			'allowed-tools': skill.allowedTools,
@@ -48,4 +50,3 @@ export function serializeSkillMd(skill: Skill, instructions: string): string {
 	const yamlStr = stringifyYaml(fm, { lineWidth: 0 });
 	return `---\n${yamlStr}---\n\n${instructions}`;
 }
-

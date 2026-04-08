@@ -1,25 +1,25 @@
 <script lang="ts">
 	import { Button } from '@epicenter/ui/button';
+	import { CommandPalette } from '@epicenter/ui/command-palette';
 	import { ConfirmationDialog } from '@epicenter/ui/confirmation-dialog';
+	import * as DropdownMenu from '@epicenter/ui/dropdown-menu';
 	import * as Empty from '@epicenter/ui/empty';
 	import { Input } from '@epicenter/ui/input';
+	import { Toaster } from '@epicenter/ui/sonner';
 	import { Spinner } from '@epicenter/ui/spinner';
 	import { Toggle } from '@epicenter/ui/toggle';
-	import * as DropdownMenu from '@epicenter/ui/dropdown-menu';
 	import * as Tooltip from '@epicenter/ui/tooltip';
+	import CaseSensitiveIcon from '@lucide/svelte/icons/case-sensitive';
+	import ChevronDownIcon from '@lucide/svelte/icons/chevron-down';
+	import RegexIcon from '@lucide/svelte/icons/regex';
 	import SearchIcon from '@lucide/svelte/icons/search';
 	import TerminalIcon from '@lucide/svelte/icons/terminal';
 	import TriangleAlertIcon from '@lucide/svelte/icons/triangle-alert';
+	import WholeWordIcon from '@lucide/svelte/icons/whole-word';
 	import XIcon from '@lucide/svelte/icons/x';
 	import ZapIcon from '@lucide/svelte/icons/zap';
-	import CaseSensitiveIcon from '@lucide/svelte/icons/case-sensitive';
-	import RegexIcon from '@lucide/svelte/icons/regex';
-	import WholeWordIcon from '@lucide/svelte/icons/whole-word';
-	import ChevronDownIcon from '@lucide/svelte/icons/chevron-down';
-	import { Toaster } from '@epicenter/ui/sonner';
 	import { ModeWatcher } from 'mode-watcher';
 	import AiDrawer from '$lib/components/AiDrawer.svelte';
-	import { CommandPalette } from '@epicenter/ui/command-palette';
 	import { items } from '$lib/components/command-palette-items';
 	import SyncStatusIndicator from '$lib/components/SyncStatusIndicator.svelte';
 	import UnifiedTabList from '$lib/components/tabs/UnifiedTabList.svelte';
@@ -30,7 +30,9 @@
 	let commandPaletteOpen = $state(false);
 	let aiDrawerOpen = $state(false);
 	let searchFocused = $state(false);
-	const isSearchActive = $derived(searchFocused || unifiedViewState.searchQuery !== '');
+	const isSearchActive = $derived(
+		searchFocused || unifiedViewState.searchQuery !== '',
+	);
 </script>
 
 {#snippet searchToggle(pressed: boolean, onPressedChange: (v: boolean) => void, Icon: typeof CaseSensitiveIcon, label: string)}
@@ -100,7 +102,9 @@
 							: "h-8 pl-8 pr-8 text-sm [&::-webkit-search-cancel-button]:hidden"}
 					/>
 					{#if isSearchActive}
-						<div class="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-0.5">
+						<div
+							class="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-0.5"
+						>
 							{#if unifiedViewState.searchQuery}
 								<button
 									type="button"
@@ -124,16 +128,24 @@
 											class="flex items-center gap-0.5 rounded-sm px-1 py-0.5 text-[10px] font-medium text-muted-foreground hover:text-foreground hover:bg-accent"
 											{...props}
 										>
-									{({ all: 'All', title: 'Title', url: 'URL' })[unifiedViewState.searchField]}
+											{({ all: 'All', title: 'Title', url: 'URL' })[unifiedViewState.searchField]}
 											<ChevronDownIcon class="size-2.5" />
 										</button>
 									{/snippet}
 								</DropdownMenu.Trigger>
 								<DropdownMenu.Content align="end" class="w-28">
-									<DropdownMenu.RadioGroup bind:value={unifiedViewState.searchField}>
-										<DropdownMenu.RadioItem value="all">All Fields</DropdownMenu.RadioItem>
-										<DropdownMenu.RadioItem value="title">Title Only</DropdownMenu.RadioItem>
-										<DropdownMenu.RadioItem value="url">URL Only</DropdownMenu.RadioItem>
+									<DropdownMenu.RadioGroup
+										bind:value={unifiedViewState.searchField}
+									>
+										<DropdownMenu.RadioItem value="all"
+											>All Fields</DropdownMenu.RadioItem
+										>
+										<DropdownMenu.RadioItem value="title"
+											>Title Only</DropdownMenu.RadioItem
+										>
+										<DropdownMenu.RadioItem value="url"
+											>URL Only</DropdownMenu.RadioItem
+										>
 									</DropdownMenu.RadioGroup>
 								</DropdownMenu.Content>
 							</DropdownMenu.Root>
@@ -186,7 +198,7 @@
 	</main>
 </Tooltip.Provider>
 <ConfirmationDialog />
-	<CommandPalette {items} bind:open={commandPaletteOpen} shortcut={null} />
+<CommandPalette {items} bind:open={commandPaletteOpen} shortcut={null} />
 <ModeWatcher />
 <Toaster position="bottom-center" richColors closeButton />
 <AiDrawer bind:open={aiDrawerOpen} />

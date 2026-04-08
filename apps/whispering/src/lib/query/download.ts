@@ -2,8 +2,8 @@ import type { Result } from 'wellcrafted/result';
 import { defineMutation } from '$lib/query/client';
 import { WhisperingErr, type WhisperingError } from '$lib/result';
 import { services } from '$lib/services';
-import type { Recording } from '$lib/state/recordings.svelte';
 import type { DownloadError } from '$lib/services/download';
+import type { Recording } from '$lib/state/recordings.svelte';
 
 export const download = {
 	downloadRecording: defineMutation({

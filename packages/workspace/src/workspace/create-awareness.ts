@@ -158,4 +158,3 @@ export function createAwareness<TDefs extends AwarenessDefinitions>(
 		raw: awareness,
 	};
 }
-

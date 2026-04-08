@@ -33,8 +33,7 @@ export function hasNavigatorLocalTranscriptionIssue({
 }): boolean {
 	if (!window.__TAURI_INTERNALS__) return false;
 
-	const isUsingNavigator =
-		deviceConfig.get('recording.method') === 'navigator';
+	const isUsingNavigator = deviceConfig.get('recording.method') === 'navigator';
 	const isUsingLocalTranscription =
 		settings.get('transcription.service') === 'whispercpp' ||
 		settings.get('transcription.service') === 'parakeet' ||

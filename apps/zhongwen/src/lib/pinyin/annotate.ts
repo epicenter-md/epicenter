@@ -20,7 +20,10 @@ export function annotateHtml(html: string): string {
 			const chars = [...match];
 			const pinyinArray = pinyin(match, { type: 'array' });
 			return chars
-				.map((char, j) => `<ruby>${char}<rp>(</rp><rt>${pinyinArray[j] ?? ''}</rt><rp>)</rp></ruby>`)
+				.map(
+					(char, j) =>
+						`<ruby>${char}<rp>(</rp><rt>${pinyinArray[j] ?? ''}</rt><rp>)</rp></ruby>`,
+				)
 				.join('');
 		});
 	}

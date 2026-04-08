@@ -416,8 +416,12 @@ describe('createSqliteMirror', () => {
 
 				await testSetup.workspace.extensions.sqlite.whenReady;
 
-				expect(await testSetup.workspace.extensions.sqlite.count('posts')).toBe(2);
-				expect(await testSetup.workspace.extensions.sqlite.count('notes')).toBe(0);
+				expect(await testSetup.workspace.extensions.sqlite.count('posts')).toBe(
+					2,
+				);
+				expect(await testSetup.workspace.extensions.sqlite.count('notes')).toBe(
+					0,
+				);
 			} finally {
 				await cleanup(testSetup);
 			}
@@ -429,7 +433,9 @@ describe('createSqliteMirror', () => {
 			try {
 				await testSetup.workspace.extensions.sqlite.whenReady;
 
-				expect(await testSetup.workspace.extensions.sqlite.count('nonexistent')).toBe(0);
+				expect(
+					await testSetup.workspace.extensions.sqlite.count('nonexistent'),
+				).toBe(0);
 			} finally {
 				await cleanup(testSetup);
 			}

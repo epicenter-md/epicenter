@@ -10,23 +10,23 @@ import Header from './table-header.svelte';
 import Row from './table-row.svelte';
 
 export {
-	Root,
 	Body,
+	Body as TableBody,
 	Caption,
+	Caption as TableCaption,
 	Cell,
+	Cell as TableCell,
 	Footer,
+	Footer as TableFooter,
 	Head,
+	Head as TableHead,
 	Header,
-	Row,
-	SelectAllPopover,
-	SortableTableHeader,
+	Header as TableHeader,
+	Root,
 	//
 	Root as Table,
-	Body as TableBody,
-	Caption as TableCaption,
-	Cell as TableCell,
-	Footer as TableFooter,
-	Head as TableHead,
-	Header as TableHeader,
+	Row,
 	Row as TableRow,
+	SelectAllPopover,
+	SortableTableHeader,
 };

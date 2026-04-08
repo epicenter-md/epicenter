@@ -9,10 +9,10 @@
 	import { toggleMode } from 'mode-watcher';
 	import { page } from '$app/state';
 	import { GithubIcon } from '$lib/components/icons';
+	import { notificationLog } from '$lib/components/NotificationLog.svelte';
 	import { NAV_ITEMS } from '$lib/constants/ui';
 	import MigrationDialog from '$lib/migration/MigrationDialog.svelte';
 	import { migrationDialog } from '$lib/migration/migration-dialog.svelte';
-	import { notificationLog } from '$lib/components/NotificationLog.svelte';
 
 	const shouldShowMigrationButton = $derived(
 		import.meta.env.DEV || migrationDialog.isPending,
@@ -36,7 +36,9 @@
 							>
 								<span class="text-lg">🎙️</span>
 							</div>
-							<div class="grid flex-1 text-left text-sm leading-tight group-data-[collapsible=icon]:hidden">
+							<div
+								class="grid flex-1 text-left text-sm leading-tight group-data-[collapsible=icon]:hidden"
+							>
 								<span class="truncate font-semibold">Whispering</span>
 								<span class="truncate text-xs text-muted-foreground"
 									>Speech to text</span
@@ -147,16 +149,16 @@
 				<Sidebar.MenuItem>
 					<Sidebar.MenuButton>
 						{#snippet child({ props })}
-						<button
-							onclick={async () => {
+							<button
+								onclick={async () => {
 								const { getCurrentWindow, LogicalSize } = await import('@tauri-apps/api/window');
 								getCurrentWindow().setSize(new LogicalSize(72, 84));
 							}}
-							{...props}
-						>
-							<Minimize2Icon />
-							<span>Minimize</span>
-						</button>
+								{...props}
+							>
+								<Minimize2Icon />
+								<span>Minimize</span>
+							</button>
 						{/snippet}
 					</Sidebar.MenuButton>
 				</Sidebar.MenuItem>

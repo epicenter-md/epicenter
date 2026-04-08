@@ -21,6 +21,4 @@
 	});
 </script>
 
-<div class="prose prose-sm">
-	{@html html}
-</div>
+<div class="prose prose-sm">{@html html}</div>

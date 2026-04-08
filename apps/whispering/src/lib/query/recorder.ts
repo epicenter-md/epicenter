@@ -82,7 +82,7 @@ export const recorder = {
 
 			// Resolve the output folder - use default if null
 			const outputFolder = window.__TAURI_INTERNALS__
-			? (deviceConfig.get("recording.cpal.outputFolder") ??
+				? (deviceConfig.get('recording.cpal.outputFolder') ??
 					(await PATHS.DB.RECORDINGS()))
 				: '';
 
@@ -91,29 +91,29 @@ export const recorder = {
 					...baseParams,
 					method: 'navigator' as const,
 					selectedDeviceId: parseDeviceId(
-					deviceConfig.get("recording.navigator.deviceId"),
+						deviceConfig.get('recording.navigator.deviceId'),
 					),
-					bitrateKbps: deviceConfig.get("recording.navigator.bitrateKbps"),
+					bitrateKbps: deviceConfig.get('recording.navigator.bitrateKbps'),
 				},
 				ffmpeg: {
 					...baseParams,
 					method: 'ffmpeg' as const,
 					selectedDeviceId: parseDeviceId(
-					deviceConfig.get("recording.ffmpeg.deviceId"),
+						deviceConfig.get('recording.ffmpeg.deviceId'),
 					),
-					globalOptions: deviceConfig.get("recording.ffmpeg.globalOptions"),
-					inputOptions: deviceConfig.get("recording.ffmpeg.inputOptions"),
-					outputOptions: deviceConfig.get("recording.ffmpeg.outputOptions"),
+					globalOptions: deviceConfig.get('recording.ffmpeg.globalOptions'),
+					inputOptions: deviceConfig.get('recording.ffmpeg.inputOptions'),
+					outputOptions: deviceConfig.get('recording.ffmpeg.outputOptions'),
 					outputFolder,
 				},
 				cpal: {
 					...baseParams,
 					method: 'cpal' as const,
 					selectedDeviceId: parseDeviceId(
-					deviceConfig.get("recording.cpal.deviceId"),
+						deviceConfig.get('recording.cpal.deviceId'),
 					),
 					outputFolder,
-					sampleRate: deviceConfig.get("recording.cpal.sampleRate"),
+					sampleRate: deviceConfig.get('recording.cpal.sampleRate'),
 				},
 			} as const;
 
@@ -121,7 +121,7 @@ export const recorder = {
 				paramsMap[
 					!window.__TAURI_INTERNALS__
 						? 'navigator'
-						: deviceConfig.get("recording.method")
+						: deviceConfig.get('recording.method')
 				];
 
 			const { data: deviceAcquisitionOutcome, error: startRecordingError } =
@@ -213,5 +213,5 @@ export function recorderService() {
 		ffmpeg: desktopServices.ffmpegRecorder,
 		cpal: desktopServices.cpalRecorder,
 	};
-	return recorderMap[deviceConfig.get("recording.method")];
+	return recorderMap[deviceConfig.get('recording.method')];
 }

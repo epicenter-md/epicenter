@@ -133,10 +133,10 @@ export const NavigatorRecorderServiceLive: RecorderService = {
 			try: () =>
 				new Promise<Blob>((resolve) => {
 					recording.mediaRecorder.addEventListener('stop', () => {
-					const audioBlob = new Blob(recording.recordedChunks, {
-						type: recording.mediaRecorder.mimeType,
-					});
-					resolve(audioBlob);
+						const audioBlob = new Blob(recording.recordedChunks, {
+							type: recording.mediaRecorder.mimeType,
+						});
+						resolve(audioBlob);
 					});
 					recording.mediaRecorder.stop();
 				}),

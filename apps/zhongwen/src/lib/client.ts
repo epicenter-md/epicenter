@@ -7,8 +7,8 @@
 import { APP_URLS } from '@epicenter/constants/vite';
 import { createAuth } from '@epicenter/svelte/auth';
 import { createWorkspace } from '@epicenter/workspace';
-import { broadcastChannelSync } from '@epicenter/workspace/extensions/sync/broadcast-channel';
 import { indexeddbPersistence } from '@epicenter/workspace/extensions/persistence/indexeddb';
+import { broadcastChannelSync } from '@epicenter/workspace/extensions/sync/broadcast-channel';
 import { session } from '$lib/auth';
 import { definition } from './workspace/definition';
 

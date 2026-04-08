@@ -9,22 +9,22 @@
  * the sole authority for ephemeral browser state. See `browser-state.svelte.ts`.
  */
 
-import { actionsToAiTools } from '@epicenter/workspace/ai';
 import { createAuth } from '@epicenter/svelte/auth';
-import {
-	defineMutation,
-	defineQuery,
-} from '@epicenter/workspace';
-import { createSyncExtension, toWsUrl } from '@epicenter/workspace/extensions/sync/websocket';
+import { defineMutation, defineQuery } from '@epicenter/workspace';
+import { actionsToAiTools } from '@epicenter/workspace/ai';
 import { indexeddbPersistence } from '@epicenter/workspace/extensions/persistence/indexeddb';
+import {
+	createSyncExtension,
+	toWsUrl,
+} from '@epicenter/workspace/extensions/sync/websocket';
 import Type from 'typebox';
 import { Ok, tryAsync } from 'wellcrafted/result';
+import { getGoogleCredentials, session } from '$lib/auth';
 import {
 	generateDefaultDeviceName,
 	getBrowserName,
 	getDeviceId,
 } from '$lib/device/device-id';
-import { session, getGoogleCredentials } from '$lib/auth';
 import { remoteServerUrl, serverUrl } from '$lib/state/settings.svelte';
 import { generateBookmarkId, generateSavedTabId } from './workspace/definition';
 import { createTabManagerWorkspace } from './workspace/workspace';
@@ -89,7 +89,8 @@ function buildWorkspaceClient() {
 		.withExtension(
 			'sync',
 			createSyncExtension({
-				url: (workspaceId) => toWsUrl(`${serverUrl.current}/workspaces/${workspaceId}`),
+				url: (workspaceId) =>
+					toWsUrl(`${serverUrl.current}/workspaces/${workspaceId}`),
 				getToken: async () => (await session.get())?.token ?? null,
 			}),
 		)
@@ -339,7 +340,8 @@ function buildWorkspaceClient() {
 				 */
 				restore: defineMutation({
 					title: 'Restore Saved Tab',
-					description: 'Re-open a saved tab in the browser and delete the record.',
+					description:
+						'Re-open a saved tab in the browser and delete the record.',
 					input: Type.Object({
 						id: Type.String(),
 						url: Type.String(),
@@ -421,7 +423,8 @@ function buildWorkspaceClient() {
 				 */
 				toggle: defineMutation({
 					title: 'Toggle Bookmark',
-					description: 'Add or remove a bookmark for a URL. If the URL is already bookmarked, removes all matching bookmarks; otherwise creates a new bookmark.',
+					description:
+						'Add or remove a bookmark for a URL. If the URL is already bookmarked, removes all matching bookmarks; otherwise creates a new bookmark.',
 					input: Type.Object({
 						url: Type.String(),
 						title: Type.String(),
@@ -435,7 +438,10 @@ function buildWorkspaceClient() {
 							for (const match of allMatching) {
 								tables.bookmarks.delete(match.id);
 							}
-							return { action: 'removed' as const, removedCount: allMatching.length };
+							return {
+								action: 'removed' as const,
+								removedCount: allMatching.length,
+							};
 						}
 						const deviceId = await getDeviceId();
 						const id = generateBookmarkId();
@@ -460,7 +466,8 @@ function buildWorkspaceClient() {
 				 */
 				open: defineMutation({
 					title: 'Open Bookmark',
-					description: 'Open a bookmarked URL in a new browser tab. The bookmark is not deleted.',
+					description:
+						'Open a bookmarked URL in a new browser tab. The bookmark is not deleted.',
 					input: Type.Object({
 						url: Type.String(),
 					}),

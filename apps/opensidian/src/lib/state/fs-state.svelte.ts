@@ -1,7 +1,7 @@
 import type { FileId, FileRow } from '@epicenter/filesystem';
 import { fromTable } from '@epicenter/svelte';
-import { SvelteSet } from 'svelte/reactivity';
 import { toast } from '@epicenter/ui/sonner';
+import { SvelteSet } from 'svelte/reactivity';
 import { fs, workspace } from '$lib/client';
 
 /**
@@ -151,7 +151,6 @@ function createFsState() {
 			: null,
 	);
 
-
 	// ── Private helpers ───────────────────────────────────────────────
 
 	/**
@@ -273,7 +272,7 @@ function createFsState() {
 		): T[] {
 			const results: T[] = [];
 			function walk(pid: FileId | null) {
-				for (const childId of (childrenOf.get(pid) ?? [])) {
+				for (const childId of childrenOf.get(pid) ?? []) {
 					const row = filesMap.get(childId);
 					if (!row || row.trashedAt !== null) continue;
 					const { collect, descend } = visitor(childId, row);
@@ -343,7 +342,6 @@ function createFsState() {
 			await state.rename(id, newName.trim());
 		},
 
-
 		// ── Context menu ─────────────────────────────────────────────
 
 		setContextMenuTarget(id: FileId | null) {
@@ -375,9 +373,7 @@ function createFsState() {
 
 		async createFile(parentId: FileId | null, name: string) {
 			await withErrorToast(async () => {
-				const parentPath = parentId
-					? (state.getPath(parentId) ?? '/')
-					: '/';
+				const parentPath = parentId ? (state.getPath(parentId) ?? '/') : '/';
 				const path = parentPath === '/' ? `/${name}` : `${parentPath}/${name}`;
 				await fs.writeFile(path, '');
 				toast.success(`Created ${path}`);
@@ -386,9 +382,7 @@ function createFsState() {
 
 		async createFolder(parentId: FileId | null, name: string) {
 			await withErrorToast(async () => {
-				const parentPath = parentId
-					? (state.getPath(parentId) ?? '/')
-					: '/';
+				const parentPath = parentId ? (state.getPath(parentId) ?? '/') : '/';
 				const path = parentPath === '/' ? `/${name}` : `${parentPath}/${name}`;
 				await fs.mkdir(path);
 				if (parentId) expandedIds.add(parentId);
@@ -419,7 +413,6 @@ function createFsState() {
 				toast.success(`Renamed to ${newName}`);
 			}, 'Failed to rename');
 		},
-
 
 		/** Cleanup — call from +layout.svelte onDestroy if needed. */
 		async dispose() {

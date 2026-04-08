@@ -1,5 +1,5 @@
-import { nanoid } from 'nanoid/non-secure';
 import { toast as sonnerToast } from '@epicenter/ui/sonner';
+import { nanoid } from 'nanoid/non-secure';
 import { goto } from '$app/navigation';
 import { moreDetailsDialog } from '$lib/components/MoreDetailsDialog.svelte';
 import type { UnifiedNotificationOptions } from './notifications/types';

@@ -1,9 +1,13 @@
 <script lang="ts">
-	import { cn, type WithElementRef, type WithoutChildren } from "#/utils.js";
-	import type { HTMLAttributes } from "svelte/elements";
-	import { getPayloadConfigFromPayload, useChart, type TooltipPayload } from "./chart-utils.js";
-	import { getChartContext, Tooltip as TooltipPrimitive } from "layerchart";
-	import type { Snippet } from "svelte";
+	import { getChartContext, Tooltip as TooltipPrimitive } from 'layerchart';
+	import type { Snippet } from 'svelte';
+	import type { HTMLAttributes } from 'svelte/elements';
+	import { cn, type WithElementRef, type WithoutChildren } from '#/utils.js';
+	import {
+		getPayloadConfigFromPayload,
+		type TooltipPayload,
+		useChart,
+	} from './chart-utils.js';
 
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	function defaultFormatter(value: any, _payload: TooltipPayload[]) {
@@ -14,7 +18,7 @@
 		ref = $bindable(null),
 		class: className,
 		hideLabel = false,
-		indicator = "dot",
+		indicator = 'dot',
 		hideIndicator = false,
 		labelKey,
 		label,
@@ -27,13 +31,14 @@
 	}: WithoutChildren<WithElementRef<HTMLAttributes<HTMLDivElement>>> & {
 		hideLabel?: boolean;
 		label?: string;
-		indicator?: "line" | "dot" | "dashed";
+		indicator?: 'line' | 'dot' | 'dashed';
 		nameKey?: string;
 		labelKey?: string;
 		hideIndicator?: boolean;
 		labelClassName?: string;
 		labelFormatter?: // eslint-disable-next-line @typescript-eslint/no-explicit-any
-			((value: any, payload: TooltipPayload[]) => string | number | Snippet) | null;
+			| ((value: any, payload: TooltipPayload[]) => string | number | Snippet)
+			| null;
 		formatter?: Snippet<
 			[
 				{
@@ -53,7 +58,9 @@
 	// Filter to series with defined values (important for item-based charts like Pie/Arc
 	// where only the hovered item has a value)
 	const visibleSeries = $derived(
-		chartCtx.tooltip.series.filter((s: TooltipPayload) => s.value !== undefined)
+		chartCtx.tooltip.series.filter(
+			(s: TooltipPayload) => s.value !== undefined,
+		),
 	);
 
 	const formattedLabel = $derived.by(() => {
@@ -65,16 +72,16 @@
 		// Get the x-axis label value from the raw tooltip data (e.g. a Date or month string)
 		const dataLabel = tooltipData != null ? chartCtx.x(tooltipData) : undefined;
 
-		const key = labelKey ?? item?.label ?? item?.key ?? "value";
+		const key = labelKey ?? item?.label ?? item?.key ?? 'value';
 		const itemConfig = getPayloadConfigFromPayload(
 			chart.config,
 			item,
 			key,
-			tooltipData as Record<string, unknown> | null
+			tooltipData as Record<string, unknown> | null,
 		);
 
 		let value: unknown;
-		if (!labelKey && typeof label === "string") {
+		if (!labelKey && typeof label === 'string') {
 			value = chart.config[label as keyof typeof chart.config]?.label ?? label;
 		} else if (labelKey) {
 			value = itemConfig?.label ?? dataLabel;
@@ -87,7 +94,7 @@
 		return labelFormatter(value, visibleSeries);
 	});
 
-	const nestLabel = $derived(visibleSeries.length === 1 && indicator !== "dot");
+	const nestLabel = $derived(visibleSeries.length === 1 && indicator !== 'dot');
 </script>
 
 {#snippet TooltipLabel()}
@@ -171,7 +178,9 @@
 								</span>
 							</div>
 							{#if item.value !== undefined}
-								<span class="text-foreground font-mono font-medium tabular-nums">
+								<span
+									class="text-foreground font-mono font-medium tabular-nums"
+								>
 									{item.value.toLocaleString()}
 								</span>
 							{/if}

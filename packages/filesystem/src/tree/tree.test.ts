@@ -479,7 +479,6 @@ describe('createFileTree', () => {
 		});
 	});
 
-
 	describe('dispose', () => {
 		test('can be called without error', () => {
 			const tree = setup();

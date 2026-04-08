@@ -39,13 +39,13 @@
 
 	const sampleRateLabel = $derived(
 		SAMPLE_RATE_OPTIONS.find(
-		(o) => o.value === deviceConfig.get('recording.cpal.sampleRate'),
+			(o) => o.value === deviceConfig.get('recording.cpal.sampleRate'),
 		)?.label,
 	);
 
 	const bitrateLabel = $derived(
 		BITRATE_OPTIONS.find(
-		(o) => o.value === deviceConfig.get('recording.navigator.bitrateKbps'),
+			(o) => o.value === deviceConfig.get('recording.navigator.bitrateKbps'),
 		)?.label,
 	);
 
@@ -83,7 +83,7 @@
 
 	const recordingMethodLabel = $derived(
 		RECORDING_METHOD_OPTIONS.find(
-		(o) => o.value === deviceConfig.get('recording.method'),
+			(o) => o.value === deviceConfig.get('recording.method'),
 		)?.label,
 	);
 
@@ -99,11 +99,11 @@
 	function getManualDeviceId(method: 'cpal' | 'navigator' | 'ffmpeg') {
 		switch (method) {
 			case 'cpal':
-			return deviceConfig.get('recording.cpal.deviceId');
+				return deviceConfig.get('recording.cpal.deviceId');
 			case 'navigator':
-			return deviceConfig.get('recording.navigator.deviceId');
+				return deviceConfig.get('recording.navigator.deviceId');
 			case 'ffmpeg':
-			return deviceConfig.get('recording.ffmpeg.deviceId');
+				return deviceConfig.get('recording.ffmpeg.deviceId');
 		}
 	}
 
@@ -165,7 +165,7 @@
 				<Field.Label for="recording-method">Recording Method</Field.Label>
 				<Select.Root
 					type="single"
-				bind:value={() => deviceConfig.get('recording.method'),
+					bind:value={() => deviceConfig.get('recording.method'),
 						(selected) => {
 							if (selected)
 							deviceConfig.set(
@@ -264,7 +264,7 @@
 							<div class="flex items-center gap-2">
 								<span class="text-sm"><strong>Option 1:</strong></span>
 								<Button
-						onclick={() => deviceConfig.set('recording.method', 'cpal')}
+									onclick={() => deviceConfig.set('recording.method', 'cpal')}
 									variant="secondary"
 									size="sm"
 								>
@@ -349,7 +349,7 @@
 					<Field.Label for="bit-rate">Bitrate</Field.Label>
 					<Select.Root
 						type="single"
-					bind:value={() => deviceConfig.get('recording.navigator.bitrateKbps'),
+						bind:value={() => deviceConfig.get('recording.navigator.bitrateKbps'),
 							(selected) => {
 								if (selected)
 							deviceConfig.set(
@@ -375,20 +375,20 @@
 			{:else if isUsingFfmpegMethod}
 				<!-- FFmpeg method settings -->
 				<Field.Field>
-				<Field.Label for="output-folder">Recording Output Folder</Field.Label>
-				<DesktopOutputFolder></DesktopOutputFolder>
-				<Field.Description>
-					Choose where to save your recordings. Default location is secure and
-					managed by the app.
-				</Field.Description>
+					<Field.Label for="output-folder">Recording Output Folder</Field.Label>
+					<DesktopOutputFolder></DesktopOutputFolder>
+					<Field.Description>
+						Choose where to save your recordings. Default location is secure and
+						managed by the app.
+					</Field.Description>
 				</Field.Field>
 
 				<FfmpegCommandBuilder
-				bind:globalOptions={() => deviceConfig.get('recording.ffmpeg.globalOptions'),
+					bind:globalOptions={() => deviceConfig.get('recording.ffmpeg.globalOptions'),
 						(v) => deviceConfig.set('recording.ffmpeg.globalOptions', v)}
-				bind:inputOptions={() => deviceConfig.get('recording.ffmpeg.inputOptions'),
+					bind:inputOptions={() => deviceConfig.get('recording.ffmpeg.inputOptions'),
 						(v) => deviceConfig.set('recording.ffmpeg.inputOptions', v)}
-				bind:outputOptions={() => deviceConfig.get('recording.ffmpeg.outputOptions'),
+					bind:outputOptions={() => deviceConfig.get('recording.ffmpeg.outputOptions'),
 						(v) => deviceConfig.set('recording.ffmpeg.outputOptions', v)}
 				/>
 			{:else}
@@ -397,7 +397,7 @@
 					<Field.Label for="sample-rate">Sample Rate</Field.Label>
 					<Select.Root
 						type="single"
-					bind:value={() => deviceConfig.get('recording.cpal.sampleRate'),
+						bind:value={() => deviceConfig.get('recording.cpal.sampleRate'),
 							(selected) => {
 								if (selected)
 							deviceConfig.set('recording.cpal.sampleRate', selected);
@@ -418,12 +418,12 @@
 				</Field.Field>
 
 				<Field.Field>
-				<Field.Label for="output-folder">Recording Output Folder</Field.Label>
-				<DesktopOutputFolder></DesktopOutputFolder>
-				<Field.Description>
-					Choose where to save your recordings. Default location is secure and
-					managed by the app.
-				</Field.Description>
+					<Field.Label for="output-folder">Recording Output Folder</Field.Label>
+					<DesktopOutputFolder></DesktopOutputFolder>
+					<Field.Description>
+						Choose where to save your recordings. Default location is secure and
+						managed by the app.
+					</Field.Description>
 				</Field.Field>
 			{/if}
 		{/if}

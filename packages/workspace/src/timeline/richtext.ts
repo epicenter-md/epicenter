@@ -11,10 +11,11 @@
  *
  * @module
  */
-import * as Y from 'yjs';
-import type { RootContent, PhrasingContent } from 'mdast';
-import { unified } from 'unified';
+
+import type { PhrasingContent, RootContent } from 'mdast';
 import remarkParse from 'remark-parse';
+import { unified } from 'unified';
+import * as Y from 'yjs';
 
 /**
  * Block-level element names that produce line breaks in plaintext extraction.
@@ -224,10 +225,18 @@ function collectInlineRuns(
 				runs.push({ text: node.value, attrs: { ...inheritedAttrs } });
 				break;
 			case 'strong':
-				collectInlineRuns(node.children, { ...inheritedAttrs, bold: true }, runs);
+				collectInlineRuns(
+					node.children,
+					{ ...inheritedAttrs, bold: true },
+					runs,
+				);
 				break;
 			case 'emphasis':
-				collectInlineRuns(node.children, { ...inheritedAttrs, italic: true }, runs);
+				collectInlineRuns(
+					node.children,
+					{ ...inheritedAttrs, italic: true },
+					runs,
+				);
 				break;
 			case 'link':
 				collectInlineRuns(
@@ -237,7 +246,10 @@ function collectInlineRuns(
 				);
 				break;
 			case 'inlineCode':
-				runs.push({ text: node.value, attrs: { ...inheritedAttrs, code: true } });
+				runs.push({
+					text: node.value,
+					attrs: { ...inheritedAttrs, code: true },
+				});
 				break;
 			// Skip unknown inline types silently
 		}

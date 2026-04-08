@@ -48,7 +48,6 @@ function createSkillsState() {
 			.sort((a, b) => a.path.localeCompare(b.path));
 	});
 
-
 	return {
 		/** All skills, sorted alphabetically by name. */
 		get skills() {
@@ -146,7 +145,6 @@ function createSkillsState() {
 				selectedSkillId = next?.id ?? null;
 			}
 		},
-
 
 		/**
 		 * Add a file reference to a skill.

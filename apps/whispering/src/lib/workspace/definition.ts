@@ -1,15 +1,14 @@
-import {
-	defineKv,
-	defineTable,
-	defineWorkspace,
-} from '@epicenter/workspace';
+import { defineKv, defineTable, defineWorkspace } from '@epicenter/workspace';
 import { type } from 'arktype';
 
 // ── Constant imports ─────────────────────────────────────────────────────────
 
 import { RECORDING_MODES } from '$lib/constants/audio/recording-modes';
 import { INFERENCE_PROVIDER_IDS } from '$lib/constants/inference';
-import { TRANSCRIPTION, TRANSCRIPTION_SERVICE_IDS } from '$lib/constants/transcription';
+import {
+	TRANSCRIPTION,
+	TRANSCRIPTION_SERVICE_IDS,
+} from '$lib/constants/transcription';
 import { ALWAYS_ON_TOP_MODES } from '$lib/constants/ui/always-on-top';
 import { FFMPEG_DEFAULT_COMPRESSION_OPTIONS } from '$lib/services/desktop/recorder/ffmpeg';
 
@@ -202,7 +201,10 @@ const ui = {
  * the semantically correct numeric type.
  */
 const dataRetention = {
-	'retention.strategy': defineKv(type("'keep-forever' | 'limit-count'"), 'keep-forever'),
+	'retention.strategy': defineKv(
+		type("'keep-forever' | 'limit-count'"),
+		'keep-forever',
+	),
 	'retention.maxCount': defineKv(type('number.integer >= 1'), 100),
 } as const;
 
@@ -221,17 +223,38 @@ const recording = {
  * @see {@link https://github.com/EpicenterHQ/epicenter/blob/main/specs/20260312T170000-whispering-workspace-polish-and-migration.md | Spec Decision 2}
  */
 const transcription = {
-	'transcription.service': defineKv(type.enumerated(...TRANSCRIPTION_SERVICE_IDS), 'moonshine'),
-	'transcription.openai.model': defineKv(type('string'), TRANSCRIPTION.OpenAI.defaultModel),
-	'transcription.groq.model': defineKv(type('string'), TRANSCRIPTION.Groq.defaultModel),
-	'transcription.elevenlabs.model': defineKv(type('string'), TRANSCRIPTION.ElevenLabs.defaultModel),
-	'transcription.deepgram.model': defineKv(type('string'), TRANSCRIPTION.Deepgram.defaultModel),
-	'transcription.mistral.model': defineKv(type('string'), TRANSCRIPTION.Mistral.defaultModel),
+	'transcription.service': defineKv(
+		type.enumerated(...TRANSCRIPTION_SERVICE_IDS),
+		'moonshine',
+	),
+	'transcription.openai.model': defineKv(
+		type('string'),
+		TRANSCRIPTION.OpenAI.defaultModel,
+	),
+	'transcription.groq.model': defineKv(
+		type('string'),
+		TRANSCRIPTION.Groq.defaultModel,
+	),
+	'transcription.elevenlabs.model': defineKv(
+		type('string'),
+		TRANSCRIPTION.ElevenLabs.defaultModel,
+	),
+	'transcription.deepgram.model': defineKv(
+		type('string'),
+		TRANSCRIPTION.Deepgram.defaultModel,
+	),
+	'transcription.mistral.model': defineKv(
+		type('string'),
+		TRANSCRIPTION.Mistral.defaultModel,
+	),
 	'transcription.language': defineKv(type('string'), 'auto'),
 	'transcription.prompt': defineKv(type('string'), ''),
 	'transcription.temperature': defineKv(type('0 <= number <= 1'), 0),
 	'transcription.compressionEnabled': defineKv(type('boolean'), false),
-	'transcription.compressionOptions': defineKv(type('string'), FFMPEG_DEFAULT_COMPRESSION_OPTIONS),
+	'transcription.compressionOptions': defineKv(
+		type('string'),
+		FFMPEG_DEFAULT_COMPRESSION_OPTIONS,
+	),
 } as const;
 
 /**
@@ -243,7 +266,10 @@ const transcription = {
  */
 const transformation = {
 	'transformation.selectedId': defineKv(type('string | null'), null),
-	'transformation.openrouterModel': defineKv(type('string'), 'mistralai/mixtral-8x7b'),
+	'transformation.openrouterModel': defineKv(
+		type('string'),
+		'mistralai/mixtral-8x7b',
+	),
 } as const;
 
 /** Anonymized event logging toggle (Aptabase). */

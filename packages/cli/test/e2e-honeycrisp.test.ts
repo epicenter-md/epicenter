@@ -13,9 +13,9 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
+import { createHoneycrisp, honeycrisp } from '@epicenter/honeycrisp/workspace';
 import { dateTimeStringNow } from '@epicenter/workspace';
 import { filesystemPersistence } from '@epicenter/workspace/extensions/persistence/sqlite';
-import { honeycrisp, createHoneycrisp } from '@epicenter/honeycrisp/workspace';
 import { loadConfig } from '../src/load-config';
 
 const FIXTURE_DIR = join(import.meta.dir, 'fixtures/single-workspace');

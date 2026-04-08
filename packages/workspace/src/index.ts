@@ -112,8 +112,8 @@ export { defineWorkspace } from './workspace/define-workspace';
 // WORKSPACE CREATION
 // ════════════════════════════════════════════════════════════════════════════
 
-export { createWorkspace } from './workspace/create-workspace';
 export { DOCUMENTS_ORIGIN } from './workspace/create-document';
+export { createWorkspace } from './workspace/create-workspace';
 
 // ════════════════════════════════════════════════════════════════════════════
 // INTROSPECTION
@@ -137,6 +137,12 @@ export { createUnionSchema } from './workspace/schema-union';
 // TYPES
 // ════════════════════════════════════════════════════════════════════════════
 
+// Runtime schemas (arktype) — for validation at deserialization boundaries
+export {
+	EncryptionKey,
+	EncryptionKeys,
+	encryptionKeysFingerprint,
+} from './workspace/encryption-key';
 export type {
 	AnyWorkspaceClient,
 	AwarenessDefinitions,
@@ -150,7 +156,6 @@ export type {
 	DocumentsHelper,
 	ExtensionContext,
 	ExtensionFactory,
-	SharedExtensionContext,
 	GetResult,
 	InferAwarenessValue,
 	InferKvValue,
@@ -162,6 +167,7 @@ export type {
 	KvHelper,
 	NotFoundResult,
 	RowResult,
+	SharedExtensionContext,
 	TableDefinition,
 	TableDefinitions,
 	TableHelper,
@@ -172,13 +178,6 @@ export type {
 	WorkspaceClientBuilder,
 	WorkspaceDefinition,
 } from './workspace/types';
-
-// Runtime schemas (arktype) — for validation at deserialization boundaries
-export {
-	EncryptionKey,
-	EncryptionKeys,
-	encryptionKeysFingerprint,
-} from './workspace/encryption-key';
 
 // ════════════════════════════════════════════════════════════════════════════
 // DRIZZLE RE-EXPORTS

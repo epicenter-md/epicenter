@@ -4,7 +4,10 @@
 	import * as ContextMenu from '@epicenter/ui/context-menu';
 	import { skillsState } from '$lib/state/skills-state.svelte';
 
-	let { skill, onRequestRename }: {
+	let {
+		skill,
+		onRequestRename,
+	}: {
 		skill: Skill;
 		onRequestRename: () => void;
 	} = $props();

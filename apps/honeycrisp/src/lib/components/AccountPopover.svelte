@@ -8,7 +8,6 @@
 	import { auth } from '$lib/client';
 	import AuthForm from '$lib/components/AuthForm.svelte';
 
-
 	let popoverOpen = $state(false);
 </script>
 

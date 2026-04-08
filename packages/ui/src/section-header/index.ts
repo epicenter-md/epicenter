@@ -4,8 +4,8 @@ import Title from './section-title.svelte';
 
 export {
 	Description,
-	Root,
 	Description as SectionDescription,
+	Root,
 	//
 	Root as SectionHeader,
 	Title as SectionTitle,

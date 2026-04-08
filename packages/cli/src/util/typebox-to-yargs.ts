@@ -47,10 +47,7 @@ export function typeboxToYargsOptions(
 	return options;
 }
 
-function fieldToYargsOption(
-	schema: FieldSchema,
-	isRequired: boolean,
-): Options {
+function fieldToYargsOption(schema: FieldSchema, isRequired: boolean): Options {
 	const option: Options = {
 		description: schema.description,
 		demandOption: isRequired,

@@ -19,9 +19,9 @@
  * @module
  */
 
+import type { AnyClientTool, JSONSchema } from '@tanstack/ai';
 import type { Action, Actions } from '../shared/actions';
 import { iterateActions } from '../shared/actions';
-import type { AnyClientTool, JSONSchema } from '@tanstack/ai';
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -147,7 +147,9 @@ export function actionsToAiTools<TActions extends Actions>(
 	const tools = entries.map(([action, path]) => ({
 		__toolSide: 'client' as const,
 		name: path.join(ACTION_NAME_SEPARATOR) as ActionNames<TActions>,
-		description: action.description ?? `${action.type}: ${path.join(ACTION_NAME_SEPARATOR)}`,
+		description:
+			action.description ??
+			`${action.type}: ${path.join(ACTION_NAME_SEPARATOR)}`,
 		...(action.input && { inputSchema: action.input }),
 		...(action.type === 'mutation' && { needsApproval: true }),
 		execute: async (args: unknown) => (action.input ? action(args) : action()),
@@ -155,19 +157,19 @@ export function actionsToAiTools<TActions extends Actions>(
 
 	// Derive wire definitions directly from actions—avoids the type-widening
 	// round-trip through AnyClientTool that required `as JSONSchema` casts.
-	const definitions: ToolDefinition[] = entries.map(
-		([action, path]) => ({
-			name: path.join(ACTION_NAME_SEPARATOR),
-			...(action.title && { title: action.title }),
-			description: action.description ?? `${action.type}: ${path.join(ACTION_NAME_SEPARATOR)}`,
-			// Safe cast: workspace actions only accept TypeBox schemas (TSchema),
-			// which ARE plain JSON Schema objects at runtime.
-			...(action.input && {
-				inputSchema: normalizeSchema(action.input as JSONSchema),
-			}),
-			...(action.type === 'mutation' && { needsApproval: true }),
+	const definitions: ToolDefinition[] = entries.map(([action, path]) => ({
+		name: path.join(ACTION_NAME_SEPARATOR),
+		...(action.title && { title: action.title }),
+		description:
+			action.description ??
+			`${action.type}: ${path.join(ACTION_NAME_SEPARATOR)}`,
+		// Safe cast: workspace actions only accept TypeBox schemas (TSchema),
+		// which ARE plain JSON Schema objects at runtime.
+		...(action.input && {
+			inputSchema: normalizeSchema(action.input as JSONSchema),
 		}),
-	);
+		...(action.type === 'mutation' && { needsApproval: true }),
+	}));
 
 	return { tools, definitions };
 }

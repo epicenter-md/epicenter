@@ -8,7 +8,6 @@ export {
 	VAD_STATE_TO_ICON,
 } from './icons';
 
-
 export {
 	NAV_ITEMS,
 	type NavItem,

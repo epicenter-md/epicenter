@@ -4,10 +4,10 @@ import TreeViewFolder from './tree-view-folder.svelte';
 
 export {
 	TreeView,
-	TreeViewFile,
-	TreeViewFolder,
 	// ...
 	TreeView as Root,
+	TreeViewFile,
 	TreeViewFile as File,
+	TreeViewFolder,
 	TreeViewFolder as Folder,
 };

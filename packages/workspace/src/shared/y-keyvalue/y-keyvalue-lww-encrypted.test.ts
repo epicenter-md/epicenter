@@ -1,11 +1,7 @@
 import { describe, expect, test } from 'bun:test';
-import * as Y from 'yjs';
-import {
-	type EncryptedBlob,
-	getKeyVersion,
-	isEncryptedBlob,
-	} from '../crypto';
 import { randomBytes } from '@noble/ciphers/utils.js';
+import * as Y from 'yjs';
+import { type EncryptedBlob, getKeyVersion, isEncryptedBlob } from '../crypto';
 import type { YKeyValueLwwEntry } from './y-keyvalue-lww';
 import {
 	createEncryptedYkvLww,

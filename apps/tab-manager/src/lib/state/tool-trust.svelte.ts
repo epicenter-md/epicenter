@@ -12,8 +12,8 @@
  */
 
 import { fromTable } from '@epicenter/svelte';
-import type { ToolTrust } from '$lib/workspace';
 import { workspace } from '$lib/client';
+import type { ToolTrust } from '$lib/workspace';
 
 /**
  * Trust level for a mutation tool.
@@ -32,7 +32,10 @@ function createToolTrustState() {
 
 	/** Cached projection of trust entries — stable reference via $derived. */
 	const trustEntries = $derived(
-		trustMap.values().toArray().map((t): [string, TrustLevel] => [t.id, t.trust]),
+		trustMap
+			.values()
+			.toArray()
+			.map((t): [string, TrustLevel] => [t.id, t.trust]),
 	);
 	return {
 		/**

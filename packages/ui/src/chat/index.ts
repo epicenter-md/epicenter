@@ -11,6 +11,7 @@ import List from './chat-list.svelte';
 const BubbleAvatarImage = Avatar.Image;
 const BubbleAvatarFallback = Avatar.Fallback;
 
+export type * from './types';
 export {
 	Bubble,
 	BubbleAvatar,
@@ -19,5 +20,3 @@ export {
 	BubbleMessage,
 	List,
 };
-
-export type * from './types';

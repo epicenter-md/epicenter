@@ -42,7 +42,9 @@
 	}
 </script>
 
-<div class="flex items-center gap-1.5 border-t px-3 py-1.5 text-xs text-muted-foreground">
+<div
+	class="flex items-center gap-1.5 border-t px-3 py-1.5 text-xs text-muted-foreground"
+>
 	<Database class="size-3 shrink-0" />
 	<span>
 		{skillCount}

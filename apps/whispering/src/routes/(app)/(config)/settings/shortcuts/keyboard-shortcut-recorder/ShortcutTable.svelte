@@ -2,10 +2,13 @@
 	import { Input } from '@epicenter/ui/input';
 	import * as Table from '@epicenter/ui/table';
 	import Search from '@lucide/svelte/icons/search';
+	import { workspace } from '$lib/client';
 	import { commands } from '$lib/commands';
 	import { rpc } from '$lib/query';
-	import { deviceConfig, type DeviceConfigKey } from '$lib/state/device-config.svelte';
-	import { workspace } from '$lib/client';
+	import {
+		type DeviceConfigKey,
+		deviceConfig,
+	} from '$lib/state/device-config.svelte';
 	import { createPressedKeys } from '$lib/utils/createPressedKeys.svelte';
 	import GlobalKeyboardShortcutRecorder from './GlobalKeyboardShortcutRecorder.svelte';
 	import LocalKeyboardShortcutRecorder from './LocalKeyboardShortcutRecorder.svelte';
@@ -17,8 +20,13 @@
 	/** Look up the definition default for a shortcut key from the correct store. */
 	function getDefaultShortcut(commandId: string): string | null {
 		if (type === 'local') {
-			const defs = workspace.definitions.kv as Record<string, { defaultValue: unknown }>;
-			return (defs[`shortcut.${commandId}`]?.defaultValue as string | null) ?? null;
+			const defs = workspace.definitions.kv as Record<
+				string,
+				{ defaultValue: unknown }
+			>;
+			return (
+				(defs[`shortcut.${commandId}`]?.defaultValue as string | null) ?? null
+			);
 		}
 		return deviceConfig.getDefault(
 			`shortcuts.global.${commandId}` as DeviceConfigKey,

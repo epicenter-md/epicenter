@@ -38,10 +38,10 @@ export function isTranscriptionServiceConfigured(
 				Mistral: 'apiKeys.mistral',
 			} as const;
 
-			return deviceConfig.get(apiKeyByService[service.id]) !== "";
+			return deviceConfig.get(apiKeyByService[service.id]) !== '';
 		}
 		case 'self-hosted': {
-			const url = deviceConfig.get("transcription.speaches.baseUrl");
+			const url = deviceConfig.get('transcription.speaches.baseUrl');
 			return url !== '';
 		}
 		case 'local': {
@@ -51,7 +51,7 @@ export function isTranscriptionServiceConfigured(
 				moonshine: 'transcription.moonshine.modelPath',
 			} as const;
 
-			return deviceConfig.get(modelPathByService[service.id]) !== "";
+			return deviceConfig.get(modelPathByService[service.id]) !== '';
 		}
 		default: {
 			return true;

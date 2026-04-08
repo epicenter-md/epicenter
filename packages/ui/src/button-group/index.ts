@@ -4,10 +4,10 @@ import Text from './button-group-text.svelte';
 
 export {
 	Root,
-	Text,
-	Separator,
 	//
 	Root as ButtonGroup,
-	Text as ButtonGroupText,
+	Separator,
 	Separator as ButtonGroupSeparator,
+	Text,
+	Text as ButtonGroupText,
 };

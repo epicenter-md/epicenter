@@ -279,112 +279,112 @@
 			</Field.Description>
 
 			<Field.Group>
-			<!-- Flexible layout that adapts to number of controls -->
-			<div class="flex flex-col sm:flex-row gap-3">
-				<div class="flex-1">
-					<Field.Field>
-						<Field.Label for="ffmpeg-format">Format</Field.Label>
-						<Select.Root
-							type="single"
-							bind:value={() => selected.format,
+				<!-- Flexible layout that adapts to number of controls -->
+				<div class="flex flex-col sm:flex-row gap-3">
+					<div class="flex-1">
+						<Field.Field>
+							<Field.Label for="ffmpeg-format">Format</Field.Label>
+							<Select.Root
+								type="single"
+								bind:value={() => selected.format,
 								(value) => {
 									if (value) {
 										selected = { ...selected, format: value };
 										rebuildOutputOptionsFromSelections();
 									}
 								}}
-						>
-							<Select.Trigger id="ffmpeg-format" class="w-full">
-								{formatLabel ?? 'Select format'}
-							</Select.Trigger>
-							<Select.Content>
-								{#each audioFormatOptions as item}
-									<Select.Item value={item.value} label={item.label} />
-								{/each}
-							</Select.Content>
-						</Select.Root>
-					</Field.Field>
-				</div>
+							>
+								<Select.Trigger id="ffmpeg-format" class="w-full">
+									{formatLabel ?? 'Select format'}
+								</Select.Trigger>
+								<Select.Content>
+									{#each audioFormatOptions as item}
+										<Select.Item value={item.value} label={item.label} />
+									{/each}
+								</Select.Content>
+							</Select.Root>
+						</Field.Field>
+					</div>
 
-				<div class="flex-1">
-					<Field.Field>
-						<Field.Label for="ffmpeg-sample-rate">Sample Rate</Field.Label>
-						<Select.Root
-							type="single"
-							bind:value={() => selected.sampleRate,
+					<div class="flex-1">
+						<Field.Field>
+							<Field.Label for="ffmpeg-sample-rate">Sample Rate</Field.Label>
+							<Select.Root
+								type="single"
+								bind:value={() => selected.sampleRate,
 								(value) => {
 									if (value) {
 										selected = { ...selected, sampleRate: value };
 										rebuildOutputOptionsFromSelections();
 									}
 								}}
-						>
-							<Select.Trigger id="ffmpeg-sample-rate" class="w-full">
-								{sampleRateLabel ?? 'Sample rate'}
-							</Select.Trigger>
-							<Select.Content>
-								{#each SAMPLE_RATE_OPTIONS as item}
-									<Select.Item value={item.value} label={item.label} />
-								{/each}
-							</Select.Content>
-						</Select.Root>
-					</Field.Field>
-				</div>
+							>
+								<Select.Trigger id="ffmpeg-sample-rate" class="w-full">
+									{sampleRateLabel ?? 'Sample rate'}
+								</Select.Trigger>
+								<Select.Content>
+									{#each SAMPLE_RATE_OPTIONS as item}
+										<Select.Item value={item.value} label={item.label} />
+									{/each}
+								</Select.Content>
+							</Select.Root>
+						</Field.Field>
+					</div>
 
-				{#if selected.format === 'ogg'}
-					<!-- Quality scale for OGG Vorbis -->
-					<div class="flex-1">
-						<Field.Field>
-							<Field.Label for="ffmpeg-quality">Quality</Field.Label>
-							<Select.Root
-								type="single"
-								bind:value={() => selected.quality,
+					{#if selected.format === 'ogg'}
+						<!-- Quality scale for OGG Vorbis -->
+						<div class="flex-1">
+							<Field.Field>
+								<Field.Label for="ffmpeg-quality">Quality</Field.Label>
+								<Select.Root
+									type="single"
+									bind:value={() => selected.quality,
 									(value) => {
 										if (value) {
 											selected = { ...selected, quality: value };
 											rebuildOutputOptionsFromSelections();
 										}
 									}}
-							>
-								<Select.Trigger id="ffmpeg-quality" class="w-full">
-									{qualityLabel ?? 'Quality'}
-								</Select.Trigger>
-								<Select.Content>
-									{#each qualityItems as item}
-										<Select.Item value={item.value} label={item.label} />
-									{/each}
-								</Select.Content>
-							</Select.Root>
-						</Field.Field>
-					</div>
-				{:else if selected.format !== 'wav'}
-					<!-- Bitrate for MP3, Opus, AAC -->
-					<div class="flex-1">
-						<Field.Field>
-							<Field.Label for="ffmpeg-bitrate">Bitrate</Field.Label>
-							<Select.Root
-								type="single"
-								bind:value={() => selected.bitrate,
+								>
+									<Select.Trigger id="ffmpeg-quality" class="w-full">
+										{qualityLabel ?? 'Quality'}
+									</Select.Trigger>
+									<Select.Content>
+										{#each qualityItems as item}
+											<Select.Item value={item.value} label={item.label} />
+										{/each}
+									</Select.Content>
+								</Select.Root>
+							</Field.Field>
+						</div>
+					{:else if selected.format !== 'wav'}
+						<!-- Bitrate for MP3, Opus, AAC -->
+						<div class="flex-1">
+							<Field.Field>
+								<Field.Label for="ffmpeg-bitrate">Bitrate</Field.Label>
+								<Select.Root
+									type="single"
+									bind:value={() => selected.bitrate,
 									(value) => {
 										if (value) {
 											selected = { ...selected, bitrate: value };
 											rebuildOutputOptionsFromSelections();
 										}
 									}}
-							>
-								<Select.Trigger id="ffmpeg-bitrate" class="w-full">
-									{bitrateLabel ?? 'Bitrate'}
-								</Select.Trigger>
-								<Select.Content>
-									{#each bitrateItems as item}
-										<Select.Item value={item.value} label={item.label} />
-									{/each}
-								</Select.Content>
-							</Select.Root>
-						</Field.Field>
-					</div>
-				{/if}
-			</div>
+								>
+									<Select.Trigger id="ffmpeg-bitrate" class="w-full">
+										{bitrateLabel ?? 'Bitrate'}
+									</Select.Trigger>
+									<Select.Content>
+										{#each bitrateItems as item}
+											<Select.Item value={item.value} label={item.label} />
+										{/each}
+									</Select.Content>
+								</Select.Root>
+							</Field.Field>
+						</div>
+					{/if}
+				</div>
 			</Field.Group>
 		</Field.Set>
 
@@ -506,7 +506,9 @@
 	<div class="flex flex-col h-full">
 		<div class="rounded-lg border bg-muted/30 flex-1 flex flex-col">
 			<SectionHeader.Root class="p-4 border-b bg-background/50">
-				<SectionHeader.Title level={5} class="font-medium">Command Preview</SectionHeader.Title>
+				<SectionHeader.Title level={5} class="font-medium"
+					>Command Preview</SectionHeader.Title
+				>
 				<SectionHeader.Description class="text-xs">
 					Live updates as you modify settings
 				</SectionHeader.Description>

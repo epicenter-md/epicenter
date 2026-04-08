@@ -3,8 +3,8 @@
 	import * as Popover from '@epicenter/ui/popover';
 	import { Switch } from '@epicenter/ui/switch';
 	import SettingsIcon from '@lucide/svelte/icons/settings';
-	import { toolTrustState } from '$lib/state/tool-trust.svelte';
 	import { workspaceAiTools } from '$lib/client';
+	import { toolTrustState } from '$lib/state/tool-trust.svelte';
 
 	const trustedTools = $derived(
 		toolTrustState.entries.filter(([, level]) => level === 'always'),
@@ -26,7 +26,7 @@
 					{#each trustedTools as [ name ] (name)}
 						<div class="flex items-center justify-between gap-2">
 							<span class="text-sm">
-						{workspaceAiTools.definitions.find(d => d.name === name)?.title ??
+								{workspaceAiTools.definitions.find(d => d.name === name)?.title ??
 									name
 										.replace(/_/g, ' ')
 										.replace(/^\w/, (c) => c.toUpperCase())}

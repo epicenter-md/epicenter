@@ -79,7 +79,6 @@ export class DocumentRoom extends BaseSyncRoom {
 		return Y.encodeStateAsUpdateV2(restoredDoc);
 	}
 
-
 	/** Delete a snapshot by ID. Returns true if a row was removed. */
 	async deleteSnapshot(snapshotId: number): Promise<boolean> {
 		const rowsDeleted = this.ctx.storage.sql.exec(

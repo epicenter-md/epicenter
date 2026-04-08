@@ -1,15 +1,15 @@
 <script lang="ts">
 	import * as Sidebar from '@epicenter/ui/sidebar';
 	import { listen, type UnlistenFn } from '@tauri-apps/api/event';
-	import { MediaQuery } from 'svelte/reactivity';
 	import { onDestroy, onMount } from 'svelte';
+	import { MediaQuery } from 'svelte/reactivity';
 	import { goto } from '$app/navigation';
+	import { migrateOldSettings } from '$lib/migration/migrate-settings';
 	import { rpc } from '$lib/query';
 	import { services } from '$lib/services';
-	import { migrateOldSettings } from '$lib/migration/migrate-settings';
 	import AppLayout from './_components/AppLayout.svelte';
-	import VerticalNav from './_components/VerticalNav.svelte';
 	import BottomNav from './_components/BottomNav.svelte';
+	import VerticalNav from './_components/VerticalNav.svelte';
 
 	// Migrate old monolithic settings blob to per-key stores (one-time, idempotent)
 	migrateOldSettings();

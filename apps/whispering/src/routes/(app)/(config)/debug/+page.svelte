@@ -179,7 +179,9 @@
 				const { error } = trySync({
 					try: () => {
 						const count = workspace.tables.recordings.count();
-						measure('Deleted', count, () => workspace.tables.recordings.clear());
+						measure('Deleted', count, () =>
+							workspace.tables.recordings.clear(),
+						);
 					},
 					catch: (cause) => DebugStressTestError.DeleteFailed({ cause }),
 				});
@@ -387,7 +389,9 @@
 				</div>
 
 				{#if stressTest.lastError}
-					<div class="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
+					<div
+						class="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive"
+					>
 						{stressTest.lastError.message}
 					</div>
 				{/if}

@@ -1,15 +1,18 @@
 <script lang="ts">
+	import { Button } from '@epicenter/ui/button';
+	import {
+		CommandPalette,
+		type CommandPaletteItem,
+	} from '@epicenter/ui/command-palette';
 	import * as Resizable from '@epicenter/ui/resizable';
 	import { ScrollArea } from '@epicenter/ui/scroll-area';
-	import { CommandPalette, type CommandPaletteItem } from '@epicenter/ui/command-palette';
-	import { Button } from '@epicenter/ui/button';
 	import * as Tooltip from '@epicenter/ui/tooltip';
 	import SearchIcon from '@lucide/svelte/icons/search';
+	import { skillsState } from '$lib/state/skills-state.svelte';
+	import NewSkillDialog from './dialogs/NewSkillDialog.svelte';
 	import SkillEditor from './editor/SkillEditor.svelte';
 	import SkillsList from './SkillsList.svelte';
 	import StorageBadge from './StorageBadge.svelte';
-	import NewSkillDialog from './dialogs/NewSkillDialog.svelte';
-	import { skillsState } from '$lib/state/skills-state.svelte';
 
 	let commandPaletteOpen = $state(false);
 
@@ -31,7 +34,9 @@
 				<div class="flex h-full flex-col">
 					<!-- Sidebar Header -->
 					<div class="flex items-center justify-between border-b px-3 py-2">
-						<span class="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+						<span
+							class="text-xs font-medium uppercase tracking-wide text-muted-foreground"
+						>
 							Skills
 						</span>
 						<NewSkillDialog />
@@ -61,9 +66,7 @@
 				</div>
 			</Resizable.Pane>
 			<Resizable.Handle withHandle />
-			<Resizable.Pane defaultSize={75}>
-				<SkillEditor />
-			</Resizable.Pane>
+			<Resizable.Pane defaultSize={75}> <SkillEditor /> </Resizable.Pane>
 		</Resizable.PaneGroup>
 		<CommandPalette
 			items={skillItems}

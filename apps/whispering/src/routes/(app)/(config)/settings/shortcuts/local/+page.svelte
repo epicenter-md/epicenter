@@ -17,7 +17,10 @@
 	>
 		<SectionHeader.Root>
 			<div class="flex items-center gap-2">
-				<SectionHeader.Title level={2} class="text-xl tracking-tight sm:text-2xl">
+				<SectionHeader.Title
+					level={2}
+					class="text-xl tracking-tight sm:text-2xl"
+				>
 					Local Shortcuts
 				</SectionHeader.Title>
 				<ShortcutFormatHelp type="local" />

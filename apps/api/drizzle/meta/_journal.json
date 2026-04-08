@@ -1,27 +1,27 @@
 {
-  "version": "7",
-  "dialect": "postgresql",
-  "entries": [
-    {
-      "idx": 0,
-      "version": "7",
-      "when": 1773162614501,
-      "tag": "0000_simple_mach_iv",
-      "breakpoints": true
-    },
-    {
-      "idx": 1,
-      "version": "7",
-      "when": 1773443824067,
-      "tag": "0001_futuristic_santa_claus",
-      "breakpoints": true
-    },
-    {
-      "idx": 2,
-      "version": "7",
-      "when": 1774071339224,
-      "tag": "0002_chubby_captain_america",
-      "breakpoints": true
-    }
-  ]
+	"version": "7",
+	"dialect": "postgresql",
+	"entries": [
+		{
+			"idx": 0,
+			"version": "7",
+			"when": 1773162614501,
+			"tag": "0000_simple_mach_iv",
+			"breakpoints": true
+		},
+		{
+			"idx": 1,
+			"version": "7",
+			"when": 1773443824067,
+			"tag": "0001_futuristic_santa_claus",
+			"breakpoints": true
+		},
+		{
+			"idx": 2,
+			"version": "7",
+			"when": 1774071339224,
+			"tag": "0002_chubby_captain_america",
+			"breakpoints": true
+		}
+	]
 }

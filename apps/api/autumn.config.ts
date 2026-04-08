@@ -8,7 +8,8 @@ import {
 
 /** Asserts a value is non-null at runtime. Used for plan fields that are null on some tiers. */
 function defined<T>(value: T): NonNullable<T> {
-	if (value == null) throw new Error('Expected defined value in billing plan config');
+	if (value == null)
+		throw new Error('Expected defined value in billing plan config');
 	return value as NonNullable<T>;
 }
 

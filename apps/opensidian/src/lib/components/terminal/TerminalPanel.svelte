@@ -32,7 +32,12 @@
 <div class="flex h-full flex-col border-t bg-background font-mono text-sm">
 	<div class="flex items-center justify-between px-3 py-1">
 		<span class="text-xs font-medium text-muted-foreground">Terminal</span>
-		<Button variant="ghost" size="icon-xs" aria-label="Close terminal" onclick={() => terminalState.hide()}>
+		<Button
+			variant="ghost"
+			size="icon-xs"
+			aria-label="Close terminal"
+			onclick={() => terminalState.hide()}
+		>
 			<X aria-hidden="true" class="size-3" />
 		</Button>
 	</div>

@@ -1,8 +1,8 @@
 <script lang="ts">
 	import { Spinner } from '@epicenter/ui/spinner';
 	import type { DocumentHandle } from '@epicenter/workspace';
-	import { skillsState } from '$lib/state/skills-state.svelte';
 	import { workspace } from '$lib/client';
+	import { skillsState } from '$lib/state/skills-state.svelte';
 	import CodeMirrorEditor from './CodeMirrorEditor.svelte';
 
 	let { skillId }: { skillId: string } = $props();
@@ -14,7 +14,8 @@
 		const id = skillId;
 		handle = null;
 		error = null;
-		workspace.documents.skills.instructions.open(id).then((h) => {
+		workspace.documents.skills.instructions.open(id).then(
+			(h) => {
 				if (skillsState.selectedSkillId !== id) return;
 				handle = h;
 			},

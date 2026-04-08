@@ -57,10 +57,12 @@
 	import LoaderCircle from '@lucide/svelte/icons/loader-circle';
 	import LogOutIcon from '@lucide/svelte/icons/log-out';
 	import RefreshCwIcon from '@lucide/svelte/icons/refresh-cw';
-	import AuthForm from '$lib/components/AuthForm.svelte';
 	import { auth } from '$lib/client';
+	import AuthForm from '$lib/components/AuthForm.svelte';
 
-	const tooltip = $derived(getTooltip(syncStatus.current, auth.isAuthenticated));
+	const tooltip = $derived(
+		getTooltip(syncStatus.current, auth.isAuthenticated),
+	);
 
 	let popoverOpen = $state(false);
 </script>
@@ -96,14 +98,14 @@
 					<p class="text-xs text-muted-foreground">{auth.user?.email}</p>
 				</div>
 				<div class="border-t pt-3 space-y-1">
-				<p class="text-xs text-muted-foreground">
-					Sync:
-					{({
+					<p class="text-xs text-muted-foreground">
+						Sync:
+						{({
 						connected: 'Connected',
 						connecting: 'Connecting…',
 						offline: 'Offline',
 					} satisfies Record<SyncStatus['phase'], string>)[syncStatus.current.phase]}
-				</p>
+					</p>
 				</div>
 				<div class="border-t pt-3 flex gap-2">
 					{#if syncStatus.current.phase !== 'connected'}

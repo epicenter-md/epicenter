@@ -15,7 +15,6 @@
 	} = $props();
 
 	let inputValue = $state('');
-
 </script>
 
 <div

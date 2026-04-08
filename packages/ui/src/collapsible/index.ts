@@ -3,11 +3,11 @@ import Content from './collapsible-content.svelte';
 import Trigger from './collapsible-trigger.svelte';
 
 export {
-	Root,
 	Content,
-	Trigger,
+	Content as CollapsibleContent,
+	Root,
 	//
 	Root as Collapsible,
-	Content as CollapsibleContent,
+	Trigger,
 	Trigger as CollapsibleTrigger,
 };

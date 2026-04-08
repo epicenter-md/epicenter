@@ -109,7 +109,12 @@ export type Connection = {
 export type MessageResult =
 	| { action: 'reply'; data: Uint8Array }
 	| { action: 'broadcast'; data: Uint8Array; shouldPersistAttachment: boolean }
-	| { action: 'forward'; targetClientId: number; data: Uint8Array; onMissReply?: Uint8Array };
+	| {
+			action: 'forward';
+			targetClientId: number;
+			data: Uint8Array;
+			onMissReply?: Uint8Array;
+	  };
 
 // ============================================================================
 // Handlers

@@ -1,9 +1,9 @@
+import { createPersistedState } from '@epicenter/svelte';
+import { type } from 'arktype';
 import { defineCommand } from 'just-bash';
-	import { createPersistedState } from '@epicenter/svelte';
+import { Ok, tryAsync } from 'wellcrafted/result';
 import { bash, fs } from '$lib/client';
 import { fsState } from '$lib/state/fs-state.svelte';
-import { Ok, tryAsync } from 'wellcrafted/result';
-import { type } from 'arktype';
 
 /**
  * A single entry in the terminal history.
@@ -88,7 +88,14 @@ function createTerminalState() {
 
 	function ensureWelcome() {
 		if (history.length === 0) {
-			history = [{ type: 'output', stdout: WELCOME_MESSAGE + '\n', stderr: '', exitCode: 0 }];
+			history = [
+				{
+					type: 'output',
+					stdout: WELCOME_MESSAGE + '\n',
+					stderr: '',
+					exitCode: 0,
+				},
+			];
 		}
 	}
 

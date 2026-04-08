@@ -11,8 +11,11 @@
 	import WandIcon from '@lucide/svelte/icons/wand';
 	import { goto } from '$app/navigation';
 	import { rpc } from '$lib/query';
-	import { transformations, type Transformation } from '$lib/state/transformations.svelte';
 	import { settings } from '$lib/state/settings.svelte';
+	import {
+		type Transformation,
+		transformations,
+	} from '$lib/state/transformations.svelte';
 	import { viewTransition } from '$lib/utils/viewTransitions';
 
 	const sortedTransformations = $derived(transformations.sorted);

@@ -107,11 +107,11 @@
 										{format(parseDateTime(entry.updatedAt), 'h:mm a')}
 									</span>
 								</div>
-							{#if entry.subtitle}
-								<p class="line-clamp-1 text-xs text-muted-foreground">
-									{entry.subtitle}
-								</p>
-							{/if}
+								{#if entry.subtitle}
+									<p class="line-clamp-1 text-xs text-muted-foreground">
+										{entry.subtitle}
+									</p>
+								{/if}
 							</div>
 						{/each}
 					</div>

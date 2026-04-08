@@ -23,10 +23,10 @@
  * @module
  */
 
-// Workspace factory + definition
-export { createSkillsWorkspace } from './workspace.js';
 export { skillsDefinition } from './definition.js';
+export type { Reference, Skill } from './tables.js';
 
 // Tables + types (for embedding in custom workspaces)
-export { skillsTable, referencesTable } from './tables.js';
-export type { Skill, Reference } from './tables.js';
+export { referencesTable, skillsTable } from './tables.js';
+// Workspace factory + definition
+export { createSkillsWorkspace } from './workspace.js';

@@ -116,5 +116,4 @@ describe('actionsToAiTools', () => {
 			expect('title' in definitions[0]!).toBe(false);
 		});
 	});
-
-	});
+});

@@ -9,21 +9,21 @@
 	import MoreDetailsDialog from '$lib/components/MoreDetailsDialog.svelte';
 	import NotificationLog from '$lib/components/NotificationLog.svelte';
 	import UpdateDialog from '$lib/components/UpdateDialog.svelte';
-	import { rpc } from '$lib/query';
-	import { services } from '$lib/services';
-	import { vadRecorder } from '$lib/state/vad-recorder.svelte';
-	import { settings } from '$lib/state/settings.svelte';
 	import {
 		RECORDER_STATE_TO_ICON,
 		VAD_STATE_TO_ICON,
 	} from '$lib/constants/audio';
+	import { migrationDialog } from '$lib/migration/migration-dialog.svelte';
+	import { rpc } from '$lib/query';
+	import { services } from '$lib/services';
+	import { settings } from '$lib/state/settings.svelte';
+	import { vadRecorder } from '$lib/state/vad-recorder.svelte';
 	import { syncWindowAlwaysOnTopWithRecorderState } from '../_layout-utils/alwaysOnTop.svelte';
 	import {
 		checkCompressionRecommendation,
 		checkFfmpegRecordingMethodCompatibility,
 	} from '../_layout-utils/check-ffmpeg';
 	import { checkForUpdates } from '../_layout-utils/check-for-updates';
-	import { migrationDialog } from '$lib/migration/migration-dialog.svelte';
 	import {
 		resetGlobalShortcutsToDefaultIfDuplicates,
 		resetLocalShortcutsToDefaultIfDuplicates,

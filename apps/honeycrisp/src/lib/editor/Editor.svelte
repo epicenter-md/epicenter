@@ -119,10 +119,10 @@
 		marks: basicSchema.spec.marks.append({ underline, strike }),
 	});
 
-
 	function markActive(state: EditorState, markType: MarkType): boolean {
 		const { from, $from: resolvedFrom, to, empty } = state.selection;
-		if (empty) return !!markType.isInSet(state.storedMarks || resolvedFrom.marks());
+		if (empty)
+			return !!markType.isInSet(state.storedMarks || resolvedFrom.marks());
 		return state.doc.rangeHasMark(from, to, markType);
 	}
 
@@ -132,7 +132,7 @@
 		attrs?: Record<string, unknown>,
 	): boolean {
 		const { $from: resolvedFrom } = state.selection;
-	
+
 		for (let depth = resolvedFrom.depth; depth >= 0; depth -= 1) {
 			const node = resolvedFrom.node(depth);
 			if (node.type !== nodeType) continue;

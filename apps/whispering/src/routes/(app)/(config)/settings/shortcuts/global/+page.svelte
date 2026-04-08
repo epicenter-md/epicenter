@@ -7,7 +7,7 @@
 	import Layers2Icon from '@lucide/svelte/icons/layers-2';
 	import RotateCcw from '@lucide/svelte/icons/rotate-ccw';
 	import { rpc } from '$lib/query';
-import { desktopRpc } from '$lib/query/desktop';
+	import { desktopRpc } from '$lib/query/desktop';
 	import { resetGlobalShortcuts } from '$routes/(app)/_layout-utils/register-commands';
 	import ShortcutFormatHelp from '../keyboard-shortcut-recorder/ShortcutFormatHelp.svelte';
 	import ShortcutTable from '../keyboard-shortcut-recorder/ShortcutTable.svelte';
@@ -22,7 +22,10 @@ import { desktopRpc } from '$lib/query/desktop';
 		>
 			<SectionHeader.Root>
 				<div class="flex items-center gap-2">
-					<SectionHeader.Title level={2} class="text-xl tracking-tight sm:text-2xl">
+					<SectionHeader.Title
+						level={2}
+						class="text-xl tracking-tight sm:text-2xl"
+					>
 						Global Shortcuts
 					</SectionHeader.Title>
 					<ShortcutFormatHelp type="global" />

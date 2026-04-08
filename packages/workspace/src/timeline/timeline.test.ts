@@ -7,8 +7,8 @@
 
 import { describe, expect, test } from 'bun:test';
 import * as Y from 'yjs';
-import { createTimeline } from './timeline.js';
 import { xmlFragmentToPlaintext } from './richtext.js';
+import { createTimeline } from './timeline.js';
 
 function setup() {
 	return createTimeline(new Y.Doc());
@@ -18,7 +18,7 @@ describe('createTimeline - sheet entries', () => {
 	test('asSheet on empty timeline creates sheet entry', () => {
 		const tl = setup();
 		tl.asSheet();
-	expect(tl.currentType).toBe('sheet');
+		expect(tl.currentType).toBe('sheet');
 	});
 
 	test('asSheet on empty timeline creates empty columns and rows', () => {
@@ -387,9 +387,9 @@ describe('createTimeline - observe', () => {
 		const tl = setup();
 		let callCount = 0;
 		tl.observe(() => callCount++);
-		tl.asText();     // push text entry (empty timeline)
+		tl.asText(); // push text entry (empty timeline)
 		tl.asRichText(); // push richtext entry (converts from text)
-		tl.asSheet();    // push sheet entry (converts from richtext)
+		tl.asSheet(); // push sheet entry (converts from richtext)
 		expect(callCount).toBe(3);
 	});
 
@@ -404,7 +404,8 @@ describe('createTimeline - observe', () => {
 
 	test('does not fire when write replaces sheet in-place', () => {
 		const tl = setup();
-		tl.asSheet(); tl.write('A,B\n1,2\n');
+		tl.asSheet();
+		tl.write('A,B\n1,2\n');
 		let callCount = 0;
 		tl.observe(() => callCount++);
 		tl.write('C,D\n3,4\n'); // replaces in-place, no new entry pushed
@@ -435,9 +436,7 @@ describe('createTimeline - observe', () => {
 		let callCount = 0;
 		tl.observe(() => callCount++);
 
-		tl.restoreFromSnapshot(
-			createSnapshotBinary((s) => s.asRichText()),
-		);
+		tl.restoreFromSnapshot(createSnapshotBinary((s) => s.asRichText()));
 		expect(callCount).toBe(1);
 		doc.destroy();
 	});
@@ -449,9 +448,7 @@ describe('createTimeline - observe', () => {
 		let callCount = 0;
 		tl.observe(() => callCount++);
 
-		tl.restoreFromSnapshot(
-			createSnapshotBinary((s) => s.write('restored')),
-		);
+		tl.restoreFromSnapshot(createSnapshotBinary((s) => s.write('restored')));
 		expect(callCount).toBe(0);
 		doc.destroy();
 	});
@@ -535,7 +532,8 @@ describe('createTimeline - cross-mode conversions', () => {
 describe('createTimeline - write (sheet mode)', () => {
 	test('write on sheet mode replaces sheet content', () => {
 		const tl = setup();
-		tl.asSheet(); tl.write('Name,Age\nAlice,30\n');
+		tl.asSheet();
+		tl.write('Name,Age\nAlice,30\n');
 		expect(tl.currentType).toBe('sheet');
 		expect(tl.read()).toBe('Name,Age\nAlice,30\n');
 		expect(tl.length).toBe(1);

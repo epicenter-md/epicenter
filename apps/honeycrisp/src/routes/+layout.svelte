@@ -1,11 +1,11 @@
 <script lang="ts">
 	import { WorkspaceGate } from '@epicenter/svelte/workspace-gate';
+	import { Toaster } from '@epicenter/ui/sonner';
 	import { QueryClientProvider } from '@tanstack/svelte-query';
 	import { SvelteQueryDevtools } from '@tanstack/svelte-query-devtools';
 	import { ModeWatcher } from 'mode-watcher';
-	import { Toaster } from '@epicenter/ui/sonner';
-	import { queryClient } from '$lib/query/client';
 	import { workspace } from '$lib/client';
+	import { queryClient } from '$lib/query/client';
 	import '@epicenter/ui/app.css';
 	import * as Tooltip from '@epicenter/ui/tooltip';
 

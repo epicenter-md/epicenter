@@ -37,6 +37,7 @@
 </script>
 
 <script lang="ts">
+	import { AuthForm } from '@epicenter/svelte/auth-form';
 	import { Button, buttonVariants } from '@epicenter/ui/button';
 	import * as Popover from '@epicenter/ui/popover';
 	import Cloud from '@lucide/svelte/icons/cloud';
@@ -44,10 +45,11 @@
 	import LoaderCircle from '@lucide/svelte/icons/loader-circle';
 	import LogOut from '@lucide/svelte/icons/log-out';
 	import RefreshCw from '@lucide/svelte/icons/refresh-cw';
-	import { AuthForm } from '@epicenter/svelte/auth-form';
 	import { auth } from '$lib/client';
 
-	const tooltip = $derived(getTooltip(syncStatus.current, auth.isAuthenticated));
+	const tooltip = $derived(
+		getTooltip(syncStatus.current, auth.isAuthenticated),
+	);
 
 	let popoverOpen = $state(false);
 </script>

@@ -1,6 +1,10 @@
 <script lang="ts">
 	import * as Sidebar from '@epicenter/ui/sidebar';
-	import { MessageSquarePlusIcon, MessageSquareTextIcon, TrashIcon } from '@lucide/svelte';
+	import {
+		MessageSquarePlusIcon,
+		MessageSquareTextIcon,
+		TrashIcon,
+	} from '@lucide/svelte';
 	import { chatState } from '$lib/chat/chat-state.svelte';
 </script>
 

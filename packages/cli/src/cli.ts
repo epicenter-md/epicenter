@@ -13,10 +13,10 @@ import {
 import { describeCommand } from './commands/describe';
 import { kvCommand } from './commands/kv';
 import { initCommand } from './commands/project';
+import { rpcCommand } from './commands/rpc';
 import { runActionCommand } from './commands/run';
 import { sizeCommand } from './commands/size';
 import { startCommand } from './commands/start';
-import { rpcCommand } from './commands/rpc';
 
 /** Resolution order: EPICENTER_HOME env > ~/.epicenter/ */
 export function resolveEpicenterHome(flagValue?: string): string {

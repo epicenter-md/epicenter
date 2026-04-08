@@ -64,7 +64,7 @@
 			"OPENAI_API_KEY",
 			"ANTHROPIC_API_KEY",
 			"AUTUMN_SECRET_KEY",
-			"GEMINI_API_KEY",
+			"GEMINI_API_KEY"
 		]
 	},
 	// --- Hyperdrive: Postgres connection pool ---

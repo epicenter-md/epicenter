@@ -21,8 +21,8 @@
  * ```
  */
 
-import { generateId } from '@epicenter/workspace';
 import { fromTable } from '@epicenter/svelte';
+import { generateId } from '@epicenter/workspace';
 import { workspace } from '$lib/client';
 import type { FolderId } from '$lib/workspace';
 

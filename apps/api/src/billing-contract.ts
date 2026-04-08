@@ -52,7 +52,6 @@ export type PortalResponse = Awaited<
 	ReturnType<Autumn['billing']['openCustomerPortal']>
 >;
 
-
 // ── Dashboard request types (subset of SDK params, no server fields) ─
 
 /**

@@ -496,8 +496,7 @@ describe('multi-client broadcast', () => {
 	});
 
 	test('awareness broadcast reaches other clients', () => {
-		const { room, connection1, awareness } =
-			setupTwoClients();
+		const { room, connection1, awareness } = setupTwoClients();
 
 		// Client A sends awareness update
 		const clientDoc = new Y.Doc();
@@ -531,11 +530,7 @@ describe('multi-client broadcast', () => {
 describe('full handshake convergence', () => {
 	test('server content syncs to client via SyncStep1 → SyncStep2 exchange', () => {
 		// Server has content
-		const {
-			room,
-			connection,
-			initialMessages,
-		} = setup((d) => {
+		const { room, connection, initialMessages } = setup((d) => {
 			d.getMap('notes').set('note1', 'Hello from server');
 			d.getArray('items').push(['item-a', 'item-b']);
 		});

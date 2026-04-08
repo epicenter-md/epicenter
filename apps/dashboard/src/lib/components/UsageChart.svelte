@@ -1,8 +1,8 @@
 <script lang="ts">
 	import * as Card from '@epicenter/ui/card';
 	import * as Chart from '@epicenter/ui/chart';
-	import * as Select from '@epicenter/ui/select';
 	import * as Empty from '@epicenter/ui/empty';
+	import * as Select from '@epicenter/ui/select';
 	import { Skeleton } from '@epicenter/ui/skeleton';
 	import { createQuery } from '@tanstack/svelte-query';
 	import { scaleUtc } from 'd3-scale';
@@ -131,7 +131,9 @@
 			<Empty.Root class="py-8 border-0">
 				<Empty.Content>
 					<Empty.Title>No usage data yet</Empty.Title>
-					<Empty.Description>Credits you use will appear here as a chart.</Empty.Description>
+					<Empty.Description
+						>Credits you use will appear here as a chart.</Empty.Description
+					>
 				</Empty.Content>
 			</Empty.Root>
 		{:else}

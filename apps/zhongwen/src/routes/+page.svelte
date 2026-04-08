@@ -4,18 +4,17 @@
 	import * as Chat from '@epicenter/ui/chat';
 	import * as Sidebar from '@epicenter/ui/sidebar';
 	import { chatState } from '$lib/chat/chat-state.svelte';
+	import { auth, workspace } from '$lib/client';
 	import ChatInput from '$lib/components/ChatInput.svelte';
 	import ChatMessage from '$lib/components/ChatMessage.svelte';
 	import ModelPicker from '$lib/components/ModelPicker.svelte';
 	import ZhongwenSidebar from '$lib/components/ZhongwenSidebar.svelte';
-	import { auth, workspace } from '$lib/client';
 
 	const showPinyin = fromKv(workspace.kv, 'showPinyin');
 	let dismissedError = $state(false);
 	let submitError = $state<string | null>(null);
 
 	const handle = $derived(chatState.active);
-
 
 	async function signInWithGoogle() {
 		const { error } = await auth.signInWithSocialRedirect({
@@ -51,14 +50,10 @@
 					{showPinyin.current ? 'Hide Pinyin' : 'Show Pinyin'}
 				</Button>
 
-			{#if auth.isAuthenticated}
-					<span class="text-sm text-muted-foreground"
-						>{auth.user?.name}</span
-					>
-			{:else if !auth.isAuthenticated}
-					<Button size="sm" onclick={signInWithGoogle}>
-						Sign In
-					</Button>
+				{#if auth.isAuthenticated}
+					<span class="text-sm text-muted-foreground">{auth.user?.name}</span>
+				{:else if !auth.isAuthenticated}
+					<Button size="sm" onclick={signInWithGoogle}> Sign In </Button>
 				{/if}
 			</div>
 		</header>
@@ -75,9 +70,7 @@
 					{#if submitError}
 						<p class="text-sm text-destructive">{submitError}</p>
 					{/if}
-					<Button onclick={signInWithGoogle}
-						>Sign in with Google</Button
-					>
+					<Button onclick={signInWithGoogle}>Sign in with Google</Button>
 				</div>
 			</div>
 		{:else if handle}
