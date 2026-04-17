@@ -39,6 +39,9 @@ pub struct RecorderState {
     sample_rate: u32,
     channels: u16,
     file_path: Option<PathBuf>,
+    cached_devices: Vec<String>,
+    device_cache: std::collections::HashMap<String, Device>,
+    config_cache: std::collections::HashMap<String, cpal::SupportedStreamConfig>,
 }
 
 impl RecorderState {
@@ -51,18 +54,29 @@ impl RecorderState {
             sample_rate: 0,
             channels: 0,
             file_path: None,
+            cached_devices: Vec::new(),
+            device_cache: std::collections::HashMap::new(),
+            config_cache: std::collections::HashMap::new(),
         }
     }
 
     /// List available recording devices by name
-    pub fn enumerate_devices(&self) -> Result<Vec<String>> {
+    pub fn enumerate_devices(&mut self) -> Result<Vec<String>> {
+        // If we have cached devices and they are recent (e.g., less than 5 seconds old), use them
+        // For now, simple caching: if we have them, return them.
+        // In a real app, you might want a "refresh" parameter or a timestamp check.
+        if !self.cached_devices.is_empty() {
+             return Ok(self.cached_devices.clone());
+        }
+
         let host = cpal::default_host();
-        let devices = host
+        let devices: Vec<String> = host
             .input_devices()
             .map_err(|e| format!("Failed to get input devices: {}", e))?
             .filter_map(|device| device.name().ok())
             .collect();
-
+        
+        self.cached_devices = devices.clone();
         Ok(devices)
     }
 
@@ -81,11 +95,10 @@ impl RecorderState {
         let file_path = output_folder.join(format!("{}.wav", recording_id));
 
         // Find the device
-        let host = cpal::default_host();
-        let device = find_device(&host, &device_name)?;
+        let device = self.get_device(&device_name)?;
 
         // Get optimal config for voice with optional preferred sample rate
-        let config = get_optimal_config(&device, preferred_sample_rate)?;
+        let config = self.get_config(&device, &device_name, preferred_sample_rate)?;
         let sample_format = config.sample_format();
         let sample_rate = config.sample_rate().0;
         let channels = config.channels();
@@ -295,120 +308,150 @@ impl RecorderState {
             None
         }
     }
-}
 
-/// Find a recording device by name
-fn find_device(host: &cpal::Host, device_name: &str) -> Result<Device> {
-    // Handle "default" device
-    if device_name.to_lowercase() == "default" {
-        return host
-            .default_input_device()
-            .ok_or_else(|| "No default input device available".to_string());
-    }
+    /// Find a recording device by name (checking cache first)
+    fn get_device(&mut self, device_name: &str) -> Result<Device> {
+        // Check cache first
+        if let Some(device) = self.device_cache.get(device_name) {
+            return Ok(device.clone());
+        }
 
-    // Find specific device
-    let devices: Vec<_> = host.input_devices().map_err(|e| e.to_string())?.collect();
+        let host = cpal::default_host();
+        
+        // Handle "default" device
+        if device_name.to_lowercase() == "default" {
+            let device = host
+                .default_input_device()
+                .ok_or_else(|| "No default input device available".to_string())?;
+            self.device_cache.insert(device_name.to_string(), device.clone());
+            return Ok(device);
+        }
 
-    for device in devices {
-        if let Ok(name) = device.name() {
-            if name == device_name {
-                return Ok(device);
+        // Find specific device
+        let devices = host.input_devices().map_err(|e| e.to_string())?;
+        
+        for device in devices {
+            if let Ok(name) = device.name() {
+                if name == device_name {
+                    self.device_cache.insert(device_name.to_string(), device.clone());
+                    return Ok(device);
+                }
             }
         }
+
+        Err(format!("Device '{}' not found", device_name))
     }
 
-    Err(format!("Device '{}' not found", device_name))
-}
+    /// Get optimal configuration (checking cache first)
+    fn get_config(
+        &mut self,
+        device: &Device,
+        device_name: &str,
+        preferred_sample_rate: Option<u32>,
+    ) -> Result<cpal::SupportedStreamConfig> {
+        let cache_key = format!("{}-{:?}", device_name, preferred_sample_rate);
 
-/// Get optimal configuration for voice recording
-fn get_optimal_config(
-    device: &Device,
-    preferred_sample_rate: Option<u32>,
-) -> Result<cpal::SupportedStreamConfig> {
-    // Use preferred sample rate or default to 16kHz for voice
-    let target_sample_rate = preferred_sample_rate.unwrap_or(16000);
+        if let Some(config) = self.config_cache.get(&cache_key) {
+            return Ok(config.clone());
+        }
 
-    let configs: Vec<_> = device
-        .supported_input_configs()
-        .map_err(|e| e.to_string())?
-        .collect();
+        // Use preferred sample rate or default to 16kHz for voice
+        let target_sample_rate = preferred_sample_rate.unwrap_or(16000);
 
-    if configs.is_empty() {
-        return Err("No supported input configurations".to_string());
-    }
+        let configs: Vec<_> = device
+            .supported_input_configs()
+            .map_err(|e| e.to_string())?
+            .collect();
 
-    // Filter for supported sample formats only
-    let supported_formats = [SampleFormat::F32, SampleFormat::I16, SampleFormat::U16];
-    let compatible_configs: Vec<_> = configs
-        .iter()
-        .filter(|config| supported_formats.contains(&config.sample_format()))
-        .collect();
+        if configs.is_empty() {
+            return Err("No supported input configurations".to_string());
+        }
 
-    if compatible_configs.is_empty() {
-        return Err("No configurations with supported sample formats (F32, I16, U16)".to_string());
-    }
+        // Filter for supported sample formats only
+        let supported_formats = [SampleFormat::F32, SampleFormat::I16, SampleFormat::U16];
+        let compatible_configs: Vec<_> = configs
+            .iter()
+            .filter(|config| supported_formats.contains(&config.sample_format()))
+            .collect();
 
-    // Try to find mono config with target sample rate and supported format
-    for config in &compatible_configs {
-        if config.channels() == 1 {
-            let min_rate = config.min_sample_rate().0;
-            let max_rate = config.max_sample_rate().0;
-            if min_rate <= target_sample_rate && max_rate >= target_sample_rate {
-                return Ok(config.with_sample_rate(cpal::SampleRate(target_sample_rate)));
+        if compatible_configs.is_empty() {
+            return Err("No configurations with supported sample formats (F32, I16, U16)".to_string());
+        }
+
+        let mut final_config = None;
+
+        // Try to find mono config with target sample rate and supported format
+        for config in &compatible_configs {
+            if config.channels() == 1 {
+                let min_rate = config.min_sample_rate().0;
+                let max_rate = config.max_sample_rate().0;
+                if min_rate <= target_sample_rate && max_rate >= target_sample_rate {
+                    final_config = Some(config.with_sample_rate(cpal::SampleRate(target_sample_rate)));
+                    break;
+                }
             }
         }
-    }
 
-    // Try stereo with target sample rate if mono not available
-    for config in &compatible_configs {
-        let min_rate = config.min_sample_rate().0;
-        let max_rate = config.max_sample_rate().0;
-        if min_rate <= target_sample_rate && max_rate >= target_sample_rate {
-            return Ok(config.with_sample_rate(cpal::SampleRate(target_sample_rate)));
+        // Try stereo with target sample rate if mono not available
+        if final_config.is_none() {
+            for config in &compatible_configs {
+                let min_rate = config.min_sample_rate().0;
+                let max_rate = config.max_sample_rate().0;
+                if min_rate <= target_sample_rate && max_rate >= target_sample_rate {
+                    final_config = Some(config.with_sample_rate(cpal::SampleRate(target_sample_rate)));
+                    break;
+                }
+            }
         }
-    }
 
-    // If target rate not supported, try to find closest rate
-    let mut best_config = None;
-    let mut best_diff = u32::MAX;
+        // If target rate not supported, try to find closest rate
+        if final_config.is_none() {
+            let mut best_config = None;
+            let mut best_diff = u32::MAX;
 
-    for config in &compatible_configs {
-        // Prefer mono
-        if config.channels() == 1 {
+            for config in &compatible_configs {
+                // Prefer mono
+                if config.channels() == 1 {
+                    let min_rate = config.min_sample_rate().0;
+                    let max_rate = config.max_sample_rate().0;
+
+                    // Find closest supported rate
+                    let closest_rate = if target_sample_rate < min_rate {
+                        min_rate
+                    } else if target_sample_rate > max_rate {
+                        max_rate
+                    } else {
+                        target_sample_rate
+                    };
+
+                    let diff = (closest_rate as i32 - target_sample_rate as i32).abs() as u32;
+                    if diff < best_diff {
+                        best_diff = diff;
+                        best_config = Some(config.with_sample_rate(cpal::SampleRate(closest_rate)));
+                    }
+                }
+            }
+             final_config = best_config;
+        }
+
+        // If still no best config, take any compatible config
+        if final_config.is_none() && !compatible_configs.is_empty() {
+             let config = compatible_configs[0];
             let min_rate = config.min_sample_rate().0;
             let max_rate = config.max_sample_rate().0;
-
-            // Find closest supported rate
-            let closest_rate = if target_sample_rate < min_rate {
-                min_rate
-            } else if target_sample_rate > max_rate {
-                max_rate
-            } else {
+            let rate = if min_rate <= target_sample_rate && max_rate >= target_sample_rate {
                 target_sample_rate
+            } else {
+                min_rate // Use minimum rate as fallback
             };
-
-            let diff = (closest_rate as i32 - target_sample_rate as i32).abs() as u32;
-            if diff < best_diff {
-                best_diff = diff;
-                best_config = Some(config.with_sample_rate(cpal::SampleRate(closest_rate)));
-            }
+            final_config = Some(config.with_sample_rate(cpal::SampleRate(rate)));
         }
-    }
 
-    // If still no best config, take any compatible config
-    if best_config.is_none() && !compatible_configs.is_empty() {
-        let config = compatible_configs[0];
-        let min_rate = config.min_sample_rate().0;
-        let max_rate = config.max_sample_rate().0;
-        let rate = if min_rate <= target_sample_rate && max_rate >= target_sample_rate {
-            target_sample_rate
-        } else {
-            min_rate // Use minimum rate as fallback
-        };
-        best_config = Some(config.with_sample_rate(cpal::SampleRate(rate)));
+        let config = final_config.ok_or_else(|| "Failed to find suitable audio configuration".to_string())?;
+        
+        self.config_cache.insert(cache_key, config.clone());
+        Ok(config)
     }
-
-    best_config.ok_or_else(|| "Failed to find suitable audio configuration".to_string())
 }
 
 /// Build input stream for any supported sample format
