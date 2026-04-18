@@ -5,6 +5,7 @@
 	import { Switch } from '@epicenter/ui/switch';
 	import { createMutation, createQuery } from '@tanstack/svelte-query';
 	import { ALWAYS_ON_TOP_MODE_OPTIONS } from '$lib/constants/ui';
+	import { PLATFORM_TYPE } from '$lib/constants/platform';
 	import { rpc } from '$lib/query';
 	import { desktopRpc } from '$lib/query/desktop';
 	import { settings } from '$lib/state/settings.svelte';
@@ -191,6 +192,21 @@
 		{/if}
 
 		{#if window.__TAURI_INTERNALS__}
+			{#if PLATFORM_TYPE === 'linux'}
+				<Field.Field orientation="horizontal">
+					<Field.Content>
+						<Field.Label for="use-ydotool">Use ydotool (Linux Wayland)</Field.Label>
+						<Field.Description>
+							Use ydotool for key simulation instead of enigo. Required for paste-at-cursor on Wayland.
+						</Field.Description>
+					</Field.Content>
+					<Switch
+						id="use-ydotool"
+						bind:checked={() => settings.get('system.useYdotool'),
+							(v) => settings.set('system.useYdotool', v)}
+					/>
+				</Field.Field>
+			{/if}
 			<Field.Field orientation="horizontal">
 				<Field.Content>
 					<Field.Label for="autostart">Launch on Startup</Field.Label>
