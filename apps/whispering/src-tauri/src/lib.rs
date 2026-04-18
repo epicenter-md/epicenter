@@ -209,7 +209,7 @@ use tauri_plugin_clipboard_manager::ClipboardExt;
 /// This approach is faster than typing character-by-character and preserves
 /// the user's clipboard, making it ideal for inserting transcribed text.
 #[tauri::command]
-async fn write_text(app: tauri::AppHandle, text: String) -> Result<(), String> {
+async fn write_text(app: tauri::AppHandle, text: String, use_ydotool: Option<bool>) -> Result<(), String> {
     // 1. Save current clipboard content
     let original_clipboard = app.clipboard().read_text().ok();
 
@@ -222,6 +222,30 @@ async fn write_text(app: tauri::AppHandle, text: String) -> Result<(), String> {
     tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
 
     // 3. Simulate paste operation using virtual key codes (layout-independent)
+    // On Linux with ydotool enabled, use ydotool for Wayland compatibility
+    #[cfg(target_os = "linux")]
+    if use_ydotool.unwrap_or(false) {
+        let result = std::process::Command::new("ydotool")
+            .args(["key", "ctrl+v"])
+            .status();
+        match result {
+            Ok(status) if status.success() => {
+                // Small delay to ensure paste completes
+                tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+
+                // Restore original clipboard content
+                if let Some(content) = original_clipboard {
+                    app.clipboard()
+                        .write_text(&content)
+                        .map_err(|e| format!("Failed to restore clipboard: {}", e))?;
+                }
+                return Ok(());
+            }
+            Ok(status) => tracing::warn!("ydotool key exited with: {}", status),
+            Err(e) => tracing::warn!("ydotool not available: {}", e),
+        }
+    }
+
     let mut enigo = Enigo::new(&Settings::default()).map_err(|e| e.to_string())?;
 
     // Use virtual key codes for V to work with any keyboard layout
@@ -266,7 +290,18 @@ async fn write_text(app: tauri::AppHandle, text: String) -> Result<(), String> {
 /// This is useful for automatically submitting text in chat applications
 /// after transcription has been pasted.
 #[tauri::command]
-async fn simulate_enter_keystroke() -> Result<(), String> {
+async fn simulate_enter_keystroke(use_ydotool: Option<bool>) -> Result<(), String> {
+    // On Linux with ydotool enabled, use ydotool for Wayland compatibility
+    #[cfg(target_os = "linux")]
+    if use_ydotool.unwrap_or(false) {
+        let result = std::process::Command::new("ydotool")
+            .args(["key", "Return"])
+            .status();
+        if result.is_ok() && result.unwrap().success() {
+            return Ok(());
+        }
+    }
+
     let mut enigo = Enigo::new(&Settings::default()).map_err(|e| e.to_string())?;
 
     // Use Direction::Click for a combined press+release action

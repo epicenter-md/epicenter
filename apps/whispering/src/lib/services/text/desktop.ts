@@ -4,7 +4,9 @@ import { tryAsync } from 'wellcrafted/result';
 import type { TextService } from './types';
 import { TextError } from './types';
 
-export function createTextServiceDesktop(): TextService {
+export function createTextServiceDesktop(deps: {
+	getUseYdotool: () => boolean;
+}): TextService {
 	return {
 		readFromClipboard: () =>
 			tryAsync({
@@ -23,13 +25,20 @@ export function createTextServiceDesktop(): TextService {
 
 		writeToCursor: async (text) =>
 			tryAsync({
-				try: () => invoke<void>('write_text', { text }),
+				try: () =>
+					invoke<void>('write_text', {
+						text,
+						useYdotool: deps.getUseYdotool(),
+					}),
 				catch: (error) => TextError.WriteToCursor({ cause: error }),
 			}),
 
 		simulateEnterKeystroke: () =>
 			tryAsync({
-				try: () => invoke<void>('simulate_enter_keystroke'),
+				try: () =>
+					invoke<void>('simulate_enter_keystroke', {
+						useYdotool: deps.getUseYdotool(),
+					}),
 				catch: (error) => TextError.SimulateKeystroke({ cause: error }),
 			}),
 	};
