@@ -533,7 +533,7 @@ export const FfmpegRecorderServiceLive: RecorderService = {
 /**
  * Parse FFmpeg device enumeration output based on platform
  */
-function parseDevices(output: string): Device[] {
+export function parseDevices(output: string): Device[] {
 	// Platform-specific parsing configuration
 	// Note: Regex capture groups are guaranteed to exist when the regex matches.
 	// We use optional chaining with fallbacks to satisfy the linter.
@@ -547,8 +547,11 @@ function parseDevices(output: string): Device[] {
 			}),
 		},
 		windows: {
-			// Windows DirectShow format: "Microphone Name" (audio)
-			regex: /^\s*"(.+?)"\s+\(audio\)/,
+			// Windows DirectShow format:
+			// - Modern: [dshow @ ...] "Microphone Name" (audio)
+			// - Legacy: "Microphone Name" (audio)
+			// Supports both for broader FFmpeg version compatibility.
+			regex: /^\s*(?:\[dshow.*?\]\s+)?\s*"(.+?)"\s+\(audio\)/,
 			extractDevice: (match: RegExpMatchArray) => ({
 				id: asDeviceIdentifier(match[1] ?? ''),
 				label: match[1] ?? '',
