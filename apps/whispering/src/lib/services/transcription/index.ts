@@ -2,7 +2,7 @@
 
 // Cloud transcription services
 import { DeepgramTranscriptionServiceLive } from './cloud/deepgram';
-import { ElevenlabsTranscriptionServiceLive } from './cloud/elevenlabs';
+import { ElevenLabsTranscriptionServiceLive } from './cloud/elevenlabs';
 import { GroqTranscriptionServiceLive } from './cloud/groq';
 import { MistralTranscriptionServiceLive } from './cloud/mistral';
 import { OpenaiTranscriptionServiceLive } from './cloud/openai';
@@ -16,7 +16,7 @@ import { SpeachesTranscriptionServiceLive } from './self-hosted/speaches';
 
 export {
 	DeepgramTranscriptionServiceLive as deepgram,
-	ElevenlabsTranscriptionServiceLive as elevenlabs,
+	ElevenLabsTranscriptionServiceLive as elevenlabs,
 	GroqTranscriptionServiceLive as groq,
 	MistralTranscriptionServiceLive as mistral,
 	MoonshineTranscriptionServiceLive as moonshine,

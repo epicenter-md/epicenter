@@ -16,8 +16,9 @@
 	import { nanoid } from 'nanoid/non-secure';
 	import { onDestroy, onMount } from 'svelte';
 	import { extractErrorMessage } from 'wellcrafted/error';
-	import { Err, partitionResults, tryAsync } from 'wellcrafted/result';
+	import { partitionResults, tryAsync } from 'wellcrafted/result';
 	import { commandCallbacks } from '$lib/commands';
+	import { WhisperingErr } from '$lib/result';
 	import TranscriptDialog from '$lib/components/copyable/TranscriptDialog.svelte';
 	import {
 		CompressionSelector,
@@ -153,14 +154,13 @@
 					},
 				);
 			},
-			catch: (error) => Err(error),
+			catch: (error) =>
+				WhisperingErr({
+					title: '❌ Failed to set up drag drop listener',
+					description: extractErrorMessage(error),
+				}),
 		});
-		if (error) {
-			rpc.notify.error({
-				title: '❌ Failed to set up drag drop listener',
-				description: extractErrorMessage(error),
-			});
-		}
+		if (error) rpc.notify.error(error);
 	});
 
 	onDestroy(() => {

@@ -1,11 +1,15 @@
 import { type } from 'arktype';
+import {
+	defineErrors,
+	extractErrorMessage,
+	type InferErrors,
+} from 'wellcrafted/error';
 import { Ok, type Result } from 'wellcrafted/result';
-import { WhisperingErr, type WhisperingError } from '$lib/result';
 import { HttpServiceLive } from '$lib/services/http';
+import type { HttpError } from '$lib/services/http/types';
 
-const MAX_FILE_SIZE_MB = 500 as const; // Deepgram supports larger files
+const MAX_FILE_SIZE_MB = 500 as const;
 
-// Schema for Deepgram API response
 const DeepgramResponse = type({
 	results: {
 		channels: type({
@@ -17,6 +21,74 @@ const DeepgramResponse = type({
 	},
 });
 
+export const DeepgramError = defineErrors({
+	MissingApiKey: () => ({
+		message: 'Deepgram API key is required',
+	}),
+	FileTooLarge: ({
+		sizeMb,
+		maxMb,
+	}: {
+		sizeMb: number;
+		maxMb: number;
+	}) => ({
+		message: `File size ${sizeMb.toFixed(1)}MB exceeds ${maxMb}MB limit`,
+		sizeMb,
+		maxMb,
+	}),
+	Connection: ({ cause }: { cause: HttpError }) => ({
+		message: cause.message,
+		cause,
+	}),
+	BadRequest: ({ cause }: { cause: HttpError }) => ({
+		message: cause.message,
+		cause,
+	}),
+	Unauthorized: ({ cause }: { cause: HttpError }) => ({
+		message: cause.message,
+		cause,
+	}),
+	Forbidden: ({ cause }: { cause: HttpError }) => ({
+		message: cause.message,
+		cause,
+	}),
+	PayloadTooLarge: ({ cause }: { cause: HttpError }) => ({
+		message: cause.message,
+		cause,
+	}),
+	UnsupportedMediaType: ({ cause }: { cause: HttpError }) => ({
+		message: cause.message,
+		cause,
+	}),
+	RateLimit: ({ cause }: { cause: HttpError }) => ({
+		message: cause.message,
+		cause,
+	}),
+	ServiceUnavailable: ({
+		cause,
+		status,
+	}: {
+		cause: HttpError;
+		status: number;
+	}) => ({
+		message: cause.message,
+		cause,
+		status,
+	}),
+	Parse: ({ cause }: { cause: HttpError }) => ({
+		message: cause.message,
+		cause,
+	}),
+	NoTranscriptDetected: () => ({
+		message: 'No speech was detected in the audio file',
+	}),
+	Unexpected: ({ cause }: { cause: unknown }) => ({
+		message: extractErrorMessage(cause),
+		cause,
+	}),
+});
+export type DeepgramError = InferErrors<typeof DeepgramError>;
+
 export const DeepgramTranscriptionServiceLive = {
 	async transcribe(
 		audioBlob: Blob,
@@ -27,31 +99,14 @@ export const DeepgramTranscriptionServiceLive = {
 			apiKey: string;
 			modelName: string;
 		},
-	): Promise<Result<string, WhisperingError>> {
-		// Pre-validation: Check API key
-		if (!options.apiKey) {
-			return WhisperingErr({
-				title: '🔑 API Key Required',
-				description:
-					'Please enter your Deepgram API key in settings to use Deepgram transcription.',
-				action: {
-					type: 'link',
-					label: 'Add API key',
-					href: '/settings/transcription',
-				},
-			});
+	): Promise<Result<string, DeepgramError>> {
+		if (!options.apiKey) return DeepgramError.MissingApiKey();
+
+		const sizeMb = audioBlob.size / (1024 * 1024);
+		if (sizeMb > MAX_FILE_SIZE_MB) {
+			return DeepgramError.FileTooLarge({ sizeMb, maxMb: MAX_FILE_SIZE_MB });
 		}
 
-		// Validate file size
-		const blobSizeInMb = audioBlob.size / (1024 * 1024);
-		if (blobSizeInMb > MAX_FILE_SIZE_MB) {
-			return WhisperingErr({
-				title: `The file size (${blobSizeInMb}MB) is too large`,
-				description: `Please upload a file smaller than ${MAX_FILE_SIZE_MB}MB.`,
-			});
-		}
-
-		// Build query parameters
 		const params = new URLSearchParams({
 			model: options.modelName,
 			smart_format: 'true',
@@ -68,139 +123,56 @@ export const DeepgramTranscriptionServiceLive = {
 			params.append(isNova3 ? 'keyterm' : 'keywords', options.prompt);
 		}
 
-		// Send raw audio data directly as recommended by Deepgram docs
-		const { data: deepgramResponse, error: postError } =
+		const { data: deepgramResponse, error: httpError } =
 			await HttpServiceLive.post({
 				url: `https://api.deepgram.com/v1/listen?${params.toString()}`,
-				body: audioBlob, // Send raw audio blob directly
+				body: audioBlob,
 				headers: {
 					Authorization: `Token ${options.apiKey}`,
-					'Content-Type': audioBlob.type || 'audio/*', // Use the blob's mime type or fallback to audio/*
+					'Content-Type': audioBlob.type || 'audio/*',
 				},
 				schema: DeepgramResponse,
 			});
 
-		if (postError) {
-			switch (postError.name) {
-				case 'Connection': {
-					return WhisperingErr({
-						title: '🌐 Connection Issue',
-						description:
-							'Unable to connect to Deepgram service. Please check your internet connection.',
-						action: { type: 'more-details', error: postError },
-					});
-				}
-
-				case 'Response': {
-					const { status, message } = postError;
-
-					if (status === 400) {
-						return WhisperingErr({
-							title: '❌ Bad Request',
-							description:
-								message ||
-								'Invalid request parameters. Please check your audio file and settings.',
-							action: { type: 'more-details', error: postError },
-						});
-					}
-
-					if (status === 401) {
-						return WhisperingErr({
-							title: '🔑 Authentication Failed',
-							description:
-								'Your Deepgram API key is invalid or expired. Please update your API key in settings.',
-							action: {
-								type: 'link',
-								label: 'Update API key',
-								href: '/settings/transcription',
-							},
-						});
-					}
-
-					if (status === 403) {
-						return WhisperingErr({
-							title: '⛔ Access Denied',
-							description:
-								message ||
-								'Your account does not have access to this feature or model.',
-							action: { type: 'more-details', error: postError },
-						});
-					}
-
-					if (status === 413) {
-						return WhisperingErr({
-							title: '📦 Audio File Too Large',
-							description:
-								'Your audio file exceeds the maximum size limit. Try splitting it into smaller segments.',
-							action: { type: 'more-details', error: postError },
-						});
-					}
-
-					if (status === 415) {
-						return WhisperingErr({
-							title: '🎵 Unsupported Format',
-							description:
-								"This audio format isn't supported. Please convert your file to a supported format.",
-							action: { type: 'more-details', error: postError },
-						});
-					}
-
-					if (status === 429) {
-						return WhisperingErr({
-							title: '⏱️ Rate Limit Reached',
-							description:
-								'Too many requests. Please wait before trying again.',
-							action: { type: 'more-details', error: postError },
-						});
-					}
-
-					if (status && status >= 500) {
-						return WhisperingErr({
-							title: '🔧 Service Unavailable',
-							description: `The Deepgram service is temporarily unavailable (Error ${status}). Please try again later.`,
-							action: { type: 'more-details', error: postError },
-						});
-					}
-
-					return WhisperingErr({
-						title: '❌ Transcription Failed',
-						description:
-							message ||
-							'An unexpected error occurred during transcription. Please try again.',
-						action: { type: 'more-details', error: postError },
-					});
-				}
-
+		if (httpError) {
+			switch (httpError.name) {
+				case 'Connection':
+					return DeepgramError.Connection({ cause: httpError });
 				case 'Parse':
-					return WhisperingErr({
-						title: '🔍 Response Error',
-						description:
-							'Received an unexpected response from Deepgram service. Please try again.',
-						action: { type: 'more-details', error: postError },
-					});
-
-				default:
-					return WhisperingErr({
-						title: '❓ Unexpected Error',
-						description:
-							'An unexpected error occurred during transcription. Please try again.',
-						action: { type: 'more-details', error: postError },
-					});
+					return DeepgramError.Parse({ cause: httpError });
+				case 'Response': {
+					const { status } = httpError;
+					switch (status) {
+						case 400:
+							return DeepgramError.BadRequest({ cause: httpError });
+						case 401:
+							return DeepgramError.Unauthorized({ cause: httpError });
+						case 403:
+							return DeepgramError.Forbidden({ cause: httpError });
+						case 413:
+							return DeepgramError.PayloadTooLarge({ cause: httpError });
+						case 415:
+							return DeepgramError.UnsupportedMediaType({ cause: httpError });
+						case 429:
+							return DeepgramError.RateLimit({ cause: httpError });
+						default:
+							if (status >= 500) {
+								return DeepgramError.ServiceUnavailable({
+									cause: httpError,
+									status,
+								});
+							}
+							return DeepgramError.Unexpected({ cause: httpError });
+					}
+				}
 			}
 		}
 
-		// Extract transcription text
 		const transcript = deepgramResponse.results?.channels
 			?.at(0)
 			?.alternatives?.at(0)?.transcript;
 
-		if (!transcript) {
-			return WhisperingErr({
-				title: '📝 No Transcription Found',
-				description:
-					'No speech was detected in the audio file. Please check your audio and try again.',
-			});
-		}
+		if (!transcript) return DeepgramError.NoTranscriptDetected();
 
 		return Ok(transcript.trim());
 	},

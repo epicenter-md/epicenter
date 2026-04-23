@@ -1,10 +1,84 @@
 import Groq from 'groq-sdk';
-import { Err, Ok, type Result, tryAsync, trySync } from 'wellcrafted/result';
-import { WhisperingErr, type WhisperingError } from '$lib/result';
+import {
+	defineErrors,
+	extractErrorMessage,
+	type InferErrors,
+} from 'wellcrafted/error';
+import { Err, type Result, tryAsync, trySync } from 'wellcrafted/result';
 import { customFetch } from '$lib/services/http';
 import { getAudioExtension } from '$lib/services/transcription/utils';
 
 const MAX_FILE_SIZE_MB = 25 as const;
+
+type GroqAPIError = InstanceType<typeof Groq.APIError>;
+
+export const GroqError = defineErrors({
+	MissingApiKey: () => ({
+		message: 'Groq API key is required',
+	}),
+	InvalidApiKeyFormat: () => ({
+		message: 'Groq API keys must start with "gsk_" or "xai-"',
+	}),
+	FileTooLarge: ({
+		sizeMb,
+		maxMb,
+	}: {
+		sizeMb: number;
+		maxMb: number;
+	}) => ({
+		message: `File size ${sizeMb.toFixed(1)}MB exceeds ${maxMb}MB limit`,
+		sizeMb,
+		maxMb,
+	}),
+	FileCreationFailed: ({ cause }: { cause: unknown }) => ({
+		message: `Failed to create audio file for transcription: ${extractErrorMessage(cause)}`,
+		cause,
+	}),
+	BadRequest: ({ cause }: { cause: GroqAPIError }) => ({
+		message: cause.message,
+		cause,
+	}),
+	Unauthorized: ({ cause }: { cause: GroqAPIError }) => ({
+		message: cause.message,
+		cause,
+	}),
+	PermissionDenied: ({ cause }: { cause: GroqAPIError }) => ({
+		message: cause.message,
+		cause,
+	}),
+	NotFound: ({ cause }: { cause: GroqAPIError }) => ({
+		message: cause.message,
+		cause,
+	}),
+	UnprocessableEntity: ({ cause }: { cause: GroqAPIError }) => ({
+		message: cause.message,
+		cause,
+	}),
+	RateLimit: ({ cause }: { cause: GroqAPIError }) => ({
+		message: cause.message,
+		cause,
+	}),
+	ServiceUnavailable: ({
+		cause,
+		status,
+	}: {
+		cause: GroqAPIError;
+		status: number;
+	}) => ({
+		message: cause.message,
+		cause,
+		status,
+	}),
+	Connection: ({ cause }: { cause: GroqAPIError }) => ({
+		message: cause.message,
+		cause,
+	}),
+	Unexpected: ({ cause }: { cause: unknown }) => ({
+		message: extractErrorMessage(cause),
+		cause,
+	}),
+});
+export type GroqError = InferErrors<typeof GroqError>;
 
 export const GroqTranscriptionServiceLive = {
 	async transcribe(
@@ -17,58 +91,21 @@ export const GroqTranscriptionServiceLive = {
 			modelName: string;
 			baseURL?: string;
 		},
-	): Promise<Result<string, WhisperingError>> {
+	): Promise<Result<string, GroqError>> {
 		const isUsingCustomEndpoint = Boolean(options.baseURL);
 
-		// When no custom baseURL is provided, we're using the official Groq API.
-		// The official API has strict requirements:
-		// 1. An API key is always required
-		// 2. The key must follow Groq's format (starts with "gsk_" or "xai-")
-		//
-		// Custom endpoints (reverse proxies, Groq-compatible servers, etc.) may have
-		// different authentication schemes or no auth at all, so we skip these checks.
 		if (!isUsingCustomEndpoint) {
-			// Check 1: Official Groq API requires an API key
-			if (!options.apiKey) {
-				return WhisperingErr({
-					title: '🔑 API Key Required',
-					description: 'Please enter your Groq API key in settings.',
-					action: {
-						type: 'link',
-						label: 'Add API key',
-						href: '/settings/transcription',
-					},
-				});
-			}
-
-			// Check 2: Official Groq API keys start with "gsk_" or "xai-"
+			if (!options.apiKey) return GroqError.MissingApiKey();
 			const hasValidGroqKeyFormat =
 				options.apiKey.startsWith('gsk_') || options.apiKey.startsWith('xai-');
-
-			if (!hasValidGroqKeyFormat) {
-				return WhisperingErr({
-					title: '🔑 Invalid API Key Format',
-					description:
-						'Your Groq API key should start with "gsk_" or "xai-". Please check and update your API key.',
-					action: {
-						type: 'link',
-						label: 'Update API key',
-						href: '/settings/transcription',
-					},
-				});
-			}
+			if (!hasValidGroqKeyFormat) return GroqError.InvalidApiKeyFormat();
 		}
 
-		// Check file size
-		const blobSizeInMb = audioBlob.size / (1024 * 1024);
-		if (blobSizeInMb > MAX_FILE_SIZE_MB) {
-			return WhisperingErr({
-				title: `The file size (${blobSizeInMb}MB) is too large`,
-				description: `Please upload a file smaller than ${MAX_FILE_SIZE_MB}MB.`,
-			});
+		const sizeMb = audioBlob.size / (1024 * 1024);
+		if (sizeMb > MAX_FILE_SIZE_MB) {
+			return GroqError.FileTooLarge({ sizeMb, maxMb: MAX_FILE_SIZE_MB });
 		}
 
-		// Create file from blob
 		const { data: file, error: fileError } = trySync({
 			try: () =>
 				new File(
@@ -76,21 +113,14 @@ export const GroqTranscriptionServiceLive = {
 					`recording.${getAudioExtension(audioBlob.type)}`,
 					{ type: audioBlob.type },
 				),
-			catch: (error) =>
-				WhisperingErr({
-					title: '📄 File Creation Failed',
-					description:
-						'Failed to create audio file for transcription. Please try again.',
-					action: { type: 'more-details', error },
-				}),
+			catch: (cause) => GroqError.FileCreationFailed({ cause }),
 		});
 
 		if (fileError) return Err(fileError);
 
-		// Make the transcription request
-		const { data: transcription, error: groqApiError } = await tryAsync({
-			try: () =>
-				new Groq({
+		return tryAsync({
+			try: async () => {
+				const transcription = await new Groq({
 					apiKey: options.apiKey,
 					dangerouslyAllowBrowser: true,
 					fetch: customFetch,
@@ -106,130 +136,38 @@ export const GroqTranscriptionServiceLive = {
 					temperature: options.temperature
 						? Number.parseFloat(options.temperature)
 						: undefined,
-				}),
+				});
+				return transcription.text.trim();
+			},
 			catch: (error) => {
-				// Check if it's NOT a Groq API error
 				if (!(error instanceof Groq.APIError)) {
-					// This is an unexpected error type
-					throw error;
+					return GroqError.Unexpected({ cause: error });
 				}
-				// Return the error directly
-				return Err(error);
+				const { status, name } = error;
+				if (!status && name === 'APIConnectionError') {
+					return GroqError.Connection({ cause: error });
+				}
+				switch (status) {
+					case 400:
+						return GroqError.BadRequest({ cause: error });
+					case 401:
+						return GroqError.Unauthorized({ cause: error });
+					case 403:
+						return GroqError.PermissionDenied({ cause: error });
+					case 404:
+						return GroqError.NotFound({ cause: error });
+					case 422:
+						return GroqError.UnprocessableEntity({ cause: error });
+					case 429:
+						return GroqError.RateLimit({ cause: error });
+					default:
+						if (status && status >= 500) {
+							return GroqError.ServiceUnavailable({ cause: error, status });
+						}
+						return GroqError.Unexpected({ cause: error });
+				}
 			},
 		});
-
-		if (groqApiError) {
-			// Error handling follows https://www.npmjs.com/package/groq-sdk#error-handling
-			const { status, name, message, error } = groqApiError;
-
-			// 400 - BadRequestError
-			if (status === 400) {
-				return WhisperingErr({
-					title: '❌ Bad Request',
-					description:
-						message ??
-						`Invalid request to Groq API. ${error?.message ?? ''}`.trim(),
-					action: { type: 'more-details', error: groqApiError },
-				});
-			}
-
-			// 401 - AuthenticationError
-			if (status === 401) {
-				return WhisperingErr({
-					title: '🔑 Authentication Required',
-					description:
-						message ??
-						'Your API key appears to be invalid or expired. Please update your API key in settings to continue transcribing.',
-					action: {
-						type: 'link',
-						label: 'Update API key',
-						href: '/settings/transcription',
-					},
-				});
-			}
-
-			// 403 - PermissionDeniedError
-			if (status === 403) {
-				return WhisperingErr({
-					title: '⛔ Permission Denied',
-					description:
-						message ??
-						"Your account doesn't have access to this feature. This may be due to plan limitations or account restrictions.",
-					action: { type: 'more-details', error: groqApiError },
-				});
-			}
-
-			// 404 - NotFoundError
-			if (status === 404) {
-				return WhisperingErr({
-					title: '🔍 Not Found',
-					description:
-						message ??
-						'The requested resource was not found. This might indicate an issue with the model or API endpoint.',
-					action: { type: 'more-details', error: groqApiError },
-				});
-			}
-
-			// 422 - UnprocessableEntityError
-			if (status === 422) {
-				return WhisperingErr({
-					title: '⚠️ Invalid Input',
-					description:
-						message ??
-						'The request was valid but the server cannot process it. Please check your audio file and parameters.',
-					action: {
-						type: 'link',
-						label: 'Update API key',
-						href: '/settings/transcription',
-					},
-				});
-			}
-
-			// 429 - RateLimitError
-			if (status === 429) {
-				return WhisperingErr({
-					title: '⏱️ Rate Limit Reached',
-					description: message ?? 'Too many requests. Please try again later.',
-					action: {
-						type: 'link',
-						label: 'Update API key',
-						href: '/settings/transcription',
-					},
-				});
-			}
-
-			// >=500 - InternalServerError
-			if (status && status >= 500) {
-				return WhisperingErr({
-					title: '🔧 Service Unavailable',
-					description:
-						message ??
-						`The transcription service is temporarily unavailable (Error ${status}). Please try again in a few minutes.`,
-					action: { type: 'more-details', error: groqApiError },
-				});
-			}
-
-			// Handle APIConnectionError (no status code)
-			if (!status && name === 'APIConnectionError') {
-				return WhisperingErr({
-					title: '🌐 Connection Issue',
-					description:
-						message ??
-						'Unable to connect to the Groq service. This could be a network issue or temporary service interruption.',
-					action: { type: 'more-details', error: groqApiError },
-				});
-			}
-
-			// Return the error directly for other API errors
-			return WhisperingErr({
-				title: '❌ Unexpected Error',
-				description:
-					message ?? 'An unexpected error occurred. Please try again.',
-				action: { type: 'more-details', error: groqApiError },
-			});
-		}
-
-		return Ok(transcription.text.trim());
 	},
 };
 

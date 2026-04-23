@@ -1,11 +1,12 @@
 import { check, type DownloadEvent } from '@tauri-apps/plugin-updater';
 import { extractErrorMessage } from 'wellcrafted/error';
-import { Err, tryAsync } from 'wellcrafted/result';
+import { tryAsync } from 'wellcrafted/result';
 import {
 	type UpdateInfo,
 	updateDialog,
 } from '$lib/components/UpdateDialog.svelte';
 import { rpc } from '$lib/query';
+import { WhisperingErr } from '$lib/result';
 
 export async function checkForUpdates() {
 	const { error } = await tryAsync({
@@ -24,14 +25,13 @@ export async function checkForUpdates() {
 				});
 			}
 		},
-		catch: (error) => Err(error),
+		catch: (error) =>
+			WhisperingErr({
+				title: 'Failed to check for updates',
+				description: extractErrorMessage(error),
+			}),
 	});
-	if (error) {
-		rpc.notify.error({
-			title: 'Failed to check for updates',
-			description: extractErrorMessage(error),
-		});
-	}
+	if (error) rpc.notify.error(error);
 }
 
 /**
