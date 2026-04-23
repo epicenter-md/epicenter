@@ -21,6 +21,7 @@
 	import TranscriptDialog from '$lib/components/copyable/TranscriptDialog.svelte';
 	import {
 		CompressionSelector,
+		DictionarySelector,
 		TranscriptionSelector,
 		TransformationSelector,
 	} from '$lib/components/settings';
@@ -302,6 +303,7 @@
 					<CompressionSelector />
 					<TranscriptionSelector />
 					<TransformationSelector />
+					<DictionarySelector />
 				</div>
 			{/if}
 		</div>
@@ -330,6 +332,7 @@
 					<CompressionSelector />
 					<TranscriptionSelector />
 					<TransformationSelector />
+					<DictionarySelector />
 				</div>
 			{/if}
 		</div>
@@ -356,6 +359,7 @@
 				<CompressionSelector />
 				<TranscriptionSelector />
 				<TransformationSelector />
+				<DictionarySelector />
 			</div>
 		</div>
 	{/if}

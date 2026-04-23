@@ -280,6 +280,7 @@ const transcription = {
 	'transcription.language': defineKv(type('string'), 'auto'),
 	'transcription.prompt': defineKv(type('string'), ''),
 	'transcription.temperature': defineKv(type('0 <= number <= 1'), 0),
+	'transcription.dictionary': defineKv(type('string'), '[]'),
 	'transcription.compressionEnabled': defineKv(type('boolean'), false),
 	'transcription.compressionOptions': defineKv(
 		type('string'),

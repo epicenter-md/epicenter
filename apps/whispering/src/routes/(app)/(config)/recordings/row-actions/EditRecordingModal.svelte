@@ -9,6 +9,7 @@
 	import EditIcon from '@lucide/svelte/icons/pencil';
 	import { createQuery } from '@tanstack/svelte-query';
 	import { onDestroy } from 'svelte';
+	import TranscriptContextMenu from '$lib/components/TranscriptContextMenu.svelte';
 	import { rpc } from '$lib/query';
 	import { services } from '$lib/services';
 	import { type Recording, recordings } from '$lib/state/recordings.svelte';
@@ -162,18 +163,20 @@
 			</div>
 			<div class="grid grid-cols-4 items-center gap-4">
 				<Label for="transcript" class="text-right">Transcript</Label>
-				<Textarea
-					id="transcript"
-					value={workingCopy.transcript}
-					oninput={(e) => {
-						workingCopy = {
-							...workingCopy,
-							transcript: e.currentTarget.value,
-						};
-						isWorkingCopyDirty = true;
-					}}
-					class="col-span-3"
-				/>
+				<TranscriptContextMenu>
+					<Textarea
+						id="transcript"
+						value={workingCopy.transcript}
+						oninput={(e) => {
+							workingCopy = {
+								...workingCopy,
+								transcript: e.currentTarget.value,
+							};
+							isWorkingCopyDirty = true;
+						}}
+						class="col-span-3"
+					/>
+				</TranscriptContextMenu>
 			</div>
 			{#if audioUrl}
 				<div class="grid grid-cols-4 items-center gap-4">
