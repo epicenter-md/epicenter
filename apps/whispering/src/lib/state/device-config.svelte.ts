@@ -89,6 +89,7 @@ const DEVICE_DEFINITIONS = {
 	),
 
 	// ── Global OS shortcuts (device-specific, never synced) ───────────
+	'shortcuts.global.passthrough': defineEntry(type('boolean'), false),
 	'shortcuts.global.toggleManualRecording': defineEntry(
 		type('string | null'),
 		`${CommandOrControl}+Shift+;` as string | null,

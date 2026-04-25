@@ -4,6 +4,7 @@ import {
 	unregister as tauriUnregister,
 	unregisterAll as tauriUnregisterAll,
 } from '@tauri-apps/plugin-global-shortcut';
+import { invoke as tauriInvoke } from '@tauri-apps/api/core';
 import * as os from '@tauri-apps/plugin-os';
 import type { Brand } from 'wellcrafted/brand';
 import {
@@ -97,10 +98,12 @@ export const GlobalShortcutManagerLive = {
 		accelerator,
 		callback,
 		on,
+		passthrough,
 	}: {
 		accelerator: Accelerator;
 		callback: (state: ShortcutEventState) => void;
 		on: ShortcutEventState[];
+		passthrough?: boolean;
 	}): Promise<
 		Result<void, InvalidAcceleratorError | GlobalShortcutServiceError>
 	> {
@@ -114,9 +117,30 @@ export const GlobalShortcutManagerLive = {
 
 		const { error: registerError } = await tryAsync({
 			try: () =>
-				tauriRegister(accelerator, (event) => {
+				tauriRegister(accelerator, async (event) => {
 					if (on.includes(event.state)) {
+						// Check if we are currently simulating keys to avoid infinite loops
+						const isSimulating = await tauriInvoke<boolean>(
+							'get_is_simulating',
+						);
+						if (isSimulating) return;
+
 						callback(event.state);
+
+						if (passthrough) {
+							// Perform passthrough: Unregister -> Simulate -> Re-register
+							// We re-register immediately after simulation starts/ends
+							// The get_is_simulating flag will protect us from the event
+							// that arrives while the keys are being simulated.
+							await GlobalShortcutManagerLive.unregister(accelerator);
+							await tauriInvoke('simulate_accelerator', { accelerator });
+							await GlobalShortcutManagerLive.register({
+								accelerator,
+								callback,
+								on,
+								passthrough,
+							});
+						}
 					}
 				}),
 			catch: (error) =>

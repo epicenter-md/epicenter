@@ -152,6 +152,8 @@ pub async fn run() {
     let builder = builder.invoke_handler(tauri::generate_handler![
         write_text,
         simulate_enter_keystroke,
+        simulate_accelerator,
+        get_is_simulating,
         // Audio recorder commands
         get_current_recording_id,
         enumerate_recording_devices,
@@ -195,6 +197,7 @@ pub async fn run() {
     });
 }
 
+use std::sync::atomic::Ordering;
 use enigo::{Direction, Enigo, Key, Keyboard, Settings};
 use tauri_plugin_clipboard_manager::ClipboardExt;
 
@@ -275,4 +278,130 @@ async fn simulate_enter_keystroke() -> Result<(), String> {
         .map_err(|e| format!("Failed to simulate Enter key: {}", e))?;
 
     Ok(())
+}
+
+/// Simulates a keyboard accelerator (shortcut)
+///
+/// This is used for "passthrough" global shortcuts where Whispering needs to
+/// re-emit the key combination so other applications can receive it.
+#[tauri::command]
+async fn simulate_accelerator(
+    state: tauri::State<'_, AppData>,
+    accelerator: String,
+) -> Result<(), String> {
+    state.is_simulating.store(true, Ordering::SeqCst);
+
+    let result = async {
+        let mut enigo = Enigo::new(&Settings::default()).map_err(|e| e.to_string())?;
+
+        let parts: Vec<&str> = accelerator.split('+').collect();
+        let mut modifiers = Vec::new();
+
+        for i in 0..parts.len() - 1 {
+            let m = parts[i];
+            let key = match m {
+                "Command" | "Cmd" | "Meta" => Key::Meta,
+                "Control" | "Ctrl" => Key::Control,
+                "Alt" | "Option" => Key::Alt,
+                "Shift" => Key::Shift,
+                "Super" => Key::Meta,
+                "CommandOrControl" | "CmdOrCtrl" => {
+
+                    #[cfg(target_os = "macos")]
+                    {
+                        Key::Meta
+                    }
+                    #[cfg(not(target_os = "macos"))]
+                    {
+                        Key::Control
+                    }
+                }
+                _ => continue,
+            };
+            modifiers.push(key);
+        }
+
+        let last_part = parts.last().ok_or("Invalid accelerator")?;
+        let main_key = match *last_part {
+            "Enter" | "Return" => Key::Return,
+            "Tab" => Key::Tab,
+            "Space" => Key::Space,
+            "Backspace" => Key::Backspace,
+            "Delete" => Key::Delete,
+            "Insert" => Key::Insert,
+            "Home" => Key::Home,
+            "End" => Key::End,
+            "PageUp" => Key::PageUp,
+            "PageDown" => Key::PageDown,
+            "Up" => Key::UpArrow,
+            "Down" => Key::DownArrow,
+            "Left" => Key::LeftArrow,
+            "Right" => Key::RightArrow,
+            "Escape" | "Esc" => Key::Escape,
+            "F1" => Key::F1,
+            "F2" => Key::F2,
+            "F3" => Key::F3,
+            "F4" => Key::F4,
+            "F5" => Key::F5,
+            "F6" => Key::F6,
+            "F7" => Key::F7,
+            "F8" => Key::F8,
+            "F9" => Key::F9,
+            "F10" => Key::F10,
+            "F11" => Key::F11,
+            "F12" => Key::F12,
+            "Plus" => Key::Unicode('+'),
+            ";" => Key::Unicode(';'),
+            "'" => Key::Unicode('\''),
+            "," => Key::Unicode(','),
+            "." => Key::Unicode('.'),
+            "/" => Key::Unicode('/'),
+            "\\" => Key::Unicode('\\'),
+            "[" => Key::Unicode('['),
+            "]" => Key::Unicode(']'),
+            "`" => Key::Unicode('`'),
+            "-" => Key::Unicode('-'),
+            "=" => Key::Unicode('='),
+            _ if last_part.len() == 1 => {
+                let c = last_part.chars().next().unwrap();
+                Key::Unicode(c.to_ascii_lowercase())
+            }
+            _ => return Err(format!("Unsupported key: {}", last_part)),
+        };
+
+        // 1. Press all modifiers
+        for &m in &modifiers {
+            enigo
+                .key(m, Direction::Press)
+                .map_err(|e| format!("Failed to press modifier: {}", e))?;
+        }
+
+        // 2. Click main key
+        enigo
+            .key(main_key, Direction::Click)
+            .map_err(|e| format!("Failed to click main key: {}", e))?;
+
+        // 3. Release all modifiers in reverse order
+        for &m in modifiers.iter().rev() {
+            enigo
+                .key(m, Direction::Release)
+                .map_err(|e| format!("Failed to release modifier: {}", e))?;
+        }
+
+        Ok(())
+    }
+    .await;
+
+    // Small sleep to ensure the OS has processed the simulated events
+    // before we reset the flag.
+    tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+    state.is_simulating.store(false, Ordering::SeqCst);
+
+    result
+}
+
+/// Returns whether a keyboard simulation is currently in progress
+#[tauri::command]
+async fn get_is_simulating(state: tauri::State<'_, AppData>) -> Result<bool, String> {
+    Ok(state.is_simulating.load(Ordering::SeqCst))
 }

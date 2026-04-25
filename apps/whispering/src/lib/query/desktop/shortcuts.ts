@@ -3,6 +3,7 @@ import { IS_MACOS } from '$lib/constants/platform';
 import { defineMutation } from '$lib/query/client';
 import { desktopServices } from '$lib/services/desktop';
 import type { Accelerator } from '$lib/services/desktop/global-shortcut-manager';
+import { deviceConfig } from '$lib/state/device-config.svelte';
 
 /**
  * Global shortcuts - desktop-only, require Tauri.
@@ -26,10 +27,12 @@ export const globalShortcuts = {
 				'CommandOrControl',
 				IS_MACOS ? 'Command' : 'Control',
 			) as Accelerator;
+			const passthrough = deviceConfig.get('shortcuts.global.passthrough');
 			return desktopServices.globalShortcutManager.register({
 				accelerator,
 				callback: commandCallbacks[command.id],
 				on: command.on,
+				passthrough,
 			});
 		},
 	}),

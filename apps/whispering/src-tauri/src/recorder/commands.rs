@@ -1,18 +1,21 @@
 use crate::recorder::recorder::{AudioRecording, RecorderState, Result};
 use std::path::PathBuf;
 use std::sync::Mutex;
+use std::sync::atomic::AtomicBool;
 use tauri::State;
 use log::{debug, info};
 
 /// Application state containing the recorder
 pub struct AppData {
     pub recorder: Mutex<RecorderState>,
+    pub is_simulating: AtomicBool,
 }
 
 impl AppData {
     pub fn new() -> Self {
         Self {
             recorder: Mutex::new(RecorderState::new()),
+            is_simulating: AtomicBool::new(false),
         }
     }
 }
