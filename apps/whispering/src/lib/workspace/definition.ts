@@ -302,6 +302,14 @@ const transformation = {
 	),
 } as const;
 
+/**
+ * Linux Wayland support. When enabled, uses ydotool for key simulation
+ * instead of enigo, which doesn't work under Wayland compositors.
+ */
+const system = {
+	'system.useYdotool': defineKv(type('boolean'), false),
+} as const;
+
 /** Anonymized event logging toggle (Aptabase). */
 const analytics = {
 	'analytics.enabled': defineKv(type('boolean'), true),
@@ -346,6 +354,7 @@ export const whisperingDefinition = defineWorkspace({
 		...recording,
 		...transcription,
 		...transformation,
+		...system,
 		...analytics,
 		...shortcuts,
 	},
