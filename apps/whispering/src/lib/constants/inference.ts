@@ -47,7 +47,14 @@ export const INFERENCE = {
 	Anthropic: {
 		label: 'Anthropic',
 		models: [
-			// Claude 4.5 models (latest generation - recommended)
+			// Claude 4.7 models (latest generation - recommended)
+			'claude-opus-4-7',
+			// Claude 4.6 models
+			'claude-sonnet-4-6',
+			'claude-opus-4-6',
+			// Claude 4.5 models
+			'claude-opus-4-5-20251101',
+			'claude-opus-4-5',
 			'claude-sonnet-4-5-20250929',
 			'claude-sonnet-4-5',
 			'claude-haiku-4-5-20251001',
@@ -59,12 +66,6 @@ export const INFERENCE = {
 			'claude-sonnet-4-0',
 			'claude-opus-4-20250514',
 			'claude-opus-4-0',
-			// Claude 3.7 models (legacy)
-			'claude-3-7-sonnet-20250219',
-			'claude-3-7-sonnet-latest',
-			// Claude 3.5 models (legacy)
-			'claude-3-5-haiku-20241022',
-			'claude-3-5-haiku-latest',
 			// Claude 3 models (legacy)
 			'claude-3-haiku-20240307',
 		],
