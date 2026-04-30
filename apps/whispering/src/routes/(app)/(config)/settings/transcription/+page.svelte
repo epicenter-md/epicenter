@@ -47,6 +47,12 @@
 		label: model.name,
 		...model,
 	}));
+	const CUSTOM_OPENAI_MODEL = 'custom';
+	const isCustomOpenaiModel = $derived(
+		!openaiModelItems.some(
+			(item) => item.value === settings.get('transcription.openai.model'),
+		),
+	);
 
 	const groqModelItems = TRANSCRIPTION.Groq.models.map((model) => ({
 		value: model.name,
@@ -74,9 +80,11 @@
 
 	// Selected labels for select triggers
 	const openaiModelLabel = $derived(
-		openaiModelItems.find(
-			(i) => i.value === settings.get('transcription.openai.model'),
-		)?.label,
+		isCustomOpenaiModel
+			? 'Custom'
+			: openaiModelItems.find(
+					(i) => i.value === settings.get('transcription.openai.model'),
+				)?.label,
 	);
 
 	const groqModelLabel = $derived(
@@ -132,8 +140,14 @@
 				<Field.Label for="openai-model">OpenAI Model</Field.Label>
 				<Select.Root
 					type="single"
-					bind:value={() => settings.get('transcription.openai.model'),
-						(v) => settings.set('transcription.openai.model', v)}
+					bind:value={() => isCustomOpenaiModel
+							? CUSTOM_OPENAI_MODEL
+							: settings.get('transcription.openai.model'),
+						(v) =>
+							settings.set(
+								'transcription.openai.model',
+								v === CUSTOM_OPENAI_MODEL ? '' : v,
+							)}
 				>
 					<Select.Trigger id="openai-model" class="w-full">
 						{openaiModelLabel ?? 'Select a model'}
@@ -144,6 +158,7 @@
 								{@render renderModelOption({ item })}
 							</Select.Item>
 						{/each}
+						<Select.Item value={CUSTOM_OPENAI_MODEL} label="Custom Model" />
 					</Select.Content>
 				</Select.Root>
 				<Field.Description>
@@ -157,6 +172,18 @@
 					.
 				</Field.Description>
 			</Field.Field>
+			{#if isCustomOpenaiModel}
+				<Field.Field>
+					<Field.Label for="openai-custom-model">Custom Model Name</Field.Label>
+					<Input
+						id="openai-custom-model"
+						placeholder="gpt-114514"
+						autocomplete="off"
+						bind:value={() => settings.get('transcription.openai.model'),
+							(value) => settings.set('transcription.openai.model', value)}
+					/>
+				</Field.Field>
+			{/if}
 			<OpenAiApiKeyInput />
 		{:else if settings.get('transcription.service') === 'Groq'}
 			<Field.Field>
