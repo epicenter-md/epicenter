@@ -1,7 +1,6 @@
 import type { Table } from '@epicenter/workspace';
 import type { IFileSystem } from 'just-bash';
 import { FS_ERRORS } from './errors.js';
-import type { FileContentDocCache } from './file-content-docs.js';
 import type { FileId } from './ids.js';
 import { posixResolve } from './path.js';
 import type { FileRow } from './table.js';
@@ -17,12 +16,12 @@ function FileSystem<T extends IFileSystem>(fs: T): T {
  * Create a POSIX-like virtual filesystem backed by Yjs CRDTs.
  *
  * Thin orchestrator that delegates metadata operations to {@link FileTree}
- * and content I/O to a per-file content-doc cache. Every method applies `cwd` via
- * {@link posixResolve}, then calls the appropriate sub-service.
+ * and content I/O to a caller-owned file content store. Every method applies
+ * `cwd` via {@link posixResolve}, then calls the appropriate sub-service.
  *
  * The returned object satisfies the `IFileSystem` interface from `just-bash`,
  * which allows this virtual filesystem to be used as a drop-in backend for
- * shell emulation: while also exposing extra members (`index`,
+ * shell emulation while also exposing extra members (`index`,
  * `lookupId`, `dispose`) that aren't part of `IFileSystem`.
  *
  * **No symlinks**: `symlink`, `link`, and `readlink` always throw ENOSYS.
@@ -36,15 +35,16 @@ function FileSystem<T extends IFileSystem>(fs: T): T {
  *
  * const ydoc = new Y.Doc({ guid: 'app' });
  * const files = attachTable(ydoc, 'files', filesTable);
- * const contentDocs = createDisposableCache((fileId) =>
- *   createFileContentDoc({ fileId, workspaceId: 'app', filesTable: files }),
- * );
- * const fs = attachYjsFileSystem(files, contentDocs);
+ * const fs = attachYjsFileSystem(files, fileContent);
  * ```
  */
 export function attachYjsFileSystem(
 	filesTable: Table<FileRow>,
-	contentDocuments: FileContentDocCache,
+	fileContent: {
+		read(fileId: FileId): Promise<string>;
+		write(fileId: FileId, text: string): Promise<void>;
+		append(fileId: FileId, text: string): Promise<string>;
+	},
 	cwd: string = '/',
 ) {
 	const tree = attachFileTree(filesTable);
@@ -160,9 +160,7 @@ export function attachYjsFileSystem(
 			if (id === null) throw FS_ERRORS.ENOENT(abs);
 			const row = tree.getRow(id, abs);
 			if (row.type === 'folder') throw FS_ERRORS.EISDIR(abs);
-			await using handle = contentDocuments.open(id);
-			await handle.whenReady;
-			return handle.content.read();
+			return fileContent.read(id);
 		},
 
 		async readFileBuffer(path) {
@@ -193,9 +191,7 @@ export function attachYjsFileSystem(
 				justCreated = true;
 			}
 
-			await using handle = contentDocuments.open(id);
-			await handle.whenReady;
-			handle.content.write(textData);
+			await fileContent.write(id, textData);
 			if (!justCreated) tree.touch(id, size);
 		},
 
@@ -209,12 +205,8 @@ export function attachYjsFileSystem(
 			const row = tree.getRow(id, abs);
 			if (row.type === 'folder') throw FS_ERRORS.EISDIR(abs);
 
-			await using handle = contentDocuments.open(id);
-			await handle.whenReady;
-			handle.content.appendText(text);
-			const newSize = new TextEncoder().encode(
-				handle.content.read(),
-			).byteLength;
+			const nextText = await fileContent.append(id, text);
+			const newSize = new TextEncoder().encode(nextText).byteLength;
 			tree.touch(id, newSize);
 		},
 
@@ -302,9 +294,7 @@ export function attachYjsFileSystem(
 					});
 				}
 			} else {
-				await using handle = contentDocuments.open(srcId);
-				await handle.whenReady;
-				const srcText = handle.content.read();
+				const srcText = await fileContent.read(srcId);
 				await this.writeFile(resolvedDest, srcText);
 			}
 		},

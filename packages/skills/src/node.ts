@@ -1,7 +1,7 @@
 /**
  * @fileoverview Server-side entry for the shared skills workspace.
  *
- * Exports `skillsDocument` — a `createDisposableCache` keyed by guid like the
+ * Exports `skillsDocument`: a `createDisposableCache` keyed by guid like the
  * browser entry, but with NO IndexedDB / BroadcastChannel attachments and WITH
  * `importFromDisk` / `exportToDisk` actions.
  *
@@ -36,13 +36,13 @@ import {
 	type InferErrors,
 } from 'wellcrafted/error';
 import { Ok, tryAsync } from 'wellcrafted/result';
+import * as Y from 'yjs';
 import { parseSkillMd } from './parse.js';
 import { createReferenceContentDoc } from './reference-content-docs.js';
 import { serializeSkillMd } from './serialize.js';
 import { createSkillInstructionsDoc } from './skill-instructions-docs.js';
 import { createSkillsActions } from './skills-actions.js';
 import { referencesTable, type Skill, skillsTable } from './tables.js';
-import * as Y from 'yjs';
 
 export type { Reference, Skill } from './tables.js';
 export { referencesTable, skillsTable } from './tables.js';
@@ -60,17 +60,17 @@ export type SkillsIoError = InferErrors<typeof SkillsIoError>;
 
 /**
  * Skills workspace factory for Node/Bun runtimes. No IndexedDB, no broadcast
- * channel — callers layer their own persistence if needed. The returned
+ * channel. Callers layer their own persistence if needed. The returned
  * bundle includes `importFromDisk` and `exportToDisk` actions alongside the
  * standard read actions.
  *
- * Uses guid `'epicenter.skills'` — the same guid as the browser entry — so
+ * Uses guid `'epicenter.skills'`, the same guid as the browser entry, so
  * data parity across environments is preserved at the CRDT level.
  *
  * Note: in a hybrid browser+node process (e.g. Tauri), importing this AND
  * `@epicenter/skills` in the same process would give you two separate
  * factories with two separate caches. That isn't a supported configuration
- * today — TODO if we ever need it.
+ * today. TODO if we ever need it.
  */
 export const skillsDocument = createDisposableCache(
 	(id: string) => {
@@ -100,8 +100,16 @@ export const skillsDocument = createDisposableCache(
 
 		const readActions = createSkillsActions({
 			tables,
-			instructionsDocs,
-			referenceDocs,
+			async readInstructions(skillId) {
+				await using handle = instructionsDocs.open(skillId);
+				await handle.whenReady;
+				return handle.instructions.read();
+			},
+			async readReference(referenceId) {
+				await using handle = referenceDocs.open(referenceId);
+				await handle.whenReady;
+				return handle.content.read();
+			},
 		});
 
 		const nodeActions = {
@@ -114,7 +122,7 @@ export const skillsDocument = createDisposableCache(
 			 * second gets a fresh one and its SKILL.md is rewritten.
 			 *
 			 * References in `references/*.md` subdirectories are imported with
-			 * deterministic IDs derived from `skillId + filename`—no ephemeral IDs,
+			 * deterministic IDs derived from `skillId + filename`: no ephemeral IDs,
 			 * no matching needed.
 			 */
 			importFromDisk: defineMutation({
@@ -214,12 +222,13 @@ export const skillsDocument = createDisposableCache(
 			/**
 			 * Serialize workspace table data to agentskills.io-compliant folders.
 			 *
-			 * One-way publish step—run this when you want agent runtimes (Codex,
+			 * One-way publish step. Run this when you want agent runtimes (Codex,
 			 * Claude Code, OpenCode) to pick up the latest skill definitions.
 			 * Stale directories for deleted skills are cleaned up automatically.
 			 */
 			exportToDisk: defineMutation({
-				description: 'Export all skills to an agentskills.io-compliant directory',
+				description:
+					'Export all skills to an agentskills.io-compliant directory',
 				input: DirInput,
 				handler: async ({ dir }) => {
 					const skills = tables.skills.getAllValid();
@@ -311,7 +320,7 @@ const REFERENCE_ID_ALPHABET = 'abcdefghijklmnopqrstuvwxyz0123456789';
  *
  * Uses SHA-256, then maps each byte to the same `[a-z0-9]` alphabet
  * used by `generateId()`. Renaming a reference file naturally creates
- * a new ID—the old file is conceptually a different reference.
+ * a new ID. The old file is conceptually a different reference.
  */
 function deriveReferenceId(skillId: string, path: string): string {
 	const hash = createHash('sha256').update(`${skillId}:${path}`).digest();

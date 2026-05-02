@@ -66,10 +66,30 @@ export function openOpensidian({
 		},
 		{ gcTime: 5_000 },
 	);
-	const sqliteIndex = createSqliteIndex(fileContentDocs)({
+	const fileContent = {
+		async read(fileId: FileId) {
+			await using handle = fileContentDocs.open(fileId);
+			await handle.whenReady;
+			return handle.content.read();
+		},
+		async write(fileId: FileId, text: string) {
+			await using handle = fileContentDocs.open(fileId);
+			await handle.whenReady;
+			handle.content.write(text);
+		},
+		async append(fileId: FileId, text: string) {
+			await using handle = fileContentDocs.open(fileId);
+			await handle.whenReady;
+			handle.content.appendText(text);
+			return handle.content.read();
+		},
+	};
+	const sqliteIndex = createSqliteIndex({
+		readContent: fileContent.read,
+	})({
 		tables: doc.tables,
 	}).exports;
-	const fs = attachYjsFileSystem(doc.tables.files, fileContentDocs);
+	const fs = attachYjsFileSystem(doc.tables.files, fileContent);
 	const bash = new Bash({ fs, cwd: '/' });
 	const actions = createOpensidianActions({ fs, sqliteIndex, bash });
 

@@ -169,7 +169,24 @@ describe('markdown integration with YjsFileSystem', () => {
 				}),
 			{ gcTime: Number.POSITIVE_INFINITY },
 		);
-		return attachYjsFileSystem(ws.tables.files, contentDocs);
+		return attachYjsFileSystem(ws.tables.files, {
+			async read(fileId) {
+				await using handle = contentDocs.open(fileId);
+				await handle.whenReady;
+				return handle.content.read();
+			},
+			async write(fileId, text) {
+				await using handle = contentDocs.open(fileId);
+				await handle.whenReady;
+				handle.content.write(text);
+			},
+			async append(fileId, text) {
+				await using handle = contentDocs.open(fileId);
+				await handle.whenReady;
+				handle.content.appendText(text);
+				return handle.content.read();
+			},
+		});
 	}
 
 	test('write and read .md file with front matter', async () => {

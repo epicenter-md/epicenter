@@ -1,7 +1,7 @@
 /**
  * Browser entry for the shared skills workspace.
  *
- * Module-scope flat exports — the file IS the workspace recipe, top-down.
+ * Module-scope flat exports: the file IS the workspace recipe, top-down.
  * Per-row caches (`instructionsDocs`, `referenceDocs`) and the action layer
  * (`skillsActions`) sit at the same level as the workspace primitives;
  * everything is a top-level export.
@@ -72,8 +72,16 @@ export const referenceDocs = createDisposableCache(
 // ─── actions ───────────────────────────────────────────────────────────
 export const skillsActions = createSkillsActions({
 	tables,
-	instructionsDocs,
-	referenceDocs,
+	async readInstructions(skillId) {
+		await using handle = instructionsDocs.open(skillId);
+		await handle.whenReady;
+		return handle.instructions.read();
+	},
+	async readReference(referenceId) {
+		await using handle = referenceDocs.open(referenceId);
+		await handle.whenReady;
+		return handle.content.read();
+	},
 });
 
 export const batch = (fn: () => void) => ydoc.transact(fn);

@@ -10,7 +10,6 @@ export {
 // File content documents
 export {
 	createFileContentDoc,
-	type FileContentDocCache,
 	fileContentDocGuid,
 } from './file-content-docs.js';
 // File system (orchestrator)

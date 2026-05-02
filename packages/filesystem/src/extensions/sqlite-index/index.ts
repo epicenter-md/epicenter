@@ -5,7 +5,7 @@
  * (libSQL WASM). Provides SQL queries, full-text search, and fast
  * lookups against file metadata and content.
  *
- * The SQLite database is **never** the source of truth:it's a derived,
+ * The SQLite database is **never** the source of truth: it is a derived,
  * rebuildable cache. On every page load the index is rebuilt from Yjs.
  * Ongoing mutations are picked up via a debounced table observer.
  *
@@ -16,10 +16,9 @@
  * ```typescript
  * const ydoc = new Y.Doc({ guid: 'app' });
  * const tables = attachTables(ydoc, { files: filesTable });
- * const fileContentDocs = createDisposableCache((fileId) =>
- *   createFileContentDoc({ fileId, workspaceId: 'app', filesTable: tables.files }),
- * );
- * const sqliteIndex = createSqliteIndex(fileContentDocs)({ tables });
+ * const sqliteIndex = createSqliteIndex({
+ *   readContent: fileContent.read,
+ * })({ tables });
  * await sqliteIndex.exports.whenReady;
  * const results = await sqliteIndex.exports.search('meeting notes');
  * ```
@@ -31,7 +30,6 @@ import type { Table } from '@epicenter/workspace';
 import type { Client, InStatement } from '@libsql/client-wasm';
 import { createClient } from '@libsql/client-wasm';
 
-import type { FileContentDocCache } from '../../file-content-docs.js';
 import type { FileId } from '../../ids.js';
 import type { FileRow } from '../../table.js';
 
@@ -136,21 +134,19 @@ type SqliteIndexContext = {
  * const ydoc = new Y.Doc({ guid: 'app' });
  * const tables = attachTables(ydoc, { files: filesTable });
  * attachIndexedDb(ydoc);
- * const sqliteIndex = createSqliteIndex(fileContentDocs)({ tables });
+ * const sqliteIndex = createSqliteIndex({ readContent })({ tables });
  * ```
  */
 export function createSqliteIndex(
-	contentDocs: FileContentDocCache,
+	{
+		readContent,
+	}: {
+		readContent(fileId: FileId): Promise<string>;
+	},
 	{ debounceMs = 100 }: SqliteIndexOptions = {},
 ) {
 	return (context: SqliteIndexContext): SqliteIndex => {
 		const filesTable = context.tables.files;
-
-		async function readFileContent(id: FileId): Promise<string> {
-			await using handle = contentDocs.open(id);
-			await handle.whenReady;
-			return handle.content.read();
-		}
 
 		const client = createClient({ url: ':memory:' });
 		let syncTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -202,7 +198,7 @@ export function createSqliteIndex(
 					continue;
 				}
 				try {
-					const text = await readFileContent(row.id);
+					const text = await readContent(row.id);
 					contentMap.set(row.id, text || null);
 				} catch {
 					contentMap.set(row.id, null);
@@ -353,7 +349,7 @@ export function createSqliteIndex(
 
 				let fileContent: string | null = null;
 				try {
-					const text = await readFileContent(row.id);
+					const text = await readContent(row.id);
 					fileContent = text || null;
 				} catch {
 					fileContent = null;

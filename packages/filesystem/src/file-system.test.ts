@@ -13,10 +13,7 @@ import { describe, expect, test } from 'bun:test';
 import { attachTables, createDisposableCache } from '@epicenter/workspace';
 import { Bash } from 'just-bash';
 import * as Y from 'yjs';
-import {
-	createFileContentDoc,
-	type FileContentDocCache,
-} from './file-content-docs.js';
+import { createFileContentDoc } from './file-content-docs.js';
 import { attachYjsFileSystem, type YjsFileSystem } from './file-system.js';
 import type { FileId } from './ids.js';
 import { filesTable } from './table.js';
@@ -35,7 +32,24 @@ function setup() {
 			}),
 		{ gcTime: Number.POSITIVE_INFINITY },
 	);
-	const fs = attachYjsFileSystem(ws.tables.files, contentDocs);
+	const fs = attachYjsFileSystem(ws.tables.files, {
+		async read(fileId) {
+			await using handle = contentDocs.open(fileId);
+			await handle.whenReady;
+			return handle.content.read();
+		},
+		async write(fileId, text) {
+			await using handle = contentDocs.open(fileId);
+			await handle.whenReady;
+			handle.content.write(text);
+		},
+		async append(fileId, text) {
+			await using handle = contentDocs.open(fileId);
+			await handle.whenReady;
+			handle.content.appendText(text);
+			return handle.content.read();
+		},
+	});
 	return { fs, ws, contentDocs };
 }
 
@@ -399,7 +413,7 @@ describe('mv preserves content (no conversion)', () => {
 
 function getTimelineLength(
 	fs: YjsFileSystem,
-	contentDocs: FileContentDocCache,
+	contentDocs: ReturnType<typeof setup>['contentDocs'],
 	path: string,
 ): number {
 	const id = fs.lookupId(path);

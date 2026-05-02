@@ -15,11 +15,7 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { mkdir, rm } from 'node:fs/promises';
 import { join } from 'node:path';
-import {
-	createFileContentDoc,
-	type FileContentDocCache,
-	type FileId,
-} from '@epicenter/filesystem';
+import { createFileContentDoc, type FileId } from '@epicenter/filesystem';
 import {
 	attachEncryption,
 	createDisposableCache,
@@ -79,7 +75,7 @@ function createTestClient() {
 }
 
 async function writeContent(
-	contentDocs: FileContentDocCache,
+	contentDocs: ReturnType<typeof createTestClient>['contentDocs'],
 	id: string,
 	text: string,
 ) {
@@ -88,7 +84,10 @@ async function writeContent(
 	handle.content.write(text);
 }
 
-async function readContent(contentDocs: FileContentDocCache, id: string) {
+async function readContent(
+	contentDocs: ReturnType<typeof createTestClient>['contentDocs'],
+	id: string,
+) {
 	await using handle = contentDocs.open(id as FileId);
 	await handle.whenReady;
 	return handle.content.read();
@@ -284,7 +283,7 @@ describe('e2e: opensidian pushFromMarkdown', () => {
 
 		const result = await pushFromMarkdown({
 			tables: client.tables,
-			contentDocs,
+			writeContent: (id, text) => writeContent(contentDocs, id, text),
 			filesDir: IMPORT_FILES_DIR,
 		});
 
@@ -314,7 +313,7 @@ describe('e2e: opensidian pushFromMarkdown', () => {
 
 		const result = await pushFromMarkdown({
 			tables: client.tables,
-			contentDocs,
+			writeContent: (id, text) => writeContent(contentDocs, id, text),
 			filesDir: IMPORT_FILES_DIR,
 		});
 
@@ -361,7 +360,7 @@ describe('e2e: opensidian pushFromMarkdown', () => {
 
 		const result = await pushFromMarkdown({
 			tables: client.tables,
-			contentDocs,
+			writeContent: (id, text) => writeContent(contentDocs, id, text),
 			filesDir: IMPORT_FILES_DIR,
 		});
 

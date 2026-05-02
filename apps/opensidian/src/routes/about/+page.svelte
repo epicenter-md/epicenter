@@ -31,7 +31,7 @@
 			icon: GitBranch,
 			title: 'CRDT Storage',
 			description:
-				'Every file row lives in a Yjs Y.Map. Create, rename, delete, move\u2014all conflict-free. No server needed.',
+				'Every file row lives in a Yjs Y.Map. Create, rename, delete, and move all stay conflict-free. No server needed.',
 		},
 		{
 			icon: FileText,
@@ -43,7 +43,7 @@
 			icon: HardDrive,
 			title: 'IndexedDB Persistence',
 			description:
-				'The workspace persists all Y.Docs to IndexedDB automatically. Close the tab, reopen\u2014your notes are there.',
+				'The workspace persists all Y.Docs to IndexedDB automatically. Close the tab, reopen it, and your notes are there.',
 		},
 		{
 			icon: Database,
@@ -68,8 +68,13 @@ export function openOpensidian() {
   const ydoc = new Y.Doc({ guid: 'opensidian' });
   const tables = attachTables(ydoc, { files: filesTable });
   const idb = attachIndexedDb(ydoc);
-  const sqliteIndex = createSqliteIndex(tables.files);
-  const fs = attachYjsFileSystem(tables.files, fileContentDocs);
+  const fileContent = {
+    read: (fileId) => readFileContent(fileId),
+    write: (fileId, text) => writeFileContent(fileId, text),
+    append: (fileId, text) => appendFileContent(fileId, text),
+  };
+  const sqliteIndex = createSqliteIndex({ readContent: fileContent.read })({ tables });
+  const fs = attachYjsFileSystem(tables.files, fileContent);
 
   return {
     ydoc, tables, idb, sqliteIndex, fs,
@@ -101,15 +106,15 @@ export const opensidian = openOpensidian();`;
 		},
 		{
 			id: 'sqlite-index',
-			line: 'createSqliteIndex(tables.files)',
+			line: 'createSqliteIndex({ readContent: fileContent.read })({ tables })',
 			explanation:
 				'Spins up a WASM SQLite database that mirrors the Yjs files table into SQL rows for fast tree queries.',
 		},
 		{
 			id: 'filesystem',
-			line: 'attachYjsFileSystem(workspace.tables.files, fileContentDocs)',
+			line: 'attachYjsFileSystem(workspace.tables.files, fileContent)',
 			explanation:
-				'Wraps the raw table and document APIs into a familiar filesystem interface\u2014writeFile, mkdir, rm, mv.',
+				'Wraps the raw table and content operations into a familiar filesystem interface: writeFile, mkdir, rm, mv.',
 		},
 	] as const;
 

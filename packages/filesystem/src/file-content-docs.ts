@@ -24,7 +24,7 @@
  * compose this directly with `createDisposableCache`.
  */
 
-import type { DisposableCache, Table } from '@epicenter/workspace';
+import type { Table } from '@epicenter/workspace';
 import {
 	attachTimeline,
 	type DocPersistence,
@@ -79,14 +79,3 @@ export function createFileContentDoc({
 		},
 	};
 }
-
-/**
- * Cross-package alias for the cache that holds opened file content doc
- * handles. Exported so consumers (the filesystem ops layer, sqlite-index
- * extension, e2e configs) can declare the shared cache contract without
- * naming the builder's full return object.
- */
-export type FileContentDocCache = DisposableCache<
-	FileId,
-	ReturnType<typeof createFileContentDoc>
->;
