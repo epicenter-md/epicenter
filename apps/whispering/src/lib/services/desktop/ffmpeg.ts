@@ -7,10 +7,10 @@ import {
 	type InferErrors,
 } from 'wellcrafted/error';
 import { Err, Ok, tryAsync } from 'wellcrafted/result';
+import { IS_MACOS } from '$lib/constants/platform';
 import { asShellCommand, CommandServiceLive } from './command';
 import { FsServiceLive } from './fs';
 import { getFileExtensionFromFfmpegOptions } from './recorder/ffmpeg';
-import { IS_MACOS } from '$lib/constants/platform';
 
 export const FfmpegError = defineErrors({
 	InstallCheckFailed: ({ cause }: { cause: unknown }) => ({
