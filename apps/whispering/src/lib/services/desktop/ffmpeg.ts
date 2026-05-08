@@ -10,6 +10,7 @@ import { Err, Ok, tryAsync } from 'wellcrafted/result';
 import { asShellCommand, CommandServiceLive } from './command';
 import { FsServiceLive } from './fs';
 import { getFileExtensionFromFfmpegOptions } from './recorder/ffmpeg';
+import { IS_MACOS } from '$lib/constants/platform';
 
 export const FfmpegError = defineErrors({
 	InstallCheckFailed: ({ cause }: { cause: unknown }) => ({
@@ -40,6 +41,19 @@ export const FfmpegServiceLive = {
 						await CommandServiceLive.execute(asShellCommand('ffmpeg -version'));
 
 					if (commandError) throw commandError;
+
+					if (result.code !== 0 && IS_MACOS) {
+						const { data: macosResult, error: macosCommandError } =
+							await CommandServiceLive.execute(
+								asShellCommand(
+									'PATH="/opt/homebrew/bin:/usr/local/bin:$PATH" ffmpeg -version',
+								),
+							);
+
+						if (macosCommandError) throw macosCommandError;
+						return macosResult;
+					}
+
 					return result;
 				},
 				catch: (error) => FfmpegError.InstallCheckFailed({ cause: error }),
