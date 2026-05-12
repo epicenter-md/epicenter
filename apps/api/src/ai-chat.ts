@@ -9,6 +9,7 @@ import {
 } from '@tanstack/ai';
 import { ANTHROPIC_MODELS, createAnthropicChat } from '@tanstack/ai-anthropic';
 import { createGeminiChat, GeminiTextModels } from '@tanstack/ai-gemini';
+import { createGrokText, GROK_CHAT_MODELS } from '@tanstack/ai-grok';
 import { createOpenaiChat, OPENAI_CHAT_MODELS } from '@tanstack/ai-openai';
 import { type } from 'arktype';
 import { createFactory } from 'hono/factory';
@@ -41,6 +42,7 @@ const aiChatBody = type({
 			{ provider: "'openai'", model: type.enumerated(...OPENAI_CHAT_MODELS) },
 			{ provider: "'anthropic'", model: type.enumerated(...ANTHROPIC_MODELS) },
 			{ provider: "'gemini'", model: type.enumerated(...GeminiTextModels) },
+			{ provider: "'grok'", model: type.enumerated(...GROK_CHAT_MODELS) },
 		),
 	),
 	/** User-provided API key for BYOK. When present, billing is bypassed entirely. */
@@ -118,6 +120,13 @@ export const aiChatHandlers = factory.createHandlers(
 				if (!apiKey)
 					return c.json(AiChatError.ProviderNotConfigured({ provider }), 503);
 				adapter = createGeminiChat(data.model, apiKey);
+				break;
+			}
+			case 'grok': {
+				const apiKey = userApiKey ?? c.env.GROK_API_KEY;
+				if (!apiKey)
+					return c.json(AiChatError.ProviderNotConfigured({ provider }), 503);
+				adapter = createGrokText(data.model, apiKey);
 				break;
 			}
 		}

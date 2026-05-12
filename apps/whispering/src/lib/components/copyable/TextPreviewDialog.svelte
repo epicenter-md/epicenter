@@ -6,6 +6,7 @@
 	import { Spinner } from '@epicenter/ui/spinner';
 	import { Textarea } from '@epicenter/ui/textarea';
 	import TrashIcon from '@lucide/svelte/icons/trash';
+	import TranscriptContextMenu from '$lib/components/TranscriptContextMenu.svelte';
 	import { createCopyFn } from '$lib/utils/createCopyFn';
 
 	/**
@@ -112,7 +113,9 @@
 	</InputGroup.Root>
 	<Modal.Content class="max-w-4xl">
 		<Modal.Title>{title}</Modal.Title>
-		<Textarea readonly value={text} rows={20} />
+		<TranscriptContextMenu>
+			<Textarea readonly value={text} rows={20} />
+		</TranscriptContextMenu>
 		<Modal.Footer>
 			{#if onDelete}
 				<Button

@@ -1,11 +1,13 @@
 import type { ANTHROPIC_MODELS } from '@tanstack/ai-anthropic';
 import type { GeminiTextModels } from '@tanstack/ai-gemini';
+import type { GROK_CHAT_MODELS } from '@tanstack/ai-grok';
 import type { OPENAI_CHAT_MODELS } from '@tanstack/ai-openai';
 
 type SupportedModel =
 	| (typeof OPENAI_CHAT_MODELS)[number]
 	| (typeof ANTHROPIC_MODELS)[number]
-	| (typeof GeminiTextModels)[number];
+	| (typeof GeminiTextModels)[number]
+	| (typeof GROK_CHAT_MODELS)[number];
 
 /**
  * Per-model credit costs for proportional AI billing.
@@ -78,11 +80,13 @@ export const MODEL_CREDITS: Partial<Record<SupportedModel, number>> = {
 	// ── Gemini: Flash Lite (1 credit) ────────────────────────────
 	'gemini-3.1-flash-lite-preview': 1, // $0.25/$1.50
 	'gemini-2.5-flash-lite': 1, // $0.04/$0.16
+	'gemini-2.5-flash-lite-preview-09-2025': 1, // $0.04/$0.16
 	'gemini-2.0-flash-lite': 1, // $0.02/$0.08
 
 	// ── Gemini: Flash (1–2 credits) ──────────────────────────────
 	'gemini-3-flash-preview': 2, // $0.30/$2.50
 	'gemini-2.5-flash': 1, // $0.15/$0.60
+	'gemini-2.5-flash-preview-09-2025': 1, // $0.15/$0.60
 	'gemini-2.0-flash': 1, // $0.10/$0.40
 
 	// ── Gemini: Pro (5 credits) ──────────────────────────────────
@@ -99,10 +103,26 @@ export const MODEL_CREDITS: Partial<Record<SupportedModel, number>> = {
 	'claude-3-7-sonnet': 5, // $3/$15
 	'claude-sonnet-4': 5, // $3/$15
 	'claude-sonnet-4-5': 5, // $3/$15
+	'claude-sonnet-4-6': 5, // $3/$15
 
 	// ── Anthropic: Opus (10–30 credits) ──────────────────────────
 	'claude-opus-4-6': 10, // $5/$25
 	'claude-opus-4': 30, // $15/$75
 	'claude-opus-4-1': 30, // $15/$75
 	'claude-opus-4-5': 30, // $15/$75
+
+	// ── Grok: Mini/Fast non-reasoning (1–2 credits) ───────────────
+	'grok-3-mini': 1, // $0.30/$0.50
+	'grok-4-fast-non-reasoning': 2, // $0.40/$1
+	'grok-4-1-fast-non-reasoning': 2, // $0.40/$1
+	'grok-2-vision-1212': 2, // older vision model
+
+	// ── Grok: Fast reasoning / code (3 credits) ───────────────────
+	'grok-code-fast-1': 3, // $2/$8
+	'grok-4-fast-reasoning': 3, // $2/$8
+	'grok-4-1-fast-reasoning': 3, // $2/$8
+
+	// ── Grok: Full models (5 credits) ─────────────────────────────
+	'grok-3': 5, // $3/$15
+	'grok-4': 5, // $3/$15
 };

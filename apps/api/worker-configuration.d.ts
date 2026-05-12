@@ -20,6 +20,7 @@ declare namespace Cloudflare {
 		ANTHROPIC_API_KEY: string;
 		AUTUMN_SECRET_KEY: string;
 		GEMINI_API_KEY: string;
+		GROK_API_KEY: string;
 		WORKSPACE_ROOM: DurableObjectNamespace<import('./src/app').WorkspaceRoom>;
 		DOCUMENT_ROOM: DurableObjectNamespace<import('./src/app').DocumentRoom>;
 	}
@@ -44,6 +45,7 @@ declare namespace NodeJS {
 				| 'ANTHROPIC_API_KEY'
 				| 'AUTUMN_SECRET_KEY'
 				| 'GEMINI_API_KEY'
+				| 'GROK_API_KEY'
 			>
 		> {}
 }

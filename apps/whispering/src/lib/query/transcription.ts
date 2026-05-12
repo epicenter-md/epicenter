@@ -12,6 +12,7 @@ import { deviceConfig } from '$lib/state/device-config.svelte';
 import type { Recording } from '$lib/state/recordings.svelte';
 import { recordings } from '$lib/state/recordings.svelte';
 import { settings } from '$lib/state/settings.svelte';
+import { applyDictionary, buildVocabHint, getDictionary } from '$lib/utils/dictionary';
 import { notify } from './notify';
 import { deepgramErrorToWhisperingErr } from './transcription-errors/deepgram';
 import { elevenlabsErrorToWhisperingErr } from './transcription-errors/elevenlabs';
@@ -157,7 +158,10 @@ export async function transcribeBlob(
 	const transcriptionResult: Result<string, WhisperingError> =
 		await (async () => {
 			const outputLanguage = getOutputLanguage();
-			const prompt = settings.get('transcription.prompt');
+			const dictionary = getDictionary();
+			const vocabHint = buildVocabHint(dictionary);
+			const basePrompt = settings.get('transcription.prompt');
+			const prompt = [basePrompt, vocabHint].filter(Boolean).join(' ');
 			const temperature = String(settings.get('transcription.temperature'));
 
 			switch (selectedService) {
@@ -302,6 +306,10 @@ export async function transcribeBlob(
 			provider: selectedService,
 			duration,
 		});
+	}
+
+	if (transcriptionResult.data !== undefined && dictionary.length > 0) {
+		return Ok(applyDictionary(transcriptionResult.data, dictionary));
 	}
 
 	return transcriptionResult;
