@@ -701,7 +701,7 @@ pub async fn transcribe_audio_moonshine(
     );
 
     // Extract samples from WAV
-    let samples = extract_samples_from_wav(wav_data)?;
+    let mut samples = extract_samples_from_wav(wav_data)?;
     debug!(
         "[Transcription] extracted {} PCM samples for Moonshine engine",
         samples.len()
@@ -711,6 +711,18 @@ pub async fn transcribe_audio_moonshine(
     if samples.is_empty() {
         warn!("[Transcription] no samples extracted, returning empty transcription");
         return Ok(String::new());
+    }
+
+    // Moonshine needs at least ~1.5s of audio to generate output reliably.
+    // Pad short clips with silence to avoid empty transcriptions. See #1282
+    const MIN_MOONSHINE_SAMPLES: usize = 24000; // 1.5s at 16kHz
+    if samples.len() < MIN_MOONSHINE_SAMPLES {
+        debug!(
+            "[Transcription] padding short audio ({:.2}s) to {:.2}s",
+            samples.len() as f32 / 16000.0,
+            MIN_MOONSHINE_SAMPLES as f32 / 16000.0
+        );
+        samples.resize(MIN_MOONSHINE_SAMPLES, 0.0);
     }
 
     // Extract variant from model path directory name
