@@ -14,6 +14,8 @@ export {
 	KEYBOARD_EVENT_SPECIAL_KEY_TO_ACCELERATOR_KEY_CODE_MAP,
 } from './accelerator-conversions';
 
+export { codeToLogicalKey } from './browser/code-to-key';
+export { parseManualShortcut } from './browser/parse-manual-shortcut';
 export type { KeyboardEventPossibleKey } from './browser/possible-keys';
 
 export {

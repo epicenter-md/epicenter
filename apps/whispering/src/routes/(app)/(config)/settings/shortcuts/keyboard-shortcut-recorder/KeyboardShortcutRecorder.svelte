@@ -1,19 +1,17 @@
 <script lang="ts">
-	import * as Alert from '@epicenter/ui/alert';
 	import { Button } from '@epicenter/ui/button';
 	import { Input } from '@epicenter/ui/input';
 	import * as Kbd from '@epicenter/ui/kbd';
 	import * as Popover from '@epicenter/ui/popover';
 	import { cn } from '@epicenter/ui/utils';
-	import AlertTriangle from '@lucide/svelte/icons/alert-triangle';
 	import Keyboard from '@lucide/svelte/icons/keyboard';
 	import Pencil from '@lucide/svelte/icons/pencil';
 	import XIcon from '@lucide/svelte/icons/x';
 	import {
 		getShortcutDisplayLabel,
-		type KeyboardEventSupportedKey,
+		parseManualShortcut,
 	} from '$lib/constants/keyboard';
-	import { IS_MACOS } from '$lib/constants/platform';
+	import { rpc } from '$lib/query';
 	import { type KeyRecorder } from './create-key-recorder.svelte';
 
 	const {
@@ -99,20 +97,6 @@
 					</p>
 				</div>
 
-				{#if IS_MACOS && !isManualMode}
-					<Alert.Root variant="warning" class="text-xs">
-						<AlertTriangle class="size-4" />
-						<Alert.Title class="text-xs font-medium"
-							>macOS Option Key Note</Alert.Title
-						>
-						<Alert.Description class="text-xs">
-							Some Option+key combinations (E, I, N, U, `) may not record
-							properly. Try recording in reverse (press letter first, then
-							Option) or edit manually.
-						</Alert.Description>
-					</Alert.Root>
-				{/if}
-
 				{#if !isManualMode}
 					<!-- Recording mode -->
 					<button
@@ -193,12 +177,18 @@
 					<form
 						onsubmit={(e) => {
 							e.preventDefault();
-							if (manualValue) {
-								keyRecorder.register(
-									manualValue.split('+') as KeyboardEventSupportedKey[],
-								);
-								isManualMode = false;
+							if (!manualValue) return;
+							const { keys, invalidTokens } = parseManualShortcut(manualValue);
+							if (invalidTokens.length > 0) {
+								rpc.notify.error({
+									title: 'Invalid shortcut',
+									description: `Could not recognize: ${invalidTokens.join(', ')}. Try aliases like ctrl, cmd, option, shift, space, or a single letter / digit / punctuation key.`,
+								});
+								return;
 							}
+							if (keys.length === 0) return;
+							keyRecorder.register(keys);
+							isManualMode = false;
 						}}
 						class="space-y-3"
 					>

@@ -277,33 +277,31 @@ Goal: make recording work on FI (and any) layout, make manual entry honest, stop
 
 #### Wave 3.1: Add diagnostic logging (gated by DEV)
 
-- [ ] **3.1.1** In `createPressedKeys.svelte.ts`, log `{ key: e.key, code: e.code, metaKey, altKey, ctrlKey, shiftKey }` at the top of the keydown handler, gated by `import.meta.env.DEV`.
-- [ ] **3.1.2** In `global-shortcut-manager.ts:125-133`, log the swallowed error (still swallow for now) so we can see what Tauri actually says when the user's FI keyboard tries to register the default combo.
-- [ ] **3.1.3** User runs the app with these logs on, reports back what `e.key` and `e.code` look like for the FI keycaps they care about. (Out-of-band step; pause here for evidence before writing the fix.)
+- [x] **3.1.1** `createPressedKeys.svelte.ts` keydown handler logs `{key, code, metaKey, altKey, ctrlKey, shiftKey}` via `console.debug` under `import.meta.env.DEV`. Stays on as long as we may need FI-layout evidence.
+- [x] **3.1.2** Skipped: superseded by Wave 3.4. We stopped swallowing the error entirely instead of logging it.
+- [-] **3.1.3** Skipped (per user request to bundle Phase 1-3 testing). Evidence to be gathered post-hoc by user if Phase 3 fix doesn't work first try.
 
 #### Wave 3.2: Switch capture to `e.code`-based key
 
-- [ ] **3.2.1** Introduce a `codeToAcceleratorKey(code: string)` helper in `$lib/constants/keyboard/` that maps W3C `code` values to Tauri accelerator names (`KeyA` → `A`, `Digit5` → `5`, `Semicolon` → `;`, `Minus` → `-`, `Space` → `Space`, etc.). Reference: <https://developer.mozilla.org/en-US/docs/Web/API/UI_Events/Keyboard_event_code_values>.
-- [ ] **3.2.2** Modify `createPressedKeys.svelte.ts` to push the code-derived key for non-modifiers; keep using `e.key` for modifier detection (`'meta'`, `'alt'`, `'control'`, `'shift'`).
-- [ ] **3.2.3** Display: in the recorder UI, label the captured key using the current `e.key` value so the user sees what is printed on their keycap. Store the code-derived value.
-- [ ] **3.2.4** Verify FI user can now record `Cmd+Shift+the-Ö-physical-key` and have it stored as `Command+Shift+;` (which is what Tauri's plugin will match against the same physical key at runtime).
+- [x] **3.2.1** New `$lib/constants/keyboard/browser/code-to-key.ts` exports `codeToLogicalKey(code)` mapping W3C codes (`Semicolon`, `Minus`, `KeyA`, `Digit0`, `F1-F24`, `Space`, arrows, navigation, editing, numpad) to the lowercase logical form (`;`, `-`, `a`, `0`, `f1`, ` `, ...). Exported from `keyboard/index.ts`.
+- [x] **3.2.2** Both keydown and keyup in `createPressedKeys.svelte.ts` now translate the non-modifier key through `codeToLogicalKey` first, falling back to `e.key` only when the code is unmapped. Modifier keys (`MODIFIER_KEYS` Set) continue to use e.key.
+- [x] **3.2.3** Display remains unchanged: the recorder UI displays the stored accelerator (which is the canonical form), not the in-progress pressedKeys. Acceptable per the spec note.
+- [-] **3.2.4** Pending user verification on FI hardware.
 
-#### Wave 3.3: Honest manual entry
+#### Wave 3.3: Honest manual entry (Option A: alias normalization)
 
-Pick A or B per Open Question 1 before starting.
-
-- [ ] **3.3.1 (A)** Add an alias-and-normalize step in `KeyboardShortcutRecorder.svelte` before splitting: `ctrl→Control`, `cmd|command|⌘→Command`, `option|opt|⌥→Option`, `alt→Alt`, `shift|⇧→Shift`, `space→Space`, etc. Case-insensitive. Surface a validation error toast if any token does not normalize.
-- [ ] **3.3.1 (B)** Replace the text input with modifier checkboxes (Cmd/Option/Ctrl/Shift) plus a key dropdown. No free-text path.
+- [x] **3.3.1 (A)** New `$lib/constants/keyboard/browser/parse-manual-shortcut.ts` exports `parseManualShortcut(input)` returning `{keys, invalidTokens}`. Alias map covers `ctrl|cmd|command|⌘|win|super|option|opt|⌥|alt|shift|⇧|altgr|space|spacebar|esc|escape|ret|return|enter|tab|bs|backspace|del|delete|ins|insert|home|end|pgup|pageup|pgdn|pagedown|up|down|left|right|arrow*`. Case-insensitive. Unmapped tokens pass through (handles `a`, `5`, `;`, `f5`, etc.).
+- [x] **3.3.1** `KeyboardShortcutRecorder.svelte` onsubmit replaces the naive split-and-cast with `parseManualShortcut`. Invalid tokens trigger an error toast naming them; empty result is a silent no-op. The obsolete macOS Option-dead-key warning is removed (e.code fixes that path too).
 
 #### Wave 3.4: Surface registration errors
 
-- [ ] **3.4.1** In `global-shortcut-manager.ts:125-133`, replace `if (registerError) return Ok(undefined);` with `if (registerError) return Err(registerError);`.
-- [ ] **3.4.2** Verify the existing error-toast plumbing in `syncGlobalShortcutsWithSettings` (`register-commands.ts:113-137`) shows the cause; if message is opaque, include the raw plugin error.
-- [ ] **3.4.3** Confirm with a deliberately-bad combo (e.g. `Cmd+Space` which macOS reserves) that the toast appears and the shortcut row reflects "not set".
+- [x] **3.4.1** `global-shortcut-manager.ts` no longer swallows `tauriRegister` errors. The previous `return Ok(undefined)` on error is replaced with `return Err(registerError)`. Comment updated to explain the prior swallow was speculative; if false positives resurface we will gate per-error rather than swallow the whole class.
+- [x] **3.4.2** Existing `syncGlobalShortcutsWithSettings` plumbing already shows the error message in a toast (`register-commands.ts:144-148`). No changes needed.
+- [-] **3.4.3** Pending user verification (try `Cmd+Space` on macOS, expect error toast).
 
 #### Wave 3.5: Cleanup
 
-- [ ] **3.5.1** Remove or hide the diagnostic logging from 3.1 once 3.2-3.4 are verified. If keeping, gate fully behind `import.meta.env.DEV`.
+- [ ] **3.5.1** Diagnostic log left in place behind `import.meta.env.DEV` (no-op in production builds). Pull out in a follow-up commit once FI verification is confirmed clean.
 
 ## Edge Cases
 
@@ -355,6 +353,8 @@ Pick A or B per Open Question 1 before starting.
 - Keep `OPTION_KEY_CHARACTER_MAP` for now: constraint is that even with Phase 2.2 in place, users on the macOS Safari/WebView combo may still get layout-dependent characters in edge cases (Option held while typing). Revisit when: confirmed via the Phase 2.1 logs that `e.code` is reliably populated in the Tauri webview.
 - Keep duplicated Switch-block markup in `local/+page.svelte` and `global/+page.svelte`: constraint is two instances do not justify a shared component yet; extraction would be premature abstraction. Revisit when: a third subsystem toggle is added anywhere in settings.
 - Phase 1 invariant: `syncLocalShortcutsWithSettings` is a no-op while `shortcuts.local.enabled === false`. The window listener is gated on the same setting in `+layout.svelte`. Flipping the toggle back to true re-runs the sync (via reactive `$effect` in `AppLayout.svelte`) and re-mounts the listener.
+- Keep `OPTION_KEY_CHARACTER_MAP` and `OPTION_DEAD_KEYS`: constraint is that they are no longer needed for the recorder path (e.code translation in `createPressedKeys.svelte.ts` bypasses Option dead keys and per-layout characters). `OPTION_KEY_CHARACTER_MAP` is still wired as a defensive fallback in `createPressedKeys`. `OPTION_DEAD_KEYS` is unused dead code. Revisit when: cleaning up after FI-keyboard verification confirms e.code is reliably populated in the Tauri webview.
+- Local shortcut manager (`local-shortcut-manager.ts`) was not updated to use e.code in Phase 3. It still uses raw `e.key`. Grandfathered users with local enabled will see the layout-blind capture there. Revisit when: a user reports the issue on local shortcuts, OR when removing local hotkeys is reconsidered.
 
 ## Success Criteria
 
