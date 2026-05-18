@@ -27,6 +27,7 @@
 	import { checkForUpdates } from '../_layout-utils/check-for-updates';
 	import {
 		grandfatherLocalShortcutsEnabled,
+		migrateGlobalToggleDefaultToOptionSpace,
 		resetGlobalShortcutsToDefaultIfDuplicates,
 		resetLocalShortcutsToDefaultIfDuplicates,
 		syncGlobalShortcutsWithSettings,
@@ -63,6 +64,9 @@
 		migrationDialog.check();
 
 		if (window.__TAURI_INTERNALS__) {
+			// Seed Alt+Space toggle default for fresh installs and retire the
+			// US-only Cmd+Shift+; default for existing users; runs once via marker.
+			migrateGlobalToggleDefaultToOptionSpace();
 			syncGlobalShortcutsWithSettings();
 			resetGlobalShortcutsToDefaultIfDuplicates();
 

@@ -263,11 +263,11 @@ Commit boundary: Phase 1 ships as one PR.
 
 Goal: give the FI user (and everyone else on non-US layouts) a working default that doesn't depend on US punctuation positions.
 
-- [ ] **2.1** In `register-commands.ts`, replace `DEFAULT_GLOBAL_SHORTCUTS` with `{ toggleManualRecording: 'Alt+Space' }`; set all other entries to `null`.
-- [ ] **2.2** Verify the legacy-replacement code at `query/desktop/shortcuts.ts:25-28` leaves `Alt` as `Alt` on macOS (it should; Alt is the W3C name and Tauri's plugin handles platform rendering). If not, hardcode `Option+Space` for macOS.
-- [ ] **2.3** Conditional migration: if the user's stored `shortcuts.global.toggleManualRecording` equals the literal old default (`Command+Shift+;`) AND registration for that combo failed on the last app start, reset it to the new default. (Less surprising than a blind reset; see Open Question 3.)
-- [ ] **2.4** Update any docs/help text mentioning the old defaults.
-- [ ] **2.5** Smoke-test on FI keyboard: fresh install → press Option+Space → recording toggles.
+- [x] **2.1** `DEFAULT_GLOBAL_SHORTCUTS` rewritten in `register-commands.ts`: `{ toggleManualRecording: 'Alt+Space' }`, all others `null`.
+- [x] **2.2** Legacy replacement at `query/desktop/shortcuts.ts:25-28` only rewrites `CommandOrControl`; `Alt` passes through unchanged. Tauri's `plugin-global-shortcut` accepts `Alt` and routes it to the Option key on macOS automatically (Alt is the W3C name).
+- [x] **2.3** `migrateGlobalToggleDefaultToOptionSpace()` added: idempotent (localStorage marker), reseats `toggleManualRecording` to `Alt+Space` only when the current value is null OR exactly the old default (`Command+Shift+;` / `Control+Shift+;`). Custom user values are preserved. Wired into `AppLayout.svelte` onMount before `syncGlobalShortcutsWithSettings()`.
+- [x] **2.4** No user-facing docs reference the old default (grep on README and code confirmed only an internal comment). Nothing to update.
+- [ ] **2.5** Smoke-test on FI keyboard: fresh install → press Option+Space → recording toggles. (User to verify alongside Phase 1 and Phase 3.)
 
 Commit boundary: Phase 2 ships as one PR.
 

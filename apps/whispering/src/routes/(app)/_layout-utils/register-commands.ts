@@ -1,6 +1,5 @@
 import { partitionResults } from 'wellcrafted/result';
 import { commands } from '$lib/commands';
-import { CommandOrAlt, CommandOrControl } from '$lib/constants/keyboard';
 import { rpc } from '$lib/query';
 import { desktopRpc } from '$lib/query/desktop';
 import type { Accelerator } from '$lib/services/desktop/global-shortcut-manager';
@@ -41,6 +40,37 @@ export function grandfatherLocalShortcutsEnabled() {
 	window.localStorage.setItem(GRANDFATHER_MARKER_KEY, 'done');
 }
 
+/**
+ * One-time migration that seeds the new `Alt+Space` toggle default and
+ * retires the old US-layout `Cmd+Shift+;` / `Ctrl+Shift+;` default.
+ *
+ * Behavior:
+ * - If the user has no toggle shortcut stored (fresh install, or never reset
+ *   to defaults), set it to `Alt+Space`.
+ * - If the user has exactly the old default stored (resolved form for either
+ *   platform), reset it to `Alt+Space` so they get a working combo on any
+ *   layout.
+ * - If the user has a custom value, leave it alone.
+ *
+ * Idempotent via a localStorage marker.
+ */
+const TOGGLE_DEFAULT_MARKER_KEY = 'whispering.shortcuts.global.toggleDefault.migrated';
+const TOGGLE_KEY = 'shortcuts.global.toggleManualRecording' as const;
+const NEW_TOGGLE_DEFAULT = 'Alt+Space';
+const OLD_TOGGLE_DEFAULTS = ['Command+Shift+;', 'Control+Shift+;'];
+
+export function migrateGlobalToggleDefaultToOptionSpace() {
+	if (window.localStorage.getItem(TOGGLE_DEFAULT_MARKER_KEY) === 'done') return;
+	const current = deviceConfig.get(TOGGLE_KEY);
+	const shouldSeed =
+		current == null ||
+		(typeof current === 'string' && OLD_TOGGLE_DEFAULTS.includes(current));
+	if (shouldSeed) {
+		deviceConfig.set(TOGGLE_KEY, NEW_TOGGLE_DEFAULT);
+	}
+	window.localStorage.setItem(TOGGLE_DEFAULT_MARKER_KEY, 'done');
+}
+
 /** Default values for in-app (local) shortcuts. Keyed by command id string. */
 const DEFAULT_LOCAL_SHORTCUTS: Record<string, string | null> = {
 	pushToTalk: 'p',
@@ -55,18 +85,31 @@ const DEFAULT_LOCAL_SHORTCUTS: Record<string, string | null> = {
 	runTransformationOnClipboard: 'r',
 };
 
-/** Default values for global OS shortcuts. Keyed by command id string. */
+/**
+ * Default values for global OS shortcuts. Keyed by command id string.
+ *
+ * One sensible default (toggle recording with Alt+Space) so the app works
+ * out of the box on any keyboard layout. The prior US-punctuation defaults
+ * (`Cmd+Shift+;`, etc.) were unusable on non-US layouts because Tauri's
+ * plugin-global-shortcut maps the accelerator to the W3C physical key code
+ * (Semicolon), which on FI / DE / other ISO layouts is a key labeled `Ö` /
+ * `Ü` / similar that the user has no reason to press.
+ *
+ * `Alt+Space` resolves to the Option-Space physical position on macOS and
+ * Alt-Space on Windows/Linux. Both are layout-independent (the spacebar is
+ * always the spacebar) and unreserved by the OS in their default state.
+ */
 const DEFAULT_GLOBAL_SHORTCUTS: Record<string, string | null> = {
-	pushToTalk: `${CommandOrAlt}+Shift+D`,
-	toggleManualRecording: `${CommandOrControl}+Shift+;`,
+	pushToTalk: null,
+	toggleManualRecording: 'Alt+Space',
 	startManualRecording: null,
 	stopManualRecording: null,
-	cancelManualRecording: `${CommandOrControl}+Shift+'`,
+	cancelManualRecording: null,
 	startVadRecording: null,
 	stopVadRecording: null,
 	toggleVadRecording: null,
-	openTransformationPicker: `${CommandOrControl}+Shift+X`,
-	runTransformationOnClipboard: `${CommandOrControl}+Shift+R`,
+	openTransformationPicker: null,
+	runTransformationOnClipboard: null,
 };
 
 type LocalShortcutKey =
