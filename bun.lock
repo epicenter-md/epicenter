@@ -157,6 +157,7 @@
         "@epicenter/auth": "workspace:*",
         "@epicenter/auth-svelte": "workspace:*",
         "@epicenter/constants": "workspace:*",
+        "@epicenter/encryption": "workspace:*",
         "@epicenter/svelte": "workspace:*",
         "@epicenter/workspace": "workspace:*",
         "@tanstack/svelte-query": "catalog:",
@@ -391,7 +392,7 @@
         "@tauri-apps/plugin-dialog": "^2.3.2",
         "@tauri-apps/plugin-fs": "catalog:",
         "@tauri-apps/plugin-global-shortcut": "^2.3.0",
-        "@tauri-apps/plugin-http": "^2.5.1",
+        "@tauri-apps/plugin-http": "2.5.4",
         "@tauri-apps/plugin-log": "~2",
         "@tauri-apps/plugin-notification": "^2.3.0",
         "@tauri-apps/plugin-opener": "catalog:",
@@ -1665,7 +1666,7 @@
 
     "@tauri-apps/plugin-global-shortcut": ["@tauri-apps/plugin-global-shortcut@2.3.1", "", { "dependencies": { "@tauri-apps/api": "^2.8.0" } }, "sha512-vr40W2N6G63dmBPaha1TsBQLLURXG538RQbH5vAm0G/ovVZyXJrmZR1HF1W+WneNloQvwn4dm8xzwpEXRW560g=="],
 
-    "@tauri-apps/plugin-http": ["@tauri-apps/plugin-http@2.5.8", "", { "dependencies": { "@tauri-apps/api": "^2.10.1" } }, "sha512-oxd7oypzQeu8kAfFCrw534Kq7Cw+NzozcnCY21O4rz3A+veJiIiuSCMIprgGcZOcLAXFP9GmDhKUbhuKWcunRw=="],
+    "@tauri-apps/plugin-http": ["@tauri-apps/plugin-http@2.5.4", "", { "dependencies": { "@tauri-apps/api": "^2.8.0" } }, "sha512-/i4U/9za3mrytTgfRn5RHneKubZE/dwRmshYwyMvNRlkWjvu1m4Ma72kcbVJMZFGXpkbl+qLyWMGrihtWB76Zg=="],
 
     "@tauri-apps/plugin-log": ["@tauri-apps/plugin-log@2.8.0", "", { "dependencies": { "@tauri-apps/api": "^2.8.0" } }, "sha512-a+7rOq3MJwpTOLLKbL8d0qGZ85hgHw5pNOWusA9o3cf7cEgtYHiGY/+O8fj8MvywQIGqFv0da2bYQDlrqLE7rw=="],
 

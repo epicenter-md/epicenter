@@ -64,7 +64,7 @@
 		"@tauri-apps/plugin-dialog": "^2.3.2",
 		"@tauri-apps/plugin-fs": "catalog:",
 		"@tauri-apps/plugin-global-shortcut": "^2.3.0",
-		"@tauri-apps/plugin-http": "^2.5.1",
+		"@tauri-apps/plugin-http": "2.5.4",
 		"@tauri-apps/plugin-log": "~2",
 		"@tauri-apps/plugin-notification": "^2.3.0",
 		"@tauri-apps/plugin-opener": "catalog:",
