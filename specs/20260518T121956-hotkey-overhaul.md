@@ -383,4 +383,67 @@ Goal: make recording work on FI (and any) layout, make manual entry honest, stop
 
 ## Review
 
-(To be filled in after implementation.)
+**Status**: Implemented across 3 commits on branch `fix/whispering-hotkeys`. Pending user smoke test (combined Phase 1+2+3 verification per user request).
+
+### Commits
+
+```
+c2c6b7a4d  fix(whispering): make global hotkey capture layout-independent       (Phase 3)
+52833f158  feat(whispering): ship Alt+Space as the only global hotkey default   (Phase 2)
+438ca3653  feat(whispering): gate hotkey subsystems behind toggles              (Phase 1)
+```
+
+### What landed
+
+**Phase 1: Subsystem toggles** (6 files modified, ~520 lines including spec)
+- Two new settings: `shortcuts.local.enabled` (default `false`), `shortcuts.global.enabled` (default `true`).
+- Local listener mounts only when enabled. Global registrations unregister system-wide when disabled. Reactive `$effect`s re-sync on toggle change.
+- Master `Switch` on each shortcuts settings page; reset-to-defaults button disabled when subsystem off.
+- Grandfather migration: existing users (detected via prior migration marker OR presence of old `whispering-settings` blob) keep local enabled; fresh installs get OFF.
+
+**Phase 2: Sensible default** (3 files modified, ~60 lines)
+- `DEFAULT_GLOBAL_SHORTCUTS` reduced to `{ toggleManualRecording: 'Alt+Space' }`; all others `null`.
+- One-shot `migrateGlobalToggleDefaultToOptionSpace()` seeds `Alt+Space` when toggle is null OR exactly matches the old `Cmd+Shift+;` / `Ctrl+Shift+;` default. Custom user values preserved.
+- Removed unused `CommandOrAlt`/`CommandOrControl` imports from `register-commands.ts`.
+
+**Phase 3: Layout-independent capture + honest errors** (7 files, 268 lines incl. 2 new helpers)
+- New `codeToLogicalKey(code)` translates W3C `KeyboardEvent.code` values to canonical lowercase keys. Used in both keydown and keyup of `createPressedKeys` for non-modifier keys.
+- New `parseManualShortcut(input)` normalizes user-friendly aliases (`ctrl`, `cmd`, `option`, `space`, etc.) and returns invalid tokens for visible error feedback.
+- `tauriRegister` errors now propagate to the existing toast plumbing instead of being swallowed.
+- DEV-gated `console.debug` log on every keydown captures `{key, code, modifiers}` for diagnosing layout edge cases.
+- Removed obsolete macOS Option-dead-key warning from the recorder (e.code bypasses it).
+
+### Post-implementation review findings
+
+| Phase | Issue | Severity | Disposition |
+|---|---|---|---|
+| 1 | Initial double-sync on cold mount (onMount + reactive effect both fire) | low | Acceptable; idempotent. Could simplify in a future cleanup. |
+| 1 | Toggle UI markup duplicated across local/global pages | medium | Two instances does not justify extraction. Decisions Log entry to revisit if a third toggle appears. |
+| 1 | Local-listener gating means local Map can drift from settings while subsystem is off | medium | Documented as an invariant: sync is no-op while off; flip-to-on re-runs sync. No data corruption possible since UI is disabled. |
+| 2 | `OLD_TOGGLE_DEFAULTS` hardcodes two strings | low | Acceptable: those are the only two values the old default ever resolved to. |
+| 3 | `OPTION_KEY_CHARACTER_MAP` is now mostly fallback-only; `OPTION_DEAD_KEYS` still unused dead code | low | Leave as defensive fallback until FI verification confirms e.code is reliably populated. |
+| 3 | Local shortcut manager (`local-shortcut-manager.ts`) still uses raw `e.key` | low | Out of scope per user direction. Grandfathered local users will not benefit from the FI fix on local shortcuts. |
+| 3 | DEV-gated log does not fire in production builds | medium | Communicated as a constraint; user runs dev for diagnostics. |
+
+### What was deliberately not done
+
+- Security hardening from prior audit (CSP, capability narrowing) — scoped to a separate branch per user direction.
+- `pushToTalk` as a global hotkey — deferred (different press/release semantics across OSes via Tauri's plugin).
+- Manual-entry restructured UI (modifier checkboxes + key dropdown) — chose alias normalization (Option A in OQ2) for minimal change. Decisions Log notes the long-term answer is the structured editor.
+- Local subsystem layout fix — Phase 3 only touched the global capture path. Grandfathered local users may still see the FI-keyboard issue on local shortcuts.
+
+### Pending user verification
+
+- [ ] **Phase 1**: Fresh install shows local OFF; existing-user upgrade shows local ON. Toggle either subsystem and confirm immediate effect.
+- [ ] **Phase 2**: Fresh install + Tauri → `Alt+Space` registered on first boot → pressing it toggles recording.
+- [ ] **Phase 3 (FI keyboard)**: Open global shortcut editor, record `Cmd+Shift+<physical-Semicolon-position-key>` → stored accelerator is `Command+Shift+;` → triggering that physical combo fires the shortcut.
+- [ ] **Phase 3 (manual entry)**: Type `ctrl+shift+a` → registers successfully. Type `garbage+foo` → error toast naming the invalid tokens.
+- [ ] **Phase 3 (error surfacing)**: Try to register `Cmd+Space` on macOS (Spotlight reserves it) → error toast appears.
+
+### Follow-up scope (not in this branch)
+
+- Delete `OPTION_DEAD_KEYS` (unused).
+- Apply the same e.code translation to `local-shortcut-manager.ts`.
+- Consider replacing the manual-entry text input with a structured editor (OQ2 Option B).
+- Cleanup pass: remove the DEV-gated log once FI verification is green.
+- The original security hardening branch (CSP, fs scope, shell capability) per the prior audit.
