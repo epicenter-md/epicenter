@@ -329,8 +329,16 @@ const analytics = {
  * In-app keyboard shortcuts. System-global shortcuts are device-specific and stay
  * in localStorage — these are only the shortcuts within the Whispering window.
  * `null` = unbound.
+ *
+ * `shortcuts.local.enabled` and `shortcuts.global.enabled` are master switches
+ * for each subsystem. Local defaults OFF (most users only need global, and the
+ * local listener can interfere with shortcut recording); global defaults ON.
+ * Existing users with configured local shortcuts are migrated to local=ON via
+ * `grandfatherLocalShortcutsEnabled()` in `register-commands.ts`.
  */
 const shortcuts = {
+	'shortcuts.local.enabled': defineKv(type('boolean'), false),
+	'shortcuts.global.enabled': defineKv(type('boolean'), true),
 	'shortcut.toggleManualRecording': defineKv(type('string | null'), ' '),
 	'shortcut.startManualRecording': defineKv(type('string | null'), null),
 	'shortcut.stopManualRecording': defineKv(type('string | null'), null),

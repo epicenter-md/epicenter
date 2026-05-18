@@ -7,6 +7,7 @@
 	import { migrateOldSettings } from '$lib/migration/migrate-settings';
 	import { rpc } from '$lib/query';
 	import { services } from '$lib/services';
+	import { settings } from '$lib/state/settings.svelte';
 	import AppLayout from './_components/AppLayout.svelte';
 	import BottomNav from './_components/BottomNav.svelte';
 	import VerticalNav from './_components/VerticalNav.svelte';
@@ -22,7 +23,10 @@
 	// Sidebar when wide, bottom bar on narrow viewports (phone, small window).
 	const isNarrow = new MediaQuery('(max-width: 767px)');
 
+	// Local shortcut listener is gated on shortcuts.local.enabled. Reads
+	// reactively so toggling the setting starts/stops the listener immediately.
 	$effect(() => {
+		if (!settings.get('shortcuts.local.enabled')) return;
 		const unlisten = services.localShortcutManager.listen();
 		return () => unlisten();
 	});

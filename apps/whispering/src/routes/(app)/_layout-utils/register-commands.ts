@@ -11,6 +11,36 @@ import {
 import { deviceConfig } from '$lib/state/device-config.svelte';
 import { settings } from '$lib/state/settings.svelte';
 
+/**
+ * Grandfather migration: users who were already on Whispering before the
+ * local-subsystem toggle landed keep `shortcuts.local.enabled = true` so their
+ * existing in-app shortcuts keep working. Fresh installs get the new default
+ * (false).
+ *
+ * Detection: we treat the user as pre-existing if EITHER (a) the prior
+ * monolithic-to-per-key migration has completed (`whispering.settings.migration
+ * === 'completed'`) OR (b) the old monolithic `whispering-settings` blob is
+ * still present (migration runs async and may not have completed yet by the
+ * time we get here on first boot of the new build). Brand-new installs match
+ * neither and stay OFF.
+ *
+ * Idempotent via its own marker so it only flips the setting once.
+ */
+const GRANDFATHER_MARKER_KEY = 'whispering.shortcuts.local.enabled.grandfathered';
+const OLD_SETTINGS_MIGRATION_KEY = 'whispering.settings.migration';
+const OLD_SETTINGS_BLOB_KEY = 'whispering-settings';
+
+export function grandfatherLocalShortcutsEnabled() {
+	if (window.localStorage.getItem(GRANDFATHER_MARKER_KEY) === 'done') return;
+	const isExistingUser =
+		window.localStorage.getItem(OLD_SETTINGS_MIGRATION_KEY) === 'completed' ||
+		window.localStorage.getItem(OLD_SETTINGS_BLOB_KEY) !== null;
+	if (isExistingUser) {
+		settings.set('shortcuts.local.enabled', true);
+	}
+	window.localStorage.setItem(GRANDFATHER_MARKER_KEY, 'done');
+}
+
 /** Default values for in-app (local) shortcuts. Keyed by command id string. */
 const DEFAULT_LOCAL_SHORTCUTS: Record<string, string | null> = {
 	pushToTalk: 'p',
@@ -73,11 +103,15 @@ function getGlobalShortcutKey(commandId: string): GlobalShortcutKey {
 
 /**
  * Synchronizes local keyboard shortcuts with the current settings.
+ * - Returns early if the local subsystem is disabled (the window listener in
+ *   +layout.svelte is already gated on the same setting, so any registrations
+ *   left in the in-memory Map are inert until the listener restarts)
  * - Registers shortcuts that have key combinations defined in settings
  * - Unregisters shortcuts that don't have key combinations defined
  * - Shows error toast if any registration/unregistration fails
  */
 export async function syncLocalShortcutsWithSettings() {
+	if (!settings.get('shortcuts.local.enabled')) return;
 	const results = await Promise.all(
 		commands
 			.map((command) => {
@@ -106,11 +140,17 @@ export async function syncLocalShortcutsWithSettings() {
 
 /**
  * Synchronizes global keyboard shortcuts with the current settings.
+ * - Tears down all OS-level registrations and returns early if the global
+ *   subsystem is disabled (so disabling actually frees the hotkeys system-wide)
  * - Registers shortcuts that have key combinations defined in settings
  * - Unregisters shortcuts that don't have key combinations defined
  * - Shows error toast if any registration/unregistration fails
  */
 export async function syncGlobalShortcutsWithSettings() {
+	if (!settings.get('shortcuts.global.enabled')) {
+		await desktopRpc.globalShortcuts.unregisterAll();
+		return;
+	}
 	const commandsWithAccelerators = commands
 		.map((command) => {
 			const accelerator = deviceConfig.get(
