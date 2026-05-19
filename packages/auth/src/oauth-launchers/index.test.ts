@@ -11,6 +11,7 @@
  */
 
 import { expect, test } from 'bun:test';
+import { expectErr, expectOk } from '@epicenter/test-utils/result';
 import type { AuthFetch } from '../create-oauth-app-auth.js';
 import { createOAuthClient, type OAuthTemporaryStorage } from './index.js';
 
@@ -75,17 +76,16 @@ test('createAuthorizationUrl stores verifier state and returns PKCE URL', async 
 		fetch: createFetch(),
 	});
 
-	const { data: url, error } = await client.createAuthorizationUrl();
+	const url = expectOk(await client.createAuthorizationUrl());
 
-	expect(error).toBeNull();
-	expect(url?.searchParams.get('response_type')).toBe('code');
-	expect(url?.searchParams.get('client_id')).toBe('client-1');
-	expect(url?.searchParams.get('scope')).toBe(
+	expect(url.searchParams.get('response_type')).toBe('code');
+	expect(url.searchParams.get('client_id')).toBe('client-1');
+	expect(url.searchParams.get('scope')).toBe(
 		'openid profile email offline_access workspaces:open',
 	);
-	expect(url?.searchParams.get('resource')).toBe('http://auth.test');
-	expect(url?.searchParams.get('code_challenge_method')).toBe('S256');
-	expect(url?.searchParams.get('code_challenge')).toBeTruthy();
+	expect(url.searchParams.get('resource')).toBe('http://auth.test');
+	expect(url.searchParams.get('code_challenge_method')).toBe('S256');
+	expect(url.searchParams.get('code_challenge')).toBeTruthy();
 	expect(values.size).toBe(1);
 });
 
@@ -100,11 +100,13 @@ test('handleCallback rejects missing stored transaction', async () => {
 		fetch: createFetch(),
 	});
 
-	const { error } = await client.handleCallback(
-		'http://app.test/auth/callback?code=code-1&state=state-1',
+	const error = expectErr(
+		await client.handleCallback(
+			'http://app.test/auth/callback?code=code-1&state=state-1',
+		),
 	);
 
-	expect(error?.name).toBe('MissingCallbackTransaction');
+	expect(error.name).toBe('MissingCallbackTransaction');
 });
 
 test('handleCallback reports callback authorization errors', async () => {
@@ -124,8 +126,10 @@ test('handleCallback reports callback authorization errors', async () => {
 		fetch: createFetch(),
 	});
 
-	const { error } = await client.handleCallback(
-		'http://app.test/auth/callback?error=access_denied&error_description=Denied&state=state-1',
+	const error = expectErr(
+		await client.handleCallback(
+			'http://app.test/auth/callback?error=access_denied&error_description=Denied&state=state-1',
+		),
 	);
 
 	expect(error).toEqual(
@@ -159,11 +163,13 @@ test('handleCallback rejects state mismatch before token exchange', async () => 
 		}),
 	});
 
-	const { error } = await client.handleCallback(
-		'http://app.test/auth/callback?code=code-1&state=state-2',
+	const error = expectErr(
+		await client.handleCallback(
+			'http://app.test/auth/callback?code=code-1&state=state-2',
+		),
 	);
 
-	expect(error?.name).toBe('StateMismatch');
+	expect(error.name).toBe('StateMismatch');
 	expect(tokenRequests).toBe(0);
 });
 
@@ -190,14 +196,16 @@ test('handleCallback returns token result after successful exchange', async () =
 		}),
 	});
 
-	const { data, error } = await client.handleCallback(
-		'http://app.test/auth/callback?code=code-1&state=state-1',
+	const data = expectOk(
+		await client.handleCallback(
+			'http://app.test/auth/callback?code=code-1&state=state-1',
+		),
 	);
+	if (!data) throw new Error('Expected non-null token grant');
 
-	expect(error).toBeNull();
-	expect(data?.accessToken).toBe('access-token');
-	expect(data?.refreshToken).toBe('refresh-token');
-	expect(data?.accessTokenExpiresAt).toBeGreaterThanOrEqual(now + 899_000);
+	expect(data.accessToken).toBe('access-token');
+	expect(data.refreshToken).toBe('refresh-token');
+	expect(data.accessTokenExpiresAt).toBeGreaterThanOrEqual(now + 899_000);
 	expect(tokenBody?.get('resource')).toBe('http://auth.test');
 	expect(values.size).toBe(0);
 });
@@ -219,11 +227,13 @@ test('handleCallback reports token exchange failure', async () => {
 		fetch: createFetch({ tokenStatus: 400 }),
 	});
 
-	const { error } = await client.handleCallback(
-		'http://app.test/auth/callback?code=code-1&state=state-1',
+	const error = expectErr(
+		await client.handleCallback(
+			'http://app.test/auth/callback?code=code-1&state=state-1',
+		),
 	);
 
-	expect(error?.name).toBe('TokenExchangeFailed');
+	expect(error.name).toBe('TokenExchangeFailed');
 });
 
 test('handleCallback rejects a token response without access token', async () => {
@@ -249,11 +259,13 @@ test('handleCallback rejects a token response without access token', async () =>
 		}),
 	});
 
-	const { error } = await client.handleCallback(
-		'http://app.test/auth/callback?code=code-1&state=state-1',
+	const error = expectErr(
+		await client.handleCallback(
+			'http://app.test/auth/callback?code=code-1&state=state-1',
+		),
 	);
 
-	expect(error?.name).toBe('TokenExchangeFailed');
+	expect(error.name).toBe('TokenExchangeFailed');
 });
 
 test('handleCallback rejects a token response without refresh token', async () => {
@@ -279,11 +291,13 @@ test('handleCallback rejects a token response without refresh token', async () =
 		}),
 	});
 
-	const { error } = await client.handleCallback(
-		'http://app.test/auth/callback?code=code-1&state=state-1',
+	const error = expectErr(
+		await client.handleCallback(
+			'http://app.test/auth/callback?code=code-1&state=state-1',
+		),
 	);
 
-	expect(error?.name).toBe('MissingRefreshToken');
+	expect(error.name).toBe('MissingRefreshToken');
 });
 
 test('handleCallback rejects a token response without expires_in', async () => {
@@ -309,11 +323,13 @@ test('handleCallback rejects a token response without expires_in', async () => {
 		}),
 	});
 
-	const { error } = await client.handleCallback(
-		'http://app.test/auth/callback?code=code-1&state=state-1',
+	const error = expectErr(
+		await client.handleCallback(
+			'http://app.test/auth/callback?code=code-1&state=state-1',
+		),
 	);
 
-	expect(error?.name).toBe('MissingExpiresIn');
+	expect(error.name).toBe('MissingExpiresIn');
 });
 
 test('handleCallback rejects a non-bearer token response', async () => {
@@ -340,9 +356,11 @@ test('handleCallback rejects a non-bearer token response', async () => {
 		}),
 	});
 
-	const { error } = await client.handleCallback(
-		'http://app.test/auth/callback?code=code-1&state=state-1',
+	const error = expectErr(
+		await client.handleCallback(
+			'http://app.test/auth/callback?code=code-1&state=state-1',
+		),
 	);
 
-	expect(error?.name).toBe('TokenExchangeFailed');
+	expect(error.name).toBe('TokenExchangeFailed');
 });

@@ -15,6 +15,7 @@ import { describe, expect, test } from 'bun:test';
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { expectErr, expectOk } from '@epicenter/test-utils/result';
 
 import { claimDaemonLease } from './lease.js';
 
@@ -35,22 +36,15 @@ function setup() {
 	};
 }
 
-function expectClaimedLease(result: ReturnType<typeof claimDaemonLease>) {
-	expect(result.error).toBeNull();
-	if (result.error !== null) throw result.error;
-	return result.data;
-}
-
 describe('claimDaemonLease', () => {
 	test('second claimant receives AlreadyRunning while first lease is held', () => {
 		const { workDir, cleanup } = setup();
 		const first = claimDaemonLease(workDir);
 		try {
-			expectClaimedLease(first);
+			expectOk(first);
 
-			const second = claimDaemonLease(workDir);
-			expect(second.data).toBeNull();
-			expect(second.error?.name).toBe('AlreadyRunning');
+			const error = expectErr(claimDaemonLease(workDir));
+			expect(error.name).toBe('AlreadyRunning');
 		} finally {
 			if (first.error === null) first.data.release();
 			cleanup();
@@ -60,13 +54,13 @@ describe('claimDaemonLease', () => {
 	test('release allows a later claimant to acquire the lease', () => {
 		const { workDir, cleanup } = setup();
 		try {
-			const first = expectClaimedLease(claimDaemonLease(workDir));
+			const first = expectOk(claimDaemonLease(workDir));
 			expect(existsSync(first.leasePath)).toBe(true);
 			first.release();
 
 			const second = claimDaemonLease(workDir);
 			try {
-				expectClaimedLease(second);
+				expectOk(second);
 			} finally {
 				if (second.error === null) second.data.release();
 			}
@@ -78,11 +72,11 @@ describe('claimDaemonLease', () => {
 	test('release is idempotent and leaves the lease claimable', () => {
 		const { workDir, cleanup } = setup();
 		try {
-			const first = expectClaimedLease(claimDaemonLease(workDir));
+			const first = expectOk(claimDaemonLease(workDir));
 			first.release();
 			expect(() => first.release()).not.toThrow();
 
-			const second = expectClaimedLease(claimDaemonLease(workDir));
+			const second = expectOk(claimDaemonLease(workDir));
 			second.release();
 		} finally {
 			cleanup();
@@ -102,9 +96,8 @@ describe('claimDaemonLease', () => {
 		process.env.XDG_RUNTIME_DIR = runtimeRootFile;
 
 		try {
-			const result = claimDaemonLease(workDir);
-			expect(result.data).toBeNull();
-			expect(result.error?.name).toBe('LeaseFailed');
+			const error = expectErr(claimDaemonLease(workDir));
+			expect(error.name).toBe('LeaseFailed');
 		} finally {
 			if (oldXdg === undefined) delete process.env.XDG_RUNTIME_DIR;
 			else process.env.XDG_RUNTIME_DIR = oldXdg;

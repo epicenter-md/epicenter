@@ -19,8 +19,8 @@ import {
 	MESSAGE_TYPE,
 	SYNC_MESSAGE_TYPE,
 } from '@epicenter/sync';
+import { expectOk } from '@epicenter/test-utils/result';
 import * as encoding from 'lib0/encoding';
-import type { Result } from 'wellcrafted/result';
 import { Awareness, encodeAwarenessUpdate } from 'y-protocols/awareness';
 import * as Y from 'yjs';
 
@@ -71,12 +71,6 @@ function makeConnection(
 		installationId,
 	});
 	return { ws, connection };
-}
-
-function expectOk<T>(result: Result<T, unknown>): T {
-	expect(result.error).toBeNull();
-	if (result.error !== null) throw result.error;
-	return result.data as T;
 }
 
 function frameSingleByte(messageType: number): Uint8Array {

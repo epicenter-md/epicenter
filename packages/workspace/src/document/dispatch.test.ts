@@ -15,6 +15,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { expectErr, expectOk } from '@epicenter/test-utils/result';
 import Type from 'typebox';
 import { Err, Ok, type Result } from 'wellcrafted/result';
 import { Awareness } from 'y-protocols/awareness';
@@ -23,9 +24,9 @@ import { defineMutation, defineQuery } from '../shared/actions.js';
 import {
 	type ActionInput,
 	type ActionOutput,
+	DispatchError,
 	deriveDispatchUrl,
 	dispatch,
-	DispatchError,
 	getOnlineInstallationIds,
 	runInboundDispatch,
 	typedDispatch,
@@ -112,7 +113,10 @@ describe('runInboundDispatch', () => {
 			input: undefined,
 		});
 
-		const response = await runInboundDispatch({ rawFrame: inbound, actions: {} });
+		const response = await runInboundDispatch({
+			rawFrame: inbound,
+			actions: {},
+		});
 
 		const parsed = JSON.parse(response!);
 		expect(parsed.result.error.name).toBe('ActionNotFound');
@@ -164,7 +168,9 @@ describe('runInboundDispatch', () => {
 	});
 
 	test('malformed frame: returns null (do not tear down the socket)', async () => {
-		expect(await runInboundDispatch({ rawFrame: '{not json', actions: {} })).toBeNull();
+		expect(
+			await runInboundDispatch({ rawFrame: '{not json', actions: {} }),
+		).toBeNull();
 		expect(
 			await runInboundDispatch({
 				rawFrame: JSON.stringify({ type: 'not_dispatch' }),
@@ -229,8 +235,8 @@ describe('dispatch', () => {
 			req: { to: 'R_phone', action: 'tabs_close', input: { tabIds: [1, 2] } },
 		});
 
-		expect(result.error).toBeNull();
-		expect((result.data as { closed: number } | null)?.closed).toBe(2);
+		const data = expectOk(result) as { closed: number };
+		expect(data.closed).toBe(2);
 		const sent = JSON.parse(capturedBody);
 		expect(sent).toEqual({
 			from: 'R_laptop',
@@ -241,51 +247,57 @@ describe('dispatch', () => {
 	});
 
 	test('RecipientOffline: decodes from Err body', async () => {
-		installFetch(async () =>
-			new Response(
-				JSON.stringify(
-					Err({
-						name: 'RecipientOffline',
-						to: 'R_phone',
-						message: 'Recipient "R_phone" is offline',
-					}),
+		installFetch(
+			async () =>
+				new Response(
+					JSON.stringify(
+						Err({
+							name: 'RecipientOffline',
+							to: 'R_phone',
+							message: 'Recipient "R_phone" is offline',
+						}),
+					),
+					{ status: 200, headers: { 'content-type': 'application/json' } },
 				),
-				{ status: 200, headers: { 'content-type': 'application/json' } },
-			),
 		);
 
-		const result = await dispatch({
-			dispatchUrl: 'https://api.example.com/rooms/wid/dispatch',
-			installationId: 'R_laptop',
-			req: { to: 'R_phone', action: 'tabs_close', input: {} },
-		});
+		const error = expectErr(
+			await dispatch({
+				dispatchUrl: 'https://api.example.com/rooms/wid/dispatch',
+				installationId: 'R_laptop',
+				req: { to: 'R_phone', action: 'tabs_close', input: {} },
+			}),
+		);
 
-		expect(result.error?.name).toBe('RecipientOffline');
+		expect(error.name).toBe('RecipientOffline');
 	});
 
 	test('ActionNotFound: decoded with action key', async () => {
-		installFetch(async () =>
-			new Response(
-				JSON.stringify(
-					Err({
-						name: 'ActionNotFound',
-						action: 'tabs_close',
-						message: 'no handler',
-					}),
+		installFetch(
+			async () =>
+				new Response(
+					JSON.stringify(
+						Err({
+							name: 'ActionNotFound',
+							action: 'tabs_close',
+							message: 'no handler',
+						}),
+					),
+					{ status: 200, headers: { 'content-type': 'application/json' } },
 				),
-				{ status: 200, headers: { 'content-type': 'application/json' } },
-			),
 		);
 
-		const result = await dispatch({
-			dispatchUrl: 'https://api.example.com/rooms/wid/dispatch',
-			installationId: 'R_laptop',
-			req: { to: 'R_phone', action: 'tabs_close', input: {} },
-		});
+		const error = expectErr(
+			await dispatch({
+				dispatchUrl: 'https://api.example.com/rooms/wid/dispatch',
+				installationId: 'R_laptop',
+				req: { to: 'R_phone', action: 'tabs_close', input: {} },
+			}),
+		);
 
-		expect(result.error?.name).toBe('ActionNotFound');
-		if (result.error?.name !== 'ActionNotFound') throw new Error('unreachable');
-		expect(result.error.action).toBe('tabs_close');
+		expect(error.name).toBe('ActionNotFound');
+		if (error.name !== 'ActionNotFound') throw new Error('unreachable');
+		expect(error.action).toBe('tabs_close');
 	});
 
 	test('caller aborts: surfaces as Cancelled with the signal reason', async () => {
@@ -311,11 +323,11 @@ describe('dispatch', () => {
 		});
 		await Promise.resolve();
 		controller.abort('user-cancel');
-		const result = await pending;
+		const error = expectErr(await pending);
 
-		expect(result.error?.name).toBe('Cancelled');
-		if (result.error?.name !== 'Cancelled') throw new Error('unreachable');
-		expect(result.error.reason).toBe('user-cancel');
+		expect(error.name).toBe('Cancelled');
+		if (error.name !== 'Cancelled') throw new Error('unreachable');
+		expect(error.reason).toBe('user-cancel');
 	});
 
 	test('network failure (fetch throws, no abort): NetworkFailed', async () => {
@@ -323,13 +335,15 @@ describe('dispatch', () => {
 			throw new TypeError('connect ECONNREFUSED');
 		});
 
-		const result = await dispatch({
-			dispatchUrl: 'https://api.example.com/rooms/wid/dispatch',
-			installationId: 'R_laptop',
-			req: { to: 'R_phone', action: 'tabs_close', input: {} },
-		});
+		const error = expectErr(
+			await dispatch({
+				dispatchUrl: 'https://api.example.com/rooms/wid/dispatch',
+				installationId: 'R_laptop',
+				req: { to: 'R_phone', action: 'tabs_close', input: {} },
+			}),
+		);
 
-		expect(result.error?.name).toBe('NetworkFailed');
+		expect(error.name).toBe('NetworkFailed');
 	});
 });
 
@@ -383,8 +397,8 @@ describe('typedDispatch', () => {
 			action: 'tabs_close',
 			input: { tabIds: [1, 2] },
 		});
-		expect(result.error).toBeNull();
-		expect(result.data?.closedCount).toBe(2);
+		const data = expectOk(result);
+		expect(data.closedCount).toBe(2);
 	});
 });
 

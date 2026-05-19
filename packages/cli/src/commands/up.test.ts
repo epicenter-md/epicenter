@@ -25,6 +25,7 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { expectErr, expectOk } from '@epicenter/test-utils/result';
 import {
 	claimDaemonLease,
 	metadataPathFor,
@@ -33,7 +34,7 @@ import {
 	writeMetadata,
 } from '@epicenter/workspace/node';
 import { Hono } from 'hono';
-import { Ok, type Result } from 'wellcrafted/result';
+import { Ok } from 'wellcrafted/result';
 import { runUp } from './up';
 
 let originalXdg: string | undefined;
@@ -45,12 +46,6 @@ let homeRoot: string;
 function servePingDaemon(socketPath: string): Bun.Server<undefined> {
 	const app = new Hono().post('/ping', (c) => c.json(Ok('pong' as const)));
 	return Bun.serve({ unix: socketPath, fetch: app.fetch });
-}
-
-function expectOk<T>(result: Result<T, unknown>): T {
-	expect(result.error).toBeNull();
-	if (result.error !== null) throw result.error;
-	return result.data as T;
 }
 
 beforeEach(() => {
@@ -77,8 +72,7 @@ beforeEach(() => {
 				keyring: [
 					{
 						version: 1,
-						subjectKeyBase64:
-							'AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=',
+						subjectKeyBase64: 'AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=',
 					},
 				],
 			},
@@ -208,12 +202,14 @@ describe('runUp: failure cleanup', () => {
 			};
 		`);
 
-		const { error } = await runUp({
-			projectDir: workDir,
-			quiet: true,
-		});
+		const error = expectErr(
+			await runUp({
+				projectDir: workDir,
+				quiet: true,
+			}),
+		);
 
-		expect(error?.name).toBe('WorkspaceOpenFailed');
+		expect(error.name).toBe('WorkspaceOpenFailed');
 		const lease = expectOk(claimDaemonLease(workDir));
 		lease.release();
 	});
@@ -222,12 +218,14 @@ describe('runUp: failure cleanup', () => {
 		writeRuntimeDaemon();
 		mkdirSync(metadataPathFor(workDir));
 
-		const { error } = await runUp({
-			projectDir: workDir,
-			quiet: true,
-		});
+		const error = expectErr(
+			await runUp({
+				projectDir: workDir,
+				quiet: true,
+			}),
+		);
 
-		expect(error?.name).toBe('MetadataWriteFailed');
+		expect(error.name).toBe('MetadataWriteFailed');
 		expect(existsSync(socketPathFor(workDir))).toBe(false);
 		const lease = expectOk(claimDaemonLease(workDir));
 		lease.release();
@@ -252,10 +250,12 @@ describe('runUp: already running', () => {
 		});
 
 		try {
-			const { error } = await runUp({
-				projectDir: workDir,
-				quiet: true,
-			});
+			const error = expectErr(
+				await runUp({
+					projectDir: workDir,
+					quiet: true,
+				}),
+			);
 			expect(error).toMatchObject({
 				name: 'AlreadyRunning',
 				pid: process.pid,
@@ -274,12 +274,14 @@ describe('runUp: already running', () => {
 		writeRuntimeDaemon({ onImportMarker: importMarker });
 
 		try {
-			const { error } = await runUp({
-				projectDir: workDir,
-				quiet: true,
-			});
+			const error = expectErr(
+				await runUp({
+					projectDir: workDir,
+					quiet: true,
+				}),
+			);
 
-			expect(error?.name).toBe('AlreadyRunning');
+			expect(error.name).toBe('AlreadyRunning');
 			expect(existsSync(importMarker)).toBe(false);
 		} finally {
 			lease.release();

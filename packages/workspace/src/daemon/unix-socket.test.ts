@@ -17,6 +17,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { existsSync, mkdirSync, mkdtempSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { expectErr, expectOk } from '@epicenter/test-utils/result';
 
 import { Hono } from 'hono';
 
@@ -130,17 +131,16 @@ describe('bindOrRecover', () => {
 
 	test('clean bind: succeeds and returns the server', async () => {
 		const sock = socketPathFor(workDir);
-		const result = await bindOrRecover({
-			socketPath: sock,
-			projectDir: workDir,
-			fetch: fetchOk,
-			isSocketResponsive: async () => false,
-		});
-		expect(result.error).toBeNull();
-		if (result.error === null) {
-			servers.push(result.data);
-			expect(existsSync(sock)).toBe(true);
-		}
+		const server = expectOk(
+			await bindOrRecover({
+				socketPath: sock,
+				projectDir: workDir,
+				fetch: fetchOk,
+				isSocketResponsive: async () => false,
+			}),
+		);
+		servers.push(server);
+		expect(existsSync(sock)).toBe(true);
 	});
 
 	test('ping-finds-occupant: returns AlreadyRunning with metadata pid', async () => {
@@ -158,15 +158,16 @@ describe('bindOrRecover', () => {
 			discoveredAt: new Date(0).toISOString(),
 		});
 
-		const result = await bindOrRecover({
-			socketPath: sock,
-			projectDir: workDir,
-			fetch: fetchOk,
-			isSocketResponsive: async () => true,
-		});
-		expect(result.data).toBeNull();
-		if (result.error?.name === 'AlreadyRunning') {
-			expect(result.error.pid).toBe(4242);
+		const error = expectErr(
+			await bindOrRecover({
+				socketPath: sock,
+				projectDir: workDir,
+				fetch: fetchOk,
+				isSocketResponsive: async () => true,
+			}),
+		);
+		if (error.name === 'AlreadyRunning') {
+			expect(error.pid).toBe(4242);
 		} else {
 			throw new Error('expected AlreadyRunning');
 		}
@@ -185,17 +186,16 @@ describe('bindOrRecover', () => {
 			discoveredAt: new Date(0).toISOString(),
 		});
 
-		const result = await bindOrRecover({
-			socketPath: sock,
-			projectDir: workDir,
-			fetch: fetchOk,
-			isSocketResponsive: async () => false,
-		});
-		expect(result.error).toBeNull();
-		if (result.error === null) {
-			servers.push(result.data);
-			expect(existsSync(sock)).toBe(true);
-		}
+		const server = expectOk(
+			await bindOrRecover({
+				socketPath: sock,
+				projectDir: workDir,
+				fetch: fetchOk,
+				isSocketResponsive: async () => false,
+			}),
+		);
+		servers.push(server);
+		expect(existsSync(sock)).toBe(true);
 		// Stale metadata is swept on the recovery branch.
 		expect(existsSync(metadataPathFor(workDir))).toBe(false);
 	});

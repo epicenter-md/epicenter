@@ -10,16 +10,12 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import {
-	mkdirSync,
-	mkdtempSync,
-	rmSync,
-	writeFileSync,
-} from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import type { AuthClient } from '@epicenter/auth';
+import { expectErr, expectOk } from '@epicenter/test-utils/result';
 
 import { startDaemonWorkspaceApps } from './start-daemon-workspace-apps.js';
 
@@ -82,8 +78,8 @@ describe('startDaemonWorkspaceApps', () => {
 			projectDir,
 			auth: stubAuthClient(),
 		});
-		expect(result.error).toBeNull();
-		const routes = result.data!.routes
+		const data = expectOk(result);
+		const routes = data.routes
 			.map((entry) => entry.route)
 			.slice()
 			.sort();
@@ -121,9 +117,9 @@ describe('startDaemonWorkspaceApps', () => {
 			projectDir,
 			auth: stubAuthClient(),
 		});
-		expect(result.data).toBeNull();
-		expect(result.error?.name).toBe('WorkspaceOpenFailed');
-		expect(result.error).toMatchObject({ route: 'bad' });
+		const error = expectErr(result);
+		expect(error.name).toBe('WorkspaceOpenFailed');
+		expect(error).toMatchObject({ route: 'bad' });
 
 		expect(await Bun.file(goodMarker).exists()).toBe(true);
 	});
@@ -139,9 +135,9 @@ describe('startDaemonWorkspaceApps', () => {
 			projectDir,
 			auth: stubAuthClient(),
 		});
-		expect(result.data).toBeNull();
-		expect(result.error?.name).toBe('WorkspaceDaemonInvalidExport');
-		expect(result.error).toMatchObject({ route: 'broken' });
+		const error = expectErr(result);
+		expect(error.name).toBe('WorkspaceDaemonInvalidExport');
+		expect(error).toMatchObject({ route: 'broken' });
 	});
 
 	test('returns an empty result when there is no workspaces/ directory', async () => {
@@ -149,8 +145,8 @@ describe('startDaemonWorkspaceApps', () => {
 			projectDir,
 			auth: stubAuthClient(),
 		});
-		expect(result.error).toBeNull();
-		expect(result.data!.routes).toEqual([]);
+		const data = expectOk(result);
+		expect(data.routes).toEqual([]);
 	});
 
 	test('refuses to open workspaces when machine auth is signed out', async () => {
@@ -168,7 +164,7 @@ describe('startDaemonWorkspaceApps', () => {
 			projectDir,
 			auth: { state: { status: 'signed-out' } } as AuthClient,
 		});
-		expect(result.data).toBeNull();
-		expect(result.error?.name).toBe('WorkspaceAuthSignedOut');
+		const error = expectErr(result);
+		expect(error.name).toBe('WorkspaceAuthSignedOut');
 	});
 });

@@ -83,8 +83,7 @@ function makeEnv(): EnvOverrides {
 				keyring: [
 					{
 						version: 1,
-						subjectKeyBase64:
-							'AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=',
+						subjectKeyBase64: 'AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=',
 					},
 				],
 			},

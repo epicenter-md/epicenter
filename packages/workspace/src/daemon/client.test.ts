@@ -8,6 +8,7 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { expectErr, expectOk } from '@epicenter/test-utils/result';
 
 import { Hono } from 'hono';
 import { Ok } from 'wellcrafted/result';
@@ -69,15 +70,14 @@ describe('daemonClient', () => {
 		});
 		servers.push(server);
 
-		const { data, error } = await daemonClient(socketPath).peers();
-		expect(error).toBeNull();
+		const data = expectOk(await daemonClient(socketPath).peers());
 		expect(data).toEqual([]);
 	});
 
 	test('returns Unreachable when socket is missing', async () => {
 		const missing = join(tmpdir(), `definitely-not-here-${Date.now()}.sock`);
-		const { error } = await daemonClient(missing).peers();
-		expect(error?.name).toBe('Unreachable');
+		const error = expectErr(await daemonClient(missing).peers());
+		expect(error.name).toBe('Unreachable');
 	});
 
 	test('returns Timeout when route hangs past the deadline', async () => {
@@ -88,8 +88,8 @@ describe('daemonClient', () => {
 		});
 		servers.push(server);
 
-		const { error } = await daemonClient(socketPath, 100).peers();
-		expect(error?.name).toBe('Timeout');
+		const error = expectErr(await daemonClient(socketPath, 100).peers());
+		expect(error.name).toBe('Timeout');
 	});
 
 	test('returns HandlerCrashed on a 500 from the daemon', async () => {
@@ -102,7 +102,7 @@ describe('daemonClient', () => {
 		});
 		servers.push(server);
 
-		const { error } = await daemonClient(socketPath).peers();
-		expect(error?.name).toBe('HandlerCrashed');
+		const error = expectErr(await daemonClient(socketPath).peers());
+		expect(error.name).toBe('HandlerCrashed');
 	});
 });

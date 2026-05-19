@@ -11,6 +11,9 @@ import { randomUUID } from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+
+import { expectErr, expectOk } from '@epicenter/test-utils/result';
+
 import type { PersistedAuth } from '../auth-types.js';
 import {
 	loadMachineTokens,
@@ -59,10 +62,10 @@ test('round trip: save then load returns the same PersistedAuth', async () => {
 	const filePath = tmpAuthPath();
 	const cell = makeCell();
 	const saved = await saveMachineTokens(cell, { filePath });
-	expect(saved.error).toBeNull();
+	expectOk(saved);
 	const loaded = await loadMachineTokens({ filePath });
-	expect(loaded.error).toBeNull();
-	expect(loaded.data).toEqual(cell);
+	const loadedData = expectOk(loaded);
+	expect(loadedData).toEqual(cell);
 });
 
 test('save writes file with mode 0o600 and parent dir 0o700', async () => {
@@ -79,17 +82,17 @@ test('save(null) removes the file; subsequent load returns Ok(null)', async () =
 	const filePath = tmpAuthPath();
 	await saveMachineTokens(makeCell(), { filePath });
 	const cleared = await saveMachineTokens(null, { filePath });
-	expect(cleared.error).toBeNull();
+	expectOk(cleared);
 	const loaded = await loadMachineTokens({ filePath });
-	expect(loaded.error).toBeNull();
-	expect(loaded.data).toBeNull();
+	const loadedData = expectOk(loaded);
+	expect(loadedData).toBeNull();
 });
 
 test('load against a missing file returns Ok(null)', async () => {
 	const filePath = tmpAuthPath();
 	const loaded = await loadMachineTokens({ filePath });
-	expect(loaded.error).toBeNull();
-	expect(loaded.data).toBeNull();
+	const loadedData = expectOk(loaded);
+	expect(loadedData).toBeNull();
 });
 
 test('load against corrupt JSON returns Ok(null)', async () => {
@@ -97,8 +100,8 @@ test('load against corrupt JSON returns Ok(null)', async () => {
 	await fs.mkdir(path.dirname(filePath), { recursive: true, mode: 0o700 });
 	await fs.writeFile(filePath, '{not valid json', { mode: 0o600 });
 	const loaded = await loadMachineTokens({ filePath });
-	expect(loaded.error).toBeNull();
-	expect(loaded.data).toBeNull();
+	const loadedData = expectOk(loaded);
+	expect(loadedData).toBeNull();
 });
 
 test('load refuses when permissions are too open', async () => {
@@ -107,5 +110,6 @@ test('load refuses when permissions are too open', async () => {
 	await saveMachineTokens(makeCell(), { filePath });
 	await fs.chmod(filePath, 0o644);
 	const loaded = await loadMachineTokens({ filePath });
-	expect(loaded.error?.name).toBe('PermissionsTooOpen');
+	const error = expectErr(loaded);
+	expect(error.name).toBe('PermissionsTooOpen');
 });

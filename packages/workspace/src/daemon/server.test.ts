@@ -17,6 +17,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { expectErr, expectOk } from '@epicenter/test-utils/result';
 import { type ActionRegistry, defineQuery } from '../shared/actions.js';
 import { daemonClient } from './client.js';
 import { claimDaemonLease, type DaemonLease } from './lease.js';
@@ -44,18 +45,7 @@ function makeRuntime(
 }
 
 function claimTestLease(): DaemonLease {
-	const lease = claimDaemonLease(workDir);
-	expect(lease.error).toBeNull();
-	if (lease.error !== null) throw new Error('expected daemon lease');
-	return lease.data;
-}
-
-function expectStartedServer(
-	result: Awaited<ReturnType<typeof startDaemonServer>>,
-) {
-	expect(result.error).toBeNull();
-	if (result.error !== null) throw result.error;
-	return result.data;
+	return expectOk(claimDaemonLease(workDir));
 }
 
 beforeEach(() => {
@@ -82,11 +72,10 @@ describe('startDaemonServer', () => {
 		});
 
 		try {
-			const server = expectStartedServer(serverResult);
+			const server = expectOk(serverResult);
 
-			const result = await daemonClient(server.socketPath).peers();
-			expect(result.error).toBeNull();
-			expect(result.data).toEqual([]);
+			const data = expectOk(await daemonClient(server.socketPath).peers());
+			expect(data).toEqual([]);
 		} finally {
 			if (serverResult.error === null) await serverResult.data.close();
 			lease.release();
@@ -96,15 +85,16 @@ describe('startDaemonServer', () => {
 	test('returns RouteNameRejected before binding duplicate routes', async () => {
 		const lease = claimTestLease();
 		try {
-			const result = await startDaemonServer({
-				lease,
-				routes: [
-					{ route: 'demo', runtime: makeRuntime() },
-					{ route: 'demo', runtime: makeRuntime() },
-				],
-			});
-			expect(result.data).toBeNull();
-			expect(result.error).toMatchObject({
+			const error = expectErr(
+				await startDaemonServer({
+					lease,
+					routes: [
+						{ route: 'demo', runtime: makeRuntime() },
+						{ route: 'demo', runtime: makeRuntime() },
+					],
+				}),
+			);
+			expect(error).toMatchObject({
 				name: 'RouteNameRejected',
 				route: 'demo',
 				reason: 'duplicate',
@@ -118,12 +108,13 @@ describe('startDaemonServer', () => {
 	test('returns RouteNameRejected before binding invalid routes', async () => {
 		const lease = claimTestLease();
 		try {
-			const result = await startDaemonServer({
-				lease,
-				routes: [{ route: 'bad.route', runtime: makeRuntime() }],
-			});
-			expect(result.data).toBeNull();
-			expect(result.error).toMatchObject({
+			const error = expectErr(
+				await startDaemonServer({
+					lease,
+					routes: [{ route: 'bad.route', runtime: makeRuntime() }],
+				}),
+			);
+			expect(error).toMatchObject({
 				name: 'RouteNameRejected',
 				route: 'bad.route',
 				reason: 'invalid',
@@ -142,7 +133,7 @@ describe('startDaemonServer', () => {
 		});
 
 		try {
-			const server = expectStartedServer(serverResult);
+			const server = expectOk(serverResult);
 			expect(existsSync(server.socketPath)).toBe(true);
 
 			await server.close();
@@ -165,15 +156,15 @@ describe('startDaemonServer', () => {
 		});
 
 		try {
-			const server = expectStartedServer(serverResult);
-			const result = await daemonClient(server.socketPath).run({
-				actionPath: 'demo.echo',
-				input: null,
-				waitMs: 25,
-			});
-
-			expect(result.error).toBeNull();
-			expect(result.data).toBe('hello');
+			const server = expectOk(serverResult);
+			const data = expectOk(
+				await daemonClient(server.socketPath).run({
+					actionPath: 'demo.echo',
+					input: null,
+					waitMs: 25,
+				}),
+			);
+			expect(data).toBe('hello');
 		} finally {
 			if (serverResult.error === null) await serverResult.data.close();
 			lease.release();
@@ -187,12 +178,13 @@ describe('startDaemonServer', () => {
 			fetch: () => new Response('ok'),
 		});
 		try {
-			const second = await startDaemonServer({
-				lease,
-				routes: [{ route: 'demo', runtime: makeRuntime() }],
-			});
-			expect(second.data).toBeNull();
-			expect(second.error?.name).toBe('AlreadyRunning');
+			const error = expectErr(
+				await startDaemonServer({
+					lease,
+					routes: [{ route: 'demo', runtime: makeRuntime() }],
+				}),
+			);
+			expect(error.name).toBe('AlreadyRunning');
 		} finally {
 			await occupant.stop(true).catch(() => {
 				// best-effort

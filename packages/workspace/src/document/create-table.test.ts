@@ -3,6 +3,7 @@
  */
 
 import { describe, expect, test } from 'bun:test';
+import { expectErr, expectOk } from '@epicenter/test-utils/result';
 import { type } from 'arktype';
 import * as Y from 'yjs';
 import { createEncryptedYkvLww } from '../shared/y-keyvalue/y-keyvalue-lww-encrypted.js';
@@ -76,8 +77,7 @@ describe('createTable', () => {
 
 			helper.set({ id: '1', name: 'Alice', _v: 1 });
 
-			const { data, error } = helper.get('1');
-			expect(error).toBeNull();
+			const data = expectOk(helper.get('1'));
 			expect(data).toEqual({ id: '1', name: 'Alice', _v: 1 });
 		});
 
@@ -116,8 +116,7 @@ describe('createTable', () => {
 			);
 			const helper = createTable(ykv, definition, 'test');
 
-			const { data, error } = helper.get('nonexistent');
-			expect(error).toBeNull();
+			const data = expectOk(helper.get('nonexistent'));
 			expect(data).toBeNull();
 		});
 
@@ -131,15 +130,13 @@ describe('createTable', () => {
 			// Insert invalid data directly
 			yarray.push([{ key: '1', val: { id: '1', name: 123, _v: 1 }, ts: 0 }]); // name should be string
 
-			const { data, error } = helper.get('1');
-			expect(data).toBeNull();
-			expect(error).not.toBeNull();
-			expect(error?.name).toBe('ValidationFailed');
-			if (error?.name === 'ValidationFailed') {
-				expect(error.id).toBe('1');
-				expect(error.issues.length).toBeGreaterThan(0);
-				expect(error.row).toEqual({ id: '1', name: 123, _v: 1 });
-			}
+			const error = expectErr(helper.get('1'));
+			expect(error.name).toBe('ValidationFailed');
+			if (error.name !== 'ValidationFailed')
+				throw new Error('Expected ValidationFailed');
+			expect(error.id).toBe('1');
+			expect(error.issues.length).toBeGreaterThan(0);
+			expect(error.row).toEqual({ id: '1', name: 123, _v: 1 });
 		});
 
 		test('getAll / getAllValid / getAllInvalid partition results by validity', () => {
@@ -270,9 +267,8 @@ describe('createTable', () => {
 			const helper = createTable(ykv, definition, 'test');
 
 			helper.set({ id: '1', name: 'Alice', age: 25, _v: 1 });
-			const { data, error } = helper.update('1', { age: 30 });
+			const data = expectOk(helper.update('1', { age: 30 }));
 
-			expect(error).toBeNull();
 			expect(data).toEqual({ id: '1', name: 'Alice', age: 30, _v: 1 });
 
 			// Verify the row is actually saved
@@ -287,9 +283,8 @@ describe('createTable', () => {
 			);
 			const helper = createTable(ykv, definition, 'test');
 
-			const { data, error } = helper.update('nonexistent', { name: 'Bob' });
+			const data = expectOk(helper.update('nonexistent', { name: 'Bob' }));
 
-			expect(error).toBeNull();
 			expect(data).toBeNull();
 		});
 
@@ -302,9 +297,8 @@ describe('createTable', () => {
 			const update = helper.update;
 
 			helper.set({ id: '1', name: 'Alice', _v: 1 });
-			const { data, error } = update('1', { name: 'Bob' });
+			const data = expectOk(update('1', { name: 'Bob' }));
 
-			expect(error).toBeNull();
 			expect(data).toEqual({ id: '1', name: 'Bob', _v: 1 });
 			expect(helper.get('1').data).toEqual({ id: '1', name: 'Bob', _v: 1 });
 		});
@@ -319,15 +313,13 @@ describe('createTable', () => {
 			// Insert invalid data directly
 			yarray.push([{ key: '1', val: { id: '1', name: 123, _v: 1 }, ts: 0 }]); // name should be string
 
-			const { data, error } = helper.update('1', { name: 'Valid' });
-
-			expect(data).toBeNull();
-			expect(error?.name).toBe('ValidationFailed');
-			if (error?.name === 'ValidationFailed') {
-				expect(error.id).toBe('1');
-				expect(error.issues.length).toBeGreaterThan(0);
-				expect(error.row).toEqual({ id: '1', name: 123, _v: 1 });
-			}
+			const error = expectErr(helper.update('1', { name: 'Valid' }));
+			expect(error.name).toBe('ValidationFailed');
+			if (error.name !== 'ValidationFailed')
+				throw new Error('Expected ValidationFailed');
+			expect(error.id).toBe('1');
+			expect(error.issues.length).toBeGreaterThan(0);
+			expect(error.row).toEqual({ id: '1', name: 123, _v: 1 });
 		});
 
 		test('update preserves id field', () => {
@@ -338,7 +330,7 @@ describe('createTable', () => {
 			const helper = createTable(ykv, definition, 'test');
 
 			helper.set({ id: '1', name: 'Alice', _v: 1 });
-			const { data } = helper.update('1', { name: 'Bob' });
+			const data = expectOk(helper.update('1', { name: 'Bob' }));
 
 			expect(data?.id).toBe('1');
 			expect(data?.name).toBe('Bob');
@@ -560,8 +552,7 @@ describe('createTable', () => {
 				{ key: '1', val: { id: '1', name: 'Alice', _v: 1 }, ts: 0 },
 			]);
 
-			const { data, error } = helper.get('1');
-			expect(error).toBeNull();
+			const data = expectOk(helper.get('1'));
 			expect(data).toEqual({ id: '1', name: 'Alice', age: 0, _v: 2 });
 		});
 
@@ -578,8 +569,7 @@ describe('createTable', () => {
 
 			helper.set({ id: '1', name: 'Alice', age: 30, _v: 2 });
 
-			const { data, error } = helper.get('1');
-			expect(error).toBeNull();
+			const data = expectOk(helper.get('1'));
 			expect(data).toEqual({ id: '1', name: 'Alice', age: 30, _v: 2 });
 		});
 
@@ -643,14 +633,13 @@ describe('createTable', () => {
 				{ key: '1', val: { id: '1', name: 'Alice', _v: 1 }, ts: 0 },
 			]);
 
-			const { data, error } = helper.get('1');
-			expect(data).toBeNull();
-			expect(error?.name).toBe('MigrationFailed');
-			if (error?.name === 'MigrationFailed') {
-				expect(error.id).toBe('1');
-				expect(error.cause).toBeInstanceOf(Error);
-				expect((error.cause as Error).message).toBe('migration broke');
-			}
+			const error = expectErr(helper.get('1'));
+			expect(error.name).toBe('MigrationFailed');
+			if (error.name !== 'MigrationFailed')
+				throw new Error('Expected MigrationFailed');
+			expect(error.id).toBe('1');
+			expect(error.cause).toBeInstanceOf(Error);
+			expect((error.cause as Error).message).toBe('migration broke');
 		});
 	});
 
@@ -676,12 +665,11 @@ describe('createTable', () => {
 			// Any stored row triggers parseRow, which must detect the Promise.
 			ykv.set('1', { id: '1', name: 'Alice', _v: 1 });
 
-			const { data, error } = helper.get('1');
-			expect(data).toBeNull();
-			expect(error?.name).toBe('AsyncSchemaNotSupported');
-			if (error?.name === 'AsyncSchemaNotSupported') {
-				expect(error.id).toBe('1');
-			}
+			const error = expectErr(helper.get('1'));
+			expect(error.name).toBe('AsyncSchemaNotSupported');
+			if (error.name !== 'AsyncSchemaNotSupported')
+				throw new Error('Expected AsyncSchemaNotSupported');
+			expect(error.id).toBe('1');
 		});
 	});
 
@@ -696,12 +684,13 @@ describe('createTable', () => {
 			helper.set({ id: '1', name: 'Alice', age: 25, _v: 1 });
 
 			// Current row is valid; the partial update violates age>0.
-			const { data, error } = helper.update('1', {
-				age: -5,
-			} as unknown as Partial<{ name: string; age: number }>);
+			const error = expectErr(
+				helper.update('1', {
+					age: -5,
+				} as unknown as Partial<{ name: string; age: number }>),
+			);
 
-			expect(data).toBeNull();
-			expect(error?.name).toBe('ValidationFailed');
+			expect(error.name).toBe('ValidationFailed');
 
 			// And the stored row is unchanged.
 			expect(helper.get('1').data).toEqual({

@@ -8,6 +8,7 @@
  */
 
 import { describe, expect, test } from 'bun:test';
+import { expectErr, expectOk } from '@epicenter/test-utils/result';
 import Type from 'typebox';
 import { Err, Ok } from 'wellcrafted/result';
 import {
@@ -29,27 +30,30 @@ describe('invokeAction', () => {
 			const action = defineMutation({
 				handler: () => ({ count: 7 }),
 			});
-			const result = await invokeAction<{ count: number }>(action, undefined);
-			expect(result.error).toBeNull();
-			expect(result.data).toEqual({ count: 7 });
+			const data = expectOk(
+				await invokeAction<{ count: number }>(action, undefined),
+			);
+			expect(data).toEqual({ count: 7 });
 		});
 
 		test('Ok-wraps a raw return value from an async handler', async () => {
 			const action = defineMutation({
 				handler: async () => ({ count: 11 }),
 			});
-			const result = await invokeAction<{ count: number }>(action, undefined);
-			expect(result.error).toBeNull();
-			expect(result.data).toEqual({ count: 11 });
+			const data = expectOk(
+				await invokeAction<{ count: number }>(action, undefined),
+			);
+			expect(data).toEqual({ count: 11 });
 		});
 
 		test('passes through an Ok from a Result-returning handler unchanged', async () => {
 			const action = defineMutation({
 				handler: () => Ok({ ok: true }),
 			});
-			const result = await invokeAction<{ ok: boolean }>(action, undefined);
-			expect(result.error).toBeNull();
-			expect(result.data).toEqual({ ok: true });
+			const data = expectOk(
+				await invokeAction<{ ok: boolean }>(action, undefined),
+			);
+			expect(data).toEqual({ ok: true });
 		});
 
 		test('passes through an Err from a Result-returning handler unchanged', async () => {
@@ -57,9 +61,8 @@ describe('invokeAction', () => {
 			const action = defineMutation({
 				handler: () => Err(customError) as unknown as ReturnType<typeof Ok>,
 			});
-			const result = await invokeAction(action, undefined);
-			expect(result.data).toBeNull();
-			expect(result.error as unknown).toEqual(customError);
+			const error = expectErr(await invokeAction(action, undefined));
+			expect(error as unknown).toEqual(customError);
 		});
 
 		test('isResult discrimination is structural and passes through {data,error}-shaped values', async () => {
@@ -71,9 +74,8 @@ describe('invokeAction', () => {
 			const action = defineMutation({
 				handler: () => lookalike as unknown as ReturnType<typeof Ok>,
 			});
-			const result = await invokeAction<string>(action, undefined);
-			expect(result.error).toBeNull();
-			expect(result.data).toBe('fake');
+			const data = expectOk(await invokeAction<string>(action, undefined));
+			expect(data).toBe('fake');
 		});
 	});
 
@@ -85,9 +87,8 @@ describe('invokeAction', () => {
 					throw cause;
 				},
 			});
-			const result = await invokeAction(action, undefined);
-			expect(result.data).toBeNull();
-			expect(result.error).toBe(cause);
+			const error = expectErr(await invokeAction(action, undefined));
+			expect(error).toBe(cause);
 		});
 
 		test('catches an async rejection and returns Err(cause) with the raw cause', async () => {
@@ -97,9 +98,8 @@ describe('invokeAction', () => {
 					throw cause;
 				},
 			});
-			const result = await invokeAction(action, undefined);
-			expect(result.data).toBeNull();
-			expect(result.error).toBe(cause);
+			const error = expectErr(await invokeAction(action, undefined));
+			expect(error).toBe(cause);
 		});
 
 		test('catches a thrown non-Error value and preserves it as-is', async () => {
@@ -108,8 +108,8 @@ describe('invokeAction', () => {
 					throw 'string-throw';
 				},
 			});
-			const result = await invokeAction(action, undefined);
-			expect(result.error).toBe('string-throw');
+			const error = expectErr(await invokeAction(action, undefined));
+			expect(error).toBe('string-throw');
 		});
 	});
 
@@ -136,9 +136,9 @@ describe('invokeAction', () => {
 					return input.x * 2;
 				},
 			});
-			const result = await invokeAction<number>(action, { x: 21 });
+			const data = expectOk(await invokeAction<number>(action, { x: 21 }));
 			expect(seenInputs).toEqual([{ x: 21 }]);
-			expect(result.data).toBe(42);
+			expect(data).toBe(42);
 		});
 	});
 
@@ -150,16 +150,14 @@ describe('invokeAction', () => {
 			const mutation = defineMutation({
 				handler: () => ({ kind: 'mutation' as const }),
 			});
-			const queryResult = await invokeAction<{ kind: 'query' }>(
-				query,
-				undefined,
+			const queryData = expectOk(
+				await invokeAction<{ kind: 'query' }>(query, undefined),
 			);
-			const mutationResult = await invokeAction<{ kind: 'mutation' }>(
-				mutation,
-				undefined,
+			const mutationData = expectOk(
+				await invokeAction<{ kind: 'mutation' }>(mutation, undefined),
 			);
-			expect(queryResult.data).toEqual({ kind: 'query' });
-			expect(mutationResult.data).toEqual({ kind: 'mutation' });
+			expect(queryData).toEqual({ kind: 'query' });
+			expect(mutationData).toEqual({ kind: 'mutation' });
 		});
 	});
 });

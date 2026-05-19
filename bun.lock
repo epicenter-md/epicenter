@@ -43,6 +43,7 @@
         "yjs": "catalog:",
       },
       "devDependencies": {
+        "@epicenter/test-utils": "workspace:*",
         "@types/bun": "catalog:",
         "@types/pg": "^8.18.0",
         "atmn": "^1.1.5",
@@ -520,6 +521,7 @@
         "wellcrafted": "catalog:",
       },
       "devDependencies": {
+        "@epicenter/test-utils": "workspace:*",
         "@types/bun": "catalog:",
         "typescript": "catalog:",
       },
@@ -561,6 +563,7 @@
         "@epicenter/api": "workspace:*",
         "@epicenter/honeycrisp": "workspace:*",
         "@epicenter/tab-manager": "workspace:*",
+        "@epicenter/test-utils": "workspace:*",
         "@types/bun": "catalog:",
         "@types/yargs": "catalog:",
         "typescript": "catalog:",
@@ -677,6 +680,17 @@
         "yjs": "catalog:",
       },
     },
+    "packages/test-utils": {
+      "name": "@epicenter/test-utils",
+      "version": "0.1.0",
+      "dependencies": {
+        "wellcrafted": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
     "packages/ui": {
       "name": "@epicenter/ui",
       "version": "0.1.0",
@@ -749,6 +763,7 @@
         "y-protocols": "catalog:",
       },
       "devDependencies": {
+        "@epicenter/test-utils": "workspace:*",
         "@noble/ciphers": "^2.1.1",
         "@noble/hashes": "^2.0.1",
         "@types/diff": "^8.0.0",
@@ -1044,6 +1059,8 @@
     "@epicenter/sync": ["@epicenter/sync@workspace:packages/sync"],
 
     "@epicenter/tab-manager": ["@epicenter/tab-manager@workspace:apps/tab-manager"],
+
+    "@epicenter/test-utils": ["@epicenter/test-utils@workspace:packages/test-utils"],
 
     "@epicenter/ui": ["@epicenter/ui@workspace:packages/ui"],
 

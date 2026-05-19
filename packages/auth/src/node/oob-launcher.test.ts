@@ -12,6 +12,7 @@
  */
 
 import { expect, test } from 'bun:test';
+import { expectErr, expectOk } from '@epicenter/test-utils/result';
 import type { AuthFetch } from '../create-oauth-app-auth.js';
 import { createOobOAuthLauncher } from './oob-launcher.js';
 
@@ -89,9 +90,9 @@ function setup({
 
 test('happy path returns a 3-field OAuthTokenGrant', async () => {
 	const { launcher, printed, tokenRequests } = setup();
-	const result = await launcher.startSignIn();
-	expect(result.error).toBeNull();
-	expect(result.data).toEqual({
+	const data = expectOk(await launcher.startSignIn());
+	if (!data) throw new Error('Expected non-null token grant');
+	expect(data).toEqual({
 		accessToken: 'a',
 		refreshToken: 'r',
 		accessTokenExpiresAt: NOW + 3_600_000,
@@ -131,8 +132,7 @@ test('PKCE verifier and challenge are linked', async () => {
 		openBrowser: async () => {},
 		readCode: async () => 'CODE',
 	});
-	const result = await launcher.startSignIn();
-	expect(result.error).toBeNull();
+	expectOk(await launcher.startSignIn());
 	expect(receivedVerifier).toBeTruthy();
 	const urlLine = printed[0];
 	expect(urlLine).toBeDefined();
@@ -154,10 +154,9 @@ test('cancellation: empty paste returns Err(AuthorizationCancelled) and no netwo
 			return new Response(null, { status: 500 });
 		},
 	});
-	const result = await launcher.startSignIn();
+	const err = expectErr(await launcher.startSignIn()) as { name?: string };
 	expect(fetched).toBe(false);
-	const err = result.error as { name?: string } | null;
-	expect(err?.name).toBe('AuthorizationCancelled');
+	expect(err.name).toBe('AuthorizationCancelled');
 });
 
 test('invalid token_type returns Err(InvalidTokenResponse)', async () => {
@@ -170,9 +169,8 @@ test('invalid token_type returns Err(InvalidTokenResponse)', async () => {
 				token_type: 'mac',
 			}),
 	});
-	const result = await launcher.startSignIn();
-	const err = result.error as { name?: string } | null;
-	expect(err?.name).toBe('InvalidTokenResponse');
+	const err = expectErr(await launcher.startSignIn()) as { name?: string };
+	expect(err.name).toBe('InvalidTokenResponse');
 });
 
 test('server 400 returns Err(TokenExchangeFailed) with status + body', async () => {
@@ -183,15 +181,14 @@ test('server 400 returns Err(TokenExchangeFailed) with status + body', async () 
 				headers: { 'content-type': 'application/json' },
 			}),
 	});
-	const result = await launcher.startSignIn();
-	const err = result.error as {
+	const err = expectErr(await launcher.startSignIn()) as {
 		name?: string;
 		status?: number;
 		body?: string;
-	} | null;
-	expect(err?.name).toBe('TokenExchangeFailed');
-	expect(err?.status).toBe(400);
-	expect(err?.body).toContain('invalid_grant');
+	};
+	expect(err.name).toBe('TokenExchangeFailed');
+	expect(err.status).toBe(400);
+	expect(err.body).toContain('invalid_grant');
 });
 
 test('openBrowser failure does not abort the flow', async () => {
@@ -200,9 +197,9 @@ test('openBrowser failure does not abort the flow', async () => {
 			throw new Error('no browser available');
 		},
 	});
-	const result = await launcher.startSignIn();
-	expect(result.error).toBeNull();
-	expect(result.data?.accessToken).toBe('a');
+	const data = expectOk(await launcher.startSignIn());
+	if (!data) throw new Error('Expected non-null token grant');
+	expect(data.accessToken).toBe('a');
 });
 
 test('case-insensitive token_type check', async () => {
@@ -215,7 +212,7 @@ test('case-insensitive token_type check', async () => {
 				token_type: 'Bearer',
 			}),
 	});
-	const result = await launcher.startSignIn();
-	expect(result.error).toBeNull();
-	expect(result.data?.accessToken).toBe('a');
+	const data = expectOk(await launcher.startSignIn());
+	if (!data) throw new Error('Expected non-null token grant');
+	expect(data.accessToken).toBe('a');
 });

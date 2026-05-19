@@ -8,6 +8,7 @@
  */
 
 import { describe, expect, test } from 'bun:test';
+import { expectErr, expectOk } from '@epicenter/test-utils/result';
 import type { Result } from 'wellcrafted/result';
 
 import {
@@ -80,12 +81,13 @@ describe('executeRun peer dispatch', () => {
 			waitMs: 25,
 		});
 
-		expect(result.error?.name).toBe('PeerNotFound');
-		if (result.error?.name !== 'PeerNotFound') {
-			throw new Error(`expected PeerNotFound, got ${result.error?.name}`);
+		const error = expectErr(result);
+		expect(error.name).toBe('PeerNotFound');
+		if (error.name !== 'PeerNotFound') {
+			throw new Error(`expected PeerNotFound, got ${error.name}`);
 		}
-		expect(result.error.peerTarget).toBe('ghost');
-		expect(result.error.syncStatus).toEqual(runSyncStatus);
+		expect(error.peerTarget).toBe('ghost');
+		expect(error.syncStatus).toEqual(runSyncStatus);
 	});
 
 	test('remote dispatch sends the resolved installationId and action key', async () => {
@@ -107,7 +109,7 @@ describe('executeRun peer dispatch', () => {
 			waitMs: 25,
 		});
 
-		expect(result.error).toBeNull();
+		expectOk(result);
 		expect(invokedAction).toBe('tabs_list');
 		expect(invokedTo).toBe('mac');
 	});
@@ -129,11 +131,12 @@ describe('executeRun peer dispatch', () => {
 			waitMs: 25,
 		});
 
-		expect(result.error?.name).toBe('RemoteCallFailed');
-		if (result.error?.name !== 'RemoteCallFailed') {
+		const error = expectErr(result);
+		expect(error.name).toBe('RemoteCallFailed');
+		if (error.name !== 'RemoteCallFailed') {
 			throw new Error('expected RemoteCallFailed');
 		}
-		expect(result.error.cause).toMatchObject({ name: 'ActionFailed' });
+		expect(error.cause).toMatchObject({ name: 'ActionFailed' });
 	});
 
 	test('RecipientOffline from the relay surfaces as RemoteCallFailed', async () => {
@@ -152,11 +155,12 @@ describe('executeRun peer dispatch', () => {
 			waitMs: 25,
 		});
 
-		expect(result.error?.name).toBe('RemoteCallFailed');
-		if (result.error?.name !== 'RemoteCallFailed') {
+		const error = expectErr(result);
+		expect(error.name).toBe('RemoteCallFailed');
+		if (error.name !== 'RemoteCallFailed') {
 			throw new Error('expected RemoteCallFailed');
 		}
-		expect(result.error.cause).toMatchObject({ name: 'RecipientOffline' });
+		expect(error.cause).toMatchObject({ name: 'RecipientOffline' });
 	});
 });
 
@@ -177,8 +181,8 @@ describe('executeRun route-prefixed routing', () => {
 			waitMs: 25,
 		});
 
-		expect(result.error).toBeNull();
-		expect(result.data).toEqual({ body: 'hello' });
+		const data = expectOk(result);
+		expect(data).toEqual({ body: 'hello' });
 	});
 
 	test('missing prefix suggests action-root-relative sibling', async () => {
@@ -197,11 +201,12 @@ describe('executeRun route-prefixed routing', () => {
 			waitMs: 25,
 		});
 
-		expect(result.error?.name).toBe('UsageError');
-		if (result.error?.name !== 'UsageError') {
+		const error = expectErr(result);
+		expect(error.name).toBe('UsageError');
+		if (error.name !== 'UsageError') {
 			throw new Error('expected UsageError');
 		}
-		expect(result.error.suggestions).toEqual(['  notes.notes_add  (mutation)']);
+		expect(error.suggestions).toEqual(['  notes.notes_add  (mutation)']);
 	});
 
 	test('unknown route returns available route suggestions', async () => {
@@ -214,13 +219,14 @@ describe('executeRun route-prefixed routing', () => {
 			},
 		);
 
-		expect(result.error?.name).toBe('UsageError');
-		if (result.error?.name !== 'UsageError') {
+		const error = expectErr(result);
+		expect(error.name).toBe('UsageError');
+		if (error.name !== 'UsageError') {
 			throw new Error('expected UsageError');
 		}
-		expect(result.error.message).toBe(
+		expect(error.message).toBe(
 			'No daemon route "missing". Available: demo, tasks',
 		);
-		expect(result.error.suggestions).toEqual(['  demo', '  tasks']);
+		expect(error.suggestions).toEqual(['  demo', '  tasks']);
 	});
 });

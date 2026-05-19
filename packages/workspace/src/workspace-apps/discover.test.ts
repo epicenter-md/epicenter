@@ -13,6 +13,8 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
+import { expectErr, expectOk } from '@epicenter/test-utils/result';
+
 import { discoverWorkspaceApps } from './discover.js';
 
 let projectDir: string;
@@ -53,8 +55,8 @@ function makeWorkspace(
 describe('discoverWorkspaceApps', () => {
 	test('returns an empty list when workspaces/ does not exist', () => {
 		const result = discoverWorkspaceApps(projectDir);
-		expect(result.error).toBeNull();
-		expect(result.data).toEqual([]);
+		const data = expectOk(result);
+		expect(data).toEqual([]);
 	});
 
 	test('resolves each workspace folder with its execution paths', () => {
@@ -62,10 +64,8 @@ describe('discoverWorkspaceApps', () => {
 		const opensidianDir = makeWorkspace('opensidian');
 
 		const result = discoverWorkspaceApps(projectDir);
-		expect(result.error).toBeNull();
-		const entries = result.data!.slice().sort((a, b) =>
-			a.route.localeCompare(b.route),
-		);
+		const data = expectOk(result);
+		const entries = data.slice().sort((a, b) => a.route.localeCompare(b.route));
 		expect(entries).toEqual([
 			{
 				route: 'fuji',
@@ -84,8 +84,8 @@ describe('discoverWorkspaceApps', () => {
 		makeWorkspace('.DS_Store', { withDaemon: false });
 
 		const result = discoverWorkspaceApps(projectDir);
-		expect(result.error).toBeNull();
-		expect(result.data!.map((entry) => entry.route)).toEqual(['fuji']);
+		const data = expectOk(result);
+		expect(data.map((entry) => entry.route)).toEqual(['fuji']);
 	});
 
 	test('skips a workspace folder missing daemon.ts', () => {
@@ -93,8 +93,8 @@ describe('discoverWorkspaceApps', () => {
 		makeWorkspace('headless', { withDaemon: false });
 
 		const result = discoverWorkspaceApps(projectDir);
-		expect(result.error).toBeNull();
-		expect(result.data!.map((entry) => entry.route)).toEqual(['fuji']);
+		const data = expectOk(result);
+		expect(data.map((entry) => entry.route)).toEqual(['fuji']);
 	});
 
 	test('rejects invalid folder names before requiring daemon.ts', () => {
@@ -107,9 +107,9 @@ describe('discoverWorkspaceApps', () => {
 		);
 
 		const result = discoverWorkspaceApps(projectDir);
-		expect(result.data).toBeNull();
-		expect(result.error?.name).toBe('WorkspaceFolderInvalid');
-		expect(result.error).toMatchObject({
+		const error = expectErr(result);
+		expect(error.name).toBe('WorkspaceFolderInvalid');
+		expect(error).toMatchObject({
 			folderName: '__proto__',
 			reason: 'invalid-name',
 		});
@@ -122,13 +122,12 @@ describe('discoverWorkspaceApps', () => {
 			makeWorkspace('Fuji');
 
 			const result = discoverWorkspaceApps(projectDir);
-			expect(result.data).toBeNull();
-			expect(result.error?.name).toBe('WorkspaceFolderCollision');
-			expect(result.error).toMatchObject({ route: 'fuji' });
-			const folderNames = (result.error as {
-				folderNames: readonly string[];
-			}).folderNames;
-			expect(folderNames.slice().sort()).toEqual(['Fuji', 'fuji']);
+			const error = expectErr(result);
+			if (error.name !== 'WorkspaceFolderCollision') {
+				throw new Error(`Expected WorkspaceFolderCollision, got ${error.name}`);
+			}
+			expect(error).toMatchObject({ route: 'fuji' });
+			expect(error.folderNames.slice().sort()).toEqual(['Fuji', 'fuji']);
 		},
 	);
 });
