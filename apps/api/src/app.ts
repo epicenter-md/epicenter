@@ -625,15 +625,7 @@ app.post(
 		description: 'Dispatch a live-device call via the relay',
 		tags: ['rooms'],
 	}),
-	sValidator(
-		'json',
-		type({
-			from: '/^[A-Za-z0-9_-]+$/ <= 128',
-			to: '/^[A-Za-z0-9_-]+$/ <= 128',
-			action: '/^[a-z][a-z0-9_]{0,63}$/',
-			input: 'unknown',
-		}),
-	),
+	sValidator('json', dispatchRequestSchema),
 	async (c) => {
 		const { stub, doName, room } = getRoomStub(c);
 		const body = c.req.valid('json');

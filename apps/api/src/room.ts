@@ -91,7 +91,7 @@ export type DispatchRpcRequest = {
 	from: string;
 	to: string;
 	action: string;
-	input: unknown;
+	input?: unknown;
 };
 
 // ============================================================================
