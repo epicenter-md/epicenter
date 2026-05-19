@@ -18,7 +18,7 @@
 
 import { resolve } from 'node:path';
 import type { AuthClient } from '@epicenter/auth';
-import { Ok, type Result } from 'wellcrafted/result';
+import { Err, Ok, type Result } from 'wellcrafted/result';
 import type * as Y from 'yjs';
 
 import type { DaemonWorkspaceContext } from '../daemon/define-daemon-workspace.js';
@@ -89,7 +89,7 @@ export async function startDaemonWorkspaceApps(
 
 	if (firstError !== null) {
 		await disposeOpenedRuntimes(opened);
-		return { data: null, error: firstError };
+		return Err(firstError);
 	}
 
 	return Ok({ routes: opened });
