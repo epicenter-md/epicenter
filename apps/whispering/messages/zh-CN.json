@@ -1,0 +1,18 @@
+{
+  "$schema": "https://inlang.com/schema/inlang-message-format",
+
+  "settings_language_section_title": "语言",
+  "settings_language_description": "选择界面语言。如果部分文字没有更新,重启 app 一次即可。",
+  "settings_language_placeholder": "选择语言",
+  "settings_language_label_zh_cn": "简体中文",
+  "settings_language_label_en": "English",
+
+  "settings_sidebar_general": "通用",
+  "settings_sidebar_recording": "录音",
+  "settings_sidebar_transcription": "转写",
+  "settings_sidebar_api_keys": "API 密钥",
+  "settings_sidebar_sound": "声音",
+  "settings_sidebar_shortcuts": "快捷键",
+  "settings_sidebar_analytics": "隐私与分析",
+  "settings_sidebar_manage_billing": "账单管理"
+}

@@ -5,9 +5,33 @@
 	import { Switch } from '@epicenter/ui/switch';
 	import { createMutation, createQuery } from '@tanstack/svelte-query';
 	import { ALWAYS_ON_TOP_MODE_OPTIONS } from '$lib/constants/ui';
+	import { m } from '$lib/paraglide/messages.js';
+	import {
+		getLocale,
+		locales,
+		setLocale,
+		type Locale,
+	} from '$lib/paraglide/runtime';
 	import { rpc } from '$lib/query';
 	import { desktopRpc } from '$lib/query/desktop';
 	import { settings } from '$lib/state/settings.svelte';
+
+	// Localized labels for each available UI locale.
+	// Falls back to the raw locale code if no mapping exists (future locales).
+	function labelFor(locale: Locale): string {
+		if (locale === 'zh-CN') return m.settings_language_label_zh_cn();
+		if (locale === 'en') return m.settings_language_label_en();
+		return locale;
+	}
+
+	const languageItems = $derived(
+		locales.map((locale) => ({ value: locale, label: labelFor(locale) })),
+	);
+
+	const currentLanguageLabel = $derived(
+		languageItems.find((i) => i.value === getLocale())?.label ??
+			m.settings_language_placeholder(),
+	);
 
 	const retentionItems = [
 		{ value: 'keep-forever', label: 'Keep All Recordings' },
@@ -60,6 +84,33 @@
 	</Field.Description>
 	<Field.Separator />
 	<Field.Group>
+		<Field.Set>
+			<Field.Legend variant="label">
+				{m.settings_language_section_title()}
+			</Field.Legend>
+			<Field.Description>
+				{m.settings_language_description()}
+			</Field.Description>
+			<Field.Field>
+				<Select.Root
+					type="single"
+					bind:value={() => getLocale(),
+						(v) => setLocale(v as Locale)}
+				>
+					<Select.Trigger id="ui-language" class="w-full">
+						{currentLanguageLabel}
+					</Select.Trigger>
+					<Select.Content>
+						{#each languageItems as item}
+							<Select.Item value={item.value} label={item.label} />
+						{/each}
+					</Select.Content>
+				</Select.Root>
+			</Field.Field>
+		</Field.Set>
+
+		<Field.Separator />
+
 		<Field.Set>
 			<Field.Legend variant="label">Transcription output</Field.Legend>
 			<Field.Description>

@@ -1,4 +1,5 @@
 import { APPS } from '@epicenter/constants/apps';
+import { paraglideVitePlugin } from '@inlang/paraglide-js';
 import { sveltekit } from '@sveltejs/kit/vite';
 import tailwindcss from '@tailwindcss/vite';
 import { defineConfig } from 'vite';
@@ -8,7 +9,19 @@ const host = process.env.TAURI_DEV_HOST;
 
 // https://vitejs.dev/config/
 export default defineConfig(async () => ({
-	plugins: [sveltekit(), tailwindcss(), devtoolsJson()],
+	plugins: [
+		paraglideVitePlugin({
+			project: './project.inlang',
+			outdir: './src/lib/paraglide',
+			// Tauri desktop SPA: no SSR, no URL locale, no cookies.
+			// Persist user choice in localStorage; fall back to baseLocale (en).
+			// Runtime sets initial locale to zh-CN via root +layout.svelte.
+			strategy: ['localStorage', 'baseLocale'],
+		}),
+		sveltekit(),
+		tailwindcss(),
+		devtoolsJson(),
+	],
 	resolve: {
 		dedupe: ['yjs'],
 	},

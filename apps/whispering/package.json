@@ -40,7 +40,8 @@
 		"typescript": "catalog:",
 		"vite": "catalog:",
 		"vite-plugin-devtools-json": "^1.0.0",
-		"wrangler": "catalog:"
+		"wrangler": "catalog:",
+		"@inlang/paraglide-js": "^2.18.1"
 	},
 	"type": "module",
 	"dependencies": {

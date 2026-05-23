@@ -1,0 +1,18 @@
+{
+  "$schema": "https://inlang.com/schema/inlang-message-format",
+
+  "settings_language_section_title": "Language",
+  "settings_language_description": "Choose your interface language. Restart the app if some text does not update.",
+  "settings_language_placeholder": "Select language",
+  "settings_language_label_zh_cn": "简体中文",
+  "settings_language_label_en": "English",
+
+  "settings_sidebar_general": "General",
+  "settings_sidebar_recording": "Recording",
+  "settings_sidebar_transcription": "Transcription",
+  "settings_sidebar_api_keys": "API Keys",
+  "settings_sidebar_sound": "Sound",
+  "settings_sidebar_shortcuts": "Shortcuts",
+  "settings_sidebar_analytics": "Privacy & Analytics",
+  "settings_sidebar_manage_billing": "Manage billing"
+}

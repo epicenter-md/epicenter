@@ -6,19 +6,21 @@
 	import { cubicInOut } from 'svelte/easing';
 	import { crossfade } from 'svelte/transition';
 	import { page } from '$app/state';
+	import { m } from '$lib/paraglide/messages.js';
 
-	const items = [
-		{ title: 'General', href: '/settings' },
-		{ title: 'Recording', href: '/settings/recording' },
-		{ title: 'Transcription', href: '/settings/transcription' },
-		{ title: 'API Keys', href: '/settings/api-keys' },
-		{ title: 'Sound', href: '/settings/sound' },
+	// `title` is a () => string so paraglide re-runs on locale change
+	const items = $derived([
+		{ title: m.settings_sidebar_general(), href: '/settings' },
+		{ title: m.settings_sidebar_recording(), href: '/settings/recording' },
+		{ title: m.settings_sidebar_transcription(), href: '/settings/transcription' },
+		{ title: m.settings_sidebar_api_keys(), href: '/settings/api-keys' },
+		{ title: m.settings_sidebar_sound(), href: '/settings/sound' },
 		{
-			title: 'Shortcuts',
+			title: m.settings_sidebar_shortcuts(),
 			href: '/settings/shortcuts/local',
 			activePathPrefix: '/settings/shortcuts',
 		},
-		{ title: 'Privacy & Analytics', href: '/settings/analytics' },
+		{ title: m.settings_sidebar_analytics(), href: '/settings/analytics' },
 	] satisfies {
 		title: string;
 		href: string;
@@ -27,7 +29,7 @@
 		 * Otherwise, it is considered active if the current pathname is exactly equal to the item's href.
 		 */
 		activePathPrefix?: string;
-	}[];
+	}[]);
 
 	const [send, receive] = crossfade({
 		duration: 250,
@@ -74,7 +76,7 @@
 		class="relative justify-start text-left font-normal text-sidebar-foreground hover:bg-sidebar-accent/50 hover:text-sidebar-accent-foreground"
 	>
 		<span class="relative z-10 flex items-center gap-2">
-			Manage billing
+			{m.settings_sidebar_manage_billing()}
 			<ExternalLinkIcon class="size-3 text-muted-foreground" />
 		</span>
 	</Button>
