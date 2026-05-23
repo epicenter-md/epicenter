@@ -273,7 +273,7 @@ const recording = {
 const transcription = {
 	'transcription.service': defineKv(
 		type.enumerated(...TRANSCRIPTION_SERVICE_IDS),
-		'moonshine',
+		'whispercpp',
 	),
 	'transcription.openai.model': defineKv(
 		type('string'),
