@@ -26,6 +26,8 @@
 	} from '../_layout-utils/check-ffmpeg';
 	import { checkForUpdates } from '../_layout-utils/check-for-updates';
 	import {
+		grandfatherLocalShortcutsEnabled,
+		migrateGlobalToggleDefaultToOptionSpace,
 		resetGlobalShortcutsToDefaultIfDuplicates,
 		resetLocalShortcutsToDefaultIfDuplicates,
 		syncGlobalShortcutsWithSettings,
@@ -49,6 +51,9 @@
 		// Sync operations - run immediately, these are fast
 		window.commands = commandCallbacks;
 		window.goto = goto;
+		// Grandfather existing users with configured local shortcuts so they
+		// keep working; new installs default to local OFF (see register-commands.ts).
+		grandfatherLocalShortcutsEnabled();
 		syncLocalShortcutsWithSettings();
 		resetLocalShortcutsToDefaultIfDuplicates();
 		registerOnboarding();
@@ -59,6 +64,9 @@
 		migrationDialog.check();
 
 		if (window.__TAURI_INTERNALS__) {
+			// Seed Alt+Space toggle default for fresh installs and retire the
+			// US-only Cmd+Shift+; default for existing users; runs once via marker.
+			migrateGlobalToggleDefaultToOptionSpace();
 			syncGlobalShortcutsWithSettings();
 			resetGlobalShortcutsToDefaultIfDuplicates();
 
@@ -97,6 +105,19 @@
 		services.blobs.audio.delete(idsToDelete);
 		// Delete recording metadata from workspace (single-scan bulk)
 		recordings.bulkDelete(idsToDelete);
+	});
+
+	// Reactive re-sync when either subsystem toggle changes. Reading the setting
+	// inside the effect creates the dependency; flipping the switch immediately
+	// (un)registers shortcuts without an app restart.
+	$effect(() => {
+		settings.get('shortcuts.local.enabled');
+		void syncLocalShortcutsWithSettings();
+	});
+	$effect(() => {
+		if (!window.__TAURI_INTERNALS__) return;
+		settings.get('shortcuts.global.enabled');
+		void syncGlobalShortcutsWithSettings();
 	});
 
 	let { children } = $props();

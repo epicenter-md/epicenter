@@ -1,13 +1,16 @@
 <script lang="ts">
 	import { Button, buttonVariants } from '@epicenter/ui/button';
 	import * as Empty from '@epicenter/ui/empty';
+	import { Label } from '@epicenter/ui/label';
 	import { Link } from '@epicenter/ui/link';
 	import * as SectionHeader from '@epicenter/ui/section-header';
 	import { Separator } from '@epicenter/ui/separator';
+	import { Switch } from '@epicenter/ui/switch';
 	import Layers2Icon from '@lucide/svelte/icons/layers-2';
 	import RotateCcw from '@lucide/svelte/icons/rotate-ccw';
 	import { rpc } from '$lib/query';
 	import { desktopRpc } from '$lib/query/desktop';
+	import { settings } from '$lib/state/settings.svelte';
 	import { resetGlobalShortcuts } from '$routes/(app)/_layout-utils/register-commands';
 	import ShortcutFormatHelp from '../keyboard-shortcut-recorder/ShortcutFormatHelp.svelte';
 	import ShortcutTable from '../keyboard-shortcut-recorder/ShortcutTable.svelte';
@@ -39,6 +42,7 @@
 			<Button
 				variant="outline"
 				size="sm"
+				disabled={!settings.get('shortcuts.global.enabled')}
 				onclick={async () => {
 					await desktopRpc.globalShortcuts.unregisterAll();
 					resetGlobalShortcuts();
@@ -56,7 +60,34 @@
 
 		<Separator class="my-6" />
 
-		<ShortcutTable type="global" />
+		<div class="mb-6 flex items-start justify-between gap-4 rounded-md border p-4">
+			<div class="space-y-1">
+				<Label for="global-shortcuts-toggle" class="text-base font-medium">
+					Enable global shortcuts
+				</Label>
+				<p class="text-sm text-muted-foreground">
+					On by default. Turn off to free all configured combos system-wide
+					(your settings stay; flipping back on restores them).
+				</p>
+			</div>
+			<Switch
+				id="global-shortcuts-toggle"
+				bind:checked={
+					() => settings.get('shortcuts.global.enabled'),
+					(checked) => settings.set('shortcuts.global.enabled', checked)
+				}
+				class="shrink-0"
+			/>
+		</div>
+
+		<div
+			class={settings.get('shortcuts.global.enabled')
+				? ''
+				: 'pointer-events-none opacity-50'}
+			aria-disabled={!settings.get('shortcuts.global.enabled')}
+		>
+			<ShortcutTable type="global" />
+		</div>
 	</section>
 {:else}
 	<Empty.Root>

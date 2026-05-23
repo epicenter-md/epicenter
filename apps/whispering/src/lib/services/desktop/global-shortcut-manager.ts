@@ -122,15 +122,13 @@ export const GlobalShortcutManagerLive = {
 			catch: (error) =>
 				ShortcutError.RegisterFailed({ accelerator, cause: error }),
 		});
-		/**
-		 * NOTE: We often get "RegisterEventHotKey failed for <key>" errors when
-		 * registering global shortcuts, even though the shortcut was valid and
-		 * registered successfully. This is a known issue with the underlying system
-		 * API on certain platforms. We gracefully return Ok(undefined) in these
-		 * cases to avoid propagating the error as an unnecessary error toast,
-		 * allowing the shortcut system to continue functioning for other valid keys.
-		 */
-		if (registerError) return Ok(undefined);
+		// Surface the registration failure to the caller so the error toast
+		// plumbing in syncGlobalShortcutsWithSettings can show the actual cause
+		// (reserved by OS, accelerator parse failure, etc.). Previously this was
+		// swallowed because the underlying plugin emitted false-positive errors
+		// for some valid registrations; if that resurfaces we will gate per-error
+		// rather than swallowing the whole class.
+		if (registerError) return Err(registerError);
 
 		return Ok(undefined);
 	},

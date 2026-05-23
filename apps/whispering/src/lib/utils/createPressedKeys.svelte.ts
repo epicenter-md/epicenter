@@ -1,11 +1,20 @@
 import { on } from 'svelte/events';
 import {
+	codeToLogicalKey,
 	isSupportedKey,
 	type KeyboardEventPossibleKey,
 	type KeyboardEventSupportedKey,
 	normalizeOptionKeyCharacter,
 } from '$lib/constants/keyboard';
 import { IS_MACOS } from '$lib/constants/platform';
+
+const MODIFIER_KEYS = new Set<KeyboardEventPossibleKey>([
+	'control',
+	'shift',
+	'alt',
+	'meta',
+	'altgraph',
+]);
 
 /**
  * Creates a reactive state manager for tracking pressed keyboard keys.
@@ -62,17 +71,36 @@ export function createPressedKeys({
 			if (preventDefault) {
 				e.preventDefault();
 			}
+			if (import.meta.env.DEV) {
+				// Layout-debugging instrumentation: keep this until the e.code-based
+				// capture is verified working on every keyboard layout users report.
+				console.debug('[hotkey:keydown]', {
+					key: e.key,
+					code: e.code,
+					metaKey: e.metaKey,
+					altKey: e.altKey,
+					ctrlKey: e.ctrlKey,
+					shiftKey: e.shiftKey,
+				});
+			}
 			let key = e.key.toLowerCase() as KeyboardEventPossibleKey;
 
-			// macOS Option key normalization:
-			// On macOS, the Option key (Alt) triggers special character insertion.
-			// For example, Option+A produces "å" instead of registering as "alt+a".
-			// This breaks keyboard shortcut detection because we get the special
-			// character instead of the actual key that was pressed.
+			// For non-modifier keys, prefer the e.code-derived value so capture is
+			// layout-independent: pressing the physical Semicolon-position key on a
+			// FI layout (which produces 'Ö' via e.key) maps to ';' via e.code, the
+			// same canonical token a US user would see. Modifier keys keep using
+			// e.key, which already gives the right name on every platform.
 			//
-			// To fix this, when Option is held on macOS, we normalize these special
-			// characters back to their base keys (e.g., "å" → "a", "ç" → "c").
-			// This ensures keyboard shortcuts work consistently across platforms.
+			// Fall back to e.key when codeToLogicalKey returns null (unmapped codes
+			// like NumpadEqual or vendor-specific keys).
+			if (!MODIFIER_KEYS.has(key)) {
+				key = codeToLogicalKey(e.code) ?? key;
+			}
+
+			// macOS Option-key character normalization is now only a fallback for
+			// cases where we had to use e.key above (unmapped e.code). When
+			// codeToLogicalKey succeeds we already have the layout-neutral key, so
+			// the Option-character mapping is a no-op.
 			if (IS_MACOS && pressedKeys.includes('alt')) {
 				key = normalizeOptionKeyCharacter(key);
 			}
@@ -88,7 +116,12 @@ export function createPressedKeys({
 		});
 
 		const keyup = on(window, 'keyup', (e) => {
-			const key = e.key.toLowerCase() as KeyboardEventPossibleKey;
+			let key = e.key.toLowerCase() as KeyboardEventPossibleKey;
+			// Mirror the keydown translation so the value we look for in
+			// pressedKeys matches what we stored on press (layout-neutral form).
+			if (!MODIFIER_KEYS.has(key)) {
+				key = codeToLogicalKey(e.code) ?? key;
+			}
 
 			if (!isSupportedKey(key)) return;
 
