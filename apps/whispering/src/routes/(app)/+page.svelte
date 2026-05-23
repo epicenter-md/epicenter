@@ -18,6 +18,7 @@
 	import { extractErrorMessage } from 'wellcrafted/error';
 	import { partitionResults, tryAsync } from 'wellcrafted/result';
 	import { commandCallbacks } from '$lib/commands';
+	import { m } from '$lib/paraglide/messages.js';
 	import TranscriptDialog from '$lib/components/copyable/TranscriptDialog.svelte';
 	import {
 		CompressionSelector,
@@ -60,6 +61,25 @@
 			return window.__TAURI_INTERNALS__;
 		}),
 	);
+
+	/**
+	 * Localized labels for recording modes. Keeps RECORDING_MODE_OPTIONS in
+	 * `lib/constants` side-effect free; resolves the i18n key here at the
+	 * component boundary. New modes need both an entry in the constant and
+	 * a case here (plus a message key).
+	 */
+	function modeLabel(value: RecordingMode, fallback: string): string {
+		if (value === 'manual') return m.main_mode_manual();
+		if (value === 'vad') return m.main_mode_vad();
+		if (value === 'upload') return m.main_mode_upload();
+		return fallback;
+	}
+	function modeAriaLabel(value: RecordingMode): string {
+		if (value === 'manual') return m.main_aria_switch_to_manual();
+		if (value === 'vad') return m.main_aria_switch_to_vad();
+		if (value === 'upload') return m.main_aria_switch_to_upload();
+		return value;
+	}
 
 	const AUDIO_EXTENSIONS = [
 		'mp3',
@@ -239,7 +259,7 @@
 			Whispering
 		</SectionHeader.Title>
 		<SectionHeader.Description class="text-center">
-			Press shortcut → speak → get text. Free and open source ❤️
+			{m.main_subtitle()}
 		</SectionHeader.Description>
 	</SectionHeader.Root>
 
@@ -255,10 +275,10 @@
 		{#each availableModes as option}
 			<ToggleGroup.Item
 				value={option.value}
-				aria-label={`Switch to ${option.label.toLowerCase()} mode`}
+				aria-label={modeAriaLabel(option.value)}
 			>
 				{option.icon}
-				<span class="hidden sm:inline">{option.label}</span>
+				<span class="hidden sm:inline">{modeLabel(option.value, option.label)}</span>
 			</ToggleGroup.Item>
 		{/each}
 	</ToggleGroup.Root>
@@ -268,8 +288,8 @@
 		<div class="relative">
 			<Button
 				tooltip={getRecorderStateQuery.data === 'IDLE'
-					? 'Start recording'
-					: 'Stop recording'}
+					? m.main_tooltip_start_recording()
+					: m.main_tooltip_stop_recording()}
 				onclick={() => commandCallbacks.toggleManualRecording()}
 				variant="ghost"
 				class="shrink-0 size-32 sm:size-36 lg:size-40 xl:size-44 transform items-center justify-center overflow-hidden duration-300 ease-in-out"
@@ -285,7 +305,7 @@
 			{#if getRecorderStateQuery.data === 'RECORDING'}
 				<div class="absolute -right-12 bottom-4 flex items-center">
 					<Button
-						tooltip="Cancel recording"
+						tooltip={m.main_tooltip_cancel_recording()}
 						onclick={() => commandCallbacks.cancelManualRecording()}
 						variant="ghost"
 						size="icon"
@@ -308,8 +328,8 @@
 		<div class="relative">
 			<Button
 				tooltip={vadRecorder.state === 'IDLE'
-					? 'Start voice activated session'
-					: 'Stop voice activated session'}
+					? m.main_tooltip_start_vad()
+					: m.main_tooltip_stop_vad()}
 				onclick={() => commandCallbacks.toggleVadRecording()}
 				variant="ghost"
 				class="shrink-0 size-32 sm:size-36 lg:size-40 xl:size-44 transform items-center justify-center overflow-hidden duration-300 ease-in-out"
@@ -401,10 +421,10 @@
 	<div class="xs:flex hidden flex-col items-center gap-3">
 		{#if settings.get('recording.mode') === 'manual'}
 			<p class="text-foreground/75 text-center text-sm">
-				Click the microphone or press
+				{m.main_hint_click_or_press()}
 				{' '}
 				<Link
-					tooltip="Go to local shortcut in settings"
+					tooltip={m.main_tooltip_go_local_shortcut()}
 					href="/settings/shortcuts/local"
 				>
 					<Kbd.Root
@@ -414,14 +434,14 @@
 					>
 				</Link>
 				{' '}
-				to start recording here.
+				{m.main_hint_to_record_here()}
 			</p>
 			{#if window.__TAURI_INTERNALS__}
 				<p class="text-foreground/75 text-sm">
-					Press
+					{m.main_hint_press()}
 					{' '}
 					<Link
-						tooltip="Go to global shortcut in settings"
+						tooltip={m.main_tooltip_go_global_shortcut()}
 						href="/settings/shortcuts/global"
 					>
 						<Kbd.Root
@@ -431,15 +451,15 @@
 						>
 					</Link>
 					{' '}
-					to start recording anywhere.
+					{m.main_hint_to_record_anywhere()}
 				</p>
 			{/if}
 		{:else if settings.get('recording.mode') === 'vad'}
 			<p class="text-foreground/75 text-center text-sm">
-				Click the microphone or press
+				{m.main_hint_click_or_press()}
 				{' '}
 				<Link
-					tooltip="Go to local shortcut in settings"
+					tooltip={m.main_tooltip_go_local_shortcut()}
 					href="/settings/shortcuts/local"
 				>
 					<Kbd.Root
@@ -449,18 +469,18 @@
 					>
 				</Link>
 				{' '}
-				to start a voice activated session.
+				{m.main_hint_to_start_vad()}
 			</p>
 		{:else if settings.get('recording.mode') === 'upload'}
 			<p class="text-foreground/75 text-center text-sm">
-				Drag files here or click to browse.
+				{m.main_hint_drag_files()}
 			</p>
 			{#if window.__TAURI_INTERNALS__}
 				<p class="text-foreground/75 text-sm">
-					Press
+					{m.main_hint_press()}
 					{' '}
 					<Link
-						tooltip="Go to global shortcut in settings"
+						tooltip={m.main_tooltip_go_global_shortcut()}
 						href="/settings/shortcuts/global"
 					>
 						<Kbd.Root
@@ -470,20 +490,20 @@
 						>
 					</Link>
 					{' '}
-					to start recording instead.
+					{m.main_hint_to_record_instead()}
 				</p>
 			{/if}
 		{/if}
 		<p class="text-muted-foreground text-center text-sm font-light">
 			{#if !window.__TAURI_INTERNALS__}
-				Tired of switching tabs?
+				{m.main_web_tired()}
 				<Link
-					tooltip="Get Whispering for desktop"
+					tooltip={m.main_tooltip_get_desktop()}
 					href="https://epicenter.so/whispering"
 					target="_blank"
 					rel="noopener noreferrer"
 				>
-					Get the native desktop app
+					{m.main_web_get_app()}
 				</Link>
 			{/if}
 		</p>

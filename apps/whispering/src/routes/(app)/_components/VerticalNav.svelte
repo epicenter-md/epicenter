@@ -13,12 +13,34 @@
 	import { NAV_ITEMS } from '$lib/constants/ui';
 	import MigrationDialog from '$lib/migration/MigrationDialog.svelte';
 	import { migrationDialog } from '$lib/migration/migration-dialog.svelte';
+	import { m } from '$lib/paraglide/messages.js';
 
 	const shouldShowMigrationButton = $derived(
 		import.meta.env.DEV || migrationDialog.isPending,
 	);
 
 	const sidebar = useSidebar();
+
+	/**
+	 * Localize NAV_ITEMS labels by href. We do not modify the NAV_ITEMS
+	 * constant itself to keep it side-effect free and shareable. Adding a
+	 * new top-level route requires both updating NAV_ITEMS and adding a
+	 * matching case here (and in BottomNav).
+	 */
+	function navLabel(href: string, fallback: string): string {
+		switch (href) {
+			case '/':
+				return m.nav_home();
+			case '/recordings':
+				return m.nav_recordings();
+			case '/transformations':
+				return m.nav_transformations();
+			case '/settings':
+				return m.nav_settings();
+			default:
+				return fallback;
+		}
+	}
 </script>
 
 <Sidebar.Root collapsible="icon">
@@ -41,7 +63,7 @@
 							>
 								<span class="truncate font-semibold">Whispering</span>
 								<span class="truncate text-xs text-muted-foreground"
-									>Speech to text</span
+									>{m.nav_brand_subtitle()}</span
 								>
 							</div>
 						</button>
@@ -54,7 +76,7 @@
 	<Sidebar.Content>
 		<!-- Navigation Group -->
 		<Sidebar.Group>
-			<Sidebar.GroupLabel>Navigation</Sidebar.GroupLabel>
+			<Sidebar.GroupLabel>{m.nav_group_navigation()}</Sidebar.GroupLabel>
 			<Sidebar.GroupContent>
 				<Sidebar.Menu>
 					{#each NAV_ITEMS as item}
@@ -64,7 +86,7 @@
 									{@const Icon = item.icon}
 									<a href={item.href} {...props}>
 										<Icon />
-										<span>{item.label}</span>
+										<span>{navLabel(item.href, item.label)}</span>
 									</a>
 								{/snippet}
 							</Sidebar.MenuButton>
@@ -88,7 +110,7 @@
 							<MoonIcon
 								class="absolute h-4 w-4 rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100"
 							/>
-							<span>Toggle theme</span>
+							<span>{m.nav_toggle_theme()}</span>
 						</button>
 					{/snippet}
 				</Sidebar.MenuButton>
@@ -117,7 +139,7 @@
 					{#snippet child({ props })}
 						<button onclick={() => (notificationLog.isOpen = true)} {...props}>
 							<LogsIcon />
-							<span>Notifications</span>
+							<span>{m.nav_notifications()}</span>
 						</button>
 					{/snippet}
 				</Sidebar.MenuButton>
@@ -132,7 +154,7 @@
 								{#snippet trigger({ props: dialogProps })}
 									<button {...props} {...dialogProps}>
 										<Database />
-										<span>Database Migration</span>
+										<span>{m.nav_database_migration()}</span>
 										<span
 											class="absolute right-2 top-2 size-2 rounded-full bg-warning before:absolute before:left-0 before:top-0 before:h-full before:w-full before:rounded-full before:bg-warning/50 before:animate-ping"
 										></span>
@@ -157,7 +179,7 @@
 								{...props}
 							>
 								<Minimize2Icon />
-								<span>Minimize</span>
+								<span>{m.nav_minimize()}</span>
 							</button>
 						{/snippet}
 					</Sidebar.MenuButton>

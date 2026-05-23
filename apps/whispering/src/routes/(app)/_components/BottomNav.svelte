@@ -2,6 +2,22 @@
 	import { cn } from '@epicenter/ui/utils';
 	import { page } from '$app/state';
 	import { NAV_ITEMS } from '$lib/constants/ui';
+	import { m } from '$lib/paraglide/messages.js';
+
+	function navLabel(href: string, fallback: string): string {
+		switch (href) {
+			case '/':
+				return m.nav_home();
+			case '/recordings':
+				return m.nav_recordings();
+			case '/transformations':
+				return m.nav_transformations();
+			case '/settings':
+				return m.nav_settings();
+			default:
+				return fallback;
+		}
+	}
 </script>
 
 <nav
@@ -20,7 +36,7 @@
 			)}
 		>
 			<Icon class="size-5" />
-			<span>{item.label}</span>
+			<span>{navLabel(item.href, item.label)}</span>
 		</a>
 	{/each}
 </nav>
