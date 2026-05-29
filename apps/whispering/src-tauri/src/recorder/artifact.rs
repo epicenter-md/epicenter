@@ -42,14 +42,12 @@ const RECORDINGS_DIR_NAME: &str = "recordings";
 
 /// Serializable handle returned to the JS side. The id is the lookup key
 /// for every later operation; the rest is metadata the UI needs without
-/// having to read the file (duration for analytics, byteLength for upload
-/// size, mimeType for the player).
+/// having to read the file (duration for analytics, byteLength for artifact
+/// diagnostics, mimeType for the player).
 ///
 /// `mime_type` is `String` rather than `&'static str` so specta's TS
-/// generator sees a stable serializable shape (and so future producers,
-/// e.g. navigator-saved webm artifacts after the next collapse, can set
-/// it to a non-static value). The runtime cost is one short allocation
-/// per artifact write.
+/// generator sees a stable serializable shape. The runtime cost is one short
+/// allocation per artifact write.
 ///
 /// `duration_ms` and `byte_length` use `#[specta(type = Number<u64>)]`
 /// to opt out of specta's bigint guard: both stay well under

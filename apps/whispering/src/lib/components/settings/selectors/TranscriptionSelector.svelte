@@ -21,6 +21,7 @@
 	} from '$lib/settings/transcription-validation';
 	import { deviceConfig } from '$lib/state/device-config.svelte';
 	import { settings } from '$lib/state/settings.svelte';
+	import { tauri } from '$lib/tauri';
 
 	let { class: className }: { class?: string } = $props();
 
@@ -99,7 +100,9 @@
 	);
 
 	const localServices = $derived(
-		TRANSCRIPTION_SERVICES.filter((service) => service.location === 'local'),
+		tauri
+			? TRANSCRIPTION_SERVICES.filter((service) => service.location === 'local')
+			: [],
 	);
 
 	const combobox = useCombobox();
@@ -180,43 +183,44 @@
 			<Command.List class="max-h-[40vh]">
 				<Command.Empty>No service found.</Command.Empty>
 
-				<!-- Local Services -->
-				<Command.Group heading="Local">
-					{#each localServices as service (service.id)}
-						{@const isSelected =
-							getSelectedServiceId() === service.id}
-						{@const isConfigured = isTranscriptionServiceConfigured(service)}
-						{@const modelPath = getSelectedModelNameOrUrl(service)}
+				{#if localServices.length > 0}
+					<Command.Group heading="Local">
+						{#each localServices as service (service.id)}
+							{@const isSelected =
+								getSelectedServiceId() === service.id}
+							{@const isConfigured = isTranscriptionServiceConfigured(service)}
+							{@const modelPath = getSelectedModelNameOrUrl(service)}
 
-						<Command.Item
-							value={`${service.id} ${service.name} whisper cpp ggml local offline`}
-							onSelect={() => {
-								settings.set('transcription.service', service.id);
-								combobox.closeAndFocusTrigger();
-							}}
-							class="flex items-center gap-2 px-2 py-2"
-						>
-							<CheckIcon
-								class={cn('size-3.5 shrink-0', {
-									'text-transparent': !isSelected,
-								})}
-							/>
-							{@render renderServiceIcon(service)}
-							<div class="flex-1 min-w-0">
-								<div class="font-medium text-sm">{service.name}</div>
-								{#if modelPath}
-									<div class="text-xs text-muted-foreground truncate">
-										{modelPath.split(sep()).pop() || modelPath}
-									</div>
-								{:else if !isConfigured}
-									<span class="text-xs text-warning">
-										Model file required
-									</span>
-								{/if}
-							</div>
-						</Command.Item>
-					{/each}
-				</Command.Group>
+							<Command.Item
+								value={`${service.id} ${service.name} whisper cpp ggml local offline`}
+								onSelect={() => {
+									settings.set('transcription.service', service.id);
+									combobox.closeAndFocusTrigger();
+								}}
+								class="flex items-center gap-2 px-2 py-2"
+							>
+								<CheckIcon
+									class={cn('size-3.5 shrink-0', {
+										'text-transparent': !isSelected,
+									})}
+								/>
+								{@render renderServiceIcon(service)}
+								<div class="flex-1 min-w-0">
+									<div class="font-medium text-sm">{service.name}</div>
+									{#if modelPath}
+										<div class="text-xs text-muted-foreground truncate">
+											{modelPath.split(sep()).pop() || modelPath}
+										</div>
+									{:else if !isConfigured}
+										<span class="text-xs text-warning">
+											Model file required
+										</span>
+									{/if}
+								</div>
+							</Command.Item>
+						{/each}
+					</Command.Group>
+				{/if}
 
 				<!-- Cloud Services -->
 				<Command.Group heading="Cloud">

@@ -12,32 +12,12 @@ import { type Static, Type } from 'typebox';
 // ── Constant imports ─────────────────────────────────────────────────────────
 
 import { RECORDING_MODES } from '$lib/constants/audio/recording-modes';
-import {
-	INFERENCE_PROVIDER_IDS,
-	type InferenceProviderId,
-} from '$lib/constants/inference';
+import { INFERENCE_PROVIDER_IDS } from '$lib/constants/inference';
 import {
 	TRANSCRIPTION,
 	TRANSCRIPTION_SERVICE_IDS,
-	type TranscriptionServiceId,
 } from '$lib/constants/transcription';
 import { ALWAYS_ON_TOP_MODES } from '$lib/constants/ui/always-on-top';
-
-/**
- * The constants files type `*_IDS` as plain mutable arrays for ergonomics in
- * UI code. `column.enum` needs a const-typed tuple to derive literal members,
- * so we re-narrow at the schema boundary without touching the constants.
- */
-const TRANSCRIPTION_SERVICE_ID_TUPLE =
-	TRANSCRIPTION_SERVICE_IDS as unknown as readonly [
-		TranscriptionServiceId,
-		...TranscriptionServiceId[],
-	];
-const INFERENCE_PROVIDER_ID_TUPLE =
-	INFERENCE_PROVIDER_IDS as unknown as readonly [
-		InferenceProviderId,
-		...InferenceProviderId[],
-	];
 
 /**
  * Tables store normalized domain entities. Each row is replaced atomically via
@@ -127,7 +107,7 @@ const transformationSteps = defineTable({
 	type: column.enum(['prompt_transform', 'find_replace']),
 
 	// Prompt transform: active provider
-	inferenceProvider: column.enum(INFERENCE_PROVIDER_ID_TUPLE),
+	inferenceProvider: column.enum(INFERENCE_PROVIDER_IDS),
 
 	// Prompt transform: per-provider model memory
 	openaiModel: column.string(),
@@ -187,19 +167,6 @@ const TransformationRunResult = Type.Union([
 	FailedResult,
 ]);
 export type TransformationRunResult = Static<typeof TransformationRunResult>;
-
-/**
- * Results from runs that have reached a terminal state. Enumerated, not
- * negated: adding a new non-terminal status (e.g. `pending`) means adding
- * a variant above, not silently widening this union.
- */
-const TerminalTransformationRunResult = Type.Union([
-	CompletedResult,
-	FailedResult,
-]);
-export type TerminalTransformationRunResult = Static<
-	typeof TerminalTransformationRunResult
->;
 
 /**
  * Execution records for transformation pipelines. One run per invocation.
@@ -323,7 +290,7 @@ const recording = {
  */
 const transcription = {
 	'transcription.service': defineKv(
-		column.enum(TRANSCRIPTION_SERVICE_ID_TUPLE),
+		column.enum(TRANSCRIPTION_SERVICE_IDS),
 		() => 'moonshine' as const,
 	),
 	'transcription.openai.model': defineKv(

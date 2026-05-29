@@ -8,10 +8,10 @@
  * offending line during typecheck.
  */
 
-import { type Static, type TUnsafe, Type } from 'typebox';
+import type { Static, TUnsafe, Type } from 'typebox';
 import type { Brand } from 'wellcrafted/brand';
 import type { JsonValue } from 'wellcrafted/json';
-import { type ColumnError, column, type FlatJsonTSchema } from './index';
+import type { ColumnError, column, FlatJsonTSchema } from './index';
 
 // --------------------------------------------------------------------------
 // Helpers
@@ -23,6 +23,7 @@ type Equal<X, Y> =
 		: false;
 
 type Expect<T extends true> = T;
+type EmptyProperties = Record<string, never>;
 
 // --------------------------------------------------------------------------
 // ColumnError pattern
@@ -82,7 +83,10 @@ export type _AcceptNullable = Expect<
 type IsError<S> = S extends string ? true : false;
 
 export type _RejectObject = Expect<
-	Equal<IsError<FlatJsonTSchema<ReturnType<typeof Type.Object<{}>>>>, true>
+	Equal<
+		IsError<FlatJsonTSchema<ReturnType<typeof Type.Object<EmptyProperties>>>>,
+		true
+	>
 >;
 export type _RejectArray = Expect<
 	Equal<
@@ -159,6 +163,16 @@ export type _StringLiteralRejected = Expect<
 // column.string<NoteId>() returns a branded Unsafe schema.
 export type _StringBrandedReturnsUnsafe = ReturnType<
 	typeof column.string<NoteId>
+>;
+
+// --------------------------------------------------------------------------
+// column.enum static inference
+// --------------------------------------------------------------------------
+
+const statusIds = ['draft', 'published'] as Array<'draft' | 'published'>;
+type StatusSchema = ReturnType<typeof column.enum<typeof statusIds>>;
+export type _EnumArrayPreservesElementUnion = Expect<
+	Equal<Static<StatusSchema>, 'draft' | 'published'>
 >;
 
 // --------------------------------------------------------------------------

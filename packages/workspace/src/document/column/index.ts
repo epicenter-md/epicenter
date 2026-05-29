@@ -13,17 +13,4 @@ export {
 	isNullable,
 	type SqliteStorage,
 } from './derive';
-export {
-	boolean,
-	column,
-	dateTime,
-	enum_,
-	type Infer,
-	ianaTimeZone,
-	integer,
-	json,
-	literal,
-	nullable,
-	number,
-	string,
-} from './sugar';
+export { column, type Infer } from './sugar';

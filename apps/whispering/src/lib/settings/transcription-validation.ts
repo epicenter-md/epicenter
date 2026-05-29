@@ -4,6 +4,7 @@ import {
 } from '$lib/services/transcription/registry';
 import { deviceConfig } from '$lib/state/device-config.svelte';
 import { settings } from '$lib/state/settings.svelte';
+import { tauri } from '$lib/tauri';
 
 /**
  * Gets the currently selected transcription service.
@@ -15,7 +16,11 @@ export function getSelectedTranscriptionService():
 	| TranscriptionService
 	| undefined {
 	const selectedServiceId = settings.get('transcription.service');
-	return TRANSCRIPTION_SERVICES.find((s) => s.id === selectedServiceId);
+	const service = TRANSCRIPTION_SERVICES.find(
+		(s) => s.id === selectedServiceId,
+	);
+	if (!tauri && service?.location === 'local') return undefined;
+	return service;
 }
 
 /**

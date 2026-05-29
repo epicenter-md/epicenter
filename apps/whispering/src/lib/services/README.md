@@ -174,9 +174,6 @@ Inline overrides at the call site are how context-specific copy lands ("Authenti
 
    ```typescript
    const RecorderError = defineErrors({
-     AlreadyRecording: () => ({
-       message: 'A recording is already in progress. Please stop the current recording.',
-     }),
      InitFailed: ({ cause }: { cause: unknown }) => ({
        message: `Failed to initialize recorder: ${extractErrorMessage(cause)}`,
        cause,
@@ -232,9 +229,6 @@ The caller is responsible for reporting service errors. This separation ensures:
 
 ```typescript
 const RecorderError = defineErrors({
-	AlreadyRecording: () => ({
-		message: 'A recording is already in progress. Please stop the current recording.',
-	}),
 	StreamAcquisition: ({ cause }: { cause: unknown }) => ({
 		message: `Failed to acquire recording stream: ${extractErrorMessage(cause)}`,
 		cause,
@@ -252,10 +246,6 @@ export function createManualRecorderService() {
 			recordingSettings,
 			{ sendStatus },
 		): Promise<Result<DeviceAcquisitionOutcome, RecorderError>> => {
-			if (activeRecording) {
-				return RecorderError.AlreadyRecording();
-			}
-
 			const { data: streamResult, error: acquireStreamError } =
 				await getRecordingStream(selectedDeviceId, sendStatus);
 
@@ -400,7 +390,8 @@ const result = await services.completion.openai.complete({
 
 ### Cross-platform (`services/`)
 
-- `recorder/navigator.ts` - MediaRecorder-based audio capture (browser + desktop fallback)
+- `recorder/index.tauri.ts` - Desktop manual recording through the native CPAL backend
+- `recorder/index.browser.ts` - Web manual recording through MediaRecorder
 - `recorder/types.ts` - Shared `RecorderService` interface, error types, params
 - `device-stream.ts` - `getRecordingStream` and `enumerateDevices` shared by recorder backends
 - `local-shortcut-manager.ts` - In-window keyboard shortcuts
@@ -427,7 +418,7 @@ Each leaf picks one canonical call form: TanStack-backed (via `defineQuery`/`def
 
 Pure accelerator parsing (validate-format, pressed-keys-to-accelerator, the `Accelerator` brand) doesn't need the Tauri runtime and lives in `$lib/utils/accelerator.ts`. The Tauri-side registration code consumes the same types.
 
-The cpal recorder (`services/recorder/cpal.tauri.ts`) stays under `services/` because it's a sibling of `navigator.ts` and the recorder folder exposes both through its own suffix files.
+The manual recorder lives under `services/recorder/index.*.ts` because the recorder folder exposes one platform-owned manual recorder through suffix files.
 
 ### Multi-provider services
 

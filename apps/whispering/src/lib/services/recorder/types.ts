@@ -165,10 +165,6 @@ export const RecorderError = defineErrors({
 			"We couldn't find any microphone to record from. Please connect a microphone and try again.",
 		cause,
 	}),
-	AlreadyRecording: () => ({
-		message:
-			'A recording is already in progress. Please stop the current recording before starting a new one.',
-	}),
 	InitFailed: ({ cause }: { cause: unknown }) => ({
 		message: `Failed to initialize the audio recorder: ${extractErrorMessage(cause)}`,
 		cause,
@@ -193,7 +189,7 @@ export const RecorderError = defineErrors({
 export type RecorderError = InferErrors<typeof RecorderError>;
 
 /**
- * Base parameters shared across all methods
+ * Base parameters shared across manual recorder implementations.
  */
 type BaseRecordingParams = {
 	selectedDeviceId: DeviceIdentifier | null;
@@ -204,7 +200,6 @@ type BaseRecordingParams = {
  * CPAL (native Rust) recording parameters
  */
 export type CpalRecordingParams = BaseRecordingParams & {
-	method: 'cpal';
 	sampleRate: string;
 };
 
@@ -212,7 +207,6 @@ export type CpalRecordingParams = BaseRecordingParams & {
  * Navigator (MediaRecorder) recording parameters
  */
 export type NavigatorRecordingParams = BaseRecordingParams & {
-	method: 'navigator';
 	bitrateKbps: string;
 };
 
@@ -220,9 +214,8 @@ export type NavigatorRecordingParams = BaseRecordingParams & {
  * Re-exported from the tauri-specta boundary so this module's
  * `RecorderStopResult` is structurally identical to what `commands.stopRecording`
  * returns. The Rust `RecordingArtifact` struct is the single source of truth;
- * the boundary file generates the TS shape (`mimeType: string` since cpal is
- * currently the only producer but a future navigator-on-Tauri save could emit
- * other mimes).
+ * the boundary file generates the TS shape for CPAL-written manual recording
+ * artifacts.
  */
 export type { RecordingArtifact } from '$lib/tauri/commands';
 
@@ -257,19 +250,10 @@ export type RecorderStopResult =
 	  };
 
 /**
- * Discriminated union for recording parameters based on method
- */
-export type StartRecordingParams =
-	| CpalRecordingParams
-	| NavigatorRecordingParams;
-
-/**
- * A live recording session bound to the backend that started it.
+ * A live recording session returned by the recorder implementation that started it.
  *
- * The `RecordingSession` is the unit of lifecycle: it knows its own backend, owns
- * its own teardown, and exposes per-session state changes. Toggling
- * `recording.method` after construction has no effect on an in-flight
- * RecordingSession, which is what fixes the swap-mid-recording leak.
+ * The `RecordingSession` is the unit of lifecycle: it owns its own teardown and
+ * exposes per-session state changes.
  *
  * The `subscribe` handler is invoked synchronously with the current state on
  * subscribe (so callers don't have to mirror "I just started" themselves),
@@ -278,7 +262,6 @@ export type StartRecordingParams =
  */
 export type RecordingSession = {
 	readonly recordingId: string;
-	readonly backend: 'navigator' | 'cpal';
 	stop(callbacks: {
 		sendStatus: UpdateStatusMessageFn;
 	}): Promise<Result<RecorderStopResult, RecorderError>>;
@@ -291,18 +274,20 @@ export type RecordingSession = {
 /**
  * Factory for recording sessions. Services no longer carry mutable
  * start/stop state directly; instead `startRecording` returns a RecordingSession
- * whose methods are bound to the backend that produced it.
+ * whose methods are bound to the implementation that produced it.
  */
-export type RecorderService = {
+export type RecorderService<RecordingParams extends BaseRecordingParams> = {
 	/**
-	 * Probe for a RecordingSession that already exists at module-load time. CPAL
-	 * sessions can outlive a JS reload because the Rust process keeps the
-	 * stream; navigator sessions cannot survive a reload and will always
-	 * return null after one.
+	 * Recover a RecordingSession that may have survived a JS reload.
 	 *
-	 * Returns the live RecordingSession bound to this backend, or null if none.
+	 * CPAL sessions can outlive a JS reload because Rust keeps the stream;
+	 * navigator sessions cannot survive a reload and return null.
+	 *
+	 * Returns the live RecordingSession owned by this implementation, or null if none.
 	 */
-	getActiveRecording(): Promise<Result<RecordingSession | null, RecorderError>>;
+	resumeActiveSession(): Promise<
+		Result<RecordingSession | null, RecorderError>
+	>;
 
 	/**
 	 * Enumerate available recording devices with their labels and identifiers
@@ -315,7 +300,7 @@ export type RecorderService = {
 	 * and uses its `stop`/`cancel`/`subscribe` for the rest of the session.
 	 */
 	startRecording(
-		params: StartRecordingParams,
+		params: RecordingParams,
 		callbacks: {
 			sendStatus: UpdateStatusMessageFn;
 		},

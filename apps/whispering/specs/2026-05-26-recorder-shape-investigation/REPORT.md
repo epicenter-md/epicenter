@@ -3,6 +3,11 @@
 Branch: `bench/recorder-shapes-investigation` (off `codex/whispering-recorder-artifact-collapse`)
 Bench: `apps/whispering/src-tauri/tests/bench_recorder_shapes.rs`
 
+Note: the executable benchmark was later deleted after the recorder shape
+decision landed. The captured results in this report are the retained artifact;
+the benchmark did not assert product behavior and should not run as a default
+test.
+
 ## Question
 
 Should we keep PR #1831's raw `Float32Array | Blob` stop output, or replace it

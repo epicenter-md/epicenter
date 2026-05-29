@@ -4,6 +4,11 @@
 **Type**: Architectural restructure (zero behavior change)
 **Scope**: `apps/whispering/src/lib/`
 
+**Supersession note (2026-05-29)**: The recording service sketch below predates
+the manual recording clean break. The old shared start params type no longer
+exists; manual recorder params are platform-specific and built by
+`manual-recorder-params.*.ts`.
+
 ## Problem
 
 The current `$lib/` structure organizes by mechanism, not by feature:
@@ -41,7 +46,7 @@ The mechanism-based split also forces artificial rules. The recent `rpc/` rename
 ```
 $lib/recording/
   service/
-    types.ts         : DeviceIdentifier, RecorderError, StartRecordingParams
+    types.ts         : DeviceIdentifier, RecorderError, platform params
     navigator.ts     : Web MediaRecorder impl
     cpal.ts          : Tauri/Rust impl
     index.ts         : platform selector (Tauri vs web)

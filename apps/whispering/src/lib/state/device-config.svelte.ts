@@ -32,14 +32,12 @@ const DEVICE_DEFINITIONS = {
 	'apiEndpoints.groq': defineEntry(type('string'), ''),
 
 	// ── Recording hardware ────────────────────────────────────────────
-	'recording.method': defineEntry(type("'cpal' | 'navigator'"), 'cpal'),
 	'recording.cpal.deviceId': defineEntry(type('string | null'), null),
 	'recording.navigator.deviceId': defineEntry(type('string | null'), null),
 	'recording.navigator.bitrateKbps': defineEntry(
 		type.enumerated(...BITRATES_KBPS),
 		DEFAULT_BITRATE_KBPS,
 	),
-	'recording.cpal.outputFolder': defineEntry(type('string | null'), null),
 	'recording.cpal.sampleRate': defineEntry(
 		type("'16000' | '44100' | '48000'"),
 		'16000',

@@ -205,7 +205,7 @@ export const TRANSCRIPTION = {
 
 export type TranscriptionServiceId = keyof typeof TRANSCRIPTION;
 
-/** Convenience array for `type.enumerated(...TRANSCRIPTION_SERVICE_IDS)` in schemas. */
+/** Every transcription service ID, e.g. for `column.enum(TRANSCRIPTION_SERVICE_IDS)`. */
 export const TRANSCRIPTION_SERVICE_IDS = Object.keys(
 	TRANSCRIPTION,
 ) as TranscriptionServiceId[];

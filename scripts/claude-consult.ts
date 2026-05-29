@@ -104,7 +104,8 @@ function parseArgs(argv: string[]) {
 	}
 
 	if (!options.question) fail('Missing required --question value');
-	if (options.budgetUsd < 1) fail('--budget-usd must be at least 1 so Claude can return a result');
+	if (options.budgetUsd < 1)
+		fail('--budget-usd must be at least 1 so Claude can return a result');
 
 	return options;
 }

@@ -4,6 +4,15 @@
 **Type**: Build/architecture change (zero behavior change at runtime)
 **Scope**: `apps/whispering/src/lib/services/*`, `apps/whispering/vite.config.ts`, `apps/whispering/tsconfig.json`
 
+**Supersession note (2026-05-29)**: The recorder is no longer the "one tricky
+case" described below. Manual recording is build-time platform-owned:
+`services/recorder/index.tauri.ts` uses CPAL, and
+`services/recorder/index.browser.ts` uses Navigator. There is no
+`recording.method`, nullable `cpalRecorder`, `RecorderModule`, or
+`navigatorRecorder` manual path in live code. The recorder row under runtime
+DI, the "Recorder: the one tricky case" section, Risk 5, and Wave 5 are
+historical. See `20260529T000000-recording-input-paths-clean-break.md`.
+
 ## Problem
 
 Today, every cross-platform service uses runtime DI:

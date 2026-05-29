@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { Button } from '@epicenter/ui/button';
 	import * as Field from '@epicenter/ui/field';
 	import * as Select from '@epicenter/ui/select';
 	import { createQuery } from '@tanstack/svelte-query';
@@ -6,6 +7,7 @@
 	import type { DeviceIdentifier } from '$lib/services/recorder/types';
 	import { asDeviceIdentifier } from '$lib/services/recorder/types';
 	import { manualRecorder } from '$lib/state/manual-recorder.svelte';
+	import { tauri } from '$lib/tauri';
 
 	let {
 		selected = $bindable(),
@@ -34,6 +36,16 @@
 	const selectedLabel = $derived(
 		items.find((item) => item.value === selected)?.label,
 	);
+
+	async function requestMicrophoneAccess() {
+		if (!tauri) return;
+		const { error } = await tauri.permissions.microphone.request();
+		if (error) {
+			report.error({ cause: error });
+			return;
+		}
+		await getDevicesQuery.refetch();
+	}
 </script>
 
 {#if getDevicesQuery.isPending}
@@ -49,7 +61,17 @@
 		</Select.Root>
 	</Field.Field>
 {:else if getDevicesQuery.isError}
-	<p class="text-sm text-red-500">{getDevicesQuery.error.message}</p>
+	<Field.Field>
+		<Field.Label for="manual-recording-device">Recording Device</Field.Label>
+		<div class="space-y-3">
+			<p class="text-sm text-red-500">{getDevicesQuery.error.message}</p>
+			{#if tauri}
+				<Button variant="outline" size="sm" onclick={requestMicrophoneAccess}>
+					Grant microphone access
+				</Button>
+			{/if}
+		</div>
+	</Field.Field>
 {:else}
 	<Field.Field>
 		<Field.Label for="manual-recording-device">Recording Device</Field.Label>

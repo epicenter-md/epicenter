@@ -20,8 +20,6 @@
 
 	const selectedDeviceId = $derived(deviceConfig.get(settingKey));
 
-	const isDeviceSelected = $derived(!!selectedDeviceId);
-
 	const getDevicesQuery = createQuery(() => ({
 		...vadRecorder.enumerateDevices.options,
 		enabled: combobox.open,
@@ -39,7 +37,7 @@
 		{#snippet child({ props })}
 			<Button
 				{...props}
-				tooltip={isDeviceSelected
+				tooltip={selectedDeviceId
 					? 'Change VAD recording device'
 					: 'Select a VAD recording device'}
 				role="combobox"
@@ -48,7 +46,7 @@
 				size="icon"
 				class="relative"
 			>
-				{#if isDeviceSelected}
+				{#if selectedDeviceId}
 					<MicIcon class="size-4 text-green-500" />
 				{:else}
 					<MicIcon class="size-4 text-warning" />
@@ -77,10 +75,9 @@
 						<Command.Item
 							value={device.id}
 							onSelect={() => {
-								const currentDeviceId = selectedDeviceId;
-						deviceConfig.set(
+								deviceConfig.set(
 									settingKey,
-									currentDeviceId === device.id ? null : device.id,
+									selectedDeviceId === device.id ? null : device.id,
 								);
 								combobox.closeAndFocusTrigger();
 							}}

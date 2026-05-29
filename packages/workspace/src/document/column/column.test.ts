@@ -46,6 +46,12 @@ describe('column.enum', () => {
 		expect(Value.Check(status, 'published')).toBe(true);
 		expect(Value.Check(status, 'archived')).toBe(false);
 	});
+
+	test('rejects empty value lists', () => {
+		expect(() => column.enum([])).toThrow(
+			'column.enum requires at least one value',
+		);
+	});
 });
 
 describe('column.json', () => {

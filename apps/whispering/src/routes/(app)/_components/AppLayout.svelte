@@ -27,14 +27,10 @@
 		syncLocalShortcutsWithSettings,
 	} from '../_layout-utils/register-commands';
 	import { registerOnboarding } from '../_layout-utils/register-onboarding';
-	import {
-		registerAccessibilityPermission,
-		registerMicrophonePermission,
-	} from '../_layout-utils/register-permissions';
+	import { registerAccessibilityPermission } from '../_layout-utils/register-accessibility-permission';
 	import { syncIconWithRecorderState } from '../_layout-utils/syncIconWithRecorderState.svelte';
 
 	let cleanupAccessibilityPermission: (() => void) | undefined;
-	let cleanupMicrophonePermission: (() => void) | undefined;
 
 	onMount(() => {
 		// Sync operations - run immediately, these are fast
@@ -44,7 +40,6 @@
 		resetLocalShortcutsToDefaultIfDuplicates();
 		registerOnboarding();
 		cleanupAccessibilityPermission = registerAccessibilityPermission();
-		cleanupMicrophonePermission = registerMicrophonePermission();
 
 		// Platform-agnostic async checks
 		migrationDialog.check();
@@ -63,7 +58,6 @@
 
 	onDestroy(() => {
 		cleanupAccessibilityPermission?.();
-		cleanupMicrophonePermission?.();
 	});
 
 	if (tauri) {

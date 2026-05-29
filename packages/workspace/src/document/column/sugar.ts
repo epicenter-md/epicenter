@@ -11,17 +11,22 @@
  * - `ianaTimeZone` (custom format validated against `Intl.DateTimeFormat`,
  *   brand `IanaTimeZone`; registered once at module load)
  *
- * The rest are direct re-exports of `Type.X` so autocomplete on `column.`
- * lists the entire SQLite-safe constructor menu. They keep TypeBox's full
- * JSDoc / signature / overloads intact (single source of truth):
+ * The rest alias `Type.X` directly and are assembled onto the `column` object
+ * below, so autocomplete on `column.` lists the entire SQLite-safe constructor
+ * menu. They keep TypeBox's full JSDoc / signature / overloads intact (single
+ * source of truth):
  *
  *   column.number   = Type.Number
  *   column.integer  = Type.Integer
  *   column.boolean  = Type.Boolean
  *   column.literal  = Type.Literal
  *
+ * `column` is the only builder export (the `Infer` type aside): the builders
+ * are module-private and reachable solely as `column.X`, so there is one
+ * blessed way to construct a column.
+ *
  * `column.enum` is a small function (it builds a Union from a values array)
- * so it isn't a re-export, but it still defers all option-typing to TypeBox.
+ * so it isn't a plain alias, but it still defers all option-typing to TypeBox.
  *
  * Users may freely mix `column.X()` and raw `Type.X()`; the `FlatJsonTSchema`
  * constraint enforces safety regardless of which call site produced the
@@ -44,7 +49,7 @@ import {
 import { Format } from 'typebox/format';
 import type { Brand } from 'wellcrafted/brand';
 import type { JsonValue } from 'wellcrafted/json';
-import { DateTimeString } from '../../shared/datetime-string';
+import type { DateTimeString } from '../../shared/datetime-string';
 import {
 	IANA_TIME_ZONE_FORMAT,
 	IanaTimeZone,
@@ -69,7 +74,7 @@ if (!Format.Has(IANA_TIME_ZONE_FORMAT)) {
  *   subtype is enforced at runtime is dishonest; use `column.literal('draft')`
  *   instead.
  */
-export function string<T extends string = string>(
+function string<T extends string = string>(
 	opts?: TStringOptions,
 ): string extends T ? TString : T extends BrandedString ? TUnsafe<T> : never {
 	return Type.String(opts) as string extends T
@@ -79,14 +84,14 @@ export function string<T extends string = string>(
 			: never;
 }
 
-/** Pass-through to `Type.Number`. Re-exported for autocomplete discoverability. */
-export const number = Type.Number;
+/** Pass-through to `Type.Number`, exposed as `column.number`. */
+const number = Type.Number;
 
 /** Pass-through to `Type.Integer`. */
-export const integer = Type.Integer;
+const integer = Type.Integer;
 
 /** Pass-through to `Type.Boolean`. */
-export const boolean = Type.Boolean;
+const boolean = Type.Boolean;
 
 /**
  * Pass-through to `Type.Literal`. Use for status enums and other
@@ -94,7 +99,12 @@ export const boolean = Type.Boolean;
  * library-managed via `defineTable`'s tuple position; do not declare
  * `_v` as a column.)
  */
-export const literal = Type.Literal;
+const literal = Type.Literal;
+
+type EnumMembers<T extends readonly TLiteralValue[]> = [
+	TLiteral<T[number] & TLiteralValue>,
+	...TLiteral<T[number] & TLiteralValue>[],
+];
 
 /**
  * Enum-of-literals column. Produces `Type.Union<TLiteral[]>` (anyOf-of-const).
@@ -104,14 +114,15 @@ export const literal = Type.Literal;
  * `Type.Enum` (`~kind: 'Enum'`) is rejected by `FlatJsonTSchema` in favor of
  * this shape so the CHECK generator has one shape to walk.
  */
-export function enum_<const T extends readonly TLiteralValue[]>(
+function enum_<const T extends readonly TLiteralValue[]>(
 	values: T,
 	opts?: TSchemaOptions,
-): TUnion<{ -readonly [K in keyof T]: TLiteral<T[K] & TLiteralValue> }> {
+): TUnion<EnumMembers<T>> {
+	if (values.length === 0) {
+		throw new Error('column.enum requires at least one value');
+	}
 	const members = values.map((v) => Type.Literal(v));
-	return Type.Union(members, opts) as TUnion<{
-		-readonly [K in keyof T]: TLiteral<T[K] & TLiteralValue>;
-	}>;
+	return Type.Union(members, opts) as TUnion<EnumMembers<T>>;
 }
 
 /**
@@ -130,7 +141,7 @@ export function enum_<const T extends readonly TLiteralValue[]>(
  * column.json(Type.Object({ x: Type.Number() }))  // Static = { x: number }
  * ```
  */
-export function json<S extends TSchema>(
+function json<S extends TSchema>(
 	schema: S,
 	opts?: TSchemaOptions,
 ): TUnsafe<
@@ -150,7 +161,7 @@ export function json<S extends TSchema>(
  * inner" instead of constructing the union by hand. Matches TypeBox issue #989
  * guidance on nullability.
  */
-export function nullable<S extends TSchema>(schema: S): TUnion<[S, TNull]> {
+function nullable<S extends TSchema>(schema: S): TUnion<[S, TNull]> {
 	return Type.Union([schema, Type.Null()]);
 }
 
@@ -170,7 +181,7 @@ export function nullable<S extends TSchema>(schema: S): TUnion<[S, TNull]> {
  * zone matters (calendar events, reminders); see the `<field>` + `<field>Zone`
  * naming convention in the workspace spec.
  */
-export function dateTime(opts?: TSchemaOptions): TUnsafe<DateTimeString> {
+function dateTime(opts?: TSchemaOptions): TUnsafe<DateTimeString> {
 	return Type.Unsafe<DateTimeString>(
 		Type.String({ format: 'date-time', ...opts }),
 	);
@@ -184,7 +195,7 @@ export function dateTime(opts?: TSchemaOptions): TUnsafe<DateTimeString> {
  * the runtime accepts is valid; any zone it rejects is not). No hand-tuned
  * regex.
  */
-export function ianaTimeZone(opts?: TSchemaOptions): TUnsafe<IanaTimeZone> {
+function ianaTimeZone(opts?: TSchemaOptions): TUnsafe<IanaTimeZone> {
 	return Type.Unsafe<IanaTimeZone>(
 		Type.String({ format: IANA_TIME_ZONE_FORMAT, ...opts }),
 	);

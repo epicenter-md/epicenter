@@ -356,7 +356,6 @@ const DEVICE_KEY_MAP = [
 	{ oldKey: 'apiEndpoints.groq', newKey: 'apiEndpoints.groq' },
 
 	// Recording hardware
-	{ oldKey: 'recording.method', newKey: 'recording.method' },
 	{ oldKey: 'recording.cpal.deviceId', newKey: 'recording.cpal.deviceId' },
 	{
 		oldKey: 'recording.navigator.deviceId',

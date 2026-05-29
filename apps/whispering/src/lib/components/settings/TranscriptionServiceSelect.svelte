@@ -9,6 +9,7 @@
 		TRANSCRIPTION_SERVICES,
 		type TranscriptionService,
 	} from '$lib/services/transcription/registry';
+	import { tauri } from '$lib/tauri';
 
 	let {
 		id = 'transcription-service',
@@ -28,12 +29,10 @@
 		description?: string | Snippet;
 	} = $props();
 
-	const selectedService = $derived(
-		TRANSCRIPTION_SERVICES.find((service) => service.id === selected),
-	);
-
 	const localServices = $derived(
-		TRANSCRIPTION_SERVICES.filter((service) => service.location === 'local'),
+		tauri
+			? TRANSCRIPTION_SERVICES.filter((service) => service.location === 'local')
+			: [],
 	);
 
 	const cloudServices = $derived(
@@ -46,12 +45,12 @@
 		),
 	);
 
-	// Create items array with group information
-	const items = $derived([
-		...localServices.map((s) => ({ ...s, group: 'Local' })),
-		...cloudServices.map((s) => ({ ...s, group: 'Cloud' })),
-		...selfHostedServices.map((s) => ({ ...s, group: 'Self-Hosted' })),
-	]);
+	const selectedService = $derived(
+		[...localServices, ...cloudServices, ...selfHostedServices].find(
+			(service) => service.id === selected,
+		),
+	);
+
 </script>
 
 {#snippet renderServiceIcon(service: TranscriptionService)}

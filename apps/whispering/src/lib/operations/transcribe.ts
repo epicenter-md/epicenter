@@ -29,6 +29,10 @@ const TranscriptionOperationError = defineErrors({
 	NoTranscriptionServiceSelected: () => ({
 		message: 'Please select a transcription service in settings.',
 	}),
+	LocalTranscriptionUnavailableOnWeb: () => ({
+		message:
+			'Local transcription is only available in the desktop app. Choose a cloud or self-hosted provider on web.',
+	}),
 });
 
 /**
@@ -204,6 +208,10 @@ async function dispatchLocalTranscription(
 	recordingId: string,
 	selectedService: TranscriptionServiceId,
 ): Promise<Result<string, TranscriptionError>> {
+	if (!tauri) {
+		return TranscriptionOperationError.LocalTranscriptionUnavailableOnWeb();
+	}
+
 	if (!isLocalEngineId(selectedService)) {
 		return TranscriptionOperationError.NoTranscriptionServiceSelected();
 	}

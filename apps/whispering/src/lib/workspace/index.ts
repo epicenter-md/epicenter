@@ -4,7 +4,6 @@ export {
 	type FailedResult,
 	type Recording,
 	type RunningResult,
-	type TerminalTransformationRunResult,
 	type Transformation,
 	type TransformationRun,
 	type TransformationRunResult,

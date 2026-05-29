@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { Badge } from '@epicenter/ui/badge';
 	import { Button } from '@epicenter/ui/button';
 	import * as Command from '@epicenter/ui/command';
 	import { useCombobox } from '@epicenter/ui/hooks';
@@ -12,35 +11,10 @@
 	import { createQuery } from '@tanstack/svelte-query';
 	import { report } from '$lib/report';
 	import { tauri } from '$lib/tauri';
-	import { deviceConfig } from '$lib/state/device-config.svelte';
+	import { manualRecorderConfig } from '$lib/state/manual-recorder-config';
 	import { manualRecorder } from '$lib/state/manual-recorder.svelte';
 
 	const combobox = useCombobox();
-
-	const selectedMethod = $derived(deviceConfig.get('recording.method'));
-
-	// Get the device ID for the current method
-	const selectedDeviceId = $derived(
-		deviceConfig.get(`recording.${selectedMethod}.deviceId`),
-	);
-
-	const isDeviceSelected = $derived(!!selectedDeviceId);
-
-	// Recording method options with descriptions
-	const RECORDING_METHODS = {
-		cpal: {
-			label: 'CPAL',
-			description: 'Native audio recording with low latency',
-			badge: 'Recommended',
-			isAvailable: !!tauri, // Desktop only
-		},
-		navigator: {
-			label: 'Navigator',
-			description: 'Browser MediaRecorder API',
-			badge: 'Universal',
-			isAvailable: true, // Always available
-		},
-	} as const;
 
 	const getDevicesQuery = createQuery(() => ({
 		...manualRecorder.enumerateDevices.options,
@@ -52,6 +26,16 @@
 			report.info({ cause: getDevicesQuery.error });
 		}
 	});
+
+	async function requestMicrophoneAccess() {
+		if (!tauri) return;
+		const { error } = await tauri.permissions.microphone.request();
+		if (error) {
+			report.error({ cause: error });
+			return;
+		}
+		await getDevicesQuery.refetch();
+	}
 </script>
 
 <Popover.Root bind:open={combobox.open}>
@@ -59,15 +43,15 @@
 		{#snippet child({ props })}
 			<Button
 				{...props}
-				tooltip={isDeviceSelected
-					? `Recording via ${RECORDING_METHODS[selectedMethod].label} - Change device or method`
-					: `Select recording device (${RECORDING_METHODS[selectedMethod].label} method)`}
+				tooltip={manualRecorderConfig.deviceId
+					? 'Change microphone'
+					: 'Select microphone'}
 				role="combobox"
 				aria-expanded={combobox.open}
 				variant="ghost"
 				size="icon"
 			>
-				{#if isDeviceSelected}
+				{#if manualRecorderConfig.deviceId}
 					<MicIcon class="size-4 text-green-500" />
 				{:else}
 					<MicIcon class="size-4 text-warning" />
@@ -77,80 +61,46 @@
 	</Popover.Trigger>
 	<Popover.Content class="p-0">
 		<Command.Root loop>
-			<Command.Input placeholder="Search devices and methods..." />
+			<Command.Input placeholder="Search devices..." />
 			<Command.List class="max-h-[40vh]">
 				<Command.Empty>No recording devices found.</Command.Empty>
 
-				<!-- Recording Method Selection -->
-				<Command.Group heading="Recording Method">
-					{#each Object.entries(RECORDING_METHODS) as [ methodKey, method ]}
-						{@const isSelected = selectedMethod === methodKey}
-						{#if method.isAvailable}
-							<Command.Item
-								value={`method-${methodKey} ${method.label} ${method.description}`}
-								onSelect={() => {
-						deviceConfig.set(
-										'recording.method',
-										methodKey as keyof typeof RECORDING_METHODS,
-									);
-									getDevicesQuery.refetch();
-								}}
-								class="flex items-center gap-3 px-3 py-2"
-							>
-								<CheckIcon
-									class={cn(
-										'size-4 shrink-0',
-										isSelected ? 'opacity-100' : 'opacity-0',
-									)}
-								/>
-								<div class="flex-1 min-w-0">
-									<div class="flex items-center gap-2">
-										<span class="font-medium text-sm">{method.label}</span>
-										<Badge
-											variant={isSelected ? 'default' : 'secondary'}
-											class="text-xs"
-										>
-											{method.badge}
-										</Badge>
-									</div>
-									<p class="text-xs text-muted-foreground mt-1">
-										{method.description}
-									</p>
-								</div>
-							</Command.Item>
-						{/if}
-					{/each}
-				</Command.Group>
-
-				<Command.Separator />
-
-				<!-- Device Selection -->
 				<Command.Group heading="Recording Device">
 					{#if getDevicesQuery.isPending}
 						<div class="p-4 text-center text-sm text-muted-foreground">
 							Loading devices...
 						</div>
 					{:else if getDevicesQuery.isError}
-						<div class="p-4 text-center text-sm text-destructive">
-							{getDevicesQuery.error.message}
+						<div class="space-y-3 p-4 text-center">
+							<p class="text-sm text-destructive">
+								{getDevicesQuery.error.message}
+							</p>
+							{#if tauri}
+								<Button
+									variant="outline"
+									size="sm"
+									onclick={requestMicrophoneAccess}
+								>
+									Grant microphone access
+								</Button>
+							{/if}
 						</div>
 					{:else}
 						{#each getDevicesQuery.data as device (device.id)}
 							<Command.Item
 								value={`device-${device.id} ${device.label}`}
 								onSelect={() => {
-									const currentDeviceId = selectedDeviceId;
-						deviceConfig.set(
-										`recording.${selectedMethod}.deviceId`,
-										currentDeviceId === device.id ? null : device.id,
-									);
+									manualRecorderConfig.deviceId =
+										manualRecorderConfig.deviceId === device.id
+											? null
+											: device.id;
 								}}
 								class="flex items-center gap-3 px-3 py-2"
 							>
 								<CheckIcon
 									class={cn(
 										'size-4 shrink-0',
-										selectedDeviceId === device.id
+										manualRecorderConfig.deviceId === device.id
 											? 'opacity-100'
 											: 'opacity-0',
 									)}
