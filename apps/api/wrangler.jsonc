@@ -79,7 +79,7 @@
 	"hyperdrive": [
 		{
 			"binding": "HYPERDRIVE",
-			"id": "8e3481a8472248e0a883d07471f0cc36",
+			"id": "bdd11bcf12b24f01a627ada04ebdc73b",
 			"localConnectionString": "postgres://postgres:postgres@localhost:5432/epicenter"
 		}
 	],
