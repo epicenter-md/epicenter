@@ -202,10 +202,15 @@ export async function runTransformation({
 		} satisfies TransformationStepRun;
 		transformationStepRuns.set(stepRun);
 
-		const handleStepResult = await handleStep({
-			input: currentInput,
-			step,
-		});
+		let handleStepResult: Result<string, StepError>;
+		try {
+			handleStepResult = await handleStep({
+				input: currentInput,
+				step,
+			});
+		} catch (error) {
+			handleStepResult = Err(extractErrorMessage(error));
+		}
 
 		if (isErr(handleStepResult)) {
 			const stepError = extractErrorMessage(handleStepResult.error);
