@@ -15,6 +15,7 @@
 	} from '$lib/constants/audio';
 	import { services } from '$lib/services';
 	import { tauri } from '#platform/tauri';
+	import { whispering } from '#platform/whispering';
 	import { manualRecorder } from '$lib/state/manual-recorder.svelte';
 	import { recordings } from '$lib/state/recordings.svelte';
 	import { settings } from '$lib/state/settings.svelte';
@@ -55,7 +56,7 @@
 		// Sync operations - run immediately, these are fast
 		window.commands = commandCallbacks;
 		window.goto = goto;
-		registerOnboarding();
+		void registerOnboardingWhenReady();
 		// On macOS the listener starts when Accessibility is granted (the single
 		// gate the whole dictation flow shares); this is its one subscriber.
 		cleanupAccessibilityPermission = registerAccessibilityPermission({
@@ -92,6 +93,11 @@
 		shortcutListenerDestroyed = true;
 		cleanupShortcutListener?.();
 	});
+
+	async function registerOnboardingWhenReady() {
+		await whispering.whenReady;
+		registerOnboarding();
+	}
 
 	if (tauri) {
 		syncWindowAlwaysOnTopWithRecorderState(tauri);

@@ -33,7 +33,6 @@
 	import AppLayout from './_components/AppLayout.svelte';
 	import BottomNav from './_components/BottomNav.svelte';
 	import VerticalNav from './_components/VerticalNav.svelte';
-
 	let { children } = $props();
 
 	let sidebarOpen = $state(false);
