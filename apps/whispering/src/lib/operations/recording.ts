@@ -57,7 +57,11 @@ function isVadRecordingActive() {
 	);
 }
 
-export async function startManualRecording() {
+let manualStartPromise: Promise<void> | null = null;
+let manualStopPromise: Promise<void> | null = null;
+let stopAfterManualStart = false;
+
+async function startManualRecordingNow() {
 	settings.set('recording.mode', 'manual');
 
 	const loading = report.loading({
@@ -90,7 +94,23 @@ export async function startManualRecording() {
 	sound.playSoundIfEnabled('manual-start');
 }
 
-export async function stopManualRecording() {
+export async function startManualRecording() {
+	if (manualRecorder.state === 'RECORDING') return;
+	if (manualStartPromise) return manualStartPromise;
+
+	manualStartPromise = startManualRecordingNow();
+	try {
+		await manualStartPromise;
+	} finally {
+		manualStartPromise = null;
+	}
+
+	if (!stopAfterManualStart) return;
+	stopAfterManualStart = false;
+	await stopManualRecording();
+}
+
+async function stopManualRecordingNow() {
 	const loading = report.loading({
 		title: '⏸️ Stopping recording...',
 		description: 'Finalizing your audio capture...',
@@ -127,6 +147,24 @@ export async function stopManualRecording() {
 		source,
 		durationMs,
 	});
+}
+
+export async function stopManualRecording() {
+	if (manualStartPromise && manualRecorder.state !== 'RECORDING') {
+		stopAfterManualStart = true;
+		await manualStartPromise;
+		return;
+	}
+
+	if (manualRecorder.state !== 'RECORDING') return;
+	if (manualStopPromise) return manualStopPromise;
+
+	manualStopPromise = stopManualRecordingNow();
+	try {
+		await manualStopPromise;
+	} finally {
+		manualStopPromise = null;
+	}
 }
 
 export function toggleManualRecording() {
