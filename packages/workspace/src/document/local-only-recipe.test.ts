@@ -19,7 +19,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { IDBKeyRange, indexedDB } from 'fake-indexeddb';
 import { attachBroadcastChannel } from './attach-broadcast-channel.js';
 import { attachIndexedDb } from './attach-indexed-db.js';
-import { column } from './column/index.js';
+import { field } from '@epicenter/field';
 import { defineTable } from './define-table.js';
 import { createWorkspace } from './workspace.js';
 
@@ -41,8 +41,8 @@ class FakeBroadcastChannel {
 }
 
 const NoteDef = defineTable({
-	id: column.string(),
-	body: column.string(),
+	id: field.string(),
+	body: field.string(),
 });
 
 describe('local-only recipe', () => {

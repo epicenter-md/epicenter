@@ -20,7 +20,8 @@
  * collaborative or independently-syncing body editing is real.
  */
 
-import { column, defineTable, type InferTableRow } from '@epicenter/workspace';
+import { defineTable, type InferTableRow, nullable } from '@epicenter/workspace';
+import { field } from '@epicenter/field';
 import { type TSchema, Type } from 'typebox';
 import type { Brand } from 'wellcrafted/brand';
 import type { JsonObject, JsonValue } from 'wellcrafted/json';
@@ -47,7 +48,7 @@ export function isTSchemaObject(value: unknown): boolean {
  *   makes a display rename metadata-only (no SQL DDL).
  * - `name` is the display name; free to change.
  * - `schema` is the column's TypeBox schema, authored with the real `column.*`
- *   builders (`column.url()`, `column.nullable(column.number())`) so call sites
+ *   builders (`field.url()`, `nullable(field.number())`) so call sites
  *   get autocomplete and type-checking. A `TSchema` IS JSON Schema, so it is
  *   stored verbatim and re-validated with `Value.Check` after the Yjs/JSON
  *   round-trip (this TypeBox validates on plain JSON Schema, no `[Kind]`
@@ -86,10 +87,10 @@ const columnsCell = Type.Unsafe<StoredColumnSpec[]>(
  *
  *   { youtube_video: { url: "https://...", duration: 1240 } }
  *
- * Like `columnsCell`, this uses `Type.Unsafe` rather than `column.json`: the
+ * Like `columnsCell`, this uses `Type.Unsafe` rather than `field.json`: the
  * exact `Record<string, Record<string, JsonValue>>` static carries through while
  * the runtime schema stays an `object` the SQLite layer maps to a TEXT cell. Do
- * not "simplify" it back to `column.json`; the nested-record static does not
+ * not "simplify" it back to `field.json`; the nested-record static does not
  * survive that gate.
  */
 export type PageTypeValues = Record<string, Record<string, JsonValue>>;
@@ -100,25 +101,25 @@ const pageTypeValuesCell = Type.Unsafe<PageTypeValues>(
 
 /** The types registry: one row per user-defined type. */
 export const typesTable = defineTable({
-	id: column.string<TypeId>(),
-	name: column.string(),
-	icon: column.nullable(column.string()),
+	id: field.string<TypeId>(),
+	name: field.string(),
+	icon: nullable(field.string()),
 	columns: columnsCell,
-	createdAt: column.dateTime(),
-	updatedAt: column.dateTime(),
+	createdAt: field.datetime(),
+	updatedAt: field.datetime(),
 });
 
 /** The pages table: worldview-neutral core + the nested `types` cell + body. */
 export const pagesTable = defineTable({
-	id: column.string<PageId>(),
-	title: column.string(),
-	description: column.nullable(column.string()),
-	tags: column.json(Type.Array(Type.String())),
-	source: column.json(Type.Array(Type.String())),
+	id: field.string<PageId>(),
+	title: field.string(),
+	description: nullable(field.string()),
+	tags: field.json(Type.Array(Type.String())),
+	source: field.json(Type.Array(Type.String())),
 	types: pageTypeValuesCell,
-	body: column.string(),
-	createdAt: column.dateTime(),
-	updatedAt: column.dateTime(),
+	body: field.string(),
+	createdAt: field.datetime(),
+	updatedAt: field.datetime(),
 });
 
 export type WikiType = InferTableRow<typeof typesTable>;

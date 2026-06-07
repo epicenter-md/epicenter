@@ -24,6 +24,7 @@
 		"@codemirror/autocomplete": "^6.20.1",
 		"@epicenter/auth": "workspace:*",
 		"@epicenter/constants": "workspace:*",
+		"@epicenter/field": "workspace:*",
 		"@epicenter/skills": "workspace:*",
 		"@epicenter/svelte": "workspace:*",
 		"@tanstack/ai": "catalog:",

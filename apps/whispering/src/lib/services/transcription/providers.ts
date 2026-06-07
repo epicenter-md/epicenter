@@ -255,7 +255,7 @@ export type CloudProviderId = {
 		: never;
 }[TranscriptionServiceId];
 
-/** Every provider ID, e.g. for `column.enum(TRANSCRIPTION_SERVICE_IDS)`. */
+/** Every provider ID, e.g. for `field.select(TRANSCRIPTION_SERVICE_IDS)`. */
 export const TRANSCRIPTION_SERVICE_IDS = Object.keys(
 	PROVIDERS,
 ) as TranscriptionServiceId[];

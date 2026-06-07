@@ -30,7 +30,7 @@ Use this pattern when you need to:
 Load these on demand based on the spec's decision surface:
 
 - If writing a spec with **many trade-offs, migration cleanup, or "keep for consistency" decisions**, read [references/decision-hygiene.md](references/decision-hygiene.md).
-- If writing a spec with **architecture, API, lifecycle, or ownership changes**, read [../pull-request/references/pull-request-guidelines.md](../pull-request/references/pull-request-guidelines.md) for before/after examples and visual communication rhythm.
+- If writing a spec with **architecture, API, lifecycle, or ownership changes**, read [../pull-request/references/body-patterns.md](../pull-request/references/body-patterns.md) for before/after examples and visual communication rhythm.
 
 ## The Core Philosophy
 

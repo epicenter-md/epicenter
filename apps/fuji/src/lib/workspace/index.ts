@@ -28,8 +28,8 @@
  * commands beside it.
  */
 
+import { field } from '@epicenter/field';
 import {
-	column,
 	createWorkspace,
 	DateTimeString,
 	defineActions,
@@ -42,6 +42,7 @@ import {
 	type IanaTimeZone,
 	type InferTableRow,
 	type Keyring,
+	nullable,
 } from '@epicenter/workspace';
 import { Type } from 'typebox';
 import type { Brand } from 'wellcrafted/brand';
@@ -58,21 +59,21 @@ export type EntryId = string & Brand<'EntryId'>;
 export const asEntryId = (value: string): EntryId => value as EntryId;
 
 const entriesTable = defineTable({
-	id: column.string<EntryId>(),
-	title: column.string(),
-	subtitle: column.string(),
-	type: column.json(Type.Array(Type.String())),
-	tags: column.json(Type.Array(Type.String())),
-	pinned: column.boolean(),
-	deletedAt: column.nullable(column.dateTime()),
+	id: field.string<EntryId>(),
+	title: field.string(),
+	subtitle: field.string(),
+	type: field.json(Type.Array(Type.String())),
+	tags: field.json(Type.Array(Type.String())),
+	pinned: field.boolean(),
+	deletedAt: nullable(field.datetime()),
 	// `date` is the canonical UTC instant; `dateZone` carries the originating
 	// IANA zone so display code can render the user's local wall-clock time.
 	// Per the workspace `<field>` + `<field>Zone` convention.
-	date: column.dateTime(),
-	dateZone: column.ianaTimeZone(),
-	createdAt: column.dateTime(),
-	updatedAt: column.dateTime(),
-	rating: column.number(),
+	date: field.datetime(),
+	dateZone: field.string<IanaTimeZone>(),
+	createdAt: field.datetime(),
+	updatedAt: field.datetime(),
+	rating: field.number(),
 });
 
 export type Entry = InferTableRow<typeof entriesTable>;
@@ -197,8 +198,8 @@ export function createFuji(opts: { keyring: () => Keyring }) {
 					tags: Type.Array(Type.String(), { description: 'Freeform tags' }),
 					pinned: Type.Boolean({ description: 'Whether the entry is pinned' }),
 					rating: Type.Number({ description: 'Rating from 0 to 5' }),
-					deletedAt: column.nullable(
-						column.dateTime({ description: 'Soft deletion timestamp' }),
+					deletedAt: nullable(
+						field.datetime({ description: 'Soft deletion timestamp' }),
 					),
 					date: Type.Unsafe<DateTimeString>({
 						type: 'string',

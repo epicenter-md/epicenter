@@ -11,13 +11,13 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { createWorkspace, defineTable } from '../../../index.js';
-import { column } from '../../column/index.js';
+import { field } from '@epicenter/field';
 import { attachMarkdownExport } from './export.js';
 
 const postsTable = defineTable({
-	id: column.string(),
-	title: column.string(),
-	published: column.boolean(),
+	id: field.string(),
+	title: field.string(),
+	published: field.boolean(),
 });
 
 const tableDefinitions = { posts: postsTable };

@@ -1,11 +1,12 @@
+import { field } from '@epicenter/field';
 import {
-	column,
 	createWorkspace,
 	defineKv,
 	defineTable,
 	defineWorkspace,
 	type InferKvValue,
 	type InferTableRow,
+	nullable,
 } from '@epicenter/workspace';
 import { type Static, Type } from 'typebox';
 
@@ -26,18 +27,18 @@ import {
  */
 /** Audio recordings captured by the user. One row per recording session. */
 const recordings = defineTable({
-	id: column.string(),
-	title: column.string(),
-	recordedAt: column.string(),
-	updatedAt: column.string(),
-	transcript: column.string(),
-	transcriptionStatus: column.enum([
+	id: field.string(),
+	title: field.string(),
+	recordedAt: field.string(),
+	updatedAt: field.string(),
+	transcript: field.string(),
+	transcriptionStatus: field.select([
 		'UNPROCESSED',
 		'TRANSCRIBING',
 		'DONE',
 		'FAILED',
 	]),
-	duration: column.nullable(column.number()),
+	duration: nullable(field.number()),
 });
 
 /** Recording row type inferred from the workspace table schema. */
@@ -45,11 +46,11 @@ export type Recording = InferTableRow<typeof recordings>;
 
 /** User-defined transformation pipelines. Each transformation has ordered steps. */
 const transformations = defineTable({
-	id: column.string(),
-	title: column.string(),
-	description: column.string(),
-	createdAt: column.string(),
-	updatedAt: column.string(),
+	id: field.string(),
+	title: field.string(),
+	description: field.string(),
+	createdAt: field.string(),
+	updatedAt: field.string(),
 });
 
 /** Transformation row type inferred from the workspace table schema. */
@@ -69,31 +70,31 @@ export type Transformation = InferTableRow<typeof transformations>;
  * @see {@link https://github.com/EpicenterHQ/epicenter/blob/main/specs/20260312T170000-whispering-workspace-polish-and-migration.md | Spec Decision 1}
  */
 const transformationSteps = defineTable({
-	id: column.string(),
-	transformationId: column.string(),
-	order: column.number(),
-	type: column.enum(TRANSFORMATION_STEP_TYPES),
+	id: field.string(),
+	transformationId: field.string(),
+	order: field.number(),
+	type: field.select(TRANSFORMATION_STEP_TYPES),
 
 	// Prompt transform: active provider
-	inferenceProvider: column.enum(INFERENCE_PROVIDER_IDS),
+	inferenceProvider: field.select(INFERENCE_PROVIDER_IDS),
 
 	// Prompt transform: per-provider model memory
-	openaiModel: column.string(),
-	groqModel: column.string(),
-	anthropicModel: column.string(),
-	googleModel: column.string(),
-	openrouterModel: column.string(),
-	customModel: column.string(),
-	customBaseUrl: column.string(),
+	openaiModel: field.string(),
+	groqModel: field.string(),
+	anthropicModel: field.string(),
+	googleModel: field.string(),
+	openrouterModel: field.string(),
+	customModel: field.string(),
+	customBaseUrl: field.string(),
 
 	// Prompt transform: prompt templates
-	systemPromptTemplate: column.string(),
-	userPromptTemplate: column.string(),
+	systemPromptTemplate: field.string(),
+	userPromptTemplate: field.string(),
 
 	// Find & replace
-	findText: column.string(),
-	replaceText: column.string(),
-	useRegex: column.boolean(),
+	findText: field.string(),
+	replaceText: field.string(),
+	useRegex: field.boolean(),
 });
 
 /** Transformation step row type inferred from the workspace table schema. */
@@ -142,12 +143,12 @@ export type TransformationRunResult = Static<typeof TransformationRunResult>;
  * sort by `startedAt`; status-dependent fields live inside `result`.
  */
 const transformationRuns = defineTable({
-	id: column.string(),
-	transformationId: column.string(),
-	recordingId: column.nullable(column.string()),
-	input: column.string(),
-	startedAt: column.string(),
-	result: column.json(TransformationRunResult),
+	id: field.string(),
+	transformationId: field.string(),
+	recordingId: nullable(field.string()),
+	input: field.string(),
+	startedAt: field.string(),
+	result: field.json(TransformationRunResult),
 });
 
 /** Transformation run row type inferred from the workspace table schema. */
@@ -155,13 +156,13 @@ export type TransformationRun = InferTableRow<typeof transformationRuns>;
 
 /** Per-step execution records within a transformation run. */
 const transformationStepRuns = defineTable({
-	id: column.string(),
-	transformationRunId: column.string(),
-	stepId: column.string(),
-	order: column.number(),
-	input: column.string(),
-	startedAt: column.string(),
-	result: column.json(TransformationRunResult),
+	id: field.string(),
+	transformationRunId: field.string(),
+	stepId: field.string(),
+	order: field.number(),
+	input: field.string(),
+	startedAt: field.string(),
+	result: field.json(TransformationRunResult),
 });
 
 /** Transformation step run row type inferred from the workspace table schema. */
@@ -185,14 +186,14 @@ export type TransformationStepRun = InferTableRow<
  * Manual = user-initiated recording. VAD = voice activity detection.
  */
 const sound = {
-	'sound.manualStart': defineKv(column.boolean(), () => true),
-	'sound.manualStop': defineKv(column.boolean(), () => true),
-	'sound.manualCancel': defineKv(column.boolean(), () => true),
-	'sound.vadStart': defineKv(column.boolean(), () => true),
-	'sound.vadCapture': defineKv(column.boolean(), () => true),
-	'sound.vadStop': defineKv(column.boolean(), () => true),
-	'sound.transcriptionComplete': defineKv(column.boolean(), () => true),
-	'sound.transformationComplete': defineKv(column.boolean(), () => true),
+	'sound.manualStart': defineKv(field.boolean(), () => true),
+	'sound.manualStop': defineKv(field.boolean(), () => true),
+	'sound.manualCancel': defineKv(field.boolean(), () => true),
+	'sound.vadStart': defineKv(field.boolean(), () => true),
+	'sound.vadCapture': defineKv(field.boolean(), () => true),
+	'sound.vadStop': defineKv(field.boolean(), () => true),
+	'sound.transcriptionComplete': defineKv(field.boolean(), () => true),
+	'sound.transformationComplete': defineKv(field.boolean(), () => true),
 } as const;
 
 /**
@@ -211,18 +212,18 @@ const sound = {
  * toggle on.
  */
 const output = {
-	'output.transcription.clipboard': defineKv(column.boolean(), () => true),
-	'output.transcription.cursor': defineKv(column.boolean(), () => true),
-	'output.transcription.enter': defineKv(column.boolean(), () => false),
-	'output.transformation.clipboard': defineKv(column.boolean(), () => true),
-	'output.transformation.cursor': defineKv(column.boolean(), () => false),
-	'output.transformation.enter': defineKv(column.boolean(), () => false),
+	'output.transcription.clipboard': defineKv(field.boolean(), () => true),
+	'output.transcription.cursor': defineKv(field.boolean(), () => true),
+	'output.transcription.enter': defineKv(field.boolean(), () => false),
+	'output.transformation.clipboard': defineKv(field.boolean(), () => true),
+	'output.transformation.cursor': defineKv(field.boolean(), () => false),
+	'output.transformation.enter': defineKv(field.boolean(), () => false),
 } as const;
 
 /** Window behavior and navigation layout preferences. */
 const ui = {
 	'ui.alwaysOnTop': defineKv(
-		column.enum(ALWAYS_ON_TOP_MODES),
+		field.select(ALWAYS_ON_TOP_MODES),
 		() => 'Never' as const,
 	),
 } as const;
@@ -234,16 +235,16 @@ const ui = {
  */
 const dataRetention = {
 	'retention.strategy': defineKv(
-		column.enum(['keep-forever', 'limit-count']),
+		field.select(['keep-forever', 'limit-count']),
 		() => 'keep-forever' as const,
 	),
-	'retention.maxCount': defineKv(column.integer({ minimum: 1 }), () => 100),
+	'retention.maxCount': defineKv(field.integer({ minimum: 1 }), () => 100),
 } as const;
 
 /** User's preferred recording mode: manual trigger vs voice activity detection. */
 const recording = {
 	'recording.mode': defineKv(
-		column.enum(RECORDING_MODES),
+		field.select(RECORDING_MODES),
 		() => 'manual' as const,
 	),
 } as const;
@@ -258,31 +259,31 @@ const recording = {
  */
 const transcription = {
 	'transcription.service': defineKv(
-		column.enum(TRANSCRIPTION_SERVICE_IDS),
+		field.select(TRANSCRIPTION_SERVICE_IDS),
 		() => 'moonshine' as const,
 	),
 	'transcription.openai.model': defineKv(
-		column.string(),
+		field.string(),
 		() => PROVIDERS.OpenAI.defaultModel as string,
 	),
 	'transcription.groq.model': defineKv(
-		column.string(),
+		field.string(),
 		() => PROVIDERS.Groq.defaultModel as string,
 	),
 	'transcription.elevenlabs.model': defineKv(
-		column.string(),
+		field.string(),
 		() => PROVIDERS.ElevenLabs.defaultModel as string,
 	),
 	'transcription.deepgram.model': defineKv(
-		column.string(),
+		field.string(),
 		() => PROVIDERS.Deepgram.defaultModel as string,
 	),
 	'transcription.mistral.model': defineKv(
-		column.string(),
+		field.string(),
 		() => PROVIDERS.Mistral.defaultModel as string,
 	),
-	'transcription.language': defineKv(column.string(), () => 'auto'),
-	'transcription.prompt': defineKv(column.string(), () => ''),
+	'transcription.language': defineKv(field.string(), () => 'auto'),
+	'transcription.prompt': defineKv(field.string(), () => ''),
 } as const;
 
 /**
@@ -296,14 +297,14 @@ const transcription = {
  */
 const transformation = {
 	'transformation.selectedId': defineKv(
-		column.nullable(column.string()),
+		nullable(field.string()),
 		(): string | null => null,
 	),
 } as const;
 
 /** Anonymized event logging toggle (Aptabase). */
 const analytics = {
-	'analytics.enabled': defineKv(column.boolean(), () => true),
+	'analytics.enabled': defineKv(field.boolean(), () => true),
 } as const;
 
 /**
@@ -313,27 +314,27 @@ const analytics = {
  */
 const shortcuts = {
 	'shortcut.toggleManualRecording': defineKv(
-		column.nullable(column.string()),
+		nullable(field.string()),
 		(): string | null => ' ',
 	),
 	'shortcut.cancelManualRecording': defineKv(
-		column.nullable(column.string()),
+		nullable(field.string()),
 		(): string | null => 'c',
 	),
 	'shortcut.toggleVadRecording': defineKv(
-		column.nullable(column.string()),
+		nullable(field.string()),
 		(): string | null => 'v',
 	),
 	'shortcut.pushToTalk': defineKv(
-		column.nullable(column.string()),
+		nullable(field.string()),
 		(): string | null => 'p',
 	),
 	'shortcut.openTransformationPicker': defineKv(
-		column.nullable(column.string()),
+		nullable(field.string()),
 		(): string | null => 't',
 	),
 	'shortcut.runTransformationOnClipboard': defineKv(
-		column.nullable(column.string()),
+		nullable(field.string()),
 		(): string | null => 'r',
 	),
 } as const;

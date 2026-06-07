@@ -25,8 +25,6 @@ import type { AnyTable, TablesRecord } from '../shared.js';
 import { generateDdl, quoteIdentifier } from './ddl.js';
 import { createSqliteFtsLayer } from './fts.js';
 
-export type { TablesRecord } from '../shared.js';
-
 /**
  * Optional FTS configuration, keyed by the same names as `tables`. Each
  * value lists the columns of that table's row to include in the FTS5 index.

@@ -1,0 +1,46 @@
+{
+	"name": "@epicenter/matter",
+	"description": "Typed markdown folder editor: open a folder, give it a model, see files grouped by conformance (valid / invalid / unparseable).",
+	"private": true,
+	"version": "0.0.1",
+	"type": "module",
+	"scripts": {
+		"dev": "vite dev",
+		"build": "vite build",
+		"preview": "vite preview",
+		"prepare": "svelte-kit sync || echo ''",
+		"inspect": "bun scripts/inspect.ts",
+		"tauri": "tauri",
+		"test": "bun test",
+		"typecheck": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json"
+	},
+	"devDependencies": {
+		"@epicenter/ui": "workspace:*",
+		"@lucide/svelte": "catalog:",
+		"@sveltejs/adapter-static": "catalog:",
+		"@sveltejs/kit": "catalog:",
+		"@sveltejs/vite-plugin-svelte": "catalog:",
+		"@tailwindcss/vite": "catalog:",
+		"@tauri-apps/cli": "catalog:",
+		"@types/bun": "catalog:",
+		"mode-watcher": "catalog:",
+		"svelte": "catalog:",
+		"svelte-check": "catalog:",
+		"tailwindcss": "catalog:",
+		"typescript": "catalog:",
+		"vite": "catalog:"
+	},
+	"dependencies": {
+		"@codemirror/commands": "^6.10.3",
+		"@codemirror/lang-markdown": "^6.5.0",
+		"@codemirror/state": "^6.6.0",
+		"@codemirror/view": "^6.41.0",
+		"@epicenter/field": "workspace:*",
+		"@tauri-apps/api": "catalog:",
+		"@tauri-apps/plugin-dialog": "^2.3.2",
+		"typebox": "catalog:",
+		"wellcrafted": "catalog:",
+		"yaml": "^2.8.0"
+	},
+	"license": "AGPL-3.0-or-later"
+}

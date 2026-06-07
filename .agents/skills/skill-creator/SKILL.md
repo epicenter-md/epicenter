@@ -1,25 +1,47 @@
 ---
 name: skill-creator
-description: Create or update Vercel-backed Agent Skills for this repository. Use when the user asks to write a skill, revise a skill, standardize .agents/skills, validate skill discovery, or decide what belongs in SKILL.md, references, scripts, or assets.
+description: Create, revise, evaluate, and validate Vercel-backed Agent Skills for this repository. Use when writing a new skill, improving an existing skill, tuning skill descriptions, deciding what belongs in SKILL.md, references, scripts, or assets, validating discovery, or reviewing whether a skill should exist.
 ---
 
 # Skill Creator
 
-Use this skill to create and maintain repository skills under `.agents/skills` using the Vercel-backed Agent Skills format.
+Use this skill to create and maintain project-local skills under `.agents/skills`.
 
-The source of truth for format and discovery is the `skills` CLI from `vercel-labs/skills`. Do not maintain a separate local validator unless the user explicitly asks for one.
+The Vercel `skills` CLI is the source of truth for format and discovery. Do not maintain a separate local validator unless the user explicitly asks for one.
+
+Skills should encode repeatable project expertise: real conventions, recurring failure modes, fragile workflows, and corrections the agent would otherwise miss. Do not turn one-off advice into a skill.
+
+Read [references/evaluation.md](references/evaluation.md) when tuning trigger descriptions, comparing skill versions, evaluating behavior, auditing imported skills, or checking source links.
+
+## Compose With
+
+Use other skills for their owned domains:
+
+- `writing-voice`: user-facing prose, UI text, errors, docs, and tone.
+- Domain skills such as `workspace-api`, `svelte`, or `auth`: package conventions the new skill must encode.
+- `git`: staging, commits, branch work, and commit messages.
+- `plugin-creator`: Codex plugins, not agent skills.
+- `skill-installer`: installing third-party skills.
+
+## Decide Update Or New
+
+Update an existing skill when it already owns the same user intent. Create a new skill only when the task is a separate coherent capability with distinct triggers.
+
+Split a skill only when workflows are mutually exclusive, the routing description becomes broad or ambiguous, or a reference file would be loaded for the wrong jobs. Prefer small composable skills over broad manuals.
 
 ## Supported Shape
 
-Every skill is a directory with a required `SKILL.md`:
+Every skill is a flat directory with a required `SKILL.md`:
 
 ```txt
 .agents/skills/<skill-name>/
-├── SKILL.md
-├── references/   optional, detailed context loaded only when needed
-├── scripts/      optional, executable helpers for repeatable fragile work
-└── assets/       optional, files used in generated output
+|-- SKILL.md
+|-- references/   optional, detailed context loaded only when needed
+|-- scripts/      optional, executable helpers for repeatable fragile work
+|-- assets/       optional, files used in generated output
 ```
+
+Use `.agents/skills` for project-local portable skills. The Vercel CLI discovers this path, and Codex uses it as the project skill location.
 
 The required frontmatter is:
 
@@ -30,13 +52,11 @@ description: What this skill does and when agents should use it.
 ---
 ```
 
-`metadata.internal: true` is the only optional Vercel-backed field this skill should teach by default. It hides a skill from normal discovery unless internal skills are explicitly included.
-
-The CLI does not reject arbitrary extra frontmatter keys in general parsing, but do not add extra keys unless the target agent or tool explicitly supports them.
+Use lowercase hyphenated names. `metadata.internal: true` is the only optional Vercel-backed field this skill should teach by default. Avoid agent-specific fields such as `allowed-tools`, hooks, and `context: fork` unless the user explicitly targets an agent that supports them.
 
 ## What Not To Add
 
-Keep repository skills portable and boring. Do not add Codex-specific helper layers as part of the standard:
+Keep repository skills portable and boring. Do not add these as part of the standard:
 
 ```txt
 agents/openai.yaml
@@ -60,21 +80,27 @@ bun x --package skills skills init <skill-name>
 
 Then edit `.agents/skills/<skill-name>/SKILL.md` directly.
 
-Use lowercase hyphenated names. Prefer short names that describe the job:
+Before drafting body content:
 
-```txt
-good: github-issues
-good: workspace-api
-bad: Helpful Epicenter Knowledge Pack
-```
+1. Classify the skill as `process`, `tool workflow`, `convention`, or `domain pattern`.
+2. Gather real source material: completed tasks, diffs, review comments, issue threads, runbooks, execution traces, and repeated corrections.
+3. Confirm the task, target users, trigger use cases, supporting references, and whether any repeated fragile work needs a script.
+4. If those answers are missing and cannot be discovered from repo files, ask before drafting.
+5. Write the description before expanding body content.
+6. Ensure the draft states the job to be done, required inputs or prerequisites, ordered workflow, output format, guardrails, and final checks.
+7. Keep the core workflow small and move conditional detail to `references/`.
 
 ## Write The Description First
 
-The description is always loaded and drives skill selection. Include:
+The description is always loaded and drives selection. It must carry the trigger logic because the body is loaded only after the skill is selected.
+
+Include:
 
 1. What the skill does.
-2. The concrete situations that should trigger it.
+2. Concrete situations that should trigger it.
 3. Important file types, packages, tools, or phrases the user might mention.
+
+Use `Use when...` phrasing. Describe user intent, not implementation mechanics. Keep the description concise and under the 1024 character limit.
 
 Good:
 
@@ -88,29 +114,43 @@ Weak:
 description: Helps with workspace stuff.
 ```
 
-Do not rely on a "When To Use" section in the body for triggering. The body is loaded only after the skill is already selected.
+For subtle routing, test 2 or 3 should-trigger prompts and 1 or 2 near-miss should-not-trigger prompts. Do not stuff exact keywords unless the keyword represents a real trigger category.
 
-## Keep SKILL.md Small
+## Use Progressive Disclosure
 
-Put essential workflow in `SKILL.md`. Move detailed material into `references/` only when the skill would otherwise become noisy.
+Put only essential workflow in `SKILL.md`. Aim for under 100 lines when practical, and keep the Vercel guideline of under 500 lines as the outer bound.
 
 Use this split:
 
-```txt
-SKILL.md
-  Core rules, decision points, commands, and links to resources.
+- `SKILL.md`: core rules, recurring gotchas, decision points, commands, and links.
+- `references/`: long examples, conditional gotchas, eval notes, decision tables, API details, and edge cases.
+- `scripts/`: repeated deterministic helpers the agent would otherwise recreate.
+- `assets/`: templates, images, boilerplate, or other files used in generated output.
 
-references/
-  Long examples, API details, migration notes, tables, and edge cases.
+Every reference link needs a concrete load condition, for example: "Read `references/api-errors.md` when the API returns a non-200 status."
 
-scripts/
-  Deterministic helpers that avoid rewriting fragile code each time.
+Use `scripts/` only for repeated, deterministic, fragile, or error-prone work. Scripts should be documented in `SKILL.md`, non-interactive, retry-friendly, clear about prerequisites, structured on stdout, diagnostics on stderr, and bounded in output.
 
-assets/
-  Templates, images, fonts, boilerplate, or other output inputs.
-```
+Use Bun by default in this repository. Translate upstream Agent Skills CLI examples from `npx skills ...` to `bun x --package skills skills ...`. For other npm package commands, preserve the package and use `bun x` or `bunx`, pinning versions when behavior must be reproducible.
 
-If a reference file is longer than about 100 lines, add a short table of contents at the top so agents can decide whether to read it.
+Calibrate control to fragility. Be prescriptive for exact commands, migrations, destructive operations, and brittle formats. For batch, destructive, external-state, or high-blast-radius operations, use plan-validate-execute: create the plan, validate it against the source of truth, then execute. For judgment-heavy reviews or design work, give defaults and decision rules rather than rigid scripts.
+
+## Evaluate A Skill
+
+Do a lightweight eval when creating a new skill, changing trigger descriptions, or revising subtle behavior.
+
+Escalate to [references/evaluation.md](references/evaluation.md) when the user asks to tune descriptions, compare versions, prove a skill works, audit an imported skill, or diagnose poor skill behavior.
+
+Use this loop:
+
+1. Start with 2 or 3 realistic prompts.
+2. Compare against no skill for new skills, or the previous version for updates.
+3. Use a clean context where possible.
+4. Record failures, wasted steps, and missed project conventions.
+5. Revise the description or core workflow first.
+6. Move detail to references only when it is conditionally useful.
+
+Read [references/evaluation.md](references/evaluation.md) for trigger evals, execution trace review, and security checks.
 
 ## Validate With Vercel CLI
 
@@ -133,15 +173,38 @@ Local path validated
 Found N skill(s)
 ```
 
-If the skill does not appear, fix `SKILL.md` and run the command again.
+If the skill does not appear, fix `SKILL.md` and run the command again. When the current CLI supports it, use `skills use <source>` to forward-test a skill prompt without installing it.
 
 ## Update A Skill
 
 When updating an existing skill:
 
 1. Read the current `SKILL.md`.
-2. Check whether any linked `references/`, `scripts/`, or `assets/` still earn their keep.
-3. Remove stale local-only scaffolding from the guidance.
-4. Validate with `bun x --package skills skills add <path> --list`.
+2. Decide whether this should update the existing skill or become a new skill.
+3. Check whether linked `references/`, `scripts/`, or `assets/` still earn their keep.
+4. Review the description against realistic trigger and near-miss prompts.
+5. Remove stale local-only scaffolding from the guidance.
+6. Validate with `bun x --package skills skills add <path> --list`.
+7. Forward-test subtle behavior with realistic prompts.
 
-Forward-test only when behavior is subtle. Ask an agent to use the skill on a realistic task; do not tell it what answer you expect.
+Ask draft review questions when the scope is uncertain: does this cover the target use cases, is anything missing, and should any section move to `references/`?
+
+Use sharper review questions when the design still feels soft:
+
+- What repeated failure does this prevent?
+- Which future prompt should not trigger this?
+- Which other skill should compose with this instead?
+- What concrete run would prove this skill helped?
+
+## Review Checklist
+
+- The description has concrete triggers and near-miss boundaries.
+- `SKILL.md` contains the core workflow, not a copied source essay.
+- References have clear load conditions.
+- Scripts are justified, non-interactive, and portable.
+- Required tools are stated as prerequisites; the skill does not imply access to apps, files, connectors, or credentials.
+- The skill avoids unsupported frontmatter and agent-specific metadata.
+- The skill avoids time-sensitive facts unless sourced and necessary.
+- No orphan `CLAUDE.md` files are created; sibling shims only import `@AGENTS.md`.
+- No em dash or en dash characters are present.
+- Validation passed with the Vercel `skills` CLI.

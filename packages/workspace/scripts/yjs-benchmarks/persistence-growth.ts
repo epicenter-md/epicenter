@@ -15,7 +15,8 @@
  */
 
 import * as Y from 'yjs';
-import { column, createWorkspace, defineTable } from '../../src/index.js';
+import { createWorkspace, defineTable } from '../../src/index.js';
+import { field } from '@epicenter/field';
 import { formatBytes } from './helpers.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -35,11 +36,11 @@ const CYCLES = 5;
 // ═══════════════════════════════════════════════════════════════════════════════
 
 const eventDefinition = defineTable({
-	id: column.string(),
-	type: column.enum(['command', 'event']),
-	name: column.string(),
-	payload: column.string(),
-	timestamp: column.number(),
+	id: field.string(),
+	type: field.select(['command', 'event']),
+	name: field.string(),
+	payload: field.string(),
+	timestamp: field.number(),
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════

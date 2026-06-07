@@ -17,6 +17,10 @@ worker    isolated edit attempt in a disposable worktree
 
 Default to `consult`. Escalate only when the task shape earns it.
 
+## Prerequisites
+
+Claude delegation requires the local `claude` CLI, working Claude Code auth, and the repo wrapper at `bun run claude:consult`. If those are unavailable, do not improvise an unbounded substitute. Provide the prompt for the user to run, or continue locally without Claude.
+
 ## Delegation Test
 
 Do not use Claude just because another agent is available. Use Claude only when at least one condition is true:
@@ -54,35 +58,53 @@ Do not paste a template mechanically. Write the prompt a sharp senior engineer w
 
 If the user wants to run it themselves, provide only the prompt.
 
-If the user wants Codex to run it, or asks for Claude's judgment as part of the work, prefer the repo wrapper:
+If the user wants Codex to run it, or asks for Claude's judgment as part of the work, use the repo wrapper's background commands. Do not use the synchronous wrapper path. The synchronous path can hang Codex because it waits for Claude inline.
 
 ```bash
-bun run claude:consult -- \
+bun run claude:consult -- start \
   --mode review \
   --question "Find behavioral bugs in this diff only"
 ```
 
 Pipe narrow context into the wrapper or pass specific files with repeatable `--context` flags. Use `--mode review`, `--mode design`, `--mode tests`, or `--mode docs` to pick the critique lens.
 
-The wrapper uses `claude -p`, `--output-format json`, `--max-budget-usd`, `--no-session-persistence`, `--disable-slash-commands`, and `--permission-mode dontAsk`. It intentionally loads the user's normal Claude Code config by default because the local Claude login, model choice, and effort level can live there. Use the wrapper's `--bare` flag only when bare mode is known to have working auth.
+The wrapper uses `claude -p`, `--max-budget-usd`, `--no-session-persistence`, `--disable-slash-commands`, and `--permission-mode dontAsk`. Background jobs use `--output-format stream-json` and store the final result for later retrieval. It intentionally loads the user's normal Claude Code config by default because the local Claude login, model choice, and effort level can live there. Use the wrapper's `--bare` flag only when bare mode is known to have working auth.
 
 The default budget is `$25` so normal strong consults have room to produce a real answer. Do not use a tiny budget cap as a safety rail for strong models: Claude Code can spend enough on setup or cache creation to hit the cap before a reusable `.result` exists. The wrapper rejects budgets under `$1` because local testing showed very small caps can fail before returning a result.
 
 By default, pass context directly and do not expose read/search tools. The wrapper disables tools with `--tools ""` and always denies `Edit`, `Write`, and `Bash`. Add `--read-files` only when Claude needs to read or search extra repo files. In that mode, the wrapper uses `--tools Read,Grep,Glob` and `--allowedTools Read,Grep,Glob`.
 
-Prefer this shape for reliable consults:
+Use this shape for reliable consults:
 
 ```bash
 git diff -- packages/foo/src/bar.ts \
-  | bun run claude:consult -- \
+  | bun run claude:consult -- start \
     --mode review \
     --question "Find only behavioral bugs in this diff. If none, say none and name the highest residual risk."
 ```
 
+Then poll instead of waiting inline:
+
+```bash
+bun run claude:consult -- status <job-id>
+bun run claude:consult -- result <job-id>
+```
+
+Use `cancel` when the job is no longer useful:
+
+```bash
+bun run claude:consult -- cancel <job-id>
+```
+
+The background runner stores state under `.tmp/claude-consult`, captures
+Claude's `stream-json` result, and records the Claude child PID so cancellation
+targets the active Claude process. Treat `result` output as Claude's consult
+answer, not as a patch to apply blindly.
+
 Use `--context` for small, stable context files:
 
 ```bash
-bun run claude:consult -- \
+bun run claude:consult -- start \
   --mode design \
   --context packages/foo/src/bar.ts \
   --context packages/foo/src/bar.test.ts \
@@ -100,21 +122,11 @@ continue until done
 
 Those shapes convert a consult into an exploration loop. Exploration should be split into scouts with separate budgets and exact scopes.
 
-Use a direct `claude -p` call only when the wrapper does not fit the question. For repo consults, restrict Claude to read/search tools:
-
-```bash
-claude -p "[prompt]" \
-  --tools "Read,Grep,Glob" \
-  --allowedTools "Read,Grep,Glob" \
-  --disallowedTools "Edit,Write,Bash" \
-  --permission-mode dontAsk \
-  --output-format json \
-  --max-budget-usd 1
-```
+Do not use direct `claude -p` for repo consults. Use the wrapper background commands so Codex never waits inline.
 
 Add `--max-turns` only when the user explicitly asks for a hard turn cap. Do not set `--model` or `--effort` unless the user explicitly asks for an override; otherwise, let the local Claude config decide.
 
-For pure judgment consults that do not need workspace files, pass `--tools ""`.
+For pure judgment consults that do not need workspace files, omit `--read-files`. The wrapper then passes `--tools ""` internally.
 
 Bare mode may not see the user's Claude Code login. If a `--bare` call reports `Not logged in`, retry without `--bare` before changing auth state.
 
@@ -141,7 +153,15 @@ tasks where the next local step is blocked on every result
 anything that requires editing
 ```
 
-Launch each scout as its own bounded `claude -p` call with read/search tools, JSON output, and a budget. Give each scout a concrete question, exact search scope, and answer shape. Codex reconciles the reports and verifies contradictions against local files.
+Launch each scout as its own bounded background wrapper job. Give each scout a concrete question, exact search scope, and answer shape. Codex reconciles the reports and verifies contradictions against local files.
+
+```bash
+bun run claude:consult -- start \
+  --mode review \
+  --read-files \
+  --budget-usd 3 \
+  --question "Within packages/foo only, find one likely cause of the failing sync test. Return evidence and the smallest next check."
+```
 
 Keep fan-out small. Default to one scout. Use two or three when the work is genuinely parallel. Avoid more than four unless the user explicitly asks for a broad sweep.
 
@@ -188,6 +208,8 @@ Then run Claude from that worktree:
 )
 ```
 
+Run editing workers only through a bounded execution path: a local timeout command, a supervising shell, or another process wrapper that can terminate the Claude process. If no bounded path is available, do not start the worker.
+
 Add only the Bash commands the task needs. Avoid broad `Bash` allowlists for workers.
 
 Do not use `--bare` for editing workers unless you inject the repo rules explicitly. Bare mode skips normal project instruction discovery, which can drop the rules this repo cares about: `bun`, specific-file staging, no AI attribution, no em or en dashes, and no direct `console.*` in library code.
@@ -196,13 +218,13 @@ Never use `bypassPermissions`, `--dangerously-skip-permissions`, or `--allow-dan
 
 ## Blocking Behavior
 
-Consults and scouts are normally blocking because they are one-pass subprocess calls. They should be focused and budgeted.
+Repo-wrapper consults must use `start`, then `status`, `result`, or `cancel`. Do not run a foreground wrapper consult and wait for it. They should still be focused and budgeted.
 
-Workers and large fan-out runs must not block Codex indefinitely. Use a wall-clock timeout when practical. If Claude hangs, runs out of budget, lacks auth, hits a turn limit, or returns generic output, record that and continue with the best local path.
+Scouts, workers, and large fan-out runs must not block Codex indefinitely. Use a wall-clock timeout when practical. If Claude hangs, runs out of budget, lacks auth, hits a turn limit, or returns generic output, record that and continue with the best local path.
 
 Only stop the overall task for Claude when the user explicitly made Claude's answer the deliverable.
 
-When the wrapper hits `--max-turns` or `--max-budget-usd`, treat the run as failed even if Claude may have reasoned internally. With `--output-format json`, the usable result is the final `.result` string. If the final result is missing, do not infer a partial answer from the failed run. Tighten the prompt, reduce context, remove `--read-files`, or split into scouts.
+When the wrapper hits `--max-turns` or `--max-budget-usd`, treat the run as failed even if Claude may have reasoned internally. The usable background consult answer is the stored result returned by `bun run claude:consult -- result <job-id>`. If the final result is missing, do not infer a partial answer from the failed run. Tighten the prompt, reduce context, remove `--read-files`, or split into scouts.
 
 Do not leave Claude background sessions running. If you use background sessions, capture their IDs, check logs, stop stuck work, and remove finished sessions.
 
@@ -224,8 +246,8 @@ Treat Claude output like a strong code review comment, not truth.
 
 For consults and scouts:
 
-1. Check `is_error` first.
-2. Read `.result` from the JSON envelope.
+1. Check job status before reading the result.
+2. Read the stored result with `bun run claude:consult -- result <job-id>`.
 3. Separate concrete findings from opinion.
 4. Check each claim against local files, installed types, official docs, DeepWiki, or tests.
 5. Keep only recommendations that fit repo constraints.

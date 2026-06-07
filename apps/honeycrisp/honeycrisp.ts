@@ -16,7 +16,6 @@
 
 import {
 	attachRichText,
-	column,
 	createDisposableCache,
 	createWorkspace,
 	DateTimeString,
@@ -28,8 +27,10 @@ import {
 	generateId,
 	type InferTableRow,
 	type Keyring,
+	nullable,
 	onLocalUpdate,
 } from '@epicenter/workspace';
+import { field } from '@epicenter/field';
 import Type from 'typebox';
 import type { Brand } from 'wellcrafted/brand';
 import * as Y from 'yjs';
@@ -81,10 +82,10 @@ export const generateFolderId = (): FolderId => generateId<FolderId>();
  * reordering in the sidebar. Notes reference folders via `folderId`.
  */
 const foldersTable = defineTable({
-	id: column.string<FolderId>(),
-	name: column.string(),
-	icon: column.nullable(column.string()),
-	sortOrder: column.number(),
+	id: field.string<FolderId>(),
+	name: field.string(),
+	icon: nullable(field.string()),
+	sortOrder: field.number(),
 });
 export type Folder = InferTableRow<typeof foldersTable>;
 
@@ -103,15 +104,15 @@ export type Folder = InferTableRow<typeof foldersTable>;
  * opener attaches its own persistence and sync.
  */
 const notesTable = defineTable({
-	id: column.string<NoteId>(),
-	folderId: column.nullable(column.string<FolderId>()),
-	title: column.string(),
-	preview: column.string(),
-	pinned: column.boolean(),
-	createdAt: column.dateTime(),
-	updatedAt: column.dateTime(),
-	deletedAt: column.nullable(column.dateTime()),
-	wordCount: column.nullable(column.number()),
+	id: field.string<NoteId>(),
+	folderId: nullable(field.string<FolderId>()),
+	title: field.string(),
+	preview: field.string(),
+	pinned: field.boolean(),
+	createdAt: field.datetime(),
+	updatedAt: field.datetime(),
+	deletedAt: nullable(field.datetime()),
+	wordCount: nullable(field.number()),
 });
 export type Note = InferTableRow<typeof notesTable>;
 

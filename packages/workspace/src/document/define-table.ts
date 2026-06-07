@@ -20,17 +20,17 @@
  * ```ts
  * // Single-version table: no migrate needed.
  * const notes = defineTable({
- *   id: column.string<NoteId>(),
- *   title: column.string({ minLength: 1, maxLength: 200 }),
- *   createdAt: column.dateTime(),
+ *   id: field.string<NoteId>(),
+ *   title: field.string({ minLength: 1, maxLength: 200 }),
+ *   createdAt: field.datetime(),
  * });
  *
  * // Multi-version table: migrate is required.
  * const versioned = defineTable(
  *   // v1
- *   { id: column.string<NoteId>(), title: column.string() },
+ *   { id: field.string<NoteId>(), title: field.string() },
  *   // v2
- *   { id: column.string<NoteId>(), title: column.string(), pinned: column.boolean() },
+ *   { id: field.string<NoteId>(), title: field.string(), pinned: field.boolean() },
  * ).migrate(({ value, version }) => {
  *   switch (version) {
  *     case 1: return { ...value, pinned: false };

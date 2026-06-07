@@ -50,6 +50,7 @@
 		"@epicenter/auth": "workspace:*",
 		"@epicenter/constants": "workspace:*",
 		"@epicenter/encryption": "workspace:*",
+		"@epicenter/field": "workspace:*",
 		"@epicenter/svelte": "workspace:*",
 		"@epicenter/workspace": "workspace:*",
 		"@tanstack/svelte-table": "catalog:",

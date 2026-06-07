@@ -24,6 +24,7 @@
 		"typecheck": "tsc --noEmit"
 	},
 	"dependencies": {
+		"@epicenter/field": "workspace:*",
 		"@epicenter/util": "workspace:*",
 		"@epicenter/workspace": "workspace:*",
 		"@libsql/client": "^0.14.0",

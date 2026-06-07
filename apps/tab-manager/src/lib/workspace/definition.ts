@@ -9,9 +9,9 @@
  * factory.
  */
 
+import { field, jsonValue } from '@epicenter/field';
 import {
 	asDeviceId,
-	column,
 	createWorkspace,
 	type DeviceId,
 	defineTable,
@@ -19,10 +19,10 @@ import {
 	type Id,
 	type InferTableRow,
 	type Keyring,
+	nullable,
 } from '@epicenter/workspace';
 import { Type } from 'typebox';
 import type { Brand } from 'wellcrafted/brand';
-import type { JsonValue } from 'wellcrafted/json';
 
 export type { DeviceId };
 // `DeviceId` and `asDeviceId` are the canonical brand from `@epicenter/workspace`.
@@ -170,10 +170,10 @@ export const asChatMessageId = (value: string): ChatMessageId =>
  * collisions.
  */
 const devicesTable = defineTable({
-	id: column.string<DeviceId>(), // NanoID, generated once on install
-	name: column.string(), // User-editable: "Chrome on macOS", "Firefox on Windows"
-	lastSeen: column.string(), // ISO timestamp, updated on each sync
-	browser: column.string(), // 'chrome' | 'firefox' | 'safari' | 'edge' | 'opera'
+	id: field.string<DeviceId>(), // NanoID, generated once on install
+	name: field.string(), // User-editable: "Chrome on macOS", "Firefox on Windows"
+	lastSeen: field.string(), // ISO timestamp, updated on each sync
+	browser: field.string(), // 'chrome' | 'firefox' | 'safari' | 'edge' | 'opera'
 });
 export type Device = InferTableRow<typeof devicesTable>;
 
@@ -188,13 +188,13 @@ export type Device = InferTableRow<typeof devicesTable>;
  * Deleted when a user restores the tab (opens URL locally + deletes row).
  */
 const savedTabsTable = defineTable({
-	id: column.string<SavedTabId>(), // nanoid, generated on save
-	url: column.string(), // The tab URL
-	title: column.string(), // Tab title at time of save
-	favIconUrl: column.nullable(column.string()), // Favicon URL (null when missing)
-	pinned: column.boolean(), // Whether tab was pinned
-	sourceDeviceId: column.string<DeviceId>(), // Device that saved this tab
-	savedAt: column.number(), // Timestamp (ms since epoch)
+	id: field.string<SavedTabId>(), // nanoid, generated on save
+	url: field.string(), // The tab URL
+	title: field.string(), // Tab title at time of save
+	favIconUrl: nullable(field.string()), // Favicon URL (null when missing)
+	pinned: field.boolean(), // Whether tab was pinned
+	sourceDeviceId: field.string<DeviceId>(), // Device that saved this tab
+	savedAt: field.number(), // Timestamp (ms since epoch)
 });
 export type SavedTab = InferTableRow<typeof savedTabsTable>;
 
@@ -206,13 +206,13 @@ export type SavedTab = InferTableRow<typeof savedTabsTable>;
  * delete the record. Synced across devices via Y.Doc CRDT.
  */
 const bookmarksTable = defineTable({
-	id: column.string<BookmarkId>(), // nanoid, generated on bookmark
-	url: column.string(), // The bookmarked URL
-	title: column.string(), // Title at time of bookmark
-	favIconUrl: column.nullable(column.string()), // Favicon URL (null when missing)
-	description: column.nullable(column.string()), // Optional user note (null when absent)
-	sourceDeviceId: column.string<DeviceId>(), // Device that created the bookmark
-	createdAt: column.number(), // Timestamp (ms since epoch)
+	id: field.string<BookmarkId>(), // nanoid, generated on bookmark
+	url: field.string(), // The bookmarked URL
+	title: field.string(), // Title at time of bookmark
+	favIconUrl: nullable(field.string()), // Favicon URL (null when missing)
+	description: nullable(field.string()), // Optional user note (null when absent)
+	sourceDeviceId: field.string<DeviceId>(), // Device that created the bookmark
+	createdAt: field.number(), // Timestamp (ms since epoch)
 });
 export type Bookmark = InferTableRow<typeof bookmarksTable>;
 
@@ -225,15 +225,15 @@ export type Bookmark = InferTableRow<typeof bookmarksTable>;
  * message in a parent conversation.
  */
 const conversationsTable = defineTable({
-	id: column.string<ConversationId>(),
-	title: column.string(),
-	parentId: column.nullable(column.string<ConversationId>()),
-	sourceMessageId: column.nullable(column.string<ChatMessageId>()),
-	systemPrompt: column.nullable(column.string()),
-	provider: column.string(),
-	model: column.string(),
-	createdAt: column.number(),
-	updatedAt: column.number(),
+	id: field.string<ConversationId>(),
+	title: field.string(),
+	parentId: nullable(field.string<ConversationId>()),
+	sourceMessageId: nullable(field.string<ChatMessageId>()),
+	systemPrompt: nullable(field.string()),
+	provider: field.string(),
+	model: field.string(),
+	createdAt: field.number(),
+	updatedAt: field.number(),
 });
 export type Conversation = InferTableRow<typeof conversationsTable>;
 
@@ -248,11 +248,11 @@ export type Conversation = InferTableRow<typeof conversationsTable>;
  * @see {@link file://./ai/ui-message.ts} — drift detection + toUiMessage boundary
  */
 const chatMessagesTable = defineTable({
-	id: column.string<ChatMessageId>(),
-	conversationId: column.string<ConversationId>(),
-	role: column.enum(['user', 'assistant', 'system']),
-	parts: column.json(Type.Unsafe<JsonValue[]>(Type.Array(Type.Any()))),
-	createdAt: column.number(),
+	id: field.string<ChatMessageId>(),
+	conversationId: field.string<ConversationId>(),
+	role: field.select(['user', 'assistant', 'system']),
+	parts: field.json(Type.Array(jsonValue)),
+	createdAt: field.number(),
 });
 export type ChatMessage = InferTableRow<typeof chatMessagesTable>;
 
@@ -267,8 +267,8 @@ export type ChatMessage = InferTableRow<typeof chatMessagesTable>;
  * (e.g. `tabs_close`).
  */
 const toolTrustTable = defineTable({
-	id: column.string(),
-	trust: column.enum(['ask', 'always']),
+	id: field.string(),
+	trust: field.select(['ask', 'always']),
 });
 export type ToolTrust = InferTableRow<typeof toolTrustTable>;
 

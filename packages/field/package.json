@@ -1,0 +1,23 @@
+{
+	"name": "@epicenter/field",
+	"description": "The closed field-type vocabulary: field.* builders and recognize(), inverses over one JSON Schema wire-form.",
+	"private": true,
+	"version": "0.0.1",
+	"type": "module",
+	"exports": {
+		".": "./src/index.ts"
+	},
+	"license": "MIT",
+	"scripts": {
+		"typecheck": "tsc --noEmit",
+		"test": "bun test"
+	},
+	"dependencies": {
+		"typebox": "catalog:",
+		"wellcrafted": "catalog:"
+	},
+	"devDependencies": {
+		"@types/bun": "catalog:",
+		"typescript": "catalog:"
+	}
+}

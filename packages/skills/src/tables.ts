@@ -9,7 +9,8 @@
  * @module
  */
 
-import { column, defineTable, type InferTableRow } from '@epicenter/workspace';
+import { defineTable, nullable, type InferTableRow } from '@epicenter/workspace';
+import { field } from '@epicenter/field';
 
 /**
  * Skills table, one row per skill, 1:1 mapping to SKILL.md.
@@ -46,14 +47,14 @@ import { column, defineTable, type InferTableRow } from '@epicenter/workspace';
  * ```
  */
 export const skillsTable = defineTable({
-	id: column.string(),
-	name: column.string(),
-	description: column.string(),
-	license: column.nullable(column.string()),
-	compatibility: column.nullable(column.string()),
-	metadata: column.nullable(column.string()),
-	allowedTools: column.nullable(column.string()),
-	updatedAt: column.number(),
+	id: field.string(),
+	name: field.string(),
+	description: field.string(),
+	license: nullable(field.string()),
+	compatibility: nullable(field.string()),
+	metadata: nullable(field.string()),
+	allowedTools: nullable(field.string()),
+	updatedAt: field.number(),
 });
 
 /**
@@ -80,10 +81,10 @@ export const skillsTable = defineTable({
  * ```
  */
 export const referencesTable = defineTable({
-	id: column.string(),
-	skillId: column.string(),
-	path: column.string(),
-	updatedAt: column.number(),
+	id: field.string(),
+	skillId: field.string(),
+	path: field.string(),
+	updatedAt: field.number(),
 });
 
 export type Skill = InferTableRow<typeof skillsTable>;

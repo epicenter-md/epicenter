@@ -14,7 +14,8 @@ import { expect, test } from 'bun:test';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { column } from '@epicenter/workspace';
+import { nullable } from '@epicenter/workspace';
+import { field } from '@epicenter/field';
 import {
 	assembleMarkdown,
 	parseMarkdownFile,
@@ -26,11 +27,11 @@ import { projectWiki } from './projection';
 import type { ColumnSpec, Page } from './schema';
 
 const youtubeColumns: ColumnSpec[] = [
-	{ id: 'url', name: 'URL', schema: column.url() },
+	{ id: 'url', name: 'URL', schema: field.url() },
 	{
 		id: 'duration',
 		name: 'Duration',
-		schema: column.nullable(column.number()),
+		schema: nullable(field.number()),
 	},
 ];
 
@@ -71,7 +72,7 @@ test('round-trips a typed page Yjs <-> markdown <-> Yjs and answers a typed SQLi
 			join(dir, 'types', 'youtube_video.md'),
 			'utf-8',
 		);
-		expect(typeMd).toContain('format: uri'); // column.url()
+		expect(typeMd).toContain('format: uri'); // field.url()
 
 		// 5. Edit the .md as a text editor would, then reconcile (markdown apply).
 		const parsed = parseMarkdownFile(pageMd)!;
@@ -121,7 +122,7 @@ test('schema-on-read lens buckets match / excess / missing', () => {
 	// a malformed duration, and an unknown `channel`.
 	const columns: ColumnSpec[] = [
 		...youtubeColumns,
-		{ id: 'rating', name: 'Rating', schema: column.number() },
+		{ id: 'rating', name: 'Rating', schema: field.number() },
 	];
 	const data = {
 		url: 'https://youtu.be/abc',
@@ -147,7 +148,7 @@ test('types_define rejects a non-slug type id at definition time', () => {
 		const result = wiki.actions.types_define({
 			id: 'Not A Slug',
 			name: 'Bad',
-			columns: [{ id: 'x', name: 'X', schema: column.string() }],
+			columns: [{ id: 'x', name: 'X', schema: field.string() }],
 		});
 		expect(result.error?.name).toBe('InvalidTypeId');
 		expect(wiki.actions.types_get_all()).toHaveLength(0);
@@ -183,11 +184,11 @@ test('column rename is metadata-only; adding a column re-projects', () => {
 			id: 'youtube_video',
 			name: 'YouTube Video',
 			columns: [
-				{ id: 'url', name: 'Link', schema: column.url() },
+				{ id: 'url', name: 'Link', schema: field.url() },
 				{
 					id: 'duration',
 					name: 'Length',
-					schema: column.nullable(column.number()),
+					schema: nullable(field.number()),
 				},
 			],
 		});
@@ -198,13 +199,13 @@ test('column rename is metadata-only; adding a column re-projects', () => {
 			id: 'youtube_video',
 			name: 'YouTube Video',
 			columns: [
-				{ id: 'url', name: 'Link', schema: column.url() },
+				{ id: 'url', name: 'Link', schema: field.url() },
 				{
 					id: 'duration',
 					name: 'Length',
-					schema: column.nullable(column.number()),
+					schema: nullable(field.number()),
 				},
-				{ id: 'rating', name: 'Rating', schema: column.number() },
+				{ id: 'rating', name: 'Rating', schema: field.number() },
 			],
 		});
 		const ddlAfterAdd = project();

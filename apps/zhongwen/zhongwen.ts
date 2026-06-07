@@ -16,8 +16,8 @@
  *  - `apps/zhongwen/project.ts` → `zhongwen()` mount factory
  */
 
+import { field, jsonValue } from '@epicenter/field';
 import {
-	column,
 	createWorkspace,
 	defineActions,
 	defineKv,
@@ -30,7 +30,6 @@ import {
 } from '@epicenter/workspace';
 import { Type } from 'typebox';
 import type { Brand } from 'wellcrafted/brand';
-import type { JsonValue } from 'wellcrafted/json';
 
 export const ZHONGWEN_ID = 'epicenter-zhongwen';
 
@@ -65,21 +64,21 @@ export const asChatMessageId = (value: string): ChatMessageId =>
 // ─────────────────────────────────────────────────────────────────────────────
 
 const conversationsTable = defineTable({
-	id: column.string<ConversationId>(),
-	title: column.string(),
-	provider: column.string(),
-	model: column.string(),
-	createdAt: column.number(),
-	updatedAt: column.number(),
+	id: field.string<ConversationId>(),
+	title: field.string(),
+	provider: field.string(),
+	model: field.string(),
+	createdAt: field.number(),
+	updatedAt: field.number(),
 });
 export type Conversation = InferTableRow<typeof conversationsTable>;
 
 const chatMessagesTable = defineTable({
-	id: column.string<ChatMessageId>(),
-	conversationId: column.string<ConversationId>(),
-	role: column.enum(['user', 'assistant']),
-	parts: column.json(Type.Array(Type.Unsafe<JsonValue>(Type.Any()))),
-	createdAt: column.number(),
+	id: field.string<ChatMessageId>(),
+	conversationId: field.string<ConversationId>(),
+	role: field.select(['user', 'assistant']),
+	parts: field.json(Type.Array(jsonValue)),
+	createdAt: field.number(),
 });
 export type ChatMessage = InferTableRow<typeof chatMessagesTable>;
 

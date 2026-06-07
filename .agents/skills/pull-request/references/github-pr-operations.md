@@ -1,10 +1,10 @@
 # GitHub PR Operations
 
-## When to Read This
+## When To Read This
 
 Read when drafting PR descriptions with issue references, mentioning GitHub users, or choosing the merge strategy.
 
-### Scanning GitHub Issues Before Writing a PR Description
+## Scanning GitHub Issues Before Writing a PR Description
 
 Before drafting a PR description, run a cursory search of open GitHub issues to identify any that the PR's changes may fix, partially address, or lay groundwork for:
 
@@ -22,13 +22,13 @@ gh issue view <NUMBER> --json title,body,labels,comments
 - Bug reports where your changes improve error messages or diagnostics without fully fixing the bug
 
 **How to reference in the PR description:**
-- `Closes #123` — only if the PR fully resolves the issue
-- `Partially addresses #123` — if the PR improves the situation but doesn't fully fix it
-- `Lays groundwork for #123` — if the PR creates infrastructure that a future PR will use to fix the issue
+- `Closes #123`: only if the PR fully resolves the issue
+- `Partially addresses #123`: if the PR improves the situation but doesn't fully fix it
+- `Lays groundwork for #123`: if the PR creates infrastructure that a future PR will use to fix the issue
 
 **Be honest:** Don't claim a fix unless the changes directly address the root cause. Improved error messages or internal refactors that happen to touch related code do not count as fixes.
 
-### Verifying GitHub Usernames
+## Verifying GitHub Usernames
 
 **CRITICAL**: When mentioning GitHub users with `@username` in PR descriptions, issue comments, or any GitHub content, NEVER guess or assume usernames. Always verify programmatically using the GitHub CLI:
 
@@ -42,7 +42,7 @@ gh issue view <ISSUE_NUMBER> --json author
 
 This prevents embarrassing mistakes where you credit the wrong person. Always run the verification command before writing the @mention.
 
-### Merge Strategy
+## Merge Strategy
 
 When merging PRs, use regular merge commits (NOT squash):
 

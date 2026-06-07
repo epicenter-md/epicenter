@@ -14,7 +14,6 @@ For general CSS and Tailwind guidelines, see the `styling` skill.
 - Each component in its own folder under `$lib/components/ui/` with an `index.ts` export
 - Follow kebab-case for folder names (e.g., `dialog/`, `toggle-group/`)
 - Group related sub-components in the same folder
-- When using $state, $derived, or functions only referenced once in markup, inline them directly
 
 ## Import Patterns
 
@@ -32,19 +31,19 @@ import { Button } from '$lib/components/ui/button';
 import { Input } from '$lib/components/ui/input';
 ```
 
-**Lucide icons** (always use individual imports from `@lucide/svelte`):
+**Lucide icons** (prefer individual icon paths in this repo):
 
 ```typescript
-// Good: Individual icon imports
+// Good: individual icon paths keep dev imports narrow
 import Database from '@lucide/svelte/icons/database';
 import MinusIcon from '@lucide/svelte/icons/minus';
 import MoreVerticalIcon from '@lucide/svelte/icons/more-vertical';
 
-// Bad: Don't import multiple icons from lucide-svelte
-import { Database, MinusIcon, MoreVerticalIcon } from 'lucide-svelte';
+// Avoid adding new barrel imports in changed files
+import { Database, MinusIcon, MoreVerticalIcon } from '@lucide/svelte';
 ```
 
-The path uses kebab-case (e.g., `more-vertical`, `minimize-2`), and you can name the import whatever you want (typically PascalCase with optional Icon suffix).
+The path uses kebab-case (e.g., `more-vertical`, `minimize-2`), and you can name the import whatever you want (typically PascalCase with optional Icon suffix). If you are already editing a file with `@lucide/svelte` barrel imports, convert the touched icons to per-icon paths when it stays local to the change.
 
 ## Styling and Customization
 
@@ -78,14 +77,89 @@ Use proper component composition following shadcn-svelte patterns:
 - Ensure custom components follow the same organizational patterns
 - Consider semantic appropriateness (e.g., use section headers instead of cards for page sections)
 
-# Props Pattern
+# DOM Attachments
 
-## Always Inline Props Types
-
-Never create a separate `type Props = {...}` declaration. Always inline the type directly in `$props()`:
+For new reusable DOM behavior on elements, prefer Svelte 5 attachments:
 
 ```svelte
-<!-- BAD: Separate Props type -->
+<input
+	{@attach (node) => node.select()}
+/>
+```
+
+Use `use:` actions when you are preserving existing code or consuming a library
+that only exposes an action. If you need to pass an action through a component
+or compose it with other DOM behavior, check `fromAction` in `svelte/attachments`
+before writing adapter code yourself.
+
+This repo already uses `{@attach (node) => node.select()}` for focused edit
+fields in Matter. Follow that shape for small one-off element behavior; extract
+an attachment factory only when several call sites share the behavior or the
+setup owns cleanup.
+
+# Props Pattern
+
+## Bindable Props And Ownership
+
+Treat props as parent-owned unless the component deliberately exposes a
+two-way binding API. Svelte allows temporary prop reassignment, but mutating a
+parent-owned state proxy from a child produces an ownership warning. Do not add
+`$bindable` just to quiet that warning; decide whether the child is a controlled
+component or whether it should ask the parent to act.
+
+Use callback props for commands and one-shot events:
+
+```svelte
+<!-- BAD: child mutates parent-owned row state -->
+<script lang="ts">
+	let { row }: { row: { archived: boolean } } = $props();
+</script>
+
+<Button onclick={() => (row.archived = true)}>Archive</Button>
+
+<!-- GOOD: parent keeps ownership of the command -->
+<script lang="ts">
+	let { row, onArchive }: {
+		row: { id: string; archived: boolean };
+		onArchive: (id: string) => void;
+	} = $props();
+</script>
+
+<Button onclick={() => onArchive(row.id)}>Archive</Button>
+```
+
+Use `$bindable` for controlled component values that callers naturally bind:
+
+```svelte
+<!-- GOOD: wrapper exposes the same bindable surface as the input it wraps -->
+<script lang="ts">
+	import type { HTMLInputAttributes } from 'svelte/elements';
+	import { type WithElementRef } from '$lib/utils';
+
+	type Props = WithElementRef<HTMLInputAttributes>;
+
+	let { ref = $bindable(null), value = $bindable(), ...restProps }: Props =
+		$props();
+</script>
+
+<input bind:this={ref} bind:value {...restProps} />
+```
+
+Good bindable candidates are controlled UI values and DOM handles: `value`,
+`checked`, `open`, `ref`, `viewportRef`, and primitive state passed through from
+Bits UI or local `@epicenter/ui` components. Avoid making rich domain objects
+bindable just so a child can edit their fields. Domain actions such as archive,
+delete, select, save, or rename should usually be callback props or mutations,
+not two-way bound booleans.
+
+## Inline Simple Props Types
+
+Inline small, component-local prop shapes directly in `$props()`. A separate
+`type Props = {...}` for a one-screen component usually adds a jump without
+owning an invariant.
+
+```svelte
+<!-- NOISY: separate Props type for a simple local contract -->
 <script lang="ts">
 	type Props = {
 		selectedWorkspaceId: string | undefined;
@@ -104,29 +178,69 @@ Never create a separate `type Props = {...}` declaration. Always inline the type
 </script>
 ```
 
-## Children Prop Never Needs Type Annotation
+Keep or introduce a named `Props` type when it earns its name:
 
-The `children` prop is implicitly typed in Svelte. Never annotate it:
+- The component wraps native elements and composes `svelte/elements` types, such
+  as `HTMLInputAttributes` or `HTMLButtonAttributes`.
+- The props encode a generic relationship that would be harder to read inline.
+- The type is exported, reused, or documented as a public contract.
+- The prop shape is large enough that the destructuring becomes unreadable.
 
 ```svelte
-<!-- BAD: Annotating children -->
+<!-- GOOD: wrapper component with a real type contract -->
 <script lang="ts">
-	let { children }: { children: Snippet } = $props();
+	import type { HTMLInputAttributes } from 'svelte/elements';
+	import { type WithElementRef } from '$lib/utils';
+
+	type Props = WithElementRef<HTMLInputAttributes>;
+
+	let { ref = $bindable(null), class: className, ...restProps }: Props =
+		$props();
+</script>
+```
+
+## Type Snippet Props When The Component Has A Typed Contract
+
+Svelte turns content inside component tags into an implicit `children`
+snippet, but that does not make the component's TypeScript contract
+self-documenting. When you annotate `$props()`, type snippet props with
+`Snippet` from `svelte`; use a tuple for snippet parameters.
+
+```svelte
+<!-- BAD: typed props, untyped snippet contract -->
+<script lang="ts">
+	let { children, title, row }: {
+		children: unknown;
+		title: string;
+		row: unknown;
+	} = $props();
 </script>
 
-<!-- GOOD: children is implicitly typed -->
+<!-- GOOD: children and row are explicit snippet props -->
+<script lang="ts" generics="Row">
+	import type { Snippet } from 'svelte';
+
+	let { children, title, row }: {
+		children: Snippet;
+		title: string;
+		row: Snippet<[Row]>;
+	} = $props();
+</script>
+```
+
+If `children` is the only prop and no TypeScript contract is needed, the
+short form is fine:
+
+```svelte
 <script lang="ts">
 	let { children } = $props();
 </script>
 
-<!-- GOOD: Other props need types, but children does not -->
-<script lang="ts">
-	let { children, title, onClose }: {
-		title: string;
-		onClose: () => void;
-	} = $props();
-</script>
+{@render children()}
 ```
+
+Do not define a normal prop named `children` on a component that also accepts
+child content. Svelte reserves that name for the implicit snippet.
 
 # Self-Contained Component Pattern
 
@@ -312,6 +426,96 @@ For more complex repeated patterns (e.g., toolbar buttons with tooltips), use `{
 
 - **2 or fewer** repetitions: extraction adds indirection without meaningful savings.
 - **Structurally similar but semantically different**: if the elements serve different purposes and might diverge, keep them separate.
+
+# Single-Use Functions And Aliases: Inline Or Document
+
+If a `function`, `$derived`, or `const` (including a one-off class string) is defined in the script tag and used **only once** in the template, inline it at the call site. This covers event handlers, callbacks, derived aliases, and one-off class strings.
+
+## Why Inline?
+
+Single-use extracted bindings add indirection: the reader jumps between the script definition and the template to understand what happens on click/keydown/render. Inlining keeps cause and effect together at the point where the action happens.
+
+```svelte
+<!-- BAD: Extracted single-use function with no JSDoc or semantic value -->
+<script>
+	function handleShare() {
+		share.mutate({ id });
+	}
+
+	function handleSelectItem(itemId: string) {
+		goto(`/items/${itemId}`);
+	}
+</script>
+
+<Button onclick={handleShare}>Share</Button>
+<Item onclick={() => handleSelectItem(item.id)} />
+
+<!-- GOOD: Inlined at the call site -->
+<Button onclick={() => share.mutate({ id })}>Share</Button>
+<Item onclick={() => goto(`/items/${item.id}`)} />
+```
+
+A single-use `const` class string is the same smell: scanning it inline beats chasing a name to a definition for no reuse.
+
+```svelte
+<!-- BAD: a class string referenced once, behind a name -->
+<script lang="ts">
+	const rowClass = 'grid gap-3 rounded-md border bg-background px-3 py-3';
+</script>
+<div class={rowClass}>...</div>
+
+<!-- GOOD: the class lives where it is applied -->
+<div class="grid gap-3 rounded-md border bg-background px-3 py-3">...</div>
+```
+
+This also applies to longer handlers. If the logic is linear (guard clauses + branches, not deeply nested), inline it even if it's 10 to 15 lines:
+
+```svelte
+<!-- GOOD: Inlined keyboard shortcut handler -->
+<svelte:window onkeydown={(e) => {
+	const meta = e.metaKey || e.ctrlKey;
+	if (!meta) return;
+	if (e.key === 'k') {
+		e.preventDefault();
+		commandPaletteOpen = !commandPaletteOpen;
+		return;
+	}
+	if (e.key === 'n') {
+		e.preventDefault();
+		notesState.createNote();
+	}
+}} />
+```
+
+## The Exception: A Justifying Comment Plus A Semantic Name
+
+Keep a single-use binding extracted **only** when both conditions are met:
+
+1. It has **JSDoc or a comment** explaining why it exists as a named unit.
+2. The name provides a **clear semantic meaning** that makes the template more readable than the inlined version would be.
+
+```svelte
+<script lang="ts">
+	/**
+	 * Navigate the note list with arrow keys, wrapping at boundaries.
+	 * Operates on the flattened display-order ID list to respect date grouping.
+	 */
+	function navigateWithArrowKeys(e: KeyboardEvent) {
+		// 15 lines of keyboard navigation logic...
+	}
+</script>
+
+<!-- The semantic name communicates intent better than inlined logic would -->
+<div onkeydown={navigateWithArrowKeys} tabindex="-1">
+```
+
+A documented state-to-class map earns the same exception: when the name parks a non-obvious decision (why a cell rings amber, why digits right-align), keeping it beats burying that rationale inside a `class={[...]}` array.
+
+Without a justifying comment and a meaningful name, inline it: the indirection is not earning its keep.
+
+## Multi-Use Bindings
+
+Bindings used **2 or more times** should always stay extracted: this rule only applies to single-use bindings.
 
 # Referential Stability for Reactive Data Sources
 
@@ -509,7 +713,7 @@ In Svelte, `\uXXXX` escape sequences work in JavaScript strings (inside `<script
 <Tooltip.Content>Toggle terminal (\u2318`)</Tooltip.Content>
 <p>Close the tab, reopen\u2014your notes are there.</p>
 
-<!-- GOOD: Use actual unicode characters -->
+<!-- GOOD: write the visible text directly, using repo-approved punctuation -->
 <input placeholder="Search..." />
 <Tooltip.Content>Toggle terminal (Cmd+`)</Tooltip.Content>
 <p>Close the tab, reopen: your notes are there.</p>
@@ -530,4 +734,4 @@ JavaScript contexts are fine: these are standard JS string escapes:
 
 Common characters affected: `\u2014` (:), `\u2026` (...), `\u2318` (Cmd), `\u21e7` (Shift), `\u2192` (->).
 
-**Rule**: In HTML attributes and text content, always use the actual character. Reserve `\uXXXX` for JavaScript strings only.
+**Rule**: In HTML attributes and text content, do not use JavaScript escape sequences. Write the visible text directly, using ASCII substitutions where this repo's writing rules require them. Reserve `\uXXXX` for JavaScript strings only.

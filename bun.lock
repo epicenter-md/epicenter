@@ -1,6 +1,5 @@
 {
   "lockfileVersion": 1,
-  "configVersion": 0,
   "workspaces": {
     "": {
       "name": "epicenter",
@@ -93,6 +92,7 @@
         "@epicenter/auth": "workspace:*",
         "@epicenter/constants": "workspace:*",
         "@epicenter/encryption": "workspace:*",
+        "@epicenter/field": "workspace:*",
         "@epicenter/svelte": "workspace:*",
         "@epicenter/workspace": "workspace:*",
         "@tanstack/svelte-table": "catalog:",
@@ -147,6 +147,7 @@
         "@epicenter/auth": "workspace:*",
         "@epicenter/constants": "workspace:*",
         "@epicenter/encryption": "workspace:*",
+        "@epicenter/field": "workspace:*",
         "@epicenter/svelte": "workspace:*",
         "@epicenter/workspace": "workspace:*",
         "@tanstack/svelte-query": "catalog:",
@@ -209,6 +210,38 @@
         "typescript": "catalog:",
       },
     },
+    "apps/matter": {
+      "name": "@epicenter/matter",
+      "version": "0.0.1",
+      "dependencies": {
+        "@codemirror/commands": "^6.10.3",
+        "@codemirror/lang-markdown": "^6.5.0",
+        "@codemirror/state": "^6.6.0",
+        "@codemirror/view": "^6.41.0",
+        "@epicenter/field": "workspace:*",
+        "@tauri-apps/api": "catalog:",
+        "@tauri-apps/plugin-dialog": "^2.3.2",
+        "typebox": "catalog:",
+        "wellcrafted": "catalog:",
+        "yaml": "^2.8.0",
+      },
+      "devDependencies": {
+        "@epicenter/ui": "workspace:*",
+        "@lucide/svelte": "catalog:",
+        "@sveltejs/adapter-static": "catalog:",
+        "@sveltejs/kit": "catalog:",
+        "@sveltejs/vite-plugin-svelte": "catalog:",
+        "@tailwindcss/vite": "catalog:",
+        "@tauri-apps/cli": "catalog:",
+        "@types/bun": "catalog:",
+        "mode-watcher": "catalog:",
+        "svelte": "catalog:",
+        "svelte-check": "catalog:",
+        "tailwindcss": "catalog:",
+        "typescript": "catalog:",
+        "vite": "catalog:",
+      },
+    },
     "apps/opensidian": {
       "name": "opensidian",
       "version": "0.0.1",
@@ -216,6 +249,7 @@
         "@codemirror/autocomplete": "^6.20.1",
         "@epicenter/auth": "workspace:*",
         "@epicenter/constants": "workspace:*",
+        "@epicenter/field": "workspace:*",
         "@epicenter/skills": "workspace:*",
         "@epicenter/svelte": "workspace:*",
         "@tanstack/ai": "catalog:",
@@ -280,6 +314,7 @@
       "name": "@epicenter/reddit",
       "version": "0.0.1",
       "dependencies": {
+        "@epicenter/field": "workspace:*",
         "@epicenter/workspace": "workspace:*",
         "@sindresorhus/slugify": "catalog:",
         "arktype": "catalog:",
@@ -346,6 +381,7 @@
       "dependencies": {
         "@epicenter/auth": "workspace:*",
         "@epicenter/constants": "workspace:*",
+        "@epicenter/field": "workspace:*",
         "@epicenter/svelte": "workspace:*",
         "@epicenter/ui": "workspace:*",
         "@epicenter/workspace": "workspace:*",
@@ -394,6 +430,7 @@
         "@aptabase/tauri": "^0.4.1",
         "@aptabase/web": "^0.4.3",
         "@epicenter/constants": "workspace:*",
+        "@epicenter/field": "workspace:*",
         "@epicenter/svelte": "workspace:*",
         "@epicenter/util": "workspace:*",
         "@epicenter/workspace": "workspace:*",
@@ -466,6 +503,7 @@
       "name": "@epicenter/wiki",
       "version": "0.0.1",
       "dependencies": {
+        "@epicenter/field": "workspace:*",
         "@epicenter/workspace": "workspace:*",
         "typebox": "catalog:",
         "wellcrafted": "catalog:",
@@ -482,6 +520,7 @@
       "dependencies": {
         "@epicenter/auth": "workspace:*",
         "@epicenter/constants": "workspace:*",
+        "@epicenter/field": "workspace:*",
         "@epicenter/svelte": "workspace:*",
         "@epicenter/ui": "workspace:*",
         "@epicenter/workspace": "workspace:*",
@@ -646,10 +685,23 @@
         "typescript": "catalog:",
       },
     },
+    "packages/field": {
+      "name": "@epicenter/field",
+      "version": "0.0.1",
+      "dependencies": {
+        "typebox": "catalog:",
+        "wellcrafted": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
     "packages/filesystem": {
       "name": "@epicenter/filesystem",
       "version": "0.1.0",
       "dependencies": {
+        "@epicenter/field": "workspace:*",
         "@epicenter/util": "workspace:*",
         "@epicenter/workspace": "workspace:*",
         "@libsql/client": "^0.14.0",
@@ -720,6 +772,7 @@
       "name": "@epicenter/skills",
       "version": "0.1.0",
       "dependencies": {
+        "@epicenter/field": "workspace:*",
         "@epicenter/workspace": "workspace:*",
         "typebox": "catalog:",
         "wellcrafted": "catalog:",
@@ -827,6 +880,7 @@
       "version": "0.2.0",
       "dependencies": {
         "@epicenter/encryption": "workspace:*",
+        "@epicenter/field": "workspace:*",
         "@epicenter/identity": "workspace:*",
         "@epicenter/sync": "workspace:*",
         "@epicenter/util": "workspace:*",
@@ -838,7 +892,6 @@
         "arktype": "catalog:",
         "chokidar": "^5.0.0",
         "diff": "^8.0.3",
-        "drizzle-orm": "catalog:",
         "elysia": "^1.2.25",
         "env-paths": "^3.0.0",
         "fflate": "catalog:",
@@ -857,8 +910,6 @@
         "@noble/hashes": "^2.0.1",
         "@types/diff": "^8.0.0",
         "@types/node": "catalog:",
-        "better-sqlite3": "^12.4.1",
-        "drizzle-kit": "catalog:",
         "fake-indexeddb": "^6.2.5",
         "filenamify": "^7.0.1",
         "typescript": "catalog:",
@@ -1124,6 +1175,8 @@
 
     "@epicenter/encryption": ["@epicenter/encryption@workspace:packages/encryption"],
 
+    "@epicenter/field": ["@epicenter/field@workspace:packages/field"],
+
     "@epicenter/filesystem": ["@epicenter/filesystem@workspace:packages/filesystem"],
 
     "@epicenter/fuji": ["@epicenter/fuji@workspace:apps/fuji"],
@@ -1133,6 +1186,8 @@
     "@epicenter/identity": ["@epicenter/identity@workspace:packages/identity"],
 
     "@epicenter/landing": ["@epicenter/landing@workspace:apps/landing"],
+
+    "@epicenter/matter": ["@epicenter/matter@workspace:apps/matter"],
 
     "@epicenter/posthog-reverse-proxy": ["@epicenter/posthog-reverse-proxy@workspace:apps/posthog-reverse-proxy"],
 
@@ -1772,7 +1827,7 @@
 
     "@tauri-apps/plugin-deep-link": ["@tauri-apps/plugin-deep-link@2.4.9", "", { "dependencies": { "@tauri-apps/api": "^2.11.0" } }, "sha512-u0SKOUHnJ1wqeqXsDFq2+kASCBj9xxbG0g9XZWPy9SOmU4wXtp6b/wiYpm6oH6/5fBTQsLqnLhIvqLBRpgHJlA=="],
 
-    "@tauri-apps/plugin-dialog": ["@tauri-apps/plugin-dialog@2.7.0", "", { "dependencies": { "@tauri-apps/api": "^2.10.1" } }, "sha512-4nS/hfGMGCXiAS3LtVjH9AgsSAPJeG/7R+q8agTFqytjnMa4Zq95Bq8WzVDkckpanX+yyRHXnRtrKXkANKDHvw=="],
+    "@tauri-apps/plugin-dialog": ["@tauri-apps/plugin-dialog@2.7.1", "", { "dependencies": { "@tauri-apps/api": "^2.11.0" } }, "sha512-OK1UBXYt+ojcmxMktzzuyonYIFta8CmAASpX+CA+DTGK24KlHjhYI6x2iOJ/TjZF4N7/ACK1oFmEOjIY9IhzOQ=="],
 
     "@tauri-apps/plugin-fs": ["@tauri-apps/plugin-fs@2.5.0", "", { "dependencies": { "@tauri-apps/api": "^2.10.1" } }, "sha512-c83kbz61AK+rKjhS+je9+stIO27nXj7p9cqeg36TwkIUtxpCFTttlHHtqon6h6FN54cXjyAjlMPOJcW3mwE5XQ=="],
 
@@ -3977,8 +4032,6 @@
     "@tauri-apps/plugin-autostart/@tauri-apps/api": ["@tauri-apps/api@2.10.1", "", {}, "sha512-hKL/jWf293UDSUN09rR69hrToyIXBb8CjGaWC7gfinvnQrBVvnLr08FeFi38gxtugAVyVcTa5/FD/Xnkb1siBw=="],
 
     "@tauri-apps/plugin-clipboard-manager/@tauri-apps/api": ["@tauri-apps/api@2.10.1", "", {}, "sha512-hKL/jWf293UDSUN09rR69hrToyIXBb8CjGaWC7gfinvnQrBVvnLr08FeFi38gxtugAVyVcTa5/FD/Xnkb1siBw=="],
-
-    "@tauri-apps/plugin-dialog/@tauri-apps/api": ["@tauri-apps/api@2.10.1", "", {}, "sha512-hKL/jWf293UDSUN09rR69hrToyIXBb8CjGaWC7gfinvnQrBVvnLr08FeFi38gxtugAVyVcTa5/FD/Xnkb1siBw=="],
 
     "@tauri-apps/plugin-fs/@tauri-apps/api": ["@tauri-apps/api@2.10.1", "", {}, "sha512-hKL/jWf293UDSUN09rR69hrToyIXBb8CjGaWC7gfinvnQrBVvnLr08FeFi38gxtugAVyVcTa5/FD/Xnkb1siBw=="],
 

@@ -12,8 +12,8 @@
  *
  * `db` is a `bun:sqlite` `Database` opened with `{ readonly: true }` and
  * `PRAGMA query_only = ON`, so any errant write attempt fails fast at the
- * driver. Wrapping it in Drizzle (`drizzle(reader.db, { schema })`) is the
- * per-app peer factory's job; this primitive intentionally stays narrow.
+ * driver. Callers run raw SQL through `reader.db.query(...)`; this primitive
+ * intentionally stays narrow.
  *
  * Named `open*` rather than `attach*` because it has no Y.Doc to attach to
  * and registers no listeners. The caller owns the lifecycle through `using`
@@ -62,7 +62,7 @@ export type OpenSqliteReaderOptions = {
  *   filePath: sqlitePath(projectDir, fuji.ydoc.guid),
  * });
  * const hits = reader.search('entries', 'hello world', { limit: 25 });
- * const drizzleDb = drizzle(reader.db, { schema });
+ * const rows = reader.db.query('SELECT * FROM entries').all();
  * ```
  */
 export function openSqliteReader({ filePath }: OpenSqliteReaderOptions) {

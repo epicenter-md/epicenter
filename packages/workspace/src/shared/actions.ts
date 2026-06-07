@@ -102,7 +102,7 @@ export type ActionMeta<
  * the receiver actually sees over the WebSocket.
  */
 export const ActionMetaSchema = Type.Object({
-	type: Type.Union([Type.Literal('query'), Type.Literal('mutation')]),
+	type: Type.Enum(['query', 'mutation']),
 	title: Type.Optional(Type.String()),
 	description: Type.Optional(Type.String()),
 	input: Type.Optional(

@@ -25,6 +25,7 @@
 		"typecheck": "tsc --noEmit"
 	},
 	"dependencies": {
+		"@epicenter/field": "workspace:*",
 		"@epicenter/workspace": "workspace:*",
 		"typebox": "catalog:",
 		"wellcrafted": "catalog:",

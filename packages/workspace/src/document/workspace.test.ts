@@ -9,7 +9,7 @@ import type { Keyring } from '@epicenter/encryption';
 import { bytesToBase64 } from '@epicenter/encryption';
 import { randomBytes } from '@noble/ciphers/utils.js';
 import { Type } from 'typebox';
-import { column } from './column/index.js';
+import { field } from '@epicenter/field';
 import { defineKv } from './define-kv.js';
 import { defineTable } from './define-table.js';
 import { createWorkspace } from './workspace.js';
@@ -19,12 +19,12 @@ function toKeyring(key: Uint8Array): Keyring {
 }
 
 const notesDefinition = defineTable({
-	id: column.string(),
-	title: column.string(),
+	id: field.string(),
+	title: field.string(),
 });
 
 const sortOrderDefinition = defineKv(
-	Type.Union([Type.Literal('asc'), Type.Literal('desc')]),
+	Type.Enum(['asc', 'desc']),
 	() => 'asc' as const,
 );
 

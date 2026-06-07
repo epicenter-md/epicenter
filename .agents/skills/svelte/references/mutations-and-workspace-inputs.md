@@ -104,6 +104,57 @@ For component-local operation lifecycle, wrap the function locally:
 
 Do not create an RPC adapter only to get `isPending` for one component. Local `createMutation` gives the component a standard pending/error/success surface without pretending the operation is shared query-layer state.
 
+## Whispering RPC Pattern
+
+Read this section when editing Whispering components that use shared RPC
+adapters or component-local operation lifecycles.
+
+Whispering components consume shared RPC adapters through `.options` inside an
+accessor:
+
+```svelte
+<script lang="ts">
+	import { createMutation, createQuery } from '@tanstack/svelte-query';
+	import { rpc } from '$lib/rpc';
+
+	const playbackUrl = createQuery(() =>
+		rpc.audio.getPlaybackUrl(() => recordingId).options,
+	);
+
+	const transformRecording = createMutation(
+		() => rpc.transformer.transformRecording.options,
+	);
+</script>
+```
+
+For a component-local operation lifecycle, do not add a new RPC adapter only to
+observe `isPending`. Wrap the operation locally:
+
+```svelte
+<script lang="ts">
+	import { createMutation } from '@tanstack/svelte-query';
+	import { mutationOptions } from 'wellcrafted/query';
+	import { startManualRecording } from '$lib/operations/recording';
+
+	const startRecording = createMutation(() =>
+		mutationOptions({
+			mutationKey: ['recording', 'startManual'],
+			mutationFn: startManualRecording,
+		}),
+	);
+</script>
+```
+
+Whispering error presentation goes through `$lib/report` at the UI or operation
+boundary:
+
+```typescript
+if (error) {
+	report.error({ cause: error });
+	return;
+}
+```
+
 ## Direct Await Pattern
 
 In `.ts` files, use direct `await` because `createMutation` requires component context. For shared Wellcrafted mutations, call the mutation definition directly:
@@ -136,80 +187,7 @@ In `.svelte` files, direct `await` is still appropriate when the template does n
 
 If the next edit adds `disabled={isCopying}`, a spinner, loading text, or toast lifecycle, promote the action to `createMutation` instead of adding a one-off `$state` pending flag.
 
-## Single-Use Functions: Inline or Document
-
-If a function is defined in the script tag and used only once in the template, inline it at the call site. This applies to event handlers, callbacks, and any other single-use logic.
-
-### Why Inline?
-
-Single-use extracted functions add indirection: the reader jumps between the function definition and the template to understand what happens on click/keydown/etc. Inlining keeps cause and effect together at the point where the action happens.
-
-```svelte
-<!-- BAD: Extracted single-use function with no JSDoc or semantic value -->
-<script>
-	function handleShare() {
-		share.mutate({ id });
-	}
-
-	function handleSelectItem(itemId: string) {
-		goto(`/items/${itemId}`);
-	}
-</script>
-
-<Button onclick={handleShare}>Share</Button>
-<Item onclick={() => handleSelectItem(item.id)} />
-
-<!-- GOOD: Inlined at the call site -->
-<Button onclick={() => share.mutate({ id })}>Share</Button>
-<Item onclick={() => goto(`/items/${item.id}`)} />
-```
-
-This also applies to longer handlers. If the logic is linear (guard clauses + branches, not deeply nested), inline it even if it's 10-15 lines:
-
-```svelte
-<!-- GOOD: Inlined keyboard shortcut handler -->
-<svelte:window onkeydown={(e) => {
-	const meta = e.metaKey || e.ctrlKey;
-	if (!meta) return;
-	if (e.key === 'k') {
-		e.preventDefault();
-		commandPaletteOpen = !commandPaletteOpen;
-		return;
-	}
-	if (e.key === 'n') {
-		e.preventDefault();
-		notesState.createNote();
-	}
-}} />
-```
-
-### The Exception: JSDoc + Semantic Name
-
-Keep a single-use function extracted **only** when both conditions are met:
-
-1. It has **JSDoc** explaining why it exists as a named unit.
-2. The name provides a **clear semantic meaning** that makes the template more readable than the inlined version would be.
-
-```svelte
-<script lang="ts">
-	/**
-	 * Navigate the note list with arrow keys, wrapping at boundaries.
-	 * Operates on the flattened display-order ID list to respect date grouping.
-	 */
-	function navigateWithArrowKeys(e: KeyboardEvent) {
-		// 15 lines of keyboard navigation logic...
-	}
-</script>
-
-<!-- The semantic name communicates intent better than inlined logic would -->
-<div onkeydown={navigateWithArrowKeys} tabindex="-1">
-```
-
-Without JSDoc and a meaningful name, extract it anyway: the indirection isn't earning its keep.
-
-### Multi-Use Functions
-
-Functions used **2 or more times** should always stay extracted: this rule only applies to single-use functions.
+For when a single-use handler should be inlined at its call site versus kept as a named function, see "Single-Use Functions And Aliases" in [component and UI patterns](component-ui-patterns.md).
 
 # Commit-on-Blur for Workspace String Fields
 

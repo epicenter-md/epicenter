@@ -6,6 +6,7 @@
  */
 
 import { formatDistanceToNowStrict } from 'date-fns';
+import type { IanaTimeZone } from '@epicenter/workspace';
 
 /**
  * Format a `DateTimeString` as a human-readable relative time, e.g.
@@ -21,7 +22,7 @@ export function relativeTime(dts: string): string {
  * Format a UTC ISO `date` in the given IANA `zone` for display.
  * Renders the user's local wall-clock time (e.g. "May 25, 2026, 2:30 PM").
  */
-export function formatInZone(date: string, zone: string): string {
+export function formatInZone(date: string, zone: IanaTimeZone): string {
 	return new Intl.DateTimeFormat('en-US', {
 		timeZone: zone,
 		month: 'short',

@@ -2,9 +2,9 @@
  * Generate SQLite DDL from a workspace table's latest-version row schema.
  *
  * Callers pass `definition.schema` (a TypeBox `TObject` which is itself a
- * JSON Schema). Column storage class and nullability come from
- * `deriveStorage` / `isNullable`, so `column.nullable(column.X())` rows map
- * cleanly to nullable SQLite columns.
+ * JSON Schema). Column storage class and nullability are read from the schema
+ * structure (the lenient `deriveStorage` / `isNullable` helpers below), so
+ * `nullable(column.X())` rows map cleanly to nullable SQLite columns.
  *
  * Since `_v` is library-managed and stripped from the user-facing row schema,
  * the generated DDL never contains a `_v` column. SQLite projects only what
@@ -14,7 +14,6 @@
  */
 
 import type { TSchema } from 'typebox';
-import { deriveStorage, isNullable } from '../../column/derive.js';
 
 type JsonSchema = Record<string, unknown>;
 
@@ -108,4 +107,62 @@ function columnDef(
 
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+// ─── storage-class and nullability derivation ────────────────────────────────
+//
+// The materializer reads schemas directly: storage class and nullability fall
+// out of the JSON Schema structure, not from any column wrapper or extension
+// keyword. `FlatJsonTSchema` already restricts every column to a `~kind` with a
+// single SQLite storage class, so these reads only have to look at what is there.
+
+type SqliteStorage = 'TEXT' | 'INTEGER' | 'REAL';
+
+type SchemaShape = {
+	type?: string;
+	const?: unknown;
+	anyOf?: TSchema[];
+};
+
+function asShape(schema: TSchema): SchemaShape {
+	return schema as unknown as SchemaShape;
+}
+
+/**
+ * Derive the SQLite storage class for a column.
+ *
+ * - `string` / array / object → `TEXT` (objects and arrays are JSON-encoded)
+ * - `integer` / `boolean` → `INTEGER` (booleans store as 0/1 by SQLite convention)
+ * - `number` → `REAL`
+ * - `const`: numeric integer → `INTEGER`, otherwise `TEXT`
+ * - `anyOf` with a single non-null branch → recurse into that branch
+ * - `anyOf` mixed → `TEXT` (JSON-encoded fallback)
+ */
+function deriveStorage(schema: TSchema): SqliteStorage {
+	const s = asShape(schema);
+	if (s.type === 'integer') return 'INTEGER';
+	if (s.type === 'number') return 'REAL';
+	if (s.type === 'boolean') return 'INTEGER';
+	if (s.type === 'string') return 'TEXT';
+	if (s.type === 'array' || s.type === 'object') return 'TEXT';
+	if (s.const !== undefined) {
+		return typeof s.const === 'number' && Number.isInteger(s.const)
+			? 'INTEGER'
+			: 'TEXT';
+	}
+	if (s.anyOf) {
+		const nonNull = s.anyOf.filter((branch) => asShape(branch).type !== 'null');
+		if (nonNull.length === 1) {
+			const only = nonNull[0];
+			if (only) return deriveStorage(only);
+		}
+		return 'TEXT';
+	}
+	return 'TEXT';
+}
+
+/** Whether the column's union includes a `Type.Null()` branch. */
+function isNullable(schema: TSchema): boolean {
+	const s = asShape(schema);
+	return Boolean(s.anyOf?.some((branch) => asShape(branch).type === 'null'));
 }

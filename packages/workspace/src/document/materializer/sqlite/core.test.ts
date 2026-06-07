@@ -24,18 +24,19 @@ import {
 	type Tables,
 } from '../../../index.js';
 import { isAction, isMutation, isQuery } from '../../../shared/actions.js';
-import { column } from '../../column/index.js';
+import { field } from '@epicenter/field';
+import { nullable } from '../../nullable.js';
 import { attachSqliteMaterializerCore } from './core.js';
 
 const postsTable = defineTable({
-	id: column.string(),
-	title: column.string(),
-	published: column.nullable(column.boolean()),
+	id: field.string(),
+	title: field.string(),
+	published: nullable(field.boolean()),
 });
 
 const notesTable = defineTable({
-	id: column.string(),
-	body: column.string(),
+	id: field.string(),
+	body: field.string(),
 });
 
 const tableDefinitions = { posts: postsTable, notes: notesTable };

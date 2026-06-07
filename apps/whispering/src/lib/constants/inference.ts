@@ -92,7 +92,7 @@ export const INFERENCE = {
 
 export type InferenceProviderId = keyof typeof INFERENCE;
 
-/** Every inference provider ID, e.g. for `column.enum(INFERENCE_PROVIDER_IDS)`. */
+/** Every inference provider ID, e.g. for `field.select(INFERENCE_PROVIDER_IDS)`. */
 export const INFERENCE_PROVIDER_IDS = Object.keys(
 	INFERENCE,
 ) as InferenceProviderId[];

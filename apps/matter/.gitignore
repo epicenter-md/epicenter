@@ -1,0 +1,23 @@
+node_modules
+
+# Output
+.output
+.vercel
+.wrangler
+/.svelte-kit
+/build
+/package
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Vite
+vite.config.js.timestamp-*
+vite.config.ts.timestamp-*
+
+# Matter's derived SQLite index (sits next to each vault's matter.json, rebuilt from files)
+*.sqlite
+*.sqlite-journal
+*.sqlite-wal
+*.sqlite-shm

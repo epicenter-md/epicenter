@@ -41,12 +41,11 @@ import type { JsonValue } from 'wellcrafted/json';
  */
 export type ColumnError<Msg extends string> = `${Msg}​`;
 
-type RejectedCompositeKind =
-	| 'Object'
-	| 'Array'
-	| 'Record'
-	| 'Tuple'
-	| 'Intersect';
+// `Array` is intentionally NOT here: a list of scalars (`field.tags()` /
+// `field.multiSelect()`) is a flat JSON-TEXT column, and the final `Static<S> extends
+// JsonValue` clause still rejects a list of non-JSON elements (e.g. `Date[]`). A bare
+// object / record / tuple / intersection still routes to `field.json(...)`.
+type RejectedCompositeKind = 'Object' | 'Record' | 'Tuple' | 'Intersect';
 
 type RejectedNonJsonKind = 'BigInt' | 'Symbol' | 'Undefined' | 'Void';
 
@@ -63,8 +62,6 @@ type RejectedRefKind = 'Ref' | 'This' | 'Cyclic';
 
 type RejectedModifierKind = 'Optional' | 'Readonly';
 
-type RejectedEnumKind = 'Enum';
-
 /**
  * Two-stage flat-JSON column constraint.
  *
@@ -78,20 +75,18 @@ export type FlatJsonTSchema<S extends TSchema> = S extends {
 	? ColumnError<'Type.Transform/Codec is not allowed in defineTable columns. Transforms are not portable and break SQLite materialization. Drop the transform or move it into the migrate function.'>
 	: S extends { '~kind': infer K }
 		? K extends RejectedCompositeKind
-			? ColumnError<`Nested structures (~kind '${K & string}') cannot map to a single SQLite column. Wrap in column.json<T extends JsonValue>(schema) to store as JSON-encoded TEXT, or split into separate columns.`>
+			? ColumnError<`Nested structures (~kind '${K & string}') cannot map to a single SQLite column. Wrap in field.json(schema) to store as JSON-encoded TEXT, or split into separate columns. (A list of scalars is fine: field.tags() / field.multiSelect().)`>
 			: K extends RejectedNonJsonKind
-				? ColumnError<`'${K & string}' is not JSON-serializable. Use column.string<Brand>() if you need a TEXT representation.`>
+				? ColumnError<`'${K & string}' is not JSON-serializable. Use field.string<Brand>() if you need a TEXT representation.`>
 				: K extends RejectedNonStorableKind
 					? ColumnError<`'${K & string}' is not a storable value. Compute at read time instead.`>
 					: K extends RejectedTopKind
-						? ColumnError<`'${K & string}' has no derivable storage class. Use column.json<T extends JsonValue>(schema) for a JSON-shaped escape hatch.`>
+						? ColumnError<`'${K & string}' has no derivable storage class. Use field.json(schema) for a JSON-shaped escape hatch.`>
 						: K extends RejectedRefKind
-							? ColumnError<`Reference type '${K & string}' requires resolution and cannot live in a CRDT row. Use a branded string id (column.string<OtherRowId>()).`>
+							? ColumnError<`Reference type '${K & string}' requires resolution and cannot live in a CRDT row. Use a branded string id (field.string<OtherRowId>()).`>
 							: K extends RejectedModifierKind
-								? ColumnError<`Modifier '${K & string}' is not allowed at the column level. Use column.nullable(inner) for intentionally-empty values; optional keys aren't safe in CRDT rows.`>
-								: K extends RejectedEnumKind
-									? ColumnError<'Type.Enum is rejected at the column level. Use column.enum([...values]) which produces a Type.Union<TLiteral[]>; deriveCheck emits a CHECK constraint from union-of-const members.'>
-									: Static<S> extends JsonValue
-										? S
-										: ColumnError<'Column Static<> is not assignable to JsonValue. Common cause: Type.Unsafe<NonJsonValue>(...) (e.g. Type.Unsafe<Date>) or a Type.Base<Value> extension whose value type is Date / bigint / Uint8Array / undefined.'>
+								? ColumnError<`Modifier '${K & string}' is not allowed at the column level. Use nullable(inner) for intentionally-empty values; optional keys aren't safe in CRDT rows.`>
+								: Static<S> extends JsonValue
+									? S
+									: ColumnError<'Column Static<> is not assignable to JsonValue. Common cause: Type.Unsafe<NonJsonValue>(...) (e.g. Type.Unsafe<Date>) or a Type.Base<Value> extension whose value type is Date / bigint / Uint8Array / undefined.'>
 		: S;

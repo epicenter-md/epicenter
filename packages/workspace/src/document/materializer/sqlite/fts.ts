@@ -14,7 +14,8 @@ import Type from 'typebox';
 import { defineErrors, extractErrorMessage } from 'wellcrafted/error';
 import type { Logger } from 'wellcrafted/logger';
 import { defineQuery } from '../../../shared/actions.js';
-import type { FtsConfig, TablesRecord } from './core.js';
+import type { TablesRecord } from '../shared.js';
+import type { FtsConfig } from './core.js';
 import { quoteIdentifier } from './ddl.js';
 
 // ════════════════════════════════════════════════════════════════════════════

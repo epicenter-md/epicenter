@@ -1,17 +1,15 @@
 # Changelog Entries in PRs
 
-## When to Read This
+## When To Read This
 
 Read when preparing PR descriptions for `feat:` or `fix:` changes that require end-user changelog entries.
-
-### Changelog Entries in PRs
 
 PRs with `feat:` or `fix:` prefix MUST include a `## Changelog` section in the PR description body. These entries are automatically aggregated into GitHub Releases by `auto.release.yml`.
 
 **Rules:**
 
 - One line per user-visible change
-- Written for end users, not developers — describe the benefit, not the implementation
+- Written for end users, not developers. Describe the benefit, not the implementation
 - Use imperative mood ("Add...", "Fix...", not "Added" or "Fixes")
 - Internal-only PRs (`chore:`, `refactor:`, `docs:`) should omit the section entirely
 
@@ -28,7 +26,7 @@ PRs with `feat:` or `fix:` prefix MUST include a `## Changelog` section in the P
 ```
 ## Changelog
 - refactor(services): flatten isomorphic/ to services root
-- Bump transcribe-rs 0.2.1 → 0.2.9
+- Bump transcribe-rs 0.2.1 to 0.2.9
 ```
 
 The first examples describe user-visible outcomes. The second examples are developer shorthand that means nothing to users.

@@ -35,6 +35,7 @@
 	},
 	"dependencies": {
 		"@epicenter/auth": "workspace:*",
+		"@epicenter/field": "workspace:*",
 		"@epicenter/svelte": "workspace:*",
 		"@epicenter/workspace": "workspace:*",
 		"@epicenter/encryption": "workspace:*",

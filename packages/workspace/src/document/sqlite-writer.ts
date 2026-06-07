@@ -38,7 +38,7 @@ import { trySync } from 'wellcrafted/result';
  * silently; the writer continues with driver defaults rather than
  * failing the open.
  */
-export const SqliteWriterError = defineErrors({
+const SqliteWriterError = defineErrors({
 	/** A `PRAGMA` statement threw at execution time. */
 	PragmaSetupFailed: ({
 		pragma,
@@ -62,7 +62,7 @@ export const SqliteWriterError = defineErrors({
 		actualMode,
 	}),
 });
-export type SqliteWriterError = InferErrors<typeof SqliteWriterError>;
+type SqliteWriterError = InferErrors<typeof SqliteWriterError>;
 
 /**
  * Open (or create) a writer-side SQLite file ready for the daemon's

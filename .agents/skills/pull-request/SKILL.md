@@ -1,32 +1,48 @@
 ---
 name: pull-request
-description: 'Draft and review GitHub pull request titles and bodies for Epicenter. Use when creating a PR, running gh pr create, drafting a PR body, editing a pull request description, writing changelog entries, linking issues from a PR, choosing merge strategy, or reviewing PR text. Never include Testing, Test Plan, or Verification sections in PR bodies unless explicitly requested.'
-metadata:
-  author: epicenter
-  version: '1.0'
+description: Draft and review durable GitHub pull request titles and bodies for Epicenter. Use when creating a PR, running gh pr create, drafting or editing a PR body, writing changelog entries, linking issues, choosing merge strategy, or reviewing PR text. For local commits and branches use the git skill; for issue replies use github-issues. Never include Testing, Test Plan, or Verification sections in PR bodies unless explicitly requested.
 ---
 
 # Pull Request Guidelines
 
-## Use This For
+Use this skill for PR titles, PR bodies, changelog entries, issue closing language, GitHub username verification, reviewer guidance, and merge strategy.
 
-Use this skill to write or review PR titles, PR descriptions, changelog entries, issue closing language, GitHub username verification, reviewer guidance, and merge strategy.
+If the task is only staging, splitting, or committing local changes, use [git](../git/SKILL.md). If the task is issue triage or public issue replies, use [github-issues](../github-issues/SKILL.md). The [writing-voice](../writing-voice/SKILL.md) rules govern the prose in any body you write.
 
-If the task is only staging, splitting, or committing local changes, use [git](../git/SKILL.md). If the task is issue triage or public issue replies, use [github-issues](../github-issues/SKILL.md).
+## Default Standard
+
+A PR body is a durable explanation of the change, not a reviewer-only checklist. Write the lightest body that still makes sense after merge. Open with why the change matters, then weave in what changed with the examples a reader needs to trust it.
+
+## Pick A Body Shape
+
+Match the change to a shape, then open that shape's section in [references/body-patterns.md](references/body-patterns.md):
+
+| Change | Shape | Body in one line |
+| --- | --- | --- |
+| Narrow bug or UI fix | Focused fix | Two or three paragraphs, no headings |
+| New or changed public surface | API or feature guide | Smallest call site first, concept headings allowed |
+| Composition change, stable behavior | Refactor or architecture guide | Old shape, new shape, ownership decision |
+| Versioned release or migration | Release notes | Version heading, contents, breaking section |
+
+When unsure, default to the focused fix and add structure only when a reader would be lost without it.
 
 ## Hard Rules
 
-- Write PR descriptions as continuous narrative prose, opening with WHY.
-- Never include `## Summary`, `## Changes`, `## Testing`, `## Test Plan`, or `## Verification` sections unless the user explicitly asks.
+- Do not include `## Summary`, `## Changes`, `## Testing`, `## Test Plan`, or `## Verification` sections unless the user explicitly asks.
 - Report commands run, tests run, and verification gaps in the chat final response, not the PR body.
 - Do not list changed files. The diff tab already does that.
 - Do not include AI or tool attribution.
+- PR titles use the same conventional commit format as commits.
+- Include code examples for public API, CLI, HTTP, config, or type-signature changes.
+- Name breaking changes with old and new examples.
 - Add a `## Changelog` section only for `feat:` and `fix:` PRs with user-visible changes.
 
 ## References
 
-Load these on demand based on what you're working on:
+Load these on demand:
 
-- If working with **PR description structure, API examples, and visual communication**, read [references/pull-request-guidelines.md](references/pull-request-guidelines.md). This is style and review communication guidance.
-- If working with **changelog entries for `feat:` or `fix:` PRs**, read [references/changelog-entries.md](references/changelog-entries.md).
-- If working with **GitHub issue linking, username verification, CODEOWNERS, or merge strategy**, read [references/github-pr-operations.md](references/github-pr-operations.md). This is GitHub platform and `gh` CLI guidance for PRs.
+- Body shapes, openers, headings, framing patterns, and what to avoid: [references/body-patterns.md](references/body-patterns.md).
+- Diagram catalog (composition trees, before/after, journeys, flow, comparison tables) with when to use each: [references/visual-patterns.md](references/visual-patterns.md).
+- A full worked body to copy a structure from before drafting your own: [references/examples.md](references/examples.md).
+- Changelog entries for `feat:` or `fix:` PRs: [references/changelog-entries.md](references/changelog-entries.md).
+- Issue linking, username verification, CODEOWNERS, and merge strategy: [references/github-pr-operations.md](references/github-pr-operations.md).

@@ -13,7 +13,6 @@
  * import {
  *   attachIndexedDb,
  *   attachRichText,
- *   column,
  *   createDeviceId,
  *   createDisposableCache,
  *   createWorkspace,
@@ -22,13 +21,14 @@
  *   openCollaboration,
  *   roomWsUrl,
  * } from '@epicenter/workspace';
+ * import { field } from '@epicenter/field';
  * import type { AuthClient } from '@epicenter/auth';
  * import type { OwnerId } from '@epicenter/identity';
  * import * as Y from 'yjs';
  *
  * const posts = defineTable({
- *   id: column.string(),
- *   title: column.string(),
+ *   id: field.string(),
+ *   title: field.string(),
  * });
  * declare const auth: AuthClient;
  * declare const ownerId: OwnerId;
@@ -139,21 +139,16 @@ export type { ProjectDir } from './shared/types';
 // ID + DATE PRIMITIVES
 // ════════════════════════════════════════════════════════════════════════════
 
-export { DateTimeString } from './shared/datetime-string';
-export { IANA_TIME_ZONE_FORMAT, IanaTimeZone } from './shared/iana-time-zone';
+export { DateTimeString } from '@epicenter/field';
+export { IanaTimeZone } from './shared/iana-time-zone';
 export type { Guid, Id } from './shared/id';
 export { generateGuid, generateId } from './shared/id';
 
 // ════════════════════════════════════════════════════════════════════════════
-// COLUMN PRIMITIVES (TypeBox-native)
+// EMPTINESS AXIS (nullable: substrate value policy)
 // ════════════════════════════════════════════════════════════════════════════
 
-export {
-	type ColumnError,
-	column,
-	type FlatJsonTSchema,
-	type Infer,
-} from './document/column/index';
+export { nullable } from './document/nullable';
 
 // ════════════════════════════════════════════════════════════════════════════
 // DOCUMENT PRIMITIVES
@@ -179,10 +174,6 @@ export {
 	typedDispatch,
 } from './document/dispatch.js';
 export { docGuid } from './document/doc-guid.js';
-export {
-	type TablesToDrizzleSchema,
-	tablesToDrizzleSchema,
-} from './document/drizzle-schema.js';
 // One-shot HTTP read of a hosted room: GET the snapshot into a throwaway doc.
 // The atomic snapshot lets a relay-only doc be read without a live
 // `openCollaboration` session.

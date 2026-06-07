@@ -6,7 +6,7 @@
  */
 
 import { Type } from 'typebox';
-import { column } from '../document/column/index';
+import { field } from '@epicenter/field';
 import { defineKv } from '../document/define-kv';
 import { defineTable } from '../document/define-table';
 
@@ -15,41 +15,41 @@ import { defineTable } from '../document/define-table';
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export const postDefinition = defineTable({
-	id: column.string(),
-	title: column.string(),
-	views: column.number(),
+	id: field.string(),
+	title: field.string(),
+	views: field.number(),
 });
 
 export const noteDefinition = defineTable({
-	id: column.string(),
-	title: column.string(),
-	content: column.string(),
-	tags: column.json(Type.Array(Type.String())),
-	createdAt: column.number(),
-	updatedAt: column.number(),
+	id: field.string(),
+	title: field.string(),
+	content: field.string(),
+	tags: field.json(Type.Array(Type.String())),
+	createdAt: field.number(),
+	updatedAt: field.number(),
 });
 
 export const heavyNoteDefinition = defineTable({
-	id: column.string(),
-	title: column.string(),
-	content: column.string(),
-	summary: column.string(),
-	tags: column.json(Type.Array(Type.String())),
-	createdAt: column.number(),
-	updatedAt: column.number(),
+	id: field.string(),
+	title: field.string(),
+	content: field.string(),
+	summary: field.string(),
+	tags: field.json(Type.Array(Type.String())),
+	createdAt: field.number(),
+	updatedAt: field.number(),
 });
 
 export const eventDefinition = defineTable({
-	id: column.string(),
-	type: column.enum(['command', 'event']),
-	name: column.string(),
-	payload: column.string(),
-	timestamp: column.number(),
+	id: field.string(),
+	type: field.select(['command', 'event']),
+	name: field.string(),
+	payload: field.string(),
+	timestamp: field.number(),
 });
 
 export const settingsDefinition = defineKv(
 	Type.Object({
-		theme: Type.Union([Type.Literal('light'), Type.Literal('dark')]),
+		theme: Type.Enum(['light', 'dark']),
 		fontSize: Type.Number(),
 	}),
 	() => ({ theme: 'light' as const, fontSize: 14 }),

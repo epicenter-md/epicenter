@@ -1,9 +1,6 @@
 ---
 name: svelte
-description: 'Svelte 5 component patterns for `.svelte` files: runes, snippets, keyed lifecycles, `{#await}`, TanStack Query, SvelteMap, shadcn-svelte, and workspace observers. Use when editing Svelte components or Svelte state modules.'
-metadata:
-  author: epicenter
-  version: '2.1'
+description: Svelte 5 component and state-module patterns for Epicenter apps. Use when editing `.svelte`, `.svelte.ts`, or Svelte UI state code involving runes, `$props`, snippets, keyed lifecycles, `{#await}`, TanStack Query, SvelteMap, shadcn-svelte, or workspace observers.
 ---
 
 # Svelte Guidelines
@@ -15,6 +12,15 @@ Use this skill for Svelte 5 components and Svelte state modules in Epicenter app
 - [Svelte](https://github.com/sveltejs/svelte): Svelte 5 framework with runes and fine-grained reactivity
 - [shadcn-svelte](https://github.com/huntabyte/shadcn-svelte): Port of shadcn/ui for Svelte with Bits UI primitives
 - [shadcn-svelte-extras](https://github.com/ieedan/shadcn-svelte-extras): Additional components for shadcn-svelte
+
+## Source Checks
+
+- Check [Svelte `$props`](https://svelte.dev/docs/svelte/$props), [`$bindable`](https://svelte.dev/docs/svelte/$bindable), and [snippets](https://svelte.dev/docs/svelte/snippet) before changing prop ownership, `bind:` APIs, or `children` snippet typing rules.
+- Check [Svelte `{#key}`](https://svelte.dev/docs/svelte/key), [`{#await}`](https://svelte.dev/docs/svelte/await), and [lifecycle hooks](https://svelte.dev/docs/svelte/lifecycle-hooks) before changing keyed resource or async readiness guidance.
+- Check [Svelte `{@attach}`](https://svelte.dev/docs/svelte/@attach), [`use:`](https://svelte.dev/docs/svelte/use), and [`svelte/attachments`](https://svelte.dev/docs/svelte/svelte-attachments) before changing reusable DOM behavior, actions, or attachment guidance.
+- Check [Svelte `svelte/reactivity`](https://svelte.dev/docs/svelte/svelte-reactivity) before changing `SvelteMap`, `SvelteSet`, or reactive collection guidance.
+- Check the [Svelte 5 migration guide](https://svelte.dev/docs/svelte/v5-migration-guide) before changing legacy API avoidance, event syntax, slot migration, or callback-prop guidance.
+- Check [TanStack Svelte Query `createMutation`](https://tanstack.com/query/v5/docs/framework/svelte/reference/functions/createMutation) and local installed types before changing mutation lifecycle guidance.
 
 ## Upstream Grounding
 
@@ -44,70 +50,28 @@ Use this skill when you need to:
 ## Svelte 5 Baseline
 
 - Use `$state` for reactive values that the component mutates. Use `$state.raw` for large reassigned objects or handles that should not be deep-proxied.
-- Prefer `$derived` for computed state. Treat `$effect` as an escape hatch for DOM integration, analytics, subscriptions, and external systems.
+- Prefer `$derived` for computed state. Treat `$effect` as a browser-only escape hatch for DOM integration, analytics, subscriptions, and external systems. A returned cleanup runs before the effect re-runs and when the component is destroyed.
 - Props can change. Values derived from `$props()` should usually be `$derived`, not one-time initialization.
-- Prefer snippets and `{@render}` over slots for new Svelte 5 code. Type snippet props with `Snippet<[...args]>`.
-- Avoid legacy patterns in runes-mode code: `$:` declarations, `export let`, `on:click`, `<svelte:component>`, `<svelte:self>`, `beforeUpdate`, `afterUpdate`, and `createEventDispatcher`.
+- Treat props as parent-owned by default. Use callback props for commands and `$bindable` only for intentional two-way APIs such as UI wrappers, `bind:value`, `bind:open`, and `bind:ref`.
+- Prefer snippets and `{@render}` over slots for new Svelte 5 code. Type exposed snippet props with `Snippet` from `svelte`; use tuple parameters such as `Snippet<[Row]>`.
+- Avoid legacy patterns in runes-mode code: `$:` declarations, `export let`, `on:click`, `<slot>`, `<svelte:component>`, `<svelte:self>`, `beforeUpdate`, `afterUpdate`, and `createEventDispatcher`.
+- Use event attributes and callback props: `onclick={...}`, `onkeydown={...}`, and `onSelect={() => ...}` style props. Do not add `on:` directives or dispatch component events in new runes-mode code.
 
 ## Core Decisions
 
 - If a disposable resource identity depends on a prop, let the parent own mount and unmount with `{#key}` or `{#if}`; open the resource synchronously in the child. Read [lifecycle and reactivity](references/lifecycle-and-reactivity.md).
 - If readiness is a stable promise, use `{#await}` in the template instead of a `$state(false)` flag and a cancellation effect.
-- Inline shallow property aliases. Keep `$derived` and `{@const}` only when they compute, narrow, or stabilize something useful.
+- Inline shallow property aliases and single-use script helpers (a `function`, `$derived`, or one-off `const` used once in the template). Keep one extracted only when it computes, narrows, or stabilizes something useful, or when a justifying comment plus a semantic name makes the template read better. Read [component and UI patterns](references/component-ui-patterns.md).
 - Map finite unions with a `satisfies Record` lookup, not nested ternaries or `$derived.by()` switches.
-- Use `SvelteMap` for ID-keyed collections where individual entries need to update reactively. Convert maps to arrays with `$derived` before passing them to components.
+- Use `SvelteMap` for ID-keyed collections where `get`, `has`, `size`, or iteration should update reactively. Values inside a `SvelteMap` are not deep-proxied, so store reactive row objects or replace values when nested data changes. Convert maps to stable arrays with `$derived` before passing them to table-like consumers.
+- For new reusable DOM behavior on elements, prefer `{@attach}` attachments over new `use:` actions. Keep `use:` for existing code or libraries that only expose actions.
 - Create TanStack Query mutations in `.svelte` files and call `mutation.mutate(...)` directly from template handlers unless the action earns a semantic helper. Read [mutations and workspace inputs](references/mutations-and-workspace-inputs.md).
 - For workspace string fields, prefer commit-on-blur over writing a CRDT transaction on every keystroke.
-- Keep component props inline and push large view-mode branches into focused child components. Read [component and UI patterns](references/component-ui-patterns.md).
+- Keep simple component props inline. Use named `Props` only when a wrapper, generic relationship, exported contract, or native DOM type composition earns it. Push large view-mode branches into focused child components. Read [component and UI patterns](references/component-ui-patterns.md).
 - Use local `@epicenter/ui` loading, empty, pending, and tooltip components before ad hoc markup.
-
-## TanStack Query With Whispering RPC
-
-Whispering components consume shared RPC adapters through `.options` inside an accessor:
-
-```svelte
-<script lang="ts">
-	import { createMutation, createQuery } from '@tanstack/svelte-query';
-	import { rpc } from '$lib/rpc';
-
-	const playbackUrl = createQuery(() =>
-		rpc.audio.getPlaybackUrl(() => recordingId).options,
-	);
-
-	const transformRecording = createMutation(
-		() => rpc.transformer.transformRecording.options,
-	);
-</script>
-```
-
-For a component-local operation lifecycle, do not add a new RPC adapter only to observe `isPending`. Wrap the operation locally:
-
-```svelte
-<script lang="ts">
-	import { createMutation } from '@tanstack/svelte-query';
-	import { mutationOptions } from 'wellcrafted/query';
-	import { startManualRecording } from '$lib/operations/recording';
-
-	const startRecording = createMutation(() =>
-		mutationOptions({
-			mutationKey: ['recording', 'startManual'],
-			mutationFn: startManualRecording,
-		}),
-	);
-</script>
-```
-
-Whispering error presentation goes through `$lib/report` at the UI or operation boundary:
-
-```typescript
-if (error) {
-	report.error({ cause: error });
-	return;
-}
-```
 
 ## Reference Map
 
-- [Lifecycle and reactivity](references/lifecycle-and-reactivity.md): keyed resources, async gates, shallow aliases, value maps, `SvelteMap`, table state, state modules.
-- [Mutations and workspace inputs](references/mutations-and-workspace-inputs.md): TanStack Query mutation placement, inline handlers, commit-on-blur.
-- [Component and UI patterns](references/component-ui-patterns.md): shadcn-svelte, props, self-contained components, branching limits, repetitive markup, loading and empty states, template gotchas.
+- Read [Lifecycle and reactivity](references/lifecycle-and-reactivity.md) when a change touches keyed resources, readiness promises, `$effect` cleanup, shallow aliases, value maps, `SvelteMap`, table state, or `.svelte.ts` state modules.
+- Read [Mutations and workspace inputs](references/mutations-and-workspace-inputs.md) when a change touches TanStack Query mutation placement, inline handlers, async button states, direct `await`, or workspace-backed text inputs.
+- Read [Component and UI patterns](references/component-ui-patterns.md) when a change touches shadcn-svelte imports, `$props` typing, `$bindable`, snippets, DOM attachments, self-contained dialogs, view branching, repetitive markup, single-use helper inlining, loading or empty states, prop-first derivation, or template text gotchas.

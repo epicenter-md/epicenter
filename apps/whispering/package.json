@@ -99,6 +99,7 @@
 		"@aptabase/tauri": "^0.4.1",
 		"@aptabase/web": "^0.4.3",
 		"@epicenter/constants": "workspace:*",
+		"@epicenter/field": "workspace:*",
 		"@epicenter/svelte": "workspace:*",
 		"@epicenter/util": "workspace:*",
 		"@epicenter/workspace": "workspace:*",

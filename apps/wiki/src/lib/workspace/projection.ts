@@ -152,8 +152,8 @@ type SchemaShape = { type?: string; const?: unknown; anyOf?: TSchema[] };
 /**
  * SQLite storage class for a column schema. Mirrors the workspace materializer's
  * `deriveStorage` (which is not exported from the package), including the
- * `const`/literal branch, so a `column.literal(5)` column derives INTEGER like
- * the real one rather than silently falling through to TEXT.
+ * `const` branch, so an integer-`const` column (`Type.Literal(5)`) derives
+ * INTEGER like the real one rather than silently falling through to TEXT.
  */
 function deriveStorage(schema: TSchema): 'TEXT' | 'INTEGER' | 'REAL' {
 	const s = schema as SchemaShape;

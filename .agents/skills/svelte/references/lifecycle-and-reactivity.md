@@ -99,12 +99,11 @@ Bare `{:then}` is valid Svelte when the resolved promise value is unused. In thi
 Three problems, every time:
 1. **One idea, three primitives.** A state var, a subscription effect, and an if/else branch collectively say what `{#await}` says in four lines.
 2. **Silent unhandled rejections.** The `.then()` chain drops errors on the floor. `{#await}`'s `{:catch}` makes failure explicit and catchable.
-3. **Manual cancellation.** The `cancelled` flag exists because `.then()` fires after unmount. `{#await}` tears down the subscription when the block does.
+3. **Manual stale-result handling.** The `cancelled` flag exists because `.then()` can fire after the branch is gone. `{#await}` keeps the pending, fulfilled, and rejected render states tied to the template branch instead of scattering that state across a flag and an effect.
 
 ### When you still need `$state` flags
 
-`{#await}` is for **one stable promise** driving one render branch. Reach for `$state` + `$effect` only when:
-- The flag is toggled imperatively by user action (`isSaving` around an `await save()` in a click handler).
+`{#await}` is for **one stable promise** driving one render branch. Reach for `$state` + `$effect` only when:Wait, I think you're good now. Like you can now apply the actual fix on top.er).
 - You're composing multiple promises with custom logic (race, timeout, retry).
 - The flag reflects an external reactive source (`$derived(query.isPending)` from TanStack Query, a Svelte store, `createSubscriber`).
 
@@ -268,7 +267,14 @@ See `docs/articles/record-lookup-over-nested-ternaries.md` for rationale.
 
 # When to Use SvelteMap vs $state
 
-Use `SvelteMap` when items have stable IDs and you need keyed lookup. Use `$state` for primitives, local UI booleans, and sequential data without identity.
+Use `SvelteMap` when items have stable IDs and you need keyed lookup. Reads of
+`get`, `has`, `size`, and iteration participate in Svelte reactivity when they
+happen inside a template, `$derived`, or `$effect`. Use `$state` for primitives,
+local UI booleans, and sequential data without identity.
+
+`SvelteMap` does not deep-proxy its values. If nested fields must update
+reactively, store row objects that are already reactive, mutate through the
+workspace table API, or replace the map value with `set(id, next)`.
 
 | Data Shape | Use | Example |
 |---|---|---|
@@ -286,7 +292,7 @@ Use `SvelteMap` when items have stable IDs and you need keyed lookup. Use `$stat
 let conversations = $state<Conversation[]>(readAll());
 const metadata = $derived(conversations.find((c) => c.id === id)); // O(n) scan
 
-// Good: O(1) lookups, per-key reactivity, stable $derived array
+// Good: O(1) lookups, per-key map reactivity, stable $derived array
 const conversationsMap = fromTable(workspace.tables.conversations);
 const conversations = $derived(
 	conversationsMap.values().toArray().sort((a, b) => b.updatedAt - a.updatedAt),

@@ -8,8 +8,8 @@
  *
  * For ranked FTS5 search plus snippet helpers, use `openSqliteReader`
  * instead; this function intentionally returns a bare `bun:sqlite`
- * `Database` so callers can `db.query(...).all(...)` (or wrap it with
- * Drizzle) without extra ceremony.
+ * `Database` so callers can `db.query(...).all(...)` without extra
+ * ceremony.
  */
 
 import type { Database } from 'bun:sqlite';

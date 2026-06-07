@@ -282,8 +282,7 @@ column.string<T extends string = string>(opts?) // TEXT. T may be a branded stri
 column.number(opts?)                  // REAL. Refinements: minimum, maximum, multipleOf, etc.
 column.integer(opts?)                 // INTEGER. Same options as number, plus integer-only constraint.
 column.boolean(opts?)                 // INTEGER (0/1). Description-only options.
-column.enum([...], opts?)             // TEXT, anyOf-of-literals. Materializer derives CHECK from members.
-column.literal(value, opts?)          // TEXT/INTEGER, exactly the given value. Primary use: _v markers.
+column.enum([...], opts?)             // TEXT, native enum keyword (= field.select). Static is the literal union.
 column.json<T extends JsonValue>(schema?, opts?)  // TEXT JSON-encoded. T must satisfy JsonValue.
 ```
 

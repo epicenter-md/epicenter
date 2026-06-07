@@ -1,0 +1,12 @@
+{
+	"fields": {
+		"title": { "type": "string" },
+		"status": { "type": "string", "enum": ["draft", "ready", "published", "archived"] },
+		"format": { "type": "string", "enum": ["article", "carousel", "video"] },
+		"destinations": { "type": "array", "items": { "type": "string" } },
+		"publishDate": { "type": "string" },
+		"duration": { "type": "integer" },
+		"featured": { "type": "boolean" },
+		"url": { "type": "string", "format": "uri" }
+	}
+}

@@ -9,14 +9,15 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { column, createWorkspace, defineTable } from '../index.js';
+import { createWorkspace, defineTable } from '../index.js';
+import { field } from '@epicenter/field';
 import { attachBunSqliteMaterializer } from './materializer/sqlite/bun-sqlite.js';
 import { openSqliteReader } from './open-sqlite-reader.js';
 
 const entriesTable = defineTable({
-	id: column.string(),
-	title: column.string(),
-	body: column.string(),
+	id: field.string(),
+	title: field.string(),
+	body: field.string(),
 });
 
 let workDir: string;

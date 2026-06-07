@@ -1,15 +1,16 @@
-import { column, defineTable, type InferTableRow } from '@epicenter/workspace';
+import { field } from '@epicenter/field';
+import { defineTable, nullable, type InferTableRow } from '@epicenter/workspace';
 import type { FileId } from './ids.js';
 
 export const filesTable = defineTable({
-	id: column.string<FileId>(),
-	name: column.string(),
-	parentId: column.nullable(column.string<FileId>()),
-	type: column.enum(['file', 'folder']),
-	size: column.number(),
-	createdAt: column.number(),
-	updatedAt: column.number(),
-	trashedAt: column.nullable(column.number()),
+	id: field.string<FileId>(),
+	name: field.string(),
+	parentId: nullable(field.string<FileId>()),
+	type: field.select(['file', 'folder']),
+	size: field.number(),
+	createdAt: field.number(),
+	updatedAt: field.number(),
+	trashedAt: nullable(field.number()),
 });
 
 /** File metadata row derived from the files table definition */

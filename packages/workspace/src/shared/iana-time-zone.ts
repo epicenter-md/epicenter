@@ -8,18 +8,12 @@
  * valid; any zone it rejects is not. This avoids a hand-maintained regex and
  * keeps the predicate in sync with whatever the host runtime supports.
  *
- * Paired with `DateTimeString` for zoned-datetime composition: see
- * `column.dateTime()` + `column.ianaTimeZone()` for the two-field pattern.
+ * Paired with `DateTimeString` for zoned-datetime composition: a
+ * `field.datetime()` instant plus a `field.string<IanaTimeZone>()` zone, the
+ * `<field>` + `<field>Zone` convention.
  */
 
 import type { Brand } from 'wellcrafted/brand';
-
-/**
- * The TypeBox format-registry key for IANA timezone strings. Registered once
- * by `column.ianaTimeZone()` at module load using `Intl.DateTimeFormat` as
- * the validator.
- */
-export const IANA_TIME_ZONE_FORMAT = 'iana-time-zone';
 
 /**
  * Branded IANA timezone identifier.

@@ -11,7 +11,7 @@ import { KV_KEY } from './keys.js';
 import { createKv } from './kv.js';
 
 const themeSchema = Type.Object({
-	mode: Type.Union([Type.Literal('light'), Type.Literal('dark')]),
+	mode: Type.Enum(['light', 'dark']),
 });
 const themeDefault = () => ({ mode: 'light' as const });
 

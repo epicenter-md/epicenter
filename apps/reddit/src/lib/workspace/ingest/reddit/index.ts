@@ -60,7 +60,7 @@ type RedditImportTarget = RedditImport;
  *
  * CSV schemas use arktype optionals (`'title?': 'string'`) which produce
  * `undefined` for missing keys. Workspace tables use TypeBox
- * `column.nullable(column.string())` which stores `null`. Normalize at the
+ * `nullable(field.string())` which stores `null`. Normalize at the
  * boundary so the stored row round-trips cleanly through validation on read.
  */
 function nullifyUndefined(
