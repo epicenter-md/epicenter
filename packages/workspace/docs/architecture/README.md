@@ -25,7 +25,7 @@ System architecture documentation for Epicenter's distributed sync system.
 ### Connection Rules
 
 ```
-Client ──► Remote Server  ✅  (WebSocket, HTTP — data sync, AI, auth)
+Client ──► Remote Server  ✅  (WebSocket, HTTP: data sync, AI, auth)
 Client ──► Client         ✅  (via YJS action dispatch, not direct connection)
 Server ──► Server         ✅  (WebSocket)
 Server ──► Client         ✅  (via YJS action dispatch, not direct connection)

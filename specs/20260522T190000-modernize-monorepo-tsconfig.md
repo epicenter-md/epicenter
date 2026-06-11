@@ -34,7 +34,7 @@ Leaf configs drifted into several near-identical-but-not shapes. Representative
 samples:
 
 ```jsonc
-// packages/workspace, filesystem, skills, cli, util, sync  — "bun library"
+// packages/workspace, filesystem, skills, cli, util, sync : "bun library"
 {
 	"extends": "../../tsconfig.base.json",
 	"compilerOptions": {
@@ -45,7 +45,7 @@ samples:
 	}
 }
 
-// packages/encryption — same, plus a redundant re-declaration
+// packages/encryption: same, plus a redundant re-declaration
 {
 	"extends": "../../tsconfig.base.json",
 	"compilerOptions": {
@@ -55,7 +55,7 @@ samples:
 	}
 }
 
-// packages/constants — the outlier: a SECOND module strategy
+// packages/constants: the outlier: a SECOND module strategy
 {
 	"extends": ["../../tsconfig.base.json"],
 	"compilerOptions": {
@@ -67,7 +67,7 @@ samples:
 	"exclude": ["node_modules", "dist"]  // <-- node_modules is default; dist does not exist
 }
 
-// apps/tab-manager — orphaned: extends ONLY its generated wxt config,
+// apps/tab-manager: orphaned: extends ONLY its generated wxt config,
 // re-declares 9 options by hand, and is missing the repo's extra strict flags
 {
 	"extends": "./.wxt/tsconfig.json",

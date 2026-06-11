@@ -234,7 +234,7 @@ Three honest commits, one PR. No staged migration: there's no durable contract t
 - [x] **2.1** `packages/server/src/middleware/require-url-owner-id-matches-auth.ts:24` calls `RequestGuardError.OwnerMismatch()`.
 - [x] **2.2** `packages/server/src/middleware/require-origin-for-cookie-mutations.ts:28` calls `RequestGuardError.ForbiddenOrigin()`.
 - [x] **2.3** `packages/server/src/middleware/require-origin-for-cookie-mutations.test.ts:30` asserts `body.error.name === 'ForbiddenOrigin'`.
-- [x] **2.4** `apps/api/src/autumn-gates.ts` — all four sites swapped (lines 82, 86, 90, 104, and 149-152 for `AssetError.StorageLimitExceeded`).
+- [x] **2.4** `apps/api/src/autumn-gates.ts`: all four sites swapped (lines 82, 86, 90, 104, and 149-152 for `AssetError.StorageLimitExceeded`).
 - [x] **2.5** `bun typecheck` clean across all referenced packages.
 - [x] **2.6** `bun test` clean in `packages/server`.
 
@@ -281,7 +281,7 @@ The first three are resolved; the last two remain intentionally deferred. Kept h
 
 3. ~~**CI guard: grep vs ESLint rule?**~~ **Resolved.** Shipped as a Biome GritQL plugin (`scripts/biome/c-json-errors.grit`) running under `bun run lint:check`. AST-precise; runs in CI via `.github/workflows/ci.format.yml`. Commit `fbbf8f42d`.
 
-4. **Should `AssetError` get a custom error class like `AiChatHttpError`?** **Deferred.** Asset reads go through `auth.fetch` directly, which returns the `Response` — clients branch on `body.error.name` without a throw-bridge. Add a custom error class only if an adapter (analogous to TanStack AI's) forces one. Revisit when an asset SDK gains an adapter that swallows the body.
+4. **Should `AssetError` get a custom error class like `AiChatHttpError`?** **Deferred.** Asset reads go through `auth.fetch` directly, which returns the `Response`: clients branch on `body.error.name` without a throw-bridge. Add a custom error class only if an adapter (analogous to TanStack AI's) forces one. Revisit when an asset SDK gains an adapter that swallows the body.
 
 5. **Should the status code be encoded into the variant definition?** **Deferred.** Audit (2026-05-24) found all variant-to-status mappings are 1:1 across 18 call sites with zero wrong-status bugs. Adding a sidecar map would couple `packages/constants` to Hono's `ContentfulStatusCode` (or split the map into `packages/server` away from the variant definition). Adding `httpStatus` to the variant body pollutes the wire shape. Revisit when: a variant first appears at two different status codes.
 

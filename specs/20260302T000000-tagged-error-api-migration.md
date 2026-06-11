@@ -1,6 +1,6 @@
 # Tagged Error Migration Plan
 
-Based on [PR #99](https://github.com/wellcrafted-dev/wellcrafted/pull/99) — the `createTaggedError` redesign with flat fields and sealed `.withMessage()`.
+Based on [PR #99](https://github.com/wellcrafted-dev/wellcrafted/pull/99): the `createTaggedError` redesign with flat fields and sealed `.withMessage()`.
 
 > **⚠️ Note on `cause` and `underlyingError` patterns**: This spec was written when `cause`/`underlyingError` were typed as `string` and call sites used `extractErrorMessage(error)`. The current pattern types `cause` as `unknown` and calls `extractErrorMessage(cause)` inside the constructor's message template. Call sites pass `{ cause: error }` (the raw caught error). See the `services-layer` skill for the updated pattern.
 
@@ -222,7 +222,7 @@ InvalidAcceleratorErr({ reason: 'generated_invalid', accelerator })
 
 ### ResponseError ✅ Mode 2 (mechanical migration)
 
-Already had `.withContext<{ status }>()` — just flatten.
+Already had `.withContext<{ status }>()`: just flatten.
 
 ```ts
 export const { ResponseError, ResponseErr } =
@@ -261,7 +261,7 @@ ParseJsonErr({ value, parseError: extractErrorMessage(e) })
 
 ---
 
-### ExtensionError ✅ Mode 2 (dormant — zero call sites)
+### ExtensionError ✅ Mode 2 (dormant: zero call sites)
 
 Flatten context fields, derive message from `operation` when present.
 
@@ -284,7 +284,7 @@ export const { ExtensionError, ExtensionErr } = createTaggedError('ExtensionErro
 
 ---
 
-### OsServiceError ✅ Mode 2 (no change — never called)
+### OsServiceError ✅ Mode 2 (no change: never called)
 
 ```ts
 export const { OsServiceError, OsServiceErr } =
@@ -292,7 +292,7 @@ export const { OsServiceError, OsServiceErr } =
         .withMessage(() => 'OS service operation failed');
 ```
 
-### LocalShortcutServiceError ✅ Mode 2 (no change — never called)
+### LocalShortcutServiceError ✅ Mode 2 (no change: never called)
 
 ```ts
 const { LocalShortcutServiceError } =
@@ -306,7 +306,7 @@ const { LocalShortcutServiceError } =
 
 These errors have diverse, context-specific messages that can't be meaningfully templated.
 
-### TextServiceError — Mode 1
+### TextServiceError: Mode 1
 
 6+ distinct messages across 3 platform variants (desktop/web/extension). Platform name, operation, and underlying error all vary independently.
 
@@ -317,7 +317,7 @@ export const { TextServiceError, TextServiceErr } =
 
 ---
 
-### RecorderServiceError — Mode 1
+### RecorderServiceError: Mode 1
 
 10+ distinct messages across 3 recorder backends (navigator/cpal/ffmpeg). Operation context and failure mode vary per site.
 
@@ -328,7 +328,7 @@ export const { RecorderServiceError, RecorderServiceErr } =
 
 ---
 
-### CompletionServiceError — Mode 1
+### CompletionServiceError: Mode 1
 
 10+ messages per provider (OpenAI-compatible, Anthropic, Groq). Status-code-specific user-actionable guidance. Clearest Mode 1 case.
 
@@ -339,7 +339,7 @@ export const { CompletionServiceError, CompletionServiceErr } =
 
 ---
 
-### DbServiceError — Mode 1
+### DbServiceError: Mode 1
 
 25+ call sites across file-system and desktop implementations. Messages vary by entity type and operation.
 
@@ -350,7 +350,7 @@ export const { DbServiceError, DbServiceErr } =
 
 ---
 
-### NotificationServiceError — Mode 1
+### NotificationServiceError: Mode 1
 
 4 distinct messages. One embeds a dynamic `id`. All embed `extractErrorMessage(error)`.
 
@@ -361,7 +361,7 @@ export const { NotificationServiceError, NotificationServiceErr } =
 
 ---
 
-### PlaySoundServiceError — Mode 1
+### PlaySoundServiceError: Mode 1
 
 Single live call site embeds `extractErrorMessage(error)`.
 
@@ -372,7 +372,7 @@ export const { PlaySoundServiceError, PlaySoundServiceErr } =
 
 ---
 
-### DownloadServiceError — Mode 1
+### DownloadServiceError: Mode 1
 
 3 distinct messages with platform-specific phrasing plus dynamic error detail.
 
@@ -383,7 +383,7 @@ export const { DownloadServiceError, DownloadServiceErr } =
 
 ---
 
-### ConnectionError — Mode 1
+### ConnectionError: Mode 1
 
 Call sites append `extractErrorMessage(error)`. Current sealed message discards that detail.
 
@@ -394,7 +394,7 @@ export const { ConnectionError, ConnectionErr } =
 
 ---
 
-### AnalyticsServiceError — Mode 1
+### AnalyticsServiceError: Mode 1
 
 2 call sites with platform-specific wording plus `extractErrorMessage(error)`.
 
@@ -406,9 +406,9 @@ export { AnalyticsServiceErr, AnalyticsServiceError };
 
 ---
 
-### AutostartServiceError — Mode 1
+### AutostartServiceError: Mode 1
 
-3 call sites. Messages are `"Failed to {action} autostart: {cause}"` — could technically be Mode 2, but no downstream consumer inspects the error structurally; the query layer wraps every failure uniformly.
+3 call sites. Messages are `"Failed to {action} autostart: {cause}"`: could technically be Mode 2, but no downstream consumer inspects the error structurally; the query layer wraps every failure uniformly.
 
 ```ts
 export const { AutostartServiceError, AutostartServiceErr } =
@@ -417,7 +417,7 @@ export const { AutostartServiceError, AutostartServiceErr } =
 
 ---
 
-### CommandServiceError — Mode 1
+### CommandServiceError: Mode 1
 
 2 call sites with different messages. Note: `execute()` call site drops the cause entirely (possible bug).
 
@@ -428,7 +428,7 @@ export const { CommandServiceError, CommandServiceErr } =
 
 ---
 
-### WorkspaceError — Mode 1
+### WorkspaceError: Mode 1
 
 8 call sites: 3 "not found", 1 catch, 4 stubs. Heterogeneous messages, no shared structure.
 
@@ -439,7 +439,7 @@ export const { WorkspaceError, WorkspaceErr } =
 
 ---
 
-### StaticWorkspaceError — Mode 1
+### StaticWorkspaceError: Mode 1
 
 1 call site: `String(error)`. Unpredictable runtime value.
 
@@ -449,7 +449,7 @@ const { StaticWorkspaceErr } = createTaggedError('StaticWorkspaceError');
 
 ---
 
-### TransformServiceError — Mode 1 (with `.withFields()`)
+### TransformServiceError: Mode 1 (with `.withFields()`)
 
 7 call sites: 2 validation + 5 DB failures. Messages too diverse for a template, but `operation` field is valuable for structured logging.
 
@@ -474,7 +474,7 @@ TransformServiceErr({ operation: 'validate_input', message: 'Empty input. Please
 TransformServiceErr({ operation: 'db_create_run', message: 'Unable to start transformation run' })
 ```
 
-**Note:** Fixes a real bug — the current sealed message `'Transform operation failed'` silently discards all 7 specific messages.
+**Note:** Fixes a real bug: the current sealed message `'Transform operation failed'` silently discards all 7 specific messages.
 
 ---
 
@@ -514,7 +514,7 @@ TransformServiceErr({ operation: 'db_create_run', message: 'Unable to start tran
 
 ## Bugs Fixed by This Migration
 
-1. **All Mode 1 errors currently have `.withMessage()` with static strings** — these seal a generic message that discards the specific, contextual messages being passed at call sites. Every Mode 1 migration fixes this by removing `.withMessage()` so call-site messages are actually used.
-2. **PermissionsServiceError** — `'Permissions check failed'` discards action and permission type context.
-3. **TransformServiceError** — `'Transform operation failed'` discards all 7 specific failure messages.
-4. **CommandServiceError `execute()` call site** — drops the underlying error cause entirely (pre-existing bug, not caused by the migration).
+1. **All Mode 1 errors currently have `.withMessage()` with static strings**: these seal a generic message that discards the specific, contextual messages being passed at call sites. Every Mode 1 migration fixes this by removing `.withMessage()` so call-site messages are actually used.
+2. **PermissionsServiceError**: `'Permissions check failed'` discards action and permission type context.
+3. **TransformServiceError**: `'Transform operation failed'` discards all 7 specific failure messages.
+4. **CommandServiceError `execute()` call site**: drops the underlying error cause entirely (pre-existing bug, not caused by the migration).

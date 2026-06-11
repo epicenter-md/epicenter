@@ -34,7 +34,7 @@
  * simultaneously without coordination, how do you merge their changes?
  *
  * Y.Map solves this by keeping historical context. When you update a key, Yjs doesn't
- * just overwrite the old value—it needs to remember what was there so it can merge
+ * just overwrite the old value. It needs to remember what was there so it can merge
  * correctly when syncing with other clients.
  *
  * **The catch**: Y.Map retains ALL historical values for EACH key. If you update
@@ -69,7 +69,7 @@
  * ```
  *
  * **Why Y.Array doesn't have the same problem**: When you delete from Y.Array,
- * Yjs marks the item as a "tombstone" but doesn't retain the full value—just
+ * Yjs marks the item as a "tombstone" but doesn't retain the full value, just
  * enough metadata to know it was deleted. The actual data is garbage collected.
  *
  * ## How the In-Memory Map Works
@@ -88,7 +88,7 @@
  * ```
  *
  * The Map is rebuilt on initialization and updated incrementally via Y.Array's
- * observer. It's never persisted—just derived state.
+ * observer. It's never persisted; just derived state.
  *
  * ## Conflict Resolution: ClientID-Based Ordering
  *
@@ -106,7 +106,7 @@
  * ```
  *
  * The key insight: YKeyValue's "rightmost wins" cleanup on top of Yjs's
- * clientID-ordered array produces deterministic conflict resolution—the same
+ * clientID-ordered array produces deterministic conflict resolution. The same
  * mechanism that powers Y.Map.
  *
  * ## Limitations
@@ -177,7 +177,7 @@ import type * as Y from 'yjs';
  * Entry stored in the Y.Array.
  *
  * Field names are intentionally short (`val` not `value`) to minimize
- * serialized storage size—these entries are persisted and synced.
+ * serialized storage size. These entries are persisted and synced.
  *
  * Unlike `YKeyValueLwwEntry`, this has no `ts` field since conflict resolution
  * is positional (rightmost wins) rather than timestamp-based.
@@ -264,7 +264,7 @@ export class YKeyValue<T> {
 	/**
 	 * Keys deleted by `delete()` but not yet processed by the observer.
 	 *
-	 * Symmetric counterpart to `pending` — while `pending` tracks writes not yet
+	 * Symmetric counterpart to `pending`: while `pending` tracks writes not yet
 	 * in `map`, `pendingDeletes` tracks deletions not yet removed from `map`.
 	 * This prevents stale reads after `delete()` during a batch/transaction.
 	 */
@@ -336,7 +336,7 @@ export class YKeyValue<T> {
 
 			event.changes.deleted.forEach((deletedItem) => {
 				deletedItem.content.getContent().forEach((entry: YKeyValueEntry<T>) => {
-					// Always clear pendingDeletes for this key — even if the ref-equality
+					// Always clear pendingDeletes for this key: even if the ref-equality
 					// check fails (e.g. set+delete in same txn where entry never reached map)
 					this.pendingDeletes.delete(entry.key);
 

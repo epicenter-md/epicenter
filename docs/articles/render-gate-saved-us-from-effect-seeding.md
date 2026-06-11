@@ -5,7 +5,7 @@
 We had a singleton service called [`browserState`](https://github.com/EpicenterHQ/epicenter/blob/9b893eddc/apps/tab-manager/src/lib/state/browser-state.svelte.ts) that manages all browser windows and tabs for a tab manager extension. It's constructed synchronously at module scope so any component can import it, but the actual data comes from an async call to the browser API. The service starts empty and fills in after the seed resolves.
 
 ```typescript
-// browser-state.svelte.ts — the singleton
+// browser-state.svelte.ts: the singleton
 function createBrowserState() {
   const windowStates = new SvelteMap<WindowCompositeId, WindowState>();
 
@@ -56,11 +56,11 @@ createBrowserState()       FlatTabList mounts        Async seed resolves
         │───────────────────────>│                         │
         │                        │                         │
         │                        │  new SvelteSet([])      │
-        │                        │  (empty — no focused    │
+        │                        │  (empty, no focused    │
         │                        │   window found)         │
         │                        │                         │
         │                        │                   windows = [A, B, C]
-        │                        │                   (too late — set already
+        │                        │                   (too late: set already
         │                        │                    constructed)
 ```
 
@@ -69,7 +69,7 @@ createBrowserState()       FlatTabList mounts        Async seed resolves
 Our first attempt was to make the component watch for data arrival using `$effect`.
 
 ```svelte
-<!-- FlatTabList.svelte — the $effect approach -->
+<!-- FlatTabList.svelte. The $effect approach -->
 <script>
   const expandedWindows = new SvelteSet<WindowCompositeId>();
 
@@ -113,7 +113,7 @@ The real fix was structural. Instead of making the component deal with the timin
 The service side: capture the fire-and-forget IIFE as a promise and [expose it](https://github.com/EpicenterHQ/epicenter/blob/9b893eddc/apps/tab-manager/src/lib/state/browser-state.svelte.ts#L83-L109).
 
 ```typescript
-// browser-state.svelte.ts — BEFORE
+// browser-state.svelte.ts: BEFORE
 (async () => {
   const browserWindows = await browser.windows.getAll({ populate: true });
   // ... populate windowStates ...
@@ -126,7 +126,7 @@ return {
 ```
 
 ```typescript
-// browser-state.svelte.ts — AFTER
+// browser-state.svelte.ts: AFTER
 const whenReady = (async () => {
   const browserWindows = await browser.windows.getAll({ populate: true });
   // ... populate windowStates ...
@@ -159,7 +159,7 @@ The UI side: [`App.svelte`](https://github.com/EpicenterHQ/epicenter/blob/9b893e
 Now `FlatTabList` only mounts after `whenReady` resolves. By the time its `<script>` block runs, `browserState.windows` is populated. The [original one-liner](https://github.com/EpicenterHQ/epicenter/blob/9b893eddc/apps/tab-manager/src/lib/components/FlatTabList.svelte#L14-L19) works.
 
 ```typescript
-// FlatTabList.svelte — back to the simple version
+// FlatTabList.svelte: back to the simple version
 const expandedWindows = new SvelteSet<WindowCompositeId>(
   browserState.windows.filter((w) => w.focused).map((w) => w.id),
 );

@@ -14,7 +14,7 @@ Better Auth sessions default to seven days. Cloudflare Logpush retention is what
 
 You can't set `Authorization` on a browser WebSocket. The browser `WebSocket` constructor takes a URL and an optional list of subprotocols, and that's it. No headers, no custom fields. So the token has to ride along on one of those two inputs. URL or subprotocol.
 
-Subprotocols are meant for negotiating what goes over the wire after the handshake—like `graphql-transport-ws` or `mqtt`. But the `Sec-WebSocket-Protocol` header is just a comma-separated list of ASCII tokens, and nobody checks what you put in there as long as the server echoes back one of them to complete the 101 handshake. So you can smuggle auth through it.
+Subprotocols are meant for negotiating what goes over the wire after the handshake. Like `graphql-transport-ws` or `mqtt`. But the `Sec-WebSocket-Protocol` header is just a comma-separated list of ASCII tokens, and nobody checks what you put in there as long as the server echoes back one of them to complete the 101 handshake. So you can smuggle auth through it.
 
 Here's what we do now:
 
@@ -22,7 +22,7 @@ Here's what we do now:
 const ws = new WebSocket(wsUrl, ['epicenter', `bearer.${token}`]);
 ```
 
-The client offers two protocols. `epicenter` is the real one the server echoes back. `bearer.<token>` is a carrier—the server reads it, consumes it, and never echoes it. The token lives in a header, not a URL, and headers don't get logged by default on Cloudflare or most HTTP middlewares.
+The client offers two protocols. `epicenter` is the real one the server echoes back. `bearer.<token>` is a carrier. The server reads it, consumes it, and never echoes it. The token lives in a header, not a URL, and headers don't get logged by default on Cloudflare or most HTTP middlewares.
 
 On the server, it's a few lines:
 
@@ -43,11 +43,11 @@ function withBearerFromSubprotocol(original: Headers): Headers {
 }
 ```
 
-We extract the `bearer.<token>` entry, synthesize a standard `Authorization: Bearer <token>` header, and hand it to Better Auth's `getSession`. From Better Auth's perspective, it looks exactly like an HTTP request with a bearer header—which is what its bearer plugin was already built to handle. No new auth code, just a bridge.
+We extract the `bearer.<token>` entry, synthesize a standard `Authorization: Bearer <token>` header, and hand it to Better Auth's `getSession`. From Better Auth's perspective, it looks exactly like an HTTP request with a bearer header, which is what its bearer plugin was already built to handle. No new auth code, just a bridge.
 
 ## Why this pattern exists
 
-I felt smart about the subprotocol trick for about ten minutes before realizing it's the exact pattern Kubernetes uses for its API server. Their subprotocol string is `base64url.bearer.authorization.k8s.io.<base64url-encoded-token>`—longer, more namespaced, but structurally identical. Supabase Realtime does the same thing with `phx_bearer.<token>`. Phoenix channels, OpenShift, a handful of others. This is a standard move; I just hadn't seen it.
+I felt smart about the subprotocol trick for about ten minutes before realizing it's the exact pattern Kubernetes uses for its API server. Their subprotocol string is `base64url.bearer.authorization.k8s.io.<base64url-encoded-token>`: longer, more namespaced, but structurally identical. Supabase Realtime does the same thing with `phx_bearer.<token>`. Phoenix channels, OpenShift, a handful of others. This is a standard move; I just hadn't seen it.
 
 The reason everyone converges here is that the alternatives are worse:
 
@@ -60,11 +60,11 @@ Subprotocol auth runs during the handshake. By the time the server writes the 10
 
 ## What I should have thought about sooner
 
-The thing that bugs me about the old `?token=` version isn't that it was insecure—Cloudflare logs aren't publicly readable and our session tokens were scoped to our own API. It's that I never asked where the URL ended up. I wrote `new URL(wsUrl).searchParams.set('token', token)` and moved on. The token existed, the request worked, I checked it off.
+The thing that bugs me about the old `?token=` version isn't that it was insecure. Cloudflare logs aren't publicly readable and our session tokens were scoped to our own API. It's that I never asked where the URL ended up. I wrote `new URL(wsUrl).searchParams.set('token', token)` and moved on. The token existed, the request worked, I checked it off.
 
 The question I should have asked: *after this URL is constructed, who sees it?* Cloudflare sees it. Our access logs see it. If a user ever pasted a WebSocket URL into a bug report, GitHub saw it. If we forwarded headers anywhere for debugging, the downstream service saw it. A URL is a public surface. Treating it like private transport is a category error.
 
-Subprotocols aren't magically private either—if you turn on `RequestHeaders` capture in Cloudflare Logpush, the `Sec-WebSocket-Protocol` header shows up too. But it's off by default, and nothing treats it like a canonical identifier the way URLs get treated. It's private enough for this use case, and a lot more private than URL-space by default.
+Subprotocols aren't magically private either. If you turn on `RequestHeaders` capture in Cloudflare Logpush, the `Sec-WebSocket-Protocol` header shows up too. But it's off by default, and nothing treats it like a canonical identifier the way URLs get treated. It's private enough for this use case, and a lot more private than URL-space by default.
 
 The real lesson: every credential I put anywhere, I should be able to answer "what logs, caches, and referrers does this touch?" If I can't answer that in ten seconds, I haven't thought about it enough.
 

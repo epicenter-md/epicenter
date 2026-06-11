@@ -1,9 +1,9 @@
 # Epicenter App: Three-Fetch Pattern Migration
 
-> **Status: Superseded** — This spec was a design document. The API evolved during implementation. The current API uses `createWorkspace(definition)` instead of `workspace.create()`. See `packages/epicenter/src/static/README.md` for the current API.
+> **Status: Superseded**: This spec was a design document. The API evolved during implementation. The current API uses `createWorkspace(definition)` instead of `workspace.create()`. See `packages/epicenter/src/static/README.md` for the current API.
 
-**Created**: 2026-01-09T17:49:00  
-**Updated**: 2026-01-09T18:10:00  
+**Created**: 2026-01-09T17:49:00
+**Updated**: 2026-01-09T18:10:00
 **Status**: Ready for Implementation
 
 ## Problem
@@ -575,28 +575,28 @@ async function loadWorkspaceSchema(guid: string) {
 
 ## Decisions Made
 
-1. **No `.epicenter/` subfolder** — App data directory is already app-specific
-2. **Slug in URLs, GUID in filesystem** — Best of both worlds
-3. **Specialized providers (Option B)** — Path logic centralized, type-safe
-4. **Tauri persistence in app, not package** — Keeps `@epicenter/workspace` dependency-lean
-5. **No backwards compatibility** — Existing JSON workspaces won't be migrated
+1. **No `.epicenter/` subfolder**: App data directory is already app-specific
+2. **Slug in URLs, GUID in filesystem**: Best of both worlds
+3. **Specialized providers (Option B)**: Path logic centralized, type-safe
+4. **Tauri persistence in app, not package**: Keeps `@epicenter/workspace` dependency-lean
+5. **No backwards compatibility**: Existing JSON workspaces won't be migrated
 
 ## Open Implementation Questions
 
 These can be decided by the implementing agent:
 
-1. **Schema reconstruction from Y.Doc** — The `bootstrap.ts` loads schemas from workspace docs. The exact structure of reading tables/kv from the schema Y.Map needs implementation.
+1. **Schema reconstruction from Y.Doc**: The `bootstrap.ts` loads schemas from workspace docs. The exact structure of reading tables/kv from the schema Y.Map needs implementation.
 
-2. **Error handling granularity** — Should persistence failures be:
+2. **Error handling granularity**: Should persistence failures be:
    - Silent (log only)
    - Surfaced to UI
    - Fatal errors
 
-3. **Write debouncing** — Should `persistYDoc` debounce writes to avoid excessive I/O on rapid changes? Current implementation writes on every update.
+3. **Write debouncing**: Should `persistYDoc` debounce writes to avoid excessive I/O on rapid changes? Current implementation writes on every update.
 
-4. **Workspace deletion** — Current plan removes from registry but doesn't delete files. Should it clean up `workspaces/{guid}/` folder?
+4. **Workspace deletion**: Current plan removes from registry but doesn't delete files. Should it clean up `workspaces/{guid}/` folder?
 
-5. **Slug uniqueness enforcement** — Current check is in-memory only. Need to ensure uniqueness across app restarts.
+5. **Slug uniqueness enforcement**: Current check is in-memory only. Need to ensure uniqueness across app restarts.
 
 ## Todo
 
@@ -614,10 +614,10 @@ These can be decided by the implementing agent:
 
 ## References
 
-- `packages/epicenter/src/core/docs/README.md` — Three-document architecture
-- `packages/epicenter/src/core/docs/head-doc.ts` — CRDT-safe epoch implementation
-- `packages/epicenter/src/core/docs/registry-doc.ts` — Registry implementation
-- `packages/epicenter/src/core/workspace/contract.ts` — defineWorkspace/create
-- `packages/epicenter/src/core/workspace/README.md` — Workspace usage patterns
+- `packages/epicenter/src/core/docs/README.md`: Three-document architecture
+- `packages/epicenter/src/core/docs/head-doc.ts`: CRDT-safe epoch implementation
+- `packages/epicenter/src/core/docs/registry-doc.ts`: Registry implementation
+- `packages/epicenter/src/core/workspace/contract.ts`: defineWorkspace/create
+- `packages/epicenter/src/core/workspace/README.md`: Workspace usage patterns
 - Tauri Plugin FS: https://v2.tauri.app/plugin/file-system/
 - Tauri Path API: https://v2.tauri.app/reference/javascript/api/namespacepath/

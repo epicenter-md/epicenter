@@ -30,7 +30,7 @@ That's the whole teardown story at the bundle layer. The framework's `docs.close
 1. Sets `isDestroyed = true`. Subsequent destroys noop.
 2. Emits a synchronous `'destroy'` event.
 
-Every attachment in this codebase — `attach-indexed-db`, `attach-sync`, `attach-encryption`, `attach-kv`, `attach-sqlite` — registers a listener for that event at construction time:
+Every attachment in this codebase: `attach-indexed-db`, `attach-sync`, `attach-encryption`, `attach-kv`, `attach-sqlite`: registers a listener for that event at construction time:
 
 ```ts
 export function attachIndexedDb(ydoc: Y.Doc): IndexedDbAttachment {
@@ -50,7 +50,7 @@ export function attachIndexedDb(ydoc: Y.Doc): IndexedDbAttachment {
 }
 ```
 
-When `ydoc.destroy()` fires, every attachment's async `destroy` handler runs. Nothing at the framework level awaits the resulting promise. It just runs in the background — the IndexedDB connection closes, the WebSocket closes, the materializer drains.
+When `ydoc.destroy()` fires, every attachment's async `destroy` handler runs. Nothing at the framework level awaits the resulting promise. It just runs in the background. The IndexedDB connection closes, the WebSocket closes, the materializer drains.
 
 ## What "nobody awaits" actually means
 
@@ -92,7 +92,7 @@ async close(id) {
 
 Every builder composed `whenDisposed: Promise.all([idb.whenDisposed, sync.whenDisposed]).then(() => {})`. Every `close()` call awaited it. The framework guaranteed "teardown complete" as a contract.
 
-The problem: that contract is a promise the framework can't actually keep cheaply. Teardown for a Y.Doc with persistence + sync can take hundreds of milliseconds in some conditions — a stuck WebSocket close handshake, an IDB transaction queued behind other work. Every `close()` becomes a multi-hundred-ms await. And 95% of callers don't care.
+The problem: that contract is a promise the framework can't actually keep cheaply. Teardown for a Y.Doc with persistence + sync can take hundreds of milliseconds in some conditions: a stuck WebSocket close handshake, an IDB transaction queued behind other work. Every `close()` becomes a multi-hundred-ms await. And 95% of callers don't care.
 
 So: every caller paid for a guarantee they didn't need, on a promise the framework couldn't cheapen, to solve a problem only tests hit.
 
@@ -114,7 +114,7 @@ async [Symbol.asyncDispose]() {
 
 Recipe-style: you read the dispose function top-to-bottom and see exactly what's being torn down. No hidden cascade.
 
-I walked away from this for one reason: it gives up the safety net. If anywhere in the codebase — a test, a crash handler, a `finally` block — calls `ydoc.destroy()` outside the bundle's dispose path, the explicit-call model leaks every attachment. The cascade model catches that case because attachments listen regardless.
+I walked away from this for one reason: it gives up the safety net. If anything in the codebase calls `ydoc.destroy()` outside the bundle's dispose path, whether a test, a crash handler, or a `finally` block, the explicit-call model leaks every attachment. The cascade model catches that case because attachments listen regardless.
 
 `ydoc.destroy()` is the platform-native teardown signal. Our attachments respect it. That's idiomatic yjs. The explicit-call model is more "correct" in a platonic sense, but it trades a real property (safety) for a cosmetic one (readable recipe).
 
@@ -122,7 +122,7 @@ I walked away from this for one reason: it gives up the safety net. If anywhere 
 
 Upstream `y-indexeddb` and `y-websocket` expect the caller to call `provider.destroy()` explicitly. They don't wire themselves to the Y.Doc destroy event. Our attachment wrappers do. That looks like going against the grain.
 
-It isn't. Our wrappers *satisfy* yjs's contract (we do call `provider.destroy()` when appropriate) — we just call it from a `ydoc.once('destroy')` handler instead of from our own code. That's a layering choice inside our application, not a monkey-patch on the yjs provider. The provider sees a normal `destroy()` call from its perspective.
+It isn't. Our wrappers *satisfy* yjs's contract (we do call `provider.destroy()` when appropriate): we just call it from a `ydoc.once('destroy')` handler instead of from our own code. That's a layering choice inside our application, not a monkey-patch on the yjs provider. The provider sees a normal `destroy()` call from its perspective.
 
 Why this layering: a workspace framework has a lot of attachments per doc. Forcing every caller to track every attachment and dispose each one is the exact kind of ceremony frameworks exist to eliminate. Centralizing on `ydoc.destroy()` as the teardown trigger gives us one call site for the common case and preserves idempotent explicit-dispose for the uncommon one.
 

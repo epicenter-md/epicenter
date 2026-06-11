@@ -22,7 +22,7 @@ The toolbar is a single `<div>` row that mixes four unrelated concerns:
 
 This creates problems:
 
-1. **File operations in the wrong place**: Every established editor (VS Code, StackBlitz, CodeSandbox, Zed) puts file creation in the sidebar header or context menu—never in a global top bar. Rename/Delete are already duplicated in the context menu and keyboard shortcuts (`F2`, `Delete`/`Backspace`), making the toolbar buttons redundant and potentially confusing (they operate on `activeFileId`, which may differ from the right-clicked item).
+1. **File operations in the wrong place**: Every established editor (VS Code, StackBlitz, CodeSandbox, Zed) puts file creation in the sidebar header or context menu. Never in a global top bar. Rename/Delete are already duplicated in the context menu and keyboard shortcuts (`F2`, `Delete`/`Backspace`), making the toolbar buttons redundant and potentially confusing (they operate on `activeFileId`, which may differ from the right-clicked item).
 2. **One-time action permanently visible**: "Load Sample Data" occupies toolbar space at all times for a one-time onboarding action. The empty state already says "No files yet" but lacks its own CTA.
 3. **Cloud icon is ambiguous**: The cloud icon communicates sync status, not account. New users won't know it's a sign-in button.
 4. **About navigates away**: Every other toolbar button is an in-page action; "About" navigates to `/about`, which is jarring in an editor context.
@@ -61,7 +61,7 @@ No global toolbar. File operations scoped to the sidebar. AI Chat toggle in the 
 | Obsidian Copilot | Chat icon | Left ribbon → opens right panel | Ribbon icon |
 | Notion AI | AI face icon | Bottom-right + sidebar | Floating + sidebar |
 
-**Key finding**: No consensus. Status bar (Zed) and sidebar icon rail (VS Code) are the two dominant patterns. Since OpenSidian only has two sidebar views (files, search)—not enough to justify an activity rail—the status bar is the better fit.
+**Key finding**: No consensus. Status bar (Zed) and sidebar icon rail (VS Code) are the two dominant patterns. Since OpenSidian only has two sidebar views (files, search): not enough to justify an activity rail. The status bar is the better fit.
 
 **Oracle recommendation**: Status bar with icon + tooltip showing `⌘⇧L`. Consider adding a text label ("AI Chat") beside the icon for discoverability, since AI is a marquee feature.
 
@@ -196,7 +196,7 @@ AFTER:
 
 1. **Should SidebarHeader change its title when in search view?**
    - Options: (a) Always show "FILES" with search icon highlighted, (b) Switch to "SEARCH" when search is active, (c) Show both icons but highlight active one
-   - **Recommendation**: (c) — Keep "FILES" as the label but visually indicate which view is active via the icon state. Simple, no text switching.
+   - **Recommendation**: (c): Keep "FILES" as the label but visually indicate which view is active via the icon state. Simple, no text switching.
 
 2. **Should we add a visible terminal toggle to the status bar too?**
    - Currently terminal is keyboard-only (⌘\`). If we add AI Chat to status bar, the asymmetry might feel odd.
@@ -204,7 +204,7 @@ AFTER:
 
 ## Success Criteria
 
-- [ ] Global toolbar is deleted—no horizontal bar above the editor
+- [ ] Global toolbar is deleted. No horizontal bar above the editor
 - [ ] New File and New Folder are accessible from the sidebar header
 - [ ] Rename and Delete work exclusively through context menu and keyboard shortcuts
 - [ ] AI Chat toggles from the status bar
@@ -216,12 +216,12 @@ AFTER:
 
 ## References
 
-- `apps/opensidian/src/lib/components/Toolbar.svelte` — being deleted
-- `apps/opensidian/src/lib/components/AppShell.svelte` — main layout, restructuring
-- `apps/opensidian/src/lib/components/editor/StatusBar.svelte` — adding AI Chat toggle
-- `apps/opensidian/src/lib/components/editor/TabBar.svelte` — adding AccountPopover
-- `apps/opensidian/src/lib/components/tree/FileTree.svelte` — empty state enhancement
-- `apps/opensidian/src/lib/components/tree/FileTreeItem.svelte` — context menu (already has rename/delete, no changes needed)
-- `apps/opensidian/src/lib/components/AccountPopover.svelte` — icon replacement
-- `apps/opensidian/src/lib/components/editor/ContentPanel.svelte` — empty state enhancement
-- `packages/ui/src/` — available UI components (button, popover, tooltip, separator, etc.)
+- `apps/opensidian/src/lib/components/Toolbar.svelte`: being deleted
+- `apps/opensidian/src/lib/components/AppShell.svelte`: main layout, restructuring
+- `apps/opensidian/src/lib/components/editor/StatusBar.svelte`: adding AI Chat toggle
+- `apps/opensidian/src/lib/components/editor/TabBar.svelte`: adding AccountPopover
+- `apps/opensidian/src/lib/components/tree/FileTree.svelte`: empty state enhancement
+- `apps/opensidian/src/lib/components/tree/FileTreeItem.svelte`: context menu (already has rename/delete, no changes needed)
+- `apps/opensidian/src/lib/components/AccountPopover.svelte`: icon replacement
+- `apps/opensidian/src/lib/components/editor/ContentPanel.svelte`: empty state enhancement
+- `packages/ui/src/`: available UI components (button, popover, tooltip, separator, etc.)

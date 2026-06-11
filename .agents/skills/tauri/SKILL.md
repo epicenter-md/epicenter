@@ -11,6 +11,12 @@ metadata:
 
 - [Tauri](https://github.com/tauri-apps/tauri): Desktop app framework with Rust backend and web frontend
 
+## Upstream Grounding
+
+When Tauri command behavior, permissions, capabilities, CSP, asset protocols, path APIs, plugin filesystem behavior, or IPC semantics affect correctness, use source-backed grounding before relying on memory. If DeepWiki MCP is available, ask a narrow question against `tauri-apps/tauri`; if it is unavailable or the repo is not indexed, use upstream source or official docs directly. Treat DeepWiki as orientation, then verify decisive details against local generated bindings, installed Rust crates, TypeScript types, source, or official docs before changing code.
+
+Skip DeepWiki for repo-local command naming and app-specific wrapper conventions already visible in the code.
+
 ## When to Apply This Skill
 
 Use this pattern when you need to:

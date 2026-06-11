@@ -8,11 +8,11 @@
 
 `defineKv(schema)` has no concept of a default value. When `kv.get(key)` finds no data in the Yjs doc, it returns `{ status: 'not_found', value: undefined }`. This forces every consumer to handle the missing-data case.
 
-For Wave 2 (SvelteMap reactive settings), we need `get(key)` to always return a valid typed value—either the stored value or a default. Writing defaults to the Yjs doc is wrong: it pollutes CRDT history, causes initialization races on multi-device sync, and makes every new workspace carry 43 CRDT operations worth of "nothing changed."
+For Wave 2 (SvelteMap reactive settings), we need `get(key)` to always return a valid typed value. Either the stored value or a default. Writing defaults to the Yjs doc is wrong: it pollutes CRDT history, causes initialization races on multi-device sync, and makes every new workspace carry 43 CRDT operations worth of "nothing changed."
 
 ## Solution
 
-Add a required `defaultValue` parameter to `defineKv`. Simplify `get()` to always return a value—the stored value if valid, the default otherwise. Never write the default to Yjs.
+Add a required `defaultValue` parameter to `defineKv`. Simplify `get()` to always return a value. The stored value if valid, the default otherwise. Never write the default to Yjs.
 
 ### New API
 
@@ -25,7 +25,7 @@ const result = kv.get('sound.manualStart');
 // After: required default, get() returns value directly
 const sound = defineKv(type('boolean'), true);
 const value = kv.get('sound.manualStart');
-// value: boolean — always valid
+// value: boolean: always valid
 ```
 
 ### Behavior on `get(key)`
@@ -45,7 +45,7 @@ No `KvGetResult` discriminated union needed at this layer. Consumers always get 
 defineKv(v1, v2).migrate(fn, defaultValue)
 ```
 
-Nobody currently uses multi-version KV. The variadic+migrate pattern adds complexity that KV settings don't need—they're simple flags and preferences, not structured documents that evolve through versions. When a KV schema changes, updating the schema and default is sufficient: `get()` already returns `defaultValue` when stored data fails validation, which **is** the migration strategy for KV.
+Nobody currently uses multi-version KV. The variadic+migrate pattern adds complexity that KV settings don't need. They're simple flags and preferences, not structured documents that evolve through versions. When a KV schema changes, updating the schema and default is sufficient: `get()` already returns `defaultValue` when stored data fails validation, which **is** the migration strategy for KV.
 
 **Follow-up consideration:** Remove the variadic overload entirely. If a rare case needs schema evolution, a single-schema overload with an optional `migrate` callback would be simpler than the current multi-schema variadic pattern.
 
@@ -54,13 +54,13 @@ Nobody currently uses multi-version KV. The variadic+migrate pattern adds comple
 **Changed:** `kv.get(key)` return type: `KvGetResult<T>` → `T`
 
 **Affected files** (exhaustive):
-- `packages/workspace/src/workspace/create-kv.test.ts` — 4 assertions check `.status`
-- `packages/workspace/src/workspace/define-workspace.test.ts` — 1 assertion checks `.status`
-- `packages/workspace/src/workspace/benchmark.test.ts` — 3 assertions check `.status`
+- `packages/workspace/src/workspace/create-kv.test.ts`: 4 assertions check `.status`
+- `packages/workspace/src/workspace/define-workspace.test.ts`: 1 assertion checks `.status`
+- `packages/workspace/src/workspace/benchmark.test.ts`: 3 assertions check `.status`
 
 No app-level code uses `kv.get()` yet. All breakage is in tests only.
 
-**Unchanged:** `kv.set()`, `kv.delete()`, `kv.observe()` — no changes.
+**Unchanged:** `kv.set()`, `kv.delete()`, `kv.observe()`: no changes.
 
 ## Implementation plan
 
@@ -184,7 +184,7 @@ get(key) {
 },
 ```
 
-`parseValue` is no longer needed for `get()` — inline the logic. Keep `parseValue` if `observe()` still uses it.
+`parseValue` is no longer needed for `get()`: inline the logic. Keep `parseValue` if `observe()` still uses it.
 
 **Acceptance:**
 - [x] `get(key)` returns the stored value when valid
@@ -341,10 +341,10 @@ expect(value).toEqual({ mode: 'dark' });
 ```
 
 ```typescript
-// Before — not_found
+// Before: not_found
 expect(kv.get('theme').status).toBe('not_found');
 
-// After — returns default
+// After: returns default
 expect(kv.get('theme')).toEqual({ mode: 'light' }); // the default
 ```
 
@@ -409,9 +409,9 @@ Task 4 (observeAll) is independent and can run in parallel with Task 3.
 
 ## Verification
 
-- [x] `bun test` in `packages/workspace` — all tests pass (70/70)
-- [x] `bun run tsc --noEmit` in packages/workspace — no new type errors (10 pre-existing errors remain, none in our files)
-- [ ] `bun run check` in `apps/whispering` — workspace.ts compiles clean with new defaults (not verified—app-level check requires full monorepo build)
+- [x] `bun test` in `packages/workspace`: all tests pass (70/70)
+- [x] `bun run tsc --noEmit` in packages/workspace: no new type errors (10 pre-existing errors remain, none in our files)
+- [ ] `bun run check` in `apps/whispering`: workspace.ts compiles clean with new defaults (not verified. App-level check requires full monorepo build)
 
 ## Review
 
@@ -419,7 +419,7 @@ Task 4 (observeAll) is independent and can run in parallel with Task 3.
 
 **Wave 1** (committed `c8e64f781`):
 - `types.ts`: Added `defaultValue` field to `KvDefinition`, changed `KvHelper.get()` return type from `KvGetResult<T>` to `T` directly
-- `define-kv.ts`: Rewrote overloads — single-version `defineKv(schema, defaultValue)`, multi-version `.migrate(fn, defaultValue)`
+- `define-kv.ts`: Rewrote overloads: single-version `defineKv(schema, defaultValue)`, multi-version `.migrate(fn, defaultValue)`
 
 **Wave 2** (committed `d3e8b382f`):
 - `create-kv.ts`: Simplified `get()` to return `defaultValue` on miss/invalid instead of `KvGetResult` discriminated union
@@ -441,8 +441,8 @@ Task 4 (observeAll) is independent and can run in parallel with Task 3.
 
 ### Pre-existing issues (not caused by this spec)
 
-- 10 TypeScript errors in `packages/workspace` — all in unrelated files (`define-table.ts`, `y-keyvalue-lww.test.ts`, `reddit/` tests, `types.ts` updatedAt indexing)
+- 10 TypeScript errors in `packages/workspace`: all in unrelated files (`define-table.ts`, `y-keyvalue-lww.test.ts`, `reddit/` tests, `types.ts` updatedAt indexing)
 
 ### Follow-up: consider removing variadic defineKv pattern
 
-KV stores are single values per key—not documents that accumulate rows over time. The `defineKv(v1, v2).migrate(fn, default)` pattern imports table-like versioning machinery that KV doesn't need. The "invalid stored data → return default" behavior already handles schema changes gracefully. If a migration function is ever needed, it could be an optional parameter on the shorthand: `defineKv(schema, default, { migrate? })` rather than a separate multi-schema overload.
+KV stores are single values per key. Not documents that accumulate rows over time. The `defineKv(v1, v2).migrate(fn, default)` pattern imports table-like versioning machinery that KV doesn't need. The "invalid stored data → return default" behavior already handles schema changes gracefully. If a migration function is ever needed, it could be an optional parameter on the shorthand: `defineKv(schema, default, { migrate? })` rather than a separate multi-schema overload.

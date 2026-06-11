@@ -10,8 +10,8 @@
  * - Document content (Y.Text via timeline): character-level CRDT where
  *   every keystroke is a separate operation. History accumulates per-char.
  *
- * Each test group builds two Y.Docs with identical final state—one through
- * incremental edits, one through a single pristine write—then compares
+ * Each test group builds two Y.Docs with identical final state: one through
+ * incremental edits, one through a single pristine write. Then it compares
  * binary sizes. The delta is the "edit history tax."
  */
 
@@ -33,7 +33,7 @@ import {
 describe('table row edit overhead (LWW)', () => {
 	/**
 	 * Simulates metadata-style edits: title renames, tag changes, summary rewrites.
-	 * Each set() replaces the entire row—the question is how much residue
+	 * Each set() replaces the entire row. The question is how much residue
 	 * accumulates from N full-row replacements vs a single write.
 	 */
 	for (const editsPerRow of [10, 100, 500]) {
@@ -62,12 +62,12 @@ describe('table row edit overhead (LWW)', () => {
 					});
 				}
 
-				// Progressive edits — title renames, summary rewrites, tag changes
+				// Progressive edits: title renames, summary rewrites, tag changes
 				for (let edit = 1; edit <= editsPerRow; edit++) {
 					for (let i = 0; i < rowCount; i++) {
 						incrTables.notes.set({
 							id: `note-${i}`,
-							title: `Note ${i} — revision ${edit}`,
+							title: `Note ${i}: revision ${edit}`,
 							content:
 								baseContent.slice(0, contentChars - 20) + ` [edit ${edit}]`,
 							summary: `Summary after edit ${edit}`,
@@ -91,7 +91,7 @@ describe('table row edit overhead (LWW)', () => {
 				for (let i = 0; i < rowCount; i++) {
 					pristineTables.notes.set({
 						id: `note-${i}`,
-						title: `Note ${i} — revision ${editsPerRow}`,
+						title: `Note ${i}: revision ${editsPerRow}`,
 						content:
 							baseContent.slice(0, contentChars - 20) +
 							` [edit ${editsPerRow}]`,
@@ -188,7 +188,7 @@ describe('document content edit overhead (Y.Text)', () => {
 				cursor += sentence.length;
 
 				// Every 5th sentence: simulate backspace-and-retype of the last word
-				// (delete ~8 chars, retype them — like fixing a typo)
+				// (delete ~8 chars, retype them: like fixing a typo)
 				if (i > 0 && i % 5 === 0) {
 					const deleteLen = Math.min(8, cursor);
 					const deleted = ytext.toString().slice(cursor - deleteLen, cursor);
@@ -334,7 +334,7 @@ describe('realistic writing session (table + document)', () => {
 	 *   80 autosaves with minor content tweaks to both the row and document.
 	 *
 	 * - Note C: Metadata-only changes. 20 title renames and tag edits.
-	 *   No content changes—just row-level set() calls.
+	 *   No content changes. Just row-level set() calls.
 	 *
 	 * The benchmark measures total size across the workspace Y.Doc (table rows)
 	 * and all document Y.Docs (content), then compares against a pristine
@@ -345,10 +345,10 @@ describe('realistic writing session (table + document)', () => {
 
 		// Sentences for progressive typing in Note A
 		const typingSentences = [
-			'Started a new project today—the goal is to build a local-first notes app. ',
+			'Started a new project today. The goal is to build a local-first notes app. ',
 			'The key insight is that CRDTs handle sync so the server stays dumb. ',
 			'Spent the morning reading about Yjs internals and LWW registers. ',
-			'Afternoon was all implementation—got basic table CRUD working. ',
+			'Afternoon was all implementation. Got basic table CRUD working. ',
 			'Tomorrow I need to wire up persistence and cross-tab sync. ',
 			'The document API is surprisingly clean once you understand timelines. ',
 			'Each document gets its own Y.Doc which keeps content isolated. ',
@@ -367,7 +367,7 @@ describe('realistic writing session (table + document)', () => {
 			notes: heavyNoteDefinition,
 		});
 
-		// Document Y.Docs (content) — one per note that has content
+		// Document Y.Docs (content): one per note that has content
 		const incrContentDocs: Y.Doc[] = [];
 		const incrTimelines: ReturnType<typeof attachTimeline>[] = [];
 
@@ -404,7 +404,7 @@ describe('realistic writing session (table + document)', () => {
 				ytext.insert(cursor, sentence);
 				cursor += sentence.length;
 
-				// Autosave fires — row gets updated with new metadata
+				// Autosave fires: row gets updated with new metadata
 				incrTables.notes.set({
 					id: 'note-0',
 					title: save < 5 ? 'Untitled' : 'Local-First Notes Architecture',
@@ -444,7 +444,7 @@ describe('realistic writing session (table + document)', () => {
 				incrTables.notes.set({
 					id: 'note-2',
 					title:
-						save % 3 === 0 ? `Note 2 — ${save}` : `Renamed Note 2 (${save})`,
+						save % 3 === 0 ? `Note 2: ${save}` : `Renamed Note 2 (${save})`,
 					content: 'content-doc-2',
 					summary: `Updated summary ${save}`,
 					tags: save % 4 === 0 ? ['existing', 'important'] : ['existing'],
@@ -512,7 +512,7 @@ describe('realistic writing session (table + document)', () => {
 					updatedAt: Date.now(),
 				});
 
-				// Content doc — written once with final content
+				// Content doc: written once with final content
 				const contentDoc = new Y.Doc();
 				const tl = attachTimeline(contentDoc);
 				if (i === 0) {

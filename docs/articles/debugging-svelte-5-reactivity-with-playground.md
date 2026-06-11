@@ -146,7 +146,7 @@ rows['row-1'] = { ...rows['row-1'], title: 'Replaced ' + Date.now() };
 
 Svelte's reactivity system diffs the values. Since `published` had the same value (`false`) before and after, Svelte didn't consider it "changed" for rendering purposes.
 
-This is the proxy doing intelligent diffing under the hood. It's not just checking "did this object reference change"—it's checking "did this _value_ actually change."
+This is the proxy doing intelligent diffing under the hood. It's not just checking "did this object reference change". It's checking "did this _value_ actually change."
 
 ## Key Takeaways
 

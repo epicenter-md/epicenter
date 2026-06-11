@@ -7,7 +7,7 @@
 
 ## Overview
 
-The sidebar runs `createChat()` from `@tanstack/ai-svelte` directly, streaming SSE from the hub server's generic `/ai/chat` endpoint. The BGSW has zero AI responsibilities — it handles only Yjs sync and browser event syncing. The hub server remains maximally generic with no app-specific tools or system prompts.
+The sidebar runs `createChat()` from `@tanstack/ai-svelte` directly, streaming SSE from the hub server's generic `/ai/chat` endpoint. The BGSW has zero AI responsibilities. It handles only Yjs sync and browser event syncing. The hub server remains maximally generic with no app-specific tools or system prompts.
 
 ## Motivation
 
@@ -20,8 +20,8 @@ The sidebar runs `createChat()` from `@tanstack/ai-svelte` directly, streaming S
 ### Why Revert
 
 - `createChat()` in the sidebar gives us the full TanStack AI Svelte adapter DX (reactive state, automatic stream lifecycle, background streaming across conversations)
-- No message passing between sidebar and BGSW for AI — eliminates a whole class of complexity
-- The hub server stays generic — it just relays messages to LLM providers and streams responses back
+- No message passing between sidebar and BGSW for AI: eliminates a whole class of complexity
+- The hub server stays generic: it just relays messages to LLM providers and streams responses back
 - Side panels have full Chrome API access, so client-side tools can execute locally if needed later
 
 ## Architecture
@@ -32,7 +32,7 @@ The sidebar runs `createChat()` from `@tanstack/ai-svelte` directly, streaming S
 │                                                         │
 │  createChat({                                           │
 │    connection: fetchServerSentEvents('/ai/chat'),       │
-│    // tools: clientTools(...) — future                  │
+│    // tools: clientTools(...): future                  │
 │  })                                                     │
 │       │                                                 │
 │       │ POST /ai/chat (provider, model, messages)       │
@@ -66,21 +66,21 @@ The sidebar runs `createChat()` from `@tanstack/ai-svelte` directly, streaming S
 
 ### Deleted
 
-- `apps/tab-manager/src/lib/ai/engine.ts` — BGSW chat engine
-- `apps/tab-manager/src/lib/ai/adapters.ts` — BGSW adapter factory
-- `apps/tab-manager/src/lib/ai/tools/definitions.ts` — Tool definition contracts
-- `apps/tab-manager/src/lib/ai/tools/mutation-tools.ts` — Chrome API mutation tools
-- `apps/tab-manager/src/lib/ai/tools/read-tools.ts` — Y.Doc read tools
+- `apps/tab-manager/src/lib/ai/engine.ts`: BGSW chat engine
+- `apps/tab-manager/src/lib/ai/adapters.ts`: BGSW adapter factory
+- `apps/tab-manager/src/lib/ai/tools/definitions.ts`: Tool definition contracts
+- `apps/tab-manager/src/lib/ai/tools/mutation-tools.ts`: Chrome API mutation tools
+- `apps/tab-manager/src/lib/ai/tools/read-tools.ts`: Y.Doc read tools
 
 ### Modified
 
-- `apps/tab-manager/src/entrypoints/background.ts` — Removed AI import, chat engine creation, and `onMessage` handler
-- `apps/tab-manager/src/lib/state/chat.svelte.ts` — Reverted from BGSW message passing to `createChat()` + `fetchServerSentEvents` pattern
+- `apps/tab-manager/src/entrypoints/background.ts`: Removed AI import, chat engine creation, and `onMessage` handler
+- `apps/tab-manager/src/lib/state/chat.svelte.ts`: Reverted from BGSW message passing to `createChat()` + `fetchServerSentEvents` pattern
 
 ### Kept As-Is
 
-- `packages/server/src/ai/plugin.ts` — Generic relay (already simplified on this branch)
-- `apps/tab-manager/src/lib/commands/` — Command consumer for future cross-device use
+- `packages/server/src/ai/plugin.ts`: Generic relay (already simplified on this branch)
+- `apps/tab-manager/src/lib/commands/`: Command consumer for future cross-device use
 
 ## Future Directions
 
@@ -111,5 +111,5 @@ const chat = createChat({
 - [x] Remove AI code from background.ts
 - [x] Revert chat.svelte.ts to createChat() pattern
 - [x] Verify typecheck passes (0 new errors)
-- [x] Implement client-side tools in sidebar (follow-up) — see `20260224T190000-client-side-ai-tools.md`
-- [x] Add system prompt back (client-side, in createChat body) — default `TAB_MANAGER_SYSTEM_PROMPT` in `$lib/ai/system-prompt.ts`
+- [x] Implement client-side tools in sidebar (follow-up): see `20260224T190000-client-side-ai-tools.md`
+- [x] Add system prompt back (client-side, in createChat body): default `TAB_MANAGER_SYSTEM_PROMPT` in `$lib/ai/system-prompt.ts`

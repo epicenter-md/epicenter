@@ -176,7 +176,7 @@ kv['fontSize'].set(16);
 kv['fontSize'].get(); // 16 (valid) or 14 (invalid/missing)
 ```
 
-This works because KV stores hold preferences, not accumulated data. Widening an enum (`'light' | 'dark'` to `'light' | 'dark' | 'system'`) still validates old data. Narrowing a type resets to the default—acceptable for a preference.
+This works because KV stores hold preferences, not accumulated data. Widening an enum (`'light' | 'dark'` to `'light' | 'dark' | 'system'`) still validates old data. Narrowing a type resets to the default. Acceptable for a preference.
 
 ## Reads Are Pure
 

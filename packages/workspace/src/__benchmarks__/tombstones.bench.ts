@@ -40,15 +40,15 @@ describe('tombstone residue after delete + replace', () => {
 
 			const label = formatBytes(contentChars).toUpperCase();
 			console.log(`\n=== TOMBSTONE ANALYSIS: ${label}/ROW ===`);
-			console.log(`  Step 1 — 5 rows:               ${formatBytes(sizeWith5)}`);
+			console.log(`  Step 1: 5 rows:               ${formatBytes(sizeWith5)}`);
 			console.log(
-				`  Step 2 — delete 2 (3 remain):  ${formatBytes(sizeAfterDelete)}`,
+				`  Step 2: delete 2 (3 remain):  ${formatBytes(sizeAfterDelete)}`,
 			);
 			console.log(
 				`    Size freed:                  ${formatBytes(sizeWith5 - sizeAfterDelete)}`,
 			);
 			console.log(
-				`  Step 3 — add 2 new (5 total):  ${formatBytes(sizeAfterReplace)}`,
+				`  Step 3: add 2 new (5 total):  ${formatBytes(sizeAfterReplace)}`,
 			);
 			const delta = sizeAfterReplace - sizeWith5;
 			const pct = ((sizeAfterReplace / sizeWith5 - 1) * 100).toFixed(2);

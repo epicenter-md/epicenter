@@ -67,7 +67,7 @@ Both can be replaced with **`border-b border-border`** (Tailwind utility + CSS v
 
 **Identical Issue**: Same RGB hardcoding as Component 1
 
-**Recommendation**: Same fix—replace with `border-b border-border`
+**Recommendation**: Same fix. Replace with `border-b border-border`
 
 ---
 

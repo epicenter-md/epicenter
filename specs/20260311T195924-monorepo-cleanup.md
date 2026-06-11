@@ -42,7 +42,7 @@ Three sequential PRs to clean up dead/misplaced packages in the monorepo. Each P
 
 - `apps/vault-demo/` is a SvelteKit demo for `packages/vault/` (which is itself a "very early POC"). In-memory DB, no persistence. Features: Reddit GDPR ingest UI, entity extraction heuristics, entity curation, cross-adapter dashboard, notes with entity linking, import/export.
 - `apps/demo-mcp/` is a 338-line CLI that exercises the vault Reddit adapter. Import ZIP → SQLite, export to Markdown, MCP integration.
-- `packages/vault/` is kept alive for now—it has real architecture (adapters, codecs, migrations, tests) and unique ideas (entity extraction) not yet ported to the workspace system.
+- `packages/vault/` is kept alive for now. It has real architecture (adapters, codecs, migrations, tests) and unique ideas (entity extraction) not yet ported to the workspace system.
 - Nothing outside the vault island depends on these two apps.
 - Reddit ingestion is already being reimplemented in `packages/workspace/src/ingest/reddit/` on the Yjs architecture.
 
@@ -69,7 +69,7 @@ Three sequential PRs to clean up dead/misplaced packages in the monorepo. Each P
 ### Context
 
 - `packages/server-remote/` is a standalone Cloudflare Worker (Hono + Better Auth + Durable Objects + Yjs sync + AI chat). It deploys to `api.epicenter.so`.
-- Nothing in the monorepo imports `@epicenter/server-remote` as a dependency—it's a deployable application, not a library.
+- Nothing in the monorepo imports `@epicenter/server-remote` as a dependency. It's a deployable application, not a library.
 - Its own `wrangler.jsonc` already names it `"api"`.
 - It belongs in `apps/`, not `packages/`.
 
@@ -106,7 +106,7 @@ Three sequential PRs to clean up dead/misplaced packages in the monorepo. Each P
 
 All three PRs executed as specified. Each branch was created off `opencode/lucky-river`, changes committed with conventional commit messages, and PRs opened against the same base.
 
-**PR 1** removed the dead `packages/config/` directory (empty exports, empty scripts—confirmed by its own README) and scrubbed the four stale `devDependency` references across `apps/epicenter`, `apps/whispering`, `packages/ui`, and `apps/posthog-reverse-proxy`. Added a README to `apps/fs-explorer/` explaining its purpose as a dev UI for `@epicenter/filesystem`.
+**PR 1** removed the dead `packages/config/` directory (empty exports, empty scripts. Confirmed by its own README) and scrubbed the four stale `devDependency` references across `apps/epicenter`, `apps/whispering`, `packages/ui`, and `apps/posthog-reverse-proxy`. Added a README to `apps/fs-explorer/` explaining its purpose as a dev UI for `@epicenter/filesystem`.
 
 **PR 2** removed `apps/vault-demo/` (~2,400 lines) and `apps/demo-mcp/` (338 lines). Both were demo consumers of `packages/vault/` with no external dependents. `packages/vault/` intentionally kept.
 

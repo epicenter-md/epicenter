@@ -19,7 +19,7 @@ This means "device busy," "permission denied," and "stream failed" all produce t
 ## Goals
 
 1. Break monolithic service errors into discriminated unions of specific failure modes
-2. Make `.withMessage()` required — every error defines how its message is computed from its structured data
+2. Make `.withMessage()` required: every error defines how its message is computed from its structured data
 3. Use structured `context` instead of encoding information in message strings
 4. Enforce JSON-serializability of error data for logging/observability
 
@@ -73,23 +73,23 @@ type RecorderServiceError = RecorderBusyError | RecorderPermissionError | Record
 
 Every `createTaggedError` chain **must** end with `.withMessage(fn)`. This is enforced at the type level: the error factory functions (`FooError`, `FooErr`) are only available on the return type of `.withMessage()`, not on the builder itself.
 
-**The callback is always required** — there is no auto-derivation from the error name. Auto-deriving messages from PascalCase names (e.g., `'RecorderBusyError'` -> `'Recorder busy'`) produces low-quality messages: noun phrases instead of sentences, no indication of what happened, and a hidden coupling between the name (chosen for type discrimination) and the message (written for human comprehension). Those are different concerns. The cost of writing `.withMessage(() => 'A recording is already in progress')` is trivial, and the message is always better than what auto-derive would produce.
+**The callback is always required**: there is no auto-derivation from the error name. Auto-deriving messages from PascalCase names (e.g., `'RecorderBusyError'` -> `'Recorder busy'`) produces low-quality messages: noun phrases instead of sentences, no indication of what happened, and a hidden coupling between the name (chosen for type discrimination) and the message (written for human comprehension). Those are different concerns. The cost of writing `.withMessage(() => 'A recording is already in progress')` is trivial, and the message is always better than what auto-derive would produce.
 
 #### Builder API
 
-`.withMessage()` receives a callback with `{ name, context?, cause? }` — everything the error will have except `message` (since that's what it's computing):
+`.withMessage()` receives a callback with `{ name, context?, cause? }`: everything the error will have except `message` (since that's what it's computing):
 
 ```typescript
-// No context, no cause — callback gets { name }
+// No context, no cause: callback gets { name }
 const { RecorderBusyError, RecorderBusyErr } = createTaggedError('RecorderBusyError')
   .withMessage(() => 'A recording is already in progress');
 
-// With context — callback gets { name, context }
+// With context: callback gets { name, context }
 const { DbNotFoundError, DbNotFoundErr } = createTaggedError('DbNotFoundError')
   .withContext<{ table: string; id: string }>()
   .withMessage(({ context }) => `${context.table} '${context.id}' not found`);
 
-// With context and cause — callback gets { name, context, cause }
+// With context and cause: callback gets { name, context, cause }
 const { ServiceError, ServiceErr } = createTaggedError('ServiceError')
   .withContext<{ operation: string }>()
   .withCause<DbServiceError>()
@@ -112,7 +112,7 @@ type MessageInput<TName, TContext, TCause> =
 
 #### Chain ordering
 
-`.withContext()` and `.withCause()` can be in **any order** relative to each other — they fill in independent type parameters. `.withMessage()` must always be **last** because it needs to know the final context and cause types.
+`.withContext()` and `.withCause()` can be in **any order** relative to each other. They fill in independent type parameters. `.withMessage()` must always be **last** because it needs to know the final context and cause types.
 
 ```typescript
 // All valid:
@@ -122,15 +122,15 @@ createTaggedError('X').withCause<C>().withMessage(fn)
 createTaggedError('X').withContext<T>().withCause<C>().withMessage(fn)
 createTaggedError('X').withCause<C>().withContext<T>().withMessage(fn)
 
-// Invalid — factories not accessible without withMessage:
+// Invalid: factories not accessible without withMessage:
 const { FooError } = createTaggedError('FooError');  // TS error!
 // Property 'FooError' does not exist on type 'ErrorBuilder<...>'
 
-// Invalid — withMessage called without callback:
+// Invalid: withMessage called without callback:
 createTaggedError('X').withMessage()  // TS error!
 // Expected 1 arguments, but got 0
 
-// Invalid — withMessage not last:
+// Invalid: withMessage not last:
 createTaggedError('X').withMessage(fn).withContext<T>()  // TS error!
 // Property 'withContext' does not exist on type 'FinalFactories<...>'
 ```
@@ -140,14 +140,14 @@ createTaggedError('X').withMessage(fn).withContext<T>()  // TS error!
 The builder type does NOT include factory functions. Only the return type of `.withMessage()` does:
 
 ```typescript
-// Builder — has chain methods, NO factories
+// Builder: has chain methods, NO factories
 type ErrorBuilder<TName, TContext, TCause> = {
   withContext<T extends JsonObject>(): ErrorBuilder<TName, T, TCause>;
   withCause<T extends AnyTaggedError>(): ErrorBuilder<TName, TContext, T>;
   withMessage(fn: MessageFn<TName, TContext, TCause>): FinalFactories<TName, TContext, TCause>;
 };
 
-// FinalFactories — has factories, NO chain methods
+// FinalFactories: has factories, NO chain methods
 type FinalFactories<TName, TContext, TCause> = {
   [K in TName]: (input: ErrorCallInput<TContext, TCause>) => TaggedError<TName, TContext, TCause>;
   [K in ReplaceErrorWithErr<TName>]: (input: ErrorCallInput<TContext, TCause>) => Err<TaggedError<TName, TContext, TCause>>;
@@ -156,7 +156,7 @@ type FinalFactories<TName, TContext, TCause> = {
 
 This means you literally cannot construct errors without first defining how their message is computed.
 
-#### Call site — `message` is no longer an input, `context` is the input
+#### Call site: `message` is no longer an input, `context` is the input
 
 ```typescript
 // Before: message is manual, data trapped in string
@@ -198,7 +198,7 @@ type DbNotFoundError = {
 
 **Status: Accepted**
 
-Tagged errors are plain objects (`{ name, message, context?, cause? }`), not `Error` class instances. This is intentional — no non-enumerable properties, no stack traces, no prototype chains to deal with. Because they're plain objects, JSON serialization is straightforward if we constrain what goes into them.
+Tagged errors are plain objects (`{ name, message, context?, cause? }`), not `Error` class instances. This is intentional, no non-enumerable properties, no stack traces, no prototype chains to deal with. Because they're plain objects, JSON serialization is straightforward if we constrain what goes into them.
 
 The `context` constraint changes from `Record<string, unknown>` to `JsonObject`:
 
@@ -213,20 +213,20 @@ TContext extends Record<string, unknown> | undefined
 TContext extends JsonObject | undefined
 ```
 
-`cause` is always an `AnyTaggedError` — which has `name: string`, `message: string`, and optionally `context: JsonObject` and `cause: AnyTaggedError`. Since context is JSON-serializable and cause is recursively a TaggedError, the entire error tree is JSON-serializable by induction.
+`cause` is always an `AnyTaggedError`: which has `name: string`, `message: string`, and optionally `context: JsonObject` and `cause: AnyTaggedError`. Since context is JSON-serializable and cause is recursively a TaggedError, the entire error tree is JSON-serializable by induction.
 
-**Why not `toJSON()` or a `serialize()` function?** They're unnecessary. The object already *is* the serialized form — `JSON.stringify(error)` just works:
+**Why not `toJSON()` or a `serialize()` function?** They're unnecessary. The object already *is* the serialized form: `JSON.stringify(error)` just works:
 
 ```typescript
 JSON.stringify(error);
 // → {"name":"DbNotFoundError","message":"recordings 'abc' not found","context":{"table":"recordings","id":"abc"}}
 ```
 
-No `toJSON()` method to maintain, no serialization layer to keep in sync. The `JsonObject` type constraint shifts validation left to definition time — if it compiles, it serializes.
+No `toJSON()` method to maintain, no serialization layer to keep in sync. The `JsonObject` type constraint shifts validation left to definition time. If it compiles, it serializes.
 
 **Caveat**: `JSON.stringify` silently drops `undefined` values in objects. This is acceptable for logging, but means `{ key: undefined }` and `{}` are indistinguishable in serialized output. Prefer omitting optional context fields over setting them to `undefined`.
 
-**Implications**: No `Date` objects in context (use ISO strings). No `Error` instances (use `extractErrorMessage()`). No class instances. This is intentional — it forces portable, structured error data.
+**Implications**: No `Date` objects in context (use ISO strings). No `Error` instances (use `extractErrorMessage()`). No class instances. This is intentional: it forces portable, structured error data.
 
 ### 4. Separate errors vs. discriminated union in context
 
@@ -319,11 +319,11 @@ if (error.name === 'DbError') {
 
 | Signal | Separate errors (Approach A) | Union context (Approach B) |
 |--------|------------------------------|----------------------------|
-| Consumer handles variants differently | **Yes** — each `case` in `switch (error.name)` does something fundamentally different (404 vs login prompt vs retry) | No |
-| Consumer usually treats all variants the same | No — creating 3 error types just to `toast.error(error.message)` on all of them is over-splitting | **Yes** — one `case` handles everything, drill into `.context.kind` only when needed |
-| Error appears in multiple service unions | **Yes** — `ConnectionError` can appear in `HttpServiceError`, `DbServiceError`, etc. Separate names enable reuse across unions | No — `{ kind: 'connection' }` is trapped inside one error's context type |
-| Exhaustiveness checking at the top level | **Yes** — `switch (error.name)` with `default: never` catches missing cases across the whole service error union | Partial — exhaustiveness on `error.name`, but `context.kind` discrimination is a second level |
-| Many variants (5+) that consumers rarely distinguish individually | No — too much ceremony | **Yes** — one definition, union type does the work |
+| Consumer handles variants differently | **Yes**: each `case` in `switch (error.name)` does something fundamentally different (404 vs login prompt vs retry) | No |
+| Consumer usually treats all variants the same | No: creating 3 error types just to `toast.error(error.message)` on all of them is over-splitting | **Yes**: one `case` handles everything, drill into `.context.kind` only when needed |
+| Error appears in multiple service unions | **Yes**: `ConnectionError` can appear in `HttpServiceError`, `DbServiceError`, etc. Separate names enable reuse across unions | No: `{ kind: 'connection' }` is trapped inside one error's context type |
+| Exhaustiveness checking at the top level | **Yes**: `switch (error.name)` with `default: never` catches missing cases across the whole service error union | Partial: exhaustiveness on `error.name`, but `context.kind` discrimination is a second level |
+| Many variants (5+) that consumers rarely distinguish individually | No: too much ceremony | **Yes**: one definition, union type does the work |
 
 **Default to Approach A.** The `HttpServiceError` pattern (`ConnectionError | ResponseError | ParseError`) is already proven in the codebase and all consumption sites already `switch` on `error.name`. Approach B is the escape hatch for when you have a cluster of variants that consumers rarely tell apart.
 
@@ -384,7 +384,7 @@ type RecorderServiceError =
 
 // --- Call sites ---
 
-// Just context — message auto-computes from template
+// Just context: message auto-computes from template
 RecorderDeviceErr({ context: { deviceId: 'abc', deviceName: 'Blue Yeti' } });
 // -> { name: 'RecorderDeviceError', message: "Failed to acquire stream from 'Blue Yeti'",
 //    context: { deviceId: 'abc', deviceName: 'Blue Yeti' } }
@@ -418,7 +418,7 @@ type RecorderDeviceError = ReturnType<typeof RecorderDeviceError>;
 
 ## Runtime Implementation Sketch
 
-The current `createTaggedError` runtime is minimal — `withContext`/`withCause` are no-ops that re-invoke `createBuilder()`. The new implementation adds `.withMessage()` as the terminal step that captures the template function:
+The current `createTaggedError` runtime is minimal: `withContext`/`withCause` are no-ops that re-invoke `createBuilder()`. The new implementation adds `.withMessage()` as the terminal step that captures the template function:
 
 ```typescript
 function createTaggedError(name) {
@@ -447,17 +447,17 @@ function createTaggedError(name) {
 }
 ```
 
-No `deriveMessageFromName` function — the callback is always required, so there's no auto-derivation path to implement.
+No `deriveMessageFromName` function. The callback is always required, so there's no auto-derivation path to implement.
 
 ## Impact on Existing Layers
 
 ### Service Layer
-- All error definitions must end with `.withMessage(fn)` — callback is required
+- All error definitions must end with `.withMessage(fn)`: callback is required
 - Call sites provide `context` (and optionally `cause`), not `message`
 - `message` override available for one-off cases
 
 ### Query Layer (`WhisperingError`)
-- `serviceError.message` extraction continues to work — always present
+- `serviceError.message` extraction continues to work: always present
 - Structured `context` enables richer "more details" displays
 
 ### Actions/Display Layer

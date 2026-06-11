@@ -761,7 +761,7 @@ The tradeoff is slightly more verbosity for simple cases (`text({ id: 'title' })
 
 ## Review
 
-**Implementation Date**: 2026-01-29  
+**Implementation Date**: 2026-01-29
 **Status**: Complete ✅
 
 ### Summary
@@ -838,4 +838,4 @@ Used a combination of:
 
 - **`packages/vault-core/`** was correctly excluded (uses Drizzle ORM's `text()` function)
 - **`to-drizzle.ts`** imports were correctly preserved (uses custom sqlite builders, not our field helpers)
-- The migration was atomic—no intermediate broken states committed
+- The migration was atomic. No intermediate broken states committed

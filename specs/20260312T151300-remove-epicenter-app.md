@@ -43,20 +43,20 @@
 - `@epicenter/app` is not imported by any other package in the monorepo
 - No CI workflows reference `@epicenter/app`
 - No turbo.json references to epicenter specifically
-- The monorepo uses `apps/*` workspace pattern — removal is automatic
+- The monorepo uses `apps/*` workspace pattern: removal is automatic
 
 ### Precedent
 
-This follows the exact pattern used for removing `apps/sh/` (the assistant) in `specs/20251121T171358 remove-assistant-rebuild.md` — remove from main, rebuild on a fresh branch when the architecture is ready.
+This follows the exact pattern used for removing `apps/sh/` (the assistant) in `specs/20251121T171358 remove-assistant-rebuild.md`: remove from main, rebuild on a fresh branch when the architecture is ready.
 
 ### Reference Specs for Rebuild
 
 When the sidecar architecture is ready, these specs describe the target:
 
-- `specs/20260225T000000-bun-sidecar-workspace-modules.md` — Phase 1-5 roadmap for the sidecar
-- `specs/20260304T120000-hub-sidecar-architecture.md` — Two-plane hub/sidecar design
-- `specs/20260225T210000-workspace-apps-orchestrator.md` — Workspace-as-app model
-- `docs/articles/tauri-bun-dual-backend-architecture.md` — Rust sidecar spawning code
+- `specs/20260225T000000-bun-sidecar-workspace-modules.md`: Phase 1-5 roadmap for the sidecar
+- `specs/20260304T120000-hub-sidecar-architecture.md`: Two-plane hub/sidecar design
+- `specs/20260225T210000-workspace-apps-orchestrator.md`: Workspace-as-app model
+- `docs/articles/tauri-bun-dual-backend-architecture.md`: Rust sidecar spawning code
 
 ## Todo
 
@@ -76,7 +76,7 @@ Deleted the entire `apps/epicenter/` Tauri app (75 tracked files including sourc
 ### Verification
 
 - `bun install` completed cleanly with `Removed: 1`
-- `bun typecheck` shows zero new errors. One pre-existing failure in `@epicenter/ai` (unrelated `NumberKeysOf` type error in `@epicenter/workspace`) — confirmed identical before and after removal.
+- `bun typecheck` shows zero new errors. One pre-existing failure in `@epicenter/ai` (unrelated `NumberKeysOf` type error in `@epicenter/workspace`): confirmed identical before and after removal.
 - `grep -r "@epicenter/app"` across all `package.json` files returns zero results.
 
 ### Deviations from Spec

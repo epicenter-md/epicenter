@@ -14,16 +14,16 @@
 | `rooms.ts` | In-memory room manager (Y.Doc + Awareness + connection map + eviction) | Yes (sole consumer) | No (DOs are the rooms) |
 
 Other issues:
-- `package.json` exports `"./discovery"` pointing to `src/discovery/index.ts` — directory was deleted in `7d32c0a6b`
-- `@epicenter/sync` lists `@epicenter/sync` as a dependency but has zero imports from it (added on current branch, may be intentional for upcoming work — verify before removing)
+- `package.json` exports `"./discovery"` pointing to `src/discovery/index.ts`: directory was deleted in `7d32c0a6b`
+- `@epicenter/sync` lists `@epicenter/sync` as a dependency but has zero imports from it (added on current branch, may be intentional for upcoming work: verify before removing)
 
 ## Problem
 
 `rooms.ts` exists in sync-core as a "shared primitive" but has exactly one consumer (`server-local`). It was kept during the standalone removal with the rationale "useful for tests and potential future standalone." But:
 
-1. It's not a protocol primitive — it's an in-memory connection lifecycle manager with Elysia-specific design assumptions (`ws.raw` as `object` key)
+1. It's not a protocol primitive: it's an in-memory connection lifecycle manager with Elysia-specific design assumptions (`ws.raw` as `object` key)
 2. Its config surface (`getDoc`, `onRoomCreated`, `onRoomEvicted`, `evictionTimeout`) exists to serve `server-local`'s sidecar pattern
-3. CF doesn't need it — each Durable Object IS its own room with its own `Map<WebSocket, ConnectionState>` and platform-managed lifecycle
+3. CF doesn't need it: each Durable Object IS its own room with its own `Map<WebSocket, ConnectionState>` and platform-managed lifecycle
 4. Keeping it in sync-core creates the illusion of reusability that doesn't exist
 
 ## Proposal
@@ -34,7 +34,7 @@ Move `rooms.ts` and `rooms.test.ts` from `packages/sync-core/src/` to `packages/
 
 **sync-core becomes**: pure protocol primitives (encode/decode + handlers). This is exactly what both consumers actually share.
 
-**server-local gets**: the room manager it exclusively uses, co-located with the Elysia plugin that wraps it. The `WsSyncPluginConfig` type already redeclares the same `getDoc`/`onRoomCreated`/`onRoomEvicted` config — after inlining, that duplication collapses.
+**server-local gets**: the room manager it exclusively uses, co-located with the Elysia plugin that wraps it. The `WsSyncPluginConfig` type already redeclares the same `getDoc`/`onRoomCreated`/`onRoomEvicted` config: after inlining, that duplication collapses.
 
 Changes:
 - [x] 1. Move `sync-core/src/rooms.ts` → `server-local/src/sync/rooms.ts`
@@ -42,7 +42,7 @@ Changes:
 - [x] 3. Remove `createRoomManager` export from `sync-core/src/index.ts`
 - [x] 4. Update `ws-plugin.ts` import from `'@epicenter/sync'` to `'./rooms'`
 - [x] 5. Added `y-protocols` as direct dependency to `server-local/package.json`
-  > rooms.ts imports from `y-protocols/awareness` — previously resolved transitively via sync-core, now needs explicit declaration.
+  > rooms.ts imports from `y-protocols/awareness`: previously resolved transitively via sync-core, now needs explicit declaration.
 - [x] 6. `handlers.ts` and `protocol.ts` still use yjs/y-protocols, so those deps stay in sync-core
 
 ### Wave 2: Clean up `sync-core` package.json
@@ -55,14 +55,14 @@ Changes:
 
 - [x] Exported `RoomManagerConfig` from `rooms.ts`
 - [x] Changed `WsSyncPluginConfig` to `RoomManagerConfig & { verifyToken?: ... }`
-- [x] Simplified `createRoomManager(config)` call — passes config directly instead of destructuring individual fields
+- [x] Simplified `createRoomManager(config)` call: passes config directly instead of destructuring individual fields
 - [x] Removed unused `import type * as Y from 'yjs'` from `ws-plugin.ts`
 
 ## What This Does NOT Change
 
-- `protocol.ts` and `handlers.ts` stay in `sync-core` — both server-local and CF use them
-- `@epicenter/sync` (client provider) is unaffected — it has its own protocol implementation
-- The room manager API (`join`/`leave`/`broadcast`/`destroy`) stays the same — this is a move, not a rewrite
+- `protocol.ts` and `handlers.ts` stay in `sync-core`: both server-local and CF use them
+- `@epicenter/sync` (client provider) is unaffected: it has its own protocol implementation
+- The room manager API (`join`/`leave`/`broadcast`/`destroy`) stays the same: this is a move, not a rewrite
 
 ## Risk
 
@@ -81,5 +81,5 @@ Moved `rooms.ts` and its tests from `sync-core` to `server-local`, making sync-c
 
 ### Deviations from Spec
 
-- Added `y-protocols` as an explicit dependency to `server-local/package.json` — not called out in the spec but required since `rooms.ts` imports from `y-protocols/awareness` directly.
+- Added `y-protocols` as an explicit dependency to `server-local/package.json`: not called out in the spec but required since `rooms.ts` imports from `y-protocols/awareness` directly.
 - `@epicenter/sync`'s dependency on sync-core was verified as real (5 active imports), so it was kept rather than removed.

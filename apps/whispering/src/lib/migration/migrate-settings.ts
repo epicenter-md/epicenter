@@ -80,7 +80,7 @@ export async function migrateOldSettings(): Promise<void> {
 		'whispering-device-config',
 	);
 
-	// No old data at all — fresh install
+	// No old data at all: fresh install
 	if (!oldSettingsRaw && !oldDeviceConfigRaw) {
 		setMigrationState('not-needed');
 		return;
@@ -90,7 +90,7 @@ export async function migrateOldSettings(): Promise<void> {
 	const oldSettings = tryParseJson(oldSettingsRaw);
 	const oldDeviceConfig = tryParseJson(oldDeviceConfigRaw);
 
-	// Both parse failures — nothing to migrate
+	// Both parse failures: nothing to migrate
 	if (!oldSettings && !oldDeviceConfig) {
 		setMigrationState('completed');
 		return;
@@ -148,7 +148,7 @@ export async function migrateOldSettings(): Promise<void> {
 	for (const { oldKey, newKey } of DEVICE_KEY_MAP) {
 		trySync({
 			try: () => {
-				// Already has a per-key entry — user-set or prior migration run
+				// Already has a per-key entry: user-set or prior migration run
 				if (window.localStorage.getItem(`whispering.device.${newKey}`) !== null)
 					return;
 

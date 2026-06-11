@@ -19,7 +19,7 @@ The renames make each name self-documenting:
 | Old Name                     | New Name                 | Why                                                                              |
 | ---------------------------- | ------------------------ | -------------------------------------------------------------------------------- |
 | `DocBinding`                 | `DocumentConfig`         | It's configuration for a document, not a binding                                 |
-| `DocumentBinding`            | `Documents`              | Matches `client.documents.{table}.{doc}` — the object IS the documents namespace |
+| `DocumentBinding`            | `Documents`              | Matches `client.documents.{table}.{doc}`: the object IS the documents namespace |
 | `DOCUMENT_BINDING_ORIGIN`    | `DOCUMENTS_ORIGIN`       | Matches the `documents` namespace                                                |
 | `createDocument()`           | `createDocuments()`      | Creates multiple document bindings for a table, not a single document            |
 | `ExtractDocTags`             | `ExtractDocumentTags`    | Expands abbreviation for consistency                                             |
@@ -54,30 +54,30 @@ Local variable renames (`binding` → `documents`, `docBinding` → `documentCon
 
 ### Phase 4: Update re-exports
 
-- [x] Update `workspace/index.ts` — `DocBinding` → `DocumentConfig`, `DocumentBinding` → `Documents`
-- [x] Update `src/index.ts` — same changes
+- [x] Update `workspace/index.ts`: `DocBinding` → `DocumentConfig`, `DocumentBinding` → `Documents`
+- [x] Update `src/index.ts`: same changes
 
 ### Phase 5: Update consumers
 
-- [x] `packages/filesystem/src/yjs-file-system.ts` — `DocumentBinding` → `Documents`
-- [x] `packages/filesystem/src/content-helpers.ts` — `DocumentBinding` → `Documents`
-- [x] `packages/epicenter/src/workspace/define-table.ts` — `DocBinding` → `DocumentConfig`
-- [x] `create-document.test.ts` — all constant and function name updates
-- [x] `create-workspace.test.ts` — `createDocument` → `createDocuments` in comment
+- [x] `packages/filesystem/src/yjs-file-system.ts`: `DocumentBinding` → `Documents`
+- [x] `packages/filesystem/src/content-helpers.ts`: `DocumentBinding` → `Documents`
+- [x] `packages/epicenter/src/workspace/define-table.ts`: `DocBinding` → `DocumentConfig`
+- [x] `create-document.test.ts`: all constant and function name updates
+- [x] `create-workspace.test.ts`: `createDocument` → `createDocuments` in comment
 
 ### Phase 6: Verify
 
-- [x] Grep for all old names — zero hits in `.ts` files
-- [x] `bun typecheck` — no new errors
-- [x] `bun test` in packages/epicenter — 336 pass, 0 fail
-- [x] `bun test` at repo root — 813 pass, 0 fail
+- [x] Grep for all old names: zero hits in `.ts` files
+- [x] `bun typecheck`: no new errors
+- [x] `bun test` in packages/epicenter: 336 pass, 0 fail
+- [x] `bun test` at repo root: 813 pass, 0 fail
 
 ## Decisions
 
 | Decision                                | Choice                            | Rationale                                                                     |
 | --------------------------------------- | --------------------------------- | ----------------------------------------------------------------------------- |
 | `DocsPropertyOf` rename                 | Skipped                           | Already deleted in previous spec's implementation (commit `fc065978a`)        |
-| `createDocument` in `apps/tab-manager/` | Not renamed                       | That's `browser.offscreen.createDocument` — a browser API, not ours           |
+| `createDocument` in `apps/tab-manager/` | Not renamed                       | That's `browser.offscreen.createDocument`: a browser API, not ours           |
 | Historical spec files                   | Not rewritten                     | Old references are documentation history; specs record how the design evolved |
 | LSP rename vs manual                    | Manual (`edit` with `replaceAll`) | LSP rename returned "Method not found" in this environment                    |
 
@@ -100,7 +100,7 @@ Local variable renames (`binding` → `documents`, `docBinding` → `documentCon
 
 ### Summary
 
-Pure rename refactor — 10 files changed, zero behavior changes. All type names, function names, constants, local variables, and symbols now align with the `client.documents` namespace introduced in the previous spec.
+Pure rename refactor: 10 files changed, zero behavior changes. All type names, function names, constants, local variables, and symbols now align with the `client.documents` namespace introduced in the previous spec.
 
 ### Verification
 

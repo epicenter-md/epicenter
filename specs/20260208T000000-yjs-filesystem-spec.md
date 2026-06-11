@@ -5,7 +5,7 @@
 
 > **Note (2026-02-11)**: The content format sections of this spec (Y.XmlFragment for .md, Y.Text for code, Y.Map for frontmatter, extension-based format detection, healing, content migration on rename) are **superseded** by `specs/20260211T100000-simplified-ytext-content-store.md`, which is in turn superseded by `specs/20260211T230000-timeline-content-storage-implementation.md`. Content docs now use a `Y.Array('timeline')` with nested shared types (Option F). The two-layer architecture (flat metadata table + per-file content docs), files table schema, runtime indexes, and `IFileSystem` interface remain valid.
 >
-> **See also**: `specs/20260211T220000-yjs-content-doc-multi-mode-research.md` — Decision record with full rationale for the Y.Array timeline approach (Option F).
+> **See also**: `specs/20260211T220000-yjs-content-doc-multi-mode-research.md`: Decision record with full rationale for the Y.Array timeline approach (Option F).
 
 ## Problem
 
@@ -43,9 +43,9 @@ Runtime Indexes (ephemeral JS Maps, not in Yjs)
 
 ### Why this architecture
 
-**Google Drive uses this exact separation.** A Google Doc has no `size`, no checksum, can't be downloaded — it's a structured data entity in a separate system. The Drive file resource is a metadata pointer connected by file ID. Our `files` table is the Drive file resource. Our content Y.Docs are the Google Docs content system.
+**Google Drive uses this exact separation.** A Google Doc has no `size`, no checksum, can't be downloaded: it's a structured data entity in a separate system. The Drive file resource is a metadata pointer connected by file ID. Our `files` table is the Drive file resource. Our content Y.Docs are the Google Docs content system.
 
-**Separate top-level Y.Docs (not subdocs).** Subdocs provide one thing top-level docs don't: parent-doc GUID enumeration. But almost no provider supports subdocs (y-websocket, y-indexeddb, y-sweet, Hocuspocus all don't). The `files` table already enumerates document GUIDs — each file's `id` (a `Guid`) is directly used as the Y.Doc GUID, no composite key needed. AFFiNE uses subdocs and had to build a complete custom provider stack.
+**Separate top-level Y.Docs (not subdocs).** Subdocs provide one thing top-level docs don't: parent-doc GUID enumeration. But almost no provider supports subdocs (y-websocket, y-indexeddb, y-sweet, Hocuspocus all don't). The `files` table already enumerates document GUIDs: each file's `id` (a `Guid`) is directly used as the Y.Doc GUID, no composite key needed. AFFiNE uses subdocs and had to build a complete custom provider stack.
 
 **Runtime indexes, not stored paths.** The files table stores `parentId` + `name` as source of truth. Full paths are computed and cached in ephemeral JS Maps. This keeps Yjs writes minimal (move = 1 row update) while giving O(1) path lookups for IFileSystem operations.
 
@@ -59,7 +59,7 @@ import { type } from 'arktype';
 
 const files = defineTable(
 	type({
-		id: 'string', // Guid — globally unique, doubles as Y.Doc GUID for content
+		id: 'string', // Guid: globally unique, doubles as Y.Doc GUID for content
 		name: 'string', // filename: "api.md", "src", "index.ts"
 		parentId: 'string | null', // null = root level
 		type: "'file' | 'folder'", // discriminator
@@ -80,8 +80,8 @@ const workspace = defineWorkspace({
 
 | Field       | Needed for                         | Notes                                                                                                                                                                                                                                                                                                                                                             |
 | ----------- | ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `id`        | Everything                         | `Guid` (15-char nanoid). Globally unique. Stable across renames/moves. Doubles as the content Y.Doc GUID — no composite key needed.                                                                                                                                                                                                                               |
-| `name`      | `readdir()`, path resolution       | Just the filename, not the full path. Must not contain `/`, `\`, or null bytes — see [Name validation](#name-validation). Unique per `(parentId, name)` among active files — enforced with `EEXIST` on write, disambiguated at read layer for CRDT conflicts. See [Name uniqueness](#name-uniqueness-eexist-on-write--display-disambiguation-for-crdt-conflicts). |
+| `id`        | Everything                         | `Guid` (15-char nanoid). Globally unique. Stable across renames/moves. Doubles as the content Y.Doc GUID: no composite key needed.                                                                                                                                                                                                                               |
+| `name`      | `readdir()`, path resolution       | Just the filename, not the full path. Must not contain `/`, `\`, or null bytes: see [Name validation](#name-validation). Unique per `(parentId, name)` among active files: enforced with `EEXIST` on write, disambiguated at read layer for CRDT conflicts. See [Name uniqueness](#name-uniqueness-eexist-on-write--display-disambiguation-for-crdt-conflicts). |
 | `parentId`  | `readdir()`, tree traversal        | null = root. ID-based = O(1) move, no cascading updates                                                                                                                                                                                                                                                                                                           |
 | `type`      | `stat()`, `readdirWithFileTypes()` | Derives `isFile`, `isDirectory`                                                                                                                                                                                                                                                                                                                                   |
 | `size`      | `stat()`, `ls -l`, `find -size`    | Updated by content doc observer. Avoids loading content for stat                                                                                                                                                                                                                                                                                                  |
@@ -91,18 +91,18 @@ const workspace = defineWorkspace({
 
 ### What's NOT stored
 
-- **Full path**: Derived at runtime. Storing it means cascade-updating every descendant on rename/move — O(n) Yjs writes vs O(1).
+- **Full path**: Derived at runtime. Storing it means cascade-updating every descendant on rename/move: O(n) Yjs writes vs O(1).
 - **Content / plaintext**: Content belongs in content Y.Docs. Mixing it into metadata violates the two-layer separation and bloats the always-loaded main doc.
-- **Unix mode/permissions**: Always derived (0o644 for files, 0o755 for folders). `chmod()` is a no-op (silently succeeds to satisfy just-bash). Collaborative system — unix permissions don't apply.
+- **Unix mode/permissions**: Always derived (0o644 for files, 0o755 for folders). `chmod()` is a no-op (silently succeeds to satisfy just-bash). Collaborative system: unix permissions don't apply.
 - **MIME type**: Derived from file extension at runtime.
-- **File extension**: Stored as part of `name` (single field). Extensions are a convention, not a structural element — files without extensions (`Makefile`, `.gitignore`) and files with multiple dots (`file.test.ts`, `archive.tar.gz`) make splitting ambiguous. Every real filesystem and API (ext4, APFS, Google Drive, Dropbox) stores a single name.
-- **Sort order**: No filesystem or file API (Google Drive included) supports user-defined sibling ordering. `ls` and `readdir` sort at the application layer. If a UI file tree with drag-and-drop reordering is needed later, add a nullable `sortOrder` field — it's a non-breaking additive change.
+- **File extension**: Stored as part of `name` (single field). Extensions are a convention, not a structural element: files without extensions (`Makefile`, `.gitignore`) and files with multiple dots (`file.test.ts`, `archive.tar.gz`) make splitting ambiguous. Every real filesystem and API (ext4, APFS, Google Drive, Dropbox) stores a single name.
+- **Sort order**: No filesystem or file API (Google Drive included) supports user-defined sibling ordering. `ls` and `readdir` sort at the application layer. If a UI file tree with drag-and-drop reordering is needed later, add a nullable `sortOrder` field: it's a non-breaking additive change.
 
 ---
 
 ## Layer 2: File Content (Top-Level Y.Docs)
 
-Each text file gets its own Y.Doc. The file's `id` (a `Guid`) is used directly as the Y.Doc GUID — a clean 1:1 mapping with no composite key.
+Each text file gets its own Y.Doc. The file's `id` (a `Guid`) is used directly as the Y.Doc GUID. A clean 1:1 mapping with no composite key.
 
 The Yjs backing type depends on the file extension:
 
@@ -141,7 +141,7 @@ type RichTextDocumentHandle = {
 
 type DocumentHandle = TextDocumentHandle | RichTextDocumentHandle;
 
-// Y.Doc lifecycle is owned by ContentDocStore — openDocument receives an existing ydoc
+// Y.Doc lifecycle is owned by ContentDocStore: openDocument receives an existing ydoc
 function openDocument(
 	fileId: FileId,
 	fileName: string,
@@ -163,14 +163,14 @@ function openDocument(
 ### Content doc GC strategy
 
 - **Main doc** (files table): `gc: true`. LWW doesn't need CRDT history. Efficient.
-- **Content docs**: `gc: false`. Retains tombstones for all deleted items, enabling Yjs snapshots for per-file version history. A snapshot is a state vector (`{ clientId → clock }`) that captures the document state at a point in time. Since tombstones are retained, any previous snapshot can be fully reconstructed — rollback to any version, play through the full history. Snapshots can be taken on every transaction for fine-grained history. Matches Google Drive's per-file revision model — no workspace-wide rollback, just individual file history.
-- **Clear-and-rebuild writes (agent `writeFile` on `.md`)**: Each agent write tombstones all existing characters and inserts new ones. Snapshots still capture complete document state — rollback works perfectly. The only cost is storage growth (tombstones accumulate) and coarser diffs between snapshots (shows "everything deleted, everything re-inserted" instead of character-level changes). This does not affect rollback or version browsing — each snapshot is a complete, exact document state.
+- **Content docs**: `gc: false`. Retains tombstones for all deleted items, enabling Yjs snapshots for per-file version history. A snapshot is a state vector (`{ clientId → clock }`) that captures the document state at a point in time. Since tombstones are retained, any previous snapshot can be fully reconstructed: rollback to any version, play through the full history. Snapshots can be taken on every transaction for fine-grained history. Matches Google Drive's per-file revision model: no workspace-wide rollback, just individual file history.
+- **Clear-and-rebuild writes (agent `writeFile` on `.md`)**: Each agent write tombstones all existing characters and inserts new ones. Snapshots still capture complete document state: rollback works perfectly. The only cost is storage growth (tombstones accumulate) and coarser diffs between snapshots (shows "everything deleted, everything re-inserted" instead of character-level changes). This does not affect rollback or version browsing: each snapshot is a complete, exact document state.
 
 ---
 
 ## Runtime Indexes
 
-The files table is always in memory (it's on the main Y.Doc). Runtime indexes provide O(1) lookups for IFileSystem operations. They're ephemeral JS Maps — not stored in Yjs — rebuilt on load and updated via full rebuild on `files.observe()`.
+The files table is always in memory (it's on the main Y.Doc). Runtime indexes provide O(1) lookups for IFileSystem operations. They're ephemeral JS Maps, not stored in Yjs: rebuilt on load and updated via full rebuild on `files.observe()`.
 
 ```typescript
 function createFileSystemIndex(
@@ -214,7 +214,7 @@ function createFileSystemIndex(
 }
 ```
 
-**Why two maps, not three.** `pathToId` provides full-path → FileId resolution (the table stores `name` + `parentId`, not computed paths). `childrenOf` provides parent → children reverse lookup (the table only stores child → parent via `parentId`). An `idToPath` reverse map was initially included for symmetry but had zero consumers in production code — removed per `specs/20260209T120000-branded-file-ids.md`. A `plaintext` cache was initially included but was fundamentally broken (no Y.Doc observers, stale on any write that bypasses `YjsFileSystem`) — removed per `specs/20260209T000000-simplify-content-doc-lifecycle.md`.
+**Why two maps, not three.** `pathToId` provides full-path → FileId resolution (the table stores `name` + `parentId`, not computed paths). `childrenOf` provides parent → children reverse lookup (the table only stores child → parent via `parentId`). An `idToPath` reverse map was initially included for symmetry but had zero consumers in production code: removed per `specs/20260209T120000-branded-file-ids.md`. A `plaintext` cache was initially included but was fundamentally broken (no Y.Doc observers, stale on any write that bypasses `YjsFileSystem`): removed per `specs/20260209T000000-simplify-content-doc-lifecycle.md`.
 
 ### Path resolution: O(depth) build, O(1) lookup
 
@@ -224,7 +224,7 @@ Path computation walks the `parentId` chain: `file → parent → grandparent �
 
 ## IFileSystem Implementation (just-bash)
 
-[just-bash](https://github.com/vercel-labs/just-bash) is a complete bash interpreter reimplemented in TypeScript. It has 83 built-in commands (grep, find, cat, ls, sed, awk, jq, etc.) that operate against an `IFileSystem` interface. The AI agent integration is a single `bash` tool — the agent writes bash scripts, just-bash interprets them.
+[just-bash](https://github.com/vercel-labs/just-bash) is a complete bash interpreter reimplemented in TypeScript. It has 83 built-in commands (grep, find, cat, ls, sed, awk, jq, etc.) that operate against an `IFileSystem` interface. The AI agent integration is a single `bash` tool. The agent writes bash scripts, just-bash interprets them.
 
 By implementing `IFileSystem` backed by the Yjs filesystem, agents get all 83 commands for free with pipe composition, redirections, and shell scripting.
 
@@ -284,19 +284,19 @@ interface FsStat {
 - `mv(src, dest)`, NOT `rename()`. This handles both moves and renames.
 - `cp(src, dest, options?)`, NOT `copyFile`. Supports `{ recursive: true }` for directory copies.
 - `resolvePath(base, path)` takes two arguments: a base path and a relative path.
-- `readdirWithFileTypes` is optional (`?`) — implementations may omit it.
-- `FsStat` has NO `birthtime` field — only `mtime`.
-- No `watch()` method — just-bash does not require file watching.
+- `readdirWithFileTypes` is optional (`?`): implementations may omit it.
+- `FsStat` has NO `birthtime` field: only `mtime`.
+- No `watch()` method: just-bash does not require file watching.
 
 ### Root directory
 
-The root directory (`/`) is a virtual entry — no row in the files table. Special-cased in all path operations:
+The root directory (`/`) is a virtual entry, no row in the files table. Special-cased in all path operations:
 
 ```typescript
-// No sentinel constant — null represents root everywhere.
+// No sentinel constant: null represents root everywhere.
 // resolveId('/') returns null
 // stat('/') returns a synthetic directory entry
-// readdir('/') returns childrenOf.get(null) — children with parentId === null
+// readdir('/') returns childrenOf.get(null): children with parentId === null
 // exists('/') checks resolved === '/' short-circuit (root is not in pathToId)
 ```
 
@@ -304,11 +304,11 @@ Files with `parentId: null` are root-level children. The `childrenOf` index uses
 
 ### Content doc store
 
-Content Y.Docs are managed by a `ContentDocStore` — a simple lifecycle manager that holds live Y.Doc instances keyed by `FileId`. It has zero domain knowledge: no file names, no document types, no serialization.
+Content Y.Docs are managed by a `ContentDocStore`: a simple lifecycle manager that holds live Y.Doc instances keyed by `FileId`. It has zero domain knowledge: no file names, no document types, no serialization.
 
 ```typescript
 type ContentDocStore = {
-	/** Get or create a Y.Doc for a file. Idempotent — returns existing if already created. */
+	/** Get or create a Y.Doc for a file. Idempotent: returns existing if already created. */
 	ensure(fileId: FileId): Y.Doc;
 	/** Destroy a specific file's Y.Doc. Called when a file is deleted. No-op if not created. */
 	destroy(fileId: FileId): void;
@@ -342,9 +342,9 @@ function createContentDocStore(): ContentDocStore {
 }
 ```
 
-**Why not a pool with reference counting**: The original design used acquire/release with refcounts. In practice, every filesystem operation (readFile, writeFile) acquired and released in the same scope — the refcount never exceeded 1 in headless usage. The store keeps Y.Docs alive until explicitly destroyed, which is both simpler and better for performance (no create/destroy churn on repeated reads of the same file). See `specs/20260209T000000-simplify-content-doc-lifecycle.md` for the full analysis.
+**Why not a pool with reference counting**: The original design used acquire/release with refcounts. In practice, every filesystem operation (readFile, writeFile) acquired and released in the same scope: the refcount never exceeded 1 in headless usage. The store keeps Y.Docs alive until explicitly destroyed, which is both simpler and better for performance (no create/destroy churn on repeated reads of the same file). See `specs/20260209T000000-simplify-content-doc-lifecycle.md` for the full analysis.
 
-**Why no plaintext cache**: The original design cached serialized strings in `index.plaintext`. This cache had no Y.Doc observers — any write that bypassed `YjsFileSystem` (provider sync, editor writes, remote collaborators) left it stale silently. Serializing from a live Y.Doc on every read is ~0.05-0.1ms per file — imperceptible even for `grep -r` on 100 files. Always-correct beats sometimes-fast. See `specs/20260209T000000-simplify-content-doc-lifecycle.md`.
+**Why no plaintext cache**: The original design cached serialized strings in `index.plaintext`. This cache had no Y.Doc observers: any write that bypassed `YjsFileSystem` (provider sync, editor writes, remote collaborators) left it stale silently. Serializing from a live Y.Doc on every read is ~0.05-0.1ms per file: imperceptible even for `grep -r` on 100 files. Always-correct beats sometimes-fast. See `specs/20260209T000000-simplify-content-doc-lifecycle.md`.
 
 **Provider separation**: The store doesn't know about providers. The filesystem doesn't know about providers. The editor/app layer attaches providers (IndexedDB, WebSocket) to the Y.Doc it gets from `store.ensure()`. This clean separation means the same store works in tests (no providers), headless servers (persistence only), and browsers (full sync).
 
@@ -414,7 +414,7 @@ class YjsFileSystem implements IFileSystem {
 	}
 
 	async lstat(path: string): Promise<FsStat> {
-		return this.stat(path); // No symlinks — lstat is identical to stat
+		return this.stat(path); // No symlinks: lstat is identical to stat
 	}
 
 	async exists(path: string): Promise<boolean> {
@@ -422,7 +422,7 @@ class YjsFileSystem implements IFileSystem {
 		return resolved === '/' || this.index.pathToId.has(resolved);
 	}
 
-	// --- Reads (content — always serializes from live Y.Doc) ---
+	// --- Reads (content: always serializes from live Y.Doc) ---
 
 	async readFile(path: string, _options?: { encoding?: string | null } | string): Promise<string> {
 		const resolved = posixResolve(this.cwd, path);
@@ -733,7 +733,7 @@ const result4 = await bash.exec('ls -la /src/');
 | `mkdir /new-dir`       | 1 row insert                                       | O(1)                                            |
 | `echo "x" > /file.txt` | Content doc load + Yjs transaction + row update    | O(1)                                            |
 
-`grep -r` is the expensive case. Each file requires serializing from its live Y.Doc (~0.05-0.1ms per file). For a workspace with 100 files, this is ~5-10ms total — imperceptible. The store keeps Y.Docs alive after first access, so subsequent operations reuse the same instances without re-creation overhead.
+`grep -r` is the expensive case. Each file requires serializing from its live Y.Doc (~0.05-0.1ms per file). For a workspace with 100 files, this is ~5-10ms total: imperceptible. The store keeps Y.Docs alive after first access, so subsequent operations reuse the same instances without re-creation overhead.
 
 ---
 
@@ -763,19 +763,19 @@ const result4 = await bash.exec('ls -la /src/');
 
 - y-prosemirror requires Y.XmlFragment (ProseMirror needs a tree structure)
 - y-codemirror.next requires Y.Text (1:1 character mapping)
-- Y.Map is the natural CRDT type for front matter — per-field last-writer-wins, concurrent edits to different metadata fields merge cleanly
+- Y.Map is the natural CRDT type for front matter: per-field last-writer-wins, concurrent edits to different metadata fields merge cleanly
 - No production system successfully syncs both representations bidirectionally
-- File extension determines the active types — it rarely changes, but when it does (rename), convert-on-switch migrates content between types
+- File extension determines the active types: it rarely changes, but when it does (rename), convert-on-switch migrates content between types
 
 ### Triple keys with convert-on-switch (content type switching)
 
-**Decision: Each content doc uses three root-level keys — `'text'` (Y.Text), `'richtext'` (Y.XmlFragment), and `'frontmatter'` (Y.Map). Active keys depend on file extension: `.md` uses `'richtext'` + `'frontmatter'`; code/txt files use `'text'` only.**
+**Decision: Each content doc uses three root-level keys: `'text'` (Y.Text), `'richtext'` (Y.XmlFragment), and `'frontmatter'` (Y.Map). Active keys depend on file extension: `.md` uses `'richtext'` + `'frontmatter'`; code/txt files use `'text'` only.**
 
-**Why separate keys, not a shared `'content'` key**: Yjs permanently locks a root-level key to whichever shared type is accessed first. If a doc calls `getText('content')`, that key is bound to Y.Text forever — calling `getXmlFragment('content')` on the same doc throws. Separate keys allow both types to coexist, enabling type switching without destroying the document.
+**Why separate keys, not a shared `'content'` key**: Yjs permanently locks a root-level key to whichever shared type is accessed first. If a doc calls `getText('content')`, that key is bound to Y.Text forever: calling `getXmlFragment('content')` on the same doc throws. Separate keys allow both types to coexist, enabling type switching without destroying the document.
 
 **Key names**: `'text'` and `'richtext'` mirror the `type` discriminator in `DocumentHandle`. `'frontmatter'` stores structured YAML metadata for `.md` files. They describe what the data represents (content format), not the Yjs type that stores it.
 
-**Lazy key creation:** Keys are created in Yjs only when first accessed via `getXmlFragment()`, `getText()`, or `getMap()`. The `openDocument()` function only accesses the active keys for the current file type. A `.ts` file that was never renamed has exactly one key (`Y.Text('text')`) in its doc state — the `richtext` and `frontmatter` keys don't exist at all until a conversion happens. There is zero overhead for the common case (files that never change type).
+**Lazy key creation:** Keys are created in Yjs only when first accessed via `getXmlFragment()`, `getText()`, or `getMap()`. The `openDocument()` function only accesses the active keys for the current file type. A `.ts` file that was never renamed has exactly one key (`Y.Text('text')`) in its doc state: the `richtext` and `frontmatter` keys don't exist at all until a conversion happens. There is zero overhead for the common case (files that never change type).
 
 **Convert-on-switch flow:**
 
@@ -791,7 +791,7 @@ Rename `.md` → `.txt`:
 
 1. Serialize front matter: `yMapToRecord(ydoc.getMap('frontmatter'))` → YAML string
 2. Serialize body: `remarkSerialize(ydoc.getXmlFragment('richtext'))` → markdown string
-3. Combine: `serializeMarkdownWithFrontmatter(frontmatter, body)` — prepends `---\n{yaml}\n---\n` if front matter is non-empty
+3. Combine: `serializeMarkdownWithFrontmatter(frontmatter, body)`: prepends `---\n{yaml}\n---\n` if front matter is non-empty
 4. Replace `ydoc.getText('text')` with the combined string via `updateYTextFromString()`
 5. Active key is now `getText('text')`
 
@@ -815,14 +815,14 @@ Y.Doc(guid: "bbb-222")
   │ Y.Map('frontmatter')       → { title: "API Ref" }   │ stale
   └──────────────────────────────────────────────────────┘
   Y.Text created during conversion. Old keys remain but are
-  never read — the file extension determines which keys are active.
+  never read. The file extension determines which keys are active.
 
   ── Phase 3: edited as .ts in CodeMirror ───────────────────────────
   │ Y.Text('text')             → "export const x = 42;" │ ACTIVE (edited)
   │ Y.XmlFragment('richtext')  → <p>Hello world</p>     │ stale (now WRONG)
   │ Y.Map('frontmatter')       → { title: "API Ref" }   │ stale (now WRONG)
   └──────────────────────────────────────────────────────┘
-  Stale keys diverge from reality. This is fine — they are never
+  Stale keys diverge from reality. This is fine. They are never
   read while the file is .ts. Correctness depends only on the
   active key, never on stale keys.
 
@@ -856,18 +856,18 @@ Y.Doc(guid: "bbb-222")
 
 **Properties:**
 
-- Rename remains a metadata operation (files table) + content migration — same Y.Doc, same GUID, no orphaned docs
-- Inactive keys only exist after a conversion has occurred — the common case (no type change) has exactly the keys it needs, nothing more
-- Stale data is never read and is always overwritten on the next conversion — correctness depends only on the active keys
+- Rename remains a metadata operation (files table) + content migration: same Y.Doc, same GUID, no orphaned docs
+- Inactive keys only exist after a conversion has occurred: the common case (no type change) has exactly the keys it needs, nothing more
+- Stale data is never read and is always overwritten on the next conversion: correctness depends only on the active keys
 - Front matter survives format conversion: `.txt` → `.md` extracts front matter from text into structured Y.Map fields; `.md` → `.txt` serializes Y.Map fields back into YAML text
-- Round-trip is inherently lossy (markdown ↔ structured tree) — this matches reality of format conversion
-- No bidirectional sync — only one type is active at a time, avoiding the normalization loops that plague dual-representation systems
+- Round-trip is inherently lossy (markdown ↔ structured tree): this matches reality of format conversion
+- No bidirectional sync: only one type is active at a time, avoiding the normalization loops that plague dual-representation systems
 
 ### Observer-side editor swap on type-changing rename
 
-**Decision: Observing peers tear down and rebind their editor when they detect a type-changing rename — same as any editor reloading a buffer after an external change.**
+**Decision: Observing peers tear down and rebind their editor when they detect a type-changing rename: same as any editor reloading a buffer after an external change.**
 
-The renaming peer performs the convert-on-switch data migration (reads old active keys, writes new active keys). Observing peers don't need to migrate anything — they detect the type change via `files.observe()` and rebind their editor to the already-migrated content. This mirrors standard editor behavior: Neovim, VS Code, and every file editor reload the buffer when the file type changes externally.
+The renaming peer performs the convert-on-switch data migration (reads old active keys, writes new active keys). Observing peers don't need to migrate anything. They detect the type change via `files.observe()` and rebind their editor to the already-migrated content. This mirrors standard editor behavior: Neovim, VS Code, and every file editor reload the buffer when the file type changes externally.
 
 **Observer-side flow:**
 
@@ -891,22 +891,22 @@ Peer A (renaming peer)             Peer B (observing peer)
 | Change                                           | Action                                           |
 | ------------------------------------------------ | ------------------------------------------------ |
 | Category change (`.txt` → `.md`, `.md` → `.ts`)  | Tear down editor, rebind to new active keys      |
-| Same category (`.ts` → `.js`, `.py` → `.rs`)     | No editor swap — update syntax highlighting only |
-| No extension change (rename `foo.md` → `bar.md`) | No editor swap — same active keys                |
+| Same category (`.ts` → `.js`, `.py` → `.rs`)     | No editor swap: update syntax highlighting only |
+| No extension change (rename `foo.md` → `bar.md`) | No editor swap: same active keys                |
 
-**No incremental migration on the observing side.** The renaming peer writes to the new active keys. Observing peers just rebind. Editor state (cursor position, scroll, selection, undo history) is lost on swap — acceptable for the rare event of a type-changing rename.
+**No incremental migration on the observing side.** The renaming peer writes to the new active keys. Observing peers just rebind. Editor state (cursor position, scroll, selection, undo history) is lost on swap: acceptable for the rare event of a type-changing rename.
 
-**Cross-doc timing.** The rename (main doc) and content migration (content doc) propagate through independent sync channels. An observing peer may receive the rename before the migration arrives. This resolves naturally — y-prosemirror and y-codemirror handle external mutations to the shared types they're bound to. If the target type is empty (first-ever conversion) or contains stale data (re-conversion), the editor binds to that state and then updates when the migration arrives. Worst case: a brief flash of empty or stale content, comparable to VS Code reloading a file after an external change.
+**Cross-doc timing.** The rename (main doc) and content migration (content doc) propagate through independent sync channels. An observing peer may receive the rename before the migration arrives. This resolves naturally: y-prosemirror and y-codemirror handle external mutations to the shared types they're bound to. If the target type is empty (first-ever conversion) or contains stale data (re-conversion), the editor binds to that state and then updates when the migration arrives. Worst case: a brief flash of empty or stale content, comparable to VS Code reloading a file after an external change.
 
-**Self-healing.** If the renaming peer crashes between rename and migration, the file has a new extension but the target content type is empty or stale. Any peer opening the file can detect this: the extension says `.md` but `Y.XmlFragment('richtext')` is empty while `Y.Text('text')` has content (or vice versa). That peer runs the migration itself — read from the populated type, write to the empty type. `openDocument()` is the natural place for this check. No stuck states.
+**Self-healing.** If the renaming peer crashes between rename and migration, the file has a new extension but the target content type is empty or stale. Any peer opening the file can detect this: the extension says `.md` but `Y.XmlFragment('richtext')` is empty while `Y.Text('text')` has content (or vice versa). That peer runs the migration itself: read from the populated type, write to the empty type. `openDocument()` is the natural place for this check. No stuck states.
 
 ### Alternatives considered for content type storage
 
-**New doc per type change:** On rename, create a new Y.Doc with a new GUID, migrate content, update a `contentDocGuid` field on the file row. Each doc is "clean" (no stale keys). But this breaks the `fileId = docGuid` invariant — every file row now needs a separate `contentDocGuid` field. Version history is split across multiple doc GUIDs (no continuity). Orphaned docs need provider-level garbage collection. The clean 1:1 mapping between file IDs and doc GUIDs is too valuable to sacrifice for cosmetic key cleanliness.
+**New doc per type change:** On rename, create a new Y.Doc with a new GUID, migrate content, update a `contentDocGuid` field on the file row. Each doc is "clean" (no stale keys). But this breaks the `fileId = docGuid` invariant: every file row now needs a separate `contentDocGuid` field. Version history is split across multiple doc GUIDs (no continuity). Orphaned docs need provider-level garbage collection. The clean 1:1 mapping between file IDs and doc GUIDs is too valuable to sacrifice for cosmetic key cleanliness.
 
 **Always Y.Text, derive rich editing:** Store everything as Y.Text regardless of type. For `.md` files, parse into ProseMirror on open, sync edits back to Y.Text via serialize → diff → apply. One key, one type, no conversion on rename. But this is bidirectional sync: ProseMirror edit → serialize to markdown → diff against Y.Text → apply Yjs ops. The round-trip normalizes whitespace, emphasis style, list markers. Two concurrent editors get normalization loops where each peer's serialization "corrects" the other's formatting. No production system has solved this.
 
-**Versioned key names:** Use `'text:1'`, `'richtext:2'`, `'frontmatter:2'` with a `contentVersion` counter. Every conversion creates fresh keys, so no stale data confusion. But keys accumulate forever (10 renames = 10 sets of keys), requires a version counter in metadata, and gains nothing over triple-key — stale keys in the triple-key approach are equally harmless and get overwritten on the next conversion instead of accumulating indefinitely.
+**Versioned key names:** Use `'text:1'`, `'richtext:2'`, `'frontmatter:2'` with a `contentVersion` counter. Every conversion creates fresh keys, so no stale data confusion. But keys accumulate forever (10 renames = 10 sets of keys), requires a version counter in metadata, and gains nothing over triple-key: stale keys in the triple-key approach are equally harmless and get overwritten on the next conversion instead of accumulating indefinitely.
 
 ### Front matter as Y.Map (structured metadata for .md files)
 
@@ -926,8 +926,8 @@ Body content here.
 
 **Y.Map properties:**
 
-- **Per-field LWW**: Each top-level YAML key is a Y.Map entry. Concurrent edits to different fields merge cleanly (user A changes `title`, user B changes `tags` — both apply).
-- **JSON-compatible values**: Y.Map entries store strings, numbers, booleans, arrays, and nested objects — matching YAML's value space. Nested structures are stored as opaque JSON values (LWW at the top-level key, not deep-merged).
+- **Per-field LWW**: Each top-level YAML key is a Y.Map entry. Concurrent edits to different fields merge cleanly (user A changes `title`, user B changes `tags`: both apply).
+- **JSON-compatible values**: Y.Map entries store strings, numbers, booleans, arrays, and nested objects: matching YAML's value space. Nested structures are stored as opaque JSON values (LWW at the top-level key, not deep-merged).
 - **Separate from body**: ProseMirror's document tree represents body content only. Front matter is not rendered as ProseMirror nodes. This avoids schema complexity and keeps the XmlFragment clean.
 
 **Why not store front matter in the Y.XmlFragment:**
@@ -939,7 +939,7 @@ Body content here.
 **Why not store front matter in Y.Text:**
 
 - Y.Text is a flat character sequence. Concurrent edits to different YAML keys could interleave characters, producing invalid YAML.
-- Y.Map gives per-field conflict resolution — the correct granularity for structured metadata.
+- Y.Map gives per-field conflict resolution: the correct granularity for structured metadata.
 
 **Read path**: `Y.Map.forEach()` → `Record<string, unknown>` → `yamlStringify()` → prepend to body with `---` delimiters.
 
@@ -1005,22 +1005,22 @@ function yMapToRecord(ymap: Y.Map<unknown>): Record<string, unknown> {
 
 **Approach**: Agent `writeFile` on `.md` files uses clear-and-rebuild via `updateYXmlFragmentFromString()`. This deletes all XmlFragment nodes and rebuilds from the parsed markdown in a single Yjs transaction. Every character loses its Yjs item ID on each write.
 
-**Revision history is fully functional.** Content docs use `gc: false`, so tombstones from clear-and-rebuild are retained. Snapshots taken before and after an agent write capture complete document states. Rollback to any snapshot reconstructs the exact document. The only difference from character-level diffs: the diff _between_ two snapshots shows "everything deleted, everything re-inserted" rather than highlighting the specific changes. The snapshots themselves are perfect — browsing history and restoring versions works identically to code files with character-level diffs.
+**Revision history is fully functional.** Content docs use `gc: false`, so tombstones from clear-and-rebuild are retained. Snapshots taken before and after an agent write capture complete document states. Rollback to any snapshot reconstructs the exact document. The only difference from character-level diffs: the diff _between_ two snapshots shows "everything deleted, everything re-inserted" rather than highlighting the specific changes. The snapshots themselves are perfect: browsing history and restoring versions works identically to code files with character-level diffs.
 
-**Concurrent editing limitation.** If a human is editing in ProseMirror while an agent calls `writeFile`, the agent's clear-and-rebuild destroys the human's in-flight CRDT operations. Non-overlapping edits are lost because every character is deleted and re-inserted with new IDs. This is the primary cost of clear-and-rebuild — not revision history, but concurrent writer safety.
+**Concurrent editing limitation.** If a human is editing in ProseMirror while an agent calls `writeFile`, the agent's clear-and-rebuild destroys the human's in-flight CRDT operations. Non-overlapping edits are lost because every character is deleted and re-inserted with new IDs. This is the primary cost of clear-and-rebuild: not revision history, but concurrent writer safety.
 
 **Storage cost.** Each agent write creates tombstones for every existing character plus new items for every inserted character. A 5KB markdown file with 20 agent writes accumulates ~200KB of Yjs state. Manageable for local-first storage, and compaction (snapshot → fresh doc) can reclaim space if needed.
 
-**Future optimization: `updateYFragment`.** Replace clear-and-rebuild internals with y-prosemirror's `updateYFragment()`. This diffs a ProseMirror node tree against the existing Y.XmlFragment, preserving unchanged paragraphs and applying character-level diffs within modified text nodes. Requires a headless ProseMirror schema matching Milkdown's schema plus a `markdownToProseMirrorNode()` parse function. Adopt when concurrent human + agent editing on `.md` files is a real workflow. The architectural change is contained to a single function's internals — no API changes needed.
+**Future optimization: `updateYFragment`.** Replace clear-and-rebuild internals with y-prosemirror's `updateYFragment()`. This diffs a ProseMirror node tree against the existing Y.XmlFragment, preserving unchanged paragraphs and applying character-level diffs within modified text nodes. Requires a headless ProseMirror schema matching Milkdown's schema plus a `markdownToProseMirrorNode()` parse function. Adopt when concurrent human + agent editing on `.md` files is a real workflow. The architectural change is contained to a single function's internals: no API changes needed.
 
 ### File IDs are branded FileIds (Guid-based)
 
-**Decision: File rows use `FileId = Guid & Brand<'FileId'>` — a branded 15-char nanoid, globally unique.**
+**Decision: File rows use `FileId = Guid & Brand<'FileId'>`: a branded 15-char nanoid, globally unique.**
 
-- `FileId` is a branded `Guid` — semantically distinct from workspace IDs or other GUIDs. `generateFileId()` wraps `generateGuid()` with a cast. The type carries two brands (`Brand<'Guid'>` + `Brand<'FileId'>`), which is intentional.
-- File IDs double as Y.Doc GUIDs — they must be globally unique across all workspaces, not just unique within the files table
+- `FileId` is a branded `Guid`: semantically distinct from workspace IDs or other GUIDs. `generateFileId()` wraps `generateGuid()` with a cast. The type carries two brands (`Brand<'Guid'>` + `Brand<'FileId'>`), which is intentional.
+- File IDs double as Y.Doc GUIDs: they must be globally unique across all workspaces, not just unique within the files table
 - 1:1 mapping: `fileId` IS the content doc GUID. No composite key (`{workspaceId}:file:{fileId}`), no string construction, no convention to remember
-- `null` represents root everywhere — no sentinel constant. `resolveId('/')` returns `null`. Root checks are `=== null`.
+- `null` represents root everywhere: no sentinel constant. `resolveId('/')` returns `null`. Root checks are `=== null`.
 - Cross-workspace file moves don't require re-creating the content doc under a new GUID
 - See `specs/20260209T120000-branded-file-ids.md` for the full analysis of why branded types + null-for-root
 
@@ -1030,15 +1030,15 @@ function yMapToRecord(ymap: Y.Map<unknown>): Record<string, unknown> {
 
 - One big doc: 500 files \* 10KB = 5MB loaded eagerly. Can't lazy-load. No per-file GC control.
 - Subdocs: correct semantically but no provider support (y-websocket, y-indexeddb, y-sweet, Hocuspocus all don't support them)
-- Top-level docs: lazy-load for free (create Y.Doc on open, destroy on close). Standard provider support. The file's `Guid` is used directly as the Y.Doc GUID — 1:1 mapping, no composite key.
+- Top-level docs: lazy-load for free (create Y.Doc on open, destroy on close). Standard provider support. The file's `Guid` is used directly as the Y.Doc GUID: 1:1 mapping, no composite key.
 
 ### No filesystem-level rollback
 
 **Decision: Per-file version history only. No workspace-wide snapshots.**
 
 - Google Drive has no version history for metadata (renames, moves are not versioned)
-- Rolling back the filesystem means undoing renames that other users already see — semantically wrong
-- Per-file snapshots via Yjs (content docs use `gc: false`) provide complete version history per file. Snapshots can be taken on every transaction. Each snapshot reconstructs the exact document state at that point — rollback and history playback work for all file types, including `.md` files with clear-and-rebuild agent writes
+- Rolling back the filesystem means undoing renames that other users already see: semantically wrong
+- Per-file snapshots via Yjs (content docs use `gc: false`) provide complete version history per file. Snapshots can be taken on every transaction. Each snapshot reconstructs the exact document state at that point: rollback and history playback work for all file types, including `.md` files with clear-and-rebuild agent writes
 - Main doc uses `gc: true` for efficient LWW
 
 ### Soft delete (co-located `trashedAt`)
@@ -1046,10 +1046,10 @@ function yMapToRecord(ymap: Y.Map<unknown>): Record<string, unknown> {
 **Decision: `trashedAt: number | null` field on the file row. `null` = active, timestamp = when trashed.**
 
 - Soft delete prevents accidental data loss in a collaborative system where one user's `rm` affects everyone
-- Co-located on the row (not a separate trash table) for simplicity — one lookup, one table, restore preserves the entire row (parentId, name, everything)
-- `readdir()` and `readdirWithFileTypes()` filter out trashed files — trashed files are invisible to IFileSystem/bash operations
+- Co-located on the row (not a separate trash table) for simplicity: one lookup, one table, restore preserves the entire row (parentId, name, everything)
+- `readdir()` and `readdirWithFileTypes()` filter out trashed files: trashed files are invisible to IFileSystem/bash operations
 - Permanent delete = `files.delete(id)`, same as before
-- LWW conflict with concurrent metadata edits is the same risk as any other field — if someone trashes a file while someone else renames it, one wins. In practice this is rare and the consequence is mild (trash it again)
+- LWW conflict with concurrent metadata edits is the same risk as any other field: if someone trashes a file while someone else renames it, one wins. In practice this is rare and the consequence is mild (trash it again)
 - `rm` via IFileSystem soft-deletes (sets `trashedAt`). In a collaborative system, an agent's `rm` shouldn't permanently destroy data that other users may need. Permanent delete is an explicit "empty trash" UI operation
 
 ### Name validation
@@ -1057,9 +1057,9 @@ function yMapToRecord(ymap: Y.Map<unknown>): Record<string, unknown> {
 **Decision: `name` must not contain `/`, `\`, or null bytes (`\0`). All other characters are allowed.**
 
 - Path resolution joins names with `/` to build paths like `/docs/api.md`. A file named `foo/bar` in `/docs/` produces the path `/docs/foo/bar`, which is ambiguous with a file named `bar` in `/docs/foo/`
-- Every real filesystem enforces this — ext4 and APFS forbid `/` in filenames at the kernel level, NTFS forbids `\ / : * ? " < > |`
+- Every real filesystem enforces this: ext4 and APFS forbid `/` in filenames at the kernel level, NTFS forbids `\ / : * ? " < > |`
 - We only enforce the minimum: path separators and null bytes. Spaces, dots, unicode, emoji, special characters are all allowed
-- Validation happens on write (`writeFile`, `mkdir`, rename operations) — reject with `EINVAL` before touching Yjs
+- Validation happens on write (`writeFile`, `mkdir`, rename operations): reject with `EINVAL` before touching Yjs
 
 ```typescript
 function validateName(name: string): void {
@@ -1076,9 +1076,9 @@ function validateName(name: string): void {
 
 **Decision: Enforce unique `(parentId, name)` on local writes. Disambiguate at the IFileSystem read layer for concurrent CRDT conflicts.**
 
-Real filesystems (ext4, APFS, NTFS) enforce unique filenames per directory at the kernel level. Google Drive does not — it allows multiple files with the same name in the same folder because Drive never exposes path-based access (everything is by ID). We need both: ID-based storage (like Drive) and path-based access (IFileSystem for bash). So uniqueness is enforced at two layers:
+Real filesystems (ext4, APFS, NTFS) enforce unique filenames per directory at the kernel level. Google Drive does not. It allows multiple files with the same name in the same folder because Drive never exposes path-based access (everything is by ID). We need both: ID-based storage (like Drive) and path-based access (IFileSystem for bash). So uniqueness is enforced at two layers:
 
-**Layer 1: EEXIST check on local writes.** All operations that create or rename a file (`writeFile` creating new, `mkdir`, rename, move) check if an active (non-trashed) file with the same `(parentId, name)` already exists. If so, reject with `EEXIST`. This prevents 99% of duplicates — the single-user and non-concurrent cases.
+**Layer 1: EEXIST check on local writes.** All operations that create or rename a file (`writeFile` creating new, `mkdir`, rename, move) check if an active (non-trashed) file with the same `(parentId, name)` already exists. If so, reject with `EEXIST`. This prevents 99% of duplicates: the single-user and non-concurrent cases.
 
 ```typescript
 function assertUniqueName(
@@ -1101,7 +1101,7 @@ function assertUniqueName(
 }
 ```
 
-**Layer 2: Display disambiguation for CRDT conflicts.** Two users can simultaneously create files with the same name — each generates a unique Guid, inserts a row with the same `(parentId, name)`. Both writes succeed independently via LWW (different IDs). The stored `name` is NOT mutated. Instead:
+**Layer 2: Display disambiguation for CRDT conflicts.** Two users can simultaneously create files with the same name: each generates a unique Guid, inserts a row with the same `(parentId, name)`. Both writes succeed independently via LWW (different IDs). The stored `name` is NOT mutated. Instead:
 
 - The IFileSystem layer detects duplicate names at read time (`readdir`, `readdirWithFileTypes`, path index rebuild)
 - Assigns display suffixes: `foo.txt` stays for the earliest-created file, `foo (1).txt` for the next, `foo (2).txt` for subsequent duplicates
@@ -1126,7 +1126,7 @@ function disambiguateNames(rows: FileRow[]): Map<string, string> {
 			result.set(group[0].id, name);
 			continue;
 		}
-		// Sort by createdAt — earliest keeps clean name
+		// Sort by createdAt: earliest keeps clean name
 		group.sort((a, b) => a.createdAt - b.createdAt);
 		result.set(group[0].id, name);
 		for (let i = 1; i < group.length; i++) {
@@ -1141,7 +1141,7 @@ function disambiguateNames(rows: FileRow[]): Map<string, string> {
 }
 ```
 
-**Why not auto-rename in metadata:** Auto-renaming writes back to the CRDT, which can itself conflict with other concurrent operations. Clock skew across peers makes "later" ambiguous. Silently renaming a file someone just created is surprising. Display-only disambiguation avoids all write-back issues — it's purely a read-layer concern.
+**Why not auto-rename in metadata:** Auto-renaming writes back to the CRDT, which can itself conflict with other concurrent operations. Clock skew across peers makes "later" ambiguous. Silently renaming a file someone just created is surprising. Display-only disambiguation avoids all write-back issues: it's purely a read-layer concern.
 
 **Why not reject on observe:** The CRDT has already accepted both writes. Deleting one would lose data. The correct CRDT philosophy: accept all data, present it coherently.
 
@@ -1152,7 +1152,7 @@ function disambiguateNames(rows: FileRow[]): Map<string, string> {
 ### Create File
 
 1. Validate name (no `/`, `\`, null bytes, empty, `.`, `..`)
-2. Assert unique name in parent (`assertUniqueName` — reject with `EEXIST` if duplicate)
+2. Assert unique name in parent (`assertUniqueName`: reject with `EEXIST` if duplicate)
 3. Generate FileId via `generateFileId()`
 4. `files.set({ id, name, parentId, type: 'file', size: 0, createdAt: Date.now(), updatedAt: Date.now(), trashedAt: null })`
 5. Content Y.Doc created lazily via `store.ensure(id)` on first read/write
@@ -1160,23 +1160,23 @@ function disambiguateNames(rows: FileRow[]): Map<string, string> {
 ### Create Folder
 
 1. Validate name
-2. Assert unique name in parent (`assertUniqueName` — reject with `EEXIST` if duplicate)
+2. Assert unique name in parent (`assertUniqueName`: reject with `EEXIST` if duplicate)
 3. Generate FileId via `generateFileId()`
 4. `files.set({ id, name, parentId, type: 'folder', size: 0, createdAt: Date.now(), updatedAt: Date.now(), trashedAt: null })`
 
 ### Move File/Folder
 
-1. Assert unique name in new parent (`assertUniqueName` with `excludeId` — reject with `EEXIST` if duplicate)
+1. Assert unique name in new parent (`assertUniqueName` with `excludeId`: reject with `EEXIST` if duplicate)
 2. `files.update(id, { parentId: newParentId, updatedAt: Date.now() })`
 3. Runtime indexes update reactively via `files.observe()`
-4. No cascading updates — children still reference this node by ID
+4. No cascading updates: children still reference this node by ID
 
 ### Rename
 
 **Renaming peer:**
 
 1. Validate new name
-2. Assert unique name in parent (`assertUniqueName` with `excludeId` — reject with `EEXIST` if duplicate)
+2. Assert unique name in parent (`assertUniqueName` with `excludeId`: reject with `EEXIST` if duplicate)
 3. `files.update(id, { name: newName, updatedAt: Date.now() })`
 4. If file extension category changed (e.g., `.txt` → `.md` or `.md` → `.txt`):
    a. Read plaintext content from current Y.Doc
@@ -1197,7 +1197,7 @@ function disambiguateNames(rows: FileRow[]): Map<string, string> {
 ### Trash (IFileSystem `rm` and UI)
 
 1. `files.update(id, { trashedAt: Date.now() })`
-2. `store.destroy(id)` — release the content Y.Doc
+2. `store.destroy(id)`: release the content Y.Doc
 3. File/folder becomes invisible to `readdir()` and path resolution
 4. If recursive, `softDeleteDescendants()` walks children and trashes + destroys each
 
@@ -1210,21 +1210,21 @@ function disambiguateNames(rows: FileRow[]): Map<string, string> {
 ### Delete (permanent, "empty trash" UI only)
 
 1. `files.delete(id)`
-2. `store.destroy(id)` — clean up the content Y.Doc
+2. `store.destroy(id)`: clean up the content Y.Doc
 3. Recursively delete children via `childrenOf` index
 
 ### Read File Content
 
 1. Resolve path to ID via `pathToId` index
-2. `store.ensure(id)` — get or create the content Y.Doc
-3. `healContentType(ydoc, row.name)` — self-heal if content is in wrong-type keys
+2. `store.ensure(id)`: get or create the content Y.Doc
+3. `healContentType(ydoc, row.name)`: self-heal if content is in wrong-type keys
 4. `openDocument(id, row.name, ydoc)` → typed `DocumentHandle`
-5. `documentHandleToString(handle)` — serialize to string. For code files: `Y.Text.toString()`. For `.md` files: serialize `Y.Map('frontmatter')` → YAML + serialize `Y.XmlFragment('richtext')` → markdown body + combine with `---` delimiters.
+5. `documentHandleToString(handle)`: serialize to string. For code files: `Y.Text.toString()`. For `.md` files: serialize `Y.Map('frontmatter')` → YAML + serialize `Y.XmlFragment('richtext')` → markdown body + combine with `---` delimiters.
 
 ### Write File Content
 
 1. Resolve path to ID (or create file if new, using `generateFileId()`)
-2. `store.ensure(id)` — get or create the content Y.Doc
+2. `store.ensure(id)`: get or create the content Y.Doc
 3. `healContentType(ydoc, row.name)` + `openDocument(id, row.name, ydoc)`
 4. For code files: apply changes via Yjs transaction on Y.Text. For `.md` files: extract front matter → `updateYMapFromRecord()` on Y.Map, apply body via `updateYXmlFragmentFromString()` on Y.XmlFragment (clear-and-rebuild).
 5. Update `size` and `updatedAt` on files table row
@@ -1234,7 +1234,7 @@ function disambiguateNames(rows: FileRow[]): Map<string, string> {
 1. `childrenOf.get(folderId)` for child IDs
 2. Filter out rows where `trashedAt !== null`
 3. Run `disambiguateNames()` to assign display names (handles CRDT duplicate conflicts)
-4. Map to rows using display names (sort applied at the application layer — `ls` sorts by name, time, size, etc.)
+4. Map to rows using display names (sort applied at the application layer: `ls` sorts by name, time, size, etc.)
 
 ### Resolve Path
 
@@ -1257,7 +1257,7 @@ All operations that set a filename (`writeFile`, `mkdir`, rename) must validate 
 
 Duplicate `(parentId, name)` pairs among active files can arise from concurrent CRDT writes that bypass the local `EEXIST` check. Detection and disambiguation happen at two points:
 
-**On index rebuild/update (`files.observe()`):** When building the `pathToId` index, group active children by `(parentId, name)`. For groups with >1 entry, assign display suffixes using `disambiguateNames()` — earliest `createdAt` keeps the clean path, later entries get suffixed paths. Both clean and suffixed paths are indexed in `pathToId`.
+**On index rebuild/update (`files.observe()`):** When building the `pathToId` index, group active children by `(parentId, name)`. For groups with >1 entry, assign display suffixes using `disambiguateNames()`: earliest `createdAt` keeps the clean path, later entries get suffixed paths. Both clean and suffixed paths are indexed in `pathToId`.
 
 **On `readdir()` / `readdirWithFileTypes()`:** Return display names (with suffixes) instead of raw stored names when duplicates exist within the listed directory.
 
@@ -1273,7 +1273,7 @@ Detection: after any `parentId` change observed via `files.observe()`, walk the 
 
 If a file's `parentId` references a permanently deleted folder, the file is orphaned. On index rebuild, detect orphans and surface them at root level (`parentId = null`) as the safe default.
 
-Note: trashed folders don't create orphans — their children are implicitly unreachable via `readdir()` (which filters by `trashedAt`). Orphans only occur from permanent deletes, which remove the row entirely.
+Note: trashed folders don't create orphans: their children are implicitly unreachable via `readdir()` (which filters by `trashedAt`). Orphans only occur from permanent deletes, which remove the row entirely.
 
 ---
 
@@ -1314,7 +1314,7 @@ The static API is production-ready and provides the core building blocks:
 
 **Not yet installed (Phase 5)**: `y-codemirror.next`, `@milkdown/plugin-collab`
 
-### Phase 1: Files table + runtime indexes — DONE
+### Phase 1: Files table + runtime indexes: DONE
 
 **Commit**: `feat(filesystem): add files table definition and runtime indexes`
 
@@ -1323,15 +1323,15 @@ The static API is production-ready and provides the core building blocks:
 **Delivered**:
 
 1. Files table definition using `defineTable()` with the schema from Layer 1 (`file-table.ts`)
-2. `createFileSystemIndex()` — builds `pathToId`, `childrenOf` Maps from the files table (`file-system-index.ts`)
+2. `createFileSystemIndex()`: builds `pathToId`, `childrenOf` Maps from the files table (`file-system-index.ts`)
 3. Full rebuild on `filesTable.observe()` (incremental update found to be equivalent to full rebuild for in-memory data)
 4. `validateName()`, `assertUniqueName()`, `disambiguateNames()` helper functions (`validation.ts`)
 5. Circular reference detection (`detectCycle`) and orphan detection (`fixOrphans`) in index rebuild
 6. Core types: `FileRow`, `FileSystemIndex`, `DocumentHandle` types (`types.ts`)
 
-**Tests**: 27 tests — index building, path resolution, name validation, disambiguation, circular reference breaking.
+**Tests**: 27 tests: index building, path resolution, name validation, disambiguation, circular reference breaking.
 
-### Phase 2: IFileSystem + just-bash integration — DONE
+### Phase 2: IFileSystem + just-bash integration: DONE
 
 **Commit**: `feat(filesystem): add IFileSystem implementation and just-bash integration`
 
@@ -1341,14 +1341,14 @@ The static API is production-ready and provides the core building blocks:
 
 1. Installed `just-bash`
 2. `YjsFileSystem` class implementing the full `IFileSystem` contract (all 20 methods + optional `readdirWithFileTypes`)
-3. `createContentDocPool()` for content doc lifecycle (later replaced by `ContentDocStore` — see post-implementation refactors)
+3. `createContentDocPool()` for content doc lifecycle (later replaced by `ContentDocStore`: see post-implementation refactors)
 4. Root directory handling (`/` as virtual entry)
 5. `posixResolve()` for path normalization
 6. Private helpers: `resolveId`, `getRow`, `assertDirectory`, `getActiveChildren`, `parsePath`, `softDeleteDescendants`
 
-**Tests**: 77 tests — full just-bash integration tests: `ls`, `cat`, `find`, `grep`, `mkdir -p`, `rm -rf`, `mv`, `cp -r`, `wc -l`, pipe composition.
+**Tests**: 77 tests: full just-bash integration tests: `ls`, `cat`, `find`, `grep`, `mkdir -p`, `rm -rf`, `mv`, `cp -r`, `wc -l`, pipe composition.
 
-### Phase 3: Markdown support (Y.XmlFragment + Y.Map) — DONE
+### Phase 3: Markdown support (Y.XmlFragment + Y.Map): DONE
 
 **Commit**: `feat(filesystem): add markdown support with Y.XmlFragment and Y.Map`
 
@@ -1356,20 +1356,20 @@ The static API is production-ready and provides the core building blocks:
 
 **Delivered**:
 
-1. `parseFrontmatter(content)` — split `---` delimited YAML from body
-2. `serializeMarkdownWithFrontmatter(frontmatter, body)` — combine YAML + body
-3. `updateYMapFromRecord(ymap, target)` — diff-update Y.Map from plain object
-4. `yMapToRecord(ymap)` — Y.Map to plain object
-5. `serializeXmlFragmentToMarkdown(fragment)` — headless: Y.XmlFragment → ProseMirror JSON → ProseMirror node → markdown
-6. `updateYXmlFragmentFromString(fragment, markdown)` — headless: markdown → ProseMirror doc → Y.XmlFragment (via `prosemirrorToYXmlFragment`)
+1. `parseFrontmatter(content)`: split `---` delimited YAML from body
+2. `serializeMarkdownWithFrontmatter(frontmatter, body)`: combine YAML + body
+3. `updateYMapFromRecord(ymap, target)`: diff-update Y.Map from plain object
+4. `yMapToRecord(ymap)`: Y.Map to plain object
+5. `serializeXmlFragmentToMarkdown(fragment)`: headless: Y.XmlFragment → ProseMirror JSON → ProseMirror node → markdown
+6. `updateYXmlFragmentFromString(fragment, markdown)`: headless: markdown → ProseMirror doc → Y.XmlFragment (via `prosemirrorToYXmlFragment`)
 7. Updated `openDocument()` to return `RichTextDocumentHandle` for `.md` files
 8. Updated `readFile()` and `writeFile()` to handle the richtext path
 
 All serialization is DOM-free (verified in source). The pipeline works in Node.js/Bun without jsdom.
 
-**Tests**: 95 tests — round-trip markdown, frontmatter parsing/serialization, Y.Map diff-update, headless XmlFragment ↔ markdown.
+**Tests**: 95 tests: round-trip markdown, frontmatter parsing/serialization, Y.Map diff-update, headless XmlFragment ↔ markdown.
 
-### Phase 4: Convert-on-switch — DONE
+### Phase 4: Convert-on-switch: DONE
 
 **Commit**: `feat(filesystem): add convert-on-switch for type-changing renames`
 
@@ -1379,12 +1379,12 @@ All serialization is DOM-free (verified in source). The pipeline works in Node.j
 
 1. `getExtensionCategory(name)` → `'text' | 'richtext'` (`convert-on-switch.ts`)
 2. Convert-on-switch in `mv()`: read plaintext from current type, destroy Y.Doc, update metadata, re-write via `writeFile()` which uses the new type handler
-3. `healContentType(ydoc, fileName)` — self-healing: detects content in wrong-type keys and migrates on load
+3. `healContentType(ydoc, fileName)`: self-healing: detects content in wrong-type keys and migrates on load
 4. Self-healing called in both `readFile()` and `writeFile()` via `store.ensure()` + `healContentType()`
 
-**Tests**: 112 tests — rename `.txt` → `.md`, `.md` → `.ts`, round-trip, self-healing with wrong-category content.
+**Tests**: 112 tests: rename `.txt` → `.md`, `.md` → `.ts`, round-trip, self-healing with wrong-category content.
 
-### Post-implementation refactors — DONE
+### Post-implementation refactors: DONE
 
 These specs were created after initial implementation to address discovered issues:
 
@@ -1394,7 +1394,7 @@ These specs were created after initial implementation to address discovered issu
 
 3. **Remove idToPath** (`specs/20260210T000000-remove-idtopath-from-index.md`): Draft spec to remove unused `idToPath` map from `FileSystemIndex`. Zero consumers in production code.
 
-### Phase 5: Editor bindings (UI layer) — DEFERRED
+### Phase 5: Editor bindings (UI layer): DEFERRED
 
 **Goal**: Wire up collaborative editors in the Tauri app.
 
@@ -1552,12 +1552,12 @@ async function ingestDirectory(
 2. ~~**Binary files**~~: **Resolved.** Ephemeral `Map<FileId, Uint8Array>` for binary data, Y.Text for text. Mutually exclusive per file. Matches InMemoryFs semantics. See `specs/20260211T200000-yjs-filesystem-conformance-fixes.md` for the full options analysis and decision.
 3. **File size limits**: Large files (>1MB) as Y.Text are expensive. Read-only mode above a threshold?
 4. ~~**Plaintext cache warming**~~: **Resolved.** The plaintext cache was removed entirely. `readFile()` always serializes from the live Y.Doc (~0.05-0.1ms per file). No caching strategy needed. See `specs/20260209T000000-simplify-content-doc-lifecycle.md`.
-5. **Front matter deep merge**: Y.Map stores top-level YAML keys with LWW semantics. Nested objects (e.g., `metadata: { author: "...", version: "..." }`) are stored as opaque JSON — concurrent edits to different nested keys within the same top-level key will be LWW (one wins). Is this sufficient, or should deeply nested front matter use nested Y.Maps? Recommendation: start with flat LWW. Deep merge adds complexity and front matter is rarely deeply nested in practice.
+5. **Front matter deep merge**: Y.Map stores top-level YAML keys with LWW semantics. Nested objects (e.g., `metadata: { author: "...", version: "..." }`) are stored as opaque JSON: concurrent edits to different nested keys within the same top-level key will be LWW (one wins). Is this sufficient, or should deeply nested front matter use nested Y.Maps? Recommendation: start with flat LWW. Deep merge adds complexity and front matter is rarely deeply nested in practice.
 
 ## Related Specs
 
-- `specs/20260208T010000-example-implementation.md` — Minimal working implementation guide (Y-Sweet, Bun, Svelte)
-- `specs/20260209T120000-branded-file-ids.md` — FileId branding and null-for-root (Done)
-- `specs/20260209T000000-simplify-content-doc-lifecycle.md` — ContentDocStore replacing ContentDocPool (Done)
-- `specs/20260210T000000-remove-idtopath-from-index.md` — Remove unused idToPath map (Draft)
-- `specs/20260211T200000-yjs-filesystem-conformance-fixes.md` — IFileSystem behavioral fixes: mkdir EEXIST, writeFile EISDIR, appendFile incremental insert, dead code cleanup (Done)
+- `specs/20260208T010000-example-implementation.md`: Minimal working implementation guide (Y-Sweet, Bun, Svelte)
+- `specs/20260209T120000-branded-file-ids.md`: FileId branding and null-for-root (Done)
+- `specs/20260209T000000-simplify-content-doc-lifecycle.md`: ContentDocStore replacing ContentDocPool (Done)
+- `specs/20260210T000000-remove-idtopath-from-index.md`: Remove unused idToPath map (Draft)
+- `specs/20260211T200000-yjs-filesystem-conformance-fixes.md`: IFileSystem behavioral fixes: mkdir EEXIST, writeFile EISDIR, appendFile incremental insert, dead code cleanup (Done)

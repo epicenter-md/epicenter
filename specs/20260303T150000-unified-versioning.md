@@ -19,13 +19,13 @@ One version number across the entire monorepo. Every PR merge to `main` automati
 └─── Major: manual only, effectively permanent at 8
 ```
 
-Version `8.0.0` is the inaugural release under this system. Major `9` is reserved for "if ever needed" — the expectation is to stay on `8` indefinitely, similar to how Chrome version numbers just keep incrementing the minor/patch.
+Version `8.0.0` is the inaugural release under this system. Major `9` is reserved for "if ever needed". The expectation is to stay on `8` indefinitely, similar to how Chrome version numbers just keep incrementing the minor/patch.
 
 ## Design Decisions
 
 ### Source of truth: git tags, not files
 
-Files contain stale versions between releases. The git tag `v8.0.42` is the canonical current version. The `bump-version.ts` script reads from tags and stamps into files — files are derived, tags are authoritative.
+Files contain stale versions between releases. The git tag `v8.0.42` is the canonical current version. The `bump-version.ts` script reads from tags and stamps into files: files are derived, tags are authoritative.
 
 This is the same approach OpenCode uses (they read from the npm registry, but the principle is the same: an external source of truth, not a checked-in file).
 
@@ -37,16 +37,16 @@ Alternative considered: bump version inside the PR before merge, so the merge co
 
 The in-PR approach has a fatal concurrency problem: if PR #1 and PR #2 are both open, they'd both compute the same next version (e.g., `8.0.1`). Whoever merges second creates a conflict or a duplicate. You'd need to constantly rebase PRs against each other's version bumps.
 
-Post-merge avoids this entirely. A concurrency group ensures only one release workflow runs at a time, and each invocation reads the *latest* tag to determine the next version. The tradeoff is a "bot commit" on `main` after each PR — acceptable noise that OpenCode also produces (`release: v{version}` commits).
+Post-merge avoids this entirely. A concurrency group ensures only one release workflow runs at a time, and each invocation reads the *latest* tag to determine the next version. The tradeoff is a "bot commit" on `main` after each PR: acceptable noise that OpenCode also produces (`release: v{version}` commits).
 
 ### Per-app workflows, not monolithic
 
 Each app gets its own release and preview workflow:
 
-- `release.whispering.yml` — builds Whispering desktop for 4 platforms on `v*` tags
-- `release.epicenter.yml` — builds Epicenter desktop (when ready) on `v*` tags
-- `pr-preview.whispering.yml` — builds Whispering preview artifacts on PRs touching relevant paths
-- `pr-preview.epicenter.yml` — builds Epicenter preview artifacts (when ready)
+- `release.whispering.yml`: builds Whispering desktop for 4 platforms on `v*` tags
+- `release.epicenter.yml`: builds Epicenter desktop (when ready) on `v*` tags
+- `pr-preview.whispering.yml`: builds Whispering preview artifacts on PRs touching relevant paths
+- `pr-preview.epicenter.yml`: builds Epicenter preview artifacts (when ready)
 
 Rationale:
 - **Path filtering**: Only build the app whose code changed. A PR touching `apps/whispering/` shouldn't trigger an Epicenter build.
@@ -56,7 +56,7 @@ Rationale:
 
 ### Workflow naming convention
 
-GitHub Actions requires all workflows to be flat files in `.github/workflows/` — no subdirectories. We use a **period-delimited prefix convention** so workflows group naturally when sorted alphabetically. Periods are structural delimiters (separating category from name); hyphens are word separators within a segment.
+GitHub Actions requires all workflows to be flat files in `.github/workflows/`: no subdirectories. We use a **period-delimited prefix convention** so workflows group naturally when sorted alphabetically. Periods are structural delimiters (separating category from name); hyphens are word separators within a segment.
 
 | Prefix | Purpose | Examples |
 |---|---|---|
@@ -67,7 +67,7 @@ GitHub Actions requires all workflows to be flat files in `.github/workflows/` �
 | `auto.{name}.yml` | Automated repo maintenance | `auto.release.yml`, `auto.label-issues.yml` |
 | `meta.{name}.yml` | Repo meta tasks | `meta.sponsors-readme.yml`, `meta.update-readme-version.yml`, `meta.sync-releases.yml` |
 
-Unprefixed: `claude.yml` (stays as-is — it's a one-off).
+Unprefixed: `claude.yml` (stays as-is. It's a one-off).
 
 ### `bump-version.ts` stays runnable manually
 
@@ -76,7 +76,7 @@ The script remains a CLI tool (`bun run bump-version 8.0.0`) for:
 - Emergency manual releases
 - Local testing
 
-But day-to-day, it's called by CI only. The script is refactored to be a pure "stamp version into files" utility — no `git commit`, no `git push`. CI handles the git operations.
+But day-to-day, it's called by CI only. The script is refactored to be a pure "stamp version into files" utility, no `git commit`, no `git push`. CI handles the git operations.
 
 ## Architecture
 
@@ -99,7 +99,7 @@ PR merges to main
 
 ### Files stamped by `bump-version.ts`
 
-The script globs for app-level files that need version updates. Packages are **intentionally excluded**—they use independent semver for future npm publishing.
+The script globs for app-level files that need version updates. Packages are **intentionally excluded**: they use independent semver for future npm publishing.
 
 ```
 # JSON files (version field)
@@ -220,7 +220,7 @@ Unchanged: `claude.yml`, `deploy.cloudflare.yml`.
 
 ## Migration Steps
 
-**Waves 1-2 are safe to ship immediately.** They are pure infrastructure — no version bump, no release. The repo has 185 existing `v*` tags (latest `v7.11.0`), so `auto-release.yml` must NOT exist until Wave 3 or it would increment from `v7.11.0` on the next PR merge.
+**Waves 1-2 are safe to ship immediately.** They are pure infrastructure: no version bump, no release. The repo has 185 existing `v*` tags (latest `v7.11.0`), so `auto-release.yml` must NOT exist until Wave 3 or it would increment from `v7.11.0` on the next PR merge.
 
 ### Wave 1: Version infrastructure
 1. Refactor `bump-version.ts` to glob all packages, remove git operations
@@ -242,16 +242,16 @@ Unchanged: `claude.yml`, `deploy.cloudflare.yml`.
 
 ### Wave 3: Initial release (when ready)
 
-Wave 3 is intentionally decoupled. Tag `v8.0.0` when the big release is ready — could be days or weeks after Waves 1-2 land.
+Wave 3 is intentionally decoupled. Tag `v8.0.0` when the big release is ready: could be days or weeks after Waves 1-2 land.
 
 15. Create `auto.release.yml`
 16. Run `bun run bump-version 8.0.0` manually to stamp all files
-17. Commit, tag `v8.0.0`, push — triggers first release under new system
+17. Commit, tag `v8.0.0`, push: triggers first release under new system
 18. Verify `release.whispering.yml` builds successfully
 19. Verify `auto.release.yml` fires on next PR merge
 
 ## References
 
-- [sst/opencode](https://github.com/sst/opencode) — single version across monorepo, post-merge `release: v{version}` commits, manual `./script/release [patch|minor]` trigger
-- OpenCode's `packages/script/src/index.ts` — version computation logic
-- OpenCode's `publish.yml` — stamps version into all package.json via glob at publish time
+- [sst/opencode](https://github.com/sst/opencode): single version across monorepo, post-merge `release: v{version}` commits, manual `./script/release [patch|minor]` trigger
+- OpenCode's `packages/script/src/index.ts`: version computation logic
+- OpenCode's `publish.yml`: stamps version into all package.json via glob at publish time

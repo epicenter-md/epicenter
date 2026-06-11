@@ -12,7 +12,7 @@ type TimelineYMap = Y.Map<unknown>;
 // ── Entry types ──────────────────────────────────────────────────────────
 
 /**
- * Timeline entry shapes — a discriminated union on 'type'.
+ * Timeline entry shapes: a discriminated union on 'type'.
  * These describe the extracted, typed form of what's stored in Y.Maps.
  * At runtime, entries are Y.Map instances; push functions construct them
  * and readEntry validates/extracts them into these shapes.
@@ -210,7 +210,7 @@ export function attachTimeline(ydoc: Y.Doc, key = 'timeline') {
 					return;
 				}
 				if (entry.type === 'text') {
-					// Append directly to existing Y.Text—no new entry, no mode change
+					// Append directly to existing Y.Text. No new entry, no mode change.
 					entry.content.insert(entry.content.length, text);
 				} else {
 					// Flatten current content (richtext or sheet) + append as new text entry
@@ -303,7 +303,7 @@ export function attachTimeline(ydoc: Y.Doc, key = 'timeline') {
 				// timeline using the same helpers that write() and as*() use.
 				switch (entry.type) {
 					case 'text': {
-						// Y.Text can't transfer between docs—extract the raw string.
+						// Y.Text can't transfer between docs. Extract the raw string.
 						// If live doc is text, overwrite in-place; otherwise push new entry.
 						const text = entry.content.toString();
 						const current = this.currentEntry;

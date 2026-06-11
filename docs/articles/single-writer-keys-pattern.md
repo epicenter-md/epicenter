@@ -30,11 +30,11 @@ User A's update finally arrives. Overwrites with `11`.
 
 The count dropped from `15` to `11`. Four clicks vanished.
 
-This isn't a bug—it's how CRDTs work. From the Yjs creator:
+This isn't a bug. It's how CRDTs work. From the Yjs creator:
 
 > "This is expected behavior. CRDT won't guarantee that result is always correct for each round, it only guarantees result is same for every client."
 >
-> — [GitHub issue #520](https://github.com/yjs/yjs/issues/520)
+> Source: [GitHub issue #520](https://github.com/yjs/yjs/issues/520)
 
 ## The Fix
 
@@ -133,7 +133,7 @@ More keys. More storage. Slightly more complex reads.
 
 But zero conflicts. Zero lost data. Every write survives.
 
-For counters, votes, presence, activity logs—anywhere multiple writers append to the same concept—this pattern eliminates an entire class of distributed bugs.
+For counters, votes, presence, activity logs. Anywhere multiple writers append to the same concept. This pattern eliminates an entire class of distributed bugs.
 
 One key per writer. That's it.
 

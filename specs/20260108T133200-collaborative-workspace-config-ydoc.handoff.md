@@ -1,6 +1,6 @@
 # Handoff: Collaborative Workspace Config Y.Doc
 
-> **Status: Superseded** — This spec was a design document. The API evolved during implementation. The current API uses `createWorkspace(definition)` instead of `workspace.create()`. See `packages/epicenter/src/static/README.md` for the current API.
+> **Status: Superseded**: This spec was a design document. The API evolved during implementation. The current API uses `createWorkspace(definition)` instead of `workspace.create()`. See `packages/epicenter/src/static/README.md` for the current API.
 
 **Date**: 2026-01-08 (Updated)
 **Parent Spec**: `20260108T133200-collaborative-workspace-config-ydoc.md`
@@ -52,7 +52,7 @@ json({
 | `SerializedFieldDefinition` (stripped metadata) | `FieldDefinition` (full metadata) | Enables collaborative editing                        |
 | `name`, `description`, `icon` stripped          | Preserved in Y.Doc                | Users can rename fields, add descriptions, set icons |
 
-**Key insight**: The original design stripped metadata because "nobody uses it" — but that was circular reasoning. For Notion-like collaborative schema editing, metadata must be stored in Y.Doc.
+**Key insight**: The original design stripped metadata because "nobody uses it", but that was circular reasoning. For Notion-like collaborative schema editing, metadata must be stored in Y.Doc.
 
 ### Phase 1: Terminology Refactor ✅ COMPLETE
 
@@ -247,7 +247,7 @@ head.observeEpoch((epoch) => { ... });
 head.destroy();
 ```
 
-**Note**: The Head Doc is minimal—just stores `epoch: number`. No `isMigrating` flag needed; epoch bump is an atomic pointer flip. Old epochs remain accessible for historical viewing.
+**Note**: The Head Doc is minimal. Just stores `epoch: number`. No `isMigrating` flag needed; epoch bump is an atomic pointer flip. Old epochs remain accessible for historical viewing.
 
 ### createDataDoc
 

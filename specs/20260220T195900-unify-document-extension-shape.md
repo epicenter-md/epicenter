@@ -6,7 +6,7 @@
 
 ## Overview
 
-Make document extensions return `{ exports?, lifecycle? }` — the same shape as workspace extensions. Move `clearData` from the lifecycle to exports. Reconsider whether `purge()` should exist as a framework method.
+Make document extensions return `{ exports?, lifecycle? }`: the same shape as workspace extensions. Move `clearData` from the lifecycle to exports. Reconsider whether `purge()` should exist as a framework method.
 
 ## Motivation
 
@@ -15,7 +15,7 @@ Make document extensions return `{ exports?, lifecycle? }` — the same shape as
 Workspace extensions and document extensions return different shapes for the same conceptual pattern:
 
 ```typescript
-// Workspace extension — returns Extension<T>
+// Workspace extension: returns Extension<T>
 .withExtension('persistence', ({ ydoc }) => ({
   exports: { clearData: () => idb.clearData() },
   lifecycle: {
@@ -24,7 +24,7 @@ Workspace extensions and document extensions return different shapes for the sam
   },
 }))
 
-// Document extension — returns DocumentLifecycle
+// Document extension: returns DocumentLifecycle
 .withDocumentExtension('persistence', ({ ydoc }) => ({
   whenReady: idb.whenSynced,
   destroy: () => idb.destroy(),
@@ -170,7 +170,7 @@ export function indexeddbPersistence({ ydoc }: { ydoc: Y.Doc }) {
 	};
 }
 
-// Usage — same function, both levels:
+// Usage: same function, both levels:
 createWorkspace(definition)
 	.withExtension('persistence', indexeddbPersistence)
 	.withDocumentExtension('persistence', indexeddbPersistence, {
@@ -226,7 +226,7 @@ createDocumentBinding({
 });
 ```
 
-**Pattern C: Keep it even simpler — no getExports, just keep purge**
+**Pattern C: Keep it even simpler: no getExports, just keep purge**
 
 If Pattern A/B feels like overengineering, keep `purge()` but rewrite it to iterate `exports` instead of `lifecycles` for `clearData`. It's a convenience method, not framework magic. The only change is where it looks for `clearData`.
 
@@ -252,8 +252,8 @@ My recommendation: remove it now while there are zero production callers, but pr
 
 - [x] **1.1** In `shared/lifecycle.ts`: remove the `DocumentLifecycle` type entirely. Document extensions will return `Extension<T>`, same as workspace extensions.
 - [x] **1.2** In `shared/lifecycle.ts`: update `DocumentContext` to keep `{ ydoc, whenReady, binding }` unchanged. The context is fine; only the return type changes.
-- [x] **1.3** In `static/types.ts`: update `DocumentExtensionRegistration` — the `factory` field changes from `(context: DocumentContext) => DocumentLifecycle | void` to `(context: DocumentContext) => Extension<Record<string, unknown>> | void`.
-- [x] **1.4** In `static/types.ts`: update `WorkspaceClientBuilder.withDocumentExtension` — factory return type changes from `DocumentLifecycle | void` to `Extension<Record<string, unknown>> | void`.
+- [x] **1.3** In `static/types.ts`: update `DocumentExtensionRegistration`: the `factory` field changes from `(context: DocumentContext) => DocumentLifecycle | void` to `(context: DocumentContext) => Extension<Record<string, unknown>> | void`.
+- [x] **1.4** In `static/types.ts`: update `WorkspaceClientBuilder.withDocumentExtension`: factory return type changes from `DocumentLifecycle | void` to `Extension<Record<string, unknown>> | void`.
 
 ### Phase 2: Update `create-document-binding.ts`
 
@@ -278,9 +278,9 @@ My recommendation: remove it now while there are zero production callers, but pr
 
 ### Phase 5: Verify
 
-- [x] **5.1** `bun tsc --noEmit` from packages/epicenter — zero new type errors (pre-existing errors in unrelated test files).
-- [x] **5.2** `bun test` from packages/epicenter — 680 pass, 0 fail.
-- [x] **5.3** Grep the entire repo for `DocumentLifecycle`, `clearData` in lifecycle position, and `purge(` — no stale references in source (only historical specs).
+- [x] **5.1** `bun tsc --noEmit` from packages/epicenter: zero new type errors (pre-existing errors in unrelated test files).
+- [x] **5.2** `bun test` from packages/epicenter: 680 pass, 0 fail.
+- [x] **5.3** Grep the entire repo for `DocumentLifecycle`, `clearData` in lifecycle position, and `purge(`: no stale references in source (only historical specs).
 - [x] **5.4** Build the fs-explorer app to verify the indexeddbPersistence reuse works end-to-end.
 
 ## Edge Cases
@@ -291,7 +291,7 @@ Currently allowed (`DocumentLifecycle | void`). The unified shape keeps this: `E
 
 ### Document extension with exports but no lifecycle
 
-New capability. A document extension could return `{ exports: { helpers } }` with no lifecycle. The binding stores the exports and uses noop lifecycle defaults. This is fine — workspace extensions already support this pattern.
+New capability. A document extension could return `{ exports: { helpers } }` with no lifecycle. The binding stores the exports and uses noop lifecycle defaults. This is fine: workspace extensions already support this pattern.
 
 ### `indexeddbPersistence` receives `DocumentContext` instead of `ExtensionContext`
 
@@ -299,7 +299,7 @@ New capability. A document extension could return `{ exports: { helpers } }` wit
 
 ### CRDT row resurrection after clearData
 
-If a consumer clears persisted data for a document and the row later reappears from another peer via sync, the content doc will be empty (persisted state was deleted). The row metadata (title, updatedAt, etc.) will be restored by CRDT sync, but the content doc starts fresh. This is the expected behavior for permanent deletion — the consumer explicitly chose to destroy the data. Not a framework concern; it's a product decision.
+If a consumer clears persisted data for a document and the row later reappears from another peer via sync, the content doc will be empty (persisted state was deleted). The row metadata (title, updatedAt, etc.) will be restored by CRDT sync, but the content doc starts fresh. This is the expected behavior for permanent deletion. The consumer explicitly chose to destroy the data. Not a framework concern; it's a product decision.
 
 ### The `whenReady` chaining in document extensions
 
@@ -308,7 +308,7 @@ Document extensions receive `whenReady` in their context (composite of prior doc
 ## Open Questions
 
 1. **Should `getExports` be typed per extension key?**
-   - Currently proposed as `Record<string, Record<string, unknown>>` — loose typing.
+   - Currently proposed as `Record<string, Record<string, unknown>>`: loose typing.
    - Could be tightened if document extensions accumulated type information like workspace extensions do. But that requires generic plumbing on `withDocumentExtension` return types.
    - Recommendation: start with loose typing. Tighten later if consumers need autocomplete on per-doc exports. The common case (clearData) is simple enough that loose typing works.
 
@@ -333,12 +333,12 @@ Document extensions receive `whenReady` in their context (composite of prior doc
 
 ## References
 
-- `packages/epicenter/src/shared/lifecycle.ts` — `Extension<T>`, `DocumentLifecycle` (to be removed), `DocumentContext`
-- `packages/epicenter/src/static/types.ts` — `DocumentExtensionRegistration`, `WorkspaceClientBuilder.withDocumentExtension`, `DocumentBinding`
-- `packages/epicenter/src/static/create-workspace.ts` — `withDocumentExtension` implementation
-- `packages/epicenter/src/static/create-document-binding.ts` — `open()`, `purge()`, `DocEntry`
-- `packages/epicenter/src/extensions/sync/web.ts` — `indexeddbPersistence` (the factory that will work at both levels)
-- `apps/fs-explorer/src/lib/fs/fs-state.svelte.ts` — primary consumer, the motivating example
+- `packages/epicenter/src/shared/lifecycle.ts`: `Extension<T>`, `DocumentLifecycle` (to be removed), `DocumentContext`
+- `packages/epicenter/src/static/types.ts`: `DocumentExtensionRegistration`, `WorkspaceClientBuilder.withDocumentExtension`, `DocumentBinding`
+- `packages/epicenter/src/static/create-workspace.ts`: `withDocumentExtension` implementation
+- `packages/epicenter/src/static/create-document-binding.ts`: `open()`, `purge()`, `DocEntry`
+- `packages/epicenter/src/extensions/sync/web.ts`: `indexeddbPersistence` (the factory that will work at both levels)
+- `apps/fs-explorer/src/lib/fs/fs-state.svelte.ts`: primary consumer, the motivating example
 
 ## Review
 
@@ -350,6 +350,6 @@ Key implementation details:
 - `DocEntry` now tracks `exports: Record<string, Record<string, unknown>>` alongside lifecycle arrays
 - `open()` unwraps `result.lifecycle ?? {}` and `result.exports` separately, accumulating exports keyed by extension name
 - `getExports()` returns the accumulated exports for a given doc guid, or `undefined` if not open
-- fs-explorer replaced its inline `IndexeddbPersistence` document extension with the shared `indexeddbPersistence` factory — one import, used at both workspace and document levels
+- fs-explorer replaced its inline `IndexeddbPersistence` document extension with the shared `indexeddbPersistence` factory: one import, used at both workspace and document levels
 
 Files changed: `lifecycle.ts` (removed type), `types.ts` (updated signatures), `create-document-binding.ts` (core logic), `create-workspace.ts` (factory type), `index.ts` (removed export), `fs-state.svelte.ts` (consumer), plus both test files.

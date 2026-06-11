@@ -42,7 +42,7 @@
 						<NewSkillDialog />
 					</div>
 
-					<!-- Search Trigger — opens command palette -->
+					<!-- Search Trigger: opens command palette -->
 					<div class="px-2 pt-2">
 						<Button
 							variant="outline"

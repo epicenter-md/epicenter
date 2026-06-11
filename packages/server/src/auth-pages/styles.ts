@@ -4,7 +4,7 @@
  *
  * Matches the Epicenter design system tokens from `packages/ui/src/app.css`
  * using oklch equivalents. System-ui font stack (brand font Manrope is not
- * loaded on these standalone pages). No external dependencies—this string is
+ * loaded on these standalone pages). No external dependencies. This string is
  * inlined in the `<style>` tag by the layout component.
  */
 export const AUTH_STYLES = `

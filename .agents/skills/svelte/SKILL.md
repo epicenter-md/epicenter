@@ -24,7 +24,7 @@ Use this skill for Svelte 5 components and Svelte state modules in Epicenter app
 
 ## Upstream Grounding
 
-When Svelte 5 runes, compiler behavior, SvelteKit integration, or component-library APIs affect correctness, ask DeepWiki a narrow question against `sveltejs/svelte` or the relevant upstream repo before relying on memory. Use it to orient, then verify decisive details against local installed types, source, or official docs before changing code.
+When Svelte 5 runes, compiler behavior, lifecycle, reactivity, snippets, or template behavior affect correctness, use source-backed grounding before relying on memory. If DeepWiki MCP is available, ask a narrow question against `sveltejs/svelte`; for SvelteKit integration, ask against `sveltejs/kit`; for shadcn-svelte or extras component APIs, ask against `huntabyte/shadcn-svelte` or `ieedan/shadcn-svelte-extras`. If DeepWiki is unavailable or the repo is not indexed, use upstream source or official docs directly. Treat DeepWiki as orientation, then verify decisive details against local installed types, source, or official docs before changing code.
 
 Skip DeepWiki for stable basics and repo-local patterns already documented here or in references.
 

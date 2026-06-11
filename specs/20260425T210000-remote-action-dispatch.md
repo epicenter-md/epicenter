@@ -1,10 +1,10 @@
-# Remote action dispatch — calling actions on a peer device
+# Remote action dispatch: calling actions on a peer device
 
 **Date:** 2026-04-25
 **Status:** shipped. Supersedes the `invoke()` shape in `specs/20260425T000000-device-actions-via-awareness.md`.
 **Depends on:** `specs/20260425T200000-actions-passthrough-adr.md` (shipped)
 **Supersedes:** the `invoke()` proposal in `specs/20260425T000000-device-actions-via-awareness.md`
-**Revisions:** v2 (curried API critique); v3 (post-collapse pass — see "Final design" below); v4 (further collapse: `dispatch:` removed entirely from `attachSync`; `RemoteCallOptions` aligned to `{ timeout? }` only).
+**Revisions:** v2 (curried API critique); v3 (post-collapse pass: see "Final design" below); v4 (further collapse: `dispatch:` removed entirely from `attachSync`; `RemoteCallOptions` aligned to `{ timeout? }` only).
 
 ---
 
@@ -12,7 +12,7 @@
 
 The body of this spec describes the v2 design (three layers: `createRemoteProxy`, `createRemoteCaller`, awareness convention). After working through the design with Braden, **the v2 layering was collapsed**. This section is the source of truth; the rest of the spec is preserved as historical context for the reasoning.
 
-### Public API — one function
+### Public API: one function
 
 ```ts
 import { peer } from '@epicenter/workspace';
@@ -54,7 +54,7 @@ import { getOrCreateDeviceId } from '@epicenter/workspace';
 const deviceId = getOrCreateDeviceId(localStorageAdapter);
 ```
 
-`SimpleStorage` is a sync `{ getItem, setItem }` shape — same pattern as auth's `SessionStore`. Adapters land next to the storage they wrap (localStorage in svelte-utils, chrome.storage with `whenReady` in tab-manager, tauri-plugin-store wrapper in apps that need it).
+`SimpleStorage` is a sync `{ getItem, setItem }` shape: same pattern as auth's `SessionStore`. Adapters land next to the storage they wrap (localStorage in svelte-utils, chrome.storage with `whenReady` in tab-manager, tauri-plugin-store wrapper in apps that need it).
 
 ### Awareness publishing (PR-D side)
 
@@ -108,7 +108,7 @@ Walks `awareness.getStates()` in clientId-ascending order; returns the first mat
 
 ### Disconnect-aware short-circuit
 
-`peer()` keeps a `Map<clientId, Set<PendingCall>>` and subscribes to awareness `removed` events. When a clientId disappears with pending calls, those promises reject with `RpcError.PeerLeft` immediately — no waiting for the `timeout` to fire.
+`peer()` keeps a `Map<clientId, Set<PendingCall>>` and subscribes to awareness `removed` events. When a clientId disappears with pending calls, those promises reject with `RpcError.PeerLeft` immediately, no waiting for the `timeout` to fire.
 
 ### CLI surface
 
@@ -122,12 +122,12 @@ One form for remote (`--peer <deviceId>`), no dot-prefix sugar, no `device.<fiel
 
 ### Out of scope (deferred until a real consumer asks)
 
-- **Auth / per-action authorization gates** — the workspace room is the auth boundary in v1.
-- **Fan-out** (`peer.all<T>(workspace).action(...)`) — speculative.
-- **`{ clientId }` direct addressing** — no real use case identified.
-- **Per-action timeout in metadata** — caller passes `{ timeout }` per call.
-- **Lazy schema fetch on demand** — full schema in awareness for v1; revisit if payload is a problem.
-- **Custom transports / HTTP fallback** — speculative; reintroduce `createRemoteProxy(send)` as an unexported helper-promotable-to-public if a real case shows up.
+- **Auth / per-action authorization gates**: the workspace room is the auth boundary in v1.
+- **Fan-out** (`peer.all<T>(workspace).action(...)`): speculative.
+- **`{ clientId }` direct addressing**: no real use case identified.
+- **Per-action timeout in metadata**: caller passes `{ timeout }` per call.
+- **Lazy schema fetch on demand**: full schema in awareness for v1; revisit if payload is a problem.
+- **Custom transports / HTTP fallback**: speculative; reintroduce `createRemoteProxy(send)` as an unexported helper-promotable-to-public if a real case shows up.
 
 ### Execution
 
@@ -142,11 +142,11 @@ See `specs/20260426T000000-execution-prompt-device-actions-and-remote-dispatch.m
 
 Three layers, each earning its keep:
 
-1. **Primitive: `createRemoteProxy<TActions>(send)`** — generic-only typing, JavaScript Proxy at runtime. Pure functional core: type variable + a single `send` callable, no awareness, no sync, no workspace. The escape hatch for callers who want their own routing.
+1. **Primitive: `createRemoteProxy<TActions>(send)`**: generic-only typing, JavaScript Proxy at runtime. Pure functional core: type variable + a single `send` callable, no awareness, no sync, no workspace. The escape hatch for callers who want their own routing.
 
-2. **Convenience: `createRemoteCaller(workspace)` → `caller.peer<TActions>(target)`** — curried. Workspace bound once (lifetime matches workspace). Target per peer. Each leaf accepts per-call `{ timeout, signal }` options.
+2. **Convenience: `createRemoteCaller(workspace)` → `caller.peer<TActions>(target)`**: curried. Workspace bound once (lifetime matches workspace). Target per peer. Each leaf accepts per-call `{ timeout, signal }` options.
 
-3. **Standard awareness convention** — `device` and `offers` keys, opt-in by spreading into `attachAwareness` defs. `serializeActionManifest(actions)` populates `offers`.
+3. **Standard awareness convention**: `device` and `offers` keys, opt-in by spreading into `attachAwareness` defs. `serializeActionManifest(actions)` populates `offers`.
 
 Call sites:
 
@@ -167,7 +167,7 @@ The lower-level form is callable directly when you want full control:
 
 ```ts
 const remote = createRemoteProxy<TabManagerActions>(async (path, input, options) => {
-  // your own routing — auth wrapping, audit log, HTTP fallback, mock for tests
+  // your own routing: auth wrapping, audit log, HTTP fallback, mock for tests
   return mySend(path, input, options);
 });
 ```
@@ -178,22 +178,22 @@ const remote = createRemoteProxy<TabManagerActions>(async (path, input, options)
 |---|---|
 | `sync.rpc(clientId, action, input, { timeout })` | Implemented end-to-end |
 | `RpcActionMap` / `DefaultRpcMap` / `InferSyncRpcMap<A>` | Implemented |
-| `createRemoteActions(actions, send)` (runtime tree walk) | Implemented; **deleted in this proposal** — redundant with `createRemoteProxy` |
+| `createRemoteActions(actions, send)` (runtime tree walk) | Implemented; **deleted in this proposal**: redundant with `createRemoteProxy` |
 | `attachAwareness(ydoc, defs)` typed wrapper | Implemented |
-| Standardized `device` / `offers` awareness keys | **Not implemented — spec only** |
+| Standardized `device` / `offers` awareness keys | **Not implemented: spec only** |
 | `serializeActionManifest(actions)` | **Not implemented** |
 | `createRemoteProxy<TActions>(send)` | **Not implemented** |
 | `createRemoteCaller(workspace)` | **Not implemented** |
-| `RpcError.AmbiguousDeviceId` / `WorkspaceDisposed` variants | **Not implemented — additions needed in `@epicenter/sync`** |
+| `RpcError.AmbiguousDeviceId` / `WorkspaceDisposed` variants | **Not implemented: additions needed in `@epicenter/sync`** |
 | Tab-manager publishes `{ deviceId, client }` ad-hoc | True today; migrates to `device` + `offers` + `client` |
 
-## Why curry — answering the API critique
+## Why curry: answering the API critique
 
 The original proposal took `{ sync, awareness, target }` as a single bag at every peer construction. That was wrong:
 
 - **`sync` and `awareness` are co-owned by definition** (both belong to the same workspace). Two args invites swapping them or pairing across workspaces. Wrap them.
 - **Workspace lifetime ≠ peer lifetime.** A UI rendering a peer list constructs N proxies churning every awareness tick. Five peers = five identical closures over identical `sync`/`awareness`. Curry the deps once.
-- **Industry patterns curry.** tRPC's `createTRPCClient<AppRouter>({ links })`, gRPC-Web stubs, Apollo's `client.query({}, { context })` — all bind transport once, route per-call. The proposed shape was idiosyncratic.
+- **Industry patterns curry.** tRPC's `createTRPCClient<AppRouter>({ links })`, gRPC-Web stubs, Apollo's `client.query({}, { context })`: all bind transport once, route per-call. The proposed shape was idiosyncratic.
 
 The curried API:
 
@@ -207,7 +207,7 @@ Each `peer()` call constructs a Proxy parameterized by the target. The Proxy clo
 
 ## API: full surface
 
-### `createRemoteProxy<TActions>(send)` — primitive
+### `createRemoteProxy<TActions>(send)`: primitive
 
 ```ts
 // packages/workspace/src/rpc/remote-proxy.ts
@@ -238,7 +238,7 @@ Implementation: JavaScript `Proxy` over a function target. Property access retur
 
 The `options?` parameter is appended to the handler's args. Type: `Parameters<F>` plus optional `RemoteSendOptions`.
 
-### `createRemoteCaller(workspace | deps)` — convenience
+### `createRemoteCaller(workspace | deps)`: convenience
 
 ```ts
 // packages/workspace/src/rpc/remote-caller.ts
@@ -342,7 +342,7 @@ export function serializeActionManifest(
 
 Apps call this once at session-applied to populate `awareness.setLocal({ device, offers, ... })`.
 
-## Hidden invariants — explicit answers
+## Hidden invariants: explicit answers
 
 The original spec waved past these. Each gets a definitive answer here.
 
@@ -370,7 +370,7 @@ Rationale: defaulting to "pick first" is non-deterministic and silently broken; 
 
 ### Mid-call peer churn
 
-Resolution happens at call time, then `sync.rpc` awaits the response. If the peer disconnects mid-flight, `sync.rpc` surfaces `RpcError.Disconnected` (its existing behavior — it clears `pendingRequests` on socket close). The proxy passes that through unchanged.
+Resolution happens at call time, then `sync.rpc` awaits the response. If the peer disconnects mid-flight, `sync.rpc` surfaces `RpcError.Disconnected` (its existing behavior. It clears `pendingRequests` on socket close). The proxy passes that through unchanged.
 
 We do **not** introduce a separate `PeerLeft` variant. `Disconnected` is the right name for "the wire died before I got a response," whether the cause was peer-side or transport-side.
 
@@ -391,7 +391,7 @@ The low-level adapter form takes an explicit `whenDisposed?: Promise<unknown>` f
 
 The proxy closes over `RemoteCaller`'s deps; `RemoteCaller` closes over the workspace. Long-lived proxies pin the workspace.
 
-This is **acceptable**. Workspaces in this codebase are singletons at module scope; they're not GC'd in practice. If a future use case requires per-component workspaces with frequent churn, callers should `[Symbol.dispose]()` them and the proxy's calls will reject — no leak. Document, don't engineer for.
+This is **acceptable**. Workspaces in this codebase are singletons at module scope; they're not GC'd in practice. If a future use case requires per-component workspaces with frequent churn, callers should `[Symbol.dispose]()` them and the proxy's calls will reject, no leak. Document, don't engineer for.
 
 ### Awareness without standard keys
 
@@ -401,9 +401,9 @@ The caller can introspect state via `awareness.getAll()` directly to debug.
 
 ## Why kill `createRemoteActions`
 
-The runtime-tree-walking factory takes `actions` as both shape source AND runtime tree, but doesn't actually invoke through the local actions — it produces a parallel proxy. After this spec, that's structurally identical to `createRemoteProxy<TypeOf<typeof actions>>(send)`, with one fewer dependency (no runtime tree).
+The runtime-tree-walking factory takes `actions` as both shape source AND runtime tree, but doesn't actually invoke through the local actions. It produces a parallel proxy. After this spec, that's structurally identical to `createRemoteProxy<TypeOf<typeof actions>>(send)`, with one fewer dependency (no runtime tree).
 
-`createRemoteActions(actions, send)` is dead weight. **Delete it.** Migrate its existing tests to `createRemoteProxy<typeof exampleActions>(send)` — same behavior, simpler signature.
+`createRemoteActions(actions, send)` is dead weight. **Delete it.** Migrate its existing tests to `createRemoteProxy<typeof exampleActions>(send)`: same behavior, simpler signature.
 
 ## Concrete call-site comparison
 
@@ -469,7 +469,7 @@ The local-vs-remote delta is exactly: error union widens by `RpcError`. The data
 
 Tests written first, capturing desired ergonomics before implementation lands.
 
-### Layer 1: `createRemoteProxy<TActions>(send)` — unit tests
+### Layer 1: `createRemoteProxy<TActions>(send)`: unit tests
 
 ```ts
 // packages/workspace/src/rpc/remote-proxy.test.ts
@@ -508,7 +508,7 @@ describe('createRemoteProxy', () => {
 });
 ```
 
-### Layer 2: `createRemoteCaller` — unit tests with adapter overload
+### Layer 2: `createRemoteCaller`: unit tests with adapter overload
 
 ```ts
 // packages/workspace/src/rpc/remote-caller.test.ts
@@ -552,7 +552,7 @@ describe('createRemoteCaller (workspace overload)', () => {
 });
 ```
 
-### Layer 3: integration — `createRemoteCaller` over `FakeWebSocket`
+### Layer 3: integration: `createRemoteCaller` over `FakeWebSocket`
 
 ```ts
 // packages/workspace/src/rpc/remote-caller.integration.test.ts
@@ -604,69 +604,69 @@ Each test file runs green before moving to the next.
 
 ## Implementation phases
 
-### Phase R1 — Type-system additions in workspace package
+### Phase R1: Type-system additions in workspace package
 
 - `RpcError.AmbiguousDeviceId` and `RpcError.WorkspaceDisposed` variants in `@epicenter/sync`.
 - `RemoteSendOptions`, `RemoteSend`, `RemoteCallerDeps`, `PeerState`, `RemoteTarget`, `RemoteCaller` types.
 
-### Phase R2 — `serializeActionManifest`
+### Phase R2: `serializeActionManifest`
 
 - Add to `packages/workspace/src/shared/actions.ts` next to `iterateActions`.
 - Tests per Layer 4.
 
-### Phase R3 — `standardAwarenessDefs`
+### Phase R3: `standardAwarenessDefs`
 
 - Add `packages/workspace/src/document/standard-awareness.ts`.
 - Export from workspace barrel.
 
-### Phase R4 — `createRemoteProxy`
+### Phase R4: `createRemoteProxy`
 
 - Add `packages/workspace/src/rpc/remote-proxy.ts`.
 - Tests per Layer 1.
 
-### Phase R5 — `createRemoteCaller`
+### Phase R5: `createRemoteCaller`
 
 - Add `packages/workspace/src/rpc/remote-caller.ts`.
 - Tests per Layer 2.
 
-### Phase R6 — Integration tests
+### Phase R6: Integration tests
 
 - Add `packages/workspace/src/rpc/remote-caller.integration.test.ts` per Layer 3.
 - Reuse `FakeWebSocket`.
 
-### Phase R7 — Delete `createRemoteActions`
+### Phase R7: Delete `createRemoteActions`
 
 - Remove `packages/workspace/src/rpc/remote-actions.ts`.
 - Migrate `packages/workspace/src/rpc/remote-actions.test.ts` → use `createRemoteProxy<typeof exampleActions>` instead.
 - Remove from workspace barrel.
 
-### Phase R8 — App adoption
+### Phase R8: App adoption
 
 - Tab-manager: spread `standardAwarenessDefs` into `tabManagerAwarenessDefs`; publish `device` and `offers` in `setLocal`; export `TabManagerActions` type from public entry.
-- One real demonstration call site in tab-manager — likely a "send tab to my desktop" command.
+- One real demonstration call site in tab-manager: likely a "send tab to my desktop" command.
 
-### Phase R9 — Optional CLI migration
+### Phase R9: Optional CLI migration
 
 - CLI `epicenter run --peer deviceId=X` already works via direct `sync.rpc`. Migrate to `createRemoteCaller` internally for typed-error benefits and to dogfood the adapter overload.
 
 ## What this enables
 
 1. **Typed cross-device dispatch.** UI on Alice calls Bob's actions as easily as local actions, with full type safety on inputs and outputs.
-2. **AI agents calling remote tools.** TanStack AI tools wrap actions via `actionsToAiTools`. The same wrapping over `caller.peer<TActions>(target)` produces a tool that runs on a remote peer transparently — same code path, swapped delivery.
+2. **AI agents calling remote tools.** TanStack AI tools wrap actions via `actionsToAiTools`. The same wrapping over `caller.peer<TActions>(target)` produces a tool that runs on a remote peer transparently: same code path, swapped delivery.
 3. **CLI cross-device dispatch.** `epicenter run desktop-1.tabs.close` resolves `desktop-1` against awareness via `createRemoteCaller`'s adapter form.
 4. **Discovery UI.** `awareness.getAll()` gives every peer; render `device.name` + render `offers` paths via TypeBox schema; let the user click to invoke any offered action on any peer.
 5. **Custom routing.** `createRemoteProxy(mySend)` is the escape hatch for auth wrapping, audit log, retry semantics, HTTP fallback when WebSocket is dead, mock for tests, and anything else not in the convenience layer.
 
 ## Open questions deferred to follow-up
 
-- **Versioning** in `offers` records — `version: '1.2.0'` per action? Defer until version skew bites.
-- **Authorization** — any peer in the room can call any offered action. The room is the auth boundary today. Per-action auth via `dispatch` callback wrapping (the spec's "auth gate, audit log, rate limit" use case).
-- **Retry semantics** — caller's responsibility today. Don't bake into the primitive.
-- **Batching across paths** — probably never. Most use cases are independent.
-- **Peer-state subscriptions** — "tell me when Bob comes online." Read-side concern; lives in `awareness.observe()`, not the caller.
+- **Versioning** in `offers` records: `version: '1.2.0'` per action? Defer until version skew bites.
+- **Authorization**: any peer in the room can call any offered action. The room is the auth boundary today. Per-action auth via `dispatch` callback wrapping (the spec's "auth gate, audit log, rate limit" use case).
+- **Retry semantics**: caller's responsibility today. Don't bake into the primitive.
+- **Batching across paths**: probably never. Most use cases are independent.
+- **Peer-state subscriptions**: "tell me when Bob comes online." Read-side concern; lives in `awareness.observe()`, not the caller.
 
 ## Cross-references
 
-- `specs/20260425T200000-actions-passthrough-adr.md` — the action-shape decision this design depends on.
-- `specs/20260425T000000-device-actions-via-awareness.md` — original awareness publishing proposal. This doc supersedes its `invoke()` helper; reuses `serializeActionManifest` and the `device`/`offers` convention.
-- `packages/cli/src/util/find-peer.ts` — existing peer-resolution logic; pattern is generalized into `resolvePeer` inside `createRemoteCaller`.
+- `specs/20260425T200000-actions-passthrough-adr.md`: the action-shape decision this design depends on.
+- `specs/20260425T000000-device-actions-via-awareness.md`: original awareness publishing proposal. This doc supersedes its `invoke()` helper; reuses `serializeActionManifest` and the `device`/`offers` convention.
+- `packages/cli/src/util/find-peer.ts`: existing peer-resolution logic; pattern is generalized into `resolvePeer` inside `createRemoteCaller`.

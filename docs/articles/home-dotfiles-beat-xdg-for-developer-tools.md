@@ -64,7 +64,7 @@ Epicenter follows the same model as Homebrew. All workspaces live under `~/.epic
           └── ...
 ```
 
-One directory to back up, one directory to nuke, one directory to `ls`. The app server discovers workspaces by reading `~/.epicenter/workspaces/`—no registry file, no scattered project folders to track down.
+One directory to back up, one directory to nuke, one directory to `ls`. The app server discovers workspaces by reading `~/.epicenter/workspaces/`: no registry file, no scattered project folders to track down.
 
 This mirrors how Homebrew puts everything in `/opt/homebrew/Cellar/` and how Cargo puts everything in `~/.cargo/`. A single, predictable location that you can find with your eyes closed.
 

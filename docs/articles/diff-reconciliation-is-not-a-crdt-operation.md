@@ -1,6 +1,6 @@
 # Diff-Based Sync Guesses Intent, CRDT Operations Express It
 
-**TL;DR**: Diffing a string to sync Yjs doesn't express intent—it guesses what you meant based on before/after states.
+**TL;DR**: Diffing a string to sync Yjs doesn't express intent. It guesses what you meant based on before/after states.
 
 > When you call `yText.insert(6, "Beautiful ")`, you're saying "insert 'Beautiful' here". When you call `updateYTextFromString(yText, "Hello Beautiful World")`, you're saying "make it look like this" and letting the diff algorithm guess what operations will get you there.
 
@@ -101,7 +101,7 @@ Because the alternative is worse:
 
 If your agent reads "Hello World" and writes "Hello Beautiful Galaxy", and the user changed "World" to "Earth" in between, diff-based sync gives you "Hello Beautiful Galaxy". The "Earth" edit is gone, but only because it overlaps with the agent's change.
 
-If the user changed something else—say, added a title above the text—that survives. Clear-and-rebuild would nuke everything.
+If the user changed something else. Say, added a title above the text. That survives. Clear-and-rebuild would nuke everything.
 
 ## When It's Correct
 

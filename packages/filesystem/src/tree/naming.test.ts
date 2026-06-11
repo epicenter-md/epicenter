@@ -117,7 +117,7 @@ describe('assertUniqueName', () => {
 });
 
 describe('disambiguateNames', () => {
-	test('no duplicates — returns original names', () => {
+	test('no duplicates: returns original names', () => {
 		const rows = [
 			makeRow('a', 'foo.txt', null, 1000),
 			makeRow('b', 'bar.txt', null, 2000),
@@ -127,7 +127,7 @@ describe('disambiguateNames', () => {
 		expect(result.get('b')).toBe('bar.txt');
 	});
 
-	test('duplicates — earliest keeps clean name, later gets suffix', () => {
+	test('duplicates: earliest keeps clean name, later gets suffix', () => {
 		const rows = [
 			makeRow('a', 'foo.txt', null, 1000),
 			makeRow('b', 'foo.txt', null, 2000),

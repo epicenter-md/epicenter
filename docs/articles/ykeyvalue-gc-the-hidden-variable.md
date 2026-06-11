@@ -1,6 +1,6 @@
 # YKeyValue vs Y.Map: Garbage Collection Is the Hidden Variable
 
-**TL;DR: YKeyValueLww destroys Y.Map in storage benchmarks—but only when garbage collection is enabled. Turn GC off and Y.Map wins. This single boolean flips the entire recommendation.**
+**TL;DR: YKeyValueLww destroys Y.Map in storage benchmarks. But only when garbage collection is enabled. Turn GC off and Y.Map wins. This single boolean flips the entire recommendation.**
 
 > The choice between Y.Map and YKeyValue isn't about the data structure. It's about whether you need revision history.
 
@@ -201,7 +201,7 @@ Benchmarks without context are dangerous. We benchmarked YKeyValueLww with the d
 
 The GC setting isn't obscure. It's on the front page of the Y.Doc API docs. We just didn't think it was relevant to our storage benchmarks because we didn't understand the mechanism.
 
-Now we know: YKeyValueLww's efficiency comes from generating tombstones that GC can merge. Disable GC and you're not using a space-efficient data structure—you're using a space-inefficient one that happens to have a nice API.
+Now we know: YKeyValueLww's efficiency comes from generating tombstones that GC can merge. Disable GC and you're not using a space-efficient data structure. You're using a space-inefficient one that happens to have a nice API.
 
 ---
 

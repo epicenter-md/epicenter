@@ -1,6 +1,6 @@
 # Write Context to a File, Not a Prompt
 
-**TL;DR**: When working with coding agents, externalize your context to a spec file. Subagents read the file directly—no copy-pasting, no re-explaining, no compression loss.
+**TL;DR**: When working with coding agents, externalize your context to a spec file. Subagents read the file directly. No copy-pasting, no re-explaining, no compression loss.
 
 > The spec file is the handoff mechanism. Pass the filename, not the context.
 

@@ -22,7 +22,7 @@ export const settings = (() => {
     get value(): Settings {
       return _settings.value;
     },
-    
+
     updateKey<K extends keyof Settings>(key: K, value: Settings[K]) {
       _settings.value = { ..._settings.value, [key]: value };
     }
@@ -103,4 +103,4 @@ When you have a read-only getter with a separate update method, function binding
 
 No callbacks. No prop drilling. No `onGlobalOptionsChange` handlers. Just clean, declarative bindings that work with your store's API.
 
-The settings persist now. Focus, blur, refresh—they survive it all. Sometimes the fix isn't about restructuring everything. It's about finding the right adapter pattern. Function bindings are that adapter.
+The settings persist now. Focus, blur, refresh. They survive it all. Sometimes the fix isn't about restructuring everything. It's about finding the right adapter pattern. Function bindings are that adapter.

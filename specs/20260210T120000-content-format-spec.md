@@ -2,23 +2,23 @@
 
 **Date**: 2026-02-10
 **Status**: Superseded
-**Superseded by**: `specs/20260211T100000-simplified-ytext-content-store.md` (further superseded by `specs/20260211T230000-timeline-content-storage-implementation.md`) — Y.Text('content') per document, lens architecture deferred to future.
-**See also**: `specs/20260211T220000-yjs-content-doc-multi-mode-research.md` — Option F achieves this spec's format-as-metadata colocation goal differently: the `type` field in each timeline entry IS the format, embedded inside the content Y.Doc. No `FormatRegistry` needed.
+**Superseded by**: `specs/20260211T100000-simplified-ytext-content-store.md` (further superseded by `specs/20260211T230000-timeline-content-storage-implementation.md`): Y.Text('content') per document, lens architecture deferred to future.
+**See also**: `specs/20260211T220000-yjs-content-doc-multi-mode-research.md`: Option F achieves this spec's format-as-metadata colocation goal differently: the `type` field in each timeline entry IS the format, embedded inside the content Y.Doc. No `FormatRegistry` needed.
 ---
 
 ## Problem
 
-The content lens spec introduced an extensible lens pattern for file content types — good. But it inherited a flawed assumption from the original filesystem spec: **the file extension determines the active content type, and renaming triggers automatic content migration.**
+The content lens spec introduced an extensible lens pattern for file content types: good. But it inherited a flawed assumption from the original filesystem spec: **the file extension determines the active content type, and renaming triggers automatic content migration.**
 
 This assumption creates cascading complexity:
 
-1. **Healing** — When two peers are connected, a rename's metadata can sync before the content migration. The receiving peer sees a `.md` file but only `text:content` is populated. A healing system must detect this, probe all lenses for content, and migrate.
+1. **Healing**: When two peers are connected, a rename's metadata can sync before the content migration. The receiving peer sees a `.md` file but only `text:content` is populated. A healing system must detect this, probe all lenses for content, and migrate.
 
-2. **Stale key probing** — Healing must call `ydoc.share.has()` before accessing keys to avoid permanently locking Yjs shared types to the wrong type. Every lens needs a `hasContent()` method solely for this probe.
+2. **Stale key probing**: Healing must call `ydoc.share.has()` before accessing keys to avoid permanently locking Yjs shared types to the wrong type. Every lens needs a `hasContent()` method solely for this probe.
 
-3. **Conversion pipeline** — Every `mv` that changes extension category must serialize from the old lens and deserialize into the new lens. Error handling for parse failures. The `.txt` escape hatch for unrecoverable formats.
+3. **Conversion pipeline**: Every `mv` that changes extension category must serialize from the old lens and deserialize into the new lens. Error handling for parse failures. The `.txt` escape hatch for unrecoverable formats.
 
-4. **Race conditions** — Content migration and metadata update are on different Y.Docs and can't share a Yjs transaction. The ordering matters. Edge cases with concurrent renames.
+4. **Race conditions**: Content migration and metadata update are on different Y.Docs and can't share a Yjs transaction. The ordering matters. Edge cases with concurrent renames.
 
 **None of this complexity exists in any real filesystem.** In POSIX, `mv notes.txt notes.md` changes the filename. The bytes are unchanged. The application interprets the extension. The filesystem is content-agnostic.
 
@@ -26,11 +26,11 @@ This assumption creates cascading complexity:
 
 ## Core Insight: Format Is Colocated With Content
 
-A file's content format — how its CRDT structure serializes to a string and deserializes from a string — is an intrinsic property of the content itself. It belongs **inside the content Y.Doc**, not in the files table and not derived from the extension.
+A file's content format: how its CRDT structure serializes to a string and deserializes from a string: is an intrinsic property of the content itself. It belongs **inside the content Y.Doc**, not in the files table and not derived from the extension.
 
-This is the Google Drive model: a Google Doc is always a Doc. A Google Sheet is always a Sheet. You can rename a Doc from "Budget" to "Budget.csv" — it's still a Doc. The name is cosmetic. The document type is structural.
+This is the Google Drive model: a Google Doc is always a Doc. A Google Sheet is always a Sheet. You can rename a Doc from "Budget" to "Budget.csv". It's still a Doc. The name is cosmetic. The document type is structural.
 
-**Why colocation specifically?** The content Y.Doc already stores the CRDT data (Y.Text, Y.XmlFragment, etc.). Storing the format alongside that data means format changes and content changes happen in the **same Y.Doc transaction** — no cross-doc timing issues, no healing, no race conditions.
+**Why colocation specifically?** The content Y.Doc already stores the CRDT data (Y.Text, Y.XmlFragment, etc.). Storing the format alongside that data means format changes and content changes happen in the **same Y.Doc transaction**: no cross-doc timing issues, no healing, no race conditions.
 
 ```
 writeFile('/notes.md', '# Hello')
@@ -60,7 +60,7 @@ const filesTable = defineTable(
     id: 'string',
     name: 'string',
     parentId: 'string | null',
-    type: "'file' | 'folder'",   // unchanged — just file vs folder
+    type: "'file' | 'folder'",   // unchanged: just file vs folder
     size: 'number',
     createdAt: 'number',
     updatedAt: 'number',
@@ -100,10 +100,10 @@ The files table already uses `type` for `'file' | 'folder'`. Using `format` in t
 |---------|----------------------|------------------------|
 | `convertType` atomicity | Two Y.Docs, two transactions, timing window | **One Y.Doc, one transaction, atomic** |
 | Files table migration | Need new schema version + migrate function | **No change** |
-| Self-describing documents | No — need files table to interpret content | **Yes** — doc carries its own metadata |
-| Must load content doc to know format | No — read from always-loaded main doc | Yes — but you're loading it anyway for any content operation |
+| Self-describing documents | No: need files table to interpret content | **Yes**: doc carries its own metadata |
+| Must load content doc to know format | No: read from always-loaded main doc | Yes, but you're loading it anyway for any content operation |
 
-The tradeoff: you must load the content Y.Doc to know the format. But every operation that needs the format (`readFile`, `writeFile`, `convertType`) also needs the content — so the doc is loaded regardless.
+The tradeoff: you must load the content Y.Doc to know the format. But every operation that needs the format (`readFile`, `writeFile`, `convertType`) also needs the content. So the doc is loaded regardless.
 
 Operations that don't need format (`stat`, `readdir`, `mkdir`, `mv`) never touch the content doc.
 
@@ -156,7 +156,7 @@ interface ContentLens<THandle = unknown> {
 
 **What changed from the content lens spec:**
 
-- **`hasContent()` is removed.** It only existed for healing — probing whether a lens had content in its keys so the healing system could find content in the "wrong" lens. With format as authoritative metadata, there's no wrong lens. You always know which lens to use.
+- **`hasContent()` is removed.** It only existed for healing: probing whether a lens had content in its keys so the healing system could find content in the "wrong" lens. With format as authoritative metadata, there's no wrong lens. You always know which lens to use.
 - **`format` property added.** Maps lens to its format value (e.g., `'md'` lens handles `'markdown'` format).
 
 Two consumers:
@@ -189,9 +189,9 @@ const registry = createFormatRegistry({
 
 **What changed from the content lens spec:**
 
-- **`lensForFile(fileName)` → `lensFor(format)`** — Direct map lookup by format string, not extension parsing. The filesystem reads the format from the content doc's metadata.
+- **`lensForFile(fileName)` → `lensFor(format)`**: Direct map lookup by format string, not extension parsing. The filesystem reads the format from the content doc's metadata.
 - **`heal()` is removed entirely.** No healing. Format metadata is authoritative.
-- **`inferFormat(fileName)` added** — Used only at file creation time to determine the initial format from the extension. After creation, the format is read from the content doc.
+- **`inferFormat(fileName)` added**: Used only at file creation time to determine the initial format from the extension. After creation, the format is read from the content doc.
 
 Extension matching in `inferFormat` uses the last dot segment: `'notes.md'` → `'.md'` → `'markdown'`. Files without extensions (`.gitignore`, `Makefile`) fall back to `'text'`.
 
@@ -215,12 +215,12 @@ Y.Doc (one per file, guid = fileId)
 **Rules:**
 - Every content key is prefixed with its lens ID
 - Keys are created lazily (only when a lens accesses them)
-- A `.ts` file that was never converted only has `meta` + `'text:content'` — no other keys exist
+- A `.ts` file that was never converted only has `meta` + `'text:content'`: no other keys exist
 - Stale keys from previous explicit conversions are never read (format metadata determines active lens)
 
 **Why `text:content` and not just `text`?** Consistency. Every lens follows the same `{lensId}:{keyName}` pattern. No special cases.
 
-**Why `text` and not `plain` or `default`?** The `text` prefix refers to the Yjs shared type (Y.Text), not the file extension. A `.ts`, `.json`, or `.csv` file all use the text lens because they're all stored as plain text via Y.Text. The `md` lens is the exception — it uses Y.XmlFragment for collaborative WYSIWYG.
+**Why `text` and not `plain` or `default`?** The `text` prefix refers to the Yjs shared type (Y.Text), not the file extension. A `.ts`, `.json`, or `.csv` file all use the text lens because they're all stored as plain text via Y.Text. The `md` lens is the exception: it uses Y.XmlFragment for collaborative WYSIWYG.
 
 ---
 
@@ -290,7 +290,7 @@ Editor binding: ProseMirror via y-prosemirror. Front matter rendered as form fie
 
 ### Future Lenses
 
-See content lens spec for CSV and JSON lens designs. These extend naturally — add a new lens, add a new format value, register in the extension map for `inferFormat`.
+See content lens spec for CSV and JSON lens designs. These extend naturally: add a new lens, add a new format value, register in the extension map for `inferFormat`.
 
 ---
 
@@ -310,7 +310,7 @@ readFile('/notes.txt')
 
 **What's gone:** No `heal()` call. No `healContentType()`. The format is authoritative. If the format says 'markdown', we read from markdown keys. Period.
 
-### writeFile(path, content) — existing file
+### writeFile(path, content): existing file
 
 ```
 writeFile('/notes.txt', 'new content')
@@ -322,7 +322,7 @@ writeFile('/notes.txt', 'new content')
  6. Update file size + mtime in files table
 ```
 
-### writeFile(path, content) — new file
+### writeFile(path, content): new file
 
 ```
 writeFile('/notes.md', '# Hello')
@@ -338,9 +338,9 @@ writeFile('/notes.md', '# Hello')
     })
 ```
 
-**Key point:** `inferFormat` is called exactly once — at file creation. After that, the format is read from the content doc's metadata. The extension is never consulted again.
+**Key point:** `inferFormat` is called exactly once: at file creation. After that, the format is read from the content doc's metadata. The extension is never consulted again.
 
-### mkdir(path) — folder creation
+### mkdir(path): folder creation
 
 ```
 mkdir('/docs')
@@ -349,7 +349,7 @@ mkdir('/docs')
 
 No lens, no content doc. Unchanged from current implementation.
 
-### mv(src, dest) — Always Metadata-Only
+### mv(src, dest): Always Metadata-Only
 
 ```
 mv('/notes.md', '/notes.txt')
@@ -362,9 +362,9 @@ mv('/notes.md', '/notes.txt')
 
 **That's it.** No extension category check. No content migration. No `store.destroy()`. No healing. No content doc access at all. Just a metadata update. Always O(1). Always safe.
 
-The `mv` implementation is identical for files and folders — no branching on content format.
+The `mv` implementation is identical for files and folders, no branching on content format.
 
-### convertFormat(path, targetFormat) — Explicit Conversion
+### convertFormat(path, targetFormat): Explicit Conversion
 
 A new public method for when the user deliberately wants to change a file's content format:
 
@@ -385,13 +385,13 @@ convertFormat('/notes.txt', 'markdown')
 ```
 
 **Properties:**
-- **Single Y.Doc transaction** — format change and content migration are atomic. All peers see both changes together. No timing window.
+- **Single Y.Doc transaction**: format change and content migration are atomic. All peers see both changes together. No timing window.
 - Uses the same `toString → fromString` pipeline as the old rename conversion
-- In-place on the same Y.Doc — no destroy/recreate
+- In-place on the same Y.Doc: no destroy/recreate
 - Old lens's keys become stale (harmless, never read)
 - If `fromString` throws (content can't be parsed as target format), the entire transaction is rolled back. Format stays unchanged. Y.Doc is not modified on failure.
 - Not exposed via IFileSystem (no POSIX equivalent). This is a workspace-level operation, exposed through the UI or a dedicated API.
-- Cannot convert folders — guard with EISDIR check.
+- Cannot convert folders: guard with EISDIR check.
 
 ---
 
@@ -418,10 +418,10 @@ Y.Doc (meta.format: 'text')
 ```
 
 **Why stale keys are harmless:**
-1. They're never read — format metadata is authoritative
-2. No probing — we don't need `ydoc.share.has()` checks or `hasContent()`
+1. They're never read: format metadata is authoritative
+2. No probing: we don't need `ydoc.share.has()` checks or `hasContent()`
 3. They get overwritten on the next conversion to that format
-4. Storage cost is minimal — a few KB of orphaned CRDT data per conversion
+4. Storage cost is minimal: a few KB of orphaned CRDT data per conversion
 
 **Why not clear stale keys:**
 - Clearing means writing deletion tombstones into the CRDT (more storage, not less)
@@ -436,7 +436,7 @@ This section explains the decision for future readers who might ask "why not jus
 
 ### Real filesystems don't do this
 
-In ext4, APFS, NTFS: `mv report.txt report.md` changes the filename. Same bytes. Same inode. The filesystem is content-agnostic. Applications choose how to render based on extension — but the data is unchanged.
+In ext4, APFS, NTFS: `mv report.txt report.md` changes the filename. Same bytes. Same inode. The filesystem is content-agnostic. Applications choose how to render based on extension. But the data is unchanged.
 
 Our filesystem should behave the same way. `readFile` returns the same string before and after a rename. The serialization format is an intrinsic property of the content, not the name.
 
@@ -447,14 +447,14 @@ Our filesystem should behave the same way. `readFile` returns the same string be
 | Cross-peer timing on rename | Metadata syncs before content migration → content in wrong keys → need healing | Metadata syncs → new name, same format → no migration, no healing |
 | Concurrent rename conflicts | Two peers rename to different extensions → two migrations → conflicting content | Two peers rename → only name changes, format unchanged → normal LWW |
 | Parse failure on rename | `.csv` → `.json`: CSV content isn't valid JSON → partial migration → degraded state | No conversion on rename → no parse failure possible |
-| Stale key probing | Must check `ydoc.share.has()` before accessing keys to avoid type-locking | No probing — format metadata tells you exactly which keys to read |
+| Stale key probing | Must check `ydoc.share.has()` before accessing keys to avoid type-locking | No probing: format metadata tells you exactly which keys to read |
 | `mv` complexity | Conditional: same-category rename vs cross-category with full migration pipeline | Always a single metadata update |
 
 ### The only thing you lose is "rename to convert"
 
 `mv notes.txt notes.md` no longer makes the file a rich text document. But:
 - How often does a user actually do this? Almost never.
-- It's surprising behavior — no other filesystem converts content on rename.
+- It's surprising behavior: no other filesystem converts content on rename.
 - Google Drive proves you can build a successful product without it.
 - When you DO want to convert, `convertFormat()` is explicit and intentional.
 
@@ -467,10 +467,10 @@ An alternative design stores the format in the files table as a unified `type` f
 ### The cross-doc timing problem
 
 With format in the files table, `convertFormat` must update two Y.Docs:
-1. Content Y.Doc — write new content through the target lens
-2. Main Y.Doc (files table) — update the format field
+1. Content Y.Doc: write new content through the target lens
+2. Main Y.Doc (files table): update the format field
 
-These are separate Y.Docs that can't share a Yjs transaction. If the main doc syncs before the content doc, Peer B sees the new format but the content hasn't arrived yet — resulting in an empty read.
+These are separate Y.Docs that can't share a Yjs transaction. If the main doc syncs before the content doc, Peer B sees the new format but the content hasn't arrived yet: resulting in an empty read.
 
 With format in the content Y.Doc, `convertFormat` is a **single transaction**. Format change and content migration sync together atomically. No timing window. No empty reads.
 
@@ -499,7 +499,7 @@ The fundamental CRDT constraint still applies:
 
 | Model | How it works | Problem |
 |-------|-------------|---------|
-| **Mutually exclusive** (chosen) | One active lens per file. Others go stale. | None — simple and correct |
+| **Mutually exclusive** (chosen) | One active lens per file. Others go stale. | None: simple and correct |
 | **Y.Text always updated** | Every lens writes to text:content on each edit | User A edits Y.Text, User B edits XmlFragment simultaneously → two CRDTs diverge, no reconciliation possible |
 | **Y.Text is source of truth** | Structured lenses are ephemeral, serialize back to Y.Text | y-prosemirror binds to XmlFragment for real-time collab. Serializing back every keystroke while another peer edits Y.Text → two fighting CRDTs |
 
@@ -513,18 +513,18 @@ Two Yjs shared types cannot be bidirectionally synced without a single-writer co
 
 If `toLens.fromString()` throws during `convertFormat()`:
 
-1. The entire Yjs transaction is rolled back — no partial writes
+1. The entire Yjs transaction is rolled back: no partial writes
 2. The format field is NOT updated (it's in the same transaction)
 3. The file continues to work as before
-4. The caller receives the error — UI can display "Cannot convert: invalid content for target format"
+4. The caller receives the error: UI can display "Cannot convert: invalid content for target format"
 
 ### The text escape hatch
 
-`textLens.fromString()` never throws — it accepts any string. Converting any file to `'text'` format always succeeds. This is the universal fallback for recovery.
+`textLens.fromString()` never throws. It accepts any string. Converting any file to `'text'` format always succeeds. This is the universal fallback for recovery.
 
 ### writeFile() format mismatch
 
-If an agent calls `writeFile('/notes.txt', '# markdown content')` and the file's format is `'text'`, the content is stored as plain text in Y.Text. The `#` is just characters. No markdown parsing. If the user later converts via `convertFormat()`, the `#` becomes a heading. This is correct — the file was text, now it's markdown.
+If an agent calls `writeFile('/notes.txt', '# markdown content')` and the file's format is `'text'`, the content is stored as plain text in Y.Text. The `#` is just characters. No markdown parsing. If the user later converts via `convertFormat()`, the `#` becomes a heading. This is correct. The file was text, now it's markdown.
 
 ---
 
@@ -589,7 +589,7 @@ Colocation eliminates this entire class of problem.
 
 | Concept | Where it lived | Why it's gone |
 |---------|---------------|---------------|
-| `healContentType()` | `convert-on-switch.ts` | No wrong-key scenario — format metadata is authoritative |
+| `healContentType()` | `convert-on-switch.ts` | No wrong-key scenario: format metadata is authoritative |
 | `hasContent()` on lenses | Content lens interface | Only existed for healing probes |
 | `heal()` on LensRegistry | Registry interface | No healing needed |
 | `getExtensionCategory()` | `convert-on-switch.ts` | Extension no longer determines active format |
@@ -604,17 +604,17 @@ Colocation eliminates this entire class of problem.
 | ContentLens interface | `content-lens.ts` | Still the right abstraction for serialization |
 | `{lensId}:{keyName}` naming | Y.Doc keys | Clean namespacing, lazy creation |
 | Stale keys model | Y.Doc after conversion | Harmless orphaned data, overwritten on next conversion |
-| `toString → fromString` pipeline | `convertFormat()` | Still the right way to convert — 2N functions for N types |
+| `toString → fromString` pipeline | `convertFormat()` | Still the right way to convert: 2N functions for N types |
 | Mutually exclusive active lens | Architecture | CRDTs can't be bidirectionally synced |
 | `ContentDocStore` | `content-doc-store.ts` | Still manages Y.Doc lifecycle |
 | `FormatRegistry` | `content-lens.ts` | Still routes format → lens, just without healing |
-| Files table schema | `file-table.ts` | `type: 'file' \| 'folder'` — completely unchanged |
+| Files table schema | `file-table.ts` | `type: 'file' \| 'folder'`: completely unchanged |
 
 ---
 
 ## Implementation Guide
 
-This section has everything an implementing agent needs — concrete code changes, file-by-file instructions, before/after comparisons.
+This section has everything an implementing agent needs: concrete code changes, file-by-file instructions, before/after comparisons.
 
 ### Files to modify
 
@@ -747,7 +747,7 @@ return {
 };
 ```
 
-No change needed — `type` is still `'file' | 'folder'`.
+No change needed: `type` is still `'file' | 'folder'`.
 
 #### How `mkdir` stays the same
 
@@ -799,7 +799,7 @@ Pattern: `{lensId}:{keyName}` for content, `Y.Map('meta')` for metadata.
 - **Use bun**, not npm/node: `bun test`, `bun run`, etc.
 - **Y.Doc keys are permanently type-locked**: Once you call `ydoc.getText('foo')`, that key is forever Y.Text. This is why we use separate namespaced keys per lens.
 - **Lenses must be DOM-free**: `serializeXmlFragmentToMarkdown` uses `prosemirror-markdown` (headless). No jsdom.
-- **markdown-helpers.ts stays unchanged**: `parseFrontmatter`, `serializeMarkdownWithFrontmatter`, `updateYMapFromRecord`, `yMapToRecord`, `serializeXmlFragmentToMarkdown`, `updateYXmlFragmentFromString` are all still needed — they're used by the markdown lens.
+- **markdown-helpers.ts stays unchanged**: `parseFrontmatter`, `serializeMarkdownWithFrontmatter`, `updateYMapFromRecord`, `yMapToRecord`, `serializeXmlFragmentToMarkdown`, `updateYXmlFragmentFromString` are all still needed: they're used by the markdown lens.
 
 ### Verification
 
@@ -811,7 +811,7 @@ Checklist:
 - [ ] `bun test` passes
 - [ ] Files table schema is unchanged (`type: 'file' | 'folder'`)
 - [ ] Content Y.Doc has `Y.Map('meta')` with `format` field
-- [ ] `mv` never touches content doc or format — pure name/parentId update
+- [ ] `mv` never touches content doc or format: pure name/parentId update
 - [ ] New file creation infers format from extension via `inferFormat`, stores in content doc
 - [ ] `readFile` reads format from content doc, not file extension
 - [ ] `convertFormat` works for text ↔ markdown in a single transaction
@@ -827,8 +827,8 @@ Checklist:
 
 ## Related Specs
 
-- `specs/20260208T000000-yjs-filesystem-spec.md` — Original filesystem spec. The two-layer architecture, files table, runtime indexes, IFileSystem implementation, and design decisions sections are still valid. The triple-key and convert-on-switch sections (lines 766-862) are superseded by this spec.
-- `specs/20260210T000000-content-lens-spec.md` — Superseded entirely by this spec. The lens interface and key naming survive in simplified form. The healing, extension-based lookup, and rename conversion sections are eliminated.
-- `specs/20260210T000000-mv-in-place-migration.md` — Superseded. The in-place migration insight is preserved in `convertFormat()`, but rename no longer triggers migration.
-- `specs/20260209T000000-simplify-content-doc-lifecycle.md` — Still valid. ContentDocStore design unchanged.
-- `specs/20260209T120000-branded-file-ids.md` — Still valid. FileId branding unchanged.
+- `specs/20260208T000000-yjs-filesystem-spec.md`: Original filesystem spec. The two-layer architecture, files table, runtime indexes, IFileSystem implementation, and design decisions sections are still valid. The triple-key and convert-on-switch sections (lines 766-862) are superseded by this spec.
+- `specs/20260210T000000-content-lens-spec.md`: Superseded entirely by this spec. The lens interface and key naming survive in simplified form. The healing, extension-based lookup, and rename conversion sections are eliminated.
+- `specs/20260210T000000-mv-in-place-migration.md`: Superseded. The in-place migration insight is preserved in `convertFormat()`, but rename no longer triggers migration.
+- `specs/20260209T000000-simplify-content-doc-lifecycle.md`: Still valid. ContentDocStore design unchanged.
+- `specs/20260209T120000-branded-file-ids.md`: Still valid. FileId branding unchanged.

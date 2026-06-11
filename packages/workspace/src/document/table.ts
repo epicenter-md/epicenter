@@ -334,7 +334,7 @@ export type ReadonlyTables<TTableDefinitions extends TableDefinitions> = {
 
 // ════════════════════════════════════════════════════════════════════════════
 // INTERNAL: attach (used by package-local benchmarks + tests; NOT exported
-// from the public barrel — public callers go through `createWorkspace`)
+// from the public barrel: public callers go through `createWorkspace`)
 // ════════════════════════════════════════════════════════════════════════════
 
 export function attachTable<

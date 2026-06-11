@@ -1,6 +1,6 @@
 # @epicenter/sync
 
-`@epicenter/sync` is the wire-format package for Epicenter sync. It owns the binary framing for Yjs sync, awareness, sync-status, and peer-to-peer RPC messages so the transport layer can stay dumb. `@epicenter/workspace` and `apps/api` use it when they need to turn a `Y.Doc` change into bytes—or turn bytes back into something the app can reason about.
+`@epicenter/sync` is the wire-format package for Epicenter sync. It owns the binary framing for Yjs sync, awareness, sync-status, and peer-to-peer RPC messages so the transport layer can stay dumb. `@epicenter/workspace` and `apps/api` use it when they need to turn a `Y.Doc` change into bytes. Or turn bytes back into something the app can reason about.
 
 ## Installation
 
@@ -65,7 +65,7 @@ The design shows up in a few places:
 - `encodeSyncRequest` and `decodeSyncRequest` collapse the WebSocket handshake into a binary HTTP request/response format.
 - RPC framing is separate from RPC behavior. The package defines request/response bytes and shared error variants, not the transport policy around retries or timeouts.
 
-If you want lifecycle helpers for a WebSocket server, this package is the protocol layer under them—not the server itself.
+If you want lifecycle helpers for a WebSocket server, this package is the protocol layer under them. Not the server itself.
 
 ## API overview
 

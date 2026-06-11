@@ -1,5 +1,5 @@
 /**
- * `@epicenter/field` — the closed field-type vocabulary.
+ * `@epicenter/field`: the closed field-type vocabulary.
  *
  * Two halves over ONE wire-form:
  * - `field.*` builders (authoring) construct a schema in the recognized form.

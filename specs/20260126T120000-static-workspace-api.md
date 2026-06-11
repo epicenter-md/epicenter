@@ -1,6 +1,6 @@
 # Static Workspace API Specification
 
-> **Status: Superseded** — This spec was a design document. The API evolved during implementation. The current API uses `createWorkspace(definition)` instead of `workspace.create()`. See `packages/epicenter/src/static/README.md` for the current API.
+> **Status: Superseded**: This spec was a design document. The API evolved during implementation. The current API uses `createWorkspace(definition)` instead of `workspace.create()`. See `packages/epicenter/src/static/README.md` for the current API.
 
 ## Overview
 
@@ -433,7 +433,7 @@ type TableHelper<TRow extends { id: string }> = {
 	// DELETE
 	// ════════════════════════════════════════════════════════════════
 
-	/** Delete a row by ID. Fire-and-forget — no-op if missing. */
+	/** Delete a row by ID. Fire-and-forget, no-op if missing. */
 	delete(id: string): void;
 
 	/** Delete all rows (table structure preserved). */
@@ -1120,7 +1120,7 @@ type RowResult<TRow> = ValidRowResult<TRow> | InvalidRowResult;
 
 type GetResult<TRow> = RowResult<TRow> | NotFoundResult;
 
-// delete() returns void — fire-and-forget, matches Y.Map.delete() semantics
+// delete() returns void: fire-and-forget, matches Y.Map.delete() semantics
 
 // KV results
 type KvGetResult<TValue> =
@@ -1352,8 +1352,8 @@ If `TTableDefs` appears in a function **parameter** (contravariant), you can't i
 
    ```typescript
    type Lifecycle = {
-   	whenSynced: Promise<unknown>; // REQUIRED
-   	destroy: () => MaybePromise<void>; // REQUIRED
+	whenSynced: Promise<unknown>; // REQUIRED
+	destroy: () => MaybePromise<void>; // REQUIRED
    };
    ```
 
@@ -1364,10 +1364,10 @@ If `TTableDefs` appears in a function **parameter** (contravariant), you can't i
    ```typescript
    // CapabilityFactory is generic over exports only
    export type CapabilityFactory<TExports extends Lifecycle = Lifecycle> = <
-   	TTableDefinitions extends TableDefinitions,
-   	TKvDefinitions extends KvDefinitions,
+	TTableDefinitions extends TableDefinitions,
+	TKvDefinitions extends KvDefinitions,
    >(
-   	context: CapabilityContext<TTableDefinitions, TKvDefinitions>,
+	context: CapabilityContext<TTableDefinitions, TKvDefinitions>,
    ) => TExports;
    ```
 
@@ -1379,11 +1379,11 @@ If `TTableDefs` appears in a function **parameter** (contravariant), you can't i
 
    // InferCapabilityExports only needs TCapabilities!
    export type InferCapabilityExports<TCapabilities extends CapabilityMap> = {
-   	[K in keyof TCapabilities]: TCapabilities[K] extends CapabilityFactory<
-   		infer TExports
-   	>
-   		? TExports
-   		: Lifecycle;
+	[K in keyof TCapabilities]: TCapabilities[K] extends CapabilityFactory<
+		infer TExports
+	>
+		? TExports
+		: Lifecycle;
    };
    ```
 

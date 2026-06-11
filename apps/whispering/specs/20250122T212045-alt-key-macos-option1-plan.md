@@ -62,7 +62,7 @@ const OPTION_CHAR_TO_KEY_MAP: Record<string, string> = {
   // Option + Special Keys
   '"': '[',  // Option+[
   ''': ']',  // Option+]
-  '–': '-',  // Option+- (en dash)
+  '\u2013': '-',  // Option+- (en dash)
   '÷': '/',  // Option+/
   '≥': '.',  // Option+.
   '≤': ',',  // Option+,
@@ -169,10 +169,10 @@ export function createPressedKeys<
 
    ```typescript
    test('coerceMacosKey maps Option special characters', () => {
-   	expect(coerceMacosKey('å')).toBe('a');
-   	expect(coerceMacosKey('∫')).toBe('b');
-   	expect(coerceMacosKey('a')).toBe('a'); // unchanged
-   	expect(coerceMacosKey('alt')).toBe('alt'); // multi-char unchanged
+	expect(coerceMacosKey('å')).toBe('a');
+	expect(coerceMacosKey('∫')).toBe('b');
+	expect(coerceMacosKey('a')).toBe('a'); // unchanged
+	expect(coerceMacosKey('alt')).toBe('alt'); // multi-char unchanged
    });
    ```
 

@@ -18,7 +18,7 @@ Clean up `packages/workspace/src/workspace/create-document.ts` by inlining trivi
 **Hoisted trivial helpers that obscure intent:**
 
 ```typescript
-// Top-level function, used only inside createDocuments — one-liner
+// Top-level function, used only inside createDocuments: one-liner
 function makeHandle(
   timeline: Timeline,
   extensions: Record<string, Extension<any>>,
@@ -28,7 +28,7 @@ function makeHandle(
 ```
 
 ```typescript
-// Private helper inside factory, trivial ternary — 2 call sites
+// Private helper inside factory, trivial ternary: 2 call sites
 function resolveGuid(input: TRow | string): string {
   if (typeof input === 'string') return input;
   return String(input[guidKey]);
@@ -57,13 +57,13 @@ for (let i = destroys.length - 1; i >= 0; i--) {
 This creates problems:
 
 1. **Unnecessary indirection**: `makeHandle` and `resolveGuid` force the reader to jump out of context for trivial operations. Both are one-liners called in 2 places each.
-2. **Duplicated cleanup ceremony**: The LIFO destroy loop is copy-pasted 3 times in `create-document.ts` with minor variations (async vs sync, collect vs log errors). `create-workspace.ts` already has `destroyLifo()` and `startDestroyLifo()` as extracted utilities—`create-document.ts` should reuse them.
+2. **Duplicated cleanup ceremony**: The LIFO destroy loop is copy-pasted 3 times in `create-document.ts` with minor variations (async vs sync, collect vs log errors). `create-workspace.ts` already has `destroyLifo()` and `startDestroyLifo()` as extracted utilities: `create-document.ts` should reuse them.
 3. **Zone ordering drift**: The factory body has a private helper (`resolveGuid`) sandwiched between mutable state initialization and the return object, breaking the four-zone convention (immutable state → mutable state → private helpers → public API).
 4. **Type bucket**: `types.ts` is 1285 lines mixing document, table, kv, awareness, extension, and workspace types. Document types account for ~10 type definitions that may be better co-located.
 
 ### Desired State
 
-- `makeHandle` and `resolveGuid` inlined at call sites—fewer names, fewer jumps
+- `makeHandle` and `resolveGuid` inlined at call sites. Fewer names, fewer jumps
 - LIFO cleanup extracted to a shared utility, reused by both `create-document.ts` and `create-workspace.ts`
 - Factory body reads top-to-bottom: config → state → return object
 - Informed recommendation on document type co-location (move or keep, with reasoning)
@@ -101,7 +101,7 @@ This creates problems:
 
 **Key finding**: Several types are used only within `types.ts` itself or by `define-table.ts` (the builder chain). The consumer-facing types (`DocumentHandle`, `Documents`, `DocumentsHelper`) are re-exported from `index.ts`. Moving them requires updating re-exports but doesn't risk circular deps since the flow is `types.ts` → `create-document.ts` → `create-workspace.ts` (one direction).
 
-**Implication**: This is an evaluation item—verify the import graph before deciding. The agent should research and recommend, not blindly move.
+**Implication**: This is an evaluation item. Verify the import graph before deciding. The agent should research and recommend, not blindly move.
 
 ## Design Decisions
 
@@ -121,8 +121,8 @@ This creates problems:
 - [x] **1.2** Update `create-workspace.ts` to import from `lifecycle.ts`
 - [x] **1.3** Replace the LIFO loops in `create-document.ts` `close()` and `closeAll()` with `destroyLifo()`
 - [x] **1.4** Replace the sync LIFO loop in `create-document.ts` `open()` error path with `startDestroyLifo()`
-  > **Note**: Also replaced the async LIFO loop in `open()`'s `whenReady` catch with `destroyLifo()`—the spec research table missed this 4th instance.
-- [x] **1.5** Verify error-handling semantics are preserved—`close()` throws aggregate, `closeAll()` logs, `open()` rethrows original
+  > **Note**: Also replaced the async LIFO loop in `open()`'s `whenReady` catch with `destroyLifo()`: the spec research table missed this 4th instance.
+- [x] **1.5** Verify error-handling semantics are preserved: `close()` throws aggregate, `closeAll()` logs, `open()` rethrows original
 
 ### Phase 2: Inline trivial helpers
 
@@ -130,7 +130,7 @@ This creates problems:
   > **Note**: makeHandle had been consolidated to 1 call site (post-earlier refactor). Also removed unused `type Timeline` import.
 - [x] **2.2** Inline `resolveGuid()`: replace 2 call sites with `const guid = typeof input === 'string' ? input : String(input[guidKey])`, delete the function and its JSDoc
 - [x] **2.3** Remove the now-unused `DocEntry` comment about `resolveGuid` if any references remain
-  > **Note**: No stale references found—clean deletion.
+  > **Note**: No stale references found. Clean deletion.
 - [x] **2.4** Run tests
 
 ### Phase 3: Reorder factory zones
@@ -143,7 +143,7 @@ This creates problems:
 
 ### Phase 4: Evaluate and report
 
-- [x] **4.1** Research the import graph for the 10 document-related types in `types.ts`—use `lsp_find_references` on each
+- [x] **4.1** Research the import graph for the 10 document-related types in `types.ts`: use `lsp_find_references` on each
 - [x] **4.2** Determine which types are internal-only vs re-exported for consumers
 - [x] **4.3** Write recommendation in Review section: move, partially move, or leave with rationale
 - [x] **4.4** Re-read `open()` method after all changes. If still >100 lines and the extension resolution loop (tag filtering + factory invocation + incremental context) is a self-contained concern, extract it as a private helper. Otherwise leave it and note why in Review.
@@ -156,7 +156,7 @@ This creates problems:
 2. `closeAll()` collects errors and logs them via `console.error` (does not throw)
 3. `open()` error path collects cleanup errors, logs them, then rethrows the original factory error
 
-These tails MUST remain different after extracting the shared loop. The shared `destroyLifo()` returns an error array—each call site handles it in its own way.
+These tails MUST remain different after extracting the shared loop. The shared `destroyLifo()` returns an error array. Each call site handles it in its own way.
 
 ### `makeHandle` type assertion
 
@@ -164,13 +164,13 @@ These tails MUST remain different after extracting the shared loop. The shared `
 
 ### `resolveGuid` and `closeAll`
 
-`closeAll()` doesn't call `resolveGuid`—it iterates the `openDocuments` Map directly by key. Only `open()` and `close()` use `resolveGuid`. Verify this before inlining to avoid creating a third inline site that doesn't exist.
+`closeAll()` doesn't call `resolveGuid`: it iterates the `openDocuments` Map directly by key. Only `open()` and `close()` use `resolveGuid`. Verify this before inlining to avoid creating a third inline site that doesn't exist.
 
 ## Open Questions
 
 1. **Should `destroyLifo` accept an error handler callback instead of returning an array?**
    - Options: (a) return `unknown[]` and let call sites decide, (b) accept `onError?: (err: unknown) => void` callback, (c) return a discriminated result
-   - **Recommendation**: Keep (a)—return the array. It's already the pattern in `create-workspace.ts` and keeps the utility pure. Call sites are 3 lines of error handling; a callback wouldn't save much.
+   - **Recommendation**: Keep (a): return the array. It's already the pattern in `create-workspace.ts` and keeps the utility pure. Call sites are 3 lines of error handling; a callback wouldn't save much.
 
 2. **Should document types move to a `document-types.ts` or into `create-document.ts` itself?**
    - This depends on the import graph research in Phase 4. If types like `DocumentConfig` are imported by `define-table.ts` (the builder), putting them in `create-document.ts` would create a backward dependency. A standalone `document-types.ts` avoids this.
@@ -178,14 +178,14 @@ These tails MUST remain different after extracting the shared loop. The shared `
 
 3. **Should `open()` become method shorthand with `this.close()` internally?**
    - Currently `open`, `close`, `closeAll` are defined as properties on a `const documents` object literal. The `close` method could potentially call `this.close()` if the object used method shorthand.
-   - **Recommendation**: Not in this refactor. The current object-literal-with-arrow-functions pattern works and the methods don't call each other (except `closeAll` could theoretically call `close`, but doesn't—it does its own loop for performance). Leave for a future pass if method shorthand would enable JSDoc improvements.
+   - **Recommendation**: Not in this refactor. The current object-literal-with-arrow-functions pattern works and the methods don't call each other (except `closeAll` could theoretically call `close`, but doesn't. It does its own loop for performance). Leave for a future pass if method shorthand would enable JSDoc improvements.
 
 ## Success Criteria
 
 - [x] All existing tests pass without modification: `bun test packages/workspace/src/workspace/create-document.test.ts`
 - [x] All existing tests pass: `bun test packages/workspace/src/workspace/create-workspace.test.ts`
 - [x] `lsp_diagnostics` clean on all changed files
-- [x] No behavior changes—pure refactor, no API changes, no new exports
+- [x] No behavior changes. Pure refactor, no API changes, no new exports
 - [x] LIFO cleanup ceremony exists in exactly one location (`lifecycle.ts`), imported by both consumer files
 - [x] `makeHandle` and `resolveGuid` no longer exist as named functions
 - [x] Factory zones in `createDocuments` read top-to-bottom without private helpers between state and return
@@ -194,13 +194,13 @@ These tails MUST remain different after extracting the shared loop. The shared `
 
 ## References
 
-- `packages/workspace/src/workspace/create-document.ts` — primary refactor target
-- `packages/workspace/src/workspace/create-document.test.ts` — tests that must pass, do not modify
-- `packages/workspace/src/workspace/create-workspace.ts` — consumer of `createDocuments`, has `destroyLifo`/`startDestroyLifo` to extract
-- `packages/workspace/src/workspace/lifecycle.ts` — destination for shared LIFO utilities
-- `packages/workspace/src/workspace/types.ts` — 1285-line type file with document types to evaluate
-- `packages/workspace/src/workspace/index.ts` — re-exports to check when evaluating type moves
-- `packages/workspace/src/workspace/define-table.ts` — imports `DocumentConfig`, `StringKeysOf`, `ClaimedDocumentColumns`
+- `packages/workspace/src/workspace/create-document.ts`: primary refactor target
+- `packages/workspace/src/workspace/create-document.test.ts`: tests that must pass, do not modify
+- `packages/workspace/src/workspace/create-workspace.ts`: consumer of `createDocuments`, has `destroyLifo`/`startDestroyLifo` to extract
+- `packages/workspace/src/workspace/lifecycle.ts`: destination for shared LIFO utilities
+- `packages/workspace/src/workspace/types.ts`: 1285-line type file with document types to evaluate
+- `packages/workspace/src/workspace/index.ts`: re-exports to check when evaluating type moves
+- `packages/workspace/src/workspace/define-table.ts`: imports `DocumentConfig`, `StringKeysOf`, `ClaimedDocumentColumns`
 
 ## Review
 
@@ -209,15 +209,15 @@ These tails MUST remain different after extracting the shared loop. The shared `
 
 ### Summary
 
-Extracted duplicated LIFO cleanup to `lifecycle.ts` as shared `destroyLifo()`/`startDestroyLifo()` primitives, inlined two trivial helpers (`makeHandle`, `resolveGuid`), and verified the factory body's zone ordering. The refactor reduced `create-document.ts` from 426 to 368 lines while eliminating 4 hand-rolled LIFO loops (3 in `create-document.ts` + the spec's original 3 miscount—there were actually 4, including the `whenReady` catch path).
+Extracted duplicated LIFO cleanup to `lifecycle.ts` as shared `destroyLifo()`/`startDestroyLifo()` primitives, inlined two trivial helpers (`makeHandle`, `resolveGuid`), and verified the factory body's zone ordering. The refactor reduced `create-document.ts` from 426 to 368 lines while eliminating 4 hand-rolled LIFO loops (3 in `create-document.ts` + the spec's original 3 miscount. There were actually 4, including the `whenReady` catch path).
 
 ### Deviations from Spec
 
 - **4th LIFO instance discovered**: The spec research table listed 3 LIFO locations in `create-document.ts`, but there were 4. The async loop inside `open()`'s `whenReady` `.catch()` was also replaced with `destroyLifo()`.
 - **`makeHandle` had 1 call site, not 2**: An earlier refactor (pre-spec) consolidated the two call sites into one. The inline was simpler than anticipated.
-- **Phase 2+3 combined into one commit**: After inlining `resolveGuid` (which was the only private helper between state and return), zone ordering was already correct—no moves needed. Both phases touched only `create-document.ts` so they fit naturally in one commit.
+- **Phase 2+3 combined into one commit**: After inlining `resolveGuid` (which was the only private helper between state and return), zone ordering was already correct. No moves needed. Both phases touched only `create-document.ts` so they fit naturally in one commit.
 
-### Type Co-location Findings (Phase 4.1–4.3)
+### Type Co-location Findings (Phase 4.1-4.3)
 
 **Recommendation: Leave document types in `types.ts`.** The import graph confirms they're tightly woven into the builder type chain.
 
@@ -227,10 +227,10 @@ Extracted duplicated LIFO cleanup to `lifecycle.ts` as shared `destroyLifo()`/`s
 | `DocumentExtensionRegistration` | create-document.ts (×2), create-workspace.ts (×3) | Runtime-facing but small; not worth isolating |
 | `DocumentHandle` | create-document.ts (×4), index.ts (×2) | Could move to create-document.ts, but re-export from index.ts would still need types.ts path |
 | `Documents` | create-document.ts (×4), create-workspace.ts (×3), index.ts (×2) | Cross-file; can't isolate without both directions importing |
-| `HasDocuments` | types.ts only (DocumentsHelper helper) | Internal-only—must stay |
-| `DocumentsOf` | types.ts only (DocumentsHelper helper) | Internal-only—must stay |
+| `HasDocuments` | types.ts only (DocumentsHelper helper) | Internal-only. Must stay |
+| `DocumentsOf` | types.ts only (DocumentsHelper helper) | Internal-only. Must stay |
 | `DocumentsHelper` | types.ts (×2), create-workspace.ts (×2), index.ts (×2) | Participates in WorkspaceClient type algebra |
-| `ExtractAllDocumentTags` | types.ts only (builder chain) | Internal-only—must stay |
+| `ExtractAllDocumentTags` | types.ts only (builder chain) | Internal-only. Must stay |
 | `StringKeysOf` | define-table.ts (×2) | Builder chain utility; moving adds import for no benefit |
 | `ClaimedDocumentColumns` | define-table.ts (×3) | Builder chain utility; same reasoning |
 

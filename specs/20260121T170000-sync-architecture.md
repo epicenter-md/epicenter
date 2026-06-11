@@ -1,8 +1,8 @@
 # Sync Architecture
 
-**Status**: Outdated — significant architectural divergence (see Current Reality below)  
-**Created**: 2026-01-21  
-**Updated**: 2026-03-20  
+**Status**: Outdated: significant architectural divergence (see Current Reality below)
+**Created**: 2026-01-21
+**Updated**: 2026-03-20
 **Purpose**: Define how Epicenter syncs Y.js documents across devices and users
 
 ---
@@ -15,16 +15,16 @@
 
 The implementation diverged from this spec in three fundamental ways:
 
-**1. Per-user ownership, not org-scoped.** Durable Object names follow `user:{userId}:workspace:{name}` (Google Docs model). Each user gets their own DO instance per workspace. The org-scoped model (`{orgId}:{workspaceId}-{epoch}`) described below was rejected because most workspaces contain personal data (transcriptions, notes) that shouldn't merge into a shared Y.Doc. See the rationale in `apps/api/src/app.ts` lines 427–453.
+**1. Per-user ownership, not org-scoped.** Durable Object names follow `user:{userId}:workspace:{name}` (Google Docs model). Each user gets their own DO instance per workspace. The org-scoped model (`{orgId}:{workspaceId}-{epoch}`) described below was rejected because most workspaces contain personal data (transcriptions, notes) that shouldn't merge into a shared Y.Doc. See the rationale in `apps/api/src/app.ts` lines 427-453.
 
 **2. Cloudflare Durable Objects, not Y-Sweet.** Sync runs on Cloudflare Workers with Durable Objects providing single-threaded per-user isolates, built-in SQLite for update logs, and WebSocket hibernation for idle connections. The Y-Sweet references in this spec no longer apply.
 
-**3. Only cloud mode exists.** Of the three sync modes described below, only Epicenter Cloud (Tier 1) is implemented via `apps/api/`. Self-hosted hub is not yet available—the CLI prints a notice directing users to Epicenter Cloud. Local-only mode works trivially by omitting the sync extension.
+**3. Only cloud mode exists.** Of the three sync modes described below, only Epicenter Cloud (Tier 1) is implemented via `apps/api/`. Self-hosted hub is not yet available. The CLI prints a notice directing users to Epicenter Cloud. Local-only mode works trivially by omitting the sync extension.
 
 ### What this spec still gets right
 
 - The three-mode concept (local, self-hosted, cloud) remains the long-term vision
-- The SDK's sync interface is auth-agnostic—the developer provides `getToken`, not a specific auth system
+- The SDK's sync interface is auth-agnostic. The developer provides `getToken`, not a specific auth system
 - The separation between SDK (client) and hub (server) holds
 
 ### Current implementation references
@@ -45,9 +45,9 @@ The implementation diverged from this spec in three fundamental ways:
 
 Epicenter supports three sync modes with a single, unified ownership model:
 
-1. **Local Only** — No account, no sync, data stays on device
-2. **Self-Hosted** — User runs their own Y-Sweet server, no account needed
-3. **Epicenter Cloud** — Managed sync with Better Auth for users and organizations
+1. **Local Only**: No account, no sync, data stays on device
+2. **Self-Hosted**: User runs their own Y-Sweet server, no account needed
+3. **Epicenter Cloud**: Managed sync with Better Auth for users and organizations
 
 ### The Key Simplification
 
@@ -258,19 +258,19 @@ Epicenter cleanly separates concerns across three layers:
 ### Core Types
 
 ```typescript
-// Workspace definition — same for all sync modes
+// Workspace definition: same for all sync modes
 type Workspace = {
 	id: string; // Human-readable: "epicenter.whispering" or UUID
 	name: string; // Display name
 };
 
-// App-level settings — stored locally per device, not synced
+// App-level settings: stored locally per device, not synced
 type AppSettings = {
 	syncMode: 'local' | 'self-hosted' | 'cloud';
 	relayEndpoint?: string; // Y-Sweet server URL
 };
 
-// Organization — includes personal orgs
+// Organization: includes personal orgs
 type Organization = {
 	id: string; // "org_alice_personal" or "org_acme"
 	name: string; // "Alice's Workspace" or "Acme Corp"
@@ -279,7 +279,7 @@ type Organization = {
 	createdAt: Date;
 };
 
-// Membership — links users to orgs
+// Membership: links users to orgs
 type Member = {
 	id: string;
 	userId: string;
@@ -288,7 +288,7 @@ type Member = {
 	createdAt: Date;
 };
 
-// Cloud workspace registry — tracks which org owns which workspace
+// Cloud workspace registry: tracks which org owns which workspace
 type WorkspaceRegistry = {
 	docId: string; // "org_alice_personal:epicenter.whispering-0"
 	workspaceId: string; // "epicenter.whispering"
@@ -310,15 +310,15 @@ function getDocId(
 
 	switch (context.mode) {
 		case 'local':
-			// Local storage key — no prefix
+			// Local storage key: no prefix
 			return baseId;
 
 		case 'self-hosted':
-			// User controls their server — no prefix
+			// User controls their server: no prefix
 			return baseId;
 
 		case 'cloud':
-			// Multi-tenant — ALWAYS prefix with org
+			// Multi-tenant: ALWAYS prefix with org
 			// activeOrganizationId is always set (personal org if nothing else)
 			return `${context.activeOrganizationId}:${baseId}`;
 	}
@@ -583,7 +583,7 @@ Transfer = move workspace from one org to another.
 │                                                                                        │
 │   WHY NEW DOC ID?                                                                      │
 │   • Ownership is encoded in doc ID for security                                       │
-│   • Y-Sweet doesn't understand ownership — the ID IS the namespace                    │
+│   • Y-Sweet doesn't understand ownership. The ID IS the namespace                    │
 │   • Clean audit trail (old doc can be preserved)                                      │
 │   • No risk of permission leaks                                                        │
 │                                                                                        │
@@ -651,7 +651,7 @@ Transfer = move workspace from one org to another.
 │                                                                                        │
 │   CONFLICT RESOLUTION:                                                                 │
 │   • Yjs CRDTs handle concurrent edits automatically                                   │
-│   • No central "last write wins" — all writes merge deterministically                 │
+│   • No central "last write wins": all writes merge deterministically                 │
 │   • Same updates → same final state on all clients (crdt guarantee)                   │
 │                                                                                        │
 └────────────────────────────────────────────────────────────────────────────────────────┘
@@ -693,7 +693,7 @@ Transfer = move workspace from one org to another.
 │   OFFLINE HANDLING:                                                                    │
 │   • Device goes offline → Changes queue locally in Y.Doc                              │
 │   • Device comes online → Reconnects, syncs queued changes                            │
-│   • Yjs merges automatically — no conflict dialogs needed                             │
+│   • Yjs merges automatically, no conflict dialogs needed                             │
 │                                                                                        │
 └────────────────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -733,7 +733,7 @@ Transfer = move workspace from one org to another.
 │   │                      org_acme:epicenter.crm-0                                │    │
 │   │                                                                               │    │
 │   │  All three users see the same data, real-time sync via Yjs CRDTs            │    │
-│   │  Changes merge automatically — no conflicts                                  │    │
+│   │  Changes merge automatically, no conflicts                                  │    │
 │   └──────────────────────────────────────────────────────────────────────────────┘    │
 │                                                                                        │
 └────────────────────────────────────────────────────────────────────────────────────────┘
@@ -1165,7 +1165,7 @@ Options:
 2. **Prevent delete**: Can't delete org with workspaces (safer)
 3. **Transfer required**: Must transfer all workspaces first (safest)
 
-**Recommendation**: Option 3 — require all workspaces to be transferred before org deletion.
+**Recommendation**: Option 3: require all workspaces to be transferred before org deletion.
 
 ### Q: How do epochs work with cloud sync?
 

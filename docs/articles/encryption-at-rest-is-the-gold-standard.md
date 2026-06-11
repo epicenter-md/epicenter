@@ -1,6 +1,6 @@
 # Encryption at Rest Is the Gold Standard
 
-Encryption at rest is the baseline for modern data ownership. It means your data is ciphertext wherever it sits—on your local disk, on a sync server, or in a cloud backup. If someone steals the entire database, they get noise.
+Encryption at rest is the baseline for modern data ownership. It means your data is ciphertext wherever it sits. On your local disk, on a sync server, or in a cloud backup. If someone steals the entire database, they get noise.
 
 ## Workspace data is ciphertext by default
 
@@ -10,11 +10,11 @@ In Epicenter, this protection covers every piece of workspace data. Your notes, 
 App code → createEncryptedKvLww → encrypt (XChaCha20-Poly1305) → Y.Doc → IndexedDB / Durable Objects / backups
 ```
 
-This approach provides defense-in-depth for your most sensitive information. An attacker needs two things to read your data: a full copy of the database and the application secret. Stealing one is hard—stealing both is significantly harder.
+This approach provides defense-in-depth for your most sensitive information. An attacker needs two things to read your data: a full copy of the database and the application secret. Stealing one is hard. Stealing both is significantly harder.
 
 ## Metadata remains visible for sync
 
-The encryption uses XChaCha20-Poly1305. Each value is stored as a bare `Uint8Array` with a self-describing binary header: `[formatVersion(1) ‖ keyVersion(1) ‖ nonce(24) ‖ ciphertext ‖ tag(16)]`. The format version is the sole contract for the encryption format—algorithm, nonce size, tag size, and encoding are all implied by the version.
+The encryption uses XChaCha20-Poly1305. Each value is stored as a bare `Uint8Array` with a self-describing binary header: `[formatVersion(1) ‖ keyVersion(1) ‖ nonce(24) ‖ ciphertext ‖ tag(16)]`. The format version is the sole contract for the encryption format. Algorithm, nonce size, tag size, and encoding are all implied by the version.
 
 ```
 [0x01][keyVer][...24-byte nonce...][...ciphertext + 16-byte Poly1305 tag...]

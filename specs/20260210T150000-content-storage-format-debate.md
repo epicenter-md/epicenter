@@ -2,9 +2,9 @@
 
 **Date**: 2026-02-10
 **Status**: Acknowledged
-**Acknowledged by**: `specs/20260211T100000-simplified-ytext-content-store.md` (further superseded by `specs/20260211T230000-timeline-content-storage-implementation.md`) — implements this spec's recommendation (markdown-as-text source of truth) with v13 Yjs. v14 migration deferred.
+**Acknowledged by**: `specs/20260211T100000-simplified-ytext-content-store.md` (further superseded by `specs/20260211T230000-timeline-content-storage-implementation.md`): implements this spec's recommendation (markdown-as-text source of truth) with v13 Yjs. v14 migration deferred.
 **Supersedes**: Nothing. This is an architectural decision document that informs the content-format-spec, not replaces it.
-**See also**: `specs/20260211T220000-yjs-content-doc-multi-mode-research.md` — Option F makes the text-vs-tree debate less decisive: the timeline supports both `Y.Text` (text mode) and `Y.XmlFragment` (richtext mode) per-file, switchable at runtime. You can have the Obsidian model AND the Google Docs model.
+**See also**: `specs/20260211T220000-yjs-content-doc-multi-mode-research.md`: Option F makes the text-vs-tree debate less decisive: the timeline supports both `Y.Text` (text mode) and `Y.XmlFragment` (richtext mode) per-file, switchable at runtime. You can have the Obsidian model AND the Google Docs model.
 
 ---
 

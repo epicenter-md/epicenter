@@ -82,15 +82,15 @@ Grepping the codebase for `@epicenter/workspace/dynamic` imports reveals:
 
 | Consumer                                          | What it imports                                                                              | What it actually needs                                                      |
 | ------------------------------------------------- | -------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
-| `apps/epicenter/` templates (whispering, entries) | `defineWorkspace`, field factories (`id`, `text`, `select`, etc.)                            | Workspace definitions — migrate to Static `defineWorkspace` + `defineTable` |
-| `apps/epicenter/` workspace service               | `WorkspaceDefinition` type                                                                   | Type — migrate to Static equivalent                                         |
-| `apps/epicenter/` yjs workspace                   | `createWorkspace`, `Extension`, `ExtensionContext`                                           | Core workspace — migrate to Static `createWorkspace`                        |
-| `apps/epicenter/` workspace-persistence           | `ExtensionContext` type                                                                      | Type only — migrate to Static                                               |
-| `apps/tab-manager/` (2 files)                     | `generateId`                                                                                 | Just the ID utility — already exported from root `@epicenter/workspace`            |
-| `extensions/sqlite`                               | `ExtensionContext`, schema types, `Row`, `TableDefinition`, Drizzle converters               | **Dead code** — no app imports this extension                               |
-| `extensions/markdown`                             | `ExtensionContext`, schema types, `Field`, `Row`, `TableHelper`, `TableById`, `getTableById` | **Dead code** — no app imports this extension                               |
-| `extensions/revision-history`                     | `ExtensionContext`, schema types                                                             | **Dead code** — no app imports this extension                               |
-| `extensions/sync/desktop`                         | `ExtensionContext`                                                                           | Type only — migrate to Static                                               |
+| `apps/epicenter/` templates (whispering, entries) | `defineWorkspace`, field factories (`id`, `text`, `select`, etc.)                            | Workspace definitions: migrate to Static `defineWorkspace` + `defineTable` |
+| `apps/epicenter/` workspace service               | `WorkspaceDefinition` type                                                                   | Type: migrate to Static equivalent                                         |
+| `apps/epicenter/` yjs workspace                   | `createWorkspace`, `Extension`, `ExtensionContext`                                           | Core workspace: migrate to Static `createWorkspace`                        |
+| `apps/epicenter/` workspace-persistence           | `ExtensionContext` type                                                                      | Type only: migrate to Static                                               |
+| `apps/tab-manager/` (2 files)                     | `generateId`                                                                                 | Just the ID utility: already exported from root `@epicenter/workspace`            |
+| `extensions/sqlite`                               | `ExtensionContext`, schema types, `Row`, `TableDefinition`, Drizzle converters               | **Dead code**: no app imports this extension                               |
+| `extensions/markdown`                             | `ExtensionContext`, schema types, `Field`, `Row`, `TableHelper`, `TableById`, `getTableById` | **Dead code**: no app imports this extension                               |
+| `extensions/revision-history`                     | `ExtensionContext`, schema types                                                             | **Dead code**: no app imports this extension                               |
+| `extensions/sync/desktop`                         | `ExtensionContext`                                                                           | Type only: migrate to Static                                               |
 
 **Key finding 1**: App-level consumers (`apps/`) use the Dynamic API superficially: `createWorkspace`, type imports, and `generateId`. These are straightforward import path changes.
 
@@ -104,12 +104,12 @@ Even though these extensions will be deleted, documenting the coupling explains 
 
 | Extension                   | Dynamic imports                                                                                                    | Static equivalent exists?                                           |
 | --------------------------- | ------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------- |
-| `sqlite/sqlite.ts`          | `ExtensionContext`, `KvField`, `Row`, `TableDefinition`, `Id`, `convertTableDefinitionsToDrizzle`                  | Partial — no `convertTableDefinitionsToDrizzle` equivalent          |
-| `sqlite/builders.ts`        | `DateTimeString`, `generateId` (also `typebox`)                                                                    | Yes — these are in `shared/`                                        |
-| `markdown/markdown.ts`      | `ExtensionContext`, `Field`, `Id`, `KvField`, `Row`, `TableDefinition`, `TableById`, `getTableById`, `TableHelper` | No — `Field`, `TableById`, `getTableById` have no Static equivalent |
-| `markdown/configs.ts`       | `Field`, `Row`, `tableToArktype`                                                                                   | No — `tableToArktype` is a Dynamic converter                        |
+| `sqlite/sqlite.ts`          | `ExtensionContext`, `KvField`, `Row`, `TableDefinition`, `Id`, `convertTableDefinitionsToDrizzle`                  | Partial: no `convertTableDefinitionsToDrizzle` equivalent          |
+| `sqlite/builders.ts`        | `DateTimeString`, `generateId` (also `typebox`)                                                                    | Yes: these are in `shared/`                                        |
+| `markdown/markdown.ts`      | `ExtensionContext`, `Field`, `Id`, `KvField`, `Row`, `TableDefinition`, `TableById`, `getTableById`, `TableHelper` | No: `Field`, `TableById`, `getTableById` have no Static equivalent |
+| `markdown/configs.ts`       | `Field`, `Row`, `tableToArktype`                                                                                   | No: `tableToArktype` is a Dynamic converter                        |
 | `revision-history/local.ts` | `ExtensionContext`, `KvField`, `TableDefinition`                                                                   | Partial                                                             |
-| `sync/desktop.ts`           | `ExtensionContext`                                                                                                 | Yes — Static has its own `ExtensionContext`                         |
+| `sync/desktop.ts`           | `ExtensionContext`                                                                                                 | Yes: Static has its own `ExtensionContext`                         |
 
 The markdown extension alone would require rewriting its entire serialization system to work with Standard Schema instead of Dynamic Field objects. Since no app uses it, deletion is the right call.
 
@@ -121,7 +121,7 @@ The markdown extension alone would require rewriting its entire serialization sy
 | Different users, same cell         | Timestamp wins (deterministic)       | ClientId wins (arbitrary but consistent) |
 | Offline reconnect, different cells | Both edits preserved                 | Both edits preserved                     |
 | Offline reconnect, same cell       | Later timestamp wins                 | Arbitrary winner                         |
-| Row deletion                       | O(k) — delete each cell entry        | O(1) — `rows.delete(rowId)`              |
+| Row deletion                       | O(k): delete each cell entry        | O(1): `rows.delete(rowId)`              |
 | Row existence check                | O(1) via maintained in-memory index  | O(1) native Y.Map.has                    |
 | Add column to existing rows        | Must iterate all rows, write per row | Just start writing to new key            |
 
@@ -153,29 +153,29 @@ Files to delete (confirmed via grep and glob):
 
 **`src/dynamic/` (entire directory)**:
 
-- `workspace/` — `create-workspace.ts`, `create-workspace.test.ts`, `normalize.test.ts`, `workspace.ts`, `types.ts`, `node.ts`, README
-- `tables/` — `table-helper.ts`, `create-tables.ts`, `y-cell-store.ts`, `y-row-store.ts`, + 5 test files
-- `schema/` — `fields/`, `converters/`, `workspace-definition.ts`, `workspace-definition-validator.ts`, `schema-file.ts`, README
-- `kv/` — `create-kv.ts`, `kv-helper.ts`, `kv-helper.test.ts`
+- `workspace/`: `create-workspace.ts`, `create-workspace.test.ts`, `normalize.test.ts`, `workspace.ts`, `types.ts`, `node.ts`, README
+- `tables/`: `table-helper.ts`, `create-tables.ts`, `y-cell-store.ts`, `y-row-store.ts`, + 5 test files
+- `schema/`: `fields/`, `converters/`, `workspace-definition.ts`, `workspace-definition-validator.ts`, `schema-file.ts`, README
+- `kv/`: `create-kv.ts`, `kv-helper.ts`, `kv-helper.test.ts`
 - `extension.ts`, `index.ts`, `provider-types.ts`, `workspace-doc.ts`, `YDOC-ARCHITECTURE.md`
 - **12 test files** in total
 
 **`src/extensions/` (Dynamic-coupled extensions)**:
 
-- `sqlite/` — `sqlite.ts`, `builders.ts`, `index.ts`, tests
-- `markdown/` — `markdown.ts`, `configs.ts`, `diagnostics-manager.ts`, `io.ts`, `index.ts`, tests, README
-- `revision-history/` — `index.ts`, `local.ts`, tests
-- `extensions/index.ts` — needs rewriting (remove sqlite/markdown/revision-history exports)
+- `sqlite/`: `sqlite.ts`, `builders.ts`, `index.ts`, tests
+- `markdown/`: `markdown.ts`, `configs.ts`, `diagnostics-manager.ts`, `io.ts`, `index.ts`, tests, README
+- `revision-history/`: `index.ts`, `local.ts`, tests
+- `extensions/index.ts`: needs rewriting (remove sqlite/markdown/revision-history exports)
 
 **`src/shared/`**:
 
-- `cell-keys.ts` — only used by CellStore
+- `cell-keys.ts`: only used by CellStore
 
 **Other**:
 
-- `scripts/ymap-vs-ykeyvalue-benchmark.ts` — comparison benchmark, can keep or delete
-- `scripts/yjs-data-structure-benchmark.ts` — general benchmark, keep
-- `scripts/yjs-gc-benchmark.ts` — general benchmark, keep
+- `scripts/ymap-vs-ykeyvalue-benchmark.ts`: comparison benchmark, can keep or delete
+- `scripts/yjs-data-structure-benchmark.ts`: general benchmark, keep
+- `scripts/yjs-gc-benchmark.ts`: general benchmark, keep
 
 ## Design Decisions
 
@@ -240,7 +240,7 @@ The app-level migration is shallow. No logic changes, just import paths.
 - [x] **1.4** `apps/epicenter/src/lib/workspaces/dynamic/service.ts`: Defined local `WorkspaceDefinition` type (display metadata only), removed Dynamic import.
 - [x] **1.5** `apps/epicenter/src/lib/yjs/workspace.ts`: Rewrote to use Static `createWorkspace` with template registry lookup by ID.
 - [x] **1.6** `apps/epicenter/src/lib/yjs/workspace-persistence.ts`: Changed to Static `ExtensionContext`, simplified to Y.Doc binary persistence only.
-- [ ] **1.7** `apps/epicenter/src/lib/query/index.ts`: No change needed — import path was already correct.
+- [ ] **1.7** `apps/epicenter/src/lib/query/index.ts`: No change needed: import path was already correct.
 - [x] **1.8** `apps/epicenter/src/routes/(workspace)/workspaces/[id]/+layout.ts`: Updated to pass workspace ID instead of definition.
 - [x] **1.8b** `apps/epicenter/src/routes/.../tables/[tableId]/+page.svelte`: Rewrote for Static API (property access, data-derived columns).
 - [x] **1.8c** `apps/epicenter/src/routes/.../settings/[key]/+page.svelte`: Simplified to not-found state (no runtime KV schema).
@@ -275,7 +275,7 @@ Every field factory (`id()`, `text()`, `select()`, etc.) must be translated to a
 
 ### Phase 3: Promote Static and Delete Dynamic
 
-- [ ] **3.1** Move `static/` contents up to root level (or rename to `workspace/`). — Deferred: kept `static/` in place, merged exports into root `index.ts` instead.
+- [ ] **3.1** Move `static/` contents up to root level (or rename to `workspace/`).: Deferred: kept `static/` in place, merged exports into root `index.ts` instead.
 - [x] **3.2** Merged Static exports into root `src/index.ts` (defineTable, defineWorkspace, createWorkspace, all types, introspection, validation).
 - [x] **3.3** Updated `package.json` exports: removed `"./dynamic"` and `"./node"`. Kept `"./static"` as alias.
 - [x] **3.4** Kept `"./static"` export pointing to `./src/static/index.ts` for backward compatibility.
@@ -291,15 +291,15 @@ Every field factory (`id()`, `text()`, `select()`, etc.) must be translated to a
 
 ### Phase 4: Cleanup and Verify
 
-- [x] **4.1** Updated root `src/index.ts` — removed Dynamic references, added Static API exports.
-- [ ] **4.2** Update `AGENTS.md` references — deferred to follow-up.
-- [ ] **4.3** Update `packages/epicenter/README.md` — deferred to follow-up.
+- [x] **4.1** Updated root `src/index.ts`: removed Dynamic references, added Static API exports.
+- [ ] **4.2** Update `AGENTS.md` references: deferred to follow-up.
+- [ ] **4.3** Update `packages/epicenter/README.md`: deferred to follow-up.
 - [x] **4.4** READMEs in deleted folders removed with folder deletion. Updated `apps/epicenter/src/lib/yjs/README.md`.
 - [ ] **4.5** Kept `"./static"` re-export for backward compatibility.
-- [x] **4.6** `bun run typecheck` — 0 source errors (149 pre-existing test file errors only).
-- [x] **4.7** `bun test` — 377 pass, 0 fail.
+- [x] **4.6** `bun run typecheck`: 0 source errors (149 pre-existing test file errors only).
+- [x] **4.7** `bun test`: 377 pass, 0 fail.
 - [x] **4.8** Zero imports of `@epicenter/workspace/dynamic` or `@epicenter/workspace/node` anywhere in the monorepo.
-- [ ] **4.9** App build — not tested (requires Tauri build environment). Typecheck passes.
+- [ ] **4.9** App build: not tested (requires Tauri build environment). Typecheck passes.
 - [x] **4.10** Deleted `scripts/ymap-vs-ykeyvalue-benchmark.ts`.
 
 ## Edge Cases
@@ -337,10 +337,10 @@ Currently exports sqlite, markdown, revision-history, sync, and error-logger. Af
 - [x] `src/dynamic/` folder deleted
 - [x] `src/extensions/sqlite/`, `src/extensions/markdown/`, `src/extensions/revision-history/` deleted
 - [x] `typebox` removed from package.json dependencies
-- [x] All existing tests pass (minus deleted Dynamic tests) — 377 pass, 0 fail
+- [x] All existing tests pass (minus deleted Dynamic tests): 377 pass, 0 fail
 - [x] `bun run typecheck` clean across all packages (pre-existing test errors only)
-- [ ] Apps build and run correctly — typecheck passes; full build requires Tauri environment
-- [x] Net reduction in code and dependencies — ~17,900 lines deleted
+- [ ] Apps build and run correctly: typecheck passes; full build requires Tauri environment
+- [x] Net reduction in code and dependencies: ~17,900 lines deleted
 
 ## Review
 
@@ -380,11 +380,11 @@ Removed the entire Dynamic workspace API and its coupled extensions. ~17,900 lin
 
 ## References
 
-- `packages/epicenter/src/static/` — The surviving (and now primary) workspace API
-- `packages/epicenter/src/shared/` — Shared utilities (kept)
-- `packages/epicenter/src/shared/y-keyvalue/ymap-simplicity-case.test.ts` — Analysis proving Y.Map<Y.Map> equivalence
-- `packages/epicenter/src/extensions/sync/` — Sync extension (kept, migrated to Static types)
-- `packages/epicenter/package.json` — Updated export map
-- `apps/epicenter/src/lib/templates/` — Migrated workspace templates
-- `apps/epicenter/src/lib/workspaces/dynamic/` — Migrated app-level workspace code
-- `apps/tab-manager/src/lib/` — Migrated tab manager imports
+- `packages/epicenter/src/static/`: The surviving (and now primary) workspace API
+- `packages/epicenter/src/shared/`: Shared utilities (kept)
+- `packages/epicenter/src/shared/y-keyvalue/ymap-simplicity-case.test.ts`: Analysis proving Y.Map<Y.Map> equivalence
+- `packages/epicenter/src/extensions/sync/`: Sync extension (kept, migrated to Static types)
+- `packages/epicenter/package.json`: Updated export map
+- `apps/epicenter/src/lib/templates/`: Migrated workspace templates
+- `apps/epicenter/src/lib/workspaces/dynamic/`: Migrated app-level workspace code
+- `apps/tab-manager/src/lib/`: Migrated tab manager imports

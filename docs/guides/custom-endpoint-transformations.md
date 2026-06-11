@@ -1,6 +1,6 @@
 # Using Custom Endpoints for Local AI Transformations
 
-**Transform your transcribed text with local AI models—completely offline and privacy-preserving.**
+**Transform your transcribed text with local AI models. Completely offline and privacy-preserving.**
 
 This guide walks you through setting up and using custom API endpoints (Ollama, LM Studio, llama.cpp) for transformations in Whispering. With this feature, you can run AI-powered text transformations entirely on your local machine without sending data to cloud services.
 
@@ -37,11 +37,11 @@ A custom endpoint allows you to use any OpenAI-compatible API server for text tr
 
 ## Why Use Local Models?
 
-✅ **Complete Privacy** - Your data never leaves your machine  
-✅ **No API Costs** - Free inference with your own hardware  
-✅ **Offline Usage** - Work without internet connection  
-✅ **Data Compliance** - Meet enterprise security requirements  
-✅ **Fast Processing** - No network latency (with good hardware)  
+✅ **Complete Privacy** - Your data never leaves your machine
+✅ **No API Costs** - Free inference with your own hardware
+✅ **Offline Usage** - Work without internet connection
+✅ **Data Compliance** - Meet enterprise security requirements
+✅ **Fast Processing** - No network latency (with good hardware)
 ✅ **Full Control** - Choose any model that fits your needs
 
 ---
@@ -65,7 +65,7 @@ This guide covers the three most popular options: Ollama, LM Studio, and llama.c
 
 ### What is Ollama?
 
-Ollama is the easiest way to run large language models locally. It's like Docker for AI models—simple, fast, and works out of the box.
+Ollama is the easiest way to run large language models locally. It's like Docker for AI models. Simple, fast, and works out of the box.
 
 ### Installation
 
@@ -232,7 +232,7 @@ When creating a transformation in Whispering:
 
 ### What is llama.cpp?
 
-llama.cpp is a C++ implementation of LLaMA inference—fast, efficient, and highly customizable. Best for advanced users who want fine-grained control.
+llama.cpp is a C++ implementation of LLaMA inference. Fast, efficient, and highly customizable. Best for advanced users who want fine-grained control.
 
 ### Installation
 
@@ -965,4 +965,4 @@ If you encounter issues not covered in this guide:
 
 **Happy transforming!** 🚀
 
-With custom endpoints, you have complete control over your AI transformations—private, powerful, and completely free.
+With custom endpoints, you have complete control over your AI transformations. Private, powerful, and completely free.

@@ -6,7 +6,7 @@
 
 ## Overview
 
-Restructure the tab manager's side panel from a 3-tab layout (Tabs, Saved, AI) into a unified scrollable view. Open tabs and saved-for-later tabs merge into one virtualized list. A search input at the top filters tabs instantly, while dedicated `⌘` and `⚡` buttons open a command palette and AI drawer respectively—keeping each feature in its own clear surface. Quick actions like duplicate removal run via the command palette. A new "bookmarks" concept adds permanent, non-consumable URL references.
+Restructure the tab manager's side panel from a 3-tab layout (Tabs, Saved, AI) into a unified scrollable view. Open tabs and saved-for-later tabs merge into one virtualized list. A search input at the top filters tabs instantly, while dedicated `⌘` and `⚡` buttons open a command palette and AI drawer respectively. Keeping each feature in its own clear surface. Quick actions like duplicate removal run via the command palette. A new "bookmarks" concept adds permanent, non-consumable URL references.
 
 ## Motivation
 
@@ -33,7 +33,7 @@ This creates problems:
 1. **Context switching to find things.** To check saved tabs, you leave the tabs view. To ask AI about tabs, you leave both. There's no way to see open tabs and saved tabs at the same time.
 2. **No search.** The only way to find a tab is scrolling or asking AI (which requires switching to the AI tab). With 50+ tabs across windows, this is painful. The `tabs.search` AI query exists in `workspace.ts` but has no direct UI.
 3. **No quick actions.** Duplicate removal, "close all by domain," and "group by domain" have no UI. The AI can do some of these, but it's slow for simple operations.
-4. **AI is hidden.** Chat lives behind a tab switch. Users can't ask AI about their tabs while looking at them. The AI chat is a tool, not a content view—it shouldn't compete for the same slot.
+4. **AI is hidden.** Chat lives behind a tab switch. Users can't ask AI about their tabs while looking at them. The AI chat is a tool, not a content view. It shouldn't compete for the same slot.
 5. **Tab bar won't scale.** Adding bookmarks, sessions, or settings as more top-level tabs would overflow the narrow side panel.
 
 ### Desired State
@@ -57,7 +57,7 @@ This creates problems:
 | Organization | Flat list by time | Flat list initially, folders later |
 | Cross-device | Yes (Yjs CRDT) | Yes (same Yjs pattern) |
 
-**Key finding:** The current `savedTabs` model is a transient parking lot—`save` closes the tab, `restore` deletes the record. This is semantically distinct from bookmarks, which persist indefinitely. Both are needed.
+**Key finding:** The current `savedTabs` model is a transient parking lot: `save` closes the tab, `restore` deletes the record. This is semantically distinct from bookmarks, which persist indefinitely. Both are needed.
 
 **Implication:** Bookmarks need a new table (`bookmarks`) with no delete-on-open semantics. The `savedTabs` table and state module stay unchanged.
 
@@ -73,9 +73,9 @@ This creates problems:
 
 **Key finding:** Three specialist agents (visual-engineering, Oracle, librarian) independently evaluated three approaches and unanimously rejected prefix-based mode switching for a narrow (360px) side panel. Prefixes are undiscoverable, create ambiguity ("close youtube tabs" = filter or AI command?), and impose cognitive overhead of choosing a mode before typing.
 
-**Winning approach (C+):** The search input has ONE job—plain text filtering. Commands and AI live behind dedicated buttons (`⌘` and `⚡`) next to the input. This gives each feature its own clear surface: filter is inline, commands are an overlay (using existing `@epicenter/ui/command`), and AI is a drawer. Hidden power-user shortcuts (`/` and `@` in an empty input) exist for keyboard-heavy users but are not the primary interaction.
+**Winning approach (C+):** The search input has ONE job. Plain text filtering. Commands and AI live behind dedicated buttons (`⌘` and `⚡`) next to the input. This gives each feature its own clear surface: filter is inline, commands are an overlay (using existing `@epicenter/ui/command`), and AI is a drawer. Hidden power-user shortcuts (`/` and `@` in an empty input) exist for keyboard-heavy users but are not the primary interaction.
 
-**Implication:** Use a plain search input + two icon buttons in the header bar. No prefix detection in the input itself—prefixes are handled as shortcuts that open the appropriate surface.
+**Implication:** Use a plain search input + two icon buttons in the header bar. No prefix detection in the input itself. Prefixes are handled as shortcuts that open the appropriate surface.
 ### Existing Infrastructure
 
 Already available in the codebase:
@@ -270,11 +270,11 @@ Built-in actions for v1:
 
 | Command | Action | Confirmation? |
 |---|---|---|
-| `/dedup` | Close duplicate tabs (same URL) | Yes — "Found N duplicates. Close them?" |
-| `/close <domain>` | Close all tabs matching domain | Yes — "Close N tabs from domain?" |
+| `/dedup` | Close duplicate tabs (same URL) | Yes: "Found N duplicates. Close them?" |
+| `/close <domain>` | Close all tabs matching domain | Yes: "Close N tabs from domain?" |
 | `/group` | Group tabs by domain | No |
 | `/sort` | Sort tabs by title within each window | No |
-| `/save-all` | Save all tabs for later + close | Yes — "Save and close N tabs?" |
+| `/save-all` | Save all tabs for later + close | Yes: "Save and close N tabs?" |
 
 ### Duplicate Detection Logic
 
@@ -307,46 +307,46 @@ function normalizeUrl(url: string): string {
 
 ### Phase 1: Unified View (no search, no commands, no bookmarks)
 
-Merge the existing two views into one scrollable list. No new features—just restructure.
+Merge the existing two views into one scrollable list. No new features. Just restructure.
 
-- [x] **1.1** Create `UnifiedTabList.svelte` — single VList with section headers for "Open Tabs" and "Saved for Later", using the `FlatItem` discriminated union. Reuses existing `TabItem.svelte` and per-item rendering from `SavedTabList`.
-- [x] **1.2** Update `App.svelte` — replace the 3-tab Tabs.Root with the unified view. Remove Tabs component usage. Keep AI as a button/trigger (not rendered as content yet).
-- [x] **1.3** Create `unified-view-state.svelte.ts` — manages expanded sections (`SvelteSet`), derives the flat item array from `browserState` + `savedTabState`. Follows the `createXxxState()` factory pattern.
-- [x] **1.4** Add section header rendering in VList — collapsible headers for "Open Tabs (N)" and "Saved for Later (N)" with chevron toggle. Window headers remain as sub-collapsibles.
-- [x] **1.5** Preserve existing "Restore All" / "Delete All" for saved tabs — move these to the saved section's header or a context menu.
+- [x] **1.1** Create `UnifiedTabList.svelte`: single VList with section headers for "Open Tabs" and "Saved for Later", using the `FlatItem` discriminated union. Reuses existing `TabItem.svelte` and per-item rendering from `SavedTabList`.
+- [x] **1.2** Update `App.svelte`: replace the 3-tab Tabs.Root with the unified view. Remove Tabs component usage. Keep AI as a button/trigger (not rendered as content yet).
+- [x] **1.3** Create `unified-view-state.svelte.ts`: manages expanded sections (`SvelteSet`), derives the flat item array from `browserState` + `savedTabState`. Follows the `createXxxState()` factory pattern.
+- [x] **1.4** Add section header rendering in VList: collapsible headers for "Open Tabs (N)" and "Saved for Later (N)" with chevron toggle. Window headers remain as sub-collapsibles.
+- [x] **1.5** Preserve existing "Restore All" / "Delete All" for saved tabs: move these to the saved section's header or a context menu.
 
 ### Phase 2: Instant Search Filter
 Add the search input with plain-text filtering. The input has ONE job: filter.
 
-- [x] **2.1** Add search input + action buttons to the header area — replace the h1 "Tab Manager" with a search input flanked by `⌘` (command palette) and `⚡` (AI drawer) icon buttons. Show "Search tabs..." as placeholder.
-- [x] **2.2** Wire filter into `unified-view-state` — when `searchQuery` is non-empty, filter `flatItems` by title/URL match (case-insensitive `includes`). Auto-expand all sections when filtering.
-- [x] **2.3** Handle empty results — show inline "No matching tabs" state with a CTA: "✦ Ask AI about [query]" that opens the AI drawer with the query prefilled.
-- [x] **2.4** Add hidden `/` shortcut — when input is empty and user types `/`, open the command palette (Phase 3) and clear the input. Power-user enhancement.
+- [x] **2.1** Add search input + action buttons to the header area: replace the h1 "Tab Manager" with a search input flanked by `⌘` (command palette) and `⚡` (AI drawer) icon buttons. Show "Search tabs..." as placeholder.
+- [x] **2.2** Wire filter into `unified-view-state`: when `searchQuery` is non-empty, filter `flatItems` by title/URL match (case-insensitive `includes`). Auto-expand all sections when filtering.
+- [x] **2.3** Handle empty results: show inline "No matching tabs" state with a CTA: "✦ Ask AI about [query]" that opens the AI drawer with the query prefilled.
+- [x] **2.4** Add hidden `/` shortcut: when input is empty and user types `/`, open the command palette (Phase 3) and clear the input. Power-user enhancement.
 ### Phase 3: Command Palette
 
 Add `⌘` button that opens a Command.Dialog overlay with quick actions.
 
-- [x] **3.1** Create `quick-actions.ts` — registry of `QuickAction` objects with `id`, `label`, `execute`, `dangerous`. Start with `dedup` only.
-- [x] **3.2** Create `CommandPalette.svelte` — uses `Command.Dialog`, `Command.Input`, `Command.List`, `Command.Item`, `Command.Group` from `@epicenter/ui/command`. Opens when `⌘` button is clicked (or `/` shortcut from Phase 2.4).
-- [x] **3.3** Implement `dedup` — `findDuplicates()` logic + confirmation dialog + `browserState.actions.close()` for each duplicate.
-- [x] **3.4** Add more commands — `close <domain>`, `group`, `sort`, `save-all`.
+- [x] **3.1** Create `quick-actions.ts`: registry of `QuickAction` objects with `id`, `label`, `execute`, `dangerous`. Start with `dedup` only.
+- [x] **3.2** Create `CommandPalette.svelte`: uses `Command.Dialog`, `Command.Input`, `Command.List`, `Command.Item`, `Command.Group` from `@epicenter/ui/command`. Opens when `⌘` button is clicked (or `/` shortcut from Phase 2.4).
+- [x] **3.3** Implement `dedup`: `findDuplicates()` logic + confirmation dialog + `browserState.actions.close()` for each duplicate.
+- [x] **3.4** Add more commands: `close <domain>`, `group`, `sort`, `save-all`.
 ### Phase 4: AI Drawer
 
 Add `⚡` button that opens a bottom sheet with the existing AI chat.
 
-- [x] **4.1** Create `AiDrawer.svelte` — wrap existing `AiChat.svelte` in a `Sheet` or `Drawer` from `@epicenter/ui`. Triggered by the `⚡` button in the header (or `@` shortcut in empty input).
-- [x] **4.2** Wire `@` shortcut — when input is empty and user types `@`, open the AI drawer and focus the AI chat input. Clear the search input.
-- [x] **4.3** Wire empty-state CTA — the "Ask AI about [query]" link from Phase 2.3 opens the drawer with the query prefilled in the AI chat input.
-- [x] **4.4** Ensure AI streams in background — when drawer is closed, active streams continue (already supported by `aiChatState`'s per-conversation `ChatClient`).
+- [x] **4.1** Create `AiDrawer.svelte`: wrap existing `AiChat.svelte` in a `Sheet` or `Drawer` from `@epicenter/ui`. Triggered by the `⚡` button in the header (or `@` shortcut in empty input).
+- [x] **4.2** Wire `@` shortcut: when input is empty and user types `@`, open the AI drawer and focus the AI chat input. Clear the search input.
+- [x] **4.3** Wire empty-state CTA: the "Ask AI about [query]" link from Phase 2.3 opens the drawer with the query prefilled in the AI chat input.
+- [x] **4.4** Ensure AI streams in background: when drawer is closed, active streams continue (already supported by `aiChatState`'s per-conversation `ChatClient`).
 ### Phase 5: Bookmarks
 
 Add permanent, non-consumable bookmarks.
 
 - [x] **5.1** Add `BookmarkId` branded type and `bookmarksTable` to `workspace.ts`. Follow `savedTabsTable` pattern.
-- [x] **5.2** Create `bookmark-state.svelte.ts` — follows `savedTabState` pattern: `createBookmarkState()` factory, Y.Doc observer, CRUD actions. Key difference: `open(bookmark)` calls `browser.tabs.create()` but does NOT delete the record.
-- [x] **5.3** Add "Bookmark" action to `TabItem.svelte` — alongside existing "Save for later" button. Different icon (e.g. `StarIcon` vs `ArchiveIcon`).
-- [x] **5.4** Add "Bookmarks" section to `UnifiedTabList` — new section header + bookmark items in the flat item array.
-- [x] **5.5** Rename "Save for Later" icon from `BookmarkIcon` to `ArchiveIcon` or `InboxIcon` — fixes the current UX mismatch where the icon says "bookmark" but the behavior is "stash and close."
+- [x] **5.2** Create `bookmark-state.svelte.ts`: follows `savedTabState` pattern: `createBookmarkState()` factory, Y.Doc observer, CRUD actions. Key difference: `open(bookmark)` calls `browser.tabs.create()` but does NOT delete the record.
+- [x] **5.3** Add "Bookmark" action to `TabItem.svelte`: alongside existing "Save for later" button. Different icon (e.g. `StarIcon` vs `ArchiveIcon`).
+- [x] **5.4** Add "Bookmarks" section to `UnifiedTabList`: new section header + bookmark items in the flat item array.
+- [x] **5.5** Rename "Save for Later" icon from `BookmarkIcon` to `ArchiveIcon` or `InboxIcon`: fixes the current UX mismatch where the icon says "bookmark" but the behavior is "stash and close."
 
 ## Edge Cases
 
@@ -367,17 +367,17 @@ Add permanent, non-consumable bookmarks.
 
 1. User has AI drawer open, then clicks the search input and types
 2. The search filters the main list; the AI drawer stays open above it
-3. These are independent—no conflict. The bottom sheet overlays the lower content area while the filter applies to the list visible above.
+3. These are independent. No conflict. The bottom sheet overlays the lower content area while the filter applies to the list visible above.
 ### Bookmark and Save for Later the same URL
 
 1. User bookmarks a tab AND saves it for later
-2. Both records coexist—different tables, different semantics
+2. Both records coexist. Different tables, different semantics
 3. Restoring the saved tab opens it and deletes the saved record. The bookmark persists. This is correct.
 
 ### Large tab count performance
 
 1. User has 200+ tabs across 10 windows
-2. VList handles this fine—`virtua` virtualizes rendering (only visible items are in the DOM)
+2. VList handles this fine: `virtua` virtualizes rendering (only visible items are in the DOM)
 3. Filtering is O(n) over `browserState` SvelteMaps, which is fast for hundreds of items
 4. No concern until thousands of items
 
@@ -385,7 +385,7 @@ Add permanent, non-consumable bookmarks.
 
 1. **Should the AI drawer be a side sheet or bottom sheet?**
    - Options: (a) Right sheet (splits the panel horizontally), (b) Bottom sheet (slides up from bottom), (c) Full overlay (replaces content)
-   - **Recommendation:** Bottom sheet. The side panel is already narrow (~360px)—splitting it horizontally makes both halves unusable. A bottom sheet gives the AI a comfortable input area while keeping the tab list partially visible above.
+   - **Recommendation:** Bottom sheet. The side panel is already narrow (~360px): splitting it horizontally makes both halves unusable. A bottom sheet gives the AI a comfortable input area while keeping the tab list partially visible above.
 
 2. **How aggressive should URL normalization be for `/dedup`?**
    - Options: (a) Exact URL match, (b) Ignore query params + hash, (c) Ignore query params + hash + trailing slash
@@ -418,16 +418,16 @@ Add permanent, non-consumable bookmarks.
 
 ## References
 
-- `apps/tab-manager/src/entrypoints/sidepanel/App.svelte` — Current 3-tab layout to replace
-- `apps/tab-manager/src/lib/components/tabs/FlatTabList.svelte` — Existing VList + flatItems pattern to extend
-- `apps/tab-manager/src/lib/components/tabs/SavedTabList.svelte` — Saved tabs rendering to merge
-- `apps/tab-manager/src/lib/components/tabs/TabItem.svelte` — Per-tab actions (pin, mute, save, close)
-- `apps/tab-manager/src/lib/state/browser-state.svelte.ts` — Reactive browser state
-- `apps/tab-manager/src/lib/state/saved-tab-state.svelte.ts` — Saved tab state pattern to follow for bookmarks
-- `apps/tab-manager/src/lib/state/chat-state.svelte.ts` — AI chat state (stays unchanged)
-- `apps/tab-manager/src/lib/workspace.ts` — Workspace schema (add bookmarks table)
-- `apps/tab-manager/src/lib/commands/actions.ts` — Existing command execution pattern
-- `packages/ui/src/command/` — Command palette components (Dialog, Input, List, Item, Group)
-- `packages/ui/src/sheet/` or `packages/ui/src/drawer/` — Sheet/drawer for AI overlay
-- `specs/20260213T003200-suspended-tabs.md` — Original "save for later" design decisions
-- `specs/20260221T190252-ai-chat-tab.md` — AI chat tab design (being restructured)
+- `apps/tab-manager/src/entrypoints/sidepanel/App.svelte`: Current 3-tab layout to replace
+- `apps/tab-manager/src/lib/components/tabs/FlatTabList.svelte`: Existing VList + flatItems pattern to extend
+- `apps/tab-manager/src/lib/components/tabs/SavedTabList.svelte`: Saved tabs rendering to merge
+- `apps/tab-manager/src/lib/components/tabs/TabItem.svelte`: Per-tab actions (pin, mute, save, close)
+- `apps/tab-manager/src/lib/state/browser-state.svelte.ts`: Reactive browser state
+- `apps/tab-manager/src/lib/state/saved-tab-state.svelte.ts`: Saved tab state pattern to follow for bookmarks
+- `apps/tab-manager/src/lib/state/chat-state.svelte.ts`: AI chat state (stays unchanged)
+- `apps/tab-manager/src/lib/workspace.ts`: Workspace schema (add bookmarks table)
+- `apps/tab-manager/src/lib/commands/actions.ts`: Existing command execution pattern
+- `packages/ui/src/command/`: Command palette components (Dialog, Input, List, Item, Group)
+- `packages/ui/src/sheet/` or `packages/ui/src/drawer/`: Sheet/drawer for AI overlay
+- `specs/20260213T003200-suspended-tabs.md`: Original "save for later" design decisions
+- `specs/20260221T190252-ai-chat-tab.md`: AI chat tab design (being restructured)

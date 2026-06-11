@@ -207,16 +207,16 @@ truncated blobs fail decrypt and get quarantined |
 
 ### Phase 2: Encrypted KV Wrapper Updates
 
-- [x] **2.1** Update `y-keyvalue-lww-encrypted.ts` — the `maybeDecrypt` function uses `isEncryptedBlob(value)` which will now check for Uint8Array instead of object shape. Verify this works with no call-site changes needed.
+- [x] **2.1** Update `y-keyvalue-lww-encrypted.ts`: the `maybeDecrypt` function uses `isEncryptedBlob(value)` which will now check for Uint8Array instead of object shape. Verify this works with no call-site changes needed.
 - [x] **2.2** Update any type annotations that reference the old `EncryptedBlob` shape (e.g., `EncryptedBlob | T` in generics)
 - [x] **2.3** Verify the observer and quarantine logic still works with Uint8Array values
 
 ### Phase 3: Test Updates
 
-- [x] **3.1** Update `crypto.test.ts` — all tests that construct or assert on `{ v: 1, ct }` must change to bare Uint8Array
-- [x] **3.2** Update `isEncryptedBlob` test cases — object-based tests become Uint8Array-based tests
-- [x] **3.3** Update `y-keyvalue-lww-encrypted.test.ts` — any assertions on inner CRDT values that check for `{ v, ct }` shape
-- [x] **3.4** Run full test suite: `bun test` in `packages/workspace` — all tests must pass
+- [x] **3.1** Update `crypto.test.ts`: all tests that construct or assert on `{ v: 1, ct }` must change to bare Uint8Array
+- [x] **3.2** Update `isEncryptedBlob` test cases: object-based tests become Uint8Array-based tests
+- [x] **3.3** Update `y-keyvalue-lww-encrypted.test.ts`: any assertions on inner CRDT values that check for `{ v, ct }` shape
+- [x] **3.4** Run full test suite: `bun test` in `packages/workspace`: all tests must pass
 
 ### Phase 4: Documentation
 
@@ -250,7 +250,7 @@ User values stored in plaintext mode are always JS objects (from schema definiti
 
 ## Success Criteria
 
-- [x] `EncryptedBlob` type is `Uint8Array` (no object wrapper) — branded via `Uint8Array & Brand<'EncryptedBlob'>`
+- [x] `EncryptedBlob` type is `Uint8Array` (no object wrapper): branded via `Uint8Array & Brand<'EncryptedBlob'>`
 - [x] `isEncryptedBlob` detects bare Uint8Array with format version check (`instanceof Uint8Array && value[0] === 1`)
 - [x] `encryptValue` returns a bare Uint8Array with format version at byte 0, key version at byte 1
 - [x] `decryptValue` reads format version from byte 0, key version from byte 1, nonce from bytes 2-25
@@ -263,12 +263,12 @@ User values stored in plaintext mode are always JS objects (from schema definiti
 
 ## References
 
-- `packages/workspace/src/shared/crypto/index.ts` — Core encrypt/decrypt/type functions (PRIMARY)
-- `packages/workspace/src/shared/crypto/crypto.test.ts` — Unit tests for crypto primitives
-- `packages/workspace/src/shared/y-keyvalue/y-keyvalue-lww-encrypted.ts` — Encrypted wrapper that calls encrypt/decrypt
-- `packages/workspace/src/shared/y-keyvalue/y-keyvalue-lww-encrypted.test.ts` — Integration tests for encrypted wrapper
-- `.agents/skills/encryption/SKILL.md` — Encryption skill documentation
-- `specs/20260314T070000-per-user-workspace-hkdf-key-derivation.md` — HKDF spec (may reference old blob format)
+- `packages/workspace/src/shared/crypto/index.ts`: Core encrypt/decrypt/type functions (PRIMARY)
+- `packages/workspace/src/shared/crypto/crypto.test.ts`: Unit tests for crypto primitives
+- `packages/workspace/src/shared/y-keyvalue/y-keyvalue-lww-encrypted.ts`: Encrypted wrapper that calls encrypt/decrypt
+- `packages/workspace/src/shared/y-keyvalue/y-keyvalue-lww-encrypted.test.ts`: Integration tests for encrypted wrapper
+- `.agents/skills/encryption/SKILL.md`: Encryption skill documentation
+- `specs/20260314T070000-per-user-workspace-hkdf-key-derivation.md`: HKDF spec (may reference old blob format)
 
 ## Review
 
@@ -282,4 +282,4 @@ Replaced the `{ v: 1, ct: Uint8Array }` object wrapper with a bare `Uint8Array` 
 
 - **Branded type chosen**: Spec recommended plain `Uint8Array`, but implementation uses `Uint8Array & Brand<'EncryptedBlob'>` for type safety at call sites.
 - **Exact version check chosen**: Spec recommended `ct[0] >= 1` for forward compatibility, but implementation uses exact `=== 1` check. Unknown format versions fall through to plaintext handling and get quarantined.
-- **Algorithm changed**: During implementation, the cipher was changed from AES-256-GCM (12-byte nonce) to XChaCha20-Poly1305 (24-byte nonce). This changed the binary layout offsets: nonce is bytes 2–25 (24 bytes) instead of the 12 bytes that AES-GCM would use.
+- **Algorithm changed**: During implementation, the cipher was changed from AES-256-GCM (12-byte nonce) to XChaCha20-Poly1305 (24-byte nonce). This changed the binary layout offsets: nonce is bytes 2-25 (24 bytes) instead of the 12 bytes that AES-GCM would use.

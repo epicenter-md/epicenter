@@ -3,8 +3,8 @@
  *
  * Answers: "What does real-world usage look like for storage growth?"
  *
- * Simulates realistic editing sessions—autosave every 2s for 10 minutes,
- * all-day editing across 3 documents—and measures Y.Doc growth across
+ * Simulates realistic editing sessions: autosave every 2s for 10 minutes,
+ * all-day editing across 3 documents. Measures Y.Doc growth across
  * YKV, Y.Map Replace, and Y.Map Field Update strategies.
  */
 
@@ -44,7 +44,7 @@ describe('autosave scenario', () => {
 			};
 		}
 
-		// Simulate progressive typing — content grows slightly each save
+		// Simulate progressive typing: content grows slightly each save
 		const baseContent = generateHeavyContent(contentChars);
 		function contentAtSave(n: number): string {
 			const extra = ` [edit ${n}]`;
@@ -99,7 +99,7 @@ describe('autosave scenario', () => {
 		const fieldFinal = Y.encodeStateAsUpdate(fieldDoc).byteLength;
 
 		console.log(
-			'\n=== PRODUCTION: AUTOSAVE — 300 saves to 1 doc over 10 min ===',
+			'\n=== PRODUCTION: AUTOSAVE: 300 saves to 1 doc over 10 min ===',
 		);
 		console.log(`  5 notes × 20K chars, 1 being actively edited`);
 		console.log(`  ────────────────────────────────────────────────────────`);
@@ -181,7 +181,7 @@ describe('all-day editing scenario', () => {
 		const fieldSize = Y.encodeStateAsUpdate(fieldDoc).byteLength;
 
 		console.log(
-			'\n=== PRODUCTION: ALL-DAY SESSION — 2000 saves across 3 documents ===',
+			'\n=== PRODUCTION: ALL-DAY SESSION: 2000 saves across 3 documents ===',
 		);
 		console.log(`  5 notes × 30K chars, 3 actively edited over 8 hours`);
 		console.log(`  ────────────────────────────────────────────────────────`);

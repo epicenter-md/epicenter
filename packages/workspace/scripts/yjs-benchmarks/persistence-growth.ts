@@ -273,7 +273,7 @@ function main() {
 	console.log(`${'═'.repeat(80)}`);
 	console.log('  COMPACTED SIZE TREND (after each cycle)');
 	console.log(
-		`  This is what matters — the floor IndexedDB returns to after compaction.`,
+		`  This is what matters: the floor IndexedDB returns to after compaction.`,
 	);
 	console.log(`${'═'.repeat(80)}`);
 	console.log();
@@ -282,7 +282,7 @@ function main() {
 	);
 	console.log(`  ${'─'.repeat(66)}`);
 	console.log(
-		`  ${'Base'.padEnd(8)} ${STEADY_STATE_ROWS.toString().padStart(8)} ${formatBytes(baselineDocSize).padStart(14)} ${formatBytes(baselineIdb.totalBytes).padStart(16)} ${'—'.padStart(18)}`,
+		`  ${'Base'.padEnd(8)} ${STEADY_STATE_ROWS.toString().padStart(8)} ${formatBytes(baselineDocSize).padStart(14)} ${formatBytes(baselineIdb.totalBytes).padStart(16)} ${'-'.padStart(18)}`,
 	);
 
 	for (const r of results) {
@@ -300,7 +300,7 @@ function main() {
 	// ── Peak IDB sizes (between compactions) ────────────────────────────────
 	console.log(`${'═'.repeat(80)}`);
 	console.log(
-		'  PEAK IDB SIZE (before compaction — what the browser actually stores)',
+		'  PEAK IDB SIZE (before compaction: what the browser actually stores)',
 	);
 	console.log(`${'═'.repeat(80)}`);
 	console.log();
@@ -371,7 +371,7 @@ function main() {
 	} else {
 		console.log(`  ✅ The compacted size is stable across cycles.`);
 		console.log(
-			`  GC is working — deleted tombstones are cleaned up on compaction.`,
+			`  GC is working: deleted tombstones are cleaned up on compaction.`,
 		);
 	}
 

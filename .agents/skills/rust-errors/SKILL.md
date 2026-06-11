@@ -11,6 +11,12 @@ metadata:
 
 - [Tauri](https://github.com/tauri-apps/tauri): Desktop app framework (source of Rust-to-TypeScript error patterns)
 
+## Upstream Grounding
+
+When Rust error serialization, Tauri command error transport, IPC payload shape, generated bindings, or frontend invoke error behavior affects correctness, use source-backed grounding before relying on memory. If DeepWiki MCP is available, ask a narrow question against `tauri-apps/tauri`; if it is unavailable or the repo is not indexed, use upstream source or official docs directly. Treat DeepWiki as orientation, then verify decisive details against local Rust code, generated bindings, installed crates, TypeScript types, source, or official docs before changing code.
+
+Skip DeepWiki for local error naming conventions already documented below.
+
 ## When to Apply This Skill
 
 Use this pattern when you need to:

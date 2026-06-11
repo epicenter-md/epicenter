@@ -8,9 +8,9 @@
 
 This document shows a minimal working implementation of the Yjs filesystem with 3 components syncing via Y-Sweet:
 
-1. **Y-Sweet Server** — CRDT orchestration
-2. **Bun Process** — Bidirectional filesystem sync (Yjs ↔ native FS)
-3. **Svelte App** — File browser and editor UI
+1. **Y-Sweet Server**: CRDT orchestration
+2. **Bun Process**: Bidirectional filesystem sync (Yjs ↔ native FS)
+3. **Svelte App**: File browser and editor UI
 
 All components connect to the same Y-Sweet server. Changes propagate automatically.
 
@@ -425,7 +425,7 @@ bun scripts/fs-sync.ts
 2. **Browser B** types "World" at position 0
 3. **Y-Sweet receives both** → Yjs CRDT merge algorithm resolves conflict
 4. **All peers converge** to same state (e.g., "HelloWorld" or "WorldHello" based on CRDT rules)
-5. **No infinite loops** — coordination counters prevent re-processing same change
+5. **No infinite loops**: coordination counters prevent re-processing same change
 
 ---
 
@@ -594,7 +594,7 @@ watcher.on('change', async (filePath) => {
       error: error.message,
       timestamp: Date.now(),
     });
-    // Don't crash — log and continue
+    // Don't crash: log and continue
   }
 });
 

@@ -12,16 +12,16 @@ Evolve the existing 45 flat SKILL.md skills into a structured authoring model th
 
 ### Current State
 
-45 skills in `.agents/skills/`, 44 mirrored in `.claude/skills/`. Every skill is a single `SKILL.md` file—no skill uses `references/`, `scripts/`, or `assets/`. 6 skills are sourced externally from `better-auth/skills` (tracked in `skills-lock.json`).
+45 skills in `.agents/skills/`, 44 mirrored in `.claude/skills/`. Every skill is a single `SKILL.md` file. No skill uses `references/`, `scripts/`, or `assets/`. 6 skills are sourced externally from `better-auth/skills` (tracked in `skills-lock.json`).
 
 ```
-.agents/skills/svelte/SKILL.md     # 779 lines — loads entirely into context
+.agents/skills/svelte/SKILL.md     # 779 lines: loads entirely into context
 .claude/skills/svelte/SKILL.md     # identical copy
 ```
 
 This creates problems:
 
-1. **Context waste**: The `svelte` skill at 779 lines exceeds the spec's 500-line / 5,000-token recommendation. When an agent activates it to handle a `$derived` question, it also loads shadcn patterns, loading states, and data-driven markup—none of which are relevant.
+1. **Context waste**: The `svelte` skill at 779 lines exceeds the spec's 500-line / 5,000-token recommendation. When an agent activates it to handle a `$derived` question, it also loads shadcn patterns, loading states, and data-driven markup. None of which are relevant.
 2. **Duplication**: Every skill is maintained in two places (`.agents/` and `.claude/`). Changes must be applied twice or they drift.
 3. **No progressive disclosure**: The agentskills.io spec is designed around metadata → instructions → resources, loaded in stages. We load everything at once.
 4. **No automation**: No skills use `scripts/` for validation or pattern checking, despite having well-defined conventions that could be machine-verified.
@@ -67,7 +67,7 @@ The [Agent Skills specification](https://agentskills.io/specification) defines a
 2. **Activation** (<5,000 tokens): Full `SKILL.md` body loaded when task matches
 3. **Resources** (as needed): Files in `references/`, `scripts/`, `assets/` loaded only when referenced
 
-**Key finding**: The spec recommends keeping `SKILL.md` under 500 lines. Our `svelte` skill is 779 lines, `workspace-api` is 397. The spec's `references/` directory is specifically designed for this overflow—agents load reference files only when the SKILL.md tells them to.
+**Key finding**: The spec recommends keeping `SKILL.md` under 500 lines. Our `svelte` skill is 779 lines, `workspace-api` is 397. The spec's `references/` directory is specifically designed for this overflow. Agents load reference files only when the SKILL.md tells them to.
 
 **Implication**: We should break large skills into core SKILL.md + reference files, using conditional loading instructions like *"If working with TanStack Query mutations, read `references/tanstack-query-mutations.md`."*
 
@@ -100,14 +100,14 @@ Our 45 skills cluster into 5 natural categories:
 |---|---|---|
 | `packages/workspace` | `workspace-api` | `yjs`, `arktype` |
 | `packages/ui` | `svelte` (shadcn section) | `styling` |
-| `packages/vault` | `encryption` | — |
+| `packages/vault` | `encryption` |: |
 | `packages/sync` | `yjs` | `workspace-api` |
 | `apps/api` | `elysia` | `better-auth-*`, `drizzle-orm` |
 | `apps/whispering` | `tauri` | `svelte`, `workspace-api` |
 | `apps/honeycrisp` | *(no dedicated skill)* | `svelte`, `workspace-api` |
 | `apps/tab-manager` | *(no dedicated skill)* | `svelte`, `workspace-api` |
 
-Convention skills (typescript, testing, error-handling, git) don't map to specific folders—they apply everywhere and are loaded based on task type.
+Convention skills (typescript, testing, error-handling, git) don't map to specific folders. They apply everywhere and are loaded based on task type.
 
 ### External Skill Sources
 
@@ -134,7 +134,7 @@ The agentskills.io spec has one experimental field: `allowed-tools` (space-delim
 - **`references/`**: Reference material loaded on demand
 - **The SKILL.md body itself**: Instructions guiding the agent to use its existing tools
 
-There's no standard for embedding MCP server definitions in skills. For project-specific tooling, `scripts/` is the right answer—validation scripts, pattern checkers, template generators that run via `bun run`.
+There's no standard for embedding MCP server definitions in skills. For project-specific tooling, `scripts/` is the right answer. Validation scripts, pattern checkers, template generators that run via `bun run`.
 
 ## Design Decisions
 
@@ -142,9 +142,9 @@ There's no standard for embedding MCP server definitions in skills. For project-
 |----------|--------|-----------|
 | Canonical source location | `.agents/skills/` (existing) | Both OpenCode and VS Code/Copilot already look here. No migration needed. |
 | Duplication elimination | Sync script copies `.agents/skills/` → `.claude/skills/` | `.claude/` is the secondary consumer. A simple `scripts/sync-skills.ts` keeps them in sync. |
-| Category subdirectories | No — keep flat skill list | Agent discovery works on flat lists. Categories are a human concern documented in this spec, not directory structure. |
-| Progressive disclosure | Yes — `references/` for large skills | Immediate context savings. The `svelte` skill alone drops from ~779 to ~250 tokens on activation. |
-| Scripts | Future — add as conventions mature | Don't add empty `scripts/` directories. Add them when there's actual validation logic to bundle. |
+| Category subdirectories | No: keep flat skill list | Agent discovery works on flat lists. Categories are a human concern documented in this spec, not directory structure. |
+| Progressive disclosure | Yes: `references/` for large skills | Immediate context savings. The `svelte` skill alone drops from ~779 to ~250 tokens on activation. |
+| Scripts | Future: add as conventions mature | Don't add empty `scripts/` directories. Add them when there's actual validation logic to bundle. |
 | Reference file naming | `kebab-case.md` matching the topic | Consistent with skill directory naming. Referenced from SKILL.md with relative paths. |
 | Cross-references between skills | Keep existing `> **Related Skills**: See \`skill-name\`` pattern | Already works, agents understand it, no tooling needed. |
 
@@ -231,7 +231,7 @@ metadata:
 # Skill Title
 
 ## Reference Repositories
-- [Repo](url) — one-line description
+- [Repo](url): one-line description
 
 > **Related Skills**: See `other-skill` for X. See `another-skill` for Y.
 
@@ -252,7 +252,7 @@ metadata:
 
 ### Reference File Structure
 
-Each reference file is standalone—it should make sense without reading the parent SKILL.md:
+Each reference file is standalone. It should make sense without reading the parent SKILL.md:
 
 ```markdown
 # Topic Title
@@ -261,12 +261,12 @@ Each reference file is standalone—it should make sense without reading the par
 [One sentence: what task triggers loading this file]
 
 ## Patterns
-[The actual content — code examples, rules, anti-patterns]
+[The actual content: code examples, rules, anti-patterns]
 ```
 
 ## Implementation Plan
 
-### Phase 1: Proof of Concept — Svelte Skill
+### Phase 1: Proof of Concept: Svelte Skill
 
 - [x] **1.1** Break `svelte/SKILL.md` (779 lines) into core SKILL.md + 5 reference files
 - [x] **1.2** Verify all content is preserved (no information loss)
@@ -286,7 +286,7 @@ Each reference file is standalone—it should make sense without reading the par
 
 - [x] **3.1** Write `scripts/sync-skills.ts`
 - [x] **3.2** Add `sync-skills` to `bun run` scripts in root `package.json`
-- [x] **3.3** Run sync — 46 skills synced to `.claude/skills/`
+- [x] **3.3** Run sync: 46 skills synced to `.claude/skills/`
 
 ### Phase 4: Scripts (Future)
 
@@ -301,7 +301,7 @@ Each reference file is standalone—it should make sense without reading the par
 
 2. **Should we add `compatibility` fields?**
    - Some skills assume `bun` (e.g., `monorepo` skill). The spec supports a `compatibility` field.
-   - **Recommendation**: Defer. Our skills are all project-specific—the project already requires bun.
+   - **Recommendation**: Defer. Our skills are all project-specific. The project already requires bun.
 
 3. **Should we publish skills for other Epicenter users?**
    - The `skills-lock.json` pattern (install from GitHub) already works for consuming external skills. Publishing our skills would mean maintaining them as a public API.
@@ -321,11 +321,11 @@ Each reference file is standalone—it should make sense without reading the par
 
 ## References
 
-- `agentskills.io/specification` — The Agent Skills format specification
-- `agentskills.io/skill-creation/best-practices` — Skill authoring best practices
-- `.agents/skills/svelte/SKILL.md` — Current 779-line skill (proof-of-concept target)
-- `.agents/skills/workspace-api/SKILL.md` — Current 397-line skill (phase 2 target)
-- `skills-lock.json` — External skill tracking
+- `agentskills.io/specification`: The Agent Skills format specification
+- `agentskills.io/skill-creation/best-practices`: Skill authoring best practices
+- `.agents/skills/svelte/SKILL.md`: Current 779-line skill (proof-of-concept target)
+- `.agents/skills/workspace-api/SKILL.md`: Current 397-line skill (phase 2 target)
+- `skills-lock.json`: External skill tracking
 
 ## Review
 

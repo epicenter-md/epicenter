@@ -2,7 +2,7 @@
 
 **Goal**: Establish a two-plane server architecture where the hub handles sync and identity, and the sidecar handles data and execution.
 
-**Status**: Partially Implemented — Hub exists on Cloudflare, sidecar and self-hosted tiers are unbuilt (see Current State below)
+**Status**: Partially Implemented: Hub exists on Cloudflare, sidecar and self-hosted tiers are unbuilt (see Current State below)
 
 > The hub is a sync and identity plane; the sidecar is the data and execution plane. Hosted users get your hub. Self-hosters can run their own hub. Enterprises can plug their own identity. The sidecar stays local and stable across all three tiers.
 
@@ -24,7 +24,7 @@ The two-plane concept holds, but only the hub plane shipped. Here's what exists 
 - **Sidecar plane**: No `server-sidecar` package. No local Elysia server running per-device. The desktop app (Tauri) talks directly to the hub via the sync extension.
 - **Self-hosted hub (Tier 2)**: No `server-hub` package. The CLI prints: *"Self-hosted hub is not yet available. Use Epicenter Cloud."*
 - **Enterprise hub (Tier 3)**: No OIDC/SAML federation. No enterprise auth mode.
-- **Package restructure**: The `server-elysia`, `server-local`, and `server-remote` packages referenced in the Problem section have been deleted (commit `185dd1204`). They were not replaced by `server-hub`/`server-sidecar`—the Cloudflare hub in `apps/api/` became the sole implementation.
+- **Package restructure**: The `server-elysia`, `server-local`, and `server-remote` packages referenced in the Problem section have been deleted (commit `185dd1204`). They were not replaced by `server-hub`/`server-sidecar`: the Cloudflare hub in `apps/api/` became the sole implementation.
 - **R2 blob storage**: The `storage.ts` → R2 concept from the package structure hasn't been built. Durable Object SQLite is the only sync storage.
 
 ### Ownership model divergence
@@ -52,7 +52,7 @@ sync-core (pure TS handlers)
 1. `server-elysia` mixes shared utilities (sync plugins, auth helpers, provider constants) with Elysia-specific plugin wiring. Some of its exports are framework-agnostic (providers, discovery awareness types) and belong in `sync-core` or their own package.
 2. `server-local` and `server-remote` are ~300-line factory functions that are structurally identical (both compose `new Elysia()` + sync plugin + auth guard + health check + optional plugins). The shared pattern isn't captured anywhere.
 3. The self-hosted hub (Elysia) and hosted hub (Cloudflare/Hono) need the same external contract (sync rooms, auth, AI proxy) but share no interface definition.
-4. The "remote" auth mode in `server-local` is tightly coupled to Better Auth's `GET /auth/get-session` response shape, but this is the hub's concern — the sidecar should validate tokens against any hub.
+4. The "remote" auth mode in `server-local` is tightly coupled to Better Auth's `GET /auth/get-session` response shape, but this is the hub's concern: the sidecar should validate tokens against any hub.
 
 ---
 
@@ -60,7 +60,7 @@ sync-core (pure TS handlers)
 
 ### Two Planes
 
-**Hub (Sync + Identity Plane)** — One per deployment. Infrastructure.
+**Hub (Sync + Identity Plane)**: One per deployment. Infrastructure.
 
 - Relays Y.Doc sync between devices (WebSocket rooms)
 - Owns identity (authentication, session management)
@@ -69,7 +69,7 @@ sync-core (pure TS handlers)
 - Faces the internet (or corporate network for enterprise)
 - Two implementations: Cloudflare (Hono + Durable Objects) and self-hosted (Elysia/Bun)
 
-**Sidecar (Data + Execution Plane)** — One per device. Application logic.
+**Sidecar (Data + Execution Plane)**: One per device. Application logic.
 
 - Persists workspace data (Y.Docs backed by workspace clients)
 - Runs user-defined code: table schemas, KV stores, actions (queries + mutations)
@@ -125,7 +125,7 @@ Self-Hosted Hub (Elysia/Bun)   ◄── user runs on VPS / NAS / RPi
         auth: delegates to self-hosted hub
 ```
 
-The self-hosted hub replaces Cloudflare entirely. User runs `bun run hub.ts` on a box that's always on. Token auth is the default — set `AUTH_TOKEN` env var and done.
+The self-hosted hub replaces Cloudflare entirely. User runs `bun run hub.ts` on a box that's always on. Token auth is the default: set `AUTH_TOKEN` env var and done.
 
 #### Tier 3: Enterprise
 
@@ -142,7 +142,7 @@ Same as Tier 2 but with proper auth. Better Auth runs on the hub with the enterp
 
 ---
 
-## Package Structure (Target) — Planned, Not Started
+## Package Structure (Target): Planned, Not Started
 
 > **Note (2026-03-20)**: None of these packages exist. The source packages (`server-elysia`, `server-local`, `server-remote`) were deleted. The Cloudflare hub lives at `apps/api/` and is the only server implementation. This section describes the target architecture if/when self-hosted and enterprise tiers are built.
 
@@ -161,8 +161,8 @@ packages/
   server-elysia/              # Shared Elysia plugin library (thin wrappers)
     src/
       sync/
-        ws/plugin.ts          # createWsSyncPlugin — Elysia WS adapter for sync-core
-        http/plugin.ts        # createHttpSyncPlugin — Elysia HTTP adapter for sync-core
+        ws/plugin.ts          # createWsSyncPlugin: Elysia WS adapter for sync-core
+        http/plugin.ts        # createHttpSyncPlugin: Elysia HTTP adapter for sync-core
       auth.ts                 # createTokenGuardPlugin (Elysia-specific)
       server.ts               # listenWithFallback, DEFAULT_PORT
 
@@ -170,15 +170,15 @@ packages/
     src/
       hub.ts                  # createHub({ auth, sync, ai?, proxy? }) → { app, start, stop }
       auth/                   # none, token, betterAuth modes
-      ai/                     # createAIPlugin (SSE streaming) — moved from server-remote
-      proxy/                  # createProxyPlugin (provider proxy) — moved from server-remote
+      ai/                     # createAIPlugin (SSE streaming): moved from server-remote
+      proxy/                  # createProxyPlugin (provider proxy): moved from server-remote
 
   server-sidecar/             # Local sidecar (Elysia). Replaces server-local.
     src/
       sidecar.ts              # createSidecar({ hubUrl, workspace, ... }) → { app, start, stop }
       auth/                   # remote mode only (delegates to hub)
-      workspace/              # createWorkspacePlugin (tables, KV, actions) — moved from server-local
-    opencode/                 # createOpenCodeProcess — separate export, not HTTP
+      workspace/              # createWorkspacePlugin (tables, KV, actions): moved from server-local
+    opencode/                 # createOpenCodeProcess: separate export, not HTTP
 
   server-cloudflare/          # Hosted hub (Hono + Durable Objects). Phase 2.
     src/
@@ -204,15 +204,15 @@ packages/
 
 ### What Gets Deleted
 
-- `server-remote/` package — replaced by `server-hub/`
-- `server-local/` package — replaced by `server-sidecar/`
+- `server-remote/` package: replaced by `server-hub/`
+- `server-local/` package: replaced by `server-sidecar/`
 
 ### What Stays Unchanged
 
-- `sync-core/` — gains discovery + providers, otherwise unchanged
-- `server-elysia/` — loses discovery + providers, keeps Elysia sync/auth plugins
-- `sync/` (client-side provider) — unchanged
-- `workspace/` — unchanged
+- `sync-core/`: gains discovery + providers, otherwise unchanged
+- `server-elysia/`: loses discovery + providers, keeps Elysia sync/auth plugins
+- `sync/` (client-side provider): unchanged
+- `workspace/`: unchanged
 
 ---
 
@@ -376,7 +376,7 @@ See [Cloudflare Hub Design](#cloudflare-hub-design) below for the full architect
 ### Phase 3: Enterprise Auth
 
 1. Add OIDC/SAML plugin configuration to `server-hub` auth
-2. Better Auth already has plugins for this — expose config surface
+2. Better Auth already has plugins for this: expose config surface
 3. Test with Okta, Azure AD, Google Workspace
 4. Document enterprise deployment guide
 
@@ -384,7 +384,7 @@ See [Cloudflare Hub Design](#cloudflare-hub-design) below for the full architect
 
 ## Cloudflare Hub Design
 
-The Cloudflare hub is a Hono application deployed as a Cloudflare Worker, with one Durable Object per sync room. It consumes `@epicenter/sync` handlers directly — no Elysia dependency.
+The Cloudflare hub is a Hono application deployed as a Cloudflare Worker, with one Durable Object per sync room. It consumes `@epicenter/sync` handlers directly, no Elysia dependency.
 
 ### System Topology
 
@@ -440,18 +440,18 @@ The Cloudflare hub is a Hono application deployed as a Cloudflare Worker, with o
 This maps directly to the `RoomManager` concept from sync-core, but Cloudflare manages the lifecycle:
 
 - **Location affinity**: the DO runs near the first client that connects, minimizing latency
-- **WebSocket Hibernation**: connections stay alive while the DO pays zero compute when idle. Replaces the `evictionTimer` pattern in `rooms.ts` — Cloudflare evicts and restores automatically
+- **WebSocket Hibernation**: connections stay alive while the DO pays zero compute when idle. Replaces the `evictionTimer` pattern in `rooms.ts`: Cloudflare evicts and restores automatically
 - **Built-in persistence**: DO SQLite storage survives hibernation and restarts, answering Open Question #4 (hub persistence) for free
 - **No room routing logic**: each room ID maps 1:1 to a DO instance via `idFromName(roomId)`
 - **Isolation**: one misbehaving room can't affect others (unlike the current `Map<string, Y.Doc>` in `server-remote` where all rooms share a single process)
 
 ### Auth Database: PlanetScale Postgres via Hyperdrive
 
-> **Note**: The original spec planned a Phase 1 (Neon) / Phase 2 (PlanetScale) migration path. Phase 1 was skipped — PlanetScale Postgres via Cloudflare Hyperdrive was adopted from day 1. See `specs/20260305T180000-neon-to-planetscale-hyperdrive.md` for the migration details.
+> **Note**: The original spec planned a Phase 1 (Neon) / Phase 2 (PlanetScale) migration path. Phase 1 was skipped: PlanetScale Postgres via Cloudflare Hyperdrive was adopted from day 1. See `specs/20260305T180000-neon-to-planetscale-hyperdrive.md` for the migration details.
 
 Better Auth uses Kysely internally and expects transaction support. [D1 does not support transactions](https://github.com/better-auth/better-auth/discussions/7487), which causes runtime failures in Better Auth's session and account management code. This is a [known unresolved issue](https://kemalyilmaz.com/blog/setting-up-better-auth-with-cloudflare-workers-d1-kysely/) with no clean workaround.
 
-**PlanetScale Postgres** (GA September 2025) provides managed PostgreSQL with sharding, replication, and branching workflows. Cloudflare Hyperdrive proxies TCP connections from Workers with connection pooling, and its `localConnectionString` config routes `wrangler dev` to local Postgres — same driver code everywhere, zero conditional logic.
+**PlanetScale Postgres** (GA September 2025) provides managed PostgreSQL with sharding, replication, and branching workflows. Cloudflare Hyperdrive proxies TCP connections from Workers with connection pooling, and its `localConnectionString` config routes `wrangler dev` to local Postgres: same driver code everywhere, zero conditional logic.
 
 The driver is `postgres` (postgres.js) + `drizzle-orm/postgres-js`. The Worker uses `env.HYPERDRIVE.connectionString`; CLI tools use `DATABASE_URL` from `.dev.vars`.
 
@@ -463,7 +463,7 @@ Edge latency is irrelevant here: KV session caching handles 99% of auth reads at
 |---|---|---|
 | `HYPERDRIVE` | Binding | PlanetScale Postgres via Cloudflare Hyperdrive |
 | `YJS_ROOM` | `DurableObjectNamespace` | One DO per sync room |
-| `SESSION_KV` | `KVNamespace` | Better Auth `SecondaryStorage` — session cache with TTL |
+| `SESSION_KV` | `KVNamespace` | Better Auth `SecondaryStorage`: session cache with TTL |
 | `AUTH_SECRET` | Secret | Better Auth signing secret |
 | `OPENAI_API_KEY` | Secret | AI provider proxy |
 | `ANTHROPIC_API_KEY` | Secret | AI provider proxy |
@@ -482,9 +482,9 @@ packages/server-cloudflare/
       yjs-room.ts            # YjsRoom Durable Object class (WebSocket Hibernation)
       storage.ts             # DOSqliteSyncStorage implementing SyncStorage interface
     ai/
-      chat.ts                # POST /ai/chat — SSE streaming (raw body passthrough)
+      chat.ts                # POST /ai/chat: SSE streaming (raw body passthrough)
     proxy/
-      handler.ts             # ALL /proxy/:provider/* — key injection + fetch forwarding
+      handler.ts             # ALL /proxy/:provider/*: key injection + fetch forwarding
   wrangler.toml              # Bindings, DO migrations, compatibility flags
   package.json
   tsconfig.json
@@ -543,7 +543,7 @@ type Variables = {
 const app = new Hono<{ Bindings: Bindings; Variables: Variables }>()
 
 // --- CORS ---
-// Skip CORS for WebSocket upgrades — Hono's CORS middleware modifies response
+// Skip CORS for WebSocket upgrades: Hono's CORS middleware modifies response
 // headers, which conflicts with the immutable 101 WebSocket upgrade response
 // returned from Durable Object stubs. This is a known Hono gotcha.
 app.use('*', async (c, next) => {
@@ -560,7 +560,7 @@ app.use('*', async (c, next) => {
 app.get('/', (c) => c.json({ mode: 'hub', runtime: 'cloudflare', version: '0.1.0' }))
 
 // --- Better Auth ---
-// Use app.on() instead of app.mount() — mount() strips the base path before
+// Use app.on() instead of app.mount(): mount() strips the base path before
 // forwarding, which breaks Better Auth's internal routing when basePath is '/auth'.
 // app.on() passes c.req.raw with the full URL intact, so Better Auth sees
 // /auth/sign-in/email as expected. This matches the official Hono example:
@@ -597,8 +597,8 @@ export { YjsRoom }
 ```
 
 Key design decisions:
-- `app.on(['GET', 'POST'], '/auth/*', handler)` is used for Better Auth instead of `app.mount()`. `mount()` strips the base path before forwarding, which breaks Better Auth's routing when `basePath: '/auth'` is set — it would receive `/sign-in/email` but expect `/auth/sign-in/email`. Using `app.on()` with `c.req.raw` passes the full URL intact. This follows [the official Hono pattern](https://hono.dev/examples/better-auth-on-cloudflare).
-- Auth middleware runs *before* DO forwarding. The DO never validates tokens — that's the worker's job.
+- `app.on(['GET', 'POST'], '/auth/*', handler)` is used for Better Auth instead of `app.mount()`. `mount()` strips the base path before forwarding, which breaks Better Auth's routing when `basePath: '/auth'` is set: it would receive `/sign-in/email` but expect `/auth/sign-in/email`. Using `app.on()` with `c.req.raw` passes the full URL intact. This follows [the official Hono pattern](https://hono.dev/examples/better-auth-on-cloudflare).
+- Auth middleware runs *before* DO forwarding. The DO never validates tokens: that's the worker's job.
 - Room routes use `app.all()` to forward both WebSocket upgrades and HTTP sync requests to the same DO stub.
 
 #### Auth Middleware (`auth/middleware.ts`)
@@ -630,7 +630,7 @@ export function createAuthMiddleware() {
 }
 ```
 
-Note: `extractBearerToken` is already exported from `@epicenter/sync` — zero new auth code needed.
+Note: `extractBearerToken` is already exported from `@epicenter/sync`: zero new auth code needed.
 
 #### Better Auth Factory (`auth/better-auth.ts`)
 
@@ -648,7 +648,7 @@ export function createAuth(env: {
   SESSION_KV: KVNamespace
   AUTH_SECRET: string
 }) {
-  // Cache per isolate — env strings are stable within a Worker isolate
+  // Cache per isolate: env strings are stable within a Worker isolate
   if (cached && cached.cacheKey === env.HYPERDRIVE.connectionString) return cached.auth
 
   const auth = betterAuth({
@@ -664,7 +664,7 @@ export function createAuth(env: {
     session: {
       expiresIn: 60 * 60 * 24 * 7,   // 7 days
       updateAge: 60 * 60 * 24,        // 1 day
-      // storeSessionInDatabase left as default (true) — see rationale below.
+      // storeSessionInDatabase left as default (true): see rationale below.
       cookieCache: {
         enabled: true,
         maxAge: 60 * 5,               // 5 min
@@ -701,23 +701,23 @@ The hub serves three client types with different auth capabilities. The caching 
 |---|---|---|---|---|
 | **L1: cookieCache (JWE)** | Encrypted session in `session_data` cookie | Browsers only | Zero (crypto verify) | L2 |
 | **L2: KV secondaryStorage** | Edge-cached session in Cloudflare KV | Mobile, Tauri, browser (cookie expired) | ~5ms edge read | L3 |
-| **L3: PlanetScale database** | Source of truth | Cache miss / cross-edge propagation | ~50-100ms | — |
+| **L3: PlanetScale database** | Source of truth | Cache miss / cross-edge propagation | ~50-100ms |: |
 
-**Why cookieCache uses JWE**: The `jwt` and `compact` strategies produce signed but readable tokens — session data (user ID, email) would be visible in browser DevTools. `jwe` encrypts the payload using AES-256-CBC-HS512 with HKDF key derivation, so the cookie is opaque. The trade-off is slightly larger cookies (~200 bytes more), which is negligible.
+**Why cookieCache uses JWE**: The `jwt` and `compact` strategies produce signed but readable tokens: session data (user ID, email) would be visible in browser DevTools. `jwe` encrypts the payload using AES-256-CBC-HS512 with HKDF key derivation, so the cookie is opaque. The trade-off is slightly larger cookies (~200 bytes more), which is negligible.
 
 **Why `storeSessionInDatabase` stays `true`**: This is a multi-device sync app. A user might sign in on their phone (hitting Cloudflare edge in Frankfurt) and open the desktop app 10 seconds later (hitting edge in London). KV is eventually consistent with ~60 second propagation delay. Without the database fallback, the desktop app would get a 401 during the propagation window. Keeping database writes ensures the database fallback always has the session.
 
-**Why KV and not something else**: Better Auth's `secondaryStorage` interface is `get(key)`, `set(key, value, ttl)`, `delete(key)` — this maps 1:1 to Cloudflare KV. Alternatives considered:
+**Why KV and not something else**: Better Auth's `secondaryStorage` interface is `get(key)`, `set(key, value, ttl)`, `delete(key)`: this maps 1:1 to Cloudflare KV. Alternatives considered:
 - **D1** (SQLite at edge): SQL is the wrong abstraction for key-value session data, adds query overhead
 - **Durable Objects**: Per-instance state, no global read caching, overkill for session lookup
 - **Upstash Redis**: Equivalent semantics but adds a separate vendor, separate bill, higher latency than edge-cached KV
 - **No cache**: Every bearer-token request hits the database (~50-100ms). Acceptable at low scale, expensive at high scale
 
-**Cost**: KV is included in the Workers Paid plan ($5/mo) with 10M reads/mo and 1M writes/mo. Session data is tiny (<1KB per key). At 1,000 DAU × 50 requests/day, monthly KV reads are ~1.5M — well within the included tier. The KV cost is effectively $0 while reducing database compute by ~99% for session-related queries.
+**Cost**: KV is included in the Workers Paid plan ($5/mo) with 10M reads/mo and 1M writes/mo. Session data is tiny (<1KB per key). At 1,000 DAU × 50 requests/day, monthly KV reads are ~1.5M: well within the included tier. The KV cost is effectively $0 while reducing database compute by ~99% for session-related queries.
 
 #### Migrations (`auth/migrate.ts`)
 
-Migrations can run programmatically via a worker endpoint, or locally via `npx @better-auth/cli migrate` (PlanetScale Postgres is accessible from anywhere via connection string — no Worker runtime required).
+Migrations can run programmatically via a worker endpoint, or locally via `npx @better-auth/cli migrate` (PlanetScale Postgres is accessible from anywhere via connection string, no Worker runtime required).
 
 ```typescript
 import { createAuth } from './better-auth'
@@ -750,22 +750,22 @@ This is the core component. Each DO instance manages one Y.Doc sync room using t
 
 #### Design Constraints from Cloudflare
 
-1. **No `setTimeout`/`setInterval`** — timers prevent hibernation. The existing Elysia adapter's 30s ping interval is replaced by `setWebSocketAutoResponse` (auto ping/pong without waking the DO).
-1. **No `onOpen` event** — Cloudflare Workers WebSocket adapter does not fire `onOpen`. Initial sync messages must be sent inline during the upgrade in `fetch()`, not in a separate callback. Do not add a `webSocketOpen()` handler — it won't fire.
-2. **Constructor runs on every wake** — minimize initialization. Rebuild in-memory state lazily or via `blockConcurrencyWhile`.
-3. **`serializeAttachment` for per-connection state** — max 2,048 bytes per WebSocket. Store the `ConnectionState` fields needed to survive hibernation.
-4. **Binary messages** — `WebSocket.send()` accepts `ArrayBuffer | string`. sync-core produces `Uint8Array`. Need `ws.send(data.buffer)` or spread into `ArrayBuffer`.
-5. **Message batching** — each WS message incurs a context switch. For high-frequency Y.Doc updates, consider batching into single frames.
+1. **No `setTimeout`/`setInterval`**: timers prevent hibernation. The existing Elysia adapter's 30s ping interval is replaced by `setWebSocketAutoResponse` (auto ping/pong without waking the DO).
+1. **No `onOpen` event**: Cloudflare Workers WebSocket adapter does not fire `onOpen`. Initial sync messages must be sent inline during the upgrade in `fetch()`, not in a separate callback. Do not add a `webSocketOpen()` handler: it won't fire.
+2. **Constructor runs on every wake**: minimize initialization. Rebuild in-memory state lazily or via `blockConcurrencyWhile`.
+3. **`serializeAttachment` for per-connection state**: max 2,048 bytes per WebSocket. Store the `ConnectionState` fields needed to survive hibernation.
+4. **Binary messages**: `WebSocket.send()` accepts `ArrayBuffer | string`. sync-core produces `Uint8Array`. Need `ws.send(data.buffer)` or spread into `ArrayBuffer`.
+5. **Message batching**: each WS message incurs a context switch. For high-frequency Y.Doc updates, consider batching into single frames.
 
 #### Connection State Serialization
 
 sync-core's `ConnectionState` includes:
-- `roomId: string` — known (one room per DO)
-- `doc: Y.Doc` — rebuilt from storage on wake, shared across connections
-- `awareness: Awareness` — rebuilt, shared
-- `updateHandler: Function` — recreated on wake (closure over `send`)
-- `controlledClientIds: Set<number>` — must survive hibernation
-- `connId: object` — use the `WebSocket` reference itself
+- `roomId: string`: known (one room per DO)
+- `doc: Y.Doc`: rebuilt from storage on wake, shared across connections
+- `awareness: Awareness`: rebuilt, shared
+- `updateHandler: Function`: recreated on wake (closure over `send`)
+- `controlledClientIds: Set<number>`: must survive hibernation
+- `connId: object`: use the `WebSocket` reference itself
 
 Only `controlledClientIds` needs serialization. The rest is either fixed per-DO or recreated.
 
@@ -793,9 +793,9 @@ import {
 } from '@epicenter/sync'
 import { DOSqliteSyncStorage } from './storage'
 
-// Use `type` not `interface` — interfaces cause issues with Hono/DO type generics.
+// Use `type` not `interface`: interfaces cause issues with Hono/DO type generics.
 type Env = {
-  // DO doesn't need auth bindings — worker validates before forwarding
+  // DO doesn't need auth bindings: worker validates before forwarding
 }
 
 export class YjsRoom extends DurableObject {
@@ -905,7 +905,7 @@ export class YjsRoom extends DurableObject {
     const pair = new WebSocketPair()
     const [client, server] = Object.values(pair)
 
-    // Accept with Hibernation API — DO can sleep while connection stays alive
+    // Accept with Hibernation API: DO can sleep while connection stays alive
     this.ctx.acceptWebSocket(server)
 
     const send = (data: Uint8Array) => server.send(data)
@@ -971,7 +971,7 @@ export class YjsRoom extends DurableObject {
     this.connectionStates.delete(ws)
 
     // Compact storage when last connection leaves.
-    // The DO will hibernate after this — compaction ensures fast doc reload on next wake.
+    // The DO will hibernate after this: compaction ensures fast doc reload on next wake.
     if (this.connectionStates.size === 0) {
       await this.storage.compactAll('room')
     }
@@ -996,9 +996,9 @@ type WsAttachment = {
 |---|---|
 | `ws.raw` as connection key (`object`) | `WebSocket` server object as map key |
 | `WeakMap<object, state>` per connection | `Map<WebSocket, ConnectionState>` |
-| `setInterval(30s)` ping/pong | `setWebSocketAutoResponse('ping', 'pong')` — zero-cost, never wakes DO |
-| `ws.sendBinary(data)` | `ws.send(data)` — accepts `Uint8Array` |
-| `queueMicrotask` for initial messages | Direct `ws.send()` after `acceptWebSocket` (no `webSocketOpen` callback — `onOpen` is not supported on CF Workers) |
+| `setInterval(30s)` ping/pong | `setWebSocketAutoResponse('ping', 'pong')`: zero-cost, never wakes DO |
+| `ws.sendBinary(data)` | `ws.send(data)`: accepts `Uint8Array` |
+| `queueMicrotask` for initial messages | Direct `ws.send()` after `acceptWebSocket` (no `webSocketOpen` callback: `onOpen` is not supported on CF Workers) |
 | `roomManager.broadcast(roomId, data, excludeRaw)` | Manual iteration over `connectionStates` map |
 | Eviction timer (60s after last disconnect) | Cloudflare manages hibernation/eviction automatically |
 
@@ -1058,12 +1058,12 @@ export class DOSqliteSyncStorage implements SyncStorage {
     })
   }
 
-  /** Compact all updates for a doc — called on last disconnect before hibernation. */
+  /** Compact all updates for a doc: called on last disconnect before hibernation. */
   async compactAll(docId: string): Promise<void> {
     const updates = await this.getAllUpdates(docId)
     if (updates.length <= 1) return
 
-    // Use static import — yjs is already a dependency of this package.
+    // Use static import: yjs is already a dependency of this package.
     // Dynamic import('yjs') adds unnecessary latency.
     const merged = Y.mergeUpdatesV2(updates)
     await this.compact(docId, merged)
@@ -1081,7 +1081,7 @@ Why SQLite over DO KV storage:
 
 Streams the provider's SSE response body directly to the client. Unlike the proxy handler (which forwards arbitrary provider APIs), the chat handler selects the provider and injects the API key based on the request body.
 
-Do **not** re-parse and re-emit SSE events via `streamSSE` — that drops `event:`, `id:`, and `retry:` fields, and breaks multi-line `data:` values. Stream the raw response body through instead (same pattern as the proxy handler).
+Do **not** re-parse and re-emit SSE events via `streamSSE`: that drops `event:`, `id:`, and `retry:` fields, and breaks multi-line `data:` values. Stream the raw response body through instead (same pattern as the proxy handler).
 
 ```typescript
 export function createAiChatHandler() {
@@ -1095,7 +1095,7 @@ export function createAiChatHandler() {
       body: JSON.stringify(body),
     })
 
-    // Stream the raw SSE response body through — don't re-parse.
+    // Stream the raw SSE response body through: don't re-parse.
     // Re-parsing (splitting by \n, matching 'data: ' prefix) would drop
     // event/id/retry fields and break multi-line data values.
     return new Response(providerResponse.body, {
@@ -1110,7 +1110,7 @@ export function createAiChatHandler() {
 
 ### Provider Proxy (`proxy/handler.ts`)
 
-Same pattern as `server-remote/src/proxy/plugin.ts` — validate provider, swap auth header with real API key, forward request, stream response.
+Same pattern as `server-remote/src/proxy/plugin.ts`: validate provider, swap auth header with real API key, forward request, stream response.
 
 ```typescript
 const PROVIDER_CONFIG = {
@@ -1174,7 +1174,7 @@ id = "<your-kv-id>"
 name = "YJS_ROOM"
 class_name = "YjsRoom"
 
-# SQLite-backed DO — persistent storage survives hibernation.
+# SQLite-backed DO: persistent storage survives hibernation.
 # Use new_sqlite_classes (not new_classes) to enable DO SQLite.
 [[migrations]]
 tag = "v1"
@@ -1201,7 +1201,7 @@ sync-core requires **zero changes** to support Cloudflare. The handlers are alre
 | `RoomManager` connection key type | `object` (ws.raw) | `WebSocket` (also an object) |
 | `send` callback signature | `(data: Uint8Array) => void` | `(data: Uint8Array) => void` via `ws.send(data)` |
 
-The only potential issue: Cloudflare's `WebSocket.send()` accepts `string | ArrayBuffer | ArrayBufferView`. `Uint8Array` is an `ArrayBufferView`, so it works directly — no `.buffer` conversion needed.
+The only potential issue: Cloudflare's `WebSocket.send()` accepts `string | ArrayBuffer | ArrayBufferView`. `Uint8Array` is an `ArrayBufferView`, so it works directly: no `.buffer` conversion needed.
 
 ### Deployment Sequence
 
@@ -1224,7 +1224,7 @@ The only potential issue: Cloudflare's `WebSocket.send()` accepts `string | Arra
    wrangler deploy
    ```
 
-3. **Run migrations** (Better Auth tables — can also run locally via `npx @better-auth/cli migrate`):
+3. **Run migrations** (Better Auth tables: can also run locally via `npx @better-auth/cli migrate`):
    ```bash
    curl -X POST https://epicenter-hub.<your-subdomain>.workers.dev/migrate
    ```
@@ -1251,13 +1251,13 @@ The only potential issue: Cloudflare's `WebSocket.send()` accepts `string | Arra
 
 | Constraint | Impact | Mitigation |
 |---|---|---|
-| DO single-threaded | One room can't use multiple CPU cores | Fine for relay — Y.Doc merge is fast |
+| DO single-threaded | One room can't use multiple CPU cores | Fine for relay: Y.Doc merge is fast |
 | 32,768 concurrent WS per DO | Max 32,768 hibernatable clients per room | More than sufficient for workspace sync |
 | Constructor runs on every wake | Must rebuild in-memory state | `blockConcurrencyWhile` + SQLite read is fast (<10ms for typical docs) |
 | No `setTimeout`/`setInterval` | Can't do periodic compaction | Compact on last disconnect instead |
 | Code deploy disconnects all WS | All clients reconnect on deploy | y-websocket protocol handles reconnection gracefully |
 | PostgreSQL latency (~20-50ms) | Auth check on first request | KV session cache (SecondaryStorage) reduces to <1ms |
-| 2,048 byte attachment limit | Can't serialize large connection state | Only `controlledClientIds` needs serialization — a few dozen bytes |
+| 2,048 byte attachment limit | Can't serialize large connection state | Only `controlledClientIds` needs serialization: a few dozen bytes |
 
 ### Future Extensions
 
@@ -1275,7 +1275,7 @@ The only potential issue: Cloudflare's `WebSocket.send()` accepts `string | Arra
 
 2. **Shared Elysia base**: Both hub and sidecar are Elysia apps. Should `server-elysia` remain as a shared plugin library, or should sync plugins move into `sync-core` as framework-agnostic factories with an Elysia adapter inline in each consumer?
 
-3. **AI on sidecar**: Should the sidecar ever serve AI directly (for offline/local LLM use cases)? Current design says no — AI always goes through the hub. But local LLM inference is a growing use case.
+3. **AI on sidecar**: Should the sidecar ever serve AI directly (for offline/local LLM use cases)? Current design says no: AI always goes through the hub. But local LLM inference is a growing use case.
 
 4. **Hub persistence**: ~~Should the self-hosted hub support optional persistence?~~ **Answered for Cloudflare**: DO SQLite provides automatic persistence that survives hibernation. The self-hosted hub could optionally use a SQLite-backed `SyncStorage` impl for parity.
 
@@ -1287,8 +1287,8 @@ The only potential issue: Cloudflare's `WebSocket.send()` accepts `string | Arra
 
 8. **Room listing without central registry**: The hub contract specifies `GET /rooms` to list active rooms. In the DO model there's no central index. Options: (a) KV namespace written on DO first-connect/last-disconnect, (b) Workers Analytics Engine, (c) drop the endpoint. This is mainly a debugging/admin feature.
 
-9. ~~**DO connection limit**: Cloudflare allows ~32,768 concurrent hibernatable WebSockets per DO. This is more than sufficient for workspace sync scenarios — no sharding needed.~~ **Resolved.**
+9. ~~**DO connection limit**: Cloudflare allows ~32,768 concurrent hibernatable WebSockets per DO. This is more than sufficient for workspace sync scenarios: no sharding needed.~~ **Resolved.**
 
-10. **Better Auth instance caching**: The current design caches the Better Auth instance at module level in the worker isolate. With postgres.js over Hyperdrive (TCP proxied through Cloudflare), there's no persistent connection to churn — each query is an independent HTTP request. The cache mainly avoids re-constructing the Better Auth config object. This is low-risk.
+10. **Better Auth instance caching**: The current design caches the Better Auth instance at module level in the worker isolate. With postgres.js over Hyperdrive (TCP proxied through Cloudflare), there's no persistent connection to churn: each query is an independent HTTP request. The cache mainly avoids re-constructing the Better Auth config object. This is low-risk.
 
-11. **Migrate endpoint security**: `POST /migrate` runs PostgreSQL schema migrations. In production this should be protected — either by a deploy secret, removed entirely and run via `npx @better-auth/cli migrate` locally against the connection string, or gated behind an admin token. The current spec leaves this open.
+11. **Migrate endpoint security**: `POST /migrate` runs PostgreSQL schema migrations. In production this should be protected: either by a deploy secret, removed entirely and run via `npx @better-auth/cli migrate` locally against the connection string, or gated behind an admin token. The current spec leaves this open.

@@ -1,10 +1,10 @@
 /**
  * # ObservableKvStore
  *
- * The shared contract between `YKeyValueLww` and the encrypted wrapper —
+ * The shared contract between `YKeyValueLww` and the encrypted wrapper.
  * both live in `@epicenter/workspace`. Consumers like
- * `createTable` / `createKv` depend on this interface — not on any specific
- * store implementation — so the same helper logic runs over plaintext and
+ * `createTable` / `createKv` depend on this interface, not on any specific
+ * store implementation, so the same helper logic runs over plaintext and
  * encrypted stores alike.
  *
  * ## Why not `LwwStore<T>`?

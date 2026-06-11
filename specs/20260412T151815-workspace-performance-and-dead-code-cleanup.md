@@ -14,11 +14,11 @@ Fix the one real performance bottleneck in the workspace API (O(n²) bulk update
 
 The workspace package ships ~91 source files. A structural audit revealed:
 
-1. **One algorithmic bottleneck**: `deleteEntryByKey()` does `toArray().findIndex()` on every update/delete — O(n) per call. Bulk updating 10K existing rows takes 560ms where it should take ~60ms.
+1. **One algorithmic bottleneck**: `deleteEntryByKey()` does `toArray().findIndex()` on every update/delete: O(n) per call. Bulk updating 10K existing rows takes 560ms where it should take ~60ms.
 
 2. **Three dead modules** (0 external callers): `ingest/` (7 files), `extensions/materializer/sqlite/` (4 files), `extensions/persistence/sqlite.ts` (1 file).
 
-3. **One dead utility**: `shared/snakify.ts` — only imported by the dead `ingest/` module.
+3. **One dead utility**: `shared/snakify.ts`: only imported by the dead `ingest/` module.
 
 4. **One over-split module**: `shared/standard-schema/` is 3 files for 1 type + 1 function.
 
@@ -33,7 +33,7 @@ The workspace package ships ~91 source files. A structural audit revealed:
 
 ## Research Findings
 
-### O(n²) Bulk Update — Root Cause
+### O(n²) Bulk Update: Root Cause
 
 Benchmarked via `benchmark.test.ts` (9 new tests committed in this session):
 
@@ -55,9 +55,9 @@ private deleteEntryByKey(key: string): void {
 }
 ```
 
-The observer already handles duplicate-key resolution during sync conflicts — it's the same dedup logic needed here.
+The observer already handles duplicate-key resolution during sync conflicts. It's the same dedup logic needed here.
 
-### Storage Edge Cases — Confirmed Non-Issue
+### Storage Edge Cases: Confirmed Non-Issue
 
 Benchmarked 7 storage scenarios at 10K scale:
 
@@ -71,7 +71,7 @@ Benchmarked 7 storage scenarios at 10K scale:
 
 Storage is not a concern with `gc: true`.
 
-### Dead Code — Caller Counts
+### Dead Code: Caller Counts
 
 | Module | Files | External callers | Last meaningful use |
 |---|---|---|---|
@@ -87,7 +87,7 @@ Storage is not a concern with `gc: true`.
 | Fix O(n²) update | Defer delete to observer | Observer already handles this for sync conflicts; reuse existing dedup |
 | Build entry→index map | In observer, from single `toArray()` | O(n) build once + O(1) per lookup vs O(n) per `indexOf` call |
 | Keep `delete()` as O(n) | Accepted | `delete()` is rare (benchmarks confirm), not worth the complexity |
-| Move ingest/ to Breddit app | Move, don't delete | See `specs/20260412T151815-breddit.md` — ingest code becomes Breddit's data layer |
+| Move ingest/ to Breddit app | Move, don't delete | See `specs/20260412T151815-breddit.md`: ingest code becomes Breddit's data layer |
 | Remove materializer/sqlite/ | Delete | Zero consumers; can be rebuilt if needed |
 | Remove persistence/sqlite.ts | Delete | Zero consumers; indexeddb covers all current apps |
 | Merge standard-schema/ | Single file | 3 files for 2 exports is unnecessary indirection |
@@ -95,7 +95,7 @@ Storage is not a concern with `gc: true`.
 
 ## Architecture
 
-### O(n²) Fix — Before and After
+### O(n²) Fix: Before and After
 
 ```
 BEFORE (current):
@@ -114,11 +114,11 @@ For 10K updates: 10K × O(n) = O(n²) = 560ms
 AFTER (proposed):
 ─────────────────
 set('foo', newVal)                    // existing key
-  └── yarray.push([entry])           // O(1) — just push, no delete
+  └── yarray.push([entry])           // O(1): just push, no delete
                                       // Observer deduplicates in batch
 
 Observer fires (once per transaction):
-  ├── Build entryIndexMap from        // O(n) — one toArray() call
+  ├── Build entryIndexMap from        // O(n): one toArray() call
   │   single toArray() snapshot
   ├── For each conflict:              // O(1) per lookup via Map
   │     entryIndexMap.get(existing)
@@ -148,11 +148,11 @@ which the observer already handles correctly.
 
 ### Wave 1: Observer infrastructure for bulk operations
 
-- [x] **1.1** Read `y-keyvalue-lww.ts` fully — understand `set()`, `delete()`, observer, `pending` mechanism
-- [x] **1.2** Add `DEDUP_ORIGIN` symbol — observer skips re-entrant calls from conflict-resolution deletions
+- [x] **1.1** Read `y-keyvalue-lww.ts` fully: understand `set()`, `delete()`, observer, `pending` mechanism
+- [x] **1.2** Add `DEDUP_ORIGIN` symbol: observer skips re-entrant calls from conflict-resolution deletions
 - [x] **1.3** Add `lazy()` utility for observer-scoped caches (`getAllEntries`, `getEntryIndexMap`)
-- [x] **1.4** Replace observer `indexOf()` calls with `getEntryIndex()` — uses Map for batches, indexOf for small conflicts
-- [x] **1.5** `set()` is UNCHANGED — the O(n²) fix is delivered via `bulkSet()` in Wave 7, not by modifying `set()`
+- [x] **1.4** Replace observer `indexOf()` calls with `getEntryIndex()`: uses Map for batches, indexOf for small conflicts
+- [x] **1.5** `set()` is UNCHANGED: the O(n²) fix is delivered via `bulkSet()` in Wave 7, not by modifying `set()`
   > **Note**: Originally tried modifying `set()` to skip `deleteEntryByKey`. This caused benchmark regressions for individual updates. The correct approach: leave `set()` alone, add `bulkSet()` that uses the optimized observer path.
 - [x] **1.6** All 149 y-keyvalue tests pass, all 40 benchmarks pass (identical to baseline)
 - [x] **1.7** Committed
@@ -175,7 +175,7 @@ See `specs/20260412T151815-breddit.md` Phase 1 for the full plan. Summary:
 - [x] **3.3** Add `@sindresorhus/slugify` to breddit's package.json
 - [x] **3.4** `bun install` to update lockfile
 - [x] **3.5** Committed (combined with Wave 2)
-### Wave 4: Remove dead code — `materializer/sqlite/`
+### Wave 4: Remove dead code: `materializer/sqlite/`
 
 - [x] **4.1** Delete `src/extensions/materializer/sqlite/` directory (6 files: 4 source + 2 test)
 - [x] **4.2** ~~Remove subpath export~~ **SKIP**: No such export existed
@@ -183,7 +183,7 @@ See `specs/20260412T151815-breddit.md` Phase 1 for the full plan. Summary:
 - [x] **4.4** All 613 workspace tests pass
 - [x] **4.5** Committed (combined with Wave 2-3)
 
-### Wave 5: Remove dead code — `persistence/sqlite.ts`
+### Wave 5: Remove dead code: `persistence/sqlite.ts`
 
 - [x] **5.1** Delete `src/extensions/persistence/sqlite.ts` (no test file existed)
 - [x] **5.2** Remove `extensions/persistence/sqlite` subpath export from `package.json`
@@ -204,12 +204,12 @@ See `specs/20260412T151815-breddit.md` Phase 1 for the full plan. Summary:
 
 ### Design: Why `set()` eagerly deletes but `bulkSet()` defers
 
-`deleteEntryByKey()` scans the Y.Array to find an entry's index — O(n) per call.
+`deleteEntryByKey()` scans the Y.Array to find an entry's index: O(n) per call.
 For a single `set()`, that's fine. For 10K `set()` calls in a loop, it's O(n²).
 
 `bulkSet()` skips this per-key scan. Instead, it pushes all entries in one
 transaction. When the transaction ends, the observer fires once and:
-1. Builds `entryIndexMap` from one `toArray()` call — O(n)
+1. Builds `entryIndexMap` from one `toArray()` call: O(n)
 2. Resolves each conflict with O(1) Map lookups
 3. Batch-deletes all losers
 
@@ -243,8 +243,8 @@ Architecture: Both `bulkSet` and `bulkDelete` get methods on `YKeyValueLww`. `bu
 ### Wave 1: `set()` then `delete()` in same transaction
 
 1. `set('foo', newVal)` pushes without deleting old
-2. `delete('foo')` calls `deleteEntryByKey('foo')` — but which entry does it find?
-3. It could find the OLD entry (correct) or the NEW entry (wrong — it was just pushed)
+2. `delete('foo')` calls `deleteEntryByKey('foo')`: but which entry does it find?
+3. It could find the OLD entry (correct) or the NEW entry (wrong: it was just pushed)
 4. **Mitigation**: `delete()` should check `pending` and remove the pending entry too. The observer will clean up the old array entry.
 
 ### Wave 1: Multiple `set()` for same key in one transaction
@@ -253,7 +253,7 @@ Architecture: Both `bulkSet` and `bulkDelete` get methods on `YKeyValueLww`. `bu
 2. `set('foo', val2)` pushes entry2
 3. Y.Array now has: old-foo, entry1, entry2
 4. Observer sees 3 entries for 'foo', keeps highest-ts (entry2), batch-deletes the other 2
-5. **This already works** — the observer's conflict resolution handles arbitrary duplicates.
+5. **This already works**: the observer's conflict resolution handles arbitrary duplicates.
 
 ### Wave 4: Drizzle dependency removal
 
@@ -266,7 +266,7 @@ Architecture: Both `bulkSet` and `bulkDelete` get methods on `YKeyValueLww`. `bu
 ## Open Questions (Resolved)
 
 1. **Should `delete()` also defer to the observer?**
-   - **Decision**: No. Leave as-is (Option A). Single delete is 29.5µs at 10K — negligible.
+   - **Decision**: No. Leave as-is (Option A). Single delete is 29.5µs at 10K: negligible.
    - Bulk delete is handled by the new `bulkDelete()` method which does a one-pass scan.
    - Consistency lives at the bulk API level, not the single-op level.
 
@@ -291,13 +291,13 @@ Architecture: Both `bulkSet` and `bulkDelete` get methods on `YKeyValueLww`. `bu
 
 ## References
 
-- `packages/workspace/src/shared/y-keyvalue/y-keyvalue-lww.ts` — the O(n²) bottleneck lives here
-- `packages/workspace/src/workspace/create-table.ts` — `TableHelper` implementation, where `bulkSet` goes
-- `packages/workspace/src/workspace/types.ts` — `TableHelper` type definition
-- `packages/workspace/src/workspace/benchmark.test.ts` — existing benchmarks to verify against
-- `packages/workspace/src/ingest/` — dead module to remove
-- `packages/workspace/src/extensions/materializer/sqlite/` — dead module to remove
-- `packages/workspace/src/extensions/persistence/sqlite.ts` — dead file to remove
-- `packages/workspace/src/shared/snakify.ts` — dead utility to remove
-- `packages/workspace/src/shared/standard-schema/` — 3 files to merge into 1
-- `packages/workspace/package.json` — subpath exports to clean up
+- `packages/workspace/src/shared/y-keyvalue/y-keyvalue-lww.ts`: the O(n²) bottleneck lives here
+- `packages/workspace/src/workspace/create-table.ts`: `TableHelper` implementation, where `bulkSet` goes
+- `packages/workspace/src/workspace/types.ts`: `TableHelper` type definition
+- `packages/workspace/src/workspace/benchmark.test.ts`: existing benchmarks to verify against
+- `packages/workspace/src/ingest/`: dead module to remove
+- `packages/workspace/src/extensions/materializer/sqlite/`: dead module to remove
+- `packages/workspace/src/extensions/persistence/sqlite.ts`: dead file to remove
+- `packages/workspace/src/shared/snakify.ts`: dead utility to remove
+- `packages/workspace/src/shared/standard-schema/`: 3 files to merge into 1
+- `packages/workspace/package.json`: subpath exports to clean up

@@ -79,7 +79,7 @@ const notes = defineTable(
 });
 
 notes.set({ id: 'n_1' as NoteId, title: 'Hi', pinned: false });
-notes.get('n_1'); // { id: NoteId, title: string, pinned: boolean } — no _v on the row
+notes.get('n_1'); // { id: NoteId, title: string, pinned: boolean }, no _v on the row
 ```
 
 ## Design decisions
@@ -402,7 +402,7 @@ This is small enough to land in one atomic commit. Library + materializer + test
 ## Open questions
 
 1. **Keep `column.literal` in the namespace?**
-   With `_v` removed, `column.literal` loses its primary use case. Recommend keep — it's a one-line re-export of `Type.Literal` with general utility for status enums and other literal-valued fields.
+   With `_v` removed, `column.literal` loses its primary use case. Recommend keep. It's a one-line re-export of `Type.Literal` with general utility for status enums and other literal-valued fields.
 
 2. **What about consumer-side reads of `row._v` outside migrate functions?**
    Survey shows zero such reads in production code. TypeScript will catch any that exist in code I missed. No proactive defensive measures needed.
@@ -423,8 +423,8 @@ This is small enough to land in one atomic commit. Library + materializer + test
 
 ## References
 
-- `packages/workspace/src/document/define-table.ts` — current API; this spec edits it.
-- `packages/workspace/src/document/attach-table.ts` — current parse/migrate machinery; this spec edits the read/write/migrate paths.
-- `packages/workspace/src/document/materializer/sqlite/ddl.ts` — drops `_v` column and `oneOf` walk.
-- `packages/workspace/src/document/column/sugar.ts` — `column.literal` JSDoc update.
-- `.agents/skills/workspace-api/references/table-migrations.md` — needs updating to reflect the new shape.
+- `packages/workspace/src/document/define-table.ts`: current API; this spec edits it.
+- `packages/workspace/src/document/attach-table.ts`: current parse/migrate machinery; this spec edits the read/write/migrate paths.
+- `packages/workspace/src/document/materializer/sqlite/ddl.ts`: drops `_v` column and `oneOf` walk.
+- `packages/workspace/src/document/column/sugar.ts`: `column.literal` JSDoc update.
+- `.agents/skills/workspace-api/references/table-migrations.md`: needs updating to reflect the new shape.

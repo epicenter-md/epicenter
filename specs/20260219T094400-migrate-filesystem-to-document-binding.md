@@ -1,6 +1,6 @@
 # Migrate Filesystem Package to Document Binding API
 
-> **Note**: The `.docs` access pattern described here was replaced by `client.documents` — see specs/20260221T204200-documents-top-level-namespace.md
+> **Note**: The `.docs` access pattern described here was replaced by `client.documents`: see specs/20260221T204200-documents-top-level-namespace.md
 > **Content model note**: The "two content access paths" design described in this spec's review section is superseded by `specs/20260313T224500-unify-document-content-model.md`. The dual model (handle Y.Text vs filesystem timeline) causes silent data loss and is being unified on the timeline model.
 
 **Date**: 2026-02-19
@@ -88,10 +88,10 @@ const fs = YjsFileSystem.create(ws.tables.files);
 
 This creates problems:
 
-1. **Duplicate doc management**: `createContentDocStore` duplicates what `createDocumentBinding` now does — Y.Doc creation, provider lifecycle, cleanup on shutdown. The two systems don't share state.
-2. **No extension hooks**: `ContentOps` takes raw `ProviderFactory[]` — there's no way for workspace extensions (persistence, sync) to participate in content doc lifecycle via `onDocumentOpen`.
+1. **Duplicate doc management**: `createContentDocStore` duplicates what `createDocumentBinding` now does: Y.Doc creation, provider lifecycle, cleanup on shutdown. The two systems don't share state.
+2. **No extension hooks**: `ContentOps` takes raw `ProviderFactory[]`: there's no way for workspace extensions (persistence, sync) to participate in content doc lifecycle via `onDocumentOpen`.
 3. **No automatic updatedAt**: `ContentOps` doesn't bump `updatedAt` when content changes. The caller must do it manually (and the `filesTable` now has `.withDocument('content', { guid: 'id', updatedAt: 'updatedAt' })` which would do this automatically).
-4. **No row-deletion cleanup**: Deleting a file row doesn't automatically destroy its content doc. `YjsFileSystem.rm()` manually calls `this.content.destroy(id)` — but only in that one code path.
+4. **No row-deletion cleanup**: Deleting a file row doesn't automatically destroy its content doc. `YjsFileSystem.rm()` manually calls `this.content.destroy(id)`, but only in that one code path.
 
 ### Desired State
 
@@ -102,7 +102,7 @@ const ws = createWorkspace({
 	tables: { files: filesTable },
 }).withExtension('persistence', indexeddbPersistence);
 
-// Content docs are managed by the document binding — automatically
+// Content docs are managed by the document binding: automatically
 const { content } = ws.tables.files.docs;
 await content.read(fileId); // opens doc, returns text
 await content.write(fileId, 'hello'); // opens doc, writes, auto-bumps updatedAt
@@ -134,7 +134,7 @@ Every `ContentOps` method maps to either the document binding directly or a thin
 | ------------------------------------ | ------------------------------------------------------------ | ------------------------------------------------------------------ |
 | `YjsFileSystem`                      | `ContentOps.read/readBuffer/write/append/destroy/destroyAll` | Replace `ContentOps` with document binding + thin timeline wrapper |
 | `fs-explorer` (fs-state.svelte.ts)   | `fs.content.read(id)`, `fs.content.write(id, data)`          | Use `ws.tables.files.docs.content.read/write` directly             |
-| `fs-explorer` (ContentEditor.svelte) | Indirectly via fsState actions                               | No change needed — actions layer abstracts it                      |
+| `fs-explorer` (ContentEditor.svelte) | Indirectly via fsState actions                               | No change needed: actions layer abstracts it                      |
 
 ### createContentDocStore vs createDocumentBinding
 
@@ -203,17 +203,17 @@ Every `ContentOps` method maps to either the document binding directly or a thin
 
 - [x] **1.1** Create `packages/filesystem/src/content-helpers.ts` with thin wrappers that use `DocumentBinding.open()` + timeline for mode-specific operations (`readBuffer`, `append`, sheet writes)
 - [x] **1.2** Update `YjsFileSystem` constructor to accept `DocumentBinding` instead of `ContentOps`
-- [x] **1.3** Update `YjsFileSystem.create()` — accept document binding, remove `options.providers` parameter
-- [x] **1.4** Remove manual `this.content.destroy(id)` calls in `YjsFileSystem.rm()` — the binding's table observer handles this automatically
-- [x] **1.5** Update `YjsFileSystem.destroy()` — no longer needs to call `content.destroyAll()` (workspace destroy cascades)
+- [x] **1.3** Update `YjsFileSystem.create()`: accept document binding, remove `options.providers` parameter
+- [x] **1.4** Remove manual `this.content.destroy(id)` calls in `YjsFileSystem.rm()`: the binding's table observer handles this automatically
+- [x] **1.5** Update `YjsFileSystem.destroy()`: no longer needs to call `content.destroyAll()` (workspace destroy cascades)
 - [x] **1.6** Verify all existing filesystem tests pass with the new wiring
 - [x] **1.7** Add test verifying that row deletion triggers automatic content doc cleanup (no manual destroy needed)
 
 ### Phase 2: Update fs-explorer App
 
 - [x] **2.1** Update `fs-state.svelte.ts` to wire workspace with extensions (IndexedDB persistence for both workspace Y.Doc and content docs via `onDocumentOpen`)
-- [x] **2.2** Pass `ws.tables.files.docs.content` to `YjsFileSystem` constructor instead of creating `ContentOps` — handled automatically by `createWorkspace()` which wires document bindings for tables with `.withDocument()` declarations
-- [x] **2.3** Update `readContent`/`writeContent` actions to use document binding directly (`ws.tables.files.docs.content.read/write`) — simpler path for the UI's text-only editor, while `YjsFileSystem.content` (ContentHelpers with timeline) remains available for full filesystem operations
+- [x] **2.2** Pass `ws.tables.files.docs.content` to `YjsFileSystem` constructor instead of creating `ContentOps`: handled automatically by `createWorkspace()` which wires document bindings for tables with `.withDocument()` declarations
+- [x] **2.3** Update `readContent`/`writeContent` actions to use document binding directly (`ws.tables.files.docs.content.read/write`): simpler path for the UI's text-only editor, while `YjsFileSystem.content` (ContentHelpers with timeline) remains available for full filesystem operations
 - [x] **2.4** Verify fs-explorer builds and renders correctly
 
 ### Phase 3: Delete Standalone Content Doc Store
@@ -233,7 +233,7 @@ Every `ContentOps` method maps to either the document binding directly or a thin
 
 1. File has text content, user writes binary data
 2. `ContentOps.write()` currently handles this via timeline's `pushBinary()`
-3. The content helper wrapper must preserve this behavior — it can't just use `binding.write()` which is text-only
+3. The content helper wrapper must preserve this behavior: it can't just use `binding.write()` which is text-only
 
 ### Sheet Content
 
@@ -243,14 +243,14 @@ Every `ContentOps` method maps to either the document binding directly or a thin
 
 ### Concurrent Content Access
 
-1. `binding.open()` is idempotent — same GUID returns same Y.Doc
+1. `binding.open()` is idempotent: same GUID returns same Y.Doc
 2. This matches `createContentDocStore.ensure()` behavior
 3. No change in concurrent access semantics
 
 ### Provider Migration
 
-1. `ContentOps` takes `ProviderFactory[]` — a dynamic API type (`{ ydoc } => Lifecycle`)
-2. Document binding takes `onDocumentOpen` hooks — a static API type (`DocumentContext => DocumentLifecycle | void`)
+1. `ContentOps` takes `ProviderFactory[]`: a dynamic API type (`{ ydoc } => Lifecycle`)
+2. Document binding takes `onDocumentOpen` hooks: a static API type (`DocumentContext => DocumentLifecycle | void`)
 3. Existing provider factories (if any are passed to `YjsFileSystem.create()`) need to be adapted or replaced with `onDocumentOpen` implementations on extensions
 
 ## Open Questions
@@ -273,7 +273,7 @@ Every `ContentOps` method maps to either the document binding directly or a thin
 - [x] `updatedAt` is automatically bumped on content changes (no manual bookkeeping)
 - [x] All filesystem tests pass (208 pass)
 - [x] All epicenter tests pass
-- [ ] Typecheck passes on both packages (pre-existing type errors in `table-helper.test.ts` related to `TableDefinitionWithDocBuilder` — not caused by this migration)
+- [ ] Typecheck passes on both packages (pre-existing type errors in `table-helper.test.ts` related to `TableDefinitionWithDocBuilder`: not caused by this migration)
 
 ## Review
 
@@ -281,14 +281,14 @@ Every `ContentOps` method maps to either the document binding directly or a thin
 
 **Phase 1** (filesystem package refactor):
 
-- Created `content-helpers.ts` — thin wrappers around `DocumentBinding.open()` + timeline for mode-aware content I/O (binary, sheet, text append)
-- Refactored `YjsFileSystem` to accept `FilesTableWithDocs` instead of `ContentOps` — the document binding is accessed via `filesTable.docs.content`
-- Removed manual `content.destroy()` calls in `rm()` — the binding's table observer handles cleanup automatically
-- Simplified `destroy()` — content doc cleanup cascades through workspace destroy
+- Created `content-helpers.ts`: thin wrappers around `DocumentBinding.open()` + timeline for mode-aware content I/O (binary, sheet, text append)
+- Refactored `YjsFileSystem` to accept `FilesTableWithDocs` instead of `ContentOps`: the document binding is accessed via `filesTable.docs.content`
+- Removed manual `content.destroy()` calls in `rm()`: the binding's table observer handles cleanup automatically
+- Simplified `destroy()`: content doc cleanup cascades through workspace destroy
 
 **Phase 2** (fs-explorer app update):
 
-- Added `y-indexeddb` dependency and wired `IndexeddbPersistence` as a workspace extension with `onDocumentOpen` — persists both the workspace Y.Doc and per-file content docs to browser IndexedDB
+- Added `y-indexeddb` dependency and wired `IndexeddbPersistence` as a workspace extension with `onDocumentOpen`: persists both the workspace Y.Doc and per-file content docs to browser IndexedDB
 - Simplified `readContent`/`writeContent` actions to use `ws.tables.files.docs.content.read/write` directly instead of routing through `YjsFileSystem.content`. The binding's plain-text read/write is sufficient for the textarea editor; full timeline support remains available through `fs.content` for filesystem operations
 
 **Phase 3** (cleanup):
@@ -306,13 +306,13 @@ Every `ContentOps` method maps to either the document binding directly or a thin
 
 ### Known Issues
 
-- Pre-existing type errors in `packages/epicenter/src/static/table-helper.test.ts` — `TableDefinitionWithDocBuilder` is not assignable to `TableDefinition`. These errors are unrelated to this migration (the test file was not modified on this branch).
+- Pre-existing type errors in `packages/epicenter/src/static/table-helper.test.ts`: `TableDefinitionWithDocBuilder` is not assignable to `TableDefinition`. These errors are unrelated to this migration (the test file was not modified on this branch).
 
 ## References
 
-- `specs/20260217T094400-table-level-document-api.md` — Parent specification
-- `packages/filesystem/src/content-helpers.ts` — ContentHelpers (new, wraps binding with timeline)
-- `packages/filesystem/src/yjs-file-system.ts` — YjsFileSystem (refactored)
-- `packages/filesystem/src/timeline-helpers.ts` — Timeline abstraction (preserved)
-- `packages/epicenter/src/static/create-document-binding.ts` — DocumentBinding implementation
-- `apps/fs-explorer/src/lib/fs/fs-state.svelte.ts` — App state (updated with persistence extension)
+- `specs/20260217T094400-table-level-document-api.md`: Parent specification
+- `packages/filesystem/src/content-helpers.ts`: ContentHelpers (new, wraps binding with timeline)
+- `packages/filesystem/src/yjs-file-system.ts`: YjsFileSystem (refactored)
+- `packages/filesystem/src/timeline-helpers.ts`: Timeline abstraction (preserved)
+- `packages/epicenter/src/static/create-document-binding.ts`: DocumentBinding implementation
+- `apps/fs-explorer/src/lib/fs/fs-state.svelte.ts`: App state (updated with persistence extension)

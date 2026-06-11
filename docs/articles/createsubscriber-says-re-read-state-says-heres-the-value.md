@@ -1,6 +1,6 @@
 # `createSubscriber` Says "Re-read." `$state` Says "Here's the Value."
 
-Svelte 5 gives you two ways to bridge external sources into runes. The difference is one sentence: `createSubscriber` says "hey, something changed—go re-read the source." `$state` says "here's the new value, I'll hold it for you."
+Svelte 5 gives you two ways to bridge external sources into runes. The difference is one sentence: `createSubscriber` says "hey, something changed. Go re-read the source." `$state` says "here's the new value, I'll hold it for you."
 
 That distinction decides which one you reach for.
 
@@ -58,16 +58,16 @@ Same result, different ownership. The first has zero shadow state. The second ma
 
 |                           | `createSubscriber`                | `$state` + subscribe           |
 | ------------------------- | --------------------------------- | ------------------------------ |
-| Value storage             | None—reads source directly        | Duplicates into Svelte proxy   |
-| When subscription starts  | Lazy—first effect that reads      | Eager—when `$effect` runs      |
-| When subscription stops   | Auto—last dependent effect dies   | Manual—`$effect` cleanup       |
+| Value storage             | None. Reads source directly        | Duplicates into Svelte proxy   |
+| When subscription starts  | Lazy. First effect that reads      | Eager. When `$effect` runs      |
+| When subscription stops   | Auto. Last dependent effect dies   | Manual: `$effect` cleanup      |
 | Memory overhead           | One integer (version counter)     | Full proxy wrapper             |
 | Notification model        | Binary "dirty" signal             | Full value propagation         |
 | SSR behavior              | No-op (safe)                      | Allocates state (wasteful)     |
 
 ## When Each One Wins
 
-`createSubscriber` is the right call when the source is readable on demand—browser APIs like `matchMedia`, `navigator.onLine`, `document.visibilityState`, `localStorage`. You don't need to cache what you can always re-read.
+`createSubscriber` is the right call when the source is readable on demand. Browser APIs like `matchMedia`, `navigator.onLine`, `document.visibilityState`, `localStorage`. You don't need to cache what you can always re-read.
 
 `$state` is the right call when the source is push-only. You can't "re-read" which keys are pressed from any browser API; you have to track `keydown`/`keyup` events and accumulate them. The value doesn't exist anywhere except in your state.
 
@@ -80,7 +80,7 @@ export function createPressedKeys({ preventDefault = true }) {
   $effect(() => {
     const keydown = on(window, 'keydown', (e) => {
       if (!pressedKeys.includes(key)) {
-        pressedKeys.push(key); // mutation—needs the $state proxy
+        pressedKeys.push(key); // mutation. Needs the $state proxy
       }
     });
 

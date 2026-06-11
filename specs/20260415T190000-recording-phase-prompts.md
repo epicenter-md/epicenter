@@ -18,7 +18,7 @@ Key changes:
 2. Rename create → saveAudio(recordingId: string, audio: Blob)
 3. Simplify delete to accept string | string[] (IDs, not full DbRecording objects)
 4. Delete the DbRecording type entirely (models/recordings.ts)
-5. Remove markdown serialization functions from file-system.ts (recordingToMarkdown, markdownToRecording, RecordingFrontMatter, etc.) — the materializer in client.ts handles this now
+5. Remove markdown serialization functions from file-system.ts (recordingToMarkdown, markdownToRecording, RecordingFrontMatter, etc.): the materializer in client.ts handles this now
 6. Update all callers (especially actions.ts and cleanupExpired)
 
 Load skills: workspace-api, services-layer, typescript, error-handling, refactoring

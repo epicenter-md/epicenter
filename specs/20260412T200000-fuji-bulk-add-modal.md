@@ -50,7 +50,7 @@ Call `await workspace.tables.entries.bulkSet(rows)`. Close modal on success. Sho
 
 ## Component
 
-`BulkAddModal.svelte`—self-contained with its own trigger button.
+`BulkAddModal.svelte`: self-contained with its own trigger button.
 
 Uses `Modal` (not Dialog) per UI README: "If the user needs to type or input data, use Modal."
 
@@ -81,7 +81,7 @@ Reuse `TimezoneCombobox` from `@epicenter/ui/timezone-combobox`. Default to `loc
 
 | File | Change |
 |------|--------|
-| `apps/fuji/src/lib/components/BulkAddModal.svelte` | New file—the modal component |
+| `apps/fuji/src/lib/components/BulkAddModal.svelte` | New file. The modal component |
 | `apps/fuji/src/lib/components/AppHeader.svelte` | Add trigger button next to existing "+" button |
 
 The modal is self-contained (trigger + content in one component, like `NewSkillDialog.svelte` in apps/skills). AppHeader just renders `<BulkAddModal />`.

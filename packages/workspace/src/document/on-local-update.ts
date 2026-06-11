@@ -1,10 +1,10 @@
 /**
- * onLocalUpdate — register a Y.Doc listener for local mutations only.
+ * onLocalUpdate: register a Y.Doc listener for local mutations only.
  *
  * Filters on `transaction.local`, Yjs's own invariant: `true` iff the update
  * originated from a direct mutation on this Y.Doc, `false` for anything
  * applied via `Y.applyUpdate` (sync transports, IndexedDB hydration, broadcast
- * channel replay). This is semantic — it doesn't depend on origin-shape
+ * channel replay). This is semantic: it doesn't depend on origin-shape
  * conventions and can't be fooled by a third-party provider that uses a
  * symbol origin.
  *

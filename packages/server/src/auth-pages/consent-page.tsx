@@ -10,8 +10,8 @@ import { CONSENT_SCRIPT } from './scripts/consent';
  * the requested scopes, and approve/deny buttons.
  *
  * Query params (set by Better Auth):
- * - `client_id` — the requesting application
- * - `scope` — space-separated list of requested scopes
+ * - `client_id`: the requesting application
+ * - `scope`: space-separated list of requested scopes
  */
 export function ConsentPage({
 	clientId,

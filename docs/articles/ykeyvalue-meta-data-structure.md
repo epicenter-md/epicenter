@@ -1,19 +1,19 @@
 # YKeyValue: The Most Interesting Meta Data Structure in Yjs
 
 > **Note**: YKeyValue uses the same clientID-based conflict resolution as Y.Map under the hood.
-> The original deprecation claimed "unpredictable LWW" behavior, but this was misleading—both
+> The original deprecation claimed "unpredictable LWW" behavior, but this was misleading. Both
 > Y.Map and YKeyValue resolve conflicts using Yjs's deterministic clientID ordering.
 > YKeyValue remains useful for long-lived collaborative documents without epoch compaction.
 
 YKeyValue is one of the most interesting meta Yjs data structures I've encountered.
 
-I've talked before about how you can build complex data structures with Yjs primitives—often to make them more performant or more memory efficient. Well, this one takes the cake. It's also one of the few that's canonically inside the Yjs organization itself (in [yjs/y-utility](https://github.com/yjs/y-utility)).
+I've talked before about how you can build complex data structures with Yjs primitives. Often to make them more performant or more memory efficient. Well, this one takes the cake. It's also one of the few that's canonically inside the Yjs organization itself (in [yjs/y-utility](https://github.com/yjs/y-utility)).
 
 The core insight: we represent something that _looks_ like a `Y.Map` (key-value pairs) using a `Y.Array` instead. And it works dramatically better for certain workloads.
 
 ## The Problem with Y.Map
 
-A traditional `Y.Map` tracks way too much. Every time you call `ymap.set(key, value)`, Yjs creates a new internal item and tombstones the previous one. Those tombstones stick around—Yjs can't garbage collect them because a remote peer might have operations referencing them.
+A traditional `Y.Map` tracks way too much. Every time you call `ymap.set(key, value)`, Yjs creates a new internal item and tombstones the previous one. Those tombstones stick around. Yjs can't garbage collect them because a remote peer might have operations referencing them.
 
 Here's what happens with alternating updates:
 
@@ -76,7 +76,7 @@ So reads are fast. You pay the cost on writes.
 
 ## The Tradeoff: Storage vs Write Performance
 
-This is the real story. YKeyValue isn't strictly "better"—it's a different tradeoff:
+This is the real story. YKeyValue isn't strictly "better". It's a different tradeoff:
 
 | Aspect  | YKeyValue                | Y.Map                         |
 | ------- | ------------------------ | ----------------------------- |
@@ -92,7 +92,7 @@ Why does this matter? Because for most "table-like" workloads:
 - You have occasional writes (O(n) is tolerable)
 - You care about document size (YKeyValue wins dramatically)
 
-If you're doing high-frequency writes on massive datasets, YKeyValue's linear scan becomes a problem. But for most collaborative apps—where you're syncing documents across devices, storing them in IndexedDB, sending them over the wire—storage efficiency dominates.
+If you're doing high-frequency writes on massive datasets, YKeyValue's linear scan becomes a problem. But for most collaborative apps. Where you're syncing documents across devices, storing them in IndexedDB, sending them over the wire. Storage efficiency dominates.
 
 ## Why Array Tracking Beats Map Tracking
 
@@ -100,7 +100,7 @@ The fundamental difference is in what the CRDT must retain.
 
 **Y.Map tombstones retain the key.** A tombstoned map entry still knows it was for key `'a'`. This metadata is part of how Yjs resolves conflicts among entries for the same key. Every overwrite creates a new entry struct with that key embedded.
 
-**Y.Array tombstones are positional.** A deleted array element becomes "there used to be something at position X." The application-level key (`'a'`) isn't embedded in the CRDT structure—it's inside the value object, which is gone.
+**Y.Array tombstones are positional.** A deleted array element becomes "there used to be something at position X." The application-level key (`'a'`) isn't embedded in the CRDT structure. It's inside the value object, which is gone.
 
 So even though both use tombstones, map tombstones are heavier. They carry per-key conflict resolution metadata that array tombstones don't need.
 
@@ -124,7 +124,7 @@ YKeyValue exploits this. By encoding "current value for key" as "rightmost survi
 
 ## In Epicenter
 
-We use YKeyValue for table storage. Tables have rows, rows have IDs, and rows change frequently. The storage savings are massive—we went from documents that ballooned after normal usage to documents that stay proportional to actual data.
+We use YKeyValue for table storage. Tables have rows, rows have IDs, and rows change frequently. The storage savings are massive. We went from documents that ballooned after normal usage to documents that stay proportional to actual data.
 
 The implementation is straightforward:
 
@@ -137,9 +137,9 @@ A `Y.Map` at the root (table names rarely change), with `YKeyValue`-backed array
 
 ## The Lesson
 
-Not every Yjs data structure maps directly to what you'd reach for in non-collaborative code. `Y.Map` looks like a map, but it doesn't _behave_ like one under repeated updates. Understanding the CRDT's internal tracking—what gets tombstoned, what retains metadata—lets you pick structures that match your actual access patterns.
+Not every Yjs data structure maps directly to what you'd reach for in non-collaborative code. `Y.Map` looks like a map, but it doesn't _behave_ like one under repeated updates. Understanding the CRDT's internal tracking. What gets tombstoned, what retains metadata. Lets you pick structures that match your actual access patterns.
 
-YKeyValue is a meta structure: a map interface built on array primitives. It's uglier internally, but the results speak for themselves. 271 bytes vs 524,985 bytes isn't a minor optimization—it's the difference between a practical collaborative app and an unusable one.
+YKeyValue is a meta structure: a map interface built on array primitives. It's uglier internally, but the results speak for themselves. 271 bytes vs 524,985 bytes isn't a minor optimization. It's the difference between a practical collaborative app and an unusable one.
 
 ## Update (2026-02-01): GC Setting Is the Hidden Variable
 

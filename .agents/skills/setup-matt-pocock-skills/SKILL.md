@@ -84,11 +84,16 @@ Let them edit before writing.
 
 **Pick the file to edit:**
 
-- If `CLAUDE.md` exists, edit it.
-- Else if `AGENTS.md` exists, edit it.
-- If neither exists, ask the user which one to create - don't pick for them.
+- If `AGENTS.md` exists, edit it.
+- Else if only `CLAUDE.md` exists, create `AGENTS.md` as the canonical shared
+  instruction file and replace `CLAUDE.md` with a compatibility shim that
+  contains only `@AGENTS.md`, plus rare Claude-specific notes if already
+  present and still necessary.
+- If neither exists, create `AGENTS.md` and a sibling `CLAUDE.md` shim with
+  `@AGENTS.md`.
 
-Never create `AGENTS.md` when `CLAUDE.md` already exists (or vice versa) - always edit the one that's already there.
+Never put shared agent-skill routing only in `CLAUDE.md`. In Epicenter,
+`AGENTS.md` is canonical; `CLAUDE.md` is a compatibility shim.
 
 If an `## Agent skills` block already exists in the chosen file, update its contents in-place rather than appending a duplicate. Don't overwrite user edits to the surrounding sections.
 
@@ -110,13 +115,15 @@ The block:
 [one-line summary of layout - "single-context" or "multi-context"]. See `docs/agents/domain.md`.
 ```
 
-Then write the three docs files using the seed templates in this skill folder as a starting point:
+Then write the three docs files using the seed templates in this skill's
+`references/` folder as a starting point. Load only the template matching the
+user's selected tracker or configuration:
 
-- [issue-tracker-github.md](./issue-tracker-github.md) - GitHub issue tracker
-- [issue-tracker-gitlab.md](./issue-tracker-gitlab.md) - GitLab issue tracker
-- [issue-tracker-local.md](./issue-tracker-local.md) - local-markdown issue tracker
-- [triage-labels.md](./triage-labels.md) - label mapping
-- [domain.md](./domain.md) - domain doc consumer rules + layout
+- [issue-tracker-github.md](references/issue-tracker-github.md) - GitHub issue tracker
+- [issue-tracker-gitlab.md](references/issue-tracker-gitlab.md) - GitLab issue tracker
+- [issue-tracker-local.md](references/issue-tracker-local.md) - local-markdown issue tracker
+- [triage-labels.md](references/triage-labels.md) - label mapping
+- [domain.md](references/domain.md) - domain doc consumer rules + layout
 
 For "other" issue trackers, write `docs/agents/issue-tracker.md` from scratch using the user's description.
 

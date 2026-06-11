@@ -4,7 +4,7 @@
 
 ## Context
 
-The server-local package uses Elysia while server-remote uses Hono. This creates two different framework mental models, prevents middleware sharing, and means the auth validation layer (`hub-validator.ts`) is hand-rolled with code smells (redundant types, no cache eviction, manual response casting). Since server-local hasn't been deployed yet, this is the right time for a clean rewrite on Hono — same framework as the remote server.
+The server-local package uses Elysia while server-remote uses Hono. This creates two different framework mental models, prevents middleware sharing, and means the auth validation layer (`hub-validator.ts`) is hand-rolled with code smells (redundant types, no cache eviction, manual response casting). Since server-local hasn't been deployed yet, this is the right time for a clean rewrite on Hono: same framework as the remote server.
 
 ## Scope
 
@@ -35,52 +35,52 @@ The server-local package uses Elysia while server-remote uses Hono. This creates
 | `package.json` | Swap deps |
 | **New:** `src/middleware/auth.ts` | Combined auth middleware |
 
-Consumer to update: `packages/cli/src/commands/sidecar-command.ts` (only imports `createSidecar` — API shape stays the same, no changes needed).
+Consumer to update: `packages/cli/src/commands/sidecar-command.ts` (only imports `createSidecar`: API shape stays the same, no changes needed).
 
 ---
 
 ## Implementation Plan
 
 ### Wave 1: Dependencies & Package Setup
-- [x] **1.1** Update `package.json` — remove Elysia deps, add Hono deps, run `bun install`
+- [x] **1.1** Update `package.json`: remove Elysia deps, add Hono deps, run `bun install`
 
 ### Wave 2: Auth Middleware (new file)
-- [x] **2.1** Create `src/middleware/auth.ts` — replaces `auth/hub-validator.ts`, `auth/token-guard.ts`, `auth/index.ts`
+- [x] **2.1** Create `src/middleware/auth.ts`: replaces `auth/hub-validator.ts`, `auth/token-guard.ts`, `auth/index.ts`
 
 ### Wave 3: Server & Sidecar Core
-- [x] **3.1** Rewrite `src/server.ts` — Hono `Bun.serve()` instead of `app.listen()`
-- [x] **3.2** Rewrite `src/sidecar.ts` — Hono app factory (depends on 2.1, 3.1)
-- [x] **3.3** Update `src/start.ts` — use new serve function
+- [x] **3.1** Rewrite `src/server.ts`: Hono `Bun.serve()` instead of `app.listen()`
+- [x] **3.2** Rewrite `src/sidecar.ts`: Hono app factory (depends on 2.1, 3.1)
+- [x] **3.3** Update `src/start.ts`: use new serve function
 
-### Wave 4: Workspace Routes (parallel — separate files)
+### Wave 4: Workspace Routes (parallel: separate files)
 - [x] **4.1** Port `src/workspace/plugin.ts`
 - [x] **4.2** Port `src/workspace/tables.ts`
 - [x] **4.3** Port `src/workspace/kv.ts`
 - [x] **4.4** Port `src/workspace/actions.ts`
 
 ### Wave 5: WebSocket Sync Plugin
-- [x] **5.1** Rewrite `src/sync/ws-plugin.ts` — Hono `upgradeWebSocket` adapter
+- [x] **5.1** Rewrite `src/sync/ws-plugin.ts`: Hono `upgradeWebSocket` adapter
   > **Note**: Extended Hono's `websocket` handler with a custom `pong` handler for keepalive since Hono's BunWebSocket adapter doesn't expose pong events.
 
-### Wave 6: Tests (parallel — separate files)
+### Wave 6: Tests (parallel: separate files)
 - [x] **6.1** Port `src/sidecar.test.ts`
 - [x] **6.2** Port `src/workspace/plugin.test.ts`
 - [x] **6.3** Port `src/workspace/tables.test.ts`
 - [x] **6.4** Port `src/workspace/actions.test.ts`
 - [x] **6.5** Port `src/sync/ws-plugin.test.ts`
-- [x] **6.6** `src/sync/rooms.test.ts` — no changes (framework-agnostic)
-  > **Note**: Fixed trailing slash mismatches — Hono is strict about trailing slashes unlike Elysia.
+- [x] **6.6** `src/sync/rooms.test.ts`: no changes (framework-agnostic)
+  > **Note**: Fixed trailing slash mismatches: Hono is strict about trailing slashes unlike Elysia.
 
 ### Wave 7: Exports & Cleanup
-- [x] **7.1** Update `src/index.ts` — remove old auth exports, add `AuthUser`, replace `listenWithFallback` with `serve`
-- [x] **7.2** `src/workspace/index.ts` — no changes needed
+- [x] **7.1** Update `src/index.ts`: remove old auth exports, add `AuthUser`, replace `listenWithFallback` with `serve`
+- [x] **7.2** `src/workspace/index.ts`: no changes needed
 - [x] **7.3** Delete `src/auth/` directory
 
 ## Verification
 
-1. `bun run typecheck` — passes (only pre-existing errors in workspace package)
-2. `bun test packages/server-local/src/` — 76 pass, 0 fail
-3. CLI integration: `packages/cli` only imports `createSidecar` — API shape unchanged
+1. `bun run typecheck`: passes (only pre-existing errors in workspace package)
+2. `bun test packages/server-local/src/`: 76 pass, 0 fail
+3. CLI integration: `packages/cli` only imports `createSidecar`: API shape unchanged
 
 ## Review
 

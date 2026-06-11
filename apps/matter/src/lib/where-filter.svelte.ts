@@ -1,21 +1,25 @@
 /**
- * The page-owned SQL WHERE filter over a vault's mirror.
+ * The per-tab SQL WHERE filter over a vault's mirror.
  *
  * Bundles the three things a filter is, the input (`text`), the result
- * (`matchedFileNames`), and a bad-clause `error`, plus the debounced query into ONE unit, so
- * the page binds `filter.text` and reads `filter.matchedFileNames` instead of carrying three
- * loose `$state`s and an inline effect that a reader has to mentally group. The states
- * still exist (reactive state is always `let $state`); this just gives them an owner and
- * a name.
+ * (`matchedFileNames`), and a bad-clause `error`, plus the debounced query and its own
+ * reactive lifecycle, into ONE unit. FolderGrid binds `filter.text` and reads
+ * `filter.matchedFileNames` instead of carrying three loose `$state`s and a standing effect
+ * a reader has to mentally group.
  *
- * The vault is NOT stored: it is passed to `resolve` at call time. The vault is
- * page-owned, swappable (open another folder reassigns it), and per-route (the `/demo`
- * route runs its own), so there is no singleton to capture and storing one instance would
- * go stale on the next swap. The page drives the filter with
- * `$effect(() => filter.resolve(vault))`: the effect reads the reactive `vault` (and,
- * inside `resolve`, the vault's `read`), so it re-runs when the folder swaps OR its rows
- * change, and `resolve` returns a cleanup that cancels an in-flight query so a newer
- * clause, a data change, or a folder swap never lands a stale result set.
+ * The vault is taken at construction (not per call): a tab's vault is non-swappable (a
+ * folder switch remounts VaultView with a fresh vault AND a fresh filter), so there is
+ * nothing to re-point at call time. The filter owns its own `$effect`, which Svelte ties to
+ * the component that constructs it (the same pattern as `createPressedKeys`), so the caller
+ * just writes `const filter = createWhereFilter(vault)`, with no effect to wire and no
+ * cleanup to honor.
+ *
+ * The effect re-runs on two reactive reads: `text` (the clause) and `vault.mirrorVersion`
+ * (bumped after each rebuild of `matter.sqlite`). Keying on the mirror's version, not the
+ * in-memory rows, means the query fires only once the file it reads is actually fresh, so a
+ * data edit can never land a result from the pre-rebuild mirror. Each run debounces, and its
+ * cleanup cancels the pending/in-flight query so a newer clause or rebuild never lands a
+ * stale result set.
  */
 
 import type { Vault } from './vault.svelte';
@@ -23,23 +27,20 @@ import type { Vault } from './vault.svelte';
 /** Let a burst of keystrokes (or rapid external edits) settle before querying the mirror. */
 const DEBOUNCE_MS = 200;
 
-export function createWhereFilter() {
+export function createWhereFilter(vault: Vault) {
 	let text = $state('');
 	let matchedFileNames = $state<Set<string>>();
 	let error = $state<string>();
 
-	/**
-	 * Resolve the current clause to matched names against `vault`. Call inside an `$effect`
-	 * so the reactive reads (`vault` and, when present, its `read`) are tracked; the
-	 * returned cleanup cancels the pending/in-flight query so only the latest run can
-	 * assign. `vault` is passed in rather than captured because the page owns it and can
-	 * swap it.
-	 */
-	function resolve(vault: Vault | undefined): (() => void) | void {
+	// Resolve the current clause to matched names whenever the clause or the mirror changes.
+	// Reading `vault.mirrorVersion` (discarded) is the subscription: it bumps after each
+	// `matter.sqlite` rebuild, so the query below always reads a fresh file. The cleanup
+	// cancels the pending/in-flight query so a newer clause or rebuild never lands a stale set.
+	$effect(() => {
 		const clause = text.trim();
-		if (vault) void vault.read; // re-run when rows change so an edit updates membership
-		// No vault or empty clause: there is no filter, so show every row.
-		if (!vault || !clause) {
+		void vault.mirrorVersion; // re-run after the mirror is rebuilt (downstream of row edits)
+		// Empty clause: there is no filter, so show every row.
+		if (!clause) {
 			matchedFileNames = undefined;
 			error = undefined;
 			return;
@@ -47,7 +48,7 @@ export function createWhereFilter() {
 		let cancelled = false;
 		const handle = setTimeout(async () => {
 			const { data, error: failure } = await vault.matchingFileNames(clause);
-			if (cancelled) return; // a newer clause, a data change, or a folder swap won
+			if (cancelled) return; // a newer clause, a rebuild, or this tab being torn down won
 			if (failure) error = failure.message;
 			else {
 				matchedFileNames = data;
@@ -58,10 +59,9 @@ export function createWhereFilter() {
 			cancelled = true;
 			clearTimeout(handle);
 		};
-	}
+	});
 
 	return {
-		resolve,
 		/** The WHERE clause, two-way bound to the folder-header input. */
 		get text() {
 			return text;
@@ -79,3 +79,6 @@ export function createWhereFilter() {
 		},
 	};
 }
+
+/** A per-tab WHERE filter. The grid takes one to render its header input and narrow rows. */
+export type WhereFilter = ReturnType<typeof createWhereFilter>;

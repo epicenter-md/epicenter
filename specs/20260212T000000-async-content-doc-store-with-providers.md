@@ -3,26 +3,26 @@
 **Date**: 2026-02-12T00:00:00
 **Status**: Implemented
 **Parent**: `specs/20260209T000000-simplify-content-doc-lifecycle.md`
-**See also**: `specs/20260208T000000-yjs-filesystem-spec.md` — two-layer architecture
+**See also**: `specs/20260208T000000-yjs-filesystem-spec.md`: two-layer architecture
 
 ## Problem
 
-`ContentDocStore.ensure()` is synchronous and returns a `Y.Doc` that may be empty. Content docs have no persistence — they're pure in-memory. When `readFile()` calls `ensure(id)`, the doc might not have content yet if persistence (IndexedDB) or sync (WebSocket) haven't delivered it.
+`ContentDocStore.ensure()` is synchronous and returns a `Y.Doc` that may be empty. Content docs have no persistence. They're pure in-memory. When `readFile()` calls `ensure(id)`, the doc might not have content yet if persistence (IndexedDB) or sync (WebSocket) haven't delivered it.
 
 This means:
 
 - **`readFile()` can return empty string** for a file that has persisted content in IndexedDB
 - **`grep -r` can miss content** across files that haven't been loaded from storage
-- **No persistence survives page reload** — content docs are ephemeral
+- **No persistence survives page reload**: content docs are ephemeral
 
 The fix: make `ensure()` async, attach persistence providers per doc, await readiness before returning.
 
 ## Constraints
 
-- `IFileSystem.readFile()` is already async — can await readiness
+- `IFileSystem.readFile()` is already async: can await readiness
 - `y-indexeddb` provides `whenSynced` promise per doc (~10-20ms per small doc)
 - Workspace scale: typically 50-500 files (not thousands)
-- Tests run in Bun — no IndexedDB available in test environment
+- Tests run in Bun: no IndexedDB available in test environment
 - `ProviderFactory` type already exists in `provider-types.ts` for doc-level providers
 
 ---
@@ -34,10 +34,10 @@ The fix: make `ensure()` async, attach persistence providers per doc, await read
 Provider factories are a **configuration concern**, not a per-file concern. You want IndexedDB persistence for every content doc, not selectively. Pass factories once when creating the store:
 
 ```typescript
-// Creation — configure providers once
+// Creation: configure providers once
 const store = createContentDocStore([indexeddbPersistence]);
 
-// Usage — callers don't know or care about providers
+// Usage: callers don't know or care about providers
 const ydoc = await store.ensure(fileId);  // hydrated, ready to use
 ```
 
@@ -52,7 +52,7 @@ type ProviderContext = { ydoc: Y.Doc };
 type ProviderFactory = (context: ProviderContext) => Lifecycle;
 ```
 
-Takes `{ ydoc }` (the doc's guid is the FileId, accessible via `ydoc.guid`). Returns `Lifecycle` (`whenSynced` + `destroy`). Factories are **always synchronous** — async initialization tracked via `whenSynced`.
+Takes `{ ydoc }` (the doc's guid is the FileId, accessible via `ydoc.guid`). Returns `Lifecycle` (`whenSynced` + `destroy`). Factories are **always synchronous**: async initialization tracked via `whenSynced`.
 
 ### No LRU cache, no eviction
 
@@ -60,7 +60,7 @@ Docs stay in memory after first load. At workspace scale (50-500 files, 1-50KB e
 
 ### No providers = instant
 
-When `providerFactories` is empty (tests, headless), `ensure()` uses `Promise.resolve(ydoc)` — resolves in the same microtask. Zero async overhead for tests.
+When `providerFactories` is empty (tests, headless), `ensure()` uses `Promise.resolve(ydoc)`: resolves in the same microtask. Zero async overhead for tests.
 
 ---
 
@@ -160,14 +160,14 @@ export function createContentDocStore(
 | Behavior | How |
 |---|---|
 | Concurrent deduplication | Map entry set synchronously before any await. Second `ensure()` for same fileId returns same promise. |
-| No providers = instant | `Promise.resolve(ydoc)` — same microtask resolution |
-| Factory error cleanup | try/catch around factory loop — partially-created providers destroyed |
+| No providers = instant | `Promise.resolve(ydoc)`: same microtask resolution |
+| Factory error cleanup | try/catch around factory loop: partially-created providers destroyed |
 | Provider cleanup order | Providers destroyed before Y.Doc (mirrors workspace pattern from `create-workspace.ts`) |
-| `destroyAll` resilience | `Promise.allSettled` — one failing provider doesn't block others |
+| `destroyAll` resilience | `Promise.allSettled`: one failing provider doesn't block others |
 
 ### `YjsFileSystem` changes
 
-**Constructor** — accept optional providers:
+**Constructor**: accept optional providers:
 
 ```typescript
 constructor(
@@ -186,16 +186,16 @@ Backward-compatible. Existing callers (`new YjsFileSystem(ws.tables.files)`) kee
 
 | Method | Line | Change |
 |---|---|---|
-| `destroy()` | 49 | `await this.store.destroyAll()` — make method async |
+| `destroy()` | 49 | `await this.store.destroyAll()`: make method async |
 | `readFile()` | 127 | `await this.store.ensure(id)` |
 | `readFileBuffer()` | 139 | `await this.store.ensure(id)` |
 | `writeFile()` | 172 | `await this.store.ensure(id)` |
 | `appendFile()` | 205 | `await this.store.ensure(id)` |
 | `rm()` | 308 | `await this.store.destroy(id)` |
 | `cp()` | 332 | `await this.store.ensure(srcId)` |
-| `softDeleteDescendants()` | 462 | `await this.store.destroy(cid)` — make method async |
+| `softDeleteDescendants()` | 462 | `await this.store.destroy(cid)`: make method async |
 
-All methods are already async except `destroy()` and `softDeleteDescendants()` — both become async.
+All methods are already async except `destroy()` and `softDeleteDescendants()`: both become async.
 
 ---
 
@@ -240,7 +240,7 @@ const fs = new YjsFileSystem(ws.tables.files, '/', {
 ### Tests (no providers)
 
 ```typescript
-// Zero-arg — no providers, instant ensure
+// Zero-arg: no providers, instant ensure
 const store = createContentDocStore();
 const fs = new YjsFileSystem(ws.tables.files);
 

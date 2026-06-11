@@ -22,7 +22,7 @@ tables.keys(); // List all table names
 tables.toJSON(); // Serialize all tables
 ```
 
-If someone created a table named "toJSON", the API would break. I couldn't just reserve those names—that's a terrible DX.
+If someone created a table named "toJSON", the API would break. I couldn't just reserve those names. That's a terrible DX.
 
 ## Phase 2: Callable Collections
 
@@ -48,7 +48,7 @@ I was proud of this. It felt clever.
 
 After using it for a while, I noticed issues:
 
-1. **Discoverability**: When I typed `tables.` in my IDE, I saw `keys`, `toJSON`, etc.—but not the main way to access tables. The callable was invisible.
+1. **Discoverability**: When I typed `tables.` in my IDE, I saw `keys`, `toJSON`, etc., but not the main way to access tables. The callable was invisible.
 
 2. **Unfamiliar**: Every time I onboarded someone, I had to explain "oh, you call it like a function." Map uses `.get()`. WeakMap uses `.get()`. Every ORM uses `.get()` or `.find()`. Nobody uses callable objects.
 
@@ -94,7 +94,7 @@ When I see code 6 months later, I want to immediately understand it. `tables.get
 tables.get('posts').upsert({ id: '1', title: 'Hello' });
 tables.get('posts').getAll();
 
-// KV (flattened—no intermediate helper)
+// KV (flattened. No intermediate helper)
 kv.get('theme'); // get value
 kv.set('theme', 'dark'); // set value
 kv.reset('theme'); // reset to default
@@ -112,7 +112,7 @@ Almost never. But if:
 2. Your users will write thousands of these calls
 3. You've explicitly measured that `.get` verbosity is a problem
 
-Then maybe. But for library APIs, configuration, or anything users read more than write—just use `.get()`.
+Then maybe. But for library APIs, configuration, or anything users read more than write. Just use `.get()`.
 
 ## See Also
 

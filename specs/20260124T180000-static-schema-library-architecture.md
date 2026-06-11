@@ -1,6 +1,6 @@
 # Static Schema Library Architecture
 
-> **Status: Superseded** — This spec was a design document. The API evolved during implementation. The current API uses `createWorkspace(definition)` instead of `workspace.create()`. See `packages/epicenter/src/static/README.md` for the current API.
+> **Status: Superseded**: This spec was a design document. The API evolved during implementation. The current API uses `createWorkspace(definition)` instead of `workspace.create()`. See `packages/epicenter/src/static/README.md` for the current API.
 
 > **📝 NOTE**: This spec should be read alongside [`specs/20260124T162638-stable-id-schema-pattern.md`](./20260124T162638-stable-id-schema-pattern.md) which introduces stable internal IDs for fields. The stable ID pattern simplifies the migration story further: instead of lazy ArkType pipe migrations, fields have permanent internal IDs and invalid data simply returns defaults.
 

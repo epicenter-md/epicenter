@@ -6,14 +6,14 @@ changes, eliminating manual `sync.reconnect()` calls from auth callbacks.
 ## Problem
 
 Three apps use the sync extension. Only one calls `reconnect()` after auth
-changes—and it's manually wired into auth callbacks alongside unrelated
+changes. And it's manually wired into auth callbacks alongside unrelated
 encryption logic:
 
 | App | Calls `reconnect()` on auth change? | How |
 |---|---|---|
 | honeycrisp | Yes | Manual calls in `onSignedIn`/`onSignedOut` auth callbacks |
-| opensidian | **No** — bug | — |
-| tab-manager | **No** — bug (only manual UI button) | — |
+| opensidian | **No**: bug |: |
+| tab-manager | **No**: bug (only manual UI button) |: |
 
 The sync provider calls `getToken()` fresh on every connection attempt, but
 it has no mechanism to detect when the token changes mid-session. A live
@@ -25,7 +25,7 @@ calls `reconnect()`.
 The shared `createAuthState` factory currently has `onSignedIn`/`onSignedOut`
 callbacks. We want to replace them with a focused `encryption` config object
 (`activate`/`deactivate`/`restoreFromCache`). But honeycrisp puts
-`sync.reconnect()` in those callbacks alongside encryption—so they're not
+`sync.reconnect()` in those callbacks alongside encryption. So they're not
 purely about encryption. Fixing sync auto-reconnect removes `reconnect()`
 from auth callbacks, making the `encryption` abstraction correct.
 
@@ -67,7 +67,7 @@ type SyncExtensionConfig = {
    * Subscribe to auth token changes. Called once during setup with a
    * `reconnect` callback. Return an unsubscribe function.
    *
-   * When the token changes, call `reconnect()` — the provider will
+   * When the token changes, call `reconnect()`: the provider will
    * disconnect the current WebSocket and start a new connection with
    * a fresh token from `getToken`.
    */
@@ -186,7 +186,7 @@ onTokenChange: (reconnect) => {
 },
 ```
 
-**opensidian** — same pattern as honeycrisp.
+**opensidian**: same pattern as honeycrisp.
 
 ### After this change
 
@@ -195,7 +195,7 @@ removed from all auth callbacks. The `encryption` config object in the
 auth factory becomes the correct abstraction:
 
 ```typescript
-// honeycrisp — no more sync.reconnect() in auth callbacks
+// honeycrisp: no more sync.reconnect() in auth callbacks
 export const authState = createAuthState({
   baseURL: APP_URLS.API,
   storage: createLocalStorage('honeycrisp'),

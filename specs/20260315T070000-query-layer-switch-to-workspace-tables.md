@@ -2,11 +2,11 @@
 
 **Date**: 2026-03-15
 **Status**: Partially Implemented
-**Prerequisite**: [20260314T070000-database-to-workspace-migration.md](./20260314T070000-database-to-workspace-migration.md) (Implemented — data is in workspace tables)
+**Prerequisite**: [20260314T070000-database-to-workspace-migration.md](./20260314T070000-database-to-workspace-migration.md) (Implemented: data is in workspace tables)
 
 ## Overview
 
-Replace the TanStack Query + DbService read/write path with reactive state modules backed by Yjs workspace tables. After the database migration (already implemented) copies data into workspace tables, this spec wires the app to read and write from those tables directly—eliminating the stale-while-revalidate polling pattern in favor of live CRDT reactivity.
+Replace the TanStack Query + DbService read/write path with reactive state modules backed by Yjs workspace tables. After the database migration (already implemented) copies data into workspace tables, this spec wires the app to read and write from those tables directly. Eliminating the stale-while-revalidate polling pattern in favor of live CRDT reactivity.
 
 ## Motivation
 
@@ -40,7 +40,7 @@ runs.getByRecordingId:      defineQuery → services.db.runs.getByRecordingId(id
 runs.delete:                defineMutation → delete + invalidate per FK
 ```
 
-Every mutation must manually invalidate the right queries. Miss one and the UI shows stale data. Add a new mutation and you have to figure out which queries to invalidate. This is a solved problem—Yjs solves it at the CRDT layer.
+Every mutation must manually invalidate the right queries. Miss one and the UI shows stale data. Add a new mutation and you have to figure out which queries to invalidate. This is a solved problem. Yjs solves it at the CRDT layer.
 
 ### What's Already In Place
 
@@ -88,17 +88,17 @@ The `TableHelper` from `packages/workspace/src/workspace/table-helper.ts` provid
 
 ### Yjs Observation Model (from Y.Map/Y.Array docs)
 
-- `observe()` fires after the Y.Transaction completes — bulk operations fire **one** callback
+- `observe()` fires after the Y.Transaction completes: bulk operations fire **one** callback
 - Changes are batched per transaction, reducing unnecessary re-renders
 - The `transaction` object enables origin checks (local vs remote changes)
 - `unobserve()` cleanup prevents memory leaks
 
 ### Svelte 5 SvelteMap Reactivity (from sveltejs/svelte DeepWiki)
 
-- `SvelteMap` uses internal `$state` signals — `set()`, `delete()`, `clear()` trigger re-renders
+- `SvelteMap` uses internal `$state` signals: `set()`, `delete()`, `clear()` trigger re-renders
 - Fine-grained: only components reading a specific key re-render when that key changes
-- Values are **not deeply reactive** — but workspace table rows are plain JSON objects (not nested state), so this is fine
-- Module-level `SvelteMap` in `.svelte.ts` files creates singletons — exactly the pattern we need
+- Values are **not deeply reactive**: but workspace table rows are plain JSON objects (not nested state), so this is fine
+- Module-level `SvelteMap` in `.svelte.ts` files creates singletons: exactly the pattern we need
 
 ### Proven Pattern: workspace-settings.svelte.ts
 
@@ -234,9 +234,9 @@ export const workspaceRecordings = createWorkspaceRecordings();
 
 ### Phase 1: Reactive state modules for recordings and transformations
 
-- [x] **1.1** Create `$lib/state/workspace-recordings.svelte.ts` — SvelteMap backed by `workspace.tables.recordings`, with `observe()` for live updates
-- [x] **1.2** Create `$lib/state/workspace-transformations.svelte.ts` — same pattern for transformations
-- [x] **1.3** Create `$lib/state/workspace-transformation-steps.svelte.ts` — same pattern, with helper to get steps by transformationId
+- [x] **1.1** Create `$lib/state/workspace-recordings.svelte.ts`: SvelteMap backed by `workspace.tables.recordings`, with `observe()` for live updates
+- [x] **1.2** Create `$lib/state/workspace-transformations.svelte.ts`: same pattern for transformations
+- [x] **1.3** Create `$lib/state/workspace-transformation-steps.svelte.ts`: same pattern, with helper to get steps by transformationId
 
 ### Phase 2: Switch component reads from TanStack Query to reactive state
 
@@ -248,15 +248,15 @@ export const workspaceRecordings = createWorkspaceRecordings();
 
 ### Phase 3: Switch component writes from TanStack mutations to direct workspace writes
 
-- [x] **3.1** Replace `db.recordings.create.mutate()` calls with `workspaceRecordings.set(recording)` — no invalidation needed
+- [x] **3.1** Replace `db.recordings.create.mutate()` calls with `workspaceRecordings.set(recording)`: no invalidation needed
   > processRecordingPipeline: metadata to workspace, audio blob still saved to DbService
-- [x] **3.2** Replace `db.recordings.update.mutate()` with `workspaceRecordings.update()` — same write, observer handles UI update
+- [x] **3.2** Replace `db.recordings.update.mutate()` with `workspaceRecordings.update()`: same write, observer handles UI update
   > transcription.ts: all 3 update calls switched to workspaceRecordings.update()
-- [x] **3.3** Replace `db.recordings.delete.mutate()` with `workspaceRecordings.delete(id)` — add audio URL cleanup before delete
+- [x] **3.3** Replace `db.recordings.delete.mutate()` with `workspaceRecordings.delete(id)`: add audio URL cleanup before delete
   > recording-actions.ts, recordings page, home page: sync delete + revokeAudioUrl
 - [x] **3.4** Same for transformation create/update/delete
   > COMPLETED: Editor refactored to flat workspace field names. Create/update now use workspace.batch() for atomic writes.
-- [x] **3.5** Same for transformation step create/update/delete (these were previously nested in transformation objects — now they're their own table)
+- [x] **3.5** Same for transformation step create/update/delete (these were previously nested in transformation objects: now they're their own table)
   > COMPLETED: Configuration.svelte refactored from dot-notation to flat field names. Steps passed as separate `steps` prop. Editor, Test, Create, Edit all use workspace types and workspace.batch() for saves.
 
 ### Phase 4: Handle transformation runs (incremental)
@@ -264,19 +264,19 @@ export const workspaceRecordings = createWorkspaceRecordings();
 - [x] **4.1** Create `$lib/state/workspace-transformation-runs.svelte.ts` for new runs
   > Created with getByTransformationId(), getByRecordingId(), getLatestByRecordingId() helpers
 - [ ] **4.2** Wire new transformation run creation to workspace tables
-  > Deferred — the run lifecycle (create → addStep → completeStep/failStep → complete) is deeply coupled to DbService. Requires refactoring `runTransformation()` in transformer.ts.
+  > Deferred: the run lifecycle (create → addStep → completeStep/failStep → complete) is deeply coupled to DbService. Requires refactoring `runTransformation()` in transformer.ts.
 - [x] **4.3** Keep `db.runs.getByTransformationId` / `db.runs.getByRecordingId` as fallback for historical runs not in workspace tables
   > Kept. Also switched recording read in transformer.ts from DbService to workspaceRecordings.get().
 
 ### Phase 5: Cleanup
 
 - [ ] **5.1** Remove recordings/transformations queries and mutations from `$lib/query/db.ts`
-  > Deferred — transformation create/update mutations are still in use (Editor uses old type). Recording queries (getAll, getLatest, getById) are no longer used in components. Can remove recording queries but must keep transformation queries for now.
+  > Deferred: transformation create/update mutations are still in use (Editor uses old type). Recording queries (getAll, getLatest, getById) are no longer used in components. Can remove recording queries but must keep transformation queries for now.
 - [ ] **5.2** Remove `dbKeys.recordings.*` and `dbKeys.transformations.*` from query key registry
-  > Deferred — same reason as 5.1. Some query keys still referenced by transformation mutations and the transformer's invalidateQueries calls.
+  > Deferred: same reason as 5.1. Some query keys still referenced by transformation mutations and the transformer's invalidateQueries calls.
 - [x] **5.3** Keep `db.recordings.getAudioPlaybackUrl` (audio blobs aren't in Yjs)
 - [ ] **5.4** Update `$lib/query/README.md` to document the new architecture
-  > Deferred — the README documents the full query layer pattern. Updating it requires documenting the new workspace state pattern and when to use each. This is a writing task for after the transition completes.
+  > Deferred: the README documents the full query layer pattern. Updating it requires documenting the new workspace state pattern and when to use each. This is a writing task for after the transition completes.
 - [x] **5.5** Update `$lib/state/README.md` to document the new state modules
   > Added documentation for all 4 new workspace state modules.
 
@@ -288,7 +288,7 @@ The workspace IndexedDB persistence loads asynchronously. `workspace.tables.reco
 1. Initialize empty and let the `observe()` callback populate rows as persistence loads
 2. Or await `workspace.whenReady` before initializing (blocks first render)
 
-Option 1 is better — the UI shows empty briefly, then populates as data loads. This is the same behavior users see today with TanStack Query's loading state.
+Option 1 is better. The UI shows empty briefly, then populates as data loads. This is the same behavior users see today with TanStack Query's loading state.
 
 ### Audio blob access after migration
 
@@ -300,7 +300,7 @@ The `observe()` callback fires `map.delete(id)`. Any component using `workspaceR
 
 ### Concurrent writes from multiple tabs
 
-Yjs CRDTs handle this automatically — last-writer-wins at the row level. Both tabs' SvelteMap observers fire, and both converge to the same state. No conflict resolution needed in the app layer.
+Yjs CRDTs handle this automatically: last-writer-wins at the row level. Both tabs' SvelteMap observers fire, and both converge to the same state. No conflict resolution needed in the app layer.
 
 ### Transformation steps are a separate table now
 
@@ -311,10 +311,10 @@ The old model had `transformation.steps[]` as a nested array. The workspace mode
 1. **Should we await `workspace.whenReady` in the state modules?**
    - Option A: Initialize empty, let `observe()` populate (faster first render, brief empty state)
    - Option B: Block on `whenReady` before creating the SvelteMap (no empty flash, slower startup)
-   - **Recommendation**: Option A — matches how TanStack Query works today (loading → data). The brief empty state is already handled by existing UI loading patterns.
+   - **Recommendation**: Option A: matches how TanStack Query works today (loading → data). The brief empty state is already handled by existing UI loading patterns.
 
 2. **What about the transcription query (`$lib/query/transcription.ts`)?**
-   - This isn't a DbService read — it calls external APIs (OpenAI, Groq, etc.). TanStack Query's mutation tracking is useful here for loading state.
+   - This isn't a DbService read: it calls external APIs (OpenAI, Groq, etc.). TanStack Query's mutation tracking is useful here for loading state.
    - **Recommendation**: Keep TanStack Query for transcription. Only remove it for workspace table reads/writes.
 
 3. **Should `workspaceRecordings.sorted` use `$derived` or recompute on access?**
@@ -324,7 +324,7 @@ The old model had `transformation.steps[]` as a nested array. The workspace mode
 
 4. **How do we handle the transition period where some components still use TanStack Query?**
    - During incremental migration, both systems will be active
-   - **Recommendation**: That's fine. They read from different sources but the data is the same. Don't try to sync them — just migrate component by component.
+   - **Recommendation**: That's fine. They read from different sources but the data is the same. Don't try to sync them: just migrate component by component.
 
 ## Success Criteria
 
@@ -337,14 +337,14 @@ The old model had `transformation.steps[]` as a nested array. The workspace mode
 
 ## References
 
-- `apps/whispering/src/lib/state/workspace-settings.svelte.ts` — THE reference pattern (SvelteMap + Yjs KV observers)
-- `apps/whispering/src/lib/state/device-config.svelte.ts` — reference for per-key localStorage + SvelteMap
-- `apps/whispering/src/lib/state/README.md` — documents when to use state vs query layer
-- `apps/whispering/src/lib/query/db.ts` — the query layer being replaced (12 queries/mutations)
-- `apps/whispering/src/lib/workspace.ts` — workspace table definitions (target)
-- `packages/workspace/src/workspace/table-helper.ts` — table API (set, get, getAll, observe, etc.)
-- `specs/20260314T070000-database-to-workspace-migration.md` — prerequisite (data is already in workspace tables)
-- `specs/20260312T170000-whispering-workspace-polish-and-migration.md` — parent spec
+- `apps/whispering/src/lib/state/workspace-settings.svelte.ts`: THE reference pattern (SvelteMap + Yjs KV observers)
+- `apps/whispering/src/lib/state/device-config.svelte.ts`: reference for per-key localStorage + SvelteMap
+- `apps/whispering/src/lib/state/README.md`: documents when to use state vs query layer
+- `apps/whispering/src/lib/query/db.ts`: the query layer being replaced (12 queries/mutations)
+- `apps/whispering/src/lib/workspace.ts`: workspace table definitions (target)
+- `packages/workspace/src/workspace/table-helper.ts`: table API (set, get, getAll, observe, etc.)
+- `specs/20260314T070000-database-to-workspace-migration.md`: prerequisite (data is already in workspace tables)
+- `specs/20260312T170000-whispering-workspace-polish-and-migration.md`: parent spec
 
 ## Review
 
@@ -352,7 +352,7 @@ The old model had `transformation.steps[]` as a nested array. The workspace mode
 
 ### Summary
 
-Replaced TanStack Query + DbService read/write path with reactive SvelteMap state modules backed by Yjs workspace tables for recordings. The recordings data flow is now fully workspace-backed: components read from SvelteMap, writes go directly to workspace tables, Yjs observers keep the SvelteMap in sync. Transformations are partially migrated—reads and deletes use workspace state, but create/update still go through TanStack Query mutations because the Editor component uses the old dot-notation field schema.
+Replaced TanStack Query + DbService read/write path with reactive SvelteMap state modules backed by Yjs workspace tables for recordings. The recordings data flow is now fully workspace-backed: components read from SvelteMap, writes go directly to workspace tables, Yjs observers keep the SvelteMap in sync. Transformations are partially migrated. Reads and deletes use workspace state, but create/update still go through TanStack Query mutations because the Editor component uses the old dot-notation field schema.
 
 ### Deviations from Spec
 

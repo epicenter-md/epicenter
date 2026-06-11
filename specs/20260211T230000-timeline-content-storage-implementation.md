@@ -2,7 +2,7 @@
 
 **Date**: 2026-02-11
 **Status**: Implemented
-**Implementation notes**: Phases 1-3 completed. `timeline-helpers.ts` created with `createTimeline()` factory API (slightly different from spec's standalone functions — uses object with methods instead). `binaryStore` removed from YjsFileSystem. Tests exist in `yjs-file-system.test.ts` covering timeline length, mode switching, and binary persistence. Phase 4 (richtext) remains deferred.
+**Implementation notes**: Phases 1-3 completed. `timeline-helpers.ts` created with `createTimeline()` factory API (slightly different from spec's standalone functions: uses object with methods instead). `binaryStore` removed from YjsFileSystem. Tests exist in `yjs-file-system.test.ts` covering timeline length, mode switching, and binary persistence. Phase 4 (richtext) remains deferred.
 **Supersedes**: `specs/20260211T100000-simplified-ytext-content-store.md`
 **See also**: `specs/20260211T220000-yjs-content-doc-multi-mode-research.md` (decision record with full rationale)
 

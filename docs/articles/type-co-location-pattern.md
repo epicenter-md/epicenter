@@ -219,7 +219,7 @@ When you're reading code, you're building a mental model. You're asking question
 
 Every time you have to jump to another file, you're interrupting that process. You're context-switching. You're paying a cognitive tax.
 
-Co-locating related code minimizes that tax. The type, the implementation, the tests—if they're all part of the same story, they should live together.
+Co-locating related code minimizes that tax. The type, the implementation, the tests. If they're all part of the same story, they should live together.
 
 I've seen this pattern in other contexts too. React components that export their prop types. GraphQL resolvers that export their type definitions. Database models that export their validation schemas.
 

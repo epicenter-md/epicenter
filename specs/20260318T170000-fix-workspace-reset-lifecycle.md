@@ -1,13 +1,13 @@
 # Fix Workspace Reset Lifecycle
 
 **Date**: 2026-03-18
-**Status**: Approved (v2 — stable client approach)
+**Status**: Approved (v2: stable client approach)
 
 ## The insight
 
 **Don't replace the workspace client. Ever.**
 
-The previous approach (rebuild-not-mutate) required every consumer module to handle client rotation via `$effect.root(() => $effect(...))` — 10 files changed, `workspace.ts` renamed to `.svelte.ts`, `$state`, `$derived`, the works.
+The previous approach (rebuild-not-mutate) required every consumer module to handle client rotation via `$effect.root(() => $effect(...))`: 10 files changed, `workspace.ts` renamed to `.svelte.ts`, `$state`, `$derived`, the works.
 
 The simpler approach: keep the same client object forever. Toggle encryption state in-place. Clear data in-place. Observers stay alive because the Y.Doc never changes. Actions stay valid because the client never changes. No `$state`, no `$effect`, no file renames, zero consumer changes.
 
@@ -15,7 +15,7 @@ The simpler approach: keep the same client object forever. Toggle encryption sta
 
 ### 1. Dead observers after reset
 
-`workspace.reset()` replaces the client — observers bound at module init are attached to a disposed Y.Doc. **Fix: don't replace the client. Remove `reset()`.**
+`workspace.reset()` replaces the client: observers bound at module init are attached to a disposed Y.Doc. **Fix: don't replace the client. Remove `reset()`.**
 
 ### 2. Stale tool closures after reset
 
@@ -23,7 +23,7 @@ The simpler approach: keep the same client object forever. Toggle encryption sta
 
 ### 3. Encryption mutated onto a live client
 
-`activateEncryption(key)` fires synthetic events with `undefined as unknown as Y.Transaction`. **Accepted trade-off: we keep `activateEncryption()` but add `deactivateEncryption()` for sign-out. Synthetic events only fire when plaintext data exists at sign-in time (rare — store is usually empty after sign-out wipe).**
+`activateEncryption(key)` fires synthetic events with `undefined as unknown as Y.Transaction`. **Accepted trade-off: we keep `activateEncryption()` but add `deactivateEncryption()` for sign-out. Synthetic events only fire when plaintext data exists at sign-in time (rare: store is usually empty after sign-out wipe).**
 
 ### 4. Scattered session side effects
 
@@ -57,9 +57,9 @@ This restores:
 - `$derived(...)` on tool exports → back to plain `const`
 - `$effect.root(() => $effect(...))` in saved-tab-state, bookmark-state, tool-trust → back to direct `.observe()` calls
 
-### Step 1: `packages/workspace` — add `deactivateEncryption()` + `clearAllData()` (~25 lines)
+### Step 1: `packages/workspace`: add `deactivateEncryption()` + `clearAllData()` (~25 lines)
 
-**`y-keyvalue-lww-encrypted.ts`** — add method to the return object:
+**`y-keyvalue-lww-encrypted.ts`**: add method to the return object:
 ```typescript
 deactivateEncryption() {
     currentKey = undefined;
@@ -67,12 +67,12 @@ deactivateEncryption() {
 },
 ```
 
-**`YKeyValueLwwEncrypted<T>` type** — add to the type:
+**`YKeyValueLwwEncrypted<T>` type**: add to the type:
 ```typescript
 deactivateEncryption(): void;
 ```
 
-**`create-workspace.ts`** — add two methods to the client object:
+**`create-workspace.ts`**: add two methods to the client object:
 ```typescript
 deactivateEncryption() {
     workspaceKey = undefined;
@@ -91,13 +91,13 @@ clearAllData() {
 },
 ```
 
-**`WorkspaceClient` type in `types.ts`** — add:
+**`WorkspaceClient` type in `types.ts`**: add:
 ```typescript
 deactivateEncryption(): void;
 clearAllData(): void;
 ```
 
-### Step 2: `workspace.ts` — remove `reset()`, simplify to stable client
+### Step 2: `workspace.ts`: remove `reset()`, simplify to stable client
 
 Remove `createWorkspaceState()` wrapper and `reset()` method. The workspace is a static singleton that never changes:
 
@@ -130,7 +130,7 @@ export const workspace = createWorkspaceState();
 
 Note: `workspace.current` getter stays (consumers already use it). We just remove `reset()` and make `client` a `const`.
 
-### Step 3: `auth.svelte.ts` — replace `workspace.reset()` with clear-in-place
+### Step 3: `auth.svelte.ts`: replace `workspace.reset()` with clear-in-place
 
 Remove `createKeyManager` usage. Replace all `workspace.reset()` calls with the clear-in-place sequence.
 
@@ -177,19 +177,19 @@ async function restoreFromCache(userId: string): Promise<boolean> {
 
 ### Step 4: Remove scattered side effects
 
-**`AuthForm.svelte`** — remove `workspace.current.extensions.sync.reconnect()` after sign-in.
+**`AuthForm.svelte`**: remove `workspace.current.extensions.sync.reconnect()` after sign-in.
 
-**`App.svelte`** — remove `authState.onExternalSignIn(() => workspace.current.extensions.sync.reconnect())`. Remove the unsub cleanup.
+**`App.svelte`**: remove `authState.onExternalSignIn(() => workspace.current.extensions.sync.reconnect())`. Remove the unsub cleanup.
 
-**`SyncStatusIndicator.svelte`** — if it calls `reconnect()` after sign-out, remove that too.
+**`SyncStatusIndicator.svelte`**: if it calls `reconnect()` after sign-out, remove that too.
 
 ## What we're NOT changing
 
-- Consumer modules: saved-tab-state, bookmark-state, tool-trust, browser-state, chat-state, SyncStatusIndicator — **ZERO changes** (observers stay alive)
-- `workspaceTools`, `workspaceDefinitions`, `workspaceToolTitles` — stay as static `const` exports (actions never change)
-- `workspace.current` getter pattern — stays (consumers already use it, harmless)
-- `createKeyManager` in `packages/workspace` — stays, we just stop importing it in app code
-- `activateEncryption()` on `WorkspaceClient` — stays, still used for sign-in
+- Consumer modules: saved-tab-state, bookmark-state, tool-trust, browser-state, chat-state, SyncStatusIndicator: **ZERO changes** (observers stay alive)
+- `workspaceTools`, `workspaceDefinitions`, `workspaceToolTitles`: stay as static `const` exports (actions never change)
+- `workspace.current` getter pattern: stays (consumers already use it, harmless)
+- `createKeyManager` in `packages/workspace`: stays, we just stop importing it in app code
+- `activateEncryption()` on `WorkspaceClient`: stays, still used for sign-in
 
 ## Todo
 
@@ -198,22 +198,22 @@ async function restoreFromCache(userId: string): Promise<boolean> {
 - [x] Add `deactivateEncryption()` + `clearAllData()` to `create-workspace.ts` client object
 - [x] Add `deactivateEncryption()` + `clearAllData()` to `WorkspaceClient` type in `types.ts`
 - [x] Remove `reset()` from `workspace.ts`, make `client` a `const`
-- [x] Update `auth.svelte.ts` — replace `workspace.reset()` with `deactivateSession()`, add `activateSession()` / `restoreFromCache()`
-- [x] Update `AuthForm.svelte` — remove `reconnect()` call
-- [x] Update `App.svelte` — remove `onExternalSignIn` callback + `reconnect()`
+- [x] Update `auth.svelte.ts`: replace `workspace.reset()` with `deactivateSession()`, add `activateSession()` / `restoreFromCache()`
+- [x] Update `AuthForm.svelte`: remove `reconnect()` call
+- [x] Update `App.svelte`: remove `onExternalSignIn` callback + `reconnect()`
 - [x] Add tests for `deactivateEncryption()` in `y-keyvalue-lww-encrypted.test.ts`
-- [x] Add test for `clearAllData()` in `create-workspace.test.ts` — 4 tests (removes all rows, fires observers, clears encrypted data, write after clear)
-- [x] Run `bun test` in `packages/workspace` — 497 pass, 0 fail
-- [x] Run `bun run typecheck` across the monorepo — all errors pre-existing (packages/ui `#/` imports, workspace `NumberKeysOf`)
+- [x] Add test for `clearAllData()` in `create-workspace.test.ts`: 4 tests (removes all rows, fires observers, clears encrypted data, write after clear)
+- [x] Run `bun test` in `packages/workspace`: 497 pass, 0 fail
+- [x] Run `bun run typecheck` across the monorepo: all errors pre-existing (packages/ui `#/` imports, workspace `NumberKeysOf`)
 
 ## Constraints
 
 - Use `bun`, not npm/yarn/pnpm
 - Use `type` not `interface`
 - No `as any`, `@ts-ignore`, `@ts-expect-error`
-- Every change should be as simple as possible — minimal diff
+- Every change should be as simple as possible: minimal diff
 - Follow existing patterns in packages/workspace for new methods
-- `activateEncryption()` stays — it's the sign-in mechanism
+- `activateEncryption()` stays: it's the sign-in mechanism
 - The synthetic `undefined as unknown as Y.Transaction` in `activateEncryption()` is accepted (only fires on rare plaintext→encrypted transitions, all consumers ignore the transaction)
 
 ## Review
@@ -225,24 +225,24 @@ async function restoreFromCache(userId: string): Promise<boolean> {
 **Status**: 12/12 items complete
 All lifecycle changes shipped across multiple commits:
 
-- `e20b21154` — revert: undo second $effect re-application — stable client approach
-- `dd3d7d743` — feat(workspace): add deactivateEncryption() and clearAllData() to workspace client
-- `439424456` — refactor(tab-manager): remove reset(), make workspace client const
-- `c8c00be94` — refactor(tab-manager): replace workspace.reset() with clear-in-place lifecycle
-- `331a6c755` — refactor(tab-manager): export workspace client directly, remove .current wrapper
-- `4251ca18c` — refactor(tab-manager): remove workspace.current indirection across consumers
-- `aa8002bf2` — chore(tab-manager): update stale comment in App.svelte
-- `2380be1ae` — docs(tab-manager): fix stale JSDoc referencing workspace rebuild
-- `259d4d614` — docs(workspace): fix stale JSDoc referencing workspace.reset()
+- `e20b21154`: revert: undo second $effect re-application: stable client approach
+- `dd3d7d743`: feat(workspace): add deactivateEncryption() and clearAllData() to workspace client
+- `439424456`: refactor(tab-manager): remove reset(), make workspace client const
+- `c8c00be94`: refactor(tab-manager): replace workspace.reset() with clear-in-place lifecycle
+- `331a6c755`: refactor(tab-manager): export workspace client directly, remove .current wrapper
+- `4251ca18c`: refactor(tab-manager): remove workspace.current indirection across consumers
+- `aa8002bf2`: chore(tab-manager): update stale comment in App.svelte
+- `2380be1ae`: docs(tab-manager): fix stale JSDoc referencing workspace rebuild
+- `259d4d614`: docs(workspace): fix stale JSDoc referencing workspace.reset()
 
 Dead `$effect.root`/`$effect` wrappers confirmed removed from all three consumer files:
-- `SyncStatusIndicator.svelte` — plain init-time calls
-- `browser-state.svelte.ts` — plain Yjs observers
-- `chat-state.svelte.ts` — plain Yjs observers + `whenReady`
+- `SyncStatusIndicator.svelte`: plain init-time calls
+- `browser-state.svelte.ts`: plain Yjs observers
+- `chat-state.svelte.ts`: plain Yjs observers + `whenReady`
 
 ### Remaining
 
-None — all items complete.
+None: all items complete.
 
 ### Verification
 

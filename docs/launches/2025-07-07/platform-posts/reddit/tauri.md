@@ -27,7 +27,7 @@ export const ClipboardServiceLive = window.__TAURI_INTERNALS__
   : createClipboardServiceWeb();     // Browser APIs
 ```
 
-This pattern (detailed in [services/README.md](https://github.com/EpicenterHQ/epicenter/tree/main/apps/whispering/src/lib/services)) means I write business logic once. The desktop app gets native performance, system tray, global shortcuts—while the web version uses browser APIs. Same UI, same logic, different runtime. Components don't even know which implementation they're using—it's all swapped at build time, so every component works identically on both platforms.
+This pattern (detailed in [services/README.md](https://github.com/EpicenterHQ/epicenter/tree/main/apps/whispering/src/lib/services)) means I write business logic once. The desktop app gets native performance, system tray, global shortcuts. While the web version uses browser APIs. Same UI, same logic, different runtime. Components don't even know which implementation they're using. It's all swapped at build time, so every component works identically on both platforms.
 
 Some Tauri challenges I solved:
 - Smooth auto-updater experience without annoying users
@@ -36,7 +36,7 @@ Some Tauri challenges I solved:
 - macOS audio permissions with Info.plist and Entitlements.plist
 - Global shortcuts that actually work across all three OS
 
-The app itself solves a real problem—transcription services charging $30/month for API wrappers. With Whispering, you bring your own API key and pay cents directly to providers. Been using it daily and it's saved me hundreds.
+The app itself solves a real problem. Transcription services charging $30/month for API wrappers. With Whispering, you bring your own API key and pay cents directly to providers. Been using it daily and it's saved me hundreds.
 
 Built with Svelte 5 + Tauri. The combination of Rust backend performance and modern web UI has been fantastic.
 

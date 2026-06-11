@@ -47,7 +47,7 @@ type EncryptedBlob = {
 
 This creates one problem:
 
-1. **33% storage overhead from base64 encoding.** AES-256-GCM ciphertext is the same length as plaintext. The nonce (12 bytes) and auth tag (16 bytes) add a fixed 28 bytes. But `bytesToBase64` then expands the entire binary payload by 4:3. For a 200-byte value, encrypted storage is ~318 bytes instead of ~230 bytes—59% overhead vs the achievable 15%.
+1. **33% storage overhead from base64 encoding.** AES-256-GCM ciphertext is the same length as plaintext. The nonce (12 bytes) and auth tag (16 bytes) add a fixed 28 bytes. But `bytesToBase64` then expands the entire binary payload by 4:3. For a 200-byte value, encrypted storage is ~318 bytes instead of ~230 bytes: 59% overhead vs the achievable 15%.
 
 ### Desired State
 
@@ -70,18 +70,18 @@ Verified directly from source code in `dmonad/lib0` (the encoding library Yjs us
 
 | Data Type | Type Tag | Encoding Method | Handles recursion? |
 |-----------|----------|----------------|--------------------|
-| undefined | 127 | — | — |
-| null | 126 | — | — |
-| integer | 125 | writeVarInt | — |
-| float32 | 124 | writeFloat32 | — |
-| float64 | 123 | writeFloat64 | — |
-| bigint | 122 | writeBigInt64 | — |
-| boolean (false) | 121 | — | — |
-| boolean (true) | 120 | — | — |
-| string | 119 | writeVarString | — |
-| object | 118 | custom | Yes — recurses `writeAny` per property value |
-| array | 117 | custom | Yes — recurses `writeAny` per element |
-| **Uint8Array** | **116** | **writeVarUint8Array** | — |
+| undefined | 127 |: |: |
+| null | 126 |: |: |
+| integer | 125 | writeVarInt |: |
+| float32 | 124 | writeFloat32 |: |
+| float64 | 123 | writeFloat64 |: |
+| bigint | 122 | writeBigInt64 |: |
+| boolean (false) | 121 |: |: |
+| boolean (true) | 120 |: |: |
+| string | 119 | writeVarString |: |
+| object | 118 | custom | Yes: recurses `writeAny` per property value |
+| array | 117 | custom | Yes: recurses `writeAny` per element |
+| **Uint8Array** | **116** | **writeVarUint8Array** |: |
 
 **Critical path for our use case:**
 
@@ -107,7 +107,7 @@ const readAnyLookupTable = [
   readVarString,            // 119
   decoder => { /* object: recurses readAny */ }, // 118
   decoder => { /* array: recurses readAny */ },  // 117
-  readVarUint8Array          // 116 — returns Uint8Array
+  readVarUint8Array          // 116: returns Uint8Array
 ]
 ```
 
@@ -117,7 +117,7 @@ Round-trip is symmetric. `readAny` for type 116 calls `readVarUint8Array`, which
 
 - This encoding has been stable across all `lib0@0.2.x` versions (current: `^0.2.117`)
 - DeepWiki confirms `writeAny`/`readAny` type tags are unchanged between Yjs v13 and v14
-- The encoding table is the core binary format contract—changing it would break all existing documents
+- The encoding table is the core binary format contract. Changing it would break all existing documents
 
 ### Storage Overhead Comparison
 
@@ -146,10 +146,10 @@ Concrete numbers:
 
 | Decision | Choice | Rationale |
 |----------|--------|-----------|
-| Version bump `v: 1` → `v: 2` | **No** | No backward compatibility needed. Monorepo deploys atomically—all clients update together. Keeping `v: 1` avoids union types and version dispatch. |
+| Version bump `v: 1` → `v: 2` | **No** | No backward compatibility needed. Monorepo deploys atomically. All clients update together. Keeping `v: 1` avoids union types and version dispatch. |
 | Keep `{ v, ct }` wrapper object | Yes | Preserves `isEncryptedBlob` shape-checking pattern. Alternative (bare `Uint8Array`) loses version info. |
 | `isEncryptedBlob` checks `ct instanceof Uint8Array` | Yes | Direct type check, no ambiguity. `typeof ct === 'string'` removed entirely. |
-| Remove `bytesToBase64`/`base64ToBytes` from crypto exports | No—keep for now | Still used by `apps/api/src/app.ts` for key transport (JSON over HTTP). Separate concern from blob storage. |
+| Remove `bytesToBase64`/`base64ToBytes` from crypto exports | No. Keep for now | Still used by `apps/api/src/app.ts` for key transport (JSON over HTTP). Separate concern from blob storage. |
 | `encryptValue` returns `{ v: 1, ct: Uint8Array }` | Yes | All writes use binary. No base64 in the encrypt path. |
 | `decryptValue` uses `blob.ct` directly | Yes | No version dispatch. Single code path. |
 | Backward compatibility with old base64 `ct: string` | **None** | Old data is not migrated. Coordinated deploy means no mixed-version clients. |
@@ -202,10 +202,10 @@ decryptValue(blob, key)
 
 ### Phase 2: Test Updates
 
-- [x] **2.1** Update `crypto.test.ts` — shape assertions expect `{ v: 1, ct: Uint8Array }`
-- [x] **2.2** Update `crypto.test.ts` — tampered ciphertext/nonce tests use Uint8Array operations
-- [x] **2.3** Update `crypto.test.ts` — isEncryptedBlob tests check `v: 1` + `Uint8Array` only
-- [x] **2.4** Update `y-keyvalue-lww-encrypted.test.ts` — corrupt blob entries use `Uint8Array` instead of string
+- [x] **2.1** Update `crypto.test.ts`: shape assertions expect `{ v: 1, ct: Uint8Array }`
+- [x] **2.2** Update `crypto.test.ts`: tampered ciphertext/nonce tests use Uint8Array operations
+- [x] **2.3** Update `crypto.test.ts`: isEncryptedBlob tests check `v: 1` + `Uint8Array` only
+- [x] **2.4** Update `y-keyvalue-lww-encrypted.test.ts`: corrupt blob entries use `Uint8Array` instead of string
 - [x] **2.5** Add binary storage overhead benchmark test
 
 ### Phase 3: Documentation Updates
@@ -232,7 +232,7 @@ Current guard checks `Object.keys(value).length === 2 && v === 1 && ct instanceo
 
 ## Success Criteria
 
-- [x] `encryptValue` returns `{ v: 1, ct: Uint8Array }` — no base64 in the hot path
+- [x] `encryptValue` returns `{ v: 1, ct: Uint8Array }`: no base64 in the hot path
 - [x] `decryptValue` round-trips correctly using `blob.ct` directly
 - [x] `isEncryptedBlob` checks `v === 1 && ct instanceof Uint8Array`
 - [x] All existing tests pass (crypto, encrypted KV, comparison)
@@ -256,7 +256,7 @@ Current guard checks `Object.keys(value).length === 2 && v === 1 && ct instanceo
 |------|-----|
 | `packages/workspace/src/shared/y-keyvalue/y-keyvalue-lww-encrypted.ts` | Uses `encryptValue`/`decryptValue`/`isEncryptedBlob` via imports. The `EncryptedBlob \| T` union type widens automatically. No code changes. |
 | `packages/workspace/src/shared/y-keyvalue/y-keyvalue-lww.ts` | Unaware of encryption. Stores whatever value type it receives. |
-| `apps/api/src/app.ts` | Uses `bytesToBase64` for key transport over JSON—separate concern, no change |
+| `apps/api/src/app.ts` | Uses `bytesToBase64` for key transport over JSON. Separate concern, no change |
 
  ## Review
 

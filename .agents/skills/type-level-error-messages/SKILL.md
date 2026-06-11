@@ -128,8 +128,8 @@ A `unique symbol` works for nominal types on objects (`type Brand<T, K> = T & { 
 
 Compile-time validation only catches authoring inside the helper's parameter context. Authors can bypass it with:
 
-- `Object.fromEntries(dynamic)` — TS widens key type to `string`, the predicate becomes vacuous.
-- `as` cast — explicit bypass.
+- `Object.fromEntries(dynamic)`: TS widens key type to `string`, the predicate becomes vacuous.
+- `as` cast: explicit bypass.
 - Helper called from a `.js` file in a mixed codebase.
 
 So pair the type-level check with a runtime check inside the helper:

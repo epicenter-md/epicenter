@@ -10,7 +10,7 @@ import { defineBackground } from 'wxt/utils/define-background';
 
 export default defineBackground(() => {
 	// Open side panel when the extension icon is clicked (Chromium-based browsers).
-	// Firefox uses sidebar_action manifest key — no runtime call needed.
+	// Firefox uses sidebar_action manifest key: no runtime call needed.
 	if (!import.meta.env.FIREFOX) {
 		browser.sidePanel
 			.setPanelBehavior({ openPanelOnActionClick: true })

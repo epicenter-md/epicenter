@@ -3,7 +3,7 @@
 **Status**: Superseded by `20260307T000000-remove-server-remote-standalone.md`
 **Date**: 2026-03-05
 **Supersedes**: Parts of `20260304T120000-hub-sidecar-architecture.md` (package structure section)
-**Superseded by**: `20260305T180000-server-remote-adapter-architecture.md` (adapter hosting model — splits adapters into separate packages)
+**Superseded by**: `20260305T180000-server-remote-adapter-architecture.md` (adapter hosting model: splits adapters into separate packages)
 
 ## Summary
 
@@ -13,9 +13,9 @@ Consolidate six server-related packages (`server-elysia`, `server-hub`, `server-
 
 The current package topology has accidental complexity:
 
-1. **`server-elysia`** exists only because both `server-hub` and `server-sidecar` used Elysia. With the hub moving to Hono, the sidecar is its only consumer — the abstraction layer is no longer justified.
+1. **`server-elysia`** exists only because both `server-hub` and `server-sidecar` used Elysia. With the hub moving to Hono, the sidecar is its only consumer: the abstraction layer is no longer justified.
 2. **`server-hub`** (Elysia) and **`server-cloudflare`** (Hono) implement the same logical hub with different frameworks. The Hono version is strictly more capable (persistent sync via DO SQLite, OAuth provider, HTTP sync). Maintaining two hub implementations is wasteful.
-3. The shared Hono routes in `server-cloudflare` (auth, AI chat, provider proxy, health) are already framework-portable — they use only `fetch()`, `Response`, and Hono middleware. Only the sync transport and storage are Cloudflare-specific.
+3. The shared Hono routes in `server-cloudflare` (auth, AI chat, provider proxy, health) are already framework-portable: they use only `fetch()`, `Response`, and Hono middleware. Only the sync transport and storage are Cloudflare-specific.
 
 ## Target Architecture
 
@@ -74,17 +74,17 @@ The current package topology has accidental complexity:
 
 ## Naming Decision: `sync-core`
 
-The `sync-core` package is server-side only — the client `sync` package does not import it. Alternative names considered:
+The `sync-core` package is server-side only. The client `sync` package does not import it. Alternative names considered:
 
-- **`sync-protocol`** — Accurate for encode/decode, but doesn't capture room management and storage.
-- **`sync-server`** — Captures everything, but collides with the actual server packages.
-- **`sync-core`** (keep) — "Core sync infrastructure that servers build on." Not perfect, but not confusing enough to justify the churn of renaming.
+- **`sync-protocol`**: Accurate for encode/decode, but doesn't capture room management and storage.
+- **`sync-server`**: Captures everything, but collides with the actual server packages.
+- **`sync-core`** (keep): "Core sync infrastructure that servers build on." Not perfect, but not confusing enough to justify the churn of renaming.
 
 **Decision**: Keep `sync-core`. The name is adequate and renaming creates unnecessary migration work across all consumers.
 
 ## Detailed Design
 
-### 1. `server-remote` — Hono Hub Server
+### 1. `server-remote`: Hono Hub Server
 
 #### Directory Structure
 
@@ -101,8 +101,8 @@ packages/server-remote/
 │   │   └── index.ts
 │   │
 │   ├── proxy/
-│   │   ├── chat.ts                # POST /ai/chat — structured AI completions
-│   │   ├── passthrough.ts         # ALL /proxy/:provider/* — transparent proxy
+│   │   ├── chat.ts                # POST /ai/chat: structured AI completions
+│   │   ├── passthrough.ts         # ALL /proxy/:provider/*: transparent proxy
 │   │   └── index.ts
 │   │
 │   ├── sync/
@@ -141,7 +141,7 @@ These already exist in `server-cloudflare` and are not Cloudflare-specific:
 | `POST /ai/chat` | `proxy/chat.ts` | Raw fetch passthrough to provider (from `server-cloudflare`). See AI implementation note below. |
 | `ALL /proxy/:provider/*` | `proxy/passthrough.ts` | Unchanged from current `server-cloudflare` |
 
-The auth middleware (`auth/middleware.ts`) is also shared — it extracts tokens from `?token=` (WS) or `Authorization` (HTTP) headers and calls `auth.api.getSession()`. This logic is identical between adapters.
+The auth middleware (`auth/middleware.ts`) is also shared. It extracts tokens from `?token=` (WS) or `Authorization` (HTTP) headers and calls `auth.api.getSession()`. This logic is identical between adapters.
 
 #### AI Chat Implementation Note
 
@@ -149,7 +149,7 @@ The auth middleware (`auth/middleware.ts`) is also shared — it extracts tokens
 
 | | `server-hub` (Elysia) | `server-cloudflare` (Hono) |
 |---|---|---|
-| Implementation | TanStack AI `chat()` with `agentLoopStrategy: maxIterations(10)`, tool definitions, system prompts | Raw `fetch()` passthrough — forwards request body to provider, streams response back |
+| Implementation | TanStack AI `chat()` with `agentLoopStrategy: maxIterations(10)`, tool definitions, system prompts | Raw `fetch()` passthrough: forwards request body to provider, streams response back |
 | Tool loop | Yes (up to 10 iterations) | No |
 | `systemPrompt` / `modelOptions` / `conversationId` | Yes | No |
 | SSE streaming | `toServerSentEventsResponse(stream)` | Raw `Response(providerResponse.body)` |
@@ -162,7 +162,7 @@ The sync route is the only place where adapters diverge significantly:
 
 **Cloudflare adapter** (`adapters/cloudflare/app.ts`):
 ```typescript
-// Forwards to Durable Object — the DO handles WS upgrade, HTTP sync, everything
+// Forwards to Durable Object: the DO handles WS upgrade, HTTP sync, everything
 app.all('/rooms/:room', (c) => {
   const id = c.env.YJS_ROOM.idFromName(c.req.param('room'));
   return c.env.YJS_ROOM.get(id).fetch(c.req.raw);
@@ -212,17 +212,17 @@ The Cloudflare adapter always runs in `betterAuth` mode (it's the hosted tier).
 #### Factory API
 
 ```typescript
-// Cloudflare — no factory needed, it's a Worker export
+// Cloudflare: no factory needed, it's a Worker export
 // adapters/cloudflare/worker.ts
 export { YjsRoom } from './yjs-room';
 export default app;
 
-// Standalone — factory function
+// Standalone: factory function
 // adapters/standalone/server.ts
 export function createRemoteHub(config: StandaloneHubConfig): {
   app: Hono;
   start(): Promise<{ port: number }>;
-  stop(): Promise<void>;  // Calls roomManager.destroy() — clears all rooms, timers, and Y.Docs
+  stop(): Promise<void>;  // Calls roomManager.destroy(): clears all rooms, timers, and Y.Docs
 };
 ```
 
@@ -244,7 +244,7 @@ for (const signal of ['SIGINT', 'SIGTERM'] as const) {
 
 When running in `betterAuth` mode, the standalone adapter supports bootstrapping an initial admin user via `ADMIN_EMAIL` and `ADMIN_PASSWORD` environment variables. This is called at startup, silently no-ops if the user already exists.
 
-### 2. `server-local` — Elysia Sidecar
+### 2. `server-local`: Elysia Sidecar
 
 #### Directory Structure
 
@@ -283,13 +283,13 @@ packages/server-local/
 | `server-elysia/src/auth.ts` | `server-local/src/auth/token-guard.ts` | ~27 | `createTokenGuardPlugin` + `extractBearerToken` re-export |
 | `server-elysia/src/server.ts` | `server-local/src/server.ts` | ~18 | `listenWithFallback` + `DEFAULT_PORT` |
 
-`createHttpSyncPlugin` from `server-elysia` is **not** inlined — the sidecar doesn't use it. If HTTP sync is ever needed for the sidecar, it can be added directly.
+`createHttpSyncPlugin` from `server-elysia` is **not** inlined. The sidecar doesn't use it. If HTTP sync is ever needed for the sidecar, it can be added directly.
 
 #### No Logic Changes
 
-The sidecar's behavior is unchanged. This is purely a packaging refactor — moving code from a shared dependency into the only package that uses it.
+The sidecar's behavior is unchanged. This is purely a packaging refactor: moving code from a shared dependency into the only package that uses it.
 
-### 3. `sync-core` — Unchanged
+### 3. `sync-core`: Unchanged
 
 No changes to `sync-core`. Its current contents are well-placed:
 
@@ -303,37 +303,37 @@ No changes to `sync-core`. Its current contents are well-placed:
 | `providers.ts` | Provider constants used by server-remote (AI/proxy) and server-local (OpenCode) |
 | `discovery/` | Discovery protocol used by both server tiers |
 
-### 4. `sync` — Unchanged
+### 4. `sync`: Unchanged
 
 Client-side package. No changes.
 
 ## Migration Plan
 
-### Phase 1: Create `server-remote` (scaffold) — DONE
+### Phase 1: Create `server-remote` (scaffold): DONE
 
 1. ~~Create `packages/server-remote/` with the directory structure above~~
 2. ~~Move shared routes from `server-cloudflare` into `src/proxy/` and `src/auth/`~~
 3. ~~Move Cloudflare-specific code into `src/adapters/cloudflare/`~~
 4. ~~Keep `wrangler.toml`, `drizzle.config.ts`, `better-auth.config.ts`, and `.dev.vars` in `adapters/cloudflare/` (not at package root). Run `wrangler` commands from that subdirectory. Update `package.json` scripts to `cd` into the adapter directory or use `--config` flags.~~
 5. ~~Verify the Cloudflare adapter builds and deploys identically~~
-6. ~~Delete `packages/server-cloudflare/` — fully absorbed into `server-remote`~~
+6. ~~Delete `packages/server-cloudflare/`: fully absorbed into `server-remote`~~
 
 **Acceptance**: ~~`wrangler dev` works from `adapters/cloudflare/`. All existing Cloudflare functionality preserved.~~
 - `bun install` succeeds, `tsc --noEmit` passes clean in `packages/server-remote`
-- `packages/server-cloudflare/` deleted — all code now lives under `server-remote/src/adapters/cloudflare/`
+- `packages/server-cloudflare/` deleted: all code now lives under `server-remote/src/adapters/cloudflare/`
 - `package.json` scripts use `--config` flags to point wrangler/drizzle-kit at the adapter subdirectory
 
-### Phase 2: Standalone adapter — DONE
+### Phase 2: Standalone adapter: DONE
 
 1. ~~Create `src/adapters/standalone/`~~
-2. ~~Implement `sync-adapter.ts` — Hono WebSocket upgrade using `sync-core`'s `createRoomManager` + handlers~~
+2. ~~Implement `sync-adapter.ts`: Hono WebSocket upgrade using `sync-core`'s `createRoomManager` + handlers~~
 3. ~~Port auth modes from `server-hub` (none/token/betterAuth) into standalone auth config~~
 4. ~~Port AI chat and proxy routes (already shared from Phase 1)~~
 5. ~~Implement `createRemoteHub()` factory~~
 
 **Acceptance**: ~~`createRemoteHub({ auth: { mode: 'token', token: 'test' } })` starts and passes the same test suite as current `server-hub`.~~
 
-### Phase 3: Create `server-local` (rename + inline) — DONE
+### Phase 3: Create `server-local` (rename + inline): DONE
 
 1. ~~Rename `packages/server-sidecar/` → `packages/server-local/`~~
 2. ~~Copy `server-elysia/src/sync/ws/plugin.ts` → `server-local/src/sync/ws-plugin.ts`~~
@@ -341,16 +341,16 @@ Client-side package. No changes.
 4. ~~Copy `server-elysia/src/auth.ts` → `server-local/src/auth/token-guard.ts`~~
 5. ~~Copy `server-elysia/src/server.ts` → `server-local/src/server.ts`~~
 6. ~~Update all imports in `server-local` to use local paths instead of `@epicenter/server-elysia`~~
-7. ~~Update `sidecar.test.ts` — change `import { DEFAULT_PORT } from '@epicenter/server-elysia'` to local import~~
+7. ~~Update `sidecar.test.ts`: change `import { DEFAULT_PORT } from '@epicenter/server-elysia'` to local import~~
 8. ~~Remove `@epicenter/server-elysia` from `server-local`'s dependencies~~
 
 **Acceptance**: ~~All existing sidecar tests pass (42 tests across 5 files). All 14 WS sync plugin tests pass. No import of `@epicenter/server-elysia` remains.~~
 
-### Phase 4: Update CLI + delete old packages — DONE
+### Phase 4: Update CLI + delete old packages: DONE
 
-1. ~~Update `packages/cli/src/commands/hub-command.ts` — change `import { createHub } from '@epicenter/server-hub'` → `import { createRemoteHub } from '@epicenter/server-remote'`~~
-2. ~~Update `packages/cli/src/commands/sidecar-command.ts` — change `import('@epicenter/server-sidecar')` → `import('@epicenter/server-local')`~~
-3. ~~Update `packages/cli/package.json` — replace `@epicenter/server-hub` and `@epicenter/server-sidecar` with `@epicenter/server-remote` and `@epicenter/server-local`~~
+1. ~~Update `packages/cli/src/commands/hub-command.ts`: change `import { createHub } from '@epicenter/server-hub'` → `import { createRemoteHub } from '@epicenter/server-remote'`~~
+2. ~~Update `packages/cli/src/commands/sidecar-command.ts`: change `import('@epicenter/server-sidecar')` → `import('@epicenter/server-local')`~~
+3. ~~Update `packages/cli/package.json`: replace `@epicenter/server-hub` and `@epicenter/server-sidecar` with `@epicenter/server-remote` and `@epicenter/server-local`~~
 4. ~~Delete `packages/server-elysia/`~~
 5. ~~Delete `packages/server-hub/`~~
 6. ~~Delete `packages/server-cloudflare/`~~ (already deleted in Phase 1)
@@ -361,11 +361,11 @@ Client-side package. No changes.
 
 ## Resolved Questions
 
-1. **Standalone sync persistence**: **Ephemeral.** The hub is an ephemeral relay by design — the sidecar (server-local) owns persistence via `.yjs` workspace files. The Cloudflare adapter only uses DO SQLite because Durable Objects can be evicted from memory at any time (hibernation) and must rebuild state on wake. A long-lived standalone process doesn't have this constraint — clients resync their full state on reconnect via the SyncStep1/SyncStep2 handshake.
+1. **Standalone sync persistence**: **Ephemeral.** The hub is an ephemeral relay by design: the sidecar (server-local) owns persistence via `.yjs` workspace files. The Cloudflare adapter only uses DO SQLite because Durable Objects can be evicted from memory at any time (hibernation) and must rebuild state on wake. A long-lived standalone process doesn't have this constraint: clients resync their full state on reconnect via the SyncStep1/SyncStep2 handshake.
 
 2. **Package naming**: **`server-remote` / `server-local`**. Describes the deployment topology clearly.
 
-3. **Hono WebSocket adapter choice**: **Bun-native (`hono/bun`)** for the standalone adapter. This is the primary self-hosted runtime. Node support via `@hono/node-ws` can be added later if needed — it's a separate adapter, not a breaking change. The Cloudflare adapter continues using the DO Hibernation API.
+3. **Hono WebSocket adapter choice**: **Bun-native (`hono/bun`)** for the standalone adapter. This is the primary self-hosted runtime. Node support via `@hono/node-ws` can be added later if needed: it's a separate adapter, not a breaking change. The Cloudflare adapter continues using the DO Hibernation API.
 
 4. **Standalone session storage**: **In-memory.** Sufficient for single-instance self-hosted deployments. Redis adds operational complexity (separate process) without meaningful benefit at this scale. If multi-instance standalone deployments become a need, Redis can be added as an optional `secondaryStorage` backend later.
 
@@ -375,15 +375,15 @@ The standalone adapter uses `upgradeWebSocket` from `hono/bun`. Key translation 
 
 | Elysia pattern | Hono/Bun equivalent |
 |---|---|
-| `ws.sendBinary(data)` | `ws.send(data)` — accepts `Uint8Array` directly |
-| `ws.raw` (Bun `ServerWebSocket`) | `ws.raw` — same underlying object, may need type assertion |
-| `ws.raw.ping()` | `(ws.raw as ServerWebSocket).ping()` — Hono doesn't expose `ping()` directly |
-| `queueMicrotask` for initial messages | May not be needed — test if `ws.send()` works in `onOpen` |
-| `setInterval` ping/pong keepalive | Same pattern — no automatic keepalive in Hono or Bun |
-| `WeakMap<ws.raw, state>` keying | Same pattern — `ws.raw` is the stable identity |
-| CORS middleware on WS routes | **Must skip** — CORS headers conflict with upgrade. Same pattern `server-cloudflare` already uses. |
+| `ws.sendBinary(data)` | `ws.send(data)`: accepts `Uint8Array` directly |
+| `ws.raw` (Bun `ServerWebSocket`) | `ws.raw`: same underlying object, may need type assertion |
+| `ws.raw.ping()` | `(ws.raw as ServerWebSocket).ping()`: Hono doesn't expose `ping()` directly |
+| `queueMicrotask` for initial messages | May not be needed: test if `ws.send()` works in `onOpen` |
+| `setInterval` ping/pong keepalive | Same pattern: no automatic keepalive in Hono or Bun |
+| `WeakMap<ws.raw, state>` keying | Same pattern: `ws.raw` is the stable identity |
+| CORS middleware on WS routes | **Must skip**: CORS headers conflict with upgrade. Same pattern `server-cloudflare` already uses. |
 
-Incoming binary messages arrive as `ArrayBuffer` — wrap with `new Uint8Array(evt.data as ArrayBuffer)`.
+Incoming binary messages arrive as `ArrayBuffer`: wrap with `new Uint8Array(evt.data as ArrayBuffer)`.
 
 The `websocket` handler must be exported alongside `fetch` from the Bun entry point:
 ```typescript
@@ -393,7 +393,7 @@ export default { fetch: app.fetch, websocket }
 
 ## Monorepo Impact (Audited)
 
-External consumers of deleted packages — **only `packages/cli`**:
+External consumers of deleted packages: **only `packages/cli`**:
 
 | File | Current import | New import |
 |---|---|---|
@@ -426,7 +426,7 @@ After implementing Phases 1-2, we identified friction with the nested adapter ap
 
 1. Every wrangler command needs `--config` flags pointing at the nested `wrangler.toml`
 2. Self-hosters have to navigate into `src/adapters/standalone/` to find the entry point
-3. Mixed dependencies — Cloudflare and standalone deps share one `package.json`
+3. Mixed dependencies: Cloudflare and standalone deps share one `package.json`
 
 **Decision:** Split adapters into separate packages. See `20260305T180000-server-remote-adapter-architecture.md` for the full spec.
 

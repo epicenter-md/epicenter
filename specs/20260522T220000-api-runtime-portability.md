@@ -41,18 +41,18 @@ Cloudflare runtime in four places that have no Bun/Node equivalent:
 // apps/api/src/room.ts:37
 import { DurableObject } from 'cloudflare:workers';
 
-// apps/api/src/room.ts:167  — the actor model
+// apps/api/src/room.ts:167 : the actor model
 export class Room extends DurableObject { /* ... */ }
 
-// apps/api/src/room.ts:339  — the WebSocket Hibernation API
+// apps/api/src/room.ts:339 : the WebSocket Hibernation API
 this.ctx.acceptWebSocket(server);
 
-// apps/api/src/app.ts:526  — DO naming + routing
+// apps/api/src/app.ts:526 : DO naming + routing
 const roomStub = c.env.ROOM.get(c.env.ROOM.idFromName(roomName));
 ```
 
 ```ts
-// apps/api/src/auth/encryption.ts:1  — module-scope Worker env, unresolvable on Node
+// apps/api/src/auth/encryption.ts:1 : module-scope Worker env, unresolvable on Node
 import { env } from 'cloudflare:workers';
 ```
 
@@ -340,7 +340,7 @@ socket gets a factory because hibernation persistence is work the seam earns.
 ### The contract and the two factories (`RoomUpdateLog`)
 
 ```ts
-// src/room/contracts.ts — vocabulary. Both factories implement it.
+// src/room/contracts.ts: vocabulary. Both factories implement it.
 export type RoomUpdateLog = {
   loadAll(): Uint8Array[];
   append(update: Uint8Array): void;
@@ -348,7 +348,7 @@ export type RoomUpdateLog = {
   byteSize(): number;
 };
 
-// src/room/backends/durable-object.ts — deps: the DO SQL handle
+// src/room/backends/durable-object.ts: deps: the DO SQL handle
 export function createDurableObjectUpdateLog(sql: SqlStorage) {
   sql.exec(`CREATE TABLE IF NOT EXISTS updates (id INTEGER PRIMARY KEY AUTOINCREMENT, data BLOB NOT NULL)`);
   return {
@@ -359,7 +359,7 @@ export function createDurableObjectUpdateLog(sql: SqlStorage) {
   } satisfies RoomUpdateLog;
 }
 
-// src/room/backends/bun-sqlite.ts — deps: an open bun:sqlite Database
+// src/room/backends/bun-sqlite.ts: deps: an open bun:sqlite Database
 export function createBunSqliteUpdateLog(db: Database) {
   db.run(`CREATE TABLE IF NOT EXISTS updates (id INTEGER PRIMARY KEY AUTOINCREMENT, data BLOB NOT NULL)`);
   const insert = db.query('INSERT INTO updates (data) VALUES (?)');
@@ -388,11 +388,11 @@ The same pattern produces `createDurableObjectRoomRegistry(env.ROOM)` and
 ### `app.ts` route change
 
 ```ts
-// BEFORE (app.ts:526) — Cloudflare-only
+// BEFORE (app.ts:526): Cloudflare-only
 const roomStub = c.env.ROOM.get(c.env.ROOM.idFromName(roomName));
 return roomStub.fetch(c.req.raw);
 
-// AFTER — backend-agnostic; c.var.rooms is a RoomRegistry
+// AFTER: backend-agnostic; c.var.rooms is a RoomRegistry
 const room = c.var.rooms.getRoom(roomName);
 return room.handleUpgrade(c.req.raw);
 ```
@@ -417,7 +417,7 @@ Discourse/GitLab self-host shape.
 ### Two entry files, two wirings
 
 ```
-STEP 1: src/worker.ts   (Cloudflare — keeps export default app)
+STEP 1: src/worker.ts   (Cloudflare: keeps export default app)
 ─────────────────────────────────────────────────────────────
   rooms   = createDurableObjectRoomRegistry(env.ROOM)
   assets  = createR2AssetStore(env.ASSETS_BUCKET)
@@ -425,7 +425,7 @@ STEP 1: src/worker.ts   (Cloudflare — keeps export default app)
   auth    = createAuth({ ..., secondaryStorage: KV })
   static  = env.ASSETS Fetcher
 
-STEP 2: src/server.ts   (Bun — new)
+STEP 2: src/server.ts   (Bun: new)
 ─────────────────────────────────────────────────────────────
   rooms   = createBunRoomRegistry({ dir: `${DATA_DIR}/rooms` })
   assets  = createFilesystemAssetStore(`${DATA_DIR}/assets`)

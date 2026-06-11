@@ -14,11 +14,11 @@ First-principles design of the encryption API for a local-first workspace platfo
 
 A local-first workspace must encrypt data at rest with per-user, per-workspace keys while satisfying five constraints that pull in different directions:
 
-1. **The key comes from the server** (HKDF-derived from a master secret)—but the workspace must work *before* the key arrives
-2. **The workspace client is a module-level singleton** that can't be recreated—but sign-out must wipe local data
-3. **Offline restarts must decrypt immediately** from a cached key—but the cache must be clearable on sign-out
-4. **Encryption must be transparent** to components—table helpers (`set`, `get`, `observe`) must not change signature
-5. **The API must be obvious** to a developer who's never seen it—no hidden modes, no surprising failures
+1. **The key comes from the server** (HKDF-derived from a master secret): but the workspace must work *before* the key arrives
+2. **The workspace client is a module-level singleton** that can't be recreated. But sign-out must wipe local data
+3. **Offline restarts must decrypt immediately** from a cached key. But the cache must be clearable on sign-out
+4. **Encryption must be transparent** to components. Table helpers (`set`, `get`, `observe`) must not change signature
+5. **The API must be obvious** to a developer who's never seen it. No hidden modes, no surprising failures
 
 ### Current State
 
@@ -49,7 +49,7 @@ This spec documents *why* each of these exists by deriving them from first princ
 
 **Key finding**: Bitwarden's "lock vs sign-out" distinction maps directly to the three-mode state machine. Lock = clear key but keep cached data. Sign-out = clear everything. None mode (no key ever seen) is unique to this system's progressive enhancement requirement.
 
-**Key finding**: Signal and Bitwarden both use HKDF with unversioned domain-separation info strings (per RFC 5869 §3.2). The info string is *not* a version identifier—if derivation changes, the blob format version handles migration. Vault Transit, AWS KMS, and libsodium follow the same convention.
+**Key finding**: Signal and Bitwarden both use HKDF with unversioned domain-separation info strings (per RFC 5869 §3.2). The info string is *not* a version identifier. If derivation changes, the blob format version handles migration. Vault Transit, AWS KMS, and libsodium follow the same convention.
 
 ### Why XChaCha20-Poly1305 Over AES-256-GCM
 
@@ -61,11 +61,11 @@ This spec documents *why* each of these exists by deriving them from first princ
 | Sync/async | WebCrypto: async only | `@noble/ciphers`: synchronous |
 | Used by | NIST, TLS 1.3 | libsodium, WireGuard, Noise Protocol |
 
-**Implication**: The CRDT hot path (`table.set()`) must be synchronous—394+ call sites depend on it. WebCrypto's async-only AES-256-GCM would require making `set()` async, breaking every consumer. XChaCha20-Poly1305 via `@noble/ciphers` (Cure53-audited, pure JS) is the only viable choice.
+**Implication**: The CRDT hot path (`table.set()`) must be synchronous: 394+ call sites depend on it. WebCrypto's async-only AES-256-GCM would require making `set()` async, breaking every consumer. XChaCha20-Poly1305 via `@noble/ciphers` (Cure53-audited, pure JS) is the only viable choice.
 
 ### Why Composition Over Fork for the CRDT Wrapper
 
-Yjs `ContentAny` stores entry objects by **reference**. The inner CRDT (`YKeyValueLww`) uses `indexOf()` (strict `===`) to find entries in the Y.Array during conflict resolution. A fork that decrypts values into new objects would break `indexOf()`—the map entries would no longer be the same JS objects as the yarray entries.
+Yjs `ContentAny` stores entry objects by **reference**. The inner CRDT (`YKeyValueLww`) uses `indexOf()` (strict `===`) to find entries in the Y.Array during conflict resolution. A fork that decrypts values into new objects would break `indexOf()`: the map entries would no longer be the same JS objects as the yarray entries.
 
 **Implication**: Encryption must be a wrapper that transforms values at the boundary, not a modification of the CRDT internals. The inner CRDT stays unaware of encryption.
 
@@ -74,7 +74,7 @@ Yjs `ContentAny` stores entry objects by **reference**. The inner CRDT (`YKeyVal
 | Decision | Choice | Rationale |
 |---|---|---|
 | Number of encryption modes | Three: `plaintext`, `encrypted`, `locked` | Two modes can't distinguish "never had a key" (allow writes) from "lost key" (block writes). Four+ modes add complexity without solving new problems |
-| Mode names | `plaintext`, `encrypted`, `locked` | Maps to Bitwarden/1Password mental model. "None" is explicit about the security posture. "Unencrypted" was rejected—too close to "error state" connotation |
+| Mode names | `plaintext`, `encrypted`, `locked` | Maps to Bitwarden/1Password mental model. "None" is explicit about the security posture. "Unencrypted" was rejected. Too close to "error state" connotation |
 | Encryption boundary | Composition wrapper over CRDT (`createEncryptedYkvLww`) | Yjs reference equality constraint (see Research Findings). Fork would break `indexOf()` |
 | Cipher | XChaCha20-Poly1305 via `@noble/ciphers` | Synchronous (CRDT hot path), 2.3× faster than AES-256-GCM in pure JS, 24-byte nonce safe for random generation |
 | Key hierarchy | Two-level HKDF: user → workspace | Server derives once per session (not per workspace). Compromising one workspace key doesn't expose others |
@@ -124,7 +124,7 @@ Yjs `ContentAny` stores entry objects by **reference**. The inner CRDT (`YKeyVal
 |---|---|---|---|
 | `plaintext` | Writes plaintext to CRDT | Reads plaintext from CRDT | Fires with plaintext values |
 | `encrypted` | Encrypts, writes `EncryptedBlob` to CRDT | Decrypts from cache (or on-the-fly fallback) | Decrypts, fires with plaintext values |
-| `locked` | **Throws** ("Workspace is locked—sign in to write") | Returns cached plaintext from last unlocked session | No new events (writes blocked, remote changes undecryptable) |
+| `locked` | **Throws** ("Workspace is locked. Sign in to write") | Returns cached plaintext from last unlocked session | No new events (writes blocked, remote changes undecryptable) |
 
 ### Encryption Boundary in the Stack
 
@@ -176,7 +176,7 @@ ENCRYPTION_SECRETS="1:base64Secret"              ← Server environment variable
        │  New writes: JSON.stringify → XChaCha20-Poly1305 encrypt → EncryptedBlob
        │  Reads: EncryptedBlob → XChaCha20-Poly1305 decrypt → JSON.parse → plaintext
        ▼
-  Transparent operation — components unaware
+  Transparent operation: components unaware
 ```
 
 ### EncryptedBlob Binary Format
@@ -218,7 +218,7 @@ createWorkspace(definition)
         │
         └── clearLocalData() →  lock()
                                  for (callback of clearDataCallbacks) callback()
-                                 (LIFO order — last registered, first wiped)
+                                 (LIFO order: last registered, first wiped)
 ```
 
 ### Full Lifecycle: Creation → Sign-In → Sign-Out → Re-Sign-In
@@ -245,7 +245,7 @@ STEP 2: User signs in, key arrives
   client.tables.posts.set(...)    ← encrypts, stores EncryptedBlob
   client.tables.posts.get(...)    ← decrypts from cache (transparent)
 
-  // Old plaintext-mode entries stay plaintext — mixed mode handled at value level
+  // Old plaintext-mode entries stay plaintext: mixed mode handled at value level
   // Only new writes are encrypted
 
 STEP 3: Session expires (or tab backgrounded)
@@ -261,7 +261,7 @@ STEP 4: User signs out
   await client.clearLocalData();
 
   // Internally: lock() → wipe IndexedDB (clearData on persistence extension)
-  // Client singleton survives — ready for next sign-in
+  // Client singleton survives: ready for next sign-in
 
 STEP 5: App restarts offline, cached key available
 ────────────────────────────────────────────────────
@@ -269,12 +269,12 @@ STEP 5: App restarts offline, cached key available
   if (cachedKey) {
     const wsKey = await deriveWorkspaceKey(cachedKey, client.id);
     client.activateEncryption(wsKey);
-    // Immediate decryption — no server roundtrip needed
+    // Immediate decryption: no server roundtrip needed
   }
 
 STEP 6: New user signs in
 ──────────────────────────
-  // Same as step 2 — singleton workspace transitions back to 'encrypted'
+  // Same as step 2: singleton workspace transitions back to 'encrypted'
   // with the new user's key
 ```
 
@@ -283,7 +283,7 @@ STEP 6: New user signs in
 The workspace package provides the primitives. The app wires them to its auth system. This is the complete integration for a Svelte app:
 
 ```typescript
-// encryption-wiring.svelte.ts — the ENTIRE integration
+// encryption-wiring.svelte.ts: the ENTIRE integration
 import { base64ToBytes, deriveWorkspaceKey } from '@epicenter/workspace/shared/crypto';
 
 export function initEncryptionWiring() {
@@ -346,7 +346,7 @@ This handles wrong-key scenarios gracefully: `activateEncryption(wrongKey)` quar
 ### None-to-Encrypted Migration
 
 1. Workspace used in `plaintext` mode, entries written
-2. `activateEncryption(key)` called — mode transitions to `encrypted`
+2. `activateEncryption(key)` called: mode transitions to `encrypted`
 3. Existing plaintext entries stay plaintext in Y.Array (NOT re-encrypted)
 4. New writes are encrypted
 5. Mixed mode handled transparently: `isEncryptedBlob()` discriminates per value
@@ -356,8 +356,8 @@ This handles wrong-key scenarios gracefully: `activateEncryption(wrongKey)` quar
 
 1. `activateEncryption(key)` iterates `encryptedStores[]`
 2. Store 3 of 5 throws during activateEncryption
-3. Stores 1–2 (already unlocked) are rolled back to `locked`
-4. Error is rethrown — workspace is in consistent `locked` state
+3. Stores 1-2 (already unlocked) are rolled back to `locked`
+4. Error is rethrown: workspace is in consistent `locked` state
 5. No store is left in `encrypted` while others are `locked`
 
 ### Sign-Out During Active Writes
@@ -366,7 +366,7 @@ This handles wrong-key scenarios gracefully: `activateEncryption(wrongKey)` quar
 2. Sign-out triggers `clearLocalData()` which calls `lock()` first
 3. Any subsequent `set()` throws immediately ("Workspace is locked")
 4. `clearLocalData()` proceeds to wipe persisted data
-5. In-flight Yjs transactions that already committed are in ciphertext — IndexedDB wipe removes them
+5. In-flight Yjs transactions that already committed are in ciphertext: IndexedDB wipe removes them
 
 ### Offline Restart Without Cached Key
 
@@ -384,9 +384,9 @@ This handles wrong-key scenarios gracefully: `activateEncryption(wrongKey)` quar
 1. `clearLocalData()` calls `lock()` (succeeds)
 2. Iterates `clearDataCallbacks` in LIFO order
 3. One callback throws (e.g., IndexedDB API error)
-4. Error is caught and logged — iteration continues
+4. Error is caught and logged: iteration continues
 5. All callbacks are attempted regardless of individual failures
-6. Workspace is locked regardless — writes blocked, data may be partially wiped
+6. Workspace is locked regardless: writes blocked, data may be partially wiped
 
 ## Open Questions
 
@@ -397,7 +397,7 @@ This handles wrong-key scenarios gracefully: `activateEncryption(wrongKey)` quar
    - **Recommendation**: Add AAD binding. It's one line in `set()` and one in `maybeDecrypt()`, zero performance cost
 
 2. **Should `mode` be natively reactive (Svelte `$state` rune)?**
-   - Currently a plain getter—components can't `$effect` on `client.mode` directly
+   - Currently a plain getter. Components can't `$effect` on `client.mode` directly
    - Works today because mode changes are always caused by auth state changes, and the encryption wiring watches `authState`, not `client.mode`
    - If a non-auth source ever needed to trigger mode-dependent UI, this would need to change
    - **Recommendation**: Defer. Current indirection through `authState` is sufficient and avoids coupling workspace internals to Svelte reactivity
@@ -418,11 +418,11 @@ This handles wrong-key scenarios gracefully: `activateEncryption(wrongKey)` quar
 
 - [x] Three-mode state machine: `plaintext` → `encrypted` ↔ `locked`
 - [x] `mode`, `lock()`, `activateEncryption(key)`, `clearLocalData()` on `WorkspaceClient`
-- [x] Encryption transparent to table helpers — no signature changes
-- [x] Progressive enhancement — workspace works before key arrives
+- [x] Encryption transparent to table helpers: no signature changes
+- [x] Progressive enhancement: workspace works before key arrives
 - [x] Singleton survives sign-out via `clearLocalData()` (lock + wipe, no dispose)
 - [x] Offline restart decrypts immediately from cached key
-- [x] Unlock atomicity — rollback on partial failure
+- [x] Unlock atomicity: rollback on partial failure
 - [x] Quarantine with retry for wrong-key scenarios
 - [x] LIFO disposal and clearData ordering
 - [x] New developer can understand the wiring in under a minute
@@ -434,32 +434,32 @@ This spec was derived from first principles and constraints before examining the
 | Derived Design Element | Current Implementation | File |
 |---|---|---|
 | Three-mode state machine | `EncryptionMode = 'plaintext' \| 'locked' \| 'encrypted'` | `y-keyvalue-lww-encrypted.ts:125` |
-| Four methods on WorkspaceClient | `mode`, `lock()`, `activateEncryption(key)`, `clearLocalData()` | `types.ts:1288–1433` |
+| Four methods on WorkspaceClient | `mode`, `lock()`, `activateEncryption(key)`, `clearLocalData()` | `types.ts:1288-1433` |
 | Composition wrapper over CRDT | `createEncryptedYkvLww` wraps `YKeyValueLww` | `y-keyvalue-lww-encrypted.ts:220` |
 | Table helpers unaware of encryption | `createTable(ykv, def)` receives wrapper | `create-workspace.ts:167` |
-| `isEncryptedBlob()` discrimination | `value instanceof Uint8Array && value[0] === 1` | `crypto/index.ts:271–273` |
-| Two-level HKDF hierarchy | `deriveWorkspaceKey(userKey, workspaceId)` | `crypto/index.ts:377–399` |
-| Platform-agnostic `KeyCache` interface | `KeyCache` type (set/get/clear) | `crypto/key-cache.ts:74–81` |
-| XChaCha20-Poly1305 via `@noble/ciphers` | `xchacha20poly1305(key, nonce)` | `crypto/index.ts:58–59` |
-| Self-describing binary blob format | `[formatVersion, keyVersion, nonce(24), ct, tag(16)]` | `crypto/index.ts:70–95` |
-| Unlock rollback on partial failure | `try/catch` with re-lock loop | `create-workspace.ts:295–307` |
-| Quarantine with retry | `quarantine` map, retried in `activateEncryption()` | `y-keyvalue-lww-encrypted.ts:252, 479–528` |
-| LIFO clearData | Reverse iteration of `clearDataCallbacks` | `create-workspace.ts:313–323` |
+| `isEncryptedBlob()` discrimination | `value instanceof Uint8Array && value[0] === 1` | `crypto/index.ts:271-273` |
+| Two-level HKDF hierarchy | `deriveWorkspaceKey(userKey, workspaceId)` | `crypto/index.ts:377-399` |
+| Platform-agnostic `KeyCache` interface | `KeyCache` type (set/get/clear) | `crypto/key-cache.ts:74-81` |
+| XChaCha20-Poly1305 via `@noble/ciphers` | `xchacha20poly1305(key, nonce)` | `crypto/index.ts:58-59` |
+| Self-describing binary blob format | `[formatVersion, keyVersion, nonce(24), ct, tag(16)]` | `crypto/index.ts:70-95` |
+| Unlock rollback on partial failure | `try/catch` with re-lock loop | `create-workspace.ts:295-307` |
+| Quarantine with retry | `quarantine` map, retried in `activateEncryption()` | `y-keyvalue-lww-encrypted.ts:252, 479-528` |
+| LIFO clearData | Reverse iteration of `clearDataCallbacks` | `create-workspace.ts:313-323` |
 | Consumer-side encryption wiring | `encryption-wiring.svelte.ts` with `$effect` | `apps/tab-manager/.../encryption-wiring.svelte.ts` |
 
 **Why it matches**: The design space is heavily constrained. The singleton requirement eliminates recreation-based approaches. The synchronous CRDT hot path eliminates async crypto. The local-first requirement eliminates server-only encryption. The progressive enhancement requirement demands the three-mode state machine. The Yjs reference equality constraint demands the composition wrapper. Once these constraints are accepted, the design converges to essentially one solution.
 
 ## References
 
-- `packages/workspace/src/workspace/types.ts` — `WorkspaceClient` type with `mode`, `lock`, `activateEncryption`, `clearLocalData`
-- `packages/workspace/src/workspace/create-workspace.ts` — Builder that coordinates `encryptedStores[]`
-- `packages/workspace/src/shared/y-keyvalue/y-keyvalue-lww-encrypted.ts` — Three-mode encrypted CRDT wrapper
-- `packages/workspace/src/shared/crypto/index.ts` — XChaCha20-Poly1305 primitives, HKDF, blob format
-- `packages/workspace/src/shared/crypto/key-cache.ts` — Platform-agnostic key caching interface
-- `packages/workspace/src/workspace/lifecycle.ts` — Extension lifecycle (whenReady, dispose, clearData)
-- `apps/tab-manager/src/lib/state/encryption-wiring.svelte.ts` — Reference consumer wiring pattern
-- `apps/tab-manager/src/lib/state/auth.svelte.ts` — Auth state with encryptionKey flow
-- `docs/articles/why-e2e-encryption-keeps-failing.md` — Design philosophy context
-- `docs/articles/let-the-server-handle-encryption.md` — Server-managed key rationale
-- `specs/20260312T120000-y-keyvalue-lww-encrypted.md` — Original encrypted wrapper spec
-- `specs/20260314T064000-per-workspace-envelope-encryption.md` — Key hierarchy spec
+- `packages/workspace/src/workspace/types.ts`: `WorkspaceClient` type with `mode`, `lock`, `activateEncryption`, `clearLocalData`
+- `packages/workspace/src/workspace/create-workspace.ts`: Builder that coordinates `encryptedStores[]`
+- `packages/workspace/src/shared/y-keyvalue/y-keyvalue-lww-encrypted.ts`: Three-mode encrypted CRDT wrapper
+- `packages/workspace/src/shared/crypto/index.ts`: XChaCha20-Poly1305 primitives, HKDF, blob format
+- `packages/workspace/src/shared/crypto/key-cache.ts`: Platform-agnostic key caching interface
+- `packages/workspace/src/workspace/lifecycle.ts`: Extension lifecycle (whenReady, dispose, clearData)
+- `apps/tab-manager/src/lib/state/encryption-wiring.svelte.ts`: Reference consumer wiring pattern
+- `apps/tab-manager/src/lib/state/auth.svelte.ts`: Auth state with encryptionKey flow
+- `docs/articles/why-e2e-encryption-keeps-failing.md`: Design philosophy context
+- `docs/articles/let-the-server-handle-encryption.md`: Server-managed key rationale
+- `specs/20260312T120000-y-keyvalue-lww-encrypted.md`: Original encrypted wrapper spec
+- `specs/20260314T064000-per-workspace-envelope-encryption.md`: Key hierarchy spec

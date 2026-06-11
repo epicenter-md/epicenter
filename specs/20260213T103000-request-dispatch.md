@@ -10,7 +10,7 @@
 
 Cross-runtime action dispatch via a per-workspace `requests` table. Any client connected to a workspace's Y.Doc can invoke actions on another online client by writing a request row. The target client observes, executes, writes the response, and the row is eventually purged.
 
-This is not just cross-device — it's cross-runtime. A CLI tool, a desktop app, and a browser extension on the same machine can dispatch requests to each other through the same y-sweet document.
+This is not just cross-device. It's cross-runtime. A CLI tool, a desktop app, and a browser extension on the same machine can dispatch requests to each other through the same y-sweet document.
 
 ## Motivation
 
@@ -18,9 +18,9 @@ This is not just cross-device — it's cross-runtime. A CLI tool, a desktop app,
 
 Epicenter workspaces define actions (`defineQuery`, `defineMutation`) that run locally. But some actions only make sense on specific runtimes:
 
-- **Browser extension**: `closeTab`, `openTab`, `suspendTab` — requires `browser.tabs.*` API
-- **Desktop app (Tauri)**: `readLocalFile`, `showNotification` — requires OS access
-- **Server**: `sendEmail`, `runQuery` — requires server infrastructure
+- **Browser extension**: `closeTab`, `openTab`, `suspendTab`: requires `browser.tabs.*` API
+- **Desktop app (Tauri)**: `readLocalFile`, `showNotification`: requires OS access
+- **Server**: `sendEmail`, `runQuery`: requires server infrastructure
 
 A CLI tool wants to close a tab. It can't call `browser.tabs.remove()`. But the browser extension can. The CLI needs a way to say: "Hey browser, close this tab for me."
 
@@ -30,7 +30,7 @@ HTTP requires the target to accept incoming connections. Browser extensions can'
 
 ### Why Not Awareness Alone?
 
-Awareness is ephemeral — it vanishes on disconnect and has no request/response semantics. You can't write "close tab X" into awareness and expect a response back.
+Awareness is ephemeral. It vanishes on disconnect and has no request/response semantics. You can't write "close tab X" into awareness and expect a response back.
 
 ### The Solution
 
@@ -71,7 +71,7 @@ awareness.setLocalState({
 
 No action schemas, no capabilities, no complex objects. Just enough to answer: "Which devices are connected right now?"
 
-The `devices` table (already exists in tab-manager) stores richer metadata — names, browsers, last seen timestamps. Awareness tells you which of those devices are currently live.
+The `devices` table (already exists in tab-manager) stores richer metadata: names, browsers, last seen timestamps. Awareness tells you which of those devices are currently live.
 
 ### Action Discovery: Static Definitions
 
@@ -153,7 +153,7 @@ for (const request of pendingRequests) {
 	if (request.targetDeviceId !== myDeviceId) continue;
 	if (request.respondedAt !== null) continue;
 	if (Date.now() > request.expiresAt) {
-		// Stale — mark as expired and move on
+		// Stale: mark as expired and move on
 		requests.update({
 			id: request.id,
 			respondedAt: Date.now(),
@@ -374,14 +374,14 @@ No surprise tab closures.
 2. Chrome kills service worker (30s limit)
 3. Service worker restarts, re-observes requests table
 4. Pending requests that haven't expired are re-processed
-5. Idempotent execution: "close tab by URL" — if tab is already gone, noop
+5. Idempotent execution: "close tab by URL": if tab is already gone, noop
 
 ### Request Written During Sync Lag
 
 1. CLI writes request
 2. Y-sweet sync has a few hundred ms lag
 3. Browser-ext hasn't received the update yet
-4. Normal Yjs behavior — the request arrives on the next sync cycle
+4. Normal Yjs behavior: the request arrives on the next sync cycle
 5. Within the 30s TTL, this is fine
 
 ## What This Supersedes
@@ -410,7 +410,7 @@ This spec simplifies to:
 
 ### Phase 2: Request Processor
 
-- [ ] **2.1** Create `request-processor.ts` — observe requests table, execute matching requests
+- [ ] **2.1** Create `request-processor.ts`: observe requests table, execute matching requests
 - [ ] **2.2** Implement `closeTab` action (by URL, idempotent)
 - [ ] **2.3** Implement `openTab` action (create tab with URL)
 - [ ] **2.4** Wire processor into `background.ts`
@@ -441,10 +441,10 @@ This spec simplifies to:
 
 ## References
 
-- `packages/epicenter/docs/architecture/action-dispatch.md` — Architecture doc (to be updated)
-- `apps/tab-manager/src/entrypoints/background.ts` — Background sync logic
-- `apps/tab-manager/src/lib/epicenter/browser.schema.ts` — Table definitions
-- `apps/tab-manager/src/lib/device-id.ts` — Device ID management
-- `packages/epicenter/src/extensions/y-sweet-sync.ts` — Y-Sweet provider (exposes awareness)
-- `specs/20260212T132200-events-based-tab-management.md` — Superseded spec
-- `specs/20260213T003200-suspended-tabs.md` — Suspended tabs (complementary feature)
+- `packages/epicenter/docs/architecture/action-dispatch.md`: Architecture doc (to be updated)
+- `apps/tab-manager/src/entrypoints/background.ts`: Background sync logic
+- `apps/tab-manager/src/lib/epicenter/browser.schema.ts`: Table definitions
+- `apps/tab-manager/src/lib/device-id.ts`: Device ID management
+- `packages/epicenter/src/extensions/y-sweet-sync.ts`: Y-Sweet provider (exposes awareness)
+- `specs/20260212T132200-events-based-tab-management.md`: Superseded spec
+- `specs/20260213T003200-suspended-tabs.md`: Suspended tabs (complementary feature)

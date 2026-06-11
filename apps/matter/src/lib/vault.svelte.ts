@@ -13,16 +13,16 @@
  * Lifecycle: opening a vault IS observing it, so the watcher starts at
  * construction. `whenReady` resolves once it is armed (the seed scan has run, so
  * the store holds the folder's current contents) and rejects if it cannot be, which
- * the UI gates on with `{#await}`. `dispose()` stops the OS watch. The `vaultSession`
- * singleton owns the one open vault and disposes the previous when you switch
- * folders, so no component drives the watcher with an effect.
+ * the UI gates on with `{#await}`. `dispose()` stops the OS watch. The keyed route
+ * component (`/vault/[id]`) owns one vault's lifetime, constructing it on mount and
+ * disposing it on destroy, so no module singleton or standing effect drives the
+ * watcher; the set of open vaults is just a persisted list (`open-vaults.svelte.ts`).
  *
  * Desktop-only: it talks to Tauri directly (no platform seam). Develop with
  * `bun run tauri dev`.
  */
 
 import { invoke, Channel } from '@tauri-apps/api/core';
-import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { SvelteMap } from 'svelte/reactivity';
 import { extractErrorMessage } from 'wellcrafted/error';
 import { Err, type Result, tryAsync } from 'wellcrafted/result';
@@ -49,7 +49,7 @@ const basename = (path: string) => path.split(/[/\\]/).pop() ?? path;
  * and fills from the first pushed batch once `watch()` runs, so there is no
  * separate initial read and no read-then-watch gap.
  */
-function createVault(path: string) {
+export function createVault(path: string) {
 	const folderName = basename(path);
 
 	// ONE store, keyed by filename: each entry is a `Result` that is either a
@@ -61,6 +61,10 @@ function createVault(path: string) {
 	// Set when the LAST save could not reach disk. A save never mutates the store
 	// (that is the watcher's job); this is the only state a write touches.
 	let writeError = $state<string | undefined>(undefined);
+	// Bumped after each successful `matter.sqlite` rebuild, so a reader can key its query on
+	// the mirror being fresh rather than on the in-memory rows (which lead the file by the
+	// async rebuild). The WHERE filter reacts to this; see `reconcileMirror`.
+	let mirrorVersion = $state(0);
 	// Memoized: Schema.Compile runs only when matter.json changes, not on every
 	// .md change. A single-file change reclassifies against these cached columns.
 	const loaded = $derived(loadModel(modelText));
@@ -114,11 +118,11 @@ function createVault(path: string) {
 	});
 
 	/**
-	 * Reconcile `<path>/matter.sqlite` from the current VALID rows: a FULL
-	 * DROP + CREATE + INSERT, so the file is a pure function of the folder (self-healing,
-	 * no incremental drift to debug, no stale row an agent could read). The SvelteMap
-	 * stays the live in-app surface; this file is the EXTERNAL one. An unmodeled folder
-	 * has no typed table, so it is skipped. Fire-and-forget: a failure never blocks the
+	 * Reconcile `<path>/matter.sqlite` from the current readable rows (valid AND drafts
+	 * in progress): a FULL DROP + CREATE + INSERT, so the file is a pure function of the
+	 * folder (self-healing, no incremental drift to debug, no stale row an agent could
+	 * read). The SvelteMap stays the live in-app surface; this file is the EXTERNAL one.
+	 * An unmodeled folder has no typed table, so it is skipped. Fire-and-forget: a failure never blocks the
 	 * grid and self-heals on the next batch (the rebuild is a full DROP + CREATE + INSERT),
 	 * so a transient error needs no surfacing. The JS projector builds all the SQL; the
 	 * Rust `write_mirror` command only executes it and binds the rows.
@@ -135,7 +139,11 @@ function createVault(path: string) {
 			view.model,
 			view.conformance,
 		);
-		void invoke('write_mirror', { path, schema, insert, rows: tuples }).catch(() => {});
+		void invoke('write_mirror', { path, schema, insert, rows: tuples })
+			.then(() => {
+				mirrorVersion++; // the file is now fresh: wake any reader keyed on the mirror
+			})
+			.catch(() => {});
 	}
 
 	/**
@@ -208,13 +216,13 @@ function createVault(path: string) {
 
 	/**
 	 * Filter the folder with a SQL WHERE clause: run it against the mirror
-	 * (`matter.sqlite`, read-only) and return the FILE NAMES of the matching VALID rows, so the
+	 * (`matter.sqlite`, read-only) and return the FILE NAMES of the matching rows, so the
 	 * grid can narrow its live rows by a SQL predicate while still rendering them with the
-	 * rich, editable widgets. Only valid rows are in the mirror, so the clause filters
-	 * those; invalid / unparseable files (the "needs attention" axis) are not matchable
-	 * here. The clause is interpolated raw, it is the user's own query on their own local
-	 * file and the connection is read-only, so the worst a bad clause does is return an
-	 * error.
+	 * rich, editable widgets. Every readable row is in the mirror (drafts included), with
+	 * a missing cell as NULL, so a clause like `format = 'carousel'` finds an in-progress
+	 * draft too; only unparseable files (which never became a row) are absent. The clause
+	 * is interpolated raw, it is the user's own query on their own local file and the
+	 * connection is read-only, so the worst a bad clause does is return an error.
 	 */
 	function matchingFileNames(
 		where: string,
@@ -247,7 +255,7 @@ function createVault(path: string) {
 		if (disposed) void invoke('unwatch_folder', { id });
 		else watchId = id;
 	});
-	/** Stop the OS watch. The session calls this when it swaps to another folder. */
+	/** Stop the OS watch. The keyed route component calls this when it is torn down (a tab switch or close). */
 	function dispose(): void {
 		disposed = true;
 		if (watchId !== undefined) void invoke('unwatch_folder', { id: watchId });
@@ -271,6 +279,11 @@ function createVault(path: string) {
 		get writeError(): string | undefined {
 			return writeError;
 		},
+		/** Increments after each successful `matter.sqlite` rebuild. Read it (reactively) to
+		 *  re-run only once the mirror is fresh, rather than the moment the in-memory rows change. */
+		get mirrorVersion(): number {
+			return mirrorVersion;
+		},
 	};
 }
 
@@ -286,65 +299,3 @@ export type Vault = ReturnType<typeof createVault>;
  * drop-in rather than a vault pretending to watch a folder.
  */
 export type FolderGridVault = Pick<Vault, 'folderName' | 'read' | 'saveField' | 'saveBody'>;
-
-/** Prompt for a folder; `null` if the dialog was cancelled. */
-async function openFolderDialog(): Promise<string | null> {
-	const path = await openDialog({
-		directory: true,
-		multiple: false,
-		title: 'Open vault folder',
-	});
-	if (path === null || Array.isArray(path)) return null;
-	return path;
-}
-
-/**
- * The one open folder. A module singleton because the desktop app shows a single vault at a
- * time, swapped by "Open folder". It owns the open flow (dialog then {@link createVault}) and
- * the open vault's lifetime, disposing the previous watcher when you switch, so the page just
- * reads `current` and renders. The `/demo` route does NOT use this (it builds its own
- * in-memory vault), which is why {@link FolderGridVault} consumers stay vault-agnostic.
- */
-function createVaultSession() {
-	let current = $state<Vault>();
-	let opening = $state(false);
-	let openError = $state<string | undefined>(undefined);
-
-	/**
-	 * Prompt for a folder and open it, disposing the previously open one. A cancelled dialog
-	 * is a no-op; a failure surfaces in `openError`.
-	 */
-	async function open(): Promise<void> {
-		opening = true;
-		openError = undefined;
-		try {
-			const path = await openFolderDialog();
-			if (path !== null) {
-				current?.dispose();
-				current = createVault(path);
-			}
-		} catch (cause) {
-			openError = extractErrorMessage(cause);
-		} finally {
-			opening = false;
-		}
-	}
-
-	return {
-		/** The open vault, or `undefined` before the first folder is opened. */
-		get current(): Vault | undefined {
-			return current;
-		},
-		/** True while the folder dialog and open are in flight. */
-		get opening(): boolean {
-			return opening;
-		},
-		/** Set if opening the folder failed (a cancel is not a failure). */
-		get openError(): string | undefined {
-			return openError;
-		},
-		open,
-	};
-}
-
-export const vaultSession = createVaultSession();

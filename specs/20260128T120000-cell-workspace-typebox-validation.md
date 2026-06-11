@@ -11,7 +11,7 @@ Cell workspace provides integrated TypeBox validation with JIT-compiled validato
 
 ## Background
 
-Cell workspace uses external JSON schemas (`SchemaFieldDefinition`) that differ from core's `Field` types. The schema is advisory—validation flags issues but doesn't reject data. This requires:
+Cell workspace uses external JSON schemas (`SchemaFieldDefinition`) that differ from core's `Field` types. The schema is advisory. Validation flags issues but doesn't reject data. This requires:
 
 1. A converter from `SchemaFieldDefinition` → TypeBox
 2. All fields treated as optional and nullable (advisory nature)
@@ -68,7 +68,7 @@ All fields are wrapped with `Type.Optional()` because missing fields are valid i
 
 ### Unified TableHelper API
 
-`TableHelper` provides integrated validation. All read operations return result types that include both the validation status and the raw value—so you always have access to the data regardless of validity:
+`TableHelper` provides integrated validation. All read operations return result types that include both the validation status and the raw value. So you always have access to the data regardless of validity:
 
 ```typescript
 type TableHelper = {
@@ -102,7 +102,7 @@ Validators are compiled once at construction. Field validators are compiled lazi
 - **Defined tables**: Schema comes from `WorkspaceSchema.tables[tableId]`
 - **Dynamic tables**: Empty schema `{ name: tableId, fields: {} }` is used, which passes all validation
 
-Schema is always required—there's no `undefined` case to check.
+Schema is always required. There's no `undefined` case to check.
 
 ## Usage
 

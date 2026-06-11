@@ -22,7 +22,7 @@ be read against the unified vocabulary in the companion spec.
 
 ## Overview
 
-Add two new server-authoritative apps to Epicenter—**Betcha** (betcha.so), a Splitwise-inspired accountability/wager app, and **The Ark** (theark.so), a social media platform—sharing a single PlanetScale Postgres database (EU region) with all tables in the `public` schema via Cloudflare Hyperdrive. Both reuse Better Auth for identity and the existing OAuth provider infrastructure, but store domain data in dedicated Postgres tables (organized by file) rather than Yjs/workspace CRDTs.
+Add two new server-authoritative apps to Epicenter:**Betcha** (betcha.so), a Splitwise-inspired accountability/wager app, and **The Ark** (theark.so), a social media platform. Sharing a single PlanetScale Postgres database (EU region) with all tables in the `public` schema via Cloudflare Hyperdrive. Both reuse Better Auth for identity and the existing OAuth provider infrastructure, but store domain data in dedicated Postgres tables (organized by file) rather than Yjs/workspace CRDTs.
 
 This spec also defines the **platform architecture** for how first-party Epicenter apps get privileged database access while third-party apps use "Sign in with Epicenter" via OAuth 2.1.
 
@@ -30,13 +30,13 @@ This spec also defines the **platform architecture** for how first-party Epicent
 
 ### Current State
 
-Epicenter's existing apps (Whispering, Opensidian, Tab Manager, Honeycrisp) are all **local-first** via `@epicenter/workspace` + Yjs CRDTs. The sync server is a relay—it applies CRDT updates but has zero business logic authority. Auth lives in Postgres via Hyperdrive with Drizzle ORM.
+Epicenter's existing apps (Whispering, Opensidian, Tab Manager, Honeycrisp) are all **local-first** via `@epicenter/workspace` + Yjs CRDTs. The sync server is a relay. It applies CRDT updates but has zero business logic authority. Auth lives in Postgres via Hyperdrive with Drizzle ORM.
 
 This creates a gap:
 
-1. **Challenges involve two parties agreeing on terms, money, and statuses.** CRDTs auto-merge conflicts—if two users simultaneously mark a challenge as `done` and `missed`, LWW picks one arbitrarily. That's data corruption, not conflict resolution.
+1. **Challenges involve two parties agreeing on terms, money, and statuses.** CRDTs auto-merge conflicts. If two users simultaneously mark a challenge as `done` and `missed`, LWW picks one arbitrarily. That's data corruption, not conflict resolution.
 2. **Social media needs authoritative feeds, follower counts, and notifications.** Fan-out reads, social graph JOINs, and reliable write ordering are Postgres strengths that SQLite/D1/CRDTs can't match at this layer.
-3. **Cross-app integration** (e.g., "show me friends who have active wagers") requires relational JOINs across app boundaries—impossible with separate CRDTs or D1 databases.
+3. **Cross-app integration** (e.g., "show me friends who have active wagers") requires relational JOINs across app boundaries. Impossible with separate CRDTs or D1 databases.
 
 ### Desired State
 
@@ -69,26 +69,26 @@ export default defineConfig({
 });
 ```
 
-All tables use `pgTable()` — the same API as the existing auth tables. Domain separation is file-based, not schema-based:
+All tables use `pgTable()`: the same API as the existing auth tables. Domain separation is file-based, not schema-based:
 
 ```typescript
-// Existing auth tables — UNCHANGED
+// Existing auth tables: UNCHANGED
 import { pgTable } from 'drizzle-orm/pg-core';
 export const user = pgTable('user', { ... });
 
-// New app tables — same API, separate file
+// New app tables: same API, separate file
 // apps/api/src/db/betcha-schema.ts
 import { pgTable } from 'drizzle-orm/pg-core';
 export const challenge = pgTable('challenge', { ... });
 ```
 
-FKs and JOINs work naturally — everything is in the same schema:
+FKs and JOINs work naturally, everything is in the same schema:
 
 ```typescript
 // betcha-schema.ts
 export const challenge = pgTable('challenge', {
   createdBy: text('created_by').references(() => user.id, { onDelete: 'set null' }),
-  // ↑ FK to user — standard FK, no cross-schema complexity
+  // ↑ FK to user: standard FK, no cross-schema complexity
 });
 ```
 
@@ -106,7 +106,7 @@ db.select().from(challenge).innerJoin(user, eq(challenge.createdBy, user.id));
 
 **Key finding**: Splitwise explicitly states "Splitwise doesn't actually handle any real money" for Venmo/PayPal settlement. They're a ledger that links to payment apps. This avoids money transmitter status. Splitwise ran this model for years before adding their own bank-integrated "Splitwise Pay" (via a partner bank). The self-report model is the proven MVP.
 
-**Betcha is a ledger.** Bets change balances between friends. Payments reduce balances. These are independent operations. The app never knows if a payment actually happened—it knows when the sender says "I paid" and the recipient says "I received."
+**Betcha is a ledger.** Bets change balances between friends. Payments reduce balances. These are independent operations. The app never knows if a payment actually happened. It knows when the sender says "I paid" and the recipient says "I received."
 
 ### International Payment Methods
 
@@ -119,7 +119,7 @@ Venmo is US-only. Global support requires multiple methods:
 | UK/EU | Revolut | `https://revolut.me/USER` | ❌ |
 | India | UPI | `upi://pay?pa=USER&am=AMT&cu=INR&tn=NOTE` | ✅ |
 | Global | Wise | `https://wise.com/pay/USER` | ❌ |
-| Everywhere | Manual | N/A — "I paid outside the app" | N/A |
+| Everywhere | Manual | N/A: "I paid outside the app" | N/A |
 
 The **recipient** chooses how they get paid (stored in their payment preferences). The **sender** sees a deep link for the recipient's preferred method. PayPal is the universal fallback (web + mobile, 200+ countries).
 
@@ -130,7 +130,7 @@ The **recipient** chooses how they get paid (stored in their payment preferences
 | US (us-east-1) | ~10ms | ~100ms | Requires legal mechanisms | ⚠️ |
 | **EU (eu-west-1)** | ~80-100ms | ~10ms | Compliant by default | ✅ |
 
-Host in EU from day one. US has no data localization laws for consumer apps—storing US data in EU is fine. Hyperdrive caches reads globally, KV caches auth sessions globally, and writes are infrequent. The latency penalty is negligible.
+Host in EU from day one. US has no data localization laws for consumer apps. Storing US data in EU is fine. Hyperdrive caches reads globally, KV caches auth sessions globally, and writes are infrequent. The latency penalty is negligible.
 
 ## Design Decisions
 
@@ -142,14 +142,14 @@ Host in EU from day one. US has no data localization laws for consumer apps—st
 | Data isolation | File-per-domain in `public` schema | All first-party apps, shared domain concepts (follows, notifications), no Drizzle `pgSchema()` bugs, standard `pgTable()` everywhere |
 | Auth tables | All tables in `public` schema | Single schema, file-based organization provides code-level namespacing |
 | Challenge model | One-directional commitment device | Creator stakes money on a task. Success = keep it (no payment). Failure = pay partner(s). Payment only flows one direction. |
-| Participant status model | Editable ledger—no verification ceremony | Any participant can mark `done`/`missed`. Deadline auto-marks unresolved participants as `missed`. History is visible through `ledger.actorUserId`. Same flow for 1v1 and groups. |
+| Participant status model | Editable ledger. No verification ceremony | Any participant can mark `done`/`missed`. Deadline auto-marks unresolved participants as `missed`. History is visible through `ledger.actorUserId`. Same flow for 1v1 and groups. |
 | Payment model | Running balance + settle-up (Splitwise model) | Failed challenges accumulate a balance between friends. Pay whenever. App never touches money. Challenges change balances; payments reduce balances. Per-user payment methods are deferred to Phase 2. |
-| Disputes | No dispute system—just edit the participant status | "Dispute" = someone changes the status. The ledger history shows who changed what. If you're in a flip-flop war, that's a friendship problem, not a software problem. |
-| Group challenges | Same flow as 1v1, scales naturally | Each participant has their own status row. Anyone in the challenge can mark anyone's status. No majority voting in v1—add later if edit wars emerge. |
-| Local-first layer | None—TanStack Query with optimistic updates | Challenges are social (need counterparty), offline-first creation is a weird UX |
+| Disputes | No dispute system. Just edit the participant status | "Dispute" = someone changes the status. The ledger history shows who changed what. If you're in a flip-flop war, that's a friendship problem, not a software problem. |
+| Group challenges | Same flow as 1v1, scales naturally | Each participant has their own status row. Anyone in the challenge can mark anyone's status. No majority voting in v1. Add later if edit wars emerge. |
+| Local-first layer | None. TanStack Query with optimistic updates | Challenges are social (need counterparty), offline-first creation is a weird UX |
 | App framework | SvelteKit + Vite (same as Fuji/Honeycrisp) | Existing pattern, shares `@epicenter/ui` and `@epicenter/svelte` |
 | API routes | New route modules in `apps/api` | Shared Postgres connection, shared auth middleware |
-| Cross-app FKs | All tables FK to `user` directly | Same schema — standard FKs, no cross-schema complexity. Shared tables (follow, notification) accessible to all apps naturally. |
+| Cross-app FKs | All tables FK to `user` directly | Same schema: standard FKs, no cross-schema complexity. Shared tables (follow, notification) accessible to all apps naturally. |
 | Media storage | R2 (existing `ASSETS_BUCKET`) | Only metadata in Postgres |
 | Third-party apps | OAuth 2.1 + PKCE via existing `oauthProvider` | "Sign in with Epicenter" already works. Third-party apps never touch schemas. |
 
@@ -159,38 +159,38 @@ Betcha is a shared ledger between friends. This single insight drives every desi
 
 ### The Deadline Does ONE Thing
 
-When the deadline passes, any participant still marked `pending` auto-converts to `missed` and the balance adjusts immediately. That's it. No verification ceremony. No partner prompts. No waiting states. The system assumes failure on inaction—this is what makes it a commitment device.
+When the deadline passes, any participant still marked `pending` auto-converts to `missed` and the balance adjusts immediately. That's it. No verification ceremony. No partner prompts. No waiting states. The system assumes failure on inaction. This is what makes it a commitment device.
 
-Before the deadline, anyone in the challenge can mark a participant as `done`. After the deadline, anyone can flip any status (`done` ↔ `missed`). Every change creates a compensating ledger record. No history is rewritten—only appended.
+Before the deadline, anyone in the challenge can mark a participant as `done`. After the deadline, anyone can flip any status (`done` ↔ `missed`). Every change creates a compensating ledger record. No history is rewritten. Only appended.
 
 ### No Disputes, No Verification, No Windows
 
 Traditional wager apps (StickK, Beeminder) have verification ceremonies: self-report → referee confirms → dispute window → resolution. This makes sense when the app charges your credit card and needs to be "right" before taking money.
 
-Betcha never touches money. It's a ledger. If the status is wrong, you change it and the balance adjusts. "Dispute" is just "edit the status." The ledger history shows who changed what—social friction replaces enforcement.
+Betcha never touches money. It's a ledger. If the status is wrong, you change it and the balance adjusts. "Dispute" is just "edit the status." The ledger history shows who changed what. Social friction replaces enforcement.
 
 This works because:
 - **You're doing this with friends.** You can text them. You can see them. The app doesn't need to adjudicate your friendship.
 - **The balance is always adjustable.** Marked as failed but you actually did it? Your friend flips it. Balance corrects.
 - **Visible history is the accountability.** Every change is logged. Lying to your friend's face in a shared ledger history is harder than it sounds.
-- **Payments are voluntary anyway.** Since settlement is self-reported (Splitwise model), getting the verdict "right" before settlement is ceremony—you can always adjust after.
+- **Payments are voluntary anyway.** Since settlement is self-reported (Splitwise model), getting the verdict "right" before settlement is ceremony. You can always adjust after.
 
 ### Why This Still Works as a Commitment Device
 
-The default is **loss on inaction**. Miss the deadline and your balance worsens immediately. You feel it. That's the behavioral economics mechanism that makes StickK and Beeminder effective—the sting of losing money. The difference is that Betcha makes it trivially easy to correct mistakes, because correctness comes from the relationship, not the software.
+The default is **loss on inaction**. Miss the deadline and your balance worsens immediately. You feel it. That's the behavioral economics mechanism that makes StickK and Beeminder effective. The sting of losing money. The difference is that Betcha makes it trivially easy to correct mistakes, because correctness comes from the relationship, not the software.
 
 ### Same Flow for 1v1 and Groups
 
 There's no separate "group verification" flow. Every challenge has participants. Each participant has their own status. Anyone in the challenge can mark anyone's status. For 1v1, that's 2 people. For a group of 5, that's 5 people. The interaction is identical: tap a person's row, mark `done` or `missed`.
 
-If group challenges turn into edit wars (unlikely among friends), voting can be layered on later—the ledger history already records who marked what, so majority-wins is just a query on existing data. No schema change needed.
+If group challenges turn into edit wars (unlikely among friends), voting can be layered on later. The ledger history already records who marked what, so majority-wins is just a query on existing data. No schema change needed.
 
 ### Future: Optional Voting for Groups
 
 If edit wars become a pattern, add opt-in majority voting:
 - Each participant's `marked_done` / `marked_missed` action counts as a vote
 - Majority wins; ties default to `missed`
-- This is ~50 lines of API logic on top of the editable ledger—no schema changes
+- This is ~50 lines of API logic on top of the editable ledger. No schema changes
 - Don't build it until you see the problem in the wild
 ## Architecture
 
@@ -272,7 +272,7 @@ PlanetScale Postgres (eu-west-1) via Hyperdrive
 │
 └── public (all tables)
     │
-    │  AUTH (Better Auth — unchanged)
+    │  AUTH (Better Auth: unchanged)
     ├── user, session, account, verification, jwks
     ├── device_code, oauth_client, oauth_refresh_token
     ├── oauth_access_token, oauth_consent
@@ -291,8 +291,8 @@ PlanetScale Postgres (eu-west-1) via Hyperdrive
     │  SHARED (apps/api/src/db/shared-schema.ts)
     ├── follow                 ← Social graph: unidirectional; mutual = friends (used by Betcha + The Ark)
     │
-    │  SHARED — FUTURE
-    ├── notification           ← Activity notifications (deferred — delivery mechanism TBD)
+    │  SHARED: FUTURE
+    ├── notification           ← Activity notifications (deferred: delivery mechanism TBD)
     ├── community, community_member
 ```
 
@@ -308,7 +308,7 @@ post ───────────────FK──▶ user
 follow ─────────────FK──▶ user (follower + following)
 comment ────────────FK──▶ user + post
 
-All tables in public schema — standard FKs, no cross-schema complexity.
+All tables in public schema: standard FKs, no cross-schema complexity.
 ```
 
 ### Shared Drizzle Schema
@@ -356,7 +356,7 @@ import { index, numeric, pgTable, text, timestamp, unique } from 'drizzle-orm/pg
 import { customAlphabet } from 'nanoid';
 import { user } from './schema';
 
-/** 15-char alphanumeric ID — matches generateGuid in @epicenter/workspace. */
+/** 15-char alphanumeric ID: matches generateGuid in @epicenter/workspace. */
 const generateId = customAlphabet('abcdefghijklmnopqrstuvwxyz0123456789', 15);
 
 
@@ -441,7 +441,7 @@ export const ledger = pgTable('ledger', {
 ### Drizzle Config Change
 
 ```typescript
-// apps/api/drizzle.config.ts — ONLY CHANGE: schema path
+// apps/api/drizzle.config.ts: ONLY CHANGE: schema path
 export default defineConfig({
   dialect: 'postgresql',
   schema: './src/db/*.ts',  // was: './src/db/schema.ts'
@@ -452,10 +452,10 @@ export default defineConfig({
 });
 ```
 
-### Drizzle Instance — Import All Schemas
+### Drizzle Instance: Import All Schemas
 
 ```typescript
-// apps/api/src/app.ts — expand schema import
+// apps/api/src/app.ts: expand schema import
 import * as publicSchema from './db/schema';
 import * as betchaSchema from './db/betcha-schema';
 import * as sharedSchema from './db/shared-schema';
@@ -665,41 +665,41 @@ PlanetScale Postgres (eu-west-1)
 - [x] **0.3** Verify `drizzle-kit generate` produces correct DDL
 - [x] **0.4** Expand schema import in `apps/api/src/app.ts` to include all schema files (publicSchema + betchaSchema + sharedSchema)
 
-### Phase 1: Betcha — API Layer
+### Phase 1: Betcha: API Layer
 
 - [x] **1.1** Create `apps/api/src/db/betcha-schema.ts` with `pgTable()` tables (challenge, participant, ledger)
-- [x] **1.2** Create `apps/api/src/db/shared-schema.ts` with `pgTable()` table (follow) — enables friend selection for challenges
+- [x] **1.2** Create `apps/api/src/db/shared-schema.ts` with `pgTable()` table (follow): enables friend selection for challenges
 - [x] **1.3** Generate and run Drizzle migration for new tables
-- [x] **1.4** Create `apps/api/src/betcha-routes.ts` — Hono routes:
+- [x] **1.4** Create `apps/api/src/betcha-routes.ts`: Hono routes:
   - CRUD: create challenge, get challenge, list user's challenges
   - Challenge lifecycle: submit, accept, decline, cancel
   - Participant statuses: mark done, mark missed (creates ledger record with `actorUserId`)
-  - Deadline: cron/scheduled handler to auto-expire pending participants (deferred — requires wrangler.jsonc changes)
+  - Deadline: cron/scheduled handler to auto-expire pending participants (deferred: requires wrangler.jsonc changes)
   - Balances: get running balance per friend pair
   - Payment recording only for MVP (`user_payment_method` deferred to Phase 2)
   - Follow/friend routes: follow user, unfollow, list friends (mutual follows), list followers
-- [x] **1.5** Auth middleware: reuse existing `authGuard` from `app.ts` — already validates Bearer token and extracts user ID
+- [x] **1.5** Auth middleware: reuse existing `authGuard` from `app.ts`: already validates Bearer token and extracts user ID
 - [x] **1.6** Wire betcha + shared routes into `apps/api/src/app.ts`
 - [x] **1.7** Verify FK and JOIN work in practice
   > **Note**: Verified via type-check and LSP diagnostics. Cross-table JOINs confirmed working in route implementations (e.g., participant + user JOIN in challenge detail).
 
-### Phase 2: Betcha — Frontend
+### Phase 2: Betcha: Frontend
 
 - [ ] **2.1** Scaffold `apps/betcha/` SvelteKit app (copy Fuji/Honeycrisp skeleton)
 - [ ] **2.2** Auth gate via `@epicenter/svelte`
 - [ ] **2.3** TanStack Query hooks for challenge CRUD + participant status changes + balances
 - [ ] **2.4** Pages: dashboard, create challenge, challenge detail + ledger history, balances + settle-up
-- [ ] **2.5** Deep link generation / saved payment methods (Venmo, PayPal, Revolut, UPI, Wise, manual) — Phase 2 because `user_payment_method` is deferred from MVP
+- [ ] **2.5** Deep link generation / saved payment methods (Venmo, PayPal, Revolut, UPI, Wise, manual): Phase 2 because `user_payment_method` is deferred from MVP
 - [ ] **2.6** Deploy to Cloudflare Pages (betcha.so)
 
-### Phase 3: Betcha — Group Challenges
+### Phase 3: Betcha: Group Challenges
 
 - [ ] **3.1** Group challenge creation UI (invite N participants)
 - [ ] **3.2** Pot-split ledger calculation (loser→winner pairs)
 - [ ] **3.3** Group challenge detail page showing N participant statuses
 - [ ] **3.4** Optional: majority voting layer if edit wars emerge
 
-### Phase 4: The Ark — API Layer
+### Phase 4: The Ark: API Layer
 
 > **Blocked on cloud-modules-and-networks landing.** When implemented, the
 > Ark schema and routes move into `apps/cloud/src/cloud-apps/ark/`, not
@@ -711,7 +711,7 @@ PlanetScale Postgres (eu-west-1)
 - [ ] **4.3** Create `apps/cloud/src/cloud-apps/ark/routes.ts` and `scopes.ts`: profiles, posts, feed, follows, communities
 - [ ] **4.4** Register Ark as a product Cloud App with at least one App Instance host
 
-### Phase 5: The Ark — Frontend
+### Phase 5: The Ark: Frontend
 
 > **Blocked on cloud-modules-and-networks landing.** Hosted Ark UI lives
 > on the App Instance host (`ark.epicenter.so`) and authenticates with an
@@ -750,7 +750,7 @@ PlanetScale Postgres (eu-west-1)
 
 1. Alice marks Bob as `done`, Bob flips to `missed`, Alice flips back
 2. Each flip creates a compensating ledger record (balance swings back and forth)
-3. Ledger history makes this visible—social friction discourages it
+3. Ledger history makes this visible. Social friction discourages it
 4. If it becomes a pattern: stop making challenges with that person (product limit, not software limit)
 5. Future: optional majority voting for groups to prevent one person overriding consensus
 
@@ -758,12 +758,12 @@ PlanetScale Postgres (eu-west-1)
 
 1. Two people try to mark the same participant at the same time
 2. Postgres transaction isolation prevents double-processing
-3. Last transaction wins—both changes appear in ledger history
+3. Last transaction wins. Both changes appear in ledger history
 
 ### User Deletes Account
 
 1. Active challenges are auto-cancelled (no ledger records)
-2. `createdBy` set to NULL (`onDelete: 'set null'`)—completed challenges remain readable as historical records
+2. `createdBy` set to NULL (`onDelete: 'set null'`): completed challenges remain readable as historical records
 3. Ledger entries preserved (amounts and dates remain for audit trail)
 4. Social posts/comments are soft-deleted (tombstoned)
 
@@ -771,7 +771,7 @@ PlanetScale Postgres (eu-west-1)
 
 1. Committer misses challenge, ledger record created (balance owed)
 2. Loser doesn't pay → balance stays negative indefinitely
-3. App never forces payment (can't—Splitwise model)
+3. App never forces payment (can't. Splitwise model)
 4. Social pressure is the enforcement mechanism
 
 ### Group Pot-Split Rounding
@@ -786,19 +786,19 @@ If any app outgrows the shared Postgres:
 1. Cross-schema FKs to `public.user` break (replace with JWT validation + app-level consistency)
 2. Cross-schema JOINs break (replace with API calls)
 3. Transactions across schemas break (replace with saga patterns)
-4. This is real work, not a rename—but the schema boundary makes the cut line clear
+4. This is real work, not a rename. But the schema boundary makes the cut line clear
 
 ## Open Questions
 
-1. **Domain**: resolved — `betcha.so`.
+1. **Domain**: resolved: `betcha.so`.
 
-2. **PlanetScale vs current provider**: resolved — PlanetScale Postgres with EU region, confirmed.
+2. **PlanetScale vs current provider**: resolved: PlanetScale Postgres with EU region, confirmed.
 
-3. **theark.so encrypted messaging**: Defer to V2. Requires E2E encryption, key exchange, real-time transport—separate spec.
+3. **theark.so encrypted messaging**: Defer to V2. Requires E2E encryption, key exchange, real-time transport. Separate spec.
 
 4. **Notification delivery**: Push notifications (FCM/APNs), email, or in-app only? Affects infrastructure.
 
-5. **Drizzle `push` vs `generate` + `migrate`**: Use `generate` + `migrate` for safety — `push` can have unexpected behavior with multi-file schemas. The specific `pgSchema` bugs (#4969, #5609) are no longer relevant since all tables use `pgTable()`, but `generate` + `migrate` remains the preferred workflow.
+5. **Drizzle `push` vs `generate` + `migrate`**: Use `generate` + `migrate` for safety: `push` can have unexpected behavior with multi-file schemas. The specific `pgSchema` bugs (#4969, #5609) are no longer relevant since all tables use `pgTable()`, but `generate` + `migrate` remains the preferred workflow.
 
 ## Success Criteria
 
@@ -815,19 +815,19 @@ If any app outgrows the shared Postgres:
 - [ ] No regressions to existing public schema tables (auth, OAuth provider, platform)
 ## References
 
-- `apps/api/src/db/schema.ts` — Current Drizzle schema (public, all `pgTable()`)
-- `apps/api/src/auth/create-auth.ts` — Better Auth config with OAuth provider already running
-- `apps/api/drizzle.config.ts` — Current Drizzle config (single schema file → glob)
-- `apps/api/src/app.ts` — Hono app + Drizzle instance creation via Hyperdrive
-- `apps/fuji/` — Reference SvelteKit app skeleton
-- `apps/honeycrisp/` — Reference SvelteKit app skeleton
-- [Drizzle `pgSchema` docs](https://orm.drizzle.team/docs/schemas) — Multi-schema API
-- [Drizzle issue #5274](https://github.com/drizzle-team/drizzle-orm/issues/5274) — `CREATE SCHEMA` without `IF NOT EXISTS`
-- [Drizzle issue #4969](https://github.com/drizzle-team/drizzle-orm/issues/4969) — Sequence alterations in non-default schemas
-- [PlanetScale Postgres](https://planetscale.com/metal) — Metal NVMe offering, Cloudflare partnership
-- [Better Auth OAuth Provider docs](https://better-auth.com/docs/plugins/oauth-provider) — OAuth 2.1 provider plugin
+- `apps/api/src/db/schema.ts`: Current Drizzle schema (public, all `pgTable()`)
+- `apps/api/src/auth/create-auth.ts`: Better Auth config with OAuth provider already running
+- `apps/api/drizzle.config.ts`: Current Drizzle config (single schema file → glob)
+- `apps/api/src/app.ts`: Hono app + Drizzle instance creation via Hyperdrive
+- `apps/fuji/`: Reference SvelteKit app skeleton
+- `apps/honeycrisp/`: Reference SvelteKit app skeleton
+- [Drizzle `pgSchema` docs](https://orm.drizzle.team/docs/schemas): Multi-schema API
+- [Drizzle issue #5274](https://github.com/drizzle-team/drizzle-orm/issues/5274): `CREATE SCHEMA` without `IF NOT EXISTS`
+- [Drizzle issue #4969](https://github.com/drizzle-team/drizzle-orm/issues/4969): Sequence alterations in non-default schemas
+- [PlanetScale Postgres](https://planetscale.com/metal): Metal NVMe offering, Cloudflare partnership
+- [Better Auth OAuth Provider docs](https://better-auth.com/docs/plugins/oauth-provider): OAuth 2.1 provider plugin
 
-## Review — Phase 0 + Phase 1
+## Review: Phase 0 + Phase 1
 
 **Completed**: 2026-04-17
 
@@ -841,7 +841,7 @@ Implemented the database infrastructure (Phase 0) and Betcha API layer (Phase 1)
 - **Added `follow` table to Phase 1.** Originally planned for Phase 6, but friend selection is essential for the core challenge creation UX.
 - **Added `shared-schema.ts`** as a new file for cross-app tables (follow). The original spec had no shared schema concept.
 - **No table name prefixes.** Names like `challenge`, `participant`, `ledger`, `follow` are naturally unambiguous.
-- **Deadline cron handler deferred.** Requires `wrangler.jsonc` changes — will be a separate task.
+- **Deadline cron handler deferred.** Requires `wrangler.jsonc` changes: will be a separate task.
 - **Ledger recipient logic uses simple fallback.** Currently pays the challenge creator; group pot-split math is Phase 3.
 
 ### Follow-up Work

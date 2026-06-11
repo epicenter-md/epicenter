@@ -1,7 +1,7 @@
 # Workspace Architecture: Desktop App & AI Scripting Platform
 
 **Date**: 2026-03-13
-**Status**: Draft — amended 2026-03-13 (HTTP architecture, editor choice, self-contained workspace extensions)
+**Status**: Draft: amended 2026-03-13 (HTTP architecture, editor choice, self-contained workspace extensions)
 **Supersedes**: Aspects of `20260225T210000-workspace-apps-orchestrator.md` (centralized model) and `20260312T211500-headless-workspace-runner.md` (runner-specific decisions)
 
 > **Path note (2026-05-22):** The centralized `~/.epicenter/workspaces/` architecture in this draft is superseded. Do not copy its global workspace registry, install, or discovery paths into new work. Current generated workspace data is project-local under `<projectDir>/.epicenter/`; machine auth and daemon runtime files have separate platform/runtime path owners.
@@ -13,9 +13,9 @@ Simplified from "per-folder anywhere + discovery cache" to "all workspaces live 
 - **Decision 1**: Workspaces always live in `~/.epicenter/workspaces/`, not scattered across the filesystem. Eliminates discovery cache, self-registration, and scan logic.
 - **Decision 6**: Aggregation becomes trivial `readdir()`. No `known-workspaces.json`.
 - **Removed**: Cache schema, pruning logic, self-registration mechanism, scan locations.
-- **Unchanged**: Decisions 2–5, 7–8 (config exports, module resolution, Bun server, Monaco types, HTTP protocol, editor choice).
+- **Unchanged**: Decisions 2-5, 7-8 (config exports, module resolution, Bun server, Monaco types, HTTP protocol, editor choice).
 
-Rationale: Browser configs will diverge from server configs anyway (different action sets, no FS extensions). Workspaces are Epicenter artifacts, not project artifacts. The per-folder model added discovery complexity for a use case that doesn't exist yet. Obsidian, VS Code, Docker, and every comparable tool uses a centralized registry — none do recursive filesystem scanning as primary discovery.
+Rationale: Browser configs will diverge from server configs anyway (different action sets, no FS extensions). Workspaces are Epicenter artifacts, not project artifacts. The per-folder model added discovery complexity for a use case that doesn't exist yet. Obsidian, VS Code, Docker, and every comparable tool uses a centralized registry: none do recursive filesystem scanning as primary discovery.
 ---
 
 ## Table of Contents
@@ -46,7 +46,7 @@ Rationale: Browser configs will diverge from server configs anyway (different ac
 Epicenter is a local-first workspace platform using Yjs CRDTs, a Tauri desktop app, Bun runtime, and TypeScript. Two prior specs made conflicting architectural decisions:
 
 - **Orchestrator spec** (Feb 25): Centralized `~/.epicenter/workspaces/` with symlinks, registry database, CLI as package manager
-- **Runner spec** (Mar 12): Per-folder model — any folder with `epicenter.config.ts` + `.epicenter/` sibling, headless daemon
+- **Runner spec** (Mar 12): Per-folder model: any folder with `epicenter.config.ts` + `.epicenter/` sibling, headless daemon
 
 Both are partially implemented. They disagree on where state lives, what the config exports, and how workspaces are discovered.
 
@@ -54,7 +54,7 @@ This spec resolves 6 core architectural questions through deep analysis, 5 Oracl
 
 ### The Core Tension We Resolved
 
-The original debate was "definitions vs builders in config." Oracle initially recommended pure definitions (`defineWorkspace()`). But the AI scripting use case requires full type information—including extension methods and action signatures—which only exist on the builder chain. The breakthrough insight: **Monaco's TypeScript worker resolves types statically from source code without executing it.** The same `.ts` file serves both Monaco (types) and Bun (runtime). No type transfer, generation, or serialization needed.
+The original debate was "definitions vs builders in config." Oracle initially recommended pure definitions (`defineWorkspace()`). But the AI scripting use case requires full type information. Including extension methods and action signatures. Which only exist on the builder chain. The breakthrough insight: **Monaco's TypeScript worker resolves types statically from source code without executing it.** The same `.ts` file serves both Monaco (types) and Bun (runtime). No type transfer, generation, or serialization needed.
 
 ---
 
@@ -282,7 +282,7 @@ The original spec supported workspaces scattered across the filesystem (e.g., `~
 
 ### Answer
 
-`epicenter.config.ts` exports the result of `createWorkspace().withExtension().withActions()` — the **full builder chain** with workspace-inherent extensions and actions.
+`epicenter.config.ts` exports the result of `createWorkspace().withExtension().withActions()`: the **full builder chain** with workspace-inherent extensions and actions.
 
 ### What You're Actually Exporting
 
@@ -301,7 +301,7 @@ import {
 } from '@epicenter/workspace';
 
 // ═══════════════════════════════════════════════════════════════════════
-// THIS IS WHAT YOU EXPORT — a fully-chained workspace client
+// THIS IS WHAT YOU EXPORT: a fully-chained workspace client
 // ═══════════════════════════════════════════════════════════════════════
 
 export const blog = createWorkspace({
@@ -394,7 +394,7 @@ typeof blog = WorkspaceClientWithActions<
 >
 ```
 
-**This is the complete type.** Tables, extension methods, action signatures — all inferred from the source. No `.d.ts` generation. No schema walking. TypeScript already does this.
+**This is the complete type.** Tables, extension methods, action signatures: all inferred from the source. No `.d.ts` generation. No schema walking. TypeScript already does this.
 
 ### Why Not Just `defineWorkspace()`?
 
@@ -510,21 +510,21 @@ This was confirmed by Oracle via Bun 1.3.1 testing. The imported config resolves
 
 ### Standalone Running
 
-`bun run epicenter.config.ts` works as a **smoke test** — the module loads successfully, which verifies that:
+`bun run epicenter.config.ts` works as a **smoke test**: the module loads successfully, which verifies that:
 - `@epicenter/workspace` is installed
 - The config has no syntax errors
 - Exports are valid
 
 For meaningful standalone behavior, use CLI commands:
-- `epicenter validate` — checks config structure and schema validity
-- `epicenter inspect` — shows workspace ID, tables, actions, extensions
+- `epicenter validate`: checks config structure and schema validity
+- `epicenter inspect`: shows workspace ID, tables, actions, extensions
 
 ### Why This Model (Not Global Install)
 
 | Approach | Problem |
 |----------|---------|
 | Global install (`bun install -g`) | Version pinning across workspaces is impossible |
-| Runner provides imports | Bun resolves from config's dir, not runner's — confirmed broken |
+| Runner provides imports | Bun resolves from config's dir, not runner's: confirmed broken |
 | Self-bootstrapping config | Hidden mutation during module load is fragile and bad for CI |
 | **Per-project install** | How every serious tool works (Prisma, Drizzle, Vite). Boring. Correct. |
 
@@ -534,7 +534,7 @@ For meaningful standalone behavior, use CLI commands:
 
 ### Answer
 
-One Bun process serves everything: the Svelte SPA, the workspace API, and the workspace runtime. Tauri's Rust binary is a thin shell—it spawns Bun, opens a webview, and provides native OS capabilities (system tray, menus, global shortcuts, auto-update). All workspace logic lives in Bun.
+One Bun process serves everything: the Svelte SPA, the workspace API, and the workspace runtime. Tauri's Rust binary is a thin shell. It spawns Bun, opens a webview, and provides native OS capabilities (system tray, menus, global shortcuts, auto-update). All workspace logic lives in Bun.
 
 ### Why Not Tauri IPC?
 
@@ -607,7 +607,7 @@ The original design had Svelte communicating with Bun through Tauri's IPC, with 
 
 ### Startup Pipeline
 
-The startup pipeline is unchanged from the original design—only the transport changes from IPC to HTTP:
+The startup pipeline is unchanged from the original design. Only the transport changes from IPC to HTTP:
 
 1. **Discovery**: `readdir(~/.epicenter/workspaces/)`, filter for directories containing `epicenter.config.ts`
 2. **Import**: For each workspace directory, `import(Bun.pathToFileURL(configPath).href)` in parallel
@@ -689,7 +689,7 @@ This keeps the simple "always ready" model while avoiding connection fan-out.
 
 ### Answer
 
-Load actual `.ts` source files into Monaco's virtual filesystem. Generate a tiny globals prelude. Monaco's TypeScript worker does all type inference — no `.d.ts` generation from schemas.
+Load actual `.ts` source files into Monaco's virtual filesystem. Generate a tiny globals prelude. Monaco's TypeScript worker does all type inference, no `.d.ts` generation from schemas.
 
 ### The Setup
 
@@ -740,7 +740,7 @@ Load actual `.ts` source files into Monaco's virtual filesystem. Generate a tiny
 ### What the Prelude Generator Looks Like
 
 ```typescript
-// In the Bun app server — runs when user opens scripting tool or changes selection
+// In the Bun app server: runs when user opens scripting tool or changes selection
 
 function generateGlobalsPrelude(
   selectedWorkspaces: Map<string, { configPath: string; exportName: string }>
@@ -769,7 +769,7 @@ That's it. ~15 lines of code. The TypeScript worker does the rest.
 | Approach | Effort | Completeness | Fragility |
 |----------|--------|-------------|-----------|
 | Schema → .d.ts generator | High (walk every type) | Partial (misses extensions, actions) | Breaks when schema API changes |
-| Load .ts source into Monaco | Low (~15 lines) | Complete (everything in the source) | Never breaks — same source |
+| Load .ts source into Monaco | Low (~15 lines) | Complete (everything in the source) | Never breaks: same source |
 | Ship only base .d.ts | Zero | Incomplete (no per-workspace types) | N/A |
 
 ---
@@ -814,7 +814,7 @@ All communication between the webview and workspace runtime uses standard HTTP a
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│  Bun App Server — Hono Routes                                       │
+│  Bun App Server: Hono Routes                                       │
 │                                                                     │
 │  Static:                                                            │
 │  GET  /              → Serve Svelte SPA (index.html)                │
@@ -832,13 +832,13 @@ All communication between the webview and workspace runtime uses standard HTTP a
 
 ### Security Model
 
-The server binds to `127.0.0.1` only—never `0.0.0.0`. Traffic never leaves the machine. For defense-in-depth:
+The server binds to `127.0.0.1` only. Never `0.0.0.0`. Traffic never leaves the machine. For defense-in-depth:
 
 | Layer | Mechanism |
 |-------|-----------|
-| **Network binding** | `127.0.0.1:{PORT}` — unreachable from other machines |
+| **Network binding** | `127.0.0.1:{PORT}`: unreachable from other machines |
 | **Startup token** | Rust generates a random token, passes it to Bun (env var) and the webview (URL param or cookie). Bun rejects requests without it. |
-| **Random port** | OS assigns a free port — avoids conflicts and makes the endpoint unpredictable |
+| **Random port** | OS assigns a free port: avoids conflicts and makes the endpoint unpredictable |
 | **No CORS needed** | Same-origin: webview loads from the same `http://127.0.0.1:{PORT}` it fetches from |
 
 ### Startup Token Flow
@@ -884,10 +884,10 @@ Tauri offers `tauri://localhost` and custom protocol handlers. We avoid them bec
 
 | App | Communication | Our Assessment |
 |-----|--------------|----------------|
-| **VS Code** | Node.js extension host + custom JSON-RPC | Complex — justified by multi-language extension ecosystem |
-| **Obsidian** | Single-process (Electron) | No IPC needed — but can't use Bun's runtime advantages |
+| **VS Code** | Node.js extension host + custom JSON-RPC | Complex: justified by multi-language extension ecosystem |
+| **Obsidian** | Single-process (Electron) | No IPC needed: but can't use Bun's runtime advantages |
 | **Cursor** | Fork of VS Code + HTTP to AI backend | Similar to our approach for the AI layer |
-| **Warp** | Rust renders directly, no webview API | Wrong model — we want web technologies |
+| **Warp** | Rust renders directly, no webview API | Wrong model: we want web technologies |
 | **Epicenter** | Bun HTTP + WebSocket | Simplest possible. Standard web APIs. |
 
 ---
@@ -896,7 +896,7 @@ Tauri offers `tauri://localhost` and custom protocol handlers. We avoid them bec
 
 ### Answer
 
-Monaco Editor for the AI scripting tool. It provides full TypeScript IntelliSense out of the box—the exact capability our architecture depends on.
+Monaco Editor for the AI scripting tool. It provides full TypeScript IntelliSense out of the box. The exact capability our architecture depends on.
 
 ### Why This Decision Matters
 
@@ -912,12 +912,12 @@ This isn't a cosmetic choice. The editor IS the type system's frontend.
 | Factor | Monaco | CodeMirror 6 | Ace | Eclipse Theia |
 |--------|--------|-------------|-----|--------------|
 | **TS IntelliSense** | Built-in TS worker + virtual FS. ~15 lines of setup. | Syntax highlighting only via `@codemirror/lang-javascript`. Full TS requires custom Web Worker + `@typescript/vfs` (~300-500 lines). | Partial via `ace-linters` + LSP bridge. | Full (embeds VS Code's language service). |
-| **Virtual filesystem** | Native `monaco.languages.typescript.addExtraLib()` | Manual — must build custom LanguageServer integration | No native support | Full (inherits VS Code model) |
+| **Virtual filesystem** | Native `monaco.languages.typescript.addExtraLib()` | Manual: must build custom LanguageServer integration | No native support | Full (inherits VS Code model) |
 | **Setup effort** | ~15 lines to load types + config sources | ~300-500 lines for equivalent TS support | ~200 lines for basic TS | ~2000+ lines (full IDE framework) |
 | **Bundle size** | ~2.5MB | ~200KB (base) + ~5MB (TS compiler for full support) | ~1MB | ~20MB+ |
-| **Community TS support** | First-class (Monaco IS VS Code's editor) | `@valtown/codemirror-ts` — archived Sept 2025. Roll-your-own. | Minimal community investment | First-class |
+| **Community TS support** | First-class (Monaco IS VS Code's editor) | `@valtown/codemirror-ts`: archived Sept 2025. Roll-your-own. | Minimal community investment | First-class |
 | **Extensibility** | Moderate (VS Code extension-like API) | Excellent (composable extensions) | Limited | Full VS Code extension support |
-| **Mobile/lightweight** | Heavy — not suitable for mobile | Excellent — designed for it | Moderate | Not suitable |
+| **Mobile/lightweight** | Heavy: not suitable for mobile | Excellent: designed for it | Moderate | Not suitable |
 
 ### Bundle Size Is Irrelevant for Desktop
 
@@ -968,7 +968,7 @@ Both Monaco and the CodeMirror TS path use the same TypeScript compiler undernea
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-Build the abstraction interface from the start so the editor choice is an implementation detail, not an architectural commitment. But use Monaco now—it's the path of least resistance for the exact feature we need.
+Build the abstraction interface from the start so the editor choice is an implementation detail, not an architectural commitment. But use Monaco now. It's the path of least resistance for the exact feature we need.
 
 ## End-to-End Walkthrough: The SQLite Query Scenario
 
@@ -1093,7 +1093,7 @@ Monaco ──── script text ────HTTP────► Bun App Server
 
 Bun wraps with runtime prelude:
 ┌─────────────────────────────────────────────────────────┐
-│  // Injected by Bun — matches what __globals.d.ts       │
+│  // Injected by Bun: matches what __globals.d.ts       │
 │  // declares, so types match runtime                    │
 │  const blog = __workspaceClients.get('blog');           │
 │                                                          │
@@ -1146,7 +1146,7 @@ Bun ──── output ────WebSocket────► Monaco displays res
 ### FAQ
 
 **Q: Am I literally exporting the `createWorkspace(...)` result?**
-Yes. `export const blog = createWorkspace({...}).withExtension(...).withActions(...)`. That's a `WorkspaceClientWithActions` — a live client object with a Y.Doc, typed tables, extensions, and actions.
+Yes. `export const blog = createWorkspace({...}).withExtension(...).withActions(...)`. That's a `WorkspaceClientWithActions`: a live client object with a Y.Doc, typed tables, extensions, and actions.
 
 **Q: What happens when Bun `import()`s my config?**
 Bun evaluates the file. `createWorkspace()` runs, creates a Y.Doc. `.withExtension()` runs, calls the factory, opens SQLite. `.withActions()` runs, binds handlers. Bun gets back a fully-formed live client.
@@ -1273,7 +1273,7 @@ This is the key architectural insight. Types don't "transfer" between processes.
 | Builders vs definitions? | Definitions > builders (pre-revision) | Side effects on import are real, but acceptable when the Bun app server IS the consumer |
 | Standalone `bun run config`? | Per-project dep is the answer | Bun resolves from config's dir, not importer's. `epicenter init` solves friction. |
 | Lazy vs eager loading? | Eager load all | Lazy loading contaminates scripting API. 20 workspaces = ~40-160MB, acceptable. |
-| .d.ts generation needed? | No — load .ts source into Monaco | `typeof import(...)` gives full types. ~15 lines of prelude code. 1-4h effort. |
+| .d.ts generation needed? | No: load .ts source into Monaco | `typeof import(...)` gives full types. ~15 lines of prelude code. 1-4h effort. |
 | Per-folder as THE model? | Centralized is simpler (revised) | Original verdict was per-folder. Revised: all workspaces in `~/.epicenter/workspaces/` eliminates discovery complexity with no loss of functionality. |
 
 ### Librarian Research (5 agents)
@@ -1298,7 +1298,7 @@ This is the key architectural insight. Types don't "transfer" between processes.
 
 ### Phase 2: Bun App Server
 
-- [ ] Create Bun app server entry point (Hono — serves SPA + API + WebSocket)
+- [ ] Create Bun app server entry point (Hono: serves SPA + API + WebSocket)
 - [ ] Implement Rust shell: spawn Bun on launch, open webview to `http://127.0.0.1:{PORT}`, kill on close
 - [ ] Implement config loading pipeline (`readdir()` workspaces dir, import each, register, await ready)
 - [ ] Define HTTP API routes (`GET /api/workspaces`, `GET /api/types`, `POST /api/run`, `WS /api/ws`)
@@ -1316,7 +1316,7 @@ This is the key architectural insight. Types don't "transfer" between processes.
 ### Phase 4: Script Execution
 
 - [ ] Implement runtime prelude generator (injects workspace client globals)
-- [ ] Implement script execution endpoint (`POST /api/run` — wrap user code + eval in Bun)
+- [ ] Implement script execution endpoint (`POST /api/run`: wrap user code + eval in Bun)
 - [ ] Implement output streaming via WebSocket (`WS /api/ws`)
 - [ ] Handle script errors gracefully (syntax errors, runtime errors, timeout)
 
@@ -1333,17 +1333,17 @@ This is the key architectural insight. Types don't "transfer" between processes.
 
 ### ~~Lazy Extension Factory Execution~~ (Resolved)
 
-**Decision**: Eager execution is fine. `.withExtension(factory)` calls the factory immediately on `import()`. The Bun app server IS the consumer—side effects on import are acceptable. The simplicity of eager execution (~30 lines, no lifecycle management) outweighs the theoretical purity of deferred execution.
+**Decision**: Eager execution is fine. `.withExtension(factory)` calls the factory immediately on `import()`. The Bun app server IS the consumer. Side effects on import are acceptable. The simplicity of eager execution (~30 lines, no lifecycle management) outweighs the theoretical purity of deferred execution.
 
 ### ~~Environment-Specific Extension Override~~ (Resolved)
 
 **Decision**: Not needed. This was a phantom requirement.
 
-The per-folder model means each workspace is self-contained. The config defines ALL its extensions—persistence, sync, SQLite, everything. Sync URLs are configured in the config itself (or read from env vars). Persistence paths are relative to the workspace folder. Auth tokens are read from local config or env vars by the extension factories.
+The per-folder model means each workspace is self-contained. The config defines ALL its extensions. Persistence, sync, SQLite, everything. Sync URLs are configured in the config itself (or read from env vars). Persistence paths are relative to the workspace folder. Auth tokens are read from local config or env vars by the extension factories.
 
-The Bun app server just `import()`s configs and gets back fully-formed clients. It has nothing to inject. Therefore `.withActions()` being terminal is not a problem—nothing needs to chain after it.
+The Bun app server just `import()`s configs and gets back fully-formed clients. It has nothing to inject. Therefore `.withActions()` being terminal is not a problem. Nothing needs to chain after it.
 
-The browser never imports configs directly—it connects via HTTP API. CI runs the same configs headless. There is no environment split that demands runtime injection.
+The browser never imports configs directly. It connects via HTTP API. CI runs the same configs headless. There is no environment split that demands runtime injection.
 
 ### ~~Browser Config Compatibility~~ (Resolved)
 
@@ -1354,15 +1354,15 @@ No longer an open question. Browser apps connect to the Bun app server via HTTP,
 When the user edits `epicenter.config.ts`, should Bun hot-reload? Options:
 1. Watch for file changes, re-import (need to handle Y.Doc lifecycle)
 2. Manual reload via CLI/UI button
-3. No reload—restart Bun
+3. No reload. Restart Bun
 
 ### Port Conflicts and Process Management
 
 The Bun app server uses a random OS-assigned port. Potential issues:
-1. What if the user runs multiple Epicenter instances? Each gets its own port—fine.
+1. What if the user runs multiple Epicenter instances? Each gets its own port. Fine.
 2. What if Bun crashes? Rust shell should detect child process exit and either restart or show an error.
 3. What if the port is somehow blocked by a firewall? Unlikely for loopback, but worth a fallback (retry with different port).
-4. Should we support a fixed port for development? Probably yes—`EPICENTER_PORT=3913` env var override.
+4. Should we support a fixed port for development? Probably yes: `EPICENTER_PORT=3913` env var override.
 
 ### Startup Token Rotation
 
@@ -1392,4 +1392,4 @@ Recommendation: single token per session. The threat model is local-only.
 
 ### Key Architectural Insight
 
-The type system is the bridge between compile-time (Monaco) and runtime (Bun). The same `.ts` source file serves both consumers. No serialization, no generation, no transfer of types needed. This only works because the config exports the full builder chain—`typeof export` gives Monaco the complete type, and `import()` gives Bun the live object. The HTTP architecture means this bridge works over standard web APIs, making it portable to headless, web, and desktop contexts.
+The type system is the bridge between compile-time (Monaco) and runtime (Bun). The same `.ts` source file serves both consumers. No serialization, no generation, no transfer of types needed. This only works because the config exports the full builder chain: `typeof export` gives Monaco the complete type, and `import()` gives Bun the live object. The HTTP architecture means this bridge works over standard web APIs, making it portable to headless, web, and desktop contexts.

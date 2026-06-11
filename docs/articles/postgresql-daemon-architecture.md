@@ -1,6 +1,6 @@
 # PostgreSQL Daemon Architecture: A Study in Process Isolation
 
-PostgreSQL is often cited as the gold standard for relational database reliability. While much of this reputation comes from its strict adherence to ACID properties, its fundamental architectural design—specifically its process-based daemon model—is what makes it remarkably resilient to the types of failures that often take down other systems.
+PostgreSQL is often cited as the gold standard for relational database reliability. While much of this reputation comes from its strict adherence to ACID properties, its fundamental architectural design, specifically its process-based daemon model, is what makes it remarkably resilient to the types of failures that often take down other systems.
 
 In an era where many high-performance systems default to thread-per-connection models for lower overhead, PostgreSQL remains a process-per-connection system. This decision isn't a relic of the past; it is a deliberate choice for isolation and crash safety.
 

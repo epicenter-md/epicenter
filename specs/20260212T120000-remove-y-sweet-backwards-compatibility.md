@@ -86,10 +86,10 @@ After removal, the event listener types simplify from `YSweetEvent | YWebsocketE
 **Files:** `provider.ts`
 
 Remove these four getters at `provider.ts:751-787`:
-- `shouldConnect` — consumers should use `provider.status !== 'offline'`
-- `wsconnected` — consumers should use `provider.status === 'connected' || provider.status === 'handshaking'`
-- `wsconnecting` — consumers should use `provider.status === 'connecting'`
-- `synced` — consumers should use `provider.status === 'connected'`
+- `shouldConnect`: consumers should use `provider.status !== 'offline'`
+- `wsconnected`: consumers should use `provider.status === 'connected' || provider.status === 'handshaking'`
+- `wsconnecting`: consumers should use `provider.status === 'connecting'`
+- `synced`: consumers should use `provider.status === 'connected'`
 
 **No production code uses these.** Only spec files reference them in documentation examples (not executable code).
 
@@ -118,41 +118,41 @@ Remove exports from `main.ts`:
 Remove these options from `YSweetProviderParams` and their corresponding constructor logic:
 
 **`awareness?: awarenessProtocol.Awareness`** (line 81):
-- Never passed by any call site — both consumers use the default `new Awareness(doc)`
+- Never passed by any call site: both consumers use the default `new Awareness(doc)`
 - Creates ownership ambiguity: provider calls `removeAwarenessStates` in `destroy()` and `websocketClose()`, which could blow away shared state if the Awareness instance is externally owned
 - Consumers can configure awareness post-construction via the public `provider.awareness` property
 - Remove the option and always create `new awarenessProtocol.Awareness(doc)` internally
 
 **`warnOnClose?: boolean`** (line 100):
 - Never passed by any call site
-- Leaky abstraction — tab-close warning is a UI concern, not a sync provider concern
+- Leaky abstraction: tab-close warning is a UI concern, not a sync provider concern
 - The provider already exposes `hasLocalChanges`, so the consuming app can handle `beforeunload` itself
 - Remove the option, the `handleBeforeUnload` method, and the `window.addEventListener('beforeunload', ...)` logic
 
 ### What to keep
 
-- `createYjsProvider` factory — used by 2 production files
-- `YSweetProvider` class — core provider
-- `EVENT_CONNECTION_STATUS` and `EVENT_LOCAL_CHANGES` — the modern event API
+- `createYjsProvider` factory: used by 2 production files
+- `YSweetProvider` class: core provider
+- `EVENT_CONNECTION_STATUS` and `EVENT_LOCAL_CHANGES`: the modern event API
 - All status constants (`STATUS_OFFLINE`, `STATUS_CONNECTING`, etc.)
 - `ClientToken`, `Authorization`, `AuthDocRequest` types
 - `YSweetProviderParams` type (minus `showDebuggerLink`, `awareness`, `warnOnClose`)
-- `connect`, `initialClientToken`, `offlineSupport`, `WebSocketPolyfill` options — all serve real purposes
-- `indexeddb.ts` — offline persistence
-- `sleeper.ts` — reconnection utility
+- `connect`, `initialClientToken`, `offlineSupport`, `WebSocketPolyfill` options: all serve real purposes
+- `indexeddb.ts`: offline persistence
+- `sleeper.ts`: reconnection utility
 - All reconnection, heartbeat, and sync protocol logic (minus the old-server guard)
 
 ## Consumer migration
 
 Two production files used the deprecated `'sync'` event. **Both have been migrated** to use `'connection-status'` directly.
 
-- `apps/epicenter/src/lib/yjs/y-sweet-connection.ts` — now uses `provider.on('connection-status', ...)` with proper unsubscribe
-- `packages/epicenter/src/extensions/y-sweet-sync.ts` — now uses `provider.on('connection-status', ...)` with proper unsubscribe (also fixes a subtle bug where the original `provider.on('sync', () => resolve())` never unsubscribed)
+- `apps/epicenter/src/lib/yjs/y-sweet-connection.ts`: now uses `provider.on('connection-status', ...)` with proper unsubscribe
+- `packages/epicenter/src/extensions/y-sweet-sync.ts`: now uses `provider.on('connection-status', ...)` with proper unsubscribe (also fixes a subtle bug where the original `provider.on('sync', () => resolve())` never unsubscribed)
 
 ## Tasks
 
-- [x] Update `apps/epicenter/src/lib/yjs/y-sweet-connection.ts` — replace `'sync'` event with `'connection-status'` event
-- [x] Update `packages/epicenter/src/extensions/y-sweet-sync.ts` — replace `'sync'` event with `'connection-status'` event
+- [x] Update `apps/epicenter/src/lib/yjs/y-sweet-connection.ts`: replace `'sync'` event with `'connection-status'` event
+- [x] Update `packages/epicenter/src/extensions/y-sweet-sync.ts`: replace `'sync'` event with `'connection-status'` event
 - [x] Remove `receivedAtLeastOneSyncResponse` field and all 4 references in `provider.ts`
 - [x] Delete `packages/y-sweet/src/ws-status.ts`
 - [x] Remove all ws-status imports, `WebSocketCompatLayer` instantiation, `EVENT_CONNECTION_CLOSE`/`EVENT_CONNECTION_ERROR` emits, and `YWebsocketEvent` type references from `provider.ts`
@@ -160,10 +160,10 @@ Two production files used the deprecated `'sync'` event. **Both have been migrat
 - [x] Remove `debugUrl` getter, `showDebuggerLink` field/option/assignment/logging from `provider.ts`
 - [x] Delete `packages/y-sweet/src/encoding.ts`
 - [x] Remove `encodeClientToken`/`decodeClientToken` exports from `main.ts`
-- [x] Remove `awareness` option from `YSweetProviderParams` and constructor logic — always create `new Awareness(doc)` internally
+- [x] Remove `awareness` option from `YSweetProviderParams` and constructor logic: always create `new Awareness(doc)` internally
 - [x] Remove `warnOnClose` option from `YSweetProviderParams`, the `handleBeforeUnload` method, and `beforeunload` listener logic
 - [x] Run `bun run check` to verify no type errors (y-sweet package passes `tsc --noEmit`; unrelated `@epicenter/config` failure pre-exists)
-- [x] Run `bun test` in `packages/y-sweet` — no test files exist
+- [x] Run `bun test` in `packages/y-sweet`: no test files exist
 
 ## File summary
 
@@ -180,8 +180,8 @@ Two production files used the deprecated `'sync'` event. **Both have been migrat
 
 After all changes:
 
-1. **No references to deleted APIs**: Grep for `shouldConnect`, `wsconnected`, `wsconnecting`, `\.synced`, `debugUrl`, `showDebuggerLink`, `encodeClientToken`, `decodeClientToken`, `WebSocketCompatLayer`, `EVENT_SYNC`, `EVENT_SYNCED`, `EVENT_STATUS`, `receivedAtLeastOneSyncResponse` — none should appear in `packages/y-sweet/src/`
+1. **No references to deleted APIs**: Grep for `shouldConnect`, `wsconnected`, `wsconnecting`, `\.synced`, `debugUrl`, `showDebuggerLink`, `encodeClientToken`, `decodeClientToken`, `WebSocketCompatLayer`, `EVENT_SYNC`, `EVENT_SYNCED`, `EVENT_STATUS`, `receivedAtLeastOneSyncResponse`: none should appear in `packages/y-sweet/src/`
 2. **Type check passes**: `bun run check` should produce no errors related to y-sweet
 3. **Functional test**: Connect to a running Y-Sweet server, verify sync completes and `whenSynced` resolves
-4. **Heartbeat works**: After connecting, wait >5s idle — connection should remain open (heartbeat succeeds)
-5. **Reconnection works**: Kill the Y-Sweet server, wait, restart it — client should reconnect automatically
+4. **Heartbeat works**: After connecting, wait >5s idle: connection should remain open (heartbeat succeeds)
+5. **Reconnection works**: Kill the Y-Sweet server, wait, restart it: client should reconnect automatically

@@ -1,4 +1,4 @@
-# Whispering Recording Markdown Export — Greenfield Grill
+# Whispering Recording Markdown Export: Greenfield Grill
 
 **Date**: 2026-05-27
 **Status**: Proposal
@@ -85,7 +85,7 @@ Independent of which sentence wins, these are dead or near-dead:
 
 3. `whispering.rebuildRecordingMarkdownExport` exists on the public Whispering
    client purely so one Svelte file can call it. The Whispering client doesn't
-   own the exporter as a concept — the exporter is its own module. The
+   own the exporter as a concept. The exporter is its own module. The
    settings panel should reach the exporter directly, not via the workspace
    client. Refusing this leak unbinds `openWhispering` from the markdown export
    action surface.
@@ -107,7 +107,7 @@ filesystem IO trust       | Tauri write_markdown_files      | Tauri write_markdo
 filesystem deletes        | Tauri delete_files_in_directory | Tauri delete_files_in_directory
 export folder choice      | deviceConfig (durable)          | settings UI (per-export prompt)
 exporter lifecycle        | openWhispering owns mutable     | n/a, no lifecycle
-                            handle + observe/dispose          
+                            handle + observe/dispose
 "is file current" promise | implicit, eventually consistent | snapshot-at-export, honest
 ```
 
@@ -115,7 +115,7 @@ The asymmetry: Sentence B has no exporter-as-living-thing. There is no "is this 
 
 ## Candidate refusals (refusal-shaped, in priority order)
 
-### Refusal 1 — Refuse `whenExported`. (wins regardless)
+### Refusal 1: Refuse `whenExported`. (wins regardless)
 
 ```txt
 Code family it deletes:
@@ -131,7 +131,7 @@ Decision:
   Refuse.
 ```
 
-### Refusal 2 — Refuse `whispering.idb` on the public client. (wins regardless)
+### Refusal 2: Refuse `whispering.idb` on the public client. (wins regardless)
 
 ```txt
 Code family it deletes:
@@ -146,7 +146,7 @@ Decision:
   private to openWhispering.
 ```
 
-### Refusal 3 — Refuse `whispering.rebuildRecordingMarkdownExport`. (wins regardless)
+### Refusal 3: Refuse `whispering.rebuildRecordingMarkdownExport`. (wins regardless)
 
 ```txt
 Code family it deletes:
@@ -167,7 +167,7 @@ Decision:
   Refuse.
 ```
 
-### Refusal 4 — Refuse the user-selected live export folder. (Sentence B win)
+### Refusal 4: Refuse the user-selected live export folder. (Sentence B win)
 
 ```txt
 Code family it deletes:
@@ -208,7 +208,7 @@ Decision:
   **Recommend refuse.** See "Asymmetric win" below.
 ```
 
-### Refusal 5 — Refuse rebuild-as-repair under Sentence C. (Sentence C cleanup only)
+### Refusal 5: Refuse rebuild-as-repair under Sentence C. (Sentence C cleanup only)
 
 If Sentence C survives, the rebuild button still smells. Rebuild only exists because live projection is implicit and can drift. That is a symptom of live projection, not an independent product feature. Either:
 
@@ -216,13 +216,13 @@ If Sentence C survives, the rebuild button still smells. Rebuild only exists bec
 Option C1: Keep rebuild as an explicit user repair (current shape).
 Option C2: Refuse rebuild. If projection drifts, the user toggles the folder
            setting off and back on (which re-attaches and re-fires
-           writeAllRecordings as the initial pass — once whenExported is
+           writeAllRecordings as the initial pass. Once whenExported is
            reintroduced for that purpose only, see contradiction with R1).
 ```
 
 The contradiction matters: **`whenExported` is the right primitive for "do the initial export" but the wrong primitive to expose as a returned member.** Internally, the live exporter still needs an initial write to backfill. Just don't return it.
 
-### Refusal 6 — Refuse the `client.browser.ts` / `client.tauri.ts` split (regardless).
+### Refusal 6: Refuse the `client.browser.ts` / `client.tauri.ts` split (regardless).
 
 The task suggested investigating an env split. Don't do it. Today `whispering/client.ts` directly imports `./tauri`. There is no browser variant. Adding a `.browser.ts` shim would be a no-op export that exists only to look symmetric. The honest shape is: Whispering's runtime client is Tauri-only at this layer. The browser app (if it ever exists) builds a different client file. Don't add an env-split until a real browser path exists.
 
@@ -308,7 +308,7 @@ If the user pushes back and keeps Sentence C:
    "this is a snapshot at <timestamp>".
 
 3. If we keep Sentence C and accept the smaller refusals, the dispose/
-   re-attach pattern still exists — just moved. Make sure the new home
+   re-attach pattern still exists, just moved. Make sure the new home
    doesn't import `openWhispering` and create a circular dependency.
 
 4. `DeleteFilesSelection::Filenames` is earned (audio blob store uses it).

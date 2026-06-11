@@ -59,7 +59,7 @@ type InvalidKey<S extends string> =
   `Invalid action key "${S}", must be snake_case ASCII matching /^[a-z][a-z0-9_]*$/​`;
 ```
 
-Note the trailing `​` — that's U+200B, a Unicode zero-width space. It's invisible in IDE error tooltips and editor windows, but it brands the literal: no user types it, so the type isn't structurally reachable from any normal string.
+Note the trailing `​`: that's U+200B, a Unicode zero-width space. It's invisible in IDE error tooltips and editor windows, but it brands the literal: no user types it, so the type isn't structurally reachable from any normal string.
 
 The error tooltip reads as a sentence:
 
@@ -177,8 +177,8 @@ So the regex-derived type idea is dead for shape constraints. Write the recursiv
 
 The type check catches authoring inside the helper's parameter context. It does not catch:
 
-- `Object.fromEntries(somethingDynamic)` — TS widens to `Record<string, V>`, predicate becomes vacuous
-- `as` casts — explicit bypass
+- `Object.fromEntries(somethingDynamic)`: TS widens to `Record<string, V>`, predicate becomes vacuous
+- `as` casts: explicit bypass
 - Helper called from `.js` files in mixed codebases
 
 So pair the type-level check with a runtime check inside the helper. Two sources of truth for the same rule, sitting next to each other in the file. TypeScript cannot derive a runtime value from a type, and arkregex doesn't narrow ranges. Pay the cost.

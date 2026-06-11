@@ -1,7 +1,7 @@
 # Network Topology: Multi-Server Architecture
 
 **Date**: 2026-02-22
-**Status**: Draft (design discussion — not yet implementation-ready)
+**Status**: Draft (design discussion: not yet implementation-ready)
 **Author**: Braden + AI-assisted
 **Related**: `20260219T195800-server-architecture-rethink.md`, `20260220T080000-plugin-first-server-architecture.md`, `20260220T133004-unified-local-server-architecture.md`, `20260222T073156-unified-cli-server-sidecar.md`, `20260219T200000-deployment-targets-research.md`, `20260222T195800-server-side-api-key-management.md`, `20260121T170000-sync-architecture.md`, `20260109T140700-opencode-integration-architecture.md`
 
@@ -25,7 +25,7 @@ Desktop App (Tauri)
       └── AI chat (/ai/chat)
 ```
 
-The server package (`@epicenter/server`) exposes `createServer()` which composes sync, workspace, and AI plugins into a single Elysia app. Each desktop runs its own instance. There is no coordination between devices — sync happens through a shared relay (Y-Sweet or the server's own sync plugin), but there's no concept of a "hub" server or device discovery.
+The server package (`@epicenter/server`) exposes `createServer()` which composes sync, workspace, and AI plugins into a single Elysia app. Each desktop runs its own instance. There is no coordination between devices: sync happens through a shared relay (Y-Sweet or the server's own sync plugin), but there's no concept of a "hub" server or device discovery.
 
 This creates problems:
 
@@ -77,7 +77,7 @@ The architecture is already designed in layers. The plugin-first approach means 
 | Open WebUI | Client → Self-hosted server | Single server | Server-side (proxied) |
 | Tailscale | Mesh network (peer-to-peer) | Coordination server (control plane) | N/A |
 
-Every multi-device collaboration tool uses a central coordination server. The variation is whether it's cloud-only (Linear, Figma), self-hosted (Open WebUI), or hybrid (Obsidian). Nobody does fully decentralized coordination for CRDT sync — there's always at least one "known" endpoint. Tailscale's model (lightweight control plane + direct peer connections) is the closest analog to what we're building.
+Every multi-device collaboration tool uses a central coordination server. The variation is whether it's cloud-only (Linear, Figma), self-hosted (Open WebUI), or hybrid (Obsidian). Nobody does fully decentralized coordination for CRDT sync. There's always at least one "known" endpoint. Tailscale's model (lightweight control plane + direct peer connections) is the closest analog to what we're building.
 
 A designated hub server is the standard pattern. The innovation here is making it interchangeable between self-hosted and cloud.
 
@@ -95,15 +95,15 @@ The simplest design is: **all AI on hub, no exceptions.** Here's why:
 
 4. **Key management stays trivial.** Keys live on the hub in one encrypted store. No distribution, no sync, no encrypted Yjs KV. The `server-side-api-key-management` spec applies without changes.
 
-5. **The extra network hop is irrelevant.** An LLM API call takes 500ms–30s. A local-to-hub hop adds 5ms. Token arrival speed is identical because responses stream via SSE.
+5. **The extra network hop is irrelevant.** An LLM API call takes 500ms: 30s. A local-to-hub hop adds 5ms. Token arrival speed is identical because responses stream via SSE.
 
 | Dimension | All AI on Hub |
 | --- | --- |
-| Client routing | `hubUrl + "/ai/chat"` — one endpoint, always |
+| Client routing | `hubUrl + "/ai/chat"`: one endpoint, always |
 | Key management | Keys on hub only. Zero distribution. |
 | Ollama handling | Hub config: `OLLAMA_HOST`. Same AI plugin code. |
 | Mobile support | Same endpoint as desktop. Nothing special. |
-| TanStack AI fit | Used exactly as designed — serverful. |
+| TanStack AI fit | Used exactly as designed: serverful. |
 | Local sidecar AI code | None. Deleted. |
 | Fault tolerance | Hub down = no AI. Same as sync/auth being down. |
 
@@ -208,7 +208,7 @@ Sidecar (createSidecarServer)
 ├── WS   /rooms/{id}/sync                      ← Yjs WebSocket sync (local relay)
 ├── /workspaces/...                             ← Workspace CRUD (local)
 └── (NO auth endpoints, NO AI, NO key management,
-     NO server discovery — discovery uses Awareness on hub's sync layer)
+     NO server discovery: discovery uses Awareness on hub's sync layer)
 ```
 
 The sidecar has zero AI responsibility. It exists to provide fast local sync between the Tauri webview and Y.Doc persistence, and to serve the workspace API for local file operations.
@@ -305,7 +305,7 @@ The server-side AI plugin is unchanged from the current implementation. `resolve
 
 ### Ollama Configuration
 
-Ollama runs as a separate process — it's already a server at `localhost:11434`. The hub just needs to know where to reach it:
+Ollama runs as a separate process. It's already a server at `localhost:11434`. The hub just needs to know where to reach it:
 
 ```
 Self-hosted hub IS the desktop:
@@ -477,8 +477,8 @@ Plugin execution is always local -- each desktop spawns its own MCP servers and 
 1. User logs in via Better Auth on the hub server (same flow whether hub is self-hosted or cloud)
 2. Client receives a session token
 3. Client stores the session token locally (Tauri app settings, mobile secure storage, chrome.storage.local)
-4. For requests to the **hub server**: client includes session token as cookie or bearer header — hub validates directly via Better Auth
-5. For requests to the **local sidecar**: client includes the same session token — sidecar validates by calling `GET /auth/session` on the hub (response cached with TTL)
+4. For requests to the **hub server**: client includes session token as cookie or bearer header: hub validates directly via Better Auth
+5. For requests to the **local sidecar**: client includes the same session token: sidecar validates by calling `GET /auth/session` on the hub (response cached with TTL)
 
 **Why this works for interchangeability:**
 
@@ -495,11 +495,11 @@ The client stores `hubUrl` and a session token. It doesn't know or care whether 
 
 **Third-Party Hosted Workspaces (OAuth Provider)**
 
-The auth flow above covers first-party clients — the Tauri desktop app, mobile app, and browser extension. These clients are same-origin (or trusted-origin) with the hub and use session tokens directly. Third-party developers who host workspace apps at their own domains (e.g., `myapp.com`) need a different mechanism because they are cross-origin with the hub and cannot share session cookies.
+The auth flow above covers first-party clients. The Tauri desktop app, mobile app, and browser extension. These clients are same-origin (or trusted-origin) with the hub and use session tokens directly. Third-party developers who host workspace apps at their own domains (e.g., `myapp.com`) need a different mechanism because they are cross-origin with the hub and cannot share session cookies.
 
-For this case, the hub acts as an **OAuth 2.1 / OIDC identity provider** using Better Auth's `oauthProvider` plugin. Third-party apps register as OAuth clients, redirect users to the hub's authorization endpoint for login, receive OAuth access tokens (JWTs) on callback, and use those tokens to authenticate WebSocket connections to hub sync rooms. The hub validates these JWTs on WebSocket upgrade using its own JWKS keys — no external identity provider or third-party validation service is involved.
+For this case, the hub acts as an **OAuth 2.1 / OIDC identity provider** using Better Auth's `oauthProvider` plugin. Third-party apps register as OAuth clients, redirect users to the hub's authorization endpoint for login, receive OAuth access tokens (JWTs) on callback, and use those tokens to authenticate WebSocket connections to hub sync rooms. The hub validates these JWTs on WebSocket upgrade using its own JWKS keys, no external identity provider or third-party validation service is involved.
 
-This adds a second column to the auth topology: first-party clients authenticate with session tokens, third-party hosted workspaces authenticate with OAuth access tokens. Both token types resolve to the same user accounts, authorize access to the same sync rooms, and are validated by the same hub. From the sync layer's perspective, the token type is an implementation detail — the WebSocket upgrade handler accepts either. See `specs/20260225T210000-workspace-apps-orchestrator.md`, section "Third-Party Auth Flow (Login with Epicenter)" for the full OAuth flow design.
+This adds a second column to the auth topology: first-party clients authenticate with session tokens, third-party hosted workspaces authenticate with OAuth access tokens. Both token types resolve to the same user accounts, authorize access to the same sync rooms, and are validated by the same hub. From the sync layer's perspective, the token type is an implementation detail. The WebSocket upgrade handler accepts either. See `specs/20260225T210000-workspace-apps-orchestrator.md`, section "Third-Party Auth Flow (Login with Epicenter)" for the full OAuth flow design.
 
 ### Hub URL Discovery
 
@@ -535,7 +535,7 @@ Onboarding flow (self-hosted):
   4. Done. URL persisted locally. Never asked again.
 ```
 
-**This is a one-time-per-device setup.** Once the hub URL is persisted, the device remembers it across app restarts, updates, and network changes. The user configures each device once and never thinks about it again — similar to how you sign into iCloud once per device.
+**This is a one-time-per-device setup.** Once the hub URL is persisted, the device remembers it across app restarts, updates, and network changes. The user configures each device once and never thinks about it again: similar to how you sign into iCloud once per device.
 
 **QR code flow (recommended for mobile):**
 1. Hub server's admin UI (`hubUrl/admin`) displays a QR code containing the server URL and a one-time setup token
@@ -545,7 +545,7 @@ Onboarding flow (self-hosted):
 
 **Tailscale (recommended for self-hosted networking):**
 
-For self-hosted setups, Tailscale is the recommended network layer. It gives each machine a stable hostname (e.g., `macmini.tailnet-name.ts.net`) that works across networks (home, office, cellular), avoids manual IP management, and provides encrypted tunnels with no port forwarding. The hub URL stays the same whether the user is at home or on cellular — no reconfiguration needed when switching networks.
+For self-hosted setups, Tailscale is the recommended network layer. It gives each machine a stable hostname (e.g., `macmini.tailnet-name.ts.net`) that works across networks (home, office, cellular), avoids manual IP management, and provides encrypted tunnels with no port forwarding. The hub URL stays the same whether the user is at home or on cellular, no reconfiguration needed when switching networks.
 
 ### Sidecar Auth Boundary
 
@@ -643,7 +643,7 @@ Define the hub server as a distinct composition of existing plugins, plus Better
 Strip the local sidecar to sync + workspace only.
 
 - [ ] **2.1** Create `createSidecarServer()` composition: sync plugin + workspace plugin (NO AI plugin, NO key management)
-- [ ] **2.2** Implement session token validation on the local sidecar — validates against hub's `/auth/session` endpoint with response caching
+- [ ] **2.2** Implement session token validation on the local sidecar: validates against hub's `/auth/session` endpoint with response caching
 - [ ] **2.3** Configure CORS allowlist on sidecar startup (Tauri webview origin + hub origin)
 - [ ] **2.4** Wire the auth boundary into the Tauri sidecar startup flow
 
@@ -652,7 +652,7 @@ Strip the local sidecar to sync + workspace only.
 Update clients to always hit hub for AI.
 
 - [ ] **3.1** Add `hubServerUrl` in client settings (cloud mode: hardcoded, self-hosted mode: user-configured)
-- [ ] **3.2** Client AI connection: `fetchServerSentEvents(hubServerUrl + "/ai/chat")` — one endpoint, no routing
+- [ ] **3.2** Client AI connection: `fetchServerSentEvents(hubServerUrl + "/ai/chat")`: one endpoint, no routing
 - [ ] **3.3** Add hub URL configuration UI (onboarding flow: cloud vs self-hosted choice)
 - [ ] **3.4** Add mode selection to onboarding: "Use Epicenter Cloud" (default) vs "Connect to self-hosted server"
 
@@ -726,7 +726,7 @@ The hub is a single point of failure for cross-device features. This is an inher
 2. User logs in to the new hub via Better Auth
 3. Sync reconnects to the new hub's relay
 4. API keys must be re-entered on the new hub (keys don't sync between hubs)
-5. Y.Doc data is preserved locally — CRDTs merge when the new relay receives updates
+5. Y.Doc data is preserved locally: CRDTs merge when the new relay receives updates
 6. Conversation history persists (stored in Y.Doc, not on the hub)
 
 ### Ollama not reachable from hub
@@ -743,7 +743,7 @@ The hub is a single point of failure for cross-device features. This is an inher
 
 1. Epicenter cloud doesn't run Ollama (no local GPU)
 2. Selecting an Ollama model returns: "Ollama is not available on Epicenter Cloud. Use a cloud provider or switch to a self-hosted server."
-3. This is the expected behavior — cloud = cloud providers, self-hosted = cloud providers + Ollama
+3. This is the expected behavior: cloud = cloud providers, self-hosted = cloud providers + Ollama
 
 ### Hub down with OpenCode running
 
@@ -776,11 +776,11 @@ The hub is a single point of failure for cross-device features. This is an inher
 2. **Should the local sidecar validate tokens on every request or cache the validation?**
    - Every request: always fresh, but adds latency (HTTP call to hub per request).
    - Cached with TTL: fast after first validation, but stale tokens work until TTL expires.
-   - **Recommendation**: Cache with a 5-minute TTL. The sidecar is on the same machine as the client — the threat model is local process isolation, not internet-facing auth. A 5-minute window is acceptable.
+   - **Recommendation**: Cache with a 5-minute TTL. The sidecar is on the same machine as the client: the threat model is local process isolation, not internet-facing auth. A 5-minute window is acceptable.
 
 3. **How does the hub server's Better Auth config stay identical between self-hosted and cloud?**
    - Options: (a) Ship the same Better Auth config in the binary and the cloud deployment, (b) Allow config divergence (cloud adds social login, self-hosted is email/password only), (c) Use a shared config package.
-   - **Recommendation**: (b) Allow divergence. Self-hosted starts with email/password or passkeys. Cloud adds Google/GitHub social login. The session token format is the same regardless — clients don't care how the user authenticated.
+   - **Recommendation**: (b) Allow divergence. Self-hosted starts with email/password or passkeys. Cloud adds Google/GitHub social login. The session token format is the same regardless: clients don't care how the user authenticated.
 
 4. **Should `OLLAMA_HOST` be configurable via settings UI or env var only?**
    - Env var: simple for self-hosted users who manage server configs. Set-and-forget.
@@ -799,7 +799,7 @@ The hub is a single point of failure for cross-device features. This is an inher
    - **Recommendation**: Start with manual registration only. The number of third-party workspace apps will be small initially. Add dynamic registration later if developer onboarding friction becomes a bottleneck, with rate limiting and admin approval workflows.
 
 7. **Should the local sidecar sync relay be optional?**
-   - If the hub is on the same machine (self-hosted on desktop), the sidecar sync relay is redundant — the webview could connect directly to the hub.
+   - If the hub is on the same machine (self-hosted on desktop), the sidecar sync relay is redundant: the webview could connect directly to the hub.
    - If the hub is remote, the sidecar provides meaningful latency benefits (local WebSocket vs remote).
    - **Recommendation**: Always run the sidecar for consistency. The overhead is minimal and it simplifies the client code (always connect to `localhost:3913` for sync).
 
@@ -809,7 +809,7 @@ The hub is a single point of failure for cross-device features. This is an inher
 - [ ] Desktop Tauri sidecar starts with sync + workspace only (no AI plugin)
 - [ ] Mobile client connects to hub for sync and AI
 - [ ] Desktop client connects to hub for AI, local sidecar for sync
-- [ ] All AI requests (cloud and Ollama) route through hub — no client-side provider routing
+- [ ] All AI requests (cloud and Ollama) route through hub: no client-side provider routing
 - [ ] `OLLAMA_HOST` is configurable and the hub calls Ollama at the configured host
 - [ ] Sidecar connects to hub's discovery room and appears in Awareness state visible to all clients
 - [ ] Session token from hub authenticates requests to both hub and local sidecar
@@ -827,18 +827,18 @@ The hub is a single point of failure for cross-device features. This is an inher
 
 ## References
 
-- `packages/server/src/server.ts` — Current `createServer()` composition
-- `packages/server/src/ai/plugin.ts` — AI chat plugin with `resolveApiKey()`
-- `packages/server/src/ai/adapters.ts` — Provider adapters, Ollama exemption, `PROVIDER_ENV_VARS`
-- `packages/server/src/sync/plugin.ts` — Sync plugin (WebSocket rooms)
-- `apps/tab-manager/src/lib/state/settings.ts` — `serverUrlItem` in chrome.storage.local
-- `apps/tab-manager/src/lib/state/ai-chat-state.svelte.ts` — Current AI chat state
-- `specs/20260219T195800-server-architecture-rethink.md` — Layered server architecture
-- `specs/20260220T080000-plugin-first-server-architecture.md` — Plugin composition pattern
-- `specs/20260220T133004-unified-local-server-architecture.md` — Tauri sidecar server
-- `specs/20260222T073156-unified-cli-server-sidecar.md` — Compiled binary server
-- `specs/20260219T200000-deployment-targets-research.md` — Cloud deployment (CF Workers + DOs)
-- `specs/20260222T195800-server-side-api-key-management.md` — Encrypted key store
-- `specs/20260121T170000-sync-architecture.md` — Three sync modes
-- `specs/20260222T200800-server-endpoint-security.md` — CORS + bearer token auth boundary
-- `specs/20260109T140700-opencode-integration-architecture.md` — OpenCode as AI backend (XDG isolation, plugin generation, spawn lifecycle)
+- `packages/server/src/server.ts`: Current `createServer()` composition
+- `packages/server/src/ai/plugin.ts`: AI chat plugin with `resolveApiKey()`
+- `packages/server/src/ai/adapters.ts`: Provider adapters, Ollama exemption, `PROVIDER_ENV_VARS`
+- `packages/server/src/sync/plugin.ts`: Sync plugin (WebSocket rooms)
+- `apps/tab-manager/src/lib/state/settings.ts`: `serverUrlItem` in chrome.storage.local
+- `apps/tab-manager/src/lib/state/ai-chat-state.svelte.ts`: Current AI chat state
+- `specs/20260219T195800-server-architecture-rethink.md`: Layered server architecture
+- `specs/20260220T080000-plugin-first-server-architecture.md`: Plugin composition pattern
+- `specs/20260220T133004-unified-local-server-architecture.md`: Tauri sidecar server
+- `specs/20260222T073156-unified-cli-server-sidecar.md`: Compiled binary server
+- `specs/20260219T200000-deployment-targets-research.md`: Cloud deployment (CF Workers + DOs)
+- `specs/20260222T195800-server-side-api-key-management.md`: Encrypted key store
+- `specs/20260121T170000-sync-architecture.md`: Three sync modes
+- `specs/20260222T200800-server-endpoint-security.md`: CORS + bearer token auth boundary
+- `specs/20260109T140700-opencode-integration-architecture.md`: OpenCode as AI backend (XDG isolation, plugin generation, spawn lifecycle)

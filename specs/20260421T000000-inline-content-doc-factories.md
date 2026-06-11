@@ -52,7 +52,7 @@ export function buildPerRowDoc({ workspaceId, collection, field, id, onUpdate, a
 }
 ```
 
-Consumers call the factory and immediately destructure — the wrapper adds no domain value:
+Consumers call the factory and immediately destructure. The wrapper adds no domain value:
 
 ```ts
 // apps/opensidian/src/lib/client.ts
@@ -66,7 +66,7 @@ const fileContentDocs = createFileContentDocs({
 This creates problems:
 
 1. **Indirection without payoff**: Each factory forwards its args to `buildPerRowDoc` unchanged and adds one `attach*` call. Reading a call site requires chasing two files.
-2. **Premature abstraction**: Three callers with two variations (`attachTimeline` vs `attachPlainText`) doesn't justify a shared primitive. The 30 lines of `buildPerRowDoc` are now effectively boilerplate to read — not to write.
+2. **Premature abstraction**: Three callers with two variations (`attachTimeline` vs `attachPlainText`) doesn't justify a shared primitive. The 30 lines of `buildPerRowDoc` are now effectively boilerplate to read: not to write.
 3. **Contract surface leaks**: `DocPersistence` and `PerRowDocBase` are exported from `packages/document` solely to type the factory seam. Inlining collapses both into local structural shapes.
 
 ### Desired State
@@ -104,16 +104,16 @@ The task description said "3 call sites." Actual count is **7**, across 3 factor
 | `createSkillInstructionsDocs`    | `packages/skills/src/index.ts`, `packages/skills/src/node.ts`                                                |
 | `createReferenceContentDocs`     | `packages/skills/src/index.ts`, `packages/skills/src/node.ts`                                                |
 
-All 7 must be inlined. If duplication across the browser/node pair in `packages/skills` turns out to be painful, the implementer can factor the common body back out — but into the same file, not a shared primitive.
+All 7 must be inlined. If duplication across the browser/node pair in `packages/skills` turns out to be painful, the implementer can factor the common body back out. But into the same file, not a shared primitive.
 
 ## Design Decisions
 
 | Decision                                     | Choice                                                          | Rationale                                                                                            |
 | -------------------------------------------- | --------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
-| Keep `defineDocument`?                       | Yes                                                             | It provides caching, ref-counting, grace-period GC — real value. Not a wrapper.                       |
+| Keep `defineDocument`?                       | Yes                                                             | It provides caching, ref-counting, grace-period GC: real value. Not a wrapper.                       |
 | Keep `docGuid`?                              | Yes                                                             | Deterministic guid derivation is shared logic worth centralizing; it's a pure helper, not a wrapper. |
 | Keep `onLocalUpdate`?                        | Yes                                                             | Encapsulates the origin-filter subtlety (non-trivial); not a factory.                                |
-| Fate of `NO_PERSISTENCE` fallback            | Inline per call site, or drop entirely if every call site attaches | Two `packages/skills/src/node.ts` sites omit `attach` today — they'll need an explicit inline fallback. |
+| Fate of `NO_PERSISTENCE` fallback            | Inline per call site, or drop entirely if every call site attaches | Two `packages/skills/src/node.ts` sites omit `attach` today: they'll need an explicit inline fallback. |
 | Export surface for `DocPersistence`          | Delete                                                          | Only used by the factory seam. No external consumers after inlining.                                 |
 | Export surface for `PerRowDocBase`           | Delete                                                          | Same.                                                                                                |
 | Export surface for `buildPerRowDoc`          | Delete                                                          | File itself is deleted.                                                                              |
@@ -147,7 +147,7 @@ defineDocument((id) => {
 })
 ```
 
-Each call site is self-contained. `packages/document` still exports `defineDocument`, `docGuid`, `onLocalUpdate`, and the `attach*` helpers — everything call sites compose.
+Each call site is self-contained. `packages/document` still exports `defineDocument`, `docGuid`, `onLocalUpdate`, and the `attach*` helpers, everything call sites compose.
 
 ## Implementation Plan
 
@@ -167,7 +167,7 @@ Each call site is self-contained. `packages/document` still exports `defineDocum
 - [ ] **2.2** Delete `packages/skills/src/skill-instructions-docs.ts`.
 - [ ] **2.3** Delete `packages/skills/src/reference-content-docs.ts`.
 - [ ] **2.4** Delete `packages/document/src/build-per-row-doc.ts`.
-- [ ] **2.5** Remove `buildPerRowDoc`, `DocPersistence`, `PerRowDocBase` exports from `packages/document/src/index.ts` (lines 66–70).
+- [ ] **2.5** Remove `buildPerRowDoc`, `DocPersistence`, `PerRowDocBase` exports from `packages/document/src/index.ts` (lines 66-70).
 - [ ] **2.6** Remove re-exports of the deleted factories from `packages/filesystem/src/index.ts` and `packages/skills/src/index.ts` (grep for `file-content-docs`, `skill-instructions-docs`, `reference-content-docs`).
 - [ ] **2.7** Check for `FileContentDocs` type export and any other `ReturnType<typeof create...>` exports; delete or replace with structural types at the consumer.
 
@@ -175,7 +175,7 @@ Each call site is self-contained. `packages/document` still exports `defineDocum
 
 - [ ] **3.1** `bun run typecheck` at repo root (or equivalent per package).
 - [ ] **3.2** `bun test` for `packages/document`, `packages/skills`, `packages/filesystem`, `playground/opensidian-e2e`.
-- [ ] **3.3** Grep for any stragglers: `rg "createFileContentDocs|createSkillInstructionsDocs|createReferenceContentDocs|buildPerRowDoc|DocPersistence|PerRowDocBase|NO_PERSISTENCE"` — should return zero hits outside `specs/` and `docs/`.
+- [ ] **3.3** Grep for any stragglers: `rg "createFileContentDocs|createSkillInstructionsDocs|createReferenceContentDocs|buildPerRowDoc|DocPersistence|PerRowDocBase|NO_PERSISTENCE"`: should return zero hits outside `specs/` and `docs/`.
 - [ ] **3.4** Spot-check one call site end-to-end (e.g., opensidian app) to confirm document open/close still works.
 
 ## Edge Cases
@@ -198,21 +198,21 @@ return {
 
 ### Downstream `FileContentDocs` type consumers
 
-`createFileContentDocs` exports `type FileContentDocs = ReturnType<typeof createFileContentDocs>`. Grep for usage before deletion — any consumer typing against it needs to switch to `ReturnType<typeof defineDocument<...>>` or a local type alias at the call site.
+`createFileContentDocs` exports `type FileContentDocs = ReturnType<typeof createFileContentDocs>`. Grep for usage before deletion: any consumer typing against it needs to switch to `ReturnType<typeof defineDocument<...>>` or a local type alias at the call site.
 
 ### Spec docs referencing the removed primitives
 
-`specs/20260420T152026-definedocument-primitive.md` and `specs/20260420T220000-simplify-definedocument-primitive.md` mention `buildPerRowDoc`. Don't edit historical specs — they're point-in-time records.
+`specs/20260420T152026-definedocument-primitive.md` and `specs/20260420T220000-simplify-definedocument-primitive.md` mention `buildPerRowDoc`. Don't edit historical specs. They're point-in-time records.
 
 ## Open Questions
 
 1. **Should `NO_PERSISTENCE` stay as a named export from `packages/document`?**
-   - Options: (a) delete entirely — each call site writes `Promise.resolve()` inline, (b) keep as a tiny exported constant for the no-attach case.
+   - Options: (a) delete entirely: each call site writes `Promise.resolve()` inline, (b) keep as a tiny exported constant for the no-attach case.
    - **Recommendation**: (a) delete. Two literals per no-persistence call site is clearer than an import.
 
 2. **Should the two `packages/skills` pairs (index.ts + node.ts) share a private helper inside `packages/skills/src/`?**
    - The node and browser variants differ only in `attach`. After inlining, they're ~20 duplicate lines × 2 collections = 40 lines of duplication across two files.
-   - **Recommendation**: Inline first, look at the diff, decide after. If the duplication reads cleanly (it likely will — only `attach` differs), leave it. Co-locating a shared helper inside `packages/skills` would recreate the thing we just deleted, one layer shallower.
+   - **Recommendation**: Inline first, look at the diff, decide after. If the duplication reads cleanly (it likely will: only `attach` differs), leave it. Co-locating a shared helper inside `packages/skills` would recreate the thing we just deleted, one layer shallower.
 
 3. **Does `docGuid` warrant inlining too?**
    - It's a pure helper exported from `packages/document`. Has real callers beyond these factories.
@@ -229,13 +229,13 @@ return {
 
 ## References
 
-- `packages/document/src/build-per-row-doc.ts` — primitive being deleted (contains `DocPersistence`, `NO_PERSISTENCE`, `PerRowDocBase`, `buildPerRowDoc`).
-- `packages/document/src/index.ts:66-70` — exports to remove.
-- `packages/document/src/define-document.ts` — retained primitive; inlined call sites call this directly.
-- `packages/document/src/doc-guid.ts` — retained helper.
-- `packages/document/src/on-local-update.ts` — retained helper.
-- `packages/filesystem/src/file-content-docs.ts` — factory to delete.
-- `packages/skills/src/skill-instructions-docs.ts` — factory to delete.
-- `packages/skills/src/reference-content-docs.ts` — factory to delete.
+- `packages/document/src/build-per-row-doc.ts`: primitive being deleted (contains `DocPersistence`, `NO_PERSISTENCE`, `PerRowDocBase`, `buildPerRowDoc`).
+- `packages/document/src/index.ts:66-70`: exports to remove.
+- `packages/document/src/define-document.ts`: retained primitive; inlined call sites call this directly.
+- `packages/document/src/doc-guid.ts`: retained helper.
+- `packages/document/src/on-local-update.ts`: retained helper.
+- `packages/filesystem/src/file-content-docs.ts`: factory to delete.
+- `packages/skills/src/skill-instructions-docs.ts`: factory to delete.
+- `packages/skills/src/reference-content-docs.ts`: factory to delete.
 - Call sites: `apps/opensidian/src/lib/client.ts`, `playground/opensidian-e2e/epicenter.config.ts`, `playground/opensidian-e2e/epicenter.config.test.ts`, `packages/skills/src/index.ts`, `packages/skills/src/node.ts`.
-- Prior commit `6ac9f59bc` (inline `docPersistence` → `buildPerRowDoc`) — this spec extends that cleanup one layer further.
+- Prior commit `6ac9f59bc` (inline `docPersistence` → `buildPerRowDoc`): this spec extends that cleanup one layer further.

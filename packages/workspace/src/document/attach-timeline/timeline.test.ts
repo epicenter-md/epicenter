@@ -529,7 +529,7 @@ describe('attachTimeline - batch', () => {
 		let callCount = 0;
 		tl.observe(() => callCount++);
 		// First write pushes text entry, second replaces in-place.
-		// Yjs collapses nested transactions—single observe callback.
+		// Yjs collapses nested transactions. Single observe callback.
 		tl.batch(() => {
 			tl.write('first');
 			tl.write('second');

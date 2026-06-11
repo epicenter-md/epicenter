@@ -1,6 +1,6 @@
 # Better Auth Needs Two Entry Points in Serverless
 
-In serverless, there's no long-lived process. Your auth instance gets created on every request. That's fine — Better Auth is designed for it. You write a factory function that takes the request's environment and returns a fresh `betterAuth()` instance:
+In serverless, there's no long-lived process. Your auth instance gets created on every request. That's fine: Better Auth is designed for it. You write a factory function that takes the request's environment and returns a fresh `betterAuth()` instance:
 
 ```ts
 export function createAuth(env: AuthEnv) {
@@ -13,7 +13,7 @@ export function createAuth(env: AuthEnv) {
 }
 ```
 
-But then you need to run the CLI — `bunx @better-auth/cli generate` or `migrate`. The CLI needs to import a file that exports a static `auth` object. It introspects the config to generate types and migrations. It can't call your factory function because it doesn't have Cloudflare bindings, KV namespaces, or any of the runtime context your factory expects.
+But then you need to run the CLI: `bunx @better-auth/cli generate` or `migrate`. The CLI needs to import a file that exports a static `auth` object. It introspects the config to generate types and migrations. It can't call your factory function because it doesn't have Cloudflare bindings, KV namespaces, or any of the runtime context your factory expects.
 
 So you need two entry points into the same auth config.
 
@@ -29,7 +29,7 @@ export const sharedAuthConfig = {
 } satisfies Partial<BetterAuthOptions>;
 ```
 
-Plugins, base path, feature flags — anything that changes what tables or columns exist. This is the source of truth.
+Plugins, base path, feature flags: anything that changes what tables or columns exist. This is the source of truth.
 
 Then two consumers spread it:
 
@@ -49,9 +49,9 @@ Then two consumers spread it:
   process.env  Cloudflare bindings
 ```
 
-**`auth.ts`** — the CLI entry point. Reads `process.env`, validates with arktype, exports a static `auth` object. This is what `@better-auth/cli` imports.
+**`auth.ts`**: the CLI entry point. Reads `process.env`, validates with arktype, exports a static `auth` object. This is what `@better-auth/cli` imports.
 
-**`createAuth(env)`** — the runtime factory. Takes Cloudflare bindings, adds session config, KV caching, trusted origins — everything the CLI doesn't need and can't provide.
+**`createAuth(env)`**: the runtime factory. Takes Cloudflare bindings, adds session config, KV caching, trusted origins: everything the CLI doesn't need and can't provide.
 
 Both spread `sharedAuthConfig`. If the schema-affecting options ever diverge between CLI and runtime, your migrations won't match your tables. One shared object makes that impossible.
 
@@ -73,7 +73,7 @@ The rule: if it changes the schema, it goes in `sharedAuthConfig`. If it's runti
 
 ## Update: Module-Level Auth with Global Env
 
-Since March 2025, Cloudflare Workers supports `import { env } from "cloudflare:workers"` — module-level access to bindings without waiting for a request. This changes the runtime side of the pattern.
+Since March 2025, Cloudflare Workers supports `import { env } from "cloudflare:workers"`: module-level access to bindings without waiting for a request. This changes the runtime side of the pattern.
 
 Before, you needed a per-request factory because there was no way to read `DATABASE_URL` or `BETTER_AUTH_SECRET` outside a request handler. Now you can:
 
@@ -83,7 +83,7 @@ import { env } from "cloudflare:workers";
 export const auth = createAuth(env);
 ```
 
-One call at module level. Not per-request. `betterAuth()` doesn't perform I/O during construction — it stores config and lazily connects on first query. The `secondaryStorage` callbacks are closures that only execute during requests. So a module-level singleton is safe.
+One call at module level. Not per-request. `betterAuth()` doesn't perform I/O during construction. It stores config and lazily connects on first query. The `secondaryStorage` callbacks are closures that only execute during requests. So a module-level singleton is safe.
 
 This means you no longer need to thread `auth` through Hono middleware and `c.var`. Import it directly wherever you need it.
 

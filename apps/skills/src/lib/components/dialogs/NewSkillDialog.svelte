@@ -19,7 +19,7 @@
 
 		const errors = validateSkill({
 			name: trimmed,
-			description: 'TODO—describe when and why to use this skill.',
+			description: 'TODO: describe when and why to use this skill.',
 		});
 		const nameErrors = errors.filter((e) => e.includes('name'));
 		if (nameErrors.length > 0) {
@@ -75,7 +75,7 @@
 				<p class="text-sm text-destructive">{error}</p>
 			{/if}
 			<p class="text-xs text-muted-foreground">
-				Lowercase, hyphens only (1–64 chars)
+				Lowercase, hyphens only (1-64 chars)
 			</p>
 		</div>
 		<Dialog.Footer>

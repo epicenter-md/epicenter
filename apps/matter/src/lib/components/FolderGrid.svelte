@@ -3,8 +3,10 @@
 	import { Badge } from '@epicenter/ui/badge';
 	import { Button } from '@epicenter/ui/button';
 	import * as Empty from '@epicenter/ui/empty';
+	import { Input } from '@epicenter/ui/input';
 	import * as Table from '@epicenter/ui/table';
 	import * as ToggleGroup from '@epicenter/ui/toggle-group';
+	import CheckIcon from '@lucide/svelte/icons/check';
 	import ExternalLinkIcon from '@lucide/svelte/icons/external-link';
 	import FileWarningIcon from '@lucide/svelte/icons/file-warning';
 	import ListIcon from '@lucide/svelte/icons/list';
@@ -13,6 +15,7 @@
 	import type { Kind } from '@epicenter/field';
 	import type { Cell } from '$lib/core/conformance';
 	import type { FolderGridVault } from '$lib/vault.svelte';
+	import type { WhereFilter } from '$lib/where-filter.svelte';
 	import ModeledCell from './ModeledCell.svelte';
 	import RowDetailDialog from './RowDetailDialog.svelte';
 
@@ -20,10 +23,13 @@
 	// in-memory demo vault, injected by the route. The narrow getters are bound once
 	// here so the template reads `read` / `folder` / `onSave*` exactly as before, and a
 	// vault swap (open another folder) flows through these derivations.
-	// `matchedFileNames` is the file names of the rows a WHERE clause matched, computed by
-	// the page (the live-vault owner) and handed down as data. `undefined` means no filter.
-	let { vault, matchedFileNames }: { vault: FolderGridVault; matchedFileNames?: Set<string> } =
-		$props();
+	// `filter` is the tab's WHERE filter (the live vault provides one; the demo does not).
+	// The grid renders its input in the header and narrows rows to the names it matched;
+	// `undefined` (no filter, or an empty clause) means show every row.
+	let { vault, filter }: { vault: FolderGridVault; filter?: WhereFilter } = $props();
+
+	// The file names the WHERE clause matched, or undefined when no clause is active.
+	const matchedFileNames = $derived(filter?.matchedFileNames);
 
 	const read = $derived(vault.read);
 	const folder = $derived(vault.folderName);
@@ -31,42 +37,53 @@
 	const onSaveBody = $derived(vault.saveBody);
 	const view = $derived(read.view);
 
-	type RowFilter = 'all' | 'attention';
+	type RowFilter = 'all' | 'attention' | 'ready';
 
-	// The attention filter is a view mode over the same table, not a relayout.
+	// The row filter is a view mode over the same table, not a relayout.
 	let rowFilter = $state<RowFilter>('all');
 
-	const visibleRows = $derived.by(() => {
+	const filteredRows = $derived.by(() => {
 		if (view.mode !== 'modeled') return [];
-		let rows =
-			rowFilter === 'attention'
-				? view.conformance.filter((c) => !c.rowValid)
-				: view.conformance;
 		// The WHERE filter (matched row file names from the mirror, computed by the page)
 		// narrows the visible set; no active filter leaves it undefined, nothing to do. The
 		// local alias is load-bearing: it narrows `Set | undefined` to `Set` in the closure.
 		const fileNames = matchedFileNames;
-		if (fileNames) rows = rows.filter((c) => fileNames.has(c.row.fileName));
-		return rows;
+		if (fileNames) return view.conformance.filter((c) => fileNames.has(c.row.fileName));
+		return view.conformance;
+	});
+
+	const visibleRows = $derived.by(() => {
+		if (rowFilter === 'attention') return filteredRows.filter((c) => !c.rowValid);
+		if (rowFilter === 'ready') return filteredRows.filter((c) => c.rowValid);
+		return filteredRows;
 	});
 
 	// "X of Y rows" whenever a lens is narrowing the table (attention OR a WHERE clause).
-	const isFiltered = $derived(rowFilter === 'attention' || matchedFileNames !== undefined);
+	const isFiltered = $derived(rowFilter !== 'all' || matchedFileNames !== undefined);
 
 	// The modeled empty-state copy as ONE mutually exclusive decision, so the title and the
 	// description always describe the same case. Reads top-down like the question a person
 	// asks ("is a filter on? is attention on? otherwise it is just empty") instead of two
 	// nested ternaries in the markup that have to be kept in sync by hand.
 	const emptyState = $derived.by(() => {
-		if (matchedFileNames)
+		if (matchedFileNames && filteredRows.length === 0)
 			return {
 				title: 'No rows match the filter',
-				description: 'No valid rows match this WHERE clause.',
+				description: 'No rows match this WHERE clause.',
 			};
 		if (rowFilter === 'attention')
 			return {
-				title: 'No rows need attention',
-				description: 'Every readable row matches this model.',
+				title: matchedFileNames ? 'No matching rows need attention' : 'No rows need attention',
+				description: matchedFileNames
+					? 'Rows matched by this WHERE clause are valid.'
+					: 'Every readable row matches this model.',
+			};
+		if (rowFilter === 'ready')
+			return {
+				title: matchedFileNames ? 'No matching ready rows' : 'No ready rows',
+				description: matchedFileNames
+					? 'Rows matched by this WHERE clause need attention.'
+					: 'Fix required or invalid fields to make rows ready.',
 			};
 		return {
 			title: 'No rows yet',
@@ -74,9 +91,8 @@
 		};
 	});
 
-	const needsAttentionCount = $derived(
-		view.mode === 'modeled' ? view.conformance.filter((c) => !c.rowValid).length : 0,
-	);
+	const needsAttentionCount = $derived(filteredRows.filter((c) => !c.rowValid).length);
+	const readyRowsCount = $derived(filteredRows.filter((c) => c.rowValid).length);
 
 	let detailOpen = $state(false);
 	let detailFileName = $state<string>();
@@ -133,6 +149,12 @@
 		return '';
 	}
 
+	function setRowFilter(value: string | undefined): void {
+		if (value === 'all' || value === 'attention' || value === 'ready') {
+			rowFilter = value;
+		}
+	}
+
 	$effect(() => {
 		if (!detailOpen) {
 			detailFileName = undefined;
@@ -167,12 +189,31 @@
 	{/if}
 {/snippet}
 
+{#snippet rowFilterItem(
+	value: RowFilter,
+	label: string,
+	count: number,
+	Icon: typeof ListIcon,
+	ariaLabel: string,
+)}
+	<ToggleGroup.Item {value} aria-label={ariaLabel} class="h-8 flex-none gap-2 px-3 text-xs">
+		<Icon data-icon="inline-start" class="size-4" />
+		<span>{label}</span>
+		<Badge
+			variant="secondary"
+			class="ml-0.5 h-5 min-w-5 justify-center rounded-md px-1.5 font-mono text-[11px]"
+		>
+			{count}
+		</Badge>
+	</ToggleGroup.Item>
+{/snippet}
+
 <div class="flex min-h-0 flex-1 flex-col">
 	{#if view.mode === 'unmodeled'}
 		<header
 			class="flex flex-wrap items-center justify-between gap-3 border-b bg-background/95 px-4 py-3"
 		>
-			<div>
+			<div class="min-w-0">
 				<h1 class="max-w-[70vw] truncate text-sm font-semibold">{folder}</h1>
 				<div class="mt-1 flex flex-wrap gap-1.5">
 					<Badge variant="secondary">{read.rows.length} rows</Badge>
@@ -196,7 +237,9 @@
 			</Alert.Description>
 		</Alert.Root>
 
-		<div class="flex-1 overflow-auto">
+		<!-- Table.Root includes a horizontal scroll wrapper. This grid pane owns both
+		     axes so sticky headers and the frozen file column use the same scrollport. -->
+		<div class="flex-1 overflow-auto [&>[data-slot=table-container]]:overflow-visible">
 			<Table.Root class="min-w-full">
 				<Table.Header>
 					<Table.Row>
@@ -237,7 +280,7 @@
 		<header
 			class="flex flex-wrap items-center justify-between gap-3 border-b bg-background/95 px-4 py-3"
 		>
-			<div>
+			<div class="min-w-0">
 				<h1 class="max-w-[70vw] truncate text-sm font-semibold">{folder}</h1>
 				<div class="mt-1 flex flex-wrap gap-1.5">
 					<Badge variant="secondary">
@@ -251,24 +294,56 @@
 					{/if}
 				</div>
 			</div>
-			<ToggleGroup.Root
-				type="single"
-				variant="outline"
-				size="sm"
-				value={rowFilter}
-				onValueChange={(value) => {
-					if (value === 'all' || value === 'attention') rowFilter = value;
-				}}
-			>
-				<ToggleGroup.Item value="all" aria-label="Show all rows">
-					<ListIcon />
-					All rows ({read.rows.length})
-				</ToggleGroup.Item>
-				<ToggleGroup.Item value="attention" aria-label="Show rows that need attention">
-					<ListFilterIcon />
-					Needs attention ({needsAttentionCount})
-				</ToggleGroup.Item>
-			</ToggleGroup.Root>
+			<div class="flex min-w-0 flex-wrap items-center justify-end gap-3">
+				{#if filter}
+					<div class="flex min-w-0 items-center gap-1.5">
+						<span
+							class="font-mono text-[11px] font-medium uppercase tracking-wide text-muted-foreground"
+						>
+							where
+						</span>
+						<Input
+							bind:value={filter.text}
+							placeholder="status = 'ready'"
+							spellcheck={false}
+							autocapitalize="off"
+							autocomplete="off"
+							autocorrect="off"
+							aria-invalid={Boolean(filter.error)}
+							aria-label="Filter rows with a SQL WHERE clause"
+							title={filter.error}
+							class={[
+								'h-8 w-64 max-w-[min(16rem,60vw)] font-mono text-xs',
+								filter.error && 'border-destructive focus-visible:ring-destructive/30',
+							]}
+						/>
+					</div>
+				{/if}
+				<ToggleGroup.Root
+					type="single"
+					variant="outline"
+					size="sm"
+					spacing={1}
+					class="max-w-full flex-wrap justify-end"
+					bind:value={() => rowFilter, setRowFilter}
+				>
+					{@render rowFilterItem(
+						'all',
+						'All',
+						filteredRows.length,
+						ListIcon,
+						'Show all rows',
+					)}
+					{@render rowFilterItem(
+						'attention',
+						'Attention',
+						needsAttentionCount,
+						ListFilterIcon,
+						'Show rows that need attention',
+					)}
+					{@render rowFilterItem('ready', 'Ready', readyRowsCount, CheckIcon, 'Show ready rows')}
+				</ToggleGroup.Root>
+			</div>
 		</header>
 
 		{#if view.model.unmodeled.length}
@@ -282,7 +357,9 @@
 			</Alert.Root>
 		{/if}
 
-		<div class="flex-1 overflow-auto">
+		<!-- Table.Root includes a horizontal scroll wrapper. This grid pane owns both
+		     axes so sticky headers and the frozen file column use the same scrollport. -->
+		<div class="flex-1 overflow-auto [&>[data-slot=table-container]]:overflow-visible">
 			<Table.Root class="min-w-full table-fixed">
 				<!-- table-fixed honours these <col> widths, so cells truncate instead of
 				     stretching the column to the widest value. -->

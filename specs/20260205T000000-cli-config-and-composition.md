@@ -14,16 +14,16 @@ Three intertwined design questions:
 
 ## Key Tension
 
-Actions use closure-based dependency injection — they close over the client variable. This means the client and actions are separate variables. You can't just `export default createWorkspace(...)` anymore when you also have actions.
+Actions use closure-based dependency injection. They close over the client variable. This means the client and actions are separate variables. You can't just `export default createWorkspace(...)` anymore when you also have actions.
 
 ## Why Not `defineConfig({ client, actions })`
 
 The original approach proposed a `defineConfig` wrapper that bundles `{ client, actions }` into a config object. This works but introduces unnecessary indirection:
 
 - **New concept**: `defineConfig` is an identity function that exists solely for TypeScript. The codebase already has a builder pattern (`.withExtension()`) that solves the same coupling problem.
-- **Two objects**: The "config" is a bag containing a client. The client should BE the config — it already carries tables, kv, and capabilities.
+- **Two objects**: The "config" is a bag containing a client. The client should BE the config: it already carries tables, kv, and capabilities.
 - **Discovery complexity**: Duck-typing three shapes (raw client, config object, composed config) creates three code paths.
-- **The code already wants this**: `cli.ts:59` has `options?.actions ?? (client as any).actions` — it tries to read actions from the client.
+- **The code already wants this**: `cli.ts:59` has `options?.actions ?? (client as any).actions`: it tries to read actions from the client.
 
 Actions have the same relationship to the client that extensions do: they depend on it, travel with it, share its lifecycle. Extensions are coupled via `.withExtension()`. Actions should be coupled the same way.
 
@@ -34,7 +34,7 @@ Actions have the same relationship to the client that extensions do: they depend
 `.withActions()` chains after `createWorkspace()` or after `.withExtension()`. It receives a factory function that gets the current client and returns an actions tree. The result is the same client with an `actions` property.
 
 ```typescript
-// Without extensions — actions get base client
+// Without extensions: actions get base client
 export default createWorkspace({
 	id: 'blog',
 	tables: { posts },
@@ -44,7 +44,7 @@ export default createWorkspace({
 	}),
 }));
 
-// With extensions — actions get client WITH extensions
+// With extensions: actions get client WITH extensions
 export default createWorkspace(redditWorkspace)
 	.withExtension('persistence', persistence)
 	.withActions((client) => ({
@@ -77,7 +77,7 @@ const reddit = createWorkspace(redditWorkspace)
      preview: defineQuery({ ... }),
    }))
 
-// Programmatic use — fully typed
+// Programmatic use: fully typed
 await reddit.actions.import.handler({ file: './export.zip' })
 const preview = await reddit.actions.preview.handler({ file: './export.zip' })
 ```
@@ -111,7 +111,7 @@ createWorkspace(def)                    → WorkspaceClientBuilder
 ```
 
 - `.withActions()` is available on both `WorkspaceClientBuilder` and the return of `.withExtension()`.
-- `.withActions()` is terminal — no more builder methods after it.
+- `.withActions()` is terminal: no more builder methods after it.
 - The factory receives the client at that point in the chain (with or without extensions).
 - Without `.withActions()`, the client works exactly as before (backwards compatible).
 
@@ -158,17 +158,17 @@ type WorkspaceClientBuilder<TId, TTableDefs, TKvDefs> =
      ): WorkspaceClientWithActions<TId, TTableDefs, TKvDefs, Record<string, never>, TActions>;
    };
 
-// AnyWorkspaceClient no longer needs intersection — actions are on the base type
+// AnyWorkspaceClient no longer needs intersection: actions are on the base type
 type AnyWorkspaceClient = WorkspaceClient<any, any, any, any>;
 ```
 
-### Discovery — No Changes Needed
+### Discovery: No Changes Needed
 
 `discovery.ts` already duck-types with `isWorkspaceClient(value)` checking `id` + `tables`. A client with `.withActions()` still has `id` and `tables`. Discovery just returns it. Actions are available on the client if they exist.
 
 The only change: update the `AnyWorkspaceClient` type alias to include `actions?: Actions`.
 
-### CLI — Simplified
+### CLI: Simplified
 
 Remove the `CLIOptions` type. `createCLI` just reads `client.actions`:
 
@@ -191,7 +191,7 @@ export function createCLI(client: AnyWorkspaceClient) {
 }
 ```
 
-### Server — Same Simplification
+### Server: Same Simplification
 
 ```typescript
 // Before
@@ -209,7 +209,7 @@ export type ServerOptions = {
 
 ## Flat Commands with Collision Detection
 
-Single workspace — everything is flat, no prefixes:
+Single workspace, everything is flat, no prefixes:
 
 ```
 epicenter posts list              ← table (auto-generated)
@@ -228,7 +228,7 @@ Error: Action "posts" collides with table "posts".
 Rename the action or table to avoid ambiguity.
 ```
 
-No `epicenter actions import` prefix — actions are first-class peers of table commands.
+No `epicenter actions import` prefix: actions are first-class peers of table commands.
 
 ## Multi-Workspace Composition (Phase 2)
 
@@ -300,7 +300,7 @@ Discovery detects the shape:
 
 3. **Discovery** (`packages/epicenter/src/cli/discovery.ts`)
    - Update `AnyWorkspaceClient` type to `WorkspaceClient<any, any, any, any> & { actions?: Actions }`
-   - No logic changes — duck-typing still works
+   - No logic changes: duck-typing still works
 
 4. **CLI** (`packages/epicenter/src/cli/cli.ts`)
    - Remove `CLIOptions` type
@@ -309,7 +309,7 @@ Discovery detects the shape:
    - Remove the `(client as any).actions` hack
 
 5. **Bin** (`packages/epicenter/src/cli/bin.ts`)
-   - Simplify: `createCLI(resolution.client)` — already correct, just remove any actions passing
+   - Simplify: `createCLI(resolution.client)`: already correct, just remove any actions passing
 
 6. **Server** (`packages/epicenter/src/server/server.ts`)
    - Remove `actions` from `ServerOptions`
@@ -320,9 +320,9 @@ Discovery detects the shape:
 
 ### Phase 2: Multi-workspace composition (later)
 
-8. **`composeWorkspaces`** — Takes `Record<string, AnyWorkspaceClient>`, returns `ComposedWorkspace`
-9. **Namespaced CLI** — Detect composed workspace in discovery, prefix commands
-10. **Namespaced server routes** — `/reddit/posts/list`, `/twitter/tweets/list`
+8. **`composeWorkspaces`**: Takes `Record<string, AnyWorkspaceClient>`, returns `ComposedWorkspace`
+9. **Namespaced CLI**: Detect composed workspace in discovery, prefix commands
+10. **Namespaced server routes**: `/reddit/posts/list`, `/twitter/tweets/list`
 
 ## Open Questions
 

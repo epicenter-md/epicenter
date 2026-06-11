@@ -66,7 +66,7 @@ const OPTION_KEY_CHARACTER_MAP = {
 	// Option + Punctuation
 	'"': '[', // Option+[
 	"'": ']', // Option+]
-	'–': '-', // Option+- (en dash)
+	'\u2013': '-', // Option+- (en dash)
 	'÷': '/', // Option+/
 	'≥': '.', // Option+.
 	'≤': ',', // Option+,

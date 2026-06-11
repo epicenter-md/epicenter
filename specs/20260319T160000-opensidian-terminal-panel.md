@@ -10,11 +10,11 @@ Opensidian has a complete file management UI (tree, editor, tabs) but no way to 
 
 ## Key Insight
 
-The infrastructure already exists. `createYjsFileSystem` in `packages/filesystem` implements the `IFileSystem` interface from `just-bash`. The test suite proves the integration works—`echo`, `cat`, `grep`, `find`, `mkdir`, `rm`, `mv`, `cp`, `wc` all operate on the Yjs CRDT and trigger reactive updates. The only missing piece is a UI to type commands and see output.
+The infrastructure already exists. `createYjsFileSystem` in `packages/filesystem` implements the `IFileSystem` interface from `just-bash`. The test suite proves the integration works: `echo`, `cat`, `grep`, `find`, `mkdir`, `rm`, `mv`, `cp`, `wc` all operate on the Yjs CRDT and trigger reactive updates. The only missing piece is a UI to type commands and see output.
 
 ## Approach: Simple REPL
 
-A REPL-style terminal panel—monospace input line at the bottom, scrollable output above. This matches `just-bash`'s batch execution model (`exec()` returns `{stdout, stderr, exitCode}`) without fighting a PTY abstraction.
+A REPL-style terminal panel. Monospace input line at the bottom, scrollable output above. This matches `just-bash`'s batch execution model (`exec()` returns `{stdout, stderr, exitCode}`) without fighting a PTY abstraction.
 
 **Why not ghostty-web/xterm.js?** Those are designed for streaming PTY connections. `just-bash` returns batch results. You'd have to manually buffer keystrokes, render fake prompts, and pipe output via `term.write()`. A simple REPL is honest to the execution model and ships faster. Can upgrade later if real shell access is added via Tauri.
 
@@ -55,7 +55,7 @@ Current `AppShell.svelte` structure:
 </Resizable.PaneGroup>
 ```
 
-New structure—nest a vertical split inside the right pane:
+New structure. Nest a vertical split inside the right pane:
 
 ```svelte
 <Resizable.PaneGroup direction="horizontal" class="flex-1">
@@ -92,7 +92,7 @@ import { fs } from './workspace';
 export const bash = new Bash({ fs, cwd: '/' });
 ```
 
-The `Bash` constructor accepts the existing `fs` directly—no adapter needed. The filesystem is shared across `exec()` calls, so files created in one command are visible in the next. Shell state (env vars, functions, cwd) resets between calls by default.
+The `Bash` constructor accepts the existing `fs` directly. No adapter needed. The filesystem is shared across `exec()` calls, so files created in one command are visible in the next. Shell state (env vars, functions, cwd) resets between calls by default.
 
 ### Terminal State
 
@@ -191,7 +191,7 @@ New file: `src/lib/components/terminal/TerminalPanel.svelte`
 
 New file: `src/lib/components/terminal/TerminalOutput.svelte`
 
-Renders a single history entry. Input lines show with `$` prompt. Output lines are plain text—stdout in default color, stderr in red, non-zero exit codes shown as a badge.
+Renders a single history entry. Input lines show with `$` prompt. Output lines are plain text. Stdout in default color, stderr in red, non-zero exit codes shown as a badge.
 
 ```svelte
 <script lang="ts">
@@ -318,17 +318,17 @@ From the `just-bash` README, these commands work in the browser (which is Opensi
 
 - **No real system access.** `just-bash` is a pure TypeScript emulator. No `child_process`, no `exec`, no real filesystem.
 - **Sandboxed to Yjs.** The blast radius is bounded to the virtual CRDT document. Worst case: `rm -rf /` deletes all virtual files.
-- **Built-in execution limits.** Infinite loop protection, max recursion depth, max command count—all configurable.
+- **Built-in execution limits.** Infinite loop protection, max recursion depth, max command count. All configurable.
 - **No network by default.** `curl` returns "command not found" unless explicitly enabled.
 
 ## Implementation Plan
 
-- [x] Create `src/lib/state/terminal-state.svelte.ts`—terminal state singleton with history, exec, command recall
-- [x] Create `src/lib/components/terminal/TerminalOutput.svelte`—renders input/output entries
-- [x] Create `src/lib/components/terminal/TerminalInput.svelte`—input line with prompt, Enter to exec, arrow keys for history
-- [x] Create `src/lib/components/terminal/TerminalPanel.svelte`—composes output + input with header and scroll area
-- [x] Update `workspace.ts`—add `Bash` instance export
-- [x] Update `AppShell.svelte`—nest vertical PaneGroup, wire terminal visibility, add `Ctrl+\`` shortcut
+- [x] Create `src/lib/state/terminal-state.svelte.ts`: terminal state singleton with history, exec, command recall
+- [x] Create `src/lib/components/terminal/TerminalOutput.svelte`: renders input/output entries
+- [x] Create `src/lib/components/terminal/TerminalInput.svelte`: input line with prompt, Enter to exec, arrow keys for history
+- [x] Create `src/lib/components/terminal/TerminalPanel.svelte`: composes output + input with header and scroll area
+- [x] Update `workspace.ts`: add `Bash` instance export
+- [x] Update `AppShell.svelte`: nest vertical PaneGroup, wire terminal visibility, add `Ctrl+\`` shortcut
 - [ ] Verify: `echo "test" > /new.md` creates a file visible in the file tree
 - [ ] Verify: `cat` on an existing file shows its content
 - [ ] Verify: `Ctrl+\`` toggles the panel, keyboard focus moves to input on open
@@ -349,21 +349,21 @@ From the `just-bash` README, these commands work in the browser (which is Opensi
 
 **New files (4):**
 
-1. **`src/lib/state/terminal-state.svelte.ts`** — Reactive terminal state singleton following the `fs-state.svelte.ts` factory pattern. Manages open/closed visibility, scrollable history (input + output entries), command recall via arrow keys, and `exec()` delegation to `bash.exec()`. Exported as `terminalState`.
+1. **`src/lib/state/terminal-state.svelte.ts`**: Reactive terminal state singleton following the `fs-state.svelte.ts` factory pattern. Manages open/closed visibility, scrollable history (input + output entries), command recall via arrow keys, and `exec()` delegation to `bash.exec()`. Exported as `terminalState`.
 
-2. **`src/lib/components/terminal/TerminalOutput.svelte`** — Renders a single history entry. Input lines display with a green `$` prompt. Output entries show stdout in default color, stderr in destructive red, and non-zero exit codes as a badge.
+2. **`src/lib/components/terminal/TerminalOutput.svelte`**: Renders a single history entry. Input lines display with a green `$` prompt. Output entries show stdout in default color, stderr in destructive red, and non-zero exit codes as a badge.
 
-3. **`src/lib/components/terminal/TerminalInput.svelte`** — Monospace input line with `$` prompt. Enter submits, ArrowUp/ArrowDown cycle command history. Disables during execution with "Running..." placeholder. Exports a `focus()` method for programmatic focus.
+3. **`src/lib/components/terminal/TerminalInput.svelte`**: Monospace input line with `$` prompt. Enter submits, ArrowUp/ArrowDown cycle command history. Disables during execution with "Running..." placeholder. Exports a `focus()` method for programmatic focus.
 
-4. **`src/lib/components/terminal/TerminalPanel.svelte`** — Composes TerminalOutput + TerminalInput with a header bar (title + close button) and ScrollArea. Auto-scrolls to bottom on new entries via `$effect`. Exports `focus()` for keyboard shortcut integration.
+4. **`src/lib/components/terminal/TerminalPanel.svelte`**: Composes TerminalOutput + TerminalInput with a header bar (title + close button) and ScrollArea. Auto-scrolls to bottom on new entries via `$effect`. Exports `focus()` for keyboard shortcut integration.
 
 **Modified files (3):**
 
-5. **`src/lib/workspace.ts`** — Added `Bash` import from `just-bash` and exported a singleton `bash` instance backed by the existing `fs`. No adapter needed—`createYjsFileSystem` already satisfies `IFileSystem`.
+5. **`src/lib/workspace.ts`**: Added `Bash` import from `just-bash` and exported a singleton `bash` instance backed by the existing `fs`. No adapter needed: `createYjsFileSystem` already satisfies `IFileSystem`.
 
-6. **`src/lib/components/AppShell.svelte`** — Nested a vertical `Resizable.PaneGroup` inside the right pane. Terminal panel conditionally renders below the editor when `terminalState.open` is true. Added `Ctrl+\`` / `Cmd+\`` keyboard shortcut via `<svelte:window onkeydown>`. Focus auto-moves to terminal input on open.
+6. **`src/lib/components/AppShell.svelte`**: Nested a vertical `Resizable.PaneGroup` inside the right pane. Terminal panel conditionally renders below the editor when `terminalState.open` is true. Added `Ctrl+\`` / `Cmd+\`` keyboard shortcut via `<svelte:window onkeydown>`. Focus auto-moves to terminal input on open.
 
-7. **`apps/opensidian/package.json`** — Added `just-bash: ^2.9.7` to devDependencies.
+7. **`apps/opensidian/package.json`**: Added `just-bash: ^2.9.7` to devDependencies.
 
 ### Design Decisions
 

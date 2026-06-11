@@ -39,7 +39,7 @@ nodePolyfills({
 
 This creates problems:
 
-1. **Unnecessary polyfill**: `gray-matter` calls `Buffer.from()` internally for BOM stripping (`strip-bom-string`) and string coercion. Whispering reads files via Tauri's `readTextFile()` which returns clean UTF-8 strings—BOM stripping is unnecessary.
+1. **Unnecessary polyfill**: `gray-matter` calls `Buffer.from()` internally for BOM stripping (`strip-bom-string`) and string coercion. Whispering reads files via Tauri's `readTextFile()` which returns clean UTF-8 strings. BOM stripping is unnecessary.
 2. **Bundle bloat**: `vite-plugin-node-polyfills` pulls in `node-stdlib-browser` and `@rollup/plugin-inject`. `gray-matter` itself brings `section-matter`, `strip-bom-string`, `kind-of`, and `js-yaml@3` (an older version pinned by gray-matter).
 3. **Pattern contagion**: The apple-notes-archetype spec (`specs/20260311T224500-apple-notes-archetype.md`, line 127) lists `nodePolyfills` as required configuration for new apps, propagating a workaround for a single dependency.
 4. **SSR footgun**: `vite-plugin-node-polyfills` shims are browser-only virtual modules that break during SSR, requiring `ssr = false` as a hard coupling (documented in the archetype spec, line 129).
@@ -56,7 +56,7 @@ Only two functions from gray-matter are used, across a single file (`file-system
 
 | Function | Call Sites | What It Does |
 |---|---|---|
-| `matter(string)` | 6 (getAll/getById for recordings, transformations, runs) | Returns `{ data: object, content: string }` — splits YAML frontmatter from markdown body |
+| `matter(string)` | 6 (getAll/getById for recordings, transformations, runs) | Returns `{ data: object, content: string }`: splits YAML frontmatter from markdown body |
 | `matter.stringify(body, data)` | 8+ (create/update for recordings, transformations, runs; addStep/failStep/completeStep/complete for runs) | Returns markdown string with YAML frontmatter |
 
 No other gray-matter features are used (no excerpts, no engines, no sections, no options).
@@ -65,7 +65,7 @@ No other gray-matter features are used (no excerpts, no engines, no sections, no
 
 | Library | Bundle (gzip) | Node Polyfills? | Stringify? | Notes |
 |---|---|---|---|---|
-| `gray-matter` | ~25KB + polyfills | **Yes** (Buffer) | Yes | Current — the problem |
+| `gray-matter` | ~25KB + polyfills | **Yes** (Buffer) | Yes | Current: the problem |
 | `front-matter` | ~25KB | No | No | Parse only, still uses js-yaml@3 |
 | `vfile-matter` | ~15KB | No | No | unified ecosystem, parse only |
 | `ultramatter` | <1KB | No | No | Parse only, YAML subset |
@@ -80,7 +80,7 @@ No other gray-matter features are used (no excerpts, no engines, no sections, no
 | Replacement approach | Hand-rolled utility + `js-yaml` | Zero new deps. `js-yaml` is already in the tree. The parsing/stringifying logic is ~20 lines. |
 | YAML library | `js-yaml` (v4, direct dep) | Already proven compatible with existing `.md` files (gray-matter uses v3 internally). v4 is the maintained version with ESM support. |
 | Utility location | `apps/whispering/src/lib/services/db/frontmatter.ts` | Co-located with `file-system.ts` which is the only consumer. |
-| Fuji cleanup | Verify already clean | Fuji's `vite.config.ts` already has no `nodePolyfills` — no action needed. |
+| Fuji cleanup | Verify already clean | Fuji's `vite.config.ts` already has no `nodePolyfills`: no action needed. |
 
 ## Implementation Plan
 
@@ -104,8 +104,8 @@ No other gray-matter features are used (no excerpts, no engines, no sections, no
 
 ### Phase 4: Update Documentation
 
-- [x] **4.1** ~~Update `specs/20260311T224500-apple-notes-archetype.md`~~ — N/A: archetype spec does not exist in the repo
-- [x] **4.2** Update `apps/whispering/src/lib/services/db/README.md` — replace the gray-matter reference with the new utility
+- [x] **4.1** ~~Update `specs/20260311T224500-apple-notes-archetype.md`~~: N/A: archetype spec does not exist in the repo
+- [x] **4.2** Update `apps/whispering/src/lib/services/db/README.md`: replace the gray-matter reference with the new utility
 
 ### Phase 5: Verify
 
@@ -119,11 +119,11 @@ No other gray-matter features are used (no excerpts, no engines, no sections, no
 
 ### Existing .md Files with BOM
 
-gray-matter's `strip-bom-string` removes UTF-8 BOM from file contents. Since all files are written by Whispering itself via Tauri's `writeTextFile()` (which doesn't add BOM), this is a non-issue. If a user manually edits a file with an editor that adds BOM, `js-yaml` will still parse it correctly—YAML spec tolerates BOM.
+gray-matter's `strip-bom-string` removes UTF-8 BOM from file contents. Since all files are written by Whispering itself via Tauri's `writeTextFile()` (which doesn't add BOM), this is a non-issue. If a user manually edits a file with an editor that adds BOM, `js-yaml` will still parse it correctly. YAML spec tolerates BOM.
 
 ### YAML Output Format Differences
 
-`js-yaml` v4's `dump()` may produce slightly different whitespace or quoting than v3's `safeDump()` used by gray-matter. This is cosmetic—the YAML parses to identical objects. The only concern is that a read-then-write cycle might produce a diff on untouched files. This is acceptable since:
+`js-yaml` v4's `dump()` may produce slightly different whitespace or quoting than v3's `safeDump()` used by gray-matter. This is cosmetic. The YAML parses to identical objects. The only concern is that a read-then-write cycle might produce a diff on untouched files. This is acceptable since:
 - Files are only written on explicit create/update operations
 - The data round-trips correctly regardless of formatting
 
@@ -153,12 +153,12 @@ gray-matter's `stringify` adds specific trailing newlines. The replacement shoul
 
 ## References
 
-- `apps/whispering/src/lib/services/db/file-system.ts` — sole consumer of gray-matter (14 call sites)
-- `apps/whispering/vite.config.ts` — nodePolyfills configuration to remove
-- `apps/whispering/package.json` — deps to remove (gray-matter, vite-plugin-node-polyfills)
-- `specs/20260311T224500-apple-notes-archetype.md` — archetype spec to update (lines 127–131)
-- `apps/whispering/src/lib/services/db/README.md` — references gray-matter on line 74
-- `apps/fuji/vite.config.ts` — already clean, no action needed
+- `apps/whispering/src/lib/services/db/file-system.ts`: sole consumer of gray-matter (14 call sites)
+- `apps/whispering/vite.config.ts`: nodePolyfills configuration to remove
+- `apps/whispering/package.json`: deps to remove (gray-matter, vite-plugin-node-polyfills)
+- `specs/20260311T224500-apple-notes-archetype.md`: archetype spec to update (lines 127-131)
+- `apps/whispering/src/lib/services/db/README.md`: references gray-matter on line 74
+- `apps/fuji/vite.config.ts`: already clean, no action needed
 
 ## Review
 

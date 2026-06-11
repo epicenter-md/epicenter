@@ -12,7 +12,7 @@ import {
 /**
  * Creates a reactive state manager for tracking pressed keyboard keys.
  *
- * Uses pure `$state` for reactivity — array mutations (`.push()`, `.filter()`,
+ * Uses pure `$state` for reactivity: array mutations (`.push()`, `.filter()`,
  * reassignment) signal Svelte through the proxy. Event listeners are cheap and
  * always wanted while the component is mounted, so `$effect` handles lifecycle
  * directly without `createSubscriber`.

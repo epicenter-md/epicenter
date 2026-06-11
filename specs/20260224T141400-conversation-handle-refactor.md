@@ -6,7 +6,7 @@
 
 ## Overview
 
-Replace the parallel data structures in `chat.svelte.ts` (a `chatInstances` Map + a `conversations` array + scattered active-routing boilerplate) with a single `Map<ConversationId, ConversationHandle>` where each handle is a self-contained, reactive object that owns all per-conversation state — chat instance, metadata, ephemeral UI state, and actions.
+Replace the parallel data structures in `chat.svelte.ts` (a `chatInstances` Map + a `conversations` array + scattered active-routing boilerplate) with a single `Map<ConversationId, ConversationHandle>` where each handle is a self-contained, reactive object that owns all per-conversation state: chat instance, metadata, ephemeral UI state, and actions.
 
 ## Motivation
 
@@ -22,7 +22,7 @@ const chatInstances = new Map<ConversationId, CreateChatReturn>();
 let conversations = $state<Conversation[]>(readAllConversations());
 ```
 
-Every public API method repeats the same routing dance — read `activeConversationId`, look up in one or both structures, delegate:
+Every public API method repeats the same routing dance: read `activeConversationId`, look up in one or both structures, delegate:
 
 ```typescript
 get messages() {
@@ -42,7 +42,7 @@ Meanwhile, component-local state lives outside both structures entirely:
 
 ```svelte
 <!-- AiChat.svelte -->
-let inputValue = $state('');   // Not per-conversation — lost on switch
+let inputValue = $state('');   // Not per-conversation: lost on switch
 let dismissedError = $state<string | null>(null); // Also not per-conversation
 ```
 
@@ -68,19 +68,19 @@ conv.provider        // Y.Doc-backed, get/set
 conv.sendMessage()   // action, scoped to this conversation
 ```
 
-The singleton becomes a thin orchestrator — a Map + an active pointer + conversation CRUD. Each handle owns its own state and actions.
+The singleton becomes a thin orchestrator. A Map + an active pointer + conversation CRUD. Each handle owns its own state and actions.
 
 ## Design Decisions
 
 | Decision | Choice | Rationale |
 |---|---|---|
 | Single Map vs parallel structures | Single `Map<ConversationId, ConversationHandle>` | Eliminates sync between chatInstances and conversations array. One lookup gives you everything. |
-| Handle creation | Factory function `createConversationHandle(id)` | Follows existing codebase factory pattern. Each handle gets baked-in `conversationId` — same closure pattern as current `ensureChat()`. |
+| Handle creation | Factory function `createConversationHandle(id)` | Follows existing codebase factory pattern. Each handle gets baked-in `conversationId`: same closure pattern as current `ensureChat()`. |
 | ChatClient lifecycle | Lazy inside handle (created on first `messages`/`sendMessage` access) | Matches current `ensureChat()` behavior. Conversations loaded from Y.Doc don't need a ChatClient until the user interacts. |
 | Input draft storage | `$state` inside handle, in-memory only | Ephemeral UI state doesn't belong in Y.Doc. Losing drafts on extension reload is acceptable. |
 | Y.Doc as source of truth for metadata | Handle reads metadata from Y.Doc via conversations array | Y.Doc observer updates the reactive `conversations` array. Handles derive metadata from this array (same as today). Handles don't duplicate Y.Doc data. |
 | `active` convenience getter | `$derived` that returns `get(activeConversationId)` | Preserves the common case (component binds to active conversation) while enabling direct access by ID. |
-| Conversation list type | `ConversationHandle[]` (not `Conversation[]`) | Components iterate handles directly. Each item in the list IS the conversation — no secondary lookup needed for streaming state, preview, etc. |
+| Conversation list type | `ConversationHandle[]` (not `Conversation[]`) | Components iterate handles directly. Each item in the list IS the conversation: no secondary lookup needed for streaming state, preview, etc. |
 | Provider/model globals | Keep `availableProviders` and `modelsForProvider()` on singleton | These are global configuration, not per-conversation state. They stay on the orchestrator. |
 | Error dismissal | Move `dismissedError` into handle | Currently component-local. Per-conversation dismissal means switching back to a conversation doesn't re-show an error you already dismissed. |
 
@@ -190,8 +190,8 @@ This means handles are always in sync with Y.Doc without any manual sync logic.
 - [ ] **2.1** Replace `chatInstances` Map with `handles: Map<ConversationId, ConversationHandle>`
 - [ ] **2.2** Add reconciliation logic in Y.Doc observer: create handles for new conversation IDs, clean up handles for deleted ones
 - [ ] **2.3** Replace all `ensureChat(activeConversationId).X` getters with `active.X` delegation
-- [ ] **2.4** Simplify `switchConversation` — just update pointer, handle's `refreshFromDoc()` called internally
-- [ ] **2.5** Simplify `deleteConversation` — call `handle.delete()` which stops stream + removes from Map + Y.Doc batch
+- [ ] **2.4** Simplify `switchConversation`: just update pointer, handle's `refreshFromDoc()` called internally
+- [ ] **2.5** Simplify `deleteConversation`: call `handle.delete()` which stops stream + removes from Map + Y.Doc batch
 - [ ] **2.6** Add `get(id)` method that returns handle or undefined
 - [ ] **2.7** Change `conversations` getter to return `ConversationHandle[]` (sorted) instead of `Conversation[]`
 - [ ] **2.8** Add `get active()` convenience getter
@@ -215,15 +215,15 @@ This means handles are always in sync with Y.Doc without any manual sync logic.
 
 ### Handle for conversation that doesn't exist in Y.Doc yet
 
-1. `popupWorkspace.whenReady` hasn't resolved — conversations array is empty
+1. `popupWorkspace.whenReady` hasn't resolved: conversations array is empty
 2. `get(id)` returns undefined, `active` returns undefined
 3. UI handles this with optional chaining (same as today's `activeConversation?.title`)
 
 ### Y.Doc observer fires while a handle is streaming
 
 1. Conversation metadata changes (e.g., remote device renames it)
-2. Handle's metadata getters re-derive from updated conversations array — title updates reactively
-3. Streaming is unaffected — ChatClient is independent of metadata
+2. Handle's metadata getters re-derive from updated conversations array: title updates reactively
+3. Streaming is unaffected: ChatClient is independent of metadata
 
 ### Conversation deleted while its handle is streaming
 
@@ -234,25 +234,25 @@ This means handles are always in sync with Y.Doc without any manual sync logic.
 ### Y.Doc persistence loads conversations that already have handles
 
 1. Observer fires, reconciliation runs
-2. Existing handles are kept (not recreated) — their ChatClient and ephemeral state survive
+2. Existing handles are kept (not recreated): their ChatClient and ephemeral state survive
 3. Only new IDs get handles; only removed IDs get cleaned up
 
 ### Two conversations streaming concurrently
 
-1. Each handle owns its own ChatClient — completely independent streams
+1. Each handle owns its own ChatClient: completely independent streams
 2. `handle.isLoading` is per-handle, no shared state
 3. Both `onFinish` callbacks persist to correct conversation via baked-in ID (unchanged from today)
 
 ## Open Questions
 
 1. **Should `conversations` getter return `ConversationHandle[]` or keep returning `Conversation[]`?**
-   - Options: (a) Return `ConversationHandle[]` — components get rich objects, (b) Keep `Conversation[]` for the list, use `get(id)` for handles
-   - **Recommendation**: (a) — the whole point is collocation. The conversation list items should be able to access `.isLoading`, `.lastMessagePreview`, `.inputValue` without a secondary lookup. This is the power of the pattern.
+   - Options: (a) Return `ConversationHandle[]`: components get rich objects, (b) Keep `Conversation[]` for the list, use `get(id)` for handles
+   - **Recommendation**: (a): the whole point is collocation. The conversation list items should be able to access `.isLoading`, `.lastMessagePreview`, `.inputValue` without a secondary lookup. This is the power of the pattern.
 
 2. **Should `active` ever be undefined?**
    - Currently `activeConversation` can be undefined before persistence loads
    - Options: (a) `active` returns `ConversationHandle | undefined` (caller must null-check), (b) Create a "placeholder" handle that returns empty/default values
-   - **Recommendation**: (a) — keep it honest. The UI already handles the undefined case. A placeholder handle would hide a real state (persistence not loaded) behind fake data.
+   - **Recommendation**: (a): keep it honest. The UI already handles the undefined case. A placeholder handle would hide a real state (persistence not loaded) behind fake data.
 
 3. **Should handle methods like `setProvider` auto-select the first model for the new provider?**
    - This logic currently lives in `setProvider()` on the singleton
@@ -264,7 +264,7 @@ This means handles are always in sync with Y.Doc without any manual sync logic.
 ## Success Criteria
 
 - [ ] `chat.svelte.ts` uses a single `Map<ConversationId, ConversationHandle>` instead of parallel `chatInstances` + `conversations` structures
-- [ ] `AiChat.svelte` has zero local `$state` for `inputValue` — binds to `active.inputValue`
+- [ ] `AiChat.svelte` has zero local `$state` for `inputValue`: binds to `active.inputValue`
 - [ ] Switching conversations preserves input drafts
 - [ ] Background streaming indicators work via `conv.isLoading` (no special `isStreaming` method)
 - [ ] `ModelCombobox.svelte` binds to active handle's provider/model
@@ -273,8 +273,8 @@ This means handles are always in sync with Y.Doc without any manual sync logic.
 
 ## References
 
-- `apps/tab-manager/src/lib/state/chat.svelte.ts` — Primary refactor target (712 lines → ~400-450 estimated)
-- `apps/tab-manager/src/lib/components/AiChat.svelte` — Main consumer, loses local state
-- `apps/tab-manager/src/lib/components/ModelCombobox.svelte` — Secondary consumer, rebind to active handle
-- `apps/tab-manager/src/lib/workspace.ts` — Conversation/ChatMessage schema (unchanged)
-- `apps/tab-manager/src/lib/workspace-popup.ts` — Y.Doc client (unchanged)
+- `apps/tab-manager/src/lib/state/chat.svelte.ts`: Primary refactor target (712 lines → ~400-450 estimated)
+- `apps/tab-manager/src/lib/components/AiChat.svelte`: Main consumer, loses local state
+- `apps/tab-manager/src/lib/components/ModelCombobox.svelte`: Secondary consumer, rebind to active handle
+- `apps/tab-manager/src/lib/workspace.ts`: Conversation/ChatMessage schema (unchanged)
+- `apps/tab-manager/src/lib/workspace-popup.ts`: Y.Doc client (unchanged)

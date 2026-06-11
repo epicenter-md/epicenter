@@ -12,11 +12,11 @@
 
 Turn each workspace into a self-contained app that can be installed from a registry, loaded into the local server process, accessed from a unified Svelte shell, and optionally run standalone or synced against a remote hosted version.
 
-The core insight: `epicenter.config.ts` is a **universal contract** — a workspace definition (schema + actions) that works identically whether loaded into the local server, run standalone on its own port, or imported directly by a browser SPA. Every namespace in the filesystem is its own app. You can download and run 20 of them locally in one process, run any individually, or import the config in a client-side app that operates on its own Y.Doc and syncs via WebSocket. Hub sync keeps instances in sync regardless of where they run.
+The core insight: `epicenter.config.ts` is a **universal contract**: a workspace definition (schema + actions) that works identically whether loaded into the local server, run standalone on its own port, or imported directly by a browser SPA. Every namespace in the filesystem is its own app. You can download and run 20 of them locally in one process, run any individually, or import the config in a client-side app that operates on its own Y.Doc and syncs via WebSocket. Hub sync keeps instances in sync regardless of where they run.
 
-**Terminology**: `createWorkspace()` returns a `WorkspaceClientBuilder` — an object that IS a `WorkspaceClient` (Y.Doc, tables, kv, awareness) plus chainable builder methods (`.withExtension()`, `.withDocumentExtension()`, `.withActions()`). The builder uses immutable state — each `.withExtension()` returns a new builder, enabling builder branching (multiple chains from the same base). `.withActions()` is terminal, producing a `WorkspaceClientWithActions`.
+**Terminology**: `createWorkspace()` returns a `WorkspaceClientBuilder`: an object that IS a `WorkspaceClient` (Y.Doc, tables, kv, awareness) plus chainable builder methods (`.withExtension()`, `.withDocumentExtension()`, `.withActions()`). The builder uses immutable state: each `.withExtension()` returns a new builder, enabling builder branching (multiple chains from the same base). `.withActions()` is terminal, producing a `WorkspaceClientWithActions`.
 
-**The config exports the builder, not the terminal client.** The `epicenter.config.ts` default export is a `WorkspaceClientBuilder` — the result of `createWorkspace()` without `.withExtension()` or `.withActions()` chained. This is the **data contract**: schema only. Each runtime (browser SPA, Bun sidecar, standalone hosted workspace) imports the builder and chains its own extensions and actions as appropriate. Extensions and actions are **not** part of the config — they are attached per-runtime, keeping the config portable and allowing different runtimes to expose different capabilities.
+**The config exports the builder, not the terminal client.** The `epicenter.config.ts` default export is a `WorkspaceClientBuilder`: the result of `createWorkspace()` without `.withExtension()` or `.withActions()` chained. This is the **data contract**: schema only. Each runtime (browser SPA, Bun sidecar, standalone hosted workspace) imports the builder and chains its own extensions and actions as appropriate. Extensions and actions are **not** part of the config: they are attached per-runtime, keeping the config portable and allowing different runtimes to expose different capabilities.
 
 ## The Hub Server Is Separate
 
@@ -25,17 +25,17 @@ This spec discusses three runtime contexts for a workspace config: the Bun sidec
 | | Hub Server | Standalone Hosted Workspace |
 |---|---|---|
 | Created with | `createHubServer()` | `createLocalServer({ clients: [client] })` |
-| Knows about workspace configs | **No** | Yes — imports `epicenter.config.ts` |
+| Knows about workspace configs | **No** | Yes: imports `epicenter.config.ts` |
 | Has extensions | **No** | Yes (e.g., `filePersistence`, `markdownProjection`) |
 | Has actions | **No** | Yes (e.g., `coreActions`, `sendWebhook`) |
-| Persists Y.Docs | **No** — ephemeral rooms only | Yes — `workspace.yjs` on disk |
+| Persists Y.Docs | **No**: ephemeral rooms only | Yes: `workspace.yjs` on disk |
 | Role | Auth + AI proxy + Yjs relay | Workspace CRUD + sync, running in the cloud |
 
-**Hub server** (`createHubServer()`): A generic, schema-agnostic relay. It provides auth (Better Auth JWT), an AI proxy (streaming), and Yjs WebSocket rooms (ephemeral Y.Docs). It has **no knowledge of any workspace** — no `epicenter.config.ts` is ever imported, no extensions are mounted, no actions are registered. Any number of workspace instances (local sidecars, standalone hosted workspaces, browser SPAs) connect to the hub as peers. The hub merges their updates and rebroadcasts — nothing more.
+**Hub server** (`createHubServer()`): A generic, schema-agnostic relay. It provides auth (Better Auth JWT), an AI proxy (streaming), and Yjs WebSocket rooms (ephemeral Y.Docs). It has **no knowledge of any workspace**: no `epicenter.config.ts` is ever imported, no extensions are mounted, no actions are registered. Any number of workspace instances (local sidecars, standalone hosted workspaces, browser SPAs) connect to the hub as peers. The hub merges their updates and rebroadcasts: nothing more.
 
-**Standalone hosted workspace**: A specific `epicenter.config.ts` deployed as a cloud web service (Phase 5). It uses `createLocalServer({ clients: [client] })` — the same server used by the local Bun sidecar — with extensions and actions chained for the cloud environment (e.g., Durable Objects instead of `filePersistence`). It connects to the hub as a peer, just like the local sidecar does.
+**Standalone hosted workspace**: A specific `epicenter.config.ts` deployed as a cloud web service (Phase 5). It uses `createLocalServer({ clients: [client] })`: the same server used by the local Bun sidecar: with extensions and actions chained for the cloud environment (e.g., Durable Objects instead of `filePersistence`). It connects to the hub as a peer, just like the local sidecar does.
 
-**Summary**: Local sidecar and standalone hosted workspace are both "local servers" — one runs on your machine, one runs in the cloud. The hub knows about neither. All three connect to the hub as Yjs peers.
+**Summary**: Local sidecar and standalone hosted workspace are both "local servers": one runs on your machine, one runs in the cloud. The hub knows about neither. All three connect to the hub as Yjs peers.
 
 ## Motivation
 
@@ -72,7 +72,7 @@ Each workspace is a directory with an `epicenter.config.ts` that can be:
 - **Loaded** into the local server alongside other workspaces
 - **Browsed** in the Svelte shell alongside other workspaces
 - **Run standalone** on its own port as a plain web app
-- **Synced remotely** — a hosted version at `myapp.com` can share data with the local instance via Yjs hub relay
+- **Synced remotely**: a hosted version at `myapp.com` can share data with the local instance via Yjs hub relay
 
 ## Research Findings
 
@@ -84,16 +84,16 @@ Elysia provides two in-process composition mechanisms, plus external proxying:
 |-----------|-------------|------|-----------|---------|
 | `.use()` | Merges plugin into parent. Shares lifecycle hooks (scoped), decorators, store. | Yes | Yes | Same |
 | `.mount(path, handler.fetch)` | Passes raw `Request` to a WinterCG `fetch` handler. Strips prefix. Fully isolated. | Yes | **No** | Same |
-| `.mount(path, elysiaInstance)` | **Extracts `.fetch` handler** — same behavior as raw handler. Types NOT preserved, OpenAPI hidden, WebSocket broken. | Yes | **No** | Same |
+| `.mount(path, elysiaInstance)` | **Extracts `.fetch` handler**: same behavior as raw handler. Types NOT preserved, OpenAPI hidden, WebSocket broken. | Yes | **No** | Same |
 | Reverse proxy | Manual `fetch()` forwarding to another port | Yes | Manual relay only | Separate |
 
 **Critical nuance**: `.mount()` **always extracts `.fetch`** regardless of what you pass it. Passing an Elysia instance is NOT the same as calling `.use()`:
 
 ```typescript
-// RAW HANDLER — opaque, no types, no OpenAPI, no WebSocket
+// RAW HANDLER: opaque, no types, no OpenAPI, no WebSocket
 orchestrator.mount('/entries', entriesApp.fetch);
 
-// ELYSIA INSTANCE — also extracts .fetch internally. Same result as above.
+// ELYSIA INSTANCE: also extracts .fetch internally. Same result as above.
 // Does NOT auto-resolve via .use(). Types, OpenAPI, WebSocket all lost.
 orchestrator.mount('/entries', entriesApp);
 
@@ -115,7 +115,7 @@ The official docs claim `.mount(path, elysiaInstance)` auto-resolves via `.use()
 
 **Key finding**: WebSocket proxying in Bun is broken. There is a known issue (`oven-sh/bun#10441`) where Bun's HTTP handling emits a `response` event instead of `upgrade`, breaking `node-http-proxy` and similar libraries. Manual WebSocket relay is possible but fragile and adds latency to Yjs sync messages.
 
-**Implication**: For first-party workspaces, `.use()` is the clear choice — preserves types, OpenAPI, WebSocket, with zero runtime overhead. `.mount(path, handler.fetch)` becomes relevant only when mounting untrusted third-party code or non-Elysia frameworks. The local server should own the sync relay (WebSocket) centrally regardless of which composition mechanism is used for HTTP routes. Note: this research was originally done to evaluate per-workspace Elysia instances with dedicated prefixes. That approach was rejected (see Resolved Question #9), but the `.mount()` vs `.use()` findings remain relevant for future third-party workspace isolation.
+**Implication**: For first-party workspaces, `.use()` is the clear choice: preserves types, OpenAPI, WebSocket, with zero runtime overhead. `.mount(path, handler.fetch)` becomes relevant only when mounting untrusted third-party code or non-Elysia frameworks. The local server should own the sync relay (WebSocket) centrally regardless of which composition mechanism is used for HTTP routes. Note: this research was originally done to evaluate per-workspace Elysia instances with dedicated prefixes. That approach was rejected (see Resolved Question #9), but the `.mount()` vs `.use()` findings remain relevant for future third-party workspace isolation.
 
 ### jsrepo as Distribution Mechanism
 
@@ -127,7 +127,7 @@ jsrepo distributes source code blocks from GitHub-backed registries.
 | Arbitrary file types | Yes | `.ts`, `.svelte`, `.json`, anything |
 | npm dependency detection | Yes | Reads registry's `package.json` for versions |
 | Per-app `package.json` | **No** | Installs deps into consumer's root, doesn't copy `package.json` |
-| Programmatic API | Yes | Exported from `dist/api/index.js`. File writing is NOT included — we write files ourselves via Bun. |
+| Programmatic API | Yes | Exported from `dist/api/index.js`. File writing is NOT included: we write files ourselves via Bun. |
 | Import rewriting | Yes (automatic, CLI only) | CLI rewrites imports; programmatic API fetches raw content without transformation |
 
 **Key finding**: jsrepo's model is "copy source into your project." It does not natively support isolated per-workspace `package.json` files. The `package.json` in the registry is read for dependency versions but not copied to the consumer.
@@ -165,9 +165,9 @@ const items = await resolveAndFetchAllItems(resolved.value, {
 // items.value[n].dependencies = RemoteDependency[] for package.json generation
 ```
 
-All results use `neverthrow`'s `Result<T, E>` — check `.isErr()` / `.isOk()` before unwrapping. File writing is not in the API — we use `Bun.write()` directly after fetching. This means **no import rewriting happens**, solving the mangling concern without any post-processing.
+All results use `neverthrow`'s `Result<T, E>`: check `.isErr()` / `.isOk()` before unwrapping. File writing is not in the API. We use `Bun.write()` directly after fetching. This means **no import rewriting happens**, solving the mangling concern without any post-processing.
 
-**Implication**: We should use jsrepo for source distribution but handle `package.json` generation and `bun install` ourselves. The workspace directory layout includes a `package.json` that jsrepo doesn't manage — either we template it during install, or the `epicenter.config.ts` file is self-sufficient (imports only from `@epicenter/workspace` which is already installed globally).
+**Implication**: We should use jsrepo for source distribution but handle `package.json` generation and `bun install` ourselves. The workspace directory layout includes a `package.json` that jsrepo doesn't manage: either we template it during install, or the `epicenter.config.ts` file is self-sufficient (imports only from `@epicenter/workspace` which is already installed globally).
 
 ### Better Auth Across Services
 
@@ -179,11 +179,11 @@ const { payload } = await jwtVerify(token, createRemoteJWKSet(
 ));
 ```
 
-**Implication**: The local server validates auth once. All workspace routes trust the process boundary — no per-workspace auth needed.
+**Implication**: The local server validates auth once. All workspace routes trust the process boundary: no per-workspace auth needed.
 
 ### Yjs Sync as the Shared Data Layer
 
-The existing sync plugin (`packages/server/src/sync/plugin.ts`) is a Y.Doc WebSocket relay. Any client — local WebView, remote web app, CLI — connects to a room and syncs via the standard y-websocket protocol.
+The existing sync plugin (`packages/server/src/sync/plugin.ts`) is a Y.Doc WebSocket relay. Any client: local WebView, remote web app, CLI: connects to a room and syncs via the standard y-websocket protocol.
 
 **Key finding**: This is already the mechanism for remote data sharing. A hosted version of a workspace at `myapp.com` and the local Epicenter instance can both connect to the same hub room. Yjs handles the merge. No special plumbing needed beyond what exists.
 
@@ -191,21 +191,21 @@ The existing sync plugin (`packages/server/src/sync/plugin.ts`) is a Y.Doc WebSo
 
 | Decision | Choice | Rationale |
 |----------|--------|-----------|
-| Storage location | `~/.epicenter/` (configurable via `EPICENTER_HOME`) | Defaults to `~/.epicenter/` — developer-friendly: tab-completable (`~/.ep<tab>`), no spaces in path (unlike `~/Library/Application Support/`), cross-platform (works on macOS, Linux, WSL), follows conventions of `.cargo/`, `.bun/`, `.docker/`. **Configurable**: Set `EPICENTER_HOME=/path/to/dir` to override. CLI also accepts `--home /path/to/dir` on all commands. Resolution order: `--home` flag > `EPICENTER_HOME` env var > `~/.epicenter/`. This enables CI environments, portable installs, and testing against isolated directories. Non-developer users never interact with the filesystem directly — the Tauri app and CLI are the interfaces. **Alternatives considered**: `~/Library/Application Support/Epicenter/` (Apple-sanctioned, Time Machine-backed, but path has spaces, macOS-only, annoying to `cd` into), `~/Documents/Epicenter/` (user-visible, iCloud-synced, but mixes app internals like `node_modules/` and `workspace.yjs` with user content). **Backup implication**: `~/.epicenter/` is excluded from iCloud sync by default and may be skipped by some backup tools. This is acceptable because: (1) the Y.Doc can be reconstructed from hub sync, (2) extensions project user-visible data to backed-up locations like `~/Documents/`, (3) Time Machine does cover dotfiles. |
-| Discovery model | Centralized directory + symlinks for dev workspaces | Single `readdir()` scan — no config registry to corrupt or get stale. Installed workspaces live directly in `~/.epicenter/workspaces/`. Developer-authored workspaces (in git repos elsewhere) are symlinked in via `epicenter add <path>`. Avoids the "stale paths in config.json" problem of the distributed model. |
+| Storage location | `~/.epicenter/` (configurable via `EPICENTER_HOME`) | Defaults to `~/.epicenter/`: developer-friendly: tab-completable (`~/.ep<tab>`), no spaces in path (unlike `~/Library/Application Support/`), cross-platform (works on macOS, Linux, WSL), follows conventions of `.cargo/`, `.bun/`, `.docker/`. **Configurable**: Set `EPICENTER_HOME=/path/to/dir` to override. CLI also accepts `--home /path/to/dir` on all commands. Resolution order: `--home` flag > `EPICENTER_HOME` env var > `~/.epicenter/`. This enables CI environments, portable installs, and testing against isolated directories. Non-developer users never interact with the filesystem directly: the Tauri app and CLI are the interfaces. **Alternatives considered**: `~/Library/Application Support/Epicenter/` (Apple-sanctioned, Time Machine-backed, but path has spaces, macOS-only, annoying to `cd` into), `~/Documents/Epicenter/` (user-visible, iCloud-synced, but mixes app internals like `node_modules/` and `workspace.yjs` with user content). **Backup implication**: `~/.epicenter/` is excluded from iCloud sync by default and may be skipped by some backup tools. This is acceptable because: (1) the Y.Doc can be reconstructed from hub sync, (2) extensions project user-visible data to backed-up locations like `~/Documents/`, (3) Time Machine does cover dotfiles. |
+| Discovery model | Centralized directory + symlinks for dev workspaces | Single `readdir()` scan: no config registry to corrupt or get stale. Installed workspaces live directly in `~/.epicenter/workspaces/`. Developer-authored workspaces (in git repos elsewhere) are symlinked in via `epicenter add <path>`. Avoids the "stale paths in config.json" problem of the distributed model. |
 | Filesystem projections | `.withExtension()` on workspace config | Workspaces may need to materialize Y.Doc data to arbitrary filesystem locations (Markdown files, JSON exports, etc.). Extensions are reactive side effects that subscribe to Y.Doc changes and write to a target path. This keeps the core contract clean (schema + actions) and makes materialization opt-in. The workspace directory stays centralized; extensions project *outward*. **This is the key enabler for the `~/.epicenter/` storage decision**: the internal data (Y.Doc, config, deps) lives in a hidden developer-friendly location, while extensions project user-visible output (Markdown, JSON, etc.) to wherever the user wants (`~/Documents/`, `~/notes/`, Obsidian vaults). The workspace doesn't need to *be* in the output directory to *write* to it. |
-| Composition mechanism | Shared `createWorkspacePlugin(clients)` via `.use()`, parameterized `/:workspaceId` routes, centralized sync relay for WS | All workspaces share one plugin with parameterized routes (`/workspaces/:workspaceId/tables/:tableName`, etc.). Workspace resolution happens at request time via `workspaces[params.workspaceId]`. This is the current working approach — simple, no per-workspace Elysia instances needed. The SPA never hits HTTP (it uses Y.Doc directly via WebSocket), and the CLI only uses Eden Treaty for ~8 table/KV commands. Per-workspace route prefixes would only improve type discrimination for those few CLI calls — not worth the architectural complexity. `.mount(path, handler.fetch)` reserved for future untrusted third-party code where lifecycle isolation is needed. |
+| Composition mechanism | Shared `createWorkspacePlugin(clients)` via `.use()`, parameterized `/:workspaceId` routes, centralized sync relay for WS | All workspaces share one plugin with parameterized routes (`/workspaces/:workspaceId/tables/:tableName`, etc.). Workspace resolution happens at request time via `workspaces[params.workspaceId]`. This is the current working approach: simple, no per-workspace Elysia instances needed. The SPA never hits HTTP (it uses Y.Doc directly via WebSocket), and the CLI only uses Eden Treaty for ~8 table/KV commands. Per-workspace route prefixes would only improve type discrimination for those few CLI calls: not worth the architectural complexity. `.mount(path, handler.fetch)` reserved for future untrusted third-party code where lifecycle isolation is needed. |
 | Process model | Single process | Avoids port management, WebSocket relay, CORS across origins. `mount()` provides logical isolation. |
 | Distribution | jsrepo programmatic API for source + custom install step for deps | Use `resolveRegistries()`, `parseWantedItems()`, `resolveWantedItems()`, `resolveAndFetchAllItems()` from `jsrepo`. Write files ourselves via `Bun.write()` (no file-writing in the API). We handle `package.json` generation and `bun install` since jsrepo doesn't support per-app isolation. Programmatic API returns raw file content without import rewriting, so `@epicenter/workspace` imports arrive unmodified. |
 | CLI role | Package manager + process launcher | `epicenter install`, `epicenter serve`, `epicenter add`, `epicenter <workspace> <command>`. Not a persistent daemon. |
-| Standalone mode | Each workspace can also run via `createLocalServer({ clients: [client] })` | The same `epicenter.config.ts` works mounted or standalone — isomorphic by design. |
-| Config portability | `epicenter.config.ts` default export is the builder — no extensions, no actions | The config is the data contract (schema only). Each runtime chains its own extensions and actions. Enables browser SPA to import the config for local-first Y.Doc operations, while the server chains FS extensions and server-only actions. |
+| Standalone mode | Each workspace can also run via `createLocalServer({ clients: [client] })` | The same `epicenter.config.ts` works mounted or standalone: isomorphic by design. |
+| Config portability | `epicenter.config.ts` default export is the builder: no extensions, no actions | The config is the data contract (schema only). Each runtime chains its own extensions and actions. Enables browser SPA to import the config for local-first Y.Doc operations, while the server chains FS extensions and server-only actions. |
 | Remote sync | Via hub relay, not a new mechanism | Hosted apps and local apps connect to the same Yjs room on the hub. Already works. |
 | Auth boundary | Local server validates; workspace routes trust process | Better Auth JWT validated at the edge. No per-workspace auth layer. |
 
 ## Two Runtime Modes
 
-Every workspace has the same storage format on disk. The only question is **how you run it**: in the local server alongside other workspaces, or standalone on its own port. Sync via a Yjs hub is orthogonal — any workspace in either mode can optionally connect to a hub.
+Every workspace has the same storage format on disk. The only question is **how you run it**: in the local server alongside other workspaces, or standalone on its own port. Sync via a Yjs hub is orthogonal: any workspace in either mode can optionally connect to a hub.
 
 ### Multi-Workspace (Local Server)
 
@@ -220,7 +220,7 @@ The default. The local server scans `~/.epicenter/workspaces/`, imports each `ep
     └── workspace.yjs      # Local Y.Doc (source of truth)
 ```
 
-**Data flow**: Browser → Y.Doc in memory (via WebSocket sync) → persisted to `workspace.yjs`. The SPA never hits HTTP — it imports the workspace config directly and syncs via `/rooms/:workspaceId`.
+**Data flow**: Browser → Y.Doc in memory (via WebSocket sync) → persisted to `workspace.yjs`. The SPA never hits HTTP: it imports the workspace config directly and syncs via `/rooms/:workspaceId`.
 **Sync**: Optional. Start the local server with `--hub <url>` to share data with other instances.
 
 This is the "app store" experience. `epicenter install @epicenter/entries` downloads the source, installs deps, and the local server picks it up on next start. You could install 20 apps this way and they all load into the same process, sharing one `createWorkspacePlugin` with parameterized routes.
@@ -234,9 +234,9 @@ epicenter run epicenter.entries --port 4000
 epicenter run epicenter.entries --port 4000 --hub wss://hub.example.com
 ```
 
-The storage format is identical to multi-workspace mode — same directory, same files. The only difference is the process model: one workspace, one port, one server.
+The storage format is identical to multi-workspace mode: same directory, same files. The only difference is the process model: one workspace, one port, one server.
 
-This produces an identical API surface to being in the multi-workspace local server — same routes, same sync. The workspace doesn't know or care whether it's the only client or one of twenty.
+This produces an identical API surface to being in the multi-workspace local server: same routes, same sync. The workspace doesn't know or care whether it's the only client or one of twenty.
 
 **Use cases**:
 - Development: iterate on a workspace without starting the full local server
@@ -253,7 +253,7 @@ Laptop B:  epicenter.entries (local server, --hub wss://hub.example.com)
 Server:    epicenter.entries (standalone, deployed at entries.example.com, --hub wss://hub.example.com)
 ```
 
-All three have the full workspace installed. All three run it locally. All three connect to the same Yjs hub room. CRDTs ensure they converge regardless of edit order or network partitions. There's no special "remote" mode — it's just multiple instances of the same workspace syncing via the mechanism Yjs already provides.
+All three have the full workspace installed. All three run it locally. All three connect to the same Yjs hub room. CRDTs ensure they converge regardless of edit order or network partitions. There's no special "remote" mode. It's just multiple instances of the same workspace syncing via the mechanism Yjs already provides.
 
 ## Architecture
 
@@ -290,11 +290,11 @@ All three have the full workspace installed. All three run it locally. All three
 └──────────────────────────────────────────────────────────────┘
 ```
 
-**Why parameterized routes, not per-workspace prefixes**: The SPA never hits HTTP — it imports the workspace config directly, operates on a local Y.Doc, and syncs via WebSocket. The HTTP API exists for the CLI and external clients. The CLI uses Eden Treaty for table/KV CRUD (~8 calls) and raw `fetch` for actions (dynamic paths break Treaty types anyway). Per-workspace prefixes (`/entries/tables/...` instead of `/workspaces/entries/tables/...`) would improve type discrimination for those ~8 CLI calls, but that's not worth creating a separate Elysia instance per workspace. The parameterized approach is simpler, already works, and the type safety that matters (schema validation, action input/output) comes from the workspace client itself, not from the HTTP layer.
+**Why parameterized routes, not per-workspace prefixes**: The SPA never hits HTTP: it imports the workspace config directly, operates on a local Y.Doc, and syncs via WebSocket. The HTTP API exists for the CLI and external clients. The CLI uses Eden Treaty for table/KV CRUD (~8 calls) and raw `fetch` for actions (dynamic paths break Treaty types anyway). Per-workspace prefixes (`/entries/tables/...` instead of `/workspaces/entries/tables/...`) would improve type discrimination for those ~8 CLI calls, but that's not worth creating a separate Elysia instance per workspace. The parameterized approach is simpler, already works, and the type safety that matters (schema validation, action input/output) comes from the workspace client itself, not from the HTTP layer.
 
 ### Workspace Directory Layout
 
-Workspaces have two "weights" — installed from a registry, or symlinked from a developer's local project. Both have the same directory structure. The root is `$EPICENTER_HOME` (defaults to `~/.epicenter/`, configurable via env var or `--home` flag):
+Workspaces have two "weights": installed from a registry, or symlinked from a developer's local project. Both have the same directory structure. The root is `$EPICENTER_HOME` (defaults to `~/.epicenter/`, configurable via env var or `--home` flag):
 
 ```
 $EPICENTER_HOME/                          # Default: ~/.epicenter/
@@ -322,7 +322,7 @@ $EPICENTER_HOME/                          # Default: ~/.epicenter/
     └── jsrepo-manifest.json
 ```
 
-**Discovery is always a single `readdir()`** on `~/.epicenter/workspaces/`. Symlinks are transparent — the local server follows them and imports the `epicenter.config.ts` at the resolved path. If a symlink is broken (developer deleted the project), the local server logs a warning and skips it, same as any other import failure.
+**Discovery is always a single `readdir()`** on `~/.epicenter/workspaces/`. Symlinks are transparent: the local server follows them and imports the `epicenter.config.ts` at the resolved path. If a symlink is broken (developer deleted the project), the local server logs a warning and skips it, same as any other import failure.
 
 **Two CLI commands map to the two weights:**
 - `epicenter install <registry/block>` → creates a directory in `workspaces/` (installed)
@@ -331,7 +331,7 @@ $EPICENTER_HOME/                          # Default: ~/.epicenter/
 ### How a Workspace Becomes an App
 
 ```
-STEP 1: Author writes epicenter.config.ts (DATA CONTRACT — schema only)
+STEP 1: Author writes epicenter.config.ts (DATA CONTRACT: schema only)
 ──────────────────────────────────────────────────────────────────────
 import { createWorkspace, defineTable, defineQuery, defineMutation } from '@epicenter/workspace';
 
@@ -351,7 +351,7 @@ export const coreActions = (c) => ({
 
 STEP 2: Each runtime chains extensions + actions as needed
 ──────────────────────────────────────────────────────────
-// Bun sidecar (server) — chains extensions AND actions
+// Bun sidecar (server): chains extensions AND actions
 import workspace, { coreActions } from './epicenter.config.ts';
 
 const client = workspace
@@ -366,7 +366,7 @@ const client = workspace
     },
   }));
 
-// Browser SPA — chains only actions (no FS extensions possible)
+// Browser SPA: chains only actions (no FS extensions possible)
 import workspace, { coreActions } from './epicenter.config.ts';
 
 const client = workspace.withActions((c) => ({
@@ -401,12 +401,12 @@ new Elysia({ prefix: '/rooms' }).use(createSyncPlugin({
 STEP 5: SPA connects via Yjs sync (local-first, no HTTP for data)
 ─────────────────────────────────────────────────────────────────
 // SPA already has its own Y.Doc from importing the config (Step 2).
-// Connect to the Yjs WebSocket room — all data syncs automatically.
+// Connect to the Yjs WebSocket room: all data syncs automatically.
 ws://localhost:3913/rooms/my-app   → Yjs sync (bidirectional)
 
 // Actions execute locally on the browser's Y.Doc:
-client.actions.posts.getAll();     // Local read — zero latency
-client.actions.posts.create({});   // Local write — syncs to server via WS
+client.actions.posts.getAll();     // Local read: zero latency
+client.actions.posts.create({});   // Local write: syncs to server via WS
 
 // Server-only actions (deleteAll, exportToCsv) are NOT on the SPA's client.
 // The SPA can discover them via awareness protocol and proxy via HTTP if needed.
@@ -414,7 +414,7 @@ client.actions.posts.create({});   // Local write — syncs to server via WS
 
 ### Standalone Mode (Single Workspace)
 
-Any workspace can run independently. `createLocalServer()` takes a `clients` array of `AnyWorkspaceClient` objects — there is no separate "createWorkspaceServer". A standalone workspace is just `createLocalServer` with a single client.
+Any workspace can run independently. `createLocalServer()` takes a `clients` array of `AnyWorkspaceClient` objects. There is no separate "createWorkspaceServer". A standalone workspace is just `createLocalServer` with a single client.
 
 Since the config exports a builder (not terminal), the standalone runner must chain extensions and actions before passing to `createLocalServer`:
 
@@ -435,7 +435,7 @@ createLocalServer({ clients: [client], port: 4000 }).start();
 epicenter run epicenter.entries --port 4000
 ```
 
-This produces an identical API surface to being in the multi-workspace local server — same routes, same sync. The workspace doesn't know or care whether it's the only client or one of twenty. The only difference between "multi-workspace" and "standalone" is how many clients are in the array passed to `createLocalServer()` and what extensions/actions each runtime chains.
+This produces an identical API surface to being in the multi-workspace local server: same routes, same sync. The workspace doesn't know or care whether it's the only client or one of twenty. The only difference between "multi-workspace" and "standalone" is how many clients are in the array passed to `createLocalServer()` and what extensions/actions each runtime chains.
 
 ### Remote Sync (Hosted App + Local Data)
 
@@ -449,15 +449,15 @@ This produces an identical API surface to being in the multi-workspace local ser
 └─────────────────────┘     └──────────────────┘     └─────────────────────┘
 ```
 
-`myapp.com` here is a **standalone hosted workspace** — a specific `epicenter.config.ts` deployed as a cloud service (Phase 5). It is NOT the hub. The hub relay in the middle is the generic `createHubServer()` instance: schema-agnostic, no workspace config, no extensions, no actions. Both `myapp.com` and the local Bun sidecar connect to it as Yjs peers.
+`myapp.com` here is a **standalone hosted workspace**: a specific `epicenter.config.ts` deployed as a cloud service (Phase 5). It is NOT the hub. The hub relay in the middle is the generic `createHubServer()` instance: schema-agnostic, no workspace config, no extensions, no actions. Both `myapp.com` and the local Bun sidecar connect to it as Yjs peers.
 
-Both the hosted version and local instance use the same `epicenter.config.ts` schema. They connect to the same hub room. Yjs CRDTs handle conflict-free merging. No special sync protocol — this is what Yjs already does.
+Both the hosted version and local instance use the same `epicenter.config.ts` schema. They connect to the same hub room. Yjs CRDTs handle conflict-free merging. No special sync protocol. This is what Yjs already does.
 
 ### Third-Party Auth Flow (Login with Epicenter)
 
-When a third-party developer (Alice) hosts a workspace at `myapp.com`, users need to authenticate so the hub knows which room to grant access to. The hub acts as an **OAuth 2.1 / OIDC identity provider** using Better Auth's `oauthProvider` plugin. This is the same pattern as "Log in with Google" — the hub is the identity provider, `myapp.com` is the relying party.
+When a third-party developer (Alice) hosts a workspace at `myapp.com`, users need to authenticate so the hub knows which room to grant access to. The hub acts as an **OAuth 2.1 / OIDC identity provider** using Better Auth's `oauthProvider` plugin. This is the same pattern as "Log in with Google". The hub is the identity provider, `myapp.com` is the relying party.
 
-**Why this doesn't contradict the "no JWT" auth spec**: The simplified auth spec (`20260223T160300`) eliminates JWT for first-party use — the Tauri app and local sidecar use opaque session tokens because they're same-origin with the hub. Third-party apps are a different threat model: `myapp.com` and `hub.epicenter.com` are different origins. Cookies don't work across origins. The OAuth provider plugin naturally issues JWTs (id_tokens, access_tokens) for cross-origin use. Session tokens for first-party, OAuth JWTs for third-party — no overlap, no contradiction.
+**Why this doesn't contradict the "no JWT" auth spec**: The simplified auth spec (`20260223T160300`) eliminates JWT for first-party use: the Tauri app and local sidecar use opaque session tokens because they're same-origin with the hub. Third-party apps are a different threat model: `myapp.com` and `hub.epicenter.com` are different origins. Cookies don't work across origins. The OAuth provider plugin naturally issues JWTs (id_tokens, access_tokens) for cross-origin use. Session tokens for first-party, OAuth JWTs for third-party: no overlap, no contradiction.
 
 **Better Auth's `oauthProvider` plugin provides everything needed out of the box:**
 
@@ -574,7 +574,7 @@ Both peers sync the same Y.Doc. User sees identical data everywhere.
 **Token lifecycle for long-lived WebSocket connections**: Access tokens expire (15 minutes by default). For long-lived WebSocket connections:
 1. The SPA monitors token expiry and refreshes via the `refresh_token` grant before expiration
 2. On refresh, the SPA disconnects and reconnects the WebSocket with the new access token
-3. Yjs handles reconnection gracefully — pending updates queue locally and sync on reconnect
+3. Yjs handles reconnection gracefully: pending updates queue locally and sync on reconnect
 4. Alternative: the hub could accept a token refresh message on the existing WebSocket (optimization for later)
 
 **What Alice (third-party developer) needs:**
@@ -586,17 +586,17 @@ Both peers sync the same Y.Doc. User sees identical data everywhere.
 | 3. Import config | Same `epicenter.config.ts` | `npm install` from jsrepo registry |
 | 4. Connect sync | WebSocket to hub with access token | `y-websocket` with `params: { token }` |
 
-Alice doesn't need an Epicenter SDK beyond the standard `@epicenter/workspace` package and any OAuth client library. The hub is a standard OIDC provider — Alice can use `openid-client`, `arctic`, or any OAuth library her framework supports.
+Alice doesn't need an Epicenter SDK beyond the standard `@epicenter/workspace` package and any OAuth client library. The hub is a standard OIDC provider: Alice can use `openid-client`, `arctic`, or any OAuth library her framework supports.
 
 **Trust model**: Registering an OAuth client on the hub does NOT give Alice access to user data. The OAuth flow requires explicit user consent. A user must visit `myapp.com`, click "Log in with Epicenter," and approve the consent screen before `myapp.com` can access their sync rooms. The hub enforces room-level access control based on the JWT's `sub` claim.
 
 ### The epicenter.config.ts as Universal Contract
 
-The config file is portable across all runtime contexts — server (Bun local server, standalone), browser (Svelte SPA), or edge (Cloudflare Worker). This portability is possible because the config contains only the data contract: schema definitions and a Y.Doc. Actions and extensions are chained per-runtime.
+The config file is portable across all runtime contexts: server (Bun local server, standalone), browser (Svelte SPA), or edge (Cloudflare Worker). This portability is possible because the config contains only the data contract: schema definitions and a Y.Doc. Actions and extensions are chained per-runtime.
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────────────┐
-│  epicenter.config.ts (DATA CONTRACT — portable, runs anywhere)                    │
+│  epicenter.config.ts (DATA CONTRACT: portable, runs anywhere)                    │
 │                                                                                   │
 │  ┌─────────────┐   ┌──────────────────┐   ┌──────────────────────────────────┐  │
 │  │  Schema      │   │  UI Hints        │   │  Shared Action Factories         │  │
@@ -607,7 +607,7 @@ The config file is portable across all runtime contexts — server (Bun local se
 │  └─────────────┘   └──────────────────┘   └──────────────────────────────────┘  │
 │                                                                                   │
 │  Default export: createWorkspace(config) → WorkspaceClientBuilder                │
-│  Y.Doc created eagerly. Builder is chainable — NOT terminal.                     │
+│  Y.Doc created eagerly. Builder is chainable, NOT terminal.                     │
 │  No .withExtension() or .withActions() in the config.                            │
 └──────────────────────────────────────────────────────────────────────────────────┘
 
@@ -636,18 +636,18 @@ The config file is portable across all runtime contexts — server (Bun local se
                   Awareness (each peer advertises its actions)
 ```
 
-**Note on the three columns above**: These are all consumers of `epicenter.config.ts` — each imports the builder and chains runtime-specific extensions and actions. The **hub server is not shown here** because it never imports workspace configs. The hub is a separate process that all three columns connect to as Yjs peers. "Standalone Hosted Workspace" (right column) is a `createLocalServer()` instance running in the cloud — a local server deployed remotely, not the hub.
+**Note on the three columns above**: These are all consumers of `epicenter.config.ts`: each imports the builder and chains runtime-specific extensions and actions. The **hub server is not shown here** because it never imports workspace configs. The hub is a separate process that all three columns connect to as Yjs peers. "Standalone Hosted Workspace" (right column) is a `createLocalServer()` instance running in the cloud: a local server deployed remotely, not the hub.
 
 **Three layers, three portability levels:**
 - **Schema** (in config): Universal. Must be identical everywhere for Yjs sync to work.
 - **Actions** (per-runtime): Context-dependent. Different runtimes expose different capabilities. Shared action factories (named exports) prevent duplication for common CRUD.
 - **Extensions** (per-runtime): Environment-specific. FS projections on server, IndexedDB persistence in browser, Durable Objects on edge.
 
-**Why this works**: `createWorkspace()` eagerly creates a `Y.Doc`. The builder uses immutable state, so branching is safe — multiple runtimes can chain different extensions/actions from the same base without interference. Each import in a different process creates a fresh Y.Doc. Yjs sync handles convergence.
+**Why this works**: `createWorkspace()` eagerly creates a `Y.Doc`. The builder uses immutable state, so branching is safe: multiple runtimes can chain different extensions/actions from the same base without interference. Each import in a different process creates a fresh Y.Doc. Yjs sync handles convergence.
 
 **Awareness as action discovery**: Each peer can advertise its available actions via the Yjs awareness protocol. The SPA sees that the Bun sidecar has `deleteAll` and `exportToCsv`, and can proxy those calls via HTTP. The user sees all capabilities across the network, even actions that only run on the server.
 
-**Browser import pattern**: The Svelte SPA imports the config, chains its own actions, and operates on a local Y.Doc synced via WebSocket. Zero HTTP round-trips for data operations. The HTTP API layer becomes optional — useful for non-browser clients (CLI, curl) and for proxying server-only actions, but not required for the SPA's own data path.
+**Browser import pattern**: The Svelte SPA imports the config, chains its own actions, and operates on a local Y.Doc synced via WebSocket. Zero HTTP round-trips for data operations. The HTTP API layer becomes optional: useful for non-browser clients (CLI, curl) and for proxying server-only actions, but not required for the SPA's own data path.
 
 ## Implementation Plan
 
@@ -716,16 +716,16 @@ GLOBAL OPTIONS
   --version                              Show version
 ```
 
-### Step 1: Foundation — `resolveEpicenterHome` + Discovery Rewrite
+### Step 1: Foundation: `resolveEpicenterHome` + Discovery Rewrite
 
 **What changes**: Create `packages/cli/src/paths.ts`. Rewrite `packages/cli/src/discovery.ts` to scan `$EPICENTER_HOME/workspaces/` instead of arbitrary `--dir` paths.
 
 **Files to create**:
-- `packages/cli/src/paths.ts` — `resolveEpicenterHome()`, `workspacesDir()`, `cacheDir()`
+- `packages/cli/src/paths.ts`: `resolveEpicenterHome()`, `workspacesDir()`, `cacheDir()`
 
 **Files to modify**:
-- `packages/cli/src/discovery.ts` — replace `discoverAllWorkspaces(dirs)` with `discoverWorkspaces(home)` that does a single `readdir()` on `workspacesDir(home)` with `{ withFileTypes: true }`, follows symlinks, imports each `epicenter.config.ts`
-- `packages/cli/src/cli.ts` — add `--home` global option, thread through to discovery and commands
+- `packages/cli/src/discovery.ts`: replace `discoverAllWorkspaces(dirs)` with `discoverWorkspaces(home)` that does a single `readdir()` on `workspacesDir(home)` with `{ withFileTypes: true }`, follows symlinks, imports each `epicenter.config.ts`
+- `packages/cli/src/cli.ts`: add `--home` global option, thread through to discovery and commands
 
 **Exact Bun APIs**:
 ```typescript
@@ -761,15 +761,15 @@ for (const dirent of dirents) {
 - [x] **1.4** Graceful failure: `try/catch` around each workspace import, log error, continue loading others
 - [x] **1.5** Ensure `mkdir(workspacesDir(home), { recursive: true })` on first use (idempotent)
 
-### Step 2: `epicenter add <path>` — Symlink Registration
+### Step 2: `epicenter add <path>`: Symlink Registration
 
-**What changes**: New command file. Simplest package manager command — validates path, creates symlink.
+**What changes**: New command file. Simplest package manager command: validates path, creates symlink.
 
 **Files to create**:
 - `packages/cli/src/commands/add-command.ts`
 
 **Files to modify**:
-- `packages/cli/src/cli.ts` — register `buildAddCommand(home)` in tier 1 (non-workspace-scoped)
+- `packages/cli/src/cli.ts`: register `buildAddCommand(home)` in tier 1 (non-workspace-scoped)
 
 **Exact implementation**:
 ```typescript
@@ -802,7 +802,7 @@ export function buildAddCommand(home: string): CommandModule {
         outputError(`Workspace "${workspaceId}" already exists at ${linkPath}`);
         process.exitCode = 1;
         return;
-      } catch { /* doesn't exist — good */ }
+      } catch { /* doesn't exist: good */ }
 
       await symlink(targetPath, linkPath);
       output({ added: workspaceId, path: targetPath, link: linkPath });
@@ -819,7 +819,7 @@ export function buildAddCommand(home: string): CommandModule {
 - [x] **2.4** Error if a workspace with that ID already exists
 - [x] **2.5** Register in `cli.ts` as a tier-1 command
 
-### Step 3: `epicenter ls` — Filesystem Listing
+### Step 3: `epicenter ls`: Filesystem Listing
 
 **What changes**: New command. Reads `~/.epicenter/workspaces/` directly (no running server needed).
 
@@ -874,12 +874,12 @@ export function buildLsCommand(home: string): CommandModule {
 - [x] **3.3** Handle broken symlinks gracefully (status: "error", message: "symlink target not found")
 - [x] **3.4** Register in `cli.ts` as tier-1 command
 
-### Step 4: Update `epicenter serve` — Use New Discovery
+### Step 4: Update `epicenter serve`: Use New Discovery
 
 **What changes**: Modify the existing `serve` command to use `discoverWorkspaces(home)` instead of `discoverAllWorkspaces(dirs)`. Deprecate `--dir` (keep it working with a warning).
 
 **Files to modify**:
-- `packages/cli/src/cli.ts` — `buildServeCommand()` uses `resolveEpicenterHome(argv.home)` and calls new discovery
+- `packages/cli/src/cli.ts`: `buildServeCommand()` uses `resolveEpicenterHome(argv.home)` and calls new discovery
 
 **Before → After**:
 ```typescript
@@ -907,7 +907,7 @@ handler: async (argv) => {
 - [x] **4.2** Deprecate `--dir` with a console warning, keep it functional as fallback
 - [x] **4.3** Add `--home` option to serve command
 
-### Step 5: `epicenter install <registry/block>` — jsrepo Integration
+### Step 5: `epicenter install <registry/block>`: jsrepo Integration
 
 **What changes**: The largest new command. Fetches workspace source from jsrepo, writes to disk, generates `package.json`, runs `bun install`.
 
@@ -994,7 +994,7 @@ async function installWorkspace(registryUrl: string, itemName: string, home: str
 - [x] **5.7** Create empty `data/` directory for future `workspace.yjs` persistence
 - [x] **5.8** Error if workspace ID already exists in `workspacesDir(home)`
 
-### Step 6: `epicenter run <id>` — Standalone Mode
+### Step 6: `epicenter run <id>`: Standalone Mode
 
 **What changes**: New command. Imports a single workspace, chains standard extensions, calls `createLocalServer({ clients: [client] })`.
 
@@ -1050,7 +1050,7 @@ export function buildRunCommand(home: string): CommandModule {
 ```
 
 - [x] **6.1** Create `packages/cli/src/commands/run-command.ts` with `buildRunCommand(home)`
-- [ ] **6.2** _(deferred: filePersistence extension not yet implemented — Step 9)_ Import workspace config, chain `filePersistence` extension for `data/workspace.yjs`
+- [ ] **6.2** _(deferred: filePersistence extension not yet implemented: Step 9)_ Import workspace config, chain `filePersistence` extension for `data/workspace.yjs`
 - [ ] **6.3** _(deferred: coreActions chaining depends on convention adoption)_ Chain `coreActions` if exported from config
 - [x] **6.4** Pass `--hub` URL to `createLocalServer` for optional Yjs hub sync
 - [x] **6.5** Register as tier-1 command in `cli.ts`
@@ -1095,27 +1095,27 @@ if (stat.isSymbolicLink()) {
 
 Extensions allow workspaces to reactively materialize Y.Doc data to arbitrary filesystem locations. This is how a workspace writes Markdown files, JSON exports, or any other file-based output without requiring the workspace itself to live in the output directory.
 
-- [ ] **9.1** Define the `.withExtension()` API on the workspace builder — extensions receive access to the workspace's Y.Doc observation lifecycle and a target path
-- [ ] **9.2** Implement `filePersistence` as the first built-in extension — binary snapshot of Y.Doc to `data/workspace.yjs`
-- [ ] **9.3** Implement `markdownProjection` — subscribes to `observeDeep` on a table's Y.Map, diffs changes, writes/deletes `.md` files at the target path
-- [ ] **9.4** Wire extension lifecycle into the local server — start extensions on workspace load, stop on shutdown
+- [ ] **9.1** Define the `.withExtension()` API on the workspace builder: extensions receive access to the workspace's Y.Doc observation lifecycle and a target path
+- [ ] **9.2** Implement `filePersistence` as the first built-in extension: binary snapshot of Y.Doc to `data/workspace.yjs`
+- [ ] **9.3** Implement `markdownProjection`: subscribes to `observeDeep` on a table's Y.Map, diffs changes, writes/deletes `.md` files at the target path
+- [ ] **9.4** Wire extension lifecycle into the local server: start extensions on workspace load, stop on shutdown
 - [ ] **9.5** Support multiple extensions per workspace
-- [ ] **9.6** Handle extension errors gracefully — log, expose status, don't crash the process
+- [ ] **9.6** Handle extension errors gracefully: log, expose status, don't crash the process
 
 ### Step 10: Third-Party Auth (Login with Epicenter)
 
-- [ ] **10.1** Enable Better Auth's `oauthProvider` plugin on the hub — adds `/oauth2/authorize`, `/oauth2/token`, `/jwks`, `/.well-known/openid-configuration`, `/oauth2/userinfo` endpoints
+- [ ] **10.1** Enable Better Auth's `oauthProvider` plugin on the hub: adds `/oauth2/authorize`, `/oauth2/token`, `/jwks`, `/.well-known/openid-configuration`, `/oauth2/userinfo` endpoints
 - [ ] **10.2** Add `epicenter register-app <domain> --redirect <uri>` CLI command
-- [ ] **10.3** Add room-level access control on WebSocket upgrade — validate OAuth JWT via JWKS, check `token.sub` matches room's user scope
+- [ ] **10.3** Add room-level access control on WebSocket upgrade: validate OAuth JWT via JWKS, check `token.sub` matches room's user scope
 - [ ] **10.4** Add consent screen UI on the hub
 - [ ] **10.5** Document the third-party developer integration guide
 
 **Example API:**
 
-Since the config exports the builder (not terminal), each runtime chains extensions and actions independently. `.withActions()` is terminal — extensions must come before actions in the chain.
+Since the config exports the builder (not terminal), each runtime chains extensions and actions independently. `.withActions()` is terminal: extensions must come before actions in the chain.
 
 ```typescript
-// epicenter.config.ts — DATA CONTRACT (builder, no extensions, no actions)
+// epicenter.config.ts: DATA CONTRACT (builder, no extensions, no actions)
 export default createWorkspace({ id: 'journal', tables: { entries } });
 
 export const coreActions = (c) => ({
@@ -1125,7 +1125,7 @@ export const coreActions = (c) => ({
   },
 });
 
-// Bun sidecar — chains extensions + actions
+// Bun sidecar: chains extensions + actions
 import workspace, { coreActions } from './epicenter.config.ts';
 
 const client = workspace
@@ -1151,7 +1151,7 @@ const client = workspace
   }));
 ```
 
-**Key insight**: The workspace stays centralized in `~/.epicenter/workspaces/`. Extensions project *outward* to wherever the user wants output. The config exports a builder (not terminal), so every runtime — browser SPA, Bun sidecar, standalone hosted workspace — chains exactly the extensions and actions it needs. This cleanly separates "what the data looks like" (config) from "what you can do with it" (per-runtime).
+**Key insight**: The workspace stays centralized in `~/.epicenter/workspaces/`. Extensions project *outward* to wherever the user wants output. The config exports a builder (not terminal), so every runtime: browser SPA, Bun sidecar, standalone hosted workspace: chains exactly the extensions and actions it needs. This cleanly separates "what the data looks like" (config) from "what you can do with it" (per-runtime).
 
 ## Hard Problems
 
@@ -1159,17 +1159,17 @@ These are the genuinely difficult parts of this architecture. Everything else is
 
 ### 1. Schema Evolution After Updates
 
-When a workspace is updated via `epicenter update`, the new `epicenter.config.ts` may add/remove tables or change field types. The persisted `workspace.yjs` still has the old schema's data. Yjs is schema-tolerant — old fields remain, new fields get defaults — but `getAllValid()` may filter out stale rows.
+When a workspace is updated via `epicenter update`, the new `epicenter.config.ts` may add/remove tables or change field types. The persisted `workspace.yjs` still has the old schema's data. Yjs is schema-tolerant: old fields remain, new fields get defaults. But `getAllValid()` may filter out stale rows.
 
-When two instances of the same workspace sync via hub and one updates to a newer schema version, they'll briefly disagree on the schema. This is fine — Yjs doesn't care about schema, and both instances render what their local schema understands. Unknown fields are preserved in the Y.Doc but not displayed.
+When two instances of the same workspace sync via hub and one updates to a newer schema version, they'll briefly disagree on the schema. This is fine: Yjs doesn't care about schema, and both instances render what their local schema understands. Unknown fields are preserved in the Y.Doc but not displayed.
 
 **Recommendation**: Accept drift for v1. The SPA should handle unknown fields gracefully since `getAllValid()` already filters by the current schema.
 
 ### 2. Process Isolation at Scale
 
-The local server runs all workspaces in a single Bun process. This is fine for personal use — each Y.Doc is KB to low MB, Yjs sync is cheap, and the scale is 20 workspaces on one laptop, not a multi-tenant server. Installing a third-party workspace is the same trust model as `npm install`: you're already trusting that code with full access to your machine. Process isolation doesn't change that.
+The local server runs all workspaces in a single Bun process. This is fine for personal use: each Y.Doc is KB to low MB, Yjs sync is cheap, and the scale is 20 workspaces on one laptop, not a multi-tenant server. Installing a third-party workspace is the same trust model as `npm install`: you're already trusting that code with full access to your machine. Process isolation doesn't change that.
 
-**Recommendation**: Single process. Isolation becomes relevant only if Epicenter serves multiple untrusted tenants in a shared process — a product direction not currently planned.
+**Recommendation**: Single process. Isolation becomes relevant only if Epicenter serves multiple untrusted tenants in a shared process: a product direction not currently planned.
 
 ### 3. The "20 Apps" UI Problem
 
@@ -1181,10 +1181,10 @@ If you have 20 workspaces mounted, the Svelte shell needs to render a coherent U
 
 **The tension**: The local server serves a single SPA. Custom per-workspace UI means either:
 - The SPA is a generic shell that renders all workspaces as tables (current approach, boring but works)
-- Workspaces can ship their own Svelte components (powerful but complex — code loading, security, bundle size)
+- Workspaces can ship their own Svelte components (powerful but complex: code loading, security, bundle size)
 - Workspaces define "views" declaratively (column layouts, card templates) that the SPA interprets
 
-**Recommendation**: Generic table shell for v1. Explore declarative view definitions for v2 (a workspace's config could include `views: [{ type: 'kanban', groupBy: 'status' }]`). Custom Svelte components are a v3 concern — they require a plugin sandbox and dramatically increase complexity.
+**Recommendation**: Generic table shell for v1. Explore declarative view definitions for v2 (a workspace's config could include `views: [{ type: 'kanban', groupBy: 'status' }]`). Custom Svelte components are a v3 concern: they require a plugin sandbox and dramatically increase complexity.
 
 ## Edge Cases
 
@@ -1212,14 +1212,14 @@ If you have 20 workspaces mounted, the Svelte shell needs to render a coherent U
 1. User runs `epicenter update my-app`, which replaces `epicenter.config.ts` with a new version.
 2. The new schema may add/remove tables or change field types.
 3. The persisted `workspace.yjs` still has the old schema's data.
-4. Yjs is schema-tolerant — old fields remain in the Y.Doc, new fields get defaults. But `getAllValid()` may filter out stale rows. This is the existing behavior and is acceptable.
+4. Yjs is schema-tolerant: old fields remain in the Y.Doc, new fields get defaults. But `getAllValid()` may filter out stale rows. This is the existing behavior and is acceptable.
 
 ### Data Trapped in Hidden Y.Doc (No Extensions Configured)
 
 1. Non-technical user installs a journal workspace via the Tauri app.
 2. They write 200 journal entries over 6 months.
 3. They uninstall Epicenter, or their machine dies, or they want to export their data.
-4. All 200 entries are in `~/.epicenter/workspaces/journal/data/workspace.yjs` — a binary CRDT file that no other app can read.
+4. All 200 entries are in `~/.epicenter/workspaces/journal/data/workspace.yjs`: a binary CRDT file that no other app can read.
 5. **Mitigations**: (a) The Tauri app should always offer an "Export" button that dumps table data as JSON/CSV/Markdown, independent of extensions. (b) If hub sync is configured, the data exists on the hub and can be recovered. (c) `epicenter export <workspace-id> --format json` as a CLI escape hatch. (d) Workspace authors can use `.withExtension()` to project data to user-visible locations.
 6. **Principle**: The Y.Doc is the source of truth, but it must never be the *only* copy of user data in a human-readable format. At minimum, export must always be available via the app UI and CLI.
 
@@ -1244,42 +1244,42 @@ These were open during design and have been decided. Kept here for context so im
 1. **Where should workspaces be stored?**
    - **Decision**: `~/.epicenter/workspaces/` (centralized dotfile directory). See "Storage location" and "Discovery model" in Design Decisions.
    - **Alternatives rejected**: `~/Library/Application Support/Epicenter/` (path has spaces, macOS-only), `~/Documents/Epicenter/` (mixes app internals with user content), distributed paths in `config.json` (stale path problem, single point of failure).
-   - **Key enabler**: The extension/projection system means user-visible data doesn't need to live *in* `~/.epicenter/` — it gets projected outward to user-chosen locations.
+   - **Key enabler**: The extension/projection system means user-visible data doesn't need to live *in* `~/.epicenter/`: it gets projected outward to user-chosen locations.
 
 2. **How should developer-authored workspaces (in git repos) be registered?**
    - **Decision**: `epicenter add <path>` creates a symlink in `~/.epicenter/workspaces/`. The local server follows symlinks transparently. Broken symlinks are handled the same as import failures.
    - **Alternative rejected**: Path registry in `config.json` (corrupts, gets stale, requires validation on every startup).
 
 3. **Where do non-technical users see their data?**
-   - **Decision**: Extensions (`.withExtension()`) project Y.Doc data outward to user-visible locations (`~/Documents/`, Obsidian vaults, etc.). The Y.Doc in `~/.epicenter/` is internal plumbing — users interact with projected output or the Tauri app UI. Export via app UI and CLI is always available as a fallback.
+   - **Decision**: Extensions (`.withExtension()`) project Y.Doc data outward to user-visible locations (`~/Documents/`, Obsidian vaults, etc.). The Y.Doc in `~/.epicenter/` is internal plumbing: users interact with projected output or the Tauri app UI. Export via app UI and CLI is always available as a fallback.
 
 4. **What happens to the current `createWorkspacePlugin` approach?**
-   - **Decision**: Keep it. The shared parameterized approach (`/workspaces/:workspaceId/...`) stays. The only change is where the `clients` array comes from — currently hardcoded, moving to dynamic discovery from `~/.epicenter/workspaces/`. Per-workspace Elysia instances with dedicated prefixes were considered but rejected: the SPA never hits HTTP (it uses Y.Doc directly via WebSocket), and Eden Treaty type discrimination for the CLI's ~8 table/KV calls isn't worth the architectural complexity.
+   - **Decision**: Keep it. The shared parameterized approach (`/workspaces/:workspaceId/...`) stays. The only change is where the `clients` array comes from: currently hardcoded, moving to dynamic discovery from `~/.epicenter/workspaces/`. Per-workspace Elysia instances with dedicated prefixes were considered but rejected: the SPA never hits HTTP (it uses Y.Doc directly via WebSocket), and Eden Treaty type discrimination for the CLI's ~8 table/KV calls isn't worth the architectural complexity.
 
 5. **How should workspace-specific dependencies be managed?**
-   - **Decision**: Each workspace has its own `package.json` + `node_modules/`. Bun installs are fast (~100ms) and disk is cheap. This gives maximum flexibility — workspaces can import any npm package, not just `@epicenter/workspace`.
-   - **Alternative rejected**: Restricting workspaces to only import from `@epicenter/workspace` (too limiting — workspaces that call external APIs, use crypto libraries, etc. need their own deps).
+   - **Decision**: Each workspace has its own `package.json` + `node_modules/`. Bun installs are fast (~100ms) and disk is cheap. This gives maximum flexibility: workspaces can import any npm package, not just `@epicenter/workspace`.
+   - **Alternative rejected**: Restricting workspaces to only import from `@epicenter/workspace` (too limiting: workspaces that call external APIs, use crypto libraries, etc. need their own deps).
 
 6. **Should the CLI shell out to `jsrepo add` or use the programmatic API?**
-   - **Decision**: Use jsrepo's programmatic API exported from `jsrepo` (`resolveRegistries()`, `parseWantedItems()`, `resolveWantedItems()`, `resolveAndFetchAllItems()`). File writing is not in the API — we write files via `Bun.write()` directly, which means no import rewriting occurs.
-   - **Why programmatic over shelling out**: (a) We need custom post-processing anyway (generate `package.json`, run `bun install`, write `manifest.json` with provenance). (b) Avoids the import rewriting edge case — jsrepo's CLI automatically rewrites imports, which could mangle `@epicenter/workspace` paths. Programmatic control lets us skip that. (c) No subprocess overhead, error handling stays in-process.
+   - **Decision**: Use jsrepo's programmatic API exported from `jsrepo` (`resolveRegistries()`, `parseWantedItems()`, `resolveWantedItems()`, `resolveAndFetchAllItems()`). File writing is not in the API: we write files via `Bun.write()` directly, which means no import rewriting occurs.
+   - **Why programmatic over shelling out**: (a) We need custom post-processing anyway (generate `package.json`, run `bun install`, write `manifest.json` with provenance). (b) Avoids the import rewriting edge case: jsrepo's CLI automatically rewrites imports, which could mangle `@epicenter/workspace` paths. Programmatic control lets us skip that. (c) No subprocess overhead, error handling stays in-process.
    - **Alternative rejected**: Shelling out to `jsrepo add` via `Bun.$` (viable but gives less control over the install flow, and the import rewriting problem requires post-processing to fix anyway).
 
 7. **How should the hub relay authorize room access?**
    - **Decision**: User-level auth via Better Auth JWT. The hub validates the JWT on WebSocket upgrade and checks room-level permissions (which workspaces has this user been granted access to?).
-   - **Why**: Both self-hosted and Cloudflare-hosted hubs support Better Auth. Using the same auth system everywhere means one mechanism, one codebase, one login flow — regardless of whether the hub is local or remote. No separate token issuance or distribution needed.
+   - **Why**: Both self-hosted and Cloudflare-hosted hubs support Better Auth. Using the same auth system everywhere means one mechanism, one codebase, one login flow: regardless of whether the hub is local or remote. No separate token issuance or distribution needed.
    - **Alternative rejected**: Room-level access tokens (creates a "who issues the token and how does it reach the other instance" problem, introduces a second auth system alongside Better Auth).
 
 8. **Should `epicenter.config.ts` be portable across browser and server?**
-   - **Decision**: Yes. The config's default export is a `WorkspaceClientBuilder` (result of `createWorkspace()` — not terminal). It contains NO extensions, NO actions, and NO server-only dependencies. This allows any runtime to import it and chain its own extensions and actions.
-   - **Why**: `createWorkspace()` eagerly creates a Y.Doc, and Yjs is fully isomorphic (runs in browser, Bun, Deno, edge). The builder uses immutable state, so branching is safe — multiple runtimes chain different things from the same base. Actions are context-dependent (a Bun sidecar might expose `deleteAll` and `exportToCsv` that the browser SPA shouldn't have). Extensions are environment-specific (FS projections on server, IndexedDB in browser).
+   - **Decision**: Yes. The config's default export is a `WorkspaceClientBuilder` (result of `createWorkspace()`: not terminal). It contains NO extensions, NO actions, and NO server-only dependencies. This allows any runtime to import it and chain its own extensions and actions.
+   - **Why**: `createWorkspace()` eagerly creates a Y.Doc, and Yjs is fully isomorphic (runs in browser, Bun, Deno, edge). The builder uses immutable state, so branching is safe: multiple runtimes chain different things from the same base. Actions are context-dependent (a Bun sidecar might expose `deleteAll` and `exportToCsv` that the browser SPA shouldn't have). Extensions are environment-specific (FS projections on server, IndexedDB in browser).
    - **Implication**: Neither `.withExtension()` nor `.withActions()` appear in the config. The config is purely the data contract (schema). Shared action factories can be exported as named exports for DRY across runtimes.
    - **Alternative rejected**: Putting actions in the config (forces all runtimes to have identical capabilities, prevents server-only or browser-only actions).
 
 9. **Should per-workspace route prefixes replace parameterized routes?**
    - **Decision**: No. Keep the shared `createWorkspacePlugin` with parameterized `/:workspaceId` routes.
-   - **Why**: Per-workspace prefixes (`/entries/tables/...` instead of `/workspaces/entries/tables/...`) would require a separate Elysia instance per workspace. The only benefit is Eden Treaty type discrimination — knowing at the type level that `entries` has a `posts` table vs `whispering` has a `recordings` table. But: (a) the SPA never hits HTTP at all — it uses Y.Doc directly, (b) the CLI uses Eden Treaty for only ~8 table/KV commands, and already uses raw `fetch` for actions (dynamic paths break Treaty types), (c) the type safety that matters (schema validation, action input/output) comes from the workspace client itself, not the HTTP layer. The parameterized approach is simpler, already works, and avoids creating N Elysia instances at startup.
-   - **`.mount()` note**: The `.mount()` vs `.use()` research (see Research Findings) remains relevant for future untrusted third-party workspaces that need lifecycle isolation. For first-party workspaces, both are `.use()`'d — the question is just whether it's one shared plugin or N separate instances. Answer: one shared plugin.
+   - **Why**: Per-workspace prefixes (`/entries/tables/...` instead of `/workspaces/entries/tables/...`) would require a separate Elysia instance per workspace. The only benefit is Eden Treaty type discrimination: knowing at the type level that `entries` has a `posts` table vs `whispering` has a `recordings` table. But: (a) the SPA never hits HTTP at all: it uses Y.Doc directly, (b) the CLI uses Eden Treaty for only ~8 table/KV commands, and already uses raw `fetch` for actions (dynamic paths break Treaty types), (c) the type safety that matters (schema validation, action input/output) comes from the workspace client itself, not the HTTP layer. The parameterized approach is simpler, already works, and avoids creating N Elysia instances at startup.
+   - **`.mount()` note**: The `.mount()` vs `.use()` research (see Research Findings) remains relevant for future untrusted third-party workspaces that need lifecycle isolation. For first-party workspaces, both are `.use()`'d: the question is just whether it's one shared plugin or N separate instances. Answer: one shared plugin.
 
 ## Open Questions
 
@@ -1287,26 +1287,26 @@ These were open during design and have been decided. Kept here for context so im
    - Each runtime has different actions available (SPA has CRUD, Bun sidecar has CRUD + FS operations). The SPA should be able to discover and proxy server-only actions.
    - Option A: Each peer broadcasts its action list via Yjs awareness protocol. The SPA shows server-only actions as "available via server" and proxies calls via HTTP.
    - Option B: The `/registry` endpoint includes the server's full action list. The SPA knows which actions it has locally and which require HTTP proxy.
-   - Option C: Both — awareness for real-time capability discovery (peer goes offline = actions disappear), registry for static discovery.
-   - **Leaning toward Option C** — awareness handles the dynamic case (which peers are online and what can they do), registry handles the static case (what does this workspace support in general).
+   - Option C: Both: awareness for real-time capability discovery (peer goes offline = actions disappear), registry for static discovery.
+   - **Leaning toward Option C**: awareness handles the dynamic case (which peers are online and what can they do), registry handles the static case (what does this workspace support in general).
 
 2. **Should shared action factories be a convention or a framework feature?**
    - Currently, shared actions are just named exports (`export const coreActions = ...`). This is a convention, not enforced.
    - Could the framework provide `defineActions()` that returns a reusable factory, or is the plain function export sufficient?
-   - **Leaning toward convention** — a plain function export is simple, well-understood, and doesn't require framework support. Adding `defineActions()` would add API surface for minimal benefit.
+   - **Leaning toward convention**: a plain function export is simple, well-understood, and doesn't require framework support. Adding `defineActions()` would add API surface for minimal benefit.
 
 3. **Should the hub allow dynamic OAuth client registration?**
    - Better Auth's `oauthProvider` plugin supports dynamic client registration (RFC 7591) at `/oauth2/register`.
-   - Option A: Manual registration only — third-party developers register via CLI or admin UI. Simpler, more controlled.
-   - Option B: Dynamic registration — any app can register itself programmatically. Lower friction for developers, but requires rate limiting and abuse prevention.
-   - **Leaning toward Option A for v1** — manual registration is sufficient for early third-party integrations. Dynamic registration can be enabled later when there's demand and the abuse prevention story is clear.
+   - Option A: Manual registration only: third-party developers register via CLI or admin UI. Simpler, more controlled.
+   - Option B: Dynamic registration: any app can register itself programmatically. Lower friction for developers, but requires rate limiting and abuse prevention.
+   - **Leaning toward Option A for v1**: manual registration is sufficient for early third-party integrations. Dynamic registration can be enabled later when there's demand and the abuse prevention story is clear.
 
 4. **How should room IDs encode workspace + user scope for third-party access?**
    - Current room IDs are workspace IDs (e.g., `myapp`). Third-party auth needs user scoping so each user gets their own Y.Doc.
-   - Option A: `{workspaceId}:{userId}` — simple, flat namespace.
-   - Option B: `{workspaceId}/{userId}` — path-like, easier to parse.
+   - Option A: `{workspaceId}:{userId}`: simple, flat namespace.
+   - Option B: `{workspaceId}/{userId}`: path-like, easier to parse.
    - Option C: Keep workspace-level rooms but use Yjs sub-documents for per-user data.
-   - **Leaning toward Option A** — simple, no ambiguity. The hub checks `token.sub === roomId.split(':')[1]`.
+   - **Leaning toward Option A**: simple, no ambiguity. The hub checks `token.sub === roomId.split(':')[1]`.
 
 ## Success Criteria
 
@@ -1330,7 +1330,7 @@ These were open during design and have been decided. Kept here for context so im
 ### Phase 6 (Extensions)
 - [ ] A workspace with `.withExtension(markdownProjection(...))` writes Markdown files to the target path on Y.Doc changes
 - [ ] Multiple extensions per workspace work independently (different targets, different formats)
-- [ ] Extension failures are isolated — a broken extension doesn't crash the workspace or local server
+- [ ] Extension failures are isolated: a broken extension doesn't crash the workspace or local server
 - [ ] Extensions run in the same process as the workspace (local server or standalone)
 
 ### Phase 7 (Third-Party Auth)
@@ -1357,19 +1357,19 @@ This mirrors how mobile operating systems work:
 An alternative design was considered: workspaces live anywhere on disk, and Epicenter tracks them via a path list in `config.json` (the Obsidian model). This was rejected for the centralized-with-symlinks approach because:
 
 1. **Stale path problem**: If a user moves or deletes a directory, `config.json` still points at it. The local server must handle N missing paths on every startup. This is a persistent UX paper cut.
-2. **Single point of failure**: A corrupted or deleted `config.json` means Epicenter forgets about every workspace. With the centralized model, the directory *is* the source of truth — there's nothing to corrupt.
+2. **Single point of failure**: A corrupted or deleted `config.json` means Epicenter forgets about every workspace. With the centralized model, the directory *is* the source of truth: there's nothing to corrupt.
 3. **Discovery simplicity**: One `readdir()` vs "read config, validate each path, handle missing ones."
 4. **Symlinks solve the 90% case**: The only scenario that needs workspaces outside `~/.epicenter/` is developer-authored workspaces in git repos. `epicenter add <path>` creates a symlink, which is transparent to the local server and self-evidently broken (dangling symlink) if the target disappears.
 
 The centralized model handles both workspace weights (installed, developed) without introducing a mutable registry of paths.
 
-The key difference from mobile: **every app shares a universal data layer (Yjs)**. Apps don't have siloed databases — they have CRDTs that can sync with any other instance of the same schema. Two instances of the same workspace on different machines, both connected to a hub, are looking at the same data.
+The key difference from mobile: **every app shares a universal data layer (Yjs)**. Apps don't have siloed databases. They have CRDTs that can sync with any other instance of the same schema. Two instances of the same workspace on different machines, both connected to a hub, are looking at the same data.
 
 ### The epicenter.config.ts is Like package.json for Apps
 
 Just as `package.json` describes an npm package (name, version, dependencies, entry points), `epicenter.config.ts` describes a workspace app (ID, tables, actions, schema). It's the single file that makes a directory into an app.
 
-The difference is that `epicenter.config.ts` is executable — it's not just metadata, it's the actual app definition. `createWorkspace()` eagerly creates a `Y.Doc` and returns a `WorkspaceClientBuilder`. Chaining `.withActions()` (terminal) produces a `WorkspaceClientWithActions` — the default export. The schema types are runtime-validated (via arktype). The action handlers are real functions that operate on the Y.Doc. This means the same file serves as both the "manifest" and the "implementation" — and because Yjs is isomorphic, it works in browsers too.
+The difference is that `epicenter.config.ts` is executable. It's not just metadata, it's the actual app definition. `createWorkspace()` eagerly creates a `Y.Doc` and returns a `WorkspaceClientBuilder`. Chaining `.withActions()` (terminal) produces a `WorkspaceClientWithActions`: the default export. The schema types are runtime-validated (via arktype). The action handlers are real functions that operate on the Y.Doc. This means the same file serves as both the "manifest" and the "implementation", and because Yjs is isomorphic, it works in browsers too.
 
 ### Why Yjs Makes Multi-Instance Sync Trivial
 
@@ -1380,19 +1380,19 @@ The typical approach to syncing a desktop app with a hosted version requires:
 4. A sync protocol with change tracking (last-modified timestamps, version vectors)
 5. A merge strategy for concurrent edits
 
-Yjs eliminates all five. The Y.Doc is the single source of truth. Every mutation is a CRDT operation that commutes — order doesn't matter, every peer converges. The "sync protocol" is just y-websocket, a well-tested library. Offline support is automatic — the Y.Doc accumulates local changes and merges them when the connection resumes.
+Yjs eliminates all five. The Y.Doc is the single source of truth. Every mutation is a CRDT operation that commutes: order doesn't matter, every peer converges. The "sync protocol" is just y-websocket, a well-tested library. Offline support is automatic. The Y.Doc accumulates local changes and merges them when the connection resumes.
 
-This means two instances of the same workspace — one on your laptop, one deployed as a web service — don't need any special plumbing to sync. They both connect to a hub room, and Yjs does the rest. The local `workspace.yjs` file is a snapshot of the Y.Doc for fast startup and offline access.
+This means two instances of the same workspace: one on your laptop, one deployed as a web service: don't need any special plumbing to sync. They both connect to a hub room, and Yjs does the rest. The local `workspace.yjs` file is a snapshot of the Y.Doc for fast startup and offline access.
 
 ## References
 
-- `packages/server/src/local.ts` — Current `createLocalServer()` composition
-- `packages/server/src/workspace/plugin.ts` — Current shared workspace plugin (to be refactored)
-- `packages/server/src/workspace/actions.ts` — Per-action static route registration
-- `packages/server/src/sync/plugin.ts` — Yjs WebSocket sync relay
-- `packages/cli/src/discovery.ts` — `loadClientFromPath()` and `discoverAllWorkspaces()`
-- `packages/cli/src/cli.ts` — Current CLI two-mode dispatch
-- `packages/epicenter/src/workspace/describe-workspace.ts` — Workspace introspection for registry
-- `specs/20260225T000000-bun-sidecar-workspace-modules.md` — Prior spec: sidecar + dynamic loading
-- `specs/20260225T172506-epicenter-workspace-module-redesign.md` — Prior spec: module redesign
-- `docs/articles/tauri-bun-dual-backend-architecture.md` — Sidecar spawning pattern
+- `packages/server/src/local.ts`: Current `createLocalServer()` composition
+- `packages/server/src/workspace/plugin.ts`: Current shared workspace plugin (to be refactored)
+- `packages/server/src/workspace/actions.ts`: Per-action static route registration
+- `packages/server/src/sync/plugin.ts`: Yjs WebSocket sync relay
+- `packages/cli/src/discovery.ts`: `loadClientFromPath()` and `discoverAllWorkspaces()`
+- `packages/cli/src/cli.ts`: Current CLI two-mode dispatch
+- `packages/epicenter/src/workspace/describe-workspace.ts`: Workspace introspection for registry
+- `specs/20260225T000000-bun-sidecar-workspace-modules.md`: Prior spec: sidecar + dynamic loading
+- `specs/20260225T172506-epicenter-workspace-module-redesign.md`: Prior spec: module redesign
+- `docs/articles/tauri-bun-dual-backend-architecture.md`: Sidecar spawning pattern

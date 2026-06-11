@@ -2,7 +2,7 @@
 
 Here's something weird about TypeScript.
 
-The `in` operator checks if a key _exists_ in an object—not if the value is defined.
+The `in` operator checks if a key _exists_ in an object. Not if the value is defined.
 
 ```typescript
 const obj = { key: undefined };
@@ -22,6 +22,6 @@ So JavaScript's `in` operator can tell the difference at runtime, but TypeScript
 
 The fix? Enable `exactOptionalPropertyTypes` in your tsconfig.
 
-Now `key?: string` means "missing or string"—not "missing or string or undefined."
+Now `key?: string` means "missing or string". Not "missing or string or undefined."
 
 And suddenly, TypeScript understands what `in` has known all along.

@@ -12,18 +12,18 @@ The solution: **declare the arktype validator first, derive the type from it, an
 import { type } from 'arktype';
 import type { Brand } from 'wellcrafted/brand';
 
-// 1. VALIDATOR — declared first, single source of truth.
+// 1. VALIDATOR: declared first, single source of truth.
 //    Use inside arktype schemas (`id: UserId`) and to validate
 //    `unknown` boundary values.
 export const UserId = type('string').as<string & Brand<'UserId'>>();
 
-// 2. TYPE — derived from the validator via `typeof X.infer`.
+// 2. TYPE: derived from the validator via `typeof X.infer`.
 //    TypeScript keeps value space and type space separate, so the
 //    same identifier `UserId` is the validator in value positions
 //    and the inferred branded type in type positions.
 export type UserId = typeof UserId.infer;
 
-// 3. AS HELPER (optional) — syntactic sugar for `value as UserId`.
+// 3. AS HELPER (optional): syntactic sugar for `value as UserId`.
 //    The constrained `string` parameter is what earns it over a raw
 //    `as`: callers can't accidentally widen to `unknown`. The only
 //    place in the codebase where `as UserId` appears.
@@ -43,11 +43,11 @@ The arktype validator is callable, but its signature is `(value: unknown) => T |
 `asUserId(value: string): UserId` is a typed cast in one place: the input is constrained to `string` at compile time, the body is the only `as UserId` in the codebase, and it is grep-friendly when auditing brand boundaries.
 
 ```typescript
-// Good — syntactic sugar, intent obvious
+// Good: syntactic sugar, intent obvious
 const userId = asUserId(c.var.user.id);
 const ownerId = asOwnerId(params.ownerId);
 
-// Bad — scattered raw casts, hard to grep
+// Bad: scattered raw casts, hard to grep
 const userId = c.var.user.id as UserId;
 ```
 
@@ -78,7 +78,7 @@ The three-part pattern flexes by what kind of value the third part needs to prod
 | ------------------------------------------- | ----------------------------------------------- |
 | Minted fresh by this code                   | `generateXxx()` wrapping `generateId() as Xxx`  |
 | Received as a typed string (auth, URL, DB)  | `asXxx(value: string)` syntactic-sugar helper   |
-| Received as `unknown` at a network boundary | None — use the validator or `.assert(unknown)`  |
+| Received as `unknown` at a network boundary | None: use the validator or `.assert(unknown)`  |
 | Set from an external source, never minted   | `asXxx` helper                                  |
 
 Examples in the repo:
@@ -91,9 +91,9 @@ Examples in the repo:
 
 The validator and the type share PascalCase because:
 
-1. **Matches the type name** — `UserId` the type and `UserId` the validator are visually one concept.
-2. **No parameter shadowing** — a `userId` parameter does not shadow the `UserId` validator.
-3. **Hover docs flow through** — TypeScript merges JSDoc from the type and the const, so consumers get the same tooltip from a function parameter, a schema field, or an import.
+1. **Matches the type name**: `UserId` the type and `UserId` the validator are visually one concept.
+2. **No parameter shadowing**: a `userId` parameter does not shadow the `UserId` validator.
+3. **Hover docs flow through**: TypeScript merges JSDoc from the type and the const, so consumers get the same tooltip from a function parameter, a schema field, or an import.
 
 ## Adding Validation Later
 
@@ -111,10 +111,10 @@ Every schema that composes `UserId` and every `UserId.assert(...)` call inherits
 
 Good candidates:
 
-- **IDs** — user ids, post ids, row ids
-- **Keys** — cache keys, storage keys
-- **Paths** — absolute paths, URL paths
-- **Tokens** — auth tokens, API keys
+- **IDs**: user ids, post ids, row ids
+- **Keys**: cache keys, storage keys
+- **Paths**: absolute paths, URL paths
+- **Tokens**: auth tokens, API keys
 
 Not worth it for:
 
@@ -127,6 +127,6 @@ Not worth it for:
 1. **Declare the validator first**: `export const UserId = type('string').as<string & Brand<'UserId'>>()`
 2. **Derive the type via `.infer`**: `export type UserId = typeof UserId.infer`
 3. **Add an `asXxx` helper if external strings flow in**: `export const asUserId = (value: string): UserId => value as UserId`
-4. **Never write `as UserId` anywhere else** — the helper (or a `generate*` wrapper) is the only place.
+4. **Never write `as UserId` anywhere else**: the helper (or a `generate*` wrapper) is the only place.
 
 The validator is the gatekeeper. All boundary strings pass through `.assert()` or the named schema; all trusted strings pass through `asXxx`. One place to change the brand, one place to add validation, one place to grep when auditing.

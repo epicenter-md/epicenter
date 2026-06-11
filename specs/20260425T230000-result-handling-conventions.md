@@ -8,7 +8,7 @@
 
 When a `defineMutation` / `defineQuery` handler returns `Result<T, E>`, the call site has to choose: handle the error, drop it silently, or toast. This ADR documents which choice fits which call pattern, so new contributors don't re-derive it.
 
-**Default**: handle the error — destructure `{ data, error }` or use `toastOnError` at the call site. **Exception**: high-frequency continuous mutations whose error is bug-class (e.g., `oninput` on a CRDT-write handler that exposes `TableParseError`). Per-call toasting on every keystroke would be worse UX than silent.
+**Default**: handle the error: destructure `{ data, error }` or use `toastOnError` at the call site. **Exception**: high-frequency continuous mutations whose error is bug-class (e.g., `oninput` on a CRDT-write handler that exposes `TableParseError`). Per-call toasting on every keystroke would be worse UX than silent.
 
 ## Context
 
@@ -27,7 +27,7 @@ For Result-returning handlers, fire-and-forget call sites discard the `Err` chan
 
 Three categories of call sites, each with a default pattern:
 
-### Category A — One-shot user-initiated mutations
+### Category A: One-shot user-initiated mutations
 
 Examples: `delete`, `restore`, `save`, `submit`, anything triggered by a confirmation dialog or a discrete button click.
 
@@ -46,9 +46,9 @@ onConfirm: () => {
 }
 ```
 
-### Category B — High-frequency continuous mutations on bug-class errors
+### Category B: High-frequency continuous mutations on bug-class errors
 
-Examples: `oninput` handlers on text fields that route through a CRDT write. The handler may return `Result<Row, TableParseError>`, but `TableParseError` only fires when stored CRDT data fails schema validation — bug-class, not user-actionable.
+Examples: `oninput` handlers on text fields that route through a CRDT write. The handler may return `Result<Row, TableParseError>`, but `TableParseError` only fires when stored CRDT data fails schema validation: bug-class, not user-actionable.
 
 **Convention**: bare call. Add a code comment near the call (or in the helper that wraps it) noting why per-call toasting was rejected.
 
@@ -62,7 +62,7 @@ function updateEntry(updates: EntryUpdate) {
 }
 ```
 
-### Category C — Real domain errors that callers must distinguish
+### Category C: Real domain errors that callers must distinguish
 
 Examples: `BrowserApiFailed` from `tabs.close`, network failures, validation errors. Caller logic depends on whether the operation succeeded.
 
@@ -78,9 +78,9 @@ const { closedCount } = result.data;
 showSuccess(`Closed ${closedCount} tab${closedCount === 1 ? '' : 's'}`);
 ```
 
-### Category D — Mixed-success operations
+### Category D: Mixed-success operations
 
-Examples: `savedTabs.save` returns `{ saved: true, closeResult }` — the save succeeded; the close-source-tab half may have failed.
+Examples: `savedTabs.save` returns `{ saved: true, closeResult }`: the save succeeded; the close-source-tab half may have failed.
 
 **Convention**: branch on the inner Result.
 
@@ -94,7 +94,7 @@ savedTabState.save(tab).then((result) => {
 
 ### Why not always destructure-and-handle?
 
-Convention C is the most "honest" — every Result deserves explicit handling. But applied uniformly, it produces UX disasters at high-frequency call sites. An `oninput` handler that toasts on every keystroke would spam the user during normal typing, on a bug-class error that should ideally surface once or not at all.
+Convention C is the most "honest": every Result deserves explicit handling. But applied uniformly, it produces UX disasters at high-frequency call sites. An `oninput` handler that toasts on every keystroke would spam the user during normal typing, on a bug-class error that should ideally surface once or not at all.
 
 Convention B (bare call with comment) acknowledges that not every Result deserves the same ceremony. The comment is the signal that the silent discard is intentional.
 
@@ -112,7 +112,7 @@ Considered:
 
 - ESLint has `@typescript-eslint/no-floating-promises` for Promises.
 - Could write an analogous `no-unused-result` rule based on type analysis.
-- wellcrafted's `Result<T, E>` is structurally typed — no brand. The rule would have to detect `{ data: T | null; error: E | null }` signatures.
+- wellcrafted's `Result<T, E>` is structurally typed: no brand. The rule would have to detect `{ data: T | null; error: E | null }` signatures.
 
 Rejected for cost-benefit:
 
@@ -134,7 +134,7 @@ I.e., have `entriesState.update(...)` internally call `toastOnError`. Considered
 
 - Each new mutation call site picks a category and follows the matching pattern.
 - Handler authors are encouraged to document expected error shapes (bug-class vs user-actionable) in JSDoc, so call site authors know which category applies.
-- Code review can ask "which category is this?" — if the answer is unclear, the call site needs a comment.
+- Code review can ask "which category is this?": if the answer is unclear, the call site needs a comment.
 - Future contributors don't have to re-derive the convention.
 
 ### Per-action category table
@@ -156,12 +156,12 @@ I.e., have `entriesState.update(...)` internally call `toastOnError`. Considered
 ## Open questions
 
 - The "high-frequency continuous mutation" pattern is brittle. The single call site (`fuji.entries.update` via `oninput`) is the only Category B example today. If that pattern proliferates, we may need a structural fix (debounced update, commit-on-blur, doc-corruption observer) rather than per-call discipline. Tracked separately; see follow-up notes after this ADR.
-- `toastOnError`'s behavior on raw values (non-Result) is no-op-y. The convention assumes `toastOnError(actionResult, message)` where the result IS a Result. If a future handler is changed from Result-returning to raw, calling `toastOnError` on it silently no-ops — a regression that lint can't catch. Mitigation: code review when handler shapes change.
+- `toastOnError`'s behavior on raw values (non-Result) is no-op-y. The convention assumes `toastOnError(actionResult, message)` where the result IS a Result. If a future handler is changed from Result-returning to raw, calling `toastOnError` on it silently no-ops: a regression that lint can't catch. Mitigation: code review when handler shapes change.
 
 ## Cross-references
 
-- `specs/20260425T200000-actions-passthrough-adr.md` — the action-shape decision this convention sits on top of.
-- `apps/fuji/src/lib/components/EntryEditor.svelte` — Category A (`delete`) and Category B (`update`) examples.
-- `apps/fuji/src/routes/trash/+page.svelte` — Category A (`restore`) example.
-- `apps/tab-manager/src/lib/components/tabs/UnifiedTabList.svelte` — Category C (`restore`, `open`) examples.
-- `apps/tab-manager/src/lib/components/tabs/TabItem.svelte` — Category D (`savedTabs.save` mixed return) example.
+- `specs/20260425T200000-actions-passthrough-adr.md`: the action-shape decision this convention sits on top of.
+- `apps/fuji/src/lib/components/EntryEditor.svelte`: Category A (`delete`) and Category B (`update`) examples.
+- `apps/fuji/src/routes/trash/+page.svelte`: Category A (`restore`) example.
+- `apps/tab-manager/src/lib/components/tabs/UnifiedTabList.svelte`: Category C (`restore`, `open`) examples.
+- `apps/tab-manager/src/lib/components/tabs/TabItem.svelte`: Category D (`savedTabs.save` mixed return) example.

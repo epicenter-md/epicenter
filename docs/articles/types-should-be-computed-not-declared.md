@@ -69,7 +69,7 @@ And `background.ts` had its own `defineWorkspace({ id: 'tab-manager', tables: BR
 After:
 
 ```typescript
-// workspace.ts — single source of truth
+// workspace.ts: single source of truth
 const tabs = defineTable(
 	type({ id: TabCompositeId, deviceId: 'string' /* ... */ }),
 );

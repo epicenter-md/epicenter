@@ -3,7 +3,7 @@
 **Date**: 2026-02-22
 **Status**: Draft
 **Author**: AI-assisted
-**Related**: ~~`20260222T195800-server-side-api-key-management.md`~~ (superseded — key store removed, see `20260223T102844-remove-key-store-simplify-api-key-resolution.md`)
+**Related**: ~~`20260222T195800-server-side-api-key-management.md`~~ (superseded: key store removed, see `20260223T102844-remove-key-store-simplify-api-key-resolution.md`)
 
 > **Note (2026-02-23)**: The `/api/provider-keys` endpoints referenced in this spec have been removed along with the encrypted key store. API keys are now resolved from environment variables. The security model for auth, sync, and proxy endpoints still applies, but key management endpoints no longer exist.
 >
@@ -19,9 +19,9 @@ A two-layer security model for the Epicenter local server's HTTP endpoints. Laye
 
 The Epicenter server runs on `http://localhost:3913` and exposes sensitive endpoints:
 
-- `PUT /api/provider-keys/:provider` — stores API keys worth real money
-- `POST /ai/chat` — uses stored API keys to make billable API calls
-- `DELETE /api/provider-keys/:provider` — removes API keys
+- `PUT /api/provider-keys/:provider`: stores API keys worth real money
+- `POST /ai/chat`: uses stored API keys to make billable API calls
+- `DELETE /api/provider-keys/:provider`: removes API keys
 
 **Any process on the user's machine can hit these endpoints.** This includes:
 
@@ -30,7 +30,7 @@ The Epicenter server runs on `http://localhost:3913` and exposes sensitive endpo
 - A malicious website the user visits (CSRF via JavaScript)
 - A rogue CLI tool or script
 
-Without protection, an attacker doesn't need disk access or elevated privileges — just the ability to run code on the same machine.
+Without protection, an attacker doesn't need disk access or elevated privileges, just the ability to run code on the same machine.
 
 ### What CORS Does and Doesn't Do
 
@@ -139,7 +139,7 @@ Access-Control-Allow-Headers: Content-Type, Authorization
 Access-Control-Max-Age: 86400
 ```
 
-Preflight `OPTIONS` requests are handled automatically — return 204 with CORS headers, no body.
+Preflight `OPTIONS` requests are handled automatically: return 204 with CORS headers, no body.
 
 ### First Boot Behavior
 
@@ -147,11 +147,11 @@ Preflight `OPTIONS` requests are handled automatically — return 204 with CORS 
 2. If missing → create with defaults:
    ```json
    {
-   	"allowedOrigins": ["tauri://localhost"],
-   	"appKeys": []
+	"allowedOrigins": ["tauri://localhost"],
+	"appKeys": []
    }
    ```
-3. No app keys by default — browser-only access works out of the box via CORS
+3. No app keys by default: browser-only access works out of the box via CORS
 4. User adds app keys manually when they want non-browser access (CLI tools, scripts)
 
 ### Token Format
@@ -206,7 +206,7 @@ Rate limiting uses in-memory counters (no external dependency). Resets on server
 - [ ] **1.3** CORS middleware: check `Origin` header against `allowedOrigins`, set CORS response headers, handle OPTIONS preflight
 - [ ] **1.4** Bearer token middleware: check `Authorization: Bearer <token>` against `appKeys` when no Origin header present
 - [ ] **1.5** Compose middlewares: if request has Origin → CORS check; if no Origin → bearer check; endpoints listed as public skip both
-- [ ] **1.6** Wire into `createServer()` — apply middleware to all routes except health/openapi/OPTIONS
+- [ ] **1.6** Wire into `createServer()`: apply middleware to all routes except health/openapi/OPTIONS
 - [ ] **1.7** Tests: allowed origin passes, disallowed origin blocked, valid token passes, invalid token blocked, no auth on public endpoints, OPTIONS preflight works
 
 ### Phase 2: Developer Tooling
@@ -226,23 +226,23 @@ Rate limiting uses in-memory counters (no external dependency). Resets on server
 
 ### Tauri Webview Origin
 
-Tauri sends `tauri://localhost` as the Origin header. This is always in the default allowlist. If a user accidentally removes it, the desktop app stops working — the config file is user-editable, so they can fix it.
+Tauri sends `tauri://localhost` as the Origin header. This is always in the default allowlist. If a user accidentally removes it, the desktop app stops working. The config file is user-editable, so they can fix it.
 
 ### Development Servers
 
-Dev servers (Vite) use origins like `http://localhost:5173`. These must be manually added to `allowedOrigins`. This is intentional — we don't want to auto-allow all localhost ports.
+Dev servers (Vite) use origins like `http://localhost:5173`. These must be manually added to `allowedOrigins`. This is intentional. We don't want to auto-allow all localhost ports.
 
 ### Config File Hot Reload
 
-The server reads `config.json` on boot. Changes to the file require a server restart. Hot-reloading config adds complexity (file watchers, race conditions) for minimal benefit — config changes are rare.
+The server reads `config.json` on boot. Changes to the file require a server restart. Hot-reloading config adds complexity (file watchers, race conditions) for minimal benefit: config changes are rare.
 
 ### Multiple Servers
 
-If multiple Epicenter server instances run on different ports, they share the same `config.json`. This is fine — the config is about "which clients are trusted", not "which server am I".
+If multiple Epicenter server instances run on different ports, they share the same `config.json`. This is fine. The config is about "which clients are trusted", not "which server am I".
 
 ### Bearer Token in Browser
 
-A browser client could technically send a bearer token instead of relying on CORS. This works — the middleware checks bearer first if present. But CORS is preferred for browser clients because it's automatic (no token management in the frontend).
+A browser client could technically send a bearer token instead of relying on CORS. This works. The middleware checks bearer first if present. But CORS is preferred for browser clients because it's automatic (no token management in the frontend).
 
 ## Prior Art
 
@@ -269,7 +269,7 @@ Epicenter's approach is closest to Ollama's CORS model, extended with bearer tok
 
 ## References
 
-- `packages/server/src/server.ts` — `createServer()` where middleware will be wired
-- `specs/20260222T195800-server-side-api-key-management.md` — API key endpoints this spec protects
-- [MDN: CORS](https://developer.mozilla.org/en-US/docs/Web/HTTP/CORS) — Canonical CORS reference
-- [Ollama CORS config](https://github.com/ollama/ollama/blob/main/docs/faq.md#how-can-i-allow-additional-web-origins-to-access-ollama) — Prior art for local server CORS
+- `packages/server/src/server.ts`: `createServer()` where middleware will be wired
+- `specs/20260222T195800-server-side-api-key-management.md`: API key endpoints this spec protects
+- [MDN: CORS](https://developer.mozilla.org/en-US/docs/Web/HTTP/CORS): Canonical CORS reference
+- [Ollama CORS config](https://github.com/ollama/ollama/blob/main/docs/faq.md#how-can-i-allow-additional-web-origins-to-access-ollama): Prior art for local server CORS

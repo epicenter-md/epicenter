@@ -38,7 +38,7 @@ function createUserService({ db, cache, logger }) {
 
 **Second argument: Configuration (optional)**
 
-Options specific to this factory. Not dependency configuration—that belongs at dependency creation time.
+Options specific to this factory. Not dependency configuration. That belongs at dependency creation time.
 
 ```typescript
 function createUserService({ db, cache, logger }, options = {}) {
@@ -53,9 +53,9 @@ function createUserService({ db, cache, logger }, options = {}) {
 
 This signature makes your code composable because each factory:
 
-1. **Receives fully-configured dependencies** — it doesn't know or care how they were configured
-2. **Adds its own layer of configuration** — specific to its domain
-3. **Returns something the next layer can use** — an object with methods
+1. **Receives fully-configured dependencies**: it doesn't know or care how they were configured
+2. **Adds its own layer of configuration**: specific to its domain
+3. **Returns something the next layer can use**: an object with methods
 
 ```typescript
 // Layer 1: Create dependencies (each configured independently)
@@ -198,16 +198,16 @@ users.list({ active: true });
 
 Use the factory function signature when:
 
-- **You're wrapping external dependencies** — database clients, HTTP clients, SDKs
-- **You need configuration that persists** — settings that apply across all method calls
-- **You want testability** — inject mocks at creation time
-- **You're building composable systems** — services that depend on other services
+- **You're wrapping external dependencies**: database clients, HTTP clients, SDKs
+- **You need configuration that persists**: settings that apply across all method calls
+- **You want testability**: inject mocks at creation time
+- **You're building composable systems**: services that depend on other services
 
 Don't overthink it for:
 
-- **Pure utility functions** — `formatDate(date)` doesn't need a factory
-- **One-off scripts** — if you're not reusing it, keep it simple
-- **Trivial wrappers** — if there's no configuration and one method, a plain function might be fine
+- **Pure utility functions**: `formatDate(date)` doesn't need a factory
+- **One-off scripts**: if you're not reusing it, keep it simple
+- **Trivial wrappers**: if there's no configuration and one method, a plain function might be fine
 
 ## The Rule
 
@@ -219,7 +219,7 @@ Write `createService(client)` that returns `{ method() }`, not `doSomething(clie
 
 ## Related
 
-- [Stop Passing Clients as Arguments](./stop-passing-clients-as-arguments.md) — the problem this solves
-- [The Factory Function Pattern](./factory-function-pattern.md) — detailed walkthrough
-- [Factory Method Patterns](./factory-method-patterns.md) — separating bundled options
-- [Factory Function Composition Skill](../../.claude/skills/factory-function-composition/SKILL.md) — quick reference
+- [Stop Passing Clients as Arguments](./stop-passing-clients-as-arguments.md): the problem this solves
+- [The Factory Function Pattern](./factory-function-pattern.md): detailed walkthrough
+- [Factory Method Patterns](./factory-method-patterns.md): separating bundled options
+- [Factory Function Composition Skill](../../.claude/skills/factory-function-composition/SKILL.md): quick reference

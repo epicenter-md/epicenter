@@ -147,17 +147,17 @@ function createSomething(dependencies, options?) {
 
 **First argument**: Dependencies. Either a single client or a destructured object of multiple clients.
 
-**Second argument**: Optional configuration for _this_ factory. Not client config—that belongs at client creation time.
+**Second argument**: Optional configuration for _this_ factory. Not client config. That belongs at client creation time.
 
 That's it. Two arguments max. First is resources, second is config.
 
 ## Why This Works
 
 1. **Dependencies are passed once** at creation time, not on every call
-2. **Each client is configured where it's created** — no piping config through your code
-3. **Testing is trivial** — inject mocks at factory creation
-4. **Adding dependencies doesn't change call sites** — only the factory creation
-5. **Autocomplete works** — type `users.` and see all available methods
+2. **Each client is configured where it's created**: no piping config through your code
+3. **Testing is trivial**: inject mocks at factory creation
+4. **Adding dependencies doesn't change call sites**: only the factory creation
+5. **Autocomplete works**: type `users.` and see all available methods
 
 ## The Mental Model
 
@@ -262,11 +262,11 @@ function createYjsStore() {
 }
 ```
 
-Both stores have the same interface. The implementation details are hidden. Testing is trivial—just call the methods.
+Both stores have the same interface. The implementation details are hidden. Testing is trivial. Just call the methods.
 
 ## Further Reading
 
-- [The Universal Factory Function Signature](./universal-factory-signature.md) — why every factory uses this signature
-- [The Factory Function Pattern](./factory-function-pattern.md) — the full pattern with all variations
-- [Factory Method Patterns](./factory-method-patterns.md) — separating bundled options and turning functions into methods
-- [Factory Function Composition Skill](../../.claude/skills/factory-function-composition/SKILL.md) — quick reference
+- [The Universal Factory Function Signature](./universal-factory-signature.md): why every factory uses this signature
+- [The Factory Function Pattern](./factory-function-pattern.md): the full pattern with all variations
+- [Factory Method Patterns](./factory-method-patterns.md): separating bundled options and turning functions into methods
+- [Factory Function Composition Skill](../../.claude/skills/factory-function-composition/SKILL.md): quick reference

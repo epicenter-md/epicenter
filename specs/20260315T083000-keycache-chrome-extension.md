@@ -17,7 +17,7 @@ On every page refresh or sidebar open, the encryption flow is:
 App mounts → checkSession() → HTTP GET /auth/get-session → encryptionKey arrives → activateEncryption()
 ```
 
-Until `getSession()` completes (~50-200ms), the workspace is in `'plaintext'` mode. Encrypted IndexedDB data is unreadable. If the user is offline, `getSession()` fails and the workspace stays in plaintext mode indefinitely—encrypted data is inaccessible until connectivity returns.
+Until `getSession()` completes (~50-200ms), the workspace is in `'plaintext'` mode. Encrypted IndexedDB data is unreadable. If the user is offline, `getSession()` fails and the workspace stays in plaintext mode indefinitely. Encrypted data is inaccessible until connectivity returns.
 
 ### Problems
 
@@ -69,8 +69,8 @@ The docs describe three platform implementations:
 
 Two paths set `encryptionKey` in `auth.svelte.ts`:
 
-1. `refreshEncryptionKey()` — called after signIn/signUp/signInWithGoogle. Gets key from `getSession()`.
-2. `checkSession()` — called on app startup. Gets key from `getSession()`.
+1. `refreshEncryptionKey()`: called after signIn/signUp/signInWithGoogle. Gets key from `getSession()`.
+2. `checkSession()`: called on app startup. Gets key from `getSession()`.
 
 Both paths call the `getSession()` wrapper which returns typed `CustomSessionFields`. The `encryptionKey` is a base64 string. The encryption wiring then decodes it, derives a per-workspace key via HKDF, and calls `activateEncryption()`.
 
@@ -119,7 +119,7 @@ App startup
 
 ### Phase 2: Wire cache writes
 
-- [x] **2.1** Cache writes handled automatically by `createKeyManager` — `setKey(key, userId)` writes to cache when keyCache is configured
+- [x] **2.1** Cache writes handled automatically by `createKeyManager`: `setKey(key, userId)` writes to cache when keyCache is configured
 - [x] **2.2** Cache clearing handled automatically by `keyManager.wipe()` which calls `keyCache.clear()`
 - [x] **2.3** userId passed from `authState.user?.id` in the reactive adapter
 
@@ -127,15 +127,15 @@ App startup
 
 - [x] **3.1** Separate `$effect` in `syncAuthToEncryption()` attempts `keyManager.restoreKey(userId)` when user loads from storage
 - [x] **3.2** Cache hit triggers `setKey()` internally which derives HKDF key and calls `activateEncryption()`
-- [x] **3.3** Main `$effect` handles key rotation — if server returns different key, `setKey()` updates and re-activates encryption
+- [x] **3.3** Main `$effect` handles key rotation: if server returns different key, `setKey()` updates and re-activates encryption
 - [x] **3.4** If `checkSession()` returns 4xx, auth adapter calls `lock()`; sign-out calls `wipe()` which clears cache
 
 ### Phase 4: Verify
 
-- [ ] **4.1** Test: refresh sidebar with cached key — workspace decrypts instantly
-- [ ] **4.2** Test: go offline, refresh — workspace still decrypts from cache
-- [ ] **4.3** Test: sign out — cache cleared, next open requires sign-in
-- [ ] **4.4** Test: key rotation — server returns new key, cache updated, workspace re-activates encryption
+- [ ] **4.1** Test: refresh sidebar with cached key: workspace decrypts instantly
+- [ ] **4.2** Test: go offline, refresh: workspace still decrypts from cache
+- [ ] **4.3** Test: sign out: cache cleared, next open requires sign-in
+- [ ] **4.4** Test: key rotation: server returns new key, cache updated, workspace re-activates encryption
 
 ## Edge Cases
 
@@ -144,7 +144,7 @@ App startup
 1. User A signs in, key cached as `ek:userA`
 2. User A signs out, `keyCache.clear()` removes `ek:userA`
 3. User B signs in, key cached as `ek:userB`
-4. No stale key issue — `clear()` runs on sign-out
+4. No stale key issue: `clear()` runs on sign-out
 
 ### Key rotation (server changes ENCRYPTION_SECRETS)
 
@@ -158,13 +158,13 @@ App startup
 
 1. `chrome.storage.session` is automatically cleared by Chrome
 2. Next browser launch: no cache, falls back to `checkSession()`
-3. Clean state — no stale keys
+3. Clean state: no stale keys
 
 ### userId not available at cache-read time
 
 1. On cold start, `authUser.current` might be undefined until `chrome.storage` loads
 2. Need `authUser.whenReady` before attempting cache read
-3. If no cached user, skip cache read — `checkSession()` handles everything
+3. If no cached user, skip cache read: `checkSession()` handles everything
 
 ## Open Questions
 
@@ -180,7 +180,7 @@ App startup
 3. **Should this be a Svelte-reactive store or a plain async utility?**
    - The encryption wiring already watches `authState.encryptionKey` reactively
    - The cache is just a side-channel for the same data
-   - **Recommendation**: Plain async utility. No reactivity needed — it's a cache, not a state source.
+   - **Recommendation**: Plain async utility. No reactivity needed: it's a cache, not a state source.
 
 ## Success Criteria
 
@@ -192,21 +192,21 @@ App startup
 
 ## References
 
-- `packages/workspace/src/shared/crypto/key-cache.ts` — The interface to implement
-- `apps/tab-manager/src/lib/state/auth.svelte.ts` — Where encryption key is set
-- `apps/tab-manager/src/lib/state/encryption-wiring.svelte.ts` — Where activateEncryption/lock is called
-- `apps/tab-manager/src/lib/workspace.ts` — Workspace singleton creation
+- `packages/workspace/src/shared/crypto/key-cache.ts`: The interface to implement
+- `apps/tab-manager/src/lib/state/auth.svelte.ts`: Where encryption key is set
+- `apps/tab-manager/src/lib/state/encryption-wiring.svelte.ts`: Where activateEncryption/lock is called
+- `apps/tab-manager/src/lib/workspace.ts`: Workspace singleton creation
 
 ## Execution Notes
 
 **Execution order**: 4th (after Encryption Wiring Factory). Can run in parallel with Client Surface Audit.
 
-**Dependencies**: The Encryption Wiring Factory (spec `20260315T141700`) must be implemented first — it provides the `keyCache` config slot that this implementation plugs into.
+**Dependencies**: The Encryption Wiring Factory (spec `20260315T141700`) must be implemented first: it provides the `keyCache` config slot that this implementation plugs into.
 
 **Open question resolutions**:
-- Store base64 string (not raw bytes) — `chrome.storage.session` uses JSON serialization, base64 is natural
+- Store base64 string (not raw bytes): `chrome.storage.session` uses JSON serialization, base64 is natural
 - Write cache in auth state layer (closer to the key source), read in encryption wiring (closer to activateEncryption)
-- Plain async utility, not a Svelte-reactive store — the cache is a side-channel, not a state source
+- Plain async utility, not a Svelte-reactive store: the cache is a side-channel, not a state source
 
 ## Implementation Review
 
@@ -226,7 +226,7 @@ The spec was written before `createKeyManager` existed. Key naming differences:
 
 1. **`apps/tab-manager/src/lib/state/key-cache.ts`** (new)
    - `KeyCache` implementation using `browser.storage.session`
-   - Stores base64 strings natively (no Uint8Array conversion—interface is string-based)
+   - Stores base64 strings natively (no Uint8Array conversion. Interface is string-based)
    - `clear()` filters for `ek:*` prefix before removing
 
 2. **`apps/tab-manager/src/lib/state/key-manager.svelte.ts`** (modified)

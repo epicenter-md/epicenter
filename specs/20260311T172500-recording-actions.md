@@ -12,7 +12,7 @@ The existing `actions.ts` centralizes recording **lifecycle** actions (start/sto
 
 ## Solution
 
-Create `recording-actions.ts` in `$lib/utils/` that exports a `recordingActions` object with `deleteWithConfirmation()`. This is a UI orchestration helper—composing confirmation dialog + rpc call + notification—not a query-layer primitive.
+Create `recording-actions.ts` in `$lib/utils/` that exports a `recordingActions` object with `deleteWithConfirmation()`. This is a UI orchestration helper. Composing confirmation dialog + rpc call + notification. Not a query-layer primitive.
 
 Components import `recordingActions` directly. It does not live on the `rpc` namespace because it reaches into the UI layer (`confirmationDialog`) and doesn't use `defineQuery`/`defineMutation`.
 
@@ -47,11 +47,11 @@ Components import `recordingActions` directly. It does not live on the `rpc` nam
 **Modified files** (4 existing, net -75 lines / +12 lines):
 - `RecordingRowActions.svelte`: 22-line inline delete → single function call, removed unused `confirmationDialog` import
 - `recordings/+page.svelte`: 26-line bulk delete → single function call, removed unused `confirmationDialog` import
-- `EditRecordingModal.svelte`: 25-line inline delete → single function call with `onSuccess` to close modal (kept `confirmationDialog` import—still used for unsaved changes prompt)
+- `EditRecordingModal.svelte`: 25-line inline delete → single function call with `onSuccess` to close modal (kept `confirmationDialog` import. Still used for unsaved changes prompt)
 - `isomorphic/index.ts`: Removed `recordingActions` from rpc namespace
 
 ### Behavioral Notes
 
 - The `notify` calls in `recording-actions.ts` use `rpc.notify.success(...)` and `rpc.notify.error(...)`. These go through the defineMutation pattern in notify.ts which handles both toast + OS notification.
-- The `throw error` pattern in `onConfirm` is preserved—this keeps the `ConfirmationDialog` open on failure (its built-in behavior).
+- The `throw error` pattern in `onConfirm` is preserved. This keeps the `ConfirmationDialog` open on failure (its built-in behavior).
 - Slight wording normalization: all three sites now use the same messages ("Are you sure you want to delete this recording?" / "these recordings?") instead of the slightly different strings they had before.

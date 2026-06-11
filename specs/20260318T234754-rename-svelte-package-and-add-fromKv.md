@@ -4,11 +4,11 @@
 
 Two repeating patterns across the codebase:
 
-**1. KV state boilerplate** — `$state(kv.get(key))` + `kv.observe(key, callback)` appears 5 times across 2 apps. Each instance is 6–8 lines of identical shape.
+**1. KV state boilerplate**: `$state(kv.get(key))` + `kv.observe(key, callback)` appears 5 times across 2 apps. Each instance is 6-8 lines of identical shape.
 
-**2. Table state boilerplate** — `$state<Row[]>(readAll())` + `table.observe(() => { items = readAll() })` appears 7+ times across 4 apps. The naive array approach re-fetches ALL rows on every change, even when only one row changed. The table observer already gives `changedIds`—we should do granular O(changed) updates.
+**2. Table state boilerplate**: `$state<Row[]>(readAll())` + `table.observe(() => { items = readAll() })` appears 7+ times across 4 apps. The naive array approach re-fetches ALL rows on every change, even when only one row changed. The table observer already gives `changedIds`: we should do granular O(changed) updates.
 
-**3. tsconfig drift** — Base config is ES2022, but packages inconsistently override with ESNext, mixed casing, and missing DOM.Iterable.
+**3. tsconfig drift**: Base config is ES2022, but packages inconsistently override with ESNext, mixed casing, and missing DOM.Iterable.
 
 ## Solution
 
@@ -23,9 +23,9 @@ Two repeating patterns across the codebase:
 
 **Base**: `lib: ["ESNext"]` (up from `["ES2022"]`)
 
-ESNext is correct for a private monorepo targeting only modern runtimes (Tauri WebView, Chrome extension, Cloudflare Workers). It's a superset of ES2024—includes `Symbol.dispose`, `Promise.withResolvers`, `Object.groupBy`, Set methods, Iterator helpers, and everything else. No manual bumping needed. Pin to a specific version only when publishing public packages.
+ESNext is correct for a private monorepo targeting only modern runtimes (Tauri WebView, Chrome extension, Cloudflare Workers). It's a superset of ES2024. Includes `Symbol.dispose`, `Promise.withResolvers`, `Object.groupBy`, Set methods, Iterator helpers, and everything else. No manual bumping needed. Pin to a specific version only when publishing public packages.
 
-**Standardize individual packages**: All packages use `ESNext`. Packages needing DOM use `["ESNext", "DOM", "DOM.Iterable"]`. TS lib arrays don't merge on `extends`—they replace—so each package needing DOM must list the full set.
+**Standardize individual packages**: All packages use `ESNext`. Packages needing DOM use `["ESNext", "DOM", "DOM.Iterable"]`. TS lib arrays don't merge on `extends`: they replace. So each package needing DOM must list the full set.
 
 ### 3. Add `fromKv` utility
 
@@ -37,7 +37,7 @@ import type { InferKvValue, KvDefinitions, KvHelper } from '@epicenter/workspace
 /**
  * Create a reactive binding to a single workspace KV key.
  *
- * Mirrors Svelte 5's `fromStore()` pattern—wraps an external data source
+ * Mirrors Svelte 5's `fromStore()` pattern. Wraps an external data source
  * into a reactive `{ current }` box. Reading `.current` is reactive (triggers
  * re-renders). Writing `.current` calls `kv.set()` under the hood.
  *
@@ -84,7 +84,7 @@ export function fromKv<
 
 **File**: `packages/svelte-utils/src/fromTable.svelte.ts`
 
-Uses a `SvelteMap` for granular per-row reactivity. The table observer gives `changedIds`, so we update only the rows that changed—O(changed) not O(all).
+Uses a `SvelteMap` for granular per-row reactivity. The table observer gives `changedIds`, so we update only the rows that changed. O(changed) not O(all).
 
 ```typescript
 import type { BaseRow, TableHelper } from '@epicenter/workspace';
@@ -95,9 +95,9 @@ import { SvelteMap } from 'svelte/reactivity';
  *
  * Returns a `SvelteMap<id, Row>` that stays in sync with the underlying
  * Yjs table via granular per-row updates. Only changed rows trigger
- * re-renders—not the entire collection.
+ * re-renders. Not the entire collection.
  *
- * Read-only—mutations go through `table.set()`, `table.update()`, etc.
+ * Read-only. Mutations go through `table.set()`, `table.update()`, etc.
  * The observer picks up changes from both local writes and remote CRDT sync.
  *
  * @example
@@ -127,7 +127,7 @@ export function fromTable<TRow extends BaseRow>(
     map.set(row.id, row);
   }
 
-  // Granular updates — only touch changed rows
+  // Granular updates: only touch changed rows
   const unobserve = table.observe((changedIds) => {
     for (const id of changedIds) {
       const result = table.get(id);
@@ -192,20 +192,20 @@ With 3 utilities (`fromKv`, `fromTable`, `createPersistedState`), one entry poin
 
 ### Why ESNext (not ES2024)
 - Private monorepo targeting only modern runtimes (Tauri, Chrome extension, Cloudflare Workers)
-- ESNext ⊃ ES2024—includes everything ES2024 has plus newer proposals
+- ESNext ⊃ ES2024. Includes everything ES2024 has plus newer proposals
 - No manual bumping needed; TypeScript auto-includes latest features
 - Pin to a specific version only when publishing public packages
-- Several packages already use ESNext—standardizing reduces inconsistency
+- Several packages already use ESNext. Standardizing reduces inconsistency
 
 ### Why SvelteMap for tables (not array wholesale replacement)
-- Table observer gives `changedIds`—do O(changed) updates, not O(all) re-fetches
-- SvelteMap provides per-key reactivity—only components reading changed rows re-render
+- Table observer gives `changedIds`: do O(changed) updates, not O(all) re-fetches
+- SvelteMap provides per-key reactivity. Only components reading changed rows re-render
 - Matches existing pattern in browser-state, chat-state, and tool-trust
 - Strictly better than array replacement in all cases
 
 ## Todo
 
-### Phase 1 — Foundation
+### Phase 1: Foundation
 - [x] Rename package in `packages/svelte-utils/package.json`: `@epicenter/svelte-utils` → `@epicenter/svelte`
 - [x] Update whispering imports: `@epicenter/svelte-utils` → `@epicenter/svelte` (3 files)
 - [x] Bump `tsconfig.base.json` lib from `["ES2022"]` to `["ESNext"]`
@@ -215,13 +215,13 @@ With 3 utilities (`fromKv`, `fromTable`, `createPersistedState`), one entry poin
 - [x] Create `packages/svelte-utils/src/fromTable.svelte.ts`
 - [x] Export both from `packages/svelte-utils/src/index.ts`
 
-### Phase 2 — First migrations (honeycrisp + fuji)
+### Phase 2: First migrations (honeycrisp + fuji)
 - [x] Add `@epicenter/svelte` as dependency to honeycrisp `package.json`
 - [x] Migrate honeycrisp `view.svelte.ts`: 3 KV state+observer pairs → 3 `fromKv` calls
 - [x] Add `@epicenter/svelte` as dependency to fuji `package.json`
 - [x] Migrate fuji `+page.svelte`: 2 KV observers → `fromKv`, 1 table observer → `fromTable`
 
-### Phase 3 — Full rollout (remaining simple observers)
+### Phase 3: Full rollout (remaining simple observers)
 - [x] Migrate honeycrisp `notes.svelte.ts`: array+observe → `fromTable`
 - [x] Migrate honeycrisp `folders.svelte.ts`: array+observe → `fromTable`
 - [x] Migrate tab-manager `saved-tab-state.svelte.ts`: array+observe → `fromTable`
@@ -234,9 +234,9 @@ With 3 utilities (`fromKv`, `fromTable`, `createPersistedState`), one entry poin
 
 ### Future work (separate specs)
 - Rename directory `packages/svelte-utils` → `packages/svelte`
-- Migrate tab-manager browser-state (complex nested SvelteMap — custom logic, doesn't fit `fromTable`)
-- Migrate tab-manager chat-state (multi-table reconciliation — custom logic)
-- Migrate opensidian fs-state (version counter + requestAnimationFrame batching — different pattern)
+- Migrate tab-manager browser-state (complex nested SvelteMap: custom logic, doesn't fit `fromTable`)
+- Migrate tab-manager chat-state (multi-table reconciliation: custom logic)
+- Migrate opensidian fs-state (version counter + requestAnimationFrame batching: different pattern)
 - `fromKvAll` utility (SvelteMap over all KV keys, replaces whispering workspace-settings pattern)
 - Add `Symbol.dispose` alongside `destroy` when Svelte script blocks support `using`
 
@@ -244,7 +244,7 @@ With 3 utilities (`fromKv`, `fromTable`, `createPersistedState`), one entry poin
 
 ### Changes made
 
-**Phase 1 — Foundation:**
+**Phase 1: Foundation:**
 - Renamed `@epicenter/svelte-utils` → `@epicenter/svelte` in `packages/svelte-utils/package.json`
 - Updated 3 whispering source files + `apps/whispering/package.json` to use new package name
 - Bumped `tsconfig.base.json` lib from `["ES2022"]` → `["ESNext"]`
@@ -253,12 +253,12 @@ With 3 utilities (`fromKv`, `fromTable`, `createPersistedState`), one entry poin
 - Created `fromKv.svelte.ts` and `fromTable.svelte.ts` with full JSDoc, exported from `index.ts`
 - Removed `NodeNext` module/moduleResolution from svelte-utils tsconfig (incompatible with workspace's bundler resolution)
 
-**Phase 2 — First migrations:**
+**Phase 2: First migrations:**
 - Added `@epicenter/svelte` dep to honeycrisp + fuji `package.json`
 - Migrated honeycrisp `view.svelte.ts`: 3 `$state` + 3 `kv.observe` → 3 `fromKv` calls. Updated all `.current` reads/writes.
 - Migrated fuji `+page.svelte`: removed `$effect` wrapper, replaced 2 KV observers with `fromKv`, 1 table observer with `fromTable`. Updated derived state to use SvelteMap `.get()` and `[...values()]`.
 
-**Phase 3 — Full rollout:**
+**Phase 3: Full rollout:**
 - Migrated honeycrisp `notes.svelte.ts`: replaced `allNotes` array + observe with `fromTable`. Derived `notes`, `deletedNotes`, `noteCounts` now read from `[...allNotesMap.values()]`.
 - Migrated honeycrisp `folders.svelte.ts`: replaced `folders` array + observe with `fromTable`.
 - Migrated tab-manager `saved-tab-state.svelte.ts`: replaced `tabs` array + observe with `fromTable`.
@@ -267,5 +267,5 @@ With 3 utilities (`fromKv`, `fromTable`, `createPersistedState`), one entry poin
 
 **Verification:**
 - `bun install` succeeded (tab-manager `wxt prepare` postinstall fails due to pre-existing nypm/tinyexec issue)
-- All migrated files typecheck clean — zero new errors introduced
+- All migrated files typecheck clean: zero new errors introduced
 - Pre-existing errors in workspace (mdast, NumberKeysOf), Editor.svelte (Level), fuji workspace.ts (defineKv arity), UI (Record generic)

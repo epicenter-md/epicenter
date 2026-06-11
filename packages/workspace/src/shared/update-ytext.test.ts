@@ -91,7 +91,7 @@ describe('updateYTextFromString', () => {
 		Y.applyUpdate(doc1, Y.encodeStateAsUpdate(doc2));
 		Y.applyUpdate(doc2, Y.encodeStateAsUpdate(doc1));
 
-		// Both docs should have the merged result — "!" preserved
+		// Both docs should have the merged result: "!" preserved
 		expect(text1.toString()).toBe('Hello Beautiful World!');
 		expect(text2.toString()).toBe('Hello Beautiful World!');
 	});

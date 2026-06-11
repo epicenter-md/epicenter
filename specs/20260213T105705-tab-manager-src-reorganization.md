@@ -65,12 +65,12 @@ lib/
 ## Tasks
 
 - [x] Create directory structure (device/, schema/, services/, state/, utils/)
-- [x] Create `lib/device/composite-id.ts` — branded types, arktype validators, create*, parse*
-- [x] Create `lib/device/device-id.ts` — device identity only (minus parsers)
-- [x] Create `lib/schema/tables.ts` — table definitions, BROWSER_TABLES, type exports
-- [x] Create `lib/schema/row-converters.ts` — tabToRow, windowToRow, tabGroupToRow
-- [x] Create `lib/schema/index.ts` — barrel re-exports + BrowserDb type
-- [x] Create `lib/utils/format.ts` — getDomain, getRelativeTime
+- [x] Create `lib/device/composite-id.ts`: branded types, arktype validators, create*, parse*
+- [x] Create `lib/device/device-id.ts`: device identity only (minus parsers)
+- [x] Create `lib/schema/tables.ts`: table definitions, BROWSER_TABLES, type exports
+- [x] Create `lib/schema/row-converters.ts`: tabToRow, windowToRow, tabGroupToRow
+- [x] Create `lib/schema/index.ts`: barrel re-exports + BrowserDb type
+- [x] Create `lib/utils/format.ts`: getDomain, getRelativeTime
 - [x] Move + update `lib/services/save-tab.ts`
 - [x] Move + update `lib/state/browser-state.svelte.ts`
 - [x] Move + update `lib/state/saved-tab-state.svelte.ts`

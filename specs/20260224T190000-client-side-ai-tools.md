@@ -6,7 +6,7 @@
 
 ## Overview
 
-Wire TanStack AI client tools into the sidebar's `createChat()`. The server stays generic — it just forwards tool schemas to the LLM. Tool execution happens client-side in the sidebar, which has full Chrome API access and Y.Doc state.
+Wire TanStack AI client tools into the sidebar's `createChat()`. The server stays generic. It just forwards tool schemas to the LLM. Tool execution happens client-side in the sidebar, which has full Chrome API access and Y.Doc state.
 
 ## Architecture
 
@@ -55,17 +55,17 @@ Pass client tools to `createChat({ tools })` and raw definitions in the request 
 
 ### Summary
 
-Implemented 13 client-side AI tools (5 read + 8 mutation) for the tab-manager sidebar chat. The server stays generic — it just forwards tool schemas from the request body to the LLM. Tool execution happens entirely client-side.
+Implemented 13 client-side AI tools (5 read + 8 mutation) for the tab-manager sidebar chat. The server stays generic. It just forwards tool schemas from the request body to the LLM. Tool execution happens entirely client-side.
 
 ### Files Changed
 
 | File | Change |
 |------|--------|
-| `apps/tab-manager/src/lib/ai/tools/definitions.ts` | Created — 13 `toolDefinition()` contracts with arktype schemas |
-| `apps/tab-manager/src/lib/ai/tools/client.ts` | Created — Client `.client(execute)` implementations using Y.Doc reads + Chrome APIs |
-| `packages/server/src/ai/plugin.ts` | Modified — Accept `tools` in request body, forward to `chat()` |
-| `apps/tab-manager/src/lib/state/chat.svelte.ts` | Modified — Wire `tabManagerClientTools` into `createChat()` and `allToolDefinitions` into request body |
-| `apps/tab-manager/src/lib/sync/broadcast-channel.ts` | Deleted — Dead code with zero imports |
+| `apps/tab-manager/src/lib/ai/tools/definitions.ts` | Created: 13 `toolDefinition()` contracts with arktype schemas |
+| `apps/tab-manager/src/lib/ai/tools/client.ts` | Created: Client `.client(execute)` implementations using Y.Doc reads + Chrome APIs |
+| `packages/server/src/ai/plugin.ts` | Modified: Accept `tools` in request body, forward to `chat()` |
+| `apps/tab-manager/src/lib/state/chat.svelte.ts` | Modified: Wire `tabManagerClientTools` into `createChat()` and `allToolDefinitions` into request body |
+| `apps/tab-manager/src/lib/sync/broadcast-channel.ts` | Deleted: Dead code with zero imports |
 
 ### Design Decisions
 

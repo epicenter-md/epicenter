@@ -4,7 +4,7 @@
 
 Both `lib/query/` and `lib/services/` contain an `isomorphic/` subfolder that holds ~90% of
 the code. The name "isomorphic" is a misnomer (traditionally means server+client; this app is
-fully client-side) and the nesting inverts the default—the majority case lives in a subfolder
+fully client-side) and the nesting inverts the default. The majority case lives in a subfolder
 while the 10% exception (`desktop/`) sits alongside it.
 
 ## Solution
@@ -80,13 +80,13 @@ Removed the `isomorphic/` folder from both `lib/query/` and `lib/services/`. Cro
 code now lives at the directory root; desktop-only code stays nested in `desktop/`.
 
 ### Stats
-- **Wave 1** (query): 15 files changed — 12 file moves + barrel merge + directory removal
-- **Wave 2** (services): 127 files changed — 82 file moves + barrel merge + 70 import path updates across 57 files
-- **Zero new errors introduced** — same 14 pre-existing errors before and after
+- **Wave 1** (query): 15 files changed: 12 file moves + barrel merge + directory removal
+- **Wave 2** (services): 127 files changed: 82 file moves + barrel merge + 70 import path updates across 57 files
+- **Zero new errors introduced**: same 14 pre-existing errors before and after
 - **All renames tracked at 100% similarity** by git
 
 ### Why this was the right call
-1. "Isomorphic" was a misnomer — the app has no server, so server+client code sharing isn't the axis
-2. 90% of code lived in a subfolder while 10% (desktop) sat alongside it — inverted hierarchy
+1. "Isomorphic" was a misnomer: the app has no server, so server+client code sharing isn't the axis
+2. 90% of code lived in a subfolder while 10% (desktop) sat alongside it: inverted hierarchy
 3. Import paths are now shorter: `$lib/services/sound` instead of `$lib/services/isomorphic/sound`
 4. The organizational principle is preserved: shared code at root, desktop exception nested

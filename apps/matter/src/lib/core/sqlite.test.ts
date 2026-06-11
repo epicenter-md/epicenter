@@ -37,32 +37,47 @@ const valid: Row = {
 
 const incomplete: Row = {
 	fileName: 'post-2.md',
-	frontmatter: { title: 'Partial' }, // missing required fields -> NEEDS_VALUE
+	frontmatter: { title: 'Partial' }, // missing required fields -> NEEDS_VALUE -> NULL
+	body: '',
+};
+
+const invalid: Row = {
+	fileName: 'post-3.md',
+	frontmatter: {
+		title: 'Bad',
+		status: 'bogus', // not in the enum -> INVALID, kept raw
+		count: 1.5, // not an integer -> INVALID, kept raw
+		score: 2,
+		live: false,
+		tags: ['x'],
+		url: 'https://y.com',
+	},
 	body: '',
 };
 
 describe('schema script (DROP + CREATE, one execute_batch)', () => {
-	test('drops then recreates: file PK, one NOT NULL column per field by storage class, _extra JSON', () => {
+	test('drops then recreates: file PK, one nullable column per field by storage class, _extra JSON', () => {
 		const { schema } = projectToSqlite(m, []);
 		expect(schema).toBe(
 			'DROP TABLE IF EXISTS "entries";\n' +
 				'CREATE TABLE "entries" (' +
 				'"file" TEXT PRIMARY KEY, ' +
-				'"title" TEXT NOT NULL, ' +
-				'"status" TEXT NOT NULL, ' +
-				'"count" INTEGER NOT NULL, ' +
-				'"score" REAL NOT NULL, ' +
-				'"live" INTEGER NOT NULL, ' +
-				'"tags" TEXT NOT NULL, ' +
-				'"url" TEXT NOT NULL, ' +
+				'"title" TEXT, ' +
+				'"status" TEXT, ' +
+				'"count" INTEGER, ' +
+				'"score" REAL, ' +
+				'"live" INTEGER, ' +
+				'"tags" TEXT, ' +
+				'"url" TEXT, ' +
 				'"_extra" TEXT NOT NULL)',
 		);
 	});
 
-	test('field identifiers with quotes/spaces are escaped', () => {
+	test('field identifiers with quotes/spaces are escaped, and stay nullable', () => {
 		const weird = model({ 'a "b"': { type: 'string' } });
 		const { schema } = projectToSqlite(weird, []);
-		expect(schema).toContain('"a ""b""" TEXT NOT NULL');
+		expect(schema).toContain('"a ""b""" TEXT');
+		expect(schema).not.toContain('"a ""b""" TEXT NOT NULL');
 	});
 });
 
@@ -79,16 +94,16 @@ describe('insert template (one ? per column, bound positionally)', () => {
 	});
 });
 
-describe('rows (valid only, serialized per storage class)', () => {
+describe('rows (every readable row, serialized by conformance state)', () => {
 	const conformance = classifyRows(m.fields, [valid, incomplete]);
 	const proj = projectToSqlite(m, conformance);
 
-	test('only the valid row projects; the incomplete one is absent', () => {
-		expect(proj.rows).toHaveLength(1);
-		expect(proj.rows[0]?.[0]).toBe('post-1.md');
+	test('valid AND incomplete rows both project, in folder order', () => {
+		expect(proj.rows).toHaveLength(2);
+		expect(proj.rows.map((r) => r[0])).toEqual(['post-1.md', 'post-2.md']);
 	});
 
-	test('each value is serialized to its storage class', () => {
+	test('an OK cell is serialized to its storage class', () => {
 		const [file, title, status, count, score, live, tags, url, extra] =
 			proj.rows[0]!;
 		expect(file).toBe('post-1.md');
@@ -102,9 +117,23 @@ describe('rows (valid only, serialized per storage class)', () => {
 		expect(extra).toBe('{"extraKey":"kept"}'); // unmodeled keys -> _extra JSON
 	});
 
-	test('an all-invalid folder yields a schema but no rows', () => {
-		const p = projectToSqlite(m, classifyRows(m.fields, [incomplete]));
-		expect(p.rows).toEqual([]);
-		expect(p.schema).toContain('CREATE TABLE "entries"');
+	test('a missing required cell binds NULL (the draft is still a row)', () => {
+		const [file, title, status, count, , , tags, url, extra] = proj.rows[1]!;
+		expect(file).toBe('post-2.md');
+		expect(title).toBe('Partial');
+		expect(status).toBeNull();
+		expect(count).toBeNull();
+		expect(tags).toBeNull();
+		expect(url).toBeNull();
+		expect(extra).toBe('{}'); // no unmodeled keys
+	});
+
+	test('an out-of-domain cell keeps its raw value so the draft stays filterable', () => {
+		const p = projectToSqlite(m, classifyRows(m.fields, [invalid]));
+		const [file, title, status, count] = p.rows[0]!;
+		expect(file).toBe('post-3.md');
+		expect(title).toBe('Bad');
+		expect(status).toBe('bogus'); // not in the enum, kept raw
+		expect(count).toBe(1.5); // not an integer, kept raw
 	});
 });

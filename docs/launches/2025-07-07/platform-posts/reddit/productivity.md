@@ -12,7 +12,7 @@ Hey r/productivity!
 
 I've discovered a new way to capture thoughts without interrupting my workflow: completely hands-free voice transcription.
 
-I can be typing an email, working on a spreadsheet, or using my mouse—and the moment a thought hits me, I just start speaking. My computer picks it up instantly and transcribes everything. No keyboard shortcuts, no clicking buttons, no switching windows.
+I can be typing an email, working on a spreadsheet, or using my mouse. And the moment a thought hits me, I just start speaking. My computer picks it up instantly and transcribes everything. No keyboard shortcuts, no clicking buttons, no switching windows.
 
 This has transformed how I work. Before, I'd lose ideas because I was in the middle of something else. Now, whether I'm deep in a task or walking around my office, I can capture every thought the moment it occurs. It's like having a personal assistant who never misses anything.
 

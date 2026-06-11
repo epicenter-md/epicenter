@@ -7,7 +7,7 @@
 
 ## Overview
 
-Add a Postgres asset index and Autumn storage billing to the R2 blob storage system. This is the "Phase 4" from the R2 spec—separated into its own document because it changes the architecture in ways worth discussing independently.
+Add a Postgres asset index and Autumn storage billing to the R2 blob storage system. This is the "Phase 4" from the R2 spec. Separated into its own document because it changes the architecture in ways worth discussing independently.
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -59,7 +59,7 @@ Adding Postgres as the metadata authority enables several architectural changes.
 | Concern | Decision | Why It Doesn't Change |
 |---|---|---|
 | **R2 key structure** | `{userId}/{assetId}` | The userId prefix is still useful for R2 `list()` in admin/cleanup operations |
-| **URL format** | `/api/assets/:userId/:assetId` | See "URL simplification" below—adding a DB query to every image load isn't worth it |
+| **URL format** | `/api/assets/:userId/:assetId` | See "URL simplification" below. Adding a DB query to every image load isn't worth it |
 | **Read auth** | Unauthenticated, unguessable IDs | The `<img>` tag constraint hasn't changed |
 | **httpMetadata** | Still stored on R2 | `writeHttpMetadata(headers)` still simplifies the read handler |
 
@@ -73,7 +73,7 @@ With Postgres, the URL *could* be `/api/assets/:assetId` (no userId). The read h
 3. ASSETS_BUCKET.get(key)
 ```
 
-**Why not**: This adds a Postgres query to every `<img>` load. Currently, asset reads are the fastest path in the API—one R2 `get()` call, no database. Adding Postgres means:
+**Why not**: This adds a Postgres query to every `<img>` load. Currently, asset reads are the fastest path in the API. One R2 `get()` call, no database. Adding Postgres means:
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -90,7 +90,7 @@ The userId in the URL is an opaque nanoid. The cleaner URL isn't worth 2-3x late
 
 ### customMetadata: Dropped (httpMetadata Stays)
 
-With Postgres as the metadata authority, R2 `customMetadata` becomes redundant. Writing the same data to two places is a code smell—it creates drift risk and two update sites for no application benefit.
+With Postgres as the metadata authority, R2 `customMetadata` becomes redundant. Writing the same data to two places is a code smell. It creates drift risk and two update sites for no application benefit.
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -105,18 +105,18 @@ With Postgres as the metadata authority, R2 `customMetadata` becomes redundant. 
 │                                    contentType (new)             │
 │                                                                  │
 │  customMetadata is dropped.                                      │
-│  httpMetadata stays — it's functional (writeHttpMetadata()),     │
+│  httpMetadata stays. It's functional (writeHttpMetadata()),     │
 │  not metadata storage.                                           │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
 **Migration**: Scan existing R2 objects via `list({ include: ['customMetadata'] })`, backfill the Postgres table from their customMetadata, then stop writing customMetadata on new uploads.
 
-**Decision**: Drop customMetadata writes. Postgres is the single source of truth. R2 `httpMetadata` (contentType, cacheControl, contentDisposition) stays because `writeHttpMetadata()` uses it—that's functional, not storage.
+**Decision**: Drop customMetadata writes. Postgres is the single source of truth. R2 `httpMetadata` (contentType, cacheControl, contentDisposition) stays because `writeHttpMetadata()` uses it. That's functional, not storage.
 
 ### Middleware Consideration
 
-In `app.ts`, the database middleware (`app.use('*')`) creates a `pg.Client` for every request—including unauthenticated asset reads that don't need it. This is wasted work for v1.
+In `app.ts`, the database middleware (`app.use('*')`) creates a `pg.Client` for every request. Including unauthenticated asset reads that don't need it. This is wasted work for v1.
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -127,7 +127,7 @@ In `app.ts`, the database middleware (`app.use('*')`) creates a `pg.Client` for 
 │  Asset reads don't need steps 2 or 3.                            │
 │  Options:                                                        │
 │    A. Mount read route BEFORE db middleware (v1 optimization)    │
-│    B. Leave it—pg connection is ~5ms, not worth restructuring   │
+│    B. Leave it. Pg connection is ~5ms, not worth restructuring   │
 │    C. Restructure middleware to be route-specific (future)       │
 │                                                                  │
 │  Recommendation: Option B for now. The pg overhead is small      │
@@ -140,7 +140,7 @@ In `app.ts`, the database middleware (`app.use('*')`) creates a `pg.Client` for 
 
 | Decision | Choice | Rationale |
 |---|---|---|
-| Postgres table | `asset` with id, userId, contentType, sizeBytes, originalName, uploadedAt | Minimal schema—everything needed for billing + listing |
+| Postgres table | `asset` with id, userId, contentType, sizeBytes, originalName, uploadedAt | Minimal schema. Everything needed for billing + listing |
 | Table primary key | `id` (assetId, the generateGuid nanoid) | Already globally unique, matches R2 key component |
 | Foreign key | `userId → user.id ON DELETE CASCADE` | User deletion cleans up asset records. R2 cleanup handled separately. |
 | Insert timing | Same request as R2 `put()`, before returning response | Guarantees metadata exists when the client gets the URL back |
@@ -175,13 +175,13 @@ export const asset = pgTable(
 );
 ```
 
-Follows the exact pattern of `durableObjectInstance` in the existing schema—`userId` FK with cascade, index on userId, bigint for byte sizes.
+Follows the exact pattern of `durableObjectInstance` in the existing schema: `userId` FK with cascade, index on userId, bigint for byte sizes.
 
 ### Upload Flow (Updated)
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│  UPLOAD  (POST /api/assets) — with Postgres + Autumn             │
+│  UPLOAD  (POST /api/assets): with Postgres + Autumn             │
 │                                                                  │
 │  Client ──[auth + file]──→ Worker                                │
 │                              ├─ authGuard                        │
@@ -214,7 +214,7 @@ Note: `autumn.track()` is fire-and-forget via `afterResponse` (same pattern as `
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│  DELETE  (DELETE /api/assets/:userId/:assetId) — with Postgres   │
+│  DELETE  (DELETE /api/assets/:userId/:assetId): with Postgres   │
 │                                                                  │
 │  Client ──[auth]──→ Worker                                       │
 │                       ├─ authGuard + ownerCheck                  │
@@ -241,7 +241,7 @@ Note: `autumn.track()` is fire-and-forget via `afterResponse` (same pattern as `
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│  READ  (GET /api/assets/:userId/:assetId) — NO CHANGE           │
+│  READ  (GET /api/assets/:userId/:assetId): NO CHANGE           │
 │                                                                  │
 │  Still just: ASSETS_BUCKET.get(key) → serve with headers        │
 │  No Postgres query. No Autumn call. Fastest possible path.       │
@@ -251,7 +251,7 @@ Note: `autumn.track()` is fire-and-forget via `afterResponse` (same pattern as `
 ### Autumn Configuration
 
 ```ts
-// autumn.config.ts — additions
+// autumn.config.ts: additions
 
 export const storageBytes = feature({
   id: FEATURE_IDS.storageBytes,   // 'storage_bytes'
@@ -270,7 +270,7 @@ export const storageBytes = feature({
 ```
 
 ```ts
-// billing-plans.ts — addition
+// billing-plans.ts: addition
 
 export const FEATURE_IDS = {
   aiUsage: 'ai_usage',
@@ -305,14 +305,14 @@ Autumn `track()` can fail silently (network issues, Worker timeout). Periodic re
 With Postgres, these become trivial:
 
 ```ts
-// GET /api/assets — list current user's assets
+// GET /api/assets: list current user's assets
 // Already behind authGuard
 const assets = await db.select().from(asset)
   .where(eq(asset.userId, c.var.user.id))
   .orderBy(desc(asset.uploadedAt))
   .limit(100);
 
-// GET /api/assets/usage — current user's storage total
+// GET /api/assets/usage: current user's storage total
 const [{ total }] = await db.select({
   total: sql<number>`COALESCE(SUM(${asset.sizeBytes}), 0)`
 }).from(asset).where(eq(asset.userId, c.var.user.id));
@@ -339,7 +339,7 @@ const [{ total }] = await db.select({
 - [x] **3.1** Add `FEATURE_IDS.storageBytes = 'storage_bytes'` to `billing-plans.ts`
 - [x] **3.2** Add `storageBytes` feature to `autumn.config.ts` as `type: 'metered', consumable: false`
 - [x] **3.3** Add storage items to each plan:
-  - Free: `included: 0` (no overage — uploads already blocked by plan gate)
+  - Free: `included: 0` (no overage: uploads already blocked by plan gate)
   - Pro: `included: 5_000_000_000` (5GB), overage: $1/GB usage_based
   - Ultra: `included: 10_000_000_000` (10GB), overage: $0.75/GB
   - Max: `included: 50_000_000_000` (50GB), overage: $0.50/GB
@@ -354,8 +354,8 @@ const [{ total }] = await db.select({
 
 ### Phase 5: Listing + Usage Endpoints
 
-- [x] **5.1** Add `GET /api/assets` — list user's assets (paginated, sorted by uploadedAt desc)
-- [x] **5.2** Add `GET /api/assets/usage` — return user's total storage in bytes
+- [x] **5.1** Add `GET /api/assets`: list user's assets (paginated, sorted by uploadedAt desc)
+- [x] **5.2** Add `GET /api/assets/usage`: return user's total storage in bytes
 - [x] **5.3** Wire both behind `authGuard`
 
 ### Phase 6: Reconciliation
@@ -370,28 +370,28 @@ const [{ total }] = await db.select({
 
 1. Object exists in R2 but has no Postgres row
 2. Client receives 500 error (doesn't get the URL back)
-3. Object is orphaned — uses storage but isn't tracked
+3. Object is orphaned: uses storage but isn't tracked
 4. **Recovery**: Reconciliation compares R2 `list()` against Postgres and deletes orphans, or insert missing rows
 
 ### Postgres Delete Succeeds, R2 Delete Fails
 
 1. Postgres row deleted, R2 object still exists
 2. Client receives 204 (thinks it's deleted)
-3. Object is orphaned in R2 — uses R2 storage but not billed
+3. Object is orphaned in R2: uses R2 storage but not billed
 4. **Recovery**: Same reconciliation catches this
 
 ### User Deletion (CASCADE)
 
 1. User is deleted from Better Auth
 2. `ON DELETE CASCADE` removes all `asset` rows
-3. R2 objects are NOT automatically deleted — need a cleanup job
+3. R2 objects are NOT automatically deleted: need a cleanup job
 4. **Solution**: Listen for user deletion events (or reconciliation) and batch-delete R2 objects for orphaned userId prefixes
 
 ### Storage Allowance per Plan
 
 Plan changes (upgrade/downgrade) change the allowance:
 - **Upgrade**: More storage immediately available (Autumn handles this via plan item swap)
-- **Downgrade**: If current usage exceeds new allowance, user is over quota. Autumn's overage logic handles this — they'll be charged overage or blocked, depending on config. Existing files are NOT deleted.
+- **Downgrade**: If current usage exceeds new allowance, user is over quota. Autumn's overage logic handles this: they'll be charged overage or blocked, depending on config. Existing files are NOT deleted.
 
 ## Open Questions
 
@@ -405,12 +405,12 @@ Plan changes (upgrade/downgrade) change the allowance:
 3. **R2 orphan cleanup**: How to handle R2 objects with no Postgres row?
    - Option A: Daily reconciliation deletes orphans older than 24h
    - Option B: Manual cleanup via admin endpoint
-   - **Recommendation**: Option A — automated, catches all cases.
+   - **Recommendation**: Option A: automated, catches all cases.
 
 4. **User deletion R2 cleanup**: How to delete R2 objects when a user is deleted?
    - Option A: Async job triggered by user deletion webhook/hook
    - Option B: Reconciliation catches it (all asset rows are CASCADE-deleted, so any R2 objects under that userId prefix are orphans)
-   - **Recommendation**: Option B — simplest, reuses existing reconciliation.
+   - **Recommendation**: Option B: simplest, reuses existing reconciliation.
 
 ## Success Criteria
 
@@ -426,14 +426,14 @@ Plan changes (upgrade/downgrade) change the allowance:
 
 ## References
 
-- `specs/20260406T180000-r2-blob-storage.md` — v1 R2 spec (must ship first)
-- `specs/20260319T140004-autumn-phase4-storage-billing.md` — Original storage billing planning
-- `apps/api/src/db/schema.ts` — Existing schema, `durableObjectInstance` pattern to follow
-- `apps/api/src/app.ts` — `afterResponse` pattern for fire-and-forget, `upsertDoInstance` as model
-- `apps/api/src/ai-chat.ts` — `autumn.check()` and `autumn.track()` patterns
-- `apps/api/src/billing-plans.ts` — `FEATURE_IDS` and `PLAN_IDS`
-- `apps/api/autumn.config.ts` — Autumn feature/plan definitions
-- [Autumn non-consumable metered features](https://github.com/useautumn/autumn) — `track()` takes deltas, `usage()` takes absolutes
+- `specs/20260406T180000-r2-blob-storage.md`: v1 R2 spec (must ship first)
+- `specs/20260319T140004-autumn-phase4-storage-billing.md`: Original storage billing planning
+- `apps/api/src/db/schema.ts`: Existing schema, `durableObjectInstance` pattern to follow
+- `apps/api/src/app.ts`: `afterResponse` pattern for fire-and-forget, `upsertDoInstance` as model
+- `apps/api/src/ai-chat.ts`: `autumn.check()` and `autumn.track()` patterns
+- `apps/api/src/billing-plans.ts`: `FEATURE_IDS` and `PLAN_IDS`
+- `apps/api/autumn.config.ts`: Autumn feature/plan definitions
+- [Autumn non-consumable metered features](https://github.com/useautumn/autumn): `track()` takes deltas, `usage()` takes absolutes
 
 ## Review
 

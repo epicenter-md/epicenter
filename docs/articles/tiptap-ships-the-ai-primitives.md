@@ -1,6 +1,6 @@
 # TipTap Ships the Primitives So You Don't Have to Build the Diff Engine
 
-**TL;DR**: TipTap now handles the hard parts of AI editing—document diffing, schema-aware agents, and streaming integration—so you can wire up an LLM without rebuilding ProseMirror infrastructure.
+**TL;DR**: TipTap now handles the hard parts of AI editing. Document diffing, schema-aware agents, and streaming integration. So you can wire up an LLM without rebuilding ProseMirror infrastructure.
 
 > "Make sure the stream returns HTML to render directly as rich text."
 
@@ -37,7 +37,7 @@ The diff utility compares two ProseMirror documents and returns a list of change
 | smartInline    | Changed blocks first, inline    | Balance of precision/perf |
 | smartInlineV2  | Improved for block elements     | Tables, complex blocks    |
 
-The default is detailed. If you're showing changes in a document with lots of nested structure—tables, code blocks, lists—smartInlineV2 handles those better. Block mode treats entire paragraphs as atomic units, which is faster but less precise.
+The default is detailed. If you're showing changes in a document with lots of nested structure. Tables, code blocks, lists. SmartInlineV2 handles those better. Block mode treats entire paragraphs as atomic units, which is faster but less precise.
 
 You can configure how changes merge together. The changeMergeDistance option controls how close two changes need to be before they combine into one. You can also ignore specific attributes or marks if you don't care about formatting changes.
 
@@ -78,7 +78,7 @@ Here's the licensing breakdown:
 | Diff Utility      | Pro          |
 | Markdown Package  | Open Source  |
 
-The markdown package is the only part you can use without a TipTap Pro license. Everything else—the agent, diff utility, generation resolvers—requires Pro.
+The markdown package is the only part you can use without a TipTap Pro license. Everything else requires Pro: the agent, diff utility, and generation resolvers.
 
 ## Why This Matters
 
@@ -92,7 +92,7 @@ You still need to bring your own LLM and write the resolver functions. But you d
 
 This is Pro-only except for markdown conversion. If you're building a free or open-source editor, you'll need to implement diffing and streaming yourself.
 
-The architecture assumes client-server split. If you're running an LLM entirely client-side—like with WebLLM or a local model—you still need to follow the agent pattern. You can't skip the extension layer.
+The architecture assumes client-server split. If you're running an LLM entirely client-side. Like with WebLLM or a local model. You still need to follow the agent pattern. You can't skip the extension layer.
 
 The streaming resolver expects HTML. If your LLM outputs markdown, you need the conversion step. That's an extra dependency and processing overhead.
 

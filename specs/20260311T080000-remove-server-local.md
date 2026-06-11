@@ -6,7 +6,7 @@
 
 ## Overview
 
-Remove `packages/server-local` and its sole consumer (the CLI sidecar command) from the monorepo. The package is functional, well-tested, and recently rewritten—but nothing actually uses it. This PR preserves it in git history so it can be restored when needed.
+Remove `packages/server-local` and its sole consumer (the CLI sidecar command) from the monorepo. The package is functional, well-tested, and recently rewritten. But nothing actually uses it. This PR preserves it in git history so it can be restored when needed.
 
 ## Motivation
 
@@ -21,13 +21,13 @@ Its only runtime consumer is a dynamic import in the CLI:
 const { createSidecar } = await import('@epicenter/server-local');
 ```
 
-No app, no UI component, no Rust code, and no other package imports from it. The CLI sidecar command exists but nobody runs it—it's an unused code path behind a manual CLI invocation.
+No app, no UI component, no Rust code, and no other package imports from it. The CLI sidecar command exists but nobody runs it. It's an unused code path behind a manual CLI invocation.
 
 ### Problems
 
 1. **Dead weight**: The package adds dependencies (`hono`, `hono-openapi`, `@hono/standard-validator`), lockfile entries, and typecheck surface for code that never runs.
 2. **Maintenance drag**: Any changes to `@epicenter/workspace` or `@epicenter/sync-server` must still satisfy server-local's type requirements, slowing unrelated work.
-3. **False signal**: Its presence implies the sidecar is a supported feature. It isn't—not yet.
+3. **False signal**: Its presence implies the sidecar is a supported feature. It isn't. Not yet.
 
 ### Desired State
 
@@ -89,7 +89,7 @@ packages/server-local/
 ├── tsconfig.json
 └── src/
     ├── index.ts                    # Public API exports
-    ├── sidecar.ts                  # createSidecar() — Hono app factory
+    ├── sidecar.ts                  # createSidecar(): Hono app factory
     ├── server.ts                   # Bun.serve wrapper, port fallback
     ├── start.ts                    # CLI entry: `bun src/start.ts`
     ├── sidecar.test.ts             # Integration tests
@@ -117,16 +117,16 @@ packages/server-local/
 ```
 
 **Public API** (`src/index.ts`):
-- `createSidecar(config: SidecarConfig)` — main factory, returns `{ app, start(), stop() }`
-- `serve(app, port, websocket?)` — Bun.serve with fallback
-- `DEFAULT_PORT` — 3913
-- `createWorkspacePlugin(clients)` — Hono sub-app for workspace CRUD
+- `createSidecar(config: SidecarConfig)`: main factory, returns `{ app, start(), stop() }`
+- `serve(app, port, websocket?)`: Bun.serve with fallback
+- `DEFAULT_PORT`: 3913
+- `createWorkspacePlugin(clients)`: Hono sub-app for workspace CRUD
 - `type AuthUser`, `type SidecarApp`, `type SidecarAuthConfig`, `type SidecarConfig`
 
 **Auth modes** (middleware/auth.ts):
-- `none` — CORS-only, no token validation
-- `token` — pre-shared secret
-- `remote` — delegates to hub via `GET /auth/get-session`
+- `none`: CORS-only, no token validation
+- `token`: pre-shared secret
+- `remote`: delegates to hub via `GET /auth/get-session`
 
 **Dependencies** (package.json):
 - `@epicenter/sync-server: workspace:*`
@@ -169,14 +169,14 @@ The sidecar command provided: `epicenter sidecar start [--workspace] [--hub] [--
 
 - [x] **3.1** Run `bun install` to update lockfile
 - [x] **3.2** Run `bun run typecheck` across affected packages (at minimum `packages/cli`)
-  > Pre-existing type errors in `data-command.ts` and `workspace/define-table.ts` — none related to this removal.
+  > Pre-existing type errors in `data-command.ts` and `workspace/define-table.ts`: none related to this removal.
 - [x] **3.3** Run full build/test to confirm nothing breaks
 
 ## Edge Cases
 
 ### Something else imports sync-server indirectly
 
-Searched all `.ts` files for `from '@epicenter/sync-server'`—only one match, inside `server-local`. The Cloudflare server has a comment referencing it but inlined the code; no actual import. Safe to remove.
+Searched all `.ts` files for `from '@epicenter/sync-server'`: only one match, inside `server-local`. The Cloudflare server has a comment referencing it but inlined the code; no actual import. Safe to remove.
 
 ### Specs and docs reference "server-local"
 
@@ -193,9 +193,9 @@ Searched all `.ts` files for `from '@epicenter/sync-server'`—only one match, i
 
 ## References
 
-- `packages/server-local/` — package being removed
-- `packages/sync-server/` — orphaned dependency, also removed
-- `packages/cli/src/commands/sidecar-command.ts` — sole consumer
-- `packages/cli/src/cli.ts` — registers sidecar command
-- `specs/20260308T120000-server-local-elysia-to-hono.md` — most recent spec (Elysia→Hono rewrite, completed 2026-03-08)
-- `specs/20260308T120000-sync-three-layer-split.md` — created sync-server as a separate package
+- `packages/server-local/`: package being removed
+- `packages/sync-server/`: orphaned dependency, also removed
+- `packages/cli/src/commands/sidecar-command.ts`: sole consumer
+- `packages/cli/src/cli.ts`: registers sidecar command
+- `specs/20260308T120000-server-local-elysia-to-hono.md`: most recent spec (Elysia→Hono rewrite, completed 2026-03-08)
+- `specs/20260308T120000-sync-three-layer-split.md`: created sync-server as a separate package

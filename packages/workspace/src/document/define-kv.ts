@@ -1,5 +1,5 @@
 /**
- * `defineKv(schema, defaultValue)` — TypeBox-native KV definition.
+ * `defineKv(schema, defaultValue)`: TypeBox-native KV definition.
  *
  * KV stores use validate-or-default semantics: invalid or missing values
  * return the result of the `defaultValue` factory. There is no migration

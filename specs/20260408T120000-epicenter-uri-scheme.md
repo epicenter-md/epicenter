@@ -66,10 +66,10 @@ Tauri receives the same string via `onOpenUrl()` and routes to the correct works
 
 | App | Content links | Deep links | Unified? |
 |---|---|---|---|
-| Obsidian | `[[Page Name]]` (wikilinks) | `obsidian://open?vault=X&file=Y` | No — completely separate formats |
-| Notion | Internal page refs | `https://notion.so/workspace/page-id` | Sort of — web URLs serve both (web-first) |
+| Obsidian | `[[Page Name]]` (wikilinks) | `obsidian://open?vault=X&file=Y` | No: completely separate formats |
+| Notion | Internal page refs | `https://notion.so/workspace/page-id` | Sort of: web URLs serve both (web-first) |
 | Bear | `[[note title]]` | `bear://x-callback-url/open-note?id=X` | No |
-| Spotify | N/A | `spotify:track:4iV5W9uY...` | N/A — colon-delimited URI, not URL |
+| Spotify | N/A | `spotify:track:4iV5W9uY...` | N/A: colon-delimited URI, not URL |
 | VS Code | N/A | `vscode://file/path:line:col` | N/A |
 
 **Key finding**: Most apps separate content links from deep links. Notion is the exception, but it's web-first so `https://` naturally serves both. No local-first app was found that unifies them.
@@ -80,7 +80,7 @@ Tauri receives the same string via `onOpenUrl()` and routes to the correct works
 
 From Context7 + Tauri v2 docs:
 
-**Registration** — declare scheme name in `tauri.conf.json`:
+**Registration**: declare scheme name in `tauri.conf.json`:
 
 ```json
 {
@@ -92,7 +92,7 @@ From Context7 + Tauri v2 docs:
 }
 ```
 
-**Handler** — receives raw URL strings:
+**Handler**: receives raw URL strings:
 
 ```typescript
 import { getCurrent, onOpenUrl } from '@tauri-apps/plugin-deep-link';
@@ -118,7 +118,7 @@ app.deep_link().register("epicenter")?;
 
 ### Verbosity Is Hidden
 
-The editor's `InternalLinkWidget` (CodeMirror `Decoration.replace`) already replaces the entire `[text](href)` with a styled clickable span showing only the display text. The href is invisible in the editor — users see "Meeting Notes" as an underlined clickable span, not the raw URI.
+The editor's `InternalLinkWidget` (CodeMirror `Decoration.replace`) already replaces the entire `[text](href)` with a styled clickable span showing only the display text. The href is invisible in the editor: users see "Meeting Notes" as an underlined clickable span, not the raw URI.
 
 **Implication**: URI verbosity only matters in raw markdown view and git diffs. The 9-character increase (`id:abc` → `epicenter://ws/table/abc`) has near-zero UX impact.
 
@@ -212,11 +212,11 @@ convertWikilinksToInternalLinks       1  push-from-markdown.ts
 
 ### Stale Boundaries to Collapse
 
-1. **`isInternalLink` + `getTargetFileId`** — 1 caller each, always used sequentially. Every call site does `if (!isInternalLink(href)) continue; const fileId = getTargetFileId(href);`. These are one concept split into two functions. Merge into `parseEntityRef(href): EntityRef | null`.
+1. **`isInternalLink` + `getTargetFileId`**: 1 caller each, always used sequentially. Every call site does `if (!isInternalLink(href)) continue; const fileId = getTargetFileId(href);`. These are one concept split into two functions. Merge into `parseEntityRef(href): EntityRef | null`.
 
-2. **Duplicated regex** — `INTERNAL_LINK_RE` exists in both `links.ts` and `link-decorations.ts` with different capture groups. One regex, one place.
+2. **Duplicated regex**: `INTERNAL_LINK_RE` exists in both `links.ts` and `link-decorations.ts` with different capture groups. One regex, one place.
 
-3. **`makeInternalHref(fileId: FileId)`** — signature too narrow. New scheme needs workspace + table + id.
+3. **`makeInternalHref(fileId: FileId)`**: signature too narrow. New scheme needs workspace + table + id.
 
 ### Naming Renames
 
@@ -232,15 +232,15 @@ convertWikilinksToInternalLinks       1  push-from-markdown.ts
 
 ### Keep As-Is
 
-- `isInsideCode()` — justified extraction, non-trivial syntax tree walk
-- `InternalLinkWidget` class structure — CodeMirror WidgetType requires it
-- `buildDecorations()` — complex scan loop, extraction earns its name
-- `wikilinkCompletionSource()` — clean separation from CM wiring
-- `convertInternalLinksToWikilinks` / `convertWikilinksToInternalLinks` — 3+ callers, real utility
+- `isInsideCode()`: justified extraction, non-trivial syntax tree walk
+- `InternalLinkWidget` class structure: CodeMirror WidgetType requires it
+- `buildDecorations()`: complex scan loop, extraction earns its name
+- `wikilinkCompletionSource()`: clean separation from CM wiring
+- `convertInternalLinksToWikilinks` / `convertWikilinksToInternalLinks`: 3+ callers, real utility
 
 ### Questionable: `ignoreEvent()` Override
 
-`InternalLinkWidget.ignoreEvent()` returns `false`. WidgetType's default returns `true` for most events. Returning `false` means the editor also processes click events (potentially moving the cursor). The widget's click handler already calls `preventDefault + stopPropagation`. This override is either accidental or redundant — investigate during implementation and remove if unnecessary.
+`InternalLinkWidget.ignoreEvent()` returns `false`. WidgetType's default returns `true` for most events. Returning `false` means the editor also processes click events (potentially moving the cursor). The widget's click handler already calls `preventDefault + stopPropagation`. This override is either accidental or redundant: investigate during implementation and remove if unnecessary.
 
 ## Implementation Plan
 
@@ -252,22 +252,22 @@ convertWikilinksToInternalLinks       1  push-from-markdown.ts
 - [x] **1.4** Update `convertInternalLinksToWikilinks` regex to match `epicenter://` URIs
 - [x] **1.5** Update `convertWikilinksToInternalLinks` to accept a resolver returning full `epicenter://` URIs
 - [x] **1.6** Update `packages/filesystem/src/index.ts` barrel exports
-- [x] **1.7** Update `links.test.ts` — all assertions use new format
+- [x] **1.7** Update `links.test.ts`: all assertions use new format
 
 ### Phase 2: Editor Extensions (Opensidian)
 
-- [x] **2.1** Update `link-decorations.ts` — import `parseEntityRef` and `ENTITY_REF_RE`, remove duplicated regex
+- [x] **2.1** Update `link-decorations.ts`: import `parseEntityRef` and `ENTITY_REF_RE`, remove duplicated regex
 - [x] **2.2** Rename `InternalLinkWidget` → `EntityRefWidget`, update `onNavigate` to take `EntityRef`
-- [x] **2.3** Investigate and resolve `ignoreEvent()` override — removed, default WidgetType behavior is correct
-- [x] **2.4** Update `wikilink-autocomplete.ts` — add `workspaceId` + `tableName` to config, use `makeEntityRef`
+- [x] **2.3** Investigate and resolve `ignoreEvent()` override: removed, default WidgetType behavior is correct
+- [x] **2.4** Update `wikilink-autocomplete.ts`: add `workspaceId` + `tableName` to config, use `makeEntityRef`
 - [x] **2.5** Update Opensidian call sites that pass config to these extensions
 
 ### Phase 3: Markdown Materializer
 
-- [x] **3.1** Update `packages/workspace/src/extensions/materializer/markdown/markdown.ts` — regex + conversion calls
+- [x] **3.1** Update `packages/workspace/src/extensions/materializer/markdown/markdown.ts`: regex + conversion calls
 - [x] **3.2** Update `playground/opensidian-e2e/materializer.ts` and `push-from-markdown.ts`
 
-### Phase 4: Deep Link Handler (Future — Separate Spec)
+### Phase 4: Deep Link Handler (Future: Separate Spec)
 
 - [ ] **4.1** Register `epicenter` scheme in Tauri `deep-link` plugin config
 - [ ] **4.2** Add `onOpenUrl` handler that parses `epicenter://` URIs and routes to workspace/entity
@@ -297,12 +297,12 @@ Exported markdown uses wikilinks (`[[Page Name]]`), not the URI format. The URI 
 
 ## Resolved Decisions
 
-All questions closed — no ambiguity remains:
+All questions closed, no ambiguity remains:
 
-1. **Migration**: Not needed — no production data exists. Clean break, no backward compatibility.
-2. **Parsing**: `new URL()` — standard, correct, not a hot path.
+1. **Migration**: Not needed: no production data exists. Clean break, no backward compatibility.
+2. **Parsing**: `new URL()`: standard, correct, not a hot path.
 3. **Cross-workspace clicks**: Same-workspace links navigate locally. Cross-workspace links are a no-op for now (handler checks `ref.workspace === currentWorkspaceId`).
-4. **Table segment**: Always explicit. Opensidian already has `conversations` and `chatMessages` tables — linking to them is plausible.
+4. **Table segment**: Always explicit. Opensidian already has `conversations` and `chatMessages` tables: linking to them is plausible.
 
 ## Success Criteria
 
@@ -317,15 +317,15 @@ All questions closed — no ambiguity remains:
 
 ## References
 
-- `packages/filesystem/src/links.ts` — Core link utilities (primary change target)
-- `packages/filesystem/src/links.test.ts` — Link tests
-- `packages/filesystem/src/index.ts` — Barrel exports
-- `apps/opensidian/src/lib/components/editor/extensions/link-decorations.ts` — Editor widget
-- `apps/opensidian/src/lib/components/editor/extensions/wikilink-autocomplete.ts` — `[[` autocomplete
-- `packages/workspace/src/extensions/materializer/markdown/markdown.ts` — Markdown export
-- `playground/opensidian-e2e/materializer.ts` — E2E materializer test
-- `playground/opensidian-e2e/push-from-markdown.ts` — Markdown import
-- `apps/api/src/app.ts:351-395` — DO naming (NOT changing, separate concern)
+- `packages/filesystem/src/links.ts`: Core link utilities (primary change target)
+- `packages/filesystem/src/links.test.ts`: Link tests
+- `packages/filesystem/src/index.ts`: Barrel exports
+- `apps/opensidian/src/lib/components/editor/extensions/link-decorations.ts`: Editor widget
+- `apps/opensidian/src/lib/components/editor/extensions/wikilink-autocomplete.ts`: `[[` autocomplete
+- `packages/workspace/src/extensions/materializer/markdown/markdown.ts`: Markdown export
+- `playground/opensidian-e2e/materializer.ts`: E2E materializer test
+- `playground/opensidian-e2e/push-from-markdown.ts`: Markdown import
+- `apps/api/src/app.ts:351-395`: DO naming (NOT changing, separate concern)
 
 ## Review
 
@@ -339,13 +339,13 @@ Replaced the `id:` internal link scheme with `epicenter://` URIs across the enti
 
 - `isInternalLink` + `getTargetFileId` merged into single `parseEntityRef` (both had 1 real caller, always used sequentially)
 - Duplicated regex between `links.ts` and `link-decorations.ts` consolidated into single exported `ENTITY_REF_RE`
-- `InternalLinkWidget.ignoreEvent()` override removed — was returning `false` ("let editor process events too") but the click handler already calls `preventDefault + stopPropagation`, making it redundant
+- `InternalLinkWidget.ignoreEvent()` override removed: was returning `false` ("let editor process events too") but the click handler already calls `preventDefault + stopPropagation`, making it redundant
 - `ContentEditor.svelte` passes `opensidianDefinition.id` as `workspaceId` to the wikilink autocomplete, so the workspace ID comes from the definition rather than a hardcoded string
 - Resolver in `convertWikilinksToEntityRefs` now returns full `epicenter://` URIs rather than bare `FileId` values
 
 ### Deviations from Spec
 
-None — all phases executed as planned.
+None: all phases executed as planned.
 
 ### Follow-up Work
 

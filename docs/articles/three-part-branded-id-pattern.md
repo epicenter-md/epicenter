@@ -1,4 +1,4 @@
-# Three Parts, One ID — and a Fourth When You Need Both Directions
+# Three Parts, One ID, and a Fourth When You Need Both Directions
 
 Every branded ID in the workspace codebase follows the same canonical shape: a validator that lives in the value space, a type derived from it via `typeof X.infer`, and zero, one, or two helpers sized to where the value comes from. Most workspace IDs end up with three exports; the ones that flow in from both directions (minted by the app AND received from URL params or DB rows) end up with four.
 
@@ -22,7 +22,7 @@ Declaring the validator first and deriving the type via `typeof SavedTabId.infer
 
 ## Extend the base Id type to simplify the factory generic
 
-The brand intersects with `Id` (which is `string & Brand<'Id'>`) rather than bare `string`. That lets the factory use `generateId<SavedTabId>()` directly — the generic is constrained to `T extends string`, so any brand on top of `Id` (which extends `string`) flows through without a cast.
+The brand intersects with `Id` (which is `string & Brand<'Id'>`) rather than bare `string`. That lets the factory use `generateId<SavedTabId>()` directly. The generic is constrained to `T extends string`, so any brand on top of `Id` (which extends `string`) flows through without a cast.
 
 ```typescript
 // Good: factory uses the generic; no `as` in the body.
@@ -74,7 +74,7 @@ const fromUrl: FileId = asFileId(page.url.searchParams.get('file')!);
 
 ## Distinguish `generate*` from `create*`
 
-`generate*` means a new ID minted from scratch — `generateId()`, `generateGuid()`, or `nanoid()` under the hood. `create*` means assembling an ID from existing inputs:
+`generate*` means a new ID minted from scratch: `generateId()`, `generateGuid()`, or `nanoid()` under the hood. `create*` means assembling an ID from existing inputs:
 
 ```typescript
 export const generateSavedTabId = (): SavedTabId => generateId<SavedTabId>();
@@ -86,7 +86,7 @@ Both are factory functions. The prefix tells the reader whether the function fab
 
 ## `asXxx` is the only place `as Xxx` should appear in the codebase
 
-The `asXxx` helper exists to centralize the typed cast. Once it exists, raw `value as Xxx` casts elsewhere are a smell — the helper's `value: string` parameter rejects accidental `unknown` widenings and any code that wants to bypass it has to spell out a real reason.
+The `asXxx` helper exists to centralize the typed cast. Once it exists, raw `value as Xxx` casts elsewhere are a smell. The helper's `value: string` parameter rejects accidental `unknown` widenings and any code that wants to bypass it has to spell out a real reason.
 
 ```typescript
 // Good: helper centralizes the cast, rejects unknown widening.

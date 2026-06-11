@@ -6,7 +6,7 @@
 
 ## Overview
 
-Replace the full nuke-and-rebuild strategy in the SQLite index extension with surgical per-row updates. When a file is edited, only that file's row in SQLite + FTS is updated—not the entire database.
+Replace the full nuke-and-rebuild strategy in the SQLite index extension with surgical per-row updates. When a file is edited, only that file's row in SQLite + FTS is updated. Not the entire database.
 
 ## Motivation
 
@@ -15,7 +15,7 @@ Replace the full nuke-and-rebuild strategy in the SQLite index extension with su
 `packages/filesystem/src/extensions/sqlite-index/index.ts` rebuilds the entire in-memory SQLite database on every Yjs table mutation:
 
 ```typescript
-// Line 182 — observe fires on ANY table change
+// Line 182: observe fires on ANY table change
 unobserve = filesTable.observe(() => scheduleSync());
 
 // scheduleSync debounces 100ms, then calls rebuild()
@@ -38,7 +38,7 @@ async function rebuild(): Promise<void> {
 
 This creates problems:
 
-1. **O(N) content reads on every mutation**: Editing one file triggers `contentDocs.open()` for every file in the workspace. Content reads are async and sequential—this is the bottleneck.
+1. **O(N) content reads on every mutation**: Editing one file triggers `contentDocs.open()` for every file in the workspace. Content reads are async and sequential. This is the bottleneck.
 2. **Wasted work**: A single rename re-reads all content, recomputes all paths, and rewrites all rows.
 3. **Missed mutations under load**: The `rebuilding` guard flag silently drops a rebuild if one is already in progress. If a rebuild takes >100ms (the debounce window), a mutation can be lost.
 
@@ -56,7 +56,7 @@ Full rebuild only happens on initial load and manual recovery.
 |---|---|---|
 | Keep debouncing | Yes, same 100ms | Coalesces rapid edits (typing) into one batch of surgical updates |
 | Path cascade on folder rename | Query SQLite for descendants | Folder renames are rare; querying `WHERE path LIKE '/old/%'` is fast on in-memory SQLite |
-| Keep full `rebuild()` | Yes, for init + recovery | No SQLite state on page load—need a full build. Exposed `rebuild()` stays for corruption recovery |
+| Keep full `rebuild()` | Yes, for init + recovery | No SQLite state on page load. Need a full build. Exposed `rebuild()` stays for corruption recovery |
 | Path computation for single row | Walk `parentId` chain via `filesTable.get()` | Reuses existing Yjs reads, no need for a separate index |
 
 ## Architecture
@@ -85,7 +85,7 @@ filesTable.observe(changedIds) → debounce 100ms → syncRows(changedIds)
 
 INITIAL LOAD (unchanged):
 ────────────────────────────────
-rebuild() — same as current full nuke-and-rebuild
+rebuild(): same as current full nuke-and-rebuild
 ```
 
 ## Implementation Plan
@@ -94,7 +94,7 @@ rebuild() — same as current full nuke-and-rebuild
 
 - [x] **1.1** Add `computePathForRow(id, filesTable)` function that walks the `parentId` chain using `filesTable.get()` calls (not `getAllValid()`)
 - [x] **1.2** Add `syncRows(changedIds: Set<string>)` async function that handles add/update/delete per row
-- [x] **1.3** Change the observer from `filesTable.observe(() => scheduleSync())` to `filesTable.observe((changedIds) => scheduleSync(changedIds))` — pass changed IDs through the debounce
+- [x] **1.3** Change the observer from `filesTable.observe(() => scheduleSync())` to `filesTable.observe((changedIds) => scheduleSync(changedIds))`: pass changed IDs through the debounce
 
 ### Phase 2: Handle folder rename cascading
 
@@ -107,7 +107,7 @@ rebuild() — same as current full nuke-and-rebuild
 - [x] **3.1** Switch the observer to call `scheduleSync(changedIds)` instead of `scheduleSync()`
 - [x] **3.2** Update `scheduleSync` to accumulate changed IDs across debounce window (union of all sets)
 - [x] **3.3** Keep `rebuild()` for initial load (`whenReady`) and the public `rebuild()` export
-- [x] **3.4** Remove the `rebuilding` guard flag—no longer needed since `syncRows` is incremental
+- [x] **3.4** Remove the `rebuilding` guard flag. No longer needed since `syncRows` is incremental
 
 ## Edge Cases
 
@@ -124,7 +124,7 @@ rebuild() — same as current full nuke-and-rebuild
 1. User deletes a file
 2. 100ms later, `syncRows` fires with that ID
 3. `filesTable.get(id)` returns `not_found`
-4. **Resolution**: Already handled—`not_found` triggers `DELETE` from SQLite.
+4. **Resolution**: Already handled: `not_found` triggers `DELETE` from SQLite.
 
 ### Initial load (empty SQLite)
 
@@ -135,7 +135,7 @@ rebuild() — same as current full nuke-and-rebuild
 ### Content doc fails to open
 
 1. `contentDocs.open(id)` throws for a specific file
-2. **Resolution**: Same as current—catch and set content to `null`. File is still searchable by name.
+2. **Resolution**: Same as current. Catch and set content to `null`. File is still searchable by name.
 
 ## Open Questions
 
@@ -160,12 +160,12 @@ rebuild() — same as current full nuke-and-rebuild
 
 ## References
 
-- `packages/filesystem/src/extensions/sqlite-index/index.ts` — Main file being modified
-- `packages/filesystem/src/extensions/sqlite-index/schema.ts` — SQLite schema (unchanged)
-- `packages/filesystem/src/extensions/sqlite-index/ddl.ts` — DDL generation (unchanged)
-- `packages/workspace/src/workspace/table-helper.ts` — Observer API providing `changedIds: Set<string>`
-- `packages/workspace/src/shared/y-keyvalue/y-keyvalue-lww.ts` — Underlying change types (`add`/`update`/`delete`)
-- `apps/opensidian/src/lib/fs/fs-state.svelte.ts` — Consumer wiring `createSqliteIndex()` into workspace
+- `packages/filesystem/src/extensions/sqlite-index/index.ts`: Main file being modified
+- `packages/filesystem/src/extensions/sqlite-index/schema.ts`: SQLite schema (unchanged)
+- `packages/filesystem/src/extensions/sqlite-index/ddl.ts`: DDL generation (unchanged)
+- `packages/workspace/src/workspace/table-helper.ts`: Observer API providing `changedIds: Set<string>`
+- `packages/workspace/src/shared/y-keyvalue/y-keyvalue-lww.ts`: Underlying change types (`add`/`update`/`delete`)
+- `apps/opensidian/src/lib/fs/fs-state.svelte.ts`: Consumer wiring `createSqliteIndex()` into workspace
 
 ## Review
 

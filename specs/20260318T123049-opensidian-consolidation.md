@@ -19,13 +19,13 @@ Reduce duplication and improve organization in `apps/opensidian/`. Five changes 
 - FileTreeItem context menu and Toolbar buttons call `fsState.actions.openCreate('file')` etc.
 
 **Files changed**:
-- `src/lib/fs/fs-state.svelte.ts` — add dialog state + actions
-- `src/lib/components/AppShell.svelte` — render dialogs once
-- `src/lib/components/FileTreeItem.svelte` — remove dialog state/instances, call fsState.actions
-- `src/lib/components/Toolbar.svelte` — remove dialog state/instances, call fsState.actions
-- `src/lib/components/CreateDialog.svelte` — read open/mode from fsState instead of props
-- `src/lib/components/RenameDialog.svelte` — read open from fsState instead of props
-- `src/lib/components/DeleteConfirmation.svelte` — read open from fsState instead of props
+- `src/lib/fs/fs-state.svelte.ts`: add dialog state + actions
+- `src/lib/components/AppShell.svelte`: render dialogs once
+- `src/lib/components/FileTreeItem.svelte`: remove dialog state/instances, call fsState.actions
+- `src/lib/components/Toolbar.svelte`: remove dialog state/instances, call fsState.actions
+- `src/lib/components/CreateDialog.svelte`: read open/mode from fsState instead of props
+- `src/lib/components/RenameDialog.svelte`: read open from fsState instead of props
+- `src/lib/components/DeleteConfirmation.svelte`: read open from fsState instead of props
 
 ### 2. Extract withToast Error Handling Wrapper
 
@@ -36,7 +36,7 @@ Reduce duplication and improve organization in `apps/opensidian/`. Five changes 
 - Refactor createFile, createFolder, deleteFile, rename, readContent, writeContent to use it
 
 **Files changed**:
-- `src/lib/fs/fs-state.svelte.ts` — add helper, refactor 6 actions
+- `src/lib/fs/fs-state.svelte.ts`: add helper, refactor 6 actions
 
 ### 3. Add walkTree Utility to fsState
 
@@ -48,9 +48,9 @@ Reduce duplication and improve organization in `apps/opensidian/`. Five changes 
 - Refactor CommandPalette.svelte `allFiles` to use it
 
 **Files changed**:
-- `src/lib/fs/fs-state.svelte.ts` — add walkTree method
-- `src/lib/components/FileTree.svelte` — use walkTree
-- `src/lib/components/CommandPalette.svelte` — use walkTree
+- `src/lib/fs/fs-state.svelte.ts`: add walkTree method
+- `src/lib/components/FileTree.svelte`: use walkTree
+- `src/lib/components/CommandPalette.svelte`: use walkTree
 
 ### 4. Reorganize Files by Concern
 
@@ -96,9 +96,9 @@ All imports updated to use `$lib/state/`, `$lib/utils/`, and new component paths
 - Use it in fsState's `getPathForId` and `selectedPath`
 
 **Files changed**:
-- `packages/filesystem/src/tree/path-index.ts` — add reverse map + method
-- `packages/filesystem/src/tree/index.ts` — re-export if needed
-- `apps/opensidian/src/lib/fs/fs-state.svelte.ts` — use new O(1) lookup
+- `packages/filesystem/src/tree/path-index.ts`: add reverse map + method
+- `packages/filesystem/src/tree/index.ts`: re-export if needed
+- `apps/opensidian/src/lib/fs/fs-state.svelte.ts`: use new O(1) lookup
 
 ## Task List
 
@@ -129,9 +129,9 @@ All imports updated to use `$lib/state/`, `$lib/utils/`, and new component paths
 **5 commits, 14 files changed:**
 
 1. `docs(opensidian)`: Spec plan + file renames (git mv)
-2. `refactor(opensidian)`: Core state—dialog state in zone 2, `withErrorToast` helper in zone 3, `walkTree<T>` generic method, O(1) `getPathById` in path-index.ts
-3. `refactor(opensidian)`: Dialog consolidation—3 dialogs read from fsState singleton (no props), rendered once in AppShell. FileTreeItem dropped from 101 to 85 lines, Toolbar from 155 to 134 lines
-4. `refactor(opensidian)`: walkTree usage—FileTree.visibleIds 15 to 4 lines, CommandPalette.allFiles 20 to 8 lines
+2. `refactor(opensidian)`: Core state. Dialog state in zone 2, `withErrorToast` helper in zone 3, `walkTree<T>` generic method, O(1) `getPathById` in path-index.ts
+3. `refactor(opensidian)`: Dialog consolidation: 3 dialogs read from fsState singleton (no props), rendered once in AppShell. FileTreeItem dropped from 101 to 85 lines, Toolbar from 155 to 134 lines
+4. `refactor(opensidian)`: walkTree usage. FileTree.visibleIds 15 to 4 lines, CommandPalette.allFiles 20 to 8 lines
 5. `refactor(opensidian)`: Import path updates for reorganized structure
 
 ### Net Impact

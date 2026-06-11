@@ -1,4 +1,4 @@
-# Recording Materializer—Rust Write Commands
+# Recording Materializer. Rust Write Commands
 
 **Date**: 2026-04-15
 **Status**: In Progress

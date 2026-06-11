@@ -20,7 +20,7 @@ Both return plain objects. The distinction is **whether the call modifies a subj
 
 These rules apply to `packages/workspace` primitives and other functions that take a *subject* (a Y.Doc, an attachment, or a comparable composable target) and decorate it. They do **not** apply to:
 
-- Module-level factory singletons in app code (e.g. UI state containers, service clients) — even if those factories perform I/O at construction time. Use `create*`.
+- Module-level factory singletons in app code (e.g. UI state containers, service clients). Even if those factories perform I/O at construction time, use `create*`.
 - Top-level orchestrators that own their own lifecycle and aren't attached to anything external.
 
 The discriminator is **"what is being attached to what?"** If there's no `subject` on the left side of that question, it's `create*`.

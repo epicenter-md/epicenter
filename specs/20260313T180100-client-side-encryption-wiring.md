@@ -6,8 +6,8 @@
 **Related**: PR #1507 (encryption infrastructure), `apps/api/src/app.ts` (server-side key delivery)
 > **Superseded (2026-03-14)**: This spec has been refactored into two focused specs:
 >
-> 1. **`specs/20260314T063000-encryption-wrapper-hardening.md`** — Three explicit encryption modes, error containment, key transition hook, AAD binding. Covers Phase 0 below. Execute first.
-> 2. **`specs/20260314T070000-per-user-workspace-hkdf-key-derivation.md`** — Per-user-per-workspace key derivation via HKDF, `GET /workspaces/:id/key` endpoint, workspace-scoped key cache. Replaces Phases 1-2 below (deployment-wide key from session → per-user-workspace key from endpoint).
+> 1. **`specs/20260314T063000-encryption-wrapper-hardening.md`**: Three explicit encryption modes, error containment, key transition hook, AAD binding. Covers Phase 0 below. Execute first.
+> 2. **`specs/20260314T070000-per-user-workspace-hkdf-key-derivation.md`**: Per-user-per-workspace key derivation via HKDF, `GET /workspaces/:id/key` endpoint, workspace-scoped key cache. Replaces Phases 1-2 below (deployment-wide key from session → per-user-workspace key from endpoint).
 >
 > Phase 3 (per-app wiring) is now part of the HKDF spec's Phase 3. The app inventory and edge cases sections below remain useful reference.
 >
@@ -17,7 +17,7 @@
 
 ## Overview
 
-Wire the encryption infrastructure from PR #1507 into every auth-backed app. The crypto primitives and encrypted KV wrapper exist but are dormant—every app calls `createWorkspace(definition)` without `key`, so nothing encrypts. This spec activates encryption by delivering the server-provided key to each app's workspace.
+Wire the encryption infrastructure from PR #1507 into every auth-backed app. The crypto primitives and encrypted KV wrapper exist but are dormant. Every app calls `createWorkspace(definition)` without `key`, so nothing encrypts. This spec activates encryption by delivering the server-provided key to each app's workspace.
 
 ## Motivation
 
@@ -26,7 +26,7 @@ Wire the encryption infrastructure from PR #1507 into every auth-backed app. The
 The server already delivers an encryption key via Better Auth's `customSession` plugin:
 
 ```typescript
-// apps/api/src/app.ts — server side (already implemented)
+// apps/api/src/app.ts: server side (already implemented)
 customSession(async ({ user, session }) => {
   const encryptionKey = await deriveKeyFromSecret(env.BETTER_AUTH_SECRET);
   return { user, session, encryptionKey: bytesToBase64(encryptionKey) };
@@ -50,7 +50,7 @@ const workspace = createWorkspace(definition)
   .withExtension('persistence', ...)
   .withExtension('sync', ...);
 
-// Auth subscription — sole mechanism for key delivery
+// Auth subscription: sole mechanism for key delivery
 session.subscribe((s) => {
   workspace.activateEncryption(s?.encryptionKey ? base64ToBytes(s.encryptionKey) : undefined);
 });
@@ -86,10 +86,10 @@ Better Auth Server (customSession plugin)
 
 | Decision | Choice | Rationale |
 |----------|--------|-----------|
-| Key delivery | `activateEncryption()` / `lock()` via `$session` subscription | `key` constructor option is static (set once). All runtime key transitions go through `activateEncryption()` and `lock()`. No in-memory key store needed—the subscription calls these methods directly. |
+| Key delivery | `activateEncryption()` / `lock()` via `$session` subscription | `key` constructor option is static (set once). All runtime key transitions go through `activateEncryption()` and `lock()`. No in-memory key store needed. The subscription calls these methods directly. |
 | Key format in memory | `Uint8Array` (decoded from base64 once) | Avoids repeated base64 decode on every `key` access. |
 | Auth client plugin | `customSessionClient()` from `better-auth/client/plugins` | Required to type `session.encryptionKey` on the client. Server already uses `customSession`. |
-| Loading gate | Not needed for initial wiring | Apps are local-first and work without auth. The workspace starts in `plaintext` mode and transitions to `encrypted` when auth completes. No loading gate required—the UI is fully functional in plaintext mode. For page refresh with mixed data, KeyCache (future) prevents partial-data flash. |
+| Loading gate | Not needed for initial wiring | Apps are local-first and work without auth. The workspace starts in `plaintext` mode and transitions to `encrypted` when auth completes. No loading gate required. The UI is fully functional in plaintext mode. For page refresh with mixed data, KeyCache (future) prevents partial-data flash. |
 | No-auth apps | Unchanged | `fs-explorer` and `tab-manager-markdown` don't have auth, don't need encryption. |
 | One commit per app | Yes | Each app is independently deployable and testable. |
 | Encryption mode | Three explicit modes: `plaintext` \| `locked` \| `encrypted` | `key === undefined` currently means passthrough. For encrypted workspaces, no key should mean **locked/read-only**, not plaintext-mode writes that can LWW-win over ciphertext. |
@@ -112,7 +112,7 @@ Better Auth Server (customSession plugin)
 
 ### Phase 1: Per-App Wiring
 
-No shared key store needed. The `$session` subscription calls `workspace.activateEncryption()` or `workspace.lock()` directly—no intermediate abstraction. Each app wires the same 3-line pattern:
+No shared key store needed. The `$session` subscription calls `workspace.activateEncryption()` or `workspace.lock()` directly. No intermediate abstraction. Each app wires the same 3-line pattern:
 
 ```typescript
 session.subscribe((s) => {
@@ -128,23 +128,23 @@ session.subscribe((s) => {
 
 These items address architectural gaps identified during review. They should land before real keys flow to real clients.
 
-- [x] **0.1** **Three explicit encryption modes** — Add a `mode: 'plaintext' | 'locked' | 'encrypted'` state to `createEncryptedKvLww`. When mode is `locked` (key was previously encrypted but is now cleared), `set()` throws or no-ops instead of writing plaintext-mode. Mode transitions: `plaintext` → `encrypted` (key arrives) → `locked` (key cleared / sign-out). Workspaces that have never seen a key stay in `plaintext` mode.
-- [ ] **0.2** **Per-workspace subkey derivation** — In `apps/api/src/app.ts`, change `SHA-256(BETTER_AUTH_SECRET)` to `HKDF(SHA-256(BETTER_AUTH_SECRET), workspaceId)`. Client receives a workspace-scoped key. No change to the encryption primitives—just a different key per workspace.
-- [x] **0.3** **AAD context binding** — Update `encryptValue` and `decryptValue` to accept an optional `aad?: Uint8Array` parameter. The encrypted wrapper passes `encode(workspaceId + ':' + tableName + ':' + key)` as AAD. Ciphertext becomes position-bound.
-- [x] **0.4** **Error containment in observer** — Wrap `maybeDecrypt` calls in the `inner.observe()` handler with `trySync`. On failure, log the error and skip the entry (or mark it as `{ status: 'decrypt-failed' }`) instead of throwing. One bad blob should not poison the entire table.
-- [x] **0.5** **Key transition hook** — Add `lock()` and `activateEncryption(key: Uint8Array)` methods to `YKeyValueLwwEncrypted`. When called, they re-iterate `inner.map`, re-decrypt all entries with the new key, and rebuild `wrapper.map`. The key store calls these when the key changes.
+- [x] **0.1** **Three explicit encryption modes**: Add a `mode: 'plaintext' | 'locked' | 'encrypted'` state to `createEncryptedKvLww`. When mode is `locked` (key was previously encrypted but is now cleared), `set()` throws or no-ops instead of writing plaintext-mode. Mode transitions: `plaintext` → `encrypted` (key arrives) → `locked` (key cleared / sign-out). Workspaces that have never seen a key stay in `plaintext` mode.
+- [ ] **0.2** **Per-workspace subkey derivation**: In `apps/api/src/app.ts`, change `SHA-256(BETTER_AUTH_SECRET)` to `HKDF(SHA-256(BETTER_AUTH_SECRET), workspaceId)`. Client receives a workspace-scoped key. No change to the encryption primitives. Just a different key per workspace.
+- [x] **0.3** **AAD context binding**: Update `encryptValue` and `decryptValue` to accept an optional `aad?: Uint8Array` parameter. The encrypted wrapper passes `encode(workspaceId + ':' + tableName + ':' + key)` as AAD. Ciphertext becomes position-bound.
+- [x] **0.4** **Error containment in observer**: Wrap `maybeDecrypt` calls in the `inner.observe()` handler with `trySync`. On failure, log the error and skip the entry (or mark it as `{ status: 'decrypt-failed' }`) instead of throwing. One bad blob should not poison the entire table.
+- [x] **0.5** **Key transition hook**: Add `lock()` and `activateEncryption(key: Uint8Array)` methods to `YKeyValueLwwEncrypted`. When called, they re-iterate `inner.map`, re-decrypt all entries with the new key, and rebuild `wrapper.map`. The key store calls these when the key changes.
 
 ### Phase 2: Per-App Wiring (one commit each)
 
 For each auth-backed app:
 
-- [ ] **2.1** **epicenter** — Add `customSessionClient()` to auth client config. Add `$session` subscription calling `workspace.activateEncryption(key)` or `workspace.lock()`. Disable editing UI when `workspace.mode === 'locked'`.
-- [ ] **2.2** **whispering** — Same pattern. Auth client → `$session` subscription → `activateEncryption()`/`lock()`. Disable editing in locked mode.
-- [ ] **2.3** **tab-manager** — Same pattern. Note: Chrome extension auth flow may have different session access patterns (popup vs background). Verify `$session` subscription works in the extension context.
+- [ ] **2.1** **epicenter**: Add `customSessionClient()` to auth client config. Add `$session` subscription calling `workspace.activateEncryption(key)` or `workspace.lock()`. Disable editing UI when `workspace.mode === 'locked'`.
+- [ ] **2.2** **whispering**: Same pattern. Auth client → `$session` subscription → `activateEncryption()`/`lock()`. Disable editing in locked mode.
+- [ ] **2.3** **tab-manager**: Same pattern. Note: Chrome extension auth flow may have different session access patterns (popup vs background). Verify `$session` subscription works in the extension context.
 
 ### Phase 3: Verify
 
-- [ ] **3.1** Run `bun test` in `packages/workspace`—all tests pass (passthrough still works)
+- [ ] **3.1** Run `bun test` in `packages/workspace`: all tests pass (passthrough still works)
 - [ ] **3.2** Run `bun run typecheck` across the monorepo
 - [ ] **3.3** Verify each app builds: `bun run build` in each app directory
 - [ ] **3.4** Manual verification: sign in → check that new KV writes produce `EncryptedBlob` in Y.Doc. Sign out → check that `key` is `undefined`.
@@ -153,7 +153,7 @@ For each auth-backed app:
 
 ### Workspace Created Before Auth Completes
 
-This is the common case—workspaces are created at module scope as side-effect-free exports. The workspace starts in `plaintext` mode (fully functional, no encryption). Users can read and write freely. Once auth completes, the `$session` subscription calls `activateEncryption(key)`, transitioning to `encrypted` mode. New writes encrypt; old plaintext-mode data stays readable via mixed-mode detection.
+This is the common case. Workspaces are created at module scope as side-effect-free exports. The workspace starts in `plaintext` mode (fully functional, no encryption). Users can read and write freely. Once auth completes, the `$session` subscription calls `activateEncryption(key)`, transitioning to `encrypted` mode. New writes encrypt; old plaintext-mode data stays readable via mixed-mode detection.
 
 ### Session Refresh / Token Rotation
 
@@ -161,16 +161,16 @@ When Better Auth refreshes the session, `$session` emits a new value. The subscr
 
 ### Sign Out
 
-On sign-out, `$session` emits `null`. The subscription calls `lock()`. Mode transitions to `locked`—`set()` throws instead of falling through to plaintext-mode. This prevents sign-out from accidentally downgrading previously encrypted data via LWW timestamp wins.
+On sign-out, `$session` emits `null`. The subscription calls `lock()`. Mode transitions to `locked`: `set()` throws instead of falling through to plaintext-mode. This prevents sign-out from accidentally downgrading previously encrypted data via LWW timestamp wins.
 
-**UX in locked mode**: Apps are local-first—users were editing freely before sign-in and expect to keep working. But once encryption has activated, allowing plaintext-mode writes is a security downgrade. The UI should:
+**UX in locked mode**: Apps are local-first. Users were editing freely before sign-in and expect to keep working. But once encryption has activated, allowing plaintext-mode writes is a security downgrade. The UI should:
 - Detect `workspace.mode === 'locked'`
 - Disable all editing controls (forms, inputs, buttons that trigger writes)
 - Show a clear message: "Sign in to continue editing"
 - Keep all data readable from the cached decrypted map
 - On re-sign-in, `activateEncryption(key)` transitions back to `encrypted` and editing resumes
 
-This matches how cloud apps handle expired auth in offline mode—read-only until credentials are restored.
+This matches how cloud apps handle expired auth in offline mode. Read-only until credentials are restored.
 
 ### Mixed None-Mode and Encrypted Data
 
@@ -180,11 +180,11 @@ When encryption first activates, existing data is plaintext-mode. The encrypted 
 
 1. ~~**Should the key store live in `packages/workspace` or per-app?**~~ **RESOLVED.** No key store needed. The `$session` subscription calls `workspace.activateEncryption()` or `workspace.lock()` directly. No intermediate abstraction.
 
-2. **Loading gate UX—what does the user see before auth completes?**
+2. **Loading gate UX. What does the user see before auth completes?**
    - Apps are local-first and work without auth. The workspace is fully functional in `plaintext` mode before sign-in. No loading gate needed.
    - **Caveat**: After sign-in + page refresh, encrypted entries are invisible until `activateEncryption()` fires (~100-500ms). KeyCache (future) would eliminate this flash by seeding the key at construction via the `key` option. For the initial wiring, this brief partial-data flash is acceptable.
 
-3. **Tab-manager extension context—does `$session` work in service workers?**
+3. **Tab-manager extension context. Does `$session` work in service workers?**
    - The extension's auth client may behave differently in the WXT background script vs popup.
    - **Recommendation**: Investigate during implementation. If `$session` doesn't work in the service worker, use `chrome.storage.session` as an intermediary.
 
@@ -202,12 +202,12 @@ When encryption first activates, existing data is plaintext-mode. The encrypted 
 
 ## References
 
-- `packages/workspace/src/shared/crypto/index.ts`—`base64ToBytes`, `EncryptedBlob`
-- `packages/workspace/src/shared/crypto/key-cache.ts`—`KeyCache` interface (not used yet, but defines the future extensibility point)
-- `packages/workspace/src/workspace/create-workspace.ts`—`options.key` parameter
-- `packages/workspace/src/shared/y-keyvalue/y-keyvalue-lww-encrypted.ts`—`createEncryptedKvLww`, `key` option
-- `apps/api/src/app.ts`—server-side `customSession` plugin delivering `encryptionKey`
-- `apps/epicenter/src/lib/yjs/workspace.ts`—Epicenter workspace creation
-- `apps/whispering/src/lib/workspace.ts`—Whispering workspace creation
-- `apps/tab-manager/src/lib/workspace.ts`—Tab Manager workspace creation
+- `packages/workspace/src/shared/crypto/index.ts`: `base64ToBytes`, `EncryptedBlob`
+- `packages/workspace/src/shared/crypto/key-cache.ts`: `KeyCache` interface (not used yet, but defines the future extensibility point)
+- `packages/workspace/src/workspace/create-workspace.ts`: `options.key` parameter
+- `packages/workspace/src/shared/y-keyvalue/y-keyvalue-lww-encrypted.ts`: `createEncryptedKvLww`, `key` option
+- `apps/api/src/app.ts`: server-side `customSession` plugin delivering `encryptionKey`
+- `apps/epicenter/src/lib/yjs/workspace.ts`: Epicenter workspace creation
+- `apps/whispering/src/lib/workspace.ts`: Whispering workspace creation
+- `apps/tab-manager/src/lib/workspace.ts`: Tab Manager workspace creation
 - Better Auth docs: `customSessionClient()` from `better-auth/client/plugins`

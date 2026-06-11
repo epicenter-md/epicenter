@@ -1,6 +1,6 @@
 # The Production Patterns Hiding in Yjs Demos
 
-**The Yjs demos run so fast because they implement patterns most developers don't realize are being demonstrated—dual-channel sync, thin relay servers, and version history without central logic.**
+**The Yjs demos run so fast because they implement patterns most developers don't realize are being demonstrated. Dual-channel sync, thin relay servers, and version history without central logic.**
 
 > Every Yjs demo is a working reference implementation. Not toys. Not tutorials. Production code that shows you exactly how to build collaborative apps.
 
@@ -53,7 +53,7 @@ The speed is because of a pattern hidden inside `y-websocket` provider that deve
 └──────────────────────────────────────────────────────────────┘
 ```
 
-The BroadcastChannel lets same-origin tabs synchronize with zero network latency. The WebSocket lets any device in the world join the same session and persists state on the server. Both channels operate independently—if the WebSocket is down, tabs still sync. If you disconnect from the network, local tabs keep working.
+The BroadcastChannel lets same-origin tabs synchronize with zero network latency. The WebSocket lets any device in the world join the same session and persists state on the server. Both channels operate independently. If the WebSocket is down, tabs still sync. If you disconnect from the network, local tabs keep working.
 
 This is handled automatically inside the `y-websocket` provider. There's no config. No opt-in. It just works. But most developers don't realize it exists because you never have to think about it.
 
@@ -67,7 +67,7 @@ Disconnecting calls `provider.disconnect()`, which does three things:
 2. Calls `disconnectBc()` to unsubscribe from BroadcastChannel and broadcast an awareness removal message (tells other tabs "I'm offline, clear my cursor")
 3. Calls `closeWebsocketConnection()` to close the actual TCP connection
 
-Here's what matters: your local `Y.Doc` is completely intact. You can keep typing. Edits accumulate locally. When you reconnect, the provider's `connect()` method opens a new WebSocket and immediately sends Sync Step 1—a compact encoding of "here's what I already have."
+Here's what matters: your local `Y.Doc` is completely intact. You can keep typing. Edits accumulate locally. When you reconnect, the provider's `connect()` method opens a new WebSocket and immediately sends Sync Step 1. A compact encoding of "here's what I already have."
 
 The server receives that state vector, compares it against its document state, and responds with Sync Step 2: only the missing updates. Your local doc merges those updates. All your buffered edits are sent to the server. Other clients receive them. Everyone converges to the same state.
 
@@ -133,7 +133,7 @@ wss.on('connection', (conn, req) => {
 })
 ```
 
-No CRDT logic on the server. No conflict resolution. No operational transforms. The server doesn't even know it's handling a CRDT—it just receives bytes, applies them to a Y.Doc, and broadcasts those same bytes to other clients. The intelligence is entirely on the client side.
+No CRDT logic on the server. No conflict resolution. No operational transforms. The server doesn't even know it's handling a CRDT. It just receives bytes, applies them to a Y.Doc, and broadcasts those same bytes to other clients. The intelligence is entirely on the client side.
 
 This is the opposite of traditional collaborative editing servers, which have to merge operations, resolve conflicts, and maintain canonical state. The Yjs pattern inverts this: clients sync peer-to-peer via CRDTs, the server is just a relay and durability layer.
 
@@ -147,7 +147,7 @@ Compare two approaches:
 | Scales vertically (bigger server)      | Scales horizontally (more servers) |
 | Hard to test (state reconciliation)    | Easy to test (deterministic) |
 
-The demos use this pattern across all 8 editors—Quill, ProseMirror, Monaco, CodeMirror 5 & 6, and the React variants. Same server architecture works for all of them because the server never cares about editor-specific logic.
+The demos use this pattern across all 8 editors. Quill, ProseMirror, Monaco, CodeMirror 5 & 6, and the React variants. Same server architecture works for all of them because the server never cares about editor-specific logic.
 
 ## Awareness and Ephemeral State
 
@@ -170,7 +170,7 @@ provider.awareness.setLocalStateField('user', {
 })
 ```
 
-This metadata is broadcast via awareness, not stored in the CRDT. It's ephemeral—if you disconnect, your awareness state vanishes. It doesn't persist. Other clients automatically clean up your cursor, your name badge, everything.
+This metadata is broadcast via awareness, not stored in the CRDT. It's ephemeral. If you disconnect, your awareness state vanishes. It doesn't persist. Other clients automatically clean up your cursor, your name badge, everything.
 
 The awareness protocol is built into `y-websocket` the same way BroadcastChannel is: automatic, no config. It piggybacks on the same WebSocket connection but uses a different message type (messageAwareness instead of messageSync). Clients broadcast awareness updates whenever their local state changes, and the server repeats them to all other peers.
 
@@ -283,8 +283,8 @@ For more on these patterns:
 
 And see the companion articles:
 
-- [Yjs Has Free WebSocket Infrastructure (Just for Demos)](./yjs-demos-free-websocket-infrastructure.md) — how to use the public server for your own prototypes
-- [Why the Yjs Demos Website Is Your Best Learning Resource](./yjs-demos-best-learning-resource.md) — meta-level guide to learning from demos.yjs.dev
+- [Yjs Has Free WebSocket Infrastructure (Just for Demos)](./yjs-demos-free-websocket-infrastructure.md): how to use the public server for your own prototypes
+- [Why the Yjs Demos Website Is Your Best Learning Resource](./yjs-demos-best-learning-resource.md): meta-level guide to learning from demos.yjs.dev
 
 ---
 

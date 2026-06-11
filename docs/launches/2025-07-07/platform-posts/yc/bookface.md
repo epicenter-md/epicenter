@@ -11,7 +11,7 @@ How I code 5x faster by talking to my computer
 
 Been experimenting with a new coding workflow: splitting Claude Code five ways, then using voice-activated dictation to manage all of them simultaneously.
 
-The key innovation is completely hands-free operation—I don't even press a key. I can be typing or moving my mouse on one task, and the moment I have a thought, I just start speaking out loud.
+The key innovation is completely hands-free operation. I don't even press a key. I can be typing or moving my mouse on one task, and the moment I have a thought, I just start speaking out loud.
 
 I speak naturally while coding, get instant transcription, and paste. No carefully crafted prompts; I just talk like I'm explaining to a colleague. Claude just gets it.
 
@@ -21,9 +21,9 @@ What surprised me most is how it changes your thinking. When you're not worried 
 
 Here's a 3-min demo of the workflow: https://www.youtube.com/watch?v=tP1fuFpJt7g&t=8s
 
-For anyone who wants to try this —I use Whispering, an open-source transcription app I built. You bring your own API key (e.g. Groq is $0.02/hour) and your audio goes directly to them. No middleman servers.
+For anyone who wants to try this: I use Whispering, an open-source transcription app I built. You bring your own API key (e.g. Groq is $0.02/hour) and your audio goes directly to them. No middleman servers.
 
-Launched it today on HN and Reddit. The response has been interesting—people seem more excited about the workflow than the cost savings.
+Launched it today on HN and Reddit. The response has been interesting. People seem more excited about the workflow than the cost savings.
 
 GitHub: https://github.com/EpicenterHQ/epicenter
 

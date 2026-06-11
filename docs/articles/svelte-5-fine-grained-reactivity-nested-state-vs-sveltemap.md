@@ -1,6 +1,6 @@
 # Svelte 5 Fine-Grained Reactivity: Nested $state vs SvelteMap
 
-I needed cell-level reactivity for a YJS-backed table system. When a single cell changes, only that cell should re-render—not the entire row or table. Here's what I learned comparing two approaches.
+I needed cell-level reactivity for a YJS-backed table system. When a single cell changes, only that cell should re-render. Not the entire row or table. Here's what I learned comparing two approaches.
 
 ## The Problem
 
@@ -112,8 +112,8 @@ When you click "Update Title" on row-1, only the `$inspect` for `rows['row-1'].t
 
 **The key insight:** Svelte 5's reactivity is fine-grained at the property level for both approaches. You get cell-level precision as long as you:
 
-1. **Mutate in place** — don't spread and replace the whole object
-2. **Access specific properties** — don't read the entire object structure unnecessarily
+1. **Mutate in place**: don't spread and replace the whole object
+2. **Access specific properties**: don't read the entire object structure unnecessarily
 
 ## What Breaks Fine-Grained Reactivity
 
@@ -356,7 +356,7 @@ If you need to know for your specific case:
 
 Run this in your actual environment. The results will depend on your data shape, access patterns, and browser.
 
-> **Real-world result:** I ran this benchmark and found `SvelteMap` to be roughly 2x faster—often ~1ms vs ~2ms for the same operations. The proxy overhead in `$state` is measurable at scale.
+> **Real-world result:** I ran this benchmark and found `SvelteMap` to be roughly 2x faster. Often ~1ms vs ~2ms for the same operations. The proxy overhead in `$state` is measurable at scale.
 
 ### My Take
 

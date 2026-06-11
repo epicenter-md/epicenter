@@ -49,7 +49,7 @@ array: [{key:'theme', val:'dark'}]                     // still 1 item!
 array: [{key:'theme', val:'light'}]                    // still 1 item!
 ```
 
-**Why Y.Array doesn't have the same problem**: When you delete from Y.Array, Yjs marks the item as a "tombstone" but doesn't retain the full value—just enough metadata to know it was deleted.
+**Why Y.Array doesn't have the same problem**: When you delete from Y.Array, Yjs marks the item as a "tombstone" but doesn't retain the full value. Just enough metadata to know it was deleted.
 
 ## The Trade-off
 

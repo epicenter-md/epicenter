@@ -2,7 +2,7 @@
 
 Epicenter has two packages for storing application data: `@epicenter/workspace` (typed tables, KV, documents) and `@epicenter/filesystem` (POSIX-style virtual files and folders). The workspace is the default. Most apps should use it directly and never touch the filesystem package.
 
-The interesting part is that the filesystem isn't a separate storage system—it's built on top of workspace tables. The specialized API composes on the general-purpose one, not beside it.
+The interesting part is that the filesystem isn't a separate storage system. It's built on top of workspace tables. The specialized API composes on the general-purpose one, not beside it.
 
 ## Honeycrisp thinks in records
 
@@ -84,7 +84,7 @@ await fs.mv('/docs/hello.md', '/notes/hello.md');
 
 Opensidian needs this because the appeal IS files and folders. Users expect to see a file tree, right-click to create files, drag things between directories. A bash terminal writes to the same filesystem. Paths, not IDs, are the primary way users think about their data.
 
-But notice: the filesystem still uses workspace tables underneath. It doesn't replace them. Opensidian also has `conversations` and `chatMessages` tables alongside the `files` table—those are plain workspace records that don't need file semantics at all.
+But notice: the filesystem still uses workspace tables underneath. It doesn't replace them. Opensidian also has `conversations` and `chatMessages` tables alongside the `files` table. Those are plain workspace records that don't need file semantics at all.
 
 ## The filesystem composes on the workspace
 
@@ -98,7 +98,7 @@ This is the architectural point worth calling out. The dependency graph looks li
 apps (Opensidian)      fs.mkdir, fs.writeFile, fs.mv
 ```
 
-`@epicenter/filesystem` imports `defineTable` from `@epicenter/workspace` to create the `filesTable`. It imports workspace types like `TableHelper` and `Documents` to build the POSIX wrapper. The filesystem package doesn't introduce a new storage layer—it adds a semantic layer on top of the existing one.
+`@epicenter/filesystem` imports `defineTable` from `@epicenter/workspace` to create the `filesTable`. It imports workspace types like `TableHelper` and `Documents` to build the POSIX wrapper. The filesystem package doesn't introduce a new storage layer. It adds a semantic layer on top of the existing one.
 
 That means you get both: structured table access for metadata queries (fast directory listings, path lookups, search indexing) and POSIX-style operations for user-facing file interactions. The same row that `fs.mv` updates is the same row that `workspace.tables.files.get(id)` returns.
 
@@ -106,8 +106,8 @@ That means you get both: structured table access for metadata queries (fast dire
 
 The decision comes down to how users think about the data.
 
-If the app knows the shape of every record upfront—notes with titles, bookmarks with URLs, chat messages with timestamps—workspace tables are the right fit. The data is structured. The fields are known. You define a schema, get typed CRUD, and move on.
+If the app knows the shape of every record upfront. Notes with titles, bookmarks with URLs, chat messages with timestamps. Workspace tables are the right fit. The data is structured. The fields are known. You define a schema, get typed CRUD, and move on.
 
-If the app's data model is inherently hierarchical files—a code editor, a note vault with nested folders, anything where users expect `mkdir` and path resolution—add the filesystem package on top. You still get workspace tables underneath (for metadata queries and other structured data), plus the POSIX operations users expect.
+If the app's data model is inherently hierarchical files. A code editor, a note vault with nested folders, anything where users expect `mkdir` and path resolution. Add the filesystem package on top. You still get workspace tables underneath (for metadata queries and other structured data), plus the POSIX operations users expect.
 
 Honeycrisp doesn't use the filesystem because notes don't need paths. Opensidian does because the file tree is the product.

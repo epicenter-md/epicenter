@@ -9,7 +9,7 @@
 
 ## One-Sentence Test
 
-Async attach* primitives expose `whenDisposed: Promise<unknown>` barriers; bundles compose them into `[Symbol.asyncDispose]` (daemons) or `wipe()` (browser bundles), where the bundle-level method is the actual trigger and the attach-level surface is honest about being a barrier — not a function call disguising one.
+Async attach* primitives expose `whenDisposed: Promise<unknown>` barriers; bundles compose them into `[Symbol.asyncDispose]` (daemons) or `wipe()` (browser bundles), where the bundle-level method is the actual trigger and the attach-level surface is honest about being a barrier, not a function call disguising one.
 
 If the design exposes `[Symbol.asyncDispose]` on individual attachments, requires a `lazy()` memoization to dedup against cascade-fired disposal, or makes `await attachment[Symbol.asyncDispose]()` the call-site shape for "wait for cleanup," the design is not honest yet.
 
@@ -74,7 +74,7 @@ What we learned implementing it:
 
 **2. The function-call syntax obscures the cascade dependency.** When `wipe()` reads `await idb[Symbol.asyncDispose]()`, a fresh reader sees what looks like a trigger. The actual trigger was `doc[Symbol.dispose]()` two lines up; `lazy()` retrieves the in-flight Promise. Verb syntax wraps barrier semantics. Cognitive tax on every reader.
 
-**3. The `lazy()` memoization is machinery for hiding the cascade.** Not just any caching — it specifically exists so that `attachment[Symbol.asyncDispose]()` returns the same Promise as the one the cascade fired. That dedup is a workaround for the verb syntax pretending to be a trigger. With `whenDisposed` (property access), there's nothing to dedup; both readers of the property get the same Promise field that `Promise.withResolvers` resolved when the cascade-fired handler completed.
+**3. The `lazy()` memoization is machinery for hiding the cascade.** Not just any caching: it specifically exists so that `attachment[Symbol.asyncDispose]()` returns the same Promise as the one the cascade fired. That dedup is a workaround for the verb syntax pretending to be a trigger. With `whenDisposed` (property access), there's nothing to dedup; both readers of the property get the same Promise field that `Promise.withResolvers` resolved when the cascade-fired handler completed.
 
 **4. Symmetry is honest only if it reflects symmetric behavior.** All async attachments running their cleanup the same way is honest symmetry. All async attachments exposing the same FUNCTION surface when the call has different semantic meaning at different layers is fake symmetry.
 
@@ -117,11 +117,11 @@ at the bundle level:
   - browser bundles (have async attachments + storage to wipe):
       [Symbol.dispose]() for sync HMR / fire-and-forget cleanup
       wipe() for ordered dispose + clear (returns Promise)
-      NO [Symbol.asyncDispose] — would be a hybrid (sync + async with same semantic)
+      NO [Symbol.asyncDispose]: would be a hybrid (sync + async with same semantic)
 
   - daemon bundles (have async attachments, no storage to wipe):
       [Symbol.asyncDispose]() for `await using runtime = startDaemon()`
-      NO [Symbol.dispose] — daemons always want clean shutdown
+      NO [Symbol.dispose]: daemons always want clean shutdown
 
 at the consumer level:
   - browser:
@@ -131,7 +131,7 @@ at the consumer level:
       await using runtime = startDaemon(...)   // scope-bound cleanup
 ```
 
-This is the user's articulation: each `openX()` factory decides between `Symbol.dispose` and `Symbol.asyncDispose` based on whether any of its composed attachments has async work. If they're all sync, expose `Symbol.dispose`. If any is async, you need a barrier — at the bundle level, that becomes `Symbol.asyncDispose` for daemons or named methods (`wipe()`) for browser bundles where the dispose+clear distinction matters.
+This is the user's articulation: each `openX()` factory decides between `Symbol.dispose` and `Symbol.asyncDispose` based on whether any of its composed attachments has async work. If they're all sync, expose `Symbol.dispose`. If any is async, you need a barrier: at the bundle level, that becomes `Symbol.asyncDispose` for daemons or named methods (`wipe()`) for browser bundles where the dispose+clear distinction matters.
 
 ## Architecture
 
@@ -336,7 +336,7 @@ return {
 
 Move from `packages/workspace/src/shared/lazy.ts` back to `packages/workspace/src/document/y-keyvalue/lazy.ts`. After the revert, the only remaining caller is `y-keyvalue-lww.ts` (sync use, the original use case). Co-located with its single caller.
 
-The JSDoc note added in this branch about "for async disposal, prefer `lazy(async () => { ... })`" should be removed too — there are no async callers anymore.
+The JSDoc note added in this branch about "for async disposal, prefer `lazy(async () => { ... })`" should be removed too. There are no async callers anymore.
 
 ## Implementation plan
 
@@ -372,11 +372,11 @@ Manual smoke (browser): sign in, open a note/entry, sign out, confirm clean relo
 
 ## What we KEEP from the previous spec
 
-Independent of the barrier-shape choice — these were correct calls and stay:
+Independent of the barrier-shape choice. These were correct calls and stay:
 
 - y-indexeddb double-binding fix (`ydoc.off('destroy', idb.destroy)` after construction).
 - Bundle `wipe()` owns the dispose+clear sequence; consumer no longer composes it in `client.ts`.
-- The big comment block in `client.ts` explaining ordering — gone.
+- The big comment block in `client.ts` explaining ordering: gone.
 - Bundle `Symbol.dispose` vs `wipe()` distinction (different verbs for different ops).
 - Daemon `Symbol.asyncDispose` pattern (the bundle is the genuine trigger).
 - CLI `hasDaemonRuntimeShape` slimmed to the four fields `up.ts` actually invokes.
@@ -416,7 +416,7 @@ Same operation, two shapes, with TypeScript silently picking one based on `using
 
 ### Keep `lazy()` in `shared/`
 
-Currently three import sites in this branch (after revert: one — `y-keyvalue-lww.ts`). `shared/` as a location implies cross-cutting use; one caller doesn't justify the implication. Co-locating with the single caller matches what the code actually is: y-keyvalue's internal helper.
+Currently three import sites in this branch (after revert: one: `y-keyvalue-lww.ts`). `shared/` as a location implies cross-cutting use; one caller doesn't justify the implication. Co-locating with the single caller matches what the code actually is: y-keyvalue's internal helper.
 
 ### Lean into y-indexeddb's auto-binding (drop `attachIndexedDb`'s barrier entirely)
 
@@ -440,7 +440,7 @@ Identical semantics to the previous shape; only the syntax changes (property acc
 
 ### Async work rejection inside the destroy handler
 
-`try { await asyncWork() } finally { resolveDisposed() }` — `resolveDisposed()` always fires, even on throw. The barrier resolves even if the async work failed. Errors during cleanup are not propagated to barrier-awaiters; they're cleanup-flow errors, not critical-path. (Same as the implemented identity-reset's behavior; this is intentional.)
+`try { await asyncWork() } finally { resolveDisposed() }`: `resolveDisposed()` always fires, even on throw. The barrier resolves even if the async work failed. Errors during cleanup are not propagated to barrier-awaiters; they're cleanup-flow errors, not critical-path. (Same as the implemented identity-reset's behavior; this is intentional.)
 
 If a future caller needs explicit failure propagation: switch to `try { await asyncWork(); resolveDisposed(); } catch (e) { rejectDisposed(e); }`. Out of scope for this spec.
 

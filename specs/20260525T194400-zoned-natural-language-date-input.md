@@ -131,30 +131,30 @@ Deletes:
 
 ## Implementation Waves
 
-### Wave A — pure helper + types
+### Wave A: pure helper + types
 
 Add `packages/ui/src/natural-language-date-input/parse.ts` exporting `parseInZone`, `ParsedSuggestion`, `ParseInZoneOptions`. Type-only import of `IanaTimeZone` from `@epicenter/workspace`.
 
-### Wave B — primitive update
+### Wave B: primitive update
 
 Modify `natural-language-date-input.svelte`:
 - Add `timeZone?: IanaTimeZone` to the prop type.
 - Replace the inline `$derived` chrono parse with `parseInZone({ text: value, referenceNow: new Date(), timeZone, min, max })`.
 - Default `timeZone` to `IanaTimeZone.current()`.
 
-### Wave C — wrapper component
+### Wave C: wrapper component
 
 Add `zoned-natural-language-date-input.svelte` with the prop shape above. Internally: one `$state(initialDateZone ?? IanaTimeZone.current())` for the draft zone, one child `<NaturalLanguageDateInput timeZone={dateZone} ...>`, one child `<TimezoneCombobox bind:value={dateZone} />`.
 
-### Wave D — exports
+### Wave D: exports
 
 `index.ts` re-exports `ZonedNaturalLanguageDateInput` + `ZonedNaturalLanguageDateInputProps` + `ZonedDateTimeChoice`.
 
-### Wave E — Fuji migration
+### Wave E: Fuji migration
 
 Edit `apps/fuji/src/routes/(signed-in)/components/EntryEditor.svelte` per the diff above.
 
-### Wave F — typecheck + review
+### Wave F: typecheck + review
 
 `bun run --filter @epicenter/ui typecheck` and the Fuji equivalent. Post-implementation review pass per `AGENTS.md`.
 

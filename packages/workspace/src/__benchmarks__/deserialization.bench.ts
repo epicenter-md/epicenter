@@ -3,7 +3,7 @@
  *
  * Answers: "How fast is app startup? How long does it take to load a Y.Doc from binary?"
  *
- * Measures Y.applyUpdate() time at various document sizes—this is the critical
+ * Measures Y.applyUpdate() time at various document sizes. This is the critical
  * path for cold start, tab restore, and initial sync. Also measures snapshot
  * encoding time (encodeStateAsUpdate) which affects save-to-disk performance.
  */

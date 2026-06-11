@@ -1,4 +1,4 @@
-# "This Smells Wrong—Design It from Scratch"
+# "This Smells Wrong. Design It from Scratch"
 
 The most effective prompt I give an AI coding agent isn't "fix this" or "refactor that." It's: "This feels like a code smell. If you were designing this from scratch, what would you have done differently?"
 
@@ -19,7 +19,7 @@ The agent treats existing code as correct-but-broken. It never questions whether
 
 ## Why "from scratch" changes the output
 
-"Design it from scratch" gives the agent permission to throw away the current approach. It stops trying to preserve—and starts evaluating. The internal reasoning shifts from "how do I make this work" to "what's the right way to solve this problem."
+"Design it from scratch" gives the agent permission to throw away the current approach. It stops trying to preserve. And starts evaluating. The internal reasoning shifts from "how do I make this work" to "what's the right way to solve this problem."
 
 Here's a real example. A browser extension had two methods on an auth state object that consumers had to call inside a `$effect` block:
 
@@ -56,11 +56,11 @@ Same behavior. The smell is gone. The agent found it because the prompt gave it 
 
 The full prompt has three parts, and each one matters:
 
-**"This feels like a code smell"** tells the agent something is wrong without specifying what. It has to identify the problem, not just apply a pre-selected fix. This is important—you might be wrong about what the smell is, and the agent might find the real issue is somewhere you didn't expect.
+**"This feels like a code smell"** tells the agent something is wrong without specifying what. It has to identify the problem, not just apply a pre-selected fix. This is important. You might be wrong about what the smell is, and the agent might find the real issue is somewhere you didn't expect.
 
 **"If you were designing this from scratch"** detaches the agent from the current implementation. It stops anchoring to variable names, function boundaries, and file structure. It can propose moving responsibility to a different module, splitting a file, or eliminating a layer entirely.
 
-**"What would you have done differently?"** invites comparison. The agent has to articulate why the new approach is better than the old one. This forces it to identify the specific properties that make the current code problematic—not just "it's messy" but "it exposes internal state transitions as public API" or "it creates an implicit dependency between modules."
+**"What would you have done differently?"** invites comparison. The agent has to articulate why the new approach is better than the old one. This forces it to identify the specific properties that make the current code problematic. Not just "it's messy" but "it exposes internal state transitions as public API" or "it creates an implicit dependency between modules."
 
 ## When to use it
 

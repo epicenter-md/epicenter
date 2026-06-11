@@ -4,7 +4,7 @@ I've been working on syncing Yjs CRDTs with Svelte 5 and landed on a clean patte
 
 ## The Problem
 
-You have an external data source (WebSocket, IndexedDB, Yjs, Firebase, etc.) with its own observation API. You want Svelte components to react when it changes—without manual invalidation.
+You have an external data source (WebSocket, IndexedDB, Yjs, Firebase, etc.) with its own observation API. You want Svelte components to react when it changes. Without manual invalidation.
 
 ## The Pattern
 

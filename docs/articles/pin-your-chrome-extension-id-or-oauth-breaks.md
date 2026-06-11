@@ -1,6 +1,6 @@
 # Pin Your Chrome Extension ID or OAuth Breaks
 
-When you're developing a Chrome extension with a framework like WXT, Chrome generates the extension ID from the absolute path of the unpacked extension folder. Different developer, different path, different ID. Every URL tied to that ID—OAuth redirects, `chrome.identity.getRedirectURL()`, externally connectable allowlists—breaks silently.
+When you're developing a Chrome extension with a framework like WXT, Chrome generates the extension ID from the absolute path of the unpacked extension folder. Different developer, different path, different ID. Every URL tied to that ID. OAuth redirects, `chrome.identity.getRedirectURL()`, externally connectable allowlists. Breaks silently.
 
 ```
 /Users/alice/code/my-ext/.output/chrome-mv3  → ID: abcdefghijklmnop  ✅

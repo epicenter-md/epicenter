@@ -1,6 +1,6 @@
 # Dashboard
 
-Billing data has one source of truth: the server. Dashboard doesn't pretend otherwise—it's a pure API consumer with no CRDTs, no local state, no sync layer. Just a clean read of what Stripe and the hub already know.
+Billing data has one source of truth: the server. Dashboard doesn't pretend otherwise. It's a pure API consumer with no CRDTs, no local state, no sync layer. Just a clean read of what Stripe and the hub already know.
 
 Part of the [Epicenter](https://github.com/EpicenterHQ/epicenter) monorepo. AGPL-3.0 licensed.
 
@@ -18,7 +18,7 @@ Part of the [Epicenter](https://github.com/EpicenterHQ/epicenter) monorepo. AGPL
 └─────────────────────────────────────────────┘
 ```
 
-Unlike every other Epicenter app, there's no workspace here. Billing needs a single authority, so the dashboard fetches everything from the hub API and writes back through Stripe. The diagram is intentionally simple—that's the point.
+Unlike every other Epicenter app, there's no workspace here. Billing needs a single authority, so the dashboard fetches everything from the hub API and writes back through Stripe. The diagram is intentionally simple. That's the point.
 
 ---
 
@@ -26,7 +26,7 @@ Unlike every other Epicenter app, there's no workspace here. Billing needs a sin
 
 Auth gates the entire app via Google sign-in (`@epicenter/svelte/auth-form`). Once signed in, a tabbed UI shows three views: an overview with credit balance, usage-by-model charts (D3 + layerchart), and a top-10 models table; a model cost guide; and a billing activity feed.
 
-Plan management sits below the tabs—monthly/annual toggle, prorated charge preview, confirm to upgrade. "Buy 500 credits" opens a Stripe checkout session. "Manage billing" opens the Stripe billing portal.
+Plan management sits below the tabs. Monthly/annual toggle, prorated charge preview, confirm to upgrade. "Buy 500 credits" opens a Stripe checkout session. "Manage billing" opens the Stripe billing portal.
 
 ---
 
@@ -58,4 +58,4 @@ bun run build    # Static output with /dashboard base path
 
 ## License
 
-[AGPL-3.0](../../LICENSE). Most packages in this monorepo are MIT—this app is the exception.
+[AGPL-3.0](../../LICENSE). Most packages in this monorepo are MIT. This app is the exception.

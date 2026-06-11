@@ -88,7 +88,7 @@ This specification documents the migration from CRDT-embedded rows to JSON-seria
 - **Renamed** `ytext()` → `richtext()` factory function
 - **Renamed** `YtextFieldSchema` → `RichtextFieldSchema` type
 - **Simplified**: `richtext()` now stores a string ID (e.g., `"rtxt_abc123"`) instead of Y.Text
-- **No type distinction**: Removed the `text` vs `blocks` distinction—just a simple ID reference
+- **No type distinction**: Removed the `text` vs `blocks` distinction. Just a simple ID reference
 - Removed `updateYTextFromString()` and `diffChars` import from `yjs.ts`
 - Simplified `serialization.ts` to identity function
 - Simplified `kv-helper.ts` (no Y.Text creation/update logic)

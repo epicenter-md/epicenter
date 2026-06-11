@@ -515,7 +515,7 @@ grep -rn '/workspace-identity' apps/ packages/
 grep -rn 'resolveBearerIdentity' apps/ packages/
 # Expect: zero matches if you deleted it.
 
-grep -rn '—\|–' specs/20260514T154500-id-token-bearing-encryption-keys.md \
+grep -P -rn '\x{2014}|\x{2013}' specs/20260514T154500-id-token-bearing-encryption-keys.md \
                   specs/20260514T120000-machine-auth-oob-clean-break.md
 # Expect: zero.
 ```
@@ -576,7 +576,7 @@ The composition is fully landed when ALL of these are true:
     the same OAuthTokenGrant arktype
 [ ] CLI smoke passes on macOS, Linux server (SSH headless), Docker container
 [ ] Browser smoke passes on at least one app: cold boot, sign-in, sign-out, force-401-reauth, restore
-[ ] grep '—\|–' returns zero in source files, comments, JSDoc, error strings, commit messages
+[ ] grep -P '\x{2014}|\x{2013}' returns zero in source files, comments, JSDoc, error strings, commit messages
 [ ] post-implementation-review run after each wave; findings addressed or filed
 ```
 

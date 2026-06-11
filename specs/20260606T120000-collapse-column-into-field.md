@@ -212,7 +212,7 @@ field.tags(s?)                    // TEXT (JSON array), array of string    <- no
 field.json<S extends TSchema>(s?) // TEXT (JSON), x-json-schema carrier    <- NEW kind, round-trips
 
 // standalone, NOT a kind:
-nullable(inner)                   // Type.Union([inner, Type.Null()]) — the emptiness axis
+nullable(inner)                   // Type.Union([inner, Type.Null()]): the emptiness axis
 ```
 
 ### What was considered and rejected
@@ -300,7 +300,7 @@ deletedAt: nullable(field.datetime()),
 
 ## Implementation Plan
 
-### Phase 1: Build the json kind (additive, no consumer changes) — DONE
+### Phase 1: Build the json kind (additive, no consumer changes): DONE
 
 - [x] **1.1** Added `json` to `FIELDS` (`field.ts`) with the OPEN marker meta + `JSON_SCHEMA_KEYWORD`, `storage:'TEXT'`.
 - [x] **1.2** Added `field.json()` / `field.json<S>(inner)` to `builders.ts` (spread inner keywords + `x-json-schema: true`). No JsonValue gate in the leaf; `FlatJsonTSchema` gates non-JSON inners at `defineTable`.
@@ -308,27 +308,27 @@ deletedAt: nullable(field.datetime()),
 - [x] **1.4** Promoted verification into `field.test.ts` (json describe block + catalog/round-trip/canonical updated for the 10th kind).
 - [x] **1.5** Re-pointed `column.json = field.json` (`sugar.ts`); updated `column.test.ts` / `column.test-d.ts` (the JsonValue gate moved to `FlatJsonTSchema`).
 
-### Phase 1b: matter JsonField widget — DONE
+### Phase 1b: matter JsonField widget: DONE
 
 - [x] `JsonField.svelte` (cloned from `JsonRepairEditor`, FieldProps); `registry.ts` `json` entry + stale-comment reword; `FolderGrid` `COLUMN_WIDTH.json`; `sqlite.ts serializeCell` json -> `JSON.stringify`; `model.ts` header reword. matter typecheck + 44 tests green.
 
-### Phase 2: Allow array kinds as columns — DONE
+### Phase 2: Allow array kinds as columns: DONE
 
 - [x] **2.1** Dropped `'Array'` from `RejectedCompositeKind` in `constraint.ts`; the final `Static<S> extends JsonValue` clause guards element safety (chose the permissive line: `Date[]` still rejects, bare object still nudged to `field.json`).
 - [x] **2.2** `column.test-d.ts`: `_AcceptArrayOfScalar` + `_RejectArrayOfNonJson`. Also reworded the 5 `ColumnError` strings `column.* -> field.*` (folded Phase 4's reword in here).
 - [ ] **2.3** TODO: cross-package consistency test `deriveStorage(array)` === `storageOf('tags')` (from the projection-primitives spec). Deferred, not blocking.
 
-### Phase 2b: export nullable/ianaTimeZone standalone — DONE
+### Phase 2b: export nullable/ianaTimeZone standalone: DONE
 
 - [x] `nullable` + `ianaTimeZone` exported standalone from `sugar.ts` -> `column/index.ts` -> `@epicenter/workspace` barrel. `column` still works (aliases) until Phase 4.
 
-### Phase 3: Stop importing column — DONE
+### Phase 3: Stop importing column: DONE
 
 - [x] **3.1** `nullable` + `ianaTimeZone` exported standalone from `@epicenter/workspace` (NOT `@epicenter/field`: they are substrate policy, the leaf stays kind-only).
 - [x] **3.2** Renamed every `column.X` -> `field.X` / `nullable` / `ianaTimeZone` across ALL consumers (~675 call sites, 30 files): the 8 apps PLUS `packages/skills`, `packages/filesystem`, and `packages/workspace` internals (tests, benchmarks, JSDoc). 10 consumer groups done by parallel sub-agents; workspace internals done in-place. `column.json` kept as a mechanical `field.json` rename (the array-of-string -> `field.tags()` UPGRADE deferred as polish).
 - [x] **3.3** Per-group typecheck green; `@epicenter/field` added as a direct dep to each consuming package; root `bun install` reconciled.
 
-### Phase 4: Remove — DONE
+### Phase 4: Remove: DONE
 
 - [x] **4.1** Deleted the `column` object from `sugar.ts` (kept `nullable` / `ianaTimeZone`); removed `column` from `column/index.ts` and the `@epicenter/workspace` barrel + JSDoc example. `constraint.ts` (`FlatJsonTSchema`) kept; the `column/` dir retained as "column primitives" (constraint + the two substrate builders). Migrated `column.test.ts` (now tests `nullable`/`ianaTimeZone`/cross-substrate) and `column.test-d.ts` (now `field.*` + `nullable`).
 - [x] **4.2** Reworded the `field.ts` doctrine (json IS a kind, `null` is the rejection lane; optionality stays banned, nullability is a substrate axis) and the 5 `ColumnError` strings (`column.* -> field.*`).

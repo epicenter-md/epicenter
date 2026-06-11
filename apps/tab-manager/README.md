@@ -1,6 +1,6 @@
 # Tab Manager
 
-Live tabs and saved tabs are fundamentally different things. Live tabs mirror Chrome's reality—they're ephemeral, they vanish on restart, and they're not yours to own. Saved tabs and bookmarks are workspace data: they persist, sync across devices, and survive browser restarts. Tab Manager is a browser extension that keeps these two layers separate and bridges them with an AI chat drawer that can act on your workspace.
+Live tabs and saved tabs are fundamentally different things. Live tabs mirror Chrome's reality. They're ephemeral, they vanish on restart, and they're not yours to own. Saved tabs and bookmarks are workspace data: they persist, sync across devices, and survive browser restarts. Tab Manager is a browser extension that keeps these two layers separate and bridges them with an AI chat drawer that can act on your workspace.
 
 Part of the [Epicenter](https://github.com/EpicenterHQ/epicenter) monorepo. MIT licensed.
 
@@ -30,7 +30,7 @@ The extension never fights Chrome for ownership of tab state. Ephemeral state se
 
 ### Browser state
 
-On load, `browser-state.svelte.ts` seeds a reactive map of every open window and tab. Chrome's tab and window event listeners keep it current. This layer exposes actions—close, activate, pin, mute, reload, duplicate—all backed by Chrome APIs. Nothing here persists; it's a mirror.
+On load, `browser-state.svelte.ts` seeds a reactive map of every open window and tab. Chrome's tab and window event listeners keep it current. This layer exposes actions: close, activate, pin, mute, reload, and duplicate. They are all backed by Chrome APIs. Nothing here persists; it's a mirror.
 
 ### Workspace state
 
@@ -38,7 +38,7 @@ Saved tabs and bookmarks live in Epicenter workspace tables and sync across devi
 
 ### Side panel
 
-A Svelte app mounted into `#app`. There's no popup and no content scripts—everything runs in the side panel, which opens when you click the extension action button. The background service worker is minimal; its only job is to open the side panel on click.
+A Svelte app mounted into `#app`. There's no popup and no content scripts. Everything runs in the side panel, which opens when you click the extension action button. The background service worker is minimal; its only job is to open the side panel on click.
 
 ### UI
 
@@ -67,7 +67,7 @@ Awareness entries carry `{ deviceId, client: "extension" | "desktop" | "cli" }` 
 
 The `AiDrawer` component is a sign-in-gated chat drawer that supports multiple conversations. Chat streams via SSE from the configured remote server. Workspace actions are converted to AI tools via `@epicenter/workspace/ai`'s `actionsToAiTools`, so the AI can read and write workspace data directly.
 
-Destructive tool calls require inline approval before they execute. Each tool can also be set to "always allow," and that preference is stored in the `toolTrust` table—so it syncs across all your devices like any other workspace data.
+Destructive tool calls require inline approval before they execute. Each tool can also be set to "always allow," and that preference is stored in the `toolTrust` table, so it syncs across all your devices like any other workspace data.
 
 ---
 
@@ -113,15 +113,15 @@ Auth uses Google OAuth via `browser.identity`. Encryption keys are applied on lo
 
 ## Tech stack
 
-- [WXT](https://wxt.dev)—browser extension framework
-- [Svelte 5](https://svelte.dev)—UI (side panel)
-- [Yjs](https://yjs.dev)—CRDT engine
-- [virtua](https://github.com/inokawa/virtua)—virtualized tab list
-- [Tailwind CSS](https://tailwindcss.com)—styling
-- `@epicenter/workspace`—CRDT-backed tables, sync, persistence
+- [WXT](https://wxt.dev): browser extension framework
+- [Svelte 5](https://svelte.dev): UI (side panel)
+- [Yjs](https://yjs.dev): CRDT engine
+- [virtua](https://github.com/inokawa/virtua): virtualized tab list
+- [Tailwind CSS](https://tailwindcss.com): styling
+- `@epicenter/workspace`: CRDT-backed tables, sync, persistence
 - `@epicenter/workspace/ai` - workspace-to-LLM tool bridge
-- `@epicenter/svelte`—auth integration
-- `@epicenter/ui`—shadcn-svelte component library
+- `@epicenter/svelte`: auth integration
+- `@epicenter/ui`: shadcn-svelte component library
 
 ---
 

@@ -52,7 +52,7 @@ function defineProviders<T extends Providers>(exports: T): T;
 
 ## Note
 
-Config key `actions` remains unchanged—it's where you define the actions factory.
+Config key `actions` remains unchanged. It's where you define the actions factory.
 
 ### After
 

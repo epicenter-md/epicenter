@@ -25,8 +25,8 @@ Per-table row counts are available via `table.count()`. But there's no CLI surfa
 
 ### Problems
 
-1. **No terminal-level diagnostics** — Can't quickly check if a workspace is bloating without writing code.
-2. **Multi-workspace blind spot** — If a config exports multiple workspaces, there's no way to compare their sizes at a glance.
+1. **No terminal-level diagnostics**: Can't quickly check if a workspace is bloating without writing code.
+2. **Multi-workspace blind spot**: If a config exports multiple workspaces, there's no way to compare their sizes at a glance.
 
 ### Desired State
 
@@ -47,10 +47,10 @@ shop (8.7 KB)
 
 | Decision | Choice | Rationale |
 | --- | --- | --- |
-| Show all workspaces by default | Yes | The whole point is "each client's size" — filtering to one defeats the purpose. Use `--workspace` to narrow. |
+| Show all workspaces by default | Yes | The whole point is "each client's size": filtering to one defeats the purpose. Use `--workspace` to narrow. |
 | Don't use `runCommand` helper | Custom handler using `loadConfig` directly | `runCommand` resolves to a single client. We need to iterate all clients. |
 | Human-readable default output | Custom formatting (not JSON) | `output()` only does JSON. A human-readable table with formatted byte sizes is more useful for quick checks. |
-| Per-table byte size | Not available — show row counts instead | Yjs stores all tables in a single `Y.Doc`. There's no per-table byte measurement without deep Yjs internals. Row counts via `table.count()` are the next best thing. |
+| Per-table byte size | Not available: show row counts instead | Yjs stores all tables in a single `Y.Doc`. There's no per-table byte measurement without deep Yjs internals. Row counts via `table.count()` are the next best thing. |
 | `--format json` support | Yes | Machine-readable output for scripting. Raw byte counts, not formatted strings. |
 
 ## Architecture
@@ -120,11 +120,11 @@ Row counts are right-aligned. Workspaces separated by blank lines.
 ### No workspaces in config
 
 1. `loadConfig()` already throws `No workspace clients found in epicenter.config.ts` with a helpful hint.
-2. No special handling needed — the error propagates naturally.
+2. No special handling needed: the error propagates naturally.
 
 ### Single workspace with `--workspace` flag
 
-1. Works fine — `--workspace` filters to the matching one.
+1. Works fine: `--workspace` filters to the matching one.
 2. If the ID doesn't match, print an error listing available IDs (same pattern as `resolveWorkspace`).
 
 ### Workspace with no tables
@@ -134,8 +134,8 @@ Row counts are right-aligned. Workspaces separated by blank lines.
 
 ### Workspace with encrypted tables
 
-1. `table.count()` returns `ykv.decryptedSize` — this may be 0 if encryption keys haven't been applied.
-2. Acceptable — the total `encodedSize()` still reflects the real Y.Doc size.
+1. `table.count()` returns `ykv.decryptedSize`: this may be 0 if encryption keys haven't been applied.
+2. Acceptable: the total `encodedSize()` still reflects the real Y.Doc size.
 
 ## Success Criteria
 
@@ -148,13 +148,13 @@ Row counts are right-aligned. Workspaces separated by blank lines.
 
 ## References
 
-- `packages/cli/src/commands/describe.ts` — Simplest existing command to use as template
-- `packages/cli/src/util/command.ts` — `defineCommand`, `withWorkspaceOptions`, `loadConfig` import, error handling patterns
-- `packages/cli/src/load-config.ts` — `loadConfig()` for getting all clients
-- `packages/cli/src/util/format-output.ts` — `output()`, `outputError()`, `formatYargsOptions()`
-- `packages/cli/src/cli.ts` — Registration point (`.command(sizeCommand)`)
-- `packages/cli/src/commands/data.ts` — Pattern for iterating tables (`exportCommand`)
-- `packages/workspace/src/workspace/create-workspace.ts:323-325` — `encodedSize()` implementation
+- `packages/cli/src/commands/describe.ts`: Simplest existing command to use as template
+- `packages/cli/src/util/command.ts`: `defineCommand`, `withWorkspaceOptions`, `loadConfig` import, error handling patterns
+- `packages/cli/src/load-config.ts`: `loadConfig()` for getting all clients
+- `packages/cli/src/util/format-output.ts`: `output()`, `outputError()`, `formatYargsOptions()`
+- `packages/cli/src/cli.ts`: Registration point (`.command(sizeCommand)`)
+- `packages/cli/src/commands/data.ts`: Pattern for iterating tables (`exportCommand`)
+- `packages/workspace/src/workspace/create-workspace.ts:323-325`: `encodedSize()` implementation
 
 ## Review
 
@@ -162,7 +162,7 @@ Row counts are right-aligned. Workspaces separated by blank lines.
 
 ### Summary
 
-Added `epicenter size` command that reports encoded byte size and per-table row counts for all workspaces in an `epicenter.config.ts`. Three files changed: one new (`size.ts`), two modified (`cli.ts`, `README.md`). Implementation follows established command patterns exactly—same error handling, same dispose pattern, same option flags.
+Added `epicenter size` command that reports encoded byte size and per-table row counts for all workspaces in an `epicenter.config.ts`. Three files changed: one new (`size.ts`), two modified (`cli.ts`, `README.md`). Implementation follows established command patterns exactly. Same error handling, same dispose pattern, same option flags.
 
 ### Deviations from Spec
 

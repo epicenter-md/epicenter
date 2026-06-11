@@ -8,10 +8,10 @@
 
 The CLI currently loads workspace configs in-process and operates directly on Y.Doc data. Each invocation initializes a full workspace client, does one operation, and exits. This is:
 
-1. **Slow** — Y.Doc initialization on every command
-2. **Stateless** — no persistence between commands without file-based extensions
-3. **Single-workspace only** — treats multiple configs as an error
-4. **Architecturally misaligned** — the sidecar spec (`specs/20260225T000000-bun-sidecar-workspace-modules.md`) defines a persistent Bun server as the single owner of workspace Y.Docs
+1. **Slow**: Y.Doc initialization on every command
+2. **Stateless**: no persistence between commands without file-based extensions
+3. **Single-workspace only**: treats multiple configs as an error
+4. **Architecturally misaligned**: the sidecar spec (`specs/20260225T000000-bun-sidecar-workspace-modules.md`) defines a persistent Bun server as the single owner of workspace Y.Docs
 
 The server (`packages/server/`) already has multi-workspace support, REST CRUD for tables, and action endpoints. The CLI should become a thin HTTP client that talks to this running server.
 
@@ -31,11 +31,11 @@ The server (`packages/server/`) already has multi-workspace support, REST CRUD f
      └────────────────┘      └───────────────────┘
 ```
 
-The server is the **single owner** of each workspace's Y.Doc. Everything else (CLI, UI, sync peers) talks to it via HTTP or WebSocket. Without the server running, there is no safe way to read/write workspace data — concurrent access to Y.Doc files is a race condition even with CRDTs (lost updates between read-modify-write cycles).
+The server is the **single owner** of each workspace's Y.Doc. Everything else (CLI, UI, sync peers) talks to it via HTTP or WebSocket. Without the server running, there is no safe way to read/write workspace data: concurrent access to Y.Doc files is a race condition even with CRDTs (lost updates between read-modify-write cycles).
 
 ## Key Design Decision: Parameterized Routes
 
-The original plan was to create routes dynamically per workspace (e.g., `new Elysia({ prefix: \`/\${client.id}\` })`). This doesn't work with Eden Treaty because Elysia's type system only accumulates types from statically-defined `.use()` chains. Routes created inside loops produce `Elysia<{}>` — the types vanish.
+The original plan was to create routes dynamically per workspace (e.g., `new Elysia({ prefix: \`/\${client.id}\` })`). This doesn't work with Eden Treaty because Elysia's type system only accumulates types from statically-defined `.use()` chains. Routes created inside loops produce `Elysia<{}>`: the types vanish.
 
 **Solution**: All workspace routes use parameterized paths (`/:workspaceId/tables/:tableName`) and resolve the workspace at request time from a `Record<string, AnyWorkspaceClient>` map. This gives Eden Treaty full static type information.
 
@@ -82,7 +82,7 @@ epicenter <workspace> action <path> [json]         # Run action (query or mutati
 
 ### Design decisions
 
-- **Workspace ID is always the first positional arg** for CRUD commands. No implicit resolution from cwd — explicit is better for a client talking to a remote server that may host multiple workspaces.
+- **Workspace ID is always the first positional arg** for CRUD commands. No implicit resolution from cwd: explicit is better for a client talking to a remote server that may host multiple workspaces.
 - **`kv` and `action` are subcommands**, not top-level like table names. This avoids namespace collisions (a table named `kv` would shadow the KV commands otherwise).
 - **Table names are top-level subcommands** under a workspace, discovered dynamically from the metadata endpoint.
 - **Input methods** are preserved: inline JSON, `@file` references, stdin piping (from existing `parse-input.ts`).
@@ -151,43 +151,43 @@ Created `createKvPlugin(workspaces)` with parameterized routes:
 | `PUT` | `/:workspaceId/kv/:key` | `workspace.kv.set(key, body)` | `200` |
 | `DELETE` | `/:workspaceId/kv/:key` | `workspace.kv.delete(key)` | `200` |
 
-**Modified**: `packages/server/src/workspace/plugin.ts` — mounts KV plugin.
-**Modified**: `packages/server/src/workspace/index.ts` — re-exports `createKvPlugin`.
+**Modified**: `packages/server/src/workspace/plugin.ts`: mounts KV plugin.
+**Modified**: `packages/server/src/workspace/index.ts`: re-exports `createKvPlugin`.
 
 ### Step 2: Refactor server routes to parameterized paths
 
 All workspace routes changed from per-workspace dynamic prefixes to parameterized paths. Each plugin takes `Record<string, AnyWorkspaceClient>` and resolves the workspace at request time.
 
-**Rewritten**: `packages/server/src/workspace/tables.ts` — `/:workspaceId/tables/:tableName[/:id]`
-**Rewritten**: `packages/server/src/workspace/actions.ts` — `/:workspaceId/actions/*` (wildcard)
-**Rewritten**: `packages/server/src/workspace/plugin.ts` — builds workspaces map, adds metadata endpoint, chains all plugins.
+**Rewritten**: `packages/server/src/workspace/tables.ts`: `/:workspaceId/tables/:tableName[/:id]`
+**Rewritten**: `packages/server/src/workspace/actions.ts`: `/:workspaceId/actions/*` (wildcard)
+**Rewritten**: `packages/server/src/workspace/plugin.ts`: builds workspaces map, adds metadata endpoint, chains all plugins.
 
 ### Step 3: Export Elysia App type for Eden Treaty
 
-**Rewritten**: `packages/server/src/local.ts` — auth guard extracted to plugin, all `.use()` chained, unconditional workspace mount, exports `LocalApp` type.
-**Modified**: `packages/server/src/index.ts` — re-exports `LocalApp` type.
+**Rewritten**: `packages/server/src/local.ts`: auth guard extracted to plugin, all `.use()` chained, unconditional workspace mount, exports `LocalApp` type.
+**Modified**: `packages/server/src/index.ts`: re-exports `LocalApp` type.
 
 ### Step 4: Add `@elysiajs/eden` to CLI + create API client
 
-**Modified**: `packages/cli/package.json` — added `@elysiajs/eden` dependency.
-**New file**: `packages/cli/src/api-client.ts` — Eden Treaty client wrapper + `assertServerRunning()`.
+**Modified**: `packages/cli/package.json`: added `@elysiajs/eden` dependency.
+**New file**: `packages/cli/src/api-client.ts`: Eden Treaty client wrapper + `assertServerRunning()`.
 
 ### Step 5: Multi-workspace discovery
 
-**Modified**: `packages/cli/src/discovery.ts` — added `discoverAllWorkspaces(dirs)` with duplicate ID detection.
+**Modified**: `packages/cli/src/discovery.ts`: added `discoverAllWorkspaces(dirs)` with duplicate ID detection.
 
 ### Step 6: Rewrite CRUD commands as HTTP calls
 
-**Rewritten**: `packages/cli/src/commands/table-commands.ts` — Eden Treaty function-call syntax.
-**Rewritten**: `packages/cli/src/commands/kv-commands.ts` — Eden Treaty function-call syntax.
-**Rewritten**: `packages/cli/src/commands/meta-commands.ts` — takes table names from server metadata.
-**Rewritten**: `packages/cli/src/command-builder.ts` — actions via plain `fetch` (wildcards don't type in Eden).
-**New file**: `packages/cli/src/commands/workspaces-command.ts` — lists workspaces via Eden Treaty.
+**Rewritten**: `packages/cli/src/commands/table-commands.ts`: Eden Treaty function-call syntax.
+**Rewritten**: `packages/cli/src/commands/kv-commands.ts`: Eden Treaty function-call syntax.
+**Rewritten**: `packages/cli/src/commands/meta-commands.ts`: takes table names from server metadata.
+**Rewritten**: `packages/cli/src/command-builder.ts`: actions via plain `fetch` (wildcards don't type in Eden).
+**New file**: `packages/cli/src/commands/workspaces-command.ts`: lists workspaces via Eden Treaty.
 
 ### Step 7: Restructure CLI entry point
 
-**Rewritten**: `packages/cli/src/cli.ts` — two-mode dispatch: `serve` loads in-process, everything else fetches workspace metadata then builds commands.
-**Simplified**: `packages/cli/src/bin.ts` — removed watch mode and directory flag parsing.
+**Rewritten**: `packages/cli/src/cli.ts`: two-mode dispatch: `serve` loads in-process, everything else fetches workspace metadata then builds commands.
+**Simplified**: `packages/cli/src/bin.ts`: removed watch mode and directory flag parsing.
 
 ## Server Route Structure
 
@@ -234,7 +234,7 @@ POST /rooms/:room                                   → apply Yjs update
 | `packages/cli/src/commands/table-commands.ts` | Rewrite | Eden Treaty function-call syntax |
 | `packages/cli/src/commands/kv-commands.ts` | Rewrite | Eden Treaty function-call syntax |
 | `packages/cli/src/commands/meta-commands.ts` | Rewrite | Takes table names from server metadata |
-| `packages/cli/src/commands/workspaces-command.ts` | **New** | `epicenter workspaces` — list from server |
+| `packages/cli/src/commands/workspaces-command.ts` | **New** | `epicenter workspaces`: list from server |
 | `packages/cli/src/command-builder.ts` | Rewrite | Action commands via plain `fetch` |
 | `packages/cli/src/cli.test.ts` | Rewrite | Updated for HTTP-based architecture |
 | `packages/cli/src/command-builder.test.ts` | Rewrite | Updated for new action command shape |

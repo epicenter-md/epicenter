@@ -1,4 +1,4 @@
-# Report Spine — Agent Execution Prompts
+# Report Spine: Agent Execution Prompts
 
 Companion to `20260527T001351-report-spine.md`. Each prompt is self-contained: an agent can read the spec and execute without back-and-forth.
 
@@ -7,13 +7,13 @@ Execution note: completed on 2026-05-27 on branch
 to migrate every executable `notify.*` call site before Stage 3 demolition.
 
 Dispatch order:
-1. **Stage 1** — single agent, blocks all others.
-2. **Stage 2** — multiple agents in parallel after Stage 1 lands.
-3. **Stage 3** — single agent after Stage 2 lands.
+1. **Stage 1**: single agent, blocks all others.
+2. **Stage 2**: multiple agents in parallel after Stage 1 lands.
+3. **Stage 3**: single agent after Stage 2 lands.
 
 ---
 
-## Stage 1 prompt — Foundation
+## Stage 1 prompt: Foundation
 
 ```
 Build the foundation for the report spine described in
@@ -55,7 +55,7 @@ Create these files under `apps/whispering/src/lib/report/`:
    - Import AnyTaggedError from 'wellcrafted/error'.
 
 3. `sinks/console.ts`
-   - Re-export `consoleSink` from `wellcrafted/logger`. (Single-line file —
+   - Re-export `consoleSink` from `wellcrafted/logger`. (Single-line file:
      this just centralises the import surface for future swaps.)
 
 4. `sinks/memory.ts`
@@ -122,11 +122,11 @@ When done:
 
 ---
 
-## Stage 2 prompts — Migrate call sites (run in parallel)
+## Stage 2 prompts: Migrate call sites (run in parallel)
 
 Each prompt below is independent. Dispatch them only after Stage 1 lands.
 
-### 2A — `pipeline.ts` and `delivery.ts`
+### 2A: `pipeline.ts` and `delivery.ts`
 
 ```
 Migrate two files to use the new report spine (built in Stage 1, see
@@ -141,7 +141,7 @@ guide:
   - notify.loading -> report.loading (returns LoadingHandle, no string id)
   - notify.warning -> EITHER report.error (if the user should know / might
                       act on it) OR report.info (if we recovered). Decide
-                      per call site — see the spec's call site examples.
+                      per call site: see the spec's call site examples.
   - notify.info    -> report.info
   - notify.dismiss(id) -> handle.dismiss()
 
@@ -158,7 +158,7 @@ Specifics:
 - For the "no transformation selected" case at pipeline.ts:118-129: use
   report.info with the existing link action shape. No cause to attach.
 - For the "Audio not saved" case at pipeline.ts:94-100: report.error
-  with cause (data-loss-adjacent — user should know).
+  with cause (data-loss-adjacent: user should know).
 - For the "Couldn't write to cursor, here's a copy button" case in delivery.ts:
   this is recovered, becomes report.info with the existing copy action and
   the cause attached for logging.
@@ -166,13 +166,13 @@ Specifics:
   not recovered (no fallback action). Becomes report.error.
 
 Do not touch the transcription services (cloud/local/self-hosted) in this
-agent — those are a separate stage.
+agent. Those are a separate stage.
 
 Constraints:
 - AGENTS.md hygiene (no em/en dashes, no console.*, no try/catch).
 - After your edits, `bun run typecheck` from repo root must pass. The
   old `notify.*` and `WhisperingErr` symbols still exist (other call sites
-  still use them) — don't break them.
+  still use them): don't break them.
 - Stage your changes with `git add <file>` (no `git add -A`). Do not commit;
   the user will review.
 
@@ -180,7 +180,7 @@ Report: list of every `notify.X` -> `report.Y` mapping you made, with a one-
 line rationale for any `warning -> error` vs `warning -> info` decision.
 ```
 
-### 2B — Cloud transcription services
+### 2B: Cloud transcription services
 
 ```
 Delete the `toWhisperingErr` sidecar from every cloud transcription service
@@ -202,7 +202,7 @@ For each file:
   3. Keep `transcribe` returning `Result<string, <ProviderError>>` (the
      tagged error). No changes to the defineErrors block itself unless you
      find variant names that won't humanize well (use the humanize rules in
-     `apps/whispering/src/lib/report/humanize.ts` as a sanity check —
+     `apps/whispering/src/lib/report/humanize.ts` as a sanity check:
      rename obviously bad variants while you're here).
 
 Then update `apps/whispering/src/lib/operations/transcribe.ts`:
@@ -218,14 +218,14 @@ Then update `apps/whispering/src/lib/operations/transcribe.ts`:
     directly from the tagged error instead of `error.title` / `error.description`.
 
 For the speaches self-hosted service and the local services (whispercpp,
-parakeet, moonshine), see the separate prompts (2C, 2D) — do NOT modify
+parakeet, moonshine), see the separate prompts (2C, 2D): do NOT modify
 them here.
 
 Constraints:
 - AGENTS.md hygiene.
 - `bun run typecheck` must pass. The call sites in `pipeline.ts` might still
   use `WhisperingError` shape from `transcribeArtifact`'s return; that's
-  fine if Stage 2A hasn't landed yet — but coordinate the merge order.
+  fine if Stage 2A hasn't landed yet. But coordinate the merge order.
   Easiest: land 2B BEFORE 2A so transcribe's return is already a tagged
   error when pipeline.ts gets rewritten.
 
@@ -233,7 +233,7 @@ Report: per-service, the count of lines removed and the resulting return
 type of `transcribe`.
 ```
 
-### 2C — Self-hosted and local transcription services
+### 2C: Self-hosted and local transcription services
 
 ```
 Convert these services from returning prebaked `WhisperingError` shapes to
@@ -255,7 +255,7 @@ For each file:
      cleanly per the rules in `apps/whispering/src/lib/report/humanize.ts`.
   2. Convert every `WhisperingErr({ title, description, action })` call
      into a tagged-error variant constructor. Drop the title/description
-     strings — the message field of defineErrors carries the human text;
+     strings. The message field of defineErrors carries the human text;
      auto-derive will fill the UI. Keep the message string the same as the
      description used to be.
   3. Update the function signature from `Promise<WhisperingResult<string>>`
@@ -263,7 +263,7 @@ For each file:
 
 Then update `dispatchTranscription` in
 `apps/whispering/src/lib/operations/transcribe.ts` to reflect the new return
-types — these services previously already returned `WhisperingResult` so
+types. These services previously already returned `WhisperingResult` so
 no `toWhisperingErr` adapter is involved, just the return type.
 
 Constraints:
@@ -276,7 +276,7 @@ Report: per-service, the new tagged-error variants and the call sites
 upstream that need a follow-up because their types changed.
 ```
 
-### 2D — Other `WhisperingErr` consumers
+### 2D: Other `WhisperingErr` consumers
 
 ```
 Find every remaining consumer of `WhisperingErr` / `WhisperingError` /
@@ -319,7 +319,7 @@ Report: per file, the changes made and any cases you weren't sure about.
 
 ---
 
-## Stage 3 prompt — Demolition
+## Stage 3 prompt: Demolition
 
 ```
 All call sites have been migrated to the report spine described in
@@ -329,7 +329,7 @@ the old machinery.
 Pre-flight (must be true before you start):
   bun x rg "WhisperingErr|WhisperingError|WhisperingResult" apps/whispering/src
 should return zero matches. If it doesn't, stop and report which file still
-references those symbols — that's a Stage 2 miss.
+references those symbols, that's a Stage 2 miss.
 
 Delete these files:
   - apps/whispering/src/lib/result.ts
@@ -369,7 +369,7 @@ Then:
 
 Constraints:
 - AGENTS.md hygiene.
-- If you find a Stage 2 miss, stop immediately and report — do not patch it
+- If you find a Stage 2 miss, stop immediately and report: do not patch it
   in this stage.
 - Do not edit the report spine or the sinks built in Stage 1.
 

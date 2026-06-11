@@ -1,6 +1,6 @@
 # Localhost Is Not a Firewall
 
-Every time you run a dev server, you open a door. `npm run dev`, `opencode`, `jupyter notebook`, `docker`—they all bind to localhost and listen for connections. The implicit assumption is that localhost is safe. Only you can connect, right?
+Every time you run a dev server, you open a door. `npm run dev`, `opencode`, `jupyter notebook`, `docker`: they all bind to localhost and listen for connections. The implicit assumption is that localhost is safe. Only you can connect, right?
 
 Wrong. Any website you visit can send requests to localhost. And if that server responds with `Access-Control-Allow-Origin: *`, the website can read the response too.
 
@@ -35,7 +35,7 @@ for (let port = 4096; port < 4200; port++) {
 }
 ```
 
-If the dev server returns `Access-Control-Allow-Origin: *` (and many do), this works. The attacker now has your session history, code snippets, API responses—whatever that localhost server exposes.
+If the dev server returns `Access-Control-Allow-Origin: *` (and many do), this works. The attacker now has your session history, code snippets, API responses. Whatever that localhost server exposes.
 
 ---
 
@@ -57,9 +57,9 @@ The browser's same-origin policy is designed to prevent `evil.com` from reading 
 
 When you visit `evil.com`, JavaScript on that page can:
 
-1. `fetch('http://localhost:4096/...')` — request is sent
-2. Server processes request — side effects happen
-3. Browser checks CORS headers — decides if JS can read response
+1. `fetch('http://localhost:4096/...')`: request is sent
+2. Server processes request: side effects happen
+3. Browser checks CORS headers: decides if JS can read response
 
 Steps 1 and 2 happen regardless of CORS. If the server does something destructive on a POST request, the damage is done before the browser even checks headers.
 
@@ -79,9 +79,9 @@ app.use(cors()); // Defaults to Access-Control-Allow-Origin: *
 
 This is common. Many dev tools do this because:
 
-1. **Convenience** — no CORS errors when accessing from different ports
-2. **"It's just local"** — assumption that localhost is safe
-3. **Copy-paste culture** — tutorials show `cors()` with no options
+1. **Convenience**: no CORS errors when accessing from different ports
+2. **"It's just local"**: assumption that localhost is safe
+3. **Copy-paste culture**: tutorials show `cors()` with no options
 
 The result: a dev server that accepts requests from any origin and lets any origin read responses.
 
@@ -209,17 +209,17 @@ Explicit allowlist instead of `*`.
 
 **As a user:**
 
-1. **Be aware** — that dev server is a door to your machine
-2. **Use the desktop app when available** — OpenCode's desktop app doesn't expose HTTP
-3. **Close dev servers when not using them** — don't leave them running overnight
-4. **Segment browsing** — use a different browser/profile for sketchy sites
+1. **Be aware**: that dev server is a door to your machine
+2. **Use the desktop app when available**: OpenCode's desktop app doesn't expose HTTP
+3. **Close dev servers when not using them**: don't leave them running overnight
+4. **Segment browsing**: use a different browser/profile for sketchy sites
 
 **As a tool author:**
 
-1. **Don't default to CORS: \*** — require explicit origin configuration
-2. **Add token auth** — generate on startup, print to terminal
-3. **Check Origin header** — reject requests from non-localhost origins
-4. **Document the risk** — let users make informed choices
+1. **Don't default to CORS: \***: require explicit origin configuration
+2. **Add token auth**: generate on startup, print to terminal
+3. **Check Origin header**: reject requests from non-localhost origins
+4. **Document the risk**: let users make informed choices
 
 **As an industry:**
 
@@ -252,4 +252,4 @@ Every dev server you run is trusting every website you visit. That's the deal we
 
 ## Update: It Happened
 
-In January 2026, OpenCode got [CVE-2026-22812](https://github.com/anomalyco/opencode/security/advisories/GHSA-vxw4-wv6m-9hhh)—CVSS 8.8, exactly the attack described above. The JavaScript in "The Attack" section wasn't hypothetical; it was a working exploit. OpenCode has since added `OPENCODE_SERVER_PASSWORD` (HTTP Basic Auth) and made the server opt-in. Full writeup: [OpenCode Got an RCE and I Already Wrote the Exploit](./opencode-rce-called-it.md).
+In January 2026, OpenCode got [CVE-2026-22812](https://github.com/anomalyco/opencode/security/advisories/GHSA-vxw4-wv6m-9hhh): CVSS 8.8, exactly the attack described above. The JavaScript in "The Attack" section wasn't hypothetical; it was a working exploit. OpenCode has since added `OPENCODE_SERVER_PASSWORD` (HTTP Basic Auth) and made the server opt-in. Full writeup: [OpenCode Got an RCE and I Already Wrote the Exploit](./opencode-rce-called-it.md).

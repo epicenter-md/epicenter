@@ -4,7 +4,7 @@
 
 ## Task
 
-Implement VS Code-style search mode toggles and a field scope selector for the tab manager's search input. The spec has the full design—read it first.
+Implement VS Code-style search mode toggles and a field scope selector for the tab manager's search input. The spec has the full design. Read it first.
 
 ## Context
 
@@ -15,7 +15,7 @@ Implement VS Code-style search mode toggles and a field scope selector for the t
 
 ## Execution Order
 
-Work in this exact order. Each step is atomic—verify before moving on.
+Work in this exact order. Each step is atomic. Verify before moving on.
 
 ### Step 1: Create Search Preferences (`search-preferences.svelte.ts`)
 
@@ -32,7 +32,7 @@ Follow the exact pattern from `settings.svelte.ts`:
  * Toggle states survive panel close/reopen and sync across extension
  * contexts (popup, sidebar) via chrome.storage.onChanged.
  *
- * @see {@link ./storage-state.svelte} — chrome.storage reactive wrapper
+ * @see {@link ./storage-state.svelte}: chrome.storage reactive wrapper
  */
 
 import { type } from 'arktype';
@@ -112,10 +112,10 @@ Rewrite `matchesFilter`. The logic:
 1. If not filtering, return true (unchanged)
 2. Read `searchField.current` to determine which fields to test
 3. For each field being tested, apply the match mode:
-   - **Regex mode** (`searchRegex.current`): construct `new RegExp(searchQuery, searchCaseSensitive.current ? '' : 'i')`. Wrap in try/catch—return `false` on invalid regex. Test against the raw field value.
+   - **Regex mode** (`searchRegex.current`): construct `new RegExp(searchQuery, searchCaseSensitive.current ? '' : 'i')`. Wrap in try/catch. Return `false` on invalid regex. Test against the raw field value.
    - **Exact match mode** (`searchExactMatch.current`):
      - For **title**: whole-word boundary match using `new RegExp('\\b' + escapeRegex(q) + '\\b', flags)`
-     - For **URL**: exact match after normalization — `normalizeUrl(url) === normalizeUrl(searchQuery)`
+     - For **URL**: exact match after normalization: `normalizeUrl(url) === normalizeUrl(searchQuery)`
    - **Default mode**: substring `includes` (current behavior, but now respecting `searchCaseSensitive.current`)
 4. Return true if ANY tested field matches
 
@@ -165,19 +165,19 @@ return {
 ```
 
 **MUST DO**:
-- Keep the `flatItems` derivation completely unchanged—it already calls `matchesFilter`, so it picks up the new behavior automatically
+- Keep the `flatItems` derivation completely unchanged. It already calls `matchesFilter`, so it picks up the new behavior automatically
 - The `$derived` chain will reactively pick up `.current` changes from `createStorageState` because the wrapper uses `$state` internally
-- Do NOT add any `$state` for the toggle values—they live in `search-preferences.svelte.ts`
+- Do NOT add any `$state` for the toggle values. They live in `search-preferences.svelte.ts`
 
 **MUST NOT DO**:
 - Don't change the `FlatItem` type
 - Don't change `flatItems` derivation logic
 - Don't change section expansion behavior
-- Don't use `localStorage`—this is a Chrome extension, use the `createStorageState` pattern
+- Don't use `localStorage`: this is a Chrome extension, use the `createStorageState` pattern
 
 **Verify**: Run `lsp_diagnostics` on the file after changes.
 
-### Step 4: UI — Search Toggles + Field Scope (`App.svelte`)
+### Step 4: UI: Search Toggles + Field Scope (`App.svelte`)
 
 Read `apps/tab-manager/src/entrypoints/sidepanel/App.svelte`.
 
@@ -262,13 +262,13 @@ Add the field scope ToggleGroup. Place it after the search input `<div>` and bef
 
 **MUST DO**:
 - Increase input `pr-*` padding to make room for toggles (calculate based on 3 toggles × size-6 + gaps + clear button)
-- Keep all existing keyboard shortcuts (/, @, Escape) working—they're in the `onkeydown` handler on the Input, which doesn't change
+- Keep all existing keyboard shortcuts (/, @, Escape) working. They're in the `onkeydown` handler on the Input, which doesn't change
 - Keep the existing Commands, AI Chat, and Sync buttons unchanged
 - Ensure toggles are vertically centered within the input
 
 **MUST NOT DO**:
 - Don't remove any existing functionality
-- Don't change the Tooltip.Provider wrapping—it already exists at the top of the template
+- Don't change the Tooltip.Provider wrapping. It already exists at the top of the template
 - Don't add any new dependencies
 
 **Verify**: Run `lsp_diagnostics` on App.svelte.
@@ -302,11 +302,11 @@ Update the "No matching tabs" empty state to hint about regex when relevant:
 
 ## Files Changed (Expected)
 
-1. `apps/tab-manager/src/lib/state/search-preferences.svelte.ts` — **NEW** — Persisted search toggle states via `createStorageState`
-2. `apps/tab-manager/src/lib/utils/tab-helpers.ts` — Export `normalizeUrl`
-3. `apps/tab-manager/src/lib/state/unified-view-state.svelte.ts` — Import preferences, updated `matchesFilter`, proxy getters/setters
-4. `apps/tab-manager/src/entrypoints/sidepanel/App.svelte` — Toggle UI, field scope ToggleGroup
-5. `apps/tab-manager/src/lib/components/tabs/UnifiedTabList.svelte` — Regex hint in empty state
+1. `apps/tab-manager/src/lib/state/search-preferences.svelte.ts`: **NEW**: Persisted search toggle states via `createStorageState`
+2. `apps/tab-manager/src/lib/utils/tab-helpers.ts`: Export `normalizeUrl`
+3. `apps/tab-manager/src/lib/state/unified-view-state.svelte.ts`: Import preferences, updated `matchesFilter`, proxy getters/setters
+4. `apps/tab-manager/src/entrypoints/sidepanel/App.svelte`: Toggle UI, field scope ToggleGroup
+5. `apps/tab-manager/src/lib/components/tabs/UnifiedTabList.svelte`: Regex hint in empty state
 
 ## Key Patterns to Follow
 

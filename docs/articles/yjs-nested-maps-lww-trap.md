@@ -333,6 +333,6 @@ The structure of your Yjs document isn't just about convenience; it's about conf
 
 _See also:_
 
-- [Root vs Nested: The Two Worlds of `.get()` in Yjs](./yjs-root-vs-nested-get.md) — Why root-level and nested behave completely differently
-- [The Surprising Truth About "Last Write Wins" in CRDTs](./crdt-last-write-wins-surprise.md) — Why "last" doesn't mean what you think
-- [Yjs Internals](https://github.com/yjs/yjs/blob/main/INTERNALS.md) — How Yjs actually resolves conflicts
+- [Root vs Nested: The Two Worlds of `.get()` in Yjs](./yjs-root-vs-nested-get.md): Why root-level and nested behave completely differently
+- [The Surprising Truth About "Last Write Wins" in CRDTs](./crdt-last-write-wins-surprise.md): Why "last" doesn't mean what you think
+- [Yjs Internals](https://github.com/yjs/yjs/blob/main/INTERNALS.md): How Yjs actually resolves conflicts

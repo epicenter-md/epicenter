@@ -27,10 +27,10 @@
 
 > **Reversed (2026-02-23)**: The encrypted key store was removed in `20260223T102844-remove-key-store-simplify-api-key-resolution.md`. The `keys/` directory, key management REST API, and async `resolveApiKey()` are all gone. API keys now resolve from env vars only. See that spec for rationale (security theater, redundant with env vars, ~400 lines of unnecessary code).
 
-- [x] ~~3.1 Create encrypted key store (AES-256-GCM, `packages/server/src/keys/store.ts`)~~ — Removed
-- [x] ~~3.2 Create key management Elysia plugin (`packages/server/src/keys/plugin.ts`)~~ — Removed
-- [x] ~~3.3 Extend `resolveApiKey()` to check server store (async, 3-step chain)~~ — Reverted to sync 2-step
-- [x] ~~3.4 Wire key management into hub server~~ — Removed
+- [x] ~~3.1 Create encrypted key store (AES-256-GCM, `packages/server/src/keys/store.ts`)~~: Removed
+- [x] ~~3.2 Create key management Elysia plugin (`packages/server/src/keys/plugin.ts`)~~: Removed
+- [x] ~~3.3 Extend `resolveApiKey()` to check server store (async, 3-step chain)~~: Reverted to sync 2-step
+- [x] ~~3.4 Wire key management into hub server~~: Removed
 - [x] 3.5 Tests pass (161/161)
 
 ### Step 4: OLLAMA_HOST Configuration
@@ -53,7 +53,7 @@
 ### Step 7: AI Proxy for OpenCode
 
 - [x] 7.1 Create AI proxy plugin (`packages/server/src/proxy/plugin.ts`)
-- [x] 7.2 Wire proxy into hub server (mounted unconditionally — reads env vars, no keyStore dependency)
+- [x] 7.2 Wire proxy into hub server (mounted unconditionally: reads env vars, no keyStore dependency)
 - [x] 7.3 Tests pass
 
 ### Step 8: Server Discovery via Yjs Awareness
@@ -68,38 +68,38 @@
 - [x] 9.1 Create OpenCode config generator (`packages/server/src/opencode/config.ts`)
 - [x] 9.2 Create XDG-isolated OpenCode spawner with lifecycle management (`packages/server/src/opencode/spawner.ts`)
 - [x] 9.3 Add exports to packages/server (index.ts, package.json)
-- [ ] 9.4 Wire OpenCode lifecycle to Tauri app lifecycle (deferred — needs Rust changes)
-- [ ] 9.5 Plugin list sync via Yjs (deferred — needs `opencode_plugins` table in workspace schema)
+- [ ] 9.4 Wire OpenCode lifecycle to Tauri app lifecycle (deferred: needs Rust changes)
+- [ ] 9.5 Plugin list sync via Yjs (deferred: needs `opencode_plugins` table in workspace schema)
 
 ## Files Created
 
-- `packages/server/src/hub.ts` — Hub server composition
-- `packages/server/src/local.ts` — Local server composition
-- `packages/server/src/auth/plugin.ts` — Better Auth Elysia plugin
-- `packages/server/src/auth/local-auth.ts` — Hub-delegated session validator
-- `packages/server/src/auth/index.ts` — Auth exports
-- ~~`packages/server/src/keys/store.ts` — Encrypted key store (AES-256-GCM)~~ — Removed (2026-02-23)
-- ~~`packages/server/src/keys/plugin.ts` — Key management REST endpoints~~ — Removed (2026-02-23)
-- ~~`packages/server/src/keys/index.ts` — Keys exports~~ — Removed (2026-02-23)
-- `packages/server/src/proxy/plugin.ts` — AI proxy for OpenCode
-- `packages/server/src/proxy/index.ts` — Proxy exports
-- `packages/server/src/discovery/awareness.ts` — Yjs Awareness-based discovery
-- `packages/server/src/discovery/index.ts` — Discovery exports
-- `packages/server/src/opencode/config.ts` — OpenCode config generator (OPENCODE_CONFIG_CONTENT)
-- `packages/server/src/opencode/spawner.ts` — XDG-isolated OpenCode process manager
-- `packages/server/src/opencode/index.ts` — OpenCode exports
+- `packages/server/src/hub.ts`: Hub server composition
+- `packages/server/src/local.ts`: Local server composition
+- `packages/server/src/auth/plugin.ts`: Better Auth Elysia plugin
+- `packages/server/src/auth/local-auth.ts`: Hub-delegated session validator
+- `packages/server/src/auth/index.ts`: Auth exports
+- ~~`packages/server/src/keys/store.ts`: Encrypted key store (AES-256-GCM)~~: Removed (2026-02-23)
+- ~~`packages/server/src/keys/plugin.ts`: Key management REST endpoints~~: Removed (2026-02-23)
+- ~~`packages/server/src/keys/index.ts`: Keys exports~~: Removed (2026-02-23)
+- `packages/server/src/proxy/plugin.ts`: AI proxy for OpenCode
+- `packages/server/src/proxy/index.ts`: Proxy exports
+- `packages/server/src/discovery/awareness.ts`: Yjs Awareness-based discovery
+- `packages/server/src/discovery/index.ts`: Discovery exports
+- `packages/server/src/opencode/config.ts`: OpenCode config generator (OPENCODE_CONFIG_CONTENT)
+- `packages/server/src/opencode/spawner.ts`: XDG-isolated OpenCode process manager
+- `packages/server/src/opencode/index.ts`: OpenCode exports
 
 ## Files Modified
 
-- `packages/server/src/index.ts` — Updated exports (all modules including opencode)
-- `packages/server/src/start-hub.ts` — Hub server entry point
-- `packages/server/src/start-local.ts` — Local server entry point
-- `packages/server/src/ai/adapters.ts` — Sync resolveApiKey (header → env var), removed Ollama. KeyStore removed (2026-02-23).
-- `packages/server/src/ai/plugin.ts` — No config needed, sync key resolution. KeyStore removed (2026-02-23).
-- `packages/server/src/ai/plugin.test.ts` — Fixed 3 tests for async resolveApiKey
-- `packages/server/package.json` — Added better-auth, @elysiajs/cors, new export paths (incl. ./opencode)
-- `apps/tab-manager/src/lib/state/settings.ts` — Added hubServerUrl setting
-- `apps/tab-manager/src/lib/state/chat.svelte.ts` — AI chat routes through hub URL, removed Ollama providers
+- `packages/server/src/index.ts`: Updated exports (all modules including opencode)
+- `packages/server/src/start-hub.ts`: Hub server entry point
+- `packages/server/src/start-local.ts`: Local server entry point
+- `packages/server/src/ai/adapters.ts`: Sync resolveApiKey (header → env var), removed Ollama. KeyStore removed (2026-02-23).
+- `packages/server/src/ai/plugin.ts`: No config needed, sync key resolution. KeyStore removed (2026-02-23).
+- `packages/server/src/ai/plugin.test.ts`: Fixed 3 tests for async resolveApiKey
+- `packages/server/package.json`: Added better-auth, @elysiajs/cors, new export paths (incl. ./opencode)
+- `apps/tab-manager/src/lib/state/settings.ts`: Added hubServerUrl setting
+- `apps/tab-manager/src/lib/state/chat.svelte.ts`: AI chat routes through hub URL, removed Ollama providers
 
 ## Review
 

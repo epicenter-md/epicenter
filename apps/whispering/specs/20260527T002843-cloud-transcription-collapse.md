@@ -13,15 +13,15 @@ This spec is a follow-on to two commits that collapsed the **local** transcripti
 
 The local commits worked because main had already moved local dispatch into a single typed Tauri command (`transcribe_recording(recording_id, config: TranscribeRequest)`), making the JS-side per-engine service files thin shims that did preflight + one Tauri call. Three files became one switch.
 
-**Read this carefully before assuming the same pattern applies here:** cloud provider service files are not thin shims. Each contains real HTTP work — SDK setup, request shaping, error mapping by status code. The 1:1 application of the local pattern would discard meaningful provider-specific behavior. The win is narrower and more selective.
+**Read this carefully before assuming the same pattern applies here:** cloud provider service files are not thin shims. Each contains real HTTP work: SDK setup, request shaping, error mapping by status code. The 1:1 application of the local pattern would discard meaningful provider-specific behavior. The win is narrower and more selective.
 
 ## What is actually duplicated (and what isn't)
 
 ```
 File sizes today:
-  cloud/openai.ts     180  } 
+  cloud/openai.ts     180  }
   cloud/groq.ts       166  } Same shape (OpenAI SDK pattern)
-  cloud/mistral.ts    152  } 
+  cloud/mistral.ts    152  }
   cloud/deepgram.ts   173    Own SDK
   cloud/elevenlabs.ts  67    Own SDK, minimal error handling
   self-hosted/speaches.ts 176 Raw HTTP, arktype validation, friendly error messages
@@ -31,7 +31,7 @@ File sizes today:
 
 ### Duplicated (target this)
 
-**OpenAI / Groq** use OpenAI-SDK-shaped clients (`groq-sdk` extends the OpenAI SDK contract). Compare openai.ts:85-180 with groq.ts:77-167 with a 2-way diff — the differences are:
+**OpenAI / Groq** use OpenAI-SDK-shaped clients (`groq-sdk` extends the OpenAI SDK contract). Compare openai.ts:85-180 with groq.ts:77-167 with a 2-way diff: the differences are:
 
 ```
             openai          groq
@@ -140,17 +140,17 @@ export const OpenaiTranscriptionServiceLive = {
 
 ### 2. Decide on error type strategy (pick one before coding)
 
-**Option A — single shared error**: drop `OpenaiError` / `GroqError` / `MistralError`. Callers and `dispatchCloudTranscription` see `CloudOpenAIShapedError` from these three. Provider identity carried only in the message (`"OpenAI API key is required"`).
+**Option A: single shared error**: drop `OpenaiError` / `GroqError` / `MistralError`. Callers and `dispatchCloudTranscription` see `CloudOpenAIShapedError` from these three. Provider identity carried only in the message (`"OpenAI API key is required"`).
 
 - Pro: one error family for three providers. Fewer types to wire through Result generics in `operations/transcribe.ts`.
 - Con: error.name no longer tells you which provider failed without parsing the message. If anywhere matches on `error.name === 'OpenaiError.RateLimit'`, breakage.
 
-**Option B — provider-tagged shared error**: `CloudOpenAIShapedError.RateLimit({ provider: 'OpenAI', cause })`. Same variants, but every variant carries a `provider` field.
+**Option B: provider-tagged shared error**: `CloudOpenAIShapedError.RateLimit({ provider: 'OpenAI', cause })`. Same variants, but every variant carries a `provider` field.
 
 - Pro: keeps provider identity machine-readable.
 - Con: every callsite that constructs the error pays for the tag. The provider field is rarely consumed.
 
-**Option C — per-provider re-export thin alias**: keep `OpenaiError = CloudOpenAIShapedError` as a re-export from each file, so external consumers (analytics, reporting) keep importing the same name but it points at the shared type.
+**Option C: per-provider re-export thin alias**: keep `OpenaiError = CloudOpenAIShapedError` as a re-export from each file, so external consumers (analytics, reporting) keep importing the same name but it points at the shared type.
 
 - Pro: no API churn for consumers.
 - Con: three names for one type can confuse readers grepping for the error definition.
@@ -159,7 +159,7 @@ export const OpenaiTranscriptionServiceLive = {
 
 ### 3. Optional: collapse self-hosted `speaches` into the same family?
 
-Speaches uses an OpenAI-compatible Whisper API at a user-provided URL. It does NOT use the OpenAI SDK — it uses raw `HttpServiceLive.post` + arktype validation. The error taxonomy is different (friendly messages) and there's no API-key gate.
+Speaches uses an OpenAI-compatible Whisper API at a user-provided URL. It does NOT use the OpenAI SDK. It uses raw `HttpServiceLive.post` + arktype validation. The error taxonomy is different (friendly messages) and there's no API-key gate.
 
 **Recommendation**: leave speaches.ts alone. Its value is that it gives users control over server-side errors with human-readable messages. Forcing it into the SDK-shaped adapter would be a regression in UX for self-hosted users.
 
@@ -190,7 +190,7 @@ The Mistral verification (above) confirmed it's NOT a target, so the impact is m
 
 ## Handoff prompt (copy-paste to a fresh agent)
 
-> Apply spec `apps/whispering/specs/20260527T002843-cloud-transcription-collapse.md`. This is a continuation of two recent commits (`165c10b03`, `b662724a4`) that collapsed the *local* transcription engines. The cloud spec is more selective — read its "What is actually duplicated (and what isn't)" section first.
+> Apply spec `apps/whispering/specs/20260527T002843-cloud-transcription-collapse.md`. This is a continuation of two recent commits (`165c10b03`, `b662724a4`) that collapsed the *local* transcription engines. The cloud spec is more selective: read its "What is actually duplicated (and what isn't)" section first.
 >
 > Concretely:
 >

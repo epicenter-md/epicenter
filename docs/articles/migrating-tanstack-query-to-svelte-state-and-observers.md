@@ -4,7 +4,7 @@
 
 ## Migrating Tanstack Query To Svelte State And Observers
 
-We had a browser extension popup with TanStack Query managing tab state. Every component that could close, pin, mute, reload, duplicate, or suspend a tab needed a `createMutation` call for each action—plus loading spinners, `isPending` checks, and `invalidateQueries` callbacks. A single `TabItem.svelte` component had nine mutation objects. [PR #1337](https://github.com/EpicenterHQ/epicenter/pull/1337) replaced all of them with one import line. Here's what the migration looked like and why the result is so much less code.
+We had a browser extension popup with TanStack Query managing tab state. Every component that could close, pin, mute, reload, duplicate, or suspend a tab needed a `createMutation` call for each action. Plus loading spinners, `isPending` checks, and `invalidateQueries` callbacks. A single `TabItem.svelte` component had nine mutation objects. [PR #1337](https://github.com/EpicenterHQ/epicenter/pull/1337) replaced all of them with one import line. Here's what the migration looked like and why the result is so much less code.
 
 ## The Mutation Tax
 
@@ -170,9 +170,9 @@ Actions are methods on the same class. `browserState.actions.close(tabId)` calls
 
 ## A Note on `createSubscriber`
 
-Svelte 5's `createSubscriber` is designed for bridging external event sources into Svelte reactivity when there's no `$state` involved—reading `navigator.onLine` on demand, or computing a value fresh from an external source on every access. When your event handlers already mutate `$state` directly, the `$state` proxy is the reactive signal. `createSubscriber` would add a second notification channel for something that's already notified. For a deeper comparison, see [`$state` vs `createSubscriber`: Who Owns the Reactivity?](./state-vs-createsubscriber-who-owns-reactivity.md).
+Svelte 5's `createSubscriber` is designed for bridging external event sources into Svelte reactivity when there's no `$state` involved. Reading `navigator.onLine` on demand, or computing a value fresh from an external source on every access. When your event handlers already mutate `$state` directly, the `$state` proxy is the reactive signal. `createSubscriber` would add a second notification channel for something that's already notified. For a deeper comparison, see [`$state` vs `createSubscriber`: Who Owns the Reactivity?](./state-vs-createsubscriber-who-owns-reactivity.md).
 
-For the architectural reasoning behind this migration—why TanStack Query's pull-based model was wrong for push-based browser APIs—see [Stop Caching Data That Isn't Remote](./when-tanstack-query-is-the-wrong-abstraction.md).
+For the architectural reasoning behind this migration. Why TanStack Query's pull-based model was wrong for push-based browser APIs. See [Stop Caching Data That Isn't Remote](./when-tanstack-query-is-the-wrong-abstraction.md).
 
 ## What This Means
 

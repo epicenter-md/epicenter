@@ -3,18 +3,18 @@
 **Date**: 2026-02-09T00:00:00
 **Status**: Implemented
 **Parent**: `specs/20260208T000000-yjs-filesystem-spec.md`
-**Implemented by**: `specs/20260211T100000-simplified-ytext-content-store.md` (further superseded by `specs/20260211T230000-timeline-content-storage-implementation.md`) — the simplification went further than this spec planned. Pool and cache were dropped. `openDocument()`/`documentHandleToString()` were removed entirely. `ContentDocStore` kept as `ensure`/`destroy`/`destroyAll`. The ensure/heal/open pipeline was simplified to just `ensure` — no healing, no document handles.
-**See also**: `specs/20260211T220000-yjs-content-doc-multi-mode-research.md` — `ContentDocStore` remains unchanged under Option F. The timeline changes what's inside each Y.Doc, not how Y.Doc lifecycle is managed.
+**Implemented by**: `specs/20260211T100000-simplified-ytext-content-store.md` (further superseded by `specs/20260211T230000-timeline-content-storage-implementation.md`): the simplification went further than this spec planned. Pool and cache were dropped. `openDocument()`/`documentHandleToString()` were removed entirely. `ContentDocStore` kept as `ensure`/`destroy`/`destroyAll`. The ensure/heal/open pipeline was simplified to just `ensure`: no healing, no document handles.
+**See also**: `specs/20260211T220000-yjs-content-doc-multi-mode-research.md`: `ContentDocStore` remains unchanged under Option F. The timeline changes what's inside each Y.Doc, not how Y.Doc lifecycle is managed.
 
-> **Note (2026-02-11)**: The `mv()` type-changing rename concept is eliminated entirely — all files use `Y.Text('content')`, so `mv()` is always metadata-only. No `store.destroy()` in `mv()`, no healing, no conversion.
+> **Note (2026-02-11)**: The `mv()` type-changing rename concept is eliminated entirely: all files use `Y.Text('content')`, so `mv()` is always metadata-only. No `store.destroy()` in `mv()`, no healing, no conversion.
 
 ## Problem
 
 The current content doc system has two mechanisms that add complexity without proportional benefit:
 
-1. **ContentDocPool** — reference-counted acquire/release lifecycle for per-file Y.Docs. In practice, every filesystem operation (readFile, writeFile) acquires and releases in the same synchronous scope. The refcount never exceeds 1 in headless usage. The pool exists for a UI editor scenario that doesn't exist yet.
+1. **ContentDocPool**: reference-counted acquire/release lifecycle for per-file Y.Docs. In practice, every filesystem operation (readFile, writeFile) acquires and releases in the same synchronous scope. The refcount never exceeds 1 in headless usage. The pool exists for a UI editor scenario that doesn't exist yet.
 
-2. **Plaintext cache** (`index.plaintext: Map<FileId, string>`) — manually invalidated string cache with **zero observers** on per-file Y.Docs. If a remote collaborator, editor, or provider writes to a Y.Doc, the cache goes stale silently. Adding observers would require loading every Y.Doc into memory, defeating lazy loading entirely.
+2. **Plaintext cache** (`index.plaintext: Map<FileId, string>`): manually invalidated string cache with **zero observers** on per-file Y.Docs. If a remote collaborator, editor, or provider writes to a Y.Doc, the cache goes stale silently. Adding observers would require loading every Y.Doc into memory, defeating lazy loading entirely.
 
 ### Why the cache is fundamentally broken
 
@@ -26,7 +26,7 @@ The cache is updated in exactly 5 places, all inside `YjsFileSystem`:
 - `mv()` with type change deletes it
 - `softDeleteDescendants()` deletes it
 
-Any write that bypasses `YjsFileSystem` — a provider sync, an editor writing directly to the Y.Doc, a remote collaborator — leaves the cache stale. There are no Y.Doc observers to catch this.
+Any write that bypasses `YjsFileSystem`: a provider sync, an editor writing directly to the Y.Doc, a remote collaborator: leaves the cache stale. There are no Y.Doc observers to catch this.
 
 ### Why acquire/release adds ceremony without value
 
@@ -45,7 +45,7 @@ The pool creates a Y.Doc on acquire and destroys it on release. For `writeFile`,
 
 ---
 
-## Proposal: ContentDocStore — a Y.Doc Lifecycle Manager
+## Proposal: ContentDocStore: a Y.Doc Lifecycle Manager
 
 Replace the pool and cache with a **ContentDocStore**: a data structure that manages the lifecycle of many per-file Y.Docs. It holds live `Y.Doc` instances keyed by `FileId`. That's all it does.
 
@@ -58,7 +58,7 @@ import type * as Y from 'yjs';
 import type { FileId } from './types.js';
 
 export type ContentDocStore = {
-	/** Get or create a Y.Doc for a file. Idempotent — returns existing if already created. */
+	/** Get or create a Y.Doc for a file. Idempotent: returns existing if already created. */
 	ensure(fileId: FileId): Y.Doc;
 	/** Destroy a specific file's Y.Doc. Called when a file is deleted. No-op if not created. */
 	destroy(fileId: FileId): void;
@@ -106,10 +106,10 @@ export function createContentDocStore(): ContentDocStore {
 
 ### How the filesystem uses it
 
-The filesystem already has `row.name` from its metadata lookup. It calls the domain-specific helpers (`healContentType`, `openDocument`, `documentHandleToString`) itself — these are just utility functions, not part of the store.
+The filesystem already has `row.name` from its metadata lookup. It calls the domain-specific helpers (`healContentType`, `openDocument`, `documentHandleToString`) itself. These are just utility functions, not part of the store.
 
 ```typescript
-// readFile — always serialize from live Y.Doc
+// readFile: always serialize from live Y.Doc
 async readFile(path: string): Promise<string> {
   const resolved = posixResolve(this.cwd, path);
   const id = this.resolveId(resolved);
@@ -122,7 +122,7 @@ async readFile(path: string): Promise<string> {
   return documentHandleToString(handle);
 }
 
-// writeFile — write to live Y.Doc, no release needed
+// writeFile: write to live Y.Doc, no release needed
 async writeFile(path: string, data: string): Promise<void> {
   // ...resolve/create file metadata...
   const ydoc = this.store.ensure(id);
@@ -141,7 +141,7 @@ async writeFile(path: string, data: string): Promise<void> {
   // ...update metadata...
 }
 
-// rm — destroy the Y.Doc when file is deleted
+// rm: destroy the Y.Doc when file is deleted
 async rm(path: string, options?: RmOptions): Promise<void> {
   // ...soft delete metadata...
   this.store.destroy(id);
@@ -150,14 +150,14 @@ async rm(path: string, options?: RmOptions): Promise<void> {
 
 No try/finally. No cache set/delete. No acquire/release.
 
-**Why `openDocument` on every call is fine:** `ydoc.getXmlFragment('richtext')` and `ydoc.getText('text')` are just lookups on the Y.Doc's internal shared types map. They return the same instance every time. Creating a `DocumentHandle` is essentially free — it's just wrapping references that already exist.
+**Why `openDocument` on every call is fine:** `ydoc.getXmlFragment('richtext')` and `ydoc.getText('text')` are just lookups on the Y.Doc's internal shared types map. They return the same instance every time. Creating a `DocumentHandle` is essentially free: it's just wrapping references that already exist.
 
 **Why `healContentType` on every call is fine:** It's idempotent. It checks if content is in wrong-type keys and migrates if needed. If content is already in the right place, it's a no-op (a few empty-string checks).
 
 ### How an editor uses it (future)
 
 ```typescript
-// Editor opens a file — gets the same Y.Doc the filesystem uses
+// Editor opens a file: gets the same Y.Doc the filesystem uses
 const ydoc = store.ensure(fileId);
 
 // Attach providers for persistence + sync (editor's responsibility)
@@ -169,9 +169,9 @@ const content = ydoc.getXmlFragment('richtext'); // same instance filesystem use
 const frontmatter = ydoc.getMap('frontmatter');
 
 // Any edits propagate through the live Y.Doc
-// Next readFile() serializes the latest state — always correct
+// Next readFile() serializes the latest state: always correct
 
-// Editor closes — disconnect sync, Y.Doc stays alive in store
+// Editor closes: disconnect sync, Y.Doc stays alive in store
 provider.destroy();
 persistence.destroy();
 ```
@@ -232,7 +232,7 @@ Runtime Indexes (ephemeral JS Maps, rebuilt from files table)
 | `yjs-file-system.ts`                                     | Replace `pool: ContentDocPool` with `store: ContentDocStore`. Replace `pool.acquire`/`pool.release` pattern with `store.ensure` + `openDocument`. Remove all `index.plaintext` references (8 occurrences). Remove try/finally release blocks. Add `store.destroy(id)` in `rm`/`softDeleteDescendants`. |
 | `file-system-index.ts`                                   | Remove `plaintext` map creation (line 17), return (line 69), and comment (line 29).                                                                                                                                                                                                                    |
 | `content-doc-pool.test.ts` → `content-doc-store.test.ts` | Rewrite: test ensure idempotency, destroy cleanup, destroyAll. Remove refcount/release/loadAndCache tests.                                                                                                                                                                                             |
-| `yjs-file-system.test.ts`                                | No changes expected — tests use readFile/writeFile which behave the same.                                                                                                                                                                                                                              |
+| `yjs-file-system.test.ts`                                | No changes expected: tests use readFile/writeFile which behave the same.                                                                                                                                                                                                                              |
 | `index.ts`                                               | Update re-exports for renamed file.                                                                                                                                                                                                                                                                    |
 
 ### What gets deleted

@@ -6,13 +6,13 @@
 
 `createSyncProvider` has config design issues:
 
-1. **`connect` collides with the method name** — requires renaming to `shouldConnect` internally. A boolean defaulting to `true` that controls "do I start doing things on construction" is a footgun. The only consumer that uses `connect: false` immediately calls `.connect()` after an async gate — it would read better as two explicit lines.
+1. **`connect` collides with the method name**: requires renaming to `shouldConnect` internally. A boolean defaulting to `true` that controls "do I start doing things on construction" is a footgun. The only consumer that uses `connect: false` immediately calls `.connect()` after an async gate: it would read better as two explicit lines.
 
-2. **`baseUrl` lies** — the URL is only used as a WebSocket URL. The JSDoc mentions "HTTP snapshot prefetch" but no such feature exists. The provider silently swaps `http:` → `ws:` and `https:` → `wss:`, which is surprising behavior.
+2. **`baseUrl` lies**: the URL is only used as a WebSocket URL. The JSDoc mentions "HTTP snapshot prefetch" but no such feature exists. The provider silently swaps `http:` → `ws:` and `https:` → `wss:`, which is surprising behavior.
 
-3. **`WebSocketConstructor` is DI pollution** — a testing/environment escape hatch mixed into the main config object. Every production call site ignores it; every test call site sets it.
+3. **`WebSocketConstructor` is DI pollution**: a testing/environment escape hatch mixed into the main config object. Every production call site ignores it; every test call site sets it.
 
-4. **Awareness ownership is ambiguous** — if you pass one in, `destroy()` still calls `removeAwarenessStates` on it. The provider doesn't distinguish "I created this" from "caller owns this."
+4. **Awareness ownership is ambiguous**: if you pass one in, `destroy()` still calls `removeAwarenessStates` on it. The provider doesn't distinguish "I created this" from "caller owns this."
 
 ## Design
 
@@ -53,15 +53,15 @@ The provider no longer does protocol swapping. Callers pass `ws:` or `wss:` URLs
 The sync extension (`packages/epicenter/src/extensions/sync.ts`) currently passes HTTP URLs via `config.url(workspaceId)`. This call site will do the conversion:
 
 ```typescript
-// sync.ts — before
+// sync.ts: before
 const resolvedBaseUrl = config.url(workspaceId);
 
-// sync.ts — after
+// sync.ts: after
 const httpUrl = config.url(workspaceId);
 const wsUrl = httpUrl.replace(/^https:/, 'wss:').replace(/^http:/, 'ws:');
 ```
 
-This keeps the extension's public config as HTTP URLs (which makes sense — the extension config is a higher-level concept that may also use HTTP endpoints in the future), while the provider takes exactly what it uses.
+This keeps the extension's public config as HTTP URLs (which makes sense. The extension config is a higher-level concept that may also use HTTP endpoints in the future), while the provider takes exactly what it uses.
 
 ### Awareness ownership
 
@@ -110,9 +110,9 @@ reconnect() {
 **Files:** `packages/sync-client/src/types.ts`
 
 - [x] **1.1** Rename `baseUrl` → `url` in `SyncProviderConfig`
-- [x] **1.2** ~~Rename `WebSocketConstructor` → `WebSocket`~~ — N/A, already removed in a14008659
+- [x] **1.2** ~~Rename `WebSocketConstructor` → `WebSocket`~~: N/A, already removed in a14008659
 - [x] **1.3** Remove `connect` from `SyncProviderConfig`
-- [x] **1.4** Update `SyncProviderConfig` JSDoc — remove HTTP snapshot references, document awareness ownership
+- [x] **1.4** Update `SyncProviderConfig` JSDoc: remove HTTP snapshot references, document awareness ownership
 
 ### Wave 2: Provider implementation
 **Files:** `packages/sync-client/src/provider.ts`

@@ -15,7 +15,7 @@ metadata:
 
 ## Upstream Grounding
 
-When Turso sync behavior, libSQL driver behavior, embedded replicas, partial sync, concurrency, compatibility, or CLI behavior affects correctness, ask DeepWiki a narrow question against `tursodatabase/turso`. Verify decisive details against local driver versions and Turso docs.
+When Turso sync behavior, libSQL driver behavior, embedded replicas, partial sync, concurrency, compatibility, or CLI behavior affects correctness, use source-backed grounding before relying on memory. If DeepWiki MCP is available, ask a narrow question against `tursodatabase/turso`; for Drizzle's libSQL adapter or typed query surface, ask against `drizzle-team/drizzle-orm`. If DeepWiki is unavailable or the repo is not indexed, use upstream source or official docs directly. Treat DeepWiki as orientation, then verify decisive details against local driver versions, installed types, source, or official docs before changing code.
 
 Use the `drizzle-orm` skill for schema and query builder decisions.
 

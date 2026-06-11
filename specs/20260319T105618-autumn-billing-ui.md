@@ -1,7 +1,7 @@
 > **Superseded.** This spec's research is preserved here for reference, but the implementation plan has been restructured into the phase specs:
 > - [Master Plan](./20260319T140000-autumn-billing-overview.md)
 > - [Phase 2: Billing Routes](./20260319T140002-autumn-phase2-billing-routes.md) (covers Phase 1 below)
-> - [Phase 3: Billing UI](./20260319T140003-autumn-phase3-billing-ui.md) (covers Phases 2–4 below)
+> - [Phase 3: Billing UI](./20260319T140003-autumn-phase3-billing-ui.md) (covers Phases 2-4 below)
 
 ---
 

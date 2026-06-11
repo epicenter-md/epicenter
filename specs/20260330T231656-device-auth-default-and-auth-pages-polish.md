@@ -66,7 +66,7 @@ And the hosted auth pages should keep their current structure while getting a sm
 | Current default | Password is default on TTY; device only on `--device` or non-TTY | `packages/cli/src/commands/auth-command.ts` |
 | Test surface | No obvious dedicated CLI auth tests surfaced in this pass | repo search |
 
-**Key finding**: The behavior change is mostly one-file work. We do not need to redesign auth—just flip the branching and change the flag surface.
+**Key finding**: The behavior change is mostly one-file work. We do not need to redesign auth. Just flip the branching and change the flag surface.
 
 ### Hosted auth UI in `apps/api`
 

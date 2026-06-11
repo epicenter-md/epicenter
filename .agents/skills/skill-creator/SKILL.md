@@ -52,7 +52,25 @@ description: What this skill does and when agents should use it.
 ---
 ```
 
-Use lowercase hyphenated names. `metadata.internal: true` is the only optional Vercel-backed field this skill should teach by default. Avoid agent-specific fields such as `allowed-tools`, hooks, and `context: fork` unless the user explicitly targets an agent that supports them.
+Use lowercase hyphenated names. Vercel CLI discovery only requires `name` and
+`description`, and treats `metadata.internal: true` specially for hidden
+internal skills. The broader Agent Skills format also permits useful optional
+fields such as `license`, arbitrary `metadata`, `argument-hint`, and
+`disable-model-invocation`. Do not remove those fields just because Vercel CLI
+does not need them for `--list`.
+
+Use optional frontmatter intentionally:
+
+- `argument-hint`: slash-invoked skills that need user input.
+- `disable-model-invocation`: skills that should be explicit-only, not
+  model-auto-invoked.
+- `license`: bundled or imported skills whose license terms matter.
+- `metadata`: provenance, version, or internal routing facts that a client may
+  preserve even if another client ignores them.
+
+Avoid agent-specific execution-control fields such as `allowed-tools`, hooks,
+and `context: fork` unless the user explicitly targets an agent that supports
+them.
 
 ## What Not To Add
 
@@ -160,10 +178,10 @@ Validate discovery with the same path the CLI uses before installation:
 bun x --package skills skills add /Users/braden/Code/epicenter/.agents/skills --list
 ```
 
-For one skill:
+For one skill, pass the source directory plus the skill name:
 
 ```bash
-bun x --package skills skills add /Users/braden/Code/epicenter/.agents/skills/<skill-name> --list
+bun x --package skills skills add /Users/braden/Code/epicenter/.agents/skills --skill <skill-name> --list
 ```
 
 The useful signal is:
@@ -175,6 +193,11 @@ Found N skill(s)
 
 If the skill does not appear, fix `SKILL.md` and run the command again. When the current CLI supports it, use `skills use <source>` to forward-test a skill prompt without installing it.
 
+Do not validate a local skill by passing the skill subdirectory itself. Current
+CLI behavior validates that path but can report `No skills found`. For
+`metadata.internal: true` skills, pass `--skill <name>` and confirm the named
+skill appears in the listing.
+
 ## Update A Skill
 
 When updating an existing skill:
@@ -184,7 +207,7 @@ When updating an existing skill:
 3. Check whether linked `references/`, `scripts/`, or `assets/` still earn their keep.
 4. Review the description against realistic trigger and near-miss prompts.
 5. Remove stale local-only scaffolding from the guidance.
-6. Validate with `bun x --package skills skills add <path> --list`.
+6. Validate with the commands in [Validate With Vercel CLI](#validate-with-vercel-cli).
 7. Forward-test subtle behavior with realistic prompts.
 
 Ask draft review questions when the scope is uncertain: does this cover the target use cases, is anything missing, and should any section move to `references/`?
@@ -203,7 +226,10 @@ Use sharper review questions when the design still feels soft:
 - References have clear load conditions.
 - Scripts are justified, non-interactive, and portable.
 - Required tools are stated as prerequisites; the skill does not imply access to apps, files, connectors, or credentials.
-- The skill avoids unsupported frontmatter and agent-specific metadata.
+- Optional frontmatter is intentional: keep cross-agent fields like `license`,
+  `argument-hint`, `disable-model-invocation`, and useful `metadata`; avoid
+  agent-specific execution-control fields unless the target agent supports
+  them.
 - The skill avoids time-sensitive facts unless sourced and necessary.
 - No orphan `CLAUDE.md` files are created; sibling shims only import `@AGENTS.md`.
 - No em dash or en dash characters are present.

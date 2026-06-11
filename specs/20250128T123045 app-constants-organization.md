@@ -12,13 +12,13 @@ My original approach used a runtime function:
 // Single file with runtime function
 export const APPS = (env) => ({
   AUTH: {
-    URL: env.MODE === 'production' 
+    URL: env.MODE === 'production'
       ? 'https://auth.epicenter.so'
       : 'http://localhost:8787'
   },
   SH: {
     URL: env.MODE === 'production'
-      ? 'https://epicenter.sh' 
+      ? 'https://epicenter.sh'
       : 'http://localhost:5173'
   }
 });
@@ -109,7 +109,7 @@ This eliminates runtime environment checking and makes your constants predictabl
 
 ## Implementation Notes
 
-I keep the constants structure identical between files—only the environment detection differs. This maintains API consistency while optimizing for each runtime.
+I keep the constants structure identical between files. Only the environment detection differs. This maintains API consistency while optimizing for each runtime.
 
 The `/env/vite` and `/env/node` naming makes the intended context obvious. You know exactly which file to import based on your environment.
 

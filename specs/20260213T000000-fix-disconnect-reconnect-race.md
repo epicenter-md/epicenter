@@ -2,7 +2,7 @@
 
 **Date**: 2026-02-13
 **Status**: Complete (Superseded)
-**Implementation notes**: The entire `YSweetProvider` was deleted as part of the migration to `@epicenter/sync` (PR #1350). The new `createSyncProvider()` uses a supervisor loop architecture that eliminates the race conditions analyzed here by design. Option B (supervisor loop redesign) was effectively implemented — just in a new package rather than as a refactor of the old one. All issues identified in this spec (generation counter races, listener leaks, reconnect state machine gaps) no longer exist.
+**Implementation notes**: The entire `YSweetProvider` was deleted as part of the migration to `@epicenter/sync` (PR #1350). The new `createSyncProvider()` uses a supervisor loop architecture that eliminates the race conditions analyzed here by design. Option B (supervisor loop redesign) was effectively implemented: just in a new package rather than as a refactor of the old one. All issues identified in this spec (generation counter races, listener leaks, reconnect state machine gaps) no longer exist.
 
 ## What This Document Is
 
@@ -205,8 +205,8 @@ Six different mechanisms, four different call sites, two different guard strateg
 this.connectionTimeoutHandle = setTimeout(() => {
 	if (this.websocket) {
 		this.websocket.close(); // triggers websocketClose
-		this.setStatus(STATUS_ERROR); // redundant — websocketClose does this too
-		this.connect(); // redundant — websocketClose does this too
+		this.setStatus(STATUS_ERROR); // redundant: websocketClose does this too
+		this.connect(); // redundant: websocketClose does this too
 	}
 }, MAX_TIMEOUT_WITHOUT_RECEIVING_HEARTBEAT);
 ```
@@ -461,7 +461,7 @@ Replace the connect loop + event handler decision-making with a single superviso
 
 **Do Option A now (it's done). Plan Option B as a follow-up when runtime server switching is needed.**
 
-The generation counter fix is correct and sufficient. The supervisor loop is architecturally superior, but it's a bigger change than needed to fix the race. The right time to do it is when we need `reconnect()` or `setAuthEndpoint()` — those features require the supervisor loop's architecture naturally.
+The generation counter fix is correct and sufficient. The supervisor loop is architecturally superior, but it's a bigger change than needed to fix the race. The right time to do it is when we need `reconnect()` or `setAuthEndpoint()`: those features require the supervisor loop's architecture naturally.
 
 In the meantime, fix the remaining issues (Part 5) as separate patches:
 
@@ -475,8 +475,8 @@ In the meantime, fix the remaining issues (Part 5) as separate patches:
 
 ## References
 
-- `packages/y-sweet/src/provider.ts` — The file analyzed
-- `packages/y-sweet/src/sleeper.ts` — Sleeper utility
-- `packages/epicenter/src/extensions/y-sweet-sync.ts` — Primary consumer
-- `apps/epicenter/src/lib/yjs/y-sweet-connection.ts` — Direct consumer
-- `specs/20260212T190000-y-sweet-persistence-architecture.md` — Persistence architecture context
+- `packages/y-sweet/src/provider.ts`: The file analyzed
+- `packages/y-sweet/src/sleeper.ts`: Sleeper utility
+- `packages/epicenter/src/extensions/y-sweet-sync.ts`: Primary consumer
+- `apps/epicenter/src/lib/yjs/y-sweet-connection.ts`: Direct consumer
+- `specs/20260212T190000-y-sweet-persistence-architecture.md`: Persistence architecture context

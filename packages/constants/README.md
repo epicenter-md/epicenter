@@ -47,7 +47,7 @@ const devOrigins = Object.values(APPS).map(a => `http://localhost:${a.port}`);
 // Dev server port:
 server: { port: APPS.AUDIO.port, strictPort: true }
 
-// CLI tool — always local:
+// CLI tool: always local:
 const baseURL = `http://localhost:${APPS.API.port}`;
 ```
 
@@ -62,4 +62,4 @@ import { VERSION } from '@epicenter/constants/versions';
 ## Adding a new app
 
 1. Add an entry to `APPS` in `src/apps.ts` with `port` and `urls`.
-2. Every export picks it up automatically — TypeScript enforces completeness.
+2. Every export picks it up automatically: TypeScript enforces completeness.

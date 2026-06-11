@@ -44,7 +44,7 @@ Defenses: `SameSite=Lax` cookies (blocks cross-site POST), CSRF tokens (server g
 
 ## Bearer tokens are immune to CSRF
 
-The browser never attaches Bearer tokens automatically. `evil.com` can make a request to your API, but without the `Authorization` header, it's unauthenticated. The attacker would need XSS to read the token from localStorage first—and that's a different attack entirely.
+The browser never attaches Bearer tokens automatically. `evil.com` can make a request to your API, but without the `Authorization` header, it's unauthenticated. The attacker would need XSS to read the token from localStorage first. And that's a different attack entirely.
 
 ## The trade-off
 
@@ -63,7 +63,7 @@ Each approach is vulnerable to one class of attack the other isn't.
 If an attacker has XSS on your app, they don't need to steal the token or forge a cross-site request. They're running code inside your app, on your origin, with your user's session. They make requests directly:
 
 ```javascript
-// Attacker's XSS payload—works regardless of auth strategy
+// Attacker's XSS payload. Works regardless of auth strategy
 fetch('/api/sensitive-action', {
   method: 'POST',
   credentials: 'include',  // cookies sent automatically

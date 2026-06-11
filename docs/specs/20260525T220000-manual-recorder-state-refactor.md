@@ -295,7 +295,7 @@ Single PR, sequenced commits. Each commit must typecheck and pass any existing t
 - [ ] **1.8** Drop ffmpeg config section from `routes/(app)/(config)/settings/recording/+page.svelte` and `+page.ts`
 - [ ] **1.9** Remove `checkFfmpegRecordingMethodCompatibility()` from `_layout-utils/check-ffmpeg.ts`; remove its call site in `AppLayout.svelte:onMount`
 - [ ] **1.10** Remove ffmpeg branch from `paramsMap` in `query/recorder.ts:89-118` and the `recorderService()` selector
-- [ ] **1.11** Grep for `recording.method === 'ffmpeg'` and `FfmpegRecorder` — verify zero matches outside of migration code
+- [ ] **1.11** Grep for `recording.method === 'ffmpeg'` and `FfmpegRecorder`: verify zero matches outside of migration code
 
 **Keep** (ffmpeg-the-binary):
 - `services/desktop/ffmpeg.ts`
@@ -310,11 +310,11 @@ Single PR, sequenced commits. Each commit must typecheck and pass any existing t
 - [ ] **2.2** Inline the params builder (CPAL needs `await PATHS.DB.RECORDINGS()` fallback; make `buildStartParams` async)
 - [ ] **2.3** Inline the `_currentRecordingId` lifecycle (move from `query/recorder.ts:26`)
 - [ ] **2.4** Move `enumerateDevices` query definition into the new module
-- [ ] **2.5** Verify typecheck — module compiles but is not yet consumed
+- [ ] **2.5** Verify typecheck: module compiles but is not yet consumed
 
 ### Phase 3: Migrate consumers (Commit 3)
 
-Independent file edits — can be fanned out. All swap `rpc.recorder.*` for `manualRecorder.*`.
+Independent file edits: can be fanned out. All swap `rpc.recorder.*` for `manualRecorder.*`.
 
 - [ ] **3.1** `query/actions.ts`: replace all 4 `recorder.*` references; simplify `toggleManualRecording`
 - [ ] **3.2** `_layout-utils/alwaysOnTop.svelte.ts`: delete `createQuery`, read `manualRecorder.state`
@@ -323,7 +323,7 @@ Independent file edits — can be fanned out. All swap `rpc.recorder.*` for `man
 - [ ] **3.5** `(config)/+layout.svelte`: same (5 reads of `getRecorderStateQuery.data`)
 - [ ] **3.6** `(app)/+page.svelte`: same (4 reads + `stopAllRecordingModesExcept`)
 - [ ] **3.7** `ManualDeviceSelector.svelte`: swap `rpc.recorder.enumerateDevices.options` → `manualRecorder.enumerateDevices.options`
-- [ ] **3.8** `FfmpegCommandBuilder.svelte` — already deleted in Phase 1
+- [ ] **3.8** `FfmpegCommandBuilder.svelte`: already deleted in Phase 1
 - [ ] **3.9** `ManualSelectRecordingDevice.svelte`: same swap as 3.7
 
 ### Phase 4: Delete the old query layer (Commit 4)
@@ -387,10 +387,10 @@ Phase 1.6 migration auto-promotes to `'cpal'`. If user explicitly wanted ffmpeg'
 
 ## References
 
-- `apps/whispering/src/lib/state/vad-recorder.svelte.ts` — the pattern being mirrored
-- `apps/whispering/src/lib/query/recorder.ts` — the file being deleted
-- `apps/whispering/src/lib/services/recorder/types.ts` — `RecorderService` interface; `FfmpegRecordingParams` to remove
-- `apps/whispering/src/lib/services/desktop/recorder/ffmpeg.ts` — 679 LOC to delete
-- `apps/whispering/src/lib/services/desktop/recorder/cpal.ts` — Rust-backed service; `getRecorderState` reads from Rust
-- `apps/whispering/src/lib/services/recorder/navigator.ts` — browser backend; state in module-local var
-- DeepWiki search: Tauri emit/listen pattern for state sync — verified canonical "snapshot + subscribe"
+- `apps/whispering/src/lib/state/vad-recorder.svelte.ts`: the pattern being mirrored
+- `apps/whispering/src/lib/query/recorder.ts`: the file being deleted
+- `apps/whispering/src/lib/services/recorder/types.ts`: `RecorderService` interface; `FfmpegRecordingParams` to remove
+- `apps/whispering/src/lib/services/desktop/recorder/ffmpeg.ts`: 679 LOC to delete
+- `apps/whispering/src/lib/services/desktop/recorder/cpal.ts`: Rust-backed service; `getRecorderState` reads from Rust
+- `apps/whispering/src/lib/services/recorder/navigator.ts`: browser backend; state in module-local var
+- DeepWiki search: Tauri emit/listen pattern for state sync: verified canonical "snapshot + subscribe"

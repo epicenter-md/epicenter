@@ -1,6 +1,6 @@
 # Yjs v14: Every YType Is Both a Map and a List
 
-Yjs v14 kills the entire type hierarchy. `Y.Text`, `Y.Array`, `Y.Map`, `Y.XmlElement`, `Y.XmlFragment` — all gone. There's one class now: `YType`, exported as `Type`. Every instance is simultaneously a key-value store and an ordered list. This is the biggest breaking change in Yjs history.
+Yjs v14 kills the entire type hierarchy. `Y.Text`, `Y.Array`, `Y.Map`, `Y.XmlElement`, `Y.XmlFragment`: all gone. There's one class now: `YType`, exported as `Type`. Every instance is simultaneously a key-value store and an ordered list. This is the biggest breaking change in Yjs history.
 
 ## The v13 World: Four Separate Classes
 
@@ -10,10 +10,10 @@ In v13, you pick your data structure upfront:
 import * as Y from 'yjs'
 
 const ydoc = new Y.Doc()
-const text = ydoc.getText('mytext')     // Y.Text — rich text
-const arr = ydoc.getArray('myarray')    // Y.Array — ordered list
-const map = ydoc.getMap('mymap')        // Y.Map — key-value store
-const xml = ydoc.getXmlFragment('myxml') // Y.XmlFragment — XML tree
+const text = ydoc.getText('mytext')     // Y.Text: rich text
+const arr = ydoc.getArray('myarray')    // Y.Array: ordered list
+const map = ydoc.getMap('mymap')        // Y.Map: key-value store
+const xml = ydoc.getXmlFragment('myxml') // Y.XmlFragment: XML tree
 ```
 
 Each class has its own API. `Y.Map` has `set`/`get`/`delete`. `Y.Array` has `insert`/`push`/`toArray`. `Y.Text` has `insert`/`format`/`toDelta`. They don't share methods. They're completely separate CRDT implementations that happen to share the same underlying linked-list data structure.
@@ -24,7 +24,7 @@ Each class has its own API. `Y.Map` has `set`/`get`/`delete`. `Y.Array` has `ins
 import { Doc, Type } from '@y/y'  // package renamed from 'yjs' to '@y/y'
 
 const ydoc = new Doc()
-const type = ydoc.get('anything')  // Type — that's it
+const type = ydoc.get('anything')  // Type, that's it
 ```
 
 There is no `getText`, `getArray`, `getMap`, or `getXmlFragment`. There's just `get`.
@@ -50,7 +50,7 @@ const type = ydoc.get('thing')
 type.setAttr('title', 'My Document')
 type.setAttr('version', 3)
 
-// AND use it as a list — on the same instance
+// AND use it as a list: on the same instance
 type.insert(0, ['item1', 'item2'])
 type.push(['item3'])
 
@@ -107,7 +107,7 @@ yarr.slice(0, 2)    // [1, true]
 yarr.toArray()      // [1, true, false, 4, 5]
 yarr.length         // 5
 
-// v14 — same method names
+// v14: same method names
 const yarr = ydoc.get('items')
 yarr.insert(0, [1, true, false])
 yarr.push([4, 5])
@@ -133,7 +133,7 @@ ytext.toDelta()
 // [{ insert: 'Hello ', attributes: { italic: true } },
 //  { insert: 'World', attributes: { bold: true } }]
 
-// v14 — identical API
+// v14: identical API
 const ytext = ydoc.get('editor')
 ytext.insert(0, 'Hello ')
 ytext.insert(6, 'World', { bold: true })
@@ -145,7 +145,7 @@ ytext.toDelta()
 The difference between a "text insert" and an "array insert" is what you pass. A string produces `ContentString` items, an array produces `ContentAny`/`ContentType` items. This is handled automatically in `applyDelta`:
 
 ```js
-// From the source — applyDelta checks the op type:
+// From the source: applyDelta checks the op type:
 if (delta.$textOp.check(op)) {
   // string insert -> ContentString
   insertContent(transaction, this, currPos, new ContentString(op.insert), ...)
@@ -173,8 +173,8 @@ get(key = '', name = null) {
 
 Two parameters:
 
-- **`key`** — the lookup key in `doc.share` (the document's top-level map of shared types). This is how you get the same instance back on every call.
-- **`name`** — the "tag name" stored on the YType. When non-null, the YType acts like an XML element with that tag.
+- **`key`**: the lookup key in `doc.share` (the document's top-level map of shared types). This is how you get the same instance back on every call.
+- **`name`**: the "tag name" stored on the YType. When non-null, the YType acts like an XML element with that tag.
 
 ```js
 // v13
@@ -196,9 +196,9 @@ div.toString()  // <div class="container">hello</div>
 
 The `name` affects three things:
 
-1. **`toString()`** — uses `name` as the XML tag: `<div>...</div>` vs just the raw content when name is null
-2. **Wire format** — `name !== null` uses `YXmlElementRefID`, `name === null` uses `YXmlFragmentRefID` (for backwards compat with v13 encoding)
-3. **`toJSON()`** — includes `{ name: 'div', attrs: {...}, children: [...] }` when name is set
+1. **`toString()`**: uses `name` as the XML tag: `<div>...</div>` vs just the raw content when name is null
+2. **Wire format**: `name !== null` uses `YXmlElementRefID`, `name === null` uses `YXmlFragmentRefID` (for backwards compat with v13 encoding)
+3. **`toJSON()`**: includes `{ name: 'div', attrs: {...}, children: [...] }` when name is set
 
 But functionally, a named YType and an unnamed YType have the exact same methods. The name is just metadata.
 
@@ -254,7 +254,7 @@ deleteAttr(key) {
 }
 ```
 
-A delta has two parts: **`children`** (list operations — insert, retain, delete) and **`attrs`** (map operations — setAttr, deleteAttr). `applyDelta` processes both:
+A delta has two parts: **`children`** (list operations: insert, retain, delete) and **`attrs`** (map operations: setAttr, deleteAttr). `applyDelta` processes both:
 
 ```js
 applyDelta(d) {
@@ -342,8 +342,8 @@ ymap.observeDeep(event => {
 | `yarray.push([item])` | `ytype.push([item])` |
 | `yarray.toArray()` | `ytype.toArray()` |
 | `yarray.get(i)` | `ytype.get(i)` |
-| `insertAfter()` | Removed — use index-based `insert` |
-| Rollup/CJS bundle | Removed — ESM only |
+| `insertAfter()` | Removed: use index-based `insert` |
+| Rollup/CJS bundle | Removed: ESM only |
 
 ## Why This Design
 

@@ -37,7 +37,7 @@ See also [[type-safe-context-factory-pattern]]
 
 These PRs show the pattern applied across shadcn-svelte components:
 
-- [PR #2445](https://github.com/huntabyte/shadcn-svelte/pull/2445) — toggle-group
-- [PR #2446](https://github.com/huntabyte/shadcn-svelte/pull/2446) — chart, carousel, sidebar
+- [PR #2445](https://github.com/huntabyte/shadcn-svelte/pull/2445): toggle-group
+- [PR #2446](https://github.com/huntabyte/shadcn-svelte/pull/2446): chart, carousel, sidebar
 
 Pure refactor, no breaking changes. The public API stays the same; only the internals get cleaner.

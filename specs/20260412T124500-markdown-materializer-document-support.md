@@ -2,7 +2,7 @@
 
 ## Task
 
-Replace the markdown-specific `markdownMaterializer` with a general `createMaterializer` factory that follows the factory function composition pattern. First arg is the resource (extension context—`{ tables, kv }`), second is config (`{ dir }`). Returns a builder with `.table()` for opt-in per-table materialization and `.kv()` for opt-in KV materialization. Nothing materializes by default—explicit `.table()` and `.kv()` calls opt in.
+Replace the markdown-specific `markdownMaterializer` with a general `createMaterializer` factory that follows the factory function composition pattern. First arg is the resource (extension context: `{ tables, kv }`), second is config (`{ dir }`). Returns a builder with `.table()` for opt-in per-table materialization and `.kv()` for opt-in KV materialization. Nothing materializes by default. Explicit `.table()` and `.kv()` calls opt in.
 
 The serialize contract is general: `{ filename, content }`. A `markdown()` helper handles the common case of frontmatter + body. This eliminates the two app-specific materializers (fuji, opensidian) and generalizes beyond markdown.
 
@@ -11,12 +11,12 @@ The serialize contract is general: `{ filename, content }`. A `markdown()` helpe
 The generic `markdownMaterializer` has three categories of issues:
 
 **Type holes:**
-1. Table names are untyped strings — `tables: { entries: {...} }` doesn't validate that `entries` exists
-2. Row data is `Record<string, unknown>` — the serialize callback can't access `row.title` without casting
-3. Document names are untyped strings — no validation that a document exists
+1. Table names are untyped strings: `tables: { entries: {...} }` doesn't validate that `entries` exists
+2. Row data is `Record<string, unknown>`: the serialize callback can't access `row.title` without casting
+3. Document names are untyped strings: no validation that a document exists
 
 **Markdown-specific contract:**
-4. Serialize returns `{ frontmatter, body, filename }` — hardcoded to markdown format
+4. Serialize returns `{ frontmatter, body, filename }`: hardcoded to markdown format
 5. No support for JSON, YAML, or custom file formats
 6. No KV materialization
 
@@ -28,20 +28,20 @@ The generic `markdownMaterializer` has three categories of issues:
 ### Generic markdownMaterializer (`packages/workspace/src/extensions/materializer/markdown/markdown.ts`)
 
 ```typescript
-// Returns a factory — called BEFORE context is available
+// Returns a factory: called BEFORE context is available
 export function markdownMaterializer(config: MarkdownMaterializerConfig) {
     return ({ tables }: ExtensionContext) => {
         // tables accessed by untyped string key: tables[tableKey]
-        // serializer.serialize(row) — row is Record<string, unknown>
-        // returns { frontmatter, body, filename } — markdown-only
+        // serializer.serialize(row): row is Record<string, unknown>
+        // returns { frontmatter, body, filename }: markdown-only
     };
 }
 ```
 
 ### App-specific materializers that should not exist
 
-1. `apps/fuji/src/lib/materializer.ts` — reads `documents.entries.content.open(row.id)`
-2. `playground/opensidian-e2e/materializer.ts` — reads `documents.files.content.open(row.id)`
+1. `apps/fuji/src/lib/materializer.ts`: reads `documents.entries.content.open(row.id)`
+2. `playground/opensidian-e2e/materializer.ts`: reads `documents.files.content.open(row.id)`
 
 Both are ~80% identical to the generic materializer. The only differences: which table/document to use and frontmatter field selection.
 
@@ -70,7 +70,7 @@ export const fuji = createFujiWorkspace()
 
 ### Factory function pattern
 
-Following the factory function composition skill: first arg is the resource (destructured for multiple dependencies — `{ tables, kv }`), second arg is config.
+Following the factory function composition skill: first arg is the resource (destructured for multiple dependencies: `{ tables, kv }`), second arg is config.
 
 ```typescript
 type MaterializerContext<
@@ -91,7 +91,7 @@ function createMaterializer<
 ): MaterializerBuilder<TTables, TKv>;
 ```
 
-The factory receives the extension context (structurally typed—not importing `ExtensionContext`). Passing `ctx` directly from the `.withWorkspaceExtension` closure works because `ExtensionContext` satisfies `{ tables, kv, whenReady }` structurally. The materializer awaits `ctx.whenReady` before initial materialization to ensure persistence/sync have loaded data first. This gives the factory:
+The factory receives the extension context (structurally typed. Not importing `ExtensionContext`). Passing `ctx` directly from the `.withWorkspaceExtension` closure works because `ExtensionContext` satisfies `{ tables, kv, whenReady }` structurally. The materializer awaits `ctx.whenReady` before initial materialization to ensure persistence/sync have loaded data first. This gives the factory:
 - `keyof TTables` for validated table name strings
 - `TTables[K]` for row type inference per table
 - `TKv` for typed KV access
@@ -103,7 +103,7 @@ Nothing materializes by default. Call `.table(name)` to opt in a table. Call `.k
 
 **Why opt-in, not default-materialize-all:**
 - **No surprise files.** Adding a table to the workspace definition doesn't silently produce `.md` files on disk.
-- **No `.skip()` needed.** The API surface shrinks—no negation mixed into the chain.
+- **No `.skip()` needed.** The API surface shrinks. No negation mixed into the chain.
 - **Explicit > implicit** for an extension that writes to the filesystem.
 - **Every line is additive.** Each `.table()` call opts in one table. The chain is purely constructive.
 - **In practice you customize most tables anyway** (filename strategy, document content), so you're writing `.table()` calls regardless.
@@ -118,7 +118,7 @@ type SerializeResult = {
     content: string;
 };
 
-// Already exists in packages/workspace/src/workspace/lifecycle.ts — import, don't redefine
+// Already exists in packages/workspace/src/workspace/lifecycle.ts: import, don't redefine
 import type { MaybePromise } from './lifecycle.js';
 ```
 
@@ -239,7 +239,7 @@ import {
     toSlugFilename,
 } from '@epicenter/workspace/extensions/materializer';
 
-// Tab manager — override filename strategy, everything else defaults
+// Tab manager: override filename strategy, everything else defaults
 export const tabManager = createTabManagerWorkspace()
     .withWorkspaceExtension('materializer', (ctx) =>
         createMaterializer(ctx, {
@@ -251,14 +251,14 @@ export const tabManager = createTabManagerWorkspace()
         .kv()
     );
 
-// Fuji — custom serialize with document content via closure
+// Fuji: custom serialize with document content via closure
 export const fuji = createFujiWorkspace()
     .withWorkspaceExtension('materializer', (ctx) =>
         createMaterializer(ctx, { dir: import.meta.dir })
         .table('entries', {
             dir: 'fuji',
             serialize: async (row) => markdown({
-                // row: Entry — inferred from ctx.tables['entries']
+                // row: Entry: inferred from ctx.tables['entries']
                 frontmatter: {
                     id: row.id,
                     title: row.title,
@@ -289,7 +289,7 @@ export const opensidian = createWorkspace(opensidianDefinition)
         })
         .table('files', {
             serialize: async (row) => {
-                // row: FileRow — inferred from ctx.tables['files']
+                // row: FileRow: inferred from ctx.tables['files']
                 if (row.type === 'folder') {
                     return markdown({
                         frontmatter: { id: row.id, name: row.name, type: 'folder' },
@@ -349,53 +349,53 @@ createMaterializer(ctx, { dir: '...' })
 
 ### Factory
 
-- `createMaterializer(ctx, { dir })` — factory: resource first (extension context), config second
+- `createMaterializer(ctx, { dir })`: factory: resource first (extension context), config second
 
-### Serialize presets (markdown — return `SerializeResult`)
+### Serialize presets (markdown: return `SerializeResult`)
 
 These produce markdown output. The names are short for call-site readability; JSDoc documents the format.
 
-- `slugFilename(field)` — all fields as markdown frontmatter, slugified `{title}-{id}.md`. JSDoc: `@remarks Produces markdown output via markdown() internally.`
-- `bodyField(field)` — extracts one field as markdown body, rest as frontmatter, `{id}.md`. JSDoc: `@remarks Produces markdown output via markdown() internally.`
+- `slugFilename(field)`: all fields as markdown frontmatter, slugified `{title}-{id}.md`. JSDoc: `@remarks Produces markdown output via markdown() internally.`
+- `bodyField(field)`: extracts one field as markdown body, rest as frontmatter, `{id}.md`. JSDoc: `@remarks Produces markdown output via markdown() internally.`
 - Default (when serialize omitted): all fields as markdown frontmatter, `{id}.md`
 
 ### Helpers
 
-- `markdown({ frontmatter, body, filename })` — converts to `{ filename, content }` with wikilink processing
-- `toSlugFilename(title, id)` — standalone string utility: `{slug}-{id}.md`
-- `toIdFilename(id)` — standalone string utility: `{id}.md`
-- `toMarkdown(frontmatter, body?)` — pure YAML frontmatter + body assembly (already exists)
+- `markdown({ frontmatter, body, filename })`: converts to `{ filename, content }` with wikilink processing
+- `toSlugFilename(title, id)`: standalone string utility: `{slug}-{id}.md`
+- `toIdFilename(id)`: standalone string utility: `{id}.md`
+- `toMarkdown(frontmatter, body?)`: pure YAML frontmatter + body assembly (already exists)
 
 ### Types
 
-- `SerializeResult` — `{ filename: string; content: string }`
-- `MaybePromise<T>` — import from `packages/workspace/src/workspace/lifecycle.ts` (already exists)
+- `SerializeResult`: `{ filename: string; content: string }`
+- `MaybePromise<T>`: import from `packages/workspace/src/workspace/lifecycle.ts` (already exists)
 
 ## Files to Modify
 
 ### Primary (new materializer)
 
-- `packages/workspace/src/extensions/materializer/` — new `createMaterializer` implementation. Consider whether it replaces `materializer/markdown/` or lives alongside it at `materializer/filesystem/` or `materializer/index.ts`.
-- `packages/workspace/src/extensions/materializer/markdown/serializers.ts` — adapt existing serializer factories to return `SerializeResult` (general contract). Rename: `titleFilenameSerializer` → `slugFilename`, `bodyFieldSerializer` → `bodyField`. Add `toSlugFilename`, `toIdFilename` standalone utilities.
-- `packages/workspace/src/extensions/materializer/markdown/markdown.ts` — extract `toMarkdown` as a reusable utility. The `markdown()` helper wraps it with wikilink conversion. The old `markdownMaterializer` function is deleted.
-- `packages/workspace/src/extensions/materializer/markdown/index.ts` — update exports for new API surface.
+- `packages/workspace/src/extensions/materializer/`: new `createMaterializer` implementation. Consider whether it replaces `materializer/markdown/` or lives alongside it at `materializer/filesystem/` or `materializer/index.ts`.
+- `packages/workspace/src/extensions/materializer/markdown/serializers.ts`: adapt existing serializer factories to return `SerializeResult` (general contract). Rename: `titleFilenameSerializer` → `slugFilename`, `bodyFieldSerializer` → `bodyField`. Add `toSlugFilename`, `toIdFilename` standalone utilities.
+- `packages/workspace/src/extensions/materializer/markdown/markdown.ts`: extract `toMarkdown` as a reusable utility. The `markdown()` helper wraps it with wikilink conversion. The old `markdownMaterializer` function is deleted.
+- `packages/workspace/src/extensions/materializer/markdown/index.ts`: update exports for new API surface.
 
 ### Secondary (consumers to delete)
 
-- `apps/fuji/src/lib/materializer.ts` — **delete**
-- `apps/fuji/package.json` — remove `"./materializer"` export, remove `@sindresorhus/slugify` and `filenamify` deps
-- `playground/opensidian-e2e/materializer.ts` — **delete**
+- `apps/fuji/src/lib/materializer.ts`: **delete**
+- `apps/fuji/package.json`: remove `"./materializer"` export, remove `@sindresorhus/slugify` and `filenamify` deps
+- `playground/opensidian-e2e/materializer.ts`: **delete**
 
 ### Tertiary (consumers to migrate)
 
-- `playground/opensidian-e2e/epicenter.config.ts` — use `createMaterializer` with `.table()` override
-- `playground/tab-manager-e2e/epicenter.config.ts` — use `createMaterializer` if applicable
-- `packages/cli/test/fixtures/*/epicenter.config.ts` — grep for materializer usage, migrate
+- `playground/opensidian-e2e/epicenter.config.ts`: use `createMaterializer` with `.table()` override
+- `playground/tab-manager-e2e/epicenter.config.ts`: use `createMaterializer` if applicable
+- `packages/cli/test/fixtures/*/epicenter.config.ts`: grep for materializer usage, migrate
 - Any file importing from `@epicenter/workspace/extensions/materializer/markdown`
 
-### External (vault — not in monorepo)
+### External (vault: not in monorepo)
 
-- `~/Code/vault/epicenter.config.ts` — replace both materializer setups with `createMaterializer`
+- `~/Code/vault/epicenter.config.ts`: replace both materializer setups with `createMaterializer`
 
 ## Design Decisions
 
@@ -405,13 +405,13 @@ The materializer writes files. It doesn't care about format. Markdown-specific l
 
 ### 2. Factory function pattern: resource first, config second
 
-`createMaterializer(ctx, { dir })` follows the universal factory function signature. `ctx` is the resource (structurally typed as `{ tables, kv }`—receives the extension context directly). `{ dir }` is the config. Two args max. `dir` is used consistently for both base path and table subdirectory—context makes the meaning clear.
+`createMaterializer(ctx, { dir })` follows the universal factory function signature. `ctx` is the resource (structurally typed as `{ tables, kv }`: receives the extension context directly). `{ dir }` is the config. Two args max. `dir` is used consistently for both base path and table subdirectory. Context makes the meaning clear.
 
 ### 3. Opt-in materialization, not default-materialize-all
 
 Nothing materializes until you call `.table()` or `.kv()`. This is the right default for an extension that writes to the filesystem:
 - No surprise files when adding tables to a workspace definition
-- No `.skip()` / `.skipKv()` needed—the API surface is purely additive
+- No `.skip()` / `.skipKv()` needed. The API surface is purely additive
 - Explicit enumeration: every `.table()` line is a conscious decision
 - In practice, most tables need serialize customization anyway
 
@@ -433,7 +433,7 @@ KV materializes only when `.kv()` is called. Default: `{dir}/kv.json` with JSON.
 
 ### 8. `markdown()` helper applies wikilink conversion
 
-The `markdown()` helper calls `convertEpicenterLinksToWikilinks` on body content. This is the only place epicenter-specific link processing happens. Custom serialize callbacks that don't use `markdown()` don't get link conversion — that's intentional. For markdown without link conversion, use `toMarkdown()` directly (already exported, pure function).
+The `markdown()` helper calls `convertEpicenterLinksToWikilinks` on body content. This is the only place epicenter-specific link processing happens. Custom serialize callbacks that don't use `markdown()` don't get link conversion, that's intentional. For markdown without link conversion, use `toMarkdown()` directly (already exported, pure function).
 
 ## Breaking Changes
 
@@ -453,7 +453,7 @@ All consumers in the monorepo must be migrated in the same commit.
 ## MUST DO
 
 - [x] Implement `createMarkdownMaterializer(ctx, { dir })` factory where ctx is structurally typed as `{ tables, kv, whenReady }`
-- [x] Generic type parameters on factory for `TTables` and `TKv` — infer from ctx arg
+- [x] Generic type parameters on factory for `TTables` and `TKv`: infer from ctx arg
 - [x] `.table(name, config)` validates name as `keyof TTables`, infers row type for serialize callback
 - [x] General serialize contract: `{ filename: string; content: string }`
 - [x] `markdown()` helper: `{ frontmatter, body, filename }` → `{ filename, content }` with wikilink conversion
@@ -477,24 +477,24 @@ All consumers in the monorepo must be migrated in the same commit.
 - Do not support table → one file (all rows in single file)
 - Do not add new dependencies to `packages/workspace`
 - Do not modify `packages/workspace/src/workspace/types.ts`
-- Do not remove `toMarkdown` utility—it's still needed by the `markdown()` helper
-- Do not add `.skip()` or `.skipKv()`—opt-in model makes them unnecessary
+- Do not remove `toMarkdown` utility. It's still needed by the `markdown()` helper
+- Do not add `.skip()` or `.skipKv()`: opt-in model makes them unnecessary
 
 ## Resolved Open Questions
 
 | # | Issue | Resolution |
 |---|---|---|
-| 1 | Preset names don't indicate markdown | **JSDoc** — `@remarks Produces markdown output via markdown() internally`. Short names fine for readability. |
-| 2 | Default-materialize-all assumptions | **API fix** — switched to opt-in. No defaults, no assumptions about table content. |
-| 3 | KV observation | **Resolved** — `kv.observeAll(cb)` exists. Live materialization works. |
-| 4 | `markdown()` link conversion opt-out | **JSDoc** — `toMarkdown()` is the escape hatch (pure, no links). |
-| 5 | `whenReady` timing | **JSDoc** — lazy start after all `.table()`/`.kv()` calls complete synchronously. |
-| 6 | `.kv({ skip })` vs `.skipKv()` | **API fix** — eliminated both. Opt-in model means no skip needed. |
-| 7 | `MaybePromise<T>` | **Resolved** — import from `lifecycle.ts`. |
-| 8 | `directory` vs `dir` | **API fix** — `dir` everywhere. Short, consistent. Context makes base path vs subfolder obvious. |
-| 9 | KV serialize/overrides | **API fix** — `.kv({ serialize })` receives typed KV snapshot, returns `SerializeResult`. |
-| 10 | Global default serialize | **No** — would be `Record<string, unknown>` (untyped), defeating row type inference. Built-in default is always safe. Two-line repetition is fine. |
-| 11 | `ctx.whenReady` ordering | **API fix** — structural type includes `whenReady`. Materializer awaits it before reading data to avoid racing persistence/sync. |
+| 1 | Preset names don't indicate markdown | **JSDoc**: `@remarks Produces markdown output via markdown() internally`. Short names fine for readability. |
+| 2 | Default-materialize-all assumptions | **API fix**: switched to opt-in. No defaults, no assumptions about table content. |
+| 3 | KV observation | **Resolved**: `kv.observeAll(cb)` exists. Live materialization works. |
+| 4 | `markdown()` link conversion opt-out | **JSDoc**: `toMarkdown()` is the escape hatch (pure, no links). |
+| 5 | `whenReady` timing | **JSDoc**: lazy start after all `.table()`/`.kv()` calls complete synchronously. |
+| 6 | `.kv({ skip })` vs `.skipKv()` | **API fix**: eliminated both. Opt-in model means no skip needed. |
+| 7 | `MaybePromise<T>` | **Resolved**: import from `lifecycle.ts`. |
+| 8 | `directory` vs `dir` | **API fix**: `dir` everywhere. Short, consistent. Context makes base path vs subfolder obvious. |
+| 9 | KV serialize/overrides | **API fix**: `.kv({ serialize })` receives typed KV snapshot, returns `SerializeResult`. |
+| 10 | Global default serialize | **No**: would be `Record<string, unknown>` (untyped), defeating row type inference. Built-in default is always safe. Two-line repetition is fine. |
+| 11 | `ctx.whenReady` ordering | **API fix**: structural type includes `whenReady`. Materializer awaits it before reading data to avoid racing persistence/sync. |
 
 ## Review
 
@@ -510,10 +510,10 @@ Replaced the markdown-specific `markdownMaterializer` with `createMarkdownMateri
 - `TKv` generic is `KvHelper<any>` (single helper), not `Record<string, KvHelper<any>>` as the spec suggested. The actual workspace type has `kv` as a single `KvHelper`, not a record of helpers.
 - Initial KV materialization writes nothing (no key enumeration API). The file appears on first `observeAll` change. Spec implied initial snapshot but `KvHelper` doesn't expose bulk-read.
 - Observer writes are sequential (not `Promise.allSettled`). This prevents rename races where a parallel delete could remove a file another write targets.
-- `writeSerializedFile` helper was added then inlined during code review — the indirection didn't earn its keep.
+- `writeSerializedFile` helper was added then inlined during code review: the indirection didn't earn its keep.
 
 ### Follow-up Work
 
 - `KvHelper` could expose `getAll()` or `keys()` to enable initial KV snapshot materialization.
 - The fuji workspace on the current branch has a broken import (`definition.ts` was refactored into `workspace.ts` in a prior commit). The vault `epicenter start` test is blocked by this pre-existing issue.
-- ~~Consider whether `createMaterializer` should live in a format-agnostic location~~ — rejected. The name stays `createMarkdownMaterializer` and lives under `materializer/markdown/`. The factory was split into its own `materializer.ts` file, separate from the pure formatting helpers in `markdown.ts`.
+- ~~Consider whether `createMaterializer` should live in a format-agnostic location~~: rejected. The name stays `createMarkdownMaterializer` and lives under `materializer/markdown/`. The factory was split into its own `materializer.ts` file, separate from the pure formatting helpers in `markdown.ts`.

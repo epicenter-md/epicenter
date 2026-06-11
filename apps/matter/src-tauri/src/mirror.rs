@@ -1,8 +1,10 @@
 //! The read-only SQLite mirror for a vault folder.
 //!
 //! `matter.sqlite` sits NEXT TO `matter.json` as a derived, disposable mirror of the
-//! folder's VALID rows, so a coding agent (or an in-app SQL console) can run arbitrary
-//! SQL over the typed folder. The JS projector (`core/sqlite.ts`) builds all the SQL
+//! folder's readable rows (valid rows AND drafts in progress, a missing cell stored as
+//! NULL), so a coding agent (or an in-app SQL console) can run arbitrary SQL over the
+//! typed folder, including triaging unfinished drafts. The JS projector
+//! (`core/sqlite.ts`) builds all the SQL
 //! TEXT (the schema script + the insert, quoting and placeholders included) and the
 //! row tuples; Rust only opens the db, runs the schema script, and parameter-binds
 //! each row. It never learns what a column or a kind is, the same faithful role
@@ -30,9 +32,9 @@ fn open_mirror(path: &str, flags: OpenFlags) -> Result<Connection, String> {
     Ok(conn)
 }
 
-/// Turn one JSON arg into a SQLite-bindable value. The projector only emits strings
-/// and numbers (booleans are already 0/1, arrays are JSON text), but bool / null are
-/// mapped defensively so a future projector change cannot panic here.
+/// Turn one JSON arg into a SQLite-bindable value. The projector emits strings, numbers,
+/// and null (a missing cell binds NULL; booleans are already 0/1, arrays are JSON text);
+/// bool is mapped defensively too so a future projector change cannot panic here.
 fn to_sql(value: &serde_json::Value) -> Value {
     use serde_json::Value as J;
     match value {
@@ -49,7 +51,7 @@ fn to_sql(value: &serde_json::Value) -> Value {
 
 /// Rebuild `<path>/matter.sqlite` from the projected rows. `schema` (a `DROP` + `CREATE`
 /// script) and `insert` are the SQL the JS projector built; `rows` is one tuple per
-/// valid row, positional against the insert's columns. Full drop-and-recreate in one
+/// readable row, positional against the insert's columns. Full drop-and-recreate in one
 /// transaction, so the file is disposable.
 #[tauri::command]
 pub fn write_mirror(
@@ -263,5 +265,31 @@ CREATE TABLE "drafts" ("path" TEXT PRIMARY KEY, "title" TEXT NOT NULL, "count" I
         // The connection is read-only, so a write is rejected, never a silent mutation.
         let err = query_mirror(path, r#"DELETE FROM "drafts""#.into(), None).unwrap_err();
         assert!(err.to_lowercase().contains("readonly"));
+    }
+
+    #[test]
+    fn binds_null_for_a_missing_cell() {
+        // The projector emits null for a NEEDS_VALUE cell (a draft in progress) against a
+        // nullable column; it must bind as SQL NULL so `IS NULL` finds the draft.
+        let dir = scratch();
+        let path: String = dir.to_string_lossy().into();
+        let schema = "DROP TABLE IF EXISTS \"drafts\";\nCREATE TABLE \"drafts\" (\"path\" TEXT PRIMARY KEY, \"title\" TEXT)";
+        let insert = r#"INSERT INTO "drafts" ("path", "title") VALUES (?, ?)"#;
+        write_mirror(
+            path.clone(),
+            schema.into(),
+            insert.into(),
+            vec![vec![json!("draft.md"), json!(null)]],
+        )
+        .unwrap();
+
+        let result = query_mirror(
+            path,
+            r#"SELECT "path" FROM "drafts" WHERE "title" IS NULL"#.into(),
+            None,
+        )
+        .unwrap();
+        assert_eq!(result.rows.len(), 1);
+        assert_eq!(result.rows[0][0], json!("draft.md"));
     }
 }

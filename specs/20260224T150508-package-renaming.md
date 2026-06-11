@@ -43,10 +43,10 @@ Three problems remain:
 
 ### What Was Already Completed (from the original spec)
 
-- npm name `@epicenter/hq` → `@epicenter/workspace` (done — `package.json` updated)
-- All `@epicenter/hq` import references replaced with `@epicenter/workspace` across the codebase (done — zero remaining references in `.ts` or `.json` files)
+- npm name `@epicenter/hq` → `@epicenter/workspace` (done: `package.json` updated)
+- All `@epicenter/hq` import references replaced with `@epicenter/workspace` across the codebase (done: zero remaining references in `.ts` or `.json` files)
 - All `package.json` dependency references updated (done)
-- Server restructure (done differently than proposed — split into `server/`, `server-local/`, `server-remote/` instead of keeping as one package)
+- Server restructure (done differently than proposed: split into `server/`, `server-local/`, `server-remote/` instead of keeping as one package)
 
 ### Desired State
 
@@ -75,9 +75,9 @@ packages/
 | Decision | Choice | Rationale |
 |---|---|---|
 | Rename dir `packages/epicenter/` → `packages/workspace/` | Do it | Directory should match npm name. The npm name is already `@epicenter/workspace`. |
-| Keep npm name `@epicenter/workspace` | Keep | Every export is workspace-related (`defineWorkspace`, `createClient`). Considered `core`, `sdk`, `client`, `data` — all worse. "Workspace" IS the core domain abstraction. |
+| Keep npm name `@epicenter/workspace` | Keep | Every export is workspace-related (`defineWorkspace`, `createClient`). Considered `core`, `sdk`, `client`, `data`: all worse. "Workspace" IS the core domain abstraction. |
 | Singular `workspace` not `workspaces` | Singular | Package naming convention is singular (`@prisma/client`, `drizzle-orm`). |
-| Delete `@epicenter/shared` entirely | Delete | Zero imports in the entire codebase. The only export (`safeLookup`) is unused dead code. Not worth merging into `constants` — just delete it. |
+| Delete `@epicenter/shared` entirely | Delete | Zero imports in the entire codebase. The only export (`safeLookup`) is unused dead code. Not worth merging into `constants`: just delete it. |
 | Rename `@epicenter/vault-core` → `@epicenter/vault` | Do it | Drop phantom `-core` suffix. No parent `@epicenter/vault` package exists. |
 | Drop Phase 4 (server docs) from original spec | Drop | The server was already restructured into separate packages (`server/`, `server-local/`, `server-remote/`), which resolved the original concern about conflated responsibilities. |
 
@@ -87,9 +87,9 @@ packages/
 
 The npm name is already correct. This is purely a directory rename + reference updates.
 
-**Impact audit — references to `packages/epicenter` in the codebase:**
-- `AGENTS.md` line 5 (root) — mentions `packages/epicenter/`
-- `packages/epicenter/AGENTS.md` — will move with the directory
+**Impact audit: references to `packages/epicenter` in the codebase:**
+- `AGENTS.md` line 5 (root): mentions `packages/epicenter/`
+- `packages/epicenter/AGENTS.md`: will move with the directory
 
 No references in: `turbo.json`, `tsconfig` files, `biome.jsonc`, any `package.json`.
 
@@ -101,25 +101,25 @@ No references in: `turbo.json`, `tsconfig` files, `biome.jsonc`, any `package.js
 
 ### Phase 2: Rename `@epicenter/vault-core` → `@epicenter/vault`
 
-**Impact audit — all references:**
+**Impact audit: all references:**
 
 TypeScript imports (19 across 10 files):
-- `apps/vault-demo/src/routes/api/vault/ingest/+server.ts` — 4 imports
-- `apps/vault-demo/src/lib/remote/vault.remote.ts` — 1 import
-- `apps/vault-demo/src/lib/export/index.ts` — 1 import
-- `apps/vault-demo/src/lib/server/vaultService.ts` — 5 imports
-- `apps/demo-mcp/src/cli.ts` — 3 imports
-- `packages/vault-core/src/adapters/entity-index/src/adapter.ts` — 1 import
-- `packages/vault-core/src/adapters/reddit/src/ingestor.ts` — 1 import
-- `packages/vault-core/src/adapters/reddit/src/metadata.ts` — 1 import
-- `packages/vault-core/src/adapters/reddit/src/adapter.ts` — 1 import
-- `packages/vault-core/src/adapters/example-notes/src/adapter.ts` — 1 import
+- `apps/vault-demo/src/routes/api/vault/ingest/+server.ts`: 4 imports
+- `apps/vault-demo/src/lib/remote/vault.remote.ts`: 1 import
+- `apps/vault-demo/src/lib/export/index.ts`: 1 import
+- `apps/vault-demo/src/lib/server/vaultService.ts`: 5 imports
+- `apps/demo-mcp/src/cli.ts`: 3 imports
+- `packages/vault-core/src/adapters/entity-index/src/adapter.ts`: 1 import
+- `packages/vault-core/src/adapters/reddit/src/ingestor.ts`: 1 import
+- `packages/vault-core/src/adapters/reddit/src/metadata.ts`: 1 import
+- `packages/vault-core/src/adapters/reddit/src/adapter.ts`: 1 import
+- `packages/vault-core/src/adapters/example-notes/src/adapter.ts`: 1 import
 
 JSON/config references (4 files):
-- `packages/vault-core/package.json` — name field
-- `apps/vault-demo/package.json` — dependency
-- `apps/demo-mcp/package.json` — dependency
-- `apps/demo-mcp/tsconfig.json` — path mapping
+- `packages/vault-core/package.json`: name field
+- `apps/vault-demo/package.json`: dependency
+- `apps/demo-mcp/package.json`: dependency
+- `apps/demo-mcp/tsconfig.json`: path mapping
 
 - [ ] **2.1** Rename directory: `mv packages/vault-core packages/vault`
 - [ ] **2.2** Update `packages/vault/package.json`: name `@epicenter/vault-core` → `@epicenter/vault`
@@ -133,9 +133,9 @@ JSON/config references (4 files):
 
 ### Phase 3: Delete `@epicenter/shared`
 
-**Impact audit — all references:**
-- `packages/shared/package.json` — the package itself
-- `apps/whispering/package.json` — lists as dependency (but nothing imports from it)
+**Impact audit: all references:**
+- `packages/shared/package.json`: the package itself
+- `apps/whispering/package.json`: lists as dependency (but nothing imports from it)
 - Zero TypeScript imports anywhere in the codebase
 
 - [ ] **3.1** Remove `@epicenter/shared` from `apps/whispering/package.json` dependencies
@@ -161,7 +161,7 @@ Anyone who previously ran `bun link` in `packages/epicenter/` will need to re-li
 
 - [ ] `packages/workspace/` directory name matches npm name `@epicenter/workspace`
 - [ ] `packages/epicenter/` no longer exists
-- [ ] `@epicenter/vault-core` no longer exists — all references are `@epicenter/vault`
+- [ ] `@epicenter/vault-core` no longer exists: all references are `@epicenter/vault`
 - [ ] `packages/vault/` directory name matches npm name `@epicenter/vault`
 - [ ] `packages/vault-core/` no longer exists
 - [ ] `packages/shared/` no longer exists
@@ -172,8 +172,8 @@ Anyone who previously ran `bun link` in `packages/epicenter/` will need to re-li
 
 ## References
 
-- `packages/epicenter/package.json` — already has name `@epicenter/workspace` (directory rename only)
-- `packages/vault-core/package.json` — current `@epicenter/vault-core` definition
-- `packages/shared/package.json` — dead package to delete
-- `AGENTS.md` — references `packages/epicenter/`
-- `apps/demo-mcp/tsconfig.json` — has vault-core path mapping
+- `packages/epicenter/package.json`: already has name `@epicenter/workspace` (directory rename only)
+- `packages/vault-core/package.json`: current `@epicenter/vault-core` definition
+- `packages/shared/package.json`: dead package to delete
+- `AGENTS.md`: references `packages/epicenter/`
+- `apps/demo-mcp/tsconfig.json`: has vault-core path mapping

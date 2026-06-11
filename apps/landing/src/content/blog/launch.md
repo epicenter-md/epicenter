@@ -8,7 +8,7 @@ I have 47 browser tabs open right now. My thoughts are scattered across Notion, 
 
 Sound familiar?
 
-So I built Epicenter. It's simple: all your work—notes, transcripts, chat histories—lives in one folder on your machine. Plain text and SQLite. Every tool we build reads and writes to this same folder. Your transcription from this morning becomes searchable in your text editor this afternoon. Your chat with AI about that bug fix is right there next to the code.
+So I built Epicenter. It's simple: all your work. Notes, transcripts, chat histories. Lives in one folder on your machine. Plain text and SQLite. Every tool we build reads and writes to this same folder. Your transcription from this morning becomes searchable in your text editor this afternoon. Your chat with AI about that bug fix is right there next to the code.
 
 ## What we've built so far
 
@@ -44,7 +44,7 @@ We're early. Things will break. But if you're tired of your tools treating you l
 
 Join our Discord: [go.epicenter.so/discord](https://go.epicenter.so/discord)
 
-—
+---
 
 *P.S. Everything is AGPLv3 licensed. Fork it, extend it, make it yours. That's the whole point.*
 

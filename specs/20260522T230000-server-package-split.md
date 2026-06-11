@@ -402,8 +402,8 @@ Design intent (which IS stable and belongs here):
   inside their respective files because no external consumer needs them.
 
 For the concrete shape at any point in time:
-- `packages/server/src/index.ts` — public re-exports.
-- `apps/api/src/index.ts` — cloud composition reading top-to-bottom.
+- `packages/server/src/index.ts`: public re-exports.
+- `apps/api/src/index.ts`: cloud composition reading top-to-bottom.
 
 ## 11. Library internals: how mode dispatches
 
@@ -432,7 +432,7 @@ billing, CSRF) around each sub-app at mount time. The base app owns
 per-request lifecycle (pg, after-response queue, CORS); deployments own
 which sub-apps are mounted and what middleware wraps them.
 
-For the cloud composition, read `apps/api/src/index.ts` top to bottom —
+For the cloud composition, read `apps/api/src/index.ts` top to bottom:
 that file is the canonical example and the entire cloud URL surface.
 For a self-hosted team deployment, a sibling app directory would compose
 the same sub-apps with team-mode middleware (no billing gates, no

@@ -5,7 +5,7 @@
  * Uses a real workspace client with in-memory Y.Doc.
  *
  * Key behaviors:
- * - One bad row doesn't abort the entire import—valid rows still land
+ * - One bad row doesn't abort the entire import. Valid rows still land
  * - Errors are collected with table name, row index, and validation message
  * - Stats include both imported count and skipped count
  */

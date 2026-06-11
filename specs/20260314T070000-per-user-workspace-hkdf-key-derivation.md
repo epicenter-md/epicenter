@@ -2,21 +2,21 @@
 
 **Date**: 2026-03-14
 **Status**: Implemented
-**Revision**: Simplified — two-level HKDF with user key in session, no separate endpoint. Updated 2026-03-20 to reflect `ENCRYPTION_SECRETS` keyring.
+**Revision**: Simplified: two-level HKDF with user key in session, no separate endpoint. Updated 2026-03-20 to reflect `ENCRYPTION_SECRETS` keyring.
 **Replaces**: `specs/20260314T064000-per-workspace-envelope-encryption.md`
 **Depends on**: `specs/20260314T063000-encryption-wrapper-hardening.md` (mode system, AAD, error containment)
 **Builds on**: `specs/20260313T180100-client-side-encryption-wiring.md` (key delivery to apps)
 
 ## Overview
 
-Replace the deployment-wide encryption key (`SHA-256(BETTER_AUTH_SECRET)`) with per-user-per-workspace keys derived via two-level HKDF. The server derives a per-user key and sends it in the session. The client derives per-workspace keys locally. No new endpoints, no new database tables, no key storage—keys are deterministically derived from a server secret. The actual implementation uses an `ENCRYPTION_SECRETS` env var with versioned keyring entries (`version:secret` pairs). When a newer version becomes current, workspace activation can decrypt old-version blobs through the keyring and rewrite them under the current version.
+Replace the deployment-wide encryption key (`SHA-256(BETTER_AUTH_SECRET)`) with per-user-per-workspace keys derived via two-level HKDF. The server derives a per-user key and sends it in the session. The client derives per-workspace keys locally. No new endpoints, no new database tables, no key storage. Keys are deterministically derived from a server secret. The actual implementation uses an `ENCRYPTION_SECRETS` env var with versioned keyring entries (`version:secret` pairs). When a newer version becomes current, workspace activation can decrypt old-version blobs through the keyring and rewrite them under the current version.
 
 ## Motivation
 
 ### Current State
 
 ```typescript
-// apps/api/src/app.ts — every session gets the same key
+// apps/api/src/app.ts: every session gets the same key
 async function deriveKeyFromSecret(secret: string): Promise<Uint8Array> {
   const hash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(secret));
   return new Uint8Array(hash);
@@ -60,12 +60,12 @@ workspace.activateEncryption(wsKey);
 ## How HKDF Works (At a Glance)
 
 ```
-CURRENT: SHA-256 — one secret, one key, everyone shares it
+CURRENT: SHA-256: one secret, one key, everyone shares it
 ══════════════════════════════════════════════════════════
 
   BETTER_AUTH_SECRET ──SHA-256──▶ 0xA3F2...9B01 (same for all users)
 
-NEW: Two-Level HKDF — one secret, unique key per user per workspace
+NEW: Two-Level HKDF: one secret, unique key per user per workspace
 ═══════════════════════════════════════════════════════════════════
 
   WORKSPACE_KEY_SECRET
@@ -83,7 +83,7 @@ NEW: Two-Level HKDF — one secret, unique key per user per workspace
     └──────────────────────────┘
 ```
 
-Each level is deterministic — same inputs always produce the same key. Nothing is stored.
+Each level is deterministic: same inputs always produce the same key. Nothing is stored.
 
 ## Research Findings
 
@@ -95,7 +95,7 @@ Each level is deterministic — same inputs always produce the same key. Nothing
 | Per-workspace (workspaceId) | All users of one app | Trivial | Low |
 | **Per-user-workspace** (workspaceId + userId) | **One user, all apps** | Server-mediated | Low |
 
-In Epicenter's model, "workspace" = "app" (e.g., `epicenter.whispering`). Per-workspace keys would mean a single key compromise exposes all users' transcriptions—still a large blast radius. Per-user-workspace gives the tightest practical isolation.
+In Epicenter's model, "workspace" = "app" (e.g., `epicenter.whispering`). Per-workspace keys would mean a single key compromise exposes all users' transcriptions. Still a large blast radius. Per-user-workspace gives the tightest practical isolation.
 
 **Key finding**: Durable Objects are already per-user. The natural key derivation boundary matches the storage boundary.
 
@@ -109,7 +109,7 @@ In Epicenter's model, "workspace" = "app" (e.g., `epicenter.whispering`). Per-wo
 | **Wiring complexity** | Same as today | New endpoint + fetch + cache |
 | **Server changes** | Swap SHA-256 → HKDF in customSession | New route, remove from session |
 
-The blast radius difference is theoretical — a compromised client would fetch all workspace keys from the endpoint anyway. The session approach is simpler, works offline, and keeps the identical `$session` subscription wiring that already exists.
+The blast radius difference is theoretical. A compromised client would fetch all workspace keys from the endpoint anyway. The session approach is simpler, works offline, and keeps the identical `$session` subscription wiring that already exists.
 
 ### Why HKDF (Not Random DEKs / Envelope Encryption)
 
@@ -242,7 +242,7 @@ if (room.isShared) {
 
 For shared rooms, the server returns the workspace key directly (not a user key). The client skips the second HKDF level and uses the key as-is.
 
-**Trade-off**: Shared room blast radius = all members of that workspace. This is inherent to shared encrypted state—all readers need the same decryption key.
+**Trade-off**: Shared room blast radius = all members of that workspace. This is inherent to shared encrypted state. All readers need the same decryption key.
 
 ### Phase 3: Envelope Encryption for Shared Rooms (If Enterprise Demand)
 
@@ -257,29 +257,29 @@ Replace shared room HKDF with actual random DEKs + wrapped copies, only for shar
 
 ## Implementation Plan
 
-### Phase 1: Server — HKDF in customSession
+### Phase 1: Server: HKDF in customSession
 
-- [x] **1.1** ~~Add `WORKSPACE_KEY_SECRET` env var~~ — Skipped: using `BETTER_AUTH_SECRET` directly (no new env var).
-- [x] **1.2** Implement `deriveUserKey(secret, userId)` in `apps/api/src/app.ts` — uses Web Crypto HKDF-SHA256: `importKey('raw', SHA-256(secret), 'HKDF')` then `deriveBits({ name: 'HKDF', hash: 'SHA-256', salt: new Uint8Array(0), info: encode("user:{userId}") }, 256)`.
+- [x] **1.1** ~~Add `WORKSPACE_KEY_SECRET` env var~~: Skipped: using `BETTER_AUTH_SECRET` directly (no new env var).
+- [x] **1.2** Implement `deriveUserKey(secret, userId)` in `apps/api/src/app.ts`: uses Web Crypto HKDF-SHA256: `importKey('raw', SHA-256(secret), 'HKDF')` then `deriveBits({ name: 'HKDF', hash: 'SHA-256', salt: new Uint8Array(0), info: encode("user:{userId}") }, 256)`.
 - [x] **1.3** Replace `deriveKeyFromSecret(env.BETTER_AUTH_SECRET)` call in `customSession` with `deriveUserKey(env.BETTER_AUTH_SECRET, user.id)`. Session still returns `encryptionKey: bytesToBase64(userKey)`.
 - [x] **1.4** Remove old `deriveKeyFromSecret` function (replaced by `deriveUserKey`).
 
-### Phase 2: Client — Local Workspace Key Derivation
+### Phase 2: Client: Local Workspace Key Derivation
 
 - [x] **2.1** Add `deriveWorkspaceKey(userKey: Uint8Array, workspaceId: string): Promise<Uint8Array>` to `packages/workspace/src/shared/crypto/index.ts`. Uses Web Crypto HKDF-SHA256 with `info="workspace:{wsId}"` and empty salt.
 - [x] **2.2** Export `deriveWorkspaceKey` from the crypto barrel. Tests added: deterministic output, different userKeys diverge, different workspaceIds diverge, output is 32 bytes.
 
 ### Phase 2.5: Workspace-Level Encryption API
 
-The workspace client currently hides encrypted KV stores inside `createTables`/`createKv` — no way to call `lock()`/`activateEncryption(key)` at runtime. This phase surfaces encryption as a workspace-level concern so apps can react to session key arrival/departure.
+The workspace client currently hides encrypted KV stores inside `createTables`/`createKv`: no way to call `lock()`/`activateEncryption(key)` at runtime. This phase surfaces encryption as a workspace-level concern so apps can react to session key arrival/departure.
 
 **Design principle**: The workspace owns encryption state. Tables and KV are storage layers that delegate to encrypted stores the workspace created and retained.
 
 #### 2.5a: Extract `createKvHelper` from `create-kv.ts`
 
 `createKv` currently creates the encrypted store AND builds 100+ lines of helper methods in one function. Split into:
-- `createKvHelper(store, definitions)` — exported, builds KV helper from a pre-created encrypted store
-- `createKv(ydoc, definitions, options?)` — unchanged public API, thin wrapper: creates store then calls `createKvHelper`
+- `createKvHelper(store, definitions)`: exported, builds KV helper from a pre-created encrypted store
+- `createKv(ydoc, definitions, options?)`: unchanged public API, thin wrapper: creates store then calls `createKvHelper`
 
 - [x] **2.5a** Extract `createKvHelper(store: YKeyValueLwwEncrypted<unknown>, definitions: TKvDefinitions)` from `create-kv.ts`. Export it. Public `createKv` becomes a thin wrapper.
 
@@ -299,9 +299,9 @@ The workspace client currently hides encrypted KV stores inside `createTables`/`
 ```typescript
 /** Current encryption mode across all stores. */
 readonly mode: EncryptionMode;
-/** Lock — clears key, writes throw, reads return cached plaintext. No-op if mode is 'plaintext'. */
+/** Lock: clears key, writes throw, reads return cached plaintext. No-op if mode is 'plaintext'. */
 lock(): void;
-/** Unlock with encryption key — decrypts all stores, retries quarantine. Rolls back on partial failure. */
+/** Unlock with encryption key: decrypts all stores, retries quarantine. Rolls back on partial failure. */
 activateEncryption(key: Uint8Array): void;
 ```
 
@@ -312,22 +312,22 @@ activateEncryption(key: Uint8Array): void;
 - [x] **2.5d** Tests: runtime activateEncryption enables encrypted writes, re-lock preserves cached reads, set() throws while locked, construction-time key starts encrypted, lock no-op in plaintext. 7 tests added.
 
 #### Files changed
-- `packages/workspace/src/workspace/create-kv.ts` — extract `createKvHelper`
-- `packages/workspace/src/workspace/create-workspace.ts` — own stores, expose lock/activateEncryption/mode
-- `packages/workspace/src/workspace/types.ts` — add lock/activateEncryption/mode to WorkspaceClient
-- `packages/workspace/src/workspace/create-workspace.test.ts` — new tests
-- `create-tables.ts` — **no changes** (standalone API stays as-is)
+- `packages/workspace/src/workspace/create-kv.ts`: extract `createKvHelper`
+- `packages/workspace/src/workspace/create-workspace.ts`: own stores, expose lock/activateEncryption/mode
+- `packages/workspace/src/workspace/types.ts`: add lock/activateEncryption/mode to WorkspaceClient
+- `packages/workspace/src/workspace/create-workspace.test.ts`: new tests
+- `create-tables.ts`: **no changes** (standalone API stays as-is)
 
 ### Phase 3: Per-App Wiring
 
-- [x] ~~**3.1** **epicenter**~~ — Skipped (apps/epicenter/src doesn't exist)
-- [x] ~~**3.2** **whispering**~~ — Skipped (no auth infrastructure yet)
-- [x] **3.3** **tab-manager** — Added `encryptionKey` to `authState` (extracted from `getSession()` response), created `encryption-wiring.svelte.ts` module with `$effect` that derives workspace key and calls `activateEncryption()`/`lock()`, wired into `App.svelte` onMount. Added `./shared/crypto` export to workspace package.json.
+- [x] ~~**3.1** **epicenter**~~: Skipped (apps/epicenter/src doesn't exist)
+- [x] ~~**3.2** **whispering**~~: Skipped (no auth infrastructure yet)
+- [x] **3.3** **tab-manager**: Added `encryptionKey` to `authState` (extracted from `getSession()` response), created `encryption-wiring.svelte.ts` module with `$effect` that derives workspace key and calls `activateEncryption()`/`lock()`, wired into `App.svelte` onMount. Added `./shared/crypto` export to workspace package.json.
 
 ### Phase 4: Verify
 
-- [x] **4.1** `bun test` in `packages/workspace` — 483 pass, 0 fail
-- [x] **4.2** `bun run typecheck` in `apps/api` — clean
+- [x] **4.1** `bun test` in `packages/workspace`: 483 pass, 0 fail
+- [x] **4.2** `bun run typecheck` in `apps/api`: clean
 
 ### DO NOT build yet (deferred to future phases):
 
@@ -335,7 +335,7 @@ activateEncryption(key: Uint8Array): void;
 - KEK derivation / wrap / unwrap helpers (Phase 3)
 - Key rotation re-wrapping (Phase 3)
 - Shared workspace key derivation (Phase 2)
-- `GET /workspaces/:id/key` endpoint (removed — not needed with session-based delivery)
+- `GET /workspaces/:id/key` endpoint (removed: not needed with session-based delivery)
 
 ## Edge Cases
 
@@ -343,7 +343,7 @@ activateEncryption(key: Uint8Array): void;
 
 1. Session arrives with per-user `encryptionKey`
 2. Client calls `deriveWorkspaceKey(userKey, workspaceId)` → deterministic per-workspace key
-3. `workspace.activateEncryption(wsKey)` — workspace decrypts
+3. `workspace.activateEncryption(wsKey)`: workspace decrypts
 4. Same derivation tomorrow produces the same workspace key (same inputs)
 
 ### Secret rotation
@@ -356,7 +356,7 @@ On activation, the workspace picks the highest version as current. Plaintext ent
 
 1. Admin removes user from workspace
 2. User's next session still contains their user key (server can't prevent this)
-3. But the Durable Object enforces authz — sync requests return 403
+3. But the Durable Object enforces authz: sync requests return 403
 4. User can still derive the workspace key locally, but has no data to decrypt
 5. The authz boundary is the Durable Object, not the key derivation
 
@@ -365,7 +365,7 @@ On activation, the workspace picks the highest version as current. Plaintext ent
 1. User opens workspace, session provides user key, workspace key derived locally
 2. Network goes down
 3. Reads/writes continue locally (CRDT)
-4. Sync resumes when network returns — no key re-fetch needed (key is in memory)
+4. Sync resumes when network returns: no key re-fetch needed (key is in memory)
 5. Full page refresh without network → session gone → workspace locked until network returns
 
 ### Multiple workspaces open simultaneously
@@ -394,7 +394,7 @@ This spec supersedes `specs/20260314T064000-per-workspace-envelope-encryption.md
 
 - [x] Each user gets a unique key per workspace via two-level HKDF
 - [x] Keys are derived deterministically (not stored in any database)
-- [x] ~~`WORKSPACE_KEY_SECRET` is separate from `BETTER_AUTH_SECRET`~~ — Uses `BETTER_AUTH_SECRET` directly. See Design Decisions table for rationale.
+- [x] ~~`WORKSPACE_KEY_SECRET` is separate from `BETTER_AUTH_SECRET`~~: Uses `BETTER_AUTH_SECRET` directly. See Design Decisions table for rationale.
 - [x] Session carries per-user key (not deployment-wide key)
 - [x] Client derives per-workspace key locally via Web Crypto HKDF
 - [x] All existing tests pass, typecheck clean, apps build
@@ -402,14 +402,14 @@ This spec supersedes `specs/20260314T064000-per-workspace-envelope-encryption.md
 
 ## References
 
-- `apps/api/src/app.ts` — `deriveUserKey` and `customSession` (per-user HKDF key in session)
-- `packages/workspace/src/shared/crypto/index.ts` — encryption primitives (add `deriveWorkspaceKey`)
-- `packages/workspace/src/shared/crypto/key-cache.ts` — `KeyCache` interface (unchanged, used for session key caching)
-- `specs/20260314T063000-encryption-wrapper-hardening.md` — prerequisite (mode system, AAD, error containment)
-- `specs/20260314T090000-encrypted-blob-binary-storage.md` — `EncryptedBlob` uses `Uint8Array` ct
-- `specs/20260313T180100-client-side-encryption-wiring.md` — original wiring plan (app inventory still useful reference)
-- RFC 5869 — HKDF specification
-- Web Crypto API — `crypto.subtle.deriveBits` with HKDF algorithm
+- `apps/api/src/app.ts`: `deriveUserKey` and `customSession` (per-user HKDF key in session)
+- `packages/workspace/src/shared/crypto/index.ts`: encryption primitives (add `deriveWorkspaceKey`)
+- `packages/workspace/src/shared/crypto/key-cache.ts`: `KeyCache` interface (unchanged, used for session key caching)
+- `specs/20260314T063000-encryption-wrapper-hardening.md`: prerequisite (mode system, AAD, error containment)
+- `specs/20260314T090000-encrypted-blob-binary-storage.md`: `EncryptedBlob` uses `Uint8Array` ct
+- `specs/20260313T180100-client-side-encryption-wiring.md`: original wiring plan (app inventory still useful reference)
+- RFC 5869: HKDF specification
+- Web Crypto API: `crypto.subtle.deriveBits` with HKDF algorithm
 
 ## Review
 
@@ -420,19 +420,19 @@ This spec supersedes `specs/20260314T064000-per-workspace-envelope-encryption.md
 
 Implemented two-level HKDF key derivation: server derives per-user keys from `BETTER_AUTH_SECRET` + userId, client derives per-workspace keys locally from the user key + workspaceId. Both use Web Crypto HKDF-SHA256.
 
-The biggest design deviation was Phase 2.5 — the spec assumed `workspace.activateEncryption()` existed, but the workspace client didn't expose encryption controls. We added a workspace-level `lock()`/`activateEncryption(key)`/`mode` API by refactoring `createWorkspace` to own all encrypted KV stores directly. This required extracting `createKvHelper` from `create-kv.ts` and moving store creation from `createTables`/`createKv` into `createWorkspace`.
+The biggest design deviation was Phase 2.5. The spec assumed `workspace.activateEncryption()` existed, but the workspace client didn't expose encryption controls. We added a workspace-level `lock()`/`activateEncryption(key)`/`mode` API by refactoring `createWorkspace` to own all encrypted KV stores directly. This required extracting `createKvHelper` from `create-kv.ts` and moving store creation from `createTables`/`createKv` into `createWorkspace`.
 
 ### Deviations from Spec
 
-- **No `WORKSPACE_KEY_SECRET`** — spec called for a separate env var; we use `BETTER_AUTH_SECRET` directly (per user request)
-- **Phase 2.5 added** — workspace-level encryption API (`lock`/`activateEncryption`/`mode`) didn't exist and was needed for Phase 3
-- **epicenter and whispering skipped** — epicenter doesn't exist, whispering has no auth
-- **`createWorkspace` refactored** — no longer delegates to `createTables`/`createKv`; owns encrypted stores directly for lock/activateEncryption coordination
-- **`activateEncryption()` has rollback** — Oracle-recommended: if any store fails to activateEncryption, already-unlocked stores are re-locked
+- **No `WORKSPACE_KEY_SECRET`**: spec called for a separate env var; we use `BETTER_AUTH_SECRET` directly (per user request)
+- **Phase 2.5 added**: workspace-level encryption API (`lock`/`activateEncryption`/`mode`) didn't exist and was needed for Phase 3
+- **epicenter and whispering skipped**: epicenter doesn't exist, whispering has no auth
+- **`createWorkspace` refactored**: no longer delegates to `createTables`/`createKv`; owns encrypted stores directly for lock/activateEncryption coordination
+- **`activateEncryption()` has rollback**: Oracle-recommended: if any store fails to activateEncryption, already-unlocked stores are re-locked
 
 ### Follow-up Work
 
 - Wire whispering when it gets auth infrastructure
 - Wire epicenter when it exists
 - Consider exposing `quarantine` at workspace level for diagnostic UI
-- The `signIn()`/`signUp()` responses may also contain `encryptionKey` — currently only `checkSession()` extracts it (slight delay on first sign-in before key arrives)
+- The `signIn()`/`signUp()` responses may also contain `encryptionKey`: currently only `checkSession()` extracts it (slight delay on first sign-in before key arrives)

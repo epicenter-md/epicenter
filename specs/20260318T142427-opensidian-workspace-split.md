@@ -27,19 +27,19 @@ Does NOT own:
 
 ### fs-state.svelte.ts (pure UI state)
 
-Receives workspace as import (not dependency injection—it's a singleton anyway).
+Receives workspace as import (not dependency injection. It's a singleton anyway).
 
 Owns:
 - `$state` reactive values (version, activeFileId, openFileIds, focusedId, dialog state)
 - `$derived` computations (rootChildIds, selectedNode, selectedPath)
 - rAF-coalesced observer (the `void version` bridge)
-- Reactive wrappers: `getRow()`, `getChildIds()`, `getPathForId()`, `walkTree()` — these add `void version` tracking
+- Reactive wrappers: `getRow()`, `getChildIds()`, `getPathForId()`, `walkTree()`: these add `void version` tracking
 - All `actions` (selectFile, closeFile, toggleExpand, focus, dialog open/close, CRUD operations)
 - `destroy()` cleanup
 
 Does NOT own:
 - Workspace creation or extension config
-- Raw `fs`, `documents`, `sqliteIndex` — these are no longer proxied
+- Raw `fs`, `documents`, `sqliteIndex`: these are no longer proxied
 
 ### Consumer changes
 
@@ -52,11 +52,11 @@ Does NOT own:
 
 ## Task List
 
-- [x] 1. Create `state/workspace.ts` — extract workspace + filesystem creation
-- [x] 2. Update `fs-state.svelte.ts` — import from workspace, remove infra creation, drop `fs`/`documents`/`sqliteIndex` from return object
-- [x] 3. Update Toolbar.svelte — import `fs` from workspace for `loadSampleData`
-- [x] 4. Update ContentEditor.svelte — import `documents` from workspace
-- [x] 5. Update window debug exposure — expose workspace on window in workspace.ts
+- [x] 1. Create `state/workspace.ts`: extract workspace + filesystem creation
+- [x] 2. Update `fs-state.svelte.ts`: import from workspace, remove infra creation, drop `fs`/`documents`/`sqliteIndex` from return object
+- [x] 3. Update Toolbar.svelte: import `fs` from workspace for `loadSampleData`
+- [x] 4. Update ContentEditor.svelte: import `documents` from workspace
+- [x] 5. Update window debug exposure: expose workspace on window in workspace.ts
 - [x] 6. Verify build passes (`bun --bun vite build`)
 - [ ] 7. Stage and commit
 
@@ -66,17 +66,17 @@ Does NOT own:
 
 Split `createFsState()` into two modules:
 
-- **`workspace.ts`** (52 lines) — Pure TypeScript. Creates the Yjs workspace with `filesTable`, wires `indexeddbPersistence` and `sqliteIndex` extensions, creates `YjsFileSystem`. Exports `fs`, `documents`, `filesDb`, `sqliteIndex`. Also exposes `window.workspace` for dev console access.
-- **`fs-state.svelte.ts`** (358 lines, down from 376) — Imports workspace singletons instead of creating them. Removed `fs`, `documents`, `sqliteIndex` from return object. Replaced 4 occurrences of `ws.tables.files` with `filesDb`. All reactive state, derived computations, actions, and destroy() unchanged.
+- **`workspace.ts`** (52 lines): Pure TypeScript. Creates the Yjs workspace with `filesTable`, wires `indexeddbPersistence` and `sqliteIndex` extensions, creates `YjsFileSystem`. Exports `fs`, `documents`, `filesDb`, `sqliteIndex`. Also exposes `window.workspace` for dev console access.
+- **`fs-state.svelte.ts`** (358 lines, down from 376): Imports workspace singletons instead of creating them. Removed `fs`, `documents`, `sqliteIndex` from return object. Replaced 4 occurrences of `ws.tables.files` with `filesDb`. All reactive state, derived computations, actions, and destroy() unchanged.
 
 ### Consumer changes
 
 - **Toolbar.svelte**: Removed `const { fs } = fsState` destructure, added `import { fs } from '$lib/state/workspace'`. All `fs.mkdir()`/`fs.writeFile()` calls unchanged.
 - **ContentEditor.svelte**: Added `import { documents } from '$lib/state/workspace'`. Changed `fsState.documents.open(id)` → `documents.open(id)`. The `fsState.activeFileId` guard stays (UI state).
-- **All other components**: No changes needed — they only access UI state/actions through `fsState`.
+- **All other components**: No changes needed: they only access UI state/actions through `fsState`.
 
 ### Verification
 
 - LSP diagnostics: 0 errors across all 4 changed files
 - Build: `bun --bun vite build` passes (SSR + client, 5412/5390 modules)
-- No behavior changes — pure structural refactor
+- No behavior changes: pure structural refactor

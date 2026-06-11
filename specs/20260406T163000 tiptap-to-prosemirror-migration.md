@@ -15,7 +15,7 @@ Replace TipTap with raw ProseMirror in both Honeycrisp and Fuji editors. TipTap 
 Both apps instantiate TipTap's `Editor` class inside a `$effect`, configure a handful of extensions, and wire Yjs collaboration via `y-prosemirror` plugins:
 
 ```ts
-// apps/honeycrisp/src/lib/editor/Editor.svelte (lines 78–136)
+// apps/honeycrisp/src/lib/editor/Editor.svelte (lines 78-136)
 const ed = new Editor({
   element,
   extensions: [
@@ -38,7 +38,7 @@ const ed = new Editor({
 ```
 
 ```ts
-// apps/fuji/src/lib/components/EntryEditor.svelte (lines 36–62)
+// apps/fuji/src/lib/components/EntryEditor.svelte (lines 36-62)
 const ed = new Editor({
   element,
   extensions: [
@@ -57,13 +57,13 @@ const ed = new Editor({
 
 This creates problems:
 
-1. **TipTap's Svelte guide is broken with Svelte 5 runes.** [Issue #6025](https://github.com/ueberdosis/tiptap/issues/6025) is open with no official fix. The workaround requires a `createSubscriber()` + Proxy hack—we're building on an unsupported combination.
+1. **TipTap's Svelte guide is broken with Svelte 5 runes.** [Issue #6025](https://github.com/ueberdosis/tiptap/issues/6025) is open with no official fix. The workaround requires a `createSubscriber()` + Proxy hack. We're building on an unsupported combination.
 
 2. **TipTap is dead weight.** We use `StarterKit` (a bundle of prosemirror-schema-basic nodes/marks), `Placeholder` (a decoration plugin), `TaskList`/`TaskItem` (custom nodes), `Underline` (a trivial mark), and the `chain().focus().toggleX().run()` command API. All of these map 1:1 to ProseMirror primitives.
 
-3. **Dependency bloat.** `@tiptap/starter-kit` alone pulls **24 dependencies**—each a `@tiptap/extension-*` wrapper around a ProseMirror feature. Honeycrisp has 6 direct `@tiptap/*` packages; Fuji has 3. Both apps already have `prosemirror-model`, `prosemirror-state`, and `prosemirror-view` as direct dependencies (likely for type imports), so the ProseMirror packages are already in the dependency graph.
+3. **Dependency bloat.** `@tiptap/starter-kit` alone pulls **24 dependencies**: each a `@tiptap/extension-*` wrapper around a ProseMirror feature. Honeycrisp has 6 direct `@tiptap/*` packages; Fuji has 3. Both apps already have `prosemirror-model`, `prosemirror-state`, and `prosemirror-view` as direct dependencies (likely for type imports), so the ProseMirror packages are already in the dependency graph.
 
-4. **The Yjs integration is already raw ProseMirror.** The custom `yjs-collaboration` extension just calls `ySyncPlugin()` and `yUndoPlugin()` from `y-prosemirror`. TipTap's `Extension.create({ addProseMirrorPlugins })` wrapper adds nothing—it's passing plugins through.
+4. **The Yjs integration is already raw ProseMirror.** The custom `yjs-collaboration` extension just calls `ySyncPlugin()` and `yUndoPlugin()` from `y-prosemirror`. TipTap's `Extension.create({ addProseMirrorPlugins })` wrapper adds nothing. It's passing plugins through.
 
 ### Desired State
 
@@ -80,7 +80,7 @@ Two production Svelte 5 apps use raw ProseMirror with the exact pattern we'd ado
 | [jakelazaroff/waypoint](https://github.com/jakelazaroff/waypoint) | Svelte 5 + ProseMirror + Yjs | Yes (`ySyncPlugin`, `yCursorPlugin`, `yUndoPlugin`) | `$effect(() => { view = new EditorView(...); return () => view.destroy(); })` | [Outline.svelte](https://github.com/jakelazaroff/waypoint/blob/main/src/component/Outline.svelte) |
 | [PostOwl/postowl](https://github.com/PostOwl/postowl) | Svelte 5 + ProseMirror | No | `onMount` + `$effect.pre` for external content sync, `$derived` for schema | [RichTextEditor.svelte](https://github.com/PostOwl/postowl/blob/main/src/lib/components/RichTextEditor.svelte) |
 
-**Key finding**: The waypoint project is the closest match to our stack—Svelte 5 runes, ProseMirror, Yjs collaboration, custom NodeSpecs, keyboard shortcuts, and input rules. It works cleanly without any wrapper library.
+**Key finding**: The waypoint project is the closest match to our stack. Svelte 5 runes, ProseMirror, Yjs collaboration, custom NodeSpecs, keyboard shortcuts, and input rules. It works cleanly without any wrapper library.
 
 **Svelte NodeView pattern**: Jake Lazaroff documented a pattern for rendering Svelte 5 components as ProseMirror NodeViews ([TIL post](https://til.jakelazaroff.com/prosemirror/use-a-svelte-component-as-a-nodeview/)). This uses `mount()` from Svelte 5 to render into the NodeView's DOM element. We don't currently need custom NodeViews, but this pattern is available if we do later.
 
@@ -95,8 +95,8 @@ Every TipTap feature we use maps directly to ProseMirror primitives:
 | `Placeholder.configure({ placeholder })` | ProseMirror `Plugin` with `DecorationSet` | ~25 lines |
 | `TaskList` / `TaskItem.configure({ nested: true })` | Custom `NodeSpec` definitions | ~60 lines total |
 | `Underline` | `MarkSpec` with `<u>` DOM output | 5 lines |
-| `Extension.create({ addProseMirrorPlugins: [ySyncPlugin, yUndoPlugin] })` | Direct plugin array in `EditorState.create({ plugins: [...] })` | 0 lines—remove wrapper |
-| `editor.chain().focus().toggleBold().run()` | `toggleMark(schema.marks.strong)(view.state, view.dispatch); view.focus()` | Trivial—different shape |
+| `Extension.create({ addProseMirrorPlugins: [ySyncPlugin, yUndoPlugin] })` | Direct plugin array in `EditorState.create({ plugins: [...] })` | 0 lines. Remove wrapper |
+| `editor.chain().focus().toggleBold().run()` | `toggleMark(schema.marks.strong)(view.state, view.dispatch); view.focus()` | Trivial. Different shape |
 | `editor.isActive('bold')` | Helper: `markActive(state, markType)` checking `state.storedMarks` or `state.selection` | ~8 lines helper |
 | `onUpdate` callback | `dispatchTransaction` hook or Plugin `view.update` | ~5 lines |
 | `onTransaction` callback | Same `dispatchTransaction` function | Built-in |
@@ -136,7 +136,7 @@ const editorView = new EditorView(element, {
 });
 ```
 
-This is actually simpler than TipTap's approach—no separate `onTransaction` callback needed.
+This is actually simpler than TipTap's approach. No separate `onTransaction` callback needed.
 
 ### `extractTitleAndPreview` Migration
 
@@ -176,7 +176,7 @@ TipTap's `@tiptap/pm` re-exports all prosemirror-\* packages, so they're already
 | What | Minified | Gzip |
 |------|----------|------|
 | `@tiptap/core` (eliminated) | 95.6 KB | 29.2 KB |
-| `@tiptap/starter-kit` + extensions (eliminated) | ~94 KB unpacked | — |
+| `@tiptap/starter-kit` + extensions (eliminated) | ~94 KB unpacked |: |
 | ProseMirror packages (already loaded via `@tiptap/pm`) | 0 net new | 0 net new |
 
 Net result: bundle gets smaller. Both `package.json` files already list `prosemirror-model`, `prosemirror-state`, and `prosemirror-view` as direct dependencies.
@@ -187,8 +187,8 @@ Net result: bundle gets smaller. Both `package.json` files already list `prosemi
 |----------|--------|-----------|
 | Schema approach | Build from `prosemirror-schema-basic` + `prosemirror-schema-list`, extend with custom nodes/marks | Reuses battle-tested NodeSpecs rather than writing from scratch. Same thing StarterKit does internally. |
 | Placeholder implementation | Custom ProseMirror `Plugin` with `DecorationSet` | Well-documented pattern (~25 lines). Avoids any wrapper dependency. |
-| Task list nodes | Custom `NodeSpec` with checkbox DOM rendering | No existing lightweight package. TipTap's implementation is [~100 lines](https://github.com/ueberdosis/tiptap/blob/main/packages/extension-task-item/src/task-item.ts) including the extension system boilerplate—the raw NodeSpec is simpler. |
-| Toolbar command pattern | Direct `prosemirror-commands` calls + `view.focus()` | 1:1 mapping from `chain().focus().toggleX().run()`. Actually clearer—no chaining abstraction. |
+| Task list nodes | Custom `NodeSpec` with checkbox DOM rendering | No existing lightweight package. TipTap's implementation is [~100 lines](https://github.com/ueberdosis/tiptap/blob/main/packages/extension-task-item/src/task-item.ts) including the extension system boilerplate. The raw NodeSpec is simpler. |
+| Toolbar command pattern | Direct `prosemirror-commands` calls + `view.focus()` | 1:1 mapping from `chain().focus().toggleX().run()`. Actually clearer. No chaining abstraction. |
 | Active format detection | Small `markActive` / `nodeActive` helpers | ProseMirror doesn't bundle these, but they're [~8 lines each](https://prosemirror.net/examples/menu/). Standard ProseMirror pattern. |
 | Editor lifecycle | `$effect(() => { ... return () => view.destroy() })` | Matches waypoint pattern. Clean Svelte 5 lifecycle integration. |
 | Shared vs per-app code | Shared schema + helpers in a common module; per-app Svelte components | Schema and helpers are identical; only the Svelte template/toolbar differs between apps. |
@@ -259,23 +259,23 @@ The middle layer (TipTap) is completely removed. The Svelte components talk dire
 
 Create a shared module with the schema, plugins, and helpers that both apps will use.
 
-- [ ] **1.1** Create `packages/editor/` (or a shared location—see Open Questions) with:
-  - `schema.ts` — ProseMirror `Schema` built from `prosemirror-schema-basic` nodes + `prosemirror-schema-list` list nodes + custom `task_list`, `task_item`, and `underline` mark
-  - `plugins.ts` — `createPlaceholderPlugin(text: string)` returning a ProseMirror `Plugin`
-  - `helpers.ts` — `markActive(state, markType)`, `nodeActive(state, nodeType, attrs?)`, `extractTitleAndPreview(doc)`
+- [ ] **1.1** Create `packages/editor/` (or a shared location. See Open Questions) with:
+  - `schema.ts`: ProseMirror `Schema` built from `prosemirror-schema-basic` nodes + `prosemirror-schema-list` list nodes + custom `task_list`, `task_item`, and `underline` mark
+  - `plugins.ts`: `createPlaceholderPlugin(text: string)` returning a ProseMirror `Plugin`
+  - `helpers.ts`: `markActive(state, markType)`, `nodeActive(state, nodeType, attrs?)`, `extractTitleAndPreview(doc)`
 - [ ] **1.2** Define the custom `task_list` and `task_item` NodeSpecs with checkbox rendering. Reference TipTap's [task-item.ts](https://github.com/ueberdosis/tiptap/blob/main/packages/extension-task-item/src/task-item.ts) and [task-list.ts](https://github.com/ueberdosis/tiptap/blob/main/packages/extension-task-list/src/task-list.ts) for the DOM structure to maintain Yjs document compatibility.
 - [ ] **1.3** Add `prosemirror-keymap`, `prosemirror-commands`, `prosemirror-schema-basic`, `prosemirror-schema-list`, and `prosemirror-inputrules` as dependencies. Remove `@tiptap/*` packages.
 
 ### Phase 2: Migrate Fuji (simpler editor, no toolbar)
 
-Fuji's `EntryEditor.svelte` is the simpler target—no toolbar, no task lists, no underline.
+Fuji's `EntryEditor.svelte` is the simpler target. No toolbar, no task lists, no underline.
 
 - [x] **2.1** Replace TipTap `Editor` instantiation with ProseMirror `EditorView` + `EditorState.create()` inside the existing `$effect`. Wire `ySyncPlugin(ytext)` and `yUndoPlugin()` directly in the plugins array.
 - [x] **2.2** Import `prosemirror-view/style/prosemirror.css`.
 - [x] **2.3** Update CSS selectors from `:global(.tiptap)` to `:global(.ProseMirror)`.
 - [x] **2.4** Remove TipTap imports and dependencies from `apps/fuji/package.json`.
 - [x] **2.5** Verify: editor loads, content syncs via Yjs, placeholder shows, undo/redo works.
-  > **Note**: `ySyncPlugin` typed for `Y.XmlFragment` but accepts `Y.Text` at runtime—used `as unknown as Y.XmlFragment` cast matching original TipTap behavior. Added keyboard shortcuts (Mod-B/I, list keys) and input rules (headings, lists, blockquote, code blocks) beyond what spec explicitly listed for Fuji.
+  > **Note**: `ySyncPlugin` typed for `Y.XmlFragment` but accepts `Y.Text` at runtime. Used `as unknown as Y.XmlFragment` cast matching original TipTap behavior. Added keyboard shortcuts (Mod-B/I, list keys) and input rules (headings, lists, blockquote, code blocks) beyond what spec explicitly listed for Fuji.
 
 ### Phase 3: Migrate Honeycrisp (toolbar + task lists + underline)
 
@@ -318,7 +318,7 @@ Honeycrisp has the full toolbar and additional extensions.
 
 1. Honeycrisp styles `:global(.tiptap > *:first-child)` with large font for the title.
 2. After migration, this becomes `:global(.ProseMirror > *:first-child)`.
-3. **No content change**—the first child is still a `<p>` or `<h1>` from the schema.
+3. **No content change**: the first child is still a `<p>` or `<h1>` from the schema.
 
 ### Placeholder Text
 
@@ -330,13 +330,13 @@ Honeycrisp has the full toolbar and additional extensions.
 
 1. TipTap stores the editor instance as `$state`. Toolbar buttons call `editor?.chain()...`.
 2. With ProseMirror, we store `view` as `$state<EditorView>()`. Toolbar buttons call command functions with `view.state` and `view.dispatch`.
-3. **No reactivity issue**—the view reference itself doesn't change; only the internal state does (via `dispatchTransaction`).
+3. **No reactivity issue**: the view reference itself doesn't change; only the internal state does (via `dispatchTransaction`).
 
 ## Open Questions
 
 1. **Where should the shared editor module live?**
    - Options: (a) `packages/editor/` as a new workspace package, (b) `packages/ui/src/editor/` inside the existing UI package, (c) inline in each app with shared code copied
-   - **Recommendation**: (a) `packages/editor/`—it's a distinct domain (rich text editing) separate from UI components, and both apps depend on it. Follows monorepo conventions.
+   - **Recommendation**: (a) `packages/editor/`: it's a distinct domain (rich text editing) separate from UI components, and both apps depend on it. Follows monorepo conventions.
 
 2. **Should we add `prosemirror-schema-basic` as a dependency or copy-paste the schema?**
    - Options: (a) depend on `prosemirror-schema-basic` and extend it, (b) copy the schema definition (~80 lines) and own it entirely
@@ -375,20 +375,20 @@ Honeycrisp has the full toolbar and additional extensions.
 
 ## References
 
-- `apps/honeycrisp/src/lib/editor/Editor.svelte` — Main TipTap editor with toolbar (245 lines)
-- `apps/honeycrisp/src/lib/editor/utils.ts` — `extractTitleAndPreview` using TipTap's `Editor` type (34 lines)
-- `apps/honeycrisp/src/routes/+page.svelte` — Yjs document handle acquisition (`handle.asRichText()`)
-- `apps/honeycrisp/package.json` — 6 `@tiptap/*` dependencies
-- `apps/fuji/src/lib/components/EntryEditor.svelte` — Simpler TipTap editor without toolbar (147 lines)
-- `apps/fuji/src/routes/+page.svelte` — Yjs document handle acquisition (`handle.asText()`)
-- `apps/fuji/package.json` — 3 `@tiptap/*` dependencies
-- [jakelazaroff/waypoint Outline.svelte](https://github.com/jakelazaroff/waypoint/blob/main/src/component/Outline.svelte) — Production Svelte 5 + ProseMirror + Yjs reference
-- [PostOwl RichTextEditor.svelte](https://github.com/PostOwl/postowl/blob/main/src/lib/components/RichTextEditor.svelte) — Svelte 5 + ProseMirror with `$effect.pre` pattern
-- [Jake Lazaroff: Svelte NodeView pattern](https://til.jakelazaroff.com/prosemirror/use-a-svelte-component-as-a-nodeview/) — Rendering Svelte components as ProseMirror NodeViews
-- [TipTap issue #6025](https://github.com/ueberdosis/tiptap/issues/6025) — Svelte 5 runes incompatibility (open, no fix)
-- [TipTap task-item source](https://github.com/ueberdosis/tiptap/blob/main/packages/extension-task-item/src/task-item.ts) — Reference for task item NodeSpec + NodeView
-- [ProseMirror example-setup inputrules](https://github.com/ProseMirror/prosemirror-example-setup/blob/master/src/inputrules.ts) — Reference for input rule definitions
-- [Svelte Summit Fall 2024: Building a rich text editor with Svelte 5](https://www.youtube.com/watch?v=T2RMYj_1g9E) — Michael Aufreiter on ProseMirror alternatives in Svelte 5
+- `apps/honeycrisp/src/lib/editor/Editor.svelte`: Main TipTap editor with toolbar (245 lines)
+- `apps/honeycrisp/src/lib/editor/utils.ts`: `extractTitleAndPreview` using TipTap's `Editor` type (34 lines)
+- `apps/honeycrisp/src/routes/+page.svelte`: Yjs document handle acquisition (`handle.asRichText()`)
+- `apps/honeycrisp/package.json`: 6 `@tiptap/*` dependencies
+- `apps/fuji/src/lib/components/EntryEditor.svelte`: Simpler TipTap editor without toolbar (147 lines)
+- `apps/fuji/src/routes/+page.svelte`: Yjs document handle acquisition (`handle.asText()`)
+- `apps/fuji/package.json`: 3 `@tiptap/*` dependencies
+- [jakelazaroff/waypoint Outline.svelte](https://github.com/jakelazaroff/waypoint/blob/main/src/component/Outline.svelte): Production Svelte 5 + ProseMirror + Yjs reference
+- [PostOwl RichTextEditor.svelte](https://github.com/PostOwl/postowl/blob/main/src/lib/components/RichTextEditor.svelte): Svelte 5 + ProseMirror with `$effect.pre` pattern
+- [Jake Lazaroff: Svelte NodeView pattern](https://til.jakelazaroff.com/prosemirror/use-a-svelte-component-as-a-nodeview/): Rendering Svelte components as ProseMirror NodeViews
+- [TipTap issue #6025](https://github.com/ueberdosis/tiptap/issues/6025): Svelte 5 runes incompatibility (open, no fix)
+- [TipTap task-item source](https://github.com/ueberdosis/tiptap/blob/main/packages/extension-task-item/src/task-item.ts): Reference for task item NodeSpec + NodeView
+- [ProseMirror example-setup inputrules](https://github.com/ProseMirror/prosemirror-example-setup/blob/master/src/inputrules.ts): Reference for input rule definitions
+- [Svelte Summit Fall 2024: Building a rich text editor with Svelte 5](https://www.youtube.com/watch?v=T2RMYj_1g9E): Michael Aufreiter on ProseMirror alternatives in Svelte 5
 
 ## Review
 
@@ -396,7 +396,7 @@ Honeycrisp has the full toolbar and additional extensions.
 
 ### Summary
 
-Replaced TipTap with raw ProseMirror in both Fuji and Honeycrisp editors. Both apps now use `EditorView` mounted via `$effect` with cleanup, schemas built from `prosemirror-schema-basic` + `prosemirror-schema-list`, and direct `y-prosemirror` plugin integration. The Honeycrisp toolbar uses ProseMirror commands (`toggleMark`, `setBlockType`, `wrapInList`) with active format detection via `dispatchTransaction`. No shared `packages/editor/` was created—schemas are inlined in each editor since they differ (Honeycrisp has taskList/taskItem/underline/strike that Fuji doesn't need).
+Replaced TipTap with raw ProseMirror in both Fuji and Honeycrisp editors. Both apps now use `EditorView` mounted via `$effect` with cleanup, schemas built from `prosemirror-schema-basic` + `prosemirror-schema-list`, and direct `y-prosemirror` plugin integration. The Honeycrisp toolbar uses ProseMirror commands (`toggleMark`, `setBlockType`, `wrapInList`) with active format detection via `dispatchTransaction`. No shared `packages/editor/` was created. Schemas are inlined in each editor since they differ (Honeycrisp has taskList/taskItem/underline/strike that Fuji doesn't need).
 
 ### Deviations from Spec
 
@@ -421,4 +421,4 @@ Replaced TipTap with raw ProseMirror in both Fuji and Honeycrisp editors. Both a
 
 - End-to-end testing (spec item 4.4) requires manual verification with running apps
 - Consider extracting shared schema/helpers to `packages/editor/` if a third editor appears
-- The `<svelte:component>` deprecation warnings in Honeycrisp toolbar snippets are pre-existing and unrelated—can be fixed by replacing with direct component rendering
+- The `<svelte:component>` deprecation warnings in Honeycrisp toolbar snippets are pre-existing and unrelated. Can be fixed by replacing with direct component rendering

@@ -35,11 +35,11 @@ if (await this.exists(resolved)) {
     const row = this.getRow(id, resolved);
     if (row.type === 'file') throw fsError('EEXIST', resolved);
   }
-  return; // existing directory — no-op
+  return; // existing directory, no-op
 }
 ```
 
-The `recursive` path has the same issue — when walking path segments, if an existing segment is a file, it should throw `ENOTDIR` (can't create a directory inside a file):
+The `recursive` path has the same issue. When walking path segments, if an existing segment is a file, it should throw `ENOTDIR` (can't create a directory inside a file):
 
 ```typescript
 if (options?.recursive) {
@@ -71,7 +71,7 @@ let id = this.index.pathToId.get(resolved);
 if (!id) {
   // ... create new file
 }
-// proceeds to write content — even if id points to a folder
+// proceeds to write content: even if id points to a folder
 ```
 
 `writeFile('/existing-dir', 'hello')` succeeds, writing a Y.Text content to a metadata row that says `type: 'folder'`. This corrupts the filesystem state.
@@ -101,7 +101,7 @@ async appendFile(path, data, _options) {
 }
 ```
 
-This reads the entire file, concatenates, then does a full `delete(0, length) + insert(0, fullText)` via `writeFile`. This is O(n) and generates a massive Yjs operation that tombstones every existing character. Two concurrent appends would conflict badly — each would read the same state, append their content, and do a full rewrite, with one overwriting the other via LWW.
+This reads the entire file, concatenates, then does a full `delete(0, length) + insert(0, fullText)` via `writeFile`. This is O(n) and generates a massive Yjs operation that tombstones every existing character. Two concurrent appends would conflict badly: each would read the same state, append their content, and do a full rewrite, with one overwriting the other via LWW.
 
 **Expected behavior**: Append to the end of the Y.Text directly, preserving existing CRDT item IDs. Two concurrent appends should both succeed (Yjs handles concurrent inserts at the same position).
 
@@ -117,7 +117,7 @@ async appendFile(path: string, data: FileContent, _options?: { encoding?: string
   const row = this.getRow(id, resolved);
   if (row.type === 'folder') throw fsError('EISDIR', resolved);
 
-  // Check binary store — if file has binary data, read-concat-write
+  // Check binary store: if file has binary data, read-concat-write
   const binary = this.binaryStore.get(id);
   if (binary) {
     const existingText = new TextDecoder().decode(binary);
@@ -151,7 +151,7 @@ async stat(path: string): Promise<FsStat> {
     return { isFile: false, isDirectory: true, ... };  // line 75-83
   }
   const id = this.resolveId(resolved);       // throws ENOENT if not found
-  if (id === null) throw fsError('EISDIR', resolved);  // line 86 — UNREACHABLE
+  if (id === null) throw fsError('EISDIR', resolved);  // line 86: UNREACHABLE
   const row = this.getRow(id, resolved);
   // ...
 }
@@ -172,19 +172,19 @@ async stat(path: string): Promise<FsStat> {
 }
 ```
 
-Same dead-code pattern also exists in `readFile` (line 115) and `readFileBuffer` (line 130). Apply the same cleanup — after the root check, `resolveId` guarantees a non-null FileId, so the null check is dead code in all three methods.
+Same dead-code pattern also exists in `readFile` (line 115) and `readFileBuffer` (line 130). Apply the same cleanup: after the root check, `resolveId` guarantees a non-null FileId, so the null check is dead code in all three methods.
 
 ---
 
 ### Fix 5: `appendFile` on directory should throw EISDIR
 
-**Current behavior**: `appendFile('/existing-dir', 'data')` falls through to `readFile(resolved)` which throws EISDIR. This happens to be correct, but only by accident — the error comes from `readFile`, not from `appendFile` itself.
+**Current behavior**: `appendFile('/existing-dir', 'data')` falls through to `readFile(resolved)` which throws EISDIR. This happens to be correct, but only by accident: the error comes from `readFile`, not from `appendFile` itself.
 
-**Fix**: Already addressed in Fix 3 — the new `appendFile` checks `row.type === 'folder'` explicitly before attempting any content operations.
+**Fix**: Already addressed in Fix 3: the new `appendFile` checks `row.type === 'folder'` explicitly before attempting any content operations.
 
 ---
 
-## Part 2: Binary Storage — Discussion
+## Part 2: Binary Storage: Discussion
 
 The current design uses an ephemeral `Map<FileId, Uint8Array>` for binary files. This means binary data is:
 - Not synced via Yjs (no collaborative merge)
@@ -200,7 +200,7 @@ The user's primary question: **Is this the right tradeoff? Should we persist/syn
 **Pros**:
 - Simplest implementation (already done)
 - Zero overhead for the text path (which is 99% of usage)
-- Matches InMemoryFs semantics — just-bash's own fs is also ephemeral
+- Matches InMemoryFs semantics: just-bash's own fs is also ephemeral
 
 **Cons**:
 - Binary files vanish on reload
@@ -222,13 +222,13 @@ async writeFile(path: string, data: FileContent): Promise<void> {
 
 **Pros**:
 - Removes all binary branching from read/write/rm/cp paths
-- Every file is Y.Text-backed — consistent, collaborative, persistent
+- Every file is Y.Text-backed: consistent, collaborative, persistent
 - Simpler mental model: filesystem = text files
-- `readFileBuffer` becomes `new TextEncoder().encode(ytext.toString())` — one path
+- `readFileBuffer` becomes `new TextEncoder().encode(ytext.toString())`: one path
 
 **Cons**:
 - Binary data that contains invalid UTF-8 gets replacement characters (U+FFFD) on decode. SQLite databases, images, compressed files become corrupted.
-- just-bash's `sqlite3` command would break — it writes Uint8Array and reads it back via `readFileBuffer`, expecting byte-perfect round-trip.
+- just-bash's `sqlite3` command would break: it writes Uint8Array and reads it back via `readFileBuffer`, expecting byte-perfect round-trip.
 
 **Best for**: If we decide binary support isn't needed. The bash agent primarily works with text. But `sqlite3` is a significant just-bash feature.
 
@@ -244,18 +244,18 @@ Y.Doc (guid = fileId)
 
 When `writeFile` receives a Uint8Array, it writes to the Y.Map. When it receives a string, it writes to Y.Text and clears the Y.Map. The `readFile`/`readFileBuffer` checks the Y.Map first.
 
-Yjs `Y.Map` natively supports `Uint8Array` values — `ymap.set('data', uint8Array)` works out of the box. The binary data syncs via Yjs with last-write-wins semantics at the whole-value level (not byte-level CRDT, which would be overkill).
+Yjs `Y.Map` natively supports `Uint8Array` values: `ymap.set('data', uint8Array)` works out of the box. The binary data syncs via Yjs with last-write-wins semantics at the whole-value level (not byte-level CRDT, which would be overkill).
 
 **Pros**:
 - Binary data persists and syncs via standard Yjs providers
 - LWW is the right merge strategy for binary (you can't meaningfully merge two SQLite databases at the byte level)
-- No new infrastructure — uses existing Y.Doc and providers
+- No new infrastructure: uses existing Y.Doc and providers
 - Byte-perfect round-trip
 
 **Cons**:
 - Large binary files bloat the Y.Doc (a 1MB SQLite database = 1MB in the Y.Doc state)
 - Y.Doc `gc: false` means old binary versions accumulate as tombstones
-- Every binary write replaces the entire value in Y.Map (no delta — but this is correct for binary)
+- Every binary write replaces the entire value in Y.Map (no delta, but this is correct for binary)
 - Adds a second shared type to the content Y.Doc (complexity)
 
 **Best for**: If binary files need to persist across sessions and sync between peers. Makes sense if `sqlite3` is a core feature of the agent workflow.
@@ -283,7 +283,7 @@ Yjs `Y.Map` natively supports `Uint8Array` values — `ymap.set('data', uint8Arr
 
 The bash agent use case is overwhelmingly text: code files, config, markdown, shell scripts. Binary files are session artifacts that don't need to survive reloads. The two-track storage is already implemented and working.
 
-If binary persistence becomes a real requirement (e.g., agent workflows that build and query SQLite databases across sessions), upgrade to Option C (Y.Map with Uint8Array). It's a contained change — add a Y.Map to the content Y.Doc, update read/write/rm paths. No IFileSystem API changes.
+If binary persistence becomes a real requirement (e.g., agent workflows that build and query SQLite databases across sessions), upgrade to Option C (Y.Map with Uint8Array). It's a contained change: add a Y.Map to the content Y.Doc, update read/write/rm paths. No IFileSystem API changes.
 
 Option B (remove binary) is tempting for simplicity but breaks `sqlite3`, which is a significant just-bash selling point.
 

@@ -12,6 +12,12 @@ metadata:
 - [Drizzle ORM](https://github.com/drizzle-team/drizzle-orm) : TypeScript ORM with SQL-like query builder
 - [Turso](https://github.com/tursodatabase/turso) : Edge-hosted LibSQL database (Epicenter's database)
 
+## Upstream Grounding
+
+When Drizzle schema definitions, migration snapshots, query builder APIs, column typing, custom types, or driver integration affect correctness, use source-backed grounding before relying on memory. If DeepWiki MCP is available, ask a narrow question against `drizzle-team/drizzle-orm`; for libSQL, Turso sync, embedded replicas, D1 compatibility, or remote SQLite behavior, ask against `tursodatabase/turso`. If DeepWiki is unavailable or the repo is not indexed, use upstream source or official docs directly. Treat DeepWiki as orientation, then verify decisive details against local installed types, generated migrations, source, driver versions, or official docs before changing code.
+
+Skip DeepWiki for repo-local schema naming and storage-boundary conventions already documented below.
+
 ## When to Apply This Skill
 
 Use this pattern when you need to:

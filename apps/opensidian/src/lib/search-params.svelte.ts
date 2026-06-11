@@ -6,18 +6,18 @@
  * (via `page.url.searchParams`), and a batch `update()` that writes all
  * changes in a single `goto()` call.
  *
- * Defaults are elided from the URL to keep it clean—`/` means no file or
+ * Defaults are elided from the URL to keep it clean. `/` means no file or
  * chat selected.
  *
  * @example
  * ```typescript
  * import { searchParams } from '$lib/search-params.svelte';
  *
- * // Read (reactive — tracked by $derived automatically)
+ * // Read (reactive: tracked by $derived automatically)
  * const fileId = searchParams.file;
  * const chatId = searchParams.chat;
  *
- * // Write (atomic — one goto())
+ * // Write (atomic: one goto())
  * searchParams.update({ file: fileId, chat: null });
  * ```
  */
@@ -38,7 +38,7 @@ type SearchParams = {
 	chat: ConversationId | null;
 };
 
-/** Values that get elided from the URL — presence means non-default. */
+/** Values that get elided from the URL: presence means non-default. */
 const DEFAULTS = {
 	file: null,
 	chat: null,

@@ -28,7 +28,7 @@ Each app exposes a single workspace client file at `apps/<app>/src/lib/`:
 | tab-manager  | `client.svelte.ts`  | flat module-scope (verified)        |
 | whispering   | `client.ts`         | flat module-scope (verified)        |
 
-`client.svelte.ts` (zhongwen) — current shape:
+`client.svelte.ts` (zhongwen): current shape:
 
 ```ts
 function openZhongwen() {
@@ -101,11 +101,11 @@ for environments that don't have paths.
 
 ### Conflict with recent codebase direction
 
-Commit `ca3b81a77 refactor(workspaces): drop bundle + open* — fully flat
+Commit `ca3b81a77 refactor(workspaces): drop bundle + open*: fully flat
 module-scope exports` (4 commits ago) standardized most apps on **flat
 module-scope exports** instead of `open*()` factories. Whispering and
 tab-manager were migrated. Zhongwen was not. The reasoning behind that commit
-was: "the file IS the workspace recipe, top-down" — the file's exports *are*
+was: "the file IS the workspace recipe, top-down". The file's exports *are*
 the workspace; you don't need a constructor.
 
 This is the central tension. The split into iso + env files works under either
@@ -141,7 +141,7 @@ apps/opensidian/           ← client.svelte.ts (browser)
 apps/posthog-reverse-proxy ← proxy. SKIP.
 apps/tab-manager/          ← client.svelte.ts (chrome extension)
 apps/whispering/           ← client.ts (Tauri desktop)
-apps/zhongwen/             ← client.svelte.ts (browser) — pilot
+apps/zhongwen/             ← client.svelte.ts (browser): pilot
 ```
 
 Six apps in scope. Five browser/extension/Tauri, plus zhongwen.
@@ -158,10 +158,10 @@ Six apps in scope. Five browser/extension/Tauri, plus zhongwen.
 | Reject `browser.ts` for tab-manager | Use `extension.ts`                              | Chrome extensions use `chrome.*` APIs not present in regular browser env; `browser.ts` would understate.   |
 | Function name                     | `open<App>` in every file (canonical, same name)  | Path disambiguates; function name stays grep-able and consistent across the monorepo.                      |
 | Singleton const                   | Lowercase `<app>`, only in env files              | `index.ts` is for tooling/tests that want fresh docs; no implicit singleton there.                         |
-| Verb choice                       | `open` over `create`/`make`/`init`                | Signals "resource needing teardown" — pairs with `[Symbol.dispose]`.                                       |
+| Verb choice                       | `open` over `create`/`make`/`init`                | Signals "resource needing teardown": pairs with `[Symbol.dispose]`.                                       |
 | Always have `index.ts`            | Even if app has only one environment              | Build tools, tests, and migrations need a portable factory. Cost is one tiny file per app.                 |
 | Convention location               | `.claude/skills/workspace-app-layout/SKILL.md`    | User preference; skills are the durable place for codebase patterns.                                       |
-| Singleton vs factory pattern      | **OPEN — see Open Questions #1**                  | Conflict with `ca3b81a77`. Pick before executing.                                                          |
+| Singleton vs factory pattern      | **OPEN: see Open Questions #1**                  | Conflict with `ca3b81a77`. Pick before executing.                                                          |
 
 ## Architecture
 
@@ -195,7 +195,7 @@ tauri.ts ─────imports───────────┘ (siblings ne
 ```
 
 `browser.ts` and `tauri.ts` never import each other. The browser bundle entry
-walks `browser.ts → index.ts → ...` and stops — `bun:sqlite` cannot reach
+walks `browser.ts → index.ts → ...` and stops: `bun:sqlite` cannot reach
 the browser bundle even if added carelessly to `tauri.ts`.
 
 ### Function shape (factory pattern variant)
@@ -245,13 +245,13 @@ export const whenReady = idb.whenLoaded;
 
 ### Phase 1: Pilot zhongwen ✅
 
-- [x] **1.1** Create `apps/zhongwen/src/lib/zhongwen/index.ts` — isomorphic factory.
-- [x] **1.2** Create `apps/zhongwen/src/lib/zhongwen/browser.ts` — browser bindings + singleton.
+- [x] **1.1** Create `apps/zhongwen/src/lib/zhongwen/index.ts`: isomorphic factory.
+- [x] **1.2** Create `apps/zhongwen/src/lib/zhongwen/browser.ts`: browser bindings + singleton.
 - [x] **1.3** Update call sites (`+page.svelte`, `chat-state.svelte.ts`) to import
       from `$lib/zhongwen/browser` and access via `zhongwen.kv`, `zhongwen.tables`,
       `zhongwen.batch`, `zhongwen.whenReady`.
 - [x] **1.4** Delete old `apps/zhongwen/src/lib/client.svelte.ts`.
-- [x] **1.5** Typecheck + build — refactor introduces zero new errors. Pre-existing
+- [x] **1.5** Typecheck + build: refactor introduces zero new errors. Pre-existing
       `@tanstack/ai-svelte` missing-dep issue is independent.
 - [ ] **1.6** Manual smoke test in browser deferred to user.
 
@@ -261,44 +261,44 @@ export const whenReady = idb.whenLoaded;
       conventions: folder shape, naming rules, binding vocabulary, function
       shape, two bleed-prevention rules, what-goes-where table, anti-patterns,
       and migration guide.
-- [ ] **2.2** Reference from `AGENTS.md` (deferred — skills are auto-discovered
+- [ ] **2.2** Reference from `AGENTS.md` (deferred: skills are auto-discovered
       via their description; explicit reference may be unnecessary).
 
 ### Phase 3: Roll out to remaining apps ✅
 
 Then refactored further (per user request) into a three-file layout per app:
-- `index.ts` — iso doc factory (`open<App>()`)
-- `<binding>.ts` — pure env factory, takes injected deps like `{ auth }`,
+- `index.ts`: iso doc factory (`open<App>()`)
+- `<binding>.ts`: pure env factory, takes injected deps like `{ auth }`,
   no `createAuth`, no singleton, no `onSessionChange`
-- `client.ts` — `createAuth`, singleton, lifecycle subscriptions, HMR dispose
+- `client.ts`: `createAuth`, singleton, lifecycle subscriptions, HMR dispose
 
 Call sites import from `client.ts` and use direct property access
-(`<app>.tables.foo`, `<app>.actions.bar`) — no destructuring.
+(`<app>.tables.foo`, `<app>.actions.bar`): no destructuring.
 
-- [x] **3.1** fuji — `lib/fuji/{index,browser,client}.ts`. 7 call sites updated.
-- [x] **3.2** honeycrisp — `lib/honeycrisp/{index,browser,client}.ts`. 5 call sites updated.
-- [x] **3.3** opensidian — `lib/opensidian/{index,browser,client}.ts`. 12 call sites updated.
+- [x] **3.1** fuji: `lib/fuji/{index,browser,client}.ts`. 7 call sites updated.
+- [x] **3.2** honeycrisp: `lib/honeycrisp/{index,browser,client}.ts`. 5 call sites updated.
+- [x] **3.3** opensidian: `lib/opensidian/{index,browser,client}.ts`. 12 call sites updated.
       `actions`, `fs`, `bash`, `sqliteIndex`, `fileContentDocs` live in
       `browser.ts` because they depend on `attachIndexedDb`. `workspaceAiTools`
       lives in `client.ts` (uses the singleton).
-- [x] **3.4** tab-manager — `lib/tab-manager/{index,extension,client}.ts`. 11 call sites
+- [x] **3.4** tab-manager: `lib/tab-manager/{index,extension,client}.ts`. 11 call sites
       updated. `await session.whenReady` (chrome.storage hydration) lives in
       `client.ts` before `createAuth`. `rpc-contract.ts` derives `Actions`
       from `typeof tabManager.actions`.
-- [x] **3.5** whispering — `lib/whispering/{index,tauri,client}.ts`. 9 call sites updated.
-      `recordingsFs` lives in `tauri.ts`. `client.ts` is minimal (no auth/sync) —
+- [x] **3.5** whispering: `lib/whispering/{index,tauri,client}.ts`. 9 call sites updated.
+      `recordingsFs` lives in `tauri.ts`. `client.ts` is minimal (no auth/sync):
       just `export const whispering = openWhispering()`.
 
 ### Phase 4: Verify nothing imports old paths ✅
 
-- [x] **4.1** Grep for `$lib/client` and `$lib/client.svelte` across all apps —
+- [x] **4.1** Grep for `$lib/client` and `$lib/client.svelte` across all apps:
       zero hits.
 - [x] **4.2** Confirmed no leftover `client.ts` / `client.svelte.ts` files in
       any app's `src/lib/`.
 - [ ] **4.3** Full monorepo type-check / test run deferred to user. Per-app
       diagnostics during migration showed only pre-existing errors
       (`@tanstack/ai-svelte` missing dep, `@tanstack/ai-svelte` FetchFn shape
-      mismatch, FileId branding) — none introduced by the refactor.
+      mismatch, FileId branding): none introduced by the refactor.
 
 ## Edge Cases
 
@@ -308,7 +308,7 @@ Call sites import from `client.ts` and use direct property access
 scope before constructing auth. This works because the file is a module with
 top-level await. After the split:
 
-1. `index.ts` should not contain auth/session wiring — that's environment
+1. `index.ts` should not contain auth/session wiring: that's environment
    concerns. Auth lives in `extension.ts`.
 2. `extension.ts` keeps the top-level await pattern.
 3. Importing `index.ts` from a Node config does not trigger the await chain.
@@ -323,7 +323,7 @@ isomorphic doc has no filesystem.
 
 Flat module-scope apps (whispering, tab-manager) export named primitives like
 `ydoc`, `tables`, `kv`. Many call sites import these directly. The migration
-must preserve those exports under the new path — `browser.ts` / `tauri.ts` /
+must preserve those exports under the new path: `browser.ts` / `tauri.ts` /
 `extension.ts` re-exports `index.ts` and adds the env-specific ones. Call
 sites change from `$lib/client.svelte` to `$lib/<app>/<binding>` but the
 import names stay the same.
@@ -354,7 +354,7 @@ this; the folder name is unchanged.
 
 ## Open Questions
 
-1. **Factory pattern (`open<App>()`) vs flat module-scope exports** — **RESOLVED: (a) Full factory.**
+1. **Factory pattern (`open<App>()`) vs flat module-scope exports**: **RESOLVED: (a) Full factory.**
    - User decision (2026-04-25): full factory pattern in both files. `browser.ts`
      composes around `index.ts`'s factory. Clean break from `ca3b81a77`.
    - Call sites that previously did `import { kv, batch, tables } from '$lib/client.svelte'`
@@ -380,7 +380,7 @@ this; the folder name is unchanged.
      Could add `$workspace` as a per-app alias if it matters.
    - **Recommendation**: Defer. `$lib/<app>/<binding>` is fine.
 
-5. **Migration sequencing — single PR or per-app commits?**
+5. **Migration sequencing: single PR or per-app commits?**
    - Options: (a) one big PR for all six apps; (b) zhongwen pilot ships first,
      then a second PR sweeps the rest; (c) one PR per app.
    - **Recommendation**: (b). Pilot zhongwen, validate, then sweep. Avoids
@@ -401,15 +401,15 @@ this; the folder name is unchanged.
 
 ## References
 
-- `apps/zhongwen/src/lib/client.svelte.ts` — current zhongwen client (factory pattern).
-- `apps/whispering/src/lib/client.ts` — current whispering client (flat, Tauri).
-- `apps/tab-manager/src/lib/client.svelte.ts` — current tab-manager client (flat, extension).
-- `packages/workspace/src/document/attach-indexed-db.ts` — verified destroy
+- `apps/zhongwen/src/lib/client.svelte.ts`: current zhongwen client (factory pattern).
+- `apps/whispering/src/lib/client.ts`: current whispering client (flat, Tauri).
+- `apps/tab-manager/src/lib/client.svelte.ts`: current tab-manager client (flat, extension).
+- `packages/workspace/src/document/attach-indexed-db.ts`: verified destroy
   hook + `whenDisposed` promise.
-- `packages/workspace/src/document/attach-broadcast-channel.ts` — verified
+- `packages/workspace/src/document/attach-broadcast-channel.ts`: verified
   destroy hook + `whenDisposed` promise.
-- Commit `ca3b81a77 refactor(workspaces): drop bundle + open* — fully flat
-  module-scope exports` — the recent direction this spec must reconcile with.
-- `.claude/skills/factory-function-composition/SKILL.md` — relevant if
+- Commit `ca3b81a77 refactor(workspaces): drop bundle + open*: fully flat
+  module-scope exports`: the recent direction this spec must reconcile with.
+- `.claude/skills/factory-function-composition/SKILL.md`: relevant if
   Open Question #1 lands on factory or hybrid.
-- `.claude/skills/workspace-api/SKILL.md` — current workspace API docs.
+- `.claude/skills/workspace-api/SKILL.md`: current workspace API docs.

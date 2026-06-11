@@ -19,7 +19,7 @@ Here's what every React/Svelte developer has written a thousand times:
 />
 ```
 
-That `as TranscriptionService` isn't just annoying—it's a symptom of broken type flow. TypeScript knows `value` should be `TranscriptionService`, but the callback pattern destroys that information.
+That `as TranscriptionService` isn't just annoying. It's a symptom of broken type flow. TypeScript knows `value` should be `TranscriptionService`, but the callback pattern destroys that information.
 
 This happens because callbacks create type indirection:
 
@@ -200,7 +200,7 @@ let {
 } = $props();
 ```
 
-This isn't just fewer lines—it's conceptually cleaner. A "value" that can be read and written is one concept, not two.
+This isn't just fewer lines. It's conceptually cleaner. A "value" that can be read and written is one concept, not two.
 
 ## Component Implementation: Internal Benefits
 
@@ -338,11 +338,11 @@ Each component can be migrated independently. The patterns can coexist during tr
 
 ## The Verdict: Use $bindable() Everywhere
 
-Function bindings aren't "another option"—they're the replacement for callback props. In every objective measure, they're superior:
+Function bindings aren't "another option". They're the replacement for callback props. In every objective measure, they're superior:
 
 - **Type safety**: Perfect generic handling without casts
 - **API design**: Single-prop APIs instead of dual-prop
-- **Performance**: Fewer allocations, better optimization potential  
+- **Performance**: Fewer allocations, better optimization potential
 - **Developer experience**: Better IDE support, cleaner refactoring
 - **Consistency**: Uniform binding pattern across components
 
@@ -350,8 +350,8 @@ The only reason to use callback props is legacy compatibility. For new component
 
 ## Start Today
 
-If you're building Svelte 5 components, make `$bindable()` your default. Don't think of it as "bidirectional binding"—think of it as "correct component API design."
+If you're building Svelte 5 components, make `$bindable()` your default. Don't think of it as "bidirectional binding". Think of it as "correct component API design."
 
 The callback pattern was a workaround for limitations in earlier frameworks. Svelte 5 eliminates those limitations. There's no reason to keep using the workaround.
 
-**Function bindings don't just improve your code—they prove that callback props were wrong all along.**
+**Function bindings don't just improve your code. They prove that callback props were wrong all along.**

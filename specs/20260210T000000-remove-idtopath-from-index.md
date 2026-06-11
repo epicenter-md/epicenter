@@ -23,12 +23,12 @@ export type FileSystemIndex = {
 ```
 
 ```typescript
-// file-system-index.ts — buildPaths()
+// file-system-index.ts: buildPaths()
 pathToId.set(path, row.id);
 idToPath.set(row.id, path);   // ← written here, never consumed
 ```
 
-A grep across the entire codebase for `idToPath.get(` returns zero results. The only reads are in test assertions (`file-system-index.test.ts` lines 36, 48, 78) that verify the map is populated — they test that dead code works correctly.
+A grep across the entire codebase for `idToPath.get(` returns zero results. The only reads are in test assertions (`file-system-index.test.ts` lines 36, 48, 78) that verify the map is populated. They test that dead code works correctly.
 
 ### Why it exists
 
@@ -43,7 +43,7 @@ Each provides a lookup the underlying `TableHelper` structurally cannot:
 | `pathToId` | Full path → FileId resolution | Table stores `name` + `parentId`, not computed paths |
 | `childrenOf` | Parent → children reverse lookup | Table only stores child → parent via `parentId` |
 
-`idToPath` is the reverse of `pathToId`. If a use case ever needs it, iterating `pathToId` entries is O(n) where n is file count — sub-millisecond for any realistic workspace. Adding it back later is a one-line change in `buildPaths()`.
+`idToPath` is the reverse of `pathToId`. If a use case ever needs it, iterating `pathToId` entries is O(n) where n is file count: sub-millisecond for any realistic workspace. Adding it back later is a one-line change in `buildPaths()`.
 
 ### Desired State
 
@@ -93,9 +93,9 @@ Two maps. Each one derives something the table can't give you directly.
 
 ## References
 
-- `packages/epicenter/src/filesystem/types.ts` — Type definition (primary target)
-- `packages/epicenter/src/filesystem/file-system-index.ts` — Index builder (remove map + writes)
-- `packages/epicenter/src/filesystem/file-system-index.test.ts` — Test assertions to remove
-- `packages/epicenter/src/filesystem/yjs-file-system.ts` — Confirm zero `idToPath` usage (already verified)
-- `specs/20260209T000000-simplify-content-doc-lifecycle.md` — Prior art: removed `plaintext` map
-- `specs/20260209T120000-branded-file-ids.md` — References `idToPath` in diagrams (doc cleanup)
+- `packages/epicenter/src/filesystem/types.ts`: Type definition (primary target)
+- `packages/epicenter/src/filesystem/file-system-index.ts`: Index builder (remove map + writes)
+- `packages/epicenter/src/filesystem/file-system-index.test.ts`: Test assertions to remove
+- `packages/epicenter/src/filesystem/yjs-file-system.ts`: Confirm zero `idToPath` usage (already verified)
+- `specs/20260209T000000-simplify-content-doc-lifecycle.md`: Prior art: removed `plaintext` map
+- `specs/20260209T120000-branded-file-ids.md`: References `idToPath` in diagrams (doc cleanup)

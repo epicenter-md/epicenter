@@ -90,7 +90,7 @@ the "PersonalWorkspaceMissing" UI distinction   apps/* would surface lookupFailu
 
 ## Non-goals
 
-- **Multi-workspace UI changes.** Workspace switching, workspace listing, member management — out of scope. The `/api/workspaces` endpoint and its consumers remain.
+- **Multi-workspace UI changes.** Workspace switching, workspace listing, member management: out of scope. The `/api/workspaces` endpoint and its consumers remain.
 - **Daemon path changes.** The daemon knows its workspaceId from config and uses the explicit-workspace route. Leave it.
 - **Token claim audit.** This spec assumes the auth token identifies the user, and the user has at most one default workspace. Those invariants already exist in `apps/api/src/cloud-workspaces.ts`. Do not redesign.
 - **Widening `openCollaboration.url`.** Considered and rejected (see Decisions Log).
@@ -230,7 +230,7 @@ app.use('/me/*', requireCookieOrBearerUser);
 
 The WebSocket upgrade handler must reject with a permanent-failure signal the supervisor can recognize. Two options:
 
-- **A.** Refuse the WebSocket upgrade (return 409 before `rooms.handleWebSocket`). Browser sees a normal WebSocket open failure; supervisor retries with backoff indefinitely. **Wrong** — this is supposed to be a permanent failure.
+- **A.** Refuse the WebSocket upgrade (return 409 before `rooms.handleWebSocket`). Browser sees a normal WebSocket open failure; supervisor retries with backoff indefinitely. **Wrong**: this is supposed to be a permanent failure.
 - **B.** Accept the upgrade, then close with code 4401 and reason `JSON.stringify({ code: 'no_default_workspace' })`. The supervisor's `parsePermanentFailure` (`sync-supervisor.ts:160-179`) already parses this shape; the supervisor parks in `failed` with `reason.code === 'no_default_workspace'`. Apps can read `status.reason.code` to render UI.
 
 **Choose B.** This is the only option that reuses existing supervisor machinery.
@@ -409,16 +409,16 @@ The line count is not the prize. The deletion of `attachDeferredCollaboration` a
 browser bundle      openCollaboration       sync-supervisor       relay
 ─────────────      ─────────────────       ───────────────       ─────
 
-construct                  
-collaboration ──▶  return Collaboration              
+construct
+collaboration ──▶  return Collaboration
                    handle (sync)
                           │
                           ▼
-                   supervisor loop                   
-                   parks until waitFor               
-                   (idb.whenLoaded)                  
+                   supervisor loop
+                   parks until waitFor
+                   (idb.whenLoaded)
                           │
-                   waitFor resolves                  
+                   waitFor resolves
                           │
                           ▼
                    attemptConnection ────────────▶ accept upgrade
@@ -426,7 +426,7 @@ collaboration ──▶  return Collaboration
                                                     user.defaultWorkspace
                                                     from auth token
                                                     ◀────── snapshot
-                          status: 'connecting'           
+                          status: 'connecting'
                                                     ◀────── presence_snapshot
                                                             (from presence spec)
                           status: 'connected'
@@ -438,11 +438,11 @@ collaboration ──▶  return Collaboration
 browser bundle      openCollaboration       sync-supervisor       relay
 ─────────────      ─────────────────       ───────────────       ─────
 
-construct                  
-collaboration ──▶  return Collaboration              
+construct
+collaboration ──▶  return Collaboration
                    handle (sync)
                           │
-                   waitFor resolves                  
+                   waitFor resolves
                           │
                           ▼
                    attemptConnection ────────────▶ no auth -> close 4401
@@ -690,7 +690,7 @@ url: string | (() => Promise<string | null>)
 
 The supervisor calls the resolver per cycle, parks in offline if it returns null, dispatches a connect if it returns a URL. The deferred wrapper collapses into the supervisor.
 
-This works. It is a smaller change to the server (zero changes) and a smaller change to the apps (zero changes). But it preserves the underlying assumption — that the client is responsible for producing the URL — and pays for that assumption by widening a primitive's signature.
+This works. It is a smaller change to the server (zero changes) and a smaller change to the apps (zero changes). But it preserves the underlying assumption, that the client is responsible for producing the URL, and pays for that assumption by widening a primitive's signature.
 
 Refusing the assumption (server resolves the workspaceId) deletes the resolver-function shape, the deferred wrapper, the `/api/workspaces` fetch, and the `lookupFailure` UI distinction. The product sentence is unchanged either way.
 

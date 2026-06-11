@@ -5,7 +5,7 @@
 **Superseded by**: `specs/20260504T230000-attach-whendisposed-honest-barriers.md` for the attach-level `[Symbol.asyncDispose]` direction. The cleanup work outside that barrier shape still stands.
 **Author**: AI-assisted (Claude)
 **Branch**: codex/sync-create-auth (or successor)
-**Builds on**: `specs/20260504T020000-workspace-identity-reset-deterministic-teardown.md` — the implemented teardown moved ORDER into the call site (`resetLocalClient`); this spec moves the order INSIDE the bundle and replaces `whenDisposed` with `Symbol.asyncDispose` backed by `lazy()`.
+**Builds on**: `specs/20260504T020000-workspace-identity-reset-deterministic-teardown.md`: the implemented teardown moved ORDER into the call site (`resetLocalClient`); this spec moves the order INSIDE the bundle and replaces `whenDisposed` with `Symbol.asyncDispose` backed by `lazy()`.
 
 ## One-Second Summary
 
@@ -55,7 +55,7 @@ To make `wipe()` safe (the in-bundle dispose and the cascade-triggered dispose m
 This is a refinement of the implemented identity-reset spec, not a redesign. That spec's lever was "make teardown deterministic" and chose to install determinism at the call site. Two follow-on smells survived:
 
 1. **Ordering knowledge in `client.ts`.** Every browser app ships the same comment block explaining the dispose-then-clear sequence. Identical shape, different cache-field name per app. That's repetition, not honest composition.
-2. **`whenDisposed` is a public composition primitive.** It exists for daemons and tests, but its presence on every async attachment plus the CLI's vestigial duck-type makes it feel like a public surface. It isn't — no consumer actually waits on it for behavior, only for ordering.
+2. **`whenDisposed` is a public composition primitive.** It exists for daemons and tests, but its presence on every async attachment plus the CLI's vestigial duck-type makes it feel like a public surface. It isn't: no consumer actually waits on it for behavior, only for ordering.
 
 Both smells point at the same root: "barrier promises as public properties." Replacing them with `Symbol.asyncDispose` on the attachment + `wipe()` on the bundle:
 - Names the operation, not the event.
@@ -137,7 +137,7 @@ isThenable(sync.whenDisposed) &&     // never read by CLI
 
 1. **Ordering knowledge in callers.** Every `client.ts` repeats `dispose(); await clearLocalData();` plus an explanatory comment.
 2. **`whenDisposed` everywhere.** Public per-attachment property used only for ordering; daemons compose it, tests use it, CLI duck-types it for shape but never reads the value.
-3. **`let destroyPromise: Promise<void> | null = null` would appear** the moment we tried to dedup the bundle dispose against the cascade — the explicit `let-then-check` smell.
+3. **`let destroyPromise: Promise<void> | null = null` would appear** the moment we tried to dedup the bundle dispose against the cascade: the explicit `let-then-check` smell.
 4. **y-indexeddb double-binding.** Both upstream and our wrapper register `doc.on('destroy')`. `Y.Doc.destroy()` fires both, producing two independent `db.close()` Promises.
 5. **CLI vestigial duck-type.** `isThenable(sync.whenDisposed)` validates a property nothing in `up.ts` invokes.
 
@@ -183,7 +183,7 @@ async [Symbol.asyncDispose]() {
 
 ```ts
 // packages/cli/src/load-config.ts (hasDaemonRuntimeShape)
-// drop: isThenable(sync.whenDisposed) — CLI never reads it
+// drop: isThenable(sync.whenDisposed): CLI never reads it
 // shrink umbrella to fields up.ts actually invokes
 ```
 
@@ -331,7 +331,7 @@ export function attachIndexedDb(ydoc: Y.Doc): IndexedDbAttachment {
 }
 ```
 
-After (END state — Phase A.2 keeps `whenDisposed` transitionally; see Implementation plan):
+After (END state: Phase A.2 keeps `whenDisposed` transitionally; see Implementation plan):
 
 ```ts
 import { clearDocument } from 'y-indexeddb';
@@ -364,7 +364,7 @@ export function attachIndexedDb(ydoc: Y.Doc): IndexedDbAttachment {
 
   return {
     whenLoaded: idb.whenSynced.then(() => {}),
-    // Direct deleteDB rather than idb.clearData() — clearData would call
+    // Direct deleteDB rather than idb.clearData(): clearData would call
     // idb.destroy() a second time (bypassing lazy()) and produce a fresh
     // db.close() Promise. Callers MUST `await [Symbol.asyncDispose]()`
     // before invoking clearLocal so the connection is already closed; the
@@ -377,7 +377,7 @@ export function attachIndexedDb(ydoc: Y.Doc): IndexedDbAttachment {
 
 ### `attachSync`
 
-Same shape: expose `[Symbol.asyncDispose]` backed by `lazy()`. The existing destroy handler that does the synchronous prefix (`unsubscribeAuthChange()`, `ydoc.off(...)`, `clearPendingRequests()`, `manageWindowListeners('remove')`, `status.clear()`) and then `await loopPromise; await waitForWsClose(...)` becomes the body of the lazy initializer. **Replace** the existing `ydoc.once('destroy', ...)` handler — do NOT add a second one.
+Same shape: expose `[Symbol.asyncDispose]` backed by `lazy()`. The existing destroy handler that does the synchronous prefix (`unsubscribeAuthChange()`, `ydoc.off(...)`, `clearPendingRequests()`, `manageWindowListeners('remove')`, `status.clear()`) and then `await loopPromise; await waitForWsClose(...)` becomes the body of the lazy initializer. **Replace** the existing `ydoc.once('destroy', ...)` handler: do NOT add a second one.
 
 ```ts
 const dispose = lazy(async () => {
@@ -557,15 +557,15 @@ function hasDaemonRuntimeShape(value: unknown): value is DaemonRuntime {
 ```
 
 Drops:
-- `actions` check — unused by `up.ts`; only `load-config.test.ts:87` reads it
-- `sync.whenDisposed` check — never read by CLI
-- `sync.status` check — CLI reads the callback argument's `.phase`/`.retries` from `onStatusChange`, never reads `sync.status` directly
-- `remote.invoke` check — the IPC server in `@epicenter/workspace/node` reads it; that's the workspace's contract, not the CLI's
+- `actions` check: unused by `up.ts`; only `load-config.test.ts:87` reads it
+- `sync.whenDisposed` check: never read by CLI
+- `sync.status` check: CLI reads the callback argument's `.phase`/`.retries` from `onStatusChange`, never reads `sync.status` directly
+- `remote.invoke` check: the IPC server in `@epicenter/workspace/node` reads it; that's the workspace's contract, not the CLI's
 
 Cascading deletions:
-- `isThenable` import — unused, delete.
-- `hasSyncStatusShape`, `hasSyncErrorShape`, `hasSyncFailedReasonShape` helpers (`load-config.ts:157-189`) — only callers were each other and the umbrella; orphaned. Delete entirely.
-- `InvalidRouteRuntime` error message at `load-config.ts:112-117` — currently lists "actions, sync teardown/status, awareness peers/observe, remote.invoke, and `[Symbol.asyncDispose]`." Trim to "awareness peers/observe, sync.onStatusChange, and `[Symbol.asyncDispose]`."
+- `isThenable` import: unused, delete.
+- `hasSyncStatusShape`, `hasSyncErrorShape`, `hasSyncFailedReasonShape` helpers (`load-config.ts:157-189`): only callers were each other and the umbrella; orphaned. Delete entirely.
+- `InvalidRouteRuntime` error message at `load-config.ts:112-117`: currently lists "actions, sync teardown/status, awareness peers/observe, remote.invoke, and `[Symbol.asyncDispose]`." Trim to "awareness peers/observe, sync.onStatusChange, and `[Symbol.asyncDispose]`."
 
 Optional follow-up (out of scope for this spec): if `@epicenter/workspace`'s `startDaemonServer` doesn't validate `remote.invoke` itself, push that check there. The CLI's responsibility is the parts it directly invokes.
 
@@ -588,11 +588,11 @@ Rejected because `using foo = openHoneycrisp(...)` would silently call only `Sym
 Name is honest about HALF of the operation. After this spec the method also tears down providers; `clearLocalData` understates that. `wipe` captures both halves and is shorter.
 
 Considered alternatives:
-- `clearLocal()` — same understatement, fewer chars
-- `purge()` — synonym; more dramatic, less specific
-- `destroy()` — conflicts with `ydoc.destroy()` mentally
-- `forgetMe()` — soft; auth-flavored
-- `decommission()` — formal; verbose
+- `clearLocal()`: same understatement, fewer chars
+- `purge()`: synonym; more dramatic, less specific
+- `destroy()`: conflicts with `ydoc.destroy()` mentally
+- `forgetMe()`: soft; auth-flavored
+- `decommission()`: formal; verbose
 
 `wipe` wins on brevity + honesty + finality.
 
@@ -642,7 +642,7 @@ Phase A introduces `[Symbol.asyncDispose]` on each async attachment, backed by a
 
   Both `whenDisposed` and `[Symbol.asyncDispose]: dispose` resolve at the same point. Update `IndexedDbAttachment` to include both `whenDisposed` (marked `@deprecated`) and `[Symbol.asyncDispose]` for the migration window.
 
-- [x] **A.3** Migrate `attach-sync.ts`: same transitional pattern. Wrap the existing destroy handler body in `lazy(async () => { ... })`. Add `[Symbol.asyncDispose]`. Keep `whenDisposed` resolving via the same lazy reference. **REPLACE** the existing `ydoc.once('destroy', ...)` handler — do NOT stack a second one (would double-fire the synchronous prefix).
+- [x] **A.3** Migrate `attach-sync.ts`: same transitional pattern. Wrap the existing destroy handler body in `lazy(async () => { ... })`. Add `[Symbol.asyncDispose]`. Keep `whenDisposed` resolving via the same lazy reference. **REPLACE** the existing `ydoc.once('destroy', ...)` handler: do NOT stack a second one (would double-fire the synchronous prefix).
 
 - [x] **A.4** Migrate `attach-yjs-log.ts`: same transitional pattern. Same replace-don't-stack rule.
 
@@ -747,7 +747,7 @@ The audit (sub-agent, recorded above under "CLI `hasDaemonRuntimeShape`") establ
 
 After Phase D lands, no source file (apps, packages, examples, playground, tests, CLI) reads `whenDisposed` on `IndexedDbAttachment`, `SyncAttachment`, or `YjsLogAttachment`. The alias is now safe to delete.
 
-- [x] **F.1** Remove `whenDisposed` from `IndexedDbAttachment` type and return value in `packages/workspace/src/document/attach-indexed-db.ts`. Drop the `Promise.withResolvers`/`resolveDisposed` plumbing — the lazy disposer is now the only path. Body simplifies to:
+- [x] **F.1** Remove `whenDisposed` from `IndexedDbAttachment` type and return value in `packages/workspace/src/document/attach-indexed-db.ts`. Drop the `Promise.withResolvers`/`resolveDisposed` plumbing: the lazy disposer is now the only path. Body simplifies to:
 
   ```ts
   const dispose = lazy(async () => {
@@ -805,7 +805,7 @@ Independent of the `whenDisposed`/`wipe` work but folded in to keep the migratio
 
 ### Phase E: docs and stragglers
 
-- [x] **E.1** Update `docs/articles/20260422T160000-sync-dispose-cascade.md` — the article rejected per-attachment async dispose for safety-net reasons. Add a follow-up section (or new article) documenting that `lazy()` makes the cascade-vs-explicit overlap free, so per-attachment `Symbol.asyncDispose` is now coherent with the cascade safety net.
+- [x] **E.1** Update `docs/articles/20260422T160000-sync-dispose-cascade.md`: the article rejected per-attachment async dispose for safety-net reasons. Add a follow-up section (or new article) documenting that `lazy()` makes the cascade-vs-explicit overlap free, so per-attachment `Symbol.asyncDispose` is now coherent with the cascade safety net.
 
 - [x] **E.2** Update `docs/architecture.md` line 146-156 (the `whenDisposed` documented contract).
 
@@ -840,7 +840,7 @@ Cascade still fires (we still register `ydoc.once('destroy', () => { void dispos
 
 ### `lazy()` and Promise rejection
 
-If `idb.destroy()` rejects, the cached Promise is the rejected Promise. Subsequent `await attachment[Symbol.asyncDispose]()` calls re-throw the same error. That's correct behavior — the disposal failed, and every observer needs to know. A consumer that wants retry on failure should not call dispose again expecting fresh work; they should treat the attachment as toast.
+If `idb.destroy()` rejects, the cached Promise is the rejected Promise. Subsequent `await attachment[Symbol.asyncDispose]()` calls re-throw the same error. That's correct behavior. The disposal failed, and every observer needs to know. A consumer that wants retry on failure should not call dispose again expecting fresh work; they should treat the attachment as toast.
 
 ### y-indexeddb `whenSynced` after dispose
 
@@ -848,7 +848,7 @@ If `idb.destroy()` rejects, the cached Promise is the rejected Promise. Subseque
 
 ### Subdoc cache
 
-`createDisposableCache`'s entries each have `[Symbol.dispose]() { ydoc.destroy(); }`. The cache itself has sync `[Symbol.dispose]()` that iterates entries. This stays sync — calling `cache[Symbol.dispose]()` at the start of `wipe()` fires every child's destroy synchronously, which kicks off each child's lazy dispose Promises. The bundle then awaits the parent's sync/idb disposes; child doc disposes settle in the background and `clearDocument` per child uses IDB's native blocking as belt-and-suspenders.
+`createDisposableCache`'s entries each have `[Symbol.dispose]() { ydoc.destroy(); }`. The cache itself has sync `[Symbol.dispose]()` that iterates entries. This stays sync: calling `cache[Symbol.dispose]()` at the start of `wipe()` fires every child's destroy synchronously, which kicks off each child's lazy dispose Promises. The bundle then awaits the parent's sync/idb disposes; child doc disposes settle in the background and `clearDocument` per child uses IDB's native blocking as belt-and-suspenders.
 
 **Verify during execution**: `createDisposableCache[Symbol.dispose]()` must be idempotent. `wipe()` calls it; if the consumer subsequently (or previously) calls `bundle[Symbol.dispose]()`, the cache's dispose runs again. Read `packages/workspace/src/cache/disposable-cache.ts` (line ~299-303). If the iteration over entries is on an already-empty internal collection, second call is a safe no-op. If not, add an early-return guard.
 
@@ -878,7 +878,7 @@ After Phase D, the CLI accepts any object whose shape matches the new umbrella. 
 - [x] Every browser `client.ts` `resetLocalClient` body is `try { await <bundle>.wipe() } catch ... finally { window.location.reload() }`. No comment block explaining ordering.
 - [x] Every daemon's `Symbol.asyncDispose` reads `await sync[Symbol.asyncDispose]()`.
 - [x] `hasDaemonRuntimeShape` in `packages/cli/src/load-config.ts` checks only `awareness.peers`, `awareness.observe`, `sync.onStatusChange`, `[Symbol.asyncDispose]`. Helpers `hasSyncStatusShape`, `hasSyncErrorShape`, `hasSyncFailedReasonShape` deleted. `isThenable` import dropped. `InvalidRouteRuntime.message` updated to match.
-- [x] `DaemonRuntime` type at `packages/workspace/src/daemon/types.ts` UNCHANGED — fields stay because `daemon/app.ts` and `daemon/run-handler.ts` read them. Only the CLI's validator shrinks.
+- [x] `DaemonRuntime` type at `packages/workspace/src/daemon/types.ts` UNCHANGED: fields stay because `daemon/app.ts` and `daemon/run-handler.ts` read them. Only the CLI's validator shrinks.
 - [x] `AwarenessAttachment` no longer exposes `setLocalField`, `getLocalField`, `getLocal`, `getAll`.
 - [x] `attachBroadcastChannel` returns `void`; `BroadcastChannelAttachment` type no longer exported.
 - [x] `EncryptionAttachment` no longer exposes `whenDisposed` or `register` (register stays in the closure, off the public type).

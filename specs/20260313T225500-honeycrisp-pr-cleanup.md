@@ -1,4 +1,4 @@
-# Honeycrisp PR #1526 Cleanup — Eliminate Prop Drilling, Fix Patterns
+# Honeycrisp PR #1526 Cleanup: Eliminate Prop Drilling, Fix Patterns
 
 **Date**: 2026-03-13
 **Status**: Implemented
@@ -13,10 +13,10 @@ PR #1526 correctly extracted state into a module singleton (`notesState`) but th
 
 ### Current State
 
-The PR introduced `notesState` as a module singleton in `notes.svelte.ts`—following the established `saved-tab-state` / `browser-state` pattern. But `+page.svelte` immediately prop-drills it back down:
+The PR introduced `notesState` as a module singleton in `notes.svelte.ts`: following the established `saved-tab-state` / `browser-state` pattern. But `+page.svelte` immediately prop-drills it back down:
 
 ```svelte
-<!-- +page.svelte — 30+ props forwarding notesState methods -->
+<!-- +page.svelte: 30+ props forwarding notesState methods -->
 <NoteList
   notes={isRecentlyDeletedView ? notesState.deletedNotes : notesState.filteredNotes}
   selectedNoteId={notesState.selectedNoteId}
@@ -79,10 +79,10 @@ Components import `notesState` directly. `+page.svelte` is a thin layout shell. 
 ```
 +page.svelte (layout shell)
 │
-├─→ Sidebar        (0 forwarded props — imports notesState directly)
-├─→ NoteList       (0 forwarded props — imports notesState directly)
-│   └─→ NoteCard   (note, isSelected — imports notesState for actions)
-├─→ CommandPalette (open bindable only — imports notesState directly)
+├─→ Sidebar        (0 forwarded props: imports notesState directly)
+├─→ NoteList       (0 forwarded props: imports notesState directly)
+│   └─→ NoteCard   (note, isSelected: imports notesState for actions)
+├─→ CommandPalette (open bindable only: imports notesState directly)
 └─→ Editor         (yxmlfragment, onContentChange ✓)
 
 notesState singleton (imported by all leaf components)
@@ -95,7 +95,7 @@ notesState singleton (imported by all leaf components)
 
 ## Implementation Plan
 
-### Tier 1 — Must Fix (correctness + pattern alignment)
+### Tier 1: Must Fix (correctness + pattern alignment)
 
 These directly contradict established codebase conventions or have correctness issues.
 
@@ -103,26 +103,26 @@ These directly contradict established codebase conventions or have correctness i
 - [x] **1.2** Add `folderName` as a `$derived` getter on `notesState` (currently a ternary in +page.svelte).
 - [x] **1.3** Refactor `Sidebar.svelte` to import `notesState` directly. Remove all forwarded data/callback props. Keep only props that are genuinely component-local (editing state).
 - [x] **1.4** Refactor `NoteList.svelte` to import `notesState` directly. The only prop it should receive is potentially `viewMode` (or derive it from `notesState.isRecentlyDeletedView`).
-  > **Note**: Zero props — derives notes list from `notesState.isRecentlyDeletedView` internally.
+  > **Note**: Zero props: derives notes list from `notesState.isRecentlyDeletedView` internally.
 - [x] **1.5** Refactor `NoteCard.svelte` to import `notesState` directly. Props reduce to `note` and `isSelected`. Actions call `notesState.softDeleteNote(note.id)` etc. directly.
-  > **Note**: Props reduced to just `note` — `isSelected` is now computed internally via `$derived`.
+  > **Note**: Props reduced to just `note`: `isSelected` is now computed internally via `$derived`.
 - [x] **1.6** Refactor `CommandPalette.svelte` to import `notesState` directly. Only prop: `open` (bindable).
 - [x] **1.7** Slim down `+page.svelte` to layout + document handle `$effect` + keyboard shortcuts only.
   > **Note**: 164 lines → 103 lines. Only props remaining: Editor's yxmlfragment + onContentChange.
 - [x] **1.8** Fix `generateId() as unknown as FolderId` → `generateId() as string as FolderId` in `notes.svelte.ts` (2 occurrences: `createFolder` and `createNote`).
 
-### Tier 2 — Should Fix (code quality)
+### Tier 2: Should Fix (code quality)
 
 These improve maintainability but don't fix correctness issues.
 
 - [x] **2.1** Extract `parseDateTime(dts: string): Date` to `$lib/utils/date.ts`. Remove duplicates from NoteCard and NoteList.
 - [x] **2.2** Rename `handleContentChange` → `updateNoteContent` in `notesState` (and update the call site in +page.svelte / Editor).
 - [x] **2.3** Remove unnecessary `as` casts in NoteCard prop defaults (`viewMode = 'normal' as 'normal' | 'recentlyDeleted'` → just `viewMode = 'normal'`).
-  > **Note**: Resolved by removing all those props entirely — NoteCard now reads from notesState directly.
+  > **Note**: Resolved by removing all those props entirely: NoteCard now reads from notesState directly.
 - [x] **2.4** Clean up `onSortChange` → `onSortChange` / `setSortBy` naming inconsistency (will be resolved by direct import in Tier 1, but verify).
-  > **Note**: Resolved — components now call `notesState.setSortBy()` directly, no more prop indirection.
+  > **Note**: Resolved: components now call `notesState.setSortBy()` directly, no more prop indirection.
 
-### Tier 3 — Nice to Have (polish)
+### Tier 3: Nice to Have (polish)
 
 These improve developer experience but don't affect behavior.
 
@@ -137,18 +137,18 @@ Some components may need genuinely local props (e.g., `open` bindable on Command
 
 ### NoteCard needs `note` and `isSelected` as props
 
-NoteCard renders inside an `{#each}` loop. It can't derive "which note am I?" from `notesState`—that comes from the loop. So `note` stays as a prop. `isSelected` is `note.id === notesState.selectedNoteId` which NoteCard can compute internally from `note.id`, so it could technically be removed too. Implementer's call.
+NoteCard renders inside an `{#each}` loop. It can't derive "which note am I?" from `notesState`: that comes from the loop. So `note` stays as a prop. `isSelected` is `note.id === notesState.selectedNoteId` which NoteCard can compute internally from `note.id`, so it could technically be removed too. Implementer's call.
 
 ### Editor's `onContentChange` callback
 
-The Editor component receives a Y.XmlFragment and fires content changes. This callback updates `notesState.updateNoteContent()`. Since `+page.svelte` manages the document handle lifecycle, this callback should stay as a prop on Editor OR Editor can import `notesState` directly. Either works—the document handle `$effect` is the more important coupling.
+The Editor component receives a Y.XmlFragment and fires content changes. This callback updates `notesState.updateNoteContent()`. Since `+page.svelte` manages the document handle lifecycle, this callback should stay as a prop on Editor OR Editor can import `notesState` directly. Either works. The document handle `$effect` is the more important coupling.
 
 ## Open Questions
 
 1. **Should `isRecentlyDeletedView` be persisted to KV?**
    - If yes: add `defineKv(type('boolean'), false)` and observe it
    - If no: keep as plain `$state` in the factory (simpler, resets on reload)
-   - **Recommendation**: No. It's ephemeral UI state—restarting the app should show All Notes, not Recently Deleted.
+   - **Recommendation**: No. It's ephemeral UI state. Restarting the app should show All Notes, not Recently Deleted.
 
 2. **Should NoteCard compute `isSelected` internally?**
    - It has access to `note.id` (prop) and `notesState.selectedNoteId` (singleton)
@@ -176,15 +176,15 @@ The Editor component receives a Y.XmlFragment and fires content changes. This ca
 
 ## References
 
-- `apps/honeycrisp/src/lib/state/notes.svelte.ts` — State singleton to modify
-- `apps/honeycrisp/src/routes/+page.svelte` — Layout shell to slim down
-- `apps/honeycrisp/src/lib/components/NoteCard.svelte` — Heaviest prop reduction
-- `apps/honeycrisp/src/lib/components/NoteList.svelte` — Remove forwarded props
-- `apps/honeycrisp/src/lib/components/Sidebar.svelte` — Remove forwarded props
-- `apps/honeycrisp/src/lib/components/CommandPalette.svelte` — Remove forwarded props
-- `docs/articles/migrating-tanstack-query-to-svelte-state-and-observers.md` — The pattern we're aligning with
-- `.agents/skills/svelte/SKILL.md` — Self-Contained Component Pattern, no `handle*` functions
-- `.agents/skills/workspace-api/SKILL.md` — `generateId()` cast convention
+- `apps/honeycrisp/src/lib/state/notes.svelte.ts`: State singleton to modify
+- `apps/honeycrisp/src/routes/+page.svelte`: Layout shell to slim down
+- `apps/honeycrisp/src/lib/components/NoteCard.svelte`: Heaviest prop reduction
+- `apps/honeycrisp/src/lib/components/NoteList.svelte`: Remove forwarded props
+- `apps/honeycrisp/src/lib/components/Sidebar.svelte`: Remove forwarded props
+- `apps/honeycrisp/src/lib/components/CommandPalette.svelte`: Remove forwarded props
+- `docs/articles/migrating-tanstack-query-to-svelte-state-and-observers.md`: The pattern we're aligning with
+- `.agents/skills/svelte/SKILL.md`: Self-Contained Component Pattern, no `handle*` functions
+- `.agents/skills/workspace-api/SKILL.md`: `generateId()` cast convention
 
 ## Review
 
@@ -193,7 +193,7 @@ The Editor component receives a Y.XmlFragment and fires content changes. This ca
 
 ### Summary
 
-Eliminated prop drilling from all Honeycrisp components. Components now import the `notesState` singleton directly—matching the established `browser-state`/`saved-tab-state` pattern documented in `docs/articles/migrating-tanstack-query-to-svelte-state-and-observers.md`. `+page.svelte` went from 164 lines of wiring harness to 103 lines of pure layout + document handle lifecycle.
+Eliminated prop drilling from all Honeycrisp components. Components now import the `notesState` singleton directly. Matching the established `browser-state`/`saved-tab-state` pattern documented in `docs/articles/migrating-tanstack-query-to-svelte-state-and-observers.md`. `+page.svelte` went from 164 lines of wiring harness to 103 lines of pure layout + document handle lifecycle.
 
 ### Changes by Wave
 
@@ -207,10 +207,10 @@ Eliminated prop drilling from all Honeycrisp components. Components now import t
 
 ### Deviations from Spec
 
-- **1.5**: Spec said "props reduce to `note` and `isSelected`". `isSelected` was moved to a `$derived` inside NoteCard instead—fewer props, trivial computation.
+- **1.5**: Spec said "props reduce to `note` and `isSelected`". `isSelected` was moved to a `$derived` inside NoteCard instead. Fewer props, trivial computation.
 - **2.3/2.4**: Resolved implicitly by removing all affected props entirely rather than fixing their defaults/names.
 
 ### Follow-up Work
 
-- Consider moving document handle lifecycle from `+page.svelte` into `notesState` (spec Open Question #3—deferred as recommended).
-- Consider persisting `isRecentlyDeletedView` to KV if cross-device sync becomes desirable (spec Open Question #1—deferred as recommended).
+- Consider moving document handle lifecycle from `+page.svelte` into `notesState` (spec Open Question #3. Deferred as recommended).
+- Consider persisting `isRecentlyDeletedView` to KV if cross-device sync becomes desirable (spec Open Question #1. Deferred as recommended).

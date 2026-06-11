@@ -47,7 +47,7 @@ Store massive amounts of data in `$state`, but only render a tiny slice:
 | 100,000        | ~2-5ms              | Still fast        |
 | 1,000,000      | ~5-15ms             | Svelte handles it |
 
-These numbers are for the **reactive system only**—updating values in memory. The DOM isn't involved because we're updating random rows that aren't rendered.
+These numbers are for the **reactive system only**: updating values in memory. The DOM isn't involved because we're updating random rows that aren't rendered.
 
 ## $state vs SvelteMap: Almost Identical
 

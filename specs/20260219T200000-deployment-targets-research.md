@@ -31,11 +31,11 @@ createSyncServer (standalone relay)
 
 The implementation is composed from plugins:
 
-- **`createSyncPlugin`** — Elysia plugin mounting `/:room/ws`. Handles the y-websocket protocol: sync (step1/step2/update), awareness, query-awareness, and a custom sync-status heartbeat (message type 102). Operates in standalone mode (fresh Y.Docs on demand) or integrated mode (resolve docs via `getDoc` callback).
-- **`createRoomManager`** — Manages room lifecycle. Each room holds a Y.Doc, an Awareness instance, and a connection map keyed by `ws.raw` (Bun's stable WebSocket identity). 60-second eviction timer after last client disconnects.
-- **`createWorkspacePlugin`** — Bundles table CRUD routes and action routing per workspace.
-- **`createActionsRouter`** — Maps `defineQuery` → GET and `defineMutation` → POST. Validates input via Standard Schema (`~standard`).
-- **Auth** — `AuthConfig` supports `{ token: string }` (shared secret) or `{ verify: (token) => boolean }` (custom validation). Applied during WebSocket upgrade via query parameter `?token=`.
+- **`createSyncPlugin`**: Elysia plugin mounting `/:room/ws`. Handles the y-websocket protocol: sync (step1/step2/update), awareness, query-awareness, and a custom sync-status heartbeat (message type 102). Operates in standalone mode (fresh Y.Docs on demand) or integrated mode (resolve docs via `getDoc` callback).
+- **`createRoomManager`**: Manages room lifecycle. Each room holds a Y.Doc, an Awareness instance, and a connection map keyed by `ws.raw` (Bun's stable WebSocket identity). 60-second eviction timer after last client disconnects.
+- **`createWorkspacePlugin`**: Bundles table CRUD routes and action routing per workspace.
+- **`createActionsRouter`**: Maps `defineQuery` → GET and `defineMutation` → POST. Validates input via Standard Schema (`~standard`).
+- **Auth**: `AuthConfig` supports `{ token: string }` (shared secret) or `{ verify: (token) => boolean }` (custom validation). Applied during WebSocket upgrade via query parameter `?token=`.
 
 Key detail: the room manager already models the "1 room = 1 document" pattern. Each room owns a single Y.Doc, a single Awareness, and broadcasts updates to all connections except the sender. This maps directly to the Durable Object model.
 
@@ -73,8 +73,8 @@ One caveat: DO geographic location matters for AI API calls. A DO in Hong Kong c
 
 y-sweet's authentication pattern is worth studying because it solves the "how do users get access to a specific document" problem cleanly:
 
-- **Server tokens** — Long-lived, never expire. Used by the application backend to create documents (`POST /doc/new`) and issue client tokens (`POST /doc/{id}/auth`). Never sent to the browser.
-- **Client tokens** — Short-lived, document-scoped, encode authorization level (`Full` or `ReadOnly`). Issued by the backend, sent to the browser, used to authenticate WebSocket connections. The DO validates them on connect.
+- **Server tokens**: Long-lived, never expire. Used by the application backend to create documents (`POST /doc/new`) and issue client tokens (`POST /doc/{id}/auth`). Never sent to the browser.
+- **Client tokens**: Short-lived, document-scoped, encode authorization level (`Full` or `ReadOnly`). Issued by the backend, sent to the browser, used to authenticate WebSocket connections. The DO validates them on connect.
 
 The flow: App backend (trusted) uses server token → calls y-sweet to get a client token for doc X → sends client token to browser → browser connects to DO with that token → DO validates and allows connection.
 
@@ -117,7 +117,7 @@ PartyServer supports hibernation (`options.hibernate = true`), which is critical
 
 TanStack AI is in alpha. It's a provider-agnostic SDK for building AI chat features with streaming. Architecture:
 
-**Server-side** — Framework-agnostic. Two functions:
+**Server-side**: Framework-agnostic. Two functions:
 
 ```typescript
 import { chat, toServerSentEventsResponse } from '@tanstack/ai';
@@ -136,11 +136,11 @@ export async function POST(request: Request) {
 
 `chat()` returns an async iterable stream. `toServerSentEventsResponse()` converts it to an HTTP Response with SSE headers. Works with any server that returns `Response` objects: Bun, Cloudflare Workers, Node.js, Deno.
 
-**Client-side** — React hooks today (`useChat`, `fetchServerSentEvents`). Svelte adapter not yet available but the core is framework-agnostic. AG-UI protocol for streaming.
+**Client-side**: React hooks today (`useChat`, `fetchServerSentEvents`). Svelte adapter not yet available but the core is framework-agnostic. AG-UI protocol for streaming.
 
-**Adapters** — `@tanstack/ai-openai`, `@tanstack/ai-anthropic`, `@tanstack/ai-ollama`, `@tanstack/ai-gemini`. Pluggable.
+**Adapters**: `@tanstack/ai-openai`, `@tanstack/ai-anthropic`, `@tanstack/ai-ollama`, `@tanstack/ai-gemini`. Pluggable.
 
-**Tools** — Isomorphic tool definitions with `toolDefinition()`. Server tools (`.server()`) execute on the backend; client tools (`.client()`) execute in the browser. Built-in approval flow for sensitive operations.
+**Tools**: Isomorphic tool definitions with `toolDefinition()`. Server tools (`.server()`) execute on the backend; client tools (`.client()`) execute in the browser. Built-in approval flow for sensitive operations.
 
 The important takeaway: TanStack AI doesn't require a specific server framework. A `/chat` endpoint is just another route handler that returns an SSE Response. It fits cleanly as a plugin alongside sync and table routes.
 
@@ -401,8 +401,8 @@ After analysis, the cloud deployment target focuses on **sync + auth only**.
 
 ### Why
 
-1. **DO single-threading**: A slow action (e.g., 5s AI call) blocks all WebSocket sync for that workspace. Sync quality is the core value prop — mixing long-running work degrades it.
-2. **Security**: Running arbitrary user code on shared infrastructure requires isolation, abuse prevention, and billing — a different business entirely.
+1. **DO single-threading**: A slow action (e.g., 5s AI call) blocks all WebSocket sync for that workspace. Sync quality is the core value prop: mixing long-running work degrades it.
+2. **Security**: Running arbitrary user code on shared infrastructure requires isolation, abuse prevention, and billing: a different business entirely.
 3. **Simplicity**: Sync maps cleanly to the DO model. Actions don't.
 
 ### How actions work in cloud mode
@@ -417,15 +417,15 @@ User → Better Auth (login) → workspace-scoped JWT
 
 ## References
 
-- `packages/server/src/server.ts` — `createServer()` implementation
-- `packages/server/src/sync/plugin.ts` — Sync plugin (Elysia WebSocket wiring)
-- `packages/server/src/sync/rooms.ts` — Room manager (framework-agnostic)
-- `packages/server/src/sync/protocol.ts` — y-websocket protocol (framework-agnostic)
-- `packages/server/src/sync/auth.ts` — Auth validation (framework-agnostic)
-- `packages/server/src/actions.ts` — Action routing
-- `packages/server/src/workspace-plugin.ts` — Workspace plugin (tables + actions)
-- `packages/constants/src/cloudflare.ts` — Existing Cloudflare env schema
-- `specs/20260219T195800-server-architecture-rethink.md` — Layered server architecture (complementary)
+- `packages/server/src/server.ts`: `createServer()` implementation
+- `packages/server/src/sync/plugin.ts`: Sync plugin (Elysia WebSocket wiring)
+- `packages/server/src/sync/rooms.ts`: Room manager (framework-agnostic)
+- `packages/server/src/sync/protocol.ts`: y-websocket protocol (framework-agnostic)
+- `packages/server/src/sync/auth.ts`: Auth validation (framework-agnostic)
+- `packages/server/src/actions.ts`: Action routing
+- `packages/server/src/workspace-plugin.ts`: Workspace plugin (tables + actions)
+- `packages/constants/src/cloudflare.ts`: Existing Cloudflare env schema
+- `specs/20260219T195800-server-architecture-rethink.md`: Layered server architecture (complementary)
 - [Cloudflare Durable Objects: WebSockets](https://developers.cloudflare.com/durable-objects/best-practices/websockets/)
 - [Cloudflare Agents: Using AI Models](https://developers.cloudflare.com/agents/api-reference/using-ai-models/)
 - [PartyServer README](https://github.com/threepointone/partyserver)

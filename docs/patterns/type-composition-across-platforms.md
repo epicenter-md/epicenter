@@ -14,7 +14,7 @@ Different runtimes (Node.js vs browser) complicate imports. Even if browser type
 
 ### Scenario 1: Direct Intersection (Same Runtime)
 
-When one type is a strict superset of another and they run in the same environment, just import and intersect. The key insight: the base type isn't a "shared" extraction—it's a complete, standalone type that another type happens to extend.
+When one type is a strict superset of another and they run in the same environment, just import and intersect. The key insight: the base type isn't a "shared" extraction. It's a complete, standalone type that another type happens to extend.
 
 ```typescript
 // browser-options.ts - This is a complete type, not a "shared" file

@@ -3,8 +3,8 @@
  * Encrypted YKeyValueLww Longevity Benchmark
  *
  * Simulates 10 years of app usage to answer: does CRDT storage grow
- * unboundedly over time? Tests two scenarios—growing collection and
- * constant-size heavy churn—with encrypted entries and gc:true.
+ * unboundedly over time? Tests two scenarios: growing collection and
+ * constant-size heavy churn with encrypted entries and gc:true.
  *
  * Usage: bun run encrypted-kv-longevity.ts
  */
@@ -192,7 +192,7 @@ console.log('');
 // Does adding then deleting return to the same size?
 // ═══════════════════════════════════════════════════════════════════════
 
-header('SCENARIO 3: Add-then-delete — does size return to baseline?');
+header('SCENARIO 3: Add-then-delete: does size return to baseline?');
 
 {
 	const doc = new Y.Doc({ guid: 'baseline', gc: true });
@@ -238,7 +238,7 @@ header('SCENARIO 3: Add-then-delete — does size return to baseline?');
 // ═══════════════════════════════════════════════════════════════════════
 
 header('SUMMARY');
-console.log('With gc:true, storage tracks active data—not operation history.');
+console.log('With gc:true, storage tracks active data. Not operation history.');
 console.log('10 years of heavy use adds ~150 bytes to ~1.3 KB of overhead.');
 console.log('Add/delete cycles cost a few bytes each (GC struct metadata).');
 console.log('Repeated edits to the same keys have near-zero overhead.');

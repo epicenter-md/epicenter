@@ -5,7 +5,7 @@
 The current `exporter.ts` generates a hybrid format: Markdown wrapping a JSON code block, plus a redundant human-readable summary. This serves neither programmatic nor human consumers well:
 
 - The JSON blob is noise for human readers (the summary already has everything)
-- Programmatic consumers must parse Markdown to extract JSON — strictly worse than a `.json` file
+- Programmatic consumers must parse Markdown to extract JSON: strictly worse than a `.json` file
 - Git diffs are noisy (JSON mutations inside a Markdown code block)
 - The summary duplicates 100% of the JSON content
 
@@ -80,15 +80,15 @@ tabGroups: 1
 
 ### Why This Format
 
-- **YAML frontmatter** is the standard for Obsidian, Jekyll, Hugo — tools already parse it
+- **YAML frontmatter** is the standard for Obsidian, Jekyll, Hugo: tools already parse it
 - **Tables** render cleanly in GitHub, Obsidian, and any Markdown viewer
-- **Window-scoped tabs** — tabs listed under their window, which is how humans think about them (not a flat list)
-- **No redundancy** — metadata in frontmatter, content in body, nothing repeated
-- **Clean git diffs** — a tab title change is a single table row diff
+- **Window-scoped tabs**: tabs listed under their window, which is how humans think about them (not a flat list)
+- **No redundancy**: metadata in frontmatter, content in body, nothing repeated
+- **Clean git diffs**: a tab title change is a single table row diff
 
 ## Todo
 
-- [x] Rewrite `generateMarkdown()` in `exporter.ts` — YAML frontmatter + window-scoped tab tables
+- [x] Rewrite `generateMarkdown()` in `exporter.ts`: YAML frontmatter + window-scoped tab tables
 - [x] Remove `generateSummary()` (absorbed into the new `generateMarkdown`)
 - [x] Use `Bun.YAML.stringify()` for frontmatter serialization (no hand-written YAML)
 - [x] Replace Node `fs`/`path` with `Bun.write()` (`createPath: true`) in `markdown-persistence-extension.ts`
@@ -97,7 +97,7 @@ tabGroups: 1
 
 ## Non-Goals
 
-- No new dependencies — used Bun's built-in `YAML.stringify()` and `Bun.write()`
+- No new dependencies: used Bun's built-in `YAML.stringify()` and `Bun.write()`
 - No changes to `index.ts`
 - No changes to the workspace definition or data model
 - No bidirectional sync
@@ -105,8 +105,8 @@ tabGroups: 1
 ## Technical Notes
 
 - `Bun.YAML.stringify(obj, null, 2)` produces block-style YAML (multi-line, human-readable)
-- `Bun.write(path, data, { createPath: true })` auto-creates parent directories — removed `fs.mkdir`
-- Tab titles may contain pipe characters (`|`) which break Markdown tables — escaped with `\|`
+- `Bun.write(path, data, { createPath: true })` auto-creates parent directories: removed `fs.mkdir`
+- Tab titles may contain pipe characters (`|`) which break Markdown tables: escaped with `\|`
 - The flat tab list sorted by index is replaced by tabs grouped under their parent window
 - Tab groups section stays at the bottom as a summary (groups span windows)
 
@@ -114,14 +114,14 @@ tabGroups: 1
 
 ### Changes Made
 
-**`exporter.ts`** — Full rewrite of `generateMarkdown()`, removed `generateSummary()`:
+**`exporter.ts`**: Full rewrite of `generateMarkdown()`, removed `generateSummary()`:
 
 - YAML frontmatter via `Bun.YAML.stringify()` with device metadata + counts
 - Body: tabs grouped by window in Markdown tables (not a flat list)
 - Pipe character escaping for table cells
 - No JSON code block, no redundant summary section
 
-**`markdown-persistence-extension.ts`** — Swapped Node APIs for Bun:
+**`markdown-persistence-extension.ts`**: Swapped Node APIs for Bun:
 
 - Replaced `fs.writeFile()` with `Bun.write()` (`createPath: true`)
 - Removed `fs.mkdir()` call (directory creation handled by `Bun.write`)

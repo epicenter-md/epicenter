@@ -13,7 +13,7 @@ import { attachFileSystemIndex } from './path-index.js';
  *
  * Owns the files table and the derived path/children indexes.
  * All methods work with absolute paths (never sees `cwd`).
- * Has no knowledge of file content — only structure and metadata.
+ * Has no knowledge of file content: only structure and metadata.
  *
  * Teardown is hooked to `ydoc.once('destroy', ...)` via the underlying
  * index. Callers do not call a dispose method.
@@ -108,7 +108,7 @@ export function attachFileTree(ydoc: Y.Doc, filesTable: Table<FileRow>) {
 
 		/**
 		 * Collect all active descendant IDs of a folder (recursive).
-		 * Returns a flat array of IDs — the caller decides what to do with them.
+		 * Returns a flat array of IDs: the caller decides what to do with them.
 		 */
 		descendantIds(parentId: FileId): FileId[] {
 			const result: FileId[] = [];

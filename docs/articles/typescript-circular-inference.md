@@ -2,7 +2,7 @@
 
 I needed an API where one property's type depends on another property's inferred type. Something like this:
 
-> **Note:** The `defineWorkspace({ tables, providers, actions })` API shown below is from an earlier Epicenter iteration and no longer exists — the current primitive is `defineDocument((id) => ({ ydoc, tables, ... }))` with inline composition instead of the `providers` / `actions` callback chain. The TypeScript circular-inference problem this article teaches generalizes to any config API where one property's type depends on another's inferred type.
+> **Note:** The `defineWorkspace({ tables, providers, actions })` API shown below is from an earlier Epicenter iteration and no longer exists: the current primitive is `defineDocument((id) => ({ ydoc, tables, ... }))` with inline composition instead of the `providers` / `actions` callback chain. The TypeScript circular-inference problem this article teaches generalizes to any config API where one property's type depends on another's inferred type.
 
 ```typescript
 defineWorkspace({
@@ -22,7 +22,7 @@ defineWorkspace({
 });
 ```
 
-TypeScript should infer the table types into providers, then both into exports. It does—mostly. Table types flow through fine, but provider types get widened to `any` in exports.
+TypeScript should infer the table types into providers, then both into exports. It does. Mostly. Table types flow through fine, but provider types get widened to `any` in exports.
 
 **The Problem**: TypeScript infers all properties simultaneously. Using computed types like `ReturnType<>` creates a circular dependency:
 
@@ -62,7 +62,7 @@ type Config<
 };
 ```
 
-TypeScript infers `TProviderMap` from the concrete return value. No circular dependency—you're inferring from values, not types-of-types-being-inferred.
+TypeScript infers `TProviderMap` from the concrete return value. No circular dependency. You're inferring from values, not types-of-types-being-inferred.
 
 This pattern applies to any API with dependent properties: ORMs where queries depend on schemas, routers where handlers depend on middleware, form libraries where validation depends on field types.
 

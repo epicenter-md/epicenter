@@ -12,13 +12,13 @@ We dispatched 5 research agents plus direct web searches across the SQLite sync 
 
 **Title**: Every SQLite Sync Engine Ends Up Server-Authoritative
 
-**Thesis**: The only project that attempted true multi-master SQLite-to-SQLite CRDT sync (cr-sqlite) was abandoned—its creator left to build a server-authoritative alternative. The entire industry quietly conceded that peer-to-peer relational sync is too hard.
+**Thesis**: The only project that attempted true multi-master SQLite-to-SQLite CRDT sync (cr-sqlite) was abandoned. Its creator left to build a server-authoritative alternative. The entire industry quietly conceded that peer-to-peer relational sync is too hard.
 
 **Key evidence to include**:
 - cr-sqlite abandoned; Matt Wonlaw joined Rocicorp to build Zero (server-authoritative)
-- GitHub issue #444 "Is this project dead?" — effectively yes
-- Fly.io's internal fork (`corrosion`) is the sole production deployment: 7.5M rows, 300K ops/sec, ~1000 nodes — but custom infrastructure, not general-purpose
-- ElectricSQL 1.0: "Postgres sync engine" with shapes — server is the authority
+- GitHub issue #444 "Is this project dead?": effectively yes
+- Fly.io's internal fork (`corrosion`) is the sole production deployment: 7.5M rows, 300K ops/sec, ~1000 nodes: but custom infrastructure, not general-purpose
+- ElectricSQL 1.0: "Postgres sync engine" with shapes: server is the authority
 - PowerSync: server writes, client reads local SQLite
 - Zero: Postgres → IndexedDB client cache
 - LiveStore: event-sourced SQLite, requires central sync backend
@@ -31,12 +31,12 @@ We dispatched 5 research agents plus direct web searches across the SQLite sync 
 
 **Title**: Why We Picked Yjs Over SQLite Sync
 
-**Thesis**: We evaluated the SQLite sync landscape and found our existing Yjs CRDT architecture already solves the hard problems—and we materialize to SQLite anyway for queries. The SQLite sync world gives you SQL queries but makes you give up automatic merging.
+**Thesis**: We evaluated the SQLite sync landscape and found our existing Yjs CRDT architecture already solves the hard problems. And we materialize to SQLite anyway for queries. The SQLite sync world gives you SQL queries but makes you give up automatic merging.
 
 **Key evidence to include**:
 - Our architecture: Yjs source of truth → SQLite materializer for queries. Best of both worlds.
-- Notion's offline mode (Dec 2025) uses SQLite locally with CRDTs for conflict resolution — same hybrid we built
-- Linear uses LWW with centralized ordering for most data, CRDTs only for rich text — our YKeyValueLww is the same pattern
+- Notion's offline mode (Dec 2025) uses SQLite locally with CRDTs for conflict resolution: same hybrid we built
+- Linear uses LWW with centralized ordering for most data, CRDTs only for rich text: our YKeyValueLww is the same pattern
 - migrate-on-read (`_v` field) is more elegant than anything in the SQLite sync world
 - What SQLite sync would give us: ad-hoc SQL, large dataset perf, partial replication, relational integrity
 - What it would cost us: Yjs automatic merging, Y.Text for rich editing, extension composition, and we'd pick from a fragmented ecosystem
@@ -54,9 +54,9 @@ We dispatched 5 research agents plus direct web searches across the SQLite sync 
 - joodaloop.com quote: "conflict resolution gets a comically disproportionate amount of attention"
 - **Permissions**: client has data locally → how enforce access control? Zero uses server-side checks. Nobody has a P2P answer. The local-first premise is in direct tension with ACLs.
 - **Schema migrations**: peer offline 3 weeks, you ship 4 schema changes, what happens? Most tools have no answer. Our migrate-on-read is one of the few clean solutions.
-- **Partial replication**: "sync only what this user needs" — ElectricSQL shapes, PowerSync buckets, but Yjs syncs full doc
+- **Partial replication**: "sync only what this user needs": ElectricSQL shapes, PowerSync buckets, but Yjs syncs full doc
 - **Tombstones**: every CRDT accumulates delete markers forever. Fly.io's corrosion fork built custom compaction. Our YKeyValueLww + GC actually handles this well (see existing article on tombstones).
-- **Server authority for business rules**: payments, uniqueness constraints, sequential IDs — some things genuinely need a server
+- **Server authority for business rules**: payments, uniqueness constraints, sequential IDs: some things genuinely need a server
 
 **Structure**: Mechanism explainer with diagrams. Walk through each "real" problem. ~120-150 lines.
 

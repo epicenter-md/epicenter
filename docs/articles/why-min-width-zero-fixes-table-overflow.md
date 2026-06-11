@@ -23,7 +23,7 @@ The real culprit was flexbox's default `min-width: auto` behavior. In my layout 
 </div>
 ```
 
-By default, flex items have `min-width: auto`, which means **they refuse to shrink smaller than their content's intrinsic width**. This is usually helpful—you don't want text to get cut off—but it breaks scrollable containers.
+By default, flex items have `min-width: auto`, which means **they refuse to shrink smaller than their content's intrinsic width**. This is usually helpful. You don't want text to get cut off. But it breaks scrollable containers.
 
 ## What Was Happening Step by Step
 
@@ -67,15 +67,15 @@ This is one of CSS flexbox's most confusing behaviors. The default `min-width: a
 This flexbox behavior trips up many developers because:
 
 - The problem appears to be with the table styling
-- The solution is in a completely different part of the layout hierarchy  
+- The solution is in a completely different part of the layout hierarchy
 - `min-width: 0` sounds like it would break things, not fix them
 - The connection between flexbox behavior and scrollable content isn't obvious
 
 ## The Lesson
 
-When you have scrollable content (tables, text containers, etc.) inside flex layouts, and the scrolling isn't working properly, check if any flex items in the hierarchy need `min-width: 0`. 
+When you have scrollable content (tables, text containers, etc.) inside flex layouts, and the scrolling isn't working properly, check if any flex items in the hierarchy need `min-width: 0`.
 
-This tells flex items: "It's okay to be smaller than your content—let the content handle its own overflow behavior."
+This tells flex items: "It's okay to be smaller than your content. Let the content handle its own overflow behavior."
 
 The fix was literally one CSS class. All the complex column sizing, container modifications, and overflow tweaks I tried were unnecessary. Sometimes the most minimal solution is the right one.
 

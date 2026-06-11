@@ -1,5 +1,5 @@
 /**
- * createKv — set/get/delete/observe over EncryptedYKeyValueLww with validate-or-default semantics.
+ * createKv: set/get/delete/observe over EncryptedYKeyValueLww with validate-or-default semantics.
  */
 
 import { expect, test } from 'bun:test';

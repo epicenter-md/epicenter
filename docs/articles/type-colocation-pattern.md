@@ -1,6 +1,6 @@
 # Why I Stopped Using types/models.ts
 
-I was looking at my codebase and saw this: `$lib/types/models.ts`. Just sitting there, accumulating random type definitions like a junk drawer. LocalModelConfig, UserModel, SessionModel—all unrelated types living together because... well, where else would you put "models"?
+I was looking at my codebase and saw this: `$lib/types/models.ts`. Just sitting there, accumulating random type definitions like a junk drawer. LocalModelConfig, UserModel, SessionModel. All unrelated types living together because... well, where else would you put "models"?
 
 ## The Problem with Type Buckets
 
@@ -87,6 +87,6 @@ The answer is always: with the code that uses it.
 
 ---
 
-_Note: This pattern applies to any codebase, not just TypeScript. Constants, types, utilities—they all benefit from living close to the code that depends on them._
+_Note: This pattern applies to any codebase, not just TypeScript. Constants, types, utilities. They all benefit from living close to the code that depends on them._
 
 See also: [The Case Against catch-all `types.ts`](./type-co-location-pattern.md) for a deeper look at discoverability, and [Types Should Be Computed, Not Declared](./types-should-be-computed-not-declared.md) for why most types shouldn't be manually declared at all.

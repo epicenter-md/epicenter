@@ -151,7 +151,7 @@ The real payoff comes from composability. When every action carries its own meta
 
 Here's a concrete example from Epicenter. The library merges actions from different sources (indexes, table helpers, dependencies) into a unified client interface:
 
-> **Note:** The code below is from an earlier `createWorkspaceClient(...)` shape. The current API is `defineDocument((id) => ({ ydoc, tables, users: { getById: defineQuery(...), create: defineMutation(...) }, ... }))` — actions live directly on the bundle returned by the document factory, not in a separate `client.indexes / client.tables / client.deps` namespace. The callable-with-metadata pattern this article teaches is unchanged: every action is `type action = fn & { input, type, description }`.
+> **Note:** The code below is from an earlier `createWorkspaceClient(...)` shape. The current API is `defineDocument((id) => ({ ydoc, tables, users: { getById: defineQuery(...), create: defineMutation(...) }, ... }))`: actions live directly on the bundle returned by the document factory, not in a separate `client.indexes / client.tables / client.deps` namespace. The callable-with-metadata pattern this article teaches is unchanged: every action is `type action = fn & { input, type, description }`.
 
 ```typescript
 const client = await createWorkspaceClient(workspace);

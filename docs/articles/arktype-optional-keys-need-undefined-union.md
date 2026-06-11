@@ -45,7 +45,7 @@ Now all three cases pass: key absent, key explicitly `undefined`, key with a rea
 
 Sometimes `'key?': 'string'` is exactly what you want. If you're validating user input for a PATCH endpoint, you might want to distinguish between "field not provided" (don't update) and "field set to undefined" (that's a bug, reject it). The strict behavior catches malformed payloads where someone accidentally sends `undefined` instead of omitting the field.
 
-The rule: use `'key?': 'string'` when `undefined` as a value is always a mistake. Use `'key?': 'string | undefined'` when the data source might legitimately include `undefined` — which is most of the time with HTTP JSON bodies, database results, and third-party APIs.
+The rule: use `'key?': 'string'` when `undefined` as a value is always a mistake. Use `'key?': 'string | undefined'` when the data source might legitimately include `undefined`, which is most of the time with HTTP JSON bodies, database results, and third-party APIs.
 
 ## The Global Escape Hatch
 
@@ -57,11 +57,11 @@ import { configure } from 'arktype/config';
 configure({ exactOptionalPropertyTypes: false });
 ```
 
-With this, `'key?': 'string'` behaves like TypeScript's default — `undefined` values are accepted. But this is a blunt instrument. You lose the ability to be strict anywhere. Better to be explicit per-field with `| undefined` and keep the default strict behavior as a safety net.
+With this, `'key?': 'string'` behaves like TypeScript's default: `undefined` values are accepted. But this is a blunt instrument. You lose the ability to be strict anywhere. Better to be explicit per-field with `| undefined` and keep the default strict behavior as a safety net.
 
 ## The Pattern
 
-When defining optional properties in arktype, ask: "Can this value actually be `undefined` at runtime?" If yes — and for most real-world data sources, the answer is yes — always write both `?` and `| undefined`:
+When defining optional properties in arktype, ask: "Can this value actually be `undefined` at runtime?" If yes, and for most real-world data sources the answer is yes, always write both `?` and `| undefined`:
 
 ```typescript
 const Schema = type({

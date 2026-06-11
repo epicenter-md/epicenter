@@ -23,7 +23,7 @@ function snapFrom(row: FileRow): RowSnapshot {
  * Uses incremental updates: the observer classifies each changed row and
  * patches only the affected index entries instead of rebuilding everything.
  * Touch-only changes (size/updatedAt) are detected via a snapshot of
- * path-relevant fields and skipped entirely—O(1) per editing mutation.
+ * path-relevant fields and skipped entirely. O(1) per editing mutation.
  *
  * Teardown is hooked to `ydoc.once('destroy', ...)`. Callers do not call a
  * dispose method; destroying the workspace's Y.Doc cascades.
@@ -47,13 +47,13 @@ export function attachFileSystemIndex(ydoc: Y.Doc, filesTable: Table<FileRow>) {
 	ydoc.once('destroy', unobserve);
 
 	// ═══════════════════════════════════════════════════════════════════════
-	// INITIAL BUILD — runs once before the observer is registered
+	// INITIAL BUILD: runs once before the observer is registered
 	// ═══════════════════════════════════════════════════════════════════════
 
 	/**
 	 * Build all indexes from scratch with self-healing for circular refs
 	 * and orphans. Runs once during construction, before the observer
-	 * subscribes — so table mutations from the fix helpers don't re-enter
+	 * subscribes before registering the observer, so table mutations from the fix helpers don't re-enter
 	 * processChanges.
 	 */
 	function buildInitialState() {
@@ -91,7 +91,7 @@ export function attachFileSystemIndex(ydoc: Y.Doc, filesTable: Table<FileRow>) {
 	}
 
 	// ═══════════════════════════════════════════════════════════════════════
-	// INCREMENTAL UPDATE — the hot path
+	// INCREMENTAL UPDATE: the hot path
 	// ═══════════════════════════════════════════════════════════════════════
 
 	/**
@@ -99,7 +99,7 @@ export function attachFileSystemIndex(ydoc: Y.Doc, filesTable: Table<FileRow>) {
 	 *
 	 * Classifies each change by comparing current state against the snapshot,
 	 * then patches only the affected index entries. Touch-only changes
-	 * (size/updatedAt) are O(1) — detected and skipped immediately.
+	 * (size/updatedAt) are O(1): detected and skipped immediately.
 	 */
 	function processChanges(changedIds: ReadonlySet<string>) {
 		const foldersToDisambiguate = new Set<FileId | null>();
@@ -131,7 +131,7 @@ export function attachFileSystemIndex(ydoc: Y.Doc, filesTable: Table<FileRow>) {
 				continue;
 			}
 
-			// Both remaining branches require prev — this is unreachable since
+			// Both remaining branches require prev: this is unreachable since
 			// wasActive implies prev !== undefined, but the guard gives TS
 			// narrowing without non-null assertions.
 			if (!prev) continue;
@@ -155,7 +155,7 @@ export function attachFileSystemIndex(ydoc: Y.Doc, filesTable: Table<FileRow>) {
 				continue;
 			}
 
-			// wasActive && isActive — row is still active, check what changed.
+			// wasActive && isActive: row is still active, check what changed.
 			// isActive implies row !== null && !error.
 			if (row === null || error) continue;
 
@@ -163,7 +163,7 @@ export function attachFileSystemIndex(ydoc: Y.Doc, filesTable: Table<FileRow>) {
 			const nameChanged = prev.name !== row.name;
 
 			if (!parentChanged && !nameChanged) {
-				// TOUCHED — only size/updatedAt changed. No index work needed.
+				// TOUCHED: only size/updatedAt changed. No index work needed.
 				continue;
 			}
 
@@ -304,7 +304,7 @@ export function attachFileSystemIndex(ydoc: Y.Doc, filesTable: Table<FileRow>) {
 				const name = displayName.get(id) ?? snap.name;
 
 				if (snap.parentId === null) {
-					// Root level — always computable
+					// Root level: always computable
 					const path = `/${name}`;
 					pathToId.set(path, id);
 					idToPath.set(id, path);
@@ -313,7 +313,7 @@ export function attachFileSystemIndex(ydoc: Y.Doc, filesTable: Table<FileRow>) {
 				} else {
 					const parentPath = idToPath.get(snap.parentId);
 					if (parentPath !== undefined) {
-						// Parent path known — compute child path
+						// Parent path known: compute child path
 						const path = `${parentPath}/${name}`;
 						pathToId.set(path, id);
 						idToPath.set(id, path);
@@ -329,7 +329,7 @@ export function attachFileSystemIndex(ydoc: Y.Doc, filesTable: Table<FileRow>) {
 	 * Build all paths from root downward using childrenOf and displayNames.
 	 * Used by buildInitialState after disambiguation. BFS level-by-level,
 	 * which makes the MAX_DEPTH cap a true depth cap (iteration N processes
-	 * exactly the nodes at depth N) — unlike computePathsConvergent, whose
+	 * exactly the nodes at depth N, unlike computePathsConvergent, whose
 	 * iteration cap doesn't bound tree depth when pending is seeded in
 	 * parent-before-child order.
 	 */
@@ -402,7 +402,7 @@ export function attachFileSystemIndex(ydoc: Y.Doc, filesTable: Table<FileRow>) {
 			if (visited.has(currentId)) break;
 
 			if (inStack.has(currentId)) {
-				// Cycle detected — move the latest-updated node in the cycle to root.
+				// Cycle detected: move the latest-updated node in the cycle to root.
 				const cycleIds = path.slice(path.indexOf(currentId));
 				let latestId: FileId | null = null;
 				let latestTime = -1;

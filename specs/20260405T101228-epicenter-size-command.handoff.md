@@ -2,7 +2,7 @@
 
 ## Task
 
-Execute the spec at `specs/20260405T101228-epicenter-size-command.md`. This adds an `epicenter size` command that reports encoded byte size and per-table row counts for all workspaces in a config. Three files touched — one new, two modified.
+Execute the spec at `specs/20260405T101228-epicenter-size-command.md`. This adds an `epicenter size` command that reports encoded byte size and per-table row counts for all workspaces in a config. Three files touched: one new, two modified.
 
 ## Context
 
@@ -12,14 +12,14 @@ Every command follows this pattern:
 
 1. Define a command object with `defineCommand()` (identity function for type narrowing)
 2. Use `withWorkspaceOptions(y)` to add `--dir`, `--workspace`, `--format` flags
-3. Use `runCommand(opts, fn, format)` for single-workspace commands — it handles loadConfig → resolve → whenReady → execute → dispose
+3. Use `runCommand(opts, fn, format)` for single-workspace commands: it handles loadConfig → resolve → whenReady → execute → dispose
 
 **However, this command is different.** It needs to show ALL workspaces, not just one. So it uses `loadConfig()` directly instead of `runCommand()`.
 
 ### The existing `describe` command (simplest template)
 
 ```typescript
-// packages/cli/src/commands/describe.ts — full file
+// packages/cli/src/commands/describe.ts: full file
 import { describeWorkspace } from '@epicenter/workspace';
 import type { Argv } from 'yargs';
 import {
@@ -86,12 +86,12 @@ export async function loadConfig(targetDir: string): Promise<LoadConfigResult> {
 ### Key workspace client APIs
 
 ```typescript
-client.id                              // string — workspace ID
-client.encodedSize()                   // number — total Y.Doc byte size
-client.definitions.tables              // Record<string, TableDefinition> — table schemas
-client.tables[name].count()            // number — row count (valid + invalid)
-client.whenReady                       // Promise<void> — resolves when extensions init'd
-client.dispose()                       // Promise<void> — cleanup
+client.id                              // string: workspace ID
+client.encodedSize()                   // number: total Y.Doc byte size
+client.definitions.tables              // Record<string, TableDefinition>: table schemas
+client.tables[name].count()            // number: row count (valid + invalid)
+client.whenReady                       // Promise<void>: resolves when extensions init'd
+client.dispose()                       // Promise<void>: cleanup
 ```
 
 ### How output utilities work
@@ -106,7 +106,7 @@ export function formatYargsOptions(): { format: { type: 'string', choices: ['jso
 ### How commands are registered
 
 ```typescript
-// packages/cli/src/cli.ts — add one line in the .command() chain
+// packages/cli/src/cli.ts: add one line in the .command() chain
 import { sizeCommand } from './commands/size';
 // ...
 .command(sizeCommand)
@@ -189,10 +189,10 @@ shop (8.7 KB)
 
 ## MUST NOT DO
 
-- Do not use `runCommand` — it resolves to a single client, but we need all clients
+- Do not use `runCommand`: it resolves to a single client, but we need all clients
 - Do not install any new dependencies
 - Do not modify any files outside of `packages/cli/`
 - Do not add per-table byte sizes (not available from the Yjs API)
-- Do not use `interface` — use `type` for all TypeScript types
+- Do not use `interface`: use `type` for all TypeScript types
 - Do not use `as any` or `@ts-ignore`
 - Do not create test files (out of scope for this spec)

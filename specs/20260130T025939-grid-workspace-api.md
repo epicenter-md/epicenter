@@ -1,6 +1,6 @@
 # Grid Workspace API Specification
 
-> **Status: Superseded** — This spec was a design document. The API evolved during implementation. The current API uses `createWorkspace(definition)` instead of `workspace.create()`. See `packages/epicenter/src/static/README.md` for the current API.
+> **Status: Superseded**: This spec was a design document. The API evolved during implementation. The current API uses `createWorkspace(definition)` instead of `workspace.create()`. See `packages/epicenter/src/static/README.md` for the current API.
 
 **Status**: Implemented (2026-01-30)
 
@@ -18,7 +18,7 @@ Currently there are three workspace systems in `packages/epicenter/src/`:
 
 **Problem**: Cell and Dynamic are nearly identical (both cell-level CRDT), differing only in schema location. This creates maintenance burden and confusion.
 
-**Solution**: Merge Cell + Dynamic into **Grid Workspace** — a single API with:
+**Solution**: Merge Cell + Dynamic into **Grid Workspace**: a single API with:
 
 - Cell-level CRDT storage (like both)
 - External schema with validation (like Cell, not Dynamic)
@@ -27,10 +27,10 @@ Currently there are three workspace systems in `packages/epicenter/src/`:
 ## Goals
 
 1. **Unify Cell + Dynamic** into a single Grid Workspace API
-2. **Optional HeadDoc** — if provided, enables time travel and epochs; if absent, enables garbage collection
-3. **External schema always** — definition passed in, schema editing happens externally (JSON file, database), then client is recreated
-4. **Validation on read** — Cell's approach (advisory validation, not enforcement)
-5. **Builder pattern** — `.withExtensions()` for type-safe extension setup
+2. **Optional HeadDoc**: if provided, enables time travel and epochs; if absent, enables garbage collection
+3. **External schema always**: definition passed in, schema editing happens externally (JSON file, database), then client is recreated
+4. **Validation on read**: Cell's approach (advisory validation, not enforcement)
+5. **Builder pattern**: `.withExtensions()` for type-safe extension setup
 
 ## Non-Goals
 
@@ -439,10 +439,10 @@ const client = createGridWorkspace({
    - Decision: Both overloads for flexibility
 
 2. **Do we need `getAllWithCellValidation()` on table helper?**
-   - Decision: Defer — can add later if needed
+   - Decision: Defer: can add later if needed
 
 3. **Should Static also move to builder pattern?**
-   - Decision: No — keep `workspace.create({ capabilities })` for simplicity; just add optional `headDoc`
+   - Decision: No: keep `workspace.create({ capabilities })` for simplicity; just add optional `headDoc`
 
 ## References
 

@@ -1,7 +1,7 @@
 /**
  * YKV (Y.Array LWW) vs Native Y.Map Comparison
  *
- * Answers: "Which storage approach is better—and is the custom LWW worth the complexity?"
+ * Answers: "Which storage approach is better, and is the custom LWW worth the complexity?"
  *
  * Compares the Workspace API's YKeyValue-LWW (opaque ContentAny blobs in Y.Array)
  * against native Y.Map (nested Y.Maps with cell-level granularity) across size,
@@ -137,7 +137,7 @@ describe('YKV vs Y.Map: size and tombstones', () => {
 		}
 		const ymapAfterReplace = Y.encodeStateAsUpdate(ymapDoc).byteLength;
 
-		console.log('\n=== YKV (Y.Array LWW) vs NATIVE Y.Map — 50K chars/row ===');
+		console.log('\n=== YKV (Y.Array LWW) vs NATIVE Y.Map: 50K chars/row ===');
 		console.log(`                          YKV          Y.Map        Diff`);
 		console.log(
 			`  5 rows:                 ${formatBytes(ykvSize5).padEnd(12)} ${formatBytes(ymapSize5).padEnd(12)} ${ymapSize5 > ykvSize5 ? '+' : ''}${formatBytes(ymapSize5 - ykvSize5)}`,

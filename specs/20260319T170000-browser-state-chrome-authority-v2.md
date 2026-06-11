@@ -5,13 +5,13 @@
 
 ## Motivation
 
-`browser-state.svelte.ts` is ~890 lines because it dual-writes to SvelteMap AND Y.Doc for every browser event, runs Y.Doc observers that call Chrome APIs for remote changes, and needs echo detection to break the cycle. Live browser tabs don't need CRDT persistence—Chrome IS the authority. Only user-created data (saved tabs, bookmarks, chat) needs Y.Doc.
+`browser-state.svelte.ts` is ~890 lines because it dual-writes to SvelteMap AND Y.Doc for every browser event, runs Y.Doc observers that call Chrome APIs for remote changes, and needs echo detection to break the cycle. Live browser tabs don't need CRDT persistence. Chrome IS the authority. Only user-created data (saved tabs, bookmarks, chat) needs Y.Doc.
 
 ## Design Principles (learned from v1)
 
 1. **Use Chrome's types directly.** `BrowserTab = Browser.tabs.Tab & { id: number }`. No manual type declarations, no converter functions that create new objects. Just a narrowing guard that asserts `id` is defined.
 2. **No field renames.** Chrome calls it `tab.id` and `window.id`. So do we. The old `tabId`/`windowId` rename was a Y.Doc artifact (avoiding collision with composite string IDs).
-3. **Only carry what consumers read.** v1 audit found `groupId`, `openerTabId`, `status`, `incognito`, `type` are stored but never read. Don't store them—but since we pass through Chrome's object directly (no converter), they're on the object anyway. The TYPE just narrows `id`.
+3. **Only carry what consumers read.** v1 audit found `groupId`, `openerTabId`, `status`, `incognito`, `type` are stored but never read. Don't store them. But since we pass through Chrome's object directly (no converter), they're on the object anyway. The TYPE just narrows `id`.
 4. **Converters become guards.** `toBrowserTab` → `narrowTab`: no object creation, just null-check `id` and type-assert.
 
 ## Target Architecture
@@ -54,7 +54,7 @@ function narrowWindow(win: Browser.windows.Window): BrowserWindow | null {
 }
 ```
 
-Consumers use Chrome's field names directly: `tab.id`, `tab.url`, `tab.title`, `window.id`, `window.focused`. Optional fields (`title?: string`, `url?: string`, `audible?: boolean`) are handled at call sites—most already use `??`, `?.`, or truthiness checks.
+Consumers use Chrome's field names directly: `tab.id`, `tab.url`, `tab.title`, `window.id`, `window.focused`. Optional fields (`title?: string`, `url?: string`, `audible?: boolean`) are handled at call sites. Most already use `??`, `?.`, or truthiness checks.
 
 ## Implementation Plan
 
@@ -65,7 +65,7 @@ Consumers use Chrome's field names directly: `tab.id`, `tab.url`, `tab.title`, `
 - ALL Y.Doc seed logic (diff against existing rows, prune stale entries)
 - ALL Y.Doc observers (`_unobserveTabs`, `_unobserveWindows`, `_unobserveTabGroups`)
 - ALL `// Y.Doc write` lines in event handlers
-- ALL `authState.status` checks in event handlers (Y.Doc artifact—Chrome events fire regardless)
+- ALL `authState.status` checks in event handlers (Y.Doc artifact. Chrome events fire regardless)
 - `recentlyAddedTabIds` echo detection
 - `row-converters` imports
 - Composite ID imports
@@ -117,7 +117,7 @@ browser.tabs.onCreated.addListener((tab) => {
 - `trySync` import (only used by removed actions)
 
 **Update:**
-- Mutation actions (`tabs.close`, `tabs.open`, `tabs.activate`, `tabs.save`, `tabs.group`, `tabs.pin`, `tabs.mute`, `tabs.reload`) — accept native `number` IDs instead of composite strings. Remove `getDeviceId`/`toNativeIds` dance from handlers (except `tabs.save` which still needs `getDeviceId` for `sourceDeviceId`).
+- Mutation actions (`tabs.close`, `tabs.open`, `tabs.activate`, `tabs.save`, `tabs.group`, `tabs.pin`, `tabs.mute`, `tabs.reload`): accept native `number` IDs instead of composite strings. Remove `getDeviceId`/`toNativeIds` dance from handlers (except `tabs.save` which still needs `getDeviceId` for `sourceDeviceId`).
 
 **Keep:**
 - `devicesTable`, `savedTabsTable`, `bookmarksTable`, `conversationsTable`, `chatMessagesTable`, `toolTrustTable`

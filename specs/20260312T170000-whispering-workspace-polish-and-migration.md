@@ -1,7 +1,7 @@
 # Whispering Workspace: Polish & Migration Completion
 
 **Date**: 2026-03-12
-**Status**: In Progress (Waves 1–3 complete, Wave 4 deferred)
+**Status**: In Progress (Waves 1-3 complete, Wave 4 deferred)
 **Builds on**: [20260302T140000-whispering-sync-strategy.md](./20260302T140000-whispering-sync-strategy.md)
 
 ## Overview
@@ -9,8 +9,8 @@
 The Whispering workspace definition (`apps/whispering/src/lib/workspace.ts`) is ~80% complete. This spec audits it against the old data model and the sync strategy spec, identifies concrete issues, and plans the remaining work to reach production-grade.
 
 Two goals:
-1. **Polish** — fix design issues in the workspace definition
-2. **Complete remaining waves** — settings separation, migration, sync wiring
+1. **Polish**: fix design issues in the workspace definition
+2. **Complete remaining waves**: settings separation, migration, sync wiring
 
 ### Architecture: Where Data Lives Today vs After Migration
 
@@ -86,7 +86,7 @@ Wave 2     Settings separation
   ▼
 Wave 3     Migration
   │         Dialog-driven, user-initiated. 3-state machine in localStorage.
-  │         Old data copied into workspace — never deleted automatically.
+  │         Old data copied into workspace, never deleted automatically.
   │
   │         localStorage['whispering:migration']:
   │           (absent) ──► probe for old data ──► 'pending' or 'cleaned'
@@ -104,7 +104,7 @@ Wave 3     Migration
   │         └─────────────┘    └──────────────────┘
   │
   ▼
-Wave 4     Sync wiring (deferred — needs Better Auth + server-remote)
+Wave 4     Sync wiring (deferred: needs Better Auth + server-remote)
             Add server URL setting ──► createSyncExtension connects.
             Everything above works offline-first; sync is additive.
 ```
@@ -216,7 +216,7 @@ Wave 4     Sync wiring (deferred — needs Better Auth + server-remote)
 ║  │  ├── transcribedText: string                                                       │  ║
 ║  │  ├── transcriptionStatus: UNPROCESSED|TRANSCRIBING|DONE|FAILED                     │  ║
 ║  │  ├── transcriptionError: string              ← empty when not FAILED               │  ║
-║  │  │    ⚠ NO audio blob — stored out-of-band (blob store / FS)                      │  ║
+║  │  │    ⚠ NO audio blob: stored out-of-band (blob store / FS)                      │  ║
 ║  │                                                                                    │  ║
 ║  │  transformations  (_v: 1)                   ◄── NORMALIZED (no nested steps)        │  ║
 ║  │  ├── id: string                                                                    │  ║
@@ -362,7 +362,7 @@ CHANGE                          OLD (Dexie/FS)              NEW (workspace clien
                                 all device-local)           synced across devices)
                                                             API keys stay in localStorage
 
-5. Audio blobs                  serializedAudio in IDB      NOT in Y.Doc — out-of-band
+5. Audio blobs                  serializedAudio in IDB      NOT in Y.Doc: out-of-band
                                 OR separate file on FS      (blob store / FS, same as now)
 
 6. Source of truth              Dexie IDB + FS (dual read)  Y.Doc (single CRDT source)
@@ -376,16 +376,16 @@ CHANGE                          OLD (Dexie/FS)              NEW (workspace clien
 ```
 
 
-### Tables — What's Good
+### Tables: What's Good
 
 The 5 normalized tables are correct:
-- `recordings` — matches old `Recording` type exactly
-- `transformations` — matches old `Transformation` type (minus embedded `steps[]`, which is correct)
-- `transformationSteps` — normalized from old `Transformation.steps[]`
-- `transformationRuns` — matches old `TransformationRun` (minus embedded `stepRuns[]`)
-- `transformationStepRuns` — normalized from old `TransformationRun.stepRuns[]`
+- `recordings`: matches old `Recording` type exactly
+- `transformations`: matches old `Transformation` type (minus embedded `steps[]`, which is correct)
+- `transformationSteps`: normalized from old `Transformation.steps[]`
+- `transformationRuns`: matches old `TransformationRun` (minus embedded `stepRuns[]`)
+- `transformationStepRuns`: normalized from old `TransformationRun.stepRuns[]`
 
-### Issue 1: `transformationSteps` — Discriminated Union vs Flat Row
+### Issue 1: `transformationSteps`: Discriminated Union vs Flat Row
 
 **Current workspace.ts** uses arktype's discriminated union for step types:
 
@@ -405,7 +405,7 @@ const transformationSteps = defineTable(
 **Old model** (`transformation-steps.ts`) uses flat row with ALL fields present:
 
 ```typescript
-// Every step has ALL fields — prompt_transform fields AND find_replace fields
+// Every step has ALL fields: prompt_transform fields AND find_replace fields
 const TransformationStepV2 = type({
   type: type.enumerated(...TRANSFORMATION_STEP_TYPES),
   'prompt_transform.inference.provider': type.enumerated(...INFERENCE_PROVIDER_IDS),
@@ -422,7 +422,7 @@ const TransformationStepV2 = type({
 
 **Problems with the current discriminated union approach:**
 
-1. **Per-provider model memory lost.** Old model stores `prompt_transform.inference.provider.OpenAI.model`, `prompt_transform.inference.provider.Groq.model`, etc. as separate fields. When you switch providers, your model selection for each is preserved. The workspace's `inference.model` only stores the active provider's model — switching providers loses the previous selection.
+1. **Per-provider model memory lost.** Old model stores `prompt_transform.inference.provider.OpenAI.model`, `prompt_transform.inference.provider.Groq.model`, etc. as separate fields. When you switch providers, your model selection for each is preserved. The workspace's `inference.model` only stores the active provider's model: switching providers loses the previous selection.
 
 2. **Yjs doesn't enforce unions.** Yjs stores whatever you put in the Y.Map. The arktype union only validates on read. If a step is `prompt_transform` type but someone sets a `find_replace.findText` field, Yjs won't prevent it. The flat row approach is honest about this.
 
@@ -430,7 +430,7 @@ const TransformationStepV2 = type({
 
 **Recommendation:** Switch to flat row approach, matching the old model and the spec. Each provider's model gets its own field. All step type fields present on every row, discriminated by `type`.
 
-### Issue 2: `transcription.config` KV — Single Blob vs Individual KVs
+### Issue 2: `transcription.config` KV: Single Blob vs Individual KVs
 
 **Current workspace.ts:**
 
@@ -443,7 +443,7 @@ const transcription = {
 };
 ```
 
-**Problem:** `transcription.config` is a single blob containing `{ service, model }`. With LWW conflict resolution, if Device A uses Groq and Device B uses OpenAI, and both edit settings simultaneously, one device's entire config gets overwritten — including the service choice.
+**Problem:** `transcription.config` is a single blob containing `{ service, model }`. With LWW conflict resolution, if Device A uses Groq and Device B uses OpenAI, and both edit settings simultaneously, one device's entire config gets overwritten: including the service choice.
 
 **The sync strategy spec** proposed individual KVs for service and model:
 
@@ -469,7 +469,7 @@ The workspace KV keys differ from the old settings keys:
 | `database.recordingRetentionStrategy` | `retention.strategy` | Re-prefixed |
 | `database.maxRecordingCount` | `retention.maxCount` | Re-prefixed |
 
-**This is intentional.** The workspace KV is a fresh namespace. Shorter, cleaner keys are better. No need to match old localStorage keys — the migration will map between them.
+**This is intentional.** The workspace KV is a fresh namespace. Shorter, cleaner keys are better. No need to match old localStorage keys: the migration will map between them.
 
 ### Issue 4: Missing KV Entries
 
@@ -477,13 +477,13 @@ The workspace has entries for synced settings only. But some settings from the o
 
 | Setting | In workspace? | Should sync? |
 |---|---|---|
-| Per-service transcription model selections | Partially (blob) | Yes — individual KVs |
-| `transcription.selectedTranscriptionService` | In blob | Yes — individual KV |
-| `completion.openrouter.model` | No | Yes — roams across devices |
+| Per-service transcription model selections | Partially (blob) | Yes: individual KVs |
+| `transcription.selectedTranscriptionService` | In blob | Yes: individual KV |
+| `completion.openrouter.model` | No | Yes: roams across devices |
 
 ### Issue 5: Settings That Should NOT Be in Workspace KV
 
-Verify these are correctly EXCLUDED (they are — just confirming):
+Verify these are correctly EXCLUDED (they are, just confirming):
 - API keys (`apiKeys.*`) ✅ excluded
 - API endpoint overrides (`apiEndpoints.*`) ✅ excluded
 - Device IDs (`recording.*.deviceId`) ✅ excluded
@@ -512,8 +512,8 @@ Verify these are correctly EXCLUDED (they are — just confirming):
 - [x] **1.3** Add missing KV entries
   - `completion.openrouter.model` (roams across devices)
   - Audit confirmed: only one entry was missing; all others present or correctly excluded
-- [x] **1.4** Review all KV types — all correct
-  - `retention.maxCount` (`number.integer >= 1`) and `transcription.temperature` (`0 <= number <= 1`) intentionally differ from settings.ts string types — workspace uses semantically correct types
+- [x] **1.4** Review all KV types: all correct
+  - `retention.maxCount` (`number.integer >= 1`) and `transcription.temperature` (`0 <= number <= 1`) intentionally differ from settings.ts string types: workspace uses semantically correct types
 - [x] **1.5** Add JSDoc comments to every table and KV group explaining the design
 
 ### Wave 2: Settings Separation
@@ -521,15 +521,15 @@ Verify these are correctly EXCLUDED (they are — just confirming):
 Two separate reactive state files instead of a single merged interface. The split reflects a real architectural boundary: user preferences (synced) vs device configuration (local).
 
 **Why two files instead of one merged interface:**
-- Simpler implementation — no dual-source merging logic
-- Clear boundary — consumers know whether a setting syncs or not
+- Simpler implementation: no dual-source merging logic
+- Clear boundary: consumers know whether a setting syncs or not
 - Encryption applies cleanly to just the workspace side later
 - Most consumers use one category or the other, not both simultaneously
 
-**`workspace-settings.svelte.ts`** — reads/writes workspace KV (synced across devices):
+**`workspace-settings.svelte.ts`**: reads/writes workspace KV (synced across devices):
 - ~42 keys: sound toggles, output behavior, UI prefs, recording mode, transcription service + per-service models, language/prompt/temperature, compression, retention policy, in-app shortcuts, selected transformation, completion model, analytics
 
-**`device-config.svelte.ts`** — reads/writes localStorage (device-bound):
+**`device-config.svelte.ts`**: reads/writes localStorage (device-bound):
 - ~36 keys: API keys (secrets), API endpoint overrides, hardware device IDs, recording method, cpal/ffmpeg/navigator config, filesystem model paths, self-hosted server URLs, global OS shortcuts
 
 **Future**: Once encryption lands, API keys (~8) and endpoint overrides (~2) move from device-config to workspace KV. The device-config shrinks to genuinely hardware/OS-bound keys only.
@@ -548,11 +548,11 @@ Two separate reactive state files instead of a single merged interface. The spli
   - Transcription service code: reads API key from device-config + model from workspace-settings
   - Recording code: reads device ID from device-config + mode from workspace-settings
 - [x] **2.4** Deprecate old unified `settings.svelte.ts` once all consumers are migrated
-  > **Note**: Singleton deleted entirely — zero importers remained. The monolithic Settings arktype schema (settings.ts) was also deleted after inlining service param types.
+  > **Note**: Singleton deleted entirely: zero importers remained. The monolithic Settings arktype schema (settings.ts) was also deleted after inlining service param types.
 
 ### Wave 3: Migration
 
-Dialog-driven, user-initiated migration from old storage to workspace. Old data is never deleted automatically — the user must explicitly choose to clean it up.
+Dialog-driven, user-initiated migration from old storage to workspace. Old data is never deleted automatically. The user must explicitly choose to clean it up.
 
 #### Migration State Machine
 
@@ -588,12 +588,12 @@ localStorage['whispering:migration']
 - `'cleaned'`: Terminal. No more probes, no more UI, done.
 
 **Transient UI states** (in dialog component, not persisted):
-- `idle` — dialog shown, waiting for user action
-- `migrating` — spinner, migration in progress
-- `failed` — error message + retry button
-- `done` — summary with counts
+- `idle`: dialog shown, waiting for user action
+- `migrating`: spinner, migration in progress
+- `failed`: error message + retry button
+- `done`: summary with counts
 
-If the app crashes mid-migration, persisted state is still `'pending'` — user retries on next launch.
+If the app crashes mid-migration, persisted state is still `'pending'`: user retries on next launch.
 
 #### Migration Dialog UX
 
@@ -605,7 +605,7 @@ If the app crashes mid-migration, persisted state is still `'pending'` — user 
 │  older version. Migrate them to the new      │
 │  workspace format for sync support.          │
 │                                              │
-│  Your existing data won't be touched — this  │
+│  Your existing data won't be touched. This  │
 │  copies everything into the new format.      │
 │                                              │
 │              [ Migrate Now ]                 │
@@ -660,7 +660,7 @@ After migration completes, in settings:
   - When state is `'completed'`: show "Remove old data" button
   - On click: delete old Dexie DB + old localStorage keys → set `'cleaned'`
 
-### Wave 4: Sync UI + Wiring (future — not in this PR)
+### Wave 4: Sync UI + Wiring (future: not in this PR)
 
 This wave is deferred. It requires the sync infrastructure (Better Auth, server-remote) which is a separate workstream.
 
@@ -668,13 +668,13 @@ This wave is deferred. It requires the sync infrastructure (Better Auth, server-
 
 ### Decision 1: Flat Row for `transformationSteps` ✅ Confirmed
 
-**Choice**: Flat row — all fields present on every row, discriminated by `type`.
+**Choice**: Flat row: all fields present on every row, discriminated by `type`.
 
 **Rationale (in order of importance)**:
 
-1. **Row-level atomicity kills discriminated unions.** The workspace API's `table.set()` replaces the entire row (`ykv.set(row.id, row)`). With a discriminated union, switching a step from `prompt_transform` → `find_replace` writes only `find_replace` fields — the `prompt_transform` data (inference provider, model selections, prompt templates) is permanently lost. With a flat row, `set()` writes the complete row including all `prompt_transform.*` fields unchanged. Switch back → everything is still there.
+1. **Row-level atomicity kills discriminated unions.** The workspace API's `table.set()` replaces the entire row (`ykv.set(row.id, row)`). With a discriminated union, switching a step from `prompt_transform` → `find_replace` writes only `find_replace` fields: the `prompt_transform` data (inference provider, model selections, prompt templates) is permanently lost. With a flat row, `set()` writes the complete row including all `prompt_transform.*` fields unchanged. Switch back → everything is still there.
 
-2. **Per-provider model memory.** The old model stores each provider's model independently (`prompt_transform.inference.provider.OpenAI.model`, `prompt_transform.inference.provider.Groq.model`, etc.). Switching providers preserves each provider's model selection. The current workspace's single `inference.model` field only stores the active provider's model — switching providers loses the previous selection.
+2. **Per-provider model memory.** The old model stores each provider's model independently (`prompt_transform.inference.provider.OpenAI.model`, `prompt_transform.inference.provider.Groq.model`, etc.). Switching providers preserves each provider's model selection. The current workspace's single `inference.model` field only stores the active provider's model: switching providers loses the previous selection.
 
 3. **Yjs honesty.** Y.Map stores whatever keys you set. The flat row approach doesn't pretend the schema enforces something the runtime can't. Schema validation on read is sufficient for type safety; the storage layer doesn't need to match.
 
@@ -682,15 +682,15 @@ This wave is deferred. It requires the sync infrastructure (Better Auth, server-
 
 5. **Schema readability.** One object literal with all fields. No `.merge(type.or())` composition gymnastics.
 
-6. **camelCase for tables, dot-notation for KV.** Table rows are replaced atomically via `table.set()` — dot-notation keys provide zero per-field conflict resolution benefit and force bracket access in TypeScript (`step['prompt_transform.inference.provider.OpenAI.model']`). KV entries are independently LWW-resolved, so dot-notation (`transcription.openai.model`) creates meaningful per-key granularity. Every other table in workspace.ts uses camelCase — this is consistent.
+6. **camelCase for tables, dot-notation for KV.** Table rows are replaced atomically via `table.set()`: dot-notation keys provide zero per-field conflict resolution benefit and force bracket access in TypeScript (`step['prompt_transform.inference.provider.OpenAI.model']`). KV entries are independently LWW-resolved, so dot-notation (`transcription.openai.model`) creates meaningful per-key granularity. Every other table in workspace.ts uses camelCase: this is consistent.
 
 **Alternatives considered**:
 
-- **Discriminated union (current)**: Better compile-time narrowing on `type` field. But the workspace API's row-level atomicity makes this approach fundamentally incompatible — data loss on type switches is unacceptable. The type safety benefit doesn't justify the data integrity risk.
+- **Discriminated union (current)**: Better compile-time narrowing on `type` field. But the workspace API's row-level atomicity makes this approach fundamentally incompatible: data loss on type switches is unacceptable. The type safety benefit doesn't justify the data integrity risk.
 
 - **Discriminated union with manual stash/restore**: The app could manually save variant data before switching types and restore it when switching back. This is fragile, error-prone, and pushes schema concerns into application logic.
 
-**Target schema** (camelCase — consistent with other tables in workspace.ts; dot-notation reserved for KV keys where per-key LWW benefits from finer granularity):
+**Target schema** (camelCase: consistent with other tables in workspace.ts; dot-notation reserved for KV keys where per-key LWW benefits from finer granularity):
 
 ```typescript
 const transformationSteps = defineTable(type({
@@ -730,19 +730,19 @@ const transformationSteps = defineTable(type({
 
 **Rationale**:
 
-1. **LWW safety.** `transcription.config` is a single KV entry — a blob containing `{ service, model }`. With LWW conflict resolution, if Device A changes the service and Device B changes the model simultaneously, one device's entire blob overwrites the other. Individual KVs (`transcription.service`, `transcription.openai.model`, etc.) give per-key LWW — both changes survive.
+1. **LWW safety.** `transcription.config` is a single KV entry: a blob containing `{ service, model }`. With LWW conflict resolution, if Device A changes the service and Device B changes the model simultaneously, one device's entire blob overwrites the other. Individual KVs (`transcription.service`, `transcription.openai.model`, etc.) give per-key LWW: both changes survive.
 
 2. **Per-service model memory.** Each service's model selection is stored independently. Switching from OpenAI to Groq and back preserves your OpenAI model selection.
 
 3. **Consistency with transformationSteps.** Same principle: individual fields over blobs, discriminated by a type/service selector rather than schema-level unions.
 
 **Target KVs**:
-- `transcription.service` — selected service ID (replaces blob)
-- `transcription.openai.model` — OpenAI model selection
-- `transcription.groq.model` — Groq model selection
-- `transcription.elevenlabs.model` — ElevenLabs model selection
-- `transcription.deepgram.model` — Deepgram model selection
-- `transcription.mistral.model` — Mistral model selection
+- `transcription.service`: selected service ID (replaces blob)
+- `transcription.openai.model`: OpenAI model selection
+- `transcription.groq.model`: Groq model selection
+- `transcription.elevenlabs.model`: ElevenLabs model selection
+- `transcription.deepgram.model`: Deepgram model selection
+- `transcription.mistral.model`: Mistral model selection
 
 ### Decision 3: KV Key Naming ✅ Confirmed
 
@@ -758,7 +758,7 @@ const transformationSteps = defineTable(type({
 
 2. **Simpler implementation.** No dual-source merging, no "which source does this key come from?" logic. Each file owns its storage backend completely.
 
-3. **Encryption readiness.** When encryption lands, API keys move from device-config to workspace KV. The workspace-settings file is already wired to workspace KV — it's just adding keys. No architectural change needed.
+3. **Encryption readiness.** When encryption lands, API keys move from device-config to workspace KV. The workspace-settings file is already wired to workspace KV: it's just adding keys. No architectural change needed.
 
 4. **Consumer clarity.** `import { workspaceSettings } from './workspace-settings.svelte'` tells you this setting syncs. `import { deviceConfig } from './device-config.svelte'` tells you it doesn't. No guessing.
 
@@ -766,7 +766,7 @@ const transformationSteps = defineTable(type({
 
 | `workspace-settings.svelte.ts` (~42 keys) | `device-config.svelte.ts` (~36 keys) |
 |---|---|
-| Sound toggles (8) | API keys (8) — secrets, move to workspace once encrypted |
+| Sound toggles (8) | API keys (8): secrets, move to workspace once encrypted |
 | Output behavior (6) | API endpoint overrides (2) |
 | UI prefs (2) | Hardware device IDs (3) |
 | Retention policy (2) | Recording method + cpal/ffmpeg/navigator config (6) |
@@ -779,11 +779,11 @@ const transformationSteps = defineTable(type({
 
 ### Decision 5: Migration State Machine ✅ Confirmed
 
-**Choice**: 3-state machine in `localStorage['whispering:migration']` — `'pending'` / `'completed'` / `'cleaned'`.
+**Choice**: 3-state machine in `localStorage['whispering:migration']`: `'pending'` / `'completed'` / `'cleaned'`.
 
 **Rationale**:
 
-1. **Minimal states.** Three persisted values cover every lifecycle phase. Transient states (migrating, failed) live only in the dialog component — no need to persist them.
+1. **Minimal states.** Three persisted values cover every lifecycle phase. Transient states (migrating, failed) live only in the dialog component: no need to persist them.
 
 2. **Crash-safe.** If the app crashes mid-migration, state is still `'pending'`. User retries on next launch. No partial state to recover from.
 

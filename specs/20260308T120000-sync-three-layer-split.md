@@ -12,7 +12,7 @@
 | `protocol.ts` | Pure encode/decode (wire protocol) | sync-client, server-local (indirectly), server-remote |
 | `handlers.ts` | Server-side WS connection lifecycle | server-local, server-remote |
 
-`@epicenter/sync-client` is already clean — client-side providers only.
+`@epicenter/sync-client` is already clean: client-side providers only.
 
 ## Problem
 
@@ -87,7 +87,7 @@ server-remote ────→ @epicenter/sync-server
 
 ### server-remote/src/workspace-room.ts
 
-Same pattern as document-room.ts — split the import.
+Same pattern as document-room.ts: split the import.
 
 ### sync-client (NO CHANGES)
 
@@ -120,17 +120,17 @@ Same pattern as document-room.ts — split the import.
    }
    ```
 
-2. Create `packages/sync-server/tsconfig.json` — copy from `packages/sync/tsconfig.json`
+2. Create `packages/sync-server/tsconfig.json`: copy from `packages/sync/tsconfig.json`
 
 3. Move `packages/sync/src/handlers.ts` → `packages/sync-server/src/handlers.ts`
    - Update internal import: `from './protocol'` → `from '@epicenter/sync'`
    - The file imports these from protocol: `encodeAwareness`, `encodeAwarenessStates`, `encodeSyncStatus`, `encodeSyncStep1`, `encodeSyncUpdate`, `handleSyncMessage`, `MESSAGE_TYPE`
-   - It also imports `Awareness` from `y-protocols/awareness` and `decoding` from `lib0/decoding` directly — these stay as-is
+   - It also imports `Awareness` from `y-protocols/awareness` and `decoding` from `lib0/decoding` directly: these stay as-is
 
 4. Create `packages/sync-server/src/index.ts`:
    ```ts
    /**
-    * @epicenter/sync-server — Server-Side Sync Handlers
+    * @epicenter/sync-server: Server-Side Sync Handlers
     *
     * Framework-agnostic WS connection lifecycle. Adapters (Elysia, Cloudflare Workers)
     * call these handlers and map the results to their transport layer.
@@ -151,10 +151,10 @@ Same pattern as document-room.ts — split the import.
 
 ### Wave 2: Update `@epicenter/sync` (remove handler exports)
 
-1. Update `packages/sync/src/index.ts` — remove all handler re-exports:
+1. Update `packages/sync/src/index.ts`: remove all handler re-exports:
    ```ts
    /**
-    * @epicenter/sync — Sync Wire Protocol
+    * @epicenter/sync: Sync Wire Protocol
     *
     * Pure encode/decode functions for the yjs sync protocol.
     * No framework deps. No connection lifecycle. Only yjs + lib0 + y-protocols.
@@ -187,7 +187,7 @@ Same pattern as document-room.ts — split the import.
 2. Delete `packages/sync/src/handlers.ts` (moved in Wave 1)
 
 3. Remove `lib0` from `packages/sync/package.json` dependencies IF `protocol.ts` doesn't import it directly.
-   > **Check**: `protocol.ts` imports `lib0/decoding` and `lib0/encoding` — `lib0` stays.
+   > **Check**: `protocol.ts` imports `lib0/decoding` and `lib0/encoding`: `lib0` stays.
 
 ### Wave 3: Update server consumers
 
@@ -197,25 +197,25 @@ Same pattern as document-room.ts — split the import.
 2. **`packages/server-remote/package.json`**: Add `@epicenter/sync-server` to dependencies. Keep `@epicenter/sync` (CF rooms use `decodeSyncRequest` and `stateVectorsEqual` from protocol).
 
 3. Update import paths in:
-   - `packages/server-local/src/sync/ws-plugin.ts` — change `'@epicenter/sync'` → `'@epicenter/sync-server'`
-   - `packages/server-remote/src/document-room.ts` — split import (protocol from `sync`, handlers from `sync-server`)
-   - `packages/server-remote/src/workspace-room.ts` — same split
+   - `packages/server-local/src/sync/ws-plugin.ts`: change `'@epicenter/sync'` → `'@epicenter/sync-server'`
+   - `packages/server-remote/src/document-room.ts`: split import (protocol from `sync`, handlers from `sync-server`)
+   - `packages/server-remote/src/workspace-room.ts`: same split
 
 4. Run `bun install` to wire up the new workspace package.
 
 ### Wave 4: Verify
 
 1. `bun run typecheck` across all affected packages
-2. `bun test packages/sync/` — protocol tests still pass
-3. `bun test packages/server-local/` — ws-plugin integration tests still pass
-4. `bun test packages/sync-client/` — client tests unaffected
+2. `bun test packages/sync/`: protocol tests still pass
+3. `bun test packages/server-local/`: ws-plugin integration tests still pass
+4. `bun test packages/sync-client/`: client tests unaffected
 
 ## What This Does NOT Change
 
-- `protocol.ts` stays in `@epicenter/sync` — pure encode/decode, no lifecycle
-- `sync-client` is untouched — it only imports protocol symbols
-- No API changes — all functions keep the same signatures
-- No wire protocol changes — same bytes on the wire
+- `protocol.ts` stays in `@epicenter/sync`: pure encode/decode, no lifecycle
+- `sync-client` is untouched: it only imports protocol symbols
+- No API changes: all functions keep the same signatures
+- No wire protocol changes: same bytes on the wire
 
 ## Risk
 
@@ -229,9 +229,9 @@ Currently `@epicenter/sync` re-exports `Awareness` from `y-protocols/awareness` 
 - `sync-client` has its own `y-protocols` dependency already
 - Protocol-level encode/decode functions take `awareness: Awareness` as args
 
-**Decision**: Move the `Awareness` re-export to `sync-server`. Server consumers get it from there. `sync-client` already imports `Awareness` directly from `y-protocols/awareness`. If a protocol consumer needs the type, they can import from `y-protocols` directly — it's a peer dep anyway.
+**Decision**: Move the `Awareness` re-export to `sync-server`. Server consumers get it from there. `sync-client` already imports `Awareness` directly from `y-protocols/awareness`. If a protocol consumer needs the type, they can import from `y-protocols` directly: it's a peer dep anyway.
 
-Alternatively, keep it in `@epicenter/sync` too — re-exporting from two places is fine since it's the same underlying type. But cleaner to have one canonical source per layer.
+Alternatively, keep it in `@epicenter/sync` too: re-exporting from two places is fine since it's the same underlying type. But cleaner to have one canonical source per layer.
 
 ## Review
 
@@ -244,7 +244,7 @@ Split `@epicenter/sync` into `@epicenter/sync` (protocol) + `@epicenter/sync-ser
 
 ### Deviations from Spec
 
-- Wave 2 item 3 (remove `lib0` dep): Not applicable — `protocol.ts` uses `lib0` directly, so it stays.
+- Wave 2 item 3 (remove `lib0` dep): Not applicable: `protocol.ts` uses `lib0` directly, so it stays.
 - The spec's import map assumed pre-subpath-split imports (`from '@epicenter/sync'` for handlers). The actual starting point was post-subpath-split (`from '@epicenter/sync/server'`), making the consumer changes simpler.
 - `Awareness` re-export removed from `@epicenter/sync` entirely (moved to `sync-server` only), per the spec's decision.
-- Also removed `packages/sync/src/server.ts` (the subpath barrel file from the prior commit) — not mentioned in spec since it didn't exist when spec was written.
+- Also removed `packages/sync/src/server.ts` (the subpath barrel file from the prior commit): not mentioned in spec since it didn't exist when spec was written.

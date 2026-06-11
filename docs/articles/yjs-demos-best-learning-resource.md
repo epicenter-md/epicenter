@@ -39,7 +39,7 @@ The snapshots example is especially valuable. The prosemirror-versions demo show
 Open the yjs-demos repository. Read the source code. You'll understand:
 
 - How WebSocket providers handle dual-channel sync (WebSocket + BroadcastChannel)
-- How the server works (it's shockingly simple—just a thin relay)
+- How the server works (it's shockingly simple. Just a thin relay)
 - How awareness sync works separately from document sync
 - How editor bindings translate between editor deltas and CRDT mutations
 - How to implement version control with snapshots
@@ -51,16 +51,16 @@ Open the yjs-demos repository. Read the source code. You'll understand:
 
 After exploring the demos:
 
-[The Production Patterns Hiding in Yjs Demos](./yjs-demos-production-patterns.md) explains what you're seeing—dual-channel sync, thin relay servers, snapshotting, all the architectural decisions underneath the code.
+[The Production Patterns Hiding in Yjs Demos](./yjs-demos-production-patterns.md) explains what you're seeing. Dual-channel sync, thin relay servers, snapshotting, all the architectural decisions underneath the code.
 
 [Yjs Has Free WebSocket Infrastructure (Just for Demos)](./yjs-demos-free-websocket-infrastructure.md) shows you how to use the public server for your own prototypes.
 
 Then dive into the full documentation and advanced patterns:
 
-- [learn.yjs.dev](https://learn.yjs.dev) — Interactive tutorials
-- [Yjs documentation](https://docs.yjs.dev) — Complete API reference
-- [Fractional Ordering: User-Controlled Item Order in Yjs](./fractional-ordering-meta-data-structure.md) — Implementing reordering
-- [Yjs CRDT Patterns and Meta Data Structures](./yjs-document-structure-design.md) — Schema design for CRDTs
+- [learn.yjs.dev](https://learn.yjs.dev): Interactive tutorials
+- [Yjs documentation](https://docs.yjs.dev): Complete API reference
+- [Fractional Ordering: User-Controlled Item Order in Yjs](./fractional-ordering-meta-data-structure.md): Implementing reordering
+- [Yjs CRDT Patterns and Meta Data Structures](./yjs-document-structure-design.md): Schema design for CRDTs
 
 But start with the demos. Everything else makes sense faster when you've seen it working.
 

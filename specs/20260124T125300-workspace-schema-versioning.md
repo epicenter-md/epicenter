@@ -6,7 +6,7 @@
 >
 > **What changed**: The Stable ID pattern eliminates the need for per-row `_v` versioning entirely. Instead of tracking versions and running migrations, each field has a stable internal ID that never changes. Renaming is free (just change the schema key), and invalid/missing data simply returns the default value.
 >
-> **What's still valuable here**: The analysis of the problem space (why CRDT migrations are hard, the epoch system for breaking changes, the YJS conflict problem) remains accurate. The two-tier model (epochs for breaking changes, additive changes within epochs) is still correct—but "additive changes" no longer need version tracking.
+> **What's still valuable here**: The analysis of the problem space (why CRDT migrations are hard, the epoch system for breaking changes, the YJS conflict problem) remains accurate. The two-tier model (epochs for breaking changes, additive changes within epochs) is still correct. But "additive changes" no longer need version tracking.
 >
 > **Read this spec for**: Understanding the problem. **Read the Stable ID spec for**: The solution.
 
@@ -23,10 +23,10 @@
 
 This spec proposes **workspace-level schema versioning** as an alternative to per-table or per-row versioning. The key insight is that schema changes often affect multiple tables simultaneously, and versioning at the workspace level provides:
 
-1. **Atomic schema changes** — Add fields to multiple tables in one version bump
-2. **Simpler mental model** — "The workspace is at version 3" vs "Table A is v2, Table B is v4"
-3. **Better type safety** — One version number → one complete TypeScript type
-4. **Natural callback API** — Previous schema flows into next, enabling spreads and transforms
+1. **Atomic schema changes**: Add fields to multiple tables in one version bump
+2. **Simpler mental model**: "The workspace is at version 3" vs "Table A is v2, Table B is v4"
+3. **Better type safety**: One version number → one complete TypeScript type
+4. **Natural callback API**: Previous schema flows into next, enabling spreads and transforms
 
 ---
 
@@ -142,7 +142,7 @@ The migration callback receives the **fully typed previous schema** and must ret
 
 - Full type safety end-to-end
 - Explicit about what changed
-- Flexible — spread, modify, restructure as needed
+- Flexible: spread, modify, restructure as needed
 - No magic APIs to learn
 
 #### 2. Defaults Drive Data Migration
@@ -668,7 +668,7 @@ Device B (offline): Edits just the "title" field on v1
 Both sync...
 ```
 
-**Result**: If A's migration wrote the `title` field (even with its old value), A and B both wrote to the same key. YJS picks one — B's edit may be lost.
+**Result**: If A's migration wrote the `title` field (even with its old value), A and B both wrote to the same key. YJS picks one: B's edit may be lost.
 
 ### Why Patch-Based Is Safe
 
@@ -748,9 +748,9 @@ const definition = workspace('blog')
 
 ## Related Documents
 
-- `specs/20260124T004528-versioned-table-api-design.md` — Previous table-level research and YJS conflict analysis
-- `packages/epicenter/src/core/docs/README.md` — Three-document architecture (Registry, Head, Workspace)
-- `packages/epicenter/src/core/workspace/README.md` — Current workspace API and epoch system
+- `specs/20260124T004528-versioned-table-api-design.md`: Previous table-level research and YJS conflict analysis
+- `packages/epicenter/src/core/docs/README.md`: Three-document architecture (Registry, Head, Workspace)
+- `packages/epicenter/src/core/workspace/README.md`: Current workspace API and epoch system
 
 ---
 

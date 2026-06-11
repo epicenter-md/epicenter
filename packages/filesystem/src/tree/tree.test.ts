@@ -435,7 +435,7 @@ describe('attachFileTree', () => {
 			expect(tree.exists('/before.txt')).toBe(true);
 			expect(tree.lookupId('/before.txt')).toBe(id);
 
-			// Tear down the ydoc — the observer registered via
+			// Tear down the ydoc: the observer registered via
 			// ydoc.once('destroy', unobserve) should unregister.
 			ydoc.destroy();
 

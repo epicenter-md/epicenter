@@ -1,5 +1,5 @@
 /**
- * @epicenter/sync — Yjs Sync Protocol Primitives
+ * @epicenter/sync: Yjs Sync Protocol Primitives
  *
  * Encode/decode functions for the sync wire protocol.
  *

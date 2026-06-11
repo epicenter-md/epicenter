@@ -5,20 +5,20 @@
 
 ## Problem
 
-No visibility into which Durable Object instances exist per user, what type they are, or how much storage they consume. A user dashboard needs this data to show storage usage. The Worker already accesses DOs on every request—we just need to record the access and piggyback storage size on existing RPC responses.
+No visibility into which Durable Object instances exist per user, what type they are, or how much storage they consume. A user dashboard needs this data to show storage usage. The Worker already accesses DOs on every request. We just need to record the access and piggyback storage size on existing RPC responses.
 
 ## Architecture Decisions
 
 1. **Single table** `durable_object_instance` with `do_type` discriminator
-2. **Composite PK**: `(userId, doType, resourceName)`—not `doName` alone
+2. **Composite PK**: `(userId, doType, resourceName)`: not `doName` alone
 3. **`doName` as a regular column** with UNIQUE constraint (not PK)
 4. **`resourceName` denormalized** for queryable display without parsing `doName`
 5. **Both `createdAt` + `lastAccessedAt`** timestamps retained
-6. **Separate `storageMeasuredAt`** from `lastAccessedAt`—storage isn't measured on every access (e.g. WebSocket upgrades)
-7. **Piggyback storage size** on existing `sync()` and `getDoc()` RPC responses—no separate RPC
-8. **`afterResponse` queue pattern** in DB middleware—ensures upsert completes before `client.end()` without blocking the HTTP response
-9. **Skip snapshot route tracking** in v1—any document access via `getDoc()`/`sync()` captures the instance before snapshots are used
-10. **WebSocket upgrades** upsert `lastAccessedAt` only (no `storageBytes`)—next HTTP call fills in storage
+6. **Separate `storageMeasuredAt`** from `lastAccessedAt`: storage isn't measured on every access (e.g. WebSocket upgrades)
+7. **Piggyback storage size** on existing `sync()` and `getDoc()` RPC responses. No separate RPC
+8. **`afterResponse` queue pattern** in DB middleware. Ensures upsert completes before `client.end()` without blocking the HTTP response
+9. **Skip snapshot route tracking** in v1. Any document access via `getDoc()`/`sync()` captures the instance before snapshots are used
+10. **WebSocket upgrades** upsert `lastAccessedAt` only (no `storageBytes`): next HTTP call fills in storage
 
 ## Implementation Plan
 
@@ -87,7 +87,7 @@ durableObjectInstances: many(durableObjectInstance),
 - [x] Change `getDoc()` return type from `Promise<Uint8Array>` to `Promise<{ data: Uint8Array; storageBytes: number }>`
 - [x] Read `this.ctx.storage.sql.databaseSize` in each method
 
-**`sync()` change (base-sync-room.ts:244–257):**
+**`sync()` change (base-sync-room.ts:244-257):**
 
 ```typescript
 async sync(body: Uint8Array): Promise<{ diff: Uint8Array | null; storageBytes: number }> {
@@ -106,7 +106,7 @@ async sync(body: Uint8Array): Promise<{ diff: Uint8Array | null; storageBytes: n
 }
 ```
 
-**`getDoc()` change (base-sync-room.ts:266–268):**
+**`getDoc()` change (base-sync-room.ts:266-268):**
 
 ```typescript
 async getDoc(): Promise<{ data: Uint8Array; storageBytes: number }> {
@@ -118,7 +118,7 @@ async getDoc(): Promise<{ data: Uint8Array; storageBytes: number }> {
 ```
 
 **Verification:**
-- `bun run typecheck` from `apps/api/` passes (will fail until Task 3 updates callers—Tasks 2+3 are in the same commit)
+- `bun run typecheck` from `apps/api/` passes (will fail until Task 3 updates callers. Tasks 2+3 are in the same commit)
 
 ### Task 3: Worker upsert logic (`app.ts`)
 
@@ -201,7 +201,7 @@ app.use('*', async (c, next) => {
  * Records that a user accessed a DO, optionally updating storage bytes.
  * Uses INSERT ON CONFLICT so the first access creates the row and
  * subsequent accesses update `lastAccessedAt` (and `storageBytes` when
- * provided). Errors are caught and logged—this is best-effort telemetry,
+ * provided). Errors are caught and logged. This is best-effort telemetry,
  * not billing authority.
  */
 function upsertDoInstance(
@@ -242,10 +242,10 @@ function upsertDoInstance(
 
 #### 3c: Route handler modifications
 
-- [x] `GET /workspaces/:workspace` — destructure `getDoc()` result, add upsert (with storageBytes for HTTP, without for WS)
-- [x] `POST /workspaces/:workspace` — destructure `sync()` result, add upsert with storageBytes
-- [x] `GET /documents/:document` — same pattern as workspace GET
-- [x] `POST /documents/:document` — same pattern as workspace POST
+- [x] `GET /workspaces/:workspace`: destructure `getDoc()` result, add upsert (with storageBytes for HTTP, without for WS)
+- [x] `POST /workspaces/:workspace`: destructure `sync()` result, add upsert with storageBytes
+- [x] `GET /documents/:document`: same pattern as workspace GET
+- [x] `POST /documents/:document`: same pattern as workspace POST
 
 **Pattern for GET routes (using workspace as example, document is identical with `'document'` doType):**
 
@@ -333,16 +333,16 @@ app.post(
 ### Commit 1: `feat(api): add durable_object_instance schema and migration`
 
 **Files:**
-- `apps/api/src/db/schema.ts` — new table + relations + updated `userRelations`
-- `apps/api/drizzle/0001_*.sql` — generated migration
+- `apps/api/src/db/schema.ts`: new table + relations + updated `userRelations`
+- `apps/api/drizzle/0001_*.sql`: generated migration
 
 **Why separate:** Schema is a DB-only change. The new table doesn't affect existing code. Can be deployed (migration applied) independently before the runtime change ships.
 
 ### Commit 2: `feat(api): track DO instances with storage size on every access`
 
 **Files:**
-- `apps/api/src/base-sync-room.ts` — `sync()` and `getDoc()` return `{ data/diff, storageBytes }`
-- `apps/api/src/app.ts` — `afterResponse` queue, `upsertDoInstance` helper, route handler updates
+- `apps/api/src/base-sync-room.ts`: `sync()` and `getDoc()` return `{ data/diff, storageBytes }`
+- `apps/api/src/app.ts`: `afterResponse` queue, `upsertDoInstance` helper, route handler updates
 
 **Why together:** The RPC return type change and the Worker code that destructures the new shape must ship atomically. If deployed separately, the Worker would try to use a `Uint8Array` as a `{ data, storageBytes }` object (or vice versa).
 
@@ -368,10 +368,10 @@ Client                    Worker (app.ts)              DO (base-sync-room.ts)   
 
 ## Not in Scope (v1)
 
-- **Snapshot route tracking** — covered by `getDoc()`/`sync()` accesses
-- **Upsert throttling** — add later if traffic warrants it
-- **Deletion cleanup** — when DOs are deleted, rows become stale; a future cleanup job can handle this
-- **Dashboard query endpoint** — separate feature; this spec only covers the write path
+- **Snapshot route tracking**: covered by `getDoc()`/`sync()` accesses
+- **Upsert throttling**: add later if traffic warrants it
+- **Deletion cleanup**: when DOs are deleted, rows become stale; a future cleanup job can handle this
+- **Dashboard query endpoint**: separate feature; this spec only covers the write path
 
 ## Review
 

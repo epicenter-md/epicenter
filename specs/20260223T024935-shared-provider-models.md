@@ -14,7 +14,7 @@ Replace hardcoded AI model lists across the monorepo with imports from TanStack 
 
 Model lists are duplicated with divergent data:
 
-**Tab Manager** — hardcoded, outdated, 12 models:
+**Tab Manager**: hardcoded, outdated, 12 models:
 ```typescript
 // apps/tab-manager/src/lib/state/ai-chat-state.svelte.ts
 const PROVIDER_MODELS: Record<string, string[]> = {
@@ -26,7 +26,7 @@ const PROVIDER_MODELS: Record<string, string[]> = {
 };
 ```
 
-**Server** — accepts any string, types via TanStack AI imports:
+**Server**: accepts any string, types via TanStack AI imports:
 ```typescript
 // packages/server/src/ai/adapters.ts
 export type SupportedProvider = 'openai' | 'anthropic' | 'gemini' | 'ollama' | 'grok';
@@ -41,7 +41,7 @@ This creates problems:
 ### Desired State
 
 ```typescript
-// Import directly from TanStack AI — no wrapper package
+// Import directly from TanStack AI: no wrapper package
 import { OPENAI_CHAT_MODELS } from '@tanstack/ai-openai';
 import { ANTHROPIC_MODELS } from '@tanstack/ai-anthropic';
 
@@ -62,7 +62,7 @@ TanStack AI (v0.5.x) exports both **runtime constant arrays** and **type unions*
 | `@tanstack/ai-grok` | `GROK_CHAT_MODELS` | `GrokChatModel` | 9 models |
 | `@tanstack/ai-ollama` | `OllamaTextModels` | `OllamaTextModel` | 60+ models |
 
-These are pure `as const` arrays — tree-shakeable, no runtime overhead.
+These are pure `as const` arrays: tree-shakeable, no runtime overhead.
 
 **Key finding**: No wrapper package needed. These ARE the shared constants. `bun update @tanstack/ai-*` updates model lists everywhere.
 
@@ -119,13 +119,13 @@ The component:
 
 - [ ] **1.1** Add `@tanstack/ai-openai`, `@tanstack/ai-anthropic`, `@tanstack/ai-gemini`, `@tanstack/ai-grok`, `@tanstack/ai-ollama` to `apps/tab-manager/package.json`
 - [ ] **1.2** Replace `PROVIDER_MODELS` in `apps/tab-manager/src/lib/state/ai-chat-state.svelte.ts` with direct imports from `@tanstack/ai-*`
-- [ ] **1.3** Build `ModelCombobox.svelte` in `@epicenter/ui` using Popover + Command — accepts a model array prop and allows freeform text
+- [ ] **1.3** Build `ModelCombobox.svelte` in `@epicenter/ui` using Popover + Command: accepts a model array prop and allows freeform text
 - [ ] **1.4** Replace `Select.Root` model selector in `apps/tab-manager/src/lib/components/AiChat.svelte` with the new combobox
 - [ ] **1.5** Verify type-check passes, tab-manager builds
 
 ### Phase 2: Server Alignment
 
-- [ ] **2.1** Replace `SupportedProvider` type in `packages/server/src/ai/adapters.ts` — derive from the provider packages already imported there
+- [ ] **2.1** Replace `SupportedProvider` type in `packages/server/src/ai/adapters.ts`: derive from the provider packages already imported there
 - [ ] **2.2** Verify server builds and tests pass
 
 ### Phase 3: Whispering Migration (Separate Effort, Deferred)
@@ -150,7 +150,7 @@ The component:
 
 ## Success Criteria
 
-- [ ] Tab Manager imports model arrays directly from `@tanstack/ai-*` — no local hardcoded list
+- [ ] Tab Manager imports model arrays directly from `@tanstack/ai-*`: no local hardcoded list
 - [ ] Tab Manager model selector is a combobox supporting both list selection and freeform text
 - [ ] Server's `SupportedProvider` is derived from imported packages, not manually maintained
 - [ ] Running `bun update @tanstack/ai-openai` updates model lists everywhere
@@ -158,9 +158,9 @@ The component:
 
 ## References
 
-- `apps/tab-manager/src/lib/state/ai-chat-state.svelte.ts` — Current model definitions (to be replaced)
-- `apps/tab-manager/src/lib/components/AiChat.svelte` — Current model selector UI (to be updated)
-- `packages/server/src/ai/adapters.ts` — Server adapter factories and `SupportedProvider` type
-- `packages/ui/src/hooks/use-combobox.svelte.ts` — Existing combobox hook
-- `packages/ui/src/command/` — Existing Command components
-- `apps/whispering/src/lib/components/settings/selectors/TranscriptionSelector.svelte` — Reference combobox implementation
+- `apps/tab-manager/src/lib/state/ai-chat-state.svelte.ts`: Current model definitions (to be replaced)
+- `apps/tab-manager/src/lib/components/AiChat.svelte`: Current model selector UI (to be updated)
+- `packages/server/src/ai/adapters.ts`: Server adapter factories and `SupportedProvider` type
+- `packages/ui/src/hooks/use-combobox.svelte.ts`: Existing combobox hook
+- `packages/ui/src/command/`: Existing Command components
+- `apps/whispering/src/lib/components/settings/selectors/TranscriptionSelector.svelte`: Reference combobox implementation

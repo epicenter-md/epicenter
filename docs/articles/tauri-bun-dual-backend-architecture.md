@@ -1,6 +1,6 @@
 # Tauri's Webview Doesn't Care What Serves It
 
-Tauri's `invoke()` IPC and a Bun HTTP server can run side by side from the same frontend. The webview loads from Bun, fetches data from Bun, and calls native Rust commands through `invoke()` — all on the same page, no hacks required. This is how Epicenter gets native OS APIs (audio, shortcuts, tray) from Rust while keeping all business logic in TypeScript.
+Tauri's `invoke()` IPC and a Bun HTTP server can run side by side from the same frontend. The webview loads from Bun, fetches data from Bun, and calls native Rust commands through `invoke()`: all on the same page, no hacks required. This is how Epicenter gets native OS APIs (audio, shortcuts, tray) from Rust while keeping all business logic in TypeScript.
 
 ## The Architecture
 
@@ -27,7 +27,7 @@ Tauri's `invoke()` IPC and a Bun HTTP server can run side by side from the same 
 │  └─────────────────────────────────────────────────────┘  │
 │                                                           │
 │  ┌─────────────────────────────────────────────────────┐  │
-│  │  Bun Sidecar (local server — HTTP server)           │  │
+│  │  Bun Sidecar (local server: HTTP server)           │  │
 │  │                                                     │  │
 │  │  GET /              → Svelte SPA                    │  │
 │  │  GET /assets/*      → static files                  │  │
@@ -106,7 +106,7 @@ use tauri::webview::{WebviewWindowBuilder, WebviewUrl};
 
 #[tauri::command]
 fn start_recording(device: String) -> Result<String, String> {
-    // cpal audio recording — requires OS-level access
+    // cpal audio recording: requires OS-level access
     Ok("recording_started".into())
 }
 
@@ -167,15 +167,15 @@ import { invoke } from '@tauri-apps/api/core';
 
 const isTauri = '__TAURI_INTERNALS__' in window;
 
-// Bun backend — always available (desktop and web)
+// Bun backend: always available (desktop and web)
 async function loadDocuments() {
 	return fetch('/api/documents').then((r) => r.json());
 }
 
-// Yjs sync — always available
+// Yjs sync: always available
 const ws = new WebSocket('/ws/sync');
 
-// Rust backend — only inside Tauri desktop app
+// Rust backend: only inside Tauri desktop app
 async function startRecording(device: string) {
 	if (isTauri) {
 		return invoke('start_recording', { device });
@@ -195,7 +195,7 @@ PORT:54321
 Epicenter running at http://127.0.0.1:54321
 ```
 
-`invoke()` calls don't exist because `__TAURI_INTERNALS__` isn't injected. The `isTauri` check catches this and uses browser APIs or shows "desktop only" for native features. Everything else — documents, Yjs sync, workspace operations — works identically.
+`invoke()` calls don't exist because `__TAURI_INTERNALS__` isn't injected. The `isTauri` check catches this and uses browser APIs or shows "desktop only" for native features. Everything else: documents, Yjs sync, workspace operations: works identically.
 
 ## Why Bun Instead of Rust for the Server
 
@@ -233,4 +233,4 @@ The compiled Bun binary goes into `src-tauri/binaries/` with a target-triple suf
 
 You ship two binaries instead of one. The Tauri shell is ~5MB, the compiled Bun server adds ~30MB. Startup takes 100-200ms longer because the sidecar needs to boot and report its port. And sidecar crash recovery is complexity that doesn't exist in a single-process Rust server.
 
-The payoff: your entire business logic is TypeScript. Your Yjs sync is native JS. Your dev loop is hot reload instead of recompile. And your web mode is just `bun run server.ts` — no Tauri, no Rust, same frontend.
+The payoff: your entire business logic is TypeScript. Your Yjs sync is native JS. Your dev loop is hot reload instead of recompile. And your web mode is just `bun run server.ts`: no Tauri, no Rust, same frontend.

@@ -115,7 +115,7 @@ function handleDataOnly<T, E>(result: ResultDataOnly<T, E>) {
 /*
  * A subtle gotcha: why is `t` typed as `T | null`, not `null`?
  *
- * `T` is unbounded — it could itself include null. If someone instantiates
+ * `T` is unbounded: it could itself include null. If someone instantiates
  * ResultDataOnly<string | null, Error>:
  *   - Variant 1: { data: string | null }   ← can satisfy data === null!
  *   - Variant 2: { data: null; error: E }

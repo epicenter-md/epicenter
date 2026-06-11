@@ -1,4 +1,4 @@
-# CLI Simplification — Handoff Context
+# CLI Simplification: Handoff Context
 
 **Date**: 2026-03-31
 **Status**: In Progress
@@ -6,7 +6,7 @@
 
 ## What happened
 
-We refactored the CLI package (`packages/cli/`) across 7 commits to eliminate ~550 lines of dead code, branching logic, and vestigial features. The core change: `epicenter.config.ts` now exports **pre-wired workspace clients** (results of `createWorkspace()`) instead of raw schema definitions. The CLI no longer decides how to wire persistence, sync, or auth—the config author does.
+We refactored the CLI package (`packages/cli/`) across 7 commits to eliminate ~550 lines of dead code, branching logic, and vestigial features. The core change: `epicenter.config.ts` now exports **pre-wired workspace clients** (results of `createWorkspace()`) instead of raw schema definitions. The CLI no longer decides how to wire persistence, sync, or auth. The config author does.
 
 ### Commits (in order)
 
@@ -15,7 +15,7 @@ We refactored the CLI package (`packages/cli/`) across 7 commits to eliminate ~5
 3. `refactor(cli): delete resolve-config.ts and loadClientFromPath`
 4. `refactor(cli): move load-config.ts to src root, delete empty config/ folder`
 5. `test(cli): add tab-manager e2e test using real app workspace factory`
-6. `refactor(cli): delete dead code — vestigial auth logging, unused exports, redundant checks`
+6. `refactor(cli): delete dead code: vestigial auth logging, unused exports, redundant checks`
 7. Several follow-up commits: named export enforcement, default export removal, workspace client moves
 
 ### What was removed
@@ -31,7 +31,7 @@ We refactored the CLI package (`packages/cli/`) across 7 commits to eliminate ~5
 | `toWebSocketUrl()`, `clearAllSessions()`, `resolveServer()`, `resolveToken()` | Zero callers |
 | `cacheDir()` | Zero callers |
 | `--server` flag on `start` command | Daemon no longer wires sync |
-| Auth/server logging in daemon | Vestigial—daemon doesn't connect to servers |
+| Auth/server logging in daemon | Vestigial. Daemon doesn't connect to servers |
 | Default-vs-named export branching in `loadConfig` | `Object.entries(module)` handles both; we chose named-only |
 
 ## Current file structure
@@ -91,7 +91,7 @@ epicenter
 ## How `epicenter.config.ts` works now
 
 ```typescript
-// epicenter.config.ts — what users write
+// epicenter.config.ts: what users write
 import { createTabManagerWorkspace } from '@epicenter/tab-manager/workspace';
 import { filesystemPersistence } from '@epicenter/workspace/extensions/sync/desktop';
 
@@ -106,19 +106,19 @@ The config exports named workspace clients. The CLI:
 2. Iterates `Object.entries(module)`, skips `default`, duck-types for `{ id, definitions, tables }`
 3. Returns `{ configDir, clients[] }`
 
-Each client is already wired with whatever extensions the config author chained. The CLI doesn't add anything—it's a passthrough.
+Each client is already wired with whatever extensions the config author chained. The CLI doesn't add anything. It's a passthrough.
 
 ## Key source files to read
 
 These are the files you need for any CLI work:
 
-- **`packages/cli/src/load-config.ts`** — The entire config loading system (88 lines). One function: `loadConfig(dir) → { configDir, clients[] }`.
-- **`packages/cli/src/runtime/start-daemon.ts`** — The daemon (71 lines). Loads config, waits, stays alive.
-- **`packages/cli/src/runtime/open-workspace.ts`** — Opens a single workspace for data commands (103 lines).
-- **`packages/cli/src/commands/data-command.ts`** — All `data` subcommands (300 lines). Pattern: `runDataCommand(opts, fn, format)`.
-- **`packages/cli/src/util/typebox-to-yargs.ts`** — Converts TypeBox schemas to yargs options (121 lines). Currently unused but needed for action introspection.
-- **`packages/cli/test/fixtures/tab-manager/epicenter.config.ts`** — Example config using a real app factory.
-- **`packages/cli/test/e2e-tab-manager.test.ts`** — E2e test proving config loading + CRUD + actions + persistence.
+- **`packages/cli/src/load-config.ts`**: The entire config loading system (88 lines). One function: `loadConfig(dir) → { configDir, clients[] }`.
+- **`packages/cli/src/runtime/start-daemon.ts`**: The daemon (71 lines). Loads config, waits, stays alive.
+- **`packages/cli/src/runtime/open-workspace.ts`**: Opens a single workspace for data commands (103 lines).
+- **`packages/cli/src/commands/data-command.ts`**: All `data` subcommands (300 lines). Pattern: `runDataCommand(opts, fn, format)`.
+- **`packages/cli/src/util/typebox-to-yargs.ts`**: Converts TypeBox schemas to yargs options (121 lines). Currently unused but needed for action introspection.
+- **`packages/cli/test/fixtures/tab-manager/epicenter.config.ts`**: Example config using a real app factory.
+- **`packages/cli/test/e2e-tab-manager.test.ts`**: E2e test proving config loading + CRUD + actions + persistence.
 
 ## Workspace action introspection
 
@@ -135,9 +135,9 @@ client.actions.devices.list({})    // callable → { devices: [...] }
 
 Actions are defined via `defineQuery` or `defineAction` with TypeBox `input` schemas. The `typeboxToYargsOptions` utility (121 lines, well-tested) converts those schemas into yargs flag definitions. This is the bridge for auto-generating CLI commands from workspace actions.
 
-## Next steps — candidate features
+## Next steps: candidate features
 
-### 1. `epicenter run` — Action introspection (high value)
+### 1. `epicenter run`: Action introspection (high value)
 
 Auto-generate CLI subcommands from workspace actions:
 
@@ -154,7 +154,7 @@ Implementation approach:
 
 Key files: `load-config.ts`, `typebox-to-yargs.ts`, `data-command.ts` (pattern to follow)
 
-### 2. `epicenter serve` — Local HTTP server (use with caution)
+### 2. `epicenter serve`: Local HTTP server (use with caution)
 
 Auto-generate REST endpoints from workspace tables + actions:
 
@@ -169,14 +169,14 @@ GET  /tab-manager/kv/:key           → KV access
 ### 3. Scripting story (already works)
 
 ```typescript
-// scripts/seed.ts — just import the config
+// scripts/seed.ts: just import the config
 import { tabManager } from '../epicenter.config';
 await tabManager.whenReady;
 tabManager.tables.devices.set({ ... });
 await tabManager.dispose();
 ```
 
-No CLI feature needed—`bun run scripts/seed.ts` works today.
+No CLI feature needed: `bun run scripts/seed.ts` works today.
 
 ## Remaining known smells (low priority)
 

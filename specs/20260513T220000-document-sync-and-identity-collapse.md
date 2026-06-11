@@ -64,20 +64,20 @@ Apps thread a `peer: PeerIdentity` through workspace constructors. Content docs 
 ### Desired State
 
 ```ts
-// Schema (awareness payload) — purely client-claimed
+// Schema (awareness payload): purely client-claimed
 peerAwarenessSchema = {
   replica: type({ id: 'string', platform: '"web"|"tauri"|"chrome-extension"|"node"' }),
   actionPaths: type('string[]'),
 };
 
-// Wire envelope (new frame kind) — server-stamped
+// Wire envelope (new frame kind): server-stamped
 {
   kind: 'awareness-attested',
   subject: string,             // server-derived from auth session
   payload: <opaque y-protocols awareness bytes>
 }
 
-// Consumer surface — joins envelope + payload by clientID
+// Consumer surface: joins envelope + payload by clientID
 type Peer = {
   clientID: number;             // Yjs, per session
   subject: string;              // from envelope, server-trusted
@@ -302,7 +302,7 @@ This wave is the one that needs the server-side reviewer per Open Question #1.
 
 Round of cleanup after `code-reviewer` audited the wave-6 result.
 
-- **Subject is non-empty by construction.** Dropped the `subject ?? ''` fallback in `peer.ts`. A peer surface entry now requires a matching `peerMetadata.get(clientId)` — if the supervisor saw an awareness state without a matching `AWARENESS_ATTESTED` envelope (only possible on a wire-protocol violation), the peer is filtered from `peers.list()` / `peers.find()` rather than surfaced with an empty subject.
+- **Subject is non-empty by construction.** Dropped the `subject ?? ''` fallback in `peer.ts`. A peer surface entry now requires a matching `peerMetadata.get(clientId)`: if the supervisor saw an awareness state without a matching `AWARENESS_ATTESTED` envelope (only possible on a wire-protocol violation), the peer is filtered from `peers.list()` / `peers.find()` rather than surfaced with an empty subject.
 - **Bare-AWARENESS client decode path removed.** The "legacy server compatibility" branch in `sync-supervisor.ts` (and the orphan `handleRemoteAwarenessUpdate` helper) was the exact transitional shim the spec promised to delete. The client now only accepts `AWARENESS_ATTESTED`; servers that haven't shipped the envelope drop their peers out of the surface (intentional hard break).
 - **`subjectFromDoName` fails loudly.** Replaced the silent empty-string fallback with a throw so misconfigured deployments (test rigs using `idFromString` / `newUniqueId`, or a future name-builder regression) blow up at boot instead of broadcasting empty-subject envelopes.
 - **AWARENESS_ATTESTED rejection is now load-bearing tested.** Added an inbound test in `sync-handlers.test.ts` that constructs a client-side `AWARENESS_ATTESTED` frame with subject `"attacker"`, asserts the server returns no result and does not mutate awareness state. The previous test only covered payload-embedded forgery.
@@ -349,7 +349,7 @@ No special workspace-internal wiring needed: auth-state changes are an applicati
    - **Recommendation**: (a). Cleaner directionality (client never sends ATTESTED; server never sends bare AWARENESS to peers). Cost is one enum entry and one decoder branch in the supervisor.
    - **Needs**: server reviewer with `@epicenter/sync` parsers in their head before this wave lands.
 
-2. **`presence` key in awareness schema, later — single optional key or namespaced extensions?**
+2. **`presence` key in awareness schema, later: single optional key or namespaced extensions?**
    - When cursors/status/typing arrive, where do they live? One `presence` blob or app-defined per-doc fields?
    - **Recommendation**: Defer. Decide when the first real consumer lands. Schema is per-key validated so additions are cheap.
 

@@ -2,7 +2,7 @@
 
 Fractional ordering is a meta pattern for implementing drag-and-drop reordering in collaborative applications. This is covered excellently in the [Learn Yjs: Todo List](https://learn.yjs.dev/lessons/03-todo-list/) tutorial by Jamsocket, which walks through the problem interactively. Much of what follows is based on that tutorial.
 
-The core insight: instead of relying on Y.Array's native position, add an `index` property to each item and sort by it. Reordering becomes updating a single field rather than delete+insert—which avoids Yjs's fundamental limitation that shared types cannot move once added to a document.
+The core insight: instead of relying on Y.Array's native position, add an `index` property to each item and sort by it. Reordering becomes updating a single field rather than delete+insert, which avoids Yjs's fundamental limitation that shared types cannot move once added to a document.
 
 ## The Problem with "Moving" Items
 
@@ -140,7 +140,7 @@ Neither approach guarantees zero collisions, but in practice collisions become a
 
 JavaScript's `Number` has limited precision (~15-17 significant digits). After many reorderings in the same spot, you could exhaust precision.
 
-Production implementations use arbitrary-precision decimals (strings or libraries) instead of floats. But for most apps, floats work fine—you'd need pathological usage patterns to hit the limit.
+Production implementations use arbitrary-precision decimals (strings or libraries) instead of floats. But for most apps, floats work fine. You'd need pathological usage patterns to hit the limit.
 
 ## The Tradeoff
 
@@ -214,7 +214,7 @@ function getNextIndex(yarray) {
 
 Y.Array's native ordering is optimized for append operations, not arbitrary reordering. The delete+insert pattern for moves is a fundamental mismatch with how CRDTs track changes.
 
-Fractional ordering sidesteps this by moving the "order" concept from the data structure level (array position) to the data model level (a property). Reordering becomes a property update—something Yjs handles cleanly with last-write-wins semantics.
+Fractional ordering sidesteps this by moving the "order" concept from the data structure level (array position) to the data model level (a property). Reordering becomes a property update. Something Yjs handles cleanly with last-write-wins semantics.
 
 The 8-byte overhead per item is negligible compared to the correctness guarantees. Lost updates and duplicates aren't edge cases; they're predictable outcomes of concurrent reordering with delete+insert. Fractional ordering eliminates them.
 

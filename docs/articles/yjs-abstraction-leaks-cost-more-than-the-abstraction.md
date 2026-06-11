@@ -13,7 +13,7 @@ Three lines. Works fine. Ships.
 
 Six months later you want to change how the timeline stores text entries. You refactor the internal `Y.Map` structure, update `createTimeline`, update `read()` and `write()`. Tests pass. Then you discover that filesystem's `appendFile` reaches through `currentEntry` to call `Y.Text.insert()` directly, and your refactor broke it in a way the type system couldn't catch.
 
-That's the cost. Not the three lines—the invisible coupling they create.
+That's the cost. Not the three lines. The invisible coupling they create.
 
 ## What a Y.js Abstraction Leak Looks Like
 
@@ -47,13 +47,13 @@ One line, no Y.js knowledge. The Timeline owns the "am I in text mode?" decision
 
 After auditing a real codebase, these patterns reliably predict abstraction leaks:
 
-**Type assertions to Y.js types.** `as Y.Map`, `as Y.Text`, `as Y.XmlFragment` outside the owning module. The consumer has untyped data and is forcing it into shape—which means the typed API doesn't give them what they need.
+**Type assertions to Y.js types.** `as Y.Map`, `as Y.Text`, `as Y.XmlFragment` outside the owning module. The consumer has untyped data and is forcing it into shape, which means the typed API doesn't give them what they need.
 
 **Mode branching in consumer code.** `if (entry.type === 'text') ... else if (entry.type === 'sheet')` outside the module that owns content modes. The consumer is making a decision the abstraction should make.
 
 **Raw mutations inside batch callbacks.** `handle.batch(() => ytext.insert(...))` means the consumer is doing CRDT operations the handle should encapsulate. `batch()` is for grouping *high-level* operations (multiple `table.delete()` calls), not for wrapping raw Y.js mutations.
 
-**Internal helpers on the public API.** Functions like `parseSheetFromCsv(columns: Y.Map<Y.Map<string>>, rows: Y.Map<Y.Map<string>>)` on a package's root export. The parameters are raw Y.js types—you can't call this function without first breaking the abstraction to get those references.
+**Internal helpers on the public API.** Functions like `parseSheetFromCsv(columns: Y.Map<Y.Map<string>>, rows: Y.Map<Y.Map<string>>)` on a package's root export. The parameters are raw Y.js types. You can't call this function without first breaking the abstraction to get those references.
 
 **`ydoc.getArray()`/`ydoc.getMap()` in consumer code.** Direct Y.Doc access outside infrastructure (sync, persistence) bypasses every typed API you built.
 
@@ -78,11 +78,11 @@ Y.js code naturally settles into three layers, and each has clear rules about wh
 └──────────────────────────────────────────────────────────┘
 ```
 
-The middle layer is the tricky one. Format bridges (converting `Y.XmlFragment` to markdown, serializing `Y.Map<Y.Map<string>>` to CSV) are legitimate—they exist specifically to work with Y.js types. But they should live next to the module that owns those types, not be re-exported across package boundaries where any consumer can call them.
+The middle layer is the tricky one. Format bridges (converting `Y.XmlFragment` to markdown, serializing `Y.Map<Y.Map<string>>` to CSV) are legitimate. They exist specifically to work with Y.js types. But they should live next to the module that owns those types, not be re-exported across package boundaries where any consumer can call them.
 
 ## Real Example: How a Barrel Export Creates Coupling
 
-`parseSheetFromCsv` and `serializeSheetToCsv` are internal helpers that convert between CSV strings and Y.Map-based sheet structures. They lived in `packages/workspace/src/timeline/sheet.ts`—the right place. But then they got re-exported:
+`parseSheetFromCsv` and `serializeSheetToCsv` are internal helpers that convert between CSV strings and Y.Map-based sheet structures. They lived in `packages/workspace/src/timeline/sheet.ts`: the right place. But then they got re-exported:
 
 ```
 timeline/sheet.ts (defined)
@@ -92,7 +92,7 @@ timeline/sheet.ts (defined)
         → filesystem/src/index.ts (re-export) ← public API!
 ```
 
-Now any consumer of `@epicenter/workspace` or `@epicenter/filesystem` can import these functions. But they're useless without raw `Y.Map<Y.Map<string>>` references—which you can only get by reaching through the Timeline abstraction. The export itself is the invitation to break the boundary.
+Now any consumer of `@epicenter/workspace` or `@epicenter/filesystem` can import these functions. But they're useless without raw `Y.Map<Y.Map<string>>` references, which you can only get by reaching through the Timeline abstraction. The export itself is the invitation to break the boundary.
 
 The fix was simple: remove from all barrel exports. The functions stay in `timeline/sheet.ts` where `timeline.ts` imports them directly. The Timeline's `write()` and `read()` methods encapsulate the CSV conversion. No consumer needs the raw helpers.
 

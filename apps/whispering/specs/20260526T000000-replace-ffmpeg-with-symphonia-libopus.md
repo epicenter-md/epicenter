@@ -107,9 +107,9 @@ The full space of capture × upload × inference paths, with what each cell actu
 └────────────────────────┴─────────────────────────┴─────────────────────────────────┘
 ```
 
-**Read this table this way:** the new Rust audio module's decoder fires for any cell that crosses "decode" — that's three Tauri cells. The encoder fires for one Tauri cell (cpal → cloud). Web never touches Rust audio code.
+**Read this table this way:** the new Rust audio module's decoder fires for any cell that crosses "decode": that's three Tauri cells. The encoder fires for one Tauri cell (cpal → cloud). Web never touches Rust audio code.
 
-The cpal default + local default mean the most-common cell is `Tauri + cpal + local`, which needs neither decoder nor encoder. The new code earns its keep on the secondary cells, not on the hot path. That's fine — the deletion of FFmpeg is the win, not throughput.
+The cpal default + local default mean the most-common cell is `Tauri + cpal + local`, which needs neither decoder nor encoder. The new code earns its keep on the secondary cells, not on the hot path. That's fine. The deletion of FFmpeg is the win, not throughput.
 
 ## Research findings
 
@@ -154,7 +154,7 @@ Per OpenAI's transcriptions API: `flac, mp3, mp4, mpeg, mpga, m4a, ogg, wav, web
 
 | App | Capture | Decode | Encode for upload |
 | --- | --- | --- | --- |
-| **Handy** (cpais) | cpal only (Tauri-only, no web) | none — captured PCM goes direct to local Whisper | n/a (no cloud path) |
+| **Handy** (cpais) | cpal only (Tauri-only, no web) | none: captured PCM goes direct to local Whisper | n/a (no cloud path) |
 | **Whispering today** | cpal default + navigator opt-in | Tier 1/2/3 (hound + rubato → FFmpeg sidecar) | none (uploads uncompressed WAV) |
 | **Whispering target (this spec)** | cpal + navigator (unchanged) | Symphonia + libopus + rubato | libopus + ogg |
 
@@ -318,7 +318,7 @@ if samples.is_empty() {
 
 **Semantic shifts to flag**:
 - `engine_label` parameter goes away (it was logging-only; the new decoder logs uniformly)
-- Return type changes from `Option<Vec<f32>>` to `Vec<f32>` — empty-input check moves to call site
+- Return type changes from `Option<Vec<f32>>` to `Vec<f32>`: empty-input check moves to call site
 - `TranscriptionError::FfmpegNotFoundError` no longer reachable; remove that variant and any TS-side error handling for it
 
 ### Call site 2: cloud upload (new)
@@ -362,7 +362,7 @@ if (error.name === 'FfmpegNotFoundError') {
 
 **After**:
 ```ts
-// Branch deleted — variant no longer exists in Rust.
+// Branch deleted: variant no longer exists in Rust.
 ```
 
 Grep `FfmpegNotFoundError` across `src/` to find every site.
@@ -395,7 +395,7 @@ Wave ordering follows Build → Prove → Remove. Old code stays on disk and unu
 - [x] **3.1** `transcription/mod.rs` calls `audio::decode_to_pcm16k_mono`. (PR #1826 went further and deleted the old `transcription/audio.rs`; Wave 4.1/4.2 were folded into PR 1.)
 - [x] **3.2** Added `transcription.uploadCompression` setting (`'opus'` default everywhere, no-op on web) and a UI toggle (`UploadCompressionToggle.svelte`) on the transcription settings page. PR #1828.
 - [x] **3.3** + **3.5** Rolled to every upload provider in one shot (OpenAI, Groq, ElevenLabs, Deepgram, Mistral, Speaches) via orchestrator-side compression in `transcribeBlob`. PR #1828.
-- [ ] **3.4** Smoke-test locally on each platform — blocking on manual verification before PR #1828 merges.
+- [ ] **3.4** Smoke-test locally on each platform: blocking on manual verification before PR #1828 merges.
 
 ### Wave 4: Remove
 
@@ -422,7 +422,7 @@ Out of scope for this spec. See Open Questions.
 
 1. Some MP3 encoders omit the Xing/VBRI header.
 2. Symphonia handles this; duration may be approximate, but decoded sample count is exact.
-3. No code change required — note as a known property.
+3. No code change required: note as a known property.
 
 ### WebM with multiple audio tracks
 
@@ -434,7 +434,7 @@ Out of scope for this spec. See Open Questions.
 
 1. User uploads a 96 kHz studio recording.
 2. Symphonia decodes; rubato downsamples to 16 kHz.
-3. rubato's max ratio is 8.0 (see existing Tier 2 code); 96 kHz / 16 kHz = 6.0 is fine. Anything > 128 kHz would fail — guard with an explicit error.
+3. rubato's max ratio is 8.0 (see existing Tier 2 code); 96 kHz / 16 kHz = 6.0 is fine. Anything > 128 kHz would fail: guard with an explicit error.
 
 ### Encoder called on non-WAV input
 
@@ -487,13 +487,13 @@ Out of scope for this spec. See Open Questions.
 
 ## References
 
-- `apps/whispering/src-tauri/src/transcription/audio.rs` — current 3-tier conversion (to be deleted)
-- `apps/whispering/src-tauri/src/transcription/mod.rs:154` — primary call site
-- `apps/whispering/src-tauri/src/transcription/error.rs` — `FfmpegNotFoundError` to remove
-- `apps/whispering/src-tauri/src/recorder/recorder.rs` — cpal recorder (unchanged, but feeds the new decoder)
-- `apps/whispering/src/lib/state/device-config.svelte.ts:38` — `recording.method` default
-- `apps/whispering/src/lib/services/recorder/navigator.ts:237-246` — browser mime-type fallback list
-- Commit `95d08439c` — recent Tier 3 perf optimization (stdin streaming); becomes dead code in Wave 4
-- DeepWiki: `pdeljanov/Symphonia` — verified demuxer-only API and Opus packet handling
-- DeepWiki: `cjpais/Handy` — reference architecture for cpal-based capture
-- OpenAI transcriptions API docs — accepted formats include `.ogg` (verified for Wave 2.3 pilot)
+- `apps/whispering/src-tauri/src/transcription/audio.rs`: current 3-tier conversion (to be deleted)
+- `apps/whispering/src-tauri/src/transcription/mod.rs:154`: primary call site
+- `apps/whispering/src-tauri/src/transcription/error.rs`: `FfmpegNotFoundError` to remove
+- `apps/whispering/src-tauri/src/recorder/recorder.rs`: cpal recorder (unchanged, but feeds the new decoder)
+- `apps/whispering/src/lib/state/device-config.svelte.ts:38`: `recording.method` default
+- `apps/whispering/src/lib/services/recorder/navigator.ts:237-246`: browser mime-type fallback list
+- Commit `95d08439c`: recent Tier 3 perf optimization (stdin streaming); becomes dead code in Wave 4
+- DeepWiki: `pdeljanov/Symphonia`: verified demuxer-only API and Opus packet handling
+- DeepWiki: `cjpais/Handy`: reference architecture for cpal-based capture
+- OpenAI transcriptions API docs: accepted formats include `.ogg` (verified for Wave 2.3 pilot)

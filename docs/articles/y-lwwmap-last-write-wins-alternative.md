@@ -6,7 +6,7 @@ YKeyValue optimizes for storage efficiency. y-lwwmap optimizes for conflict reso
 
 ## The Problem YKeyValue Doesn't Solve
 
-YKeyValue is brilliant for storage—we've seen [1935x improvements](./ykeyvalue-migration-storage-gains.md) over Y.Map. But it has a subtle behavior that can surprise users during offline sync.
+YKeyValue is brilliant for storage. We've seen [1935x improvements](./ykeyvalue-migration-storage-gains.md) over Y.Map. But it has a subtle behavior that can surprise users during offline sync.
 
 When two clients edit the same key offline and reconnect:
 
@@ -27,7 +27,7 @@ This mirrors how native Y.Map works. From dmonad:
 
 > "The 'winner' is decided by `ydoc.clientID` of the document (which is a generated number). The higher clientID wins."
 >
-> — [dmonad, GitHub issue #520](https://github.com/yjs/yjs/issues/520)
+> Source: [dmonad, GitHub issue #520](https://github.com/yjs/yjs/issues/520)
 
 This is fine for many use cases. But if users expect "my later edit should stick," it's confusing.
 
@@ -45,7 +45,7 @@ The internal structure stores timestamps alongside values:
 { Key: string, Value?: T, Timestamp: number }
 ```
 
-Notice the optional `Value`. A missing value means "deleted"—this is a tombstone entry.
+Notice the optional `Value`. A missing value means "deleted". This is a tombstone entry.
 
 ### Synthetic Timestamps (Lamport-like)
 
@@ -135,7 +135,7 @@ The downside: you're responsible for conflict resolution logic that LWWMap handl
 
 y-lwwmap is a drop-in replacement for YKeyValue. Same API, different internals. If you're hitting sync predictability issues with YKeyValue, it's worth evaluating.
 
-That said, most collaborative apps can live with YKeyValue's behavior. The "random winner" scenario only matters when users actually notice which edit survived—and often they don't.
+That said, most collaborative apps can live with YKeyValue's behavior. The "random winner" scenario only matters when users actually notice which edit survived. And often they don't.
 
 ## Update (2026-01-27): We Built YKeyValueLww
 

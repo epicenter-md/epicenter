@@ -35,17 +35,17 @@ sheet     ✓ (CSV)   ✗             ✓
 
 ### Problems
 
-1. **`read()` returns `''` for richtext—silent data loss.** A document with rich text content returns empty string. The user sees blank content with zero indication something went wrong.
+1. **`read()` returns `''` for richtext. Silent data loss.** A document with rich text content returns empty string. The user sees blank content with zero indication something went wrong.
 
 2. **`getText()`/`getFragment()` are inconsistent about auto-creation.** Empty timeline → auto-creates the requested type. Current entry is wrong type → returns `undefined`. Behavior changes based on hidden state.
 
-3. **`getFragment()` bypasses the Timeline API.** There's no `pushRichtext()` on Timeline, so `getFragment()` manually manipulates `ydoc.getArray('timeline')` directly—a layering violation.
+3. **`getFragment()` bypasses the Timeline API.** There's no `pushRichtext()` on Timeline, so `getFragment()` manually manipulates `ydoc.getArray('timeline')` directly. A layering violation.
 
 4. **No conversion between types.** If you have a richtext document and need a Y.Text for a plaintext editor, there's no path. If you have text and want a sheet, no path. The handle gives you `undefined` and you're on your own.
 
 5. **No sheet accessor.** `getText()` and `getFragment()` exist but there's no `getSheet()`. Sheet data is only accessible through `handle.timeline` escape hatch.
 
-6. **Naming is Yjs jargon.** `getFragment()` means nothing to someone who doesn't know Y.XmlFragment. `getText()` is ambiguous—does it return a string or a Y.Text?
+6. **Naming is Yjs jargon.** `getFragment()` means nothing to someone who doesn't know Y.XmlFragment. `getText()` is ambiguous. Does it return a string or a Y.Text?
 
 ### Desired State
 
@@ -111,10 +111,10 @@ function textToXmlFragment(text: Y.Text): Y.XmlFragment {
 `parseSheetFromCsv()` already exists in `content/sheet-csv.ts`. It handles RFC 4180 (quoted fields, escaped quotes, newlines within fields). The question is: when does text→sheet conversion fail?
 
 - Any non-empty string is technically valid CSV (single column, single row)
-- But a string like `"hello world"` parsed as CSV gives a 1×1 sheet—probably not what the user wanted
+- But a string like `"hello world"` parsed as CSV gives a 1×1 sheet. Probably not what the user wanted
 - The real failure case is structural: the text doesn't look like tabular data
 
-**Decision**: Text→sheet always succeeds at the CSV parsing level (any string is a valid single-cell CSV). The conversion itself won't fail—but the result may not be useful. This is the same as richtext→text being lossy. Document it, don't error on it.
+**Decision**: Text→sheet always succeeds at the CSV parsing level (any string is a valid single-cell CSV). The conversion itself won't fail. But the result may not be useful. This is the same as richtext→text being lossy. Document it, don't error on it.
 
 ### Existing Error Patterns in Workspace
 
@@ -137,7 +137,7 @@ Result types come from `wellcrafted/result`: `Ok`, `Err`, `trySync`, `tryAsync`.
 | Decision | Choice | Rationale |
 |---|---|---|
 | Naming | `asText()`, `asRichText()`, `asSheet()` | "as" signals transformation, not retrieval. Avoids Yjs jargon (`getFragment`). Reads naturally: "give me this as text." |
-| Return type for `as*()` | Plain value (`Y.Text`, `Y.XmlFragment`, `SheetBinding`) | All six pairwise conversions are infallible—any string is valid CSV, richtext→text always extracts plaintext, etc. Wrapping infallible operations in Result misleads callers into handling errors that don't exist. If future types need failure semantics, that's a new method, not a retrofit. |
+| Return type for `as*()` | Plain value (`Y.Text`, `Y.XmlFragment`, `SheetBinding`) | All six pairwise conversions are infallible. Any string is valid CSV, richtext→text always extracts plaintext, etc. Wrapping infallible operations in Result misleads callers into handling errors that don't exist. If future types need failure semantics, that's a new method, not a retrofit. |
 | `read()` return type | `string` (no Result) | Imperative API that always works. Richtext→plaintext is lossy but valid. Empty/unknown → `''`. |
 | `write()` return type | `void` (no Result) | Always succeeds. Mode-switches if needed (pushes new text entry). |
 | Conversion strategy | Push new timeline entry | Timeline is append-only by design. Converting text→richtext pushes a new richtext entry. The old text entry stays as history. |
@@ -145,7 +145,7 @@ Result types come from `wellcrafted/result`: `Ok`, `Err`, `trySync`, `tryAsync`.
 | Where errors live | Removed (`content/errors.ts` deleted) | No conversion can fail, so `ContentConversionError` was dead code. Removed entirely. |
 | `pushRichtext()` | Add to Timeline | Fixes the layering violation where `getFragment()` bypasses Timeline. |
 | Old methods (`getText`, `getFragment`) | Remove | Clean break. The cleanup spec already flattened `handle.content` → `handle`. One more rename is acceptable. |
-| `as*()` on empty timeline | Auto-create requested type, return directly | Matches current behavior on empty. No conversion needed—just creation. |
+| `as*()` on empty timeline | Auto-create requested type, return directly | Matches current behavior on empty. No conversion needed. Just creation. |
 | `as*()` on matching type | Return existing Y.* directly | No conversion needed. Fast path. |
 | `as*()` on different type | Convert, push new entry, return directly | Conversion creates a new timeline entry. Old entry preserved as history. |
 | SheetBinding type | `{ columns: Y.Map<Y.Map<string>>; rows: Y.Map<Y.Map<string>> }` | Matches the existing sheet entry structure. Named type for clarity. |
@@ -199,11 +199,11 @@ handle.asSheet() called
 
 ```
 packages/workspace/src/content/
-├── entry-types.ts        (unchanged — TextEntry, RichTextEntry, SheetEntry)
+├── entry-types.ts        (unchanged: TextEntry, RichTextEntry, SheetEntry)
 ├── timeline.ts           (add pushRichtext())
-├── sheet-csv.ts          (unchanged — parseSheetFromCsv, serializeSheetToCsv)
-├── conversions.ts        (NEW — pairwise conversion functions)
-├── errors.ts             (NEW — ContentConversionError)
+├── sheet-csv.ts          (unchanged: parseSheetFromCsv, serializeSheetToCsv)
+├── conversions.ts        (NEW: pairwise conversion functions)
+├── errors.ts             (NEW: ContentConversionError)
 └── index.ts              (re-export new additions)
 
 packages/workspace/src/workspace/
@@ -339,7 +339,7 @@ export function textToSheet(content: Y.Text): SheetBinding { ... }
 
 /**
  * Convert a validated richtext entry to a new text entry.
- * Extracts plaintext from the XmlFragment. Lossy—all formatting is stripped.
+ * Extracts plaintext from the XmlFragment. Lossy. All formatting is stripped.
  */
 export function richTextToText(fragment: Y.XmlFragment): Y.Text { ... }
 
@@ -461,12 +461,12 @@ asText(): Result<Y.Text, ContentConversionError> {
 
 ### Wave 1: Foundation (no breaking changes)
 
-- [x] **1.1** Create `content/errors.ts` — define `ContentConversionError` with `ConversionFailed` variant.
+- [x] **1.1** Create `content/errors.ts`: define `ContentConversionError` with `ConversionFailed` variant.
 - [x] **1.2** Add `pushRichtext()` to Timeline type and `createTimeline()` implementation.
-- [x] **1.3** Create `content/conversions.ts` — implement `xmlFragmentToPlaintext()` and `populateFragmentFromText()`.
-  > **Note**: Restructured from spec. Instead of six conversion functions returning Y types, split into extract functions (doc-backed → primitives) and populate functions (primitives → doc-backed). Standalone Y types can't be read from—only written to. The `as*()` methods compose extract + timeline push + populate inside transactions.
+- [x] **1.3** Create `content/conversions.ts`: implement `xmlFragmentToPlaintext()` and `populateFragmentFromText()`.
+  > **Note**: Restructured from spec. Instead of six conversion functions returning Y types, split into extract functions (doc-backed → primitives) and populate functions (primitives → doc-backed). Standalone Y types can't be read from. Only written to. The `as*()` methods compose extract + timeline push + populate inside transactions.
 - [x] **1.4** Removed: individual conversion functions replaced by compose pattern in `as*()` methods.
-- [x] **1.5** Fix `readAsString()` in timeline.ts — use `xmlFragmentToPlaintext()` for richtext instead of returning `''`.
+- [x] **1.5** Fix `readAsString()` in timeline.ts: use `xmlFragmentToPlaintext()` for richtext instead of returning `''`.
 - [x] **1.6** Export new additions from `content/index.ts` and `packages/workspace/src/index.ts`.
 - [x] **1.7** Write tests for conversions: `content/conversions.test.ts` (xmlFragmentToPlaintext, populateFragmentFromText, pushRichtext).
 - [x] **1.8** pushRichtext tests included in conversions.test.ts.
@@ -484,9 +484,9 @@ asText(): Result<Y.Text, ContentConversionError> {
 
 ### Wave 3: Update consumers, deprecate old methods
 
-- [~] **3.1–3.2** `getText()` and `getFragment()` marked `@deprecated` instead of removed.
+- [~] **3.1-3.2** `getText()` and `getFragment()` marked `@deprecated` instead of removed.
   > Softer migration: deprecated methods still work. Removal can happen in a follow-up.
-- [x] **3.3** Searched entire repo — only 2 app consumers found (Fuji, Honeycrisp).
+- [x] **3.3** Searched entire repo: only 2 app consumers found (Fuji, Honeycrisp).
 - [x] **3.4** No filesystem consumers of `getText()`/`getFragment()` (removed in prior cleanup).
 - [x] **3.5** Updated Fuji `+page.svelte` (`handle.getText()` → `handle.asText().data`) and Honeycrisp `+page.svelte` (`handle.getFragment()` → `handle.asRichText().data`).
 - [x] **3.6** Verify: 388 tests pass.
@@ -503,14 +503,14 @@ asText(): Result<Y.Text, ContentConversionError> {
 ### Corrupt entry (invalid Y.Map structure)
 
 1. `readEntry()` returns `{ mode: 'empty' }` for corrupt entries (existing behavior).
-2. `as*()` treats this same as empty timeline—auto-creates requested type.
-3. No error surfaced for corruption—matches current philosophy of graceful degradation.
+2. `as*()` treats this same as empty timeline. Auto-creates requested type.
+3. No error surfaced for corruption. Matches current philosophy of graceful degradation.
 
 ### Consecutive conversions (text → richtext → sheet → text)
 
 1. Each conversion pushes a new timeline entry. Timeline grows: length 1 → 2 → 3 → 4.
 2. Each `as*()` call operates on `currentEntry` (the last entry).
-3. Old entries are preserved as history—this is by design.
+3. Old entries are preserved as history. This is by design.
 4. No risk of infinite loops because each call reads, converts, pushes once.
 
 ### Concurrent as*() calls
@@ -519,12 +519,12 @@ asText(): Result<Y.Text, ContentConversionError> {
 2. First call: reads richtext, pushes text entry. Timeline length: 2.
 3. Second call: reads current entry (now text), hits fast path. Returns existing Y.Text.
 4. No double-push because the second call sees the already-converted entry.
-5. Yjs transactions are synchronous within a single client—no interleaving within a single call.
+5. Yjs transactions are synchronous within a single client. No interleaving within a single call.
 
 ### Empty Y.XmlFragment (richtext with no content)
 
 1. `xmlFragmentToPlaintext()` on an empty fragment returns `''`.
-2. `read()` returns `''`. This is correct—the document is genuinely empty.
+2. `read()` returns `''`. This is correct. The document is genuinely empty.
 3. `asText()` converts to text entry with `''`. Correct.
 
 ### Sheet with no columns or rows
@@ -536,7 +536,7 @@ asText(): Result<Y.Text, ContentConversionError> {
 
 1. User has a richtext document with bold, italic, headings, links.
 2. Calls `asText()`. Gets plain text with formatting stripped.
-3. The old richtext entry is still in the timeline—user can go back.
+3. The old richtext entry is still in the timeline. User can go back.
 4. This is documented in JSDoc: "Conversion is lossy for richtext (strips formatting)."
 
 ## Open Questions (Resolved)
@@ -548,7 +548,7 @@ asText(): Result<Y.Text, ContentConversionError> {
    - **Resolved**: Yes. Add `\n` between block-level elements (paragraph, heading, list-item, blockquote). Without this, paragraphs smash together.
 
 3. **Should conversion functions create Yjs types inside or outside a transaction?**
-   - **Resolved**: Inside. User preference for simpler mental model—everything happens in one place. Verified via Yjs docs: no functional difference between inside vs outside. Creating inside the transaction is equally correct.
+   - **Resolved**: Inside. User preference for simpler mental model. Everything happens in one place. Verified via Yjs docs: no functional difference between inside vs outside. Creating inside the transaction is equally correct.
 
 4. **Should we add a `mode` getter to the handle?**
    - **Resolved**: Yes. Cheap passthrough to `tl.currentType`.
@@ -564,7 +564,7 @@ asText(): Result<Y.Text, ContentConversionError> {
 - [x] `pushRichtext()` exists on Timeline (no more layering bypass)
 - [x] `getText()`/`getFragment()` fully removed from DocumentHandle type
 - [x] No app-level `handle.getText()` or `handle.getFragment()` references remain
-- [x] `ContentConversionError` removed (dead code — all conversions infallible)
+- [x] `ContentConversionError` removed (dead code: all conversions infallible)
 - [x] Tests cover all six pairwise conversions
 - [x] Tests cover empty timeline auto-creation for all three types
 - [x] Tests cover fast path (matching type) for all three types
@@ -572,13 +572,13 @@ asText(): Result<Y.Text, ContentConversionError> {
 
 ## References
 
-- `packages/workspace/src/content/timeline.ts` — Timeline implementation (add `pushRichtext()`, fix `readAsString()`)
-- `packages/workspace/src/content/entry-types.ts` — Entry type definitions (unchanged)
-- `packages/workspace/src/content/sheet-csv.ts` — CSV parse/serialize (reused by conversions)
-- `packages/workspace/src/workspace/create-document.ts` — `makeHandle()` (main change target)
-- `packages/workspace/src/workspace/types.ts` — `DocumentHandle` type (add `asText/asRichText/asSheet`, remove `getText/getFragment`)
-- `packages/workspace/src/shared/errors.ts` — Existing `defineErrors` pattern to follow
-- `specs/20260314T060000-document-handle-cleanup.md` — Previous cleanup (this spec continues from)
+- `packages/workspace/src/content/timeline.ts`: Timeline implementation (add `pushRichtext()`, fix `readAsString()`)
+- `packages/workspace/src/content/entry-types.ts`: Entry type definitions (unchanged)
+- `packages/workspace/src/content/sheet-csv.ts`: CSV parse/serialize (reused by conversions)
+- `packages/workspace/src/workspace/create-document.ts`: `makeHandle()` (main change target)
+- `packages/workspace/src/workspace/types.ts`: `DocumentHandle` type (add `asText/asRichText/asSheet`, remove `getText/getFragment`)
+- `packages/workspace/src/shared/errors.ts`: Existing `defineErrors` pattern to follow
+- `specs/20260314T060000-document-handle-cleanup.md`: Previous cleanup (this spec continues from)
 
 ## Review
 
@@ -591,12 +591,12 @@ Added mode-aware content conversion to DocumentHandle. Three new `as*()` methods
 ### Deviations from Spec
 
 - **Conversion functions restructured**: The spec planned six standalone conversion functions returning Y types. Yjs standalone types can't be read from ("Add Yjs type to a document before reading data"), so the approach was restructured into extract functions (doc-backed → primitives) and populate functions (primitives → doc-backed). The `as*()` methods compose these with timeline push methods inside `ydoc.transact()`. Simpler and more correct.
-- **`SheetBinding` type location**: Defined in `content/conversions.ts` instead of `types.ts` — co-located with content code.
+- **`SheetBinding` type location**: Defined in `content/conversions.ts` instead of `types.ts`: co-located with content code.
 - **`getText()`/`getFragment()` fully removed**: Clean breaking change, not deprecated. All consumers updated.
-- **`as*()` return plain values, not Result**: After tracing every code path, all six pairwise conversions are infallible — no content type can fail to convert to another. `ContentConversionError` was dead code and has been deleted. Any string is valid CSV (worst case: single cell). Richtext→text always extracts plaintext. The only "error" paths were defensive guards against Yjs itself producing corrupt entries after a push, which never happens. Wrapping infallible operations in Result misleads callers. If future content types introduce genuinely fallible conversions (e.g., JSON schema validation), those would be new methods — not a retrofit of these three.
-- **Documentation updates 4.2–4.4**: Deferred to a follow-up. The JSDoc on the types is updated.
+- **`as*()` return plain values, not Result**: After tracing every code path, all six pairwise conversions are infallible: no content type can fail to convert to another. `ContentConversionError` was dead code and has been deleted. Any string is valid CSV (worst case: single cell). Richtext→text always extracts plaintext. The only "error" paths were defensive guards against Yjs itself producing corrupt entries after a push, which never happens. Wrapping infallible operations in Result misleads callers. If future content types introduce genuinely fallible conversions (e.g., JSON schema validation), those would be new methods: not a retrofit of these three.
+- **Documentation updates 4.2-4.4**: Deferred to a follow-up. The JSDoc on the types is updated.
 
 ### Follow-up Work
 
-- Update README content model sections (4.2–4.4)
+- Update README content model sections (4.2-4.4)
 - Update AGENTS.md with new handle API

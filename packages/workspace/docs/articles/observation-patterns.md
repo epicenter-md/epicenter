@@ -4,7 +4,7 @@
 
 All observers in Epicenter follow a simple principle: **notify at the Y.Map boundary, let the consumer fetch the data**.
 
-Observers don't reconstruct or validate data—they just tell you what changed. You call the appropriate getter to fetch current state when you need it.
+Observers don't reconstruct or validate data. They just tell you what changed. You call the appropriate getter to fetch current state when you need it.
 
 ## Why This Design
 

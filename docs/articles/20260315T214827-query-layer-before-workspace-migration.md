@@ -82,7 +82,7 @@ Examples:
 
 ## Runtime Dependency Injection
 
-The query layer handles **runtime dependency injection**—dynamically switching service implementations based on user settings. Unlike services which use build-time platform detection, the query layer makes decisions based on reactive variables:
+The query layer handles **runtime dependency injection**: dynamically switching service implementations based on user settings. Unlike services which use build-time platform detection, the query layer makes decisions based on reactive variables:
 
 ```typescript
 // Simplified example inspired by the actual transcription implementation
@@ -127,7 +127,7 @@ createRecording: defineMutation({
 });
 ```
 
-The query layer co-locates three key things in one place: (1) the service call, (2) runtime settings injection based on reactive variables, and (3) cache manipulation (also reactive). This creates a layer that bridges reactivity with services in an intuitive way, and gives developers a consistent place to put this logic—now developers know that all cache manipulation lives in the query folder.
+The query layer co-locates three key things in one place: (1) the service call, (2) runtime settings injection based on reactive variables, and (3) cache manipulation (also reactive). This creates a layer that bridges reactivity with services in an intuitive way, and gives developers a consistent place to put this logic. Now developers know that all cache manipulation lives in the query folder.
 
 ## Error Transformation Pattern
 
@@ -184,7 +184,7 @@ startRecording: defineMutation({
    ```typescript
    // In manual-recorder.ts
    const { RecorderError } = defineErrors({
-   	RecorderError: {},
+	RecorderError: {},
    });
    ```
 
@@ -192,13 +192,13 @@ startRecording: defineMutation({
 
    ```typescript
    if (serviceError) {
-   	return Err(
-   		WhisperingError({
-   			title: '❌ User-friendly title',
-   			description: serviceError.message, // Preserve detailed message
-   			action: { type: 'more-details', error: serviceError },
-   		}),
-   	);
+	return Err(
+		WhisperingError({
+			title: '❌ User-friendly title',
+			description: serviceError.message, // Preserve detailed message
+			action: { type: 'more-details', error: serviceError },
+		}),
+	);
    }
    ```
 

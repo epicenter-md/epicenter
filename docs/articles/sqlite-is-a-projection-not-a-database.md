@@ -2,7 +2,7 @@
 
 Yjs is the database. SQLite is a read cache that happens to look like one.
 
-Every write in the workspace goes through a Yjs CRDT. The Y.Doc is the source of truth: it handles conflict resolution, offline merges, and multi-device sync. SQLite doesn't participate in any of that. It sits downstream, populated by an observer that watches the Y.Doc and mirrors changes into rows and columns. If you delete the SQLite file, nothing is lost. The workspace rebuilds it from the CRDT on next open—the same way a database rebuilds a materialized view from the underlying tables.
+Every write in the workspace goes through a Yjs CRDT. The Y.Doc is the source of truth: it handles conflict resolution, offline merges, and multi-device sync. SQLite doesn't participate in any of that. It sits downstream, populated by an observer that watches the Y.Doc and mirrors changes into rows and columns. If you delete the SQLite file, nothing is lost. The workspace rebuilds it from the CRDT on next open. The same way a database rebuilds a materialized view from the underlying tables.
 
 That distinction matters because it changes what SQLite is for. It's not where you write. It's where you read.
 
@@ -20,11 +20,11 @@ Y.Array("table:recordings")
     ts: 1743965000000 }
   ...
 
-The `ts` field is what makes Last-Write-Wins work. Two devices edit the same row offline; after sync, the higher timestamp wins, regardless of which update arrived first. The Y.Array grows monotonically—entries are never deleted, just superseded by newer ones with the same key.
+The `ts` field is what makes Last-Write-Wins work. Two devices edit the same row offline; after sync, the higher timestamp wins, regardless of which update arrived first. The Y.Array grows monotonically. Entries are never deleted, just superseded by newer ones with the same key.
 
 This is great for sync. It's terrible for queries. To find all recordings transcribed this week, you'd scan every entry, apply LWW per key to get current rows, filter by status and date, and reconstruct the result. That's O(n) over the raw CRDT data every time.
 
-SQLite fixes this. The observer collapses the Y.Array into a normal relational table—one row per recording, one column per field—and keeps it current as the CRDT changes. Queries that would require custom traversal logic become standard SQL.
+SQLite fixes this. The observer collapses the Y.Array into a normal relational table: one row per recording, one column per field, kept current as the CRDT changes. Queries that would require custom traversal logic become standard SQL.
 
 ## The layers build on each other
 
@@ -81,7 +81,7 @@ Each layer is optional. A CLI tool that only needs SQL queries stops at Layer 1.
 
 ## Any tool that speaks SQL can now read workspace data
 
-This is the practical payoff. The workspace API is TypeScript-first—it understands Yjs, CRDT semantics, table helpers, and LWW resolution. That's fine for application code. It's not fine for a coding agent that just wants to answer a question about your recordings.
+This is the practical payoff. The workspace API is TypeScript-first. It understands Yjs, CRDT semantics, table helpers, and LWW resolution. That's fine for application code. It's not fine for a coding agent that just wants to answer a question about your recordings.
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -115,7 +115,7 @@ This is the practical payoff. The workspace API is TypeScript-first—it underst
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-Option A requires the agent to know the workspace API. Options B through D require only SQL—a language every coding agent, analytics tool, CLI, and MCP server already understands. The materialized SQLite layer is what makes workspace data universally queryable without coupling every consumer to the CRDT internals.
+Option A requires the agent to know the workspace API. Options B through D require only SQL. A language every coding agent, analytics tool, CLI, and MCP server already understands. The materialized SQLite layer is what makes workspace data universally queryable without coupling every consumer to the CRDT internals.
 
 ## Writes still go through Yjs
 
@@ -130,6 +130,6 @@ Writing directly to SQLite would bypass conflict resolution entirely. Two device
 
 ## Rebuilding from scratch is the proof
 
-The clearest way to understand the relationship: delete the SQLite file. The workspace still works. Open it, and the observer replays the entire Y.Doc into a fresh SQLite database. All your data is there. Nothing was lost because nothing was stored there in the first place—it was always in the CRDT.
+The clearest way to understand the relationship: delete the SQLite file. The workspace still works. Open it, and the observer replays the entire Y.Doc into a fresh SQLite database. All your data is there. Nothing was lost because nothing was stored there in the first place. It was always in the CRDT.
 
 That's what "projection" means. SQLite is a view over the Yjs data, materialized to disk for query performance. The CRDT is the record; SQLite is the index.

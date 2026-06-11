@@ -6,7 +6,7 @@
 
 ## Overview
 
-Add an opt-in mode where users provide their own encryption password instead of relying on the server-derived key. The server never sees the encryption key in this mode—functionally zero-knowledge. Users can switch between server-managed and self-managed encryption, and change their encryption password.
+Add an opt-in mode where users provide their own encryption password instead of relying on the server-derived key. The server never sees the encryption key in this mode. Functionally zero-knowledge. Users can switch between server-managed and self-managed encryption, and change their encryption password.
 
 ## Motivation
 
@@ -21,10 +21,10 @@ Client: HKDF(userKey, "workspace:{workspaceId}") → workspaceKey
   → activateEncryption(workspaceKey) on all stores
 ```
 
-The server can derive every user's key. For Epicenter Cloud, this is intentional—it enables search, AI, and password recovery. For self-hosted deployments, the user controls the server, so it's functionally zero-knowledge.
+The server can derive every user's key. For Epicenter Cloud, this is intentional. It enables search, AI, and password recovery. For self-hosted deployments, the user controls the server, so it's functionally zero-knowledge.
 
 ```typescript
-// apps/api/src/auth/encryption.ts — server always sends the key
+// apps/api/src/auth/encryption.ts: server always sends the key
 export async function deriveUserEncryptionKey(userId: string) {
     const userKey = await deriveUserKey(currentKeySecret, userId);
     return {
@@ -35,7 +35,7 @@ export async function deriveUserEncryptionKey(userId: string) {
 ```
 
 ```typescript
-// apps/honeycrisp/src/lib/client.ts — client always receives it
+// apps/honeycrisp/src/lib/client.ts: client always receives it
 onLogin(session) {
     workspace.unlockWithKey(session.userKeyBase64);
 }
@@ -71,14 +71,14 @@ Investigated every component in the encryption stack to determine what already s
 
 | Component | Ready? | Evidence |
 |---|---|---|
-| `activateEncryption(nextKey)` with previous-key fallback | ✅ | Lines 444-489 of `y-keyvalue-lww-encrypted.ts`—saves `previousKey`, decrypts with fallback, re-encrypts only entries that need it |
-| `deriveKeyFromPassword(password, salt)` | ✅ | `crypto/index.ts`—PBKDF2 with 600K iterations, returns 32-byte key |
+| `activateEncryption(nextKey)` with previous-key fallback | ✅ | Lines 444-489 of `y-keyvalue-lww-encrypted.ts`: saves `previousKey`, decrypts with fallback, re-encrypts only entries that need it |
+| `deriveKeyFromPassword(password, salt)` | ✅ | `crypto/index.ts`: PBKDF2 with 600K iterations, returns 32-byte key |
 | `deriveSalt(userId, workspaceId)` | ⚠️ | Exists but has concatenation collision bug (`"user1" + "23ws"` === `"user12" + "3ws"`) |
 | `deriveWorkspaceKey(userKey, workspaceId)` | ✅ | HKDF-SHA256 per-workspace isolation, key-source agnostic |
-| `unlock(userKey)` API | ✅ | `create-workspace.ts` line 961—accepts any `Uint8Array`, doesn't care about source |
+| `unlock(userKey)` API | ✅ | `create-workspace.ts` line 961. Accepts any `Uint8Array`, doesn't care about source |
 | `UserKeyStore` caching | ✅ | Interface + IndexedDB implementation, stores base64 key regardless of source |
-| Auto-boot from cache | ✅ | `create-workspace.ts` lines 1002-1016—reads cached key on startup |
-| Server keyring parsing | ✅ | `apps/api/src/auth/encryption.ts`—`ENCRYPTION_SECRETS` supports versioned keys |
+| Auto-boot from cache | ✅ | `create-workspace.ts` lines 1002-1016. Reads cached key on startup |
+| Server keyring parsing | ✅ | `apps/api/src/auth/encryption.ts`: `ENCRYPTION_SECRETS` supports versioned keys |
 | Password change / `changeKey` | ❌ | No explicit API. But `activateEncryption` with fallback handles the mechanics |
 | Mode flag (self-managed vs server-managed) | ❌ | Doesn't exist anywhere |
 | Multi-device password change detection | ❌ | `failedDecryptCount` exists but nothing watches it for re-prompting |
@@ -111,7 +111,7 @@ activateEncryption(nextKey):
   5. Diff old vs new plaintext map, emit synthetic change events
 ```
 
-This means calling `unlock(newKey)` while the old key is active already re-encrypts everything. A `changePassword` API is a thin wrapper—derive new key, call unlock.
+This means calling `unlock(newKey)` while the old key is active already re-encrypts everything. A `changePassword` API is a thin wrapper. Derive new key, call unlock.
 
 ## Design Decisions
 
@@ -119,7 +119,7 @@ This means calling `unlock(newKey)` while the old key is active already re-encry
 |---|---|---|
 | Where to store mode flag | Server-side (workspace settings table or user preferences) | Server needs to know whether to include `userKeyBase64` in the session response. Client-side only wouldn't sync across devices. |
 | One password or two | Two: auth password (email/password for Better Auth) + encryption password (PBKDF2 for workspace key) | Same-password requires SRP or similar protocol change to prevent server from seeing the password. Two passwords is simpler and the auth layer stays untouched. |
-| Salt derivation | `HKDF(SHA-256(userId + ":" + workspaceId), 16)` — fix concatenation collision with separator | Deterministic from known values, no storage needed. The separator prevents `("user1", "23ws")` colliding with `("user12", "3ws")`. |
+| Salt derivation | `HKDF(SHA-256(userId + ":" + workspaceId), 16)`: fix concatenation collision with separator | Deterministic from known values, no storage needed. The separator prevents `("user1", "23ws")` colliding with `("user12", "3ws")`. |
 | Password change mechanism | Thin wrapper over existing `unlock()` which calls `activateEncryption` with previous-key fallback | The mechanics already work. No new CRDT primitive needed. |
 | Features disabled in self-managed mode | Server-side search, AI summarization, password recovery for encryption key | Server can't read data without the key. Auth password recovery still works (Better Auth handles that). |
 | `changePassword` API location | On `WorkspaceEncryption` (exposed via `workspace.encryption.changePassword`) | Consistent with existing `workspace.encryption.unlock` and `workspace.encryption.lock` |
@@ -128,7 +128,7 @@ This means calling `unlock(newKey)` while the old key is active already re-encry
 
 ## Architecture
 
-### Key Derivation—Two Paths, Same Destination
+### Key Derivation. Two Paths, Same Destination
 
 ```
 SERVER-MANAGED (default):
@@ -174,7 +174,7 @@ Everything below `userKey` is identical. The entire change is above the `userKey
 Device A: changes password → re-encrypts → syncs new ciphertext
                                               │
 Device B: receives new ciphertext via sync ───┘
-  → activateEncryption auto-runs on observer? No—
+  → activateEncryption auto-runs on observer? No.
   → Old cached key tries to decrypt new blobs → fails
   → failedDecryptCount > 0
   → UI detects this → shows "Encryption password changed" prompt
@@ -210,18 +210,18 @@ SELF-MANAGED → SERVER-MANAGED:
 
 Before adding new features, fix the issues found during analysis.
 
-- [ ] **1.1** Fix `deriveSalt` concatenation collision—add `":"` separator between `userId` and `workspaceId`
-- [ ] **1.2** Fix `bytesToBase64` stack bomb—replace `String.fromCharCode(...bytes)` spread with loop (in `crypto/index.ts`, the shared version—the server version at `apps/api/src/auth/encryption.ts` line 104 already uses a loop)
+- [ ] **1.1** Fix `deriveSalt` concatenation collision. Add `":"` separator between `userId` and `workspaceId`
+- [ ] **1.2** Fix `bytesToBase64` stack bomb. Replace `String.fromCharCode(...bytes)` spread with loop (in `crypto/index.ts`, the shared version. The server version at `apps/api/src/auth/encryption.ts` line 104 already uses a loop)
 
 ### Phase 2: Core Encryption Primitives
 
-Add `changePassword` capability to the workspace encryption runtime. No UI, no server changes—just the primitive.
+Add `changePassword` capability to the workspace encryption runtime. No UI, no server changes. Just the primitive.
 
 - [ ] **2.1** Add `changePassword(oldPassword: string, newPassword: string): Promise<void>` to `WorkspaceEncryption` type in `create-workspace.ts`
   - Derive old key, verify against active key
   - Derive new key, call `unlock(newKey)` (which handles re-encryption via `activateEncryption`)
   - Update `UserKeyStore` cache
-  - Requires `userId` in scope—pass via `EncryptionConfig` or closure from `withEncryption`
+  - Requires `userId` in scope. Pass via `EncryptionConfig` or closure from `withEncryption`
 - [ ] **2.2** Add `unlockWithPassword(password: string): Promise<void>` convenience method alongside `unlockWithKey`
   - Wraps `deriveKeyFromPassword` + `deriveSalt` + `unlock`
   - Requires `userId` in scope
@@ -233,7 +233,7 @@ Add `changePassword` capability to the workspace encryption runtime. No UI, no s
 Make the server aware of encryption mode so it can conditionally send (or not send) the key.
 
 - [ ] **3.1** Add `encryptionMode` field to workspace/user settings (database schema). Values: `'server'` (default) | `'self'`
-- [ ] **3.2** Update `customSession()` hook in `create-auth.ts`—skip `deriveUserEncryptionKey` when mode is `'self'`
+- [ ] **3.2** Update `customSession()` hook in `create-auth.ts`: skip `deriveUserEncryptionKey` when mode is `'self'`
 - [ ] **3.3** Add API endpoint: `POST /workspaces/:id/encryption-mode` to toggle the mode
   - When switching to `'self'`: just flip the flag (client handles re-encryption)
   - When switching to `'server'`: flip the flag and return the server-derived key so the client can re-encrypt
@@ -243,7 +243,7 @@ Make the server aware of encryption mode so it can conditionally send (or not se
 
 Wire the mode into the client auth flow and workspace initialization.
 
-- [ ] **4.1** Update `onLogin` handler pattern—check if `session.userKeyBase64` is present
+- [ ] **4.1** Update `onLogin` handler pattern. Check if `session.userKeyBase64` is present
   - If present: `workspace.unlockWithKey(session.userKeyBase64)` (unchanged)
   - If absent: rely on auto-boot from cache, or signal UI to prompt
 - [ ] **4.2** Add `workspace.encryption.mode: 'server' | 'self' | 'unknown'` reactive state
@@ -260,18 +260,18 @@ Wire the mode into the client auth flow and workspace initialization.
 
 Build the Svelte components for password management.
 
-- [ ] **5.1** `EncryptionPasswordGate.svelte`—wraps page content, shows password prompt when `needsPassword` is true
+- [ ] **5.1** `EncryptionPasswordGate.svelte`: wraps page content, shows password prompt when `needsPassword` is true
   - Password input, submit button, error state for wrong password
   - Shows ~500ms spinner during PBKDF2 derivation
   - On success: slot content renders (workspace data visible)
-- [ ] **5.2** `EncryptionPasswordChanged.svelte`—banner/dialog shown when `passwordChanged` is true
+- [ ] **5.2** `EncryptionPasswordChanged.svelte`: banner/dialog shown when `passwordChanged` is true
   - "Your encryption password was changed on another device. Enter your new password."
   - Password input, submit on enter
-- [ ] **5.3** `ChangeEncryptionPassword.svelte`—settings panel component
+- [ ] **5.3** `ChangeEncryptionPassword.svelte`: settings panel component
   - Old password, new password, confirm new password
   - Calls `workspace.encryption.changePassword(old, new)`
   - Success toast, error handling for wrong old password
-- [ ] **5.4** `EncryptionModeSwitch.svelte`—settings panel toggle
+- [ ] **5.4** `EncryptionModeSwitch.svelte`: settings panel toggle
   - Switch between "Epicenter manages encryption" and "I manage my own password"
   - Server→self: prompts for new encryption password
   - Self→server: prompts for current password (verification), then switches
@@ -279,7 +279,7 @@ Build the Svelte components for password management.
 
 ### Phase 6: Documentation
 
-- [ ] **6.1** Update `apps/api/README.md` encryption section—document the two modes
+- [ ] **6.1** Update `apps/api/README.md` encryption section. Document the two modes
 - [ ] **6.2** Update or create article explaining the self-managed option and when to use it
 - [ ] **6.3** Add JSDoc to new public APIs (`changePassword`, `unlockWithPassword`, `encryptionMode`)
 
@@ -293,14 +293,14 @@ Build the Svelte components for password management.
 
 **Outcome**: On next launch, the cached key is the new key (cache updates after `unlock` succeeds). `activateEncryption` runs with `previousKey` = undefined (no old key in memory). Entries still on old key fail to decrypt and show in `failedDecryptCount`. User can't recover without the old password.
 
-**Mitigation**: `activateEncryption` uses `inner.doc.transact()` for re-encryption writes (line 481), so all CRDT mutations are batched. Yjs transactions are atomic within a single JS event loop tick—XChaCha20 is synchronous, so the entire re-encryption completes in one transaction. The risk of partial re-encryption is extremely low (process kill, not a JS exception).
+**Mitigation**: `activateEncryption` uses `inner.doc.transact()` for re-encryption writes (line 481), so all CRDT mutations are batched. Yjs transactions are atomic within a single JS event loop tick. XChaCha20 is synchronous, so the entire re-encryption completes in one transaction. The risk of partial re-encryption is extremely low (process kill, not a JS exception).
 
 **Recommendation**: Accept the risk. For belt-and-suspenders, keep the old key in the `UserKeyStore` as a fallback entry until re-encryption is confirmed complete. Defer to Open Questions.
 
 ### User forgets encryption password
 
 1. Self-managed mode. User forgets their encryption password.
-2. No recovery possible—server doesn't have the key.
+2. No recovery possible. Server doesn't have the key.
 
 **Outcome**: Data is permanently inaccessible. Auth still works (different password). Workspace can be reset (delete encrypted data, start fresh).
 
@@ -324,7 +324,7 @@ Build the Svelte components for password management.
 2. Device B is offline. Has server-derived key cached.
 3. Device B comes online. Sync delivers entries encrypted with password-derived key.
 
-**Outcome**: Device B's cached server key can't decrypt new entries. `failedDecryptCount > 0`. But Device B doesn't know the encryption password—it was using server-managed mode.
+**Outcome**: Device B's cached server key can't decrypt new entries. `failedDecryptCount > 0`. But Device B doesn't know the encryption password. It was using server-managed mode.
 
 **Mitigation**: The mode flag syncs via the server. When Device B reconnects, its next `getSession()` call returns no `userKeyBase64` (server knows mode changed). The client detects this and shows the password prompt.
 
@@ -346,7 +346,7 @@ Build the Svelte components for password management.
 2. **Should the old key be kept as a fallback in `UserKeyStore` during password change?**
    - If yes: cache stores `{ current: base64, previous: base64 }`. Auto-boot tries current, falls back to previous. Protects against interrupted re-encryption.
    - If no: simpler cache, but interrupted re-encryption means data loss.
-   - **Recommendation**: Keep it simple—single key in cache. The re-encryption is transactional (synchronous XChaCha20 in a Yjs transaction). The risk is negligible.
+   - **Recommendation**: Keep it simple. Single key in cache. The re-encryption is transactional (synchronous XChaCha20 in a Yjs transaction). The risk is negligible.
 
 3. **Per-workspace or per-user encryption mode?**
    - Per-workspace: different workspaces can have different modes. More granular. User might forget which workspaces are self-managed.
@@ -364,8 +364,8 @@ Build the Svelte components for password management.
    - **Recommendation**: Delete indexes on switch to self-managed. Show a clear warning before switching: "Server-side search and AI features will be disabled."
 
 6. **Should `EncryptionConfig` accept `userId` directly, or should it be injected later?**
-   - `withEncryption({ userKeyStore, userId })` — requires userId at workspace creation time, which may not be available yet (pre-auth).
-   - `withEncryption({ userKeyStore })` with userId injected via `unlockWithPassword(password, userId)` — more flexible but less ergonomic.
+   - `withEncryption({ userKeyStore, userId })`: requires userId at workspace creation time, which may not be available yet (pre-auth).
+   - `withEncryption({ userKeyStore })` with userId injected via `unlockWithPassword(password, userId)`: more flexible but less ergonomic.
    - **Recommendation**: Accept `userId` on the method calls (`unlockWithPassword`, `changePassword`), not in config. The workspace is created before auth completes. userId arrives with the session.
 
 ## Success Criteria
@@ -384,15 +384,15 @@ Build the Svelte components for password management.
 
 ## References
 
-- `packages/workspace/src/shared/crypto/index.ts` — Encryption primitives, `deriveKeyFromPassword`, `deriveSalt`, `deriveWorkspaceKey`
-- `packages/workspace/src/shared/y-keyvalue/y-keyvalue-lww-encrypted.ts` — Encrypted KV wrapper, `activateEncryption` with previous-key fallback
-- `packages/workspace/src/workspace/create-workspace.ts` — `withEncryption()` builder, `unlock`, `lock`, `EncryptionRuntime`
-- `packages/workspace/src/workspace/user-key-store.ts` — `UserKeyStore` interface
-- `apps/api/src/auth/encryption.ts` — Server-side key derivation, keyring parsing
-- `apps/api/src/auth/create-auth.ts` — `customSession()` hook that sends `userKeyBase64`
-- `packages/svelte-utils/src/auth/create-auth.svelte.ts` — Client auth with `onLogin`/`onLogout` hooks
-- `packages/svelte-utils/src/indexed-db-key-store.ts` — IndexedDB `UserKeyStore` implementation
-- `docs/articles/if-you-dont-trust-the-server-become-the-server.md` — Philosophy article on trust model
-- `docs/articles/let-the-server-handle-encryption.md` — Philosophy article on server-managed keys
-- `docs/articles/why-epicenter-doesnt-encrypt-without-authentication.md` — Why no encryption pre-auth
-- `specs/20260328T120000-key-version-propagation.md` — Related DRAFT spec for keyVersion propagation
+- `packages/workspace/src/shared/crypto/index.ts`: Encryption primitives, `deriveKeyFromPassword`, `deriveSalt`, `deriveWorkspaceKey`
+- `packages/workspace/src/shared/y-keyvalue/y-keyvalue-lww-encrypted.ts`: Encrypted KV wrapper, `activateEncryption` with previous-key fallback
+- `packages/workspace/src/workspace/create-workspace.ts`: `withEncryption()` builder, `unlock`, `lock`, `EncryptionRuntime`
+- `packages/workspace/src/workspace/user-key-store.ts`: `UserKeyStore` interface
+- `apps/api/src/auth/encryption.ts`: Server-side key derivation, keyring parsing
+- `apps/api/src/auth/create-auth.ts`: `customSession()` hook that sends `userKeyBase64`
+- `packages/svelte-utils/src/auth/create-auth.svelte.ts`: Client auth with `onLogin`/`onLogout` hooks
+- `packages/svelte-utils/src/indexed-db-key-store.ts`: IndexedDB `UserKeyStore` implementation
+- `docs/articles/if-you-dont-trust-the-server-become-the-server.md`: Philosophy article on trust model
+- `docs/articles/let-the-server-handle-encryption.md`: Philosophy article on server-managed keys
+- `docs/articles/why-epicenter-doesnt-encrypt-without-authentication.md`: Why no encryption pre-auth
+- `specs/20260328T120000-key-version-propagation.md`: Related DRAFT spec for keyVersion propagation

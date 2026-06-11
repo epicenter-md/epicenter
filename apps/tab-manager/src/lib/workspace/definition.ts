@@ -1,5 +1,5 @@
 /**
- * Workspace schema — branded IDs, table definitions, and awareness shape.
+ * Workspace schema: branded IDs, table definitions, and awareness shape.
  *
  * Browser-agnostic: no Chrome APIs, no IndexedDB, no Svelte imports.
  * This file can be safely imported by the CLI daemon or any Node/Bun process.
@@ -37,7 +37,7 @@ export const TAB_MANAGER_ID = 'epicenter-tab-manager';
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Branded saved tab ID — nanoid generated when a tab is explicitly saved.
+ * Branded saved tab ID: nanoid generated when a tab is explicitly saved.
  *
  * Prevents accidental mixing with composite tab IDs or other string IDs.
  */
@@ -61,7 +61,7 @@ export type SavedTabId = Id & Brand<'SavedTabId'>;
 export const generateSavedTabId = (): SavedTabId => generateId() as SavedTabId;
 
 /**
- * Branded bookmark ID — nanoid generated when a URL is bookmarked.
+ * Branded bookmark ID: nanoid generated when a URL is bookmarked.
  *
  * Unlike {@link SavedTabId}, bookmarks persist indefinitely (opening a
  * bookmarked URL does NOT delete the record).
@@ -86,7 +86,7 @@ export type BookmarkId = Id & Brand<'BookmarkId'>;
 export const generateBookmarkId = (): BookmarkId => generateId() as BookmarkId;
 
 /**
- * Branded conversation ID — nanoid generated when a chat conversation is created.
+ * Branded conversation ID: nanoid generated when a chat conversation is created.
  *
  * Used as the primary key for conversations and as a foreign key in chat messages.
  * Prevents accidental mixing with message IDs or other string IDs.
@@ -123,7 +123,7 @@ export const asConversationId = (value: string): ConversationId =>
 	value as ConversationId;
 
 /**
- * Branded chat message ID — nanoid generated when a message is created.
+ * Branded chat message ID: nanoid generated when a message is created.
  *
  * Prevents accidental mixing with conversation IDs or other string IDs.
  */
@@ -162,7 +162,7 @@ export const asChatMessageId = (value: string): ChatMessageId =>
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Devices — tracks browser-scoped devices (one per persistent storage scope)
+ * Devices: tracks browser-scoped devices (one per persistent storage scope)
  * for multi-device sync.
  *
  * Each device generates a unique ID on first install, stored in storage.local.
@@ -178,7 +178,7 @@ const devicesTable = defineTable({
 export type Device = InferTableRow<typeof devicesTable>;
 
 /**
- * Saved tabs — explicitly saved tabs that can be restored later.
+ * Saved tabs: explicitly saved tabs that can be restored later.
  *
  * Unlike live browser state (which is ephemeral and Chrome-owned),
  * saved tabs are shared across all devices. Any device can read, edit, or
@@ -199,7 +199,7 @@ const savedTabsTable = defineTable({
 export type SavedTab = InferTableRow<typeof savedTabsTable>;
 
 /**
- * Bookmarks — permanent, non-consumable URL references.
+ * Bookmarks: permanent, non-consumable URL references.
  *
  * Unlike saved tabs (which are deleted on restore), bookmarks persist
  * indefinitely. Opening a bookmark creates a new browser tab but does NOT
@@ -217,7 +217,7 @@ const bookmarksTable = defineTable({
 export type Bookmark = InferTableRow<typeof bookmarksTable>;
 
 /**
- * AI conversations — metadata for each chat thread.
+ * AI conversations: metadata for each chat thread.
  *
  * Each conversation has its own message history (linked via
  * chatMessages.conversationId). Subpages use `parentId` to form
@@ -238,14 +238,14 @@ const conversationsTable = defineTable({
 export type Conversation = InferTableRow<typeof conversationsTable>;
 
 /**
- * Chat messages — TanStack AI UIMessage data persisted per conversation.
+ * Chat messages: TanStack AI UIMessage data persisted per conversation.
  *
  * The `parts` field stores MessagePart[] as a JSON-encoded array. Runtime
  * validation of the inner shape is skipped (typed as `JsonValue[]`) because
  * parts are always produced by TanStack AI: compile-time drift detection in
  * `ui-message.ts` catches type mismatches on TanStack AI upgrades instead.
  *
- * @see {@link file://./ai/ui-message.ts} — drift detection + toUiMessage boundary
+ * @see {@link file://./ai/ui-message.ts}: drift detection + toUiMessage boundary
  */
 const chatMessagesTable = defineTable({
 	id: field.string<ChatMessageId>(),
@@ -257,7 +257,7 @@ const chatMessagesTable = defineTable({
 export type ChatMessage = InferTableRow<typeof chatMessagesTable>;
 
 /**
- * Tool trust — per-tool approval preferences for AI chat.
+ * Tool trust: per-tool approval preferences for AI chat.
  *
  * Each row represents a user's trust decision for a specific destructive tool.
  * Tools not in this table default to 'ask' (show approval UI). Users can

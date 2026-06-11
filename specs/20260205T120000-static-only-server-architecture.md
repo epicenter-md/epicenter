@@ -287,7 +287,7 @@ export function createTablesPlugin(
 **Key changes:**
 
 1. Access `workspace.definitions.tables` for table definitions (no `$meta` indirection)
-2. Iterate `Object.entries(workspace.tables)` directly — no metadata properties to skip
+2. Iterate `Object.entries(workspace.tables)` directly: no metadata properties to skip
 3. Use `tableDef.schema['~standard'].validate()` for Standard Schema validation
 4. Use `tableDef.migrate()` for version migration
 
@@ -422,7 +422,7 @@ If issues arise:
    - This spec assumes that naming unification has been completed first
 
 2. ~~**Should `$meta` be exposed on the public API?**~~
-   - ✅ **RESOLVED:** Implemented as `client.definitions` — a clean, public property on `WorkspaceClient` that exposes `{ tables, kv }` for server/CLI introspection. No `$` prefix needed since it's a first-class property.
+   - ✅ **RESOLVED:** Implemented as `client.definitions`: a clean, public property on `WorkspaceClient` that exposes `{ tables, kv }` for server/CLI introspection. No `$` prefix needed since it's a first-class property.
 
 3. **Should server validate against schemas at HTTP layer?**
    - Pro: Better error messages before Y.js

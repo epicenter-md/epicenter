@@ -11,9 +11,15 @@ This skill guides creation of distinctive, production-grade frontend interfaces 
 
 ## Reference Repositories
 
-- [shadcn-svelte](https://github.com/huntabyte/shadcn-svelte) — Port of shadcn/ui for Svelte with Bits UI primitives
-- [shadcn-svelte-extras](https://github.com/ieedan/shadcn-svelte-extras) — Additional components for shadcn-svelte
-- [Svelte](https://github.com/sveltejs/svelte) — Svelte 5 framework
+- [shadcn-svelte](https://github.com/huntabyte/shadcn-svelte): Port of shadcn/ui for Svelte with Bits UI primitives
+- [shadcn-svelte-extras](https://github.com/ieedan/shadcn-svelte-extras): Additional components for shadcn-svelte
+- [Svelte](https://github.com/sveltejs/svelte): Svelte 5 framework
+
+## Upstream Grounding
+
+When a design implementation depends on Svelte behavior, use source-backed grounding before relying on memory. If DeepWiki MCP is available, ask a narrow question against `sveltejs/svelte`; for shadcn-svelte or extras component APIs, ask against `huntabyte/shadcn-svelte` or `ieedan/shadcn-svelte-extras`. If DeepWiki is unavailable or the repo is not indexed, use upstream source or official docs directly. Treat DeepWiki as orientation, then verify decisive details against local `@epicenter/ui` wrappers, installed types, source, or official docs before changing code.
+
+Do not use upstream repos as authority for visual taste. Use them for component API and behavior only.
 
 The user provides frontend requirements: a component, page, application, or interface to build. They may include context about the purpose, audience, or technical constraints.
 

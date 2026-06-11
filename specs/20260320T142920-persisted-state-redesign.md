@@ -5,24 +5,24 @@ Redesign `createPersistedState` and extract `deviceConfig`'s SvelteMap logic int
 ## Context
 
 **Current state:**
-- `createPersistedState` — factory function, `.value` accessor, schema required, `onParseError` must return a fallback
-- `deviceConfig` — 326-line bespoke module with SvelteMap, cross-tab sync, per-key localStorage. Not reusable.
+- `createPersistedState`: factory function, `.value` accessor, schema required, `onParseError` must return a fallback
+- `deviceConfig`: 326-line bespoke module with SvelteMap, cross-tab sync, per-key localStorage. Not reusable.
 
 **Problems:**
 1. `createPersistedState` uses `.value` (Vue convention) instead of `.current` (Svelte 5/runed convention)
 2. `createPersistedState` is a factory function, not a class (runed uses PascalCase classes)
 3. `onParseError` conflates side effects (logging) with providing a fallback value
 4. `onUpdateSuccess` and `onUpdateSettled` exist but have zero consumers
-5. No multi-key equivalent — `deviceConfig` reimplements SvelteMap + event listeners + parsing inline
+5. No multi-key equivalent: `deviceConfig` reimplements SvelteMap + event listeners + parsing inline
 
 ## Design Decisions
 
 ### 1. Options object, not positional args
 
-Runed uses `new PersistedState(key, initialValue, options?)` — positional for required, object for optional. **We should not follow this.** Reasons:
+Runed uses `new PersistedState(key, initialValue, options?)`: positional for required, object for optional. **We should not follow this.** Reasons:
 
 - Runed has 2 required params. We have 2 required + schema (often provided). Three positional args is where readability degrades.
-- Positional args encode order, not semantics. `key` and `defaultValue` are equally required — making one "first" is arbitrary.
+- Positional args encode order, not semantics. `key` and `defaultValue` are equally required: making one "first" is arbitrary.
 - Options objects are self-documenting at call sites. You read `{ key: '...', defaultValue: null }` and know what each thing is.
 - The existing codebase already uses options objects for this pattern (`createPersistedState`).
 - Adding a required field later doesn't break the signature with options objects.
@@ -37,13 +37,13 @@ Runed calls it `initialValue`. We use `defaultValue` because it's used for:
 - `reset()` on PersistedMap
 - `getDefault()` on PersistedMap
 
-"Default" is the right word — it's a value you can return to, not just a one-time seed. This also matches the existing codebase convention (`DEVICE_DEFINITIONS`, `KV_DEFINITIONS`).
+"Default" is the right word. It's a value you can return to, not just a one-time seed. This also matches the existing codebase convention (`DEVICE_DEFINITIONS`, `KV_DEFINITIONS`).
 
 ### 3. Schema is required
 
 Both `PersistedState` and `PersistedMap` require a schema. Reasons:
 
-- localStorage is external, untrusted storage. Data can be edited in DevTools, corrupted by other code, or left over from a previous app version. Validation isn't optional—it's the point.
+- localStorage is external, untrusted storage. Data can be edited in DevTools, corrupted by other code, or left over from a previous app version. Validation isn't optional. It's the point.
 - Requiring schema eliminates the two-overload type system ("with schema" vs "without schema"). One path, one type inference strategy: always infer from `StandardSchemaV1.InferOutput<S>`.
 - `defaultValue` uses `NoInfer<T>` to prevent TypeScript from widening the type from the default instead of the schema.
 - If you truly don't care about validation, `type('unknown')` is one line. The API shouldn't add complexity to serve that edge case.
@@ -84,26 +84,26 @@ Both `PersistedState` and `PersistedMap` use the same error type. For `Persisted
 
 ### 5. `onError` is fire-and-forget, not a fallback provider
 
-Current `onParseError` must return a value—it conflates "handle the error" with "provide the fallback." New design splits these:
+Current `onParseError` must return a value. It conflates "handle the error" with "provide the fallback." New design splits these:
 
-- `defaultValue` — always the fallback (explicit, required, no callback needed)
-- `onError` — optional side effect (logging, notifications). Receives a `PersistedError`. Returns void.
+- `defaultValue`: always the fallback (explicit, required, no callback needed)
+- `onError`: optional side effect (logging, notifications). Receives a `PersistedError`. Returns void.
 
 ### 6. Drop unused callbacks
 
 `onUpdateSuccess` and `onUpdateSettled` have zero consumers in the codebase. Removed. Keeping only:
-- `onError` — read failures (parse error, validation failure). Receives `PersistedError`.
-- `onUpdateError` — write failures (quota exceeded). Receives raw `unknown` error.
+- `onError`: read failures (parse error, validation failure). Receives `PersistedError`.
+- `onUpdateError`: write failures (quota exceeded). Receives raw `unknown` error.
 
 ### 7. Follow runed conventions
 
-- **PascalCase class** — `PersistedState`, `PersistedMap`
-- **`.current` accessor** — consistent with all 34+ runed utilities
-- **Options deviate from runed** — options object instead of positional args (justified in §1)
+- **PascalCase class**: `PersistedState`, `PersistedMap`
+- **`.current` accessor**: consistent with all 34+ runed utilities
+- **Options deviate from runed**: options object instead of positional args (justified in §1)
 
 ## API Design
 
-### `PersistedState<S>` — single persisted value
+### `PersistedState<S>`: single persisted value
 
 ```ts
 import { PersistedState } from '@epicenter/svelte-utils';
@@ -125,26 +125,26 @@ session.current = null;  // persists to localStorage
 ```ts
 type PersistedStateOptions<S extends StandardSchemaV1> = {
   key: string;                                        // required
-  schema: S;                                          // required — StandardSchemaV1
-  defaultValue: NoInfer<StandardSchemaV1.InferOutput<S>>; // required — fallback
+  schema: S;                                          // required: StandardSchemaV1
+  defaultValue: NoInfer<StandardSchemaV1.InferOutput<S>>; // required: fallback
   storage?: 'local' | 'session';                      // default: 'local'
   syncTabs?: boolean;                                  // default: true
-  onError?: (error: PersistedError) => void;           // optional — side effects
-  onUpdateError?: (error: unknown) => void;            // optional — write failures
+  onError?: (error: PersistedError) => void;           // optional: side effects
+  onUpdateError?: (error: unknown) => void;            // optional: write failures
 };
 ```
 
-No `storage_empty` error—empty storage returns `defaultValue` silently. That's the expected first-visit case, not a failure.
+No `storage_empty` error. Empty storage returns `defaultValue` silently. That's the expected first-visit case, not a failure.
 
 **Internal implementation (high level):**
 
 - Uses `$state` for the reactive value
 - Reads localStorage on construction, validates via schema, falls back to `defaultValue` on failure
 - Cross-tab sync via `storage` event listener (when `syncTabs: true`)
-- Same-tab sync via `focus` event listener (always on—catches DevTools edits)
+- Same-tab sync via `focus` event listener (always on. Catches DevTools edits)
 - Writes to localStorage on `.current` set, calls `onUpdateError` on write failure
 
-### `PersistedMap<D>` — typed multi-key persisted config
+### `PersistedMap<D>`: typed multi-key persisted config
 
 ```ts
 import { PersistedMap } from '@epicenter/svelte-utils';
@@ -249,22 +249,22 @@ export const deviceConfig = new PersistedMap({
 
 | Option | Required? | Why |
 |--------|-----------|-----|
-| `key` | **Required** | Identity — which localStorage key |
-| `defaultValue` | **Required** | Fallback — what to use when storage is empty/invalid |
+| `key` | **Required** | Identity: which localStorage key |
+| `defaultValue` | **Required** | Fallback: what to use when storage is empty/invalid |
 | `schema` | **Required** | localStorage is untrusted storage. Validation is the point, not an afterthought |
 | `storage` | Optional | Defaults to `'local'`. `'session'` is rare |
 | `syncTabs` | Optional | Defaults to `true`. Only disable for private/ephemeral state |
-| `onError` | Optional | Side effect only — `defaultValue` handles fallback |
+| `onError` | Optional | Side effect only: `defaultValue` handles fallback |
 | `onUpdateError` | Optional | Write failures are rare (quota exceeded) |
 
 ### PersistedMap
 
 | Option | Required? | Why |
 |--------|-----------|-----|
-| `prefix` | **Required** | Namespace — prevents localStorage key collisions |
-| `definitions` | **Required** | The whole point — defines the key space with types and defaults |
+| `prefix` | **Required** | Namespace: prevents localStorage key collisions |
+| `definitions` | **Required** | The whole point: defines the key space with types and defaults |
 | `definitions[key].defaultValue` | **Required** | Same reason as PersistedState |
-| `definitions[key].schema` | **Required** | Same as PersistedState — untrusted storage, validation required |
+| `definitions[key].schema` | **Required** | Same as PersistedState: untrusted storage, validation required |
 | `storage` | Optional | Same as PersistedState |
 | `syncTabs` | Optional | Same as PersistedState |
 | `onError` | Optional | Same as PersistedState, but receives `key` as first arg |
@@ -296,14 +296,14 @@ export const deviceConfig = new PersistedMap({
 ### Changes made
 
 **New files:**
-- `packages/svelte-utils/src/PersistedState.svelte.ts` (214 lines) — class with `.current` accessor, `$state` internally, `StandardSchemaV1` validation, cross-tab + focus sync, `defineErrors`-based error types
-- `packages/svelte-utils/src/PersistedMap.svelte.ts` (286 lines) — class with `SvelteMap` internally, shared event listeners, typed `.get()`/`.set()`/`.reset()`/`.getDefault()`/`.update()`
+- `packages/svelte-utils/src/PersistedState.svelte.ts` (214 lines): class with `.current` accessor, `$state` internally, `StandardSchemaV1` validation, cross-tab + focus sync, `defineErrors`-based error types
+- `packages/svelte-utils/src/PersistedMap.svelte.ts` (286 lines): class with `SvelteMap` internally, shared event listeners, typed `.get()`/`.set()`/`.reset()`/`.getDefault()`/`.update()`
 
 **Modified files:**
-- `packages/svelte-utils/src/index.ts` — barrel exports for `PersistedState`, `PersistedMap`, `PersistedError`
-- `packages/svelte-utils/package.json` — updated exports map, removed old `createPersistedState` entry
-- `apps/whispering/src/lib/services/desktop/recorder/ffmpeg.ts` — migrated from `createPersistedState` to `PersistedState`, `.value` → `.current` (9 usages)
-- `apps/whispering/src/lib/state/device-config.svelte.ts` — 326 → 174 lines, all infrastructure replaced by `PersistedMap`
+- `packages/svelte-utils/src/index.ts`: barrel exports for `PersistedState`, `PersistedMap`, `PersistedError`
+- `packages/svelte-utils/package.json`: updated exports map, removed old `createPersistedState` entry
+- `apps/whispering/src/lib/services/desktop/recorder/ffmpeg.ts`: migrated from `createPersistedState` to `PersistedState`, `.value` → `.current` (9 usages)
+- `apps/whispering/src/lib/state/device-config.svelte.ts`: 326 → 174 lines, all infrastructure replaced by `PersistedMap`
 
 **Deleted files:**
 - `packages/svelte-utils/src/createPersistedState.svelte.ts` (189 lines)

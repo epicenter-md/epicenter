@@ -1,14 +1,14 @@
-# Sync Client Simplification — Implemented
+# Sync Client Simplification: Implemented
 
 > Drop SYNC_STATUS (102), use Cloudflare auto-response for liveness, simplify to 3-state status model.
 
 ## Problem
 
-The sync provider (`packages/sync-client/src/provider.ts`) has ~745 lines with 11 closure state variables and 7 interacting mechanisms (heartbeat, connection timeout, ack tracking, liveness detection, reconnection, status management, browser events). Several of these exist to power `hasLocalChanges` / `onLocalChanges` — a feature with **zero consumers** across all apps.
+The sync provider (`packages/sync-client/src/provider.ts`) has ~745 lines with 11 closure state variables and 7 interacting mechanisms (heartbeat, connection timeout, ack tracking, liveness detection, reconnection, status management, browser events). Several of these exist to power `hasLocalChanges` / `onLocalChanges`: a feature with **zero consumers** across all apps.
 
 The heartbeat/ack system also has concrete bugs:
 - **Idle liveness gap:** When `ackedVersion === localVersion` (clean), the heartbeat probe is skipped. A silently-dead idle connection is never detected.
-- **False ack on reconnect:** `localVersion`/`ackedVersion` are not reset on reconnect. The first SYNC_STATUS echo marks everything as acked — even updates lost on the dead connection.
+- **False ack on reconnect:** `localVersion`/`ackedVersion` are not reset on reconnect. The first SYNC_STATUS echo marks everything as acked: even updates lost on the dead connection.
 - **Ack doesn't prove persistence:** The server echoes SYNC_STATUS in the same handler that processes updates, before confirming SQLite write success.
 
 ## Key Constraints (from research)
@@ -16,8 +16,8 @@ The heartbeat/ack system also has concrete bugs:
 ### Cloudflare Durable Objects
 - `setWebSocketAutoResponse(new WebSocketRequestResponsePair("ping", "pong"))` responds to **text** `"ping"` with `"pong"` **at the edge, without waking the DO**. Already configured in the constructor.
 - Messages matching the auto-response pair are handled at the edge without waking the DO. All other messages (binary or non-matching text) wake the DO. Since auto-response only matches text strings, binary messages inherently always wake the DO.
-- No documented idle timeout specifically for DO WebSocket connections. The ~100s CDN proxy read timeout is widely reported in community forums but not officially documented for DO WebSockets. The 400s figure is the HTTP keep-alive timeout from Cloudflare's connection limits docs, not TCP keepalive — unclear if it applies to WebSocket connections through DOs.
-- On DO crash: client gets close code 1006. With hibernation (which we use), eviction does NOT close WebSocket connections — they survive on Cloudflare's network. Without hibernation, eviction after 70-140s of inactivity terminates connections. On code deploy: all WebSocket connections are terminated immediately.
+- No documented idle timeout specifically for DO WebSocket connections. The ~100s CDN proxy read timeout is widely reported in community forums but not officially documented for DO WebSockets. The 400s figure is the HTTP keep-alive timeout from Cloudflare's connection limits docs, not TCP keepalive: unclear if it applies to WebSocket connections through DOs.
+- On DO crash: client gets close code 1006. With hibernation (which we use), eviction does NOT close WebSocket connections: they survive on Cloudflare's network. Without hibernation, eviction after 70-140s of inactivity terminates connections. On code deploy: all WebSocket connections are terminated immediately.
 - Max idle time without app-level heartbeats: uncertain and undocumented. **Must send heartbeats.**
 - **Local dev caveat:** `setWebSocketAutoResponse` has known bugs in `workerd` ([#1009](https://github.com/cloudflare/workerd/issues/1009), [#1259](https://github.com/cloudflare/workerd/issues/1259)). Tests relying on auto-response behavior may not work in local development.
 
@@ -98,12 +98,12 @@ let lastMessageTime = Date.now();
 const PING_INTERVAL_MS = 30_000;
 const LIVENESS_TIMEOUT_MS = 45_000;
 
-// Send text "ping" every 30s — CF auto-response echoes "pong" without waking DO
+// Send text "ping" every 30s: CF auto-response echoes "pong" without waking DO
 const pingInterval = setInterval(() => {
     if (ws.readyState === WS.OPEN) ws.send('ping');
 }, PING_INTERVAL_MS);
 
-// Check liveness every 10s — uses wall clock, robust against timer throttling
+// Check liveness every 10s: uses wall clock, robust against timer throttling
 const livenessInterval = setInterval(() => {
     if (Date.now() - lastMessageTime > LIVENESS_TIMEOUT_MS) {
         ws.close();
@@ -116,10 +116,10 @@ In `onmessage`:
 ws.onmessage = (event: MessageEvent) => {
     lastMessageTime = Date.now();
 
-    // Text "pong" from auto-response — liveness confirmed, nothing else to do
+    // Text "pong" from auto-response: liveness confirmed, nothing else to do
     if (typeof event.data === 'string') return;
 
-    // Binary messages — existing sync protocol decode
+    // Binary messages: existing sync protocol decode
     const data = new Uint8Array(event.data);
     // ...
 };
@@ -152,7 +152,7 @@ function handleOnline() {
 }
 
 function handleOffline() {
-    // Trust the event — close and let the supervisor loop reconnect.
+    // Trust the event: close and let the supervisor loop reconnect.
     // False positives (e.g., WiFi drops but Ethernet stays) cause a cheap
     // reconnect: new WebSocket, sync handshake, empty diff.
     websocket?.close();
@@ -168,7 +168,7 @@ function handleVisibilityChange() {
     if (document.visibilityState !== 'visible') return;
 
     // Tab just became visible. Timer callbacks may have been throttled,
-    // so check wall clock directly — if the connection looks stale, close it.
+    // so check wall clock directly: if the connection looks stale, close it.
     // If alive, send an immediate ping to verify.
     if (websocket?.readyState === WS.OPEN) {
         websocket.send('ping');
@@ -184,15 +184,15 @@ The ping triggers a "pong" response. If the connection is dead, the liveness int
 type SyncStatus = 'offline' | 'connecting' | 'connected';
 ```
 
-- `'offline'` — not trying to connect
-- `'connecting'` — supervisor loop active, socket not yet synced
-- `'connected'` — sync handshake complete
+- `'offline'`: not trying to connect
+- `'connecting'`: supervisor loop active, socket not yet synced
+- `'connected'`: sync handshake complete
 
-`'handshaking'` merges into `'connecting'` — the UI shows the same spinner for both. `'error'` merges into `'connecting'` — the supervisor loop is still running and will retry.
+`'handshaking'` merges into `'connecting'`: the UI shows the same spinner for both. `'error'` merges into `'connecting'`: the supervisor loop is still running and will retry.
 
 ### 6. Handshake detection
 
-The current handshake detection logic stays the same — when we receive `SYNC_MESSAGE_TYPE.STEP2` or `SYNC_MESSAGE_TYPE.UPDATE` during the handshake phase, the connection is considered synced and status transitions to `'connected'`. The `handshakeComplete` boolean is scoped inside `attemptConnection` (already the case).
+The current handshake detection logic stays the same. When we receive `SYNC_MESSAGE_TYPE.STEP2` or `SYNC_MESSAGE_TYPE.UPDATE` during the handshake phase, the connection is considered synced and status transitions to `'connected'`. The `handshakeComplete` boolean is scoped inside `attemptConnection` (already the case).
 
 ### 7. Server-side cleanup
 
@@ -235,7 +235,7 @@ export type SyncProvider = {
 };
 ```
 
-Removed: `hasLocalChanges`, `onLocalChanges()`. These are re-added when the "Saving.../Saved" UI is built — at which point we design a proper persistence-confirmed ack (server sends ack after SQLite write, not an echo of client bytes).
+Removed: `hasLocalChanges`, `onLocalChanges()`. These are re-added when the "Saving.../Saved" UI is built: at which point we design a proper persistence-confirmed ack (server sends ack after SQLite write, not an echo of client bytes).
 
 ### 10. `destroy()` calls `disconnect()`
 
@@ -261,8 +261,8 @@ destroy() {
 - [x] **1.1** Remove `localVersion`, `ackedVersion`, `heartbeatHandle`, `connectionTimeoutHandle` state vars
 - [x] **1.2** Remove `incrementLocalVersion`, `updateAckedVersion`, `emitLocalChanges`, `localChangesListeners`
 - [x] **1.3** Remove `sendSyncStatus`, `armConnectionTimeout`, `clearConnectionTimeout`, `resetHeartbeat`, `clearHeartbeat`
-- [x] **1.4** Simplify `handleDocUpdate` — just send the update
-- [x] **1.5** Simplify `handleOffline` — just close the websocket
+- [x] **1.4** Simplify `handleDocUpdate`: just send the update
+- [x] **1.5** Simplify `handleOffline`: just close the websocket
 - [x] **1.6** Add text ping interval + wall-clock liveness check inside `attemptConnection`
 - [x] **1.7** Handle text `"pong"` in `onmessage` (reset timer, return early)
 - [x] **1.8** Add `visibilitychange` listener alongside `online`/`offline`
@@ -290,15 +290,15 @@ destroy() {
 - [x] **3.3** Update status transition tests (3 states, no `'handshaking'` or `'error'`)
 - [x] **3.4** Update protocol.test.ts: remove MESSAGE_SYNC_STATUS describe block, encodeSyncStatus/decodeSyncStatus imports
 - [x] **3.5** Update sync-server handlers.test.ts: replace SYNC_STATUS echo test with silent-ignore test
-- [ ] **3.6** Add liveness detection tests (text ping/pong, liveness timeout) — deferred to follow-up
-- [ ] **3.7** Add `visibilitychange` handling tests — deferred to follow-up
-- [ ] **3.8** Add `handleOffline` → close behavior test — deferred to follow-up
+- [ ] **3.6** Add liveness detection tests (text ping/pong, liveness timeout): deferred to follow-up
+- [ ] **3.7** Add `visibilitychange` handling tests: deferred to follow-up
+- [ ] **3.8** Add `handleOffline` → close behavior test: deferred to follow-up
 
 ### Wave 4: Extension + consumer updates
 **Files:** `packages/epicenter/src/extensions/sync.ts`, any consumers
 
-- [x] **4.1** Update any references to removed `SyncStatus` values — none found in consumers
-- [x] **4.2** Update any references to `hasLocalChanges` / `onLocalChanges` — only README reference, updated
+- [x] **4.1** Update any references to removed `SyncStatus` values: none found in consumers
+- [x] **4.2** Update any references to `hasLocalChanges` / `onLocalChanges`: only README reference, updated
 
 ## Future: Adding Ack Tracking Back
 
@@ -307,7 +307,7 @@ When the "Saving.../Saved" UI is built, design a proper persistence-confirmed ac
 1. Server sends ack **after** the SQLite write succeeds, not as an echo of client bytes
 2. Ack payload includes the server's state vector hash (or equivalent), so the client knows exactly what the server has persisted
 3. The ack message type can reuse tag 102 or use a new tag
-4. Deploy server first (adds handler), then client (starts sending) — the server's `default` case silently ignores unknown tags, so no coordination needed
+4. Deploy server first (adds handler), then client (starts sending): the server's `default` case silently ignores unknown tags, so no coordination needed
 5. Add `hasLocalChanges` and `onLocalChanges` back to the provider API
 
 ## Review
@@ -321,10 +321,10 @@ Replaced the SYNC_STATUS (102) heartbeat/ack system with text ping/pong liveness
 
 ### Deviations from Spec
 
-- `sync-server/handlers.ts` was also cleaned up (spec only listed the CF handler) — it had identical SYNC_STATUS handling
+- `sync-server/handlers.ts` was also cleaned up (spec only listed the CF handler): it had identical SYNC_STATUS handling
 - `encodeSyncStatus`/`decodeSyncStatus` removed from protocol (spec said "remove encodeSyncStatus", decodeSyncStatus was also cleaned up)
 - `MESSAGE_TYPE.SYNC_STATUS = 102` constant kept for future ack protocol (spec said "optionally remove")
-- New liveness/visibility/offline behavior tests (spec items 3.6–3.8) deferred to follow-up
+- New liveness/visibility/offline behavior tests (spec items 3.6-3.8) deferred to follow-up
 
 ### Follow-up Work
 

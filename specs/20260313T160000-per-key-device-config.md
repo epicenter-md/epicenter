@@ -71,7 +71,7 @@ deviceConfig.get(key)      / deviceConfig.set(key, value)
 
 | Decision | Choice | Rationale |
 |---|---|---|
-| New utility vs inline | **Open question** — see below | Could go either way |
+| New utility vs inline | **Open question**: see below | Could go either way |
 | Storage key format | `whispering.device.{key}` | Namespaced, greppable, no collisions |
 | Keep `createPersistedState` | Yes, unchanged | It's correct for single-value persistence. Wrong tool for maps, not a broken tool |
 | Consumer API shape | `get(key)` / `set(key, value)` matching workspace-settings | Consistency between the two stores |
@@ -151,8 +151,8 @@ CROSS-TAB: storage event fires for 'whispering.device.apiKeys.openai'
 - [x] **1.5** Add `focus` event listener to re-read all keys (same pattern as createPersistedState)
 - [x] **1.6** Change `set(key, value)` to write only that key's localStorage entry
 - [x] **1.7** Update `reset()` to iterate all definitions and write defaults per-key
-- [x] **1.8** Remove the old `DeviceConfig` monolithic arktype schema and `parseStoredDeviceConfig` progressive recovery (no longer needed — per-key validation handles this)
-- [x] **1.9** Verify consumer API is unchanged — `deviceConfig.get(key)` / `deviceConfig.set(key, value)`
+- [x] **1.8** Remove the old `DeviceConfig` monolithic arktype schema and `parseStoredDeviceConfig` progressive recovery (no longer needed: per-key validation handles this)
+- [x] **1.9** Verify consumer API is unchanged: `deviceConfig.get(key)` / `deviceConfig.set(key, value)`
 
 ### Phase 2: Type alignment
 
@@ -162,8 +162,8 @@ CROSS-TAB: storage event fires for 'whispering.device.apiKeys.openai'
 ### Phase 3: Cleanup
 
 - [x] **3.1** Remove old `whispering-device-config` localStorage key handling (the migration spec handles reading from it if it exists)
-- [x] **3.2** Run `bun typecheck` — zero new errors
-- [x] **3.3** Run `bun test packages/workspace/` — no regressions (skipped — no workspace tests affected by this change)
+- [x] **3.2** Run `bun typecheck`: zero new errors
+- [x] **3.3** Run `bun test packages/workspace/`: no regressions (skipped: no workspace tests affected by this change)
 
 ## Edge Cases
 
@@ -178,11 +178,11 @@ CROSS-TAB: storage event fires for 'whispering.device.apiKeys.openai'
 
 1. `set()` calls `localStorage.setItem()` which throws `QuotaExceededError`
 2. Catch and call `onWriteError` handler (same pattern as createPersistedState's `onUpdateError`)
-3. SvelteMap still has the new value in memory — only persistence fails
+3. SvelteMap still has the new value in memory: only persistence fails
 
 ### Key removed from DEVICE_DEFINITIONS in a code update
 
-1. Old localStorage entries with removed keys just sit there — harmless
+1. Old localStorage entries with removed keys just sit there: harmless
 2. No code reads them, no validation runs on them
 3. Can add a cleanup sweep later if localStorage size matters
 
@@ -198,11 +198,11 @@ CROSS-TAB: storage event fires for 'whispering.device.apiKeys.openai'
 
    With per-key writes, batch updates would be N separate `localStorage.setItem` calls. No transactionality. But consumers already use it.
 
-   **Recommendation**: Keep `update()` as syntactic sugar that calls `set()` N times. Document that it's not atomic. In practice, partial writes are fine for device config — these aren't database transactions.
+   **Recommendation**: Keep `update()` as syntactic sugar that calls `set()` N times. Document that it's not atomic. In practice, partial writes are fine for device config: these aren't database transactions.
 
 3. **What about the old `whispering-device-config` monolithic key?**
 
-   After this refactor, new installs write per-key. But existing users who ran the current code may have data in `whispering-device-config`. The data migration spec handles this — it reads from both old sources.
+   After this refactor, new installs write per-key. But existing users who ran the current code may have data in `whispering-device-config`. The data migration spec handles this. It reads from both old sources.
 
    **Recommendation**: Don't handle migration in this spec. Just handle per-key reads (if key exists → use it, else → default). The migration spec writes per-key entries.
 
@@ -211,15 +211,15 @@ CROSS-TAB: storage event fires for 'whispering.device.apiKeys.openai'
 - [x] device-config uses per-key localStorage entries under `whispering.device.{key}` prefix
 - [x] `deviceConfig.get(key)` / `deviceConfig.set(key, value)` API matches workspace-settings
 - [x] Cross-tab sync works per-key (change one key in tab A → only that key updates in tab B)
-- [x] `bun typecheck --filter=@epicenter/whispering` — no new errors beyond pre-existing
+- [x] `bun typecheck --filter=@epicenter/whispering`: no new errors beyond pre-existing
 - [x] All existing consumers compile without changes (API-compatible refactor)
 
 ## References
 
-- `apps/whispering/src/lib/state/device-config.svelte.ts` — file to refactor
-- `apps/whispering/src/lib/state/workspace-settings.svelte.ts` — pattern to mirror
-- `packages/svelte-utils/src/createPersistedState.svelte.ts` — NOT modifying, reference only
-- `apps/whispering/src/lib/workspace.ts` — KV definitions pattern to follow
+- `apps/whispering/src/lib/state/device-config.svelte.ts`: file to refactor
+- `apps/whispering/src/lib/state/workspace-settings.svelte.ts`: pattern to mirror
+- `packages/svelte-utils/src/createPersistedState.svelte.ts`: NOT modifying, reference only
+- `apps/whispering/src/lib/workspace.ts`: KV definitions pattern to follow
 
 ## Review
 
@@ -234,8 +234,8 @@ Refactored `device-config.svelte.ts` from a single monolithic `createPersistedSt
 - Used a `defineDevice(schema, defaultValue)` helper function for type inference rather than raw `{ schema, defaultValue }` objects. This gives proper TypeScript inference from arktype schemas without needing `as const` everywhere.
 - `InferDeviceValue<K>` infers from `defaultValue` (which is typed as `T` by the `defineDevice` return type annotation) rather than from `StandardSchemaV1.InferOutput`. Same result, simpler implementation.
 - Schema calls in `readKey` use `(def.schema as (data: unknown) => unknown)(parsed)` cast because TypeScript can't resolve the union of all `Type<T>` as callable when `K` is generic. Safe because all arktype types are callable.
-- Consumer API is NOT unchanged — it changed from `.value['key']` to `.get('key')` and `.updateKey()` to `.set()`. The spec item 1.9 was aspirational; the context notes made clear these changes were expected.
+- Consumer API is NOT unchanged: it changed from `.value['key']` to `.get('key')` and `.updateKey()` to `.set()`. The spec item 1.9 was aspirational; the context notes made clear these changes were expected.
 
 ### Follow-up Work
 
-- [20260313T163000-settings-data-migration.md](./20260313T163000-settings-data-migration.md) — reads from old `whispering-device-config` monolithic key and writes per-key entries for existing users
+- [20260313T163000-settings-data-migration.md](./20260313T163000-settings-data-migration.md): reads from old `whispering-device-config` monolithic key and writes per-key entries for existing users

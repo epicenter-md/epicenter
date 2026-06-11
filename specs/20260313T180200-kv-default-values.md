@@ -1,7 +1,7 @@
 # KV Default Values and Optional Migration
 
 **Date**: 2026-03-13
-**Status**: Implemented (simpler design — required `defaultValue` param, no `migrate` callback, no status discriminant)
+**Status**: Implemented (simpler design: required `defaultValue` param, no `migrate` callback, no status discriminant)
 **Builds on**: `specs/20260214T225000-version-discriminant-tables-only.md`, `specs/20251230T132500-kv-store-feature.md`
 **Independent of**: `specs/20260313T180100-client-side-encryption-wiring.md` (can be implemented in parallel)
 
@@ -22,10 +22,10 @@ const sidebar = defineKv(type({ collapsed: 'boolean', width: 'number' }));
 const result = kv.get('sidebar');
 switch (result.status) {
   case 'not_found':
-    // First visit — use hardcoded default
+    // First visit: use hardcoded default
     return { collapsed: false, width: 300 };
   case 'invalid':
-    // Schema changed, old data doesn't validate — use hardcoded default
+    // Schema changed, old data doesn't validate: use hardcoded default
     return { collapsed: false, width: 300 };
   case 'valid':
     return result.value;
@@ -52,7 +52,7 @@ This is the right tool for tables (thousands of rows, multiple versions coexisti
 
 ### Why KV Migration Is Different From Table Migration
 
-Tables accumulate rows over time. A table with 10,000 recordings might have rows at versions 1, 2, and 3 simultaneously. The variadic multi-schema pattern with discriminated unions handles this correctly—every row validates against its own version's schema, then migrates forward.
+Tables accumulate rows over time. A table with 10,000 recordings might have rows at versions 1, 2, and 3 simultaneously. The variadic multi-schema pattern with discriminated unions handles this correctly. Every row validates against its own version's schema, then migrates forward.
 
 KV stores are different. There's one value per key. You're migrating one thing, not thousands. The calculus changes:
 
@@ -104,7 +104,7 @@ const transcription = defineKv(
 | Return type for defaulted values | `{ status: 'default', value: T }` | Distinguishes "stored and validated" from "using default". Components can show a "(default)" indicator or skip saving defaults to storage. |
 | `migrate` callback | `(old: unknown) => T \| undefined` | Receives the raw stored value (pre-validation). Returns migrated value or `undefined` to fall back to default. Simple function, not multi-schema union. |
 | Migration flow | `migrate → validate → return` or `fallback to default` | If `migrate` returns a value, it's validated against the schema. If validation fails, default is used. If `migrate` returns `undefined`, default is used. |
-| Variadic pattern | Keep for backward compatibility | Existing variadic `defineKv(v1, v2).migrate(fn)` still works. Not deprecated—just not the recommended path for most KV. |
+| Variadic pattern | Keep for backward compatibility | Existing variadic `defineKv(v1, v2).migrate(fn)` still works. Not deprecated. Just not the recommended path for most KV. |
 | `defaultValue` in variadic | Not added | The variadic pattern is for complex multi-version cases. If you need the variadic pattern, you're already handling the complexity. Adding defaults there muddies the API. |
 
 ## Architecture
@@ -169,7 +169,7 @@ get(key) flow with defaults:
 
 ### Phase 4: Migrate Existing Apps (optional, incremental)
 
-- [ ] **4.1** Audit existing `defineKv` usage across apps—identify which KV settings would benefit from defaults
+- [ ] **4.1** Audit existing `defineKv` usage across apps. Identify which KV settings would benefit from defaults
 - [ ] **4.2** Add defaults to settings that currently have hardcoded fallbacks in component code
 - [ ] **4.3** Add `migrate` callbacks only to high-value settings (service selections, file paths, device selections)
 
@@ -185,17 +185,17 @@ If `migrate` throws, catch the error and fall back to the default value. Log a w
 
 ### Encrypted Values
 
-The `migrate` callback receives the decrypted, deserialized value (same as what the variadic `migrate` receives). Encryption is transparent at this layer—the encrypted KV wrapper decrypts before the value reaches `get()`.
+The `migrate` callback receives the decrypted, deserialized value (same as what the variadic `migrate` receives). Encryption is transparent at this layer. The encrypted KV wrapper decrypts before the value reaches `get()`.
 
 ## Open Questions
 
 1. **Should `get()` with defaults still expose `'not_found'` and `'invalid'` statuses?**
    - Options: (a) always return `'valid'` or `'default'` when defaults exist, (b) keep all four statuses
-   - **Recommendation**: (a)—when a default exists, the caller never needs to handle `not_found` or `invalid`. Simplify to two states.
+   - **Recommendation**: (a): when a default exists, the caller never needs to handle `not_found` or `invalid`. Simplify to two states.
 
 2. **Should `observe()` fire for default values?**
    - The observer fires when the underlying YKV changes. If the key doesn't exist, the observer doesn't fire. Default values are a read-time concept, not a storage-time concept.
-   - **Recommendation**: No—observe only fires on actual storage changes. Defaults are a `get()` concern.
+   - **Recommendation**: No. Observe only fires on actual storage changes. Defaults are a `get()` concern.
 
 3. **Naming: `default` vs `defaultValue` vs `fallback`?**
    - `default` is a reserved word in some contexts but works as a property name.
@@ -213,9 +213,9 @@ The `migrate` callback receives the decrypted, deserialized value (same as what 
 
 ## References
 
-- `packages/workspace/src/workspace/define-kv.ts`—current `defineKv` implementation
-- `packages/workspace/src/workspace/create-kv.ts`—`get()` method with `parseValue`
-- `packages/workspace/src/workspace/types.ts`—`KvDefinition`, `KvGetResult` types
-- `specs/20260214T225000-version-discriminant-tables-only.md`—KV versioning decisions (field presence vs `_v`)
-- `specs/20251230T132500-kv-store-feature.md`—original KV store design
-- `specs/20260126T120000-static-workspace-api.md`—workspace API design principles
+- `packages/workspace/src/workspace/define-kv.ts`: current `defineKv` implementation
+- `packages/workspace/src/workspace/create-kv.ts`: `get()` method with `parseValue`
+- `packages/workspace/src/workspace/types.ts`: `KvDefinition`, `KvGetResult` types
+- `specs/20260214T225000-version-discriminant-tables-only.md`: KV versioning decisions (field presence vs `_v`)
+- `specs/20251230T132500-kv-store-feature.md`: original KV store design
+- `specs/20260126T120000-static-workspace-api.md`: workspace API design principles

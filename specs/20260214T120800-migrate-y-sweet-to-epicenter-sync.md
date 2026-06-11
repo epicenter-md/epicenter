@@ -7,7 +7,7 @@
 
 ## Overview
 
-Replace the forked `@epicenter/y-sweet` client provider and the Y-Sweet server dependency with a clean `@epicenter/sync` provider backed by the `@epicenter/server` Elysia sync plugin. The provider is **rewritten from scratch** as a factory function with a supervisor loop — not a renamed class. The server gets `MESSAGE_SYNC_STATUS` (102) echo, server-side ping/pong keepalive, and room idle eviction. The result is a fully owned sync stack that follows this codebase's conventions.
+Replace the forked `@epicenter/y-sweet` client provider and the Y-Sweet server dependency with a clean `@epicenter/sync` provider backed by the `@epicenter/server` Elysia sync plugin. The provider is **rewritten from scratch** as a factory function with a supervisor loop, not a renamed class. The server gets `MESSAGE_SYNC_STATUS` (102) echo, server-side ping/pong keepalive, and room idle eviction. The result is a fully owned sync stack that follows this codebase's conventions.
 
 ## Motivation
 
@@ -37,7 +37,7 @@ This creates problems:
 1. **Y-Sweet is dead.** Jamsocket's hosted service shuts down March 4, 2026. The open-source Rust binary is unmaintained in practice. We're carrying a fork of a dead project's client code.
 2. **Two URL formats.** Y-Sweet uses `/d/{docId}/ws`. Our Elysia server uses `/workspaces/{id}/sync`. The `directAuth` helper constructs Y-Sweet URLs that don't work with our server.
 3. **Missing heartbeat on our server.** The Elysia sync plugin doesn't handle `MESSAGE_SYNC_STATUS` (102), so `hasLocalChanges` never resolves and the 5-second dead connection detection doesn't work when pointing at our server.
-4. **Confusing naming.** The package is called `y-sweet` but has nothing to do with Y-Sweet anymore — it's our own code. Extensions reference Y-Sweet in their names (`y-sweet-persist-sync`).
+4. **Confusing naming.** The package is called `y-sweet` but has nothing to do with Y-Sweet anymore: it's our own code. Extensions reference Y-Sweet in their names (`y-sweet-persist-sync`).
 
 ### Desired State
 
@@ -67,30 +67,30 @@ Exhaustive source code analysis of Y-Sweet (`4f1909b`), y-websocket (`dc70a43`),
 
 | Feature                                                          | Y-Sweet                                                   | y-websocket                                     | Our Elysia Server            | Implement?                                  |
 | ---------------------------------------------------------------- | --------------------------------------------------------- | ----------------------------------------------- | ---------------------------- | ------------------------------------------- |
-| **`MESSAGE_SYNC_STATUS` (102)** — heartbeat + version ack        | ✅ Client sends `localVersion`, server echoes bytes       | ❌ No concept                                   | ❌ Not handled               | **YES**                                     |
-| **`hasLocalChanges`** — unsaved changes tracking                 | ✅ `ackedVersion !== localVersion`                        | ❌                                              | ❌                           | **YES**                                     |
+| **`MESSAGE_SYNC_STATUS` (102)**: heartbeat + version ack        | ✅ Client sends `localVersion`, server echoes bytes       | ❌ No concept                                   | ❌ Not handled               | **YES**                                     |
+| **`hasLocalChanges`**: unsaved changes tracking                 | ✅ `ackedVersion !== localVersion`                        | ❌                                              | ❌                           | **YES**                                     |
 | **5-state connection model**                                     | ✅ OFFLINE / CONNECTING / HANDSHAKING / CONNECTED / ERROR | ⚠️ 3 states (connected/connecting/disconnected) | N/A (server)                 | **YES**                                     |
 | **Application-layer heartbeat** (fast dead connection detection) | ✅ 2s idle → probe, 3s timeout → reconnect (5s total)     | ⚠️ 45s socket timeout + 30s server ping/pong    | ❌                           | **YES**                                     |
 | **Browser online/offline events**                                | ✅ Immediately wakes reconnect sleeper                    | ❌                                              | N/A                          | **YES**                                     |
 | **Exponential backoff** (sophisticated, wakeable)                | ✅ 1.1^retries × base, wakeable Sleeper                   | ⚠️ 2^retries × 100ms, max 2500ms                | N/A                          | **YES** (already in fork)                   |
 | **`EVENT_LOCAL_CHANGES`** event                                  | ✅ Fires when `hasLocalChanges` toggles                   | ❌                                              | N/A                          | **YES**                                     |
 | **`EVENT_CONNECTION_STATUS`** event                              | ✅ Fires on every status transition                       | ⚠️ `status` event with 3 states                 | N/A                          | **YES** (already in fork)                   |
-| **Token-based auth with refresh**                                | ✅ 3 retries then refresh token                           | ❌ URL params only                              | ❌ No auth yet               | **YES** — three-mode auth in server spec    |
-| **Read-only mode enforcement**                                   | ✅ Server rejects writes from read-only tokens            | ❌ Must implement manually                      | ❌                           | **LATER** — after auth is implemented       |
-| **HTTP REST API for docs**                                       | ✅ `/doc/new`, `/doc/:id/as-update`                       | ❌                                              | ✅ Table CRUD already exists | **NO** — different approach, already solved |
-| **S3 persistence**                                               | ✅ Built-in                                               | ❌                                              | ❌                           | **NO** — client-side persistence model      |
-| **Encrypted IndexedDB**                                          | ✅ AES-GCM 256-bit                                        | ❌                                              | N/A                          | **NO** — E2EE is a separate spec            |
-| **Cross-tab BroadcastChannel**                                   | ❌                                                        | ✅ Built-in                                     | N/A                          | **NO** — y-indexeddb handles this           |
-| **Debugger integration**                                         | ✅ `debugger.y-sweet.dev`                                 | ❌                                              | ❌                           | **NO** — service is dead                    |
-| **y-websocket compat layer**                                     | ✅ Translates events/status                               | N/A                                             | N/A                          | **NO** — we own both sides                  |
+| **Token-based auth with refresh**                                | ✅ 3 retries then refresh token                           | ❌ URL params only                              | ❌ No auth yet               | **YES**: three-mode auth in server spec    |
+| **Read-only mode enforcement**                                   | ✅ Server rejects writes from read-only tokens            | ❌ Must implement manually                      | ❌                           | **LATER**: after auth is implemented       |
+| **HTTP REST API for docs**                                       | ✅ `/doc/new`, `/doc/:id/as-update`                       | ❌                                              | ✅ Table CRUD already exists | **NO**: different approach, already solved |
+| **S3 persistence**                                               | ✅ Built-in                                               | ❌                                              | ❌                           | **NO**: client-side persistence model      |
+| **Encrypted IndexedDB**                                          | ✅ AES-GCM 256-bit                                        | ❌                                              | N/A                          | **NO**: E2EE is a separate spec            |
+| **Cross-tab BroadcastChannel**                                   | ❌                                                        | ✅ Built-in                                     | N/A                          | **NO**: y-indexeddb handles this           |
+| **Debugger integration**                                         | ✅ `debugger.y-sweet.dev`                                 | ❌                                              | ❌                           | **NO**: service is dead                    |
+| **y-websocket compat layer**                                     | ✅ Translates events/status                               | N/A                                             | N/A                          | **NO**: we own both sides                  |
 
 ### The Killer Feature: MESSAGE_SYNC_STATUS
 
 `MESSAGE_SYNC_STATUS` (tag 102) is application-layer TCP sequence numbers. It gives you three capabilities from one mechanism:
 
-1. **`hasLocalChanges`** — binary flag for "Saving..." / "Saved" UI
-2. **Heartbeat** — 2s probe + 3s timeout = 5s dead connection detection (vs y-websocket's 45s)
-3. **Zero cost** — server just echoes bytes. Never parses the version number. Can't corrupt sync state.
+1. **`hasLocalChanges`**: binary flag for "Saving..." / "Saved" UI
+2. **Heartbeat**: 2s probe + 3s timeout = 5s dead connection detection (vs y-websocket's 45s)
+3. **Zero cost**: server just echoes bytes. Never parses the version number. Can't corrupt sync state.
 
 Wire format:
 
@@ -102,14 +102,14 @@ Server implementation is ~5 lines:
 
 ```typescript
 case MESSAGE_SYNC_STATUS: {
-  // Echo the payload back — that's it.
+  // Echo the payload back: that's it.
   const payload = decoding.readVarUint8Array(decoder);
   ws.send(toBuffer(encodeMessageSyncStatus({ payload })));
   break;
 }
 ```
 
-Tag 102 is safely outside the standard Yjs protocol range (0–3). Any y-websocket client/server that doesn't understand it simply ignores it — no breakage.
+Tag 102 is safely outside the standard Yjs protocol range (0-3). Any y-websocket client/server that doesn't understand it simply ignores it, no breakage.
 
 ### Auth: Three-Mode System (Already Designed)
 
@@ -121,7 +121,7 @@ The auth system is fully designed in `20260213T120800-extract-epicenter-server-p
 | **2: Shared Secret** | `auth: { secret: '...' }`    | `url` + `token: '...'`                  | Self-hosted, exposed to internet |
 | **3: External JWT**  | `auth: { jwtSecret: '...' }` | `url` + `getToken: async (id) => '...'` | Epicenter Cloud, power users     |
 
-The provider's auth callback (`getToken`) already handles token refresh on reconnect — this is the Y-Sweet `ensureClientToken` pattern, renamed.
+The provider's auth callback (`getToken`) already handles token refresh on reconnect. This is the Y-Sweet `ensureClientToken` pattern, renamed.
 
 ### Naming Conventions
 
@@ -147,13 +147,13 @@ The current fork has Y-Sweet naming throughout:
 | Rewrite provider, don't rename      | Factory function with supervisor loop                   | The forked class has 7 interacting subsystems, 4 entry points to `connect()`, event handlers making reconnection decisions, and `status` serving as both observable state and control flow. A rename ships a known-messy design under our brand. See `20260213T000000-fix-disconnect-reconnect-race.md` Part 2 for the full structural critique. |
 | Factory function, not class         | `createSyncProvider()` returns object                   | Matches codebase conventions (`createSyncPlugin`, `createSleeper`, `createIndexLogger`). Closure-based state eliminates `this` binding. Method shorthand preserves JSDoc.                                                                                                                                                                        |
 | Supervisor loop architecture        | One loop decides, everything else reports               | The Y-Sweet provider has `websocketClose`, `websocketError`, `setConnectionTimeout`, AND the connect loop all making reconnection decisions. The supervisor pattern centralizes this: event handlers resolve a promise, the loop decides what to do.                                                                                             |
-| Separate `desired` from `status`    | `desired: 'online' \| 'offline'` + `status: SyncStatus` | Currently `status` is both UI-observable state AND connect loop control flow. Splitting them means `disconnect()` sets `desired = 'offline'` and the loop exits cleanly — no race conditions.                                                                                                                                                    |
+| Separate `desired` from `status`    | `desired: 'online' \| 'offline'` + `status: SyncStatus` | Currently `status` is both UI-observable state AND connect loop control flow. Splitting them means `disconnect()` sets `desired = 'offline'` and the loop exits cleanly: no race conditions.                                                                                                                                                    |
 | Server-side ping/pong               | 30s interval in Elysia sync plugin                      | Client heartbeat (102) detects dead connections from the client side. But if the client dies (laptop lid closed), the server has no way to know. Server ping/pong catches dead TCP connections that the client can't report. y-websocket server does this; our server doesn't.                                                                   |
 | Room idle eviction                  | Destroy rooms after 60s with no connections             | The current server keeps rooms in memory forever. A long-running server with many workspaces will leak memory. `createRoom()` already has `destroy()` in the server spec.                                                                                                                                                                        |
 | Add MESSAGE_SYNC_STATUS to server   | Echo handler in Elysia sync plugin                      | ~5 lines. Unlocks `hasLocalChanges` + fast heartbeat for all clients.                                                                                                                                                                                                                                                                            |
 | Rename package to `@epicenter/sync` | Clean break                                             | Y-Sweet name is confusing. We own this code.                                                                                                                                                                                                                                                                                                     |
 | Remove `ClientToken` type           | Replace with URL + optional token/getToken              | `ClientToken` was Y-Sweet's auth abstraction. Our three-mode auth is simpler: you have a URL, and optionally a token.                                                                                                                                                                                                                            |
-| Keep `Sleeper` utility              | Yes — wakeable sleep for browser events                 | Browser `online` event waking up the reconnect sleeper is genuinely useful. Not available in y-websocket. Already follows factory pattern.                                                                                                                                                                                                       |
+| Keep `Sleeper` utility              | Yes: wakeable sleep for browser events                 | Browser `online` event waking up the reconnect sleeper is genuinely useful. Not available in y-websocket. Already follows factory pattern.                                                                                                                                                                                                       |
 | Auth implementation                 | Aligned with server spec Phase 2                        | Three-mode auth is designed. Provider supports `token` (static) and `getToken` (dynamic) from day one.                                                                                                                                                                                                                                           |
 
 ## Architecture
@@ -246,7 +246,7 @@ Unlocks `hasLocalChanges` + fast heartbeat for all connected providers.
 
 - [x] **1A.1** Add `SYNC_STATUS: 102` to `MESSAGE_TYPE` constant in `packages/server/src/sync/protocol.ts` with JSDoc noting it's an extension beyond the standard y-websocket protocol
 - [x] **1A.2** Add `encodeMessageSyncStatus({ payload })` encoder function to protocol.ts
-- [x] **1A.3** Add echo handler in `packages/server/src/sync/index.ts` — receive type 102, echo the raw payload back as type 102
+- [x] **1A.3** Add echo handler in `packages/server/src/sync/index.ts`: receive type 102, echo the raw payload back as type 102
 - [x] **1A.4** Add protocol test: encode → decode roundtrip for MESSAGE_SYNC_STATUS
 - [x] **1A.5** Verify existing protocol tests still pass
 
@@ -256,7 +256,7 @@ Detects dead clients (laptop lid closed, browser killed) that the client-side he
 
 - [x] **1B.1** Add 30-second `setInterval` per connection in the `open()` handler that calls `ws.raw.ping()` (Bun's ServerWebSocket supports this)
 - [x] **1B.2** Track `pongReceived` boolean per connection (in `connectionState` WeakMap). Set `true` on pong, `false` before each ping.
-- [x] **1B.3** If `pongReceived === false` when next ping fires, close the connection — server considers client dead
+- [x] **1B.3** If `pongReceived === false` when next ping fires, close the connection: server considers client dead
 - [x] **1B.4** Clean up the interval in the `close()` handler
 - [x] **1B.5** Test: verify connections are cleaned up when client stops responding
 
@@ -278,10 +278,10 @@ This is the core of the migration. Replace the Y-Sweet class with a clean factor
 The current `YSweetProvider` class has structural problems documented in the race condition spec:
 
 - **7 subsystems** competing through 11 pieces of shared mutable state
-- **4 call sites** all calling `connect()` — constructor, websocketClose, websocketError, heartbeat timeout
-- **Event handlers make decisions** — `websocketClose` sets `STATUS_ERROR` and calls `connect()` instead of just reporting
-- **Status is both state and control flow** — `setStatus(ERROR)` implicitly keeps the connect loop running
-- **No single owner** of "should we be connected?" — 6 different mechanisms, 4 call sites, 2 guard strategies
+- **4 call sites** all calling `connect()`: constructor, websocketClose, websocketError, heartbeat timeout
+- **Event handlers make decisions**: `websocketClose` sets `STATUS_ERROR` and calls `connect()` instead of just reporting
+- **Status is both state and control flow**: `setStatus(ERROR)` implicitly keeps the connect loop running
+- **No single owner** of "should we be connected?": 6 different mechanisms, 4 call sites, 2 guard strategies
 
 A rename ships all of this under our brand. A rewrite fixes it.
 
@@ -356,7 +356,7 @@ type SyncProvider = {
 	readonly hasLocalChanges: boolean;
 	/** The awareness instance for user presence. */
 	readonly awareness: awarenessProtocol.Awareness;
-	/** Start connecting. Idempotent — safe to call multiple times. */
+	/** Start connecting. Idempotent: safe to call multiple times. */
 	connect(): void;
 	/** Stop connecting and close the socket. */
 	disconnect(): void;
@@ -364,7 +364,7 @@ type SyncProvider = {
 	onStatusChange(listener: (status: SyncStatus) => void): () => void;
 	/** Subscribe to local changes state changes. Returns unsubscribe function. */
 	onLocalChanges(listener: (hasLocalChanges: boolean) => void): () => void;
-	/** Clean up everything — disconnect, remove listeners, release resources. */
+	/** Clean up everything: disconnect, remove listeners, release resources. */
 	destroy(): void;
 };
 
@@ -394,11 +394,11 @@ function createSyncProvider(config: SyncProviderConfig): SyncProvider;
 #### Implementation Steps
 
 - [x] **2.1** Create `packages/sync/` directory with `package.json` (`@epicenter/sync`), `tsconfig.json`
-- [x] **2.2** Copy `sleeper.ts` verbatim — it's already a clean factory function
+- [x] **2.2** Copy `sleeper.ts` verbatim: it's already a clean factory function
 - [x] **2.3** Write `types.ts` with `SyncProviderConfig`, `SyncStatus`, `SyncProvider` type
-- [x] **2.4** Write `provider.ts` — the `createSyncProvider()` factory function:
+- [x] **2.4** Write `provider.ts`: the `createSyncProvider()` factory function:
   - Closure state: `desired`, `status`, `runId`, `localVersion`, `ackedVersion`, `websocket`, `heartbeatHandle`, `connectionTimeoutHandle`, `reconnectSleeper`, `statusListeners`, `localChangesListeners`
-  - Supervisor loop: `runLoop(myRunId)` — single owner of status transitions and reconnection
+  - Supervisor loop: `runLoop(myRunId)`: single owner of status transitions and reconnection
   - Token handling: if `config.getToken`, call it on each connection attempt; if `config.token`, use static; if neither, no auth
   - Token transport: `Sec-WebSocket-Protocol` header (primary), `?token=` query param (fallback)
   - Heartbeat: same timing (2s idle → probe, 3s timeout → close socket)
@@ -406,7 +406,7 @@ function createSyncProvider(config: SyncProviderConfig): SyncProvider;
   - Event handlers: `onopen` → resolve connect promise; `onclose`/`onerror` → resolve socketClosed promise; `onmessage` → dispatch by message type
   - Browser events: `online` wakes sleeper, `offline` triggers immediate probe
   - `destroy()`: disconnect, remove doc/awareness listeners, remove window listeners
-- [x] **2.5** Write `index.ts` — public exports
+- [x] **2.5** Write `index.ts`: public exports
 - [x] **2.6** Write tests for the new provider:
   - Connect/disconnect lifecycle
   - Reconnection after socket close
@@ -414,7 +414,7 @@ function createSyncProvider(config: SyncProviderConfig): SyncProvider;
   - `desired` / `status` separation (disconnect during connect doesn't race)
   - Token refresh after N retries
   - `destroy()` cleans up all listeners
-- [x] **2.7** Delete `packages/y-sweet/` entirely — the old code is gone
+- [x] **2.7** Delete `packages/y-sweet/` entirely: the old code is gone
 - [x] **2.8** Update all imports: `@epicenter/y-sweet` → `@epicenter/sync`
 - [x] **2.9** Update `bun.lock` / workspace references
 
@@ -430,17 +430,17 @@ Rename the extension files and update the config to use the new provider API.
 - [x] **3.6** Simplify config:
   ```typescript
   type SyncExtensionConfig = {
-  	/** WebSocket URL. Use {id} placeholder for workspace ID. */
-  	url: string | ((workspaceId: string) => string);
-  	/** Static token (Mode 2). */
-  	token?: string;
-  	/** Dynamic token fetcher (Mode 3). */
-  	getToken?: (workspaceId: string) => Promise<string>;
-  	/** Persistence factory (REQUIRED). */
-  	persistence: (context: { ydoc: Y.Doc }) => Lifecycle;
+	/** WebSocket URL. Use {id} placeholder for workspace ID. */
+	url: string | ((workspaceId: string) => string);
+	/** Static token (Mode 2). */
+	token?: string;
+	/** Dynamic token fetcher (Mode 3). */
+	getToken?: (workspaceId: string) => Promise<string>;
+	/** Persistence factory (REQUIRED). */
+	persistence: (context: { ydoc: Y.Doc }) => Lifecycle;
   };
   ```
-- [x] **3.7** Remove `directAuth()` helper — URL is passed directly
+- [x] **3.7** Remove `directAuth()` helper: URL is passed directly
 - [x] **3.8** Remove `ClientToken` type and `YSweetClientToken` re-export
 - [x] **3.9** Update `package.json` exports: `./extensions/y-sweet-persist-sync` → `./extensions/sync`
 - [x] **3.10** Update consumer imports (tab-manager, epicenter app)
@@ -451,7 +451,7 @@ Rename the extension files and update the config to use the new provider API.
 - [x] **4.1** Delete `apps/epicenter/src/lib/yjs/y-sweet-connection.ts`
 - [x] **4.2** Remove any remaining Y-Sweet URL format references (`/d/{docId}/ws`)
 - [x] **4.3** Remove `@y-sweet/client` and `@y-sweet/sdk` from any remaining dependency lists
-- [x] **4.4** Grep for `y-sweet`, `ysweet`, `YSweet` across the codebase — nothing outside specs/ and docs/
+- [x] **4.4** Grep for `y-sweet`, `ysweet`, `YSweet` across the codebase: nothing outside specs/ and docs/
 
 ### Phase 5: Verification
 
@@ -462,7 +462,7 @@ Rename the extension files and update the config to use the new provider API.
 - [ ] **5.5** Manual test: start Elysia server, connect provider, verify `hasLocalChanges` toggles correctly
 - [ ] **5.6** Manual test: kill server, verify provider reconnects within 5 seconds
 - [ ] **5.7** Manual test: kill client (close tab), verify server evicts connection via ping/pong within 60s
-- [x] **5.8** Grep for `y-sweet` — zero hits outside specs/ and docs/articles/
+- [x] **5.8** Grep for `y-sweet`: zero hits outside specs/ and docs/articles/
 
 ## Edge Cases
 
@@ -472,7 +472,7 @@ If a y-websocket client connects to our server and receives a type 102 message, 
 
 ### Provider Connected to Non-Echo Server
 
-If `createSyncProvider` connects to a server that doesn't echo 102 (e.g., a standard y-websocket server), the heartbeat messages are sent but ignored. The provider must track whether it has ever received a 102 response on the current connection. If it hasn't, it doesn't arm the 3-second reconnect timeout — preventing false-positive disconnects. This is the same backward-compatibility guard Y-Sweet uses.
+If `createSyncProvider` connects to a server that doesn't echo 102 (e.g., a standard y-websocket server), the heartbeat messages are sent but ignored. The provider must track whether it has ever received a 102 response on the current connection. If it hasn't, it doesn't arm the 3-second reconnect timeout: preventing false-positive disconnects. This is the same backward-compatibility guard Y-Sweet uses.
 
 ### Token Expiry During Active Session
 
@@ -523,11 +523,11 @@ A connection joins room "X", then disconnects. Eviction timer starts (60s). A ne
 
 ## Success Criteria
 
-- [x] `@epicenter/y-sweet` package no longer exists — replaced by `@epicenter/sync`
-- [x] `createSyncProvider()` is a factory function, not a class — closure-based state, supervisor loop, typed events
-- [x] Server echoes MESSAGE_SYNC_STATUS (102) — `hasLocalChanges` works end-to-end
-- [x] Server has ping/pong keepalive — dead clients detected within 60s
-- [x] Server evicts idle rooms — no memory leaks on long-running servers
+- [x] `@epicenter/y-sweet` package no longer exists: replaced by `@epicenter/sync`
+- [x] `createSyncProvider()` is a factory function, not a class: closure-based state, supervisor loop, typed events
+- [x] Server echoes MESSAGE_SYNC_STATUS (102): `hasLocalChanges` works end-to-end
+- [x] Server has ping/pong keepalive: dead clients detected within 60s
+- [x] Server evicts idle rooms: no memory leaks on long-running servers
 - [x] Provider connects to `@epicenter/server` Elysia sync endpoint (not Y-Sweet URLs)
 - [x] Provider supports three auth modes: no auth, static token, dynamic getToken
 - [x] Dead connection detected within 5 seconds from client side (heartbeat)
@@ -537,21 +537,21 @@ A connection joins room "X", then disconnects. Eviction timer starts (60s). A ne
 
 ## References
 
-- `packages/y-sweet/src/provider.ts` — Current provider (DELETE target, ~610 lines). Port: heartbeat timing, `hasLocalChanges` logic, awareness protocol, sync protocol. Drop: class structure, event handler decision-making, `ClientToken` abstraction.
-- `packages/y-sweet/src/sleeper.ts` — Wakeable sleep utility (COPY verbatim — already a clean factory function)
-- `packages/y-sweet/src/main.ts` — Old factory (DELETE — replaced by `createSyncProvider`)
-- `packages/y-sweet/src/types.ts` — Old types (DELETE — replaced by `types.ts`)
-- `packages/server/src/sync/index.ts` — Elysia sync plugin (MODIFY — add 102 echo, ping/pong, room eviction)
-- `packages/server/src/sync/protocol.ts` — Protocol encode/decode (MODIFY — add SYNC_STATUS constant + encoder)
-- `packages/epicenter/src/extensions/y-sweet-persist-sync.ts` — Extension factory (RENAME + simplify config)
-- `packages/epicenter/src/extensions/y-sweet-persist-sync/web.ts` — IndexedDB persistence (RENAME dir)
-- `packages/epicenter/src/extensions/y-sweet-persist-sync/desktop.ts` — Filesystem persistence (RENAME dir)
-- `apps/tab-manager/src/entrypoints/background.ts` — Consumer (UPDATE imports)
-- `apps/epicenter/src/lib/yjs/y-sweet-connection.ts` — DELETE entirely
-- `specs/20260213T000000-fix-disconnect-reconnect-race.md` — Supervisor loop architecture (Parts 4-5)
-- `specs/20260213T120800-extract-epicenter-server-package.md` — Server extraction + three-mode auth design
-- `specs/20260213T120800-cloud-sync-durable-objects.md` — Cloud path (shares protocol + room layers)
-- `docs/articles/y-sweet-message-sync-status.md` — Technical article on the 102 protocol
-- `docs/articles/three-gradations-of-websocket-auth.md` — Auth mode rationale
-- `packages/epicenter/src/shared/lifecycle.ts` — Lifecycle type that extensions must satisfy
-- `packages/epicenter/src/extensions/error-logger.ts` — Reference factory function pattern (async queue + lifecycle)
+- `packages/y-sweet/src/provider.ts`: Current provider (DELETE target, ~610 lines). Port: heartbeat timing, `hasLocalChanges` logic, awareness protocol, sync protocol. Drop: class structure, event handler decision-making, `ClientToken` abstraction.
+- `packages/y-sweet/src/sleeper.ts`: Wakeable sleep utility (COPY verbatim: already a clean factory function)
+- `packages/y-sweet/src/main.ts`: Old factory (DELETE: replaced by `createSyncProvider`)
+- `packages/y-sweet/src/types.ts`: Old types (DELETE: replaced by `types.ts`)
+- `packages/server/src/sync/index.ts`: Elysia sync plugin (MODIFY: add 102 echo, ping/pong, room eviction)
+- `packages/server/src/sync/protocol.ts`: Protocol encode/decode (MODIFY: add SYNC_STATUS constant + encoder)
+- `packages/epicenter/src/extensions/y-sweet-persist-sync.ts`: Extension factory (RENAME + simplify config)
+- `packages/epicenter/src/extensions/y-sweet-persist-sync/web.ts`: IndexedDB persistence (RENAME dir)
+- `packages/epicenter/src/extensions/y-sweet-persist-sync/desktop.ts`: Filesystem persistence (RENAME dir)
+- `apps/tab-manager/src/entrypoints/background.ts`: Consumer (UPDATE imports)
+- `apps/epicenter/src/lib/yjs/y-sweet-connection.ts`: DELETE entirely
+- `specs/20260213T000000-fix-disconnect-reconnect-race.md`: Supervisor loop architecture (Parts 4-5)
+- `specs/20260213T120800-extract-epicenter-server-package.md`: Server extraction + three-mode auth design
+- `specs/20260213T120800-cloud-sync-durable-objects.md`: Cloud path (shares protocol + room layers)
+- `docs/articles/y-sweet-message-sync-status.md`: Technical article on the 102 protocol
+- `docs/articles/three-gradations-of-websocket-auth.md`: Auth mode rationale
+- `packages/epicenter/src/shared/lifecycle.ts`: Lifecycle type that extensions must satisfy
+- `packages/epicenter/src/extensions/error-logger.ts`: Reference factory function pattern (async queue + lifecycle)

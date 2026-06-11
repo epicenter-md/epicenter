@@ -502,7 +502,7 @@ export const postRelations = relations(post, ({ one }) => ({
 }));
 ```
 
-The factory is thin — it accepts the operator's mount config and forwards the
+The factory is thin. It accepts the operator's mount config and forwards the
 schema module wholesale to `defineCloudApp`:
 
 ```ts

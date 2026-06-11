@@ -1,6 +1,6 @@
 # Two Ways to Compose Arktype Types
 
-When multiple types share the same base fields, you need a way to define those fields once and extend them. Arktype gives you two approaches: object spread with `as const`, or `.merge()`. Both work — we lean toward `.merge()`.
+When multiple types share the same base fields, you need a way to define those fields once and extend them. Arktype gives you two approaches: object spread with `as const`, or `.merge()`. Both work. We lean toward `.merge()`.
 
 ## The Two Patterns
 
@@ -54,7 +54,7 @@ With object spread, `BaseFields` is just a plain object until you spread it into
 
 **It's explicit composition.** `.merge()` says exactly what's happening: "take this type and add these fields." Spread syntax hides the composition inside object literal construction.
 
-**The base is independently usable.** If you later need to validate against just the base fields — for a partial update, a migration check, a test fixture — it's already a validator. With the spread pattern you'd have to go back and wrap it in `type()`.
+**The base is independently usable.** If you later need to validate against just the base fields for a partial update, a migration check, or a test fixture, it's already a validator. With the spread pattern you'd have to go back and wrap it in `type()`.
 
 ## When Object Spread Is Fine
 
@@ -88,7 +88,7 @@ V1 and V2 are clearly extensions of a common base. The relationship is in the co
 
 | Aspect | `.merge()` | Object Spread |
 |--------|-----------|--------------|
-| Base definition | `type({...})` — real validator | Plain object with `as const` |
+| Base definition | `type({...})`: real validator | Plain object with `as const` |
 | Extension syntax | `Base.merge({ newField })` | `type({ ...Base, newField })` |
 | Base validates immediately | Yes | No, only when spread into `type()` |
 | Base usable independently | Yes | No, need to wrap in `type()` first |

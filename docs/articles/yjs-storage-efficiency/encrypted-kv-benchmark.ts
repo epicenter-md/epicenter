@@ -75,10 +75,10 @@ console.log(`Encryption overhead:    ${((encSize / plainSize - 1) * 100).toFixed
 console.log(`Per-entry overhead:     ~${Math.round((encSize - plainSize) / 100)} bytes/entry`);
 
 // ═══════════════════════════════════════════════════════════════════════
-// TEST 2: Tombstones are free (gc:true) — add/delete cycles
+// TEST 2: Tombstones are free (gc:true): add/delete cycles
 // ═══════════════════════════════════════════════════════════════════════
 
-header('TEST 2: Tombstones with gc:true — add 1000, delete all, repeat 5x');
+header('TEST 2: Tombstones with gc:true: add 1000, delete all, repeat 5x');
 
 const gcDoc = new Y.Doc({ guid: 'gc-true', gc: true });
 const gcKv = createEncryptedYkvLww<Row>(gcDoc, 'data');
@@ -97,10 +97,10 @@ for (let cycle = 0; cycle < 5; cycle++) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-// TEST 3: Tombstones NOT free (gc:false) — add/delete cycles
+// TEST 3: Tombstones NOT free (gc:false): add/delete cycles
 // ═══════════════════════════════════════════════════════════════════════
 
-header('TEST 3: Tombstones with gc:false — add 1000, delete all, repeat 5x');
+header('TEST 3: Tombstones with gc:false: add 1000, delete all, repeat 5x');
 
 const noGcDoc = new Y.Doc({ guid: 'gc-false', gc: false });
 const noGcKv = createEncryptedYkvLww<Row>(noGcDoc, 'data');
@@ -205,10 +205,10 @@ console.log(
 );
 
 // ═══════════════════════════════════════════════════════════════════════
-// TEST 6: Scale test — 10,000 encrypted rows
+// TEST 6: Scale test: 10,000 encrypted rows
 // ═══════════════════════════════════════════════════════════════════════
 
-header('TEST 6: Scale — 10,000 encrypted rows');
+header('TEST 6: Scale: 10,000 encrypted rows');
 
 const scaleDoc = new Y.Doc({ guid: 'scale', gc: true });
 const scaleKv = createEncryptedYkvLww<Row>(scaleDoc, 'data');
@@ -233,8 +233,8 @@ console.log(
 // ═══════════════════════════════════════════════════════════════════════
 
 header('SUMMARY');
-console.log('gc:true  — Tombstones merge. Add/delete cycles stay bounded.');
-console.log('gc:false — Tombstones accumulate. Size grows with operation count.');
+console.log('gc:true : Tombstones merge. Add/delete cycles stay bounded.');
+console.log('gc:false: Tombstones accumulate. Size grows with operation count.');
 console.log('Encryption adds ~40-60 bytes/entry (nonce + tag + header).');
 console.log('Update overhead with gc:true is minimal (GC structs merge).');
 console.log('');

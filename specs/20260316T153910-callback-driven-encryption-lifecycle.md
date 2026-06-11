@@ -1,7 +1,7 @@
 # Callback-Driven Encryption Lifecycle
 
 **Date**: 2026-03-16
-**Status**: Revision 2 — Adapter pattern
+**Status**: Revision 2: Adapter pattern
 **Builds on**: `specs/20260316T093000-encryption-wiring-api-refinements.md` (implemented), `specs/20260315T083000-keycache-chrome-extension.md`
 
 ## Overview
@@ -10,7 +10,7 @@ Replace the reactive `$effect` adapter between auth state and the key manager wi
 
 ### Revision note
 
-The initial draft proposed three callback Sets (`onCacheRestore`, `onEncryptionKeyAvailable`, `onSigningOut`) following the existing `onExternalSignIn` pattern. During review, a responsibility analysis revealed that `encryptionKey` shouldn't be state inside auth at all—it's session data that auth extracts but never needs to store. The adapter pattern passes the key through transient, eliminating the stale-state class of bugs (including the pre-existing 4xx bug) by construction. It also reduces 3 Sets + 3 methods to 1 type + 1 method.
+The initial draft proposed three callback Sets (`onCacheRestore`, `onEncryptionKeyAvailable`, `onSigningOut`) following the existing `onExternalSignIn` pattern. During review, a responsibility analysis revealed that `encryptionKey` shouldn't be state inside auth at all. It's session data that auth extracts but never needs to store. The adapter pattern passes the key through transient, eliminating the stale-state class of bugs (including the pre-existing 4xx bug) by construction. It also reduces 3 Sets + 3 methods to 1 type + 1 method.
 
 ## Motivation
 
@@ -54,9 +54,9 @@ $effect(() => {
 
 This creates problems:
 
-1. **Reactive indirection.** Auth already knows when the encryption key changes—it sets `encryptionKey` inside `signIn()`, `signUp()`, `checkSession()`. The effect is a secondary observer re-deriving information auth had at the call site.
+1. **Reactive indirection.** Auth already knows when the encryption key changes. It sets `encryptionKey` inside `signIn()`, `signUp()`, `checkSession()`. The effect is a secondary observer re-deriving information auth had at the call site.
 2. **Boolean flag for one-shot semantics.** Svelte 5 has no "run once when a reactive value appears" primitive. The `cacheRestoreAttempted` flag is the canonical workaround, but it's an imperative escape hatch in a declarative system.
-3. **Effect timing race.** When `userId` appears, both effects re-run. The main effect calls `lock()` (no key yet), then the fast-path's async `restoreKey` resolves and activates encryption. The workspace flashes through a locked state for ~1–5ms. Correct (generation counter ensures activateEncryption wins), but unnecessarily subtle.
+3. **Effect timing race.** When `userId` appears, both effects re-run. The main effect calls `lock()` (no key yet), then the fast-path's async `restoreKey` resolves and activates encryption. The workspace flashes through a locked state for ~1-5ms. Correct (generation counter ensures activateEncryption wins), but unnecessarily subtle.
 4. **Growing effect complexity.** Each new concern (cache restore, external sign-in, future key rotation) requires another effect or another branch in an existing effect. The reactive graph becomes harder to reason about.
 5. **Stale state bug.** `encryptionKey` is stored as `$state` inside auth. If any code path forgets to clear it (the 4xx path in `checkSession()`), the reactive effect sees a truthy key and keeps the workspace in `encrypted` mode with a stale derived key. Storing the key as state creates an entire class of bugs.
 
@@ -75,7 +75,7 @@ type EncryptionAdapter = {
 // Inside createAuthState:
 let encryption: EncryptionAdapter | undefined;
 
-// At call sites — optional chaining, no loops:
+// At call sites: optional chaining, no loops:
 encryption?.restoreKey(userId);
 encryption?.setKey(key, userId);
 encryption?.wipe();
@@ -98,7 +98,7 @@ export function syncAuthToEncryption() {
 }
 ```
 
-The hard parts stay in the key manager factory. The adapter is pure wiring—no reactive scope, no boolean flags, no timing races, no stored encryption key.
+The hard parts stay in the key manager factory. The adapter is pure wiring. No reactive scope, no boolean flags, no timing races, no stored encryption key.
 
 ## Research Findings
 
@@ -112,9 +112,9 @@ Every place `encryptionKey` is set or cleared in `auth.svelte.ts`:
 | `checkSession()` success | `encryptionKey = data.encryptionKey` | `setKey(key, userId)` |
 | `signOut()` | `encryptionKey = undefined` | `wipe()` |
 | `checkSession()` rejection (4xx) | **Bug: `encryptionKey` is NOT cleared** (stays at previous value) | `wipe()` |
-| `checkSession()` network error / 5xx | `encryptionKey` unchanged, trusts cached user | No action (intentional—offline support) |
+| `checkSession()` network error / 5xx | `encryptionKey` unchanged, trusts cached user | No action (intentional. Offline support) |
 
-**Pre-existing bug**: `checkSession()` on 4xx calls `clearState()` and sets `phase = 'signed-out'`, but never clears `encryptionKey`. The adapter pattern eliminates this bug by construction—there is no `encryptionKey` variable to forget to clear. Auth calls `encryption?.wipe()` on 4xx, same as sign-out.
+**Pre-existing bug**: `checkSession()` on 4xx calls `clearState()` and sets `phase = 'signed-out'`, but never clears `encryptionKey`. The adapter pattern eliminates this bug by construction. There is no `encryptionKey` variable to forget to clear. Auth calls `encryption?.wipe()` on 4xx, same as sign-out.
 
 ### Responsibility Analysis: Why `encryptionKey` Doesn't Belong in Auth
 
@@ -146,11 +146,11 @@ onExternalSignIn(callback: () => void) {
 }
 ```
 
-The encryption adapter uses a different pattern: a single handler slot instead of a Set. This is deliberate—there will only ever be one encryption consumer, so the N-subscriber Set pattern is unnecessary overhead. The `onExternalSignIn` pattern stays as-is (it serves a different purpose).
+The encryption adapter uses a different pattern: a single handler slot instead of a Set. This is deliberate. There will only ever be one encryption consumer, so the N-subscriber Set pattern is unnecessary overhead. The `onExternalSignIn` pattern stays as-is (it serves a different purpose).
 
 ### Cache Fast-Path: Timing via `checkSession()`
 
-Rather than calling `restoreKey` imperatively at mount time (which may miss if `authUser` hasn't hydrated yet), the cache restore fires from the adapter in `checkSession()`. `checkSession()` already manages async boot order—it awaits `authToken.whenReady`. Adding `authUser.whenReady` gives it the userId at exactly the right moment: after storage hydration, before the network call.
+Rather than calling `restoreKey` imperatively at mount time (which may miss if `authUser` hasn't hydrated yet), the cache restore fires from the adapter in `checkSession()`. `checkSession()` already manages async boot order. It awaits `authToken.whenReady`. Adding `authUser.whenReady` gives it the userId at exactly the right moment: after storage hydration, before the network call.
 
 ```typescript
 // Inside checkSession():
@@ -180,14 +180,14 @@ session: {
 }
 ```
 
-Sessions auto-refresh on every `getSession()` call if older than 1 day. `checkSession()` runs on mount and on every visibility change. As long as the user opens the extension once per week, the session never expires. Session expiry is a rare edge case—but the 4xx path should still be correct.
+Sessions auto-refresh on every `getSession()` call if older than 1 day. `checkSession()` runs on mount and on every visibility change. As long as the user opens the extension once per week, the session never expires. Session expiry is a rare edge case. But the 4xx path should still be correct.
 
 ## Design Decisions
 
 | Decision | Choice | Rationale |
 |---|---|---|
 | Single adapter slot, not three callback Sets | `EncryptionAdapter` type with `registerEncryption()` | Only one consumer (key-manager). A Set per event is N-subscriber overhead for a 1:1 relationship. One type + one method vs three Sets + three methods. |
-| Remove `encryptionKey` from auth state | Yes | Auth extracts the key from session responses but never uses it. Storing it as state creates the 4xx stale-key bug. With the adapter, the key is transient—passed through, never stored. |
+| Remove `encryptionKey` from auth state | Yes | Auth extracts the key from session responses but never uses it. Storing it as state creates the 4xx stale-key bug. With the adapter, the key is transient. Passed through, never stored. |
 | Adapter methods mirror key manager names | `restoreKey`, `setKey`, `wipe` | The adapter IS the key manager interface from auth's perspective. Same names make the mapping obvious and the adapter code trivial. |
 | Adapter on `authState`, not on the factory | Yes | Auth owns the lifecycle events. The key manager factory is framework-agnostic. The adapter wires them together. |
 | Cache restore via adapter from `checkSession()` | Yes | `checkSession()` already manages async boot. Awaiting `authUser.whenReady` gives it the userId at the right time. Adapter keeps auth decoupled from key manager. |
@@ -252,13 +252,13 @@ Auth calls adapter → Adapter calls key manager. Two hops, no reactive indirect
 
 - [ ] **0.1** Define `EncryptionAdapter` type inside `createAuthState()`: `{ restoreKey(userId: string): void; setKey(key: string, userId: string): void; wipe(): void; }`
 - [ ] **0.2** Add `let encryption: EncryptionAdapter | undefined` inside `createAuthState()`
-- [ ] **0.3** Remove `let encryptionKey = $state<string | undefined>(undefined)` — no longer needed
+- [ ] **0.3** Remove `let encryptionKey = $state<string | undefined>(undefined)`: no longer needed
 - [ ] **0.4** Remove the `get encryptionKey()` getter from the return object
 - [ ] **0.5** In `refreshEncryptionKey()`: replace `encryptionKey = result.data.encryptionKey` with `if (result?.data?.encryptionKey) encryption?.setKey(result.data.encryptionKey, result.data.user.id)`
 - [ ] **0.6** In `checkSession()`: change `await authToken.whenReady` to `await Promise.all([authToken.whenReady, authUser.whenReady])`. After the await, fire `encryption?.restoreKey(userId)` if userId is truthy (before the token check)
 - [ ] **0.7** In `checkSession()` success path: replace `encryptionKey = data.encryptionKey` with `if (data.encryptionKey) encryption?.setKey(data.encryptionKey, data.user.id)`
 - [ ] **0.8** In `signOut()`: remove `encryptionKey = undefined`. Add `encryption?.wipe()` after setting `phase = { status: 'signing-out' }`, before `client.signOut()`
-- [ ] **0.9** In `checkSession()` 4xx path: add `encryption?.wipe()` after `await clearState()` (no `encryptionKey = undefined` needed—variable doesn't exist)
+- [ ] **0.9** In `checkSession()` 4xx path: add `encryption?.wipe()` after `await clearState()` (no `encryptionKey = undefined` needed. Variable doesn't exist)
 - [ ] **0.10** Expose `registerEncryption(adapter: EncryptionAdapter)` on the return object. Sets `encryption = adapter`, returns `() => { encryption = undefined; }`. Include JSDoc.
 - [ ] **0.11** Remove the three callback Sets and three `on*` methods added in the initial implementation (if present from partial implementation of the previous draft)
 - [ ] **0.12** Verify: `lsp_diagnostics` clean on `auth.svelte.ts`
@@ -284,7 +284,7 @@ Auth calls adapter → Adapter calls key manager. Two hops, no reactive indirect
 
 ### Cache Restore When User Not Yet Hydrated
 
-1. `syncAuthToEncryption()` runs from `onMount` — registers adapter
+1. `syncAuthToEncryption()` runs from `onMount`: registers adapter
 2. `authState.checkSession()` also runs from `onMount`
 3. `checkSession()` awaits `Promise.all([authToken.whenReady, authUser.whenReady])`
 4. After hydration, if userId is truthy, calls `encryption?.restoreKey(userId)`
@@ -328,9 +328,9 @@ Expected: Clean transition to locked state. User must re-authenticate.
 
 If `checkSession()` runs before `syncAuthToEncryption()` (race between two `onMount` calls):
 
-1. `checkSession()` calls `encryption?.restoreKey(userId)` — `encryption` is undefined → no-op (optional chaining)
-2. `checkSession()` completes, gets session with key, calls `encryption?.setKey(key, userId)` — still undefined → no-op
-3. `syncAuthToEncryption()` runs, registers adapter — but the key was already available
+1. `checkSession()` calls `encryption?.restoreKey(userId)`: `encryption` is undefined → no-op (optional chaining)
+2. `checkSession()` completes, gets session with key, calls `encryption?.setKey(key, userId)`: still undefined → no-op
+3. `syncAuthToEncryption()` runs, registers adapter: but the key was already available
 
 This is a theoretical concern. In practice, both calls happen synchronously in the same `onMount` callback in App.svelte:
 
@@ -342,7 +342,7 @@ onMount(() => {
 });
 ```
 
-`checkSession()` is async—its first await (`Promise.all(...)`) yields back to the event loop. By the time it resumes, `syncAuthToEncryption()` has already registered the adapter. No race.
+`checkSession()` is async. Its first await (`Promise.all(...)`) yields back to the event loop. By the time it resumes, `syncAuthToEncryption()` has already registered the adapter. No race.
 
 ## Open Questions
 
@@ -385,11 +385,11 @@ All resolved:
 
 ## References
 
-- `apps/tab-manager/src/lib/state/key-manager.svelte.ts` — Adapter to rewrite
-- `apps/tab-manager/src/lib/state/auth.svelte.ts` — Auth module (add adapter here)
-- `apps/tab-manager/src/lib/state/key-cache.ts` — KeyCache implementation (wire into createKeyManager)
-- `packages/workspace/src/shared/crypto/key-manager.ts` — Factory (unchanged)
-- `apps/tab-manager/src/entrypoints/sidepanel/App.svelte` — Call site for syncAuthToEncryption
-- `apps/api/src/app.ts` — Better Auth session config (expiresIn, updateAge)
-- `specs/20260316T093000-encryption-wiring-api-refinements.md` — Previous spec (implemented)
-- `specs/20260315T083000-keycache-chrome-extension.md` — KeyCache spec
+- `apps/tab-manager/src/lib/state/key-manager.svelte.ts`: Adapter to rewrite
+- `apps/tab-manager/src/lib/state/auth.svelte.ts`: Auth module (add adapter here)
+- `apps/tab-manager/src/lib/state/key-cache.ts`: KeyCache implementation (wire into createKeyManager)
+- `packages/workspace/src/shared/crypto/key-manager.ts`: Factory (unchanged)
+- `apps/tab-manager/src/entrypoints/sidepanel/App.svelte`: Call site for syncAuthToEncryption
+- `apps/api/src/app.ts`: Better Auth session config (expiresIn, updateAge)
+- `specs/20260316T093000-encryption-wiring-api-refinements.md`: Previous spec (implemented)
+- `specs/20260315T083000-keycache-chrome-extension.md`: KeyCache spec

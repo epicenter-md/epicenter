@@ -45,7 +45,7 @@ matter.json    = model       the contract: each field is a JSON Schema. NEVER ga
 `matter.json` is one folder-local file with both concerns kept as separate keys:
 
 ```jsonc
-// folder/matter.json   — app-, agent-, and raw-editable. JSON is canonical (no eval).
+// folder/matter.json  : app-, agent-, and raw-editable. JSON is canonical (no eval).
 {
   "fields": {                                            // field name -> JSON Schema (the column.* subset)
     "title":  { "type": "string" },                      // required by default (no null in the schema)

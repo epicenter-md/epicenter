@@ -5,7 +5,7 @@
  * surgical updates via browser event listeners. Uses a single
  * `SvelteMap<number, WindowState>` where each window owns its tabs.
  *
- * Chrome is the sole authority for live tab state—no Y.Doc/CRDT
+ * Chrome is the sole authority for live tab state. No Y.Doc/CRDT
  * persistence. Only user-created data (saved tabs, bookmarks, chat)
  * uses Y.Doc.
  *
@@ -33,7 +33,7 @@ const TAB_ID_NONE = -1;
 
 // ── Branded ID Types ─────────────────────────────────────────────────
 
-/** Branded tab ID—guaranteed valid (not undefined, not TAB_ID_NONE). */
+/** Branded tab ID, guaranteed valid (not undefined, not TAB_ID_NONE). */
 type TabId = number & Brand<'TabId'>;
 
 /** Brand a raw tab ID, rejecting undefined and TAB_ID_NONE. */
@@ -42,7 +42,7 @@ function TabId(raw: number | undefined): TabId | null {
 	return raw as TabId;
 }
 
-/** Branded window ID—guaranteed valid (not undefined). */
+/** Branded window ID, guaranteed valid (not undefined). */
 type WindowId = number & Brand<'WindowId'>;
 
 /** Brand a raw window ID, rejecting undefined. */
@@ -60,7 +60,7 @@ export type BrowserTab = Browser.tabs.Tab & { id: TabId };
  * Narrow a Chrome tab to {@link BrowserTab}, returning null if `id`
  * is missing or reserved.
  *
- * No object creation—validates the ID via {@link TabId} and asserts
+ * No object creation. Validates the ID via {@link TabId} and asserts
  * the object type. This is the sole ingestion boundary for Chrome tabs.
  */
 function BrowserTab(tab: Browser.tabs.Tab): BrowserTab | null {
@@ -80,14 +80,14 @@ function BrowserWindow(win: Browser.windows.Window): BrowserWindow | null {
 /**
  * A window and all the tabs it owns, stored together.
  *
- * Browser state is inherently hierarchical—tabs belong to windows. Storing
+ * Browser state is inherently hierarchical: tabs belong to windows. Storing
  * them as a coupled unit means every access pattern (render a window's tabs,
  * remove a window and its tabs, switch active tab within a window) is a direct
  * lookup instead of a filter-all-tabs scan.
  *
  * Each window gets its own inner `SvelteMap` for tabs. Svelte 5's reactivity
  * tracks each SvelteMap independently, so mutating one window's tabs only
- * re-renders that window's `{#each}` block—not every window.
+ * re-renders that window's `{#each}` block, not every window.
  */
 type WindowState = {
 	window: BrowserWindow;
@@ -109,13 +109,13 @@ function createBrowserState() {
 	 *
 	 * Every event handler guards with `if (!seeded) return`, which means
 	 * events that arrive before the seed completes are silently dropped
-	 * (they'd be stale anyway—the seed is the authoritative snapshot).
+	 * (they'd be stale anyway; the seed is the authoritative snapshot).
 	 */
 	let seeded = false;
 
 	// ── Seed ─────────────────────────────────────────────────────────────
 	// Single IPC call via `getAll({ populate: true })` returns windows with
-	// their tabs already nested—a natural fit for our WindowState shape.
+	// their tabs already nested, which is a natural fit for our WindowState shape.
 
 	const whenReady = (async () => {
 		const browserWindows = await browser.windows.getAll({ populate: true });
@@ -158,7 +158,7 @@ function createBrowserState() {
 		windowStates.get(removeInfo.windowId)?.tabs.delete(tabId);
 	});
 
-	// onUpdated: Full Tab in 3rd arg—route to correct window
+	// onUpdated: Full Tab in 3rd arg; route to correct window
 	browser.tabs.onUpdated.addListener((_tabId, _changeInfo, tab) => {
 		if (!seeded) return;
 		const bt = BrowserTab(tab);
@@ -181,7 +181,7 @@ function createBrowserState() {
 
 	// onActivated: Only scans the affected window's tabs (not all tabs across
 	// all windows) to flip the active flag. This is the main perf win of the
-	// coupled structure—a 50-tab window with 5 other windows only iterates 50
+	// coupled structure. A 50-tab window with 5 other windows only iterates 50
 	// tabs, not 300.
 	browser.tabs.onActivated.addListener((activeInfo) => {
 		if (!seeded) return;
@@ -207,8 +207,8 @@ function createBrowserState() {
 
 	// ── Attach / Detach ──────────────────────────────────────────────────
 	// Moving a tab between windows fires two events in order:
-	//   1. onDetached (old window) — we remove the tab from the old window's map
-	//   2. onAttached (new window) — we re-query the tab and add it to the new
+	//   1. onDetached (old window): we remove the tab from the old window's map
+	//   2. onAttached (new window): we re-query the tab and add it to the new
 	//      window's map (re-query is needed to get the updated windowId + index)
 	//
 	// Between detach and attach, the tab exists in neither window. This is fine
@@ -242,7 +242,7 @@ function createBrowserState() {
 	});
 
 	// onRemoved: Deleting the WindowState entry removes the window AND all its
-	// tabs in one operation—no orphan cleanup needed.
+	// tabs in one operation. No orphan cleanup needed.
 	browser.windows.onRemoved.addListener((windowId) => {
 		if (!seeded) return;
 		windowStates.delete(windowId);
@@ -329,7 +329,7 @@ function createBrowserState() {
 		/**
 		 * Close a tab. Browser onRemoved event updates state.
 		 *
-		 * None of these methods mutate `windowStates` directly—they call the
+		 * None of these methods mutate `windowStates` directly. They call the
 		 * browser API, which fires an event (e.g. `onRemoved`, `onUpdated`),
 		 * and the event listener above handles the state update.
 		 */

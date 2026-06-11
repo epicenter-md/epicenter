@@ -1,7 +1,7 @@
 # Schema System Improvements
 
-**Status:** Complete  
-**Created:** 2025-12-31  
+**Status:** Complete
+**Created:** 2025-12-31
 **Branch:** `feat/static-defaults-constraint`
 
 ---
@@ -10,9 +10,9 @@
 
 This branch makes three improvements to the schema system:
 
-1. **Static defaults only** — Remove function defaults from column schemas
-2. **Library-agnostic JSON columns** — `JsonColumnSchema` now accepts any Standard Schema library
-3. **Embedded Standard Schema types** — Remove `@standard-schema/spec` dependency
+1. **Static defaults only**: Remove function defaults from column schemas
+2. **Library-agnostic JSON columns**: `JsonColumnSchema` now accepts any Standard Schema library
+3. **Embedded Standard Schema types**: Remove `@standard-schema/spec` dependency
 
 ---
 
@@ -111,10 +111,10 @@ packages/epicenter/src/core/schema/standard-schema.ts
 
 Contains:
 
-- `StandardTypedV1` — Base type
-- `StandardSchemaV1` — Validation interface
-- `StandardJSONSchemaV1` — JSON Schema conversion interface
-- `CombinedStandardSchema` — Combined type (our extension)
+- `StandardTypedV1`: Base type
+- `StandardSchemaV1`: Validation interface
+- `StandardJSONSchemaV1`: JSON Schema conversion interface
+- `CombinedStandardSchema`: Combined type (our extension)
 
 ### Why
 
@@ -126,16 +126,16 @@ The Standard Schema spec recommends embedding the types rather than depending on
 
 ### Created
 
-- `packages/epicenter/src/core/schema/standard-schema.ts` — Embedded spec types
+- `packages/epicenter/src/core/schema/standard-schema.ts`: Embedded spec types
 
 ### Modified
 
-- `packages/epicenter/src/core/schema/types.ts` — Updated column schema types
-- `packages/epicenter/src/core/schema/columns.ts` — Updated column factories
-- `packages/epicenter/src/core/schema/index.ts` — Updated exports
-- `packages/epicenter/src/core/schema/converters/*.ts` — Updated imports
-- `packages/epicenter/src/core/actions.ts` — Updated imports
-- `packages/epicenter/src/cli/standard-json-schema-to-yargs.ts` — Updated imports
+- `packages/epicenter/src/core/schema/types.ts`: Updated column schema types
+- `packages/epicenter/src/core/schema/columns.ts`: Updated column factories
+- `packages/epicenter/src/core/schema/index.ts`: Updated exports
+- `packages/epicenter/src/core/schema/converters/*.ts`: Updated imports
+- `packages/epicenter/src/core/actions.ts`: Updated imports
+- `packages/epicenter/src/cli/standard-json-schema-to-yargs.ts`: Updated imports
 
 ---
 

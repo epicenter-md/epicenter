@@ -10,13 +10,13 @@ Refactor `browser.schema.ts` and all consumers in `apps/tab-manager/` to use cam
 
 ## Changes
 
-### 1. `browser.schema.ts` — Schema source of truth
+### 1. `browser.schema.ts`: Schema source of truth
 
 **Table key renames** (in `BROWSER_TABLES` export object):
 
 - `tab_groups` → `tabGroups`
 - `suspended_tabs` → `suspendedTabs`
-- `devices`, `tabs`, `windows` — already camelCase, no change
+- `devices`, `tabs`, `windows`: already camelCase, no change
 
 **Field renames** (snake_case → camelCase):
 
@@ -42,23 +42,23 @@ Refactor `browser.schema.ts` and all consumers in `apps/tab-manager/` to use cam
 
 **Remove unused constants**: `WINDOW_STATES`, `WINDOW_TYPES`, `TAB_STATUS`, `TAB_GROUP_COLORS`
 
-**Update type exports**: `BrowserTables` type stays, individual row types stay (`Device`, `Tab`, `Window`, `TabGroup`, `SuspendedTab`) — field shapes change automatically via `InferTableRow`.
+**Update type exports**: `BrowserTables` type stays, individual row types stay (`Device`, `Tab`, `Window`, `TabGroup`, `SuspendedTab`): field shapes change automatically via `InferTableRow`.
 
-### 2. `browser-helpers.ts` — Row converters
+### 2. `browser-helpers.ts`: Row converters
 
 Update `tabToRow()`, `windowToRow()`, `tabGroupToRow()` return object keys from snake_case to camelCase. The Chrome API input side stays the same (Chrome uses its own naming).
 
-### 3. `schema.ts` — Re-exports
+### 3. `schema.ts`: Re-exports
 
 Minimal: just re-exports `BROWSER_TABLES`. No changes needed unless we rename the export itself (we won't).
 
-Update `BrowserDb` type — table access changes from `tables.suspended_tabs` to `tables.suspendedTabs` etc.
+Update `BrowserDb` type: table access changes from `tables.suspended_tabs` to `tables.suspendedTabs` etc.
 
-### 4. `index.ts` — Public type re-exports
+### 4. `index.ts`: Public type re-exports
 
 No changes needed. Type names stay the same, field shapes change automatically.
 
-### 5. `suspend-tab.ts` — Suspend/restore helpers
+### 5. `suspend-tab.ts`: Suspend/restore helpers
 
 Update all field accesses:
 
@@ -69,7 +69,7 @@ Update all field accesses:
 - `suspended_at` → `suspendedAt`
 - `fav_icon_url` → `favIconUrl`
 
-### 6. `background.ts` — Background service worker (biggest file, ~930 lines)
+### 6. `background.ts`: Background service worker (biggest file, ~930 lines)
 
 Table accessor renames:
 
@@ -89,12 +89,12 @@ Field access renames throughout:
 
 Also: the debug `ytables.get('tabs')` string reference on line ~319 stays as-is (that's a Y.Doc internal key, not a schema field).
 
-### 7. `query/suspended-tabs.ts` — Suspended tab queries
+### 7. `query/suspended-tabs.ts`: Suspended tab queries
 
 - `popupWorkspace.tables.suspended_tabs` → `popupWorkspace.tables.suspendedTabs`
 - `b.suspended_at` → `b.suspendedAt`
 
-### 8. `query/tabs.ts` — Tab queries
+### 8. `query/tabs.ts`: Tab queries
 
 No table access changes (reads from Chrome APIs directly). The `tabToRow` / `windowToRow` / `tabGroupToRow` calls produce new camelCase field shapes, but the query layer just returns them.
 
@@ -116,15 +116,15 @@ No table access changes (reads from Chrome APIs directly). The `tabToRow` / `win
 
 ## TODO
 
-- [x] Update `browser.schema.ts` — camelCase fields, camelCase table keys, remove unused constants
-- [x] Update `browser-helpers.ts` — camelCase return object keys
-- [x] Update `schema.ts` — if needed for table key renames
-- [x] Update `suspend-tab.ts` — camelCase field accesses and table accessors
-- [x] Update `background.ts` — camelCase table accessors and field accesses
-- [x] Update `query/suspended-tabs.ts` — camelCase table accessor and field accesses
-- [x] Update `TabItem.svelte` — camelCase field accesses
-- [x] Update `TabList.svelte` — camelCase field accesses
-- [x] Update `SuspendedTabList.svelte` — camelCase field accesses
+- [x] Update `browser.schema.ts`: camelCase fields, camelCase table keys, remove unused constants
+- [x] Update `browser-helpers.ts`: camelCase return object keys
+- [x] Update `schema.ts`: if needed for table key renames
+- [x] Update `suspend-tab.ts`: camelCase field accesses and table accessors
+- [x] Update `background.ts`: camelCase table accessors and field accesses
+- [x] Update `query/suspended-tabs.ts`: camelCase table accessor and field accesses
+- [x] Update `TabItem.svelte`: camelCase field accesses
+- [x] Update `TabList.svelte`: camelCase field accesses
+- [x] Update `SuspendedTabList.svelte`: camelCase field accesses
 - [x] Run type check to verify no field name mismatches remain
 
 ## Review

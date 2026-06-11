@@ -12,7 +12,7 @@ That's the one-time migration converting your existing data. It runs once, and y
 
 ## Thousands of JSON Files, One Per Everything
 
-OpenCode originally stored all its data as individual JSON files—one file per project, session, message, part, todo, permission, and share. The directory structure looked like this:
+OpenCode originally stored all its data as individual JSON files. One file per project, session, message, part, todo, permission, and share. The directory structure looked like this:
 
 ```
 ~/.opencode/storage/
@@ -25,7 +25,7 @@ OpenCode originally stored all its data as individual JSON files—one file per 
   session_share/*.json
 ```
 
-Every message you sent, every response you received, every todo item—each got its own `.json` file on disk. This works fine when you're starting out. But if you've been using OpenCode for a while, you could have thousands of these files. Reading and writing thousands of small files gets slow as history grows.
+Every message you sent, every response you received, every todo item. Each got its own `.json` file on disk. This works fine when you're starting out. But if you've been using OpenCode for a while, you could have thousands of these files. Reading and writing thousands of small files gets slow as history grows.
 
 They moved to SQLite (via `bun:sqlite` + Drizzle ORM) stored as a single `opencode.db` file.
 
@@ -73,13 +73,13 @@ PRAGMA cache_size = 10000;
 PRAGMA temp_store = MEMORY;
 ```
 
-`journal_mode = WAL` enables write-ahead logging for concurrent reads during the import. `synchronous = OFF` tells SQLite not to wait for disk flushes—dangerous for ongoing writes, but fine for a one-time bulk import where the source data (JSON files) still exists as a fallback. `cache_size = 10000` keeps more pages in memory, and `temp_store = MEMORY` avoids temp files entirely. Inserts happen in batches of 1,000.
+`journal_mode = WAL` enables write-ahead logging for concurrent reads during the import. `synchronous = OFF` tells SQLite not to wait for disk flushes. Dangerous for ongoing writes, but fine for a one-time bulk import where the source data (JSON files) still exists as a fallback. `cache_size = 10000` keeps more pages in memory, and `temp_store = MEMORY` avoids temp files entirely. Inserts happen in batches of 1,000.
 
 ---
 
 ## Why It Can Take "A Few Minutes"
 
-The progress bar you see during migration is tracking a file-by-file scan. If you've been using OpenCode heavily, you could have thousands of JSON files—one per message part alone. The migration reads every single one, parses the JSON, and inserts it into SQLite in batches.
+The progress bar you see during migration is tracking a file-by-file scan. If you've been using OpenCode heavily, you could have thousands of JSON files. One per message part alone. The migration reads every single one, parses the JSON, and inserts it into SQLite in batches.
 
 On a typical setup with a few hundred sessions, it finishes in seconds. Heavy users with months of history might wait a minute or two.
 
@@ -93,15 +93,15 @@ OpenCode doesn't delete your old JSON files after migration. They stay in `~/.op
 
 ## Why They Migrated
 
-**1. Performance—SQLite with WAL mode is dramatically faster**
+**1. Performance. SQLite with WAL mode is dramatically faster**
 
 Reading thousands of small files means thousands of filesystem syscalls. SQLite stores everything in one file and uses memory-mapped I/O with write-ahead logging. Queries that used to scan a directory of JSON files now hit an indexed database.
 
-**2. Reliability—ACID transactions instead of hope**
+**2. Reliability. ACID transactions instead of hope**
 
 JSON files can corrupt if the process crashes mid-write. You get a half-written file and lose that session's data. SQLite gives you atomic transactions: either the write completes fully or it doesn't happen at all.
 
-**3. Queryability—structured data instead of scattered files**
+**3. Queryability. Structured data instead of scattered files**
 
 Want to find all sessions for a project? With JSON files, you scan a directory and parse each file. With SQLite, it's a single indexed query. This matters as OpenCode adds features that need to correlate data across sessions, messages, and todos.
 

@@ -14,9 +14,9 @@ When a user switches conversations mid-stream, the AI response finishes generati
 
 Switching conversations while an AI response was streaming killed the stream. `stop()` aborted the SSE fetch, `onFinish` never fired, and the partial response was lost. This caused:
 
-1. **Lost responses** — a 30-second generation gone if the user glances elsewhere.
-2. **Wasted API spend** — tokens generated but thrown away.
-3. **Friction** — users learn to avoid switching, defeating multi-conversation support.
+1. **Lost responses**: a 30-second generation gone if the user glances elsewhere.
+2. **Wasted API spend**: tokens generated but thrown away.
+3. **Friction**: users learn to avoid switching, defeating multi-conversation support.
 
 ### Solution
 
@@ -60,7 +60,7 @@ Switching = `activeConversationId = newId` + refresh idle instances from Y.Doc.
 | Decision | Choice | Rationale |
 |---|---|---|
 | Instance lifecycle | Lazy creation via `ensureChat()` | Only allocate when the user interacts with a conversation |
-| `onFinish` correctness | `conversationId` baked into closure at creation | Can never persist to the wrong conversation — correct by construction |
+| `onFinish` correctness | `conversationId` baked into closure at creation | Can never persist to the wrong conversation: correct by construction |
 | Concurrent streams | Unlimited (bounded by instance cache) | Each ChatClient has its own AbortController and stream processor |
 | Instance eviction | LRU-style, max 20 cached | Prevents unbounded memory growth; evicts idle, non-streaming instances |
 | Switch behavior | Refresh idle instances from Y.Doc | Ensures view reflects latest persisted state after background completion |
@@ -70,17 +70,17 @@ Switching = `activeConversationId = newId` + refresh idle instances from Y.Doc.
 
 ### Files Changed
 
-- `apps/tab-manager/src/lib/state/chat.svelte.ts` — sole state module (refactored)
-- `apps/tab-manager/src/lib/components/AiChat.svelte` — streaming indicator in conversation list
+- `apps/tab-manager/src/lib/state/chat.svelte.ts`: sole state module (refactored)
+- `apps/tab-manager/src/lib/components/AiChat.svelte`: streaming indicator in conversation list
 
 ### State Module (`chat.svelte.ts`)
 
 **Added:**
-- `chatInstances: Map<string, ChatClient>` — per-conversation instance cache
-- `ensureChat(conversationId)` — lazy factory, creates ChatClient with baked-in `conversationId`
-- `evictStaleInstances()` — removes idle instances when cache exceeds 20
-- `isStreaming(conversationId)` — public method for background streaming indicators
-- `chatMessages.observe()` handler — refreshes idle instances when Y.Doc messages change (background completion sync)
+- `chatInstances: Map<string, ChatClient>`: per-conversation instance cache
+- `ensureChat(conversationId)`: lazy factory, creates ChatClient with baked-in `conversationId`
+- `evictStaleInstances()`: removes idle instances when cache exceeds 20
+- `isStreaming(conversationId)`: public method for background streaming indicators
+- `chatMessages.observe()` handler: refreshes idle instances when Y.Doc messages change (background completion sync)
 
 **Removed:**
 - Single `chatInstance` created at module init
@@ -116,7 +116,7 @@ function switchConversation(conversationId: string) {
 
 Why both paths matter:
 - **Idle instance**: Refresh from Y.Doc to pick up responses that completed in the background (written by `onFinish`).
-- **Streaming instance**: Keep ChatClient's internal state — it has the in-progress assistant message that Y.Doc doesn't have yet. Switching back reconnects to the live stream.
+- **Streaming instance**: Keep ChatClient's internal state: it has the in-progress assistant message that Y.Doc doesn't have yet. Switching back reconnects to the live stream.
 
 ### Background Completion Sync
 
@@ -129,7 +129,7 @@ popupWorkspace.tables.chatMessages.observe(() => {
 });
 ```
 
-When a background stream completes, `onFinish` writes the assistant message to Y.Doc. This triggers the `chatMessages` observer, which refreshes all idle ChatClient instances from Y.Doc. Streaming instances are skipped — they have the in-progress assistant message that Y.Doc doesn't have yet.
+When a background stream completes, `onFinish` writes the assistant message to Y.Doc. This triggers the `chatMessages` observer, which refreshes all idle ChatClient instances from Y.Doc. Streaming instances are skipped. They have the in-progress assistant message that Y.Doc doesn't have yet.
 
 This complements `switchConversation()`'s refresh: the observer handles "message appeared while viewing another conversation," while `switchConversation()` handles "user returns to a conversation."
 
@@ -137,7 +137,7 @@ This complements `switchConversation()`'s refresh: the observer handles "message
 
 - Added `LoaderCircleIcon` import
 - Spinning loader icon next to conversations generating in the background
-- Zero changes to how the public API is consumed — all existing getters/methods unchanged
+- Zero changes to how the public API is consumed: all existing getters/methods unchanged
 
 ### Instance Eviction Strategy
 
@@ -200,13 +200,13 @@ Each instance's `error` getter is scoped to that instance. The active conversati
 
 ### What Changed
 
-The entire architecture shifted from "one ChatClient shared across conversations" to "one ChatClient per conversation." This eliminated the background streaming state machine entirely — what was 140+ lines of state tracking (`streamingConversationId`, `isBackgroundStreaming`, `realignChatClient()`, routing in 4 getters) became zero lines because background streaming is a free consequence of per-instance isolation.
+The entire architecture shifted from "one ChatClient shared across conversations" to "one ChatClient per conversation." This eliminated the background streaming state machine entirely: what was 140+ lines of state tracking (`streamingConversationId`, `isBackgroundStreaming`, `realignChatClient()`, routing in 4 getters) became zero lines because background streaming is a free consequence of per-instance isolation.
 
 ### Why Per-Conversation Instances
 
 The single-instance approach forced a fundamental coupling: "what the user sees" and "what the ChatClient streams for" were the same thing. Every feature that violated this coupling (background streaming, concurrent streams, error isolation) required additional state machinery to work around it.
 
-Per-conversation instances remove the coupling entirely. Each instance is self-contained: its own messages, its own stream, its own lifecycle. The "active conversation" concept only controls which instance the UI reads from — it doesn't affect any instance's behavior.
+Per-conversation instances remove the coupling entirely. Each instance is self-contained: its own messages, its own stream, its own lifecycle. The "active conversation" concept only controls which instance the UI reads from. It doesn't affect any instance's behavior.
 
 ### TanStack AI Internals (confirmed via DeepWiki)
 
@@ -218,6 +218,6 @@ Per-conversation instances remove the coupling entirely. Each instance is self-c
 
 ### References
 
-- `apps/tab-manager/src/lib/state/chat.svelte.ts` — state module
-- `apps/tab-manager/src/lib/components/AiChat.svelte` — primary consumer
-- `apps/tab-manager/src/lib/components/ModelCombobox.svelte` — secondary consumer (unchanged)
+- `apps/tab-manager/src/lib/state/chat.svelte.ts`: state module
+- `apps/tab-manager/src/lib/components/AiChat.svelte`: primary consumer
+- `apps/tab-manager/src/lib/components/ModelCombobox.svelte`: secondary consumer (unchanged)

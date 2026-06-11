@@ -12,39 +12,39 @@ Replace the implicit "every document is text/richtext/sheet via Timeline" model 
 
 ### Current State
 
-Every `.withDocument()` call produces a handle with the same generic surface—`read()`, `write()`, `asText()`, `asRichText()`, `asSheet()`, `batch()`, `restoreFromSnapshot()`—regardless of what content type the document actually is:
+Every `.withDocument()` call produces a handle with the same generic surface: `read()`, `write()`, `asText()`, `asRichText()`, `asSheet()`, `batch()`, `restoreFromSnapshot()`: regardless of what content type the document actually is:
 
 ```ts
-// Definition — no content type specified
+// Definition: no content type specified
 ).withDocument('content', {
   guid: 'id',
   onUpdate: () => ({ updatedAt: Date.now() }),
 });
 
-// Consumption — generic handle, all methods available
+// Consumption: generic handle, all methods available
 const handle = await documents.content.open(row);
 handle.asText();       // always available
 handle.asRichText();   // always available
-handle.asSheet();      // always available — even on a chat document?
+handle.asSheet();      // always available: even on a chat document?
 ```
 
 This creates problems:
 
 1. **No type safety at the handle level.** A honeycrisp note handle has `.asSheet()` on it. A filesystem file has `.asRichText()`. These methods exist but are nonsensical for those use cases.
-2. **Can't add new content types.** chatTree, canvas, or any custom content type would require modifying the framework's Timeline internals—adding new entry types, conversion paths, and handle methods.
+2. **Can't add new content types.** chatTree, canvas, or any custom content type would require modifying the framework's Timeline internals. Adding new entry types, conversion paths, and handle methods.
 3. **The Timeline manages format switching for documents that never switch.** 100% of current call sites use a single content type. The Timeline's format conversion machinery is unused overhead.
 
 ### Desired State
 
 ```ts
-// Definition — content type is explicit
+// Definition: content type is explicit
 ).withDocument('content', {
   content: plainText(),
   guid: 'id',
   onUpdate: () => ({ updatedAt: Date.now() }),
 });
 
-// Consumption — handle.content IS the binding, fully typed
+// Consumption: handle.content IS the binding, fully typed
 const handle = await documents.content.open(row);
 handle.content            // Y.Text (for plainText strategy)
 handle.content.toString() // read
@@ -99,7 +99,7 @@ At open time:                               │
 
 - [x] **2.1** Remove `asText()`, `asRichText()`, `asSheet()`, `read()`, `write()` from handle
 - [x] **2.2** Migrate all remaining consumers to `handle.content`
-- [x] **2.3** Timeline kept as library — `timeline` strategy returns it
+- [x] **2.3** Timeline kept as library: `timeline` strategy returns it
 - [x] **2.4** Remove `timeline` from `DocumentContext`
 
 ## Call site changes
@@ -136,11 +136,11 @@ At open time:                               │
 
 ## References
 
-- `packages/workspace/src/workspace/types.ts` — DocumentConfig, DocumentHandle, DocumentContext
-- `packages/workspace/src/workspace/define-table.ts` — withDocument() chain
-- `packages/workspace/src/workspace/create-documents.ts` — runtime document manager
-- `packages/workspace/src/timeline/timeline.ts` — Timeline (to be replaced in Phase 2)
-- `packages/filesystem/src/table.ts` — filesystem call site
-- `packages/skills/src/tables.ts` — skills call sites
-- `apps/fuji/src/lib/workspace.ts` — fuji call site
-- `apps/honeycrisp/src/lib/workspace/definition.ts` — honeycrisp call site
+- `packages/workspace/src/workspace/types.ts`: DocumentConfig, DocumentHandle, DocumentContext
+- `packages/workspace/src/workspace/define-table.ts`: withDocument() chain
+- `packages/workspace/src/workspace/create-documents.ts`: runtime document manager
+- `packages/workspace/src/timeline/timeline.ts`: Timeline (to be replaced in Phase 2)
+- `packages/filesystem/src/table.ts`: filesystem call site
+- `packages/skills/src/tables.ts`: skills call sites
+- `apps/fuji/src/lib/workspace.ts`: fuji call site
+- `apps/honeycrisp/src/lib/workspace/definition.ts`: honeycrisp call site

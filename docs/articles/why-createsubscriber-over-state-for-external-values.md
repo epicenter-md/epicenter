@@ -8,7 +8,7 @@ window.addEventListener('online', () => { online = true; });
 window.addEventListener('offline', () => { online = false; });
 ```
 
-But now `online` is a copy. A shadow variable you have to keep in sync with the browser's actual value. For `navigator.online` it's trivial—two events, two assignments, done. But the `createSubscriber` version has no copy at all:
+But now `online` is a copy. A shadow variable you have to keep in sync with the browser's actual value. For `navigator.online` it's trivial. Two events, two assignments, done. But the `createSubscriber` version has no copy at all:
 
 ```typescript
 get online() {
@@ -19,11 +19,11 @@ get online() {
 
 The getter reads fresh from the source every single time. Zero shadow state. Nothing can be stale.
 
-That's the real reason: not performance, not lifecycle—no copy to keep in sync. The external source already has the value. Why maintain a mirror of it? `createSubscriber` lets you read the source directly and just tells Svelte when to re-read. For read-only external state, that's strictly simpler than maintaining a `$state` shadow.
+That's the real reason: not performance, not lifecycle. No copy to keep in sync. The external source already has the value. Why maintain a mirror of it? `createSubscriber` lets you read the source directly and just tells Svelte when to re-read. For read-only external state, that's strictly simpler than maintaining a `$state` shadow.
 
 ## The Shadow Copy Problem
 
-`$state` is a proxy. When you write `let matches = $state(query.matches)`, you're creating a reactive variable that Svelte tracks. But you're also creating a second source of truth. The browser has the real value; your `$state` variable has a copy. Now you need event listeners to keep them in sync, and if you miss an edge case—an event you didn't anticipate, a race condition during initialization—the copy drifts.
+`$state` is a proxy. When you write `let matches = $state(query.matches)`, you're creating a reactive variable that Svelte tracks. But you're also creating a second source of truth. The browser has the real value; your `$state` variable has a copy. Now you need event listeners to keep them in sync, and if you miss an edge case. An event you didn't anticipate, a race condition during initialization. The copy drifts.
 
 For `navigator.online`, there are exactly two events (`online`, `offline`) and the value is a boolean. Hard to get wrong. For `matchMedia`, there's one `change` event. Still manageable. But the pattern doesn't scale gracefully. The more complex the external source, the more event handlers you need to keep your shadow copy accurate, and the more opportunities for drift.
 
@@ -63,9 +63,9 @@ For cheap listeners like DOM events, this laziness isn't buying you anything. Re
 
 ## When `$state` Is the Right Call
 
-If the external source doesn't have a synchronous read API—`chrome.storage`, IndexedDB, anything that returns a promise—you can't read from the source in a getter. You need a cache. And if you need a cache, `$state` is a fine choice for that cache (though a plain `let` with `createSubscriber` as the sole reactivity owner is simpler; see [createSubscriber Cache for Async External State](./createsubscriber-cache-for-async-external-state.md)).
+If the external source doesn't have a synchronous read API, such as `chrome.storage`, IndexedDB, or anything that returns a promise, you can't read from the source in a getter. You need a cache. And if you need a cache, `$state` is a fine choice for that cache (though a plain `let` with `createSubscriber` as the sole reactivity owner is simpler; see [createSubscriber Cache for Async External State](./createsubscriber-cache-for-async-external-state.md)).
 
-And if your event handlers are already mutating `$state` because the value is state you own—not a mirror of something external—then `$state` is all you need. No bridge required. See [`$state` Already Signals Svelte](./state-already-signals-svelte.md) for why adding `createSubscriber` on top of `$state` is redundant.
+And if your event handlers are already mutating `$state` because the value is state you own. Not a mirror of something external. Then `$state` is all you need. No bridge required. See [`$state` Already Signals Svelte](./state-already-signals-svelte.md) for why adding `createSubscriber` on top of `$state` is redundant.
 
 ## Further Reading
 

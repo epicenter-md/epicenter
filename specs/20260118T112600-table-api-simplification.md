@@ -156,17 +156,17 @@ export type WorkspaceInput<
 
 **Files to update**:
 
-- `packages/epicenter/src/core/schema/fields/types.ts` — remove or mark `@internal`
-- `packages/epicenter/src/core/schema/index.ts` — stop exporting
-- `packages/epicenter/src/index.ts` — stop exporting
+- `packages/epicenter/src/core/schema/fields/types.ts`: remove or mark `@internal`
+- `packages/epicenter/src/core/schema/index.ts`: stop exporting
+- `packages/epicenter/src/index.ts`: stop exporting
 
 #### 1.5 Remove `CoverDefinition` (if unused after `cover` removal)
 
 **Files to update**:
 
-- `packages/epicenter/src/core/schema/fields/types.ts` — remove type
-- `packages/epicenter/src/core/schema/index.ts` — stop exporting
-- `packages/epicenter/src/index.ts` — stop exporting
+- `packages/epicenter/src/core/schema/fields/types.ts`: remove type
+- `packages/epicenter/src/core/schema/index.ts`: stop exporting
+- `packages/epicenter/src/index.ts`: stop exporting
 
 #### 1.6 Update `NormalizedTables` type
 
@@ -180,7 +180,7 @@ export type NormalizedTables<TTables extends TableInputMap> = {
 };
 ```
 
-**Checkpoint**: Run `bun run check` — expect errors in normalization code (fixed in Phase 2)
+**Checkpoint**: Run `bun run check`: expect errors in normalization code (fixed in Phase 2)
 
 ---
 
@@ -293,7 +293,7 @@ function normalizeWorkspaceInput<
 }
 ```
 
-**Checkpoint**: Run `bun run check` — expect errors in callsites (fixed in Phase 3)
+**Checkpoint**: Run `bun run check`: expect errors in callsites (fixed in Phase 3)
 
 ---
 
@@ -376,14 +376,14 @@ posts: {
 
 **Apps**:
 
-- `apps/tab-manager/src/lib/epicenter/schema.ts` — full definitions with `cover: null`
-- `apps/tab-manager/src/entrypoints/background.ts` — uses schema constant
+- `apps/tab-manager/src/lib/epicenter/schema.ts`: full definitions with `cover: null`
+- `apps/tab-manager/src/entrypoints/background.ts`: uses schema constant
 
 **Packages**:
 
-- `packages/epicenter/scripts/email-minimal-simulation.ts` — minimal tables
-- `packages/epicenter/scripts/email-storage-simulation.ts` — minimal tables
-- `packages/epicenter/scripts/yjs-vs-sqlite-comparison.ts` — minimal tables
+- `packages/epicenter/scripts/email-minimal-simulation.ts`: minimal tables
+- `packages/epicenter/scripts/email-storage-simulation.ts`: minimal tables
+- `packages/epicenter/scripts/yjs-vs-sqlite-comparison.ts`: minimal tables
 
 **Documentation/Examples**:
 
@@ -401,7 +401,7 @@ posts: {
 4. **Batch 4**: Other apps + examples
    - Run `bun run check` at repo root
 
-**Checkpoint**: Run `bun run check` at repo root — should pass
+**Checkpoint**: Run `bun run check` at repo root: should pass
 
 ---
 
@@ -510,17 +510,17 @@ describe('defineWorkspace', () => {
 **apps/epicenter**:
 
 1. `bun run typecheck`
-2. `bun run dev:web` — confirm app loads, workspace list renders
+2. `bun run dev:web`: confirm app loads, workspace list renders
 
 **apps/tab-manager**:
 
 1. `bun run typecheck`
-2. `bun run dev` — confirm extension compiles
+2. `bun run dev`: confirm extension compiles
 
 **apps/whispering**:
 
 1. `bun run typecheck`
-2. `bun run dev:web` — confirm app loads
+2. `bun run dev:web`: confirm app loads
 
 #### 4.3 Regression Checks
 

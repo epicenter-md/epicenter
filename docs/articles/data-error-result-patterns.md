@@ -189,7 +189,7 @@ const ValidationError = defineErrors({
 	}),
 });
 
-// Usage in table-helper.ts — fields are flat, message is computed by template
+// Usage in table-helper.ts: fields are flat, message is computed by template
 return {
 	status: 'invalid',
 	id,
@@ -215,7 +215,7 @@ return {
 
 ## The Key Insight
 
-**Discriminated unions** put all cases at the same level—they're "peers". Use when:
+**Discriminated unions** put all cases at the same level. They're "peers". Use when:
 
 - Cases need fundamentally different handling
 - No natural hierarchy (is "not found" really an "error"?)

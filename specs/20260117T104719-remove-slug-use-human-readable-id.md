@@ -33,8 +33,8 @@ Eliminate `slug` entirely. Make `id` the human-readable identifier that users ch
 | `epicenter.whispering` | `epicenter.whispering` | Yes                          |
 | `work.projects.2024`   | `work.projects.2024`   | Yes (multiple dots OK)       |
 | `UPPERCASE`            | `uppercase`            | Yes (canonicalized)          |
-| `-invalid`             | —                      | No (can't start with hyphen) |
-| `has spaces`           | —                      | No (spaces not allowed)      |
+| `-invalid`             | - | No (can't start with hyphen) |
+| `has spaces`           | - | No (spaces not allowed)      |
 
 ### Where ID Is Used
 

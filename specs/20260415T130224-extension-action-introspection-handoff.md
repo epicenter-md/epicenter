@@ -74,7 +74,7 @@ export function* iterateActions(
 }
 ```
 
-`isAction` is the single chokepoint—all detection flows through it:
+`isAction` is the single chokepoint. All detection flows through it:
 - `iterateActions()` in `actions.ts`
 - `isQuery()` / `isMutation()` in `actions.ts` (delegate to `isAction()`)
 - Sync RPC dispatch in `websocket.ts` line 358
@@ -170,7 +170,7 @@ for (const [action, path] of iterateActions(client.actions)) {
 }
 ```
 
-Add extension fallback: if not found in `client.actions`, walk each `client.extensions[key]` and check if `extensionKey + '.' + path.join('.')` matches. This is a clean break—no backward compat concerns.
+Add extension fallback: if not found in `client.actions`, walk each `client.extensions[key]` and check if `extensionKey + '.' + path.join('.')` matches. This is a clean break. No backward compat concerns.
 
 ## What to Change
 
@@ -204,7 +204,7 @@ export function isAction(value: unknown): value is Action {
 }
 ```
 
-Keep `.type` property — `isQuery`/`isMutation` still discriminate on `.type === 'query' | 'mutation'`.
+Keep `.type` property: `isQuery`/`isMutation` still discriminate on `.type === 'query' | 'mutation'`.
 
 Also update the `ActionMeta` type to include the brand:
 
@@ -235,7 +235,7 @@ export type MirrorStatement = {
 };
 ```
 
-Then in `sqlite.ts`, add casts where the materializer reads rows — `(row as Record<string, unknown>)`. Safe because SQLite always returns row objects.
+Then in `sqlite.ts`, add casts where the materializer reads rows: `(row as Record<string, unknown>)`. Safe because SQLite always returns row objects.
 
 Also: every call to `db.prepare(...)` must now be awaited, since it returns `MaybePromise<MirrorStatement>`. Update internal usages in `sqlite.ts`:
 - `const stmt = await db.prepare(...)` (previously no await needed)
@@ -289,7 +289,7 @@ return {
     handler: () => rebuild(),
   }),
 
-  // Lifecycle (not actions — no symbol, skipped by walker)
+  // Lifecycle (not actions: no symbol, skipped by walker)
   whenReady: initialize(),
   dispose,
   db,
@@ -364,7 +364,7 @@ if (!found && client.extensions) {
 
 - Load skills: `monorepo`, `typescript`, `testing`, `workspace-api` before implementing
 - Use `type` instead of `interface` everywhere
-- Use `Symbol.for('epicenter.action')` — NOT `Symbol('epicenter.action')` (must work cross-package)
+- Use `Symbol.for('epicenter.action')`: NOT `Symbol('epicenter.action')` (must work cross-package)
 - Keep `.type` property on actions alongside the symbol (used by `isQuery`/`isMutation`)
 - Export `ACTION_BRAND` from barrel files
 - Cast row results in materializer internals where types were widened (`as Record<string, unknown>`)
@@ -378,7 +378,7 @@ if (!found && client.extensions) {
 - Do not suppress type errors with `as any` or `@ts-ignore`
 - Do not delete or skip existing tests
 - Do not modify files outside `packages/workspace/` and `packages/cli/` (except barrel re-exports)
-- Do not auto-register extension actions into `client.actions` — they stay in `client.extensions`
-- Do not remove the `.type` property from actions — only add the symbol alongside it
-- Do not change the `iterateActions` walker logic — only change what `isAction` checks
+- Do not auto-register extension actions into `client.actions`: they stay in `client.extensions`
+- Do not remove the `.type` property from actions: only add the symbol alongside it
+- Do not change the `iterateActions` walker logic: only change what `isAction` checks
 - Do not commit unless explicitly asked

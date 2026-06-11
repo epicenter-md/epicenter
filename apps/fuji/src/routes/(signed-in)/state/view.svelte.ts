@@ -3,7 +3,7 @@
  *
  * View mode, sort order, and search query live in the URL so they're
  * bookmarkable, shareable, and work with browser back/forward.
- * Default values are elided from the URL to keep it clean—`/` means
+ * Default values are elided from the URL to keep it clean. `/` means
  * table view, sorted by date, no search.
  *
  * The entry collection and search helpers live in `entries-state.svelte.ts`.
@@ -24,7 +24,7 @@ const SORT_KEYS = [
 ] as const;
 type SortBy = (typeof SORT_KEYS)[number];
 
-/** Defaults—elided from the URL to keep it clean. */
+/** Defaults: elided from the URL to keep it clean. */
 type SearchParams = {
 	view: ViewMode;
 	sort: SortBy;

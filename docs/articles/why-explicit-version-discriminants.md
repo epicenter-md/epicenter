@@ -123,6 +123,6 @@ One pattern, explicit, greppable. That's the bet.
 
 We didn't stop at documentation. In [PR #1366](https://github.com/EpicenterHQ/epicenter/pull/1366), we changed the table generic constraint from `CombinedStandardSchema<{ id: string }>` to `CombinedStandardSchema<{ id: string; _v: number }>`. Passing a table schema without `_v` to `defineTable()` is now a compile error.
 
-This closed the loop: `_v` went from "recommended" to "the only way." The pattern taxonomy — field presence, asymmetric `_v`, symmetric `_v` — disappeared from the docs entirely. There's one pattern for tables. KV stores stay flexible since they're small objects where field presence is unambiguous.
+This closed the loop: `_v` went from "recommended" to "the only way." The pattern taxonomy: field presence, asymmetric `_v`, symmetric `_v`: disappeared from the docs entirely. There's one pattern for tables. KV stores stay flexible since they're small objects where field presence is unambiguous.
 
 The change was zero-risk because every table schema already had `_v: 1` from the same PR. The type enforcement just prevents future code from going back to the old patterns.

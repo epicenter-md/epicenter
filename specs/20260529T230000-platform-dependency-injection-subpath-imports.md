@@ -88,7 +88,7 @@ selection where the wrong file is never resolved. This is that, scoped to an app
 ## The Mechanism (grounded, minimal)
 
 ```jsonc
-// apps/fuji/package.json  — the ONE source of truth
+// apps/fuji/package.json : the ONE source of truth
 "imports": {
   "#platform/auth":  { "tauri": "./src/lib/platform/auth.tauri.ts",  "default": "./src/lib/platform/auth.browser.ts" },
   "#platform/tauri": { "tauri": "./src/lib/platform/tauri.tauri.ts", "default": "./src/lib/platform/tauri.browser.ts" }

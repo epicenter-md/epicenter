@@ -4,7 +4,7 @@ The hard part of adding encryption to Epicenter wasn't encryption. It was decidi
 
 ## Encryption wraps values, not transport
 
-The core decision was made early and never changed. Encryption wraps individual values inside `YKeyValueLww`—a last-writer-wins map built on Yjs, the CRDT library that backs every table and KV store. Key names, timestamps, and conflict resolution stay in plaintext so Yjs can merge edits. Row data becomes opaque ciphertext.
+The core decision was made early and never changed. Encryption wraps individual values inside `YKeyValueLww`: a last-writer-wins map built on Yjs, the CRDT library that backs every table and KV store. Key names, timestamps, and conflict resolution stay in plaintext so Yjs can merge edits. Row data becomes opaque ciphertext.
 
 ```
 set('tab-1', { url: 'https://bank.com' })
@@ -40,7 +40,7 @@ Page reopen (no server roundtrip)
   → workspace.activateEncryption(cachedKey)
 ```
 
-The key arrives via authentication or a cached session. Either way, the workspace is created at module scope—before auth completes, before cache restores. Encryption activates later. That async gap between workspace creation and key arrival is where all the architectural trouble lived.
+The key arrives via authentication or a cached session. Either way, the workspace is created at module scope. Before auth completes, before cache restores. Encryption activates later. That async gap between workspace creation and key arrival is where all the architectural trouble lived.
 
 ## Putting lock/unlock on every client polluted the type
 
@@ -48,11 +48,11 @@ The initial API put `lock()`, `unlock(key)`, and `mode` directly on `WorkspaceCl
 
 `unlock()` took a pre-derived workspace key, so auth had to run HKDF itself. Calling it twice with the same key repeated work. Worse, a slow HKDF from an old session could finish after a newer session's key was already active, silently corrupting the encryption state.
 
-And every app that used `WorkspaceClient` saw `lock`/`unlock`/`mode` on the type, whether it needed encryption or not. The client type was polluted for every app—Whispering (transcription, no auth) and CLI tools had encryption methods they should never call.
+And every app that used `WorkspaceClient` saw `lock`/`unlock`/`mode` on the type, whether it needed encryption or not. The client type was polluted for every app. Whispering (transcription, no auth) and CLI tools had encryption methods they should never call.
 
 ## EncryptionAdapter: indirection without value
 
-The first decoupling attempt introduced `EncryptionAdapter`—a callback-based interface between the workspace stores and auth. The workspace registered an adapter; the adapter received lifecycle events.
+The first decoupling attempt introduced `EncryptionAdapter`: a callback-based interface between the workspace stores and auth. The workspace registered an adapter; the adapter received lifecycle events.
 
 ```typescript
 // The pattern that didn't survive
@@ -95,9 +95,9 @@ await keyManager.clearKeys();
 await workspace.deactivateEncryption();  // ← forgotten in 2 of 4 paths
 ```
 
-Auth.svelte.ts had four sign-out paths. Two got the sequence right. Two—the `$effect` token-cleared path and the `!data` branch in `checkSession`—forgot `workspace.deactivateEncryption()`. The key cache cleared, but the workspace stores stayed encrypted with a key about to be garbage collected. Real bugs. Easy to miss in review.
+Auth.svelte.ts had four sign-out paths. Two got the sequence right. Two. The `$effect` token-cleared path and the `!data` branch in `checkSession`: forgot `workspace.deactivateEncryption()`. The key cache cleared, but the workspace stores stayed encrypted with a key about to be garbage collected. Real bugs. Easy to miss in review.
 
-The KeyManager's `KeyManagerTarget` interface—`{ id, activateEncryption }`—was just a narrowed copy of `WorkspaceClient`, not a real boundary. It was plumbing that had leaked into architecture.
+The KeyManager's `KeyManagerTarget` interface, `{ id, activateEncryption }`, was just a narrowed copy of `WorkspaceClient`, not a real boundary. It was plumbing that had leaked into architecture.
 
 ## `.withEncryption()` moves the boundary to the right place
 
@@ -152,7 +152,7 @@ No two-step dance. No forgotten cleanup paths. No separate object to coordinate.
 
 The consumer decides where the key comes from, how long to cache it, and when encryption becomes active. The workspace accepts bytes and two callbacks. It doesn't know about Better Auth, `chrome.storage.session`, or any specific key source.
 
-Whispering can skip `.withEncryption()` entirely—`activateEncryption` and `isEncrypted` don't exist on its client type. The type system enforces the opt-in.
+Whispering can skip `.withEncryption()` entirely: `activateEncryption` and `isEncrypted` don't exist on its client type. The type system enforces the opt-in.
 
 Extension ordering doesn't matter. The builder tracks encrypted stores separately from extension callbacks, so chaining order doesn't change the runtime behavior:
 
@@ -164,12 +164,12 @@ createWorkspace(def).withExtension('persistence', ...).withEncryption({...})
 
 ## The builder already accumulates capabilities
 
-`.withEncryption()` works because the builder already accumulates capabilities. `.withExtension()` returns a new builder with the extension's type and lifecycle hooks added. `.withEncryption()` does the same—it keeps a small closure for encryption state (`lastUserKey` for dedup, `keyGeneration` for the race counter), then returns a client with `activateEncryption`, `deactivateEncryption`, and `isEncrypted` added. No class, no module, no separate object. The state lives in the builder's closure and dies with the workspace.
+`.withEncryption()` works because the builder already accumulates capabilities. `.withExtension()` returns a new builder with the extension's type and lifecycle hooks added. `.withEncryption()` does the same. It keeps a small closure for encryption state (`lastUserKey` for dedup, `keyGeneration` for the race counter), then returns a client with `activateEncryption`, `deactivateEncryption`, and `isEncrypted` added. No class, no module, no separate object. The state lives in the builder's closure and dies with the workspace.
 
 ## What the abstraction graveyard taught us
 
 Each intermediate abstraction was wrong in a different way. The EncryptionAdapter was a layer that didn't do anything. KeyManager was a real abstraction that sat between auth and workspace when the logic belonged inside workspace with the boundary pushed out to callbacks.
 
-The right answer was to stop asking "how do I wire auth to encryption?" and start asking "what does encryption need from the outside?" The answer turned out to be remarkably little: some bytes and two lifecycle hooks. Everything else—dedup, race protection, HKDF, store coordination—is internal to the workspace and shouldn't leak.
+The right answer was to stop asking "how do I wire auth to encryption?" and start asking "what does encryption need from the outside?" The answer turned out to be remarkably little: some bytes and two lifecycle hooks. Everything else is internal to the workspace and shouldn't leak: dedup, race protection, HKDF, store coordination.
 
 Encryption ended up as an opt-in workspace capability. Auth passes bytes in and gets lifecycle hooks back.

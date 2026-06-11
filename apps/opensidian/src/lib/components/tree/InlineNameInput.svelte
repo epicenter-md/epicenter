@@ -34,7 +34,7 @@
 	});
 
 	/**
-	 * Idempotency guard — prevents double-fire when Enter keydown and
+	 * Idempotency guard: prevents double-fire when Enter keydown and
 	 * blur both call confirm().
 	 */
 	let confirmed = false;

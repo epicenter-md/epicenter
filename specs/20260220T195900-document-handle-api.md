@@ -1,6 +1,6 @@
 # Document Handle API
 
-> **Note**: The `.docs` access pattern described here was replaced by `client.documents` — see specs/20260221T204200-documents-top-level-namespace.md
+> **Note**: The `.docs` access pattern described here was replaced by `client.documents`: see specs/20260221T204200-documents-top-level-namespace.md
 
 **Date:** 2026-02-20
 **Status:** Implemented
@@ -63,14 +63,14 @@ This creates problems:
 ```typescript
 const handle = await binding.open(id);
 
-// Content — synchronous, doc is already open
+// Content: synchronous, doc is already open
 const text = handle.read();
 handle.write('new content');
 
-// Exports — natural property, not a lookup function
+// Exports: natural property, not a lookup function
 await handle.exports.persistence?.clearData?.();
 
-// Lifecycle — "close" not "destroy"
+// Lifecycle: "close" not "destroy"
 await binding.close(id);
 ```
 
@@ -87,7 +87,7 @@ await binding.close(id);
  * Exports are a property, not a function, because they belong to this doc.
  */
 type DocumentHandle = {
-	/** The raw Y.Doc — escape hatch for custom operations (timelines, binary, sheets). */
+	/** The raw Y.Doc: escape hatch for custom operations (timelines, binary, sheets). */
 	ydoc: Y.Doc;
 
 	/** Read the document's text content (from `ydoc.getText('content')`). */
@@ -136,7 +136,7 @@ type DocumentBinding<TRow extends BaseRow> = {
 	 * Open a content Y.Doc for a row.
 	 *
 	 * Creates the Y.Doc if it doesn't exist, wires up providers, and attaches
-	 * the updatedAt observer. Idempotent — calling open() twice for the same
+	 * the updatedAt observer. Idempotent: calling open() twice for the same
 	 * row returns the same handle (same Y.Doc).
 	 *
 	 * @param input - A row (extracts GUID from the bound column) or a GUID string
@@ -144,7 +144,7 @@ type DocumentBinding<TRow extends BaseRow> = {
 	open(input: TRow | string): Promise<DocumentHandle>;
 
 	/**
-	 * Close a document — free memory, disconnect providers.
+	 * Close a document: free memory, disconnect providers.
 	 * Persisted data is NOT deleted. The doc can be re-opened later.
 	 *
 	 * @param input - A row or GUID string
@@ -209,7 +209,7 @@ const text = handle.read();
 handle.write(data);
 ```
 
-Note: the UI layer already needs the handle open to display content. The two-step pattern (open, then read/write) matches the actual UI lifecycle — open when the user navigates to a file, read/write while editing, close when they navigate away.
+Note: the UI layer already needs the handle open to display content. The two-step pattern (open, then read/write) matches the actual UI lifecycle: open when the user navigates to a file, read/write while editing, close when they navigate away.
 
 ### clearData-before-delete
 
@@ -225,7 +225,7 @@ await handle.exports.persistence?.clearData?.();
 await binding.close(guid);
 ```
 
-`exports` as a property is more natural — "this document's exports" rather than "look up exports for this ID."
+`exports` as a property is more natural: "this document's exports" rather than "look up exports for this ID."
 
 ### create-workspace.ts (workspace cleanup)
 
@@ -308,7 +308,7 @@ No more hidden `open()` calls inside `read()`/`write()`. The caller explicitly o
 
 ### 3. `getExports` disappears as a concept
 
-It's just `handle.exports` — a property on the thing you already have. No separate lookup function, no `undefined` return for "not open" (you have a handle, so it's open).
+It's just `handle.exports`: a property on the thing you already have. No separate lookup function, no `undefined` return for "not open" (you have a handle, so it's open).
 
 ### 4. `updatedAtOf` is removed
 
@@ -316,7 +316,7 @@ Zero usage outside tests. If needed, consumers can read `row[updatedAtKey]` dire
 
 ### 5. Naming clarity: `close` vs `destroy`
 
-"Close" correctly communicates "free resources, keep data." "Destroy" was misleading — it suggested permanent deletion, which is not what it does. This aligns with how filesystems (close a file handle), databases (close a connection), and editors (close a tab) use the term.
+"Close" correctly communicates "free resources, keep data." "Destroy" was misleading. It suggested permanent deletion, which is not what it does. This aligns with how filesystems (close a file handle), databases (close a connection), and editors (close a tab) use the term.
 
 ### 6. Handle pattern enables future extensions
 
@@ -326,7 +326,7 @@ If we later want to add `handle.isReady`, `handle.guid`, or `handle.observe()`, 
 
 ### Idempotent open returns the same handle
 
-Calling `open()` twice for the same GUID should return handles backed by the same Y.Doc. Whether it returns the exact same handle object or a new handle wrapping the same Y.Doc is an implementation detail — both are correct since handles are lightweight wrappers.
+Calling `open()` twice for the same GUID should return handles backed by the same Y.Doc. Whether it returns the exact same handle object or a new handle wrapping the same Y.Doc is an implementation detail: both are correct since handles are lightweight wrappers.
 
 ### Handle used after close
 
@@ -334,7 +334,7 @@ If a consumer holds a handle and someone else calls `binding.close(guid)`, the h
 
 ### content-helpers.ts only uses `ydoc`
 
-`createContentHelpers` calls `binding.open(fileId)` and only uses the returned Y.Doc for timeline operations. After the change it accesses `handle.ydoc`. The `read()`/`write()` methods on the handle won't be used by content-helpers since it has its own mode-aware content logic. This is fine — the handle provides both the convenience layer and the escape hatch.
+`createContentHelpers` calls `binding.open(fileId)` and only uses the returned Y.Doc for timeline operations. After the change it accesses `handle.ydoc`. The `read()`/`write()` methods on the handle won't be used by content-helpers since it has its own mode-aware content logic. This is fine. The handle provides both the convenience layer and the escape hatch.
 
 ## Implementation Plan
 
@@ -342,7 +342,7 @@ If a consumer holds a handle and someone else calls `binding.close(guid)`, the h
 
 - [x] **1.1** Add `DocumentHandle` type to `types.ts`
 - [x] **1.2** Update `DocumentBinding` type: change `open()` return type, rename `destroy`→`close`, `destroyAll`→`closeAll`, remove `read`, `write`, `getExports`, `updatedAtOf`
-- [x] **1.3** Update `DocsPropertyOf` if needed (no change needed — it maps to `DocumentBinding`)
+- [x] **1.3** Update `DocsPropertyOf` if needed (no change needed: it maps to `DocumentBinding`)
 
 ### Phase 2: Implementation
 
@@ -353,18 +353,18 @@ If a consumer holds a handle and someone else calls `binding.close(guid)`, the h
 
 ### Phase 3: Consumer updates
 
-- [x] **3.1** `content-helpers.ts` — change `binding.open(fileId)` usage to `(await binding.open(fileId)).ydoc`
-- [x] **3.2** `fs-state.svelte.ts` — change `binding.read(id)` / `binding.write(id, data)` to open-then-handle pattern
-- [x] **3.3** `yjs-file-system.ts` — no change needed (`FilesTableWithDocs` references `DocumentBinding` which updated automatically)
-- [x] **3.4** `create-workspace.ts` — rename `binding.destroyAll()` → `binding.closeAll()`
+- [x] **3.1** `content-helpers.ts`: change `binding.open(fileId)` usage to `(await binding.open(fileId)).ydoc`
+- [x] **3.2** `fs-state.svelte.ts`: change `binding.read(id)` / `binding.write(id, data)` to open-then-handle pattern
+- [x] **3.3** `yjs-file-system.ts`: no change needed (`FilesTableWithDocs` references `DocumentBinding` which updated automatically)
+- [x] **3.4** `create-workspace.ts`: rename `binding.destroyAll()` → `binding.closeAll()`
 
 ### Phase 4: Tests
 
-- [x] **4.1** Update `create-document-binding.test.ts` — adapt all tests to handle pattern
-- [x] **4.2** Update `create-workspace.test.ts` — adapt doc binding tests
-- [x] **4.3** Update `yjs-file-system.test.ts` — adapt binding usage in tests
-- [x] **4.4** `define-table.test.ts` — unaffected (tests definitions, not runtime)
-- [x] **4.5** Run full test suite — 1118 pass, 0 fail, 2 skip
+- [x] **4.1** Update `create-document-binding.test.ts`: adapt all tests to handle pattern
+- [x] **4.2** Update `create-workspace.test.ts`: adapt doc binding tests
+- [x] **4.3** Update `yjs-file-system.test.ts`: adapt binding usage in tests
+- [x] **4.4** `define-table.test.ts`: unaffected (tests definitions, not runtime)
+- [x] **4.5** Run full test suite: 1118 pass, 0 fail, 2 skip
 
 ## Open Questions
 
@@ -379,7 +379,7 @@ If a consumer holds a handle and someone else calls `binding.close(guid)`, the h
    - **Recommendation**: Keep hardcoded `'content'` for now. The escape hatch is `handle.ydoc.getText('whatever')`. If a pattern emerges, add `handle.getText(key)` later.
 
 3. **Should the `exports` type on `DocumentHandle` be more specific?**
-   - Currently `Record<string, Record<string, unknown>>` — very loose
+   - Currently `Record<string, Record<string, unknown>>`: very loose
    - Could be typed per-extension if document extensions declared their export shapes
    - **Recommendation**: Keep loose for now. Typed document extension exports is a separate feature that doesn't block this refactor.
 
@@ -387,7 +387,7 @@ If a consumer holds a handle and someone else calls `binding.close(guid)`, the h
 
 - [x] `DocumentBinding` has 3 methods: `open`, `close`, `closeAll`
 - [x] `DocumentHandle` has `ydoc`, `read()`, `write()`, `exports`
-- [x] All existing tests pass (adapted to new API) — 1118 pass, 0 fail
+- [x] All existing tests pass (adapted to new API): 1118 pass, 0 fail
 - [x] No `destroy` / `destroyAll` / `getExports` / `updatedAtOf` references remain on `DocumentBinding`
 - [x] `read()` and `write()` are synchronous on the handle
 - [x] `exports` is a property, not a function
@@ -404,7 +404,7 @@ If a consumer holds a handle and someone else calls `binding.close(guid)`, the h
 
 **Implementation (`create-document-binding.ts`)**:
 
-- Added `makeHandle()` factory — lightweight wrapper around Y.Doc + exports
+- Added `makeHandle()` factory: lightweight wrapper around Y.Doc + exports
 - `open()` now resolves to `makeHandle(contentYdoc, docExports)` instead of raw Y.Doc
 - Removed `read()`, `write()`, `getExports()`, `updatedAtOf()` implementations
 - Renamed `destroy()` → `close()`, `destroyAll()` → `closeAll()`
@@ -415,11 +415,11 @@ If a consumer holds a handle and someone else calls `binding.close(guid)`, the h
 - `create-workspace.ts`: `binding.destroyAll()` → `binding.closeAll()`
 - `content-helpers.ts`: `binding.open(fileId)` → `handle.ydoc` for timeline operations
 - `fs-state.svelte.ts`: `binding.read(id)` / `binding.write(id, data)` → open-then-handle pattern
-- `yjs-file-system.ts`: No changes needed — `FilesTableWithDocs` type updated automatically via `DocumentBinding`
+- `yjs-file-system.ts`: No changes needed: `FilesTableWithDocs` type updated automatically via `DocumentBinding`
 
 **Tests**:
 
-- `create-document-binding.test.ts`: All tests adapted — `doc` → `handle.ydoc`, `binding.read/write` → `handle.read/write`, `destroy` → `close`, `destroyAll` → `closeAll`, `getExports` → `handle.exports`, removed `updatedAtOf` test
+- `create-document-binding.test.ts`: All tests adapted: `doc` → `handle.ydoc`, `binding.read/write` → `handle.read/write`, `destroy` → `close`, `destroyAll` → `closeAll`, `getExports` → `handle.exports`, removed `updatedAtOf` test
 - `create-workspace.test.ts`: Updated `DocumentBindingLike` helper type, updated method existence assertions
 - `yjs-file-system.test.ts`: Updated 3 callsites that used `binding.open()` result as raw Y.Doc
 
@@ -435,13 +435,13 @@ If a consumer holds a handle and someone else calls `binding.close(guid)`, the h
 
 ## Related Specs
 
-- [Extension Handle Passthrough](./20260220T200000-extension-handle-passthrough.md) — Changes how extensions are stored in `client.extensions[key]` from flat exports to `{ exports, lifecycle }` wrappers. **Overlapping file**: `create-document-binding.ts` — this spec changed the binding surface (`open→DocumentHandle`, `destroy→close`); that spec changes how document extension results are wrapped in the extension loop. **No conflicts** — `DocumentHandle.exports` (introduced by this spec) stays flat. Only `DocumentContext.extensions` (factory context) gets the `ExtensionHandle` wrapper.
+- [Extension Handle Passthrough](./20260220T200000-extension-handle-passthrough.md): Changes how extensions are stored in `client.extensions[key]` from flat exports to `{ exports, lifecycle }` wrappers. **Overlapping file**: `create-document-binding.ts`: this spec changed the binding surface (`open→DocumentHandle`, `destroy→close`); that spec changes how document extension results are wrapped in the extension loop. **No conflicts**: `DocumentHandle.exports` (introduced by this spec) stays flat. Only `DocumentContext.extensions` (factory context) gets the `ExtensionHandle` wrapper.
 
 ## References
 
-- `packages/epicenter/src/static/types.ts` — Type definitions (primary change)
-- `packages/epicenter/src/static/create-document-binding.ts` — Runtime implementation
-- `packages/epicenter/src/static/create-workspace.ts` — Wiring (destroyAll → closeAll)
-- `packages/filesystem/src/content-helpers.ts` — Primary consumer (open → ydoc)
-- `apps/fs-explorer/src/lib/fs/fs-state.svelte.ts` — UI consumer (read/write)
-- `packages/filesystem/src/yjs-file-system.ts` — Type reference (FilesTableWithDocs)
+- `packages/epicenter/src/static/types.ts`: Type definitions (primary change)
+- `packages/epicenter/src/static/create-document-binding.ts`: Runtime implementation
+- `packages/epicenter/src/static/create-workspace.ts`: Wiring (destroyAll → closeAll)
+- `packages/filesystem/src/content-helpers.ts`: Primary consumer (open → ydoc)
+- `apps/fs-explorer/src/lib/fs/fs-state.svelte.ts`: UI consumer (read/write)
+- `packages/filesystem/src/yjs-file-system.ts`: Type reference (FilesTableWithDocs)

@@ -10,7 +10,7 @@
  *
  * Historically each transport defined its own symbol locally, which meant
  * two separate symbols for the same semantic "this update came from the
- * server" concept — fine as long as only one transport existed per Y.Doc,
+ * server" concept: fine as long as only one transport existed per Y.Doc,
  * risky once multiple layers could attach. These exports make the contract
  * explicit and unambiguous.
  *

@@ -1,4 +1,4 @@
-# Migrate to defineErrors v2 — Rust-style Namespaced Errors
+# Migrate to defineErrors v2: Rust-style Namespaced Errors
 
 **Created**: 2026-03-02
 **Status**: Implemented
@@ -10,7 +10,7 @@
 
 ## Summary
 
-Once wellcrafted publishes `defineErrors` v2, migrate all 24 error definitions in this monorepo from `createTaggedError` builder chains to Rust-style namespaced `defineErrors`. This migration touches **both definition sites AND call sites** — every `FooServiceErr({...})` becomes `FooError.Variant({...})`.
+Once wellcrafted publishes `defineErrors` v2, migrate all 24 error definitions in this monorepo from `createTaggedError` builder chains to Rust-style namespaced `defineErrors`. This migration touches **both definition sites AND call sites**: every `FooServiceErr({...})` becomes `FooError.Variant({...})`.
 
 The key changes:
 - Short variant names under a namespace (`HttpError.Connection` not `ConnectionErr`)
@@ -105,7 +105,7 @@ AutostartServiceErr({ operation: 'check', cause: extractErrorMessage(error) })
 ResponseErr({ status: 404 })
 ConnectionErr({ cause: extractErrorMessage(error) })
 
-// AFTER (v2 / defineErrors namespaced — cause: unknown, extractErrorMessage in constructor):
+// AFTER (v2 / defineErrors namespaced: cause: unknown, extractErrorMessage in constructor):
 AutostartError.Service({ operation: 'check', cause: error })
 HttpError.Response({ status: 404 })
 HttpError.Connection({ cause: error })
@@ -126,7 +126,7 @@ For each file: the current definition, the v2 replacement, and call site changes
 
 ---
 
-### 1. HTTP service errors (grouped — the model)
+### 1. HTTP service errors (grouped: the model)
 
 **File**: `apps/whispering/src/lib/services/isomorphic/http/types.ts`
 
@@ -407,7 +407,7 @@ Call site: `TrayError.SetIcon({ cause: extractErrorMessage(error) })`
 
 ### 5. Bare errors (message at call site)
 
-These all follow the same minimal pattern — message provided by the caller:
+These all follow the same minimal pattern: message provided by the caller:
 
 ```typescript
 const FooError = defineErrors({
@@ -546,8 +546,8 @@ For each file:
    - [x] `global-shortcut-manager.ts` (2 errors → `ShortcutError` with 2 variants)
 3. [x] **Migrate services with fields + sealed message** (definition + call site changes):
    - [x] `autostart.ts`, `command.ts`, `ffmpeg.ts`, `fs.ts`, `permissions.ts`, `tray.ts`, `device-stream.ts`
-   - [x] `os/types.ts` (not in original spec — discovered during audit)
-   - [x] `local-shortcut-manager.ts` (not in original spec — discovered during audit)
+   - [x] `os/types.ts` (not in original spec: discovered during audit)
+   - [x] `local-shortcut-manager.ts` (not in original spec: discovered during audit)
 4. [x] **Migrate bare errors** (definition + call site changes):
    - [x] DbError, CompletionError, RecorderError (60+ call sites across 18 files)
    - [x] TextError, AnalyticsError, NotificationError, DownloadError, SoundError (23 files)
@@ -561,20 +561,20 @@ For each file:
 
 ## Verification
 
-1. `bun run typecheck` — no type errors across the monorepo
-2. `bun run build` — build succeeds for all apps/packages
+1. `bun run typecheck`: no type errors across the monorepo
+2. `bun run build`: build succeeds for all apps/packages
 3. Spot-check: for 3-4 migrated files, verify the factory's return type matches the expected shape (same `message`, and field types, but `name` is now the short variant key)
-4. **Every call site must be updated** — grep for old names (`FooServiceErr`, `FooServiceError(`) to ensure no stragglers
-5. **Every discrimination must be updated** — grep for old `name` checks (`=== 'FooServiceError'`)
+4. **Every call site must be updated**: grep for old names (`FooServiceErr`, `FooServiceError(`) to ensure no stragglers
+5. **Every discrimination must be updated**: grep for old `name` checks (`=== 'FooServiceError'`)
 
 ## Notes for implementing agent
 
 - **Call sites MUST change.** Every `FooServiceErr({...})` becomes `Namespace.Variant({...})`. Every `error.name === 'FooServiceError'` becomes `error.name === 'Variant'`.
 - **Use `...input` spread** for errors with many fields to avoid repetition. For errors with 1-2 fields, explicit listing is fine.
 - **`InferErrors` replaces manual unions.** For multi-variant namespaces, `type HttpError = InferErrors<typeof HttpError>` is the union.
-- **`InferError` takes the factory directly.** `InferError<typeof HttpError.Connection>` — no string key.
+- **`InferError` takes the factory directly.** `InferError<typeof HttpError.Connection>`: no string key.
 - **Keep `extractErrorMessage` imports.** That utility is unchanged.
-- **`name` is auto-stamped as the short variant key.** Do not include `name` in the constructor return — `defineErrors` adds it.
+- **`name` is auto-stamped as the short variant key.** Do not include `name` in the constructor return: `defineErrors` adds it.
 - The per-service granularity decisions from `20260226T000000-granular-error-migration.md` (whether to split `RecorderServiceError` into `RecorderBusyError` + `RecorderStartError`, etc.) remain valid and are not affected by this API change. This spec only changes how errors are defined, not which errors exist.
 - **Errors are `Readonly` and `Object.freeze`d.** This is automatic.
 - **Every factory returns `Err<...>` directly.** No need for `Err()` wrapping at call sites.
@@ -597,5 +597,5 @@ Migrated all 24+ error definitions from `createTaggedError` builder chains to `d
 
 ### Follow-up Work
 
-- The `WhisperingError` pattern in `result.ts` still uses manual construction rather than `defineErrors`. Consider migrating it for consistency (out of scope — it doesn't use `createTaggedError`).
+- The `WhisperingError` pattern in `result.ts` still uses manual construction rather than `defineErrors`. Consider migrating it for consistency (out of scope: it doesn't use `createTaggedError`).
 - Pre-existing type errors in `packages/ui` (Record type args), `+page.svelte` (void/Promise mismatch), `packages/filesystem` (FileId), `apps/demo-mcp` (DrizzleDb) are unrelated to this migration.

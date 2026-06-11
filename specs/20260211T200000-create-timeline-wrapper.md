@@ -15,7 +15,7 @@ const current = getCurrentEntry(timeline);     // timeline.get(timeline.length -
 const mode = getEntryType(current);            // current.get('type')
 ```
 
-Tests are worse — they reach through `(content as any).store.ensure(id)` then call `getTimeline(ydoc).length` just to assert timeline didn't grow.
+Tests are worse. They reach through `(content as any).store.ensure(id)` then call `getTimeline(ydoc).length` just to assert timeline didn't grow.
 
 The raw Yjs calls (`ydoc.getArray`, `Y.Map.get('type')`, `Y.Map.get('content')`) leak through every consumer. Nobody should need to know the timeline lives at `ydoc.getArray('timeline')` or that entries are `Y.Map` instances with a `'type'` key.
 
@@ -195,7 +195,7 @@ export class ContentOps {
 
 ### Test improvements
 
-**content-ops.test.ts** — Tests that currently do:
+**content-ops.test.ts**: Tests that currently do:
 
 ```typescript
 const ydoc = await (content as any).store.ensure(id);
@@ -211,7 +211,7 @@ expect(createTimeline(ydoc).length).toBe(1);
 
 This removes the `getTimeline` import from tests entirely. The test still reaches into `.store` internals (unavoidable for timeline-length assertions), but no longer needs to know the array key name.
 
-**yjs-file-system.test.ts** — The `getTimelineLength` helper:
+**yjs-file-system.test.ts**: The `getTimelineLength` helper:
 
 ```typescript
 // Before
@@ -237,11 +237,11 @@ async function getTimelineLength(fs: YjsFileSystem, path: string): Promise<numbe
 
 ### What does NOT change
 
-- `content-doc-store.ts` — doesn't use timeline helpers at all
-- `file-tree.ts` — metadata only, no content awareness
-- `yjs-file-system.ts` — delegates to `ContentOps`, doesn't touch timeline helpers
-- `types.ts` — `ContentType`, `TimelineEntry` types stay as-is
-- `index.ts` — no timeline-helpers re-exports exist today
+- `content-doc-store.ts`: doesn't use timeline helpers at all
+- `file-tree.ts`: metadata only, no content awareness
+- `yjs-file-system.ts`: delegates to `ContentOps`, doesn't touch timeline helpers
+- `types.ts`: `ContentType`, `TimelineEntry` types stay as-is
+- `index.ts`: no timeline-helpers re-exports exist today
 
 ---
 
@@ -259,7 +259,7 @@ async function getTimelineLength(fs: YjsFileSystem, path: string): Promise<numbe
 - **File**: `content-ops.ts`
 - Replace 7-function import with single `createTimeline` import
 - Rewrite `read`, `readBuffer`, `write`, `append` to use `createTimeline(ydoc)` wrapper
-- No behavior changes — same mode-switching logic, same transact boundaries
+- No behavior changes: same mode-switching logic, same transact boundaries
 
 ### Step 3: Update tests
 
@@ -272,8 +272,8 @@ async function getTimelineLength(fs: YjsFileSystem, path: string): Promise<numbe
 
 ### Step 4: Verify
 
-- Run `bun test packages/epicenter/src/filesystem/` — all existing tests pass unchanged
-- Run `bun run typecheck` — no type errors
+- Run `bun test packages/epicenter/src/filesystem/`: all existing tests pass unchanged
+- Run `bun run typecheck`: no type errors
 
 ---
 
@@ -288,8 +288,8 @@ async function getTimelineLength(fs: YjsFileSystem, path: string): Promise<numbe
 
 ## References
 
-- `packages/epicenter/src/filesystem/timeline-helpers.ts` — file being refactored
-- `packages/epicenter/src/filesystem/content-ops.ts` — primary consumer
-- `packages/epicenter/src/filesystem/content-ops.test.ts` — test consumer
-- `packages/epicenter/src/filesystem/yjs-file-system.test.ts` — test consumer
-- `specs/20260212T120000-yjs-filesystem-decomposition.md` — parent decomposition spec
+- `packages/epicenter/src/filesystem/timeline-helpers.ts`: file being refactored
+- `packages/epicenter/src/filesystem/content-ops.ts`: primary consumer
+- `packages/epicenter/src/filesystem/content-ops.test.ts`: test consumer
+- `packages/epicenter/src/filesystem/yjs-file-system.test.ts`: test consumer
+- `specs/20260212T120000-yjs-filesystem-decomposition.md`: parent decomposition spec

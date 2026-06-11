@@ -8,7 +8,7 @@
 
 `server-remote` runs in two modes: deploy to Cloudflare Workers, or run as a standalone Node.js/Bun server. Both share the same Hono routes (auth, AI chat, provider proxy, health) but differ in sync transport, auth backing store, and runtime bindings.
 
-The question: what's the right folder/package structure for hosting these two adapters? The answer matters for self-hosters — someone who clones this repo and wants to deploy their own remote hub needs to quickly find the right entry point, configure it, and run it.
+The question: what's the right folder/package structure for hosting these two adapters? The answer matters for self-hosters: someone who clones this repo and wants to deploy their own remote hub needs to quickly find the right entry point, configure it, and run it.
 
 ## Current State
 
@@ -18,7 +18,7 @@ Single package, adapters as subdirectories:
 packages/server-remote/
 ├── package.json              # all deps (Cloudflare + standalone)
 ├── src/
-│   ├── app.ts                # createSharedApp() — shared Hono routes
+│   ├── app.ts                # createSharedApp(): shared Hono routes
 │   ├── types.ts              # SharedEnv, AuthInstance, etc.
 │   ├── auth/                 # shared auth (middleware, base config)
 │   ├── proxy/                # shared AI chat + provider proxy
@@ -50,27 +50,27 @@ packages/server-remote/
 
 **Pros:**
 - Everything server-remote is in one place. One `cd`, one mental model.
-- Shared code is just relative imports — no cross-package dependency resolution.
+- Shared code is just relative imports: no cross-package dependency resolution.
 - Already implemented and working.
 
 **Cons:**
-- `wrangler.toml` lives at `src/adapters/cloudflare/wrangler.toml`. Every wrangler command needs `--config`. `wrangler secret put`, `wrangler tail`, `wrangler types` — all need the flag. Self-hosters will stumble on this.
-- Mixed `package.json` — `postgres` (standalone), `@cloudflare/workers-types` (CF), `wrangler` (CF) are all in one dependency list. Both adapters' deps are installed regardless of which one you use.
+- `wrangler.toml` lives at `src/adapters/cloudflare/wrangler.toml`. Every wrangler command needs `--config`. `wrangler secret put`, `wrangler tail`, `wrangler types`: all need the flag. Self-hosters will stumble on this.
+- Mixed `package.json`: `postgres` (standalone), `@cloudflare/workers-types` (CF), `wrangler` (CF) are all in one dependency list. Both adapters' deps are installed regardless of which one you use.
 - Self-hoster entry point is buried: `packages/server-remote/src/adapters/standalone/start.ts`. Not obvious.
 
 ### Option B: Separate packages per adapter
 
 ```
 packages/server-remote/                  # shared core library
-packages/server-remote/       # CF Worker — wrangler.toml at root
-packages/server-remote-standalone/       # Node/Bun server — entry point at root
+packages/server-remote/       # CF Worker: wrangler.toml at root
+packages/server-remote-standalone/       # Node/Bun server: entry point at root
 ```
 
 **Pros:**
 - Each deployable is its own package with config at the root. A self-hoster sees `server-remote-standalone/`, opens it, sees `package.json` with `bun run start`, `.env.example`, and a clear entry point.
-- `wrangler.toml` at package root — every wrangler command works without `--config`.
+- `wrangler.toml` at package root: every wrangler command works without `--config`.
 - Dependencies are separated. CF adapter has `wrangler` and Workers types. Standalone has `postgres`. Neither pollutes the other.
-- CI/CD is clean — deploy the CF worker from `server-remote/`, deploy standalone from `server-remote-standalone/`.
+- CI/CD is clean: deploy the CF worker from `server-remote/`, deploy standalone from `server-remote-standalone/`.
 
 **Cons:**
 - Three packages instead of one. More `package.json` files, more workspace entries.
@@ -90,7 +90,7 @@ apps/server-standalone/         # deployable Node/Bun server
 - Convention matches Turborepo/Nx monorepo patterns.
 
 **Cons:**
-- In this monorepo, `apps/` contains Tauri apps and browser extensions — things with their own build toolchains and UI. The server adapters are thin Hono compositions, not full apps. They'd feel out of place next to the Tauri app.
+- In this monorepo, `apps/` contains Tauri apps and browser extensions: things with their own build toolchains and UI. The server adapters are thin Hono compositions, not full apps. They'd feel out of place next to the Tauri app.
 - Scatters server code across two top-level directories.
 
 ### Option D: Nested deployables with their own package.json
@@ -130,7 +130,7 @@ The primary user is a self-hoster who wants to deploy a remote hub. Their experi
 
 This is the path of least confusion. Every alternative requires the self-hoster to understand the internal adapter structure before they can deploy.
 
-The shared core (`server-remote`) stays as a library. The adapters are consumers. This matches how the code already works — `createSharedApp()` is a library function that adapters call.
+The shared core (`server-remote`) stays as a library. The adapters are consumers. This matches how the code already works: `createSharedApp()` is a library function that adapters call.
 
 ## Target Structure
 
@@ -261,7 +261,7 @@ Note how clean the scripts are. No `--config` paths. No `cd` into subdirectories
 1. Remove `src/adapters/` directory entirely
 2. Remove adapter-specific deps from `package.json` (wrangler, @cloudflare/workers-types)
 3. Remove adapter-specific scripts (dev:cloudflare, deploy:cloudflare, typegen)
-4. Update `index.ts` — remove standalone adapter re-exports
+4. Update `index.ts`: remove standalone adapter re-exports
 5. Update any consumers that imported `createRemoteHub` from `@epicenter/server-remote` → `@epicenter/server-remote-standalone`
 
 ### Phase 4: Update CLI
@@ -305,6 +305,6 @@ After the split, each adapter package should have a clear README:
 
 1. **Should server-remote-standalone support Node.js (not just Bun)?** Currently uses `hono/bun` for WebSocket support. `@hono/node-ws` exists but is a separate adapter. Decision: start Bun-only, add Node support if requested.
 
-2. **Should the standalone adapter package export its factory function?** Currently `index.ts` re-exports `createRemoteHub` from the standalone adapter. After the split, consumers would import from `@epicenter/server-remote-standalone`. If it's only used as a runnable entry point (not imported programmatically), it doesn't need to export anything — just have `start.ts`.
+2. **Should the standalone adapter package export its factory function?** Currently `index.ts` re-exports `createRemoteHub` from the standalone adapter. After the split, consumers would import from `@epicenter/server-remote-standalone`. If it's only used as a runnable entry point (not imported programmatically), it doesn't need to export anything: just have `start.ts`.
 
 3. **Naming: `server-remote` vs `server-cloudflare`?** The `server-remote-` prefix is verbose but makes the relationship clear. `server-cloudflare` is shorter but doesn't signal it's the remote hub (vs a hypothetical Cloudflare worker for something else). Decision: use `server-remote` for clarity.

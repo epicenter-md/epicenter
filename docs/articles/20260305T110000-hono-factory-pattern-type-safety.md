@@ -32,7 +32,7 @@ export function createProxyHandler() {
 
 > **Note:** `Bindings` no longer needs to be manually maintained. Run `wrangler types` to generate a `worker-configuration.d.ts` with a `Cloudflare.Env` namespace derived from your `wrangler.toml`. KV namespaces, Durable Objects, vars, and secrets are all typed automatically.
 >
-> Similarly, `auth` no longer lives in `Variables`. Since `import { env } from "cloudflare:workers"` gives module-level access to bindings, the auth instance is a module-level singleton — import it directly instead of threading it through middleware and `c.var`.
+> Similarly, `auth` no longer lives in `Variables`. Since `import { env } from "cloudflare:workers"` gives module-level access to bindings, the auth instance is a module-level singleton: import it directly instead of threading it through middleware and `c.var`.
 
 Compare this to the manual approach. Without the factory, each file imports `Context` and `AppEnv` separately, annotating handlers individually.
 
@@ -49,7 +49,7 @@ export function createProxyHandler() {
 }
 ```
 
-The factory approach wins on three fronts. First, you avoid repeating the same type annotation across dozens of handler files. Second, types propagate automatically from the factory—change `AppEnv` and every handler sees the update. Third, reading `factory.createMiddleware()` immediately signals to readers that this code is part of the typed ecosystem.
+The factory approach wins on three fronts. First, you avoid repeating the same type annotation across dozens of handler files. Second, types propagate automatically from the factory. Change `AppEnv` and every handler sees the update. Third, reading `factory.createMiddleware()` immediately signals to readers that this code is part of the typed ecosystem.
 
 ```
 AppEnv (single source of truth)

@@ -19,7 +19,7 @@ Replace the deployment-wide encryption key (`SHA-256(BETTER_AUTH_SECRET)`) with 
 ### Current State
 
 ```typescript
-// apps/api/src/app.ts — every session gets the same key
+// apps/api/src/app.ts: every session gets the same key
 async function deriveKeyFromSecret(secret: string): Promise<Uint8Array> {
   const hash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(secret));
   return new Uint8Array(hash);
@@ -35,7 +35,7 @@ This creates three problems:
 
 1. **Deployment-wide blast radius.** One compromised client can decrypt any captured ciphertext from any workspace in the deployment. The key is identical for every user and workspace.
 2. **No key rotation.** Rotating `BETTER_AUTH_SECRET` changes the encryption key for every workspace simultaneously. Existing ciphertext becomes unreadable unless you re-encrypt everything in one atomic operation.
-3. **No path to workspace sharing.** If users A and B share a workspace, they need the same DEK. With a deployment-wide key this is trivially true, but it's the wrong kind of "sharing"—it means every user can read every workspace.
+3. **No path to workspace sharing.** If users A and B share a workspace, they need the same DEK. With a deployment-wide key this is trivially true, but it's the wrong kind of "sharing". It means every user can read every workspace.
 
 ### Desired State
 
@@ -64,7 +64,7 @@ createEncryptedKvLww(yarray, {
 | B: Random DEK + server KEK wrap | `randomBytes(32)`, wrapped by KEK | Postgres | Re-wrap needed | Re-wrap only, no re-encrypt | Works (same DEK, multiple wrapped copies) |
 | C: Random DEK + password wrap | `randomBytes(32)`, wrapped by PBKDF2(password) | Postgres | N/A (zero-knowledge) | Re-wrap on password change | Needs public-key envelopes |
 
-**Key finding**: Option A doesn't work for workspace sharing—Alice and Bob would derive different keys and can't read the same Yjs ciphertext. Option B is the right balance for both cloud and self-hosted.
+**Key finding**: Option A doesn't work for workspace sharing. Alice and Bob would derive different keys and can't read the same Yjs ciphertext. Option B is the right balance for both cloud and self-hosted.
 
 **Implication**: Use Option B for server-managed mode. Defer Option C (zero-knowledge + sharing) to a future spec requiring public-key infrastructure.
 
@@ -169,24 +169,24 @@ WORKSPACE_KEY_SECRET (env var, separate from BETTER_AUTH_SECRET)
 ### Phase 3: Per-App Wiring
 
 - [ ] **3.1** Remove `encryptionKey` from `customSession` plugin response. Session no longer carries the key.
-- [ ] **3.2** **epicenter** — On workspace open, call `fetchWorkspaceKey`. Pass `key: workspaceKeyCache.getSync(wsId)` to `createWorkspace`.
-- [ ] **3.3** **whispering** — Same pattern.
-- [ ] **3.4** **tab-manager** — Same pattern. Verify Chrome extension can call the key endpoint.
+- [ ] **3.2** **epicenter**: On workspace open, call `fetchWorkspaceKey`. Pass `key: workspaceKeyCache.getSync(wsId)` to `createWorkspace`.
+- [ ] **3.3** **whispering**: Same pattern.
+- [ ] **3.4** **tab-manager**: Same pattern. Verify Chrome extension can call the key endpoint.
 
 ### Phase 4: Key Rotation Support
 
-- [ ] **4.1** Add `rewrapWorkspaceKeys({ db, fromVersion, toVersion, limit })` — batch re-wrap DEKs when KEK version changes. Background-safe (idempotent, limit-based).
+- [ ] **4.1** Add `rewrapWorkspaceKeys({ db, fromVersion, toVersion, limit })`: batch re-wrap DEKs when KEK version changes. Background-safe (idempotent, limit-based).
 - [ ] **4.2** Support a small keyring of encrypted + retired KEK versions. Unwrap tries current version, falls back to `kek_version` from the row.
 
 ### Phase 5: Workspace Sharing (Future)
 
-- [ ] **5.1** `shareWorkspaceDek({ db, workspaceId, ownerUserId, targetUserId })` — reads owner's wrapped DEK, unwraps, re-wraps for target user's KEK, inserts new row.
+- [ ] **5.1** `shareWorkspaceDek({ db, workspaceId, ownerUserId, targetUserId })`: reads owner's wrapped DEK, unwraps, re-wraps for target user's KEK, inserts new row.
 - [ ] **5.2** Access control check before sharing.
 
 ### Phase 6: Verify
 
-- [ ] **6.1** `bun test` in `packages/workspace` — all pass
-- [ ] **6.2** `bun run typecheck` — clean
+- [ ] **6.1** `bun test` in `packages/workspace`: all pass
+- [ ] **6.2** `bun run typecheck`: clean
 - [ ] **6.3** Manual: sign in → open workspace → verify DEK fetched → new writes produce EncryptedBlob → sign out → workspace locked
 
 ## Edge Cases
@@ -211,14 +211,14 @@ WORKSPACE_KEY_SECRET (env var, separate from BETTER_AUTH_SECRET)
 1. Remove row from `workspace_user_key` for that user
 2. User's next `GET /workspaces/:id/key` returns 403
 3. Client can't fetch DEK → workspace stays locked
-4. Ciphertext in the Yjs doc is still encrypted with the workspace DEK — removing access doesn't require re-encryption (user already had the DEK in memory during their session)
+4. Ciphertext in the Yjs doc is still encrypted with the workspace DEK: removing access doesn't require re-encryption (user already had the DEK in memory during their session)
 
 ### Offline with cached key
 
 1. User opens workspace, DEK cached in memory
 2. Network goes down
 3. Reads/writes continue locally (CRDT)
-4. Sync resumes when network returns — no key re-fetch needed (key is in memory)
+4. Sync resumes when network returns: no key re-fetch needed (key is in memory)
 5. Full page refresh without network → no key available → workspace locked until network returns (unless persistent KeyCache is implemented)
 
 ## Open Questions
@@ -226,14 +226,14 @@ WORKSPACE_KEY_SECRET (env var, separate from BETTER_AUTH_SECRET)
 1. **Should the key endpoint return the DEK directly, or should the client derive it?**
    - Direct: simpler, fewer client-side crypto operations.
    - Client-derive: server never sees the raw DEK (true for Option C, not for Option B).
-   - **Recommendation**: Direct for server-managed mode. The server already wraps/unwraps — it has the raw DEK transiently. Pretending otherwise is security theater for cloud mode.
+   - **Recommendation**: Direct for server-managed mode. The server already wraps/unwraps: it has the raw DEK transiently. Pretending otherwise is security theater for cloud mode.
 
 2. **Should we implement persistent `WorkspaceKeyCache` now?**
    - Without it: every page refresh requires a network roundtrip before decryption works.
    - With it: workspace decrypts instantly from cache, auth roundtrip happens in background.
    - **Recommendation**: Start with in-memory only. Add `sessionStorage` persistence as a fast follow if refresh latency is noticeable.
 
-3. **Workspace ID source — where does the workspace ID come from?**
+3. **Workspace ID source: where does the workspace ID come from?**
    - Currently workspaces are implicitly single per user (no workspace ID in URLs or schemas).
    - Per-workspace keys require an explicit workspace ID.
    - **Recommendation**: Use the Yjs doc name as the workspace ID. It's already unique per workspace.
@@ -256,11 +256,11 @@ WORKSPACE_KEY_SECRET (env var, separate from BETTER_AUTH_SECRET)
 
 ## References
 
-- `apps/api/src/app.ts` — current `deriveKeyFromSecret` and `customSession` (to be replaced)
-- `packages/workspace/src/shared/crypto/index.ts` — encryption primitives (unchanged)
-- `packages/workspace/src/shared/crypto/key-cache.ts` — `KeyCache` interface (to be extended/replaced with `WorkspaceKeyCache`)
-- `packages/workspace/src/shared/y-keyvalue/y-keyvalue-lww-encrypted.ts` — `lock()` and `activateEncryption()` from hardening spec
-- `specs/20260314T063000-encryption-wrapper-hardening.md` — prerequisite (mode system, AAD, error containment)
-- `specs/20260313T180100-client-side-encryption-wiring.md` — original wiring plan (Phases 1-3 still apply for per-app integration)
-- NIST SP 800-38D — AES-GCM nonce uniqueness requirements
-- AWS Encryption SDK concepts — envelope encryption pattern reference
+- `apps/api/src/app.ts`: current `deriveKeyFromSecret` and `customSession` (to be replaced)
+- `packages/workspace/src/shared/crypto/index.ts`: encryption primitives (unchanged)
+- `packages/workspace/src/shared/crypto/key-cache.ts`: `KeyCache` interface (to be extended/replaced with `WorkspaceKeyCache`)
+- `packages/workspace/src/shared/y-keyvalue/y-keyvalue-lww-encrypted.ts`: `lock()` and `activateEncryption()` from hardening spec
+- `specs/20260314T063000-encryption-wrapper-hardening.md`: prerequisite (mode system, AAD, error containment)
+- `specs/20260313T180100-client-side-encryption-wiring.md`: original wiring plan (Phases 1-3 still apply for per-app integration)
+- NIST SP 800-38D: AES-GCM nonce uniqueness requirements
+- AWS Encryption SDK concepts: envelope encryption pattern reference

@@ -4,12 +4,12 @@
 **Status**: Draft (Updated 2026-03-12: key option, decrypted map, all open questions resolved)
 **Builds on**: `specs/20260213T005300-encrypted-workspace-storage.md`
 
-> **Note (2026-03-13)**: The `alg` and `iv` fields were later removed from `EncryptedBlob`. The blob format is now `{ v: 1, ct }`—the version field is the sole contract for algorithm and encoding. The `ct` field contains `base64(nonce(12) || ciphertext || tag(16))`. See `specs/20260313T202000-encrypted-blob-pack-nonce.md`.
+> **Note (2026-03-13)**: The `alg` and `iv` fields were later removed from `EncryptedBlob`. The blob format is now `{ v: 1, ct }`: the version field is the sole contract for algorithm and encoding. The `ct` field contains `base64(nonce(12) || ciphertext || tag(16))`. See `specs/20260313T202000-encrypted-blob-pack-nonce.md`.
 > **Note (2026-03-14)**: The `{ v: 1, ct }` object wrapper has been replaced with a bare `Uint8Array` with self-describing binary header. See `specs/20260314T230000-bare-uint8array-encrypted-blob.md`.
 
 ## Overview
 
-An encrypted variant of `YKeyValueLww` that transparently encrypts values before they enter the Y.Doc and decrypts on read. Encryption at the CRDT data structure level—the lowest possible insertion point—so no higher layer can accidentally bypass it.
+An encrypted variant of `YKeyValueLww` that transparently encrypts values before they enter the Y.Doc and decrypts on read. Encryption at the CRDT data structure level. The lowest possible insertion point. So no higher layer can accidentally bypass it.
 
 ## Motivation
 
@@ -46,9 +46,9 @@ kv.set('tab-1', { url: 'https://bank.com', title: 'My Bank Account' });
 
 Three options were evaluated:
 
-**Option A: Server-side at-rest only.** The Durable Object encrypts when persisting to SQLite. The client Y.Doc and IndexedDB stay plaintext. Simplest—no loading gates, no key management. But IndexedDB is fully readable by any browser extension, any XSS attack, any forensic tool. Cloudflare already encrypts disks, so this adds minimal real security. And anyone with access to the DO runtime (Cloudflare employee, security breach, law enforcement request) sees plaintext values in the Y.Doc.
+**Option A: Server-side at-rest only.** The Durable Object encrypts when persisting to SQLite. The client Y.Doc and IndexedDB stay plaintext. Simplest. No loading gates, no key management. But IndexedDB is fully readable by any browser extension, any XSS attack, any forensic tool. Cloudflare already encrypts disks, so this adds minimal real security. And anyone with access to the DO runtime (Cloudflare employee, security breach, law enforcement request) sees plaintext values in the Y.Doc.
 
-**Option B: Client-side CRDT encryption (this spec).** Values encrypted before entering the Y.Doc. Everything downstream—IndexedDB, WebSocket sync, DO storage—automatically gets ciphertext. One wrapper, one code path. The key source is the only variable between cloud and self-hosted.
+**Option B: Client-side CRDT encryption (this spec).** Values encrypted before entering the Y.Doc. Everything downstream. IndexedDB, WebSocket sync, DO storage. Automatically gets ciphertext. One wrapper, one code path. The key source is the only variable between cloud and self-hosted.
 
 **Option C: Hybrid.** Server-side for cloud, client-side for self-hosted. Two encryption strategies, two code paths. Every data feature asks "which mode am I in?" Double the test surface for marginal UX gain in cloud mode.
 
@@ -56,19 +56,19 @@ Three options were evaluated:
 
 | Mode | Key source | Server can decrypt? |
 |---|---|---|
-| Epicenter Cloud | Server derives from `BETTER_AUTH_SECRET`, sends on auth | Yes (stated in README—server is trusted) |
+| Epicenter Cloud | Server derives from `BETTER_AUTH_SECRET`, sends on auth | Yes (stated in README. Server is trusted) |
 | Self-hosted (opt-in) | User password → PBKDF2 → key | No (real E2E zero-knowledge) |
 | Local / no encryption | No key → passthrough | N/A (plaintext, OS disk encryption suffices) |
 
-**Why not server-side only?** Client-side CRDT encryption costs ~100 lines of wrapper code and adds ~1ms per 1000 values. The self-hosted E2E story falls out for free—same code, different key source. Server-side only saves no meaningful complexity while losing the security narrative that matters: "Self-hosted is real zero-knowledge. The server never sees your key."
+**Why not server-side only?** Client-side CRDT encryption costs ~100 lines of wrapper code and adds ~1ms per 1000 values. The self-hosted E2E story falls out for free. Same code, different key source. Server-side only saves no meaningful complexity while losing the security narrative that matters: "Self-hosted is real zero-knowledge. The server never sees your key."
 
-**What Cloudflare disk encryption doesn't cover:** Cloudflare encrypts hard drives. But anyone with access to the Durable Object runtime sees the Y.Doc in plaintext—values are right there in the SQLite rows. With CRDT-level encryption, that same person sees noise. They can see key names (`tab-1`, `theme`) and timestamps, but not the values. They'd need `BETTER_AUTH_SECRET` to decrypt.
+**What Cloudflare disk encryption doesn't cover:** Cloudflare encrypts hard drives. But anyone with access to the Durable Object runtime sees the Y.Doc in plaintext. Values are right there in the SQLite rows. With CRDT-level encryption, that same person sees noise. They can see key names (`tab-1`, `theme`) and timestamps, but not the values. They'd need `BETTER_AUTH_SECRET` to decrypt.
 
 ## Design Decisions
 
 | Decision | Choice | Rationale |
 |---|---|---|
-| Architecture | Composition wrapper around `YKeyValueLww` | Zero changes to the existing LWW class. Yjs `ContentAny` stores objects by reference—`YKeyValueLww` relies on `indexOf()` (strict `===`) for conflict resolution. A fork that decrypts into new objects breaks `indexOf` because the map entries are no longer the same JS objects as the yarray entries. Empirically verified with 8 experiments (see `docs/articles/yjs-reference-equality-why-we-compose-encrypted-crdts.md`). |
+| Architecture | Composition wrapper around `YKeyValueLww` | Zero changes to the existing LWW class. Yjs `ContentAny` stores objects by reference-`YKeyValueLww` relies on `indexOf()` (strict `===`) for conflict resolution. A fork that decrypts into new objects breaks `indexOf` because the map entries are no longer the same JS objects as the yarray entries. Empirically verified with 8 experiments (see `docs/articles/yjs-reference-equality-why-we-compose-encrypted-crdts.md`). |
 | Encrypted value format | `{ v: 1, ct: string }` | `v` for format versioning. `ct` contains `base64(nonce(12) || ciphertext || tag(16))` for JSON-safe Yjs ContentAny storage. |
 | Algorithm shorthand | `'A256GCM'` (not `'AES-256-GCM'`) | JWE algorithm identifier. Compact, standardized, unambiguous. |
 | No-key passthrough | When `key` is undefined, behave identically to plain `YKeyValueLww` | Zero overhead for unencrypted workspaces. Same code path, just no encryption. |
@@ -81,9 +81,9 @@ Three options were evaluated:
 | No `entries()` cache | Decrypt on every `entries()` call, no cached result set | ~5ms for 1000 decrypts. Caching would need invalidation logic tied to the observer and doubles memory. Not worth the complexity at workspace scale. |
 | Base64 encoding | `ct` and `iv` stored as base64 strings, not raw `Uint8Array` | Yjs ContentAny JSON-serializes object properties. A `Uint8Array` in an object property would serialize to `{"0":1,"1":2,...}` instead of compact binary. Base64 adds ~33% overhead but guarantees correct round-trip through Yjs's internal serialization. |
 | No `kid` field (deferred) | No key identifier in `EncryptedBlob` v1 | Key rotation is a future concern. When needed, bump blob format to `v: 2` and add `kid`. For now, one key per workspace, derived deterministically from server secret (cloud) or user password (self-hosted). |
-| Self-hosted salt derivation | `SHA-256(userId + workspaceId)` — deterministic, no storage | Salt syncs implicitly because both inputs are already known. No need to store/distribute salts separately. Unique per user×workspace pair. |
-| Abstraction level | Encrypt at YKeyValueLww level, plumbed through createKv/createTables/createWorkspace | Lowest possible insertion point. Every layer above gets encryption for free. Tables are KV stores with schema validation on top—encrypt at KV, tables inherit. |
-| Migration safety | Eager on sign-in, single Y.Doc transaction, ~50ms for 1000 entries | Interruption-safe: if migration is interrupted, unencrypted entries remain plaintext and will be encrypted on next sign-in (mixed-mode detection handles this). Concurrent devices: each device migrates independently—LWW ensures the latest encrypted write wins. |
+| Self-hosted salt derivation | `SHA-256(userId + workspaceId)`: deterministic, no storage | Salt syncs implicitly because both inputs are already known. No need to store/distribute salts separately. Unique per user×workspace pair. |
+| Abstraction level | Encrypt at YKeyValueLww level, plumbed through createKv/createTables/createWorkspace | Lowest possible insertion point. Every layer above gets encryption for free. Tables are KV stores with schema validation on top. Encrypt at KV, tables inherit. |
+| Migration safety | Eager on sign-in, single Y.Doc transaction, ~50ms for 1000 entries | Interruption-safe: if migration is interrupted, unencrypted entries remain plaintext and will be encrypted on next sign-in (mixed-mode detection handles this). Concurrent devices: each device migrates independently. LWW ensures the latest encrypted write wins. |
 
 ## Architecture
 
@@ -149,10 +149,10 @@ APPLICATION CODE (tables, KV, app layer)
 
 ### Why the Wrapper Needs Its Own `.map`
 
-`table-helper.ts` methods (`getAll()`, `getAllValid()`, `filter()`, `find()`, `clear()`, `count()`) iterate `ykv.map` directly—they don't call `get()` per entry:
+`table-helper.ts` methods (`getAll()`, `getAllValid()`, `filter()`, `find()`, `clear()`, `count()`) iterate `ykv.map` directly. They don't call `get()` per entry:
 
 ```typescript
-// From table-helper.ts — reads ykv.map directly
+// From table-helper.ts: reads ykv.map directly
 getAll(): RowResult<TRow>[] {
   const results: RowResult<TRow>[] = [];
   for (const [key, entry] of ykv.map) {
@@ -269,10 +269,10 @@ There is zero additional UX cost. The app already gates workspace access on auth
 
 ```
 Today (no encryption):
-  App loads → auth check (50–200ms) → show workspace
+  App loads → auth check (50-200ms) → show workspace
 
 With encryption:
-  App loads → auth check (50–200ms, key included) → decrypt → show workspace
+  App loads → auth check (50-200ms, key included) → decrypt → show workspace
                                                      ↑
                                               adds ~1ms for 1000 values
 ```
@@ -285,20 +285,20 @@ The user sees the same loading screen for the same duration. Decryption overhead
 |---|---|
 | Tauri desktop, app restart | Cache key in OS keychain via Tauri. Read on launch, no network needed. |
 | Browser, tab refresh | `sessionStorage`. Survives refresh, clears on tab close. |
-| Browser, cold start (offline) | "Sign in to access your data." Can't sync anyway—honest UX. |
+| Browser, cold start (offline) | "Sign in to access your data." Can't sync anyway. Honest UX. |
 | Self-hosted | Password prompt before workspace opens. |
 
 Key caching means subsequent launches don't require network. Only the first login (or session expiry) hits the server for the key.
 
 ### Why the Loading Gate Is Not Always a Gate
 
-When an encryption key exists, the app can't show workspace data until the key is available. This is not a regression—the app already requires auth for workspace access.
+When an encryption key exists, the app can't show workspace data until the key is available. This is not a regression. The app already requires auth for workspace access.
 
 When no key exists (unauthenticated, first launch, local-only), passthrough mode kicks in. The user creates and edits data in plaintext. Encryption activates transparently when they sign in and the key arrives.
 
 ## Session & Data Lifecycle
 
-The full lifecycle from first launch through logout and re-login. Encryption is opportunistic—it activates when a key exists and passes through when it doesn't. The user is never locked out of their own device.
+The full lifecycle from first launch through logout and re-login. Encryption is opportunistic. It activates when a key exists and passes through when it doesn't. The user is never locked out of their own device.
 
 ### First Launch (No Account)
 
@@ -345,7 +345,7 @@ Stop sync → clear session token → clear key from keychain → wipe IndexedDB
 → clean slate, no local data remains
 ```
 
-For shared devices, selling hardware, or security concerns. An explicit user action, never the default. Standard Notes and Signal use this pattern because their audience is security-first. For a daily-driver productivity tool, it's an option—not the default.
+For shared devices, selling hardware, or security concerns. An explicit user action, never the default. Standard Notes and Signal use this pattern because their audience is security-first. For a daily-driver productivity tool, it's an option. Not the default.
 
 ### Re-Login After Full Clear
 
@@ -356,7 +356,7 @@ User authenticates → server sends encryption key
 → all data back, no loss
 ```
 
-The Durable Object holds the canonical Y.Doc. Clearing IndexedDB and re-syncing is a clean pull—CRDT merge with an empty local doc produces the server's state exactly. No conflicts, no data loss. This is what CRDTs are designed for.
+The Durable Object holds the canonical Y.Doc. Clearing IndexedDB and re-syncing is a clean pull. CRDT merge with an empty local doc produces the server's state exactly. No conflicts, no data loss. This is what CRDTs are designed for.
 
 ### Different User Logs In
 
@@ -398,7 +398,7 @@ function decryptValue(blob: EncryptedBlob, key: Uint8Array): string;
 /** Type guard: is this value an EncryptedBlob? */
 function isEncryptedBlob(value: unknown): value is EncryptedBlob;
 
-/** Derive key from password (self-hosted opt-in). Async — PBKDF2 via Web Crypto. */
+/** Derive key from password (self-hosted opt-in). Async: PBKDF2 via Web Crypto. */
 function deriveKeyFromPassword(password: string, salt: Uint8Array): Promise<Uint8Array>;
 
 /** Derive deterministic salt for self-hosted PBKDF2 (no storage needed). */
@@ -449,7 +449,7 @@ async function deriveSalt(userId: string, workspaceId: string): Promise<Uint8Arr
   return new Uint8Array(hash).slice(0, 16); // 16 bytes
 }
 // Same userId + workspaceId always produces the same salt.
-// No need to store/distribute salts — both inputs are already known on every device.
+// No need to store/distribute salts: both inputs are already known on every device.
 ```
 
 ## Implementation Plan
@@ -464,8 +464,8 @@ Synchronous via `@noble/ciphers`. Zero Yjs dependency. Independently testable.
 - [x] **1.4** Implement `encryptValue`, `decryptValue` (synchronous, AES-256-GCM via `gcm` from `@noble/ciphers/aes`)
   > **Note**: Added 32-byte key length validation guard. `@noble/ciphers` `gcm()` accepts 16-byte keys (AES-128) which we don't want. Import paths use `.js` extension per `@noble/ciphers` v2.x exports map.
 - [x] **1.5** Implement `isEncryptedBlob` type guard
-- [x] **1.6** Implement `deriveKeyFromPassword` (async PBKDF2 via Web Crypto — only for self-hosted password mode)
-- [x] **1.7** Implement `deriveSalt` (deterministic `SHA-256(userId + workspaceId)` — no random salt, syncs implicitly)
+- [x] **1.6** Implement `deriveKeyFromPassword` (async PBKDF2 via Web Crypto: only for self-hosted password mode)
+- [x] **1.7** Implement `deriveSalt` (deterministic `SHA-256(userId + workspaceId)`: no random salt, syncs implicitly)
 - [x] **1.8** Tests: round-trip, same password + salt = same key, unique IV per call, invalid key throws, tampered ciphertext throws, `deriveSalt` is deterministic (39 tests, all passing)
 
 ### Phase 2: `createEncryptedKvLww`
@@ -476,11 +476,11 @@ Composition wrapper. Zero changes to `YKeyValueLww`.
 - [x] **2.2** Implement `createEncryptedKvLww` factory function with `key` option
 - [x] **2.3** `set()`: read `key` from options → if undefined, passthrough; else serialize → encrypt → delegate to inner
 - [x] **2.4** `get()`: read from wrapper.map (decrypted) or pending → return plaintext
-- [x] **2.5** Maintain decrypted `wrapper.map` via `inner.observe()` — decrypt each change, write to wrapper.map
+- [x] **2.5** Maintain decrypted `wrapper.map` via `inner.observe()`: decrypt each change, write to wrapper.map
 - [x] **2.6** `entries()`: iterate wrapper.map (already decrypted), merge with pending
 - [x] **2.7** `observe()`: wrap inner observer, decrypt change values before forwarding to registered handlers
 - [x] **2.8** No-key passthrough: when `key` is undefined, all operations pass through without encryption
-- [x] **2.9** Tests: 24 tests passing — encrypt round-trip, no-key passthrough, observer decryption, mixed plaintext/encrypted migration, wrapper.map always plaintext, two-device sync with same key, batch operations, mid-session key availability
+- [x] **2.9** Tests: 24 tests passing: encrypt round-trip, no-key passthrough, observer decryption, mixed plaintext/encrypted migration, wrapper.map always plaintext, two-device sync with same key, batch operations, mid-session key availability
 
 ### Phase 3: Wire into `createKv`
 
@@ -496,7 +496,7 @@ The workspace creation flow passes the encryption key down.
 
 - [x] **4.1** Add `key` option to workspace options or extension context
 - [x] **4.2** All table and KV helpers receive the `key` option
-- [x] **4.3** Extensions (SQLite, persistence) continue to work—they read through the same helpers
+- [x] **4.3** Extensions (SQLite, persistence) continue to work. They read through the same helpers
 
 ## Edge Cases
 
@@ -504,7 +504,7 @@ The workspace creation flow passes the encryption key down.
 
 1. User enables encryption on an existing workspace with 500 plaintext entries.
 2. `get()` reads each entry. `isEncryptedBlob` returns false for plaintext values.
-3. Plaintext values returned as-is—no decryption needed.
+3. Plaintext values returned as-is. No decryption needed.
 4. Migration script reads all plaintext entries and re-writes them encrypted.
 5. After migration, all entries are encrypted. Old plaintext entries are overwritten by LWW.
 
@@ -512,8 +512,8 @@ The workspace creation flow passes the encryption key down.
 
 No longer a concern. The `key` option is seeded at creation time. After creation, `lock()` and `activateEncryption(key)` handle all key transitions. The wrapper calls these methods when the key changes:
 
-1. **`key` is undefined (no key yet):** Passthrough mode—values stored/read as plaintext. Zero overhead.
-2. **`key` is provided:** Encrypted mode—values encrypted on write, decrypted on read.
+1. **`key` is undefined (no key yet):** Passthrough mode. Values stored/read as plaintext. Zero overhead.
+2. **`key` is provided:** Encrypted mode. Values encrypted on write, decrypted on read.
 3. **Key becomes available mid-session:** Call `activateEncryption(key)` to transition. The wrapper re-decrypts all entries. Existing plaintext entries are read via `isEncryptedBlob` mixed-mode detection.
 
 The workspace is created eagerly as a module-level export (`apps/tab-manager/src/lib/workspace.ts` line 572) before auth completes. The `key` option is seeded at creation time. After auth, `activateEncryption(key)` is called to activate encryption. No wrapper recreation needed.
@@ -535,7 +535,7 @@ Existing infrastructure: `clearData()` in `packages/workspace/src/extensions/syn
 
 ### ~~Concurrent `set()` calls during encryption~~ (RESOLVED)
 
-No longer an issue. `@noble/ciphers` `gcm().encrypt()` is synchronous—`set()` remains synchronous.
+No longer an issue. `@noble/ciphers` `gcm().encrypt()` is synchronous: `set()` remains synchronous.
 Two rapid `set('x', 1)` then `set('x', 2)` calls execute sequentially as they always have.
 
 ## Open Questions
@@ -546,36 +546,36 @@ Two rapid `set('x', 1)` then `set('x', 2)` calls execute sequentially as they al
    - Audited by Cure53 (Sep 2024), zero dependencies, 11KB gzipped
    - Works in Cloudflare Workers, browser extensions, all browsers
    - Performance: ~5µs per 64-byte encrypt on Apple M4 (201K ops/sec), well within the <5ms/1000-ops target
-   - Key type changes from `CryptoKey` to `Uint8Array` (32 bytes) — simpler, no import/export ceremony
-   - PBKDF2 key derivation (self-hosted) remains async via Web Crypto — runs once at session start, not in hot path
+   - Key type changes from `CryptoKey` to `Uint8Array` (32 bytes): simpler, no import/export ceremony
+   - PBKDF2 key derivation (self-hosted) remains async via Web Crypto: runs once at session start, not in hot path
 
 2. ~~**Class vs factory function**~~: **RESOLVED.** Factory function (`createEncryptedKvLww<T>()`). Matches `createKv`, `createTables`, and the rest of the codebase's preference for factory functions over classes.
 
 3. ~~**Key mutability**: Can the encryption key change mid-session?~~ **RESOLVED.** Yes, via `lock()` and `activateEncryption(key)`. The key is seeded at creation time. After creation, `activateEncryption(newKey)` handles key arrival and `lock()` handles key removal. The key either goes from undefined→present (auth) or present→undefined (logout). Re-keying is a separate future concern.
 
-4. ~~**Table encryption**~~: **RESOLVED.** Same `createEncryptedKvLww` wrapper. Tables are KV stores with schema validation on top. Both `createKv` and `createTables` instantiate `YKeyValueLww` internally—both switch to `createEncryptedKvLww`. Encrypt at the KV level, tables get encryption for free.
+4. ~~**Table encryption**~~: **RESOLVED.** Same `createEncryptedKvLww` wrapper. Tables are KV stores with schema validation on top. Both `createKv` and `createTables` instantiate `YKeyValueLww` internally. Both switch to `createEncryptedKvLww`. Encrypt at the KV level, tables get encryption for free.
 
-5. ~~**Key field in entries**~~: **RESOLVED.** Entry keys (like `'tab-1'`) remain plaintext. They're structural metadata required for CRDT conflict resolution. Encrypting keys would break LWW entirely. They reveal "what kinds of data exist" but not the content—same as column names in a database.
+5. ~~**Key field in entries**~~: **RESOLVED.** Entry keys (like `'tab-1'`) remain plaintext. They're structural metadata required for CRDT conflict resolution. Encrypting keys would break LWW entirely. They reveal "what kinds of data exist" but not the content. Same as column names in a database.
 
 6. ~~**`entries()` caching**~~: **RESOLVED.** No cache. Decrypt on every call. ~5ms for 1000 values is acceptable. Caching would require invalidation tied to the observer and doubles memory for negligible gain.
 
 7. ~~**Base64 vs raw bytes**~~: **RESOLVED.** Base64 is necessary. Yjs ContentAny JSON-serializes object properties. A `Uint8Array` inside an object property becomes `{"0":1,"1":2,...}`. Base64 adds ~33% overhead but guarantees correct round-trip.
 
-8. ~~**Table helper compatibility**~~: **RESOLVED.** The wrapper maintains its own decrypted `.map`. Table helper methods (`getAll()`, `filter()`, `find()`, etc.) read `ykv.map` directly — they get plaintext values from the wrapper's map. Zero changes to `table-helper.ts`.
+8. ~~**Table helper compatibility**~~: **RESOLVED.** The wrapper maintains its own decrypted `.map`. Table helper methods (`getAll()`, `filter()`, `find()`, etc.) read `ykv.map` directly: they get plaintext values from the wrapper's map. Zero changes to `table-helper.ts`.
 
 9. ~~**Key rotation / `kid` field**~~: **RESOLVED.** Deferred. No `kid` in `EncryptedBlob` v1. When key rotation is needed, bump to `v: 2` and add `kid`. For now, one key per workspace.
 
-10. ~~**Abstraction level**~~: **RESOLVED.** Encrypt at YKeyValueLww level. This is the lowest possible insertion point — plumbed through `createKv` / `createTables` / `createWorkspace`. Tables are KV stores with schema validation on top, so encrypting at the KV level gives tables encryption for free.
+10. ~~**Abstraction level**~~: **RESOLVED.** Encrypt at YKeyValueLww level. This is the lowest possible insertion point: plumbed through `createKv` / `createTables` / `createWorkspace`. Tables are KV stores with schema validation on top, so encrypting at the KV level gives tables encryption for free.
 
-11. ~~**Self-hosted salt**~~: **RESOLVED.** Derive deterministically from `SHA-256(userId + workspaceId)`. No storage needed — both inputs are already known on every device. Unique per user×workspace pair.
+11. ~~**Self-hosted salt**~~: **RESOLVED.** Derive deterministically from `SHA-256(userId + workspaceId)`. No storage needed: both inputs are already known on every device. Unique per user×workspace pair.
 
-12. ~~**Migration safety**~~: **RESOLVED.** Eager on sign-in, single Y.Doc transaction. Interruption-safe: unencrypted entries stay plaintext, re-encrypted on next sign-in. Concurrent devices migrate independently — LWW ensures the latest encrypted write wins.
+12. ~~**Migration safety**~~: **RESOLVED.** Eager on sign-in, single Y.Doc transaction. Interruption-safe: unencrypted entries stay plaintext, re-encrypted on next sign-in. Concurrent devices migrate independently: LWW ensures the latest encrypted write wins.
 
 ## Key Management & Lifecycle APIs
 
 ### Server: Key Delivery via `customSession` Plugin
 
-Better Auth's `customSession` plugin wraps `getSession` and lets you add arbitrary fields to the response. The encryption key piggybacks on every session check—no extra endpoint, no extra request.
+Better Auth's `customSession` plugin wraps `getSession` and lets you add arbitrary fields to the response. The encryption key piggybacks on every session check. No extra endpoint, no extra request.
 
 ```typescript
 // In app.ts auth config
@@ -616,9 +616,9 @@ const authClient = createAuthClient({
 // authClient.getSession() now returns { user, session, encryptionKey }
 ```
 
-The app already uses `bearer()` for Tauri OAuth/PKCE auth (`tauri://localhost/auth/callback`). The `customSession` plugin composes alongside it—no conflicts.
+The app already uses `bearer()` for Tauri OAuth/PKCE auth (`tauri://localhost/auth/callback`). The `customSession` plugin composes alongside it. No conflicts.
 
-**Note on Tauri**: Better Auth has `@better-auth/electron` for Electron (uses `safeStorage` + `conf` package). No Tauri-specific integration exists. The current setup—bearer tokens via OAuth/PKCE—already works. The encryption key is a separate concern stored via `tauri-plugin-stronghold` (encrypted vault with password-based snapshots, memory zeroization—the Tauri equivalent of Electron's `safeStorage`). Do NOT use `tauri-plugin-store` for secrets—it writes plain JSON to disk.
+**Note on Tauri**: Better Auth has `@better-auth/electron` for Electron (uses `safeStorage` + `conf` package). No Tauri-specific integration exists. The current setup. Bearer tokens via OAuth/PKCE. Already works. The encryption key is a separate concern stored via `tauri-plugin-stronghold` (encrypted vault with password-based snapshots, memory zeroization. The Tauri equivalent of Electron's `safeStorage`). Do NOT use `tauri-plugin-store` for secrets. It writes plain JSON to disk.
 
 ### Client: Key Cache Interface
 
@@ -639,9 +639,9 @@ type KeyCache = {
 
 | Platform | Implementation |
 |---|---|
-| Tauri desktop | `tauri-plugin-stronghold`—encrypted vault with password-based snapshots, memory zeroization. The Tauri equivalent of Electron's `safeStorage`. |
-| Browser | `sessionStorage`—survives tab refresh, clears on tab close |
-| Self-hosted | No cache needed—user enters password each session, key derived via PBKDF2 |
+| Tauri desktop | `tauri-plugin-stronghold`: encrypted vault with password-based snapshots, memory zeroization. The Tauri equivalent of Electron's `safeStorage`. |
+| Browser | `sessionStorage`: survives tab refresh, clears on tab close |
+| Self-hosted | No cache needed. User enters password each session, key derived via PBKDF2 |
 
 ### Client: Lifecycle Operations
 
@@ -650,14 +650,14 @@ These live at the app layer (not workspace layer) since they coordinate auth + p
 ```typescript
 // App-level auth state (e.g., apps/tab-manager/src/lib/state/auth.svelte.ts)
 
-/** Default logout — stop sync, keep local data and key. */
+/** Default logout: stop sync, keep local data and key. */
 async function logout() {
   syncProvider.disconnect();
   await authClient.signOut();
   // Key stays in cache. IndexedDB stays. User keeps editing.
 }
 
-/** Security wipe — clear everything. */
+/** Security wipe: clear everything. */
 async function signOutAndClear() {
   syncProvider.disconnect();
   await authClient.signOut();
@@ -666,12 +666,12 @@ async function signOutAndClear() {
   // Clean slate. Re-login pulls from DO.
 }
 
-/** Called on every auth — detects user switch, triggers migration. */
+/** Called on every auth: detects user switch, triggers migration. */
 async function onAuthenticated(newUserId: string, encryptionKey: Uint8Array) {
   const cachedUserId = localStorage.getItem('lastUserId');
 
   if (cachedUserId && cachedUserId !== newUserId) {
-    // Different user — mandatory wipe
+    // Different user: mandatory wipe
     await workspace.extensions.persistence.clearData();
     await keyCache.clear();
   }
@@ -715,10 +715,10 @@ function migrateToEncrypted(workspace: WorkspaceClient, key: Uint8Array) {
 
 ## References
 
-- `packages/workspace/src/shared/y-keyvalue/y-keyvalue-lww.ts` — The existing LWW class (unchanged)
-- `packages/workspace/src/shared/y-keyvalue/y-keyvalue-lww.test.ts` — Test patterns to follow
-- `packages/workspace/src/workspace/create-kv.ts` — Where KV is instantiated (wire-in point)
-- `specs/20260213T005300-encrypted-workspace-storage.md` — Broader encryption architecture
-- `apps/api/src/app.ts` — Better Auth config (key delivery endpoint)
-- `apps/tab-manager/src/lib/workspace.ts` — Consumer that creates workspaces
-- `docs/articles/yjs-reference-equality-why-we-compose-encrypted-crdts.md` — Why composition over fork (reference equality analysis)
+- `packages/workspace/src/shared/y-keyvalue/y-keyvalue-lww.ts`: The existing LWW class (unchanged)
+- `packages/workspace/src/shared/y-keyvalue/y-keyvalue-lww.test.ts`: Test patterns to follow
+- `packages/workspace/src/workspace/create-kv.ts`: Where KV is instantiated (wire-in point)
+- `specs/20260213T005300-encrypted-workspace-storage.md`: Broader encryption architecture
+- `apps/api/src/app.ts`: Better Auth config (key delivery endpoint)
+- `apps/tab-manager/src/lib/workspace.ts`: Consumer that creates workspaces
+- `docs/articles/yjs-reference-equality-why-we-compose-encrypted-crdts.md`: Why composition over fork (reference equality analysis)

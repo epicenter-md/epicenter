@@ -7,7 +7,7 @@
 
 ## Summary
 
-Convert `createKv` and `createTables` from Record-based to Array-based APIs. This is a **breaking change** with no backward compatibility—the Record format will be removed entirely.
+Convert `createKv` and `createTables` from Record-based to Array-based APIs. This is a **breaking change** with no backward compatibility. The Record format will be removed entirely.
 
 ## Current State
 

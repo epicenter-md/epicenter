@@ -1,5 +1,5 @@
 /**
- * `defineTable(...)` — TypeBox-native table definition.
+ * `defineTable(...)`: TypeBox-native table definition.
  *
  * Every column schema flows through the `FlatJsonTSchema` mapped-type
  * constraint, which rejects every TypeBox `~kind` that cannot materialize

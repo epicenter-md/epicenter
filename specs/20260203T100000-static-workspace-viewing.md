@@ -10,9 +10,9 @@
 
 Static workspaces can be **viewed** in the Epicenter app with minimal requirements:
 
-1. **Only the workspace ID is needed** — structure is discoverable from Y.Doc
-2. **No TypeScript runtime required** — `ydoc.share` exposes all table names
-3. **Sync via y-sweet** — connect to relay server at `localhost:8080` or port 3913
+1. **Only the workspace ID is needed**: structure is discoverable from Y.Doc
+2. **No TypeScript runtime required**: `ydoc.share` exposes all table names
+3. **Sync via y-sweet**: connect to relay server at `localhost:8080` or port 3913
 
 The key insight: **you don't need the schema to read data**. The Y.Doc contains everything.
 
@@ -22,7 +22,7 @@ The key insight: **you don't need the schema to read data**. The Y.Doc contains 
 
 ### Discovery via `ydoc.share`
 
-Y.Doc has a `share` property — a `Map<string, AbstractType>` of all top-level shared types:
+Y.Doc has a `share` property. A `Map<string, AbstractType>` of all top-level shared types:
 
 ```typescript
 // Given a Y.Doc with workspace data
@@ -138,32 +138,32 @@ await provider.synced;
 
    ```svelte
    <script lang="ts">
-   	import * as Y from 'yjs';
+	import * as Y from 'yjs';
 
-   	export let ydoc: Y.Doc;
-   	export let tableName: string;
+	export let ydoc: Y.Doc;
+	export let tableName: string;
 
-   	const array = ydoc.getArray(`table:${tableName}`);
+	const array = ydoc.getArray(`table:${tableName}`);
 
-   	// Reactive rows from Y.Array
-   	let rows: unknown[] = [];
-   	$: {
-   		rows = array.toArray().map((entry) => entry.val);
-   	}
+	// Reactive rows from Y.Array
+	let rows: unknown[] = [];
+	$: {
+		rows = array.toArray().map((entry) => entry.val);
+	}
 
-   	array.observe(() => {
-   		rows = array.toArray().map((entry) => entry.val);
-   	});
+	array.observe(() => {
+		rows = array.toArray().map((entry) => entry.val);
+	});
    </script>
 
    <table>
-   	<tbody>
-   		{#each rows as row}
-   			<tr>
-   				<td><pre>{JSON.stringify(row, null, 2)}</pre></td>
-   			</tr>
-   		{/each}
-   	</tbody>
+	<tbody>
+		{#each rows as row}
+			<tr>
+				<td><pre>{JSON.stringify(row, null, 2)}</pre></td>
+			</tr>
+		{/each}
+	</tbody>
    </table>
    ```
 

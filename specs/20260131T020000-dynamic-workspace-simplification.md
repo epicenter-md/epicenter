@@ -16,10 +16,10 @@ The current dynamic workspace API (`src/dynamic/`) needs refinement:
 
 | Aspect             | Status                                                        |
 | ------------------ | ------------------------------------------------------------- |
-| Flat row shape     | Done — `{ id, title, views }` with no wrapper                 |
-| `batch()` works    | Done — uses `ydoc.transact()`                                 |
-| Cell-level storage | Done — YKeyValueLww with `rowId:fieldId` keys                 |
-| Result types       | Good — `ValidRowResult`, `InvalidRowResult`, `NotFoundResult` |
+| Flat row shape     | Done: `{ id, title, views }` with no wrapper                 |
+| `batch()` works    | Done: uses `ydoc.transact()`                                 |
+| Cell-level storage | Done: YKeyValueLww with `rowId:fieldId` keys                 |
+| Result types       | Good: `ValidRowResult`, `InvalidRowResult`, `NotFoundResult` |
 
 ## Goals
 
@@ -41,7 +41,7 @@ The current dynamic workspace API (`src/dynamic/`) needs refinement:
 
 ### Result Types (Keep Current)
 
-Keep existing result types — they're well-named and work:
+Keep existing result types. They're well-named and work:
 
 ```typescript
 // packages/epicenter/src/dynamic/tables/table-helper.ts
@@ -66,14 +66,14 @@ type RowResult<TRow> = ValidRowResult<TRow> | InvalidRowResult;
 type GetResult<TRow> = RowResult<TRow> | NotFoundResult;
 ```
 
-### Cell Operations (New — Primary API)
+### Cell Operations (New: Primary API)
 
 Add cell-level operations. These become the PRIMARY primitives since storage is already cell-based.
 
 ```typescript
 type TableHelper = {
 	// ═══════════════════════════════════════════════════════════════════════════
-	// CELL OPERATIONS (Primary — NEW)
+	// CELL OPERATIONS (Primary: NEW)
 	// ═══════════════════════════════════════════════════════════════════════════
 
 	/** Get a cell value */
@@ -89,7 +89,7 @@ type TableHelper = {
 	hasCell(rowId: string, fieldId: string): boolean;
 
 	// ═══════════════════════════════════════════════════════════════════════════
-	// ROW OPERATIONS (Convenience — renamed for clarity)
+	// ROW OPERATIONS (Convenience: renamed for clarity)
 	// ═══════════════════════════════════════════════════════════════════════════
 
 	/** Get a row by ID (validates all cells) */
@@ -101,7 +101,7 @@ type TableHelper = {
 	/** Update specific fields of an existing row */
 	update(partialRow: PartialRow): UpdateResult; // Keep current name
 
-	/** Delete a row (all its cells). Fire-and-forget — no-op if missing. */
+	/** Delete a row (all its cells). Fire-and-forget, no-op if missing. */
 	delete(id: string): void;
 
 	// ═══════════════════════════════════════════════════════════════════════════
@@ -215,7 +215,7 @@ type FieldType = CoreFieldType;
 
 ### 3. ~~table() vs tables.get()?~~ RESOLVED
 
-**Answer**: Keep `tables.get('posts')` — familiar pattern, no change needed.
+**Answer**: Keep `tables.get('posts')`: familiar pattern, no change needed.
 
 ### 4. ~~Rename result types?~~ RESOLVED
 
@@ -226,7 +226,7 @@ type FieldType = CoreFieldType;
 ## Success Criteria
 
 - [x] Cell operations added: `getCell()`, `setCell()`, `deleteCell()`, `hasCell()`
-- [x] ~~Table access changed to function call~~ — Cancelled, keeping `tables.get()`
+- [x] ~~Table access changed to function call~~: Cancelled, keeping `tables.get()`
 - [x] `createWorkspaceDoc` accepts `HeadDoc` instead of raw `epoch` (uses `getOwnEpoch()`)
 - [ ] Unused type aliases deleted
 - [ ] Tests updated and passing
@@ -240,16 +240,16 @@ type FieldType = CoreFieldType;
 
 Added cell-level operations to both `TableHelper` and `UntypedTableHelper`:
 
-- `getCell(rowId, fieldId)` — Get a single cell value
-- `setCell(rowId, fieldId, value)` — Set a single cell value
-- `deleteCell(rowId, fieldId)` — Delete a cell
-- `hasCell(rowId, fieldId)` — Check if cell exists
+- `getCell(rowId, fieldId)`: Get a single cell value
+- `setCell(rowId, fieldId, value)`: Set a single cell value
+- `deleteCell(rowId, fieldId)`: Delete a cell
+- `hasCell(rowId, fieldId)`: Check if cell exists
 
 These work directly with `YKeyValueLww` using `CellKey(RowId(rowId), FieldId(fieldId))`.
 
 ### 2026-01-31: Table Access Pattern Kept
 
-Originally planned to change `tables.get('posts')` to `tables('posts')`. After implementation, decided to keep the original `tables.get()` pattern — it's familiar and works well.
+Originally planned to change `tables.get('posts')` to `tables('posts')`. After implementation, decided to keep the original `tables.get()` pattern. It's familiar and works well.
 
 ### 2026-01-31: HeadDoc Integration Complete
 
@@ -259,7 +259,7 @@ Changed `createWorkspaceDoc` to accept `headDoc` instead of `workspaceId` and `e
 - `epoch` extracted from `headDoc.getOwnEpoch()` (this client's epoch, not global max)
 - Y.Doc guid remains `${workspaceId}-${epoch}`
 
-This enables per-client epoch viewing — one client can view epoch 2 while another views epoch 3.
+This enables per-client epoch viewing: one client can view epoch 2 while another views epoch 3.
 
 ### Remaining Work
 

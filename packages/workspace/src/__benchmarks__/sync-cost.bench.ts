@@ -3,7 +3,7 @@
  *
  * Answers: "What does collaborative sync cost in size and time?"
  *
- * Measures delta sizes and merge times for two diverged Y.Docs—the core
+ * Measures delta sizes and merge times for two diverged Y.Docs. The core
  * of collaborative editing. Tests both small divergence (few edits while
  * offline) and large divergence (extended offline editing sessions).
  */

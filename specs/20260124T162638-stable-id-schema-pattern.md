@@ -123,7 +123,7 @@ By making internal keys stable (either explicitly via `id` or implicitly via key
 | **Migration race conditions** | Two clients migrating simultaneously? Not a thing. Nothing to migrate. |
 | **Version coordination** | Tracking who's migrated? Unnecessary. Schema handles interpretation. |
 
-The pattern doesn't just make renaming easier—it makes renaming a **non-operation** at the data layer. You're not "handling" renames; you're making them structurally impossible to get wrong.
+The pattern doesn't just make renaming easier. It makes renaming a **non-operation** at the data layer. You're not "handling" renames; you're making them structurally impossible to get wrong.
 
 ## The `field()` Helper
 

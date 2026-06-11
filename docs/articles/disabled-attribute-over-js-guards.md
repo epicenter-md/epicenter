@@ -1,6 +1,6 @@
 # Use `disabled` Instead of JS Guards for Non-Interactive States
 
-When a button can't do anything—zero items to expand, nothing to submit, no action available—use the HTML `disabled` attribute. Don't write `if (!hasItems) return` inside an `onclick` handler and call it done. The browser already has a mechanism for "this element isn't interactive right now," and it's one attribute.
+When a button can't do anything. Zero items to expand, nothing to submit, no action available. Use the HTML `disabled` attribute. Don't write `if (!hasItems) return` inside an `onclick` handler and call it done. The browser already has a mechanism for "this element isn't interactive right now," and it's one attribute.
 
 ## The Problem
 

@@ -15,7 +15,7 @@ Add alarm-based compaction to `BaseSyncRoom` so the SQLite update log is compact
 Compaction runs only during cold start, inside `blockConcurrencyWhile`. It uses `Y.mergeUpdatesV2` to merge all rows, then replaces them with a single compacted row:
 
 ```typescript
-// base-sync-room.ts — constructor, inside blockConcurrencyWhile
+// base-sync-room.ts: constructor, inside blockConcurrencyWhile
 const rows = ctx.storage.sql
   .exec('SELECT data FROM updates ORDER BY id')
   .toArray();
@@ -41,7 +41,7 @@ if (rows.length > 0) {
 When the last WebSocket disconnects, the hub fires `onAllDisconnected` but performs no compaction:
 
 ```typescript
-// base-sync-room.ts — createConnectionHub.close()
+// base-sync-room.ts: createConnectionHub.close()
 close(ws: WebSocket, code: number, reason: string) {
   const state = states.get(ws);
   if (!state) return;
@@ -84,7 +84,7 @@ When the last WebSocket disconnects, schedule a DO alarm 30 seconds later. When 
 
 **Key finding**: There is no pre-hibernation callback. The only way to run deferred logic after all clients leave is to schedule an alarm.
 
-**Implication**: A 30-second alarm delay is the right mechanism — long enough to skip reconnect storms (user refresh, network blip), short enough to fire before the ~60s eviction window.
+**Implication**: A 30-second alarm delay is the right mechanism: long enough to skip reconnect storms (user refresh, network blip), short enough to fire before the ~60s eviction window.
 
 ### Comparison with y-durableobjects
 
@@ -122,7 +122,7 @@ Sources: Yjs source (`src/utils/updates.js#L331`, `src/utils/encoding.js#L500`),
 
 ### V2 Encoding Validation
 
-V2 uses specialized encoders (`IntDiffOptRleEncoder`, `UintOptRleEncoder`) that compress CRDT metadata 10-20x better than V1. Real-world: ~9MB (V1) to ~450KB (V2) for large documents (yjs#675). V1 and V2 are not wire-compatible. Our codebase uses V2 consistently throughout `sync-handlers.ts` and all RPC methods — no changes needed.
+V2 uses specialized encoders (`IntDiffOptRleEncoder`, `UintOptRleEncoder`) that compress CRDT metadata 10-20x better than V1. Real-world: ~9MB (V1) to ~450KB (V2) for large documents (yjs#675). V1 and V2 are not wire-compatible. Our codebase uses V2 consistently throughout `sync-handlers.ts` and all RPC methods, no changes needed.
 
 ## Design Decisions
 
@@ -212,7 +212,7 @@ V2 uses specialized encoders (`IntDiffOptRleEncoder`, `UintOptRleEncoder`) that 
 - [x] **2.1** Add `COMPACTION_DELAY_MS = 30_000` constant
 - [x] **2.2** Schedule alarm in `createConnectionHub.close()` when `states.size === 0` (after `onAllDisconnected`)
 - [x] **2.3** Cancel pending alarm in `createConnectionHub.upgrade()` via `void ctx.storage.deleteAlarm()`
-- [x] **2.4** Add `alarm()` override to `BaseSyncRoom` — read update log, skip if already compacted (rows <= 1) or clients connected, compact using `encodeStateAsUpdateV2`, replace rows in a transaction
+- [x] **2.4** Add `alarm()` override to `BaseSyncRoom`: read update log, skip if already compacted (rows <= 1) or clients connected, compact using `encodeStateAsUpdateV2`, replace rows in a transaction
 - [x] **2.5** Extract compaction logic into a shared helper (used by both cold-start and alarm paths)
 
 ### Phase 3: Verification
@@ -242,15 +242,15 @@ Harmless. Double-compaction is idempotent.
 
 1. Alarm scheduled at T=0 (last disconnect)
 2. Client reconnects at T=15s
-3. `upgrade()` cancels alarm — but if `deleteAlarm()` races with the alarm firing, the handler could still run
-4. Guard: check connection count in `alarm()` and skip. Even without the guard, compaction is safe — `doc.on('updateV2')` continues appending new updates after compaction.
+3. `upgrade()` cancels alarm: but if `deleteAlarm()` races with the alarm firing, the handler could still run
+4. Guard: check connection count in `alarm()` and skip. Even without the guard, compaction is safe: `doc.on('updateV2')` continues appending new updates after compaction.
 
 ### Document exceeds 2MB compacted
 
 1. Compaction runs (cold-start or alarm)
 2. Compacted blob > `MAX_COMPACTED_BYTES` (2 MB)
 3. Row replacement skipped (existing behavior preserved)
-4. With more frequent alarm-based compaction, reaching 2MB is far less likely — the log stays compact between cold starts.
+4. With more frequent alarm-based compaction, reaching 2MB is far less likely: the log stays compact between cold starts.
 
 ### Concurrent writes during alarm compaction
 
@@ -261,7 +261,7 @@ Impossible. DO isolate is single-threaded. The `alarm()` handler is synchronous 
 1. Last client disconnects
 2. `hub.close()` fires `onAllDisconnected` → DocumentRoom's auto-snapshot writes to `snapshots` table (synchronous)
 3. Base class schedules alarm for compaction of `updates` table
-4. Orthogonal: different tables, different concerns. Ordering is deterministic — snapshot always fires before alarm is scheduled.
+4. Orthogonal: different tables, different concerns. Ordering is deterministic: snapshot always fires before alarm is scheduled.
 
 ## Open Questions
 
@@ -292,11 +292,11 @@ Impossible. DO isolate is single-threaded. The `alarm()` handler is synchronous 
 
 ## References
 
-- `packages/server-remote/src/base-sync-room.ts` — primary file, all changes here
-- `packages/server-remote/src/document-room.ts` — subclass with `onAllDisconnected` auto-snapshot (`gc: false`)
-- `packages/server-remote/src/workspace-room.ts` — bare subclass (`gc: true`)
-- `packages/server-remote/src/sync-handlers.ts` — WebSocket protocol handlers, V2 encoding usage throughout
-- [yjs#710](https://github.com/yjs/yjs/issues/710) — `mergeUpdatesV2` exponential performance edge case
-- [yjs#675](https://github.com/yjs/yjs/issues/675) — V1 vs V2 encoding size comparison
-- [Cloudflare Durable Objects Alarms](https://developers.cloudflare.com/durable-objects/api/alarms/) — Alarm API docs
-- [y-durableobjects](https://github.com/napolab/y-durableobjects) — reference DO-based Yjs implementation
+- `packages/server-remote/src/base-sync-room.ts`: primary file, all changes here
+- `packages/server-remote/src/document-room.ts`: subclass with `onAllDisconnected` auto-snapshot (`gc: false`)
+- `packages/server-remote/src/workspace-room.ts`: bare subclass (`gc: true`)
+- `packages/server-remote/src/sync-handlers.ts`: WebSocket protocol handlers, V2 encoding usage throughout
+- [yjs#710](https://github.com/yjs/yjs/issues/710): `mergeUpdatesV2` exponential performance edge case
+- [yjs#675](https://github.com/yjs/yjs/issues/675): V1 vs V2 encoding size comparison
+- [Cloudflare Durable Objects Alarms](https://developers.cloudflare.com/durable-objects/api/alarms/): Alarm API docs
+- [y-durableobjects](https://github.com/napolab/y-durableobjects): reference DO-based Yjs implementation

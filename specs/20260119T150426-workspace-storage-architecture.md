@@ -14,10 +14,10 @@ This spec defines the storage architecture for Epicenter workspaces, including:
 
 ## Design Principles
 
-1. **Single Y.Doc per epoch** — Schema and data co-located for atomic snapshots/rollback
-2. **Three top-level namespaces** — `definition`, `kv`, `tables` (1:1 mapping to files)
-3. **Hybrid persistence** — Binary for sync, JSON for humans, SQLite for queries
-4. **Epoch isolation** — Each epoch is a self-contained folder
+1. **Single Y.Doc per epoch**: Schema and data co-located for atomic snapshots/rollback
+2. **Three top-level namespaces**: `definition`, `kv`, `tables` (1:1 mapping to files)
+3. **Hybrid persistence**: Binary for sync, JSON for humans, SQLite for queries
+4. **Epoch isolation**: Each epoch is a self-contained folder
 
 ## Y.Doc Structure
 
@@ -164,10 +164,10 @@ Snapshots capture the entire Y.Doc state for rollback. They live inside each epo
 
 ### Why Per-Epoch?
 
-1. **Snapshots reference Y.Doc items** — A snapshot from epoch 0 can only reconstruct epoch 0's Y.Doc
-2. **Atomic rollback** — Rolling back restores both schema AND data together
-3. **Clean deletion** — `rm -rf 0/` removes epoch and all its snapshots
-4. **Isolation** — Epoch 1 starts fresh snapshot history after migration
+1. **Snapshots reference Y.Doc items**: A snapshot from epoch 0 can only reconstruct epoch 0's Y.Doc
+2. **Atomic rollback**: Rolling back restores both schema AND data together
+3. **Clean deletion**: `rm -rf 0/` removes epoch and all its snapshots
+4. **Isolation**: Epoch 1 starts fresh snapshot history after migration
 
 ### Snapshot API
 
@@ -187,7 +187,7 @@ Snapshots require `gc: false` on the Y.Doc. Without this, deleted items are garb
 
 ## Registry
 
-The registry remains minimal — just workspace existence:
+The registry remains minimal, just workspace existence:
 
 ```typescript
 // registry.yjs
@@ -230,7 +230,7 @@ When bumping epochs (schema migration, compaction):
 5. Old epoch (0/) can be archived or deleted
 ```
 
-Snapshots do NOT migrate — each epoch has its own snapshot history.
+Snapshots do NOT migrate: each epoch has its own snapshot history.
 
 ## Example: Full Workspace Tree
 

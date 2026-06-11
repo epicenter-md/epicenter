@@ -10,7 +10,7 @@
 
 Radically simplify the workspace encryption architecture. Replace the lock/unlock state machine, UserKeyStore, `.withEncryption()` builder method, and dual-cache encrypted wrapper with a single `applyEncryptionKeys()` method on the workspace client. The developer controls when and how keys arrive. The workspace library just encrypts.
 
-### Before (current—1,395 lines of encryption code)
+### Before (current: 1,395 lines of encryption code)
 
 ```typescript
 const workspace = createWorkspace(def)
@@ -25,7 +25,7 @@ const workspace = createWorkspace(def)
 //   → dual-cache observer pipeline in encrypted wrapper
 ```
 
-### After (proposed—~500 lines)
+### After (proposed: ~500 lines)
 
 ```typescript
 const workspace = createWorkspace(def)
@@ -58,7 +58,7 @@ The complexity is disproportionate to the value delivered. The core encryption *
 
 ### What encryption actually protects today
 
-The current model is **server-managed encryption, not E2E**. The server derives user keys from `ENCRYPTION_SECRETS` via HKDF and sends them to the client in the auth session. The server can decrypt all data. This is intentional—documented in the API README and three articles.
+The current model is **server-managed encryption, not E2E**. The server derives user keys from `ENCRYPTION_SECRETS` via HKDF and sends them to the client in the auth session. The server can decrypt all data. This is intentional. Documented in the API README and three articles.
 
 | Threat | Protected? | Notes |
 |---|---|---|
@@ -68,7 +68,7 @@ The current model is **server-managed encryption, not E2E**. The server derives 
 | Full server compromise (DB + env vars) | ❌ | Attacker derives all keys |
 | Government subpoena | ❌ | Server can comply by decrypting |
 
-**The real value**: data at rest everywhere (client IndexedDB, server Durable Object SQLite, sync payloads) is ciphertext. A database dump is useless without the separately-stored `ENCRYPTION_SECRETS`. This is the Notion/Linear model, applied at the CRDT value level—genuinely deeper than database-level encryption.
+**The real value**: data at rest everywhere (client IndexedDB, server Durable Object SQLite, sync payloads) is ciphertext. A database dump is useless without the separately-stored `ENCRYPTION_SECRETS`. This is the Notion/Linear model, applied at the CRDT value level. Genuinely deeper than database-level encryption.
 
 ### The two-tier future
 
@@ -86,7 +86,7 @@ The wrapper doesn't change between tiers. Only the key source changes. This spec
 
 ### What we tried before (and why it was wrong)
 
-**Attempt 1: Store-level bifurcation** (`feat/new-bifurcation` branch). Made encryption a birth-time property—encrypted workspaces use strict stores, non-encrypted use plain `YKeyValueLww`. Required a `KvStore<T>` interface, conditional store creation, moving `.withEncryption()` to constructor. **Wrong because** it prevents zero-friction onboarding → optional encryption later.
+**Attempt 1: Store-level bifurcation** (`feat/new-bifurcation` branch). Made encryption a birth-time property. Encrypted workspaces use strict stores, non-encrypted use plain `YKeyValueLww`. Required a `KvStore<T>` interface, conditional store creation, moving `.withEncryption()` to constructor. **Wrong because** it prevents zero-friction onboarding → optional encryption later.
 
 **Attempt 2: Sync-layer gating only** (original version of this spec). Keep the full state machine but add sync gating. **Wrong because** it preserves all the complexity (state machine, UserKeyStore, dual-cache, transactional activation) for a ~5-line sync gate. The gate is right, but the machinery it depends on is over-engineered.
 
@@ -102,7 +102,7 @@ The wrapper doesn't change between tiers. Only the key source changes. This spec
 | 4 | Plaintext→encrypted transition | One-way. `applyEncryptionKeys()` re-encrypts plaintext entries. No going back. | Once data has been encrypted, it should never be plaintext again. Logout → `clearLocalData()` → fresh start. |
 | 5 | Re-encryption scope | Re-encrypt plaintext entries and decryptable old-version ciphertext. | Plaintext must be encrypted before sync connects. Old-version ciphertext must also converge to the current key during activation, so a rotation actually upgrades at-rest data instead of waiting for a future write that may never happen. |
 | 6 | Sync connection | Explicit. App calls `sync.connect()` after applying keys. | No implicit coupling between encryption and sync. App controls ordering. Simplest possible sync extension. |
-| 6a | Boot sequencing | Composed by app, not by library. App runs persistence + auth in parallel, then applies keys synchronously. | Fastest boot (parallel), zero gap (sync apply), no coupling (library doesn't know about auth). WorkspaceGate is a generic promise gate—app passes any promise. |
+| 6a | Boot sequencing | Composed by app, not by library. App runs persistence + auth in parallel, then applies keys synchronously. | Fastest boot (parallel), zero gap (sync apply), no coupling (library doesn't know about auth). WorkspaceGate is a generic promise gate. App passes any promise. |
 | 7 | Dual-cache in wrapper | Remove. Decrypt on read (~0.01ms per value). | Eliminates ~200 lines of cache sync, diffAndEmit, rebuildMap, transaction-gap fallback. XChaCha20-Poly1305 is fast enough. |
 | 8 | Lock/unlock state machine | Remove entirely. | No app cycles between locked/unlocked during a session. Key arrives once at boot (from cached auth session or fresh login). |
 | 9 | Dead crypto exports | Remove PBKDF2, deriveSalt, generateEncryptionKey from core module. | Never called. Re-add PBKDF2 in a separate `password-key-provider.ts` when Tier 2 ships. |
@@ -246,18 +246,18 @@ applyEncryptionKeys(keys: EncryptionKeys): void {
 ### Tab-Manager (encrypted + synced)
 
 ```typescript
-// client.ts — no .withEncryption(), no UserKeyStore
+// client.ts: no .withEncryption(), no UserKeyStore
 const workspace = createWorkspace(tabManagerDefinition)
   .withExtension('persistence', indexeddbPersistence)
   .withExtension('sync', createSyncExtension({ url: ... }));
 
-// auth.ts — on login
+// auth.ts: on login
 function onLogin(session: SessionResponse) {
   workspace.applyEncryptionKeys(session.encryptionKeys);
   workspace.extensions.sync.connect();
 }
 
-// auth.ts — on logout
+// auth.ts: on logout
 async function onLogout() {
   await workspace.clearLocalData(); // wipes IndexedDB, disconnects sync
 }
@@ -266,7 +266,7 @@ async function onLogout() {
 ### Whispering (local-only today, sync someday)
 
 ```typescript
-// client.ts — same as today, no encryption, no sync
+// client.ts: same as today, no encryption, no sync
 const workspace = createWorkspace(whisperingDefinition)
   .withExtension('persistence', indexeddbPersistence);
 
@@ -279,7 +279,7 @@ const workspace = createWorkspace(whisperingDefinition)
 ### Future: Password-based E2E (Tier 2)
 
 ```typescript
-// ~30 lines — separate password-key-provider.ts
+// ~30 lines: separate password-key-provider.ts
 async function deriveKeysFromPassword(
   password: string,
   salt: Uint8Array,
@@ -363,7 +363,7 @@ Safe. `applyEncryptionKeys()` re-encrypts all plaintext entries before returning
 
 ### `applyEncryptionKeys()` fails midway through re-encryption
 
-Some entries re-encrypted, some still plaintext. The wrapper handles mixed content on read (checks each entry). The app can retry `applyEncryptionKeys()` — remaining plaintext entries will be re-encrypted. Self-healing on retry.
+Some entries re-encrypted, some still plaintext. The wrapper handles mixed content on read (checks each entry). The app can retry `applyEncryptionKeys()`: remaining plaintext entries will be re-encrypted. Self-healing on retry.
 
 ### Key rotation (auth session has new key version)
 
@@ -375,15 +375,15 @@ Device A has keyring `[v1, v2]`, Device B has keyring `[v1]`. Device A writes wi
 
 ### User is offline, auth session expires
 
-Cached auth session still has the encryption keys. Data remains readable. When online again, auth refresh provides new session with same (or rotated) keys. `applyEncryptionKeys()` can be called again with the new keys—keyring is updated, no data loss.
+Cached auth session still has the encryption keys. Data remains readable. When online again, auth refresh provides new session with same (or rotated) keys. `applyEncryptionKeys()` can be called again with the new keys. Keyring is updated, no data loss.
 
 ### `clearLocalData()` called, sync reconnects before new keys applied
 
-`clearLocalData()` disconnects sync and wipes IndexedDB. Workspace is empty. Sync can't reconnect until the app explicitly calls `.connect()` again—and the app won't do that until after `applyEncryptionKeys()`.
+`clearLocalData()` disconnects sync and wipes IndexedDB. Workspace is empty. Sync can't reconnect until the app explicitly calls `.connect()` again. And the app won't do that until after `applyEncryptionKeys()`.
 
 ### App configures sync but never calls `applyEncryptionKeys()`
 
-Data syncs as plaintext. This is the developer's conscious choice—they configured sync without encryption. The framework doesn't prevent this. It prevents the *accidental* case by making the ordering explicit: apply keys → connect sync.
+Data syncs as plaintext. This is the developer's conscious choice. They configured sync without encryption. The framework doesn't prevent this. It prevents the *accidental* case by making the ordering explicit: apply keys → connect sync.
 
 ### Whispering adds sync in the future
 
@@ -435,15 +435,15 @@ Data syncs as plaintext. This is the developer's conscious choice—they configu
 
 ## References
 
-- `packages/workspace/src/shared/y-keyvalue/y-keyvalue-lww-encrypted.ts` — Current encrypted wrapper (to simplify)
-- `packages/workspace/src/shared/crypto/index.ts` — Crypto primitives (to prune)
-- `apps/api/src/auth/encryption.ts` — Server-side HKDF key derivation (unchanged)
-- `apps/api/src/auth/create-auth.ts` — Auth session includes `encryptionKeys` (unchanged)
-- `docs/articles/let-the-server-handle-encryption.md` — Philosophy behind server-managed encryption
-- `docs/articles/if-you-dont-trust-the-server-become-the-server.md` — Self-hosting as zero-knowledge
-- `docs/articles/why-e2e-encryption-keeps-failing.md` — Why we chose this model
-- `specs/20260402T120000-workspace-encryption-model.md` — Previous spec (superseded)
-- `specs/20260401T160000-self-managed-encryption-password.md` — Future Tier 2 reference
+- `packages/workspace/src/shared/y-keyvalue/y-keyvalue-lww-encrypted.ts`: Current encrypted wrapper (to simplify)
+- `packages/workspace/src/shared/crypto/index.ts`: Crypto primitives (to prune)
+- `apps/api/src/auth/encryption.ts`: Server-side HKDF key derivation (unchanged)
+- `apps/api/src/auth/create-auth.ts`: Auth session includes `encryptionKeys` (unchanged)
+- `docs/articles/let-the-server-handle-encryption.md`: Philosophy behind server-managed encryption
+- `docs/articles/if-you-dont-trust-the-server-become-the-server.md`: Self-hosting as zero-knowledge
+- `docs/articles/why-e2e-encryption-keeps-failing.md`: Why we chose this model
+- `specs/20260402T120000-workspace-encryption-model.md`: Previous spec (superseded)
+- `specs/20260401T160000-self-managed-encryption-password.md`: Future Tier 2 reference
 
 ## Review
 
@@ -456,21 +456,21 @@ Replaced the lock/unlock encryption state machine with a single synchronous `app
 
 ### Commits
 
-1. `638300203` — Phase 0+1: Simplify encrypted wrapper (remove dual-cache, add one-way encryption)
-2. `f8cc1e5b0` — Remove dead `hasBeenEncrypted` flag and `EncryptionError.Locked` (done by Braden)
-3. `042cbcfda` — Phase 2: Replace encryption runtime with `applyEncryptionKeys()` (-1,190 lines)
-4. `1cc38489a` — Phase 3: Remove dead crypto exports (-285 lines)
-5. `a8583af3e` — Phase 4: Update all 4 apps + remove dead key-store files (-159 lines)
+1. `638300203`: Phase 0+1: Simplify encrypted wrapper (remove dual-cache, add one-way encryption)
+2. `f8cc1e5b0`: Remove dead `hasBeenEncrypted` flag and `EncryptionError.Locked` (done by Braden)
+3. `042cbcfda`: Phase 2: Replace encryption runtime with `applyEncryptionKeys()` (-1,190 lines)
+4. `1cc38489a`: Phase 3: Remove dead crypto exports (-285 lines)
+5. `a8583af3e`: Phase 4: Update all 4 apps + remove dead key-store files (-159 lines)
 
 ### Deviations from Spec
 
-- **Phase 5 (sync extension)**: No changes needed. The sync extension already auto-connects after persistence is ready via `whenReady`. Encrypted blobs sync correctly as raw `Uint8Array` — decryption happens on read, not on storage. The `applyEncryptionKeys()` → `reconnect()` pattern in app `onLogin` hooks is sufficient.
-- **`generateEncryptionKey()`**: Spec said to remove it. We did, replacing all test usages with `randomBytes(32)` (which was its entire implementation). Docs benchmark files were left unchanged — they're not part of the build/test pipeline.
+- **Phase 5 (sync extension)**: No changes needed. The sync extension already auto-connects after persistence is ready via `whenReady`. Encrypted blobs sync correctly as raw `Uint8Array`: decryption happens on read, not on storage. The `applyEncryptionKeys()` → `reconnect()` pattern in app `onLogin` hooks is sufficient.
+- **`generateEncryptionKey()`**: Spec said to remove it. We did, replacing all test usages with `randomBytes(32)` (which was its entire implementation). Docs benchmark files were left unchanged: they're not part of the build/test pipeline.
 - **`createIndexedDbKeyStore`**: Removed from `@epicenter/svelte-utils` since all 4 app callers were removed in Phase 4. The spec said this was optional follow-up but it caused type errors so we cleaned it up.
-- **`hasBeenEncrypted` flag**: Removed in a separate commit by Braden between Phase 1 and Phase 2. The flag was dead code since `deactivateEncryption()` was already removed — the one-way behavior is now structural (no API to reverse it).
+- **`hasBeenEncrypted` flag**: Removed in a separate commit by Braden between Phase 1 and Phase 2. The flag was dead code since `deactivateEncryption()` was already removed: the one-way behavior is now structural (no API to reverse it).
 
 ### What's Left
 
-- Docs benchmark files (`docs/articles/yjs-storage-efficiency/`) still import `generateEncryptionKey` — harmless, not part of build
-- `cachedEntries()` naming is now misleading (no cache) — rename in a follow-up
+- Docs benchmark files (`docs/articles/yjs-storage-efficiency/`) still import `generateEncryptionKey`: harmless, not part of build
+- `cachedEntries()` naming is now misleading (no cache): rename in a follow-up
 - Server-side encryption (`apps/api/`) is unchanged as specified

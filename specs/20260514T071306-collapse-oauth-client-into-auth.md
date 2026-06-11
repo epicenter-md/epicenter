@@ -32,7 +32,7 @@ import {
 
 The boundary the package draws (client OAuth ceremony vs. signed-in
 session lifecycle) is real, but it lives perfectly well as a subpath
-inside `@epicenter/auth` — the same way `@epicenter/auth/node` already
+inside `@epicenter/auth`: the same way `@epicenter/auth/node` already
 isolates Bun-only code from browser bundles.
 
 ### What the package actually contained

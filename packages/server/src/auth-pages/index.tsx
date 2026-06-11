@@ -20,7 +20,7 @@ export function renderSignInPage({
 	githubEnabled: boolean;
 }) {
 	return (
-		<AuthLayout title="Sign in — Epicenter">
+		<AuthLayout title="Sign in: Epicenter">
 			<SignInPage githubEnabled={githubEnabled} />
 		</AuthLayout>
 	);
@@ -34,7 +34,7 @@ export function renderConsentPage({
 	scope?: string;
 }) {
 	return (
-		<AuthLayout title="Authorize — Epicenter">
+		<AuthLayout title="Authorize: Epicenter">
 			<ConsentPage clientId={clientId} scope={scope} />
 		</AuthLayout>
 	);
@@ -48,7 +48,7 @@ export function renderSignedInPage({
 	email: string;
 }) {
 	return (
-		<AuthLayout title="Signed in — Epicenter">
+		<AuthLayout title="Signed in: Epicenter">
 			<SignedInPage displayName={displayName} email={email} />
 		</AuthLayout>
 	);

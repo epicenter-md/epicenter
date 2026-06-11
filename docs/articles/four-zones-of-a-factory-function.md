@@ -1,13 +1,13 @@
 # Every Factory Function Has Four Zones
 
-Open any factory function in this codebase and you'll find the same internal layout: immutable state, mutable state, private helpers, return object. The ordering isn't accidental—it mirrors how the function actually executes and makes the public API trivially easy to find.
+Open any factory function in this codebase and you'll find the same internal layout: immutable state, mutable state, private helpers, return object. The ordering isn't accidental. It mirrors how the function actually executes and makes the public API trivially easy to find.
 
 ```
 function createSomething({ db, cache }, options?) {
-	// Zone 1 — Immutable state
-	// Zone 2 — Mutable state
-	// Zone 3 — Private helpers
-	// Zone 4 — return { public API }
+	// Zone 1: Immutable state
+	// Zone 2: Mutable state
+	// Zone 3: Private helpers
+	// Zone 4: return { public API }
 }
 ```
 
@@ -23,7 +23,7 @@ function createSyncProvider({ doc, url, getToken }: SyncProviderConfig) {
 }
 ```
 
-Dependencies can be destructured in the signature or in the body—both work. Signature destructuring is shorter for small dep lists. Body destructuring makes sense when you also need to pass the deps object around or the list is long.
+Dependencies can be destructured in the signature or in the body. Both work. Signature destructuring is shorter for small dep lists. Body destructuring makes sense when you also need to pass the deps object around or the list is long.
 
 ```typescript
 // Signature destructuring
@@ -62,7 +62,7 @@ function createSyncProvider(config: SyncProviderConfig) {
 }
 ```
 
-From `packages/sync-client/src/provider.ts`. Four `let` variables and one sub-factory (`createBackoff`) that encapsulates its own mutable state. All of it private by position—none of it appears in the return object.
+From `packages/sync-client/src/provider.ts`. Four `let` variables and one sub-factory (`createBackoff`) that encapsulates its own mutable state. All of it private by position. None of it appears in the return object.
 
 When two or more `let` variables are always read, written, and reset together, they're a single concept. Extract them into a sub-factory:
 
@@ -113,7 +113,7 @@ function createSyncProvider(config: SyncProviderConfig) {
 
 Seven private functions, none exposed. The consumer calls `connect()` and `disconnect()` without knowing about `send`, `handleDocUpdate`, `runLoop`, or any of the internal machinery.
 
-Zone 3 is empty for small factories. `createBackoff()` has three `let` variables and three public methods with no private helpers in between—zones 2 and 4 sit right next to each other.
+Zone 3 is empty for small factories. `createBackoff()` has three `let` variables and three public methods with no private helpers in between. Zones 2 and 4 sit right next to each other.
 
 ## Zone 4: The Return Object
 
@@ -157,7 +157,7 @@ return {
 
 Six public members. The return object starts on line ~386 of a 560-line function; you scroll to the bottom and you're looking at the entire API. No scanning for `private` keywords, no checking member order.
 
-`destroy()` calls `this.disconnect()` because both live in the return object—method shorthand gives proper `this` binding. Meanwhile, `disconnect()` calls `backoff.wake()` and `manageWindowListeners()` directly because those are zone 3 helpers accessed through closure.
+`destroy()` calls `this.disconnect()` because both live in the return object. Method shorthand gives proper `this` binding. Meanwhile, `disconnect()` calls `backoff.wake()` and `manageWindowListeners()` directly because those are zone 3 helpers accessed through closure.
 
 ## The Decision Rule
 
@@ -177,6 +177,6 @@ Reading the function top-down gives you setup context before implementation; rea
 
 ## Related
 
-- [Closures Are Better Privacy Than Keywords](./closures-are-better-privacy-than-keywords.md)—why this beats class keywords
-- [The Factory Function Pattern](./factory-function-pattern.md)—the external signature and dependency injection
-- [Method Shorthand for JSDoc Preservation](./method-shorthand-jsdoc-preservation.md)—why method shorthand in zone 4 preserves IDE documentation
+- [Closures Are Better Privacy Than Keywords](./closures-are-better-privacy-than-keywords.md): why this beats class keywords
+- [The Factory Function Pattern](./factory-function-pattern.md): the external signature and dependency injection
+- [Method Shorthand for JSDoc Preservation](./method-shorthand-jsdoc-preservation.md): why method shorthand in zone 4 preserves IDE documentation

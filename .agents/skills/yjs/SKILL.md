@@ -9,13 +9,13 @@ metadata:
 # Yjs CRDT Patterns
 ## Reference Repositories
 
-- [Yjs](https://github.com/yjs/yjs) — CRDT framework for shared editing and offline-first data
+- [Yjs](https://github.com/yjs/yjs): CRDT framework for shared editing and offline-first data
 - [Yjs Protocols](https://github.com/yjs/y-protocols) - Sync, awareness, and auth protocol helpers
 - [Y IndexedDB](https://github.com/yjs/y-indexeddb) - Browser persistence provider for Y.Doc updates
 
 ## Upstream Grounding
 
-When conflict semantics, transaction origins, shared-type behavior, update encoding, storage growth, or provider interoperability affects correctness, ask DeepWiki a narrow question against `yjs/yjs` before relying on memory. Use it to orient, then verify decisive details against local installed types, source, or official docs before changing code.
+When conflict semantics, transaction origins, shared-type behavior, update encoding, storage growth, or shared-type APIs affect correctness, use source-backed grounding before relying on memory. If DeepWiki MCP is available, ask a narrow question against `yjs/yjs`; for sync, awareness, auth protocol helpers, or provider interoperability, ask against `yjs/y-protocols`; for browser persistence behavior, ask against `yjs/y-indexeddb`. If DeepWiki is unavailable or the repo is not indexed, use upstream source or official docs directly. Treat DeepWiki as orientation, then verify decisive details against local installed types, source, or official docs before changing code.
 
 Skip DeepWiki for stable basics and repo-local patterns already documented below.
 
@@ -74,7 +74,7 @@ The other three (`Y.XmlElement`, `Y.XmlFragment`, `Y.XmlText`) are for rich text
 
 ### Client ID
 
-Every Y.Doc gets a random `clientID` on creation. This ID is used for conflict resolution—when two clients write to the same key simultaneously, the **higher clientID wins**, not the later timestamp.
+Every Y.Doc gets a random `clientID` on creation. This ID is used for conflict resolution: when two clients write to the same key simultaneously, the **higher clientID wins**, not the later timestamp.
 
 ```typescript
 const doc = new Y.Doc();
@@ -85,7 +85,7 @@ From dmonad (Yjs creator):
 
 > "The 'winner' is decided by `ydoc.clientID` of the document (which is a generated number). The higher clientID wins."
 >
-> — [GitHub issue #520](https://github.com/yjs/yjs/issues/520)
+> Source: [GitHub issue #520](https://github.com/yjs/yjs/issues/520)
 
 The actual comparison in source ([updates.js#L357](https://github.com/yjs/yjs/blob/main/src/utils/updates.js#L357)):
 
@@ -263,7 +263,7 @@ Any concurrent edits to the "moved" item are lost because you deleted the origin
 
 Y.js shared types (`Y.Map`, `Y.Text`, `Y.XmlFragment`, `Y.Array`) are implementation details that should stay behind typed APIs. When consumer code reaches through an abstraction to manipulate raw shared types, it creates coupling that's hard to change later.
 
-**The pattern**: If a module returns Y.js shared types for editor binding (e.g., `handle.asText()` returns `Y.Text`), that's intentional—the consumer needs the live CRDT reference. But if consumer code is *constructing*, *casting*, or *mutating* Y.js types that the owning module should encapsulate, that's a leak.
+**The pattern**: If a module returns Y.js shared types for editor binding (e.g., `handle.asText()` returns `Y.Text`), that's intentional: the consumer needs the live CRDT reference. But if consumer code is *constructing*, *casting*, or *mutating* Y.js types that the owning module should encapsulate, that's a leak.
 
 ```typescript
 // BAD: consumer reaches through handle to do raw Y.Text mutation

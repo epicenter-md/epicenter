@@ -413,7 +413,7 @@ Build → Prove → Remove ordering. Fuji first as the reference implementation;
 ### Phase 7: Replicate for Zhongwen, rename `(protected)/` → `(signed-in)/`
 
 - [x] **7.1** Rename `apps/zhongwen/src/routes/(protected)/` to `apps/zhongwen/src/routes/(signed-in)/`
-- [x] **7.2** Update layout/component to match the spec; Zhongwen may not have a workspace open, in which case the `SignedIn` type can be `{ identity: AuthIdentity }` only and the gate skips the `openFuji`-equivalent step. **Decide per-app: if there is no workspace, this spec does not apply at the workspace level — only the auth-gate part.**
+- [x] **7.2** Update layout/component to match the spec; Zhongwen may not have a workspace open, in which case the `SignedIn` type can be `{ identity: AuthIdentity }` only and the gate skips the `openFuji`-equivalent step. **Decide per-app: if there is no workspace, this spec does not apply at the workspace level: only the auth-gate part.**
   > **Note**: Zhongwen does have a local workspace (`openZhongwen`, chat tables, and `showPinyin` KV), so it uses the full signed-in bundle with `SignedIn = { identity, zhongwen }`.
 - [ ] **7.3** Repeat verification + cleanup
   > **Note**: Deferred to the final cross-app verification pass by request.
@@ -480,7 +480,7 @@ Build → Prove → Remove ordering. Fuji first as the reference implementation;
 ### `<SignedIn>` mounted from outside the route group (programmer error)
 
 1. The script-top `if (auth.state.status !== 'signed-in') throw` fires
-2. Without a `<svelte:boundary>` parent, the route crashes — this is intended; it is a programmer error, not a user-facing failure
+2. Without a `<svelte:boundary>` parent, the route crashes: this is intended; it is a programmer error, not a user-facing failure
 
 ### `getSignedIn()` called outside the gate (programmer error)
 
@@ -550,7 +550,7 @@ A post-implementation audit caught:
 - Honeycrisp `SignedIn.svelte` had `const state = ...` colliding with the `$state` rune. Fixed by renaming to `honeycrispState`.
 - Fuji and Honeycrisp browser bundles never gained `whenReady` / `dispose()`, so all three gates were awaiting `idb.whenLoaded` and disposing via `[Symbol.dispose]()`. Fixed by adding the bundle-level names and switching the gates to use them.
 - Dead `&& page.url.pathname !== '/sign-in'` guard in all three `(signed-in)/+layout.svelte` files; the guard was unreachable because `/sign-in` lives outside the route group. Removed.
-- Fuji's `entries-state.svelte.ts` was a module-level singleton bound by `<SignedIn>` on mount — recreating the drift smell the migration was meant to kill. Replaced with `createEntriesState(fuji)` + `[getEntriesState, setEntriesState]` context, mirroring `createHoneycrispState` in apps/honeycrisp.
+- Fuji's `entries-state.svelte.ts` was a module-level singleton bound by `<SignedIn>` on mount: recreating the drift smell the migration was meant to kill. Replaced with `createEntriesState(fuji)` + `[getEntriesState, setEntriesState]` context, mirroring `createHoneycrispState` in apps/honeycrisp.
 - A short-lived experiment extracted the `{:catch}` UI into a shared `<WorkspaceGate>` in `@epicenter/svelte/workspace-gate`. That component was deleted shortly after: the wrapper saved no lines once the caller still had to compose the readiness promise and override the error UI per app. Each gate now inlines the `{#await}` + `<Empty.Root>` markup. See `specs/20260506T020000-expose-attachments-not-aliases.md` for the full reasoning.
 - Identity `$state` snapshot defense documented inline so the next refactor does not collapse it into a live `auth.state.identity` read.
 

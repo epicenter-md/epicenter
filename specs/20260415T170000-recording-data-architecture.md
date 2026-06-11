@@ -1,4 +1,4 @@
-# Recording Data Architecture—Where Should Files Live?
+# Recording Data Architecture. Where Should Files Live?
 
 **Date**: 2026-04-15
 **Status**: Draft
@@ -9,7 +9,7 @@
 
 After migrating the recording schema to V2 and exploring four different approaches to filesystem materialization, we arrived at a fundamental question: should the Whispering desktop app write `.md` files at all? This spec documents the full exploration, the HN-effect concern, and the recommended architecture.
 
-## Journey—How We Got Here
+## Journey. How We Got Here
 
 ### Phase 1: Schema cleanup (implemented ✓)
 
@@ -21,15 +21,15 @@ Renamed columns (`timestamp` → `recordedAt`, `transcribedText` → `transcript
 
 Attempted to wire `createMarkdownMaterializer` into the Tauri desktop app:
 
-1. **DI on the materializer** — Added `io?` and `yaml?` adapters to `createMarkdownMaterializer` so it could run in Bun, Node, or Tauri. Good general improvement, committed to the workspace package.
+1. **DI on the materializer**: Added `io?` and `yaml?` adapters to `createMarkdownMaterializer` so it could run in Bun, Node, or Tauri. Good general improvement, committed to the workspace package.
 
-2. **Tauri IO adapter** — Created `tauriIO` and `tauriYaml` adapters using `@tauri-apps/plugin-fs` and `js-yaml`. Worked, but added a file and an indirection layer.
+2. **Tauri IO adapter**: Created `tauriIO` and `tauriYaml` adapters using `@tauri-apps/plugin-fs` and `js-yaml`. Worked, but added a file and an indirection layer.
 
-3. **Async factory problem** — Tauri path APIs are async (`appDataDir()` returns a Promise). The `withWorkspaceExtension` factory must be sync. Attempted to make the factory async—resulted in hacky code: mutable `let` closures, type lies (`[key]: {}`), duplicate code paths. Reverted.
+3. **Async factory problem**: Tauri path APIs are async (`appDataDir()` returns a Promise). The `withWorkspaceExtension` factory must be sync. Attempted to make the factory async. Resulted in hacky code: mutable `let` closures, type lies (`[key]: {}`), duplicate code paths. Reverted.
 
-4. **Lazy dir** — Widened the materializer's `dir` config to accept `string | (() => MaybePromise<string>)`. Resolved inside `whenReady`. Clean, minimal change. This approach worked.
+4. **Lazy dir**: Widened the materializer's `dir` config to accept `string | (() => MaybePromise<string>)`. Resolved inside `whenReady`. Clean, minimal change. This approach worked.
 
-5. **Inlined the serializer** — The 44-line `recording-serializer.ts` had one caller and one export. Inlined the 8-line serialize function into `client.ts`. Net -31 lines.
+5. **Inlined the serializer**: The 44-line `recording-serializer.ts` had one caller and one export. Inlined the 8-line serialize function into `client.ts`. Net -31 lines.
 
 **Finding**: The JS materializer approach works but adds significant wiring for what's essentially "observe table, write files." Every piece (IO adapter, YAML adapter, lazy dir, serialize function) was individually reasonable but collectively heavy for one table.
 
@@ -61,7 +61,7 @@ The `.md` files in `appDataDir/recordings/` were the source of truth when the DB
 | Portability / backup | **No** | The workspace (IndexedDB) is the actual data. Backing up `.md` files without the workspace gives you metadata without audio. |
 | External tool integration | **No** | No known tools read these files. |
 
-### The HN effect—"I want to own my data as files"
+### The HN effect: "I want to own my data as files"
 
 The Hacker News audience values local-first, file-based data ownership. "Your data is just markdown files" is a powerful selling point. But there's a critical distinction:
 
@@ -69,7 +69,7 @@ The Hacker News audience values local-first, file-based data ownership. "Your da
 
 1. Data stored in a human-readable, version-controllable format
 2. Ability to read/edit recordings outside the app
-3. No vendor lock-in—data accessible without the app running
+3. No vendor lock-in. Data accessible without the app running
 4. Files in a directory THEY choose, not buried in `~/Library/Application Support/`
 
 **What the current `.md` files provide:**
@@ -92,7 +92,7 @@ Files that are:
 
 The `epicenter.config.ts` + CLI approach handles this properly:
 ```typescript
-// epicenter.config.ts — user chooses the directory
+// epicenter.config.ts: user chooses the directory
 export default defineConfig(
   createWhisperingWorkspace()
     .withExtension('persistence', filesystemPersistence({ filePath: './workspace.db' }))
@@ -113,7 +113,7 @@ The user runs `epicenter serve` or `epicenter push`. Files appear where they cho
 | Audio files in appdata? | **Yes** | Audio blobs are too large for Yjs. Desktop needs them on the filesystem for playback (`convertFileSrc`). This is a storage concern, not a data ownership concern. |
 | User-facing `.md` export? | **Via `epicenter.config.ts` + CLI** | The established pattern. User chooses directory. Bun materializer works natively. Proper export, not a hidden copy. |
 | Two-way sync (file edits → workspace)? | **Not now** | Massive complexity (file watcher, conflict resolution, loop prevention, YAML parse validation). Not worth it for Whispering's use case. The app UI is the editing interface. |
-| Remove existing `.md` write path? | **Yes, incrementally** | Phase 3b slims the DB service. Old files on disk are harmless—they just stop being updated. |
+| Remove existing `.md` write path? | **Yes, incrementally** | Phase 3b slims the DB service. Old files on disk are harmless. They just stop being updated. |
 
 ## Architecture
 
@@ -149,16 +149,16 @@ epicenter push → createMarkdownMaterializer → user-chosen directory
 
 ### Phase A: Remove `.md` writes from the desktop app
 
-- [ ] **A.1** Remove `recordingToMarkdown` call from `services.db.recordings.create()` in `file-system.ts`—create only writes audio
+- [ ] **A.1** Remove `recordingToMarkdown` call from `services.db.recordings.create()` in `file-system.ts`: create only writes audio
 - [ ] **A.2** Remove `services.db.recordings.update()` method (never called from app code)
 - [ ] **A.3** Remove `recordingToMarkdown`, `markdownToRecording`, `RecordingFrontMatter`, `RecordingFrontMatterRaw`, `normalizeRecordingFrontMatter` from `file-system.ts`
 - [ ] **A.4** Remove `stringifyFrontmatter` from `frontmatter.ts` if only used by recording writes (check transformation usage first)
-- [ ] **A.5** Revert materializer wiring from `client.ts`—back to the simple `createWorkspace(def).withExtension('persistence', indexeddb)` form
+- [ ] **A.5** Revert materializer wiring from `client.ts`: back to the simple `createWorkspace(def).withExtension('persistence', indexeddb)` form
 - [ ] **A.6** Delete `tauri-materializer-io.ts` (no longer needed)
 
 ### Phase B: Slim the DB service to audio-only
 
-(Unchanged from previous spec—Phase 3b)
+(Unchanged from previous spec. Phase 3b)
 
 - [ ] **B.1** Remove metadata-only methods: `getAll`, `getLatest`, `getById`, `getTranscribingIds`, `getCount`
 - [ ] **B.2** Rename `create` → `saveAudio` with signature `(recordingId: string, audio: Blob)`
@@ -224,10 +224,10 @@ epicenter push → createMarkdownMaterializer → user-chosen directory
 | Schema V2 migration (definition.ts) | Committed | ✅ Yes |
 | `InferTableRow` for Recording type | Committed | ✅ Yes |
 | `DbRecording` rename | Committed | ✅ Yes |
-| Materializer DI (`io?`, `yaml?` config) | Committed | ✅ Yes—good for CLI/Bun consumers |
-| Materializer lazy `dir` (`string \| () => MaybePromise<string>`) | Committed | ✅ Yes—good general improvement |
-| `tauri-materializer-io.ts` | On branch | ❌ Delete—no in-app materializer |
-| Materializer wiring in `client.ts` | On branch | ❌ Revert—no in-app materializer |
+| Materializer DI (`io?`, `yaml?` config) | Committed | ✅ Yes. Good for CLI/Bun consumers |
+| Materializer lazy `dir` (`string \| () => MaybePromise<string>`) | Committed | ✅ Yes. Good general improvement |
+| `tauri-materializer-io.ts` | On branch | ❌ Delete. No in-app materializer |
+| Materializer wiring in `client.ts` | On branch | ❌ Revert. No in-app materializer |
 | Async factory support in `withWorkspaceExtension` | Reverted | ❌ Already reverted (was hacky) |
 
 ## Success Criteria
@@ -242,10 +242,10 @@ epicenter push → createMarkdownMaterializer → user-chosen directory
 
 ## References
 
-- `apps/whispering/src/lib/services/db/file-system.ts` — Current write path (to be slimmed)
-- `apps/whispering/src/lib/services/db/frontmatter.ts` — YAML helpers (may be removable)
-- `apps/whispering/src/lib/workspace/definition.ts` — Recording V2 schema
-- `apps/whispering/src/lib/client.ts` — Workspace client (revert to simple form)
-- `packages/workspace/src/extensions/materializer/markdown/materializer.ts` — Bun materializer (kept for CLI)
-- `playground/tab-manager-e2e/epicenter.config.ts` — Example CLI materializer config
-- `apps/whispering/src-tauri/src/markdown_reader.rs` — Rust read/delete commands (keep for migration)
+- `apps/whispering/src/lib/services/db/file-system.ts`: Current write path (to be slimmed)
+- `apps/whispering/src/lib/services/db/frontmatter.ts`: YAML helpers (may be removable)
+- `apps/whispering/src/lib/workspace/definition.ts`: Recording V2 schema
+- `apps/whispering/src/lib/client.ts`: Workspace client (revert to simple form)
+- `packages/workspace/src/extensions/materializer/markdown/materializer.ts`: Bun materializer (kept for CLI)
+- `playground/tab-manager-e2e/epicenter.config.ts`: Example CLI materializer config
+- `apps/whispering/src-tauri/src/markdown_reader.rs`: Rust read/delete commands (keep for migration)

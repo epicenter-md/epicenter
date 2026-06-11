@@ -4,7 +4,7 @@
 
 Two issues with the current architecture:
 
-1. **Developer ergonomics**: `defineWorkspace` requires full metadata (name, icon, description) for every table. Developers building their own apps only need sync—they don't care about UI metadata.
+1. **Developer ergonomics**: `defineWorkspace` requires full metadata (name, icon, description) for every table. Developers building their own apps only need sync. They don't care about UI metadata.
 
 2. **Definition storage**: The current branch stores `WorkspaceDefinition` inside the Y.Doc as CRDT state. This adds complexity and CRDT overhead for data that rarely changes (workspace name, table icons).
 

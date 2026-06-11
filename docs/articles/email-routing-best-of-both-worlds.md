@@ -1,6 +1,6 @@
 # How I Kept Wildcard Email Routing While Adding Google Workspace
 
-I had the perfect email setup with Cloudflare Email Routing. Any email sent to `*@epicenter.so` would forward to my personal inbox. `hello@epicenter.so`, `random-service-signup@epicenter.so`, `newsletter-123@epicenter.so` — they all just worked. It was beautiful.
+I had the perfect email setup with Cloudflare Email Routing. Any email sent to `*@epicenter.so` would forward to my personal inbox. `hello@epicenter.so`, `random-service-signup@epicenter.so`, `newsletter-123@epicenter.so`: they all just worked. It was beautiful.
 
 Then I needed a professional email address. Google Workspace seemed like the obvious choice for `braden@epicenter.md`. That's when I hit the MX record wall.
 

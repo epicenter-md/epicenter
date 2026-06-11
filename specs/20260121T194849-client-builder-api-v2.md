@@ -1,9 +1,9 @@
 # Client Builder API v2: Schema-First Refactor
 
-**Status**: REVERSED (2026-01-22)  
-**Created**: 2026-01-21  
-**Updated**: 2026-01-22  
-**Purpose**: Simplify the client builder API by separating schema from identity  
+**Status**: REVERSED (2026-01-22)
+**Created**: 2026-01-21
+**Updated**: 2026-01-22
+**Purpose**: Simplify the client builder API by separating schema from identity
 **Related**:
 
 - [specs/20260121T231500-doc-architecture-v2.md](./20260121T231500-doc-architecture-v2.md)
@@ -19,7 +19,7 @@ This spec was implemented but then **reversed**. The rename from `.withDefinitio
 2. **Convention mismatch**: Per the codebase naming convention in `packages/epicenter/src/core/schema/README.md`:
    - **Schema** = raw type constraints (no metadata)
    - **Definition** = metadata + schema
-3. **Y.Map alignment**: The Y.Map was renamed from `Y.Map('schema')` to `Y.Map('definition')` for the same reason—it stores definitions, not schemas
+3. **Y.Map alignment**: The Y.Map was renamed from `Y.Map('schema')` to `Y.Map('definition')` for the same reason. It stores definitions, not schemas
 
 The method is now back to `.withDefinition()`. The `WorkspaceSchema` type still exists as an alias (`WorkspaceDefinitionInput`) for backwards compatibility.
 
@@ -549,8 +549,8 @@ const client = createClient(def.id, { epoch })
 
   ```typescript
   type WorkspaceSchema<TTables, TKv> = {
-  	tables: TTables;
-  	kv: TKv;
+	tables: TTables;
+	kv: TKv;
   };
   ```
 

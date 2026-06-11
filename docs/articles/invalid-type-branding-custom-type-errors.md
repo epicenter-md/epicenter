@@ -50,8 +50,8 @@ Single, clean error. The message IS the parameter type.
 
 1. Widen the generic constraint to `SomeSchema` (no type parameter) so TypeScript doesn't reject at the constraint level first
 2. The conditional type checks `InferOutput<T> extends RequiredShape`
-3. When valid: resolves to `T` — no change, everything works
-4. When invalid: resolves to a string literal — `T & string` is `never`, and the error shows the string
+3. When valid: resolves to `T`: no change, everything works
+4. When invalid: resolves to a string literal: `T & string` is `never`, and the error shows the string
 
 ### When it breaks
 
@@ -77,13 +77,13 @@ export function createThing<T extends SomeSchema<RequiredShape>>(
   schema: T,
 ): ThingDefinition<[T]>;
 
-// Overload 2: Fallback — custom error message
+// Overload 2: Fallback: custom error message
 export function createThing(
   schema: "createThing() error: Schema must include 'id: string' and 'version: number' fields.",
   ...rest: unknown[]
 ): never;
 
-// Implementation (not callable — TypeScript only tries declared overloads)
+// Implementation (not callable: TypeScript only tries declared overloads)
 export function createThing(
   first: SomeSchema | string,
   ...rest: unknown[]
@@ -105,7 +105,7 @@ No overload matches this call.
 
 ### Trade-off
 
-The structural diff still shows (from overload 1). Your custom message appears alongside it, not instead of it. The error is noisier — two blocks instead of one.
+The structural diff still shows (from overload 1). Your custom message appears alongside it, not instead of it. The error is noisier: two blocks instead of one.
 
 In practice, the structural diff often already surfaces the answer in its last line (e.g., `Type '{ name: string; }' is missing the following properties from type '{ id: string; _v: number; }': id, _v`). The fallback overload adds a clearer version of the same information but also adds visual noise.
 
@@ -131,7 +131,7 @@ In practice, the structural diff often already surfaces the answer in its last l
 Three rules:
 
 1. **Name the function.** Users might be calling several similar functions. Start with `createThing() error:`.
-2. **State the constraint violated.** Not the TypeScript type — the human concept. "Schema must include" beats "must extend BaseRow".
+2. **State the constraint violated.** Not the TypeScript type: the human concept. "Schema must include" beats "must extend BaseRow".
 3. **Tell them how to fix it.** "Add `id: string` and `_v: number`" is actionable. "Must extend BaseRow" requires looking up what BaseRow is.
 
 ---
@@ -144,6 +144,6 @@ Conditional type branding gives the cleanest error but adds type depth that can 
 
 Fallback overloads add zero type depth but produce noisier errors. The custom message appears alongside the structural diff, not instead of it. And TypeScript may reorder overloads in the error display, so your message might not appear where you expect.
 
-For simple constraints with shallow types, conditional type branding is strictly better. For complex constraints with deep types (StandardSchema, ArkType, Zod), the fallback overload is the safer choice — if the added noise is worth the clearer message. Sometimes TypeScript's structural diff already gets there in the last line, and neither pattern is needed.
+For simple constraints with shallow types, conditional type branding is strictly better. For complex constraints with deep types (StandardSchema, ArkType, Zod), the fallback overload is the safer choice. If the added noise is worth the clearer message. Sometimes TypeScript's structural diff already gets there in the last line, and neither pattern is needed.
 
 Evaluate on a case-by-case basis. Try conditional branding first. If it triggers TS2589, fall back to the overload pattern. If the structural diff already surfaces the missing fields clearly, you might not need either.

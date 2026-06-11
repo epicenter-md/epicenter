@@ -121,7 +121,7 @@ With separated structure:
 // Definition changes (cold)
 doc.getMap('definition').get('tables').get('posts').observe(cb);
 
-// Row changes (hot) — clean, no filtering
+// Row changes (hot): clean, no filtering
 doc.getMap('tables').get('posts').observeDeep(cb);
 ```
 

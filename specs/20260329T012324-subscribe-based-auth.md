@@ -3,10 +3,10 @@
 **Date**: 2026-03-29
 **Status**: Implemented
 **Author**: AI-assisted
-**Depends on**: 20260329T002221 (collapse transport + session—already implemented)
+**Depends on**: 20260329T002221 (collapse transport + session. Already implemented)
 ## Overview
 
-Replace the manual command→resolve pipeline in `createAuth` with Better Auth's built-in `useSession.subscribe()`, bridged to Svelte 5 via `createSubscriber` from `svelte/reactivity`. BA owns the session lifecycle (auto-refresh, cross-tab sync, token rotation). Workspace side-effects (key fetch, unlock, reconnect) are driven by an `onSessionChange` callback. Commands return errors only—subscribe handles the success path.
+Replace the manual command→resolve pipeline in `createAuth` with Better Auth's built-in `useSession.subscribe()`, bridged to Svelte 5 via `createSubscriber` from `svelte/reactivity`. BA owns the session lifecycle (auto-refresh, cross-tab sync, token rotation). Workspace side-effects (key fetch, unlock, reconnect) are driven by an `onSessionChange` callback. Commands return errors only. Subscribe handles the success path.
 
 ## Motivation
 
@@ -61,9 +61,9 @@ if (error) submitError = error.message;
 ### BA's Client Session Management
 
 BA uses nanostores internally. The vanilla client exposes:
-- `useSession` — nanostore atom with `{ data, isPending, isRefetching, error }`
-- `useSession.subscribe(callback)` — fires on every session change
-- `SessionRefreshManager` — auto-refresh on visibility, network online, polling, cross-tab BroadcastChannel
+- `useSession`: nanostore atom with `{ data, isPending, isRefetching, error }`
+- `useSession.subscribe(callback)`: fires on every session change
+- `SessionRefreshManager`: auto-refresh on visibility, network online, polling, cross-tab BroadcastChannel
 
 ### Svelte 5 External Source Integration
 
@@ -81,7 +81,7 @@ const subscribe = createSubscriber((update) => {
     return unsubscribe;
 });
 
-// In a getter — makes it reactive
+// In a getter: makes it reactive
 get value() {
     subscribe(); // registers dependency
     return externalSource.getValue();
@@ -109,7 +109,7 @@ get value() {
 | Session cache | Box stays (`{ current: AuthSession }`) | Stale-while-revalidate. Instant UI on startup from localStorage, BA refreshes in background. |
 | Token storage | Reads from box (`session.current.token`) | Box is persisted → token survives page reload → BA uses it for initial getSession. |
 | Token rotation | `onSuccess` header check | Captures rotated token from `set-auth-token` header immediately. Subscribe confirms with full session. |
-| Workspace integration | `onSessionChange(next, prev)` callback | Auth emits, app responds. Auth doesn't know about workspaces, keys, or sync. Supports multiple workspaces—each callback decides what to unlock/reconnect. |
+| Workspace integration | `onSessionChange(next, prev)` callback | Auth emits, app responds. Auth doesn't know about workspaces, keys, or sync. Supports multiple workspaces. Each callback decides what to unlock/reconnect. |
 | Command return | `Promise<AuthError \| undefined>` | Commands return errors only. Session updates propagate via subscribe → reactive getters. Return value carried dead weight. |
 | Operation state | Internal `$state<AuthOperation>` | BA has `isPending`/`isRefetching` but not `signing-in`/`signing-out`. Still needed for command-specific UI spinners. |
 | Auto-refresh | BA's SessionRefreshManager | Handles visibility, network online, cross-tab, polling. Replaces our manual visibility listener. |
@@ -299,7 +299,7 @@ The `onSuccess` callback ensures the token is updated before any subsequent requ
 
 1. `auth.signIn({ email, password })` → BA returns error
 2. Operation set to 'idle'
-3. Subscribe does NOT fire (session atom unchanged — no successful auth)
+3. Subscribe does NOT fire (session atom unchanged: no successful auth)
 4. Error returned to caller for UI display
 
 ## Open Questions
@@ -316,20 +316,20 @@ The `onSuccess` callback ensures the token is updated before any subsequent requ
 
 - [x] `create-auth.svelte.ts` under 200 lines (down from 569)
 - [x] `workspace-auth.svelte.ts` deleted
-- [x] No manual `getSession` calls — BA handles session resolution
-- [x] No manual visibility change listener — BA's SessionRefreshManager
-- [x] Commands return `AuthError | undefined` — no session in return
+- [x] No manual `getSession` calls: BA handles session resolution
+- [x] No manual visibility change listener: BA's SessionRefreshManager
+- [x] Commands return `AuthError | undefined`: no session in return
 - [x] `onSessionChange` callback drives all workspace side effects
 - [x] `bun test` passes
 - [x] `lsp_diagnostics` clean
 
 ## References
 
-- `packages/svelte-utils/src/create-auth.svelte.ts` — rewrite target
-- `packages/svelte-utils/src/workspace-auth.svelte.ts` — being deleted
-- `packages/svelte-utils/src/workspace-auth.test.ts` — being deleted
-- `packages/svelte-utils/src/auth.svelte.ts` — barrel update
-- All app auth + workspace client files — call site updates
+- `packages/svelte-utils/src/create-auth.svelte.ts`: rewrite target
+- `packages/svelte-utils/src/workspace-auth.svelte.ts`: being deleted
+- `packages/svelte-utils/src/workspace-auth.test.ts`: being deleted
+- `packages/svelte-utils/src/auth.svelte.ts`: barrel update
+- All app auth + workspace client files: call site updates
 - [BA client session-refresh.ts](https://github.com/better-auth/better-auth/blob/canary/packages/better-auth/src/client/session-refresh.ts)
 - [BA client vanilla.ts](https://github.com/better-auth/better-auth/blob/canary/packages/better-auth/src/client/vanilla.ts)
 - [Svelte 5 createSubscriber docs](https://svelte.dev/docs/svelte/svelte-reactivity#createSubscriber)
@@ -340,7 +340,7 @@ The `onSuccess` callback ensures the token is updated before any subsequent requ
 
 ### Summary
 
-Rewrote `createAuth` to use BA's `useSession.subscribe()` bridged to Svelte 5 via `createSubscriber`. Deleted `workspace-auth.svelte.ts` entirely—the subscribe callback + `onSessionChange` replaces it. All 4 apps (honeycrisp, tab-manager, opensidian, zhongwen) updated to wire `onSessionChange` in their workspace client files. Commands now return `AuthError | undefined` instead of the old `AuthCommandResult` union.
+Rewrote `createAuth` to use BA's `useSession.subscribe()` bridged to Svelte 5 via `createSubscriber`. Deleted `workspace-auth.svelte.ts` entirely. The subscribe callback + `onSessionChange` replaces it. All 4 apps (honeycrisp, tab-manager, opensidian, zhongwen) updated to wire `onSessionChange` in their workspace client files. Commands now return `AuthError | undefined` instead of the old `AuthCommandResult` union.
 
 ### Deviations from Spec
 

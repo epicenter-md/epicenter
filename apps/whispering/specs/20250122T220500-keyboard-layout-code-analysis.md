@@ -46,7 +46,7 @@ Using `e.code` can be confusing for international users:
 
 ## The Real Issue We're Solving
 
-The problem isn't really about layouts—it's about macOS transforming keys:
+The problem isn't really about layouts. It's about macOS transforming keys:
 
 - Option+A → 'å' (QWERTY)
 - Option+Q → 'œ' (AZERTY)

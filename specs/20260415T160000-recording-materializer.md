@@ -26,7 +26,7 @@ The DB service writes a `{id}.md` with YAML frontmatter (metadata) + body (trans
 
 Problems:
 
-1. **Two writes, one source of truth.** Metadata updates via `recordings.update()` only go to the workspace—the `.md` file on disk gets stale the moment the user edits a transcript or transcription completes.
+1. **Two writes, one source of truth.** Metadata updates via `recordings.update()` only go to the workspace. The `.md` file on disk gets stale the moment the user edits a transcript or transcription completes.
 2. **Dead write path.** `services.db.recordings.update()` and `services.db.recordings.delete()` are never called from app code. The file-system's metadata layer is write-once, then abandoned.
 3. **Unnecessary middleman type.** `DbRecording` exists solely to bridge the DB service's storage format to the workspace type.
 
@@ -47,7 +47,7 @@ Markdown files stay in sync because they're derived from workspace observations.
 
 | Decision | Choice | Rationale |
 |---|---|---|
-| Materializer runtime | Tauri-specific extension using `@tauri-apps/plugin-fs` | Existing `createMarkdownMaterializer` uses `Bun.write`—browser WebView can't use Bun APIs |
+| Materializer runtime | Tauri-specific extension using `@tauri-apps/plugin-fs` | Existing `createMarkdownMaterializer` uses `Bun.write`: browser WebView can't use Bun APIs |
 | Scope | Recordings table only (Phase 3) | Transformations/runs still use DB service for CRUD; tackle later |
 | Audio handling | Separate from materializer | Audio is a one-time write at recording time, not a derived view. Materializer only handles metadata→markdown. |
 | `.md` format | Same YAML frontmatter + transcript body | Backward compatible with existing files. Users can read/grep their recordings. |
@@ -138,7 +138,7 @@ processRecordingPipeline()
 
 1. `processRecordingPipeline` runs before `whenReady` resolves
 2. Recording is written to workspace immediately
-3. Materializer's initial flush picks it up—no gap
+3. Materializer's initial flush picks it up. No gap
 4. Expected: `.md` file appears after `whenReady`, not lost
 
 ### Audio save fails but metadata succeeds
@@ -181,10 +181,10 @@ processRecordingPipeline()
 
 ## References
 
-- `packages/workspace/src/extensions/materializer/markdown/materializer.ts` — Bun materializer (pattern to follow, not the runtime)
-- `apps/whispering/src/lib/services/db/file-system.ts` — Current desktop write path (to be replaced)
-- `apps/whispering/src/lib/services/db/frontmatter.ts` — YAML serialization (reuse)
-- `apps/whispering/src/lib/workspace/definition.ts` — Recording V2 schema
-- `apps/whispering/src/lib/client.ts` — Where to chain `.withWorkspaceExtension()`
-- `apps/whispering/src/lib/constants/paths.ts` — `PATHS.DB.RECORDINGS()`, `PATHS.DB.RECORDING_MD(id)`
-- `playground/tab-manager-e2e/epicenter.config.ts` — Example materializer usage
+- `packages/workspace/src/extensions/materializer/markdown/materializer.ts`: Bun materializer (pattern to follow, not the runtime)
+- `apps/whispering/src/lib/services/db/file-system.ts`: Current desktop write path (to be replaced)
+- `apps/whispering/src/lib/services/db/frontmatter.ts`: YAML serialization (reuse)
+- `apps/whispering/src/lib/workspace/definition.ts`: Recording V2 schema
+- `apps/whispering/src/lib/client.ts`: Where to chain `.withWorkspaceExtension()`
+- `apps/whispering/src/lib/constants/paths.ts`: `PATHS.DB.RECORDINGS()`, `PATHS.DB.RECORDING_MD(id)`
+- `playground/tab-manager-e2e/epicenter.config.ts`: Example materializer usage

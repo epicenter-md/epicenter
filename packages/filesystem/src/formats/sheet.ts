@@ -1,5 +1,5 @@
 /**
- * Sheet helpers — reorder functions stay here, CSV parse/serialize
+ * Sheet helpers: reorder functions stay here, CSV parse/serialize
  * re-exported from @epicenter/workspace.
  */
 

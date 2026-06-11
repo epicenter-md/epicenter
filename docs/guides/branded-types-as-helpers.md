@@ -6,17 +6,17 @@ When a branded ID flows through an arktype schema and into trusted internal call
 import { type } from 'arktype';
 import type { Brand } from 'wellcrafted/brand';
 
-// 1. VALIDATOR — declared first, single source of truth.
+// 1. VALIDATOR: declared first, single source of truth.
 export const UserId = type('string').as<string & Brand<'UserId'>>();
 
-// 2. TYPE — derived from the validator.
+// 2. TYPE: derived from the validator.
 export type UserId = typeof UserId.infer;
 
-// 3. AS HELPER — syntactic sugar for `value as UserId`.
+// 3. AS HELPER: syntactic sugar for `value as UserId`.
 export const asUserId = (value: string): UserId => value as UserId;
 ```
 
-That is it. The helper is optional — generators like `generateSavedTabId()` cover the "minted fresh" case, and the validator's `.assert(unknown)` covers the network-boundary case. Reach for the `as*` helper when external typed strings flow in (Better Auth user ids, URL params, DB columns) and you want a single named cast site.
+That is it. The helper is optional: generators like `generateSavedTabId()` cover the "minted fresh" case, and the validator's `.assert(unknown)` covers the network-boundary case. Reach for the `as*` helper when external typed strings flow in (Better Auth user ids, URL params, DB columns) and you want a single named cast site.
 
 ## What the Helper Earns
 
@@ -26,10 +26,10 @@ The arktype validator is callable, but its signature is `(value: unknown) => T |
 export const asUserId = (value: string): UserId => value as UserId;
 ```
 
-- **Constrained input** — `value: string` rejects accidental `unknown` widenings at compile time.
-- **One assertion** — the function body is the only `as UserId` in the codebase.
-- **Grep-friendly** — `asUserId(` finds every brand-cast site.
-- **Cheap rename** — change the brand or the underlying primitive in the validator and the helper signature follows.
+- **Constrained input**: `value: string` rejects accidental `unknown` widenings at compile time.
+- **One assertion**: the function body is the only `as UserId` in the codebase.
+- **Grep-friendly**: `asUserId(` finds every brand-cast site.
+- **Cheap rename**: change the brand or the underlying primitive in the validator and the helper signature follows.
 
 ## Where the Helper Fits
 
@@ -45,18 +45,18 @@ const cell = {
   // ...
 } satisfies PersistedAuth;
 
-// Schema validation throws — use the validator, not the helper
+// Schema validation throws: use the validator, not the helper
 const parsed = PersistedAuth.assert(JSON.parse(rawCellJson));
 ```
 
 ## What Not to Do
 
 ```typescript
-// Bad — scattered raw casts
+// Bad: scattered raw casts
 const userId = c.var.user.id as UserId;
 const another = processString(data as UserId);
 
-// Bad — calling the validator at a trusted site (returns UserId | ArkErrors)
+// Bad: calling the validator at a trusted site (returns UserId | ArkErrors)
 const userId = UserId(c.var.user.id); // type is `UserId | type.errors`
 ```
 
@@ -78,9 +78,9 @@ export const asUserId = (value: string): UserId => value as UserId;
 
 Skip it when:
 
-- The ID is minted fresh in this code — use `generateXxxId()` instead. See [Three Parts, One ID](../articles/three-part-branded-id-pattern.md).
-- The branded type is only ever consumed from an arktype-validated schema — `id: UserId` in the schema body already produces a branded value.
-- Path-style types that flow through a single `path.resolve()` choke point — cast there once. See [Absolute Path Type Safety](../articles/absolute-path-type-safety.md).
+- The ID is minted fresh in this code: use `generateXxxId()` instead. See [Three Parts, One ID](../articles/three-part-branded-id-pattern.md).
+- The branded type is only ever consumed from an arktype-validated schema: `id: UserId` in the schema body already produces a branded value.
+- Path-style types that flow through a single `path.resolve()` choke point: cast there once. See [Absolute Path Type Safety](../articles/absolute-path-type-safety.md).
 
 ## Naming
 

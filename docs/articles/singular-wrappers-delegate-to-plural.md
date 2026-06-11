@@ -57,17 +57,17 @@ function createScopeModifiers(
 
 The chain reads naturally in both forms:
 
-> **Note:** The `createWorkspace(...).withDocumentExtension(...)` extension-chain API shown below was removed along with `createWorkspace` itself — workspaces now compose via `defineDocument((id) => ...)` with inline `attach*` calls, not a builder chain. The singular-wraps-plural pattern this article teaches still applies (see the `registerForProfile` / `registerForProfiles` example further down).
+> **Note:** The `createWorkspace(...).withDocumentExtension(...)` extension-chain API shown below was removed along with `createWorkspace` itself: workspaces now compose via `defineDocument((id) => ...)` with inline `attach*` calls, not a builder chain. The singular-wraps-plural pattern this article teaches still applies (see the `registerForProfile` / `registerForProfiles` example further down).
 
 ```typescript
 createWorkspace({ id: 'app', tables: { notes, images, chat } })
 	.withDocumentExtension('persistence', persistenceFactory)
 
-	// Singular — most common case
+	// Singular: most common case
 	.withDocumentExtension('sync', syncFactory)
 	.forProfile('synced')
 
-	// Plural — when you need it
+	// Plural: when you need it
 	.withDocumentExtension('history', historyFactory)
 	.exceptProfiles(['ephemeral', 'scratch']);
 ```

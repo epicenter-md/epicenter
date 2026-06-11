@@ -1,6 +1,6 @@
 # Only the Leaves Need Revision History
 
-**TL;DR: Split your Yjs architecture into a metadata doc (gc: true) for structure and separate per-content docs (gc: false) for editable text, loaded on demand—the same split Google Drive uses between file metadata and document content.**
+**TL;DR: Split your Yjs architecture into a metadata doc (gc: true) for structure and separate per-content docs (gc: false) for editable text, loaded on demand. The same split Google Drive uses between file metadata and document content.**
 
 > Structure is cheap. History is expensive. Only pay for history where users actually edit.
 

@@ -1,4 +1,4 @@
-# Encryption Primitive Refactor — Explicit Encrypted Variants
+# Encryption Primitive Refactor: Explicit Encrypted Variants
 
 **Date**: 2026-04-21
 **Status**: Completed (2026-04-21)
@@ -9,7 +9,7 @@
 
 ## Overview
 
-Replace the `{ helpers } / { helper } / { tables, kv }` plumbing on `attachTables`, `attachKv`, and `attachEncryption` with explicit encrypted-variant primitives (`attachEncryptedTable`, `attachEncryptedTables`, `attachEncryptedKv`) that take `encryption` as a positional argument. Every `attachX` call site reads as its own intent — no stripped-off internal fields, no threaded dependency objects.
+Replace the `{ helpers } / { helper } / { tables, kv }` plumbing on `attachTables`, `attachKv`, and `attachEncryption` with explicit encrypted-variant primitives (`attachEncryptedTable`, `attachEncryptedTables`, `attachEncryptedKv`) that take `encryption` as a positional argument. Every `attachX` call site reads as its own intent, no stripped-off internal fields, no threaded dependency objects.
 
 ## Motivation
 
@@ -38,7 +38,7 @@ This creates problems:
 1. **Leaky return types**: internal encryption plumbing surfaces in every `defineDocument` closure. Callers must know to write `tables.helpers` and `kv.helper`, or nothing works.
 2. **Non-generalizable signature**: `attachEncryption(ydoc, { tables, kv })` hard-codes the two primitive kinds that can register. Any future encrypted primitive forces a signature change.
 3. **Silent-plaintext failure mode**: the `{ stores }` escape hatch exists to let tests construct stores outside `attachTables`/`attachKv`. A caller who forgets to wire a store into that array writes plaintext indefinitely. No type guards prevent this.
-4. **Implicit "all stores are encrypted"**: there's no way to attach a plaintext table today — e.g., for ephemeral UI state or local indexes. Every primitive always encrypts.
+4. **Implicit "all stores are encrypted"**: there's no way to attach a plaintext table today: e.g., for ephemeral UI state or local indexes. Every primitive always encrypts.
 
 ### Desired State
 
@@ -53,17 +53,17 @@ return { ydoc, tables, kv, encryption, /* ... */ };
 
 Every attachment returns the user-facing shape directly. `attachEncryption` has no per-primitive signature. The verb names the encryption policy: `attachEncryptedTable` is a grep-friendly audit token.
 
-Plaintext variants remain available (`attachTable`, `attachTables`, `attachKv`) for ephemeral state that doesn't need encryption — composition by call-site choice, not global invariant.
+Plaintext variants remain available (`attachTable`, `attachTables`, `attachKv`) for ephemeral state that doesn't need encryption: composition by call-site choice, not global invariant.
 
 ## Research Findings
 
-### Encryption mechanism — narrower than assumed, broader than it looks
+### Encryption mechanism: narrower than assumed, broader than it looks
 
 `EncryptedYKeyValueLww` intercepts `set(key, val)` at the entry level: `JSON.stringify(val) → encryptValue(...) → Uint8Array blob`. The blob is stored as the value inside a `YKeyValueLwwEntry`. The `Y.Array` mechanics are encryption-unaware.
 
 **Implications**:
 - Encryption pattern is not `Y.Array`-specific; it's "intercept value-level writes on a CRDT." Same pattern would work for `Y.Map`.
-- `Y.Text` is structurally incompatible — character-delta CRDT loses collaborative semantics if encrypted as blob.
+- `Y.Text` is structurally incompatible: character-delta CRDT loses collaborative semantics if encrypted as blob.
 - IDB / sync / broadcast / sqlite never see plaintext when encryption is active. They all transport Yjs binary update format, which carries the already-encrypted blobs inside it. No additional encryption needed at those layers.
 - Awareness is ephemeral state over y-protocols. Encrypting it is possible but a different threat model; out of scope.
 
@@ -73,9 +73,9 @@ Three shapes were evaluated at `apps/whispering/src/lib/client.ts` scale (5 tabl
 
 | Variant | Call shape | Cold-read | Failure visibility | Extensibility | Grep-audit |
 |---|---|---|---|---|---|
-| A — separate primitives | `attachEncryptedTable(ydoc, enc, ...)` | 🟢 verb names outcome | 🟢 name differs | 🔴 combinatorial on 2nd axis | 🟢 one token |
-| B — factory method | `enc.attachTable(...)` | 🟡 needs enc context | 🟡 receiver differs | 🟡 | 🔴 two tokens |
-| C — option bag | `attachTable(ydoc, ..., { encryption: enc })` | 🟢 good | 🔴 silent omission | 🟢 scales | 🟡 |
+| A: separate primitives | `attachEncryptedTable(ydoc, enc, ...)` | 🟢 verb names outcome | 🟢 name differs | 🔴 combinatorial on 2nd axis | 🟢 one token |
+| B: factory method | `enc.attachTable(...)` | 🟡 needs enc context | 🟡 receiver differs | 🟡 | 🔴 two tokens |
+| C: option bag | `attachTable(ydoc, ..., { encryption: enc })` | 🟢 good | 🔴 silent omission | 🟢 scales | 🟡 |
 
 **Key finding**: for a codebase where silent plaintext is the worst failure mode, A's grep-friendly audit surface (`rg "attachEncrypted"` finds every encrypted attachment) outweighs B's brevity and C's extensibility.
 
@@ -94,9 +94,9 @@ Bidirectional persistence, not a materializer. Reads all `updates` rows on open 
 | Batch form | Sugar over singular via `Object.fromEntries` | Zero semantics, pure naming |
 | `register()` visibility | Internal (`@epicenter/document/internal`) | Only framework-internal primitives need it; no consumer-facing register |
 | Plaintext primitives | Preserved (`attachTable`, `attachTables`, `attachKv`) | Enables ephemeral state; composition over enforcement |
-| `attachEncryption` signature | `(ydoc)` — no `{ tables, kv }` | Stores self-register via `encryption.register(store)` |
+| `attachEncryption` signature | `(ydoc)`: no `{ tables, kv }` | Stores self-register via `encryption.register(store)` |
 | `attachEncryption` escape hatch | Dropped (no `{ stores }` overload) | Tests use the same `register()` pathway |
-| `attachSqlite` rename | Keep | Correctly named — bidirectional persistence |
+| `attachSqlite` rename | Keep | Correctly named: bidirectional persistence |
 | `attachAwareness` change | None | No encryption axis in-scope |
 | `defineWorkspace` fate | Update body to new primitives; evaluate removal separately | Decouple from this refactor |
 | Migration rollout | Big-bang: all apps updated in one pass | Avoids parallel API surface |
@@ -112,7 +112,7 @@ Plaintext                         Encrypted
 attachTable(ydoc, name, def)      attachEncryptedTable(ydoc, encryption, name, def)
 attachTables(ydoc, defs)          attachEncryptedTables(ydoc, encryption, defs)
 attachKv(ydoc, defs)              attachEncryptedKv(ydoc, encryption, defs)
-attachAwareness(ydoc, defs)       (n/a — out of scope)
+attachAwareness(ydoc, defs)       (n/a: out of scope)
 ```
 
 All four table/kv entry points are thin wrappers over one internal `_attachTable` / `_attachKv` core.
@@ -153,7 +153,7 @@ enc                         →   encryption       (variable renamed)
 
 ## Implementation Plan
 
-### Phase 1 — Core primitive refactor (`@epicenter/document` + `@epicenter/workspace`)
+### Phase 1: Core primitive refactor (`@epicenter/document` + `@epicenter/workspace`)
 
 - [ ] **1.1** Add `register(store)` method to `EncryptionAttachment` type (exported from `packages/document/src/internal.ts`).
 - [ ] **1.2** Rewrite `attachEncryption(ydoc)` to construct the registry internally; drop `{ tables, kv }` and `{ stores }` overloads.
@@ -161,14 +161,14 @@ enc                         →   encryption       (variable renamed)
 - [ ] **1.4** Add `attachEncryptedTable(ydoc, encryption, name, def)` and `attachEncryptedTables(ydoc, encryption, defs)` as thin wrappers that call `encryption.register(store)` after creation.
 - [ ] **1.5** Rewrite `attachKv` to return the helper directly. Add `attachEncryptedKv(ydoc, encryption, defs)`.
 - [ ] **1.6** Update `packages/workspace/src/index.ts` exports.
-- [ ] **1.7** Commit as one atomic change — this layer has no external consumers beyond the apps (and `defineWorkspace`).
+- [ ] **1.7** Commit as one atomic change: this layer has no external consumers beyond the apps (and `defineWorkspace`).
 
-### Phase 2 — Internal consumer updates
+### Phase 2: Internal consumer updates
 
 - [ ] **2.1** Update `defineWorkspace` body to use new primitives. Bundle shape preserves `enc` (aliased to `encryption`) for compatibility; deprecate in a follow-up.
 - [ ] **2.2** Update `packages/skills/src/skill-instructions-docs.ts`, `reference-content-docs.ts`, and `packages/filesystem/src/file-content-docs.ts` if they touch these APIs.
 
-### Phase 3 — App migrations
+### Phase 3: App migrations
 
 - [ ] **3.1** `apps/whispering/src/lib/client.ts`
 - [ ] **3.2** `apps/tab-manager/src/lib/client.ts`
@@ -178,14 +178,14 @@ enc                         →   encryption       (variable renamed)
 - [ ] **3.6** `apps/opensidian/src/lib/client.ts`
 - [ ] **3.7** `apps/breddit/src/lib/workspace/ingest/reddit/workspace.ts`
 
-### Phase 4 — Tests
+### Phase 4: Tests
 
 - [ ] **4.1** Rewrite `packages/workspace/src/workspace/attach-tables.test.ts`
 - [ ] **4.2** Rewrite `packages/workspace/src/workspace/attach-kv.test.ts`
 - [ ] **4.3** Rewrite `packages/workspace/src/shared/attach-encryption.test.ts`
 - [ ] **4.4** Verify `packages/document/src/attach-awareness.test.ts` is unaffected
 
-### Phase 5 — Documentation
+### Phase 5: Documentation
 
 - [ ] **5.1** Update `packages/document/README.md`
 - [ ] **5.2** Update `.agents/skills/workspace-api/references/document-primitive.md`
@@ -209,31 +209,31 @@ enc                         →   encryption       (variable renamed)
 ### Forgetting encryption on a table that should be encrypted
 
 1. Caller writes `attachTable(ydoc, 'profile', profileDef)` when they meant `attachEncryptedTable(...)`.
-2. Store is permanently plaintext — `applyKeys` doesn't touch it.
+2. Store is permanently plaintext: `applyKeys` doesn't touch it.
 3. Failure mode: silent data-at-rest exposure. Mitigation: the `Encrypted` prefix in `attachEncryptedTable` is the loudest marker available without type-level enforcement. See Open Questions.
 
 ### Encryption attached before or after tables
 
 1. `attachEncryption(ydoc)` must exist before any `attachEncrypted*` call that references it.
 2. If caller inverts the order, TypeScript will error (undefined variable).
-3. No runtime ordering requirement beyond the above — stores register into the live array; `applyKeys` iterates current registrations each call.
+3. No runtime ordering requirement beyond the above: stores register into the live array; `applyKeys` iterates current registrations each call.
 
 ### `applyKeys` called before any stores registered
 
 1. Caller calls `encryption.applyKeys(keys)` on an empty registry.
 2. Fingerprint is recorded; HKDF runs; zero stores activated.
 3. Subsequent `attachEncryptedTable` calls: stores are created fresh with no keyring applied.
-4. Expected: `encryption.applyKeys` is idempotent — callers re-invoke after attaching stores. Behavior identical to today.
+4. Expected: `encryption.applyKeys` is idempotent: callers re-invoke after attaching stores. Behavior identical to today.
 
 ## Open Questions
 
 1. **Should the encrypted registry auto-apply the current keyring to newly-registered stores?**
    - Options: (a) require explicit `applyKeys` after every new `register`, (b) cache the last-applied keyring and auto-activate on `register`.
-   - **Recommendation**: (b) — cache `lastKeyring` inside `EncryptionAttachment`; `register(store)` checks it and immediately calls `store.activateEncryption(lastKeyring)` if present. Matches intuition ("once keys are applied, new stores are encrypted from creation"). Low risk.
+   - **Recommendation**: (b): cache `lastKeyring` inside `EncryptionAttachment`; `register(store)` checks it and immediately calls `store.activateEncryption(lastKeyring)` if present. Matches intuition ("once keys are applied, new stores are encrypted from creation"). Low risk.
 
 2. **Should plaintext primitives (`attachTable`, `attachKv`) still create `EncryptedYKeyValueLww` stores (just without ever activating them), or a distinct plaintext `YKeyValueLww` type?**
    - Options: (a) same `EncryptedYKeyValueLww`, activation is the toggle, (b) introduce a non-encrypted class, (c) make encryption a constructor flag.
-   - **Recommendation**: (a) for now — the existing store already runs plaintext until activation. Adding a second class is premature given encryption may never be applied. Revisit if a perf audit shows overhead from carrying unused encryption scaffolding.
+   - **Recommendation**: (a) for now: the existing store already runs plaintext until activation. Adding a second class is premature given encryption may never be applied. Revisit if a perf audit shows overhead from carrying unused encryption scaffolding.
 
 3. **Should `attachAwareness` gain an encrypted variant in this refactor?**
    - Out of scope per research findings; awareness is ephemeral and the threat model differs. Mark as non-goal.
@@ -243,7 +243,7 @@ enc                         →   encryption       (variable renamed)
    - Options: (a) no enforcement, (b) type-only assertion in the `defineWorkspace` sugar layer.
    - **Recommendation**: skip. `defineWorkspace` is scheduled for removal evaluation after this spec ships; spending complexity on enforcing an invariant on a potentially-doomed API is low-ROI.
 
-5. **`attachEncryptedAwareness` / `attachEncryptedBlob` / encrypted `Y.Map` — are these foreseeable?**
+5. **`attachEncryptedAwareness` / `attachEncryptedBlob` / encrypted `Y.Map`: are these foreseeable?**
    - Deferred. If/when they appear, they follow the same `encryption.register(store)` contract.
 
 ## Success Criteria
@@ -258,14 +258,14 @@ enc                         →   encryption       (variable renamed)
 
 ## References
 
-- `packages/document/src/define-document.ts` — cache + lifecycle
-- `packages/document/src/attach-sqlite.ts` — persistence sibling (unchanged, kept for naming reference)
-- `packages/document/src/attach-awareness.ts` — unchanged baseline
-- `packages/workspace/src/shared/attach-encryption.ts` — primary rewrite target
-- `packages/workspace/src/shared/y-keyvalue/y-keyvalue-lww-encrypted.ts:319` — encryption interception site
-- `packages/workspace/src/workspace/attach-tables.ts` — primary rewrite target
-- `packages/workspace/src/workspace/attach-kv.ts` — primary rewrite target
-- `packages/workspace/src/workspace/define-workspace.ts` — internal consumer, update body
-- `apps/whispering/src/lib/client.ts` — canonical app reference
-- `specs/20260420T152026-definedocument-primitive.md` — upstream design
-- `specs/20260420T230200-workspace-as-definedocument.md` — sibling restructuring
+- `packages/document/src/define-document.ts`: cache + lifecycle
+- `packages/document/src/attach-sqlite.ts`: persistence sibling (unchanged, kept for naming reference)
+- `packages/document/src/attach-awareness.ts`: unchanged baseline
+- `packages/workspace/src/shared/attach-encryption.ts`: primary rewrite target
+- `packages/workspace/src/shared/y-keyvalue/y-keyvalue-lww-encrypted.ts:319`: encryption interception site
+- `packages/workspace/src/workspace/attach-tables.ts`: primary rewrite target
+- `packages/workspace/src/workspace/attach-kv.ts`: primary rewrite target
+- `packages/workspace/src/workspace/define-workspace.ts`: internal consumer, update body
+- `apps/whispering/src/lib/client.ts`: canonical app reference
+- `specs/20260420T152026-definedocument-primitive.md`: upstream design
+- `specs/20260420T230200-workspace-as-definedocument.md`: sibling restructuring

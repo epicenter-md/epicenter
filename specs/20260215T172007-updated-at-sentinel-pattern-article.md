@@ -49,14 +49,14 @@ export const filesTable = defineTable(
 ### Write path
 
 ```typescript
-// yjs-file-system.ts — writeFile calls content write, then touches metadata
+// yjs-file-system.ts: writeFile calls content write, then touches metadata
 async writeFile(path, data) {
   // ... resolve path, create row if needed ...
   const size = await this.content.write(id, data);  // write to content Y.Doc
   this.tree.touch(id, size);                         // bump updatedAt in metadata
 }
 
-// file-tree.ts — touch updates the sentinel
+// file-tree.ts: touch updates the sentinel
 touch(id: FileId, size: number): void {
   this.filesTable.update(id, { size, updatedAt: Date.now() });
 }
@@ -65,12 +65,12 @@ touch(id: FileId, size: number): void {
 ### Observer chain
 
 ```typescript
-// file-system-index.ts — observes metadata table, rebuilds indexes
+// file-system-index.ts: observes metadata table, rebuilds indexes
 const unobserve = filesTable.observe(() => {
   rebuild();  // fires when updatedAt changes, among other things
 });
 
-// desktop.ts — persistence observes the Y.Doc for any update
+// desktop.ts: persistence observes the Y.Doc for any update
 ydoc.on('update', () => {
   const state = Y.encodeStateAsUpdate(ydoc);
   writeFileSync(filePath, state);

@@ -2,7 +2,7 @@
 
 ## Problem
 
-The encrypted KV wrapper (`y-keyvalue-lww-encrypted.ts`) has a three-state encryption state machine: `plaintext → encrypted → locked`. The `locked` state was designed for a theoretical transient auth gap that doesn't exist—Better Auth uses 7-day server-side sessions with no token rotation. The only trigger for `locked` is explicit sign-out.
+The encrypted KV wrapper (`y-keyvalue-lww-encrypted.ts`) has a three-state encryption state machine: `plaintext → encrypted → locked`. The `locked` state was designed for a theoretical transient auth gap that doesn't exist. Better Auth uses 7-day server-side sessions with no token rotation. The only trigger for `locked` is explicit sign-out.
 
 When locked, `set()` throws an unhandled `Error`. This crashes 37+ call sites across the tab manager (plaintext of which catch it). Browser event listeners keep firing after sign-out, calling `tables.tabs.set()` on every tab event, causing silent crashes and partially-applied `batch()` transactions.
 
@@ -13,8 +13,8 @@ The error-handling convention (wellcrafted `trySync`/`tryAsync`) says: return er
 Discussed and decided:
 
 - **Locked mode serves no purpose.** No transient auth gap exists. It only triggers on explicit sign-out.
-- **Eliminating locked mode, not just making it harmless.** Cleaner model—two states (`plaintext`, `encrypted`) instead of three.
-- **Full local functionality when signed out.** The workspace exists in `plaintext` (unencrypted) state. User can view tabs, create bookmarks, use chat—just not synced.
+- **Eliminating locked mode, not just making it harmless.** Cleaner model. Two states (`plaintext`, `encrypted`) instead of three.
+- **Full local functionality when signed out.** The workspace exists in `plaintext` (unencrypted) state. User can view tabs, create bookmarks, use chat. Just not synced.
 - **Re-download on sign-in is acceptable.** Sign-in creates a fresh encrypted workspace and syncs from server. Tab data is small (few KB), takes ~1 second.
 - **Encrypt all plaintext entries on activateEncryption.** When transitioning `plaintext → encrypted`, `activateEncryption()` encrypts any existing plaintext entries in the CRDT. Guarantees a single invariant: after `activateEncryption()`, everything is encrypted.
 - **Workspace client becomes recreatable.** Follows the existing `$state` + getter pattern used by `authState`, `authToken`, etc. in `.svelte.ts` modules.
@@ -95,7 +95,7 @@ import { workspace } from '$lib/workspace';
 workspace.current.tables.tabs.set(row);
 ```
 
-This follows the same pattern as `authToken`, `authUser`, `remoteServerUrl` in the codebase—`$state` inside a factory function, exported as a module-level singleton, accessed via `.current` getter.
+This follows the same pattern as `authToken`, `authUser`, `remoteServerUrl` in the codebase: `$state` inside a factory function, exported as a module-level singleton, accessed via `.current` getter.
 
 ### Encrypt-on-Unlock
 
@@ -112,7 +112,7 @@ This guarantees: after `activateEncryption()`, every entry in the CRDT is encryp
 
 ## Todo
 
-### Phase 1: packages/workspace — Remove locked state
+### Phase 1: packages/workspace: Remove locked state
 
 - [ ] Remove `'locked'` from `EncryptionState` type (keep `'plaintext'` and `'encrypted'` only)
 - [ ] Remove `lock()` method from `YKeyValueLwwEncrypted`
@@ -125,12 +125,12 @@ This guarantees: after `activateEncryption()`, every entry in the CRDT is encryp
 - [ ] Add tests for the new encrypt-on-activateEncryption behavior
 - [ ] Run `bun test` in packages/workspace to verify
 
-### Phase 2: apps/tab-manager — Recreatable workspace
+### Phase 2: apps/tab-manager: Recreatable workspace
 
 - [ ] Rename `workspace.ts` → `workspace.svelte.ts`
 - [ ] Wrap workspace client in `$state` + factory pattern (`.current` getter + `reset()` method)
 - [ ] Export `workspace` instead of `workspaceClient`
-- [ ] Also export derived convenience re-exports (`workspaceTools`, `workspaceDefinitions`, `workspaceToolTitles`) — these need to be `$derived` from `workspace.current`
+- [ ] Also export derived convenience re-exports (`workspaceTools`, `workspaceDefinitions`, `workspaceToolTitles`): these need to be `$derived` from `workspace.current`
 - [ ] Update all 10 consumer files to use `workspace.current` instead of `workspaceClient`
 - [ ] Update `encryption-wiring.svelte.ts`: replace `workspaceClient.lock()` with `workspace.reset()` on sign-out
 - [ ] Update `encryption-wiring.svelte.ts`: replace `workspaceClient.activateEncryption(wsKey)` with `workspace.current.activateEncryption(wsKey)`
@@ -148,13 +148,13 @@ This guarantees: after `activateEncryption()`, every entry in the CRDT is encryp
 ## Open Questions
 
 1. **IndexedDB clearing**: Does `client.destroy()` clear IndexedDB, or do we need to explicitly delete the IndexedDB database? Need to check what `indexeddbPersistence`'s `destroy()` does.
-2. **Browser listener lifecycle**: Currently listeners fire continuously. After workspace reset, they write to the new `plaintext` instance (harmless). Should we also unregister/re-register listeners on sign-out/sign-in for cleanliness? (Deferred — the reset handles it.)
+2. **Browser listener lifecycle**: Currently listeners fire continuously. After workspace reset, they write to the new `plaintext` instance (harmless). Should we also unregister/re-register listeners on sign-out/sign-in for cleanliness? (Deferred: the reset handles it.)
 3. **Honeycrisp (notes app)**: Does it also have an encrypted workspace? If so, it needs the same treatment. (Separate spec if so.)
 4. **Actions re-derivation**: `workspaceTools` and `workspaceDefinitions` are derived from `workspaceClient.actions`. After the workspace becomes recreatable, these need to be `$derived` so they update when the workspace resets. Need to verify this works with the AI tool system.
 
 ## Review
 
-### Phase 1 — packages/workspace (complete)
+### Phase 1: packages/workspace (complete)
 
 **EncryptionState** reduced from `'plaintext' | 'locked' | 'encrypted'` to `'plaintext' | 'encrypted'`.
 
@@ -163,11 +163,11 @@ This guarantees: after `activateEncryption()`, every entry in the CRDT is encryp
 - `createWorkspace` client object
 - `WorkspaceClient` type in types.ts
 
-**`set()` simplified**: removed the `encryptionState === 'locked'` throw guard. The `encryptionState === 'plaintext'` plaintext passthrough stays. A defensive `!currentKey` guard remains with message `'Encryption key missing in encrypted state — this is a bug'` (should never fire in practice).
+**`set()` simplified**: removed the `encryptionState === 'locked'` throw guard. The `encryptionState === 'plaintext'` plaintext passthrough stays. A defensive `!currentKey` guard remains with message `'Encryption key missing in encrypted state: this is a bug'` (should never fire in practice).
 
 **Encrypt-on-activateEncryption**: `activateEncryption()` now scans `inner.map` for plaintext entries (`!isEncryptedBlob(entry.val)`) and encrypts them in-place via `inner.set(key, encryptValue(...))`. This fires during plaintext→encrypted transitions. During encrypted→encrypted key rotations, all entries are already encrypted blobs so the loop is a no-op.
 
-**`clearLocalData()`** no longer calls `lock()` — it just iterates clearData callbacks.
+**`clearLocalData()`** no longer calls `lock()`: it just iterates clearData callbacks.
 
 **`activateEncryption()` rollback** in createWorkspace simplified: removed the try/catch that re-locked stores on failure. All stores use the same key, so if one fails they all fail.
 
@@ -175,22 +175,22 @@ This guarantees: after `activateEncryption()`, every entry in the CRDT is encryp
 
 **Tests**: Removed locked-mode tests (set throws, get cached, has cached, entries cached, mode transitions involving locked). Updated "passthrough then encrypted" test to expect encrypted blobs after activateEncryption. Added "activateEncryption encrypts existing plaintext entries in-place" test. 490 tests pass, 0 fail.
 
-### Phase 2 — apps/tab-manager (complete)
+### Phase 2: apps/tab-manager (complete)
 
 **`workspace.ts` → `workspace.svelte.ts`**: Renamed and wrapped in `$state` + factory pattern.
 
 **`workspace` singleton** with:
-- `workspace.current` — getter returning the current client
-- `workspace.reset()` — `await client.dispose()` + rebuild fresh client
+- `workspace.current`: getter returning the current client
+- `workspace.reset()`: `await client.dispose()` + rebuild fresh client
 
 **Derived exports**: `workspaceTools`, `workspaceDefinitions`, `workspaceToolTitles` are now `$derived` from `workspace.current.actions`.
 
 **Consumer updates** (9 files):
-- `auth.svelte.ts` — key manager target changed to proxy that delegates to `workspace.current`; `signOut()` calls `workspace.reset()`
-- `tool-trust.svelte.ts`, `saved-tab-state.svelte.ts`, `bookmark-state.svelte.ts` — `workspaceClient` → `workspace.current`
-- `browser-state.svelte.ts` — removed `const { tables } = workspaceClient` destructure, use `workspace.current.tables` at each call site
-- `chat-state.svelte.ts` — `workspaceClient` → `workspace.current`, kept `workspaceTools`/`workspaceDefinitions` imports
-- `AuthForm.svelte`, `SyncStatusIndicator.svelte`, `App.svelte` — `workspaceClient` → `workspace.current`
+- `auth.svelte.ts`: key manager target changed to proxy that delegates to `workspace.current`; `signOut()` calls `workspace.reset()`
+- `tool-trust.svelte.ts`, `saved-tab-state.svelte.ts`, `bookmark-state.svelte.ts`: `workspaceClient` → `workspace.current`
+- `browser-state.svelte.ts`: removed `const { tables } = workspaceClient` destructure, use `workspace.current.tables` at each call site
+- `chat-state.svelte.ts`: `workspaceClient` → `workspace.current`, kept `workspaceTools`/`workspaceDefinitions` imports
+- `AuthForm.svelte`, `SyncStatusIndicator.svelte`, `App.svelte`: `workspaceClient` → `workspace.current`
 
 **Note**: `encryption-wiring.svelte.ts` referenced in the spec does not exist. Encryption wiring is handled through `createKeyManager` in auth.svelte.ts, which calls `client.clearLocalData()` (via `wipe()`) and `client.activateEncryption()` (via `activateEncryption()`). The key manager target was changed to a proxy that always delegates to `workspace.current`, so it tracks workspace resets automatically.
 
@@ -199,4 +199,4 @@ This guarantees: after `activateEncryption()`, every entry in the CRDT is encryp
 1. **IndexedDB clearing**: `dispose()` calls each extension's `dispose()` in LIFO order. `indexeddbPersistence`'s dispose disconnects the provider but does not delete the IndexedDB database. For a full wipe, `clearLocalData()` calls each extension's `clearData()` callback. The `reset()` method calls `dispose()` (disconnects providers, destroys Y.Doc) then creates a fresh client. IndexedDB from the old session may persist but is ignored by the new client.
 2. **Browser listener lifecycle**: Deferred per spec. Listeners fire against the new `'plaintext'` instance harmlessly.
 3. **Honeycrisp**: Separate spec needed if applicable.
-4. **Actions re-derivation**: Resolved — `workspaceTools` and `workspaceDefinitions` are `$derived` from `workspace.current.actions` and update automatically on reset.
+4. **Actions re-derivation**: Resolved: `workspaceTools` and `workspaceDefinitions` are `$derived` from `workspace.current.actions` and update automatically on reset.

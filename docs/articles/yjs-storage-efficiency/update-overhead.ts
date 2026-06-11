@@ -56,7 +56,7 @@ const row = (i: number) => ({
 });
 
 // ═══════════════════════════════════════════════════════════════════════
-// TEST 1: Same-key updates (GC structs merge — best case)
+// TEST 1: Same-key updates (GC structs merge: best case)
 // ═══════════════════════════════════════════════════════════════════════
 
 header('TEST 1: Same-key updates (GC structs merge)');
@@ -80,7 +80,7 @@ console.log(`Fresh (same data):      ${fmt(size(fresh1))}`);
 console.log(`Overhead:               ${((size(doc1) / size(fresh1) - 1) * 100).toFixed(1)}%`);
 
 // ═══════════════════════════════════════════════════════════════════════
-// TEST 2: Interleaved add/remove (GC structs CAN'T merge — worst case)
+// TEST 2: Interleaved add/remove (GC structs CAN'T merge: worst case)
 // ═══════════════════════════════════════════════════════════════════════
 
 header('TEST 2: Interleaved add 10 / remove 5 cycles');
@@ -174,7 +174,7 @@ console.log(`  Overhead: ${((size(doc3) / Math.max(size(fresh3), 1) - 1) * 100).
 // TEST 4: Y.Text with interleaved typing (for comparison)
 // ═══════════════════════════════════════════════════════════════════════
 
-header('TEST 4: Y.Text — type 100 chars, delete 50, type 100, delete 50');
+header('TEST 4: Y.Text: type 100 chars, delete 50, type 100, delete 50');
 
 const doc4 = new Y.Doc();
 const text4 = doc4.getText('content');
@@ -206,7 +206,7 @@ console.log(`Overhead:               ${((size(doc4) / size(fresh4) - 1) * 100).t
 // TEST 5: Y.Text with gc:false (what instruction docs use)
 // ═══════════════════════════════════════════════════════════════════════
 
-header('TEST 5: Y.Text gc:false — type 100, delete 50, type 100, delete 50');
+header('TEST 5: Y.Text gc:false: type 100, delete 50, type 100, delete 50');
 
 const doc5 = new Y.Doc({ gc: false });
 const text5 = doc5.getText('content');

@@ -8,8 +8,8 @@
 
 Split Whispering's unified `settings.svelte.ts` (localStorage-backed, ~80 keys) into two reactive state files reflecting a real architectural boundary:
 
-- **`workspace-settings.svelte.ts`** — ~42 synced preferences backed by Yjs KV (SvelteMap + observer)
-- **`device-config.svelte.ts`** — ~36 device-bound keys backed by localStorage (`createPersistedState`)
+- **`workspace-settings.svelte.ts`**: ~42 synced preferences backed by Yjs KV (SvelteMap + observer)
+- **`device-config.svelte.ts`**: ~36 device-bound keys backed by localStorage (`createPersistedState`)
 
 This wave creates the reactive layer that Wave 3 (migration) writes into.
 
@@ -45,7 +45,7 @@ This wave creates the reactive layer that Wave 3 (migration) writes into.
 `workspaceSettings.get('sound.manualStart')` → `svelteMap.get('sound.manualStart')` → per-key Svelte reactivity
 
 **Remote sync path:**
-Same as write path — remote Yjs changes fire the same `observeAll()` observer. SvelteMap updates, UI re-renders. No extra code needed.
+Same as write path: remote Yjs changes fire the same `observeAll()` observer. SvelteMap updates, UI re-renders. No extra code needed.
 
 ### Data Flow: device-config
 
@@ -60,7 +60,7 @@ Same as write path — remote Yjs changes fire the same `observeAll()` observer.
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-Keeps the existing `createPersistedState` pattern. Typed `get(key)/set(key, value)` wrapper for API consistency. No SvelteMap for now — `createPersistedState` already handles reactivity + persistence.
+Keeps the existing `createPersistedState` pattern. Typed `get(key)/set(key, value)` wrapper for API consistency. No SvelteMap for now: `createPersistedState` already handles reactivity + persistence.
 
 ## Prerequisites: `observeAll()` on KV Helper
 
@@ -92,7 +92,7 @@ type KvHelper<TKvDefinitions> = {
    * fires for every KV change with the key name included. Useful for reactive
    * stores that need to sync all keys efficiently (e.g., SvelteMap).
    *
-   * Invalid values (schema validation failure) are skipped — only valid,
+   * Invalid values (schema validation failure) are skipped: only valid,
    * migrated values fire the callback.
    *
    * @returns Unsubscribe function
@@ -161,9 +161,9 @@ observeAll(
 - [x] **Task 1**: Add `observeAll()` to workspace KV helper
 
 **Files:**
-- `packages/workspace/src/workspace/types.ts` — add `observeAll` to `KvHelper` type
-- `packages/workspace/src/workspace/create-kv.ts` — implement `observeAll`
-- `packages/workspace/src/workspace/create-kv.test.ts` — test `observeAll`
+- `packages/workspace/src/workspace/types.ts`: add `observeAll` to `KvHelper` type
+- `packages/workspace/src/workspace/create-kv.ts`: implement `observeAll`
+- `packages/workspace/src/workspace/create-kv.test.ts`: test `observeAll`
 
 **Acceptance:**
 - Single observer on underlying YKeyValueLww
@@ -184,14 +184,14 @@ observeAll(
 import { SvelteMap } from 'svelte/reactivity';
 import workspace from '$lib/workspace';
 
-// The KV definitions from workspace.ts — used for typing and defaults
+// The KV definitions from workspace.ts: used for typing and defaults
 const KV_DEFINITIONS = workspace.definitions.kv;
 
 function createWorkspaceSettings() {
   const map = new SvelteMap<string, unknown>();
 
   // 1. Initialize SvelteMap with defaults for all 42 keys
-  //    (workspace KV entries may not exist yet — fresh workspace)
+  //    (workspace KV entries may not exist yet: fresh workspace)
   for (const key of Object.keys(KV_DEFINITIONS)) {
     const result = workspace.kv.get(key);
     if (result.status === 'valid') {
@@ -224,7 +224,7 @@ function createWorkspaceSettings() {
 
     /**
      * Set a synced workspace setting. Writes to Yjs KV, which fires the
-     * observer, which updates the SvelteMap. Unidirectional — never set
+     * observer, which updates the SvelteMap. Unidirectional: never set
      * the SvelteMap directly.
      */
     set<K extends keyof typeof KV_DEFINITIONS & string>(
@@ -240,17 +240,17 @@ export const workspaceSettings = createWorkspaceSettings();
 ```
 
 **Key decisions:**
-- **SvelteMap for per-key reactivity** — `map.get(key)` tracks that specific key. `map.set(key, value)` only triggers subscribers of that key.
-- **Unidirectional writes** — component calls `set()` → Yjs KV → observer → SvelteMap. Never mutate the SvelteMap directly.
-- **Defaults** — populated from current KV state on init. If KV entry doesn't exist (fresh workspace), getter returns `undefined`. Consumers handle defaults (same as current pattern where settings schema has defaults).
-- **No destroy needed** — singleton, lives for app lifetime (same as current settings.svelte.ts)
+- **SvelteMap for per-key reactivity**: `map.get(key)` tracks that specific key. `map.set(key, value)` only triggers subscribers of that key.
+- **Unidirectional writes**: component calls `set()` → Yjs KV → observer → SvelteMap. Never mutate the SvelteMap directly.
+- **Defaults**: populated from current KV state on init. If KV entry doesn't exist (fresh workspace), getter returns `undefined`. Consumers handle defaults (same as current pattern where settings schema has defaults).
+- **No destroy needed**: singleton, lives for app lifetime (same as current settings.svelte.ts)
 
 **Acceptance:**
 - SvelteMap initialized from current Yjs KV state
 - `observeAll()` updates SvelteMap on any KV change (local or remote)
 - `get(key)` returns typed value per key definition
 - `set(key, value)` writes to Yjs KV (type-checked)
-- Per-key reactivity verified — changing one key doesn't re-render components reading other keys
+- Per-key reactivity verified: changing one key doesn't re-render components reading other keys
 
 - [x] **Task 3**: Create `device-config.svelte.ts`
   > **Note**: Removed pipe transforms for device IDs (plain `string | null`). Removed unused TRANSCRIPTION import.
@@ -267,7 +267,7 @@ import { type } from 'arktype';
 // ... import constants
 
 const DeviceConfig = type({
-  // API keys — secrets, never synced
+  // API keys: secrets, never synced
   'apiKeys.openai': "string = ''",
   'apiKeys.anthropic': "string = ''",
   // ... all 8 API key entries
@@ -328,10 +328,10 @@ export const deviceConfig = (() => {
 ```
 
 **Key decisions:**
-- **Same `createPersistedState` pattern** — battle-tested, already handles reactivity + localStorage
-- **Separate localStorage key** — `whispering-device-config` (not `whispering-settings`)
-- **Progressive validation** — same approach as current `parseStoredSettings()` for robustness
-- **API shape** — `get value`, `update()`, `updateKey()` (same as current `settings`)
+- **Same `createPersistedState` pattern**: battle-tested, already handles reactivity + localStorage
+- **Separate localStorage key**: `whispering-device-config` (not `whispering-settings`)
+- **Progressive validation**: same approach as current `parseStoredSettings()` for robustness
+- **API shape**: `get value`, `update()`, `updateKey()` (same as current `settings`)
 
 **Acceptance:**
 - All ~36 device-bound keys defined with defaults
@@ -385,14 +385,14 @@ For device-config:
   > **Note**: settings.svelte.ts marked @deprecated with JSDoc. settings.ts schema kept for Wave 3 migration.
 
 **Files:**
-- `apps/whispering/src/lib/state/settings.svelte.ts` — mark deprecated or remove
-- `apps/whispering/src/lib/settings/settings.ts` — keep schema (still used for migration in Wave 3)
+- `apps/whispering/src/lib/state/settings.svelte.ts`: mark deprecated or remove
+- `apps/whispering/src/lib/settings/settings.ts`: keep schema (still used for migration in Wave 3)
 
 **Strategy:**
-- Don't delete `settings.ts` (the schema) — Wave 3 migration needs it to read old localStorage data
-- Don't delete `parseStoredSettings()` — Wave 3 needs it
-- Delete or deprecate `settings.svelte.ts` (the reactive singleton) — all consumers now use workspace-settings or device-config
-- Keep `whispering-settings` localStorage key intact — Wave 3 migration reads from it
+- Don't delete `settings.ts` (the schema): Wave 3 migration needs it to read old localStorage data
+- Don't delete `parseStoredSettings()`: Wave 3 needs it
+- Delete or deprecate `settings.svelte.ts` (the reactive singleton): all consumers now use workspace-settings or device-config
+- Keep `whispering-settings` localStorage key intact: Wave 3 migration reads from it
 
 **Acceptance:**
 - No runtime imports of the old `settings.svelte.ts` reactive singleton
@@ -450,15 +450,15 @@ Tasks 2 and 3 can be parallelized (independent files). Task 4 depends on both 2 
 
 ## Open Questions
 
-1. **Default seeding strategy** — should we seed defaults into Yjs KV on first access (lazy), or eagerly on workspace creation? Eager is simpler but writes 42 entries to an empty Yjs doc. Lazy avoids writes but complicates the getter.
+1. **Default seeding strategy**: should we seed defaults into Yjs KV on first access (lazy), or eagerly on workspace creation? Eager is simpler but writes 42 entries to an empty Yjs doc. Lazy avoids writes but complicates the getter.
 
-   **Leaning**: Eager. 42 entries in a single `batch()` is trivial. Clean mental model — every key always has a value.
+   **Leaning**: Eager. 42 entries in a single `batch()` is trivial. Clean mental model: every key always has a value.
 
-2. **API surface for consumers** — the workspace-settings `get(key)` returns a raw typed value. Should it return a `KvGetResult<T>` discriminated union (with `status: 'valid'|'not_found'`) like the raw KV API?
+2. **API surface for consumers**: the workspace-settings `get(key)` returns a raw typed value. Should it return a `KvGetResult<T>` discriminated union (with `status: 'valid'|'not_found'`) like the raw KV API?
 
-   **Leaning**: No. The SvelteMap is always seeded with defaults. `get(key)` always returns a value. No discriminated union needed — that complexity belongs in the workspace package, not the app-level reactive layer.
+   **Leaning**: No. The SvelteMap is always seeded with defaults. `get(key)` always returns a value. No discriminated union needed: that complexity belongs in the workspace package, not the app-level reactive layer.
 
-3. **Cross-tab sync for device-config** — localStorage `storage` events fire across tabs. Should device-config listen for them to sync across browser tabs?
+3. **Cross-tab sync for device-config**: localStorage `storage` events fire across tabs. Should device-config listen for them to sync across browser tabs?
 
    **Leaning**: Not in this wave. `createPersistedState` may already handle this. If not, add later.
 
@@ -470,8 +470,8 @@ Tasks 2 and 3 can be parallelized (independent files). Task 4 depends on both 2 
 ### Summary
 
 Split the unified `settings.svelte.ts` singleton into two purpose-built modules:
-- **workspace-settings.svelte.ts** — ~43 synced preferences backed by Yjs KV + SvelteMap for per-key reactivity
-- **device-config.svelte.ts** — ~37 device-bound secrets/hardware/paths backed by localStorage via createPersistedState
+- **workspace-settings.svelte.ts**: ~43 synced preferences backed by Yjs KV + SvelteMap for per-key reactivity
+- **device-config.svelte.ts**: ~37 device-bound secrets/hardware/paths backed by localStorage via createPersistedState
 
 All 47 consumer files migrated. Old settings module marked @deprecated (schema preserved for future localStorage→Yjs migration).
 

@@ -11,7 +11,7 @@ This specification amends the plugin-first server architecture to include REST e
 
 ## Motivation
 
-The original decision to separate REST endpoints from the WebSocket plugin was artificial. Document state management—whether via real-time sync or HTTP snapshots—is a single concern.
+The original decision to separate REST endpoints from the WebSocket plugin was artificial. Document state management, whether via real-time sync or HTTP snapshots, is a single concern.
 
 ### Current State
 
@@ -88,7 +88,7 @@ The convenience gain (`?token=` vs `-H "Authorization: Bearer"`) is marginal. Th
 The REST routes use a `guard` with `beforeHandle` to extract and validate the Bearer token:
 
 ```typescript
-// Inside createSyncPlugin — REST routes only
+// Inside createSyncPlugin: REST routes only
 new Elysia()
   .guard({
     async beforeHandle({ headers, set }) {
@@ -107,7 +107,7 @@ new Elysia()
   .post('/:room/doc', ...)
 ```
 
-The existing `validateAuth(config, token)` function is reused unchanged — it receives a token string regardless of where it was extracted from. The WS `open` handler keeps using `ws.data.query.token`. The REST guard extracts from `Authorization` header.
+The existing `validateAuth(config, token)` function is reused unchanged. It receives a token string regardless of where it was extracted from. The WS `open` handler keeps using `ws.data.query.token`. The REST guard extracts from `Authorization` header.
 
 ### Room list auth
 
@@ -141,7 +141,7 @@ The plugin manages the room lifecycle and exposes it through multiple transports
 - [ ] **1.1 Room List**: Add `GET /` to `plugin.ts`. It should return `{ rooms: [{ id, connections }] }` from the room manager.
 - [ ] **1.2 Document Snapshot**: Add `GET /:room/doc`. Return `Y.encodeStateAsUpdate(doc)` as a binary response. Return 404 if the room isn't active.
 - [ ] **1.3 Document Update**: Add `POST /:room/doc`. Read the binary body and call `Y.applyUpdate(doc, update)`. Create the room on demand if it doesn't exist.
-- [ ] **1.4 Auth Integration**: Add an Elysia `guard` with `beforeHandle` for REST routes. Extract token from `Authorization: Bearer` header, pass to existing `validateAuth`. Return 401 if rejected. The WS `open` handler continues using `ws.data.query.token` — no change there.
+- [ ] **1.4 Auth Integration**: Add an Elysia `guard` with `beforeHandle` for REST routes. Extract token from `Authorization: Bearer` header, pass to existing `validateAuth`. Return 401 if rejected. The WS `open` handler continues using `ws.data.query.token`: no change there.
 
 ### Phase 2: Server Simplification
 
@@ -158,7 +158,7 @@ The plugin manages the room lifecycle and exposes it through multiple transports
 - **Malformed Binary**: `Y.applyUpdate` throws on invalid data. The `POST` handler must catch this and return a 400 Bad Request.
 - **Empty Rooms**: `GET /` should return `{ rooms: [] }` when no rooms are active, not a 404 or error.
 - **GET on Inactive Room**: If a room exists in persistence but isn't "active" in memory, `GET /:room/doc` should return 404. We only want to serve snapshots for rooms that are currently being managed.
-- **REST with `?token=` instead of Bearer**: Returns 401. The token is ignored on REST routes — only `Authorization: Bearer` is checked. This is intentional (see Auth Strategy section).
+- **REST with `?token=` instead of Bearer**: Returns 401. The token is ignored on REST routes: only `Authorization: Bearer` is checked. This is intentional (see Auth Strategy section).
 - **Open mode (no auth configured)**: Both WS and REST skip auth entirely. `GET /:room/doc` works without any header. Same behavior as the current WS open mode.
 
 ## Open Questions

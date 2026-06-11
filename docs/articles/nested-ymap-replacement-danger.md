@@ -1,6 +1,6 @@
 # Why Replacing Nested Y.Maps Loses Concurrent Edits
 
-We avoid nesting Y.Maps inside each other when possible. When we do use them, we never replace the nested map—only edit keys within it.
+We avoid nesting Y.Maps inside each other when possible. When we do use them, we never replace the nested map. Only edit keys within it.
 
 Here's a scenario that shows why. It will silently lose data in a collaborative app.
 

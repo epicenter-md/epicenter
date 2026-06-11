@@ -72,7 +72,7 @@ s.includes('ENOTEMPTY') || s.includes('not empty');
 
 ### Internal Consumers
 
-Only one file in the monorepo catches filesystem errors with `.code` checks — `packages/epicenter/src/cli/parse-input.ts` — and it checks **Node.js** `readFileSync` errors, not virtual filesystem errors. No code outside `packages/filesystem` catches `fsError`-produced errors by `.code`.
+Only one file in the monorepo catches filesystem errors with `.code` checks: `packages/epicenter/src/cli/parse-input.ts`, and it checks **Node.js** `readFileSync` errors, not virtual filesystem errors. No code outside `packages/filesystem` catches `fsError`-produced errors by `.code`.
 
 ### Ergonomics Comparison (Four Approaches Evaluated)
 
@@ -135,18 +135,18 @@ B wins because it's the only approach that maximizes both discoverability (dot-a
 
 - [x] **1.1** Add `FS_ERRORS` object with a factory function per `FsErrorCode`, each delegating to `fsError`
 - [x] **1.2** Remove the `export` keyword from `fsError` (make it module-private)
-- [x] **1.3** Update `index.ts` — replace `fsError` export with `FS_ERRORS` export; also export `FsErrorCode` type
+- [x] **1.3** Update `index.ts`: replace `fsError` export with `FS_ERRORS` export; also export `FsErrorCode` type
 
 ### Phase 2: Migrate call sites
 
-- [x] **2.1** `validation.ts` — update `validateName` and `assertUniqueName` (~3 throw sites)
-- [x] **2.2** `file-tree.ts` — update all `fsError` calls (~4 throw sites), update import
-- [x] **2.3** `yjs-file-system.ts` — update all `fsError` calls (~12 throw sites), update import
+- [x] **2.1** `validation.ts`: update `validateName` and `assertUniqueName` (~3 throw sites)
+- [x] **2.2** `file-tree.ts`: update all `fsError` calls (~4 throw sites), update import
+- [x] **2.3** `yjs-file-system.ts`: update all `fsError` calls (~12 throw sites), update import
 
 ### Phase 3: Verify
 
-- [x] **3.1** Run `lsp_diagnostics` on all changed files — 0 errors on all 5 changed files
-- [x] **3.2** Run `bun test` in `packages/filesystem` — 208 tests pass, 0 failures
+- [x] **3.1** Run `lsp_diagnostics` on all changed files: 0 errors on all 5 changed files
+- [x] **3.2** Run `bun test` in `packages/filesystem`: 208 tests pass, 0 failures
 
 ## Edge Cases
 
@@ -161,16 +161,16 @@ B wins because it's the only approach that maximizes both discoverability (dot-a
 
 1. Tests in `validation.test.ts` assert on `fsError` directly
 2. Tests in `file-tree.test.ts` and `yjs-file-system.test.ts` assert on thrown error properties
-3. All tests check `.code` and/or `.message` — both remain identical after migration
+3. All tests check `.code` and/or `.message`: both remain identical after migration
 4. The `validation.test.ts` tests that call `fsError` directly will need updating to use `FS_ERRORS` or to keep calling the now-private `fsError` via `FS_ERRORS` indirectly
 
 ## Open Questions (Resolved)
 
 1. **Should `fsError` remain exported for test access?**
-   - **Resolution**: (b) — tests updated to use `FS_ERRORS.ENOENT()` directly. `fsError` is now fully private.
+   - **Resolution**: (b): tests updated to use `FS_ERRORS.ENOENT()` directly. `fsError` is now fully private.
 
 2. **Should `FS_ERRORS` factory signatures be more specific than `(message: string)`?**
-   - **Resolution**: (a) — all factories take `(message: string)`. Cosmetic parameter names not worth the maintenance cost.
+   - **Resolution**: (a): all factories take `(message: string)`. Cosmetic parameter names not worth the maintenance cost.
 
 ## Success Criteria
 
@@ -183,11 +183,11 @@ B wins because it's the only approach that maximizes both discoverability (dot-a
 
 ## References
 
-- `packages/filesystem/src/validation.ts` — error factory definition (change here)
-- `packages/filesystem/src/file-tree.ts` — ~5 throw sites to migrate
-- `packages/filesystem/src/yjs-file-system.ts` — ~12 throw sites to migrate
-- `packages/filesystem/src/index.ts` — public API exports (swap `fsError` → `FS_ERRORS`)
-- `packages/filesystem/src/validation.test.ts` — tests that import `fsError` directly
+- `packages/filesystem/src/validation.ts`: error factory definition (change here)
+- `packages/filesystem/src/file-tree.ts`: ~5 throw sites to migrate
+- `packages/filesystem/src/yjs-file-system.ts`: ~12 throw sites to migrate
+- `packages/filesystem/src/index.ts`: public API exports (swap `fsError` → `FS_ERRORS`)
+- `packages/filesystem/src/validation.test.ts`: tests that import `fsError` directly
 
 ## Review
 

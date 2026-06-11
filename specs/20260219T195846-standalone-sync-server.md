@@ -2,7 +2,7 @@
 
 **Date**: 2026-02-19
 **Status**: Superseded
-**Superseded by**: `specs/20260220T080000-plugin-first-server-architecture.md` — `createSyncServer()` is included as a convenience wrapper over `createSyncPlugin()`, which is more composable and covers all the same capabilities.
+**Superseded by**: `specs/20260220T080000-plugin-first-server-architecture.md`: `createSyncServer()` is included as a convenience wrapper over `createSyncPlugin()`, which is more composable and covers all the same capabilities.
 **Author**: AI-assisted
 **Related**: `20260219T195800-server-architecture-rethink.md` (Layer 0+1), `20260214T120800-migrate-y-sweet-to-epicenter-sync.md` (protocol)
 
@@ -17,7 +17,7 @@ Extract the sync relay from `@epicenter/server` into a standalone `createSyncSer
 The sync plugin lives inside a full-featured HTTP server that requires workspace clients:
 
 ```typescript
-// packages/server/src/server.ts — requires initialized workspace clients
+// packages/server/src/server.ts: requires initialized workspace clients
 const server = createServer(blogClient, { port: 3913 });
 server.start();
 // Provides: REST tables, actions, OpenAPI docs, AND sync
@@ -26,7 +26,7 @@ server.start();
 The sync plugin itself has no auth:
 
 ```typescript
-// packages/server/src/sync/index.ts — no auth check
+// packages/server/src/sync/index.ts: no auth check
 return new Elysia().ws('/workspaces/:workspaceId/sync', {
 	open(ws) {
 		const room = ws.data.params.workspaceId;
@@ -55,7 +55,7 @@ This creates three problems:
 
 2. **No auth on the server.** The client sends tokens, the server ignores them. Anyone with the URL can connect to any room. This is fine for localhost but dangerous for anything exposed to a network.
 
-3. **Can't manage its own docs.** The sync plugin receives Y.Docs via `getDoc()` — it can't create them. If you connect to a room that doesn't have a pre-created doc, you get a 4004 close code. Rooms should be created lazily on first connection (like y-sweet does).
+3. **Can't manage its own docs.** The sync plugin receives Y.Docs via `getDoc()`: it can't create them. If you connect to a room that doesn't have a pre-created doc, you get a 4004 close code. Rooms should be created lazily on first connection (like y-sweet does).
 
 ### Desired State
 
@@ -64,11 +64,11 @@ A standalone sync server you can start with one line:
 ```typescript
 import { createSyncServer } from '@epicenter/server/sync';
 
-// Mode 1: Open — no auth, anyone can connect, rooms created on demand
+// Mode 1: Open: no auth, anyone can connect, rooms created on demand
 const server = createSyncServer({ port: 3913 });
 server.start();
 
-// Mode 2: Shared token — server has a secret, clients must include it
+// Mode 2: Shared token: server has a secret, clients must include it
 const server = createSyncServer({
 	port: 3913,
 	auth: { token: 'my-shared-secret' },
@@ -93,14 +93,14 @@ const provider = createSyncProvider({
 | Aspect         | y-sweet                                                   | y-websocket                            | Current @epicenter/server                         |
 | -------------- | --------------------------------------------------------- | -------------------------------------- | ------------------------------------------------- |
 | Room creation  | Lazy on first connection                                  | Lazy on first connection               | Requires pre-existing Y.Doc from workspace client |
-| Y.Doc per room | Server creates and manages                                | Server creates and manages             | External — passed via `getDoc()`                  |
+| Y.Doc per room | Server creates and manages                                | Server creates and manages             | External: passed via `getDoc()`                  |
 | Auth           | Server token + per-doc client tokens with R/W permissions | None (URL only)                        | None                                              |
 | Auth timing    | Before WebSocket upgrade                                  | N/A                                    | N/A                                               |
 | Persistence    | Server-side (S3/filesystem)                               | Optional leveldb callback              | Client-side (IndexedDB/filesystem)                |
 | Room eviction  | GC worker after idle period                               | Room destroyed when last client leaves | 60s timer after last client leaves                |
 | Ping/pong      | Yes                                                       | Yes (30s)                              | Yes (30s)                                         |
 
-**Key finding**: Both y-sweet and y-websocket create and manage their own Y.Docs per room. Our server is the oddball — it borrows docs from workspace clients. For a standalone sync server, the server must own its docs.
+**Key finding**: Both y-sweet and y-websocket create and manage their own Y.Docs per room. Our server is the oddball: it borrows docs from workspace clients. For a standalone sync server, the server must own its docs.
 
 **Key finding from y-sweet**: Auth is verified BEFORE the WebSocket upgrade, not after. This prevents unauthenticated connections from consuming server resources. Elysia supports `beforeHandle` on WebSocket routes for this.
 
@@ -112,11 +112,11 @@ The three auth modes from `@epicenter/sync`'s README need corresponding server b
 | ---------------------- | ------------------------------------- | -------------------------------------------- | --------------------------------------------------------------------------------------------------- |
 | **1: Open**            | Just `url`                            | No `auth` option                             | Server accepts all connections. No token checked.                                                   |
 | **2: Shared Token**    | `url` + `token: 'secret'`             | `auth: { token: 'secret' }`                  | Client sends `?token=secret` in URL. Server compares against its configured token.                  |
-| **3: Verify Function** | `url` + `getToken: async () => '...'` | `auth: { verify: async (token) => boolean }` | Client sends token in URL. Server calls `verify(token)`. Async — can hit a DB, validate a JWT, etc. |
+| **3: Verify Function** | `url` + `getToken: async () => '...'` | `auth: { verify: async (token) => boolean }` | Client sends token in URL. Server calls `verify(token)`. Async: can hit a DB, validate a JWT, etc. |
 
-**Implication**: Mode 1 and 2 are simple string comparison (or skip). Mode 3 is the escape hatch for any auth system — JWT validation, session checks, OAuth introspection. The server doesn't need to know HOW auth works, just whether the token is valid.
+**Implication**: Mode 1 and 2 are simple string comparison (or skip). Mode 3 is the escape hatch for any auth system: JWT validation, session checks, OAuth introspection. The server doesn't need to know HOW auth works, just whether the token is valid.
 
-### Protocol — Already Solid
+### Protocol: Already Solid
 
 The existing protocol code in `packages/server/src/sync/protocol.ts` is clean and complete:
 
@@ -125,7 +125,7 @@ The existing protocol code in `packages/server/src/sync/protocol.ts` is clean an
 - MESSAGE_QUERY_AWARENESS (3): Request awareness states
 - MESSAGE_SYNC_STATUS (102): Heartbeat + hasLocalChanges echo
 
-The sync plugin in `packages/server/src/sync/index.ts` correctly handles all four message types, has ping/pong keepalive, room eviction with 60s timer, awareness tracking, and WeakMap-based connection state. This code works — it just needs auth and standalone room management.
+The sync plugin in `packages/server/src/sync/index.ts` correctly handles all four message types, has ping/pong keepalive, room eviction with 60s timer, awareness tracking, and WeakMap-based connection state. This code works. It just needs auth and standalone room management.
 
 ## Design Decisions
 
@@ -229,7 +229,7 @@ type SyncServerOptions = {
 
 	/**
 	 * Called when a new room is created. Use for logging or injecting initial doc state.
-	 * The doc is empty when this fires — client sync hasn't happened yet.
+	 * The doc is empty when this fires: client sync hasn't happened yet.
 	 */
 	onRoomCreated?: (roomId: string, doc: Y.Doc) => void;
 
@@ -289,18 +289,18 @@ if (token) {
 
 Extract the room lifecycle from `packages/server/src/sync/index.ts` into a reusable module.
 
-- [ ] **1.1** Create `packages/server/src/sync/rooms.ts` — room creation, join, leave, eviction timer
+- [ ] **1.1** Create `packages/server/src/sync/rooms.ts`: room creation, join, leave, eviction timer
 - [ ] **1.2** Move room-related state (rooms Map, awarenessMap, evictionTimers) from the plugin closure into a `createRoomManager()` factory
 - [ ] **1.3** Add `createRoom(roomId)` that creates a fresh Y.Doc + Awareness (no external `getDoc`)
 - [ ] **1.4** Add `getOrCreateRoom(roomId)` that lazily creates rooms on first access
 - [ ] **1.5** Room manager returns: `{ getOrCreate, destroy, rooms, connections }`
-- [ ] **1.6** Refactor existing `createSyncPlugin` to use the room manager internally (keep `getDoc` for backward compat — `getDoc` takes priority over lazy creation)
+- [ ] **1.6** Refactor existing `createSyncPlugin` to use the room manager internally (keep `getDoc` for backward compat: `getDoc` takes priority over lazy creation)
 
 ### Phase 2: Add Auth Gate
 
 Add authentication to the WebSocket upgrade path.
 
-- [ ] **2.1** Create `packages/server/src/sync/auth.ts` — auth verification logic
+- [ ] **2.1** Create `packages/server/src/sync/auth.ts`: auth verification logic
 - [ ] **2.2** Implement token extraction from URL query params
 - [ ] **2.3** Implement Mode 1 (no auth): always pass
 - [ ] **2.4** Implement Mode 2 (shared token): constant-time string comparison
@@ -312,7 +312,7 @@ Add authentication to the WebSocket upgrade path.
 
 Wire room manager + auth into a standalone server.
 
-- [ ] **3.1** Create `packages/server/src/sync/server.ts` — `createSyncServer()` factory
+- [ ] **3.1** Create `packages/server/src/sync/server.ts`: `createSyncServer()` factory
 - [ ] **3.2** Set up Elysia app with WebSocket route at `/rooms/:roomId`
 - [ ] **3.3** Wire auth gate as `beforeHandle` (Elysia middleware)
 - [ ] **3.4** Wire room manager for connection lifecycle
@@ -325,9 +325,9 @@ Wire room manager + auth into a standalone server.
 Test client + server working together using `@epicenter/sync`.
 
 - [ ] **4.1** Test: two clients sync through the server (doc changes propagate)
-- [ ] **4.2** Test: auth Mode 1 — open access, no token needed
-- [ ] **4.3** Test: auth Mode 2 — valid token connects, invalid token rejected
-- [ ] **4.4** Test: auth Mode 3 — verify function called, result respected
+- [ ] **4.2** Test: auth Mode 1: open access, no token needed
+- [ ] **4.3** Test: auth Mode 2: valid token connects, invalid token rejected
+- [ ] **4.4** Test: auth Mode 3: verify function called, result respected
 - [ ] **4.5** Test: room created on first connection, evicted after timeout
 - [ ] **4.6** Test: hasLocalChanges works end-to-end (102 echo)
 - [ ] **4.7** Test: reconnection after server restart
@@ -346,10 +346,10 @@ Ensure the full server still works.
 
 Room IDs come from URL paths. Potential issues:
 
-1. Empty room ID — reject with 400
-2. Very long room IDs — cap at 256 chars
-3. Special characters — URL-encoded by the client, decoded by Elysia
-4. Room IDs with `/` — Elysia's `:roomId` param captures until next `/`, so `/rooms/a/b` would not match. This is fine — room IDs are single path segments.
+1. Empty room ID: reject with 400
+2. Very long room IDs: cap at 256 chars
+3. Special characters: URL-encoded by the client, decoded by Elysia
+4. Room IDs with `/`: Elysia's `:roomId` param captures until next `/`, so `/rooms/a/b` would not match. This is fine: room IDs are single path segments.
 
 ### Auth Token in URL vs Headers
 
@@ -366,21 +366,21 @@ Tokens in URLs are visible in server logs, browser history, and potentially prox
 1. Client disconnects (network issue)
 2. 60s eviction timer starts
 3. At 59s, client reconnects
-4. Timer must be cancelled — the room stays alive
+4. Timer must be cancelled: the room stays alive
 
 This is already handled in the current sync plugin (eviction timer cancellation on new connection). The room manager extraction must preserve this.
 
-### Server Restart — No Persistence
+### Server Restart: No Persistence
 
-If the server restarts, all rooms are destroyed. When clients reconnect, they start fresh rooms. The client's local persistence (IndexedDB/filesystem) is the source of truth — it syncs its full state to the new empty server doc. This is the existing behavior and is correct for the client-side persistence model.
+If the server restarts, all rooms are destroyed. When clients reconnect, they start fresh rooms. The client's local persistence (IndexedDB/filesystem) is the source of truth. It syncs its full state to the new empty server doc. This is the existing behavior and is correct for the client-side persistence model.
 
 ### Concurrent Room Creation
 
-Two clients connect to the same room ID simultaneously. `getOrCreateRoom` must be idempotent — if the room already exists, return it. Since JavaScript is single-threaded, there's no true concurrency issue, but the `Map.get() ?? create()` pattern must be atomic (set before returning).
+Two clients connect to the same room ID simultaneously. `getOrCreateRoom` must be idempotent. If the room already exists, return it. Since JavaScript is single-threaded, there's no true concurrency issue, but the `Map.get() ?? create()` pattern must be atomic (set before returning).
 
 ### Verify Function Throws
 
-If `auth.verify(token)` throws an error, treat it as auth failure (reject the connection). Don't leak the error message to the client — log it server-side.
+If `auth.verify(token)` throws an error, treat it as auth failure (reject the connection). Don't leak the error message to the client: log it server-side.
 
 ## Open Questions
 
@@ -390,8 +390,8 @@ If `auth.verify(token)` throws an error, treat it as auth failure (reject the co
 
 2. **Should the room manager support an `allowRoom` predicate?**
    - In token auth mode, you might want to restrict which rooms can be created.
-   - Options: (a) No restriction — any room ID, (b) `allowRoom: (roomId: string, token: string) => boolean`
-   - **Recommendation**: Defer. The `verify` function in Mode 3 already receives the token — if you need per-room auth, your verify function can parse a JWT containing room claims. Adding `allowRoom` now is premature.
+   - Options: (a) No restriction: any room ID, (b) `allowRoom: (roomId: string, token: string) => boolean`
+   - **Recommendation**: Defer. The `verify` function in Mode 3 already receives the token: if you need per-room auth, your verify function can parse a JWT containing room claims. Adding `allowRoom` now is premature.
 
 3. **Should we add `onRoomCreated`/`onRoomEvicted` hooks or a plugin system?**
    - Hooks are simple. A plugin system is flexible but complex.
@@ -416,10 +416,10 @@ If `auth.verify(token)` throws an error, treat it as auth failure (reject the co
 
 ## References
 
-- `packages/server/src/sync/index.ts` — Current sync plugin (extract room manager + add auth)
-- `packages/server/src/sync/protocol.ts` — Protocol encode/decode (unchanged, already complete)
-- `packages/sync/src/provider.ts` — Client provider (already supports 3 auth modes)
-- `packages/sync/src/types.ts` — Client types (`SyncProviderConfig`, auth options)
-- `specs/20260219T195800-server-architecture-rethink.md` — Layer 0+1 is exactly this server
-- `specs/20260214T120800-migrate-y-sweet-to-epicenter-sync.md` — Protocol migration (complete)
-- `specs/20260213T120800-extract-epicenter-server-package.md` — Phase 2 designs auth modes
+- `packages/server/src/sync/index.ts`: Current sync plugin (extract room manager + add auth)
+- `packages/server/src/sync/protocol.ts`: Protocol encode/decode (unchanged, already complete)
+- `packages/sync/src/provider.ts`: Client provider (already supports 3 auth modes)
+- `packages/sync/src/types.ts`: Client types (`SyncProviderConfig`, auth options)
+- `specs/20260219T195800-server-architecture-rethink.md`: Layer 0+1 is exactly this server
+- `specs/20260214T120800-migrate-y-sweet-to-epicenter-sync.md`: Protocol migration (complete)
+- `specs/20260213T120800-extract-epicenter-server-package.md`: Phase 2 designs auth modes

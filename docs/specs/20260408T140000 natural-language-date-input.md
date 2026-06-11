@@ -58,7 +58,7 @@ A reusable `<NaturalLanguageDateInput>` component in `packages/ui` that:
 |---|---|
 | Version | 2.9.0 (TypeScript rewrite) |
 | Production bundle (minified+gzip) | ~13KB |
-| npm unpacked | 3.16MB (includes source maps, tests, all locales—irrelevant to bundle) |
+| npm unpacked | 3.16MB (includes source maps, tests, all locales. Irrelevant to bundle) |
 | Tree-shakeable | Yes (`sideEffects: false`) |
 | Per-locale import | `import * as chrono from 'chrono-node/en'` |
 | Weekly downloads | 929K |
@@ -87,7 +87,7 @@ A reusable `<NaturalLanguageDateInput>` component in `packages/ui` that:
  ISO 8601 UTC instant       IANA timezone
 ```
 
-- Pipe `|` separator—never appears in ISO strings or IANA names, so `split('|')` is always safe
+- Pipe `|` separator. Never appears in ISO strings or IANA names, so `split('|')` is always safe
 - UTC-first = lexicographic sort = chronological sort
 - Branded type from `@epicenter/workspace`
 
@@ -97,7 +97,7 @@ chrono-node doesn't accept IANA timezone names. Three options evaluated:
 
 | Approach | How it works | DST-safe? | Complexity |
 |---|---|---|---|
-| **A: Offset at reference time** | Compute IANA→offset at `new Date()`, pass to chrono | No—offset may differ at parsed date if DST boundary crossed | Low |
+| **A: Offset at reference time** | Compute IANA→offset at `new Date()`, pass to chrono | No. Offset may differ at parsed date if DST boundary crossed | Low |
 | **B: Two-pass offset** | First parse to get target date, compute offset at target date, re-parse with correct offset | Yes | Medium |
 | **C: Components + Intl** | Parse NL → extract (year, month, day, hour, min, sec) → use `Intl.DateTimeFormat` to resolve those components in the selected timezone to UTC | Yes | Medium |
 
@@ -220,7 +220,7 @@ const preview = $derived(
 );
 ```
 
-### `parse-date.ts` — Bridging Logic
+### `parse-date.ts`: Bridging Logic
 
 ```ts
 import * as chrono from 'chrono-node/en';
@@ -286,7 +286,7 @@ Uses existing `useCombobox` hook + `Command` + `Popover` from `packages/ui`:
 </Popover.Root>
 ```
 
-Timezone list sourced from `Intl.supportedValuesOf('timeZone')` — browser-native, always current, zero bundled data.
+Timezone list sourced from `Intl.supportedValuesOf('timeZone')`: browser-native, always current, zero bundled data.
 
 ## Implementation Plan
 
@@ -322,7 +322,7 @@ Timezone list sourced from `Intl.supportedValuesOf('timeZone')` — browser-nati
 ### DST Boundary Crossing
 
 1. User types "March 10 2am" with timezone "America/New_York"
-2. This time doesn't exist (spring-forward skips 2:00–2:59 AM)
+2. This time doesn't exist (spring-forward skips 2:00-2:59 AM)
 3. Expected: `Intl` resolves to the nearest valid time (3:00 AM) or the component shows a warning
 
 ### Ambiguous NL Input
@@ -341,7 +341,7 @@ Timezone list sourced from `Intl.supportedValuesOf('timeZone')` — browser-nati
 
 1. User types "3pm", preview shows "3:00 PM PST"
 2. User changes timezone to "Asia/Tokyo"
-3. Expected: preview updates to "3:00 PM JST"—same local time, different UTC instant
+3. Expected: preview updates to "3:00 PM JST". Same local time, different UTC instant
 
 ### Pre-existing Value
 
@@ -383,15 +383,15 @@ Timezone list sourced from `Intl.supportedValuesOf('timeZone')` — browser-nati
 
 ## References
 
-- `packages/workspace/src/shared/datetime-string.ts` — DateTimeString type, `dateTimeStringNow()`
-- `packages/ui/src/hooks/use-combobox.svelte.ts` — Combobox state hook (Popover + Command pattern)
-- `packages/ui/src/command/` — Searchable list component
-- `packages/ui/src/popover/` — Popover container
-- `packages/ui/src/input/` — Text input
-- `apps/fuji/src/lib/workspace/definition.ts` — Fuji entries table with DateTimeString fields
-- `apps/fuji/src/lib/components/StatusBar.svelte` — Current date display pattern (`dts.split('|')[0]`)
-- https://github.com/wanasit/chrono — chrono-node v2 docs
-- https://github.com/huntabyte/shadcn-svelte — shadcn-svelte component patterns
+- `packages/workspace/src/shared/datetime-string.ts`: DateTimeString type, `dateTimeStringNow()`
+- `packages/ui/src/hooks/use-combobox.svelte.ts`: Combobox state hook (Popover + Command pattern)
+- `packages/ui/src/command/`: Searchable list component
+- `packages/ui/src/popover/`: Popover container
+- `packages/ui/src/input/`: Text input
+- `apps/fuji/src/lib/workspace/definition.ts`: Fuji entries table with DateTimeString fields
+- `apps/fuji/src/lib/components/StatusBar.svelte`: Current date display pattern (`dts.split('|')[0]`)
+- https://github.com/wanasit/chrono: chrono-node v2 docs
+- https://github.com/huntabyte/shadcn-svelte: shadcn-svelte component patterns
 
 ## Review
 
@@ -413,7 +413,7 @@ Built a `NaturalLanguageDateInput` component in `packages/ui` that parses natura
 
 ### Deviations from Spec
 
-- Used `Intl.DateTimeFormat` for human-readable preview formatting instead of `date-fns`—avoided adding another dependency since Intl handles it natively.
+- Used `Intl.DateTimeFormat` for human-readable preview formatting instead of `date-fns`: avoided adding another dependency since Intl handles it natively.
 - Added `@epicenter/workspace` as a devDependency to `packages/ui` for the `DateTimeString` type import.
 - Timezone combobox replaces `GMT` with `UTC` in offset labels for consistency (e.g., "UTC+9" instead of "GMT+9").
 

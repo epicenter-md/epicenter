@@ -1,4 +1,4 @@
-# `defineDocument` — Invert readiness, drop barriers, trim the API
+# `defineDocument`: Invert readiness, drop barriers, trim the API
 
 **Date**: 2026-04-22
 **Status**: Complete
@@ -7,15 +7,15 @@
 
 ## Overview
 
-Remove `whenReady` **and `whenDisposed`** from the `DocumentBundle` contract, remove `factory.load(id)` from `DocumentFactory`, and stop using `defineDocument` for workspace singletons. The cache becomes a pure ref-counted identity map over a user-defined builder; **both** readiness and disposal-barriers become attachment-level conventions that consumers await on their own terms. The framework owns identity, refcount, and gcTime — nothing more.
+Remove `whenReady` **and `whenDisposed`** from the `DocumentBundle` contract, remove `factory.load(id)` from `DocumentFactory`, and stop using `defineDocument` for workspace singletons. The cache becomes a pure ref-counted identity map over a user-defined builder; **both** readiness and disposal-barriers become attachment-level conventions that consumers await on their own terms. The framework owns identity, refcount, and gcTime, nothing more.
 
-Dispose is always synchronous. `[Symbol.dispose]()` calls `ydoc.destroy()`. Attachments self-wire via `ydoc.on('destroy')` and run their async cleanup in the background. Fire-and-forget. Callers that need a barrier reach for the specific attachment field (`h.idb.whenDisposed`) at the call site — rare in production, occasionally needed in tests.
+Dispose is always synchronous. `[Symbol.dispose]()` calls `ydoc.destroy()`. Attachments self-wire via `ydoc.on('destroy')` and run their async cleanup in the background. Fire-and-forget. Callers that need a barrier reach for the specific attachment field (`h.idb.whenDisposed`) at the call site: rare in production, occasionally needed in tests.
 
 ## Motivation
 
 ### Current State
 
-`defineDocument` fuses two concerns — a ref-counted cache and an opinionated loader — and bakes "readiness" into the bundle type.
+`defineDocument` fuses two concerns. A ref-counted cache and an opinionated loader, and bakes "readiness" into the bundle type.
 
 ```ts
 // packages/workspace/src/document/define-document.ts
@@ -56,22 +56,22 @@ return {
 
 This creates problems:
 
-1. **`Promise.resolve()` spam.** 13 of 13 bundles in `define-document.test.ts`, both fixtures in `sqlite.test.ts`, and every sync/in-memory builder in tests carry `whenReady: Promise.resolve()`. The field carries no information — it exists to satisfy the type so `factory.load()` has something to await.
-2. **`whenReady` is an opinion, not a fact.** There is no single "ready" for a Y.Doc — there's `idb.whenLoaded`, `sync.whenConnected`, `sync.whenFirstSync`, `materializer.whenHydrated`. The builder picks one composition and every consumer is locked into that choice. A list view that could render on IDB alone waits for sync because the builder said so.
-3. **The cache was pretending to manage readiness.** `factory.load()` is a one-line helper over `open + await handle.whenReady`. Its only real job was making the type-level guarantee "you got a ready handle back" — but that guarantee is the builder's opinion re-exported, not a framework property.
+1. **`Promise.resolve()` spam.** 13 of 13 bundles in `define-document.test.ts`, both fixtures in `sqlite.test.ts`, and every sync/in-memory builder in tests carry `whenReady: Promise.resolve()`. The field carries no information: it exists to satisfy the type so `factory.load()` has something to await.
+2. **`whenReady` is an opinion, not a fact.** There is no single "ready" for a Y.Doc: there's `idb.whenLoaded`, `sync.whenConnected`, `sync.whenFirstSync`, `materializer.whenHydrated`. The builder picks one composition and every consumer is locked into that choice. A list view that could render on IDB alone waits for sync because the builder said so.
+3. **The cache was pretending to manage readiness.** `factory.load()` is a one-line helper over `open + await handle.whenReady`. Its only real job was making the type-level guarantee "you got a ready handle back": but that guarantee is the builder's opinion re-exported, not a framework property.
 4. **Singletons misuse the cache.** 8 of 13 production `defineDocument` call sites are workspace roots opened exactly once at module init (`fuji.open('epicenter.fuji')`, `whispering.open('whispering')`, …). Ref-counting is moot; the cache is ceremony around a builder call.
 
 ### Desired State
 
 ```ts
-// 1. Bundle shape — both whenReady AND whenDisposed gone. Bundle is
+// 1. Bundle shape: both whenReady AND whenDisposed gone. Bundle is
 //    whatever the builder returns, plus a sync [Symbol.dispose].
 export type DocumentBundle = {
   ydoc: Y.Doc;
   [Symbol.dispose](): void;
 };
 
-// 2. Factory surface — no load(). close/closeAll return void (honest:
+// 2. Factory surface: no load(). close/closeAll return void (honest:
 //    they trigger the cascade; they do NOT wait for it to settle).
 export type DocumentFactory<Id extends string, T> = {
   open(id: Id): DocumentHandle<T>;
@@ -79,14 +79,14 @@ export type DocumentFactory<Id extends string, T> = {
   closeAll(): void;
 };
 
-// 3. Consumer decides the gate at the call site — for BOTH readiness
+// 3. Consumer decides the gate at the call site: for BOTH readiness
 //    and (rarely) teardown.
 using h = docs.open(entryId);
 await h.whenReady;            // if the builder chose to expose one
 // or:
 await h.idb.whenLoaded;       // pick a specific readiness barrier
 // or:
-/* nothing — handle is already usable for this caller's purposes */
+/* nothing: handle is already usable for this caller's purposes */
 
 // Later, if a test or logout flow needs a teardown barrier:
 docs.close(entryId);
@@ -108,10 +108,10 @@ subsequent calls; `IndexeddbPersistence.destroy()` is idempotent; custom attachm
 use a `disposed` flag.
 
 In a browser SPA, the realistic cost of "teardown still in flight when we navigate":
-- Full page reload — zero. JS runtime is wiped.
-- SPA route change without reload — one IDB close + one WS onclose finish in the
+- Full page reload: zero. JS runtime is wiped.
+- SPA route change without reload: one IDB close + one WS onclose finish in the
   background. Tens of KB of retained refs until GC. Not catastrophic.
-- Rapid close+reopen of the same id (tests mostly) — genuine race on IDB. Mitigate
+- Rapid close+reopen of the same id (tests mostly): genuine race on IDB. Mitigate
   by awaiting `h.idb.whenDisposed` at the specific call site. Explicit, not magic.
 
 This matches yjs's own lifecycle philosophy: the core emits a `'destroy'` event;
@@ -141,11 +141,11 @@ Grouped by how the factory is actually used.
 | `packages/skills/src/skill-instructions-docs.ts:28` | **id-keyed** | caller-owned | `.open(skillId)` per-skill |
 | `packages/skills/src/reference-content-docs.ts:28` | **id-keyed** | caller-owned | `.open(refId)` per-ref |
 
-**Key finding**: singletons dominate (8/13). For those sites, `defineDocument` provides no value a direct builder call wouldn't — the cache never sees a second open.
+**Key finding**: singletons dominate (8/13). For those sites, `defineDocument` provides no value a direct builder call wouldn't: the cache never sees a second open.
 
 ### `.load()` vs `.open()` in non-test code
 
-`.load()` use is imperative-only and concentrated in Node/CLI contexts (`packages/skills/src/node.ts`, `packages/filesystem/*`, CLI entrypoints) and one browser path (skill editors, `await using` for scope binding). All `.load()` call sites can trivially become `const h = docs.open(id); await h.whenReady;` — two lines, same semantics.
+`.load()` use is imperative-only and concentrated in Node/CLI contexts (`packages/skills/src/node.ts`, `packages/filesystem/*`, CLI entrypoints) and one browser path (skill editors, `await using` for scope binding). All `.load()` call sites can trivially become `const h = docs.open(id); await h.whenReady;`: two lines, same semantics.
 
 ### `when*` barrier inventory
 
@@ -167,18 +167,18 @@ Attachment layer already exposes granular barriers. The `whenReady` aggregate fl
 | Decision | Choice | Rationale |
 |---|---|---|
 | Remove `whenReady` from `DocumentBundle` | Yes | Framework doesn't consume it anymore; builders that want it can still expose it under that name by convention |
-| Remove `factory.load(id)` | Yes | Becomes `const h = docs.open(id); await h.whenReady;` — trivial at call sites, removes duplicated type surface |
-| Remove `whenDisposed` from `DocumentBundle` | **Yes** | Framework stops orchestrating a teardown barrier. Cascade via `ydoc.on('destroy')` inside attachments is already wired; async cleanup runs in the background. Callers that need a barrier reach for the specific attachment field (`h.idb.whenDisposed`). Symmetric with the `whenReady` removal — neither readiness nor disposal should be framework contracts |
+| Remove `factory.load(id)` | Yes | Becomes `const h = docs.open(id); await h.whenReady;`: trivial at call sites, removes duplicated type surface |
+| Remove `whenDisposed` from `DocumentBundle` | **Yes** | Framework stops orchestrating a teardown barrier. Cascade via `ydoc.on('destroy')` inside attachments is already wired; async cleanup runs in the background. Callers that need a barrier reach for the specific attachment field (`h.idb.whenDisposed`). Symmetric with the `whenReady` removal: neither readiness nor disposal should be framework contracts |
 | `close(id)` / `closeAll()` return `void`, not `Promise<void>` | Yes | Honest typing. They trigger the cascade; they don't wait for it to settle. Zero `await docs.close(id)` ceremony at call sites |
 | Stop using `defineDocument` for workspace singletons | Yes | Export the builder directly as `buildFuji`/`buildWhispering`/etc.; call it once at module scope. Ref-count serves no purpose with one caller |
-| Split `defineDocument` into two primitives (builder + cache) | No | Overkill — just stop using the cache where it adds no value. One primitive, narrower scope |
+| Split `defineDocument` into two primitives (builder + cache) | No | Overkill: just stop using the cache where it adds no value. One primitive, narrower scope |
 | Rename `defineDocument` | Deferred | Name is fine once its scope is "ref-counted id-keyed document cache"; reconsider if the pattern grows beyond documents |
 | Keep `DocumentHandle<T>` brand + `isDocumentHandle` | Yes | Unrelated to readiness; used elsewhere for handle detection |
 | Keep attachment-level `whenDisposed` fields on `attach-*` helpers | Yes | This is where the async barrier actually lives and is useful. Consumers opt in at the specific call site. Framework doesn't peek at them |
 
 ## Architecture
 
-### Before — one primitive, two jobs
+### Before: one primitive, two jobs
 
 ```
 defineDocument(build, opts)
@@ -195,7 +195,7 @@ defineDocument(build, opts)
   cache = ceremony           cache = necessary
 ```
 
-### After — smaller primitive, honest usage
+### After: smaller primitive, honest usage
 
 ```
 // id-keyed: defineDocument is the cache
@@ -245,53 +245,53 @@ SINGLETON (workspace root)
 
 ## Implementation Plan
 
-### Phase 1 — Contract + factory surface
+### Phase 1: Contract + factory surface
 
 - [x] **1.1** Edit `packages/workspace/src/document/define-document.ts`: remove **both** `whenReady` and `whenDisposed` from `DocumentBundle`. The bundle becomes `{ ydoc: Y.Doc; [Symbol.dispose](): void }`. Update the module-level doc comment to reframe the primitive as "ref-counted id-keyed cache; readiness *and* disposal-barriers are attachment-level conventions, not framework concerns."
 - [x] **1.2** Remove `load(id)` from `DocumentFactory` type and its implementation. Update `DOCUMENT_HANDLE` brand / `isDocumentHandle` unchanged.
-- [x] **1.3** Change `close(id)` and `closeAll()` return types from `Promise<void>` to `void`. Drop the `await entry.bundle.whenDisposed` lines inside the implementations — `disposeEntry` triggers the sync `[Symbol.dispose]` and returns; async cleanup runs in the background via attachment-level `on('destroy')` handlers.
+- [x] **1.3** Change `close(id)` and `closeAll()` return types from `Promise<void>` to `void`. Drop the `await entry.bundle.whenDisposed` lines inside the implementations: `disposeEntry` triggers the sync `[Symbol.dispose]` and returns; async cleanup runs in the background via attachment-level `on('destroy')` handlers.
 - [x] **1.4** Update the `T extends DocumentBundle` generic bound so it no longer requires `whenReady` or `whenDisposed`.
 - [x] **1.5** Update the "Three usage levels" doc block: drop the `await using h = await docs.load('abc')` example, replace with `using h = docs.open(id); await h.whenReady;` pattern. Add a short "opt into teardown barrier via `h.idb.whenDisposed` if needed" note for the rare case.
 - [x] **1.6** Update the "Provider teardown" doc section to state: `[Symbol.dispose]` is sync; attachments self-wire via `ydoc.on('destroy')` and run their async cleanup in the background; if a consumer needs a barrier, it's on the attachment field.
 - [x] **1.7** Scan the file for any remaining references to `whenReady` or `whenDisposed` (comments, hazard notes, examples) and reconcile.
 
-### Phase 2 — Id-keyed call sites keep `whenReady` as builder convention, drop `whenDisposed`
+### Phase 2: Id-keyed call sites keep `whenReady` as builder convention, drop `whenDisposed`
 
-These 5 sites compose a real readiness gate and should keep exposing `whenReady` on the bundle — just as a convention, not a contract. They should **stop** composing `whenDisposed` on the bundle (attachment-level `whenDisposed` remains on `h.idb`, `h.sync`, etc. for callers that need it).
+These 5 sites compose a real readiness gate and should keep exposing `whenReady` on the bundle, just as a convention, not a contract. They should **stop** composing `whenDisposed` on the bundle (attachment-level `whenDisposed` remains on `h.idb`, `h.sync`, etc. for callers that need it).
 
-- [x] **2.1** `apps/fuji/src/lib/entry-content-docs.ts` — keep composing `whenReady`; remove `whenDisposed` field from the bundle; ensure `[Symbol.dispose]` is `ydoc.destroy()`; update call sites (`.load(entryId)` → `.open(entryId); await h.whenReady`).
-- [x] **2.2** `apps/honeycrisp/src/lib/note-body-docs.ts` — same treatment.
-- [x] **2.3** `packages/filesystem/src/file-content-docs.ts` — same. Check CLI/Node callers using `.load()`. CLI callers that previously relied on `await closeAll()` to flush must now either `await h.idb.whenDisposed` explicitly or accept fire-and-forget.
-- [x] **2.4** `packages/skills/src/skill-instructions-docs.ts` — same.
-- [x] **2.5** `packages/skills/src/reference-content-docs.ts` — same.
+- [x] **2.1** `apps/fuji/src/lib/entry-content-docs.ts`: keep composing `whenReady`; remove `whenDisposed` field from the bundle; ensure `[Symbol.dispose]` is `ydoc.destroy()`; update call sites (`.load(entryId)` → `.open(entryId); await h.whenReady`).
+- [x] **2.2** `apps/honeycrisp/src/lib/note-body-docs.ts`: same treatment.
+- [x] **2.3** `packages/filesystem/src/file-content-docs.ts`: same. Check CLI/Node callers using `.load()`. CLI callers that previously relied on `await closeAll()` to flush must now either `await h.idb.whenDisposed` explicitly or accept fire-and-forget.
+- [x] **2.4** `packages/skills/src/skill-instructions-docs.ts`: same.
+- [x] **2.5** `packages/skills/src/reference-content-docs.ts`: same.
 - [x] **2.6** Grep for `.load(` calls on document factories across `apps/`, `packages/`; rewrite each to `.open() + await whenReady`. Prefer `await using` where scope binding was the reason for `.load()`.
-- [x] **2.7** Grep for `await .*close(` and `await .*closeAll(` calls — strip the `await` since both now return `void`. For CLI/test call sites that genuinely need a flush barrier, rewrite to explicit `await h.idb.whenDisposed` (or the relevant attachment field) before the close call.
+- [x] **2.7** Grep for `await .*close(` and `await .*closeAll(` calls: strip the `await` since both now return `void`. For CLI/test call sites that genuinely need a flush barrier, rewrite to explicit `await h.idb.whenDisposed` (or the relevant attachment field) before the close call.
 
-### Phase 3 — Singletons exit the cache
+### Phase 3: Singletons exit the cache
 
 Replace `defineDocument(build).open(fixedId)` with a direct builder call + module-scope instance. This is the step that deletes the most ceremony. Each builder also drops its `whenDisposed` field (aligns with Phase 1 contract change).
 
-- [x] **3.1** `apps/fuji/src/lib/client.ts` — export `buildFuji(id)`; replace `fuji.open('epicenter.fuji')` with `buildFuji('epicenter.fuji')`. Drop `whenDisposed` from the bundle. Verify no consumer depends on cache semantics.
-- [x] **3.2** `apps/honeycrisp/src/lib/client.ts` — same pattern.
-- [x] **3.3** `apps/opensidian/src/lib/client.ts` — same.
-- [x] **3.4** `apps/zhongwen/src/lib/client.ts` — same.
-- [x] **3.5** `apps/whispering/src/lib/client.ts` — same.
-- [x] **3.6** `apps/tab-manager/src/lib/client.ts` — same.
-- [x] **3.7** `apps/breddit/src/lib/workspace/ingest/reddit/workspace.ts` — same.
-- [x] **3.8** `packages/skills/src/index.ts` — same; nested factories (`instructionsDocs`, `referenceDocs`) stay id-keyed but drop `whenDisposed` from their bundles too.
+- [x] **3.1** `apps/fuji/src/lib/client.ts`: export `buildFuji(id)`; replace `fuji.open('epicenter.fuji')` with `buildFuji('epicenter.fuji')`. Drop `whenDisposed` from the bundle. Verify no consumer depends on cache semantics.
+- [x] **3.2** `apps/honeycrisp/src/lib/client.ts`: same pattern.
+- [x] **3.3** `apps/opensidian/src/lib/client.ts`: same.
+- [x] **3.4** `apps/zhongwen/src/lib/client.ts`: same.
+- [x] **3.5** `apps/whispering/src/lib/client.ts`: same.
+- [x] **3.6** `apps/tab-manager/src/lib/client.ts`: same.
+- [x] **3.7** `apps/breddit/src/lib/workspace/ingest/reddit/workspace.ts`: same.
+- [x] **3.8** `packages/skills/src/index.ts`: same; nested factories (`instructionsDocs`, `referenceDocs`) stay id-keyed but drop `whenDisposed` from their bundles too.
 
-### Phase 4 — Tests
+### Phase 4: Tests
 
-- [x] **4.1** `packages/workspace/src/document/define-document.test.ts` — delete every `whenReady: Promise.resolve()` and `whenDisposed: ...` from fixtures. Update tests that specifically exercise `.load()` — either port them to `.open() + await`, or delete if the behavior is trivial. Tests that asserted `close()` returned a settled promise must rewrite to await the attachment-level barrier they actually care about (or drop the assertion if they don't).
-- [x] **4.2** `packages/workspace/src/document/materializer/sqlite/sqlite.test.ts` — remove `whenReady: Promise.resolve()` and any `whenDisposed` from the two fixtures at the user-quoted location.
-- [x] **4.3** Any other test fixture carrying the null-opinion promises — remove.
-- [x] **4.4** Add one test that `defineDocument` compiles + runs with a minimal bundle `{ ydoc, [Symbol.dispose] }` — no `whenReady`, no `whenDisposed`, no anything extra (regression pin for the type changes).
+- [x] **4.1** `packages/workspace/src/document/define-document.test.ts`: delete every `whenReady: Promise.resolve()` and `whenDisposed: ...` from fixtures. Update tests that specifically exercise `.load()`: either port them to `.open() + await`, or delete if the behavior is trivial. Tests that asserted `close()` returned a settled promise must rewrite to await the attachment-level barrier they actually care about (or drop the assertion if they don't).
+- [x] **4.2** `packages/workspace/src/document/materializer/sqlite/sqlite.test.ts`: remove `whenReady: Promise.resolve()` and any `whenDisposed` from the two fixtures at the user-quoted location.
+- [x] **4.3** Any other test fixture carrying the null-opinion promises: remove.
+- [x] **4.4** Add one test that `defineDocument` compiles + runs with a minimal bundle `{ ydoc, [Symbol.dispose] }`: no `whenReady`, no `whenDisposed`, no anything extra (regression pin for the type changes).
 - [x] **4.5** Add a test asserting `close(id)` returns `undefined` (not a promise) and that the cascade runs: construct a bundle whose attachment resolves a sentinel on `ydoc.on('destroy')`, `close()`, and assert the sentinel resolved without awaiting `close()`.
 
-### Phase 5 — Skills + docs
+### Phase 5: Skills + docs
 
 - [x] **5.1** Update `packages/workspace/.claude/skills/workspace-api` (if it documents `whenReady` or `load`) to match new shape.
-- [x] **5.2** Update the `sync-construction-async-property-ui-render-gate-pattern` skill reference if it mentions `whenReady` as a framework contract — it's now a convention.
+- [x] **5.2** Update the `sync-construction-async-property-ui-render-gate-pattern` skill reference if it mentions `whenReady` as a framework contract: it's now a convention.
 - [x] **5.3** Update any `AGENTS.md` / `CLAUDE.md` sections in `packages/workspace/` and root that describe bundle shape.
 
 ## Edge Cases
@@ -302,7 +302,7 @@ Replace `defineDocument(build).open(fixedId)` with a direct builder call + modul
 2. Consumer reads immediately, gets empty state.
 3. Consumer shows empty UI or returns empty data.
 
-**Resolution**: this is exactly the hazard `factory.load()` previously papered over. The fix is cultural — builders that compose async gates should name them `whenReady` by convention; reviewers catch missing awaits. Optionally add a lint / ESLint rule that flags `docs.open(...)` without a subsequent `whenReady` await in imperative contexts. See Open Questions.
+**Resolution**: this is exactly the hazard `factory.load()` previously papered over. The fix is cultural: builders that compose async gates should name them `whenReady` by convention; reviewers catch missing awaits. Optionally add a lint / ESLint rule that flags `docs.open(...)` without a subsequent `whenReady` await in imperative contexts. See Open Questions.
 
 ### Concurrent `close(id)` during in-flight `await h.whenReady`
 
@@ -329,7 +329,7 @@ Replace `defineDocument(build).open(fixedId)` with a direct builder call + modul
 
 ### Close-then-reopen race on async attachment teardown
 
-1. `docs.close(id)` fires — `ydoc.destroy()` runs; IDB attachment's `on('destroy')` handler kicks off `await idb.destroy()` in the background.
+1. `docs.close(id)` fires: `ydoc.destroy()` runs; IDB attachment's `on('destroy')` handler kicks off `await idb.destroy()` in the background.
 2. Test code immediately calls `docs.open(id)` again.
 3. New `Y.Doc` constructs; new `IndexeddbPersistence` opens the same DB while the old one's `close()` is still in flight.
 4. Potential race on IndexedDB connection handles.
@@ -342,7 +342,7 @@ Replace `defineDocument(build).open(fixedId)` with a direct builder call + modul
 2. Returns immediately. Async teardown runs in background.
 3. Handler navigates to login page.
 
-**Resolution**: this is the intended behavior and it's fine. Page navigation either reloads (GC wipes everything) or continues in SPA (background teardown completes). Callers that need a flush barrier before navigating (e.g., Node CLI exits) must `await h.idb.whenDisposed` for each doc they care about before calling `closeAll()` — or before exiting the process.
+**Resolution**: this is the intended behavior and it's fine. Page navigation either reloads (GC wipes everything) or continues in SPA (background teardown completes). Callers that need a flush barrier before navigating (e.g., Node CLI exits) must `await h.idb.whenDisposed` for each doc they care about before calling `closeAll()`: or before exiting the process.
 
 ## Open Questions
 
@@ -373,7 +373,7 @@ Replace `defineDocument(build).open(fixedId)` with a direct builder call + modul
 - [x] `DocumentFactory` no longer exposes `load()`.
 - [x] `DocumentFactory.close(id)` and `closeAll()` have return type `void` (not `Promise<void>`).
 - [x] Zero occurrences of `whenReady: Promise.resolve()` remain across the repo. (Exception: three regression-pin test fixtures in `define-document.test.ts` under `describe('whenReady as builder convention', ...)` intentionally keep this shape to assert the primitive accepts pre-resolved builder conventions.)
-- [x] Zero occurrences of `whenDisposed:` on bundle-return-shape objects. Attachment-level `whenDisposed` (on `attach-*` return values) remains — those live one layer down.
+- [x] Zero occurrences of `whenDisposed:` on bundle-return-shape objects. Attachment-level `whenDisposed` (on `attach-*` return values) remains: those live one layer down.
 - [x] Zero `await docs.close(` / `await docs.closeAll(` patterns outside of legacy ports; call sites that needed a flush barrier use explicit `await h.idb.whenDisposed` (or equivalent attachment field).
 - [x] All 8 singleton call sites use a direct builder call, not `defineDocument(...).open(fixedId)`.
 - [x] All 5 id-keyed call sites compile and work with `.open(id) + await h.whenReady`.
@@ -384,19 +384,19 @@ Replace `defineDocument(build).open(fixedId)` with a direct builder call + modul
 
 ## References
 
-- `packages/workspace/src/document/define-document.ts` — primary edit target.
-- `packages/workspace/src/document/define-document.test.ts` — test fixtures to strip.
-- `packages/workspace/src/document/materializer/sqlite/sqlite.test.ts` — two more fixtures to strip.
-- `packages/workspace/src/document/materializer/markdown/materializer.ts:132` — example builder with real readiness composition.
-- `packages/workspace/src/document/materializer/sqlite/sqlite.ts:49` — same.
-- Recent commit `5a6b3536a refactor(workspace): make DocumentBundle.whenReady required` — the immediate predecessor. This spec inverts that direction. Commit message there explains the original motivation; the argument now is that the framework should not have an opinion on readiness at all.
-- `.claude/skills/sync-construction-async-property-ui-render-gate-pattern` — the general pattern that made `whenReady` look necessary; relevant for framing the change.
-- Call sites enumerated in Research Findings — all 13 production `defineDocument` usages plus `.load()` call sites need touches.
+- `packages/workspace/src/document/define-document.ts`: primary edit target.
+- `packages/workspace/src/document/define-document.test.ts`: test fixtures to strip.
+- `packages/workspace/src/document/materializer/sqlite/sqlite.test.ts`: two more fixtures to strip.
+- `packages/workspace/src/document/materializer/markdown/materializer.ts:132`: example builder with real readiness composition.
+- `packages/workspace/src/document/materializer/sqlite/sqlite.ts:49`: same.
+- Recent commit `5a6b3536a refactor(workspace): make DocumentBundle.whenReady required`: the immediate predecessor. This spec inverts that direction. Commit message there explains the original motivation; the argument now is that the framework should not have an opinion on readiness at all.
+- `.claude/skills/sync-construction-async-property-ui-render-gate-pattern`: the general pattern that made `whenReady` look necessary; relevant for framing the change.
+- Call sites enumerated in Research Findings: all 13 production `defineDocument` usages plus `.load()` call sites need touches.
 
 ## Execution Log
 
-- Phase 1 — `8588985a7` — `DocumentBundle` reduced; `close/closeAll` sync
-- Phase 2 — `85742078f` — id-keyed bundles drop `whenDisposed`; `.load()` callers rewritten
-- Phase 3 — `978957d9d` — 8 singletons exit `defineDocument`
-- Phase 4 — `6ba6c34d1` — test fixtures ported; regression pins added
-- Phase 5 — `30309b69d` — skills/docs/stragglers reconciled
+- Phase 1: `8588985a7`: `DocumentBundle` reduced; `close/closeAll` sync
+- Phase 2: `85742078f`: id-keyed bundles drop `whenDisposed`; `.load()` callers rewritten
+- Phase 3: `978957d9d`: 8 singletons exit `defineDocument`
+- Phase 4: `6ba6c34d1`: test fixtures ported; regression pins added
+- Phase 5: `30309b69d`: skills/docs/stragglers reconciled

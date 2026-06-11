@@ -8,7 +8,7 @@ I was setting up `@better-auth/cli` in a Cloudflare Workers project and hit an i
 
 The obvious fix is a symlink: `ln -s .dev.vars .env`. Done, right?
 
-Wrong. Let me tell you why that's a bad idea — and what to do instead.
+Wrong. Let me tell you why that's a bad idea, and what to do instead.
 
 ## The Symlink Trap
 
@@ -16,7 +16,7 @@ A symlink looks like a solution because it makes both tools happy in the moment.
 
 **On macOS and Linux**, a symlink is a special filesystem entry that transparently redirects reads. Fine.
 
-**On Windows**, git stores symlinks as plain text files containing the target path — literally the string `.dev.vars` written into a file called `.env`. When a Windows dev clones your repo, they get a text file instead of a working symlink. Their tools break. They spend an hour debugging something that has nothing to do with what they're trying to do.
+**On Windows**, git stores symlinks as plain text files containing the target path: literally the string `.dev.vars` written into a file called `.env`. When a Windows dev clones your repo, they get a text file instead of a working symlink. Their tools break. They spend an hour debugging something that has nothing to do with what they're trying to do.
 
 Even if you gitignore both files (which you should, since they contain secrets), the symlink itself can end up in the repo accidentally. And even when it doesn't, you've created something conceptually weird: two files that are "the same thing." When a new person looks at the project, they see `.env` and `.dev.vars` and wonder what's different about them. There's nothing different. That's the whole problem.
 
@@ -41,7 +41,7 @@ Run `bun run auth:generate` and bun loads `.dev.vars` into `process.env` before 
 
 The intent is also explicit now. Anyone reading `package.json` can see exactly where the env vars come from. It's not hidden in a filesystem relationship between two files.
 
-## But Wait — What If the Env Vars Are Missing?
+## But Wait: What If the Env Vars Are Missing?
 
 Here's where this gets interesting. When the CLI parses `src/auth.ts` to understand your schema, it actually executes that file. That means your auth config runs at codegen time, not just at server startup. If `DATABASE_URL` is missing, you get something like:
 
@@ -112,11 +112,11 @@ export function createAuth(env: AuthEnv) {
 }
 ```
 
-`sharedAuthConfig` lives in one place and contains everything that affects the database schema — plugins, base path, feature flags. The CLI entry point and the runtime entry point both spread it and then add their own env-specific bits.
+`sharedAuthConfig` lives in one place and contains everything that affects the database schema: plugins, base path, feature flags. The CLI entry point and the runtime entry point both spread it and then add their own env-specific bits.
 
 This matters because the CLI generates migrations based on your schema. If the CLI's config and the runtime's config ever diverge, your migrations won't match your actual tables. By sharing one source of truth, that problem can't happen.
 
-One recent simplification: since March 2025, `import { env } from "cloudflare:workers"` gives you module-level access to bindings. The runtime entry point can now be a top-level singleton (`export const auth = createAuth(env)`) instead of a per-request factory. The `--env-file` pattern and arktype validation for the CLI entry point are unchanged — the CLI still runs in Node/Bun, not Workers.
+One recent simplification: since March 2025, `import { env } from "cloudflare:workers"` gives you module-level access to bindings. The runtime entry point can now be a top-level singleton (`export const auth = createAuth(env)`) instead of a per-request factory. The `--env-file` pattern and arktype validation for the CLI entry point are unchanged. The CLI still runs in Node/Bun, not Workers.
 
 Call it the **Split Entry Point Pattern**: one shared config for schema-affecting options, two entry points for the execution context.
 
@@ -160,7 +160,7 @@ ln -s .dev.vars .env
 ```
 
 ```ts
-// auth.ts — validates env before anything else runs
+// auth.ts: validates env before anything else runs
 const CliEnv = type({
   DATABASE_URL: 'string',
   BETTER_AUTH_SECRET: 'string',
@@ -181,13 +181,13 @@ if (env instanceof type.errors) {
 
 ## When Symlinks Are Fine
 
-Symlinks have legitimate uses — pointing a `node_modules/.bin` entry at a script, aliasing a build output. The problem is using them to paper over a naming mismatch between tools. That's a convention difference, and the right place to resolve convention differences is in your scripts, not in your filesystem.
+Symlinks have legitimate uses: pointing a `node_modules/.bin` entry at a script, aliasing a build output. The problem is using them to paper over a naming mismatch between tools. That's a convention difference, and the right place to resolve convention differences is in your scripts, not in your filesystem.
 
 If you're on a project where everyone is on macOS or Linux and symlinks always work, the symlink approach isn't going to break anything. But it's still solving the wrong problem in the wrong place.
 
 ---
 
-**The Golden Rule**: Name the env file in your scripts, not in your filesystem. If two tools disagree on where to find secrets, teach one tool where to look — don't create a filesystem relationship that silently breaks on other platforms.
+**The Golden Rule**: Name the env file in your scripts, not in your filesystem. If two tools disagree on where to find secrets, teach one tool where to look: don't create a filesystem relationship that silently breaks on other platforms.
 
 ---
 

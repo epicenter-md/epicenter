@@ -28,15 +28,15 @@ tripwire, browser reload-on-change) is one helper or one inline subscription.
 ## Execute the waves in order
 
 The spec contains six waves. Each wave is its own commit. Do not batch waves.
-Order matters: wave 3 needs wave 1's helper; waves 5 and 6 need waves 1–4 done.
+Order matters: wave 3 needs wave 1's helper; waves 5 and 6 need waves 1-4 done.
 
 ```txt
-WAVE 1 — Move requireSignedIn to @epicenter/auth
-WAVE 2 — createMachineAuthClient throws on null session
-WAVE 3 — Daemons/scripts use requireSignedIn
-WAVE 4 — getKeys → encryptionKeys in attachEncryption + all callers
-WAVE 5 — Inline auth lifecycle in opensidian/tab-manager; decouple registerDevice
-WAVE 6 — Delete @epicenter/auth-workspace; update docs
+WAVE 1: Move requireSignedIn to @epicenter/auth
+WAVE 2: createMachineAuthClient throws on null session
+WAVE 3: Daemons/scripts use requireSignedIn
+WAVE 4: getKeys → encryptionKeys in attachEncryption + all callers
+WAVE 5: Inline auth lifecycle in opensidian/tab-manager; decouple registerDevice
+WAVE 6: Delete @epicenter/auth-workspace; update docs
 ```
 
 For each wave:
@@ -102,7 +102,7 @@ After wave 6:
 
 ## On grilling
 
-If a question in the spec is genuinely ambiguous, **stop and ask** — do not
+If a question in the spec is genuinely ambiguous, **stop and ask**: do not
 guess. The spec was stress-tested by a grilling pass before handoff;
 remaining ambiguities are signals the design is incomplete, not invitations
 to improvise.

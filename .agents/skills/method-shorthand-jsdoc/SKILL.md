@@ -227,7 +227,7 @@ Method shorthand is the only approach that preserves JSDoc AND allows methods to
 
 ## Where This Fits in the Factory Function Anatomy
 
-Factory functions follow a four-zone internal shape: immutable state → mutable state → private helpers → return object. Method shorthand lives in the return object (zone 4)—the public API.
+Factory functions follow a four-zone internal shape: immutable state → mutable state → private helpers → return object. Method shorthand lives in the return object (zone 4): the public API.
 
 The `this.method()` vs direct-call decision depends on which zone the function lives in:
 
@@ -237,7 +237,7 @@ The `this.method()` vs direct-call decision depends on which zone the function l
 | Used by return-object methods AND pre-return init logic | Zone 3 (private helper, standalone function) | Direct call: `helperFn()` |
 | Used during initialization only, not exposed | Zone 3 (private helper) | Direct call: `helperFn()` |
 
-When a helper needs to be in zone 3, its JSDoc won't be visible to consumers—but that's correct, because it's a private implementation detail. Only zone 4 methods need consumer-facing JSDoc.
+When a helper needs to be in zone 3, its JSDoc won't be visible to consumers; that's correct, because it's a private implementation detail. Only zone 4 methods need consumer-facing JSDoc.
 
 See [Closures Are Better Privacy Than Keywords](../../docs/articles/closures-are-better-privacy-than-keywords.md) for the full factory function anatomy.
 

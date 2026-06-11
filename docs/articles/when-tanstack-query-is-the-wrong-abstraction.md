@@ -4,7 +4,7 @@
 
 ## When TanStack Query is the wrong abstraction
 
-TanStack Query solves a real problem: fetching remote data, caching it locally, and keeping it fresh. But when the data isn't remote, you're paying for an abstraction that does nothing useful. Our browser extension popup was using TanStack Query to read `browser.tabs.query({})`—an API call that takes less than a millisecond, returns data that's already local, and has a built-in push notification system for changes. We were caching data that didn't need caching, then spending more code invalidating that cache than it would have taken to just read the value.
+TanStack Query solves a real problem: fetching remote data, caching it locally, and keeping it fresh. But when the data isn't remote, you're paying for an abstraction that does nothing useful. Our browser extension popup was using TanStack Query to read `browser.tabs.query({})`: an API call that takes less than a millisecond, returns data that's already local, and has a built-in push notification system for changes. We were caching data that didn't need caching, then spending more code invalidating that cache than it would have taken to just read the value.
 
 [PR #1337](https://github.com/EpicenterHQ/epicenter/pull/1337) replaced the entire query layer with a single Svelte 5 `$state` class. Net result: ~750 lines deleted, ~457 lines added, TanStack Query dependency removed entirely from the popup.
 
@@ -31,7 +31,7 @@ TanStack re-fetches from browser API
 Component re-renders
 ```
 
-The left side has two extra hops. Every tab event—created, closed, moved, updated, activated, attached, detached—went through an invalidation layer that threw away all cached data and re-fetched everything from scratch. A single tab title change triggered a full `browser.tabs.query({})` refetch of every tab across every window.
+The left side has two extra hops. Every tab event. Created, closed, moved, updated, activated, attached, detached. Went through an invalidation layer that threw away all cached data and re-fetched everything from scratch. A single tab title change triggered a full `browser.tabs.query({})` refetch of every tab across every window.
 
 ## What the Code Looked Like
 
@@ -158,9 +158,9 @@ To this:
 
 ## A Note on `createSubscriber`
 
-Svelte 5 has `createSubscriber` from `svelte/reactivity`, which bridges external push events into Svelte's reactive graph. You might think it's needed here—browser events are external, after all. It's not. `createSubscriber` solves a different problem: when the value is computed on-read from an external source with no stored state (think `navigator.onLine` or `window.matchMedia`). When browser event listeners directly mutate `$state` arrays, the `$state` proxy already handles reactivity. Adding `createSubscriber` on top would be redundant. For the full decision framework, see [`$state` vs `createSubscriber`: Who Owns the Reactivity?](./state-vs-createsubscriber-who-owns-reactivity.md).
+Svelte 5 has `createSubscriber` from `svelte/reactivity`, which bridges external push events into Svelte's reactive graph. You might think it's needed here. Browser events are external, after all. It's not. `createSubscriber` solves a different problem: when the value is computed on-read from an external source with no stored state (think `navigator.onLine` or `window.matchMedia`). When browser event listeners directly mutate `$state` arrays, the `$state` proxy already handles reactivity. Adding `createSubscriber` on top would be redundant. For the full decision framework, see [`$state` vs `createSubscriber`: Who Owns the Reactivity?](./state-vs-createsubscriber-who-owns-reactivity.md).
 
-For a walkthrough of the actual migration—what the component diffs looked like and why nine mutations became one import—see [Nine Mutations Became One Import](./migrating-tanstack-query-to-svelte-state-and-observers.md).
+For a walkthrough of the actual migration. What the component diffs looked like and why nine mutations became one import. See [Nine Mutations Became One Import](./migrating-tanstack-query-to-svelte-state-and-observers.md).
 
 ## When TanStack Query Is Right
 

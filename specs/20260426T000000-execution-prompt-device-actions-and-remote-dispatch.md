@@ -1,4 +1,4 @@
-# Execution prompt — device actions + remote dispatch (PR-D + PR-E, collapsed)
+# Execution prompt: device actions + remote dispatch (PR-D + PR-E, collapsed)
 
 **Status:** queued
 **For an implementer with no prior conversation context.** Self-contained brief.
@@ -11,8 +11,8 @@
 **Branch:** create a fresh branch off main. Suggested name: `device-actions-and-remote-dispatch`.
 
 **Read these specs first:**
-- `specs/20260425T210000-remote-action-dispatch.md` — the design, especially the "Final design (post-collapse pass)" section at the top. The body below is historical v2 context; the section at top is the source of truth.
-- `specs/20260425T000000-device-actions-via-awareness.md` — original PR-D/PR-E architecture. Awareness-publishing piece is still load-bearing; the call-side `invoke()` proposal is superseded by the spec above.
+- `specs/20260425T210000-remote-action-dispatch.md`: the design, especially the "Final design (post-collapse pass)" section at the top. The body below is historical v2 context; the section at top is the source of truth.
+- `specs/20260425T000000-device-actions-via-awareness.md`: original PR-D/PR-E architecture. Awareness-publishing piece is still load-bearing; the call-side `invoke()` proposal is superseded by the spec above.
 
 ---
 
@@ -31,7 +31,7 @@ Plus an opportunistic collapse to `attachSync`'s API (`actions:` data instead of
 
 ## The eight commits
 
-### Commit 1 — `feat(workspace): SimpleStorage adapter + getOrCreateDeviceId helper`
+### Commit 1: `feat(workspace): SimpleStorage adapter + getOrCreateDeviceId helper`
 
 Add the per-installation deviceId convention.
 
@@ -58,15 +58,15 @@ export function getOrCreateDeviceId(storage: SimpleStorage): string {
 }
 ```
 
-**Export from barrel:** `packages/workspace/src/index.ts` — add `getOrCreateDeviceId` and `type SimpleStorage`.
+**Export from barrel:** `packages/workspace/src/index.ts`: add `getOrCreateDeviceId` and `type SimpleStorage`.
 
-**Tests:** `packages/workspace/src/shared/device-id.test.ts` — read-existing returns same value; read-empty creates and persists; second call returns the persisted value.
+**Tests:** `packages/workspace/src/shared/device-id.test.ts`: read-existing returns same value; read-empty creates and persists; second call returns the persisted value.
 
 No app consumers yet.
 
 ---
 
-### Commit 2 — `feat(workspace): standardAwarenessDefs + actionManifest helper`
+### Commit 2: `feat(workspace): standardAwarenessDefs + actionManifest helper`
 
 Add the publishing-side primitives.
 
@@ -136,13 +136,13 @@ function walk(node: Actions, path: string[], out: ActionManifest): void {
 
 **Exports:** add `standardAwarenessDefs`, `actionManifest`, `type ActionManifest`, `Device`, `Platform` to the workspace barrel.
 
-**Tests:** `action-manifest.test.ts` — covers nested trees, omits non-action nodes, JSON Schema is included when `input` is set, handles no-input actions.
+**Tests:** `action-manifest.test.ts`: covers nested trees, omits non-action nodes, JSON Schema is included when `input` is set, handles no-input actions.
 
 No app consumers yet.
 
 ---
 
-### Commit 3 — `feat(workspace): peer<T>() — typed remote-action proxy`
+### Commit 3: `feat(workspace): peer<T>(): typed remote-action proxy`
 
 The call side. Replace `packages/workspace/src/rpc/remote-actions.ts` with the new API.
 
@@ -204,7 +204,7 @@ export function peer<TActions extends Actions>(
     }
   };
   workspace.awareness.raw.on('change', onAwarenessChange);
-  // No explicit dispose — the workspace's sync.whenDisposed will free the awareness instance, which drops the listener naturally.
+  // No explicit dispose: the workspace's sync.whenDisposed will free the awareness instance, which drops the listener naturally.
 
   return buildProxy<TActions>([], async (path, input, options) => {
     const resolved = resolvePeer(workspace.awareness, deviceId);
@@ -243,7 +243,7 @@ function buildProxy<T>(path: string[], send: Sender): T {
 }
 ```
 
-**Delete:** `packages/workspace/src/rpc/remote-actions.ts` — folded into `peer.ts` (the `buildProxy` internal). Move the small set of `remote-actions.test.ts` cases that still apply (proxy shape, normalize behaviors) into `peer.test.ts`.
+**Delete:** `packages/workspace/src/rpc/remote-actions.ts`: folded into `peer.ts` (the `buildProxy` internal). Move the small set of `remote-actions.test.ts` cases that still apply (proxy shape, normalize behaviors) into `peer.test.ts`.
 
 **Update barrel:** `packages/workspace/src/index.ts`
 - **Remove** `createRemoteActions`, `RemoteSend` exports.
@@ -260,13 +260,13 @@ No app consumers yet.
 
 ---
 
-### Commit 4 — `refactor(workspace): attachSync takes actions: data, drops dispatch:`
+### Commit 4: `refactor(workspace): attachSync takes actions: data, drops dispatch:`
 
 Replace the `dispatch:` callback in `attachSync` config with `actions:` data.
 
 **Edit:** `packages/workspace/src/document/attach-sync.ts`
 - Remove `dispatch?: RpcDispatch` from `SyncAttachmentConfig`.
-- Add `actions?: Actions` (optional — workspaces without actions still work; inbound RPC returns `RpcError.ActionNotFound`).
+- Add `actions?: Actions` (optional: workspaces without actions still work; inbound RPC returns `RpcError.ActionNotFound`).
 - Inside `handleRpcRequest`, replace `const dispatch = config.dispatch; const result = await dispatch(...)` with the inline equivalent: walk `config.actions` via `dispatchAction`, normalize via `invokeNormalized`.
 - Remove `RpcDispatch` from public exports.
 
@@ -291,7 +291,7 @@ Drop the now-unused `dispatchAction` import from each app file.
 
 ---
 
-### Commit 5 — `feat(apps): publish device + offers from each app`
+### Commit 5: `feat(apps): publish device + offers from each app`
 
 Wire publishing into each app.
 
@@ -335,7 +335,7 @@ Wire publishing into each app.
 
 ---
 
-### Commit 6 — `refactor(cli): collapse find-peer to exact deviceId match`
+### Commit 6: `refactor(cli): collapse find-peer to exact deviceId match`
 
 Drop the fuzzy peer-matching DSL.
 
@@ -347,18 +347,18 @@ Drop the fuzzy peer-matching DSL.
 
 **Edit:** `packages/cli/src/commands/run.ts`
 - The `--peer` flag parser: drop the `device.<field>=<value>` form. `--peer <deviceId>` only.
-- Drop the dot-prefix `<deviceId>.<action>` resolution if it was implemented (per spec, it should not have been — verify).
+- Drop the dot-prefix `<deviceId>.<action>` resolution if it was implemented (per spec, it should not have been: verify).
 
 **Edit:** `packages/cli/src/commands/peers.ts`
 - Verify the `epicenter peers` table format puts `DEVICE ID` as the first or second column (so copy-paste discovery works). Tweak if buried.
 
-**Tests:** update `find-peer.test.ts` — drop fuzzy cases, add first-match-wins cases.
+**Tests:** update `find-peer.test.ts`: drop fuzzy cases, add first-match-wins cases.
 
 **Verify:** `bun test packages/cli` green; manual `epicenter peers` followed by `epicenter run --peer <id> tabs.close --json '...'` against a running second instance.
 
 ---
 
-### Commit 7 — `test(workspace): publish/discover/call e2e`
+### Commit 7: `test(workspace): publish/discover/call e2e`
 
 End-to-end test using two in-process workspaces sharing a Yjs awareness instance.
 
@@ -375,7 +375,7 @@ Coverage:
 
 ---
 
-### Commit 8 — `docs(specs): mark device-actions and remote-action-dispatch shipped`
+### Commit 8: `docs(specs): mark device-actions and remote-action-dispatch shipped`
 
 - `specs/20260425T210000-remote-action-dispatch.md`: change status to `shipped`. The "Final design" section at the top is already the source of truth.
 - `specs/20260425T000000-device-actions-via-awareness.md`: change status to `shipped` (publishing convention is what landed; the `invoke()` shape was superseded and that's documented).
@@ -385,7 +385,7 @@ Coverage:
 
 ## Verification before opening the PR
 
-- [ ] `bun test` — all packages, all apps, green.
+- [ ] `bun test`: all packages, all apps, green.
 - [ ] `bunx tsc --noEmit` across all packages and apps clean.
 - [ ] Manual: open Fuji in two browser tabs (same install → same deviceId); open Honeycrisp in a third tab. Confirm `awareness.peers()` shows three entries with two distinct deviceIds.
 - [ ] Manual: from a CLI script, `peer<HoneycrispActions>(fujiWorkspace, honeycrispDeviceId).<some-action>({...})` succeeds.
@@ -396,16 +396,16 @@ Coverage:
 
 ## Rollback notes
 
-Each commit is independently revertible. Highest-risk commit is #4 (collapsing `dispatch:` → `actions:` on `attachSync`) because it touches every app. If type errors surface across apps that aren't mechanical, revert #4 alone — commits 1, 2, 3, 5, 6 are independently safe (1, 2, 3 add unused exports; 5 publishes nothing anyone reads yet; 6 cleanups behind unused features).
+Each commit is independently revertible. Highest-risk commit is #4 (collapsing `dispatch:` → `actions:` on `attachSync`) because it touches every app. If type errors surface across apps that aren't mechanical, revert #4 alone: commits 1, 2, 3, 5, 6 are independently safe (1, 2, 3 add unused exports; 5 publishes nothing anyone reads yet; 6 cleanups behind unused features).
 
 ---
 
 ## Out of scope (do not add to this PR)
 
-- **Per-action authorization gates** — the workspace room is the auth boundary in v1. Re-litigate when a real consumer asks.
+- **Per-action authorization gates**: the workspace room is the auth boundary in v1. Re-litigate when a real consumer asks.
 - **Fan-out** (`peer.all<T>(...)`).
-- **`{ clientId }` direct addressing** — defer until needed.
-- **Per-action timeout in metadata** — caller passes `{ timeout }` per call.
-- **Lazy schema fetch** — full schema in awareness for v1.
-- **HTTP fallback transport / `createRemoteProxy(send)` public primitive** — the internal `buildProxy(send)` helper inside `peer.ts` can be promoted to public if a real consumer asks.
-- **Auth-core unit tests** — separate PR (the auth-core spec's open follow-up).
+- **`{ clientId }` direct addressing**: defer until needed.
+- **Per-action timeout in metadata**: caller passes `{ timeout }` per call.
+- **Lazy schema fetch**: full schema in awareness for v1.
+- **HTTP fallback transport / `createRemoteProxy(send)` public primitive**: the internal `buildProxy(send)` helper inside `peer.ts` can be promoted to public if a real consumer asks.
+- **Auth-core unit tests**: separate PR (the auth-core spec's open follow-up).

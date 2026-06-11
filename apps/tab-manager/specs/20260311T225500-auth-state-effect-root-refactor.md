@@ -6,7 +6,7 @@
 
 ## Overview
 
-Replace the two "call me inside $effect" methods (`reactToTokenCleared`, `reactToTokenSet`) in `auth.svelte.ts` with internal `$effect.root()` effects that the auth state module manages itself. Consumers no longer participate in the auth state machine—they subscribe to events.
+Replace the two "call me inside $effect" methods (`reactToTokenCleared`, `reactToTokenSet`) in `auth.svelte.ts` with internal `$effect.root()` effects that the auth state module manages itself. Consumers no longer participate in the auth state machine. They subscribe to events.
 
 ## Motivation
 
@@ -45,7 +45,7 @@ This creates problems:
 1. **Implicit contract**: Nothing in the type signature enforces that these must be called inside `$effect`. The JSDoc says "Call this inside a $effect" but that's a comment, not a guarantee. If someone calls them from a plain function, they silently do nothing.
 2. **Leaky abstraction**: The auth module's internal state transitions (signed-in → signed-out, signed-out → signed-in) are exposed as public API. The consumer has to understand the auth state machine to use it correctly.
 3. **Coupled concerns**: `reconnectSync()` (a workspace concern) is tangled into auth's reactive lifecycle via a boolean return value.
-4. **Fragile**: Both methods run inside a single `$effect` block. Svelte tracks all reactive reads in the block as dependencies. If either method reads a new `$state` in the future, the entire effect re-runs for both conditions—potentially causing unexpected behavior.
+4. **Fragile**: Both methods run inside a single `$effect` block. Svelte tracks all reactive reads in the block as dependencies. If either method reads a new `$state` in the future, the entire effect re-runs for both conditions. Potentially causing unexpected behavior.
 
 ### Desired State
 
@@ -71,7 +71,7 @@ Auth state manages its own reactive lifecycle internally. Consumers subscribe to
 |---|---|---|
 | Effect scope mechanism | `$effect.root()` inside `createAuthState()` | Module-level singleton has no component context; `$effect.root()` is the Svelte 5 API for exactly this case |
 | Cleanup of root effects | None (intentional) | Singleton lives for the JS context lifetime; cleanup is the tab/window closing. See existing article: `your-spa-singleton-doesnt-need-effect-cleanup.md` |
-| External sign-in notification | `onExternalSignIn(callback)` returning unsubscribe | Clean separation—auth manages state, consumer decides what to do about it (e.g. reconnect sync) |
+| External sign-in notification | `onExternalSignIn(callback)` returning unsubscribe | Clean separation. Auth manages state, consumer decides what to do about it (e.g. reconnect sync) |
 | External sign-out notification | No separate callback | Token cleared → phase goes to signed-out. Consumers already read `authState.status` reactively. No callback needed unless a specific side effect is required |
 | Callback invocation safety | `untrack()` around callback execution | Prevents callbacks from accidentally creating reactive dependencies inside the effect body |
 
@@ -139,7 +139,7 @@ The two effects have mutually exclusive activation conditions based on token pre
 - Token cleared fires when `!authToken.current` (token absent) AND `phase.status === 'signed-in'`
 - Token set fires when `authToken.current` (token present) AND `phase.status === 'signed-out'`
 
-If effect 1 sets phase to `signed-out`, effect 2 would need a truthy token to fire—but effect 1 only fires when token is falsy. If effect 2 sets phase to `signed-in`, effect 1 would need a falsy token—but effect 2 only fires when token is truthy. They can never trigger each other.
+If effect 1 sets phase to `signed-out`, effect 2 would need a truthy token to fire. But effect 1 only fires when token is falsy. If effect 2 sets phase to `signed-in`, effect 1 would need a falsy token. But effect 2 only fires when token is truthy. They can never trigger each other.
 
 ### No race with checkSession()
 
@@ -147,11 +147,11 @@ If effect 1 sets phase to `signed-out`, effect 2 would need a truthy token to fi
 
 ### No race with signIn()/signUp()/signOut()
 
-These methods set phase to `'signing-in'` or `'signing-out'` during their operation. Neither effect fires during these transitional states—they only match `'signed-in'` and `'signed-out'`. Once the method completes and sets the final phase, the effects align with the token state at that moment.
+These methods set phase to `'signing-in'` or `'signing-out'` during their operation. Neither effect fires during these transitional states. They only match `'signed-in'` and `'signed-out'`. Once the method completes and sets the final phase, the effects align with the token state at that moment.
 
 ### No accidental dependencies from callbacks
 
-`reconnectSync()` is `workspaceClient.extensions.sync.reconnect()`—a one-liner that reads no reactive state. However, future callbacks might read `$state` values. Wrapping callback invocation in `untrack()` prevents any callback from accidentally becoming a dependency of the effect:
+`reconnectSync()` is `workspaceClient.extensions.sync.reconnect()`: a one-liner that reads no reactive state. However, future callbacks might read `$state` values. Wrapping callback invocation in `untrack()` prevents any callback from accidentally becoming a dependency of the effect:
 
 ```typescript
 $effect(() => {
@@ -168,11 +168,11 @@ This is a defensive measure. Current consumers don't need it, but it prevents a 
 
 ### No memory leak
 
-`$effect.root()` returns a cleanup function, but we intentionally don't call it. The auth state singleton lives for the entire JS context (browser extension sidepanel). When the context dies, everything—effects, listeners, state—is garbage collected together. This matches the existing pattern in `createStorageState`, which uses `item.watch()` without cleanup.
+`$effect.root()` returns a cleanup function, but we intentionally don't call it. The auth state singleton lives for the entire JS context (browser extension sidepanel). When the context dies, everything is garbage collected together: effects, listeners, and state. This matches the existing pattern in `createStorageState`, which uses `item.watch()` without cleanup.
 
 ### No cleanup concern for listener Set
 
-`externalSignInListeners` is a `Set<() => void>`. Subscribers call the returned unsubscribe function in their `onMount` cleanup. If they don't (e.g. another module-level singleton subscribes permanently), that's also fine—the Set lives as long as the auth state, which lives as long as the JS context.
+`externalSignInListeners` is a `Set<() => void>`. Subscribers call the returned unsubscribe function in their `onMount` cleanup. If they don't (e.g. another module-level singleton subscribes permanently), that's also fine. The Set lives as long as the auth state, which lives as long as the JS context.
 
 ## Implementation Plan
 
@@ -213,7 +213,7 @@ This is the same behavior as the current implementation. The conditions naturall
 3. Existing session is still valid; `authToken` and `authUser` unchanged
 4. Next API call uses the new client with the existing token
 
-No impact on the refactored code—`$derived` on `client` is unchanged.
+No impact on the refactored code: `$derived` on `client` is unchanged.
 
 ## Success Criteria
 
@@ -225,11 +225,11 @@ No impact on the refactored code—`$derived` on `client` is unchanged.
 
 ## References
 
-- `apps/tab-manager/src/lib/state/auth.svelte.ts` — The file being refactored
-- `apps/tab-manager/src/lib/state/storage-state.svelte.ts` — Underlying reactive storage wrapper (unchanged)
-- `apps/tab-manager/src/entrypoints/sidepanel/App.svelte` — Sole consumer of reactToToken* methods
-- `apps/tab-manager/src/lib/workspace.ts` — `reconnectSync()` definition (line 870)
-- `docs/articles/your-spa-singleton-doesnt-need-effect-cleanup.md` — Prior art on singleton lifecycle
+- `apps/tab-manager/src/lib/state/auth.svelte.ts`: The file being refactored
+- `apps/tab-manager/src/lib/state/storage-state.svelte.ts`: Underlying reactive storage wrapper (unchanged)
+- `apps/tab-manager/src/entrypoints/sidepanel/App.svelte`: Sole consumer of reactToToken* methods
+- `apps/tab-manager/src/lib/workspace.ts`: `reconnectSync()` definition (line 870)
+- `docs/articles/your-spa-singleton-doesnt-need-effect-cleanup.md`: Prior art on singleton lifecycle
 
 ## Review
 
@@ -241,8 +241,8 @@ Internalized auth state's reactive lifecycle by replacing the two public `reactT
 
 ### Deviations from Spec
 
-None—implementation matched the spec exactly.
+None. Implementation matched the spec exactly.
 
 ### Follow-up Work
 
-- Manual testing items 3.1–3.5 (sign-in/sign-out flows, cross-context sync) need human verification
+- Manual testing items 3.1-3.5 (sign-in/sign-out flows, cross-context sync) need human verification

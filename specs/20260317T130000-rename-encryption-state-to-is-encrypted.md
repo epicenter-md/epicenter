@@ -2,7 +2,7 @@
 
 ## Problem
 
-After eliminating locked mode, `EncryptionState` is a union of exactly two values: `'plaintext' | 'encrypted'`. This is a boolean in disguise—every usage site checks `=== 'encrypted'` or `=== 'plaintext'`, which is just `true`/`false`.
+After eliminating locked mode, `EncryptionState` is a union of exactly two values: `'plaintext' | 'encrypted'`. This is a boolean in disguise. Every usage site checks `=== 'encrypted'` or `=== 'plaintext'`, which is just `true`/`false`.
 
 The internal state variable `encryptionState` also duplicates the key's presence. After locked mode removal, `encryptionState === 'encrypted'` is always equivalent to `currentKey !== undefined`. The variable is redundant.
 
@@ -35,21 +35,21 @@ workspace.current.encryptionState === 'encrypted'
 ```typescript
 // No type alias needed
 
-// No internal variable — derived from key presence
+// No internal variable: derived from key presence
 
 // Getter
 get isEncrypted() { return currentKey !== undefined; }
 
 // Usage
-if (!currentKey) { /* plaintext path — internal only */ }
+if (!currentKey) { /* plaintext path: internal only */ }
 workspace.current.isEncrypted
 ```
 
-Note: internally, `set()` checks `!currentKey` directly (not `!isEncrypted`) since the getter is on the returned object. The internal branching stays the same—it already checks `currentKey`.
+Note: internally, `set()` checks `!currentKey` directly (not `!isEncrypted`) since the getter is on the returned object. The internal branching stays the same. It already checks `currentKey`.
 
 ## Todo
 
-### packages/workspace — Core rename
+### packages/workspace: Core rename
 
 - [x] In `y-keyvalue-lww-encrypted.ts`:
   - Remove the `EncryptionState` type export (line ~109)
@@ -75,15 +75,15 @@ Note: internally, `set()` checks `!currentKey` directly (not `!isEncrypted`) sin
   - Change `expect(client.encryptionState).toBe('plaintext')` → `expect(client.isEncrypted).toBe(false)`
   - Change `expect(client.encryptionState).toBe('encrypted')` → `expect(client.isEncrypted).toBe(true)`
 
-### apps/ — Consumer updates
+### apps/: Consumer updates
 
 - [x] In `encryption-wiring.svelte.ts`: File no longer exists (removed during locked-mode elimination)
-- [x] Grep for any remaining `encryptionState` or `EncryptionState` references across the entire codebase — confirmed zero
+- [x] Grep for any remaining `encryptionState` or `EncryptionState` references across the entire codebase: confirmed zero
 
 ### Verify
 
-- [x] Run `bun test` in packages/workspace — 490 tests pass
-- [x] Run `bun run typecheck` across the monorepo — zero new type errors (6 pre-existing errors unrelated to this change)
+- [x] Run `bun test` in packages/workspace: 490 tests pass
+- [x] Run `bun run typecheck` across the monorepo: zero new type errors (6 pre-existing errors unrelated to this change)
 - [x] Confirm zero references to `encryptionState` or `EncryptionState` remain in `packages/` and `apps/`
 
 ## Review
@@ -107,5 +107,5 @@ Pure rename + simplification, no behavioral changes.
 
 ### Not changed
 
-- `encryption-wiring.svelte.ts` — already removed during the locked-mode elimination spec.
-- Spec files (`specs/*.md`) — these are historical documentation, not source code.
+- `encryption-wiring.svelte.ts`: already removed during the locked-mode elimination spec.
+- Spec files (`specs/*.md`): these are historical documentation, not source code.

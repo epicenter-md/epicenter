@@ -108,7 +108,7 @@ The codebase already settled on SQLite append-only log (same pattern as the Clou
 CREATE TABLE updates (id INTEGER PRIMARY KEY AUTOINCREMENT, data BLOB NOT NULL)
 ```
 
-Each Y.Doc `updateV2` event is a tiny INSERT. Compaction merges all rows into one via `Y.encodeStateAsUpdateV2` on startup and shutdown. Uses `bun:sqlite`—no external dependencies.
+Each Y.Doc `updateV2` event is a tiny INSERT. Compaction merges all rows into one via `Y.encodeStateAsUpdateV2` on startup and shutdown. Uses `bun:sqlite`: no external dependencies.
 
 ## Design Decisions
 
@@ -199,13 +199,13 @@ Running `bun run apps/runner -- .` in that folder creates two workspace clients,
 
 ### Phase 1: Scaffold `apps/runner/`
 
-- [x] **1.1** Create `apps/runner/package.json` — dependencies: `@epicenter/workspace`, `yjs`
+- [x] **1.1** Create `apps/runner/package.json`: dependencies: `@epicenter/workspace`, `yjs`
 - [x] **1.2** Create `apps/runner/tsconfig.json`
-- [x] **1.3** Create `apps/runner/src/index.ts` — entry point with arg parsing and SIGINT handler
+- [x] **1.3** Create `apps/runner/src/index.ts`: entry point with arg parsing and SIGINT handler
 
 ### Phase 2: Config loading
 
-- [x] **2.1** Create `apps/runner/src/load-config.ts` — load `epicenter.config.ts` from target dir via `Bun.pathToFileURL` + dynamic import (same approach as `packages/cli/src/discovery.ts`)
+- [x] **2.1** Create `apps/runner/src/load-config.ts`: load `epicenter.config.ts` from target dir via `Bun.pathToFileURL` + dynamic import (same approach as `packages/cli/src/discovery.ts`)
 - [x] **2.2** Filter exports: detect `WorkspaceDefinition` (has `id`, lacks `definitions`) and `WorkspaceClient` (has `definitions`)
 - [x] **2.3** Error cases: no config found, no valid exports, duplicate workspace IDs
 
@@ -232,7 +232,7 @@ Running `bun run apps/runner -- .` in that folder creates two workspace clients,
 
 The runner needs authenticated sync against remote servers (e.g. `api.epicenter.so`). The server already has `bearer()` and `jwt()` plugins, and the auth guard supports `?token=` on WebSocket upgrades. What's missing is a way for the headless runner to obtain a token without a browser.
 
-Better Auth has a first-party `deviceAuthorization` plugin implementing RFC 8628 (OAuth 2.0 Device Authorization Grant)—the same flow used by `gh auth login`, `wrangler login`, and every serious CLI tool.
+Better Auth has a first-party `deviceAuthorization` plugin implementing RFC 8628 (OAuth 2.0 Device Authorization Grant): the same flow used by `gh auth login`, `wrangler login`, and every serious CLI tool.
 
 ```
 Runner                           Server                          User's Browser
@@ -258,7 +258,7 @@ Runner                           Server                          User's Browser
   │  Use for WebSocket sync        │                                │
 ```
 
-#### 6.1 — Server: Add `deviceAuthorization` plugin
+#### 6.1: Server: Add `deviceAuthorization` plugin
 
 Surgical change to `apps/api/src/app.ts`:
 
@@ -280,7 +280,7 @@ plugins: [
 - [x] **6.1.1** Add `deviceAuthorization` plugin to `createAuth` in `apps/api/src/app.ts`
 - [x] **6.1.2** Validate the device-flow client ID in `deviceAuthorization`
 
-#### 6.2 — Server: Build `/device` verification page
+#### 6.2: Server: Build `/device` verification page
 
 Simple page where the user enters the code displayed by the runner. Can be a minimal HTML form or part of the existing Epicenter web app.
 
@@ -288,7 +288,7 @@ Simple page where the user enters the code displayed by the runner. Can be a min
 - [x] **6.2.2** Page flow: enter code → approve → confirmation message
 - [x] **6.2.3** User must be logged in to approve (redirect to sign-in if not)
 
-#### 6.3 — Runner: `login` command
+#### 6.3: Runner: `login` command
 
 ```bash
 bun run apps/runner login                         # login to default server
@@ -345,11 +345,11 @@ async function login(serverUrl: string) {
 - [ ] **6.3.3** Add `login` subcommand to entry point arg parsing
 - [ ] **6.3.4** Auto-load stored token on startup (replaces `EPICENTER_TOKEN` env var as primary method, env var remains as override)
 
-#### 6.4 — Runner: Token lifecycle
+#### 6.4: Runner: Token lifecycle
 
 - [ ] **6.4.1** On startup: check for stored token → use it; check for `EPICENTER_TOKEN` env var → use it; neither → warn "not authenticated, sync will fail against auth-required servers"
 - [ ] **6.4.2** Pass token to `createSyncExtension`'s `getToken` callback
-- [ ] **6.4.3** Handle token expiry gracefully—sync extension reconnects automatically, `getToken` is called on each reconnect so a refreshed token is used if available
+- [ ] **6.4.3** Handle token expiry gracefully. Sync extension reconnects automatically, `getToken` is called on each reconnect so a refreshed token is used if available
 - [ ] **6.4.4** Add `logout` subcommand that deletes stored token
 
 #### Scope boundaries
@@ -377,7 +377,7 @@ What's OUT of scope:
 ### Server unreachable
 
 1. Sync extension fails to connect on startup
-2. Persistence still works—offline-first by design
+2. Persistence still works. Offline-first by design
 3. Sync extension reconnects automatically (existing behavior)
 4. Runner stays alive; logs warning
 
@@ -413,7 +413,7 @@ What's OUT of scope:
    - **Recommendation**: Out of scope for v1. Users can wire markdown extensions in the config by exporting pre-wired clients instead of raw definitions.
 
 4. **What happens to `apps/tab-manager-markdown/` after folding?**
-   - Option A: Delete entirely—the runner replaces it
+   - Option A: Delete entirely. The runner replaces it
    - Option B: Keep as a reference/example
    - **Recommendation**: Delete. The runner + a tab-manager `epicenter.config.ts` fully replaces it.
 
@@ -431,22 +431,22 @@ What's OUT of scope:
 
 ## References
 
-- `apps/tab-manager-markdown/src/index.ts` — pattern to generalize
-- `apps/tab-manager-markdown/src/markdown-persistence-extension.ts` — example custom extension
-- `packages/cli/src/discovery.ts` — config loading logic (detection, error messages)
-- `packages/workspace/src/extensions/sync/desktop.ts` — `filesystemPersistence()` and `persistence()` functions
-- `packages/workspace/src/workspace/create-workspace.ts` — `createWorkspace()` and `.withExtension()` chain
-- `packages/workspace/src/workspace/define-workspace.ts` — `defineWorkspace()` and `WorkspaceDefinition` type
-- `specs/20251225T210000-epicenter-folder-discovery.md` — `.epicenter/` folder conventions
-- `specs/20251030T000000 persistence-factory-pattern.md` — persistence factory pattern (storagePath)
-- Better Auth Device Authorization plugin — `better-auth/plugins/deviceAuthorization`
-- Better Auth Bearer plugin — `better-auth/plugins/bearer` (already active in `apps/api/src/app.ts`)
+- `apps/tab-manager-markdown/src/index.ts`: pattern to generalize
+- `apps/tab-manager-markdown/src/markdown-persistence-extension.ts`: example custom extension
+- `packages/cli/src/discovery.ts`: config loading logic (detection, error messages)
+- `packages/workspace/src/extensions/sync/desktop.ts`: `filesystemPersistence()` and `persistence()` functions
+- `packages/workspace/src/workspace/create-workspace.ts`: `createWorkspace()` and `.withExtension()` chain
+- `packages/workspace/src/workspace/define-workspace.ts`: `defineWorkspace()` and `WorkspaceDefinition` type
+- `specs/20251225T210000-epicenter-folder-discovery.md`: `.epicenter/` folder conventions
+- `specs/20251030T000000 persistence-factory-pattern.md`: persistence factory pattern (storagePath)
+- Better Auth Device Authorization plugin: `better-auth/plugins/deviceAuthorization`
+- Better Auth Bearer plugin: `better-auth/plugins/bearer` (already active in `apps/api/src/app.ts`)
 - RFC 8628: OAuth 2.0 Device Authorization Grant
 - `apps/api/src/app.ts` lines 73-100: existing plugin config and device-client validation
 
 ## Review
 
-### Implementation Summary (Phases 1–4)
+### Implementation Summary (Phases 1-4)
 
 Created `apps/runner/` with 4 files:
 
@@ -461,7 +461,7 @@ Created `apps/runner/` with 4 files:
 
 ### Key decisions made during implementation
 
-1. **`AnyWorkspaceDefinition` type**: Used `WorkspaceDefinition<string, any, any, any>` from the workspace package rather than a manual duck type. Dynamic imports erase generics, so the `any` variance is justified at this boundary—matches the `AnyWorkspaceClient` pattern already in the codebase.
+1. **`AnyWorkspaceDefinition` type**: Used `WorkspaceDefinition<string, any, any, any>` from the workspace package rather than a manual duck type. Dynamic imports erase generics, so the `any` variance is justified at this boundary. Matches the `AnyWorkspaceClient` pattern already in the codebase.
 
 2. **Named exports only**: The loader skips `default` exports and only processes named exports, matching the spec's convention of `export const blog = defineWorkspace(...)`. This avoids ambiguity with configs that might `export default` something unrelated.
 
@@ -469,9 +469,9 @@ Created `apps/runner/` with 4 files:
 
 ### Phase 5 (deferred)
 
-Folding `apps/tab-manager-markdown/` into the runner is deferred per instructions. The runner already supports all the functionality needed—a user would create an `epicenter.config.ts` that exports the tab-manager definition and optionally wire custom extensions by exporting a pre-wired client instead.
+Folding `apps/tab-manager-markdown/` into the runner is deferred per instructions. The runner already supports all the functionality needed. A user would create an `epicenter.config.ts` that exports the tab-manager definition and optionally wire custom extensions by exporting a pre-wired client instead.
 
-### Phase 6.3–6.4 Implementation Plan
+### Phase 6.3-6.4 Implementation Plan
 
 #### Overview
 
@@ -530,7 +530,7 @@ Insert subcommand parsing before the existing config-loading flow.
 
 Current: `const targetDir = process.argv[2] ?? process.cwd();`
 
-New: parse `process.argv.slice(2)` — first non-flag arg is either a subcommand (`login`, `logout`) or the target dir.
+New: parse `process.argv.slice(2)`: first non-flag arg is either a subcommand (`login`, `logout`) or the target dir.
 
 ```
 bun run apps/runner login --server https://api.epicenter.so [dir]
@@ -565,7 +565,7 @@ The `getToken` callback returns `string | undefined`. The sync extension already
 // Before
 console.log(`  Auth: ${token ? 'token provided' : 'none (open mode)'}`);
 
-// After — resolve token once for logging, but getToken callback re-reads
+// After: resolve token once for logging, but getToken callback re-reads
 const initialToken = await loadToken(configDir);
 console.log(`  Auth: ${initialToken ? 'token loaded' : 'none (open mode)'}`);
 ```

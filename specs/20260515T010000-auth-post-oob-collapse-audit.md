@@ -140,13 +140,13 @@ Only used inside `apps/api/`:
 
 ### Routes touched by this audit (in `app.ts`)
 
-- `GET /` (unauth) — health
-- `GET /sign-in`, `GET /consent` — Better Auth UI
-- `GET /auth/cli-callback` — OOB code paste page
-- `GET /api/me` — single identity surface
-- `GET /.well-known/openid-configuration`, `/.well-known/oauth-authorization-server[/auth]`, `/.well-known/oauth-protected-resource` — discovery
-- `app.on(['GET','POST'], '/auth/*', ...)` — Better Auth handler
-- `GET /api/health` — claimed bearer-liveness probe
+- `GET /` (unauth): health
+- `GET /sign-in`, `GET /consent`: Better Auth UI
+- `GET /auth/cli-callback`: OOB code paste page
+- `GET /api/me`: single identity surface
+- `GET /.well-known/openid-configuration`, `/.well-known/oauth-authorization-server[/auth]`, `/.well-known/oauth-protected-resource`: discovery
+- `app.on(['GET','POST'], '/auth/*', ...)`: Better Auth handler
+- `GET /api/health`: claimed bearer-liveness probe
 
 ## Candidate table
 
@@ -180,7 +180,7 @@ The 10-20%-refusal that buys 80-90%-collapse is **C1**. C2 and C3 are housekeepi
 
 ## Dispositions
 
-### C1 — collapse landed
+### C1: collapse landed
 
 The `/api/health` route was added before the api-me waves landed under the assumption that the CLI would call a no-body liveness probe after locally decoding `id_token` claims (the retracted `id-token-bearing-encryption-keys` design). After that design was withdrawn, the CLI's `status` was rewritten to ping `/api/me` directly (`packages/auth/src/node/machine-auth.ts:203 client.fetch('/api/me')`). The route is now dead in two senses: no in-repo caller actually hits it, and its raison d'être (id_token decode) no longer exists. Removing it deletes:
 
@@ -191,31 +191,31 @@ The `/api/health` route was added before the api-me waves landed under the assum
 
 The CLI's status command continues to verify the bearer by calling `/api/me`, which already returns 200 on a valid scoped bearer and 401/403 otherwise. The "single identity surface" principle from the api-me spec is reinforced: one endpoint, one purpose.
 
-### C2 — collapse landed
+### C2: collapse landed
 
 `packages/auth/package.json` exposes `./node` *and* `./node/machine-auth`. The latter is a one-module subpath that is fully covered by the former (`node.ts` re-exports `./node/machine-auth.js` in full). The single caller (`packages/cli/src/commands/auth.ts:14`) imports `* as machineAuth` either way; switching to `@epicenter/auth/node` flattens the surface to one entry point. This matches the "one obvious place" principle of `cohesive-clean-breaks`.
 
-### C3 — collapse landed
+### C3: collapse landed
 
 `packages/auth/src/node/oob-launcher.ts:53-58` redeclares `OAuthSignInLauncher` with a comment "Declared here as well so this module is independently usable." But the module is in the same package as `create-oauth-app-auth.ts`, where the type already lives, and the relative-import path (`../create-oauth-app-auth.js`) is the cheapest possible reference. The redeclaration buys nothing and forces the two declarations to drift if the contract ever changes. Importing the type fixes that.
 
-### C4 — keep / defer
+### C4: keep / defer
 
 The two `WorkspaceIdentity` types are structurally identical but live in different conceptual planes. The server's `resource-boundary.WorkspaceIdentity` is the *response shape* of `/api/me`, validated against the `AuthUser` arktype at the resource boundary. The CLI's `machine-auth.WorkspaceIdentity` is a *display payload* the CLI receives back from `loginWithOob` and `status` for the "Signed in as alice@..." line. Per `profile-as-application-data`, email-as-display is *application data*, not identity data; collapsing the two types would force the CLI to either depend on an `apps/api` export (entangling deployable apps with library packages) or move both definitions to a shared package, which would put a `/api/me` server response type into a published library where it would imply a contract that has nothing to do with what the library exposes. The duplication is the cost of keeping the server's wire shape and the CLI's display shape conceptually distinct. **Why:** profile-as-application-data spec made identity-vs-display a deliberate split. **How to apply:** revisit only if a third caller appears that needs the same shape.
 
-### C5 — keep / defer
+### C5: keep / defer
 
 `oauth-launchers/index.ts` declares a third launcher type (`OAuthLauncher`) for the browser/extension flow. The duplication is the same shape but the file is in the browser/extension lane, not the Node lane. Importing `OAuthSignInLauncher` from `create-oauth-app-auth.ts` would work today, but the modules deliberately sit in separate dirs to keep the browser tree-shake clean of Node-side imports. The type is one of the cheapest things in the file. **Why:** browser/extension build cleanliness; entanglement risk. **How to apply:** collapse when a single launcher type is needed at a third site, or when the tree-shake invariant is enforced by a lint rule.
 
-### C6 — keep
+### C6: keep
 
 `MachineAuthRequestError` carries one variant (`RequestFailed`). The single-variant `defineErrors` is a mild smell, but the wrapper exists to give callers a name to discriminate on at the CLI boundary ("the network call to /api/me failed" vs "the OOB token exchange failed"). Replacing it with a plain `Error` subclass would lose the wellcrafted Result discriminator at zero gain. **Why:** the discriminator earns its keep at the CLI's two callers (`loginWithOob` and `status`). **How to apply:** if a second variant is ever added (e.g., `RequestRejected` for a 4xx), the value of the factory becomes obvious; until then, it's a one-line cost paying for a typed boundary.
 
-### C7 — keep
+### C7: keep
 
 `status`'s `unverified` branch returns `identity.user.email = ''`. The CLI consumes it with `identity.user.email || 'Account'`. The alternative (an `email?: string` field or a discriminated union with two identity shapes) would push branching into the CLI. The empty-string sentinel is conventionally a null-equivalent for a non-nullable string field that the caller already knows how to ignore. **Why:** the CLI consumes the field with `||`, which already handles both "no /api/me" and "empty email." **How to apply:** revisit only if a non-falsy-but-missing email is ever a real shape.
 
-### C8 — subsumed by C1
+### C8: subsumed by C1
 
 Stale docstrings on `app.ts:362-370` and `health.test.ts:1-12` reference id_token decoding that was retracted. Removing the route removes both docstrings.
 

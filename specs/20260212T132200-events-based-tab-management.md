@@ -17,7 +17,7 @@ Redesign the tab manager's cross-device write path to use an events/commands tab
 The tab manager syncs tabs across devices using Yjs CRDTs. Each device writes its own tab rows (device-scoped). Y.Doc observers detect remote changes and call Browser APIs:
 
 ```typescript
-// background.ts — current pattern
+// background.ts: current pattern
 // Each device writes its own rows
 tables.tabs.set(tabToRow(tab));
 
@@ -62,13 +62,13 @@ Chrome tab IDs are session-scoped monotonically increasing integers.
 | Tab moved between windows      | No                |
 | Tab pinned/unpinned, discarded | No                |
 | Service worker restarts (MV3)  | No                |
-| Tab closed then Ctrl+Shift+T   | Yes — new ID      |
-| Browser quit and relaunch      | Yes — all new IDs |
-| Browser crash and restore      | Yes — all new IDs |
+| Tab closed then Ctrl+Shift+T   | Yes: new ID      |
+| Browser quit and relaunch      | Yes: all new IDs |
+| Browser crash and restore      | Yes: all new IDs |
 
 **Key finding**: Tab IDs are stable within a browser session. The existing `refetchTabs()` diff-and-reconcile pattern handles ID churn on restart correctly.
 
-**Implication**: Commands reference tabs by `tab_id` (composite row ID `${deviceId}_${tabId}`) with an optional `url` field as a safety check. If the ID is stale, the processor marks it executed (noop — tab already gone).
+**Implication**: Commands reference tabs by `tab_id` (composite row ID `${deviceId}_${tabId}`) with an optional `url` field as a safety check. If the ID is stale, the processor marks it executed (noop: tab already gone).
 
 ### Awareness Protocol vs Persisted Events
 
@@ -119,7 +119,7 @@ This is the central storage design question. See Open Questions section for the 
 ┌─────────────────────────────────────────────────────────────┐
 │  LAYER 3: Awareness (ephemeral presence only)               │
 │  "Is device B online right now?"                            │
-│  UX hints only — never for command dispatch                 │
+│  UX hints only, never for command dispatch                 │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -181,21 +181,21 @@ const commands = defineTable(
 
 **Key design rules:**
 
-- **Independent commands**: Each command is a standalone row. "Close 10 tabs" = 10 rows. Each succeeds/fails independently. No `group_id` — UI groups by `(from_device_id, created_at ± threshold)` if needed.
+- **Independent commands**: Each command is a standalone row. "Close 10 tabs" = 10 rows. Each succeeds/fails independently. No `group_id`: UI groups by `(from_device_id, created_at ± threshold)` if needed.
 - **Single-writer resolution**: Only `to_device_id` writes `state`, `completed_at`, and `error`. The sender creates the row and never touches those fields again. This prevents CRDT conflicts.
 - **v1 is always auto-execute**: No `policy` field. Commands execute immediately when the target device picks them up. "Ask" mode can be added later by introducing a `policy` field and `approved`/`rejected` states.
-- **Discriminated union**: `kind` narrows the type — `close` requires `tab_id`, `create` requires `url`. TypeScript enforces this at write time; arktype validates at read time.
+- **Discriminated union**: `kind` narrows the type: `close` requires `tab_id`, `create` requires `url`. TypeScript enforces this at write time; arktype validates at read time.
 
 ### Command Types
 
-Start minimal — just two kinds:
+Start minimal, just two kinds:
 
 | Kind     | Actor intent                | Target action                  |
 | -------- | --------------------------- | ------------------------------ |
 | `close`  | "Close tab X on device B"   | `browser.tabs.remove(tabId)`   |
 | `create` | "Open this URL on device B" | `browser.tabs.create({ url })` |
 
-No `tab.` prefix — the table is already scoped to tab commands. If non-tab commands are added later, the discriminated union extends naturally with new `base.merge({ kind: "'new_kind'", ... })` branches.
+No `tab.` prefix. The table is already scoped to tab commands. If non-tab commands are added later, the discriminated union extends naturally with new `base.merge({ kind: "'new_kind'", ... })` branches.
 
 `create` on target + `close` on source = "move tab" (two independent commands).
 
@@ -203,7 +203,7 @@ Additional kinds (pin, mute, move) can be added later by adding new branches to 
 
 ## Open Questions
 
-### 1. Per-Tab Rows vs Per-Device Blob — RESOLVED
+### 1. Per-Tab Rows vs Per-Device Blob: RESOLVED
 
 **Decision**: Per-tab rows (keep current approach).
 
@@ -222,7 +222,7 @@ Per-tab rows also give precise command targeting (the commands table references 
 
 See `20260212T115500-tab-manager-per-device-state.md` (marked Superseded) for the full benchmark data and the original blob proposal.
 
-### 2. Default Policy: "auto" vs "ask" — RESOLVED
+### 2. Default Policy: "auto" vs "ask": RESOLVED
 
 **Decision**: v1 is always auto-execute. No `policy` field in the schema.
 
@@ -247,7 +247,7 @@ Resolved commands accumulate forever in Yjs. Options:
 3. Tab 42 no longer exists (new session, new IDs)
 4. Processor checks `browser.tabs.get(42)` → error
 5. Optionally checks `url` field against all current tabs as fallback
-6. Marks `state: 'executed'` (noop — tab already gone, goal achieved)
+6. Marks `state: 'executed'` (noop: tab already gone, goal achieved)
 
 ### Service Worker Restart Mid-Processing
 
@@ -275,10 +275,10 @@ Resolved commands accumulate forever in Yjs. Options:
 
 ### Phase 2: Command Processor
 
-- [ ] **2.1** Create `command-processor.ts` — observer on commands table
+- [ ] **2.1** Create `command-processor.ts`: observer on commands table
 - [ ] **2.2** Implement `close` execution (idempotent, with optional `url` safety check)
 - [ ] **2.3** Implement `create` execution
-- [ ] **2.4** Wire processor into `background.ts` — filter commands where `to_device_id` matches self
+- [ ] **2.4** Wire processor into `background.ts`: filter commands where `to_device_id` matches self
 
 ### Phase 3: Command Creation API
 
@@ -287,13 +287,13 @@ Resolved commands accumulate forever in Yjs. Options:
 
 ### Phase 4: Read-Time Overlays
 
-- [ ] **4.1** Create `command-overlay.ts` — computes pending state from unresolved commands
+- [ ] **4.1** Create `command-overlay.ts`: computes pending state from unresolved commands
 - [ ] **4.2** Integrate into tab reading logic (overlay pending badges)
 
 ### Phase 5: Awareness Integration
 
 - [ ] **5.1** Publish device online status via awareness protocol
-- [ ] **5.2** Use presence for UX hints in popup ("Device B is online — will execute immediately")
+- [ ] **5.2** Use presence for UX hints in popup ("Device B is online: will execute immediately")
 
 ## Success Criteria
 
@@ -302,17 +302,17 @@ Resolved commands accumulate forever in Yjs. Options:
 - [ ] Commands are persisted and survive service worker restarts
 - [ ] Pending commands are visible in UI overlay
 - [ ] Stale commands noop safely (no wrong-tab closes)
-- [ ] Discriminated union validated at runtime — invalid commands return `status: 'invalid'` on read
+- [ ] Discriminated union validated at runtime: invalid commands return `status: 'invalid'` on read
 - [ ] Only `to_device_id` mutates resolution fields (no CRDT conflicts)
 
 ## References
 
-- `apps/tab-manager/src/entrypoints/background.ts` — Current sync logic
-- `apps/tab-manager/src/lib/epicenter/browser.schema.ts` — Current table definitions
-- `apps/tab-manager/src/lib/device-id.ts` — Device ID and composite ID parsing
-- `packages/epicenter/src/static/define-table.ts` — defineTable API
-- `packages/epicenter/src/server/sync/index.ts` — Awareness protocol on server
-- `specs/20260202T203000-modernize-tab-manager-client.md` — Previous modernization spec
+- `apps/tab-manager/src/entrypoints/background.ts`: Current sync logic
+- `apps/tab-manager/src/lib/epicenter/browser.schema.ts`: Current table definitions
+- `apps/tab-manager/src/lib/device-id.ts`: Device ID and composite ID parsing
+- `packages/epicenter/src/static/define-table.ts`: defineTable API
+- `packages/epicenter/src/server/sync/index.ts`: Awareness protocol on server
+- `specs/20260202T203000-modernize-tab-manager-client.md`: Previous modernization spec
 
 ---
 

@@ -10,8 +10,8 @@
 
 `createBrowserState()` stores browser state as two disconnected flat collections:
 
-- `tabs`: `SvelteMap<number, Tab>` — all tabs across all windows
-- `windows`: `$state<Window[]>` — all windows
+- `tabs`: `SvelteMap<number, Tab>`: all tabs across all windows
+- `windows`: `$state<Window[]>`: all windows
 
 This is a tree (windows → tabs) modeled as two flat lists. Every access pattern reconstructs the tree:
 
@@ -33,7 +33,7 @@ Only 2 files consume `browserState`:
 | `TabList.svelte` | `.windows` (iterate, `.length`), `.tabsByWindow(id)` |
 | `TabItem.svelte` | `.actions.*` (all 8 methods)                         |
 
-**Unused API**: `seeded` getter, `tabs` flat getter — zero references.
+**Unused API**: `seeded` getter, `tabs` flat getter: zero references.
 
 ## Solution
 
@@ -50,7 +50,7 @@ const windowStates = new SvelteMap<WindowCompositeId, WindowState>();
 
 ### SvelteMap Nested Reactivity (confirmed)
 
-Inner `SvelteMap` mutations trigger subscribers who read from the inner map directly. In Svelte templates, `{#each}` over the outer map's values establishes subscriptions to each inner SvelteMap's version signal. This gives per-window reactive granularity — better than the current design where any tab change re-filters everything.
+Inner `SvelteMap` mutations trigger subscribers who read from the inner map directly. In Svelte templates, `{#each}` over the outer map's values establishes subscriptions to each inner SvelteMap's version signal. This gives per-window reactive granularity: better than the current design where any tab change re-filters everything.
 
 ### Event Handler Changes
 
@@ -58,14 +58,14 @@ Inner `SvelteMap` mutations trigger subscribers who read from the inner map dire
 | -------------------- | --------------------------------------------------- | -------------------------------------------------------------- |
 | `tabsByWindow()`     | Filter all tabs + sort                              | Direct map lookup + sort                                       |
 | `onCreated` (tab)    | `tabs.set(id, row)`                                 | `windowStates.get(windowId).tabs.set(id, row)`                 |
-| `onRemoved` (tab)    | `tabs.delete(id)` — scans nothing but uses flat map | Use `removeInfo.windowId` for direct window lookup             |
+| `onRemoved` (tab)    | `tabs.delete(id)`: scans nothing but uses flat map | Use `removeInfo.windowId` for direct window lookup             |
 | `onUpdated`          | `tabs.set(id, row)`                                 | Route to correct window's inner map                            |
 | `onMoved`            | Re-query + `tabs.set`                               | Re-query + route to window                                     |
 | `onActivated`        | Iterate ALL tabs to deactivate                      | Iterate only that window's tabs                                |
 | `onAttached`         | Re-query + `tabs.set`                               | Re-query + add to new window's map                             |
 | `onDetached`         | Re-query + `tabs.set`                               | Remove from old window's map (using `detachInfo.oldWindowId`)  |
 | `onCreated` (window) | `windows.push(row)`                                 | `windowStates.set(id, { window: row, tabs: new SvelteMap() })` |
-| `onRemoved` (window) | `findIndex` + splice + iterate all tabs             | `windowStates.delete(id)` — one line                           |
+| `onRemoved` (window) | `findIndex` + splice + iterate all tabs             | `windowStates.delete(id)`: one line                           |
 | `onFocusChanged`     | Iterate array + findIndex                           | Iterate values + direct `.get()`                               |
 
 ### Public API (identical shape for consumers)
@@ -94,10 +94,10 @@ return {
 
 ## What Does NOT Change
 
-- `actions` object — pure browser API calls, no state reads
+- `actions` object: pure browser API calls, no state reads
 - Import/export structure
-- `TabList.svelte` and `TabItem.svelte` — same public API shape
-- `browser.schema.ts` — no changes needed
+- `TabList.svelte` and `TabItem.svelte`: same public API shape
+- `browser.schema.ts`: no changes needed
 
 ## Checklist
 
@@ -114,7 +114,7 @@ Key changes:
 - **Seed**: Builds `WindowState` entries directly with nested tab maps
 - **`onRemoved` (tab)**: Uses `removeInfo.windowId` for direct window lookup; skips if `isWindowClosing`
 - **`onActivated`**: Scoped to one window's tabs instead of scanning all tabs
-- **`onRemoved` (window)**: Single `windowStates.delete()` — tabs removed with it
+- **`onRemoved` (window)**: Single `windowStates.delete()`: tabs removed with it
 - **`onDetached`**: Removes tab from old window using `detachInfo.oldWindowId` (no re-query)
 - **`onFocusChanged`**: Uses `windowStates.set()` to trigger outer map reactivity
 - **Dropped**: `seeded`, `tabs` flat getter, `ready` flag (replaced by `!deviceId` guard)

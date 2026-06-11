@@ -245,7 +245,7 @@ await body.whenLoaded;
 const text = body.read();
 ```
 
-### Daemon (apps/fuji/.../project.ts) — no cache, read bodies inline per row
+### Daemon (apps/fuji/.../project.ts): no cache, read bodies inline per row
 
 The daemon does not pre-load bodies into a map and does not run a startup loop. The
 markdown materializer's `toMarkdown(row)` hook reads the body inline, per row, every time

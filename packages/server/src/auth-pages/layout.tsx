@@ -5,7 +5,7 @@ import type { Child } from 'hono/jsx';
 import { AUTH_STYLES } from './styles';
 
 /**
- * Epicenter logo mark—two overlapping circles.
+ * Epicenter logo mark, two overlapping circles.
  *
  * Matches the favicon at `apps/landing/public/favicon.svg` but sized for
  * inline use in the auth card header. Rendered as raw HTML to avoid JSX

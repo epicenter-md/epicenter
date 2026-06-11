@@ -2,7 +2,7 @@
 
 **Date**: 2026-02-19
 **Status**: Superseded
-**Superseded by**: `specs/20260220T080000-plugin-first-server-architecture.md` — duplicate of `20260219T195846-standalone-sync-server.md`, both superseded by plugin-first architecture.
+**Superseded by**: `specs/20260220T080000-plugin-first-server-architecture.md`: duplicate of `20260219T195846-standalone-sync-server.md`, both superseded by plugin-first architecture.
 **Author**: AI-assisted
 
 ## Overview
@@ -21,7 +21,7 @@ type SyncPluginConfig = {
 	getDoc: (workspaceId: string) => Y.Doc | undefined;
 };
 
-// In open handler — rejects if doc doesn't exist:
+// In open handler: rejects if doc doesn't exist:
 const doc = config.getDoc(room);
 if (!doc) {
 	ws.close(CLOSE_ROOM_NOT_FOUND, `Room not found: ${room}`);
@@ -43,7 +43,7 @@ This creates problems:
 
 1. **No on-demand rooms**: You cannot connect to an arbitrary room ID. Every room must have a pre-initialized workspace client, which defeats the purpose of a general sync relay. y-sweet and y-websocket both create docs on demand.
 2. **No server-side auth**: The client sends `?token=xxx` as a query param (line 477-480 in `provider.ts`), but the server never reads or validates it. `MESSAGE_AUTH (2)` is declared in protocol constants but never implemented.
-3. **No standalone mode**: You cannot run just sync. The server requires workspace clients with definitions, tables, and actions — even if all you want is a Yjs relay.
+3. **No standalone mode**: You cannot run just sync. The server requires workspace clients with definitions, tables, and actions: even if all you want is a Yjs relay.
 
 ### Desired State
 
@@ -65,9 +65,9 @@ epicenter serve --token my-secret
 
 | Server      | Doc Creation                                                                 | Auth                                                    | Room Lifecycle                                                  |
 | ----------- | ---------------------------------------------------------------------------- | ------------------------------------------------------- | --------------------------------------------------------------- |
-| y-websocket | `getYDoc(docname)` — creates on demand, stored in `Map<string, WSSharedDoc>` | None built-in                                           | Manual `destroy()` or process exit                              |
-| y-sweet     | `get_or_create_doc` — creates on first connect, stores in `DocStore`         | Two-tier: server token (admin) + client token (per-doc) | `doc_gc_worker` checks ref count periodically, evicts idle docs |
-| Our current | `getDoc()` callback — rejects if undefined                                   | None                                                    | 60s eviction timer after last client disconnects                |
+| y-websocket | `getYDoc(docname)`: creates on demand, stored in `Map<string, WSSharedDoc>` | None built-in                                           | Manual `destroy()` or process exit                              |
+| y-sweet     | `get_or_create_doc`: creates on first connect, stores in `DocStore`         | Two-tier: server token (admin) + client token (per-doc) | `doc_gc_worker` checks ref count periodically, evicts idle docs |
+| Our current | `getDoc()` callback: rejects if undefined                                   | None                                                    | 60s eviction timer after last client disconnects                |
 
 **Key finding**: Both y-websocket and y-sweet create docs on demand. Our server is the outlier by requiring pre-existing docs.
 
@@ -78,8 +78,8 @@ epicenter serve --token my-secret
 | Pattern                      | Complexity                                      | Use Case                     |
 | ---------------------------- | ----------------------------------------------- | ---------------------------- |
 | No auth (Mode 1)             | None                                            | localhost, LAN, Tailscale    |
-| Static token (Mode 2)        | Low — compare string on upgrade                 | Self-hosted, trusted network |
-| Per-doc JWT (y-sweet Mode 3) | High — token issuance endpoint, signing, expiry | Multi-tenant SaaS            |
+| Static token (Mode 2)        | Low: compare string on upgrade                 | Self-hosted, trusted network |
+| Per-doc JWT (y-sweet Mode 3) | High: token issuance endpoint, signing, expiry | Multi-tenant SaaS            |
 
 **Key finding**: The client already supports modes 1 and 2. The server just needs to read the `?token=` query parameter and compare it against a configured secret. This is trivial.
 
@@ -160,7 +160,7 @@ Normal sync loop begins
   - Token validation on WebSocket upgrade via query param
   - Reuse existing `protocol.ts` encoding/decoding functions
   - Reuse same room management patterns (connection tracking, awareness, ping/pong, eviction)
-  - Return `{ app, start(), destroy() }` — same shape as `createServer`
+  - Return `{ app, start(), destroy() }`: same shape as `createServer`
 
 - [ ] **1.2** Add close code constant `CLOSE_UNAUTHORIZED = 4401` to sync module
 
@@ -194,7 +194,7 @@ Normal sync loop begins
 1. First client triggers `new Y.Doc()` + room creation
 2. Second client finds existing room, joins it
 3. Both receive each other's awareness, sync normally
-4. Standard y-websocket behavior — no special handling needed
+4. Standard y-websocket behavior: no special handling needed
 
 ### Server restarts with active rooms
 
@@ -208,24 +208,24 @@ Normal sync loop begins
 
 1. Server sees empty/missing `?token=` on upgrade
 2. Server closes with `4401 Unauthorized`
-3. This is intentional — if you configure a token, all clients must provide it
+3. This is intentional: if you configure a token, all clients must provide it
 
 ### Room eviction races
 
 1. Last client disconnects, 60s timer starts
 2. At 59s, new client connects
 3. Timer is cancelled (existing pattern), room stays alive
-4. Already handled by current `evictionTimers` logic — no change needed
+4. Already handled by current `evictionTimers` logic: no change needed
 
 ## Open Questions
 
 1. **Should `createSyncServer` also serve a basic HTTP health endpoint?**
    - Options: (a) Yes, `GET /` returns `{ status: "ok", rooms: N }`, (b) No, WebSocket only
-   - **Recommendation**: (a) — trivial to add, useful for monitoring, and matches the existing `createServer` pattern of having a `GET /` discovery endpoint.
+   - **Recommendation**: (a): trivial to add, useful for monitoring, and matches the existing `createServer` pattern of having a `GET /` discovery endpoint.
 
 2. **Should the `/sync/:roomId` route live at root or under a prefix?**
    - Options: (a) `/sync/:roomId`, (b) `/:roomId`, (c) `/rooms/:roomId`
-   - **Recommendation**: (a) — explicit namespace avoids collisions when workspace features are layered on top. `/sync/` prefix makes it clear what this endpoint does.
+   - **Recommendation**: (a): explicit namespace avoids collisions when workspace features are layered on top. `/sync/` prefix makes it clear what this endpoint does.
 
 3. **Should we add a `maxRooms` limit to prevent unbounded memory growth?**
    - Options: (a) Yes, configurable limit with a reasonable default (e.g., 1000), (b) No, trust the operator
@@ -251,9 +251,9 @@ Normal sync loop begins
 
 ## References
 
-- `packages/server/src/sync/index.ts` — Current sync plugin (room management, awareness, ping/pong, eviction patterns to reuse)
-- `packages/server/src/sync/protocol.ts` — Protocol encoding/decoding (shared by both sync server and sync plugin)
-- `packages/server/src/server.ts` — Current monolithic server (will need to mount sync server alongside)
-- `packages/sync/src/types.ts` — Client auth modes (server must match modes 1 and 2)
-- `packages/sync/src/provider.ts` — Client provider (sends `?token=` as query param)
-- `packages/epicenter/src/cli/cli.ts` — CLI `serve` command (needs --token flag and standalone sync mode)
+- `packages/server/src/sync/index.ts`: Current sync plugin (room management, awareness, ping/pong, eviction patterns to reuse)
+- `packages/server/src/sync/protocol.ts`: Protocol encoding/decoding (shared by both sync server and sync plugin)
+- `packages/server/src/server.ts`: Current monolithic server (will need to mount sync server alongside)
+- `packages/sync/src/types.ts`: Client auth modes (server must match modes 1 and 2)
+- `packages/sync/src/provider.ts`: Client provider (sends `?token=` as query param)
+- `packages/epicenter/src/cli/cli.ts`: CLI `serve` command (needs --token flag and standalone sync mode)

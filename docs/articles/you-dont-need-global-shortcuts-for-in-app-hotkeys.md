@@ -6,7 +6,7 @@ Most people reach for `tauri-plugin-global-shortcut` the moment they hear "keybo
 
 ## Global Shortcuts Are OS-Level Hooks
 
-When you register a global shortcut, Tauri talks directly to the operating system. macOS, Windows, and Linux each have their own hotkey registration APIs, and the plugin abstracts over all of them. The shortcut fires everywhere—your app could be minimized to the system tray and it still triggers.
+When you register a global shortcut, Tauri talks directly to the operating system. macOS, Windows, and Linux each have their own hotkey registration APIs, and the plugin abstracts over all of them. The shortcut fires everywhere. Your app could be minimized to the system tray and it still triggers.
 
 ```typescript
 import { register } from '@tauri-apps/plugin-global-shortcut';
@@ -39,8 +39,8 @@ No plugin needed. No Cargo dependency. No permission configuration. The webview 
 
 ## When to Use Which
 
-Reach for global shortcuts when the user isn't looking at your app. Push-to-talk while in a game. Media controls while browsing. Quick capture from any context. Whispering uses a global shortcut for exactly this—you press the hotkey in whatever app you're using and it starts recording.
+Reach for global shortcuts when the user isn't looking at your app. Push-to-talk while in a game. Media controls while browsing. Quick capture from any context. Whispering uses a global shortcut for exactly this. You press the hotkey in whatever app you're using and it starts recording.
 
-Stick with `addEventListener` for everything else. Navigation, editor commands, form shortcuts, panel toggles—anything where the user is already interacting with your window. It's simpler, requires no native plugin, and behaves identically to how you'd do it in a web app.
+Stick with `addEventListener` for everything else. Navigation, editor commands, form shortcuts, panel toggles. Anything where the user is already interacting with your window. It's simpler, requires no native plugin, and behaves identically to how you'd do it in a web app.
 
 The global shortcut plugin also comes with overhead you don't want unless you need it: OS-level registration that can conflict with other apps' shortcuts, platform-specific permission requirements, and cleanup logic to unregister on exit. Regular event listeners have none of these concerns.

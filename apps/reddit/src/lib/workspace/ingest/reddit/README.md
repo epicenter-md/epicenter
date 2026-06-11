@@ -79,14 +79,14 @@ Reddit includes the `*_headers.csv` variants so users can review metadata (dates
 
 | CSV File | Why Excluded |
 |---|---|
-| `ip_logs.csv` | Login IP history. Purely admin/security data — no one imports a Reddit export to browse their IP log. Reddit retains the registration IP indefinitely (even after account deletion) and other IPs for ~100 days. |
+| `ip_logs.csv` | Login IP history. Purely admin/security data: no one imports a Reddit export to browse their IP log. Reddit retains the registration IP indefinitely (even after account deletion) and other IPs for ~100 days. |
 | `sensitive_ads_preferences.csv` | Reddit's internal ad targeting categories. Ad machinery metadata, not user content. |
 | `linked_identities.csv` | Opaque OAuth issuer/subject ID pairs from Google/Apple sign-in. Internal identity-linking metadata with no meaning outside Reddit. |
-| `linked_phone_number.csv` | Phone number linked to the account. PII with no workspace value — the user already knows their phone number. |
+| `linked_phone_number.csv` | Phone number linked to the account. PII with no workspace value: the user already knows their phone number. |
 | `stripe.csv` | Opaque Stripe account ID. An internal payment identifier meaningless to the user. |
 | `persona.csv` | Opaque Persona KYC verification ID. An internal identity-verification identifier meaningless to the user. |
-| `account_gender.csv` | Gender from your profile. Not essential to workspace — you already know your gender. |
-| `birthdate.csv` | Birthday and verified birthday status. Not essential to workspace — you already know your birthday. |
+| `account_gender.csv` | Gender from your profile. Not essential to workspace: you already know your gender. |
+| `birthdate.csv` | Birthday and verified birthday status. Not essential to workspace: you already know your birthday. |
 | `twitter.csv` | Connected Twitter/X handle. Linked identity metadata with no workspace relevance. |
 
 ## All Files Are Optional

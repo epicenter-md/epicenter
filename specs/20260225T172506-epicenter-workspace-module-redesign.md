@@ -93,7 +93,7 @@ The Bun docs list supported environment variables that control runtime behavior.
 
 ## Architecture
 
-The diagram shows the new flow from registry source to UI and local API. This covers only the sidecar tier. AI streaming and auth issuance are handled by the hub server (`createHubServer`), a separate cloud deployment — see the topology note at the top.
+The diagram shows the new flow from registry source to UI and local API. This covers only the sidecar tier. AI streaming and auth issuance are handled by the hub server (`createHubServer`), a separate cloud deployment: see the topology note at the top.
 
 ```
 Registry Source

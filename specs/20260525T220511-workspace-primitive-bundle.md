@@ -188,7 +188,7 @@ createWorkspace(opts)
 
 ### Why this shape
 
-- **Three fields**: `ydoc`, `tables`, `kv` — each load-bearing for at least two downstream primitives. `actions` failed the test (one consumer) and stays external.
+- **Three fields**: `ydoc`, `tables`, `kv`: each load-bearing for at least two downstream primitives. `actions` failed the test (one consumer) and stays external.
 - **Optional `keyring`**: same factory handles encrypted and plaintext apps. Absence is the encryption switch, not a flag.
 - **`id` is the constructor input, `ydoc.guid` is the canonical read**: by construction `ydoc.guid === id`; downstream code reads `workspace.ydoc.guid` only.
 - **Disposal owns ydoc**: `using workspace` triggers `ydoc.destroy()`, which cascades through every store's `ydoc.once('destroy', ...)` hook. No separate disposer surface.
@@ -258,9 +258,9 @@ These three read `workspace.tables` (and markdown reads kv if asked). They genui
 
 | Primitive | File | Today | After |
 |---|---|---|---|
-| attachBunSqliteMaterializer | document/materializer/sqlite/bun-sqlite.ts:95 | `(ydoc, { filePath, tables, fts?, ... })` | `(workspace, { filePath, fts?, ... })` — drops `tables`; mirrors all of `workspace.tables` |
-| attachTursoMaterializer | document/materializer/sqlite/turso.ts:110 | `(ydoc, { path, tables, fts?, ... })` | `(workspace, { path, fts?, ... })` — drops `tables`; mirrors all of `workspace.tables` |
-| attachMarkdownMaterializer | document/materializer/markdown/materializer.ts:253 | `(ydoc, { dir, tables, kv?, perTable })` | `(workspace, { dir, perTable })` — drops `tables` and `kv`; `perTable[name]` presence is the selection |
+| attachBunSqliteMaterializer | document/materializer/sqlite/bun-sqlite.ts:95 | `(ydoc, { filePath, tables, fts?, ... })` | `(workspace, { filePath, fts?, ... })`: drops `tables`; mirrors all of `workspace.tables` |
+| attachTursoMaterializer | document/materializer/sqlite/turso.ts:110 | `(ydoc, { path, tables, fts?, ... })` | `(workspace, { path, fts?, ... })`: drops `tables`; mirrors all of `workspace.tables` |
+| attachMarkdownMaterializer | document/materializer/markdown/materializer.ts:253 | `(ydoc, { dir, tables, kv?, perTable })` | `(workspace, { dir, perTable })`: drops `tables` and `kv`; `perTable[name]` presence is the selection |
 
 ### Keep Y.Doc-shaped (persistence, log, sync)
 
@@ -422,9 +422,9 @@ Waves run sequentially. Each wave ends at a typecheck + test + smoke checkpoint.
 
 Only the three materializers change signature; everything else stays Y.Doc-shaped (callers pass `workspace.ydoc`).
 
-- [ ] **2.1** attachBunSqliteMaterializer — drop `tables` from options; iterate `workspace.tables` internally. No selection model.
-- [ ] **2.2** attachTursoMaterializer — same as 2.1.
-- [ ] **2.3** attachMarkdownMaterializer — drop `tables` and `kv`. `perTable[name]` presence becomes the selection (mirrors `fts: { ... }` idiom). Drop KV mirroring entirely.
+- [ ] **2.1** attachBunSqliteMaterializer: drop `tables` from options; iterate `workspace.tables` internally. No selection model.
+- [ ] **2.2** attachTursoMaterializer: same as 2.1.
+- [ ] **2.3** attachMarkdownMaterializer: drop `tables` and `kv`. `perTable[name]` presence becomes the selection (mirrors `fts: { ... }` idiom). Drop KV mirroring entirely.
 - [ ] **2.4** Update each materializer's tests to construct via `createWorkspace`.
 
 ### Wave 3: Migrate call sites
@@ -483,13 +483,13 @@ Verify no consumer ordering changes when `workspace.ydoc` is identity-stable but
 
 All five open questions resolved before execution. Recorded here for traceability:
 
-1. **Materializer `tables` selection** — **resolved**: SQLite materializes all of `workspace.tables` unconditionally. Markdown uses `perTable[name]` presence as the selection (no separate `mirror` slot). Same idiom as `fts: { posts: [...] }`.
+1. **Materializer `tables` selection**: **resolved**: SQLite materializes all of `workspace.tables` unconditionally. Markdown uses `perTable[name]` presence as the selection (no separate `mirror` slot). Same idiom as `fts: { posts: [...] }`.
 
-2. **Sub-doc primitives and Workspace shape** — **resolved by narrowing**: only the three materializers take `Workspace`. Persistence / sync / log primitives stay Y.Doc-shaped. Sub-doc call sites are unchanged; no shim or overload needed. Callers pass `workspace.ydoc` to Y.Doc-shaped primitives.
+2. **Sub-doc primitives and Workspace shape**: **resolved by narrowing**: only the three materializers take `Workspace`. Persistence / sync / log primitives stay Y.Doc-shaped. Sub-doc call sites are unchanged; no shim or overload needed. Callers pass `workspace.ydoc` to Y.Doc-shaped primitives.
 
-3. **`actions` factory signature** — **resolved**: switch to `(workspace)`. Tests construct via `createWorkspace` after Wave 3.
+3. **`actions` factory signature**: **resolved**: switch to `(workspace)`. Tests construct via `createWorkspace` after Wave 3.
 
-4. **Materializer KV mirroring** — **resolved**: drop the feature. KV is app-internal state without a useful markdown shape. Add only when a real call site asks.
+4. **Materializer KV mirroring**: **resolved**: drop the feature. KV is app-internal state without a useful markdown shape. Add only when a real call site asks.
 
 5. **`createWorkspace`'s `ydocOptions` escape hatch**: **resolved**: do not expose one. Workspace roots always use `gc: true`; specialized docs that need different Y.Doc behavior should construct `new Y.Doc(...)` directly with a local explanation. Daemon's `workspace.ydoc.clientID = ...` tweak stays a post-construction mutation.
 
@@ -539,12 +539,12 @@ All five open questions resolved before execution. Recorded here for traceabilit
 
 ## References
 
-- `packages/workspace/src/document/attach-encryption.ts` — the primitive `createWorkspace` subsumes
-- `packages/workspace/src/document/attach-table.ts` — table construction; `createTable` becomes internal
-- `packages/workspace/src/document/attach-kv.ts` — KV construction; `createKv` becomes internal
-- `packages/workspace/src/document/derive-workspace-keyring.ts` — per-workspace HKDF derivation
-- `apps/honeycrisp/browser.ts`, `apps/honeycrisp/daemon.ts` — canonical migration targets
-- `apps/whispering/src/lib/whispering/index.ts` — canonical plaintext migration
-- Commit `30643db63` (attach-encryption-named-slots) — direct predecessor
-- `specs/20260513T200000-workspace-surface-clean-break-vision.md` — earlier vision pass
-- `specs/20260525T212249-sqlite-fts-primitive-split.md` — sibling primitive-shape spec
+- `packages/workspace/src/document/attach-encryption.ts`: the primitive `createWorkspace` subsumes
+- `packages/workspace/src/document/attach-table.ts`: table construction; `createTable` becomes internal
+- `packages/workspace/src/document/attach-kv.ts`: KV construction; `createKv` becomes internal
+- `packages/workspace/src/document/derive-workspace-keyring.ts`: per-workspace HKDF derivation
+- `apps/honeycrisp/browser.ts`, `apps/honeycrisp/daemon.ts`: canonical migration targets
+- `apps/whispering/src/lib/whispering/index.ts`: canonical plaintext migration
+- Commit `30643db63` (attach-encryption-named-slots): direct predecessor
+- `specs/20260513T200000-workspace-surface-clean-break-vision.md`: earlier vision pass
+- `specs/20260525T212249-sqlite-fts-primitive-split.md`: sibling primitive-shape spec

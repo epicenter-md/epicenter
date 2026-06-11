@@ -10,11 +10,11 @@ Follow-up to `20260318T101545-auth-pages-fixes.md`. Two remaining issues from th
 
 ## Files
 
-- `apps/api/src/auth-pages/styles.ts` — Shared inline CSS for all auth pages
-- `apps/api/src/auth-pages/layout.tsx` — HTML shell wrapping all auth pages
-- `apps/api/src/auth-pages/signed-in-page.tsx` — NEW: signed-in confirmation component
-- `apps/api/src/auth-pages/index.tsx` — Render function exports
-- `apps/api/src/app.ts` — Route handler for `/sign-in`
+- `apps/api/src/auth-pages/styles.ts`: Shared inline CSS for all auth pages
+- `apps/api/src/auth-pages/layout.tsx`: HTML shell wrapping all auth pages
+- `apps/api/src/auth-pages/signed-in-page.tsx`: NEW: signed-in confirmation component
+- `apps/api/src/auth-pages/index.tsx`: Render function exports
+- `apps/api/src/app.ts`: Route handler for `/sign-in`
 
 ## Fix 1: Styling polish
 
@@ -34,8 +34,8 @@ Follow-up to `20260318T101545-auth-pages-fixes.md`. Two remaining issues from th
 
 ## Commit plan
 
-1. `style(api): polish auth page CSS and add Epicenter logo` — styles.ts + layout.tsx
-2. `feat(api): show signed-in confirmation when already authenticated` — signed-in-page.tsx + index.tsx + app.ts
+1. `style(api): polish auth page CSS and add Epicenter logo`: styles.ts + layout.tsx
+2. `feat(api): show signed-in confirmation when already authenticated`: signed-in-page.tsx + index.tsx + app.ts
 
 ---
 
@@ -54,4 +54,4 @@ Both fixes implemented in 2 commits.
 
 **Signed-in page flow**: Already-authenticated user → sees green check + name/email + Sign Out button. Sign Out → POST `/auth/sign-out` → reload → sees sign-in form. No redirect loops.
 
-**Open redirect prevention**: Unchanged — `callbackURL` still only honored when it starts with `/`.
+**Open redirect prevention**: Unchanged: `callbackURL` still only honored when it starts with `/`.

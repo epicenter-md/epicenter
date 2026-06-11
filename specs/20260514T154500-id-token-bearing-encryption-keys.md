@@ -25,9 +25,9 @@ The existing architecture is correct under Path B:
 
 **Related reading:**
 
-- `docs/articles/if-you-dont-trust-the-server-become-the-server.md` — the trust-model rationale this spec was inadvertently rejecting.
-- `docs/articles/encryption-at-rest-is-the-gold-standard.md` — how the current encryption layer is correct.
-- `docs/articles/let-the-server-handle-encryption.md` — the broader server-managed-keys argument.
+- `docs/articles/if-you-dont-trust-the-server-become-the-server.md`: the trust-model rationale this spec was inadvertently rejecting.
+- `docs/articles/encryption-at-rest-is-the-gold-standard.md`: how the current encryption layer is correct.
+- `docs/articles/let-the-server-handle-encryption.md`: the broader server-managed-keys argument.
 
 **Original spec content preserved below as a historical record.** Do not execute.
 

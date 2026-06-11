@@ -14,7 +14,7 @@ Evaluate whether to replace Opensidian's custom `TreeNode.svelte` (177 lines) wi
 
 Opensidian renders its file tree with two custom components:
 
-**`FileTree.svelte`** (34 lines) — the root container:
+**`FileTree.svelte`** (34 lines): the root container:
 ```svelte
 <div class="flex flex-col" role="tree">
   {#each fsState.rootChildIds as childId (childId)}
@@ -23,7 +23,7 @@ Opensidian renders its file tree with two custom components:
 </div>
 ```
 
-**`TreeNode.svelte`** (177 lines) — recursive per-node rendering:
+**`TreeNode.svelte`** (177 lines): recursive per-node rendering:
 - Uses `Collapsible.Root` / `Collapsible.Trigger` / `Collapsible.Content` from `@epicenter/ui/collapsible`
 - Inline SVG icons for chevron, folder, folder-open, file
 - Depth-based left padding (`style="padding-left: {depth * 16}px"`)
@@ -38,9 +38,9 @@ This works. The question is whether the extras Tree View component provides enou
 
 The extras package provides `TreeView` with three components:
 
-- **`TreeView.Root`** — flex column container (equivalent to `FileTree.svelte`)
-- **`TreeView.Folder`** — uses Collapsible internally (equivalent to TreeNode's folder path)
-- **`TreeView.File`** — button with icon slot (equivalent to TreeNode's file path)
+- **`TreeView.Root`**: flex column container (equivalent to `FileTree.svelte`)
+- **`TreeView.Folder`**: uses Collapsible internally (equivalent to TreeNode's folder path)
+- **`TreeView.File`**: button with icon slot (equivalent to TreeNode's file path)
 
 **API surface** (from `tree-view-folder.svelte`):
 ```svelte
@@ -131,9 +131,9 @@ FileTree.svelte
 FileTree.svelte
   └── TreeView.Root (from extras)
         └── FileTreeItem.svelte (custom wrapper, recursive)
-              ├── TreeView.Folder (from extras) — structural
+              ├── TreeView.Folder (from extras): structural
               │     └── Collapsible handled internally
-              ├── TreeView.File (from extras) — structural
+              ├── TreeView.File (from extras): structural
               ├── Lucide icons (from idiomaticity spec)
               ├── Selection logic (custom)
               ├── ContextMenu (custom)
@@ -196,7 +196,7 @@ The net effect: `TreeNode.svelte` (177 lines) becomes `FileTreeItem.svelte` (~12
 
 3. **Should the `FileTreeItem` wrapper live in Opensidian or in `@epicenter/ui`?**
    - Options: (a) `apps/opensidian/src/lib/components/FileTreeItem.svelte`, (b) `packages/ui/src/file-tree/`
-   - **Recommendation**: (a) — it's Opensidian-specific (binds to `fsState`). If other apps need a file tree, extract then.
+   - **Recommendation**: (a): it's Opensidian-specific (binds to `fsState`). If other apps need a file tree, extract then.
 
 ## Success Criteria
 
@@ -209,11 +209,11 @@ The net effect: `TreeNode.svelte` (177 lines) becomes `FileTreeItem.svelte` (~12
 
 ## References
 
-- `apps/opensidian/src/lib/components/TreeNode.svelte` — current implementation (177 lines)
-- `apps/opensidian/src/lib/components/FileTree.svelte` — current root container (34 lines)
-- `packages/ui/jsrepo.config.ts` — configured for `@ieedan/shadcn-svelte-extras`
-- `packages/ui/src/collapsible/` — Collapsible primitives (already used)
-- `packages/ui/src/context-menu/` — ContextMenu primitives (already used)
+- `apps/opensidian/src/lib/components/TreeNode.svelte`: current implementation (177 lines)
+- `apps/opensidian/src/lib/components/FileTree.svelte`: current root container (34 lines)
+- `packages/ui/jsrepo.config.ts`: configured for `@ieedan/shadcn-svelte-extras`
+- `packages/ui/src/collapsible/`: Collapsible primitives (already used)
+- `packages/ui/src/context-menu/`: ContextMenu primitives (already used)
 - shadcn-svelte-extras Tree View source: https://github.com/ieedan/shadcn-svelte-extras/tree/main/src/lib/components/ui/tree-view
 - shadcn-svelte-extras Tree View docs: https://shadcn-svelte-extras.com/components/tree-view
 
@@ -237,7 +237,7 @@ Replaced Opensidian's custom `TreeNode.svelte` (140 lines) with `FileTreeItem.sv
 
 ### Deviations from Spec
 
-- TreeView.Folder lacked an `onOpenChange` prop—added it to the local copy to support controlled expansion via `fsState.expandedIds`
+- TreeView.Folder lacked an `onOpenChange` prop. Added it to the local copy to support controlled expansion via `fsState.expandedIds`
 - `role="treeitem"` and `aria-expanded` placed on the ContextMenu wrapper `<div>` for folders (instead of on TreeView.Folder's trigger) to avoid type conflicts with Collapsible.Trigger's prop types
 - Removed tree-line visual styling (`border-l` + vertical line) from the installed component to match the existing padding-based indentation exactly
 

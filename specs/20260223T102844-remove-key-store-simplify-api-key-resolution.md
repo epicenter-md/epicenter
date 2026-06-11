@@ -42,7 +42,7 @@ This creates problems:
 1. **Encryption is security theater**: `master.key` sits in the same directory as `keys.json`. Anyone with filesystem access decrypts trivially. It's a lock with the key taped to it.
 2. **Async decryption in the hot path**: Every AI chat request and every proxy request decrypts from disk. `process.env` lookups are nanoseconds.
 3. **~400 lines of unnecessary code**: `store.ts` (243 lines) + `plugin.ts` (78 lines) + `index.ts` (3 lines) + integration wiring across `hub.ts`, `adapters.ts`, `plugin.ts`, and `proxy/plugin.ts`.
-4. **Redundant with env vars**: The key store solves "how does the server get keys" — but env vars already solve this universally. On cloud infrastructure, you use the hosting provider's secrets management (Railway, Fly, Vercel env vars). Locally, you set them in `.env`. The key store duplicates what the deployment environment already provides.
+4. **Redundant with env vars**: The key store solves "how does the server get keys": but env vars already solve this universally. On cloud infrastructure, you use the hosting provider's secrets management (Railway, Fly, Vercel env vars). Locally, you set them in `.env`. The key store duplicates what the deployment environment already provides.
 5. **Two sources of truth**: When both key store and env vars have a value for the same provider, the key store wins silently. This is confusing and untestable without reading the code.
 
 ### Desired State
@@ -61,7 +61,7 @@ export function resolveApiKey(
 }
 ```
 
-- **Header**: User's own key (BYOK — "use my account, my billing")
+- **Header**: User's own key (BYOK: "use my account, my billing")
 - **Env var**: Operator's key (hub admin set it in `.env` or hosting dashboard)
 - No key store, no encryption, no REST API for key management, no async
 
@@ -86,12 +86,12 @@ No client currently sends this header. The only consumer of `/ai/chat` is `apps/
 
 | Context                    | Who sets keys      | How                                                                                  | Key store useful?                            |
 | -------------------------- | ------------------ | ------------------------------------------------------------------------------------ | -------------------------------------------- |
-| Cloud hub (Braden's infra) | Hub operator       | `.env` / hosting secrets dashboard                                                   | No — env vars are native                     |
-| Self-hosted hub            | Technical user     | `.env` file                                                                          | No — same as cloud                           |
-| Self-hosted hub            | Non-technical user | Needs a UI                                                                           | Partially — but could use simpler approaches |
+| Cloud hub (Braden's infra) | Hub operator       | `.env` / hosting secrets dashboard                                                   | No: env vars are native                     |
+| Self-hosted hub            | Technical user     | `.env` file                                                                          | No: same as cloud                           |
+| Self-hosted hub            | Non-technical user | Needs a UI                                                                           | Partially: but could use simpler approaches |
 | Local sidecar              | N/A                | Sidecar does NOT do AI (`sidecar.ts:73`: "The sidecar does NOT handle AI streaming") | N/A                                          |
 
-**Key finding**: The sidecar never does inference. Only the hub resolves API keys. For both cloud and self-hosted hubs, env vars are the standard mechanism. The key store's only advantage (runtime updates without restart) can be achieved by writing to `process.env` directly — no encryption needed.
+**Key finding**: The sidecar never does inference. Only the hub resolves API keys. For both cloud and self-hosted hubs, env vars are the standard mechanism. The key store's only advantage (runtime updates without restart) can be achieved by writing to `process.env` directly: no encryption needed.
 
 ### Why the server-side key store is the wrong layer
 
@@ -99,9 +99,9 @@ The key store was built to answer: "How do users manage their API keys on the hu
 
 **User API keys are a client-side concern, not a server-side one.** Epicenter already has the primitives to handle this:
 
-1. **Encrypted Yjs workspaces** — `packages/epicenter` supports encrypted Y.Doc storage. API keys can live in a workspace that syncs like any other workspace but is encrypted client-side using the user's auth credentials against the hub.
-2. **Local-first by design** — The user's Tauri app already stores settings locally (see `apps/whispering/src/lib/settings/settings.ts` with `apiKeys.openai`, `apiKeys.anthropic`, etc.). These keys are already on the client. The client just needs to include the decrypted key in the `x-provider-api-key` header when making AI requests.
-3. **The hub never needs to see stored keys** — In the BYOK flow, the client decrypts its own key from its local encrypted workspace and sends it per-request. The hub receives it, uses it for that one API call, and never persists it. This is strictly better security than storing keys on the server.
+1. **Encrypted Yjs workspaces**: `packages/epicenter` supports encrypted Y.Doc storage. API keys can live in a workspace that syncs like any other workspace but is encrypted client-side using the user's auth credentials against the hub.
+2. **Local-first by design**: The user's Tauri app already stores settings locally (see `apps/whispering/src/lib/settings/settings.ts` with `apiKeys.openai`, `apiKeys.anthropic`, etc.). These keys are already on the client. The client just needs to include the decrypted key in the `x-provider-api-key` header when making AI requests.
+3. **The hub never needs to see stored keys**: In the BYOK flow, the client decrypts its own key from its local encrypted workspace and sends it per-request. The hub receives it, uses it for that one API call, and never persists it. This is strictly better security than storing keys on the server.
 
 The server-side key store tried to centralize something that should stay decentralized. Two separate concerns got conflated:
 
@@ -162,16 +162,16 @@ Hub Server
 
 - [x] **1.1** Remove `keyStore` parameter from `resolveApiKey()` in `adapters.ts`. Remove the key store step. Make the function synchronous (remove `async`/`Promise`).
 - [x] **1.2** Remove `KeyStore` import from `adapters.ts`.
-- [x] **1.3** Update `AIPluginConfig` in `ai/plugin.ts` — remove `keyStore` field. Remove `keyStore` local variable. Update `resolveApiKey()` call to drop the third argument. Remove `await` (now sync).
-- [x] **1.4** Update `createAIPlugin()` call in `hub.ts:127` — remove `{ keyStore }` config.
-- [x] **1.5** Update `createAIPlugin()` call in `server.ts:123` — already no keyStore, just verify no changes needed.
+- [x] **1.3** Update `AIPluginConfig` in `ai/plugin.ts`: remove `keyStore` field. Remove `keyStore` local variable. Update `resolveApiKey()` call to drop the third argument. Remove `await` (now sync).
+- [x] **1.4** Update `createAIPlugin()` call in `hub.ts:127`: remove `{ keyStore }` config.
+- [x] **1.5** Update `createAIPlugin()` call in `server.ts:123`: already no keyStore, just verify no changes needed.
 
 ### Phase 2: Update proxy plugin
 
 - [x] **2.1** In `proxy/plugin.ts`, replace `keyStore.get(provider)` with `process.env[PROVIDER_ENV_VARS[provider]]`. Import `PROVIDER_ENV_VARS` from `../ai/adapters`.
 - [x] **2.2** Remove `KeyStore` import and `keyStore` from `ProxyPluginConfig`. The config keeps only `validateSession`.
-- [x] **2.3** Update `createProxyPlugin()` call in `hub.ts:142` — remove `{ keyStore }` config. The proxy plugin no longer needs the key store condition guard.
-- [x] **2.4** Update the 502 error message in proxy plugin — currently says "Add one via PUT /api/provider-keys/{provider}". Change to reference the env var name (e.g., "Set ANTHROPIC_API_KEY environment variable").
+- [x] **2.3** Update `createProxyPlugin()` call in `hub.ts:142`: remove `{ keyStore }` config. The proxy plugin no longer needs the key store condition guard.
+- [x] **2.4** Update the 502 error message in proxy plugin: currently says "Add one via PUT /api/provider-keys/{provider}". Change to reference the env var name (e.g., "Set ANTHROPIC_API_KEY environment variable").
 
 ### Phase 3: Delete key store
 
@@ -184,16 +184,16 @@ Hub Server
 
 ### Phase 4: Update tests
 
-- [x] **4.1** Update `resolveApiKey` tests in `plugin.test.ts` — remove any key store test if present. Tests for header-wins-over-env and env-fallback stay. The `resolveApiKey` calls lose `await` (now sync).
+- [x] **4.1** Update `resolveApiKey` tests in `plugin.test.ts`: remove any key store test if present. Tests for header-wins-over-env and env-fallback stay. The `resolveApiKey` calls lose `await` (now sync).
 - [x] **4.2** Verify all existing tests pass with `bun test` in `packages/server`.
 
 ### Phase 5: Update docs and comments
 
-- [x] **5.1** Update JSDoc on `resolveApiKey()` — document the two-step chain.
-- [x] **5.2** Update JSDoc on `createAIPlugin()` — remove key store references.
-- [x] **5.3** Update JSDoc on `createHubServer()` — remove key store config docs and examples.
-- [x] **5.4** Update JSDoc on `createProxyPlugin()` — document env var resolution instead of key store.
-- [x] **5.5** Update 401 error message in `ai/plugin.ts:91` if needed — it already mentions env var, verify it's still accurate.
+- [x] **5.1** Update JSDoc on `resolveApiKey()`: document the two-step chain.
+- [x] **5.2** Update JSDoc on `createAIPlugin()`: remove key store references.
+- [x] **5.3** Update JSDoc on `createHubServer()`: remove key store config docs and examples.
+- [x] **5.4** Update JSDoc on `createProxyPlugin()`: document env var resolution instead of key store.
+- [x] **5.5** Update 401 error message in `ai/plugin.ts:91` if needed: it already mentions env var, verify it's still accurate.
 
 ## Edge Cases
 
@@ -205,7 +205,7 @@ Hub Server
 
 ### Header key sent to proxy endpoint
 
-The proxy plugin currently doesn't check the `x-provider-api-key` header — it uses the Authorization header as a session token. This is correct and unchanged. The proxy's job is to swap a session token for the operator's real key. BYOK users wouldn't use the proxy — they'd call provider APIs directly (or the `/ai/chat` endpoint with their key in the header).
+The proxy plugin currently doesn't check the `x-provider-api-key` header. It uses the Authorization header as a session token. This is correct and unchanged. The proxy's job is to swap a session token for the operator's real key. BYOK users wouldn't use the proxy. They'd call provider APIs directly (or the `/ai/chat` endpoint with their key in the header).
 
 ### Legacy `server.ts` (non-hub, non-sidecar mode)
 
@@ -214,11 +214,11 @@ The proxy plugin currently doesn't check the `x-provider-api-key` header — it 
 ## Open Questions
 
 1. **Should `resolveApiKey()` move out of `adapters.ts`?**
-   - It's not adapter logic — it's key resolution. Could live in a standalone `resolve-key.ts` or just stay in `adapters.ts` since it's small and co-located with its only consumers.
+   - It's not adapter logic: it's key resolution. Could live in a standalone `resolve-key.ts` or just stay in `adapters.ts` since it's small and co-located with its only consumers.
    - **Recommendation**: Leave it in `adapters.ts` for now. It's 8 lines. Moving it adds a file for no real benefit.
 
 2. **Should the proxy plugin also check the `x-provider-api-key` header?**
-   - Currently it doesn't — the proxy is for session-token-authenticated users who don't have their own keys. BYOK users would call `/ai/chat` directly.
+   - Currently it doesn't: the proxy is for session-token-authenticated users who don't have their own keys. BYOK users would call `/ai/chat` directly.
    - **Recommendation**: No. Keep the proxy as operator-key-only. Clear separation of concerns.
 
 ## Success Criteria
@@ -235,14 +235,14 @@ The proxy plugin currently doesn't check the `x-provider-api-key` header — it 
 
 ## References
 
-- `packages/server/src/ai/adapters.ts` — `resolveApiKey()`, `PROVIDER_ENV_VARS`
-- `packages/server/src/ai/plugin.ts` — `createAIPlugin()`, `AIPluginConfig`
-- `packages/server/src/ai/plugin.test.ts` — Tests for `resolveApiKey()` and AI plugin
-- `packages/server/src/hub.ts` — `createHubServer()`, key store creation and mounting
-- `packages/server/src/keys/store.ts` — Key store implementation (DELETE)
-- `packages/server/src/keys/plugin.ts` — Key management REST API (DELETE)
-- `packages/server/src/keys/index.ts` — Key store exports (DELETE)
-- `packages/server/src/proxy/plugin.ts` — Proxy plugin, currently uses `keyStore.get()`
-- `packages/server/src/index.ts` — Package-level exports
-- `packages/server/src/server.ts` — Legacy server (already no key store)
-- `specs/20260222T195800-server-side-api-key-management.md` — Original key store spec (now superseded)
+- `packages/server/src/ai/adapters.ts`: `resolveApiKey()`, `PROVIDER_ENV_VARS`
+- `packages/server/src/ai/plugin.ts`: `createAIPlugin()`, `AIPluginConfig`
+- `packages/server/src/ai/plugin.test.ts`: Tests for `resolveApiKey()` and AI plugin
+- `packages/server/src/hub.ts`: `createHubServer()`, key store creation and mounting
+- `packages/server/src/keys/store.ts`: Key store implementation (DELETE)
+- `packages/server/src/keys/plugin.ts`: Key management REST API (DELETE)
+- `packages/server/src/keys/index.ts`: Key store exports (DELETE)
+- `packages/server/src/proxy/plugin.ts`: Proxy plugin, currently uses `keyStore.get()`
+- `packages/server/src/index.ts`: Package-level exports
+- `packages/server/src/server.ts`: Legacy server (already no key store)
+- `specs/20260222T195800-server-side-api-key-management.md`: Original key store spec (now superseded)

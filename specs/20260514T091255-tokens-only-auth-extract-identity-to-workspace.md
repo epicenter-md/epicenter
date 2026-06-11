@@ -4,7 +4,7 @@
 **Status**: Superseded (2026-05-14). Do not implement.
 **Author**: Braden + Claude
 **Superseded by**:
-- `specs/20260514T120000-machine-auth-oob-clean-break.md` — replaces this spec's CLI/device-code consolidation. CLI switches to OAuth 2.1 authorization-code with OOB paste and a file-backed session at `~/.epicenter/auth.json`; the device-code grant is removed, not consolidated. Identity continues to load from `/workspace-identity` like every other client.
+- `specs/20260514T120000-machine-auth-oob-clean-break.md`: replaces this spec's CLI/device-code consolidation. CLI switches to OAuth 2.1 authorization-code with OOB paste and a file-backed session at `~/.epicenter/auth.json`; the device-code grant is removed, not consolidated. Identity continues to load from `/workspace-identity` like every other client.
 - The "extract identity from auth into workspace" half of this spec is retracted, not replaced. Identity remains in `@epicenter/auth` as `OAuthSession.identity` (the `WorkspaceIdentity` shape `{ user, encryptionKeys }`), loaded once from `/workspace-identity` after sign-in. See `docs/articles/if-you-dont-trust-the-server-become-the-server.md` and `docs/articles/encryption-at-rest-is-the-gold-standard.md` for the trust-model rationale (server-managed encryption for hosted, self-host for real privacy).
 - **Note:** an earlier successor pair (`specs/20260514T154500-id-token-bearing-encryption-keys.md` + `specs/20260514T160000-execute-id-token-and-oob-cli.md`) was itself retracted on 2026-05-14. Those specs proposed moving encryption keys into id_token claims; they introduced a security regression at the leakage surface and were rejected. See their respective `## Retraction` sections.
 
@@ -592,7 +592,7 @@ This applies to machine auth too: `loadMachineSession` / `saveMachineSession` ar
 
 ## Implementation plan
 
-> **[SUPERSEDED — do not start.]** This plan is retained as historical record. The work below is replaced by the two successor specs cited at the top of this document. In particular: Phase 1 (workspace identity package) is rejected by the `id_token` spec; Phase 2 (auth shrink to tokens-only with `identity` removed from `AuthState`) is rejected by the `id_token` spec's revert of that change; Phase 2.3 / 3 (CLI consolidation on `/workspace-identity`) is replaced by the OOB spec.
+> **[SUPERSEDED: do not start.]** This plan is retained as historical record. The work below is replaced by the two successor specs cited at the top of this document. In particular: Phase 1 (workspace identity package) is rejected by the `id_token` spec; Phase 2 (auth shrink to tokens-only with `identity` removed from `AuthState`) is rejected by the `id_token` spec's revert of that change; Phase 2.3 / 3 (CLI consolidation on `/workspace-identity`) is replaced by the OOB spec.
 
 Follows Build, Prove, Remove.
 
@@ -1203,14 +1203,14 @@ Prior precedent:
 
 ## Done when (spec is watertight)
 
-> **[SUPERSEDED.]** This checklist still legitimately reads `[x]` for the verification work that ran against this spec — file paths and line numbers were re-checked against the working tree at commit `a3213ab7f`, type contracts were checked for compilability, and library claims were grounded. It is preserved as historical record. It **no longer gates anything**, because the proposed end state has been retracted in favor of the two successor specs cited at the top of this document. Treat the checks below as "this spec was watertight at the moment it was retired."
+> **[SUPERSEDED.]** This checklist still legitimately reads `[x]` for the verification work that ran against this spec: file paths and line numbers were re-checked against the working tree at commit `a3213ab7f`, type contracts were checked for compilability, and library claims were grounded. It is preserved as historical record. It **no longer gates anything**, because the proposed end state has been retracted in favor of the two successor specs cited at the top of this document. Treat the checks below as "this spec was watertight at the moment it was retired."
 
 * [x] Every file path, type name, and function name in the spec resolves on the current branch (commit `a3213ab7f`). Pass 1 grounding; spec body uses `file.ts:line` references throughout.
 * [x] Every protocol / library claim verified via DeepWiki or in-repo source, with a citation in the spec. See `Research findings (Pass 2)`, items 1-5.
 * [x] Each of the five lifecycle flows has been mentally executed and strengthened with explicit handling. See `Lifecycle stress-test (Pass 3)`, sections A-E.
 * [x] Implementation Plan phases include concrete file paths and call-site counts where applicable. Phase 3 lists all consumers with file paths; `Plan feasibility (Pass 4)` adds counts (3 UI reads, 7 daemon/script `requireSession` callers, 6 browser apps with `createOAuthAppAuth`).
 * [x] Open Questions section updated. Old OQs about migration shim and refresh-token tolerance collapsed into clean-break decisions (Decisions log). New OQs surfaced by research: #9 (identity-fetch injection), #10 (multi-user-per-origin). Existing recommendations contradicted by research (XSS-resistance, dual-cache framing) were rewritten in place, not deleted.
-* [x] All em / en dashes removed from the spec. Verified via `grep -c '—\|–'` returning 0.
+* [x] All em/en dash characters removed from the spec. Verified via `grep -P -c '\x{2014}|\x{2013}'` returning 0.
 * [x] No paragraph longer than four sentences without a structural break. Audit pass via word-count script; the only outliers are inside fenced code blocks, which are themselves structural breaks.
 * [x] `## Decisions log` section captures Class 3 keeps surfaced during research. Four entries: (1) force re-sign-in, (2) workspace package home, (3) CLI consolidation on `/workspace-identity`, (4) storage split as blast-radius reduction (not XSS defense).
 * [x] Every `file:line` citation in this spec was re-read against the working tree (Pass 6). All 30+ paths exist (`packages/auth/src/{auth-types,auth-contract,auth-state-store,create-oauth-app-auth,require-identity,require-session,node/machine-auth,node/machine-session-store}.ts`, `packages/encryption/src/keys.ts`, `packages/workspace/src/document/local-owner.ts`, `packages/svelte-utils/src/{session,persisted-state}.svelte.ts`, `apps/api/src/{app,auth/resource-boundary,auth/create-auth}.ts`, `apps/{fuji,honeycrisp,opensidian,zhongwen}/blocks/{daemon-route,script}.ts`, `apps/{dashboard,fuji,honeycrisp,opensidian,zhongwen}/src/lib/platform/auth/auth.ts`, `apps/tab-manager/src/lib/{session,state/storage-state}.svelte.ts`, `packages/cli/src/commands/auth.ts`). All cited line numbers (`create-oauth-app-auth.ts:67,71,87-97,98,110-122,129,141,142-146,147,204,319-320`, `auth-state-store.ts:42,51,63`, `app.ts:238-252`, `resource-boundary.ts:99-114`, `persisted-state.svelte.ts:182-200`, etc.) contain the content the spec attributes to them.

@@ -14,19 +14,19 @@ Instead of:
 DbService → TanStack Query cache → Components
 ```
 
-The state modules live in `apps/whispering/src/lib/state/workspace-*.svelte.ts`. The old query layer in `lib/query/db.ts` is almost entirely dead—only `getAudioPlaybackUrl` survives because audio blobs are too large for Yjs CRDTs.
+The state modules live in `apps/whispering/src/lib/state/workspace-*.svelte.ts`. The old query layer in `lib/query/db.ts` is almost entirely dead. Only `getAudioPlaybackUrl` survives because audio blobs are too large for Yjs CRDTs.
 
 ## Investigation Summary
 
 ### db.ts (345 lines → ~25 lines)
 
 **Exported symbols:**
-- `dbKeys` — Query key registry with `recordings.*`, `transformations.*`, `runs.*`
-- `db` — Object with `recordings`, `transformations`, `runs` namespaces
+- `dbKeys`: Query key registry with `recordings.*`, `transformations.*`, `runs.*`
+- `db`: Object with `recordings`, `transformations`, `runs` namespaces
 
 **Alive:**
-- `db.recordings.getAudioPlaybackUrl` (lines 78–82) — Used in 3 consumer sites
-- `dbKeys.recordings.audioPlaybackUrl` (lines 20–21) — Key for the above query
+- `db.recordings.getAudioPlaybackUrl` (lines 78-82): Used in 3 consumer sites
+- `dbKeys.recordings.audioPlaybackUrl` (lines 20-21): Key for the above query
 
 **Dead (confirmed zero external consumers):**
 - `db.recordings.getAll`, `getLatest`, `getById`, `create`, `update`, `delete`
@@ -34,19 +34,19 @@ The state modules live in `apps/whispering/src/lib/state/workspace-*.svelte.ts`.
 - `db.runs.getByTransformationId`, `getByRecordingId`, `getLatestByRecordingId`, `delete`
 - All `dbKeys` entries except `recordings.audioPlaybackUrl`
 
-### transformer.ts — 5 dead invalidateQueries calls
+### transformer.ts: 5 dead invalidateQueries calls
 
 All use `dbKeys.runs.*` or `dbKeys.transformations.*`. No component subscribes to these keys anymore.
 
 | Line | Key | Status |
 |------|-----|--------|
-| 110–112 | `dbKeys.runs.byTransformationId(transformation.id)` | DEAD |
-| 113–115 | `dbKeys.transformations.byId(transformation.id)` | DEAD |
-| 159–161 | `dbKeys.runs.byRecordingId(recordingId)` | DEAD |
-| 162–164 | `dbKeys.runs.byTransformationId(transformation.id)` | DEAD |
-| 165–167 | `dbKeys.transformations.byId(transformation.id)` | DEAD |
+| 110-112 | `dbKeys.runs.byTransformationId(transformation.id)` | DEAD |
+| 113-115 | `dbKeys.transformations.byId(transformation.id)` | DEAD |
+| 159-161 | `dbKeys.runs.byRecordingId(recordingId)` | DEAD |
+| 162-164 | `dbKeys.runs.byTransformationId(transformation.id)` | DEAD |
+| 165-167 | `dbKeys.transformations.byId(transformation.id)` | DEAD |
 
-Also imports `dbKeys` from `./db` — must update after rename.
+Also imports `dbKeys` from `./db`: must update after rename.
 
 ### Consumer call sites (exactly 3)
 
@@ -60,9 +60,9 @@ Also imports `dbKeys` from `./db` — must update after rename.
 
 | File | Import | Status |
 |------|--------|--------|
-| `query/actions.ts` | `DbError` | KEEP — used at line 443: `DbError.NoValidFiles()` |
-| `query/transformer.ts` | `TransformationRunCompleted`, `TransformationRunFailed`, `TransformationRunRunning` | KEEP — run lifecycle still goes through DbService |
-| `migration/` files | Various | KEEP — reads old format intentionally |
+| `query/actions.ts` | `DbError` | KEEP: used at line 443: `DbError.NoValidFiles()` |
+| `query/transformer.ts` | `TransformationRunCompleted`, `TransformationRunFailed`, `TransformationRunRunning` | KEEP: run lifecycle still goes through DbService |
+| `migration/` files | Various | KEEP: reads old format intentionally |
 
 ### Non-db invalidateQueries (KEEP)
 
@@ -113,13 +113,13 @@ export const audio = {
 
 ### Task 2: Remove dead invalidateQueries from transformer.ts
 
-Remove all 5 `queryClient.invalidateQueries` calls and the `import { dbKeys } from './db'` line. Also remove the unused `import { queryClient } from '$lib/query/client'` import (verify `queryClient` isn't used elsewhere in the file first—it's imported on line 8 but only used for invalidation).
+Remove all 5 `queryClient.invalidateQueries` calls and the `import { dbKeys } from './db'` line. Also remove the unused `import { queryClient } from '$lib/query/client'` import (verify `queryClient` isn't used elsewhere in the file first. It's imported on line 8 but only used for invalidation).
 
 **Lines to remove:**
 - Line 8: `queryClient` from the `defineMutation` import (keep `defineMutation`)
 - Line 26: `import { dbKeys } from './db';`
-- Lines 110–115: Both invalidateQueries in `transformInput`
-- Lines 159–167: All three invalidateQueries in `transformRecording`
+- Lines 110-115: Both invalidateQueries in `transformInput`
+- Lines 159-167: All three invalidateQueries in `transformRecording`
 
 - [x] Done
 
@@ -158,7 +158,7 @@ Update all call sites from `rpc.db.recordings.getAudioPlaybackUrl(...)` → `rpc
 The README (1117 lines) references the old architecture extensively. Update:
 
 1. Remove references to `rpc.db.recordings.*` examples
-2. Update "Query Layer vs State" table—remove `rpc.db.recordings.getAll` example, replace with `rpc.audio.getPlaybackUrl`
+2. Update "Query Layer vs State" table. Remove `rpc.db.recordings.getAll` example, replace with `rpc.audio.getPlaybackUrl`
 3. Add note explaining workspace state modules handle CRUD, TanStack Query only for: external APIs (transcription, LLM completions), hardware state (recorder, devices), and audio blob access
 4. Update "The Three Layers" section to reflect the new architecture
 
@@ -166,13 +166,13 @@ The README (1117 lines) references the old architecture extensively. Update:
 
 ## What NOT to Touch
 
-- `lib/services/db/` — Frozen DbService types and implementations. Still needed for audio blob access, run lifecycle, and migration.
-- `lib/migration/` — Reads old format intentionally.
-- `lib/state/workspace-*.svelte.ts` — Correct and complete.
-- `query/actions.ts` — `DbError` import is still alive.
-- `query/transformer.ts` types — `TransformationRunCompleted/Failed/Running` imports still alive.
+- `lib/services/db/`: Frozen DbService types and implementations. Still needed for audio blob access, run lifecycle, and migration.
+- `lib/migration/`: Reads old format intentionally.
+- `lib/state/workspace-*.svelte.ts`: Correct and complete.
+- `query/actions.ts`: `DbError` import is still alive.
+- `query/transformer.ts` types: `TransformationRunCompleted/Failed/Running` imports still alive.
 - Any `createQuery` for non-db data (recorder, devices, ffmpeg, clipboard, autostart).
-- `query/recorder.ts` and `query/desktop/autostart.ts` — their `invalidateQueries` calls are for non-db keys.
+- `query/recorder.ts` and `query/desktop/autostart.ts`: their `invalidateQueries` calls are for non-db keys.
 
 ## Review
 
@@ -180,14 +180,14 @@ The README (1117 lines) references the old architecture extensively. Update:
 
 ### Summary
 
-Removed ~320 lines of dead query layer code (CRUD queries, mutations, cache management, query keys) after the Yjs workspace state migration. Only `getAudioPlaybackUrl` survived—audio blobs are too large for CRDTs.
+Removed ~320 lines of dead query layer code (CRUD queries, mutations, cache management, query keys) after the Yjs workspace state migration. Only `getAudioPlaybackUrl` survived. Audio blobs are too large for CRDTs.
 
 ### Execution Order
 
 Tasks were reordered from the spec for buildability:
 
 1. **Task 2 first** (commit `d3bec52`): Removed transformer.ts's dependency on `./db` (5 dead `invalidateQueries` + unused `queryClient`/`dbKeys` imports). This unblocked the rename.
-2. **Tasks 1+3+4 together** (commit `eb027a2`): Gutted db.ts → audio.ts, updated index.ts barrel export, and updated all 3 consumer call sites. These formed one atomic rename—can't rename a module without updating all references simultaneously.
+2. **Tasks 1+3+4 together** (commit `eb027a2`): Gutted db.ts → audio.ts, updated index.ts barrel export, and updated all 3 consumer call sites. These formed one atomic rename. Can't rename a module without updating all references simultaneously.
 3. **Task 5** (commit `1563dd4`): Updated README "The Three Layers" and "Query Layer vs State" sections to document the new architecture.
 
 ### Deviations from Spec
@@ -196,10 +196,10 @@ Tasks were reordered from the spec for buildability:
 
 ### Typecheck Results
 
-Zero new errors introduced. 12 pre-existing errors remain in `packages/ui/`, `packages/workspace/`, `Runs.svelte`, `actions.ts`, and `transform-clipboard/+page.svelte`—all unrelated to this cleanup.
+Zero new errors introduced. 12 pre-existing errors remain in `packages/ui/`, `packages/workspace/`, `Runs.svelte`, `actions.ts`, and `transform-clipboard/+page.svelte`: all unrelated to this cleanup.
 
 ### Additional Cleanup (2026-03-15 audit)
 
-**ARCHITECTURE.md** — Replaced stale "Optimistic Updates" section (lines 86–110) that showed the dead `createRecording` mutation with `queryClient.setQueryData(['recordings'], ...)`. Replaced with "Workspace State" section documenting the current architecture: domain data in Yjs CRDTs, query layer narrowed to external APIs/hardware/audio blobs. Also updated line 140 `rpc.recordings.getAllRecordings` → `rpc.audio.*`, `rpc.transcription.*`, `rpc.recorder.*`.
+**ARCHITECTURE.md**: Replaced stale "Optimistic Updates" section (lines 86-110) that showed the dead `createRecording` mutation with `queryClient.setQueryData(['recordings'], ...)`. Replaced with "Workspace State" section documenting the current architecture: domain data in Yjs CRDTs, query layer narrowed to external APIs/hardware/audio blobs. Also updated line 140 `rpc.recordings.getAllRecordings` → `rpc.audio.*`, `rpc.transcription.*`, `rpc.recorder.*`.
 
-**Remaining known staleness (flagged, not fixed):** The query/README.md contains ~35 `rpc.recordings.*` references in teaching examples that illustrate general TanStack Query patterns (defineQuery, defineMutation, reactive/imperative interfaces). These reference non-existent APIs but the patterns they teach are still conceptually valid. A full README rewrite is needed to replace these with current API examples — out of scope for this minimal cleanup.
+**Remaining known staleness (flagged, not fixed):** The query/README.md contains ~35 `rpc.recordings.*` references in teaching examples that illustrate general TanStack Query patterns (defineQuery, defineMutation, reactive/imperative interfaces). These reference non-existent APIs but the patterns they teach are still conceptually valid. A full README rewrite is needed to replace these with current API examples: out of scope for this minimal cleanup.

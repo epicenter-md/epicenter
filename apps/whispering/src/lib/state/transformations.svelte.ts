@@ -3,7 +3,7 @@
  *
  * Replaces TanStack Query + BlobStore for transformation CRUD. The workspace
  * model stores transformations as metadata rows (title, description, timestamps)
- * without embedded steps—steps live in a separate `transformationSteps` table.
+ * without embedded steps. Steps live in a separate `transformationSteps` table.
  *
  * @example
  * ```typescript
@@ -56,7 +56,7 @@ function createTransformations() {
 
 		/**
 		 * All transformations as a sorted array (alphabetical by title).
-		 * Memoized via `$derived`—stable reference until SvelteMap changes.
+		 * Memoized via `$derived`. Stable reference until SvelteMap changes.
 		 */
 		get sorted(): Transformation[] {
 			return sorted;
@@ -127,7 +127,7 @@ export function generateDefaultTransformation(): Transformation {
  * - Deletes existing steps first (no-op on create since none exist yet),
  *   then re-inserts with correct ordering.
  *
- * Callers should pass `$state.snapshot()` values—this function takes plain data.
+ * Callers should pass `$state.snapshot()` values. This function takes plain data.
  *
  * @example
  * ```typescript

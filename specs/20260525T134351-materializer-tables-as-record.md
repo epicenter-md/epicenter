@@ -24,7 +24,7 @@ attachMarkdownMaterializer(ydoc, { dir })
   .kv(kv);
 ```
 
-That enumeration was forced when TypeBox columns did **not** map 1:1 to Drizzle/SQLite types — some columns weren't materializable, so the caller had to pick. After the recent materializer surface cleanup (commit `d411eab64`) and the schema mapping work (commit `760eb8376`), every column a TypeBox table can declare is now materializable. The "pick which tables to mirror" requirement is a constraint paying off a problem that no longer exists.
+That enumeration was forced when TypeBox columns did **not** map 1:1 to Drizzle/SQLite types: some columns weren't materializable, so the caller had to pick. After the recent materializer surface cleanup (commit `d411eab64`) and the schema mapping work (commit `760eb8376`), every column a TypeBox table can declare is now materializable. The "pick which tables to mirror" requirement is a constraint paying off a problem that no longer exists.
 
 A side-effect of the chain was per-backend factory rebinding (each of `attachBunSqliteMaterializer`, `attachTursoMaterializer` rebinds `.table()` to thread `.client` / `.whenConnected` through the chain). That code disappears when registration moves out of the chain.
 
@@ -175,7 +175,7 @@ Same inference pattern as `fts`. Each per-table block sees the right row type fo
 
 - Drop `isRegistrationOpen` flag and assignments.
 - Drop `MaterializerBuilder` type, `builder` object, `.table()` method.
-- Drop `TableConfig.serialize` (the per-column value serializer override — unused in the repo). Keep `serializeValue` as the only value serializer.
+- Drop `TableConfig.serialize` (the per-column value serializer override: unused in the repo). Keep `serializeValue` as the only value serializer.
 - Drop the runtime "called after initial flush" error.
 - Take `tables: TTables` and `fts?: FtsConfig<TTables>` in options.
 - Populate the `registered` map synchronously before `initialize()`.
@@ -205,8 +205,8 @@ Same inference pattern as `fts`. Each per-table block sees the right row type fo
 
 The `.table()` / `.kv()` methods carry JSDoc that says "Must be called synchronously after construction, before `whenFlushed` resolves. Calls after the initial flush throw." That text dies with the methods. Locations:
 
-- `sqlite/core.ts` `MaterializerBuilder.table` (around line 387) — entire method JSDoc disappears.
-- `markdown/materializer.ts` `MaterializerBuilder.table` and `.kv` (around lines 609-624) — entire method JSDoc disappears.
+- `sqlite/core.ts` `MaterializerBuilder.table` (around line 387): entire method JSDoc disappears.
+- `markdown/materializer.ts` `MaterializerBuilder.table` and `.kv` (around lines 609-624): entire method JSDoc disappears.
 - Module-level JSDoc on `attachMarkdownMaterializer` says "returns a chainable builder where `.table(tableRef, config?)` opts in..." (around line 214). Rewrite to describe the options-bag shape.
 
 Inline comments inside `initialize()` reference the removed methods:
@@ -216,7 +216,7 @@ Inline comments inside `initialize()` reference the removed methods:
 
 ### Preserve destroy-listener ordering
 
-In both `sqlite/bun-sqlite.ts` and `sqlite/turso.ts`, the per-backend factory currently registers its `client.close()` destroy listener AFTER calling `attachSqliteMaterializerCore`. That order is invariant — core's listener runs first (cancels timers, detaches observers) so the database handle isn't closed under live work. When collapsing the augmented builder to `{ ...core, client }`, keep the order: `const core = attachSqliteMaterializerCore(...)` first, `ydoc.once('destroy', () => client.close())` second, `return { ...core, client }` last.
+In both `sqlite/bun-sqlite.ts` and `sqlite/turso.ts`, the per-backend factory currently registers its `client.close()` destroy listener AFTER calling `attachSqliteMaterializerCore`. That order is invariant: core's listener runs first (cancels timers, detaches observers) so the database handle isn't closed under live work. When collapsing the augmented builder to `{ ...core, client }`, keep the order: `const core = attachSqliteMaterializerCore(...)` first, `ydoc.once('destroy', () => client.close())` second, `return { ...core, client }` last.
 
 ## Call site updates
 
@@ -454,7 +454,7 @@ rg "AttachBunSqliteMaterializerBuilder|AttachTursoMaterializerBuilder" packages/
 
 ### Why not chain `.withFts(...)`
 
-- No inference benefit over the keyed object — TypeScript narrows just as well.
+- No inference benefit over the keyed object: TypeScript narrows just as well.
 - Would re-introduce the per-backend-factory rebinding problem the chain caused.
 - The keyed object is statically inspectable (you can see the FTS config sitting next to the tables in one block); a chain hides it behind another call.
 

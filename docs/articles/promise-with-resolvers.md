@@ -9,7 +9,7 @@ const promise = new Promise<void>((r) => {
 });
 ```
 
-This is awkward. You declare a variable, leave it uninitialized, then assign it inside a callback just to use it outside. It's the closure escape hatch pattern, and it's everywhere — cancellable timeouts, deferred results, bridging event-based APIs to async/await.
+This is awkward. You declare a variable, leave it uninitialized, then assign it inside a callback just to use it outside. It's the closure escape hatch pattern, and it's everywhere: cancellable timeouts, deferred results, bridging event-based APIs to async/await.
 
 The pattern is so common it got its own built-in. `Promise.withResolvers<T>()` returns all three pieces as a plain object:
 
@@ -31,8 +31,8 @@ function createSleeper(timeout: number) {
 }
 ```
 
-`setTimeout` resolves it after the delay. But `wake` (which is just `resolve`) can resolve it early. Since `resolve` is idempotent — calling it a second time does nothing — both paths are safe. If the timeout fires after `wake()`, it's a no-op.
+`setTimeout` resolves it after the delay. But `wake` (which is just `resolve`) can resolve it early. Since `resolve` is idempotent: calling it a second time does nothing: both paths are safe. If the timeout fires after `wake()`, it's a no-op.
 
 ## One thing to know
 
-`resolve` is idempotent. The first call wins. This matters when you have competing resolution paths (timeout vs manual wake, race conditions, etc.). You don't need guards or flags — just call `resolve` from wherever, and the first one to arrive settles the promise. Every subsequent call is silently ignored.
+`resolve` is idempotent. The first call wins. This matters when you have competing resolution paths (timeout vs manual wake, race conditions, etc.). You don't need guards or flags, just call `resolve` from wherever, and the first one to arrive settles the promise. Every subsequent call is silently ignored.

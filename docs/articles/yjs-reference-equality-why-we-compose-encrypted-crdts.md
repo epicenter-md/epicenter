@@ -8,7 +8,7 @@ Then we ran the experiments.
 
 `YKeyValueLww` is a last-write-wins key-value store backed by a Yjs `Y.Array`. Each entry is `{ key, val, ts }`. The class maintains an in-memory `Map` for O(1) lookups and resolves conflicts using timestamps. When two devices write to the same key, the observer compares timestamps and deletes the loser from the array.
 
-The encryption goal is simple: `val` should be ciphertext in the Y.Array and plaintext when consumers read it. Everything else—conflict resolution, timestamps, sync—stays the same.
+The encryption goal is simple: `val` should be ciphertext in the Y.Array and plaintext when consumers read it. Everything else stays the same: conflict resolution, timestamps, sync.
 
 ```typescript
 // Before encryption: plaintext everywhere
@@ -55,11 +55,11 @@ yarray.observe((event) => {
 
 yarray.push([obj]);
 
-obj === observerObj;           // true — same JS object
-obj === yarray.toArray()[0];   // true — same JS object
+obj === observerObj;           // true: same JS object
+obj === yarray.toArray()[0];   // true: same JS object
 ```
 
-This holds for local operations (same document, same JavaScript runtime). Remote operations—where updates are decoded from binary—naturally produce new objects.
+This holds for local operations (same document, same JavaScript runtime). Remote operations. Where updates are decoded from binary. Naturally produce new objects.
 
 ## Why Reference Equality Is Load-Bearing
 
@@ -151,7 +151,7 @@ map.set('x', decryptedEntry);
 // Later: try to find it in the array
 const allEntries = yarray.toArray();
 const existing = map.get('x');
-allEntries.indexOf(existing);  // -1 — not found
+allEntries.indexOf(existing);  // -1, not found
 ```
 
 The test passes. The entry is not found. Conflict resolution breaks.
@@ -206,9 +206,9 @@ So you ALSO need:                       ← already have it
 decryptedMap: { k1: plain_A, ... }
 ```
 
-Both approaches land on the same two-map architecture—encrypted map for CRDT internals, decrypted map for consumers. The fork just gets there with 600 extra lines of duplicated CRDT logic.
+Both approaches land on the same two-map architecture. Encrypted map for CRDT internals, decrypted map for consumers. The fork just gets there with 600 extra lines of duplicated CRDT logic.
 
-The fork also has an interface problem. If it exposes `.map` (the encrypted map), every consumer needs to know about encryption—table-helper, KV consumers, anything that reads entries. If it exposes the decrypted map as `.map` instead, you're back to the original `indexOf` failure: different objects in the map versus the array. There's no way to serve both the CRDT internals and the consumers with a single map when encryption is involved.
+The fork also has an interface problem. If it exposes `.map` (the encrypted map), every consumer needs to know about encryption. Table-helper, KV consumers, anything that reads entries. If it exposes the decrypted map as `.map` instead, you're back to the original `indexOf` failure: different objects in the map versus the array. There's no way to serve both the CRDT internals and the consumers with a single map when encryption is involved.
 
 ## Composition: Let the Engine Stay the Engine
 
@@ -268,6 +268,6 @@ Experiment 7 is particularly telling: mutating an object's property after `push(
 
 ## The Takeaway
 
-When you build on top of a CRDT, the CRDT's internal assumptions become your constraints. Yjs stores objects by reference and uses reference equality for structural operations like conflict resolution. Any layer that creates new objects for the same logical entries—whether through decryption, migration, or transformation—breaks that identity chain. And even if you avoid creating new objects by keeping the map encrypted, you still need a decrypted map for consumers—which is composition's architecture anyway, minus the maintenance burden.
+When you build on top of a CRDT, the CRDT's internal assumptions become your constraints. Yjs stores objects by reference and uses reference equality for structural operations like conflict resolution. Any layer that creates new objects for the same logical entries, whether through decryption, migration, or transformation, breaks that identity chain. And even if you avoid creating new objects by keeping the map encrypted, you still need a decrypted map for consumers, which is composition's architecture anyway, minus the maintenance burden.
 
 Composition respects the boundary. The CRDT engine stays untouched; the encryption layer sits above it with its own cache. A hundred lines of wrapper code beats six hundred lines of forked CRDT logic that you'd need to maintain in parallel, and the reference equality invariant never comes into question.

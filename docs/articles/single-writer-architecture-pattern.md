@@ -58,7 +58,7 @@ This is how many high-quality desktop applications handle multiple instances. In
 
 The single-writer pattern is not a silver bullet. Its main limitation is the bottleneck of a single CPU core. If your write volume exceeds what one process can handle, you eventually have to shard your data.
 
-However, for 99% of applications—especially local-first tools and internal services—the bottleneck isn't the CPU; it's the complexity of distributed state.
+However, for 99% of applications. Especially local-first tools and internal services. The bottleneck isn't the CPU; it's the complexity of distributed state.
 
 ### Why you want it:
 

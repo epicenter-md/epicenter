@@ -33,23 +33,23 @@ You have access to the user's notes via a Yjs CRDT-backed virtual filesystem. Ch
 - Search notes by content (full-text search via files_search)
 - Read file content (files_read)
 - List directory contents (files_list)
-- Create, edit, and delete files (files_write, files_create, files_delete — requires approval)
-- Move and rename files (files_move — requires approval)
-- Create directories (files_mkdir — requires approval)
-- Execute bash commands against the virtual filesystem (bash_exec — requires approval)
+- Create, edit, and delete files (files_write, files_create, files_delete: requires approval)
+- Move and rename files (files_move: requires approval)
+- Create directories (files_mkdir: requires approval)
+- Execute bash commands against the virtual filesystem (bash_exec: requires approval)
 
 ## Constraints
 - All file paths are absolute and start with /
-- The filesystem is virtual and backed by Yjs CRDTs — all changes sync in real-time
+- The filesystem is virtual and backed by Yjs CRDTs: all changes sync in real-time
 - Files are typically markdown (.md) but any text format is supported
 - Mutations (write, create, delete, move, mkdir, bash) require user approval before executing
 - Queries (search, read, list) execute automatically without approval
-- When reading large files, content may be truncated — use bash head/tail for specific sections`;
+- When reading large files, content may be truncated: use bash head/tail for specific sections`;
 
 /**
  * Build the system prompt section for global platform skills (Layer 2).
  *
- * Global skills come from the `@epicenter/skills` workspace — a CRDT-backed
+ * Global skills come from the `@epicenter/skills` workspace: a CRDT-backed
  * skill registry shared across ALL Epicenter apps. They define ecosystem-wide
  * conventions like writing voice, documentation patterns, and code style.
  *
@@ -74,7 +74,7 @@ export function buildGlobalSkillsPrompt(
 /**
  * Build the system prompt section for vault skills (Layer 3).
  *
- * Vault skills are markdown files in the user's `/skills/` directory — personal
+ * Vault skills are markdown files in the user's `/skills/` directory: personal
  * customizations that only apply to this vault. The user creates and edits them
  * like any other note in Opensidian.
  *
@@ -82,7 +82,7 @@ export function buildGlobalSkillsPrompt(
  * responses", "when summarizing, always include action items".
  *
  * Vault skills appear LAST in the system prompt, so they override global skills
- * when there's a conflict. This is intentional — the user's personal preferences
+ * when there's a conflict. This is intentional: the user's personal preferences
  * take priority over platform defaults.
  *
  * @param skills - Array of vault skills with filename and content

@@ -11,7 +11,7 @@ We discovered a conflict resolution problem in our YKeyValue implementation whil
 
 ## The Discovery
 
-YKeyValue is a meta data structure that provides a Map interface backed by a Y.Array. We chose it for its [dramatic storage efficiency](./ykeyvalue-migration-storage-gains.md) over Y.Map—1935x smaller in our benchmarks.
+YKeyValue is a meta data structure that provides a Map interface backed by a Y.Array. We chose it for its [dramatic storage efficiency](./ykeyvalue-migration-storage-gains.md) over Y.Map: 1935x smaller in our benchmarks.
 
 But while reading through y-lwwmap's documentation, we noticed it explicitly addresses a problem we hadn't considered: conflict resolution predictability.
 
@@ -30,7 +30,7 @@ Our original YKeyValue used "rightmost wins" conflict resolution. When two entri
 ]; // B wins
 ```
 
-This is deterministic given a specific array state. But the array state after CRDT merge depends on Yjs's internal ordering algorithm—which considers client IDs and vector clocks.
+This is deterministic given a specific array state. But the array state after CRDT merge depends on Yjs's internal ordering algorithm, which considers client IDs and vector clocks.
 
 From the user's perspective, **the winner is unpredictable**.
 
@@ -90,7 +90,7 @@ This is confirmed by dmonad (Yjs creator):
 
 > "The 'winner' is decided by `ydoc.clientID` of the document (which is a generated number). The higher clientID wins."
 >
-> — [GitHub issue #520](https://github.com/yjs/yjs/issues/520)
+> Source: [GitHub issue #520](https://github.com/yjs/yjs/issues/520)
 
 The actual comparison happens in Yjs source ([updates.js#L357](https://github.com/yjs/yjs/blob/main/src/utils/updates.js#L357)):
 
@@ -101,7 +101,7 @@ return dec2.curr.id.client - dec1.curr.id.client;
 
 ## What "Concurrent" Actually Means
 
-"Concurrent" in CRDT terms means **causally concurrent**—neither operation happened-before the other. This occurs when clients are **offline** and don't see each other's changes before making their own.
+"Concurrent" in CRDT terms means **causally concurrent**: neither operation happened-before the other. This occurs when clients are **offline** and don't see each other's changes before making their own.
 
 It does NOT mean "same millisecond." Two edits made hours apart are still "concurrent" if neither client synced in between.
 
@@ -148,7 +148,7 @@ type Entry<T> = { key: string; val: T; timestamp: number };
 
 ### Lamport-like Timestamps
 
-Raw wall clock time has problems—clocks drift between devices. We use synthetic timestamps inspired by Lamport clocks:
+Raw wall clock time has problems. Clocks drift between devices. We use synthetic timestamps inspired by Lamport clocks:
 
 ```typescript
 private lastTimestamp = 0;
@@ -185,7 +185,7 @@ if (existing && existing.timestamp > currVal.timestamp) {
 
 ### Timestamp Collision Handling
 
-y-lwwmap uses MD5 hashes to break ties when timestamps collide. We considered this but found it unnecessary for our use case—millisecond-precision timestamps with Lamport incrementing makes collisions extremely rare.
+y-lwwmap uses MD5 hashes to break ties when timestamps collide. We considered this but found it unnecessary for our use case. Millisecond-precision timestamps with Lamport incrementing makes collisions extremely rare.
 
 If you need deterministic tie-breaking, comparing the hash of serialized values works:
 
@@ -197,7 +197,7 @@ if (timestamp1 === timestamp2) {
 
 ## What About Deletions?
 
-y-lwwmap uses tombstones—entries with a timestamp but no value—to handle deletions correctly:
+y-lwwmap uses tombstones: entries with a timestamp but no value. To handle deletions correctly:
 
 ```typescript
 // Tombstone: deletion at timestamp T
@@ -222,13 +222,13 @@ Given YKeyValue's 1935x improvement over Y.Map, 8 bytes per entry is negligible.
 
 ## The Lesson
 
-CRDTs guarantee eventual consistency—all clients converge to the same state. But they don't guarantee the state you expect. Understanding your CRDT's conflict resolution semantics is critical for offline-first applications.
+CRDTs guarantee eventual consistency. All clients converge to the same state. But they don't guarantee the state you expect. Understanding your CRDT's conflict resolution semantics is critical for offline-first applications.
 
 As one community member noted:
 
 > "This is expected behavior. CRDT won't guarantee that result is always correct for each round, it only guarantees result is same for every client."
 >
-> — [GitHub issue #520 discussion](https://github.com/yjs/yjs/issues/520)
+> Source: [GitHub issue #520 discussion](https://github.com/yjs/yjs/issues/520)
 
 Two separate concerns:
 
@@ -236,7 +236,7 @@ Two separate concerns:
 
 2. **Conflict resolution (timestamps vs positional)**: When conflicts _do_ occur (same cell, offline edits), positional resolution can cause earlier edits to overwrite later ones. Timestamps ensure chronological order.
 
-These are orthogonal. Cell-level storage doesn't solve the LWW problem—it just makes conflicts rarer.
+These are orthogonal. Cell-level storage doesn't solve the LWW problem. It just makes conflicts rarer.
 
 **Current state**: We use cell-level storage but haven't yet implemented timestamps. The earlier-overwrites-later problem persists when two users edit the same column while offline. For most use cases this is acceptable; if users report "my edit disappeared" issues, we'll add timestamps.
 

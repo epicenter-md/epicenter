@@ -6,7 +6,7 @@
 
 ## Overview
 
-Collapse the tab manager's three runtime contexts (background service worker, popup Y.Doc, side panel reactive state) into a single side panel context. The side panel is a persistent extension page with full Chrome API access and no dormancy — eliminating the need for dual Y.Doc instances, duplicated browser event listeners, and the offscreen keepalive hack.
+Collapse the tab manager's three runtime contexts (background service worker, popup Y.Doc, side panel reactive state) into a single side panel context. The side panel is a persistent extension page with full Chrome API access and no dormancy: eliminating the need for dual Y.Doc instances, duplicated browser event listeners, and the offscreen keepalive hack.
 
 ## Motivation
 
@@ -14,11 +14,11 @@ Collapse the tab manager's three runtime contexts (background service worker, po
 
 Three separate contexts manage browser state independently:
 
-**1. Background service worker** (`src/entrypoints/background.ts`) — owns a Y.Doc, listens to all browser events, syncs browser state into Y.Doc, runs the command consumer for remote AI, and fights MV3 dormancy with an offscreen keepalive document.
+**1. Background service worker** (`src/entrypoints/background.ts`): owns a Y.Doc, listens to all browser events, syncs browser state into Y.Doc, runs the command consumer for remote AI, and fights MV3 dormancy with an offscreen keepalive document.
 
-**2. Popup workspace** (`src/lib/workspace-popup.ts`) — creates a *second* Y.Doc instance with the same `id: 'tab-manager'`. Attaches `.withActions()` for AI tool definitions. The two Y.Doc instances converge through shared IndexedDB persistence and WebSocket sync.
+**2. Popup workspace** (`src/lib/workspace-popup.ts`): creates a *second* Y.Doc instance with the same `id: 'tab-manager'`. Attaches `.withActions()` for AI tool definitions. The two Y.Doc instances converge through shared IndexedDB persistence and WebSocket sync.
 
-**3. Browser state** (`src/lib/state/browser-state.svelte.ts`) — a *third* layer that listens to the *same* browser events as the background, but writes into a reactive SvelteMap for the UI instead of Y.Doc.
+**3. Browser state** (`src/lib/state/browser-state.svelte.ts`): a *third* layer that listens to the *same* browser events as the background, but writes into a reactive SvelteMap for the UI instead of Y.Doc.
 
 ```
 Browser Events (tabs/windows/groups)
@@ -42,13 +42,13 @@ Y.Doc A           Y.Doc B
 
 This creates problems:
 
-1. **Triple duplication of browser event listeners**: Both `background.ts` and `browser-state.svelte.ts` register listeners for `tabs.onCreated`, `tabs.onRemoved`, `tabs.onUpdated`, `tabs.onMoved`, `tabs.onActivated`, `tabs.onAttached`, `tabs.onDetached`, `windows.onCreated`, `windows.onRemoved`, `windows.onFocusChanged` — identical events, different targets.
+1. **Triple duplication of browser event listeners**: Both `background.ts` and `browser-state.svelte.ts` register listeners for `tabs.onCreated`, `tabs.onRemoved`, `tabs.onUpdated`, `tabs.onMoved`, `tabs.onActivated`, `tabs.onAttached`, `tabs.onDetached`, `windows.onCreated`, `windows.onRemoved`, `windows.onFocusChanged`: identical events, different targets.
 
 2. **Two Y.Doc instances for one document**: The background and popup each call `createWorkspace(definition)` independently, producing two Y.Doc instances that must converge through IndexedDB and WebSocket. This doubles memory, connection overhead, and introduces convergence latency.
 
-3. **Offscreen keepalive hack**: Chrome MV3 service workers go dormant after ~30s of inactivity. The background creates an offscreen document (`offscreen.html`) that sends `keepalive` messages every 20 seconds — a workaround that exists solely because the background service worker is the Y.Doc owner.
+3. **Offscreen keepalive hack**: Chrome MV3 service workers go dormant after ~30s of inactivity. The background creates an offscreen document (`offscreen.html`) that sends `keepalive` messages every 20 seconds: a workaround that exists solely because the background service worker is the Y.Doc owner.
 
-4. **Bidirectional sync coordination complexity**: The background has an entire `syncCoordination` system with counters and `recentlyAddedTabIds` sets to prevent infinite loops between browser events and Y.Doc observers. This complexity exists because the background must handle both directions — it wouldn't be needed if browser state flowed one-way into Y.Doc.
+4. **Bidirectional sync coordination complexity**: The background has an entire `syncCoordination` system with counters and `recentlyAddedTabIds` sets to prevent infinite loops between browser events and Y.Doc observers. This complexity exists because the background must handle both directions: it wouldn't be needed if browser state flowed one-way into Y.Doc.
 
 5. **Confusing action dispatch**: The `execute*` functions in `actions.ts` call `chrome.tabs.*` directly. They're imported by *both* `workspace-popup.ts` (side panel, direct invocation) and `consumer.ts` (background, for remote AI commands). The command queue adds indirection that only matters for remote device targeting.
 
@@ -88,7 +88,7 @@ Side Panel (single context)
 
 Sources: [Chrome Side Panel API](https://developer.chrome.com/docs/extensions/reference/api/sidePanel), [Service Worker Lifecycle](https://developer.chrome.com/docs/extensions/develop/concepts/service-workers/lifecycle), [Longer ESW Lifetimes](https://developer.chrome.com/blog/longer-esw-lifetimes)
 
-**Key finding**: The side panel is a full extension page — same privileges as the background service worker, but with a persistent JavaScript context that doesn't fight dormancy. An open side panel also prevents the extension from being considered idle, which means even the service worker wouldn't terminate.
+**Key finding**: The side panel is a full extension page: same privileges as the background service worker, but with a persistent JavaScript context that doesn't fight dormancy. An open side panel also prevents the extension from being considered idle, which means even the service worker wouldn't terminate.
 
 **Key finding**: Firefox sidebars (`sidebar_action`) also have full access to `browser.tabs` and all WebExtension APIs. Source: [MDN WebExtension APIs](https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/API)
 
@@ -113,10 +113,10 @@ Sources: [Chrome Side Panel API](https://developer.chrome.com/docs/extensions/re
 | Decision | Choice | Rationale |
 |---|---|---|
 | Single runtime context | Side panel | Full API access, persistent lifetime, already has most of the code |
-| Background service worker | Remove entirely | No longer needed — side panel handles everything. If panel is closed, extension is "off" |
+| Background service worker | Remove entirely | No longer needed: side panel handles everything. If panel is closed, extension is "off" |
 | Y.Doc instance count | One (in side panel) | Eliminates convergence overhead, double memory, sync coordination |
 | Browser event listeners | Merge into one set | Feed both SvelteMap (UI) and Y.Doc (sync) from the same handlers |
-| Offscreen keepalive | Remove | Side panel doesn't need it — no dormancy problem |
+| Offscreen keepalive | Remove | Side panel doesn't need it: no dormancy problem |
 | Command consumer location | Side panel | Has access to both Y.Doc tables and Chrome APIs |
 | Sync coordination counters | Remove | With one context owning both Y.Doc and browser listeners, the bidirectional loop problem disappears. Browser events write to Y.Doc with a local origin; Y.Doc observers only act on remote origins. |
 | `workspace-popup.ts` naming | Rename to `workspace-client.ts` | No longer popup-specific |
@@ -214,7 +214,7 @@ Other Device                    This Device (Side Panel)
 - [x] **1.3** Add Y.Doc delete calls in removal handlers
 - [x] **1.4** Add tab group event handlers that write to Y.Doc
 - [x] **1.5** Add device registration logic to the side panel's initialization
-- [x] **1.6** Add the initial `refetchAll()` equivalent — seed Y.Doc from browser state on side panel open
+- [x] **1.6** Add the initial `refetchAll()` equivalent: seed Y.Doc from browser state on side panel open
 
 ### Phase 2: Move command consumer to side panel
 
@@ -224,11 +224,11 @@ Other Device                    This Device (Side Panel)
 ### Phase 3: Rename and clean up workspace-popup
 
 - [x] **3.1** Rename `workspace-popup.ts` → `workspace-client.ts`, update all imports
-- [x] **3.2** Remove the second `createWorkspace(definition)` call — single instance only
+- [x] **3.2** Remove the second `createWorkspace(definition)` call: single instance only
 
 ### Phase 4: Remove background service worker
 
-- [x] **4.1** Gut `src/entrypoints/background.ts` — reduced to 21-line minimal stub
+- [x] **4.1** Gut `src/entrypoints/background.ts`: reduced to 21-line minimal stub
 - [x] **4.2** Delete `src/entrypoints/offscreen.html`
 - [x] **4.3** Remove `'offscreen'` from permissions in `wxt.config.ts`
 - [x] **4.4** Remove all `syncCoordination` logic
@@ -240,7 +240,7 @@ Other Device                    This Device (Side Panel)
 - [x] **5.3** Remote changes via WebSocket trigger Y.Doc observers that call Chrome APIs
 - [x] **5.4** AI actions (search, close, group, etc.) work from side panel
 - [x] **5.5** Command consumer executes remote AI commands
-- [ ] **5.6** Cross-device sync works (two browsers with side panels open) — *needs manual testing*
+- [ ] **5.6** Cross-device sync works (two browsers with side panels open): *needs manual testing*
 
 ## Edge Cases
 
@@ -248,7 +248,7 @@ Other Device                    This Device (Side Panel)
 
 1. User closes the side panel
 2. No event listeners, no Y.Doc, no sync, no command consumer
-3. Extension is effectively "off" — this is the accepted trade-off
+3. Extension is effectively "off": this is the accepted trade-off
 4. When reopened, the side panel seeds from browser state + IndexedDB persistence picks up where Y.Doc left off
 
 ### Side Panel Opens After Remote Changes
@@ -278,7 +278,7 @@ Other Device                    This Device (Side Panel)
    - **Answer**: Yes. Kept a 21-line stub for `openPanelOnActionClick`.
 
 2. **Should `browser-state.svelte.ts` own the Y.Doc writes, or should a new unified module orchestrate both?**
-   - **Answer**: (a) — direct writes in browser-state. Each event handler writes to both SvelteMap and Y.Doc inline.
+   - **Answer**: (a): direct writes in browser-state. Each event handler writes to both SvelteMap and Y.Doc inline.
 
 3. **Should the Y.Doc refetch/diff logic run on every side panel open, or only when stale?**
    - **Answer**: Full refetch on every side panel open. Reuses the already-fetched `browser.windows.getAll({ populate: true })` data for both SvelteMap and Y.Doc seed (no redundant API calls). Single `batch()` transaction for all Y.Doc writes.
@@ -294,7 +294,7 @@ Key decisions made during implementation:
 - **Window observer existence check**: The `valid` case in the Y.Doc windows observer checks `browser.windows.get(row.windowId)` before creating, preventing duplicate windows on remote updates.
 - **Closure-safe narrowing**: `windows.onRemoved` captures `deviceId` into `currentDeviceId` before the `batch()` closure to avoid non-null assertions.
 - **Single batch for Y.Doc seed**: All window, tab, and tab group writes during the initial seed run in one `workspaceClient.batch()` call, producing a single Y.Doc transaction.
-- **`startCommandConsumer` return value**: Deliberately discarded — the side panel JS context tears down on close, so no explicit unsubscribe is needed.
+- **`startCommandConsumer` return value**: Deliberately discarded: the side panel JS context tears down on close, so no explicit unsubscribe is needed.
 
 ## Success Criteria
 
@@ -305,15 +305,15 @@ Key decisions made during implementation:
 - [x] `syncCoordination` object and all its references removed
 - [x] AI actions (search, close, group, pin, mute, reload, save, open, activate) work from side panel
 - [x] Command consumer processes remote AI commands in side panel
-- [ ] Cross-device sync functional (two browsers, both with side panels open) — *needs manual testing*
-- [ ] Extension loads and functions correctly in Chrome and Firefox — *needs manual testing*
+- [ ] Cross-device sync functional (two browsers, both with side panels open): *needs manual testing*
+- [ ] Extension loads and functions correctly in Chrome and Firefox: *needs manual testing*
 
 ## References
 
-- `src/entrypoints/background.ts` — Minimal stub (21 lines, `setPanelBehavior` only)
-- `src/lib/workspace-client.ts` — Single Y.Doc instance + AI actions + command consumer (renamed from `workspace-popup.ts`)
-- `src/lib/workspace.ts` — Schema definition (unchanged)
-- `src/lib/state/browser-state.svelte.ts` — Reactive browser state + Y.Doc writes + Y.Doc observers
-- `src/lib/commands/consumer.ts` — Command consumer (started from `workspace-client.ts`)
-- `src/lib/commands/actions.ts` — Execute functions (unchanged)
-- `wxt.config.ts` — Manifest config (`'offscreen'` permission removed)
+- `src/entrypoints/background.ts`: Minimal stub (21 lines, `setPanelBehavior` only)
+- `src/lib/workspace-client.ts`: Single Y.Doc instance + AI actions + command consumer (renamed from `workspace-popup.ts`)
+- `src/lib/workspace.ts`: Schema definition (unchanged)
+- `src/lib/state/browser-state.svelte.ts`: Reactive browser state + Y.Doc writes + Y.Doc observers
+- `src/lib/commands/consumer.ts`: Command consumer (started from `workspace-client.ts`)
+- `src/lib/commands/actions.ts`: Execute functions (unchanged)
+- `wxt.config.ts`: Manifest config (`'offscreen'` permission removed)

@@ -31,7 +31,7 @@ That's the theory. We went looking at what projects actually do.
 | Grafana | AGPL | Yes (CLA) | Open core + hosted |
 | GitLab | MIT (CE) | DCO (not CLA) | Open core + proprietary EE |
 
-The narrative around "dual-licensed open source" is mostly a myth. Cal.com and dub.sh are just AGPL with a hosted SaaS on top. They don't sell a commercial license; they sell the service. Bitwarden has proprietary enterprise modules, but those are written entirely by the Bitwarden team and live in a separate directory. Nextcloud's contributor guide explicitly says no CLA required. GitLab uses a DCO (Developer Certificate of Origin), which is just a sign-off saying "I wrote this and I have the right to contribute it"—not a copyright assignment.
+The narrative around "dual-licensed open source" is mostly a myth. Cal.com and dub.sh are just AGPL with a hosted SaaS on top. They don't sell a commercial license; they sell the service. Bitwarden has proprietary enterprise modules, but those are written entirely by the Bitwarden team and live in a separate directory. Nextcloud's contributor guide explicitly says no CLA required. GitLab uses a DCO (Developer Certificate of Origin), which is just a sign-off saying "I wrote this and I have the right to contribute it". Not a copyright assignment.
 
 Grafana does use a CLA, and it's one of the few projects where it makes sense: they sell Grafana Enterprise, which includes features that ship under a proprietary license. To relicense community contributions into that product, they need the copyright. That's the actual use case.
 

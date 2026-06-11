@@ -1,15 +1,15 @@
 # What Is a Uint8Array?
 
-A `Uint8Array` is a fixed-size block of raw bytes where every element is an unsigned 8-bit integer (0–255). Unlike a regular `Array`, which can hold anything and grows dynamically, a `Uint8Array` sits on top of contiguous binary memory and does exactly one thing: store small integers efficiently.
+A `Uint8Array` is a fixed-size block of raw bytes where every element is an unsigned 8-bit integer (0-255). Unlike a regular `Array`, which can hold anything and grows dynamically, a `Uint8Array` sits on top of contiguous binary memory and does exactly one thing: store small integers efficiently.
 
 ```js
 const arr = [42, "hello", { x: 1 }, null]  // Array: anything goes
 const buf = new Uint8Array(4)               // Uint8Array: 4 bytes, all zeros
 ```
 
-That difference in flexibility is also a difference in cost. A regular `Array` stores each element as a full JavaScript value—8 to 16 bytes of overhead per slot, scattered across the heap. A `Uint8Array` stores each element as exactly one byte, packed tightly in a single contiguous allocation.
+That difference in flexibility is also a difference in cost. A regular `Array` stores each element as a full JavaScript value: 8 to 16 bytes of overhead per slot, scattered across the heap. A `Uint8Array` stores each element as exactly one byte, packed tightly in a single contiguous allocation.
 
-## Regular Arrays Accept Everything—Uint8Arrays Don't
+## Regular Arrays Accept Everything; Uint8Arrays Don't
 
 A `Uint8Array` silently coerces everything to a number between 0 and 255. Values that don't fit get wrapped.
 
@@ -40,11 +40,11 @@ const bigger = new Uint8Array(6)
 bigger.set(old)  // copies old into the first 3 slots
 ```
 
-This is deliberate. Fixed-size means the engine can allocate one contiguous block and never move it—critical when you're processing thousands of bytes per frame.
+This is deliberate. Fixed-size means the engine can allocate one contiguous block and never move it, which is critical when you're processing thousands of bytes per frame.
 
 ## A Uint8Array Is a View Into an ArrayBuffer
 
-A `Uint8Array` doesn't own memory directly. It's a *view* into an `ArrayBuffer`—a chunk of raw, untyped bytes.
+A `Uint8Array` doesn't own memory directly. It's a *view* into an `ArrayBuffer`: a chunk of raw, untyped bytes.
 
 ```js
 const buffer = new ArrayBuffer(4)       // 4 bytes of raw memory
@@ -56,11 +56,11 @@ view[2] = 108  // 'l'
 view[3] = 108  // 'l'
 ```
 
-You can skip the explicit `ArrayBuffer`—`new Uint8Array(4)` creates one under the hood. But understanding the relationship matters when multiple views share the same memory. See [What Is an ArrayBuffer?](what-is-an-arraybuffer.md) for the full picture.
+You can skip the explicit `ArrayBuffer`: `new Uint8Array(4)` creates one under the hood. But understanding the relationship matters when multiple views share the same memory. See [What Is an ArrayBuffer?](what-is-an-arraybuffer.md) for the full picture.
 
 ## Uint8Array Is One of Many Typed Arrays
 
-`Uint8Array` is the most common typed array, but it has siblings. They all work the same way—fixed-size views over an `ArrayBuffer`—just with different element sizes and signedness.
+`Uint8Array` is the most common typed array, but it has siblings. They all work the same way: fixed-size views over an `ArrayBuffer`, just with different element sizes and signedness.
 
 ```js
 new Int8Array(4)      // signed: -128 to 127
@@ -89,10 +89,10 @@ If you're building something that touches files, sockets, or encryption, you'll 
 
 | | `Array` | `Uint8Array` |
 |---|---|---|
-| Element types | Anything | Only integers 0–255 |
+| Element types | Anything | Only integers 0-255 |
 | Size | Dynamic (`push`/`pop`) | Fixed at creation |
-| Memory per element | 8–16 bytes (boxing overhead) | Exactly 1 byte |
+| Memory per element | 8-16 bytes (boxing overhead) | Exactly 1 byte |
 | Memory layout | Sparse, non-contiguous | Contiguous binary buffer |
 | Backed by | JS engine internals | An `ArrayBuffer` |
 
-A regular `Array` is a general-purpose container. A `Uint8Array` is a byte buffer—one job, no overhead.
+A regular `Array` is a general-purpose container. A `Uint8Array` is a byte buffer. One job, no overhead.

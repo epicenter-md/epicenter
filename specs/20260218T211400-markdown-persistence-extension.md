@@ -4,8 +4,8 @@
 
 The tab-manager-markdown app had two separate systems:
 
-1. `createWorkspace(definition).withExtension('sync', ...)` — workspace with sync
-2. `createExporter(...)` — a hand-rolled observer that debounces and writes markdown files
+1. `createWorkspace(definition).withExtension('sync', ...)`: workspace with sync
+2. `createExporter(...)`: a hand-rolled observer that debounces and writes markdown files
 
 The exporter was doing what a persistence extension should do (observe Y.Doc → write to filesystem), but it lived outside the workspace lifecycle. This meant:
 
@@ -48,12 +48,12 @@ The sync extension already awaits `client.whenReady` before connecting, so order
   - `destroy` clears timers and flushes pending writes
   - `whenReady` ensures output directory exists
   - Reuses the existing `generateMarkdown` / `generateSummary` functions from `exporter.ts`
-- [x] Refactor `src/exporter.ts` — keep only the pure markdown generation functions (`generateMarkdown`, `generateSummary`, types), remove `createExporter`
+- [x] Refactor `src/exporter.ts`: keep only the pure markdown generation functions (`generateMarkdown`, `generateSummary`, types), remove `createExporter`
 - [x] Update `src/index.ts` to use the new extension chain, remove manual observer wiring and shutdown logic
 - [x] Verify with `bun run typecheck` in the app directory
 
 ## Non-goals
 
-- Don't move this extension into `packages/epicenter` — it's app-specific markdown serialization
+- Don't move this extension into `packages/epicenter`: it's app-specific markdown serialization
 - Don't change the markdown output format
 - Don't change the sync extension config

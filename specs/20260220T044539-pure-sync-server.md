@@ -2,7 +2,7 @@
 
 **Date**: 2026-02-20
 **Status**: Superseded
-**Superseded by**: `specs/20260220T080000-plugin-first-server-architecture.md` — all capabilities (on-demand rooms, 3 auth modes, zero @epicenter/workspace dependency) are included via `createSyncPlugin()` + `createSyncServer()` wrapper.
+**Superseded by**: `specs/20260220T080000-plugin-first-server-architecture.md`: all capabilities (on-demand rooms, 3 auth modes, zero @epicenter/workspace dependency) are included via `createSyncPlugin()` + `createSyncServer()` wrapper.
 **Author**: Braden + Claude
 **Relates to**: `specs/20260219T195800-server-architecture-rethink.md` (Layers 0+1)
 
@@ -17,14 +17,14 @@ Extract the sync relay from `@epicenter/server` into a standalone `createSyncSer
 The sync plugin lives inside `createServer()` which requires a fully initialized `AnyWorkspaceClient`:
 
 ```typescript
-// packages/server/src/server.ts — sync is buried inside the full server
+// packages/server/src/server.ts: sync is buried inside the full server
 createSyncPlugin({
 	getDoc: (room) => workspaces[room]?.ydoc, // only returns docs for known workspaces
 });
 ```
 
 ```typescript
-// packages/server/src/sync/index.ts — no auth, no dynamic rooms
+// packages/server/src/sync/index.ts: no auth, no dynamic rooms
 const doc = config.getDoc(room);
 if (!doc) {
 	ws.close(CLOSE_ROOM_NOT_FOUND, `Room not found: ${room}`);
@@ -83,7 +83,7 @@ server.start();
 | Room eviction   | No built-in eviction                            | `doc_gc_worker` evicts after inactivity          | 60s timer after last disconnect (good)   |
 | Protocol        | sync (0) + awareness (1) + auth (2) + query (3) | Same + custom extensions                         | Same + SYNC_STATUS (102) heartbeat echo  |
 
-**Key finding**: Both y-websocket and y-sweet create docs on-demand. Auth is orthogonal to sync. The sync server shouldn't care about workspace schemas — it's a room that relays Y.Doc updates.
+**Key finding**: Both y-websocket and y-sweet create docs on-demand. Auth is orthogonal to sync. The sync server shouldn't care about workspace schemas: it's a room that relays Y.Doc updates.
 
 **Implication**: The existing `createSyncPlugin` is 90% correct. It just needs: (1) auto-create docs instead of rejecting unknown rooms, and (2) auth checking before WebSocket upgrade.
 
@@ -91,7 +91,7 @@ server.start();
 
 The client (`@epicenter/sync`) speaks standard y-websocket protocol + MESSAGE_SYNC_STATUS (102). The server already handles all four message types correctly. No protocol changes needed.
 
-The 102 extension is backward-compatible — standard y-websocket clients ignore unknown message types, and the server gracefully handles clients that don't send 102.
+The 102 extension is backward-compatible: standard y-websocket clients ignore unknown message types, and the server gracefully handles clients that don't send 102.
 
 ## Design Decisions
 
@@ -140,7 +140,7 @@ createSyncServer()           createServer()
                                 └── discovery endpoint
 ```
 
-`createServer` would internally use `createSyncServer` (or its room manager) rather than duplicating sync logic. This is a future refactor — for now, `createSyncServer` is a new export alongside the existing `createServer`.
+`createServer` would internally use `createSyncServer` (or its room manager) rather than duplicating sync logic. This is a future refactor: for now, `createSyncServer` is a new export alongside the existing `createServer`.
 
 ## Implementation Plan
 
@@ -176,7 +176,7 @@ New function that composes the sync plugin into a standalone server.
 
 1. Server configured with no auth (Mode 1)
 2. Client sends `?token=xxx` anyway
-3. Server ignores the token — connection accepted. No error. The token is harmless.
+3. Server ignores the token: connection accepted. No error. The token is harmless.
 
 ### Client connects without token in token mode
 
@@ -187,29 +187,29 @@ New function that composes the sync plugin into a standalone server.
 
 ### Two clients connect to same room, one creates doc
 
-1. Client A connects to `/my-notes` — room doesn't exist, Y.Doc created
+1. Client A connects to `/my-notes`: room doesn't exist, Y.Doc created
 2. Client A sends sync step 1, server responds with sync step 2 (empty doc)
-3. Client A sends updates — server's Y.Doc now has data
-4. Client B connects to `/my-notes` — room exists, joins
+3. Client A sends updates: server's Y.Doc now has data
+4. Client B connects to `/my-notes`: room exists, joins
 5. Client B receives sync step 2 with Client A's data
 6. Both clients are now synced
 
 ### Server restarts, rooms are lost
 
-1. Server restarts — all in-memory Y.Docs are gone
+1. Server restarts: all in-memory Y.Docs are gone
 2. Clients reconnect, each sends sync step 1 with their state vector
 3. Server creates fresh Y.Doc, responds with empty sync step 2
 4. Clients send their full state as updates
 5. Server's Y.Doc is rebuilt from client state
 
-This is correct CRDT behavior — the clients are the source of truth. Persistence (keeping docs across restarts) is a Layer 4 concern.
+This is correct CRDT behavior. The clients are the source of truth. Persistence (keeping docs across restarts) is a Layer 4 concern.
 
 ### Rapid connect/disconnect during eviction window
 
-1. Last client disconnects — 60s eviction timer starts
-2. At 59s, new client connects — timer cancelled, room stays alive
-3. New client disconnects immediately — new 60s timer starts
-4. No client connects within 60s — room evicted, Y.Doc garbage collected
+1. Last client disconnects: 60s eviction timer starts
+2. At 59s, new client connects: timer cancelled, room stays alive
+3. New client disconnects immediately: new 60s timer starts
+4. No client connects within 60s: room evicted, Y.Doc garbage collected
 
 Already handled correctly by existing code.
 
@@ -244,9 +244,9 @@ Already handled correctly by existing code.
 
 ## References
 
-- `packages/server/src/sync/index.ts` — Current sync plugin (room management, WebSocket handler)
-- `packages/server/src/sync/protocol.ts` — Protocol encoding/decoding (unchanged)
-- `packages/server/src/server.ts` — Current `createServer()` that wraps everything
-- `packages/sync/src/provider.ts` — Client-side sync provider (3 auth modes)
-- `packages/sync/src/types.ts` — `SyncProviderConfig` with token/getToken
-- `specs/20260219T195800-server-architecture-rethink.md` — Broader layered architecture vision
+- `packages/server/src/sync/index.ts`: Current sync plugin (room management, WebSocket handler)
+- `packages/server/src/sync/protocol.ts`: Protocol encoding/decoding (unchanged)
+- `packages/server/src/server.ts`: Current `createServer()` that wraps everything
+- `packages/sync/src/provider.ts`: Client-side sync provider (3 auth modes)
+- `packages/sync/src/types.ts`: `SyncProviderConfig` with token/getToken
+- `specs/20260219T195800-server-architecture-rethink.md`: Broader layered architecture vision

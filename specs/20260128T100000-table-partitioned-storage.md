@@ -6,7 +6,7 @@
 **Location**: `packages/epicenter/src/cell`
 
 > **Note**: This spec proposed using `Y.Map<Y.Array>` for table partitioning. This approach was
-> abandoned because Y.Map uses LWW at the Map level—when two clients independently create a Y.Array
+> abandoned because Y.Map uses LWW at the Map level. When two clients independently create a Y.Array
 > for the same key, one client's entire Y.Array is lost. The implemented solution uses top-level
 > named Y.Arrays via `ydoc.getArray(tableId)` which merge correctly as Yjs shared types.
 
@@ -25,7 +25,7 @@ Y.Doc
 
 1. **O(n) reads**: To get all cells for a single row, we scan the entire workspace's cells array
 2. **Key bloat**: Every key includes `tableId:`, wasting storage
-3. **No isolation**: All tables share one array—large tables slow down reads for small tables
+3. **No isolation**: All tables share one array. Large tables slow down reads for small tables
 
 ## Proposed Structure
 

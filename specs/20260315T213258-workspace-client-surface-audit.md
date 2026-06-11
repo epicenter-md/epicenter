@@ -6,7 +6,7 @@
 
 ## Overview
 
-The encryption branch added four members to `WorkspaceClient`: `mode`, `lock()`, `activateEncryption(key)`, and `clearLocalData()`. It also renamed `destroy()` → `dispose()` and introduced a `clearData` lifecycle hook for extensions. This spec audits that surface area for unnecessary exposure, naming confusion, and leaky abstractions—then proposes a tighter API shape.
+The encryption branch added four members to `WorkspaceClient`: `mode`, `lock()`, `activateEncryption(key)`, and `clearLocalData()`. It also renamed `destroy()` → `dispose()` and introduced a `clearData` lifecycle hook for extensions. This spec audits that surface area for unnecessary exposure, naming confusion, and leaky abstractions. Then proposes a tighter API shape.
 
 ## Motivation
 
@@ -15,7 +15,7 @@ The encryption branch added four members to `WorkspaceClient`: `mode`, `lock()`,
 `WorkspaceClient` is the type every feature developer touches. After the encryption work, it carries five encryption-related members:
 
 ```typescript
-// packages/workspace/src/workspace/types.ts (lines 1238–1438)
+// packages/workspace/src/workspace/types.ts (lines 1238-1438)
 export type WorkspaceClient<...> = {
   id: TId;
   ydoc: Y.Doc;
@@ -40,7 +40,7 @@ export type WorkspaceClient<...> = {
 };
 ```
 
-The entire codebase has **one runtime caller** for `lock()`, `activateEncryption()`, `mode`, and `clearLocalData()`—the encryption wiring file:
+The entire codebase has **one runtime caller** for `lock()`, `activateEncryption()`, `mode`, and `clearLocalData()`: the encryption wiring file:
 
 ```typescript
 // apps/tab-manager/src/lib/state/encryption-wiring.svelte.ts (58 lines total)
@@ -102,11 +102,11 @@ Exhaustive search across `packages/workspace/`, `apps/epicenter/`, `apps/tab-man
 | Extension              | File                                          | `dispose()` | `clearData()` |
 | ---------------------- | --------------------------------------------- | ----------- | -------------- |
 | `indexeddbPersistence`  | `packages/workspace/src/extensions/sync/web.ts` | `idb.destroy()` | `idb.clearData()` |
-| `createSyncExtension`  | `packages/workspace/src/extensions/sync.ts`    | `provider.dispose()` | — |
-| `broadcastChannelSync` | `packages/workspace/src/extensions/sync/broadcast-channel.ts` | Channel close | — |
-| Desktop persistence     | `packages/workspace/src/extensions/sync/desktop.ts` | Compaction + cleanup | — |
+| `createSyncExtension`  | `packages/workspace/src/extensions/sync.ts`    | `provider.dispose()` |: |
+| `broadcastChannelSync` | `packages/workspace/src/extensions/sync/broadcast-channel.ts` | Channel close |: |
+| Desktop persistence     | `packages/workspace/src/extensions/sync/desktop.ts` | Compaction + cleanup |: |
 
-**Key finding**: Only `indexeddbPersistence` implements `clearData`. The semantics are genuinely different from `dispose`—one wipes data while keeping the client alive; the other releases resources while preserving data. They're not the same operation with a flag.
+**Key finding**: Only `indexeddbPersistence` implements `clearData`. The semantics are genuinely different from `dispose`: one wipes data while keeping the client alive; the other releases resources while preserving data. They're not the same operation with a flag.
 
 ### Quarantine exposure
 
@@ -126,11 +126,11 @@ Internal (not on WorkspaceClient):
                               └── lock/activateEncryption/mode
 ```
 
-**Key finding**: `quarantine` does not leak into `WorkspaceClient`, `TableHelper`, or `KvHelper`. The abstraction boundary is clean. `EncryptionMode` is the only encryption type re-exported from the package index—intentional and benign.
+**Key finding**: `quarantine` does not leak into `WorkspaceClient`, `TableHelper`, or `KvHelper`. The abstraction boundary is clean. `EncryptionMode` is the only encryption type re-exported from the package index. Intentional and benign.
 
 ### Precedent: IndexedDB persistence
 
-IndexedDB persistence (`y-indexeddb`) exposes `provider.destroy()` and `provider.clearData()` on the provider instance. But neither method appears on `WorkspaceClient`. They're internal to the extension lifecycle—the client calls `dispose()` or `clearLocalData()` and the framework dispatches to the right extension hooks. Lock/activateEncryption should follow the same pattern: internal to the encryption machinery, dispatched by the framework, not exposed on the client.
+IndexedDB persistence (`y-indexeddb`) exposes `provider.destroy()` and `provider.clearData()` on the provider instance. But neither method appears on `WorkspaceClient`. They're internal to the extension lifecycle. The client calls `dispose()` or `clearLocalData()` and the framework dispatches to the right extension hooks. Lock/activateEncryption should follow the same pattern: internal to the encryption machinery, dispatched by the framework, not exposed on the client.
 
 ## Design Decisions
 
@@ -161,11 +161,11 @@ function initEncryptionWiring(client: WorkspaceClient<...>) { ... }
 function initEncryptionWiring(control: WorkspaceEncryptionControl) { ... }
 ```
 
-`createWorkspace` returns the full client as before, but `WorkspaceClient` omits the encryption control methods. The runtime object still has them—consumers just need to cast or use the narrow type.
+`createWorkspace` returns the full client as before, but `WorkspaceClient` omits the encryption control methods. The runtime object still has them. Consumers just need to cast or use the narrow type.
 
 **Pros:**
 - Feature developers never see `lock`/`activateEncryption` in autocomplete
-- Wiring layer gets exactly the interface it needs—nothing more
+- Wiring layer gets exactly the interface it needs. Nothing more
 - `ExtensionContext` omission list stays consistent (already omits lifecycle methods)
 - Follows the same pattern as IndexedDB persistence internals
 
@@ -178,12 +178,12 @@ function initEncryptionWiring(control: WorkspaceEncryptionControl) { ... }
 The builder already has a wider type than the final client. Lock/activateEncryption could live on the builder only, accessible during setup but not after `.withActions()` seals the client.
 
 **Pros:**
-- No new type—uses existing builder/client distinction
+- No new type. Uses existing builder/client distinction
 - Natural temporal scoping: setup phase has access, runtime doesn't
 
 **Cons:**
 - The builder is returned from `createWorkspace()` before extensions are added. Encryption wiring runs after extension chaining is complete, so the builder type is gone by the time you need lock/activateEncryption
-- Conflates "building" with "wiring"—they're different phases
+- Conflates "building" with "wiring". They're different phases
 
 #### Option C: Keep on `WorkspaceClient`, omit from `ExtensionContext`
 
@@ -202,7 +202,7 @@ type ExtensionContext<...> = Omit<WorkspaceClient<...>,
 ```
 
 **Pros:**
-- Minimal change—one line diff
+- Minimal change. One line diff
 - Extensions can't call lock/activateEncryption (good)
 
 **Cons:**
@@ -215,7 +215,7 @@ Leave the current surface as-is.
 
 **Pros:**
 - Zero work
-- Having the methods visible is arguably "honest"—the client does support locking
+- Having the methods visible is arguably "honest". The client does support locking
 
 **Cons:**
 - Autocomplete noise for every feature developer
@@ -241,7 +241,7 @@ If lock/activateEncryption move to a wiring interface, `mode` lives on both: pub
 - Read-only signals intent: you can observe it but not change it
 
 **Cons:**
-- For plaintext-only workspaces, `mode` is always `'plaintext'`—noise if encryption is never used
+- For plaintext-only workspaces, `mode` is always `'plaintext'`: noise if encryption is never used
 
 #### Option B: Remove `mode` from public type, keep only on wiring interface
 
@@ -249,7 +249,7 @@ If no UI consumer exists yet, don't expose it. Add it back when a UI component a
 
 **Pros:**
 - Strictly minimal surface
-- YAGNI—no UI consumer exists today
+- YAGNI. No UI consumer exists today
 
 **Cons:**
 - Adding a member to a public type later is a minor API change that touches types, tests, and docs
@@ -271,7 +271,7 @@ lockAndClear(): Promise<void>;
 
 **Pros:**
 - Accurately describes both steps
-- No auth coupling—the workspace package doesn't know about sessions
+- No auth coupling. The workspace package doesn't know about sessions
 - Makes it obvious this is more destructive than a plain `lock()`
 
 **Cons:**
@@ -288,7 +288,7 @@ The actual semantic from the caller's perspective. The encryption wiring calls t
 
 **Cons:**
 - Couples naming to an auth concept the workspace package has no knowledge of
-- Workspace is a data layer—it shouldn't know what "signing out" means
+- Workspace is a data layer. It shouldn't know what "signing out" means
 - Misleading if called for non-auth reasons (e.g., "reset workspace to clean state")
 
 #### Option C: `wipeAndLock()`
@@ -296,7 +296,7 @@ The actual semantic from the caller's perspective. The encryption wiring calls t
 Same idea as `lockAndClear()` but emphasizes the data destruction first.
 
 **Pros:**
-- "Wipe" is stronger than "clear"—signals destructiveness
+- "Wipe" is stronger than "clear". Signals destructiveness
 - Order of words matches execution order (lock happens first in code, but the wipe is the more significant action)
 
 **Cons:**
@@ -340,7 +340,7 @@ These happen at different times in different contexts. `clearLocalData()` calls 
 **Pros:**
 - Opt-in: 5 of 6 extensions never touch it
 - Clean semantics: dispose ≠ wipe
-- Framework calls them independently—not a parameter on the same method
+- Framework calls them independently. Not a parameter on the same method
 
 **Cons:**
 - Extension authors must learn a third lifecycle hook exists (even if they usually ignore it)
@@ -355,7 +355,7 @@ Merge clearData into dispose as a parameter.
 
 **Cons:**
 - **Lifecycle conflict**: `clearLocalData()` calls `clearData()` without disposing. If clear is a parameter on dispose, you'd be calling `dispose({ clearData: true })` but meaning "don't actually dispose." That's contradictory
-- **Overloaded semantics**: `dispose` means "I'm done with this resource." Adding clearData makes it "I'm done with this resource AND/OR delete its data"—which overloads the concept
+- **Overloaded semantics**: `dispose` means "I'm done with this resource." Adding clearData makes it "I'm done with this resource AND/OR delete its data". Which overloads the concept
 - **Extension author burden**: Every `dispose` implementation now has an optional parameter, even though 5 of 6 extensions would ignore it
 
 ### 5. Quarantine exposure
@@ -379,11 +379,11 @@ WorkspaceClient → KvHelper<T>                          (no quarantine)
 - Console warnings provide debug visibility without API surface
 
 **Cons:**
-- No UI feedback mechanism for "N entries couldn't decrypt"—if the wrong key is used, entries silently return `undefined`
+- No UI feedback mechanism for "N entries couldn't decrypt". If the wrong key is used, entries silently return `undefined`
 
 #### Option B: Add a top-level `quarantineCount` to WorkspaceClient
 
-If a future UI needs to show "3 entries failed to decrypt—try a different key":
+If a future UI needs to show "3 entries failed to decrypt. Try a different key":
 
 ```typescript
 readonly quarantineCount: number;
@@ -394,7 +394,7 @@ readonly quarantineCount: number;
 - Enables UI feedback for wrong-key scenarios
 
 **Cons:**
-- No consumer exists yet—YAGNI
+- No consumer exists yet. YAGNI
 - Can be added later without breaking changes
 
 **Recommendation**: Don't add it until a UI component actually needs it.
@@ -531,7 +531,7 @@ Sign-out:            lock() → clearData() on each extension (LIFO)
 
 1. After removing `lock`/`activateEncryption` from the `WorkspaceClient` type, the runtime object returned by `createWorkspace()` still has these methods
 2. A consumer could access them via `(client as any).lock()` or by importing `WorkspaceEncryptionControl` and casting
-3. This is acceptable—TypeScript types are guardrails, not walls. The goal is autocomplete cleanliness and API signaling, not runtime enforcement
+3. This is acceptable. TypeScript types are guardrails, not walls. The goal is autocomplete cleanliness and API signaling, not runtime enforcement
 
 ## Open Questions
 
@@ -542,7 +542,7 @@ Sign-out:            lock() → clearData() on each extension (LIFO)
 2. **Should `lockAndClear()` also move to the wiring-only interface?**
    - It's currently on `WorkspaceClient` and omitted from `ExtensionContext` (same as `dispose`). The wiring layer is its only caller, same as `lock`/`activateEncryption`.
    - Options: (a) Keep on `WorkspaceClient` alongside `dispose` (both are lifecycle methods), (b) Move to `WorkspaceEncryptionControl` only
-   - **Recommendation**: Keep on `WorkspaceClient`. It's a lifecycle method like `dispose`—both are "you shouldn't call this from feature code" but they're part of the client's lifecycle contract. Removing lifecycle methods from the primary type would be confusing.
+   - **Recommendation**: Keep on `WorkspaceClient`. It's a lifecycle method like `dispose`: both are "you shouldn't call this from feature code" but they're part of the client's lifecycle contract. Removing lifecycle methods from the primary type would be confusing.
 
 3. **Should `mode` stay on `ExtensionContext`?**
    - Extensions currently see `mode` because `ExtensionContext` only omits `dispose`/`clearLocalData`/`asyncDispose`. An extension might legitimately want to check `mode` (e.g., a sync extension that behaves differently when locked).
@@ -550,7 +550,7 @@ Sign-out:            lock() → clearData() on each extension (LIFO)
    - **Recommendation**: Keep it. `mode` is read-only and informational. Extensions may have legitimate reasons to check encryption status (e.g., skip sync when locked, show warnings). It's not a control surface.
 
 4. **Naming: `lockAndClear` vs `wipeAndLock` vs `clearAndLock` vs something else?**
-   - The audit recommends `lockAndClear` but naming is subjective. The execution order is lock-then-clear, so `lockAndClear` matches. But the significant action is the clear—lock is a side effect.
+   - The audit recommends `lockAndClear` but naming is subjective. The execution order is lock-then-clear, so `lockAndClear` matches. But the significant action is the clear. Lock is a side effect.
    - **Recommendation**: Decide during implementation. `lockAndClear` is the default unless you feel differently.
 
 ## Success Criteria
@@ -566,27 +566,27 @@ Sign-out:            lock() → clearData() on each extension (LIFO)
 
 ## References
 
-- `packages/workspace/src/workspace/types.ts` — `WorkspaceClient`, `ExtensionContext`, `WorkspaceClientBuilder` types
-- `packages/workspace/src/workspace/create-workspace.ts` — Runtime client assembly, `clearLocalData` implementation
-- `packages/workspace/src/workspace/lifecycle.ts` — `Extension<T>` type, `defineExtension()`, `clearData` hook
-- `packages/workspace/src/shared/y-keyvalue/y-keyvalue-lww-encrypted.ts` — `YKeyValueLwwEncrypted<T>`, quarantine, `EncryptionMode`
-- `apps/tab-manager/src/lib/state/encryption-wiring.svelte.ts` — Sole runtime consumer of lock/activateEncryption/mode/clearLocalData
-- `packages/workspace/src/extensions/sync/web.ts` — `indexeddbPersistence`, sole `clearData` implementor
-- `specs/20260315T141700-encryption-wiring-factory.md` — Prior spec referencing the encryption surface
+- `packages/workspace/src/workspace/types.ts`: `WorkspaceClient`, `ExtensionContext`, `WorkspaceClientBuilder` types
+- `packages/workspace/src/workspace/create-workspace.ts`: Runtime client assembly, `clearLocalData` implementation
+- `packages/workspace/src/workspace/lifecycle.ts`: `Extension<T>` type, `defineExtension()`, `clearData` hook
+- `packages/workspace/src/shared/y-keyvalue/y-keyvalue-lww-encrypted.ts`: `YKeyValueLwwEncrypted<T>`, quarantine, `EncryptionMode`
+- `apps/tab-manager/src/lib/state/encryption-wiring.svelte.ts`: Sole runtime consumer of lock/activateEncryption/mode/clearLocalData
+- `packages/workspace/src/extensions/sync/web.ts`: `indexeddbPersistence`, sole `clearData` implementor
+- `specs/20260315T141700-encryption-wiring-factory.md`: Prior spec referencing the encryption surface
 
 ## Execution Notes
 
 **Execution order**: 3rd (after Encryption Wiring Factory)
 
-**Dependencies**: Encryption Wiring Factory (spec `20260315T141700`) must be implemented first — the factory already types its client narrowly as `EncryptionWiringClient`, which becomes the basis for `WorkspaceEncryptionControl`.
+**Dependencies**: Encryption Wiring Factory (spec `20260315T141700`) must be implemented first: the factory already types its client narrowly as `EncryptionWiringClient`, which becomes the basis for `WorkspaceEncryptionControl`.
 
 **Decision resolutions**:
 - **`clearLocalData` naming**: Keep `clearLocalData()`. Do NOT rename to `lockAndClear()`. The JSDoc already describes both steps (lock + wipe). Renaming adds churn across specs, tests, and consumers for marginal clarity.
-- **lock/activateEncryption removal**: Option A — type-only removal. Runtime object keeps the methods; `WorkspaceClient` type hides them. Wiring layer uses `WorkspaceEncryptionControl`.
+- **lock/activateEncryption removal**: Option A: type-only removal. Runtime object keeps the methods; `WorkspaceClient` type hides them. Wiring layer uses `WorkspaceEncryptionControl`.
 - **`mode` on WorkspaceClient**: Keep as read-only. Informational, legitimate UI use cases (lock icon, feature gating).
 - **`mode` on ExtensionContext**: Keep. Read-only, extensions may check encryption status.
-- **Quarantine exposure**: No changes needed — already fully internal.
-- **`lockAndClear` on wiring interface**: Keep `clearLocalData` on `WorkspaceClient` alongside `dispose` — both are lifecycle methods.
+- **Quarantine exposure**: No changes needed: already fully internal.
+- **`lockAndClear` on wiring interface**: Keep `clearLocalData` on `WorkspaceClient` alongside `dispose`: both are lifecycle methods.
 
 **Note**: After this spec executes, `WorkspaceClient` will no longer expose `lock()` or `activateEncryption()` in its type. The encryption wiring (now using the factory) will import `WorkspaceEncryptionControl` for the narrow interface.
 
@@ -598,7 +598,7 @@ Sign-out:            lock() → clearData() on each extension (LIFO)
 
 1. **`packages/workspace/src/workspace/types.ts`**:
    - Added `WorkspaceEncryptionControl` type with `id`, `mode`, `lock()`, `activateEncryption()`, `clearLocalData()`
-   - Removed `lock()` and `activateEncryption()` from `WorkspaceClient` type (type-only — runtime object unchanged)
+   - Removed `lock()` and `activateEncryption()` from `WorkspaceClient` type (type-only: runtime object unchanged)
    - `mode` and `clearLocalData()` remain on `WorkspaceClient`
 
 2. **`packages/workspace/src/workspace/index.ts`**: Exported `WorkspaceEncryptionControl`
@@ -611,10 +611,10 @@ Sign-out:            lock() → clearData() on each extension (LIFO)
 
 ### Deviations from spec
 
-- **`encryption-wiring.svelte.ts`** no longer exists — replaced by `key-manager.svelte.ts` + `createKeyManager` factory (Encryption Wiring Factory spec already executed)
-- **`EncryptionWiringClient`** renamed to `KeyManagerTarget` — lives in `packages/workspace/src/shared/crypto/key-manager.ts`. Left as-is; `WorkspaceEncryptionControl` is the public type, `KeyManagerTarget` is the internal key-manager interface. Structurally compatible (WEC ⊃ KMT)
-- **`clearLocalData` NOT renamed** — per explicit instruction, kept current name
-- **`ExtensionContext` unchanged** — `lock()`/`activateEncryption()` removal from `WorkspaceClient` automatically excludes them from `ExtensionContext` via existing `Omit<>`. No omit list update needed
+- **`encryption-wiring.svelte.ts`** no longer exists: replaced by `key-manager.svelte.ts` + `createKeyManager` factory (Encryption Wiring Factory spec already executed)
+- **`EncryptionWiringClient`** renamed to `KeyManagerTarget`: lives in `packages/workspace/src/shared/crypto/key-manager.ts`. Left as-is; `WorkspaceEncryptionControl` is the public type, `KeyManagerTarget` is the internal key-manager interface. Structurally compatible (WEC ⊃ KMT)
+- **`clearLocalData` NOT renamed**: per explicit instruction, kept current name
+- **`ExtensionContext` unchanged**: `lock()`/`activateEncryption()` removal from `WorkspaceClient` automatically excludes them from `ExtensionContext` via existing `Omit<>`. No omit list update needed
 
 ### Verification
 

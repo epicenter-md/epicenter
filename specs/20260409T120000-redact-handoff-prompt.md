@@ -1,4 +1,4 @@
-# Handoff Prompt: Vault E2E Encryption — Phase 1 (Crypto Helpers) [Implemented]
+# Handoff Prompt: Vault E2E Encryption: Phase 1 (Crypto Helpers) [Implemented]
 
 Execute Phase 1 of the spec at `specs/20260409T120000-redact-password-encrypted-vault.md`. This phase adds 3 password-based key derivation functions to the existing crypto module and writes tests for them.
 
@@ -56,7 +56,7 @@ import { pbkdf2 } from '@noble/hashes/pbkdf2.js';
 // Synchronous. Same Cure53-audited library as hkdf and sha256.
 ```
 
-### How These New Functions Will Be Used (Downstream — NOT Part of This Phase)
+### How These New Functions Will Be Used (Downstream: NOT Part of This Phase)
 
 ```typescript
 // Future vault unlock flow:
@@ -85,11 +85,11 @@ const PBKDF2_ITERATIONS_DEFAULT = 600_000;
 /**
  * Derive a 32-byte key from a password and salt using PBKDF2-HMAC-SHA256.
  *
- * Uses `@noble/hashes`—same Cure53-audited library as `hkdf`, `sha256`,
+ * Uses `@noble/hashes`: same Cure53-audited library as `hkdf`, `sha256`,
  * and `xchacha20poly1305` in this module. Synchronous, matching the
  * existing crypto pattern.
  *
- * The derived key is a user key—pass it to `deriveWorkspaceKey()` or
+ * The derived key is a user key. Pass it to `deriveWorkspaceKey()` or
  * `buildEncryptionKeys()` to get a workspace-scoped encryption key.
  *
  * @param password - The user's password
@@ -121,7 +121,7 @@ const SALT_LENGTH = 32;
 /**
  * Generate a random 32-byte salt for PBKDF2 key derivation.
  *
- * Uses `randomBytes` from `@noble/ciphers`—same CSPRNG used for
+ * Uses `randomBytes` from `@noble/ciphers`: same CSPRNG used for
  * encryption nonces in `encryptValue()`.
  *
  * @returns A 32-byte random Uint8Array
@@ -177,7 +177,7 @@ Add a `describe('deriveKeyFromPassword')` block and a `describe('buildEncryption
 3. [x] Different salts produce different keys
 4. [x] Output is 32 bytes
 5. [x] Default iterations is 600,000 (test that omitting the param still works)
-6. [x] Integrates with `deriveWorkspaceKey` — the output is a valid user key that `deriveWorkspaceKey` accepts
+6. [x] Integrates with `deriveWorkspaceKey`: the output is a valid user key that `deriveWorkspaceKey` accepts
 
 **generateSalt:**
 1. [x] Output is 32 bytes
@@ -198,7 +198,7 @@ Add a `describe('deriveKeyFromPassword')` block and a `describe('buildEncryption
 - [x] Place the 3 new functions AFTER the existing `deriveWorkspaceKey` function and BEFORE the `bytesToBase64`/`base64ToBytes` helpers (group key derivation functions together)
 - [x] Place the 2 new constants (`PBKDF2_ITERATIONS_DEFAULT`, `SALT_LENGTH`) alongside the existing constants (`NONCE_LENGTH`, `TAG_LENGTH`, `HEADER_LENGTH`) near the top
 - [x] Also export the `PBKDF2_ITERATIONS_DEFAULT` constant (apps need it for their vault metadata)
-- [x] Follow the existing JSDoc style in the file exactly — detailed, with `@example` blocks
+- [x] Follow the existing JSDoc style in the file exactly: detailed, with `@example` blocks
 - [x] Use `textEncoder` (already defined at module scope) instead of `new TextEncoder()`
 - [x] Use `bun:test` with `describe`/`test`/`expect` in the test file, matching existing patterns
 - [x] Run `bun test packages/workspace/src/shared/crypto/crypto.test.ts` after writing tests
@@ -208,11 +208,11 @@ Add a `describe('deriveKeyFromPassword')` block and a `describe('buildEncryption
 
 - Do not modify any existing functions or types
 - Do not modify any files outside of `packages/workspace/src/shared/crypto/index.ts` and `packages/workspace/src/shared/crypto/crypto.test.ts`
-- Do not change the `package.json` — `@noble/hashes` is already a dependency
+- Do not change the `package.json`: `@noble/hashes` is already a dependency
 - Do not add any new dependencies
-- Do not use WebCrypto (`crypto.subtle`) — everything must be synchronous via `@noble/hashes`
+- Do not use WebCrypto (`crypto.subtle`): everything must be synchronous via `@noble/hashes`
 - Do not create new files
-- Do not use `interface` — use `type` for all TypeScript types
+- Do not use `interface`: use `type` for all TypeScript types
 - Do not suppress type errors with `as any`, `@ts-ignore`, or `@ts-expect-error`
 
 ## Review

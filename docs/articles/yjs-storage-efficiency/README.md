@@ -122,12 +122,12 @@ If you've been avoiding CRDTs because of storage concerns, the benchmark data mi
 
 ---
 
-_Benchmark code: [benchmark.ts](./benchmark.ts)_  
+_Benchmark code: [benchmark.ts](./benchmark.ts)_
 _Tested with: Bun 1.x, YJS 13.6.x, bun:sqlite_
 
 ## Related Articles
 
-- [Why YJS Is Surprisingly Fast](../why-yjs-is-surprisingly-fast.md) — understanding the performance characteristics
-- [The Three Tiers of Database Latency](../database-latency-tiers.md) — where YJS fits in the performance hierarchy
-- [Never Underestimate In-Memory Performance](../in-memory-database-performance.md) — the general principle behind YJS speed
-- [Stop Passing Clients as Arguments](../stop-passing-clients-as-arguments.md) — the factory pattern used in the benchmark
+- [Why YJS Is Surprisingly Fast](../why-yjs-is-surprisingly-fast.md): understanding the performance characteristics
+- [The Three Tiers of Database Latency](../database-latency-tiers.md): where YJS fits in the performance hierarchy
+- [Never Underestimate In-Memory Performance](../in-memory-database-performance.md): the general principle behind YJS speed
+- [Stop Passing Clients as Arguments](../stop-passing-clients-as-arguments.md): the factory pattern used in the benchmark

@@ -7,7 +7,7 @@
  * builder the closed vocabulary deliberately OMITS, because it is a per-substrate decision
  * rather than a member of the shared field set:
  *
- * - `nullable(inner)` — `Type.Union([inner, Type.Null()])`, the emptiness AXIS. A CRDT row
+ * - `nullable(inner)`: `Type.Union([inner, Type.Null()])`, the emptiness AXIS. A CRDT row
  *   has a fixed shape and cannot omit a key, so emptiness is a `null` VALUE (matter, whose
  *   markdown substrate encodes emptiness as an ABSENT key, forbids it). It is not a kind:
  *   `recognize` returns null for a nullable wrapper, so it degrades to raw cross-substrate.

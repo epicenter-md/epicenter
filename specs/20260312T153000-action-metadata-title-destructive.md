@@ -12,7 +12,7 @@ Add `title` (optional string) and `destructive` (optional boolean, default `fals
 
 ### Current State
 
-Actions carry minimal metadata—just `description` and `input`:
+Actions carry minimal metadata. Just `description` and `input`:
 
 ```typescript
 // packages/workspace/src/shared/actions.ts
@@ -37,7 +37,7 @@ And the UI hacks around the lack of a title:
 const displayName = $derived(
     part.name.replace(/_/g, ' ').replace(/^\w/, (c) => c.toUpperCase()),
 );
-// tabs_close → "Tabs close" — not even properly capitalized
+// tabs_close → "Tabs close": not even properly capitalized
 ```
 
 Meanwhile, a parallel `QuickAction` system has the metadata we need but is completely disconnected from `.withActions()`:
@@ -77,7 +77,7 @@ tabs: {
 
 - `title` flows to the UI, MCP `annotations.title`, and tool descriptions
 - `destructive` maps to `needsApproval` in the tool bridge and `destructiveHint` in MCP
-- `ToolCallPart.svelte` uses the title directly—no regex
+- `ToolCallPart.svelte` uses the title directly. No regex
 
 ## Research Findings
 
@@ -97,8 +97,8 @@ tabs: {
 - **`title`** is the standard name across MCP and VS Code. Not `label`, not `displayName`.
 - **`destructive`** aligns with the UI layer (`variant: 'destructive'`) and maps cleanly to MCP's `destructiveHint`. It describes the nature of the action, not the UX behavior.
 - **`needsApproval`** is a consumer concern (tool bridge), not an action property. The action says "I'm destructive"; the bridge decides whether that means "show confirmation."
-- **`category`** is redundant—the action tree nesting already provides this (`tabs.close` → category `tabs`).
-- **`keywords`** deferred—command palette can search `title + description + path` effectively without a dedicated field.
+- **`category`** is redundant. The action tree nesting already provides this (`tabs.close` → category `tabs`).
+- **`keywords`** deferred. Command palette can search `title + description + path` effectively without a dedicated field.
 
 ## Design Decisions
 
@@ -142,7 +142,7 @@ ActionConfig                              Consumer Surfaces
 
 - [x] **1.1** Add `title?: string` and `destructive?: boolean` to `ActionConfig` type in `packages/workspace/src/shared/actions.ts`
 - [x] **1.2** Add `title?: string` and `destructive?: boolean` to `ActionMeta` type in the same file
-- [x] **1.3** Update `defineQuery` and `defineMutation` implementations to forward the new fields via `...rest` spread (already handled—`{ handler, ...rest }` captures them)
+- [x] **1.3** Update `defineQuery` and `defineMutation` implementations to forward the new fields via `...rest` spread (already handled: `{ handler, ...rest }` captures them)
 - [x] **1.4** Add `title?: string` and `destructive?: boolean` to `ActionDescriptor` type in `packages/workspace/src/workspace/describe-workspace.ts`
 - [x] **1.5** Update `describeWorkspace` to include `title` and `destructive` in the descriptor output
 
@@ -156,11 +156,11 @@ ActionConfig                              Consumer Surfaces
 
 - [x] **3.1** Add `title` to every action in `.withActions()` in `apps/tab-manager/src/lib/workspace.ts`
 - [x] **3.2** Add `destructive: true` to `tabs.close` action
-- [x] **3.3** Review `tabs.save`—it's only destructive when `close: true`, so leave as non-destructive (the `close` flag is an input parameter, not a static property)
+- [x] **3.3** Review `tabs.save`: it's only destructive when `close: true`, so leave as non-destructive (the `close` flag is an input parameter, not a static property)
 
 ### Phase 4: UI Consumers (apps/tab-manager)
 
-- [x] **4.1** Update `ToolCallPart.svelte` to use the tool's title metadata instead of the `replace(/_/g, ' ')` regex. The tool bridge needs to make title available on the tool call part—check how TanStack AI `ToolCallPart` exposes tool metadata and find the right path to surface it
+- [x] **4.1** Update `ToolCallPart.svelte` to use the tool's title metadata instead of the `replace(/_/g, ' ')` regex. The tool bridge needs to make title available on the tool call part. Check how TanStack AI `ToolCallPart` exposes tool metadata and find the right path to surface it
 - [x] **4.2** If TanStack AI's `ToolCallPart` doesn't carry tool metadata, create a lookup map from `workspaceTools` (name → title) and import it in `ToolCallPart.svelte`
 
 ### Phase 5: Tests
@@ -183,13 +183,13 @@ ActionConfig                              Consumer Surfaces
 1. An action has no `title` set
 2. `ToolCallPart.svelte` falls back to the existing path-derived name
 3. `describeWorkspace` omits `title` from the descriptor (same pattern as `description`)
-4. **No breaking change**—`title` is optional everywhere
+4. **No breaking change**: `title` is optional everywhere
 
 ### Tool bridge `needsApproval` precedence
 
 1. `requireApprovalForMutations: true` (blanket option) already marks all mutations
 2. `destructive: true` on a specific action should ALSO set `needsApproval: true`
-3. These are additive—`needsApproval` is true if EITHER condition is met
+3. These are additive: `needsApproval` is true if EITHER condition is met
 4. A query with `destructive: true` (unusual but valid) would get `needsApproval: true`
 
 ## Open Questions
@@ -197,8 +197,8 @@ ActionConfig                              Consumer Surfaces
 1. **Should `title` influence the tool `description` sent to the LLM?**
    - Currently: `description` field goes to LLM as-is
    - Option A: Keep `description` as LLM description (current behavior)
-   - Option B: Prefix with title: `"Close Tabs — Close one or more tabs by their composite IDs."`
-   - **Recommendation**: Option A. The LLM doesn't need the title—it has the tool name and description. Title is for human display.
+   - Option B: Prefix with title: `"Close Tabs: Close one or more tabs by their composite IDs."`
+   - **Recommendation**: Option A. The LLM doesn't need the title. It has the tool name and description. Title is for human display.
 
 2. **How does `ToolCallPart.svelte` access the title?**
    - TanStack AI's `ToolCallPart` type has `name`, `arguments`, `output` but likely not arbitrary metadata
@@ -219,15 +219,15 @@ ActionConfig                              Consumer Surfaces
 
 ## References
 
-- `packages/workspace/src/shared/actions.ts` — ActionConfig, ActionMeta, defineQuery, defineMutation
-- `packages/workspace/src/workspace/describe-workspace.ts` — ActionDescriptor, describeWorkspace
-- `packages/workspace/src/workspace/describe-workspace.test.ts` — Descriptor tests
-- `packages/ai/src/tool-bridge.ts` — actionsToClientTools, toToolDefinitions, ToolDefinitionPayload
-- `apps/tab-manager/src/lib/workspace.ts` — All 13 action definitions, workspaceTools export
-- `apps/tab-manager/src/lib/components/chat/ToolCallPart.svelte` — Regex display name hack
-- `apps/tab-manager/src/lib/quick-actions.ts` — QuickAction type (future unification target, out of scope)
-- `apps/tab-manager/src/lib/components/CommandPalette.svelte` — Quick actions consumer (future unification target, out of scope)
-- `specs/20260311T172000-refactor-action-context.md` — Previous refactor that introduced the regex hack
+- `packages/workspace/src/shared/actions.ts`: ActionConfig, ActionMeta, defineQuery, defineMutation
+- `packages/workspace/src/workspace/describe-workspace.ts`: ActionDescriptor, describeWorkspace
+- `packages/workspace/src/workspace/describe-workspace.test.ts`: Descriptor tests
+- `packages/ai/src/tool-bridge.ts`: actionsToClientTools, toToolDefinitions, ToolDefinitionPayload
+- `apps/tab-manager/src/lib/workspace.ts`: All 13 action definitions, workspaceTools export
+- `apps/tab-manager/src/lib/components/chat/ToolCallPart.svelte`: Regex display name hack
+- `apps/tab-manager/src/lib/quick-actions.ts`: QuickAction type (future unification target, out of scope)
+- `apps/tab-manager/src/lib/components/CommandPalette.svelte`: Quick actions consumer (future unification target, out of scope)
+- `specs/20260311T172000-refactor-action-context.md`: Previous refactor that introduced the regex hack
 
 ## Review
 
@@ -239,12 +239,12 @@ Added `title` and `destructive` fields to the action definition system across 7 
 
 ### Deviations from Spec
 
-- **4.1/4.2 approach**: Used the lookup map approach (spec option B from Open Question #2) since TanStack AI's `ToolCallPart` type doesn't carry arbitrary tool metadata. The map is derived from `iterateActions` at module scope, not from `workspaceTools`—this avoids any need to thread title through the TanStack AI client tool type.
+- **4.1/4.2 approach**: Used the lookup map approach (spec option B from Open Question #2) since TanStack AI's `ToolCallPart` type doesn't carry arbitrary tool metadata. The map is derived from `iterateActions` at module scope, not from `workspaceTools`: this avoids any need to thread title through the TanStack AI client tool type.
 - **Tool bridge `title` forwarding (2.3)**: Added `title` to `ToolDefinitionPayload` type for MCP wire format, but the actual forwarding from client tools to wire definitions is not implemented because the client tool type (`AnyClientTool`) doesn't support arbitrary properties. Title reaches MCP consumers via `describeWorkspace` → `ActionDescriptor.title` instead.
 
 ### Follow-up Work
 
-- `requireApprovalForMutations` was identified as redundant with the `destructive` field and removed in the follow-up spec (`specs/20260312T170000-progressive-tool-trust.md`). The `needsApproval` flag is now set conditionally—only when `destructive: true`—rather than blanket-applied to all mutations.
+- `requireApprovalForMutations` was identified as redundant with the `destructive` field and removed in the follow-up spec (`specs/20260312T170000-progressive-tool-trust.md`). The `needsApproval` flag is now set conditionally. Only when `destructive: true`: rather than blanket-applied to all mutations.
 - Unify `QuickAction` system with `.withActions()` metadata (out of scope per spec)
 - Consider `category` field if path nesting proves insufficient for command palette grouping
 - Consider `keywords` field if `title + description + path` search proves insufficient

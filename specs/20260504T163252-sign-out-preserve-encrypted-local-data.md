@@ -3,9 +3,9 @@
 **Date**: 2026-05-04
 **Status**: Superseded
 **Superseded by**:
-- `specs/20260504T233223-sign-out-preserves-local-data.md` — current product invariant ("sign-out destroys the live workspace and reloads; sign-in opens only the local cache scoped to that authenticated owner")
-- `specs/20260505T020000-collapse-owner-scoping-onto-coordinator.md` — owner-scoped IDB names (`epicenter:v1:user:{userId}:yjs:{guid}`) make the explicit per-app `localStorage` owner marker proposed in this draft redundant; cross-user pollution is now impossible at the storage primitive level
-- `specs/20260505T060000-zhongwen-context-and-listener-collapse.md` — per-app inline `auth.onChange` listener with three branches replaces the modified `bindAuthWorkspaceScope` (`applyAuthIdentity / leave / reset`) callback split this draft proposed
+- `specs/20260504T233223-sign-out-preserves-local-data.md`: current product invariant ("sign-out destroys the live workspace and reloads; sign-in opens only the local cache scoped to that authenticated owner")
+- `specs/20260505T020000-collapse-owner-scoping-onto-coordinator.md`: owner-scoped IDB names (`epicenter:v1:user:{userId}:yjs:{guid}`) make the explicit per-app `localStorage` owner marker proposed in this draft redundant; cross-user pollution is now impossible at the storage primitive level
+- `specs/20260505T060000-zhongwen-context-and-listener-collapse.md`: per-app inline `auth.onChange` listener with three branches replaces the modified `bindAuthWorkspaceScope` (`applyAuthIdentity / leave / reset`) callback split this draft proposed
 **Author**: AI-assisted
 **Branch**: not started
 **Related**:

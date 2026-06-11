@@ -1,7 +1,7 @@
 # Collapse `defineWorkspace` into `defineDocument`
 
 **Date**: 2026-04-21
-**Status**: Completed (2026-04-21) — fully superseded by `20260421T170000-collapse-document-and-workspace-primitives.md`, which killed `createWorkspace` itself.
+**Status**: Completed (2026-04-21): fully superseded by `20260421T170000-collapse-document-and-workspace-primitives.md`, which killed `createWorkspace` itself.
 **Author**: AI-assisted
 **Branch**: braden-w/document-primitive
 
@@ -10,7 +10,7 @@
 
 ## Overview
 
-Delete the `defineWorkspace` convenience wrapper. Apps and packages compose their workspace the same way they already compose content docs — one `defineDocument(() => { ... })` closure that constructs the Y.Doc and calls `attach*` primitives inline. Fix three invariant/ergonomic issues in the attach primitives that are currently masked by the wrapper.
+Delete the `defineWorkspace` convenience wrapper. Apps and packages compose their workspace the same way they already compose content docs: one `defineDocument(() => { ... })` closure that constructs the Y.Doc and calls `attach*` primitives inline. Fix three invariant/ergonomic issues in the attach primitives that are currently masked by the wrapper.
 
 ## Motivation
 
@@ -58,7 +58,7 @@ Two shapes. Workspaces split into "define schema" + "wire in client" + `Object.a
 
 2. **`Object.assign` ceremony.** The whole purpose of the wrapper is to return a "base" that callers immediately `Object.assign` onto. The base's contract doesn't survive the merge; components read `workspace.sync` or `workspace.idb` which live on the extension, not the base.
 
-3. ~~**Hidden store aggregation.**~~ **Retracted (2026-04-21).** Originally argued that `attachEncryption(ydoc, { stores: [...tables.stores, kv.store] })` exposes a silent-plaintext footgun once users compose directly. Re-examination showed the deployed pattern is `attachEncryption(ydoc)` with stores self-registering inside `attachEncryptedTable/s/Kv(ydoc, encryption, …)`. Under self-registration, the manual array-concat never appears at any call site — the risk described here is a property of a shape that was never shipped. Kept as strike-through so the history is visible.
+3. ~~**Hidden store aggregation.**~~ **Retracted (2026-04-21).** Originally argued that `attachEncryption(ydoc, { stores: [...tables.stores, kv.store] })` exposes a silent-plaintext footgun once users compose directly. Re-examination showed the deployed pattern is `attachEncryption(ydoc)` with stores self-registering inside `attachEncryptedTable/s/Kv(ydoc, encryption, …)`. Under self-registration, the manual array-concat never appears at any call site: the risk described here is a property of a shape that was never shipped. Kept as strike-through so the history is visible.
 
 4. **Inconsistent lifecycle naming.** Every primitive picks its own noun:
    - `attachIndexedDb` → `whenLoaded`
@@ -66,7 +66,7 @@ Two shapes. Workspaces split into "define schema" + "wire in client" + `Object.a
    - `attachBroadcastChannel` → only `whenDisposed`
    - User bundles → `whenReady` (convention)
 
-   In the wrapper world, apps compose once. In the direct world, every app composes — and every app picks which noun to expose.
+   In the wrapper world, apps compose once. In the direct world, every app composes, and every app picks which noun to expose.
 
 5. **Reentrance is a silent data-loss bug.** `attachTable(ydoc, 'posts', def)` called twice returns two wrappers over the same `Y.Array`. The second wrapper has no knowledge of the first's in-memory state; mutations through one don't appear on the other. Today this is impossible because the wrapper composes tables exactly once. In the direct world, a stray second `attachTable` in a test helper or diagnostic tool corrupts reads. (Audit confirmed: `packages/document/src/attach-table.ts`.)
 
@@ -120,26 +120,26 @@ Surveyed every `attach*` primitive across `packages/document/src/` and `packages
 | `attachIndexedDb` | `whenLoaded` | `whenDisposed` |
 | `attachFilesystemPersistence` | `whenLoaded` | `whenDisposed` |
 | `attachSync` | `whenConnected` | `whenDisposed` |
-| `attachBroadcastChannel` | — | `whenDisposed` |
-| `attachEncryption` | — | `whenDisposed` |
-| `attachTables` / `attachKv` / `attachAwareness` | — | — (relies on ydoc cascade) |
+| `attachBroadcastChannel` |: | `whenDisposed` |
+| `attachEncryption` |: | `whenDisposed` |
+| `attachTables` / `attachKv` / `attachAwareness` |: |: (relies on ydoc cascade) |
 
 Apps writing the `whenReady` aggregation manually will pick different nouns. Some will compose `idb.whenLoaded` and call it `whenReady`; others will compose `Promise.all([idb.whenLoaded, sync.whenConnected])`. Consumers don't know which nouns to expect.
 
 **Reentrance safety is not uniform:**
 
-> **Update (2026-04-21):** The reentrance-guard mechanism described below was removed. `attach*` is NOT idempotent — callers are expected to hold the reference from the first call. Double-attach no longer throws; for observer-installing primitives it silently installs duplicate observers. That's a caller bug the framework no longer catches.
+> **Update (2026-04-21):** The reentrance-guard mechanism described below was removed. `attach*` is NOT idempotent: callers are expected to hold the reference from the first call. Double-attach no longer throws; for observer-installing primitives it silently installs duplicate observers. That's a caller bug the framework no longer catches.
 
 | Primitive | Double-attach behavior |
 | --- | --- |
-| `attachTable` | Caller responsibility — hold the reference from the first call |
-| `attachKv` | Caller responsibility — hold the reference from the first call |
-| `attachPlainText` / `attachRichText` | Caller responsibility — hold the reference from the first call |
-| `attachAwareness` | Caller responsibility — hold the reference from the first call |
-| `attachIndexedDb` | OK — second call creates a second IndexeddbPersistence; both read/write via Y.Doc which is fine |
-| `attachSync` | OK — two supervisor loops compete but convergence is fine |
-| `attachBroadcastChannel` | OK — idempotent no-op |
-| `attachEncryption` | Caller responsibility — hold the reference from the first call |
+| `attachTable` | Caller responsibility: hold the reference from the first call |
+| `attachKv` | Caller responsibility: hold the reference from the first call |
+| `attachPlainText` / `attachRichText` | Caller responsibility: hold the reference from the first call |
+| `attachAwareness` | Caller responsibility: hold the reference from the first call |
+| `attachIndexedDb` | OK: second call creates a second IndexeddbPersistence; both read/write via Y.Doc which is fine |
+| `attachSync` | OK: two supervisor loops compete but convergence is fine |
+| `attachBroadcastChannel` | OK: idempotent no-op |
+| `attachEncryption` | Caller responsibility: hold the reference from the first call |
 
 The content-data-layer primitives (Table, Kv, PlainText, RichText) are the dangerous ones. They hand out wrappers around the same Y.Doc slot, and the wrapper caches internal state (last-write-wins timestamps, parse caches).
 
@@ -154,7 +154,7 @@ The content-data-layer primitives (Table, Kv, PlainText, RichText) are the dange
 | `attachIndexedDb(ydoc)` | One arg |
 | `attachEncryption(ydoc, { stores })` | Destructured config |
 
-Mixed conventions are mostly fine. The specific one that bites is `attachEncryption` — `{ stores: [...] }` reads awkwardly when the caller's natural unit of thought is "the tables and the kv I just attached."
+Mixed conventions are mostly fine. The specific one that bites is `attachEncryption`: `{ stores: [...] }` reads awkwardly when the caller's natural unit of thought is "the tables and the kv I just attached."
 
 ### Key finding
 
@@ -167,20 +167,20 @@ Both are masked today by `defineWorkspace` composing everything correctly behind
 
 ### Implication
 
-Removing `defineWorkspace` is net-positive for composability and symmetry, but **requires** fixing #1 and #2 first. Fixing them is independently worthwhile regardless of whether we delete the wrapper — they're latent footguns.
+Removing `defineWorkspace` is net-positive for composability and symmetry, but **requires** fixing #1 and #2 first. Fixing them is independently worthwhile regardless of whether we delete the wrapper. They're latent footguns.
 
 ## Design Decisions
 
 | Decision | Choice | Rationale |
 | --- | --- | --- |
 | Delete `defineWorkspace` | Yes, after fixes land | Wrapper is 2/3 convention and 1/3 substance. Symmetry with content docs + one-file workspaces wins. |
-| ~~`attachEncryption` signature~~ | ~~Change to `attachEncryption(ydoc, { tables, kv })`~~ **Reverted (2026-04-21)** — keep `attachEncryption(ydoc)` with internal `register()` and positional `attachEncryptedTable/s/Kv(ydoc, encryption, …)`. The introspection shape inverted the read order ("build stuff, then wrap in encryption at the bottom") for no real safety win; self-registration already prevents the manual-concat footgun. |
+| ~~`attachEncryption` signature~~ | ~~Change to `attachEncryption(ydoc, { tables, kv })`~~ **Reverted (2026-04-21)**: keep `attachEncryption(ydoc)` with internal `register()` and positional `attachEncryptedTable/s/Kv(ydoc, encryption, …)`. The introspection shape inverted the read order ("build stuff, then wrap in encryption at the bottom") for no real safety win; self-registration already prevents the manual-concat footgun. |
 | Unify lifecycle naming | All primitives use `whenReady` + `whenDisposed` | `whenLoaded` / `whenConnected` become aliases or renames. One noun to compose. |
 | Reentrance guards | Removed (2026-04-21) | Not applicable. `attach*` is not idempotent; callers hold the reference from the first call. |
 | `@epicenter/skills` package shape | Export table definitions + a `defineDocument` factory from `@epicenter/skills` | Shared-schema packages stay package-owned but expose a `defineDocument` factory, not a `defineWorkspace` factory. Consumers still get cache convergence via shared factory. |
 | `id` field on workspace | User returns it explicitly | Framework no longer injects `id`; if the caller wants it on the bundle, they put it there. |
 | `batch` helper | User returns it explicitly | Sugar over `ydoc.transact`. Either include it in the return or call `ydoc.transact` directly. Not framework-provided. |
-| Node / test variants | Package exports a `build()` function callers wrap in `defineDocument` OR pass a `persistence: 'indexeddb' \| 'none'` option | Defer — see Open Questions |
+| Node / test variants | Package exports a `build()` function callers wrap in `defineDocument` OR pass a `persistence: 'indexeddb' \| 'none'` option | Defer: see Open Questions |
 | Config shape normalization | Deferred | Cosmetic. Inconsistencies are real but low-pain. Fix opportunistically. |
 
 ## Architecture
@@ -263,26 +263,26 @@ After (one noun):
 
 ## Implementation Plan
 
-### Phase 1: Fix `attachEncryption` signature — **REVERTED (2026-04-21)**
+### Phase 1: Fix `attachEncryption` signature: **REVERTED (2026-04-21)**
 
 > **Decision (2026-04-21):** Reverted. The introspection shape (`attachEncryption(ydoc, { tables, kv })` reading `.stores` / `.store` off the helpers) was shipped briefly and then rolled back. Current deployed shape is `attachEncryption(ydoc)` with an internal `register()` method that `attachEncryptedTable/s/Kv(ydoc, encryption, …)` call during store creation.
 >
-> Why the revert: the introspection shape inverted the natural reading order (coordinator built *after* the things it coordinates) and required a branded symbol or structural `.stores` field on returned helpers — invisible machinery in exchange for removing an explicit argument. The claimed "manual array-concat footgun" only exists in a shape that was never deployed at consumer call sites; self-registration prevents it by construction. The one real failure mode (calling `attachTable` when you meant `attachEncryptedTable`) is caught by `assertAllStoresRegistered(ydoc)` — a dev-only audit that remains on the coordinator.
+> Why the revert: the introspection shape inverted the natural reading order (coordinator built *after* the things it coordinates) and required a branded symbol or structural `.stores` field on returned helpers: invisible machinery in exchange for removing an explicit argument. The claimed "manual array-concat footgun" only exists in a shape that was never deployed at consumer call sites; self-registration prevents it by construction. The one real failure mode (calling `attachTable` when you meant `attachEncryptedTable`) is caught by `assertAllStoresRegistered(ydoc)`: a dev-only audit that remains on the coordinator.
 >
 > Tasks below are left visible for historical context.
 
-- [x] ~~**1.1** Change `attachEncryption(ydoc, { stores: EncryptedStore[] })` → `attachEncryption(ydoc, { tables?: TablesAttachment, kv?: KvAttachment })`~~ — reverted.
-- [x] ~~**1.2** Introspect `.stores` off `tables` and `.store` off `kv`. Aggregate internally.~~ — reverted.
-- [x] ~~**1.3** Update `packages/workspace/src/workspace/define-workspace.ts` to use the new form as a smoke test.~~ — reverted.
-- [x] ~~**1.4** Update tests in `packages/workspace/src/workspace/` and any extension tests that call `attachEncryption` directly.~~ — reverted.
+- [x] ~~**1.1** Change `attachEncryption(ydoc, { stores: EncryptedStore[] })` → `attachEncryption(ydoc, { tables?: TablesAttachment, kv?: KvAttachment })`~~: reverted.
+- [x] ~~**1.2** Introspect `.stores` off `tables` and `.store` off `kv`. Aggregate internally.~~: reverted.
+- [x] ~~**1.3** Update `packages/workspace/src/workspace/define-workspace.ts` to use the new form as a smoke test.~~: reverted.
+- [x] ~~**1.4** Update tests in `packages/workspace/src/workspace/` and any extension tests that call `attachEncryption` directly.~~: reverted.
 
-### Phase 2: Unify lifecycle promise names — **SKIPPED**
+### Phase 2: Unify lifecycle promise names: **SKIPPED**
 
 > **Decision (2026-04-21)**: Skipping Phase 2 entirely. The distinct names (`whenLoaded`, `whenConnected`) carry semantic meaning that `whenReady` loses:
-> - `idb.whenLoaded` — local replay done, safe to render UI
-> - `sync.whenConnected` — websocket handshake done, collaborative writes visible
+> - `idb.whenLoaded`: local replay done, safe to render UI
+> - `sync.whenConnected`: websocket handshake done, collaborative writes visible
 >
-> Offline-first composition is `whenReady = idb.whenLoaded` — specifically not waiting on sync. Collapsing to a single noun makes `Promise.all([idb.whenReady, sync.whenReady])` read natural but actually compose "block initial paint on network," which is the opposite of offline-first.
+> Offline-first composition is `whenReady = idb.whenLoaded`: specifically not waiting on sync. Collapsing to a single noun makes `Promise.all([idb.whenReady, sync.whenReady])` read natural but actually compose "block initial paint on network," which is the opposite of offline-first.
 >
 > The bundle-level `whenReady` (an app-specific aggregation) is a convention apps can still adopt. But the primitives keep their semantic names. Skipped tasks:
 >
@@ -291,53 +291,53 @@ After (one noun):
 > - [ ] ~~**2.3** Rename `attachSync` return~~
 > - [ ] ~~**2.4** Update docs and examples~~
 
-### Phase 3: Reentrance guards on content-data primitives — **REMOVED (2026-04-21)**
+### Phase 3: Reentrance guards on content-data primitives: **REMOVED (2026-04-21)**
 
-> **Update (2026-04-21):** The reentrance-guard mechanism was landed and then removed. `attach*` is NOT idempotent. Callers are expected to hold the reference from the first call. Double-attach no longer throws; for observer-installing primitives (Table/Kv/Awareness/Encryption) it silently installs duplicate observers — a caller bug the framework no longer catches.
+> **Update (2026-04-21):** The reentrance-guard mechanism was landed and then removed. `attach*` is NOT idempotent. Callers are expected to hold the reference from the first call. Double-attach no longer throws; for observer-installing primitives (Table/Kv/Awareness/Encryption) it silently installs duplicate observers: a caller bug the framework no longer catches.
 >
 > The `reentrance-guard` module, `guardSlot`, `guardSingleton`, and `AttachPrimitive` constant have been deleted. See commit for the removal.
 
-- [x] ~~**3.1** `attachTable` reentrance guard~~ — removed
-- [x] ~~**3.2** `attachKv` / `attachPlainText` / `attachRichText` reentrance guards~~ — removed
-- [x] ~~**3.3** `attachAwareness` reentrance guard~~ — removed
-- [x] ~~**3.4** Guard tests~~ — removed
-- [x] ~~**3.5** `attachEncryption` reentrance guard~~ — removed
-- [x] ~~**3.6** Inverted `attach-plain-text.test.ts` / `attach-rich-text.test.ts` assertions~~ — removed
+- [x] ~~**3.1** `attachTable` reentrance guard~~: removed
+- [x] ~~**3.2** `attachKv` / `attachPlainText` / `attachRichText` reentrance guards~~: removed
+- [x] ~~**3.3** `attachAwareness` reentrance guard~~: removed
+- [x] ~~**3.4** Guard tests~~: removed
+- [x] ~~**3.5** `attachEncryption` reentrance guard~~: removed
+- [x] ~~**3.6** Inverted `attach-plain-text.test.ts` / `attach-rich-text.test.ts` assertions~~: removed
 
-### Phase 4: Rewrite app client files as direct closures — **DONE (2026-04-21)**
+### Phase 4: Rewrite app client files as direct closures: **DONE (2026-04-21)**
 
 All seven consumer `client.ts` files are now single `defineDocument` closures. Verified via `grep defineWorkspace apps/**/client.ts` → zero matches.
 
 - [x] **4.1** `apps/honeycrisp/src/lib/client.ts`
 - [x] **4.2** `apps/zhongwen/src/lib/client.ts`
-- [x] **4.3** `apps/whispering/src/lib/client.ts` — Tauri `isTauri()` branch kept inside the closure
-- [x] **4.4** `apps/tab-manager/src/lib/client.ts` — `dispatchAction(actions, …)` rpc wiring preserved
-- [x] **4.5** `apps/opensidian/src/lib/client.ts` — sqlite-index attach preserved
-- [ ] ~~**4.6** `apps/breddit/src/lib/workspace/ingest/reddit/workspace.ts`~~ — N/A on this branch
+- [x] **4.3** `apps/whispering/src/lib/client.ts`: Tauri `isTauri()` branch kept inside the closure
+- [x] **4.4** `apps/tab-manager/src/lib/client.ts`: `dispatchAction(actions, …)` rpc wiring preserved
+- [x] **4.5** `apps/opensidian/src/lib/client.ts`: sqlite-index attach preserved
+- [ ] ~~**4.6** `apps/breddit/src/lib/workspace/ingest/reddit/workspace.ts`~~: N/A on this branch
 - [x] **4.7** Old `workspace.ts` files deleted; schema lives in `client.ts` or a type-only module
 
 ### Phase 5: Migrate shared-schema packages
 
 - [x] **5.1** `@epicenter/skills` browser entry once used a document factory for Y.Doc construction, tables, KV, encryption, IDB, broadcast channel, actions, instruction/reference doc factories. `createSkillsWorkspace` deleted.
-- [x] **5.2** `@epicenter/skills/node` — separate factory with `importFromDisk` / `exportToDisk` added. Actions extracted to `skills-actions.ts` and shared by both entries.
+- [x] **5.2** `@epicenter/skills/node`: separate factory with `importFromDisk` / `exportToDisk` added. Actions extracted to `skills-actions.ts` and shared by both entries.
 - [x] **5.3** `apps/opensidian` (skills section) and `apps/skills` were rewritten to the then-current skills document factory shape. No consumer shape changes were made in that phase.
-  > **Note**: Two factories, one per entry point, each with its own `defineDocument` cache. A single process only ever imports one — cache sharing within that process works by module-identity. Hybrid Tauri/Node processes flagged with a TODO; not implemented speculatively.
+  > **Note**: Two factories, one per entry point, each with its own `defineDocument` cache. A single process only ever imports one: cache sharing within that process works by module-identity. Hybrid Tauri/Node processes flagged with a TODO; not implemented speculatively.
 
-### Phase 6: Delete `defineWorkspace` and adjust types — **REMAINING WORK**
+### Phase 6: Delete `defineWorkspace` and adjust types: **REMAINING WORK**
 
 This is the last open phase. All consumers (apps + skills package) are already off `defineWorkspace`. What's left is deleting the helper and its supporting types/tests.
 
 - [ ] **6.1** Delete `packages/workspace/src/workspace/define-workspace.ts` and `define-workspace.test.ts`.
 - [ ] **6.2** Delete or inline `packages/workspace/src/workspace/create-workspace.ts` (`create-workspace.ts:128` is the only remaining runtime caller of `defineWorkspace`). Decide: delete entirely, or keep as a thin wrapper around a direct `defineDocument` factory.
 - [ ] **6.3** Migrate `packages/workspace/src/__benchmarks__/operations.bench.test.ts` to build a factory via `defineDocument` directly.
-- [ ] **6.4** Delete `WorkspaceBundle` / `WorkspaceFactory` / `WorkspaceHandle` types — replace any remaining usages with local types derived from the closure return.
-- [ ] **6.5** Prune the `AnyWorkspaceClient` duck-type check in `packages/cli/src/load-config.ts` — new shape detection is `'ydoc' in x && 'tables' in x`.
-- [ ] **6.6** Update `packages/workspace/src/index.ts` exports — drop `defineWorkspace`, `createWorkspace`, and related types.
-- [ ] **6.7** Update stale doc references: `packages/workspace/README.md`, `packages/workspace/README-API.md`, `packages/workspace/README-unified.md`, `packages/workspace/SYNC_ARCHITECTURE.md`, `docs/architecture.md`, and the `docs/articles/**` / `.agents/skills/**` mentions (~60 occurrences). Mechanical find/replace — each becomes a direct `defineDocument` closure example.
+- [ ] **6.4** Delete `WorkspaceBundle` / `WorkspaceFactory` / `WorkspaceHandle` types: replace any remaining usages with local types derived from the closure return.
+- [ ] **6.5** Prune the `AnyWorkspaceClient` duck-type check in `packages/cli/src/load-config.ts`: new shape detection is `'ydoc' in x && 'tables' in x`.
+- [ ] **6.6** Update `packages/workspace/src/index.ts` exports: drop `defineWorkspace`, `createWorkspace`, and related types.
+- [ ] **6.7** Update stale doc references: `packages/workspace/README.md`, `packages/workspace/README-API.md`, `packages/workspace/README-unified.md`, `packages/workspace/SYNC_ARCHITECTURE.md`, `docs/architecture.md`, and the `docs/articles/**` / `.agents/skills/**` mentions (~60 occurrences). Mechanical find/replace: each becomes a direct `defineDocument` closure example.
 
 ### Phase 7: CLI + playgrounds migration
 
-Out of scope of this spec but downstream — see `specs/20260420T234500-consumer-migration-to-defineworkspace.md` for the broader deletion of `createWorkspace` and the extension system. This spec doesn't require that work to be done first; it simply stops creating new consumers of the old shape.
+Out of scope of this spec but downstream: see `specs/20260420T234500-consumer-migration-to-defineworkspace.md` for the broader deletion of `createWorkspace` and the extension system. This spec doesn't require that work to be done first; it simply stops creating new consumers of the old shape.
 
 ## Edge Cases
 
@@ -345,7 +345,7 @@ Out of scope of this spec but downstream — see `specs/20260420T234500-consumer
 
 **Scenario**: `@epicenter/skills` is imported by `apps/skills`, `apps/opensidian`, and the CLI. All three need to open the same workspace ID and see the same Y.Doc cache.
 
-**Today**: `createSkillsWorkspace()` returns a fresh factory per call, which means three callers get three factories — but they all share the underlying `defineDocument` cache because the cache key is the guid.
+**Today**: `createSkillsWorkspace()` returns a fresh factory per call, which means three callers get three factories: but they all share the underlying `defineDocument` cache because the cache key is the guid.
 
 **After**: Same. The package exports the factory once; callers share the cache through it.
 
@@ -364,13 +364,13 @@ Current `@epicenter/skills/node` already does (c). Keep it.
 
 **Scenario**: One app wants BroadcastChannel cross-tab sync, another doesn't. One wants offline-first, another wants sync-only. In wrapper-world apps had to accept the wrapper's assumptions. In closure-world each app's closure can differ.
 
-**Resolution**: This is the point. No edge case — it's the feature.
+**Resolution**: This is the point. No edge case: it's the feature.
 
 ### Forgetting `[Symbol.dispose]()` or `ydoc.destroy()` in the return
 
 **Scenario**: User composes a closure but forgets to call `ydoc.destroy()` in their `[Symbol.dispose]`. Providers don't unwind. IDB handle stays open. `defineDocument`'s cache thinks the bundle is torn down but the ydoc keeps running.
 
-**Resolution**: Document the contract explicitly in `defineDocument`'s JSDoc (it partially does today). Consider a dev-mode lint: `defineDocument`'s builder emits a warning if `bundle[Symbol.dispose]` doesn't invoke `ydoc.destroy()`. Probably overkill — callers see this pattern copy-pasted across the codebase.
+**Resolution**: Document the contract explicitly in `defineDocument`'s JSDoc (it partially does today). Consider a dev-mode lint: `defineDocument`'s builder emits a warning if `bundle[Symbol.dispose]` doesn't invoke `ydoc.destroy()`. Probably overkill: callers see this pattern copy-pasted across the codebase.
 
 ### `attachAwareness` on content docs vs workspaces
 
@@ -384,9 +384,9 @@ Current `@epicenter/skills/node` already does (c). Keep it.
    - Options: (a) Add `whenReady` while keeping `whenLoaded` / `whenConnected` as aliases for one release; (b) Straight rename, update all call sites in one PR.
    - **Recommendation**: Straight rename. The monorepo has ~10 call sites total; a repo-wide rename is ~15 lines changed. Alias adds surface area for no real migration value.
 
-2. **`attachEncryption({ tables, kv })` — what about future store types?**
+2. **`attachEncryption({ tables, kv })`: what about future store types?**
    - If we add external indexes or other encrypted stores, the config grows: `{ tables, kv, externalIndexes }`. Every caller touches it.
-   - Alternative: `attachEncryption(ydoc, ...attachments)` — variadic, each attachment has a `.stores` array and `attachEncryption` flattens.
+   - Alternative: `attachEncryption(ydoc, ...attachments)`: variadic, each attachment has a `.stores` array and `attachEncryption` flattens.
    - **Recommendation**: Start with `{ tables, kv }`. Variadic is cleaner long-term but adds one indirection. Revisit when we add a third store type.
 
 3. **Should `defineDocument` provide a conventional bundle-shape helper?**
@@ -396,7 +396,7 @@ Current `@epicenter/skills/node` already does (c). Keep it.
 
 4. **What replaces `WorkspaceClient` in `describe-workspace` and AI-tool generators?**
    - `actionsToAiTools(workspace.actions)` works today because `workspace.actions` is a typed map. No change needed.
-   - `describeWorkspace(client)` inspects `.definitions` — that field goes away. Either delete `describeWorkspace` or rebuild it to inspect the bundle structurally.
+   - `describeWorkspace(client)` inspects `.definitions`: that field goes away. Either delete `describeWorkspace` or rebuild it to inspect the bundle structurally.
    - **Recommendation**: Delete. `describeWorkspace` is primarily used in `apps/opensidian/src/routes/about/+page.svelte` as documentation strings; it was never load-bearing.
 
 5. **Do we inline `workspace.ts` into `client.ts`, or keep it as a types-only module?**
@@ -409,25 +409,25 @@ Current `@epicenter/skills/node` already does (c). Keep it.
 - [ ] `packages/workspace/src/workspace/define-workspace.ts` deleted.
 - [ ] `packages/workspace/src/workspace/create-workspace.ts` deleted or inlined.
 - [x] Every app's `client.ts` is a single `defineDocument` closure that returns the final workspace shape.
-- [x] ~~`attachEncryption` takes `{ tables, kv }` rather than a manual `stores: [...]` array.~~ **Reverted** — kept as `attachEncryption(ydoc)` with self-registration; see Phase 1 note.
-- [ ] ~~All persistence/sync primitives expose `whenReady` and `whenDisposed` under those exact names.~~ **Skipped** — see Phase 2.
-- [x] `attach*` primitives are documented as non-idempotent; callers hold the reference from the first call. (Reentrance-guard mechanism was considered, landed, and then removed — see Phase 3.)
+- [x] ~~`attachEncryption` takes `{ tables, kv }` rather than a manual `stores: [...]` array.~~ **Reverted**: kept as `attachEncryption(ydoc)` with self-registration; see Phase 1 note.
+- [ ] ~~All persistence/sync primitives expose `whenReady` and `whenDisposed` under those exact names.~~ **Skipped**: see Phase 2.
+- [x] `attach*` primitives are documented as non-idempotent; callers hold the reference from the first call. (Reentrance-guard mechanism was considered, landed, and then removed: see Phase 3.)
 - [x] All existing app-level tests pass without modification except for naming changes.
 - [x] No call site in `apps/**` or `packages/skills/src/**` references `defineWorkspace`, `WorkspaceBundle`, or `WorkspaceFactory`.
 - [ ] No call site in `packages/workspace/**` (outside deleted files) references `defineWorkspace` or `createWorkspace`.
 
 ## References
 
-- `packages/workspace/src/workspace/define-workspace.ts` — 33-line body that gets deleted.
-- ~~`packages/workspace/src/shared/attach-encryption.ts:75` — `attachEncryption` signature to change.~~ Reverted — current signature is `attachEncryption(ydoc)` with internal `register()`.
-- ~~`packages/document/src/attach-indexed-db.ts` — `whenLoaded` → `whenReady`.~~ Skipped (Phase 2).
-- ~~`packages/document/src/attach-sync.ts` — `whenConnected` → `whenReady`.~~ Skipped (Phase 2).
-- ~~`packages/document/src/attach-{table,kv,plain-text,rich-text,awareness}.ts` — add reentrance guard.~~ Reverted (Phase 3 — guards landed then removed).
-- `packages/workspace/src/workspace/create-workspace.ts:128` — last remaining runtime caller of `defineWorkspace`; delete or inline.
-- `packages/workspace/src/__benchmarks__/operations.bench.test.ts:32,45` — migrate to `defineDocument` directly.
-- `packages/filesystem/src/file-content-docs.ts:36–62` — reference pattern for the closure shape.
-- `apps/fuji/src/lib/client.ts` — working prototype of the target shape (this branch).
-- `apps/fuji/src/lib/entry-content-docs.ts:22` — content-doc pattern that workspaces now mirror.
-- `specs/20260420T230100-collapse-document-framework.md` — prior rejection of `.withDocument` sugar for the same reason.
-- `specs/20260420T230200-workspace-as-definedocument.md` — made workspace IS a `defineDocument`. This spec removes the remaining wrapper layer.
-- `specs/20260420T234500-consumer-migration-to-defineworkspace.md` — the broader migration this builds on.
+- `packages/workspace/src/workspace/define-workspace.ts`: 33-line body that gets deleted.
+- ~~`packages/workspace/src/shared/attach-encryption.ts:75`: `attachEncryption` signature to change.~~ Reverted: current signature is `attachEncryption(ydoc)` with internal `register()`.
+- ~~`packages/document/src/attach-indexed-db.ts`: `whenLoaded` → `whenReady`.~~ Skipped (Phase 2).
+- ~~`packages/document/src/attach-sync.ts`: `whenConnected` → `whenReady`.~~ Skipped (Phase 2).
+- ~~`packages/document/src/attach-{table,kv,plain-text,rich-text,awareness}.ts`: add reentrance guard.~~ Reverted (Phase 3: guards landed then removed).
+- `packages/workspace/src/workspace/create-workspace.ts:128`: last remaining runtime caller of `defineWorkspace`; delete or inline.
+- `packages/workspace/src/__benchmarks__/operations.bench.test.ts:32,45`: migrate to `defineDocument` directly.
+- `packages/filesystem/src/file-content-docs.ts:36-62`: reference pattern for the closure shape.
+- `apps/fuji/src/lib/client.ts`: working prototype of the target shape (this branch).
+- `apps/fuji/src/lib/entry-content-docs.ts:22`: content-doc pattern that workspaces now mirror.
+- `specs/20260420T230100-collapse-document-framework.md`: prior rejection of `.withDocument` sugar for the same reason.
+- `specs/20260420T230200-workspace-as-definedocument.md`: made workspace IS a `defineDocument`. This spec removes the remaining wrapper layer.
+- `specs/20260420T234500-consumer-migration-to-defineworkspace.md`: the broader migration this builds on.

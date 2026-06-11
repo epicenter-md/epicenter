@@ -1,10 +1,10 @@
 # Piggyback Storage Tracking on Existing RPCs, Not a Separate Pipeline
 
-Cloudflare gives you no external API to list your Durable Object instances or query their storage. The only way to read `ctx.storage.sql.databaseSize` is from inside the DO itself. In Epicenter, every user gets their own DOs for workspace and document sync—so we needed a registry of what exists and how big it's getting. Instead of building a separate polling pipeline, we return storage bytes alongside every RPC response that's already happening.
+Cloudflare gives you no external API to list your Durable Object instances or query their storage. The only way to read `ctx.storage.sql.databaseSize` is from inside the DO itself. In Epicenter, every user gets their own DOs for workspace and document sync. So we needed a registry of what exists and how big it's getting. Instead of building a separate polling pipeline, we return storage bytes alongside every RPC response that's already happening.
 
 ## Cloudflare Won't Tell You What DOs Exist
 
-If you want to know how much storage a DO is using, you have to ask it from inside—there's no external query API. That means you need a stub pointing at it already, which means you need to already know it exists. Sounds like a chicken-and-egg problem, but in practice every sync request already has a stub. Every `stub.sync()` and `stub.getDoc()` call already reaches into the DO. The storage number is right there; we just had to carry it back.
+If you want to know how much storage a DO is using, you have to ask it from inside. There's no external query API. That means you need a stub pointing at it already, which means you need to already know it exists. Sounds like a chicken-and-egg problem, but in practice every sync request already has a stub. Every `stub.sync()` and `stub.getDoc()` call already reaches into the DO. The storage number is right there; we just had to carry it back.
 
 ```typescript
 const { stub, doName } = getWorkspaceStub(c);
@@ -25,7 +25,7 @@ The route handler gets its data, returns the response, and pushes the upsert as 
 
 ## The afterResponse Queue Keeps the Isolate Alive
 
-Cloudflare Workers kill the isolate the moment the response finishes. Any `await` you forgot to resolve, any promise you kicked off without waiting—gone. `waitUntil()` is the escape hatch: it tells the runtime "keep this isolate alive until this promise settles."
+Cloudflare Workers kill the isolate the moment the response finishes. Any `await` you forgot to resolve, any promise you kicked off without waiting. Gone. `waitUntil()` is the escape hatch: it tells the runtime "keep this isolate alive until this promise settles."
 
 The `afterResponse` queue collects those promises during the request lifecycle, then drains them all via `waitUntil()` in the middleware's `finally` block.
 
@@ -92,7 +92,7 @@ The two branches run in parallel after the response goes out. The client sees no
 
 ## DB Failures Don't Break Sync
 
-`Promise.allSettled()` is the right choice here, not `Promise.all()`. If the upsert fails—Hyperdrive hiccup, schema mismatch, whatever—the sync already succeeded. The storage record is best-effort, not a billing authority. A `.catch()` on the upsert would work too, but `allSettled` in `drain()` means no single failed promise can surface as an unhandled rejection.
+`Promise.allSettled()` is the right choice here, not `Promise.all()`. If the upsert fails. Hyperdrive hiccup, schema mismatch, whatever. The sync already succeeded. The storage record is best-effort, not a billing authority. A `.catch()` on the upsert would work too, but `allSettled` in `drain()` means no single failed promise can surface as an unhandled rejection.
 
 The storage numbers in Postgres are approximate. They lag by one request. That's fine for usage dashboards; you don't need millisecond accuracy to know a workspace is growing.
 

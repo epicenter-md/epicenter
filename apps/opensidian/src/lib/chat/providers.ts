@@ -1,7 +1,7 @@
 /**
  * Provider and model configuration for Opensidian AI chat.
  *
- * Pure data — no Svelte runes, no side effects.
+ * Pure data: no Svelte runes, no side effects.
  * Model arrays are maintained by TanStack AI provider packages.
  * To update model lists, run: `bun update @tanstack/ai-openai @tanstack/ai-gemini ...`
  */

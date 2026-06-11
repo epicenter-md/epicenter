@@ -1,4 +1,4 @@
-# Sync Client Improvements — Status Enrichment, Connection Timeout, Persistence
+# Sync Client Improvements: Status Enrichment, Connection Timeout, Persistence
 
 > Enrich `SyncStatus` with a discriminated union on `phase`, add connection-phase timeout, guard liveness monitor, hoist status onto the extension surface, and port the DO's SQLite append-log pattern to desktop persistence.
 
@@ -14,7 +14,7 @@ Four incremental improvements identified during sync client architecture review:
 
 4. **Desktop persistence re-encodes entire doc on every update**: `Y.encodeStateAsUpdate(ydoc)` + `writeFileSync` is O(doc_size) per keystroke. The Cloudflare DO already uses an efficient SQLite append-log for the same operation.
 
-5. **Extension leaks provider to consumers**: `workspaceClient.extensions.sync.provider.status` forces consumers to reach through the extension to the raw provider. Inconsistent API surface—`reconnect()` is on the extension, but `status` and `onStatusChange` are on `extension.provider`.
+5. **Extension leaks provider to consumers**: `workspaceClient.extensions.sync.provider.status` forces consumers to reach through the extension to the raw provider. Inconsistent API surface: `reconnect()` is on the extension, but `status` and `onStatusChange` are on `extension.provider`.
 
 ## Design
 
@@ -35,9 +35,9 @@ type SyncError =
 
 - `attempt: 0` = first connection, `1+` = reconnecting after failure
 - `lastError` = what went wrong on the previous attempt (undefined on first)
-- `SyncError` is a discriminated union itself—extendable for future error types
+- `SyncError` is a discriminated union itself. Extendable for future error types
 
-**Status emitter change**: The `createStatusEmitter` currently uses `===` for dedup. With objects, every `set()` call will emit (no structural equality). This is fine—status changes at WebSocket reconnect frequency (seconds), not render frequency (ms).
+**Status emitter change**: The `createStatusEmitter` currently uses `===` for dedup. With objects, every `set()` call will emit (no structural equality). This is fine. Status changes at WebSocket reconnect frequency (seconds), not render frequency (ms).
 
 ### 2. Connection-phase timeout
 
@@ -173,13 +173,13 @@ All 6 waves implemented. The sync client now has:
 1. **Enriched `SyncStatus`**: Discriminated union on `phase` with `attempt` counter and `lastError` context on `connecting`. Consumers can distinguish auth failures from connection failures.
 2. **Connection timeout**: 15s timeout on WebSocket CONNECTING state prevents indefinite hangs against unresponsive servers.
 3. **Liveness guard**: `this.stop()` at top of `start()` prevents interval leaks on double-start.
-4. **Hoisted extension surface**: `extensions.sync.status` and `extensions.sync.onStatusChange` available directly—consumers no longer reach through to `provider`.
+4. **Hoisted extension surface**: `extensions.sync.status` and `extensions.sync.onStatusChange` available directly. Consumers no longer reach through to `provider`.
 5. **SQLite append-log persistence**: Desktop persistence uses `bun:sqlite` with incremental INSERT per update (O(update_size)) instead of full doc re-encode (O(doc_size)). Compacts on startup and clean shutdown.
 
 ### Deferred
 
 - **5.6**: `.yjs` → `.db` backward-compat migration not implemented. New installs will use `.db` directly; existing users would need a manual migration or we add it in a follow-up.
-- **6.2–6.6**: New behavioral tests for `lastError`, `attempt`, and connection timeout. The existing tests all pass with the new type structure, but dedicated tests for the new enriched fields would strengthen coverage. These are low-risk follow-ups since the provider logic is exercised by the existing integration tests.
+- **6.2-6.6**: New behavioral tests for `lastError`, `attempt`, and connection timeout. The existing tests all pass with the new type structure, but dedicated tests for the new enriched fields would strengthen coverage. These are low-risk follow-ups since the provider logic is exercised by the existing integration tests.
 
 ### Files changed
 

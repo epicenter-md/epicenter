@@ -2,11 +2,11 @@
 
 ## Problem
 
-`create-workspace.ts` (761 lines) has a 160-line `withEncryption()` method that defines its own state, five operations, and lifecycle wiring—all via closures inside a builder method. This makes it:
+`create-workspace.ts` (761 lines) has a 160-line `withEncryption()` method that defines its own state, five operations, and lifecycle wiring. All via closures inside a builder method. This makes it:
 
-1. **Untestable in isolation** — every encryption test goes through `createWorkspace().withEncryption()`, constructing a full workspace just to test lock/unlock behavior
-2. **Hard to trace** — `encryptedStores`, `id`, and other dependencies are captured from 200+ lines above via closure
-3. **A mixed concern** — encryption key management, HKDF derivation, cache serialization, and transactional store activation live inline in a workspace builder file
+1. **Untestable in isolation**: every encryption test goes through `createWorkspace().withEncryption()`, constructing a full workspace just to test lock/unlock behavior
+2. **Hard to trace**: `encryptedStores`, `id`, and other dependencies are captured from 200+ lines above via closure
+3. **A mixed concern**: encryption key management, HKDF derivation, cache serialization, and transactional store activation live inline in a workspace builder file
 
 ## Solution
 
@@ -17,9 +17,9 @@ Extract `createEncryptionRuntime()` to a new `encryption-runtime.ts` file. Move 
 ### New file: `encryption-runtime.ts`
 
 Contains:
-- `bytesEqual()` — byte-level Uint8Array comparison (moved from create-workspace.ts)
-- `transactStores()` — apply-with-rollback for encrypted stores (moved from create-workspace.ts)
-- `createEncryptionRuntime()` — all encryption state and operations, explicit dependencies
+- `bytesEqual()`: byte-level Uint8Array comparison (moved from create-workspace.ts)
+- `transactStores()`: apply-with-rollback for encrypted stores (moved from create-workspace.ts)
+- `createEncryptionRuntime()`: all encryption state and operations, explicit dependencies
 
 ```typescript
 // encryption-runtime.ts
@@ -115,16 +115,16 @@ function setup(opts?: { userKeyStore?: UserKeyStore }) {
 }
 ```
 
-Existing integration tests in `create-workspace.test.ts` remain untouched—they verify the wiring between the builder and the runtime.
+Existing integration tests in `create-workspace.test.ts` remain untouched. They verify the wiring between the builder and the runtime.
 
 ## What doesn't change
 
-- **`types.ts`** — all public types stay (WorkspaceEncryption, EncryptionConfig, WorkspaceKeyAccess). Only `WorkspaceClientWithActions` is removed.
-- **`lifecycle.ts`** — untouched
-- **`encryption-key.ts`** — untouched
-- **`user-key-store.ts`** — untouched
-- **Builder pattern** — `buildClient`, `BuilderState`, `applyWorkspaceExtension` stay in create-workspace.ts
-- **Public API** — zero breaking changes, `createWorkspace().withEncryption()` works identically
+- **`types.ts`**: all public types stay (WorkspaceEncryption, EncryptionConfig, WorkspaceKeyAccess). Only `WorkspaceClientWithActions` is removed.
+- **`lifecycle.ts`**: untouched
+- **`encryption-key.ts`**: untouched
+- **`user-key-store.ts`**: untouched
+- **Builder pattern**: `buildClient`, `BuilderState`, `applyWorkspaceExtension` stay in create-workspace.ts
+- **Public API**: zero breaking changes, `createWorkspace().withEncryption()` works identically
 
 ## Todo
 
@@ -142,7 +142,7 @@ Existing integration tests in `create-workspace.test.ts` remain untouched—they
 **New file: `encryption-runtime.ts` (242 lines)**
 - `bytesEqual()` and `transactStores()` moved here from `create-workspace.ts`
 - `createEncryptionRuntime()` takes explicit `{ workspaceId, stores, userKeyStore? }` config
-- Returns `{ encryption, lock, clearCache, bootPromise? }` — the shape the builder consumes
+- Returns `{ encryption, lock, clearCache, bootPromise? }`: the shape the builder consumes
 - All encryption state (`encryptionState`, `persisted`, `cacheQueue`) is local to the function, not captured via closures from outer scope
 
 **New file: `encryption-runtime.test.ts` (281 lines)**
@@ -150,13 +150,13 @@ Existing integration tests in `create-workspace.test.ts` remain untouched—they
 - Uses minimal fixtures (Y.Doc + 2 encrypted stores) instead of full workspace construction
 
 **Modified: `create-workspace.ts` (591 lines, was 761)**
-- `withEncryption()` collapsed from ~160 lines to ~30 lines — calls `createEncryptionRuntime()` and wires `bootPromise` into builder state
+- `withEncryption()` collapsed from ~160 lines to ~30 lines: calls `createEncryptionRuntime()` and wires `bootPromise` into builder state
 - Removed `bytesEqual`, `transactStores`, `EncryptionRuntime` type, unused imports (`base64ToBytes`, `deriveWorkspaceKey`, `EncryptionKeysSchema`, `type` from arktype, `EncryptionKeysJson`, `EncryptionKey`, `TableHelper`)
 - Added `WorkspaceEncryption` to types import (needed for inlined `buildClient` parameter type)
 - Net: -170 lines
 
 **Modified: `types.ts` (1568 lines, was 1599)**
-- Removed `WorkspaceClientWithActions` type alias (dead — never imported by any consumer)
+- Removed `WorkspaceClientWithActions` type alias (dead: never imported by any consumer)
 - Updated `AnyWorkspaceClient` doc comment to remove stale reference
 
 **Modified: `workspace/index.ts`, `src/index.ts`**
@@ -165,4 +165,4 @@ Existing integration tests in `create-workspace.test.ts` remain untouched—they
 ### Test results
 
 68 tests, 0 failures across `create-workspace.test.ts` and `encryption-runtime.test.ts`.
-All existing integration tests pass unchanged — the extraction is a pure refactor with zero API changes.
+All existing integration tests pass unchanged. The extraction is a pure refactor with zero API changes.

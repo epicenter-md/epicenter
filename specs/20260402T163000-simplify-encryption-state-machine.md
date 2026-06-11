@@ -6,7 +6,7 @@
 
 ## Overview
 
-Refactor the `withEncryption()` closure in `create-workspace.ts` from 5 independent mutable variables with duplicated rollback logic into 2 state variables with a single extracted store-coordination helper. No behavioral changes — same tests, same API.
+Refactor the `withEncryption()` closure in `create-workspace.ts` from 5 independent mutable variables with duplicated rollback logic into 2 state variables with a single extracted store-coordination helper. No behavioral changes: same tests, same API.
 
 ## Motivation
 
@@ -31,7 +31,7 @@ activeUserKey = currentUserKey;
 // If anything throws between these lines, state is inconsistent
 ```
 
-The rollback pattern (track modified stores, revert on partial failure) is duplicated across `lock()` and `unlock()` — 14 lines each with slightly different rollback strategies.
+The rollback pattern (track modified stores, revert on partial failure) is duplicated across `lock()` and `unlock()`: 14 lines each with slightly different rollback strategies.
 
 This creates problems:
 
@@ -60,7 +60,7 @@ Transitions are atomic (single assignment). Rollback is extracted. `isUnlocked` 
 | Decision | Choice | Rationale |
 |----------|--------|-----------|
 | Collapse 3 variables into one object | `encryptionState` | Atomic transitions, structurally enforced invariant |
-| Keep `cacheQueue` separate | Stays as-is | Orthogonal concern — serializes async cache ops |
+| Keep `cacheQueue` separate | Stays as-is | Orthogonal concern: serializes async cache ops |
 | Rename `isActiveUserKeyCached` → `persisted` | Shorter, same semantics | "Has the active key been written to the store?" |
 | Extract `transactStores` helper | Top-level function | Eliminates duplicated rollback tracking in lock/unlock |
 | Extract `bootFromCache` helper | Named function | Moves 22-line inline promise chain into a readable unit |
@@ -116,7 +116,7 @@ withEncryption()
 - [x] **2.1** Replace 3 variables with single `encryptionState` object
 - [x] **2.2** Rename `isActiveUserKeyCached` to `persisted`
 - [x] **2.3** Derive `isUnlocked` from `encryptionState !== undefined || storesActive`
-- [x] **2.4** Atomic state transition in `unlock()` — one assignment, not three
+- [x] **2.4** Atomic state transition in `unlock()`: one assignment, not three
 - [x] **2.5** Atomic state clear in `lock()`
 - [x] **2.6** De-dup reads from `encryptionState.userKey`
 - [x] **2.7** `persistKeys` stale guard reads from `encryptionState.userKey`
@@ -137,7 +137,7 @@ withEncryption()
 
 ### Construction-time key (`options?.key`)
 
-The construction-time key path (line 198) creates a synthetic `Map([[1, key]])` and activates stores immediately—BEFORE `withEncryption()` runs. Inside `withEncryption`, `workspaceKey` is initialized from `options?.key` purely so `isUnlocked` returns true. But `activeUserKey` and `activeWorkspaceKeyring` are NOT set.
+The construction-time key path (line 198) creates a synthetic `Map([[1, key]])` and activates stores immediately. BEFORE `withEncryption()` runs. Inside `withEncryption`, `workspaceKey` is initialized from `options?.key` purely so `isUnlocked` returns true. But `activeUserKey` and `activeWorkspaceKeyring` are NOT set.
 
 **Resolution**: Use a separate `let storesActive = options?.key !== undefined` boolean. `isUnlocked` checks `encryptionState !== undefined || storesActive`. The `unlock()` and `lock()` functions update both. This avoids polluting `encryptionState` with a synthetic entry that has no user key for de-dup.
 
@@ -147,21 +147,21 @@ The construction-time key path (line 198) creates a synthetic `Map([[1, key]])` 
 
 ### `lock()` after construction-time key
 
-`lock()` sets `encryptionState = undefined` and `storesActive = false`. Rollback: `previousKeyring` comes from `encryptionState?.keyring`. If `encryptionState` is undefined (construction-time key, no `unlock()` called), no rollback keyring is available—stores were activated externally, deactivation failure is unrecoverable. Matches current behavior.
+`lock()` sets `encryptionState = undefined` and `storesActive = false`. Rollback: `previousKeyring` comes from `encryptionState?.keyring`. If `encryptionState` is undefined (construction-time key, no `unlock()` called), no rollback keyring is available. Stores were activated externally, deactivation failure is unrecoverable. Matches current behavior.
 ## Success Criteria
 
 - [x] All 55 `create-workspace.test.ts` tests pass unchanged
 - [x] `withEncryption()` body uses 3 state variables instead of 5
-- [x] No duplicated rollback logic — `transactStores` used by both lock/unlock
+- [x] No duplicated rollback logic: `transactStores` used by both lock/unlock
 - [x] `lsp_diagnostics` clean
 - [x] Auto-boot is `bootFromCache()` named function
 
 ## References
 
-- `packages/workspace/src/workspace/create-workspace.ts` — lines 539-698 (`withEncryption` body)
-- `packages/workspace/src/workspace/create-workspace.test.ts` — lines 964-1315 (encryption + lifecycle tests)
-- `packages/workspace/src/workspace/types.ts` — `WorkspaceEncryption` type definition
-- `packages/workspace/src/shared/y-keyvalue/y-keyvalue-lww-encrypted.ts` — `activateEncryption` / `deactivateEncryption` API
+- `packages/workspace/src/workspace/create-workspace.ts`: lines 539-698 (`withEncryption` body)
+- `packages/workspace/src/workspace/create-workspace.test.ts`: lines 964-1315 (encryption + lifecycle tests)
+- `packages/workspace/src/workspace/types.ts`: `WorkspaceEncryption` type definition
+- `packages/workspace/src/shared/y-keyvalue/y-keyvalue-lww-encrypted.ts`: `activateEncryption` / `deactivateEncryption` API
 
 ## Review
 

@@ -44,7 +44,7 @@ class TabStore {
 }
 ```
 
-The browser event listener is just a plain callback that happens to mutate reactive state. `$state` is a proxy—it intercepts `.push()`, index assignment, property mutation, reassignment. Every component reading `this.#tabs` already gets re-rendered when it changes. No `createSubscriber` needed.
+The browser event listener is just a plain callback that happens to mutate reactive state. `$state` is a proxy. It intercepts `.push()`, index assignment, property mutation, reassignment. Every component reading `this.#tabs` already gets re-rendered when it changes. No `createSubscriber` needed.
 
 ## Pattern B: No `$state`, Only `createSubscriber`
 
@@ -94,7 +94,7 @@ class DBView {
 }
 ```
 
-You can't make `externalDB` use `$state`—it's not your code. `createSubscriber` bridges the gap: when the DB emits a change event, Svelte re-reads the getter.
+You can't make `externalDB` use `$state`: it's not your code. `createSubscriber` bridges the gap: when the DB emits a change event, Svelte re-reads the getter.
 
 ## Pattern D: Both, For Lazy Lifecycle
 
@@ -113,7 +113,7 @@ class LivePrices {
 			ws.onmessage = (e) => {
 				const { symbol, price } = JSON.parse(e.data);
 				this.#prices.set(symbol, price); // $state handles reactivity
-				// update() not needed here—$state already triggers re-render
+				// update() not needed here: $state already triggers re-render
 			};
 
 			// WebSocket CLOSES when no components read .prices
@@ -128,13 +128,13 @@ class LivePrices {
 }
 ```
 
-`createSubscriber`'s `start` function is lazy—it only fires when subscribers go from 0 to 1. The cleanup fires when the last consumer stops reading. So if a component conditionally shows a price widget, the WebSocket opens when it appears and closes when it disappears.
+`createSubscriber`'s `start` function is lazy. It only fires when subscribers go from 0 to 1. The cleanup fires when the last consumer stops reading. So if a component conditionally shows a price widget, the WebSocket opens when it appears and closes when it disappears.
 
 The `$state` mutation handles all the reactivity. `createSubscriber` answers a different question entirely: "should this expensive resource even be active right now?"
 
 ## When You Don't Need `createSubscriber`
 
-Browser extension event listeners are cheap to register—no network connections, no resources to manage. They're always wanted while the popup is open, and they're automatically cleaned up when the popup closes (the entire JS context dies). There's no expensive subscription to lazily manage.
+Browser extension event listeners are cheap to register. No network connections, no resources to manage. They're always wanted while the popup is open, and they're automatically cleaned up when the popup closes (the entire JS context dies). There's no expensive subscription to lazily manage.
 
 For a browser tab manager, the answer is Pattern A:
 
@@ -167,15 +167,15 @@ Register on construction. Let popup destruction handle cleanup. `$state` handles
 
 | Scenario                                      |    `$state`     | `createSubscriber` |
 | --------------------------------------------- | :-------------: | :----------------: |
-| Events mutate stored state                    |       ✅        |         —          |
-| Value computed on-read, no storage            |        —        |         ✅         |
-| External library state you can't proxy        |        —        |         ✅         |
+| Events mutate stored state                    |       ✅        |         -          |
+| Value computed on-read, no storage            |        -        |         ✅         |
+| External library state you can't proxy        |        -        |         ✅         |
 | Expensive subscription, lazy lifecycle needed | ✅ (reactivity) |   ✅ (lifecycle)   |
-| Cheap event listeners, always wanted          |       ✅        |         —          |
+| Cheap event listeners, always wanted          |       ✅        |         -          |
 
 `$state` answers "this value changed." `createSubscriber` answers "is anyone listening, and should I bother subscribing?" Most of the time you need one or the other. When you need both, they serve distinct roles that don't overlap.
 
-For more worked examples—ResizeObserver, network status, SSE, RxJS, page visibility, and others—see [Using createSubscriber](./using-createsubscriber.md).
+For more worked examples. ResizeObserver, network status, SSE, RxJS, page visibility, and others. See [Using createSubscriber](./using-createsubscriber.md).
 
 ## Further Reading
 

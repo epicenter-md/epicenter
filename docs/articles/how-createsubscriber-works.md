@@ -6,7 +6,7 @@
 
 Svelte's reactivity is pull-based. When you write `$state(0)` and read it in a template, Svelte tracks the read and knows to re-render when the value changes. But what about a value that lives outside Svelte entirely? A `window.matchMedia` result. A Yjs CRDT. A database cursor. These systems have their own change notification mechanisms (`addEventListener`, `observe`, `subscribe`) that Svelte knows nothing about.
 
-You need a bridge: something that says "Svelte, this external thing changed—please re-read my getter."
+You need a bridge: something that says "Svelte, this external thing changed. Please re-read my getter."
 
 That bridge is `createSubscriber`.
 
@@ -27,7 +27,7 @@ const subscribe = createSubscriber((update) => {
 });
 ```
 
-`createSubscriber` returns a function. Call that function inside a getter to make the getter reactive. The `start` callback runs lazily—only when at least one reactive context is reading the value.
+`createSubscriber` returns a function. Call that function inside a getter to make the getter reactive. The `start` callback runs lazily. Only when at least one reactive context is reading the value.
 
 ## What Happens Under the Hood
 
@@ -69,7 +69,7 @@ The version number itself is meaningless. It's just a counter that increments to
 
 ## Lazy Start, Lazy Stop
 
-The `start` callback doesn't run when you call `createSubscriber`. It runs when the first reactive consumer appears—specifically, when `subscribers` goes from 0 to 1. This is the "lazy" part.
+The `start` callback doesn't run when you call `createSubscriber`. It runs when the first reactive consumer appears. Specifically, when `subscribers` goes from 0 to 1. This is the "lazy" part.
 
 ```typescript
 const mq = new MediaQuery('(prefers-color-scheme: dark)');
@@ -82,7 +82,7 @@ const mq = new MediaQuery('(prefers-color-scheme: dark)');
 // which called subscribe(), which saw subscribers === 0.
 ```
 
-The cleanup function (returned by `start`) runs when the last consumer disappears—when `subscribers` goes from 1 to 0. If a component using the `MediaQuery` unmounts, and no other component reads `.current`, the `change` listener is removed from `matchMedia`. If a new component later reads `.current`, `start` runs again.
+The cleanup function (returned by `start`) runs when the last consumer disappears. When `subscribers` goes from 1 to 0. If a component using the `MediaQuery` unmounts, and no other component reads `.current`, the `change` listener is removed from `matchMedia`. If a new component later reads `.current`, `start` runs again.
 
 This is reference counting. Multiple effects can depend on the same `createSubscriber` instance. The external subscription stays alive as long as at least one consumer exists.
 
@@ -149,7 +149,7 @@ Both follow the same shape: set up a listener in `start`, call `update` when som
 
 ## Best Practices
 
-**Always call `subscribe()` inside a getter, not in the constructor.** The getter is what components read. If you call `subscribe()` during construction, you're subscribing before any reactive context exists—`effect_tracking()` returns `false`, and `subscribe()` silently does nothing.
+**Always call `subscribe()` inside a getter, not in the constructor.** The getter is what components read. If you call `subscribe()` during construction, you're subscribing before any reactive context exists: `effect_tracking()` returns `false`, and `subscribe()` silently does nothing.
 
 ```typescript
 // Wrong: subscribe() in constructor does nothing
@@ -179,7 +179,7 @@ class Good {
 
 ## When You Don't Need It
 
-If your external events mutate `$state` directly, skip `createSubscriber`. The `$state` proxy already handles reactivity. You'd be adding a lifecycle manager for a subscription that doesn't need lifecycle management. Browser event listeners, cheap callbacks, module-level subscriptions that should always be active—these don't benefit from lazy start/stop semantics.
+If your external events mutate `$state` directly, skip `createSubscriber`. The `$state` proxy already handles reactivity. You'd be adding a lifecycle manager for a subscription that doesn't need lifecycle management. Browser event listeners, cheap callbacks, module-level subscriptions that should always be active. These don't benefit from lazy start/stop semantics.
 
 ## Further Reading
 

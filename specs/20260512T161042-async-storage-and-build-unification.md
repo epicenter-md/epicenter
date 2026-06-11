@@ -15,7 +15,7 @@ After drafting the minimal version, a closer mental-inlining pass revealed three
 
 2. **UX regression on cold boot.** Today's `App.svelte` does a triple-await: outer `{#await tabManagerSession.whenReady}` masks the `chrome.storage` load; inner `{#await current.workspace.whenReady}` masks the `openTabManager` + IDB load; `SignedInApp` renders only when both complete. After the proposal, the inner `whenReady` would disappear because the workspace doesn't exist until built. `session.current === null` would conflate "no auth identity" (show sign-in) with "auth identity, workspace loading" (should show Loading). The sign-in card would flash for ~150ms on cold boot. The inner await was doing honest work.
 
-3. **Silent-failure category for async builds.** Sync builds throw synchronously and propagate. Async builds reject — into a `.catch` handler that the spec proposed handling via `console.error` and leaving payload null. New error path that swallows visibly to dev tools but silently to the user.
+3. **Silent-failure category for async builds.** Sync builds throw synchronously and propagate. Async builds reject: into a `.catch` handler that the spec proposed handling via `console.error` and leaving payload null. New error path that swallows visibly to dev tools but silently to the user.
 
 4. **Speculation about future apps.** No other async-backed app exists today. The cohesive-clean-breaks rule: "Don't design for hypothetical future requirements." If a future Tauri-filesystem or mobile app needs async builds, widen the API then, with the new app as concrete grounding.
 
@@ -45,7 +45,7 @@ holds payload null until the promise resolves.
 
 This spec widens `build` to accept `T | Promise<T>`. The lifecycle awaits when the build returns a promise; `session.current` stays null until resolution. Tab-manager's internal deferred-`ready` pattern disappears.
 
-**Out of scope** (deliberately — see Rejected Alternatives):
+**Out of scope** (deliberately: see Rejected Alternatives):
 - Widening `OAuthSessionStorage.get()` to accept promises. The 5 sync consumers (fuji, honeycrisp, opensidian, zhongwen, dashboard) plus node CLI all read sync; the wrapper tab-manager builds around `chrome.storage` is doing real work (masking the initial load with a "Loading…" indicator). Deleting it costs a sign-in card flash on cold boot.
 - Adding `auth.initialized: boolean` or `whenInitialized: Promise<void>` to the `AuthClient`. Same reason: every "skip the wrapper" option ends up needing a separate "are we ready yet?" signal, which is just relocating the wrapper.
 - Trying to make tab-manager's outer shape match fuji's. Chrome extension async storage is the runtime constraint; the wrapper is the honest cost of bridging it.
@@ -162,8 +162,8 @@ What disappears:
 - `Object.assign` after-the-fact wiring (state is added during build, not after)
 
 What survives (and stays correct):
-- Outer `tabManagerSession` wrapper — still needs to gate `auth` reads on `authSessionStorage.whenReady`.
-- Outer `App.svelte` `{#await tabManagerSession.whenReady}` — still masks the chrome.storage load.
+- Outer `tabManagerSession` wrapper: still needs to gate `auth` reads on `authSessionStorage.whenReady`.
+- Outer `App.svelte` `{#await tabManagerSession.whenReady}`: still masks the chrome.storage load.
 
 The `session.current.workspace.whenReady` pattern in App.svelte goes away (because the workspace no longer surfaces a `whenReady` field). The inner `{#await}` collapses to `{#if session.current}`.
 
@@ -310,7 +310,7 @@ BEFORE  Outer {#await tabManagerSession.whenReady}
           → Inner {#await current.workspace.whenReady}
             → SignedInApp
 
-AFTER   Outer {#await tabManagerSession.whenReady}    (unchanged — masks chrome.storage load)
+AFTER   Outer {#await tabManagerSession.whenReady}    (unchanged: masks chrome.storage load)
         → Inner {#if current}                          (now: null while build resolves too)
           → SignedInApp                                (no more nested await)
 ```
@@ -345,7 +345,7 @@ Two waves. Both small.
 
 ### Phase 3: Prove
 
-- [ ] **3.1** `bun test` in `packages/svelte-utils` — old tests pass, new tests pass.
+- [ ] **3.1** `bun test` in `packages/svelte-utils`: old tests pass, new tests pass.
 - [ ] **3.2** Per-app typecheck across the monorepo.
 - [ ] **3.3** Manual smoke on tab-manager:
   - Cold boot, persisted session: shows "Loading…" (outer await), then SignedInApp. No sign-in card flash.
@@ -421,11 +421,11 @@ Do not require sync builds to declare they're sync. The signature accepts
 
 ## References
 
-- `packages/svelte-utils/src/session.svelte.ts` — `createSession`
-- `packages/svelte-utils/src/session-lifecycle.ts` — pure lifecycle (the file actually changed)
-- `packages/svelte-utils/src/session-lifecycle.test.ts` — existing test suite
-- `apps/tab-manager/src/lib/session.svelte.ts` — current divergent build shape
-- `apps/tab-manager/src/entrypoints/sidepanel/App.svelte` — current triple-await
-- `specs/20260512T220000-session-two-axis-cohesive-reshape.md` — parent spec
-- `.agents/skills/radical-options/SKILL.md` — framework that talked us out of the bigger redesign
-- `.agents/skills/cohesive-clean-breaks/SKILL.md` — guides the "smallest widening that earns its keep" decision
+- `packages/svelte-utils/src/session.svelte.ts`: `createSession`
+- `packages/svelte-utils/src/session-lifecycle.ts`: pure lifecycle (the file actually changed)
+- `packages/svelte-utils/src/session-lifecycle.test.ts`: existing test suite
+- `apps/tab-manager/src/lib/session.svelte.ts`: current divergent build shape
+- `apps/tab-manager/src/entrypoints/sidepanel/App.svelte`: current triple-await
+- `specs/20260512T220000-session-two-axis-cohesive-reshape.md`: parent spec
+- `.agents/skills/radical-options/SKILL.md`: framework that talked us out of the bigger redesign
+- `.agents/skills/cohesive-clean-breaks/SKILL.md`: guides the "smallest widening that earns its keep" decision

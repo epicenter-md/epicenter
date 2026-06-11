@@ -20,18 +20,18 @@ The "sometimes" nature comes from timing: the `setTimeout(0)` yield between SSE 
 
 ### Secondary Issue
 
-Line 384 of `chat-state.svelte.ts` references `streamStore` and `DEFAULT_STREAM_STATE` which are undefined—dead code from a refactor. The `isCreditsExhausted` getter would throw `ReferenceError` if accessed. Currently nothing accesses it (grep-verified), but it should be cleaned up.
+Line 384 of `chat-state.svelte.ts` references `streamStore` and `DEFAULT_STREAM_STATE` which are undefined. Dead code from a refactor. The `isCreditsExhausted` getter would throw `ReferenceError` if accessed. Currently nothing accesses it (grep-verified), but it should be cleaned up.
 
 ## Plan
 
-- [ ] 1. Deep-clone tool-call parts in `cloneMessages()` — spread the `approval` nested object to break all shared references
+- [ ] 1. Deep-clone tool-call parts in `cloneMessages()`: spread the `approval` nested object to break all shared references
 - [ ] 2. Add diagnostic `console.log` in `onMessagesChange` for approval-requested parts (temporary, for runtime verification)
-- [ ] 3. Fix the dead `isCreditsExhausted` getter — replace `streamStore` reference with the handle's own `error` state
+- [ ] 3. Fix the dead `isCreditsExhausted` getter: replace `streamStore` reference with the handle's own `error` state
 - [ ] 4. Verify with `lsp_diagnostics`
 
 ## Changes
 
-### 1. `apps/tab-manager/src/lib/chat/chat-state.svelte.ts` — `cloneMessages()`
+### 1. `apps/tab-manager/src/lib/chat/chat-state.svelte.ts`: `cloneMessages()`
 
 Before:
 ```typescript
@@ -57,7 +57,7 @@ const cloneMessages = (msgs: UIMessage[]) =>
                 if (p.type !== 'tool-call') return p;
                 const clone = { ...p };
                 // Deep-clone approval to break shared references from in-place mutations.
-                // TanStack AI's updateToolCallApproval() mutates parts in-place — the shallow
+                // TanStack AI's updateToolCallApproval() mutates parts in-place: the shallow
                 // spread above copies the reference, but Svelte 5's proxy may cache the old
                 // reference identity and miss the state change.
                 if ('approval' in clone && clone.approval) {
@@ -96,10 +96,10 @@ No architecture changes. No new dependencies. No changes to TanStack AI internal
 
 All changes in `apps/tab-manager/src/lib/chat/chat-state.svelte.ts`:
 
-1. **`cloneMessages()` (lines 80–115)** — Deep-clones the `approval` nested object on tool-call parts. Previously only did `{ ...p }` which copied the `approval` reference. Now does `{ ...clone.approval }` to break all shared references from TanStack AI's in-place mutations. This ensures Svelte 5's proxy always sees a fresh object identity when approval state changes.
+1. **`cloneMessages()` (lines 80-115)**: Deep-clones the `approval` nested object on tool-call parts. Previously only did `{ ...p }` which copied the `approval` reference. Now does `{ ...clone.approval }` to break all shared references from TanStack AI's in-place mutations. This ensures Svelte 5's proxy always sees a fresh object identity when approval state changes.
 
-2. **`onMessagesChange` callback (lines 249–268)** — Added DEV-only diagnostic logging that fires when approval-requested parts are detected. Logs part name, state, and approval data. Gated behind `import.meta.env.DEV` so it's stripped in production builds.
+2. **`onMessagesChange` callback (lines 249-268)**: Added DEV-only diagnostic logging that fires when approval-requested parts are detected. Logs part name, state, and approval data. Gated behind `import.meta.env.DEV` so it's stripped in production builds.
 
-3. **`isCreditsExhausted` getter (lines 421–424)** — Replaced `streamStore.get(conversationId)` (undefined — dead code from refactor) with `error` (the handle's own `$state` variable). Previously would have thrown `ReferenceError: streamStore is not defined` if accessed.
+3. **`isCreditsExhausted` getter (lines 421-424)**: Replaced `streamStore.get(conversationId)` (undefined: dead code from refactor) with `error` (the handle's own `$state` variable). Previously would have thrown `ReferenceError: streamStore is not defined` if accessed.
 
 Zero type errors. No architecture changes. Single file changed.

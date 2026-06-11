@@ -4,15 +4,15 @@
 
 The encryption lifecycle is split across three layers:
 
-1. **WorkspaceClient** — has `activateEncryption(derivedKey)` / `deactivateEncryption()` but only does raw key distribution to stores
-2. **KeyManager** — wraps workspace, adds dedup + race protection + HKDF derivation + key caching
-3. **auth.svelte.ts** — must compose both objects (`keyManager.clearKeys()` + `workspace.deactivateEncryption()`)
+1. **WorkspaceClient**: has `activateEncryption(derivedKey)` / `deactivateEncryption()` but only does raw key distribution to stores
+2. **KeyManager**: wraps workspace, adds dedup + race protection + HKDF derivation + key caching
+3. **auth.svelte.ts**: must compose both objects (`keyManager.clearKeys()` + `workspace.deactivateEncryption()`)
 
 This creates three problems:
 
-- **Two-step dance**: sign-out requires calling both `keyManager.clearKeys()` and `workspace.deactivateEncryption()` in sequence. auth.svelte.ts duplicates this at 2 call sites—and **forgets it at 2 others** (the `$effect` token-cleared path and the `!data` branch in `checkSession`). These are real bugs where encryption state leaks after sign-out.
-- **Footgun API**: WorkspaceClient exposes `activateEncryption(derivedKey)` publicly—a raw low-level method with no dedup, no race protection, no HKDF. Nobody should call it directly, but it's right there on the type. Apps that don't use encryption (Whispering, CLI) still see these methods on the client.
-- **KeyManager is a shim, not a real abstraction**: It exists solely to bridge the async HKDF gap and add dedup/race protection. Its `KeyManagerTarget` interface (`{ id, activateEncryption }`) is just a subset of WorkspaceClient. It doesn't model a meaningful concept—it's plumbing that leaked into architecture.
+- **Two-step dance**: sign-out requires calling both `keyManager.clearKeys()` and `workspace.deactivateEncryption()` in sequence. auth.svelte.ts duplicates this at 2 call sites. And **forgets it at 2 others** (the `$effect` token-cleared path and the `!data` branch in `checkSession`). These are real bugs where encryption state leaks after sign-out.
+- **Footgun API**: WorkspaceClient exposes `activateEncryption(derivedKey)` publicly. A raw low-level method with no dedup, no race protection, no HKDF. Nobody should call it directly, but it's right there on the type. Apps that don't use encryption (Whispering, CLI) still see these methods on the client.
+- **KeyManager is a shim, not a real abstraction**: It exists solely to bridge the async HKDF gap and add dedup/race protection. Its `KeyManagerTarget` interface (`{ id, activateEncryption }`) is just a subset of WorkspaceClient. It doesn't model a meaningful concept. It's plumbing that leaked into architecture.
 
 ## Background: How Encryption Actually Works
 
@@ -44,12 +44,12 @@ Encryption is a **store-level value transformation**, not a transport concern:
 App Code → set('key', value)
   → EncryptedYkvLww → JSON.stringify → encryptValue → Uint8Array blob
   → inner YKeyValueLww (CRDT) → Y.Array entry contains ciphertext
-  → Persistence (IndexedDB) stores ciphertext — transparent
-  → Sync (WebSocket) transmits ciphertext — transparent
-  → Server stores ciphertext — transparent
+  → Persistence (IndexedDB) stores ciphertext: transparent
+  → Sync (WebSocket) transmits ciphertext: transparent
+  → Server stores ciphertext: transparent
 ```
 
-Sync and persistence never see plaintext. They receive Y.Doc binary updates containing encrypted blobs and pass them through unchanged. The server CAN decrypt (it has `ENCRYPTION_SECRETS`), but the sync room doesn't—it just relays binary updates.
+Sync and persistence never see plaintext. They receive Y.Doc binary updates containing encrypted blobs and pass them through unchanged. The server CAN decrypt (it has `ENCRYPTION_SECRETS`), but the sync room doesn't. It just relays binary updates.
 
 ### No dependency on sync or persistence ordering
 
@@ -61,11 +61,11 @@ createWorkspace(def).withEncryption({...}).withExtension('persistence', ...)
 createWorkspace(def).withExtension('persistence', ...).withEncryption({...})
 ```
 
-The only relationship: `deactivateEncryption()` calls `clearData()` on extensions (to wipe IndexedDB). That's the inverse operation and the ordering is irrelevant—`clearDataCallbacks` are accumulated by the builder and iterated at deactivation time.
+The only relationship: `deactivateEncryption()` calls `clearData()` on extensions (to wipe IndexedDB). That's the inverse operation and the ordering is irrelevant: `clearDataCallbacks` are accumulated by the builder and iterated at deactivation time.
 
 ### Keys only come via getSession()
 
-Keys are NOT delivered through WebSocket (sync extension) or any other channel. The sync extension's `getToken` provides a Better Auth bearer token for authentication, not an encryption key. The Durable Object receives `user.id` and `session` from the auth guard—never `encryptionKey`.
+Keys are NOT delivered through WebSocket (sync extension) or any other channel. The sync extension's `getToken` provides a Better Auth bearer token for authentication, not an encryption key. The Durable Object receives `user.id` and `session` from the auth guard. Never `encryptionKey`.
 
 This means `.withEncryption()` has zero coupling to the sync extension.
 
@@ -89,7 +89,7 @@ KeyManager's 9 responsibilities and where they naturally live:
 | 8 | Cache clearing | **Workspace (via hook)** | Workspace triggers it via `onDeactivate` callback. Caller provides implementation. |
 | 9 | Cache restore orchestration | **Caller** | App-level: read cache → base64ToBytes → workspace.activateEncryption. |
 
-Items 1–3, 5–6, 8 move into workspace. Items 4, 7, 9 stay in the caller. Nothing remains that justifies a standalone `KeyManager` module.
+Items 1-3, 5-6, 8 move into workspace. Items 4, 7, 9 stay in the caller. Nothing remains that justifies a standalone `KeyManager` module.
 
 ### API change
 
@@ -98,7 +98,7 @@ Items 1–3, 5–6, 8 move into workspace. Items 4, 7, 9 stay in the caller. Not
 const workspace = createWorkspace(definition)
   .withExtension('persistence', indexeddbPersistence)
 
-// Raw API — no dedup, no race protection, no HKDF
+// Raw API: no dedup, no race protection, no HKDF
 workspace.activateEncryption(derivedKey)   // sync, takes pre-derived key
 workspace.deactivateEncryption()            // doesn't clear key cache
 ```
@@ -111,7 +111,7 @@ const workspace = createWorkspace(definition)
   })
   .withExtension('persistence', indexeddbPersistence)
 
-// Full pipeline — dedup + HKDF + race protection baked in
+// Full pipeline: dedup + HKDF + race protection baked in
 await workspace.activateEncryption(userKeyBytes)  // async, takes user key
 await workspace.deactivateEncryption()             // also calls onDeactivate hook
 workspace.isEncrypted                              // boolean getter
@@ -135,7 +135,7 @@ type EncryptionConfig = {
    * Called after deactivateEncryption() completes store cleanup and IndexedDB wipe.
    * Use for platform-specific cleanup like clearing key caches.
    *
-   * This is the ONLY hook. No onActivate — asymmetric risk:
+   * This is the ONLY hook. No onActivate: asymmetric risk:
    * missing cache-clear leaks keys (security bug),
    * missing cache-set just costs a server roundtrip (UX inconvenience).
    */
@@ -194,11 +194,11 @@ await workspace.deactivateEncryption();
 phase = { status: 'signed-out' };
 ```
 
-### Leaked sign-out paths — fixed for free
+### Leaked sign-out paths: fixed for free
 
 Both existing bugs disappear because every sign-out path just calls `workspace.deactivateEncryption()`:
 
-**Bug 1: `$effect` token cleared (line 133–137)** — encryption state leaks:
+**Bug 1: `$effect` token cleared (line 133-137)**: encryption state leaks:
 ```typescript
 // BEFORE: no encryption cleanup
 if (!authToken.current && phase.status === 'signed-in') {
@@ -215,7 +215,7 @@ if (!authToken.current && phase.status === 'signed-in') {
 }
 ```
 
-**Bug 2: `!data` branch in checkSession (line 427–431)** — encryption state leaks:
+**Bug 2: `!data` branch in checkSession (line 427-431)**: encryption state leaks:
 ```typescript
 // BEFORE: no encryption cleanup
 if (!data) {
@@ -253,7 +253,7 @@ function buildWorkspaceClient() {
 ### Whispering workspace (unchanged)
 
 ```typescript
-// No .withEncryption() — no encryption methods on the type
+// No .withEncryption(): no encryption methods on the type
 export default createWorkspace(
   defineWorkspace({ id: 'whispering', tables: { ... }, kv: { ... } }),
 ).withExtension('persistence', indexeddbPersistence);
@@ -271,21 +271,21 @@ export default createWorkspace(
    - Byte-compare dedup against `lastUserKey` (early return if equal)
    - `lastUserKey = userKey`
    - `const thisGen = ++keyGeneration`
-   - `const wsKey = await deriveWorkspaceKey(userKey, id)` — HKDF
+   - `const wsKey = await deriveWorkspaceKey(userKey, id)`: HKDF
    - Stale check: `if (thisGen !== keyGeneration) return`
    - `workspaceKey = wsKey`
    - `for (store of encryptedStores) store.activateEncryption(wsKey)`
 4. Adds `deactivateEncryption()`:
-   - `++keyGeneration` — invalidate in-flight HKDF
-   - `lastUserKey = undefined` — clear fingerprint
+   - `++keyGeneration`: invalidate in-flight HKDF
+   - `lastUserKey = undefined`: clear fingerprint
    - `workspaceKey = undefined`
    - `for (store of encryptedStores) store.deactivateEncryption()`
    - `clearDataCallbacks` LIFO iteration (wipe IndexedDB)
-   - `await config.onDeactivate?.()` — call hook last
+   - `await config.onDeactivate?.()`: call hook last
 5. Adds `isEncrypted` getter: `workspaceKey !== undefined`
 6. Returns a new builder with these methods added to the type
 
-The internal `encryptedStores`, `workspaceKey`, and `clearDataCallbacks` are already closure variables in `buildClient()`. `.withEncryption()` just adds methods that operate on them—no new plumbing needed.
+The internal `encryptedStores`, `workspaceKey`, and `clearDataCallbacks` are already closure variables in `buildClient()`. `.withEncryption()` just adds methods that operate on them. No new plumbing needed.
 
 ### types.ts
 
@@ -299,13 +299,13 @@ The internal `encryptedStores`, `workspaceKey`, and `clearDataCallbacks` are alr
      deactivateEncryption(): Promise<void>;
    };
    ```
-4. `withEncryption(config)` on `WorkspaceClientBuilder` — returns `WorkspaceClientBuilder & EncryptionMethods`
+4. `withEncryption(config)` on `WorkspaceClientBuilder`: returns `WorkspaceClientBuilder & EncryptionMethods`
 5. `ExtensionContext`: if encryption is configured, extensions see the encryption methods (sync extension may want to check `isEncrypted` in the future, though it doesn't today)
 
 ### Delete
 
-- `packages/workspace/src/shared/crypto/key-manager.ts` — 239 lines
-- `packages/workspace/src/shared/crypto/key-manager.test.ts` — all tests
+- `packages/workspace/src/shared/crypto/key-manager.ts`: 239 lines
+- `packages/workspace/src/shared/crypto/key-manager.test.ts`: all tests
 - `createKeyManager`, `KeyManager`, `KeyManagerTarget`, `KeyManagerConfig` exports from `crypto/index.ts`
 - `KeyCache` type export from `crypto/index.ts` (only used by key-manager)
 
@@ -317,7 +317,7 @@ Key-manager.test.ts tests:
 - Generation counter (concurrent calls → only latest applies)
 - Key cache interactions (set on activate, clear on clearKeys, restore from cache)
 
-These move to `create-workspace.test.ts` and test through the workspace client's `activateEncryption`/`deactivateEncryption` with real encrypted stores—better integration coverage than the mock-based KeyManager tests.
+These move to `create-workspace.test.ts` and test through the workspace client's `activateEncryption`/`deactivateEncryption` with real encrypted stores. Better integration coverage than the mock-based KeyManager tests.
 
 Specifically:
 - Dedup: call `activateEncryption(sameKey)` twice, verify store.activateEncryption called once
@@ -333,7 +333,7 @@ Specifically:
 - Replace `keyManager.clearKeys()` + `workspace.deactivateEncryption()` with just `workspace.deactivateEncryption()`
 - Replace `keyManager.restoreKeyFromCache(userId)` with inline cache read + `workspace.activateEncryption(base64ToBytes(cached))`
 - Fix the two leaked sign-out paths (add `workspace.deactivateEncryption()`)
-- The `$effect` for token-cleared fires synchronously—use `void workspace.deactivateEncryption()` (fire-and-forget, same as current `restoreKeyFromCache` pattern)
+- The `$effect` for token-cleared fires synchronously. Use `void workspace.deactivateEncryption()` (fire-and-forget, same as current `restoreKeyFromCache` pattern)
 
 ### Update workspace.ts (tab-manager)
 
@@ -349,12 +349,12 @@ Specifically:
 
 - [x] Add `EncryptionConfig` and `EncryptionMethods` types to types.ts
 - [x] Remove `activateEncryption`, `deactivateEncryption`, `isEncrypted` from base `WorkspaceClient` type
-- [x] Add `withEncryption(config)` to `WorkspaceClientBuilder` type—returns builder with encryption methods
-- [x] Implement `.withEncryption()` in create-workspace.ts—dedup, generation counter, HKDF, onDeactivate hook
+- [x] Add `withEncryption(config)` to `WorkspaceClientBuilder` type. Returns builder with encryption methods
+- [x] Implement `.withEncryption()` in create-workspace.ts. Dedup, generation counter, HKDF, onDeactivate hook
 - [x] Update `ExtensionContext` so extensions see encryption methods when configured
-  > **Note**: No explicit change needed—`ExtensionContext` is `Omit<WorkspaceClient, ...>`, so removing encryption from `WorkspaceClient` automatically removes it. Encryption methods appear when the builder type is intersected with `EncryptionMethods`.
-- [x] Update workspace.ts (tab-manager)—add `.withEncryption({ onDeactivate })` to builder chain
-- [x] Update auth.svelte.ts—remove createKeyManager, use workspace directly, fix two leaked sign-out paths
+  > **Note**: No explicit change needed: `ExtensionContext` is `Omit<WorkspaceClient, ...>`, so removing encryption from `WorkspaceClient` automatically removes it. Encryption methods appear when the builder type is intersected with `EncryptionMethods`.
+- [x] Update workspace.ts (tab-manager): add `.withEncryption({ onDeactivate })` to builder chain
+- [x] Update auth.svelte.ts. Remove createKeyManager, use workspace directly, fix two leaked sign-out paths
 - [x] Delete key-manager.ts, key-manager.test.ts, remove re-exports from crypto/index.ts
 - [x] Migrate dedup/race/generation/hook tests to create-workspace.test.ts
 - [x] Update key-cache.ts JSDoc
@@ -363,17 +363,17 @@ Specifically:
 
 ## Constraints
 
-- `.withEncryption()` chains with `.withExtension()` in any order—no ordering dependency
+- `.withEncryption()` chains with `.withExtension()` in any order. No ordering dependency
 - Without `.withEncryption()`, workspace works exactly as today minus encryption methods on the type
-- `deriveWorkspaceKey` is batteries-included—not configurable
-- `onDeactivate` is the only hook—no `onActivate`
+- `deriveWorkspaceKey` is batteries-included. Not configurable
+- `onDeactivate` is the only hook. No `onActivate`
 - `activateEncryption` returns `Promise<void>` (HKDF is async)
 - Must not break Whispering, CLI, or any non-encryption workspace consumer
-- Encryption is store-level, transparent to sync and persistence—this doesn't change
+- Encryption is store-level, transparent to sync and persistence. This doesn't change
 
 ## Non-goals
 
-- Key rotation (keyVersion infrastructure exists in blob format but no rotation logic—separate concern)
+- Key rotation (keyVersion infrastructure exists in blob format but no rotation logic. Separate concern)
 - Server-side decryption changes (server already derives keys independently via `ENCRYPTION_SECRETS`)
 - Sync extension encryption awareness (sync is and should remain encryption-transparent)
 
@@ -384,7 +384,7 @@ Specifically:
 
 ### Summary
 
-Moved encryption lifecycle management from the standalone `KeyManager` factory into the workspace client via a `.withEncryption()` builder method. The workspace now owns dedup (byte-level comparison), race protection (generation counter), HKDF derivation, and the `onDeactivate` hook—all previously split across KeyManager and auth.svelte.ts. Two real bugs in auth.svelte.ts (leaked encryption state on token-cleared `$effect` and `!data` branch in `checkSession`) are fixed for free because every sign-out path now calls a single `workspace.deactivateEncryption()`.
+Moved encryption lifecycle management from the standalone `KeyManager` factory into the workspace client via a `.withEncryption()` builder method. The workspace now owns dedup (byte-level comparison), race protection (generation counter), HKDF derivation, and the `onDeactivate` hook. All previously split across KeyManager and auth.svelte.ts. Two real bugs in auth.svelte.ts (leaked encryption state on token-cleared `$effect` and `!data` branch in `checkSession`) are fixed for free because every sign-out path now calls a single `workspace.deactivateEncryption()`.
 
 ### Deviations from Spec
 
@@ -394,4 +394,4 @@ Moved encryption lifecycle management from the standalone `KeyManager` factory i
 
 ### Follow-up Work
 
-- None identified—the spec's scope is fully implemented.
+- None identified. The spec's scope is fully implemented.

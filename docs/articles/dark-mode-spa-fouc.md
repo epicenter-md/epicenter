@@ -4,7 +4,7 @@ If you've built a single-page application with dark mode support, you've probabl
 
 ## The Problem
 
-In a typical SPA setup—SvelteKit with `ssr: false`, Vite, or any statically-generated site—your HTML is served before JavaScript runs. The browser renders the page, _then_ your JavaScript hydrates, reads the user's theme preference, and applies the dark class.
+In a typical SPA setup. SvelteKit with `ssr: false`, Vite, or any statically-generated site. Your HTML is served before JavaScript runs. The browser renders the page, _then_ your JavaScript hydrates, reads the user's theme preference, and applies the dark class.
 
 That gap between "HTML rendered" and "JavaScript executed" is where the flash happens.
 
@@ -32,7 +32,7 @@ This reads the user's operating system preference and applies styles before the 
 
 ## The Edge Case: SPAs with localStorage
 
-The CSS approach breaks down when your app stores the user's theme preference in `localStorage`—which is what most theme libraries (like [mode-watcher](https://github.com/svecosystem/mode-watcher)) do to persist choices across sessions.
+The CSS approach breaks down when your app stores the user's theme preference in `localStorage`, which is what most theme libraries (like [mode-watcher](https://github.com/svecosystem/mode-watcher)) do to persist choices across sessions.
 
 CSS media queries read system settings; they have no way to access localStorage. If someone's OS is set to light mode but they explicitly chose dark mode in your app's theme toggle, CSS can't know. The page renders light, JavaScript finally runs, reads "dark" from localStorage, applies the class, and you get the flash.
 
@@ -81,7 +81,7 @@ We _want_ this script to block. It's tiny and reads from localStorage, which is 
 
 If you're using SSR, you have more options. SvelteKit provides `%sveltekit.nonce%` for CSP-compliant inline scripts, and you can use `hooks.server.ts` to inject theme logic at request time.
 
-But for prerendered or statically-generated pages, server hooks don't run when users request the page—they only run at build time. The HTML is already baked. That's why the inline script approach is necessary.
+But for prerendered or statically-generated pages, server hooks don't run when users request the page. They only run at build time. The HTML is already baked. That's why the inline script approach is necessary.
 
 ## The Full Picture
 
@@ -93,10 +93,10 @@ But for prerendered or statically-generated pages, server hooks don't run when u
 
 ## References
 
-- [SvelteKit issue #13307](https://github.com/sveltejs/kit/issues/13307#issuecomment-3690858517) — Discussion of this problem and the solution
-- [mode-watcher docs PR](https://github.com/svecosystem/mode-watcher/pull/160) — Adding CSR/SPA documentation to mode-watcher
-- [Whispering FOUC fix](https://github.com/EpicenterHQ/epicenter/pull/1168) — Real-world implementation that prompted this investigation
-- [Leftium's CSS approach](https://github.com/EpicenterHQ/epicenter/pull/1154) — An alternative CSS-only approach (works when user preference matches OS)
+- [SvelteKit issue #13307](https://github.com/sveltejs/kit/issues/13307#issuecomment-3690858517): Discussion of this problem and the solution
+- [mode-watcher docs PR](https://github.com/svecosystem/mode-watcher/pull/160): Adding CSR/SPA documentation to mode-watcher
+- [Whispering FOUC fix](https://github.com/EpicenterHQ/epicenter/pull/1168): Real-world implementation that prompted this investigation
+- [Leftium's CSS approach](https://github.com/EpicenterHQ/epicenter/pull/1154): An alternative CSS-only approach (works when user preference matches OS)
 
 ---
 

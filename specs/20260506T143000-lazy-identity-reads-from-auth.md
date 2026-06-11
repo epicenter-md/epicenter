@@ -151,7 +151,7 @@ trigger reload because no captured copy is out of date.
 ┌────────────────────────────────────────────────────────────┐
 │  attachEncryption (packages/workspace)                     │
 │                                                            │
-│  ({ encryptionKeys }) — no mutable lastKeys, no applyKeys() exit  │
+│  ({ encryptionKeys }): no mutable lastKeys, no applyKeys() exit  │
 │                                                            │
 │  Stores register; encryption derives keyring once at       │
 │  registration via encryptionKeys(); same-user changes never       │

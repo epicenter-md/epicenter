@@ -2,7 +2,7 @@
 
 I spent weeks debugging what I thought was a global shortcut issue in Whispering. Users were reporting that the keyboard shortcut to start recording would randomly fail. The shortcut would register (I could see it in the logs), but the recording wouldn't actually start.
 
-My first instinct? The global shortcut plugin must be buggy. I was ready to write my own Rust implementation. 
+My first instinct? The global shortcut plugin must be buggy. I was ready to write my own Rust implementation.
 
 I was completely wrong.
 
@@ -10,7 +10,7 @@ I was completely wrong.
 
 Here's what was actually happening: when users triggered recording via global shortcut while Whispering was in the background, macOS's App Nap would throttle the JavaScript runtime. The `navigator.mediaDevices.getUserMedia()` call would get queued but wouldn't execute until the app regained focus.
 
-The recording would eventually start—just not when the user pressed the key. Imagine pressing your recording shortcut, speaking for 30 seconds, then realizing nothing was captured because the stream hadn't actually initialized yet.
+The recording would eventually start. Just not when the user pressed the key. Imagine pressing your recording shortcut, speaking for 30 seconds, then realizing nothing was captured because the stream hadn't actually initialized yet.
 
 ## Why I Didn't Notice Sooner
 
@@ -27,9 +27,9 @@ navigator.mediaDevices.getUserMedia({ audio: true });
 
 ## The Navigator API Wasn't Built for Desktop
 
-Here's the thing about `navigator.mediaDevices`: it was designed for web browsers where user interaction happens in the foreground. The entire security model assumes the user is actively interacting with a visible page. 
+Here's the thing about `navigator.mediaDevices`: it was designed for web browsers where user interaction happens in the foreground. The entire security model assumes the user is actively interacting with a visible page.
 
-When you shoehorn this into a desktop app with global shortcuts, you're fighting against the platform. App Nap is doing exactly what it's supposed to do—throttling background JavaScript to save battery. It just happens to break our recording flow.
+When you shoehorn this into a desktop app with global shortcuts, you're fighting against the platform. App Nap is doing exactly what it's supposed to do. Throttling background JavaScript to save battery. It just happens to break our recording flow.
 
 ## The Solution: Go Native
 
@@ -84,6 +84,6 @@ Specifically for recording:
 - Progressive file writing prevents data loss
 - Platform-specific quirks (like App Nap) disappear when you go native
 
-I wasted weeks thinking I had a global shortcut problem. The shortcuts were fine—they were implemented in Rust and worked perfectly. The issue was trying to use web APIs in a context they weren't designed for.
+I wasted weeks thinking I had a global shortcut problem. The shortcuts were fine. They were implemented in Rust and worked perfectly. The issue was trying to use web APIs in a context they weren't designed for.
 
 If you're building a Tauri app with recording features, learn from my mistake: implement recording in Rust from day one. Your users (and your future self) will thank you.

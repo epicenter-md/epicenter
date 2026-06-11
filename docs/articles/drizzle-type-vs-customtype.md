@@ -6,13 +6,13 @@
 
 ## The Goal
 
-I want to store dates as branded strings (`DateTimeString`) and keep them that way through the entire system—database to API to frontend—only parsing into rich `Temporal` objects at the very last moment (UI binding). Then immediately serialize back.
+I want to store dates as branded strings (`DateTimeString`) and keep them that way through the entire system. Database to API to frontend. Only parsing into rich `Temporal` objects at the very last moment (UI binding). Then immediately serialize back.
 
 The rule: **if data enters serialized and leaves serialized, keep it serialized in the middle. Parse at the edges where you actually need the rich representation.**
 
 ## The Journey
 
-I started with a `customType` that actually did work—parsing the string into a `Temporal.ZonedDateTime` on read:
+I started with a `customType` that actually did work. Parsing the string into a `Temporal.ZonedDateTime` on read:
 
 ```typescript
 // Where I started: parsing on every read
@@ -34,7 +34,7 @@ customType<{ data: DateTimeString; driverParam: DateTimeString }>({
 });
 ```
 
-But then I looked closer—even with identity functions, Drizzle still runs through `mapFromDriverValue` on every read:
+But then I looked closer. Even with identity functions, Drizzle still runs through `mapFromDriverValue` on every read:
 
 ```typescript
 // drizzle-orm/src/utils.ts - runs for EVERY column of EVERY row
@@ -84,4 +84,4 @@ But for branded strings where the underlying data doesn't change, `$type<T>()` g
 
 ## The Rule
 
-If the data doesn't actually transform—just needs a more specific TypeScript type—use `$type<T>()`. Keep the intermediate representation. Parse at the edges.
+If the data doesn't actually transform. Just needs a more specific TypeScript type. Use `$type<T>()`. Keep the intermediate representation. Parse at the edges.

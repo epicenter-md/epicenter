@@ -1,6 +1,6 @@
 # @epicenter/server: Package Extraction + Sync Core
 
-> **Update (Feb 2026)**: The cloud deployment scope has been narrowed. Cloud focuses on sync + auth only — the workspace plugin (tables/actions) is self-hosted only. The transport-agnostic sync core (rooms, auth, protocol) remains shared across both targets as described in this spec. See `specs/20260219T200000-deployment-targets-research.md` for the architectural decision.
+> **Update (Feb 2026)**: The cloud deployment scope has been narrowed. Cloud focuses on sync + auth only: the workspace plugin (tables/actions) is self-hosted only. The transport-agnostic sync core (rooms, auth, protocol) remains shared across both targets as described in this spec. See `specs/20260219T200000-deployment-targets-research.md` for the architectural decision.
 >
 > **Topology note (2026-02-26)**: This spec predates the hub/sidecar split. The "Network Topology" section describes a single-server model. The current architecture uses `createHubServer()` (Better Auth, AI streaming, ephemeral Yjs relay) and `createLocalServer()` (workspace CRUD, extensions, actions, persisted Y.Docs). There is no single `createServer()` that handles both roles. See `specs/20260222T195645-network-topology-multi-server-architecture.md` for the authoritative three-tier topology.
 
@@ -12,7 +12,7 @@
 
 Extract the server code from `@epicenter/workspace` (currently at `packages/epicenter/src/server/`) into a standalone `@epicenter/server` package at `packages/server/`. Then build the sync core: a transport-agnostic room manager and three-mode authentication system that serve as the shared foundation for both the self-hosted Elysia server and the Cloudflare Durable Objects cloud path.
 
-**Scope boundary**: This spec covers `@epicenter/server` — the self-hosted Elysia/Bun sync server and the transport-agnostic sync core (`createRoom()`, `createAuthValidator()`, `Connection` type) that both deployment paths depend on. It also defines the **canonical client-side provider API** consumed by all three specs. The Cloudflare Durable Objects cloud path is a separate codebase documented in `20260213T120800-cloud-sync-durable-objects.md`. Client-side E2EE is documented in `20260213T120813-encryption-at-rest-architecture.md`.
+**Scope boundary**: This spec covers `@epicenter/server`: the self-hosted Elysia/Bun sync server and the transport-agnostic sync core (`createRoom()`, `createAuthValidator()`, `Connection` type) that both deployment paths depend on. It also defines the **canonical client-side provider API** consumed by all three specs. The Cloudflare Durable Objects cloud path is a separate codebase documented in `20260213T120800-cloud-sync-durable-objects.md`. Client-side E2EE is documented in `20260213T120813-encryption-at-rest-architecture.md`.
 
 ## Motivation
 
@@ -60,7 +60,7 @@ A standalone `@epicenter/server` package that:
 - Is installable independently for self-hosting (`bun add @epicenter/server`)
 - Has a three-mode auth system: open (no auth), shared secret, or external JWT validation
 - Exports a transport-agnostic room manager that can be reused by the Durable Objects cloud path
-- Does NOT embed Better Auth, OAuth, user databases, or encryption — those live in separate concerns
+- Does NOT embed Better Auth, OAuth, user databases, or encryption: those live in separate concerns
 
 ## Research Findings
 
@@ -84,16 +84,16 @@ External dependencies:
 | `yjs`               | sync/protocol.ts (type-only)                    | Y.Doc type                    |
 | `wellcrafted`       | sync/index.ts                                   | `trySync` for error handling  |
 
-**Key finding**: The server's dependency on `@epicenter/workspace` is narrow — just 5 type imports and 2 function imports (`iterateActions`, `isAction`). The types can be imported from `@epicenter/workspace` as a peer dependency.
+**Key finding**: The server's dependency on `@epicenter/workspace` is narrow: just 5 type imports and 2 function imports (`iterateActions`, `isAction`). The types can be imported from `@epicenter/workspace` as a peer dependency.
 
 ### Elysia.js and Cloudflare Durable Objects
 
-**Elysia cannot manage Durable Object WebSockets.** Durable Objects use the Hibernation API — a class-based lifecycle where the DO _is_ the WebSocket server via `this.ctx.acceptWebSocket()`, `webSocketMessage()`, `webSocketClose()` methods. There is no HTTP framework in the middle. Elysia has experimental CF Worker support (since v1.2) for basic HTTP routes, but its WebSocket handling uses `WebSocketPair` on Workers, which is the wrong model for DOs.
+**Elysia cannot manage Durable Object WebSockets.** Durable Objects use the Hibernation API: a class-based lifecycle where the DO _is_ the WebSocket server via `this.ctx.acceptWebSocket()`, `webSocketMessage()`, `webSocketClose()` methods. There is no HTTP framework in the middle. Elysia has experimental CF Worker support (since v1.2) for basic HTTP routes, but its WebSocket handling uses `WebSocketPair` on Workers, which is the wrong model for DOs.
 
 **Implication**: The self-hosted path (Elysia/Bun) and the cloud path (CF Workers + DOs) are fundamentally different codebases at the transport layer. They share:
 
-- `protocol.ts` — pure encode/decode (already transport-agnostic)
-- `room.ts` — transport-agnostic room management (to be extracted)
+- `protocol.ts`: pure encode/decode (already transport-agnostic)
+- `room.ts`: transport-agnostic room management (to be extracted)
 
 But they have completely different:
 
@@ -106,8 +106,8 @@ But they have completely different:
 
 Better Auth does NOT run inside the sync server. The architecture is:
 
-1. **Auth server** (Epicenter's cloud infrastructure) — Better Auth, user accounts, OAuth, org membership. Issues JWTs.
-2. **Sync server** (`@epicenter/server`) — Elysia WebSocket relay. Validates connections. Does NOT know about users, sessions, or OAuth.
+1. **Auth server** (Epicenter's cloud infrastructure): Better Auth, user accounts, OAuth, org membership. Issues JWTs.
+2. **Sync server** (`@epicenter/server`): Elysia WebSocket relay. Validates connections. Does NOT know about users, sessions, or OAuth.
 
 The sync server's only auth question: **"should I let this WebSocket connection in?"** This is answered by one of three modes depending on deployment context.
 
@@ -118,8 +118,8 @@ The sync server's only auth question: **"should I let this WebSocket connection 
 | Package dependency direction | `@epicenter/server` depends on `@epicenter/workspace` as peer dep                      | Server needs workspace types; keeping them in `@epicenter/workspace` avoids a types-only package                    |
 | Backward compatibility       | Breaking change, no re-export from `@epicenter/workspace/server`                       | Clean break. The server export path was pre-1.0 and has few consumers.                                       |
 | No circular deps             | `@epicenter/workspace` must NEVER depend on `@epicenter/server`                        | One-way dependency: `server → hq`. CLI uses dynamic import for `serve` command until CLI is extracted later. |
-| CLI extraction (future)      | Extract `@epicenter/cli` that depends on both `hq` and `server`                 | Clean leaf package that composes everything. Deferred — not in scope for Phase 1.                            |
-| Auth model                   | Three modes: open, shared secret, external JWT — NOT Better Auth on the server  | Sync server is a relay, not an auth authority. Auth complexity belongs in a separate service.                |
+| CLI extraction (future)      | Extract `@epicenter/cli` that depends on both `hq` and `server`                 | Clean leaf package that composes everything. Deferred: not in scope for Phase 1.                            |
+| Auth model                   | Three modes: open, shared secret, external JWT: NOT Better Auth on the server  | Sync server is a relay, not an auth authority. Auth complexity belongs in a separate service.                |
 | Auth default                 | Mode 1 (open, no auth) is the default                                           | Self-hosted on a trusted network shouldn't require OAuth setup to sync your own devices.                     |
 | No encryption in sync server | Encryption is a client-side concern (E2EE), not server-side                     | Server relays opaque Uint8Array blobs. E2EE means server never needs to decrypt. See encryption spec.        |
 | Cloud path is separate       | Durable Objects adapter is a different codebase, NOT an Elysia plugin           | DO Hibernation API is incompatible with Elysia's WebSocket model. Shared code = protocol + room layers only. |
@@ -216,7 +216,7 @@ new WebSocket('ws://localhost:3913/workspaces/blog/sync');
 // No headers, no tokens, just connect.
 ```
 
-Validation: `() => ({ allowed: true })` — everyone's welcome.
+Validation: `() => ({ allowed: true })`: everyone's welcome.
 
 #### Mode 2: Shared Secret
 
@@ -345,7 +345,7 @@ packages/server/src/sync/
 The room manager:
 
 ```typescript
-// sync/room.ts — Transport-agnostic room management
+// sync/room.ts: Transport-agnostic room management
 
 type Connection = {
 	send(data: Uint8Array): void;
@@ -396,7 +396,7 @@ function createRoom(config: RoomConfig) {
 The Elysia plugin becomes a thin adapter:
 
 ```typescript
-// sync/elysia-plugin.ts — Maps Elysia WS events → Room methods
+// sync/elysia-plugin.ts: Maps Elysia WS events → Room methods
 function createSyncPlugin(config: { getDoc; auth? }) {
 	const rooms = new Map<string, Room>();
 	const validator = createAuthValidator(config.auth);
@@ -453,7 +453,7 @@ Mode 2 uses a static `token` string. Mode 3 uses a `getToken` function that fetc
 
 #### Network Topology
 
-The primary model is **single server** — one sync server that all your devices connect to.
+The primary model is **single server**: one sync server that all your devices connect to.
 
 ```
 PRIMARY: Single Self-Hosted Server
@@ -470,10 +470,10 @@ PRIMARY: Single Self-Hosted Server
   Server handles sync and persistence. No auth database.
 ```
 
-**Hot-swapping** between self-hosted and cloud is a client-side concern — the client changes which URL it connects to. No server-to-server communication needed because clients bridge data via CRDTs.
+**Hot-swapping** between self-hosted and cloud is a client-side concern: the client changes which URL it connects to. No server-to-server communication needed because clients bridge data via CRDTs.
 
 ```typescript
-// Connect to both simultaneously — client bridges via CRDTs
+// Connect to both simultaneously: client bridges via CRDTs
 .withExtension('syncLocal', createWebsocketSyncProvider({
   url: 'ws://mac-mini.local:3913/workspaces/{id}/sync',
 }))
@@ -511,35 +511,35 @@ These are handled by companion specs:
   - Verify all imports resolve correctly
 - [x] **1.4** Update `packages/epicenter/src/cli/cli.ts` to use dynamic import
   - Changed static import to `const { createServer } = await import('@epicenter/server')` with try/catch
-  - `@epicenter/server` is NOT a dependency of `@epicenter/workspace` — no circular deps
+  - `@epicenter/server` is NOT a dependency of `@epicenter/workspace`: no circular deps
   - If `@epicenter/server` is not installed, the `serve` command prints a helpful error and exits
 - [x] **1.5** Remove `./server` export from `packages/epicenter/package.json`
   - Deleted the `"./server": "./src/server/index.ts"` entry
   - Also removed `@elysiajs/openapi` from `@epicenter/workspace` dependencies (now owned by `@epicenter/server`)
 - [x] **1.6** Delete `packages/epicenter/src/server/` directory entirely
 - [x] **1.7** Verify the server README at `packages/epicenter/src/server/README.md` is moved to `packages/server/README.md`
-- [x] **1.8** Run existing tests in new location: `bun test` from `packages/server/` — 50 pass, 0 fail
-- [x] **1.9** Run `bun typecheck` on both `@epicenter/server` and `@epicenter/workspace` — all errors are pre-existing upstream, none related to extraction
+- [x] **1.8** Run existing tests in new location: `bun test` from `packages/server/`: 50 pass, 0 fail
+- [x] **1.9** Run `bun typecheck` on both `@epicenter/server` and `@epicenter/workspace`: all errors are pre-existing upstream, none related to extraction
 - [x] **1.10** No documentation references to `@epicenter/workspace/server` found outside the spec itself
 
-### Phase 2: Room Extraction + Three-Mode Auth (Design Only — Implementation Deferred)
+### Phase 2: Room Extraction + Three-Mode Auth (Design Only: Implementation Deferred)
 
 - [ ] **2.1** Extract `createRoom()` into `sync/room.ts`
   - Move connection tracking, awareness lifecycle, broadcast logic out of `sync/index.ts`
   - Define `Connection` interface: `{ send(data: Uint8Array): void; id: string }`
-  - Room is transport-agnostic — no Elysia, no Buffer, no WebSocket types
+  - Room is transport-agnostic: no Elysia, no Buffer, no WebSocket types
   - Export from package for reuse by Durable Objects adapter (separate codebase)
 - [ ] **2.2** Create `sync/auth.ts` with `createAuthValidator()`
   - Implement all three modes: open, shared secret, JWT
   - Token extraction: parse `Sec-WebSocket-Protocol` header (primary) and `?token=` query param (fallback)
-  - JWT validation: `jose` library (works on Bun and CF Workers) — verify signature, check `exp`, check `docId` claim
+  - JWT validation: `jose` library (works on Bun and CF Workers): verify signature, check `exp`, check `docId` claim
   - Return `{ allowed: boolean; userId?: string }`
 - [ ] **2.3** Refactor `sync/index.ts` → `sync/elysia-plugin.ts`
   - Thin adapter: maps Elysia WS events to `room.addConnection`, `room.handleMessage`, `room.removeConnection`
-  - Calls auth validator on WebSocket upgrade — reject with 4001 if not allowed
+  - Calls auth validator on WebSocket upgrade: reject with 4001 if not allowed
   - Manages multiple rooms (one per workspace), evicts empty rooms
 - [ ] **2.4** Update `createServer()` to accept `auth` option
-  - `auth?: { secret: string } | { jwtSecret: string }` — undefined means open (Mode 1)
+  - `auth?: { secret: string } | { jwtSecret: string }`: undefined means open (Mode 1)
   - Pass auth config through to `createSyncPlugin`
   - Also gate REST table endpoints (not just WebSocket)
 - [ ] **2.5** Verify existing tests pass with no behavioral changes
@@ -560,7 +560,7 @@ These are handled by companion specs:
 1. `@epicenter/workspace` currently exports the server AND defines the types the server uses
 2. After extraction, `@epicenter/server` depends on `@epicenter/workspace` for types
 3. The CLI's `serve` command (in `@epicenter/workspace`) needs `createServer` from `@epicenter/server`
-4. **`@epicenter/workspace` must NEVER depend on `@epicenter/server`** — no circular deps
+4. **`@epicenter/workspace` must NEVER depend on `@epicenter/server`**: no circular deps
 
 **Resolution**: The CLI uses a dynamic import: `const { createServer } = await import('@epicenter/server')`. This makes `@epicenter/server` an optional peer dep. If not installed, the `serve` command prints "Install @epicenter/server to use this command." Later, the entire CLI will be extracted to `@epicenter/cli` which depends on both packages normally.
 
@@ -568,7 +568,7 @@ These are handled by companion specs:
 
 If using `?token=secret` query param fallback, the secret appears in server access logs and potentially browser history.
 
-**Resolution**: `Sec-WebSocket-Protocol` header is the primary transport — it's not logged by default. Query param is documented as a fallback for environments where protocol headers can't be set. Documentation should warn about log exposure.
+**Resolution**: `Sec-WebSocket-Protocol` header is the primary transport: it's not logged by default. Query param is documented as a fallback for environments where protocol headers can't be set. Documentation should warn about log exposure.
 
 ### Phase 2: Mode 3 JWT Expiry During Active Sync
 
@@ -576,7 +576,7 @@ If using `?token=secret` query param fallback, the secret appears in server acce
 2. Client syncs happily for 30 minutes
 3. JWT has been expired for 25 minutes
 
-**Resolution**: Validate JWT only at connection time. Once connected, the client is trusted for the duration of that WebSocket session. If the auth service revokes access, the client will fail to get a new token on next reconnect. Periodic revalidation adds complexity for marginal security gain — defer unless a security audit requires it.
+**Resolution**: Validate JWT only at connection time. Once connected, the client is trusted for the duration of that WebSocket session. If the auth service revokes access, the client will fail to get a new token on next reconnect. Periodic revalidation adds complexity for marginal security gain: defer unless a security audit requires it.
 
 ### Phase 2: Shared Secret Rotation
 
@@ -600,7 +600,7 @@ If using `?token=secret` query param fallback, the secret appears in server acce
 
 ## Remaining Open Questions
 
-1. **Should Mode 3 JWT validation also be exported as a standalone function?** The Durable Objects adapter (separate codebase) needs the same JWT validation. Exporting `validateSyncToken(token, jwtSecret)` from `@epicenter/server` means the DO codebase depends on this package — which adds `elysia` as a transitive dep. Alternative: extract JWT validation into a tiny shared package like `@epicenter/sync-auth`.
+1. **Should Mode 3 JWT validation also be exported as a standalone function?** The Durable Objects adapter (separate codebase) needs the same JWT validation. Exporting `validateSyncToken(token, jwtSecret)` from `@epicenter/server` means the DO codebase depends on this package, which adds `elysia` as a transitive dep. Alternative: extract JWT validation into a tiny shared package like `@epicenter/sync-auth`.
 
 2. **REST endpoint auth**: Should table REST endpoints (`/workspaces/{id}/tables/...`) also be gated by the same auth modes? Currently they're public. Mode 2 (secret) and Mode 3 (JWT) should probably gate them too, but the token transport differs (HTTP headers vs WebSocket protocol headers).
 
@@ -624,7 +624,7 @@ If using `?token=secret` query param fallback, the secret appears in server acce
 - [ ] `createRoom()` extracted to `sync/room.ts`, transport-agnostic
 - [ ] `createAuthValidator()` in `sync/auth.ts` handles all three modes
 - [ ] `createSyncPlugin()` refactored to use room + validator
-- [ ] Default (no auth) behaves identically to current code — zero regressions
+- [ ] Default (no auth) behaves identically to current code: zero regressions
 - [ ] Mode 2: connect with correct secret → accepted; wrong secret → 4001
 - [ ] Mode 3: connect with valid JWT → accepted; expired/invalid/wrong-docId JWT → 4001
 - [ ] `createRoom`, `Connection` type exported for Durable Objects adapter consumption
@@ -632,48 +632,48 @@ If using `?token=secret` query param fallback, the secret appears in server acce
 
 ## References
 
-- `packages/server/src/server.ts` — `createServer()` factory (176 lines)
-- `packages/server/src/actions.ts` — Action router (79 lines)
-- `packages/server/src/tables.ts` — Tables CRUD plugin (78 lines)
-- `packages/server/src/sync/index.ts` — WebSocket sync plugin (294 lines) — refactor target
-- `packages/server/src/sync/protocol.ts` — Protocol encode/decode (276 lines) — unchanged
-- `specs/20260213T120800-cloud-sync-durable-objects.md` — Durable Objects cloud path (separate codebase)
-- `specs/20260213T120813-encryption-at-rest-architecture.md` — Client-side E2EE architecture
-- [jose](https://github.com/panva/jose) — JWT library (works on Bun, Node, CF Workers)
-- [Secsync](https://github.com/nikgraf/secsync) — E2EE CRDT architecture reference
-- [Elysia CF Worker adapter](https://elysiajs.com/integrations/cloudflare-worker) — Experimental, HTTP only, not for DOs
+- `packages/server/src/server.ts`: `createServer()` factory (176 lines)
+- `packages/server/src/actions.ts`: Action router (79 lines)
+- `packages/server/src/tables.ts`: Tables CRUD plugin (78 lines)
+- `packages/server/src/sync/index.ts`: WebSocket sync plugin (294 lines): refactor target
+- `packages/server/src/sync/protocol.ts`: Protocol encode/decode (276 lines): unchanged
+- `specs/20260213T120800-cloud-sync-durable-objects.md`: Durable Objects cloud path (separate codebase)
+- `specs/20260213T120813-encryption-at-rest-architecture.md`: Client-side E2EE architecture
+- [jose](https://github.com/panva/jose): JWT library (works on Bun, Node, CF Workers)
+- [Secsync](https://github.com/nikgraf/secsync): E2EE CRDT architecture reference
+- [Elysia CF Worker adapter](https://elysiajs.com/integrations/cloudflare-worker): Experimental, HTTP only, not for DOs
 
 ## Review: Phase 1 Extraction (2026-02-13)
 
 ### Summary
 
-Phase 1 was a pure extraction — ~95% move/rename, ~5% glue code. No business logic was changed.
+Phase 1 was a pure extraction: ~95% move/rename, ~5% glue code. No business logic was changed.
 
 ### What Changed
 
 **New package: `packages/server/`**
 
-- `package.json` — `@epicenter/server`, peer dep on `@epicenter/workspace`, direct deps on `elysia`, `@elysiajs/openapi`, `lib0`, `y-protocols`, `yjs`, `wellcrafted`
-- `tsconfig.json` — mirrors `@epicenter/workspace` compiler options
-- `src/index.ts` — 1-line re-export of `createServer`, `DEFAULT_PORT`, `ServerOptions`
-- `src/server.ts` — moved from `packages/epicenter/src/server/server.ts`, import paths updated
-- `src/actions.ts` — moved, import paths updated (`../shared/actions` → `@epicenter/workspace`)
-- `src/tables.ts` — moved, import paths updated (`../static/types` → `@epicenter/workspace/static`)
-- `src/sync/index.ts` — moved verbatim (no import changes needed, all deps are external)
-- `src/sync/protocol.ts` — moved verbatim
-- `src/actions.test.ts` — moved, import paths updated
-- `src/sync/protocol.test.ts` — moved verbatim
-- `README.md` — moved verbatim
+- `package.json`: `@epicenter/server`, peer dep on `@epicenter/workspace`, direct deps on `elysia`, `@elysiajs/openapi`, `lib0`, `y-protocols`, `yjs`, `wellcrafted`
+- `tsconfig.json`: mirrors `@epicenter/workspace` compiler options
+- `src/index.ts`: 1-line re-export of `createServer`, `DEFAULT_PORT`, `ServerOptions`
+- `src/server.ts`: moved from `packages/epicenter/src/server/server.ts`, import paths updated
+- `src/actions.ts`: moved, import paths updated (`../shared/actions` → `@epicenter/workspace`)
+- `src/tables.ts`: moved, import paths updated (`../static/types` → `@epicenter/workspace/static`)
+- `src/sync/index.ts`: moved verbatim (no import changes needed, all deps are external)
+- `src/sync/protocol.ts`: moved verbatim
+- `src/actions.test.ts`: moved, import paths updated
+- `src/sync/protocol.test.ts`: moved verbatim
+- `README.md`: moved verbatim
 
 **Modified in `@epicenter/workspace`:**
 
-- `src/static/index.ts` — added `AnyWorkspaceClient` to type exports (was missing, needed by server package)
-- `src/cli/cli.ts` — replaced static `import { createServer }` with dynamic `await import('@epicenter/server')` + try/catch error handling
-- `package.json` — removed `"./server"` export, removed `@elysiajs/openapi` dependency
+- `src/static/index.ts`: added `AnyWorkspaceClient` to type exports (was missing, needed by server package)
+- `src/cli/cli.ts`: replaced static `import { createServer }` with dynamic `await import('@epicenter/server')` + try/catch error handling
+- `package.json`: removed `"./server"` export, removed `@elysiajs/openapi` dependency
 
 **Deleted from `@epicenter/workspace`:**
 
-- `src/server/` — entire directory
+- `src/server/`: entire directory
 
 ### Verification Results
 
@@ -682,11 +682,11 @@ Phase 1 was a pure extraction — ~95% move/rename, ~5% glue code. No business l
 | `bun install`                        | 1257 packages, no errors                        |
 | `bun test` (packages/server)         | 50 pass, 0 fail                                 |
 | `bun test` (packages/epicenter)      | 560 pass, 0 fail, 0 regressions                 |
-| `bun typecheck` (packages/server)    | 7 errors — all pre-existing upstream            |
-| `bun typecheck` (packages/epicenter) | 28 errors — all pre-existing, 0 from extraction |
+| `bun typecheck` (packages/server)    | 7 errors: all pre-existing upstream            |
+| `bun typecheck` (packages/epicenter) | 28 errors: all pre-existing, 0 from extraction |
 
 ### Notes for Phase 2
 
 - The `DEFAULT_PORT` constant (3913) is now hardcoded in the CLI fallback since it can't import from `@epicenter/server` at module level. When Phase 2 adds auth config, the CLI will need `@epicenter/server` installed anyway, so this becomes moot.
 - `AnyWorkspaceClient` was not previously exported from `@epicenter/workspace/static`. It is now. This is the only new public API surface from Phase 1.
-- The `@elysiajs/openapi` dependency moved from `@epicenter/workspace` to `@epicenter/server`. If anything else in `@epicenter/workspace` used it, it would break — but nothing does.
+- The `@elysiajs/openapi` dependency moved from `@epicenter/workspace` to `@epicenter/server`. If anything else in `@epicenter/workspace` used it, it would break, but nothing does.

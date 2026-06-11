@@ -15,24 +15,24 @@ This spec covers updating all encryption-related documentation to reflect the im
 
 ## What Changed Since the Docs Were Written
 
-1. Encryption happens inside `YKeyValueLww` via `createEncryptedKvLww`—not as a middleware or at-rest wrapper
+1. Encryption happens inside `YKeyValueLww` via `createEncryptedKvLww`: not as a middleware or at-rest wrapper
 2. `@noble/ciphers` provides synchronous AES-256-GCM (not Web Crypto async)
-3. Self-hosted users derive keys from their password via PBKDF2—real zero-knowledge, same code path
+3. Self-hosted users derive keys from their password via PBKDF2. Real zero-knowledge, same code path
 4. The encrypted blob format is versioned (`{ v: 1, ct }`)
 5. Mixed-mode detection handles plaintext→encrypted migration transparently
 6. One primitive, one code path. Key source is the only variable between cloud and self-hosted.
 
 ## The Narrative (Consistent Across All Docs)
 
-**Technical hook**: Encryption at the CRDT layer. Values are AES-256-GCM ciphertext before they enter the Y.Doc. Every storage layer downstream—IndexedDB, Durable Objects, backups—sees ciphertext automatically.
+**Technical hook**: Encryption at the CRDT layer. Values are AES-256-GCM ciphertext before they enter the Y.Doc. Every storage layer downstream. IndexedDB, Durable Objects, backups. Sees ciphertext automatically.
 
-**Honest tradeoff**: Cloud users trust the server. The server holds the key. But a DB dump alone is useless—you need the application secret too. Defense in depth, not zero trust.
+**Honest tradeoff**: Cloud users trust the server. The server holds the key. But a DB dump alone is useless. You need the application secret too. Defense in depth, not zero trust.
 
 **Escape hatch**: Self-host and the server never sees your key. Same code, same `createEncryptedKvLww`, key derives from your password via PBKDF2. That's real zero-knowledge.
 
 ## Files to Update
 
-### 1. `README.md` — `## Encryption` section (rewrite)
+### 1. `README.md`: `## Encryption` section (rewrite)
 
 **Current problem**: Generic "server-managed encryption at rest." Doesn't mention the CRDT layer, doesn't explain what defense-in-depth actually means here, reads like a privacy policy.
 
@@ -43,13 +43,13 @@ This spec covers updating all encryption-related documentation to reflect the im
 - Pitch the self-hosted escape hatch as the headline for the security-conscious
 - Keep the "Further reading" links
 
-### 2. `apps/api/README.md` — `## Encryption and trust model` section (refresh)
+### 2. `apps/api/README.md`: `## Encryption and trust model` section (refresh)
 
 **Current problem**: Already decent but says "encrypted at rest with AES-256-GCM" without explaining where the encryption boundary sits. Doesn't mention the CRDT layer or `@noble/ciphers`.
 
 **New version should**:
 - Add that encryption is at the CRDT data structure level (inside `YKeyValueLww`)
-- Mention `@noble/ciphers`—synchronous, Cure53-audited, one code path
+- Mention `@noble/ciphers`: synchronous, Cure53-audited, one code path
 - Keep the deployment table (it's good)
 - Keep the "Why not zero-knowledge?" section (it's good)
 - Add brief note about what Durable Objects see vs what they can't read
@@ -61,7 +61,7 @@ This spec covers updating all encryption-related documentation to reflect the im
 **New version should**:
 - Update the opening to explain CRDT-level encryption for all workspace data
 - Replace the API key vault diagram with one showing the `createEncryptedKvLww` → Y.Doc → storage layer flow
-- Keep the comparison table (no encryption vs TLS vs at rest)—it's useful
+- Keep the comparison table (no encryption vs TLS vs at rest): it's useful
 - Add the defense-in-depth framing: DB dump alone = noise, need the application secret
 - Drop all API key vault references
 - Add a "What this looks like in practice" section with the encrypted blob format
@@ -74,7 +74,7 @@ This spec covers updating all encryption-related documentation to reflect the im
 - Add a short section before "Related" showing how Epicenter implements this concretely
 - One primitive (`createEncryptedKvLww`), key source is the only variable
 - Brief code-like illustration of cloud vs self-hosted key paths
-- Keep everything else—the argument is solid
+- Keep everything else. The argument is solid
 
 ### 5. `docs/articles/if-you-dont-trust-the-server-become-the-server.md` (add concrete detail)
 
@@ -83,10 +83,10 @@ This spec covers updating all encryption-related documentation to reflect the im
 **Changes**:
 - Add concrete detail to the "Server-managed encryption becomes zero-knowledge" section
 - Show the key source table: cloud = server-derived, self-hosted = PBKDF2 from password
-- Mention that the encryption code is identical—not "similar" or "compatible," identical
+- Mention that the encryption code is identical. Not "similar" or "compatible," identical
 - Keep everything else
 
-### 6. `docs/articles/why-e2e-encryption-keeps-failing.md` — no changes
+### 6. `docs/articles/why-e2e-encryption-keeps-failing.md`: no changes
 
 Already a general argument. Implementation details don't belong here.
 
@@ -94,7 +94,7 @@ Already a general argument. Implementation details don't belong here.
 
 - [x] **1.** Rewrite `README.md` `## Encryption` section
 - [x] **2.** Refresh `apps/api/README.md` `## Encryption and trust model` section
-  > **Note**: Agent appended new content but didn't remove old. Fixed by deleting duplicate lines 55–77 manually.
+  > **Note**: Agent appended new content but didn't remove old. Fixed by deleting duplicate lines 55-77 manually.
 - [x] **3.** Rewrite `docs/articles/encryption-at-rest-is-the-gold-standard.md`
 - [x] **4.** Add implementation section to `docs/articles/let-the-server-handle-encryption.md`
 - [x] **5.** Add concrete detail to `docs/articles/if-you-dont-trust-the-server-become-the-server.md`
@@ -118,4 +118,4 @@ Updated all encryption documentation to reflect the `createEncryptedKvLww` imple
 
 ### Deviations from spec
 
-- apps/api/README.md agent duplicated old content instead of replacing. Fixed manually by removing lines 55–77.
+- apps/api/README.md agent duplicated old content instead of replacing. Fixed manually by removing lines 55-77.

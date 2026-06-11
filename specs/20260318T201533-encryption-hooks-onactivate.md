@@ -1,4 +1,4 @@
-# Add `onActivate` hook to `.withEncryption()` — eliminate split cache responsibility
+# Add `onActivate` hook to `.withEncryption()`: eliminate split cache responsibility
 
 Status: **Implemented**
 
@@ -20,18 +20,18 @@ So the real fix is symmetric hooks: `onActivate(userKey)` and `onDeactivate()`. 
 ### Before (current)
 
 ```typescript
-// workspace.ts — workspace knows about deactivation only
+// workspace.ts: workspace knows about deactivation only
 .withEncryption({
   onDeactivate: () => keyCache.clear(),
 })
 
-// auth.svelte.ts — auth manually manages cache writes
+// auth.svelte.ts: auth manually manages cache writes
 async function activateAndCacheKey(encryptionKey: string, userId: string) {
   await workspace.activateEncryption(base64ToBytes(encryptionKey));
   await keyCache.set(userId, encryptionKey);
 }
 
-// restore from cache — auth reads cache and activates
+// restore from cache: auth reads cache and activates
 const cached = await keyCache.get(userId);
 if (cached) await workspace.activateEncryption(base64ToBytes(cached));
 ```
@@ -39,17 +39,17 @@ if (cached) await workspace.activateEncryption(base64ToBytes(cached));
 ### After
 
 ```typescript
-// workspace.ts — workspace fires hooks on both transitions
+// workspace.ts: workspace fires hooks on both transitions
 .withEncryption({
   onActivate: (userKey) => keyCache.save(bytesToBase64(userKey)),
   onDeactivate: () => keyCache.clear(),
 })
 
-// auth.svelte.ts — just activates. cache write is automatic.
+// auth.svelte.ts: just activates. cache write is automatic.
 await workspace.activateEncryption(base64ToBytes(session.encryptionKey));
 
-// restore from cache — auth still reads cache and activates
-// (onActivate fires, cache save is an idempotent overwrite — same key)
+// restore from cache: auth still reads cache and activates
+// (onActivate fires, cache save is an idempotent overwrite: same key)
 const cached = await keyCache.load();
 if (cached) await workspace.activateEncryption(base64ToBytes(cached));
 ```
@@ -61,12 +61,12 @@ if (cached) await workspace.activateEncryption(base64ToBytes(cached));
 | Cache write after activation | Manual in auth (`activateAndCacheKey`) | Automatic via `onActivate` hook |
 | Cache clear on deactivation | `onDeactivate` hook (unchanged) | `onDeactivate` hook (unchanged) |
 | Cache restore on reopen | Manual in auth (2 lines) | Manual in auth (2 lines, unchanged) |
-| `KeyCache` interface | `set(userId, b64)`, `get(userId)`, `clear()` | `save(b64)`, `load()`, `clear()` — no userId |
+| `KeyCache` interface | `set(userId, b64)`, `get(userId)`, `clear()` | `save(b64)`, `load()`, `clear()`: no userId |
 | `activateAndCacheKey` helper | Exists in auth.svelte.ts | Deleted |
 
 ### Why `restoreFromCache` is NOT a method on the workspace
 
-The workspace doesn't know *when* to restore — that's a UI/auth decision (sidebar reopen, token found in storage, session validated). Adding `restoreFromCache()` to the workspace would either require the consumer to call it manually (no different from 2 lines of inline code) or require the workspace to know about UI lifecycle events. Two lines in auth is the right answer:
+The workspace doesn't know *when* to restore, that's a UI/auth decision (sidebar reopen, token found in storage, session validated). Adding `restoreFromCache()` to the workspace would either require the consumer to call it manually (no different from 2 lines of inline code) or require the workspace to know about UI lifecycle events. Two lines in auth is the right answer:
 
 ```typescript
 const cached = await keyCache.load();
@@ -75,7 +75,7 @@ if (cached) await workspace.activateEncryption(base64ToBytes(cached));
 
 ### `onActivate` fires AFTER successful activation
 
-The hook fires after HKDF derivation succeeds AND the stores are activated — not before, not on dedup skip. This means:
+The hook fires after HKDF derivation succeeds AND the stores are activated, not before, not on dedup skip. This means:
 - First activation with key A → `onActivate(keyA)` fires, cache saves key A
 - Second activation with same key A → dedup skips, `onActivate` does NOT fire (no work done)
 - Activation with new key B → `onActivate(keyB)` fires, cache saves key B
@@ -88,27 +88,27 @@ The hook fires after HKDF derivation succeeds AND the stores are activated — n
 - [x] Add `onActivate` to `EncryptionConfig` type in `types.ts`
 - [x] Update `EncryptionConfig` JSDoc: remove "only one hook" phrasing, document symmetric hooks
 - [x] Update `EncryptionMethods` JSDoc: note that `onActivate` fires after successful activation (not on dedup skip)
-- [x] Call `onActivate` in `withEncryption()` implementation in `create-workspace.ts` — after HKDF + store activation, before return
+- [x] Call `onActivate` in `withEncryption()` implementation in `create-workspace.ts`: after HKDF + store activation, before return
 - [x] Update `withEncryption` inline comments: add onActivate to activation pipeline
 - [x] Update module-level JSDoc encryption flow diagram in `create-workspace.ts`
 - [x] Update `apps/tab-manager/src/lib/state/key-cache.ts`: remove userId from `set`/`get`, rename to `save`/`load`, simplify storage key to just `'ek'`
 - [x] Update `apps/tab-manager/src/lib/workspace.ts`: add `onActivate` to `.withEncryption()` config
 - [x] Update `apps/tab-manager/src/lib/state/auth.svelte.ts`: delete `activateAndCacheKey`, remove all `keyCache.set`/`keyCache.get` calls, simplify restore-from-cache to use `keyCache.load()`
-- [x] Keep `import { keyCache }` in `auth.svelte.ts` — still needed for `keyCache.load()` reads
+- [x] Keep `import { keyCache }` in `auth.svelte.ts`: still needed for `keyCache.load()` reads
 - [x] Add test: `onActivate` fires after successful activation with the userKey
 - [x] Add test: `onActivate` does NOT fire on dedup skip (same key twice)
 - [x] Add test: `onActivate` does NOT fire when HKDF fails
 - [x] Add test: `onActivate` does NOT fire when activation is superseded by race (stale generation)
-- [x] Run `bun test packages/workspace/` — 494 pass, 0 fail
-- [x] Run `bun run typecheck` in `apps/tab-manager/` — only pre-existing errors (87 errors, all in `packages/ui` path aliases)
+- [x] Run `bun test packages/workspace/`: 494 pass, 0 fail
+- [x] Run `bun run typecheck` in `apps/tab-manager/`: only pre-existing errors (87 errors, all in `packages/ui` path aliases)
 
 ## Constraints
 
 - `onActivate` receives `Uint8Array` (the raw userKey bytes, same as what was passed to `activateEncryption`)
-- `onActivate` is called AFTER stores are activated, not before — if HKDF fails or the call is stale, the hook doesn't fire
-- `onActivate` is optional — workspaces without caching needs (Whispering, CLI) just don't pass it
+- `onActivate` is called AFTER stores are activated, not before: if HKDF fails or the call is stale, the hook doesn't fire
+- `onActivate` is optional: workspaces without caching needs (Whispering, CLI) just don't pass it
 - `onDeactivate` behavior is unchanged
-- The `KeyCache` interface loses userId scoping — `save(b64)` replaces `set(userId, b64)`, `load()` replaces `get(userId)`
+- The `KeyCache` interface loses userId scoping: `save(b64)` replaces `set(userId, b64)`, `load()` replaces `get(userId)`
 - `clear()` is unchanged (already clears all keys regardless of userId)
 - No new methods on the workspace client (`restoreFromCache` is explicitly out of scope)
 - Use `type` not `interface`
@@ -125,11 +125,11 @@ The hook fires after HKDF derivation succeeds AND the stores are activated — n
 
 ### Summary
 
-Added symmetric `onActivate`/`onDeactivate` hooks to `.withEncryption()`. The workspace now owns both transitions—cache writes happen automatically via `onActivate` after successful HKDF derivation + store activation. The `KeyCache` interface was simplified to drop userId scoping (`save`/`load`/`clear` instead of `set(userId)`/`get(userId)`/`clear`). The tab-manager's `activateAndCacheKey` helper was deleted entirely—all cache writes flow through the hook.
+Added symmetric `onActivate`/`onDeactivate` hooks to `.withEncryption()`. The workspace now owns both transitions. Cache writes happen automatically via `onActivate` after successful HKDF derivation + store activation. The `KeyCache` interface was simplified to drop userId scoping (`save`/`load`/`clear` instead of `set(userId)`/`get(userId)`/`clear`). The tab-manager's `activateAndCacheKey` helper was deleted entirely. All cache writes flow through the hook.
 
 ### Deviations from Spec
 
-- Spec item "Remove `import { keyCache }` from `auth.svelte.ts`" was changed to "Keep"—`keyCache.load()` is still called in auth for restore-from-cache reads, so the import stays.
+- Spec item "Remove `import { keyCache }` from `auth.svelte.ts`" was changed to "Keep": `keyCache.load()` is still called in auth for restore-from-cache reads, so the import stays.
 
 ### Files Changed
 

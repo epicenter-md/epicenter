@@ -55,7 +55,7 @@ dbCredentials: {
 postgres://postgres:postgres@localhost:5432/epicenter
 ```
 
-If `DATABASE_URL` isn't set in the environment, drizzle-kit falls through to the local Postgres. `:local` scripts rely on that fallback being the only thing available — no secrets injected, no env vars set.
+If `DATABASE_URL` isn't set in the environment, drizzle-kit falls through to the local Postgres. `:local` scripts rely on that fallback being the only thing available, no secrets injected, no env vars set.
 
 ### `:remote` scripts
 
@@ -91,7 +91,7 @@ Inside that script: `infisical run --silent --env=dev --path=/api -- wrangler de
 └──────────────┴────────────────────────────────────┴──────────────────────────────────┘
 ```
 
-The production worker never uses `DATABASE_URL` directly. It uses `env.HYPERDRIVE` — the Cloudflare binding — which handles connection pooling and routing through Hyperdrive's edge network. So there's no single URL that can target production directly from drizzle-kit. That's intentional.
+The production worker never uses `DATABASE_URL` directly. It uses `env.HYPERDRIVE`: the Cloudflare binding, which handles connection pooling and routing through Hyperdrive's edge network. So there's no single URL that can target production directly from drizzle-kit. That's intentional.
 
 ## Who `:remote` Is For
 
@@ -152,7 +152,7 @@ Or worse, there's just one script and the URL is controlled entirely by which `.
 "db:migrate:remote": "infisical run --env=prod --path=/ops -- drizzle-kit migrate",
 ```
 
-Now the command is self-documenting. `db:push:local` cannot accidentally hit the remote database — drizzle-kit will only see `LOCAL_DATABASE_URL`. `db:migrate:remote` cannot accidentally hit local — Infisical injects the real URL and that takes priority. The asymmetry between `push:local` and `migrate:remote` is intentional: fast ad-hoc pushes are fine for the schema you can nuke, but production gets versioned migrations.
+Now the command is self-documenting. `db:push:local` cannot accidentally hit the remote database: drizzle-kit will only see `LOCAL_DATABASE_URL`. `db:migrate:remote` cannot accidentally hit local: Infisical injects the real URL and that takes priority. The asymmetry between `push:local` and `migrate:remote` is intentional: fast ad-hoc pushes are fine for the schema you can nuke, but production gets versioned migrations.
 
 The suffix is not just a label. It enforces the behavior.
 
@@ -169,8 +169,8 @@ The one downside: you type more characters. `db:push:local` is longer than `db:p
 
 **If a script connects to a database, the script name should tell you which one.**
 
-Unsuffixed database commands are a footgun. You will forget which environment is active. The suffix isn't documentation — it's enforcement. `:local` scripts are wired to local Postgres. `:remote` scripts require secrets to run. The naming convention makes the blast radius visible before you hit enter.
+Unsuffixed database commands are a footgun. You will forget which environment is active. The suffix isn't documentation. It's enforcement. `:local` scripts are wired to local Postgres. `:remote` scripts require secrets to run. The naming convention makes the blast radius visible before you hit enter.
 
 ---
 
-_See also: [The Three Tiers of Database Latency](./database-latency-tiers.md) — where Hyperdrive fits in the latency picture_
+_See also: [The Three Tiers of Database Latency](./database-latency-tiers.md): where Hyperdrive fits in the latency picture_

@@ -13,7 +13,7 @@ Fix correctness bugs and structural fragilities in the tab-manager AI chat layer
 
 ### Current State
 
-The chat layer was originally built when TanStack AI was very early alpha. It uses `ChatClient` from `@tanstack/ai-client` directly and hand-rolls Svelte 5 reactivity via five `SvelteMap` stores. The approach was correct at the time—`@tanstack/ai-svelte` didn't exist or was too immature—but the library has since shipped a Svelte adapter that handles the exact problems we're working around manually.
+The chat layer was originally built when TanStack AI was very early alpha. It uses `ChatClient` from `@tanstack/ai-client` directly and hand-rolls Svelte 5 reactivity via five `SvelteMap` stores. The approach was correct at the time: `@tanstack/ai-svelte` didn't exist or was too immature. But the library has since shipped a Svelte adapter that handles the exact problems we're working around manually.
 
 The core data flow:
 
@@ -25,7 +25,7 @@ This creates problems:
 
 1. **Shallow-clone workaround**: TanStack AI's `StreamProcessor` mutates tool-call parts in-place (`output`, `state`, `approval`). Svelte 5's fine-grained reactivity tracks object identity, not deep property changes. The workaround clones N×M objects (messages × parts) on every `onMessagesChange` callback. If TanStack AI adds nested mutable properties deeper than one level, this breaks silently.
 
-2. **Unsafe type casts in ToolCallPart**: The `state` and `approval` properties on tool-call parts are accessed via raw `as` casts. TanStack AI is in alpha—these shapes could change and the casts would silently return `undefined`, breaking the approval UI with no type error.
+2. **Unsafe type casts in ToolCallPart**: The `state` and `approval` properties on tool-call parts are accessed via raw `as` casts. TanStack AI is in alpha. These shapes could change and the casts would silently return `undefined`, breaking the approval UI with no type error.
 
 3. **Dual message source race**: `sendMessage()` writes to both ChatClient and Y.Doc, with a timing-dependent guard (`if (stream?.isLoading) return`) to prevent duplicates. Cross-device Y.Doc syncs during streaming are silently dropped.
 
@@ -65,9 +65,9 @@ We tried `createChat` (commit `aa9bc03`) and had to revert (commit `c7e7916`). H
 **What actually broke:** TanStack AI's `StreamProcessor` mutates tool-call parts (`state`, `approval`, `output`) **in-place AFTER `onMessagesChange` returns**. `createChat` does `messages = newMessages` internally, but the in-place mutations bypass Svelte 5's `$state` proxy. Result: `$derived(part.state === 'approval-requested')` never fires, and tool approval buttons never render. The tool call spinner hangs forever.
 
 **Why the clone is necessary:** The only way to make Svelte 5 detect these deferred mutations is to create new object references. Direct ChatClient lets us:
-1. Shallow-clone in `onMessagesChange` — breaks reference identity on each message change
-2. `queueMicrotask(cloneMessages)` — catches mutations that happen after the callback returns
-3. Re-clone on status changes — catches mutations at lifecycle boundaries
+1. Shallow-clone in `onMessagesChange`: breaks reference identity on each message change
+2. `queueMicrotask(cloneMessages)`: catches mutations that happen after the callback returns
+3. Re-clone on status changes: catches mutations at lifecycle boundaries
 
 These three mechanisms are necessary until TanStack AI creates new part objects instead of mutating in place.
 
@@ -79,13 +79,13 @@ Shallow-cloning creates new objects that Svelte wraps in fresh proxies. Reading 
 
 ### Connection/Body Pattern (Unchanged)
 
-The current code passes provider/model/systemPrompt through `fetchServerSentEvents`'s async options callback—NOT through `ChatClient.body`. This pattern is unchanged by the migration.
+The current code passes provider/model/systemPrompt through `fetchServerSentEvents`'s async options callback. NOT through `ChatClient.body`. This pattern is unchanged by the migration.
 
 There are two separate body pathways in TanStack AI:
 1. **`ChatClient.body`** (set via constructor `body` option or `updateOptions`) → passed as `data` in the request
 2. **Connection callback's `body`** (from `fetchServerSentEvents`'s options callback) → spread at the top level of the request
 
-The current code uses pathway 2 exclusively. The migration preserves this—no changes to connection wiring needed.
+The current code uses pathway 2 exclusively. The migration preserves this. No changes to connection wiring needed.
 
 ### Server-Side Provider Coverage
 
@@ -95,7 +95,7 @@ TanStack AI provider packages (`@tanstack/ai-gemini`, `@tanstack/ai-grok`) follo
 
 ### WXT Architecture Constraints
 
-The sidepanel is a persistent extension page—`createAiChatState()` lives as a module-level singleton for the sidepanel's lifetime. Chrome can destroy the sidepanel if the user closes it, but Y.Doc persistence handles recovery. In-flight streaming is lost silently on destruction; recovering from that would require the background script to own SSE connections, which is significant complexity for marginal benefit in a tab-manager chat.
+The sidepanel is a persistent extension page: `createAiChatState()` lives as a module-level singleton for the sidepanel's lifetime. Chrome can destroy the sidepanel if the user closes it, but Y.Doc persistence handles recovery. In-flight streaming is lost silently on destruction; recovering from that would require the background script to own SSE connections, which is significant complexity for marginal benefit in a tab-manager chat.
 
 The current WXT structure (`src/entrypoints/sidepanel/`, `src/lib/`) is standard and correct. No WXT-level changes needed.
 
@@ -103,12 +103,12 @@ The current WXT structure (`src/entrypoints/sidepanel/`, `src/lib/`) is standard
 
 | Decision | Choice | Rationale |
 |---|---|---|
-| Use `createChat` from `@tanstack/ai-svelte` | **No** — tried and reverted | `createChat` can't detect in-place mutations by StreamProcessor (state, approval, output). Tool approval buttons never render. Direct ChatClient with shallow-clone is necessary. |
+| Use `createChat` from `@tanstack/ai-svelte` | **No**: tried and reverted | `createChat` can't detect in-place mutations by StreamProcessor (state, approval, output). Tool approval buttons never render. Direct ChatClient with shallow-clone is necessary. |
 | Shallow-clone fix | Shallow-clone in `onMessagesChange` + `queueMicrotask` re-clone + status-change re-clone | Three cloning points catch all deferred in-place mutations by the StreamProcessor |
 | Timeout mechanism | `onStatusChange` callback + `setTimeout` | Direct callback, no `$effect.root` needed. Timer lives in handle closure. |
-| Handle owns its state | Yes — `$state` inside handle factory closure | Eliminates `messageStore`, `streamStore`, `clients`, `submittedTimers` Maps. Handle is self-contained |
+| Handle owns its state | Yes: `$state` inside handle factory closure | Eliminates `messageStore`, `streamStore`, `clients`, `submittedTimers` Maps. Handle is self-contained |
 | Keep ConversationHandle projections | Yes | Components consume the same thin interface. Internal wiring changes; external API stays stable |
-| Add Gemini/Grok to server | Yes | Client already exposes them. Selecting one hits an undefined adapter—live bug |
+| Add Gemini/Grok to server | Yes | Client already exposes them. Selecting one hits an undefined adapter. Live bug |
 | Colocate chat files | Defer to Phase 3 | Correctness fixes first. Reorganization is a rename-only phase that can land independently |
 | Extract TextPart component | Defer | Low priority. Inline markdown rendering in MessageParts works fine |
 | Background-script SSE resilience | Skip | Significant complexity for marginal benefit. Y.Doc persistence covers sidepanel destruction |
@@ -155,7 +155,7 @@ The current WXT structure (`src/entrypoints/sidepanel/`, `src/lib/`) is standard
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-`messageStore`, `streamStore`, `clients`, and `submittedTimers` are gone — absorbed into each handle's closure. Ephemeral UI state (`inputValue`, `dismissedError`) also lives in the handle.
+`messageStore`, `streamStore`, `clients`, and `submittedTimers` are gone: absorbed into each handle's closure. Ephemeral UI state (`inputValue`, `dismissedError`) also lives in the handle.
 
 ### ConversationHandle Changes
 
@@ -167,13 +167,13 @@ get messages() { return messageStore.get(conversationId) ?? []; }
 get isLoading() { return (streamStore.get(conversationId) ?? DEFAULT).isLoading; }
 get error() { return (streamStore.get(conversationId) ?? DEFAULT).error; }
 
-// After (reading from own $state — same pattern as createChat):
+// After (reading from own $state: same pattern as createChat):
 get messages() { return messages; }
 get isLoading() { return isLoading; }
 get error() { return error; }
 ```
 
-The external interface (`ConversationHandle`) stays identical—components don't change.
+The external interface (`ConversationHandle`) stays identical. Components don't change.
 
 ### Handle Factory (Reference Implementation)
 
@@ -181,7 +181,7 @@ The external interface (`ConversationHandle`) stays identical—components don't
 function createConversationHandle(conversationId: ConversationId) {
   const initialMessages = loadMessages(conversationId);
 
-  // ── Reactive state ($state — works in .svelte.ts, no component context needed) ──
+  // ── Reactive state ($state: works in .svelte.ts, no component context needed) ──
   let messages = $state<UIMessage[]>(initialMessages);
   let isLoading = $state(false);
   let error = $state<Error | undefined>();
@@ -219,12 +219,12 @@ function createConversationHandle(conversationId: ConversationId) {
     ),
 
     // This replaces the shallow-clone hack. $state reassignment triggers
-    // Svelte reactivity — no cloning needed.
+    // Svelte reactivity: no cloning needed.
     onMessagesChange: (msgs) => { messages = msgs; },
     onLoadingChange: (v) => { isLoading = v; },
     onErrorChange: (v) => { error = v; },
 
-    // Timeout via callback — no $effect.root needed
+    // Timeout via callback: no $effect.root needed
     onStatusChange: (newStatus) => {
       status = newStatus;
       clearTimeout(timer);
@@ -244,7 +244,7 @@ function createConversationHandle(conversationId: ConversationId) {
       console.error('[ai-chat] stream error:', err.message);
     },
 
-    // Y.Doc persistence — same as current onFinish
+    // Y.Doc persistence: same as current onFinish
     onFinish: (message) => {
       workspaceClient.tables.chatMessages.set({
         id: message.id as string as ChatMessageId,
@@ -270,13 +270,13 @@ function createConversationHandle(conversationId: ConversationId) {
     set model(value: string) { /* same as current */ },
     // ... other metadata getters (systemPrompt, createdAt, updatedAt, etc.)
 
-    // ── Chat state (own $state — no store lookups) ──
+    // ── Chat state (own $state: no store lookups) ──
     get messages() { return messages; },
     get isLoading() { return isLoading; },
     get error() { return error; },
     get status() { return status; },
 
-    // ── Ephemeral UI state (shared Maps — survive handle recreation) ──
+    // ── Ephemeral UI state (shared Maps: survive handle recreation) ──
     get inputValue() { return drafts.get(conversationId) ?? ''; },
     set inputValue(value: string) { drafts.set(conversationId, value); },
     get dismissedError() { return dismissedErrors.get(conversationId) ?? null; },
@@ -322,7 +322,7 @@ function createConversationHandle(conversationId: ConversationId) {
     /**
      * Sync messages from Y.Doc (for idle conversations receiving cross-device updates).
      *
-     * Only calls setMessagesManually() — its internal emitMessagesChange() fires
+     * Only calls setMessagesManually(): its internal emitMessagesChange() fires
      * our onMessagesChange callback, which reassigns the $state. No manual
      * $state assignment needed (that would be a redundant dual-write).
      */
@@ -344,7 +344,7 @@ function createConversationHandle(conversationId: ConversationId) {
 
 ### Phase 0: Bug Fixes (Independent, Ship Anytime)
 
-Safe to land independently—no architecture changes, just correctness.
+Safe to land independently. No architecture changes, just correctness.
 
 - [x] **0.1** Add Gemini and Grok providers to `apps/api/src/ai-chat.ts`
   - Import `createGeminiChat` from `@tanstack/ai-gemini` and `createGrokChat` from `@tanstack/ai-grok`
@@ -355,7 +355,7 @@ Safe to land independently—no architecture changes, just correctness.
 
 - [x] **0.2** Fix `destroyConversation` to clear submitted timeout
   - In `chat-state.svelte.ts`, add `clearTimeout(submittedTimers.get(id))` before `submittedTimers.delete(id)` inside `destroyConversation()`
-  - **Verify**: Delete a conversation while it's in `submitted` state—no ghost timer fires
+  - **Verify**: Delete a conversation while it's in `submitted` state. No ghost timer fires
 
 - [x] **0.3** Fix MessageParts `{#each}` key
   - In `MessageParts.svelte`, change `{#each parts as part, i (i)}` to key on `part.type === 'tool-call' ? part.toolCallId : \`${part.type}-${i}\``
@@ -369,7 +369,7 @@ Replace the centralized-store + shallow-clone architecture with self-contained h
 - [x] **1.1** Rewrite `createConversationHandle` to own its state
   - Move `$state` declarations for `messages`, `isLoading`, `error`, `status` into the handle factory closure
   - Create `ChatClient` directly inside the handle factory (same as current `createClient`, but inline)
-  - Wire `onMessagesChange` as `(msgs) => { messages = msgs; }` — this is the shallow-clone fix. `$state` reassignment triggers Svelte reactivity without cloning
+  - Wire `onMessagesChange` as `(msgs) => { messages = msgs; }`: this is the shallow-clone fix. `$state` reassignment triggers Svelte reactivity without cloning
   - Wire `onStatusChange` with timeout logic (same pattern as current, but using closure-scoped `$state` and timer instead of shared Maps)
   - Wire `onFinish` to persist assistant messages to Y.Doc (same as current)
   - Add `destroy()` method that calls `clearTimeout(timer)` + `client.stop()`
@@ -377,10 +377,10 @@ Replace the centralized-store + shallow-clone architecture with self-contained h
   - **Verify**: Tool call parts update in real-time during streaming. Loading states work.
 
 - [x] **1.2** Remove centralized stores
-  - Delete `messageStore` (SvelteMap) — replaced by per-handle `$state`
-  - Delete `streamStore` (SvelteMap) — replaced by per-handle `$state`
-  - Delete `clients` (Map) — ChatClient now lives inside handle
-  - Delete `submittedTimers` (Map) — timer now lives inside handle
+  - Delete `messageStore` (SvelteMap): replaced by per-handle `$state`
+  - Delete `streamStore` (SvelteMap): replaced by per-handle `$state`
+  - Delete `clients` (Map): ChatClient now lives inside handle
+  - Delete `submittedTimers` (Map): timer now lives inside handle
   - Delete `StreamState` type and `DEFAULT_STREAM_STATE` constant
   - Keep `drafts` and `dismissedErrors` as shared SvelteMaps (ephemeral UI state)
   - **Verify**: No references to deleted stores remain
@@ -391,14 +391,14 @@ Replace the centralized-store + shallow-clone architecture with self-contained h
   - **Verify**: No ghost timers, no orphaned ChatClients
 
 - [x] **1.4** Update `reconcileHandles` for new lifecycle
-  - Creating a handle: just `createConversationHandle(id)` — it creates its own ChatClient
+  - Creating a handle: just `createConversationHandle(id)`: it creates its own ChatClient
   - Destroying a handle: `handle.destroy()` then `handles.delete(id)`
   - No separate client/timer/store management needed
 
 - [x] **1.5** Update `refreshFromDoc` and Y.Doc observers
   - Replace `refreshFromDoc(conversationId)` with `handles.get(conversationId)?.refreshFromDoc()`
-  - The handle's `refreshFromDoc()` checks `isLoading` internally and calls only `client.setMessagesManually()` — no manual `$state` assignment needed because `setMessagesManually` triggers `emitMessagesChange()` → `onMessagesChange` callback → `$state` reassignment automatically
-  - **Important**: Do NOT dual-write (`messages = msgs` + `client.setMessagesManually(msgs)`). The current code has this bug — the manual store write is immediately overwritten by the callback. One call is sufficient.
+  - The handle's `refreshFromDoc()` checks `isLoading` internally and calls only `client.setMessagesManually()`: no manual `$state` assignment needed because `setMessagesManually` triggers `emitMessagesChange()` → `onMessagesChange` callback → `$state` reassignment automatically
+  - **Important**: Do NOT dual-write (`messages = msgs` + `client.setMessagesManually(msgs)`). The current code has this bug: the manual store write is immediately overwritten by the callback. One call is sufficient.
   - Y.Doc `chatMessages` observer calls `handles.get(activeConversationId)?.refreshFromDoc()`
   - **Verify**: Messages survive page reload. Cross-device sync works for idle conversations.
 
@@ -406,8 +406,8 @@ Replace the centralized-store + shallow-clone architecture with self-contained h
 
 - [x] **2.1** Type-safe approval flow in ToolCallPart
   - Replace `(part as { state?: string }).state` with proper type narrowing
-  - Import the `ToolCallPart` type from `@tanstack/ai-client`—`state` (typed as `ToolCallState`) and `approval` (typed as `{ id: string; needsApproval: boolean; approved?: boolean }`) are on the exported type definition
-  - Use `part.type === 'tool-call'` narrowing to access `part.state` and `part.approval` directly—no casts needed
+  - Import the `ToolCallPart` type from `@tanstack/ai-client`: `state` (typed as `ToolCallState`) and `approval` (typed as `{ id: string; needsApproval: boolean; approved?: boolean }`) are on the exported type definition
+  - Use `part.type === 'tool-call'` narrowing to access `part.state` and `part.approval` directly. No casts needed
   - **Verify**: TypeScript catches if TanStack AI changes the approval shape
 
 - [x] **2.2** Add continuation-waiting state to MessageList
@@ -443,9 +443,9 @@ Rename-only phase. No logic changes.
 
 **Yes.** `ChatClient.setMessagesManually(messages)` delegates to `StreamProcessor.setMessages()`. This is what `createChat`'s `setMessages` wraps.
 
-**Source**: `packages/typescript/ai-client/src/chat-client.ts` lines 705–707.
+**Source**: `packages/typescript/ai-client/src/chat-client.ts` lines 705-707.
 
-**Implication**: Y.Doc sync for idle conversations works. The handle's `refreshFromDoc()` calls `chat.setMessages(loadMessages(id))` — `createChat`'s `setMessages` wraps `setMessagesManually` and triggers the internal `onMessagesChange` callback automatically.
+**Implication**: Y.Doc sync for idle conversations works. The handle's `refreshFromDoc()` calls `chat.setMessages(loadMessages(id))`: `createChat`'s `setMessages` wraps `setMessagesManually` and triggers the internal `onMessagesChange` callback automatically.
 
 ### 2. How is the 60-second submitted timeout handled?
 
@@ -453,11 +453,11 @@ Rename-only phase. No logic changes.
 
 A `timeoutError` overlay `$state` overrides `chat.error`/`chat.status` when the timeout fires, because `chat.stop()` sets status to `'ready'` (not `'error'`).
 
-**Why `$effect.root` is correct here**: It was designed for effects outside component lifecycle with manual disposal. Our conversations are dynamically created/destroyed in module context — `$effect.root` + `cleanupEffects()` in `destroy()` handles this cleanly.
+**Why `$effect.root` is correct here**: It was designed for effects outside component lifecycle with manual disposal. Our conversations are dynamically created/destroyed in module context: `$effect.root` + `cleanupEffects()` in `destroy()` handles this cleanly.
 
 ### 3. Should `onFinish` persistence move into the handle factory?
 
-**Yes.** `onFinish` is a first-class option on `ChatClient`. We pass it directly when constructing the client inside the handle factory. Same logic as the current `onFinish` in `createClient()`—persist assistant message to Y.Doc.
+**Yes.** `onFinish` is a first-class option on `ChatClient`. We pass it directly when constructing the client inside the handle factory. Same logic as the current `onFinish` in `createClient()`: persist assistant message to Y.Doc.
 
 ### 4. Title generation from first message
 
@@ -469,18 +469,18 @@ A `timeoutError` overlay `$state` overrides `chat.error`/`chat.status` when the 
 
 1. Conversation A is streaming on Device 1
 2. Device 2 adds a message to Conversation A via Y.Doc sync
-3. Device 1's handle owns messages during streaming via `$state` — it doesn't read from Y.Doc
+3. Device 1's handle owns messages during streaming via `$state`: it doesn't read from Y.Doc
 4. When streaming finishes (`onFinish`), the assistant message is persisted to Y.Doc
 5. Next time Device 1 switches away and back to Conversation A, `refreshFromDoc()` loads from Y.Doc (which now includes both the cross-device message and the assistant response)
-6. The cross-device message may appear out-of-order in the Y.Doc history, but this is acceptable—CRDT semantics, not a bug
+6. The cross-device message may appear out-of-order in the Y.Doc history, but this is acceptable. CRDT semantics, not a bug
 
 ### Sidepanel Destroyed During Streaming
 
 1. User closes the sidepanel while a conversation is streaming
-2. The handle (with its ChatClient and timer) is garbage collected — no explicit cleanup needed since the entire module is torn down
+2. The handle (with its ChatClient and timer) is garbage collected: no explicit cleanup needed since the entire module is torn down
 3. The user message was already persisted to Y.Doc in `sendMessage()`
 4. The assistant's partial response is lost (never reached `onFinish`)
-5. On sidepanel reopen, the conversation loads from Y.Doc—shows user message but no assistant response
+5. On sidepanel reopen, the conversation loads from Y.Doc. Shows user message but no assistant response
 6. User can hit "Regenerate" to retry
 
 ### Idle Conversation Receives Y.Doc Update
@@ -489,7 +489,7 @@ A `timeoutError` overlay `$state` overrides `chat.error`/`chat.status` when the 
 2. A cross-device Y.Doc sync adds a new message
 3. The Y.Doc observer fires and calls `handle.refreshFromDoc()`
 4. `refreshFromDoc()` checks `isLoading` (false for idle), loads messages from Y.Doc, reassigns `$state`, and calls `client.setMessagesManually()` to keep ChatClient in sync
-5. This replaces the current `refreshFromDoc` / separate `setMessagesManually` pattern — same mechanism, but encapsulated in the handle
+5. This replaces the current `refreshFromDoc` / separate `setMessagesManually` pattern: same mechanism, but encapsulated in the handle
 
 ### Tool Call Approval During Conversation Switch
 
@@ -498,7 +498,7 @@ A `timeoutError` overlay `$state` overrides `chat.error`/`chat.status` when the 
 3. Conversation A's handle stays alive with its own ChatClient (background streaming)
 4. If auto-approve is set, the `$effect` in ToolCallPart fires when the component is mounted (when user switches back)
 5. If manual approval needed, the approval buttons appear when the user switches back
-6. No state is lost—the handle preserves everything in its `$state` closure
+6. No state is lost. The handle preserves everything in its `$state` closure
 
 ## Success Criteria
 
@@ -510,26 +510,26 @@ A `timeoutError` overlay `$state` overrides `chat.error`/`chat.status` when the 
 - [x] Messages persist through page reload (Y.Doc)
 - [x] No shallow-clone workaround in the codebase
 - [x] No `as` type casts for tool-call part properties
-- [x] `$effect.root` used intentionally for timeout with manual cleanup in `destroy()` — better than the spec's original "callbacks only" constraint
+- [x] `$effect.root` used intentionally for timeout with manual cleanup in `destroy()`: better than the spec's original "callbacks only" constraint
 - [x] `bun run typecheck` passes with zero new errors in `apps/tab-manager` (87 pre-existing errors in `packages/ui` and `packages/workspace` unchanged)
 - [x] Loading dots show during submitted → first-token gap
 - [x] Loading dots show during tool-completion → continuation-text gap
 
 ## References
 
-- `apps/tab-manager/src/lib/chat/chat-state.svelte.ts` — State factory (636 lines, down from 705)
-- `apps/tab-manager/src/lib/chat/ui-message.ts` — Y.Doc ↔ UIMessage boundary
-- `apps/tab-manager/src/lib/chat/providers.ts` — Provider/model config
-- `apps/tab-manager/src/lib/chat/system-prompt.ts` — System prompt + device constraints
-- `apps/tab-manager/src/lib/state/tool-trust.svelte.ts` — Tool trust state
-- `apps/tab-manager/src/lib/components/chat/*.svelte` — All chat UI components
-- `apps/tab-manager/src/lib/workspace.ts` — Workspace actions + tool bridge
-- `packages/ai/src/tool-bridge.ts` — actionsToClientTools + toToolDefinitions
-- `apps/api/src/ai-chat.ts` — Server-side chat handler (now with Gemini + Grok)
-- `specs/20260224T171500-ai-chat-architecture-client-tools.md` — Prior architecture spec
-- `~/Code/ai/packages/typescript/ai-svelte/src/create-chat.svelte.ts` — TanStack AI Svelte adapter source
-- `~/Code/ai/packages/typescript/ai-client/src/chat-client.ts` — TanStack AI ChatClient source
-- `~/Code/ai/packages/typescript/ai-client/src/types.ts` — ToolCallPart, ToolCallState, MultimodalContent, approval types
+- `apps/tab-manager/src/lib/chat/chat-state.svelte.ts`: State factory (636 lines, down from 705)
+- `apps/tab-manager/src/lib/chat/ui-message.ts`: Y.Doc ↔ UIMessage boundary
+- `apps/tab-manager/src/lib/chat/providers.ts`: Provider/model config
+- `apps/tab-manager/src/lib/chat/system-prompt.ts`: System prompt + device constraints
+- `apps/tab-manager/src/lib/state/tool-trust.svelte.ts`: Tool trust state
+- `apps/tab-manager/src/lib/components/chat/*.svelte`: All chat UI components
+- `apps/tab-manager/src/lib/workspace.ts`: Workspace actions + tool bridge
+- `packages/ai/src/tool-bridge.ts`: actionsToClientTools + toToolDefinitions
+- `apps/api/src/ai-chat.ts`: Server-side chat handler (now with Gemini + Grok)
+- `specs/20260224T171500-ai-chat-architecture-client-tools.md`: Prior architecture spec
+- `~/Code/ai/packages/typescript/ai-svelte/src/create-chat.svelte.ts`: TanStack AI Svelte adapter source
+- `~/Code/ai/packages/typescript/ai-client/src/chat-client.ts`: TanStack AI ChatClient source
+- `~/Code/ai/packages/typescript/ai-client/src/types.ts`: ToolCallPart, ToolCallState, MultimodalContent, approval types
 
 ## Review
 
@@ -543,7 +543,7 @@ Executed 2026-03-14. 5 commits across 4 phases plus a follow-up refactor.
 | `9c3b272` | 2 | Type-safe approval flow, continuation loading dots, prop-based tool callbacks |
 | `29a1810` | 3 | File reorganization to `src/lib/chat/` |
 | `3d4da0f` | docs | Explain ChatClient rationale (later superseded by createChat refactor) |
-| `aa9bc03` | refactor | Switch to `createChat` — later reverted due to in-place mutation bug |
+| `aa9bc03` | refactor | Switch to `createChat`: later reverted due to in-place mutation bug |
 | `c7e7916` | fix | Revert to direct ChatClient with shallow-clone for tool approval reactivity |
 
 ### Deviations from Spec
@@ -551,10 +551,10 @@ Executed 2026-03-14. 5 commits across 4 phases plus a follow-up refactor.
 | Spec said | What we did | Why |
 |---|---|---|
 | Use `ChatClient` directly, not `createChat` | Tried `createChat`, reverted to `ChatClient` | `createChat` can't detect in-place mutations by StreamProcessor. Tool approval buttons never render. Shallow-clone in callbacks is necessary. |
-| No `$effect.root` for timeout | Correct — callbacks only | Timeout lives in `onStatusChange` callback. No `$effect.root` needed. |
+| No `$effect.root` for timeout | Correct: callbacks only | Timeout lives in `onStatusChange` callback. No `$effect.root` needed. |
 | `createGrokChat` from `@tanstack/ai-grok` | `createGrokText` | Actual export name in the package. No `createGrokChat` exists. |
 | `part.toolCallId` for `{#each}` key | `${part.type}-${i}` | Simpler, uniform. Parts are append-only within a message, so index is stable. `toolCallId` doesn't exist on `ToolCallPart` (it's on `ToolResultPart`). |
-| Move `drafts`/`dismissedErrors` to shared Maps | Moved into handle as `$state` | Simpler — no need for shared Maps when each handle owns its own ephemeral state. Handle recreation is rare (only on Y.Doc reconciliation). |
+| Move `drafts`/`dismissedErrors` to shared Maps | Moved into handle as `$state` | Simpler: no need for shared Maps when each handle owns its own ephemeral state. Handle recreation is rare (only on Y.Doc reconciliation). |
 
 ### Key Architectural Insight
 

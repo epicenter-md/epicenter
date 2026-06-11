@@ -66,19 +66,19 @@ Blue-green: build the new world completely, verify it works, then flip a switch.
 
 ```typescript
 async function swapDataDoc(newEpoch, state, extensions, dataToWrite?) {
-    // PREPARE — old doc still serving reads/writes
+    // PREPARE: old doc still serving reads/writes
     const fresh = prepareFreshDoc(newEpoch, dataToWrite);
     const freshExtensions = await createFreshExtensions(fresh.ydoc);
     // ↑ If this throws, old doc is fine. Destroy fresh doc and bail.
 
-    // COMMIT — single synchronous swap
+    // COMMIT: single synchronous swap
     const old = { ydoc, stores, extensions: state.extensionCleanups };
     ydoc = fresh.ydoc;
     tableHelpers = fresh.tableHelpers;
     kvHelper = fresh.kvHelper;
     // ... etc
 
-    // CLEANUP — old doc no longer referenced
+    // CLEANUP: old doc no longer referenced
     await disposeLifo(old.extensions);
     old.ydoc.destroy();
 }
@@ -89,7 +89,7 @@ async function swapDataDoc(newEpoch, state, extensions, dataToWrite?) {
 | Decision | Choice | Rationale |
 |----------|--------|-----------|
 | Swap strategy | Blue-green (prepare-then-commit) | Zero-downtime: old doc serves until new is ready. If prep fails, nothing changes. |
-| Serialization | Latest-wins loop | Epochs are monotonic. Intermediate values are always stale—skip them. Simpler than a mutex, avoids wasted work. |
+| Serialization | Latest-wins loop | Epochs are monotonic. Intermediate values are always stale. Skip them. Simpler than a mutex, avoids wasted work. |
 | Extension failure handling | Abort swap, keep old doc | If persistence can't attach to fresh doc, using that doc means silent data loss. Old doc is still fine. |
 | `isCompacting` flag | Remove | Blue-green + latest-wins makes it unnecessary. The epoch observer simply queues the latest epoch; the swap loop processes it when ready. |
 | `onRemoteEpochChange` callback | Remove | Replaced by the serialized swap loop. No more fire-and-forget async from a synchronous observer. |
@@ -175,8 +175,8 @@ If epochs 2, 3, 4 arrive while swapping to 2: finish swap to 2, see `pendingEpoc
 
 ### Phase 1: Blue-green swap internals
 
-- [x] **1.1** Extract `prepareFreshDoc()` — creates fresh Y.Doc, stores, table helpers, KV helper. Returns a bundle. Does NOT touch any `let` references.
-- [x] **1.2** Extract `createFreshExtensions()` — re-fires `dataDocExtensionFactories` on the fresh doc. Returns fresh `extensionCleanups` and `whenReadyPromises` arrays (new arrays, not mutated shared ones). If any factory throws, disposes already-created extensions and re-throws.
+- [x] **1.1** Extract `prepareFreshDoc()`: creates fresh Y.Doc, stores, table helpers, KV helper. Returns a bundle. Does NOT touch any `let` references.
+- [x] **1.2** Extract `createFreshExtensions()`: re-fires `dataDocExtensionFactories` on the fresh doc. Returns fresh `extensionCleanups` and `whenReadyPromises` arrays (new arrays, not mutated shared ones). If any factory throws, disposes already-created extensions and re-throws.
 - [x] **1.3** Rewrite `swapDataDoc()` as `doBlueGreenSwap()` with prepare → commit → cleanup structure.
   > Note: Commit step synchronously reassigns all mutable references, then disposes old extensions after.
 - [x] **1.4** Remove `isCompacting` flag.
@@ -193,12 +193,12 @@ If epochs 2, 3, 4 arrive while swapping to 2: finish swap to 2, see `pendingEpoc
 ### Phase 3: Consumer API
 
 - [x] **3.1** Added `onEpochChange(callback): () => void` to client object. Fires after successful swap with the new epoch number.
-- [x] **3.2** `whenReady` unchanged — still a one-shot boot gate.
+- [x] **3.2** `whenReady` unchanged: still a one-shot boot gate.
 
 ### Phase 4: Tests
 
-- [x] **4.1** Test: writes during swap go to correct doc — covered by existing compact tests (data preserved across compact).
-- [ ] **4.2** Test: rapid epoch bumps skip intermediate epochs — deferred (requires async timing simulation).
+- [x] **4.1** Test: writes during swap go to correct doc: covered by existing compact tests (data preserved across compact).
+- [ ] **4.2** Test: rapid epoch bumps skip intermediate epochs: deferred (requires async timing simulation).
 - [x] **4.3** Test: extension failure during prep aborts swap (old doc still works).
 - [x] **4.4** Test: concurrent `compact()` calls serialize correctly.
 - [x] **4.5** Multi-client tests rewritten with real bodies (epoch convergence, data preservation).
@@ -210,7 +210,7 @@ If epochs 2, 3, 4 arrive while swapping to 2: finish swap to 2, see `pendingEpoc
 ### Extension factory fails during preparation
 
 1. Remote epoch 2 arrives.
-2. `prepareFreshDoc()` succeeds—fresh doc and stores created.
+2. `prepareFreshDoc()` succeeds. Fresh doc and stores created.
 3. Persistence extension factory throws (e.g., IndexedDB permission denied).
 4. Fresh doc is destroyed. Old doc continues serving. Error is logged.
 5. Next epoch change retries. If the underlying issue persists, it keeps failing safely.
@@ -219,23 +219,23 @@ If epochs 2, 3, 4 arrive while swapping to 2: finish swap to 2, see `pendingEpoc
 
 1. Swap to epoch 2 begins. Fresh doc being prepared.
 2. User writes `{ id: '1', title: 'Hello' }`.
-3. Write goes to old doc (epoch 1)—helpers still point there.
+3. Write goes to old doc (epoch 1): helpers still point there.
 4. For remote epoch changes: CRDT sync delivers the write to fresh doc before commit.
 5. For local compact: the snapshot was taken before the write, so `compact()` must snapshot AFTER preparation starts or use the atomic swap to capture in-flight writes.
 
-**Note**: For local compact, the snapshot is taken at the start of `compact()` before the swap. Writes that happen after the snapshot but before the commit go to the old doc and are NOT in the fresh doc. This is acceptable because `compact()` is explicit—the caller knows they're compacting and shouldn't be writing concurrently. If this becomes a problem, `compact()` could take a snapshot inside a Y.Doc transaction.
+**Note**: For local compact, the snapshot is taken at the start of `compact()` before the swap. Writes that happen after the snapshot but before the commit go to the old doc and are NOT in the fresh doc. This is acceptable because `compact()` is explicit. The caller knows they're compacting and shouldn't be writing concurrently. If this becomes a problem, `compact()` could take a snapshot inside a Y.Doc transaction.
 
 ### Two devices compact simultaneously
 
 1. Device A bumps epoch to 2 (writes `{ A: 2 }` in epoch map).
 2. Device B bumps epoch to 2 (writes `{ B: 2 }` in epoch map).
 3. Both create data doc at GUID `{id}-2`.
-4. CRDT sync merges both docs—data converges.
+4. CRDT sync merges both docs. Data converges.
 5. `MAX(all values) = 2` on both devices. No conflict.
 
 ### Epoch observer fires during `doBlueGreenSwap`
 
-1. Swapping to epoch 2—`swapInProgress = true`.
+1. Swapping to epoch 2: `swapInProgress = true`.
 2. Epoch 3 arrives. `requestSwap(3)` sets `pendingEpoch = 3` and returns (gate: `swapInProgress`).
 3. Swap to 2 completes. `drainSwapQueue` sees `pendingEpoch = 3 > currentDataEpoch = 2`.
 4. Swaps to 3. Clean.
@@ -268,12 +268,12 @@ If epochs 2, 3, 4 arrive while swapping to 2: finish swap to 2, see `pendingEpoc
 
 ## References
 
-- `packages/workspace/src/workspace/create-workspace.ts` — Main file being refactored
-- `packages/workspace/src/workspace/epoch.ts` — Epoch tracker (unchanged)
-- `packages/workspace/src/workspace/lifecycle.ts` — `disposeLifo`, `defineExtension` (unchanged)
-- `packages/workspace/src/workspace/compact.test.ts` — Existing compact tests (extend)
-- `packages/workspace/src/workspace/compact.multi-client.test.ts` — Skeleton tests (fill in)
-- `packages/workspace/src/workspace/create-workspace.test.ts` — Extension lifecycle tests (extend)
+- `packages/workspace/src/workspace/create-workspace.ts`: Main file being refactored
+- `packages/workspace/src/workspace/epoch.ts`: Epoch tracker (unchanged)
+- `packages/workspace/src/workspace/lifecycle.ts`: `disposeLifo`, `defineExtension` (unchanged)
+- `packages/workspace/src/workspace/compact.test.ts`: Existing compact tests (extend)
+- `packages/workspace/src/workspace/compact.multi-client.test.ts`: Skeleton tests (fill in)
+- `packages/workspace/src/workspace/create-workspace.test.ts`: Extension lifecycle tests (extend)
 
 ## Review
 

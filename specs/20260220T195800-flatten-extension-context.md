@@ -6,7 +6,7 @@
 
 ## Overview
 
-Remove the `client` wrapper from both `ExtensionContext` and `DocumentContext`, flattening workspace resources (ydoc, tables, kv, etc.) to the top level alongside `whenReady` and `extensions`. Exclude `destroy` and `[Symbol.asyncDispose]` — factories return their own lifecycle, they don't control the workspace's. Standardize both context types to follow the same flat pattern.
+Remove the `client` wrapper from both `ExtensionContext` and `DocumentContext`, flattening workspace resources (ydoc, tables, kv, etc.) to the top level alongside `whenReady` and `extensions`. Exclude `destroy` and `[Symbol.asyncDispose]`: factories return their own lifecycle, they don't control the workspace's. Standardize both context types to follow the same flat pattern.
 
 ## Motivation
 
@@ -69,16 +69,16 @@ This creates problems:
 
 1. **Pure friction at every callsite.** `{ client: { ydoc } }` instead of `{ ydoc }`. The nesting adds one destructuring layer to every extension factory for zero functional benefit.
 
-2. **The `client` wrapper doesn't disambiguate `whenReady`.** That was the original justification, but `whenReady` is already at the top level of ExtensionContext — not inside `client`. The factory author knows they're inside a factory; "whenReady" self-evidently means "prior extensions ready."
+2. **The `client` wrapper doesn't disambiguate `whenReady`.** That was the original justification, but `whenReady` is already at the top level of ExtensionContext: not inside `client`. The factory author knows they're inside a factory; "whenReady" self-evidently means "prior extensions ready."
 
 3. **Extra types to maintain.** `WorkspaceExtensionClient` (static), `DynamicWorkspaceExtensionClient` (dynamic), and `DocumentExtensionClient` exist solely as the `client` wrapper type. Each needs its own generic parameters and JSDoc.
 
 ### Desired State
 
-Both contexts are flat — scope-specific resources alongside chain state:
+Both contexts are flat: scope-specific resources alongside chain state:
 
 ```typescript
-// Workspace ExtensionContext — flat
+// Workspace ExtensionContext: flat
 type ExtensionContext = {
 	id: TId;
 	ydoc: Y.Doc;
@@ -92,7 +92,7 @@ type ExtensionContext = {
 	// NO destroy, NO [Symbol.asyncDispose]
 };
 
-// DocumentContext — flat
+// DocumentContext: flat
 type DocumentContext = {
 	ydoc: Y.Doc;
 	binding: { tableName; documentName; tags };
@@ -141,7 +141,7 @@ Exhaustive search of every extension factory in the codebase:
 | `tables`                | 3/8                | ✅ Used for schema introspection, data access                |
 | `kv`                    | 1/8                | ✅ Used for settings persistence                             |
 | `awareness`             | 1/8                | ✅ Used by sync (critical)                                   |
-| `whenReady`             | 1/8                | ✅ Used by sync (critical — wait for persistence)            |
+| `whenReady`             | 1/8                | ✅ Used by sync (critical: wait for persistence)            |
 | `extensions`            | 0 (real)           | ✅ Needed for chain pattern (typed access to prior)          |
 | `definitions`           | 0 (direct)         | ✅ Keep for schema introspection (sqlite gets it via tables) |
 | `batch`                 | 0                  | ✅ Keep for atomic init operations                           |
@@ -153,7 +153,7 @@ Exhaustive search of every extension factory in the codebase:
 The `indexeddbPersistence` factory already works at both workspace and document level (fs-explorer uses it for both). With flattening, both contexts have `ydoc` at the top level, so structural typing continues to work:
 
 ```typescript
-// Works for BOTH levels — same function signature
+// Works for BOTH levels: same function signature
 function indexeddbPersistence({ ydoc }: { ydoc: Y.Doc }) { ... }
 
 // Workspace: ExtensionContext has ydoc ✅
@@ -223,40 +223,40 @@ DocumentContext<...>
 
 ### Phase 1: Flatten Type Definitions
 
-- [x] **1.1** `packages/epicenter/src/static/types.ts` — Delete `WorkspaceExtensionClient` type, inline its properties directly into `ExtensionContext`. Update `ExtensionFactory` JSDoc examples.
-- [x] **1.2** `packages/epicenter/src/dynamic/workspace/types.ts` — Delete `DynamicWorkspaceExtensionClient` type, inline into `ExtensionContext`. Add `batch` property to match static. Update `ExtensionFactory` JSDoc examples.
-- [x] **1.3** `packages/epicenter/src/shared/lifecycle.ts` — Delete `DocumentExtensionClient` type, inline `ydoc` and `binding` directly into `DocumentContext`. Update JSDoc.
+- [x] **1.1** `packages/epicenter/src/static/types.ts`: Delete `WorkspaceExtensionClient` type, inline its properties directly into `ExtensionContext`. Update `ExtensionFactory` JSDoc examples.
+- [x] **1.2** `packages/epicenter/src/dynamic/workspace/types.ts`: Delete `DynamicWorkspaceExtensionClient` type, inline into `ExtensionContext`. Add `batch` property to match static. Update `ExtensionFactory` JSDoc examples.
+- [x] **1.3** `packages/epicenter/src/shared/lifecycle.ts`: Delete `DocumentExtensionClient` type, inline `ydoc` and `binding` directly into `DocumentContext`. Update JSDoc.
 
 ### Phase 2: Update Runtime (buildContext)
 
-- [x] **2.1** `packages/epicenter/src/static/create-workspace.ts` — In `withExtension`, change `buildContext` from `{ client: { id, ydoc, ... }, whenReady, extensions }` to flat `{ id, ydoc, ..., whenReady, extensions }`.
-- [x] **2.2** `packages/epicenter/src/dynamic/workspace/create-workspace.ts` — Same flattening of `buildContext`. Add `batch` property.
-- [x] **2.3** `packages/epicenter/src/static/create-document-binding.ts` — In `open()`, change `buildContext` from `{ client: { ydoc, binding }, whenReady, extensions }` to flat `{ ydoc, binding, whenReady, extensions }`.
+- [x] **2.1** `packages/epicenter/src/static/create-workspace.ts`: In `withExtension`, change `buildContext` from `{ client: { id, ydoc, ... }, whenReady, extensions }` to flat `{ id, ydoc, ..., whenReady, extensions }`.
+- [x] **2.2** `packages/epicenter/src/dynamic/workspace/create-workspace.ts`: Same flattening of `buildContext`. Add `batch` property.
+- [x] **2.3** `packages/epicenter/src/static/create-document-binding.ts`: In `open()`, change `buildContext` from `{ client: { ydoc, binding }, whenReady, extensions }` to flat `{ ydoc, binding, whenReady, extensions }`.
 
 ### Phase 3: Update Extension Factories (Consumers)
 
-- [x] **3.1** `packages/epicenter/src/extensions/sync/web.ts` — `{ client: { ydoc } }` → `{ ydoc }`
-- [x] **3.2** `packages/epicenter/src/extensions/sync.ts` — `const { ydoc, awareness } = ctx.client` → `const { ydoc, awareness } = ctx`; `ctx.whenReady` stays as-is
-- [x] **3.3** `packages/epicenter/src/extensions/sync/desktop.ts` — `{ client: { ydoc } }` → `{ ydoc }`
-- [x] **3.4** `packages/epicenter/src/extensions/sqlite/sqlite.ts` — `{ client: { id, tables } }` → `{ id, tables }`
-- [x] **3.5** `packages/epicenter/src/extensions/revision-history/local.ts` — `{ client: { ydoc, id } }` → `{ ydoc, id }`
-- [x] **3.6** `packages/epicenter/src/extensions/markdown/markdown.ts` — `const { id, tables, ydoc } = context.client` → `const { id, tables, ydoc } = context`
-- [x] **3.7** `apps/epicenter/src/lib/yjs/workspace-persistence.ts` — `const { ydoc, id, kv } = ctx.client` → `const { ydoc, id, kv } = ctx`
-- [x] **3.8** `apps/tab-manager-markdown/src/markdown-persistence-extension.ts` — `{ client: { ydoc, tables } }` → `{ ydoc, tables }`; also fix old `{ exports, lifecycle }` return shape to flat
+- [x] **3.1** `packages/epicenter/src/extensions/sync/web.ts`: `{ client: { ydoc } }` → `{ ydoc }`
+- [x] **3.2** `packages/epicenter/src/extensions/sync.ts`: `const { ydoc, awareness } = ctx.client` → `const { ydoc, awareness } = ctx`; `ctx.whenReady` stays as-is
+- [x] **3.3** `packages/epicenter/src/extensions/sync/desktop.ts`: `{ client: { ydoc } }` → `{ ydoc }`
+- [x] **3.4** `packages/epicenter/src/extensions/sqlite/sqlite.ts`: `{ client: { id, tables } }` → `{ id, tables }`
+- [x] **3.5** `packages/epicenter/src/extensions/revision-history/local.ts`: `{ client: { ydoc, id } }` → `{ ydoc, id }`
+- [x] **3.6** `packages/epicenter/src/extensions/markdown/markdown.ts`: `const { id, tables, ydoc } = context.client` → `const { id, tables, ydoc } = context`
+- [x] **3.7** `apps/epicenter/src/lib/yjs/workspace-persistence.ts`: `const { ydoc, id, kv } = ctx.client` → `const { ydoc, id, kv } = ctx`
+- [x] **3.8** `apps/tab-manager-markdown/src/markdown-persistence-extension.ts`: `{ client: { ydoc, tables } }` → `{ ydoc, tables }`; also fix old `{ exports, lifecycle }` return shape to flat
 
 ### Phase 4: Update Re-exports and Cleanup
 
-- [x] **4.1** `packages/epicenter/src/static/index.ts` — Remove `WorkspaceExtensionClient` from exports if exported
-- [x] **4.2** `packages/epicenter/src/dynamic/index.ts` — Remove `DynamicWorkspaceExtensionClient` from exports if exported
-- [x] **4.3** `packages/epicenter/src/dynamic/extension.ts` — Verify re-exports still work
-- [x] **4.4** `packages/epicenter/src/shared/lifecycle.ts` — Remove `DocumentExtensionClient` export
+- [x] **4.1** `packages/epicenter/src/static/index.ts`: Remove `WorkspaceExtensionClient` from exports if exported
+- [x] **4.2** `packages/epicenter/src/dynamic/index.ts`: Remove `DynamicWorkspaceExtensionClient` from exports if exported
+- [x] **4.3** `packages/epicenter/src/dynamic/extension.ts`: Verify re-exports still work
+- [x] **4.4** `packages/epicenter/src/shared/lifecycle.ts`: Remove `DocumentExtensionClient` export
 
 ### Phase 5: Update Tests
 
-- [x] **5.1** `packages/epicenter/src/static/define-workspace.test.ts` — `({ client, extensions, whenReady })` → destructure flat
-- [x] **5.2** `packages/epicenter/src/static/create-workspace.test.ts` — Update any `client:` references in extension factories
-- [x] **5.3** `packages/epicenter/src/dynamic/workspace/create-workspace.test.ts` — Same
-- [x] **5.4** `packages/epicenter/src/static/create-document-binding.test.ts` — `({ client })` → flat destructure
+- [x] **5.1** `packages/epicenter/src/static/define-workspace.test.ts`: `({ client, extensions, whenReady })` → destructure flat
+- [x] **5.2** `packages/epicenter/src/static/create-workspace.test.ts`: Update any `client:` references in extension factories
+- [x] **5.3** `packages/epicenter/src/dynamic/workspace/create-workspace.test.ts`: Same
+- [x] **5.4** `packages/epicenter/src/static/create-document-binding.test.ts`: `({ client })` → flat destructure
 - [x] **5.5** Run full test suite: `bun test`
 
 ### Phase 6: Update JSDoc and Comments
@@ -277,7 +277,7 @@ If a prior extension exports a property named `tables` or `kv`, it would collide
 
 ### Dynamic API Missing `batch` and `definitions`
 
-The dynamic `ExtensionContext` currently lacks `batch` and `definitions` (static has them). Adding `batch` is straightforward — it's just `(fn) => ydoc.transact(fn)`. The dynamic API doesn't have a `definitions` property on its client; this can be deferred since no dynamic factory currently uses it.
+The dynamic `ExtensionContext` currently lacks `batch` and `definitions` (static has them). Adding `batch` is straightforward. It's just `(fn) => ydoc.transact(fn)`. The dynamic API doesn't have a `definitions` property on its client; this can be deferred since no dynamic factory currently uses it.
 
 ### `filesystemPersistence` (desktop.ts line 100)
 
@@ -308,15 +308,15 @@ This function returns a provider factory typed as `(context: { ydoc: Y.Doc }) =>
 
 **Type definitions:**
 
-- `packages/epicenter/src/static/types.ts` — Static `WorkspaceExtensionClient`, `ExtensionContext`, `ExtensionFactory`
-- `packages/epicenter/src/dynamic/workspace/types.ts` — Dynamic `DynamicWorkspaceExtensionClient`, `ExtensionContext`, `ExtensionFactory`
-- `packages/epicenter/src/shared/lifecycle.ts` — `DocumentExtensionClient`, `DocumentContext`, `Extension`
+- `packages/epicenter/src/static/types.ts`: Static `WorkspaceExtensionClient`, `ExtensionContext`, `ExtensionFactory`
+- `packages/epicenter/src/dynamic/workspace/types.ts`: Dynamic `DynamicWorkspaceExtensionClient`, `ExtensionContext`, `ExtensionFactory`
+- `packages/epicenter/src/shared/lifecycle.ts`: `DocumentExtensionClient`, `DocumentContext`, `Extension`
 
 **Runtime (buildContext):**
 
-- `packages/epicenter/src/static/create-workspace.ts` — Static `buildContext` in `withExtension`
-- `packages/epicenter/src/dynamic/workspace/create-workspace.ts` — Dynamic `buildContext` in `withExtension`
-- `packages/epicenter/src/static/create-document-binding.ts` — Document `buildContext` in `open()`
+- `packages/epicenter/src/static/create-workspace.ts`: Static `buildContext` in `withExtension`
+- `packages/epicenter/src/dynamic/workspace/create-workspace.ts`: Dynamic `buildContext` in `withExtension`
+- `packages/epicenter/src/static/create-document-binding.ts`: Document `buildContext` in `open()`
 
 **Extension factories:**
 
@@ -366,11 +366,11 @@ Flattened `ExtensionContext` and `DocumentContext` by removing the intermediate 
 
 ### Deviations from Plan
 
-1. **`sync.test.ts` was not in the original spec** — discovered during test run that mock contexts in this file also used the `client` wrapper pattern. Fixed alongside the other test files.
+1. **`sync.test.ts` was not in the original spec**: discovered during test run that mock contexts in this file also used the `client` wrapper pattern. Fixed alongside the other test files.
 
-2. **`create-workspace.test.ts` (static) needed no changes** — the test factories in this file already used the context parameter opaquely (no `client` destructuring), so they worked without modification.
+2. **`create-workspace.test.ts` (static) needed no changes**: the test factories in this file already used the context parameter opaquely (no `client` destructuring), so they worked without modification.
 
-3. **`apps/tab-manager-markdown` had two issues** — in addition to the `client` wrapper, this extension was still using the old `{ exports, lifecycle }` nested return shape from before the flat extension type refactor. Both were fixed.
+3. **`apps/tab-manager-markdown` had two issues**: in addition to the `client` wrapper, this extension was still using the old `{ exports, lifecycle }` nested return shape from before the flat extension type refactor. Both were fixed.
 
 ### Open Questions Resolution
 

@@ -1,10 +1,10 @@
 # TinyBase MergeableStore vs Yjs Performance
 
-I was comparing TinyBase and Yjs to understand the performance tradeoffs. I like TinyBase for its cell-level last-write-wins semantics—when two clients edit different cells in the same row, both changes survive. That's powerful for structured data where Yjs's character-level CRDT feels like overkill.
+I was comparing TinyBase and Yjs to understand the performance tradeoffs. I like TinyBase for its cell-level last-write-wins semantics. When two clients edit different cells in the same row, both changes survive. That's powerful for structured data where Yjs's character-level CRDT feels like overkill.
 
 But I wanted to compare TinyBase's MergeableStore performance against raw Yjs. Here's what I found.
 
-**Note:** TinyBase also has a regular `Store` which is just a wrapper around plain JavaScript objects—no CRDT, no conflict resolution. That's obviously more efficient than Yjs, but it's not a fair comparison. The fair comparison is `MergeableStore` vs Yjs since both provide CRDT capabilities with automatic conflict resolution.
+**Note:** TinyBase also has a regular `Store` which is just a wrapper around plain JavaScript objects. No CRDT, no conflict resolution. That's obviously more efficient than Yjs, but it's not a fair comparison. The fair comparison is `MergeableStore` vs Yjs since both provide CRDT capabilities with automatic conflict resolution.
 
 ## The Quick Takeaways
 
@@ -12,7 +12,7 @@ But I wanted to compare TinyBase's MergeableStore performance against raw Yjs. H
 2. **Yjs is faster at writes** (~10-12x) and sync (~2x)
 3. **Yjs is more compact** in storage (~2.5x smaller) and memory (~2.7x less heap)
 4. **Yjs has built-in delta sync** (100x smaller incremental updates)
-5. **TinyBase's cell-level LWW is semantically different** from Yjs's operation-based merging—pick based on your conflict resolution needs, not just performance
+5. **TinyBase's cell-level LWW is semantically different** from Yjs's operation-based merging. Pick based on your conflict resolution needs, not just performance
 
 ## Benchmark Results
 

@@ -65,7 +65,7 @@ The "last responsible moment" is usually UI binding:
 - Rich text editor needs parsed document structure for editing
 - Form validation might need typed objects for complex rules
 
-But for everything else in between—API responses, logging, storage, passing between services—the serialized string works fine and is arguably better. These are all just passing the data through; they don't need to understand the date, just move it. We will lazily parse it.
+But for everything else in between. API responses, logging, storage, passing between services. The serialized string works fine and is arguably better. These are all just passing the data through; they don't need to understand the date, just move it. We will lazily parse it.
 
 ## The Rule
 

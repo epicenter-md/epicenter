@@ -45,5 +45,5 @@ const markdownHighlightStyle = HighlightStyle.define([
 	{ tag: tags.meta, color: 'var(--muted-foreground, #6b7280)' },
 ]);
 
-/** Markdown syntax highlighting extension—drop into the editor's extension array. */
+/** Markdown syntax highlighting extension. Drop into the editor's extension array. */
 export const markdownHighlighting = syntaxHighlighting(markdownHighlightStyle);

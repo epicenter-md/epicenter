@@ -19,7 +19,7 @@ Both levels return `{ exports?, lifecycle? }`. The same factory works at both le
 But two gaps remain:
 
 ```typescript
-// Workspace factory — can access prior exports, but whenReady is a flat blob
+// Workspace factory: can access prior exports, but whenReady is a flat blob
 .withExtension('sync', (context) => {
   // ✅ Typed access to prior exports
   context.extensions.persistence.clearData();
@@ -27,7 +27,7 @@ But two gaps remain:
   await context.whenReady; // waits for persistence AND sqlite AND everything else
 })
 
-// Document factory — no access to prior extensions at all
+// Document factory: no access to prior extensions at all
 .withDocumentExtension('sync', ({ ydoc, whenReady }) => {
   // ❌ No typed access to prior document extension exports
   // ❌ whenReady is still a flat composite
@@ -43,13 +43,13 @@ This creates two problems:
 ### Desired State
 
 ```typescript
-// Workspace — surgical await
+// Workspace: surgical await
 .withExtension('sync', (context) => {
   context.extensions.persistence.clearData();        // typed exports (unchanged)
   await context.extensions.persistence.whenReady;    // surgical await (NEW)
 })
 
-// Document — same pattern
+// Document: same pattern
 .withDocumentExtension('sync', (context) => {
   context.extensions.persistence.clearData();        // typed exports (NEW)
   await context.extensions.persistence.whenReady;    // surgical await (NEW)
@@ -117,7 +117,7 @@ Types resolve at chain time (generics). Values are created at `open()` time (run
 
 Three viable approaches emerged from design review. All share the same unified return type (`{ exports?, lifecycle? }`); they differ in what factories _receive_.
 
-**Option A — Handle pattern**
+**Option A: Handle pattern**
 
 Each extension in `context.extensions` is wrapped: `{ exports: T, whenReady: Promise<void> }`.
 
@@ -128,7 +128,7 @@ Each extension in `context.extensions` is wrapped: `{ exports: T, whenReady: Pro
 })
 ```
 
-**Option B — Flat exports with injected `whenReady`**
+**Option B: Flat exports with injected `whenReady`**
 
 Framework merges `whenReady` into the exports object. No wrapper.
 
@@ -139,7 +139,7 @@ Framework merges `whenReady` into the exports object. No wrapper.
 })
 ```
 
-**Option D — Flat exports with `$` lifecycle namespace**
+**Option D: Flat exports with `$` lifecycle namespace**
 
 Exports are flat. Lifecycle goes under a reserved `$` property.
 
@@ -179,7 +179,7 @@ await ctx.extensions.persistence.whenReady;
 
 | Strength                                    | Weakness                                                      |
 | ------------------------------------------- | ------------------------------------------------------------- |
-| Most ergonomic — no prefix, no namespace    | Name collision if an extension exports `whenReady`            |
+| Most ergonomic: no prefix, no namespace    | Name collision if an extension exports `whenReady`            |
 | Consistent type for factories and consumers | Framework silently injects a property into the exports object |
 | Consumers can also surgically await         | TypeScript type is `T & { whenReady }` which could shadow     |
 
@@ -198,7 +198,7 @@ await ctx.extensions.persistence.$.whenReady;
 
 | Strength                                                      | Weakness                                          |
 | ------------------------------------------------------------- | ------------------------------------------------- |
-| Zero collision risk — `$` is reserved at the type level       | Extra `.$` in the access path                     |
+| Zero collision risk: `$` is reserved at the type level       | Extra `.$` in the access path                     |
 | Clean separation: exports are exports, lifecycle is lifecycle | `$` convention isn't standard (though short)      |
 | Consistent type for factories and consumers                   | Could confuse with Svelte's `$` reactivity prefix |
 
@@ -252,14 +252,14 @@ Open time (values created):
 ### Split `ExtensionContext` from `WorkspaceClient`
 
 ```typescript
-// Consumer-facing — stays clean
+// Consumer-facing: stays clean
 type WorkspaceClient<..., TExtensions> = {
   extensions: TExtensions;           // flat exports (unchanged)
   whenReady: Promise<void>;          // composite (unchanged)
   // ... ydoc, tables, kv, etc.
 };
 
-// Factory-facing — extends with per-extension handles
+// Factory-facing: extends with per-extension handles
 type ExtensionContext<..., TExtensions> = Omit<WorkspaceClient<...>, 'extensions'> & {
   extensions: {
     [K in keyof TExtensions]: TExtensions[K] & { whenReady: Promise<void> }
@@ -280,7 +280,7 @@ type ExtensionContext<..., TExtensions> = Omit<WorkspaceClient<...>, 'extensions
 
 - [ ] **2.1** In `static/types.ts`: change `WorkspaceClientBuilder` to track `TDocExtensions extends Record<string, unknown>` instead of `TDocExtKeys extends string`. Update `withDocumentExtension` generic signature to accumulate export types.
 - [ ] **2.2** In `static/types.ts`: update `DocumentExtensionRegistration` to carry the export type (or use a generic registration that erases to `Record<string, unknown>` at runtime but preserves types at chain time).
-- [ ] **2.3** In `shared/lifecycle.ts`: update `DocumentContext` to include `extensions` map — typed access to prior document extensions' exports + whenReady.
+- [ ] **2.3** In `shared/lifecycle.ts`: update `DocumentContext` to include `extensions` map: typed access to prior document extensions' exports + whenReady.
 
 ### Phase 3: Wire Runtime in `create-document-binding.ts`
 
@@ -290,7 +290,7 @@ type ExtensionContext<..., TExtensions> = Omit<WorkspaceClient<...>, 'extensions
 
 ### Phase 4: Update Consumers
 
-- [ ] **4.1** Update `indexeddbPersistence` factory if needed (it destructures `{ ydoc }` — should work as-is).
+- [ ] **4.1** Update `indexeddbPersistence` factory if needed (it destructures `{ ydoc }`: should work as-is).
 - [ ] **4.2** Update `createSyncExtension` to use surgical await if beneficial.
 - [ ] **4.3** Update fs-explorer's document extensions to use typed `context.extensions` if beneficial.
 
@@ -303,9 +303,9 @@ type ExtensionContext<..., TExtensions> = Omit<WorkspaceClient<...>, 'extensions
 
 ### Phase 6: Verify
 
-- [ ] **6.1** `bun tsc --noEmit` from packages/epicenter — zero type errors.
-- [ ] **6.2** `bun test` from packages/epicenter — all tests pass.
-- [ ] **6.3** Build fs-explorer — verify it works end-to-end.
+- [ ] **6.1** `bun tsc --noEmit` from packages/epicenter: zero type errors.
+- [ ] **6.2** `bun test` from packages/epicenter: all tests pass.
+- [ ] **6.3** Build fs-explorer: verify it works end-to-end.
 
 ## Edge Cases
 
@@ -359,25 +359,25 @@ If we want to hide this from consumers, we'd need to strip `whenReady` (or `$`) 
 
 ## References
 
-- `specs/20260220T195900-unify-document-extension-shape.md` — prerequisite spec (must be done first)
-- `packages/epicenter/src/shared/lifecycle.ts` — `Extension<T>`, `DocumentContext`
-- `packages/epicenter/src/static/types.ts` — `ExtensionContext`, `WorkspaceClientBuilder`, `DocumentExtensionRegistration`
-- `packages/epicenter/src/static/create-workspace.ts` — `buildClient()`, `withExtension`, `withDocumentExtension`
-- `packages/epicenter/src/static/create-document-binding.ts` — `open()` loop where document extensions fire
-- `packages/epicenter/src/extensions/sync/web.ts` — `indexeddbPersistence` (the factory that works at both levels)
+- `specs/20260220T195900-unify-document-extension-shape.md`: prerequisite spec (must be done first)
+- `packages/epicenter/src/shared/lifecycle.ts`: `Extension<T>`, `DocumentContext`
+- `packages/epicenter/src/static/types.ts`: `ExtensionContext`, `WorkspaceClientBuilder`, `DocumentExtensionRegistration`
+- `packages/epicenter/src/static/create-workspace.ts`: `buildClient()`, `withExtension`, `withDocumentExtension`
+- `packages/epicenter/src/static/create-document-binding.ts`: `open()` loop where document extensions fire
+- `packages/epicenter/src/extensions/sync/web.ts`: `indexeddbPersistence` (the factory that works at both levels)
 
 ## Implementation Review
 
 ### B-vs-D Decision: Option B (flat inject)
 
-**Chosen**: Option B — `whenReady` injected directly into each extension's exports object via `Object.assign`.
+**Chosen**: Option B: `whenReady` injected directly into each extension's exports object via `Object.assign`.
 
 **Rationale**:
 
 1. **Ergonomics win**: `ctx.extensions.persistence.whenReady` reads naturally with no prefix or namespace.
 2. **No `$` confusion with Svelte**: Svelte uses `$` for reactivity; adding `$` as a lifecycle namespace would create visual noise and cognitive overhead for Svelte-heavy consumers.
 3. **`whenReady` is unambiguously a framework concept**: No domain extension would plausibly export a function called `whenReady`. If one does, it's already semantically close to what the framework injects.
-4. **Consumer-visible by design**: Exposing `whenReady` to consumers (not just factories) enables `{#await client.extensions.persistence.whenReady}` in Svelte templates — a pattern the spec recommended.
+4. **Consumer-visible by design**: Exposing `whenReady` to consumers (not just factories) enables `{#await client.extensions.persistence.whenReady}` in Svelte templates: a pattern the spec recommended.
 5. **Spec recommendation aligned**: The spec itself leaned toward B for ergonomics unless a collision surfaces.
 
 **Trade-off accepted**: Framework silently injects a property into the exports object. This is documented and the `& { whenReady: Promise<void> }` mapped type makes it visible at the type level.
@@ -387,7 +387,7 @@ If we want to hide this from consumers, we'd need to strip `whenReady` (or `$`) 
 **`packages/epicenter/src/static/types.ts`**:
 
 - `WorkspaceClient.extensions` mapped type: `{ [K in keyof TExtensions]: TExtensions[K] & { whenReady: Promise<void> } }`
-- `ExtensionContext` JSDoc updated (kept as alias for WorkspaceClient; splitting deferred — see deviations)
+- `ExtensionContext` JSDoc updated (kept as alias for WorkspaceClient; splitting deferred: see deviations)
 - `WorkspaceClientBuilder` changed from `TDocExtKeys extends string = never` to `TDocExtensions extends Record<string, unknown> = Record<string, never>`
 - `withDocumentExtension` accumulates `TDocExtensions & Record<K, TDocExports>` and receives `DocumentContext<TDocExtensions>` in its factory
 
@@ -399,7 +399,7 @@ If we want to hide this from consumers, we'd need to strip `whenReady` (or `$`) 
 **`packages/epicenter/src/static/create-workspace.ts`**:
 
 - `withExtension`: normalizes `whenReady` to `Promise<void>`, injects into exports via `Object.assign(exports, { whenReady: extWhenReady })`
-- `buildClient`: casts `extensions` to the mapped type (safe — runtime injects whenReady for every entry)
+- `buildClient`: casts `extensions` to the mapped type (safe: runtime injects whenReady for every entry)
 
 **`packages/epicenter/src/static/create-document-binding.ts`**:
 
@@ -431,9 +431,9 @@ If we want to hide this from consumers, we'd need to strip `whenReady` (or `$`) 
 
 2. **Consumer-visible `whenReady`**: The spec left this as an open question. We chose to expose it (not strip from consumer type), enabling Svelte render gates like `{#await client.extensions.persistence.whenReady}`.
 
-3. **Phase 4 (Update Consumers) skipped**: `indexeddbPersistence`, `createSyncExtension`, and fs-explorer weren't updated to use surgical await. This is intentional — the change is additive and existing destructuring patterns (`{ ydoc }`) work unchanged. Consumers can adopt surgical await incrementally.
+3. **Phase 4 (Update Consumers) skipped**: `indexeddbPersistence`, `createSyncExtension`, and fs-explorer weren't updated to use surgical await. This is intentional: the change is additive and existing destructuring patterns (`{ ydoc }`) work unchanged. Consumers can adopt surgical await incrementally.
 
 ### Verification
 
-- `bun tsc --noEmit`: Zero new type errors (all errors are pre-existing in scripts/, benchmark.test.ts, table-helper.test.ts, create-tables.test.ts — `BaseRow`/`_v` issues unrelated to this work)
-- `bun test`: 689 pass, 2 skip, 0 fail (up from 680 — 9 new tests added)
+- `bun tsc --noEmit`: Zero new type errors (all errors are pre-existing in scripts/, benchmark.test.ts, table-helper.test.ts, create-tables.test.ts: `BaseRow`/`_v` issues unrelated to this work)
+- `bun test`: 689 pass, 2 skip, 0 fail (up from 680: 9 new tests added)

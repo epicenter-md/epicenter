@@ -1,10 +1,10 @@
 # Standardize Persistence Location
 
 **Date**: 2026-04-15
-**Status**: Partially superseded — 2026-04-18
+**Status**: Partially superseded: 2026-04-18
 **Author**: AI-assisted
 
-> **2026-04-18 Update**: `connectWorkspace` no longer uses persistence at all — the "global is correct" row below no longer applies to scripts. `EPICENTER_PATHS.persistence()` remains the standard location for daemon configs (`epicenter.config.ts`). The guidance for playground/daemon configs in this spec is unchanged.
+> **2026-04-18 Update**: `connectWorkspace` no longer uses persistence at all: the "global is correct" row below no longer applies to scripts. `EPICENTER_PATHS.persistence()` remains the standard location for daemon configs (`epicenter.config.ts`). The guidance for playground/daemon configs in this spec is unchanged.
 >
 > **Path note (2026-05-22):** The remaining `~/.epicenter/persistence/` guidance is superseded. Do not copy this spec's global persistence location into new work. Runtime persistence should use the current path owners described in `20260522T203209-top-level-epicenter-path-cleanup.md`; project-local generated data remains valid under `<projectDir>/.epicenter/`.
 
@@ -19,14 +19,14 @@ Extract path resolution into a single source of truth (`packages/cli/src/home.ts
 Three persistence conventions coexist:
 
 ```typescript
-// connectWorkspace — global (correct)
+// connectWorkspace: global (correct)
 filePath: join(resolveEpicenterHome(), 'persistence', `${base.id}.db`)
 
-// Playground configs — project-local (inconsistent)
+// Playground configs: project-local (inconsistent)
 const PERSISTENCE_DIR = join(import.meta.dir, '.epicenter', 'persistence');
 filePath: join(PERSISTENCE_DIR, 'opensidian.db')
 
-// Vault config — no persistence at all (bug)
+// Vault config: no persistence at all (bug)
 // just materializer → unlock → sync
 ```
 
@@ -86,7 +86,7 @@ filesystemPersistence({ filePath: resolvePersistencePath('epicenter.opensidian')
 
 ### Phase 3: Verify
 
-- [ ] **3.1** Run typecheck — zero new errors
+- [ ] **3.1** Run typecheck: zero new errors
 - [ ] **3.2** Verify LSP diagnostics clean on all changed files
 
 ## Success Criteria
@@ -99,8 +99,8 @@ filesystemPersistence({ filePath: resolvePersistencePath('epicenter.opensidian')
 
 ## References
 
-- `packages/cli/src/cli.ts` — current home of `resolveEpicenterHome`
-- `packages/cli/src/connect.ts` — uses ad-hoc persistence path
-- `packages/cli/src/auth/store.ts` — pattern reference (takes `home` param, builds path internally)
-- `playground/opensidian-e2e/epicenter.config.ts` — project-local persistence (to fix)
-- `playground/tab-manager-e2e/epicenter.config.ts` — project-local persistence (to fix)
+- `packages/cli/src/cli.ts`: current home of `resolveEpicenterHome`
+- `packages/cli/src/connect.ts`: uses ad-hoc persistence path
+- `packages/cli/src/auth/store.ts`: pattern reference (takes `home` param, builds path internally)
+- `playground/opensidian-e2e/epicenter.config.ts`: project-local persistence (to fix)
+- `playground/tab-manager-e2e/epicenter.config.ts`: project-local persistence (to fix)

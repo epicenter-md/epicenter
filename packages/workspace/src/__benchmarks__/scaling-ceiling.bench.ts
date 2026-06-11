@@ -1,7 +1,7 @@
 /**
  * Scaling Ceiling Benchmarks
  *
- * Answers: "Where does the actual performance wall hit—and what causes it?"
+ * Answers: "Where does the actual performance wall hit, and what causes it?"
  *
  * Unlike storage-overhead.bench.ts (which extrapolates from 1K-row measurements),
  * this file RUNS real workloads at 1K → 100K rows and measures what napkin math can't:
@@ -17,7 +17,7 @@
  * - Per-operation cost increases with row count (O(n) scan per write)
  * - Encoding/decoding time scales with document size
  * - Memory footprint is 2-10x the serialized byte count
- * - Multi-table workspaces share one Y.Doc—row counts compound
+ * - Multi-table workspaces share one Y.Doc. Row counts compound.
  */
 
 import { describe, test } from 'bun:test';
@@ -114,7 +114,7 @@ describe('scaling ceiling: small rows (posts)', () => {
 				}
 			});
 
-			// ── Heap snapshot (approximate—see note on heapMB) ──
+			// ── Heap snapshot (approximate, see note on heapMB) ──
 			const heap = heapMB();
 
 			// ── Encode (persistence write) ──
@@ -279,7 +279,7 @@ describe('scaling ceiling: multi-table write strategies', () => {
 	 * Multi-table performance depends entirely on HOW you write, not how many tables you have.
 	 *
 	 * The pathological case: interleaved set() calls across tables in a tight loop.
-	 * Each set() calls deleteEntryByKey() which does yarray.toArray().findIndex() — an O(n)
+	 * Each set() calls deleteEntryByKey() which does yarray.toArray().findIndex(): an O(n)
 	 * scan that allocates a new array copy. Alternating between 3 arrays thrashes V8's JIT
 	 * and GC, producing 16-22x slowdown vs sequential writes.
 	 *
@@ -367,7 +367,7 @@ describe('scaling ceiling: multi-table write strategies', () => {
 			});
 			seqDoc.destroy();
 
-			// ── Interleaved set() (pathological — never do this) ──
+			// ── Interleaved set() (pathological: never do this) ──
 			const intDoc = new Y.Doc();
 			const intTables = createTables(intDoc, {
 				posts: postDefinition,
@@ -406,7 +406,7 @@ describe('scaling ceiling: multi-table write strategies', () => {
 		console.log('bulkSet = O(n) deferred conflict resolution via observer');
 		console.log('seq set() = one table at a time, V8 JIT stays hot');
 		console.log(
-			'interleaved set() = alternating arrays, toArray() thrash — NEVER do this in bulk',
+			'interleaved set() = alternating arrays, toArray() thrash: NEVER do this in bulk',
 		);
 	}, 120_000);
 

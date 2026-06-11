@@ -1,6 +1,6 @@
 # How OpenCode Web Works
 
-When you run `opencode web` and open it in a browser, you're not looking at a chat interface with a terminal-like skin. You're looking at a real terminal—raw bytes, ANSI escape sequences, cursor positioning—streamed over WebSocket to a JavaScript terminal emulator running in your browser.
+When you run `opencode web` and open it in a browser, you're not looking at a chat interface with a terminal-like skin. You're looking at a real terminal. Raw bytes, ANSI escape sequences, cursor positioning. Streamed over WebSocket to a JavaScript terminal emulator running in your browser.
 
 This article explains the architecture.
 
@@ -46,7 +46,7 @@ return Bun.serve({ ...args, port: opts.port });
 
 The first instance claims port 4096. Every subsequent instance gets a random available port (the OS picks when you pass `port: 0` to Bun.serve). This means you can run as many OpenCode servers as you want, each on a different port.
 
-You can connect any number of clients to each server. Open the same URL in multiple browser tabs—they all connect to the same backend and share state.
+You can connect any number of clients to each server. Open the same URL in multiple browser tabs. They all connect to the same backend and share state.
 
 ---
 
@@ -76,7 +76,7 @@ onMount(async () => {
 })
 ```
 
-The `ghostty-web` package is Ghostty—the native terminal emulator written in Zig—compiled to WebAssembly. It's not xterm.js. It's the same parser that runs in the desktop Ghostty app, just running in your browser.
+The `ghostty-web` package is Ghostty. The native terminal emulator written in Zig. Compiled to WebAssembly. It's not xterm.js. It's the same parser that runs in the desktop Ghostty app, just running in your browser.
 
 ---
 
@@ -99,7 +99,7 @@ You type "ls"     →  WebSocket  →  PTY  →  shell processes
 rendered output  ←  WebSocket  ←  PTY  ←  shell outputs file list
 ```
 
-The browser receives raw ANSI escape sequences—the same bytes your iTerm or Ghostty desktop app would receive. `\x1b[32m` for green text, `\x1b[0m` to reset, cursor positioning codes, everything. ghostty-web parses and renders them.
+The browser receives raw ANSI escape sequences. The same bytes your iTerm or Ghostty desktop app would receive. `\x1b[32m` for green text, `\x1b[0m` to reset, cursor positioning codes, everything. ghostty-web parses and renders them.
 
 ---
 
@@ -113,7 +113,7 @@ OpenCode uses multiple WebSocket connections for different purposes:
 | Events  | `/events`          | Real-time status updates, session changes |
 | Share   | `/share_poll`      | Live session sharing with others          |
 
-The PTY channel is the "terminal at the bottom." The Events channel powers the rest of the UI—showing you when the AI is thinking, when files change, etc.
+The PTY channel is the "terminal at the bottom." The Events channel powers the rest of the UI. Showing you when the AI is thinking, when files change, etc.
 
 ---
 
@@ -123,7 +123,7 @@ OpenCode could have built a chat-style interface that renders messages as HTML. 
 
 The benefits:
 
-1. **Correctness**: Any program that works in a terminal works in OpenCode. Vim, htop, anything with colors or TUI—it just works because it's a real PTY.
+1. **Correctness**: Any program that works in a terminal works in OpenCode. Vim, htop, anything with colors or TUI. It just works because it's a real PTY.
 
 2. **Consistency**: The web experience matches the CLI experience exactly. Same rendering, same keybindings, same everything.
 
@@ -157,4 +157,4 @@ It's not a chat interface with terminal styling. It's an actual terminal, stream
 
 ## Security Note
 
-This architecture—an HTTP server with REST and WebSocket endpoints, no authentication, binding to a predictable port—turned out to be a serious attack surface. In January 2026, OpenCode received [CVE-2026-22812](https://github.com/anomalyco/opencode/security/advisories/GHSA-vxw4-wv6m-9hhh) for exactly this: any website could hit the server and execute shell commands. The server is now opt-in with optional password auth. See [OpenCode Got an RCE and I Already Wrote the Exploit](./opencode-rce-called-it.md).
+This architecture. An HTTP server with REST and WebSocket endpoints, no authentication, binding to a predictable port. Turned out to be a serious attack surface. In January 2026, OpenCode received [CVE-2026-22812](https://github.com/anomalyco/opencode/security/advisories/GHSA-vxw4-wv6m-9hhh) for exactly this: any website could hit the server and execute shell commands. The server is now opt-in with optional password auth. See [OpenCode Got an RCE and I Already Wrote the Exploit](./opencode-rce-called-it.md).

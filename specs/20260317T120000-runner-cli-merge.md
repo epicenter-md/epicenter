@@ -1,7 +1,7 @@
 # Runner→CLI Merge: Unified Epicenter Companion
 
-**Status**: Draft — awaiting review
-**Effort**: Medium (1–2 days)
+**Status**: Draft: awaiting review
+**Effort**: Medium (1-2 days)
 
 > **Path note (2026-05-22):** The `$EPICENTER_HOME/auth.json`, `$EPICENTER_HOME/auth/sessions.json`, and `$EPICENTER_HOME/workspaces/` migration guidance is stale. Do not copy these top-level home-directory paths into new auth, workspace discovery, or migration work.
 
@@ -21,7 +21,7 @@ Runner (`apps/runner`) and CLI (`packages/cli`) are two binaries that do overlap
 
 Three concrete problems:
 1. **Two auth systems that can't share tokens.** `epicenter auth login` and `runner login` write incompatible files to different locations.
-2. **CLI `data` commands are dead code.** They call `assertServerRunning()` against `http://localhost:3913`—a server the `hub start` stub can't start.
+2. **CLI `data` commands are dead code.** They call `assertServerRunning()` against `http://localhost:3913`: a server the `hub start` stub can't start.
 3. **Two config loaders with different conventions.** CLI prefers `default` exports. Runner skips them. Same config file, different behavior.
 
 ## Solution
@@ -65,9 +65,9 @@ Replaces `apps/runner`. A foreground process that:
 6. Prints status, stays alive
 7. SIGINT/SIGTERM → `destroy()` all clients → exit
 
-**Not a server.** No local HTTP. No pid management. No `stop`/`status` commands. It's a foreground daemon—ctrl+C stops it. If daemon management is needed later, that's a separate concern (launchd/systemd/pm2).
+**Not a server.** No local HTTP. No pid management. No `stop`/`status` commands. It's a foreground daemon. Ctrl+C stops it. If daemon management is needed later, that's a separate concern (launchd/systemd/pm2).
 
-**Why not `hub start`?** "Hub" implies a server managing multiple things. This is a sync client—it connects *to* a hub, it doesn't *run* one. The name `start` is clearer.
+**Why not `hub start`?** "Hub" implies a server managing multiple things. This is a sync client. It connects *to* a hub, it doesn't *run* one. The name `start` is clearer.
 
 ### 2. Unified Auth Store
 
@@ -119,7 +119,7 @@ export async function loadConfig(targetDir: string): Promise<LoadConfigResult> {
 
 Rule: **`default` takes priority.** If present and valid, it's the only workspace. Named exports are for multi-workspace configs. This matches standard JS module conventions.
 
-### 4. `data` Commands — Direct Disk Access
+### 4. `data` Commands: Direct Disk Access
 
 Instead of HTTP to a nonexistent local server, `data` commands open workspaces directly:
 
@@ -137,7 +137,7 @@ This is exactly what `workspace export` already does (loads Y.Doc from `.yjs` fi
 - `--dir`: target a project directory's `epicenter.config.ts`
 - Without `--dir`: uses `$EPICENTER_HOME/workspaces/` (existing behavior)
 
-**Concurrency note**: If `epicenter start` is running and writing to the SQLite persistence file, a concurrent `epicenter data` read *should* be safe—SQLite supports concurrent readers by default (WAL mode). But if it causes issues, that's the signal to add a local RPC layer. Cross that bridge when we hit it.
+**Concurrency note**: If `epicenter start` is running and writing to the SQLite persistence file, a concurrent `epicenter data` read *should* be safe. SQLite supports concurrent readers by default (WAL mode). But if it causes issues, that's the signal to add a local RPC layer. Cross that bridge when we hit it.
 
 ### 5. File Structure (After Merge)
 
@@ -357,7 +357,7 @@ describe('e2e: honeycrisp workspace', () => {
     const definition = definitions[0]!;
     const dbPath = join(PERSISTENCE_DIR, `${definition.id}.db`);
 
-    // Re-open same workspace — should load persisted state
+    // Re-open same workspace: should load persisted state
     const client = createWorkspace(definition)
       .withExtension('persistence', filesystemPersistence({ filePath: dbPath }));
 
@@ -424,15 +424,15 @@ describe('e2e: honeycrisp workspace', () => {
 
 ## Implementation Order
 
-1. **Unified config loader** — merge Runner's `loadConfig` + CLI's `loadClientFromPath` into one function at `packages/cli/src/config/load-config.ts`. Add `default` export support.
-2. **E2e test fixture + test** — create `test/fixtures/honeycrisp-basic/` and the test above. Run it. This validates the config loader and persistence independently.
-3. **`start-daemon.ts`** — extract Runner's main logic into a function. Import unified config loader.
-4. **`start` command** — yargs wrapper that calls `startDaemon()`.
-5. **Unified auth store** — new `auth/store.ts` with multi-server support. Migration from old formats.
-6. **Auth commands** — modify to use unified store, add `--device` flag.
-7. **`data` commands** — replace HTTP calls with direct disk access via `openWorkspaceFromDisk()`.
-8. **Delete `apps/runner/`** — move example config to test fixtures.
-9. **Delete `hub-command.ts`** — remove stubs.
+1. **Unified config loader**: merge Runner's `loadConfig` + CLI's `loadClientFromPath` into one function at `packages/cli/src/config/load-config.ts`. Add `default` export support.
+2. **E2e test fixture + test**: create `test/fixtures/honeycrisp-basic/` and the test above. Run it. This validates the config loader and persistence independently.
+3. **`start-daemon.ts`**: extract Runner's main logic into a function. Import unified config loader.
+4. **`start` command**: yargs wrapper that calls `startDaemon()`.
+5. **Unified auth store**: new `auth/store.ts` with multi-server support. Migration from old formats.
+6. **Auth commands**: modify to use unified store, add `--device` flag.
+7. **`data` commands**: replace HTTP calls with direct disk access via `openWorkspaceFromDisk()`.
+8. **Delete `apps/runner/`**: move example config to test fixtures.
+9. **Delete `hub-command.ts`**: remove stubs.
 
 ## Review
 

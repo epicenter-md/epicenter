@@ -89,7 +89,7 @@ The wire distinguishes the two request kinds. The supervisor dispatches them on 
 
 > Two-level message type hierarchy: top-level `MESSAGE_TYPE` byte plus protocol-specific sub-type byte. Type IDs 2+ available for custom protocols. New independent protocols get a new top-level byte; variants within a protocol get a sub-type.
 
-Epicenter already uses `MESSAGE_TYPE.RPC = 101` (a custom top-level type) with two sub-types: `RPC_TYPE.REQUEST = 0`, `RPC_TYPE.RESPONSE = 1`. Adding a third sub-type for runtime verbs is consistent with the y-protocols pattern because the new sub-type shares routing fabric and response envelope with `REQUEST` — it is a variant of the same protocol, not a new protocol.
+Epicenter already uses `MESSAGE_TYPE.RPC = 101` (a custom top-level type) with two sub-types: `RPC_TYPE.REQUEST = 0`, `RPC_TYPE.RESPONSE = 1`. Adding a third sub-type for runtime verbs is consistent with the y-protocols pattern because the new sub-type shares routing fabric and response envelope with `REQUEST`: it is a variant of the same protocol, not a new protocol.
 
 ### Alternatives considered
 
@@ -239,13 +239,13 @@ All waves complete on branch `refactor/standardize-symbol-dispose`. Final names 
 
 ## References
 
-- `packages/sync/src/protocol.ts` — wire encode/decode
-- `packages/sync/src/index.ts` — exports
-- `packages/sync/src/protocol.test.ts` — round-trip tests
-- `apps/api/src/sync-handlers.ts` — DO routing
-- `packages/workspace/src/document/internal/sync-supervisor.ts` — receiver dispatch
-- `packages/workspace/src/document/open-collaboration.ts` — runtime protocol handler wiring
-- `packages/workspace/src/document/peer.ts` — `peer.describe()` call site
-- `packages/workspace/src/shared/actions.ts` — `SystemActions` deletion
-- `packages/workspace/src/document/peer.test.ts` — test rewrite needed
-- `packages/workspace/src/document/open-collaboration.test.ts` — type-guard test removal
+- `packages/sync/src/protocol.ts`: wire encode/decode
+- `packages/sync/src/index.ts`: exports
+- `packages/sync/src/protocol.test.ts`: round-trip tests
+- `apps/api/src/sync-handlers.ts`: DO routing
+- `packages/workspace/src/document/internal/sync-supervisor.ts`: receiver dispatch
+- `packages/workspace/src/document/open-collaboration.ts`: runtime protocol handler wiring
+- `packages/workspace/src/document/peer.ts`: `peer.describe()` call site
+- `packages/workspace/src/shared/actions.ts`: `SystemActions` deletion
+- `packages/workspace/src/document/peer.test.ts`: test rewrite needed
+- `packages/workspace/src/document/open-collaboration.test.ts`: type-guard test removal

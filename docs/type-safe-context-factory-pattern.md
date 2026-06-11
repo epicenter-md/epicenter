@@ -1,6 +1,6 @@
 # The Factory Pattern for Type-Safe Co-located Functions
 
-When you have related functions—a getter and a setter, a producer and a consumer, or any pair that shares types—you have two options. You can export them separately, or you can use a factory pattern that returns them together.
+When you have related functions. A getter and a setter, a producer and a consumer, or any pair that shares types. You have two options. You can export them separately, or you can use a factory pattern that returns them together.
 
 The factory pattern is better for type safety.
 
@@ -85,7 +85,7 @@ The `bind:value` syntax with getter and setter functions co-locates them in a si
 />
 ```
 
-When you use `bind:value` with a getter and setter function, the type flows through both directions automatically. It's the same principle—co-location ensures type safety.
+When you use `bind:value` with a getter and setter function, the type flows through both directions automatically. It's the same principle. Co-location ensures type safety.
 
 ## Query Factories
 

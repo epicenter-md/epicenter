@@ -13,6 +13,12 @@ metadata:
 - [jsrepo](https://github.com/jsrepojs/jsrepo) : Package distribution for monorepos
 - [WXT](https://github.com/wxt-dev/wxt) : Browser extension framework (used by tab-manager app)
 
+## Upstream Grounding
+
+When jsrepo configuration, publish behavior, block layout, or package distribution affects correctness, use source-backed grounding before relying on memory. If DeepWiki MCP is available, ask a narrow question against `jsrepojs/jsrepo`; for browser-extension build behavior, prefer the `wxt` skill, or ask against `wxt-dev/wxt` if this skill owns the script or package boundary. If DeepWiki is unavailable or the repo is not indexed, use upstream source or official docs directly. Treat DeepWiki as orientation, then verify decisive details against local package scripts, config files, installed types, generated output, or official docs before changing code.
+
+Skip DeepWiki for repo-local Bun script conventions already documented below.
+
 The monorepo uses consistent script naming conventions:
 
 ## When to Apply This Skill

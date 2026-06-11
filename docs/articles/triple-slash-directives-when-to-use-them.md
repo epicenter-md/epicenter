@@ -6,7 +6,7 @@
 
 ## The Problem That Started This
 
-We had a Cloudflare Workers package. To make wrangler's generated types available — things like `KVNamespace`, `DurableObjectNamespace`, our `Env` interface — wrangler's `typegen` command produces a `worker-configuration.d.ts` file and you wire it up in tsconfig like this:
+We had a Cloudflare Workers package. To make wrangler's generated types available: things like `KVNamespace`, `DurableObjectNamespace`, our `Env` interface: wrangler's `typegen` command produces a `worker-configuration.d.ts` file and you wire it up in tsconfig like this:
 
 ```json
 {
@@ -18,7 +18,7 @@ We had a Cloudflare Workers package. To make wrangler's generated types availabl
 
 That works great. Worker types load. Everyone's happy.
 
-Then we added `env.ts` — a CLI utility that reads `wrangler.toml` and `.dev.vars` to give drizzle-kit and better-auth the database URL they need. It runs under Bun, not wrangler. So it uses `Bun.TOML.parse()` and `Bun.file()`:
+Then we added `env.ts`: a CLI utility that reads `wrangler.toml` and `.dev.vars` to give drizzle-kit and better-auth the database URL they need. It runs under Bun, not wrangler. So it uses `Bun.TOML.parse()` and `Bun.file()`:
 
 ```typescript
 // apps/api/src/env.ts
@@ -76,7 +76,7 @@ import { type } from 'arktype';
 
 This works. Triple-slash directives are per-file type inclusion instructions. They predate `tsconfig.json`'s `types` field and were the original way to pull in type declarations. TypeScript reads the comment, loads the declarations, and the `Bun` global is now available in that file.
 
-But it's the wrong tool here. You've now created an implicit dependency that lives in a source file instead of the project configuration. The next person who reads `env.ts` has to know that comment isn't decorative — it's load-bearing. And if another file in the project ever needs Bun types, you'll be copy-pasting that directive instead of fixing the root cause.
+But it's the wrong tool here. You've now created an implicit dependency that lives in a source file instead of the project configuration. The next person who reads `env.ts` has to know that comment isn't decorative; it's load-bearing. And if another file in the project ever needs Bun types, you'll be copy-pasting that directive instead of fixing the root cause.
 
 ---
 
@@ -119,11 +119,11 @@ This is what the format was designed for. You're authoring types, not consuming 
 
 **2. Shared or inherited tsconfig you can't modify.**
 
-If you're working in a monorepo where the tsconfig is owned by another team, or you're extending a base config that's published as a package, and you can't add to the `types` array — a triple-slash in the specific file that needs it is reasonable. It's not pretty, but it's contained.
+If you're working in a monorepo where the tsconfig is owned by another team, or you're extending a base config that's published as a package, and you can't add to the `types` array. A triple-slash in the specific file that needs it is reasonable. It's not pretty, but it's contained.
 
 **3. Truly one-off inclusion in a large project with conflicts.**
 
-If including a type package globally would genuinely break other files — because it introduces conflicting global declarations — and only one file actually needs it, a per-file directive makes the tradeoff explicit. This is rare. Most `@types/*` packages are designed not to conflict.
+If including a type package globally would genuinely break other files. Because it introduces conflicting global declarations, and only one file actually needs it, a per-file directive makes the tradeoff explicit. This is rare. Most `@types/*` packages are designed not to conflict.
 
 ---
 

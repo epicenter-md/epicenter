@@ -23,11 +23,11 @@ Rename `@epicenter/workspace` to `@epicenter/workspace`.
 | `@epicenter/core` | Generic. Every monorepo has a "core" package. Tells you nothing. |
 | `@epicenter/sdk` | Too broad. An SDK for what? The workspace. Just say workspace. |
 | `@epicenter/workspaces-api` | Overly formal. The `-api` suffix is redundant when the package is already a code library. |
-| `@epicenter/workspace` (keep) | Cute but confusing. "HQ" as a concept has no future — it doesn't map to any real domain concept. |
+| `@epicenter/workspace` (keep) | Cute but confusing. "HQ" as a concept has no future: it doesn't map to any real domain concept. |
 
 ### What would "hq" refer to in the future?
 
-Nothing meaningful. The name was chosen as a catch-all for "the main package," but as the monorepo matured, the package's identity crystallized around workspaces specifically. There's no future feature where "hq" becomes the right word. The package won't grow into a general-purpose toolkit — it will stay focused on workspace definition, creation, and the extension/action system around workspaces.
+Nothing meaningful. The name was chosen as a catch-all for "the main package," but as the monorepo matured, the package's identity crystallized around workspaces specifically. There's no future feature where "hq" becomes the right word. The package won't grow into a general-purpose toolkit. It will stay focused on workspace definition, creation, and the extension/action system around workspaces.
 
 ## Scope
 
@@ -41,7 +41,7 @@ Nothing meaningful. The name was chosen as a catch-all for "the main package," b
 
 ### What does NOT change
 
-- The directory stays `packages/epicenter/` — the directory name is the project name, not the npm package name. No need to rename it.
+- The directory stays `packages/epicenter/`: the directory name is the project name, not the npm package name. No need to rename it.
 - No API changes. Every export stays identical.
 - No subpath export changes. `@epicenter/workspace/extensions/sync/web` etc. all keep their structure, just under the new scope.
 
@@ -65,25 +65,25 @@ These packages list `@epicenter/workspace` as a dependency or peer dependency:
 
 Every `.ts` file importing from `@epicenter/workspace` or its subpaths. Key locations:
 
-- `apps/epicenter/src/lib/yjs/` — workspace creation and persistence
-- `apps/epicenter/src/lib/templates/` — workspace definitions
-- `apps/tab-manager/src/` — workspace definition, background, popup, commands, state
-- `apps/tab-manager-markdown/src/` — workspace creation
-- `apps/fs-explorer/src/` — workspace creation
-- `packages/filesystem/src/` — table helpers, types, documents
-- `packages/ai/src/` — action iteration
-- `packages/server/src/` — workspace plugin, routes, types
-- `packages/cli/src/` — action iteration, types
+- `apps/epicenter/src/lib/yjs/`: workspace creation and persistence
+- `apps/epicenter/src/lib/templates/`: workspace definitions
+- `apps/tab-manager/src/`: workspace definition, background, popup, commands, state
+- `apps/tab-manager-markdown/src/`: workspace creation
+- `apps/fs-explorer/src/`: workspace creation
+- `packages/filesystem/src/`: table helpers, types, documents
+- `packages/ai/src/`: action iteration
+- `packages/server/src/`: workspace plugin, routes, types
+- `packages/cli/src/`: action iteration, types
 
 ### Docs and specs
 
-Many files in `specs/`, `docs/`, and `packages/epicenter/docs/` reference `@epicenter/workspace` in examples. These should be updated but are lower priority — they can be batch-updated with a find-and-replace.
+Many files in `specs/`, `docs/`, and `packages/epicenter/docs/` reference `@epicenter/workspace` in examples. These should be updated but are lower priority. They can be batch-updated with a find-and-replace.
 
 ## Execution plan
 
 This is a mechanical rename. The safest approach:
 
-1. **Update `packages/epicenter/package.json`** — change the name field
+1. **Update `packages/epicenter/package.json`**: change the name field
 2. **Global find-and-replace** `@epicenter/workspace` with `@epicenter/workspace` across all `.ts`, `.json`, and `.md` files
 3. **Run `bun install`** to regenerate the lockfile
 4. **Run `bun run typecheck`** from root to verify nothing broke
@@ -93,5 +93,5 @@ This is a mechanical rename. The safest approach:
 ## Decisions
 
 1. **Directory stays `packages/epicenter/`.** No directory rename for now.
-2. **`@epicenter/server/workspace` subpath keeps its name.** It exports `createWorkspacePlugin` (Elysia plugin that mounts workspace REST routes). The distinction between `@epicenter/workspace` (the SDK) and `@epicenter/server/workspace` (HTTP routes for workspaces) is clear enough — one is a package, the other is a server subpath.
+2. **`@epicenter/server/workspace` subpath keeps its name.** It exports `createWorkspacePlugin` (Elysia plugin that mounts workspace REST routes). The distinction between `@epicenter/workspace` (the SDK) and `@epicenter/server/workspace` (HTTP routes for workspaces) is clear enough: one is a package, the other is a server subpath.
 3. **Drop the `./static` backward-compat alias.** Since this is already a breaking rename, clean up the dead alias too. Remove the `"./static"` entry from the exports map in `package.json`.

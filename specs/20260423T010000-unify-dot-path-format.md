@@ -6,7 +6,7 @@
 
 ## Overview
 
-Today the CLI addresses actions as `exportName.namespace.action` (walks into `epicenter.config.ts` exports first), while RPC addresses them as `namespace.action`. Unify both on the RPC form — CLI drops the leading `exportName` prefix; dispatch uses the config's single root entry implicitly.
+Today the CLI addresses actions as `exportName.namespace.action` (walks into `epicenter.config.ts` exports first), while RPC addresses them as `namespace.action`. Unify both on the RPC form: CLI drops the leading `exportName` prefix; dispatch uses the config's single root entry implicitly.
 
 ## Motivation
 
@@ -62,15 +62,15 @@ CLI path format matches RPC path format exactly. Entry selection is a CLI concer
 
 - [x] **1** Update `packages/cli/src/commands/run.ts` so `segments[0]` is no longer consumed as export name.
 - [x] **2** Auto-select when `entries.length === 1`. Error when `> 1` and no `--workspace` flag.
-- [x] **3** Add `--workspace <name>` option (per-command, matching `--dir`/`-C` convention — not global).
+- [x] **3** Add `--workspace <name>` option (per-command, matching `--dir`/`-C` convention: not global).
 - [x] **4** Update CLI tests and examples.
 - [ ] **5** Update docs in `apps/*/README.md` and any example scripts.
 
 ## Edge Cases
 
-1. **Two entries, no flag** — error: "Specify `--workspace <name>`. Available: tabManager, fuji."
-2. **Flag with unknown name** — error: "No workspace 'foo'. Available: tabManager, fuji."
-3. **Flag with single-entry config** — flag is redundant but accepted; doesn't conflict.
+1. **Two entries, no flag**: error: "Specify `--workspace <name>`. Available: tabManager, fuji."
+2. **Flag with unknown name**: error: "No workspace 'foo'. Available: tabManager, fuji."
+3. **Flag with single-entry config**: flag is redundant but accepted; doesn't conflict.
 
 ## Success Criteria
 
@@ -81,5 +81,5 @@ CLI path format matches RPC path format exactly. Entry selection is a CLI concer
 
 ## References
 
-- `packages/cli/src/commands/run.ts:60-76` — current entry resolution
-- `specs/20260422T234500-unified-action-invocation.md` — prerequisite (Phase 1 consolidates the resolver)
+- `packages/cli/src/commands/run.ts:60-76`: current entry resolution
+- `specs/20260422T234500-unified-action-invocation.md`: prerequisite (Phase 1 consolidates the resolver)

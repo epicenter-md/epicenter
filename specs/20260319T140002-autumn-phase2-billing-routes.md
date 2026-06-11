@@ -23,7 +23,7 @@ After this phase:
 
 ## What `autumnHandler` does
 
-The `autumnHandler` from `autumn-js/hono` creates a set of POST routes under a path prefix. It acts as a secure proxy—the frontend sends requests to your API, the handler resolves the customer via `identify()`, injects the secret key, and forwards to Autumn's API.
+The `autumnHandler` from `autumn-js/hono` creates a set of POST routes under a path prefix. It acts as a secure proxy. The frontend sends requests to your API, the handler resolves the customer via `identify()`, injects the secret key, and forwards to Autumn's API.
 
 Routes created:
 
@@ -59,7 +59,7 @@ Add this route block **after** the auth routes and **before** the `authGuard` de
 
 ```ts
 // ---------------------------------------------------------------------------
-// Billing — Autumn handler proxies frontend billing requests to Autumn API
+// Billing: Autumn handler proxies frontend billing requests to Autumn API
 // ---------------------------------------------------------------------------
 
 app.use(
@@ -101,10 +101,10 @@ If the import fails, the adapter might be at a different path. Check `node_modul
 After deploying (or running locally):
 
 ```bash
-# Unauthenticated — should return plans list
+# Unauthenticated: should return plans list
 curl -X POST http://localhost:8787/api/autumn/plans.list
 
-# Authenticated — should return customer state
+# Authenticated: should return customer state
 curl -X POST http://localhost:8787/api/autumn/customer \
   -H "Authorization: Bearer <token>" \
   -H "Content-Type: application/json"
@@ -112,7 +112,7 @@ curl -X POST http://localhost:8787/api/autumn/customer \
 
 ## Verification Checklist
 
-- [x] `autumnHandler` mounted at `/autumn/*` in `app.ts` (path adjusted — see deviations)
+- [x] `autumnHandler` mounted at `/autumn/*` in `app.ts` (path adjusted: see deviations)
 - [x] `identify` function uses Better Auth session lookup
 - [ ] `POST /autumn/plans.list` returns plan data
 - [ ] `POST /autumn/customer` returns customer balances (when authenticated)
@@ -132,10 +132,10 @@ Phase 3 ([Billing UI](./20260319T140003-autumn-phase3-billing-ui.md)) builds Sve
 ### Deviations from Spec
 
 #### 1. Path prefix: `/autumn/*` instead of `/api/autumn/*`
-The spec used `/api/autumn/*` (Autumn's default `pathPrefix`). Changed to `/autumn/*` with explicit `pathPrefix: '/autumn'` for consistency with the rest of the app's routing convention — all other routes use single-level prefixes (`/auth/*`, `/ai/*`, `/workspaces/*`, `/documents/*`). Phase 3 frontend code should target `/autumn/*`.
+The spec used `/api/autumn/*` (Autumn's default `pathPrefix`). Changed to `/autumn/*` with explicit `pathPrefix: '/autumn'` for consistency with the rest of the app's routing convention: all other routes use single-level prefixes (`/auth/*`, `/ai/*`, `/workspaces/*`, `/documents/*`). Phase 3 frontend code should target `/autumn/*`.
 
 #### 2. Handler created per-request, not at module scope
-The spec showed `autumnHandler({...})` called once at route registration. In Cloudflare Workers, `env.AUTUMN_SECRET_KEY` isn't available at module scope — only inside request handlers via `c.env`. The implementation wraps the handler in an async middleware that resolves the secret key per-request: `app.use('/autumn/*', async (c, next) => { return autumnHandler({ secretKey: c.env.AUTUMN_SECRET_KEY, ... })(c, next); })`. The `autumnHandler` factory is lightweight (no connections, no state), so per-request creation has negligible overhead.
+The spec showed `autumnHandler({...})` called once at route registration. In Cloudflare Workers, `env.AUTUMN_SECRET_KEY` isn't available at module scope, only inside request handlers via `c.env`. The implementation wraps the handler in an async middleware that resolves the secret key per-request: `app.use('/autumn/*', async (c, next) => { return autumnHandler({ secretKey: c.env.AUTUMN_SECRET_KEY, ... })(c, next); })`. The `autumnHandler` factory is lightweight (no connections, no state), so per-request creation has negligible overhead.
 
 #### 3. Session resolved in outer closure, not inside `identify`
 The `identify` function receives a generic Hono `Context` without the app's `Env` type, so `c.var.auth` would be untyped. Instead, the session is resolved in the outer middleware where `c.var.auth` is properly typed, and the `identify` function captures it via closure. This avoids `as any` casts while keeping the same behavior.

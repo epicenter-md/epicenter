@@ -11,15 +11,15 @@
 
 Reorganize the CLI from a two-tier hack (manual `argv[0]` string matching) into proper command groups, add the ability to start both local and remote servers as sibling commands, drop Eden in favor of a plain typed fetch client, and unify the `serve`/`run` split.
 
-The CLI becomes the single entry point for managing the entire Epicenter system on a developer's machine. It can start either server independently, authenticate with a remote, and manipulate workspace data — all through a clean command hierarchy.
+The CLI becomes the single entry point for managing the entire Epicenter system on a developer's machine. It can start either server independently, authenticate with a remote, and manipulate workspace data: all through a clean command hierarchy.
 
 **Key changes**:
 1. Command groups: `local`, `remote`, `workspace`, `auth`, `data`
 2. `local start` and `remote start` as independent sibling commands (not a combined `dev` mode)
-3. Drop `@elysiajs/eden` — use plain `fetch` with a thin typed wrapper for both servers
+3. Drop `@elysiajs/eden`: use plain `fetch` with a thin typed wrapper for both servers
 4. Merge `serve`/`run` into `local start [--workspace <id>]`
 5. Move inline `serve` code from `cli.ts` into `commands/local-command.ts`
-6. Static route registration for tables and KV — replace wildcard `/:tableName` routes with per-table concrete routes at server construction time (matching how actions already work)
+6. Static route registration for tables and KV: replace wildcard `/:tableName` routes with per-table concrete routes at server construction time (matching how actions already work)
 
 ## Motivation
 
@@ -37,11 +37,11 @@ if (tier1Commands.includes(argv[0])) {
 ```
 
 Problems:
-1. **CLI can't talk to the remote server at all.** `api-client.ts` creates `treaty<LocalApp>` — structurally typed to only local routes. No `login`, no `auth`, no AI, no remote sync management.
+1. **CLI can't talk to the remote server at all.** `api-client.ts` creates `treaty<LocalApp>`: structurally typed to only local routes. No `login`, no `auth`, no AI, no remote sync management.
 2. **The tier split is a hack, not architecture.** `serve` is inline in `cli.ts`, not a command file. `export` reads Y.Doc from disk while `run` launches a server, yet both are "tier 1." The distinction is arbitrary.
-3. **`serve` vs `run` is confusing.** The only difference is "all workspaces" vs "one workspace" — that's a flag, not two commands.
-4. **Eden doesn't earn its keep.** Table row types are runtime-defined by workspace configs, so Eden's compile-time type inference provides no meaningful safety for the data that matters — every mutation call requires `as any`. Eden also forces wildcard `/:tableName` routes (needed for its type chain inference), preventing per-table OpenAPI documentation. It creates a hard compile-time dependency on `@epicenter/server-local`.
-5. **Users can't self-host a remote server.** The CLI has no command to start the remote server. Users should be able to deploy their own remote instance — the `local` and `remote` servers are siblings, not parent-child.
+3. **`serve` vs `run` is confusing.** The only difference is "all workspaces" vs "one workspace": that's a flag, not two commands.
+4. **Eden doesn't earn its keep.** Table row types are runtime-defined by workspace configs, so Eden's compile-time type inference provides no meaningful safety for the data that matters: every mutation call requires `as any`. Eden also forces wildcard `/:tableName` routes (needed for its type chain inference), preventing per-table OpenAPI documentation. It creates a hard compile-time dependency on `@epicenter/server-local`.
+5. **Users can't self-host a remote server.** The CLI has no command to start the remote server. Users should be able to deploy their own remote instance: the `local` and `remote` servers are siblings, not parent-child.
 
 ### Desired State
 
@@ -85,7 +85,7 @@ epicenter data <workspace> action <path> [json]
 | `data` commands require running local server | Consistent behavior | No half-online/half-offline confusion. `workspace export` exists for offline data access. `data` commands go through the server's HTTP API. |
 | Lazy import of server packages | `await import('@epicenter/server-local')` inside `local start` handler only | CLI startup stays fast. `epicenter workspace ls` doesn't load Elysia. |
 | `auth` stores tokens in `~/.epicenter/auth.json` | Same location as workspace data | Persistent across sessions. Single `EPICENTER_HOME` controls everything. |
-| Static route registration for tables/KV | Iterate `definitions.tables` and `definitions.kv` at construction time, register one route per table/key | Matches how actions already work. Produces per-table OpenAPI entries with descriptive tags instead of generic `{tableName}` wildcards. Wildcard routes only existed for Eden Treaty type inference — with Eden dropped, there's no reason to keep them. `--watch` mode handles restarts when schemas change. |
+| Static route registration for tables/KV | Iterate `definitions.tables` and `definitions.kv` at construction time, register one route per table/key | Matches how actions already work. Produces per-table OpenAPI entries with descriptive tags instead of generic `{tableName}` wildcards. Wildcard routes only existed for Eden Treaty type inference: with Eden dropped, there's no reason to keep them. `--watch` mode handles restarts when schemas change. |
 
 ## Architecture
 
@@ -188,13 +188,13 @@ const data = await client.get(`/workspaces/${workspaceId}/tables/${tableName}`);
 
 ### Static Route Registration for Tables and KV
 
-Currently, tables and KV use wildcard parameterized routes (`/:tableName`, `/:key`) that resolve at request time. Actions already use static registration — iterating all workspace clients at construction time and registering one concrete route per action path. Tables and KV should follow the same pattern.
+Currently, tables and KV use wildcard parameterized routes (`/:tableName`, `/:key`) that resolve at request time. Actions already use static registration: iterating all workspace clients at construction time and registering one concrete route per action path. Tables and KV should follow the same pattern.
 
 **Why**: The wildcards existed so Eden Treaty could infer the full type chain from `LocalApp`. With Eden dropped, there's no benefit to wildcards. Static routes produce better OpenAPI documentation (per-table entries with tags instead of generic `{tableName}`) and are consistent with how actions already work.
 
 **Current (wildcard)**:
 ```typescript
-// tables.ts — one route handles ALL tables
+// tables.ts: one route handles ALL tables
 export function createTablesPlugin(workspaces: Record<string, AnyWorkspaceClient>) {
   return new Elysia({ prefix: '/:workspaceId/tables' })
     .get('/:tableName', ({ params, status }) => {
@@ -207,7 +207,7 @@ export function createTablesPlugin(workspaces: Record<string, AnyWorkspaceClient
 
 **After (static, per-table)**:
 ```typescript
-// tables.ts — one route PER table, registered at construction time
+// tables.ts: one route PER table, registered at construction time
 export function createTablesPlugin(workspaces: Record<string, AnyWorkspaceClient>) {
   const router = new Elysia({ prefix: '/:workspaceId/tables' });
 
@@ -239,7 +239,7 @@ export function createTablesPlugin(workspaces: Record<string, AnyWorkspaceClient
 }
 ```
 
-Same approach for KV — iterate `definitions.kv` across all workspaces, register one route per key name.
+Same approach for KV: iterate `definitions.kv` across all workspaces, register one route per key name.
 
 **OpenAPI difference**:
 
@@ -356,7 +356,7 @@ packages/cli/src/
 
 ## Implementation Plan
 
-### Step 1: Create `http-client.ts` — Replace Eden
+### Step 1: Create `http-client.ts`: Replace Eden
 
 Create the plain fetch wrapper. This is a leaf dependency with no imports from server packages.
 
@@ -373,7 +373,7 @@ Create the plain fetch wrapper. This is a leaf dependency with no imports from s
 - [ ] **1.5** Write unit tests for `createHttpClient`
   > **Note**: Deferred to Step 11 (tests wave)
 
-### Step 2: Create `auth-store.ts` — Token Persistence
+### Step 2: Create `auth-store.ts`: Token Persistence
 
 Create the auth state reader/writer for `~/.epicenter/auth.json`.
 
@@ -386,7 +386,7 @@ Create the auth state reader/writer for `~/.epicenter/auth.json`.
 - [x] **2.4** `loadAuth` returns `null` if file doesn't exist (not an error)
 - [x] **2.5** `clearAuth` silently succeeds if file doesn't exist
 
-### Step 3: Rewrite Table and KV Plugins — Static Route Registration
+### Step 3: Rewrite Table and KV Plugins: Static Route Registration
 
 Replace wildcard `/:tableName` and `/:key` routes with per-resource static routes registered at construction time. This mirrors the existing actions plugin pattern.
 
@@ -397,16 +397,16 @@ Replace wildcard `/:tableName` and `/:key` routes with per-resource static route
 - [x] **3.1** Rewrite `createTablesPlugin()` to iterate `definitions.tables` across all workspaces, collect unique table names into a `Set<string>`
 - [x] **3.2** For each table name, register five static routes: `GET /${name}`, `GET /${name}/:id`, `PUT /${name}/:id`, `PATCH /${name}/:id`, `DELETE /${name}/:id`
 - [x] **3.3** Each route gets its own `detail` with table-specific description and tags (e.g. `tags: [tableName, 'tables']`)
-- [x] **3.4** Handler logic unchanged — still uses `resolveTable(workspaces, params.workspaceId, tableName)` for workspace resolution at request time
+- [x] **3.4** Handler logic unchanged: still uses `resolveTable(workspaces, params.workspaceId, tableName)` for workspace resolution at request time
 - [x] **3.5** Rewrite `createKvPlugin()` to iterate `definitions.kv` across all workspaces, collect unique key names into a `Set<string>`
 - [x] **3.6** For each key name, register three static routes: `GET /${key}`, `PUT /${key}`, `DELETE /${key}`
 - [x] **3.7** Each KV route gets its own `detail` with key-specific tags (e.g. `tags: [key, 'kv']`)
 - [x] **3.8** Remove Eden Treaty comments from `plugin.ts`, `tables.ts`, and `kv.ts` (e.g. "Uses parameterized routes so Eden Treaty can infer the full type chain")
-  > **Note**: Followed the actions plugin pattern — `router.get()` calls without reassignment to avoid Elysia type accumulation issues.
+  > **Note**: Followed the actions plugin pattern: `router.get()` calls without reassignment to avoid Elysia type accumulation issues.
 - [ ] **3.9** Verify OpenAPI output at `/openapi` shows per-table and per-key entries instead of generic `{tableName}`/`{key}` wildcards
-  > **Note**: Deferred — requires running server with workspace data to verify
+  > **Note**: Deferred: requires running server with workspace data to verify
 
-### Step 4: Create `workspace-command.ts` — Consolidate Workspace Management
+### Step 4: Create `workspace-command.ts`: Consolidate Workspace Management
 
 Merge `add`, `install`, `uninstall`, `ls`, and `export` into a single command group.
 
@@ -429,7 +429,7 @@ Merge `add`, `install`, `uninstall`, `ls`, and `export` into a single command gr
 - [x] **4.7** Delete the five original command files
 - [x] **4.8** All subcommands are offline (no server required)
 
-### Step 5: Create `local-command.ts` — Local Server Management
+### Step 5: Create `local-command.ts`: Local Server Management
 
 Merge `serve` (inline in `cli.ts`) and `run-command.ts` into `local start`.
 
@@ -451,7 +451,7 @@ Merge `serve` (inline in `cli.ts`) and `run-command.ts` into `local start`.
 - [x] **5.10** Delete `run-command.ts`
 - [x] **5.11** Remove inline `buildServeCommand()` from `cli.ts`
 
-### Step 6: Create `remote-command.ts` — Remote Server Management
+### Step 6: Create `remote-command.ts`: Remote Server Management
 
 New command group for starting and checking remote servers.
 
@@ -462,12 +462,12 @@ New command group for starting and checking remote servers.
 - [x] **6.2** `remote start` subcommand: lazy `import('@epicenter/server-remote')`, calls `createRemoteServer()`
 - [x] **6.3** `--port <n>` flag: defaults to 3914 (one above local default)
 - [x] **6.4** Pass through relevant config: auth database path, AI provider env vars
-  > **Note**: Only `port` passed through for now — auth/sync config requires database setup beyond CLI flags
+  > **Note**: Only `port` passed through for now: auth/sync config requires database setup beyond CLI flags
 - [x] **6.5** `remote status` subcommand: `--url <url>` flag, probe health endpoint via plain fetch, display server info
 - [x] **6.6** `remote stop` subcommand: PID file approach with SIGTERM (mirrors local stop)
 - [x] **6.7** SIGINT/SIGTERM handlers for clean shutdown
 
-### Step 7: Create `auth-command.ts` — Remote Authentication
+### Step 7: Create `auth-command.ts`: Remote Authentication
 
 New command group for authenticating with a remote server.
 
@@ -481,7 +481,7 @@ New command group for authenticating with a remote server.
 - [x] **7.5** If no `--remote` flag and no stored remote URL, error with helpful message
 - [x] **7.6** Use `createHttpClient(remoteUrl)` for all remote calls (not Eden)
 
-### Step 8: Create `data-command.ts` — Workspace Data Operations
+### Step 8: Create `data-command.ts`: Workspace Data Operations
 
 Merge `table-commands.ts`, `kv-commands.ts`, `meta-commands.ts`, `workspaces-command.ts`, and action logic from `command-builder.ts` into a single command group.
 
@@ -496,7 +496,7 @@ Merge `table-commands.ts`, `kv-commands.ts`, `meta-commands.ts`, `workspaces-com
 - `packages/cli/src/command-builder.ts`
 
 - [x] **8.1** Create `data-command.ts` exporting `buildDataCommand(serverUrl: string)`
-  > **Note**: Removed `home` param — not needed since data commands use HTTP client only
+  > **Note**: Removed `home` param: not needed since data commands use HTTP client only
 - [x] **8.2** First positional arg is workspace ID
 - [x] **8.3** `tables` subcommand: list table names via HTTP
 - [x] **8.4** `<table> list|get|set|update|delete` subcommands: migrated from `table-commands.ts`, uses `createHttpClient`
@@ -506,7 +506,7 @@ Merge `table-commands.ts`, `kv-commands.ts`, `meta-commands.ts`, `workspaces-com
 - [x] **8.8** Use `parseJsonInput` for mutations (unchanged behavior)
 - [x] **8.9** `assertServerRunning()` with clear error message before any data command
 
-### Step 9: Rewrite `cli.ts` — Clean Dispatch
+### Step 9: Rewrite `cli.ts`: Clean Dispatch
 
 Replace the tier-based dispatch with command group registration.
 
@@ -517,16 +517,16 @@ Replace the tier-based dispatch with command group registration.
 - `packages/cli/src/api-client.ts`
 
 - [x] **9.1** Rewrite `createCLI()` to register five command groups: `workspace`, `local`, `remote`, `auth`, `data`
-- [x] **9.2** Each group is a yargs `.command()` call — no tier detection, no `argv[0]` string matching
+- [x] **9.2** Each group is a yargs `.command()` call: no tier detection, no `argv[0]` string matching
 - [x] **9.3** Global `--home` option threaded to all commands
   > **Note**: `home` resolved via `resolveEpicenterHome()` inside `run()`, passed to each builder
 - [x] **9.4** Global `--format json|jsonl` option
-  > **Note**: Format option handled per-subcommand via `formatYargsOptions()` — not added globally. Considered complete.
+  > **Note**: Format option handled per-subcommand via `formatYargsOptions()`: not added globally. Considered complete.
 - [x] **9.5** Delete `api-client.ts`
 - [x] **9.6** Remove `@elysiajs/eden` from `package.json` dependencies
 - [x] **9.7** Remove `DEFAULT_PORT` and `LocalApp` type imports from `@epicenter/server-local` in the CLI root (only used inside `local-command.ts` via lazy import)
 
-### Step 10: Update `package.json` — Dependencies
+### Step 10: Update `package.json`: Dependencies
 
 **Files to modify**:
 - `packages/cli/package.json`
@@ -545,9 +545,9 @@ Replace the tier-based dispatch with command group registration.
 - [x] **11.1** Update `index.ts` exports: add `createHttpClient`, keep `createCLI`, `discoverWorkspaces`, `resolveWorkspace`, path helpers
 - [x] **11.2** Remove `ApiClient` type export (no longer exists)
 - [x] **11.3** Update `cli.test.ts` for new command group structure
-  > **Note**: Basic tests in place — `createCLI()` returns `run`, empty args shows usage. Integration test is a placeholder (skipped, pending contract-handler separation).
+  > **Note**: Basic tests in place: `createCLI()` returns `run`, empty args shows usage. Integration test is a placeholder (skipped, pending contract-handler separation).
 - [x] **11.4** Ensure `integration.test.ts` still passes (or update for new command names)
-  > **Note**: `integration.test.ts` is already `describe.skip` — not affected by this refactor.
+  > **Note**: `integration.test.ts` is already `describe.skip`: not affected by this refactor.
 
 ## Migration Mapping
 
@@ -600,7 +600,7 @@ Run 'epicenter local start' to start the server.
 
 The CLI currently uses `readStdinSync()` for JSON input. `auth login` needs interactive prompts for email/password. Consider using `process.stdout.write` + `readStdinSync` or a minimal prompt library. Password input should not echo characters.
 
-**Recommendation**: Use `Bun.password` for password prompt if available, otherwise a minimal readline approach. Keep it simple — no heavy prompt library.
+**Recommendation**: Use `Bun.password` for password prompt if available, otherwise a minimal readline approach. Keep it simple: no heavy prompt library.
 
 ### 4. Backward compatibility
 
@@ -614,17 +614,17 @@ Users with existing scripts using `epicenter serve`, `epicenter ls`, `epicenter 
 
 **Decision**: Yes, as independent sibling commands. `epicenter local start` and `epicenter remote start` are parallel, not nested.
 
-**Alternatives rejected**: Combined `dev` command that starts both (too opinionated — users may want only one), remote-only via separate binary (fragments the toolchain).
+**Alternatives rejected**: Combined `dev` command that starts both (too opinionated: users may want only one), remote-only via separate binary (fragments the toolchain).
 
 ### 2. Is Eden necessary?
 
 **Decision**: No. Drop it entirely. Use plain `fetch` with a thin typed wrapper.
 
-**Alternatives rejected**: Keep Eden for local only (still unnecessary coupling), replace with a different type-safe client like `ky` or `ofetch` (same problem — the routes are simple enough that any abstraction is overhead).
+**Alternatives rejected**: Keep Eden for local only (still unnecessary coupling), replace with a different type-safe client like `ky` or `ofetch` (same problem: the routes are simple enough that any abstraction is overhead).
 
 ### 3. Should server routes be wildcard or statically registered?
 
-**Decision**: Statically registered at server construction time. Iterate `definitions.tables` and `definitions.kv` across all loaded workspaces, register one concrete route per table name and KV key — the same pattern actions already use. This produces per-resource OpenAPI entries with descriptive tags. The wildcard `/:tableName` approach only existed for Eden Treaty type inference, which is being dropped.
+**Decision**: Statically registered at server construction time. Iterate `definitions.tables` and `definitions.kv` across all loaded workspaces, register one concrete route per table name and KV key: the same pattern actions already use. This produces per-resource OpenAPI entries with descriptive tags. The wildcard `/:tableName` approach only existed for Eden Treaty type inference, which is being dropped.
 
 **Alternatives rejected**: Keep wildcard parameterized routes (loses OpenAPI granularity, inconsistent with how actions work), register per-workspace-per-table routes like `/workspaces/my-app/tables/todos` (too many routes, `:workspaceId` param is still useful since multiple workspaces can share table names).
 
@@ -640,9 +640,9 @@ Users with existing scripts using `epicenter serve`, `epicenter ls`, `epicenter 
 
 ## References
 
-- `specs/20260225T210000-workspace-apps-orchestrator.md` — Parent spec: workspace apps architecture
-- `packages/cli/src/cli.ts` — Current two-tier dispatch (to be rewritten)
-- `packages/cli/src/api-client.ts` — Current Eden client (to be deleted)
-- `packages/server-local/src/local.ts` — `createLocalServer()` and `LocalApp` type
-- `packages/server-remote/src/remote.ts` — `createRemoteServer()` and `RemoteServerConfig`
-- `packages/server/src/server.ts` — `DEFAULT_PORT` and `listenWithFallback`
+- `specs/20260225T210000-workspace-apps-orchestrator.md`: Parent spec: workspace apps architecture
+- `packages/cli/src/cli.ts`: Current two-tier dispatch (to be rewritten)
+- `packages/cli/src/api-client.ts`: Current Eden client (to be deleted)
+- `packages/server-local/src/local.ts`: `createLocalServer()` and `LocalApp` type
+- `packages/server-remote/src/remote.ts`: `createRemoteServer()` and `RemoteServerConfig`
+- `packages/server/src/server.ts`: `DEFAULT_PORT` and `listenWithFallback`

@@ -1,12 +1,12 @@
 # One Package Can't Honestly Declare Peer Deps for Every Framework
 
-TanStack ships a separate npm package per framework because no single package can tell an honest peer-dep story for React, Svelte, Vue, and Solid all at once. One package means one peer-dep declaration — and with four frameworks, that declaration always lies to somebody.
+TanStack ships a separate npm package per framework because no single package can tell an honest peer-dep story for React, Svelte, Vue, and Solid all at once. One package means one peer-dep declaration, and with four frameworks, that declaration always lies to somebody.
 
 ## The fetching logic is portable; the reactivity glue is not
 
 `@tanstack/query-core` has no peer dependencies. Zero. It manages caches, handles background refetches, tracks query states, coordinates deduplication. None of that needs React or Svelte. It's plain TypeScript.
 
-The framework binding is a thin layer on top that translates query state into something the framework's reactivity model understands. React gets hooks. Svelte gets stores (now runes). Vue gets refs. Solid gets signals. These aren't stylistic choices — each one is a fundamentally different mechanism for notifying the UI that data changed, and they don't translate into each other. You can't write one adapter that works for all of them. You write four adapters.
+The framework binding is a thin layer on top that translates query state into something the framework's reactivity model understands. React gets hooks. Svelte gets stores (now runes). Vue gets refs. Solid gets signals. These aren't stylistic choices: each one is a fundamentally different mechanism for notifying the UI that data changed, and they don't translate into each other. You can't write one adapter that works for all of them. You write four adapters.
 
 The core is portable. The glue is not.
 
@@ -54,7 +54,7 @@ That silences the warnings. It also silences the warning when you're in a React 
 Here's what the actual packages look like:
 
 ```json
-// @tanstack/react-query — v5.99.2
+// @tanstack/react-query: v5.99.2
 {
   "peerDependencies": {
     "react": "^18 || ^19"
@@ -63,7 +63,7 @@ Here's what the actual packages look like:
 ```
 
 ```json
-// @tanstack/svelte-query — v6.1.18
+// @tanstack/svelte-query: v6.1.18
 {
   "peerDependencies": {
     "svelte": "^5.25.0"
@@ -72,7 +72,7 @@ Here's what the actual packages look like:
 ```
 
 ```json
-// @tanstack/vue-query — v5.99.2
+// @tanstack/vue-query: v5.99.2
 {
   "peerDependencies": {
     "vue": "^2.6.0 || ^3.3.0"
@@ -80,13 +80,13 @@ Here's what the actual packages look like:
 }
 ```
 
-A React app installs `@tanstack/react-query`. One peer dep. If React is missing, the warning is meaningful — you actually need it. If React is present, there are no warnings. The feedback is honest because the package only knows about one framework.
+A React app installs `@tanstack/react-query`. One peer dep. If React is missing, the warning is meaningful. You actually need it. If React is present, there are no warnings. The feedback is honest because the package only knows about one framework.
 
 Version numbers can also drift independently. Svelte 5 was a major rewrite; `@tanstack/svelte-query` bumped to v6 to track it. The React and Vue packages stayed at v5. A single package can't version-track four frameworks without forcing everyone to upgrade together.
 
 ## What TanStack pays for this
 
-More packages to publish and maintain. Every change to `query-core` requires a coordinated release across all four binding packages — they all declare `@tanstack/query-core` as a direct dependency and need to be updated in lockstep. That's convention, not enforcement; a careless release could let them drift.
+More packages to publish and maintain. Every change to `query-core` requires a coordinated release across all four binding packages. They all declare `@tanstack/query-core` as a direct dependency and need to be updated in lockstep. That's convention, not enforcement; a careless release could let them drift.
 
 The maintenance overhead is real. It's the cost of serving four different ecosystems with honest packaging.
 
@@ -109,4 +109,4 @@ If you support one framework, you don't have this problem. One package, one peer
 
 One peer dep, no lies. The N×M problem only bites when N (frameworks you support) is 2 or more. Before that, the split creates overhead with no benefit.
 
-If you do eventually need to add a second framework, going from "one package with subpath exports" to "separate packages" is mechanical. Rename a directory, bump an import path, republish. No API break for existing consumers. Starting with subpath and splitting later costs one refactor when the second framework lands — not an early bet on complexity you might not need.
+If you do eventually need to add a second framework, going from "one package with subpath exports" to "separate packages" is mechanical. Rename a directory, bump an import path, republish. No API break for existing consumers. Starting with subpath and splitting later costs one refactor when the second framework lands, not an early bet on complexity you might not need.

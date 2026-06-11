@@ -71,7 +71,7 @@ The public API of `browserState` stays identical. Consumers (App.svelte, Unified
 
 ## Detailed Changes
 
-### 1. `browser-state.svelte.ts` — Rewrite (690 → ~200 lines)
+### 1. `browser-state.svelte.ts`: Rewrite (690 → ~200 lines)
 
 **Remove:**
 - ALL `tables.*` imports and usage
@@ -85,9 +85,9 @@ The public API of `browserState` stays identical. Consumers (App.svelte, Unified
 - Device registration (`tables.devices.set(...)`, `getDeviceId`, `generateDefaultDeviceName`, `getBrowserName`)
 
 **Keep:**
-- `SvelteMap<number, WindowState>` — keyed by Chrome's native `windowId` (no more composite IDs needed)
-- `whenReady` promise — still gates UI, but now only awaits `browser.windows.getAll()`
-- All browser event listeners — but they only write to SvelteMap
+- `SvelteMap<number, WindowState>`: keyed by Chrome's native `windowId` (no more composite IDs needed)
+- `whenReady` promise: still gates UI, but now only awaits `browser.windows.getAll()`
+- All browser event listeners: but they only write to SvelteMap
 - All action methods (`close`, `activate`, `pin`, `unpin`, `mute`, `unmute`, `reload`, `duplicate`)
 - The public API shape (`whenReady`, `windows`, `tabsByWindow`, actions)
 
@@ -138,7 +138,7 @@ function createBrowserState() {
     }
   })();
 
-  // Event listeners — SvelteMap writes only
+  // Event listeners: SvelteMap writes only
   browser.tabs.onCreated.addListener(...)
   browser.tabs.onRemoved.addListener(...)
   browser.tabs.onUpdated.addListener(...)
@@ -156,7 +156,7 @@ function createBrowserState() {
 }
 ```
 
-### 2. `workspace.ts` — Remove browser-state tables
+### 2. `workspace.ts`: Remove browser-state tables
 
 **Remove from table definitions:**
 - `tabsTable` (the Y.Doc table for live tabs)
@@ -164,19 +164,19 @@ function createBrowserState() {
 - `tabGroupsTable` (the Y.Doc table for live tab groups)
 
 **Remove from exports:**
-- `Tab` type (the Y.Doc row type — replaced by `BrowserTab` in browser-state)
-- `Window` type (the Y.Doc row type — replaced by `BrowserWindow` in browser-state)
+- `Tab` type (the Y.Doc row type: replaced by `BrowserTab` in browser-state)
+- `Window` type (the Y.Doc row type: replaced by `BrowserWindow` in browser-state)
 - `TabCompositeId`, `WindowCompositeId`, `GroupCompositeId` branded types
 - `createTabCompositeId`, `createWindowCompositeId`, `createGroupCompositeId` helpers
 - `parseTabId`, `parseWindowId`, `parseGroupId` helpers
 
 **Keep:**
-- `devicesTable` — still useful for device identity in saved tabs ("Saved from Chrome on MacBook")
+- `devicesTable`: still useful for device identity in saved tabs ("Saved from Chrome on MacBook")
 - `savedTabsTable`, `bookmarksTable`, `conversationsTable`, `chatMessagesTable`, `toolTrustTable`
 - `DeviceId` type
 - All workspace extensions (persistence, broadcast, sync)
 
-### 3. `row-converters.ts` — Remove or gut
+### 3. `row-converters.ts`: Remove or gut
 
 **Remove:**
 - `tabToRow` (converts Chrome tab → Y.Doc row)
@@ -185,7 +185,7 @@ function createBrowserState() {
 
 If the file has no remaining exports, delete it. If it has converters used by saved-tab-state or bookmark-state, keep only those.
 
-### 4. Consumer changes — Minimal
+### 4. Consumer changes: Minimal
 
 **unified-view-state.svelte.ts:**
 - Currently reads `browserState.windows` (returns `Window[]` with Y.Doc row type) and `browserState.tabsByWindow(windowId)` (returns `Tab[]`).
@@ -195,13 +195,13 @@ If the file has no remaining exports, delete it. If it has converters used by sa
 **UnifiedTabList.svelte, TabItem.svelte, command-palette/items.ts:**
 - These consume the browserState API. If the returned types change field names, update references. The API shape (`.windows`, `.tabsByWindow()`, `.close()`, etc.) stays the same.
 
-### 5. Device registration — Simplify
+### 5. Device registration: Simplify
 
-Currently browser-state.svelte.ts registers the device in `tables.devices` during seed. Since we're removing Y.Doc from browser-state, device registration should move to a shared location that runs on app init (e.g., a side effect in `workspace.ts` or a dedicated `device-state.svelte.ts`). Saved tabs and bookmarks reference `sourceDeviceId`, so device registration is still needed — just not in browser-state.
+Currently browser-state.svelte.ts registers the device in `tables.devices` during seed. Since we're removing Y.Doc from browser-state, device registration should move to a shared location that runs on app init (e.g., a side effect in `workspace.ts` or a dedicated `device-state.svelte.ts`). Saved tabs and bookmarks reference `sourceDeviceId`, so device registration is still needed, just not in browser-state.
 
 ## Migration Checklist
 
-- [x] Rewrite `browser-state.svelte.ts` — Chrome-only, SvelteMap-only, ~200 lines
+- [x] Rewrite `browser-state.svelte.ts`: Chrome-only, SvelteMap-only, ~200 lines
 - [x] Define `BrowserWindow` and `BrowserTab` types locally in browser-state (plain objects from Chrome data)
 - [x] Remove Y.Doc table definitions (`tabsTable`, `windowsTable`, `tabGroupsTable`) from `workspace.ts`
 - [x] Remove composite ID helpers and branded types from `workspace.ts`
@@ -211,7 +211,7 @@ Currently browser-state.svelte.ts registers the device in `tables.devices` durin
 - [x] Update `UnifiedTabList.svelte` for any field name changes
 - [x] Update `TabItem.svelte` for any field name changes
 - [x] Update `command-palette/items.ts` for any field name changes
-- [x] Verify the `{#await browserState.whenReady}` gate still works (it should — whenReady is still a promise)
+- [x] Verify the `{#await browserState.whenReady}` gate still works (it should: whenReady is still a promise)
 - [ ] Run the extension in Chrome and verify: tabs render, events update UI, actions work
 - [ ] Verify saved tabs and bookmarks still sync cross-device (unaffected by this change)
 
@@ -239,12 +239,12 @@ Removed all Y.Doc/CRDT usage for live browser tabs and windows. Chrome is now th
 | `browser-state.svelte.ts` | 690 | 406 | −284 |
 | `workspace.ts` | 1058 | 587 | −471 |
 | `row-converters.ts` | 117 | deleted | −117 |
-| Consumers (7 files) | — | — | ~+30 net |
-| **Total** | — | — | **−842 net** |
+| Consumers (7 files) |: |: | ~+30 net |
+| **Total** |: |: | **−842 net** |
 
 ### Deviations from spec
 
-1. **`saved-tab-state.svelte.ts` and `bookmark-state.svelte.ts` required type-only changes.** Both imported `type Tab` from workspace, which was removed. Changed to `type BrowserTab` from browser-state. No logic changes—just the import and method parameter type.
+1. **`saved-tab-state.svelte.ts` and `bookmark-state.svelte.ts` required type-only changes.** Both imported `type Tab` from workspace, which was removed. Changed to `type BrowserTab` from browser-state. No logic changes. Just the import and method parameter type.
 2. **Workspace actions were not addressed in the spec.** 7 query actions that read from removed Y.Doc tables were removed (`tabs.search`, `tabs.list`, `tabs.findDuplicates`, `tabs.dedup`, `tabs.groupByDomain`, `windows.list`, `domains.count`). 8 mutation actions were simplified to accept native Chrome tab IDs instead of composite string IDs.
 3. **`tab-helpers.ts` `TabLike` type updated.** Changed `id: string` to `tabId: number` since the only remaining consumer passes `BrowserTab[]`.
 4. **Existing bug fixed in `command-palette/items.ts`.** `savedTabState.actions.save(tab)` → `savedTabState.save(tab)` (`.actions` property doesn't exist).

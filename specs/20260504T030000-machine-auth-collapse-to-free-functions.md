@@ -247,7 +247,7 @@ handler: async () => {
 ```
 
 ```ts
-// fuji consumer (apps/fuji/src/lib/fuji/script.ts) — inlined
+// fuji consumer (apps/fuji/src/lib/fuji/script.ts): inlined
 
 import { loadMachineSession } from '@epicenter/auth/node';
 

@@ -18,13 +18,13 @@ Remove `WorkspaceDefinition` support from the CLI config loader so `epicenter.co
 // load-config.ts
 type LoadConfigResult = {
   configDir: string;
-  definitions: AnyWorkspaceDefinition[];  // raw schemas — needs wiring
-  clients: AnyWorkspaceClient[];          // pre-wired — passthrough
+  definitions: AnyWorkspaceDefinition[];  // raw schemas: needs wiring
+  clients: AnyWorkspaceClient[];          // pre-wired: passthrough
 };
 ```
 
 ```typescript
-// start-daemon.ts — branches to auto-wire definitions
+// start-daemon.ts: branches to auto-wire definitions
 const { definitions, clients } = await loadConfig(targetDir);
 const allClients = [...clients];
 for (const definition of definitions) {
@@ -36,7 +36,7 @@ for (const definition of definitions) {
 ```
 
 ```typescript
-// open-workspace.ts — branches again
+// open-workspace.ts: branches again
 const allEntries = [
   ...definitions.map(d => ({ type: 'definition', value: d })),
   ...clients.map(c => ({ type: 'client', value: c })),
@@ -53,14 +53,14 @@ This creates problems:
 ### Desired State
 
 ```typescript
-// epicenter.config.ts — one pattern, always works
+// epicenter.config.ts: one pattern, always works
 import { createTabManagerWorkspace } from './src/lib/workspace/workspace';
 
 export const tabManager = createTabManagerWorkspace();
 ```
 
 ```typescript
-// load-config.ts — one return type
+// load-config.ts: one return type
 type LoadConfigResult = {
   configDir: string;
   clients: AnyWorkspaceClient[];
@@ -68,7 +68,7 @@ type LoadConfigResult = {
 ```
 
 ```typescript
-// start-daemon.ts — no branching
+// start-daemon.ts: no branching
 const { clients } = await loadConfig(targetDir);
 await Promise.all(clients.map(c => c.whenReady));
 ```
@@ -88,7 +88,7 @@ export const whispering = createWhisperingWorkspace();
 |---|---|---|
 | Drop `WorkspaceDefinition` support | Yes | Eliminates branching in 3 files, makes config self-contained |
 | Keep named + default exports | Yes | `loadConfig` already handles both; no code change needed |
-| Daemon no longer auto-wires extensions | Yes | Config author chains their own extensions—explicit is better |
+| Daemon no longer auto-wires extensions | Yes | Config author chains their own extensions. Explicit is better |
 | Error message guides users | `createWorkspace({...})` | Clear migration path in error text |
 
 ## Architecture
@@ -132,28 +132,28 @@ epicenter.config.ts
 ### Phase 1: Simplify load-config.ts
 
 - [ ] **1.1** Remove `AnyWorkspaceDefinition` type alias
-- [ ] **1.2** Remove `definitions` from `LoadConfigResult` — just `clients: AnyWorkspaceClient[]`
+- [ ] **1.2** Remove `definitions` from `LoadConfigResult`: just `clients: AnyWorkspaceClient[]`
 - [ ] **1.3** Remove `isWorkspaceDefinition()` helper
-- [ ] **1.4** Remove `classifyAndAdd()` helper — replace with direct `isWorkspaceClient()` check + push
+- [ ] **1.4** Remove `classifyAndAdd()` helper: replace with direct `isWorkspaceClient()` check + push
 - [ ] **1.5** Update error message to say `export default createWorkspace({...})`
-- [ ] **1.6** `loadClientFromPath()` — already client-only, just clean up error messages if needed
+- [ ] **1.6** `loadClientFromPath()`: already client-only, just clean up error messages if needed
 
 ### Phase 2: Simplify start-daemon.ts
 
-- [ ] **2.1** Remove the `for (const definition of definitions)` wiring loop (lines 66–92)
-- [ ] **2.2** `const allClients = clients` — no spread, no loop
+- [ ] **2.1** Remove the `for (const definition of definitions)` wiring loop (lines 66-92)
+- [ ] **2.2** `const allClients = clients`: no spread, no loop
 - [ ] **2.3** Remove unused imports: `createWorkspace`, `filesystemPersistence`, `createSyncExtension`
 
 ### Phase 3: Simplify open-workspace.ts
 
-- [ ] **3.1** Remove `allEntries` type-tagging pattern — work directly with `clients[]`
+- [ ] **3.1** Remove `allEntries` type-tagging pattern: work directly with `clients[]`
 - [ ] **3.2** Remove the `entry.type === 'definition'` branch and manual persistence wiring
 - [ ] **3.3** Remove unused imports: `createWorkspace`, `filesystemPersistence`
 
 ### Phase 4: Update honeycrisp fixture + tests
 
 - [ ] **4.1** Change `honeycrisp-basic/epicenter.config.ts` from `defineWorkspace(...)` to `createWorkspace(defineWorkspace(...))`
-- [ ] **4.2** Update `e2e-honeycrisp.test.ts` — tests currently do `loadConfig()` → `definitions[0]` → manual `createWorkspace(definition)`. Change to `loadConfig()` → `clients[0]` since the config now exports a client
+- [ ] **4.2** Update `e2e-honeycrisp.test.ts`: tests currently do `loadConfig()` → `definitions[0]` → manual `createWorkspace(definition)`. Change to `loadConfig()` → `clients[0]` since the config now exports a client
 - [ ] **4.3** Run tests: `bun test` in `packages/cli`
 
 ### Phase 5: Verify
@@ -183,12 +183,12 @@ After this change, definitions are silently ignored. Only clients are collected.
 ## Open Questions
 
 1. **Should `WorkspaceDefinition` type still be exported from `@epicenter/workspace`?**
-   - Yes — `defineWorkspace()` is still useful for schema declaration. We're only removing CLI support for raw definitions, not the type itself.
+   - Yes: `defineWorkspace()` is still useful for schema declaration. We're only removing CLI support for raw definitions, not the type itself.
    - **Recommendation**: No changes to `@epicenter/workspace` exports.
 
 ## Success Criteria
 
-- [ ] `loadConfig()` returns `{ configDir, clients }` — no `definitions` field
+- [ ] `loadConfig()` returns `{ configDir, clients }`: no `definitions` field
 - [ ] `start-daemon.ts` has zero branching between definitions and clients
 - [ ] `open-workspace.ts` has zero branching between definitions and clients
 - [ ] Honeycrisp fixture exports a `createWorkspace()` result
@@ -197,10 +197,10 @@ After this change, definitions are silently ignored. Only clients are collected.
 
 ## References
 
-- `packages/cli/src/config/load-config.ts` — main loader (simplify)
-- `packages/cli/src/config/resolve-config.ts` — already client-only via `loadClientFromPath`
-- `packages/cli/src/runtime/start-daemon.ts` — daemon wiring (simplify)
-- `packages/cli/src/runtime/open-workspace.ts` — data command wiring (simplify)
-- `packages/cli/test/fixtures/honeycrisp-basic/epicenter.config.ts` — fixture (update)
-- `packages/cli/test/e2e-honeycrisp.test.ts` — tests (update)
-- `apps/tab-manager/src/lib/workspace/workspace.ts` — factory pattern to follow
+- `packages/cli/src/config/load-config.ts`: main loader (simplify)
+- `packages/cli/src/config/resolve-config.ts`: already client-only via `loadClientFromPath`
+- `packages/cli/src/runtime/start-daemon.ts`: daemon wiring (simplify)
+- `packages/cli/src/runtime/open-workspace.ts`: data command wiring (simplify)
+- `packages/cli/test/fixtures/honeycrisp-basic/epicenter.config.ts`: fixture (update)
+- `packages/cli/test/e2e-honeycrisp.test.ts`: tests (update)
+- `apps/tab-manager/src/lib/workspace/workspace.ts`: factory pattern to follow

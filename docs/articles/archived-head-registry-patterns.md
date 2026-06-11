@@ -50,9 +50,9 @@ This document preserves the HeadDoc and Registry patterns from the original thre
 
 **Why three docs?**
 
-- **Registry**: Personal — syncs only between YOUR devices (which workspaces do I have?)
-- **Head**: Shared — lightweight pointer to current epoch (version control)
-- **Workspace**: Shared — the actual data, tied to an epoch for migrations
+- **Registry**: Personal: syncs only between YOUR devices (which workspaces do I have?)
+- **Head**: Shared: lightweight pointer to current epoch (version control)
+- **Workspace**: Shared: the actual data, tied to an epoch for migrations
 
 ---
 

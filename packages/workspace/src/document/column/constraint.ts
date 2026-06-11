@@ -1,5 +1,5 @@
 /**
- * `FlatJsonTSchema<S>` — the load-bearing type-level constraint for
+ * `FlatJsonTSchema<S>`: the load-bearing type-level constraint for
  * `defineTable` columns.
  *
  * Applied per column inside `defineTable`'s generic via a mapped type:
@@ -18,10 +18,10 @@
  *
  * The discrimination happens in two stages:
  *
- * 1. **Structural** — match `S['~kind']` against the rejected-kind unions
+ * 1. **Structural**: match `S['~kind']` against the rejected-kind unions
  *    enumerated below, plus the `'~codec'` decoration that `Type.Transform`
  *    leaves on any inner schema.
- * 2. **Static<>** — fall back to `Static<S> extends JsonValue` so a
+ * 2. **Static<>**: fall back to `Static<S> extends JsonValue` so a
  *    `Type.Unsafe<Date>(...)` or `Type.Base<Date>` extension still gets
  *    caught when the user bypasses the structural check.
  */

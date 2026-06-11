@@ -166,7 +166,7 @@ field.select(['draft','published'])
 ## The `field.*` catalog
 
 ```ts
-// shared vocabulary (packages/field) — authoring half
+// shared vocabulary (packages/field): authoring half
 field.string<TBrand?>(refine?)   // {type:'string', ...minLength/maxLength/pattern}   Static = string|TBrand
 field.url(refine?)               // {type:'string', format:'uri'}
 field.datetime(refine?)          // {type:'string', format:'date-time'}               Static = DateTimeString (brand)
@@ -326,8 +326,8 @@ export const typesTable = defineTable({
 
 ## References
 
-- `apps/matter/src/lib/core/field.ts` — the recognition reference shape (FIELDS, recognize, SchemaOf, compile) to move into `packages/field`.
-- `packages/workspace/src/document/column/sugar.ts` — the `column.*` authoring dialect to re-home onto the leaf.
-- `packages/workspace/src/document/column/constraint.ts` — `FlatJsonTSchema` + (find) the `deriveCheck` that reads `enum` wire-form; the migration's blast center.
-- `apps/wiki/src/lib/workspace/schema.ts` — proof that `column.*` output is already stored-and-`Value.Check`'d as a per-column schema (the same artifact matter recognizes).
-- Prior spec `20260604T223000` (matter typed grid) — established the closed palette, everything-required, and "native enum + Type.Unsafe decouples wire from Static" that unblocks this.
+- `apps/matter/src/lib/core/field.ts`: the recognition reference shape (FIELDS, recognize, SchemaOf, compile) to move into `packages/field`.
+- `packages/workspace/src/document/column/sugar.ts`: the `column.*` authoring dialect to re-home onto the leaf.
+- `packages/workspace/src/document/column/constraint.ts`: `FlatJsonTSchema` + (find) the `deriveCheck` that reads `enum` wire-form; the migration's blast center.
+- `apps/wiki/src/lib/workspace/schema.ts`: proof that `column.*` output is already stored-and-`Value.Check`'d as a per-column schema (the same artifact matter recognizes).
+- Prior spec `20260604T223000` (matter typed grid): established the closed palette, everything-required, and "native enum + Type.Unsafe decouples wire from Static" that unblocks this.

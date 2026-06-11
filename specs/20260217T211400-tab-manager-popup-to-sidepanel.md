@@ -37,13 +37,13 @@ The popup entrypoint declares itself as a `browser_action`:
 This creates problems:
 
 1. **Fixed dimensions fight scroll behavior**: The `w-200 h-150` (800×600px) constraint means all scroll logic must negotiate with a rigid box. The current branch (`feat/tab-manager-scrollarea`) has been wrestling with ScrollArea + flex + Virtua interactions inside this fixed container.
-2. **Virtua needs hardcoded pixel height**: VList requires an explicit height. In a popup, there's no parent with a natural height to inherit — the popup IS the viewport. So we hardcode `600px`, which is fragile and doesn't adapt.
+2. **Virtua needs hardcoded pixel height**: VList requires an explicit height. In a popup, there's no parent with a natural height to inherit: the popup IS the viewport. So we hardcode `600px`, which is fragile and doesn't adapt.
 3. **Popup closes on any outside click**: Users lose their place every time they click away. For a tab manager that you reference while browsing, this is poor UX.
 4. **Non-standard pattern**: Every modern tab manager and AI assistant extension uses side panels. Popups are for quick actions (password fill, toggle), not persistent tools.
 
 ### Desired State
 
-Click the extension icon → side panel opens in Chrome's native sidebar. The panel persists across tab navigation. Layout fills the sidebar naturally — no hardcoded dimensions. Scroll behavior just works.
+Click the extension icon → side panel opens in Chrome's native sidebar. The panel persists across tab navigation. Layout fills the sidebar naturally, no hardcoded dimensions. Scroll behavior just works.
 
 ```
 ┌─────────────────────────────────────────────────────┬──────────────┐
@@ -73,7 +73,7 @@ Every modern extension in this category uses `openPanelOnActionClick: true` with
 | Uniswap Wallet                                      | `setPanelBehavior` + WXT `defineBackground`          | WXT          |
 | Nanobrowser (AI agent)                              | `openPanelOnActionClick: true`                       | Custom       |
 | Extension.js templates (React, Vue, **Svelte**, TS) | `openPanelOnActionClick: true` with Firefox fallback | Extension.js |
-| Keplr Wallet                                        | Toggleable — `true`/`false` based on user preference | Custom       |
+| Keplr Wallet                                        | Toggleable: `true`/`false` based on user preference | Custom       |
 
 **Key finding**: No serious tab manager or AI extension uses a popup as its primary UI. The industry converged on side panels after Chrome 114 (mid-2023).
 
@@ -81,7 +81,7 @@ Every modern extension in this category uses `openPanelOnActionClick: true` with
 
 ### WXT Side Panel Support
 
-WXT handles side panel entrypoints automatically. Just create the file — WXT generates the correct manifest for each target browser.
+WXT handles side panel entrypoints automatically. Just create the file: WXT generates the correct manifest for each target browser.
 
 | What WXT Does | Chrome MV3                                           | Firefox                                                   |
 | ------------- | ---------------------------------------------------- | --------------------------------------------------------- |
@@ -98,10 +98,10 @@ WXT handles side panel entrypoints automatically. Just create the file — WXT g
 
 **Supported `<meta>` tags for sidepanel HTML**:
 
-- `manifest.default_icon` — panel icon
-- `manifest.open_at_install` — Firefox only, auto-open on install
-- `manifest.browser_style` — Firefox only, deprecated
-- `manifest.include` / `manifest.exclude` — browser targeting
+- `manifest.default_icon`: panel icon
+- `manifest.open_at_install`: Firefox only, auto-open on install
+- `manifest.browser_style`: Firefox only, deprecated
+- `manifest.include` / `manifest.exclude`: browser targeting
 
 **The gap WXT doesn't fill**: `setPanelBehavior({ openPanelOnActionClick: true })` is a runtime Chrome API call. You write this yourself in `background.ts`. WXT just handles the manifest.
 
@@ -173,7 +173,7 @@ Then in Svelte:
 | Fixed dimensions         | Remove entirely (`w-200 h-150` → `h-full w-full`)             | Side panel width is controlled by the browser. Height fills naturally.                                             |
 | VList height             | Replace `600px` with flex container (`flex-1 min-h-0`)        | Parent has natural height now. No pixel guessing.                                                                  |
 | ScrollArea               | Keep `ScrollArea.Root` wrapping tab content                   | Still useful for styled scrollbars. But it gets a natural height from flex parent instead of fighting a fixed box. |
-| `workspace-popup.ts`     | Rename to `workspace-panel.ts` (or keep as-is)                | Deferred — cosmetic. File works identically regardless of entrypoint.                                              |
+| `workspace-popup.ts`     | Rename to `workspace-panel.ts` (or keep as-is)                | Deferred: cosmetic. File works identically regardless of entrypoint.                                              |
 | Firefox handling         | Let WXT auto-generate `sidebar_action` manifest               | Zero custom code needed. WXT handles it.                                                                           |
 | `app.css`                | Add `html, body, #app { height: 100% }`                       | Required for the CSS height chain. Current `app.css` has no body styles.                                           |
 | `wxt.config.ts`          | No changes needed                                             | WXT auto-discovers sidepanel entrypoint and adds permissions/manifest keys.                                        |
@@ -253,12 +253,12 @@ FlatTabList.svelte (flex height)     lib/workspace.ts
 - [ ] **1.1** Create `src/entrypoints/sidepanel/index.html`:
   - Standard HTML5 boilerplate
   - `<title>Tab Manager</title>`
-  - NO `manifest.type` meta tag (not needed for sidepanel — WXT infers from directory name)
+  - NO `manifest.type` meta tag (not needed for sidepanel: WXT infers from directory name)
   - Same icon meta tag as current popup: `<meta name="manifest.default_icon" content='{ "16": "icon-16.png", "48": "icon-48.png", "128": "icon-128.png" }' />`
   - `<div id="app"></div>` + `<script type="module" src="./main.ts"></script>`
 
 - [ ] **1.2** Create `src/entrypoints/sidepanel/main.ts`:
-  - Copy from `popup/main.ts` — identical content
+  - Copy from `popup/main.ts`: identical content
   - Mounts `App.svelte` into `#app`
 
 - [ ] **1.3** Create `src/entrypoints/sidepanel/App.svelte`:
@@ -275,10 +275,10 @@ FlatTabList.svelte (flex height)     lib/workspace.ts
 - [ ] **2.2** Update `FlatTabList.svelte`:
   - Replace `style="height: 600px;"` on VList with `class="flex-1 min-h-0 h-full"` (or `style="height: 100%"`)
   - Ensure VList's parent container provides height via flexbox
-  - Note: May need to wrap VList in a `div` with `class="flex-1 min-h-0"` if VList doesn't accept class prop — test this
+  - Note: May need to wrap VList in a `div` with `class="flex-1 min-h-0"` if VList doesn't accept class prop: test this
 
 - [ ] **2.3** Ensure ScrollArea fills flex space:
-  - `ScrollArea.Root` already has `class="flex-1 min-h-0 w-full"` — verify this works in full-height context
+  - `ScrollArea.Root` already has `class="flex-1 min-h-0 w-full"`: verify this works in full-height context
 
 ### Phase 3: Wire Up Background
 
@@ -287,10 +287,10 @@ FlatTabList.svelte (flex height)     lib/workspace.ts
   - Use the WXT `browser` global (which maps to `chrome` on Chrome):
     ```typescript
     browser.sidePanel
-    	.setPanelBehavior({ openPanelOnActionClick: true })
-    	.catch((error: unknown) => console.error(error));
+	.setPanelBehavior({ openPanelOnActionClick: true })
+	.catch((error: unknown) => console.error(error));
     ```
-  - Note: WXT's polyfill `browser` may not have `sidePanel` typed. If so, use `chrome.sidePanel` directly with a Chrome guard (`if (import.meta.env.CHROME)`) — Firefox doesn't need this call (sidebar opens via its own UI).
+  - Note: WXT's polyfill `browser` may not have `sidePanel` typed. If so, use `chrome.sidePanel` directly with a Chrome guard (`if (import.meta.env.CHROME)`): Firefox doesn't need this call (sidebar opens via its own UI).
 
 ### Phase 4: Delete Popup Entrypoint
 
@@ -308,7 +308,7 @@ FlatTabList.svelte (flex height)     lib/workspace.ts
 - [ ] **5.5** Tab list renders correctly with natural scroll (no hardcoded heights)
 - [ ] **5.6** All tab actions work (close, pin, mute, reload, duplicate, save)
 - [ ] **5.7** Saved tabs tab works
-- [ ] **5.8** Build for Firefox (`bun run --filter @epicenter/tab-manager build:firefox`) — verify manifest has `sidebar_action`
+- [ ] **5.8** Build for Firefox (`bun run --filter @epicenter/tab-manager build:firefox`): verify manifest has `sidebar_action`
 
 ## Edge Cases
 
@@ -318,7 +318,7 @@ FlatTabList.svelte (flex height)     lib/workspace.ts
 2. Background script calls `browser.sidePanel.setPanelBehavior()`
 3. Call throws
 
-**Resolution**: Guard with `if (import.meta.env.CHROME)` or catch the error (already wrapped in `.catch()`). Firefox uses `sidebar_action` manifest key — no runtime API call needed.
+**Resolution**: Guard with `if (import.meta.env.CHROME)` or catch the error (already wrapped in `.catch()`). Firefox uses `sidebar_action` manifest key: no runtime API call needed.
 
 ### VList Height in Narrow Sidebar
 
@@ -339,7 +339,7 @@ FlatTabList.svelte (flex height)     lib/workspace.ts
 1. Users accustomed to popup behavior (click icon → small window)
 2. Side panel is a different interaction pattern
 
-**Resolution**: Side panel is strictly better UX for this use case. No action needed — users adapt quickly.
+**Resolution**: Side panel is strictly better UX for this use case. No action needed: users adapt quickly.
 
 ### Existing Popup Users After Update
 
@@ -354,19 +354,19 @@ FlatTabList.svelte (flex height)     lib/workspace.ts
 1. **Should we add `open_at_install: true` for Firefox?**
    - Pro: User immediately sees the sidebar after install
    - Con: Could be annoying if they don't expect it
-   - **Recommendation**: Set `true` — matches other sidebar extensions and gives immediate value
+   - **Recommendation**: Set `true`: matches other sidebar extensions and gives immediate value
 
 2. **Should we rename `workspace-popup.ts` to `workspace-panel.ts`?**
    - It's referenced by `browser-state.svelte.ts` and `saved-tab-state.svelte.ts`
    - Purely cosmetic rename
-   - **Recommendation**: Defer — not worth the diff noise in this PR. Can rename later.
+   - **Recommendation**: Defer: not worth the diff noise in this PR. Can rename later.
 
 3. **Should we keep the `@source` glob in `app.css` as-is?**
    - Currently: `@source "./entrypoints/**/*.{svelte,ts}";`
    - This will pick up `sidepanel/` automatically
-   - **Recommendation**: Keep as-is — the glob already covers the new directory.
+   - **Recommendation**: Keep as-is: the glob already covers the new directory.
 
-4. **How should VList receive its height — `style="height: 100%"` or flex?**
+4. **How should VList receive its height: `style="height: 100%"` or flex?**
    - Virtua's `VList` accepts a `style` prop directly
    - Option A: `style="height: 100%"` with a parent that has explicit height
    - Option B: Wrap in `<div class="flex-1 min-h-0">` and let VList fill it
@@ -375,7 +375,7 @@ FlatTabList.svelte (flex height)     lib/workspace.ts
 5. **Should we add a keyboard shortcut to toggle the side panel?**
    - Chrome supports `_execute_side_panel` command in manifest
    - Would need to add to `wxt.config.ts` manifest commands
-   - **Recommendation**: Defer — nice to have, not needed for MVP migration.
+   - **Recommendation**: Defer: nice to have, not needed for MVP migration.
 
 ## Success Criteria
 
@@ -395,7 +395,7 @@ FlatTabList.svelte (flex height)     lib/workspace.ts
 | File | Change |
 | --- | --- |
 | `src/entrypoints/sidepanel/index.html` | **Created.** Standard HTML5 boilerplate, no `manifest.type` meta tag (WXT infers from directory name), same icon meta as former popup. |
-| `src/entrypoints/sidepanel/main.ts` | **Created.** Identical to former `popup/main.ts` — mounts App into `#app`. |
+| `src/entrypoints/sidepanel/main.ts` | **Created.** Identical to former `popup/main.ts`: mounts App into `#app`. |
 | `src/entrypoints/sidepanel/App.svelte` | **Created.** Copied from `popup/App.svelte`, replaced `w-200 h-150` with `h-full w-full`. All component imports and logic identical. |
 | `src/entrypoints/background.ts` | **Modified.** Added `chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true })` behind `import.meta.env.CHROME` guard at the top of `defineBackground` callback. |
 | `src/app.css` | **Modified.** Added `html, body, #app { height: 100%; margin: 0; padding: 0; }` for the full-height CSS chain. |
@@ -419,7 +419,7 @@ FlatTabList.svelte (flex height)     lib/workspace.ts
 
 - **Open Question #1 (open_at_install for Firefox)**: Not set. Can be added later via meta tag.
 - **Open Question #2 (rename workspace-popup.ts)**: Deferred as spec recommended.
-- **Open Question #3 (@source glob)**: Kept as-is — glob already covers `sidepanel/`.
+- **Open Question #3 (@source glob)**: Kept as-is: glob already covers `sidepanel/`.
 - **Open Question #4 (VList height approach)**: Used Option A (`style="height: 100%"`).
 - **Open Question #5 (keyboard shortcut)**: Deferred as spec recommended.
 
@@ -434,13 +434,13 @@ FlatTabList.svelte (flex height)     lib/workspace.ts
 
 ## References
 
-- `apps/tab-manager/src/entrypoints/popup/` — Current popup entrypoint (to be deleted)
-- `apps/tab-manager/src/entrypoints/background.ts` — Add `setPanelBehavior` call
-- `apps/tab-manager/src/entrypoints/popup/App.svelte` — Layout to adapt (remove fixed dims)
-- `apps/tab-manager/src/lib/components/FlatTabList.svelte` — Remove hardcoded `600px`
-- `apps/tab-manager/src/app.css` — Add height chain
-- `apps/tab-manager/wxt.config.ts` — No changes needed (WXT auto-discovers)
-- `apps/tab-manager/src/lib/workspace-popup.ts` — Works unchanged, optional rename later
-- Uniswap Extension (`Uniswap/interface`) — WXT + sidepanel reference implementation
-- Extension.js Svelte template — `openPanelOnActionClick` pattern with Firefox fallback
-- `specs/20260213T015500-popup-reactive-state.md` — Previous spec (reactive state, already implemented)
+- `apps/tab-manager/src/entrypoints/popup/`: Current popup entrypoint (to be deleted)
+- `apps/tab-manager/src/entrypoints/background.ts`: Add `setPanelBehavior` call
+- `apps/tab-manager/src/entrypoints/popup/App.svelte`: Layout to adapt (remove fixed dims)
+- `apps/tab-manager/src/lib/components/FlatTabList.svelte`: Remove hardcoded `600px`
+- `apps/tab-manager/src/app.css`: Add height chain
+- `apps/tab-manager/wxt.config.ts`: No changes needed (WXT auto-discovers)
+- `apps/tab-manager/src/lib/workspace-popup.ts`: Works unchanged, optional rename later
+- Uniswap Extension (`Uniswap/interface`): WXT + sidepanel reference implementation
+- Extension.js Svelte template: `openPanelOnActionClick` pattern with Firefox fallback
+- `specs/20260213T015500-popup-reactive-state.md`: Previous spec (reactive state, already implemented)

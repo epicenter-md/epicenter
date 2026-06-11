@@ -1,4 +1,4 @@
-# Variadic `defineTable` / `defineKv` — Replace `.version()` Chaining with Rest Parameters
+# Variadic `defineTable` / `defineKv`: Replace `.version()` Chaining with Rest Parameters
 
 **Date:** 2026-03-03
 **Status:** Implemented
@@ -27,11 +27,11 @@ const posts = defineTable()
 
 ### Problems
 
-1. **`.version()` chaining builds a tuple one element at a time, but TypeScript can infer the full tuple from a variadic rest parameter.** The sequential chaining gives zero type inference advantage — each `.version()` call is independent (it doesn't constrain the next call).
+1. **`.version()` chaining builds a tuple one element at a time, but TypeScript can infer the full tuple from a variadic rest parameter.** The sequential chaining gives zero type inference advantage: each `.version()` call is independent (it doesn't constrain the next call).
 
 2. **The `TableBuilder` / `KvBuilder` types exist only to collect schemas.** This is exactly what rest parameters do natively. The builder types are extra API surface to maintain, export, and document.
 
-3. **The `defineTable()` zero-arg overload returns a builder, not a definition.** This creates a confusing state where `defineTable()` on its own is incomplete — you must chain `.version().migrate()` to get a usable definition. With variadic, every call to `defineTable(...)` returns something meaningful.
+3. **The `defineTable()` zero-arg overload returns a builder, not a definition.** This creates a confusing state where `defineTable()` on its own is incomplete: you must chain `.version().migrate()` to get a usable definition. With variadic, every call to `defineTable(...)` returns something meaningful.
 
 ### Desired State
 
@@ -108,8 +108,8 @@ defineKv(s1, s2, ...sN)                → { migrate(fn) → KvDefinition<TVersi
 
 ### Types to Remove
 
-- `TableBuilder<TVersions>` — replaced by the variadic overload's return type (inline `{ migrate(...) }`)
-- `KvBuilder<TVersions>` — same
+- `TableBuilder<TVersions>`: replaced by the variadic overload's return type (inline `{ migrate(...) }`)
+- `KvBuilder<TVersions>`: same
 
 ### Types to Keep (unchanged)
 
@@ -122,7 +122,7 @@ defineKv(s1, s2, ...sN)                → { migrate(fn) → KvDefinition<TVersi
 
 ## Implementation Plan
 
-### Wave 1: Core API Changes (sequential — `defineTable` then `defineKv`)
+### Wave 1: Core API Changes (sequential: `defineTable` then `defineKv`)
 
 - [x] **1.1** Rewrite `defineTable` in `packages/epicenter/src/workspace/define-table.ts`:
   - Remove the `TableBuilder` type
@@ -150,7 +150,7 @@ Every `.version()` chain becomes variadic arguments. The migration functions sta
 - [x] **2.5** Update `packages/epicenter/src/workspace/table-helper.test.ts`
 - [x] **2.6** Update `packages/epicenter/src/workspace/describe-workspace.test.ts`
 - [ ] **2.7** Update `packages/epicenter/src/workspace/create-workspace.test.ts`
-  > **Note**: No `.version()` chains found — file already uses single-arg shorthand only. No changes needed.
+  > **Note**: No `.version()` chains found: file already uses single-arg shorthand only. No changes needed.
 
 **Transformation pattern for tests:**
 
@@ -195,15 +195,15 @@ defineKv(
 
 ## Edge Cases
 
-1. **Single schema passed to variadic overload**: TypeScript overload resolution handles this — single arg matches the first overload (shorthand), not the variadic. The variadic requires 2+ args via the tuple constraint `[S, S, ...S[]]`.
+1. **Single schema passed to variadic overload**: TypeScript overload resolution handles this: single arg matches the first overload (shorthand), not the variadic. The variadic requires 2+ args via the tuple constraint `[S, S, ...S[]]`.
 
 2. **`.withDocument()` after `.migrate()`**: Works identically. `.migrate()` returns `TableDefinitionWithDocBuilder` which has `.withDocument()`. No change needed.
 
-3. **Pre-composed schemas (like `commandBase.merge(...)`)**: Still works — the result is a `CombinedStandardSchema` passed as a single arg to the shorthand overload. No change.
+3. **Pre-composed schemas (like `commandBase.merge(...)`)**: Still works: the result is a `CombinedStandardSchema` passed as a single arg to the shorthand overload. No change.
 
 4. **KV with non-object schemas** (e.g., `defineKv(type('Record<string, string> | null'))`): Single-arg shorthand, unaffected.
 
-5. **KV with field-presence migration (no `_v`)**: Still works — the migrate function receives the union type and can use `'field' in v` checks. No change to migration function signatures.
+5. **KV with field-presence migration (no `_v`)**: Still works: the migrate function receives the union type and can use `'field' in v` checks. No change to migration function signatures.
 
 ## Impact Assessment
 
@@ -217,8 +217,8 @@ defineKv(
    - Recommendation: Yes, update `.agents/skills/workspace-api/SKILL.md` examples in the same PR.
 
 2. **Should the variadic overload's return type be a named type or inline?**
-   - Option A: Inline `{ migrate(fn): TableDefinitionWithDocBuilder<...> }` — fewer types to maintain.
-   - Option B: Named `TableMigratable<TVersions>` — more discoverable in IDE.
+   - Option A: Inline `{ migrate(fn): TableDefinitionWithDocBuilder<...> }`: fewer types to maintain.
+   - Option B: Named `TableMigratable<TVersions>`: more discoverable in IDE.
    - Recommendation: Start with inline (Option A). Extract to named type only if the inline becomes unwieldy.
 
 ## Success Criteria
@@ -235,12 +235,12 @@ defineKv(
 
 ## References
 
-- `packages/epicenter/src/workspace/define-table.ts` — `defineTable` implementation + `TableBuilder` type
-- `packages/epicenter/src/workspace/define-kv.ts` — `defineKv` implementation + `KvBuilder` type
-- `packages/epicenter/src/workspace/types.ts` — `TableDefinition`, `KvDefinition`, `LastSchema`, `BaseRow`
-- `packages/epicenter/src/workspace/schema-union.ts` — `createUnionSchema` (unchanged)
-- `packages/epicenter/src/workspace/define-table.test.ts` — primary test file for multi-version
-- `packages/epicenter/src/workspace/define-kv.test.ts` — primary test file for multi-version KV
+- `packages/epicenter/src/workspace/define-table.ts`: `defineTable` implementation + `TableBuilder` type
+- `packages/epicenter/src/workspace/define-kv.ts`: `defineKv` implementation + `KvBuilder` type
+- `packages/epicenter/src/workspace/types.ts`: `TableDefinition`, `KvDefinition`, `LastSchema`, `BaseRow`
+- `packages/epicenter/src/workspace/schema-union.ts`: `createUnionSchema` (unchanged)
+- `packages/epicenter/src/workspace/define-table.test.ts`: primary test file for multi-version
+- `packages/epicenter/src/workspace/define-kv.test.ts`: primary test file for multi-version KV
 
 ## Review
 
@@ -253,11 +253,11 @@ Replaced `.version()` builder chaining with variadic rest parameters on both `de
 
 ### Deviations from Spec
 
-- Added zero-arg runtime guard (`arguments.length === 0` throw) to both `defineTable` and `defineKv` — the original builder threw lazily in `.migrate()`, but with the new API a zero-arg call would silently return a migrate-able object with no schemas.
+- Added zero-arg runtime guard (`arguments.length === 0` throw) to both `defineTable` and `defineKv`: the original builder threw lazily in `.migrate()`, but with the new API a zero-arg call would silently return a migrate-able object with no schemas.
 
 ### Follow-up Work
 
-- Open question 1 (update `workspace-api` skill docs) deferred — not blocking.
+- Open question 1 (update `workspace-api` skill docs) deferred: not blocking.
 
 ---
 
@@ -275,8 +275,8 @@ Table rows and KV values are stored in Yjs CRDTs, which serialize to JSON. Nothi
 
 Constrain the schema types at the `defineTable` and `defineKv` call sites so that:
 
-1. **`defineTable` schemas** must output types extending `BaseRow & JsonObject` — i.e., `{ id: string; _v: number }` plus all other fields must be `JsonValue` (string, number, boolean, null, or nested arrays/objects of the same).
-2. **`defineKv` schemas** must output types extending `JsonValue` — KV values can be primitives, arrays, or objects, but must be JSON-serializable.
+1. **`defineTable` schemas** must output types extending `BaseRow & JsonObject`: i.e., `{ id: string; _v: number }` plus all other fields must be `JsonValue` (string, number, boolean, null, or nested arrays/objects of the same).
+2. **`defineKv` schemas** must output types extending `JsonValue`: KV values can be primitives, arrays, or objects, but must be JSON-serializable.
 
 ### Types from `wellcrafted/json`
 
@@ -287,7 +287,7 @@ type JsonObject = Record<string, JsonValue>;
 
 ### Changes
 
-#### 1. `types.ts` — `BaseRow` intersection
+#### 1. `types.ts`: `BaseRow` intersection
 
 ```typescript
 import type { JsonObject } from 'wellcrafted/json';
@@ -296,13 +296,13 @@ export type { JsonObject, JsonValue } from 'wellcrafted/json';
 // Before
 export type BaseRow = { id: string; _v: number };
 
-// After — all fields must be JsonValue
+// After: all fields must be JsonValue
 export type BaseRow = { id: string; _v: number } & JsonObject;
 ```
 
-This propagates automatically. Every constraint using `CombinedStandardSchema<BaseRow>` (in `defineTable`, `TableDefinitionWithDocBuilder`, `TableDefinition`) now requires JSON-safe output types. No changes needed in `define-table.ts` — it already constrains via `BaseRow`.
+This propagates automatically. Every constraint using `CombinedStandardSchema<BaseRow>` (in `defineTable`, `TableDefinitionWithDocBuilder`, `TableDefinition`) now requires JSON-safe output types. No changes needed in `define-table.ts`: it already constrains via `BaseRow`.
 
-#### 2. `define-kv.ts` — `JsonValue` constraint
+#### 2. `define-kv.ts`: `JsonValue` constraint
 
 ```typescript
 import type { JsonValue } from 'wellcrafted/json';
@@ -316,13 +316,13 @@ export function defineKv<TSchema extends CombinedStandardSchema<JsonValue>>(sche
 export function defineKv<const TVersions extends [CombinedStandardSchema<JsonValue>, ...]>(...versions: TVersions): ...
 ```
 
-#### 3. `index.ts` — Re-export `JsonValue` and `JsonObject`
+#### 3. `index.ts`: Re-export `JsonValue` and `JsonObject`
 
 ```typescript
 export type { JsonObject, JsonValue } from './types.js';
 ```
 
-#### 4. `package.json` — Bump wellcrafted
+#### 4. `package.json`: Bump wellcrafted
 
 ```json
 "wellcrafted": "^0.34.0"
@@ -359,13 +359,13 @@ defineKv(type('{ mode: string, fontSize: number } | null'));
 
 ### Edge Case: Optional Fields
 
-`{ name?: string }` produces `string | undefined` in TypeScript's output type. `undefined` is not a `JsonValue`. This is **intentionally rejected** — Yjs stores can't represent `undefined` (JSON has no `undefined`). Use `null` instead: `{ name: 'string | null' }`.
+`{ name?: string }` produces `string | undefined` in TypeScript's output type. `undefined` is not a `JsonValue`. This is **intentionally rejected**: Yjs stores can't represent `undefined` (JSON has no `undefined`). Use `null` instead: `{ name: 'string | null' }`.
 
 ### Impact Assessment
 
 **Production code**: All existing schemas use JSON-safe types (strings, numbers, booleans, nested objects). No breakage expected.
 
-**Test files**: May need minor updates if any test schemas use non-JSON types. Most test schemas use `string`, `number`, `boolean` — all `JsonValue`.
+**Test files**: May need minor updates if any test schemas use non-JSON types. Most test schemas use `string`, `number`, `boolean`: all `JsonValue`.
 
 ### Implementation Plan
 
@@ -378,16 +378,16 @@ defineKv(type('{ mode: string, fontSize: number } | null'));
 
 #### Wave 4.5: Fix `createTableHelper` Variance Issue
 
-The `& JsonObject` intersection on `BaseRow` exposed a TypeScript variance issue in `createTableHelper`. The generic `TVersions extends readonly CombinedStandardSchema<BaseRow>[]` forced the `migrate` function into a contravariant position — `(row: SpecificRow) => SpecificRow` can't satisfy `(row: BaseRow) => BaseRow`. Fixed by making the generic operate on the full definition type instead:
+The `& JsonObject` intersection on `BaseRow` exposed a TypeScript variance issue in `createTableHelper`. The generic `TVersions extends readonly CombinedStandardSchema<BaseRow>[]` forced the `migrate` function into a contravariant position: `(row: SpecificRow) => SpecificRow` can't satisfy `(row: BaseRow) => BaseRow`. Fixed by making the generic operate on the full definition type instead:
 
 ```typescript
-// Before — variance-unfriendly
+// Before: variance-unfriendly
 function createTableHelper<TVersions extends readonly CombinedStandardSchema<BaseRow>[]>(
   ykv: YKeyValueLww<unknown>,
   definition: TableDefinition<TVersions>,
 ): TableHelper<InferTableRow<TableDefinition<TVersions>>>
 
-// After — variance-friendly
+// After: variance-friendly
 function createTableHelper<TTableDefinition extends TableDefinition<any>>(
   ykv: YKeyValueLww<unknown>,
   definition: TTableDefinition,
@@ -399,6 +399,6 @@ function createTableHelper<TTableDefinition extends TableDefinition<any>>(
 
 #### Wave 5: Verify
 
-- [x] **5.1** Run `bun run typecheck` — confirm no new type errors from the constraint
-- [x] **5.2** Run `bun test` — confirm all tests still pass
-- [x] **5.3** Run `bun run lint` — fix any issues
+- [x] **5.1** Run `bun run typecheck`: confirm no new type errors from the constraint
+- [x] **5.2** Run `bun test`: confirm all tests still pass
+- [x] **5.3** Run `bun run lint`: fix any issues

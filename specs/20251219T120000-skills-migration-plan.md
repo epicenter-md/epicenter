@@ -13,7 +13,7 @@ Each skill requires:
 
 ## Migration Complexity Analysis
 
-### Tier 1: Easy (Direct Copy) — 5-10 min each
+### Tier 1: Easy (Direct Copy): 5-10 min each
 
 These are self-contained, domain-specific, and don't reference other rules:
 
@@ -28,7 +28,7 @@ These are self-contained, domain-specific, and don't reference other rules:
 
 **Migration**: Just add YAML frontmatter and move to `skills/[name]/SKILL.md`
 
-### Tier 2: Moderate (Minor Adjustments) — 10-15 min each
+### Tier 2: Moderate (Minor Adjustments): 10-15 min each
 
 These have cross-references or need description refinement:
 
@@ -41,7 +41,7 @@ These have cross-references or need description refinement:
 
 **Migration**: Remove `@rules/` references, add frontmatter, possibly split large files
 
-### Tier 3: Complex (Architectural Decision) — 30+ min
+### Tier 3: Complex (Architectural Decision): 30+ min
 
 | File | Lines | Why Complex |
 |------|-------|-------------|
@@ -56,29 +56,29 @@ These have cross-references or need description refinement:
 
 ### Phase 1: Quick Wins (start here)
 
-1. **styling** — Smallest, cleanest migration
-2. **posthog** — Small, project-specific
-3. **github** — Clear trigger ("when responding to GitHub issues")
-4. **social-media** — Clear trigger ("when writing social media posts")
+1. **styling**: Smallest, cleanest migration
+2. **posthog**: Small, project-specific
+3. **github**: Clear trigger ("when responding to GitHub issues")
+4. **social-media**: Clear trigger ("when writing social media posts")
 
 ### Phase 2: Core Development Skills
 
-5. **error-handling** — Clear trigger ("when using trySync/tryAsync")
-6. **rust** — Clear trigger ("when handling Tauri/Rust errors")
-7. **git** — Clear trigger ("when creating commits or PRs")
+5. **error-handling**: Clear trigger ("when using trySync/tryAsync")
+6. **rust**: Clear trigger ("when handling Tauri/Rust errors")
+7. **git**: Clear trigger ("when creating commits or PRs")
 
 ### Phase 3: Framework Skills
 
-8. **typescript** — Consider splitting into sub-skills if too large
-9. **svelte** — Remove `@rules/styling.md` reference after styling migrated
+8. **typescript**: Consider splitting into sub-skills if too large
+9. **svelte**: Remove `@rules/styling.md` reference after styling migrated
 
 ### Phase 4: Content Skills
 
-10. **documentation** — Consider splitting (technical writing vs README vs punctuation)
+10. **documentation**: Consider splitting (technical writing vs README vs punctuation)
 
 ### Phase 5: Architectural Decision
 
-11. **general-guidelines** — Decide: keep in AGENTS.md or restructure
+11. **general-guidelines**: Decide: keep in AGENTS.md or restructure
 
 ## Example Migration: styling.md → skills/styling/SKILL.md
 

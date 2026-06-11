@@ -15,7 +15,7 @@ Add a settings panel inside the AI chat drawer where users can view all tools th
 When a destructive tool call arrives, `ToolCallPart.svelte` shows [Allow] / [Always Allow] / [Deny]. Clicking "Always Allow" writes to the workspace table and auto-approves all future calls for that tool:
 
 ```typescript
-// ToolCallPart.svelte — "Always Allow" handler
+// ToolCallPart.svelte: "Always Allow" handler
 function handleAlwaysAllow() {
   if (!approval?.id) return;
   toolTrustState.set(part.name, 'always');
@@ -26,7 +26,7 @@ function handleAlwaysAllow() {
 The trust state module has `get()` and `set()` but no way to list or revoke:
 
 ```typescript
-// tool-trust.svelte.ts — current API surface
+// tool-trust.svelte.ts: current API surface
 return {
   get(name: string): TrustLevel { ... },
   set(name: string, level: TrustLevel): void { ... },
@@ -55,7 +55,7 @@ A small settings section inside the AI chat drawer that lists all trusted tools 
 | `CommandPalette` | Command dialog overlay | `components/CommandPalette.svelte` |
 | `ToolCallPart` | Inline approval buttons in chat stream | `components/chat/ToolCallPart.svelte` |
 
-**Key finding**: The app has no settings page. Configuration surfaces are embedded in context—sync settings live in the SyncStatusIndicator popover, AI chat lives in the AiDrawer. Trust settings should follow this pattern: embedded in the AI context, not a separate page.
+**Key finding**: The app has no settings page. Configuration surfaces are embedded in context. Sync settings live in the SyncStatusIndicator popover, AI chat lives in the AiDrawer. Trust settings should follow this pattern: embedded in the AI context, not a separate page.
 
 ### Available shadcn-svelte Components
 
@@ -78,7 +78,7 @@ Components already in `@epicenter/ui/` that are relevant:
 The `toolTrustTable` workspace table stores trust rows:
 
 ```typescript
-// workspace.ts — table definition
+// workspace.ts: table definition
 const toolTrustTable = defineTable({
   id: Type.String(),      // tool name (e.g. "tabs_close")
   trust: Type.String(),   // 'ask' | 'always'
@@ -164,15 +164,15 @@ Next "Close Tabs" tool call shows [Allow] / [Always Allow] / [Deny] again
 
 ### Phase 1: Extend Trust State API
 
-- [x] **1.1** Add `entries()` method to `toolTrustState` in `apps/tab-manager/src/lib/state/tool-trust.svelte.ts` — return the internal `trustMap` (already a `SvelteMap`, already reactive)
+- [x] **1.1** Add `entries()` method to `toolTrustState` in `apps/tab-manager/src/lib/state/tool-trust.svelte.ts`: return the internal `trustMap` (already a `SvelteMap`, already reactive)
 - [x] **1.2** Verify reactivity: when `set()` is called elsewhere (e.g. ToolCallPart "Always Allow"), the Popover's list should update live via the Y.Doc observer
 
 ### Phase 2: Settings Popover Component
 
-- [x] **2.1** Create `apps/tab-manager/src/lib/components/chat/TrustSettings.svelte` — self-contained Popover component
+- [x] **2.1** Create `apps/tab-manager/src/lib/components/chat/TrustSettings.svelte`: self-contained Popover component
 - [x] **2.2** Import `Switch` from `@epicenter/ui/switch`, `Button` from `@epicenter/ui/button`, `Popover` from `@epicenter/ui/popover`
 - [x] **2.3** Import `toolTrustState` and `workspaceToolTitles` for data and display names
-- [x] **2.4** List only tools where trust is `'always'` (no point showing `'ask'` tools — they're the default)
+- [x] **2.4** List only tools where trust is `'always'` (no point showing `'ask'` tools: they're the default)
 - [x] **2.5** Each row: tool title (from `workspaceToolTitles`) + `Switch` bound to whether trust is `'always'`
 - [x] **2.6** Toggling Switch OFF calls `toolTrustState.set(name, 'ask')`
 - [x] **2.7** Empty state: hide gear icon when no tools are trusted (Option B from Open Questions)
@@ -199,20 +199,20 @@ Next "Close Tabs" tool call shows [Allow] / [Always Allow] / [Deny] again
 2. User revokes it in the settings popover on Device B
 3. Y.Doc CRDT syncs the change → Device A's trust map updates via the existing `.observe()` callback
 4. Next "Close Tabs" call on Device A shows approval UI again
-5. **No special handling needed** — the existing observer pattern handles this
+5. **No special handling needed**: the existing observer pattern handles this
 
 ### All tools revoked
 
 1. User clicks "Revoke All"
 2. All entries set to `'ask'`
 3. Gear icon hides (no trusted tools)
-4. Popover closes (or stays open showing empty state — implementer decides)
+4. Popover closes (or stays open showing empty state: implementer decides)
 
 ### Tool renamed or removed
 
 1. Developer renames a workspace action (e.g. `tabs_close` → `tabs_remove`)
 2. Old trust entry for `tabs_close` still in the table
-3. It won't match any tool, so it's harmless — shows in settings as an unknown tool
+3. It won't match any tool, so it's harmless: shows in settings as an unknown tool
 4. **Recommendation**: Show the raw tool name as fallback when `workspaceToolTitles[name]` is undefined. No cleanup logic needed.
 
 ## Open Questions
@@ -224,7 +224,7 @@ Next "Close Tabs" tool call shows [Allow] / [Always Allow] / [Deny] again
 
 2. **Should "Revoke All" require confirmation?**
    - It's a bulk action but low-stakes (just resets to the default state)
-   - **Recommendation**: No confirmation. Revoking trust isn't destructive — it just means the next tool call will ask again.
+   - **Recommendation**: No confirmation. Revoking trust isn't destructive: it just means the next tool call will ask again.
 
 3. **Should the popover be a separate component or part of a larger settings surface?**
    - Currently no settings page exists. This would be the first settings UI.
@@ -242,14 +242,14 @@ Next "Close Tabs" tool call shows [Allow] / [Always Allow] / [Deny] again
 
 ## References
 
-- `apps/tab-manager/src/lib/state/tool-trust.svelte.ts` — Trust state module to extend with `entries()`
-- `apps/tab-manager/src/lib/components/chat/ToolCallPart.svelte` — Existing "Always Allow" handler (consumer of trust state)
-- `apps/tab-manager/src/lib/components/AiDrawer.svelte` — Where the gear icon will be added
-- `apps/tab-manager/src/lib/components/SyncStatusIndicator.svelte` — Reference pattern for Popover-from-icon-button
-- `apps/tab-manager/src/lib/workspace.ts` — `workspaceToolTitles` lookup map, `toolTrustTable` definition
-- `packages/ui/src/switch/` — Switch component (exists, not yet used in tab-manager)
-- `packages/ui/src/popover/` — Popover component (already used in tab-manager)
-- `specs/20260312T170000-progressive-tool-trust.md` — Parent spec that introduced the trust system
+- `apps/tab-manager/src/lib/state/tool-trust.svelte.ts`: Trust state module to extend with `entries()`
+- `apps/tab-manager/src/lib/components/chat/ToolCallPart.svelte`: Existing "Always Allow" handler (consumer of trust state)
+- `apps/tab-manager/src/lib/components/AiDrawer.svelte`: Where the gear icon will be added
+- `apps/tab-manager/src/lib/components/SyncStatusIndicator.svelte`: Reference pattern for Popover-from-icon-button
+- `apps/tab-manager/src/lib/workspace.ts`: `workspaceToolTitles` lookup map, `toolTrustTable` definition
+- `packages/ui/src/switch/`: Switch component (exists, not yet used in tab-manager)
+- `packages/ui/src/popover/`: Popover component (already used in tab-manager)
+- `specs/20260312T170000-progressive-tool-trust.md`: Parent spec that introduced the trust system
 
 ## Review
 
@@ -271,4 +271,4 @@ Added a settings popover in the AI chat drawer for viewing and revoking tool tru
 
 ### Follow-up Work
 
-- Manual testing needed (spec items 4.2–4.4) to verify end-to-end flow in the extension.
+- Manual testing needed (spec items 4.2-4.4) to verify end-to-end flow in the extension.

@@ -6,7 +6,7 @@
 
 ## Overview
 
-Move the sync WebSocket endpoint from `/workspaces/:room/sync` to `/rooms/:room/sync`. The sync layer is a generic Y.Doc relay organized by rooms — it doesn't know about workspaces, and mounting it under `/workspaces` becomes semantically wrong when row-level documents also sync through it.
+Move the sync WebSocket endpoint from `/workspaces/:room/sync` to `/rooms/:room/sync`. The sync layer is a generic Y.Doc relay organized by rooms. It doesn't know about workspaces, and mounting it under `/workspaces` becomes semantically wrong when row-level documents also sync through it.
 
 ## Motivation
 
@@ -42,7 +42,7 @@ createSyncExtension({ url: 'ws://localhost:3913/workspaces/{id}/sync' });
 createSyncExtension({ url: 'ws://127.0.0.1:3913/workspaces/{id}/sync' });
 ```
 
-This works today because only workspace Y.Docs sync — each room IS a workspace ID.
+This works today because only workspace Y.Docs sync: each room IS a workspace ID.
 
 ### The Problem
 
@@ -67,9 +67,9 @@ workspace.withDocumentExtension('sync', ({ ydoc, binding }) => {
 });
 ```
 
-When row-level documents sync, the room ID is a document GUID (e.g., `abc-123-def`), not a workspace ID. The URL becomes `ws://server/workspaces/abc-123-def/sync` — but `abc-123-def` isn't a workspace. It's a content document belonging to a row in some table.
+When row-level documents sync, the room ID is a document GUID (e.g., `abc-123-def`), not a workspace ID. The URL becomes `ws://server/workspaces/abc-123-def/sync`, but `abc-123-def` isn't a workspace. It's a content document belonging to a row in some table.
 
-The `/workspaces` prefix promises "this is about workspaces" — the tables and actions routes deliver on that promise, but the sync route doesn't. It's a generic document relay that happens to be co-located with workspace routes.
+The `/workspaces` prefix promises "this is about workspaces". The tables and actions routes deliver on that promise, but the sync route doesn't. It's a generic document relay that happens to be co-located with workspace routes.
 
 ### Desired State
 
@@ -89,16 +89,16 @@ createSyncExtension({ url: 'ws://localhost:3913/rooms/{id}/sync' });
 createSyncProvider({ doc: ydoc, url: `ws://server/rooms/${ydoc.guid}/sync` });
 ```
 
-Both workspace docs and row-level docs use `/rooms` — no semantic confusion.
+Both workspace docs and row-level docs use `/rooms`: no semantic confusion.
 
 ## Design Decisions
 
 | Decision               | Choice                               | Rationale                                                                                                                                                                                                                                                                                      |
 | ---------------------- | ------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| New prefix name        | `/rooms` not `/documents`            | Server code already uses "room" everywhere — `createRoomManager`, `roomId`, `join(roomId)`, `onRoomCreated`, `onRoomEvicted`. "Room" is the sync session (connections + awareness + eviction). "Document" would conflate with Y.Doc (the data structure) vs. room (the sync unit wrapping it). |
+| New prefix name        | `/rooms` not `/documents`            | Server code already uses "room" everywhere: `createRoomManager`, `roomId`, `join(roomId)`, `onRoomCreated`, `onRoomEvicted`. "Room" is the sync session (connections + awareness + eviction). "Document" would conflate with Y.Doc (the data structure) vs. room (the sync unit wrapping it). |
 | Scope of change        | Only the mount prefix changes        | The sync plugin already registers `/:room/sync`. Only the Elysia `prefix` option changes from `/workspaces` to `/rooms`. The plugin, room manager, protocol, and auth are all untouched.                                                                                                       |
 | Standalone sync server | Also uses `/rooms`                   | `createSyncServer()` currently mounts under `/workspaces`. Should use `/rooms` for consistency.                                                                                                                                                                                                |
-| Client-side URLs       | Update `{id}` placeholder convention | The `{id}` placeholder in sync URLs already refers to `ydoc.guid`, not workspace ID. This doesn't change — just the prefix around it.                                                                                                                                                          |
+| Client-side URLs       | Update `{id}` placeholder convention | The `{id}` placeholder in sync URLs already refers to `ydoc.guid`, not workspace ID. This doesn't change: just the prefix around it.                                                                                                                                                          |
 | Breaking change        | Yes, intentional                     | The URL structure is not semver-stable yet (pre-1.0). All known sync URL references are in this repo.                                                                                                                                                                                          |
 
 ## Architecture
@@ -154,7 +154,7 @@ Workspace Y.Doc (room = "blog")
 └── Workspace itself                              →  /rooms/blog/sync
 ```
 
-All documents — workspace-level or row-level — sync through the same `/rooms/:room/sync` endpoint. The room manager doesn't distinguish between them. The `getDoc` callback (in integrated mode) resolves whatever room ID the client connects with.
+All documents: workspace-level or row-level: sync through the same `/rooms/:room/sync` endpoint. The room manager doesn't distinguish between them. The `getDoc` callback (in integrated mode) resolves whatever room ID the client connects with.
 
 ## Implementation Plan
 
@@ -162,7 +162,7 @@ All documents — workspace-level or row-level — sync through the same `/rooms
 
 - [x] **1.1** In `server.ts` (`createServer`): Mount sync plugin under `/rooms` prefix instead of nesting it inside the `/workspaces` Elysia instance
 - [x] **1.2** In `sync/server.ts` (`createSyncServer`): Change prefix from `/workspaces` to `/rooms`
-- [x] **1.3** Update the `getDoc` callback in `createServer` — no code change needed since `getDoc` receives the room ID regardless of prefix, but verify this
+- [x] **1.3** Update the `getDoc` callback in `createServer`: no code change needed since `getDoc` receives the room ID regardless of prefix, but verify this
 
 ### Phase 2: Update client-side URLs
 
@@ -173,15 +173,15 @@ All documents — workspace-level or row-level — sync through the same `/rooms
 
 ### Phase 3: Update documentation and tests
 
-- [x] **3.1** Update `packages/server/README.md` — URL hierarchy section, all WebSocket URL examples
-- [x] **3.2** Update `packages/epicenter/README.md` — sync extension examples, server URL references
-- [x] **3.3** Update `packages/server/src/sync/plugin.ts` JSDoc — the examples showing `/workspaces` prefix usage
+- [x] **3.1** Update `packages/server/README.md`: URL hierarchy section, all WebSocket URL examples
+- [x] **3.2** Update `packages/epicenter/README.md`: sync extension examples, server URL references
+- [x] **3.3** Update `packages/server/src/sync/plugin.ts` JSDoc: the examples showing `/workspaces` prefix usage
 - [x] **3.4** Update test files that reference the old URL pattern (notably `sync/plugin.test.ts`, `server.test.ts`)
 - [x] **3.5** Update the plugin-first server architecture spec (`20260220T080000`) to reflect the new prefix in its review section
 
 ### Phase 4: Verify
 
-- [x] **4.1** `bun run typecheck` clean (pre-existing errors in `@epicenter/filesystem` only — unrelated to this change)
+- [x] **4.1** `bun run typecheck` clean (pre-existing errors in `@epicenter/filesystem` only: unrelated to this change)
 - [x] **4.2** `bun test` passes for `packages/server` (138 pass, 0 fail) and `packages/epicenter` sync tests (6 pass, 0 fail)
 - [x] **4.3** Grep confirms zero remaining `workspaces.*sync` URL patterns (except historical specs)
 
@@ -189,23 +189,23 @@ All documents — workspace-level or row-level — sync through the same `/rooms
 
 ### Standalone sync server has no `/workspaces` routes
 
-1. `createSyncServer()` only has sync — no tables or actions
+1. `createSyncServer()` only has sync: no tables or actions
 2. Previously mounted at `/workspaces/:room/sync` despite having nothing workspace-related
-3. Now correctly at `/rooms/:room/sync` — matches its actual purpose
+3. Now correctly at `/rooms/:room/sync`: matches its actual purpose
 
 ### Integrated mode: `getDoc` must resolve both workspace IDs and document GUIDs
 
 1. `createServer()` currently maps workspace IDs: `getDoc: (room) => workspaces[room]?.ydoc`
 2. Row-level documents have GUIDs that won't match workspace IDs
 3. The `getDoc` callback needs to be extended to resolve both workspace docs and row-level docs
-4. **This is a future concern** — this spec only changes the prefix. The `getDoc` resolution logic is a separate feature when row-level document sync is actually wired up.
+4. **This is a future concern**: this spec only changes the prefix. The `getDoc` resolution logic is a separate feature when row-level document sync is actually wired up.
 
 ### Clients connecting to old URLs after upgrade
 
 1. Client uses `ws://server/workspaces/{id}/sync` against updated server
 2. Server has no route matching `/workspaces/:room/sync` → WebSocket upgrade fails (404)
 3. Client retry loop will keep failing until URL is updated
-4. Acceptable — all known clients are in this repo and updated together
+4. Acceptable: all known clients are in this repo and updated together
 
 ## Open Questions
 
@@ -218,7 +218,7 @@ All documents — workspace-level or row-level — sync through the same `/rooms
    - Currently `createSyncExtension` uses `url: 'ws://…/rooms/{id}/sync'` and replaces `{id}` with `ydoc.guid`
    - `{room}` would be more semantically accurate for the URL template
    - But `{id}` is the workspace ID from the user's perspective when calling `createSyncExtension`
-   - **Recommendation**: Keep `{id}` — it's the user-facing placeholder. The fact that it becomes a room ID is an implementation detail. Changing it would break the existing API for no functional benefit.
+   - **Recommendation**: Keep `{id}`: it's the user-facing placeholder. The fact that it becomes a room ID is an implementation detail. Changing it would break the existing API for no functional benefit.
 
 ## Success Criteria
 
@@ -230,17 +230,17 @@ All documents — workspace-level or row-level — sync through the same `/rooms
 
 ## References
 
-- `packages/server/src/server.ts` — Mount prefix change (main change)
-- `packages/server/src/sync/server.ts` — Standalone server prefix change
-- `packages/server/src/sync/plugin.ts` — Plugin itself unchanged, JSDoc examples updated
-- `packages/server/src/sync/plugin.test.ts` — Test URL references
-- `packages/server/src/server.test.ts` — Test URL references
-- `packages/epicenter/src/extensions/sync.ts` — Client-side URL examples in JSDoc
-- `apps/tab-manager/src/entrypoints/background.ts` — Sync URL reference
-- `apps/tab-manager/src/lib/workspace-popup.ts` — Sync URL reference
-- `packages/server/README.md` — URL hierarchy documentation
-- `packages/epicenter/README.md` — Sync extension documentation
-- `specs/20260220T080000-plugin-first-server-architecture.md` — Prior spec to annotate
+- `packages/server/src/server.ts`: Mount prefix change (main change)
+- `packages/server/src/sync/server.ts`: Standalone server prefix change
+- `packages/server/src/sync/plugin.ts`: Plugin itself unchanged, JSDoc examples updated
+- `packages/server/src/sync/plugin.test.ts`: Test URL references
+- `packages/server/src/server.test.ts`: Test URL references
+- `packages/epicenter/src/extensions/sync.ts`: Client-side URL examples in JSDoc
+- `apps/tab-manager/src/entrypoints/background.ts`: Sync URL reference
+- `apps/tab-manager/src/lib/workspace-popup.ts`: Sync URL reference
+- `packages/server/README.md`: URL hierarchy documentation
+- `packages/epicenter/README.md`: Sync extension documentation
+- `specs/20260220T080000-plugin-first-server-architecture.md`: Prior spec to annotate
 
 ## Review
 
@@ -252,47 +252,47 @@ Split the single `/workspaces` Elysia instance in `server.ts` into two separate 
 
 **Server-side (functional):**
 
-- `packages/server/src/server.ts` — Split mount prefix, two separate `.use()` calls
-- `packages/server/src/sync/server.ts` — Changed prefix from `/workspaces` to `/rooms`
+- `packages/server/src/server.ts`: Split mount prefix, two separate `.use()` calls
+- `packages/server/src/sync/server.ts`: Changed prefix from `/workspaces` to `/rooms`
 - `packages/server/src/start-hub.ts` -- Hub server CLI entry point, updated JSDoc and console.log URL
 - `packages/server/src/start-local.ts` -- Local server CLI entry point, updated JSDoc and console.log URL
 
 **Client-side (functional):**
 
-- `apps/tab-manager/src/entrypoints/background.ts` — Updated sync URL
-- `apps/tab-manager/src/lib/workspace-popup.ts` — Updated sync URL
+- `apps/tab-manager/src/entrypoints/background.ts`: Updated sync URL
+- `apps/tab-manager/src/lib/workspace-popup.ts`: Updated sync URL
 
 **JSDoc updates:**
 
-- `packages/epicenter/src/extensions/sync.ts` — 5 URL examples
-- `packages/epicenter/src/extensions/sync/web.ts` — 1 URL example
-- `packages/epicenter/src/extensions/sync/desktop.ts` — 1 URL example
-- `packages/server/src/sync/plugin.ts` — JSDoc example showing new prefix pattern
-- `packages/server/src/workspace/plugin.ts` — JSDoc example showing separated architecture
-- `packages/sync/src/provider.ts` — 3 URL examples
+- `packages/epicenter/src/extensions/sync.ts`: 5 URL examples
+- `packages/epicenter/src/extensions/sync/web.ts`: 1 URL example
+- `packages/epicenter/src/extensions/sync/desktop.ts`: 1 URL example
+- `packages/server/src/sync/plugin.ts`: JSDoc example showing new prefix pattern
+- `packages/server/src/workspace/plugin.ts`: JSDoc example showing separated architecture
+- `packages/sync/src/provider.ts`: 3 URL examples
 
 **Tests:**
 
-- `packages/server/src/sync/plugin.test.ts` — `wsUrl` helper
-- `packages/epicenter/src/extensions/sync.test.ts` — 9 test URL strings
+- `packages/server/src/sync/plugin.test.ts`: `wsUrl` helper
+- `packages/epicenter/src/extensions/sync.test.ts`: 9 test URL strings
 
 **Documentation:**
 
-- `packages/server/README.md` — URL hierarchy, deployment diagram, code examples
-- `packages/epicenter/README.md` — Sync extension examples, architecture docs
-- `packages/sync/README.md` — Provider examples, relationship section
-- `packages/epicenter/SYNC_ARCHITECTURE.md` — All sync URL examples
-- `packages/epicenter/docs/architecture/security.md` — Auth example URL
-- `packages/epicenter/docs/architecture/network-topology.md` — All topology URLs
+- `packages/server/README.md`: URL hierarchy, deployment diagram, code examples
+- `packages/epicenter/README.md`: Sync extension examples, architecture docs
+- `packages/sync/README.md`: Provider examples, relationship section
+- `packages/epicenter/SYNC_ARCHITECTURE.md`: All sync URL examples
+- `packages/epicenter/docs/architecture/security.md`: Auth example URL
+- `packages/epicenter/docs/architecture/network-topology.md`: All topology URLs
 
 **Spec annotations:**
 
-- `specs/20260220T080000-plugin-first-server-architecture.md` — Added note about prefix change
+- `specs/20260220T080000-plugin-first-server-architecture.md`: Added note about prefix change
 
 ### Verification
 
-- `bun typecheck` — Clean for all changed packages. Pre-existing errors in `@epicenter/filesystem` (unrelated `_v` type issues).
-- `bun test` (packages/server) — 138 pass, 0 fail, 254 expect() calls
-- `bun test` (packages/epicenter sync.test.ts) — 6 pass, 0 fail
-- Grep for `/workspaces.*sync` in `.ts` source files — zero remaining (only table route test names in `server.test.ts`, which are correct)
-- Grep for `/workspaces.*sync` in `.md` package docs — zero remaining
+- `bun typecheck`: Clean for all changed packages. Pre-existing errors in `@epicenter/filesystem` (unrelated `_v` type issues).
+- `bun test` (packages/server): 138 pass, 0 fail, 254 expect() calls
+- `bun test` (packages/epicenter sync.test.ts): 6 pass, 0 fail
+- Grep for `/workspaces.*sync` in `.ts` source files: zero remaining (only table route test names in `server.test.ts`, which are correct)
+- Grep for `/workspaces.*sync` in `.md` package docs: zero remaining

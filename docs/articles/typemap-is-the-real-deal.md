@@ -128,7 +128,7 @@ TypeMap wins across the board when using the Standard Schema interface.
 
 Most validation libraries force a choice: nice syntax or good performance. Zod has great DX but pays for it at runtime. TypeBox has great performance but requires builder syntax. ArkType tries to bridge this with its own DSL.
 
-TypeMap sidesteps the tradeoff. Write schemas however you want—strings, Zod, Valibot, TypeBox—and compile them to high-performance validators with Standard Schema support. The compilation happens once; validation runs fast forever after.
+TypeMap sidesteps the tradeoff. Write schemas however you want. Strings, Zod, Valibot, TypeBox. And compile them to high-performance validators with Standard Schema support. The compilation happens once; validation runs fast forever after.
 
 ## Installation
 

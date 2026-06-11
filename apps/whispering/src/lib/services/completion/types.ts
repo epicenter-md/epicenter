@@ -12,7 +12,7 @@ export const CompletionError = defineErrors({
 		status,
 		cause,
 	}),
-	/** Network/DNS/TLS failure — never reached the server */
+	/** Network/DNS/TLS failure: never reached the server */
 	ConnectionFailed: ({ cause }: { cause: unknown }) => ({
 		message: `Connection failed: ${extractErrorMessage(cause)}`,
 		cause,

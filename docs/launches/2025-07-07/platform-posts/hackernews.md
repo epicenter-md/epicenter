@@ -27,7 +27,7 @@ The three-layer architecture has been particularly helpful:
 
 - *Query layer*: https://github.com/EpicenterHQ/epicenter/tree/main/apps/whispering/src/lib/query : Adds reactivity, caching, and runtime dependency injection
 
-Voice-activated mode is particularly nice when coding—you can keep your hands on the keyboard while dictating. The Svelte 5 runes + TanStack Query combination has been fantastic for managing real-time audio state.
+Voice-activated mode is particularly nice when coding. You can keep your hands on the keyboard while dictating. The Svelte 5 runes + TanStack Query combination has been fantastic for managing real-time audio state.
 
 ---
 

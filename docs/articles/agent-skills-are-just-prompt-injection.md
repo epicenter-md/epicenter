@@ -28,7 +28,7 @@ Available skills:
 - error-handling: Error handling patterns. Use when writing try-catch...
 ```
 
-Maybe 50 tokens per skill. With 20 skills, that's 1,000 tokens—not 6,000.
+Maybe 50 tokens per skill. With 20 skills, that's 1,000 tokens. Not 6,000.
 
 When the LLM decides it needs one, it calls a tool that loads the full content. Most conversations only need one or two skills. The rest never get loaded at all.
 

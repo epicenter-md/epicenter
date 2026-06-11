@@ -1,5 +1,5 @@
 /**
- * UIMessage boundary — persisted chat rows on one side, TanStack AI types on the other.
+ * UIMessage boundary: persisted chat rows on one side, TanStack AI types on the other.
  *
  * Opensidian stores chat messages in the workspace CRDT as JSON-compatible data,
  * but the chat UI and model adapters speak TanStack AI's `UIMessage` / `MessagePart`

@@ -1,6 +1,6 @@
 # Static Workspace API Guide
 
-> **Historical — API has moved.** This guide describes `defineWorkspace(...)` + `createWorkspace(definition)`, both of which have since been removed. Workspaces are now composed via `defineDocument((id) => ({ ydoc, tables, ... }))` — one closure that constructs the Y.Doc and calls `attach*` primitives inline. The versioning, schema, and migration patterns described below still apply; only the outer `defineWorkspace` / `createWorkspace` wrapping is gone. See `packages/cli/README.md` and `packages/workspace/README.md` for current composition patterns, and commit `b62cc5ae3` for the removal record.
+> **Historical: API has moved.** This guide describes `defineWorkspace(...)` + `createWorkspace(definition)`, both of which have since been removed. Workspaces are now composed via `defineDocument((id) => ({ ydoc, tables, ... }))`: one closure that constructs the Y.Doc and calls `attach*` primitives inline. The versioning, schema, and migration patterns described below still apply; only the outer `defineWorkspace` / `createWorkspace` wrapping is gone. See `packages/cli/README.md` and `packages/workspace/README.md` for current composition patterns, and commit `b62cc5ae3` for the removal record.
 
 Type-safe schema definitions and workspace clients for local-first apps with versioned data.
 
@@ -8,7 +8,7 @@ When I built Epicenter, the biggest pain point was managing data schema changes 
 
 ## The Problem
 
-Local-first apps live on user devices. Unlike servers, you can't run a migration script and update everyone's data. Instead, old data coexists with new, and you need to handle both gracefully. But CRDT libraries like Y.js don't enforce schemas—they just store blobs. So you end up writing migration logic scattered throughout your app.
+Local-first apps live on user devices. Unlike servers, you can't run a migration script and update everyone's data. Instead, old data coexists with new, and you need to handle both gracefully. But CRDT libraries like Y.js don't enforce schemas. They just store blobs. So you end up writing migration logic scattered throughout your app.
 
 This gets messy fast. Add a field to your schema? Now you need:
 
@@ -113,7 +113,7 @@ const client = createWorkspace(workspace)
 client.extensions.sqlite.db.query('SELECT * FROM posts');
 ```
 
-Extensions receive typed access to the workspace's Y.Doc and helpers. They return a plain `{ exports?, whenReady?, destroy? }` object — the framework normalizes defaults internally.
+Extensions receive typed access to the workspace's Y.Doc and helpers. They return a plain `{ exports?, whenReady?, destroy? }` object. The framework normalizes defaults internally.
 
 ### Layer 3: createTables / createKv - Bring Your Own Y.Doc
 
@@ -134,7 +134,7 @@ This gives you full control over the Y.Doc lifecycle while keeping typed helpers
 
 ## Schema Versioning
 
-The core feature is automatic schema migration on read. No background jobs, no migration commands—just data that evolves as your app does.
+The core feature is automatic schema migration on read. No background jobs, no migration commands. Just data that evolves as your app does.
 
 ### Single-Version Schemas
 
@@ -177,7 +177,7 @@ const settings = defineTable()
 	});
 ```
 
-The `.migrate()` function receives any version as input and must return the latest. TypeScript enforces this—if you handle only v1 and forget v2, type checking fails.
+The `.migrate()` function receives any version as input and must return the latest. TypeScript enforces this. If you handle only v1 and forget v2, type checking fails.
 
 This pattern scales. Add a v3? Just handle it in the same function:
 
@@ -263,7 +263,7 @@ posts.batch((tx) => {
 
 ## Key-Value Stores
 
-KV stores use `defineKv(schema, defaultValue)`. No versioning, no migration—invalid data falls back to the default:
+KV stores use `defineKv(schema, defaultValue)`. No versioning, no migration. Invalid data falls back to the default:
 
 ```typescript
 const mode = defineKv(type("'light' | 'dark' | 'system'"), 'light');
@@ -293,7 +293,7 @@ client.kv.observe('theme', (change, transaction) => {
 
 ### Row-Level Last-Writer-Wins
 
-Each `set()` replaces the entire row. You don't do field-level updates—there's no `update({ id: '1', title: 'New' })`.
+Each `set()` replaces the entire row. You don't do field-level updates. There's no `update({ id: '1', title: 'New' })`.
 
 This is intentional. When data migrates, old rows might have a different shape than new ones. Allowing field-level updates would create consistency problems: should we merge old fields with new? What if the schema changed and a field no longer exists?
 
@@ -322,7 +322,7 @@ Invalid data usually comes from:
 
 When you read old data, it migrates to the latest schema. It doesn't auto-update in storage.
 
-This means old rows coexist with new indefinitely—until they're explicitly rewritten. This is a feature: you can roll back your app version without "unmigrating" data. Plus, you only pay the migration cost when you read, not when the app starts up.
+This means old rows coexist with new indefinitely. Until they're explicitly rewritten. This is a feature: you can roll back your app version without "unmigrating" data. Plus, you only pay the migration cost when you read, not when the app starts up.
 
 ### No Field-Level Observation
 
@@ -352,7 +352,7 @@ type Extension<T> = {
 };
 ```
 
-Return a plain object directly — the framework normalizes defaults:
+Return a plain object directly. The framework normalizes defaults:
 
 ```typescript
 const persistence = ({ ydoc }) => {
@@ -377,7 +377,7 @@ type MyTables = typeof workspace.tableDefinitions;
 type MyKv = typeof workspace.kvDefinitions;
 
 const logger: ExtensionFactory<MyTables, MyKv> = ({ tables }) => {
-	// tables is fully typed—autocomplete works for all your tables
+	// tables is fully typed. Autocomplete works for all your tables
 	tables.posts.getAll();
 	return {};
 };
@@ -453,7 +453,7 @@ if (result.status === 'valid') {
 	// result.row is typed correctly
 	useRow(result.row);
 } else if (result.status === 'invalid') {
-	// Data failed validation—debug it
+	// Data failed validation. Debug it
 	console.error('Post 123 is corrupt:', result.errors);
 	// Decide: fix it, delete it, or ignore it
 } else {

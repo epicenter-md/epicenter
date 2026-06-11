@@ -1,9 +1,9 @@
 /**
- * UIMessage boundary — serialization and compile-time drift detection.
+ * UIMessage boundary: serialization and compile-time drift detection.
  *
- * Pure functions and type assertions — no Svelte runes.
+ * Pure functions and type assertions: no Svelte runes.
  *
- * @see https://tanstack.com/ai/latest — UIMessage / MessagePart types
+ * @see https://tanstack.com/ai/latest: UIMessage / MessagePart types
  */
 
 import type { MessagePart } from '@tanstack/ai';
@@ -25,7 +25,7 @@ type Equal<X, Y> =
 
 // ── Compile-time drift detection ──────────────────────────────────────
 // If TanStack AI adds, removes, or renames a part type, TypeScript
-// reports a type error here — forcing us to update our understanding.
+// reports a type error here, forcing us to update our understanding.
 
 type ExpectedPartTypes =
 	| 'text'

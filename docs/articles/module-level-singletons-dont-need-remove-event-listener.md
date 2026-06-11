@@ -66,11 +66,11 @@ export const settings = createSettings();
 
 ## Why this works: module-level singletons in SPAs
 
-Both functions are called once at module scope and exported as constants. They're not created inside components that mount and unmount—they're created when the JavaScript module first loads and never again.
+Both functions are called once at module scope and exported as constants. They're not created inside components that mount and unmount. They're created when the JavaScript module first loads and never again.
 
 In a single-page application, module-level code runs exactly once. SvelteKit in SPA mode hydrates the shell once. A Tauri desktop app loads its webview once. A browser extension popup initializes once. The module's lifetime IS the application's lifetime, so the listeners' lifetime should match.
 
-When the user closes the tab, the JavaScript context dies. Every `addEventListener`, every observer callback, every `$state` binding—all gone. The garbage collector doesn't run because there's nothing left to collect. Process exit is the cleanup.
+When the user closes the tab, the JavaScript context dies. Every `addEventListener`, every observer callback, every `$state` binding. All gone. The garbage collector doesn't run because there's nothing left to collect. Process exit is the cleanup.
 
 ## $effect would add ceremony for nothing
 
@@ -85,13 +85,13 @@ $effect(() => {
 });
 ```
 
-But `$effect` can't run at module scope. Svelte 5 throws an `effect_orphan` error—effects must be created during component initialization so Svelte knows when to tear them down. You'd need `$effect.root`, which returns a manual destroy function that you'd have to track and call from... somewhere. There is no "somewhere" for a module singleton. It has no parent component, no unmount hook, no lifecycle to respect.
+But `$effect` can't run at module scope. Svelte 5 throws an `effect_orphan` error. Effects must be created during component initialization so Svelte knows when to tear them down. You'd need `$effect.root`, which returns a manual destroy function that you'd have to track and call from... somewhere. There is no "somewhere" for a module singleton. It has no parent component, no unmount hook, no lifecycle to respect.
 
 `$effect.root` solves the wrong problem. It gives you manual lifecycle control for something that doesn't need lifecycle control.
 
 ## When this breaks
 
-Call these functions inside a component instead of at module scope and you'll leak. Each mount adds listeners that never get removed. Navigate back and forth 50 times, you get 50 storage listeners all firing. For lightweight events like `storage` and `focus`, the dead listeners update dead `$state` bindings that nothing renders—mostly harmless but not clean. For heavier subscriptions like WebSocket connections or CRDT observers, it's a real problem.
+Call these functions inside a component instead of at module scope and you'll leak. Each mount adds listeners that never get removed. Navigate back and forth 50 times, you get 50 storage listeners all firing. For lightweight events like `storage` and `focus`, the dead listeners update dead `$state` bindings that nothing renders. Mostly harmless but not clean. For heavier subscriptions like WebSocket connections or CRDT observers, it's a real problem.
 
 The rule is simple: if the function creates a singleton, call it like one. Module scope, exported as a constant, never inside a component.
 
@@ -99,6 +99,6 @@ The rule is simple: if the function creates a singleton, call it like one. Modul
 
 You lose the ability to tear down individual subscriptions for testing or hot module replacement. In practice, HMR in SvelteKit recreates the module anyway, and Vite's HMR for `.svelte.ts` files does a full module reload that clears the old listeners along with the old module scope. For tests, you'd mock the storage APIs rather than testing listener cleanup.
 
-What you gain is significant: zero lifecycle management code. No `onDestroy` imports, no cleanup functions to track, no `$effect` wrappers around subscriptions that were never going to end. The resulting code reads like what it does—subscribe to changes, update state—without the noise of managing when to stop.
+What you gain is significant: zero lifecycle management code. No `onDestroy` imports, no cleanup functions to track, no `$effect` wrappers around subscriptions that were never going to end. The resulting code reads like what it does. Subscribe to changes, update state. Without the noise of managing when to stop.
 
 For the theoretical foundation (why SPAs make this safe, how it differs from SSR), see [Your SPA Singleton Doesn't Need $effect Cleanup](./your-spa-singleton-doesnt-need-effect-cleanup.md).

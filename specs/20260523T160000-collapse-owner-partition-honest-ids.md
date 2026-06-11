@@ -36,9 +36,9 @@ This is greenfield. No back-compat shims. No "renamed but kept the old export." 
 
 Three artifacts per branded id, each with a clear role:
 
-- `UserId` / `OwnerId` (value) — **arktype validator**. Declared first so it is the single source of truth. Used inside arktype schema definitions and any call site that needs to validate an `unknown` boundary value.
-- `UserId` / `OwnerId` (type) — **branded type alias**. Derived from the validator via `typeof UserId.infer`, so schema and type stay in lockstep under one PascalCase name.
-- `asUserId` / `asOwnerId` — **shorthand cast helper**. Takes a known `string` and returns the brand. The only place `as UserId` appears in the codebase; replaces scattered raw casts at trusted internal call sites.
+- `UserId` / `OwnerId` (value): **arktype validator**. Declared first so it is the single source of truth. Used inside arktype schema definitions and any call site that needs to validate an `unknown` boundary value.
+- `UserId` / `OwnerId` (type): **branded type alias**. Derived from the validator via `typeof UserId.infer`, so schema and type stay in lockstep under one PascalCase name.
+- `asUserId` / `asOwnerId`: **shorthand cast helper**. Takes a known `string` and returns the brand. The only place `as UserId` appears in the codebase; replaces scattered raw casts at trusted internal call sites.
 
 ```ts
 // packages/auth/src/ids.ts
@@ -75,11 +75,11 @@ export type ApiSessionResponse = typeof ApiSessionResponse.infer;
 Trusted internal call sites use the `as*` shorthand:
 
 ```ts
-// PREFERRED — explicit, searchable, takes string and returns brand
+// PREFERRED: explicit, searchable, takes string and returns brand
 const ownerId = asOwnerId(c.var.user.id);
 const userId  = asUserId(rawUserId);
 
-// AVOID — silent cast, harder to grep
+// AVOID: silent cast, harder to grep
 const ownerId = c.var.user.id as OwnerId;
 ```
 
@@ -100,7 +100,7 @@ Why the `as*` helper alongside the arktype callable: the arktype callable's sign
 Generator helpers stay as bare casts because they're producing fresh values from trusted sources, not lifting external strings:
 
 ```ts
-// fine — internal generator
+// fine: internal generator
 export const generateOwnerId = (): OwnerId => generateId() as OwnerId;
 ```
 
@@ -258,7 +258,7 @@ TYPE / IDENTIFIER RENAMES (HKDF salt/info bytes UNCHANGED):
   subjectKeyringsEqual    ->  keyringsEqual
 ```
 
-The `subject` vocabulary disappears from `@epicenter/encryption`. The deriver still takes a `label: string` argument; it is the caller's job to pass `ownerId` as the label. The encryption package has no concept of "owner" or "subject" — it derives keys from a label string and a root keyring.
+The `subject` vocabulary disappears from `@epicenter/encryption`. The deriver still takes a `label: string` argument; it is the caller's job to pass `ownerId` as the label. The encryption package has no concept of "owner" or "subject". It derives keys from a label string and a root keyring.
 
 ### 2.9 `ServerOptions` field
 
@@ -276,7 +276,7 @@ const s = createServer({ mode: 'personal', signUpPolicy: 'open' });
 
 ## 3. Files changed, by phase
 
-### Phase 1 — Foundational types (sequential, one agent)
+### Phase 1: Foundational types (sequential, one agent)
 
 `@epicenter/encryption` and `@epicenter/auth` must compile and pass tests at the new shape before anything else moves.
 
@@ -293,7 +293,7 @@ packages/encryption/src/
   crypto.test.ts           rename all identifiers; assertions unchanged
 
 packages/auth/src/
-  ids.ts                   NEW — UserId, OwnerId, OwnershipMode brands
+  ids.ts                   NEW: UserId, OwnerId, OwnershipMode brands
   owner.ts                 DELETED (Owner type + ownerId() helper)
   auth-types.ts            rewrite ApiSessionResponse + PersistedAuth
                            per §2.2, §2.3; AuthUser unchanged shape
@@ -322,16 +322,16 @@ bun run --filter @epicenter/auth test
 
 Commit at the end of phase 1: "refactor(auth,encryption)!: collapse Owner partition into branded OwnerId + OwnershipMode".
 
-### Phase 2 — Parallel consumers (4 agents)
+### Phase 2: Parallel consumers (4 agents)
 
 All four depend on phase 1 finishing. They do not touch each other's files. They DO NOT commit; the orchestrator commits the union after they all return and the monorepo typechecks.
 
-**Agent 2A — `@epicenter/server`** (paths, routes, middleware)
+**Agent 2A: `@epicenter/server`** (paths, routes, middleware)
 
 ```text
 packages/server/src/
   types.ts                 ownerKind: OwnerKind -> mode: OwnershipMode
-  owner.ts                 collapse per §2.4 — single helpers, single
+  owner.ts                 collapse per §2.4: single helpers, single
                            template types; no ternaries
   create-server.ts         pass `mode` through; update JSDoc
   base-app.ts              c.json mode response uses opts.mode
@@ -361,7 +361,7 @@ bun run --filter @epicenter/server typecheck
 bun run --filter @epicenter/server test
 ```
 
-**Agent B — `@epicenter/workspace`** (transport, local key, derive)
+**Agent B: `@epicenter/workspace`** (transport, local key, derive)
 
 ```text
 packages/workspace/src/document/
@@ -401,11 +401,11 @@ bun run --filter @epicenter/workspace typecheck
 bun run --filter @epicenter/workspace test
 ```
 
-**Agent 2C — `@epicenter/auth-svelte`** (svelte re-exports)
+**Agent 2C: `@epicenter/auth-svelte`** (svelte re-exports)
 
 ```text
 packages/auth-svelte/src/
-  index.ts                 update re-exports — drop ownerId, Owner;
+  index.ts                 update re-exports: drop ownerId, Owner;
                            add UserId, OwnerId, OwnershipMode
   create-auth.svelte.ts    update Owner references; new session shape
 ```
@@ -416,7 +416,7 @@ Verification:
 bun run --filter @epicenter/auth-svelte typecheck
 ```
 
-**Agent 2D — `@epicenter/svelte-utils`** (session helpers)
+**Agent 2D: `@epicenter/svelte-utils`** (session helpers)
 
 ```text
 packages/svelte-utils/src/
@@ -433,11 +433,11 @@ bun run --filter @epicenter/svelte-utils test
 
 After all four phase-2 agents return, the orchestrator commits with: "refactor(server,workspace,svelte)!: uniform owners/:ownerId/ paths and consume branded ids".
 
-### Phase 3 — Parallel apps (8 agents)
+### Phase 3: Parallel apps (8 agents)
 
 Each phase-3 agent owns ONE app or one closely-related grouping. They do not commit; the orchestrator commits the union after all return and the monorepo typechecks.
 
-**Agent 3D — `apps/api`**
+**Agent 3D: `apps/api`**
 
 ```text
 apps/api/src/index.ts      createServer({ mode: 'personal', ... });
@@ -446,7 +446,7 @@ apps/api/src/index.ts      createServer({ mode: 'personal', ... });
 
 Verification: `bun run --filter api typecheck`
 
-**Agent 3E — `packages/cli`**
+**Agent 3E: `packages/cli`**
 
 ```text
 packages/cli/src/commands/up.ts
@@ -458,7 +458,7 @@ packages/cli/test/e2e-up-cross-peer.test.ts
 
 Verification: `bun run --filter @epicenter/cli typecheck` and `bun run --filter @epicenter/cli test`
 
-**Agent 3F — `apps/dashboard` + `apps/zhongwen`** (single auth file each)
+**Agent 3F: `apps/dashboard` + `apps/zhongwen`** (single auth file each)
 
 ```text
 apps/dashboard/src/lib/platform/auth/auth.ts
@@ -467,7 +467,7 @@ apps/zhongwen/src/lib/platform/auth/auth.ts
 
 Verification: `bun run --filter dashboard typecheck` and `bun run --filter zhongwen typecheck`
 
-**Agent 3G — `apps/fuji`**
+**Agent 3G: `apps/fuji`**
 
 ```text
 apps/fuji/src/lib/auth.ts
@@ -476,7 +476,7 @@ apps/fuji/workspace.test.ts
 
 Verification: `bun run --filter fuji typecheck` and the workspace test.
 
-**Agent 3H — `apps/honeycrisp`**
+**Agent 3H: `apps/honeycrisp`**
 
 ```text
 apps/honeycrisp/src/lib/platform/auth/auth.ts
@@ -485,7 +485,7 @@ apps/honeycrisp/workspace.test.ts
 
 Verification: `bun run --filter honeycrisp typecheck` and the workspace test.
 
-**Agent 3I — `apps/opensidian`**
+**Agent 3I: `apps/opensidian`**
 
 ```text
 apps/opensidian/src/lib/platform/auth/auth.ts
@@ -494,7 +494,7 @@ apps/opensidian/src/lib/chat/chat-state.svelte.ts
 
 Verification: `bun run --filter opensidian typecheck`.
 
-**Agent 3J — `apps/tab-manager`**
+**Agent 3J: `apps/tab-manager`**
 
 ```text
 apps/tab-manager/src/lib/session.svelte.ts
@@ -503,7 +503,7 @@ apps/tab-manager/src/lib/chat/chat-state.svelte.ts
 
 Verification: `bun run --filter tab-manager typecheck`.
 
-**Agent 3K — examples + playground**
+**Agent 3K: examples + playground**
 
 ```text
 examples/notes-cross-peer/notes.ts
@@ -575,7 +575,7 @@ What does ownerId equal?                  personal: equals userId (bytes)
                                           team: literal 'team'
 
 Why not bare 'team' as a sentinel         Because two team deployments are
-inside an otherwise opaque id?            two deployments — origin already
+inside an otherwise opaque id?            two deployments: origin already
                                           disambiguates. The literal 'team'
                                           is a constant partition key with
                                           zero config surface.
@@ -583,31 +583,31 @@ inside an otherwise opaque id?            two deployments — origin already
 Why path segment 'owners/' not 'users/'?  'users/team' would lie. 'owners/'
                                           is honest in both modes.
 
-Should ownerId be branded?                YES — matches codebase pattern
+Should ownerId be branded?                YES: matches codebase pattern
                                           (every workspace ID is branded
                                           today). UserId + OwnerId are the
                                           most bug-prone pair (equal bytes
                                           in one mode, diverge in the other).
 
-Should email be in PersistedAuth?         NO — PII at rest, goes stale, and
+Should email be in PersistedAuth?         NO: PII at rest, goes stale, and
                                           the existing cell deliberately
                                           omits profile data. The boot
                                           manifest stays minimal.
 
-Should we migrate existing local data?    NO — accept inaccessibility.
+Should we migrate existing local data?    NO: accept inaccessibility.
                                           Greenfield. Wipe-and-resync.
 
-Does HKDF label change?                   NO — label bytes equal ownerId,
+Does HKDF label change?                   NO: label bytes equal ownerId,
                                           which in personal mode equals
                                           userId (today's label) and in
                                           team mode equals 'team' (today's
                                           label). Existing keyrings decrypt.
 
-Does the subject vocabulary survive?      NO — fully removed from
+Does the subject vocabulary survive?      NO: fully removed from
                                           @epicenter/encryption. The package
                                           knows only "label" + "keyring".
 
-Synthetic-user pattern in machine-auth?   DELETED — persisted cell carries
+Synthetic-user pattern in machine-auth?   DELETED: persisted cell carries
                                           userId explicitly; the daemon
                                           reads it directly.
 ```
@@ -641,7 +641,7 @@ Each phase ends with a typecheck + test command shown above. The next phase does
 
 - Each phase-2 agent owns a non-overlapping file set listed in §3 phase 2.
 - Phase-2 agents may not modify `packages/auth`, `packages/encryption`, or each other's files.
-- Phase-2 agents may IMPORT from the updated `@epicenter/auth` and `@epicenter/encryption` packages — those are stable contract-wise after phase 1.
+- Phase-2 agents may IMPORT from the updated `@epicenter/auth` and `@epicenter/encryption` packages: those are stable contract-wise after phase 1.
 - Phase-3 agents may not modify package source; only app source.
 
 ### 5.5 Post-implementation review
@@ -651,7 +651,7 @@ After phase 3, load `post-implementation-review` per AGENTS.md and walk every to
 - Zero remaining `owner.kind` references anywhere (grep). **Confirmed 2026-05-24** (0 matches).
 - Zero remaining `SubjectKeyring` / `deriveSubjectKeyring` / `subjectKey` references (grep). **Confirmed 2026-05-24** (0 matches).
 - Zero remaining `users/:userId` URL patterns in server routes (grep). **Confirmed 2026-05-24** (0 matches in `packages/server`, `apps/api`).
-- All `OwnerId` cast sites are at boundaries (session route, machine-auth deserialization, arktype boundaries) — not scattered through business logic.
+- All `OwnerId` cast sites are at boundaries (session route, machine-auth deserialization, arktype boundaries): not scattered through business logic.
 - Doc files: `packages/workspace/SYNC_ARCHITECTURE.md`, `packages/workspace/README.md`, `packages/workspace/src/document/README.md` updated to reference the new shape.
 
 ## 6. Out of scope

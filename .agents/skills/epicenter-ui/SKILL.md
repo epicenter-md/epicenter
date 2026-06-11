@@ -23,6 +23,12 @@ Related skills:
 - [TanStack Table](https://github.com/TanStack/table): headless table state, not table empty UI
 - [Autumn](https://github.com/useautumn/autumn): billing and usage UI contexts where pending, progress, and empty states matter
 
+## Upstream Grounding
+
+When local `@epicenter/ui` behavior depends on shadcn-svelte component structure, Bits UI composition, snippets, bindable props, or wrapper APIs, use source-backed grounding before relying on memory. If DeepWiki MCP is available, ask a narrow question against `huntabyte/shadcn-svelte`; for extras components, ask against `ieedan/shadcn-svelte-extras`; for table state behavior, ask against `TanStack/table`; for billing UI nouns or usage-state semantics, ask against `useautumn/autumn`. If DeepWiki is unavailable or the repo is not indexed, use upstream source or official docs directly. Treat DeepWiki as orientation, then verify decisive details against local wrappers, installed types, source, or official docs before changing code.
+
+Skip DeepWiki for local loading, empty, pending, and tooltip conventions already documented below.
+
 ## Loading State Choice
 
 Pick the component by what the user is waiting for:

@@ -23,7 +23,7 @@ const tables1 = doc.getMap('tables');
 // Second call: returns the SAME map
 const tables2 = doc.getMap('tables');
 
-console.log(tables1 === tables2); // true — same instance
+console.log(tables1 === tables2); // true: same instance
 ```
 
 The map is created on first access and returned on subsequent access. It's a get-or-create pattern, but more importantly, it's tied to the document's identity.
@@ -61,7 +61,7 @@ const tables = doc.getMap('tables');
 const posts = tables.get('posts');
 
 if (posts === undefined) {
-	// The key doesn't exist — nothing was created
+	// The key doesn't exist: nothing was created
 }
 ```
 
@@ -99,7 +99,7 @@ AFTER SYNC: ONE of these Y.Maps wins.
             The other is completely discarded.
 ```
 
-This is the "nested Y.Map trap" in action. Two different Y.Map instances are competing for the same key. Yjs picks one deterministically. The losing one—and all its contents—is gone.
+This is the "nested Y.Map trap" in action. Two different Y.Map instances are competing for the same key. Yjs picks one deterministically. The losing one, and all its contents, is gone.
 
 ## The Method Name Confusion
 
@@ -133,7 +133,7 @@ From [Yjs INTERNALS.md](https://github.com/yjs/yjs/blob/main/INTERNALS.md), root
 
 > Each item inserted in a Yjs document is given a unique ID, formed from an ID(clientID, clock) pair.
 
-But root-level types don't follow this pattern. They're identified by their string name, not by client operations. When Client A creates `doc.getMap('tables')` and Client B creates `doc.getMap('tables')`, they're both referring to the same conceptual object—"the tables map for this document."
+But root-level types don't follow this pattern. They're identified by their string name, not by client operations. When Client A creates `doc.getMap('tables')` and Client B creates `doc.getMap('tables')`, they're both referring to the same conceptual object: "the tables map for this document."
 
 Nested Y.Maps, by contrast, are regular items with client-specific IDs. When two clients create `new Y.Map()` and assign it to the same key, they've created two different items with two different IDs competing for one slot.
 
@@ -213,23 +213,23 @@ Y.applyUpdate(docB, Y.encodeStateAsUpdate(docA));
 
 // Check results
 console.log('Root-level keys:', [...tablesA.keys()]);
-// → ["fromA", "fromB", "posts"] — MERGED!
+// → ["fromA", "fromB", "posts"]: MERGED!
 
 console.log(
 	'Nested Y.Map data:',
 	(tablesA.get('posts') as Y.Map<string>).get('data'),
 );
-// → Either "Alice's posts" OR "Bob's posts" — ONE WINS, other is GONE
+// → Either "Alice's posts" OR "Bob's posts": ONE WINS, other is GONE
 ```
 
-Run it a few times. The root-level keys always merge. The nested Y.Map is always one or the other—never both.
+Run it a few times. The root-level keys always merge. The nested Y.Map is always one or the other. Never both.
 
 ## Summary
 
 1. **`doc.getMap('name')`** is a get-or-create singleton identified by name
 2. **`ymap.get('key')`** is a standard lookup that returns undefined if missing
 3. Root-level shared types merge across clients
-4. Nested shared types compete for map keys—one wins, others are lost
+4. Nested shared types compete for map keys. One wins, others are lost
 5. The similar naming (`get*` vs `.get()`) obscures this fundamental difference
 
 Understanding this distinction is the key to structuring Yjs documents safely.
@@ -238,6 +238,6 @@ Understanding this distinction is the key to structuring Yjs documents safely.
 
 _See also:_
 
-- [The Nested Y.Map Trap](./yjs-nested-maps-lww-trap.md) — Full deep-dive on the collision problem
-- [The Curious Case of `.get()` in Yjs](./yjs-get-naming-quirk.md) — Original observation about the naming quirk
-- [Yjs INTERNALS.md](https://github.com/yjs/yjs/blob/main/INTERNALS.md) — How Yjs identifies and stores items
+- [The Nested Y.Map Trap](./yjs-nested-maps-lww-trap.md): Full deep-dive on the collision problem
+- [The Curious Case of `.get()` in Yjs](./yjs-get-naming-quirk.md): Original observation about the naming quirk
+- [Yjs INTERNALS.md](https://github.com/yjs/yjs/blob/main/INTERNALS.md): How Yjs identifies and stores items

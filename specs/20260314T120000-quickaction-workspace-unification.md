@@ -15,7 +15,7 @@ Extract pure tab-analysis helpers from QuickActions so both the command palette 
 `quick-actions.ts` contains 5 actions with embedded logic that reads directly from `browserState`:
 
 ```typescript
-// quick-actions.ts — logic is coupled to browserState
+// quick-actions.ts: logic is coupled to browserState
 function findDuplicates(): Map<string, { tabId: TabCompositeId; title: string }[]> {
     for (const window of browserState.windows) {
         for (const tab of browserState.tabsByWindow(window.id)) {
@@ -37,7 +37,7 @@ Workspace actions (`workspace.ts`) have atomic CRUD operations (`tabs.close`, `t
 This creates problems:
 
 1. **Logic duplication risk**: If workspace actions ever need dedup/grouping logic, it would be reimplemented
-2. **Untestable helpers**: `findDuplicates` and `getUniqueDomains` are coupled to `browserState`—can't unit test without mocking the whole reactive store
+2. **Untestable helpers**: `findDuplicates` and `getUniqueDomains` are coupled to `browserState`: can't unit test without mocking the whole reactive store
 3. **Low-value actions clutter the palette**: Sort, Save All, and Close by Domain are rarely useful
 
 ### Desired State
@@ -87,14 +87,14 @@ tab-helpers.ts (pure logic, zero dependencies)
 
 - [x] **1.1** Create `$lib/utils/tab-helpers.ts`
 - [x] **1.2** Move `normalizeUrl` as-is (already pure)
-- [x] **1.3** Extract `findDuplicateGroups<T>(tabs: T[])` — generic over any tab-like object with `id` and `url`
-- [x] **1.4** Extract `groupTabsByDomain<T>(tabs: T[])` — generic, uses `getDomain` from existing utils
+- [x] **1.3** Extract `findDuplicateGroups<T>(tabs: T[])`: generic over any tab-like object with `id` and `url`
+- [x] **1.4** Extract `groupTabsByDomain<T>(tabs: T[])`: generic, uses `getDomain` from existing utils
 
 ### Phase 2: Add workspace actions
 
-- [x] **2.1** Add `tabs.findDuplicates` query to `.withActions()` in workspace.ts — calls `findDuplicateGroups(tables.tabs.getAllValid())`
-- [x] **2.2** Add `tabs.dedup` mutation (destructive) — finds duplicates, closes all but first per group
-- [x] **2.3** Add `tabs.groupByDomain` mutation — groups all tabs by domain for domains with 2+ tabs
+- [x] **2.1** Add `tabs.findDuplicates` query to `.withActions()` in workspace.ts: calls `findDuplicateGroups(tables.tabs.getAllValid())`
+- [x] **2.2** Add `tabs.dedup` mutation (destructive): finds duplicates, closes all but first per group
+- [x] **2.3** Add `tabs.groupByDomain` mutation: groups all tabs by domain for domains with 2+ tabs
 
 ### Phase 3: Slim QuickActions
 
@@ -140,11 +140,11 @@ tab-helpers.ts (pure logic, zero dependencies)
 
 ## References
 
-- `apps/tab-manager/src/lib/quick-actions.ts` — current QuickActions (will be slimmed)
-- `apps/tab-manager/src/lib/workspace.ts` — workspace actions (will gain 3 new actions)
-- `apps/tab-manager/src/lib/utils/format.ts` — existing `getDomain` helper
-- `apps/tab-manager/src/lib/components/CommandPalette.svelte` — QuickAction consumer
-- `packages/workspace/src/shared/actions.ts` — `defineQuery`/`defineMutation` API
+- `apps/tab-manager/src/lib/quick-actions.ts`: current QuickActions (will be slimmed)
+- `apps/tab-manager/src/lib/workspace.ts`: workspace actions (will gain 3 new actions)
+- `apps/tab-manager/src/lib/utils/format.ts`: existing `getDomain` helper
+- `apps/tab-manager/src/lib/components/CommandPalette.svelte`: QuickAction consumer
+- `packages/workspace/src/shared/actions.ts`: `defineQuery`/`defineMutation` API
 
 ## Review
 
@@ -162,6 +162,6 @@ Extracted 3 pure tab-analysis helpers (`normalizeUrl`, `findDuplicateGroups`, `g
 
 ### Files Changed
 
-- `apps/tab-manager/src/lib/utils/tab-helpers.ts` — **new** (128 lines)
-- `apps/tab-manager/src/lib/workspace.ts` — added import + 3 actions (967 → 1058 lines)
-- `apps/tab-manager/src/lib/quick-actions.ts` — slimmed (296 → 138 lines)
+- `apps/tab-manager/src/lib/utils/tab-helpers.ts`: **new** (128 lines)
+- `apps/tab-manager/src/lib/workspace.ts`: added import + 3 actions (967 → 1058 lines)
+- `apps/tab-manager/src/lib/quick-actions.ts`: slimmed (296 → 138 lines)

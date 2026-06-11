@@ -140,6 +140,6 @@ For settings, preferences, and most user-generated content, this trade-off is wo
 
 In CRDT land, internal keys are forever. Treat them like database column names in a schema you can never migrate. Pick them once, keep them stable.
 
-Everything else—the API names, the display labels, the documentation—can change freely. That's just mapping.
+Everything else can change freely: the API names, the display labels, the documentation. That's just mapping.
 
 The data doesn't care what you call it.

@@ -1,6 +1,6 @@
 # Split YjsRoom into WorkspaceRoom + DocumentRoom
 
-**Status:** In Progress — Wave 1 complete
+**Status:** In Progress: Wave 1 complete
 
 **Supersedes:** [20260307T000000-split-yjsroom-workspace-document.md](./20260307T000000-split-yjsroom-workspace-document.md)
 
@@ -15,8 +15,8 @@ Workspace rooms and document rooms have genuinely different requirements:
 | Concern | Workspace | Document |
 |---|---|---|
 | **Content** | Structured metadata (tables, KV, awareness) | Text / rich text |
-| **GC setting** | `gc: true` — keep docs small | `gc: false` — preserve delete history for snapshots |
-| **Version history** | Not needed | Yes — Google Docs-style revisions |
+| **GC setting** | `gc: true`: keep docs small | `gc: false`: preserve delete history for snapshots |
+| **Version history** | Not needed | Yes: Google Docs-style revisions |
 | **Snapshot strategy** | N/A | Lightweight metadata snapshots (~7 bytes to ~1.5KB each) |
 | **Doc size profile** | Small, bounded (~1.5x raw content) | Larger, grows with edit history (2-5x raw content) |
 
@@ -26,7 +26,7 @@ The gc setting is the fundamental divergence. Everything else follows from it.
 
 ### Lightweight metadata snapshots are absurdly cheap
 
-`Y.snapshot(doc)` returns a state vector + delete set — pure metadata, no content. Measured sizes:
+`Y.snapshot(doc)` returns a state vector + delete set: pure metadata, no content. Measured sizes:
 
 | Scenario | Snapshot size |
 |---|---|
@@ -40,7 +40,7 @@ The gc setting is the fundamental divergence. Everything else follows from it.
 
 ### The `gc: true` full-snapshot alternative is far more expensive
 
-With `gc: true`, version history requires `Y.encodeStateAsUpdateV2(doc)` per snapshot — the full document state, ~160 KB for a substantial doc. 100 versions = ~16 MB. Large documents could exceed the 2 MB per-row BLOB limit, requiring R2 overflow. With `gc: false` metadata snapshots, you store the history once in the live doc and snapshots are just bookmarks into it.
+With `gc: true`, version history requires `Y.encodeStateAsUpdateV2(doc)` per snapshot. The full document state, ~160 KB for a substantial doc. 100 versions = ~16 MB. Large documents could exceed the 2 MB per-row BLOB limit, requiring R2 overflow. With `gc: false` metadata snapshots, you store the history once in the live doc and snapshots are just bookmarks into it.
 
 ### Update compaction is fully compatible with `gc: false`
 
@@ -50,7 +50,7 @@ The existing cold-start compaction logic works unchanged for `DocumentRoom`. The
 
 ### `gc: false` growth is your version history
 
-The "unbounded growth" concern with `gc: false` is real — the doc retains deleted item structures (content cleared, structure preserved), growing 2-5x the raw content size for heavily-edited documents. But this IS the version history. With `gc: true`, you'd store equivalent data redundantly across N full snapshots. The `gc: false` approach pays once; the `gc: true` approach pays N times.
+The "unbounded growth" concern with `gc: false` is real. The doc retains deleted item structures (content cleared, structure preserved), growing 2-5x the raw content size for heavily-edited documents. But this IS the version history. With `gc: true`, you'd store equivalent data redundantly across N full snapshots. The `gc: false` approach pays once; the `gc: true` approach pays N times.
 
 ## Architecture
 
@@ -71,7 +71,7 @@ Both classes share identical:
 
 Extract the shared foundation into a base class or composition helper. Both DO classes delegate to it.
 
-**Option A — Base class:**
+**Option A: Base class:**
 ```typescript
 // base-room.ts
 export class BaseYjsRoom extends DurableObject {
@@ -91,10 +91,10 @@ export class DocumentRoom extends BaseYjsRoom {
 }
 ```
 
-**Option B — Composition (factory helpers):**
+**Option B: Composition (factory helpers):**
 Extract `initYjsDoc`, `handleSync`, `handleWsLifecycle` as standalone functions. Each DO class calls them in its constructor and methods. More flexible, less coupled.
 
-Prefer Option A for simplicity — the shared surface is large enough that a base class avoids duplication without overcomplicating things. Option B is better if the classes diverge significantly later.
+Prefer Option A for simplicity. The shared surface is large enough that a base class avoids duplication without overcomplicating things. Option B is better if the classes diverge significantly later.
 
 ### SQLite schema
 
@@ -161,7 +161,7 @@ async restoreSnapshot(snapshotId: number): Promise<boolean> {
   // Save a "before restore" snapshot for undo
   await this.saveSnapshot('Before restore');
 
-  // Apply the past state — Yjs merge semantics handle this correctly
+  // Apply the past state: Yjs merge semantics handle this correctly
   Y.applyUpdateV2(this.doc, past, 'restore');
   return true;
 }
@@ -171,8 +171,8 @@ async restoreSnapshot(snapshotId: number): Promise<boolean> {
 
 Save snapshots automatically at natural quiescence points:
 
-1. **On last client disconnect** — when the last WebSocket closes, save an auto-snapshot.
-2. **On alarm** (optional, Phase 2) — periodic snapshots via DO alarms for long editing sessions. Configure interval per use case (e.g., every 10 minutes of activity).
+1. **On last client disconnect**: when the last WebSocket closes, save an auto-snapshot.
+2. **On alarm** (optional, Phase 2): periodic snapshots via DO alarms for long editing sessions. Configure interval per use case (e.g., every 10 minutes of activity).
 
 The disconnect trigger is simplest and covers the common case: user edits, closes tab, snapshot is saved. Alarms add periodic safety for marathon sessions.
 
@@ -212,7 +212,7 @@ Keep `/rooms/:room` as a temporary alias for `/workspaces/:room` during the clie
 ]
 ```
 
-`renamed_classes` preserves all existing YjsRoom instance data. Existing workspace rooms continue working seamlessly. Existing document data that was stored in YjsRoom instances becomes orphaned in WorkspaceRoom — it won't be accessed by new clients (they'll connect to DocumentRoom), and Cloudflare auto-evicts inactive DOs.
+`renamed_classes` preserves all existing YjsRoom instance data. Existing workspace rooms continue working seamlessly. Existing document data that was stored in YjsRoom instances becomes orphaned in WorkspaceRoom. It won't be accessed by new clients (they'll connect to DocumentRoom), and Cloudflare auto-evicts inactive DOs.
 
 ### Client changes
 
@@ -226,7 +226,7 @@ createSyncExtension({ baseUrl: `${API_URL}/workspaces` })
 createSyncExtension({ baseUrl: `${API_URL}/documents` })
 ```
 
-The client already distinguishes workspace vs document Y.Docs at the extension layer — workspace extensions run on the workspace Y.Doc, document extensions run on content Y.Docs via `withDocumentExtension()`. The URL change slots in naturally.
+The client already distinguishes workspace vs document Y.Docs at the extension layer: workspace extensions run on the workspace Y.Doc, document extensions run on content Y.Docs via `withDocumentExtension()`. The URL change slots in naturally.
 
 ### Client document `gc: false` alignment
 
@@ -234,7 +234,7 @@ The client already creates content Y.Docs with `gc: false` (`create-document.ts`
 
 ## Implementation plan
 
-### Wave 1 — Extract base, split classes (server only)
+### Wave 1: Extract base, split classes (server only)
 
 - [x] **1.1** Create `base-room.ts` with the shared YjsRoom foundation, parameterized by `{ gc: boolean }`
   > Added `onInit()` and `onLastDisconnect()` hooks for subclass customization.
@@ -247,13 +247,13 @@ The client already creates content Y.Docs with `gc: false` (`create-document.ts`
 - [x] **1.7** Re-export both classes from `app.ts` for wrangler types
 - [x] **1.8** Delete `yjs-room.ts`
 
-### Wave 2 — Client routing
+### Wave 2: Client routing
 
 1. Update sync extension to accept room type (workspace vs document)
 2. Wire workspace extensions to `/workspaces/` and document extensions to `/documents/`
 3. Remove `/rooms/:room` alias after client rollout
 
-### Wave 3 — Snapshot UI (future, not in scope)
+### Wave 3: Snapshot UI (future, not in scope)
 
 1. Auto-snapshot on last disconnect
 2. Snapshot list/restore UI in the editor
@@ -287,13 +287,13 @@ See `docs/articles/user-owned-rooms-not-org-scoped.md` for the full analysis.
 ## Risks and mitigations
 
 **Risk: `gc: false` docs grow large for heavily-edited documents.**
-Mitigation: The growth IS the version history — you'd store equivalent data as full snapshots under `gc: true`. For pathological cases (multi-MB docs), the segmented compaction note in the existing codebase applies. Monitor doc sizes in production.
+Mitigation: The growth IS the version history. You'd store equivalent data as full snapshots under `gc: true`. For pathological cases (multi-MB docs), the segmented compaction note in the existing codebase applies. Monitor doc sizes in production.
 
 **Risk: Compacted blob exceeds 2 MB for `gc: false` docs.**
 Mitigation: Unlikely for practical content documents. A 2 MB Yjs blob represents enormous text with extensive edit history. If hit, the existing skip-compaction fallback works (individual update rows are small). Segmented compaction is the YAGNI escape hatch.
 
 **Risk: Old document data orphaned in WorkspaceRoom after migration.**
-Mitigation: Clients will create new DocumentRoom instances on first connect. Old WorkspaceRoom instances are auto-evicted by Cloudflare after extended inactivity. No manual cleanup needed. No data loss — the client's IndexedDB has a full copy.
+Mitigation: Clients will create new DocumentRoom instances on first connect. Old WorkspaceRoom instances are auto-evicted by Cloudflare after extended inactivity. No manual cleanup needed. No data loss. The client's IndexedDB has a full copy.
 
 **Risk: `Y.createDocFromSnapshot` performance on large `gc: false` docs.**
-Mitigation: It iterates the struct store up to the snapshot's state vector — O(N) in number of structs. For a 500 KB doc, this is fast (milliseconds). Profile if docs approach multi-MB territory.
+Mitigation: It iterates the struct store up to the snapshot's state vector: O(N) in number of structs. For a 500 KB doc, this is fast (milliseconds). Profile if docs approach multi-MB territory.

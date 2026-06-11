@@ -101,9 +101,9 @@ The internal YJS structure is **separated by change frequency**, not co-located.
 
 **Why this matters:**
 
-- Observers attach directly to the heat — `tables.get('posts').observeDeep()` only fires for row/cell changes
-- No filtering needed — you don't get schema changes mixed into data observers
-- Different debounce strategies — sync definitions every 5s, sync rows every 100ms
+- Observers attach directly to the heat: `tables.get('posts').observeDeep()` only fires for row/cell changes
+- No filtering needed: you don't get schema changes mixed into data observers
+- Different debounce strategies: sync definitions every 5s, sync rows every 100ms
 
 **But the API hides this!** Developers see a unified, ergonomic interface.
 
@@ -226,11 +226,11 @@ function createTableHelper(tableId: string) {
 
 ### Benefits of This Approach
 
-1. **API ergonomics** — Developers see one unified table helper
-2. **Clean observation** — Observers attach to exactly what they need
-3. **No filtering** — `observeRows` only fires for rows, never for schema
-4. **Atomic operations** — Still one Y.Doc, so `transact()` works across both trees
-5. **Different debounce strategies** — Sync definitions slowly, sync rows quickly
+1. **API ergonomics**: Developers see one unified table helper
+2. **Clean observation**: Observers attach to exactly what they need
+3. **No filtering**: `observeRows` only fires for rows, never for schema
+4. **Atomic operations**: Still one Y.Doc, so `transact()` works across both trees
+5. **Different debounce strategies**: Sync definitions slowly, sync rows quickly
 
 ---
 
@@ -327,9 +327,9 @@ doc.getMap('kv'); // Warm: values only
 
 **Why three maps:**
 
-- **Maps to file output** — Each map becomes one file
-- **Maps to change frequency** — Cold, warm, hot zones
-- **Clean observation boundaries** — No filtering needed
+- **Maps to file output**: Each map becomes one file
+- **Maps to change frequency**: Cold, warm, hot zones
+- **Clean observation boundaries**: No filtering needed
 
 ### 2. Definitions Separated from Data
 
@@ -346,9 +346,9 @@ const rows = doc.getMap('tables').get(tableId);
 
 **Why separate:**
 
-- **Observation alignment** — Attach observers to exactly what you need
-- **Change frequency** — Definitions change rarely, rows change constantly
-- **Debounce strategies** — Sync definitions every 5s, sync rows every 100ms
+- **Observation alignment**: Attach observers to exactly what you need
+- **Change frequency**: Definitions change rarely, rows change constantly
+- **Debounce strategies**: Sync definitions every 5s, sync rows every 100ms
 
 ### 3. KV Split: Definition vs Value
 
@@ -401,7 +401,7 @@ The developer doesn't need to know about the internal separation.
 
 ## Icon Storage
 
-Icons are stored as **tagged strings** throughout the system—no encoding/decoding needed:
+Icons are stored as **tagged strings** throughout the system. No encoding/decoding needed:
 
 ```typescript
 // Tagged string format: "{type}:{value}"
@@ -415,7 +415,7 @@ const urlIcon: Icon = 'url:https://example.com/icon.png';
 
 **Why tagged strings everywhere:**
 
-1. **LWW-safe**: If icon were `{ type: 'emoji', value: '📝' }` as nested Y.Map, concurrent edits could create invalid states (e.g., `{ type: 'emoji', value: 'file-text' }`). With tagged strings, LWW produces a valid icon—one wins, but it's always coherent.
+1. **LWW-safe**: If icon were `{ type: 'emoji', value: '📝' }` as nested Y.Map, concurrent edits could create invalid states (e.g., `{ type: 'emoji', value: 'file-text' }`). With tagged strings, LWW produces a valid icon. One wins, but it's always coherent.
 
 2. **No transformation layer**: The value in YJS is the same as the value in TypeScript. No encode/decode functions to maintain.
 
@@ -429,8 +429,8 @@ const urlIcon: Icon = 'url:https://example.com/icon.png';
 4. **Easy parsing when needed**: Simple string split for rendering:
    ```typescript
    const [type, value] = icon.split(':') as [
-   	'emoji' | 'lucide' | 'url',
-   	string,
+	'emoji' | 'lucide' | 'url',
+	string,
    ];
    ```
 
@@ -540,7 +540,7 @@ All definitions in one human-readable file:
 
 ### tables.sqlite
 
-Row data only—one SQLite table per YJS table:
+Row data only. One SQLite table per YJS table:
 
 ```sql
 -- tables.sqlite
@@ -561,7 +561,7 @@ CREATE TABLE users (
 
 ### kv.json
 
-KV values only—flat map:
+KV values only. Flat map:
 
 ```json
 {
@@ -617,10 +617,10 @@ async function syncTables() {
 
 **Why this approach:**
 
-1. **Aligned with structure** — Each Y.Map maps to one file
-2. **Different debounce per zone** — Hot data syncs fast, cold data syncs slow
-3. **Simple** — `toJSON()` gives you exactly what you need
-4. **Inspectable** — Can `cat` the JSON files, query SQLite directly
+1. **Aligned with structure**: Each Y.Map maps to one file
+2. **Different debounce per zone**: Hot data syncs fast, cold data syncs slow
+3. **Simple**: `toJSON()` gives you exactly what you need
+4. **Inspectable**: Can `cat` the JSON files, query SQLite directly
 
 ---
 

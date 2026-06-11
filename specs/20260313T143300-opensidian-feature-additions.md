@@ -6,7 +6,7 @@
 
 ## Overview
 
-New features for Opensidian that transform it from a filesystem demo into a usable note-taking application. Each feature is scoped independently—they can be built in any order, though some have natural dependencies.
+New features for Opensidian that transform it from a filesystem demo into a usable note-taking application. Each feature is scoped independently. They can be built in any order, though some have natural dependencies.
 
 ## Motivation
 
@@ -21,17 +21,17 @@ Opensidian has the bones of a file manager:
 
 But it lacks features that users expect from any file-based note app:
 
-1. **No open file tabs** — `fsState.openFileIds` tracks open files, but there's no tab bar. Users can only view one file at a time with no way to switch between recently opened files.
-2. **No search** — No way to find files by name or content. The only navigation is manual tree browsing.
-3. **No keyboard tree navigation** — Only Enter/Space work. No arrow keys for up/down/expand/collapse.
-4. **No rich editing** — Plain textarea. No markdown rendering, no syntax highlighting, no formatting.
-5. **No file type awareness** — All files show the same icon regardless of extension.
-6. **No drag-and-drop** — Can't move files/folders by dragging in the tree.
-7. **No sort options** — Tree is always sorted alphabetically by name.
+1. **No open file tabs**: `fsState.openFileIds` tracks open files, but there's no tab bar. Users can only view one file at a time with no way to switch between recently opened files.
+2. **No search**: No way to find files by name or content. The only navigation is manual tree browsing.
+3. **No keyboard tree navigation**: Only Enter/Space work. No arrow keys for up/down/expand/collapse.
+4. **No rich editing**: Plain textarea. No markdown rendering, no syntax highlighting, no formatting.
+5. **No file type awareness**: All files show the same icon regardless of extension.
+6. **No drag-and-drop**: Can't move files/folders by dragging in the tree.
+7. **No sort options**: Tree is always sorted alphabetically by name.
 
 ### Desired State
 
-A note-taking app where users can efficiently navigate large file trees, search across all content, edit markdown with live preview, and reorganize files via drag-and-drop—all built on shadcn-svelte primitives from `@epicenter/ui`.
+A note-taking app where users can efficiently navigate large file trees, search across all content, edit markdown with live preview, and reorganize files via drag-and-drop. All built on shadcn-svelte primitives from `@epicenter/ui`.
 
 ## Feature Catalog
 
@@ -176,7 +176,7 @@ This requires managing a `focusedId` state separate from `activeFileId` (focused
 
 - [x] **1.1** Build `TabBar.svelte` using `Tabs` from `@epicenter/ui/tabs`
 - [x] **1.2** Wire tab state to `fsState.openFileIds` / `fsState.activeFileId`
-- [x] **1.3** Add close button on tabs (dirty indicator removed—no save concept in CRDT-backed storage)
+- [x] **1.3** Add close button on tabs (dirty indicator removed. No save concept in CRDT-backed storage)
 - [x] **1.4** Build `CommandPalette.svelte` using `Command` from `@epicenter/ui/command`
 - [x] **1.5** Implement file-name search (no SQLite dependency)
 - [x] **1.6** Add `Ctrl+K` / `Cmd+K` keyboard shortcut to open palette
@@ -210,7 +210,7 @@ This requires managing a `focusedId` state separate from `activeFileId` (focused
 ### Tab State Persistence
 
 1. User has 5 tabs open, refreshes the page
-2. `fsState.openFileIds` is derived from Yjs state—does it persist?
+2. `fsState.openFileIds` is derived from Yjs state. Does it persist?
 3. If not, tabs reset on reload. Consider storing open tab IDs in workspace KV.
 
 ### Command Palette with Large File Trees
@@ -229,8 +229,8 @@ This requires managing a `focusedId` state separate from `activeFileId` (focused
 ## Open Questions
 
 1. **Should tabs persist across sessions?**
-   - Options: (a) Ephemeral—reset on reload, (b) Persist in workspace KV, (c) Persist in localStorage
-   - **Recommendation**: (b) — workspace KV is already available and persists via Yjs. Store `openFileIds` and `activeFileId` there.
+   - Options: (a) Ephemeral. Reset on reload, (b) Persist in workspace KV, (c) Persist in localStorage
+   - **Recommendation**: (b): workspace KV is already available and persists via Yjs. Store `openFileIds` and `activeFileId` there.
 
 2. **Which rich text editor to use?**
    - Options: (a) CodeMirror 6, (b) TipTap, (c) Milkdown
@@ -238,7 +238,7 @@ This requires managing a `focusedId` state separate from `activeFileId` (focused
 
 3. **Should the command palette support commands beyond search?**
    - Options: (a) Search only, (b) Search + actions (create file, delete, rename, change theme)
-   - **Recommendation**: Start with (a). Add actions later—the Command component supports grouping results, making it easy to add "Actions" sections.
+   - **Recommendation**: Start with (a). Add actions later. The Command component supports grouping results, making it easy to add "Actions" sections.
 
 4. **Should drag-and-drop use native HTML5 or a library?**
    - Native DnD is painful for tree reordering. Libraries like `@formkit/drag-and-drop` or `dnd-kit` (React-first but adaptable) handle edge cases.
@@ -256,13 +256,13 @@ This requires managing a `focusedId` state separate from `activeFileId` (focused
 
 ## References
 
-- `apps/opensidian/src/lib/fs/fs-state.svelte.ts` — existing `openFileIds`, `activeFileId`, `selectFile`, `closeFile`
-- `apps/opensidian/src/lib/components/ContentPanel.svelte` — content area where tabs would go
-- `apps/opensidian/src/lib/components/ContentEditor.svelte` — textarea to replace with rich editor
-- `apps/opensidian/src/lib/components/AppShell.svelte` — top-level layout for command palette
-- `packages/ui/src/tabs/` — Tabs component
-- `packages/ui/src/command/` — Command palette component
-- `packages/filesystem/src/content/content.ts` — content read/write for editor binding
+- `apps/opensidian/src/lib/fs/fs-state.svelte.ts`: existing `openFileIds`, `activeFileId`, `selectFile`, `closeFile`
+- `apps/opensidian/src/lib/components/ContentPanel.svelte`: content area where tabs would go
+- `apps/opensidian/src/lib/components/ContentEditor.svelte`: textarea to replace with rich editor
+- `apps/opensidian/src/lib/components/AppShell.svelte`: top-level layout for command palette
+- `packages/ui/src/tabs/`: Tabs component
+- `packages/ui/src/command/`: Command palette component
+- `packages/filesystem/src/content/content.ts`: content read/write for editor binding
 
 ## Phase 3 Review
 

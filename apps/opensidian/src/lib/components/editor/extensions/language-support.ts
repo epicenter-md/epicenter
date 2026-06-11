@@ -32,7 +32,7 @@ const LANGUAGE_MAP: Record<string, () => LanguageSupport> = {
  * `defaultHighlightStyle` (light). Unknown extensions fall back to
  * markdown since opensidian is primarily a note-taking app.
  *
- * Does NOT include autocompletion—callers add that based on context
+ * Does NOT include autocompletion. Callers add that based on context
  * (code files get `autocompletion()`, markdown gets `wikilinkAutocomplete`).
  *
  * @example

@@ -19,7 +19,7 @@ Every. Single. Time. Check if the property exists. Check if it's an array. Hope 
 
 ## Here's the thing that took me too long to realize
 
-I was treating JSON parsing and validation as two separate steps. Parse first, validate later. But they're not separate concerns—they're the same concern.
+I was treating JSON parsing and validation as two separate steps. Parse first, validate later. But they're not separate concerns. They're the same concern.
 
 Then I found arktype's `string.json.parse`.
 
@@ -97,7 +97,7 @@ The arktype version treats "string containing JSON that should match this shape"
 
 ## The real insight
 
-We don't have "strings" and "JSON objects" and "validated data". We have strings that represent structured data. The transformation from one to the other isn't a side effect—it's part of the type.
+We don't have "strings" and "JSON objects" and "validated data". We have strings that represent structured data. The transformation from one to the other isn't a side effect. It's part of the type.
 
 That's what morphs are. They're not validators that happen to transform data. They're types that include their own transformation logic.
 
@@ -129,12 +129,12 @@ async function autoDetectNgrokUrl() {
   const response = await fetch(`${getProxiedBaseUrl('http://localhost:4040')}/api/tunnels`);
   const text = await response.text();
   const parsed = parseNgrokTunnels(text);
-  
+
   if (parsed instanceof type.errors) {
     toast.error('Invalid ngrok response');
     return;
   }
-  
+
   const httpsUrl = parsed.tunnels.find(t => t.proto === 'https')?.public_url;
   if (httpsUrl) {
     ngrokUrl = httpsUrl;

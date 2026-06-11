@@ -2,7 +2,7 @@
 
 When we started building the slideshow feature for Epicenter, our requirement was simple: take a string of markdown from an LLM and programmatically spit out a presentation. We needed a rendering engine that could live inside a SvelteKit app, run in a serverless function, or even execute entirely in the browser.
 
-I had been following Marp for years. It is the quiet, reliable workhorse of the markdown-to-slides world with 10.4K stars. The other obvious contender was Slidev. With 44K stars and a feature set that makes YouTubers drool—Shiki code highlighting, Vue-powered animations, and "Magic Move" transitions—Slidev is the darling of the modern web.
+I had been following Marp for years. It is the quiet, reliable workhorse of the markdown-to-slides world with 10.4K stars. The other obvious contender was Slidev. With 44K stars and a feature set that makes YouTubers drool. Shiki code highlighting, Vue-powered animations, and "Magic Move" transitions. Slidev is the darling of the modern web.
 
 But when we looked at the code required to actually render a slide, the choice became clear. Marp's entire rendering pipeline is a single function call.
 
@@ -29,11 +29,11 @@ To get from that data to a rendered slide, Slidev relies on a complex web of Vit
 The pipeline comparison looks like this:
 
 ```
-Marp:    markdown string —> marp.render() —> { html, css }
-Slidev:  markdown string —> parser —> data —> Vite plugins —> Vue SFCs —> Vite dev server —> HTML
+Marp:    markdown string -> marp.render() -> { html, css }
+Slidev:  markdown string -> parser -> data -> Vite plugins -> Vue SFCs -> Vite dev server -> HTML
 ```
 
-For a user authoring a presentation locally, Slidev's architecture is a feature; it provides a rich, reactive environment with hot module replacement. But for our use case—where an LLM generates content and the user needs an instant preview—Slidev's requirement for a project directory and a dev server was a dealbreaker. Marp can run in a Lambda or a browser worker; Slidev needs a container.
+For a user authoring a presentation locally, Slidev's architecture is a feature; it provides a rich, reactive environment with hot module replacement. But for our use case. Where an LLM generates content and the user needs an instant preview. Slidev's requirement for a project directory and a dev server was a dealbreaker. Marp can run in a Lambda or a browser worker; Slidev needs a container.
 
 We did have to accept some trade-offs. By choosing Marp, we gave up the high visual ceiling of Slidev. Marp's output is essentially a well-designed PDF. There are no entrance animations or complex transitions. This is a philosophical choice by the Marp team; their maintainer has explicitly stated that "a lot of animated things in the presentation will go against the common principles for creating better slides."
 

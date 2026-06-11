@@ -4,17 +4,17 @@
 **Status**: Superseded
 **Superseded by**: `20260223T102844-remove-key-store-simplify-api-key-resolution.md`
 **Author**: AI-assisted
-**Related**: `20260213T030000-encrypted-api-key-vault.md` (zero-knowledge approach — different tradeoffs), `20260213T005300-encrypted-workspace-storage.md` (value-level Yjs encryption — broader scope)
+**Related**: `20260213T030000-encrypted-api-key-vault.md` (zero-knowledge approach: different tradeoffs), `20260213T005300-encrypted-workspace-storage.md` (value-level Yjs encryption: broader scope)
 
 > **Superseded (2026-02-23)**: This entire spec has been superseded. The encrypted key store, key management REST API (`/api/provider-keys`), and all associated code (`keys/store.ts`, `keys/plugin.ts`, `keys/index.ts`) have been removed. API key resolution is now a synchronous two-step chain: `x-provider-api-key` header → environment variable → 401.
 >
-> **Why**: The encrypted key store was security theater — `master.key` sat in the same directory as `keys.json`, making encryption trivial to bypass with filesystem access. It added ~400 lines of async decryption in the hot path for something `process.env` handles in nanoseconds. Env vars are the standard mechanism for both cloud (hosting provider secrets) and self-hosted (`.env` file) deployments. User-owned BYOK keys belong on the client side (encrypted Yjs workspaces, sent per-request via header), not in a server-side store. See the superseding spec for the full rationale.
+> **Why**: The encrypted key store was security theater: `master.key` sat in the same directory as `keys.json`, making encryption trivial to bypass with filesystem access. It added ~400 lines of async decryption in the hot path for something `process.env` handles in nanoseconds. Env vars are the standard mechanism for both cloud (hosting provider secrets) and self-hosted (`.env` file) deployments. User-owned BYOK keys belong on the client side (encrypted Yjs workspaces, sent per-request via header), not in a server-side store. See the superseding spec for the full rationale.
 >
 > **Path note (2026-05-22):** The `~/.epicenter/server/` storage layout is also stale. Do not copy it into new server, auth, or credential-storage work.
 
 ## Overview
 
-A REST API for managing provider API keys (OpenAI, Anthropic, etc.) on the Epicenter server. Clients store and retrieve keys through HTTP endpoints. The server owns the storage — versioned JSON locally, Postgres in cloud. Same API surface for both deployment targets. No client-side key storage needed.
+A REST API for managing provider API keys (OpenAI, Anthropic, etc.) on the Epicenter server. Clients store and retrieve keys through HTTP endpoints. The server owns the storage: versioned JSON locally, Postgres in cloud. Same API surface for both deployment targets. No client-side key storage needed.
 
 ## Motivation
 
@@ -73,7 +73,7 @@ await fetch(`${serverUrl}/ai/chat`, {
   method: 'POST',
   body: JSON.stringify({ messages: [...], provider: 'openai', model: 'gpt-4o' }),
 });
-// No x-provider-api-key header needed — server already has it
+// No x-provider-api-key header needed: server already has it
 ```
 
 Works identically whether `serverUrl` is `http://localhost:3913` or `https://api.epicenter.so`.
@@ -112,14 +112,14 @@ Two existing specs explored client-side encryption:
 | Decision                          | Choice                                                             | Rationale                                                                                                                                                                                                                                                                                                  |
 | --------------------------------- | ------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Storage location                  | Server-side (not client, not Yjs)                                  | Server needs plaintext keys to call providers. Client-side storage adds a round-trip and scatters secrets.                                                                                                                                                                                                 |
-| Local storage engine              | Versioned JSON file with `Bun.write()` atomic writes               | ~5-10 entries, <2KB total — SQLite is overkill. Full TypeScript type safety. Versioned migration pattern (same as `defineKv`) makes schema evolution trivial. Atomic writes via temp+rename. Easy to inspect (`cat keys.json`). Server config ≠ user data — doesn't belong in workspace Yjs.               |
+| Local storage engine              | Versioned JSON file with `Bun.write()` atomic writes               | ~5-10 entries, <2KB total: SQLite is overkill. Full TypeScript type safety. Versioned migration pattern (same as `defineKv`) makes schema evolution trivial. Atomic writes via temp+rename. Easy to inspect (`cat keys.json`). Server config ≠ user data: doesn't belong in workspace Yjs.               |
 | Cloud storage engine              | Postgres (via existing Better Auth DB)                             | Standard. Per-user rows. Already in the cloud stack.                                                                                                                                                                                                                                                       |
-| Encryption (local)                | AES-256-GCM with auto-generated `master.key` file                  | Protects against partial file leaks (backup sync, accidental git commit). Server generates a random 256-bit key on first boot, stores in `~/.epicenter/server/master.key`. Same machine = attacker needs both files. Zero user friction — fully automatic. See "Local Encryption (Model 2)" section below. |
-| Encryption (cloud)                | AES-256-GCM with server-managed key                                | Protects against database breaches. Server key from KMS or env var. Standard SaaS pattern. NOT password-derived — server must decrypt without user present.                                                                                                                                                |
+| Encryption (local)                | AES-256-GCM with auto-generated `master.key` file                  | Protects against partial file leaks (backup sync, accidental git commit). Server generates a random 256-bit key on first boot, stores in `~/.epicenter/server/master.key`. Same machine = attacker needs both files. Zero user friction: fully automatic. See "Local Encryption (Model 2)" section below. |
+| Encryption (cloud)                | AES-256-GCM with server-managed key                                | Protects against database breaches. Server key from KMS or env var. Standard SaaS pattern. NOT password-derived: server must decrypt without user present.                                                                                                                                                |
 | API key resolution priority       | (1) per-request header → (2) server storage → (3) undefined        | Two sources, not three. Header preserves backward compat. Server storage is the single persistent source. No runtime env var fallback.                                                                                                                                                                     |
-| Environment variable handling     | Seed store on startup (insert-if-absent)                           | Env vars are an input mechanism, not a runtime source. On boot, `OPENAI_API_KEY` etc. are read and inserted into the store if no value exists. API-set values survive restarts — env vars only bootstrap.                                                                                                  |
+| Environment variable handling     | Seed store on startup (insert-if-absent)                           | Env vars are an input mechanism, not a runtime source. On boot, `OPENAI_API_KEY` etc. are read and inserted into the store if no value exists. API-set values survive restarts: env vars only bootstrap.                                                                                                  |
 | Auth for key management endpoints | CORS allowlist + bearer token (local), Better Auth session (cloud) | Local server validates Origin header against configurable allowlist (browser clients) and requires bearer token (non-browser clients). See `20260222T200800-server-endpoint-security.md` for full design. Cloud requires Better Auth session.                                                              |
-| Sync across devices               | Not via Yjs                                                        | Keys don't sync. Set them once per server. For cloud, keys are on the server — all devices access via authenticated session.                                                                                                                                                                               |
+| Sync across devices               | Not via Yjs                                                        | Keys don't sync. Set them once per server. For cloud, keys are on the server: all devices access via authenticated session.                                                                                                                                                                               |
 
 ## Architecture
 
@@ -152,7 +152,7 @@ The GET endpoint for a specific provider returns `{ configured: true }`, never t
   └─────────────────────────────────────────┘
 ```
 
-Two sources, not three. Environment variables are not checked at request time — they seed the store on server startup (see below).
+Two sources, not three. Environment variables are not checked at request time. They seed the store on server startup (see below).
 
 ### Storage Layer (Adapter Pattern)
 
@@ -185,10 +185,10 @@ Two sources, not three. Environment variables are not checked at request time �
 
 ### Environment Variable Seeding
 
-On server startup, the key store reads known env vars (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, etc.) and inserts them into the store **if no value already exists** for that provider. This is insert-if-absent, not upsert — API-set values always survive restarts.
+On server startup, the key store reads known env vars (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, etc.) and inserts them into the store **if no value already exists** for that provider. This is insert-if-absent, not upsert: API-set values always survive restarts.
 
 ```typescript
-// Pseudocode — runs once at server boot
+// Pseudocode: runs once at server boot
 for (const [provider, envVar] of Object.entries(PROVIDER_ENV_VARS)) {
 	const value = process.env[envVar];
 	if (value && !store.has(provider)) {
@@ -200,13 +200,13 @@ for (const [provider, envVar] of Object.entries(PROVIDER_ENV_VARS)) {
 **Semantics:**
 
 - Env vars bootstrap the store for Docker/CI workflows (`docker run -e OPENAI_API_KEY=sk-...`).
-- Once a user sets a key via the REST API (`source: 'api'`), that value takes precedence — env var won't overwrite it on next restart.
-- Deleting a key via the API and restarting will re-seed from the env var (since no value exists anymore). This is intentional — if you want to truly remove a key, unset the env var too.
+- Once a user sets a key via the REST API (`source: 'api'`), that value takes precedence: env var won't overwrite it on next restart.
+- Deleting a key via the API and restarting will re-seed from the env var (since no value exists anymore). This is intentional: if you want to truly remove a key, unset the env var too.
 - The `source` column tracks provenance so the UI can show "Set via environment variable" vs "Set via API".
 
 ### JSON Schema (Local)
 
-The local key store is a versioned JSON file. The schema follows the same `_v` discriminant pattern used by `defineTable` and `defineKv` throughout Epicenter — version tag in the data, migration function normalizes on read.
+The local key store is a versioned JSON file. The schema follows the same `_v` discriminant pattern used by `defineTable` and `defineKv` throughout Epicenter: version tag in the data, migration function normalizes on read.
 
 **Version 1:**
 
@@ -254,7 +254,7 @@ API keys are encrypted at rest using AES-256-GCM with the auto-generated master 
 **Schema evolution** follows the `defineKv` migration pattern:
 
 ```typescript
-// Future version — adding a field is version() + migrate(), not ALTER TABLE
+// Future version: adding a field is version() + migrate(), not ALTER TABLE
 type KeyStoreV2 = {
 	_v: 2;
 	providers: Record<
@@ -288,13 +288,13 @@ function migrate(data: KeyStoreV1 | KeyStoreV2): KeyStoreV2 {
 }
 ```
 
-**Why JSON over SQLite**: We're storing ~5-10 entries totaling <2KB. SQLite's advantages (ACID, indexing, complex queries) don't apply — we only need `get(provider)`, `set(provider, key)`, `list()`, `has(provider)`, `delete(provider)`. JSON gives us full type safety, trivial versioned migrations (no `ALTER TABLE`), easy inspection (`cat keys.json`), and consistency with how the rest of Epicenter handles schema evolution. Atomic writes via `Bun.write()` (temp file + rename) provide the same durability guarantee for a single small file.
+**Why JSON over SQLite**: We're storing ~5-10 entries totaling <2KB. SQLite's advantages (ACID, indexing, complex queries) don't apply: we only need `get(provider)`, `set(provider, key)`, `list()`, `has(provider)`, `delete(provider)`. JSON gives us full type safety, trivial versioned migrations (no `ALTER TABLE`), easy inspection (`cat keys.json`), and consistency with how the rest of Epicenter handles schema evolution. Atomic writes via `Bun.write()` (temp file + rename) provide the same durability guarantee for a single small file.
 
-**When to reconsider SQLite**: If the store grows to include usage tracking, rate limit history, key rotation audit logs, or any data that benefits from querying — that's when SQLite earns its place. For the current scope (a handful of encrypted provider keys), JSON is simpler and more appropriate.
+**When to reconsider SQLite**: If the store grows to include usage tracking, rate limit history, key rotation audit logs, or any data that benefits from querying: that's when SQLite earns its place. For the current scope (a handful of encrypted provider keys), JSON is simpler and more appropriate.
 
 ### Local Encryption (Model 2: Auto-Generated Master Key)
 
-On first boot, the server generates a random 256-bit AES key and stores it in a separate file. All API keys in `keys.json` are encrypted with this key. Zero user friction — fully automatic.
+On first boot, the server generates a random 256-bit AES key and stores it in a separate file. All API keys in `keys.json` are encrypted with this key. Zero user friction: fully automatic.
 
 **Directory layout:**
 
@@ -389,7 +389,7 @@ If `master.key` is deleted, the server cannot decrypt existing entries in `keys.
 3. The corrupted `keys.json` is replaced with an empty store
 4. Env var seeding re-populates from environment variables
 5. User re-enters any API-set keys via REST API or settings UI
-6. No catastrophic data loss — API keys are always recoverable from provider dashboards
+6. No catastrophic data loss: API keys are always recoverable from provider dashboards
 
 **Threat model:**
 
@@ -397,7 +397,7 @@ If `master.key` is deleted, the server cannot decrypt existing entries in `keys.
 | ----------------------------------------- | -------------- | -------------------------------------------------------------- |
 | `keys.json` leaked via backup/sync/git    | ✅ Yes         | Ciphertext useless without `master.key`                        |
 | Attacker reads JSON file but not key file | ✅ Yes         | AES-256-GCM ciphertext is opaque                               |
-| Full disk access (malware)                | ❌ No          | Attacker can read both files — app-level encryption can't help |
+| Full disk access (malware)                | ❌ No          | Attacker can read both files: app-level encryption can't help |
 | `master.key` deleted                      | ✅ Recoverable | New key generated, user re-enters API keys                     |
 
 ### Postgres Schema (Cloud)
@@ -451,7 +451,7 @@ This is the minimum viable feature. Local server stores encrypted keys, chat end
 - [ ] **1.1** Create master key management: `getOrCreateMasterKey()` using Web Crypto `AES-GCM` (256-bit), stored at `~/.epicenter/server/master.key`
 - [ ] **1.2** Create `KeyStore` interface (with `source` parameter on `set`) and `JsonKeyStore` implementation using versioned JSON with AES-256-GCM encryption (ciphertext + IV per entry), atomic writes via `Bun.write()`
 - [ ] **1.3** Create Elysia plugin with PUT/GET/DELETE routes for `/api/provider-keys`
-- [ ] **1.4** Update `resolveApiKey()` to accept a `KeyStore` — resolution is now header → store → undefined (no env var fallback)
+- [ ] **1.4** Update `resolveApiKey()` to accept a `KeyStore`: resolution is now header → store → undefined (no env var fallback)
 - [ ] **1.5** Implement env var seeding: on `JsonKeyStore` construction, read `PROVIDER_ENV_VARS` and insert-if-absent with `source: 'env'` (encrypted before storage)
 - [ ] **1.6** Wire the keys plugin into `createServer()` with optional `keyStore` config
 - [ ] **1.7** Graceful handling of master key loss: if decryption fails on read, log warning, replace with empty store (allows re-seeding from env vars or re-entry via API)
@@ -481,7 +481,7 @@ This is the minimum viable feature. Local server stores encrypted keys, chat end
 
 ### Key update race condition
 
-Two clients PUT the same provider key simultaneously. The JSON store is single-process, so writes are serialized in-memory — last write wins. For local server (single user), this is fine. For cloud (per-user keys), the primary key is `(user_id, provider)` so different users never conflict.
+Two clients PUT the same provider key simultaneously. The JSON store is single-process, so writes are serialized in-memory: last write wins. For local server (single user), this is fine. For cloud (per-user keys), the primary key is `(user_id, provider)` so different users never conflict.
 
 ### Server restart
 
@@ -489,13 +489,13 @@ Keys persist in `keys.json`. No data loss. The JSON file survives process restar
 
 ### Header key vs stored key
 
-If a request includes `x-provider-api-key` AND the store has a key for that provider, the header wins. This is intentional — it allows per-request key override for testing or multi-user scenarios without disturbing stored keys.
+If a request includes `x-provider-api-key` AND the store has a key for that provider, the header wins. This is intentional. It allows per-request key override for testing or multi-user scenarios without disturbing stored keys.
 
 ### Migration from env vars
 
 Users who currently use `OPENAI_API_KEY` env vars need zero migration. On first server boot with the new key store, env vars are automatically seeded into `keys.json`. Subsequent requests resolve from the store. If the user later sets a key via the API, it overwrites the env-seeded value. If the user deletes via API and restarts, the env var re-seeds.
 
-The only behavioral change: env vars are no longer read at request time. They're read once on startup. For the vast majority of users, this is invisible. The edge case is someone changing an env var without restarting the server — previously this worked (env vars are read per-request), now it doesn't. This is acceptable because "restart server after config change" is the expected workflow.
+The only behavioral change: env vars are no longer read at request time. They're read once on startup. For the vast majority of users, this is invisible. The edge case is someone changing an env var without restarting the server: previously this worked (env vars are read per-request), now it doesn't. This is acceptable because "restart server after config change" is the expected workflow.
 
 ### Migration from Whispering client-side keys
 
@@ -503,7 +503,7 @@ Whispering stores keys in Yjs KV settings. Migration path: read client-side keys
 
 ### JSON file location
 
-Default to a well-known path (`~/.epicenter/server/keys.json`). Configurable via `ServerConfig.dataDir`. The file is NOT inside any workspace directory — it's server config, not user data.
+Default to a well-known path (`~/.epicenter/server/keys.json`). Configurable via `ServerConfig.dataDir`. The file is NOT inside any workspace directory. It's server config, not user data.
 
 ## Open Questions (Resolved)
 
@@ -525,7 +525,7 @@ Default to a well-known path (`~/.epicenter/server/keys.json`). Configurable via
    - This spec handles API keys (server needs them). The vault spec handles truly sensitive data the server shouldn't see. Different threat models.
 
 7. **Local encryption**: ✅ Resolved → Model 2 (auto-generated `master.key`)
-   - Zero user friction. Protects against partial file leaks (backup/sync). Full disk access defeats it, but that's an acceptable tradeoff — OS-level encryption handles that layer.
+   - Zero user friction. Protects against partial file leaks (backup/sync). Full disk access defeats it, but that's an acceptable tradeoff: OS-level encryption handles that layer.
 
 8. **HTTP endpoint security**: ✅ Resolved → CORS allowlist + bearer token
    - See `20260222T200800-server-endpoint-security.md` for full design.
@@ -539,18 +539,18 @@ Default to a well-known path (`~/.epicenter/server/keys.json`). Configurable via
 - [ ] Env var still works when neither header nor store has a key
 - [ ] Server restart preserves stored keys (encrypted at rest)
 - [ ] Deleting `master.key` and restarting recovers gracefully (env vars re-seed, user re-enters API keys)
-- [ ] Raw `keys.json` file contains only ciphertext (verify with `cat keys.json` — no plaintext API keys visible)
+- [ ] Raw `keys.json` file contains only ciphertext (verify with `cat keys.json`: no plaintext API keys visible)
 - [ ] JSON schema versioning works (old `_v: 1` file migrated to latest version on read)
 - [ ] `bun test` in `packages/server` passes
 - [ ] No new dependencies beyond Web Crypto API (built-in)
 
 ## References
 
-- `packages/server/src/ai/adapters.ts` — Current `resolveApiKey()`, `PROVIDER_ENV_VARS`, `SUPPORTED_PROVIDERS`
-- `packages/server/src/ai/plugin.ts` — Chat endpoint that calls `resolveApiKey()`
-- `packages/server/src/server.ts` — `createServer()` and `ServerConfig`
-- `apps/whispering/src/lib/settings/settings.ts` — Client-side API key storage (9 providers)
-- `apps/whispering/src/lib/components/settings/api-key-inputs/` — 9 API key input components
-- `specs/20260213T030000-encrypted-api-key-vault.md` — Zero-knowledge vault approach (different tradeoffs)
-- `specs/20260213T005300-encrypted-workspace-storage.md` — Value-level Yjs encryption (broader scope)
-- `specs/20260220T200100 ai-plugin.md` — Original AI plugin design with `x-provider-api-key` header
+- `packages/server/src/ai/adapters.ts`: Current `resolveApiKey()`, `PROVIDER_ENV_VARS`, `SUPPORTED_PROVIDERS`
+- `packages/server/src/ai/plugin.ts`: Chat endpoint that calls `resolveApiKey()`
+- `packages/server/src/server.ts`: `createServer()` and `ServerConfig`
+- `apps/whispering/src/lib/settings/settings.ts`: Client-side API key storage (9 providers)
+- `apps/whispering/src/lib/components/settings/api-key-inputs/`: 9 API key input components
+- `specs/20260213T030000-encrypted-api-key-vault.md`: Zero-knowledge vault approach (different tradeoffs)
+- `specs/20260213T005300-encrypted-workspace-storage.md`: Value-level Yjs encryption (broader scope)
+- `specs/20260220T200100 ai-plugin.md`: Original AI plugin design with `x-provider-api-key` header

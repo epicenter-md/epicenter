@@ -7,10 +7,10 @@ export { default as CommandPalette } from './command-palette.svelte';
  *
  * This is the shared contract between command sources (workspace actions,
  * static registries, dynamic search results) and the `CommandPalette` component.
- * Anything that produces this shape can feed the palette—no adapters, no wrappers.
+ * Anything that produces this shape can feed the palette. No adapters, no wrappers.
  *
  * Only `id`, `label`, and `onSelect` are required. Every other field is a
- * progressive enhancement—omit what you don't need and the component adapts:
+ * progressive enhancement. Omit what you don't need and the component adapts:
  * no icon → text-only row, no description → single-line label, no keywords →
  * search matches against the label alone.
  *

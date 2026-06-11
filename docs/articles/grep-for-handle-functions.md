@@ -26,7 +26,7 @@ Run that in your project. If you get more than a handful of hits, you probably h
 <button onclick={() => save(draft)}>Save</button>
 ```
 
-The inlined version is shorter, and you can read the whole thing without scrolling. The function name `handleSave` wasn't adding information—it was just restating what `save` already says.
+The inlined version is shorter, and you can read the whole thing without scrolling. The function name `handleSave` wasn't adding information. It was just restating what `save` already says.
 
 This pattern shows up constantly in AI-generated code. AI assistants extract every event handler into a named function by default, even when the body is a single expression. It's not wrong, exactly, but it's not helpful either. The result is a script block full of one-liner functions that exist only to be called once.
 
@@ -46,7 +46,7 @@ Two cases where the extracted form is actually better:
 
 Ask: does the function name tell you something the inlined code doesn't? If the answer is no, inline it.
 
-`handleClick`, `handleSubmit`, `handleChange`—these names describe the event, not the action. They're noise. `confirmAndDelete` or `syncToRemote` are different; those names carry intent that an arrow function can't.
+`handleClick`, `handleSubmit`, `handleChange`: these names describe the event, not the action. They're noise. `confirmAndDelete` or `syncToRemote` are different; those names carry intent that an arrow function can't.
 
 This is related to the "Single-Use Functions: Inline or Document" rule in the Svelte skill guidelines. The principle is the same: if a function is used once and its name doesn't add meaning, it shouldn't exist as a named function.
 

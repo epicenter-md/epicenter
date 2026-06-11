@@ -23,7 +23,7 @@ Part of the [Epicenter](https://github.com/EpicenterHQ/epicenter) monorepo. MIT 
 └──────────────────────────────────────────────────────────┘
 ```
 
-The key design decision: Yjs CRDTs are the single source of truth, not the database. Every file is a Y.Doc. The filesystem is a versioned Yjs table. SQLite, IndexedDB, and the sync server are all downstream consumers of that CRDT state—they can be rebuilt from scratch at any time.
+The key design decision: Yjs CRDTs are the single source of truth, not the database. Every file is a Y.Doc. The filesystem is a versioned Yjs table. SQLite, IndexedDB, and the sync server are all downstream consumers of that CRDT state. They can be rebuilt from scratch at any time.
 
 ---
 
@@ -31,13 +31,13 @@ The key design decision: Yjs CRDTs are the single source of truth, not the datab
 
 ### CRDT filesystem
 
-Every file is a Yjs document. The filesystem itself is a versioned table with columns for `id`, `name`, `parentId`, `type`, `size`, and timestamps. File content lives in separate per-file Y.Docs, so a large note doesn't bloat the directory index. Deletes are soft—files get a `trashedAt` timestamp rather than disappearing from the CRDT, which means concurrent deletes and edits resolve cleanly instead of causing conflicts.
+Every file is a Yjs document. The filesystem itself is a versioned table with columns for `id`, `name`, `parentId`, `type`, `size`, and timestamps. File content lives in separate per-file Y.Docs, so a large note doesn't bloat the directory index. Deletes are soft. Files get a `trashedAt` timestamp rather than disappearing from the CRDT, which means concurrent deletes and edits resolve cleanly instead of causing conflicts.
 
 The `@epicenter/filesystem` package wraps this with POSIX-style operations: `mkdir`, `mv`, `rm`, `stat`, and so on. The file tree in the UI and the bash terminal both go through the same layer.
 
 ### The terminal
 
-The terminal runs [just-bash](https://github.com/nicolo-ribaudo/just-bash)—a full bash interpreter written in TypeScript, with over 80 Unix commands including `awk`, `sed`, `grep`, `jq`, `sort`, `find`, `tar`, `sqlite3`, `curl`, and `xargs`. It's wired directly to the CRDT filesystem, so shell operations and editor operations are the same thing.
+The terminal runs [just-bash](https://github.com/nicolo-ribaudo/just-bash): a full bash interpreter written in TypeScript, with over 80 Unix commands including `awk`, `sed`, `grep`, `jq`, `sort`, `find`, `tar`, `sqlite3`, `curl`, and `xargs`. It's wired directly to the CRDT filesystem, so shell operations and editor operations are the same thing.
 
 ```bash
 $ echo "# Meeting notes" > /notes/2026-04-06.md
@@ -65,7 +65,7 @@ Full-text search runs against SQLite FTS5. It indexes both file names and conten
 
 ### AI chat
 
-Conversations are stored in Yjs tables, so they sync across devices like everything else. Responses stream over SSE. The AI can call tools—file operations, search, and others—with an approval UI that shows what the tool will do before it runs. The system prompt is layered: a base prompt plus per-skill additions. Provider and model are selectable at runtime.
+Conversations are stored in Yjs tables, so they sync across devices like everything else. Responses stream over SSE. The AI can call tools for file operations, search, and other tasks, with an approval UI that shows what the tool will do before it runs. The system prompt is layered: a base prompt plus per-skill additions. Provider and model are selectable at runtime.
 
 ---
 

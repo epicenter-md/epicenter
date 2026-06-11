@@ -41,7 +41,7 @@ const SIGNED_IN_SCRIPT = raw(`<script>
  * Server-rendered "you're signed in" page.
  *
  * Shown when an authenticated user visits `/sign-in` without any OAuth
- * or callbackURL params—they don't need the sign-in form, just
+ * or callbackURL params. They don't need the sign-in form, just
  * confirmation that they're authenticated.
  */
 export function SignedInPage({

@@ -8,7 +8,7 @@ I was writing this:
 
 ```svelte
 $effect(() => {
-  auth.token;     // touched, not used — wake signal
+  auth.token;     // touched, not used: wake signal
   sync.reconnect();
 });
 ```
@@ -23,7 +23,7 @@ And the fact that I couldn't just write the second version told me something. I'
 
 ## Why the pattern appears
 
-Reactive getter APIs—Svelte runes, Vue refs, MobX observables—expose state as a value you read. You access `auth.token` and the framework records that read, tracks the dependency, and wakes up any effects that consumed it. That model is perfect for templates and derived values.
+Reactive getter APIs. Svelte runes, Vue refs, MobX observables. Expose state as a value you read. You access `auth.token` and the framework records that read, tracks the dependency, and wakes up any effects that consumed it. That model is perfect for templates and derived values.
 
 But sometimes you don't want the value. You want to be told "the token changed" so you can do something imperative: kick a reconnect, invalidate a cache, write to a log. You need a subscription, not a getter.
 
@@ -40,7 +40,7 @@ The `$effect` is filling a gap left by the publisher. That gap has a name: a mis
 
 ## The tell
 
-The dead read is the tell. A bare property access with no consumer—no assignment, no argument, no template binding. It has no meaning outside of a framework-aware reader. Someone new to the codebase can't tell what it does. A linter might even flag it as unused.
+The dead read is the tell. A bare property access with no consumer. No assignment, no argument, no template binding. It has no meaning outside of a framework-aware reader. Someone new to the codebase can't tell what it does. A linter might even flag it as unused.
 
 ```ts
 // ❌ Framework plumbing pretending to be business logic
@@ -66,35 +66,35 @@ The subscriber isn't the problem. The publisher is.
 
 ```ts
 type AuthCore = {
-  // imperative read — works anywhere
+  // imperative read: works anywhere
   getToken(): string | null;
 
-  // reactive read — for templates and derived state
+  // reactive read: for templates and derived state
   get token(): string | null;
 
-  // imperative subscribe — for side effects
+  // imperative subscribe: for side effects
   onTokenChange(fn: (token: string | null) => void): () => void;
 };
 ```
 
-The reactive getter becomes a thin Svelte layer on top of the imperative core—not a replacement for the subscription API. You implement `onTokenChange` once, and both templates and effects can wire up correctly.
+The reactive getter becomes a thin Svelte layer on top of the imperative core. Not a replacement for the subscription API. You implement `onTokenChange` once, and both templates and effects can wire up correctly.
 
 ## When a reactive touch is fine
 
 The smell is specifically the *discarded* read. When you use the value, you're fine.
 
 ```ts
-// ✅ Fine — you need the value
+// ✅ Fine: you need the value
 $effect(() => {
   console.log('token changed to:', auth.token);
 });
 
-// ✅ Fine — deriving something from the value
+// ✅ Fine: deriving something from the value
 const header = $derived(
   auth.token ? `Bearer ${auth.token}` : null
 );
 
-// ❌ Smell — the value is irrelevant, only the change matters
+// ❌ Smell: the value is irrelevant, only the change matters
 $effect(() => {
   auth.token;
   sync.reconnect();
@@ -108,22 +108,22 @@ Rule of thumb: if removing the reactive read would break the logic, it belongs t
 This isn't Svelte-specific.
 
 ```ts
-// React — deps array is the side channel
+// React: deps array is the side channel
 useEffect(() => {
   sync.reconnect();
 }, [authToken]);  // ← touched for tracking, not used in the body
 
-// Vue — honest separation
+// Vue: honest separation
 watch(() => auth.token, () => sync.reconnect());
 
-// MobX — most explicit: splits "what to observe" from "what to do"
+// MobX: most explicit: splits "what to observe" from "what to do"
 reaction(
   () => auth.token,
   () => sync.reconnect()
 );
 ```
 
-Vue and MobX force you to separate the read expression from the action—different syntactic homes. React's deps array keeps them close but still splits them. Svelte 5 is the sneakiest: the bare `auth.token;` line looks like dead code.
+Vue and MobX force you to separate the read expression from the action. Different syntactic homes. React's deps array keeps them close but still splits them. Svelte 5 is the sneakiest: the bare `auth.token;` line looks like dead code.
 
 MobX's `reaction` is probably the most honest shape. It names what it's doing: observe this expression, run this action when it changes. That's a subscription with extra steps.
 

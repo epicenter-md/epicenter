@@ -25,7 +25,7 @@ getActiveChildren(ids)  YES         no     no
 softDeleteDescendants   YES         YES    YES    ← straddles
 ```
 
-Methods 2–6 cluster around `filesTable` + `index`. They're always called together and have zero interaction with content docs. That cluster is a class waiting to be extracted.
+Methods 2-6 cluster around `filesTable` + `index`. They're always called together and have zero interaction with content docs. That cluster is a class waiting to be extracted.
 
 ### What this blocks
 
@@ -167,7 +167,7 @@ All timeline-specific logic (mode switching, in-place text editing vs pushing ne
 
 ### YjsFileSystem becomes a thin orchestrator
 
-Every IFileSystem method reduces to ~3–6 lines: apply `cwd`, call tree, call content.
+Every IFileSystem method reduces to ~3-6 lines: apply `cwd`, call tree, call content.
 
 ```typescript
 class YjsFileSystem implements IFileSystem {
@@ -335,13 +335,13 @@ When the file doesn't exist, `appendFile` delegates to `writeFile`. This remains
 
 ## References
 
-- `packages/epicenter/src/filesystem/yjs-file-system.ts` — Thin orchestrator (rewritten)
-- `packages/epicenter/src/filesystem/file-tree.ts` — FileTree class (new)
-- `packages/epicenter/src/filesystem/content-ops.ts` — ContentOps class (new)
-- `packages/epicenter/src/filesystem/path-utils.ts` — `posixResolve` standalone function (new)
-- `packages/epicenter/src/filesystem/file-system-index.ts` — Already extracted; FileTree wraps this
-- `packages/epicenter/src/filesystem/content-doc-store.ts` — Already extracted; ContentOps wraps this
-- `packages/epicenter/src/filesystem/timeline-helpers.ts` — Pure functions used by ContentOps
-- `packages/epicenter/src/filesystem/validation.ts` — Standalone validation; unchanged
-- `packages/epicenter/src/filesystem/types.ts` — Shared types (FileId, FileRow, etc.)
-- `docs/articles/private-methods-are-classes-waiting-to-be-extracted.md` — Pattern article
+- `packages/epicenter/src/filesystem/yjs-file-system.ts`: Thin orchestrator (rewritten)
+- `packages/epicenter/src/filesystem/file-tree.ts`: FileTree class (new)
+- `packages/epicenter/src/filesystem/content-ops.ts`: ContentOps class (new)
+- `packages/epicenter/src/filesystem/path-utils.ts`: `posixResolve` standalone function (new)
+- `packages/epicenter/src/filesystem/file-system-index.ts`: Already extracted; FileTree wraps this
+- `packages/epicenter/src/filesystem/content-doc-store.ts`: Already extracted; ContentOps wraps this
+- `packages/epicenter/src/filesystem/timeline-helpers.ts`: Pure functions used by ContentOps
+- `packages/epicenter/src/filesystem/validation.ts`: Standalone validation; unchanged
+- `packages/epicenter/src/filesystem/types.ts`: Shared types (FileId, FileRow, etc.)
+- `docs/articles/private-methods-are-classes-waiting-to-be-extracted.md`: Pattern article

@@ -136,7 +136,7 @@ Notes on the numbers:
 
 ## Code-delta detail
 
-### Shape 2 (progressive WAV, path-only IPC) — net deletion
+### Shape 2 (progressive WAV, path-only IPC): net deletion
 
 **Deletes** (≈300 lines, dominantly JS-side):
 - `apps/whispering/src/lib/services/recorder/pcm-to-wav.ts` (54 lines).
@@ -156,7 +156,7 @@ Notes on the numbers:
 - JS side: pass path strings through `transcribeAudio` instead of `RecorderAudio` (~30 lines net simpler).
 - Recovery scan on startup for orphaned WAV files (cheap, ~20 lines).
 
-### Shape 3 (additive `stop_and_transcribe_local`) — purely additive
+### Shape 3 (additive `stop_and_transcribe_local`): purely additive
 
 **Adds** (≈60 lines):
 - New command `stop_and_transcribe_local(config)` in `transcription/mod.rs`:
@@ -169,7 +169,7 @@ Notes on the numbers:
   wrapping. ~20 TS lines.
 - Leaves PR #1831 + cloud path untouched.
 
-### Hybrid (memory PCM + progressive WAV) — net add
+### Hybrid (memory PCM + progressive WAV): net add
 
 Keep PR #1831's PCM IPC for cloud (no decode hop), add progressive WAV
 on disk for crash-safety + a `transcribe_audio_path` for local. ~+200/-50.
@@ -197,7 +197,7 @@ deltas are well under 50 ms.
 **Switch to shape 2 only if crash safety + one-artifact simplicity is
 the real product goal.** The numbers don't punish that decision, and the
 ~300 lines of deletion on the JS side is a real architectural win. But
-that's a taste call, not a perf call — it should be argued on data-model
+that's a taste call, not a perf call. It should be argued on data-model
 grounds, not on the (non-existent) latency win.
 
 ## Files

@@ -1,6 +1,6 @@
 # What is a Daemon?
 
-In Unix-like operating systems, a "daemon" is a background process that runs independently of any user interaction. You’ve likely encountered them if you’ve ever looked at a process list and seen names ending in "d"—`sshd`, `httpd`, `crond`, or `syslogd`.
+In Unix-like operating systems, a "daemon" is a background process that runs independently of any user interaction. You’ve likely encountered them if you’ve ever looked at a process list and seen names ending in "d": `sshd`, `httpd`, `crond`, or `syslogd`.
 
 The term sounds mystical, but the concept is practical: it’s an invisible agent working in the background to handle system-wide tasks.
 
@@ -8,7 +8,7 @@ The term sounds mystical, but the concept is practical: it’s an invisible agen
 
 ## The Etymology
 
-The name doesn't come from the religious concept of demons, but from **Maxwell's demon**—a thought experiment in thermodynamics. James Clerk Maxwell imagined a tiny, helpful agent that could sort fast-moving molecules from slow-moving ones.
+The name doesn't come from the religious concept of demons, but from **Maxwell's demon**: a thought experiment in thermodynamics. James Clerk Maxwell imagined a tiny, helpful agent that could sort fast-moving molecules from slow-moving ones.
 
 In the early days of Project MAC at MIT, developers adopted the term for background processes that performed similar "helpful but invisible" tasks. They used the archaic spelling "daemon" to distinguish it from the religious "demon."
 

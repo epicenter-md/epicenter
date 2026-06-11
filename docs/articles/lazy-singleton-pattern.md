@@ -61,7 +61,7 @@ async function getRegistry(): Promise<RegistryDoc> {
 }
 ```
 
-One variable. [Store the promise, not the value](./store-the-promise-not-the-value.md)—await it every time.
+One variable. [Store the promise, not the value](./store-the-promise-not-the-value.md): await it every time.
 
 Now the same scenario plays out differently:
 

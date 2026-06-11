@@ -1,9 +1,9 @@
 # Schema Migration Patterns for Epicenter
 
-> **Status: Superseded** — This spec was a design document. The API evolved during implementation. The current API uses `createWorkspace(definition)` instead of `workspace.create()`. See `packages/epicenter/src/static/README.md` for the current API.
+> **Status: Superseded**: This spec was a design document. The API evolved during implementation. The current API uses `createWorkspace(definition)` instead of `workspace.create()`. See `packages/epicenter/src/static/README.md` for the current API.
 
-**Status**: Research & Planning  
-**Date**: 2026-01-16  
+**Status**: Research & Planning
+**Date**: 2026-01-16
 **Author**: Braden + Claude
 
 ---
@@ -56,10 +56,10 @@ The core insight: **Epicenter already has most of the building blocks for schema
 
 Epicenter uses a **contract-based architecture** where:
 
-1. **Schemas are JSON-serializable** — defined in code, stored in Y.Doc
-2. **Data persists in Y.Doc** — survives schema changes automatically
-3. **Validation is opt-in** — rows can exist without matching the schema
-4. **Multiple peers** — devices may run different schema versions concurrently
+1. **Schemas are JSON-serializable**: defined in code, stored in Y.Doc
+2. **Data persists in Y.Doc**: survives schema changes automatically
+3. **Validation is opt-in**: rows can exist without matching the schema
+4. **Multiple peers**: devices may run different schema versions concurrently
 
 This creates unique challenges not present in traditional databases:
 
@@ -113,7 +113,7 @@ The **epoch** system provides complete version isolation at the Y.Doc level:
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
-**Key insight**: Epoch bumps create NEW Y.Docs. Old data remains accessible. This is perfect for schema migrations—migrate data from epoch N to epoch N+1.
+**Key insight**: Epoch bumps create NEW Y.Docs. Old data remains accessible. This is perfect for schema migrations. Migrate data from epoch N to epoch N+1.
 
 #### 2. Definition Merge System
 
@@ -159,7 +159,7 @@ switch (result.status) {
 }
 ```
 
-**Key insight**: Invalid rows aren't deleted—they're just marked invalid. Perfect for lazy migrations.
+**Key insight**: Invalid rows aren't deleted. They're just marked invalid. Perfect for lazy migrations.
 
 ### What's Missing
 
@@ -961,7 +961,7 @@ head.bumpEpoch();
 2. **Epoch fork**: Client A stays on old epoch until manually migrated
 3. **Merge conflict**: Show user a resolution UI
 
-**Recommendation**: Use epoch system—Client A reconnects to new epoch, old data is read-only.
+**Recommendation**: Use epoch system. Client A reconnects to new epoch, old data is read-only.
 
 ### 3. Should migrations be reversible?
 

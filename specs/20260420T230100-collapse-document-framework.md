@@ -1,4 +1,4 @@
-# Collapse the document framework — delete `.withDocument`, unify `.withExtension`
+# Collapse the document framework: delete `.withDocument`, unify `.withExtension`
 
 **Date**: 2026-04-20
 **Status**: Draft
@@ -9,15 +9,15 @@
 
 ## TL;DR
 
-Three workspace-builder concepts — `.withDocument(slot, config)` on tables, `.withDocumentExtension(key, factory)` on the workspace builder, and `.withWorkspaceExtension(key, factory)` on the workspace builder — all exist because the framework used to own Y.Doc construction for content docs. They were the registry users couldn't reach by hand. Now that `defineDocument` lets apps own content-doc construction directly (see `specs/20260420T220000-simplify-definedocument-primitive.md`, Implemented), those concepts lose their reason to exist.
+Three workspace-builder concepts: `.withDocument(slot, config)` on tables, `.withDocumentExtension(key, factory)` on the workspace builder, and `.withWorkspaceExtension(key, factory)` on the workspace builder: all exist because the framework used to own Y.Doc construction for content docs. They were the registry users couldn't reach by hand. Now that `defineDocument` lets apps own content-doc construction directly (see `specs/20260420T220000-simplify-definedocument-primitive.md`, Implemented), those concepts lose their reason to exist.
 
-This spec deletes `.withDocument` and `.withDocumentExtension`, renames/collapses the extension surface to a single `.withExtension`, deletes `packages/workspace/src/workspace/create-documents.ts` (493 LOC of parallel lifecycle), deletes `packages/workspace/src/workspace/strategies.ts`, and migrates the 5 `.withDocument` call sites to app-owned `buildContentDoc` functions wrapped in `defineDocument`. Apps own the `onLocalUpdate` listeners that bump parent-row `updatedAt` — no more framework config. Net delta: ~900 LOC deleted, ~150 LOC added across 5 apps.
+This spec deletes `.withDocument` and `.withDocumentExtension`, renames/collapses the extension surface to a single `.withExtension`, deletes `packages/workspace/src/workspace/create-documents.ts` (493 LOC of parallel lifecycle), deletes `packages/workspace/src/workspace/strategies.ts`, and migrates the 5 `.withDocument` call sites to app-owned `buildContentDoc` functions wrapped in `defineDocument`. Apps own the `onLocalUpdate` listeners that bump parent-row `updatedAt`: no more framework config. Net delta: ~900 LOC deleted, ~150 LOC added across 5 apps.
 
 ## Motivation
 
 ### Current state
 
-**Table-level document declaration** (`.withDocument`) — 5 call sites, all identical shape:
+**Table-level document declaration** (`.withDocument`): 5 call sites, all identical shape:
 
 ```ts
 // apps/fuji/src/lib/workspace.ts:110
@@ -40,25 +40,25 @@ This spec deletes `.withDocument` and `.withDocumentExtension`, renames/collapse
 .withDocument('content', { content: plainText, guid: 'id', onUpdate: () => ({ updatedAt: Date.now() }) });
 ```
 
-**Workspace-level extension registration** — three overlapping methods on the builder (see `packages/workspace/src/workspace/types.ts:808-875`):
+**Workspace-level extension registration**: three overlapping methods on the builder (see `packages/workspace/src/workspace/types.ts:808-875`):
 
 ```ts
 .withExtension(key, factory)              // registers factory for BOTH workspace AND document scope
 .withWorkspaceExtension(key, factory)     // workspace-scope only (has full awareness/tables/kv context)
-.withDocumentExtension(key, factory)      // document-scope only (gets per-document context — tableName, guidKey, etc.)
+.withDocumentExtension(key, factory)      // document-scope only (gets per-document context: tableName, guidKey, etc.)
 ```
 
-**Parallel lifecycle implementation** — `packages/workspace/src/workspace/create-documents.ts` (493 LOC) is a full reimplementation of the `defineDocument` cache: keyed `openDocuments: Map<string, DocEntry>`, `bindCount`, `disconnectTimer`, `disposed`, `whenLoaded`/`whenDisposed` aggregation. It does not use `defineDocument`. It exists because `.withDocument` needs a cache but the workspace framework predates the user-owned primitive.
+**Parallel lifecycle implementation**: `packages/workspace/src/workspace/create-documents.ts` (493 LOC) is a full reimplementation of the `defineDocument` cache: keyed `openDocuments: Map<string, DocEntry>`, `bindCount`, `disconnectTimer`, `disposed`, `whenLoaded`/`whenDisposed` aggregation. It does not use `defineDocument`. It exists because `.withDocument` needs a cache but the workspace framework predates the user-owned primitive.
 
-**Strategy wrapping** — `packages/workspace/src/workspace/strategies.ts` wraps each `content: <strategy>` with encryption and framework hooks. Only exists because the framework constructs the Y.Doc for the user.
+**Strategy wrapping**: `packages/workspace/src/workspace/strategies.ts` wraps each `content: <strategy>` with encryption and framework hooks. Only exists because the framework constructs the Y.Doc for the user.
 
 ### Problems
 
-1. **Three extension concepts where one suffices.** `.withExtension` already supports both scopes (per types.ts:547: "registers the same factory for both scopes"). `.withWorkspaceExtension` and `.withDocumentExtension` are narrower variants whose distinction only matters because `.withDocumentExtension` gets per-document context (`tableName`, `documentName`, `guidKey`) — context that vanishes when users construct docs themselves.
+1. **Three extension concepts where one suffices.** `.withExtension` already supports both scopes (per types.ts:547: "registers the same factory for both scopes"). `.withWorkspaceExtension` and `.withDocumentExtension` are narrower variants whose distinction only matters because `.withDocumentExtension` gets per-document context (`tableName`, `documentName`, `guidKey`): context that vanishes when users construct docs themselves.
 2. **Duplicated lifecycle machinery.** `create-documents.ts` reimplements the refcount+grace+aggregation that `defineDocument` now owns. Two copies, two chances for bugs, two places to fix them.
 3. **Framework smell: users can't reach their own construction site.** To inject a custom provider into a content doc, you call `.withDocumentExtension('myProvider', factory)` and hope the factory's context is enough. If you want to compose two attachments in a specific order, or skip one for a specific doc type, the registry model doesn't let you.
 4. **`strategies.ts` wraps content strategies with encryption and hooks.** Its existence is entirely a consequence of "the framework owns Y.Doc construction." Delete the framework ownership and the wrapping layer has nothing to do.
-5. **`onUpdate` is a framework configuration for a user-owned concern.** Bumping `updatedAt` when a content doc changes is application logic. Encoding it as a config shape (`onUpdate: () => ({ updatedAt: ... })`) is indirection — the user writes a function that returns a patch object that the framework applies to the parent row. Replace with a direct `onLocalUpdate(ydoc, () => table.update(rowId, { updatedAt: now() }))` in the user's builder.
+5. **`onUpdate` is a framework configuration for a user-owned concern.** Bumping `updatedAt` when a content doc changes is application logic. Encoding it as a config shape (`onUpdate: () => ({ updatedAt: ... })`) is indirection: the user writes a function that returns a patch object that the framework applies to the parent row. Replace with a direct `onLocalUpdate(ydoc, () => table.update(rowId, { updatedAt: now() }))` in the user's builder.
 6. **Tight coupling between tables and documents.** A table with `.withDocument('content')` auto-gets a `tables.foo.documents.content` namespace. That's magic the user didn't opt into. If you want a document without a table row (e.g., a shared collaborative canvas), the coupling fights you.
 
 ### Desired state
@@ -81,7 +81,7 @@ function buildEntryContentDoc(rowId: EntryId) {
   const idb     = attachIndexedDb(ydoc);
   const sync    = attachSync(ydoc, { url: ... });
 
-  // User owns the updatedAt writeback — no framework config.
+  // User owns the updatedAt writeback: no framework config.
   onLocalUpdate(ydoc, () => {
     fujiWorkspace.tables.entries.update(rowId, { updatedAt: DateTimeString.now() });
   });
@@ -109,7 +109,7 @@ No `.withDocument`. No `.withDocumentExtension`. No `.withWorkspaceExtension`. N
 
 ## Research Findings
 
-### Blast radius — 5 call sites, same shape
+### Blast radius: 5 call sites, same shape
 
 | File | Slot | Strategy | Update field |
 |---|---|---|---|
@@ -162,7 +162,7 @@ Grep confirms: only defined at `packages/workspace/src/workspace/types.ts:851` a
 | 9 | `content` strategies (`richText`, `plainText`, `timeline`) | **Keep.** Users pass them as attachments (`attachRichText(ydoc)`). | Strategies themselves are fine; only the framework wrapping is the smell. |
 | 10 | Encryption of content docs | **User composes it.** `attachEncryption(ydoc, {...})` at the app level, same as workspace (see Spec C). | Same pattern as workspace; no special-casing. |
 | 11 | Migration strategy | **Big-bang PR.** 5 call sites migrate in one PR. | Small number of sites; interim state (two APIs) would be worse than the PR size. |
-| 12 | Barrel exports | **Update `packages/workspace/src/index.ts`.** Remove `createDocuments` export. | — |
+| 12 | Barrel exports | **Update `packages/workspace/src/index.ts`.** Remove `createDocuments` export. |: |
 | 13 | `lifecycle.ts` | **Keep** (`defineExtension`, `disposeLifo`, `startDisposeLifo`). Still used by remaining extensions and the workspace disposer. | Spec C revisits this; for Spec B, extensions still need LIFO teardown. |
 | 14 | `createDocuments` advanced-user public API | **Remove.** | Advanced users now use `defineDocument` directly. |
 | 15 | Tests touching deleted concepts | **Delete** (not migrate). | The concepts don't exist; tests for them are noise. |
@@ -223,7 +223,7 @@ Grep confirms: only defined at `packages/workspace/src/workspace/types.ts:851` a
   └──────────────────────────────────────────────────────────────┘
 ```
 
-### Migration — one end-to-end example (fuji)
+### Migration: one end-to-end example (fuji)
 
 **Before** (`apps/fuji/src/lib/workspace.ts:110`):
 
@@ -286,28 +286,28 @@ await h.whenReady;
 h.content.write('hello');
 ```
 
-Four more sites (`honeycrisp/note-body-doc`, `filesystem/file-content-doc`, `skills/skill-instructions-doc`, `skills/reference-content-doc`) follow the identical template — change attachment (`attachRichText` / `attachPlainText` / `attachTimeline`), change guid prefix, change `workspace.tables.X.update(...)` target. Otherwise mechanical.
+Four more sites (`honeycrisp/note-body-doc`, `filesystem/file-content-doc`, `skills/skill-instructions-doc`, `skills/reference-content-doc`) follow the identical template: change attachment (`attachRichText` / `attachPlainText` / `attachTimeline`), change guid prefix, change `workspace.tables.X.update(...)` target. Otherwise mechanical.
 
 ## Implementation Plan
 
-### Phase 1 — New `.withExtension` API surface
+### Phase 1: New `.withExtension` API surface
 
 - [ ] **1.1** In `packages/workspace/src/workspace/types.ts`, remove the type declarations for `withWorkspaceExtension` and `withDocumentExtension` on `WorkspaceClientBuilder`. Keep `withExtension` as the sole extension chainable.
 - [ ] **1.2** Remove the `DocumentExtensionRegistration`, `DocumentConfig`, `DocumentContext`, related helper types that exist only for the deleted features.
-- [ ] **1.3** Update the "Extension context" JSDoc on `ExtensionContext` — it should no longer mention document-scope.
+- [ ] **1.3** Update the "Extension context" JSDoc on `ExtensionContext`: it should no longer mention document-scope.
 
-### Phase 2 — Delete `.withDocument` from the table builder
+### Phase 2: Delete `.withDocument` from the table builder
 
 - [ ] **2.1** Remove `.withDocument(slot, config)` chain method from `packages/document/src/attach-table.ts` (or wherever `defineTable` returns its builder).
 - [ ] **2.2** Remove the `documents` sub-namespace auto-population in the `Tables<...>` type (`packages/workspace/src/workspace/types.ts`).
-- [ ] **2.3** Grep for `.withDocument(` — zero results in `packages/` + `apps/` after Phase 5.
+- [ ] **2.3** Grep for `.withDocument(`: zero results in `packages/` + `apps/` after Phase 5.
 
-### Phase 3 — Delete `.withDocumentExtension` and `.withWorkspaceExtension`
+### Phase 3: Delete `.withDocumentExtension` and `.withWorkspaceExtension`
 
 - [ ] **3.1** Remove the methods' implementations from `packages/workspace/src/workspace/create-workspace.ts`. They're in the `buildClient()` closure (~line 300-450 area, alongside `withExtension`).
 - [ ] **3.2** In `create-workspace.test.ts`, delete any test suite exercising `withDocumentExtension` or `withWorkspaceExtension`. Migrate tests that exercise `withExtension` for document-scope behavior to simply use `withExtension`.
 
-### Phase 4 — Delete `create-documents.ts` and `strategies.ts`
+### Phase 4: Delete `create-documents.ts` and `strategies.ts`
 
 - [ ] **4.1** Delete `packages/workspace/src/workspace/create-documents.ts` (493 LOC).
 - [ ] **4.2** Delete `packages/workspace/src/workspace/create-documents.test.ts`.
@@ -315,7 +315,7 @@ Four more sites (`honeycrisp/note-body-doc`, `filesystem/file-content-doc`, `ski
 - [ ] **4.4** Remove `createDocuments` import + usage from `create-workspace.ts`.
 - [ ] **4.5** Remove `createDocuments` export from `packages/workspace/src/index.ts` (if exported).
 
-### Phase 5 — Migrate 5 call sites
+### Phase 5: Migrate 5 call sites
 
 Each migration follows the same pattern. For each:
 
@@ -332,7 +332,7 @@ Each migration follows the same pattern. For each:
 - [ ] **5.5** `packages/skills/src/tables.ts:96` → `packages/skills/src/reference-content-doc.ts`.
 - [ ] **5.6** For each migrated doc, grep every downstream caller (components, queries, mutations) and update to the new factory.open() API.
 
-### Phase 6 — Verification
+### Phase 6: Verification
 
 - [ ] **6.1** `bun test` in `packages/workspace`, `packages/document`, `packages/filesystem`, `packages/skills`. All pass.
 - [ ] **6.2** `bun run build` at repo root. Clean.
@@ -363,15 +363,15 @@ Before: `strategies.ts` wrapped each Y.Text/Y.XmlFragment with encryption and th
 
 ### Schema migration on persisted content
 
-Content Y.Docs don't have versioned rows; they're Y.Text / Y.XmlFragment / timeline. No migration needed at this layer. Row-level migration (the `_v` column on parent tables) is unchanged — still handled by `defineTable(...).migrate()`.
+Content Y.Docs don't have versioned rows; they're Y.Text / Y.XmlFragment / timeline. No migration needed at this layer. Row-level migration (the `_v` column on parent tables) is unchanged: still handled by `defineTable(...).migrate()`.
 
 ### `onUpdate` edge case: transport-origin filtering
 
-Before: framework filtered out transport-origin updates when deciding whether to fire `onUpdate` (prevents timestamp ping-pong across tabs). After: user calls `onLocalUpdate(ydoc, ...)` — the filter lives in `@epicenter/document/on-local-update.ts` and is now explicitly user-visible. Make sure migration snippets use `onLocalUpdate`, not raw `ydoc.on('updateV2', ...)`.
+Before: framework filtered out transport-origin updates when deciding whether to fire `onUpdate` (prevents timestamp ping-pong across tabs). After: user calls `onLocalUpdate(ydoc, ...)`: the filter lives in `@epicenter/document/on-local-update.ts` and is now explicitly user-visible. Make sure migration snippets use `onLocalUpdate`, not raw `ydoc.on('updateV2', ...)`.
 
 ### Factory declaration + workspace circular import
 
-`buildEntryContentDoc` reads from `fujiWorkspace.tables.entries` in its `onLocalUpdate` callback. The factory file imports the workspace module, which (in some setups) may import the table definition back. Resolve with lazy access inside the callback (which already happens — the lambda captures the reference at call time, not module-init time).
+`buildEntryContentDoc` reads from `fujiWorkspace.tables.entries` in its `onLocalUpdate` callback. The factory file imports the workspace module, which (in some setups) may import the table definition back. Resolve with lazy access inside the callback (which already happens. The lambda captures the reference at call time, not module-init time).
 
 ## Open Questions
 
@@ -388,7 +388,7 @@ Before: framework filtered out transport-origin updates when deciding whether to
 4. **What's the naming convention for per-doc-type files?**
    - Recommendation: `<domain>-<slot>-doc.ts` in the same directory as the table. Export `build<Domain><Slot>Doc` (builder) and `<domain><Slot>Docs` (factory).
 
-5. **Encryption for content docs — does it ship in this spec or the next?**
+5. **Encryption for content docs: does it ship in this spec or the next?**
    - **Recommendation**: Stub in this spec (apps compose `attachEncryption` if they need it). Full migration of encryption architecture lives in Spec C (where workspace itself moves to `defineDocument`).
 
 6. **What happens to `packages/workspace/src/workspace/lifecycle.ts` (`defineExtension`, `disposeLifo`)?**
@@ -420,11 +420,11 @@ Before: framework filtered out transport-origin updates when deciding whether to
 
 ### Files modified
 
-- `packages/workspace/src/workspace/create-workspace.ts` — remove `withWorkspaceExtension` and `withDocumentExtension` implementations; remove `createDocuments` wiring; shrink to ~400 LOC.
-- `packages/workspace/src/workspace/types.ts` — remove document-related types; keep `WorkspaceClientBuilder.withExtension` and `.withActions` only.
-- `packages/workspace/src/index.ts` — barrel updates.
-- `packages/document/src/attach-table.ts` — remove `.withDocument(slot, config)` chain.
-- Per-app table files — remove `.withDocument(...)` chain invocations (5 sites).
+- `packages/workspace/src/workspace/create-workspace.ts`: remove `withWorkspaceExtension` and `withDocumentExtension` implementations; remove `createDocuments` wiring; shrink to ~400 LOC.
+- `packages/workspace/src/workspace/types.ts`: remove document-related types; keep `WorkspaceClientBuilder.withExtension` and `.withActions` only.
+- `packages/workspace/src/index.ts`: barrel updates.
+- `packages/document/src/attach-table.ts`: remove `.withDocument(slot, config)` chain.
+- Per-app table files: remove `.withDocument(...)` chain invocations (5 sites).
 
 ### Files deleted
 
@@ -443,13 +443,13 @@ Before: framework filtered out transport-origin updates when deciding whether to
 
 ### Prior art
 
-- `specs/20260420T152026-definedocument-primitive.md` — original design with full `.withDocument` inventory
-- `specs/20260420T220000-simplify-definedocument-primitive.md` — the primitive that enabled this collapse
-- `specs/20260420T230000-y-websocket-teardown-fix.md` — parallel correctness fix
-- `specs/20260420T230200-workspace-as-definedocument.md` — follow-up that unifies workspace lifecycle too
+- `specs/20260420T152026-definedocument-primitive.md`: original design with full `.withDocument` inventory
+- `specs/20260420T220000-simplify-definedocument-primitive.md`: the primitive that enabled this collapse
+- `specs/20260420T230000-y-websocket-teardown-fix.md`: parallel correctness fix
+- `specs/20260420T230200-workspace-as-definedocument.md`: follow-up that unifies workspace lifecycle too
 
 ### Naming conventions
 
-- `build<Domain><Slot>Doc(rowId)` — per-doc builder function
-- `<domain><Slot>Docs` — factory export (e.g., `entryContentDocs`)
-- `.withExtension(key, factory)` — the single remaining workspace extension method
+- `build<Domain><Slot>Doc(rowId)`: per-doc builder function
+- `<domain><Slot>Docs`: factory export (e.g., `entryContentDocs`)
+- `.withExtension(key, factory)`: the single remaining workspace extension method

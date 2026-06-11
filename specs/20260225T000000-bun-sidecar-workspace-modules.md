@@ -30,11 +30,11 @@ These already exist and form the foundation:
 
 | Component | File | What it does |
 |-----------|------|-------------|
-| Local Elysia server | `packages/server/src/local.ts` | `createLocalServer()` — CORS, OpenAPI, sync plugin, workspace plugin, auth |
+| Local Elysia server | `packages/server/src/local.ts` | `createLocalServer()`: CORS, OpenAPI, sync plugin, workspace plugin, auth |
 | Workspace REST plugin | `packages/server/src/workspace/plugin.ts` | Mounts table CRUD + action routes per workspace client |
-| Dynamic TS import | `packages/cli/src/discovery.ts` | `loadClientFromPath()` — imports `epicenter.config.ts`, validates `isWorkspaceClient()` |
-| Workspace introspection | `packages/epicenter/src/workspace/describe-workspace.ts` | `describeWorkspace(client)` — extracts JSON Schema descriptor |
-| Action iteration | `packages/epicenter/src/shared/actions.ts` | `iterateActions()` — walks action tree for introspection |
+| Dynamic TS import | `packages/cli/src/discovery.ts` | `loadClientFromPath()`: imports `epicenter.config.ts`, validates `isWorkspaceClient()` |
+| Workspace introspection | `packages/epicenter/src/workspace/describe-workspace.ts` | `describeWorkspace(client)`: extracts JSON Schema descriptor |
+| Action iteration | `packages/epicenter/src/shared/actions.ts` | `iterateActions()`: walks action tree for introspection |
 | Sidecar architecture doc | `docs/articles/tauri-bun-dual-backend-architecture.md` | Exact Rust code for spawning sidecar, reading port, building WebviewWindow |
 | Sync plugin | `packages/server/src/sync/plugin.ts` | WebSocket Yjs sync relay |
 
@@ -111,7 +111,7 @@ Each workspace is a directory under `~/.epicenter/workspaces/{id}/` with **isola
 Each workspace has its own `package.json` + `node_modules/` rather than sharing at the workspaces root:
 
 - **Uninstall = delete the folder.** No orphaned deps, no cleanup logic.
-- **No version conflicts.** Workspace A uses `nanoid@4`, workspace B uses `nanoid@5` — no problem.
+- **No version conflicts.** Workspace A uses `nanoid@4`, workspace B uses `nanoid@5`: no problem.
 - **Security containment.** A malicious workspace's deps can't poison other workspaces.
 - **Clear ownership.** Looking at a workspace folder tells you exactly what it needs.
 - **Bun installs are fast.** ~100ms for small dep trees. Disk space is negligible for a desktop app.
@@ -172,7 +172,7 @@ Validation on import (reuse `isWorkspaceClient()` from `packages/cli/src/discove
 
 ### New Files
 
-**`apps/epicenter/src-sidecar/main.ts`** — Sidecar entry point:
+**`apps/epicenter/src-sidecar/main.ts`**: Sidecar entry point:
 - Imports `createLocalServer()` from `@epicenter/server`
 - Adds `@elysiajs/static` plugin for SPA serving (`indexHTML: true` for SPA fallback)
 - Listens on port 0 (OS-assigned), prints `PORT:<N>` to stdout
@@ -203,10 +203,10 @@ Validation on import (reuse `isWorkspaceClient()` from `packages/cli/src/discove
 ### Build Pipeline
 
 New scripts in `apps/epicenter/package.json`:
-- `build:spa` — `vite build` → copies output to `src-sidecar/public/`
-- `build:sidecar` — `bun build --compile --target=bun-darwin-arm64 src-sidecar/main.ts --outfile src-tauri/binaries/epicenter-sidecar-aarch64-apple-darwin`
-- `build` — `build:spa && build:sidecar && tauri build`
-- `dev:sidecar` — `bun --watch run src-sidecar/main.ts`
+- `build:spa`: `vite build` → copies output to `src-sidecar/public/`
+- `build:sidecar`: `bun build --compile --target=bun-darwin-arm64 src-sidecar/main.ts --outfile src-tauri/binaries/epicenter-sidecar-aarch64-apple-darwin`
+- `build`: `build:spa && build:sidecar && tauri build`
+- `dev:sidecar`: `bun --watch run src-sidecar/main.ts`
 
 ### Dependencies
 
@@ -220,7 +220,7 @@ Add to `apps/epicenter/package.json`: `@elysiajs/static`
 
 ### New Files
 
-**`packages/server/src/workspace-loader.ts`** — Multi-workspace scanner:
+**`packages/server/src/workspace-loader.ts`**: Multi-workspace scanner:
 ```typescript
 import { join } from 'node:path';
 import type { AnyWorkspaceClient } from '@epicenter/workspace';
@@ -250,12 +250,12 @@ export async function loadWorkspaceModules(workspacesDir: string): Promise<AnyWo
 
 Reuses `isWorkspaceClient()` from `packages/cli/src/discovery.ts:106-115`. Consider extracting it to a shared location.
 
-**`packages/server/src/extensions/bun-persistence.ts`** — Bun-native Y.Doc persistence:
+**`packages/server/src/extensions/bun-persistence.ts`**: Bun-native Y.Doc persistence:
 - Reads/writes `workspace.yjs` using `Bun.file()` and `Bun.write()`
 - Same logic as `apps/epicenter/src/lib/yjs/workspace-persistence.ts` but using Bun APIs instead of Tauri FS
 - Returns `{ whenReady, destroy }` extension interface
 
-**`packages/server/src/workspace/management.ts`** — Workspace registry API:
+**`packages/server/src/workspace/management.ts`**: Workspace registry API:
 
 | Method | Route | Purpose |
 |--------|-------|---------|
@@ -296,7 +296,7 @@ These become the first "pre-installed" workspaces, copied to the data dir on fir
 - Remove `WORKSPACE_TEMPLATE_BY_ID` lookup
 - Fetch workspace descriptor from `/api/registry/:id`
 - Create local Y.Doc that syncs with sidecar via WebSocket (`/rooms/:id`)
-- The sidecar's Y.Doc has the persistence extension — the frontend Y.Doc is ephemeral
+- The sidecar's Y.Doc has the persistence extension: the frontend Y.Doc is ephemeral
 
 **`apps/epicenter/src/routes/(workspace)/workspaces/[id]/+layout.ts`**:
 - Fetch descriptor from API instead of loading from disk
@@ -319,7 +319,7 @@ Keep `@tauri-apps/api/core` for `invoke()` (native-only features like audio, sho
 Since the frontend now uses HTTP/WS, the same SPA works without Tauri:
 ```bash
 bun run apps/epicenter/src-sidecar/main.ts
-# Opens http://127.0.0.1:3913 — full app, no Tauri needed
+# Opens http://127.0.0.1:3913: full app, no Tauri needed
 ```
 
 Feature-detect Tauri with `'__TAURI_INTERNALS__' in window` for native-only features.
@@ -377,20 +377,20 @@ Reference: `packages/ui/jsrepo.config.ts` already uses jsrepo in this monorepo.
 
 **Goal**: Workspace actions become AI-callable tools via TanStack AI.
 
-> **Topology clarification**: AI streaming lives on the **hub** (`createHubServer`, which already mounts `createAIPlugin` at `/ai/*`), not on the local sidecar. The sidecar does not run AI inference or stream completions — it has no `createAIPlugin`. The SPA sends chat requests directly to the hub's `/ai/chat` SSE endpoint. The sidecar's role in this phase is to expose workspace action descriptors (via `/api/registry`) so the SPA can forward tool schemas to the hub alongside the chat request.
+> **Topology clarification**: AI streaming lives on the **hub** (`createHubServer`, which already mounts `createAIPlugin` at `/ai/*`), not on the local sidecar. The sidecar does not run AI inference or stream completions: it has no `createAIPlugin`. The SPA sends chat requests directly to the hub's `/ai/chat` SSE endpoint. The sidecar's role in this phase is to expose workspace action descriptors (via `/api/registry`) so the SPA can forward tool schemas to the hub alongside the chat request.
 
 ### Dependencies
 
 Add to `packages/server/package.json` (used by the hub):
-- `@tanstack/ai` — Core SDK (server-side streaming, tool orchestration)
-- `@tanstack/ai-anthropic` and/or `@tanstack/ai-openai` — Provider adapters
+- `@tanstack/ai`: Core SDK (server-side streaming, tool orchestration)
+- `@tanstack/ai-anthropic` and/or `@tanstack/ai-openai`: Provider adapters
 
 Add to `apps/epicenter/package.json` (frontend):
 - `@tanstack/ai-svelte` (when available) or vanilla JS adapter
 
 ### New Files
 
-**`packages/server/src/ai/workspace-tools.ts`** — Convert workspace actions to TanStack AI tool schemas (used by the hub when building the tool list):
+**`packages/server/src/ai/workspace-tools.ts`**: Convert workspace actions to TanStack AI tool schemas (used by the hub when building the tool list):
 
 ```typescript
 import { toolDefinition } from '@tanstack/ai';
@@ -420,7 +420,7 @@ This works because:
 - TypeBox implements Standard Schema, which TanStack AI accepts
 - Action handlers are directly callable (closure-based, no context parameter)
 
-Note: `workspaceActionsToTools` and the AI chat route are wired into the **hub** server (via `createAIPlugin` in `packages/server/src/ai/`), not the local sidecar. The hub already imports this plugin unconditionally — see `hub.ts`.
+Note: `workspaceActionsToTools` and the AI chat route are wired into the **hub** server (via `createAIPlugin` in `packages/server/src/ai/`), not the local sidecar. The hub already imports this plugin unconditionally: see `hub.ts`.
 
 ### Frontend AI Chat
 

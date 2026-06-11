@@ -1,7 +1,7 @@
 # Tab Manager Cross-Window Sync Fix
 
 **Date**: 2026-03-10
-**Status**: Phase 1 Complete (sync status visibility shipped; Phases 2–3 deferred)
+**Status**: Phase 1 Complete (sync status visibility shipped; Phases 2-3 deferred)
 **Author**: AI-assisted
 
 ## Overview
@@ -49,7 +49,7 @@ Read the full source at `node_modules/.bun/y-indexeddb@9.0.12/.../src/y-indexedd
 | Mechanism | Present? | Details |
 |-----------|----------|---------|
 | IndexedDB persistence | ✓ | `doc.on('update', this._storeUpdate)` + `fetchUpdates()` on init |
-| BroadcastChannel | ✗ | Not in source — zero cross-tab communication |
+| BroadcastChannel | ✗ | Not in source: zero cross-tab communication |
 | Cross-tab polling | ✗ | No interval-based IndexedDB reads |
 | Storage events | ✗ | IndexedDB doesn't fire cross-tab events like localStorage |
 
@@ -177,18 +177,18 @@ Only if Phase 1 reveals the WebSocket isn't connecting:
 
 1. Both windows save a tab at the same millisecond
 2. BroadcastChannel delivers both updates to both docs
-3. YKeyValueLww resolves via timestamp comparison (LWW semantics) — no data loss, deterministic winner
+3. YKeyValueLww resolves via timestamp comparison (LWW semantics): no data loss, deterministic winner
 
 ### Extension service worker termination (MV3)
 
 1. Chrome terminates the service worker
-2. BroadcastChannel is NOT affected — it lives in each side panel context, not the service worker
+2. BroadcastChannel is NOT affected: it lives in each side panel context, not the service worker
 3. Side panel contexts persist as long as the panel is open
 
 ### WebSocket + BroadcastChannel delivering same update
 
 1. Both paths deliver the same update to Window B
-2. Yjs deduplicates internally — `applyUpdateV2` with an already-applied state vector is a no-op
+2. Yjs deduplicates internally: `applyUpdateV2` with an already-applied state vector is a no-op
 3. Observer fires once (from whichever arrives first)
 
 ### BroadcastChannel unavailable
@@ -201,15 +201,15 @@ Only if Phase 1 reveals the WebSocket isn't connecting:
 
 1. **Where exactly should the sync status indicator go?**
    - Options: (a) footer bar, (b) settings page only, (c) small icon in the header
-   - **Recommendation**: Small indicator in the footer or settings — visible but unobtrusive
+   - **Recommendation**: Small indicator in the footer or settings: visible but unobtrusive
 
 2. **Should the BroadcastChannel extension live in `packages/workspace/` or `apps/tab-manager/`?**
    - Options: (a) `packages/workspace/src/extensions/sync/broadcast-channel.ts` (reusable), (b) `apps/tab-manager/src/lib/` (app-specific)
-   - **Recommendation**: (a) — it's a generic Yjs extension, useful for any browser-based workspace
+   - **Recommendation**: (a): it's a generic Yjs extension, useful for any browser-based workspace
 
 3. **Should we also sync awareness via BroadcastChannel?**
    - Awareness shows which devices are online / user presence
-   - **Recommendation**: Defer — awareness is less critical than data sync and adds complexity
+   - **Recommendation**: Defer: awareness is less critical than data sync and adds complexity
 
 ## Success Criteria
 
@@ -221,13 +221,13 @@ Only if Phase 1 reveals the WebSocket isn't connecting:
 
 ## References
 
-- `apps/tab-manager/src/lib/workspace.ts` — workspaceClient definition and extension chain
-- `apps/tab-manager/src/lib/state/saved-tab-state.svelte.ts` — savedTabs observer and reactive state
-- `apps/tab-manager/src/lib/state/settings.svelte.ts` — serverUrl storage state
-- `apps/tab-manager/src/lib/state/auth.svelte.ts` — auth token state
-- `apps/tab-manager/src/entrypoints/background.ts` — minimal background script (no sync)
-- `packages/workspace/src/extensions/sync.ts` — sync extension factory
-- `packages/workspace/src/extensions/sync/web.ts` — indexeddbPersistence factory
-- `packages/sync-client/src/provider.ts` — sync provider with status model
-- `packages/workspace/src/shared/y-keyvalue/y-keyvalue-lww.ts` — LWW conflict resolution
-- `node_modules/.bun/y-indexeddb@9.0.12/.../src/y-indexeddb.js` — verified: no BroadcastChannel
+- `apps/tab-manager/src/lib/workspace.ts`: workspaceClient definition and extension chain
+- `apps/tab-manager/src/lib/state/saved-tab-state.svelte.ts`: savedTabs observer and reactive state
+- `apps/tab-manager/src/lib/state/settings.svelte.ts`: serverUrl storage state
+- `apps/tab-manager/src/lib/state/auth.svelte.ts`: auth token state
+- `apps/tab-manager/src/entrypoints/background.ts`: minimal background script (no sync)
+- `packages/workspace/src/extensions/sync.ts`: sync extension factory
+- `packages/workspace/src/extensions/sync/web.ts`: indexeddbPersistence factory
+- `packages/sync-client/src/provider.ts`: sync provider with status model
+- `packages/workspace/src/shared/y-keyvalue/y-keyvalue-lww.ts`: LWW conflict resolution
+- `node_modules/.bun/y-indexeddb@9.0.12/.../src/y-indexeddb.js`: verified: no BroadcastChannel

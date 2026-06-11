@@ -10,18 +10,18 @@ Skip the planned Neon Phase 1 / PlanetScale Phase 2 migration path. Go straight 
 
 ## Why
 
-The Neon HTTP driver (`@neondatabase/serverless`) can't connect to a local Postgres instance — it only speaks Neon's proprietary HTTP API. This breaks local dev: `wrangler dev` can't route auth queries to `localhost:5432`.
+The Neon HTTP driver (`@neondatabase/serverless`) can't connect to a local Postgres instance. It only speaks Neon's proprietary HTTP API. This breaks local dev: `wrangler dev` can't route auth queries to `localhost:5432`.
 
 Hyperdrive solves this cleanly:
 - **Production**: proxies TCP connections from Workers to PlanetScale Postgres with connection pooling
 - **Local dev**: `localConnectionString` in `wrangler.toml` routes `wrangler dev` directly to local Postgres
-- **Same driver everywhere**: `postgres` (postgres.js) + `drizzle-orm/postgres-js` — zero conditional logic, no driver swapping
+- **Same driver everywhere**: `postgres` (postgres.js) + `drizzle-orm/postgres-js`: zero conditional logic, no driver swapping
 
 ## Driver
 
 - **Package**: `postgres` (postgres.js) v3.4+
 - **Drizzle adapter**: `drizzle-orm/postgres-js`
-- **Behavior**: Lazy connection — no I/O at import time. `postgres(connectionString)` returns a SQL tagged template function. Connections are established on first query. This preserves the module-level singleton pattern.
+- **Behavior**: Lazy connection: no I/O at import time. `postgres(connectionString)` returns a SQL tagged template function. Connections are established on first query. This preserves the module-level singleton pattern.
 
 ## Architecture
 
@@ -54,7 +54,7 @@ Local dev (wrangler dev):
   (bypasses Hyperdrive, connects directly)
 ```
 
-**CLI tools** (`auth:generate`, `db:push`, `db:studio`) use `DATABASE_URL` from `.dev.vars` directly — they don't run inside the Worker runtime and don't use Hyperdrive.
+**CLI tools** (`auth:generate`, `db:push`, `db:studio`) use `DATABASE_URL` from `.dev.vars` directly: they don't run inside the Worker runtime and don't use Hyperdrive.
 
 ## Code Changes
 
@@ -67,10 +67,10 @@ Local dev (wrangler dev):
 
 ### Files unchanged
 
-- `drizzle.config.ts` — drizzle-kit has its own internal driver, reads `DATABASE_URL` from env
-- `src/env.ts` / `src/hono.ts` — CLI env validation unchanged; Worker types updated by `wrangler types`
-- `.dev.vars` — still provides `DATABASE_URL` for CLI tools
-- `src/db/schema.ts` — pure schema definitions, no driver references
+- `drizzle.config.ts`: drizzle-kit has its own internal driver, reads `DATABASE_URL` from env
+- `src/env.ts` / `src/hono.ts`: CLI env validation unchanged; Worker types updated by `wrangler types`
+- `.dev.vars`: still provides `DATABASE_URL` for CLI tools
+- `src/db/schema.ts`: pure schema definitions, no driver references
 
 ## Manual Setup (User Runs)
 

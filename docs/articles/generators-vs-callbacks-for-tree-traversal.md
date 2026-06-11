@@ -28,7 +28,7 @@ type Actions = {
 
 Actions can be nested arbitrarily deep. A user might have `actions.users.getById` or `actions.billing.subscriptions.cancel`. I needed to visit every leaf action with its full path.
 
-My first instinct was the visitor pattern—the classic callback approach. It works, but something about it always felt clunky. This time I tried generators instead, and the difference was striking.
+My first instinct was the visitor pattern. The classic callback approach. It works, but something about it always felt clunky. This time I tried generators instead, and the difference was striking.
 
 ## The Callback Approach
 
@@ -60,7 +60,7 @@ walkActions(actions, (_, path) => {
 });
 ```
 
-This works. But notice what happened: I had to create an external variable (`paths`), then mutate it inside the callback. The callback doesn't return anything—it's pure side effect. The relationship between "I want paths" and "here are paths" is spread across three lines with a mutable variable in between.
+This works. But notice what happened: I had to create an external variable (`paths`), then mutate it inside the callback. The callback doesn't return anything. It's pure side effect. The relationship between "I want paths" and "here are paths" is spread across three lines with a mutable variable in between.
 
 Want to filter? More callback soup:
 
@@ -223,6 +223,6 @@ If you're converting a callback-based traversal to a generator, the pattern is m
 4. Replace recursive calls with `yield* recursiveCall()`
 5. Remove the visitor parameter entirely
 
-The walker's structure stays the same. Only the interface changes—from "call this function" to "produce this value."
+The walker's structure stays the same. Only the interface changes. From "call this function" to "produce this value."
 
 That's the insight: generators let you separate the traversal logic from what you do with the results. The walker produces values. Your code consumes them. Clean boundaries, composable operations, readable flow.

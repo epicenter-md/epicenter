@@ -4,10 +4,10 @@
 
 The bottom controls area of `AiChat.svelte` has several UX and styling issues:
 
-1. **Send button / textarea size mismatch** — The send button uses `size="icon"` (36×36px) but the textarea's natural height doesn't match, creating visual misalignment
-2. **Provider + model selects take too much space** — Two full-width selects eat into valuable chat real estate in a narrow sidebar panel
-3. **The controls area feels cluttered** — Provider select, model combobox, textarea, and send/stop button all stacked vertically creates a lot of visual noise for a compact sidebar
-4. **Missing `<form>` wrapper** — Enter-to-submit works via `onkeydown`, but there's no `<form>` element. Best practice for chat UIs wraps the input area in a `<form>` with `onsubmit` for accessibility and semantic HTML
+1. **Send button / textarea size mismatch**: The send button uses `size="icon"` (36×36px) but the textarea's natural height doesn't match, creating visual misalignment
+2. **Provider + model selects take too much space**: Two full-width selects eat into valuable chat real estate in a narrow sidebar panel
+3. **The controls area feels cluttered**: Provider select, model combobox, textarea, and send/stop button all stacked vertically creates a lot of visual noise for a compact sidebar
+4. **Missing `<form>` wrapper**: Enter-to-submit works via `onkeydown`, but there's no `<form>` element. Best practice for chat UIs wraps the input area in a `<form>` with `onsubmit` for accessibility and semantic HTML
 
 ## Scope
 

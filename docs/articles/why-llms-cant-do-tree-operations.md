@@ -1,12 +1,12 @@
 # Why LLMs Can't Do Tree Operations
 
-**TL;DR: LLMs are sequence models that predict the next token from all previous tokens. Tree operations require maintaining structural invariants — parent-child relationships, sibling indices, depth-aware positioning — while generating tokens left to right. This is fundamentally at odds with how transformers work. The evidence: every production AI editing system gave up on tree operations and converged on text search/replace.**
+**TL;DR: LLMs are sequence models that predict the next token from all previous tokens. Tree operations require maintaining structural invariants: parent-child relationships, sibling indices, depth-aware positioning: while generating tokens left to right. This is fundamentally at odds with how transformers work. The evidence: every production AI editing system gave up on tree operations and converged on text search/replace.**
 
 > You wouldn't ask a human to edit a document by specifying byte offsets. Stop asking LLMs to edit documents by specifying tree positions.
 
 ## The fundamental mismatch
 
-A transformer takes a sequence of tokens and predicts the next one. That's it. Everything else — conversations, code generation, reasoning — is an emergent property of next-token prediction over a large enough training corpus.
+A transformer takes a sequence of tokens and predicts the next one. That's it. Everything else: conversations, code generation, reasoning: is an emergent property of next-token prediction over a large enough training corpus.
 
 This architecture is phenomenal at producing text that looks like text. It's bad at producing structured data that requires maintaining invariants across the output.
 
@@ -41,11 +41,11 @@ And that's a single operation. A typical edit involves multiple operations that 
 ]
 ```
 
-After removing index 5, what was index 7 is now index 6. The model has to track these cascading shifts while generating each operation. This is the same class of problem as pointer arithmetic in C — technically possible, practically a source of endless bugs, even for humans.
+After removing index 5, what was index 7 is now index 6. The model has to track these cascading shifts while generating each operation. This is the same class of problem as pointer arithmetic in C: technically possible, practically a source of endless bugs, even for humans.
 
 ## The JSON Whisperer evidence
 
-The most rigorous study of this problem is JSON Whisperer (EMNLP 2025). Researchers tried having LLMs output RFC 6902 JSON Patch — the standard format for JSON diffs. The format is simple:
+The most rigorous study of this problem is JSON Whisperer (EMNLP 2025). Researchers tried having LLMs output RFC 6902 JSON Patch. The standard format for JSON diffs. The format is simple:
 
 ```json
 [
@@ -55,7 +55,7 @@ The most rigorous study of this problem is JSON Whisperer (EMNLP 2025). Research
 ]
 ```
 
-LLMs failed specifically at array operations. They could handle object key paths (`/name`, `/config/theme`) fine — those are string lookups, not arithmetic. But array index paths (`/items/2`, `/children/5`) were unreliable. The model would output index 3 when it meant 4, or fail to account for shifts after a remove.
+LLMs failed specifically at array operations. They could handle object key paths (`/name`, `/config/theme`) fine. Those are string lookups, not arithmetic. But array index paths (`/items/2`, `/children/5`) were unreliable. The model would output index 3 when it meant 4, or fail to account for shifts after a remove.
 
 The researchers' solution: EASE encoding. Replace array indices with stable two-character keys:
 
@@ -69,7 +69,7 @@ The researchers' solution: EASE encoding. Replace array indices with stable two-
 
 `Bc` doesn't shift when you remove `Aa`. There's no arithmetic. The model treats it as a string identifier, which it can copy reliably from context.
 
-This worked — but only for JSON. And only after eliminating the exact thing that makes tree operations hard: positional arithmetic.
+This worked. But only for JSON. And only after eliminating the exact thing that makes tree operations hard: positional arithmetic.
 
 ## What doesn't work in practice
 
@@ -79,7 +79,7 @@ Here's a non-exhaustive list of structured output formats that nobody has succes
 
 **Yjs CRDT operations.** Yjs operations reference internal item IDs (client ID + clock), which are opaque to the LLM. Even if you exposed a friendlier API, the operations need to reference specific positions within the CRDT's internal linked list. The model can't see this structure.
 
-**AST transformations.** "Wrap the third statement in the function body with a try-catch" requires parsing the AST, navigating to the right node, and producing a valid transformation. Models get close but break on edge cases — wrong nesting level, incorrect scope boundaries, missing closing delimiters.
+**AST transformations.** "Wrap the third statement in the function body with a try-catch" requires parsing the AST, navigating to the right node, and producing a valid transformation. Models get close but break on edge cases: wrong nesting level, incorrect scope boundaries, missing closing delimiters.
 
 **Tree diffs.** "Add node X as child 3 of node Y, then move node Z from under node A to under node B." Every operation depends on the tree state after previous operations. Cascading index shifts make this intractable for current models.
 
@@ -87,11 +87,11 @@ Here's a non-exhaustive list of structured output formats that nobody has succes
 
 Every production system converges on the same workaround: treat the document as text.
 
-**Text search/replace** — Claude Code's `str_replace(old_string, new_string)`, Aider's SEARCH/REPLACE blocks, Cursor's semantic diffs. The model finds text by matching content, not by navigating a tree. The surrounding text is the anchor.
+**Text search/replace**: Claude Code's `str_replace(old_string, new_string)`, Aider's SEARCH/REPLACE blocks, Cursor's semantic diffs. The model finds text by matching content, not by navigating a tree. The surrounding text is the anchor.
 
-**Complete rewrites with algorithmic diffing** — Liveblocks' [flatten-diff approach](./liveblocks-flatten-diff-pattern.md). Don't ask the model for a diff. Ask it to rewrite the whole section. Then diff algorithmically. Move the structural reasoning from the model (bad at it) to a deterministic algorithm (good at it).
+**Complete rewrites with algorithmic diffing**: Liveblocks' [flatten-diff approach](./liveblocks-flatten-diff-pattern.md). Don't ask the model for a diff. Ask it to rewrite the whole section. Then diff algorithmically. Move the structural reasoning from the model (bad at it) to a deterministic algorithm (good at it).
 
-**Line-level operations** — OpenAI Codex uses `*** Begin Patch` with line-context markers. Not byte positions or tree paths. The model identifies lines by their content, then specifies insertions and deletions relative to those content anchors.
+**Line-level operations**: OpenAI Codex uses `*** Begin Patch` with line-context markers. Not byte positions or tree paths. The model identifies lines by their content, then specifies insertions and deletions relative to those content anchors.
 
 The common thread: the model works with text as text. It identifies locations by content, not by position. It produces text, not operations. The system around it translates text changes into whatever structured operations the underlying data model needs.
 
@@ -101,13 +101,13 @@ The problem isn't that LLMs are "dumb." GPT-4, Claude, and Gemini are staggering
 
 Tree operations are a machine interface. They were designed for programs that maintain perfect state, can index arrays without error, and track cascading position changes flawlessly. Asking an LLM to produce them is like asking a human to hand-write TCP packets. We can technically do it. We'll get it wrong constantly.
 
-Text search/replace is a human interface. Find this chunk of text. Replace it with that chunk of text. This is how humans describe edits to each other. It's also how LLMs work best — they find patterns in text and produce new text.
+Text search/replace is a human interface. Find this chunk of text. Replace it with that chunk of text. This is how humans describe edits to each other. It's also how LLMs work best. They find patterns in text and produce new text.
 
 The best AI editing systems don't fight this. They lean into it. They let the model work with text, and they handle the translation to structural operations in deterministic code that won't hallucinate an off-by-one.
 
 ## The takeaway
 
-If you're designing a system that AI will edit, don't expose tree operations to the model. Expose text. Let the model read text and write text. Translate between text and your internal representation in code — not in the prompt.
+If you're designing a system that AI will edit, don't expose tree operations to the model. Expose text. Let the model read text and write text. Translate between text and your internal representation in code, not in the prompt.
 
 This isn't a temporary limitation that will be fixed with the next model generation. It's a consequence of the transformer architecture. Next-token prediction is good at text and bad at positional arithmetic. That won't change until the architecture does.
 

@@ -6,7 +6,7 @@ pubDate: 2025-01-29
 
 I've been building personal tools for years. Every time, I start with SQLite. Every time, I regret it.
 
-Not because SQLite is bad—it's fantastic. But because personal tools have different constraints than web apps, and databases optimize for the wrong things.
+Not because SQLite is bad. It's fantastic. But because personal tools have different constraints than web apps, and databases optimize for the wrong things.
 
 ## The problem with traditional databases
 
@@ -63,7 +63,7 @@ The first time I used Yjs, I made one giant document for everything. Bad idea. H
 
 Instead, use one document per logical unit:
 - One doc per note
-- One doc per email thread  
+- One doc per email thread
 - One doc per project
 
 Now syncs are fast, conflicts are isolated, and you can garbage collect old data.
@@ -82,17 +82,17 @@ class NoteService {
   async createNote(title) {
     const doc = new Y.Doc()
     const noteId = generateId()
-    
+
     // Define the structure
     const note = doc.getMap('note')
     note.set('title', title)
     note.set('content', new Y.Text())
     note.set('created', Date.now())
-    
+
     // Save to disk
     const filePath = path.join(this.notesDir, `${noteId}.yjs`)
     await fs.writeFile(filePath, Y.encodeStateAsUpdate(doc))
-    
+
     this.docs.set(noteId, doc)
     return noteId
   }
@@ -100,10 +100,10 @@ class NoteService {
   async loadNote(noteId) {
     const filePath = path.join(this.notesDir, `${noteId}.yjs`)
     const data = await fs.readFile(filePath)
-    
+
     const doc = new Y.Doc()
     Y.applyUpdate(doc, data)
-    
+
     this.docs.set(noteId, doc)
     return doc
   }
@@ -121,11 +121,11 @@ async addAttachment(noteId, file) {
   // Hash the content for deduplication
   const hash = await hashFile(file)
   const ext = path.extname(file.name)
-  
+
   // Store in assets folder
   const assetPath = path.join(this.notesDir, 'assets', `${hash}${ext}`)
   await fs.copyFile(file.path, assetPath)
-  
+
   // Reference in the CRDT
   const doc = this.docs.get(noteId)
   const attachments = doc.getArray('attachments')
@@ -164,7 +164,7 @@ class DocManager {
     // Always append the update
     await fs.appendFile(this.updatesPath, update)
     this.updateCount++
-    
+
     // Snapshot every 1000 updates
     if (this.updateCount >= 1000) {
       const state = Y.encodeStateAsUpdate(doc)
@@ -176,13 +176,13 @@ class DocManager {
 
   async load() {
     const doc = new Y.Doc()
-    
+
     // Load snapshot if it exists
     if (await exists(this.snapshotPath)) {
       const snapshot = await fs.readFile(this.snapshotPath)
       Y.applyUpdate(doc, snapshot)
     }
-    
+
     // Apply recent updates
     if (await exists(this.updatesPath)) {
       const updates = await fs.readFile(this.updatesPath)
@@ -196,7 +196,7 @@ class DocManager {
         offset += updateSize
       }
     }
-    
+
     return doc
   }
 }

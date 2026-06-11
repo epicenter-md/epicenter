@@ -11,7 +11,7 @@
 
 ## One-sentence thesis
 
-> Each device publishes its action set into awareness as JSON Schema. Any device can discover what every other online device offers, and invoke a specific peer's action via `sync.rpc`. No new attach primitive — just a state convention plus two helpers (`serializeActionManifest`, `invoke`).
+> Each device publishes its action set into awareness as JSON Schema. Any device can discover what every other online device offers, and invoke a specific peer's action via `sync.rpc`. No new attach primitive: just a state convention plus two helpers (`serializeActionManifest`, `invoke`).
 
 ---
 
@@ -30,7 +30,7 @@
    ─────────────────────────────────────────────────
    iPad sends a URL; desktop browser is the target.
 
-4. Multi-Mac fallback — two laptops both have Claude Code
+4. Multi-Mac fallback: two laptops both have Claude Code
    ─────────────────────────────────────────────────────
    Either can serve. Caller picks any peer that offers it.
 
@@ -46,8 +46,8 @@ What these have in common:
 - **The caller wants a synchronous response.** "Did the transcription succeed? Here's the text."
 
 What they *don't* have in common with state mutations like `entries.create`:
-- State mutations are **idempotent under CRDT** — every device can perform them, and the result merges. No need for cross-device dispatch.
-- Cross-device side effects are **device-bound** — only the device with the capability can execute. Dispatching elsewhere is meaningless.
+- State mutations are **idempotent under CRDT**: every device can perform them, and the result merges. No need for cross-device dispatch.
+- Cross-device side effects are **device-bound**: only the device with the capability can execute. Dispatching elsewhere is meaningless.
 
 So: per-device side effects need a discovery + addressable-RPC layer. State mutations don't.
 
@@ -55,7 +55,7 @@ So: per-device side effects need a discovery + addressable-RPC layer. State muta
 
 ## Why "actions" stays one concept (not "actions + capabilities")
 
-A "capability" here would be a typed callable with input schema, type tag, and an advertised location. **That's an action with awareness metadata.** Adding the term "capability" implies a separate primitive. There's only one — actions — with two new properties:
+A "capability" here would be a typed callable with input schema, type tag, and an advertised location. **That's an action with awareness metadata.** Adding the term "capability" implies a separate primitive. There's only one: actions, with two new properties:
 
 - *Locally implemented*: this device's `dispatch` callback handles incoming RPC for it.
 - *Advertised in awareness*: this device announces it to peers.
@@ -79,9 +79,9 @@ type DeviceAwarenessState = {
     id: string;          // stable across reconnects (persisted locally)
     name: string;        // human-readable, may be user-editable
     platform?: string;   // 'darwin' | 'ios' | 'browser' | 'node' | etc.
-    [key: string]: unknown;  // extension point — user adds whatever
+    [key: string]: unknown;  // extension point: user adds whatever
   };
-  // Schemas only — handlers stay local. JSON-serializable.
+  // Schemas only: handlers stay local. JSON-serializable.
   offers: {
     [actionPath: string]: {
       type: 'query' | 'mutation';
@@ -97,13 +97,13 @@ Each device sets this once at boot via `awareness.setLocalState({ device, offers
 
 ### Why TypeBox for schemas
 
-TypeBox produces JSON Schema directly — the schema *is* the serializable form. arktype, Zod, and Standard Schema all need a `.toJsonSchema()` step. For awareness publishing, schema-as-data is the right shape, so TypeBox is the path of least resistance.
+TypeBox produces JSON Schema directly. The schema *is* the serializable form. arktype, Zod, and Standard Schema all need a `.toJsonSchema()` step. For awareness publishing, schema-as-data is the right shape, so TypeBox is the path of least resistance.
 
 The framework accepts JSON Schema as the canonical format. Users may use any library that produces it; the convention here references TypeBox because it's the existing in-repo library and already used by Fuji's actions (`apps/fuji/src/lib/workspace.ts`).
 
-### Device identity — generation, persistence, rename
+### Device identity: generation, persistence, rename
 
-`device.id` is generated once and persisted locally per device. `device.name` is user-editable. **No framework helper** — the pattern is short enough to inline; persistence is platform-specific anyway.
+`device.id` is generated once and persisted locally per device. `device.name` is user-editable. **No framework helper**: the pattern is short enough to inline; persistence is platform-specific anyway.
 
 ```ts
 // At boot
@@ -117,7 +117,7 @@ awareness.setLocalState({
   offers: serializeActionManifest(actions),
 });
 
-// Rename — exposed to settings UI
+// Rename: exposed to settings UI
 export function renameDevice(newName: string) {
   localStorage.setItem('fuji:device-name', newName);
   const state = awareness.getLocalState();
@@ -214,7 +214,7 @@ export async function invoke<O = unknown>(
 
 ---
 
-## Architecture — three primitives, two helpers
+## Architecture: three primitives, two helpers
 
 ```
                             ┌──────────────────┐
@@ -253,7 +253,7 @@ Three attaches stay independent. Two helper *functions* wire them together at th
 
 ---
 
-## Bootstrap example — full SPA
+## Bootstrap example: full SPA
 
 ```ts
 // apps/fuji/src/lib/client.svelte.ts
@@ -304,10 +304,10 @@ export const fuji = {
 Use:
 
 ```ts
-// In SPA component — local action call (no schema run, no network)
+// In SPA component: local action call (no schema run, no network)
 fuji.actions.entries.create({ title: 'hi' });
 
-// Cross-device — find a peer that offers it, invoke remotely
+// Cross-device: find a peer that offers it, invoke remotely
 const result = await fuji.invoke(
   { has: 'claude-code.run' },
   'claude-code.run',
@@ -322,7 +322,7 @@ console.log(result.data);
 
 ---
 
-## Per-device action sets — concrete example
+## Per-device action sets: concrete example
 
 A desktop device's action registry includes `claude-code.run`; a mobile's doesn't. Both include `entries.create`.
 
@@ -347,9 +347,9 @@ const actions = createFujiActions(tables);
 
 Both call `serializeActionManifest(actions)` and publish to awareness. Each device sees the other's manifest and knows which actions are offered where.
 
-`fuji.invoke({ has: 'claude-code.run' }, ...)` from mobile finds the desktop peer and dispatches via RPC. From desktop, it finds itself first (it's a peer offering the action) — but since `awareness.clientID === found[0]` is filtered out, it picks another peer or returns `NoOffer`. Local invocation should not go through `invoke`; the caller should call `actions.claude-code.run(input)` directly. **The invoke helper is for cross-device dispatch only.**
+`fuji.invoke({ has: 'claude-code.run' }, ...)` from mobile finds the desktop peer and dispatches via RPC. From desktop, it finds itself first (it's a peer offering the action): but since `awareness.clientID === found[0]` is filtered out, it picks another peer or returns `NoOffer`. Local invocation should not go through `invoke`; the caller should call `actions.claude-code.run(input)` directly. **The invoke helper is for cross-device dispatch only.**
 
-(If a "smart invoke" — prefer local, fall back to remote — turns out useful, that can ship as a separate helper later. Not in scope for v1.)
+(If a "smart invoke": prefer local, fall back to remote: turns out useful, that can ship as a separate helper later. Not in scope for v1.)
 
 ---
 
@@ -380,13 +380,13 @@ $ epicenter run desktop-1.claude-code.run '{"prompt":"...","cwd":"/"}'
 
 The existing `epicenter peers` command already lists peers (`packages/cli/src/commands/peers.ts`). It can be extended (or replaced by `epicenter devices`) to render the offered actions per peer.
 
-**Path syntax — keep both forms, with clear roles**:
+**Path syntax: keep both forms, with clear roles**:
 
 ```bash
-# Dot-prefix (primary) — when you know the target device id
+# Dot-prefix (primary): when you know the target device id
 $ epicenter run desktop-1.claude-code.run '{"prompt":"..."}'
 
-# --peer flag (existing) — for field matching ("any darwin device")
+# --peer flag (existing): for field matching ("any darwin device")
 $ epicenter run claude-code.run --peer platform=darwin '{...}'
 $ epicenter run claude-code.run --peer 'device.name=*Mac*' '{...}'
 ```
@@ -398,7 +398,7 @@ Resolution rules:
 
 Constraint: device ids must not contain dots. `crypto.randomUUID()` and nanoid don't produce dots, so this is free.
 
-(Detailed CLI changes are out of scope for this spec — that's a separate update to the CLI scripting-first redesign spec.)
+(Detailed CLI changes are out of scope for this spec, that's a separate update to the CLI scripting-first redesign spec.)
 
 ---
 
@@ -406,13 +406,13 @@ Constraint: device ids must not contain dots. `crypto.randomUUID()` and nanoid d
 
 | Decision | Choice | Rationale |
 |---|---|---|
-| New attach primitive | **No** — function helpers only (`serializeActionManifest`, `invoke`) | The pattern is composition over `awareness.setLocalState` + `sync.rpc`. No state to manage in a new attach. Inline-first principle: ship the helpers; promote to a primitive only if the pattern duplicates painfully. |
-| New "capability" concept | **No** — actions stay one concept | A capability is just an action that's advertised. Adding a separate term doubles the vocabulary without doubling the substance. |
-| Schema serialization library | **TypeBox** for canonical form | TypeBox produces JSON Schema directly — schema *is* data. arktype/Zod/etc. work via `.toJsonSchema()` if users prefer those upstream. Framework's wire format is JSON Schema. |
+| New attach primitive | **No**: function helpers only (`serializeActionManifest`, `invoke`) | The pattern is composition over `awareness.setLocalState` + `sync.rpc`. No state to manage in a new attach. Inline-first principle: ship the helpers; promote to a primitive only if the pattern duplicates painfully. |
+| New "capability" concept | **No**: actions stay one concept | A capability is just an action that's advertised. Adding a separate term doubles the vocabulary without doubling the substance. |
+| Schema serialization library | **TypeBox** for canonical form | TypeBox produces JSON Schema directly: schema *is* data. arktype/Zod/etc. work via `.toJsonSchema()` if users prefer those upstream. Framework's wire format is JSON Schema. |
 | Awareness state shape | Standardized keys (`device`, `offers`) | Without a convention, every app would invent its own; tooling (CLI `devices`, agent introspection) couldn't be cross-app. Standardizing the keys lets one set of tools work against any workspace. |
 | Per-device device id | **Persisted locally** (localStorage / file path) | Stable across reconnects. y-protocols' clientID is session-local (re-randomized per session), so the user-meaningful device identity must live elsewhere. |
 | `invoke` target shapes | `{ peerId: number }` *or* `{ has: string }` | Direct addressing for known peers; capability-based addressing for "any peer that can do this." Two needs, one helper. |
-| Local-vs-remote dispatch | Caller chooses. `invoke` is remote-only. | Local invocation goes through `actions.X.create(...)` directly — typed, fast, no network. `invoke` is the cross-device escape hatch. Smart "prefer local, fall back" is a future-additive helper if needed. |
+| Local-vs-remote dispatch | Caller chooses. `invoke` is remote-only. | Local invocation goes through `actions.X.create(...)` directly: typed, fast, no network. `invoke` is the cross-device escape hatch. Smart "prefer local, fall back" is a future-additive helper if needed. |
 | Response shape | wellcrafted `Result<T, InvokeError>` | Matches the codebase's existing pattern. Network errors, missing-peer errors, remote-thrown errors all surface as `Err` variants. |
 
 ---
@@ -432,9 +432,9 @@ Constraint: device ids must not contain dots. `crypto.randomUUID()` and nanoid d
 |---|---|
 | Ship `attachCapabilities(awareness, sync, { device, serve })` as a new attach | All it would do is wrap `awareness.setLocalState` + `dispatch` setup in one call. The same wiring is 5 lines inline. Don't extract until it duplicates. |
 | Bake capability publishing into `attachAwareness` (it gets a `serve` config) | Conflates awareness's job (presence) with action wiring (cross-cutting). `attachAwareness` should know about state, not handlers. |
-| Split `attachSync` into `attachWebSocket` + `attachCRDTSync` + `attachRpcServer` + `attachRpcClient` | Maximum atomicity, but every consumer wants all four. Five setup lines for the common case. The `dispatch` and `getToken` parameters of `attachSync` are already the seam — config-option granularity, not attach granularity. |
+| Split `attachSync` into `attachWebSocket` + `attachCRDTSync` + `attachRpcServer` + `attachRpcClient` | Maximum atomicity, but every consumer wants all four. Five setup lines for the common case. The `dispatch` and `getToken` parameters of `attachSync` are already the seam: config-option granularity, not attach granularity. |
 | Make state mutations go through `invoke` too (unified addressing) | Wasteful network round-trips for operations every device can do locally. State mutations are CRDT-local; invoke is for true side effects. Keep the paths separate. |
-| Auto-publish offers from inside `attachSync.dispatch` (sync writes to awareness on construction) | Sync would need to know about awareness's state shape and what's "an action." Better to have the user call `awareness.setLocalState({ offers: serializeActionManifest(actions) })` explicitly — visible in the bootstrap, no magic. |
+| Auto-publish offers from inside `attachSync.dispatch` (sync writes to awareness on construction) | Sync would need to know about awareness's state shape and what's "an action." Better to have the user call `awareness.setLocalState({ offers: serializeActionManifest(actions) })` explicitly: visible in the bootstrap, no magic. |
 | Use arktype-style validators (functions, not data) in awareness | Functions don't serialize. Schema-as-data is the load-bearing requirement; TypeBox gives it natively. |
 | Name the concept "capability" | Adds vocabulary. Actions already do this job; we're just adding awareness publishing. |
 
@@ -442,26 +442,26 @@ Constraint: device ids must not contain dots. `crypto.randomUUID()` and nanoid d
 
 ## Implementation plan
 
-### Phase 1 — Helpers and conventions
+### Phase 1: Helpers and conventions
 
 - [ ] **1.1** Add `DeviceAwarenessState` type to `@epicenter/workspace` exports. Just the type; users construct values.
 - [ ] **1.2** Implement `serializeActionManifest(actions)` (~10 lines). Export from `@epicenter/workspace`.
 - [ ] **1.3** Implement `invoke(ctx, target, method, input)` (~30 lines including peer resolution). Export from `@epicenter/workspace`.
 - [ ] **1.4** Update `packages/workspace/README.md` and the `workspace-api` skill to document the awareness state convention and helpers.
 
-### Phase 2 — Update bootstrap examples
+### Phase 2: Update bootstrap examples
 
 - [ ] **2.1** Update `apps/fuji/src/lib/client.svelte.ts` to publish `device` + `offers` via `awareness.setLocalState`. Expose a typed `fuji.invoke(target, method, input)` on the export.
 - [ ] **2.2** Update each playground config (`playground/tab-manager-e2e/epicenter.config.ts`, `playground/opensidian-e2e/epicenter.config.ts`) similarly.
 - [ ] **2.3** Verify cross-device discovery: open Fuji on two devices (or two browser tabs), confirm `awareness.getStates()` shows both with their `offers`.
 
-### Phase 3 — CLI surface (separate spec coordination)
+### Phase 3: CLI surface (separate spec coordination)
 
 - [ ] **3.1** `epicenter peers` already exists. Extend it (or add `epicenter devices`) to render `offers` per peer.
 - [ ] **3.2** `epicenter run <device>.<action>` resolves the device by `device.id` from awareness, calls `sync.rpc`. Coordinate with `cli-scripting-first-redesign` spec.
 - [ ] **3.3** Decide on path syntax: `desktop-1.claude-code.run` (device-prefixed) vs the existing `--peer device.id=desktop-1 claude-code.run`. Likely keep both.
 
-### Phase 4 — Real cross-device use case (separate spec/PR)
+### Phase 4: Real cross-device use case (separate spec/PR)
 
 - [ ] **4.1** Pick the first real consumer (Claude Code remote, or Whisper-on-Mac, or open-tab-in-browser).
 - [ ] **4.2** Define the action(s) on the appropriate device's bootstrap. Include in `serializeActionManifest`.
@@ -476,19 +476,19 @@ Constraint: device ids must not contain dots. `crypto.randomUUID()` and nanoid d
 `sync.rpc` will time out per its existing semantics. `invoke` returns `Err({ name: 'PeerOffline' or 'Timeout', ... })`. Caller handles via Result.
 
 ### Two devices offer the same action
-`{ has: 'claude-code.run' }` resolves to the *first* peer iterated — implementation detail, no ordering guarantee. If the caller wants a specific one, they pass `{ peerId }` directly. If load-balancing or fallback is needed later, that's a wrapper helper, not framework concern.
+`{ has: 'claude-code.run' }` resolves to the *first* peer iterated: implementation detail, no ordering guarantee. If the caller wants a specific one, they pass `{ peerId }` directly. If load-balancing or fallback is needed later, that's a wrapper helper, not framework concern.
 
 ### Schema in awareness is invalid / corrupted
 The receiving device validates with `Value.Cast(schema, input)` (TypeBox) inside `dispatch`. Validation failure surfaces as an `RpcError` returned to the caller. The awareness publisher is the source of truth; if it published garbage, that's a deploy bug.
 
 ### Awareness state size grows large
-A device with 100 actions × 1KB schemas = 100KB awareness state. Awareness is broadcast on every change. Realistically Fuji has ~5 actions, schemas under 500 bytes. Watch for this in Whispering / tab-manager if their action sets balloon. If it becomes a problem, the schemas can move to a Y.Map and awareness only carries the action *names* — but defer until measured.
+A device with 100 actions × 1KB schemas = 100KB awareness state. Awareness is broadcast on every change. Realistically Fuji has ~5 actions, schemas under 500 bytes. Watch for this in Whispering / tab-manager if their action sets balloon. If it becomes a problem, the schemas can move to a Y.Map and awareness only carries the action *names*. But defer until measured.
 
 ### Offline → online transitions
 On reconnect, awareness re-announces local state. Other peers see the device come back online. No special handling.
 
 ### CLI invokes its own action
-The CLI is itself a peer. If the user runs `epicenter run cli-self.entries.create`, `invoke` finds the local clientID — but the helper filters that out (per the implementation above) and returns `NoOffer`. The CLI dispatching its own actions should go through `dispatchAction(entry.workspace.actions, path, input)` directly, not through `invoke`.
+The CLI is itself a peer. If the user runs `epicenter run cli-self.entries.create`, `invoke` finds the local clientID. But the helper filters that out (per the implementation above) and returns `NoOffer`. The CLI dispatching its own actions should go through `dispatchAction(entry.workspace.actions, path, input)` directly, not through `invoke`.
 
 ---
 
@@ -498,7 +498,7 @@ The CLI is itself a peer. If the user runs `epicenter run cli-self.entries.creat
    - UUID for stability + a `name` field for display reads cleanly.
    - **Recommendation**: persist a UUID as `id`; let users edit `name` in settings.
 
-2. **Awareness includes ephemeral state (cursor position, selected entry) — does mixing it with `device`/`offers` cause issues?**
+2. **Awareness includes ephemeral state (cursor position, selected entry): does mixing it with `device`/`offers` cause issues?**
    - `device` and `offers` are static-after-boot. Cursor/selection update frequently.
    - Awareness reduces all keys into one state object on update. No issue with mixing, but bandwidth-conscious code might want to namespace.
    - **Recommendation**: keep them as top-level keys for now. Watch for traffic if it becomes painful.
@@ -510,7 +510,7 @@ The CLI is itself a peer. If the user runs `epicenter run cli-self.entries.creat
 4. **Per-action authorization (e.g., only signed-in admin can run claude-code.run)?**
    - Out of scope for v1. The receiving device's `dispatch` callback can wrap actions with auth checks; that's app-level, not framework.
 
-5. **`invoke` returns `Result` — how does this interact with actions whose handlers also return `Result`?**
+5. **`invoke` returns `Result`: how does this interact with actions whose handlers also return `Result`?**
    - **Resolved by the teardown spec's "always async + always Result" decision**: every action returns `Promise<Result<T, E>>` from the caller's perspective. Handlers may return raw values or `Result`s; the framework normalizes via `isResult(returnedValue) ? value : Ok(value)`.
    - Local callers always pattern-match `result.error`. Remote callers see the same shape; their error union widens by `RpcError | InvokeError`. No transport-aware type machinery needed at call sites.
    - The `RemoteReturn` conditional type (`packages/workspace/src/shared/actions.ts:515-528`) is removed; remote callers just see `Promise<Result<T, E | RpcError | InvokeError>>`.
@@ -532,20 +532,20 @@ The CLI is itself a peer. If the user runs `epicenter run cli-self.entries.creat
 
 ### Builds on
 
-- `specs/20260424T180000-drop-document-factory-attach-everything.md` — post-factory architecture, action shape, attach decomposition.
+- `specs/20260424T180000-drop-document-factory-attach-everything.md`: post-factory architecture, action shape, attach decomposition.
 
 ### Coordinates with
 
-- `specs/20260421T155436-cli-scripting-first-redesign.md` — CLI dispatch surface (the dot-prefixed `<device>.<action>` form is a follow-up edit there).
-- `specs/20260423T174126-cli-remote-peer-rpc.md` — existing `--peer` semantics; this spec aligns with them and adds a typed-discovery layer.
+- `specs/20260421T155436-cli-scripting-first-redesign.md`: CLI dispatch surface (the dot-prefixed `<device>.<action>` form is a follow-up edit there).
+- `specs/20260423T174126-cli-remote-peer-rpc.md`: existing `--peer` semantics; this spec aligns with them and adds a typed-discovery layer.
 
 ### Conversation that produced this spec
 
 The reasoning that led here:
 
 1. The teardown spec collapsed `Document` / `DocumentHandle` / `DocumentFactory` and most of the action-walking machinery.
-2. With the cleanup done, the next question became "what's the action system *for*?" — and a real use case (run Claude Code remotely from mobile) crystallized the per-device-side-effect category.
-3. Considered (and rejected) introducing a "capability" concept as a separate primitive — actions already do the job, just need awareness publishing.
+2. With the cleanup done, the next question became "what's the action system *for*?": and a real use case (run Claude Code remotely from mobile) crystallized the per-device-side-effect category.
+3. Considered (and rejected) introducing a "capability" concept as a separate primitive: actions already do the job, just need awareness publishing.
 4. The load-bearing insight: TypeBox produces JSON Schema natively, so action schemas can live directly in awareness state.
-5. Considered (and rejected) shipping `attachCapabilities` as a new attach. The pattern is just `awareness.setLocalState({ offers })` + `invoke()` — five lines of inline composition. Helper functions, no new primitive.
-6. Decomposition question: should `attachSync` be split into WebSocket / CRDT / RPC primitives? Concluded no — the parameters (`dispatch`, `getToken`, `awareness`) already provide the seams; no current consumer needs the split. Defer until a real swap appears.
+5. Considered (and rejected) shipping `attachCapabilities` as a new attach. The pattern is just `awareness.setLocalState({ offers })` + `invoke()`: five lines of inline composition. Helper functions, no new primitive.
+6. Decomposition question: should `attachSync` be split into WebSocket / CRDT / RPC primitives? Concluded no: the parameters (`dispatch`, `getToken`, `awareness`) already provide the seams; no current consumer needs the split. Defer until a real swap appears.

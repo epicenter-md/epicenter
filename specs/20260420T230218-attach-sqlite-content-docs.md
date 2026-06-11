@@ -1,7 +1,7 @@
-# Spec: `attachSqlite` — per-doc SQLite persistence + attach-callback factory API
+# Spec: `attachSqlite`: per-doc SQLite persistence + attach-callback factory API
 
 **Status:** Implemented on `braden-w/document-primitive`.
-**Related:** `20260420T230100-collapse-document-framework.md` — landed the
+**Related:** `20260420T230100-collapse-document-framework.md`: landed the
 app-owned `defineDocument` pattern this completes.
 
 > **Path note (2026-05-22):** Any `~/.epicenter/persistence/` examples in this historical implementation note are stale. Keep project-local `<projectDir>/.epicenter/` examples when they describe generated project data, but do not use top-level `~/.epicenter/` as the current persistence root.
@@ -9,15 +9,15 @@ app-owned `defineDocument` pattern this completes.
 ## Problem
 
 Per-content Y.Docs had exactly one persistence adapter: `attachIndexedDb`,
-browser-only. Node, Bun, and Tauri runtimes had no equivalent — content docs
+browser-only. Node, Bun, and Tauri runtimes had no equivalent: content docs
 ran in memory and re-hydrated from WebSocket sync on every cold start.
 
 Three things conspired to make the situation worse than it looked:
 
 1. **The primitive nearly existed already.** A file
    `packages/document/src/attach-filesystem-persistence.ts` shipped the
-   right shape — `{ whenLoaded, clearLocal, whenDisposed }`, exactly
-   parallel to `attachIndexedDb` — but was named `attachFilesystemPersistence`
+   right shape: `{ whenLoaded, clearLocal, whenDisposed }`, exactly
+   parallel to `attachIndexedDb`: but was named `attachFilesystemPersistence`
    and not part of the package.json exports surface.
 2. **The append-log compaction code was duplicated verbatim** between
    `packages/document/src/attach-filesystem-persistence.ts` and
@@ -25,8 +25,8 @@ Three things conspired to make the situation worse than it looked:
    Y.Doc persistence extension). Byte-for-byte identical constants +
    `compactUpdateLog()`. Drift bomb.
 3. **Content-doc factories carried a vestigial `persistence` flag.** Three
-   factories — `createFileContentDocs`, `createSkillInstructionsDocs`,
-   `createReferenceContentDocs` — took `persistence: 'indexeddb' | 'none'`.
+   factories: `createFileContentDocs`, `createSkillInstructionsDocs`,
+   `createReferenceContentDocs`: took `persistence: 'indexeddb' | 'none'`.
    The flag is the exact shape of the framework-decides pattern we'd just
    collapsed. Browser apps set `'indexeddb'`; Node set `'none'`; nobody ever
    wanted a different axis.
@@ -76,7 +76,7 @@ workspace-scope) import from this single module. Exported via subpath
 `@epicenter/document/sqlite-update-log` so workspace can reference it
 without pulling the full `@epicenter/document` barrel.
 
-### Factory API change — `persistence` → `attach`
+### Factory API change: `persistence` → `attach`
 
 Before:
 
@@ -140,7 +140,7 @@ because:
 - `ls` is self-documenting (the workspace-collection-field prefix shows
   the Y.Doc's full identity).
 - Deletion of one doc is `rm` of one file; no DB lock contention.
-- File-per-doc matches IndexedDB's namespace-per-doc model — drop-in swap.
+- File-per-doc matches IndexedDB's namespace-per-doc model: drop-in swap.
 
 ## Commits
 
@@ -161,7 +161,7 @@ Bisect-friendly; each phase green under `bun test`.
   keeps its single-file workspace-scope role; now just imports the shared
   helper.
 - No remote-SQLite support (libSQL / Turso). Future work.
-- No `attachOpfs` or browser-filesystem variants. The pattern is ready —
+- No `attachOpfs` or browser-filesystem variants. The pattern is ready:
   a third attachment would add one file under `packages/document/src/`
   with the same shape.
 

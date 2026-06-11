@@ -20,7 +20,7 @@ export const fs = createYjsFileSystem(workspace.tables.files, workspace.document
 export const bash = new Bash({ fs, cwd: '/' });
 ```
 
-The tab-manager app already has a working TanStack AI chat integration with tool calling, approval flows, and multi-provider support—all connecting to the existing `/ai/chat` endpoint in `apps/api`.
+The tab-manager app already has a working TanStack AI chat integration with tool calling, approval flows, and multi-provider support. All connecting to the existing `/ai/chat` endpoint in `apps/api`.
 
 The `@epicenter/skills` package provides a CRDT-backed skills workspace with `listSkills()`, `getSkill()`, and `getSkillWithReferences()` read actions. The `apps/skills` app already demonstrates this pattern with `createSkillsWorkspace()` + IndexedDB persistence.
 
@@ -34,8 +34,8 @@ The `@epicenter/skills` package provides a CRDT-backed skills workspace with `li
 
 A chat panel in opensidian where the AI can search, read, create, edit, and organize notes. Two skill layers shape AI behavior:
 
-- **Global skills** from `@epicenter/skills`—platform-level behavior shared across all Epicenter apps (e.g. writing voice, documentation conventions, TypeScript patterns). Maintained by developers, synced via the skills workspace CRDT.
-- **Vault skills** from `/skills/*.md`—user-created customizations personal to each vault (e.g. "format meeting notes like this", "use Spanish for responses"). Just markdown files the user edits like any other note.
+- **Global skills** from `@epicenter/skills`: platform-level behavior shared across all Epicenter apps (e.g. writing voice, documentation conventions, TypeScript patterns). Maintained by developers, synced via the skills workspace CRDT.
+- **Vault skills** from `/skills/*.md`: user-created customizations personal to each vault (e.g. "format meeting notes like this", "use Spanish for responses"). Just markdown files the user edits like any other note.
 
 All mutations require approval.
 
@@ -46,7 +46,7 @@ All mutations require approval.
 | Component | Location | What It Does |
 |-----------|----------|-------------|
 | `/ai/chat` endpoint | `apps/api/src/ai-chat.ts` | Hono handler: validates body (arktype), billing check, picks adapter, `chat()` → `toServerSentEventsResponse()` |
-| `@epicenter/ai` tool bridge | `packages/ai/src/tool-bridge.ts` | `actionsToClientTools()` + `toToolDefinitions()` — converts workspace actions to TanStack AI tools |
+| `@epicenter/ai` tool bridge | `packages/ai/src/tool-bridge.ts` | `actionsToClientTools()` + `toToolDefinitions()`: converts workspace actions to TanStack AI tools |
 | TanStack AI (Svelte) | `@tanstack/ai-svelte` | `createChat()` + `fetchServerSentEvents()` for SSE streaming |
 | Chat UI components | `apps/tab-manager/src/lib/components/chat/` | `AiChat.svelte`, `MessageList.svelte`, `MessageParts.svelte`, `ToolCallPart.svelte`, `ToolResultPart.svelte`, `ChatInput.svelte` |
 | Chat state pattern | `apps/tab-manager/src/lib/chat/chat-state.svelte.ts` | `createChat` wiring with tools, system prompts, persistence |
@@ -56,7 +56,7 @@ All mutations require approval.
 | just-bash | `apps/opensidian/src/lib/client.ts` | Already wired: `new Bash({ fs, cwd: '/' })` with Yjs filesystem |
 | SQLite FTS search | `apps/opensidian/src/lib/state/search-state.svelte.ts` | `workspace.extensions.sqliteIndex.search()` |
 | Skills workspace | `packages/skills/src/workspace.ts` | `createSkillsWorkspace()` with `listSkills()`, `getSkill()`, `getSkillWithReferences()` read actions |
-| Skills tables | `packages/skills/src/tables.ts` | `skillsTable` + `referencesTable` — CRDT-backed skill storage with Y.Doc instructions |
+| Skills tables | `packages/skills/src/tables.ts` | `skillsTable` + `referencesTable`: CRDT-backed skill storage with Y.Doc instructions |
 | Skills app pattern | `apps/skills/src/lib/client.ts` | Example: `createSkillsWorkspace().withExtension('persistence', indexeddbPersistence)` |
 
 **Key finding**: The server endpoint needs zero changes. It already accepts `tools` and `systemPrompts` in the request body and passes them through to `chat()`.
@@ -128,7 +128,7 @@ createChat({
 **Why two layers, not one:**
 
 - **Global skills** define ecosystem-wide behavior. When the writing-voice skill is updated in `packages/skills`, every Epicenter app's AI improves. These are curated, version-controlled, and synced via the skills workspace CRDT. They're the same skills tab-manager's AI would use.
-- **Vault skills** are personal. A researcher's vault skills differ from a developer's. They live in the filesystem because opensidian is a note-taking app—everything is a note. Users edit them alongside their other files.
+- **Vault skills** are personal. A researcher's vault skills differ from a developer's. They live in the filesystem because opensidian is a note-taking app. Everything is a note. Users edit them alongside their other files.
 - **Neither replaces the other.** Global skills provide a consistent baseline; vault skills add personal customization on top. The system prompt concatenates both.
 
 **How global skills are loaded:**
@@ -167,14 +167,14 @@ const vaultSkills = await Promise.all(
 | Tool model | Hybrid (structured tools + bash) | Structured tools for common ops with approval gating. Bash tool for power-user file manipulation. Both operate on the same Yjs fs |
 | Skill architecture | Two layers: global (`@epicenter/skills`) + vault (`/skills/*.md`) | Global skills are ecosystem-wide platform behavior. Vault skills are user customizations. Neither replaces the other |
 | Global skill source | `@epicenter/skills` workspace (CRDT table) | Already exists, syncs across devices, used by other apps. Separate workspace instance with IndexedDB persistence |
-| Vault skill source | `/skills/*.md` files in Yjs filesystem | Opensidian is a note-taking app—user skills should be notes users can edit |
+| Vault skill source | `/skills/*.md` files in Yjs filesystem | Opensidian is a note-taking app. User skills should be notes users can edit |
 | Skill loading | Load all from both layers at chat init | Simple for v1. LLM-based selection can come later |
 | Skill prompt order | Base → Global → Vault | Vault skills override global when they conflict (later instructions win in LLM context) |
 | Chat UI placement | Resizable side panel (right side) | Terminal stays at bottom for bash. Chat is a different interaction mode |
 | Server changes | None | `/ai/chat` already handles everything we need |
 | Chat components | Copy from tab-manager, adapt | Same TanStack AI integration, different tool set |
 | Approval model | All mutations need approval, queries auto-execute | Matches tab-manager pattern via `defineMutation` vs `defineQuery` |
-| Bash tool | Single tool, always needs approval | Bash can do anything—always gate it |
+| Bash tool | Single tool, always needs approval | Bash can do anything. Always gate it |
 | Chat persistence | Store messages in workspace CRDT table | Same pattern as tab-manager: `chatMessages` table + `conversations` table |
 | Provider/model selection | Reuse tab-manager's provider config | Same providers, same models, same billing |
 
@@ -297,40 +297,40 @@ These skills are personal to this vault. The user created and maintains them.
 - [x] **1.1** Add `chatMessages` and `conversations` tables to `apps/opensidian/src/lib/workspace/definition.ts` (copy schema pattern from tab-manager's definition.ts)
 - [x] **1.2** Add `.withActions()` to workspace chain in `client.ts` defining file operation tools (search, read, list, write, create, delete, move, mkdir) and bash exec
 - [x] **1.3** Export `workspaceTools` and `workspaceDefinitions` from `client.ts` via `actionsToClientTools` + `toToolDefinitions`
-- [x] **1.4** Create a skills workspace instance in `client.ts`: `createSkillsWorkspace().withExtension('persistence', indexeddbPersistence)` — separate from the main opensidian workspace
+- [x] **1.4** Create a skills workspace instance in `client.ts`: `createSkillsWorkspace().withExtension('persistence', indexeddbPersistence)`: separate from the main opensidian workspace
 - [x] **1.5** Add `@epicenter/ai`, `@epicenter/skills`, `@tanstack/ai`, `@tanstack/ai-svelte`, `@tanstack/ai-client` to opensidian's package.json dependencies
 
 ### Phase 2: Skills + System Prompt + Chat State
 
-- [x] **2.1** Create `chat/providers.ts` — copy provider/model config from tab-manager
+- [x] **2.1** Create `chat/providers.ts`: copy provider/model config from tab-manager
 - [x] **2.2** Create `chat/system-prompt.ts` with three clearly documented builders:
-  - `OPENSIDIAN_SYSTEM_PROMPT` — base role, capabilities, constraints
-  - `buildGlobalSkillsPrompt(skills)` — formats global skills from `@epicenter/skills` with header explaining their ecosystem-wide scope
-  - `buildVaultSkillsPrompt(skills)` — formats vault skills from `/skills/*.md` with header explaining their user-personal scope
+  - `OPENSIDIAN_SYSTEM_PROMPT`: base role, capabilities, constraints
+  - `buildGlobalSkillsPrompt(skills)`: formats global skills from `@epicenter/skills` with header explaining their ecosystem-wide scope
+  - `buildVaultSkillsPrompt(skills)`: formats vault skills from `/skills/*.md` with header explaining their user-personal scope
   - JSDoc on each explaining the layer hierarchy and why both exist
-- [x] **2.3** Create `state/skill-state.svelte.ts` — two-layer skill loader:
-  - `loadGlobalSkills()` — calls `skillsWorkspace.actions.listSkills()` then `getSkill()` for each
-  - `loadVaultSkills()` — reads `/skills/*.md` from Yjs filesystem
-  - `loadAllSkills()` — calls both, exposes `globalSkills` and `vaultSkills` as separate reactive arrays
+- [x] **2.3** Create `state/skill-state.svelte.ts`: two-layer skill loader:
+  - `loadGlobalSkills()`: calls `skillsWorkspace.actions.listSkills()` then `getSkill()` for each
+  - `loadVaultSkills()`: reads `/skills/*.md` from Yjs filesystem
+  - `loadAllSkills()`: calls both, exposes `globalSkills` and `vaultSkills` as separate reactive arrays
   - JSDoc explaining the two-layer architecture, why they're separate, and how they compose
-- [x] **2.4** Create `chat/ui-message.ts` — convert between persisted chat messages and TanStack `UIMessage` (adapt from tab-manager)
-- [x] **2.5** Create `chat/chat-state.svelte.ts` — `createChat` + `fetchServerSentEvents` wiring with tools, system prompts (all three layers), message persistence, tool approval/deny methods
+- [x] **2.4** Create `chat/ui-message.ts`: convert between persisted chat messages and TanStack `UIMessage` (adapt from tab-manager)
+- [x] **2.5** Create `chat/chat-state.svelte.ts`: `createChat` + `fetchServerSentEvents` wiring with tools, system prompts (all three layers), message persistence, tool approval/deny methods
 
 ### Phase 3: Chat UI Components
 
-- [x] **3.1** Create `components/chat/ChatInput.svelte` — text input, model selector dropdown, send/stop buttons
-- [x] **3.2** Create `components/chat/MessageParts.svelte` — render text, tool-call, tool-result, thinking parts
-- [x] **3.3** Create `components/chat/ToolCallPart.svelte` — approval UI (Allow / Always Allow / Deny) with auto-approve from tool trust state
-- [x] **3.4** Create `components/chat/ToolResultPart.svelte` — result display with streaming/error states
-- [x] **3.5** Create `components/chat/MessageList.svelte` — scrollable message list with typing indicator
-- [x] **3.6** Create `components/chat/AiChat.svelte` — top-level composition wiring chat state to UI components
+- [x] **3.1** Create `components/chat/ChatInput.svelte`: text input, model selector dropdown, send/stop buttons
+- [x] **3.2** Create `components/chat/MessageParts.svelte`: render text, tool-call, tool-result, thinking parts
+- [x] **3.3** Create `components/chat/ToolCallPart.svelte`: approval UI (Allow / Always Allow / Deny) with auto-approve from tool trust state
+- [x] **3.4** Create `components/chat/ToolResultPart.svelte`: result display with streaming/error states
+- [x] **3.5** Create `components/chat/MessageList.svelte`: scrollable message list with typing indicator
+- [x] **3.6** Create `components/chat/AiChat.svelte`: top-level composition wiring chat state to UI components
 
 ### Phase 4: Shell Integration + Layout
 
 - [x] **4.1** Add resizable chat panel to `AppShell.svelte` (right side, togglable)
 - [x] **4.2** Add chat toggle button to `Toolbar.svelte`
 - [x] **4.3** Wire keyboard shortcut to toggle chat panel (Cmd+Shift+L)
-- [ ] **4.4** Create a default `/skills/` folder with a sample vault skill file on first load (deferred — users can create their own)
+- [ ] **4.4** Create a default `/skills/` folder with a sample vault skill file on first load (deferred: users can create their own)
 
 ## Edge Cases
 
@@ -338,7 +338,7 @@ These skills are personal to this vault. The user created and maintains them.
 
 1. User has no `/skills/` folder in their vault
 2. `skill-state.svelte.ts` catches the readdir error
-3. Returns empty vault skills array — chat works fine with only global skills (or no skills at all)
+3. Returns empty vault skills array: chat works fine with only global skills (or no skills at all)
 
 ### No Global Skills Available
 
@@ -351,7 +351,7 @@ These skills are personal to this vault. The user created and maintains them.
 1. User is offline or API unreachable
 2. `fetchServerSentEvents` fetch fails
 3. `onError` callback fires, error displayed in chat UI
-4. No data loss — user messages are persisted locally before sending
+4. No data loss: user messages are persisted locally before sending
 
 ### Large File Content in Tool Results
 
@@ -363,7 +363,7 @@ These skills are personal to this vault. The user created and maintains them.
 
 1. AI writes to a file via `files_write`
 2. User is editing the same file in the editor
-3. Yjs CRDT handles merge automatically — this is the whole point of the architecture
+3. Yjs CRDT handles merge automatically: this is the whole point of the architecture
 4. Both changes survive
 
 ### Bash Command That Hangs
@@ -375,14 +375,14 @@ These skills are personal to this vault. The user created and maintains them.
 ### Vault Skill Conflicts with Global Skill
 
 1. User creates `/skills/writing-voice.md` that conflicts with the global `writing-voice` skill
-2. Both are injected — vault skill appears later in the prompt, so the LLM prioritizes it
+2. Both are injected: vault skill appears later in the prompt, so the LLM prioritizes it
 3. This is intentional: users can override platform defaults
 
 ## Open Questions
 
 1. **Should the chat panel persist conversation across sessions?**
    - Options: (a) Yes, restore last conversation on app load, (b) No, always start fresh, (c) User chooses
-   - **Recommendation**: (a) Yes — same as tab-manager. Messages are in the CRDT table, just reload them.
+   - **Recommendation**: (a) Yes: same as tab-manager. Messages are in the CRDT table, just reload them.
 
 2. **Should we add context about the currently open file to the system prompt?**
    - e.g. "The user currently has `/notes/meeting.md` open in the editor"
@@ -416,24 +416,24 @@ These skills are personal to this vault. The user created and maintains them.
 
 ## References
 
-- `apps/opensidian/src/lib/client.ts` — workspace + fs + bash setup (modify: add withActions + skills workspace)
-- `apps/opensidian/src/lib/workspace/definition.ts` — workspace schema (modify: add chat tables)
-- `apps/opensidian/src/lib/components/AppShell.svelte` — main layout (modify: add chat panel)
-- `apps/opensidian/src/lib/components/Toolbar.svelte` — toolbar (modify: add chat toggle)
-- `apps/opensidian/src/lib/state/search-state.svelte.ts` — FTS search pattern to follow
-- `apps/tab-manager/src/lib/chat/chat-state.svelte.ts` — chat state pattern to adapt
-- `apps/tab-manager/src/lib/chat/providers.ts` — provider config to copy
-- `apps/tab-manager/src/lib/chat/system-prompt.ts` — system prompt pattern
-- `apps/tab-manager/src/lib/chat/ui-message.ts` — message conversion pattern
-- `apps/tab-manager/src/lib/components/chat/` — all chat UI components to adapt
-- `apps/tab-manager/src/lib/state/tool-trust.svelte.ts` — tool trust pattern to copy
-- `packages/ai/src/tool-bridge.ts` — `actionsToClientTools` + `toToolDefinitions`
-- `packages/skills/src/workspace.ts` — `createSkillsWorkspace()` with read actions (global skills source)
-- `packages/skills/src/tables.ts` — skills + references CRDT table definitions
-- `packages/skills/src/definition.ts` — `epicenter.skills` workspace definition
-- `apps/skills/src/lib/client.ts` — reference pattern for skills workspace setup
-- `apps/skills/src/lib/state/skills-state.svelte.ts` — reference pattern for reactive skills state
-- `apps/api/src/ai-chat.ts` — server endpoint (no changes needed)
+- `apps/opensidian/src/lib/client.ts`: workspace + fs + bash setup (modify: add withActions + skills workspace)
+- `apps/opensidian/src/lib/workspace/definition.ts`: workspace schema (modify: add chat tables)
+- `apps/opensidian/src/lib/components/AppShell.svelte`: main layout (modify: add chat panel)
+- `apps/opensidian/src/lib/components/Toolbar.svelte`: toolbar (modify: add chat toggle)
+- `apps/opensidian/src/lib/state/search-state.svelte.ts`: FTS search pattern to follow
+- `apps/tab-manager/src/lib/chat/chat-state.svelte.ts`: chat state pattern to adapt
+- `apps/tab-manager/src/lib/chat/providers.ts`: provider config to copy
+- `apps/tab-manager/src/lib/chat/system-prompt.ts`: system prompt pattern
+- `apps/tab-manager/src/lib/chat/ui-message.ts`: message conversion pattern
+- `apps/tab-manager/src/lib/components/chat/`: all chat UI components to adapt
+- `apps/tab-manager/src/lib/state/tool-trust.svelte.ts`: tool trust pattern to copy
+- `packages/ai/src/tool-bridge.ts`: `actionsToClientTools` + `toToolDefinitions`
+- `packages/skills/src/workspace.ts`: `createSkillsWorkspace()` with read actions (global skills source)
+- `packages/skills/src/tables.ts`: skills + references CRDT table definitions
+- `packages/skills/src/definition.ts`: `epicenter.skills` workspace definition
+- `apps/skills/src/lib/client.ts`: reference pattern for skills workspace setup
+- `apps/skills/src/lib/state/skills-state.svelte.ts`: reference pattern for reactive skills state
+- `apps/api/src/ai-chat.ts`: server endpoint (no changes needed)
 
 ## Review
 

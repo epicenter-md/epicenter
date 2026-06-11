@@ -1,6 +1,6 @@
 # Why TypeBox Won't Implement Standard Schema (And What To Use Instead)
 
-Standard Schema is a common TypeScript interface designed to unify validation libraries like Zod, Valibot, and ArkType. When asked to implement it, TypeBox's maintainer (sinclairzx81) declined—and published a detailed critique of the specification itself.
+Standard Schema is a common TypeScript interface designed to unify validation libraries like Zod, Valibot, and ArkType. When asked to implement it, TypeBox's maintainer (sinclairzx81) declined and published a detailed critique of the specification itself.
 
 This article summarizes the technical concerns and explains how to use TypeBox with Standard Schema anyway.
 
@@ -26,7 +26,7 @@ This isn't just aesthetic. TypeBox produces standard JSON Schema that works with
 
 ### 1. Misleading Naming
 
-"Standard Schema" sounds like a schema format (like JSON Schema), but it's actually just a TypeScript interface for validation libraries. It doesn't define schema structure—it defines how validators should expose their `validate()` function.
+"Standard Schema" sounds like a schema format (like JSON Schema), but it's actually just a TypeScript interface for validation libraries. It doesn't define schema structure. It defines how validators should expose their `validate()` function.
 
 This conflates:
 
@@ -69,7 +69,7 @@ interface FailureResult {
 }
 ```
 
-Error generation is expensive (string formatting, path tracking). Many environments don't need detailed errors—production APIs, security contexts following "minimal disclosure" principles, etc.
+Error generation is expensive (string formatting, path tracking). Many environments don't need detailed errors. Production APIs, security contexts following "minimal disclosure" principles, etc.
 
 TypeBox separates these concerns:
 
@@ -110,7 +110,7 @@ Schema validation is fundamentally synchronous and CPU-bound. Async implies I/O 
 
 ### 6. No JIT Provisions
 
-Standard Schema only defines a runtime `validate()` function. It doesn't account for compilation—generating optimized validation code ahead of time.
+Standard Schema only defines a runtime `validate()` function. It doesn't account for compilation. Generating optimized validation code ahead of time.
 
 TypeBox's JIT compiler shows why this matters:
 
@@ -136,7 +136,7 @@ Standard Schema has no way to express or leverage this optimization.
 
 ## The Solution: TypeMap
 
-Despite not implementing Standard Schema natively, TypeBox offers full support through TypeMap—an official adapter listed on [standardschema.dev](https://standardschema.dev):
+Despite not implementing Standard Schema natively, TypeBox offers full support through TypeMap. An official adapter listed on [standardschema.dev](https://standardschema.dev):
 
 ```bash
 npm install @sinclair/typemap
@@ -176,7 +176,7 @@ TypeMap also provides:
 | Async validation          | Unnecessary complexity | Sync-only validation                 |
 | No JIT support            | Missed 100x perf       | `Compile()` for JIT optimization     |
 
-The core tension: Standard Schema was designed by libraries (Zod, Valibot, ArkType) that couple schemas with validation. TypeBox follows separation of concerns—schemas are data structures passed to independent validators. This isn't just philosophical; it enables JSON Schema compatibility, performance optimization, and architectural flexibility that the specification doesn't accommodate.
+The core tension: Standard Schema was designed by libraries (Zod, Valibot, ArkType) that couple schemas with validation. TypeBox follows separation of concerns. Schemas are data structures passed to independent validators. This isn't just philosophical; it enables JSON Schema compatibility, performance optimization, and architectural flexibility that the specification doesn't accommodate.
 
 ## References
 

@@ -17,17 +17,17 @@ The AI chat feature lives in three files:
 ```
 src/lib/
   state/
-    chat.svelte.ts          # 845 lines — state + providers + UIMessage boundary
+    chat.svelte.ts          # 845 lines: state + providers + UIMessage boundary
   components/
-    AiChat.svelte            # 351 lines — god component (5+ concerns)
-    ModelCombobox.svelte     # 98 lines — reads singleton directly
+    AiChat.svelte            # 351 lines: god component (5+ concerns)
+    ModelCombobox.svelte     # 98 lines: reads singleton directly
 ```
 
 Problems:
 
-1. **`AiChat.svelte` is a god component.** It owns conversation switching, message rendering, error display, input form, and provider/model selection — each a distinct concern with independent change reasons.
+1. **`AiChat.svelte` is a god component.** It owns conversation switching, message rendering, error display, input form, and provider/model selection: each a distinct concern with independent change reasons.
 
-2. **Only `text` parts are rendered.** The `getTextContent()` helper concatenates text parts and silently drops `tool-call`, `tool-result`, `thinking`, `image`, `audio`, `video`, and `document` parts. When the LLM invokes any of the 13 tab management tools, the user sees nothing — no progress, no result. This defeats the purpose of having client-side tools.
+2. **Only `text` parts are rendered.** The `getTextContent()` helper concatenates text parts and silently drops `tool-call`, `tool-result`, `thinking`, `image`, `audio`, `video`, and `document` parts. When the LLM invokes any of the 13 tab management tools, the user sees nothing: no progress, no result. This defeats the purpose of having client-side tools.
 
 3. **`ModelCombobox` reads the `aiChatState` singleton directly**, making it untestable and unreusable.
 
@@ -42,8 +42,8 @@ Problems:
 ```
 src/lib/
   ai/
-    providers.ts                    # Pure data — provider/model config
-    ui-message.ts                   # Pure — toUiMessage + drift detection types
+    providers.ts                    # Pure data: provider/model config
+    ui-message.ts                   # Pure: toUiMessage + drift detection types
   state/
     chat-state.svelte.ts            # Orchestrator + per-conversation reactive handles
   components/
@@ -56,8 +56,8 @@ src/lib/
     ThinkingPart.svelte             # Collapsible thinking block
     ChatInput.svelte                # Textarea + send/stop + provider/model controls
     ChatErrorBanner.svelte          # Dismissible error display
-    ModelCombobox.svelte            # Controlled — props in, events out
-    ProviderSelect.svelte           # Controlled — props in, events out
+    ModelCombobox.svelte            # Controlled: props in, events out
+    ProviderSelect.svelte           # Controlled: props in, events out
 ```
 
 ## Research Findings
@@ -122,12 +122,12 @@ Tool call rendering should show human-readable names (e.g., "Searching tabs…",
 
 | Decision | Choice | Rationale |
 |---|---|---|
-| State file split granularity | 3 files (providers, ui-message, chat-state) | Providers and ui-message are pure — no `.svelte.ts` needed. Handle factory is an inner function inside chat-state — DI was over-engineered for a single consumer. |
+| State file split granularity | 3 files (providers, ui-message, chat-state) | Providers and ui-message are pure: no `.svelte.ts` needed. Handle factory is an inner function inside chat-state: DI was over-engineered for a single consumer. |
 | Component file split | 11 files (see Desired State) | Each concern maps to one change reason. `MessageParts` dispatches; leaf components render. |
 | ModelCombobox API | Controlled: `value`, `models`, `onSelect` props | Matches shadcn-svelte composition philosophy. Enables reuse and testing. |
 | ProviderSelect extraction | New component with `value`, `providers`, `onSelect` props | Same rationale as ModelCombobox. Symmetrical API. |
 | Markdown rendering | `.prose-sm` class on text part container | Already exists, no new dependency. Compact variant fits sidebar. |
-| Tool call display | Inline badge + collapsible details | Tools are frequent — they should be compact by default, expandable on demand. |
+| Tool call display | Inline badge + collapsible details | Tools are frequent: they should be compact by default, expandable on demand. |
 | Thinking blocks | Collapsed by default with "Thinking…" label | Most users don't need to read chain-of-thought. Power users can expand. |
 | Media parts | Placeholder with type label initially | Image/audio/video are uncommon in a tab manager context. Can iterate later. |
 | `updateConversation` fix | Use `TableHelper.update()` | Atomic read-merge-write. Correct in CRDT context. |
@@ -143,13 +143,13 @@ src/lib/ai/providers.ts
 ├── Provider type
 ├── DEFAULT_PROVIDER, DEFAULT_MODEL
 └── AVAILABLE_PROVIDERS
-    (Pure data — no runes, no .svelte.ts extension)
+    (Pure data, no runes, no .svelte.ts extension)
 
 src/lib/ai/ui-message.ts
 ├── toUiMessage(ChatMessage → UIMessage)
 ├── Drift detection types (Expect, Equal, _DriftCheck)
 └── TanStackMessagePart type alias
-    (Pure functions + compile-time assertions — no runes)
+    (Pure functions + compile-time assertions, no runes)
 
 src/lib/state/chat-state.svelte.ts
 ├── createAiChatState()
@@ -173,7 +173,7 @@ src/lib/state/chat-state.svelte.ts
 
 ### Conversation Handle as Inner Function
 
-`createConversationHandle` is an inner function inside `createAiChatState()`. It closes over the orchestrator's state directly — `conversations`, `updateConversation`, `deleteConversation`, `loadMessages`, `hubUrlCache` — eliminating the need for a dependency injection interface.
+`createConversationHandle` is an inner function inside `createAiChatState()`. It closes over the orchestrator's state directly: `conversations`, `updateConversation`, `deleteConversation`, `loadMessages`, `hubUrlCache`: eliminating the need for a dependency injection interface.
 
 This was initially split into a separate file with an explicit `ConversationHandleDeps` interface, but the DI layer was over-engineered: there is exactly one consumer (the orchestrator), and the interface added ceremony without enabling meaningful independent testing. Consolidating into a single file reduced complexity and improved readability.
 
@@ -260,10 +260,10 @@ Y.Doc (CRDT)
 
 ### Phase 1: Extract Pure Modules (no behavior change)
 
-- [x] 1.1 Create `src/lib/ai/providers.ts` — move `PROVIDER_MODELS`, `Provider`, `DEFAULT_PROVIDER`, `DEFAULT_MODEL`, `AVAILABLE_PROVIDERS` from `chat.svelte.ts`
-- [x] 1.2 Create `src/lib/ai/ui-message.ts` — move `toUiMessage()`, drift detection types (`Expect`, `Equal`, `TanStackMessagePart`, `ExpectedPartTypes`, `_DriftCheck`) from `chat.svelte.ts`
+- [x] 1.1 Create `src/lib/ai/providers.ts`: move `PROVIDER_MODELS`, `Provider`, `DEFAULT_PROVIDER`, `DEFAULT_MODEL`, `AVAILABLE_PROVIDERS` from `chat.svelte.ts`
+- [x] 1.2 Create `src/lib/ai/ui-message.ts`: move `toUiMessage()`, drift detection types (`Expect`, `Equal`, `TanStackMessagePart`, `ExpectedPartTypes`, `_DriftCheck`) from `chat.svelte.ts`
 - [x] 1.3 Update imports in `chat.svelte.ts` to reference the new modules
-- [x] 1.4 Verify build passes — no behavior change
+- [x] 1.4 Verify build passes: no behavior change
 
 ### Phase 2: Split State Files
 
@@ -272,38 +272,38 @@ Y.Doc (CRDT)
 - [x] 2.3 Fix `updateConversation` to use `TableHelper.update()` instead of find-then-set
 - [x] 2.4 Export `ConversationHandle` type from `chat-state.svelte.ts`
 - [x] 2.5 Update all consumers to import from new paths (`chat-state.svelte` instead of `chat.svelte`)
-- [x] 2.6 Verify build passes — no behavior change
+- [x] 2.6 Verify build passes: no behavior change
 
 ### Phase 3: Extract Controlled Components
 
-- [x] 3.1 Create `ProviderSelect.svelte` — props: `value`, `providers`, `onValueChange`; renders `Select.Root` + `Select.Trigger` + `Select.Content` + `Select.Item`
-- [x] 3.2 Refactor `ModelCombobox.svelte` — change from singleton reader to controlled: props `value`, `models`, `onSelect`, `class?`; remove `aiChatState` import
+- [x] 3.1 Create `ProviderSelect.svelte`: props: `value`, `providers`, `onValueChange`; renders `Select.Root` + `Select.Trigger` + `Select.Content` + `Select.Item`
+- [x] 3.2 Refactor `ModelCombobox.svelte`: change from singleton reader to controlled: props `value`, `models`, `onSelect`, `class?`; remove `aiChatState` import
 - [x] 3.3 Update `AiChat.svelte` to pass controlled props to both components
-- [x] 3.4 Verify build passes — no behavior change
+- [x] 3.4 Verify build passes: no behavior change
 
 ### Phase 4: Extract UI Components
 
-- [x] 4.1 Create `ConversationPicker.svelte` — extract the Popover+Command conversation switcher; props: `conversations` (ConversationHandle[]), `activeId`, `onSwitch`, `onCreate`; move `formatRelativeTime` and `conversationSearch` state into it
-- [x] 4.2 Create `ChatErrorBanner.svelte` — extract the error banner; props: `error`, `dismissedError`, `onRetry`, `onDismiss`
-- [x] 4.3 Create `ChatInput.svelte` — extract the controls area; props: `active` (ConversationHandle); contains ProviderSelect, ModelCombobox, Textarea, Send/Stop
-- [x] 4.4 Slim `AiChat.svelte` to thin orchestrator — compose `ConversationPicker`, `MessageList`, `ChatErrorBanner`, `ChatInput`
-- [x] 4.5 Verify build passes — visual parity
+- [x] 4.1 Create `ConversationPicker.svelte`: extract the Popover+Command conversation switcher; props: `conversations` (ConversationHandle[]), `activeId`, `onSwitch`, `onCreate`; move `formatRelativeTime` and `conversationSearch` state into it
+- [x] 4.2 Create `ChatErrorBanner.svelte`: extract the error banner; props: `error`, `dismissedError`, `onRetry`, `onDismiss`
+- [x] 4.3 Create `ChatInput.svelte`: extract the controls area; props: `active` (ConversationHandle); contains ProviderSelect, ModelCombobox, Textarea, Send/Stop
+- [x] 4.4 Slim `AiChat.svelte` to thin orchestrator: compose `ConversationPicker`, `MessageList`, `ChatErrorBanner`, `ChatInput`
+- [x] 4.5 Verify build passes: visual parity
 
 ### Phase 5: MessagePart Rendering
 
-- [x] 5.1 Create `MessageParts.svelte` — part-type dispatcher; props: `parts` (MessagePart[]); uses `{#each}` + `{#if part.type === ...}` dispatch with explicit casts (Svelte doesn't narrow discriminated unions in templates)
-- [x] 5.2 Implement text part rendering — plain text in `.prose-sm` container (markdown-to-HTML deferred to follow-up)
-- [x] 5.3 Create `ToolCallPart.svelte` — renders tool call progress with `toolDisplayNames` map, Badge status variants, Collapsible details, and LoaderCircle animation
-- [x] 5.4 Create `ToolResultPart.svelte` — renders tool results with state-based display (streaming/error/complete)
-- [x] 5.5 Create `ThinkingPart.svelte` — collapsible thinking block, collapsed by default, with Brain icon and muted styling
-- [x] 5.6 Create `MessageList.svelte` — wraps `Chat.List`, handles empty state, loading dots, regenerate button
+- [x] 5.1 Create `MessageParts.svelte`: part-type dispatcher; props: `parts` (MessagePart[]); uses `{#each}` + `{#if part.type === ...}` dispatch with explicit casts (Svelte doesn't narrow discriminated unions in templates)
+- [x] 5.2 Implement text part rendering: plain text in `.prose-sm` container (markdown-to-HTML deferred to follow-up)
+- [x] 5.3 Create `ToolCallPart.svelte`: renders tool call progress with `toolDisplayNames` map, Badge status variants, Collapsible details, and LoaderCircle animation
+- [x] 5.4 Create `ToolResultPart.svelte`: renders tool results with state-based display (streaming/error/complete)
+- [x] 5.5 Create `ThinkingPart.svelte`: collapsible thinking block, collapsed by default, with Brain icon and muted styling
+- [x] 5.6 Create `MessageList.svelte`: wraps `Chat.List`, handles empty state, loading dots, regenerate button
 - [x] 5.7 Wire `MessageList` into `AiChat.svelte`, replacing the inline message rendering
-- [x] 5.8 Verify build passes — tool calls and thinking blocks now visible
+- [x] 5.8 Verify build passes: tool calls and thinking blocks now visible
 
 ### Phase 6: Polish
 
-- [x] 6.1 Add `toolDisplayNames` map — human-readable labels for all 13 tools (co-located in `ToolCallPart.svelte`)
-- [ ] 6.2 Add result summarizers — parse tool result JSON and return human-readable strings (e.g., `{ closedCount: 3 }` → "Closed 3 tabs")
+- [x] 6.1 Add `toolDisplayNames` map: human-readable labels for all 13 tools (co-located in `ToolCallPart.svelte`)
+- [ ] 6.2 Add result summarizers: parse tool result JSON and return human-readable strings (e.g., `{ closedCount: 3 }` → "Closed 3 tabs")
 - [ ] 6.3 Add `Tooltip` to action buttons (regenerate, send, stop, new conversation, delete)
 - [ ] 6.4 Verify visual consistency with existing sidebar styling
 
@@ -445,7 +445,7 @@ let {
 {/each}
 ```
 
-Note: Text rendering will start as plain text inside a `.prose-sm` container. Full markdown-to-HTML can be added iteratively — the `.prose-sm` class from `@epicenter/ui` handles all the styling once HTML is provided.
+Note: Text rendering will start as plain text inside a `.prose-sm` container. Full markdown-to-HTML can be added iteratively. The `.prose-sm` class from `@epicenter/ui` handles all the styling once HTML is provided.
 
 ### ToolCallPart.svelte
 
@@ -608,11 +608,11 @@ Renders `Select.Root` + `Select.Trigger` + `Select.Content` + `{#each providers}
 
 The LLM streams `tool-call` parts with state `awaiting-input` → `input-streaming` → `input-complete`. The result arrives later as a separate `tool-result` part (or via `output` field on the tool-call part for client-side tools).
 
-**Mitigation**: `ToolCallPart.svelte` reads `part.state` and `part.output` reactively. The badge transitions from "running" to "completed" as the state updates. No explicit pairing logic needed — TanStack AI maintains the parts array.
+**Mitigation**: `ToolCallPart.svelte` reads `part.state` and `part.output` reactively. The badge transitions from "running" to "completed" as the state updates. No explicit pairing logic needed: TanStack AI maintains the parts array.
 
 ### 2. Conversation switch during streaming
 
-When the user switches away from a streaming conversation, the ChatClient continues streaming in the background. When they switch back, `refreshFromDoc()` is called — but only if the ChatClient is idle.
+When the user switches away from a streaming conversation, the ChatClient continues streaming in the background. When they switch back, `refreshFromDoc()` is called. But only if the ChatClient is idle.
 
 **Mitigation**: Existing behavior is correct. The `refreshFromDoc()` guard (`if (!chatInstance || chatInstance.isLoading) return`) prevents overwriting in-progress streaming state. The `MessageList` component receives reactive `messages` from the handle, so switching back shows the current streaming state.
 
@@ -620,13 +620,13 @@ When the user switches away from a streaming conversation, the ChatClient contin
 
 If we render markdown as HTML via `{@html}`, user-controlled content (or malicious LLM output) could inject scripts.
 
-**Mitigation**: Use a sanitizing markdown renderer. Options: `marked` + `DOMPurify`, or `snarkdown` (tiny, no HTML passthrough). For Phase 5, start with plain text in `.prose-sm` — no `{@html}` — and add sanitized markdown in a follow-up.
+**Mitigation**: Use a sanitizing markdown renderer. Options: `marked` + `DOMPurify`, or `snarkdown` (tiny, no HTML passthrough). For Phase 5, start with plain text in `.prose-sm`: no `{@html}`: and add sanitized markdown in a follow-up.
 
 ### 4. Empty parts array on a message
 
 Some messages may have an empty `parts` array (e.g., system messages or edge cases in TanStack AI).
 
-**Mitigation**: `MessageParts.svelte` renders nothing for an empty array. The `{#each}` simply produces no output. The parent `Chat.Bubble` still renders but is empty — acceptable for edge cases.
+**Mitigation**: `MessageParts.svelte` renders nothing for an empty array. The `{#each}` simply produces no output. The parent `Chat.Bubble` still renders but is empty: acceptable for edge cases.
 
 ### 5. Rename `chat.svelte.ts` breaks existing imports
 
@@ -640,8 +640,8 @@ Multiple files import from `$lib/state/chat.svelte`. Renaming to `chat-state.sve
 
 Which library should render text parts as markdown?
 
-- (a) `marked` + `DOMPurify` — full GFM support, battle-tested, ~30KB combined
-- (b) `snarkdown` — 1KB, covers basics (bold, italic, links, code), no HTML passthrough
+- (a) `marked` + `DOMPurify`: full GFM support, battle-tested, ~30KB combined
+- (b) `snarkdown`: 1KB, covers basics (bold, italic, links, code), no HTML passthrough
 - (c) Plain text in `.prose-sm` initially, add markdown later
 
 **Recommendation**: (c) for Phase 5, then (a) in a follow-up. The `.prose-sm` class already handles all the typography. Adding `{@html}` with a sanitizer is a separate, well-scoped change.
@@ -660,17 +660,17 @@ Should tool results show raw JSON or human-readable summaries?
 
 The parts array is `unknown[]` from Y.Doc. We cast at the `toUiMessage` boundary. Should `MessageParts.svelte` accept the typed `MessagePart[]` or a looser type?
 
-- (a) Accept `MessagePart[]` — full type safety in the component
-- (b) Accept `Array<{ type: string; [key: string]: unknown }>` — loose, but defensive
+- (a) Accept `MessagePart[]`: full type safety in the component
+- (b) Accept `Array<{ type: string; [key: string]: unknown }>`: loose, but defensive
 
 **Recommendation**: (a). The `toUiMessage` boundary already handles the cast. Components downstream should benefit from the type narrowing that TanStack AI's discriminated union provides.
 
 ## Success Criteria
 
 - [x] `AiChat.svelte` is under 60 lines (42 lines)
-- [x] `chat-state.svelte.ts` consolidates orchestrator + handle factory (~770 lines — well-structured with clear sections)
+- [x] `chat-state.svelte.ts` consolidates orchestrator + handle factory (~770 lines: well-structured with clear sections)
 - [x] `providers.ts` and `ui-message.ts` have no Svelte rune imports
-- [x] `ModelCombobox` accepts `value`, `models`, `onSelect` props — no singleton import
+- [x] `ModelCombobox` accepts `value`, `models`, `onSelect` props: no singleton import
 - [x] `ProviderSelect` accepts `value`, `providers`, `onValueChange` props
 - [x] Tool call parts render with status badges and tool names during streaming
 - [x] Tool result parts render with state-based display (streaming/error/complete)
@@ -683,27 +683,27 @@ The parts array is `unknown[]` from Y.Doc. We cast at the `toUiMessage` boundary
 
 ## References
 
-- `apps/tab-manager/src/lib/state/chat.svelte.ts` — current monolithic state file (845 lines)
-- `apps/tab-manager/src/lib/components/AiChat.svelte` — current god component (351 lines)
-- `apps/tab-manager/src/lib/components/ModelCombobox.svelte` — current singleton-reading combobox
-- `apps/tab-manager/src/lib/ai/tools/definitions.ts` — 13 tool schema contracts
-- `apps/tab-manager/src/lib/ai/tools/client.ts` — client-side tool execute bindings
-- `apps/tab-manager/src/lib/ai/system-prompt.ts` — system prompt constant
-- `apps/tab-manager/src/lib/workspace.ts` — Conversation and ChatMessage table schemas
-- `packages/ui/src/chat/` — Chat.Bubble, Chat.BubbleMessage, Chat.List primitives
-- `packages/ui/src/badge/badge.svelte` — Badge with `status.*` variants
-- `packages/ui/src/collapsible/` — Collapsible primitive for thinking blocks
-- `packages/ui/src/prose.css` — `.prose` and `.prose-sm` markdown styling
-- `packages/ui/src/hooks/use-combobox.svelte.ts` — useCombobox hook pattern
-- `node_modules/@tanstack/ai-client/src/types.ts` — UIMessage, MessagePart, ToolCallState types
-- `node_modules/@tanstack/ai-svelte/src/create-chat.svelte.ts` — createChat reactive wrapper
+- `apps/tab-manager/src/lib/state/chat.svelte.ts`: current monolithic state file (845 lines)
+- `apps/tab-manager/src/lib/components/AiChat.svelte`: current god component (351 lines)
+- `apps/tab-manager/src/lib/components/ModelCombobox.svelte`: current singleton-reading combobox
+- `apps/tab-manager/src/lib/ai/tools/definitions.ts`: 13 tool schema contracts
+- `apps/tab-manager/src/lib/ai/tools/client.ts`: client-side tool execute bindings
+- `apps/tab-manager/src/lib/ai/system-prompt.ts`: system prompt constant
+- `apps/tab-manager/src/lib/workspace.ts`: Conversation and ChatMessage table schemas
+- `packages/ui/src/chat/`: Chat.Bubble, Chat.BubbleMessage, Chat.List primitives
+- `packages/ui/src/badge/badge.svelte`: Badge with `status.*` variants
+- `packages/ui/src/collapsible/`: Collapsible primitive for thinking blocks
+- `packages/ui/src/prose.css`: `.prose` and `.prose-sm` markdown styling
+- `packages/ui/src/hooks/use-combobox.svelte.ts`: useCombobox hook pattern
+- `node_modules/@tanstack/ai-client/src/types.ts`: UIMessage, MessagePart, ToolCallState types
+- `node_modules/@tanstack/ai-svelte/src/create-chat.svelte.ts`: createChat reactive wrapper
 
 ## Review
 
 ### Implementation Notes
 
-- **MessageParts typing**: Went with option (a) — `MessagePart[]` from `@tanstack/ai-client`. Svelte templates don't narrow discriminated unions in `{#if}` blocks, so explicit `as` casts are used at dispatch boundaries in `MessageParts.svelte`. This is type-safe because the `{#if part.type === '...'}` guards guarantee correctness at runtime.
+- **MessageParts typing**: Went with option (a): `MessagePart[]` from `@tanstack/ai-client`. Svelte templates don't narrow discriminated unions in `{#if}` blocks, so explicit `as` casts are used at dispatch boundaries in `MessageParts.svelte`. This is type-safe because the `{#if part.type === '...'}` guards guarantee correctness at runtime.
 - **`updateConversation`**: Switched to `TableHelper.update()` for atomic read-merge-write as specified.
 - **Tool result summarization**: Deferred to Phase 6 follow-up. Currently shows raw `part.content` string. The `toolDisplayNames` map is already in `ToolCallPart.svelte` for progress labels.
 - **Markdown rendering**: Deferred per recommendation (c). Text renders as plain text inside `.prose-sm` containers. Adding `{@html}` with a sanitizer is a separate, well-scoped follow-up.
-- **`chat-state.svelte.ts`** is 406 lines (6 over the 400 target). The extra lines are JSDoc comments on the public API — trimming would sacrifice documentation quality.
+- **`chat-state.svelte.ts`** is 406 lines (6 over the 400 target). The extra lines are JSDoc comments on the public API: trimming would sacrifice documentation quality.

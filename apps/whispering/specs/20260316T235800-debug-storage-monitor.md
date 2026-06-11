@@ -6,7 +6,7 @@
 
 ## Overview
 
-A dev-only debug page in Whispering that lets developers bulk-generate recordings, monitor Yjs document size, track browser/Tauri storage usage, and stress-test the workspace at scale—all from within the app itself.
+A dev-only debug page in Whispering that lets developers bulk-generate recordings, monitor Yjs document size, track browser/Tauri storage usage, and stress-test the workspace at scale. All from within the app itself.
 
 ## Motivation
 
@@ -57,18 +57,18 @@ A hidden debug page (dev-only) where developers can:
 
 **Key finding**: `navigator.storage.estimate()` returns approximate `{ usage, quota }`. Not exact (padded to prevent fingerprinting), but good enough for a monitoring dashboard. `navigator.storage.persist()` prevents eviction.
 
-**Implication**: On a 512GB Mac with Tauri, the limit is ~77GB—far more than recordings metadata will ever need. The real storage concern is audio blobs (`serializedAudio: ArrayBuffer`), not workspace data.
+**Implication**: On a 512GB Mac with Tauri, the limit is ~77GB. Far more than recordings metadata will ever need. The real storage concern is audio blobs (`serializedAudio: ArrayBuffer`), not workspace data.
 
 ### IndexedDB Performance Thresholds
 
 | Record Count | Read Performance | Write Performance | Recommendation |
 |-------------|-----------------|-------------------|----------------|
 | <10K | Fast | Fast | No concerns |
-| 10K–50K | Noticeable slowdown | Batch recommended | Sweet spot ceiling |
-| 50K–100K | Significant | Need relaxed durability | Consider archiving |
+| 10K: 50K | Noticeable slowdown | Batch recommended | Sweet spot ceiling |
+| 50K: 100K | Significant | Need relaxed durability | Consider archiving |
 | 100K+ | Problematic | Problematic | Need pagination/sharding |
 
-**Key finding**: Chrome is ~5x slower than Safari/Firefox for large IndexedDB reads. Batching with `getAll()` improves performance 2–3x vs cursor iteration.
+**Key finding**: Chrome is ~5x slower than Safari/Firefox for large IndexedDB reads. Batching with `getAll()` improves performance 2-3x vs cursor iteration.
 
 ## Design Decisions
 
@@ -136,11 +136,11 @@ Debug Page
 
 - [x] **1.1** Create route at `src/routes/(app)/(config)/debug/+page.svelte`
 - [x] **1.2** Add dev-only nav link in `NavItems.svelte` (Bug icon, both collapsed and expanded variants)
-- [x] **1.3** ~~Implement `getStorageReport()` utility~~ Skipped — unnecessary abstraction, inlined directly
-- [ ] **1.4** ~~Display browser storage: used / quota / percentage with progress bar~~ Deferred — nice-to-have, not essential
+- [x] **1.3** ~~Implement `getStorageReport()` utility~~ Skipped: unnecessary abstraction, inlined directly
+- [ ] **1.4** ~~Display browser storage: used / quota / percentage with progress bar~~ Deferred: nice-to-have, not essential
 - [x] **1.5** Display Yjs doc size: `Y.encodeStateAsUpdate(workspace.ydoc).byteLength`
 - [x] **1.6** Display per-table row counts for all 5 tables
-- [ ] **1.7** ~~Add "Request Persistent Storage" button~~ Skipped — Tauri apps don't face eviction
+- [ ] **1.7** ~~Add "Request Persistent Storage" button~~ Skipped: Tauri apps don't face eviction
 
 ### Phase 2: Stress Test Panel
 
@@ -153,7 +153,7 @@ Debug Page
 
 ### Phase 3: Tombstone Monitor
 
-- [ ] **3.1** ~~Show current vs compacted Y.Doc size~~ Deferred — benchmarks prove tombstones are a non-issue
+- [ ] **3.1** ~~Show current vs compacted Y.Doc size~~ Deferred: benchmarks prove tombstones are a non-issue
 - [ ] **3.2** ~~Show tombstone overhead percentage~~ Deferred
 - [ ] **3.3** ~~Run Tombstone Test button~~ Deferred
 
@@ -195,7 +195,7 @@ Debug Page
 
 4. **How should per-table size breakdown work?**
    - Yjs encodes the entire doc as one binary. Per-table size requires encoding separate sub-docs or estimating proportionally.
-   - **Recommendation**: Show per-table row counts (cheap). Show total doc size (cheap). Skip per-table byte breakdown for now—it requires sub-doc encoding which adds complexity.
+   - **Recommendation**: Show per-table row counts (cheap). Show total doc size (cheap). Skip per-table byte breakdown for now. It requires sub-doc encoding which adds complexity.
 
 ## Success Criteria
 
@@ -209,13 +209,13 @@ Debug Page
 
 ## References
 
-- `apps/whispering/src/lib/workspace.ts` — Recording table schema, workspace definition
-- `apps/whispering/src/lib/migration/MigrationDialog.svelte` — Dev tools pattern (`import.meta.env.DEV`)
-- `apps/whispering/src/lib/migration/migration-dialog.svelte.ts` — Svelte reactive state pattern for dialog
-- `apps/whispering/src/lib/components/NavItems.svelte` — Navigation with dev-mode conditional
-- `apps/whispering/src/routes/(app)/(config)/settings/+layout.svelte` — Settings layout pattern
-- `packages/workspace/src/workspace/benchmark.test.ts` — Existing benchmarks (reference for data generation)
-- `packages/workspace/src/workspace/create-tables.ts` — Table API (set, delete, count, getAll)
+- `apps/whispering/src/lib/workspace.ts`: Recording table schema, workspace definition
+- `apps/whispering/src/lib/migration/MigrationDialog.svelte`: Dev tools pattern (`import.meta.env.DEV`)
+- `apps/whispering/src/lib/migration/migration-dialog.svelte.ts`: Svelte reactive state pattern for dialog
+- `apps/whispering/src/lib/components/NavItems.svelte`: Navigation with dev-mode conditional
+- `apps/whispering/src/routes/(app)/(config)/settings/+layout.svelte`: Settings layout pattern
+- `packages/workspace/src/workspace/benchmark.test.ts`: Existing benchmarks (reference for data generation)
+- `packages/workspace/src/workspace/create-tables.ts`: Table API (set, delete, count, getAll)
 
 ## Review
 

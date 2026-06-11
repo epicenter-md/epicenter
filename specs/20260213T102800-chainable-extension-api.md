@@ -24,7 +24,7 @@ createWorkspace(definition).withExtensions({
 });
 ```
 
-All extensions are initialized in iteration order, but the type system can't express that `sync` might depend on `persistence`. Dependencies are invisible — `ySweetSync` takes `persistence` as a config option and handles composition internally. This works but creates parallel composition mechanisms (extension map + internal config) when one would do.
+All extensions are initialized in iteration order, but the type system can't express that `sync` might depend on `persistence`. Dependencies are invisible: `ySweetSync` takes `persistence` as a config option and handles composition internally. This works but creates parallel composition mechanisms (extension map + internal config) when one would do.
 
 ### The Singular Pattern Mirrors How Builders Work
 
@@ -118,7 +118,7 @@ type WorkspaceClientBuilder<TTableDefs, TKvFields> = WorkspaceClient<
 ### Usage
 
 ```typescript
-// No extensions — works immediately
+// No extensions: works immediately
 const client = createWorkspace(definition);
 client.tables.posts.set({ id: '1', title: 'Hello' });
 
@@ -140,7 +140,7 @@ const client = createWorkspace(definition)
   }));
 ```
 
-### Type Signatures — Static API
+### Type Signatures: Static API
 
 ```typescript
 /**
@@ -206,7 +206,7 @@ type WorkspaceClientBuilder<
 	>;
 
 	/**
-	 * Attach actions. Terminal — no more chaining after this.
+	 * Attach actions. Terminal: no more chaining after this.
 	 */
 	withActions<TActions extends Actions>(
 		factory: (
@@ -224,7 +224,7 @@ type WorkspaceClientBuilder<
 
 **Key type mechanic**: Each `.withExtension()` call returns `WorkspaceClientBuilder<..., TExtensions & Record<TKey, TExports>>`. TypeScript intersects the previous extensions with the new one. The next factory's context sees all accumulated extensions.
 
-### Type Signatures — Dynamic API
+### Type Signatures: Dynamic API
 
 ```typescript
 type WorkspaceClient<
@@ -308,7 +308,7 @@ Note: The dynamic API currently has no `.withActions()`. Adding it is out of sco
 
 | Dropped field | API     | Reason                                                                                                                                      |
 | ------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| `extensionId` | Dynamic | Now the first argument to `.withExtension(key, ...)` — the factory knows its key from the call site                                         |
+| `extensionId` | Dynamic | Now the first argument to `.withExtension(key, ...)`: the factory knows its key from the call site                                         |
 | `definition`  | Dynamic | Workspace definitions are available via the client. For extensions that need the full definition, they can close over it from the call site |
 | `definitions` | Static  | Omitted from context to keep it lean. Available on the returned client. If an extension needs it, pass via closure                          |
 
@@ -328,9 +328,9 @@ type ExtensionContext<TTableDefs, TKvFields, TExtensions> = {
 };
 ```
 
-This is an implementation decision — the implementer should check how many extensions actually use `definition` and decide.
+This is an implementation decision. The implementer should check how many extensions actually use `definition` and decide.
 
-## Progressive Type Safety — Worked Example
+## Progressive Type Safety: Worked Example
 
 ```typescript
 const client = createWorkspace(definition)
@@ -355,11 +355,11 @@ const client = createWorkspace(definition)
 		});
 	});
 
-// client.extensions.persistence.clearData — typed
-// client.extensions.sync.provider — typed
+// client.extensions.persistence.clearData: typed
+// client.extensions.sync.provider: typed
 ```
 
-## Implementation — Static `createWorkspace.ts`
+## Implementation: Static `createWorkspace.ts`
 
 The core change is replacing the single `withExtensions(map)` method with a recursive `buildClient` that returns a new builder each time.
 
@@ -452,7 +452,7 @@ export function createWorkspace<
 - Destroy runs cleanups in **reverse order** (LIFO). Extensions added last depend on earlier ones, so they should be torn down first.
 - The `extensions` parameter to `buildClient` is the typed view used for the return type and context.
 
-## Implementation — Dynamic `createWorkspace.ts`
+## Implementation: Dynamic `createWorkspace.ts`
 
 Same pattern as static, but with the dynamic API's type parameters and `whenSynced` aggregation:
 
@@ -525,23 +525,23 @@ export function createWorkspace<
 **Dynamic-specific notes:**
 
 - `whenSynced` is recomputed at each builder step from the accumulated promises list.
-- `defineExports()` normalization is preserved — factories can return bare objects and lifecycle defaults are filled in.
+- `defineExports()` normalization is preserved: factories can return bare objects and lifecycle defaults are filled in.
 
 ## How Existing Extensions Adapt
 
-### `indexeddbPersistence` — No change needed
+### `indexeddbPersistence`: No change needed
 
 ```typescript
 // Before
 export function indexeddbPersistence({ ydoc }: { ydoc: Y.Doc }) { ... }
 
-// After — same signature, works as-is
+// After: same signature, works as-is
 .withExtension('persistence', indexeddbPersistence)
 ```
 
 The function destructures `{ ydoc }` from the context. Since the new context is a superset (`{ id, ydoc, tables, kv, extensions }`), destructuring `{ ydoc }` still works.
 
-### `ySweetSync` — No change needed
+### `ySweetSync`: No change needed
 
 ```typescript
 // Before
@@ -562,9 +562,9 @@ createWorkspace(def).withExtension(
 );
 ```
 
-`ySweetSync(config)` returns a factory function `({ ydoc }) => Lifecycle`. The returned factory destructures `{ ydoc }` from context — works unchanged.
+`ySweetSync(config)` returns a factory function `({ ydoc }) => Lifecycle`. The returned factory destructures `{ ydoc }` from context: works unchanged.
 
-### `persistence` (desktop) — No change needed
+### `persistence` (desktop): No change needed
 
 ```typescript
 // Before
@@ -576,21 +576,21 @@ createWorkspace(def).withExtension(
 .withExtension('persistence', (ctx) => persistence(ctx, { filePath: '...' }))
 ```
 
-### `workspacePersistence` (Tauri app) — Minor fix
+### `workspacePersistence` (Tauri app): Minor fix
 
 ```typescript
 // Before (has a bug: uses ctx.workspaceId but type has ctx.id)
-// After — fix the bug, use ctx.id
+// After: fix the bug, use ctx.id
 .withExtension('persistence', (ctx) => workspacePersistence(ctx))
 ```
 
 The `workspacePersistence` function currently destructures `{ ydoc, workspaceId, kv }` from `ExtensionContext`. The field is `id` not `workspaceId` (pre-existing bug). Fix by changing the destructure to `{ ydoc, id, kv }`.
 
-### Extensions that use `extensionId` — Minor change
+### Extensions that use `extensionId`: Minor change
 
 Any extension that uses `extensionId` from the dynamic context would need to get it from the key argument at the call site instead. In practice, `extensionId` is rarely used. Grep for it and update any occurrences.
 
-## Migration Guide — Call Sites
+## Migration Guide: Call Sites
 
 ### `apps/tab-manager/src/lib/workspace.ts`
 
@@ -671,9 +671,9 @@ const client = createWorkspace({...})
 
 | Type                       | Location                     | Replacement                                               |
 | -------------------------- | ---------------------------- | --------------------------------------------------------- |
-| `ExtensionMap`             | `static/types.ts`            | No longer needed — extensions are added one at a time     |
+| `ExtensionMap`             | `static/types.ts`            | No longer needed: extensions are added one at a time     |
 | `ExtensionFactoryMap`      | `dynamic/workspace/types.ts` | No longer needed                                          |
-| `InferExtensionExports<T>` | Both                         | No longer needed — extensions accumulate via intersection |
+| `InferExtensionExports<T>` | Both                         | No longer needed: extensions accumulate via intersection |
 
 ### Changed types
 
@@ -690,7 +690,7 @@ None. The refactor simplifies by removing types, not adding them.
 
 ## Related: ySweetSync Naming
 
-The `ySweetSync` extension composes both persistence and sync into a single lifecycle. It's not purely "sync" — it orchestrates:
+The `ySweetSync` extension composes both persistence and sync into a single lifecycle. It's not purely "sync". It orchestrates:
 
 1. Load from persistence (IndexedDB/filesystem)
 2. Connect WebSocket in background
@@ -699,11 +699,11 @@ The `ySweetSync` extension composes both persistence and sync into a single life
 
 The name `ySweetSync` undersells what it does. Consider renaming to something that reflects the composed nature:
 
-- `ySweetProvider` — mirrors Yjs terminology ("provider" = thing that connects a Y.Doc to something)
-- `ySweetConnection` — describes the full connection lifecycle
-- `ySweet` — simplest, since it IS the Y-Sweet integration
+- `ySweetProvider`: mirrors Yjs terminology ("provider" = thing that connects a Y.Doc to something)
+- `ySweetConnection`: describes the full connection lifecycle
+- `ySweet`: simplest, since it IS the Y-Sweet integration
 
-Additionally, `persistence` being optional in `YSweetSyncConfig` is questionable. The entire design assumes a local-first pattern where persistence loads first. Without persistence, it degrades to a simple WebSocket provider — which `websocket-sync.ts` already covers.
+Additionally, `persistence` being optional in `YSweetSyncConfig` is questionable. The entire design assumes a local-first pattern where persistence loads first. Without persistence, it degrades to a simple WebSocket provider, which `websocket-sync.ts` already covers.
 
 **Recommendation for future work (out of scope for this spec):**
 
@@ -721,13 +721,13 @@ Additionally, `persistence` being optional in `YSweetSyncConfig` is questionable
 - [x] Remove `ExtensionMap`, `ExtensionFactoryMap`, `InferExtensionExports` types
 - [x] Update `ExtensionFactory` type or remove it (check if extension authors import it)
 
-### Phase 2: Implementation — Static API
+### Phase 2: Implementation: Static API
 
 - [x] Rewrite `createWorkspace()` in `packages/epicenter/src/static/create-workspace.ts` with the recursive `buildClient` pattern
 - [x] Ensure `withActions()` is available on every builder step
 - [x] Ensure `destroy()` runs cleanups in reverse order
 
-### Phase 3: Implementation — Dynamic API
+### Phase 3: Implementation: Dynamic API
 
 - [x] Rewrite `createWorkspace()` in `packages/epicenter/src/dynamic/workspace/create-workspace.ts` with the recursive `buildClient` pattern
 - [x] Ensure `whenSynced` is correctly aggregated across the chain
@@ -735,8 +735,8 @@ Additionally, `persistence` being optional in `YSweetSyncConfig` is questionable
 
 ### Phase 4: Update extension re-exports
 
-- [x] Update `packages/epicenter/src/dynamic/extension.ts` — remove/update re-exported types
-- [x] Update `packages/epicenter/src/static/index.ts` — update exports
+- [x] Update `packages/epicenter/src/dynamic/extension.ts`: remove/update re-exported types
+- [x] Update `packages/epicenter/src/static/index.ts`: update exports
 - [x] Update any barrel files that re-export `ExtensionMap`, `ExtensionFactoryMap`, etc.
 
 ### Phase 5: Migrate call sites
@@ -744,13 +744,13 @@ Additionally, `persistence` being optional in `YSweetSyncConfig` is questionable
 - [x] `apps/tab-manager/src/lib/workspace.ts`
 - [x] `apps/tab-manager/src/entrypoints/background.ts`
 - [x] `apps/epicenter/src/lib/yjs/workspace.ts`
-- [x] Fix `apps/epicenter/src/lib/yjs/workspace-persistence.ts` — `workspaceId` to `id` (pre-existing bug)
+- [x] Fix `apps/epicenter/src/lib/yjs/workspace-persistence.ts`: `workspaceId` to `id` (pre-existing bug)
 
 ### Phase 6: Migrate tests
 
-- [x] `packages/epicenter/src/static/define-workspace.test.ts` — update all `.withExtensions()` calls
-- [x] `packages/epicenter/src/dynamic/workspace/create-workspace.test.ts` — update all `.withExtensions()` calls
-- [x] `packages/epicenter/src/extensions/y-sweet-sync.test.ts` — verify factory still works with new context shape
+- [x] `packages/epicenter/src/static/define-workspace.test.ts`: update all `.withExtensions()` calls
+- [x] `packages/epicenter/src/dynamic/workspace/create-workspace.test.ts`: update all `.withExtensions()` calls
+- [x] `packages/epicenter/src/extensions/y-sweet-sync.test.ts`: verify factory still works with new context shape
 - [ ] Add new test: progressive type access (extension N+1 can access extension N's exports)
 - [ ] Add new test: `.withActions()` works after `.withExtension()` chain (static API)
 - [ ] Add new test: destroy runs in reverse order
@@ -788,7 +788,7 @@ Additionally, `persistence` being optional in `YSweetSyncConfig` is questionable
 
 ```typescript
 const client = createWorkspace(definition);
-client.extensions; // {} — typed as Record<string, never>
+client.extensions; // {}: typed as Record<string, never>
 ```
 
 ### Extension key collision
@@ -807,4 +807,4 @@ const withSync = base.withExtension('sync', syncFactory);
 const withSqlite = base.withExtension('sqlite', sqliteFactory);
 ```
 
-**Warning:** This creates a shared mutation hazard — `extensionCleanups` is shared. Both branches accumulate into the same array. **Document that the builder is consumed linearly. Forking is not supported.**
+**Warning:** This creates a shared mutation hazard: `extensionCleanups` is shared. Both branches accumulate into the same array. **Document that the builder is consumed linearly. Forking is not supported.**

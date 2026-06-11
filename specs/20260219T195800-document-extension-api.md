@@ -89,7 +89,7 @@ const workspace = createWorkspace({ id: 'my-app', tables: { notes, images } })
 			lifecycle: { whenReady: idb.whenSynced, destroy: () => idb.destroy() },
 		};
 	})
-	// Document scope — targeted via tags
+	// Document scope: targeted via tags
 	.withDocumentExtension(
 		'persistence',
 		({ ydoc }) => {
@@ -307,7 +307,7 @@ withDocument<
 >;
 ```
 
-The `const TTags` generic (TypeScript 5.0+) ensures literal type inference — `tags: 'synced'` infers `TTags = 'synced'`, not `TTags = string`.
+The `const TTags` generic (TypeScript 5.0+) ensures literal type inference: `tags: 'synced'` infers `TTags = 'synced'`, not `TTags = string`.
 
 ## Complete Call-Site Example
 
@@ -398,7 +398,7 @@ What each document gets:
 
 ### Document with no tags, no universal extensions
 
-If all document extensions specify tags and a document has no tags, it gets zero document extensions. The document opens as a bare Y.Doc with no providers. This is valid — the caller is responsible for ensuring documents get what they need.
+If all document extensions specify tags and a document has no tags, it gets zero document extensions. The document opens as a bare Y.Doc with no providers. This is valid. The caller is responsible for ensuring documents get what they need.
 
 ### Multiple tags on a document, extension targets one
 
@@ -424,20 +424,20 @@ The `onDocumentOpen` property on `Extension` is removed. Extensions that current
 
 The `Extension` type in `shared/lifecycle.ts` is imported by **both** the static API (`static/`) and the dynamic workspace API (`dynamic/workspace/`). Removing `onDocumentOpen` from `Extension` affects both APIs. Specifically:
 
-- `dynamic/extension.ts` — re-exports `Extension` and references `onDocumentOpen` in JSDoc (line 16)
-- `dynamic/workspace/types.ts` — references `onDocumentOpen` in JSDoc for `withExtension` (line 161)
-- `dynamic/workspace/create-workspace.ts` — imports `Extension` from shared lifecycle (line 29)
+- `dynamic/extension.ts`: re-exports `Extension` and references `onDocumentOpen` in JSDoc (line 16)
+- `dynamic/workspace/types.ts`: references `onDocumentOpen` in JSDoc for `withExtension` (line 161)
+- `dynamic/workspace/create-workspace.ts`: imports `Extension` from shared lifecycle (line 29)
 
 The dynamic API does **not** have `withDocument` or document bindings, so `withDocumentExtension` does not apply there. The change is limited to:
 
 1. Removing `onDocumentOpen` from the shared `Extension` type (affects both APIs)
 2. Updating JSDoc in dynamic API files that mention `onDocumentOpen`
 
-The dynamic API does not gain `withDocumentExtension` — it has no document binding concept. If the dynamic API needs per-document extension hooks in the future, that's a separate design effort.
+The dynamic API does not gain `withDocumentExtension`: it has no document binding concept. If the dynamic API needs per-document extension hooks in the future, that's a separate design effort.
 
 ### Tags as a convention, not enforcement
 
-Tags are strings — the system doesn't validate that a tag like `'persistent'` means the document actually has a persistence extension. Tags are a targeting mechanism, not a contract. Misspelled tags are caught at compile time (the union type rejects unknown values), but semantic correctness is the developer's responsibility.
+Tags are strings. The system doesn't validate that a tag like `'persistent'` means the document actually has a persistence extension. Tags are a targeting mechanism, not a contract. Misspelled tags are caught at compile time (the union type rejects unknown values), but semantic correctness is the developer's responsibility.
 
 ## Implementation Plan
 
@@ -454,8 +454,8 @@ Tags are strings — the system doesn't validate that a tag like `'persistent'` 
 
 ### Phase 2: Runtime implementation
 
-- [ ] **2.1** Implement `withDocumentExtension` on the builder in `create-workspace.ts` — accumulate registrations in internal array
-- [ ] **2.2** Implement tag matching logic in `createDocumentBinding` — filter applicable extensions by comparing document tags with extension tags
+- [ ] **2.1** Implement `withDocumentExtension` on the builder in `create-workspace.ts`: accumulate registrations in internal array
+- [ ] **2.2** Implement tag matching logic in `createDocumentBinding`: filter applicable extensions by comparing document tags with extension tags
 - [ ] **2.3** Update `createDocumentBinding` to accept `tags` from table definition and pass through to `DocumentContext.binding`
 - [ ] **2.4** Update table definition parsing in `createWorkspace` to pass tags through to document bindings
 
@@ -469,8 +469,8 @@ Tags are strings — the system doesn't validate that a tag like `'persistent'` 
 
 - [ ] **4.1** Remove `onDocumentOpen` from `Extension` type in `shared/lifecycle.ts` and all references
 - [ ] **4.2** Remove `documentOpenHooks` array from `static/create-workspace.ts`
-- [ ] **4.3** Update JSDoc in `dynamic/extension.ts` — remove `onDocumentOpen` from description (line 16)
-- [ ] **4.4** Update JSDoc in `dynamic/workspace/types.ts` — remove `onDocumentOpen` from `withExtension` description (line 161)
+- [ ] **4.3** Update JSDoc in `dynamic/extension.ts`: remove `onDocumentOpen` from description (line 16)
+- [ ] **4.4** Update JSDoc in `dynamic/workspace/types.ts`: remove `onDocumentOpen` from `withExtension` description (line 161)
 - [ ] **4.5** Update JSDoc on all other affected types and functions
 
 ## Open Questions
@@ -481,7 +481,7 @@ Tags are strings — the system doesn't validate that a tag like `'persistent'` 
 
 2. **Should tag values be validated at `createWorkspace` time?**
    - We could check that every `withDocumentExtension` tag matches at least one tag declared in a table's `withDocument`.
-   - **Recommendation**: Yes, runtime warning in development via `console.warn`. Not a hard error — an extension targeting a non-existent tag simply never fires. TypeScript catches most typos at compile time via the `ExtractAllDocTags` union.
+   - **Recommendation**: Yes, runtime warning in development via `console.warn`. Not a hard error: an extension targeting a non-existent tag simply never fires. TypeScript catches most typos at compile time via the `ExtractAllDocTags` union.
 
 3. **Should `except` be added as an escape hatch?**
    - The include-only design requires explicit tagging of all document types. If an app has 20+ document types and most need persistence, listing all tags is tedious.
@@ -505,42 +505,42 @@ Tags are strings — the system doesn't validate that a tag like `'persistent'` 
 
 ## References
 
-- `packages/epicenter/src/static/create-workspace.ts` — Main builder implementation, has current `onDocumentOpen` hook wiring
-- `packages/epicenter/src/static/create-document-binding.ts` — Runtime document binding, manages content Y.Doc lifecycle
-- `packages/epicenter/src/shared/lifecycle.ts` — Extension and DocumentLifecycle types (shared by static + dynamic APIs)
-- `packages/epicenter/src/static/types.ts` — Builder types, `DocBinding`, `WorkspaceClientBuilder`
-- `packages/epicenter/src/static/define-table.ts` — `withDocument` method, `DocBinding` type
-- `packages/epicenter/src/dynamic/extension.ts` — Dynamic API extension re-exports (references `onDocumentOpen` in JSDoc)
-- `packages/epicenter/src/dynamic/workspace/types.ts` — Dynamic API builder types (references `onDocumentOpen` in JSDoc)
-- `packages/epicenter/src/dynamic/workspace/create-workspace.ts` — Dynamic API builder (imports `Extension` from shared lifecycle)
-- `apps/fs-explorer/src/lib/fs/fs-state.svelte.ts` — Real consumer that mixes workspace + document persistence
-- `packages/epicenter/src/extensions/sync.ts` — Sync extension (workspace-level, may need document counterpart)
-- `packages/epicenter/src/static/create-workspace.test.ts` — Tests for extension wiring and document bindings
+- `packages/epicenter/src/static/create-workspace.ts`: Main builder implementation, has current `onDocumentOpen` hook wiring
+- `packages/epicenter/src/static/create-document-binding.ts`: Runtime document binding, manages content Y.Doc lifecycle
+- `packages/epicenter/src/shared/lifecycle.ts`: Extension and DocumentLifecycle types (shared by static + dynamic APIs)
+- `packages/epicenter/src/static/types.ts`: Builder types, `DocBinding`, `WorkspaceClientBuilder`
+- `packages/epicenter/src/static/define-table.ts`: `withDocument` method, `DocBinding` type
+- `packages/epicenter/src/dynamic/extension.ts`: Dynamic API extension re-exports (references `onDocumentOpen` in JSDoc)
+- `packages/epicenter/src/dynamic/workspace/types.ts`: Dynamic API builder types (references `onDocumentOpen` in JSDoc)
+- `packages/epicenter/src/dynamic/workspace/create-workspace.ts`: Dynamic API builder (imports `Extension` from shared lifecycle)
+- `apps/fs-explorer/src/lib/fs/fs-state.svelte.ts`: Real consumer that mixes workspace + document persistence
+- `packages/epicenter/src/extensions/sync.ts`: Sync extension (workspace-level, may need document counterpart)
+- `packages/epicenter/src/static/create-workspace.test.ts`: Tests for extension wiring and document bindings
 
 ## Review
 
-**Status**: Complete — all 4 phases implemented and verified.
+**Status**: Complete: all 4 phases implemented and verified.
 
 ### Changes Summary
 
-**Phase 1 — Types** (7 files touched):
+**Phase 1: Types** (7 files touched):
 
 - `types.ts`: Added `TTags` generic to `DocBinding`, `DocumentExtensionRegistration` type, `ExtractDocTags`/`ExtractAllDocTags` utility types, `withDocumentExtension` method on `WorkspaceClientBuilder`, `TDocExtKeys` generic
 - `lifecycle.ts`: Removed `onDocumentOpen` from `Extension` type, added `tags: readonly string[]` to `DocumentContext.binding`
 - `define-table.ts`: `withDocument` now accepts optional `tags` param with `const TTags` inference, runtime normalization of single-string to array
 
-**Phase 2 — Runtime** (2 files touched):
+**Phase 2: Runtime** (2 files touched):
 
 - `create-workspace.ts`: Replaced `documentOpenHooks` with `documentExtensionRegistrations` array, implemented `withDocumentExtension` builder method, passes tags config through to `createDocumentBinding`
 - `create-document-binding.ts`: New config shape `{ documentExtensions, documentTags }` replacing `{ onDocumentOpen }`, tag matching via set intersection filter in `open()`
 
-**Phase 3 — Consumer Migration** (2 files touched):
+**Phase 3: Consumer Migration** (2 files touched):
 
 - `fs-state.svelte.ts`: Split persistence into workspace `withExtension` + `withDocumentExtension('persistence', ..., { tags: ['persistent'] })`
 - `file-table.ts`: Added `tags: 'persistent'` to `filesTable`'s `withDocument` call
-- Sync extension (`sync.ts`): No changes needed — had no `onDocumentOpen`
+- Sync extension (`sync.ts`): No changes needed: had no `onDocumentOpen`
 
-**Phase 4 — Cleanup** (4 files touched):
+**Phase 4: Cleanup** (4 files touched):
 
 - Removed all `onDocumentOpen` and `documentOpenHooks` references from JSDoc in `create-document-binding.ts`, `create-workspace.ts`, `dynamic/extension.ts`, `dynamic/workspace/types.ts`
 
@@ -549,12 +549,12 @@ Tags are strings — the system doesn't validate that a tag like `'persistent'` 
 - `create-workspace.test.ts`: Replaced `onDocumentOpen` test with `withDocumentExtension` test + tag matching test
 - `create-document-binding.test.ts`: Rewrote purge tests and hook tests for new `documentExtensions` config, added 5 tag matching tests (universal, matching, non-matching, no-tags-on-doc)
 - `define-table.test.ts`: Added 3 tests for `withDocument` tags (single string, array, omitted), fixed pre-existing `toEqual` type issues caused by `DocBinding` generic change
-- **Result**: 182 pass, 0 fail (up from 174 baseline — 8 new tests added)
+- **Result**: 182 pass, 0 fail (up from 174 baseline: 8 new tests added)
 
 ### Design Decisions Made During Implementation
 
 1. **Tag matching is set intersection**: Extension fires if `extension.tags ∩ doc.tags ≠ ∅`. Extensions with empty tags are universal (fire for all docs).
 2. **Tags normalized at definition time**: Single string `'persistent'` is converted to `['persistent']` in `addWithDocument` runtime, stored as `readonly string[]`.
-3. **`DocBinding` conditional tags field**: `tags?: [TTags] extends [never] ? undefined : readonly TTags[] | TTags` — when no tags declared, the field type is `undefined` (not just optional).
-4. **`DocumentExtensionRegistration` stores `tags: readonly string[]`**: Empty array for universal extensions (no optional, no undefined — simplifies runtime filtering).
+3. **`DocBinding` conditional tags field**: `tags?: [TTags] extends [never] ? undefined : readonly TTags[] | TTags`: when no tags declared, the field type is `undefined` (not just optional).
+4. **`DocumentExtensionRegistration` stores `tags: readonly string[]`**: Empty array for universal extensions (no optional, no undefined: simplifies runtime filtering).
 5. **Existing `define-table.test.ts` assertions changed from `toEqual` to field-by-field**: The `Record<string, never>` default in `TDocs` creates impossible intersections with `toEqual`'s type overloads after adding the `TTags` generic. Field-by-field `toBe`/`toBeUndefined` assertions avoid this while testing the same behavior.

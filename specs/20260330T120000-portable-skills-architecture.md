@@ -6,7 +6,7 @@
 
 ## Overview
 
-A shared `@epicenter/skills` package that lets any Epicenter app load, edit, and sync skills via workspace tables. Skills are a shared runtime resource—consumed by browser apps, edge workers, and desktop apps—not just agent tooling. Export to the [agentskills.io](https://agentskills.io/specification) folder format is a secondary publish step for Codex/Claude Code/OpenCode compatibility.
+A shared `@epicenter/skills` package that lets any Epicenter app load, edit, and sync skills via workspace tables. Skills are a shared runtime resource. Consumed by browser apps, edge workers, and desktop apps. Not just agent tooling. Export to the [agentskills.io](https://agentskills.io/specification) folder format is a secondary publish step for Codex/Claude Code/OpenCode compatibility.
 
 ## Motivation
 
@@ -70,13 +70,13 @@ skill-name/
 
 #### Body Content (Instructions)
 
-The markdown body after the frontmatter contains the skill's **instructions**—the content injected into an agent's context when the skill is activated. The spec recommends keeping SKILL.md under 500 lines and 5000 tokens.
+The markdown body after the frontmatter contains the skill's **instructions**: the content injected into an agent's context when the skill is activated. The spec recommends keeping SKILL.md under 500 lines and 5000 tokens.
 
 #### Optional Directories
 
-- **`references/`** — Additional documentation files (always markdown). Focused reference material that agents load on demand.
-- **`scripts/`** — Executable code (Python, Bash, JavaScript). Self-contained with documented dependencies.
-- **`assets/`** — Static resources: templates (JSON, YAML), images (PNG, SVG), data files (CSV, schemas). May contain binary files.
+- **`references/`**: Additional documentation files (always markdown). Focused reference material that agents load on demand.
+- **`scripts/`**: Executable code (Python, Bash, JavaScript). Self-contained with documented dependencies.
+- **`assets/`**: Static resources: templates (JSON, YAML), images (PNG, SVG), data files (CSV, schemas). May contain binary files.
 
 ### Progressive Disclosure (How Runtimes Load Skills)
 
@@ -123,7 +123,7 @@ The agentskills.io spec uses "instructions" as the semantic name for the post-fr
 
 > **Instructions** (< 5000 tokens recommended): The full SKILL.md body is loaded when the skill is activated
 
-`skill.instructions` is self-documenting. `skill.body` is generic—body of what? The spec's own language settles it. With `.withDocument('instructions')`, the API reads naturally: `ws.documents.skills.instructions.get(id)`.
+`skill.instructions` is self-documenting. `skill.body` is generic. Body of what? The spec's own language settles it. With `.withDocument('instructions')`, the API reads naturally: `ws.documents.skills.instructions.get(id)`.
 
 ### Why separate `id` and `name`
 
@@ -182,10 +182,10 @@ Separating them means renaming a skill (changing `name` from `"svelte"` to `"sve
 │                                       path: "shadcn-patterns.md",
 │                                       .withDocument('content') }
 │
-├── scripts/                       (scriptsTable — deferred, v2)
+├── scripts/                       (scriptsTable: deferred, v2)
 │   └── extract.py
 │
-└── assets/                        (assetsTable — deferred, v2)
+└── assets/                        (assetsTable: deferred, v2)
     └── template.json
 ```
 
@@ -198,7 +198,7 @@ import { defineTable, type InferTableRow } from '@epicenter/workspace'
 import { type } from 'arktype'
 
 /**
- * Skills table — one row per skill, 1:1 mapping to SKILL.md.
+ * Skills table: one row per skill, 1:1 mapping to SKILL.md.
  *
  * Frontmatter fields map to columns. The markdown instructions live in
  * an attached Y.Doc via `.withDocument('instructions')`, enabling
@@ -210,16 +210,16 @@ import { type } from 'arktype'
  *
  * @example
  * ```typescript
- * // Catalog (tier 1) — which skills exist?
+ * // Catalog (tier 1): which skills exist?
  * const catalog = ws.tables.get('skills').getAllValid()
  *   .map(s => ({ name: s.name, description: s.description }))
  *
- * // Activate (tier 2) — inject instructions into context
+ * // Activate (tier 2): inject instructions into context
  * const skill = ws.tables.get('skills').find(s => s.name === 'writing-voice')
  * const handle = ws.documents.skills.instructions.get(skill.id)
  * systemPrompt += handle.read()
  *
- * // Editor binding — collaborative Y.Text editing
+ * // Editor binding: collaborative Y.Text editing
  * const ytext = handle.asText()
  * editor.bind(ytext)
  * ```
@@ -243,7 +243,7 @@ export const skillsTable = defineTable(
 export type Skill = InferTableRow<typeof skillsTable>
 
 /**
- * References table — one row per markdown file in a skill's `references/` directory.
+ * References table: one row per markdown file in a skill's `references/` directory.
  *
  * References are additional documentation loaded on demand (tier 3 in the
  * progressive disclosure model). Each reference file gets its own Y.Doc
@@ -284,10 +284,10 @@ The following tables are spec'd for completeness but not implemented in v1. Only
 
 ```typescript
 /**
- * Scripts table — one row per executable file in a skill's `scripts/` directory.
+ * Scripts table: one row per executable file in a skill's `scripts/` directory.
  *
  * Scripts are code files (Python, Bash, JavaScript) that agents can run.
- * Stored as plain text `content` column — no `.withDocument()` needed for v1.
+ * Stored as plain text `content` column: no `.withDocument()` needed for v1.
  * Add collaborative code editing later if the skills editor supports it.
  *
  * Deferred: no existing skills use `scripts/`.
@@ -304,13 +304,13 @@ export const scriptsTable = defineTable(
 export type Script = InferTableRow<typeof scriptsTable>
 
 /**
- * Assets table — one row per static resource in a skill's `assets/` directory.
+ * Assets table: one row per static resource in a skill's `assets/` directory.
  *
  * Assets include templates (JSON, YAML), images (PNG, SVG), and data files
- * (CSV, schemas). Text-only for now — binary files (images) are skipped on
+ * (CSV, schemas). Text-only for now: binary files (images) are skipped on
  * import. Add base64 encoding or a binary column type when needed.
  *
- * No `.withDocument()` — assets are static resources, not collaboratively edited.
+ * No `.withDocument()`: assets are static resources, not collaboratively edited.
  *
  * Deferred: no existing skills use `assets/`.
  */
@@ -329,7 +329,7 @@ export type Asset = InferTableRow<typeof assetsTable>
 ### How Apps Consume Skills
 
 ```typescript
-// Any app — browser, server, edge
+// Any app: browser, server, edge
 import { skillsTable, referencesTable } from '@epicenter/skills'
 import { createWorkspace } from '@epicenter/workspace'
 
@@ -338,16 +338,16 @@ const ws = createWorkspace({
   tables: { skills: skillsTable, references: referencesTable },
 })
 
-// Catalog (tier 1) — which skills exist?
+// Catalog (tier 1): which skills exist?
 const catalog = ws.tables.get('skills').getAllValid()
   .map(s => ({ name: s.name, description: s.description }))
 
-// Activate (tier 2) — read instructions from document
+// Activate (tier 2): read instructions from document
 const skill = ws.tables.get('skills').find(s => s.name === 'writing-voice')
 const handle = ws.documents.skills.instructions.get(skill.id)
 systemPrompt += handle.read()
 
-// On-demand resources (tier 3) — load references
+// On-demand resources (tier 3): load references
 const refs = ws.tables.get('references')
   .filter(r => r.skillId === skill.id)
 for (const ref of refs) {
@@ -462,27 +462,27 @@ Export is a one-way publish step, not a bidirectional sync. Run it when you want
 ### Phase 1: Package + Schema
 
 - [ ] **1.1** Create `packages/skills/` with package.json, tsconfig.json, src/index.ts
-- [ ] **1.2** `src/tables.ts` — `skillsTable` and `referencesTable` with full JSDoc (see schema section above). Include `scriptsTable` and `assetsTable` as commented-out deferred definitions.
-- [ ] **1.3** `src/types.ts` — `Skill`, `Reference`, `Script`, `Asset` type exports. JSDoc explaining the 1:1 mapping to agentskills.io spec fields.
-- [ ] **1.4** `src/parse.ts` — `parseSkillMd(name, content)` with JSDoc, `@example`, and explanation of frontmatter → column mapping. Include `splitFrontmatter()` helper.
-- [ ] **1.5** `src/serialize.ts` — `serializeSkillMd(skill, instructions)` with JSDoc, `@example`, and explanation of which optional fields are included/omitted.
+- [ ] **1.2** `src/tables.ts`: `skillsTable` and `referencesTable` with full JSDoc (see schema section above). Include `scriptsTable` and `assetsTable` as commented-out deferred definitions.
+- [ ] **1.3** `src/types.ts`: `Skill`, `Reference`, `Script`, `Asset` type exports. JSDoc explaining the 1:1 mapping to agentskills.io spec fields.
+- [ ] **1.4** `src/parse.ts`: `parseSkillMd(name, content)` with JSDoc, `@example`, and explanation of frontmatter → column mapping. Include `splitFrontmatter()` helper.
+- [ ] **1.5** `src/serialize.ts`: `serializeSkillMd(skill, instructions)` with JSDoc, `@example`, and explanation of which optional fields are included/omitted.
 
 ### Phase 2: Import / Export
 
-- [ ] **2.1** `src/import.ts` — `importFromDisk(dir, workspace)` with JSDoc. Scans `.agents/skills/`, parses SKILL.md files, upserts skill rows, writes instruction documents, enumerates `references/` files into `referencesTable` with documents. Skips `scripts/` and `assets/`.
-- [ ] **2.2** `src/export.ts` — `exportToDisk(workspace, dir)` with JSDoc. Reads all skills, serializes to SKILL.md, writes reference files, cleans up deleted skill folders.
+- [ ] **2.1** `src/import.ts`: `importFromDisk(dir, workspace)` with JSDoc. Scans `.agents/skills/`, parses SKILL.md files, upserts skill rows, writes instruction documents, enumerates `references/` files into `referencesTable` with documents. Skips `scripts/` and `assets/`.
+- [ ] **2.2** `src/export.ts`: `exportToDisk(workspace, dir)` with JSDoc. Reads all skills, serializes to SKILL.md, writes reference files, cleans up deleted skill folders.
 - [ ] **2.3** Verify round-trip: import 49 existing skills → export → diff shows only expected changes (nanoid in row, formatting normalization).
 
 ### Phase 3: Integration
 
-- [ ] **3.1** Wire into skills editor app (`apps/skills/`) — replace virtual filesystem with workspace tables.
+- [ ] **3.1** Wire into skills editor app (`apps/skills/`): replace virtual filesystem with workspace tables.
 - [ ] **3.2** Add skills loading to one existing app as proof-of-concept (e.g., `apps/honeycrisp` or `apps/api`).
 
 ### Phase 4: Read Actions (Isomorphic)
 
 Add query actions to the isomorphic `createSkillsWorkspace()` so any app can consume skills without touching tables directly. These follow the agentskills.io progressive disclosure model (Catalog → Instructions → Resources) and use `defineQuery` from `@epicenter/workspace`.
 
-The agentskills.io spec is purely a file-format standard—it defines no consumption API. The `skills-ref` Python CLI provides `read_properties` and `to_prompt` as the only official programmatic surface. Our read actions are the TypeScript equivalent, designed for workspace-native consumption.
+The agentskills.io spec is purely a file-format standard. It defines no consumption API. The `skills-ref` Python CLI provides `read_properties` and `to_prompt` as the only official programmatic surface. Our read actions are the TypeScript equivalent, designed for workspace-native consumption.
 
 #### Actions
 
@@ -500,7 +500,7 @@ The agentskills.io spec is purely a file-format standard—it defines no consump
 | `getSkill` returns metadata + instructions | Combined | Callers almost always want both. `getSkill(id).instructions` is fine when you only want one |
 | `getSkillWithReferences` vs `getSkillBundle` | `WithReferences` | "Bundle" is invented terminology. "WithReferences" says exactly what extra data you get. When scripts/assets are added, we can expand or add `getSkillWithResources` |
 | Input as `{ id }` object vs plain string | `{ id }` object | `defineQuery` input must be a Standard Schema object for MCP/OpenAPI compatibility |
-| Actions on isomorphic workspace | Yes | Read actions don't need Node fs or browser APIs—they only read tables and documents. Belongs in `workspace.ts`, not `node.ts` |
+| Actions on isomorphic workspace | Yes | Read actions don't need Node fs or browser APIs. They only read tables and documents. Belongs in `workspace.ts`, not `node.ts` |
 | `listSkills` has no input | Correct | Returns all skills. Filtering is the consumer's job |
 
 #### Implementation
@@ -517,11 +517,11 @@ export function createSkillsWorkspace() {
      * List all skills as lightweight catalog entries.
      *
      * Returns id, name, and description for every valid skill row.
-     * No documents are opened—this is cheap enough to call on every
+     * No documents are opened. This is cheap enough to call on every
      * render cycle or at agent session startup.
      *
      * Mirrors tier 1 (Catalog) of the agentskills.io progressive
-     * disclosure model: ~50–100 tokens per skill.
+     * disclosure model: ~50-100 tokens per skill.
      */
     listSkills: defineQuery({
       description: 'List all skills (id, name, description)',
@@ -537,7 +537,7 @@ export function createSkillsWorkspace() {
      *
      * Opens the skill's instructions document (one Y.Doc) and reads
      * the full markdown content. Returns the skill row alongside the
-     * instructions text—callers almost always need both.
+     * instructions text. Callers almost always need both.
      *
      * Mirrors tier 2 (Instructions) of the agentskills.io progressive
      * disclosure model: <5000 tokens recommended.
@@ -557,7 +557,7 @@ export function createSkillsWorkspace() {
      * Get a skill with its full instructions and all reference content.
      *
      * Opens the instructions document plus one content document per
-     * reference—expensive for skills with many references. Use this
+     * reference. Expensive for skills with many references. Use this
      * at agent prompt assembly time when the full skill context is
      * needed, not for catalog browsing.
      *
@@ -592,20 +592,20 @@ export function createSkillsWorkspace() {
 #### Consuming App Example
 
 ```typescript
-// Any app—browser, server, edge
+// Any app. Browser, server, edge
 import { createSkillsWorkspace } from '@epicenter/skills'
 
 const ws = createSkillsWorkspace()
   .withExtension('persistence', indexeddbPersistence)
 
-// Tier 1—catalog for a skill picker
+// Tier 1. Catalog for a skill picker
 const skills = ws.actions.listSkills()
 
-// Tier 2—inject into agent context
+// Tier 2. Inject into agent context
 const result = await ws.actions.getSkill({ id: 'abc123' })
 if (result) systemPrompt += result.instructions
 
-// Tier 3—full skill with references for deep agent context
+// Tier 3. Full skill with references for deep agent context
 const full = await ws.actions.getSkillWithReferences({ id: 'abc123' })
 if (full) {
   systemPrompt += full.instructions
@@ -618,8 +618,8 @@ if (full) {
 #### Tasks
 
 - [x] **4.1** Add read actions (`listSkills`, `getSkill`, `getSkillWithReferences`) to `packages/skills/src/workspace.ts` via `.withActions()`
-- [x] **4.2** Re-export `defineQuery` usage—ensure `workspace.ts` imports `defineQuery` from `@epicenter/workspace` and input schema from `typebox` (TypeBox used instead of arktype for `defineQuery` TypeBox `Static<>` inference compatibility)
-- [x] **4.3** Update `packages/skills/src/index.ts` barrel if any new types need exporting — no new types needed (return types inferred from handlers)
+- [x] **4.2** Re-export `defineQuery` usage. Ensure `workspace.ts` imports `defineQuery` from `@epicenter/workspace` and input schema from `typebox` (TypeBox used instead of arktype for `defineQuery` TypeBox `Static<>` inference compatibility)
+- [x] **4.3** Update `packages/skills/src/index.ts` barrel if any new types need exporting: no new types needed (return types inferred from handlers)
 - [ ] **4.4** Verify actions work: write a test or script that calls all three actions after `importFromDisk`
 - [x] **4.5** Run `bun typecheck` on `packages/skills` to confirm no type errors
 
@@ -628,21 +628,21 @@ if (full) {
 ### Skill renamed in editor
 
 1. User renames skill `"svelte"` to `"svelte5"` by changing the `name` column
-2. The `id` (nanoid) stays the same — all references in `referencesTable` are unaffected
+2. The `id` (nanoid) stays the same: all references in `referencesTable` are unaffected
 3. On export, a new folder `svelte5/` is created; old `svelte/` folder still exists on disk
-4. Export should delete `svelte/` — or flag it for user confirmation
+4. Export should delete `svelte/`: or flag it for user confirmation
 
 ### Re-importing after edits
 
 1. Skills are imported (assigned nanoids), then edited in the browser
 2. User re-imports from disk (e.g., after editing SKILL.md in a text editor)
-3. Import should match by `name`, not `id` — update existing rows rather than creating duplicates
+3. Import should match by `name`, not `id`: update existing rows rather than creating duplicates
 4. Instructions document is overwritten with the new file content
 
 ### Skill with binary assets (deferred)
 
 1. Skill has `assets/logo.png` (binary file)
-2. `assetsTable` stores `content: string` — can't hold binary
+2. `assetsTable` stores `content: string`: can't hold binary
 3. Skip binary files on import for now. Add base64 encoding or binary column type in v2.
 
 ## Open Questions
@@ -666,9 +666,9 @@ if (full) {
 
 ## References
 
-- [agentskills.io/specification](https://agentskills.io/specification) — Canonical skill format spec
-- [agentskills.io/client-implementation](https://agentskills.io/client-implementation/adding-skills-support) — How runtimes load skills
-- `.agents/skills/` — Existing 49 skills in this repo
-- `packages/workspace/` — Yjs CRDT table infrastructure
-- `apps/skills/` — Draft skills editor (PR #1556, branch `opencode/eager-garden`)
-- `specs/20260319T120000-skill-authoring-model.md` — Previous skill restructuring spec
+- [agentskills.io/specification](https://agentskills.io/specification): Canonical skill format spec
+- [agentskills.io/client-implementation](https://agentskills.io/client-implementation/adding-skills-support): How runtimes load skills
+- `.agents/skills/`: Existing 49 skills in this repo
+- `packages/workspace/`: Yjs CRDT table infrastructure
+- `apps/skills/`: Draft skills editor (PR #1556, branch `opencode/eager-garden`)
+- `specs/20260319T120000-skill-authoring-model.md`: Previous skill restructuring spec

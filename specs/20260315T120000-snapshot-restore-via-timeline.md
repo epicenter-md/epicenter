@@ -16,7 +16,7 @@ Move snapshot restore from the Durable Object to the client, using the timeline 
 `DocumentRoom.applySnapshot` directly manipulates raw Y.Doc keys:
 
 ```typescript
-// apps/api/src/document-room.ts — BROKEN after timeline merge
+// apps/api/src/document-room.ts: BROKEN after timeline merge
 const restoredDoc = Y.createDocFromSnapshot(this.doc, snap);
 const restoredText = restoredDoc.getText('content').toString(); // ← reads from empty key
 
@@ -30,20 +30,20 @@ this.doc.transact(() => {
 This creates problems:
 
 1. **Reads from wrong key**: All content now lives in `ydoc.getArray('timeline')`, not `ydoc.getText('content')`. The restore reads an empty string and writes it to a key nothing reads from. It's a silent no-op.
-2. **DO does content-level work**: The DO is a sync room—it stores and replicates a Y.Doc. It shouldn't know about timelines, content modes, or how to read/write entries. That's the workspace layer's job.
+2. **DO does content-level work**: The DO is a sync room. It stores and replicates a Y.Doc. It shouldn't know about timelines, content modes, or how to read/write entries. That's the workspace layer's job.
 3. **No mode awareness**: Even if the key were correct, the code assumes text-only. The timeline supports text, richtext, and sheet entries. A sheet snapshot would be flattened to CSV text.
 
 ### Desired State
 
-The DO handles snapshot CRUD (save, list, get, delete). The client handles restore—reading from the snapshot doc's timeline and writing to the live doc's timeline via `DocumentHandle`. The restore is a forward operation: new CRDT ops that make the visible content match the snapshot.
+The DO handles snapshot CRUD (save, list, get, delete). The client handles restore. Reading from the snapshot doc's timeline and writing to the live doc's timeline via `DocumentHandle`. The restore is a forward operation: new CRDT ops that make the visible content match the snapshot.
 
 ## Research Findings
 
 ### Yjs Snapshot Mechanics
 
-A `Y.snapshot(doc)` captures `{ stateVector, deleteSet }` — a lightweight pointer (~7 bytes to ~1.5 KB) into the struct store. With `gc: false`, the struct store retains all deleted item content, so any snapshot can reconstruct the full doc.
+A `Y.snapshot(doc)` captures `{ stateVector, deleteSet }`: a lightweight pointer (~7 bytes to ~1.5 KB) into the struct store. With `gc: false`, the struct store retains all deleted item content, so any snapshot can reconstruct the full doc.
 
-`Y.createDocFromSnapshot(originDoc, snapshot)` replays the struct store up to the bookmark. The resulting Y.Doc has the **same internal structure** as the original at that point—including the `getArray('timeline')` with all entries as they existed.
+`Y.createDocFromSnapshot(originDoc, snapshot)` replays the struct store up to the bookmark. The resulting Y.Doc has the **same internal structure** as the original at that point. Including the `getArray('timeline')` with all entries as they existed.
 
 | Approach | What happens | Result |
 |---|---|---|
@@ -91,10 +91,10 @@ A restore makes the visible content match the snapshot. Two sub-cases:
 | Where restore logic lives | Client side | DO is format-agnostic. Client has `DocumentHandle`, timeline, mode awareness. No new deps in the Worker. |
 | Remove `applySnapshot` RPC from DO | Yes | Broken, and wrong layer. The DO shouldn't know about content format. |
 | Remove `POST .../apply` route | Yes | No server-side restore. Client orchestrates via existing endpoints. |
-| Keep `getSnapshot` RPC on DO | Yes | Returns `Y.encodeStateAsUpdateV2(restoredDoc)` — the full snapshot state as binary. Client needs this to reconstruct locally. |
+| Keep `getSnapshot` RPC on DO | Yes | Returns `Y.encodeStateAsUpdateV2(restoredDoc)`: the full snapshot state as binary. Client needs this to reconstruct locally. |
 | Safety snapshot before restore | Client calls `POST .../snapshots` with label "Before restore" | Explicit, not hidden. Client decides whether to save a safety snapshot. |
 | Mode-aware restore | Match snapshot's content mode | Restoring a sheet snapshot should produce a sheet entry, not flattened CSV text. |
-| Where client restore function lives | `@epicenter/workspace` — new export | Alongside `createTimeline` and `DocumentHandle`. Any app can use it. |
+| Where client restore function lives | `@epicenter/workspace`: new export | Alongside `createTimeline` and `DocumentHandle`. Any app can use it. |
 
 ## Architecture
 
@@ -117,13 +117,13 @@ CLIENT (has @epicenter/workspace)          DO (DocumentRoom)
    const entry = readEntry(snapshotTl.currentEntry)
 
 5. Write to live doc's timeline
-   (via DocumentHandle — same-mode or cross-mode)
+   (via DocumentHandle: same-mode or cross-mode)
 
 6. CRDT ops sync naturally ───────────►  updateV2 handler persists + broadcasts
    tempDoc.destroy()
 ```
 
-The DO only does step 1 and step 2 — pure data operations. Steps 3–6 use the timeline API that already exists.
+The DO only does step 1 and step 2: pure data operations. Steps 3-6 use the timeline API that already exists.
 
 ## Implementation Plan
 
@@ -135,7 +135,7 @@ The DO only does step 1 and step 2 — pure data operations. Steps 3–6 use the
 
 ### Phase 2: Add client-side restore function
 
-- [x] **2.1** Create `restoreFromSnapshot` function in `packages/workspace/src/timeline/restore.ts` — takes a `DocumentHandle` and a snapshot binary (`Uint8Array`), performs the restore:
+- [x] **2.1** Create `restoreFromSnapshot` function in `packages/workspace/src/timeline/restore.ts`: takes a `DocumentHandle` and a snapshot binary (`Uint8Array`), performs the restore:
   - Creates temp Y.Doc, applies the binary update
   - Reads snapshot timeline entry via `readEntry(createTimeline(tempDoc).currentEntry)`
   - Writes to the live doc's timeline, matching mode:
@@ -154,7 +154,7 @@ The DO only does step 1 and step 2 — pure data operations. Steps 3–6 use the
 
 ### Phase 3: Wire up in consuming app (if applicable)
 
-- [x] **3.1** No UI calls the old `/apply` endpoint — no wiring needed.
+- [x] **3.1** No UI calls the old `/apply` endpoint: no wiring needed.
   1. `POST /documents/:doc/snapshots` with label "Before restore"
   2. `GET /documents/:doc/snapshots/:id` to fetch binary
   3. Call `restoreFromSnapshot(handle, binary)`
@@ -171,7 +171,7 @@ The `handle.write()` / `handle.batch()` calls create local CRDT operations. The 
 
 ### Snapshot from before timeline migration
 
-If a very old snapshot was captured when the doc used `getText('content')` instead of the timeline array, `createTimeline(tempDoc)` would return an empty timeline (`currentEntry` is undefined, `readEntry` returns `{ mode: 'empty' }`). Restore is a no-op. The old content in `getText('content')` is inaccessible through the timeline API—by design. Pre-migration snapshots are effectively view-only via the raw Y.Doc (accessible through `getSnapshot`).
+If a very old snapshot was captured when the doc used `getText('content')` instead of the timeline array, `createTimeline(tempDoc)` would return an empty timeline (`currentEntry` is undefined, `readEntry` returns `{ mode: 'empty' }`). Restore is a no-op. The old content in `getText('content')` is inaccessible through the timeline API. By design. Pre-migration snapshots are effectively view-only via the raw Y.Doc (accessible through `getSnapshot`).
 
 ### Temp doc cleanup on error
 
@@ -185,7 +185,7 @@ If `Y.applyUpdateV2` throws (corrupted binary), the function should still destro
    - **Recommendation**: `DocumentHandle`. It's the canonical way to interact with content docs. The function signature: `restoreFromSnapshot(handle: DocumentHandle, snapshotBinary: Uint8Array): void`
 
 2. **Should the safety snapshot be automatic or caller-managed?**
-   - Automatic: `restoreFromSnapshot` always saves one (needs API access — breaks separation).
+   - Automatic: `restoreFromSnapshot` always saves one (needs API access: breaks separation).
    - Caller-managed: client calls `saveSnapshot` before calling restore.
    - **Recommendation**: Caller-managed. Keep `restoreFromSnapshot` pure (Y.Doc operations only, no network). The client orchestrates the API calls.
 
@@ -209,13 +209,13 @@ If `Y.applyUpdateV2` throws (corrupted binary), the function should still destro
 
 ## References
 
-- `apps/api/src/document-room.ts` — remove `applySnapshot`, keep all other snapshot RPCs
-- `apps/api/src/app.ts` — remove the `/apply` route, keep all other snapshot routes
-- `packages/workspace/src/timeline/timeline.ts` — `createTimeline`, `readEntry` (used by restore)
-- `packages/workspace/src/workspace/create-document.ts` — `makeHandle` (the `DocumentHandle` factory, shows how write/asText/asSheet work)
-- `packages/workspace/src/timeline/richtext.ts` — `xmlFragmentToPlaintext`, `populateFragmentFromText`
-- `packages/workspace/src/timeline/sheet.ts` — `serializeSheetToCsv`, `parseSheetFromCsv`
-- `specs/20260313T144805-document-snapshot-fixes.md` — superseded spec (used `getText('content')`)
+- `apps/api/src/document-room.ts`: remove `applySnapshot`, keep all other snapshot RPCs
+- `apps/api/src/app.ts`: remove the `/apply` route, keep all other snapshot routes
+- `packages/workspace/src/timeline/timeline.ts`: `createTimeline`, `readEntry` (used by restore)
+- `packages/workspace/src/workspace/create-document.ts`: `makeHandle` (the `DocumentHandle` factory, shows how write/asText/asSheet work)
+- `packages/workspace/src/timeline/richtext.ts`: `xmlFragmentToPlaintext`, `populateFragmentFromText`
+- `packages/workspace/src/timeline/sheet.ts`: `serializeSheetToCsv`, `parseSheetFromCsv`
+- `specs/20260313T144805-document-snapshot-fixes.md`: superseded spec (used `getText('content')`)
 
 ## Review
 
@@ -228,18 +228,18 @@ Moved snapshot restore from the Durable Object to the client. Removed the broken
 ### Deviations from Spec
 
 - **Phase 3 skipped**: No frontend code called the old `/apply` endpoint, so no UI wiring was needed.
-- **Signature changed**: `restoreFromSnapshot` takes `Y.Doc` instead of `DocumentHandle`—removes cross-layer dependency, function lives in `timeline.ts` instead of a separate file.
+- **Signature changed**: `restoreFromSnapshot` takes `Y.Doc` instead of `DocumentHandle`: removes cross-layer dependency, function lives in `timeline.ts` instead of a separate file.
 - **Richtext is format-preserving**: Spec recommended plaintext flattening. After verifying Yjs source, `Y.XmlElement.clone()` deep-copies with formatting intact. Implemented clone approach instead of lossy flatten.
 
 ### Files Changed
 
-- `apps/api/src/document-room.ts` — removed `applySnapshot()` method (lines 82–110)
-- `apps/api/src/app.ts` — removed `POST .../snapshots/:id/apply` route (lines 607–621)
-- `packages/workspace/src/timeline/timeline.ts` — `restoreFromSnapshot` function (inlined, no separate file)
-- `packages/workspace/src/timeline/index.ts` — re-export `restoreFromSnapshot`
-- `packages/workspace/src/index.ts` — re-export `restoreFromSnapshot`
-- `packages/workspace/src/timeline/timeline.test.ts` — 6 tests for restore (including formatting preservation)
+- `apps/api/src/document-room.ts`: removed `applySnapshot()` method (lines 82-110)
+- `apps/api/src/app.ts`: removed `POST .../snapshots/:id/apply` route (lines 607-621)
+- `packages/workspace/src/timeline/timeline.ts`: `restoreFromSnapshot` function (inlined, no separate file)
+- `packages/workspace/src/timeline/index.ts`: re-export `restoreFromSnapshot`
+- `packages/workspace/src/index.ts`: re-export `restoreFromSnapshot`
+- `packages/workspace/src/timeline/timeline.test.ts`: 6 tests for restore (including formatting preservation)
 
 ### Follow-up Work
 
-- Pre-migration snapshot handling UI (snapshots from before timeline migration are no-ops—consider surfacing this to users)
+- Pre-migration snapshot handling UI (snapshots from before timeline migration are no-ops. Consider surfacing this to users)

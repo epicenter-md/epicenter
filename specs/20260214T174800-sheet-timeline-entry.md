@@ -8,7 +8,7 @@
 
 ## Overview
 
-Add a `sheet` content mode to the per-file Y.Doc timeline. A sheet entry stores tabular data as nested Y.Maps — columns for definitions, rows for cell values — with all values as strings. Row and column ordering uses fractional indexing (property updates, not Y.Array position). Serializes to/from CSV for the filesystem `readFile`/`writeFile` interface.
+Add a `sheet` content mode to the per-file Y.Doc timeline. A sheet entry stores tabular data as nested Y.Maps: columns for definitions, rows for cell values, with all values as strings. Row and column ordering uses fractional indexing (property updates, not Y.Array position). Serializes to/from CSV for the filesystem `readFile`/`writeFile` interface.
 
 ---
 
@@ -66,7 +66,7 @@ Source: [Yjs DeepWiki](https://deepwiki.com/yjs/yjs), maintainer guidance.
 | Flat `Y.Map` with compound keys | **Not recommended** | Re-keying on positional row insert. (Not applicable with UUID keys.) |
 | Row/column reordering | **Fractional indexing** | Y.Array move = delete+insert = lost updates + duplicates. Property update = clean merge. |
 
-**Key finding**: Nested Y.Maps with fractional indexing is the consensus approach. AppFlowy's Y.Array reorder is the known antipattern — their `reorderRow` does `rows.delete(sourceIndex)` then `rows.insert(adjustedTargetIndex)`, exactly what the [fractional ordering article](../docs/articles/fractional-ordering-meta-data-structure.md) warns against.
+**Key finding**: Nested Y.Maps with fractional indexing is the consensus approach. AppFlowy's Y.Array reorder is the known antipattern: their `reorderRow` does `rows.delete(sourceIndex)` then `rows.insert(adjustedTargetIndex)`, exactly what the [fractional ordering article](../docs/articles/fractional-ordering-meta-data-structure.md) warns against.
 
 **Implication**: Use `Y.Map<rowId, Y.Map>` for rows, fractional index as a string property on each row/column Y.Map.
 
@@ -142,7 +142,7 @@ The architecture uses only two top-level Y.Maps (`columns` and `rows`), yet supp
 
 - **Column definitions** live in `columns` Y.Map (metadata: name, kind, width, order)
 - **Cell values** are nested properties within each row's Y.Map, keyed by column ID
-- No separate "cells" map needed—sparse storage works naturally (missing keys = empty cells)
+- No separate "cells" map needed. Sparse storage works naturally (missing keys = empty cells)
 - Row deletion cascades automatically: `rows.delete(rowId)` removes all cells in that row
 
 This sparse nested structure is more efficient than a flat `cells` Y.Map with compound keys like `rowId:colId` because:
@@ -246,7 +246,7 @@ Added to `packages/filesystem/src/types.ts`:
 import { type Id, generateId } from '@epicenter/workspace';
 import type { Brand } from 'wellcrafted/brand';
 
-/** Branded row identifier — a 10-char nanoid that is specifically a row ID */
+/** Branded row identifier. A 10-char nanoid that is specifically a row ID */
 export type RowId = Id & Brand<'RowId'>;
 
 /** Generate a new unique row identifier */
@@ -254,7 +254,7 @@ export function generateRowId(): RowId {
   return generateId() as RowId;
 }
 
-/** Branded column identifier — a 10-char nanoid that is specifically a column ID */
+/** Branded column identifier. A 10-char nanoid that is specifically a column ID */
 export type ColumnId = Id & Brand<'ColumnId'>;
 
 /** Generate a new unique column identifier */
@@ -296,7 +296,7 @@ The column definition shape stored in each column Y.Map:
 ```typescript
 /**
  * Column definition stored in a column Y.Map.
- * 
+ *
  * This type documents the expected shape but cannot be enforced at runtime
  * since Y.Maps are dynamic key-value stores. Use defensive reading with
  * defaults when accessing column properties.
@@ -304,13 +304,13 @@ The column definition shape stored in each column Y.Map:
 export type ColumnDefinition = {
   /** Display name of the column */
   name: string;
-  
+
   /** Column kind determines cell value interpretation */
   kind: 'text' | 'number' | 'date' | 'select' | 'boolean';
-  
+
   /** Display width in pixels (stored as string) */
   width: string;
-  
+
   /** Fractional index for column ordering (e.g., "a0", "a1", "a0V") */
   order: string;
 };
@@ -582,11 +582,11 @@ Migration is confined to `timeline-helpers.ts` and `sheet-helpers.ts`. Consumer 
 
 ## References
 
-- `packages/filesystem/src/types.ts` — TimelineEntry union (add SheetEntry here)
-- `packages/filesystem/src/timeline-helpers.ts` — Timeline factory (add pushSheet, update read switches)
-- `packages/filesystem/src/content-ops.ts` — Content I/O (update write for sheet mode)
-- `specs/20260211T230000-timeline-content-storage-implementation.md` — Parent spec (this extends it)
-- `docs/articles/fractional-ordering-meta-data-structure.md` — Fractional indexing pattern (use for row/column order)
+- `packages/filesystem/src/types.ts`: TimelineEntry union (add SheetEntry here)
+- `packages/filesystem/src/timeline-helpers.ts`: Timeline factory (add pushSheet, update read switches)
+- `packages/filesystem/src/content-ops.ts`: Content I/O (update write for sheet mode)
+- `specs/20260211T230000-timeline-content-storage-implementation.md`: Parent spec (this extends it)
+- `docs/articles/fractional-ordering-meta-data-structure.md`: Fractional indexing pattern (use for row/column order)
 
 ---
 
@@ -594,6 +594,6 @@ Migration is confined to `timeline-helpers.ts` and `sheet-helpers.ts`. Consumer 
 
 | Spec | Relationship |
 |------|-------------|
-| `specs/20260211T230000-timeline-content-storage-implementation.md` | **Parent** — this spec adds a new entry type to that timeline |
-| `specs/20260211T220000-yjs-content-doc-multi-mode-research.md` | **Context** — decision record for the timeline approach |
-| `docs/articles/fractional-ordering-meta-data-structure.md` | **Pattern** — fractional indexing used for row/column ordering |
+| `specs/20260211T230000-timeline-content-storage-implementation.md` | **Parent**: this spec adds a new entry type to that timeline |
+| `specs/20260211T220000-yjs-content-doc-multi-mode-research.md` | **Context**: decision record for the timeline approach |
+| `docs/articles/fractional-ordering-meta-data-structure.md` | **Pattern**: fractional indexing used for row/column ordering |

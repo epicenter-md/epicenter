@@ -52,7 +52,7 @@ const notesTable = defineTable(
 export type Note = InferTableRow<typeof notesTable>
 ```
 
-`.withDocument('name', { guid, onUpdate })` attaches a per-row Y.Doc. The document content is NOT a column — it's accessed via `ws.documents.{table}.{name}.get(rowId)`, which returns a handle with `.read()` (string), `.writeText()` (set string), `.asText()` (Y.Text for editor binding).
+`.withDocument('name', { guid, onUpdate })` attaches a per-row Y.Doc. The document content is NOT a column. It's accessed via `ws.documents.{table}.{name}.get(rowId)`, which returns a handle with `.read()` (string), `.writeText()` (set string), `.asText()` (Y.Text for editor binding).
 
 ### How workspaces compose tables
 
@@ -75,7 +75,7 @@ ws.tables.get('references').filter(r => r.skillId === 'abc')  // Reference[]
 
 The 49 existing skills live in `.agents/skills/`. Every skill has a folder with a `SKILL.md` file (YAML frontmatter + markdown body). Some have a `references/` directory with additional markdown files.
 
-Example — `.agents/skills/svelte/SKILL.md`:
+Example: `.agents/skills/svelte/SKILL.md`:
 ```yaml
 ---
 name: svelte
@@ -91,7 +91,7 @@ metadata:
 ...
 ```
 
-Example — `.agents/skills/encryption/SKILL.md` (no metadata):
+Example: `.agents/skills/encryption/SKILL.md` (no metadata):
 ```yaml
 ---
 name: encryption
@@ -165,7 +165,7 @@ All packages use this pattern:
 
 - Always use `type` instead of `interface`
 - Use `bun` everywhere (not npm/yarn/node)
-- Em dashes are closed (no spaces): `word—word`
+- Em dashes are closed (no spaces): `word. Word`
 - JSDoc is STRONGLY ENCOURAGED on all public APIs with `@example` blocks
 - Use `.js` extensions in relative imports (TypeScript with `"module": "preserve"`)
 
@@ -177,27 +177,27 @@ Read `specs/20260330T120000-portable-skills-architecture.md` for the full spec. 
 
 Two tables, both with `.withDocument()`:
 
-**`skillsTable`** — one row per skill, 1:1 with SKILL.md frontmatter:
-- `id: 'string'` — nanoid (stable FK for child rows)
-- `name: 'string'` — agentskills.io slug (lowercase, hyphens, 1-64 chars)
-- `description: 'string'` — 1-1024 chars
+**`skillsTable`**: one row per skill, 1:1 with SKILL.md frontmatter:
+- `id: 'string'`: nanoid (stable FK for child rows)
+- `name: 'string'`: agentskills.io slug (lowercase, hyphens, 1-64 chars)
+- `description: 'string'`: 1-1024 chars
 - `'license?': 'string | undefined'`
 - `'compatibility?': 'string | undefined'`
-- `'metadata?': 'string | undefined'` — JSON stringified `Record<string, string>`
-- `'allowedTools?': 'string | undefined'` — space-delimited
+- `'metadata?': 'string | undefined'`: JSON stringified `Record<string, string>`
+- `'allowedTools?': 'string | undefined'`: space-delimited
 - `updatedAt: 'number'`
 - `_v: '1'`
 - `.withDocument('instructions', { guid: 'id', onUpdate: () => ({ updatedAt: Date.now() }) })`
 
-**`referencesTable`** — one row per markdown file in `references/`:
-- `id: 'string'` — nanoid
-- `skillId: 'string'` — FK to skills.id
-- `path: 'string'` — filename relative to references/ (e.g., `"component-patterns.md"`)
+**`referencesTable`**: one row per markdown file in `references/`:
+- `id: 'string'`: nanoid
+- `skillId: 'string'`: FK to skills.id
+- `path: 'string'`: filename relative to references/ (e.g., `"component-patterns.md"`)
 - `updatedAt: 'number'`
 - `_v: '1'`
 - `.withDocument('content', { guid: 'id', onUpdate: () => ({ updatedAt: Date.now() }) })`
 
-Also include `scriptsTable` and `assetsTable` as **commented-out deferred definitions** with JSDoc explaining they're spec'd but not implemented in v1. These do NOT have `.withDocument()` — they use a plain `content: 'string'` column.
+Also include `scriptsTable` and `assetsTable` as **commented-out deferred definitions** with JSDoc explaining they're spec'd but not implemented in v1. These do NOT have `.withDocument()`: they use a plain `content: 'string'` column.
 
 ### 2. Types (`src/types.ts`)
 
@@ -205,23 +205,23 @@ Export `Skill`, `Reference`, `Script`, `Asset` types via `InferTableRow`. Add JS
 
 ### 3. Parse (`src/parse.ts`)
 
-`parseSkillMd(name: string, content: string)` — splits YAML frontmatter from markdown body. Returns `{ skill: Omit<Skill, 'id'> & { id?: undefined }, instructions: string }` (caller provides the id, or generates one on import). Use a simple frontmatter parser — split on `---` delimiters, parse YAML. You can use `yaml` package or write a minimal parser.
+`parseSkillMd(name: string, content: string)`: splits YAML frontmatter from markdown body. Returns `{ skill: Omit<Skill, 'id'> & { id?: undefined }, instructions: string }` (caller provides the id, or generates one on import). Use a simple frontmatter parser: split on `---` delimiters, parse YAML. You can use `yaml` package or write a minimal parser.
 
-`parseReferenceMd(skillId: string, path: string, content: string)` — creates a reference row + content string.
+`parseReferenceMd(skillId: string, path: string, content: string)`: creates a reference row + content string.
 
 ### 4. Serialize (`src/serialize.ts`)
 
-`serializeSkillMd(skill: Skill, instructions: string)` — reconstructs SKILL.md from row + document text. Only includes non-undefined optional fields in frontmatter.
+`serializeSkillMd(skill: Skill, instructions: string)`: reconstructs SKILL.md from row + document text. Only includes non-undefined optional fields in frontmatter.
 
-`serializeReferenceMd(content: string)` — trivial (just returns the string), but exists for symmetry and future processing.
+`serializeReferenceMd(content: string)`: trivial (just returns the string), but exists for symmetry and future processing.
 
 ### 5. Import (`src/import.ts`)
 
-`importFromDisk(dir: string, workspace)` — scans a directory for skill folders, parses SKILL.md files, upserts into workspace tables, writes instruction documents. Also imports `references/` files. Matches by `name` on re-import to avoid duplicates (updates existing rows).
+`importFromDisk(dir: string, workspace)`: scans a directory for skill folders, parses SKILL.md files, upserts into workspace tables, writes instruction documents. Also imports `references/` files. Matches by `name` on re-import to avoid duplicates (updates existing rows).
 
 ### 6. Export (`src/export.ts`)
 
-`exportToDisk(workspace, dir: string)` — reads all skills, serializes to SKILL.md, writes reference files. Cleans up folders for deleted skills.
+`exportToDisk(workspace, dir: string)`: reads all skills, serializes to SKILL.md, writes reference files. Cleans up folders for deleted skills.
 
 ### 7. Index (`src/index.ts`)
 
@@ -246,11 +246,11 @@ Re-export everything: tables, types, parse, serialize, import, export.
 
 ## MUST NOT DO
 
-- Do not install new dependencies beyond what's listed in the package.json template above (add `yaml` or a YAML parser if needed for frontmatter — check what's available in the monorepo first)
+- Do not install new dependencies beyond what's listed in the package.json template above (add `yaml` or a YAML parser if needed for frontmatter: check what's available in the monorepo first)
 - Do not modify any files outside `packages/skills/`
-- Do not use `interface` — use `type` exclusively
+- Do not use `interface`: use `type` exclusively
 - Do not use `as any`, `@ts-ignore`, or `@ts-expect-error`
-- Do not build the skills editor UI — this is the package only
+- Do not build the skills editor UI: this is the package only
 - Do not implement filesystem watchers or bidirectional sync
 - Do not create test files in this pass (we'll add tests separately)
 - Do not modify the spec file

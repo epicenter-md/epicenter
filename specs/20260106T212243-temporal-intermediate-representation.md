@@ -297,7 +297,7 @@ Once browsers ship native Temporal support, the polyfill can be dropped with zer
 
 ### Decision: Option B (Standalone Functions)
 
-Went with the simpler approach—no wrapper namespace. Just use `Temporal.ZonedDateTime` directly with two helper functions for serialization:
+Went with the simpler approach. No wrapper namespace. Just use `Temporal.ZonedDateTime` directly with two helper functions for serialization:
 
 ```typescript
 import { Temporal, toDateTimeString, fromDateTimeString } from '@epicenter/workspace';

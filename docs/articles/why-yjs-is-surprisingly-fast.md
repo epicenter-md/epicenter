@@ -1,6 +1,6 @@
 # Why YJS Is Surprisingly Fast
 
-YJS is a CRDT library. CRDTs have a reputation for being complex and slow—all that vector clock bookkeeping, tombstone tracking, and conflict resolution. So when you benchmark YJS against SQLite and see comparable performance, it feels wrong.
+YJS is a CRDT library. CRDTs have a reputation for being complex and slow. All that vector clock bookkeeping, tombstone tracking, and conflict resolution. So when you benchmark YJS against SQLite and see comparable performance, it feels wrong.
 
 It's not wrong. YJS is fast because it's in-memory JavaScript, and we consistently underestimate how fast that is.
 
@@ -19,7 +19,7 @@ From our [YJS vs SQLite benchmark](./yjs-storage-efficiency/README.md), operatin
 └────────────────────────┴─────────────┴─────────────┘
 ```
 
-YJS wins on full reads and updates. SQLite wins on inserts and filtered queries (it has indexes). But they're in the same ballpark—hundreds of milliseconds for 100k operations.
+YJS wins on full reads and updates. SQLite wins on inserts and filtered queries (it has indexes). But they're in the same ballpark. Hundreds of milliseconds for 100k operations.
 
 ## Why This Happens
 
@@ -162,10 +162,10 @@ YJS isn't fast despite being a CRDT. It's fast because:
 2. It's just Maps (V8 is incredibly optimized)
 3. It skips features you don't need (no query parsing, no indexes)
 
-For bulk operations and full scans, in-memory JavaScript can match or beat embedded databases. That's not a bug in the benchmark—it's the natural result of eliminating I/O from the critical path.
+For bulk operations and full scans, in-memory JavaScript can match or beat embedded databases. That's not a bug in the benchmark. It's the natural result of eliminating I/O from the critical path.
 
 ---
 
-_See also: [YJS Storage Efficiency](./yjs-storage-efficiency/README.md) — full benchmark with storage comparison_  
-_See also: [The Three Tiers of Database Latency](./database-latency-tiers.md) — where YJS fits in the performance hierarchy_  
-_See also: [Never Underestimate In-Memory Performance](./in-memory-database-performance.md) — the general principle_
+_See also: [YJS Storage Efficiency](./yjs-storage-efficiency/README.md): full benchmark with storage comparison_
+_See also: [The Three Tiers of Database Latency](./database-latency-tiers.md): where YJS fits in the performance hierarchy_
+_See also: [Never Underestimate In-Memory Performance](./in-memory-database-performance.md): the general principle_

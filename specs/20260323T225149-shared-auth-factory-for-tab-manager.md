@@ -35,7 +35,7 @@ awaits `whenReady` before reading so it doesn't see stale fallback values.
 **Fix:** Make the shared factory accept pluggable storage instead of
 hardcoding localStorage. Both storage implementations already expose the
 Svelte reactive value convention (`.current` getter/setter), so the config
-just requires that shape—no wrapper type needed:
+just requires that shape. No wrapper type needed:
 
 ```typescript
 storage: {
@@ -176,7 +176,7 @@ function is passed, the factory calls it lazily in `createAuthClient`'s
 ### 7. `checkSession` differences
 
 Tab manager's `checkSession` has two extra steps vs the shared factory:
-1. `await Promise.all([authToken.whenReady, authUser.whenReady])` — wait for chrome.storage
+1. `await Promise.all([authToken.whenReady, authUser.whenReady])`: wait for chrome.storage
 2. Early cache restore: if cached user exists, restore encryption from `keyCache` before server call
 
 **Fix for (1):** Add `whenReady?: Promise<void>` to config. `checkSession`
@@ -314,11 +314,11 @@ export const authState = createAuthState({
 
 Three commits completed the migration:
 
-1. **refactor(auth): make shared factory pluggable** — Modified shared factory to accept pluggable storage config (`storage: { token, user }` with `.current` getters/setters) instead of hardcoded localStorage + `storagePrefix`. Added `createLocalStorage` helper for web apps. Added new config fields: `whenReady`, `onCheckSessionStart`, `onExternalSignIn`, and support for reactive `baseURL` as `() => string`. Added `handleExternalSignOut` and `handleExternalSignIn` public methods.
+1. **refactor(auth): make shared factory pluggable**: Modified shared factory to accept pluggable storage config (`storage: { token, user }` with `.current` getters/setters) instead of hardcoded localStorage + `storagePrefix`. Added `createLocalStorage` helper for web apps. Added new config fields: `whenReady`, `onCheckSessionStart`, `onExternalSignIn`, and support for reactive `baseURL` as `() => string`. Added `handleExternalSignOut` and `handleExternalSignIn` public methods.
 
-2. **refactor(auth): update web apps to use createLocalStorage** — Updated honeycrisp, opensidian, zhongwen to use `createLocalStorage('prefix')` instead of `storagePrefix: 'prefix'`.
+2. **refactor(auth): update web apps to use createLocalStorage**: Updated honeycrisp, opensidian, zhongwen to use `createLocalStorage('prefix')` instead of `storagePrefix: 'prefix'`.
 
-3. **refactor(tab-manager): migrate to shared auth factory** — Replaced ~490-line tab-manager auth factory with ~120-line wrapper. Extracted Chrome extension storage (createStorageState) and Google OAuth logic. Moved form state (email, password, name, mode) to AuthForm.svelte as local `$state`. Wired cross-context watchers for external sign-in/out synchronization. Tab-manager builds successfully (1.31 MB total).
+3. **refactor(tab-manager): migrate to shared auth factory**: Replaced ~490-line tab-manager auth factory with ~120-line wrapper. Extracted Chrome extension storage (createStorageState) and Google OAuth logic. Moved form state (email, password, name, mode) to AuthForm.svelte as local `$state`. Wired cross-context watchers for external sign-in/out synchronization. Tab-manager builds successfully (1.31 MB total).
 
 ### Code reduction
 

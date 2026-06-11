@@ -62,9 +62,9 @@ This spec hands that question to an agent with enough context that they can answ
 ```
 
 After that, skim:
-- `apps/whispering/CLAUDE.md` (and its sibling `AGENTS.md`) — codebase-level rules
-- `apps/whispering/src/lib/services/transcription/utils.ts` — shared helpers
-- `apps/whispering/src/lib/services/http.ts` — `customFetch` / `HttpServiceLive`
+- `apps/whispering/CLAUDE.md` (and its sibling `AGENTS.md`): codebase-level rules
+- `apps/whispering/src/lib/services/transcription/utils.ts`: shared helpers
+- `apps/whispering/src/lib/services/http.ts`: `customFetch` / `HttpServiceLive`
 
 ## Audit findings (from preceding passes)
 
@@ -109,7 +109,7 @@ Honest naming options:
 - `providers/transcription/openai.ts` (most accurate)
 - `transcribe/openai.ts` (verb-led)
 - `adapters/transcription/openai.ts` (technical accurate)
-- keep `services/` (current — pragmatic, low-churn)
+- keep `services/` (current: pragmatic, low-churn)
 
 The agent should pick a name that matches the file's actual job and explain why.
 

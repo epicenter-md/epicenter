@@ -4,7 +4,7 @@ I was designing a blob storage layer for audio files. Desktop stores them on the
 
 ## The Setup
 
-We have recordings. Each recording has metadata (title, transcription, timestamps) and an audio blob. The metadata goes into Yjs tables for sync. The audio blob stays local — too large for CRDT sync. So we need a separate blob storage layer, and it needs to work on two platforms:
+We have recordings. Each recording has metadata (title, transcription, timestamps) and an audio blob. The metadata goes into Yjs tables for sync. The audio blob stays local: too large for CRDT sync. So we need a separate blob storage layer, and it needs to work on two platforms:
 
 - **Desktop**: Filesystem. Audio lives at `~/Library/Application Support/com.bradenwong.whispering/recordings/{id}.webm`
 - **Web**: IndexedDB. Audio lives as a serialized `ArrayBuffer` + `blobType` string in a Dexie table row.
@@ -35,7 +35,7 @@ type BlobStore = {
 
 Where `location` would be... what, exactly? A folder path on desktop? A table name in IndexedDB? Already the abstraction is leaking.
 
-You could try to make the argument generic. Call it `path`. But that's dishonest — IndexedDB doesn't have paths. You could call it `namespace`. But then on desktop you'd be mentally translating "namespace" to "folder" every time you read the code.
+You could try to make the argument generic. Call it `path`. But that's dishonest: IndexedDB doesn't have paths. You could call it `namespace`. But then on desktop you'd be mentally translating "namespace" to "folder" every time you read the code.
 
 The worst version is a discriminated union:
 
@@ -57,7 +57,7 @@ This completely destroys the point of having a shared interface. Now every call 
 The solution is to stop trying to force platform-specific configuration into the shared interface. Instead, zoom in on only the parts that are genuinely shared, and push everything else into the factory functions.
 
 ```typescript
-// The shared interface — no platform concepts at all
+// The shared interface: no platform concepts at all
 type BlobStore = {
   get(id: string): Promise<{ blob: Blob; mimeType: string } | null>;
   put(id: string, blob: Blob, mimeType: string): Promise<void>;
@@ -67,7 +67,7 @@ type BlobStore = {
 ```
 
 ```typescript
-// Desktop factory — takes a filesystem path
+// Desktop factory: takes a filesystem path
 function createFileSystemBlobStore(basePath: string): BlobStore {
   return {
     async get(id) {
@@ -87,7 +87,7 @@ function createFileSystemBlobStore(basePath: string): BlobStore {
 ```
 
 ```typescript
-// Web factory — takes IndexedDB config
+// Web factory: takes IndexedDB config
 function createIndexedDbBlobStore(dbName: string): BlobStore {
   return {
     async get(id) {
@@ -113,7 +113,7 @@ The filesystem factory takes a path because that's what filesystems care about. 
 The rest of the app just sees `BlobStore`. It never knows and never asks which platform it's on:
 
 ```typescript
-// Some component or service — doesn't care about the platform
+// Some component or service: doesn't care about the platform
 async function playRecording(blobStore: BlobStore, recordingId: string) {
   const audio = await blobStore.get(recordingId);
   if (!audio) {
@@ -147,7 +147,7 @@ When two implementations share behavior but have different configuration needs, 
 2. Put all platform-specific configuration in the factory function that creates the implementation.
 3. The factory's arguments are where the implementations diverge. The returned interface is where they converge.
 
-A filesystem folder and an IndexedDB table are conceptually the same thing — a place to store blobs keyed by ID. But they're configured differently, named differently, and initialized differently. The factory function is where you acknowledge that difference. The returned interface is where you forget it.
+A filesystem folder and an IndexedDB table are conceptually the same thing. A place to store blobs keyed by ID. But they're configured differently, named differently, and initialized differently. The factory function is where you acknowledge that difference. The returned interface is where you forget it.
 
 ## The Test
 

@@ -65,7 +65,7 @@
  * compact GC structs. A store with 20 active keys stays at roughly the same size
  * whether it was created yesterday or has processed 52,000 operations. The only
  * additional overhead is ~22 bytes per unique Yjs clientID that has ever written
- * to the doc. With `gc:false`, this property breaks—storage grows with operation
+ * to the doc. With `gc:false`, this property breaks; storage grows with operation
  * count. See `docs/articles/yjs-storage-efficiency/storage-scales-with-data-not-history.md`.
  *
  * ## Performance Architecture: Single vs Bulk Operations
@@ -81,7 +81,7 @@
  *
  * **`set()` eagerly cleans up the old entry** before pushing the new one.
  * It calls `deleteEntryByKey()` which scans the Y.Array (O(n)) to find and
- * remove the old entry. The observer then sees a clean add—no conflicts. This
+ * remove the old entry. The observer then sees a clean add with no conflicts. This
  * is fast for individual calls but O(n²) when called 10K times in a loop,
  * because each call re-scans the (mutating) array.
  *
@@ -94,7 +94,7 @@
  * **`delete()` eagerly scans** to find and remove one entry. Same O(n) as `set()`.
  *
  * **`bulkDelete()` scans once** to collect all matching indices, then batch-deletes
- * right-to-left. Unlike `bulkSet`, it does NOT defer anything to the observer—
+ * right-to-left. Unlike `bulkSet`, it does NOT defer anything to the observer:
  * deletions happen directly, no DEDUP_ORIGIN needed.
  *
  * ```
@@ -110,7 +110,7 @@
  * ## Real-World Bottlenecks (Measured)
  *
  * The cost profile is NOT what Big-O suggests. `toArray()` is ~0.04ms even at
- * 25K entries—negligible. The actual bottleneck is `Y.Array.delete(index)`, which
+ * 25K entries, which is negligible. The actual bottleneck is `Y.Array.delete(index)`, which
  * walks Yjs's internal linked list. This cost scales non-linearly within large
  * transactions due to structural fragmentation:
  *
@@ -125,7 +125,7 @@
  * - `bulkSet`: 1000 (observer conflict resolution is the bottleneck)
  * - `bulkDelete`: 2500 (Yjs linked-list deletion is the bottleneck)
  *
- * The observer's conflict resolution logic is shared with multi-device sync—when
+ * The observer's conflict resolution logic is shared with multi-device sync. When
  * two clients set the same key while offline, the observer resolves that conflict
  * using the same entryIndexMap and DEDUP_ORIGIN path that `bulkSet` uses.
  *
@@ -162,7 +162,7 @@ import type {
  * Field names are intentionally short (`val`, `ts`) to minimize serialized storage size -
  * these entries are persisted and synced.
  *
- * Storage-only type — `ts` is internal. The public `ObservableKvStore.entries()`
+ * Storage-only type: `ts` is internal. The public `ObservableKvStore.entries()`
  * surfaces the narrower `KvEntry<T> = { key, val }` instead.
  */
 export type YKeyValueLwwEntry<T> = { key: string; val: T; ts: number };
@@ -174,7 +174,7 @@ export type YKeyValueLwwEntry<T> = { key: string; val: T; ts: number };
  *
  * The observer resolves LWW conflicts by keeping the winner and deleting losers.
  * That deletion happens in a nested `doc.transact()`. Without this origin, the
- * nested transaction would trigger the observer AGAIN — but the re-entrant call
+ * nested transaction would trigger the observer AGAIN, but the re-entrant call
  * is always a no-op:
  * - `_map` already points to the winner (updated in the first observer pass)
  * - Reference equality `_map.get(key) === loserEntry` fails → nothing happens
@@ -185,12 +185,12 @@ export type YKeyValueLwwEntry<T> = { key: string; val: T; ts: number };
  *
  * ## What triggers conflicts
  *
- * 1. `bulkSet()` — pushes entries without deleting old ones, observer resolves
- * 2. Multi-device sync — two clients set the same key offline, observer resolves
- * 3. Constructor initial dedup — runs before observer is registered, doesn't need this
+ * 1. `bulkSet()`: pushes entries without deleting old ones, observer resolves
+ * 2. Multi-device sync: two clients set the same key offline, observer resolves
+ * 3. Constructor initial dedup: runs before observer is registered, doesn't need this
  *
  * Note: `set()` eagerly deletes via `deleteEntryByKey` so the observer sees no
- * conflicts. `delete()` and `bulkDelete()` only remove entries — no conflicts.
+ * conflicts. `delete()` and `bulkDelete()` only remove entries, so there are no conflicts.
  * DEDUP_ORIGIN is only relevant for the conflict-resolution path.
  *
  * Follows the same pattern as REENCRYPT_ORIGIN in the encrypted wrapper.
@@ -212,7 +212,7 @@ export class YKeyValueLww<T> implements ObservableKvStore<T>, Disposable {
 	 *
 	 * Written exclusively by the observer and constructor. External consumers
 	 * (e.g. the encrypted wrapper) read via iteration, `.get()`, and `.size`.
-	 * The `set()` method never writes to this map—the observer is the sole writer.
+	 * The `set()` method never writes to this map. The observer is the sole writer.
 	 *
 	 * @see pending for how immediate reads work after `set()`
 	 */
@@ -270,7 +270,7 @@ export class YKeyValueLww<T> implements ObservableKvStore<T>, Disposable {
 	/**
 	 * Keys deleted by `delete()` but not yet processed by the observer.
 	 *
-	 * Symmetric counterpart to `pending` — while `pending` tracks writes not yet
+	 * Symmetric counterpart to `pending`: while `pending` tracks writes not yet
 	 * in `map`, `pendingDeletes` tracks deletions not yet removed from `map`.
 	 * This prevents stale reads after `delete()` during a batch/transaction.
 	 */
@@ -378,7 +378,7 @@ export class YKeyValueLww<T> implements ObservableKvStore<T>, Disposable {
 
 		// Set up observer for future changes
 		this._observer = (event, transaction) => {
-			// Dedup deletions are always no-ops — _map already has the winner.
+			// Dedup deletions are always no-ops: _map already has the winner.
 			// Skip entirely to avoid useless work on re-entrant observer calls.
 			if (transaction.origin === DEDUP_ORIGIN) return;
 			const changes = new Map<string, KvStoreChange<T>>();
@@ -401,7 +401,7 @@ export class YKeyValueLww<T> implements ObservableKvStore<T>, Disposable {
 				deletedItem.content
 					.getContent()
 					.forEach((entry: YKeyValueLwwEntry<T>) => {
-						// Always clear pendingDeletes for this key — even if the ref-equality
+						// Always clear pendingDeletes for this key: even if the ref-equality
 						// check fails (e.g. set+delete in same txn where entry never reached map)
 						this.pendingDeletes.delete(entry.key);
 
@@ -420,17 +420,17 @@ export class YKeyValueLww<T> implements ObservableKvStore<T>, Disposable {
 			/**
 			 * Lazy array snapshot and entry-to-index map for conflict resolution.
 			 *
-			 * Both use the `lazy()` helper—a function that computes its value on
+			 * Both use the `lazy()` helper, a function that computes its value on
 			 * first call, then returns the cached result on subsequent calls. This
 			 * avoids the O(n) `toArray()` copy entirely when there are no conflicts
 			 * (the common case for bulk inserts of new keys).
 			 *
-			 * `getEntryIndexMap` builds on `getAllEntries`—calling it triggers the
+			 * `getEntryIndexMap` builds on `getAllEntries`; calling it triggers the
 			 * `toArray()` if it hasn't happened yet, then builds a Map<entry, index>
 			 * for O(1) index lookups. This replaces the old `.indexOf()` calls that
 			 * were O(n) each, which caused O(n²) behavior during bulk updates.
 			 *
-			 * Both caches are scoped to this single observer invocation—they're
+			 * Both caches are scoped to this single observer invocation. They're
 			 * garbage collected when the callback returns. No manual cleanup needed.
 			 */
 			const getAllEntries = lazy(() => yarray.toArray());
@@ -610,7 +610,7 @@ export class YKeyValueLww<T> implements ObservableKvStore<T>, Disposable {
 	 * The timestamp enables LWW conflict resolution during sync.
 	 *
 	 * For existing keys, eagerly deletes the old entry before pushing the new one.
-	 * This keeps the observer's job simple—it sees a clean add with no conflicts.
+	 * This keeps the observer's job simple: it sees a clean add with no conflicts.
 	 *
 	 * For bulk updates (1K+ rows), use {@link bulkSet} instead. It skips the
 	 * per-key delete and lets the observer batch-resolve all conflicts in one pass,
@@ -618,7 +618,7 @@ export class YKeyValueLww<T> implements ObservableKvStore<T>, Disposable {
 	 *
 	 * ## Why `set()` eagerly deletes but `bulkSet()` defers
 	 *
-	 * `deleteEntryByKey()` scans the Y.Array to find the old entry — O(n) per call.
+	 * `deleteEntryByKey()` scans the Y.Array to find the old entry: O(n) per call.
 	 * For a single `set()`, that O(n) is fine. For 10K `set()` calls in a loop,
 	 * it's 10K × O(n) = O(n²). `bulkSet` avoids this by pushing all entries first,
 	 * then letting the observer find and remove old entries using a pre-built index
@@ -672,13 +672,13 @@ export class YKeyValueLww<T> implements ObservableKvStore<T>, Disposable {
 	 *
 	 * ## Why this is faster than calling `set()` in a loop
 	 *
-	 * `set()` calls `deleteEntryByKey()` per key — an O(n) array scan. In a loop:
+	 * `set()` calls `deleteEntryByKey()` per key: an O(n) array scan. In a loop:
 	 * N calls × O(n) scan = O(n²). `bulkSet` defers all cleanup to the observer,
 	 * which builds an `entryIndexMap` (Map<Entry, index>) from one `toArray()` call
 	 * and resolves each conflict with an O(1) Map lookup. Total: O(n).
 	 *
-	 * The observer's conflict resolution already exists for multi-device sync — when
-	 * two clients set the same key offline. `bulkSet` reuses that exact same path.
+	 * The observer's conflict resolution already exists for multi-device sync.
+	 * When two clients set the same key offline, `bulkSet` reuses that exact same path.
 	 *
 	 * ## When to use
 	 *
@@ -714,7 +714,7 @@ export class YKeyValueLww<T> implements ObservableKvStore<T>, Disposable {
 	/**
 	 * Delete a key. No-op if key doesn't exist.
 	 *
-	 * Scans the Y.Array to find and remove the entry — O(n) per call.
+	 * Scans the Y.Array to find and remove the entry: O(n) per call.
 	 * For bulk deletions (1K+ keys), use {@link bulkDelete} which does
 	 * one scan for all keys instead of one scan per key.
 	 *
@@ -741,20 +741,20 @@ export class YKeyValueLww<T> implements ObservableKvStore<T>, Disposable {
 	/**
 	 * Delete many keys in one scan plus one batched transaction.
 	 *
-	 * Unlike calling {@link delete} in a loop (which scans the array per call —
+	 * Unlike calling {@link delete} in a loop (which scans the array per call,
 	 * O(n²) for N deletions), this collects all matching entry indices in a single
 	 * `toArray()` scan, then deletes them right-to-left so indices stay stable.
 	 *
 	 * ## How this differs from `bulkSet`
 	 *
 	 * `bulkSet` defers cleanup to the observer (which triggers a second, skipped
-	 * observer call via DEDUP_ORIGIN). `bulkDelete` does NOT defer anything — it
+	 * observer call via DEDUP_ORIGIN). `bulkDelete` does NOT defer anything: it
 	 * performs the deletions directly in one transaction. The observer fires once,
 	 * sees the deletions, and updates `_map`. No conflicts, no DEDUP_ORIGIN needed.
 	 *
 	 * Note: despite what Big-O analysis might suggest, the `toArray()` scan is NOT
 	 * the bottleneck (~0.04ms at 25K entries). The real cost is the `yarray.delete()`
-	 * calls inside the transaction—each one walks Yjs's internal linked list. This is
+	 * calls inside the transaction. Each one walks Yjs's internal linked list. This is
 	 * why the `Table` layer chunks calls to this method rather than passing all
 	 * IDs at once (large single transactions are slower due to linked-list fragmentation).
 	 *

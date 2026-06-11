@@ -1,14 +1,14 @@
 # AI Tools via Command Queue
 
 **Date**: 2026-02-23
-**Status**: Superseded — commands table removed in `specs/20260311T230000-remove-commands-table-and-awareness.md`
+**Status**: Superseded: commands table removed in `specs/20260311T230000-remove-commands-table-and-awareness.md`
 **Author**: AI-assisted design session
 
 ---
 
 ## Overview
 
-Add AI tool calling to the tab manager chat. Read tools query the Y.Doc on the server for cross-device tab state. Mutation tools write to a `commands` table with a discriminated union schema — the target device's background worker observes, executes the Chrome API action, and writes the result. The `action` field discriminates the union; payload fields and result types are flattened and fully typed per action (no JSON strings).
+Add AI tool calling to the tab manager chat. Read tools query the Y.Doc on the server for cross-device tab state. Mutation tools write to a `commands` table with a discriminated union schema. The target device's background worker observes, executes the Chrome API action, and writes the result. The `action` field discriminates the union; payload fields and result types are flattened and fully typed per action (no JSON strings).
 
 ---
 
@@ -27,13 +27,13 @@ const stream = chat({
 });
 ```
 
-The extension chat (`apps/tab-manager/src/lib/state/chat.svelte.ts`) sends messages to the server but has no way to act on tabs. The AI can only generate text — it can't search, close, or organize tabs.
+The extension chat (`apps/tab-manager/src/lib/state/chat.svelte.ts`) sends messages to the server but has no way to act on tabs. The AI can only generate text. It can't search, close, or organize tabs.
 
 ### Problems
 
 1. **No tab awareness**: The AI can't see what tabs are open. It can only respond to what the user types.
 2. **No tab actions**: "Close my YouTube tabs" requires 15 manual clicks. The AI could do it in one sentence.
-3. **No cross-device reach**: The background worker has `browser.tabs.*` APIs, but only for its own device. The Y.Doc already syncs all devices' tabs to the server — read tools get a global view for free.
+3. **No cross-device reach**: The background worker has `browser.tabs.*` APIs, but only for its own device. The Y.Doc already syncs all devices' tabs to the server: read tools get a global view for free.
 
 ### Desired State
 
@@ -51,11 +51,11 @@ Three patterns for combining base fields with variants:
 
 | Pattern                           | Syntax                                                                              | Tradeoff                                                                       |
 | --------------------------------- | ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
-| **`base.merge(type.or(...))`**    | `base.merge(type.or({action: "'foo'", ...}, {action: "'bar'", ...}))`              | Cleanest — base appears once, merge distributes over union branches            |
-| **`.merge().or()` chaining**      | `base.merge({action: "'foo'", ...}).or(base.merge({action: "'bar'", ...}))`         | OK for 2-3 variants — base repeated per branch                                |
+| **`base.merge(type.or(...))`**    | `base.merge(type.or({action: "'foo'", ...}, {action: "'bar'", ...}))`              | Cleanest: base appears once, merge distributes over union branches            |
+| **`.merge().or()` chaining**      | `base.merge({action: "'foo'", ...}).or(base.merge({action: "'bar'", ...}))`         | OK for 2-3 variants: base repeated per branch                                |
 | **`"..."` spread key**             | `type({"...": base, action: "'foo'", ...}).or({"...": base, action: "'bar'", ...})` | Also clean, inline syntax                                                      |
-| **JS object spread**         | `type({...baseObj, action: "'foo'", ...}).or({...baseObj, action: "'bar'", ...})`   | Works but base is a plain object, not a Type — loses arktype-level composition |
-**Recommendation**: `base.merge(type.or(...))` — `.merge()` distributes over unions (via `rNode.distribute()` internally), so the base is written once and each variant is a plain object literal inside `type.or()`. No repeating `commandBase.merge(...)` per branch.
+| **JS object spread**         | `type({...baseObj, action: "'foo'", ...}).or({...baseObj, action: "'bar'", ...})`   | Works but base is a plain object, not a Type: loses arktype-level composition |
+**Recommendation**: `base.merge(type.or(...))`: `.merge()` distributes over unions (via `rNode.distribute()` internally), so the base is written once and each variant is a plain object literal inside `type.or()`. No repeating `commandBase.merge(...)` per branch.
 
 **Note**: `.merge()` requires each union branch to be an object type. Non-object branches (e.g., `'string'`) will throw a `ParseError`.
 
@@ -67,7 +67,7 @@ const commandBase = type({
 	_v: '1' as const,
 });
 
-// base.merge(type.or(...)) — merge distributes over each branch
+// base.merge(type.or(...)): merge distributes over each branch
 const Command = commandBase.merge(
 	type.or(
 		{
@@ -101,7 +101,7 @@ The server already has the Y.Doc via the sync plugin's `dynamicDocs` map. The AI
 The hub server creates ephemeral Y.Docs in `dynamicDocs`:
 
 ```typescript
-// hub.ts — current
+// hub.ts: current
 const dynamicDocs = new Map<string, Y.Doc>();
 // ...
 getDoc: (room) => {
@@ -124,7 +124,7 @@ This means `createAIPlugin()` needs the `dynamicDocs` map (or a `getDoc` callbac
 
 | Decision                 | Choice                                                      | Rationale                                                                                                                   |
 | ------------------------ | ----------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| Tool execution location  | Server-side `.server()` for all tools                       | Read tools query Y.Doc directly; mutation tools write commands. No client tools needed — avoids sidepanel↔background relay. |
+| Tool execution location  | Server-side `.server()` for all tools                       | Read tools query Y.Doc directly; mutation tools write commands. No client tools needed: avoids sidepanel↔background relay. |
 | Mutation mechanism       | `commands` table in Y.Doc                                   | Persists across brief disconnects (within TTL). Cross-device by design. Background worker already observes Y.Doc tables.    |
 | Command schema           | Discriminated union on `action` key                         | Type-safe dispatch, no JSON.parse, payload/result typed per action. Arktype auto-discriminates.                             |
 | Union pattern            | `type.or()` + `.merge()`                                    | Static `type.or()` for flat readability with 8 variants. `.merge()` per variant to compose base fields.                     |
@@ -146,7 +146,7 @@ This means `createAIPlugin()` needs the `dynamicDocs` map (or a `getDoc` callbac
 │  ┌─────────────────────────────────────────┐                                 │
 │  │ chat.svelte.ts                          │                                 │
 │  │ createChat({ connection: SSE })         │                                 │
-│  │ No client tools — server handles all    │                                 │
+│  │ No client tools: server handles all    │                                 │
 │  └──────────────┬──────────────────────────┘                                 │
 │                 │ POST /ai/chat                                              │
 └─────────────────┼────────────────────────────────────────────────────────────┘
@@ -251,7 +251,7 @@ function waitForCommandResult(
 
 		const timeout = setTimeout(() => {
 			cleanup();
-			reject(new Error('Command timed out — device may be offline'));
+			reject(new Error('Command timed out: device may be offline'));
 		}, ttlMs);
 
 		// Abort when client disconnects
@@ -286,7 +286,7 @@ function waitForCommandResult(
 
 The `commands` table uses arktype's static `type.or()` with per-variant `.merge()` to create a discriminated union on the `action` key. Base fields are shared; payload fields and result types are flattened and typed per action.
 
-Note: `.merge()` only accepts object types — you cannot pass a union into `.merge()`. Each variant must be merged individually, then combined via `type.or()`.
+Note: `.merge()` only accepts object types. You cannot pass a union into `.merge()`. Each variant must be merged individually, then combined via `type.or()`.
 
 ```typescript
 import { type } from 'arktype';
@@ -359,7 +359,7 @@ commands: defineTable(
 
 ```typescript
 export type Command = InferTableRow<Tables['commands']>;
-// Command is a discriminated union — switch on `action` to narrow
+// Command is a discriminated union: switch on `action` to narrow
 ```
 
 ### Why This Design
@@ -409,7 +409,7 @@ These write to the `commands` table and await the result.
 
 ### deviceId Resolution
 
-Mutation tools need a `deviceId` to target. The tool schemas accept tab composite IDs (e.g. `"abc_42"`) which embed the deviceId. The server extracts `deviceId` from the first tab ID's prefix — all tabs in a single command must belong to the same device.
+Mutation tools need a `deviceId` to target. The tool schemas accept tab composite IDs (e.g. `"abc_42"`) which embed the deviceId. The server extracts `deviceId` from the first tab ID's prefix: all tabs in a single command must belong to the same device.
 
 For `openTab`, `deviceId` is explicit because there's no existing tab to derive it from.
 
@@ -445,28 +445,28 @@ apps/tab-manager/src/lib/
 
 - [ ] **1.1** Add `commandBase` type and discriminated union `commands` table to `apps/tab-manager/src/lib/workspace.ts` using `type.or()` + `.merge()` pattern
 - [ ] **1.2** Export `Command` type and `COMMAND_TTL_MS` constant
-- [ ] **1.3** Verify the union type works with `defineTable` — `table.set()`, `table.get()`, `table.getAllValid()` should all handle the discriminated union correctly
+- [ ] **1.3** Verify the union type works with `defineTable`: `table.set()`, `table.get()`, `table.getAllValid()` should all handle the discriminated union correctly
 
 ### Phase 2: Background Worker Command Consumer
 
-- [ ] **2.1** Create `apps/tab-manager/src/lib/commands/constants.ts` — export `COMMAND_TTL_MS`
-- [ ] **2.2** Create `apps/tab-manager/src/lib/commands/actions.ts` — per-action Chrome API execution functions (`closeTabs`, `openTab`, `activateTab`, etc.)
-- [ ] **2.3** Create `apps/tab-manager/src/lib/commands/consumer.ts` — `commands.observe()` handler that dispatches to actions
-- [ ] **2.4** Wire consumer into `apps/tab-manager/src/entrypoints/background.ts` — add observer after `whenReady`
-- [ ] **2.5** Add TTL cleanup — delete stale rows (past TTL, no result) on any device
+- [ ] **2.1** Create `apps/tab-manager/src/lib/commands/constants.ts`: export `COMMAND_TTL_MS`
+- [ ] **2.2** Create `apps/tab-manager/src/lib/commands/actions.ts`: per-action Chrome API execution functions (`closeTabs`, `openTab`, `activateTab`, etc.)
+- [ ] **2.3** Create `apps/tab-manager/src/lib/commands/consumer.ts`: `commands.observe()` handler that dispatches to actions
+- [ ] **2.4** Wire consumer into `apps/tab-manager/src/entrypoints/background.ts`: add observer after `whenReady`
+- [ ] **2.5** Add TTL cleanup: delete stale rows (past TTL, no result) on any device
 
 ### Phase 3: Server-Side Read Tools
 
 - [ ] **3.1** Modify `createAIPlugin()` to accept a `getDoc` callback for Y.Doc access
 - [ ] **3.2** Modify `hub.ts` to pass `dynamicDocs` access to the AI plugin
-- [ ] **3.3** Create `packages/server/src/ai/tools/definitions.ts` — Zod-based `toolDefinition()` contracts for all 13 tools
-- [ ] **3.4** Create `packages/server/src/ai/tools/read-tools.ts` — `.server()` implementations that query Y.Doc tables
+- [ ] **3.3** Create `packages/server/src/ai/tools/definitions.ts`: Zod-based `toolDefinition()` contracts for all 13 tools
+- [ ] **3.4** Create `packages/server/src/ai/tools/read-tools.ts`: `.server()` implementations that query Y.Doc tables
 - [ ] **3.5** Create table helpers from the tab-manager workspace definition for server-side Y.Doc access (import `definition` from `@epicenter/tab-manager/workspace`)
 
 ### Phase 4: Server-Side Mutation Tools
 
-- [ ] **4.1** Create `packages/server/src/ai/tools/wait-for-result.ts` — Promise-based Y.Doc observation with TTL timeout and abort signal cleanup
-- [ ] **4.2** Create `packages/server/src/ai/tools/mutation-tools.ts` — `.server()` implementations that write commands and await results
+- [ ] **4.1** Create `packages/server/src/ai/tools/wait-for-result.ts`: Promise-based Y.Doc observation with TTL timeout and abort signal cleanup
+- [ ] **4.2** Create `packages/server/src/ai/tools/mutation-tools.ts`: `.server()` implementations that write commands and await results
 - [ ] **4.3** Wire all tools into `chat()` call in `plugin.ts`
 - [ ] **4.4** Add system prompt with tool descriptions and behavior guidelines
 
@@ -474,8 +474,8 @@ apps/tab-manager/src/lib/
 
 - [ ] **5.1** End-to-end test: send chat message → AI calls searchTabs → returns tab data
 - [ ] **5.2** End-to-end test: send "close tabs" → AI calls closeTabs → command written → background executes → result returned
-- [ ] **5.3** Test TTL expiry — command written, device offline, timeout fires
-- [ ] **5.4** Test abort — client disconnects, pending command cleaned up
+- [ ] **5.3** Test TTL expiry: command written, device offline, timeout fires
+- [ ] **5.4** Test abort: client disconnects, pending command cleaned up
 
 ---
 
@@ -493,7 +493,7 @@ apps/tab-manager/src/lib/
 ### Stale Commands on Device Wake
 
 1. Laptop wakes from sleep, reconnects to Y.Doc
-2. Y.Doc syncs — laptop sees 3 command rows targeting it
+2. Y.Doc syncs: laptop sees 3 command rows targeting it
 3. Background worker checks `createdAt + COMMAND_TTL_MS > Date.now()` on each
 4. 2 expired → delete them. 1 still valid → execute it.
 5. No surprise tab closures from old commands
@@ -505,7 +505,7 @@ apps/tab-manager/src/lib/
 3. `waitForCommandResult` cleans up: clears timeout, removes observer, deletes the pending command row
 4. No orphaned commands
 
-### Multiple Devices — Which One?
+### Multiple Devices: Which One?
 
 1. AI calls `closeTabs` with tab IDs like `["abc_42", "abc_55"]`
 2. Server extracts deviceId from the tab ID prefix: `"abc"`
@@ -530,7 +530,7 @@ Tab IDs in the commands table use the composite format `${deviceId}_${tabId}`. T
 
 3. **How to handle `agentLoopStrategy`?**
    - TanStack AI supports `maxIterations(N)` to prevent runaway tool loops
-   - **Recommendation**: `maxIterations(10)` — generous enough for search → filter → act flows, low enough to prevent cost runaway.
+   - **Recommendation**: `maxIterations(10)`: generous enough for search → filter → act flows, low enough to prevent cost runaway.
 
 4. **Should read tools return raw composite IDs or parsed human-readable output?**
    - Raw: `{ id: "abc_42", deviceId: "abc", tabId: 42, title: "YouTube", ... }`
@@ -539,7 +539,7 @@ Tab IDs in the commands table use the composite format `${deviceId}_${tabId}`. T
 
 5. **Zod dependency for tool definitions**
    - TanStack AI `toolDefinition()` requires Zod schemas, but the workspace uses arktype
-   - The two don't conflict — Zod is for tool input/output schemas (AI layer), arktype is for Y.Doc table schemas (data layer)
+   - The two don't conflict: Zod is for tool input/output schemas (AI layer), arktype is for Y.Doc table schemas (data layer)
    - **Recommendation**: Accept the dual-schema reality. They serve different purposes at different boundaries.
 
 ---
@@ -560,9 +560,9 @@ Tab IDs in the commands table use the composite format `${deviceId}_${tabId}`. T
 
 ## References
 
-- `apps/tab-manager/src/lib/workspace.ts` — Current workspace definition (add commands table here)
-- `apps/tab-manager/src/entrypoints/background.ts` — Background worker (add command consumer here)
-- `packages/server/src/ai/plugin.ts` — AI chat endpoint (add tools here)
-- `packages/server/src/hub.ts` — Hub server (pass Y.Doc access to AI plugin)
-- `docs/articles/tanstack-ai-isomorphic-tool-pattern.md` — Tool definition pattern reference
-- `specs/20260214T174800-tanstack-ai-tab-manager-integration.md` (worktree) — Prior spec with command queue design, system prompt, streaming architecture
+- `apps/tab-manager/src/lib/workspace.ts`: Current workspace definition (add commands table here)
+- `apps/tab-manager/src/entrypoints/background.ts`: Background worker (add command consumer here)
+- `packages/server/src/ai/plugin.ts`: AI chat endpoint (add tools here)
+- `packages/server/src/hub.ts`: Hub server (pass Y.Doc access to AI plugin)
+- `docs/articles/tanstack-ai-isomorphic-tool-pattern.md`: Tool definition pattern reference
+- `specs/20260214T174800-tanstack-ai-tab-manager-integration.md` (worktree): Prior spec with command queue design, system prompt, streaming architecture

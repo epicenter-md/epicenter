@@ -23,13 +23,13 @@ export const tabManager = createTabManagerWorkspace()
   .withExtension('sync', createSyncExtension({ ... }));
 ```
 
-The SQLite file stores the raw Y.Doc update log—binary blobs you can't read, grep, or pipe through standard tools. If you want to see your saved tabs or bookmarks, you run `epicenter list savedTabs`. No way to browse the data as files, diff it in git, or feed it to other tools.
+The SQLite file stores the raw Y.Doc update log. Binary blobs you can't read, grep, or pipe through standard tools. If you want to see your saved tabs or bookmarks, you run `epicenter list savedTabs`. No way to browse the data as files, diff it in git, or feed it to other tools.
 
 ### Problems
 
 1. **Opaque local data**: The `.db` file is a binary blob. You can't grep your bookmarks, pipe them to `jq`, or open them in a text editor.
 2. **No git-friendly format**: Teams or power users who want version-controlled workspace data have no path to it.
-3. **No interop with file-based tools**: Obsidian, VS Code markdown preview, static site generators—none can read the binary persistence.
+3. **No interop with file-based tools**: Obsidian, VS Code markdown preview, static site generators. None can read the binary persistence.
 
 ### Desired State
 
@@ -79,7 +79,7 @@ Commit `d2c5e087` removed a fully-featured markdown extension (1,537 lines in `m
 - **Sync coordination counters** (not booleans) to prevent infinite loops during bidirectional sync. Counters handle concurrent async operations where booleans race.
 - **Per-table serializer config** via factory functions (`bodyFieldSerializer('content')`, `titleFilenameSerializer('title')`).
 - **Filename tracking map** (`Map<rowId, filename>`) to detect renames when a title field changes.
-- **Granular diffs**: Character-level for text, element-level for arrays—avoids blowing away CRDT history with wholesale replacement.
+- **Granular diffs**: Character-level for text, element-level for arrays. Avoids blowing away CRDT history with wholesale replacement.
 
 **What we don't need from it** (for Phase 1):
 
@@ -91,7 +91,7 @@ Commit `d2c5e087` removed a fully-featured markdown extension (1,537 lines in `m
 Extensions are factory functions that receive the workspace client context and return exports:
 
 ```typescript
-// From indexeddb.ts — the simplest extension
+// From indexeddb.ts: the simplest extension
 export function indexeddbPersistence({ ydoc }: { ydoc: Y.Doc }) {
   const idb = new IndexeddbPersistence(ydoc.guid, ydoc);
   return {
@@ -102,16 +102,16 @@ export function indexeddbPersistence({ ydoc }: { ydoc: Y.Doc }) {
 }
 ```
 
-The factory receives `{ ydoc, tables, id, ... }` (the "client-so-far") from the builder chain. It can return anything—the exports become available at `client.extensions.<key>`.
+The factory receives `{ ydoc, tables, id, ... }` (the "client-so-far") from the builder chain. It can return anything. The exports become available at `client.extensions.<key>`.
 
 The `tables` object exposes `.observe(callback)` per table, where the callback receives `Map<id, 'add' | 'update' | 'delete'>`. This is the primary hook for reactive materialization.
 
 ### Encryption Considerations
 
-Table rows may be encrypted via `createEncryptedYkvLww`. The markdown materializer reads rows via the public `tables` API (`getAllValid()`, `get(id)`), which returns **decrypted** values. So encryption is transparent—the materializer never touches ciphertext. This means:
+Table rows may be encrypted via `createEncryptedYkvLww`. The markdown materializer reads rows via the public `tables` API (`getAllValid()`, `get(id)`), which returns **decrypted** values. So encryption is transparent. The materializer never touches ciphertext. This means:
 
 - Markdown files on disk contain **plaintext** data
-- This is intentional—the whole point is human-readable files
+- This is intentional. The whole point is human-readable files
 - Users should understand that `.md` output is unencrypted
 
 ## Design Decisions
@@ -124,7 +124,7 @@ Table rows may be encrypted via `createEncryptedYkvLww`. The markdown materializ
 | Observe mechanism | `table.observe()` per table | Built into the workspace API, fires on add/update/delete with batched changes per Y.Transaction |
 | File naming | Configurable via serializer, default `{id}.md` | `titleFilenameSerializer` produces `{slugified-title}-{id}.md` for human browsing |
 | Location in tree | `packages/workspace/src/extensions/materializer/markdown/` | Parallel to `extensions/persistence/` and `extensions/sync/`. Materializers are a distinct concern (read-optimized projections, not state persistence). |
-| Frontmatter library | None—hand-roll YAML serialize | Frontmatter is simple key-value pairs. Avoids a dependency. The old extension used arktype for parsing. |
+| Frontmatter library | None. Hand-roll YAML serialize | Frontmatter is simple key-value pairs. Avoids a dependency. The old extension used arktype for parsing. |
 | Bidirectional sync | Deferred to Phase 2 | Can graft the old extension's sync coordination pattern (counter guards) when needed |
 
 ## Architecture
@@ -142,7 +142,7 @@ createWorkspace(definition)
   .withExtension('sync', createSyncExtension(...))             // Phase 0: Remote sync
 ```
 
-Data flow (Phase 1—one-way):
+Data flow (Phase 1. One-way):
 
 ```
 Y.Doc (CRDT source of truth)
@@ -209,12 +209,12 @@ function markdownMaterializer(config: MarkdownMaterializerConfig): ExtensionFact
 ### Phase 1: One-Way Materializer (Y.Doc → Files)
 
 - [x] **1.1** Create `packages/workspace/src/extensions/materializer/markdown/` directory structure
-- [x] **1.2** Implement `io.ts`—`writeMarkdownFile(path, frontmatter, body?)` and `deleteMarkdownFile(path)`. YAML frontmatter serialization (hand-rolled, no library). Use `Bun.write` for atomic writes.
-- [x] **1.3** Implement `serializers.ts`—`defaultSerializer()`, `bodyFieldSerializer(field)`, `titleFilenameSerializer(field)` factories. Port the slugify logic from the old `configs.ts` (it used `filenamify`).
+- [x] **1.2** Implement `io.ts`: `writeMarkdownFile(path, frontmatter, body?)` and `deleteMarkdownFile(path)`. YAML frontmatter serialization (hand-rolled, no library). Use `Bun.write` for atomic writes.
+- [x] **1.3** Implement `serializers.ts`: `defaultSerializer()`, `bodyFieldSerializer(field)`, `titleFilenameSerializer(field)` factories. Port the slugify logic from the old `configs.ts` (it used `filenamify`).
   > **Note**: Hand-rolled slugify instead of `filenamify` dependency (lowercase, replace non-alphanumeric, collapse dashes, truncate to 50 chars).
-- [x] **1.4** Implement `markdown.ts`—the core extension factory. On `whenReady`: mkdir for each table directory, do initial full materialization (write all current valid rows). Subscribe to `table.observe()` for each table. On change: serialize and write/delete. Track filename map for rename detection (old filename delete + new filename write).
-  > **Note**: Used `withWorkspaceExtension` (not `withExtension`) because the factory needs `tables` from `ExtensionContext`. The `table.observe()` callback receives `ReadonlySet<id>` (not `Map<id, action>` as originally described)—determine add/update/delete by calling `table.get(id)` and checking `status`.
-- [x] **1.5** Implement `index.ts`—public exports for the extension factory and serializer factories.
+- [x] **1.4** Implement `markdown.ts`: the core extension factory. On `whenReady`: mkdir for each table directory, do initial full materialization (write all current valid rows). Subscribe to `table.observe()` for each table. On change: serialize and write/delete. Track filename map for rename detection (old filename delete + new filename write).
+  > **Note**: Used `withWorkspaceExtension` (not `withExtension`) because the factory needs `tables` from `ExtensionContext`. The `table.observe()` callback receives `ReadonlySet<id>` (not `Map<id, action>` as originally described): determine add/update/delete by calling `table.get(id)` and checking `status`.
+- [x] **1.5** Implement `index.ts`: public exports for the extension factory and serializer factories.
 - [x] **1.6** Add subpath export to `packages/workspace/package.json`: `"./extensions/materializer/markdown"`.
 - [x] **1.7** Wire into E2E config: update `playground/tab-manager-e2e/epicenter.config.ts` to include the markdown materializer.
 - [ ] **1.8** Test: run `epicenter start playground/tab-manager-e2e`, verify `.md` files appear, modify data via the extension, verify files update.
@@ -244,7 +244,7 @@ If the materializer runs before `applyEncryptionKeys()`, `getAllValid()` returns
 
 ### Concurrent writes from observer batches
 
-`table.observe()` fires once per Y.Transaction with a `Map` of all changes. The materializer should process the entire batch before yielding—no interleaving with other transactions.
+`table.observe()` fires once per Y.Transaction with a `Map` of all changes. The materializer should process the entire batch before yielding. No interleaving with other transactions.
 
 ### Filename collisions from slugification
 
@@ -288,12 +288,12 @@ Initial materialization writes every row. For very large tables, this could be s
 
 ## References
 
-- `packages/workspace/src/extensions/persistence/sqlite.ts`—Current extension pattern to follow (factory shape, `whenReady`/`dispose` contract)
-- `packages/workspace/src/extensions/persistence/indexeddb.ts`—Simplest extension example
-- `playground/tab-manager-e2e/epicenter.config.ts`—Where the materializer will be wired in
-- `apps/tab-manager/src/lib/workspace/definition.ts`—Table schemas (savedTabs, bookmarks, devices, etc.)
-- Git: `d2c5e087^:packages/epicenter/src/extensions/markdown/`—The deleted extension (reference for serializer patterns, sync coordination, IO)
-- Git: `d2c5e087^:packages/epicenter/src/extensions/sqlite/`—The deleted SQLite materializer (reference for Phase 3)
+- `packages/workspace/src/extensions/persistence/sqlite.ts`: Current extension pattern to follow (factory shape, `whenReady`/`dispose` contract)
+- `packages/workspace/src/extensions/persistence/indexeddb.ts`: Simplest extension example
+- `playground/tab-manager-e2e/epicenter.config.ts`: Where the materializer will be wired in
+- `apps/tab-manager/src/lib/workspace/definition.ts`: Table schemas (savedTabs, bookmarks, devices, etc.)
+- Git: `d2c5e087^:packages/epicenter/src/extensions/markdown/`: The deleted extension (reference for serializer patterns, sync coordination, IO)
+- Git: `d2c5e087^:packages/epicenter/src/extensions/sqlite/`: The deleted SQLite materializer (reference for Phase 3)
 
 ## Review
 

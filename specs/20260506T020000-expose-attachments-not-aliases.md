@@ -9,7 +9,7 @@
 
 Workspace bundles expose attached subsystems (`idb`, `sync`, `awareness`) directly, and consumers await specific events on them (`fuji.idb.whenLoaded`). Top-level aliases like `whenLoaded` and `whenReady` are deleted unless `whenReady` composes two or more events into a real `Promise.all`.
 
-~~Per-app `Loading.svelte` and `ErrorState.svelte` files are inlined directly into the corresponding `SignedIn.svelte` gate.~~ **Reversed.** The gate UI now lives in two shared components — `WorkspaceGate` and `WorkspaceLoading` — in `packages/svelte-utils`, consumed by all three signed-in apps plus opensidian. See the section below for context and rationale.
+~~Per-app `Loading.svelte` and `ErrorState.svelte` files are inlined directly into the corresponding `SignedIn.svelte` gate.~~ **Reversed.** The gate UI now lives in two shared components: `WorkspaceGate` and `WorkspaceLoading`: in `packages/svelte-utils`, consumed by all three signed-in apps plus opensidian. See the section below for context and rationale.
 
 ## Post-implementation reversal (2026-05-06)
 
@@ -29,13 +29,13 @@ What changed vs what stuck:
 | Delete `whenLoaded`/`whenReady` aliases that proxy a single event | yes | yes (zero alias survivors in apps) | **stuck** |
 | Keep composed `whenReady` (Whispering, tab-manager browserState) | yes | yes | **stuck** |
 | Apply rule to child-doc bundles | yes | yes | **stuck** |
-| Inline `Loading` + `ErrorState` markup into each `SignedIn.svelte` | yes | no — extracted to `WorkspaceGate`/`WorkspaceLoading` | **reversed** |
-| Delete `WorkspaceGate` from `packages/svelte-utils` | yes | no — re-introduced with snippet overrides | **reversed** |
-| Delete per-app `Loading.svelte` | partial (kept for layout `pending`) | yes — fully replaced by `WorkspaceLoading` | **reversed (further than the spec)** |
+| Inline `Loading` + `ErrorState` markup into each `SignedIn.svelte` | yes | no: extracted to `WorkspaceGate`/`WorkspaceLoading` | **reversed** |
+| Delete `WorkspaceGate` from `packages/svelte-utils` | yes | no: re-introduced with snippet overrides | **reversed** |
+| Delete per-app `Loading.svelte` | partial (kept for layout `pending`) | yes: fully replaced by `WorkspaceLoading` | **reversed (further than the spec)** |
 
 Rationale for the reversal (not in the original spec):
 
-1. The new `WorkspaceGate` is **not** the old five-line `{#await}` wrapper that was deleted. It accepts `loading` and `error` snippets and a `pending` promise, defaulting to `WorkspaceLoading` and an `auth.signOut`-aware error panel. Apps consume it as `<WorkspaceGate pending={fuji.idb.whenLoaded} onSignOut={…}>{@render children?.()}</WorkspaceGate>` — five lines per gate, with each app free to override the loading or error branch via snippets.
+1. The new `WorkspaceGate` is **not** the old five-line `{#await}` wrapper that was deleted. It accepts `loading` and `error` snippets and a `pending` promise, defaulting to `WorkspaceLoading` and an `auth.signOut`-aware error panel. Apps consume it as `<WorkspaceGate pending={fuji.idb.whenLoaded} onSignOut={…}>{@render children?.()}</WorkspaceGate>`: five lines per gate, with each app free to override the loading or error branch via snippets.
 2. Once opensidian started using the same gate UI, the consumer count was 4 (fuji, honeycrisp, zhongwen, opensidian). The spec's "fifth app, then revisit" trigger had effectively arrived during the same branch.
 3. The same logic applies to `Loading.svelte`: a single `WorkspaceLoading` covers both the layout's auth-pending state and the gate's IDB-pending state, which is what the per-app files were already doing identically.
 
@@ -272,7 +272,7 @@ Consumer: `apps/fuji/src/lib/components/EntryEditor.svelte:174` does `{#await co
 | Delete `whenLoaded` and `whenReady` aliases | 2 coherence | Yes when 1:1 alias of a single event | Aliases lie about composition; verified single-source via grep |
 | Keep `whenReady` when composed | 1 evidence | Yes | Whispering tauri bundle composes `idb.whenLoaded` and `recordingsFs.whenFlushed`; real invariant |
 | Inline `Loading` + `ErrorState` into `SignedIn.svelte` | 2 coherence | ~~Yes, delete the separate files~~ **Reversed** | Replaced by shared `WorkspaceGate` + `WorkspaceLoading` in `packages/svelte-utils` once opensidian adopted the same UI (4 consumers). See "Post-implementation reversal" above. |
-| Shared package for gate UI | ~~Rejected~~ **Adopted in svelte-utils** | Live in `packages/svelte-utils`, not `@epicenter/auth-svelte` | The component takes a `pending` promise and an `onSignOut` callback as props, so it carries no auth dependency itself — the caller wires auth in. |
+| Shared package for gate UI | ~~Rejected~~ **Adopted in svelte-utils** | Live in `packages/svelte-utils`, not `@epicenter/auth-svelte` | The component takes a `pending` promise and an `onSignOut` callback as props, so it carries no auth dependency itself: the caller wires auth in. |
 | Apply rule to child-doc bundles | 2 coherence | Yes | Same anti-pattern, same fix |
 | Migration ordering | 2 coherence | Build-prove-remove per app | Keep alias fields until consumers migrate, then delete |
 | Apps in scope | 2 coherence | Fuji, Honeycrisp, Zhongwen, Opensidian, Skills, tab-manager-extension | All ship a single-source `whenLoaded`/`whenReady` alias today |
@@ -443,7 +443,7 @@ The `node.ts` handles legitimately need a `whenReady` field because the interfac
 - [x] **7.2** Migrate consumers:
     - `apps/tab-manager/src/lib/tab-manager/client.ts:66` (`await tabManager.whenLoaded`)
     - `apps/tab-manager/src/lib/chat/chat-state.svelte.ts:435` (`tabManager.whenLoaded.then(...)`)
-    - `apps/tab-manager/src/lib/state/unified-view-state.svelte.ts:80` (`browserState.whenReady.then(...)` — note: `browserState.whenReady` is a real composed `(async () => { ... })()`, NOT in scope)
+    - `apps/tab-manager/src/lib/state/unified-view-state.svelte.ts:80` (`browserState.whenReady.then(...)`: note: `browserState.whenReady` is a real composed `(async () => { ... })()`, NOT in scope)
 - [x] **7.3** `bun run check`. Note: `browserState.whenReady` and `apps/tab-manager/src/entrypoints/sidepanel/App.svelte:194` consume the legitimate composed `whenReady`. Do not touch.
 
 ### Phase 8: Verify and clean
@@ -479,7 +479,7 @@ The rule applies to **app workspace bundles**, not to generic handle protocols.
 
 ### `WorkspaceGate` package component (deleted, then re-introduced)
 
-`packages/svelte-utils/src/workspace-gate/workspace-gate.svelte` was a thin generic gate that accepted a single promise prop and rendered loading/children/error branches around `{#await}`. **Decision (2026-05-06): deleted.** **Reversed same day** — see "Post-implementation reversal" above.
+`packages/svelte-utils/src/workspace-gate/workspace-gate.svelte` was a thin generic gate that accepted a single promise prop and rendered loading/children/error branches around `{#await}`. **Decision (2026-05-06): deleted.** **Reversed same day**: see "Post-implementation reversal" above.
 
 Original reasoning for deletion (kept here as historical context):
 
@@ -561,7 +561,7 @@ Or, if the same composition appears in 2+ places, the bundle adds a real `whenRe
 - [x] No `whenReady: <expr>.whenLoaded` aliases remain in `apps/`. Composed `Promise.all`-based `whenReady` fields stay (Whispering, tab-manager browser-state).
 - [x] Every workspace bundle in scope (fuji, honeycrisp, zhongwen, opensidian, skills browser, tab-manager extension) exposes its attached subsystems (`idb` or `persistence`, `sync`, `awareness` where applicable) directly.
 - [~] ~~`WorkspaceGate` component removed from `packages/svelte-utils`.~~ **Superseded.** Re-introduced in `92ed684b5` with snippet-overrideable shape; consumed by all three signed-in apps plus opensidian. See "Post-implementation reversal."
-- [x] `Loading.svelte` and `ErrorState.svelte` are deleted from each app. (`ErrorState.svelte` deleted in all three apps. `Loading.svelte` was also deleted in all three — replaced by `WorkspaceLoading` from svelte-utils, which now serves both the layout's auth-pending state and the gate's IDB-pending state. The original spec language "Loading.svelte retained" is superseded.)
+- [x] `Loading.svelte` and `ErrorState.svelte` are deleted from each app. (`ErrorState.svelte` deleted in all three apps. `Loading.svelte` was also deleted in all three: replaced by `WorkspaceLoading` from svelte-utils, which now serves both the layout's auth-pending state and the gate's IDB-pending state. The original spec language "Loading.svelte retained" is superseded.)
 - [x] Each `SignedIn.svelte` gate awaits a specific subsystem event (`bundle.idb.whenLoaded`), passed in via `<WorkspaceGate pending={…}>`.
 - [ ] `bun run check` and `bun run lint` pass.
 - [ ] Manual smoke: sign in, render workspace, sign out, sign in as different user, force IDB load failure (e.g., disable IndexedDB) and see the inlined error UI.

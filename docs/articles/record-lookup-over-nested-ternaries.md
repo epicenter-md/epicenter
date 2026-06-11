@@ -18,7 +18,7 @@ const tooltip = $derived(
 );
 ```
 
-If `SyncStatus` gains a fourth phase—say `'reconnecting'`—the ternary silently maps it to `'Offline'`. No warning, no error. The else branch swallows anything it doesn't recognize. At two branches a ternary is fine; at three it's already hard to scan; at four it's unreadable.
+If `SyncStatus` gains a fourth phase. Say `'reconnecting'`: the ternary silently maps it to `'Offline'`. No warning, no error. The else branch swallows anything it doesn't recognize. At two branches a ternary is fine; at three it's already hard to scan; at four it's unreadable.
 
 ## Switch Statements Are Better, But Not Best
 

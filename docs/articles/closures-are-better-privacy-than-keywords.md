@@ -1,6 +1,6 @@
 # Closures Are Better Privacy Than Keywords
 
-Factory functions give you structural privacy. The return object is the public API; everything above it is private by position. Classes give you keyword privacy—`private`, `protected`, or nothing (meaning public)—scattered in whatever order the author felt like writing. One approach lets you see the API at a glance. The other forces you to scan every member and check its modifier.
+Factory functions give you structural privacy. The return object is the public API; everything above it is private by position. Classes give you keyword privacy: `private`, `protected`, or nothing (meaning public), scattered in whatever order the author felt like writing. One approach lets you see the API at a glance. The other forces you to scan every member and check its modifier.
 
 ## The Anatomy of a Factory Function
 
@@ -8,13 +8,13 @@ Every factory function in this codebase follows the same internal shape:
 
 ```typescript
 function createBackoff() {
-	// Zone 1 — Mutable state
+	// Zone 1: Mutable state
 	let retries = 0;
 	let sleeper: { promise: Promise<void>; wake(): void } | null = null;
 
-	// Zone 2 — (Private helpers would go here)
+	// Zone 2: (Private helpers would go here)
 
-	// Zone 3 — Public API
+	// Zone 3: Public API
 	return {
 		async sleep() {
 			const delay = Math.min(500 * 2 ** retries, 30_000);
@@ -70,19 +70,19 @@ class Backoff {
 }
 ```
 
-Same logic. But now `private retries` sits right next to `async sleep()`, and nothing in the layout tells you which methods are public. You have to read every member and look for `private`—or more likely, look for the *absence* of `private`, since public is the default. The API surface is implicit: everything that isn't marked private.
+Same logic. But now `private retries` sits right next to `async sleep()`, and nothing in the layout tells you which methods are public. You have to read every member and look for `private`: or more likely, look for the *absence* of `private`, since public is the default. The API surface is implicit: everything that isn't marked private.
 
 ## How the Zones Scale
 
-Small factories like `createBackoff` don't need zone 2 (private helpers). Larger ones use all four zones. Here's the shape of `createSyncProvider`—560 lines, same anatomy:
+Small factories like `createBackoff` don't need zone 2 (private helpers). Larger ones use all four zones. Here's the shape of `createSyncProvider`: 560 lines, same anatomy:
 
 ```
 function createSyncProvider(config) {
-	// Zone 1 — Immutable state (derived from config)
+	// Zone 1: Immutable state (derived from config)
 	const { doc, url, getToken } = config;
 	const awareness = config.awareness ?? new Awareness(doc);
 
-	// Zone 2 — Mutable state
+	// Zone 2: Mutable state
 	let desired: 'online' | 'offline' = 'offline';
 	let runId = 0;
 	let connectRun: Promise<void> | null = null;
@@ -90,7 +90,7 @@ function createSyncProvider(config) {
 
 	const backoff = createBackoff();
 
-	// Zone 3 — Private helpers
+	// Zone 3: Private helpers
 	function send(message: Uint8Array) { ... }
 	function handleDocUpdate(update: Uint8Array, origin: unknown) { ... }
 	function handleAwarenessUpdate({ added, updated, removed }) { ... }
@@ -99,7 +99,7 @@ function createSyncProvider(config) {
 	async function runLoop(myRunId: number) { ... }
 	async function attemptConnection(token, myRunId) { ... }
 
-	// Zone 4 — Public API
+	// Zone 4: Public API
 	return {
 		get status() { return status.get(); },
 		get awareness() { return awareness; },
@@ -111,7 +111,7 @@ function createSyncProvider(config) {
 }
 ```
 
-Six public methods, seven private helpers, four mutable variables. The return object sits at the bottom—you can read the public API without scrolling past any implementation. In a class, those 13 members would be interleaved in whatever order they were written, each tagged with `private` or left unmarked.
+Six public methods, seven private helpers, four mutable variables. The return object sits at the bottom. You can read the public API without scrolling past any implementation. In a class, those 13 members would be interleaved in whatever order they were written, each tagged with `private` or left unmarked.
 
 ## The Decision Rule for `this`
 
@@ -137,11 +137,11 @@ return {
 
 `bumpEpoch` calls `this.getEpoch()` because both live in the return object. Method shorthand gives you proper `this` binding; arrow functions don't.
 
-If a function is called both by return-object methods *and* by pre-return initialization logic, it belongs in zone 3 (private helpers). Call it directly by name—no `this` needed, because it's a closure variable.
+If a function is called both by return-object methods *and* by pre-return initialization logic, it belongs in zone 3 (private helpers). Call it directly by name. No `this` needed, because it's a closure variable.
 
 ```typescript
 function createSyncProvider(config) {
-	// Zone 3 — Private helper (used during init AND by public methods)
+	// Zone 3: Private helper (used during init AND by public methods)
 	function send(message: Uint8Array) {
 		if (websocket?.readyState === WebSocket.OPEN) {
 			websocket.send(message);
@@ -154,7 +154,7 @@ function createSyncProvider(config) {
 		send(encodeSyncUpdate({ update }));
 	});
 
-	// Zone 4 — Public API (also uses send via closure)
+	// Zone 4: Public API (also uses send via closure)
 	return {
 		connect() { ... },
 		disconnect() { ... },
@@ -171,9 +171,9 @@ JavaScript gives you three ways to mark class members as private: `private` (Typ
 | `private` | TypeScript-only, no runtime enforcement | Erased at compile time; a lie at runtime |
 | `#field` | True runtime privacy | Ugly syntax, no access from subclasses, poor debugging |
 | `protected` | Accessible to subclasses | Leaks implementation across inheritance boundaries |
-| *(nothing)* | Public | The default is the most permissive—easy to forget the modifier |
+| *(nothing)* | Public | The default is the most permissive. Easy to forget the modifier |
 
-All four modifiers live on the same level in the class body. You have to read every single member and check its access level. There's no structural separation—the layout doesn't tell you anything about the API surface.
+All four modifiers live on the same level in the class body. You have to read every single member and check its access level. There's no structural separation. The layout doesn't tell you anything about the API surface.
 
 Closures invert this. Private members exist *above* the return statement. Public members exist *inside* it. The structure itself communicates the contract.
 
@@ -183,10 +183,10 @@ Every factory function follows this ordering:
 
 ```
 function createSomething(deps, options?) {
-	// Zone 1 — Immutable state (const from deps/options)
-	// Zone 2 — Mutable state (let declarations)
-	// Zone 3 — Private helpers (functions used by the return object)
-	// Zone 4 — return { public API }
+	// Zone 1: Immutable state (const from deps/options)
+	// Zone 2: Mutable state (let declarations)
+	// Zone 3: Private helpers (functions used by the return object)
+	// Zone 4: return { public API }
 }
 ```
 
@@ -194,6 +194,6 @@ Zone 1 and 2 can merge when there's little state. Zone 3 is empty for small fact
 
 ## Related
 
-- [The Factory Function Pattern](./factory-function-pattern.md)—the external signature and dependency injection
-- [The Universal Factory Function Signature](./universal-factory-signature.md)—why every factory takes `(deps, options?)`
-- [Method Shorthand for JSDoc Preservation](./method-shorthand-jsdoc-preservation.md)—why method shorthand in the return object preserves IDE documentation
+- [The Factory Function Pattern](./factory-function-pattern.md): the external signature and dependency injection
+- [The Universal Factory Function Signature](./universal-factory-signature.md): why every factory takes `(deps, options?)`
+- [Method Shorthand for JSDoc Preservation](./method-shorthand-jsdoc-preservation.md): why method shorthand in the return object preserves IDE documentation

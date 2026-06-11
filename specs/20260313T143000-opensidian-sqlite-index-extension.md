@@ -6,7 +6,7 @@
 
 ## Overview
 
-A workspace extension that mirrors the Yjs CRDT filesystem into a local SQLite database as a read-optimized index. The SQLite database is never the source of truth—it's a derived, rebuildable cache that enables SQL queries, full-text search, and fast lookups against file metadata and content.
+A workspace extension that mirrors the Yjs CRDT filesystem into a local SQLite database as a read-optimized index. The SQLite database is never the source of truth. It's a derived, rebuildable cache that enables SQL queries, full-text search, and fast lookups against file metadata and content.
 
 ## Motivation
 
@@ -26,7 +26,7 @@ All queries go through the `FileTree.index` object, which maintains in-memory `M
 1. **Full-text search**: No way to search across file contents. Users can't find files by content.
 2. **Complex queries**: Can't do "find all .md files modified in the last week" or "find files larger than 10KB" without iterating every row.
 3. **SQL-powered features**: No aggregate queries, joins, or filtering that SQL gives you for free.
-4. **Content indexing**: File content lives in per-file Y.Docs—no unified view exists.
+4. **Content indexing**: File content lives in per-file Y.Docs. No unified view exists.
 
 ### Previous Implementation
 
@@ -34,7 +34,7 @@ This codebase previously had a `sqliteIndex` function (in the now-removed `packa
 
 - **Debounced rebuild beats incremental sync** (`20251205T164620-sqlite-index-batching.md`): Individual change tracking caused race conditions and ordering bugs. Rebuilding from Yjs on a 100ms debounce is simpler and guarantees correctness at ~7.4k rows/s.
 - **Config inversion** (`20251030T120000-sqlite-config-inversion.md`): The caller should pass the path/config, not the extension.
-- **WAL mode on, foreign keys off** — SQLite is a read index, not a relational database.
+- **WAL mode on, foreign keys off**: SQLite is a read index, not a relational database.
 
 ### Desired State
 
@@ -72,14 +72,14 @@ Opensidian is a SvelteKit web app (no Tauri backend). SQLite must run in the bro
 
 **Key finding**: sql.js is the safest choice for browser today. It has the most ecosystem support and a first-class Drizzle adapter.
 
-**Turso/libSQL upgrade path**: If Opensidian later needs remote sync (sharing indexes across devices), the schema stays identical—only the driver changes from sql.js to `@libsql/client`. Turso's "embedded replicas" pattern (local SQLite that syncs to a remote Turso database) maps perfectly to this architecture. The local SQLite index remains the read surface; the remote database becomes the sync target.
+**Turso/libSQL upgrade path**: If Opensidian later needs remote sync (sharing indexes across devices), the schema stays identical. Only the driver changes from sql.js to `@libsql/client`. Turso's "embedded replicas" pattern (local SQLite that syncs to a remote Turso database) maps perfectly to this architecture. The local SQLite index remains the read surface; the remote database becomes the sync target.
 
 ### Turso Platform
 
 Turso is a managed libSQL platform built on SQLite. Key capabilities relevant to this design:
 
 - **Embedded replicas**: A local SQLite file that syncs with a remote Turso database. Local reads are instant; writes propagate to remote.
-- **Database-per-tenant**: Turso supports creating databases programmatically via their Platform API—one database per workspace is a natural fit.
+- **Database-per-tenant**: Turso supports creating databases programmatically via their Platform API. One database per workspace is a natural fit.
 - **libSQL extensions**: libSQL is a fork of SQLite that adds features like native vector search and remote replication.
 
 For a LOCAL-ONLY index (no remote sync), Turso adds no value over sql.js. The value comes IF/WHEN remote sync is needed. The upgrade path is clean because:
@@ -92,9 +92,9 @@ For a LOCAL-ONLY index (no remote sync), Turso adds no value over sql.js. The va
 
 The workspace provides three extension methods:
 
-- `.withExtension(key, factory)` — applies to both workspace Y.Doc and per-file content Y.Docs (90% use case)
-- `.withWorkspaceExtension(key, factory)` — workspace Y.Doc only
-- `.withDocumentExtension(key, factory, opts?)` — per-file content Y.Docs only
+- `.withExtension(key, factory)`: applies to both workspace Y.Doc and per-file content Y.Docs (90% use case)
+- `.withWorkspaceExtension(key, factory)`: workspace Y.Doc only
+- `.withDocumentExtension(key, factory, opts?)`: per-file content Y.Docs only
 
 The SQLite index should use `.withWorkspaceExtension()` because it observes the workspace-level files table, not individual content documents. Content serialization happens by explicitly opening each file's content doc via `documents.open(fileId)`.
 
@@ -104,8 +104,8 @@ Factory receives: `{ id, ydoc, tables, kv, documents, awareness, extensions, whe
 
 File content lives in per-file Y.Docs managed by `documents.files.content`. The `ContentHelpers` abstraction provides:
 
-- `content.read(fileId): Promise<string>` — reads text content from the file's Y.Doc
-- `content.readBuffer(fileId): Promise<Uint8Array>` — reads binary content
+- `content.read(fileId): Promise<string>`: reads text content from the file's Y.Doc
+- `content.readBuffer(fileId): Promise<Uint8Array>`: reads binary content
 
 The timeline abstraction inside `ContentHelpers` handles three content modes: `text`, `binary`, and `sheet` (CSV-like). For the SQLite index, we serialize text content as UTF-8 strings and skip binary content (not searchable).
 
@@ -187,7 +187,7 @@ export const files = sqliteTable('files', {
   updatedIdx: index('updated_idx').on(t.updatedAt),
 }));
 
-// FTS5 virtual table (created via raw SQL — Drizzle can't define virtual tables)
+// FTS5 virtual table (created via raw SQL: Drizzle can't define virtual tables)
 // CREATE VIRTUAL TABLE files_fts USING fts5(name, content, content=files, content_rowid=rowid);
 ```
 
@@ -253,8 +253,8 @@ export function createSqliteIndex(options: SqliteIndexOptions = {}) {
 ### Phase 1: Core Extension
 
 - [x] **1.1** Add `sql.js` and `drizzle-orm` dependencies to `packages/filesystem`
-- [x] **1.2** Create `packages/filesystem/src/extensions/sqlite-index/schema.ts` — Drizzle schema mirroring `FileRow`
-- [x] **1.3** Create `packages/filesystem/src/extensions/sqlite-index/index.ts` — extension factory with `rebuild()`, `destroy()`, `whenReady`
+- [x] **1.2** Create `packages/filesystem/src/extensions/sqlite-index/schema.ts`: Drizzle schema mirroring `FileRow`
+- [x] **1.3** Create `packages/filesystem/src/extensions/sqlite-index/index.ts`: extension factory with `rebuild()`, `destroy()`, `whenReady`
 - [x] **1.4** Implement debounced rebuild: observe `tables.files` → schedule → nuke + reinsert
 - [x] **1.5** Wire content serialization: for each file, `documents.open(fileId)` → `content.read()` → store in `content` column
 - [x] **1.6** Add materialized `path` column populated via parentId chain traversal
@@ -284,7 +284,7 @@ export function createSqliteIndex(options: SqliteIndexOptions = {}) {
 ### Large Workspaces (>10k files)
 
 1. Rebuild iterates all rows and opens each file's content doc
-2. Content docs may not all be loaded in memory—`documents.open()` may trigger Y.Doc creation
+2. Content docs may not all be loaded in memory: `documents.open()` may trigger Y.Doc creation
 3. For >10k files, rebuild could take seconds. Consider: showing a progress indicator, or deferring content indexing to a second pass.
 
 ### Binary Files
@@ -296,7 +296,7 @@ export function createSqliteIndex(options: SqliteIndexOptions = {}) {
 ### Concurrent Rebuilds
 
 1. A rebuild is in progress when another change triggers `scheduleSync()`
-2. The debounce handles this naturally—the new timer replaces the old one
+2. The debounce handles this naturally. The new timer replaces the old one
 3. If a rebuild is actively running (async), a flag should prevent overlapping rebuilds
 
 ### Page Reload / Fresh Load
@@ -309,16 +309,16 @@ export function createSqliteIndex(options: SqliteIndexOptions = {}) {
 ## Open Questions
 
 1. **Should the SQLite database persist across page reloads?**
-   - Options: (a) Always ephemeral—rebuild from Yjs on every load, (b) Persist to IndexedDB via sql.js export, (c) Persist to OPFS via sqlite-wasm
+   - Options: (a) Always ephemeral. Rebuild from Yjs on every load, (b) Persist to IndexedDB via sql.js export, (c) Persist to OPFS via sqlite-wasm
    - **Recommendation**: Start ephemeral (a). It's simpler and the index is always fresh. Add persistence later if rebuild time becomes a problem on large workspaces.
 
 2. **Should content indexing be eager or lazy?**
    - Options: (a) Index all file content during rebuild (eager), (b) Index content only when a file is first opened (lazy), (c) Index metadata eagerly, content in a background pass
-   - **Recommendation**: (c) — rebuild metadata first (fast, synchronous), then index content in a background pass. This keeps `whenReady` fast while still enabling full-text search.
+   - **Recommendation**: (c): rebuild metadata first (fast, synchronous), then index content in a background pass. This keeps `whenReady` fast while still enabling full-text search.
 
 3. **Where should this package live?**
    - Options: (a) `packages/filesystem/src/extensions/`, (b) `packages/workspace/src/extensions/`, (c) New `packages/sqlite-index/`
-   - **Recommendation**: (a) — it's specifically an index over the filesystem, not a generic workspace extension.
+   - **Recommendation**: (a): it's specifically an index over the filesystem, not a generic workspace extension.
 
 4. **Should we use sql.js or target the official sqlite-wasm with OPFS?**
    - sql.js is more mature and has Drizzle support. Official sqlite-wasm has OPFS persistence built in but no Drizzle adapter.
@@ -336,14 +336,14 @@ export function createSqliteIndex(options: SqliteIndexOptions = {}) {
 
 ## References
 
-- `packages/filesystem/src/table.ts` — `filesTable` definition with `withDocument('content', ...)`
-- `packages/filesystem/src/file-system.ts` — `createYjsFileSystem` orchestrator
-- `packages/filesystem/src/content/content.ts` — `createContentHelpers` for reading file content
-- `packages/filesystem/src/tree/tree.ts` — `FileTree` class with index/observe patterns
-- `packages/workspace/src/workspace/create-workspace.ts` — Extension API (`withWorkspaceExtension`)
-- `specs/20251205T164620-sqlite-index-batching.md` — Previous debounced rebuild design
-- `specs/20251030T120000-sqlite-config-inversion.md` — Previous config pattern
-- `specs/20251112T132055-sqlite-schema-namespace-refactor.md` — Previous schema organization
+- `packages/filesystem/src/table.ts`: `filesTable` definition with `withDocument('content', ...)`
+- `packages/filesystem/src/file-system.ts`: `createYjsFileSystem` orchestrator
+- `packages/filesystem/src/content/content.ts`: `createContentHelpers` for reading file content
+- `packages/filesystem/src/tree/tree.ts`: `FileTree` class with index/observe patterns
+- `packages/workspace/src/workspace/create-workspace.ts`: Extension API (`withWorkspaceExtension`)
+- `specs/20251205T164620-sqlite-index-batching.md`: Previous debounced rebuild design
+- `specs/20251030T120000-sqlite-config-inversion.md`: Previous config pattern
+- `specs/20251112T132055-sqlite-schema-namespace-refactor.md`: Previous schema organization
 
 
 ## Review
@@ -351,8 +351,8 @@ export function createSqliteIndex(options: SqliteIndexOptions = {}) {
 ### Changes Made (2026-03-14)
 
 **Files created:**
-- `packages/filesystem/src/extensions/sqlite-index/schema.ts` — Drizzle `sqliteTable` definition with 10 columns (id, name, parentId, type, path, size, createdAt, updatedAt, trashedAt, content) plus 4 indexes
-- `packages/filesystem/src/extensions/sqlite-index/index.ts` — Extension factory (386 lines) implementing:
+- `packages/filesystem/src/extensions/sqlite-index/schema.ts`: Drizzle `sqliteTable` definition with 10 columns (id, name, parentId, type, path, size, createdAt, updatedAt, trashedAt, content) plus 4 indexes
+- `packages/filesystem/src/extensions/sqlite-index/index.ts`: Extension factory (386 lines) implementing:
   - sql.js WASM initialization with in-memory database
   - Raw SQL schema creation (files table + FTS5 virtual table)
   - Debounced full rebuild from Yjs (100ms default)
@@ -363,19 +363,19 @@ export function createSqliteIndex(options: SqliteIndexOptions = {}) {
   - Proper cleanup: timeout clearing, observer unsubscribe, SQLite close
 
 **Files modified:**
-- `packages/filesystem/package.json` — Added `sql.js`, `drizzle-orm`, `@types/sql.js`
-- `packages/filesystem/src/index.ts` — Added exports for `createSqliteIndex`, `SearchResult`, `SqliteIndex`, `SqliteIndexOptions`
-- `apps/opensidian/src/lib/fs/fs-state.svelte.ts` — Added `.withWorkspaceExtension('sqliteIndex', createSqliteIndex())` to workspace chain
+- `packages/filesystem/package.json`: Added `sql.js`, `drizzle-orm`, `@types/sql.js`
+- `packages/filesystem/src/index.ts`: Added exports for `createSqliteIndex`, `SearchResult`, `SqliteIndex`, `SqliteIndexOptions`
+- `apps/opensidian/src/lib/fs/fs-state.svelte.ts`: Added `.withWorkspaceExtension('sqliteIndex', createSqliteIndex())` to workspace chain
 
 ### Deviations from Spec
 
 1. **Path computation**: Spec referenced `FileTree.index.getPathById()` which doesn't exist. Implemented equivalent via parentId chain traversal with cycle detection and orphan handling (same algorithm as `path-index.ts`).
-2. **FTS5 table**: Used standalone FTS5 (`file_id UNINDEXED, name, content`) instead of external-content (`content=files, content_rowid=rowid`) for simplicity—both get nuked and rebuilt together anyway.
+2. **FTS5 table**: Used standalone FTS5 (`file_id UNINDEXED, name, content`) instead of external-content (`content=files, content_rowid=rowid`) for simplicity. Both get nuked and rebuilt together anyway.
 3. **Index syntax**: Used array-style Drizzle index syntax (`(t) => [...]`) instead of object-style (`(t) => ({...})`) to match current drizzle-orm API.
-4. **Phase 3.2–3.3 deferred**: Search service wrapper and status bar UI left for a follow-up—the extension is usable directly via `ws.extensions.sqliteIndex.search()`.
+4. **Phase 3.2-3.3 deferred**: Search service wrapper and status bar UI left for a follow-up. The extension is usable directly via `ws.extensions.sqliteIndex.search()`.
 
 ### Verification
 
 - All existing tests pass: 189 pass, 0 fail (packages/filesystem)
 - LSP diagnostics clean on all changed files (schema.ts, index.ts, index.ts barrel, fs-state.svelte.ts)
-- Extension is purely additive—no existing code was modified beyond the barrel export and Opensidian wiring
+- Extension is purely additive. No existing code was modified beyond the barrel export and Opensidian wiring

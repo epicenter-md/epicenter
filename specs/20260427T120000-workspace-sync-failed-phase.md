@@ -30,7 +30,7 @@ Today, `attachSync` has two terminal states:
                      (whenConnected resolves here)
 ```
 
-A doc destroy is the only thing that rejects `whenConnected`. Auth failures, expired tokens, protocol mismatches — all fall into the unbounded retry loop at `attach-sync.ts:1115`. The supervisor backs off forever. There is **no concept of "give up."**
+A doc destroy is the only thing that rejects `whenConnected`. Auth failures, expired tokens, protocol mismatches: all fall into the unbounded retry loop at `attach-sync.ts:1115`. The supervisor backs off forever. There is **no concept of "give up."**
 
 This forces every caller that wants bounded startup to invent its own clock. The CLI does it via `--connect-timeout` (now a hardcoded 10 s ceiling). A future Tauri app would have to do the same. That's a missing semantic at the workspace layer.
 
@@ -49,7 +49,7 @@ When the relay rejects auth, it just closes the WebSocket. The client sees `oncl
      │   blip, retry…"      │
 ```
 
-Two distinct failure modes — bad credentials vs. flaky wifi — surface as the same close event. Until the wire carries the distinction, the client can't act on it.
+Two distinct failure modes: bad credentials vs. flaky wifi: surface as the same close event. Until the wire carries the distinction, the client can't act on it.
 
 ---
 
@@ -156,7 +156,7 @@ type AuthRejectCode =
   | 'protocol_incompatible';
 ```
 
-The `cause: unknown` on `connection` is intentional — it stays freeform because network failures are inherently varied.
+The `cause: unknown` on `connection` is intentional. It stays freeform because network failures are inherently varied.
 
 ---
 
@@ -194,7 +194,7 @@ Use case: user runs `epicenter auth login` after `up` has already given up on a 
 
 The server-side change is the only piece that crosses repos. Plan around that:
 
-### Phase 1 — client-only (no server dependency)
+### Phase 1: client-only (no server dependency)
 
 Land everything client-side that doesn't need the new frame. Lays the foundation; behavior change is invisible to users until phase 2 lights it up.
 
@@ -204,9 +204,9 @@ Land everything client-side that doesn't need the new frame. Lays the foundation
 - [ ] `reconnect()` resets `failed` → `connecting`.
 - [ ] Tests: status transitions, `whenConnected` rejection on simulated `failed` event, `reconnect()` resets cleanly.
 
-After phase 1 the new states exist but nothing produces `failed` yet — the rest of the system is unchanged.
+After phase 1 the new states exist but nothing produces `failed` yet. The rest of the system is unchanged.
 
-### Phase 2 — server frame (cross-repo coordination)
+### Phase 2: server frame (cross-repo coordination)
 
 The relay learns to send `AUTH/REJECTED` before closing on bad credentials.
 
@@ -217,7 +217,7 @@ The relay learns to send `AUTH/REJECTED` before closing on bad credentials.
 
 After phase 2, real auth failures get fast-rejection.
 
-### Phase 3 — CLI cleanup
+### Phase 3: CLI cleanup
 
 - [ ] Delete `CONNECT_TIMEOUT_MS` constant from `packages/cli/src/commands/up.ts`.
 - [ ] Delete `RunUpDeps.connectTimeoutMs`.
@@ -243,7 +243,7 @@ After phase 2, real auth failures get fast-rejection.
 - **`getLocalDeviceId` getter on `SyncAttachment`.** No real consumer; users configure deviceIds and already know them. Defer until something needs to query.
 - **Bounded retries on `connection` errors.** Daemons should keep trying when the network returns. The whole point of `failed` is to distinguish "give up" (auth) from "keep trying" (network).
 - **`epicenter reconnect` CLI verb.** The IPC plumbing is implied by `reconnect()` becoming meaningful, but the CLI verb is a separate spec when there's a clear UX for it.
-- **Mid-session auth refresh.** If the server *deauthorizes* a connected client (revokes a token mid-session), we should handle that — but that's a separate frame (`AUTH/REVOKED`) and a separate spec.
+- **Mid-session auth refresh.** If the server *deauthorizes* a connected client (revokes a token mid-session), we should handle that: but that's a separate frame (`AUTH/REVOKED`) and a separate spec.
 - **Backwards compatibility with old relays.** The first time we deploy phase 2, clients running phase-1 code will see the `AUTH` frame as an unknown message and ignore it (existing protocol behavior). Old clients connecting to a new relay still get the close-after-frame; they just retry like today. No flag day.
 
 ---

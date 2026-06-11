@@ -65,6 +65,6 @@ customType<{ data: UserPrefs; driverParam: string }>({
 
 This pattern supports a broader principle: **keep data in its intermediate representation until the last responsible moment**.
 
-If data enters serialized and leaves serialized, keep it serialized in the middle. Parse at the edges where you actually need the rich representation—typically UI components that need to render or edit the data.
+If data enters serialized and leaves serialized, keep it serialized in the middle. Parse at the edges where you actually need the rich representation. Typically UI components that need to render or edit the data.
 
 For DateTimeString, this means keeping strings through the database layer, API layer, and frontend state. Only parse into `Temporal.ZonedDateTime` when a date-picker component needs it, then immediately serialize back after editing.

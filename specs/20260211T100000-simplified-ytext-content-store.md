@@ -2,10 +2,10 @@
 
 **Date**: 2026-02-11
 **Status**: Superseded
-**Superseded by**: `specs/20260211T230000-timeline-content-storage-implementation.md` — replaces single `Y.Text('content')` with `Y.Array('timeline')` containing nested shared types. Ephemeral binary store replaced by persistent timeline entries.
+**Superseded by**: `specs/20260211T230000-timeline-content-storage-implementation.md`: replaces single `Y.Text('content')` with `Y.Array('timeline')` containing nested shared types. Ephemeral binary store replaced by persistent timeline entries.
 **Supersedes**: `specs/20260210T120000-content-format-spec.md` (lens architecture), `specs/20260210T220000-v14-content-storage-spec.md` (v14 content handler)
 **Updates**: `specs/20260210T150000-content-storage-format-debate.md` (implements the direction, but with v13 Yjs, not v14)
-**See also**: `specs/20260211T220000-yjs-content-doc-multi-mode-research.md` — Decision record with full rationale for Option F.
+**See also**: `specs/20260211T220000-yjs-content-doc-multi-mode-research.md`: Decision record with full rationale for Option F.
 
 ---
 
@@ -41,7 +41,7 @@ That's it. No format metadata. No lens registry. No namespaced keys. No healing.
 
 ### Why not 'text'
 
-The current codebase uses `'text'` as the Y.Text key. But `'text'` is ambiguous — it could refer to the Yjs type or the content. `'content'` clearly means "the content of this file."
+The current codebase uses `'text'` as the Y.Text key. But `'text'` is ambiguous. It could refer to the Yjs type or the content. `'content'` clearly means "the content of this file."
 
 ### What about .md files?
 
@@ -115,7 +115,7 @@ return ytext.toString();
 
 Three lines. No healing. No format detection. No lens lookup.
 
-### writeFile(path, content) — new file
+### writeFile(path, content): new file
 
 ```typescript
 const id = generateFileId();
@@ -132,7 +132,7 @@ ydoc.transact(() => {
 });
 ```
 
-### writeFile(path, content) — existing file
+### writeFile(path, content): existing file
 
 ```typescript
 const ydoc = this.store.ensure(id);
@@ -147,7 +147,7 @@ this.filesTable.update(id, {
 });
 ```
 
-Same code for .txt, .md, .ts, .json, .csv — everything. The filesystem is content-agnostic.
+Same code for .txt, .md, .ts, .json, .csv, everything. The filesystem is content-agnostic.
 
 ### mv(src, dest)
 
@@ -178,13 +178,13 @@ Returns the UTF-8 encoding of the text content. This works for text files. For b
 
 just-bash has a built-in `sqlite3` command (via sql.js/WASM). It reads and writes SQLite database files as binary data on the virtual filesystem. The `sqlite3` command uses `readFileBuffer` and `writeFile` with `Uint8Array` data.
 
-A SQLite file is binary — it cannot be meaningfully stored in `Y.Text`. Encoding it as a string (e.g., base64) is wasteful and corrupts the data.
+A SQLite file is binary. It cannot be meaningfully stored in `Y.Text`. Encoding it as a string (e.g., base64) is wasteful and corrupts the data.
 
 ### How just-bash's InMemoryFs handles this
 
 just-bash's native `InMemoryFs` stores **all** file content as `Uint8Array` internally. The `FileEntry.content` type is `string | Uint8Array`, but internally everything is converted to `Uint8Array` via `toBuffer()`. When `readFile()` is called, it reads the buffer then converts back to string via `fromBuffer()`.
 
-This means just-bash treats binary and text as the same storage — the difference is only in how you read it (`readFile` → string, `readFileBuffer` → Uint8Array).
+This means just-bash treats binary and text as the same storage. The difference is only in how you read it (`readFile` → string, `readFileBuffer` → Uint8Array).
 
 ### Our approach: ephemeral binary store
 
@@ -295,16 +295,16 @@ async readFileBuffer(path: string): Promise<Uint8Array> {
 ### Known limitation: binary files are ephemeral
 
 Binary data stored in `binaryStore` is:
-- **Not CRDT-backed** — no collaborative merge, no conflict resolution
-- **Not persisted** — lost on page reload / app restart
-- **Not synced** — only exists on the local client
+- **Not CRDT-backed**: no collaborative merge, no conflict resolution
+- **Not persisted**: lost on page reload / app restart
+- **Not synced**: only exists on the local client
 
 This is an acknowledged weakness, and it's acceptable because:
 
-1. **Primary use case is text** — code, markdown, config files are all text. These get full Yjs collaboration.
-2. **SQLite is a session artifact** — bash agents create SQLite databases as working storage during a session. They're intermediate computation results, not documents that need persistence or collaboration.
-3. **Matches InMemoryFs semantics** — just-bash's own InMemoryFs is also ephemeral. Binary files in an in-browser shell session aren't expected to survive page reloads.
-4. **Clean upgrade path** — if we ever need persistent binary support, we can add a persistence layer behind the `Map` without changing the IFileSystem interface or the text file path. Options include IndexedDB, Y.Doc binary encoding for transport, or a blob storage service.
+1. **Primary use case is text**: code, markdown, config files are all text. These get full Yjs collaboration.
+2. **SQLite is a session artifact**: bash agents create SQLite databases as working storage during a session. They're intermediate computation results, not documents that need persistence or collaboration.
+3. **Matches InMemoryFs semantics**: just-bash's own InMemoryFs is also ephemeral. Binary files in an in-browser shell session aren't expected to survive page reloads.
+4. **Clean upgrade path**: if we ever need persistent binary support, we can add a persistence layer behind the `Map` without changing the IFileSystem interface or the text file path. Options include IndexedDB, Y.Doc binary encoding for transport, or a blob storage service.
 
 ---
 
@@ -317,7 +317,7 @@ This is an acknowledged weakness, and it's acceptable because:
 | `ContentHandler` | v14-content-storage-spec | Depends on v14. Replaced by direct Y.Text access. |
 | `healContentType()` | `convert-on-switch.ts` | No format mismatch possible. One key, one type. |
 | `hasContent()` | content-format-spec | Only existed for healing. |
-| `openDocument()` | `content-doc-store.ts` | Returns DocumentHandle discriminated union. Unnecessary — just use `ydoc.getText('content')`. |
+| `openDocument()` | `content-doc-store.ts` | Returns DocumentHandle discriminated union. Unnecessary: just use `ydoc.getText('content')`. |
 | `documentHandleToString()` | `content-doc-store.ts` | Replaced by `ydoc.getText('content').toString()`. |
 | `getExtensionCategory()` | `convert-on-switch.ts` | Extension doesn't determine storage format. |
 | `convertContentType()` | `convert-on-switch.ts` | No conversion needed. Everything is Y.Text. |
@@ -365,7 +365,7 @@ This is an acknowledged weakness, and it's acceptable because:
 | `yjs-file-system.test.ts` | **Updated** | Added binary file support tests (writeFile Uint8Array, readFile on binary, text overwrites binary, cp binary, rm binary). Added mv preservation tests (.txt→.md, .md→.txt). |
 | `content-doc-store.test.ts` | **Unchanged** | Only tests `createContentDocStore()`, which was not modified. |
 
-**Net effect**: ~250 lines deleted, ~60 lines added. 99 tests pass (down from 109 — removed 10 convert-on-switch tests, added 7 new tests).
+**Net effect**: ~250 lines deleted, ~60 lines added. 99 tests pass (down from 109: removed 10 convert-on-switch tests, added 7 new tests).
 
 ---
 
@@ -401,7 +401,7 @@ The Y.Text stores markdown. A WYSIWYG editor reads it, parses to ProseMirror, re
 
 ### Diff-based writes (future)
 
-Replace `delete(0, length) + insert(0, content)` with character-level diff. This preserves concurrent edits. The filesystem API doesn't change — `writeFile` still accepts a string. The internal implementation changes.
+Replace `delete(0, length) + insert(0, content)` with character-level diff. This preserves concurrent edits. The filesystem API doesn't change: `writeFile` still accepts a string. The internal implementation changes.
 
 ### Content metadata (future)
 
@@ -438,7 +438,7 @@ bun test packages/epicenter/src/filesystem/
 ```
 
 Checklist:
-- [x] Y.Doc has single `Y.Text('content')` — no other shared types
+- [x] Y.Doc has single `Y.Text('content')`: no other shared types
 - [x] `readFile()` returns `ydoc.getText('content').toString()` for all text files
 - [x] `writeFile()` writes to `ydoc.getText('content')` for string data
 - [x] `writeFile()` with `Uint8Array` stores in `binaryStore` (not Y.Text)
@@ -446,7 +446,7 @@ Checklist:
 - [x] `readFile()` checks `binaryStore` first, falls back to Y.Text toString
 - [x] `rm()` cleans up `binaryStore` entry for the deleted file (including recursive via `softDeleteDescendants`)
 - [x] `cp()` copies binary data if source file has `binaryStore` entry
-- [x] `mv()` never touches content doc or binary store — pure metadata update
+- [x] `mv()` never touches content doc or binary store: pure metadata update
 - [x] `mv('/notes.md', '/notes.txt')` preserves content exactly (tested)
 - [x] `convert-on-switch.ts` is deleted
 - [x] No references to `healContentType`, `getExtensionCategory`, `openDocument`, `documentHandleToString`
@@ -463,7 +463,7 @@ Checklist:
 | Spec | New Status |
 |------|-----------|
 | `20260210T120000-content-format-spec.md` | **Superseded** by this spec. Lens architecture deferred to future. |
-| `20260210T150000-content-storage-format-debate.md` | **Acknowledged** — this spec implements its recommendation (markdown-as-text), but with v13 Yjs, not v14. |
-| `20260210T220000-v14-content-storage-spec.md` | **Deferred** — v14 migration is a separate project. This spec implements the v13 equivalent of its core idea. |
-| `20260209T000000-simplify-content-doc-lifecycle.md` | **Still valid** — ContentDocStore is unchanged. |
-| `20260209T120000-branded-file-ids.md` | **Still valid** — FileId branding unchanged. |
+| `20260210T150000-content-storage-format-debate.md` | **Acknowledged**: this spec implements its recommendation (markdown-as-text), but with v13 Yjs, not v14. |
+| `20260210T220000-v14-content-storage-spec.md` | **Deferred**: v14 migration is a separate project. This spec implements the v13 equivalent of its core idea. |
+| `20260209T000000-simplify-content-doc-lifecycle.md` | **Still valid**: ContentDocStore is unchanged. |
+| `20260209T120000-branded-file-ids.md` | **Still valid**: FileId branding unchanged. |

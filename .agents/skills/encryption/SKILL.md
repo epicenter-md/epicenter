@@ -17,6 +17,12 @@ When working with encryption, consult these repositories for patterns and docume
 - [AWS KMS](https://docs.aws.amazon.com/kms/) : Envelope encryption patterns, key rotation lifecycle
 - [age](https://github.com/FiloSottile/age) : Simple file encryption design philosophy
 
+## Upstream Grounding
+
+When crypto primitive behavior, nonce requirements, AEAD semantics, or implementation APIs affect correctness, verify against the primitive library source and official cryptography docs before changing code. If DeepWiki MCP is available, use it only as orientation: ask `signalapp/libsignal` for key hierarchy, HKDF, message encryption, or Double Ratchet design patterns; ask `bitwarden/server` for vault-style key hierarchy, organization keys, and client-side encryption patterns. If DeepWiki is unavailable or the repo is not indexed, use upstream source or official docs directly. Do not copy a protocol design from either repo without adapting it to Epicenter's threat model and verifying against local code, installed types, tests, and official docs.
+
+Skip DeepWiki for Epicenter blob format and keyring conventions already documented below.
+
 ### What We Borrow From Each
 
 | Concern | Inspiration | Why |

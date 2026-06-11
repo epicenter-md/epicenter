@@ -17,9 +17,9 @@ This spec **strips two custom protocol extensions out of `attach-sync.ts` (peer 
 
 `packages/workspace/src/document/attach-sync.ts` currently bundles the supervisor with two custom protocol extensions and one underdocumented Cloudflare-specific mechanism. This spec separates the three:
 
-- **Cut #1 — RPC extraction**: execute the existing `attachRpc` split spec. Removes ~150 LOC.
-- **Cut #2 — SYNC_STATUS removal**: re-apply the previously-implemented simplification. Removes ~50 LOC.
-- **Doc #3 — Ping/liveness**: keep the mechanism, add JSDoc explaining the Cloudflare DO `setWebSocketAutoResponse` binding. No code removed; ~20 LOC of comments added.
+- **Cut #1: RPC extraction**: execute the existing `attachRpc` split spec. Removes ~150 LOC.
+- **Cut #2: SYNC_STATUS removal**: re-apply the previously-implemented simplification. Removes ~50 LOC.
+- **Doc #3: Ping/liveness**: keep the mechanism, add JSDoc explaining the Cloudflare DO `setWebSocketAutoResponse` binding. No code removed; ~20 LOC of comments added.
 
 Combined: ~200 LOC out of 1130 (~18% reduction), zero functional regressions if both removed features have no live consumers.
 
@@ -116,7 +116,7 @@ From `specs/sync-client-simplification.md:17`:
 
 Why this matters more than the y-websocket comparison: y-websocket runs on long-lived Node servers. We run on Cloudflare Durable Objects with hibernation. A binary heartbeat would wake the DO every interval, costing CPU time and defeating hibernation. The text auto-response was specifically chosen to keep idle connections cheap.
 
-The y-websocket reference impl (per deepwiki against `yjs/y-websocket`) doesn't ping at all — it relies on inbound traffic. We can't do that because:
+The y-websocket reference impl (per deepwiki against `yjs/y-websocket`) doesn't ping at all. It relies on inbound traffic. We can't do that because:
 1. Our server filters out the awareness echo trick (per `sync-client-simplification.md:36-39`)
 2. Idle connections genuinely have no inbound traffic
 3. CF's documented idle behavior is "uncertain and undocumented" (per simplification spec line 18-19)
@@ -212,7 +212,7 @@ If any current code path reads `status.hasLocalChanges` or subscribes to it via 
 - [ ] **0.2** Confirm the existing split spec at `specs/20260430T103959-...md` and its refinement at `specs/20260430T114949-...md` are still the intended direction. If superseded, follow the newer spec for Cut #1.
 - [ ] **0.3** Confirm `apps/api/src/base-sync-room.ts:141-142` is the only `setWebSocketAutoResponse` call. If multiple sync rooms use different pairs, Cut #3 (the JSDoc) must enumerate them.
 
-### Phase 1: Cut #1 — execute the RPC split (per existing spec)
+### Phase 1: Cut #1: execute the RPC split (per existing spec)
 
 Defer to `specs/20260430T103959-split-attach-sync-into-transport-presence-rpc.md` Phase 1-3. Summary of what lands in this work:
 
@@ -223,7 +223,7 @@ Defer to `specs/20260430T103959-split-attach-sync-into-transport-presence-rpc.md
 - [ ] **1.5** Move RPC tests from `attach-sync.test.ts` to `attach-rpc.test.ts`.
 - [ ] **1.6** Update `attach-sync.ts` file-level JSDoc to remove the now-truthful "Peer RPC not included" line, since RPC is now genuinely a sibling primitive.
 
-### Phase 2: Cut #2 — remove SYNC_STATUS / hasLocalChanges
+### Phase 2: Cut #2: remove SYNC_STATUS / hasLocalChanges
 
 - [ ] **2.1** Remove `localVersion`, `ackedVersion`, `syncStatusTimer` from `attach-sync.ts`.
 - [ ] **2.2** Remove SYNC_STATUS encoding from `handleDocUpdate`.
@@ -233,7 +233,7 @@ Defer to `specs/20260430T103959-split-attach-sync-into-transport-presence-rpc.md
 - [ ] **2.6** Update `@epicenter/sync` to remove `MESSAGE_TYPE.SYNC_STATUS`, `encodeSyncStatus`, `decodeSyncStatus` (or mark deprecated and unexport).
 - [ ] **2.7** Update tests that exercise the version round-trip.
 
-### Phase 3: Doc #3 — JSDoc the ping/pong contract
+### Phase 3: Doc #3: JSDoc the ping/pong contract
 
 - [ ] **3.1** Add a header block to `createLivenessMonitor` (line 995) explaining:
   - The text `"ping"` is sent every `PING_INTERVAL_MS` (60s).
@@ -250,7 +250,7 @@ Defer to `specs/20260430T103959-split-attach-sync-into-transport-presence-rpc.md
 - [ ] **4.1** Typecheck `packages/workspace`, `apps/api`, `apps/whispering`, `apps/cli`, `apps/tab-manager`.
 - [ ] **4.2** Run `attach-sync.test.ts` and `attach-rpc.test.ts`.
 - [ ] **4.3** Manual smoke: open Whispering, edit a recording, observe sync status transitions in dev tools. Verify no `hasLocalChanges` references in UI.
-- [ ] **4.4** Manual smoke: idle a tab for 90s+ with the API in dev mode; confirm reconnect works after the liveness timeout. (Note: per `sync-client-simplification.md:22`, `setWebSocketAutoResponse` has known `workerd` bugs in local dev — deploy to a preview environment if local dev misbehaves.)
+- [ ] **4.4** Manual smoke: idle a tab for 90s+ with the API in dev mode; confirm reconnect works after the liveness timeout. (Note: per `sync-client-simplification.md:22`, `setWebSocketAutoResponse` has known `workerd` bugs in local dev: deploy to a preview environment if local dev misbehaves.)
 
 ## Edge cases
 
@@ -313,12 +313,12 @@ Defer to `specs/20260430T103959-split-attach-sync-into-transport-presence-rpc.md
 
 ## References
 
-- `packages/workspace/src/document/attach-sync.ts` — the file being trimmed
-- `apps/api/src/base-sync-room.ts:141` — the CF auto-response that makes the text ping load-bearing
-- `apps/api/src/sync-handlers.ts` — server-side SYNC_STATUS echo to remove
-- `packages/sync/src/index.ts` — `MESSAGE_TYPE.SYNC_STATUS`, `encodeSyncStatus`, `decodeSyncStatus` to remove or deprecate
-- `specs/20260430T103959-split-attach-sync-into-transport-presence-rpc.md` — Cut #1 reference spec
-- `specs/20260430T114949-peer-presence-rename-and-sync-split.md` — refinement of the split spec
-- `specs/sync-client-simplification.md` — prior implementation of Cut #2 in old `sync-client`
-- `specs/20260310T235239-sync-status-102.md` — original SYNC_STATUS introduction
-- y-websocket reference (`yjs/y-websocket/src/y-websocket.js`) — for comparison on liveness; note the comparison is misleading because we run on CF DOs, not Node
+- `packages/workspace/src/document/attach-sync.ts`: the file being trimmed
+- `apps/api/src/base-sync-room.ts:141`: the CF auto-response that makes the text ping load-bearing
+- `apps/api/src/sync-handlers.ts`: server-side SYNC_STATUS echo to remove
+- `packages/sync/src/index.ts`: `MESSAGE_TYPE.SYNC_STATUS`, `encodeSyncStatus`, `decodeSyncStatus` to remove or deprecate
+- `specs/20260430T103959-split-attach-sync-into-transport-presence-rpc.md`: Cut #1 reference spec
+- `specs/20260430T114949-peer-presence-rename-and-sync-split.md`: refinement of the split spec
+- `specs/sync-client-simplification.md`: prior implementation of Cut #2 in old `sync-client`
+- `specs/20260310T235239-sync-status-102.md`: original SYNC_STATUS introduction
+- y-websocket reference (`yjs/y-websocket/src/y-websocket.js`): for comparison on liveness; note the comparison is misleading because we run on CF DOs, not Node

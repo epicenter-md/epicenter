@@ -99,7 +99,7 @@ Used for things that genuinely only need identity (encryption keys, user id), wh
 
 ### Desired state
 
-`Session<T>` becomes a nullable payload — the shape itself is the discriminator:
+`Session<T>` becomes a nullable payload. The shape itself is the discriminator:
 
 ```ts
 type SessionPayload<T> = {
@@ -204,7 +204,7 @@ The asymmetric win is **refusing the three-state shape entirely at the `Session<
 
 | Decision | Class | Choice | Rationale |
 | --- | --- | --- | --- |
-| `Session<T>` shape | 2 coherence | Nullable: `SessionPayload<T> \| null`. No discriminant field; the shape itself is the discriminator. | Matches Better Auth upstream client SDK shape (`session` is `null \| { user, session, needsRefresh }`). Refuses the wrong-question trap permanently — no field to read incorrectly. One source of truth: the value's presence. |
+| `Session<T>` shape | 2 coherence | Nullable: `SessionPayload<T> \| null`. No discriminant field; the shape itself is the discriminator. | Matches Better Auth upstream client SDK shape (`session` is `null \| { user, session, needsRefresh }`). Refuses the wrong-question trap permanently: no field to read incorrectly. One source of truth: the value's presence. |
 | `Session<T>` payload field name | 2 coherence | Rename `signedIn` → `workspace` | After the reshape, the field is the workspace payload, not a "signed-in" sentinel. Honest naming. |
 | Credential freshness on `Session<T>` | 2 coherence | Not modeled. Consumers read `auth.state.status` directly. | The asymmetric win is `Session<T>` answering exactly one question. Adding `credentialsFresh` would re-introduce the second axis. The few legitimate consumers (account-popover, sign-in pages, sync indicator) already import `auth` for `startSignIn`. |
 | Disposal trigger | 1 evidence, 2 coherence | Dispose only on `signed-out` or different user. `reauth-required` is a no-op. | Better Auth and Yjs both treat refresh failure as recoverable; preserving local identity is the documented intent (auth skill, clean-break map success criterion). |
@@ -233,7 +233,7 @@ BEFORE
                        │
                        ▼ Session<T> mirrors three states
 ┌─────────────────────────────────────────────────────────┐
-│ Session<T> (BEFORE — wrong question)                    │
+│ Session<T> (BEFORE: wrong question)                    │
 │   | { status: 'signed-in';        signedIn: T }         │
 │   | { status: 'reauth-required';  identity }            │ <- no payload, type forces redirect
 │   | { status: 'signed-out' }                            │
@@ -252,7 +252,7 @@ AFTER
                        │
                        ▼ Session<T> projects identity-presence only
 ┌─────────────────────────────────────────────────────────┐
-│ Session<T> (AFTER — right question, one shape)          │
+│ Session<T> (AFTER: right question, one shape)          │
 │   = SessionPayload<T> | null                            │
 │                                                         │
 │   SessionPayload<T> = { identity, workspace: T }        │
@@ -348,7 +348,7 @@ Wave order per cohesive-clean-breaks: Build, Prove, Remove. No coexistence perio
 - [x] **1.1** Reshape `Session<T>` in `packages/svelte-utils/src/session.svelte.ts` to `SessionPayload<T> | null`. Export `SessionPayload<T> = { identity: WorkspaceIdentity; workspace: T }`.
 - [x] **1.2** Rename the internal `signedIn` state variable to `workspace` for honesty.
 - [x] **1.3** Update `reconcile` to gate on `state.status === 'signed-out'` (not `!== 'signed-in'`). Same-user reauth becomes the existing no-op branch naturally.
-- [x] **1.4** Update the `current` getter to project the new shape: return `null` when `state.status === 'signed-out'`, otherwise return `{ identity, workspace }`. The getter never throws under invariant — if identity is present but workspace was not built, the existing `unreachable` error stays as a defensive check.
+- [x] **1.4** Update the `current` getter to project the new shape: return `null` when `state.status === 'signed-out'`, otherwise return `{ identity, workspace }`. The getter never throws under invariant: if identity is present but workspace was not built, the existing `unreachable` error stays as a defensive check.
 - [x] **1.5** Update `InferSignedIn<TSession>` → `InferWorkspace<TSession>`. The conditional infers from the non-null branch.
 - [x] **1.6** Update `SignedInBase` → `WorkspaceBase`. Constraint is unchanged: `Disposable & { userId: string }`.
 
@@ -371,7 +371,7 @@ For each of `fuji`, `honeycrisp`, `opensidian`, `zhongwen`, `tab-manager`:
 ### Phase 4: Prove
 
 - [x] **4.1** Typecheck across the monorepo (`bun run typecheck` from root, or per-app filtered).
-- [x] **4.2** Run existing auth tests (`packages/auth/src/auth-factories.test.ts`) — they reference `reauth-required` directly and should pass unchanged.
+- [x] **4.2** Run existing auth tests (`packages/auth/src/auth-factories.test.ts`): they reference `reauth-required` directly and should pass unchanged.
 - [x] **4.3** Add a test in `packages/svelte-utils` (or wherever `createSession` is tested) proving: `signed-in → reauth-required → signed-in` preserves the same workspace instance.
 - [x] **4.4** Add a test proving: `signed-in (user A) → signed-in (user B)` disposes and reloads.
 - [x] **4.5** Manual smoke per app: open the app, force a 401 (revoke refresh token or expire it on the server), verify the workspace stays mounted and the sync indicator (where present) shows the expired state.
@@ -380,9 +380,9 @@ For each of `fuji`, `honeycrisp`, `opensidian`, `zhongwen`, `tab-manager`:
 ### Phase 5: Remove
 
 - [x] **5.1** Grep monorepo for `signedIn` references that should be `workspace` after Phase 1. Update.
-- [x] **5.2** Grep for `requireSignedIn` — should be zero hits.
-- [x] **5.3** Grep for `getSignedInSession` — should be zero hits.
-- [x] **5.4** Grep for `current.status === 'signed-in'` and `current.status !== 'signed-in'` in app code — should be zero hits (only auth-state direct reads remain, which is correct for sign-in pages and account-popover).
+- [x] **5.2** Grep for `requireSignedIn`: should be zero hits.
+- [x] **5.3** Grep for `getSignedInSession`: should be zero hits.
+- [x] **5.4** Grep for `current.status === 'signed-in'` and `current.status !== 'signed-in'` in app code: should be zero hits (only auth-state direct reads remain, which is correct for sign-in pages and account-popover).
 - [x] **5.5** Delete `specs/20260512T111335-post-oauth-audit-remediation.md` Phase 3 (or mark it superseded inline) so future readers do not implement both.
 
 ### Phase 6: Defer until a triggering need
@@ -400,7 +400,7 @@ For each of `fuji`, `honeycrisp`, `opensidian`, `zhongwen`, `tab-manager`:
 4. Builds workspace from `state.identity` (encryption keys, user id all present).
 5. Layout renders the workspace immediately (`current` is truthy).
 6. Sync indicator (reading `auth.state.status` directly) shows "session expired."
-7. User clicks "Reconnect," `startSignIn` runs, success transitions auth to `signed-in`, sync resumes. `current` remains the same payload throughout — no remount.
+7. User clicks "Reconnect," `startSignIn` runs, success transitions auth to `signed-in`, sync resumes. `current` remains the same payload throughout: no remount.
 
 **Risk**: workspace construction touches the network synchronously at boot. Phase 4.5 smoke test confirms this is not the case.
 
@@ -410,7 +410,7 @@ For each of `fuji`, `honeycrisp`, `opensidian`, `zhongwen`, `tab-manager`:
 2. Next `auth.fetch` triggers refresh attempt; refresh fails.
 3. `auth.state` transitions to `reauth-required`.
 4. `reconcile` runs (`onStateChange` subscription); same-user branch matches; no disposal.
-5. `session.current` is unchanged — same `SessionPayload<T>` object, same workspace instance.
+5. `session.current` is unchanged: same `SessionPayload<T>` object, same workspace instance.
 6. Sync indicator reads `auth.state.status === 'reauth-required'` and updates its display.
 7. Workspace stays mounted. Local edits continue working.
 8. Sync push/pull attempts fail until re-auth.
@@ -526,7 +526,7 @@ Do not collapse Better Auth's session machinery. The wrap is correct; the
 Do not add a global ReauthBanner component. Wrong surface; sync indicator
   owns this.
 Do not change apps/api server routes or middleware. Server-side scope checks,
-  /workspace-identity, /docs vs /documents drift — all owned by other specs.
+  /workspace-identity, /docs vs /documents drift: all owned by other specs.
 Do not introduce a shared SignInCard component. Sibling work if duplicated
   fallbacks become expensive.
 Do not add per-operation 401 toasts in this spec. Phase 6 defers them.
@@ -536,17 +536,17 @@ Do not touch encryption derivation, keyring attachment, or store crypto
 
 ## References
 
-- `packages/svelte-utils/src/session.svelte.ts` — factory being reshaped
-- `packages/auth/src/auth-contract.ts` — AuthState type (unchanged)
-- `packages/auth/src/require-signed-in.ts` — file being renamed
-- `packages/auth/src/index.ts`, `node.ts` — export points to update
-- `apps/fuji/src/lib/session.svelte.ts` — exemplar of per-app helper to rename
-- `apps/zhongwen/src/routes/(signed-in)/+layout.svelte` — exemplar of layout gate
-- `apps/tab-manager/src/entrypoints/sidepanel/App.svelte` — extension equivalent
-- `packages/svelte-utils/src/account-popover/account-popover.svelte` — legitimate credential-freshness consumer (unchanged)
-- `specs/20260512T111335-post-oauth-audit-remediation.md` — Phase 3 superseded
-- `specs/20260512T134603-auth-spec-stack-clean-break-map.md` — success criterion this spec makes true
-- `.claude/skills/cohesive-clean-breaks/SKILL.md` — clean-break framework applied
-- `.claude/skills/auth/SKILL.md` — documents the contract this spec aligns code to
+- `packages/svelte-utils/src/session.svelte.ts`: factory being reshaped
+- `packages/auth/src/auth-contract.ts`: AuthState type (unchanged)
+- `packages/auth/src/require-signed-in.ts`: file being renamed
+- `packages/auth/src/index.ts`, `node.ts`: export points to update
+- `apps/fuji/src/lib/session.svelte.ts`: exemplar of per-app helper to rename
+- `apps/zhongwen/src/routes/(signed-in)/+layout.svelte`: exemplar of layout gate
+- `apps/tab-manager/src/entrypoints/sidepanel/App.svelte`: extension equivalent
+- `packages/svelte-utils/src/account-popover/account-popover.svelte`: legitimate credential-freshness consumer (unchanged)
+- `specs/20260512T111335-post-oauth-audit-remediation.md`: Phase 3 superseded
+- `specs/20260512T134603-auth-spec-stack-clean-break-map.md`: success criterion this spec makes true
+- `.claude/skills/cohesive-clean-breaks/SKILL.md`: clean-break framework applied
+- `.claude/skills/auth/SKILL.md`: documents the contract this spec aligns code to
 - DeepWiki query: `better-auth/better-auth` two-axis session state (2026-05-12)
 - DeepWiki query: `bitwarden/server` two-axis offline-first auth (2026-05-12)

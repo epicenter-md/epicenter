@@ -49,7 +49,7 @@ describe('attachFileSystemIndex', () => {
 	// BASIC INDEX BUILDING
 	// ═══════════════════════════════════════════════════════════════════════
 
-	test('empty table — no paths or children', () => {
+	test('empty table: no paths or children', () => {
 		const { files, ydoc } = setup();
 		const index = attachFileSystemIndex(ydoc, files);
 
@@ -178,7 +178,7 @@ describe('attachFileSystemIndex', () => {
 	// REACTIVE UPDATES
 	// ═══════════════════════════════════════════════════════════════════════
 
-	test('reactive — adding a file updates index', () => {
+	test('reactive: adding a file updates index', () => {
 		const { files, ydoc } = setup();
 		const index = attachFileSystemIndex(ydoc, files);
 
@@ -191,7 +191,7 @@ describe('attachFileSystemIndex', () => {
 		ydoc.destroy();
 	});
 
-	test('reactive — trashing a file removes it', () => {
+	test('reactive: trashing a file removes it', () => {
 		const { files, ydoc } = setup();
 		files.set(makeRow('f1', 'hello.txt'));
 		const index = attachFileSystemIndex(ydoc, files);
@@ -205,7 +205,7 @@ describe('attachFileSystemIndex', () => {
 		ydoc.destroy();
 	});
 
-	test('reactive — rename updates path', () => {
+	test('reactive: rename updates path', () => {
 		const { files, ydoc } = setup();
 		files.set(makeRow('f1', 'old.txt'));
 		const index = attachFileSystemIndex(ydoc, files);
@@ -218,7 +218,7 @@ describe('attachFileSystemIndex', () => {
 		ydoc.destroy();
 	});
 
-	test('reactive — move file to different parent', () => {
+	test('reactive: move file to different parent', () => {
 		const { files, ydoc } = setup();
 		files.set(makeRow('d1', 'src', null, 'folder'));
 		files.set(makeRow('d2', 'lib', null, 'folder'));
@@ -237,7 +237,7 @@ describe('attachFileSystemIndex', () => {
 		ydoc.destroy();
 	});
 
-	test('reactive — move file to root', () => {
+	test('reactive: move file to root', () => {
 		const { files, ydoc } = setup();
 		files.set(makeRow('d1', 'folder', null, 'folder'));
 		files.set(makeRow('f1', 'file.txt', 'd1'));
@@ -253,7 +253,7 @@ describe('attachFileSystemIndex', () => {
 		ydoc.destroy();
 	});
 
-	test('reactive — deleting a file removes it', () => {
+	test('reactive: deleting a file removes it', () => {
 		const { files, ydoc } = setup();
 		files.set(makeRow('f1', 'doomed.txt'));
 		const index = attachFileSystemIndex(ydoc, files);
@@ -266,7 +266,7 @@ describe('attachFileSystemIndex', () => {
 		ydoc.destroy();
 	});
 
-	test('reactive — renaming a parent folder updates children paths', () => {
+	test('reactive: renaming a parent folder updates children paths', () => {
 		const { files, ydoc } = setup();
 		files.set(makeRow('d1', 'old-name', null, 'folder'));
 		files.set(makeRow('f1', 'child.txt', 'd1'));
@@ -286,7 +286,7 @@ describe('attachFileSystemIndex', () => {
 	// CIRCULAR REFERENCE DETECTION
 	// ═══════════════════════════════════════════════════════════════════════
 
-	test('circular ref — self-referencing file is fixed', () => {
+	test('circular ref: self-referencing file is fixed', () => {
 		const { files, ydoc } = setup();
 		files.set(makeRow('f1', 'self-loop.txt', 'f1'));
 		const index = attachFileSystemIndex(ydoc, files);
@@ -297,9 +297,9 @@ describe('attachFileSystemIndex', () => {
 		ydoc.destroy();
 	});
 
-	test('circular ref — two-node cycle (A→B→A) moves latest to root', () => {
+	test('circular ref: two-node cycle (A→B→A) moves latest to root', () => {
 		const { files, ydoc } = setup();
-		// A.parentId = B, B.parentId = A — cycle
+		// A.parentId = B, B.parentId = A: cycle
 		// B has later updatedAt so B gets moved to root
 		// After fix: B.parentId = null, A.parentId = B → tree is root→B→A
 		files.set({ ...makeRow('a', 'alpha', 'b', 'folder'), updatedAt: 1000 });
@@ -315,7 +315,7 @@ describe('attachFileSystemIndex', () => {
 		ydoc.destroy();
 	});
 
-	test('circular ref — three-node cycle (A→B→C→A) moves latest to root', () => {
+	test('circular ref: three-node cycle (A→B→C→A) moves latest to root', () => {
 		const { files, ydoc } = setup();
 		// A.parentId = C, B.parentId = A, C.parentId = B → cycle
 		// C has latest updatedAt → C moved to root
@@ -334,7 +334,7 @@ describe('attachFileSystemIndex', () => {
 		ydoc.destroy();
 	});
 
-	test('circular ref — cycle does not affect non-cycle siblings', () => {
+	test('circular ref: cycle does not affect non-cycle siblings', () => {
 		const { files, ydoc } = setup();
 		files.set(makeRow('clean', 'clean.txt'));
 		// Cycle: x→y→x
@@ -352,7 +352,7 @@ describe('attachFileSystemIndex', () => {
 	// ORPHAN DETECTION
 	// ═══════════════════════════════════════════════════════════════════════
 
-	test('orphan — parent does not exist, file moved to root', () => {
+	test('orphan: parent does not exist, file moved to root', () => {
 		const { files, ydoc } = setup();
 		files.set(makeRow('f1', 'orphan.txt', 'nonexistent'));
 		const index = attachFileSystemIndex(ydoc, files);
@@ -363,7 +363,7 @@ describe('attachFileSystemIndex', () => {
 		ydoc.destroy();
 	});
 
-	test('orphan — parent is trashed, child moved to root', () => {
+	test('orphan: parent is trashed, child moved to root', () => {
 		const { files, ydoc } = setup();
 		files.set({
 			...makeRow('d1', 'trashed-folder', null, 'folder'),
@@ -378,7 +378,7 @@ describe('attachFileSystemIndex', () => {
 		ydoc.destroy();
 	});
 
-	test('orphan — multiple orphans with same missing parent', () => {
+	test('orphan: multiple orphans with same missing parent', () => {
 		const { files, ydoc } = setup();
 		files.set(makeRow('f1', 'orphan-a.txt', 'gone'));
 		files.set(makeRow('f2', 'orphan-b.txt', 'gone'));
@@ -396,7 +396,7 @@ describe('attachFileSystemIndex', () => {
 		ydoc.destroy();
 	});
 
-	test('orphan — chain (grandparent missing) only fixes the direct orphan', () => {
+	test('orphan: chain (grandparent missing) only fixes the direct orphan', () => {
 		const { files, ydoc } = setup();
 		files.set(makeRow('d1', 'lost-folder', 'vanished', 'folder'));
 		files.set(makeRow('f1', 'deep-orphan.txt', 'd1'));
@@ -416,7 +416,7 @@ describe('attachFileSystemIndex', () => {
 	// CRDT NAME DISAMBIGUATION
 	// ═══════════════════════════════════════════════════════════════════════
 
-	test('disambiguation — two files with same name', () => {
+	test('disambiguation: two files with same name', () => {
 		const { files, ydoc } = setup();
 		files.set({ ...makeRow('a', 'foo.txt'), createdAt: 1000, updatedAt: 1000 });
 		files.set({ ...makeRow('b', 'foo.txt'), createdAt: 2000, updatedAt: 2000 });
@@ -428,7 +428,7 @@ describe('attachFileSystemIndex', () => {
 		ydoc.destroy();
 	});
 
-	test('disambiguation — three files with same name', () => {
+	test('disambiguation: three files with same name', () => {
 		const { files, ydoc } = setup();
 		files.set({ ...makeRow('a', 'doc.md'), createdAt: 1000 });
 		files.set({ ...makeRow('b', 'doc.md'), createdAt: 2000 });
@@ -442,7 +442,7 @@ describe('attachFileSystemIndex', () => {
 		ydoc.destroy();
 	});
 
-	test('disambiguation — files without extensions', () => {
+	test('disambiguation: files without extensions', () => {
 		const { files, ydoc } = setup();
 		files.set({ ...makeRow('a', 'Makefile'), createdAt: 1000 });
 		files.set({ ...makeRow('b', 'Makefile'), createdAt: 2000 });
@@ -454,7 +454,7 @@ describe('attachFileSystemIndex', () => {
 		ydoc.destroy();
 	});
 
-	test('disambiguation — duplicate folder names propagate to children paths', () => {
+	test('disambiguation: duplicate folder names propagate to children paths', () => {
 		const { files, ydoc } = setup();
 		files.set({ ...makeRow('d1', 'src', null, 'folder'), createdAt: 1000 });
 		files.set({ ...makeRow('d2', 'src', null, 'folder'), createdAt: 2000 });
@@ -470,7 +470,7 @@ describe('attachFileSystemIndex', () => {
 		ydoc.destroy();
 	});
 
-	test('disambiguation — same name in different parents is not disambiguated', () => {
+	test('disambiguation: same name in different parents is not disambiguated', () => {
 		const { files, ydoc } = setup();
 		files.set(makeRow('d1', 'a', null, 'folder'));
 		files.set(makeRow('d2', 'b', null, 'folder'));
@@ -491,7 +491,7 @@ describe('attachFileSystemIndex', () => {
 	test('path exceeding MAX_DEPTH (50) is excluded', () => {
 		const { files, ydoc } = setup();
 
-		// Build 51 folders deep — exceeds MAX_DEPTH
+		// Build 51 folders deep: exceeds MAX_DEPTH
 		let parentId: string | null = null;
 		for (let i = 0; i < 51; i++) {
 			const id = `d${i}`;
@@ -513,7 +513,7 @@ describe('attachFileSystemIndex', () => {
 	test('path at depth 49 (under MAX_DEPTH) is included', () => {
 		const { files, ydoc } = setup();
 
-		// 48 folders + 1 file = 49 path parts — safely under MAX_DEPTH
+		// 48 folders + 1 file = 49 path parts: safely under MAX_DEPTH
 		let parentId: string | null = null;
 		for (let i = 0; i < 48; i++) {
 			const id = `d${i}`;

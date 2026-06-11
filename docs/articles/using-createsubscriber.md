@@ -1,6 +1,6 @@
 # Using `createSubscriber`
 
-If something already knows how to notify you when it changes—`addEventListener`, `.observe()`, `.subscribe()`, `.on('change')`—then `createSubscriber` makes it reactive in Svelte with almost no code. You don't need `$state`. You don't need a shadow copy. You just need a getter that reads from the source and a bridge that tells Svelte when to re-read it.
+If something already knows how to notify you when it changes, such as `addEventListener`, `.observe()`, `.subscribe()`, or `.on('change')`, then `createSubscriber` makes it reactive in Svelte with almost no code. You don't need `$state`. You don't need a shadow copy. You just need a getter that reads from the source and a bridge that tells Svelte when to re-read it.
 
 ## The Shape of the Problem
 
@@ -265,7 +265,7 @@ Same shape as `networkStatus`. The browser owns the state, the event tells Svelt
 
 ## Wrapping an EventSource (Server-Sent Events)
 
-An `EventSource` opens an HTTP connection that streams events from a server. The connection is expensive—you don't want it open if nobody's reading the data. This is where `createSubscriber`'s lazy lifecycle matters most:
+An `EventSource` opens an HTTP connection that streams events from a server. The connection is expensive. You don't want it open if nobody's reading the data. This is where `createSubscriber`'s lazy lifecycle matters most:
 
 ```typescript
 // sse.svelte.ts
@@ -336,7 +336,7 @@ export function fromObservable<T>(observable: Observable<T>, initial: T) {
 <p>Seconds: {elapsed.current}</p>
 ```
 
-The RxJS subscription starts when a component reads `.current` and unsubscribes when no consumers remain. This works for any observable—WebSocket streams, HTTP polling, state management libraries that expose observables.
+The RxJS subscription starts when a component reads `.current` and unsubscribes when no consumers remain. This works for any observable. WebSocket streams, HTTP polling, state management libraries that expose observables.
 
 ## The Getter Is Everything
 
@@ -349,7 +349,7 @@ get value() {
 }
 ```
 
-If you forget `subscribe()`, Svelte reads the value once and never again. If you put `subscribe()` outside the getter (in the constructor, in a method), it runs outside a reactive context and silently does nothing—`effect_tracking()` returns `false`, so `subscribe()` becomes a no-op.
+If you forget `subscribe()`, Svelte reads the value once and never again. If you put `subscribe()` outside the getter (in the constructor, in a method), it runs outside a reactive context and silently does nothing: `effect_tracking()` returns `false`, so `subscribe()` becomes a no-op.
 
 The getter runs during render, which is a reactive context. That's why it works there and nowhere else.
 
@@ -399,7 +399,7 @@ const subscribe = createSubscriber((update) => {
 });
 ```
 
-`createSubscriber` manages the lifecycle for you—`start` runs when consumers appear, cleanup runs when they disappear. But it can only call your cleanup if you provide one.
+`createSubscriber` manages the lifecycle for you: `start` runs when consumers appear, cleanup runs when they disappear. But it can only call your cleanup if you provide one.
 
 ## Summary
 

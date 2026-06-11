@@ -24,7 +24,7 @@ This breaks in three ways for real-world data:
 
 1. **Batched files are invisible.** Reddit splits large CSVs (`post_votes_1.csv`, `post_votes_2.csv`) when they exceed ~100K rows. The parser looks for exactly `post_votes.csv` and silently returns zero rows for the split files. A power user with 200K upvotes imports zero votes with no warning.
 
-2. **One bad row kills everything.** `schema.assert()` throws on validation failure. It's called inside `.map()` with no try/catch. A single malformed row in a 50K-row CSV aborts the entire import—all 24 tables, the whole `workspace.batch()` transaction.
+2. **One bad row kills everything.** `schema.assert()` throws on validation failure. It's called inside `.map()` with no try/catch. A single malformed row in a 50K-row CSV aborts the entire import. All 24 tables, the whole `workspace.batch()` transaction.
 
 3. **BOM corrupts the first column.** UTF-8 BOM (`\xEF\xBB\xBF`) prefixed to the first CSV file makes the first header column `\xEF\xBB\xBFid` instead of `id`. Every row gets a missing `id` field, schema validation fails, and issue #2 cascades.
 
@@ -135,7 +135,7 @@ index.ts:                                  index.ts:
 ### Phase 1: Batched File Support (parse.ts)
 
 - [ ] **1.1** Replace `.find()` with a function that collects ALL matching ZIP entries for a given CSV name. Match both `{name}.csv` and `{name}_{n}.csv` patterns (and their subdirectory variants `*/{name}.csv`, `*/{name}_{n}.csv`).
-- [ ] **1.2** Concatenate matched CSV files. Each file has its own header row—parse each independently with `CSV.parse()`, then merge the resulting row arrays. (Don't naive-concatenate raw text; headers would appear as data rows.)
+- [ ] **1.2** Concatenate matched CSV files. Each file has its own header row. Parse each independently with `CSV.parse()`, then merge the resulting row arrays. (Don't naive-concatenate raw text; headers would appear as data rows.)
 - [ ] **1.3** Add BOM stripping after `TextDecoder().decode()`: `text.replace(/^\uFEFF/, '')`. Apply to every decoded CSV.
 
 ### Phase 2: Row-Level Error Recovery (index.ts)
@@ -161,13 +161,13 @@ index.ts:                                  index.ts:
 
 ### Phase 3: Composite ID Separator (csv-schemas.ts)
 
-- [ ] **3.1** Change `.join(':')` to `.join('|')` in the three composite ID schemas: `pollVotes`, `gildedContent`, `goldReceived`. This is a breaking change for existing data—if any workspace already has imported data with `:` IDs, re-importing will create duplicates rather than overwriting. Document this in the README.
+- [ ] **3.1** Change `.join(':')` to `.join('|')` in the three composite ID schemas: `pollVotes`, `gildedContent`, `goldReceived`. This is a breaking change for existing data. If any workspace already has imported data with `:` IDs, re-importing will create duplicates rather than overwriting. Document this in the README.
 
 ### Phase 4: Documentation (README.md)
 
 - [ ] **4.1** Fix the excluded files count from "16" to match the actual list (14).
 - [ ] **4.2** Add a note about batched file support in the Architecture section.
-- [ ] **4.3** Add a note that one bad row doesn't abort the import—errors are collected and reported.
+- [ ] **4.3** Add a note that one bad row doesn't abort the import. Errors are collected and reported.
 
 ### Phase 5: Tests
 
@@ -191,7 +191,7 @@ If Reddit ever changes column order between split files, the CSV parser handles 
 1. ZIP contains `comments_1.csv` and `comments_3.csv` (no `_2`)
 2. The glob pattern collects both
 3. Both are parsed and concatenated
-4. No issue—we don't care about numbering continuity
+4. No issue. We don't care about numbering continuity
 
 ### Unsplit File Coexists With Split Files
 
@@ -251,10 +251,10 @@ If Reddit ever changes column order between split files, the CSV parser handles 
 
 ## References
 
-- `packages/workspace/src/ingest/reddit/parse.ts` — ZIP parsing, file matching (Phase 1)
-- `packages/workspace/src/ingest/reddit/csv-schemas.ts` — Arktype schemas, composite IDs (Phase 3)
-- `packages/workspace/src/ingest/reddit/index.ts` — Import orchestration, error handling (Phase 2)
-- `packages/workspace/src/ingest/reddit/README.md` — Documentation (Phase 4)
-- `packages/workspace/src/ingest/utils/csv.ts` — CSV parser (no changes needed, but referenced for BOM context)
-- `packages/workspace/src/ingest/reddit/workspace.ts` — Workspace definition (no changes needed)
-- `packages/workspace/src/ingest/reddit/transforms.ts` — Transform utilities (no changes needed)
+- `packages/workspace/src/ingest/reddit/parse.ts`: ZIP parsing, file matching (Phase 1)
+- `packages/workspace/src/ingest/reddit/csv-schemas.ts`: Arktype schemas, composite IDs (Phase 3)
+- `packages/workspace/src/ingest/reddit/index.ts`: Import orchestration, error handling (Phase 2)
+- `packages/workspace/src/ingest/reddit/README.md`: Documentation (Phase 4)
+- `packages/workspace/src/ingest/utils/csv.ts`: CSV parser (no changes needed, but referenced for BOM context)
+- `packages/workspace/src/ingest/reddit/workspace.ts`: Workspace definition (no changes needed)
+- `packages/workspace/src/ingest/reddit/transforms.ts`: Transform utilities (no changes needed)

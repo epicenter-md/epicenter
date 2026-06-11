@@ -1,20 +1,20 @@
 # Positioning
 
-Canonical messaging for Epicenter. Every public surface—README, landing page, package descriptions, social posts—should derive from this document.
+Canonical messaging for Epicenter. Every public surface should derive from this document: README, landing page, package descriptions, social posts.
 
 ## One-Liner
 
 **Local-first apps, one shared workspace.** Your notes, transcripts, and chat histories live in one folder of plain text and SQLite. Every app reads and writes to the same place.
 
-For developers: a CRDT-powered workspace engine that materializes to SQLite and markdown, with typed schemas and multi-device sync. Not another note app—the infrastructure that apps share.
+For developers: a CRDT-powered workspace engine that materializes to SQLite and markdown, with typed schemas and multi-device sync. Not another note app: the infrastructure that apps share.
 
 *"PKM substrate" is accurate but too niche for a tagline. Use it in developer-facing contexts (blog posts, technical talks) but not in the README or landing page hero.*
 
 ## The Hook
 
-Most tools store your data in their own silo. Epicenter stores it in one folder on your machine—plain text and SQLite—and every app reads from the same place. Your transcripts inform your notes. Your notes guide your AI. Nothing gets copy-pasted between apps because there's nothing to copy-paste.
+Most tools store your data in their own silo. Epicenter stores it in one folder on your machine: plain text and SQLite. Every app reads from the same place. Your transcripts inform your notes. Your notes guide your AI. Nothing gets copy-pasted between apps because there's nothing to copy-paste.
 
-Under the hood, Yjs CRDTs are the single source of truth. They materialize *down* to SQLite (for fast queries) and markdown (for human-readable files). Sync happens over the Yjs protocol. The server is a relay, not an authority—it never sees your content if you encrypt it.
+Under the hood, Yjs CRDTs are the single source of truth. They materialize *down* to SQLite (for fast queries) and markdown (for human-readable files). Sync happens over the Yjs protocol. The server is a relay, not an authority. It never sees your content if you encrypt it.
 
 ## What Epicenter Is
 
@@ -53,7 +53,7 @@ Every claim we make publicly should be provable by inspecting the repo:
 ### vs Anytype
 > Anytype is a purpose-built encrypted space ecosystem. Epicenter is the Yjs-backed substrate that lets many apps share the same schema and data.
 
-- **Win**: Standard CRDT stack (Yjs—widely adopted, battle-tested) vs custom protocol. Developer-facing API with typed schemas, not just an end-user app.
+- **Win**: Standard CRDT stack (Yjs, widely adopted and battle-tested) vs custom protocol. Developer-facing API with typed schemas, not just an end-user app.
 - **Lose**: Anytype's product is more complete today. Their P2P sync story is more mature.
 
 ### vs Logseq
@@ -63,7 +63,7 @@ Every claim we make publicly should be provable by inspecting the repo:
 - **Lose**: Logseq's block/journal UX is more native. Larger community.
 
 ### vs Standard Notes
-> Standard Notes secures your notes. Epicenter secures a whole local-first workspace that multiple apps share—with CRDTs, schemas, and materialized exports.
+> Standard Notes secures your notes. Epicenter secures a whole local-first workspace that multiple apps share, with CRDTs, schemas, and materialized exports.
 
 - **Win**: Platform, not just "notes." Structured data with schemas. Materialized to files you can inspect.
 - **Lose**: Standard Notes' encryption UX is simpler to communicate. They've earned trust over years.
@@ -77,7 +77,7 @@ Every claim we make publicly should be provable by inspecting the repo:
 ### vs Karpathy's "Second Brain" System
 > Karpathy showed the architecture. Epicenter is the runtime.
 
-- **Win**: CRDT sync across devices, typed schemas, encryption, CLI automation—everything raw folders can't do.
+- **Win**: CRDT sync across devices, typed schemas, encryption, CLI automation: everything raw folders can't do.
 - **Lose**: Karpathy's system wins on simplicity. A folder of markdown files needs zero infrastructure.
 
 ### vs Jazz
@@ -91,7 +91,7 @@ The two stacks converged from opposite premises: typed tables, query subscriptio
 ## Headlines and Hooks
 
 ### Hacker News
-1. "A local-first PKM substrate—CRDT-powered tables that materialize to SQLite and markdown"
+1. "A local-first PKM substrate: CRDT-powered tables that materialize to SQLite and markdown"
 2. "Stop arguing about apps. Own a portable workspace that multiple tools share"
 3. "CRDTs + plain files: offline-first notes without sync nightmares"
 
@@ -101,7 +101,7 @@ The two stacks converged from opposite premises: typed tables, query subscriptio
 3. "Notion stores knowledge in the cloud. Epicenter stores it in your folder"
 
 ### Karpathy Angle (strongest entry point)
-Karpathy's "second brain" post (41K bookmarks) describes: three folders of .md files + a schema file (CLAUDE.md) + AI organizes everything. Epicenter is the infrastructure version of that system—same philosophy (local files, AI organizes, no cloud lock-in), but with real sync, real schemas, real encryption, and a CLI that makes "compile the wiki" a single command.
+Karpathy's "second brain" post (41K bookmarks) describes: three folders of .md files + a schema file (CLAUDE.md) + AI organizes everything. Epicenter is the infrastructure version of that system, with the same philosophy (local files, AI organizes, no cloud lock-in), but with real sync, real schemas, real encryption, and a CLI that makes "compile the wiki" a single command.
 
 ## Keywords
 
@@ -109,7 +109,7 @@ Karpathy's "second brain" post (41K bookmarks) describes: three folders of .md f
 `local-first`, `CRDT`, `Yjs`, `offline-first`, `own your data`, `conflict-free sync`, `personal knowledge base`, `PKM`, `second brain`, `plain text`, `SQLite`, `markdown`, `self-hosted`, `open source`, `end-to-end encryption`, `multi-device sync`, `materialize`, `workspace`
 
 ### Avoid These
-`AI-native`, `agentic`, `next-gen`, `revolutionary`, `redefine`, `game changer`, `Web3`, `metaverse`, buzzword-stacking ("CRDT-powered AI-first encrypted next-gen offline-first workspace"—say less, prove more)
+`AI-native`, `agentic`, `next-gen`, `revolutionary`, `redefine`, `game changer`, `Web3`, `metaverse`, buzzword-stacking ("CRDT-powered AI-first encrypted next-gen offline-first workspace": say less, prove more)
 
 ## Package Descriptions
 

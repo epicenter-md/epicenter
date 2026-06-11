@@ -34,7 +34,7 @@ The filesystem module already has its own export path in package.json:
 
 This creates problems:
 
-1. **Dependency bloat**: `@epicenter/workspace` ships `just-bash`, `prosemirror-markdown`, `prosemirror-model`, `prosemirror-schema-basic`, and `y-prosemirror` — all used ONLY by the filesystem module. Anyone importing `@epicenter/workspace/static` for table definitions pays the install cost of these unrelated deps.
+1. **Dependency bloat**: `@epicenter/workspace` ships `just-bash`, `prosemirror-markdown`, `prosemirror-model`, `prosemirror-schema-basic`, and `y-prosemirror`: all used ONLY by the filesystem module. Anyone importing `@epicenter/workspace/static` for table definitions pays the install cost of these unrelated deps.
 2. **Conceptual confusion**: The filesystem is a consumer of `@epicenter/workspace` (it uses `defineTable`, `TableHelper`, `Lifecycle`), not a primitive. It sits at a higher abstraction level but lives inside the primitives package.
 3. **Future coupling risk**: As the filesystem grows, its dependencies will continue to inflate the core package.
 
@@ -42,7 +42,7 @@ This creates problems:
 
 ```
 packages/
-├── epicenter/          # @epicenter/workspace — workspace primitives only
+├── epicenter/          # @epicenter/workspace: workspace primitives only
 │   └── src/
 │       ├── shared/
 │       ├── static/
@@ -50,7 +50,7 @@ packages/
 │       ├── extensions/
 │       ├── server/
 │       └── cli/
-└── filesystem/         # @epicenter/filesystem — virtual filesystem layer
+└── filesystem/         # @epicenter/filesystem: virtual filesystem layer
     └── src/
         ├── yjs-file-system.ts
         ├── file-tree.ts
@@ -86,7 +86,7 @@ Every import relationship from the filesystem module was traced to determine the
 | `defineExports`, `Lifecycle` | `shared/lifecycle.ts`       | Value + Type | `content-doc-store.ts`                                         |
 | `Guid`, `generateGuid`       | `shared/id.ts`              | Value + Type | `types.ts`                                                     |
 
-**Key finding**: The interface surface is small — 4 type imports and 3 value imports. All are stable, public-API-level symbols.
+**Key finding**: The interface surface is small: 4 type imports and 3 value imports. All are stable, public-API-level symbols.
 
 #### Filesystem → External dependencies (unique to filesystem):
 
@@ -207,33 +207,33 @@ These will come transitively through the `@epicenter/workspace` dependency.
 - [x] **1.2** Write `package.json` with correct name, dependencies, and exports:
   ```json
   {
-  	"name": "@epicenter/filesystem",
-  	"version": "0.0.1",
-  	"main": "./src/index.ts",
-  	"types": "./src/index.ts",
-  	"exports": {
-  		".": "./src/index.ts"
-  	},
-  	"license": "AGPL-3.0",
-  	"scripts": {
-  		"lint": "eslint .",
-  		"typecheck": "tsc --noEmit"
-  	},
-  	"dependencies": {
-  		"@epicenter/workspace": "workspace:*",
-  		"arktype": "catalog:",
-  		"just-bash": "^2.9.7",
-  		"prosemirror-markdown": "^1.13.4",
-  		"prosemirror-model": "^1.25.4",
-  		"prosemirror-schema-basic": "^1.2.4",
-  		"y-prosemirror": "^1.3.7",
-  		"wellcrafted": "catalog:",
-  		"yjs": "^13.6.27"
-  	},
-  	"devDependencies": {
-  		"@types/bun": "catalog:",
-  		"typescript": "catalog:"
-  	}
+	"name": "@epicenter/filesystem",
+	"version": "0.0.1",
+	"main": "./src/index.ts",
+	"types": "./src/index.ts",
+	"exports": {
+		".": "./src/index.ts"
+	},
+	"license": "AGPL-3.0",
+	"scripts": {
+		"lint": "eslint .",
+		"typecheck": "tsc --noEmit"
+	},
+	"dependencies": {
+		"@epicenter/workspace": "workspace:*",
+		"arktype": "catalog:",
+		"just-bash": "^2.9.7",
+		"prosemirror-markdown": "^1.13.4",
+		"prosemirror-model": "^1.25.4",
+		"prosemirror-schema-basic": "^1.2.4",
+		"y-prosemirror": "^1.3.7",
+		"wellcrafted": "catalog:",
+		"yjs": "^13.6.27"
+	},
+	"devDependencies": {
+		"@types/bun": "catalog:",
+		"typescript": "catalog:"
+	}
   }
   ```
 - [x] **1.3** Write `tsconfig.json` (follow existing package tsconfig patterns in the monorepo)
@@ -256,7 +256,7 @@ These will come transitively through the `@epicenter/workspace` dependency.
   - `ProviderFactory`, `ProviderContext` exported from `@epicenter/workspace/dynamic`
   - `defineExports`, `Lifecycle` exported from `@epicenter/workspace`
   - `Guid`, `generateGuid` exported from `@epicenter/workspace`
-- [x] **2.4** Update `packages/filesystem/src/index.ts` — should be identical to the current barrel, just with updated internal paths (all `./` relative within the new package)
+- [x] **2.4** Update `packages/filesystem/src/index.ts`: should be identical to the current barrel, just with updated internal paths (all `./` relative within the new package)
 
 ### Phase 3: Clean up `@epicenter/workspace`
 
@@ -272,23 +272,23 @@ These will come transitively through the `@epicenter/workspace` dependency.
 
 ### Phase 4: Verify
 
-- [x] **4.1** Run `bun run typecheck` in `packages/filesystem/` — zero errors
-- [x] **4.2** Run `bun test` in `packages/filesystem/` — all tests pass
-- [x] **4.3** Run `bun run typecheck` in `packages/epicenter/` — zero errors (no regressions)
-- [x] **4.4** Run `bun test` in `packages/epicenter/` — all tests pass
-- [x] **4.5** Run `bun install` from root — no resolution errors
-- [x] **4.6** Grep the entire repo for any lingering `@epicenter/workspace/filesystem` imports — should find zero
+- [x] **4.1** Run `bun run typecheck` in `packages/filesystem/`: zero errors
+- [x] **4.2** Run `bun test` in `packages/filesystem/`: all tests pass
+- [x] **4.3** Run `bun run typecheck` in `packages/epicenter/`: zero errors (no regressions)
+- [x] **4.4** Run `bun test` in `packages/epicenter/`: all tests pass
+- [x] **4.5** Run `bun install` from root: no resolution errors
+- [x] **4.6** Grep the entire repo for any lingering `@epicenter/workspace/filesystem` imports: should find zero
 
 ## Edge Cases
 
 ### Missing public exports from `@epicenter/workspace`
 
-The filesystem currently imports via relative `../` paths. Some of these symbols may not be re-exported from the public barrel files (`index.ts`). Phase 2.3 handles this — check each symbol and add missing exports before changing imports.
+The filesystem currently imports via relative `../` paths. Some of these symbols may not be re-exported from the public barrel files (`index.ts`). Phase 2.3 handles this: check each symbol and add missing exports before changing imports.
 
 Specifically watch for:
 
-- `Guid` and `generateGuid` from `shared/id.ts` — verify they're in `@epicenter/workspace`'s root `index.ts`
-- `ProviderFactory` from `dynamic/provider-types.ts` — verify it's in `@epicenter/workspace/dynamic`'s `index.ts`
+- `Guid` and `generateGuid` from `shared/id.ts`: verify they're in `@epicenter/workspace`'s root `index.ts`
+- `ProviderFactory` from `dynamic/provider-types.ts`: verify it's in `@epicenter/workspace/dynamic`'s `index.ts`
 
 ### `just-bash` test imports
 
@@ -303,7 +303,7 @@ This dep is listed in `@epicenter/workspace`'s `package.json` but never directly
 1. **Should `Guid`/`generateGuid` be extracted to a tiny shared package?**
    - Currently in `@epicenter/workspace`'s `shared/id.ts`. The filesystem needs it for `FileId`.
    - Options: (a) import from `@epicenter/workspace` root, (b) create `@epicenter/ids` micro-package, (c) just use nanoid directly in the filesystem package
-   - **Recommendation**: (a) Import from `@epicenter/workspace` — simplest, no new packages. Only consider (b) if a circular dep emerges.
+   - **Recommendation**: (a) Import from `@epicenter/workspace`: simplest, no new packages. Only consider (b) if a circular dep emerges.
 
 2. **Should `ProviderFactory` move to a shared location?**
    - It's in `dynamic/provider-types.ts` but the filesystem uses it for content doc providers. It's not really dynamic-workspace-specific.
@@ -327,17 +327,17 @@ This dep is listed in `@epicenter/workspace`'s `package.json` but never directly
 
 ## References
 
-- `packages/epicenter/package.json` — Source package.json (deps to remove, export to remove)
-- `packages/epicenter/src/filesystem/` — All files to move (19 files)
-- `packages/epicenter/src/filesystem/index.ts` — Current barrel exports
-- `packages/epicenter/src/static/types.ts` — `TableHelper`, `InferTableRow` types
-- `packages/epicenter/src/static/define-table.ts` — `defineTable` function
-- `packages/epicenter/src/dynamic/provider-types.ts` — `ProviderFactory` type
-- `packages/epicenter/src/shared/lifecycle.ts` — `defineExports`, `Lifecycle`
-- `packages/epicenter/src/shared/id.ts` — `Guid`, `generateGuid`
-- `packages/epicenter/src/index.ts` — Root barrel (verify exports)
-- `packages/epicenter/src/static/index.ts` — Static barrel (verify exports)
-- `packages/epicenter/src/dynamic/index.ts` — Dynamic barrel (verify exports)
+- `packages/epicenter/package.json`: Source package.json (deps to remove, export to remove)
+- `packages/epicenter/src/filesystem/`: All files to move (19 files)
+- `packages/epicenter/src/filesystem/index.ts`: Current barrel exports
+- `packages/epicenter/src/static/types.ts`: `TableHelper`, `InferTableRow` types
+- `packages/epicenter/src/static/define-table.ts`: `defineTable` function
+- `packages/epicenter/src/dynamic/provider-types.ts`: `ProviderFactory` type
+- `packages/epicenter/src/shared/lifecycle.ts`: `defineExports`, `Lifecycle`
+- `packages/epicenter/src/shared/id.ts`: `Guid`, `generateGuid`
+- `packages/epicenter/src/index.ts`: Root barrel (verify exports)
+- `packages/epicenter/src/static/index.ts`: Static barrel (verify exports)
+- `packages/epicenter/src/dynamic/index.ts`: Dynamic barrel (verify exports)
 
 ---
 
@@ -346,11 +346,11 @@ This dep is listed in `@epicenter/workspace`'s `package.json` but never directly
 Below is a self-contained prompt for a handoff agent to execute this extraction.
 
 ```
-You are extracting the virtual filesystem module from `@epicenter/workspace` into a new `@epicenter/filesystem` package. This is a mechanical extraction — no behavior changes, no refactoring, no new features. The goal is a clean package boundary.
+You are extracting the virtual filesystem module from `@epicenter/workspace` into a new `@epicenter/filesystem` package. This is a mechanical extraction, no behavior changes, no refactoring, no new features. The goal is a clean package boundary.
 
 ## Context
 
-The monorepo is at the repo root. The core package is `packages/epicenter/` (published as `@epicenter/workspace`). It contains a `src/filesystem/` directory (19 files) that implements a POSIX-like virtual filesystem backed by Yjs CRDTs. This module is a CONSUMER of the core workspace API — it uses `defineTable`, `TableHelper`, `Lifecycle`, etc. from the core. It also has 5 heavy dependencies (`just-bash`, `prosemirror-markdown`, `prosemirror-model`, `prosemirror-schema-basic`, `y-prosemirror`) that nothing else in `@epicenter/workspace` uses.
+The monorepo is at the repo root. The core package is `packages/epicenter/` (published as `@epicenter/workspace`). It contains a `src/filesystem/` directory (19 files) that implements a POSIX-like virtual filesystem backed by Yjs CRDTs. This module is a CONSUMER of the core workspace API. It uses `defineTable`, `TableHelper`, `Lifecycle`, etc. from the core. It also has 5 heavy dependencies (`just-bash`, `prosemirror-markdown`, `prosemirror-model`, `prosemirror-schema-basic`, `y-prosemirror`) that nothing else in `@epicenter/workspace` uses.
 
 The full specification with dependency maps, file inventory, and architecture diagrams is at:
 `specs/20260213T120800-extract-filesystem-package.md`
@@ -362,11 +362,11 @@ The full specification with dependency maps, file inventory, and architecture di
 ### Phase 1: Create `packages/filesystem/`
 
 1. Create the directory structure: `packages/filesystem/src/`
-2. Create `package.json` — see spec for the exact content. Key points:
+2. Create `package.json`: see spec for the exact content. Key points:
    - Name: `@epicenter/filesystem`
    - Dependencies: `@epicenter/workspace` (workspace:*), plus the 5 filesystem-specific deps, plus `arktype`, `wellcrafted`, `yjs`
    - Follow the patterns of existing package.json files in the monorepo (check `packages/epicenter/package.json` for script patterns, catalog references, etc.)
-3. Create `tsconfig.json` — follow the pattern of other `packages/*/tsconfig.json` in the monorepo
+3. Create `tsconfig.json`: follow the pattern of other `packages/*/tsconfig.json` in the monorepo
 
 ### Phase 2: Move files and fix imports
 
@@ -382,13 +382,13 @@ The full specification with dependency maps, file inventory, and architecture di
    | `from '../shared/id.js'` | `from '@epicenter/workspace'` |
 
 3. **CRITICAL**: Before rewriting imports, verify that every symbol is actually exported from the target public path. Check the barrel files:
-   - `packages/epicenter/src/index.ts` — for `defineExports`, `Lifecycle`, `Guid`, `generateGuid`
-   - `packages/epicenter/src/static/index.ts` — for `TableHelper`, `InferTableRow`, `defineTable`
-   - `packages/epicenter/src/dynamic/index.ts` — for `ProviderFactory`, `ProviderContext`, `defineExports` (re-exported), `Lifecycle` (re-exported)
+   - `packages/epicenter/src/index.ts`: for `defineExports`, `Lifecycle`, `Guid`, `generateGuid`
+   - `packages/epicenter/src/static/index.ts`: for `TableHelper`, `InferTableRow`, `defineTable`
+   - `packages/epicenter/src/dynamic/index.ts`: for `ProviderFactory`, `ProviderContext`, `defineExports` (re-exported), `Lifecycle` (re-exported)
 
    If any symbol is missing from a barrel, ADD it to the appropriate barrel file before proceeding.
 
-4. Internal imports within the filesystem module (e.g., `from './types.js'`) stay as-is — they're all within the new package.
+4. Internal imports within the filesystem module (e.g., `from './types.js'`) stay as-is: they're all within the new package.
 
 ### Phase 3: Clean up `@epicenter/workspace`
 
@@ -404,20 +404,20 @@ The full specification with dependency maps, file inventory, and architecture di
 
 ### Phase 4: Verify
 
-1. `bun run typecheck` in `packages/filesystem/` — zero errors
-2. `bun test` in `packages/filesystem/` — all tests pass
-3. `bun run typecheck` in `packages/epicenter/` — zero errors
-4. `bun test` in `packages/epicenter/` — all tests pass
-5. `bun install` from root — no resolution errors
-6. Grep the entire repo for `@epicenter/workspace/filesystem` — should find zero matches
+1. `bun run typecheck` in `packages/filesystem/`: zero errors
+2. `bun test` in `packages/filesystem/`: all tests pass
+3. `bun run typecheck` in `packages/epicenter/`: zero errors
+4. `bun test` in `packages/epicenter/`: all tests pass
+5. `bun install` from root: no resolution errors
+6. Grep the entire repo for `@epicenter/workspace/filesystem`: should find zero matches
 
 ## Rules
 
 - NO behavior changes. This is a pure extraction.
 - NO refactoring. Don't rename files, don't restructure, don't "improve" anything.
 - NO new features. Don't add anything that wasn't there before.
-- If a symbol is missing from a barrel export, add ONLY that symbol — don't reorganize the barrel.
-- If tests fail, investigate and fix the import/config issue — don't modify test logic.
+- If a symbol is missing from a barrel export, add ONLY that symbol: don't reorganize the barrel.
+- If tests fail, investigate and fix the import/config issue: don't modify test logic.
 - Use `bun` for everything (not npm/yarn/node). Use `catalog:` references where other packages use them.
 - Follow the AGENTS.md instructions at the repo root for commit conventions and tooling.
 ```
@@ -454,7 +454,7 @@ Two symbols groups were missing from the public barrels and needed to be added b
 
 ### Deviations from Spec
 
-1. **`prosemirror-model` and `prosemirror-schema-basic` dropped from `@epicenter/filesystem` deps**: The spec listed all 5 deps as filesystem dependencies, but `prosemirror-model` and `prosemirror-schema-basic` are never directly imported — they're transitive deps of `prosemirror-markdown`. Removing them from explicit deps and running tests confirmed everything still works. Cleaner dependency list.
+1. **`prosemirror-model` and `prosemirror-schema-basic` dropped from `@epicenter/filesystem` deps**: The spec listed all 5 deps as filesystem dependencies, but `prosemirror-model` and `prosemirror-schema-basic` are never directly imported: they're transitive deps of `prosemirror-markdown`. Removing them from explicit deps and running tests confirmed everything still works. Cleaner dependency list.
 
 2. **Unused `defineExports` import fixed**: `content-doc-store.ts` imported `defineExports` as a value but never used it (only the type `Lifecycle` was needed). Changed to `import type { Lifecycle }` to satisfy `noUnusedLocals`. This was a pre-existing dead import that only surfaced because the new package has stricter tsconfig settings.
 
@@ -473,6 +473,6 @@ Two symbols groups were missing from the public barrels and needed to be added b
 
 ### Open Questions Resolved
 
-1. **`Guid`/`generateGuid` location**: Kept in `@epicenter/workspace`, imported from root — simplest approach, no new packages needed.
-2. **`ProviderFactory` location**: Kept in `dynamic/`, exported via `@epicenter/workspace/dynamic` — already there, works fine.
+1. **`Guid`/`generateGuid` location**: Kept in `@epicenter/workspace`, imported from root: simplest approach, no new packages needed.
+2. **`ProviderFactory` location**: Kept in `dynamic/`, exported via `@epicenter/workspace/dynamic`: already there, works fine.
 3. **`prosemirror-schema-basic` in deps**: Not needed. Transitive dep only. Dropped.

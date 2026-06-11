@@ -478,17 +478,17 @@ createSubscriber refcounts. Two `$derived` reading `recordings.all` produce one 
 
 ### Primary
 
-- `packages/svelte-utils/src/from-table.svelte.ts` — primitive being rewritten
-- `packages/svelte-utils/src/index.ts` — public export list
-- `packages/svelte-utils/src/from-table.svelte.test.ts` — new test file
-- `packages/workspace/src/document/attach-table.ts:386-460` — `Table` API contract; `get`, `getAllValid`, `observe`, `count`, `has`
+- `packages/svelte-utils/src/from-table.svelte.ts`: primitive being rewritten
+- `packages/svelte-utils/src/index.ts`: public export list
+- `packages/svelte-utils/src/from-table.svelte.test.ts`: new test file
+- `packages/workspace/src/document/attach-table.ts:386-460`: `Table` API contract; `get`, `getAllValid`, `observe`, `count`, `has`
 
 ### Svelte sources consulted
 
-- `node_modules/.bun/svelte@5.55.1/.../reactivity/create-subscriber.js` — public lifecycle primitive
-- `node_modules/.bun/svelte@5.55.1/.../reactivity/map.js` — current dependency, removed
-- `node_modules/.bun/svelte@5.55.1/.../reactivity/reactive-value.js` — private, not used
-- `node_modules/.bun/svelte@5.55.1/.../reactivity/index-client.js` — confirmed public exports
+- `node_modules/.bun/svelte@5.55.1/.../reactivity/create-subscriber.js`: public lifecycle primitive
+- `node_modules/.bun/svelte@5.55.1/.../reactivity/map.js`: current dependency, removed
+- `node_modules/.bun/svelte@5.55.1/.../reactivity/reactive-value.js`: private, not used
+- `node_modules/.bun/svelte@5.55.1/.../reactivity/index-client.js`: confirmed public exports
 
 ### Call sites (full list at Phase 2)
 
@@ -496,5 +496,5 @@ createSubscriber refcounts. Two `$derived` reading `recordings.all` produce one 
 
 ### Related specs
 
-- `specs/20260318T234754-rename-svelte-package-and-add-fromKv.md` — sibling primitive `fromKv` may need the same treatment (Open Question 4)
-- `specs/20260506T020000-expose-attachments-not-aliases.md` — recent precedent for trimming primitive surface area
+- `specs/20260318T234754-rename-svelte-package-and-add-fromKv.md`: sibling primitive `fromKv` may need the same treatment (Open Question 4)
+- `specs/20260506T020000-expose-attachments-not-aliases.md`: recent precedent for trimming primitive surface area

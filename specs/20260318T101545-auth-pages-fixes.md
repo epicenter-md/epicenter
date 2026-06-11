@@ -4,13 +4,13 @@ Server-rendered auth pages at `apps/api/src/auth-pages/` have session gate bugs,
 
 ## Files
 
-- `apps/api/src/app.ts` — Route definitions for `/sign-in`, `/consent`, `/device`
-- `apps/api/src/auth-pages/sign-in-page.tsx` — Sign-in/sign-up page + ~130-line inline script
-- `apps/api/src/auth-pages/consent-page.tsx` — OAuth consent page + ~60-line inline script
-- `apps/api/src/auth-pages/device-page.tsx` — Device auth page + ~70-line inline script
-- `apps/api/src/auth-pages/index.tsx` — Render function wrappers
-- `apps/api/src/auth-pages/layout.tsx` — Shared HTML shell (no changes needed)
-- `apps/api/src/auth-pages/styles.ts` — Shared CSS (no changes needed)
+- `apps/api/src/app.ts`: Route definitions for `/sign-in`, `/consent`, `/device`
+- `apps/api/src/auth-pages/sign-in-page.tsx`: Sign-in/sign-up page + ~130-line inline script
+- `apps/api/src/auth-pages/consent-page.tsx`: OAuth consent page + ~60-line inline script
+- `apps/api/src/auth-pages/device-page.tsx`: Device auth page + ~70-line inline script
+- `apps/api/src/auth-pages/index.tsx`: Render function wrappers
+- `apps/api/src/auth-pages/layout.tsx`: Shared HTML shell (no changes needed)
+- `apps/api/src/auth-pages/styles.ts`: Shared CSS (no changes needed)
 
 ## Key API
 
@@ -23,11 +23,11 @@ const session = await c.var.auth.api.getSession({ headers: c.req.raw.headers });
 
 ---
 
-## Fix 1: Device + consent page auth gates (bug — highest priority)
+## Fix 1: Device + consent page auth gates (bug: highest priority)
 
 **Problem:** `/device` and `/consent` GET routes render pages without session checks. When the user clicks Approve, the POST returns 401. The user sees "Sign in first, then come back to this page" but has no way to sign in.
 
-**Fix — server side (app.ts):**
+**Fix: server side (app.ts):**
 
 `/device` route: Before rendering, check session. If unauthenticated, redirect:
 ```typescript
@@ -42,7 +42,7 @@ app.get('/device', sValidator('query', type({ 'user_code?': 'string' })), async 
 });
 ```
 
-`/consent` route: Same pattern — redirect to sign-in preserving the full query string:
+`/consent` route: Same pattern: redirect to sign-in preserving the full query string:
 ```typescript
 app.get('/consent', sValidator('query', type({ 'client_id?': 'string', 'scope?': 'string' })), async (c) => {
   const session = await c.var.auth.api.getSession({ headers: c.req.raw.headers });
@@ -55,7 +55,7 @@ app.get('/consent', sValidator('query', type({ 'client_id?': 'string', 'scope?':
 });
 ```
 
-**Fix — sign-in page script (callbackURL honoring):**
+**Fix: sign-in page script (callbackURL honoring):**
 
 After successful email/password sign-in, if `callbackURL` is present in URL params and there's no OAuth redirect (`data.url`), navigate to `callbackURL` instead of reloading. Only honor relative URLs (starting with `/`) to prevent open redirect.
 
@@ -139,11 +139,11 @@ This makes the Google OAuth round-trip reliable: Google callback → sets sessio
 
 **Fix:** Create `apps/api/src/auth-pages/scripts/` with one file per page:
 
-- `scripts/sign-in.ts` — exports `SIGN_IN_SCRIPT` (the `raw()` string)
-- `scripts/consent.ts` — exports `CONSENT_SCRIPT`
-- `scripts/device.ts` — exports `DEVICE_SCRIPT`
+- `scripts/sign-in.ts`: exports `SIGN_IN_SCRIPT` (the `raw()` string)
+- `scripts/consent.ts`: exports `CONSENT_SCRIPT`
+- `scripts/device.ts`: exports `DEVICE_SCRIPT`
 
-Each page component imports from its script file instead of defining the script inline. No runtime behavior change — still inline `<script>` tags, no build step.
+Each page component imports from its script file instead of defining the script inline. No runtime behavior change: still inline `<script>` tags, no build step.
 
 - [ ] Create scripts/sign-in.ts, scripts/consent.ts, scripts/device.ts
 - [ ] Move each script constant to its respective file
@@ -153,13 +153,13 @@ Each page component imports from its script file instead of defining the script 
 
 ## Fix 5: Modernize var/ES5 to const/let/arrow
 
-**Problem:** Scripts use `var`, `function(){}`, and `getElementById` — unnecessary for developers running OAuth flows in modern browsers. Block scoping via `const`/`let` prevents accidental hoisting bugs.
+**Problem:** Scripts use `var`, `function(){}`, and `getElementById`: unnecessary for developers running OAuth flows in modern browsers. Block scoping via `const`/`let` prevents accidental hoisting bugs.
 
 **Fix (applied during Fix 4 extraction):**
 
 - `var` → `const` (or `let` where reassigned)
 - `function(){}` → arrow functions
-- `querySelector`/`querySelectorAll` where it improves clarity (e.g., `document.querySelector('#msg')` vs `document.getElementById('msg')` — keep `getElementById` where it's clear enough)
+- `querySelector`/`querySelectorAll` where it improves clarity (e.g., `document.querySelector('#msg')` vs `document.getElementById('msg')`: keep `getElementById` where it's clear enough)
 
 This is done as part of the script extraction (Fix 4) since we're already touching every line.
 

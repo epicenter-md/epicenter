@@ -200,11 +200,11 @@ createContext<FujiSignedIn>() in each session module     nothing (the createCont
 
 setSignedInSession bare export                            nothing
 
-<SignedInSessionProvider> wrapping in +layout.svelte     nothing — layout passes
+<SignedInSessionProvider> wrapping in +layout.svelte     nothing: layout passes
   ~3 LOC each                                            signedIn directly to its
                                                          shell component
 
-// svelte-ignore state_referenced_locally suppression    nothing — the warning was
+// svelte-ignore state_referenced_locally suppression    nothing: the warning was
 in 3 files                                                correct; we are no longer
                                                           doing the thing it warned
                                                           about
@@ -242,22 +242,22 @@ answer is no:
 ```txt
 WHEN CONTEXT EARNS ITS KEEP                                  RELEVANT HERE?
 ────────────────────────────────────────────────             ──────────────
-Multiple instances of the same component tree need           No — one
+Multiple instances of the same component tree need           No: one
 isolated state                                               session per page
 
-Test fixture injection via setContext                        No — vi.mock
+Test fixture injection via setContext                        No: vi.mock
                                                              is the codebase's
                                                              documented pattern
 
-Subtree-scoped lifetime (parent owns; lifetime ≠            No — workspace
+Subtree-scoped lifetime (parent owns; lifetime ≠            No: workspace
 module lifetime)                                             lifetime IS the
                                                              module lifetime
 
-Decoupling descendants from a specific module path          No — descendants
+Decoupling descendants from a specific module path          No: descendants
                                                              are app-specific
                                                              code already
 
-SSR per-request scoping                                      No — SSR not
+SSR per-request scoping                                      No: SSR not
                                                              supported
 ```
 
@@ -290,7 +290,7 @@ Shape 1 wins on three axes:
                               SHAPE 1                   SHAPES 2, 4, 5            SHAPE 3
                               (function)                (getter access)           (method)
                               ────────────────          ────────────────           ─────────────
-visually announces            yes — function call       no — looks like           yes — method call
+visually announces            yes: function call       no: looks like           yes: method call
 "this might fail"             with `Get` prefix         property access
 
 discoverability               top-level export,          must drill into           must drill into
@@ -301,11 +301,11 @@ naming collision with         no                         yes for Shape 2:       
 local `signedIn`                                         `session.signedIn` and
                                                          `const signedIn` overlap
 
-fits codebase patterns        yes — parallels            no — would be the         no — `unwrap` is
+fits codebase patterns        yes: parallels            no: would be the         no: `unwrap` is
                               `requireSignedIn(auth)`    only `.X.signedIn`        not used elsewhere
                               from @epicenter/auth        getter
 
-reads what it returns         yes — `getSignedIn-       no — `session.signedIn`    no — `unwrap` of
+reads what it returns         yes: `getSignedIn-       no: `session.signedIn`    no: `unwrap` of
                               Session` says it           does not name             what?
                               returns the session        the return type
 ```
@@ -440,7 +440,7 @@ Rejected because:
 ### Q7: Why not prop-drill from the layout to descendants?
 
 We do, where SvelteKit allows it (everything above the page boundary). But
-SvelteKit's `+page.svelte` cannot receive props from its layout — the
+SvelteKit's `+page.svelte` cannot receive props from its layout. The
 layout-page boundary is owned by SvelteKit's runtime and only delivers
 `data` (from `+page.ts` load functions) and route metadata.
 
@@ -450,7 +450,7 @@ mechanism is required:
 ```txt
 MECHANISM                          USABLE FOR PAGES?       OUR USE CASE FIT
 ─────────────────────              ──────────────────      ──────────────────────────
-+layout.ts → +page.ts data         yes (via `parent()`)    no — workspace handle
++layout.ts → +page.ts data         yes (via `parent()`)    no: workspace handle
 cascade                                                    is non-serializable; load
                                                             is wrong layer for
                                                             lifecycle
@@ -459,7 +459,7 @@ context (setContext/getContext)    yes                     loses to module-level
                                                             on every other axis
                                                             (Q1 above)
 
-module-level singleton +           yes                     CHOSEN — works, simple,
+module-level singleton +           yes                     CHOSEN: works, simple,
 helper function                                             matches `auth`/`session`
 
 page state ($app/state)            no                      wrong tool
@@ -635,7 +635,7 @@ Wave 2  Verify fuji (rollback point).
           d. concurrent token refresh during render
         If any test fails, revert Wave 1 commit; Wave 0 is inert.
         Particularly watch for getSignedInSession() throwing during
-        teardown (test a) — if it fires, the appropriate fix is to make
+        teardown (test a): if it fires, the appropriate fix is to make
         the helper return the last-known-good signedIn during the
         unmount frame, not to revert this spec. Document the decision
         if you hit this.

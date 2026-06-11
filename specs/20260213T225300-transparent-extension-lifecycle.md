@@ -26,7 +26,7 @@ const context = { id, ydoc, tables, kv, awareness, extensions };
 This forces `createSyncExtension` to manually orchestrate persistence:
 
 ```typescript
-// sync.ts — has to take persistence as a config parameter:
+// sync.ts: has to take persistence as a config parameter:
 export type SyncExtensionConfig = {
 	url: string | ((workspaceId: string) => string);
 	token?: string;
@@ -35,7 +35,7 @@ export type SyncExtensionConfig = {
 };
 ```
 
-The sync extension mixes sync config (`url`, `token`, `getToken`) with persistence config (`persistence`) in one flat object. It manually awaits persistence, then connects the WebSocket — duplicating orchestration the framework already does.
+The sync extension mixes sync config (`url`, `token`, `getToken`) with persistence config (`persistence`) in one flat object. It manually awaits persistence, then connects the WebSocket: duplicating orchestration the framework already does.
 
 ### Desired State
 
@@ -107,7 +107,7 @@ The key insight: `buildClient` already computes `whenReady = Promise.all(whenRea
 ### Phase 1: Pass full client as context (static API)
 
 - [x] **1.1** In `packages/epicenter/src/static/create-workspace.ts`, change `withExtension` to pass `client` instead of `{ id, ydoc, tables, kv, awareness, extensions }`
-- [x] **1.2** Update `ExtensionContext` type in `packages/epicenter/src/static/types.ts` — alias it to `WorkspaceClient`-so-far (or add `whenReady`, `destroy`, `definitions` to match)
+- [x] **1.2** Update `ExtensionContext` type in `packages/epicenter/src/static/types.ts`: alias it to `WorkspaceClient`-so-far (or add `whenReady`, `destroy`, `definitions` to match)
 - [x] **1.3** Update `ExtensionFactory` type signature if needed to accept the new context shape
 - [x] **1.4** Add test in `define-workspace.test.ts` verifying `context.whenReady` is accessible and resolves after prior extensions
 
@@ -128,7 +128,7 @@ The key insight: `buildClient` already computes `whenReady = Promise.all(whenRea
 ### Phase 4: Cleanup
 
 - [x] **4.1** Remove `Lifecycle` import from `sync.ts` (no longer needed for the persistence parameter type)
-- [x] **4.2** Audit JSDoc across `lifecycle.ts` and `types.ts` — remove "consumers never see lifecycle hooks" language, update `ExtensionContext` docs
+- [x] **4.2** Audit JSDoc across `lifecycle.ts` and `types.ts`: remove "consumers never see lifecycle hooks" language, update `ExtensionContext` docs
 - [x] **4.3** Run build + tests, verify everything passes (5 pre-existing type errors in `table-helper.ts`, unrelated)
 
 ## Edge Cases
@@ -139,7 +139,7 @@ The key insight: `buildClient` already computes `whenReady = Promise.all(whenRea
 
 ### Extension with no prior extensions
 
-First extension in the chain gets `context.whenReady = Promise.all([])` which resolves immediately. Correct behavior — nothing to wait for.
+First extension in the chain gets `context.whenReady = Promise.all([])` which resolves immediately. Correct behavior, nothing to wait for.
 
 ### Extension factory calls `context.destroy()`
 
@@ -147,7 +147,7 @@ An extension factory could call `context.destroy()` and nuke the workspace. This
 
 ### `indexeddbPersistence` function signature
 
-Currently `indexeddbPersistence` takes `{ ydoc }` — a subset of `ExtensionContext`. After this change, it receives the full client. The destructured `{ ydoc }` still works since it just picks what it needs. No change to `indexeddbPersistence` itself.
+Currently `indexeddbPersistence` takes `{ ydoc }`: a subset of `ExtensionContext`. After this change, it receives the full client. The destructured `{ ydoc }` still works since it just picks what it needs. No change to `indexeddbPersistence` itself.
 
 ## Success Criteria
 
@@ -160,13 +160,13 @@ Currently `indexeddbPersistence` takes `{ ydoc }` — a subset of `ExtensionCont
 
 ## References
 
-- `packages/epicenter/src/static/create-workspace.ts` — Static builder, lines 159-166 (context construction)
-- `packages/epicenter/src/static/types.ts` — `ExtensionContext`, `ExtensionFactory`, `WorkspaceClientBuilder`
-- `packages/epicenter/src/dynamic/workspace/create-workspace.ts` — Dynamic builder, line 129 (context construction)
-- `packages/epicenter/src/dynamic/workspace/types.ts` — Dynamic `ExtensionContext`, `ExtensionFactory`
-- `packages/epicenter/src/shared/lifecycle.ts` — `defineExtension`, `Extension<T>` (unchanged)
-- `packages/epicenter/src/extensions/sync.ts` — `createSyncExtension` (simplification target)
-- `packages/epicenter/src/extensions/sync/web.ts` — `indexeddbPersistence`
-- `packages/epicenter/src/extensions/sync/desktop.ts` — `filesystemPersistence`
-- `apps/tab-manager/src/entrypoints/background.ts` — Consumer call site
-- `apps/tab-manager/src/lib/workspace-popup.ts` — Consumer call site
+- `packages/epicenter/src/static/create-workspace.ts`: Static builder, lines 159-166 (context construction)
+- `packages/epicenter/src/static/types.ts`: `ExtensionContext`, `ExtensionFactory`, `WorkspaceClientBuilder`
+- `packages/epicenter/src/dynamic/workspace/create-workspace.ts`: Dynamic builder, line 129 (context construction)
+- `packages/epicenter/src/dynamic/workspace/types.ts`: Dynamic `ExtensionContext`, `ExtensionFactory`
+- `packages/epicenter/src/shared/lifecycle.ts`: `defineExtension`, `Extension<T>` (unchanged)
+- `packages/epicenter/src/extensions/sync.ts`: `createSyncExtension` (simplification target)
+- `packages/epicenter/src/extensions/sync/web.ts`: `indexeddbPersistence`
+- `packages/epicenter/src/extensions/sync/desktop.ts`: `filesystemPersistence`
+- `apps/tab-manager/src/entrypoints/background.ts`: Consumer call site
+- `apps/tab-manager/src/lib/workspace-popup.ts`: Consumer call site

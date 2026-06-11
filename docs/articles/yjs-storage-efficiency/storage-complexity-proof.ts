@@ -8,7 +8,7 @@
  *
  * Each test creates a workload, then compares the resulting doc size
  * against a fresh doc with identical active data. The ratio between them
- * is the "history tax"—anything beyond the active data.
+ * is the "history tax". Anything beyond the active data.
  *
  * Usage: bun run storage-complexity-proof.ts
  */

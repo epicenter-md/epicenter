@@ -1,12 +1,12 @@
 # Shared Encryption Wiring Factory
 
 **Date**: 2026-03-15
-**Status**: Superseded by `specs/20260315T141700-encryption-wiring-factory.md` — the imperative `connect()`/`disconnect()` API was chosen over the subscription-based `EncryptionSource` pattern for simplicity (one consumer today, fewer types, less adapter boilerplate).
+**Status**: Superseded by `specs/20260315T141700-encryption-wiring-factory.md`: the imperative `connect()`/`disconnect()` API was chosen over the subscription-based `EncryptionSource` pattern for simplicity (one consumer today, fewer types, less adapter boilerplate).
 **Author**: AI-assisted
 
 ## Overview
 
-Extract a framework-agnostic `createEncryptionWiring()` factory from the tab-manager's bespoke Svelte wiring into `@epicenter/workspace`. The factory handles the hard parts—async key derivation with race protection, three-way key-loss branching, and mode guard logic—so apps provide only a thin adapter that maps their auth state into a normalized snapshot.
+Extract a framework-agnostic `createEncryptionWiring()` factory from the tab-manager's bespoke Svelte wiring into `@epicenter/workspace`. The factory handles the hard parts. Async key derivation with race protection, three-way key-loss branching, and mode guard logic. So apps provide only a thin adapter that maps their auth state into a normalized snapshot.
 
 ## Motivation
 
@@ -52,20 +52,20 @@ onMount(() => {
 
 This creates problems:
 
-1. **Stale async derive race**: `deriveWorkspaceKey()` is async (HKDF via Web Crypto). Nothing prevents a slow derivation from completing after auth has moved on. If a user signs out while HKDF is still running, the stale `.then()` calls `activateEncryption()` after `clearLocalData()` already ran—corrupting state.
+1. **Stale async derive race**: `deriveWorkspaceKey()` is async (HKDF via Web Crypto). Nothing prevents a slow derivation from completing after auth has moved on. If a user signs out while HKDF is still running, the stale `.then()` calls `activateEncryption()` after `clearLocalData()` already ran. Corrupting state.
 
 2. **Framework coupling**: `$effect.root` + `$effect` makes this non-portable. Tests, Tauri commands, service workers, and non-Svelte consumers can't use it.
 
 3. **Copy-paste multiplication**: Every new Epicenter app (Whispering is next) must replicate the same subtle three-way branch logic, the same HKDF wiring, the same guard conditions. Getting any of them wrong either soft-locks a `plaintext`-mode workspace or skips cleanup on sign-out.
 
-4. **Opaque timing gap**: Between `authState.encryptionKey` becoming non-null and `activateEncryption()` completing, the workspace is in its previous mode. Consumers have no way to know "key derivation is in progress"—they must guess.
+4. **Opaque timing gap**: Between `authState.encryptionKey` becoming non-null and `activateEncryption()` completing, the workspace is in its previous mode. Consumers have no way to know "key derivation is in progress". They must guess.
 
 5. **Implicit auth semantics in wiring**: The three-way branch requires reading `authState.status` to distinguish sign-out from session expiry from "never had a key." This couples auth-domain knowledge into what should be pure workspace orchestration.
 
 ### Desired State
 
 ```typescript
-// packages/workspace — framework-agnostic core
+// packages/workspace: framework-agnostic core
 import { createEncryptionWiring } from '@epicenter/workspace';
 
 const wiring = createEncryptionWiring(workspaceClient, {
@@ -73,12 +73,12 @@ const wiring = createEncryptionWiring(workspaceClient, {
 });
 
 wiring.phase;     // 'idle' | 'deriving' | 'clearing'
-wiring.whenReady; // Promise<void> — first snapshot fully settled
+wiring.whenReady; // Promise<void>: first snapshot fully settled
 wiring.dispose(); // cleanup
 ```
 
 ```typescript
-// apps/tab-manager — thin Svelte adapter (~20 lines)
+// apps/tab-manager: thin Svelte adapter (~20 lines)
 const source = createSvelteEncryptionSource(authState);
 const wiring = createEncryptionWiring(workspaceClient, { source });
 // dispose on cleanup
@@ -91,18 +91,18 @@ const wiring = createEncryptionWiring(workspaceClient, { source });
 | Component | Location | Role |
 |---|---|---|
 | `deriveWorkspaceKey()` | `packages/workspace/src/shared/crypto/index.ts` | HKDF-SHA256 via Web Crypto, async, `(userKey: Uint8Array, workspaceId: string) => Promise<Uint8Array>` |
-| `base64ToBytes()` | Same file | Sync base64 decode — transport concern, not crypto |
-| `EncryptionMode` | `packages/workspace/src/shared/y-keyvalue/y-keyvalue-lww-encrypted.ts` | `'plaintext' \| 'locked' \| 'encrypted'` — the workspace mode state |
-| `WorkspaceClient.activateEncryption()` | `packages/workspace/src/workspace/create-workspace.ts` | Sync — sets key on all encrypted stores, rolls back on failure |
-| `WorkspaceClient.lock()` | Same file | Sync — clears key, cached data stays |
-| `WorkspaceClient.clearLocalData()` | Same file | Async — calls `lock()` + extension `clearData` callbacks in LIFO order |
+| `base64ToBytes()` | Same file | Sync base64 decode: transport concern, not crypto |
+| `EncryptionMode` | `packages/workspace/src/shared/y-keyvalue/y-keyvalue-lww-encrypted.ts` | `'plaintext' \| 'locked' \| 'encrypted'`: the workspace mode state |
+| `WorkspaceClient.activateEncryption()` | `packages/workspace/src/workspace/create-workspace.ts` | Sync: sets key on all encrypted stores, rolls back on failure |
+| `WorkspaceClient.lock()` | Same file | Sync: clears key, cached data stays |
+| `WorkspaceClient.clearLocalData()` | Same file | Async: calls `lock()` + extension `clearData` callbacks in LIFO order |
 | `authState` | `apps/tab-manager/src/lib/state/auth.svelte.ts` | Svelte 5 reactive singleton with `encryptionKey: string \| undefined` and `status: AuthPhase['status']` |
 
 ### Cross-App Survey
 
 | App | Has encryption wiring? | Auth integration? |
 |---|---|---|
-| `apps/tab-manager` | Yes — `encryption-wiring.svelte.ts` (58 lines) | Yes — Better Auth via `auth.svelte.ts` |
+| `apps/tab-manager` | Yes: `encryption-wiring.svelte.ts` (58 lines) | Yes: Better Auth via `auth.svelte.ts` |
 | `apps/whispering` | No | No auth yet (Tauri desktop app) |
 | `apps/api` | N/A (server) | Server-side key derivation |
 
@@ -139,23 +139,23 @@ workspaceClient.mode changes: 'plaintext' → 'encrypted' → 'locked' → ...
 ### Auth State Transition Sequence (from `auth.svelte.ts`)
 
 The sign-out flow sets state in this order:
-1. `phase = { status: 'signing-out' }` — synchronous
-2. `await client.signOut()` — server-side invalidation
-3. `await clearState()` — clears token + user from chrome.storage
-4. `encryptionKey = undefined` — **this triggers the encryption wiring**
-5. `phase = { status: 'signed-out' }` — synchronous
+1. `phase = { status: 'signing-out' }`: synchronous
+2. `await client.signOut()`: server-side invalidation
+3. `await clearState()`: clears token + user from chrome.storage
+4. `encryptionKey = undefined`: **this triggers the encryption wiring**
+5. `phase = { status: 'signed-out' }`: synchronous
 
 The encryption wiring sees the key go null while status is still `'signing-out'`. This is how it distinguishes sign-out from session expiry.
 
 ### Extension Pattern Assessment
 
-The workspace extension chain (`.withExtension()`, `.withWorkspaceExtension()`) is designed for startup/lifecycle concerns—persistence, sync, broadcast. Extensions fire once at build time, return `{ whenReady, dispose, clearData }`, and are tied to the Y.Doc lifecycle.
+The workspace extension chain (`.withExtension()`, `.withWorkspaceExtension()`) is designed for startup/lifecycle concerns. Persistence, sync, broadcast. Extensions fire once at build time, return `{ whenReady, dispose, clearData }`, and are tied to the Y.Doc lifecycle.
 
 Encryption wiring is fundamentally different:
 - It's **long-lived auth orchestration**, not startup initialization
 - It reacts to **external state changes** (auth events), not workspace events
 - It needs to **run and re-run** throughout the app lifetime, not fire once
-- It logically **sits between** auth and workspace—not inside workspace
+- It logically **sits between** auth and workspace. Not inside workspace
 
 Forcing it into the extension chain would misuse the pattern. A standalone factory is the right shape.
 
@@ -173,16 +173,16 @@ This avoids two failure modes:
 
 | Decision | Choice | Rationale |
 |---|---|---|
-| Extension vs standalone | **Standalone factory** | Extension chain is startup/lifecycle-oriented. Encryption wiring is long-lived auth orchestration—different lifecycle shape. Standalone is testable without a Y.Doc. |
+| Extension vs standalone | **Standalone factory** | Extension chain is startup/lifecycle-oriented. Encryption wiring is long-lived auth orchestration. Different lifecycle shape. Standalone is testable without a Y.Doc. |
 | Input contract | **`EncryptionSource` with `getSnapshot + subscribe`** | Avoids startup race (pure subscribe) and polling (pure getter). Matches `useSyncExternalStore` pattern. Framework-agnostic. |
 | Key format accepted | **`Uint8Array` (user key bytes)** | Transport encoding (base64) is adapter responsibility. Factory gets raw bytes. Supports password-derived keys, hardware keys, server-provided keys without change. |
 | Own `deriveWorkspaceKey` or take pre-derived? | **Own it, with optional override** | 90% case is HKDF. Default to `deriveWorkspaceKey` from `@epicenter/workspace/shared/crypto`. Accept `deriveKey` option for password-based or hardware key sources. |
-| Timing gap handling | **Expose `phase` property** (`'idle' \| 'deriving' \| 'clearing'`) | Consumers can gate UI on `phase !== 'deriving'`. More useful than a one-shot `whenUnlocked` promise—works across multiple lock/activateEncryption cycles. |
+| Timing gap handling | **Expose `phase` property** (`'idle' \| 'deriving' \| 'clearing'`) | Consumers can gate UI on `phase !== 'deriving'`. More useful than a one-shot `whenUnlocked` promise. Works across multiple lock/activateEncryption cycles. |
 | `whenReady` semantics | **Resolves when first snapshot fully settles** | Matches extension `whenReady` convention. For `waiting-for-key`, resolves immediately (no work to do). For `user-key`, resolves after first derive + activateEncryption. |
 | Three-way null branch encoding | **Discriminated union in `EncryptionSourceSnapshot`** | `kind: 'no-key', reason: 'signed-out' \| 'session-lost'` makes the branch explicit in the type system. Cleaner than `isSigningOut: boolean` which doesn't capture "waiting for key." |
 | Race protection | **Monotonic operation version counter** | Each snapshot gets a version. Late async results (derive, clear) check version before applying. Stale results are silently dropped. |
-| Error handling | **`onError` callback, no throws** | Errors in derive or clearLocalData are reported via callback. Never throw out of the subscription loop—that would kill the wiring permanently. |
-| `waiting-for-key` behavior | **No-op** | During bootstrap (`checking`, `signing-in`), the wiring does nothing. This is correct—the workspace starts in `plaintext` mode and stays there until a key arrives. |
+| Error handling | **`onError` callback, no throws** | Errors in derive or clearLocalData are reported via callback. Never throw out of the subscription loop. That would kill the wiring permanently. |
+| `waiting-for-key` behavior | **No-op** | During bootstrap (`checking`, `signing-in`), the wiring does nothing. This is correct. The workspace starts in `plaintext` mode and stays there until a key arrives. |
 
 ## Architecture
 
@@ -300,7 +300,7 @@ Time ─────────────────────────
   │                                 │  → phase = 'idle' ✓
 ```
 
-Without the version counter, the stale derive would call `activateEncryption()` after `clearLocalData()` had already wiped the workspace—silently re-unlocking with the old key.
+Without the version counter, the stale derive would call `activateEncryption()` after `clearLocalData()` had already wiped the workspace. Silently re-unlocking with the old key.
 
 ### Svelte Adapter Pattern
 
@@ -459,7 +459,7 @@ Expected: Idempotent.
 ### Synchronous Key Availability (Future: Key Cache)
 
 1. If a future key-cache provides a `Uint8Array` synchronously at startup, the source can return `user-key` from `getSnapshot()` on the first call
-2. The factory processes it immediately—no "waiting" phase needed
+2. The factory processes it immediately. No "waiting" phase needed
 3. `whenReady` resolves after the derive + activateEncryption completes
 
 Expected: Works without changes. The `waiting-for-key` state is optional, not mandatory.
@@ -476,12 +476,12 @@ Expected: Don't clear data that's already locked. The data might be from a diffe
 
 1. **Should `phase` be observable (callback) or just a readable property?**
    - If consumers want to react to phase changes (e.g., show a spinner during `'deriving'`), a callback would be more ergonomic than polling
-   - **Recommendation**: Start with a readable property. Add `onPhaseChange` callback if demand appears. YAGNI for now—the main consumer just needs `whenReady`.
+   - **Recommendation**: Start with a readable property. Add `onPhaseChange` callback if demand appears. YAGNI for now. The main consumer just needs `whenReady`.
 
 2. **Should `clearLocalData` guard check `mode === 'encrypted'` or `mode !== 'plaintext'`?**
    - Current code checks `mode === 'encrypted'`. But what about `mode === 'locked'` + sign-out? Should that also clear?
    - A user who was locked (session expired) and then explicitly signs out might expect their data to be wiped
-   - **Recommendation**: Keep `mode === 'encrypted'` guard for now. A locked workspace means the user might re-authenticate—clearing preemptively is destructive. If needed, the adapter can call `client.clearLocalData()` directly for the locked+sign-out case.
+   - **Recommendation**: Keep `mode === 'encrypted'` guard for now. A locked workspace means the user might re-authenticate. Clearing preemptively is destructive. If needed, the adapter can call `client.clearLocalData()` directly for the locked+sign-out case.
 
 3. **Should `whenReady` reject on derive error, or always resolve?**
    - Rejecting gives consumers an error signal for the initial boot
@@ -501,7 +501,7 @@ Expected: Don't clear data that's already locked. The data might be from a diffe
 
 - [ ] `createEncryptionWiring()` exists in `@epicenter/workspace` with full JSDoc
 - [ ] Unit tests pass for all edge cases listed above (especially stale derive race and rapid key rotation)
-- [ ] Tab-manager's `encryption-wiring.svelte.ts` is rewritten to the thin adapter pattern (~20–30 lines)
+- [ ] Tab-manager's `encryption-wiring.svelte.ts` is rewritten to the thin adapter pattern (~20-30 lines)
 - [ ] Tab-manager behavior is identical: sign in → activateEncryption, sign out → clear, session expiry → lock
 - [ ] No Svelte imports in the core factory
 - [ ] `phase` property exposes derivation state
@@ -512,12 +512,12 @@ Expected: Don't clear data that's already locked. The data might be from a diffe
 
 ## References
 
-- `packages/workspace/src/shared/crypto/index.ts` — `deriveWorkspaceKey`, `base64ToBytes` definitions
-- `packages/workspace/src/workspace/create-workspace.ts` — `activateEncryption()`, `lock()`, `clearLocalData()` implementations, extension chain pattern
-- `packages/workspace/src/workspace/types.ts` — `WorkspaceClient`, `EncryptionMode`, `ExtensionContext` types
-- `packages/workspace/src/workspace/lifecycle.ts` — `defineExtension()`, `MaybePromise` patterns
-- `packages/workspace/src/shared/y-keyvalue/y-keyvalue-lww-encrypted.ts` — `EncryptionMode` type definition
-- `apps/tab-manager/src/lib/state/encryption-wiring.svelte.ts` — current implementation (to be rewritten)
-- `apps/tab-manager/src/lib/state/auth.svelte.ts` — auth state reactive singleton, sign-out flow sequence
-- `apps/tab-manager/src/entrypoints/sidepanel/App.svelte` — consumption site
-- `apps/tab-manager/src/lib/workspace.ts` — workspace client instantiation with extensions
+- `packages/workspace/src/shared/crypto/index.ts`: `deriveWorkspaceKey`, `base64ToBytes` definitions
+- `packages/workspace/src/workspace/create-workspace.ts`: `activateEncryption()`, `lock()`, `clearLocalData()` implementations, extension chain pattern
+- `packages/workspace/src/workspace/types.ts`: `WorkspaceClient`, `EncryptionMode`, `ExtensionContext` types
+- `packages/workspace/src/workspace/lifecycle.ts`: `defineExtension()`, `MaybePromise` patterns
+- `packages/workspace/src/shared/y-keyvalue/y-keyvalue-lww-encrypted.ts`: `EncryptionMode` type definition
+- `apps/tab-manager/src/lib/state/encryption-wiring.svelte.ts`: current implementation (to be rewritten)
+- `apps/tab-manager/src/lib/state/auth.svelte.ts`: auth state reactive singleton, sign-out flow sequence
+- `apps/tab-manager/src/entrypoints/sidepanel/App.svelte`: consumption site
+- `apps/tab-manager/src/lib/workspace.ts`: workspace client instantiation with extensions

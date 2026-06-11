@@ -28,7 +28,7 @@ You've just hit the **Introspection Boundary**.
 
 In API design, **introspection** is the ability to examine and enumerate capabilities at runtime (or build-time) without executing the underlying logic.
 
-It’s the difference between a restaurant menu and ordering a "chef's surprise." With a menu, you can see what's available, how much it costs, and if it's vegetarian—all before you commit to eating. With a "chef's surprise," you don't know what you're getting until it's already on your plate (and you've already paid).
+It’s the difference between a restaurant menu and ordering a "chef's surprise." With a menu, you can see what's available, how much it costs, and if it's vegetarian before you commit to eating. With a "chef's surprise," you don't know what you're getting until it's already on your plate (and you've already paid).
 
 In the world of software, we rely on introspection for:
 
@@ -47,7 +47,7 @@ When we design APIs in TypeScript, we often reach for functions first. Functions
 3. **Lazy Evaluation**: Postpone expensive computations or side effects until they are absolutely necessary.
 4. **Composability**: Wrap functions in other functions to build complex pipelines of logic.
 
-But functions are **opaque**. From the perspective of your tools—your CLI, your IDE, your documentation generator—a function is a "black box." In the JavaScript runtime, you can't "peek" inside a function to see what keys it _would_ return if you called it with a certain argument. You can't serialize a function to JSON to send it over the wire to a remote AI assistant.
+But functions are **opaque**. From the perspective of your tools. Your CLI, your IDE, your documentation generator. A function is a "black box." In the JavaScript runtime, you can't "peek" inside a function to see what keys it _would_ return if you called it with a certain argument. You can't serialize a function to JSON to send it over the wire to a remote AI assistant.
 
 This opacity creates a wall. On one side of the wall is your code, where everything is flexible and dynamic. On the other side is your tooling, which is desperately trying to figure out what your code actually _is_.
 
@@ -141,7 +141,7 @@ const mySchema = {
 
 By making `~standard` a static property on the object, any library can do a simple check: `if ('~standard' in schema)`. They don't have to call a function or initialize a provider. They can instantly discover if the object they've been given is a valid schema and which version of the protocol it follows.
 
-If the authors had chosen a function-based approach—like `schema.getStandardInfo()`—they would have introduced unnecessary friction. Every consumer would have to call that function, handle potential errors, and manage the execution context. By sticking to a static boundary, they made the entire ecosystem more interoperable.
+If the authors had chosen a function-based approach like `schema.getStandardInfo()`, they would have introduced unnecessary friction. Every consumer would have to call that function, handle potential errors, and manage the execution context. By sticking to a static boundary, they made the entire ecosystem more interoperable.
 
 ## Example 3: The CLI Help Problem (and the "Boot-Loop" Trap)
 

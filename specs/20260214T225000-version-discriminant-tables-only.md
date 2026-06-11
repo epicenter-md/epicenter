@@ -60,7 +60,7 @@ const theme = defineKv()
 	});
 ```
 
-For simple additive KV, field presence works. But `_v` is also fine for KV — especially if the KV value grows complex or has non-additive changes (removals, renames). No firm stance yet on whether to recommend one over the other for KV.
+For simple additive KV, field presence works. But `_v` is also fine for KV, especially if the KV value grows complex or has non-additive changes (removals, renames). No firm stance yet on whether to recommend one over the other for KV.
 
 ## `as const` Analysis
 
@@ -156,9 +156,9 @@ No changes to `TableDefinition`, `InferTableRow`, `LastSchema`, or any other typ
 
 No code changes needed. The current implementation on `main` already works correctly:
 
-- `defineTable()` accepts any `StandardSchemaWithJSONSchema<{ id: string }>` — users include `_v` in their schema, and the literal type propagates
-- `defineKv()` accepts any `StandardSchemaWithJSONSchema` — no `_v` enforcement
-- `types.ts` types don't reference `_v` directly — they're generic over the schema types
+- `defineTable()` accepts any `StandardSchemaWithJSONSchema<{ id: string }>`: users include `_v` in their schema, and the literal type propagates
+- `defineKv()` accepts any `StandardSchemaWithJSONSchema`: no `_v` enforcement
+- `types.ts` types don't reference `_v` directly: they're generic over the schema types
 
 ## Success Criteria
 
@@ -170,8 +170,8 @@ No code changes needed. The current implementation on `main` already works corre
 
 ## References
 
-- `packages/epicenter/src/static/define-table.ts` — Current `defineTable()` implementation
-- `packages/epicenter/src/static/define-kv.ts` — Current `defineKv()` implementation
-- `packages/epicenter/src/static/types.ts` — Shared type definitions (no changes needed)
-- `specs/20260131T110000-auto-injected-version-discriminant-v2.md` — Deferred auto-injection proposal
-- `specs/20260125T120000-versioned-table-kv-specification.md` — Original versioning spec
+- `packages/epicenter/src/static/define-table.ts`: Current `defineTable()` implementation
+- `packages/epicenter/src/static/define-kv.ts`: Current `defineKv()` implementation
+- `packages/epicenter/src/static/types.ts`: Shared type definitions (no changes needed)
+- `specs/20260131T110000-auto-injected-version-discriminant-v2.md`: Deferred auto-injection proposal
+- `specs/20260125T120000-versioned-table-kv-specification.md`: Original versioning spec

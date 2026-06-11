@@ -20,7 +20,7 @@ Three commits on March 12, 2026 built the approval system in stages.
 
 `4b76002ae` added `title` and `destructive` to `ActionConfig`. The tool bridge had two approval mechanisms: per-action `destructive: true → needsApproval: true`, and a blanket `requireApprovalForMutations` option.
 
-`01d13cf30` added the `toolTrust` table—a Y.Doc-backed store for per-tool trust preferences (`'ask'` or `'always'`), synced across devices via CRDT.
+`01d13cf30` added the `toolTrust` table. A Y.Doc-backed store for per-tool trust preferences (`'ask'` or `'always'`), synced across devices via CRDT.
 
 `5d5127e73` removed `requireApprovalForMutations` entirely. After that refactor, `needsApproval` is only set when `destructive: true`.
 
@@ -61,7 +61,7 @@ export type ActionDescriptor = {
 
 The `destructive` flag has one dangerous failure mode: the developer must remember to set it. Forget it, and a mutation auto-executes with zero friction.
 
-Out of 13 tab-manager actions (5 queries, 8 mutations), only `tabs.close` has `destructive: true`. The other 7 mutations—`tabs.open`, `tabs.activate`, `tabs.pin`, `tabs.unpin`, `tabs.move`, `tabs.group`, `tabs.save`—auto-execute with no approval dialog. That's not a deliberate choice; it's an omission.
+Out of 13 tab-manager actions (5 queries, 8 mutations), only `tabs.close` has `destructive: true`. The other 7 mutations: `tabs.open`, `tabs.activate`, `tabs.pin`, `tabs.unpin`, `tabs.move`, `tabs.group`, `tabs.save`: auto-execute with no approval dialog. That's not a deliberate choice; it's an omission.
 
 The flag also creates a conceptual mismatch. "Destructive" is a judgment call. `tabs.save` with `close: true` is destructive. `tabs.open` with 50 URLs is destructive. The developer has to anticipate every dangerous combination at definition time, which is impossible.
 
@@ -204,12 +204,12 @@ User sends message → AI calls mutation tool
 
 ## Implementation Plan
 
-### Phase 1: Core types — remove `destructive` from `ActionConfig` and `ActionMeta`
+### Phase 1: Core types: remove `destructive` from `ActionConfig` and `ActionMeta`
 
 - [x] **1.1** In `packages/workspace/src/shared/actions.ts`, remove `destructive?: boolean` from `ActionConfig` (line ~133) and its JSDoc comment (line ~132)
 - [x] **1.2** In the same file, remove `destructive?: boolean` from `ActionMeta` (line ~151) and its JSDoc comment (line ~150)
 
-### Phase 2: Tool bridge — flip the approval condition
+### Phase 2: Tool bridge: flip the approval condition
 
 - [x] **2.1** In `packages/ai/src/tool-bridge.ts` line 143, change:
   ```typescript
@@ -219,10 +219,10 @@ User sends message → AI calls mutation tool
   ```typescript
   ...(action.type === 'mutation' && { needsApproval: true }),
   ```
-- [x] **2.2** Update the JSDoc for `needsApproval` in `ToolDefinitionPayload` (lines 84–88). Change "Only present when the action is marked `destructive`" to "Present on all mutations. Queries never need approval."
+- [x] **2.2** Update the JSDoc for `needsApproval` in `ToolDefinitionPayload` (lines 84-88). Change "Only present when the action is marked `destructive`" to "Present on all mutations. Queries never need approval."
 - [x] **2.3** Update the JSDoc for `actionsToClientTools` to reflect the new behavior
 
-### Phase 3: Tool bridge tests — update for mutation-default semantics
+### Phase 3: Tool bridge tests: update for mutation-default semantics
 
 - [x] **3.1** Rename test `'destructive action sets needsApproval without blanket option'` to `'all mutations get needsApproval'`
 - [x] **3.2** Update that test: the `open` mutation (currently expected to have `needsApproval` undefined) should now have `needsApproval: true`. Remove `destructive: true` from the `close` action definition.
@@ -231,12 +231,12 @@ User sends message → AI calls mutation tool
 - [x] **3.5** Rename test `'only forwards needsApproval for destructive tools'` to `'forwards needsApproval for all mutations, not queries'`
 - [x] **3.6** Update that test: the `destructive` mutation (renamed to something like `save`) should have `needsApproval: true` without `destructive: true` in its definition. The `safe` query should still omit it. Remove all `destructive: true` from test action definitions.
 
-### Phase 4: `ActionDescriptor` — remove `destructive` from workspace descriptor
+### Phase 4: `ActionDescriptor`: remove `destructive` from workspace descriptor
 
 - [x] **4.1** In `packages/workspace/src/workspace/describe-workspace.ts`, remove `destructive?: boolean` from `ActionDescriptor` (line ~48)
-- [x] **4.2** In the same file, remove the conditional spread `...(action.destructive !== undefined && { destructive: action.destructive })` from `describeWorkspace` (lines ~128–130)
+- [x] **4.2** In the same file, remove the conditional spread `...(action.destructive !== undefined && { destructive: action.destructive })` from `describeWorkspace` (lines ~128-130)
 
-### Phase 5: Descriptor tests — update for removed field
+### Phase 5: Descriptor tests: update for removed field
 
 - [x] **5.1** In `packages/workspace/src/workspace/describe-workspace.test.ts`, rename test `'title and destructive appear in action descriptors'` to `'title appears in action descriptors'`
 - [x] **5.2** Remove `destructive: true` from the `delete` mutation definition in that test (line ~236)
@@ -244,25 +244,25 @@ User sends message → AI calls mutation tool
 - [x] **5.4** Remove the assertion `expect(getAllAction?.destructive).toBeUndefined()` (line ~255)
 - [x] **5.5** Remove the assertion `expect(createAction?.destructive).toBeUndefined()` (line ~267)
 
-### Phase 6: Tab-manager workspace — remove the last `destructive: true` call site
+### Phase 6: Tab-manager workspace: remove the last `destructive: true` call site
 
 - [x] **6.1** In `apps/tab-manager/src/lib/workspace.ts` line 674, remove `destructive: true,` from the `tabs.close` action definition
 - [x] **6.2** *(discovered during implementation)* Remove `destructive: true,` from `tabs.dedup` action definition (line ~887), added in `6096e7d` after the spec was written
 
-### Phase 7: JSDoc updates — replace "destructive" language with "mutation"
+### Phase 7: JSDoc updates: replace "destructive" language with "mutation"
 
 - [x] **7.1** In `apps/tab-manager/src/lib/state/tool-trust.svelte.ts` line 4, change "Destructive AI tools start as 'ask'" to "Mutation tools start as 'ask'"
 - [x] **7.2** In the same file line 9, change "Non-destructive tools never consult this module" to "Query tools never consult this module"
 - [x] **7.3** In the same file line 54, change "Non-destructive tools should not call this" to "Query tools should not call this"
 - [x] **7.4** In the same file line 18, change "Trust level for a destructive tool" to "Trust level for a mutation tool"
-- [x] **7.5** In `apps/tab-manager/src/lib/ai/system-prompt.ts` line 28, change "Destructive actions (like closing tabs) have their own approval UI — do not ask for confirmation in prose" to "Mutations (actions that change state) have their own approval UI — do not ask for confirmation in prose"
+- [x] **7.5** In `apps/tab-manager/src/lib/ai/system-prompt.ts` line 28, change "Destructive actions (like closing tabs) have their own approval UI: do not ask for confirmation in prose" to "Mutations (actions that change state) have their own approval UI: do not ask for confirmation in prose"
 - [x] **7.6** In `apps/tab-manager/src/lib/state/chat-state.svelte.ts` line 462, change "on a destructive tool call in the chat" to "on a mutation tool call in the chat"
 
 ### Phase 8: Verification
 
-- [x] **8.1** Run `bun test` in `packages/ai` — all tests pass (4/4)
-- [x] **8.2** Run `bun test` in `packages/workspace` — all tests pass (347/347)
-- [x] **8.3** Run `bun run typecheck` from the repo root — no new errors (pre-existing `NumberKeysOf`/`Uint8Array` issues unrelated)
+- [x] **8.1** Run `bun test` in `packages/ai`: all tests pass (4/4)
+- [x] **8.2** Run `bun test` in `packages/workspace`: all tests pass (347/347)
+- [x] **8.3** Run `bun run typecheck` from the repo root: no new errors (pre-existing `NumberKeysOf`/`Uint8Array` issues unrelated)
 - [x] **8.4** Search the codebase for `destructive:` (with colon) to confirm no remaining usage in action definitions. 4 matches are all `variant="destructive"` in shadcn-svelte UI components (unrelated Tailwind styling).
 
 ---
@@ -271,7 +271,7 @@ User sends message → AI calls mutation tool
 
 ### `tabs.save` with `close: true`
 
-`tabs.save` accepts a `close` argument. When `close: true`, it closes the tab after saving—making it conditionally destructive. This was one argument for per-action `destructive` flags: you could mark only the dangerous variant.
+`tabs.save` accepts a `close` argument. When `close: true`, it closes the tab after saving. Making it conditionally destructive. This was one argument for per-action `destructive` flags: you could mark only the dangerous variant.
 
 With mutation-default approval, `tabs.save` always requires approval regardless of arguments. This is the correct behavior. The approval UI shows the full argument object, including `close: true`, so the user sees exactly what will happen before approving. The user can deny if they only wanted to save without closing.
 
@@ -326,17 +326,17 @@ On first use after this change, users will see approval dialogs for mutations th
 
 ## References
 
-- `packages/workspace/src/shared/actions.ts` — `ActionConfig`, `ActionMeta` types with `destructive` field
-- `packages/ai/src/tool-bridge.ts` — `actionsToClientTools`, `toToolDefinitions`, `needsApproval` logic
-- `packages/ai/src/tool-bridge.test.ts` — tool bridge tests with `destructive`-based assertions
-- `packages/workspace/src/workspace/describe-workspace.ts` — `ActionDescriptor`, `describeWorkspace` with `destructive` spread
-- `packages/workspace/src/workspace/describe-workspace.test.ts` — descriptor tests asserting `destructive` field
-- `apps/tab-manager/src/lib/workspace.ts` — only remaining `destructive: true` call site (`tabs.close`)
-- `apps/tab-manager/src/lib/state/tool-trust.svelte.ts` — trust state module with "destructive" language in JSDoc
-- `apps/tab-manager/src/lib/ai/system-prompt.ts` — system prompt mentioning "destructive actions"
-- `apps/tab-manager/src/lib/state/chat-state.svelte.ts` — chat state JSDoc mentioning "destructive tool call"
-- `specs/20260312T153000-action-metadata-title-destructive.md` — original spec for the `destructive` flag
-- `specs/20260312T170000-progressive-tool-trust.md` — progressive trust spec documenting the `toolTrust` table
+- `packages/workspace/src/shared/actions.ts`: `ActionConfig`, `ActionMeta` types with `destructive` field
+- `packages/ai/src/tool-bridge.ts`: `actionsToClientTools`, `toToolDefinitions`, `needsApproval` logic
+- `packages/ai/src/tool-bridge.test.ts`: tool bridge tests with `destructive`-based assertions
+- `packages/workspace/src/workspace/describe-workspace.ts`: `ActionDescriptor`, `describeWorkspace` with `destructive` spread
+- `packages/workspace/src/workspace/describe-workspace.test.ts`: descriptor tests asserting `destructive` field
+- `apps/tab-manager/src/lib/workspace.ts`: only remaining `destructive: true` call site (`tabs.close`)
+- `apps/tab-manager/src/lib/state/tool-trust.svelte.ts`: trust state module with "destructive" language in JSDoc
+- `apps/tab-manager/src/lib/ai/system-prompt.ts`: system prompt mentioning "destructive actions"
+- `apps/tab-manager/src/lib/state/chat-state.svelte.ts`: chat state JSDoc mentioning "destructive tool call"
+- `specs/20260312T153000-action-metadata-title-destructive.md`: original spec for the `destructive` flag
+- `specs/20260312T170000-progressive-tool-trust.md`: progressive trust spec documenting the `toolTrust` table
 
 ---
 

@@ -70,7 +70,7 @@ From our [YJS vs SQLite benchmark](./yjs-storage-efficiency/README.md), updating
 └────────────────────────┴─────────────┴─────────────────────┘
 ```
 
-YJS—a CRDT library not optimized for raw speed—is **faster** than SQLite for bulk operations. Not because YJS is magic, but because JavaScript Map iteration is just that fast when you're not touching disk.
+YJS, a CRDT library not optimized for raw speed, is **faster** than SQLite for bulk operations. Not because YJS is magic, but because JavaScript Map iteration is just that fast when you're not touching disk.
 
 ## The Surprise Factor
 
@@ -133,9 +133,9 @@ They don't make sense when:
 
 In-memory isn't cheating. It's choosing when to pay for durability instead of paying on every operation.
 
-When you see "in-memory database," don't think "not a real database." Think "deferred persistence." The speed isn't an illusion—it's a deliberate tradeoff that might be exactly what your application needs.
+When you see "in-memory database," don't think "not a real database." Think "deferred persistence." The speed isn't an illusion. It's a deliberate tradeoff that might be exactly what your application needs.
 
 ---
 
-_See also: [YJS Storage Efficiency](./yjs-storage-efficiency/README.md) — benchmark showing YJS is only 30% larger than SQLite_  
-_See also: [The Three Tiers of Database Latency](./database-latency-tiers.md) — understanding where latency comes from_
+_See also: [YJS Storage Efficiency](./yjs-storage-efficiency/README.md): benchmark showing YJS is only 30% larger than SQLite_
+_See also: [The Three Tiers of Database Latency](./database-latency-tiers.md): understanding where latency comes from_

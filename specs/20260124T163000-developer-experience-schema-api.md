@@ -30,10 +30,10 @@
 This spec focuses on **developer experience (DX)** for Epicenter's data layer. The goal: make it feel like working with a modern ORM, not a CRDT framework.
 
 **Key Principles:**
-1. Use existing schema libraries (ArkType, Standard Schema) — no proprietary field syntax
-2. Strong opinions on migrations — one obvious way to do things
-3. Cell-level editing by default — YJS handles conflicts naturally
-4. Minimize footguns — make the safe thing the easy thing
+1. Use existing schema libraries (ArkType, Standard Schema): no proprietary field syntax
+2. Strong opinions on migrations: one obvious way to do things
+3. Cell-level editing by default: YJS handles conflicts naturally
+4. Minimize footguns: make the safe thing the easy thing
 
 ---
 
@@ -764,7 +764,7 @@ const store = defineStore('whispering')
     },
   })
 
-  // Version 2: Add fields (additive — no migration code!)
+  // Version 2: Add fields (additive: no migration code!)
   .evolve({
     tables: {
       recordings: {
@@ -1268,7 +1268,7 @@ if (recording.status === 'valid') {
   console.log(recording.row.title);
 }
 
-// Update (patches only changed fields — cell-level LWW safe)
+// Update (patches only changed fields: cell-level LWW safe)
 recordings.update({
   id: 'abc123',
   status: 'transcribed',
@@ -1331,9 +1331,9 @@ type AppStore = typeof store;
 
 ### Why This Matters
 
-1. **No duplicate type definitions** — the schema IS the type
-2. **Autocomplete everywhere** — IDE knows your fields
-3. **Refactor safety** — rename a field, see all usages
+1. **No duplicate type definitions**: the schema IS the type
+2. **Autocomplete everywhere**: IDE knows your fields
+3. **Refactor safety**: rename a field, see all usages
 
 ---
 
@@ -1641,9 +1641,9 @@ const content = client.richtext.get(note.content); // Returns Y.XmlFragment
 
 ## Related Documents
 
-- `specs/20260124T125300-workspace-schema-versioning.md` — Workspace-level versioning details
-- `specs/20260124T004528-versioned-table-api-design.md` — YJS conflict analysis
-- `packages/epicenter/src/core/schema/fields/types.ts` — Current field system
+- `specs/20260124T125300-workspace-schema-versioning.md`: Workspace-level versioning details
+- `specs/20260124T004528-versioned-table-api-design.md`: YJS conflict analysis
+- `packages/epicenter/src/core/schema/fields/types.ts`: Current field system
 
 ---
 

@@ -1,7 +1,7 @@
 # Inline Service Factory Functions
 
-**Status:** Planning  
-**Created:** 2026-01-04  
+**Status:** Planning
+**Created:** 2026-01-04
 **Type:** Refactor
 
 ## Problem
@@ -267,7 +267,7 @@ After: export const XLive = { methods... }
 Affected services:
 - 15 transcription services (cloud/local/self-hosted)
 - 7 desktop services
-- 2 completion services  
+- 2 completion services
 - 3 recorder services
 - 1 local shortcut manager"
 
@@ -450,11 +450,11 @@ After this refactor, we'll have two patterns in services:
 1. **Direct object export** (22 files after this refactor + toast.ts)
 2. **Platform-specific with build-time injection** (8 files with `window.__TAURI_INTERNALS__`)
 
-This is the correct distinction—factories are only needed when there's actual runtime dependency injection happening.
+This is the correct distinction. Factories are only needed when there's actual runtime dependency injection happening.
 
 ## Notes
 
-- This refactor is purely structural—no functionality changes
+- This refactor is purely structural. No functionality changes
 - All imports remain the same (same export names)
 - Type safety is maintained
 - Can be done incrementally (file by file) or all at once

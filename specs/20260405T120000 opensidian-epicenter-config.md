@@ -2,7 +2,7 @@
 
 ## Goal
 
-Create an `epicenter.config.ts` for the Opensidian app that enables one-way persistence from the Epicenter cloud to local disk—including document content—following the pattern established by `playground/tab-manager-e2e/epicenter.config.ts`.
+Create an `epicenter.config.ts` for the Opensidian app that enables one-way persistence from the Epicenter cloud to local disk. Including document content. Following the pattern established by `playground/tab-manager-e2e/epicenter.config.ts`.
 
 ## Context
 
@@ -20,13 +20,13 @@ playground/tab-manager-e2e/epicenter.config.ts
 
 ### Why Opensidian differs
 
-The standard `markdownMaterializer`'s serializer only receives table row data—it can't access document content (which lives in separate Y.Docs via `.withDocument('content')`). We need a custom materializer that uses `withWorkspaceExtension` to access `documents.files.content.open(id)` → `handle.read()`.
+The standard `markdownMaterializer`'s serializer only receives table row data. It can't access document content (which lives in separate Y.Docs via `.withDocument('content')`). We need a custom materializer that uses `withWorkspaceExtension` to access `documents.files.content.open(id)` → `handle.read()`.
 
 ## Design
 
 ### Workspace-only persistence
 
-Single SQLite file for the workspace Y.Doc (files table metadata). Content docs rely on sync—no per-doc SQLite. This keeps things simple while ensuring the files table survives daemon restarts and works offline.
+Single SQLite file for the workspace Y.Doc (files table metadata). Content docs rely on sync. No per-doc SQLite. This keeps things simple while ensuring the files table survives daemon restarts and works offline.
 
 ```typescript
 .withWorkspaceExtension('persistence', (ctx) =>
@@ -76,7 +76,7 @@ packages/cli/
 - [x] Create `playground/opensidian-e2e/README.md` with usage guide
 - [x] Create `packages/cli/test/e2e-opensidian.test.ts` with config loading, table CRUD, document content, and persistence survival tests
 - [x] Update `packages/cli/src/README.md` with playground configs section
-- [x] Verify the config loads via `loadConfig()` — discovers 1 client with ID `opensidian`
+- [x] Verify the config loads via `loadConfig()`: discovers 1 client with ID `opensidian`
 - [x] All 13 e2e tests pass (honeycrisp + tab-manager + opensidian)
 
 ## Review
@@ -84,7 +84,7 @@ packages/cli/
 ### Changes made
 
 **`playground/opensidian-e2e/epicenter.config.ts`** (new, 196 lines)
-- Workspace-only persistence via `withWorkspaceExtension` + `persistence()` — single SQLite file at `.epicenter/persistence/opensidian.db`
+- Workspace-only persistence via `withWorkspaceExtension` + `persistence()`: single SQLite file at `.epicenter/persistence/opensidian.db`
 - Custom one-way content materializer via `withWorkspaceExtension('markdown', ...)` that:
   - Reads document content via `documents.files.content.open(id)` → `handle.read()`
   - Writes `.md` files with YAML frontmatter (file metadata) + markdown body (document content)
@@ -103,8 +103,8 @@ packages/cli/
 
 ### Design decisions
 
-1. **Workspace-only persistence** — content docs rely on sync, not local SQLite. Keeps the config simple. The workspace persistence ensures the files table survives daemon restarts.
-2. **Custom materializer over standard `markdownMaterializer`** — the standard serializer only receives table row data and can't access document content (separate Y.Docs via `.withDocument('content')`). The custom extension uses `ExtensionContext.documents` to read content.
-3. **`slugify` + `filenamify` for filenames** — matches the `titleFilenameSerializer` pattern from the workspace package. Falls back to `{id}.md` for empty names.
-4. **Graceful content fallback** — if document content isn't yet available (sync pending), the materializer writes metadata-only `.md` files. Subsequent observer callbacks fill in content as it arrives.
-5. **Config lives in `playground/`, not `apps/`** — the config is a CLI/daemon artifact that runs under `bun` via `epicenter start`. Putting it inside the SvelteKit app would pull it into Vite's module graph. The `playground/` pattern (established by `tab-manager-e2e`) keeps configs as standalone projects that consume workspace packages.
+1. **Workspace-only persistence**: content docs rely on sync, not local SQLite. Keeps the config simple. The workspace persistence ensures the files table survives daemon restarts.
+2. **Custom materializer over standard `markdownMaterializer`**: the standard serializer only receives table row data and can't access document content (separate Y.Docs via `.withDocument('content')`). The custom extension uses `ExtensionContext.documents` to read content.
+3. **`slugify` + `filenamify` for filenames**: matches the `titleFilenameSerializer` pattern from the workspace package. Falls back to `{id}.md` for empty names.
+4. **Graceful content fallback**: if document content isn't yet available (sync pending), the materializer writes metadata-only `.md` files. Subsequent observer callbacks fill in content as it arrives.
+5. **Config lives in `playground/`, not `apps/`**: the config is a CLI/daemon artifact that runs under `bun` via `epicenter start`. Putting it inside the SvelteKit app would pull it into Vite's module graph. The `playground/` pattern (established by `tab-manager-e2e`) keeps configs as standalone projects that consume workspace packages.

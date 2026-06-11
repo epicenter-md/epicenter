@@ -2,7 +2,7 @@
 
 **Date**: 2026-02-19
 **Status**: Superseded
-**Superseded by**: `specs/20260220T080000-plugin-first-server-architecture.md` — ws identity bug fix (room manager with `ws.raw` keying) and auth (all 3 modes) are covered in the plugin-first architecture.
+**Superseded by**: `specs/20260220T080000-plugin-first-server-architecture.md`: ws identity bug fix (room manager with `ws.raw` keying) and auth (all 3 modes) are covered in the plugin-first architecture.
 **Author**: AI-assisted
 
 ## Overview
@@ -104,7 +104,7 @@ const server = createSyncServer({
 | Decision                       | Choice                     | Rationale                                                                                    |
 | ------------------------------ | -------------------------- | -------------------------------------------------------------------------------------------- |
 | Fix ws identity tracking       | Use `ws.raw` everywhere    | Code already documents the instability. `ws.raw` is the documented stable key.               |
-| Auth modes to support          | Modes 1 and 2 only         | User requested. Mode 3 requires JWT infrastructure — defer.                                  |
+| Auth modes to support          | Modes 1 and 2 only         | User requested. Mode 3 requires JWT infrastructure: defer.                                  |
 | Server coupling                | Keep sync plugin separate  | `createSyncPlugin` is already an Elysia plugin. Fix it in place, make `createServer` use it. |
 | Add auth to plugin or server   | Plugin level               | Auth belongs at the WebSocket upgrade, not in an outer wrapper.                              |
 | Room tracking data structure   | `Map<string, Set<object>>` | Use `ws.raw` as the Set element. `ws.raw` is identity-stable per connection.                 |
@@ -196,7 +196,7 @@ STEP 3: Normal sync protocol
 
 - [ ] **3.1** Create `createSyncServer()` function that wraps Elysia + fixed sync plugin
 - [ ] **3.2** Accept `getDoc`, `auth`, `port` config
-- [ ] **3.3** Return `{ start(), destroy() }` — no tables, no actions, no OpenAPI
+- [ ] **3.3** Return `{ start(), destroy() }`: no tables, no actions, no OpenAPI
 
 ### Phase 4: Update `createServer` to use fixed plugin
 
@@ -220,7 +220,7 @@ STEP 3: Normal sync protocol
 ### Simultaneous disconnect of all clients
 
 1. Multiple clients disconnect at the same moment
-2. Each `close()` handler runs — only the last one should start the eviction timer
+2. Each `close()` handler runs: only the last one should start the eviction timer
 3. Current code handles this: checks `room.size === 0` before starting timer
 
 ### Reconnection during eviction window
@@ -232,7 +232,7 @@ STEP 3: Normal sync protocol
 ## Open Questions
 
 1. **URL pattern: `/workspaces/:room/sync` vs `/:room/sync`?**
-   - Current uses `/workspaces/:workspaceId/sync` — tied to workspace concept
+   - Current uses `/workspaces/:workspaceId/sync`: tied to workspace concept
    - A standalone sync server might want `/:room` or a configurable pattern
    - **Recommendation**: Keep `/workspaces/:room/sync` for backward compat in `createServer`, but make `createSyncServer` use `/:room/sync` (or make it configurable)
 
@@ -258,8 +258,8 @@ STEP 3: Normal sync protocol
 
 ## References
 
-- `packages/server/src/sync/index.ts` — The buggy sync plugin (main fix target)
-- `packages/server/src/sync/protocol.ts` — Protocol layer (no changes needed)
-- `packages/server/src/server.ts` — Current server that wraps the plugin
-- `packages/sync/src/provider.ts` — Client-side provider (no changes needed)
-- `packages/sync/src/types.ts` — Auth mode types for reference
+- `packages/server/src/sync/index.ts`: The buggy sync plugin (main fix target)
+- `packages/server/src/sync/protocol.ts`: Protocol layer (no changes needed)
+- `packages/server/src/server.ts`: Current server that wraps the plugin
+- `packages/sync/src/provider.ts`: Client-side provider (no changes needed)
+- `packages/sync/src/types.ts`: Auth mode types for reference

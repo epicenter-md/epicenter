@@ -1,6 +1,6 @@
 # Markdown Normalization Converges in One Pass
 
-**TL;DR**: Parse-serialize cycles normalize markdown syntax (`*italic*` → `_italic_`), but the output stabilizes after one pass—no ping-pong, no loops.
+**TL;DR**: Parse-serialize cycles normalize markdown syntax (`*italic*` → `_italic_`), but the output stabilizes after one pass. No ping-pong, no loops.
 
 > When you round-trip markdown through a parser and serializer, you get one normalization pass, then it stops. This is why ProseMirror-backed Y.Text doesn't create infinite update loops.
 

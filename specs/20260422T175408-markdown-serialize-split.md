@@ -33,34 +33,34 @@ Replace the markdown materializer's asymmetric `serialize: (row) → { filename,
 ### Problems
 
 1. **The two halves speak different dialects.**
-   - `serialize` outputs `{ filename, content }` — a filesystem concept.
-   - `deserialize` takes `{ frontmatter, body }` — a markdown concept.
+   - `serialize` outputs `{ filename, content }`: a filesystem concept.
+   - `deserialize` takes `{ frontmatter, body }`: a markdown concept.
    - They're not inverses in any type-checkable sense. You can pass files through a round-trip and break invariants without the compiler noticing.
 
 2. **Three concerns are conflated in one function (`serialize`).**
    - *Filename choice* (pure, synchronous, needs only `row.id` or `row.title`)
    - *Frontmatter shape* (which row fields become YAML keys)
    - *Body content* (how the row's content-ish field becomes the markdown body)
-   - Callers who only want to change filename have to rewrite the whole serialize, duplicating the default `toMarkdown` call. See `playground/opensidian-e2e/epicenter.config.ts:115-149` — 35 lines of serialize just to compute a slug filename.
+   - Callers who only want to change filename have to rewrite the whole serialize, duplicating the default `toMarkdown` call. See `playground/opensidian-e2e/epicenter.config.ts:115-149`: 35 lines of serialize just to compute a slug filename.
 
 3. **No round-trip identity check.** With a cleanly-split `format` / `parse` pair, a test could assert `parse(format(row)) === row` at the type level. Today there's no contract linking them.
 
-4. **`deserialize` is optional and defaults to "use frontmatter as row."** Fine for simple cases, but obscures the true contract — the default IS a parser (`frontmatter → row`), it's just implicit. A `parse` slot with a default makes this explicit.
+4. **`deserialize` is optional and defaults to "use frontmatter as row."** Fine for simple cases, but obscures the true contract: the default IS a parser (`frontmatter → row`), it's just implicit. A `parse` slot with a default makes this explicit.
 
 ### Desired State
 
 ```ts
 .table(tables.posts, {
-  // Where to write — pure, sync
+  // Where to write: pure, sync
   filename: (row) => toSlugFilename(row.title, row.id),
 
-  // How to format — row → { frontmatter, body }
+  // How to format: row → { frontmatter, body }
   toMarkdown: (row) => ({
     frontmatter: { id: row.id, title: row.title },
     body: row.content,
   }),
 
-  // Inverse of toMarkdown — { frontmatter, body } → row
+  // Inverse of toMarkdown: { frontmatter, body } → row
   fromMarkdown: (parsed) => ({
     id: parsed.frontmatter.id as string,
     title: parsed.frontmatter.title as string,
@@ -72,7 +72,7 @@ Replace the markdown materializer's asymmetric `serialize: (row) → { filename,
 
 Three slots, each takes exactly one callable. `toMarkdown` and `fromMarkdown` are true inverses over a shared `MarkdownShape` type. `filename` is its own pure slot. The materializer composes them: `writeFile(filename(row), assembleMarkdown(toMarkdown(row)))`.
 
-For common patterns like "one field is the body," ship **two independent helpers** — never a bundled pair:
+For common patterns like "one field is the body," ship **two independent helpers**: never a bundled pair:
 
 ```ts
 .table(tables.posts, {
@@ -93,7 +93,7 @@ Each helper returns one callable for one slot. No spread magic, no bundled `{ to
 | Obsidian plugins     | Filename = title (convention)           | Frontmatter + body (separate)   | Yes                 |
 | gatsby-remark        | Filename = slug                         | Frontmatter + body (separate)   | Yes                 |
 | 11ty                 | Filename = data.page.fileSlug           | Frontmatter + body (separate)   | Yes                 |
-| gray-matter (lib)    | N/A (doesn't own filenames)             | `{ data, content }` pair        | Yes — its core idiom |
+| gray-matter (lib)    | N/A (doesn't own filenames)             | `{ data, content }` pair        | Yes: its core idiom |
 | **Current markdown materializer** | Bundled with serialize       | Bundled with serialize          | No                  |
 
 **Key finding**: everyone else treats filename, frontmatter, and body as three separate concerns. The bundled `serialize → { filename, content }` is our own non-idiom.
@@ -121,8 +121,8 @@ These are straight inverses. Our `parse` / `format` will mirror this shape, usin
 | Default `toMarkdown`             | `(row) => ({ frontmatter: row, body: undefined })`  | Current behavior (dump row as frontmatter, no body).         |
 | Default `fromMarkdown`           | `(parsed) => parsed.frontmatter as Row`             | Current behavior (frontmatter-is-row).                       |
 | Shared type for pair             | `MarkdownShape = { frontmatter: Record<string, unknown>; body: string | undefined }` | Symmetric; `Parameters<fromMarkdown>[0]` === `ReturnType<toMarkdown>`. |
-| Common-case helpers              | `fieldAsBody(field)` and `bodyAsField(field)` — **two independent helpers**, never a bundled pair | Each returns one callable for one slot. No spread, no `bodyField` config slot, no precedence rules. The config always has exactly 3 optional keys. |
-| Filename for a row with no `id`  | Enforced — row must always have an id (BaseRow requires it) | No changes to the id invariant.                              |
+| Common-case helpers              | `fieldAsBody(field)` and `bodyAsField(field)`: **two independent helpers**, never a bundled pair | Each returns one callable for one slot. No spread, no `bodyField` config slot, no precedence rules. The config always has exactly 3 optional keys. |
+| Filename for a row with no `id`  | Enforced: row must always have an id (BaseRow requires it) | No changes to the id invariant.                              |
 | Async callbacks?                 | Allow `MaybePromise` on all three slots             | Matches existing `serialize` async semantics; needed when the transform depends on a lookup. |
 
 ## Architecture
@@ -219,7 +219,7 @@ export function bodyAsField<TRow extends BaseRow>(
   ```
 - [ ] **1.5** Rewrite the observer + `pull` paths with the same composition.
 - [ ] **1.6** Rewrite `push` to use `fromMarkdown` slot with default `(parsed) => parsed.frontmatter as Row`.
-- [ ] **1.7** Update module-level `defaultSerialize`/`defaultDeserialize` constants to match the new shape semantics (or delete them — the per-slot defaults inside `materializeTable` are simple enough).
+- [ ] **1.7** Update module-level `defaultSerialize`/`defaultDeserialize` constants to match the new shape semantics (or delete them: the per-slot defaults inside `materializeTable` are simple enough).
 
 ### Phase 1b: Helpers
 
@@ -230,8 +230,8 @@ export function bodyAsField<TRow extends BaseRow>(
 
 ### Phase 2: Migrate call sites
 
-- [ ] **2.1** Update `playground/opensidian-e2e/epicenter.config.ts` — split the 35-line `serialize` into `filename` + `format` + `parse`. This should dramatically shrink the config.
-- [ ] **2.2** Update materializer test helpers that customize `serialize`/`deserialize` — `uses custom serialize callback` and `uses custom deserialize callback` tests.
+- [ ] **2.1** Update `playground/opensidian-e2e/epicenter.config.ts`: split the 35-line `serialize` into `filename` + `format` + `parse`. This should dramatically shrink the config.
+- [ ] **2.2** Update materializer test helpers that customize `serialize`/`deserialize`: `uses custom serialize callback` and `uses custom deserialize callback` tests.
 
 ### Phase 3: Type-level round-trip test
 
@@ -241,44 +241,44 @@ export function bodyAsField<TRow extends BaseRow>(
 ### Phase 4: Documentation
 
 - [ ] **4.1** Update the materializer JSDoc with the new slot semantics.
-- [ ] **4.2** Update the attach-primitive skill — the materializer example currently shows the bundled `serialize`.
+- [ ] **4.2** Update the attach-primitive skill: the materializer example currently shows the bundled `serialize`.
 - [ ] **4.3** Add a short migration note (even though we're not keeping aliases, a CHANGELOG entry helps).
 
 ## Edge Cases
 
 ### Caller provides only `filename`, no `format`
 
-1. `format` falls back to default — `frontmatter = row`, `body = undefined`.
+1. `format` falls back to default: `frontmatter = row`, `body = undefined`.
 2. Output: filename chosen by caller; frontmatter = full row dump.
 3. Works.
 
 ### Caller provides `parse` but not `format`
 
 1. Push path uses caller's `parse`.
-2. Pull path uses default `format` — which may not produce what `parse` expects to invert.
-3. Round-trip is broken by caller. **Accept this** — we can't enforce inverse relationship at runtime.
+2. Pull path uses default `format`: which may not produce what `parse` expects to invert.
+3. Round-trip is broken by caller. **Accept this**: we can't enforce inverse relationship at runtime.
 
 ### `format` returns `body: undefined`
 
 1. `toMarkdown` writes frontmatter-only, no body section.
-2. `parseMarkdownFile` on read returns `body: undefined` (or `''` — TBD, this is an open question).
+2. `parseMarkdownFile` on read returns `body: undefined` (or `''`: TBD, this is an open question).
 3. `parse` default treats frontmatter as row.
 
 ### Filename function returns a path with subdirectories
 
 1. `filename(row)` returns `"archive/old.md"`.
 2. `join(directory, filename)` resolves to `directory/archive/old.md`.
-3. Materializer's `mkdir` only created the top-level directory — write fails.
+3. Materializer's `mkdir` only created the top-level directory: write fails.
 4. **Handling**: ensure `mkdir` runs on `join(directory, dirname(filename))` per write. Minor but necessary.
 
 ## Open Questions
 
 1. **Should `parse` return type be validated against the schema at runtime?**
-   - Options: (a) no — trust the caller (current behavior); (b) yes — run the result through `table.parse()` and throw on invalid.
+   - Options: (a) no: trust the caller (current behavior); (b) yes: run the result through `table.parse()` and throw on invalid.
    - **Recommendation**: (a). The materializer never validates rows today; adding it here is scope creep. If callers want validation, they can compose.
 
 2. **Should we keep `deserialize`/`serialize` as deprecated aliases for one release cycle?**
-   - Options: (a) no — one commit, break cleanly; (b) yes — both work, deprecation warning.
+   - Options: (a) no: one commit, break cleanly; (b) yes: both work, deprecation warning.
    - **Recommendation**: (a). Two call sites in the entire repo; aliases would cost more than the migration does. No external users.
 
 3. **Is there a case where `filename` depends on the markdown shape (frontmatter/body) rather than the row?**
@@ -302,9 +302,9 @@ export function bodyAsField<TRow extends BaseRow>(
 
 ## References
 
-- `packages/workspace/src/document/materializer/markdown/materializer.ts` — primary rewrite target.
-- `packages/workspace/src/document/materializer/markdown/markdown.ts` — `toMarkdown` helper we'll lean on.
-- `packages/workspace/src/document/materializer/markdown/parse-markdown-file.ts` — already returns `{ frontmatter, body }`.
-- `playground/opensidian-e2e/epicenter.config.ts:115-149` — largest call site; good test case for whether the split actually simplifies.
-- `packages/workspace/src/document/materializer/markdown/materializer.test.ts` — migration target for tests.
-- gray-matter's API for the naming model — https://github.com/jonschlinkert/gray-matter
+- `packages/workspace/src/document/materializer/markdown/materializer.ts`: primary rewrite target.
+- `packages/workspace/src/document/materializer/markdown/markdown.ts`: `toMarkdown` helper we'll lean on.
+- `packages/workspace/src/document/materializer/markdown/parse-markdown-file.ts`: already returns `{ frontmatter, body }`.
+- `playground/opensidian-e2e/epicenter.config.ts:115-149`: largest call site; good test case for whether the split actually simplifies.
+- `packages/workspace/src/document/materializer/markdown/materializer.test.ts`: migration target for tests.
+- gray-matter's API for the naming model: https://github.com/jonschlinkert/gray-matter

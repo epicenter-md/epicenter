@@ -4,7 +4,7 @@
  * Toggle states survive panel close/reopen and sync across extension
  * contexts (popup, sidebar) via chrome.storage.onChanged.
  *
- * @see {@link ./storage-state.svelte} — chrome.storage reactive wrapper
+ * @see {@link ./storage-state.svelte}: chrome.storage reactive wrapper
  */
 
 import { type } from 'arktype';

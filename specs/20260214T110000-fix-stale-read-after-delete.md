@@ -2,7 +2,7 @@
 
 **Date**: 2026-02-14
 **Status**: Complete
-**PR**: [#1355](https://github.com/EpicenterHQ/epicenter/pull/1355) — Merged 2026-02-14. Added `pendingDeletes` Set to both `YKeyValue` and `YKeyValueLww`. Oracle-reviewed.
+**PR**: [#1355](https://github.com/EpicenterHQ/epicenter/pull/1355): Merged 2026-02-14. Added `pendingDeletes` Set to both `YKeyValue` and `YKeyValueLww`. Oracle-reviewed.
 
 ## Overview
 
@@ -19,11 +19,11 @@ kv.set('foo', 'bar'); // foo exists in map
 
 ydoc.transact(() => {
 	kv.delete('foo');
-	kv.has('foo'); // TRUE (stale — map not yet updated)
-	kv.get('foo'); // 'bar' (stale — returns old value)
+	kv.has('foo'); // TRUE (stale: map not yet updated)
+	kv.get('foo'); // 'bar' (stale: returns old value)
 });
 
-kv.has('foo'); // FALSE (correct — observer has updated map)
+kv.has('foo'); // FALSE (correct: observer has updated map)
 ```
 
 ### Why This Happens
@@ -45,15 +45,15 @@ has('foo') during batch:
       └─► Returns TRUE ❌
 ```
 
-The `pending` Map solves this for `set()` — writes go into `pending`, reads check `pending` first. But `delete()` only clears `pending`; it doesn't mark the key as "pending deletion" so reads can skip the stale `map` entry.
+The `pending` Map solves this for `set()`: writes go into `pending`, reads check `pending` first. But `delete()` only clears `pending`; it doesn't mark the key as "pending deletion" so reads can skip the stale `map` entry.
 
 ### Current Workaround
 
 The limitation is documented in three places:
 
-1. `y-keyvalue-lww.ts` — `delete()` JSDoc (line 503)
-2. `y-keyvalue.ts` — `delete()` JSDoc (line 472)
-3. `static/types.ts` — `batch()` JSDoc (line 805)
+1. `y-keyvalue-lww.ts`: `delete()` JSDoc (line 503)
+2. `y-keyvalue.ts`: `delete()` JSDoc (line 472)
+3. `static/types.ts`: `batch()` JSDoc (line 805)
 
 Users are told to track deletions manually if they need accurate reads within a batch.
 
@@ -99,8 +99,8 @@ Both YKeyValue and YKeyValueLww need identical changes:
 
 - [ ] **1. Add field**: `private pendingDeletes: Set<string> = new Set();`
 - [ ] **2. Update `delete()`**: Add key to `pendingDeletes` after clearing `pending`
-- [ ] **3. Update `get()`**: Check `pendingDeletes` before checking `map` — return `undefined` if key is pending delete
-- [ ] **4. Update `has()`**: Check `pendingDeletes` before checking `map` — return `false` if key is pending delete
+- [ ] **3. Update `get()`**: Check `pendingDeletes` before checking `map`: return `undefined` if key is pending delete
+- [ ] **4. Update `has()`**: Check `pendingDeletes` before checking `map`: return `false` if key is pending delete
 - [ ] **5. Update observer**: Clear processed keys from `pendingDeletes` when they're removed from `map`
 - [ ] **6. Update existing tests**: Change stale-read tests (line 669 in y-keyvalue-lww.test.ts, line 707 in y-keyvalue.test.ts) to assert correct (non-stale) behavior
 - [ ] **7. Add new tests**: Edge cases for `pendingDeletes` (see Test Plan below)
@@ -139,7 +139,7 @@ ydoc.transact(() => {
 });
 ```
 
-**Solution**: Already idempotent. `delete()` checks `map.has(key)` and returns early if not found. The second delete will see `pendingDeletes.has('foo')` is true but `map.has('foo')` is still true (observer hasn't fired), so it will try to delete from yarray again. This is harmless — `deleteEntryByKey()` will find no entry (already deleted) and do nothing.
+**Solution**: Already idempotent. `delete()` checks `map.has(key)` and returns early if not found. The second delete will see `pendingDeletes.has('foo')` is true but `map.has('foo')` is still true (observer hasn't fired), so it will try to delete from yarray again. This is harmless: `deleteEntryByKey()` will find no entry (already deleted) and do nothing.
 
 Actually, we should check `pendingDeletes` in `delete()` to avoid the redundant yarray scan:
 
@@ -184,33 +184,33 @@ The `entries()` method already handles `pending` correctly (yields pending entri
 
 ### Update existing tests
 
-1. **y-keyvalue-lww.test.ts:669** — Change test name from "known limitation" to "delete during batch: has() returns false immediately". Change assertion from `expect(hasDuringBatch).toBe(true)` to `expect(hasDuringBatch).toBe(false)`.
+1. **y-keyvalue-lww.test.ts:669**: Change test name from "known limitation" to "delete during batch: has() returns false immediately". Change assertion from `expect(hasDuringBatch).toBe(true)` to `expect(hasDuringBatch).toBe(false)`.
 
-2. **y-keyvalue.test.ts:707** — Same change as above.
+2. **y-keyvalue.test.ts:707**: Same change as above.
 
 ### Add new tests
 
 Add to both `y-keyvalue-lww.test.ts` and `y-keyvalue.test.ts`:
 
-3. **`delete()` then `get()` in batch returns undefined** — Verify `get()` returns undefined after delete in same transaction.
+3. **`delete()` then `get()` in batch returns undefined**: Verify `get()` returns undefined after delete in same transaction.
 
-4. **`delete()` then `set()` in batch** — Verify `set()` clears `pendingDeletes` and `get()` returns new value.
+4. **`delete()` then `set()` in batch**: Verify `set()` clears `pendingDeletes` and `get()` returns new value.
 
-5. **Double-delete is idempotent** — Call `delete()` twice on same key in batch, verify no errors and correct final state.
+5. **Double-delete is idempotent**: Call `delete()` twice on same key in batch, verify no errors and correct final state.
 
-6. **`entries()` skips pending deletes** — Delete a key in batch, verify `entries()` doesn't yield it.
+6. **`entries()` skips pending deletes**: Delete a key in batch, verify `entries()` doesn't yield it.
 
-7. **Observer clears `pendingDeletes`** — Verify `pendingDeletes` is empty after transaction ends.
+7. **Observer clears `pendingDeletes`**: Verify `pendingDeletes` is empty after transaction ends.
 
 ## Documentation Cleanup
 
 Once this ships, remove or update the "Known Limitation" sections in:
 
-- [ ] **`y-keyvalue-lww.ts`** — Remove "Known Limitation" section from `delete()` JSDoc (lines 503-517)
-- [ ] **`y-keyvalue.ts`** — Remove "Known Limitation" section from `delete()` JSDoc (lines 472-486)
-- [ ] **`static/types.ts`** — Remove "Known Limitation: Stale reads after delete" section from `batch()` JSDoc (lines 805-828)
-- [ ] **`specs/20260127T180000-ykeyvalue-transaction-fix.md`** — Update "Known Limitations" section (line 406) to note this is now fixed
-- [ ] **`specs/20260214T105600-workspace-level-batch.md`** — Check if it mentions the stale-read limitation (it doesn't appear to based on the read above)
+- [ ] **`y-keyvalue-lww.ts`**: Remove "Known Limitation" section from `delete()` JSDoc (lines 503-517)
+- [ ] **`y-keyvalue.ts`**: Remove "Known Limitation" section from `delete()` JSDoc (lines 472-486)
+- [ ] **`static/types.ts`**: Remove "Known Limitation: Stale reads after delete" section from `batch()` JSDoc (lines 805-828)
+- [ ] **`specs/20260127T180000-ykeyvalue-transaction-fix.md`**: Update "Known Limitations" section (line 406) to note this is now fixed
+- [ ] **`specs/20260214T105600-workspace-level-batch.md`**: Check if it mentions the stale-read limitation (it doesn't appear to based on the read above)
 
 ## Files Changed
 

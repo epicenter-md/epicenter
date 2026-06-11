@@ -12,8 +12,8 @@ After the cleanup, RowStore has no way to write data. Callers must drop down to 
 
 Add two methods to RowStore:
 
-1. **`merge(rowId, data)`** — Set multiple cells for a row from a partial record. Merge semantics: only touches columns present in `data`, leaves others untouched.
-2. **`batch(fn)`** — Execute multiple row-level operations atomically. The transaction exposes `{ merge, delete }` — both row-level. No `setCell`/`deleteCell` (those belong to CellStore).
+1. **`merge(rowId, data)`**: Set multiple cells for a row from a partial record. Merge semantics: only touches columns present in `data`, leaves others untouched.
+2. **`batch(fn)`**: Execute multiple row-level operations atomically. The transaction exposes `{ merge, delete }`: both row-level. No `setCell`/`deleteCell` (those belong to CellStore).
 
 ## Why "merge"
 
@@ -61,13 +61,13 @@ export type RowStore<T> = {
   // ROW DELETE (unchanged)
   delete(rowId: string): boolean;
 
-  // BATCH (new — row-level only)
+  // BATCH (new: row-level only)
 
   /**
    * Execute multiple row operations atomically in a Y.js transaction.
    * - Single undo/redo step
    * - Observers fire once (not per-operation)
-   * - Transaction has { merge, delete } — row-level operations only
+   * - Transaction has { merge, delete }: row-level operations only
    */
   batch(fn: (tx: RowStoreBatchTransaction<T>) => void): void;
 
@@ -78,7 +78,7 @@ export type RowStore<T> = {
 
 ### Layer Separation
 
-The old `batch` violated layer separation by exposing `setCell`/`deleteCell` — direct duplicates of CellStore methods that bypassed CellStore entirely (calling `ykv.set`/`ykv.delete` directly).
+The old `batch` violated layer separation by exposing `setCell`/`deleteCell`: direct duplicates of CellStore methods that bypassed CellStore entirely (calling `ykv.set`/`ykv.delete` directly).
 
 The new API maintains clean separation:
 
@@ -87,7 +87,7 @@ The new API maintains clean separation:
 | **CellStore** | `setCell`, `deleteCell`, `batch({ setCell, deleteCell })` | `getCell`, `hasCell`, `cells()`, `count()` |
 | **RowStore** | `merge`, `delete`, `batch({ merge, delete })` | `get`, `has`, `ids`, `getAll`, `count` |
 
-`merge` delegates to `cellStore.setCell()` (not `ykv.set()` directly). `delete` uses `ykv.delete()` as before (it must, since CellStore has no "delete all cells for row" operation — that's a row-level concept).
+`merge` delegates to `cellStore.setCell()` (not `ykv.set()` directly). `delete` uses `ykv.delete()` as before (it must, since CellStore has no "delete all cells for row" operation, that's a row-level concept).
 
 ## Implementation
 
@@ -169,22 +169,22 @@ batch(fn) {
 
 Tests:
 
-- **merge() sets multiple cells for a row** — Verify `rows.merge('row-1', { title: 'Hello', views: '42' })` then `rows.get('row-1')` returns the merged data.
-- **merge() creates a new row if it doesn't exist** — Verify merge on non-existent row creates it.
-- **merge() preserves unmentioned columns** — Set `{ a: '1', b: '2' }`, then merge `{ b: '3', c: '4' }`, verify result is `{ a: '1', b: '3', c: '4' }`.
-- **merge() fires single observer notification** — Verify one callback for multi-field merge.
-- **merge() with empty object is a no-op** — `rows.merge('row-1', {})` shouldn't fire observers or create a row.
+- **merge() sets multiple cells for a row**: Verify `rows.merge('row-1', { title: 'Hello', views: '42' })` then `rows.get('row-1')` returns the merged data.
+- **merge() creates a new row if it doesn't exist**: Verify merge on non-existent row creates it.
+- **merge() preserves unmentioned columns**: Set `{ a: '1', b: '2' }`, then merge `{ b: '3', c: '4' }`, verify result is `{ a: '1', b: '3', c: '4' }`.
+- **merge() fires single observer notification**: Verify one callback for multi-field merge.
+- **merge() with empty object is a no-op**: `rows.merge('row-1', {})` shouldn't fire observers or create a row.
 
 #### 2. Add `describe('Batch Operations', ...)` block after Merge, before Atomic Operations
 
 Tests:
 
-- **batch merge sets cells atomically** — Multiple merges in one batch, verify all applied.
-- **batch fires single observer notification** — Multiple operations, one callback.
-- **batch observer receives all changed row IDs** — Verify the Set contains all affected rows.
-- **batch merge and delete in single transaction** — Mix merge + delete, verify both apply, one notification.
-- **batch delete of non-existent row is a no-op** — No error, existing rows unaffected.
-- **batch with empty callback is a no-op** — No observer fires.
+- **batch merge sets cells atomically**: Multiple merges in one batch, verify all applied.
+- **batch fires single observer notification**: Multiple operations, one callback.
+- **batch observer receives all changed row IDs**: Verify the Set contains all affected rows.
+- **batch merge and delete in single transaction**: Mix merge + delete, verify both apply, one notification.
+- **batch delete of non-existent row is a no-op**: No error, existing rows unaffected.
+- **batch with empty callback is a no-op**: No observer fires.
 
 #### 3. Update top doc comment
 

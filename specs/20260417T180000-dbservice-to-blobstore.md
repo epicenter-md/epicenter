@@ -25,7 +25,7 @@ type DbService = {
 Problems:
 
 1. **`transformations:` has zero app-level callers.** Transformation CRUD is already workspace-backed via `lib/state/transformations.svelte.ts`. The only consumers are the migration script (one-time) and the dual-source wrapper (reads for merge, but nobody reads from `DbService.transformations` in app code).
-2. **`runs:` has exactly one caller** — `lib/query/transformer.ts`. The UI already reads runs from workspace via `lib/state/transformation-runs.svelte.ts`. The write path in `transformer.ts` still goes through DbService because it predates the workspace migration.
+2. **`runs:` has exactly one caller**: `lib/query/transformer.ts`. The UI already reads runs from workspace via `lib/state/transformation-runs.svelte.ts`. The write path in `transformer.ts` still goes through DbService because it predates the workspace migration.
 3. **The name `DbService` is stale.** Two-thirds of the interface is dead. The only section that does real work is `audio`, which is a blob store.
 
 ### Desired State
@@ -69,7 +69,7 @@ transformationStepRuns: { id, runId, stepId, startedAt, completedAt, status, inp
 
 This is cleaner. The `transformer.ts` rewrite should write to both tables directly.
 
-### `transformer.ts` — the one remaining caller
+### `transformer.ts`: the one remaining caller
 
 5 methods called on `services.db.runs`:
 
@@ -87,10 +87,10 @@ This is cleaner. The `transformer.ts` rewrite should write to both tables direct
 |----------|--------|-----------|
 | Remove `transformations:` from DbService | Just delete | Zero callers. Dead code. |
 | Rewrite transformer.ts runs | Write to workspace tables | Only 1 caller, workspace schema already exists |
-| Step-run writes | Inline in transformer.ts | Only one call site. No need for a state module wrapper—transformer.ts is the only writer. |
+| Step-run writes | Inline in transformer.ts | Only one call site. No need for a state module wrapper. Transformer.ts is the only writer. |
 | Run lifecycle methods (addStep, etc.) | Inline in transformer.ts as helper functions | These are execution-specific logic, not general CRUD. They don't belong on a state module. |
-| Migration of old runs from DbService → workspace | Skip | Same rationale as recording migration—migration already ran for existing users. Old runs in IndexedDB/filesystem are read-only history. |
-| BlobStore naming | `BlobStore` over `AssetStore` | More precise—it stores blobs, not generic assets. |
+| Migration of old runs from DbService → workspace | Skip | Same rationale as recording migration. Migration already ran for existing users. Old runs in IndexedDB/filesystem are read-only history. |
+| BlobStore naming | `BlobStore` over `AssetStore` | More precise. It stores blobs, not generic assets. |
 | Error type | `BlobError` | Replaces `DbError` which no longer describes the scope. |
 | Keep dual-source audio reads | Yes | Desktop users may still have audio in IndexedDB from pre-migration. Dual-read fallback must remain. |
 
@@ -120,7 +120,7 @@ This is cleaner. The `transformer.ts` rewrite should write to both tables direct
 - [ ] **3.3** Remove `runs:` from `web/index.ts`
 - [ ] **3.4** Remove `runs:` from `desktop.ts`
 - [ ] **3.5** Delete run model types (`models/transformation-runs.ts`)
-- [ ] **3.6** Update `models/index.ts` — likely empty, consider deleting the directory
+- [ ] **3.6** Update `models/index.ts`: likely empty, consider deleting the directory
 
 ### Wave 4: Rename DbService → BlobStore
 
@@ -141,10 +141,10 @@ This is cleaner. The `transformer.ts` rewrite should write to both tables direct
 ## Edge Cases
 
 ### Old runs in IndexedDB/filesystem
-Users who ran transformations before this migration have run data in the old storage. The workspace reads won't find them. This is acceptable—old run history is read-only and will gradually be replaced by new runs written to workspace.
+Users who ran transformations before this migration have run data in the old storage. The workspace reads won't find them. This is acceptable. Old run history is read-only and will gradually be replaced by new runs written to workspace.
 
 ### Migration script still references DbService
-`migrate-database.ts` uses `dbService.transformations.getAll()` and `dbService.transformations.getCount()`. After removing `transformations:` from DbService, the migration needs updating (same approach as recordings—simplify or skip).
+`migrate-database.ts` uses `dbService.transformations.getAll()` and `dbService.transformations.getCount()`. After removing `transformations:` from DbService, the migration needs updating (same approach as recordings. Simplify or skip).
 
 ### Desktop dual-source reads for runs
 The desktop wrapper merges runs from filesystem + IndexedDB. After migration, new runs go to workspace. Old runs stay in filesystem/IndexedDB but are no longer queried (UI reads from workspace). The dual-source audio pattern remains for audio blobs only.
@@ -156,7 +156,7 @@ The desktop wrapper merges runs from filesystem + IndexedDB. After migration, ne
    - **Recommendation**: Rename. The import paths are `$lib/services/db` which is misleading. `$lib/services/blob-store` is accurate.
 
 2. **Property name on services: `services.db` → `services.blobStore`?**
-   - **Recommendation**: `services.blobs` — short, accurate, plural matches the namespace pattern
+   - **Recommendation**: `services.blobs`: short, accurate, plural matches the namespace pattern
 
 3. **Keep Dexie `transformations` and `transformationRuns` tables?**
    - The Dexie database still has these tables. Removing them requires a Dexie schema migration.
@@ -164,7 +164,7 @@ The desktop wrapper merges runs from filesystem + IndexedDB. After migration, ne
 
 ## Success Criteria
 
-- [ ] Zero `services.db.transformations.*` callers (already true—just remove the dead code)
+- [ ] Zero `services.db.transformations.*` callers (already true. Just remove the dead code)
 - [ ] Zero `services.db.runs.*` callers (transformer.ts migrated to workspace)
 - [ ] `DbService` renamed to `BlobStore` with only `audio:` section
 - [ ] `bun typecheck` passes
@@ -173,9 +173,9 @@ The desktop wrapper merges runs from filesystem + IndexedDB. After migration, ne
 
 ## References
 
-- `apps/whispering/src/lib/services/db/types.ts` — current interface to gut
-- `apps/whispering/src/lib/query/transformer.ts` — the one remaining runs caller
-- `apps/whispering/src/lib/state/transformation-runs.svelte.ts` — workspace-backed run reads
-- `apps/whispering/src/lib/workspace/definition.ts` — workspace table schemas for runs/step-runs
-- `specs/20260415T190000-recording-remaining-phases.md` — parent spec (updated with B+C completion)
-- `specs/20260417T120000-phase-bc-audio-only-db.md` — Phase B+C execution spec (completed)
+- `apps/whispering/src/lib/services/db/types.ts`: current interface to gut
+- `apps/whispering/src/lib/query/transformer.ts`: the one remaining runs caller
+- `apps/whispering/src/lib/state/transformation-runs.svelte.ts`: workspace-backed run reads
+- `apps/whispering/src/lib/workspace/definition.ts`: workspace table schemas for runs/step-runs
+- `specs/20260415T190000-recording-remaining-phases.md`: parent spec (updated with B+C completion)
+- `specs/20260417T120000-phase-bc-audio-only-db.md`: Phase B+C execution spec (completed)

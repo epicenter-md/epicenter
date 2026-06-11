@@ -1,4 +1,4 @@
-# Extension Action Introspection — Implementation Plan
+# Extension Action Introspection: Implementation Plan
 
 **Date**: 2026-04-15
 **Spec**: `specs/20260415T130224-extension-action-introspection.md`

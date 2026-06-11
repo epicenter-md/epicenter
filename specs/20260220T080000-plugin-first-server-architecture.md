@@ -17,7 +17,7 @@ Restructure `@epicenter/server` around two independent Elysia plugins: a sync pl
 The server is already built from Elysia plugins, but they're private to `createServer()`:
 
 ```typescript
-// packages/server/src/server.ts — plugins exist but aren't exported
+// packages/server/src/server.ts: plugins exist but aren't exported
 function createServerInternal(clients: AnyWorkspaceClient[], options?: ServerOptions) {
   const app = new Elysia()
     .use(openapi({ ... }))
@@ -36,7 +36,7 @@ This creates four problems:
 
 2. **No auth.** The client sends `?token=xxx` in the WebSocket URL. The server ignores it. Any connection is accepted.
 
-3. **Plugins aren't composable.** Users can't mount sync on one port and REST on another. They can't add sync to their own Elysia app. They can't use sync without tables. The only entry point is `createServer(clients)` — all or nothing.
+3. **Plugins aren't composable.** Users can't mount sync on one port and REST on another. They can't add sync to their own Elysia app. They can't use sync without tables. The only entry point is `createServer(clients)`: all or nothing.
 
 4. **The ws identity bug.** The sync plugin tracks connections using Elysia wrapper objects. Elysia creates a new wrapper for each event (open, message, close), so `ws` in close() is a different object than `ws` in open(). `rooms.get(room).delete(ws)` can't find the ws that was added. Rooms never empty. Eviction never triggers. Memory leaks.
 
@@ -81,8 +81,8 @@ const app = new Elysia()
 Key behaviors:
 
 - Plugins share the same server instance (routes merge)
-- WebSocket routes can live in plugins — Elysia wires them into Bun's `.ws()` handler
-- IMPORTANT: Must use `app.listen()` not `Bun.serve({ fetch: app.fetch })` — the latter skips WebSocket handler registration
+- WebSocket routes can live in plugins: Elysia wires them into Bun's `.ws()` handler
+- IMPORTANT: Must use `app.listen()` not `Bun.serve({ fetch: app.fetch })`: the latter skips WebSocket handler registration
 - Plugins can use `Elysia({ prefix: '/api' })` for route namespacing
 - Multiple Elysia instances can listen on different ports independently
 
@@ -107,7 +107,7 @@ Key behaviors:
 | `Authorization: Bearer xxx` | No\*      | Yes       | Standard for REST. \*Browser WS can't set headers |
 | Custom WS message (type 2)  | Yes       | No        | y-protocols reserves AUTH=2. More complex.        |
 
-**Decision**: Use `?token=xxx` as the primary transport. It works for both WS and REST. Browser WebSocket API cannot set custom headers, making `Authorization` unusable for WS connections. For production deployments with JWTs, the `verifyToken` callback can validate JWTs passed via `?token=`. The token is a query parameter, not a path segment — no URL pattern changes needed.
+**Decision**: Use `?token=xxx` as the primary transport. It works for both WS and REST. Browser WebSocket API cannot set custom headers, making `Authorization` unusable for WS connections. For production deployments with JWTs, the `verifyToken` callback can validate JWTs passed via `?token=`. The token is a query parameter, not a path segment: no URL pattern changes needed.
 
 ## Design Decisions
 
@@ -217,27 +217,27 @@ packages/server/
 
   src/
     index.ts                    # createServer, createWorkspacePlugin (re-exports from submodules)
-    server.ts                   # createServer() — backward compat wrapper
-    workspace-plugin.ts         # createWorkspacePlugin() — tables + actions + openapi
-    tables.ts                   # createTablesPlugin() — unchanged
-    actions.ts                  # createActionsRouter() — unchanged
+    server.ts                   # createServer(): backward compat wrapper
+    workspace-plugin.ts         # createWorkspacePlugin(): tables + actions + openapi
+    tables.ts                   # createTablesPlugin(): unchanged
+    actions.ts                  # createActionsRouter(): unchanged
     sync/
       index.ts                  # createSyncPlugin, createSyncServer (public API for ./sync)
-      plugin.ts                 # createSyncPlugin() — the Elysia plugin
-      server.ts                 # createSyncServer() — convenience wrapper
-      rooms.ts                  # createRoomManager() — extracted room lifecycle
-      auth.ts                   # validateAuth() — token/verify logic
-      protocol.ts               # unchanged — encode/decode functions
+      plugin.ts                 # createSyncPlugin(): the Elysia plugin
+      server.ts                 # createSyncServer(): convenience wrapper
+      rooms.ts                  # createRoomManager(): extracted room lifecycle
+      auth.ts                   # validateAuth(): token/verify logic
+      protocol.ts               # unchanged: encode/decode functions
 ```
 
 **Critical**: `src/sync/index.ts` must NOT import from `@epicenter/workspace`. The `./sync` subpath export is the dependency firewall.
 
-`src/index.ts` re-exports `createServer` and `createWorkspacePlugin`. It does NOT re-export sync — users import sync from `@epicenter/server/sync` to avoid pulling in `@epicenter/workspace`.
+`src/index.ts` re-exports `createServer` and `createWorkspacePlugin`. It does NOT re-export sync: users import sync from `@epicenter/server/sync` to avoid pulling in `@epicenter/workspace`.
 
 ### How createServer() Composes the Plugins
 
 ```typescript
-// server.ts — backward compatible, composes both plugins
+// server.ts: backward compatible, composes both plugins
 function createServer(
   clientOrClients: AnyWorkspaceClient | AnyWorkspaceClient[],
   options?: ServerOptions,
@@ -268,13 +268,13 @@ The server architecture rethink describes a staged kernel with 5 layers. This sp
 
 | Kernel Layer             | This Spec                                              | Future                                                        |
 | ------------------------ | ------------------------------------------------------ | ------------------------------------------------------------- |
-| Layer 0: Transport       | `new Elysia().listen(port)` — always starts            | Same                                                          |
-| Layer 1: Room Manager    | `createRoomManager()` — extracted, reusable            | Same                                                          |
-| Layer 2: Schema Registry | —                                                      | Future `createSchemaPlugin()` reads contracts from filesystem |
-| Layer 3: API Surface     | `createWorkspacePlugin()` — tables + actions + openapi | Derived from registry instead of live clients                 |
+| Layer 0: Transport       | `new Elysia().listen(port)`: always starts            | Same                                                          |
+| Layer 1: Room Manager    | `createRoomManager()`: extracted, reusable            | Same                                                          |
+| Layer 2: Schema Registry | - | Future `createSchemaPlugin()` reads contracts from filesystem |
+| Layer 3: API Surface     | `createWorkspacePlugin()`: tables + actions + openapi | Derived from registry instead of live clients                 |
 | Layer 4: Runtime         | `createServer(clients)` passes live clients            | Lazy workspace initialization on first data access            |
 
-Each layer is an Elysia plugin. The staged kernel is a specific composition order. The plugins ARE the layers — no additional abstraction needed.
+Each layer is an Elysia plugin. The staged kernel is a specific composition order. The plugins ARE the layers, no additional abstraction needed.
 
 ## `createSyncPlugin` API
 
@@ -348,11 +348,11 @@ function createWorkspacePlugin(
 
 Bundles:
 
-- `createTablesPlugin(workspaces)` — REST CRUD for all tables
-- `createActionsRouter(...)` — query/mutation endpoints per workspace
+- `createTablesPlugin(workspaces)`: REST CRUD for all tables
+- `createActionsRouter(...)`: query/mutation endpoints per workspace
 - Discovery endpoint at `/` with workspace listing
 
-Does NOT include sync — that's a separate plugin. Does NOT include OpenAPI — that's added by `createServer()` or by the user.
+Does NOT include sync, that's a separate plugin. Does NOT include OpenAPI, that's added by `createServer()` or by the user.
 
 ## `createRoomManager` (Internal)
 
@@ -399,20 +399,20 @@ function createRoomManager(config?: RoomManagerConfig): {
 };
 ```
 
-The room manager is the core extracted from the current sync plugin. It's not exported from the package — it's an internal module used by `createSyncPlugin`. Making it public is a future consideration (for Durable Objects or custom transports).
+The room manager is the core extracted from the current sync plugin. It's not exported from the package. It's an internal module used by `createSyncPlugin`. Making it public is a future consideration (for Durable Objects or custom transports).
 
 ### How the ws Identity Bug is Fixed
 
 The current bug:
 
 ```typescript
-// open handler — stores Elysia wrapper
+// open handler: stores Elysia wrapper
 rooms.get(room)!.add(ws);
 
-// close handler — tries to delete a DIFFERENT Elysia wrapper
+// close handler: tries to delete a DIFFERENT Elysia wrapper
 rooms.get(room)?.delete(ws); // ← different object, delete fails
 
-// broadcast — comparison always passes (different objects)
+// broadcast: comparison always passes (different objects)
 if (conn !== ws) {
 	conn.send(data);
 } // ← sender receives own messages
@@ -421,19 +421,19 @@ if (conn !== ws) {
 The fix (in `createRoomManager`):
 
 ```typescript
-// join() — stores ws.raw as key
+// join(): stores ws.raw as key
 room.conns.set(wsRaw, { send });
 
-// leave() — deletes by ws.raw (same object reference)
+// leave(): deletes by ws.raw (same object reference)
 room.conns.delete(wsRaw);
 
-// broadcast() — filters by ws.raw identity
+// broadcast(): filters by ws.raw identity
 for (const [raw, conn] of room.conns) {
 	if (raw !== excludeRaw) conn.send(data);
 }
 ```
 
-`ws.raw` is the underlying Bun `ServerWebSocket` — stable across all Elysia event handlers for the same connection. The room manager never touches Elysia wrappers. Bug is impossible by construction.
+`ws.raw` is the underlying Bun `ServerWebSocket`: stable across all Elysia event handlers for the same connection. The room manager never touches Elysia wrappers. Bug is impossible by construction.
 
 ## Implementation Plan
 
@@ -445,7 +445,7 @@ for (const [raw, conn] of room.conns) {
 - [ ] **1.4** Implement `leave()`: remove connection by `ws.raw`, start eviction timer if room empty
 - [ ] **1.5** Implement `broadcast()`: iterate `conns`, filter by `raw !== excludeRaw`
 - [ ] **1.6** Implement `destroy()`: clear all rooms, cancel all timers
-- [ ] **1.7** Port connection state tracking (awareness, update handler, ping interval, controlled client IDs) from current sync plugin into room manager or keep in plugin — decide during implementation
+- [ ] **1.7** Port connection state tracking (awareness, update handler, ping interval, controlled client IDs) from current sync plugin into room manager or keep in plugin: decide during implementation
 
 ### Phase 2: Add auth to sync plugin
 
@@ -464,15 +464,15 @@ for (const [raw, conn] of room.conns) {
 
 ### Phase 4: Create convenience wrappers and workspace plugin
 
-- [ ] **4.1** Create `packages/server/src/sync/server.ts` with `createSyncServer()` — wraps Elysia + sync plugin + health endpoint
-- [ ] **4.2** Create `packages/server/src/workspace-plugin.ts` with `createWorkspacePlugin()` — bundles tables + actions
+- [ ] **4.1** Create `packages/server/src/sync/server.ts` with `createSyncServer()`: wraps Elysia + sync plugin + health endpoint
+- [ ] **4.2** Create `packages/server/src/workspace-plugin.ts` with `createWorkspacePlugin()`: bundles tables + actions
 - [ ] **4.3** Update `createServer()` in `server.ts` to compose `createSyncPlugin` + `createWorkspacePlugin`
 - [ ] **4.4** Pass `auth` option through `createServer` → sync plugin
 
 ### Phase 5: Package exports
 
-- [ ] **5.1** Create `packages/server/src/sync/index.ts` — exports `createSyncPlugin`, `createSyncServer`
-- [ ] **5.2** Update `packages/server/src/index.ts` — exports `createServer`, `createWorkspacePlugin`, `DEFAULT_PORT`
+- [ ] **5.1** Create `packages/server/src/sync/index.ts`: exports `createSyncPlugin`, `createSyncServer`
+- [ ] **5.2** Update `packages/server/src/index.ts`: exports `createServer`, `createWorkspacePlugin`, `DEFAULT_PORT`
 - [ ] **5.3** Add `"./sync": "./src/sync/index.ts"` to `package.json` exports
 - [ ] **5.4** Verify `@epicenter/server/sync` has zero `@epicenter/workspace` imports (grep for it)
 - [ ] **5.5** Update existing tests
@@ -484,7 +484,7 @@ for (const [raw, conn] of room.conns) {
 
 1. Server configured with no auth
 2. Client sends `?token=xxx` anyway
-3. Server ignores the token — connection accepted. The token is harmless.
+3. Server ignores the token: connection accepted. The token is harmless.
 
 ### Client connects without token in token mode
 
@@ -495,27 +495,27 @@ for (const [raw, conn] of room.conns) {
 
 ### Standalone sync: server restarts, rooms are lost
 
-1. Server restarts — all in-memory Y.Docs are gone
+1. Server restarts: all in-memory Y.Docs are gone
 2. Clients reconnect, each sends sync step 1 with their state vector
 3. Server creates fresh Y.Doc, responds with empty sync step 2
 4. Clients send their full state as updates
 5. Server's Y.Doc is rebuilt from client state
-6. Correct CRDT behavior — clients are source of truth
+6. Correct CRDT behavior: clients are source of truth
 
 ### Both plugins mounted on same Elysia app
 
 1. User mounts sync plugin and workspace plugin on the same app
 2. Sync plugin registers `/:room/ws` (standalone route)
 3. Workspace plugin registers `/workspaces/:id/tables/...`
-4. No route conflicts — different path patterns
+4. No route conflicts: different path patterns
 5. If user wants workspace-integrated sync, they pass `getDoc` and set `routePrefix: '/workspaces/:workspaceId/ws'`
 
 ### createServer backward compatibility
 
 1. Existing code: `createServer(client, { port: 3913 })`
-2. Still works identically — `createServer` internally composes both plugins
+2. Still works identically: `createServer` internally composes both plugins
 3. New code: `createServer(client, { port: 3913, auth: { token: 'secret' } })`
-4. Auth flows through to sync plugin — additive, no breaking change
+4. Auth flows through to sync plugin: additive, no breaking change
 
 ## Open Questions
 
@@ -533,8 +533,8 @@ for (const [raw, conn] of room.conns) {
 
 4. **Should the sync plugin expose room state via REST?**
    - Example: `GET /rooms` → `[{ id: 'blog', connections: 2 }]`
-   - ~~**Recommendation**: Yes, but only in `createSyncServer` (the convenience wrapper adds a health endpoint). The raw plugin shouldn't add REST routes — it's a WS plugin.~~
-   - **Updated**: Yes, directly in `createSyncPlugin`. See `specs/20260220T195900-sync-plugin-rest-endpoints.md`. The plugin registers `GET /` (room list), `GET /:room/doc` (binary snapshot), and `POST /:room/doc` (binary update) alongside the WS route. REST and WS operate on the same Y.Doc — they're the same concern.
+   - ~~**Recommendation**: Yes, but only in `createSyncServer` (the convenience wrapper adds a health endpoint). The raw plugin shouldn't add REST routes: it's a WS plugin.~~
+   - **Updated**: Yes, directly in `createSyncPlugin`. See `specs/20260220T195900-sync-plugin-rest-endpoints.md`. The plugin registers `GET /` (room list), `GET /:room/doc` (binary snapshot), and `POST /:room/doc` (binary update) alongside the WS route. REST and WS operate on the same Y.Doc: they're the same concern.
 
 ## Success Criteria
 
@@ -543,7 +543,7 @@ for (const [raw, conn] of room.conns) {
 - [ ] Auth Mode 1 (open): Any client connects without token
 - [ ] Auth Mode 2 (token): Client with correct `?token=` connects; wrong/missing rejected with 4401
 - [ ] Auth Mode 3 (verify): Custom verify function is called and respected
-- [ ] Room eviction works correctly (60s after last disconnect — fixes the current bug)
+- [ ] Room eviction works correctly (60s after last disconnect: fixes the current bug)
 - [ ] Awareness broadcast doesn't echo back to sender (fixes the current bug)
 - [ ] `createServer(client)` still works identically (backward compatible)
 - [ ] `createServer(client, { auth: { token: 'secret' } })` adds auth to sync
@@ -554,15 +554,15 @@ for (const [raw, conn] of room.conns) {
 
 ## References
 
-- `packages/server/src/server.ts` — Current `createServer()` to refactor
-- `packages/server/src/sync/index.ts` — Current sync plugin with ws identity bug (main refactor target)
-- `packages/server/src/sync/protocol.ts` — Protocol layer (unchanged)
-- `packages/server/src/tables.ts` — Tables plugin (unchanged, absorbed into workspace plugin)
-- `packages/server/src/actions.ts` — Actions router (unchanged, absorbed into workspace plugin)
-- `packages/server/package.json` — Add `./sync` subpath export
-- `packages/sync/src/provider.ts` — Client-side sync provider (no changes needed)
-- `packages/sync/src/types.ts` — Client auth mode types (reference for auth design)
-- `specs/20260219T195800-server-architecture-rethink.md` — 5-layer vision (this spec is Layers 0+1)
+- `packages/server/src/server.ts`: Current `createServer()` to refactor
+- `packages/server/src/sync/index.ts`: Current sync plugin with ws identity bug (main refactor target)
+- `packages/server/src/sync/protocol.ts`: Protocol layer (unchanged)
+- `packages/server/src/tables.ts`: Tables plugin (unchanged, absorbed into workspace plugin)
+- `packages/server/src/actions.ts`: Actions router (unchanged, absorbed into workspace plugin)
+- `packages/server/package.json`: Add `./sync` subpath export
+- `packages/sync/src/provider.ts`: Client-side sync provider (no changes needed)
+- `packages/sync/src/types.ts`: Client auth mode types (reference for auth design)
+- `specs/20260219T195800-server-architecture-rethink.md`: 5-layer vision (this spec is Layers 0+1)
 
 ## Review
 
@@ -574,11 +574,11 @@ All 5 phases implemented in dependency order. Typecheck clean after each phase. 
 
 | File                  | Purpose                                                                                                               |
 | --------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| `sync/rooms.ts`       | `createRoomManager()` — extracted room lifecycle, fixes ws identity bug via `Map<object, { send }>` keyed by `ws.raw` |
-| `sync/auth.ts`        | `validateAuth()` — open/token/verify modes, `CLOSE_UNAUTHORIZED` constant                                             |
-| `sync/plugin.ts`      | `createSyncPlugin()` — rewritten to use room manager + auth, configurable route prefix, standalone + integrated modes |
-| `sync/server.ts`      | `createSyncServer()` — zero-config sync relay with health endpoint                                                    |
-| `workspace-plugin.ts` | `createWorkspacePlugin()` — bundles tables + actions + discovery endpoint                                             |
+| `sync/rooms.ts`       | `createRoomManager()`: extracted room lifecycle, fixes ws identity bug via `Map<object, { send }>` keyed by `ws.raw` |
+| `sync/auth.ts`        | `validateAuth()`: open/token/verify modes, `CLOSE_UNAUTHORIZED` constant                                             |
+| `sync/plugin.ts`      | `createSyncPlugin()`: rewritten to use room manager + auth, configurable route prefix, standalone + integrated modes |
+| `sync/server.ts`      | `createSyncServer()`: zero-config sync relay with health endpoint                                                    |
+| `workspace-plugin.ts` | `createWorkspacePlugin()`: bundles tables + actions + discovery endpoint                                             |
 
 ### Files Modified
 
@@ -597,7 +597,7 @@ All 5 phases implemented in dependency order. Typecheck clean after each phase. 
 
 3. **Room count limits** → (a) Unlimited. Eviction keeps memory bounded. Add limits when DoS is a real concern.
 
-4. **REST room state in sync** → ~~Only in `createSyncServer` wrapper. The raw `createSyncPlugin` doesn't add REST routes — it's a WebSocket-only plugin.~~ **Amended**: REST endpoints (`GET /`, `GET /:room/doc`, `POST /:room/doc`) now live in `createSyncPlugin` directly. See `specs/20260220T195900-sync-plugin-rest-endpoints.md`.
+4. **REST room state in sync** → ~~Only in `createSyncServer` wrapper. The raw `createSyncPlugin` doesn't add REST routes: it's a WebSocket-only plugin.~~ **Amended**: REST endpoints (`GET /`, `GET /:room/doc`, `POST /:room/doc`) now live in `createSyncPlugin` directly. See `specs/20260220T195900-sync-plugin-rest-endpoints.md`.
 
 5. **Connection state tracking (Phase 1.7)** → Per-connection state (updateHandler, pingInterval, controlledClientIds) stays in the plugin via a `WeakMap<object, ConnectionState>` keyed by `ws.raw`. This is transport-specific (WebSocket concerns). The room manager handles rooms, docs, awareness, and the connection map (`Map<object, { send }>`). Clean separation: room manager is transport-agnostic, plugin is Elysia/WebSocket-specific.
 
@@ -616,15 +616,15 @@ new Elysia()
 	.listen(3913);
 ```
 
-This replaced the earlier `routePrefix` config + `Object.values(params)[0]` extraction, which was fragile (relied on JS object key ordering for the room ID). The fixed route gives Elysia full type inference on `ws.data.params.room` — no casts, no runtime fragility.
+This replaced the earlier `routePrefix` config + `Object.values(params)[0]` extraction, which was fragile (relied on JS object key ordering for the room ID). The fixed route gives Elysia full type inference on `ws.data.params.room`: no casts, no runtime fragility.
 
 ### Verification
 
-- `bun run typecheck` — clean after every phase
-- `bun test` — 56 tests pass, 103 expect() calls, 0 failures
-- `grep @epicenter/workspace src/sync/` — zero imports (only the JSDoc comment about the firewall)
-- `protocol.ts` — untouched
-- `tables.ts`, `actions.ts` — untouched
+- `bun run typecheck`: clean after every phase
+- `bun test`: 56 tests pass, 103 expect() calls, 0 failures
+- `grep @epicenter/workspace src/sync/`: zero imports (only the JSDoc comment about the firewall)
+- `protocol.ts`: untouched
+- `tables.ts`, `actions.ts`: untouched
 - Backward compatibility: `createServer(client, { port })` signature unchanged, additive `auth` option
 
 ### Phase B: DX Improvements (Breaking Changes)
@@ -633,14 +633,14 @@ After Phase A, we applied 7 DX improvements that intentionally break backwards c
 
 **Changes:**
 
-1. **Dropped function overloads** — `createServer` has a single `export function` signature (no separate declaration + `export { createServer }` pattern).
-2. **Added `stop()`** — Async method that stops the HTTP server and destroys all workspace clients. Replaces the old `destroy()` which only cleaned up clients without stopping the server.
-3. **Removed signal handling** — `start()` no longer installs `SIGINT`/`SIGTERM` handlers or calls `process.exit()`. The caller owns lifecycle concerns.
-4. **Removed startup logging** — `start()` no longer prints the wall-of-text banner. The CLI's `serve` command now owns startup logging (2 lines: server URL + API docs URL).
-5. **Unified port constant** — Removed `DEFAULT_SYNC_PORT` from `sync/server.ts`. The sync server inlines `3913` as the default. Only `DEFAULT_PORT` exists (exported from the main entry).
-6. **Consistent return type** — `createSyncServer` now returns `async stop()` matching `createServer`'s shape. Previously had sync `destroy()`.
-7. **Moved discovery `GET /`** — The discovery endpoint (listing workspaces and actions) moved from `createWorkspacePlugin` to `createServer`. The workspace plugin is now purely tables + actions. `createServer` owns the root route.
-8. **CLI owns startup UX** — The `serve` command in `cli.ts` now prints startup info and blocks with `await new Promise(() => {})`, letting the CLI's existing signal handlers manage shutdown.
+1. **Dropped function overloads**: `createServer` has a single `export function` signature (no separate declaration + `export { createServer }` pattern).
+2. **Added `stop()`**: Async method that stops the HTTP server and destroys all workspace clients. Replaces the old `destroy()` which only cleaned up clients without stopping the server.
+3. **Removed signal handling**: `start()` no longer installs `SIGINT`/`SIGTERM` handlers or calls `process.exit()`. The caller owns lifecycle concerns.
+4. **Removed startup logging**: `start()` no longer prints the wall-of-text banner. The CLI's `serve` command now owns startup logging (2 lines: server URL + API docs URL).
+5. **Unified port constant**: Removed `DEFAULT_SYNC_PORT` from `sync/server.ts`. The sync server inlines `3913` as the default. Only `DEFAULT_PORT` exists (exported from the main entry).
+6. **Consistent return type**: `createSyncServer` now returns `async stop()` matching `createServer`'s shape. Previously had sync `destroy()`.
+7. **Moved discovery `GET /`**: The discovery endpoint (listing workspaces and actions) moved from `createWorkspacePlugin` to `createServer`. The workspace plugin is now purely tables + actions. `createServer` owns the root route.
+8. **CLI owns startup UX**: The `serve` command in `cli.ts` now prints startup info and blocks with `await new Promise(() => {})`, letting the CLI's existing signal handlers manage shutdown.
 
 **Files changed:**
 
@@ -653,10 +653,10 @@ After Phase A, we applied 7 DX improvements that intentionally break backwards c
 
 **Verification:**
 
-- `bun run typecheck` (packages/server) — clean
-- `bun test` (packages/server) — 56/56 pass
-- `bun run typecheck` (packages/epicenter) — no new errors (pre-existing `_v` type errors in test files only)
-- LSP diagnostics — zero errors on all 4 changed files
+- `bun run typecheck` (packages/server): clean
+- `bun test` (packages/server): 56/56 pass
+- `bun run typecheck` (packages/epicenter): no new errors (pre-existing `_v` type errors in test files only)
+- LSP diagnostics: zero errors on all 4 changed files
 
 ## Cloud Portability
 
@@ -670,10 +670,10 @@ The plugin architecture is designed with two deployment targets in mind:
 
 **Self-hosted only:**
 
-- `createServer()` — full convenience wrapper
-- `createWorkspacePlugin()` — tables + actions REST endpoints
-- `createTablesPlugin()` — per-workspace table CRUD
-- `createActionsRouter()` — action query/mutation endpoints
+- `createServer()`: full convenience wrapper
+- `createWorkspacePlugin()`: tables + actions REST endpoints
+- `createTablesPlugin()`: per-workspace table CRUD
+- `createActionsRouter()`: action query/mutation endpoints
 - OpenAPI documentation
 
 In cloud mode (Cloudflare Workers + Durable Objects), the sync protocol code runs inside a DO class. The DO handles WebSocket connections directly via Hibernatable WebSockets. The CF Worker handles HTTP routing and authentication. Table access happens via CRDTs (clients sync Y.Docs directly), and actions run on the user's own infrastructure.

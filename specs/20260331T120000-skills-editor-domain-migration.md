@@ -38,11 +38,11 @@ This creates problems:
 1. **Impedance mismatch**: Skills have typed fields (name, description, license, compatibility) but the editor treats them as raw markdown files. The `SkillMetadataForm` component parses frontmatter from file content on every load, then re-serializes on save.
 2. **Unnecessary complexity**: The filesystem abstraction requires 367 lines of reactive state (`fs-state.svelte.ts`) with manual `requestAnimationFrame` coalescing, path-based navigation, and a tree walker. A flat skills list needs none of this.
 3. **Disconnected from the package**: `packages/skills` already exports `createSkillsWorkspace()`, `skillsTable`, `referencesTable`, typed `Skill`/`Reference` types, and disk I/O actions. The editor doesn't use any of it.
-4. **Dead weight**: The app ships a terminal emulator (`just-bash`), SQLite FTS index, and file-icon utilities—none of which a skills editor needs.
+4. **Dead weight**: The app ships a terminal emulator (`just-bash`), SQLite FTS index, and file-icon utilities. None of which a skills editor needs.
 
 ### Desired State
 
-The editor imports `createSkillsWorkspace()` from `@epicenter/skills` and uses `fromTable()` for reactive state—the same pattern every other app in the monorepo follows. Skills are a flat list in a sidebar, not a file tree. The CodeMirror editor binds to `workspace.documents.skills.instructions` for collaborative editing. The metadata form reads/writes `workspace.tables.skills` directly.
+The editor imports `createSkillsWorkspace()` from `@epicenter/skills` and uses `fromTable()` for reactive state. The same pattern every other app in the monorepo follows. Skills are a flat list in a sidebar, not a file tree. The CodeMirror editor binds to `workspace.documents.skills.instructions` for collaborative editing. The metadata form reads/writes `workspace.tables.skills` directly.
 
 ## Research Findings
 
@@ -53,21 +53,21 @@ Every app follows the same three-file pattern:
 | Layer | File | Role |
 |-------|------|------|
 | Definition | `lib/workspace/definition.ts` | `defineWorkspace({ id, tables, kv })` |
-| Factory | `lib/workspace/workspace.ts` | `createWorkspace(definition)` — returns builder |
+| Factory | `lib/workspace/workspace.ts` | `createWorkspace(definition)`: returns builder |
 | Client | `lib/client.ts` | Chains `.withExtension()` calls, exports singleton |
 
-For `apps/skills`, the definition and factory live in the *package*—there's no need for a local `workspace/` directory at all.
+For `apps/skills`, the definition and factory live in the *package*:there's no need for a local `workspace/` directory at all.
 
 Canonical patterns by app:
 
 ```typescript
-// fuji — minimal
+// fuji: minimal
 export const workspace = createFuji().withExtension('persistence', indexeddbPersistence);
 
-// whispering — minimal
+// whispering: minimal
 export const workspace = createWhispering().withExtension('persistence', indexeddbPersistence);
 
-// honeycrisp — full stack
+// honeycrisp: full stack
 const workspace = createWorkspace(honeycrisp)
   .withEncryption({ userKeyStore: createIndexedDbKeyStore('honeycrisp:encryption-key') })
   .withExtension('persistence', indexeddbPersistence)
@@ -78,14 +78,14 @@ const workspace = createWorkspace(honeycrisp)
 
 Two patterns exist:
 
-**Pattern A: `fromTable()`** (honeycrisp, tab-manager, zhongwen, fuji)—preferred for domain tables:
+**Pattern A: `fromTable()`** (honeycrisp, tab-manager, zhongwen, fuji): preferred for domain tables:
 
 ```typescript
 const skillsMap = fromTable(workspace.tables.skills);
 const skills = $derived(skillsMap.values().toArray().sort((a, b) => a.name.localeCompare(b.name)));
 ```
 
-**Pattern B: Manual `SvelteMap` + `observe()`** (whispering)—used when custom logic is needed on each change event. Not needed here.
+**Pattern B: Manual `SvelteMap` + `observe()`** (whispering): used when custom logic is needed on each change event. Not needed here.
 
 All apps use the factory-function singleton pattern:
 
@@ -101,15 +101,15 @@ export const skillsState = createSkillsState();
 ### What the Skills Package Already Provides
 
 ```
-@epicenter/skills          — Browser-safe entry
-├── createSkillsWorkspace()  — Factory returning builder
-├── skillsDefinition         — For embedding in custom workspaces
-├── skillsTable              — defineTable with .withDocument('instructions')
-├── referencesTable          — defineTable with .withDocument('content')
-├── Skill, Reference         — Type exports
+@epicenter/skills         : Browser-safe entry
+├── createSkillsWorkspace() : Factory returning builder
+├── skillsDefinition        : For embedding in custom workspaces
+├── skillsTable             : defineTable with .withDocument('instructions')
+├── referencesTable         : defineTable with .withDocument('content')
+├── Skill, Reference        : Type exports
 
-@epicenter/skills/node     — Server-side entry (NOT needed in browser)
-├── createSkillsWorkspace()  — Factory with importFromDisk/exportToDisk actions
+@epicenter/skills/node    : Server-side entry (NOT needed in browser)
+├── createSkillsWorkspace() : Factory with importFromDisk/exportToDisk actions
 ```
 
 The browser app only needs the base import. No `node.ts`, no disk I/O.
@@ -118,7 +118,7 @@ The browser app only needs the base import. No `node.ts`, no disk I/O.
 
 | Decision | Choice | Rationale |
 |----------|--------|-----------|
-| Local workspace dir | Delete entirely | `createSkillsWorkspace()` is the factory—no local definition needed |
+| Local workspace dir | Delete entirely | `createSkillsWorkspace()` is the factory. No local definition needed |
 | Reactive state | `fromTable()` from `@epicenter/svelte` | Canonical pattern; replaces 367 lines of manual observer code |
 | Skill navigation | Flat list with expandable references | Skills aren't nested; tree walker is unnecessary |
 | Terminal | Remove | No virtual filesystem = no shell needed |
@@ -127,7 +127,7 @@ The browser app only needs the base import. No `node.ts`, no disk I/O.
 | Path breadcrumb | Remove | No filesystem paths |
 | File icons | Remove | No files |
 | CodeMirror binding | Keep, change document path | `workspace.documents.skills.instructions.open(id)` instead of `ws.documents.files.content.open(id)` |
-| Metadata form | Simplify—read/write table directly | No more parsing frontmatter from file content |
+| Metadata form | Simplify. Read/write table directly | No more parsing frontmatter from file content |
 | References editing | Keep CodeMirror for reference content | `workspace.documents.references.content.open(refId)` |
 
 ## Architecture
@@ -193,7 +193,7 @@ apps/skills/
 - [x] **1.1** Update `apps/skills/package.json`: replace `@epicenter/filesystem` with `@epicenter/skills`, remove `just-bash`
 - [x] **1.2** Delete `apps/skills/src/lib/workspace/` directory (definition.ts, workspace.ts, index.ts)
 - [x] **1.3** Rewrite `apps/skills/src/lib/client.ts` to use `createSkillsWorkspace().withExtension('persistence', indexeddbPersistence)`. Remove `fs`, `bash`, and `createSqliteIndex` exports.
-- [x] **1.4** Delete `apps/skills/src/lib/types.ts`—types come from `@epicenter/skills`. `validateSkill` moved to `utils/validation.ts`.
+- [x] **1.4** Delete `apps/skills/src/lib/types.ts`: types come from `@epicenter/skills`. `validateSkill` moved to `utils/validation.ts`.
 - [x] **1.5** Verify typecheck passes on data layer changes before touching UI
 
 ### Phase 2: State Layer
@@ -203,26 +203,26 @@ apps/skills/
 - [x] **2.3** Delete `apps/skills/src/lib/state/terminal-state.svelte.ts`
 - [x] **2.4** Delete `apps/skills/src/lib/utils/file-icons.ts`
 
-### Phase 3: UI — Remove Dead Components
+### Phase 3: UI: Remove Dead Components
 
 - [x] **3.1** Delete `apps/skills/src/lib/components/terminal/` (TerminalPanel, TerminalInput, TerminalOutput)
 - [x] **3.2** Delete `apps/skills/src/lib/components/editor/TabBar.svelte`
 - [x] **3.3** Delete `apps/skills/src/lib/components/editor/PathBreadcrumb.svelte`
 
-### Phase 4: UI — Rewrite Sidebar
+### Phase 4: UI: Rewrite Sidebar
 
 - [x] **4.1** Rewrite `FileTree.svelte` → `SkillsList.svelte`: flat list from `skillsState.skills`, click to select
 - [x] **4.2** Rewrite `FileTreeItem.svelte` → `SkillListItem.svelte`: show skill name + truncated description, context menu
-- [x] **4.3** Keep `InlineNameInput.svelte` for renaming — removed icon prop
+- [x] **4.3** Keep `InlineNameInput.svelte` for renaming: removed icon prop
 
-### Phase 5: UI — Rewrite Editor Panel
+### Phase 5: UI: Rewrite Editor Panel
 
 - [x] **5.1** Simplify `ContentPanel.svelte` → `SkillEditor.svelte`: remove tab bar and path breadcrumb, show metadata form + instructions editor for selected skill
 - [x] **5.2** Rewrite `SkillMetadataForm.svelte` to read/write `workspace.tables.skills` directly instead of parsing frontmatter from file content
 - [x] **5.3** Created `InstructionsEditor.svelte` to bind to `workspace.documents.skills.instructions.open(skillId)`. CodeMirrorEditor.svelte kept unchanged.
 - [x] **5.4** Add `ReferencesPanel.svelte` to list and edit references for the selected skill
 
-### Phase 6: UI — Update Shell Components
+### Phase 6: UI: Update Shell Components
 
 - [x] **6.1** Simplify `AppShell.svelte`: remove terminal pane, keep sidebar + editor layout
 - [x] **6.2** Update `Toolbar.svelte`: remove file creation buttons, keep "New Skill" and search. Search filters `skillsState.skills` via `$derived` instead of SQLite FTS.
@@ -232,9 +232,9 @@ apps/skills/
 
 ### Phase 7: Cleanup and Verify
 
-- [x] **7.1** Run typecheck (`bun run check` in apps/skills) — 0 errors in apps/skills code, 81 pre-existing errors in packages/ui and packages/workspace
+- [x] **7.1** Run typecheck (`bun run check` in apps/skills): 0 errors in apps/skills code, 81 pre-existing errors in packages/ui and packages/workspace
 - [ ] **7.2** Run dev server and verify: create skill, edit metadata, edit instructions, add reference, delete skill
-- [x] **7.3** Remove unused dependencies from package.json — removed `@epicenter/filesystem`, `just-bash`, SQLite WASM config from vite.config.ts
+- [x] **7.3** Remove unused dependencies from package.json: removed `@epicenter/filesystem`, `just-bash`, SQLite WASM config from vite.config.ts
 - [x] **7.4** Add review section to this spec
 
 ## Edge Cases
@@ -245,7 +245,7 @@ First launch with no IndexedDB data. The sidebar shows an empty state with a "Cr
 
 ### Skill with No References
 
-Most skills have no `references/` directory. The references panel should either be hidden or show a minimal "Add reference" prompt—not an empty list.
+Most skills have no `references/` directory. The references panel should either be hidden or show a minimal "Add reference" prompt. Not an empty list.
 
 ### CodeMirror Y.Text Binding Lifecycle
 
@@ -253,13 +253,13 @@ When the selected skill changes, the CodeMirror editor must unbind from the prev
 
 ### Concurrent Editing
 
-Since instructions are stored as Y.Text documents, two browser tabs editing the same skill will merge correctly via Yjs CRDT resolution. No special handling needed—this is what Yjs does.
+Since instructions are stored as Y.Text documents, two browser tabs editing the same skill will merge correctly via Yjs CRDT resolution. No special handling needed. This is what Yjs does.
 
 ## Open Questions
 
 1. **Should the app support importing from disk in-browser?**
    - `importFromDisk` requires Node APIs (fs, path, crypto). The browser app can't call it directly.
-   - Options: (a) CLI command imports to IndexedDB, (b) drag-and-drop SKILL.md files into the browser, (c) defer entirely—edit in browser, export via CLI
+   - Options: (a) CLI command imports to IndexedDB, (b) drag-and-drop SKILL.md files into the browser, (c) defer entirely. Edit in browser, export via CLI
    - **Recommendation**: Defer. The browser editor is for authoring and editing. Import/export is a CLI concern.
 
 2. **Should references be editable inline or in a separate view?**
@@ -274,20 +274,20 @@ Since instructions are stored as Y.Text documents, two browser tabs editing the 
 
 - [x] `apps/skills/package.json` has no `@epicenter/filesystem` or `just-bash` dependency
 - [x] `apps/skills` imports `createSkillsWorkspace` from `@epicenter/skills`
-- [x] State uses `fromTable()` from `@epicenter/svelte`—no manual observers
+- [x] State uses `fromTable()` from `@epicenter/svelte`: no manual observers
 - [x] No filesystem concepts in the UI (no paths, no tree walker, no terminal)
 - [x] Typecheck passes (0 errors in apps/skills; pre-existing errors in shared packages)
 - [ ] Dev server runs and the editor works: create, edit metadata, edit instructions, delete
 
 ## References
 
-- `packages/skills/src/tables.ts` — Table schemas and types
-- `packages/skills/src/index.ts` — Public API exports
-- `apps/honeycrisp/src/lib/client.ts` — Canonical workspace client pattern
-- `apps/honeycrisp/src/lib/state/notes.svelte.ts` — Canonical `fromTable()` + state factory pattern
-- `apps/whispering/src/lib/state/recordings.svelte.ts` — Manual `SvelteMap` + `observe()` pattern (reference, not used here)
-- `packages/svelte-utils/src/fromTable.svelte.ts` — `fromTable` implementation
-- `specs/20260330T120000-portable-skills-architecture.md` — Original architecture spec
+- `packages/skills/src/tables.ts`: Table schemas and types
+- `packages/skills/src/index.ts`: Public API exports
+- `apps/honeycrisp/src/lib/client.ts`: Canonical workspace client pattern
+- `apps/honeycrisp/src/lib/state/notes.svelte.ts`: Canonical `fromTable()` + state factory pattern
+- `apps/whispering/src/lib/state/recordings.svelte.ts`: Manual `SvelteMap` + `observe()` pattern (reference, not used here)
+- `packages/svelte-utils/src/fromTable.svelte.ts`: `fromTable` implementation
+- `specs/20260330T120000-portable-skills-architecture.md`: Original architecture spec
 
 ## Review
 
@@ -300,40 +300,40 @@ Full migration from `@epicenter/filesystem` to `@epicenter/skills`. The app drop
 ### Files Changed
 
 **Deleted (20 files)**:
-- `src/lib/workspace/` — definition.ts, workspace.ts, index.ts
-- `src/lib/state/fs-state.svelte.ts` — 367 lines of filesystem reactive state
-- `src/lib/state/terminal-state.svelte.ts` — 154 lines of terminal emulator state
-- `src/lib/types.ts` — SkillFrontmatter type (replaced by Skill from @epicenter/skills)
-- `src/lib/utils/file-icons.ts` — extension-to-icon mapping
-- `src/lib/components/terminal/` — TerminalPanel, TerminalInput, TerminalOutput
-- `src/lib/components/editor/TabBar.svelte` — multi-tab bar
-- `src/lib/components/editor/PathBreadcrumb.svelte` — filesystem path display
-- `src/lib/components/editor/ContentPanel.svelte` — replaced by SkillEditor
-- `src/lib/components/editor/ContentEditor.svelte` — replaced by InstructionsEditor
-- `src/lib/components/tree/FileTree.svelte` — replaced by SkillsList
-- `src/lib/components/tree/FileTreeItem.svelte` — replaced by SkillListItem
+- `src/lib/workspace/`: definition.ts, workspace.ts, index.ts
+- `src/lib/state/fs-state.svelte.ts`: 367 lines of filesystem reactive state
+- `src/lib/state/terminal-state.svelte.ts`: 154 lines of terminal emulator state
+- `src/lib/types.ts`: SkillFrontmatter type (replaced by Skill from @epicenter/skills)
+- `src/lib/utils/file-icons.ts`: extension-to-icon mapping
+- `src/lib/components/terminal/`: TerminalPanel, TerminalInput, TerminalOutput
+- `src/lib/components/editor/TabBar.svelte`: multi-tab bar
+- `src/lib/components/editor/PathBreadcrumb.svelte`: filesystem path display
+- `src/lib/components/editor/ContentPanel.svelte`: replaced by SkillEditor
+- `src/lib/components/editor/ContentEditor.svelte`: replaced by InstructionsEditor
+- `src/lib/components/tree/FileTree.svelte`: replaced by SkillsList
+- `src/lib/components/tree/FileTreeItem.svelte`: replaced by SkillListItem
 
 **Created (8 files)**:
-- `src/lib/state/skills-state.svelte.ts` — fromTable() reactive state with CRUD
-- `src/lib/utils/validation.ts` — validateSkill extracted from deleted types.ts
-- `src/lib/components/SkillsList.svelte` — flat skill list sidebar
-- `src/lib/components/SkillListItem.svelte` — skill name + description + context menu
-- `src/lib/components/editor/SkillEditor.svelte` — metadata + instructions + references
-- `src/lib/components/editor/InstructionsEditor.svelte` — Y.Doc binding for instructions
-- `src/lib/components/editor/ReferencesPanel.svelte` — expandable reference editor
-- `src/lib/components/dialogs/NewSkillDialog.svelte` — extracted from Toolbar
+- `src/lib/state/skills-state.svelte.ts`: fromTable() reactive state with CRUD
+- `src/lib/utils/validation.ts`: validateSkill extracted from deleted types.ts
+- `src/lib/components/SkillsList.svelte`: flat skill list sidebar
+- `src/lib/components/SkillListItem.svelte`: skill name + description + context menu
+- `src/lib/components/editor/SkillEditor.svelte`: metadata + instructions + references
+- `src/lib/components/editor/InstructionsEditor.svelte`: Y.Doc binding for instructions
+- `src/lib/components/editor/ReferencesPanel.svelte`: expandable reference editor
+- `src/lib/components/dialogs/NewSkillDialog.svelte`: extracted from Toolbar
 
 **Rewritten (5 files)**:
-- `src/lib/client.ts` — 42 lines → 4 lines
-- `src/lib/components/AppShell.svelte` — removed terminal, simplified layout
-- `src/lib/components/Toolbar.svelte` — removed file ops, kept New Skill + search
-- `src/lib/components/CommandPalette.svelte` — searches skills instead of files
-- `src/lib/components/dialogs/DeleteConfirmation.svelte` — uses skillsState
+- `src/lib/client.ts`: 42 lines → 4 lines
+- `src/lib/components/AppShell.svelte`: removed terminal, simplified layout
+- `src/lib/components/Toolbar.svelte`: removed file ops, kept New Skill + search
+- `src/lib/components/CommandPalette.svelte`: searches skills instead of files
+- `src/lib/components/dialogs/DeleteConfirmation.svelte`: uses skillsState
 
 **Updated (3 files)**:
-- `src/lib/components/tree/InlineNameInput.svelte` — removed icon prop
-- `package.json` — swapped deps, removed exports field
-- `vite.config.ts` — removed SQLite WASM / COOP-COEP config
+- `src/lib/components/tree/InlineNameInput.svelte`: removed icon prop
+- `package.json`: swapped deps, removed exports field
+- `vite.config.ts`: removed SQLite WASM / COOP-COEP config
 
 ### Deviations from Spec
 
@@ -344,5 +344,5 @@ Full migration from `@epicenter/filesystem` to `@epicenter/skills`. The app drop
 ### Follow-up Work
 
 - **7.2**: Manual testing with dev server (create skill, edit metadata, edit instructions, references, delete)
-- Sync extension (`.withExtension('sync', ...)`) — deferred per open question #3
-- Import/export from disk — deferred per open question #1
+- Sync extension (`.withExtension('sync', ...)`): deferred per open question #3
+- Import/export from disk: deferred per open question #1

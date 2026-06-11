@@ -1,4 +1,4 @@
-# Recording Architecture—Remaining Phases
+# Recording Architecture. Remaining Phases
 
 **Date**: 2026-04-15
 **Status**: Partially complete
@@ -38,7 +38,7 @@ await workspace.tables.recordings.bulkDelete(ids);
 // or via state module:
 recordings.bulkDelete(ids);
 
-// BAD: O(n²) — scans the array per delete call
+// BAD: O(n²): scans the array per delete call
 for (const id of ids) {
     recordings.delete(id);
 }
@@ -60,7 +60,7 @@ let hasWarnedUser = false;
     console.warn('[recording-materializer] write failed:', error);
     if (!hasWarnedUser) {
         hasWarnedUser = true;
-        toast.warning("Recording files couldn't be saved to disk. Your recordings are safe—this only affects the markdown export.");
+        toast.warning("Recording files couldn't be saved to disk. Your recordings are safe. This only affects the markdown export.");
     }
 });
 ```
@@ -80,7 +80,7 @@ After any observer failure, schedule a full reconcile that re-syncs all recordin
 **Goal**: Replace all 29 occurrences of `window.__TAURI_INTERNALS__` with `isTauri()` from `@tauri-apps/api/core`.
 
 ### Scope
-- 1 type declaration in `app.d.ts` — keep the `Window` interface augmentation, change runtime checks only
+- 1 type declaration in `app.d.ts`: keep the `Window` interface augmentation, change runtime checks only
 - ~9 platform gate service files (`analytics`, `notifications`, `sound`, `text`, `os`, `db`, `http`, `download`, `tauri-fetch`)
 - ~19 runtime guards in components/pages
 
@@ -92,7 +92,7 @@ After any observer failure, schedule a full reconcile that re-syncs all recordin
 - Verify each file with LSP diagnostics
 
 ### Risk
-Low—`isTauri()` is a drop-in replacement. It returns `false` on web, `true` on desktop. Same behavior as `!!window.__TAURI_INTERNALS__`.
+Low: `isTauri()` is a drop-in replacement. It returns `false` on web, `true` on desktop. Same behavior as `!!window.__TAURI_INTERNALS__`.
 
 ---
 

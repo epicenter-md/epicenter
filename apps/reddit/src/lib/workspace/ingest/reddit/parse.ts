@@ -39,20 +39,20 @@ const TABLE_CSV_FILES = [
 	// - post_headers.csv, comment_headers.csv, message_headers.csv,
 	//   messages_archive_headers.csv: strict subsets of their full counterparts (same rows, minus body)
 	// - checkfile.csv: ZIP integrity checksums, not user data
-	// - ip_logs.csv: login IP history. PII with no workspace value — purely admin/security data.
+	// - ip_logs.csv: login IP history. PII with no workspace value. Purely admin/security data.
 	// - sensitive_ads_preferences.csv: Reddit ad targeting categories. Internal ad machinery, not user content.
 	// - linked_identities.csv: opaque OAuth issuer/subject ID pairs. Internal identity metadata.
 	// - linked_phone_number.csv, stripe.csv, persona.csv: opaque account identifiers (phone, Stripe, KYC).
 	//   PII or internal IDs with no meaning outside Reddit.
 	// - account_gender.csv, birthdate.csv, twitter.csv: profile metadata (gender, birthday, linked Twitter).
-	//   Not essential to workspace — users already know these about themselves.
+	//   Not essential to workspace: users already know these about themselves.
 ] as const;
 
 /** CSV key derived from filename (e.g., 'posts.csv' → 'posts') */
 type CsvFileName = (typeof TABLE_CSV_FILES)[number];
 export type CsvKey = CsvFileName extends `${infer Name}.csv` ? Name : never;
 
-/** Typed parse output — keys are the known CSV file stems */
+/** Typed parse output: keys are the known CSV file stems */
 export type ParsedRedditData = Record<CsvKey, Record<string, string>[]>;
 
 /**

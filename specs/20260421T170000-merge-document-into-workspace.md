@@ -2,7 +2,7 @@
 
 **Date**: 2026-04-21
 **Status**: Completed (2026-04-21)
-**Shipped via**: `da1a58146 refactor(workspace): merge src/workspace/ into src/document/` (implemented with the opposite directional rename — `src/workspace/` merged into `src/document/` inside the workspace package — tighter than the original spec proposed).
+**Shipped via**: `da1a58146 refactor(workspace): merge src/workspace/ into src/document/` (implemented with the opposite directional rename: `src/workspace/` merged into `src/document/` inside the workspace package: tighter than the original spec proposed).
 **Author**: AI-assisted (design discussion with Braden)
 **Branch**: `braden-w/document-primitive`
 
@@ -56,7 +56,7 @@ This creates problems:
 1. **Import ambiguity at call sites**: developers have to remember which primitive lives in which package. `attachTable` (plaintext) is in document; `attachEncryptedTable` is in workspace. The rule "plaintext = document, encrypted = workspace" is learnable, but it's a cognitive tax on every import.
 2. **Duplicated vocabulary docs**: the `define*` / `attach*` / `create*` prefix table appears in two READMEs (deliberate, self-contained) but the underlying verb system is one thing described twice.
 3. **Zero real layering**: no production app uses `@epicenter/document` without `@epicenter/workspace`. The packages always ship together. The separate version numbers (`0.0.0` vs `0.1.0`) can't diverge in meaningful ways because the dependency is always `workspace:*`.
-4. **Four-place mix-hazard warning**: the plaintext-vs-encrypted slot-collision warning repeats in attach-encryption JSDoc, attach-encrypted JSDoc, workspace README, and skill reference — partly because the two-package split makes the confusion likelier in the first place.
+4. **Four-place mix-hazard warning**: the plaintext-vs-encrypted slot-collision warning repeats in attach-encryption JSDoc, attach-encrypted JSDoc, workspace README, and skill reference: partly because the two-package split makes the confusion likelier in the first place.
 5. **Extra subpath complexity**: document exposes 8+ subpath exports (`./internal`, `./y-keyvalue`, `./attach-sync`, etc.). Workspace will need to mirror most of these.
 
 ### Desired state
@@ -108,7 +108,7 @@ packages/workspace/src/
 
 ## Research findings
 
-### Scope — who imports `@epicenter/document`?
+### Scope: who imports `@epicenter/document`?
 
 53 files across the monorepo, 10 `package.json`s. Broken down:
 
@@ -132,33 +132,33 @@ packages/workspace/src/
 "./on-local-update"      → callers: none found
 "./attach-indexed-db"    → callers: none found (root export)
 "./attach-sqlite"        → callers: none found (root export)
-"./sqlite-update-log"    → YES — used by shared/y-keyvalue/y-keyvalue-lww-encrypted.ts
+"./sqlite-update-log"    → YES: used by shared/y-keyvalue/y-keyvalue-lww-encrypted.ts
 "./content-attachment"   → content-attachment.ts does not exist (already deleted); export is stale
 "./attach-rich-text"     → none
 "./attach-plain-text"    → none
 "./attach-sync"          → none
 "./attach-timeline"      → none
-"./y-keyvalue"           → YES — workspace's encrypted wrapper imports from here
-"./internal"             → YES — createTable, createKv, reentrance primitives (historical)
+"./y-keyvalue"           → YES: workspace's encrypted wrapper imports from here
+"./internal"             → YES: createTable, createKv, reentrance primitives (historical)
 ```
 
 **Key finding**: only three subpaths are actually used by any consumer (`./sqlite-update-log`, `./y-keyvalue`, `./internal`). Most of the subpath exports in document's package.json are aspirational or stale.
 
 **Implication**: workspace only needs to add 2-3 new subpath exports after merge. The rest can drop.
 
-### `createWorkspace` — is it still needed?
+### `createWorkspace`: is it still needed?
 
 Separate but adjacent question the user raised. Investigation:
 
 | Consumer | Uses `createWorkspace`? |
 |---|---|
-| Every app (`apps/*/`) | **No** — all 7 apps use `defineDocument` + inline attach composition |
+| Every app (`apps/*/`) | **No**: all 7 apps use `defineDocument` + inline attach composition |
 | `packages/filesystem/` | Test files only; production code imports types from workspace but doesn't call `createWorkspace` |
-| `packages/workspace/` extensions | Yes — `persistence/*`, `sync/*`, `materializer/*` extensions are designed to plug into `createWorkspace`'s extension builder |
+| `packages/workspace/` extensions | Yes: `persistence/*`, `sync/*`, `materializer/*` extensions are designed to plug into `createWorkspace`'s extension builder |
 | `packages/workspace/` tests + benchmarks | Yes |
 | `packages/cli/` | Likely yes (not verified in this pass) |
 
-**Implication**: `createWorkspace` is used by extensions and by tests, not by apps. Its extension builder pattern (`.withExtension`, `.withActions`) has no production consumers in app code. Removing it would also remove the entire `extensions/` directory as a separate concept — apps already compose those behaviors inline.
+**Implication**: `createWorkspace` is used by extensions and by tests, not by apps. Its extension builder pattern (`.withExtension`, `.withActions`) has no production consumers in app code. Removing it would also remove the entire `extensions/` directory as a separate concept: apps already compose those behaviors inline.
 
 **Recommendation**: keep `createWorkspace` untouched in the merge. Removing it is a **separate, larger** refactor (the extensions directory, filesystem tests, benchmarks all need migration). Scope this merge narrowly to the package boundary; `createWorkspace` removal is scoped in the follow-up spec `20260421T170000-collapse-document-and-workspace-primitives.md`, which sequences after this merge lands.
 
@@ -176,7 +176,7 @@ From `packages/document/package.json`:
 }
 ```
 
-Cross-reference with workspace's deps (verified earlier): `@standard-schema/spec`, `lib0`, `nanoid`, `wellcrafted` are all already listed. `@epicenter/sync` — need to verify workspace depends on it (likely yes via transitivity; explicit add needed after merge).
+Cross-reference with workspace's deps (verified earlier): `@standard-schema/spec`, `lib0`, `nanoid`, `wellcrafted` are all already listed. `@epicenter/sync`: need to verify workspace depends on it (likely yes via transitivity; explicit add needed after merge).
 
 **Implication**: minimal new deps; mostly de-duplication.
 
@@ -188,12 +188,12 @@ Cross-reference with workspace's deps (verified earlier): `@standard-schema/spec
 | Document source location | `packages/workspace/src/document/` subdirectory | One-rename diff, preserves file organization, defers "flatten into existing dirs" to a follow-up |
 | Subpath exports | Only keep the 3 with real consumers (`./internal`, `./y-keyvalue`, `./sqlite-update-log`) + re-export everything else from root | Smaller surface, honest about what's consumed |
 | `createWorkspace` fate | **Not touched** in this spec | Orthogonal concern; larger scope; evaluate after merge lands |
-| Transition shim | **None** — delete `@epicenter/document` in the same PR | Big-bang avoids parallel surface; all consumers updated in one sweep |
+| Transition shim | **None**: delete `@epicenter/document` in the same PR | Big-bang avoids parallel surface; all consumers updated in one sweep |
 | Consumer migration | Import string flip (`@epicenter/document` → `@epicenter/workspace`) + package.json dep removal | Mechanical, typecheck catches regressions |
 | `packages/document/` directory | Deleted entirely | No reason to keep an empty package directory |
 | Version bump | `@epicenter/workspace` → `0.2.0` | Breaking change for any external consumer (unlikely given internal monorepo) |
 | README strategy | Delete `packages/document/README.md`; update `packages/workspace/README.md` vocabulary section to reflect unified surface | One canonical doc |
-| Skill reference | Rename `.agents/skills/workspace-api/references/document-primitive.md` — file name becomes misleading after merge | `primitive-api.md` or similar |
+| Skill reference | Rename `.agents/skills/workspace-api/references/document-primitive.md`: file name becomes misleading after merge | `primitive-api.md` or similar |
 
 ## Architecture
 
@@ -246,7 +246,7 @@ For external consumers (apps + other packages):
 
 ## Implementation plan
 
-### Phase A — prepare workspace to host document's surface
+### Phase A: prepare workspace to host document's surface
 
 - [ ] **A.1** Update `packages/workspace/package.json`:
   - Add subpath exports: `./internal`, `./y-keyvalue`, `./sqlite-update-log`
@@ -254,13 +254,13 @@ For external consumers (apps + other packages):
   - Bump version to `0.2.0` (or a pre-release tag)
 - [ ] **A.2** Update `packages/workspace/src/index.ts` to re-export everything `packages/document/src/index.ts` currently exports. This is a **type-only** change at this phase; the imports still resolve to the old document package. Proves the surface is coverable.
 
-### Phase B — move files
+### Phase B: move files
 
 - [ ] **B.1** `git mv packages/document/src/ packages/workspace/src/document/`
 - [ ] **B.2** Verify: workspace builds are now broken (internal imports point at `@epicenter/document` which is now empty); external consumers still reference the old package path.
-- [ ] **B.3** Commit as **"refactor(workspace): move @epicenter/document sources into src/document/"** — intentionally broken intermediate state; next commit fixes.
+- [ ] **B.3** Commit as **"refactor(workspace): move @epicenter/document sources into src/document/"**: intentionally broken intermediate state; next commit fixes.
 
-### Phase C — fix workspace-package internal imports
+### Phase C: fix workspace-package internal imports
 
 - [ ] **C.1** Inside `packages/workspace/src/`, rewrite every `@epicenter/document*` import to a relative path based on source location. Files to touch (audit list):
   - `src/workspace/attach-encryption.ts`
@@ -277,7 +277,7 @@ For external consumers (apps + other packages):
 - [ ] **C.4** Run `bun test --cwd packages/workspace`. Must be all green.
 - [ ] **C.5** Commit as **"refactor(workspace): rewire internal imports to src/document/ relative paths"**.
 
-### Phase D — migrate external consumers
+### Phase D: migrate external consumers
 
 For each consumer package, in dependency order (sibling packages first, apps last):
 
@@ -293,36 +293,36 @@ For each consumer package, in dependency order (sibling packages first, apps las
 - [ ] **D.4** `packages/cli/`
   - Audit + flip any imports
   - Remove from `package.json`
-- [ ] **D.5** `apps/*` — one commit per app for reviewability, or one batch commit. All 7 apps flip imports + drop `package.json` dep.
+- [ ] **D.5** `apps/*`: one commit per app for reviewability, or one batch commit. All 7 apps flip imports + drop `package.json` dep.
 - [ ] **D.6** Run monorepo typecheck; must be clean on all files touched.
 - [ ] **D.7** Commit as **"refactor: migrate every consumer from @epicenter/document to @epicenter/workspace"**.
 
-### Phase E — delete `packages/document/`
+### Phase E: delete `packages/document/`
 
 - [ ] **E.1** `rm -rf packages/document/`
 - [ ] **E.2** Remove any `packages/document` reference from `pnpm-workspace.yaml`, root `package.json` workspaces field, `turbo.json`, `bun.lock`, etc.
 - [ ] **E.3** Run `bun install` from repo root to refresh the lockfile.
 - [ ] **E.4** Commit as **"chore: delete @epicenter/document package"**.
 
-### Phase F — documentation + skill reference
+### Phase F: documentation + skill reference
 
 - [ ] **F.1** Delete `packages/document/README.md` (already gone via E.1; confirm).
 - [ ] **F.2** Update `packages/workspace/README.md`:
-  - Remove the "Plaintext vs encrypted — lives in different packages" framing
+  - Remove the "Plaintext vs encrypted: lives in different packages" framing
   - Update Prefix vocabulary section with the full merged surface
-  - Keep the slot-collision warning (still applies — same package, same hazard)
+  - Keep the slot-collision warning (still applies: same package, same hazard)
 - [ ] **F.3** Rename `.agents/skills/workspace-api/references/document-primitive.md` → `.agents/skills/workspace-api/references/primitive-api.md`
 - [ ] **F.4** Update skill reference content to reflect unified package.
 - [ ] **F.5** Update the skill's `SKILL.md` if it references `document-primitive.md` by path.
 - [ ] **F.6** Update `AGENTS.md` / `CLAUDE.md` if they reference package structure.
 - [ ] **F.7** Commit as **"docs: unify vocabulary after document/workspace merge"**.
 
-### Phase G — verification
+### Phase G: verification
 
-- [ ] **G.1** `bun run typecheck` across monorepo — clean on all files we touched.
-- [ ] **G.2** `bun test` in `packages/workspace` — all green.
-- [ ] **G.3** `bun test` in `packages/filesystem`, `packages/skills` — all green (or same pre-existing failures as before the merge).
-- [ ] **G.4** Pick one app (whispering), `bun run --cwd apps/whispering build` — clean.
+- [ ] **G.1** `bun run typecheck` across monorepo: clean on all files we touched.
+- [ ] **G.2** `bun test` in `packages/workspace`: all green.
+- [ ] **G.3** `bun test` in `packages/filesystem`, `packages/skills`: all green (or same pre-existing failures as before the merge).
+- [ ] **G.4** Pick one app (whispering), `bun run --cwd apps/whispering build`: clean.
 - [ ] **G.5** Verify `rg "@epicenter/document"` in the monorepo returns zero hits (outside of spec/doc files referencing history).
 
 ## Edge cases
@@ -367,7 +367,7 @@ For each consumer package, in dependency order (sibling packages first, apps las
 
 1. **Drop or keep `./define-document`, `./attach-sync`, etc. subpaths?**
    - Options: (a) keep all existing document subpaths on workspace, (b) drop subpaths with no real consumers, (c) root-export everything, no subpaths at all.
-   - **Recommendation**: (b) — preserve only `./internal`, `./y-keyvalue`, `./sqlite-update-log`. Everything else re-exports from root. Simpler surface; apps already import from root anyway.
+   - **Recommendation**: (b): preserve only `./internal`, `./y-keyvalue`, `./sqlite-update-log`. Everything else re-exports from root. Simpler surface; apps already import from root anyway.
 
 2. **Flatten `document/` subdir into existing workspace directories?**
    - Options: (a) keep `src/document/` subdir as a coherent bucket (proposed), (b) move `attach-*` to `src/primitives/`, `define-document` to `src/`, `y-keyvalue` into `src/shared/y-keyvalue/`, etc.
@@ -375,7 +375,7 @@ For each consumer package, in dependency order (sibling packages first, apps las
 
 3. **Version bump strategy**
    - Options: (a) bump workspace to `0.2.0`, (b) stay at `0.1.0` since internal consumers all use `workspace:*`, (c) tag `1.0.0` to mark the stable unified surface.
-   - **Recommendation**: (a) — breaking surface change deserves a minor bump even for internal consumers; `1.0.0` is premature.
+   - **Recommendation**: (a): breaking surface change deserves a minor bump even for internal consumers; `1.0.0` is premature.
 
 4. **`createWorkspace` removal**
    - Orthogonal to this spec. Zero apps call it, but extensions + filesystem tests do.
@@ -464,14 +464,14 @@ For each consumer package, in dependency order (sibling packages first, apps las
 
 ### Related specs / history
 
-- `specs/20260421T170000-collapse-document-and-workspace-primitives.md` — **the sequenced follow-up**: deletes `createWorkspace` + extensions chain, adds `DocumentBundle` type. Runs after this merge lands.
-- `specs/20260421T140000-encryption-primitive-refactor.md` — the shipped predecessor work that created the current encrypted-variant API surface. This merge does not change that API; it only collapses where it lives.
-- `specs/20260420T230100-collapse-document-framework.md` — earlier exploration around document/workspace boundaries (context for current state).
-- Commit `65221f1b0 refactor(document): remove reentrance guards from attach primitives` — relevant to why the plaintext-vs-encrypted warning matters: with no runtime guards, the verb is the only defense.
+- `specs/20260421T170000-collapse-document-and-workspace-primitives.md`: **the sequenced follow-up**: deletes `createWorkspace` + extensions chain, adds `DocumentBundle` type. Runs after this merge lands.
+- `specs/20260421T140000-encryption-primitive-refactor.md`: the shipped predecessor work that created the current encrypted-variant API surface. This merge does not change that API; it only collapses where it lives.
+- `specs/20260420T230100-collapse-document-framework.md`: earlier exploration around document/workspace boundaries (context for current state).
+- Commit `65221f1b0 refactor(document): remove reentrance guards from attach primitives`: relevant to why the plaintext-vs-encrypted warning matters: with no runtime guards, the verb is the only defense.
 
 ### Tooling
 
-- `rg "@epicenter/document"` — authoritative consumer list
-- `bun run typecheck` from repo root — catches missed imports
-- `bun test` per-package — catches runtime regressions
+- `rg "@epicenter/document"`: authoritative consumer list
+- `bun run typecheck` from repo root: catches missed imports
+- `bun test` per-package: catches runtime regressions
 - Git `--find-renames` ensures `git mv` preserves file history

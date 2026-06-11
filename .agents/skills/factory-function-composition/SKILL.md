@@ -34,7 +34,7 @@ function createSomething(dependencies, options?) {
 ```
 
 - **First argument**: Always the resource(s). Either a single client or a destructured object of multiple dependencies.
-- **Second argument**: Optional configuration specific to this factory. Never client config—that belongs at client creation.
+- **Second argument**: Optional configuration specific to this factory. Never client config; that belongs at client creation.
 
 Two arguments max. First is resources, second is config. No exceptions.
 
@@ -67,10 +67,10 @@ service.method(methodOptions);
 
 ## Key Principles
 
-1. **Client configuration belongs at client creation time** — don't pipe clientOptions through your factory
-2. **Each layer has its own options** — client, service, and method options stay separate
-3. **Dependencies come first** — factory functions take dependencies as the first argument
-4. **Return objects with methods** — not standalone functions that need the resource passed in
+1. **Client configuration belongs at client creation time**: don't pipe clientOptions through your factory
+2. **Each layer has its own options**: client, service, and method options stay separate
+3. **Dependencies come first**: factory functions take dependencies as the first argument
+4. **Return objects with methods**: not standalone functions that need the resource passed in
 
 ## Recognizing the Anti-Patterns
 
@@ -128,7 +128,7 @@ function doSomething(clientOptions, serviceOptions, methodOptions) {
 	return service.method(methodOptions);
 }
 
-// Good — each layer visible and configurable
+// Good: each layer visible and configurable
 const client = createClient(clientOptions);
 const service = createService(client, serviceOptions);
 service.method(methodOptions);
@@ -161,16 +161,16 @@ service.method(methodOptions);
 
 ## The Canonical Internal Shape
 
-The previous sections cover the external signature—`(deps, options?) → return { methods }`. This section covers what goes *inside* the function body. Every factory function follows a four-zone ordering:
+The previous sections cover the external signature: `(deps, options?) → return { methods }`. This section covers what goes *inside* the function body. Every factory function follows a four-zone ordering:
 
 ```typescript
-// Option A — destructure in the signature (preferred for small dep lists)
+// Option A: destructure in the signature (preferred for small dep lists)
 function createSomething({ db, cache }: Deps, options?) {
 	const maxRetries = options?.maxRetries ?? 3;
 	// ...
 }
 
-// Option B — destructure in zone 1 (fine when you also need the deps object itself)
+// Option B: destructure in zone 1 (fine when you also need the deps object itself)
 function createSomething(deps: Deps, options?) {
 	const { db, cache } = deps;
 	const maxRetries = options?.maxRetries ?? 3;
@@ -182,20 +182,20 @@ Both are valid. The point is that by the time you reach zone 2, all dependencies
 
 ```typescript
 function createSomething({ db, cache }, options?) {
-	// Zone 1 — Immutable state (const from deps/options)
+	// Zone 1: Immutable state (const from deps/options)
 	const maxRetries = options?.maxRetries ?? 3;
 
-	// Zone 2 — Mutable state (let declarations)
+	// Zone 2: Mutable state (let declarations)
 	let connectionCount = 0;
 	let lastError: Error | null = null;
 
-	// Zone 3 — Private helpers
+	// Zone 3: Private helpers
 	function resetState() {
 		connectionCount = 0;
 		lastError = null;
 	}
 
-	// Zone 4 — Public API (always last)
+	// Zone 4: Public API (always last)
 	return {
 		connect() { ... },
 		disconnect() { ... },
@@ -204,7 +204,7 @@ function createSomething({ db, cache }, options?) {
 }
 ```
 
-Zones 1 and 2 can merge when there's little state. Zone 3 is empty for small factories. But the return object is always last—it's the complete public API.
+Zones 1 and 2 can merge when there's little state. Zone 3 is empty for small factories. But the return object is always last: it's the complete public API.
 
 ### Public Return Types Derive From Zone 4
 
@@ -233,7 +233,7 @@ Do not use this for shared service contracts that several factories implement. T
 
 ### The `this` Decision Rule
 
-Inside the return object, public methods sometimes need to call other public methods. Use `this.method()` for that—method shorthand gives proper `this` binding.
+Inside the return object, public methods sometimes need to call other public methods. Use `this.method()` for that; method shorthand gives proper `this` binding.
 
 If a function is called both by return-object methods *and* by pre-return initialization logic, it belongs in zone 3 (private helpers). Call it directly by name; no `this` needed.
 
@@ -272,20 +272,20 @@ function createPersistedState(opts) {
   };
 }
 
-// Consumer — pass the factory result directly, no adapter:
+// Consumer: pass the factory result directly, no adapter:
 const session = createPersistedState({ key, schema, defaultValue });
 const auth = createAuth({ baseURL, session });
 ```
 
 ### The "collapsed adapter" rule
 
-If you find yourself writing a `fromX` translator that only renames or re-projects fields, **delete it and widen the factory's return shape instead**. The adapter is pure ceremony — the factory already holds the state; just expose both surfaces.
+If you find yourself writing a `fromX` translator that only renames or re-projects fields, **delete it and widen the factory's return shape instead**. The adapter is pure ceremony; the factory already holds the state, so just expose both surfaces.
 
 Signs an adapter should be collapsed:
 
 - It's one-to-one with the factory (every caller wraps the factory result).
 - It only renames methods or adds a thin passthrough.
-- The factory and the contract disagree on shape but not on semantics (`.current` vs `.get()` — same value, different API).
+- The factory and the contract disagree on shape but not on semantics (`.current` vs `.get()`: same value, different API).
 
 Signs an adapter should stay:
 
@@ -296,7 +296,7 @@ When in doubt: start without the adapter. Add one only when the seam actually ea
 
 ### Why this works
 
-TypeScript's structural typing means the factory doesn't have to `implements SessionStore` or import the contract type. As long as the return shape matches, it's assignable. This keeps the factory package free of the consumer's dependencies — `createPersistedState` lives in `@epicenter/svelte` and has zero knowledge of `@epicenter/auth`.
+TypeScript's structural typing means the factory doesn't have to `implements SessionStore` or import the contract type. As long as the return shape matches, it's assignable. This keeps the factory package free of the consumer's dependencies: `createPersistedState` lives in `@epicenter/svelte` and has zero knowledge of `@epicenter/auth`.
 
 ## The Mental Model
 
@@ -323,8 +323,8 @@ createClient(...)  →  createService(client, ...)  →  service.method(...)
 
 See the full articles for more details:
 
-- [The Universal Factory Function Signature](../../docs/articles/universal-factory-signature.md) — signature explained in depth
-- [Stop Passing Clients as Arguments](../../docs/articles/stop-passing-clients-as-arguments.md) — practical guide
-- [The Factory Function Pattern](../../docs/articles/factory-function-pattern.md) — detailed explanation
-- [Factory Method Patterns](../../docs/articles/factory-method-patterns.md) — separating options and method patterns
-- [Closures Are Better Privacy Than Keywords](../../docs/articles/closures-are-better-privacy-than-keywords.md) — internal anatomy and why closures beat class keywords
+- [The Universal Factory Function Signature](../../docs/articles/universal-factory-signature.md): signature explained in depth
+- [Stop Passing Clients as Arguments](../../docs/articles/stop-passing-clients-as-arguments.md): practical guide
+- [The Factory Function Pattern](../../docs/articles/factory-function-pattern.md): detailed explanation
+- [Factory Method Patterns](../../docs/articles/factory-method-patterns.md): separating options and method patterns
+- [Closures Are Better Privacy Than Keywords](../../docs/articles/closures-are-better-privacy-than-keywords.md): internal anatomy and why closures beat class keywords

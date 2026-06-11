@@ -1,12 +1,12 @@
 # How We Version and Release Epicenter Packages
 
-Seven npm packages, ten apps, three deployment targets. The question isn't whether you need a release strategy—it's which one you can actually live with.
+Seven npm packages, ten apps, three deployment targets. The question isn't whether you need a release strategy. It's which one you can actually live with.
 
 ## The problem with a monorepo at this scale
 
 Epicenter has 13 packages and 11 apps. Seven packages publish to npm. Apps deploy to Cloudflare Workers, the Chrome Web Store, and GitHub Releases via Tauri. Each target has different audiences, different cadences, and different failure modes.
 
-The naive approach—version everything independently—sounds flexible until you're debugging a user's issue and asking "which version of `@epicenter/workspace` are you on, and does it match your `@epicenter/sync`?" Independent versioning creates a compatibility matrix. We didn't want to maintain one.
+The naive approach. Version everything independently. Sounds flexible until you're debugging a user's issue and asking "which version of `@epicenter/workspace` are you on, and does it match your `@epicenter/sync`?" Independent versioning creates a compatibility matrix. We didn't want to maintain one.
 
 ## One version number for all public packages
 
@@ -30,7 +30,7 @@ All seven public packages share a single version, enforced in `.changeset/config
 
 The `fixed` group means changesets treats them as one unit. When any package gets a bump, all seven bump together. Users install matching versions. No compatibility matrix.
 
-The honest trade-off: sometimes a package gets a version bump with no actual changes. If you fix a bug in `@epicenter/workspace`, `@epicenter/ui` gets a new version number even if nothing in it changed. We accept this. The alternative—tracking which packages changed and which didn't—costs more than the empty bumps.
+The honest trade-off: sometimes a package gets a version bump with no actual changes. If you fix a bug in `@epicenter/workspace`, `@epicenter/ui` gets a new version number even if nothing in it changed. We accept this. The alternative. Tracking which packages changed and which didn't. Costs more than the empty bumps.
 
 ## Three separate release systems
 
@@ -40,7 +40,7 @@ npm packages, GitHub Releases, and app deploys are handled by three different sy
 
 **Auto-release** (`auto.release.yml`) handles GitHub Releases. It fires on every merged PR, reads `## Changelog` sections from PR descriptions, and creates a versioned GitHub Release with categorized entries. It's currently disabled (`if: false`) until the v8.0.0 tag is in place and the `GH_ACTIONS_PAT` secret is configured. When re-enabled, it runs on every merge to `main`.
 
-**App deploys** are separate from both. Cloudflare Workers (the API, landing page, Whispering web) deploy on every push to `main` via `deploy.cloudflare.yml`. Tauri desktop builds trigger on `v*` tags via `release.whispering.yml`—a 4-platform matrix (macOS ARM, macOS Intel, Ubuntu, Windows) that takes 20+ minutes and produces signed, notarized binaries.
+**App deploys** are separate from both. Cloudflare Workers (the API, landing page, Whispering web) deploy on every push to `main` via `deploy.cloudflare.yml`. Tauri desktop builds trigger on `v*` tags via `release.whispering.yml`: a 4-platform matrix (macOS ARM, macOS Intel, Ubuntu, Windows) that takes 20+ minutes and produces signed, notarized binaries.
 
 The version number in a GitHub Release and the version number on npm are related but not the same thing. GitHub Releases track the overall project; npm versions track the library API.
 
@@ -55,7 +55,7 @@ bunx changeset
 # Creates .changeset/funny-name.md with your intent
 ```
 
-Commit the changeset file alongside your code. It's a plain markdown file describing what changed and why—it becomes the CHANGELOG entry.
+Commit the changeset file alongside your code. It's a plain markdown file describing what changed and why. It becomes the CHANGELOG entry.
 
 ```bash
 # 2. When ready to cut a release:
@@ -82,13 +82,13 @@ Changesets only publishes packages that are (a) not `"private": true` and (b) un
 
 Three packages never publish to npm: `@epicenter/ai`, `@epicenter/constants`, and `@epicenter/vault`. They're internal implementation details. `"private": true` in their `package.json` is all it takes; changesets ignores them automatically.
 
-**Every app in `apps/` is also `"private": true` and completely outside the changeset system.** Whispering versions come from `tauri.conf.json` and `v*` git tags. The API and landing page deploy via Cloudflare Workers on push to `main`. The Chrome extension versions via `manifest.json`. Changesets will never touch any of them—they have their own deploy pipelines documented in `.github/workflows/README.md`.
+**Every app in `apps/` is also `"private": true` and completely outside the changeset system.** Whispering versions come from `tauri.conf.json` and `v*` git tags. The API and landing page deploy via Cloudflare Workers on push to `main`. The Chrome extension versions via `manifest.json`. Changesets will never touch any of them. They have their own deploy pipelines documented in `.github/workflows/README.md`.
 
 The public/private split is intentional. `@epicenter/workspace` is the library other developers build on. The private packages are the internals that make Epicenter's own apps work. Keeping them private means we can change them without worrying about semver contracts.
 
 ## What we considered and rejected
 
-Independent versioning was the first thing we looked at. It's the default for most monorepos. We rejected it because the packages are tightly coupled—`@epicenter/sync` depends on `@epicenter/workspace`, `@epicenter/svelte` depends on both. Keeping them in sync manually is exactly the kind of work a tool should do.
+Independent versioning was the first thing we looked at. It's the default for most monorepos. We rejected it because the packages are tightly coupled: `@epicenter/sync` depends on `@epicenter/workspace`, `@epicenter/svelte` depends on both. Keeping them in sync manually is exactly the kind of work a tool should do.
 
 Lerna came up. It's the predecessor to changesets and still works, but changesets is the active project with better tooling and a cleaner mental model. No reason to use the older thing.
 

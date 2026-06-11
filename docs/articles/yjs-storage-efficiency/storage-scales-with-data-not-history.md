@@ -2,7 +2,7 @@
 
 CRDTs track every operation for conflict-free merging. The natural worry: won't storage grow forever as I use the app? Won't ten years of edits bury my 20 active rows under megabytes of tombstones?
 
-No. With Yjs garbage collection enabled (`gc:true`, the default), storage is proportional to your active data. Not your operation count, not your edit history, not your deleted rows. We tested this exhaustively—16 tests, 52,000+ operations, multi-device sync, encryption, key rotation—and the property holds.
+No. With Yjs garbage collection enabled (`gc:true`, the default), storage is proportional to your active data. Not your operation count, not your edit history, not your deleted rows. We tested this exhaustively: 16 tests, 52,000+ operations, multi-device sync, encryption, key rotation. And the property holds.
 
 ## The Precise Claim
 
@@ -46,7 +46,7 @@ Each unique device (Yjs clientID) that has ever written to the doc leaves a fing
 ✓ 50 devices, same 10 rows             1.12 KB overhead  (10 active rows)
 ```
 
-The percentages look alarming for small row counts—50 devices editing 10 rows shows 81% overhead. But the absolute number is 1.12 KB, and it's fixed. It doesn't grow with more operations. Add more rows and the percentage drops: 50 devices with 500 rows is 2.2% overhead.
+The percentages look alarming for small row counts: 50 devices editing 10 rows shows 81% overhead. But the absolute number is 1.12 KB, and it's fixed. It doesn't grow with more operations. Add more rows and the percentage drops: 50 devices with 500 rows is 2.2% overhead.
 
 The overhead is `~22 bytes × unique_device_count`, not `~22 bytes × operation_count`. A user who edits from 5 devices over 10 years pays ~110 bytes. That's the total device tax for a decade.
 
@@ -65,9 +65,9 @@ Multi-device overhead happens because tombstones from different clients interlea
 
 ## When This Doesn't Hold
 
-**gc:false breaks everything.** With garbage collection disabled, every tombstone is preserved individually. Five cycles of adding and deleting 1,000 encrypted rows grows to 1.04 MB—compared to 27 bytes with gc:true. You'd only use `gc:false` for version snapshots or undo history, and you'd need a compaction strategy.
+**gc:false breaks everything.** With garbage collection disabled, every tombstone is preserved individually. Five cycles of adding and deleting 1,000 encrypted rows grows to 1.04 MB. Compared to 27 bytes with gc:true. You'd only use `gc:false` for version snapshots or undo history, and you'd need a compaction strategy.
 
-**Encryption doesn't change the story.** The encrypted wrapper is pure composition over YKeyValueLww—it transforms values at the boundary but doesn't alter the CRDT structure. Encryption adds ~60 bytes per entry (nonce + auth tag + header), but that's a flat per-entry tax on active data, not a growing history cost.
+**Encryption doesn't change the story.** The encrypted wrapper is pure composition over YKeyValueLww. It transforms values at the boundary but doesn't alter the CRDT structure. Encryption adds ~60 bytes per entry (nonce + auth tag + header), but that's a flat per-entry tax on active data, not a growing history cost.
 
 ## Running the Proof
 
@@ -97,7 +97,7 @@ _Tested with: Bun, YJS 13.6.x, XChaCha20-Poly1305 via @noble/ciphers_
 
 **Related:**
 
-- [Encrypted CRDTs Won't Eat Your Disk](./encrypted-kv-storage.md)—encryption overhead and 10-year longevity
-- [YKeyValueLww Tombstones Are Practically Free](../ykeyvalue-lww-tombstones-are-free.md)—the original tombstone discovery
-- [YKeyValue vs Y.Map: GC Is the Hidden Variable](../ykeyvalue-gc-the-hidden-variable.md)—why gc:false inverts the storage story
-- [YJS Storage Efficiency: Only 30% Overhead](./README.md)—the original SQLite vs YJS comparison
+- [Encrypted CRDTs Won't Eat Your Disk](./encrypted-kv-storage.md): encryption overhead and 10-year longevity
+- [YKeyValueLww Tombstones Are Practically Free](../ykeyvalue-lww-tombstones-are-free.md): the original tombstone discovery
+- [YKeyValue vs Y.Map: GC Is the Hidden Variable](../ykeyvalue-gc-the-hidden-variable.md): why gc:false inverts the storage story
+- [YJS Storage Efficiency: Only 30% Overhead](./README.md): the original SQLite vs YJS comparison

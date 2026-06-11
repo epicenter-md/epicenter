@@ -20,7 +20,7 @@ import { workspaceRecordings } from '$lib/state/workspace-recordings.svelte';
 import { workspaceSettings } from '$lib/state/workspace-settings.svelte';
 import { workspaceTransformationRuns } from '$lib/state/workspace-transformation-runs.svelte';
 
-// Usage sites are verbose—"workspace" adds nothing here
+// Usage sites are verbose: "workspace" adds nothing here
 workspaceRecordings.sorted
 workspaceSettings.get('recording.mode')
 workspaceTransformationRuns.getByRecordingId(id)
@@ -39,9 +39,9 @@ state/
 
 This creates problems:
 
-1. **Redundant naming.** The prefix is a namespace simulated via convention. 5 of 7 files share it—that's a pattern screaming to be structural, or removed.
+1. **Redundant naming.** The prefix is a namespace simulated via convention. 5 of 7 files share it. That's a pattern screaming to be structural, or removed.
 2. **Verbose call sites.** `workspaceRecordings.sorted` says nothing more than `recordings.sorted` in context. The storage backend (Yjs vs localStorage) is an implementation detail, not something every consumer needs to see.
-3. **Asymmetric naming.** `deviceConfig` already scopes itself by name. Everything else is implicitly workspace-level. The `workspace` prefix on the majority is noise—you don't prefix the default.
+3. **Asymmetric naming.** `deviceConfig` already scopes itself by name. Everything else is implicitly workspace-level. The `workspace` prefix on the majority is noise. You don't prefix the default.
 4. **323 usage sites.** The `workspace` prefix appears in 323 lines across 48 source files. That's a lot of keystrokes encoding information that matters to the implementer of the module, not its consumers.
 
 ### Desired State
@@ -76,7 +76,7 @@ state/
 | Drop `workspace-` from filenames | Yes | The `state/` directory is the namespace. 5/7 files sharing a prefix is a redundant pseudo-namespace. |
 | Drop `workspace` from export names | Yes | Call sites don't need storage-backend information. `recordings.sorted` is sufficient context. `deviceConfig` already self-scopes as the exception. |
 | Keep flat directory (no subfolder) | Yes | 7 files doesn't warrant a subdirectory. The rename alone resolves the naming issue. |
-| Don't rename `deviceConfig` or `vadRecorder` | Correct | These names are already clean—they describe their domain, not their storage backend. |
+| Don't rename `deviceConfig` or `vadRecorder` | Correct | These names are already clean. They describe their domain, not their storage backend. |
 | Don't update historical specs | Correct | Specs document what happened at that point in time. Rewriting history makes them unreliable references. |
 | DO update live documentation | Yes | READMEs, ARCHITECTURE.md, and articles with code examples should reflect the current API. |
 | Handle local variable collisions | Rename the local variable | 2 files have `const transformations = $derived(workspaceTransformations.sorted)`. After rename, the local must change to avoid shadowing the import. |
@@ -84,7 +84,7 @@ state/
 
 ## Architecture
 
-The directory structure change is minimal—file renames only, no moves:
+The directory structure change is minimal. File renames only, no moves:
 
 ```
 apps/whispering/src/lib/state/
@@ -129,7 +129,7 @@ Two files currently shadow the import with a local derived variable:
 import { workspaceTransformations, type Transformation } from '$lib/state/workspace-transformations.svelte';
 const transformations = $derived(workspaceTransformations.sorted);
 
-// AFTER — local variable must change to avoid collision
+// AFTER: local variable must change to avoid collision
 import { transformations, type Transformation } from '$lib/state/transformations.svelte';
 const sortedTransformations = $derived(transformations.sorted);
 // Then update all template references from `transformations` to `sortedTransformations`
@@ -137,7 +137,7 @@ const sortedTransformations = $derived(transformations.sorted);
 
 **`src/lib/components/TransformationPickerBody.svelte`**:
 ```typescript
-// Same pattern — same fix
+// Same pattern: same fix
 import { transformations, type Transformation } from '$lib/state/transformations.svelte';
 const sortedTransformations = $derived(transformations.sorted);
 ```
@@ -176,7 +176,7 @@ Each state file has JSDoc examples referencing the old import paths and export n
 
 `settings` is a common word. However:
 - No consumer file has a local `const settings` that would collide.
-- `settings` and `deviceConfig` are semantically distinct—`settings` = user preferences (synced), `deviceConfig` = device-bound config (local). The naming asymmetry correctly communicates that `deviceConfig` is the exception.
+- `settings` and `deviceConfig` are semantically distinct: `settings` = user preferences (synced), `deviceConfig` = device-bound config (local). The naming asymmetry correctly communicates that `deviceConfig` is the exception.
 - If ambiguity ever arises in a specific file, `appSettings` is a one-line alias.
 
 ### Comment References (Non-Import)
@@ -191,7 +191,7 @@ This should update to `settings.observeAll`.
 
 ### Phase 1: Rename State Files and Exports
 
-All 5 file renames + export renames + internal factory function renames. This is the atomic unit—all must happen together.
+All 5 file renames + export renames + internal factory function renames. This is the atomic unit. All must happen together.
 
 - [x] **1.1** Rename `workspace-recordings.svelte.ts` → `recordings.svelte.ts`
   - Rename file
@@ -228,7 +228,7 @@ Mechanical find-and-replace across all `.ts` and `.svelte` files that import fro
 2. Import name update (`workspaceRecordings` → `recordings`)
 3. All usage sites in the file body (`workspaceRecordings.sorted` → `recordings.sorted`)
 
-#### 2.1 — `workspaceSettings` consumers (28 files)
+#### 2.1: `workspaceSettings` consumers (28 files)
 
 - [x] All `workspaceSettings` consumers updated (28 files)
 - [x] All `workspaceRecordings` consumers updated (10 files)
@@ -236,27 +236,27 @@ Mechanical find-and-replace across all `.ts` and `.svelte` files that import fro
 - [x] All `workspaceTransformationSteps` consumers updated (3 files)
 - [x] All `workspaceTransformationRuns` consumers updated (5 files)
 
-#### 2.2 — `workspaceRecordings` consumers (10 files)
+#### 2.2: `workspaceRecordings` consumers (10 files)
 
 - [x] All recording consumers updated
 
-#### 2.3 — `workspaceTransformations` consumers (7 files)
+#### 2.3: `workspaceTransformations` consumers (7 files)
 
 - [x] All transformation consumers updated
 
-#### 2.4 — `workspaceTransformationSteps` consumers (3 files)
+#### 2.4: `workspaceTransformationSteps` consumers (3 files)
 
 - [x] All transformation step consumers updated
 
-#### 2.5 — `workspaceTransformationRuns` consumers (5 files)
+#### 2.5: `workspaceTransformationRuns` consumers (5 files)
 
 - [x] All transformation run consumers updated
 
-#### 2.6 — Local variable collision fixes (2 files)
+#### 2.6: Local variable collision fixes (2 files)
 
-- [x] `src/lib/components/settings/selectors/TransformationSelector.svelte` — renamed `const transformations` → `const sortedTransformations`
-- [x] `src/lib/components/TransformationPickerBody.svelte` — renamed `const transformations` → `const sortedTransformations`
-- [x] `src/lib/utils/recording-actions.ts` — renamed `recordings` parameter → `toDelete` to avoid shadowing import
+- [x] `src/lib/components/settings/selectors/TransformationSelector.svelte`: renamed `const transformations` → `const sortedTransformations`
+- [x] `src/lib/components/TransformationPickerBody.svelte`: renamed `const transformations` → `const sortedTransformations`
+- [x] `src/lib/utils/recording-actions.ts`: renamed `recordings` parameter → `toDelete` to avoid shadowing import
   > **Discovery**: The `deleteWithConfirmation(recordings: Recording | Recording[])` parameter shadowed the imported `recordings` module. Renamed parameter to `toDelete`.
 
 ### Phase 3: Update Live Documentation (6 files)
@@ -272,15 +272,15 @@ These files have code examples, headings, or prose referencing the old names and
 
 ### Phase 4: Verification
 
-- [x] **4.1** Run `bun run typecheck` — all errors are pre-existing (packages/ui, packages/workspace, unrelated action types)
-- [x] **4.2** Run `lsp_diagnostics` on all 5 renamed state files — zero errors
-- [x] **4.3** Run `lsp_diagnostics` on the 3 collision-fix files — zero errors
-- [x] **4.4** Grep for old export names in `.ts`/`.svelte` — zero matches
-- [x] **4.5** Grep for old file paths in live `.md` files — zero matches (only historical specs, as expected)
+- [x] **4.1** Run `bun run typecheck`: all errors are pre-existing (packages/ui, packages/workspace, unrelated action types)
+- [x] **4.2** Run `lsp_diagnostics` on all 5 renamed state files: zero errors
+- [x] **4.3** Run `lsp_diagnostics` on the 3 collision-fix files: zero errors
+- [x] **4.4** Grep for old export names in `.ts`/`.svelte`: zero matches
+- [x] **4.5** Grep for old file paths in live `.md` files: zero matches (only historical specs, as expected)
 
 ## Historical Specs (DO NOT Update)
 
-The following specs reference the old `workspace-` prefixed names. These are historical documents that record decisions and work done at a point in time. **Do not modify them**—they remain accurate records of what was implemented when they were written.
+The following specs reference the old `workspace-` prefixed names. These are historical documents that record decisions and work done at a point in time. **Do not modify them**: they remain accurate records of what was implemented when they were written.
 
 - `specs/20260312T170000-whispering-workspace-polish-and-migration.md`
 - `specs/20260312T210000-whispering-settings-separation.md`
@@ -295,7 +295,7 @@ The following specs reference the old `workspace-` prefixed names. These are his
 1. **Should `TransformationSelector` and `TransformationPickerBody` use `transformations.sorted` directly in templates instead of an intermediate variable?**
    - Option (a): Rename local to `sortedTransformations` (keeps the derived variable for memoization)
    - Option (b): Remove the intermediate variable and use `transformations.sorted` directly in the template (`.sorted` is already `$derived`-memoized in the state module)
-   - **Recommendation**: Option (a)—keep the intermediate. It's explicit and won't break if the template iterates multiple times.
+   - **Recommendation**: Option (a): keep the intermediate. It's explicit and won't break if the template iterates multiple times.
 
 2. **Should the `README.md` for `$lib/state/` mention that these modules are workspace-backed?**
    - The README currently describes each module's backing store. After dropping the prefix, the README becomes the primary place where "this is Yjs-backed" is documented.
@@ -308,18 +308,18 @@ The following specs reference the old `workspace-` prefixed names. These are his
 - [x] All 51 consumer source files updated with new imports and usage
 - [x] 3 local variable/parameter collisions resolved
 - [x] All 6 live documentation files updated
-- [x] `bun run typecheck` — no new errors introduced (13 pre-existing errors in packages/ui, packages/workspace, and unrelated code)
+- [x] `bun run typecheck`: no new errors introduced (13 pre-existing errors in packages/ui, packages/workspace, and unrelated code)
 - [x] Zero remaining references to old names in `.ts`, `.svelte`, and live `.md` files
 
 ## References
 
-- `apps/whispering/src/lib/state/` — all 7 state module files
-- `apps/whispering/ARCHITECTURE.md` — code examples referencing state modules
-- `apps/whispering/src/lib/state/README.md` — state module documentation
-- `apps/whispering/src/lib/query/README.md` — query layer documentation with state examples
-- `apps/whispering/src/lib/components/settings/README.md` — settings component documentation
-- `docs/articles/module-level-singletons-dont-need-remove-event-listener.md` — article with code example
-- `docs/articles/your-spa-singleton-doesnt-need-effect-cleanup.md` — article with code example
+- `apps/whispering/src/lib/state/`: all 7 state module files
+- `apps/whispering/ARCHITECTURE.md`: code examples referencing state modules
+- `apps/whispering/src/lib/state/README.md`: state module documentation
+- `apps/whispering/src/lib/query/README.md`: query layer documentation with state examples
+- `apps/whispering/src/lib/components/settings/README.md`: settings component documentation
+- `docs/articles/module-level-singletons-dont-need-remove-event-listener.md`: article with code example
+- `docs/articles/your-spa-singleton-doesnt-need-effect-cleanup.md`: article with code example
 
 ## Review
 

@@ -27,19 +27,19 @@ The `AuthGate` component wraps the entire app in `App.svelte`:
 ```
 
 `AuthGate` has three states:
-1. **`checking`**—spinner, entire app invisible
-2. **`signed-out`/`signing-in`**—full-screen login form, entire app invisible
-3. **`signed-in`**—app renders, sign-out button in footer
+1. **`checking`**: spinner, entire app invisible
+2. **`signed-out`/`signing-in`**: full-screen login form, entire app invisible
+3. **`signed-in`**: app renders, sign-out button in footer
 
 This creates problems:
 
-1. **App is unusable without authentication.** The tab manager's core features—viewing tabs, saving tabs, bookmarks, grouping, search, command palette—are all local operations that use Chrome APIs and IndexedDB. None require a server. But the auth gate blocks all of them.
+1. **App is unusable without authentication.** The tab manager's core features. Viewing tabs, saving tabs, bookmarks, grouping, search, command palette. Are all local operations that use Chrome APIs and IndexedDB. None require a server. But the auth gate blocks all of them.
 
 2. **Auth framing is wrong.** The login screen says "Sign in to sync your tabs across devices." But the app presents it as a hard requirement, not an opt-in feature. Users who just want local tab management are forced through auth.
 
 3. **Account linking is broken.** When a user signs up with email/password and later tries "Continue with Google" using the same email, Better Auth returns a `LINKING_NOT_ALLOWED` error (HTTP 401) because the server has no `accountLinking` configuration. The user sees a generic "Google sign-in failed" error with no guidance.
 
-4. **Sync status indicator lacks auth context.** The cloud icon shows "Offline—click to reconnect" when unauthenticated, but reconnecting with no token just fails again silently.
+4. **Sync status indicator lacks auth context.** The cloud icon shows "Offline. Click to reconnect" when unauthenticated, but reconnecting with no token just fails again silently.
 
 ### Desired State
 
@@ -79,7 +79,7 @@ export const workspaceClient = createWorkspace(defineWorkspace({ ... }))
   }));
 ```
 
-IndexedDB and BroadcastChannel work without auth. The sync extension already handles missing/empty tokens gracefully—it enters `connecting` phase, gets a 401 from the server, and reports `lastError.type === 'auth'`.
+IndexedDB and BroadcastChannel work without auth. The sync extension already handles missing/empty tokens gracefully. It enters `connecting` phase, gets a 401 from the server, and reports `lastError.type === 'auth'`.
 
 ### Better Auth Account Linking
 
@@ -90,7 +90,7 @@ IndexedDB and BroadcastChannel work without auth. The sync extension already han
 The server config in `packages/server-remote/src/app.ts` has **no `accountLinking` configuration**:
 
 ```typescript
-// packages/server-remote/src/app.ts — current config
+// packages/server-remote/src/app.ts: current config
 export const BASE_AUTH_CONFIG = {
   basePath: '/auth',
   emailAndPassword: { enabled: true },
@@ -102,7 +102,7 @@ function createAuth(db: Db, env: Env['Bindings']) {
     socialProviders: {
       google: { clientId: env.GOOGLE_CLIENT_ID, clientSecret: env.GOOGLE_CLIENT_SECRET },
     },
-    // ❌ No account.accountLinking — this is why the error occurs
+    // ❌ No account.accountLinking: this is why the error occurs
   });
 }
 ```
@@ -139,7 +139,7 @@ account: {
 
 **What `trustedProviders` does**: When a provider is listed as trusted, Better Auth auto-links accounts even if the provider doesn't confirm email verification status. This is safe for Google because Google verifies emails before issuing `idTokens`.
 
-**Including `"email-password"`**: Allows the reverse flow too—if a user signs up with Google first, then later tries email/password with the same email, it links automatically.
+**Including `"email-password"`**: Allows the reverse flow too. If a user signs up with Google first, then later tries email/password with the same email, it links automatically.
 
 **Security note from Better Auth docs**: "When a provider is listed as trusted, Better Auth will automatically link accounts even if the provider does not confirm the email verification status. This can increase the risk of account takeover if an attacker can create an account with a victim's email address on a trusted provider that doesn't verify email ownership." Google verifies email ownership, so this is safe. We would NOT add untrusted providers here.
 
@@ -150,9 +150,9 @@ account: {
   accountLinking: {
     enabled: true,
     trustedProviders: ["google", "email-password"],
-    allowDifferentEmails: false,        // default — don't link mismatched emails
-    updateUserInfoOnLink: false,        // default — don't overwrite user name/image
-    disableImplicitLinking: false,      // default — allow auto-linking during sign-in
+    allowDifferentEmails: false,        // default: don't link mismatched emails
+    updateUserInfoOnLink: false,        // default: don't overwrite user name/image
+    disableImplicitLinking: false,      // default: allow auto-linking during sign-in
   }
 }
 ```
@@ -178,20 +178,20 @@ And the `SyncStatusIndicator` already checks for auth errors:
 ```typescript
 // apps/tab-manager/src/lib/components/SyncStatusIndicator.svelte
 if (s.lastError?.type === 'auth')
-  return 'Authentication failed—click to reconnect';
+  return 'Authentication failed. Click to reconnect';
 ```
 
-But "click to reconnect" doesn't help—the user needs to **sign in**, not reconnect. The indicator needs to become the auth entry point.
+But "click to reconnect" doesn't help. The user needs to **sign in**, not reconnect. The indicator needs to become the auth entry point.
 
 ## Design Decisions
 
 | Decision | Choice | Rationale |
 |---|---|---|
 | Remove AuthGate wrapper | Remove from App.svelte | All core features are local-first; auth gate serves no purpose for local tab management |
-| Auth entry point | SyncStatusIndicator popover | Natural location—cloud sync is what auth enables. Already has the icon + tooltip. |
+| Auth entry point | SyncStatusIndicator popover | Natural location. Cloud sync is what auth enables. Already has the icon + tooltip. |
 | Auth form location | Popover from cloud icon | Side panel is narrow; a full-page form wastes space once app works without auth. Popover keeps context visible. |
 | Account linking | `trustedProviders: ["google", "email-password"]` | Google verifies emails, so auto-linking is safe. Covers both directions (email→Google, Google→email). |
-| AI chat when unauthenticated | Show inline prompt | Better than hiding the button—user discovers the feature exists but needs auth. |
+| AI chat when unauthenticated | Show inline prompt | Better than hiding the button. User discovers the feature exists but needs auth. |
 | Sign-out location | Inside sync popover account section | Grouped with auth-related actions, not a permanent footer. |
 | Keep AuthGate component | Repurpose as auth form content | The login form UI is fine; it just shouldn't wrap the whole app. Extract form into reusable component. |
 
@@ -257,11 +257,11 @@ User can sign in anytime via cloud icon popover.
 ### Phase 1: Remove Auth Gate (Core Change)
 
 - [x] **1.1** Extract the login form from `AuthGate.svelte` into a new `AuthForm.svelte` component (reusable form content without the gate wrapper logic)
-- [x] **1.2** Remove `<AuthGate>` wrapper from `App.svelte`—app renders unconditionally
-- [x] **1.3** Update `authState.checkSession()` to handle the "no token" case without showing a loading spinner—if no token in storage, immediately set `signed-out` status (it already does this, but verify the `checking` state doesn't flash)
+- [x] **1.2** Remove `<AuthGate>` wrapper from `App.svelte`: app renders unconditionally
+- [x] **1.3** Update `authState.checkSession()` to handle the "no token" case without showing a loading spinner. If no token in storage, immediately set `signed-out` status (it already does this, but verify the `checking` state doesn't flash)
   > **Note**: Moved the `onMount` + `$effect` from AuthGate directly into App.svelte. The `checking` state never flashes because `checkSession()` fast-paths to `signed-out` when no token exists (no server round-trip).
 - [x] **1.4** Verify that `workspaceClient` initializes correctly without auth (IndexedDB + BroadcastChannel should work; sync extension should enter `connecting` → `offline` gracefully)
-  > **Note**: Verified by code inspection—`workspaceClient` uses `authState.token ?? ''` for the token, sync extension handles empty tokens gracefully (gets 401, enters offline).
+  > **Note**: Verified by code inspection: `workspaceClient` uses `authState.token ?? ''` for the token, sync extension handles empty tokens gracefully (gets 401, enters offline).
 
 ### Phase 2: SyncStatusIndicator as Auth Entry Point
 
@@ -333,7 +333,7 @@ User can sign in anytime via cloud icon popover.
 2. Status changes to `connecting` with backoff
 3. Local operations continue unaffected (Y.Doc + IndexedDB)
 4. When online again, sync reconnects automatically
-5. No auth state change—cached user is trusted when server is unreachable
+5. No auth state change. Cached user is trusted when server is unreachable
 
 ### Multiple browser contexts (tabs, windows)
 
@@ -356,7 +356,7 @@ User can sign in anytime via cloud icon popover.
 
 3. **Should we show a first-run onboarding hint?**
    - New users might not discover the cloud icon is the sign-in entry point.
-   - Options: (a) No hint—icon tooltip is sufficient, (b) One-time tooltip/callout pointing to cloud icon, (c) Banner at top
+   - Options: (a) No hint. Icon tooltip is sufficient, (b) One-time tooltip/callout pointing to cloud icon, (c) Banner at top
    - **Recommendation**: Defer. The tooltip "Sign in to sync across devices" on the cloud icon is discoverable enough. Add onboarding later if analytics show poor discovery.
 
 4. **Should `authState.checkSession()` run on app load when there's no token?**
@@ -378,19 +378,19 @@ User can sign in anytime via cloud icon popover.
 
 ## References
 
-- `apps/tab-manager/src/entrypoints/sidepanel/App.svelte` — Main app component, currently wraps everything in AuthGate
-- `apps/tab-manager/src/lib/components/AuthGate.svelte` — Current auth gate component (to be decomposed)
-- `apps/tab-manager/src/lib/components/SyncStatusIndicator.svelte` — Sync status icon (to become auth entry point)
-- `apps/tab-manager/src/lib/state/auth.svelte.ts` — Auth state singleton
-- `apps/tab-manager/src/lib/workspace.ts` — Workspace client with sync extension
-- `packages/server-remote/src/app.ts` — Better Auth server config (needs `accountLinking`)
-- `packages/server-remote/better-auth.config.ts` — CLI config (spreads `BASE_AUTH_CONFIG`)
-- `packages/sync-client/src/types.ts` — SyncStatus type definition
-- `packages/workspace/src/extensions/sync.ts` — Sync extension factory
-- Better Auth docs: [Users & Accounts](https://www.better-auth.com/docs/concepts/users-accounts) — Account linking configuration
-- Better Auth docs: [OAuth](https://www.better-auth.com/docs/concepts/oauth) — Social sign-in and idToken flow
-- Better Auth docs: [Google provider](https://www.better-auth.com/docs/authentication/google) — Google OAuth setup
-- Better Auth docs: [Error reference](https://www.better-auth.com/docs/reference/errors) — `LINKING_NOT_ALLOWED` error
+- `apps/tab-manager/src/entrypoints/sidepanel/App.svelte`: Main app component, currently wraps everything in AuthGate
+- `apps/tab-manager/src/lib/components/AuthGate.svelte`: Current auth gate component (to be decomposed)
+- `apps/tab-manager/src/lib/components/SyncStatusIndicator.svelte`: Sync status icon (to become auth entry point)
+- `apps/tab-manager/src/lib/state/auth.svelte.ts`: Auth state singleton
+- `apps/tab-manager/src/lib/workspace.ts`: Workspace client with sync extension
+- `packages/server-remote/src/app.ts`: Better Auth server config (needs `accountLinking`)
+- `packages/server-remote/better-auth.config.ts`: CLI config (spreads `BASE_AUTH_CONFIG`)
+- `packages/sync-client/src/types.ts`: SyncStatus type definition
+- `packages/workspace/src/extensions/sync.ts`: Sync extension factory
+- Better Auth docs: [Users & Accounts](https://www.better-auth.com/docs/concepts/users-accounts): Account linking configuration
+- Better Auth docs: [OAuth](https://www.better-auth.com/docs/concepts/oauth): Social sign-in and idToken flow
+- Better Auth docs: [Google provider](https://www.better-auth.com/docs/authentication/google): Google OAuth setup
+- Better Auth docs: [Error reference](https://www.better-auth.com/docs/reference/errors): `LINKING_NOT_ALLOWED` error
 
 ## Review
 
@@ -403,22 +403,22 @@ Removed the `AuthGate` wrapper that blocked the entire tab manager UI behind aut
 
 ### Changes by Wave
 
-**Wave 1 — Foundation** (`ee1f67359`)
-- Created `AuthForm.svelte` — extracted the login/signup form UI from AuthGate into a reusable component
+**Wave 1: Foundation** (`ee1f67359`)
+- Created `AuthForm.svelte`: extracted the login/signup form UI from AuthGate into a reusable component
 - Added `account.accountLinking` to `BASE_AUTH_CONFIG` with `trustedProviders: ['google', 'email-password']`
 
-**Wave 2 — Gate Removal** (`1db31608e`)
-- Removed `<AuthGate>` wrapper from `App.svelte` — app renders unconditionally
+**Wave 2: Gate Removal** (`1db31608e`)
+- Removed `<AuthGate>` wrapper from `App.svelte`: app renders unconditionally
 - Moved auth initialization (`onMount` + `$effect`) from AuthGate into App.svelte
 
-**Wave 3 — Auth Entry Point** (`cd78b77d8`)
+**Wave 3: Auth Entry Point** (`cd78b77d8`)
 - Rewrote `SyncStatusIndicator.svelte` with a `Popover` that shows AuthForm (signed-out) or AccountPanel (signed-in)
 - AccountPanel displays user name/email, sync status, reconnect and sign-out buttons
 - Added "Sign in to sync across devices" tooltip and dot indicator when signed out
 - CloudOff icon uses muted color when unauthenticated (vs destructive when auth'd but disconnected)
 
-**Wave 4 — AI Chat Gate** (`b29b52343`)
-- Added auth check to `AiDrawer.svelte` — shows "Sign in to use AI chat" prompt when unauthenticated
+**Wave 4: AI Chat Gate** (`b29b52343`)
+- Added auth check to `AiDrawer.svelte`: shows "Sign in to use AI chat" prompt when unauthenticated
 
 **Cleanup** (`c87d20372`)
 - Deleted `AuthGate.svelte` (no longer imported anywhere)

@@ -8,7 +8,7 @@
 
 ## Executive Summary
 
-This specification details the storage, discovery, and UI integration for static workspaces in the Epicenter Tauri app. Static workspaces sync via Y-Sweet and are viewed without TypeScript runtime—only their IDs are needed.
+This specification details the storage, discovery, and UI integration for static workspaces in the Epicenter Tauri app. Static workspaces sync via Y-Sweet and are viewed without TypeScript runtime. Only their IDs are needed.
 
 **Key decisions:**
 1. **Single registry file**: `static-workspaces.json` in app data directory (not per-workspace folders)
@@ -34,7 +34,7 @@ This specification details the storage, discovery, and UI integration for static
 
 **Why separate from `workspaces/` folder?**
 - Dynamic workspaces have complex per-workspace storage (definition, Y.Doc binary, KV mirror)
-- Static workspaces only need IDs—no local schema or persistence
+- Static workspaces only need IDs. No local schema or persistence
 - Clear conceptual separation: "workspaces I own" vs "workspaces I observe"
 
 ### Registry Schema
@@ -1181,16 +1181,16 @@ Add a "Static Workspaces" section after the existing workspaces section:
 
 ## Implementation Order
 
-1. **Types** (`types.ts`) — Foundation
-2. **Service Layer** (`static-workspaces.ts` service) — File I/O
-3. **Query Layer** (`static-workspaces.ts` query) — TanStack integration
-4. **Discovery Utilities** (`discover.ts`) — Y.Doc introspection
-5. **Connection Utilities** (`y-sweet-connection.ts`) — Y-Sweet provider
-6. **Route Structure** (`+layout.ts`, `+layout.svelte`, `+page.svelte`) — SvelteKit routes
-7. **Viewer Components** (`GenericTableViewer`, `GenericKvViewer`) — Data display
-8. **Sidebar Components** (`StaticWorkspaceSidebar`) — Navigation
-9. **Dialog** (`AddStaticWorkspaceDialog`) — Adding workspaces
-10. **Integration** (modify `HomeSidebar`, root layout) — Wire everything together
+1. **Types** (`types.ts`): Foundation
+2. **Service Layer** (`static-workspaces.ts` service): File I/O
+3. **Query Layer** (`static-workspaces.ts` query): TanStack integration
+4. **Discovery Utilities** (`discover.ts`): Y.Doc introspection
+5. **Connection Utilities** (`y-sweet-connection.ts`): Y-Sweet provider
+6. **Route Structure** (`+layout.ts`, `+layout.svelte`, `+page.svelte`): SvelteKit routes
+7. **Viewer Components** (`GenericTableViewer`, `GenericKvViewer`): Data display
+8. **Sidebar Components** (`StaticWorkspaceSidebar`): Navigation
+9. **Dialog** (`AddStaticWorkspaceDialog`): Adding workspaces
+10. **Integration** (modify `HomeSidebar`, root layout): Wire everything together
 
 ---
 

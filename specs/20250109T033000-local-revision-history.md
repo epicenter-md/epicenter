@@ -28,7 +28,7 @@ A capability that stores Y.Snapshots locally for time-travel and revision histor
 
 Y.Snapshots require `gc: false` on the Y.Doc. Without this, deleted items are garbage collected and snapshots cannot reconstruct historical states.
 
-**Decision**: Throw an error if `gc: true`. Don't auto-set it—that's overreaching and could mask issues elsewhere.
+**Decision**: Throw an error if `gc: true`. Don't auto-set it. That's overreaching and could mask issues elsewhere.
 
 ```typescript
 if (ydoc.gc) {
@@ -191,7 +191,7 @@ destroy() {
 
 ## Questions to Resolve
 
-1. **Should we save an initial snapshot on init?** (I say yes—capture state before any edits)
+1. **Should we save an initial snapshot on init?** (I say yes. Capture state before any edits)
 
 2. **What happens on restore?** Options:
    - A: Apply snapshot as update (additive, merges with current)

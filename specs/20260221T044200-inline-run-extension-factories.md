@@ -16,7 +16,7 @@ Delete `run-extension-factories.ts` and inline its logic into both call sites (`
 
 Two call sites:
 
-**Workspace builder** (`create-workspace.ts:249`) — always passes 1 entry:
+**Workspace builder** (`create-workspace.ts:249`): always passes 1 entry:
 
 ```typescript
 const result = runExtensionFactories({
@@ -31,7 +31,7 @@ const result = runExtensionFactories({
 });
 ```
 
-**Document binding** (`create-document-binding.ts:254`) — passes N entries, no priorDestroys:
+**Document binding** (`create-document-binding.ts:254`): passes N entries, no priorDestroys:
 
 ```typescript
 factoryResult = runExtensionFactories({
@@ -52,7 +52,7 @@ This creates problems:
 3. **Indirection without payoff**: To understand what `withExtension()` does, you jump to `runExtensionFactories`, mentally strip away the loop (1 entry), ignore `priorDestroys` context, and back out. The actual logic for the workspace case is ~10 lines.
 4. **Fire-and-forget async cleanup**: The runner is synchronous but accepts `MaybePromise<void>` destroys. Async destroy errors are silently swallowed via `result.catch(() => {})`. Each caller should handle cleanup in its own context (the document binding `open()` is already `async`).
 5. **`any` types at the boundary**: Three `biome-ignore noExplicitAny` comments. The function erases type safety that each caller preserves locally via generics.
-6. **No direct tests**: `runExtensionFactories` has zero dedicated tests — it's only tested indirectly through workspace and document binding tests. Inlining doesn't lose test coverage.
+6. **No direct tests**: `runExtensionFactories` has zero dedicated tests: it's only tested indirectly through workspace and document binding tests. Inlining doesn't lose test coverage.
 7. **Confusing name**: "Run extension factories" describes the mechanism (calling functions), not the purpose (initializing extensions with safe cleanup). Every reader's first question is "what does this actually do?"
 
 ### Desired State
@@ -132,8 +132,8 @@ try {
 | Delete vs rename                | Delete `run-extension-factories.ts` entirely    | No callers, not exported, no direct tests. Zero orphan risk.                                                                                                                                                                                              |
 | Keep `lifecycle.ts` as-is       | Don't merge anything into it                    | `lifecycle.ts` is a clean protocol definition (types + `defineExtension`). Adding execution logic would muddy the separation.                                                                                                                             |
 | Keep `defineExtension()`        | Still used by both call sites for normalization | The normalizer is genuinely shared and tiny. It stays in `lifecycle.ts`.                                                                                                                                                                                  |
-| Workspace cleanup: sync         | Keep fire-and-forget for sync context           | `withExtension()` is synchronous by design. The workspace `destroy()` method already handles proper async cleanup in LIFO order — the try/catch in `withExtension` is only for factory _construction_ errors, not async teardown. Match current behavior. |
-| Document cleanup: sync in catch | Keep sync cleanup in factory catch              | The factory loop is synchronous (intentionally — no await between `docs.get()` and `docs.set()`). Async cleanup of `whenReady` rejections is already handled separately in the `whenReady.catch()` block below. Match current behavior.                   |
+| Workspace cleanup: sync         | Keep fire-and-forget for sync context           | `withExtension()` is synchronous by design. The workspace `destroy()` method already handles proper async cleanup in LIFO order: the try/catch in `withExtension` is only for factory _construction_ errors, not async teardown. Match current behavior. |
+| Document cleanup: sync in catch | Keep sync cleanup in factory catch              | The factory loop is synchronous (intentionally: no await between `docs.get()` and `docs.set()`). Async cleanup of `whenReady` rejections is already handled separately in the `whenReady.catch()` block below. Match current behavior.                   |
 | Don't "fix" async cleanup       | Out of scope                                    | Improving async destroy error handling is a valid concern but orthogonal to this refactor. Keep behavior identical.                                                                                                                                       |
 
 ## Implementation Plan
@@ -155,8 +155,8 @@ try {
 
 ### Phase 4: Verify
 
-- [x] **4.1** Run `bun test` on workspace tests (`create-workspace.test.ts`, `create-document-binding.test.ts`) — all existing tests must pass unchanged (61 tests, 0 failures)
-- [x] **4.2** Run LSP diagnostics on both modified files — zero errors
+- [x] **4.1** Run `bun test` on workspace tests (`create-workspace.test.ts`, `create-document-binding.test.ts`): all existing tests must pass unchanged (61 tests, 0 failures)
+- [x] **4.2** Run LSP diagnostics on both modified files: zero errors
 - [ ] **4.3** Run full build to confirm no import breakage
 
 ## Edge Cases
@@ -194,15 +194,15 @@ Current behavior: async destroys are fire-and-forget in the sync catch block. Th
 Behavior-preserving refactor executed as specified. Key observations:
 
 - **Workspace inlining** simplified significantly: no loop, no `buildContext` callback, no `priorDestroys` parameter. The `whenReady` composition collapsed from a two-source merge (`state.whenReadyPromises` + accumulator) to just `state.whenReadyPromises` since there's always exactly one entry.
-- **Document binding inlining** is nearly identical to the original `runExtensionFactories` loop — same accumulators, same incremental context building. The only addition is `contentYdoc.destroy()` after LIFO cleanup in the catch block (was previously in a separate outer catch).
+- **Document binding inlining** is nearly identical to the original `runExtensionFactories` loop: same accumulators, same incremental context building. The only addition is `contentYdoc.destroy()` after LIFO cleanup in the catch block (was previously in a separate outer catch).
 - **Error handling semantics preserved exactly**: async fire-and-forget (`result.catch(() => {})`), sync error collection into `errors[]`, `console.error` logging, re-throw of the original error.
 - **biome-ignore comments**: Went from 3 `noExplicitAny` comments in the deleted file to 1 in the document binding (for `resolvedExtensions` runtime storage). The workspace side needs zero since its generic types flow through naturally.
 - **No `entries.map()` indirection**: The document binding iterates `applicableExtensions` directly instead of mapping to a separate `entries` array.
 
 ## References
 
-- `packages/epicenter/src/workspace/run-extension-factories.ts` — file to delete
-- `packages/epicenter/src/workspace/create-workspace.ts` — `withExtension()` method (~line 248)
-- `packages/epicenter/src/workspace/create-document-binding.ts` — `open()` method (~line 252)
-- `packages/epicenter/src/workspace/lifecycle.ts` — `defineExtension()` stays here, unchanged
-- `packages/epicenter/specs/20260220T195900-unify-extension-lifecycle.md` — original spec that created `runExtensionFactories`
+- `packages/epicenter/src/workspace/run-extension-factories.ts`: file to delete
+- `packages/epicenter/src/workspace/create-workspace.ts`: `withExtension()` method (~line 248)
+- `packages/epicenter/src/workspace/create-document-binding.ts`: `open()` method (~line 252)
+- `packages/epicenter/src/workspace/lifecycle.ts`: `defineExtension()` stays here, unchanged
+- `packages/epicenter/specs/20260220T195900-unify-extension-lifecycle.md`: original spec that created `runExtensionFactories`

@@ -53,9 +53,9 @@ The vocabulary is fixed and explicit:
 | Special | `<CustomLink href="...">`, `<CustomImage src="...">` |
 | Protected | `<ContactCard>`, `<CustomTaskList>`, `<Button>`, `<VideoRecord>` |
 
-The "Protected" category is crucial. The system prompt tells the LLM these blocks exist in the document but must never be modified. Contact cards, task lists, buttons, video embeds—the LLM sees them but can't touch them. This preserves complex interactive elements that would break if an LLM tried to rewrite them.
+The "Protected" category is crucial. The system prompt tells the LLM these blocks exist in the document but must never be modified. Contact cards, task lists, buttons, video embeds. The LLM sees them but can't touch them. This preserves complex interactive elements that would break if an LLM tried to rewrite them.
 
-Why not markdown? Markdown can't express `<Tab>`, `<ContactCard>`, or `<CustomLink>` with specific attributes. Why not HTML? HTML is verbose, and LLMs occasionally produce malformed HTML with missing closing tags. The custom format is compact, mirrors the schema exactly, and LLMs handle it well because it looks like JSX—something they've seen millions of times in training data.
+Why not markdown? Markdown can't express `<Tab>`, `<ContactCard>`, or `<CustomLink>` with specific attributes. Why not HTML? HTML is verbose, and LLMs occasionally produce malformed HTML with missing closing tags. The custom format is compact, mirrors the schema exactly, and LLMs handle it well because it looks like JSX. Something they've seen millions of times in training data.
 
 ## The Extended-Text Diffing Algorithm
 
@@ -65,7 +65,7 @@ Once the LLM returns a rewritten document, Liveblocks needs to show a diff. But 
 
 The process works in three stages:
 
-**Flatten**: Each document becomes a sequence of tokens. Characters become individual tokens. Structural elements become special marker tokens—end-of-block (EOB), image placeholders (IMG), horizontal rules (HR), mentions (MENTION). Each token carries metadata about which node it belongs to and what marks apply.
+**Flatten**: Each document becomes a sequence of tokens. Characters become individual tokens. Structural elements become special marker tokens. End-of-block (EOB), image placeholders (IMG), horizontal rules (HR), mentions (MENTION). Each token carries metadata about which node it belongs to and what marks apply.
 
 **Diff**: Run a classical Longest Common Subsequence algorithm on the two token sequences. This is the same core algorithm git uses for text diffs, but operating on tokens that carry structural context.
 
@@ -83,7 +83,7 @@ This keeps the preview stable. Users see content being rewritten progressively, 
 
 ## The Collaboration Model
 
-AI changes stay local. When a user invokes the copilot, their editor switches to a read-only diff view. The proposed changes exist only on that user's machine. Meanwhile, other collaborators keep editing normally—their changes sync through Liveblocks' real-time infrastructure and appear in the diff preview.
+AI changes stay local. When a user invokes the copilot, their editor switches to a read-only diff view. The proposed changes exist only on that user's machine. Meanwhile, other collaborators keep editing normally. Their changes sync through Liveblocks' real-time infrastructure and appear in the diff preview.
 
 The diff is computed against the live document state, not a frozen snapshot. If User B edits a paragraph while User A is reviewing AI changes, User A's diff updates to reflect B's edit. When User A accepts, the AI changes apply as normal collaborative transactions, authored by User A.
 
@@ -148,7 +148,7 @@ User clicks "Rewrite"
 
 The custom JSX format is doing most of the heavy lifting. It solves three problems at once:
 
-1. **Fidelity**: Every node type in the schema has a corresponding tag. Custom nodes, attributes, marks—nothing gets lost in translation.
+1. **Fidelity**: Every node type in the schema has a corresponding tag. Custom nodes, attributes, marks. Nothing gets lost in translation.
 2. **LLM compatibility**: The format looks like JSX/XML, which LLMs handle well from training. They don't need to learn a novel syntax.
 3. **Diffability**: Because the format is structured and consistent, the flattening step produces clean token sequences that diff reliably.
 
@@ -162,5 +162,5 @@ The serialization format is the contract between these two worlds. Get it right 
 
 ## References
 
-- [Building an AI Copilot Inside Your TipTap Text Editor](https://liveblocks.io/blog/building-an-ai-copilot-inside-your-tiptap-text-editor) — the full Liveblocks writeup
-- [Liveblocks AI Documentation](https://liveblocks.io/docs/ai) — API reference for their AI features
+- [Building an AI Copilot Inside Your TipTap Text Editor](https://liveblocks.io/blog/building-an-ai-copilot-inside-your-tiptap-text-editor): the full Liveblocks writeup
+- [Liveblocks AI Documentation](https://liveblocks.io/docs/ai): API reference for their AI features

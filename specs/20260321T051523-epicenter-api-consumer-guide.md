@@ -3,8 +3,8 @@
 ## Goal
 
 Two deliverables:
-1. **`docs/guides/consuming-epicenter-api.md`** — A machine-readable guide for AI agents (and humans) explaining how to connect an app to the hosted Epicenter hub at `https://api.epicenter.so`.
-2. **`packages/workspace/README.md` update** — Fix outdated API surface descriptions. The current README references a `createClient(id).withDefinition(def)` pattern with old column types (`id()`, `text()`, `boolean()`) that no longer exist. The actual API uses `createWorkspace(definition)` with `defineTable(type({...}))` via arktype.
+1. **`docs/guides/consuming-epicenter-api.md`**: A machine-readable guide for AI agents (and humans) explaining how to connect an app to the hosted Epicenter hub at `https://api.epicenter.so`.
+2. **`packages/workspace/README.md` update**: Fix outdated API surface descriptions. The current README references a `createClient(id).withDefinition(def)` pattern with old column types (`id()`, `text()`, `boolean()`) that no longer exist. The actual API uses `createWorkspace(definition)` with `defineTable(type({...}))` via arktype.
 
 ## Context
 
@@ -30,11 +30,11 @@ The tab-manager (`apps/tab-manager/`) is the canonical consumer of the hosted AP
 
 ### Write-up accuracy issues found
 
-1. **`plugins: [bearer()]` in client auth** — The actual client uses `fetchOptions.auth` pattern, not a `bearer()` plugin. Fix in guide.
-2. **`client.extensions.sync.reconnect()` on sign-out** — Not present in actual code. The sign-out just deactivates encryption + clears state. Fix in guide.
-3. **Missing `/documents/` endpoints** — The write-up only covers workspaces. Guide should mention documents.
-4. **Missing AI endpoint** — `/ai/chat` not mentioned. Guide should at least note its existence.
-5. **`packages/workspace/README.md` API mismatch** — Old `createClient` builder vs actual `createWorkspace`. Must fix.
+1. **`plugins: [bearer()]` in client auth**: The actual client uses `fetchOptions.auth` pattern, not a `bearer()` plugin. Fix in guide.
+2. **`client.extensions.sync.reconnect()` on sign-out**: Not present in actual code. The sign-out just deactivates encryption + clears state. Fix in guide.
+3. **Missing `/documents/` endpoints**: The write-up only covers workspaces. Guide should mention documents.
+4. **Missing AI endpoint**: `/ai/chat` not mentioned. Guide should at least note its existence.
+5. **`packages/workspace/README.md` API mismatch**: Old `createClient` builder vs actual `createWorkspace`. Must fix.
 
 ## Plan
 
@@ -42,20 +42,20 @@ The tab-manager (`apps/tab-manager/`) is the canonical consumer of the hosted AP
 
 Structure (machine-readable, agent-friendly):
 
-1. **Overview** — What the hosted hub is, URL (`https://api.epicenter.so`), what it handles (auth, sync, AI, encryption keys)
-2. **Prerequisites** — Packages needed (`@epicenter/workspace`, `better-auth/client`, `@epicenter/workspace/extensions/sync`, etc.)
-3. **Step 1: Define your workspace** — `defineWorkspace` + `defineTable` with arktype types. Show real pattern from tab-manager.
-4. **Step 2: Set up auth** — `createAuthClient` pointing at the hub. Show exact pattern from `auth.svelte.ts` (no `plugins: [bearer()]`). Include session type with `CustomSessionFields`.
-5. **Step 3: Build the workspace client** — Full `createWorkspace(def).withEncryption().withExtension()` chain. Show each extension: persistence (indexeddb), broadcast (cross-tab), sync (WebSocket to hub).
-6. **Step 4: Activate encryption after login** — Get session → `activateEncryption(base64ToBytes(encryptionKey))`. Show the actual `refreshEncryptionKey` pattern.
-7. **Step 5: Sign-out cleanup** — `deactivateEncryption()` → `signOut()` → clear state. No `reconnect()`.
-8. **API Reference** — Route table (from above). Note WebSocket upgrade behavior. Note Bearer token pattern (header for HTTP, query param for WS).
-9. **Encryption model** — Brief: server-managed keys, HKDF-SHA256, per-user derivation. Link to existing articles.
-10. **Self-hosting note** — Point at `apps/api/README.md` for deployment details.
+1. **Overview**: What the hosted hub is, URL (`https://api.epicenter.so`), what it handles (auth, sync, AI, encryption keys)
+2. **Prerequisites**: Packages needed (`@epicenter/workspace`, `better-auth/client`, `@epicenter/workspace/extensions/sync`, etc.)
+3. **Step 1: Define your workspace**: `defineWorkspace` + `defineTable` with arktype types. Show real pattern from tab-manager.
+4. **Step 2: Set up auth**: `createAuthClient` pointing at the hub. Show exact pattern from `auth.svelte.ts` (no `plugins: [bearer()]`). Include session type with `CustomSessionFields`.
+5. **Step 3: Build the workspace client**: Full `createWorkspace(def).withEncryption().withExtension()` chain. Show each extension: persistence (indexeddb), broadcast (cross-tab), sync (WebSocket to hub).
+6. **Step 4: Activate encryption after login**: Get session → `activateEncryption(base64ToBytes(encryptionKey))`. Show the actual `refreshEncryptionKey` pattern.
+7. **Step 5: Sign-out cleanup**: `deactivateEncryption()` → `signOut()` → clear state. No `reconnect()`.
+8. **API Reference**: Route table (from above). Note WebSocket upgrade behavior. Note Bearer token pattern (header for HTTP, query param for WS).
+9. **Encryption model**: Brief: server-managed keys, HKDF-SHA256, per-user derivation. Link to existing articles.
+10. **Self-hosting note**: Point at `apps/api/README.md` for deployment details.
 
 ### Deliverable 2: Workspace README Update
 
-Targeted fixes (not a full rewrite—the README is 1700+ lines):
+Targeted fixes (not a full rewrite. The README is 1700+ lines):
 
 - [x] Fix "Quick Start" section: Replace `createClient(id).withDefinition(def)` with `createWorkspace(def)`. Replace old column types (`id()`, `text()`, etc.) with `defineTable(type({...}))`.
 - [x] Fix "How It All Fits Together" section step 2-3: `createClient` -> `createWorkspace`, remove `.withDefinition()`.
@@ -79,8 +79,8 @@ Targeted fixes (not a full rewrite—the README is 1700+ lines):
 ## Non-goals
 
 - Full rewrite of the workspace README (too much effort, too much risk)
-- Covering the local-only (non-hosted) server setup—that's already in `apps/api/README.md`
-- Documenting the AI chat endpoint in detail—it's a separate concern
+- Covering the local-only (non-hosted) server setup. That's already in `apps/api/README.md`
+- Documenting the AI chat endpoint in detail. It's a separate concern
 - Updating the top-level repo README
 
 ## Review

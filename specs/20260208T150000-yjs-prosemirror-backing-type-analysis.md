@@ -1,11 +1,11 @@
 # Y.Text vs Y.XmlFragment for ProseMirror Markdown Files
 
 **Date**: 2026-02-08
-**Status**: Superseded — see `specs/20260208T000000-yjs-filesystem-spec.md`
+**Status**: Superseded: see `specs/20260208T000000-yjs-filesystem-spec.md`
 **Author**: AI-assisted
 **Related**: `specs/20260208T000000-yjs-filesystem-spec.md`
 
-> **Superseded**: The dual-key approach was kept. Approach B (`updateYFragment` instead of clear-and-rebuild) is noted as a future optimization in the main filesystem spec — not adopted yet since the architecture ships with clear-and-rebuild first. The analysis and research findings in this document remain valid reference material.
+> **Superseded**: The dual-key approach was kept. Approach B (`updateYFragment` instead of clear-and-rebuild) is noted as a future optimization in the main filesystem spec: not adopted yet since the architecture ships with clear-and-rebuild first. The analysis and research findings in this document remain valid reference material.
 
 ## Overview
 
@@ -59,7 +59,7 @@ This creates problems:
 
 ### Desired State
 
-`.md` files should have revision history quality comparable to plain text files — meaningful snapshot diffs showing what actually changed, compact storage proportional to actual changes, and clean filesystem interop.
+`.md` files should have revision history quality comparable to plain text files: meaningful snapshot diffs showing what actually changed, compact storage proportional to actual changes, and clean filesystem interop.
 
 ---
 
@@ -72,7 +72,7 @@ y-prosemirror maps ProseMirror's node tree 1:1 to Y.XmlFragment's tree. Each Pro
 - **Local edits**: `_prosemirrorChanged` → `updateYFragment()` diffs the ProseMirror doc against Y.XmlFragment
 - **Remote changes**: `_typeChanged` observer reconstructs a ProseMirror fragment and dispatches a transaction
 
-Cursor/presence uses `absolutePositionToRelativePosition` which traverses Y.XmlElement/Y.XmlText nodes — tightly coupled to the XML tree structure.
+Cursor/presence uses `absolutePositionToRelativePosition` which traverses Y.XmlElement/Y.XmlText nodes: tightly coupled to the XML tree structure.
 
 **Key finding**: y-prosemirror's `_typeChanged` is NOT minimal work. It iterates all top-level children, rebuilds the fragment array, and replaces the entire ProseMirror document with `tr.replace(0, doc.content.size, ...)`. This is [y-prosemirror issue #113](https://github.com/yjs/y-prosemirror/issues/113). Every plugin sees a full-document replacement.
 
@@ -80,11 +80,11 @@ Cursor/presence uses `absolutePositionToRelativePosition` which traverses Y.XmlE
 
 Milkdown's `@milkdown/plugin-collab` wraps y-prosemirror. The remark transformer (markdown ↔ ProseMirror) only runs on load/save, not during real-time collaboration. During collab, changes flow through y-prosemirror's tree-level binding with no markdown serialization involved.
 
-**Implication**: Milkdown does not solve the Y.Text problem — it uses Y.XmlFragment like everyone else.
+**Implication**: Milkdown does not solve the Y.Text problem: it uses Y.XmlFragment like everyone else.
 
 ### y-prosemirror Exports `updateYFragment`
 
-y-prosemirror exports `updateYFragment(ydoc, yXmlFragment, prosemirrorNode, mapping)` — a tree diffing function that:
+y-prosemirror exports `updateYFragment(ydoc, yXmlFragment, prosemirrorNode, mapping)`: a tree diffing function that:
 
 1. Scans children left-to-right and right-to-left to find matching endpoints
 2. Uses `mappedIdentity` for nodes with prior mappings, `equalYTypePNode` for structural equality
@@ -95,7 +95,7 @@ y-prosemirror exports `updateYFragment(ydoc, yXmlFragment, prosemirrorNode, mapp
 With an empty mapping (no prior identity tracking, which is the `writeFile` case), it falls back to structural equality. This preserves CRDT identity for unchanged paragraphs.
 
 **Limitations** ([community discussion](https://discuss.yjs.dev/t/y-prosemirror-updateyfragment-algorithm-accuracy/1273)):
-- Greedy matching, no backtracking — reordered content may trigger unnecessary delete+insert
+- Greedy matching, no backtracking: reordered content may trigger unnecessary delete+insert
 - No move operations in Y.XmlFragment
 - Type-prioritized matching can produce suboptimal diffs
 
@@ -105,23 +105,23 @@ The claim: markdown → ProseMirror → markdown is not identity (`*italic*` vs 
 
 **Finding: This is a non-issue.**
 
-1. `serialize(parse(serialize(parse(x))))` === `serialize(parse(x))` — converges in one step with a deterministic serializer
+1. `serialize(parse(serialize(parse(x))))` === `serialize(parse(x))`: converges in one step with a deterministic serializer
 2. Serialization only runs on local edits, not on remote observation (same origin-check pattern y-prosemirror uses)
 3. remark-stringify with pinned options (`emphasis: '*'`, `strong: '*'`, `bullet: '-'`, etc.) is fully deterministic
-4. Content never changes — only syntax markers normalize, which is invisible in the rich text view
+4. Content never changes: only syntax markers normalize, which is invisible in the rich text view
 
 ### Cursor/Presence with Y.Text
 
 y-codemirror.next and y-quill bind to Y.Text trivially because their position spaces are flat character offsets, matching Y.Text's index space.
 
-ProseMirror positions count node boundaries — a fundamentally different space. Mapping requires:
+ProseMirror positions count node boundaries. A fundamentally different space. Mapping requires:
 - Building a `(pmPosition, markdownOffset)` table during serialization
 - Snapping when markdown offsets land inside syntax markers (`**`, `#`, etc.)
 - Rebuilding the table on every document change
 
 **Assessment**: 2-4 weeks to build, with ongoing maintenance cost for every markdown syntax construct. Edge cases with cursors landing inside formatting markers. Precision loss is ~1-3 characters in worst case (cursor near formatting boundary during concurrent edit). Compare to y-prosemirror's cursor plugin which handles this natively with zero custom code.
 
-The Yjs Awareness protocol is completely independent of shared types — it just broadcasts arbitrary JSON. No coupling to Y.XmlFragment.
+The Yjs Awareness protocol is completely independent of shared types. It just broadcasts arbitrary JSON. No coupling to Y.XmlFragment.
 
 ### Parse/Serialize Performance
 
@@ -136,7 +136,7 @@ remark (used by Milkdown) is ~30x slower than markdown-it. With markdown-it, par
 
 **Key finding**: Since y-prosemirror already replaces the entire ProseMirror document on remote changes (issue #113), the Y.Text approach adds only the parse step on top of a similar replacement. The marginal cost is the parser, not the document replacement.
 
-Incremental/partial reparsing is feasible — Y.Text's observe delta tells you exactly which characters changed, so you can identify the affected markdown block and reparse only that block.
+Incremental/partial reparsing is feasible: Y.Text's observe delta tells you exactly which characters changed, so you can identify the affected markdown block and reparse only that block.
 
 ### Concurrent Formatting Problem
 
@@ -177,13 +177,13 @@ Diff: DELETE "content" at position 17, INSERT "text" at position 17
 **Y.XmlFragment with clear-and-rebuild:**
 ```
 Diff: DELETE every node, INSERT every node
-→ "Everything changed" — useless
+→ "Everything changed": useless
 ```
 
 **Y.XmlFragment with updateYFragment:**
 ```
 Diff: Unchanged paragraphs keep identity. Modified paragraph shows changes.
-→ Paragraph-level granularity — good but not character-level
+→ Paragraph-level granularity: good but not character-level
 ```
 
 ---
@@ -194,8 +194,8 @@ Diff: Unchanged paragraphs keep identity. Modified paragraph shows changes.
 
 | Approach | Revision History | Cursor/Presence | Concurrent Formatting | Architecture | Engineering Effort |
 |---|---|---|---|---|---|
-| **A: Y.Text everywhere** | Excellent — character-level diffs | Custom work (2-4 weeks + maintenance) | Overlapping formatting can break | Simple — one type, no dual keys | Medium-large |
-| **B: Y.XmlFragment + updateYFragment** | Good — paragraph-level granularity | Works out of the box | Correct | Dual keys remain | Small — swap one function |
+| **A: Y.Text everywhere** | Excellent: character-level diffs | Custom work (2-4 weeks + maintenance) | Overlapping formatting can break | Simple: one type, no dual keys | Medium-large |
+| **B: Y.XmlFragment + updateYFragment** | Good: paragraph-level granularity | Works out of the box | Correct | Dual keys remain | Small: swap one function |
 | **C: Y.XmlFragment + clear-and-rebuild** (current) | Useless | Works out of the box | Correct | Dual keys remain | Already done |
 
 | Decision | Choice | Rationale |
@@ -288,7 +288,7 @@ Presence:
 1. Two users bold overlapping text ranges in the same sentence
 2. CRDT merges `**` markers at the character level
 3. Resulting markdown may be syntactically invalid
-4. ProseMirror re-parses best-effort — formatting may not match either user's intent
+4. ProseMirror re-parses best-effort: formatting may not match either user's intent
 5. User can see and fix the result manually. No data loss, just formatting confusion.
 
 ### Agent writeFile during active ProseMirror editing
@@ -307,10 +307,10 @@ Presence:
 ### updateYFragment with reordered paragraphs
 
 1. Agent moves paragraph 5 to position 2 via `writeFile`
-2. `updateYFragment` has no move operation — it sees: delete at position 5, insert at position 2
+2. `updateYFragment` has no move operation: it sees: delete at position 5, insert at position 2
 3. The moved paragraph gets new CRDT identity
 4. Snapshot diff shows a deletion and an insertion rather than a move
-5. This is acceptable — moves are rare in agent workflows
+5. This is acceptable: moves are rare in agent workflows
 
 ---
 
@@ -350,10 +350,10 @@ Presence:
 
 ## References
 
-- `packages/epicenter/src/shared/y-doc-sync.ts` — Current `updateYTextFromString` and `updateYXmlFragmentFromString`
-- `specs/20260208T000000-yjs-filesystem-spec.md` — Parent filesystem spec
-- [y-prosemirror `updateYFragment`](https://github.com/yjs/y-prosemirror) — Exported tree diffing function
-- [y-prosemirror issue #113](https://github.com/yjs/y-prosemirror/issues/113) — Full-document replace on every remote change
-- [updateYFragment accuracy discussion](https://discuss.yjs.dev/t/y-prosemirror-updateyfragment-algorithm-accuracy/1273) — Known limitations
-- [Yjs attributing-content.md](https://github.com/yjs/yjs/blob/main/attributing-content.md) — Snapshot attribution API
-- [Yjs GC and versioning discussion](https://discuss.yjs.dev/t/garbage-collection-and-version-snapshotting/1839) — Production experience with `gc: false`
+- `packages/epicenter/src/shared/y-doc-sync.ts`: Current `updateYTextFromString` and `updateYXmlFragmentFromString`
+- `specs/20260208T000000-yjs-filesystem-spec.md`: Parent filesystem spec
+- [y-prosemirror `updateYFragment`](https://github.com/yjs/y-prosemirror): Exported tree diffing function
+- [y-prosemirror issue #113](https://github.com/yjs/y-prosemirror/issues/113): Full-document replace on every remote change
+- [updateYFragment accuracy discussion](https://discuss.yjs.dev/t/y-prosemirror-updateyfragment-algorithm-accuracy/1273): Known limitations
+- [Yjs attributing-content.md](https://github.com/yjs/yjs/blob/main/attributing-content.md): Snapshot attribution API
+- [Yjs GC and versioning discussion](https://discuss.yjs.dev/t/garbage-collection-and-version-snapshotting/1839): Production experience with `gc: false`

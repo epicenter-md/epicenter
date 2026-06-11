@@ -107,7 +107,7 @@ const fs = new YjsFileSystem(mockTree, mockContent);
 await fs.readFile('/test.txt'); // ◄ verify orchestration only
 ```
 
-That's what dependency injection buys you here. Before extraction, the class has N low-level dependencies and every test must wire up all of them. After extraction, related dependencies are bundled into named collaborators. The orchestrator depends on 2–3 high-level things instead of N low-level things, and each collaborator can be tested — or mocked — independently.
+That's what dependency injection buys you here. Before extraction, the class has N low-level dependencies and every test must wire up all of them. After extraction, related dependencies are bundled into named collaborators. The orchestrator depends on 2-3 high-level things instead of N low-level things, and each collaborator can be tested, or mocked: independently.
 
 The heuristic is simple: list your private methods and write down what each one touches. If they cluster into groups that share some dependencies but not others, you're looking at hidden classes. Extract each cluster, inject them into the original class, and what remains is a thin orchestrator with no private methods at all.
 

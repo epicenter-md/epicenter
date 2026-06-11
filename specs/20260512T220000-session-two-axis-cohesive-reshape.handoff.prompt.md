@@ -353,7 +353,7 @@ Follow this exact order. Each phase compiles independently; do not skip ahead.
 4. Rename internal `signedIn` state variable to `workspace` throughout the factory.
 5. Update `reconcile` to gate on `state.status === 'signed-out'` (see target above).
 6. Update `current` getter to project the new shape.
-7. Update JSDoc in the file (the `@example` block uses `FujiSignedIn` — change to `FujiWorkspace`).
+7. Update JSDoc in the file (the `@example` block uses `FujiSignedIn`: change to `FujiWorkspace`).
 8. Update `packages/svelte-utils/src/index.ts:16` export name from `InferSignedIn` to `InferWorkspace`.
 
 ### Phase 2: Rename `requireSignedIn` → `requireIdentity` in `@epicenter/auth`
@@ -443,4 +443,4 @@ Mark `specs/20260512T111335-post-oauth-audit-remediation.md` Phase 3 superseded 
 - The TypeScript compiler is your sweep tool. After Phase 1 and Phase 2 land, every remaining migration site will surface as a type error. Work through them mechanically.
 - For each app, commit at the end of that app's migration. Suggested message: `refactor({app}): migrate to nullable Session<T>`. Keep commits per-app for cherry-pickability.
 - If you discover an app or call site not listed in this prompt, audit it the same way. Do not relitigate the design.
-- If anything in the spec contradicts this prompt, **this prompt wins** — it reflects the most recent grilling pass.
+- If anything in the spec contradicts this prompt, **this prompt wins**: it reflects the most recent grilling pass.

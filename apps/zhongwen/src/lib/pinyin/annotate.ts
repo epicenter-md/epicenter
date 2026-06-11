@@ -6,7 +6,7 @@ const CJK_REGEX = /[\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaff]+/g;
 /**
  * Annotate CJK characters in an HTML string with ruby pinyin tags.
  *
- * Splits HTML by tags so only text nodes are processed—tag names
+ * Splits HTML by tags so only text nodes are processed. Tag names
  * and attributes are left untouched.
  */
 export function annotateHtml(html: string): string {

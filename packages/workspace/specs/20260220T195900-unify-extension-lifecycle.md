@@ -75,7 +75,7 @@ try {
 This creates problems:
 
 1. **Shared mutable arrays**: Workspace builder closes over `extensionCleanups[]` and `whenReadyPromises[]`. If someone branches the builder (`base.withExtension('a', ...)` and `base.withExtension('b', ...)`), the arrays contain both branches' state, making `destroy()` and `whenReady` incoherent.
-2. **Inconsistent error handling**: Document extensions have try/catch + .catch() cleanup. Workspace extensions have none — factory throws and whenReady rejects propagate unhandled, leaking resources.
+2. **Inconsistent error handling**: Document extensions have try/catch + .catch() cleanup. Workspace extensions have none: factory throws and whenReady rejects propagate unhandled, leaking resources.
 3. **Void return divergence**: Workspace does `raw ?? {}` (always registers a noop). Document does `if (raw)` (skips entirely). Different semantics for the same pattern.
 4. **Destroy ordering mismatch**: Workspace uses LIFO sequential (correct for dependency chains). Document uses parallel `Promise.allSettled` (unsafe for flush/observer races).
 5. **Factory context asymmetry**: Workspace factory receives the full client object directly (`ctx.ydoc`, `ctx.tables`). Document factory receives a slim struct (`ctx.ydoc`, `ctx.binding`). The `whenReady` comes from different sources (rebuilt client vs explicit param).
@@ -180,15 +180,15 @@ Before making any changes, establish a baseline test suite to verify behavior be
 
   ```typescript
   test('builder branching creates isolated extension sets', () => {
-  	const base = createWorkspace(def).withExtension('a', () => ({
-  		value: 'a',
-  	}));
-  	const b1 = base.withExtension('b', () => ({ value: 'b' }));
-  	const b2 = base.withExtension('c', () => ({ value: 'c' }));
+	const base = createWorkspace(def).withExtension('a', () => ({
+		value: 'a',
+	}));
+	const b1 = base.withExtension('b', () => ({ value: 'b' }));
+	const b2 = base.withExtension('c', () => ({ value: 'c' }));
 
-  	expect(Object.keys(base.extensions)).toEqual(['a']);
-  	expect(Object.keys(b1.extensions)).toEqual(['a', 'b']);
-  	expect(Object.keys(b2.extensions)).toEqual(['a', 'c']);
+	expect(Object.keys(base.extensions)).toEqual(['a']);
+	expect(Object.keys(b1.extensions)).toEqual(['a', 'b']);
+	expect(Object.keys(b2.extensions)).toEqual(['a', 'c']);
   });
   ```
 
@@ -196,13 +196,13 @@ Before making any changes, establish a baseline test suite to verify behavior be
 
   ```typescript
   test('void-returning factory does not appear in extensions', () => {
-  	const client = createWorkspace(def)
-  		.withExtension('noop', () => undefined)
-  		.withExtension('real', () => ({ value: 42 }));
+	const client = createWorkspace(def)
+		.withExtension('noop', () => undefined)
+		.withExtension('real', () => ({ value: 42 }));
 
-  	expect(client.extensions.noop).toBeUndefined();
-  	expect(client.extensions.real).toBeDefined();
-  	expect(client.extensions.real.value).toBe(42);
+	expect(client.extensions.noop).toBeUndefined();
+	expect(client.extensions.real).toBeDefined();
+	expect(client.extensions.real.value).toBe(42);
   });
   ```
 
@@ -210,24 +210,24 @@ Before making any changes, establish a baseline test suite to verify behavior be
 
   ```typescript
   test('factory throw in workspace cleans up prior extensions in LIFO order', async () => {
-  	const cleanupOrder: string[] = [];
-  	const factory =
-  		(name: string, shouldThrow = false) =>
-  		() => {
-  			if (shouldThrow) throw new Error(`${name} factory failed`);
-  			return { destroy: async () => cleanupOrder.push(name) };
-  		};
+	const cleanupOrder: string[] = [];
+	const factory =
+		(name: string, shouldThrow = false) =>
+		() => {
+			if (shouldThrow) throw new Error(`${name} factory failed`);
+			return { destroy: async () => cleanupOrder.push(name) };
+		};
 
-  	try {
-  		createWorkspace(def)
-  			.withExtension('first', factory('first'))
-  			.withExtension('second', factory('second'))
-  			.withExtension('third', factory('third', true)); // throws
-  	} catch {
-  		// expected
-  	}
+	try {
+		createWorkspace(def)
+			.withExtension('first', factory('first'))
+			.withExtension('second', factory('second'))
+			.withExtension('third', factory('third', true)); // throws
+	} catch {
+		// expected
+	}
 
-  	expect(cleanupOrder).toEqual(['second', 'first']); // LIFO, skips 'third'
+	expect(cleanupOrder).toEqual(['second', 'first']); // LIFO, skips 'third'
   });
   ```
 
@@ -235,27 +235,27 @@ Before making any changes, establish a baseline test suite to verify behavior be
 
   ```typescript
   test('document extension destroy order is LIFO', async () => {
-  	const destroyOrder: string[] = [];
-  	const factory = (name: string) => () => ({
-  		destroy: async () => destroyOrder.push(name),
-  	});
+	const destroyOrder: string[] = [];
+	const factory = (name: string) => () => ({
+		destroy: async () => destroyOrder.push(name),
+	});
 
-  	const binding = createDocumentBinding({
-  		guidKey: 'id',
-  		updatedAtKey: 'updatedAt',
-  		tableHelper: mockTable,
-  		ydoc: mockYdoc,
-  		documentExtensions: [
-  			{ key: 'first', factory: factory('first'), tags: [] },
-  			{ key: 'second', factory: factory('second'), tags: [] },
-  			{ key: 'third', factory: factory('third'), tags: [] },
-  		],
-  	});
+	const binding = createDocumentBinding({
+		guidKey: 'id',
+		updatedAtKey: 'updatedAt',
+		tableHelper: mockTable,
+		ydoc: mockYdoc,
+		documentExtensions: [
+			{ key: 'first', factory: factory('first'), tags: [] },
+			{ key: 'second', factory: factory('second'), tags: [] },
+			{ key: 'third', factory: factory('third'), tags: [] },
+		],
+	});
 
-  	const handle = await binding.open('doc-1');
-  	await binding.close('doc-1');
+	const handle = await binding.open('doc-1');
+	await binding.close('doc-1');
 
-  	expect(destroyOrder).toEqual(['third', 'second', 'first']); // LIFO
+	expect(destroyOrder).toEqual(['third', 'second', 'first']); // LIFO
   });
   ```
 
@@ -263,32 +263,32 @@ Before making any changes, establish a baseline test suite to verify behavior be
 
   ```typescript
   test('whenReady rejection in workspace triggers cleanup', async () => {
-  	const cleanupCalled = new Set<string>();
-  	let rejectWhenReady: (() => void) | undefined;
-  	const whenReadyPromise = new Promise<void>((_, reject) => {
-  		rejectWhenReady = () => reject(new Error('provider failed'));
-  	});
+	const cleanupCalled = new Set<string>();
+	let rejectWhenReady: (() => void) | undefined;
+	const whenReadyPromise = new Promise<void>((_, reject) => {
+		rejectWhenReady = () => reject(new Error('provider failed'));
+	});
 
-  	const client = createWorkspace(def)
-  		.withExtension('first', () => ({
-  			destroy: async () => cleanupCalled.add('first'),
-  		}))
-  		.withExtension('second', () => ({
-  			whenReady: whenReadyPromise,
-  			destroy: async () => cleanupCalled.add('second'),
-  		}));
+	const client = createWorkspace(def)
+		.withExtension('first', () => ({
+			destroy: async () => cleanupCalled.add('first'),
+		}))
+		.withExtension('second', () => ({
+			whenReady: whenReadyPromise,
+			destroy: async () => cleanupCalled.add('second'),
+		}));
 
-  	// Trigger rejection
-  	rejectWhenReady?.();
+	// Trigger rejection
+	rejectWhenReady?.();
 
-  	try {
-  		await client.whenReady;
-  	} catch {
-  		// expected
-  	}
+	try {
+		await client.whenReady;
+	} catch {
+		// expected
+	}
 
-  	expect(cleanupCalled.has('first')).toBe(true);
-  	expect(cleanupCalled.has('second')).toBe(true);
+	expect(cleanupCalled.has('first')).toBe(true);
+	expect(cleanupCalled.has('second')).toBe(true);
   });
   ```
 
@@ -296,45 +296,45 @@ Before making any changes, establish a baseline test suite to verify behavior be
 
   ```typescript
   test('document extension whenReady rejection triggers cleanup', async () => {
-  	const cleanupCalled = new Set<string>();
-  	let rejectWhenReady: (() => void) | undefined;
-  	const whenReadyPromise = new Promise<void>((_, reject) => {
-  		rejectWhenReady = () => reject(new Error('provider failed'));
-  	});
+	const cleanupCalled = new Set<string>();
+	let rejectWhenReady: (() => void) | undefined;
+	const whenReadyPromise = new Promise<void>((_, reject) => {
+		rejectWhenReady = () => reject(new Error('provider failed'));
+	});
 
-  	const binding = createDocumentBinding({
-  		guidKey: 'id',
-  		updatedAtKey: 'updatedAt',
-  		tableHelper: mockTable,
-  		ydoc: mockYdoc,
-  		documentExtensions: [
-  			{
-  				key: 'first',
-  				factory: () => ({ destroy: async () => cleanupCalled.add('first') }),
-  				tags: [],
-  			},
-  			{
-  				key: 'second',
-  				factory: () => ({
-  					whenReady: whenReadyPromise,
-  					destroy: async () => cleanupCalled.add('second'),
-  				}),
-  				tags: [],
-  			},
-  		],
-  	});
+	const binding = createDocumentBinding({
+		guidKey: 'id',
+		updatedAtKey: 'updatedAt',
+		tableHelper: mockTable,
+		ydoc: mockYdoc,
+		documentExtensions: [
+			{
+				key: 'first',
+				factory: () => ({ destroy: async () => cleanupCalled.add('first') }),
+				tags: [],
+			},
+			{
+				key: 'second',
+				factory: () => ({
+					whenReady: whenReadyPromise,
+					destroy: async () => cleanupCalled.add('second'),
+				}),
+				tags: [],
+			},
+		],
+	});
 
-  	const handlePromise = binding.open('doc-1');
-  	rejectWhenReady?.();
+	const handlePromise = binding.open('doc-1');
+	rejectWhenReady?.();
 
-  	try {
-  		await handlePromise;
-  	} catch {
-  		// expected
-  	}
+	try {
+		await handlePromise;
+	} catch {
+		// expected
+	}
 
-  	expect(cleanupCalled.has('first')).toBe(true);
-  	expect(cleanupCalled.has('second')).toBe(true);
+	expect(cleanupCalled.has('first')).toBe(true);
+	expect(cleanupCalled.has('second')).toBe(true);
   });
   ```
 
@@ -358,8 +358,8 @@ The current implementation closes over mutable `extensionCleanups[]` and `whenRe
 
   ```typescript
   type BuilderState = {
-  	extensionCleanups: (() => MaybePromise<void>)[];
-  	whenReadyPromises: Promise<unknown>[];
+	extensionCleanups: (() => MaybePromise<void>)[];
+	whenReadyPromises: Promise<unknown>[];
   };
   ```
 
@@ -369,8 +369,8 @@ The current implementation closes over mutable `extensionCleanups[]` and `whenRe
 
   ```typescript
   const newState: BuilderState = {
-  	extensionCleanups: [...state.extensionCleanups, resolved.destroy],
-  	whenReadyPromises: [...state.whenReadyPromises, resolved.whenReady],
+	extensionCleanups: [...state.extensionCleanups, resolved.destroy],
+	whenReadyPromises: [...state.whenReadyPromises, resolved.whenReady],
   };
   return buildClient(newExtensions, newState);
   ```
@@ -379,17 +379,17 @@ The current implementation closes over mutable `extensionCleanups[]` and `whenRe
 
   ```typescript
   return buildClient(
-  	{},
-  	{
-  		extensionCleanups: [],
-  		whenReadyPromises: [],
-  	},
+	{},
+	{
+		extensionCleanups: [],
+		whenReadyPromises: [],
+	},
   );
   ```
 
 - [ ] **1.5** Apply identical changes to `dynamic/workspace/create-workspace.ts`
 
-- [ ] **1.6** Run baseline test 0.1 — should now PASS (was failing before)
+- [ ] **1.6** Run baseline test 0.1: should now PASS (was failing before)
 
 - [ ] **1.7** Verify all existing tests still pass: `bun test`
 
@@ -403,7 +403,7 @@ The current document binding uses `Promise.allSettled` (parallel destroy), which
 
 - Extensions expecting parallel cleanup will break
 - Extensions with destructors relying on parallel execution timing will fail
-- This is CORRECT behavior — parallel destroy is unsafe
+- This is CORRECT behavior: parallel destroy is unsafe
 
 **Implementation:**
 
@@ -514,7 +514,7 @@ The current document binding uses `Promise.allSettled` (parallel destroy), which
   });
   ```
 
-- [ ] **2.5** Run baseline test 0.4 — should now PASS
+- [ ] **2.5** Run baseline test 0.4: should now PASS
 
 - [ ] **2.6** Verify all tests pass: `bun test`
 
@@ -528,7 +528,7 @@ The current implementation has inconsistent void handling: workspace returns noo
 
 - Code accessing `extensions['skippedKey']` will get `undefined` instead of noop object
 - Code checking `if (extensions.myExt)` will fail if myExt returns void
-- This is correct — if you want a noop, return `{}` explicitly
+- This is correct: if you want a noop, return `{}` explicitly
 
 **Pre-Flight Verification:**
 
@@ -556,8 +556,8 @@ The current implementation has inconsistent void handling: workspace returns noo
   ```typescript
   const raw = factory(client);
   if (!raw) {
-  	// Void return means "not installed" — skip registration
-  	return buildClient(extensions, state);
+	// Void return means "not installed": skip registration
+	return buildClient(extensions, state);
   }
   const resolved = defineExtension(raw);
   ```
@@ -566,7 +566,7 @@ The current implementation has inconsistent void handling: workspace returns noo
 
 - [ ] **3.6** Verify document binding already has this behavior (it does, in line 274)
 
-- [ ] **3.7** Run baseline test 0.2 — should now PASS
+- [ ] **3.7** Run baseline test 0.2: should now PASS
 
 - [ ] **3.8** Verify all tests pass: `bun test`
 
@@ -574,7 +574,7 @@ The current implementation has inconsistent void handling: workspace returns noo
 
 **Status: BREAKING CHANGE**
 
-The current workspace builder has no error handling — thrown factories leak resources. This phase adds try/catch with LIFO cleanup to match document binding semantics.
+The current workspace builder has no error handling: thrown factories leak resources. This phase adds try/catch with LIFO cleanup to match document binding semantics.
 
 **Breaking Impact:**
 
@@ -588,43 +588,43 @@ The current workspace builder has no error handling — thrown factories leak re
 
   ```typescript
   const withExtension = (key: string, factory: ExtensionFactory) => {
-  	try {
-  		const raw = factory(client);
-  		if (!raw) {
-  			return buildClient(extensions, state);
-  		}
+	try {
+		const raw = factory(client);
+		if (!raw) {
+			return buildClient(extensions, state);
+		}
 
-  		const resolved = defineExtension(raw);
-  		return buildClient(
-  			{ ...extensions, [key]: resolved },
-  			{
-  				extensionCleanups: [...state.extensionCleanups, resolved.destroy],
-  				whenReadyPromises: [...state.whenReadyPromises, resolved.whenReady],
-  			},
-  		);
-  	} catch (err) {
-  		// Clean up already-resolved extensions (LIFO)
-  		const errors: unknown[] = [];
-  		for (let i = state.extensionCleanups.length - 1; i >= 0; i--) {
-  			try {
-  				const result = state.extensionCleanups[i]!();
-  				if (result instanceof Promise) {
-  					await result;
-  				}
-  			} catch (cleanupErr) {
-  				errors.push(cleanupErr);
-  			}
-  		}
+		const resolved = defineExtension(raw);
+		return buildClient(
+			{ ...extensions, [key]: resolved },
+			{
+				extensionCleanups: [...state.extensionCleanups, resolved.destroy],
+				whenReadyPromises: [...state.whenReadyPromises, resolved.whenReady],
+			},
+		);
+	} catch (err) {
+		// Clean up already-resolved extensions (LIFO)
+		const errors: unknown[] = [];
+		for (let i = state.extensionCleanups.length - 1; i >= 0; i--) {
+			try {
+				const result = state.extensionCleanups[i]!();
+				if (result instanceof Promise) {
+					await result;
+				}
+			} catch (cleanupErr) {
+				errors.push(cleanupErr);
+			}
+		}
 
-  		if (errors.length > 0) {
-  			console.error(
-  				'Extension cleanup errors during factory failure:',
-  				errors,
-  			);
-  		}
+		if (errors.length > 0) {
+			console.error(
+				'Extension cleanup errors during factory failure:',
+				errors,
+			);
+		}
 
-  		throw err; // Rethrow factory error
-  	}
+		throw err; // Rethrow factory error
+	}
   };
   ```
 
@@ -632,37 +632,37 @@ The current workspace builder has no error handling — thrown factories leak re
 
   ```typescript
   const destroy = async (): Promise<void> => {
-  	const errors: unknown[] = [];
-  	for (let i = state.extensionCleanups.length - 1; i >= 0; i--) {
-  		try {
-  			await state.extensionCleanups[i]!();
-  		} catch (err) {
-  			errors.push(err);
-  		}
-  	}
-  	ydoc.destroy();
+	const errors: unknown[] = [];
+	for (let i = state.extensionCleanups.length - 1; i >= 0; i--) {
+		try {
+			await state.extensionCleanups[i]!();
+		} catch (err) {
+			errors.push(err);
+		}
+	}
+	ydoc.destroy();
 
-  	if (errors.length > 0) {
-  		throw new Error(`Extension cleanup errors: ${errors.length}`);
-  	}
+	if (errors.length > 0) {
+		throw new Error(`Extension cleanup errors: ${errors.length}`);
+	}
   };
 
   const client = {
-  	// ...
-  	destroy,
-  	whenReady: Promise.all(state.whenReadyPromises)
-  		.then(() => {})
-  		.catch(async (err) => {
-  			// If any extension's whenReady rejects, clean up everything
-  			await destroy().catch(() => {}); // idempotent
-  			throw err;
-  		}),
+	// ...
+	destroy,
+	whenReady: Promise.all(state.whenReadyPromises)
+		.then(() => {})
+		.catch(async (err) => {
+			// If any extension's whenReady rejects, clean up everything
+			await destroy().catch(() => {}); // idempotent
+			throw err;
+		}),
   };
   ```
 
 - [ ] **4.3** Apply identical changes to `dynamic/workspace/create-workspace.ts`
 
-- [ ] **4.4** Run baseline tests 0.3 and 0.5 — should now PASS
+- [ ] **4.4** Run baseline tests 0.3 and 0.5: should now PASS
 
 - [ ] **4.5** Verify all tests pass: `bun test`
 
@@ -678,30 +678,30 @@ Both static and dynamic workspace use identical extension factory execution logi
 
   ```typescript
   export type ExtensionFactoryEntry<TContext, TExports> = {
-  	key: string;
-  	factory: (ctx: TContext) => TExports & {
-  		whenReady?: Promise<unknown>;
-  		destroy?: () => MaybePromise<void>;
-  	};
+	key: string;
+	factory: (ctx: TContext) => TExports & {
+		whenReady?: Promise<unknown>;
+		destroy?: () => MaybePromise<void>;
+	};
   };
 
   export type RunExtensionFactoriesResult<
-  	TAccum extends Record<string, unknown>,
+	TAccum extends Record<string, unknown>,
   > = {
-  	extensions: TAccum;
-  	destroys: (() => MaybePromise<void>)[];
-  	whenReadyPromises: Promise<unknown>[];
+	extensions: TAccum;
+	destroys: (() => MaybePromise<void>)[];
+	whenReadyPromises: Promise<unknown>[];
   };
 
   export function runExtensionFactories<
-  	TContext extends Record<string, unknown>,
-  	TAccum extends Record<string, unknown>,
+	TContext extends Record<string, unknown>,
+	TAccum extends Record<string, unknown>,
   >(
-  	entries: ExtensionFactoryEntry<TContext, any>[],
-  	initialContext: TContext,
-  	initialAccum: TAccum,
+	entries: ExtensionFactoryEntry<TContext, any>[],
+	initialContext: TContext,
+	initialAccum: TAccum,
   ): RunExtensionFactoriesResult<TAccum> {
-  	// Implementation with LIFO cleanup on factory throw
+	// Implementation with LIFO cleanup on factory throw
   }
   ```
 
@@ -709,12 +709,12 @@ Both static and dynamic workspace use identical extension factory execution logi
 
   ```typescript
   const withExtension = (key, factory) => {
-  	const result = runExtensionFactories(
-  		[{ key, factory }],
-  		client,
-  		extensions,
-  	);
-  	// Use result.extensions, result.destroys, result.whenReadyPromises
+	const result = runExtensionFactories(
+		[{ key, factory }],
+		client,
+		extensions,
+	);
+	// Use result.extensions, result.destroys, result.whenReadyPromises
   };
   ```
 
@@ -734,7 +734,7 @@ The current API passes the full client object to factories. This phase introduce
 
 - ALL extension factories must be updated
 - Signature changes from `(ctx)` to `(ctx)` where `ctx` structure differs
-- This is a major API change — users must update their factories
+- This is a major API change: users must update their factories
 
 **Type Definitions:**
 
@@ -751,17 +751,17 @@ The current API passes the full client object to factories. This phase introduce
    * @typeParam TExtensions - Previously registered extension exports
    */
   export type ExtensionContext<
-  	TClient extends Record<string, unknown>,
-  	TExtensions extends Record<string, unknown> = Record<string, never>,
+	TClient extends Record<string, unknown>,
+	TExtensions extends Record<string, unknown> = Record<string, never>,
   > = {
-  	/** Scope-specific client data (workspace or document) */
-  	client: TClient;
+	/** Scope-specific client data (workspace or document) */
+	client: TClient;
 
-  	/** Composite promise waiting for all prior extensions to be ready */
-  	whenReady: Promise<void>;
+	/** Composite promise waiting for all prior extensions to be ready */
+	whenReady: Promise<void>;
 
-  	/** Exports from previously registered extensions (typed) */
-  	extensions: TExtensions;
+	/** Exports from previously registered extensions (typed) */
+	extensions: TExtensions;
   };
   ```
 
@@ -769,22 +769,22 @@ The current API passes the full client object to factories. This phase introduce
 
   ```typescript
   export type WorkspaceExtensionClient<
-  	TId extends string = string,
-  	TTableDefinitions extends TableDefinitions = Record<string, never>,
-  	TKvDefinitions extends KvDefinitions = Record<string, never>,
-  	TAwarenessSchema extends AwarenessSchema = Record<string, never>,
+	TId extends string = string,
+	TTableDefinitions extends TableDefinitions = Record<string, never>,
+	TKvDefinitions extends KvDefinitions = Record<string, never>,
+	TAwarenessSchema extends AwarenessSchema = Record<string, never>,
   > = {
-  	id: TId;
-  	ydoc: Y.Doc;
-  	definitions: {
-  		tables: TTableDefinitions;
-  		kv: TKvDefinitions;
-  		awareness: TAwarenessSchema;
-  	};
-  	tables: Tables<TTableDefinitions>;
-  	kv: KeyValueStore<TKvDefinitions>;
-  	awareness: AwarenessAttachment<TAwarenessSchema>;
-  	batch: (fn: () => void) => void;
+	id: TId;
+	ydoc: Y.Doc;
+	definitions: {
+		tables: TTableDefinitions;
+		kv: TKvDefinitions;
+		awareness: TAwarenessSchema;
+	};
+	tables: Tables<TTableDefinitions>;
+	kv: KeyValueStore<TKvDefinitions>;
+	awareness: AwarenessAttachment<TAwarenessSchema>;
+	batch: (fn: () => void) => void;
   };
   ```
 
@@ -792,12 +792,12 @@ The current API passes the full client object to factories. This phase introduce
 
   ```typescript
   export type DocumentExtensionClient = {
-  	ydoc: Y.Doc;
-  	binding: {
-  		tableName: string;
-  		documentName: string;
-  		tags: readonly string[];
-  	};
+	ydoc: Y.Doc;
+	binding: {
+		tableName: string;
+		documentName: string;
+		tags: readonly string[];
+	};
   };
   ```
 
@@ -845,12 +845,12 @@ The current API passes the full client object to factories. This phase introduce
 
   ```typescript
   const ctx: ExtensionContext<DocumentExtensionClient, TResolved> = {
-  	client: {
-  		ydoc: contentYdoc,
-  		binding: { tableName, documentName, tags: documentTags },
-  	},
-  	whenReady: compositeWhenReady,
-  	extensions: resolvedExtensions,
+	client: {
+		ydoc: contentYdoc,
+		binding: { tableName, documentName, tags: documentTags },
+	},
+	whenReady: compositeWhenReady,
+	extensions: resolvedExtensions,
   };
 
   const raw = reg.factory(ctx);
@@ -863,18 +863,18 @@ The current API passes the full client object to factories. This phase introduce
   ```typescript
   // Before
   export function createSyncExtension(options) {
-  	return (ctx) => {
-  		const { ydoc } = ctx;
-  		// ...
-  	};
+	return (ctx) => {
+		const { ydoc } = ctx;
+		// ...
+	};
   }
 
   // After
   export function createSyncExtension(options) {
-  	return (ctx) => {
-  		const { ydoc, awareness } = ctx.client;
-  		// ...
-  	};
+	return (ctx) => {
+		const { ydoc, awareness } = ctx.client;
+		// ...
+	};
   }
   ```
 
@@ -904,11 +904,11 @@ The current API passes the full client object to factories. This phase introduce
 
   ```typescript
   export type ExtensionFactory<
-  	TContext extends Record<string, unknown> = Record<string, unknown>,
-  	TExports extends Record<string, unknown> = Record<string, unknown>,
+	TContext extends Record<string, unknown> = Record<string, unknown>,
+	TExports extends Record<string, unknown> = Record<string, unknown>,
   > = (ctx: ExtensionContext<TContext>) => TExports & {
-  	whenReady?: Promise<unknown>;
-  	destroy?: () => MaybePromise<void>;
+	whenReady?: Promise<unknown>;
+	destroy?: () => MaybePromise<void>;
   };
   ```
 
@@ -940,9 +940,9 @@ The current API passes the full client object to factories. This phase introduce
 
 **Verification:**
 
-- [ ] **6.32** Run `bun test` — all tests should pass
+- [ ] **6.32** Run `bun test`: all tests should pass
 
-- [ ] **6.33** Run `bun run typecheck` — no type errors
+- [ ] **6.33** Run `bun run typecheck`: no type errors
 
 - [ ] **6.34** Search for remaining old-style factory patterns (should find none)
 
@@ -953,7 +953,7 @@ The current API passes the full client object to factories. This phase introduce
 **What changes:**
 
 - Builder branching now produces correctly isolated extension sets
-- This FIXES a bug — previously all branches shared the same extensions array
+- This FIXES a bug: previously all branches shared the same extensions array
 
 **Example:**
 
@@ -1083,7 +1083,7 @@ binding
 
 ---
 
-### Phase 6: Unified `ctx.client` Factory Context (BREAKING — Major API Change)
+### Phase 6: Unified `ctx.client` Factory Context (BREAKING: Major API Change)
 
 **What changes:**
 
@@ -1247,7 +1247,7 @@ try {
 
 **Rationale:**
 
-- More explicit — void clearly means "not installed"
+- More explicit: void clearly means "not installed"
 - Noop extensions aren't a real pattern (just return `{}` if needed)
 - Cleaner API surface (no mystery entries in extensions map)
 - Consistent with document binding behavior
@@ -1282,7 +1282,7 @@ try {
 
 **Rationale:**
 
-- DRY principle — same logic shouldn't be duplicated
+- DRY principle: same logic shouldn't be duplicated
 - Guarantees static and dynamic have identical semantics
 - Single place to maintain error handling
 - Makes it easy to add features later (e.g., extension hooks)
@@ -1307,8 +1307,8 @@ try {
 
 **Why NOT include `destroy` and `whenReady` on client:**
 
-- `destroy` is lifecycle — managed by framework, not factories
-- `whenReady` is composite — factories shouldn't manipulate it
+- `destroy` is lifecycle: managed by framework, not factories
+- `whenReady` is composite: factories shouldn't manipulate it
 - Separating concerns makes API clearer
 
 **Why NOT add `ctx.require('key')`:**
@@ -1411,7 +1411,7 @@ try {
 - [ ] All existing tests still pass
 - [ ] No logic duplication between implementations
 
-### Phase 6 (Unified `ctx.client` Factory Context) — MAJOR API CHANGE
+### Phase 6 (Unified `ctx.client` Factory Context): MAJOR API CHANGE
 
 **Type System:**
 
@@ -1429,7 +1429,7 @@ try {
 - [ ] `dynamic/workspace/create-workspace.ts` passes same shape
 - [ ] All three implementations use identical context shape
 
-**Factory Updates (11 files — ALL MUST BE UPDATED):**
+**Factory Updates (11 files: ALL MUST BE UPDATED):**
 
 - [ ] `packages/epicenter/src/extensions/sync.ts` ✓
 - [ ] `packages/epicenter/src/extensions/sync/desktop.ts` ✓
@@ -1528,9 +1528,9 @@ export const myExtension = ({ client, extensions, whenReady }) => {
 
 **Changes needed** if you:
 
-1. **Wrote custom factories** — Follow migration guide above
-2. **Accessed void extensions** — Now need to check `extensions.key?.method()` or return `{}` explicitly
-3. **Expected parallel destroy** — Update any sequential assumptions to sequential
+1. **Wrote custom factories**: Follow migration guide above
+2. **Accessed void extensions**: Now need to check `extensions.key?.method()` or return `{}` explicitly
+3. **Expected parallel destroy**: Update any sequential assumptions to sequential
 
 ### Execution Order
 
@@ -1580,7 +1580,7 @@ export const myExtension = ({ client, extensions, whenReady }) => {
 
 If serious issues arise during execution:
 
-1. **Phase 0-1 rollback**: Revert to previous commit (bug fix — no reason to rollback)
+1. **Phase 0-1 rollback**: Revert to previous commit (bug fix: no reason to rollback)
 2. **Phase 2-3 rollback**: Revert to Phase 1, restart from Phase 2 with different approach
 3. **Phase 4 rollback**: Revert to Phase 3, investigate error handling issues
 4. **Phase 5 rollback**: Revert to Phase 4, keep implementations separate
@@ -1594,12 +1594,12 @@ If serious issues arise during execution:
 
 **Files Modified:**
 
-- `packages/epicenter/src/static/create-workspace.ts` — Phases 1, 3, 4, 6
-- `packages/epicenter/src/static/create-document-binding.ts` — Phases 2, 4, 5
-- `packages/epicenter/src/static/types.ts` — Phases 5, 6
-- `packages/epicenter/src/shared/lifecycle.ts` — Phases 5, 6
-- `packages/epicenter/src/dynamic/workspace/create-workspace.ts` — Phases 1, 3, 4, 5, 6
-- `packages/epicenter/src/dynamic/workspace/types.ts` — Phases 5, 6
+- `packages/epicenter/src/static/create-workspace.ts`: Phases 1, 3, 4, 6
+- `packages/epicenter/src/static/create-document-binding.ts`: Phases 2, 4, 5
+- `packages/epicenter/src/static/types.ts`: Phases 5, 6
+- `packages/epicenter/src/shared/lifecycle.ts`: Phases 5, 6
+- `packages/epicenter/src/dynamic/workspace/create-workspace.ts`: Phases 1, 3, 4, 5, 6
+- `packages/epicenter/src/dynamic/workspace/types.ts`: Phases 5, 6
 
 **Extension Factories (Phase 6):**
 

@@ -12,13 +12,13 @@ There are three lessons available (with more coming). Each one builds on the las
 
 The fundamentals. You create a `Y.Doc`, learn about shared types (`Y.Map`, `Y.Array`, `Y.Text`), and see how changes sync between clients automatically.
 
-The key insight here is understanding **clientID**. Every Yjs document gets a random client ID on creation. This number becomes important later because Yjs uses it for conflict resolution. When two clients write to the same key simultaneously, the higher clientID wins—not the later timestamp.
+The key insight here is understanding **clientID**. Every Yjs document gets a random client ID on creation. This number becomes important later because Yjs uses it for conflict resolution. When two clients write to the same key simultaneously, the higher clientID wins. Not the later timestamp.
 
 This is confirmed by dmonad (Yjs creator):
 
 > "The 'winner' is decided by `ydoc.clientID` of the document (which is a generated number). The higher clientID wins."
 >
-> — [GitHub issue #520](https://github.com/yjs/yjs/issues/520)
+> Source: [GitHub issue #520](https://github.com/yjs/yjs/issues/520)
 
 This trips people up constantly.
 
@@ -61,7 +61,7 @@ function getCount(ymap) {
 }
 ```
 
-Each client only ever writes to its own key. No conflicts possible. Total count sums all keys. This pattern—partitioning state by client—shows up everywhere in CRDT design.
+Each client only ever writes to its own key. No conflicts possible. Total count sums all keys. This pattern. Partitioning state by client. Shows up everywhere in CRDT design.
 
 ## Lesson 3: Todo List
 

@@ -1,6 +1,6 @@
 # YKeyValue vs Y.Map: Quick Decision Guide
 
-**TL;DR: A single boolean (`gc: true` vs `gc: false`) completely flips which data structure is more efficient—by 100-1000x.**
+**TL;DR: A single boolean (`gc: true` vs `gc: false`) completely flips which data structure is more efficient. By 100-1000x.**
 
 ## Which Should You Use?
 
@@ -90,7 +90,7 @@ Choose Y.Map when: immutable data, write-once patterns, bounded config values.
 
 ┌─────────────────────────────────────────────────────────────────┐
 │ GC OFF (for version history)                                    │
-│ • Y.Map: Always wins—2x smaller for updates, 1.6x for write-once│
+│ • Y.Map: Always wins: 2x smaller for updates, 1.6x for write-once│
 └─────────────────────────────────────────────────────────────────┘
 ```
 

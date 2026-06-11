@@ -56,7 +56,7 @@ const posts = await client.getPosts();
 
 ### What Makes Connection Expensive?
 
-The `await` during initialization isn't arbitrary overhead—it's genuinely expensive work. When connecting to a SQLite database in the browser, the system needs to:
+The `await` during initialization isn't arbitrary overhead. It's genuinely expensive work. When connecting to a SQLite database in the browser, the system needs to:
 
 1. **Load the SQLite WASM module** (~1MB of WebAssembly code)
 2. **Initialize IndexedDB** for persistence across page reloads
@@ -90,7 +90,7 @@ actions: ({ indexes }) => ({
 
 This gets messy fast. Every single action that touches an index needs this boilerplate. Miss one, and you get runtime errors.
 
-More importantly, we want actions to be straightforward and easily editable by developers. Having to remember `await indexes.sqlite` in every action creates cognitive overhead and makes the codebase harder to maintain—especially when multiple people are contributing. Actions should read like business logic, not infrastructure management.
+More importantly, we want actions to be straightforward and easily editable by developers. Having to remember `await indexes.sqlite` in every action creates cognitive overhead and makes the codebase harder to maintain. Especially when multiple people are contributing. Actions should read like business logic, not infrastructure management.
 
 With eager initialization, indexes are already ready:
 
@@ -110,7 +110,7 @@ actions: ({ indexes }) => ({
 
 ## The Local-First Argument
 
-The architecture and constraints of local-first apps are often different from traditional web apps. (see how local-first apps are more like installing applications on your computer—they need to load and initialize the full application environment before you can interact with them)
+The architecture and constraints of local-first apps are often different from traditional web apps. (see how local-first apps are more like installing applications on your computer. They need to load and initialize the full application environment before you can interact with them)
 
 To guarantee the local-first experience, these apps typically preload their entire JavaScript runtime upfront. This includes:
 
@@ -162,7 +162,7 @@ Funnily enough, this is exactly the pattern we talked about earlier with `const 
 
 This works because:
 - The promise is created once when your module loads
-- Subsequent clicks are instant—the promise is already resolved
+- Subsequent clicks are instant. The promise is already resolved
 
 **Important caveat:** This pattern is safe in local-first apps because they're typically fully statically rendered (no server-side rendering). Exporting module-level promises is generally safer in this context compared to traditional SSR applications where you need to be more careful about shared state across requests.
 

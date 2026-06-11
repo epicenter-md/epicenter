@@ -8,16 +8,16 @@
 
 We maintain two server-remote packages with diverging implementations:
 
-- **`server-remote`** — production, actively developed, has DocumentRoom snapshots, user-scoped room keys, Durable Objects, Better Auth with Postgres via Hyperdrive
-- **`server-remote-standalone`** — stale, simpler feature set, only used by `@epicenter/cli` hub commands
+- **`server-remote`**: production, actively developed, has DocumentRoom snapshots, user-scoped room keys, Durable Objects, Better Auth with Postgres via Hyperdrive
+- **`server-remote-standalone`**: stale, simpler feature set, only used by `@epicenter/cli` hub commands
 
-Maintaining both is not worth the effort. The Cloudflare version is the canonical one. The standalone version should be removed now and rebuilt later — based on the Cloudflare version — when we actually need self-hosted deployments.
+Maintaining both is not worth the effort. The Cloudflare version is the canonical one. The standalone version should be removed now and rebuilt later: based on the Cloudflare version. When we actually need self-hosted deployments.
 
 ## Analysis: What Standalone Has
 
 | File | Purpose | Equivalent in Cloudflare |
 |------|---------|--------------------------|
-| `src/app.ts` | Hono app factory, auth modes (none/token/betterAuth), CORS, routes | `src/app.ts` (superset — has workspace + document routes, OAuth discovery) |
+| `src/app.ts` | Hono app factory, auth modes (none/token/betterAuth), CORS, routes | `src/app.ts` (superset: has workspace + document routes, OAuth discovery) |
 | `src/sync-adapter.ts` | WS + HTTP sync via `createBunWebSocket` + `createRoomManager` | `workspace-room.ts` + `document-room.ts` (Durable Objects ARE the rooms) |
 | `src/storage.ts` | `BunSqliteUpdateLog` (bun:sqlite) | DO SQLite via `ctx.storage.sql` (identical schema) |
 | `src/ai-chat.ts` | TanStack AI streaming proxy | `src/ai-chat.ts` (nearly identical, Cloudflare uses ArkType validation) |
@@ -29,8 +29,8 @@ Only **one** consumer: `packages/cli/src/commands/hub-command.ts` imports `creat
 
 ### What standalone has that Cloudflare doesn't
 
-- `mode: 'none'` auth (anonymous access) — useful for local dev
-- `mode: 'token'` auth (bearer token) — lightweight auth without Better Auth
+- `mode: 'none'` auth (anonymous access): useful for local dev
+- `mode: 'token'` auth (bearer token): lightweight auth without Better Auth
 - Embeddable as a library (`createRemoteHub()` factory)
 
 ### What Cloudflare has that standalone doesn't
@@ -50,13 +50,13 @@ After analyzing Hono's multi-runtime capabilities and Better Auth's adapter syst
 
 1. **Hono is runtime-agnostic.** Routes, middleware, and handlers are pure Web Standard `Request` → `Response` functions. The same Hono app runs on Cloudflare Workers, Bun, Node.js, and Deno.
 
-2. **Better Auth's `database` option is a union type.** Pass `env.DB` (D1) for Cloudflare, `new Database("./auth.db")` (bun:sqlite) for standalone — all other config (plugins, session settings, OAuth clients) is shared.
+2. **Better Auth's `database` option is a union type.** Pass `env.DB` (D1) for Cloudflare, `new Database("./auth.db")` (bun:sqlite) for standalone: all other config (plugins, session settings, OAuth clients) is shared.
 
-3. **Tree-shaking isolates platform code.** Wrangler bundles from the worker entry point — it never touches standalone code. Bun runs from `start.ts` — it never imports Durable Objects. No conditional imports needed; just separate entry points.
+3. **Tree-shaking isolates platform code.** Wrangler bundles from the worker entry point: it never touches standalone code. Bun runs from `start.ts`: it never imports Durable Objects. No conditional imports needed; just separate entry points.
 
 4. **The Durable Objects are the only truly Cloudflare-specific code.** Everything else (auth setup, AI chat, CORS, auth guard, health check, route structure) is portable.
 
-### Future structure (NOT part of this spec — just documenting the vision)
+### Future structure (NOT part of this spec: just documenting the vision)
 
 ```
 packages/server-remote/
@@ -88,7 +88,7 @@ Key architectural difference: In Cloudflare, each Durable Object IS the room (pl
 ### Phase 1: Remove `server-remote-standalone`
 
 **Delete the package:**
-- [x] `packages/server-remote-standalone/` — entire directory
+- [x] `packages/server-remote-standalone/`: entire directory
 
 **Update `@epicenter/cli`:**
 - [x] Remove `"@epicenter/server-remote-standalone": "workspace:*"` from `packages/cli/package.json`
@@ -102,9 +102,9 @@ Key architectural difference: In Cloudflare, each Durable Object IS the room (pl
 ### Phase 2: Clean up sync-core (if needed)
 
 Check whether `sync-core` exports anything that was ONLY used by standalone:
-- [x] `createRoomManager` — also useful for tests and potentially future standalone, **keep it**
-- [x] All protocol functions — used by both, **keep**
-- [x] All handler functions — used by both, **keep**
+- [x] `createRoomManager`: also useful for tests and potentially future standalone, **keep it**
+- [x] All protocol functions: used by both, **keep**
+- [x] All handler functions: used by both, **keep**
 
 **No sync-core changes needed.** Confirmed the package is a clean shared abstraction.
 
@@ -129,7 +129,7 @@ When rebuilding standalone support, we'll need to:
 
 **Blast radius: Very small.**
 - Only `@epicenter/cli` imports from standalone
-- The CLI hub commands are not critical path — no user-facing app depends on them
+- The CLI hub commands are not critical path: no user-facing app depends on them
 - The Cloudflare version is unaffected
 - sync-core is unaffected
 

@@ -13,7 +13,7 @@ This applies to:
 - Personal apps (epicenter.fuji-notes, epicenter.tab-manager)
 - Any future workspace
 
-No distinction between "personal" and "platform" at the workspace ID level—that's handled by ownership (user/org scoping in the API layer).
+No distinction between "personal" and "platform" at the workspace ID level. That's handled by ownership (user/org scoping in the API layer).
 
 ## Impact of Renaming tab-manager
 
@@ -37,8 +37,8 @@ The workspace ID flows into four storage layers:
 
 ## Files Changed
 
-- `apps/tab-manager/src/lib/workspace.ts` — workspace ID definition
-- `apps/tab-manager-markdown/README.md` — documentation URLs
+- `apps/tab-manager/src/lib/workspace.ts`: workspace ID definition
+- `apps/tab-manager-markdown/README.md`: documentation URLs
 
 ## Review
 

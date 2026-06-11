@@ -12,11 +12,11 @@ Prepare Epicenter for public launch on Twitter/HN by fixing the four P0 blockers
 
 ### Current State
 
-The codebase is feature-complete for a first public impression, but the surfaces people actually touch—README, npm install, landing page, app UI—have gaps that will be called out immediately on HN.
+The codebase is feature-complete for a first public impression, but the surfaces people actually touch. README, npm install, landing page, app UI. Have gaps that will be called out immediately on HN.
 
 Problems:
 
-1. **Workspace README references dead API**: `createClient`, `withDefinition`, `upsert`, `createServer`, `providers/setupPersistence`—none exist anymore. Actual API is `createWorkspace`, `client.tables.<name>.set/get/update/delete`.
+1. **Workspace README references dead API**: `createClient`, `withDefinition`, `upsert`, `createServer`, `providers/setupPersistence`: none exist anymore. Actual API is `createWorkspace`, `client.tables.<name>.set/get/update/delete`.
 2. **npm packages aren't publishable**: `@epicenter/workspace` isn't on npm. CLI has `workspace:*` and `catalog:` deps that break externally. No changeset tooling.
 3. **"Not yet implemented" in shipped UI**: `alert('Live recording not yet implemented')` in Whispering layout, `// TODO: Implement form submission` in landing waitlist form.
 4. **Landing page won't convert HN visitors**: No quickstart code block, no FAQ, blog posts from Jan 2025 only.
@@ -67,8 +67,8 @@ Problems:
 
 ### Phase 3: UI TODO Removal (P0-C)
 
-- [ ] **3.1** Remove `alert('Live recording not yet implemented')` from `apps/whispering/src/routes/(app)/(config)/+layout.svelte:132` — either implement or remove the toggle entirely
-- [ ] **3.2** Fix `WaitlistForm.svelte` — either wire to a real endpoint (Discord webhook, Resend, etc.) or remove the TODO and show a Discord join link instead
+- [ ] **3.1** Remove `alert('Live recording not yet implemented')` from `apps/whispering/src/routes/(app)/(config)/+layout.svelte:132`: either implement or remove the toggle entirely
+- [ ] **3.2** Fix `WaitlistForm.svelte`: either wire to a real endpoint (Discord webhook, Resend, etc.) or remove the TODO and show a Discord join link instead
 - [ ] **3.3** Remove `// TODO: Implement real extension detection` from `apps/whispering/src/lib/services/notifications/web.ts`
 
 ### Phase 4: Landing Page Improvements (P0-D)
@@ -80,11 +80,11 @@ Problems:
 
 ## Open Questions
 
-1. **WaitlistForm — wire or remove?**
+1. **WaitlistForm: wire or remove?**
    - Options: (a) Wire to Discord webhook, (b) Wire to Resend/email list, (c) Replace with Discord invite button
    - **Recommendation**: (c) Replace with Discord invite. Simplest, no backend needed, matches existing CTA pattern.
 
-2. **Live recording toggle — implement or hide?**
+2. **Live recording toggle: implement or hide?**
    - Options: (a) Implement live recording, (b) Hide the toggle, (c) Show as "coming soon" badge
    - **Recommendation**: (b) Hide the toggle. Don't ship half-baked features.
 
@@ -98,14 +98,14 @@ Problems:
 
 ## References
 
-- `packages/workspace/README.md` — Primary rewrite target
-- `packages/workspace/src/index.ts` — Source of truth for public API
-- `packages/workspace/src/workspace/create-workspace.ts` — Builder pattern implementation
-- `packages/workspace/src/workspace/create-table.ts` — Table operations
-- `packages/workspace/src/workspace/types.ts` — Type definitions
-- `packages/workspace/package.json` — Exports map and metadata
-- `packages/cli/package.json` — CLI metadata and bin field
-- `apps/landing/src/pages/index.astro` — Landing page homepage
-- `apps/landing/src/layouts/BaseLayout.astro` — Meta tags
-- `apps/landing/src/components/WaitlistForm.svelte` — Broken form
-- `apps/whispering/src/routes/(app)/(config)/+layout.svelte` — "Not implemented" alert
+- `packages/workspace/README.md`: Primary rewrite target
+- `packages/workspace/src/index.ts`: Source of truth for public API
+- `packages/workspace/src/workspace/create-workspace.ts`: Builder pattern implementation
+- `packages/workspace/src/workspace/create-table.ts`: Table operations
+- `packages/workspace/src/workspace/types.ts`: Type definitions
+- `packages/workspace/package.json`: Exports map and metadata
+- `packages/cli/package.json`: CLI metadata and bin field
+- `apps/landing/src/pages/index.astro`: Landing page homepage
+- `apps/landing/src/layouts/BaseLayout.astro`: Meta tags
+- `apps/landing/src/components/WaitlistForm.svelte`: Broken form
+- `apps/whispering/src/routes/(app)/(config)/+layout.svelte`: "Not implemented" alert

@@ -83,7 +83,7 @@ export function yMapToRecord(ymap: Y.Map<unknown>): Record<string, unknown> {
 
 /**
  * Serialize a Y.XmlFragment to a markdown string.
- * Headless pipeline — no DOM needed.
+ * Headless pipeline: no DOM needed.
  */
 export function serializeXmlFragmentToMarkdown(
 	fragment: Y.XmlFragment,

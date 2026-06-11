@@ -6,7 +6,7 @@ Files under review:
 
 ---
 
-## Tier 1 — Clear Wins (no debate, minimal risk)
+## Tier 1: Clear Wins (no debate, minimal risk)
 
 ### 1. Remove unnecessary manual type predicates
 
@@ -21,7 +21,7 @@ TS 5.5+ auto-infers `.filter()` type predicates. These are noise.
 .filter((id) => id !== undefined)
 ```
 
-**quick-actions.ts:147, 199, 272** — same pattern.
+**quick-actions.ts:147, 199, 272**: same pattern.
 
 **quick-actions.ts:203**
 ```typescript
@@ -40,32 +40,32 @@ Pure deletion. Zero behavior change.
 In `apps/tab-manager/src/lib/tab-actions.ts` and `apps/tab-manager/src/lib/quick-actions.ts`, remove all unnecessary manual type predicates from `.filter()` callbacks. TS 5.5+ infers these automatically.
 
 Specifically:
-- `tab-actions.ts:119` — `.filter((id): id is number => id !== undefined)` → `.filter((id) => id !== undefined)`
-- `quick-actions.ts:147, 199, 272` — same `: id is number` removal
-- `quick-actions.ts:203` — `.filter((op): op is { domain: string; nativeIds: number[] } => op !== null)` → `.filter((op) => op !== null)`
+- `tab-actions.ts:119`: `.filter((id): id is number => id !== undefined)` → `.filter((id) => id !== undefined)`
+- `quick-actions.ts:147, 199, 272`: same `: id is number` removal
+- `quick-actions.ts:203`: `.filter((op): op is { domain: string; nativeIds: number[] } => op !== null)` → `.filter((op) => op !== null)`
 
 Pure deletion only. No behavior changes. Run `lsp_diagnostics` on both files after to confirm no type errors.
 </details>
 
 ---
 
-### 2. ~~Use `SavedTabId` brand constructor instead of double-cast~~ — SKIPPED
+### 2. ~~Use `SavedTabId` brand constructor instead of double-cast~~: SKIPPED
 
-**Deferred to dedicated spec.** Investigation revealed that `SavedTabId` is an arktype validator (`type('string').pipe(...)`) used in `defineTable()` schema composition — not a callable brand constructor. Calling `SavedTabId(value)` returns `SavedTabId | ArkErrors`, which isn't directly assignable.
+**Deferred to dedicated spec.** Investigation revealed that `SavedTabId` is an arktype validator (`type('string').pipe(...)`) used in `defineTable()` schema composition: not a callable brand constructor. Calling `SavedTabId(value)` returns `SavedTabId | ArkErrors`, which isn't directly assignable.
 
 The double-cast `generateId() as string as SavedTabId` appeared in **7 sites across 4 files**. This was later resolved by extending `Id` instead of `string` in the type definition (`Id & Brand<'SavedTabId'>`), eliminating the double-cast entirely.
 
 **Resolution**: A separate spec (`20260312T180000-branded-id-convention.md`) standardizes the three-part branded ID convention:
-1. `type SavedTabId = Id & Brand<'SavedTabId'>` — branded type extending `Id` for single-cast
-2. `const SavedTabId = type('string').as<SavedTabId>()` — arktype validator (zero-cost type cast)
-3. `const generateSavedTabId = (): SavedTabId => generateId() as SavedTabId` — factory with single-cast
+1. `type SavedTabId = Id & Brand<'SavedTabId'>`: branded type extending `Id` for single-cast
+2. `const SavedTabId = type('string').as<SavedTabId>()`: arktype validator (zero-cost type cast)
+3. `const generateSavedTabId = (): SavedTabId => generateId() as SavedTabId`: factory with single-cast
 
 This applies to all branded IDs codebase-wide, not just `SavedTabId`.
 
 
 ### 3. Replace `try/catch` with `tryAsync` in `executeActivateTab`
 
-**tab-actions.ts:68–73**
+**tab-actions.ts:68-73**
 ```typescript
 // Before
 try {
@@ -88,7 +88,7 @@ Direct pattern swap. Matches every other Chrome API call in the file.
 <details>
 <summary>Prompt</summary>
 
-In `apps/tab-manager/src/lib/tab-actions.ts`, replace the `try/catch` block in `executeActivateTab` (lines 68–73) with `tryAsync`. The file already imports `tryAsync` and `Ok` from `wellcrafted/result`. Use:
+In `apps/tab-manager/src/lib/tab-actions.ts`, replace the `try/catch` block in `executeActivateTab` (lines 68-73) with `tryAsync`. The file already imports `tryAsync` and `Ok` from `wellcrafted/result`. Use:
 
 ```typescript
 const { error } = await tryAsync({
@@ -105,7 +105,7 @@ This replaces the `try { ... return { activated: true } } catch { return { activ
 
 ### 4. Replace empty catch block with `tryAsync` in `sortAction`
 
-**quick-actions.ts:175–179**
+**quick-actions.ts:175-179**
 ```typescript
 // Before
 try {
@@ -126,7 +126,7 @@ Eliminates an anti-pattern (empty catch block). Same graceful swallow, consisten
 <details>
 <summary>Prompt</summary>
 
-In `apps/tab-manager/src/lib/quick-actions.ts`, replace the `try/catch` with empty catch block in `sortAction.execute` (lines 175–179) with `tryAsync`. The file already imports `tryAsync` and `Ok` from `wellcrafted/result`. Use:
+In `apps/tab-manager/src/lib/quick-actions.ts`, replace the `try/catch` with empty catch block in `sortAction.execute` (lines 175-179) with `tryAsync`. The file already imports `tryAsync` and `Ok` from `wellcrafted/result`. Use:
 
 ```typescript
 await tryAsync({
@@ -144,7 +144,7 @@ This replaces `try { await browser.tabs.move(...) } catch { // Tab may not exist
 
 Two exported functions have zero error handling on browser APIs that can throw.
 
-**`executeOpenTab` (tab-actions.ts:54–55)**
+**`executeOpenTab` (tab-actions.ts:54-55)**
 ```typescript
 // Before
 const tab = await browser.tabs.create({ url });
@@ -159,14 +159,14 @@ if (error || !tab) return { tabId: String(-1) };
 return { tabId: String(tab.id ?? -1) };
 ```
 
-**`executeGroupTabs` (tab-actions.ts:142–151)** — both `browser.tabs.group()` and `browser.tabGroups.update()` need wrapping. Exact shape TBD during implementation—main point is neither call is protected today.
+**`executeGroupTabs` (tab-actions.ts:142-151)**: both `browser.tabs.group()` and `browser.tabGroups.update()` need wrapping. Exact shape TBD during implementation. Main point is neither call is protected today.
 
 <details>
 <summary>Prompt</summary>
 
 In `apps/tab-manager/src/lib/tab-actions.ts`, wrap the unprotected Chrome API calls in `executeOpenTab` and `executeGroupTabs` with `tryAsync`. The file already imports `tryAsync` and `Ok` from `wellcrafted/result`.
 
-For `executeOpenTab` (lines 54–55), wrap `browser.tabs.create({ url })`:
+For `executeOpenTab` (lines 54-55), wrap `browser.tabs.create({ url })`:
 ```typescript
 const { data: tab, error } = await tryAsync({
     try: () => browser.tabs.create({ url }),
@@ -176,14 +176,14 @@ if (error || !tab) return { tabId: String(-1) };
 return { tabId: String(tab.id ?? -1) };
 ```
 
-For `executeGroupTabs` (lines 142–151), wrap both `browser.tabs.group()` and `browser.tabGroups.update()` with `tryAsync`. Each call should gracefully handle failure — if `tabs.group()` fails, return a fallback `groupId: String(-1)`. If `tabGroups.update()` fails, swallow with `Ok(undefined)` (the group was already created, the title/color just didn't apply).
+For `executeGroupTabs` (lines 142-151), wrap both `browser.tabs.group()` and `browser.tabGroups.update()` with `tryAsync`. Each call should gracefully handle failure. If `tabs.group()` fails, return a fallback `groupId: String(-1)`. If `tabGroups.update()` fails, swallow with `Ok(undefined)` (the group was already created, the title/color just didn't apply).
 
 Run `lsp_diagnostics` after to confirm no type errors.
 </details>
 
 ---
 
-## Tier 2 — Solid improvements, small judgment calls
+## Tier 2: Solid improvements, small judgment calls
 
 ### 6. Fix `tab.url!` non-null assertion in `executeSaveTabs`
 
@@ -194,14 +194,14 @@ The filter checks `!!r.value.url` but TypeScript can't narrow through the `Promi
 - **Option A**: Combine filter + map into a single `.flatMap()` that extracts the url in the same step, eliminating the need for `!`.
 - **Option B**: Leave the `!` with an inline comment explaining why it's safe.
 
-Leaning toward A—it's cleaner and removes the assertion entirely.
+Leaning toward A. It's cleaner and removes the assertion entirely.
 
 <details>
 <summary>Prompt</summary>
 
 In `apps/tab-manager/src/lib/tab-actions.ts`, fix the `tab.url!` non-null assertion on line 105 inside `executeSaveTabs`. The current code filters `PromiseFulfilledResult` entries for truthy `.url` and then maps, but TypeScript can't narrow through that boundary.
 
-Refactor the `results` → `validTabs` pipeline (lines 94–99) to use `.flatMap()` so the URL truthiness check and value extraction happen in the same step, eliminating the need for `!`. The resulting `validTabs` array entries should have `url: string` (not `string | undefined`).
+Refactor the `results` → `validTabs` pipeline (lines 94-99) to use `.flatMap()` so the URL truthiness check and value extraction happen in the same step, eliminating the need for `!`. The resulting `validTabs` array entries should have `url: string` (not `string | undefined`).
 
 Don't change any other logic in the function. Run `lsp_diagnostics` after to confirm no type errors.
 </details>
@@ -225,11 +225,11 @@ In `apps/tab-manager/src/lib/tab-actions.ts`, expand the JSDoc on all exported f
 
 Each function's JSDoc should include:
 - A description of what the function does and when it's called (these are Chrome API execution functions used by `.withActions()` mutation handlers in workspace.ts)
-- Parameter semantics — especially how `deviceId` scopes composite IDs to the local device
-- Error behavior — what happens when Chrome API calls fail (graceful swallow, partial success count, etc.)
+- Parameter semantics: especially how `deviceId` scopes composite IDs to the local device
+- Error behavior: what happens when Chrome API calls fail (graceful swallow, partial success count, etc.)
 - An `@example` block with realistic usage
 
-Don't change any code logic — JSDoc only.
+Don't change any code logic: JSDoc only.
 </details>
 
 ---
@@ -257,7 +257,7 @@ Run `lsp_diagnostics` on both files after to confirm no type errors.
 
 ---
 
-## Tier 3 — More debatable (adds indirection or is a UX decision)
+## Tier 3: More debatable (adds indirection or is a UX decision)
 
 ### 9. Extract duplicated native ID conversion into a shared helper
 
@@ -277,7 +277,7 @@ const nativeIds = tabIds
 
 A helper like `toNativeIds(tabIds, deviceId)` would deduplicate both variants.
 
-**Counterargument**: The pattern is 3 lines, immediately readable, and each call site is self-contained. Extracting adds a layer of indirection for a trivial operation. The duplication is repetitive but not error-prone—there's no logic to drift.
+**Counterargument**: The pattern is 3 lines, immediately readable, and each call site is self-contained. Extracting adds a layer of indirection for a trivial operation. The duplication is repetitive but not error-prone. There's no logic to drift.
 
 Include or skip based on taste.
 
@@ -310,7 +310,7 @@ Run `lsp_diagnostics` on both files after to confirm no type errors.
 
 ### 10. `closeByDomainAction` silently picks the top domain
 
-Current behavior: finds whichever domain has the most open tabs and offers to close those. The comment says `This action needs a domain picker`. This is a UX decision, not a code quality fix—leaving it here for awareness but it's out of scope for a cleanup pass.
+Current behavior: finds whichever domain has the most open tabs and offers to close those. The comment says `This action needs a domain picker`. This is a UX decision, not a code quality fix. Leaving it here for awareness but it's out of scope for a cleanup pass.
 
 ---
 
@@ -335,7 +335,7 @@ All 10 items addressed. 8 committed as individual refactors, 1 skipped (deferred
 
 ### Key Discoveries
 
-1. **TS 5.5+ type predicate inference**—Manual type predicates on `.filter()` are unnecessary noise. TypeScript infers them automatically.
-2. **`SavedTabId` is an arktype validator**, not a simple brand—Calling it returns `SavedTabId | ArkErrors`. A separate spec (`20260312T180000-branded-id-convention.md`) standardizes the three-part pattern: branded type (extending `Id`) + arktype validator + `generate*` factory. The `Id & Brand<'SavedTabId'>` base type eliminates the double-cast.
-3. **`Tab.id` was already `TabCompositeId`**—The casts in quick-actions.ts were caused by helper functions (`findDuplicates`, `getUniqueDomains`) widening return types to `string`. Fixed upstream.
-4. **`toNativeIds()` and `compositeToNativeIds()`**—Extracted to replace 9 total inline occurrences of the map-filter-parse pattern across both files.
+1. **TS 5.5+ type predicate inference**: Manual type predicates on `.filter()` are unnecessary noise. TypeScript infers them automatically.
+2. **`SavedTabId` is an arktype validator**, not a simple brand. Calling it returns `SavedTabId | ArkErrors`. A separate spec (`20260312T180000-branded-id-convention.md`) standardizes the three-part pattern: branded type (extending `Id`) + arktype validator + `generate*` factory. The `Id & Brand<'SavedTabId'>` base type eliminates the double-cast.
+3. **`Tab.id` was already `TabCompositeId`**: The casts in quick-actions.ts were caused by helper functions (`findDuplicates`, `getUniqueDomains`) widening return types to `string`. Fixed upstream.
+4. **`toNativeIds()` and `compositeToNativeIds()`**: Extracted to replace 9 total inline occurrences of the map-filter-parse pattern across both files.

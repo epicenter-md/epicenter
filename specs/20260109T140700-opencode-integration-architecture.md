@@ -6,7 +6,7 @@
 
 ## Executive Summary
 
-This spec explores integrating [OpenCode](https://github.com/sst/opencode) (sst/opencode) as an AI backend for Epicenter apps. OpenCode is a CLI-based AI coding agent with an HTTP server mode, plugin system, and session management—making it suitable as a headless AI backend for GUI applications.
+This spec explores integrating [OpenCode](https://github.com/sst/opencode) (sst/opencode) as an AI backend for Epicenter apps. OpenCode is a CLI-based AI coding agent with an HTTP server mode, plugin system, and session management. Making it suitable as a headless AI backend for GUI applications.
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
@@ -80,7 +80,7 @@ OpenCode is a terminal-based AI coding agent from SST (the serverless framework 
 
 ## Architecture Decision: Full Isolation
 
-For Epicenter, we want **full isolation**—OpenCode runs entirely within the app's data folder, separate from any user's standalone OpenCode installation.
+For Epicenter, we want **full isolation**: OpenCode runs entirely within the app's data folder, separate from any user's standalone OpenCode installation.
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐

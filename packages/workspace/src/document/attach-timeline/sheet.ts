@@ -3,10 +3,10 @@ import * as Y from 'yjs';
 import { generateInitialOrders } from './fractional-index.js';
 
 // Short unique identifier for column/row keys inside a sheet. Scoped to a
-// single sheet's lifetime — not a workspace-wide row id.
+// single sheet's lifetime: not a workspace-wide row id.
 const generateId = customAlphabet('abcdefghijklmnopqrstuvwxyz0123456789', 10);
 
-/** The result of binding a sheet—columns and rows Y.Maps. */
+/** The result of binding a sheet: columns and rows Y.Maps. */
 export type SheetBinding = {
 	columns: Y.Map<Y.Map<string>>;
 	rows: Y.Map<Y.Map<string>>;

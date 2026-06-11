@@ -13,7 +13,7 @@ The provider becomes a pure WebSocket sync machine. The extension orchestrates t
 
 ## Why Load Order Matters
 
-Yjs CRDTs don't care about order — merging is commutative. But load order matters for **efficiency**:
+Yjs CRDTs don't care about order: merging is commutative. But load order matters for **efficiency**:
 
 **IndexedDB loads first, then WebSocket connects:**
 
@@ -35,16 +35,16 @@ Both are correct. But the first path downloads 2KB; the second downloads 500KB. 
 
 Three persistence implementations that don't coordinate:
 
-### 1. Y-Sweet provider's built-in `IndexedDBProvider` — dead code with a race condition
+### 1. Y-Sweet provider's built-in `IndexedDBProvider`: dead code with a race condition
 
 `packages/y-sweet/src/indexeddb.ts`. Custom IndexedDB implementation with compaction, BroadcastChannel cross-tab, and write-conflict retry.
 
-**Never activated** — no call site passes `offlineSupport: true`.
+**Never activated**: no call site passes `offlineSupport: true`.
 
 Even if it were activated, it's broken. The constructor fires off IndexedDB creation in an async IIFE without awaiting it, then immediately calls `connect()`:
 
 ```typescript
-// provider.ts constructor — race condition
+// provider.ts constructor: race condition
 (async () => {
 	this.indexedDBProvider = await createIndexedDBProvider(doc, docId);
 })();
@@ -74,31 +74,31 @@ The echo-loop filter (`origin === this.indexedDBProvider`) is also broken during
 
 ### Provider: pure WebSocket sync
 
-`packages/y-sweet/src/provider.ts` — no persistence knowledge.
+`packages/y-sweet/src/provider.ts`: no persistence knowledge.
 
 Remove from the provider:
 
-- `indexeddb.ts` (190 lines) — delete entirely
+- `indexeddb.ts` (190 lines): delete entirely
 - `offlineSupport` option from `YSweetProviderParams`
 - `indexedDBProvider` field from `YSweetProvider`
 - `origin === this.indexedDBProvider` check in `update()`
 - `indexedDBProvider.destroy()` in `destroy()`
 - `createIndexedDBProvider` import
 
-Keep: `connect: false` option (already supported) — the extension uses this to defer connection until persistence loads.
+Keep: `connect: false` option (already supported): the extension uses this to defer connection until persistence loads.
 
 ### Extension: `ySweetSync` with composable persistence
 
-`packages/epicenter/src/extensions/y-sweet-sync.ts` — orchestrates lifecycle.
+`packages/epicenter/src/extensions/y-sweet-sync.ts`: orchestrates lifecycle.
 
 The extension mirrors the provider's API. Instead of a `mode` discriminant wrapping different config shapes, `auth` is a callback that takes a `docId` and returns a `ClientToken`. A `directAuth` helper handles the common local-dev case.
 
-`persistence` is a function `(ydoc: Y.Doc) => Lifecycle` — any backend that can load state into a ydoc and clean up after itself. Factory functions (`indexeddbPersistence`, `filesystemPersistence`) handle common cases. Custom persistence is just a function.
+`persistence` is a function `(ydoc: Y.Doc) => Lifecycle`: any backend that can load state into a ydoc and clean up after itself. Factory functions (`indexeddbPersistence`, `filesystemPersistence`) handle common cases. Custom persistence is just a function.
 
 ```typescript
 // Consumer API:
 
-// Web — IndexedDB persistence + sync:
+// Web: IndexedDB persistence + sync:
 import { indexeddbPersistence } from '@epicenter/workspace/extensions/persistence/web';
 import { directAuth, ySweetSync } from '@epicenter/workspace/extensions/y-sweet-sync';
 
@@ -109,7 +109,7 @@ createWorkspace(def).withExtensions({
 	}),
 });
 
-// Desktop — filesystem persistence + sync:
+// Desktop: filesystem persistence + sync:
 import { filesystemPersistence } from '@epicenter/workspace/extensions/persistence/desktop';
 
 createWorkspace(def).withExtensions({
@@ -119,7 +119,7 @@ createWorkspace(def).withExtensions({
 	}),
 });
 
-// Authenticated — hosted server:
+// Authenticated: hosted server:
 createWorkspace(def).withExtensions({
 	sync: ySweetSync({
 		auth: (docId) => fetch(`/api/token/${docId}`).then((r) => r.json()),
@@ -134,7 +134,7 @@ createWorkspace(def).withExtensions({
 	}),
 });
 
-// Custom persistence — bring your own:
+// Custom persistence: bring your own:
 createWorkspace(def).withExtensions({
 	sync: ySweetSync({
 		auth: directAuth('http://localhost:8080'),
@@ -153,7 +153,7 @@ return ({ ydoc }) => {
 	const authEndpoint = () => config.auth(ydoc.guid);
 	const hasPersistence = !!config.persistence;
 
-	// 1. Create provider — defer connection if persistence needs to load first
+	// 1. Create provider: defer connection if persistence needs to load first
 	const provider = createYjsProvider(ydoc, ydoc.guid, authEndpoint, {
 		connect: !hasPersistence,
 	});
@@ -181,11 +181,11 @@ return ({ ydoc }) => {
 };
 ```
 
-When `persistence` is not provided, the extension creates the provider with `connect: true` (current behavior — immediate connection, no change).
+When `persistence` is not provided, the extension creates the provider with `connect: true` (current behavior: immediate connection, no change).
 
 ### Persistence as `(ydoc: Y.Doc) => Lifecycle`
 
-Persistence is a function, not a discriminated union. The return type is `Lifecycle` — the same protocol extensions already use:
+Persistence is a function, not a discriminated union. The return type is `Lifecycle`: the same protocol extensions already use:
 
 ```typescript
 type Lifecycle = {
@@ -220,13 +220,13 @@ export function filesystemPersistence(options: { filePath: string }) {
 }
 ```
 
-Custom persistence is just a function — no adapter interface needed. If it returns `Lifecycle`, it works.
+Custom persistence is just a function, no adapter interface needed. If it returns `Lifecycle`, it works.
 
 ### Auth as `(docId: string) => Promise<ClientToken>`
 
 Instead of a `mode` discriminant, auth is a single callback. The extension calls `config.auth(ydoc.guid)` and wraps it for the provider.
 
-`directAuth` is a helper for local dev — it constructs the WebSocket URL from a server URL:
+`directAuth` is a helper for local dev. It constructs the WebSocket URL from a server URL:
 
 ```typescript
 export function directAuth(serverUrl: string) {
@@ -264,11 +264,11 @@ They also export factory functions (`indexeddbPersistence`, `filesystemPersisten
 
 - If the socket isn't open yet → `send()` silently drops them (checks `readyState === OPEN`)
 - If the socket is open → the server already has the state from sync step 1/2 → Yjs deduplicates
-- The sync protocol uses state vectors — the server knows what it has
+- The sync protocol uses state vectors: the server knows what it has
 
 Cost: one redundant message (the persisted state) per page load, only if sync beats persistence. For the combined extension this doesn't happen because persistence loads first (`connect: false`).
 
-If profiling later shows this matters, add a `skipOrigins` option to the provider — one line in `update()`. Don't build it preemptively.
+If profiling later shows this matters, add a `skipOrigins` option to the provider: one line in `update()`. Don't build it preemptively.
 
 ### Compaction
 
@@ -282,7 +282,7 @@ The Yjs API (`Y.mergeUpdates()`, `Y.encodeStateAsUpdate()`) provides the primiti
 
 ### Cross-tab coordination
 
-**Not a persistence concern.** When sync is active, all tabs connect to the same Y-Sweet server — updates propagate naturally. BroadcastChannel adds nothing.
+**Not a persistence concern.** When sync is active, all tabs connect to the same Y-Sweet server: updates propagate naturally. BroadcastChannel adds nothing.
 
 For offline cross-tab (no server), `y-webrtc` with BroadcastChannel transport is the Yjs-ecosystem solution. Don't put cross-tab logic in the persistence layer.
 
@@ -292,7 +292,7 @@ For offline cross-tab (no server), `y-webrtc` with BroadcastChannel transport is
 
 ### Desktop persistence performance
 
-`desktop.ts` currently calls `Y.encodeStateAsUpdate(ydoc)` + `writeFileSync` on every update — full state encode + synchronous disk write per keystroke. For large docs this will become a problem.
+`desktop.ts` currently calls `Y.encodeStateAsUpdate(ydoc)` + `writeFileSync` on every update: full state encode + synchronous disk write per keystroke. For large docs this will become a problem.
 
 **Fix:** Debounce saves in the filesystem backend (e.g. 500ms). The combined extension's filesystem variant should include this.
 

@@ -10,7 +10,7 @@ Replace stringly-typed `setSearchParam(key, value)` with typed `searchParams` si
 
 | | Old (`setSearchParam`) | New (`searchParams.update()`) |
 |---|---|---|
-| **Typing** | `key: string` — typos compile | `Partial<SearchParams>` — typos are type errors |
+| **Typing** | `key: string`: typos compile | `Partial<SearchParams>`: typos are type errors |
 | **Batching** | 3 separate `goto()` calls for `selectFolder` | 1 `goto()` via object literal |
 | **URL construction** | Manual string: `` `${pathname}${search ? '?' + search : ''}` `` | `new URL(page.url)` clone + `goto(url)` |
 | **Default elision** | Caller decides per call site | Centralized in `DEFAULTS` record |
@@ -36,7 +36,7 @@ SvelteKit's `replaceState(url, state)` from `$app/navigation` is for shallow rou
 
 ### Why no shared package
 
-Each app has 2–5 params with different schemas. A generic `createSearchParams<T>()` factory adds a layer of abstraction over 40 lines of app-specific code. Not worth it.
+Each app has 2-5 params with different schemas. A generic `createSearchParams<T>()` factory adds a layer of abstraction over 40 lines of app-specific code. Not worth it.
 
 ### What shadcn-svelte does
 
@@ -52,7 +52,7 @@ import { goto } from '$app/navigation';
 import { page } from '$app/state';
 
 type SearchParams = { /* app-specific schema */ };
-const DEFAULTS: SearchParams = { /* default values — elided from URL */ };
+const DEFAULTS: SearchParams = { /* default values: elided from URL */ };
 
 function createSearchParams() {
   function update(changes: Partial<SearchParams>) {
@@ -93,11 +93,11 @@ export const searchParams = createSearchParams();
 
 ### Files changed
 
-- [x] **`search-params.svelte.ts`** — New typed singleton with `SearchParams` type, `DEFAULTS`, batch `update()`, reactive getters.
-- [x] **`state/view.svelte.ts`** — Reads from `searchParams.*` getters. State transitions use `searchParams.update({ ... })` for atomic multi-param changes. Removed `page` import and all `setSearchParam` calls.
-- [x] **`state/notes.svelte.ts`** — Replaced `page.url.searchParams.get('note')` + `setSearchParam('note', null)` with `searchParams.note` and `searchParams.update({ note: null })`.
-- [x] **`state/folders.svelte.ts`** — Replaced `page.url.searchParams.get('folder')` + two `setSearchParam` calls with `searchParams.folder === folderId` + `searchParams.update({ folder: null, note: null })`.
-- [x] **`search-params.ts`** — Deleted (replaced by `.svelte.ts` version).
+- [x] **`search-params.svelte.ts`**: New typed singleton with `SearchParams` type, `DEFAULTS`, batch `update()`, reactive getters.
+- [x] **`state/view.svelte.ts`**: Reads from `searchParams.*` getters. State transitions use `searchParams.update({ ... })` for atomic multi-param changes. Removed `page` import and all `setSearchParam` calls.
+- [x] **`state/notes.svelte.ts`**: Replaced `page.url.searchParams.get('note')` + `setSearchParam('note', null)` with `searchParams.note` and `searchParams.update({ note: null })`.
+- [x] **`state/folders.svelte.ts`**: Replaced `page.url.searchParams.get('folder')` + two `setSearchParam` calls with `searchParams.folder === folderId` + `searchParams.update({ folder: null, note: null })`.
+- [x] **`search-params.ts`**: Deleted (replaced by `.svelte.ts` version).
 
 ---
 
@@ -112,17 +112,17 @@ export const searchParams = createSearchParams();
 
 ### Files changed
 
-- [x] **`search-params.svelte.ts`** — New typed singleton.
-- [x] **`state/fs-state.svelte.ts`** — Replaced `setSearchParam('file', ...)` with `searchParams.update({ file: ... })`. Replaced `page.url.searchParams.get('file')` reads with `searchParams.file`. Updated `selectedNode`, `selectedPath` derived state, and `startCreate` to use `searchParams.file`.
-- [x] **`chat/chat-state.svelte.ts`** — Replaced all `setSearchParam('chat', ...)` with `searchParams.update({ chat: ... })`. `activeConversationId` now derives from `searchParams.chat` instead of `page.url.searchParams.get('chat')`.
-- [x] **`search-params.ts`** — Deleted (replaced by `.svelte.ts` version).
+- [x] **`search-params.svelte.ts`**: New typed singleton.
+- [x] **`state/fs-state.svelte.ts`**: Replaced `setSearchParam('file', ...)` with `searchParams.update({ file: ... })`. Replaced `page.url.searchParams.get('file')` reads with `searchParams.file`. Updated `selectedNode`, `selectedPath` derived state, and `startCreate` to use `searchParams.file`.
+- [x] **`chat/chat-state.svelte.ts`**: Replaced all `setSearchParam('chat', ...)` with `searchParams.update({ chat: ... })`. `activeConversationId` now derives from `searchParams.chat` instead of `page.url.searchParams.get('chat')`.
+- [x] **`search-params.ts`**: Deleted (replaced by `.svelte.ts` version).
 
 **NOT moved** (same evaluation as before):
-- `search-state.svelte.ts` — ephemeral command palette search
-- `sidebar-search-state.svelte.ts` — persisted via `createPersistedState`
-- `editor-state.svelte.ts` — layout/runtime state
-- `terminal-state.svelte.ts` — not linkable
-- `skill-state.svelte.ts` — runtime skill loader
+- `search-state.svelte.ts`: ephemeral command palette search
+- `sidebar-search-state.svelte.ts`: persisted via `createPersistedState`
+- `editor-state.svelte.ts`: layout/runtime state
+- `terminal-state.svelte.ts`: not linkable
+- `skill-state.svelte.ts`: runtime skill loader
 
 ---
 
@@ -138,21 +138,21 @@ export const searchParams = createSearchParams();
 
 ### Files changed
 
-- [x] **`view-state.svelte.ts`** — Replaced inline `setSearchParam()` with a local typed `update()` function. No separate file needed—Fuji's URL state is only consumed by this module.
+- [x] **`view-state.svelte.ts`**: Replaced inline `setSearchParam()` with a local typed `update()` function. No separate file needed. Fuji's URL state is only consumed by this module.
 
 ---
 
 ## Risks and edge cases
 
-1. **`goto()` is async** — URL update is near-instant with `replaceState: true` and no server load. Code that writes then immediately reads should use the value it just set from local scope, not re-read from `page.url.searchParams`.
+1. **`goto()` is async**: URL update is near-instant with `replaceState: true` and no server load. Code that writes then immediately reads should use the value it just set from local scope, not re-read from `page.url.searchParams`.
 
-2. **Circular deps** — `searchParams` is a leaf dependency. `view.svelte.ts` and `notes.svelte.ts`/`folders.svelte.ts` both import it without cycles.
+2. **Circular deps**: `searchParams` is a leaf dependency. `view.svelte.ts` and `notes.svelte.ts`/`folders.svelte.ts` both import it without cycles.
 
-3. **Workspace action context** — `defineMutation` handlers run outside Svelte context. Selection clearing stays in the Svelte layer (`foldersState.deleteFolder()`), not in the mutation handler.
+3. **Workspace action context**: `defineMutation` handlers run outside Svelte context. Selection clearing stays in the Svelte layer (`foldersState.deleteFolder()`), not in the mutation handler.
 
-4. **Initial load** — `?note=abc123` is immediately available via `page.url.searchParams`. Workspace data may not be ready yet, but components already guard on `workspace.whenReady`.
+4. **Initial load**: `?note=abc123` is immediately available via `page.url.searchParams`. Workspace data may not be ready yet, but components already guard on `workspace.whenReady`.
 
-5. **Chat reconciliation** — `reconcileHandles()` runs synchronously from observers. `searchParams.update()` calls `goto()` which may schedule a microtask. Handle lookup immediately after setting the param uses the ID value directly rather than re-reading from URL.
+5. **Chat reconciliation**: `reconcileHandles()` runs synchronously from observers. `searchParams.update()` calls `goto()` which may schedule a microtask. Handle lookup immediately after setting the param uses the ID value directly rather than re-reading from URL.
 
 ---
 

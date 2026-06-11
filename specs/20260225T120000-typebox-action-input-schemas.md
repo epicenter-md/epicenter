@@ -5,14 +5,14 @@
 
 ## Summary
 
-Switch action input schemas (`defineQuery`, `defineMutation`) from `CombinedStandardSchema` (arktype) to TypeBox `TSchema`. Document schemas (`defineTable`, `defineKv`) remain arktype via `CombinedStandardSchema`. Clean break — no backwards compatibility layer.
+Switch action input schemas (`defineQuery`, `defineMutation`) from `CombinedStandardSchema` (arktype) to TypeBox `TSchema`. Document schemas (`defineTable`, `defineKv`) remain arktype via `CombinedStandardSchema`. Clean break, no backwards compatibility layer.
 
 ## Why
 
 Action inputs flow to three consumers that all want JSON Schema:
-1. **AI tools** (TanStack AI `toolDefinition`) — needs `JSONSchema` objects
-2. **CLI** (yargs) — needs JSON Schema to generate flags
-3. **Server** (Elysia) — validates input, introspects schema
+1. **AI tools** (TanStack AI `toolDefinition`): needs `JSONSchema` objects
+2. **CLI** (yargs): needs JSON Schema to generate flags
+3. **Server** (Elysia): validates input, introspects schema
 
 Today, arktype schemas go through `standardSchemaToJsonSchema()` which:
 - Has lossy conversion (12 fallback codes in `arktype-fallback.ts`)
@@ -34,15 +34,15 @@ Type.String({
 })
 ```
 
-This metadata is impossible to attach in arktype (only `.describe()` and `.configure()` exist). The `x-ui` convention shape is deferred — we'll define it when we build the form renderer.
+This metadata is impossible to attach in arktype (only `.describe()` and `.configure()` exist). The `x-ui` convention shape is deferred. We'll define it when we build the form renderer.
 
 ## Decisions
 
 | Question | Answer |
 |----------|--------|
-| TypeBox version | **1.x** — package name is `typebox` (not `@sinclair/typebox` which is 0.34.x legacy) |
-| Backwards compatibility | **Clean break** — no `CombinedStandardSchema` bridge for actions |
-| UI annotation shape | **Deferred** — define when building the form renderer |
+| TypeBox version | **1.x**: package name is `typebox` (not `@sinclair/typebox` which is 0.34.x legacy) |
+| Backwards compatibility | **Clean break**: no `CombinedStandardSchema` bridge for actions |
+| UI annotation shape | **Deferred**: define when building the form renderer |
 
 ## TypeBox 1.x imports
 
@@ -138,37 +138,37 @@ if (action.input) {
 
 ## Files to change
 
-### Tier 1 — Core type system
+### Tier 1: Core type system
 
 | File | Change |
 |------|--------|
 | `packages/epicenter/src/shared/actions.ts` | Replace `CombinedStandardSchema` with `TSchema` from `typebox` in all action types (`ActionConfig`, `ActionHandler`, `ActionMeta`, `Action`, `Query`, `Mutation`). Replace `StandardSchemaV1.InferOutput<TInput>` with `Type.Static<TInput>`. Remove `@standard-schema/spec` import. |
 | `packages/epicenter/src/index.ts` | Update exports if needed |
 
-### Tier 2 — Adapters
+### Tier 2: Adapters
 
 | File | Change |
 |------|--------|
-| `packages/ai/src/derive-tools.ts` | Remove `standardSchemaToJsonSchema` import. In `actionToToolDefinition`, pass `action.input` directly as `inputSchema` — it's already JSON Schema. In `toNormalizedJsonSchema`, accept `TSchema` instead of `StandardJSONSchemaV1`. The function just strips `$schema` and ensures `properties`/`required` exist, so it stays simple. |
+| `packages/ai/src/derive-tools.ts` | Remove `standardSchemaToJsonSchema` import. In `actionToToolDefinition`, pass `action.input` directly as `inputSchema`: it's already JSON Schema. In `toNormalizedJsonSchema`, accept `TSchema` instead of `StandardJSONSchemaV1`. The function just strips `$schema` and ensures `properties`/`required` exist, so it stays simple. |
 | `packages/server/src/workspace/actions.ts` | Replace `action.input['~standard'].validate()` with `Value.Check()` from `typebox/value`. Use `Value.Errors()` for error details. |
-| `packages/cli/src/command-builder.ts` | Replace `standardSchemaToJsonSchema(action.input)` with direct pass-through — `action.input` IS JSON Schema. Replace `action.input['~standard'].validate()` with `Value.Check()`. |
+| `packages/cli/src/command-builder.ts` | Replace `standardSchemaToJsonSchema(action.input)` with direct pass-through: `action.input` IS JSON Schema. Replace `action.input['~standard'].validate()` with `Value.Check()`. |
 
-### Tier 3 — Introspection
+### Tier 3: Introspection
 
 | File | Change |
 |------|--------|
-| `packages/epicenter/src/workspace/describe-workspace.ts` | For actions, skip `standardSchemaToJsonSchema()` — pass `action.input` directly as the `input` field of the action descriptor. |
+| `packages/epicenter/src/workspace/describe-workspace.ts` | For actions, skip `standardSchemaToJsonSchema()`: pass `action.input` directly as the `input` field of the action descriptor. |
 
-### Tier 4 — Tests
+### Tier 4: Tests
 
 | File | Change |
 |------|--------|
 | `packages/server/src/workspace/actions.test.ts` | Replace `type({ title: 'string' })` with `Type.Object({ title: Type.String() })` |
-| `packages/cli/src/command-builder.test.ts` | Same — arktype → TypeBox for action input schemas |
-| `packages/cli/src/json-schema-to-yargs.test.ts` | Probably no change — tests JSON Schema objects directly |
+| `packages/cli/src/command-builder.test.ts` | Same: arktype → TypeBox for action input schemas |
+| `packages/cli/src/json-schema-to-yargs.test.ts` | Probably no change: tests JSON Schema objects directly |
 | `packages/epicenter/src/workspace/describe-workspace.test.ts` | Change action input schemas from arktype to TypeBox |
 
-### Tier 5 — No change needed
+### Tier 5: No change needed
 
 | File | Why |
 |------|-----|
@@ -183,7 +183,7 @@ if (action.input) {
 | `packages/epicenter/src/shared/standard-schema/types.ts` | Still needed for `defineTable`/`defineKv` |
 | `packages/cli/src/json-schema-to-yargs.ts` | Already takes JSON Schema input |
 
-### Tier 6 — Tab manager (already manual)
+### Tier 6: Tab manager (already manual)
 
 | File | Change |
 |------|--------|
@@ -193,9 +193,9 @@ if (action.input) {
 
 1. **Install `typebox`** (1.x) as a dependency in `packages/epicenter` and `packages/server` and `packages/cli` and `packages/ai`
 2. **Change core types** in `packages/epicenter/src/shared/actions.ts`
-3. **Update adapters** (AI, server, CLI) — these will have type errors after step 2
+3. **Update adapters** (AI, server, CLI): these will have type errors after step 2
 4. **Update introspection** in `describe-workspace.ts`
-5. **Update tests** — change arktype `type()` calls to TypeBox `Type.Object()` calls
+5. **Update tests**: change arktype `type()` calls to TypeBox `Type.Object()` calls
 6. **Verify** with `bun run typecheck` and `bun test`
 
 ## Example: Before and after
@@ -242,9 +242,9 @@ Read the specification at `specs/20260225T120000-typebox-action-input-schemas.md
 
 ### What you're doing
 
-Action input schemas in Epicenter currently use arktype (via `CombinedStandardSchema`). Switch them to TypeBox 1.x (`TSchema` from `typebox`) because TypeBox schemas ARE JSON Schema objects — no conversion needed, and they support arbitrary per-field metadata for UI annotations.
+Action input schemas in Epicenter currently use arktype (via `CombinedStandardSchema`). Switch them to TypeBox 1.x (`TSchema` from `typebox`) because TypeBox schemas ARE JSON Schema objects, no conversion needed, and they support arbitrary per-field metadata for UI annotations.
 
-Document schemas (`defineTable`, `defineKv`) stay on arktype. Only action schemas change. This is a clean break — no backwards compatibility layer.
+Document schemas (`defineTable`, `defineKv`) stay on arktype. Only action schemas change. This is a clean break, no backwards compatibility layer.
 
 ### TypeBox 1.x imports
 
@@ -264,26 +264,26 @@ Value.Errors(schema, data)   // iterator of errors
 
 ### Key files to modify (in order)
 
-1. **Install `typebox` 1.x** — `bun add typebox` in each package that needs it (`packages/epicenter`, `packages/server`, `packages/cli`, `packages/ai`). Use the workspace catalog if this monorepo has one.
+1. **Install `typebox` 1.x**: `bun add typebox` in each package that needs it (`packages/epicenter`, `packages/server`, `packages/cli`, `packages/ai`). Use the workspace catalog if this monorepo has one.
 
-2. **`packages/epicenter/src/shared/actions.ts`** — Replace `CombinedStandardSchema` with `TSchema` from `typebox` in all action types. Replace `StandardSchemaV1.InferOutput<TInput>` with `Type.Static<TInput>` for handler input inference. Remove `@standard-schema/spec` import from this file.
+2. **`packages/epicenter/src/shared/actions.ts`**: Replace `CombinedStandardSchema` with `TSchema` from `typebox` in all action types. Replace `StandardSchemaV1.InferOutput<TInput>` with `Type.Static<TInput>` for handler input inference. Remove `@standard-schema/spec` import from this file.
 
-3. **`packages/ai/src/derive-tools.ts`** — Remove `standardSchemaToJsonSchema` usage for actions. Pass `action.input` directly as `inputSchema` since TypeBox schemas are already JSON Schema. Update `toNormalizedJsonSchema` to accept the TypeBox schema directly instead of `StandardJSONSchemaV1`.
+3. **`packages/ai/src/derive-tools.ts`**: Remove `standardSchemaToJsonSchema` usage for actions. Pass `action.input` directly as `inputSchema` since TypeBox schemas are already JSON Schema. Update `toNormalizedJsonSchema` to accept the TypeBox schema directly instead of `StandardJSONSchemaV1`.
 
-4. **`packages/server/src/workspace/actions.ts`** — Replace `action.input['~standard'].validate()` with TypeBox's `Value.Check()` from `typebox/value`. Use `Value.Errors()` for error details.
+4. **`packages/server/src/workspace/actions.ts`**: Replace `action.input['~standard'].validate()` with TypeBox's `Value.Check()` from `typebox/value`. Use `Value.Errors()` for error details.
 
-5. **`packages/cli/src/command-builder.ts`** — Replace `standardSchemaToJsonSchema(action.input)` with direct pass-through. Replace `action.input['~standard'].validate()` with `Value.Check()`.
+5. **`packages/cli/src/command-builder.ts`**: Replace `standardSchemaToJsonSchema(action.input)` with direct pass-through. Replace `action.input['~standard'].validate()` with `Value.Check()`.
 
-6. **`packages/epicenter/src/workspace/describe-workspace.ts`** — For actions, pass `action.input` directly instead of converting through `standardSchemaToJsonSchema()`.
+6. **`packages/epicenter/src/workspace/describe-workspace.ts`**: For actions, pass `action.input` directly instead of converting through `standardSchemaToJsonSchema()`.
 
 7. **Update all test files** that define actions with input schemas: change `type({ title: 'string' })` to `Type.Object({ title: Type.String() })`.
 
 ### Important constraints
 
-- Do NOT touch document schemas (`defineTable`, `defineKv`) — they stay on arktype
-- Do NOT remove the standard-schema infrastructure (`to-json-schema.ts`, `arktype-fallback.ts`, `types.ts`) — still needed for document schema conversion in `describeWorkspace`
+- Do NOT touch document schemas (`defineTable`, `defineKv`): they stay on arktype
+- Do NOT remove the standard-schema infrastructure (`to-json-schema.ts`, `arktype-fallback.ts`, `types.ts`): still needed for document schema conversion in `describeWorkspace`
 - Use `typebox` 1.x (NOT `@sinclair/typebox` which is legacy 0.34.x)
 - Run `bun run typecheck` and `bun test` to verify after changes
 - Keep the `packages/epicenter/src/index.ts` exports clean
-- This is a clean break — no `CombinedStandardSchema` compatibility for actions
+- This is a clean break: no `CombinedStandardSchema` compatibility for actions
 ```

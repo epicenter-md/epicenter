@@ -54,7 +54,7 @@ This creates problems:
 └──────────────────────────────────────────────────────┘
 ```
 
-Content matches show an FTS5 snippet with `<mark>` highlighted terms. Name matches show path only. Both are sorted—name matches first (exact intent), then content matches (ranked by FTS5 relevance).
+Content matches show an FTS5 snippet with `<mark>` highlighted terms. Name matches show path only. Both are sorted. Name matches first (exact intent), then content matches (ranked by FTS5 relevance).
 
 ## Research Findings
 
@@ -64,7 +64,7 @@ Tab-manager has toggles for **Match Case**, **Use Regex**, **Match Whole Word**,
 
 **Key finding**: The regex and whole-word toggles don't translate to FTS5. FTS5 uses its own query syntax (MATCH expressions, prefix queries with `*`, phrase queries with `"..."`, boolean AND/OR/NOT). Case sensitivity isn't configurable in FTS5. Whole-word is the FTS5 default (it tokenizes on word boundaries).
 
-**Implication**: Don't port tab-manager's toggles directly. The only meaningful toggle for opensidian is the **search scope**—what fields to search against.
+**Implication**: Don't port tab-manager's toggles directly. The only meaningful toggle for opensidian is the **search scope**: what fields to search against.
 
 ### Existing sqliteIndex.search()
 
@@ -92,7 +92,7 @@ This searches both `name` and `content` columns simultaneously (FTS5 matches acr
 
 ### CommandPalette component
 
-`CommandPalette` from `@epicenter/ui` accepts `items: CommandPaletteItem[]` and uses bits-ui's `Command` primitive for filtering. It supports `shouldFilter={false}` to disable built-in filtering—this is how we'll take over with FTS5.
+`CommandPalette` from `@epicenter/ui` accepts `items: CommandPaletteItem[]` and uses bits-ui's `Command` primitive for filtering. It supports `shouldFilter={false}` to disable built-in filtering. This is how we'll take over with FTS5.
 
 `CommandPaletteItem` already has `description` (for path), `icon` (for file type icon), and `keywords` (for extra search tokens). It doesn't currently have a `snippet` field for HTML content.
 
@@ -101,11 +101,11 @@ This searches both `name` and `content` columns simultaneously (FTS5 matches acr
 | Decision | Choice | Rationale |
 |---|---|---|
 | Search scope toggle | Three radio buttons: Names / Content / Both | Only meaningful search dimension. Regex/case/whole-word don't apply to FTS5. |
-| Default scope | "Both" | Most useful default—user doesn't need to know where the text lives. |
+| Default scope | "Both" | Most useful default. User doesn't need to know where the text lives. |
 | Name-only search | Keep using `walkTree` + in-memory filter | Instant, no async, no SQLite dependency. FTS5 tokenization isn't ideal for filename matching (splits on dots, hyphens). |
 | Content-only search | `sqliteIndex.search()` with `content:` prefix | FTS5 column filter restricts to content only. |
 | Both search | Merge name matches + FTS content matches | Name matches first (exact intent), then FTS content matches (ranked). Dedupe by file ID. |
-| Debounce | 150ms for content/both modes, none for name mode | Content search hits SQLite—debounce prevents thrashing. Name search is instant. |
+| Debounce | 150ms for content/both modes, none for name mode | Content search hits SQLite. Debounce prevents thrashing. Name search is instant. |
 | Snippet display | Extend `CommandPaletteItem` with optional `snippet` field | Render below description as muted HTML. |
 | shouldFilter | `false` when scope is Content or Both | We manage filtering ourselves. `true` for Names mode (bits-ui handles it). |
 | Result limit | 50 for FTS, unlimited for names (bits-ui truncates visually) | FTS5 LIMIT 50 matches the existing search. Names are cheap to render. |
@@ -141,7 +141,7 @@ This searches both `name` and `content` columns simultaneously (FTS5 matches acr
 ```
 apps/opensidian/src/lib/components/AppShell.svelte
   └── CommandPalette  (from @epicenter/ui)
-        ├── Scope toggle (new — 3 radio buttons above input)
+        ├── Scope toggle (new: 3 radio buttons above input)
         ├── Command.Input  (existing)
         └── Command.List
               ├── Name matches group (file icon + name + path)
@@ -152,7 +152,7 @@ apps/opensidian/src/lib/components/AppShell.svelte
 
 | File | Change |
 |---|---|
-| `apps/opensidian/src/lib/state/search-state.svelte.ts` | **NEW** — search scope preference, debounced FTS query, merged results |
+| `apps/opensidian/src/lib/state/search-state.svelte.ts` | **NEW**: search scope preference, debounced FTS query, merged results |
 | `apps/opensidian/src/lib/components/AppShell.svelte` | Wire new search state, pass scope toggle, use `shouldFilter={false}` for content/both |
 | `packages/ui/src/command-palette/command-palette.svelte` | Add optional `snippet` rendering + slot/prop for header content (scope toggle) |
 | `packages/ui/src/command-palette/index.ts` | Extend `CommandPaletteItem` with optional `snippet: string` |
@@ -162,15 +162,15 @@ apps/opensidian/src/lib/components/AppShell.svelte
 ### Phase 1: Extend CommandPalette to support snippets and header content
 
 - [x] **1.1** Add optional `snippet?: string` to `CommandPaletteItem` type
-- [x] **1.2** Render snippet below description in `command-palette.svelte` — use `{@html snippet}` since FTS5 returns `<mark>` tags. Sanitize with a simple allowlist (only `<mark>` and text).
-- [x] **1.3** Add `headerContent` snippet prop to `CommandPalette` — rendered between the title area and the input. This is where the scope toggle goes.
+- [x] **1.2** Render snippet below description in `command-palette.svelte`: use `{@html snippet}` since FTS5 returns `<mark>` tags. Sanitize with a simple allowlist (only `<mark>` and text).
+- [x] **1.3** Add `headerContent` snippet prop to `CommandPalette`: rendered between the title area and the input. This is where the scope toggle goes.
 
 ### Phase 2: Create search state for opensidian
 
 - [x] **2.1** Create `apps/opensidian/src/lib/state/search-state.svelte.ts` with:
-  - `searchScope: 'names' | 'content' | 'both'` — persisted to localStorage via `createPersistedState`
-  - `searchQuery: string` — bound to palette input
-  - `searchResults: CommandPaletteItem[]` — derived from scope + query
+  - `searchScope: 'names' | 'content' | 'both'`: persisted to localStorage via `createPersistedState`
+  - `searchQuery: string`: bound to palette input
+  - `searchResults: CommandPaletteItem[]`: derived from scope + query
 - [x] **2.2** Implement name search: filter `fsState.walkTree()` results by substring match on file name. No debounce.
 - [x] **2.3** Implement content search: call `workspace.extensions.sqliteIndex.search(query)` with 150ms debounce. Map `SearchResult` → `CommandPaletteItem` with snippet.
 - [x] **2.4** Implement "both" search: run name search (instant) + content search (debounced) in parallel. Merge results: name matches first, then content matches. Deduplicate by file ID (name match wins if both return same file).
@@ -185,7 +185,7 @@ apps/opensidian/src/lib/components/AppShell.svelte
 
 ### Phase 4: Polish
 
-- [ ] **4.1** ~~Keyboard shortcut to cycle scope~~ — Removed. Cmd+Shift+F conflicts with standard "Find in Files" convention. The segmented control is more discoverable.
+- [ ] **4.1** ~~Keyboard shortcut to cycle scope~~: Removed. Cmd+Shift+F conflicts with standard "Find in Files" convention. The segmented control is more discoverable.
   > **Note**: Scope toggle UI was upgraded from custom buttons to shadcn-svelte `ToggleGroup` component.
 - [x] **4.2** Empty state messages per scope ("No files found." / "No content matches." / "No results.")
 - [x] **4.3** Loading indicator for content search ("Searching…" text shown during debounce + FTS query)
@@ -196,7 +196,7 @@ apps/opensidian/src/lib/components/AppShell.svelte
 
 1. User types `local-first` (hyphen = NOT operator in FTS5)
 2. `sqliteIndex.search()` catches the error and returns `[]`
-3. The palette shows "No content matches" — no crash
+3. The palette shows "No content matches": no crash
 
 ### Large vaults (10,000+ files)
 
@@ -214,13 +214,13 @@ apps/opensidian/src/lib/components/AppShell.svelte
 
 1. Folders have `content = null` in the index
 2. FTS still indexes folder names (inserted with `content ?? ''`)
-3. Folder results will have no snippet — show path only
+3. Folder results will have no snippet: show path only
 
 ## Open Questions
 
 1. **Should the scope toggle be radio buttons or a segmented control?**
    - Options: (a) Radio buttons, (b) Segmented control (like a button group), (c) Dropdown
-   - **Recommendation**: Segmented control — more compact, visually distinct states, fits the palette width
+   - **Recommendation**: Segmented control: more compact, visually distinct states, fits the palette width
 
 2. **Should content search debounce on the first character or require a minimum length?**
    - Options: (a) Debounce from first char, (b) Require 2+ chars for content, (c) Require 3+ chars
@@ -241,13 +241,13 @@ apps/opensidian/src/lib/components/AppShell.svelte
 
 ## References
 
-- `apps/opensidian/src/lib/components/AppShell.svelte` — current palette wiring
-- `apps/opensidian/src/lib/state/fs-state.svelte.ts` — walkTree and getPath
-- `packages/filesystem/src/extensions/sqlite-index/index.ts` — existing FTS5 search
-- `packages/ui/src/command-palette/command-palette.svelte` — palette component
-- `packages/ui/src/command-palette/index.ts` — CommandPaletteItem type
-- `apps/tab-manager/src/lib/state/search-preferences.svelte.ts` — localStorage persistence pattern for search toggles
-- `apps/tab-manager/src/lib/state/unified-view-state.svelte.ts` — search filter implementation reference
+- `apps/opensidian/src/lib/components/AppShell.svelte`: current palette wiring
+- `apps/opensidian/src/lib/state/fs-state.svelte.ts`: walkTree and getPath
+- `packages/filesystem/src/extensions/sqlite-index/index.ts`: existing FTS5 search
+- `packages/ui/src/command-palette/command-palette.svelte`: palette component
+- `packages/ui/src/command-palette/index.ts`: CommandPaletteItem type
+- `apps/tab-manager/src/lib/state/search-preferences.svelte.ts`: localStorage persistence pattern for search toggles
+- `apps/tab-manager/src/lib/state/unified-view-state.svelte.ts`: search filter implementation reference
 
 ## Review
 
@@ -260,12 +260,12 @@ Implemented FTS5-powered content search in opensidian's command palette with a t
 
 ### Deviations from Spec
 
-- **Segmented control instead of radio buttons** — per Open Question #1 resolution, used styled button group instead of radio inputs.
-- **`allFileItems` retained for names mode** — bits-ui's built-in filter needs the full item list to filter from, so we kept a walkTree-based derivation that only runs in names mode. The spec implied replacing `allFiles` entirely, but this was necessary for the `shouldFilter=true` path.
-- **"Searching…" text instead of spinner** — used plain text indicator for the loading state rather than importing the Spinner component. Keeps the palette lightweight.
+- **Segmented control instead of radio buttons**: per Open Question #1 resolution, used styled button group instead of radio inputs.
+- **`allFileItems` retained for names mode**: bits-ui's built-in filter needs the full item list to filter from, so we kept a walkTree-based derivation that only runs in names mode. The spec implied replacing `allFiles` entirely, but this was necessary for the `shouldFilter=true` path.
+- **"Searching…" text instead of spinner**: used plain text indicator for the loading state rather than importing the Spinner component. Keeps the palette lightweight.
 
 ### Follow-up Work
 
 - Consider caching the file list for names mode (invalidate on observer callback) for large vaults with 10,000+ files.
-- The FTS5 column filter syntax (`content:query`) doesn't support phrases — may need query escaping for complex searches.
+- The FTS5 column filter syntax (`content:query`) doesn't support phrases: may need query escaping for complex searches.
 - Could add a visual indicator showing which result came from name vs content match in "Both" mode.

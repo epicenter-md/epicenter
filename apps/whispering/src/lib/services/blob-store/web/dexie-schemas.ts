@@ -28,7 +28,7 @@ export type SerializedAudio = {
  * IndexedDB only stores the audio blob alongside the recording ID.
  *
  * Legacy rows may still carry metadata fields from older schema versions.
- * These are ignored on read—only `id` and `serializedAudio` are used.
+ * These are ignored on read. Only `id` and `serializedAudio` are used.
  */
 export type AudioStoredInIndexedDB = {
 	id: string;

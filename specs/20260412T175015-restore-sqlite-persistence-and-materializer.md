@@ -6,7 +6,7 @@
 
 ## Overview
 
-Restore the SQLite persistence extension and SQLite materializer that were deleted in `7c0962a`. Rebuild the materializer using the same builder pattern as the markdown materializer—opt-in per table, pluggable serializers, clean file separation—instead of restoring the old monolith.
+Restore the SQLite persistence extension and SQLite materializer that were deleted in `7c0962a`. Rebuild the materializer using the same builder pattern as the markdown materializer. Opt-in per table, pluggable serializers, clean file separation. Instead of restoring the old monolith.
 
 ## Motivation
 
@@ -17,8 +17,8 @@ The workspace README still documents `filesystemPersistence` and `@epicenter/wor
 | Environment | Persistence | Status |
 |---|---|---|
 | Browser | IndexedDB (`y-indexeddb`) | ✅ Works |
-| Tauri desktop | — | ❌ Nothing |
-| Server / CLI | — | ❌ Nothing |
+| Tauri desktop |: | ❌ Nothing |
+| Server / CLI |: | ❌ Nothing |
 
 The only remaining materializer is markdown (writes `.md` files). There's no way to get fast SQL reads or FTS5 search over workspace data.
 
@@ -72,12 +72,12 @@ The deleted `filesystemPersistence` was already well-structured:
 - Standard extension contract: `{ whenReady, clearLocalData, dispose }`
 - Uses `bun:sqlite` directly (fine for Tauri/Bun environments)
 
-**Implication**: Restore mostly as-is. The architecture was sound—it was deleted only because nothing was consuming it.
+**Implication**: Restore mostly as-is. The architecture was sound. It was deleted only because nothing was consuming it.
 
 ### Deleted SQLite Mirror (557 lines, monolithic)
 
 The old `createSqliteMirror` mixed everything into one file:
-- DDL generation, FTS setup, row sync, search, lifecycle—all in `create-sqlite-mirror.ts`
+- DDL generation, FTS setup, row sync, search, lifecycle. All in `create-sqlite-mirror.ts`
 - Used an async `MirrorDatabase` interface (Turso-compatible)
 - `tables: 'all' | string[]` instead of per-table builder
 
@@ -125,12 +125,12 @@ The old `createSqliteMirror` mixed everything into one file:
 
 ```
 extensions/materializer/sqlite/
-├── index.ts           — barrel exports
-├── sqlite.ts          — createSqliteMaterializer() builder + lifecycle
-├── ddl.ts             — generateDdl(), resolveSchema(), quoteIdentifier()
-├── fts.ts             — FTS5 virtual table setup, triggers, search()
-├── serialize.ts       — serializeValue() row→SQL value mapping
-└── types.ts           — MirrorDatabase, MirrorStatement, config types
+├── index.ts          : barrel exports
+├── sqlite.ts         : createSqliteMaterializer() builder + lifecycle
+├── ddl.ts            : generateDdl(), resolveSchema(), quoteIdentifier()
+├── fts.ts            : FTS5 virtual table setup, triggers, search()
+├── serialize.ts      : serializeValue() row→SQL value mapping
+└── types.ts          : MirrorDatabase, MirrorStatement, config types
 ```
 
 ### Builder API Shape
@@ -195,25 +195,25 @@ extensions/materializer/sqlite/
 - [x] **1.2** Re-add `"./extensions/persistence/sqlite"` subpath export to `packages/workspace/package.json`
 - [x] **1.3** Run existing tests to verify no regressions (`bun test packages/workspace`)
 
-### Phase 2: Rebuild SQLite Materializer — Types and DDL
+### Phase 2: Rebuild SQLite Materializer: Types and DDL
 
-- [x] **2.1** Create `packages/workspace/src/extensions/materializer/sqlite/types.ts` — `MirrorDatabase`, `MirrorStatement`, `SearchOptions`, `SearchResult`, builder config types. Restore from deleted code but update to match the builder pattern (remove `tables: 'all' | string[]`, add per-table FTS config type).
-- [x] **2.2** Create `packages/workspace/src/extensions/materializer/sqlite/ddl.ts` — restore `generateDdl()`, `resolveSchema()`, `quoteIdentifier()` from deleted code. These are pure functions and were well-tested.
-- [x] **2.3** Create `packages/workspace/src/extensions/materializer/sqlite/ddl.test.ts` — restore DDL tests from deleted code.
+- [x] **2.1** Create `packages/workspace/src/extensions/materializer/sqlite/types.ts`: `MirrorDatabase`, `MirrorStatement`, `SearchOptions`, `SearchResult`, builder config types. Restore from deleted code but update to match the builder pattern (remove `tables: 'all' | string[]`, add per-table FTS config type).
+- [x] **2.2** Create `packages/workspace/src/extensions/materializer/sqlite/ddl.ts`: restore `generateDdl()`, `resolveSchema()`, `quoteIdentifier()` from deleted code. These are pure functions and were well-tested.
+- [x] **2.3** Create `packages/workspace/src/extensions/materializer/sqlite/ddl.test.ts`: restore DDL tests from deleted code.
 
-### Phase 3: Rebuild SQLite Materializer — Core
+### Phase 3: Rebuild SQLite Materializer: Core
 
-- [x] **3.1** Create `packages/workspace/src/extensions/materializer/sqlite/serialize.ts` — extract `serializeValue()` from the old monolith into its own file.
-- [x] **3.2** Create `packages/workspace/src/extensions/materializer/sqlite/fts.ts` — extract FTS5 setup (CREATE VIRTUAL TABLE, triggers, search query) from the old monolith.
-- [x] **3.3** Create `packages/workspace/src/extensions/materializer/sqlite/sqlite.ts` — the main `createSqliteMaterializer()` builder. Follow the markdown materializer's pattern: builder collects configs synchronously, `whenReady` does initial flush, `table.observe()` for incremental sync.
-- [x] **3.4** Create `packages/workspace/src/extensions/materializer/sqlite/index.ts` — barrel exports.
+- [x] **3.1** Create `packages/workspace/src/extensions/materializer/sqlite/serialize.ts`: extract `serializeValue()` from the old monolith into its own file.
+- [x] **3.2** Create `packages/workspace/src/extensions/materializer/sqlite/fts.ts`: extract FTS5 setup (CREATE VIRTUAL TABLE, triggers, search query) from the old monolith.
+- [x] **3.3** Create `packages/workspace/src/extensions/materializer/sqlite/sqlite.ts`: the main `createSqliteMaterializer()` builder. Follow the markdown materializer's pattern: builder collects configs synchronously, `whenReady` does initial flush, `table.observe()` for incremental sync.
+- [x] **3.4** Create `packages/workspace/src/extensions/materializer/sqlite/index.ts`: barrel exports.
 
 ### Phase 4: Tests and Exports
 
-- [x] **4.1** Create `packages/workspace/src/extensions/materializer/sqlite/sqlite.test.ts` — port tests from the deleted `create-sqlite-mirror.test.ts`, adapting to the new builder API.
+- [x] **4.1** Create `packages/workspace/src/extensions/materializer/sqlite/sqlite.test.ts`: port tests from the deleted `create-sqlite-mirror.test.ts`, adapting to the new builder API.
 - [x] **4.2** Add `"./extensions/materializer/sqlite"` subpath export to `packages/workspace/package.json`.
-- [x] **4.3** Run full test suite: `bun test packages/workspace` — 651 pass, 0 fail
-- [x] **4.4** Run typecheck: `bun run typecheck` — no new errors (pre-existing errors in unrelated files)
+- [x] **4.3** Run full test suite: `bun test packages/workspace`: 651 pass, 0 fail
+- [x] **4.4** Run typecheck: `bun run typecheck`: no new errors (pre-existing errors in unrelated files)
 
 ## Edge Cases
 
@@ -234,12 +234,12 @@ extensions/materializer/sqlite/
 
 1. Workspace has 10K+ rows
 2. Initial `fullLoad` should batch INSERTs inside a transaction
-3. The old code did this — preserve the pattern
+3. The old code did this: preserve the pattern
 
 ### Observer Fires Before whenReady
 
 1. The observer is registered after `ctx.whenReady` resolves
-2. No race condition — same pattern as markdown materializer
+2. No race condition: same pattern as markdown materializer
 
 ## Open Questions
 
@@ -267,12 +267,12 @@ extensions/materializer/sqlite/
 
 ## References
 
-- `packages/workspace/src/extensions/persistence/indexeddb.ts` — Extension contract reference
-- `packages/workspace/src/extensions/materializer/markdown/markdown.ts` — Builder pattern reference
-- `packages/workspace/src/extensions/materializer/markdown/serializers.ts` — Serializer separation reference
-- `packages/workspace/package.json` — Subpath exports to update
-- Commit `7c0962a` — Source of deleted code to restore/adapt
-- `packages/workspace/README.md` — Still references `filesystemPersistence`, needs no update after restore
+- `packages/workspace/src/extensions/persistence/indexeddb.ts`: Extension contract reference
+- `packages/workspace/src/extensions/materializer/markdown/markdown.ts`: Builder pattern reference
+- `packages/workspace/src/extensions/materializer/markdown/serializers.ts`: Serializer separation reference
+- `packages/workspace/package.json`: Subpath exports to update
+- Commit `7c0962a`: Source of deleted code to restore/adapt
+- `packages/workspace/README.md`: Still references `filesystemPersistence`, needs no update after restore
 
 ## Review
 
@@ -292,16 +292,16 @@ Restored SQLite persistence verbatim from commit 7c0962a (148 lines, clean appen
 ### File Structure
 
 ```
-extensions/persistence/sqlite.ts          — restored verbatim (148 lines)
+extensions/persistence/sqlite.ts         : restored verbatim (148 lines)
 extensions/materializer/sqlite/
-├── index.ts           — barrel exports (12 lines)
-├── sqlite.ts          — createSqliteMaterializer() builder + lifecycle (453 lines)
-├── ddl.ts             — generateDdl(), resolveSchema(), quoteIdentifier() (208 lines)
-├── fts.ts             — FTS5 setup + search (149 lines)
-├── serialize.ts       — serializeValue() (45 lines)
-├── types.ts           — MirrorDatabase, MirrorStatement, config types (109 lines)
-├── ddl.test.ts        — DDL tests (261 lines)
-└── sqlite.test.ts     — Materializer tests (543 lines)
+├── index.ts          : barrel exports (12 lines)
+├── sqlite.ts         : createSqliteMaterializer() builder + lifecycle (453 lines)
+├── ddl.ts            : generateDdl(), resolveSchema(), quoteIdentifier() (208 lines)
+├── fts.ts            : FTS5 setup + search (149 lines)
+├── serialize.ts      : serializeValue() (45 lines)
+├── types.ts          : MirrorDatabase, MirrorStatement, config types (109 lines)
+├── ddl.test.ts       : DDL tests (261 lines)
+└── sqlite.test.ts    : Materializer tests (543 lines)
 ```
 
 ### Test Results

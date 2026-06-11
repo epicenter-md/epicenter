@@ -1,6 +1,6 @@
 # Shallow Reactive State Over Deep Models
 
-I tried to build a single `$state` object that mirrored my entire data model—tables, rows, cells, the works. The plan was elegant: one source of Svelte state, surgically updated by multiple Yjs observers. A singleton for the single-page app.
+I tried to build a single `$state` object that mirrored my entire data model. Tables, rows, cells, the works. The plan was elegant: one source of Svelte state, surgically updated by multiple Yjs observers. A singleton for the single-page app.
 
 It was a nightmare.
 
@@ -31,7 +31,7 @@ let workspace = $state({
 });
 ```
 
-Then you'd wire up observers at each level—table observer, row observer, cell observer—each surgically updating its slice of this giant state tree.
+Then you'd wire up observers at each level. Table observer, row observer, cell observer. Each surgically updating its slice of this giant state tree.
 
 ## Why It Falls Apart
 
@@ -138,7 +138,7 @@ Still shallow. Still scoped. The row summary component doesn't know or care abou
 
 ## What About Shared State?
 
-If multiple components need the same reactive value, lift the reactive wrapper to their common ancestor and pass it down via props or context. Don't try to deduplicate at the data layer—let Svelte's component tree handle sharing.
+If multiple components need the same reactive value, lift the reactive wrapper to their common ancestor and pass it down via props or context. Don't try to deduplicate at the data layer. Let Svelte's component tree handle sharing.
 
 ```svelte
 <!-- TableView.svelte -->
@@ -160,14 +160,14 @@ The `RowEditor` creates its own scoped state for the row it's editing. The paren
 
 This approach means you might have many small `$state` objects instead of one big one. That's fine. Svelte handles this efficiently, and the simplicity gains outweigh any micro-overhead.
 
-The real cost of the "one giant state" approach isn't performance—it's the mental overhead of coordinating mutations across a shared mutable tree. That complexity compounds. Small, scoped state stays simple.
+The real cost of the "one giant state" approach isn't performance. It's the mental overhead of coordinating mutations across a shared mutable tree. That complexity compounds. Small, scoped state stays simple.
 
 ## Key Takeaways
 
-1. **Scope state to UI, not data model** — Create reactive wrappers where they're consumed
-2. **Keep state shallow** — A cell editor needs cell state, not table→row→cell state
-3. **Let component lifecycle manage observer lifecycle** — `createSubscriber` handles cleanup
-4. **Mutations go to the source** — Never mutate `$state` directly; update the underlying Yjs/external store
-5. **Share by lifting, not by globalizing** — If components need the same state, lift the wrapper to their ancestor
+1. **Scope state to UI, not data model**: Create reactive wrappers where they're consumed
+2. **Keep state shallow**: A cell editor needs cell state, not table→row→cell state
+3. **Let component lifecycle manage observer lifecycle**: `createSubscriber` handles cleanup
+4. **Mutations go to the source**: Never mutate `$state` directly; update the underlying Yjs/external store
+5. **Share by lifting, not by globalizing**: If components need the same state, lift the wrapper to their ancestor
 
 The pattern mirrors TanStack Query's insight: don't build one cache and surgically update it. Build many small queries scoped to the components that need them. Same principle, applied to reactive state over external sources.

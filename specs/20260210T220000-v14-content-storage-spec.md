@@ -2,9 +2,9 @@
 
 **Date**: 2026-02-10
 **Status**: Deferred
-**Deferred by**: `specs/20260211T100000-simplified-ytext-content-store.md` (further superseded by `specs/20260211T230000-timeline-content-storage-implementation.md`) — v14 migration is a separate project. Core idea (markdown-as-text, single Y.Text per file) implemented with v13 Yjs.
+**Deferred by**: `specs/20260211T100000-simplified-ytext-content-store.md` (further superseded by `specs/20260211T230000-timeline-content-storage-implementation.md`): v14 migration is a separate project. Core idea (markdown-as-text, single Y.Text per file) implemented with v13 Yjs.
 **Supersedes**: `specs/20260210T120000-content-format-spec.md` (the v13 lens architecture), `specs/20260210T150000-content-storage-format-debate.md` (implements its recommendation)
-**See also**: `specs/20260211T220000-yjs-content-doc-multi-mode-research.md` — Option F addresses similar goals (multi-mode content, persistent binary, format metadata) on v13. The timeline structure is orthogonal to Yjs version — when v14 arrives, timeline entries could use `Y.Type` instead of `Y.Text`/`Y.XmlFragment`.
+**See also**: `specs/20260211T220000-yjs-content-doc-multi-mode-research.md`: Option F addresses similar goals (multi-mode content, persistent binary, format metadata) on v13. The timeline structure is orthogonal to Yjs version: when v14 arrives, timeline entries could use `Y.Type` instead of `Y.Text`/`Y.XmlFragment`.
 
 ---
 
@@ -43,7 +43,7 @@ Research into Cursor, Tiptap AI, GitHub Copilot, and Notion AI reveals the same 
 
 - **Cursor**: Two-phase architecture. LLM generates a "sketch" (intent). A trained Apply model integrates the sketch into the codebase via text diffs. Uses Monaco Editor (text-based, not tree-based). Can run 8 parallel agents in isolated git worktrees.
 
-- **Tiptap AI**: Uses a tool-based "brain and hands" architecture. The LLM runs server-side and calls document manipulation tools (`tiptapRead`, `tiptapEdit`, etc.). Serializes to a proprietary "Tiptap Shorthand" format that reduces token costs by ~80%. AI edits create Y.js transactions just like human edits — no special handling needed. CRDT merges everything automatically.
+- **Tiptap AI**: Uses a tool-based "brain and hands" architecture. The LLM runs server-side and calls document manipulation tools (`tiptapRead`, `tiptapEdit`, etc.). Serializes to a proprietary "Tiptap Shorthand" format that reduces token costs by ~80%. AI edits create Y.js transactions just like human edits: no special handling needed. CRDT merges everything automatically.
 
 - **GitHub Copilot**: Explicit working set of files. Dual-model architecture considers full session context. Inline diffs with accept/reject.
 
@@ -63,7 +63,7 @@ This matters when two humans edit the same paragraph in WYSIWYG simultaneously. 
 
 The Milkdown POC already handles this with counter-based loop prevention and character-level diffs.
 
-**Tiptap's approach is instructive here.** Tiptap uses Yjs CRDTs and treats AI edits as regular Yjs transactions. Multiple users can see AI streaming in real-time. Suggestions are only visible to the requesting user until accepted. This "AI as collaborator" pattern — where AI edits flow through the same CRDT as human edits — is exactly what markdown-as-truth enables.
+**Tiptap's approach is instructive here.** Tiptap uses Yjs CRDTs and treats AI edits as regular Yjs transactions. Multiple users can see AI streaming in real-time. Suggestions are only visible to the requesting user until accepted. This "AI as collaborator" pattern: where AI edits flow through the same CRDT as human edits: is exactly what markdown-as-truth enables.
 
 ---
 
@@ -112,9 +112,9 @@ Without the format attr, the system would need to:
 - Never handle frontmatter in the CRDT layer → push complexity to every editor
 
 With the format attr:
-- `readFile()` for `text`: return `content.toString()` — done
+- `readFile()` for `text`: return `content.toString()`: done
 - `readFile()` for `markdown`: collect `fm:*` attrs, serialize as YAML frontmatter, prepend to `content.toString()`
-- `writeFile()` for `text`: diff text, apply — done
+- `writeFile()` for `text`: diff text, apply: done
 - `writeFile()` for `markdown`: extract frontmatter from input string, update `fm:*` attrs, diff body text
 
 The format attr does NOT change the CRDT shape. Both formats are text in a Y.Type. It only affects how `readFile`/`writeFile` handle frontmatter serialization.
@@ -152,7 +152,7 @@ content.setAttr('fm:tags', ['a', 'b'])
 content.setAttr('fm:date', '2026-02-10')
 ```
 
-Each frontmatter field is a separate attr with the `fm:` prefix. Y.Type attrs are LWW per key. Two users editing different frontmatter fields merge cleanly — each key resolves independently.
+Each frontmatter field is a separate attr with the `fm:` prefix. Y.Type attrs are LWW per key. Two users editing different frontmatter fields merge cleanly: each key resolves independently.
 
 **Reading frontmatter:**
 ```js
@@ -204,7 +204,7 @@ Attrs store JSON-compatible values. Supported frontmatter types:
 - Arrays: `content.setAttr('fm:tags', ['a', 'b'])`
 - Null: `content.deleteAttr('fm:draft')` (deletion = field removed)
 
-Nested objects in frontmatter are stored as plain JSON values (LWW on the whole nested object). This is acceptable — deeply nested frontmatter is rare and concurrent edits to nested sub-fields are rarer still.
+Nested objects in frontmatter are stored as plain JSON values (LWW on the whole nested object). This is acceptable: deeply nested frontmatter is rare and concurrent edits to nested sub-fields are rarer still.
 
 ---
 
@@ -212,7 +212,7 @@ Nested objects in frontmatter are stored as plain JSON values (LWW on the whole 
 
 ### What v14 attribution enables
 
-v14 introduces an attribution system that tracks who made what changes and when. This is built into the CRDT — not bolted on.
+v14 introduces an attribution system that tracks who made what changes and when. This is built into the CRDT, not bolted on.
 
 ### How it works
 
@@ -234,7 +234,7 @@ Every piece of content in Yjs is identifiable by a unique `ID` (a pair of `clien
 
 ### How attribution works for AI edits
 
-When a bash agent calls `writeFile()`, the system applies character-level diffs to the Y.Type. Each insert/delete operation is tagged with the agent's `clientId`. Attribution is automatic — every Yjs operation already carries its creator's ID.
+When a bash agent calls `writeFile()`, the system applies character-level diffs to the Y.Type. Each insert/delete operation is tagged with the agent's `clientId`. Attribution is automatic: every Yjs operation already carries its creator's ID.
 
 **Reading attribution:**
 ```js
@@ -273,7 +273,7 @@ attrManager.rejectAllChanges()
 
 **Phase 1 (now): Implicit attribution via clientId**
 
-Every Y.Doc operation already carries the `clientId` of the peer that created it. This is free — no extra code needed. The system can already answer "which client wrote this character."
+Every Y.Doc operation already carries the `clientId` of the peer that created it. This is free, no extra code needed. The system can already answer "which client wrote this character."
 
 To make this useful:
 - Assign deterministic `clientId` ranges: human users get one range, AI agents get another
@@ -332,19 +332,19 @@ Tiptap AI uses a tool-based architecture where the LLM (brain) calls specific do
 | `getThreads` | Read comment threads |
 | `editThreads` | Modify comment threads |
 
-The LLM doesn't just generate text — it calls structured tools that manipulate the document. This is more sophisticated than prompt → replace.
+The LLM doesn't just generate text. It calls structured tools that manipulate the document. This is more sophisticated than prompt → replace.
 
 ### Token efficiency: Tiptap Shorthand
 
 Tiptap serializes ProseMirror content to a proprietary "Tiptap Shorthand" format that reduces token costs by ~80% vs HTML. This is their competitive advantage.
 
-**Lesson for Epicenter:** Markdown is already token-efficient. A `.md` file stored as text in Y.Type is already in the most LLM-native format possible. No custom serialization needed. This is an advantage of markdown-as-truth — the storage format IS the LLM format.
+**Lesson for Epicenter:** Markdown is already token-efficient. A `.md` file stored as text in Y.Type is already in the most LLM-native format possible. No custom serialization needed. This is an advantage of markdown-as-truth: the storage format IS the LLM format.
 
 ### Streaming AI edits
 
 Tiptap supports streaming LLM responses with a typewriter effect. The `streamContent` command accepts a `ReadableStream<Uint8Array>` and renders partial content in real-time.
 
-**Lesson for Epicenter:** With markdown-as-truth, streaming AI edits = streaming text insertions into the Y.Type. Each chunk is a `content.insert()` call. Yjs syncs these incrementally to other peers. All peers see the AI typing in real-time — for free, because it's just CRDT operations.
+**Lesson for Epicenter:** With markdown-as-truth, streaming AI edits = streaming text insertions into the Y.Type. Each chunk is a `content.insert()` call. Yjs syncs these incrementally to other peers. All peers see the AI typing in real-time: for free, because it's just CRDT operations.
 
 ### Collaborative AI
 
@@ -478,7 +478,7 @@ This is what makes bash agent writes safe for concurrent editing. Instead of "de
 4. return contentHandler.toString(ydoc)
 ```
 
-### writeFile(path, content) — new file
+### writeFile(path, content): new file
 
 ```
 1. Path doesn't exist → create file
@@ -489,7 +489,7 @@ This is what makes bash agent writes safe for concurrent editing. Instead of "de
 6. contentHandler.initFile(ydoc, format, content)
 ```
 
-### writeFile(path, content) — existing file
+### writeFile(path, content): existing file
 
 ```
 1. Resolve path → FileId → get row
@@ -541,7 +541,7 @@ That's it. No content doc access. No format check. No conversion. Always metadat
    })
 ```
 
-Note: `convertFormat` for text↔markdown is simpler than the v13 spec because both formats use the same CRDT shape. No content migration — just moving frontmatter between attrs and text body.
+Note: `convertFormat` for text↔markdown is simpler than the v13 spec because both formats use the same CRDT shape. No content migration, just moving frontmatter between attrs and text body.
 
 ---
 
@@ -549,7 +549,7 @@ Note: `convertFormat` for text↔markdown is simpler than the v13 spec because b
 
 | Concept | Where it lived | Why it's gone |
 |---------|---------------|---------------|
-| `healContentType()` | `convert-on-switch.ts` | No wrong-key scenario — format attr is authoritative |
+| `healContentType()` | `convert-on-switch.ts` | No wrong-key scenario: format attr is authoritative |
 | `hasContent()` on lenses | Content lens interface | Only existed for healing probes |
 | `FormatRegistry` / lens registry | `content-lens.ts` | Single content handler, no registry needed |
 | `getExtensionCategory()` | `convert-on-switch.ts` | Extension no longer determines format |
@@ -602,7 +602,7 @@ Note: `convertFormat` for text↔markdown is simpler than the v13 spec because b
 | `diff` (npm) | 15KB | Moderate | Array of change objects |
 | `diff-match-patch` | 50KB | Fast | Patch objects with context |
 
-Recommend `fast-diff` — smallest, fastest, sufficient for character-level diffs. No patch context needed since we apply ops directly to Y.Type.
+Recommend `fast-diff`: smallest, fastest, sufficient for character-level diffs. No patch context needed since we apply ops directly to Y.Type.
 
 ---
 
@@ -617,7 +617,7 @@ Checklist:
 - [ ] `readFile()` returns plain text (format=text) or markdown with frontmatter (format=markdown)
 - [ ] `writeFile()` applies character-level diff (never full replacement)
 - [ ] Two concurrent `writeFile()` calls merge at character level
-- [ ] `mv()` never touches content doc — pure metadata update
+- [ ] `mv()` never touches content doc: pure metadata update
 - [ ] `convertFormat()` moves frontmatter between attrs and text body
 - [ ] Frontmatter attrs use `fm:` prefix with per-key LWW
 - [ ] Two users editing different frontmatter fields don't conflict
@@ -630,7 +630,7 @@ Checklist:
 
 ## Related Specs
 
-- `specs/20260208T000000-yjs-filesystem-spec.md` — Original filesystem spec. Two-layer architecture, files table, runtime indexes still valid. Content format sections superseded.
-- `specs/20260210T120000-content-format-spec.md` — Superseded by this spec. The insight about format-as-metadata is preserved. The lens registry and namespaced keys are simplified away.
-- `specs/20260210T150000-content-storage-format-debate.md` — This spec implements Option A (markdown text as truth) from that document.
-- `specs/20260209T000000-simplify-content-doc-lifecycle.md` — Still valid. ContentDocStore unchanged.
+- `specs/20260208T000000-yjs-filesystem-spec.md`: Original filesystem spec. Two-layer architecture, files table, runtime indexes still valid. Content format sections superseded.
+- `specs/20260210T120000-content-format-spec.md`: Superseded by this spec. The insight about format-as-metadata is preserved. The lens registry and namespaced keys are simplified away.
+- `specs/20260210T150000-content-storage-format-debate.md`: This spec implements Option A (markdown text as truth) from that document.
+- `specs/20260209T000000-simplify-content-doc-lifecycle.md`: Still valid. ContentDocStore unchanged.

@@ -414,7 +414,7 @@ Both share the same dual-writer architecture and should use the single-writer pa
 
 ## Known Limitations
 
-### `delete()` + `has()` During Batch — **FIXED**
+### `delete()` + `has()` During Batch: **FIXED**
 
 > **Fixed in**: `20260214T110000-fix-stale-read-after-delete.md`
 > A `pendingDeletes` Set was added to both YKeyValue and YKeyValueLww, mirroring
@@ -462,7 +462,7 @@ deletions manually or restructure to avoid this pattern.
 ~~**Why not fix it?**: Adding a `pendingDeletes` set would add complexity for a
 rare edge case. The current behavior is documented and tested.~~
 
-**Update**: This was fixed by adding `pendingDeletes` — turns out it was only ~8
+**Update**: This was fixed by adding `pendingDeletes`: turns out it was only ~8
 lines per class and the pattern mirrors `pending` exactly.
 
 ## Risks

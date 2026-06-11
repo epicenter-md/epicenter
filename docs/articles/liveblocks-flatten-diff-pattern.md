@@ -10,13 +10,13 @@
 
 ## The problem
 
-You have a rich text editor — ProseMirror, Tiptap, Slate, whatever. The user highlights some text and asks the AI to rewrite it. Now you need a diff: what nodes were added, removed, or updated?
+You have a rich text editor: ProseMirror, Tiptap, Slate, whatever. The user highlights some text and asks the AI to rewrite it. Now you need a diff: what nodes were added, removed, or updated?
 
 The obvious approach: ask the AI to produce a structured diff. Tell it the schema, give it the current document as JSON, ask for a list of operations.
 
-This doesn't work. LLMs can't reliably produce tree operations. They lose track of node indices, miscalculate positions, and drop structural context. Even [JSON Whisperer (EMNLP 2025)](./every-ai-editor-converges-on-str-replace.md) had to eliminate array index arithmetic with stable two-character keys before LLMs could produce JSON patches — and that's for flat JSON, not nested document trees.
+This doesn't work. LLMs can't reliably produce tree operations. They lose track of node indices, miscalculate positions, and drop structural context. Even [JSON Whisperer (EMNLP 2025)](./every-ai-editor-converges-on-str-replace.md) had to eliminate array index arithmetic with stable two-character keys before LLMs could produce JSON patches, and that's for flat JSON, not nested document trees.
 
-Every production AI editing system gave up on structural diffs and converged on text search/replace instead. But for rich text editors, you actually want structured diffs — you want to show the user "this paragraph was rewritten" and "this heading was added," not a character-level diff that splits across node boundaries.
+Every production AI editing system gave up on structural diffs and converged on text search/replace instead. But for rich text editors, you actually want structured diffs. You want to show the user "this paragraph was rewritten" and "this heading was added," not a character-level diff that splits across node boundaries.
 
 So how do you get structural diffs without asking the AI to produce them?
 
@@ -24,7 +24,7 @@ So how do you get structural diffs without asking the AI to produce them?
 
 Liveblocks describes an approach that flips the problem:
 
-**Step 1: Constrain the output.** Give the AI a restricted markup format that mirrors your editor schema. Not arbitrary HTML — a minimal subset where every tag maps to a node type in your schema.
+**Step 1: Constrain the output.** Give the AI a restricted markup format that mirrors your editor schema. Not arbitrary HTML: a minimal subset where every tag maps to a node type in your schema.
 
 ```
 You must respond using ONLY these elements:
@@ -37,7 +37,7 @@ You must respond using ONLY these elements:
 
 **Step 2: Ask for a complete rewrite.** Don't ask for a diff. Don't ask for a list of changes. Ask the AI to output the entire rewritten section. LLMs are good at rewriting. They're bad at patching.
 
-**Step 3: Flatten both documents.** Take the original document and the AI's rewrite. Flatten each into a sequence of tokens that preserves structural metadata — each token carries its text content plus the node type and attributes it belongs to.
+**Step 3: Flatten both documents.** Take the original document and the AI's rewrite. Flatten each into a sequence of tokens that preserves structural metadata: each token carries its text content plus the node type and attributes it belongs to.
 
 **Step 4: Run LCS text-diff.** Classic longest common subsequence on the flattened token sequences. This is a solved problem. O(n*m) with well-known optimizations.
 
@@ -52,7 +52,7 @@ const diff = lcsDiff(originalTokens, rewriteTokens);
 const suggested = rebuildWithDiff(editorSchema, originalDoc, diff);
 ```
 
-The result is a structured diff with nodes labeled as unchanged, added, updated, or removed. You can render this as a suggestion overlay — green for additions, red for removals, yellow for modifications.
+The result is a structured diff with nodes labeled as unchanged, added, updated, or removed. You can render this as a suggestion overlay: green for additions, red for removals, yellow for modifications.
 
 ## Why it works
 
@@ -65,7 +65,7 @@ The insight is a clean division of labor:
 
 The flatten-diff pattern puts each actor in its zone of competence. The LLM does what it's good at (rewriting). The algorithm does what it's good at (diffing).
 
-The constraint step is crucial. If the AI outputs arbitrary HTML with `<div>` soup and inline styles, parsing it back into your schema is a nightmare. By constraining the output to a small markup vocabulary that maps 1:1 to your schema, you guarantee that the rewrite is structurally valid. The AI doesn't need to understand your schema — it just needs to use the right tags.
+The constraint step is crucial. If the AI outputs arbitrary HTML with `<div>` soup and inline styles, parsing it back into your schema is a nightmare. By constraining the output to a small markup vocabulary that maps 1:1 to your schema, you guarantee that the rewrite is structurally valid. The AI doesn't need to understand your schema. It just needs to use the right tags.
 
 ## Where it works well
 
@@ -78,23 +78,23 @@ This pattern is ideal for the **interactive copilot** use case:
 
 The snapshot isolation is key. While the AI is thinking, the document state (from the AI's perspective) doesn't change. There's no concurrent edit problem because the human gates the merge. If someone else edited a different part of the document, the CRDT or OT layer handles merging the accepted suggestion with those changes.
 
-This is how Notion AI, Tiptap AI, and similar in-editor assistants work. The flatten-diff just gives you a nicer diff — node-level instead of character-level.
+This is how Notion AI, Tiptap AI, and similar in-editor assistants work. The flatten-diff just gives you a nicer diff: node-level instead of character-level.
 
 ## Where it breaks down
 
 The pattern struggles with **external agents** that read and write files:
 
-**Agents output markdown, not constrained markup.** A coding agent that reads `README.md` and writes back an updated version produces markdown. Not `<p>` tags. Parsing markdown into your editor's ProseMirror schema is lossy — custom nodes, metadata, and non-standard extensions get dropped or misinterpreted.
+**Agents output markdown, not constrained markup.** A coding agent that reads `README.md` and writes back an updated version produces markdown. Not `<p>` tags. Parsing markdown into your editor's ProseMirror schema is lossy: custom nodes, metadata, and non-standard extensions get dropped or misinterpreted.
 
 **Independent parsing produces incompatible trees.** If you parse the original document from its CRDT state and parse the AI's output from raw markdown, you get two trees that were built by different codepaths. A paragraph with trailing whitespace might be one node in one tree and two nodes in the other. Tree-to-tree matching between independently-parsed trees is fragile.
 
-**The concurrent deletion problem.** An agent reads a file, thinks for two minutes, writes back a version. During those two minutes, another user added a paragraph. The agent's output doesn't include that paragraph — it never saw it. The tree diff sees a deletion. The new paragraph vanishes.
+**The concurrent deletion problem.** An agent reads a file, thinks for two minutes, writes back a version. During those two minutes, another user added a paragraph. The agent's output doesn't include that paragraph: it never saw it. The tree diff sees a deletion. The new paragraph vanishes.
 
 With text-level diffing, this doesn't happen: the agent's changes are localized to the character ranges it actually modified, and the new paragraph survives because the agent never touched those positions. The CRDT composes the concurrent operations cleanly.
 
 ## The takeaway
 
-The flatten-diff pattern is a genuinely clever technique for in-editor AI assistance. It gets you structural diffs — the kind users actually want to see — without asking the AI to reason about tree structure.
+The flatten-diff pattern is a genuinely clever technique for in-editor AI assistance. It gets you structural diffs. The kind users actually want to see, without asking the AI to reason about tree structure.
 
 But it's a solution for one specific context: interactive copilots with snapshot isolation and human-gated merges. For external agents writing files concurrently with human edits, text-level operations remain the safer bet.
 

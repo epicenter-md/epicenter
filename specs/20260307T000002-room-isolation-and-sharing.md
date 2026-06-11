@@ -9,13 +9,13 @@
 
 ## Overview
 
-User-scoped room keys (`user:{userId}:{roomName}`) for document isolation, with a `room_access` table as the single source of truth for shared access. No roles — all shared users are editors. Org membership can populate `room_access` rows in the future, but is never the room key itself.
+User-scoped room keys (`user:{userId}:{roomName}`) for document isolation, with a `room_access` table as the single source of truth for shared access. No roles: all shared users are editors. Org membership can populate `room_access` rows in the future, but is never the room key itself.
 
 ## Motivation
 
 ### Current State
 
-Room keys are user-scoped — the Worker prefixes `user:{userId}:` before calling `idFromName()`:
+Room keys are user-scoped. The Worker prefixes `user:{userId}:` before calling `idFromName()`:
 
 ```typescript
 // packages/server-remote/src/app.ts:196
@@ -35,7 +35,7 @@ This was shipped to fix a critical bug: all authenticated users sharing the same
 - Personal rooms work with zero DB lookup (fast path, already shipped)
 - Shared room access checked via a single Postgres table
 - Org membership can bulk-grant access in the future, but doesn't replace the table
-- The YjsRoom DO stays completely unchanged — all scoping is in the Worker
+- The YjsRoom DO stays completely unchanged: all scoping is in the Worker
 
 ## Research Findings
 
@@ -46,24 +46,24 @@ Two strategies were evaluated in depth, with dedicated agents arguing for each:
 | Dimension | User-scoped keys + `room_access` table | Org-scoped keys (`org:{orgId}:{room}`) |
 |---|---|---|
 | Personal room DB lookup | None (fast path) | Required (`activeOrganizationId` resolution) |
-| Room key stability | Immutable — sharing is a Postgres row | Changes if doc moves between orgs |
-| Per-document sharing | Native — insert a row | Requires bolting on an ACL layer on top of org infra |
-| Org sharing | Bulk-insert rows into `room_access` | Native — all org members share all rooms |
-| `activeOrganizationId` | Not used in routing | Required on every sync request — mutable session state |
-| WebSocket session drift | Impossible — userId is immutable | Possible — user switches org in another tab |
-| Ownership transfer | Not needed — sharing is additive | Requires re-keying the DO or migrating state |
-| Account deletion blast radius | Only affects rooms keyed to that user | Decoupled — org owns rooms, not users |
+| Room key stability | Immutable: sharing is a Postgres row | Changes if doc moves between orgs |
+| Per-document sharing | Native: insert a row | Requires bolting on an ACL layer on top of org infra |
+| Org sharing | Bulk-insert rows into `room_access` | Native: all org members share all rooms |
+| `activeOrganizationId` | Not used in routing | Required on every sync request: mutable session state |
+| WebSocket session drift | Impossible: userId is immutable | Possible: user switches org in another tab |
+| Ownership transfer | Not needed: sharing is additive | Requires re-keying the DO or migrating state |
+| Account deletion blast radius | Only affects rooms keyed to that user | Decoupled: org owns rooms, not users |
 | "All my shared docs" query | `SELECT * FROM room_access WHERE user_id = ?` | Same, but also needs org membership join |
-| Implementation cost (now) | Zero — already shipped | Org plugin + schema + migration + middleware |
+| Implementation cost (now) | Zero: already shipped | Org plugin + schema + migration + middleware |
 | Implementation cost (sharing) | One table + one middleware | Already built in (but per-doc sharing still needs ACL) |
 
-**Key finding**: Org-scoped keys conflate document identity with access control. When you inevitably need per-document sharing (Google Docs model), you end up building a `room_access` table anyway — on top of org infrastructure. Two permission systems coexist awkwardly.
+**Key finding**: Org-scoped keys conflate document identity with access control. When you inevitably need per-document sharing (Google Docs model), you end up building a `room_access` table anyway: on top of org infrastructure. Two permission systems coexist awkwardly.
 
 **Implication**: Use user-scoped keys for stable DO identity. Use `room_access` for all access control. Use org membership as one way to populate `room_access`, not as the routing primitive.
 
 ### The `activeOrganizationId` Footgun
 
-Better Auth's org plugin stores `activeOrganizationId` on the session. This is mutable — users can switch orgs. WebSocket connections are long-lived. If a user opens a WebSocket under org A, then switches to org B in another tab, the WebSocket is now connected to org A's room while the session says org B. This creates subtle bugs:
+Better Auth's org plugin stores `activeOrganizationId` on the session. This is mutable: users can switch orgs. WebSocket connections are long-lived. If a user opens a WebSocket under org A, then switches to org B in another tab, the WebSocket is now connected to org A's room while the session says org B. This creates subtle bugs:
 
 - HTTP sync requests go to org B's room (new `activeOrganizationId`)
 - WebSocket messages go to org A's room (connection established before switch)
@@ -77,10 +77,10 @@ With user-scoped keys, this is impossible. The user ID is immutable for the sess
 |---|---|---|
 | Room key format | `user:{userId}:{roomName}` | Deterministic, immutable, no DB lookup for owner |
 | Access control | `room_access` table in Postgres | Single source of truth, queryable, supports both direct and org-derived sharing |
-| Roles | None — all shared users are editors | YAGNI. Add a `role` column later if viewer-only access becomes a real need. |
+| Roles | None: all shared users are editors | YAGNI. Add a `role` column later if viewer-only access becomes a real need. |
 | Org plugin | Deferred | Can be added later; org membership becomes a way to populate `room_access` rows |
-| Unified route | Single `/rooms/:room` route with access check | No split between personal and shared routes. Check room key prefix — if it matches the requesting user, skip DB; otherwise, check `room_access`. |
-| Owner implicit access | Derived from room key prefix | Owner never needs a `room_access` row — their userId is in the key |
+| Unified route | Single `/rooms/:room` route with access check | No split between personal and shared routes. Check room key prefix: if it matches the requesting user, skip DB; otherwise, check `room_access`. |
+| Owner implicit access | Derived from room key prefix | Owner never needs a `room_access` row: their userId is in the key |
 | Sharing by email | Owner shares by email, server resolves to userId | Users don't know each other's IDs. The share endpoint looks up the email in the `user` table. |
 | DO changes | None | The DO is a generic Y.Doc host. All access control is at the Worker boundary. |
 
@@ -156,7 +156,7 @@ ORG-BASED BULK SHARE (future, when org plugin is added)
 
 ### `room_access` table
 
-The core table for Phase 2 is minimal — just two columns that matter:
+The core table for Phase 2 is minimal, just two columns that matter:
 
 ```sql
 CREATE TABLE room_access (
@@ -216,7 +216,7 @@ These are inspiration for Phase 3, not requirements for Phase 2.
 - [ ] **2.1** Add `roomAccess` table to Drizzle schema (`db/schema.ts`) with relations
 - [ ] **2.2** Run `bun x drizzle-kit generate` and `bun x drizzle-kit migrate`
 - [ ] **2.3** Update `/rooms/:room` routes to check `room_access` when the room key doesn't belong to the requesting user
-- [ ] **2.4** Add `POST /rooms/:room/share` endpoint — accepts `{ email }`, resolves to userId, inserts into `room_access`
+- [ ] **2.4** Add `POST /rooms/:room/share` endpoint: accepts `{ email }`, resolves to userId, inserts into `room_access`
 - [ ] **2.5** Add `DELETE /rooms/:room/share/:userId` endpoint to revoke access
 - [ ] **2.6** Add `GET /rooms/shared` endpoint to list rooms shared with the current user
 
@@ -266,13 +266,13 @@ These are inspiration for Phase 3, not requirements for Phase 2.
 1. Owner tries to share with `nobody@example.com`
 2. Server looks up email in `user` table → no result
 3. Return 404 with clear error: "No user found with that email"
-4. **No invite flow for now** — user must already have an account
+4. **No invite flow for now**: user must already have an account
 
 ## Open Questions
 
 1. **How should the client route to shared rooms?**
    - The client currently sends `/rooms/{workspaceId}` using its own workspace ID. For shared rooms, it needs to send the owner's room key instead. Options: (a) client stores the full room key when accepting a share, (b) client fetches `GET /rooms/shared` on app open and caches room keys locally.
-   - **Recommendation**: (b) — fetch on app open, cache in local state. The client treats shared rooms the same as personal rooms, just with a different room key.
+   - **Recommendation**: (b): fetch on app open, cache in local state. The client treats shared rooms the same as personal rooms, just with a different room key.
 
 2. **Should org-derived shares be eagerly inserted (batch insert on share) or lazily resolved (join at query time)?**
    - Eager: simpler access check (`SELECT FROM room_access WHERE ...`), but stale if org membership changes
@@ -295,9 +295,9 @@ These are inspiration for Phase 3, not requirements for Phase 2.
 
 ## References
 
-- `packages/server-remote/src/app.ts` — Worker routes, auth middleware, room key construction
-- `packages/server-remote/src/yjs-room.ts` — Durable Object (unchanged by this spec)
-- `packages/server-remote/src/db/schema.ts` — Drizzle schema, add `roomAccess` table here
-- `packages/epicenter/src/extensions/sync.ts` — Client WebSocket URL construction
-- `packages/epicenter/src/extensions/http-sync.ts` — Client HTTP sync URL construction
-- `specs/20260307T000001-org-scoped-rooms.md` — Alternative approach (superseded by this spec)
+- `packages/server-remote/src/app.ts`: Worker routes, auth middleware, room key construction
+- `packages/server-remote/src/yjs-room.ts`: Durable Object (unchanged by this spec)
+- `packages/server-remote/src/db/schema.ts`: Drizzle schema, add `roomAccess` table here
+- `packages/epicenter/src/extensions/sync.ts`: Client WebSocket URL construction
+- `packages/epicenter/src/extensions/http-sync.ts`: Client HTTP sync URL construction
+- `specs/20260307T000001-org-scoped-rooms.md`: Alternative approach (superseded by this spec)

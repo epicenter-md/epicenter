@@ -60,16 +60,16 @@ Read if exploring rationale:
 | `spawn_command` | `command: String` | `Result<u32, String>` | `Promise<Result<number, string>>` | auto |
 | `write_markdown_files` | `directory, files` | `Result<(), String>` | `Promise<Result<void, string>>` | auto |
 | `delete_files_in_directory` | `directory, filenames` | `Result<u32, String>` | `Promise<Result<number, string>>` | auto |
-| `read_markdown_files` | `directoryPath` | `Result<Vec<String>, String>` | dead, remove in Wave 7 | — |
-| `count_markdown_files` | `directoryPath` | `Result<usize, String>` | dead, remove in Wave 7 | — |
-| `send_sigint` | `pid` | `SignalResult` | dead, remove in Wave 7 | — |
+| `read_markdown_files` | `directoryPath` | `Result<Vec<String>, String>` | dead, remove in Wave 7 |: |
+| `count_markdown_files` | `directoryPath` | `Result<usize, String>` | dead, remove in Wave 7 |: |
+| `send_sigint` | `pid` | `SignalResult` | dead, remove in Wave 7 |: |
 
 20 commands total. 16 auto-derived. 1 hand-rolled (`encode_recording_for_upload`). 3 dead and removed in cleanup wave.
 
 Types crossing the boundary that need `#[derive(specta::Type)]`:
 - `RecordingArtifact` (recorder/artifact.rs)
-- `TranscriptionError` (transcription/error.rs) — already done on e628
-- `TranscribeRequest` (transcription/mod.rs) — currently a private enum behind `serde_json::Value`; promote to a `pub` typed argument
+- `TranscriptionError` (transcription/error.rs): already done on e628
+- `TranscribeRequest` (transcription/mod.rs): currently a private enum behind `serde_json::Value`; promote to a `pub` typed argument
 - `CommandOutput` (command.rs)
 - `MarkdownFile` (markdown.rs)
 
@@ -315,7 +315,7 @@ Becomes `Result<string | null, string>` in TS. Wellcrafted's `error !== null` di
 
 ### Tauri rejections vs app errors
 
-With `ErrorHandlingMode::Result`, Rust `Err(...)` returns through the data channel. Tauri itself can still reject the promise for infrastructure reasons (panic, deserialize failure, app handle gone). The auto-adapter does not catch these — they propagate as thrown exceptions. Consumers using `commands.*` should not need to wrap in `try/catch`; infrastructure failures should surface in the panic/crash log, not get swallowed into a string. Revisit if observed behaviour contradicts.
+With `ErrorHandlingMode::Result`, Rust `Err(...)` returns through the data channel. Tauri itself can still reject the promise for infrastructure reasons (panic, deserialize failure, app handle gone). The auto-adapter does not catch these. They propagate as thrown exceptions. Consumers using `commands.*` should not need to wrap in `try/catch`; infrastructure failures should surface in the panic/crash log, not get swallowed into a string. Revisit if observed behaviour contradicts.
 
 ## Open Questions
 
@@ -343,13 +343,13 @@ With `ErrorHandlingMode::Result`, Rust `Err(...)` returns through the data chann
 
 ## References
 
-- `specs/20260526T180000-tauri-specta-boundary-adapter.md` — v1 of this spec.
-- `specs/20260513T105808-tauri-specta-bindings.md` — earlier planning draft.
-- `specs/tauri-specta-data-error-mode-request.md` — upstream feature request.
-- `apps/whispering/specs/2026-05-26-recorder-shape-investigation/REPORT.md` — the artifact-id rationale.
-- `apps/whispering/src-tauri/src/recorder/artifact.rs` — `RecordingArtifact` definition.
-- `apps/whispering/src-tauri/src/recorder/commands.rs` — the post-collapse recorder command set.
-- `apps/whispering/src-tauri/src/transcription/mod.rs` — `transcribe_recording`, `TranscribeRequest`.
-- `apps/whispering/src-tauri/src/audio/command.rs` — the lone hand-rolled `encode_recording_for_upload`.
-- `apps/whispering/src/lib/tauri.tauri.ts` — the Tauri-only capability namespace.
-- `apps/whispering/src/lib/services/recorder/cpal.tauri.ts` — the local `invoke<T>()` wrapper that gets deleted in Wave 4.
+- `specs/20260526T180000-tauri-specta-boundary-adapter.md`: v1 of this spec.
+- `specs/20260513T105808-tauri-specta-bindings.md`: earlier planning draft.
+- `specs/tauri-specta-data-error-mode-request.md`: upstream feature request.
+- `apps/whispering/specs/2026-05-26-recorder-shape-investigation/REPORT.md`: the artifact-id rationale.
+- `apps/whispering/src-tauri/src/recorder/artifact.rs`: `RecordingArtifact` definition.
+- `apps/whispering/src-tauri/src/recorder/commands.rs`: the post-collapse recorder command set.
+- `apps/whispering/src-tauri/src/transcription/mod.rs`: `transcribe_recording`, `TranscribeRequest`.
+- `apps/whispering/src-tauri/src/audio/command.rs`: the lone hand-rolled `encode_recording_for_upload`.
+- `apps/whispering/src/lib/tauri.tauri.ts`: the Tauri-only capability namespace.
+- `apps/whispering/src/lib/services/recorder/cpal.tauri.ts`: the local `invoke<T>()` wrapper that gets deleted in Wave 4.

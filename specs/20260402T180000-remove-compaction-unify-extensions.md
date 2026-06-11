@@ -3,7 +3,7 @@
 **Date**: 2026-04-02
 **Status**: Implemented
 **Author**: AI-assisted
-**Supersedes**: `20260402T153000-workspace-anchor-and-reset-history.md` (kept for reference—contains anchor model design if compaction is ever needed)
+**Supersedes**: `20260402T153000-workspace-anchor-and-reset-history.md` (kept for reference. Contains anchor model design if compaction is ever needed)
 
 ## Overview
 
@@ -22,7 +22,7 @@ We benchmarked Yjs doc sizes under realistic workload conditions:
 | Heavy notes app (200 notes, 50 edits each) | 62 KB | 265 KB | 4.3x | 203 KB |
 | Extreme (1000 rows, 100 edits each) | 70 KB | 1 MB | 14.9x | ~1 MB |
 
-The extreme case (1 MB) loads in 20–50ms from IndexedDB and syncs in <2s on 4G. The realistic cases waste 12–200 KB. None of these justify the complexity cost:
+The extreme case (1 MB) loads in 20-50ms from IndexedDB and syncs in <2s on 4G. The realistic cases waste 12-200 KB. None of these justify the complexity cost:
 
 - ~200 lines of the most intricate code in the file
 - 10 mutable `let` variables that only exist for the swap
@@ -32,7 +32,7 @@ The extreme case (1 MB) loads in 20–50ms from IndexedDB and syncs in <2s on 4G
 
 ### The compaction infrastructure has a deeper bug
 
-The coordination doc (`coordYdoc`) isn't persisted or synced—no extension sees it. After a page reload, the epoch resets to 0. The blue-green swap masks this by making compaction take effect in-process, but the epoch is lost on reload without sync. Fixing this properly (the anchor model in the superseded spec) would add significant new complexity.
+The coordination doc (`coordYdoc`) isn't persisted or synced. No extension sees it. After a page reload, the epoch resets to 0. The blue-green swap masks this by making compaction take effect in-process, but the epoch is lost on reload without sync. Fixing this properly (the anchor model in the superseded spec) would add significant new complexity.
 
 ### Three extension methods cause confusion
 
@@ -46,7 +46,7 @@ The coordination doc (`coordYdoc`) isn't persisted or synced—no extension sees
 | Remove coordination doc | Delete, move awareness to data doc | Coordination doc only existed for epoch tracking. Without epochs, it's dead weight. |
 | Data doc GUID | Changed to just `{id}` (clean break) | No data at rest to preserve. The `-0` suffix was epoch baggage. |
 | Keep `encodedSize()` | Useful for monitoring, costs nothing | Users can track doc growth without compaction. |
-| Extension methods | Keep three methods (`withExtension`, `withWorkspaceExtension`, `withDocumentExtension`) | The unified single-method API was implemented then reverted—three methods are clearer at call sites, more discoverable via autocomplete, and easier for TypeScript to resolve. See Review section. |
+| Extension methods | Keep three methods (`withExtension`, `withWorkspaceExtension`, `withDocumentExtension`) | The unified single-method API was implemented then reverted. Three methods are clearer at call sites, more discoverable via autocomplete, and easier for TypeScript to resolve. See Review section. |
 
 ## What to delete
 
@@ -54,12 +54,12 @@ The coordination doc (`coordYdoc`) isn't persisted or synced—no extension sees
 
 | Function | Lines | Purpose (no longer needed) |
 |---|---|---|
-| `prepareFreshDoc()` | ~329–385 | Creates fresh epoch doc for swap |
-| `createFreshExtensions()` | ~392–436 | Re-fires extensions on fresh doc |
-| `doBlueGreenSwap()` | ~452–516 | PREPARE/COMMIT/CLEANUP orchestrator |
-| `requestSwap()` | ~533–537 | Remote epoch swap request |
-| `drainSwapQueue()` | ~539–556 | Latest-wins swap serialization |
-| `compact()` | ~688–715 | Public API for compaction |
+| `prepareFreshDoc()` | ~329-385 | Creates fresh epoch doc for swap |
+| `createFreshExtensions()` | ~392-436 | Re-fires extensions on fresh doc |
+| `doBlueGreenSwap()` | ~452-516 | PREPARE/COMMIT/CLEANUP orchestrator |
+| `requestSwap()` | ~533-537 | Remote epoch swap request |
+| `drainSwapQueue()` | ~539-556 | Latest-wins swap serialization |
+| `compact()` | ~688-715 | Public API for compaction |
 
 ### Variables to remove
 
@@ -119,13 +119,13 @@ encryptedStores.push(...fresh.encryptedStores);
 
 ## What to keep
 
-- `encodedSize()` — useful for monitoring doc growth
-- `onEpochChange()` — remove (no epochs to change)
-- `epoch` getter — remove
-- `encryptedStores` array — keep (encryption needs it), just never mutated after construction
-- `epochChangeCallbacks` — remove
-- The epoch observer (`unsubEpochObserver`) — remove
-- `createEpochTracker` import — remove
+- `encodedSize()`: useful for monitoring doc growth
+- `onEpochChange()`: remove (no epochs to change)
+- `epoch` getter: remove
+- `encryptedStores` array: keep (encryption needs it), just never mutated after construction
+- `epochChangeCallbacks`: remove
+- The epoch observer (`unsubEpochObserver`): remove
+- `createEpochTracker` import: remove
 
 ## What to change
 
@@ -207,10 +207,10 @@ ydoc,
 ### Two forms
 
 ```typescript
-// Form 1: Single function — fires on all scopes (90% case)
+// Form 1: Single function: fires on all scopes (90% case)
 .withExtension('persistence', indexeddbPersistence)
 
-// Form 2: Object — per-scope control
+// Form 2: Object: per-scope control
 .withExtension('persistence', {
   workspace: ({ ydoc, tables, kv, ... }) => sqlitePersistence({ ydoc }),
   document: ({ ydoc, timeline, ... }) => sqliteDocPersistence({ ydoc }),
@@ -230,8 +230,8 @@ Note: `anchor` key is reserved but not functional in this version. If the anchor
 
 ### Removes
 
-- `withWorkspaceExtension()` — use `{ workspace: fn }` instead
-- `withDocumentExtension()` — use `{ document: fn }` instead
+- `withWorkspaceExtension()`: use `{ workspace: fn }` instead
+- `withDocumentExtension()`: use `{ document: fn }` instead
 
 ## Implementation Plan
 
@@ -239,13 +239,13 @@ Note: `anchor` key is reserved but not functional in this version. If the anchor
 
 Standalone refactoring. No behavioral change. Do first because it's independently valuable and simplifies subsequent phases.
 
-- [x] ~~**1.1–1.5** Unify extension methods~~ — **Reverted.** Implemented the unified object form, evaluated it, and decided three methods are the better API. See Review.
-- [x] **1.6** Run tests: `bun test packages/workspace` — 246 pass
-- [x] **1.7** Run typecheck: `bun run typecheck` — clean (pre-existing `NumberKeysOf` error in `@epicenter/ai` only)
+- [x] ~~**1.1-1.5** Unify extension methods~~: **Reverted.** Implemented the unified object form, evaluated it, and decided three methods are the better API. See Review.
+- [x] **1.6** Run tests: `bun test packages/workspace`: 246 pass
+- [x] **1.7** Run typecheck: `bun run typecheck`: clean (pre-existing `NumberKeysOf` error in `@epicenter/ai` only)
 
 ### Phase 2: Delete compaction machinery
 
-The big deletion. Work through this methodically—each step should leave the code compilable.
+The big deletion. Work through this methodically. Each step should leave the code compilable.
 
 - [x] **2.1** Delete `epoch.ts` and `epoch.test.ts`
 - [x] **2.2** Delete `compact.test.ts` and `compact.multi-client.test.ts`
@@ -266,32 +266,32 @@ The big deletion. Work through this methodically—each step should leave the co
 - [x] **2.17** Remove `onEpochChange()` method and `epochChangeCallbacks` array
 - [x] **2.18** Remove `currentDataEpoch` variable
 - [x] **2.19** Remove `encryptedStores.length = 0; encryptedStores.push(...)` (only in deleted swap code)
-- [x] **2.20** Remove `-0` suffix from GUID entirely—clean break, no backward compat needed
+- [x] **2.20** Remove `-0` suffix from GUID entirely. Clean break, no backward compat needed
 - [x] **2.21** Update module-level JSDoc (remove "Epoch-based compaction" section)
-- [x] **2.22** Run tests: `bun test packages/workspace` — 246 pass
-- [x] **2.23** Run typecheck: `bun run typecheck` — clean
+- [x] **2.22** Run tests: `bun test packages/workspace`: 246 pass
+- [x] **2.23** Run typecheck: `bun run typecheck`: clean
 
 ### Phase 3: Update types
 
 - [x] **3.1** Verified: `compact`, `epoch`, `onEpochChange` were only on the runtime object, not in types.ts
 - [x] **3.2** `encodedSize()` already present on `WorkspaceClient` type
-- [x] **3.3** Three methods kept—no type changes needed for extension API
+- [x] **3.3** Three methods kept. No type changes needed for extension API
 - [x] **3.4** Typecheck passes
 
 ### Phase 4: Documentation
 
 - [x] **4.1** Updated `packages/workspace/src/workspace/README.md`
 - [x] **4.2** No compaction references found in root workspace README
-- [x] **4.3** Updated JSDoc in `create-workspace.ts`—removed epoch/compaction language, updated `encodedSize` docs
+- [x] **4.3** Updated JSDoc in `create-workspace.ts`: removed epoch/compaction language, updated `encodedSize` docs
 
 ## Edge Cases
 
 None. We're removing features, not adding them. The only edge case is backward compatibility:
 
-- **Existing persisted data**: Data doc GUID changed from `{id}-0` to `{id}`. Clean break—no migration.
+- **Existing persisted data**: Data doc GUID changed from `{id}-0` to `{id}`. Clean break. No migration.
 - **Code that calls `compact()`**: TypeScript error (method removed). Migration: delete the call.
 - **Code that uses `onEpochChange`**: TypeScript error. Migration: delete the callback.
-- **Code using `withWorkspaceExtension` / `withDocumentExtension`**: No change needed—three methods preserved.
+- **Code using `withWorkspaceExtension` / `withDocumentExtension`**: No change needed. Three methods preserved.
 
 ## Success Criteria
 
@@ -313,16 +313,16 @@ See `20260402T153000-workspace-anchor-and-reset-history.md` for the full anchor 
 - Epoch cache (localStorage) prevents reload loops
 - Multi-device sync flow with data-before-epoch ordering
 
-The design work is done. It can be implemented when a use case justifies it—likely when doc sizes exceed 5–10 MB and load times become noticeable.
+The design work is done. It can be implemented when a use case justifies it. Likely when doc sizes exceed 5-10 MB and load times become noticeable.
 
 ## References
 
-- `packages/workspace/src/workspace/create-workspace.ts` — primary target (1091 lines → ~700)
-- `packages/workspace/src/workspace/types.ts` — remove compaction types, update builder type
-- `packages/workspace/src/workspace/epoch.ts` — delete
-- `packages/workspace/src/workspace/epoch.test.ts` — delete
-- `packages/workspace/src/workspace/compact.test.ts` — delete
-- `packages/workspace/src/workspace/compact.multi-client.test.ts` — delete
+- `packages/workspace/src/workspace/create-workspace.ts`: primary target (1091 lines → ~700)
+- `packages/workspace/src/workspace/types.ts`: remove compaction types, update builder type
+- `packages/workspace/src/workspace/epoch.ts`: delete
+- `packages/workspace/src/workspace/epoch.test.ts`: delete
+- `packages/workspace/src/workspace/compact.test.ts`: delete
+- `packages/workspace/src/workspace/compact.multi-client.test.ts`: delete
 
 ## Review
 
@@ -331,7 +331,7 @@ The design work is done. It can be implemented when a use case justifies it—li
 
 ### Summary
 
-Deleted the entire epoch-based compaction system (~1,094 lines net across 7 files). The workspace now uses a single `Y.Doc` with `guid: id` (no coordination doc, no `-0` suffix, no epoch tracking). All swap-related mutable state is gone—`ydoc`, `kvStore`, `kvHelper` are `const`, and the client exposes them as direct properties instead of getters.
+Deleted the entire epoch-based compaction system (~1,094 lines net across 7 files). The workspace now uses a single `Y.Doc` with `guid: id` (no coordination doc, no `-0` suffix, no epoch tracking). All swap-related mutable state is gone: `ydoc`, `kvStore`, `kvHelper` are `const`, and the client exposes them as direct properties instead of getters.
 
 ### Deviations from Spec
 
@@ -345,13 +345,13 @@ Deleted the entire epoch-based compaction system (~1,094 lines net across 7 file
 
 ### Stragglers Investigated
 
-- `apps/api/src/base-sync-room.ts` "compaction" — **false positive.** This is Durable Object update log compaction (merging SQLite rows), completely unrelated to workspace epoch compaction.
-- `packages/workspace/src/shared/y-keyvalue/ymap-simplicity-case.test.ts` — **false positive.** Educational console.log strings about the general compaction concept.
-- All `specs/*.md` references — **historical records**, intentionally untouched.
+- `apps/api/src/base-sync-room.ts` "compaction": **false positive.** This is Durable Object update log compaction (merging SQLite rows), completely unrelated to workspace epoch compaction.
+- `packages/workspace/src/shared/y-keyvalue/ymap-simplicity-case.test.ts`: **false positive.** Educational console.log strings about the general compaction concept.
+- All `specs/*.md` references: **historical records**, intentionally untouched.
 
 ### Follow-up Work
 
 - Consider building `encryptedStores` as a single-pass `const` array (currently uses imperative `.push()` loop)
-- Evaluate `options?: { key?: Uint8Array }` construction-time encryption parameter—may have a cleaner alternative
+- Evaluate `options?: { key?: Uint8Array }` construction-time encryption parameter. May have a cleaner alternative
 - Review `withEncryption()` wiring (~120 lines) for unnecessary indirection
-- `packages/workspace/src/workspace/README.md` — update
+- `packages/workspace/src/workspace/README.md`: update

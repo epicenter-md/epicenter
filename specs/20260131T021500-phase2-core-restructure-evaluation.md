@@ -1,7 +1,7 @@
 # Phase 2: Core Directory Restructure Evaluation
 
-**Status**: Planning document (do not execute)  
-**Depends on**: Phase 1 completion  
+**Status**: Planning document (do not execute)
+**Depends on**: Phase 1 completion
 **Decision needed**: After Phase 1, evaluate if restructuring is worth the effort
 
 ## Context
@@ -121,8 +121,8 @@ packages/epicenter/src/
 
 **Context**: There are two table-helper implementations in dynamic:
 
-- `dynamic/table-helper.ts` — Y.Array based (older?)
-- `dynamic/tables/table-helper.ts` — nested Y.Map based
+- `dynamic/table-helper.ts`: Y.Array based (older?)
+- `dynamic/tables/table-helper.ts`: nested Y.Map based
 
 **Change**: Investigate and potentially consolidate.
 
@@ -184,7 +184,7 @@ After 2-4 weeks of working with the cleaned-up codebase:
 2. If yes, prioritize Option C (consolidate table-helpers) over Option B (full restructure)
 3. Only pursue Option B if there's a clear forcing function (new contributors, major version, etc.)
 
-**The goal is a clean, working codebase—not a perfect architecture.** Phase 1 achieves the former. Phase 2 should only happen if there's evidence the current structure is actively causing problems.
+**The goal is a clean, working codebase. Not a perfect architecture.** Phase 1 achieves the former. Phase 2 should only happen if there's evidence the current structure is actively causing problems.
 
 ---
 

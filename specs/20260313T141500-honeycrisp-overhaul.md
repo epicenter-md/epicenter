@@ -1,4 +1,4 @@
-# Honeycrisp Complete Overhaul — Faithful Apple Notes Clone
+# Honeycrisp Complete Overhaul: Faithful Apple Notes Clone
 
 **Date**: 2026-03-13
 **Status**: Implemented
@@ -7,7 +7,7 @@
 
 ## Overview
 
-Complete UI overhaul of Honeycrisp to look and feel like macOS Apple Notes. The app is structurally correct—three-column layout, folder CRUD, note CRUD, Tiptap + Yjs editor, formatting toolbar—but visually reads as a developer scaffold. This spec surgically targets every gap between current state and a convincing Apple Notes clone, maximizing shadcn-svelte component reuse and minimizing custom CSS.
+Complete UI overhaul of Honeycrisp to look and feel like macOS Apple Notes. The app is structurally correct. Three-column layout, folder CRUD, note CRUD, Tiptap + Yjs editor, formatting toolbar. But visually reads as a developer scaffold. This spec surgically targets every gap between current state and a convincing Apple Notes clone, maximizing shadcn-svelte component reuse and minimizing custom CSS.
 
 ## Motivation
 
@@ -17,14 +17,14 @@ Honeycrisp (5 files, ~830 lines) is a working notes app:
 
 ```
 apps/honeycrisp/src/
-├── routes/+page.svelte          (296 lines — ALL state, actions, layout)
+├── routes/+page.svelte          (296 lines: ALL state, actions, layout)
 ├── routes/+layout.svelte        (21 lines)
 ├── routes/+layout.ts            (3 lines)
 ├── lib/components/
 │   ├── Sidebar.svelte           (188 lines)
 │   ├── NoteList.svelte          (207 lines)
 │   └── Editor.svelte            (323 lines)
-└── lib/workspace.ts             (115 lines — schema)
+└── lib/workspace.ts             (115 lines: schema)
 ```
 
 The workspace schema is solid: `folders` + `notes` tables with branded IDs, `DateTimeString` timestamps, Y.XmlFragment documents for collaborative editing, and KV state for UI persistence.
@@ -33,7 +33,7 @@ The formatting toolbar uses shadcn `Toggle`/`ToggleGroup`/`Separator`/`Tooltip` 
 
 ### Problems
 
-1. **+page.svelte is monolithic**: 296 lines of state declarations, 7 `$effect` subscriptions, 9 action functions, layout markup, and keyboard shortcut handling—all in one file. Apple Notes has many subtle interactions; adding them here creates an unmanageable file.
+1. **+page.svelte is monolithic**: 296 lines of state declarations, 7 `$effect` subscriptions, 9 action functions, layout markup, and keyboard shortcut handling. All in one file. Apple Notes has many subtle interactions; adding them here creates an unmanageable file.
 
 2. **Note list cards are visually flat**: Raw `div` elements with inline Tailwind conditionals. No card-like appearance, no subtle shadows, no proper text truncation hierarchy. Doesn't feel like browsing Apple Notes.
 
@@ -55,7 +55,7 @@ The formatting toolbar uses shadcn `Toggle`/`ToggleGroup`/`Separator`/`Tooltip` 
 
 ### Desired State
 
-Someone opening Honeycrisp for the first time thinks "this feels like Apple Notes"—same three-column proportions, same sidebar behavior, same note card layout with title/date/preview, same warm empty states, same keyboard shortcuts. All built from existing shadcn components with near-zero custom CSS.
+Someone opening Honeycrisp for the first time thinks "this feels like Apple Notes". Same three-column proportions, same sidebar behavior, same note card layout with title/date/preview, same warm empty states, same keyboard shortcuts. All built from existing shadcn components with near-zero custom CSS.
 
 ## Research Findings
 
@@ -79,7 +79,7 @@ Someone opening Honeycrisp for the first time thinks "this feels like Apple Note
 | **AlertDialog** | ✅ | ❌ | **Add**: Delete confirmations |
 | **Badge** | ✅ | ❌ | **Add**: Note count badges in sidebar |
 | **Dialog** | ✅ | ❌ | **Consider**: Move-to-folder picker |
-| **Card** | ✅ | ❌ | ❌ Not needed—note cards are custom layout |
+| **Card** | ✅ | ❌ | ❌ Not needed. Note cards are custom layout |
 | **Tabs** | ✅ | ❌ | **Consider**: Gallery/list view toggle |
 | **Skeleton** | ✅ | ❌ | **Consider**: Loading states |
 | **Empty** | ✅ | ❌ | **Add**: Empty state component for better messaging |
@@ -91,10 +91,10 @@ From `ieedan/shadcn-svelte-extras`, already installed in `packages/ui`:
 | Component | Relevance to Honeycrisp |
 |-----------|------------------------|
 | **Chat** | ❌ Not relevant |
-| **Copy Button** | Low — maybe for sharing note links later |
-| **Emoji Picker** | **Medium** — folder icons are already emoji, picker exists |
-| **File Drop Zone** | Low — future attachment support |
-| **Kbd** | Low — keyboard shortcut hints |
+| **Copy Button** | Low: maybe for sharing note links later |
+| **Emoji Picker** | **Medium**: folder icons are already emoji, picker exists |
+| **File Drop Zone** | Low: future attachment support |
+| **Kbd** | Low: keyboard shortcut hints |
 | **Modal** | ✅ Already available for complex dialogs |
 | **Snippet** | ❌ Not relevant |
 
@@ -102,9 +102,9 @@ Not yet installed but available:
 
 | Component | Relevance |
 |-----------|-----------|
-| **Tree View** | **High** — nested folder support (future) |
-| **Tags Input** | **Medium** — note tagging (future) |
-| **Table of Contents** | Low — long note navigation (future) |
+| **Tree View** | **High**: nested folder support (future) |
+| **Tags Input** | **Medium**: note tagging (future) |
+| **Table of Contents** | Low: long note navigation (future) |
 
 ### Apple Notes macOS UI Reference
 
@@ -145,11 +145,11 @@ Three-column layout with specific proportions and behaviors:
 - No gallery view for v1 (Apple Notes has it but it's complex)
 
 **Editor characteristics**:
-- Title: first block is large (24px) and semibold—NOT a separate input, just CSS on first child
+- Title: first block is large (24px) and semibold. NOT a separate input, just CSS on first child
 - Body: comfortable reading size (~16px, 1.6 line-height)
 - Toolbar: formatting bar above editor (already implemented)
 - Generous padding (already `p-8`)
-- No visible chrome when no note is selected—just a centered "Select or create a note" message
+- No visible chrome when no note is selected. Just a centered "Select or create a note" message
 
 ### Comparison: Current vs Target
 
@@ -170,13 +170,13 @@ Three-column layout with specific proportions and behaviors:
 
 | Decision | Choice | Rationale |
 |----------|--------|-----------|
-| **Soft delete** | Add `deletedAt: DateTimeString \| undefined` field to notes table via `_v: 2` migration | Apple Notes keeps deleted notes for 30 days. This is a schema change but minimal—one optional field. |
-| **Component decomposition** | Extract state management from +page.svelte into composable hooks/stores | 296-line god component won't scale. But keep it simple—Svelte 5 `$state` in `.svelte.ts` files, not a framework. |
+| **Soft delete** | Add `deletedAt: DateTimeString \| undefined` field to notes table via `_v: 2` migration | Apple Notes keeps deleted notes for 30 days. This is a schema change but minimal. One optional field. |
+| **Component decomposition** | Extract state management from +page.svelte into composable hooks/stores | 296-line god component won't scale. But keep it simple. Svelte 5 `$state` in `.svelte.ts` files, not a framework. |
 | **Context menus** | Use shadcn `ContextMenu` on note cards and folder items | Already in packages/ui. Apple Notes uses context menus extensively. |
 | **Move-to-folder** | DropdownMenu submenu with folder list | Simpler than a modal dialog. Matches Apple Notes behavior. |
 | **Command palette** | shadcn `Command` component with ⌘K trigger | Already in packages/ui. Search notes by title, quick folder navigation, new note. |
-| **Recently Deleted** | Virtual smart folder—filter notes where `deletedAt` is set | No separate table. Just a filter on existing notes table. |
-| **Note card styling** | Minimal Tailwind adjustments within note list items | No Card component—that's too heavy. Just rounded corners, proper spacing, and selection states. |
+| **Recently Deleted** | Virtual smart folder. Filter notes where `deletedAt` is set | No separate table. Just a filter on existing notes table. |
+| **Note card styling** | Minimal Tailwind adjustments within note list items | No Card component. That's too heavy. Just rounded corners, proper spacing, and selection states. |
 | **Gallery view** | Deferred | Complex grid layout with image previews. Not worth the effort for v1. |
 | **Folder nesting** | Deferred | Would need `parentFolderId` field. Keep flat folders for now. |
 | **Note locking** | Deferred | Was in the archetype spec but excluded from v1. |
@@ -234,7 +234,7 @@ export { folders, notes, selectedFolderId, selectedNoteId, searchQuery, sortBy, 
 ### Schema v2: Soft Delete
 
 ```typescript
-// workspace.ts — notes table v2
+// workspace.ts: notes table v2
 const notesTable = defineTable(
   type({
     id: NoteId,
@@ -324,7 +324,7 @@ Migration from v1: add `deletedAt: undefined` to all existing notes.
   - Move: all action functions (createNote, deleteNote, createFolder, etc.)
   - Move: derived computations (filteredNotes, groupedNotes, noteCounts)
   - Export everything as named exports
-- [x] **0.3** Update `+page.svelte` to import from `notes.svelte.ts`—verify zero behavior change
+- [x] **0.3** Update `+page.svelte` to import from `notes.svelte.ts`: verify zero behavior change
 - [x] **0.4** Add `softDeleteNote` and `restoreNote` actions, `permanentlyDeleteNote` for trash cleanup
 - [x] **0.5** Filter `deletedAt` notes out of normal views, add `deletedNotes` derived state
 
@@ -343,7 +343,7 @@ Migration from v1: add `deletedAt: undefined` to all existing notes.
 - [x] **2.3** Add "Move to Folder" submenu inside the context menu (list all folders, click to move)
 - [x] **2.4** Improve date grouping: add "Previous 7 Days", "Previous 30 Days", and month name groups
 - [x] **2.5** Update NoteList header: show current folder name (not just "Notes"), show note count
-- [x] **2.6** Soft-delete instead of permanent delete—notes go to "Recently Deleted"
+- [x] **2.6** Soft-delete instead of permanent delete. Notes go to "Recently Deleted"
 - [x] **2.7** Add `AlertDialog` for permanent delete confirmation (only from Recently Deleted view)
 
 ### Wave 3: Command Palette
@@ -366,7 +366,7 @@ Migration from v1: add `deletedAt: undefined` to all existing notes.
 
 ### Wave 5: Quality + Edge Cases
 
-- [x] **5.1** Run `bun typecheck` on `apps/honeycrisp` — fix any new errors
+- [x] **5.1** Run `bun typecheck` on `apps/honeycrisp`: fix any new errors
   > Verified: 0 new errors. 4 pre-existing errors in packages/workspace + packages/ui (unrelated).
 - [x] **5.2** Test soft-delete flow: delete → appears in Recently Deleted → restore → back in original folder
   > Implemented and verified via code review: `softDeleteNote` sets `deletedAt`, `restoreNote` clears it with folder-existence check.
@@ -379,7 +379,7 @@ Migration from v1: add `deletedAt: undefined` to all existing notes.
 - [x] **5.6** Test command palette: search, folder navigation, new note/folder
   > Implemented in CommandPalette.svelte with ⌘K shortcut.
 - [ ] **5.7** Verify mobile behavior (SidebarProvider sheet drawer)
-  > Not verified — requires manual testing on mobile/narrow viewport. SidebarProvider should handle this automatically.
+  > Not verified: requires manual testing on mobile/narrow viewport. SidebarProvider should handle this automatically.
 
 ## Edge Cases
 
@@ -483,27 +483,27 @@ Migration from v1: add `deletedAt: undefined` to all existing notes.
 - [x] ⌘K command palette searches notes and navigates to folders
 - [x] NoteList header shows current folder name + count
 - [x] Date grouping expanded: Pinned, Today, Yesterday, Previous 7 Days, Previous 30 Days, month names
-- [x] All new UI uses shadcn components—zero new custom CSS files
+- [x] All new UI uses shadcn components. Zero new custom CSS files
 - [x] `bun typecheck` passes for `apps/honeycrisp` (4 pre-existing errors in packages/workspace + packages/ui, none in app code)
 - [ ] Playwright visual verification at localhost:51913 shows Apple Notes-like layout
-  > Not done — no Playwright tests set up for Honeycrisp.
+  > Not done: no Playwright tests set up for Honeycrisp.
 
 ## References
 
-- `apps/honeycrisp/src/routes/+page.svelte` — Main page (needs decomposition)
-- `apps/honeycrisp/src/lib/components/Editor.svelte` — Tiptap editor (stable, minimal changes)
-- `apps/honeycrisp/src/lib/components/NoteList.svelte` — Note list (needs NoteCard extraction + context menu)
-- `apps/honeycrisp/src/lib/components/Sidebar.svelte` — Folder sidebar (needs smart folders + collapsible)
-- `apps/honeycrisp/src/lib/workspace.ts` — Schema (needs v2 migration for soft delete)
-- `packages/ui/src/context-menu/` — ContextMenu component (unused, needed)
-- `packages/ui/src/command/` — Command palette component (unused, needed)
-- `packages/ui/src/collapsible/` — Collapsible component (unused, needed for sidebar)
-- `packages/ui/src/alert-dialog/` — AlertDialog for confirmations (unused, needed)
-- `packages/ui/src/empty/` — Empty state component (unused, consider for empty views)
-- `packages/ui/src/sidebar/` — 26 sub-components, expand usage
-- `specs/20260311T224500-apple-notes-archetype.md` — Umbrella spec with full schema vision
-- `specs/20260312T192500-honeycrisp.md` — Original build spec
-- `specs/20260312T224500-honeycrisp-ui-polish.md` — First polish pass spec
+- `apps/honeycrisp/src/routes/+page.svelte`: Main page (needs decomposition)
+- `apps/honeycrisp/src/lib/components/Editor.svelte`: Tiptap editor (stable, minimal changes)
+- `apps/honeycrisp/src/lib/components/NoteList.svelte`: Note list (needs NoteCard extraction + context menu)
+- `apps/honeycrisp/src/lib/components/Sidebar.svelte`: Folder sidebar (needs smart folders + collapsible)
+- `apps/honeycrisp/src/lib/workspace.ts`: Schema (needs v2 migration for soft delete)
+- `packages/ui/src/context-menu/`: ContextMenu component (unused, needed)
+- `packages/ui/src/command/`: Command palette component (unused, needed)
+- `packages/ui/src/collapsible/`: Collapsible component (unused, needed for sidebar)
+- `packages/ui/src/alert-dialog/`: AlertDialog for confirmations (unused, needed)
+- `packages/ui/src/empty/`: Empty state component (unused, consider for empty views)
+- `packages/ui/src/sidebar/`: 26 sub-components, expand usage
+- `specs/20260311T224500-apple-notes-archetype.md`: Umbrella spec with full schema vision
+- `specs/20260312T192500-honeycrisp.md`: Original build spec
+- `specs/20260312T224500-honeycrisp-ui-polish.md`: First polish pass spec
 
 ## Review
 
@@ -512,7 +512,7 @@ Migration from v1: add `deletedAt: undefined` to all existing notes.
 
 ### Summary
 
-Complete UI overhaul of Honeycrisp executed across 5 waves (0–4). The app went from a 296-line monolithic +page.svelte with flat styling to a well-decomposed component architecture with Apple Notes–style interactions. All new UI uses shadcn-svelte components with zero custom CSS added.
+Complete UI overhaul of Honeycrisp executed across 5 waves (0-4). The app went from a 296-line monolithic +page.svelte with flat styling to a well-decomposed component architecture with Apple Notes. Style interactions. All new UI uses shadcn-svelte components with zero custom CSS added.
 
 ### What Was Built
 
@@ -527,10 +527,10 @@ Complete UI overhaul of Honeycrisp executed across 5 waves (0–4). The app went
 ### Deviations from Spec
 
 - **Open Question #3 (state pattern)**: Spec recommended module-level `$state` exports; implemented as module-level `$state` with `export { }` re-exports and observer registration at module scope (no factory function). Works correctly as a single-page SPA.
-- **Open Question #1 (auto-purge)**: Not implemented—deferred per recommendation. Manual permanent delete via context menu or Recently Deleted view.
+- **Open Question #1 (auto-purge)**: Not implemented. Deferred per recommendation. Manual permanent delete via context menu or Recently Deleted view.
 - **`moveNoteToFolder` action**: Implemented inline in +page.svelte rather than in notes.svelte.ts, keeping the state module focused on core CRUD and the page handling orchestration.
 - **`defineKv` API change**: Required adding default values to all KV definitions (API changed to require 2 arguments). `kv.get()` now returns values directly instead of `{ status, value }` objects.
-- **Wave 5 (QA)**: Not executed—spec listed Waves 0–4 for execution. Manual QA deferred.
+- **Wave 5 (QA)**: Not executed. Spec listed Waves 0-4 for execution. Manual QA deferred.
 
 ### Follow-up Work
 

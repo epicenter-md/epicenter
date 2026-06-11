@@ -2,7 +2,7 @@
 
 Two patterns for cleaning up resource management and making APIs more natural to use.
 
-**Related**: [The Factory Function Pattern](./factory-function-pattern.md) — a deep dive into why and how to create factory functions that wrap external clients.
+**Related**: [The Factory Function Pattern](./factory-function-pattern.md): a deep dive into why and how to create factory functions that wrap external clients.
 
 ## Pattern 1: Invert Control for Resource Dependencies
 
@@ -183,7 +183,7 @@ Even worse is when client options get mixed with other options in one blob:
 **Before:**
 
 ```typescript
-// All options merged together — what belongs where?
+// All options merged together: what belongs where?
 doSomething({
 	// Client config (shouldn't be here!)
 	timeout: 5000,
@@ -270,7 +270,7 @@ The service is a domain-specific object that wraps the client and exposes focuse
 
 **The key insight: client configuration belongs at client creation time.**
 
-Don't pipe `clientOptions` through your service factory. Don't accept `{ ...clientOptions, ...serviceOptions }` as a merged blob. Let the caller create the client with whatever options they need, then hand you the fully-configured client. Your factory doesn't need to know how the client was configured—it just needs a working client.
+Don't pipe `clientOptions` through your service factory. Don't accept `{ ...clientOptions, ...serviceOptions }` as a merged blob. Let the caller create the client with whatever options they need, then hand you the fully-configured client. Your factory doesn't need to know how the client was configured. It just needs a working client.
 
 This is the perfect level of inversion of control. For more on this pattern, see [The Factory Function Pattern](./factory-function-pattern.md).
 
@@ -298,7 +298,7 @@ Or a destructured object when multiple dependencies are needed:
 function createAnalyticsService({ db, cache, http }, options?) { ... }
 ```
 
-**Second argument (optional)**: Configuration options specific to this factory. Not client options—those belong at client creation time.
+**Second argument (optional)**: Configuration options specific to this factory. Not client options. Those belong at client creation time.
 
 This signature is consistent across all factory functions. Once you internalize it, the pattern becomes second nature.
 
@@ -308,7 +308,7 @@ The two patterns work together: Pattern 1 ensures your factory receives explicit
 
 ## Resources
 
-- [The Universal Factory Function Signature](./universal-factory-signature.md) — the signature explained in depth
-- [The Factory Function Pattern](./factory-function-pattern.md) — deep dive into factory functions
-- [Stop Passing Clients as Arguments](./stop-passing-clients-as-arguments.md) — practical guide
-- [Factory Function Composition Skill](../../.claude/skills/factory-function-composition/SKILL.md) — quick reference
+- [The Universal Factory Function Signature](./universal-factory-signature.md): the signature explained in depth
+- [The Factory Function Pattern](./factory-function-pattern.md): deep dive into factory functions
+- [Stop Passing Clients as Arguments](./stop-passing-clients-as-arguments.md): practical guide
+- [Factory Function Composition Skill](../../.claude/skills/factory-function-composition/SKILL.md): quick reference

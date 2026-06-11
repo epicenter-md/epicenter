@@ -57,8 +57,8 @@ These dependencies appear in multiple packages with hardcoded versions and shoul
 
 ### 4. Fix other issues
 
-- [ ] **`@epicenter/landing`**: Remove `@epicenter/ui` from `devDependencies`—it's already in `dependencies`
-- [ ] **Root `package.json`**: Remove `arktype: "^2.1.29"` from `dependencies`—it should only be in the catalog (no package at root level needs it directly)
+- [ ] **`@epicenter/landing`**: Remove `@epicenter/ui` from `devDependencies`: it's already in `dependencies`
+- [ ] **Root `package.json`**: Remove `arktype: "^2.1.29"` from `dependencies`: it should only be in the catalog (no package at root level needs it directly)
 
 ## Execution order
 
@@ -72,7 +72,7 @@ These dependencies appear in multiple packages with hardcoded versions and shoul
 ## Out of scope
 
 - Dependencies that only appear in one package (no dedup benefit)
-- `workspace:*` references (internal packages—already correct)
+- `workspace:*` references (internal packages. Already correct)
 - Updating dependencies to latest upstream versions beyond what's needed for consistency (that's a separate task)
 
 ## Review
@@ -80,12 +80,12 @@ These dependencies appear in multiple packages with hardcoded versions and shoul
 
 ### Commits
 
-1. `772a525ba` — Updated root catalog: added 16 new entries, fixed 3 version mismatches (arktype ^2.1.27→^2.1.29, @lucide/svelte ^0.555.0→^0.561.0, bits-ui exact→caret).
-2. `3b1e9b222` — Switched hardcoded versions to `catalog:` across 14 workspace package.json files. Removed duplicate `@epicenter/ui` from landing devDependencies.
-3. `09626d505` — Regenerated lockfile.
+1. `772a525ba`: Updated root catalog: added 16 new entries, fixed 3 version mismatches (arktype ^2.1.27→^2.1.29, @lucide/svelte ^0.555.0→^0.561.0, bits-ui exact→caret).
+2. `3b1e9b222`: Switched hardcoded versions to `catalog:` across 14 workspace package.json files. Removed duplicate `@epicenter/ui` from landing devDependencies.
+3. `09626d505`: Regenerated lockfile.
 
 ### Notes
 
-- **Root `dependencies.arktype`**: The spec called for removing `arktype` from root `dependencies`, but the root package.json has no `dependencies` field—only `devDependencies`. The catalog entry was the only place it existed at root level, and that was updated.
+- **Root `dependencies.arktype`**: The spec called for removing `arktype` from root `dependencies`, but the root package.json has no `dependencies` field. Only `devDependencies`. The catalog entry was the only place it existed at root level, and that was updated.
 - **Typecheck results**: 6 packages pass clean. 11 packages have pre-existing type errors unrelated to this change (workspace `NumberKeysOf` missing type, demo-mcp DrizzleDb mismatch, ui svelte-check strictness). No new errors introduced by the catalog consolidation.
 - **Version bumps via catalog**: tab-manager-markdown yjs ^13.6.27→^13.6.29, tab-manager @tailwindcss/vite ^4.1.8→^4.1.11, landing @tailwindcss/typography ^0.5.16→^0.5.19, epicenter @tauri-apps/plugin-opener ^2.3.1→^2.4.0, whispering @tauri-apps/cli ^2.7.1→^2.9.6.

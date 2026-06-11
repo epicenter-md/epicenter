@@ -18,7 +18,7 @@ const matchesRoute = (href: string) => (pathname: string) =>
 /**
  * Primary navigation items shared across sidebar and bottom bar layouts.
  *
- * Add new top-level routes here — both `VerticalNav` and `BottomNav` consume
+ * Add new top-level routes here: both `VerticalNav` and `BottomNav` consume
  * this array, so changes propagate automatically.
  */
 export const NAV_ITEMS = [

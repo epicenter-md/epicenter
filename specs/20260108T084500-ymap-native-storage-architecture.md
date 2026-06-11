@@ -152,7 +152,7 @@ The epoch system (from `20260108T062000-local-first-workspace-discovery.md`) pro
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
-**Key insight**: `Y.encodeStateAsUpdate()` outputs current state WITHOUT tombstone history. This is native YJS functionality—no custom code required.
+**Key insight**: `Y.encodeStateAsUpdate()` outputs current state WITHOUT tombstone history. This is native YJS functionality. No custom code required.
 
 ## Decision Matrix
 

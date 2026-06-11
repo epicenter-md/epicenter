@@ -4,7 +4,7 @@ You have two reactive variables. Every time you assign one, you assign the other
 
 ## The Smell
 
-Here's the pattern in Svelte 5, but it applies to any reactive system — React `useState`, Vue `ref`, Solid signals, plain TypeScript:
+Here's the pattern in Svelte 5, but it applies to any reactive system: React `useState`, Vue `ref`, Solid signals, plain TypeScript:
 
 ```typescript
 let status = $state<'idle' | 'loading' | 'success' | 'error'>('idle');
@@ -25,7 +25,7 @@ async function submit() {
 }
 ```
 
-Every assignment site touches both variables. And in the success branch, `error` keeps its old value — an empty string, sure, but only because you remembered to clear it at the top. The two variables are semantically coupled but syntactically independent. Nothing in the type system connects them. You can set `status = 'success'` while `error` still holds a message from a previous failure.
+Every assignment site touches both variables. And in the success branch, `error` keeps its old value. An empty string, sure, but only because you remembered to clear it at the top. The two variables are semantically coupled but syntactically independent. Nothing in the type system connects them. You can set `status = 'success'` while `error` still holds a message from a previous failure.
 
 ## The Fix
 
@@ -53,19 +53,19 @@ async function submit() {
 }
 ```
 
-One assignment. Both values change atomically. And `error` is only accessible when `status === 'error'` — you can't read a stale error from a success state because the type doesn't have that field.
+One assignment. Both values change atomically. And `error` is only accessible when `status === 'error'`: you can't read a stale error from a success state because the type doesn't have that field.
 
-No more cleanup lines. No more `error = ''` at the top of every function. The impossible state — success with an error message — is unrepresentable.
+No more cleanup lines. No more `error = ''` at the top of every function. The impossible state: success with an error message: is unrepresentable.
 
 ## The Test
 
 Look at your assignment sites. If you see two `let` declarations and every function body assigns both of them together, they should be one `$state` with a discriminated union type.
 
-The heuristic works in reverse too. If two pieces of state change independently — a form's `email` and `password` fields, say — they should stay separate. The test isn't "are they related?" It's "do they always change at the same time?"
+The heuristic works in reverse too. If two pieces of state change independently. A form's `email` and `password` fields, say. They should stay separate. The test isn't "are they related?" It's "do they always change at the same time?"
 
 ## Beyond Reactive State
 
-This isn't a Svelte pattern. It's a TypeScript pattern. Anywhere you see two variables that are always assigned together — function-scoped, module-scoped, class fields — ask whether they're actually one variable wearing a trench coat. The reactive context just makes the cost higher because stale state means stale UI.
+This isn't a Svelte pattern. It's a TypeScript pattern. Anywhere you see two variables that are always assigned together: function-scoped, module-scoped, class fields: ask whether they're actually one variable wearing a trench coat. The reactive context just makes the cost higher because stale state means stale UI.
 
 ---
 

@@ -4,11 +4,11 @@
 
 **Date**: 2026-03-13
 **Status**: Active
-**Supersedes**: `specs/20260219T094400-migrate-filesystem-to-document-binding.md` (content model aspects—the dual-path decision is reversed here)
+**Supersedes**: `specs/20260219T094400-migrate-filesystem-to-document-binding.md` (content model aspects. The dual-path decision is reversed here)
 
 ## Overview
 
-Document Y.Docs store content through two independent, incompatible models—a timeline array and a raw Y.Text. Writes through one path are invisible to reads through the other. This spec unifies on the timeline model as the single content abstraction.
+Document Y.Docs store content through two independent, incompatible models. A timeline array and a raw Y.Text. Writes through one path are invisible to reads through the other. This spec unifies on the timeline model as the single content abstraction.
 
 ## Motivation
 
@@ -33,7 +33,7 @@ tl.pushText('hello');       // appends new timeline entry
 **Path 2: Handle model** (packages/workspace)
 
 ```typescript
-// packages/workspace/src/workspace/create-document.ts — makeHandle()
+// packages/workspace/src/workspace/create-document.ts: makeHandle()
 read()  { return ydoc.getText('content').toString(); }
 write(text) {
     const ytext = ydoc.getText('content');
@@ -63,8 +63,8 @@ This creates problems:
 |---|---|---|
 | Opensidian | `handle.read()/write()` in ContentEditor | Handle (raw Y.Text) |
 | Opensidian | `fs.writeFile()`/`fs.readFile()` for file creation | Timeline |
-| Honeycrisp | `handle.ydoc.getXmlFragment('content')` directly | Neither—raw Y.Doc access |
-| Fuji | `handle.ydoc.getText('content')` directly | Neither—raw Y.Doc access |
+| Honeycrisp | `handle.ydoc.getXmlFragment('content')` directly | Neither. Raw Y.Doc access |
+| Fuji | `handle.ydoc.getText('content')` directly | Neither. Raw Y.Doc access |
 
 Honeycrisp and Fuji bypass `handle.read()/write()` entirely. They use the handle only for Y.Doc access and work with shared types directly. Opensidian is the only app using both paths on the same Y.Doc.
 
@@ -77,8 +77,8 @@ Two patterns are anti-patterns going forward:
 ```typescript
 // ❌ BAD: handle.read/write uses Y.Text('content'), fs uses Y.Array('timeline')
 const handle = await ws.documents.files.content.open(id);
-const text = handle.read();           // reads from Y.Text('content') — WRONG store
-handle.write('hello');                // writes to Y.Text('content') — WRONG store
+const text = handle.read();           // reads from Y.Text('content'): WRONG store
+handle.write('hello');                // writes to Y.Text('content'): WRONG store
 
 // ✅ GOOD: use fs.content which reads/writes via timeline
 const text = await fs.content.read(id);     // reads from timeline
@@ -124,7 +124,7 @@ Only Opensidian's `readContent`/`writeContent` in `fs-state.svelte.ts`. Honeycri
 | Decision | Choice | Rationale |
 |---|---|---|
 | Which content model wins | Timeline | Supports text/binary/sheet. Already powers filesystem. More capable. |
-| Phase 1 change point | Opensidian app layer | Simplest fix—switch `readContent`/`writeContent` to use `fs.content` instead of `handle.read/write`. Zero workspace package changes. |
+| Phase 1 change point | Opensidian app layer | Simplest fix. Switch `readContent`/`writeContent` to use `fs.content` instead of `handle.read/write`. Zero workspace package changes. |
 | Phase 2 change point | `makeHandle()` in create-document.ts | Eventually unify handle.read/write to use timeline internally. Requires solving dependency direction. |
 | What about apps using ydoc directly | Future Phase 3 | Honeycrisp/Fuji access Y.Doc directly for Tiptap binding. Migration to timeline-nested shared types is a separate effort. |
 | handle.ydoc escape hatch | Keep it | Apps that need raw Y.Doc access (custom shared types beyond timeline) still have it, but it should be rare and documented as advanced usage. |
@@ -176,18 +176,18 @@ Opensidian's `readContent`/`writeContent` in `fs-state.svelte.ts` currently use 
 **Exact changes in `fs-state.svelte.ts`:**
 
 ```typescript
-// readContent — BEFORE:
+// readContent: BEFORE:
 const handle = await ws.documents.files.content.open(id);
 return handle.read();
 
-// readContent — AFTER:
+// readContent: AFTER:
 return await fs.content.read(id);
 
-// writeContent — BEFORE:
+// writeContent: BEFORE:
 const handle = await ws.documents.files.content.open(id);
 handle.write(data);
 
-// writeContent — AFTER:
+// writeContent: AFTER:
 await fs.content.write(id, data);
 ```
 
@@ -203,7 +203,7 @@ Change `makeHandle()` in `create-document.ts` so `read()` and `write()` use the 
 - **(b) Inline timeline read/write in makeHandle**: Add ~20 lines of inline logic to `makeHandle()` that reads from `getArray('timeline')` last entry and writes to it. No import needed, but duplicates some timeline knowledge.
 - **(c) Move full timeline to workspace**: Move `timeline.ts` and `entry-types.ts` into workspace, extract sheet parsing into a filesystem-specific extension. Clean but more files to move.
 
-**Recommendation**: Option (a)—minimal text timeline in workspace. Sheet and binary are filesystem-specific concerns.
+**Recommendation**: Option (a): minimal text timeline in workspace. Sheet and binary are filesystem-specific concerns.
 
 - [ ] **2.1** Create `packages/workspace/src/workspace/text-timeline.ts` with minimal text-only timeline
 - [ ] **2.2** Change `makeHandle()` to use text-timeline for `read()`/`write()`
@@ -241,7 +241,7 @@ These create shared types outside the timeline. The migration path:
 2. Code is updated → handle.read() now reads from timeline → returns '' (timeline is empty)
 3. **Need migration**: on first read, if timeline is empty but `getText('content')` has data, copy it into a timeline entry.
 
-This migration is deferred to Phase 2. Phase 1 (opensidian fix) doesn't need it because opensidian's `readContent`/`writeContent` switch to `fs.content` which already reads timeline. Files created via `fs.writeFile()` already have timeline entries. Files where content was written via `handle.write()` (the editor path) would have raw Y.Text content—but in practice, opensidian creates files via `fs.writeFile(path, '')` (empty timeline entry) and edits via the handle, so the timeline entry exists but is empty while the real content is in raw Y.Text. After Phase 1, new edits go to timeline, but old content in Y.Text is orphaned until Phase 2 adds migration.
+This migration is deferred to Phase 2. Phase 1 (opensidian fix) doesn't need it because opensidian's `readContent`/`writeContent` switch to `fs.content` which already reads timeline. Files created via `fs.writeFile()` already have timeline entries. Files where content was written via `handle.write()` (the editor path) would have raw Y.Text content. But in practice, opensidian creates files via `fs.writeFile(path, '')` (empty timeline entry) and edits via the handle, so the timeline entry exists but is empty while the real content is in raw Y.Text. After Phase 1, new edits go to timeline, but old content in Y.Text is orphaned until Phase 2 adds migration.
 
 ### Empty document (no timeline entries)
 
@@ -253,7 +253,7 @@ This migration is deferred to Phase 2. Phase 1 (opensidian fix) doesn't need it 
 
 1. File was written as binary via `fs.writeFile(path, buffer)`
 2. `fs.content.read()` → `readAsString()` decodes binary as text
-3. This is the current timeline behavior—acceptable.
+3. This is the current timeline behavior. Acceptable.
 
 ## Resolved Questions
 
@@ -284,11 +284,11 @@ This migration is deferred to Phase 2. Phase 1 (opensidian fix) doesn't need it 
 
 ## References
 
-- `packages/workspace/src/workspace/create-document.ts` — `makeHandle()` (line 101-120)
-- `packages/workspace/src/workspace/types.ts` — `DocumentHandle` type (line 255-278)
-- `packages/filesystem/src/content/timeline.ts` — Timeline abstraction
-- `packages/filesystem/src/content/content.ts` — `createContentHelpers()` (uses timeline)
-- `packages/filesystem/src/file-system.ts` — `createYjsFileSystem()` (uses content helpers)
-- `apps/opensidian/src/lib/fs/fs-state.svelte.ts` — `readContent`/`writeContent` (uses handle)
-- `apps/opensidian/src/lib/components/ContentEditor.svelte` — Editor component
-- `specs/20260219T094400-migrate-filesystem-to-document-binding.md` — Previous dual-model decision (superseded)
+- `packages/workspace/src/workspace/create-document.ts`: `makeHandle()` (line 101-120)
+- `packages/workspace/src/workspace/types.ts`: `DocumentHandle` type (line 255-278)
+- `packages/filesystem/src/content/timeline.ts`: Timeline abstraction
+- `packages/filesystem/src/content/content.ts`: `createContentHelpers()` (uses timeline)
+- `packages/filesystem/src/file-system.ts`: `createYjsFileSystem()` (uses content helpers)
+- `apps/opensidian/src/lib/fs/fs-state.svelte.ts`: `readContent`/`writeContent` (uses handle)
+- `apps/opensidian/src/lib/components/ContentEditor.svelte`: Editor component
+- `specs/20260219T094400-migrate-filesystem-to-document-binding.md`: Previous dual-model decision (superseded)

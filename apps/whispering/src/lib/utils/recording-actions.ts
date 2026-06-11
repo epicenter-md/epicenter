@@ -8,7 +8,7 @@ import { type Recording, recordings } from '$lib/state/recordings.svelte';
  * confirmation dialogs, workspace writes, and notifications into reusable operations.
  *
  * Unlike the lifecycle commands in `actions.ts` (start/stop/cancel recording),
- * these handle recording management—operations users perform on existing recordings.
+ * these handle recording management: operations users perform on existing recordings.
  *
  * @example
  * ```typescript

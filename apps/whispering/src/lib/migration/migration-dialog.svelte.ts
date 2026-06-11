@@ -83,7 +83,7 @@ function createMigrationDialog() {
 					);
 					hasFailedAttempt = true;
 					phase = 'failed';
-					addLog('Migration state remains pending — you can retry.');
+					addLog('Migration state remains pending: you can retry.');
 					return Ok(null);
 				},
 			});
@@ -92,7 +92,7 @@ function createMigrationDialog() {
 				addLog(`❌ Migration failed: ${migrationOutcome.error.message}`);
 				hasFailedAttempt = true;
 				phase = 'failed';
-				addLog('Migration state remains pending — you can retry.');
+				addLog('Migration state remains pending: you can retry.');
 			}
 
 			const result = migrationOutcome?.data ?? null;
@@ -126,7 +126,7 @@ function createMigrationDialog() {
 		async check() {
 			const state = getDatabaseMigrationState();
 
-			// Already done — nothing to do
+			// Already done: nothing to do
 			if (state === 'done') return;
 
 			if (state === null) {
@@ -139,7 +139,7 @@ function createMigrationDialog() {
 				setPersistedState('pending');
 			}
 
-			// State is 'pending' — show toast
+			// State is 'pending': show toast
 			showPendingToast();
 		},
 		// ── Dev tools (import.meta.env.DEV only) ──

@@ -1,6 +1,6 @@
 # Two Kinds of AI Editing
 
-**TL;DR: There are two fundamentally different AI editing contexts — the interactive copilot and the external agent — and most people conflate them. The copilot operates on a frozen snapshot with human-gated merges. The agent operates on a live document with concurrent edits. They need different solutions.**
+**TL;DR: There are two fundamentally different AI editing contexts, the interactive copilot and the external agent, and most people conflate them. The copilot operates on a frozen snapshot with human-gated merges. The agent operates on a live document with concurrent edits. They need different solutions.**
 
 > The copilot can use flatten-diff against a schema. The agent needs text-level composability with concurrent edits. Mixing them up leads to architectures that solve neither problem well.
 
@@ -21,13 +21,13 @@ This is what Notion AI, Tiptap AI, and every "AI writing assistant" does. The wo
 5. Changes go into a preview/suggestion layer
 6. User accepts, rejects, or edits the suggestion
 
-The critical property: **the AI operates on a frozen snapshot.** While the AI is thinking, the document doesn't change from the AI's perspective. And the human gates the merge — nothing lands without explicit approval.
+The critical property: **the AI operates on a frozen snapshot.** While the AI is thinking, the document doesn't change from the AI's perspective. And the human gates the merge, nothing lands without explicit approval.
 
 This means concurrent edits aren't really a problem. If another user edits a different part of the document while the AI is working, those edits exist in the live document but not in the AI's snapshot. When the user accepts the suggestion, the system merges the AI's changes into the current state. Since the AI only touched the highlighted region, conflicts are rare and human-resolvable.
 
 ### Context 2: External agent writeFile()
 
-A coding agent — Claude Code, Cursor's agent mode, Aider — reads a file from the filesystem, reasons about it for seconds to minutes, then writes back a modified version. The agent has no awareness of the editor. It doesn't know about your ProseMirror schema or your CRDT state. It read text. It writes text.
+A coding agent: Claude Code, Cursor's agent mode, Aider: reads a file from the filesystem, reasons about it for seconds to minutes, then writes back a modified version. The agent has no awareness of the editor. It doesn't know about your ProseMirror schema or your CRDT state. It read text. It writes text.
 
 The workflow:
 
@@ -80,11 +80,11 @@ Text diffing handles this because character-level operations are the smallest un
 
 You might think: just use flatten-diff for everything. Parse the agent's markdown into a tree, diff the trees. Three problems:
 
-**1. Parsing is lossy.** Your editor might have custom nodes — callouts, code blocks with metadata, embedded widgets. The agent's markdown doesn't know about these. Parsing the agent's output back into your schema loses them or maps them incorrectly.
+**1. Parsing is lossy.** Your editor might have custom nodes: callouts, code blocks with metadata, embedded widgets. The agent's markdown doesn't know about these. Parsing the agent's output back into your schema loses them or maps them incorrectly.
 
 **2. Tree-to-tree matching is fragile.** Two independently-parsed trees can represent the same text with different structures. A paragraph followed by a list might be one node or two depending on whitespace. Matching nodes between two trees that were built independently is an unsolved problem.
 
-**3. The concurrent deletion problem.** If the agent reads a file, thinks for two minutes, and writes back a version that doesn't include a paragraph User B added during those two minutes — the tree diff sees a deletion. The new paragraph disappears. With text diffing, the agent's changes are localized to the characters it actually modified, and User B's paragraph survives because the agent never touched those character positions.
+**3. The concurrent deletion problem.** If the agent reads a file, thinks for two minutes, and writes back a version that doesn't include a paragraph User B added during those two minutes, the tree diff sees a deletion. The new paragraph disappears. With text diffing, the agent's changes are localized to the characters it actually modified, and User B's paragraph survives because the agent never touched those character positions.
 
 ## The takeaway
 

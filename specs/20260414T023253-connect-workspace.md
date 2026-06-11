@@ -1,7 +1,7 @@
-# `connectWorkspace` — One-Line Authenticated Workspace for Scripts
+# `connectWorkspace`: One-Line Authenticated Workspace for Scripts
 
 **Date**: 2026-04-14
-**Status**: Superseded in part — 2026-04-18
+**Status**: Superseded in part: 2026-04-18
 **Author**: AI-assisted
 
 > **2026-04-18 Update**: `connectWorkspace` no longer attaches filesystem persistence. It now chains only `unlock → sync` and is ephemeral by design. Rationale: scripts are short-lived and the sync handshake downloads the full doc on connect, so paying for a second SQLite writer only created lock contention with a concurrently running `epicenter start` daemon on the same workspace. Persistence remains the daemon's responsibility; see `epicenter.config.ts` examples. References below that show `persistence` in the chain are historical.
@@ -66,17 +66,17 @@ Every app in the monorepo follows the same two-layer pattern:
 
 | Layer | Location | What it does |
 |---|---|---|
-| Factory | `apps/*/src/lib/workspace/workspace.ts` | `createWorkspace(def).withActions(...)` — schema + actions only |
-| Consumer | `apps/*/src/lib/client.ts` or `epicenter.config.ts` | Chains persistence + unlock + sync — environment-specific |
+| Factory | `apps/*/src/lib/workspace/workspace.ts` | `createWorkspace(def).withActions(...)`: schema + actions only |
+| Consumer | `apps/*/src/lib/client.ts` or `epicenter.config.ts` | Chains persistence + unlock + sync: environment-specific |
 
-Factory functions are intentionally bare (no I/O, isomorphic). The consumer adds environment-specific extensions. `connectWorkspace` is the "CLI/script consumer" — the counterpart of the browser's `client.ts`.
+Factory functions are intentionally bare (no I/O, isomorphic). The consumer adds environment-specific extensions. `connectWorkspace` is the "CLI/script consumer". The counterpart of the browser's `client.ts`.
 
 ### Extension Initialization Model
 
-Extensions initialize in registration order. Each factory receives `ctx.whenReady` — a composite promise of all prior extensions.
+Extensions initialize in registration order. Each factory receives `ctx.whenReady`: a composite promise of all prior extensions.
 
-- Persistence extensions (SQLite, IndexedDB) do **not** await `ctx.whenReady` — they start loading immediately.
-- Unlock and sync extensions **do** await `ctx.whenReady` — they wait for persistence to finish.
+- Persistence extensions (SQLite, IndexedDB) do **not** await `ctx.whenReady`: they start loading immediately.
+- Unlock and sync extensions **do** await `ctx.whenReady`: they wait for persistence to finish.
 
 This means the chain `persistence → unlock → sync` creates the correct dependency graph without explicit coordination:
 
@@ -94,7 +94,7 @@ persistence starts immediately ──────────────→ don
 - Sessions are stored per server URL: `{ accessToken, encryptionKeys, user }`
 - `createCliUnlock` reads encryption keys from the session and calls `applyEncryptionKeys()`
 - `createSyncExtension` uses `getToken` to fetch the access token on each reconnect
-- Both read from the same session store — shared via closure
+- Both read from the same session store: shared via closure
 
 ## Design Decisions
 
@@ -148,8 +148,8 @@ packages/cli/src/
 ### Phase 2: Validation
 
 - [ ] **2.1** Write a test script in `packages/cli/test/` that uses `connectWorkspace` with a test workspace
-- [ ] **2.2** Verify TypeScript inference — `workspace.tables.*` and `workspace.actions.*` should be fully typed
-- [ ] **2.3** Verify extension ordering — persistence loads before sync connects
+- [ ] **2.2** Verify TypeScript inference: `workspace.tables.*` and `workspace.actions.*` should be fully typed
+- [ ] **2.3** Verify extension ordering: persistence loads before sync connects
 
 ### Phase 3: Documentation
 
@@ -172,7 +172,7 @@ import type { AnyWorkspaceClientBuilder } from '@epicenter/workspace';
 
 /**
  * Connect a workspace factory to the Epicenter API with authentication,
- * persistence, and sync — ready to use in one `await`.
+ * persistence, and sync: ready to use in one `await`.
  *
  * Chains extensions in the correct order (persistence → unlock → sync) so
  * the sync handshake only exchanges the delta between local state and the
@@ -182,7 +182,7 @@ import type { AnyWorkspaceClientBuilder } from '@epicenter/workspace';
  * `~/.epicenter/auth/sessions.json`.
  *
  * @param factory - Workspace factory function (e.g. `createFujiWorkspace`).
- *   Must return a workspace builder — typically `createWorkspace(def).withActions(...)`.
+ *   Must return a workspace builder: typically `createWorkspace(def).withActions(...)`.
  * @param opts.server - Epicenter API server URL. Defaults to
  *   `process.env.EPICENTER_SERVER ?? 'https://api.epicenter.so'`.
  *
@@ -229,7 +229,7 @@ export async function connectWorkspace<T extends AnyWorkspaceClientBuilder>(
 
 1. User hasn't run `epicenter auth login`
 2. `sessions.load(server)` returns `null`
-3. `getToken` returns `null` — sync connects without auth (will fail on authenticated endpoints)
+3. `getToken` returns `null`: sync connects without auth (will fail on authenticated endpoints)
 4. `createCliUnlock` skips encryption key application
 
 **Expected**: Sync fails with an auth error. The error message from the WebSocket close should surface. Consider adding a pre-check that throws a clear error like `"No session found for ${server}. Run: epicenter auth login --server ${server}"`.
@@ -237,7 +237,7 @@ export async function connectWorkspace<T extends AnyWorkspaceClientBuilder>(
 ### Workspace Already Has Extensions
 
 1. Factory returns a builder that already has persistence or sync chained
-2. `connectWorkspace` chains them again — duplicate extensions
+2. `connectWorkspace` chains them again: duplicate extensions
 
 **Expected**: This is a misuse. The factory pattern (`createFujiWorkspace`) deliberately returns schema + actions only. Document that `connectWorkspace` is for bare factories, not pre-configured clients.
 
@@ -273,10 +273,10 @@ export async function connectWorkspace<T extends AnyWorkspaceClientBuilder>(
 
 ## References
 
-- `packages/cli/src/extensions.ts` — `createCliUnlock` implementation
-- `packages/cli/src/auth/store.ts` — `createSessionStore` implementation
-- `packages/cli/src/load-config.ts` — How CLI discovers workspace exports (for comparison)
-- `packages/workspace/src/extensions/persistence/sqlite.ts` — `filesystemPersistence` factory
-- `packages/workspace/src/extensions/sync/websocket.ts` — `createSyncExtension` factory
-- `playground/opensidian-e2e/epicenter.config.ts` — Reference config with full extension chain
-- `~/Code/vault/epicenter.config.ts` — Real-world config this function replaces for scripts
+- `packages/cli/src/extensions.ts`: `createCliUnlock` implementation
+- `packages/cli/src/auth/store.ts`: `createSessionStore` implementation
+- `packages/cli/src/load-config.ts`: How CLI discovers workspace exports (for comparison)
+- `packages/workspace/src/extensions/persistence/sqlite.ts`: `filesystemPersistence` factory
+- `packages/workspace/src/extensions/sync/websocket.ts`: `createSyncExtension` factory
+- `playground/opensidian-e2e/epicenter.config.ts`: Reference config with full extension chain
+- `~/Code/vault/epicenter.config.ts`: Real-world config this function replaces for scripts

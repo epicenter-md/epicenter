@@ -1,4 +1,4 @@
-# Honeycrisp UI Polish — Closer to Apple Notes
+# Honeycrisp UI Polish: Closer to Apple Notes
 
 **Date**: 2026-03-12
 **Status**: Implemented
@@ -7,15 +7,15 @@
 
 ## Overview
 
-Improve Honeycrisp's three-column notes app to look and feel closer to macOS Apple Notes by leveraging existing shadcn-svelte components from `packages/ui/`, adding a formatting toolbar, and fixing editor typography—while avoiding custom Tailwind classes wherever a shadcn component already handles the job.
+Improve Honeycrisp's three-column notes app to look and feel closer to macOS Apple Notes by leveraging existing shadcn-svelte components from `packages/ui/`, adding a formatting toolbar, and fixing editor typography. While avoiding custom Tailwind classes wherever a shadcn component already handles the job.
 
 ## Motivation
 
 ### Current State
 
-Honeycrisp (3 components + page) is structurally correct—three-column layout, folder CRUD, note CRUD, Tiptap + Yjs—but visually it reads as a generic developer scaffold, not a polished notes app.
+Honeycrisp (3 components + page) is structurally correct. Three-column layout, folder CRUD, note CRUD, Tiptap + Yjs. But visually it reads as a generic developer scaffold, not a polished notes app.
 
-**Editor.svelte** — bare Tiptap with `prose prose-sm`:
+**Editor.svelte**: bare Tiptap with `prose prose-sm`:
 ```typescript
 editorProps: {
   attributes: {
@@ -24,12 +24,12 @@ editorProps: {
 },
 ```
 
-**NoteList.svelte** — raw `div` elements with inline Tailwind, no search:
+**NoteList.svelte**: raw `div` elements with inline Tailwind, no search:
 ```svelte
 <div class="group relative flex cursor-pointer flex-col gap-0.5 rounded-md px-3 py-2 text-sm transition-colors hover:bg-accent/50 {selectedNoteId === note.id ? 'bg-accent' : ''}">
 ```
 
-**Sidebar.svelte** — functional but missing `Sidebar.Input` for search (Fuji uses it, Honeycrisp doesn't).
+**Sidebar.svelte**: functional but missing `Sidebar.Input` for search (Fuji uses it, Honeycrisp doesn't).
 
 ### Problems
 
@@ -42,7 +42,7 @@ editorProps: {
 
 ### Desired State
 
-A notes app where someone opening it for the first time thinks "this feels like Apple Notes"—system fonts, large title, formatting toolbar, seamless column layout, search—all built from existing shadcn components. Prefer component props and composition over raw Tailwind utility classes.
+A notes app where someone opening it for the first time thinks "this feels like Apple Notes". System fonts, large title, formatting toolbar, seamless column layout, search. All built from existing shadcn components. Prefer component props and composition over raw Tailwind utility classes.
 
 ## Research Findings
 
@@ -58,7 +58,7 @@ However, the actual font import is **commented out**:
 /* @import '@fontsource-variable/manrope'; */
 ```
 
-**Key finding**: Manrope isn't actually loading. Browsers fall through to `system-ui` → `-apple-system` → `BlinkMacSystemFont`. On macOS, that's **SF Pro**—exactly what Apple Notes uses.
+**Key finding**: Manrope isn't actually loading. Browsers fall through to `system-ui` → `-apple-system` → `BlinkMacSystemFont`. On macOS, that's **SF Pro**: exactly what Apple Notes uses.
 
 **Implication**: No font changes needed for Honeycrisp. The system font stack already produces the right result on macOS. Don't add custom fonts. Don't override `--font-sans`. Just use what's there.
 
@@ -67,11 +67,11 @@ However, the actual font import is **commented out**:
 | Component | In `packages/ui/` | Used by Honeycrisp | Recommended |
 |-----------|-------------------|--------------------|----|
 | Sidebar.* (26 sub-components) | ✅ | ✅ Partial (14 of 26) | Add: `Input`, `Trigger`, `Separator` |
-| SidebarProvider | ✅ | ✅ | — |
+| SidebarProvider | ✅ | ✅ |: |
 | Resizable.* | ✅ | ✅ | Remove `withHandle` |
-| ScrollArea | ✅ | ✅ | — |
-| Button | ✅ | ✅ | — |
-| DropdownMenu | ✅ | ✅ | — |
+| ScrollArea | ✅ | ✅ |: |
+| Button | ✅ | ✅ |: |
+| DropdownMenu | ✅ | ✅ |: |
 | Tooltip.Provider | ✅ | ✅ (layout only) | Add `Tooltip.Root/Trigger/Content` for toolbar |
 | **Toggle** | ✅ | ❌ | **Use for formatting toolbar** |
 | **ToggleGroup** | ✅ | ❌ | **Use for grouped toolbar buttons** |
@@ -88,7 +88,7 @@ However, the actual font import is **commented out**:
 
 **Key finding**: No formatting toolbar exists anywhere in this codebase. Neither Honeycrisp nor Fuji has one. Both editors use bare StarterKit + Placeholder. No `@tiptap/extension-*` packages beyond core are installed.
 
-**Implication**: The toolbar is new work, but it's straightforward—Tiptap's `editor.chain().focus().toggleBold().run()` API + shadcn `Toggle`/`ToggleGroup` components.
+**Implication**: The toolbar is new work, but it's straightforward. Tiptap's `editor.chain().focus().toggleBold().run()` API + shadcn `Toggle`/`ToggleGroup` components.
 
 ### Apple Notes Visual Reference
 
@@ -99,7 +99,7 @@ However, the actual font import is **commented out**:
 | Formatting toolbar | Persistent bar above editor | None | **Critical** |
 | Column dividers | Hairline, barely visible | Visible drag handle | Medium |
 | Note list search | Search field at top | None | Medium |
-| Selection | Rounded, subtle blue tint | Block `bg-accent` | Low — already decent |
+| Selection | Rounded, subtle blue tint | Block `bg-accent` | Low: already decent |
 | Sidebar search | Not in sidebar (in toolbar area) | None | Low |
 
 ### Fuji Comparison
@@ -110,14 +110,14 @@ Fuji's EntryEditor has:
 - Same bare `prose prose-sm` editor
 - Back button + timestamp footer
 
-Fuji's Sidebar has `Sidebar.Input` for search—Honeycrisp should follow this pattern.
+Fuji's Sidebar has `Sidebar.Input` for search. Honeycrisp should follow this pattern.
 
 ## Design Decisions
 
 | Decision | Choice | Rationale |
 |----------|--------|-----------|
 | **Font** | Keep system font stack as-is | Manrope isn't loading; system fonts are already SF Pro on macOS. No change needed. |
-| **Title styling** | CSS on `.tiptap > *:first-child` | Keep title inside the editor (Apple Notes behavior) vs separate input (Fuji approach). Title-as-first-line matches how Apple Notes works—type and it becomes the title. |
+| **Title styling** | CSS on `.tiptap > *:first-child` | Keep title inside the editor (Apple Notes behavior) vs separate input (Fuji approach). Title-as-first-line matches how Apple Notes works. Type and it becomes the title. |
 | **Body size** | `prose` instead of `prose-sm` | The existing `prose.css` in `packages/ui/src/` already defines good sizes for headings, body, lists. Just remove the `sm` modifier. |
 | **Toolbar** | shadcn `Toggle` + `Separator` | Use existing components. No custom toolbar CSS. Toggle's `data-[state=on]` handles active formatting states automatically. |
 | **Tiptap extensions** | Add `task-list`, `task-item`, `underline` | Minimum extensions to match Apple Notes formatting options. Don't over-engineer. |
@@ -158,7 +158,7 @@ apps/honeycrisp/src/
 ### Toolbar Component Structure (all shadcn)
 
 ```svelte
-<!-- All shadcn components — no custom divider/button styling needed -->
+<!-- All shadcn components, no custom divider/button styling needed -->
 <div class="flex items-center gap-1 border-b px-4 py-1">
   <ToggleGroup type="multiple" size="sm">   <!-- Bold, Italic, Underline, Strike -->
     <ToggleGroup.Item value="bold"><BoldIcon /></ToggleGroup.Item>
@@ -184,14 +184,14 @@ apps/honeycrisp/src/
 </div>
 ```
 
-**Key principle**: Every visible UI element is a shadcn component. The only Tailwind on this wrapper `div` is layout (`flex`, `items-center`, `gap-1`) and the border—structural, not decorative.
+**Key principle**: Every visible UI element is a shadcn component. The only Tailwind on this wrapper `div` is layout (`flex`, `items-center`, `gap-1`) and the border. Structural, not decorative.
 
 ## Implementation Plan
 
-### Wave 1: Editor — Title + Body Typography
+### Wave 1: Editor: Title + Body Typography
 - [x] **1.1** In `Editor.svelte`, change `prose prose-sm dark:prose-invert` → `prose dark:prose-invert` (remove `prose-sm`)
-- [x] **1.2** Add CSS rule: `:global(.tiptap > *:first-child) { font-size: 1.75rem; font-weight: 700; line-height: 1.2; }` — makes first block render as title. Also updated placeholder CSS to match title styling.
-- [x] **1.3** Verify editor padding is adequate—current `p-8` is fine at full `prose` size. No change needed.
+- [x] **1.2** Add CSS rule: `:global(.tiptap > *:first-child) { font-size: 1.75rem; font-weight: 700; line-height: 1.2; }`: makes first block render as title. Also updated placeholder CSS to match title styling.
+- [x] **1.3** Verify editor padding is adequate. Current `p-8` is fine at full `prose` size. No change needed.
 
 ### Wave 2: Formatting Toolbar
 - [x] **2.1** Install Tiptap extensions: `@tiptap/extension-task-list`, `@tiptap/extension-task-item`, `@tiptap/extension-underline` (pinned to ^2.12.0 for core compat)
@@ -204,7 +204,7 @@ apps/honeycrisp/src/
 ### Wave 3: Search + Layout Polish
 - [x] **3.1** Add `Sidebar.Input` to `Sidebar.svelte` header for folder/note search (follows Fuji pattern)
 - [x] **3.2** In `+page.svelte`, add `searchQuery` state and filter `filteredNotes` by title/preview matching
-- [x] **3.3** Remove `withHandle` from `<Resizable.Handle>` in `+page.svelte` — produces clean hairline divider
+- [x] **3.3** Remove `withHandle` from `<Resizable.Handle>` in `+page.svelte`: produces clean hairline divider
 - [x] **3.4** Add `Sidebar.Trigger` in sidebar header for toggling sidebar on mobile
 
 ### Wave 4: NoteList Header
@@ -217,7 +217,7 @@ apps/honeycrisp/src/
 
 1. User types in a fresh note. The first paragraph renders large/bold via CSS.
 2. `extractTitleAndPreview()` already takes the first line as title and first 100 chars as preview.
-3. No change needed in extraction logic—CSS handles rendering; the data model is unchanged.
+3. No change needed in extraction logic. CSS handles rendering; the data model is unchanged.
 
 ### Toolbar State When No Editor
 
@@ -233,7 +233,7 @@ apps/honeycrisp/src/
 ### Sidebar Search vs Note List Search
 
 1. Fuji puts search in Sidebar. Apple Notes puts it above the note list.
-2. For v1, put it in the Sidebar (following Fuji's pattern)—simpler, one component change.
+2. For v1, put it in the Sidebar (following Fuji's pattern): simpler, one component change.
 3. Can move it to the note list header later if desired.
 
 ## Open Questions
@@ -261,14 +261,14 @@ apps/honeycrisp/src/
 
 ## Deliberately Excluded
 
-- ❌ Custom colors or theme overrides — use base shadcn theme as-is
-- ❌ Custom fonts — system font stack is correct
-- ❌ Custom Tailwind utility classes for decoration — always check if a shadcn component exists first
-- ❌ Animations/transitions — not necessary for v1 polish
-- ❌ ⌘K command palette — future feature, not this wave
-- ❌ Right-click context menus — future feature
-- ❌ Drag-and-drop folder reordering — future feature
-- ❌ Mobile-specific layout changes — SidebarProvider handles this automatically
+- ❌ Custom colors or theme overrides: use base shadcn theme as-is
+- ❌ Custom fonts: system font stack is correct
+- ❌ Custom Tailwind utility classes for decoration: always check if a shadcn component exists first
+- ❌ Animations/transitions: not necessary for v1 polish
+- ❌ ⌘K command palette: future feature, not this wave
+- ❌ Right-click context menus: future feature
+- ❌ Drag-and-drop folder reordering: future feature
+- ❌ Mobile-specific layout changes: SidebarProvider handles this automatically
 
 ## Success Criteria
 
@@ -278,22 +278,22 @@ apps/honeycrisp/src/
 - [x] Toolbar active states reflect current cursor formatting
 - [x] Search field in sidebar filters notes by title/preview
 - [x] Resizable handle is a clean hairline (no visible drag indicator)
-- [x] All new UI uses shadcn components—no custom component CSS beyond title first-child rule
+- [x] All new UI uses shadcn components. No custom component CSS beyond title first-child rule
 - [x] `bun typecheck` passes for `apps/honeycrisp` (5 pre-existing errors in packages/workspace and packages/ui unrelated to Honeycrisp)
 
 ## References
 
-- `apps/honeycrisp/src/routes/+page.svelte` — Main page with layout, state, actions
-- `apps/honeycrisp/src/lib/components/Editor.svelte` — Tiptap editor (primary changes)
-- `apps/honeycrisp/src/lib/components/NoteList.svelte` — Note list with date grouping
-- `apps/honeycrisp/src/lib/components/Sidebar.svelte` — Folder sidebar
-- `apps/fuji/src/lib/components/FujiSidebar.svelte` — Reference for Sidebar.Input usage
-- `packages/ui/src/toggle-group/` — ToggleGroup component for toolbar
-- `packages/ui/src/toggle/` — Toggle component for toolbar
-- `packages/ui/src/separator/` — Separator for toolbar dividers
-- `packages/ui/src/sidebar/` — 26 sub-components including Input, Trigger
-- `packages/ui/src/prose.css` — Existing prose styles (used by editor)
-- `packages/ui/src/app.css` — Design tokens, font stack, color variables
+- `apps/honeycrisp/src/routes/+page.svelte`: Main page with layout, state, actions
+- `apps/honeycrisp/src/lib/components/Editor.svelte`: Tiptap editor (primary changes)
+- `apps/honeycrisp/src/lib/components/NoteList.svelte`: Note list with date grouping
+- `apps/honeycrisp/src/lib/components/Sidebar.svelte`: Folder sidebar
+- `apps/fuji/src/lib/components/FujiSidebar.svelte`: Reference for Sidebar.Input usage
+- `packages/ui/src/toggle-group/`: ToggleGroup component for toolbar
+- `packages/ui/src/toggle/`: Toggle component for toolbar
+- `packages/ui/src/separator/`: Separator for toolbar dividers
+- `packages/ui/src/sidebar/`: 26 sub-components including Input, Trigger
+- `packages/ui/src/prose.css`: Existing prose styles (used by editor)
+- `packages/ui/src/app.css`: Design tokens, font stack, color variables
 
 ## Review
 
@@ -301,14 +301,14 @@ apps/honeycrisp/src/
 
 ### Summary
 
-All four waves implemented as specified. Honeycrisp now has Apple Notes–style typography (1.75rem bold title, 16px body), a persistent formatting toolbar built entirely from shadcn Toggle/ToggleGroup/Separator/Tooltip components, sidebar search following Fuji's Sidebar.Input pattern, clean hairline resizable dividers, a sort dropdown persisted to KV, and a Sidebar.Trigger for mobile toggle.
+All four waves implemented as specified. Honeycrisp now has Apple Notes. Style typography (1.75rem bold title, 16px body), a persistent formatting toolbar built entirely from shadcn Toggle/ToggleGroup/Separator/Tooltip components, sidebar search following Fuji's Sidebar.Input pattern, clean hairline resizable dividers, a sort dropdown persisted to KV, and a Sidebar.Trigger for mobile toggle.
 
 ### Deviations from Spec
 
-- **Toolbar padding**: Spec suggested `px-4 py-1`, implementation uses `p-2`—visually equivalent, slightly more compact.
-- **Inline formatting**: Used individual Toggle components instead of ToggleGroup type="multiple" for Bold/Italic/Underline/Strike—simpler value management since each is an independent on/off state.
+- **Toolbar padding**: Spec suggested `px-4 py-1`, implementation uses `p-2`: visually equivalent, slightly more compact.
+- **Inline formatting**: Used individual Toggle components instead of ToggleGroup type="multiple" for Bold/Italic/Underline/Strike. Simpler value management since each is an independent on/off state.
 - **Tiptap extension versions**: Pinned to `^2.12.0` range instead of latest v3.x to match existing `@tiptap/core@^2.12.0`.
-- **Toolbar active state sync**: Used `onTransaction` callback instead of `$effect` on editor updates—onTransaction fires on every editor state change, which is the correct Tiptap pattern for toolbar state.
+- **Toolbar active state sync**: Used `onTransaction` callback instead of `$effect` on editor updates. OnTransaction fires on every editor state change, which is the correct Tiptap pattern for toolbar state.
 
 ### Follow-up Work
 

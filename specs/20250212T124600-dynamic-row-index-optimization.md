@@ -1,7 +1,7 @@
 # Dynamic API Row Index Optimization
 
-**Status:** Completed (via refactoring)  
-**Created:** 2025-02-12  
+**Status:** Completed (via refactoring)
+**Created:** 2025-02-12
 **Author:** Claude (via conversation with Braden)
 
 ## Summary
@@ -152,16 +152,16 @@ export class YKeyValueLww<T> {
   readonly yarray: Y.Array<YKeyValueLwwEntry<T>>;
   readonly doc: Y.Doc;
   readonly map: Map<string, YKeyValueLwwEntry<T>>;
-  
+
   // NEW: Secondary index for row-level operations
   // Maps rowId → Set of full cell keys belonging to that row
   readonly rowIndex: Map<string, Set<string>> = new Map();
-  
+
   private pending: Map<string, YKeyValueLwwEntry<T>> = new Map();
-  
+
   // NEW: Pending row index for entries not yet in main index
   private pendingRowIndex: Map<string, Set<string>> = new Map();
-  
+
   // ... existing code ...
 }
 ```
@@ -173,12 +173,12 @@ In the constructor, after building the main `map`:
 ```typescript
 constructor(yarray: Y.Array<YKeyValueLwwEntry<T>>) {
   // ... existing map building code ...
-  
+
   // Build row index from map
   for (const key of this.map.keys()) {
     this.addToRowIndex(key);
   }
-  
+
   // ... existing observer setup ...
 }
 
@@ -212,7 +212,7 @@ Modify the existing observer to maintain the row index:
 ```typescript
 yarray.observe((event, transaction) => {
   // ... existing change handling ...
-  
+
   // Handle deletions - update row index
   event.changes.deleted.forEach((deletedItem) => {
     deletedItem.content.getContent().forEach((entry: YKeyValueLwwEntry<T>) => {
@@ -223,9 +223,9 @@ yarray.observe((event, transaction) => {
       }
     });
   });
-  
+
   // ... existing add handling ...
-  
+
   // For adds that become the winner:
   if (!existing) {
     this.map.set(newEntry.key, newEntry);
@@ -236,7 +236,7 @@ yarray.observe((event, transaction) => {
     this.map.set(newEntry.key, newEntry);
     // ... existing change tracking ...
   }
-  
+
   // ... rest of observer ...
 });
 ```
@@ -248,10 +248,10 @@ The `pending` map holds entries written but not yet processed by observer. We ne
 ```typescript
 set(key: string, val: T): void {
   const entry: YKeyValueLwwEntry<T> = { key, val, ts: this.getTimestamp() };
-  
+
   this.pending.set(key, entry);
   this.addToPendingRowIndex(key);  // NEW
-  
+
   // ... existing yarray operations ...
 }
 
@@ -275,7 +275,7 @@ if (this.pending.get(newEntry.key) === newEntry) {
 ```typescript
 /**
  * Check if a row exists (has any cells). O(1).
- * 
+ *
  * Checks both confirmed (map) and pending entries.
  */
 hasRow(rowId: string): boolean {
@@ -284,7 +284,7 @@ hasRow(rowId: string): boolean {
 
 /**
  * Count total rows. O(1).
- * 
+ *
  * Note: Counts rows with at least one cell. A row with all cells
  * deleted is not counted.
  */
@@ -299,16 +299,16 @@ countRows(): number {
 
 /**
  * Get all cell keys for a row. O(1).
- * 
+ *
  * Returns undefined if row doesn't exist.
  * Combines confirmed and pending entries.
  */
 getRowKeys(rowId: string): Set<string> | undefined {
   const confirmed = this.rowIndex.get(rowId);
   const pending = this.pendingRowIndex.get(rowId);
-  
+
   if (!confirmed && !pending) return undefined;
-  
+
   const combined = new Set<string>();
   if (confirmed) for (const key of confirmed) combined.add(key);
   if (pending) for (const key of pending) combined.add(key);
@@ -317,14 +317,14 @@ getRowKeys(rowId: string): Set<string> | undefined {
 
 /**
  * Get all values for a row as a Map<fieldId, value>. O(m).
- * 
+ *
  * m = number of fields in the row.
  * Returns undefined if row doesn't exist.
  */
 getRow(rowId: string): Map<string, T> | undefined {
   const keys = this.getRowKeys(rowId);
   if (!keys) return undefined;
-  
+
   const row = new Map<string, T>();
   for (const cellKey of keys) {
     const fieldId = cellKey.substring(rowId.length + 1); // Skip "rowId:"
@@ -338,13 +338,13 @@ getRow(rowId: string): Map<string, T> | undefined {
 
 /**
  * Delete all cells for a row. O(m).
- * 
+ *
  * m = number of fields in the row.
  */
 deleteRow(rowId: string): void {
   const keys = this.getRowKeys(rowId);
   if (!keys) return;
-  
+
   this.doc.transact(() => {
     for (const cellKey of keys) {
       this.delete(cellKey);
@@ -649,7 +649,7 @@ Instead of adding a new `rowIndex` inside `YKeyValueLww`, the optimization was a
 
 ### What Was Done
 
-1. **Moved `y-cell-store.ts` and `y-row-store.ts`** from `shared/` to `dynamic/tables/` — they were dynamic-API-specific, not shared primitives.
+1. **Moved `y-cell-store.ts` and `y-row-store.ts`** from `shared/` to `dynamic/tables/`: they were dynamic-API-specific, not shared primitives.
 
 2. **Refactored `table-helper.ts`** to compose over `CellStore` + `RowStore` instead of raw `YKeyValueLww`. The `RowStore` already maintains a `Map<rowId, Map<columnId, value>>` in-memory index updated reactively via observers.
 
@@ -662,7 +662,7 @@ Instead of adding a new `rowIndex` inside `YKeyValueLww`, the optimization was a
 ### Why This Approach
 
 - `CellStore` and `RowStore` already existed with comprehensive test suites (40+ and 90+ tests)
-- No changes to `YKeyValueLww` — it stays a generic key-value primitive
+- No changes to `YKeyValueLww`: it stays a generic key-value primitive
 - Better separation of concerns: each layer has a single responsibility
 - Net reduction of 53 lines of code in `table-helper.ts`
 

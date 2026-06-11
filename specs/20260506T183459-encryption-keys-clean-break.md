@@ -31,7 +31,7 @@ SMELL                                            LOCATION                       
                                                  zhongwen/{daemon,script}.ts                       reinvents requireSignedIn locally.
                                                  fuji/{daemon,script}.ts
 
-2. requireSignedIn lives in @epicenter/          packages/auth-svelte/src/require-signed-in.ts     The helper reads `auth.state` only — it
+2. requireSignedIn lives in @epicenter/          packages/auth-svelte/src/require-signed-in.ts     The helper reads `auth.state` only: it
    auth-svelte but is needed by node-side                                                          has no Svelte dependency. Living in the
    daemons that cannot import auth-svelte                                                          framework package blocks node reuse.
 
@@ -198,7 +198,7 @@ export function requireSignedIn(auth: AuthClient): AuthIdentity {
 }
 ```
 
-Re-exported from `packages/auth/src/index.ts`. `packages/auth-svelte/src/require-signed-in.ts` is **deleted** (no re-export shim — clean break).
+Re-exported from `packages/auth/src/index.ts`. `packages/auth-svelte/src/require-signed-in.ts` is **deleted** (no re-export shim: clean break).
 
 ### `createMachineAuthClient` asserts signed-in at construction
 
@@ -271,7 +271,7 @@ re-export from `@epicenter/auth-svelte`**. One name, one home.
 ### `examples/notes-cross-peer/notes.ts` is amended too
 
 ```ts
-// examples/notes-cross-peer/notes.ts:48 — already imports createMachineAuthClient
+// examples/notes-cross-peer/notes.ts:48: already imports createMachineAuthClient
 const auth = await createMachineAuthClient(); // now throws if no saved session
 ```
 
@@ -418,7 +418,7 @@ docs/guides/consuming-epicenter-api.md                            drop bind exam
 ## Wave order (build, prove, remove)
 
 ```txt
-WAVE 1 — Move requireSignedIn to @epicenter/auth (clean break, no shim)
+WAVE 1: Move requireSignedIn to @epicenter/auth (clean break, no shim)
   - Create packages/auth/src/require-signed-in.ts (verbatim copy from auth-svelte)
   - Export from packages/auth/src/index.ts
   - Re-export from packages/auth/src/node.ts (one node-shaped surface)
@@ -433,16 +433,16 @@ WAVE 1 — Move requireSignedIn to @epicenter/auth (clean break, no shim)
       apps/tab-manager/src/lib/tab-manager/client.ts
   - Verify: typecheck. `bun run typecheck` clean.
 
-WAVE 2 — createMachineAuthClient asserts signed-in at construction
+WAVE 2: createMachineAuthClient asserts signed-in at construction
   - Throw on null loaded session with the message above.
   - Verify: typecheck. Run an end-to-end daemon test if available.
 
-WAVE 3 — Daemons/scripts use requireSignedIn
+WAVE 3: Daemons/scripts use requireSignedIn
   - Replace each verbatim throw block (8 files: 4 apps × {daemon, script})
     with `requireSignedIn(auth)` import.
   - Verify: typecheck.
 
-WAVE 4 — Rename getKeys → encryptionKeys in attachEncryption
+WAVE 4: Rename getKeys → encryptionKeys in attachEncryption
   - Edit AttachEncryptionOptions field name.
   - Edit body references (4 inside attach-encryption.ts).
   - Edit all attach-encryption.test.ts uses.
@@ -452,7 +452,7 @@ WAVE 4 — Rename getKeys → encryptionKeys in attachEncryption
   - Edit workspace/README.md.
   - Verify: typecheck + run existing tests.
 
-WAVE 5 — Inline auth lifecycle in opensidian/tab-manager
+WAVE 5: Inline auth lifecycle in opensidian/tab-manager
   - Replace `bindAuthWorkspaceScope({...})` with the inline
     `auth.onStateChange` block in both apps.
   - Decouple tab-manager's registerDevice:
@@ -465,7 +465,7 @@ WAVE 5 — Inline auth lifecycle in opensidian/tab-manager
     reload; identity-change with same user does not; warm re-auth refreshes
     `lastSeen`).
 
-WAVE 6 — Drop the package, prove unused, delete
+WAVE 6: Drop the package, prove unused, delete
   - For each app in {fuji, honeycrisp, opensidian, tab-manager}:
       grep for `@epicenter/auth-workspace` in source. If zero matches,
       remove the dep from that app's package.json.

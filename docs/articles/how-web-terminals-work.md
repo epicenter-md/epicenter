@@ -1,6 +1,6 @@
 # How Web Terminals Work
 
-When you see a terminal running inside a browser—like a web-based SSH client, VS Code's remote terminal, or Replit's console—it looks exactly like the real thing. That's because, in a sense, it _is_ the real thing. The browser is literally receiving raw terminal output and rendering it with a JavaScript-based terminal emulator.
+When you see a terminal running inside a browser. Like a web-based SSH client, VS Code's remote terminal, or Replit's console. It looks exactly like the real thing. That's because, in a sense, it _is_ the real thing. The browser is literally receiving raw terminal output and rendering it with a JavaScript-based terminal emulator.
 
 This article explains how that works.
 
@@ -8,7 +8,7 @@ This article explains how that works.
 
 ## What Terminal Emulators Actually Do
 
-A terminal emulator has one job: interpret a stream of bytes and render them visually. Most of those bytes are just text, but some are **ANSI escape sequences**—special codes that control formatting, cursor position, colors, and more.
+A terminal emulator has one job: interpret a stream of bytes and render them visually. Most of those bytes are just text, but some are **ANSI escape sequences**: special codes that control formatting, cursor position, colors, and more.
 
 For example, the bytes `\x1b[32mHello\x1b[0m` mean:
 
@@ -61,7 +61,7 @@ Here's the interesting part: web terminals use the exact same byte stream. They 
 └──────────────────┘                        └────────────────────┘
 ```
 
-The server creates a PTY, spawns a shell, and streams the PTY's output over a WebSocket. The browser receives the raw bytes—escape sequences and all—and feeds them to a JavaScript terminal emulator.
+The server creates a PTY, spawns a shell, and streams the PTY's output over a WebSocket. The browser receives the raw bytes, escape sequences and all, and feeds them to a JavaScript terminal emulator.
 
 When you type, keystrokes are sent back over the WebSocket. The server writes them to the PTY. The shell processes them, produces output, and the cycle continues.
 
@@ -84,7 +84,7 @@ The most popular option. Used by VS Code, Hyper, and many web SSH clients. It's 
 
 ### libghostty-vt (WebAssembly)
 
-Ghostty—a native terminal emulator written in Zig—ships `libghostty-vt`, a library containing just the terminal parsing logic. It can be compiled to WebAssembly, meaning you can use Ghostty's battle-tested parser in a browser.
+Ghostty. A native terminal emulator written in Zig. Ships `libghostty-vt`, a library containing just the terminal parsing logic. It can be compiled to WebAssembly, meaning you can use Ghostty's battle-tested parser in a browser.
 
 This is useful if you want a more correct or performant parser than xterm.js provides. You'd still need to handle rendering yourself (or integrate with another library).
 
@@ -132,4 +132,4 @@ Understanding this architecture clarifies several things:
 
 ## Summary
 
-A web terminal is simpler than it looks: raw bytes over WebSocket, parsed by a JavaScript terminal emulator. The same escape sequences that make `vim` work in iTerm make it work in a browser—you just need the right plumbing to get them there.
+A web terminal is simpler than it looks: raw bytes over WebSocket, parsed by a JavaScript terminal emulator. The same escape sequences that make `vim` work in iTerm make it work in a browser. You just need the right plumbing to get them there.

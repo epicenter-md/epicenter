@@ -2,7 +2,7 @@
 
 # One Table, Eight Commands, Zero JSON.parse
 
-A Y.Doc table with a discriminated union on `action` gives you a fully typed command queue. Each command variant carries its own input fields and result shape—flat key-value pairs on a Y.Map, no serialization layer.
+A Y.Doc table with a discriminated union on `action` gives you a fully typed command queue. Each command variant carries its own input fields and result shape. Flat key-value pairs on a Y.Map, no serialization layer.
 
 ```typescript
 const commandBase = type({
@@ -30,22 +30,22 @@ const Command = commandBase.merge(
 );
 ```
 
-`commandBase` holds the shared fields. `.merge()` distributes over the union—each variant gets the base fields merged in automatically. Arktype auto-discriminates on `action`.
+`commandBase` holds the shared fields. `.merge()` distributes over the union. Each variant gets the base fields merged in automatically. Arktype auto-discriminates on `action`.
 
 ## switch Narrows Everything
 
-The consumer switches on `cmd.action` and TypeScript narrows the entire type—inputs and result shape together:
+The consumer switches on `cmd.action` and TypeScript narrows the entire type. Inputs and result shape together:
 
 ```typescript
 switch (cmd.action) {
 	case 'closeTabs':
 		// cmd.tabIds: string[] ✓
-		// cmd.url — type error ✗
+		// cmd.url: type error ✗
 		result = await executeCloseTabs(cmd.tabIds, deviceId);
 		break;
 	case 'openTab':
 		// cmd.url: string ✓
-		// cmd.tabIds — type error ✗
+		// cmd.tabIds: type error ✗
 		result = await executeOpenTab(cmd.url, cmd.windowId);
 		break;
 }
@@ -71,7 +71,7 @@ Writes result back       →  commands.set({ ...cmd, result: { closedCount: 5 } 
 Server observes result   →  Promise resolves, returns to AI
 ```
 
-The server's `waitForCommandResult` wraps this in a promise—it observes the table for the command ID, resolves when `result` appears, rejects on TTL timeout. One Y.Doc observation, one promise, no polling.
+The server's `waitForCommandResult` wraps this in a promise. It observes the table for the command ID, resolves when `result` appears, rejects on TTL timeout. One Y.Doc observation, one promise, no polling.
 
 ## Why This Over a Generic Queue
 

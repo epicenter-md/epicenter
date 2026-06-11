@@ -14,11 +14,11 @@ function process<T extends string[]>(items: T): T {
 }
 
 const result = process(['a', 'b', 'c']);
-//    ^? string[] — literals lost!
+//    ^? string[]: literals lost!
 
 // Caller must add `as const` to preserve literals
 const fixed = process(['a', 'b', 'c'] as const);
-//    ^? ["a", "b", "c"] — but now every call site needs this
+//    ^? ["a", "b", "c"], but now every call site needs this
 ```
 
 That `as const` has to be everywhere. Every single call site. And if someone forgets it, they lose all the type precision you carefully designed for.
@@ -33,7 +33,7 @@ function process<const T extends readonly string[]>(items: T): T {
 }
 
 const result = process(['a', 'b', 'c']);
-//    ^? readonly ["a", "b", "c"] — no `as const` needed!
+//    ^? readonly ["a", "b", "c"]: no `as const` needed!
 ```
 
 ## Inference Behavior Reference

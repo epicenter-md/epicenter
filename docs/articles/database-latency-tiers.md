@@ -128,7 +128,7 @@ From our [YJS vs SQLite benchmark](./yjs-storage-efficiency/README.md):
 └────────────────────────┴─────────────┴───────────────┘
 ```
 
-YJS (Tier 1) beats SQLite (Tier 2) by 20% on bulk reads. Not because SQLite is slow—2.4M records/sec is incredible—but because even file I/O adds up.
+YJS (Tier 1) beats SQLite (Tier 2) by 20% on bulk reads. Not because SQLite is slow: 2.4M records/sec is incredible. But because even file I/O adds up.
 
 For writes, the difference is more dramatic:
 
@@ -141,7 +141,7 @@ For writes, the difference is more dramatic:
 └────────────────────────┴─────────────┴───────────────┘
 ```
 
-Wait, SQLite wins here? Yes, because SQLite's write path is heavily optimized. But note that YJS still achieves 457k inserts/second—that's fast enough for any real-time application.
+Wait, SQLite wins here? Yes, because SQLite's write path is heavily optimized. But note that YJS still achieves 457k inserts/second. That's fast enough for any real-time application.
 
 ## Choosing Your Tier
 
@@ -222,5 +222,5 @@ The best architectures often use multiple tiers strategically, keeping hot data 
 
 ---
 
-_See also: [Never Underestimate In-Memory Performance](./in-memory-database-performance.md) — why in-memory is faster than you think_  
-_See also: [YJS Storage Efficiency](./yjs-storage-efficiency/README.md) — benchmark comparing YJS to SQLite_
+_See also: [Never Underestimate In-Memory Performance](./in-memory-database-performance.md): why in-memory is faster than you think_
+_See also: [YJS Storage Efficiency](./yjs-storage-efficiency/README.md): benchmark comparing YJS to SQLite_

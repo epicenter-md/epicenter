@@ -1,18 +1,18 @@
 # Rename fs-explorer to Opensidian
 
-**Goal**: Rebrand `apps/fs-explorer` (a dev-only filesystem UI) into **Opensidian**—the starting point for an Obsidian-like note-taking app within the Epicenter monorepo.
+**Goal**: Rebrand `apps/fs-explorer` (a dev-only filesystem UI) into **Opensidian**: the starting point for an Obsidian-like note-taking app within the Epicenter monorepo.
 
-**Scope**: Medium rename—directory, configs, branding, README. No feature changes, no new dependencies, no Tauri yet.
+**Scope**: Medium rename. Directory, configs, branding, README. No feature changes, no new dependencies, no Tauri yet.
 
 ## Context
 
-`apps/fs-explorer/` is a SvelteKit web app with 10 components and one state file. It uses `@epicenter/filesystem`, `@epicenter/workspace`, and `@epicenter/ui`. Currently described as a "dev tool"—that changes with this rename.
+`apps/fs-explorer/` is a SvelteKit web app with 10 components and one state file. It uses `@epicenter/filesystem`, `@epicenter/workspace`, and `@epicenter/ui`. Currently described as a "dev tool". That changes with this rename.
 
 The app already has the bones of a file manager (tree view, content editor, create/rename/delete) built on Yjs CRDTs. Renaming it to Opensidian sets the direction for gradual evolution toward an Obsidian clone.
 
 ## Decisions
 
-- **Directory**: `apps/opensidian` (no hyphen—it's a proper noun, not two words)
+- **Directory**: `apps/opensidian` (no hyphen. It's a proper noun, not two words)
 - **Package name**: `"opensidian"`
 - **Stays in monorepo**: Shared packages (`@epicenter/filesystem`, `@epicenter/workspace`, `@epicenter/ui`) are too valuable to fork away from right now
 - **Historical specs**: Left untouched. They're historical records referencing `fs-explorer` and that's fine.
@@ -36,7 +36,7 @@ Git mv to preserve history.
 
 ### 3. Update `apps/opensidian/src/lib/fs/fs-state.svelte.ts`
 
-The workspace ID is used as the IndexedDB database name. Changing it means existing local data won't carry over—acceptable since this had no real users.
+The workspace ID is used as the IndexedDB database name. Changing it means existing local data won't carry over. Acceptable since this had no real users.
 
 ```diff
 - id: 'fs-explorer',

@@ -2,9 +2,9 @@
 
 **Date**: 2026-02-10
 **Status**: Superseded
-**Superseded by**: `specs/20260211T100000-simplified-ytext-content-store.md` (further superseded by `specs/20260211T230000-timeline-content-storage-implementation.md`) — lens architecture deferred. Single `Y.Text('content')` replaced all format-specific CRDT structures; timeline approach now uses `Y.Array('timeline')` with nested shared types.
+**Superseded by**: `specs/20260211T100000-simplified-ytext-content-store.md` (further superseded by `specs/20260211T230000-timeline-content-storage-implementation.md`): lens architecture deferred. Single `Y.Text('content')` replaced all format-specific CRDT structures; timeline approach now uses `Y.Array('timeline')` with nested shared types.
 **Supersedes**: Triple-key architecture in `specs/20260208T000000-yjs-filesystem-spec.md` (lines 31-36, 766-862), `convert-on-switch.ts`
-**See also**: `specs/20260211T220000-yjs-content-doc-multi-mode-research.md` — Option F (Y.Array timeline with nested shared types) eliminates the need for lenses entirely. Each timeline entry is self-contained with its own typed content — no registry, no healing, no stale keys.
+**See also**: `specs/20260211T220000-yjs-content-doc-multi-mode-research.md`: Option F (Y.Array timeline with nested shared types) eliminates the need for lenses entirely. Each timeline entry is self-contained with its own typed content: no registry, no healing, no stale keys.
 
 ---
 
@@ -46,12 +46,12 @@ Y.Doc (one per file, guid = fileId)
 **Rules**:
 - Every key is prefixed with its lens ID
 - Keys are created lazily (only when a lens accesses them)
-- A `.ts` file that was never renamed only has `'text:content'` — no other keys exist
+- A `.ts` file that was never renamed only has `'text:content'`: no other keys exist
 - Stale keys from previous conversions are never read (extension determines active lens)
 
 **Why `text:content` and not just `text`?** Consistency. Every lens follows the same `{lensId}:{keyName}` pattern. No special cases.
 
-**Why `text` and not `plain` or `default`?** The `text` prefix refers to the Yjs shared type (Y.Text), not the file extension. A `.ts`, `.json`, or `.csv` file all use the text lens because they're all stored as plain text via Y.Text. The `md` lens is the exception — it uses Y.XmlFragment for collaborative WYSIWYG.
+**Why `text` and not `plain` or `default`?** The `text` prefix refers to the Yjs shared type (Y.Text), not the file extension. A `.ts`, `.json`, or `.csv` file all use the text lens because they're all stored as plain text via Y.Text. The `md` lens is the exception: it uses Y.XmlFragment for collaborative WYSIWYG.
 
 ---
 
@@ -182,9 +182,9 @@ Editor binding: ProseMirror via y-prosemirror. Front matter rendered as form fie
 | Key | Yjs Type | Purpose |
 |-----|----------|---------|
 | `csv:headers` | `Y.Array<string>` | Column names, ordered |
-| `csv:data` | `Y.Array<Y.Map<string>>` | Rows — each row maps column name → cell value |
+| `csv:data` | `Y.Array<Y.Map<string>>` | Rows: each row maps column name → cell value |
 
-**Why `Y.Map` per row, not `Y.Array` per row?** With `Y.Array<Y.Array<string>>`, cells are addressed by index. Yjs array insertions shift subsequent indices, so two users editing different cells in the same row could conflict. With `Y.Map` per row, each cell is an independent key — different cells merge cleanly, same cell gets LWW.
+**Why `Y.Map` per row, not `Y.Array` per row?** With `Y.Array<Y.Array<string>>`, cells are addressed by index. Yjs array insertions shift subsequent indices, so two users editing different cells in the same row could conflict. With `Y.Map` per row, each cell is an independent key: different cells merge cleanly, same cell gets LWW.
 
 > **Note**: A collaborative CSV editor could also be built on Y.Text (the text lens) with a custom table UI that parses/serializes CSV. The structured lens is only needed if per-cell CRDT granularity becomes a real requirement. Start with Y.Text; add this lens if same-cell conflicts are a problem.
 
@@ -267,7 +267,7 @@ mv('/notes.txt', '/notes.md')
 
 After this, the Y.Doc has:
 ```
-├── 'text:content'    → "---\ntitle: Hello\n---\n# Content\n"   [STALE — never read while .md]
+├── 'text:content'    → "---\ntitle: Hello\n---\n# Content\n"   [STALE, never read while .md]
 ├── 'md:content'      → <heading>Content</heading>               [ACTIVE]
 └── 'md:frontmatter'  → { title: "Hello" }                       [ACTIVE]
 ```
@@ -307,7 +307,7 @@ mv('/data.csv', '/data.json')
  3. Update metadata: name='data.json'
 ```
 
-The file is now `.json` but `json:data` is empty. `readFile()` returns `""`. The user renames to `.txt` to recover — `textLens.fromString()` always succeeds.
+The file is now `.json` but `json:data` is empty. `readFile()` returns `""`. The user renames to `.txt` to recover: `textLens.fromString()` always succeeds.
 
 ### Case 5: Rename back (round-trip)
 
@@ -359,7 +359,7 @@ registry.heal(ydoc, 'notes.md')
  5. Done. md:content + md:frontmatter are now populated.
  6. What if fromString() throws?
     → heal() catches, tries next lens with content
-    → If all fail, heal() gives up — expected lens stays empty
+    → If all fail, heal() gives up: expected lens stays empty
 ```
 
 ### Why `ydoc.share.has()` matters
@@ -368,7 +368,7 @@ registry.heal(ydoc, 'notes.md')
 
 - Yjs permanently locks a root-level key to whichever shared type accesses it first
 - If healing probes `ydoc.getArray('csv:data')` on a doc that never had CSV content, that key is locked to Y.Array forever
-- `ydoc.share.has('csv:data')` checks without creating — avoids phantom keys
+- `ydoc.share.has('csv:data')` checks without creating: avoids phantom keys
 
 ### When healing fails
 
@@ -386,7 +386,7 @@ The conversion pipeline is two steps: `oldLens.toString()` then `newLens.fromStr
 
 ### The .txt Escape Hatch
 
-`textLens.fromString()` never throws — it accepts any string. Renaming any file to `.txt` recovers content via healing, regardless of what lens originally stored it.
+`textLens.fromString()` never throws. It accepts any string. Renaming any file to `.txt` recovers content via healing, regardless of what lens originally stored it.
 
 ### writeFile() Does NOT Degrade
 
@@ -400,13 +400,13 @@ We considered: "what if every lens also writes to `text:content`, so you can alw
 
 | Model | How it works | Problem |
 |-------|-------------|---------|
-| **Mutually exclusive** (chosen) | One active lens per file. Others go stale. | None — simple and correct |
+| **Mutually exclusive** (chosen) | One active lens per file. Others go stale. | None: simple and correct |
 | **Y.Text always updated** | Every lens writes to text:content on each edit | User A edits Y.Text, User B edits XmlFragment simultaneously → two CRDTs diverge, no reconciliation possible |
 | **Y.Text is source of truth** | Structured lenses are ephemeral, serialize back to Y.Text | y-prosemirror binds to XmlFragment for real-time collab. Serializing back every keystroke while another peer edits Y.Text → two fighting CRDTs |
 
 **The fundamental constraint**: two Yjs shared types cannot be bidirectionally synced without a single-writer coordination layer. That defeats CRDTs (designed for multi-writer, no coordination).
 
-The mutually exclusive model avoids this entirely. The active lens is determined by the file extension. Editing a `.md` file as raw text is a rename away — `mv notes.md notes.txt` triggers automatic conversion. The graceful degradation chain (above) ensures content is never lost.
+The mutually exclusive model avoids this entirely. The active lens is determined by the file extension. Editing a `.md` file as raw text is a rename away: `mv notes.md notes.txt` triggers automatic conversion. The graceful degradation chain (above) ensures content is never lost.
 
 ---
 
@@ -449,7 +449,7 @@ This document (move from plan file to specs/).
 ### Step 8: Rewrite tests
 
 - `convert-on-switch.test.ts` → `content-lens.test.ts`
-- `yjs-file-system.test.ts` — unchanged (same public API)
+- `yjs-file-system.test.ts`: unchanged (same public API)
 
 ### Verify
 

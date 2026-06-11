@@ -7,22 +7,22 @@
 
 ## Summary
 
-Migrate all `defineErrors` variants that use a string literal union field (`reason`, `operation`, `errorKind`, `action`) as a sub-discriminant into properly split first-class variants. Each variant gets exactly the fields it needs — no optional fields, no switch statements inside constructors.
+Migrate all `defineErrors` variants that use a string literal union field (`reason`, `operation`, `errorKind`, `action`) as a sub-discriminant into properly split first-class variants. Each variant gets exactly the fields it needs, no optional fields, no switch statements inside constructors.
 
 ## Motivation
 
-Using a discriminated union *inside* a variant's input type is a code smell. It means the variant is doing double duty — it's really N different error types crammed into one. Symptoms:
+Using a discriminated union *inside* a variant's input type is a code smell. It means the variant is doing double duty. It's really N different error types crammed into one. Symptoms:
 
 1. **Optional fields that are only relevant for some sub-discriminants.** `accelerator` is only meaningful for `invalid_format` and `generated_invalid`, but it's `accelerator?: string` on every call site.
 2. **Switch/lookup tables inside constructors.** The constructor has to map `reason` → message, which is logic that `defineErrors` already handles via separate variants.
-3. **Callers can't narrow on the sub-discriminant.** TypeScript narrowing works on the variant `name` field, not on arbitrary fields inside the error. A consumer checking `error.name === 'InvalidAccelerator'` gets the full union of all `reason` values — they'd need a second narrowing step on `error.reason`.
+3. **Callers can't narrow on the sub-discriminant.** TypeScript narrowing works on the variant `name` field, not on arbitrary fields inside the error. A consumer checking `error.name === 'InvalidAccelerator'` gets the full union of all `reason` values: they'd need a second narrowing step on `error.reason`.
 4. **Fields leak across variants.** `deviceId` only matters for `device_connection_failed`, but it's visible (as `undefined`) on all `DeviceStreamError.Service` errors.
 
 The fix is mechanical: promote each sub-discriminant value to its own variant.
 
 ## Instances
 
-### 1. `ShortcutError.InvalidAccelerator` — `reason` field
+### 1. `ShortcutError.InvalidAccelerator`: `reason` field
 
 **File:** `apps/whispering/src/lib/services/desktop/global-shortcut-manager.ts`
 
@@ -93,7 +93,7 @@ ShortcutError.GeneratedInvalid({ accelerator })
 
 ---
 
-### 2. `ShortcutError.Service` — `operation` field
+### 2. `ShortcutError.Service`: `operation` field
 
 **File:** `apps/whispering/src/lib/services/desktop/global-shortcut-manager.ts`
 
@@ -157,7 +157,7 @@ ShortcutError.UnregisterAllFailed({ cause: error })
 
 ---
 
-### 3. `DeviceStreamError.Service` — `errorKind` field
+### 3. `DeviceStreamError.Service`: `errorKind` field
 
 **File:** `apps/whispering/src/lib/services/isomorphic/device-stream.ts`
 
@@ -178,7 +178,7 @@ const DeviceStreamError = defineErrors({
 type DeviceStreamError = InferErrors<typeof DeviceStreamError>;
 ```
 
-**After (further refined — optional keys eliminated):**
+**After (further refined: optional keys eliminated):**
 ```typescript
 const DeviceStreamError = defineErrors({
   PermissionDenied: ({ cause }: { cause: unknown }) => ({
@@ -221,12 +221,12 @@ DeviceStreamError.PreferredDeviceUnavailable()
 
 **Notes:**
 - `deviceId` is now required on `DeviceConnectionFailed` (the only variant that uses it) instead of optional on the mega-union.
-- `underlyingError?: string` was renamed to `cause: unknown` and made required — all call sites were already passing it.
-- `NoDevicesAvailable({ hadPreferredDevice?: boolean })` was split into `NoDevicesFound()` and `PreferredDeviceUnavailable()` — the boolean was a sub-discriminant controlling the message.
+- `underlyingError?: string` was renamed to `cause: unknown` and made required: all call sites were already passing it.
+- `NoDevicesAvailable({ hadPreferredDevice?: boolean })` was split into `NoDevicesFound()` and `PreferredDeviceUnavailable()`: the boolean was a sub-discriminant controlling the message.
 
 ---
 
-### 4. `PermissionsError.Service` — `action` + `permissionType` fields
+### 4. `PermissionsError.Service`: `action` + `permissionType` fields
 
 **File:** `apps/whispering/src/lib/services/desktop/permissions.ts`
 
@@ -283,11 +283,11 @@ PermissionsError.CheckMicrophone({ cause: error })
 PermissionsError.RequestMicrophone({ cause: error })
 ```
 
-**Note:** The two sub-discriminants (`action` x `permissionType`) produced a 2x2 matrix. Exactly 4 call sites, one per combination — confirming these are genuinely separate failure modes.
+**Note:** The two sub-discriminants (`action` x `permissionType`) produced a 2x2 matrix. Exactly 4 call sites, one per combination: confirming these are genuinely separate failure modes.
 
 ---
 
-### 5. `AutostartError.Service` — `operation` field
+### 5. `AutostartError.Service`: `operation` field
 
 **File:** `apps/whispering/src/lib/services/desktop/autostart.ts`
 
@@ -339,7 +339,7 @@ AutostartError.DisableFailed({ cause: error })
 
 ---
 
-### 6. `CommandError.Service` — `operation` field
+### 6. `CommandError.Service`: `operation` field
 
 **File:** `apps/whispering/src/lib/services/desktop/command.ts`
 
@@ -385,7 +385,7 @@ CommandError.SpawnFailed({ cause: error })
 
 ---
 
-### 7. `TransformError.Service` — `operation` field
+### 7. `TransformError.Service`: `operation` field
 
 **File:** `apps/whispering/src/lib/query/isomorphic/transformer.ts`
 
@@ -445,13 +445,13 @@ TransformError.DbCompleteStepFailed({ message: 'Unable to save completed step...
 TransformError.DbCompleteRunFailed({ message: 'Unable to save completed run...' })
 ```
 
-**Note:** The `operation` field was purely a sub-discriminant with no consumer — nobody switches on `error.operation`. Each variant's message was already unique. Splitting removes the dead `operation` field entirely.
+**Note:** The `operation` field was purely a sub-discriminant with no consumer: nobody switches on `error.operation`. Each variant's message was already unique. Splitting removes the dead `operation` field entirely.
 
 ---
 
 ## Type Alias Updates
 
-For files that export individual error type aliases, update them to use `InferError` on the new variants. The union type stays the same — `InferErrors<typeof Namespace>` automatically covers all variants:
+For files that export individual error type aliases, update them to use `InferError` on the new variants. The union type stays the same: `InferErrors<typeof Namespace>` automatically covers all variants:
 
 ```typescript
 // Before (global-shortcut-manager.ts)
@@ -471,7 +471,7 @@ type GlobalShortcutServiceError =
   | InferError<typeof ShortcutError.UnregisterAllFailed>;
 ```
 
-For files that only export the namespace union (`type FooError = InferErrors<typeof FooError>`), no change needed — `InferErrors` picks up the new variants automatically.
+For files that only export the namespace union (`type FooError = InferErrors<typeof FooError>`), no change needed: `InferErrors` picks up the new variants automatically.
 
 ## Scope
 
@@ -480,18 +480,18 @@ This is purely a refactor. No behavior changes:
 - Same fields on each error instance (minus the now-unnecessary sub-discriminant fields)
 - Same `Result` return types on service methods (the union type covers the same variants)
 
-The only observable difference: error `.name` values change (e.g., `'InvalidAccelerator'` becomes `'InvalidFormat'` / `'NoKeyCode'` / etc.). No consumer in the codebase inspects `.name` on these errors — they're all handled as union types in `Result`.
+The only observable difference: error `.name` values change (e.g., `'InvalidAccelerator'` becomes `'InvalidFormat'` / `'NoKeyCode'` / etc.). No consumer in the codebase inspects `.name` on these errors. They're all handled as union types in `Result`.
 
 ## Implementation Order
 
 Each file is independent. Suggested order (smallest to largest):
 
-1. [x] `command.ts` — 2 call sites
-2. [x] `autostart.ts` — 3 call sites
-3. [x] `permissions.ts` — 4 call sites
-4. [x] `global-shortcut-manager.ts` — 7 call sites (both InvalidAccelerator and Service)
-5. [x] `device-stream.ts` — 6 call sites
-6. [x] `transformer.ts` — 7 call sites
+1. [x] `command.ts`: 2 call sites
+2. [x] `autostart.ts`: 3 call sites
+3. [x] `permissions.ts`: 4 call sites
+4. [x] `global-shortcut-manager.ts`: 7 call sites (both InvalidAccelerator and Service)
+5. [x] `device-stream.ts`: 6 call sites
+6. [x] `transformer.ts`: 7 call sites
 
 Verify after each file: `bun run typecheck` must pass.
 
@@ -502,7 +502,7 @@ Verify after each file: `bun run typecheck` must pass.
 
 ### Summary
 
-All 7 `defineErrors` variants across 6 files were split from sub-discriminant patterns into first-class variants. Each variant now has exactly the fields it needs — no optional fields, no switch/lookup tables in constructors. One consumer (`GlobalKeyboardShortcutRecorder.svelte`) was updated to match on the new variant names.
+All 7 `defineErrors` variants across 6 files were split from sub-discriminant patterns into first-class variants. Each variant now has exactly the fields it needs, no optional fields, no switch/lookup tables in constructors. One consumer (`GlobalKeyboardShortcutRecorder.svelte`) was updated to match on the new variant names.
 
 ### Deviations from Spec
 
@@ -511,7 +511,7 @@ All 7 `defineErrors` variants across 6 files were split from sub-discriminant pa
 ### Follow-up Work
 
 - **Optional key elimination pass** (completed): After splitting sub-discriminants, a second pass eliminated remaining optional keys:
-  - `underlyingError?: string` → `cause: unknown` (required) — all call sites already passed it
+  - `underlyingError?: string` → `cause: unknown` (required): all call sites already passed it
   - `hadPreferredDevice?: boolean` → split `NoDevicesAvailable` into `NoDevicesFound` + `PreferredDeviceUnavailable`
   - `ExtensionError.Operation` (all-optional grab bag) → split into `TableOperation`, `FileOperation`, `DirectoryOperation` with required fields
-  - `HttpError.Response.bodyMessage?: string` — kept optional with JSDoc (genuine enrichment data)
+  - `HttpError.Response.bodyMessage?: string`: kept optional with JSDoc (genuine enrichment data)

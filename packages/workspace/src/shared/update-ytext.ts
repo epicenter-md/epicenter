@@ -20,7 +20,7 @@ import type * as Y from 'yjs';
  * ytext.insert(0, 'Hello World');
  *
  * updateYTextFromString(ytext, 'Hello Beautiful World');
- * // Only inserts " Beautiful" — "Hello " and "World" keep CRDT identity
+ * // Only inserts " Beautiful": "Hello " and "World" keep CRDT identity
  * ```
  */
 export function updateYTextFromString(yText: Y.Text, newString: string): void {
@@ -51,7 +51,7 @@ export function updateYTextFromString(yText: Y.Text, newString: string): void {
  * Updates a Y.XmlFragment to match a markdown string.
  *
  * Unlike Y.Text where character-level diffing preserves CRDT identity,
- * tree-structure diffing isn't practical — ProseMirror nodes don't have
+ * tree-structure diffing isn't practical: ProseMirror nodes don't have
  * a clean character-level mapping. This does a full clear-and-rebuild
  * when the serialized content differs from the target.
  *

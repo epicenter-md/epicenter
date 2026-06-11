@@ -63,7 +63,7 @@ No prefixes needed; meaningful words vs random strings are visually distinct.
 
 ---
 
-## `defineWorkspace` — Static Schema
+## `defineWorkspace`: Static Schema
 
 For developers building apps with known table structures.
 
@@ -158,7 +158,7 @@ Both produce identical shapes. Helpers provide defaults and convenience.
 
 ---
 
-## `loadWorkspace` — Dynamic Schema
+## `loadWorkspace`: Dynamic Schema
 
 For apps like Epicenter where users create tables at runtime.
 
@@ -333,10 +333,10 @@ Human-readable JSON (same for both):
 
 ### Phase 4: Dynamic Schema API
 
-- [ ] `client.schema.tables.list()` — enumerate tables
-- [ ] `client.schema.tables.create({ id, name, fields })` — create table
-- [ ] `client.schema.tables.get(id).setName(name)` — rename
-- [ ] `client.schema.tables.get(id).fields.create(...)` — add field
+- [ ] `client.schema.tables.list()`: enumerate tables
+- [ ] `client.schema.tables.create({ id, name, fields })`: create table
+- [ ] `client.schema.tables.get(id).setName(name)`: rename
+- [ ] `client.schema.tables.get(id).fields.create(...)`: add field
 - [ ] Same pattern for KV
 
 ### Phase 5: ID Generation

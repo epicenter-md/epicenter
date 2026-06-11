@@ -135,7 +135,7 @@ Do not rely blindly on Bun inline dependency auto-install behavior inside this m
 | Skill does not trigger | Description misses user intent | Rewrite description around task phrasing and file/tool cues | Run should-trigger prompts 3 times |
 | Skill overfires | Description is too broad | Add near-miss boundaries and remove generic trigger language | Run should-not-trigger prompts |
 | Agent ignores reference | Load condition is vague | Replace "see references" with "read X when Y happens" | Re-run the prompt that needed the reference |
-| CLI validation fails | Frontmatter or discovery shape is invalid | Fix `name`, `description`, path, or unsupported metadata | Run `bun x --package skills skills add <path> --list` |
+| CLI validation fails | Frontmatter or discovery shape is invalid | Fix `name`, `description`, path, or unsupported metadata | Run the source-directory command from `SKILL.md`; add `--skill <name>` for an individual or internal skill |
 | Imported skill conflicts with AGENTS.md | Upstream guidance assumes different repo rules | Keep local AGENTS.md rules and adapt or reject the skill | Re-run local review checklist |
 | Source example uses `npx` | Upstream command is not Bun-adapted | Use `bun x --package skills skills ...` for skills CLI, or preserve package with `bun x`/`bunx` for other tools | Run command help or dry-run |
 

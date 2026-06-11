@@ -136,20 +136,20 @@ The original Y-Sweet client encrypts IndexedDB data using AES-GCM with a key sto
 
 The encryption key and the encrypted data live in the same security context. Any attack that can read one can read the other.
 
-In Tauri specifically, `document.cookie` may not persist across webview restarts, meaning the encryption key gets lost and **old IndexedDB data becomes permanently undecryptable**. This makes the encryption actively harmful — it's a data loss risk.
+In Tauri specifically, `document.cookie` may not persist across webview restarts, meaning the encryption key gets lost and **old IndexedDB data becomes permanently undecryptable**. This makes the encryption actively harmful. It's a data loss risk.
 
 ### Decision
 
 Remove `encryption.ts` and `keystore.ts` entirely. Simplify `indexeddb.ts` to store raw Yjs updates without encryption. IndexedDB is already origin-scoped in browsers, and sandboxed per-app in Tauri.
 
-If we ever need real encryption (server can't read data), that's end-to-end encryption applied before data leaves the client — a fundamentally different architecture (see secsync, Matrix-CRDT). Cookie-key IndexedDB encryption would still not be part of that solution.
+If we ever need real encryption (server can't read data), that's end-to-end encryption applied before data leaves the client. A fundamentally different architecture (see secsync, Matrix-CRDT). Cookie-key IndexedDB encryption would still not be part of that solution.
 
 ### Files removed
-- `src/encryption.ts` — AES-GCM encrypt/decrypt via Web Crypto API
-- `src/keystore.ts` — Cookie-based encryption key management
+- `src/encryption.ts`: AES-GCM encrypt/decrypt via Web Crypto API
+- `src/keystore.ts`: Cookie-based encryption key management
 
 ### Files modified
-- `src/indexeddb.ts` — Removed all encrypt/decrypt calls; stores raw `Uint8Array` values directly
+- `src/indexeddb.ts`: Removed all encrypt/decrypt calls; stores raw `Uint8Array` values directly
 
 ## Modifications to Forked Code
 
@@ -297,8 +297,8 @@ Source: https://github.com/jamsocket/y-sweet/tree/main/js-pkg/client
 - [ ] Add `tsconfig.json`
 - [ ] Copy `src/provider.ts` verbatim
 - [ ] Copy `src/indexeddb.ts` verbatim
-- [ ] ~~Copy `src/encryption.ts` verbatim~~ (deleted — see encryption removal decision)
-- [ ] ~~Copy `src/keystore.ts` verbatim~~ (deleted — see encryption removal decision)
+- [ ] ~~Copy `src/encryption.ts` verbatim~~ (deleted: see encryption removal decision)
+- [ ] ~~Copy `src/keystore.ts` verbatim~~ (deleted: see encryption removal decision)
 - [ ] Copy `src/ws-status.ts` verbatim
 - [ ] Copy `src/sleeper.ts` verbatim
 - [ ] Copy `src/main.ts` verbatim

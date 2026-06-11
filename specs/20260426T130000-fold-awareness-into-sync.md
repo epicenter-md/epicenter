@@ -8,11 +8,11 @@
 
 ## One-sentence thesis
 
-Awareness/presence isn't a separate concept from sync — it's the identity dimension of being synced — so fold the whole `attachAwareness` + `attachPeers` surface into `attachSync`, leaving `attachAwareness` as the escape hatch for custom presence schemas.
+Awareness/presence isn't a separate concept from sync. It's the identity dimension of being synced. So fold the whole `attachAwareness` + `attachPeers` surface into `attachSync`, leaving `attachAwareness` as the escape hatch for custom presence schemas.
 
 ## Overview
 
-The previous spec introduced `attachPeers` to hide the device-presence boilerplate. It worked, but it left the layering question on the table: why are awareness, presence, and sync three separate things when they share one WebSocket and one identity? This spec argues the split itself was the design mistake. Y-protocols already designed sync and awareness as siblings on one transport — we were artificially splitting them. By folding presence into `attachSync(doc, { device })`, app code drops from five orthogonal-but-wired calls to four, the `peer<T>` proxy takes a single arg, and the codebase stops carrying a vocabulary of three names (`awareness`, `peers`, `presence`) for one logical concept.
+The previous spec introduced `attachPeers` to hide the device-presence boilerplate. It worked, but it left the layering question on the table: why are awareness, presence, and sync three separate things when they share one WebSocket and one identity? This spec argues the split itself was the design mistake. Y-protocols already designed sync and awareness as siblings on one transport. We were artificially splitting them. By folding presence into `attachSync(doc, { device })`, app code drops from five orthogonal-but-wired calls to four, the `peer<T>` proxy takes a single arg, and the codebase stops carrying a vocabulary of three names (`awareness`, `peers`, `presence`) for one logical concept.
 
 `attachAwareness` survives, but only as the escape hatch for genuinely custom presence schemas (cursors on content docs, etc.). The standard path is `attachSync`.
 
@@ -22,7 +22,7 @@ The previous spec introduced `attachPeers` to hide the device-presence boilerpla
 
 ### The deeper smell
 
-The previous spec hid the device boilerplate behind `attachPeers`. The result was correct but felt off — `Peers` ended up wrapping `Awareness` with two pure-forwarder methods (`list`, `observe`) plus one genuine addition (`find`). The wrapper existed because of a *naming collision* (`peers.peers()` doubles), not because there was a real layering boundary.
+The previous spec hid the device boilerplate behind `attachPeers`. The result was correct but felt off: `Peers` ended up wrapping `Awareness` with two pure-forwarder methods (`list`, `observe`) plus one genuine addition (`find`). The wrapper existed because of a *naming collision* (`peers.peers()` doubles), not because there was a real layering boundary.
 
 When you mentally inline what an app actually does:
 
@@ -30,10 +30,10 @@ When you mentally inline what an app actually does:
 // 1. Yjs primitive (one connection's-worth of ephemeral state)
 const yAwareness = new YAwareness(doc.ydoc);
 
-// 2. Schema validation — pure typing
+// 2. Schema validation: pure typing
 const typed = wrapWithSchema(yAwareness, standardAwarenessDefs);
 
-// 3. Compute manifest — pure function
+// 3. Compute manifest: pure function
 const offers = actionManifest(doc.actions);
 
 // 4. Publish identity
@@ -50,7 +50,7 @@ const sync = attachSync(doc.ydoc, {
 peer<TActions>({ awareness: typed, sync }, 'mac');
 ```
 
-…three consumers (app's identity publication, sync's protocol routing, peer<T>'s clientId lookup) share *one* awareness instance. We've been treating them as siblings deserving a layer between them — but they're really one concept seen from three angles.
+…three consumers (app's identity publication, sync's protocol routing, peer<T>'s clientId lookup) share *one* awareness instance. We've been treating them as siblings deserving a layer between them. But they're really one concept seen from three angles.
 
 ### What the user actually wants
 
@@ -78,7 +78,7 @@ const sync = attachSync(doc, {
   waitFor: idb,
 });
 
-// One thing — sync — owns transport + identity + dispatch.
+// One thing: sync: owns transport + identity + dispatch.
 peer<TActions>(sync, 'macbook-pro');
 ```
 
@@ -86,7 +86,7 @@ Four lines. One concept. No `attachPeers`, no `attachPresence`, no `peers.awaren
 
 ## Design
 
-### `attachSync` — new shape
+### `attachSync`: new shape
 
 ```ts
 export type AttachSyncConfig = {
@@ -131,7 +131,7 @@ export type SyncAttachment = {
 };
 ```
 
-### `peer<T>()` — single-arg
+### `peer<T>()`: single-arg
 
 ```ts
 // Today
@@ -141,7 +141,7 @@ peer<TActions>({ peers, sync }, 'mac');
 peer<TActions>(sync, 'mac');
 ```
 
-The proxy duck-types `sync` for `find` + `rpc`. `PeerWorkspace` becomes inline — no named type — or we kill it entirely:
+The proxy duck-types `sync` for `find` + `rpc`. `PeerWorkspace` becomes inline, no named type, or we kill it entirely:
 
 ```ts
 export function peer<TActions extends Actions>(
@@ -150,20 +150,20 @@ export function peer<TActions extends Actions>(
 ): RemoteActions<TActions>;
 ```
 
-Even the `Pick` is honest here — the proxy genuinely only needs three methods. (Earlier we used `Pick` performatively; here it's a real boundary because callers might want to mock `sync` for tests.)
+Even the `Pick` is honest here. The proxy genuinely only needs three methods. (Earlier we used `Pick` performatively; here it's a real boundary because callers might want to mock `sync` for tests.)
 
-Open question: even simpler — drop the `Pick` and take full `SyncAttachment`. Reason to keep `Pick`: explicit dependency footprint for test mocks. Reason to drop: less ceremony. Lean toward dropping.
+Open question: even simpler: drop the `Pick` and take full `SyncAttachment`. Reason to keep `Pick`: explicit dependency footprint for test mocks. Reason to drop: less ceremony. Lean toward dropping.
 
-### `attachAwareness` — escape hatch only
+### `attachAwareness`: escape hatch only
 
-Stays exported. Schema-generic. Used when an app needs custom presence fields (cursors on content docs, typing indicators, "X is viewing settings", etc.). Apps stop using it for the *standard* device case — `attachSync` owns that.
+Stays exported. Schema-generic. Used when an app needs custom presence fields (cursors on content docs, typing indicators, "X is viewing settings", etc.). Apps stop using it for the *standard* device case: `attachSync` owns that.
 
 Removed re-exports from package root:
 - `attachPeers`, `Peers`, `PeerAwarenessState`, `FoundPeer`, `DocWithActions` (everything `attach-peers.ts` exposed)
 - `actionManifest` becomes private to `attach-sync.ts`
 - `standardAwarenessDefs` becomes private to `attach-sync.ts`
 
-`PeerDevice`, `DeviceDescriptor`, `Platform` stay exported — they're the input shape and a public type.
+`PeerDevice`, `DeviceDescriptor`, `Platform` stay exported. They're the input shape and a public type.
 
 ### Layer diagram
 
@@ -202,7 +202,7 @@ A. feat(workspace): attachSync owns standard presence
    └── waitFor accepts attachment-or-promise
 
 B. refactor(rpc): peer() takes sync directly
-   ├── peer<T>(sync, deviceId) — single arg
+   ├── peer<T>(sync, deviceId): single arg
    ├── delete PeerWorkspace named type (inline)
    └── tests: mock sync directly (no separate peers mock)
 
@@ -223,11 +223,11 @@ E. chore(workspace): delete attach-peers.ts and its exports
    └── tests live in attach-sync.test.ts (presence section added in A)
 ```
 
-Commits A–B are additive (the new attachSync API can coexist with old attachPeers calls during transition). C–D migrate consumers. E removes the now-unused code.
+Commits A. B are additive (the new attachSync API can coexist with old attachPeers calls during transition). C. D migrate consumers. E removes the now-unused code.
 
 ## Test plan
 
-- New tests in `attach-sync.test.ts`: presence section — device publishes synchronously, `peers()` excludes self, `find()` matches by deviceId, `observe()` fires on peer changes.
+- New tests in `attach-sync.test.ts`: presence section: device publishes synchronously, `peers()` excludes self, `find()` matches by deviceId, `observe()` fires on peer changes.
 - Existing peer.test.ts continues to pass with the mocked sync (was mocked Peers; same shape).
 - Existing CLI tests continue to pass (output unchanged; just the field path changes).
 - Smoke test in tab-manager: extension boots, sync.peers() shows other connected devices.
@@ -236,19 +236,19 @@ Commits A–B are additive (the new attachSync API can coexist with old attachPe
 
 **Decision: Keep the function name `attachSync`.**
 
-It still does sync. Presence is a face of being synced, not a separate concern. Renaming churns docs and muscle memory for marginal gain. The variable name at the call site is the user's call — name it `network` or `connection` if `sync.peers()` reads weird at a particular site.
+It still does sync. Presence is a face of being synced, not a separate concern. Renaming churns docs and muscle memory for marginal gain. The variable name at the call site is the user's call: name it `network` or `connection` if `sync.peers()` reads weird at a particular site.
 
 The downside: `attachSync` undersells what it does. New users see it and assume "just CRDT sync." Mitigation is JSDoc, not renaming.
 
 **Decision: `peers()` / `find()` / `observe()` always exist on `SyncAttachment`.**
 
-Even when no device was provided. They return empty Map / undefined / no-op-unsubscribe. Type-wise this avoids conditional types or overload pyramids. Behaviorally this matches "no peers known to me right now" — which is exactly what an empty list means.
+Even when no device was provided. They return empty Map / undefined / no-op-unsubscribe. Type-wise this avoids conditional types or overload pyramids. Behaviorally this matches "no peers known to me right now", which is exactly what an empty list means.
 
 Cost: silent failure if a user forgets to pass `device` and expects peers to show up. Mitigation: dev-mode warning log when `peers()` is called and no device is configured. Skip in v1; revisit if it bites.
 
 **Decision: `device` is optional, not required.**
 
-Content docs (`entryContentDocs`, `noteBodyDocs`, `fileContentDocs`) call `attachSync` without a device — they're sync'd but don't publish identity. Forcing them to pass a dummy device would be a worse API.
+Content docs (`entryContentDocs`, `noteBodyDocs`, `fileContentDocs`) call `attachSync` without a device. They're sync'd but don't publish identity. Forcing them to pass a dummy device would be a worse API.
 
 **Decision: Drop `attachPeers` entirely. Don't deprecate.**
 
@@ -283,7 +283,7 @@ Why this is worse:
 - Mutation hides the dependency graph.
 - Tests can't construct partial workspaces ergonomically.
 
-Sticking with the explicit-return pattern: each attach returns its own handle, app code wires them. This spec changes only what attaches *what* — not the wiring style.
+Sticking with the explicit-return pattern: each attach returns its own handle, app code wires them. This spec changes only what attaches *what*, not the wiring style.
 
 ## Open questions
 

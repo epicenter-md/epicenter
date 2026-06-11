@@ -34,7 +34,7 @@ const restoredDoc = Y.createDocFromSnapshot(this.doc, snap);
 return Y.encodeStateAsUpdateV2(restoredDoc);
 ```
 
-**`applySnapshot()` is a no-op.** `Y.createDocFromSnapshot(this.doc, snap)` builds a doc from `this.doc`'s struct store—every item already exists in `this.doc`. Encoding that doc as an update and applying it back adds zero new struct items (CRDTs are idempotent). The delete set from the snapshot is a subset of the current delete set, and Yjs delete sets only grow via union. Net result: the visible content doesn't change, but the method returns `true`.
+**`applySnapshot()` is a no-op.** `Y.createDocFromSnapshot(this.doc, snap)` builds a doc from `this.doc`'s struct store. Every item already exists in `this.doc`. Encoding that doc as an update and applying it back adds zero new struct items (CRDTs are idempotent). The delete set from the snapshot is a subset of the current delete set, and Yjs delete sets only grow via union. Net result: the visible content doesn't change, but the method returns `true`.
 
 There is also no way to delete a snapshot.
 
@@ -55,22 +55,22 @@ After this fix, the full snapshot API:
 
 ### Yjs Snapshot Internals
 
-`Y.snapshot(doc)` captures a lightweight state vector + delete set (~7 bytes to ~1.5 KB). `Y.createDocFromSnapshot(originDoc, snapshot)` reconstructs a read-only doc by walking the origin doc's struct store—it requires `gc: false` on the origin (which `DocumentRoom` has).
+`Y.snapshot(doc)` captures a lightweight state vector + delete set (~7 bytes to ~1.5 KB). `Y.createDocFromSnapshot(originDoc, snapshot)` reconstructs a read-only doc by walking the origin doc's struct store. It requires `gc: false` on the origin (which `DocumentRoom` has).
 
 The reconstructed doc is designed for *reading* past state, not for applying back. The Yjs README documents `createDocFromSnapshot` as a way to "create a document from a snapshot for rendering," not for restoration.
 
-**Key finding**: there is no built-in `Y.restoreFromSnapshot()` API. Restoration requires content-level replacement—read text from the snapshot doc, delete current text, insert snapshot text. This creates proper new CRDT operations.
+**Key finding**: there is no built-in `Y.restoreFromSnapshot()` API. Restoration requires content-level replacement. Read text from the snapshot doc, delete current text, insert snapshot text. This creates proper new CRDT operations.
 
 ### Forward-Merge vs Content Replacement
 
 | Approach | Mechanism | Result |
 |---|---|---|
-| Forward-merge (`Y.applyUpdateV2`) | Re-apply old update to current doc | No-op—items already exist |
+| Forward-merge (`Y.applyUpdateV2`) | Re-apply old update to current doc | No-op. Items already exist |
 | Content replacement (delete + insert) | Read old content, replace current | New CRDT ops, visible change |
 
 Content replacement is correct. It's also append-only: the delete and insert operations are new entries in the struct store. With `gc: false`, the pre-restore content is still in the struct store and could be recovered by a later snapshot restore.
 
-For server-side restoration, full delete + insert is acceptable. CRDT identity preservation only matters for concurrent editing—restoration is an intentional, non-concurrent action.
+For server-side restoration, full delete + insert is acceptable. CRDT identity preservation only matters for concurrent editing. Restoration is an intentional, non-concurrent action.
 
 ## Design Decisions
 
@@ -78,7 +78,7 @@ For server-side restoration, full delete + insert is acceptable. CRDT identity p
 |---|---|---|
 | Restoration mechanism | Full delete + insert in a transaction | No new deps in the DO. CRDT identity preservation isn't needed for intentional restores. |
 | Shared type support | `Y.Text('content')` only | Current documents use Y.Text. Add other types when needed. |
-| Delete behavior | Hard delete from SQLite | Snapshots are lightweight metadata (~7B–1.5KB). No soft-delete complexity needed. |
+| Delete behavior | Hard delete from SQLite | Snapshots are lightweight metadata (~7B: 1.5KB). No soft-delete complexity needed. |
 | Safety snapshot before restore | Keep existing behavior | The "Before restore" auto-save lets users undo a bad restore. |
 | No pruning | Users delete manually | Not enough usage data to pick a retention policy. Storage cost is negligible. |
 | No schema changes | `CREATE TABLE` unchanged | No new columns needed for these two changes. |
@@ -106,8 +106,8 @@ One new DELETE route in `app.ts`. No other endpoint changes.
   - Read restored text: `restoredDoc.getText('content').toString()`
   - Save safety snapshot: `this.saveSnapshot('Before restore')`
   - In a single `this.doc.transact()`: delete all current text, insert restored text
-- [x] **2** Add `deleteSnapshot(id)` RPC method to `DocumentRoom` — `DELETE FROM snapshots WHERE id = ?`, return boolean
-- [x] **3** Add `DELETE /documents/:document/snapshots/:id` route in `app.ts` — validate param, call `stub.deleteSnapshot()`, return 204 or 404
+- [x] **2** Add `deleteSnapshot(id)` RPC method to `DocumentRoom`: `DELETE FROM snapshots WHERE id = ?`, return boolean
+- [x] **3** Add `DELETE /documents/:document/snapshots/:id` route in `app.ts`: validate param, call `stub.deleteSnapshot()`, return 204 or 404
 
 ## Edge Cases
 
@@ -145,9 +145,9 @@ No effect on the live document. The restore created new CRDT operations that liv
 
 ## References
 
-- `apps/api/src/document-room.ts` — both changes live here
-- `apps/api/src/app.ts` — one new DELETE route
-- `apps/api/src/base-sync-room.ts` — parent class (unchanged, context only)
+- `apps/api/src/document-room.ts`: both changes live here
+- `apps/api/src/app.ts`: one new DELETE route
+- `apps/api/src/base-sync-room.ts`: parent class (unchanged, context only)
 
 ## Review
 

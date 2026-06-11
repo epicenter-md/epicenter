@@ -2,7 +2,7 @@
 
 **Status**: Superseded
 **Date**: 2026-04-26
-**Supersedes (partial)**: `specs/20260426T190000-cli-actions-unification.md` (the unified `ActionManifestEntry === ActionMeta` is preserved at the type level, but the wire shape narrows — `input` no longer travels in the manifest)
+**Supersedes (partial)**: `specs/20260426T190000-cli-actions-unification.md` (the unified `ActionManifestEntry === ActionMeta` is preserved at the type level, but the wire shape narrows: `input` no longer travels in the manifest)
 
 **Superseded By**: `20260426T230000-drop-manifest-from-awareness.md`
 
@@ -13,7 +13,7 @@ now takes no input and returns the full action manifest through
 
 ## Problem
 
-Each peer publishes an action manifest into Yjs awareness so other peers can introspect "what can you do." The manifest is `Record<dotPath, ActionMeta>` where `ActionMeta = { type, input?, title?, description? }`. The `input` field is a TypeBox `TSchema` — JSON Schema. For a typical app with ~20 actions each carrying non-trivial input shapes, this lands around **10kB per manifest**.
+Each peer publishes an action manifest into Yjs awareness so other peers can introspect "what can you do." The manifest is `Record<dotPath, ActionMeta>` where `ActionMeta = { type, input?, title?, description? }`. The `input` field is a TypeBox `TSchema`: JSON Schema. For a typical app with ~20 actions each carrying non-trivial input shapes, this lands around **10kB per manifest**.
 
 Awareness broadcasts every peer's full state to every other peer on every refresh tick (~15s). Steady-state cost grows with N²·M. At today's scale (N≤5, M≈10kB) the absolute bandwidth is small, but the **cold-connect cost** (N·M) and the **wake-frequency × wall-time** profile on Cloudflare DO Hibernation make this a genuine smell waiting for the trip wire.
 
@@ -52,7 +52,7 @@ Manifest size projection: ~10kB → ~1kB (≥10x reduction).
 
 ### Type-layer change
 
-`ActionMeta` (TypeScript, in `actions.ts`) stays unchanged — local code still has full schema access via the in-memory action tree. The unification from `specs/20260426T190000-cli-actions-unification.md` is preserved structurally (one TypeScript type, one renderer). Only the **arktype wire schema** (`ActionManifestEntrySchema` in `standard-awareness-defs.ts`) drops `input?: object`. Wire-decoded entries simply have `input === undefined` at runtime.
+`ActionMeta` (TypeScript, in `actions.ts`) stays unchanged: local code still has full schema access via the in-memory action tree. The unification from `specs/20260426T190000-cli-actions-unification.md` is preserved structurally (one TypeScript type, one renderer). Only the **arktype wire schema** (`ActionManifestEntrySchema` in `standard-awareness-defs.ts`) drops `input?: object`. Wire-decoded entries simply have `input === undefined` at runtime.
 
 ### Dispatch-layer change
 
@@ -90,7 +90,7 @@ offers: actionManifest(              offers: actionManifest(
 
 ### Validator
 
-`action-manifest.ts walk()` throws on encountering top-level path segment `system` in user-provided actions. Error message: `"User actions cannot define the 'system.*' namespace — it's reserved for runtime-injected meta operations."` One unit test for the throw.
+`action-manifest.ts walk()` throws on encountering top-level path segment `system` in user-provided actions. Error message: `"User actions cannot define the 'system.*' namespace. It's reserved for runtime-injected meta operations."` One unit test for the throw.
 
 ### CLI consumer change
 
@@ -98,9 +98,9 @@ offers: actionManifest(              offers: actionManifest(
 
 ## Out of scope (intentionally)
 
-- `system.list`, `system.health`, `system.version`, or any other meta op — only `system.describe` ships now. Add later as needed without protocol changes.
+- `system.list`, `system.health`, `system.version`, or any other meta op: only `system.describe` ships now. Add later as needed without protocol changes.
 - Manifest compression (`CompressionStream` deflate). The wire trim alone gets us 10x; compression on top would be ≤2x more for ~50 LoC of cache infrastructure. Revisit if M ever climbs back above 5kB.
-- Splitting `device` into separate `presence` + `manifest` awareness keys. Awareness broadcasts full local state on every refresh — splitting is API hygiene only, **zero wire savings**. Defer until there's a separate optimization that benefits from the seam.
+- Splitting `device` into separate `presence` + `manifest` awareness keys. Awareness broadcasts full local state on every refresh: splitting is API hygiene only, **zero wire savings**. Defer until there's a separate optimization that benefits from the seam.
 - `META` (102) protocol type. Mechanical refactor target if we ever have 3+ system ops.
 
 ## Files changed
@@ -123,39 +123,39 @@ offers: actionManifest(              offers: actionManifest(
 
 ## Dead code to remove (clean break)
 
-- **No type orphans** — `ActionManifestEntry` was already aliased to `ActionMeta` per the prior unification spec. The arktype wire schema (`ActionManifestEntrySchema`) shrinks but its name stays.
-- **No code orphans** — every reader of `entry.input` from the wire is the `list.ts` detail view, and that gets rewritten to fetch.
-- **JSDoc cleanup**: `actions.ts:94` references `ActionManifestEntry` in prose — update to clarify wire vs local.
-- **No spec deletions** — older specs (`20260424T180000-...`, `20260425T000000-...`, `20260426T000000-...`) historically described `input` on the wire. They stay as record. This spec supersedes them on the `input` question.
+- **No type orphans**: `ActionManifestEntry` was already aliased to `ActionMeta` per the prior unification spec. The arktype wire schema (`ActionManifestEntrySchema`) shrinks but its name stays.
+- **No code orphans**: every reader of `entry.input` from the wire is the `list.ts` detail view, and that gets rewritten to fetch.
+- **JSDoc cleanup**: `actions.ts:94` references `ActionManifestEntry` in prose: update to clarify wire vs local.
+- **No spec deletions**: older specs (`20260424T180000-...`, `20260425T000000-...`, `20260426T000000-...`) historically described `input` on the wire. They stay as record. This spec supersedes them on the `input` question.
 
 ## Phases (ordered, each independently revertible)
 
-### Phase 1 — Wire schema + manifest builder
+### Phase 1: Wire schema + manifest builder
 
-- [x] **1.1** `action-manifest.ts:31` — delete the `input` copy line.
-- [x] **1.2** `action-manifest.ts walk()` — add `system.*` validator. Throw when `path.length === 0 && key === 'system'`.
-- [x] **1.3** `standard-awareness-defs.ts:39` — drop `'input?': 'object'` from `ActionManifestEntrySchema`. Update JSDoc.
-- [x] **1.4** `actions.ts:94` JSDoc — clarify that wire entries omit `input`; local `ActionMeta` retains it.
-- [x] **1.5** `action-manifest.test.ts:48-50,62` — rewrite. New assertions: `expect(entry).not.toHaveProperty('input')`. Add a test for the validator throw.
+- [x] **1.1** `action-manifest.ts:31`: delete the `input` copy line.
+- [x] **1.2** `action-manifest.ts walk()`: add `system.*` validator. Throw when `path.length === 0 && key === 'system'`.
+- [x] **1.3** `standard-awareness-defs.ts:39`: drop `'input?': 'object'` from `ActionManifestEntrySchema`. Update JSDoc.
+- [x] **1.4** `actions.ts:94` JSDoc: clarify that wire entries omit `input`; local `ActionMeta` retains it.
+- [x] **1.5** `action-manifest.test.ts:48-50,62`: rewrite. New assertions: `expect(entry).not.toHaveProperty('input')`. Add a test for the validator throw.
 - [x] **1.6** Run `bun test packages/workspace`. All pass.
 
-### Phase 2 — Inject `system.describe`
+### Phase 2: Inject `system.describe`
 
-- [x] **2.1** `attach-sync.ts` — split `actions` into `userActions` (for manifest) and `actions` (for dispatch, includes `system.describe`).
+- [x] **2.1** `attach-sync.ts`: split `actions` into `userActions` (for manifest) and `actions` (for dispatch, includes `system.describe`).
 - [x] **2.2** Implement `system.describe` handler: walks `userActions` by dotted path, returns full `ActionMeta` (with `input`). Returns `null` or throws `RpcError.ActionNotFound` if path doesn't resolve.
 - [x] **2.3** Confirm `actionManifest(userActions)` still gets called with user-only tree; confirm validator catches accidental misordering.
 - [x] **2.4** Add `packages/workspace/src/document/system-describe.test.ts`. Two attached workspaces, A calls B's `system.describe`. Asserts schema returned.
 - [x] **2.5** Run `bun test packages/workspace`. All pass.
 
-### Phase 3 — CLI consumer
+### Phase 3: CLI consumer
 
-- [x] **3.1** `list.ts:357 printActionDetail` — make async. Add `peer?: PeerProxy` parameter.
+- [x] **3.1** `list.ts:357 printActionDetail`: make async. Add `peer?: PeerProxy` parameter.
 - [x] **3.2** When `peer` is provided AND `action.input === undefined`, call `peer.system.describe({ path })` to fetch full meta. On RPC error, render whatever fields are available + a one-line "schema unavailable: <reason>" footer. Don't crash.
-- [x] **3.3** Update `printActionDetail` callers — wherever `--peer` mode is wired, pass the peer proxy through.
-- [x] **3.4** Add or extend `packages/cli/test/e2e-list-peer-detail.test.ts` — regression for "input fields section still renders for peer-mode detail."
+- [x] **3.3** Update `printActionDetail` callers: wherever `--peer` mode is wired, pass the peer proxy through.
+- [x] **3.4** Add or extend `packages/cli/test/e2e-list-peer-detail.test.ts`: regression for "input fields section still renders for peer-mode detail."
 - [x] **3.5** Run `bun test packages/cli`. All pass.
 
-### Phase 4 — Final verification
+### Phase 4: Final verification
 
 - [x] **4.1** `bun test` (full suite).
 - [x] **4.2** Grep for any remaining stale references: `grep -rn "ActionManifestEntry" packages/` (should only hit JSDoc + the arktype schema definition, no orphans).
@@ -176,6 +176,6 @@ None. All design decisions locked above.
 
 ## Migration / breaking change notes
 
-This is a **wire-format breaking change**. Old peers publish `input` in their manifest; new peers ignore it (arktype schema rejects it strictly — verify behavior under the validator's `parse` semantics, may need `arktype.in`-style tolerance, or accept that mixed-version networks see manifest validation failures during the cutover). No backward-compat shim — the user explicitly asked for a clean break.
+This is a **wire-format breaking change**. Old peers publish `input` in their manifest; new peers ignore it (arktype schema rejects it strictly: verify behavior under the validator's `parse` semantics, may need `arktype.in`-style tolerance, or accept that mixed-version networks see manifest validation failures during the cutover). No backward-compat shim. The user explicitly asked for a clean break.
 
 If wire validation strictness causes mixed-version pain during deploy, the fast fix is to widen `ActionManifestEntrySchema` to accept-and-ignore `input` for one release cycle, then tighten in a follow-up. Recommended: ship strict immediately and coordinate the deploy.

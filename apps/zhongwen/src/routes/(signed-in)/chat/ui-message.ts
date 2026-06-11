@@ -1,5 +1,5 @@
 /**
- * UIMessage boundary — persisted chat message to TanStack AI UIMessage.
+ * UIMessage boundary: persisted chat message to TanStack AI UIMessage.
  *
  * Single boundary where unknown[] is cast to MessagePart[].
  * Safe because parts are always produced by TanStack AI.

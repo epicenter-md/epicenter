@@ -1,6 +1,6 @@
 # The `$effect.root` + `import.meta.hot.dispose` Pattern
 
-I hit a weird bug. Logging in, logging out, logging in again — and somewhere around the third cycle the app started calling `workspace.applySession` twice on every token rotation, then three times, then five. No new code, just HMR reloads while I worked.
+I hit a weird bug. Logging in, logging out, logging in again, and somewhere around the third cycle the app started calling `workspace.applySession` twice on every token rotation, then three times, then five. No new code, just HMR reloads while I worked.
 
 The fix is one line most Svelte tutorials don't teach you. Here's the pattern and why it's the pattern.
 
@@ -21,7 +21,7 @@ if (import.meta.hot) import.meta.hot.dispose(dispose);
 
 `auth.session` is a reactive getter on the auth client. When it changes (login, logout, token rotation), the inner `$effect` fires and calls `applySession(next)` on the workspace. One direction, one source of truth, no callback pair reaching across the auth ↔ workspace boundary.
 
-The `$effect` has to run at module scope — it's not inside a component, it's not inside `onMount`, and there's nothing that would "unmount" it naturally. That's what `$effect.root` is for: it creates a reactive scope that lives outside the component tree.
+The `$effect` has to run at module scope. It's not inside a component, it's not inside `onMount`, and there's nothing that would "unmount" it naturally. That's what `$effect.root` is for: it creates a reactive scope that lives outside the component tree.
 
 ## Why the disposer line matters
 
@@ -34,14 +34,14 @@ save file → Vite HMR → module re-evaluates
                         ↓
                     new $effect.root() created
                         ↓
-                    old $effect.root() still alive — nothing destroyed it
+                    old $effect.root() still alive, nothing destroyed it
                         ↓
                     auth.session changes
                         ↓
                     BOTH effects fire → applySession called TWICE
 ```
 
-Save again and it's three roots. Save again, five. The old roots still observe `auth.session` through Svelte's dependency graph, and Svelte has no way to know they're stale — they were created at module scope, not component scope, so the component lifecycle that normally cleans up effects doesn't see them.
+Save again and it's three roots. Save again, five. The old roots still observe `auth.session` through Svelte's dependency graph, and Svelte has no way to know they're stale. They were created at module scope, not component scope, so the component lifecycle that normally cleans up effects doesn't see them.
 
 `import.meta.hot.dispose(dispose)` tells Vite: *"before replacing this module, call this function."* Vite fires the disposer, `dispose()` tears down the `$effect.root`, and the new module starts with a clean graph.
 
@@ -71,7 +71,7 @@ None of these throw. You discover them by noticing that your login flow feels we
 Not often. Most reactive state should live inside components where Svelte's lifecycle handles cleanup for you. But some state genuinely wants to be module-scoped:
 
 - Auth ↔ workspace bridges (my case).
-- Global singletons that react to stores — a logger that changes verbosity based on a user preference.
+- Global singletons that react to stores: a logger that changes verbosity based on a user preference.
 - Coordinator effects that span multiple component trees.
 
 The test: *if this effect were inside a component, would every consumer of the module have to mount that component?* If yes, you want module scope.
@@ -98,13 +98,13 @@ if (import.meta.hot) import.meta.hot.dispose(dispose);
 Three requirements, in order:
 
 1. The file must be `.svelte.ts` (or `.svelte.js`) so the compiler processes runes.
-2. The `$effect.root()` call must be at module scope, not inside a function that gets called later — otherwise HMR can't associate it with the module being replaced.
+2. The `$effect.root()` call must be at module scope, not inside a function that gets called later: otherwise HMR can't associate it with the module being replaced.
 3. The `if (import.meta.hot)` guard is necessary because `import.meta.hot` is undefined in production builds; calling `.dispose` on it would throw.
 
 Skip any of these and the bug comes back. Miss the guard in production, you crash at boot. Put the root inside a function, HMR leaks silently. Use a plain `.ts` extension, Svelte's compiler ignores the runes and `$effect.root` is just an error.
 
 ## What the Svelte docs leave out
 
-The canonical docs mention `$effect.root` as *"useful for nested effects that you want to manually control"* and gesture at the cleanup function. What I wanted — and didn't find until I read the compiler source — was a clear statement that module-scoped roots need explicit HMR disposers, and that Vite's `import.meta.hot.dispose` is the exact hook to pair them with.
+The canonical docs mention `$effect.root` as *"useful for nested effects that you want to manually control"* and gesture at the cleanup function. What I wanted, and didn't find until I read the compiler source: was a clear statement that module-scoped roots need explicit HMR disposers, and that Vite's `import.meta.hot.dispose` is the exact hook to pair them with.
 
 So: this post. If you're reading it because your `applySession` fires N times after a few saves, that's why, and that's the fix.

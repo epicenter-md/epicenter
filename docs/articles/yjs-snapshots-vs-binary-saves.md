@@ -17,7 +17,7 @@ const doc = new Y.Doc({ gc: false });
 
 Why? Snapshots don't store content. They store references into the document's operation history. Think of them as bookmarks into a log of every edit ever made. If garbage collection runs and cleans up that log, your bookmarks point to nothing.
 
-This means your document grows forever. Every keystroke, every deletion, every undo—all preserved.
+This means your document grows forever. Every keystroke, every deletion, every undo. All preserved.
 
 ## What Each Approach Actually Stores
 
@@ -31,7 +31,7 @@ Size: ~100 bytes                  Size: ~varies with content
 Requires: original doc + history  Requires: nothing
 ```
 
-A snapshot is tiny because it's just metadata. The full binary contains all actual content but is self-contained—you can load it into any fresh `Y.Doc` without the original.
+A snapshot is tiny because it's just metadata. The full binary contains all actual content but is self-contained. You can load it into any fresh `Y.Doc` without the original.
 
 ## Two Different Access Patterns
 
@@ -44,7 +44,7 @@ Here's where the mental model clicks: these serve fundamentally different use ca
 | "Audit trail of all changes"   | Snapshots   | History IS the feature           |
 | "Disaster recovery"            | Full binary | Independent of original doc      |
 
-If you're building version history like Google Docs—where users can scrub through every previous state—snapshots make sense. The document growth is the feature, not a bug.
+If you're building version history like Google Docs. Where users can scrub through every previous state. Snapshots make sense. The document growth is the feature, not a bug.
 
 If you're just protecting against data loss with periodic saves, you're paying for history you'll never use.
 

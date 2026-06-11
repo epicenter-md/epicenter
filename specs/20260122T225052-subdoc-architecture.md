@@ -34,7 +34,7 @@ Separate Y.Docs for each table, plus shared docs for metadata and KV.
 1. **Implementation complexity**: Multi-doc requires DocManager, lazy loading orchestration, cross-doc coordination
 2. **API ergonomics**: `tables.posts.upsert()` is sync; multi-doc would require `await tables.load('posts')`
 3. **Two-phase table creation**: Multi-doc needs "creating" → "ready" status to prevent partial visibility
-4. **Current scale**: Most workspaces are < 10 tables, < 10k rows—well within single-doc comfort zone
+4. **Current scale**: Most workspaces are < 10 tables, < 10k rows. Well within single-doc comfort zone
 
 ### When to Reconsider Multi-Doc
 

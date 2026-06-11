@@ -81,13 +81,13 @@ This means:
 
 ## Detailed Design
 
-### 1. `@epicenter/sync` — The New Package
+### 1. `@epicenter/sync`: The New Package
 
 This package extracts everything that is currently framework-agnostic (or can be made so) from `@epicenter/server-elysia/src/sync/`.
 
 **Dependencies**: `yjs`, `y-protocols`, `lib0` only. Zero framework deps. Zero Node/Bun/CF-specific APIs.
 
-#### 1.1 `protocol.ts` — Move as-is
+#### 1.1 `protocol.ts`: Move as-is
 
 The current `packages/server-elysia/src/sync/ws/protocol.ts` is already pure. Move it unchanged.
 
@@ -99,7 +99,7 @@ Exports:
 - `encodeAwareness`, `encodeAwarenessStates`, `encodeQueryAwareness`
 - `decodeMessageType`, `decodeSyncMessage`
 
-#### 1.2 `storage.ts` — Move as-is
+#### 1.2 `storage.ts`: Move as-is
 
 The current `packages/server-elysia/src/sync/http/storage.ts` is already pure. Move it unchanged.
 
@@ -110,13 +110,13 @@ Exports:
 - `createMemorySyncStorage`
 - `compactDoc`
 
-#### 1.3 `rooms.ts` — Move with minor cleanup
+#### 1.3 `rooms.ts`: Move with minor cleanup
 
-The current `rooms.ts` is _almost_ pure. The only coupling is the JSDoc mentioning `ws.raw`. The actual API takes `object` as connection identity and `(data: Uint8Array) => void` as send function — already framework-agnostic.
+The current `rooms.ts` is _almost_ pure. The only coupling is the JSDoc mentioning `ws.raw`. The actual API takes `object` as connection identity and `(data: Uint8Array) => void` as send function: already framework-agnostic.
 
-Move it as-is. The connection identity is just `object` — Elysia passes `ws.raw`, Durable Objects pass the `WebSocket` instance, etc.
+Move it as-is. The connection identity is just `object`: Elysia passes `ws.raw`, Durable Objects pass the `WebSocket` instance, etc.
 
-#### 1.4 `handlers.ts` — NEW: Framework-Agnostic Message Handlers
+#### 1.4 `handlers.ts`: NEW: Framework-Agnostic Message Handlers
 
 This is the key new file. It extracts the _logic_ from `ws/plugin.ts`'s `open`, `message`, and `close` handlers into pure functions that any framework adapter can call.
 
@@ -303,7 +303,7 @@ function handleWsClose(
 /**
  * Handle an HTTP sync request (POST /:room).
  *
- * Stateless — no Y.Doc instantiated. Works with raw SyncStorage.
+ * Stateless: no Y.Doc instantiated. Works with raw SyncStorage.
  * Returns a result the adapter maps to an HTTP response.
  */
 async function handleHttpSync(
@@ -334,7 +334,7 @@ async function handleHttpSync(
 }
 ```
 
-#### 1.5 `auth.ts` — Pure Token Extraction
+#### 1.5 `auth.ts`: Pure Token Extraction
 
 ```typescript
 /** Extract a Bearer token from an Authorization header value. */
@@ -357,17 +357,17 @@ packages/sync-core/
     protocol.ts         # moved from server-elysia/src/sync/ws/protocol.ts
     rooms.ts            # moved from server-elysia/src/sync/ws/rooms.ts
     storage.ts          # moved from server-elysia/src/sync/http/storage.ts
-    handlers.ts         # NEW — framework-agnostic handlers
+    handlers.ts         # NEW: framework-agnostic handlers
     auth.ts             # pure token extraction + TokenVerifier type
 ```
 
-### 2. `@epicenter/server-elysia` — Elysia Adapter (Refactored)
+### 2. `@epicenter/server-elysia`: Elysia Adapter (Refactored)
 
 After extraction, this package becomes a thin Elysia wrapper around `@epicenter/sync`. Renamed from `@epicenter/server` to make the framework explicit.
 
 **Dependencies**: `elysia`, `@epicenter/sync`
 
-#### 2.1 `createWsSyncPlugin` — Simplified
+#### 2.1 `createWsSyncPlugin`: Simplified
 
 The current 300-line plugin becomes ~100 lines that:
 1. Creates a `roomManager` from sync-core
@@ -444,7 +444,7 @@ export function createWsSyncPlugin(config?: WsSyncPluginConfig) {
 }
 ```
 
-#### 2.2 `createHttpSyncPlugin` — Simplified
+#### 2.2 `createHttpSyncPlugin`: Simplified
 
 ```typescript
 import { Elysia } from 'elysia';
@@ -467,7 +467,7 @@ export function createHttpSyncPlugin(config: { storage: SyncStorage; verifyToken
       return result.body;
     })
     .get('/:room', async ({ params, set, status }) => {
-      // Full doc fetch — delegate to storage directly
+      // Full doc fetch: delegate to storage directly
       const updates = await config.storage.getAllUpdates(params.room);
       if (updates.length === 0) return status('Not Found');
       const merged = Y.mergeUpdatesV2(updates);
@@ -477,17 +477,17 @@ export function createHttpSyncPlugin(config: { storage: SyncStorage; verifyToken
 }
 ```
 
-#### 2.3 Auth plugins — Unchanged
+#### 2.3 Auth plugins: Unchanged
 
 `createTokenGuardPlugin` and `createAuthPlugin` (Better Auth) stay in their current packages. They're Elysia-specific by nature and compose via `.use()`. The `TokenVerifier` type from sync-core is what bridges auth into sync.
 
-### 3. `@epicenter/server-cloudflare` — Hono + Durable Objects
+### 3. `@epicenter/server-cloudflare`: Hono + Durable Objects
 
 **Dependencies**: `hono`, `@epicenter/sync`, `@cloudflare/workers-types`
 
 This is a new package. It has two parts:
 
-#### 3.1 Hono Worker — Auth Gateway + HTTP Sync + DO Router
+#### 3.1 Hono Worker: Auth Gateway + HTTP Sync + DO Router
 
 The Worker handles:
 - Auth verification (before anything reaches the DO)
@@ -522,7 +522,7 @@ app.use('/rooms/*', async (c, next) => {
   await next();
 });
 
-// HTTP sync (stateless — no DO needed)
+// HTTP sync (stateless: no DO needed)
 app.post('/rooms/:room', async (c) => {
   const storage = createR2SyncStorage(c.env.SYNC_BUCKET);
   const body = new Uint8Array(await c.req.arrayBuffer());
@@ -544,7 +544,7 @@ app.get('/rooms/:room/ws', async (c) => {
 export default app;
 ```
 
-#### 3.2 Durable Object — `YjsRoom` Class
+#### 3.2 Durable Object: `YjsRoom` Class
 
 Each DO instance IS one room. It uses sync-core handlers directly.
 
@@ -560,7 +560,7 @@ export class YjsRoom implements DurableObject {
 
   constructor(private state: DurableObjectState, private env: Env) {
     // Single-room manager. The DO IS the room, so getDoc always returns the same doc.
-    // We use standalone mode — the DO manages its own Y.Doc lifecycle.
+    // We use standalone mode: the DO manages its own Y.Doc lifecycle.
     this.roomManager = createRoomManager({
       onRoomEvicted: async (roomId, doc) => {
         // Persist to DO SQLite on eviction (optional)
@@ -682,7 +682,7 @@ type TokenVerifier = (token: string) => boolean | Promise<boolean>;
 #### 4.1 Pre-shared token mode
 
 ```typescript
-// Works everywhere — pure function
+// Works everywhere: pure function
 const verifyToken: TokenVerifier = (token) => token === process.env.AUTH_TOKEN;
 ```
 
@@ -734,10 +734,10 @@ The key insight: **the sync-core package doesn't care how tokens are verified**.
 
 **Phase 1: Extract `sync-core`** ✅
 1. [x] Create `packages/sync-core/` with `package.json` (deps: yjs, y-protocols, lib0)
-2. [x] Move `protocol.ts`, `rooms.ts`, `storage.ts` (these have full test suites — move tests too)
+2. [x] Move `protocol.ts`, `rooms.ts`, `storage.ts` (these have full test suites: move tests too)
 3. [x] Create `handlers.ts` by extracting logic from `ws/plugin.ts` and `http/plugin.ts`
    > **Note**: Added `handleHttpGetDoc` handler (not in original spec) for the GET /:room endpoint.
-   > Removed `roomManager` param from `handleWsMessage` — adapter handles broadcast via return value.
+   > Removed `roomManager` param from `handleWsMessage`: adapter handles broadcast via return value.
 4. [x] Create `auth.ts` with `extractBearerToken` and `TokenVerifier`
 5. [x] Update `@epicenter/server-elysia` (formerly `@epicenter/server`) to depend on `@epicenter/sync` and import from it
 6. [x] Refactor `createWsSyncPlugin` and `createHttpSyncPlugin` to be thin wrappers
@@ -780,8 +780,8 @@ Phase 1 extracted all framework-agnostic sync logic from `@epicenter/server` int
 ### Deviations from Spec
 
 - Added `handleHttpGetDoc` handler (spec only mentioned `handleHttpSync` for POST). The GET /:room endpoint logic was also framework-agnostic and worth extracting.
-- Removed `roomManager` parameter from `handleWsMessage` — the handler returns `{ broadcast }` and the adapter calls `roomManager.broadcast()` itself. This keeps the handler truly pure (no side effects).
-- The `wellcrafted` dependency was dropped from the refactored WS plugin — the original used `trySync` for awareness parsing, replaced with a plain try/catch since it was the only usage.
+- Removed `roomManager` parameter from `handleWsMessage`: the handler returns `{ broadcast }` and the adapter calls `roomManager.broadcast()` itself. This keeps the handler truly pure (no side effects).
+- The `wellcrafted` dependency was dropped from the refactored WS plugin: the original used `trySync` for awareness parsing, replaced with a plain try/catch since it was the only usage.
 
 ### Follow-up Work
 

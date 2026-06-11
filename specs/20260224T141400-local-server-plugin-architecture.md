@@ -1,6 +1,6 @@
 > **Path note (2026-05-22):** This draft's top-level `~/.epicenter/` layout is superseded. Do not copy its `~/.epicenter/workspaces`, `~/.epicenter/node_modules`, `~/.epicenter/data`, or `~/.epicenter/jsrepo.json` instructions into new work. Current durable user data uses platform directories, runtime sockets use the OS runtime directory, and generated project data stays under `<projectDir>/.epicenter/`.
 
-# Local Server Plugin Architecture — JSRepo + Bun Compiled Binary
+# Local Server Plugin Architecture: JSRepo + Bun Compiled Binary
 
 **Date**: 2026-02-24
 **Status**: Draft
@@ -44,7 +44,7 @@ brew install epicenter
 # First run initializes the local data folder
 epicenter init
 
-# User installs a workspace app — just downloads TypeScript source
+# User installs a workspace app: just downloads TypeScript source
 epicenter install reddit
 
 # Server starts, auto-discovers installed workspaces, serves them
@@ -82,7 +82,7 @@ const path = join(dir, 'workspace.ts');
 const mod = await import(path);
 ```
 
-### `BUN_BE_BUN=1` — Running `bun install` From a Compiled Binary
+### `BUN_BE_BUN=1`: Running `bun install` From a Compiled Binary
 
 A compiled Bun binary embeds the runtime but does **not** expose the full Bun CLI (package manager, test runner, etc.) by default. However, Bun v1.2.16 added the `BUN_BE_BUN=1` environment variable: when set, the compiled executable acts as the full Bun CLI.
 
@@ -107,7 +107,7 @@ function bunInstall(cwd: string) {
 
 ### JSRepo Programmatic API
 
-JSRepo exports a public programmatic API from `jsrepo/api`. This allows the compiled binary to fetch and write workspace blocks directly — no CLI, no `bunx`, no shell-out.
+JSRepo exports a public programmatic API from `jsrepo/api`. This allows the compiled binary to fetch and write workspace blocks directly, no CLI, no `bunx`, no shell-out.
 
 **Confirmed exports from `jsrepo/api`:**
 
@@ -162,9 +162,9 @@ async function installWorkspace(name: string, epicenterDir: string) {
 }
 ```
 
-**Note on updates**: The CLI's update flow (diffs, merge prompts) is not exposed via the programmatic API — it's CLI-only UX. For `epicenter update`, the binary fetches the latest content via `fetchRaw`, compares it to the existing file, and shows a simple "file changed, overwrite? [y/N]" prompt before writing. This loses the line-level diff view but is sufficient for v1.
+**Note on updates**: The CLI's update flow (diffs, merge prompts) is not exposed via the programmatic API: it's CLI-only UX. For `epicenter update`, the binary fetches the latest content via `fetchRaw`, compares it to the existing file, and shows a simple "file changed, overwrite? [y/N]" prompt before writing. This loses the line-level diff view but is sufficient for v1.
 
-**Note on the `jsrepo.json` config file**: The `~/.epicenter/jsrepo.json` is still written by `init` for documentation purposes (what registry this folder tracks), but the binary does not use it at runtime — the registry URL is hardcoded in the binary.
+**Note on the `jsrepo.json` config file**: The `~/.epicenter/jsrepo.json` is still written by `init` for documentation purposes (what registry this folder tracks), but the binary does not use it at runtime: the registry URL is hardcoded in the binary.
 
 ### Bare Specifier Resolution
 
@@ -176,21 +176,21 @@ When the compiled binary imports `~/.epicenter/workspaces/reddit/workspace.ts`, 
 | Install `@epicenter/hq` in `~/.epicenter/node_modules/` | Single source of truth, version always matches workspace expectations | Slightly larger disk footprint, requires `bun install` |
 | Use import maps | No `node_modules` needed | Bun import map support is limited for compiled binaries |
 
-**Recommendation**: Install `@epicenter/hq` and `arktype` in `~/.epicenter/node_modules/`. Standard module resolution walks up from the imported file's location (`~/.epicenter/workspaces/reddit/workspace.ts` → `~/.epicenter/node_modules/`). The `bun install` step is handled by `BUN_BE_BUN=1` — no separate Bun installation needed.
+**Recommendation**: Install `@epicenter/hq` and `arktype` in `~/.epicenter/node_modules/`. Standard module resolution walks up from the imported file's location (`~/.epicenter/workspaces/reddit/workspace.ts` → `~/.epicenter/node_modules/`). The `bun install` step is handled by `BUN_BE_BUN=1`: no separate Bun installation needed.
 
 ## Design Decisions
 
 | Decision | Choice | Rationale |
 |---|---|---|
 | Binary runtime | Bun `--compile` | Embeds TS transpiler for free, fast startup, single file distribution |
-| Source delivery | JSRepo programmatic API (`jsrepo/api`) | Bundled in binary — no shell-out, no `bunx`, no host dependency. `fetchBlocks` + `fetchRaw` cover install and update. |
+| Source delivery | JSRepo programmatic API (`jsrepo/api`) | Bundled in binary: no shell-out, no `bunx`, no host dependency. `fetchBlocks` + `fetchRaw` cover install and update. |
 | `bun install` from binary | `BUN_BE_BUN=1` + `process.execPath` | Compiled binary spawns itself as the full Bun CLI. No separate Bun installation required on host. |
 | Plugin location | `~/.epicenter/` | Standard XDG-ish home directory pattern. Survives binary upgrades. |
 | Dependency resolution | `node_modules` in `.epicenter/` | Standard Bun module resolution. No import maps or custom loaders. |
 | Workspace discovery | Scan `workspaces/` directory at startup | Simple, predictable, no config file to maintain |
 | Registry source | Epicenter monorepo on GitHub | Zero additional infrastructure. JSRepo reads directly from the repo. |
 | `@epicenter/hq` location | `.epicenter/node_modules/`, NOT bundled in binary | Avoids version mismatch between binary and workspace expectations |
-| Server composition | Plugins from `@epicenter/server` bundled in binary | Sync, workspace, opencode plugins are core — not user-installable |
+| Server composition | Plugins from `@epicenter/server` bundled in binary | Sync, workspace, opencode plugins are core: not user-installable |
 
 ## Architecture
 
@@ -238,7 +238,7 @@ STEP 1: epicenter init
 ────────────────────────
 Binary creates ~/.epicenter/ with:
   - jsrepo.json  (registry = github/EpicenterHQ/epicenter, informational)
-  - package.json (deps: @epicenter/hq, arktype — versions pinned to match binary)
+  - package.json (deps: @epicenter/hq, arktype: versions pinned to match binary)
   - tsconfig.json (minimal, required for workspace file transpilation)
 Runs bun install via BUN_BE_BUN=1:
   spawnSync([process.execPath, 'install'], { env: { BUN_BE_BUN: '1' }, cwd: '~/.epicenter/' })
@@ -270,7 +270,7 @@ STEP 4: epicenter update [workspace]
 Binary uses jsrepo/api to fetch latest content:
   1. fetchRaw latest workspace.ts content from registry
   2. Compare to existing ~/.epicenter/workspaces/<name>/workspace.ts
-  3. If changed: show summary ("workspace.ts has changed — overwrite? [y/N]")
+  3. If changed: show summary ("workspace.ts has changed: overwrite? [y/N]")
   4. On confirm: write new file
   5. spawnSync([process.execPath, 'install'], { env: { BUN_BE_BUN: '1' }, cwd: epicenterDir })
 ```
@@ -281,7 +281,7 @@ Binary uses jsrepo/api to fetch latest content:
 epicenter (single binary, ~50MB)
 ├── Bun runtime (TS transpiler, module resolver, HTTP server)
 ├── @epicenter/server (sync, workspace, ai, auth, proxy, opencode plugins)
-├── jsrepo/api (selectProvider, fetchBlocks, fetchRaw — for install/update commands)
+├── jsrepo/api (selectProvider, fetchBlocks, fetchRaw: for install/update commands)
 ├── elysia, y-protocols, lib0 (server deps)
 └── CLI commands (init, install, update, serve, uninstall, list)
 
@@ -302,24 +302,24 @@ NOT bundled (resolved from ~/.epicenter/node_modules/ at runtime):
 
 ### Phase 2: `.epicenter/` Scaffold
 
-- [ ] **2.1** Create `packages/cli/src/commands/init.ts` — generates `~/.epicenter/` with `jsrepo.json`, `package.json`, `tsconfig.json`
+- [ ] **2.1** Create `packages/cli/src/commands/init.ts`: generates `~/.epicenter/` with `jsrepo.json`, `package.json`, `tsconfig.json`
 - [ ] **2.2** Define the `package.json` template (pinned `@epicenter/hq` and `arktype` versions matching the binary)
 - [ ] **2.3** Define the `jsrepo.json` template (registry URL, informational)
 - [ ] **2.4** Run `bun install` via `BUN_BE_BUN=1`: `spawnSync([process.execPath, 'install'], { env: { BUN_BE_BUN: '1' }, cwd: epicenterDir })`
 
 ### Phase 3: Install / Uninstall Commands
 
-- [ ] **3.1** `epicenter install <name>` — uses `jsrepo/api`: `selectProvider` → `fetchBlocks` → `fetchRaw` → write files → `bunInstall(epicenterDir)`
-- [ ] **3.2** `epicenter uninstall <name>` — removes `~/.epicenter/workspaces/<name>/`
-- [ ] **3.3** `epicenter update [name]` — uses `jsrepo/api` to fetch latest, diff against local, prompt user, write on confirm, re-run `bunInstall`
-- [ ] **3.4** `epicenter list` — scans `~/.epicenter/workspaces/` and lists installed workspaces
+- [ ] **3.1** `epicenter install <name>`: uses `jsrepo/api`: `selectProvider` → `fetchBlocks` → `fetchRaw` → write files → `bunInstall(epicenterDir)`
+- [ ] **3.2** `epicenter uninstall <name>`: removes `~/.epicenter/workspaces/<name>/`
+- [ ] **3.3** `epicenter update [name]`: uses `jsrepo/api` to fetch latest, diff against local, prompt user, write on confirm, re-run `bunInstall`
+- [ ] **3.4** `epicenter list`: scans `~/.epicenter/workspaces/` and lists installed workspaces
 
 ### Phase 4: Dynamic Workspace Loader
 
-- [ ] **4.1** Create `loadInstalledWorkspaces()` — scans `~/.epicenter/workspaces/`, dynamic imports each `workspace.ts`, extracts `defineWorkspace` export
-- [ ] **4.2** Integrate with `createLocalServer` — loaded clients passed to server factory
-- [ ] **4.3** Error handling — graceful skip on malformed workspace files with clear error messages
-- [ ] **4.4** `epicenter serve` command — loads workspaces + starts server
+- [ ] **4.1** Create `loadInstalledWorkspaces()`: scans `~/.epicenter/workspaces/`, dynamic imports each `workspace.ts`, extracts `defineWorkspace` export
+- [ ] **4.2** Integrate with `createLocalServer`: loaded clients passed to server factory
+- [ ] **4.3** Error handling: graceful skip on malformed workspace files with clear error messages
+- [ ] **4.4** `epicenter serve` command: loads workspaces + starts server
 
 ### Phase 5: Compiled Binary
 
@@ -346,13 +346,13 @@ NOT bundled (resolved from ~/.epicenter/node_modules/ at runtime):
 3. Binary fetches latest content via `fetchRaw`, detects the local file differs
 4. Prompts: "workspace.ts has local changes. Overwrite? [y/N]"
 5. User chooses to overwrite or skip.
-6. **Note**: This is simpler than the full jsrepo CLI diff/merge UX. If line-level diffs are needed in the future, the existing content and fetched content are both in memory — diffing can be added without architectural changes.
+6. **Note**: This is simpler than the full jsrepo CLI diff/merge UX. If line-level diffs are needed in the future, the existing content and fetched content are both in memory: diffing can be added without architectural changes.
 
 ### Malformed workspace file crashes the server
 
 1. User manually edits a workspace file and introduces a syntax error
 2. `epicenter serve` tries to `import()` it
-3. Import throws — **must not crash the entire server**
+3. Import throws: **must not crash the entire server**
 4. **Mitigation**: Wrap each `import()` in try/catch, log the error, skip that workspace, continue serving others.
 
 ### Two workspaces use the same `id`
@@ -365,13 +365,13 @@ NOT bundled (resolved from ~/.epicenter/node_modules/ at runtime):
 
 1. User upgrades the `epicenter` binary (new server plugins)
 2. `~/.epicenter/node_modules/@epicenter/hq` stays at old version
-3. Server boots fine — the server plugins are in the binary, workspace schemas resolve from `node_modules`
-4. **This is the intended behavior** — binary upgrades don't break installed workspaces.
+3. Server boots fine: the server plugins are in the binary, workspace schemas resolve from `node_modules`
+4. **This is the intended behavior**: binary upgrades don't break installed workspaces.
 
 ### No internet connection during `epicenter install`
 
-1. `fetchBlocks` or `fetchRaw` fails — network error
-2. **Mitigation**: `jsrepo/api` returns `Result` types. The `install` command checks `isErr()` and surfaces a clear "Could not reach registry — check your internet connection" message. No partial writes occur (files are only written after all fetches succeed).
+1. `fetchBlocks` or `fetchRaw` fails: network error
+2. **Mitigation**: `jsrepo/api` returns `Result` types. The `install` command checks `isErr()` and surfaces a clear "Could not reach registry: check your internet connection" message. No partial writes occur (files are only written after all fetches succeed).
 
 ## Open Questions
 
@@ -381,15 +381,15 @@ NOT bundled (resolved from ~/.epicenter/node_modules/ at runtime):
 
 2. **Where should Yjs document data live?**
    - Options: (a) `~/.epicenter/data/<workspace-id>/`, (b) Alongside workspace files, (c) XDG data directory
-   - **Recommendation**: `~/.epicenter/data/` — keeps data and code in the same top-level folder, but separated. Workspace uninstall should NOT delete data (separate `epicenter purge` command).
+   - **Recommendation**: `~/.epicenter/data/`: keeps data and code in the same top-level folder, but separated. Workspace uninstall should NOT delete data (separate `epicenter purge` command).
 
 3. **Should `epicenter install` also run `bun install` automatically?**
    - Options: (a) Always, (b) Only if new deps detected, (c) Prompt user
-   - **Recommendation**: Always — it's fast with Bun and prevents subtle "missing dep" errors. The `BUN_BE_BUN=1` spawn is cheap.
+   - **Recommendation**: Always: it's fast with Bun and prevents subtle "missing dep" errors. The `BUN_BE_BUN=1` spawn is cheap.
 
 4. **Should workspaces be able to declare actions (custom server-side logic)?**
    - Actions require arbitrary code execution, not just schema definitions
-   - **Recommendation**: Support it from day one — workspace `.ts` files can export actions alongside the definition. The dynamic import loads everything. Defer sandboxing to a later phase.
+   - **Recommendation**: Support it from day one: workspace `.ts` files can export actions alongside the definition. The dynamic import loads everything. Defer sandboxing to a later phase.
 
 5. **Should the registry be the monorepo directly, or a separate `epicenter-registry` repo?**
    - Options: (a) Monorepo with `registry/` folder, (b) Separate repo, (c) Published to jsrepo.com
@@ -415,14 +415,14 @@ NOT bundled (resolved from ~/.epicenter/node_modules/ at runtime):
 
 ## References
 
-- `packages/server/src/local.ts` — Current `createLocalServer` factory (clients array, plugin composition)
-- `packages/server/src/hub.ts` — Hub server factory (reference for how plugins compose)
-- `packages/server/src/workspace/plugin.ts` — Workspace REST plugin (tables + actions)
-- `packages/epicenter/src/ingest/reddit/workspace.ts` — Example workspace definition (complex, real-world)
-- `apps/epicenter/src/lib/templates/whispering.ts` — Example workspace definition (simple)
-- `apps/tab-manager/src/lib/workspace.ts` — Example workspace definition (with actions, awareness)
-- `packages/cli/` — Existing CLI package where new commands would live
-- [JSRepo docs](https://jsrepo.dev) — Registry configuration, block management
-- [JSRepo programmatic API](https://github.com/ieedan/jsrepo) — `jsrepo/api` exports: `selectProvider`, `fetchBlocks`, `fetchRaw`, `resolvePaths`, `getPathForBlock`
-- [Bun compiled executables](https://bun.sh/docs/bundler/executables) — `--compile` flag, dynamic imports
-- [Bun `BUN_BE_BUN=1`](https://bun.sh/docs/bundler/executables) — v1.2.16+, compiled binary acts as full Bun CLI when env var is set
+- `packages/server/src/local.ts`: Current `createLocalServer` factory (clients array, plugin composition)
+- `packages/server/src/hub.ts`: Hub server factory (reference for how plugins compose)
+- `packages/server/src/workspace/plugin.ts`: Workspace REST plugin (tables + actions)
+- `packages/epicenter/src/ingest/reddit/workspace.ts`: Example workspace definition (complex, real-world)
+- `apps/epicenter/src/lib/templates/whispering.ts`: Example workspace definition (simple)
+- `apps/tab-manager/src/lib/workspace.ts`: Example workspace definition (with actions, awareness)
+- `packages/cli/`: Existing CLI package where new commands would live
+- [JSRepo docs](https://jsrepo.dev): Registry configuration, block management
+- [JSRepo programmatic API](https://github.com/ieedan/jsrepo): `jsrepo/api` exports: `selectProvider`, `fetchBlocks`, `fetchRaw`, `resolvePaths`, `getPathForBlock`
+- [Bun compiled executables](https://bun.sh/docs/bundler/executables): `--compile` flag, dynamic imports
+- [Bun `BUN_BE_BUN=1`](https://bun.sh/docs/bundler/executables): v1.2.16+, compiled binary acts as full Bun CLI when env var is set

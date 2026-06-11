@@ -171,7 +171,7 @@ This pattern has several advantages over Pattern 1:
 
 **Natural namespacing**: The serialization logic lives on the object itself. You don't need a separate serializer object cluttering your imports and your code. The behavior is encapsulated where it belongs.
 
-**Works with JSON.stringify**: This is the big one. `JSON.stringify` automatically calls `toJSON` if it exists on an object. That means your custom types work seamlessly with any code that uses `JSON.stringify` under the hood, which is practically everything. Framework serializers like Hono's `c.json()`, Next.js API routes, database drivers—they all just work. No manual serialization step required.
+**Works with JSON.stringify**: This is the big one. `JSON.stringify` automatically calls `toJSON` if it exists on an object. That means your custom types work seamlessly with any code that uses `JSON.stringify` under the hood, which is practically everything. Framework serializers like Hono's `c.json()`, Next.js API routes, database drivers. They all just work. No manual serialization step required.
 
 **Cleaner imports**: You only need to import the factory functions, not a serializer object. Just `import { DateWithTimezone, DateWithTimezoneFromString }`.
 

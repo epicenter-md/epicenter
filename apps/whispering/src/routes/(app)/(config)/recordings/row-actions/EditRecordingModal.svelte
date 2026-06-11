@@ -22,7 +22,7 @@
 	 *
 	 * Reactive props ($props) can become undefined during Svelte's teardown
 	 * when the parent's data source is deleted (e.g. deleting a recording
-	 * causes the table row—and this component—to unmount). If onDestroy
+	 * causes the table row, and this component, to unmount). If onDestroy
 	 * reads the prop directly, it may see undefined and throw. Capturing
 	 * the ID here sidesteps the reactive teardown race entirely.
 	 */
@@ -33,7 +33,7 @@
 	/**
 	 * A working copy of the recording that we can safely edit.
 	 *
-	 * It's like a photocopy of an important document—you don't want to
+	 * It's like a photocopy of an important document. You don't want to
 	 * accidentally mess up the original. You edit the photocopy, submit it,
 	 * and the original is updated. Then you get a new photocopy.
 	 *

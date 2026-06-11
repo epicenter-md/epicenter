@@ -2,10 +2,10 @@
 
 **Date**: 2026-02-10
 **Status**: Superseded
-**Superseded by**: `specs/20260211T100000-simplified-ytext-content-store.md` (further superseded by `specs/20260211T230000-timeline-content-storage-implementation.md`) — `mv()` is now always metadata-only. No content migration at all (no extension categories, no format conversion). This spec's in-place migration is unnecessary because all files use `Y.Text('content')`.
+**Superseded by**: `specs/20260211T100000-simplified-ytext-content-store.md` (further superseded by `specs/20260211T230000-timeline-content-storage-implementation.md`): `mv()` is now always metadata-only. No content migration at all (no extension categories, no format conversion). This spec's in-place migration is unnecessary because all files use `Y.Text('content')`.
 **Author**: AI-assisted
 **Supersedes**: The `mv` type-changing rename section of `specs/20260208T000000-yjs-filesystem-spec.md` (lines 517-545)
-**See also**: `specs/20260211T220000-yjs-content-doc-multi-mode-research.md` — Under Option F, `mv()` remains metadata-only (same as simplified spec). Mode switches happen via timeline entry appends, not renames.
+**See also**: `specs/20260211T220000-yjs-content-doc-multi-mode-research.md`: Under Option F, `mv()` remains metadata-only (same as simplified spec). Mode switches happen via timeline entry appends, not renames.
 
 ## Overview
 
@@ -50,7 +50,7 @@ this.filesTable.update(id, {
 });
 ```
 
-No destroy, no string roundtrip. Content migrates between keys within the same Y.Doc. Stale keys retain old data (harmless, as documented in the main filesystem spec lines 820-824: "Stale keys diverge from reality. This is fine — they are never read while the file is .ts.").
+No destroy, no string roundtrip. Content migrates between keys within the same Y.Doc. Stale keys retain old data (harmless, as documented in the main filesystem spec lines 820-824: "Stale keys diverge from reality. This is fine. They are never read while the file is .ts.").
 
 ## Research Findings
 
@@ -77,7 +77,7 @@ ydoc.transact(() => {
 });
 ```
 
-After conversion, the target key has current content and the source key retains stale content. `openDocument()` reads from whichever key matches the current extension — stale keys are ignored.
+After conversion, the target key has current content and the source key retains stale content. `openDocument()` reads from whichever key matches the current extension: stale keys are ignored.
 
 ### Cross-doc timing with in-place migration
 
@@ -99,7 +99,7 @@ With the current destroy approach, both keys are empty in this window. Healing c
 
 ### What `store.destroy()` was doing
 
-`destroy(fileId)` calls `ydoc.destroy()` (Yjs internal cleanup) and removes the entry from the in-memory map. It was used to force a clean Y.Doc on the next `ensure()` call, avoiding any interaction between old and new key content. With in-place migration, this is unnecessary — `convertContentType` handles the key transition directly.
+`destroy(fileId)` calls `ydoc.destroy()` (Yjs internal cleanup) and removes the entry from the in-memory map. It was used to force a clean Y.Doc on the next `ensure()` call, avoiding any interaction between old and new key content. With in-place migration, this is unnecessary: `convertContentType` handles the key transition directly.
 
 `store.destroy()` remains useful for file deletion (removing the Y.Doc when a file is permanently deleted). This change only affects the `mv` path.
 
@@ -159,7 +159,7 @@ filesTable.update(name: .md)
 ### Phase 1: Change `mv` to in-place migration
 
 - [ ] **1.1** Replace the destroy-and-recreate block in `yjs-file-system.ts:297-314` with `store.ensure(id)` + `convertContentType(ydoc, fromCategory, toCategory)` + metadata update
-- [ ] **1.2** Run existing `convert-on-switch.test.ts` tests (`.txt → .md`, `.md → .txt`, round-trip, same-category) — they should pass without modification
+- [ ] **1.2** Run existing `convert-on-switch.test.ts` tests (`.txt → .md`, `.md → .txt`, round-trip, same-category): they should pass without modification
 - [ ] **1.3** Run full `yjs-file-system.test.ts` suite
 
 ### Phase 2: Add cross-doc timing test coverage
@@ -189,7 +189,7 @@ File has no content in any key. `convertContentType` reads empty source, writes 
 ## Open Questions
 
 1. **Should `convertContentType` clear the source key after migration?**
-   - Currently it doesn't — stale data remains in the old key.
+   - Currently it doesn't: stale data remains in the old key.
    - Clearing would make the state cleaner but adds operations with no functional benefit (stale keys are never read).
    - **Recommendation**: Don't clear. Matches the documented triple-key architecture. Stale keys are explicitly expected.
 
@@ -208,9 +208,9 @@ File has no content in any key. `convertContentType` reads empty source, writes 
 
 ## References
 
-- `packages/epicenter/src/filesystem/yjs-file-system.ts` — `mv()` implementation (lines 287-322)
-- `packages/epicenter/src/filesystem/convert-on-switch.ts` — `convertContentType()` and `healContentType()`
-- `packages/epicenter/src/filesystem/content-doc-store.ts` — `ensure()` and `destroy()`
-- `packages/epicenter/src/filesystem/convert-on-switch.test.ts` — Existing integration tests for type-changing renames
-- `specs/20260208T000000-yjs-filesystem-spec.md` — Triple-key architecture (lines 766-834), cross-doc timing (line 895), self-healing (lines 897-898)
-- `specs/20260209T000000-simplify-content-doc-lifecycle.md` — ContentDocStore design and ensure/heal/open pipeline
+- `packages/epicenter/src/filesystem/yjs-file-system.ts`: `mv()` implementation (lines 287-322)
+- `packages/epicenter/src/filesystem/convert-on-switch.ts`: `convertContentType()` and `healContentType()`
+- `packages/epicenter/src/filesystem/content-doc-store.ts`: `ensure()` and `destroy()`
+- `packages/epicenter/src/filesystem/convert-on-switch.test.ts`: Existing integration tests for type-changing renames
+- `specs/20260208T000000-yjs-filesystem-spec.md`: Triple-key architecture (lines 766-834), cross-doc timing (line 895), self-healing (lines 897-898)
+- `specs/20260209T000000-simplify-content-doc-lifecycle.md`: ContentDocStore design and ensure/heal/open pipeline

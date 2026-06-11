@@ -9,7 +9,7 @@ import { log, report } from '$lib/report';
 // ── Per-key definitions ──────────────────────────────────────────────────────
 
 /**
- * Device-bound configuration definitions — secrets, hardware IDs, filesystem
+ * Device-bound configuration definitions: secrets, hardware IDs, filesystem
  * paths, and global OS shortcuts that should NEVER sync across devices.
  *
  * Each key has its own schema and default value. Stored individually in

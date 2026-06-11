@@ -4,7 +4,7 @@ Epicenter uses two schema systems. Not because we couldn't decide, but because t
 
 ## The Split
 
-**Data schemas** (tables and KV stores) use `CombinedStandardSchema` — in practice, ArkType. **Action input schemas** (queries and mutations) use TypeBox.
+**Data schemas** (tables and KV stores) use `CombinedStandardSchema`: in practice, ArkType. **Action input schemas** (queries and mutations) use TypeBox.
 
 ```typescript
 // Data layer: ArkType via CombinedStandardSchema
@@ -27,7 +27,7 @@ This is deliberate. The two layers need different things from their schemas.
 
 Table and KV schemas validate data on read. They deal with versioning, migrations, and morphs. ArkType is good at this because it gives you a concise string DSL, `.merge()` for composing versions, and pipes for coercion (`'string.date.parse'`, `'string.numeric.parse'`).
 
-The constraint on data schemas is `CombinedStandardSchema` — an intersection of Standard Schema (runtime validation) and Standard JSON Schema (JSON Schema generation):
+The constraint on data schemas is `CombinedStandardSchema`: an intersection of Standard Schema (runtime validation) and Standard JSON Schema (JSON Schema generation):
 
 ```typescript
 export type CombinedStandardSchema<TInput = unknown, TOutput = TInput> = {
@@ -40,7 +40,7 @@ This is library-agnostic. ArkType, Zod 4.2+, and Valibot all satisfy it. We use 
 
 ### Action Schemas Need to Be JSON Schema
 
-Action inputs have a completely different requirement: they need to cross process boundaries. An action's input schema travels from the workspace definition to the HTTP server, the CLI, and AI tool providers — all as plain JSON Schema.
+Action inputs have a completely different requirement: they need to cross process boundaries. An action's input schema travels from the workspace definition to the HTTP server, the CLI, and AI tool providers: all as plain JSON Schema.
 
 TypeBox schemas ARE plain JSON Schema objects. There is no conversion step:
 
@@ -54,10 +54,10 @@ This matters in three places:
 
 **1. HTTP validation.** The Elysia server validates incoming requests with `Value.Check(action.input, query)`. TypeBox's runtime validator operates directly on its own JSON Schema representation. No conversion needed.
 
-**2. AI tool definitions.** When actions become AI tools, their input schemas are forwarded directly to providers (Anthropic, OpenAI, etc.) as JSON Schema. The cast from TypeBox to `JSONSchema` is a safe no-op — they're already the same thing:
+**2. AI tool definitions.** When actions become AI tools, their input schemas are forwarded directly to providers (Anthropic, OpenAI, etc.) as JSON Schema. The cast from TypeBox to `JSONSchema` is a safe no-op: they're already the same thing:
 
 ```typescript
-// In tool-bridge.ts — forwarding action input to AI provider
+// In tool-bridge.ts: forwarding action input to AI provider
 // Safe cast: our action system only accepts TypeBox schemas (TSchema),
 // which ARE plain JSON Schema objects.
 ...(tool.inputSchema && {
@@ -86,13 +86,13 @@ export function standardSchemaToJsonSchema(
 }
 ```
 
-This is a conversion — ArkType produces JSON Schema on demand, with fallback handlers for edge cases like optional properties (`T | undefined` in ArkType → `required` array in JSON Schema). It works, but it's a conversion, not an identity. That's fine for `describeWorkspace()` which runs once, not on every request.
+This is a conversion: ArkType produces JSON Schema on demand, with fallback handlers for edge cases like optional properties (`T | undefined` in ArkType → `required` array in JSON Schema). It works, but it's a conversion, not an identity. That's fine for `describeWorkspace()` which runs once, not on every request.
 
 ## Why Not One Library?
 
 The honest answer: either direction creates friction.
 
-**ArkType everywhere** would mean fighting Elysia. Elysia speaks TypeBox. Its `t` helper, its route-level validation, its OpenAPI generation — all TypeBox. You'd need conversion layers everywhere actions touch the HTTP boundary. You'd also lose the zero-cost JSON Schema identity that makes AI tool definitions trivial.
+**ArkType everywhere** would mean fighting Elysia. Elysia speaks TypeBox. Its `t` helper, its route-level validation, its OpenAPI generation: all TypeBox. You'd need conversion layers everywhere actions touch the HTTP boundary. You'd also lose the zero-cost JSON Schema identity that makes AI tool definitions trivial.
 
 **TypeBox everywhere** would mean giving up ArkType's ergonomics for data schemas. TypeBox's composition story is weaker for versioned data models. No string DSL, no morphs, no pipes. You'd write more verbose schemas for the thing you write the most schemas for.
 

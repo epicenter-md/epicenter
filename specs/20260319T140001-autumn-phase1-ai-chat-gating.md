@@ -16,8 +16,8 @@ Gate `/ai/chat` behind Autumn credit-based billing. After this phase:
 
 ## Current State
 
-- `apps/api/src/ai-chat.ts`—thin TanStack AI passthrough. No billing, no rate limiting.
-- `apps/api/src/app.ts`—`authGuard` protects `/ai/*`. Has `createAfterResponseQueue()` for fire-and-forget work.
+- `apps/api/src/ai-chat.ts`: thin TanStack AI passthrough. No billing, no rate limiting.
+- `apps/api/src/app.ts`: `authGuard` protects `/ai/*`. Has `createAfterResponseQueue()` for fire-and-forget work.
 - No Autumn SDK installed. No billing infrastructure anywhere.
 
 ## Files to Create/Modify
@@ -53,7 +53,7 @@ This file defines the billing model. `atmn push` reads it to sync with the Autum
 import { feature, item, plan } from 'atmn';
 
 // ---------------------------------------------------------------------------
-// Metered features — one per model class
+// Metered features: one per model class
 // ---------------------------------------------------------------------------
 
 export const aiChatFast = feature({
@@ -78,7 +78,7 @@ export const aiChatPremium = feature({
 });
 
 // ---------------------------------------------------------------------------
-// Credit system — single pool, different costs per model class
+// Credit system: single pool, different costs per model class
 // ---------------------------------------------------------------------------
 
 export const aiCredits = feature({
@@ -96,7 +96,7 @@ export const aiCredits = feature({
 // Plans
 // ---------------------------------------------------------------------------
 
-/** Free — auto-assigned to every new customer. 50 credits/month. */
+/** Free: auto-assigned to every new customer. 50 credits/month. */
 export const free = plan({
   id: 'free',
   name: 'Free',
@@ -111,7 +111,7 @@ export const free = plan({
   ],
 });
 
-/** Pro — $20/month, 2000 credits + usage-based overage at $1/100 credits. */
+/** Pro: $20/month, 2000 credits + usage-based overage at $1/100 credits. */
 export const pro = plan({
   id: 'pro',
   name: 'Pro',
@@ -175,7 +175,7 @@ import { Autumn } from 'autumn-js';
 /**
  * Create an Autumn SDK client from worker env bindings.
  *
- * Stateless—safe to create per-request. No connection pooling needed.
+ * Stateless. Safe to create per-request. No connection pooling needed.
  *
  * @example
  * ```ts
@@ -196,22 +196,22 @@ export function createAutumn(env: { AUTUMN_SECRET_KEY: string }) {
 export type ModelClass = 'ai-chat-fast' | 'ai-chat-smart' | 'ai-chat-premium';
 
 const MODEL_CLASSES: Record<string, ModelClass> = {
-  // OpenAI — fast (1 credit)
+  // OpenAI: fast (1 credit)
   'gpt-4o-mini': 'ai-chat-fast',
   'gpt-4o-mini-2024-07-18': 'ai-chat-fast',
-  // OpenAI — smart (3 credits)
+  // OpenAI: smart (3 credits)
   'gpt-4o': 'ai-chat-smart',
   'gpt-4o-2024-11-20': 'ai-chat-smart',
   'o3-mini': 'ai-chat-smart',
-  // OpenAI — premium (10 credits)
+  // OpenAI: premium (10 credits)
   'o1': 'ai-chat-premium',
   'o3': 'ai-chat-premium',
-  // Anthropic — fast (1 credit)
+  // Anthropic: fast (1 credit)
   'claude-3-5-haiku-latest': 'ai-chat-fast',
-  // Anthropic — smart (3 credits)
+  // Anthropic: smart (3 credits)
   'claude-sonnet-4-20250514': 'ai-chat-smart',
   'claude-3-5-sonnet-latest': 'ai-chat-smart',
-  // Anthropic — premium (10 credits)
+  // Anthropic: premium (10 credits)
   'claude-opus-4-20250514': 'ai-chat-premium',
 };
 
@@ -245,7 +245,7 @@ const factory = createFactory<Env>();
  * Uses `customers.getOrCreate` (idempotent). Must run AFTER `authGuard`
  * so `c.var.user` is populated.
  *
- * This is fire-and-forget via `afterResponse` — the Autumn API is fast
+ * This is fire-and-forget via `afterResponse`: the Autumn API is fast
  * enough (~50ms) that race conditions with subsequent `check` calls are
  * negligible for v1. The free plan's `autoEnable: true` means the first
  * `check` call will work even if `getOrCreate` hasn't completed yet,
@@ -527,8 +527,8 @@ This syncs features and plans to the Autumn dashboard. Verify in the dashboard:
 ## What comes next
 
 After this phase is verified, proceed to:
-- **Phase 2** ([billing routes](./20260319T140002-autumn-phase2-billing-routes.md))—mount `autumnHandler` so the frontend can call billing APIs
-- **Phase 4** ([storage billing](./20260319T140004-autumn-phase4-storage-billing.md))—if storage billing is higher priority than UI
+- **Phase 2** ([billing routes](./20260319T140002-autumn-phase2-billing-routes.md)): mount `autumnHandler` so the frontend can call billing APIs
+- **Phase 4** ([storage billing](./20260319T140004-autumn-phase4-storage-billing.md)): if storage billing is higher priority than UI
 
 ---
 
@@ -555,7 +555,7 @@ The spec had both `reset` and `price` on the Pro plan's item. The `atmn` type sy
 Not in the original spec. Added during implementation as a third tier in `group: 'main'` with 15,000 credits and $0.50/100 overage.
 
 #### 6. BYOK (Bring Your Own Key) deferred
-The spec mentioned BYOK bypass. Not implemented—the request schema doesn't support user-provided API keys yet. When added, the credit check should be skipped entirely for BYOK requests.
+The spec mentioned BYOK bypass. Not implemented. The request schema doesn't support user-provided API keys yet. When added, the credit check should be skipped entirely for BYOK requests.
 
 #### 7. Proportional billing replaces tier-based credit system
 The spec defined 3 metered features (`ai_chat_fast`, `ai_chat_smart`, `ai_chat_premium`) with fixed `creditCost` values (1, 3, 10) mapped to model tiers. **Replaced with proportional billing**: a single `ai_usage` metered feature with `creditCost: 1`, where the `requiredBalance` passed to `autumn.check()` varies per model at runtime.

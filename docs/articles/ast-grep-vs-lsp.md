@@ -51,7 +51,7 @@ rewrite: fetchUserData($$$)
 
 It'll catch all the _call sites_ that match. But it won't rename the function definition. It won't update imports. It might accidentally rename a completely unrelated function that happens to have the same name in a different module.
 
-When you use LSP to rename `getUserData`, it starts from a specific position—line 42, character 15—and says: "This symbol, and everything that references this exact symbol, should now be called `fetchUserData`."
+When you use LSP to rename `getUserData`, it starts from a specific position, line 42, character 15, and says: "This symbol, and everything that references this exact symbol, should now be called `fetchUserData`."
 
 ## When to Use Which
 

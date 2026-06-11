@@ -135,7 +135,7 @@ Y.applyUpdate(freshDoc, snapshot);
 // freshDoc has same content, NO tombstone history
 ```
 
-This works for Y.Map too, not just YKeyValue. The 1935x benchmark assumes no compaction ever happens—which isn't true in an epoch-based architecture.
+This works for Y.Map too, not just YKeyValue. The 1935x benchmark assumes no compaction ever happens, which isn't true in an epoch-based architecture.
 
 See [Native Y.Map Storage Architecture](/specs/20260108T084500-ymap-native-storage-architecture.md) for the full analysis.
 

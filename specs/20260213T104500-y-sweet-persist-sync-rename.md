@@ -23,7 +23,7 @@ Calling this "sync" undersells half of what it does and confuses users about wha
 
 ### Persistence Is the Point
 
-The entire design of this extension assumes a local-first pattern: persistence loads first, then WebSocket connects in the background. Without persistence, it degrades to a bare WebSocket provider — which `websocketSync` (`extensions/websocket-sync.ts`) already covers.
+The entire design of this extension assumes a local-first pattern: persistence loads first, then WebSocket connects in the background. Without persistence, it degrades to a bare WebSocket provider, which `websocketSync` (`extensions/websocket-sync.ts`) already covers.
 
 Making `persistence` optional creates a false choice. If you don't need persistence, use `websocketSync`. If you want Y-Sweet, you want the full local-first lifecycle, which requires persistence.
 
@@ -45,7 +45,7 @@ They're exclusively used as the `persistence` argument to `ySweetSync`. Moving t
 | Persistence location             | Move into y-sweet module as sub-paths          | Co-locate with the only consumer                                    |
 | Standalone persistence files     | Become re-export shims (deprecation path)      | Don't break external consumers who import from the old path         |
 | `extensions/persistence/` export | Keep as re-exports initially, remove in future | Gradual migration                                                   |
-| Epicenter Tauri app              | Out of scope                                   | Uses custom `workspacePersistence` with no sync — different pattern |
+| Epicenter Tauri app              | Out of scope                                   | Uses custom `workspacePersistence` with no sync: different pattern |
 | File naming                      | `y-sweet-persist-sync.ts`                      | Matches the function name in kebab-case                             |
 
 ## Current State
@@ -57,11 +57,11 @@ packages/epicenter/src/extensions/
 ├── y-sweet-sync.ts              # ySweetSync(config) → ExtensionFactory
 ├── y-sweet-sync.test.ts         # Tests
 ├── persistence/
-│   ├── web.ts                   # indexeddbPersistence — browser (y-indexeddb)
-│   ├── desktop.ts               # filesystemPersistence + persistence — Node.js/Bun
+│   ├── web.ts                   # indexeddbPersistence: browser (y-indexeddb)
+│   ├── desktop.ts               # filesystemPersistence + persistence: Node.js/Bun
 │   ├── index.browser.ts         # Conditional re-export → web.ts
 │   └── index.node.ts            # Conditional re-export → desktop.ts
-└── websocket-sync.ts            # websocketSync — standalone y-websocket
+└── websocket-sync.ts            # websocketSync: standalone y-websocket
 ```
 
 ### Package.json Exports
@@ -126,7 +126,7 @@ packages/epicenter/src/extensions/
 │   ├── desktop.ts                # re-exports from ../y-sweet-persist-sync/desktop.ts
 │   ├── index.browser.ts          # re-exports from ../y-sweet-persist-sync/web.ts
 │   └── index.node.ts             # re-exports from ../y-sweet-persist-sync/desktop.ts
-└── websocket-sync.ts             # websocketSync — unchanged
+└── websocket-sync.ts             # websocketSync: unchanged
 ```
 
 ### Package.json Exports
@@ -155,17 +155,17 @@ Note: The old export paths (`./extensions/persistence`, `./extensions/y-sweet-sy
 type YSweetPersistSyncConfig = {
 	/** Auth callback that returns a ClientToken for the given doc ID. */
 	auth: (docId: string) => Promise<ClientToken>;
-	/** Persistence factory. REQUIRED — loads local state before connecting. */
+	/** Persistence factory. REQUIRED: loads local state before connecting. */
 	persistence: (context: { ydoc: Y.Doc }) => Lifecycle;
 };
 ```
 
-`persistence` is no longer optional. The `hasPersistence` branch in the current implementation is removed — the extension always loads persistence first, then connects WebSocket in the background.
+`persistence` is no longer optional. The `hasPersistence` branch in the current implementation is removed. The extension always loads persistence first, then connects WebSocket in the background.
 
 ### New Import Pattern
 
 ```typescript
-// Primary import — everything from one path
+// Primary import: everything from one path
 import {
 	ySweetPersistSync,
 	directAuth,
@@ -210,7 +210,7 @@ createWorkspace(definition).withExtension(
 );
 ```
 
-Note: Usage examples above use `.withExtension()` (singular) from the chainable extension API spec. If that spec is not yet implemented, the current `.withExtensions({ sync: ... })` pattern works identically — the rename is independent of the chaining refactor.
+Note: Usage examples above use `.withExtension()` (singular) from the chainable extension API spec. If that spec is not yet implemented, the current `.withExtensions({ sync: ... })` pattern works identically. The rename is independent of the chaining refactor.
 
 ## Import Path Design: Rationale
 
@@ -240,18 +240,18 @@ export function ySweetPersistSync(
 		let currentAuth = config.auth;
 		const authEndpoint = () => currentAuth(ydoc.guid);
 
-		// Create provider — defer connection until persistence loads
+		// Create provider: defer connection until persistence loads
 		let provider: YSweetProvider = createYjsProvider(
 			ydoc,
 			ydoc.guid,
 			authEndpoint,
-			{ connect: false }, // Always false — persistence always loads first
+			{ connect: false }, // Always false: persistence always loads first
 		);
 
 		let persistenceCleanup: (() => MaybePromise<void>) | undefined;
 
 		// whenSynced = persistence loaded (local-first: fast, reliable)
-		// WebSocket connects in background — don't block on it.
+		// WebSocket connects in background: don't block on it.
 		const whenSynced = (async () => {
 			const p = config.persistence({ ydoc });
 			persistenceCleanup = p.destroy;
@@ -288,14 +288,14 @@ export function ySweetPersistSync(
 - The `hasPersistence` check (`const hasPersistence = !!config.persistence`)
 - The `hasPersistence ? ... : waitForFirstSync(provider)` conditional
 - The `waitForFirstSync()` helper function
-- The `{ connect: !hasPersistence }` conditional — now always `{ connect: false }`
+- The `{ connect: !hasPersistence }` conditional: now always `{ connect: false }`
 
 **What's kept:**
 
-- `directAuth()` helper — unchanged, re-exported
-- `ClientToken` re-export — unchanged
-- `reconnect()` method — unchanged
-- `provider` getter — unchanged
+- `directAuth()` helper: unchanged, re-exported
+- `ClientToken` re-export: unchanged
+- `reconnect()` method: unchanged
+- `provider` getter: unchanged
 
 ## What Happens to the Old `y-sweet-sync.ts`
 
@@ -315,7 +315,7 @@ export {
 export type { YSweetPersistSyncConfig as YSweetSyncConfig } from './y-sweet-persist-sync';
 ```
 
-This keeps the old import path working but with a deprecation signal. The type alias means existing code that passes `persistence` (which was already the common case) continues to work. Code that relied on `persistence` being optional will get a type error — which is the desired behavior.
+This keeps the old import path working but with a deprecation signal. The type alias means existing code that passes `persistence` (which was already the common case) continues to work. Code that relied on `persistence` being optional will get a type error, which is the desired behavior.
 
 ### Option B: Delete it
 
@@ -401,25 +401,25 @@ export const popupWorkspace = createWorkspace(definition).withExtension(
 );
 ```
 
-This is a different pattern — standalone persistence, no Y-Sweet. It does NOT use `ySweetSync` or `indexeddbPersistence`. Leave it as-is. The `workspacePersistence` function is app-specific and imports `ExtensionContext` from `@epicenter/workspace/dynamic`, not from `extensions/persistence`.
+This is a different pattern: standalone persistence, no Y-Sweet. It does NOT use `ySweetSync` or `indexeddbPersistence`. Leave it as-is. The `workspacePersistence` function is app-specific and imports `ExtensionContext` from `@epicenter/workspace/dynamic`, not from `extensions/persistence`.
 
 **TODO for future:** This app should eventually use `ySweetPersistSync` when Y-Sweet sync is added to the Epicenter desktop app.
 
 ## Out of Scope
 
-1. **Chainable extension API** — covered by `20260213T102800-chainable-extension-api.md`. This rename works with either `.withExtensions(map)` or `.withExtension(key, factory)`.
-2. **Epicenter Tauri app persistence** — uses custom `workspacePersistence`, no sync. Different pattern.
-3. **The older `persistence` factory** in `desktop.ts` (the direct extension factory, not the `filesystemPersistence` curried factory) — moves with the file but its API doesn't change.
+1. **Chainable extension API**: covered by `20260213T102800-chainable-extension-api.md`. This rename works with either `.withExtensions(map)` or `.withExtension(key, factory)`.
+2. **Epicenter Tauri app persistence**: uses custom `workspacePersistence`, no sync. Different pattern.
+3. **The older `persistence` factory** in `desktop.ts` (the direct extension factory, not the `filesystemPersistence` curried factory): moves with the file but its API doesn't change.
 
 ## Implementation Plan
 
 ### Phase 1: Create new files
 
-- [x] Create `packages/epicenter/src/extensions/y-sweet-persist-sync.ts` — copy from `y-sweet-sync.ts`, rename function to `ySweetPersistSync`, rename config type to `YSweetPersistSyncConfig`, make `persistence` required, remove `hasPersistence` branch and `waitForFirstSync` helper
-- [x] Create `packages/epicenter/src/extensions/y-sweet-persist-sync/web.ts` — move `indexeddbPersistence` from `persistence/web.ts`
-- [x] Create `packages/epicenter/src/extensions/y-sweet-persist-sync/desktop.ts` — move `filesystemPersistence` and `persistence` from `persistence/desktop.ts`
+- [x] Create `packages/epicenter/src/extensions/y-sweet-persist-sync.ts`: copy from `y-sweet-sync.ts`, rename function to `ySweetPersistSync`, rename config type to `YSweetPersistSyncConfig`, make `persistence` required, remove `hasPersistence` branch and `waitForFirstSync` helper
+- [x] Create `packages/epicenter/src/extensions/y-sweet-persist-sync/web.ts`: move `indexeddbPersistence` from `persistence/web.ts`
+- [x] Create `packages/epicenter/src/extensions/y-sweet-persist-sync/desktop.ts`: move `filesystemPersistence` and `persistence` from `persistence/desktop.ts`
 
-### Phase 2: Delete old files (clean break — no shims)
+### Phase 2: Delete old files (clean break: no shims)
 
 > **Decision**: Took Option B (clean break) instead of Option A (re-export shims). The only consumers were the two tab-manager files, both updated in Phase 5. No external consumers exist.
 
@@ -438,12 +438,12 @@ This is a different pattern — standalone persistence, no Y-Sweet. It does NOT 
 
 ### Phase 4: Update barrel file
 
-- [x] Update `packages/epicenter/src/extensions/index.ts` — point persistence exports to new locations
+- [x] Update `packages/epicenter/src/extensions/index.ts`: point persistence exports to new locations
 
 ### Phase 5: Migrate call sites
 
-- [x] `apps/tab-manager/src/lib/workspace-popup.ts` — update imports to new paths, rename `ySweetSync` to `ySweetPersistSync`
-- [x] `apps/tab-manager/src/entrypoints/background.ts` — same
+- [x] `apps/tab-manager/src/lib/workspace-popup.ts`: update imports to new paths, rename `ySweetSync` to `ySweetPersistSync`
+- [x] `apps/tab-manager/src/entrypoints/background.ts`: same
 
 ### Phase 6: Migrate tests
 
@@ -454,21 +454,21 @@ This is a different pattern — standalone persistence, no Y-Sweet. It does NOT 
 
 ### Phase 7: Verify
 
-- [x] Run `bun test` — 3/3 tests pass
-- [x] Run `bun run typecheck` — 0 new errors (pre-existing errors unchanged)
-- [x] Grep for remaining `ySweetSync` references — zero found
-- [x] Grep for remaining `extensions/persistence` imports in app code — zero found
+- [x] Run `bun test`: 3/3 tests pass
+- [x] Run `bun run typecheck`: 0 new errors (pre-existing errors unchanged)
+- [x] Grep for remaining `ySweetSync` references: zero found
+- [x] Grep for remaining `extensions/persistence` imports in app code: zero found
 
 ## Files Changed
 
 | File                                                                | Change                                                            |
 | ------------------------------------------------------------------- | ----------------------------------------------------------------- |
-| `packages/epicenter/src/extensions/y-sweet-persist-sync.ts`         | **NEW** — renamed + simplified `ySweetSync` → `ySweetPersistSync` |
+| `packages/epicenter/src/extensions/y-sweet-persist-sync.ts`         | **NEW**: renamed + simplified `ySweetSync` → `ySweetPersistSync` |
 | `packages/epicenter/src/extensions/y-sweet-persist-sync/web.ts`     | **MOVED** from `persistence/web.ts`                               |
 | `packages/epicenter/src/extensions/y-sweet-persist-sync/desktop.ts` | **MOVED** from `persistence/desktop.ts`                           |
 | `packages/epicenter/src/extensions/y-sweet-persist-sync.test.ts`    | **RENAMED** from `y-sweet-sync.test.ts`, updated references       |
 | `packages/epicenter/src/extensions/y-sweet-sync.ts`                 | **DELETED** (clean break, no shim)                                |
-| `packages/epicenter/src/extensions/persistence/`                    | **DELETED** (entire directory — clean break, no shims)            |
+| `packages/epicenter/src/extensions/persistence/`                    | **DELETED** (entire directory: clean break, no shims)            |
 | `packages/epicenter/src/extensions/index.ts`                        | Updated persistence export paths                                  |
 | `packages/epicenter/package.json`                                   | Add new export paths, remove old ones                             |
 | `apps/tab-manager/src/lib/workspace-popup.ts`                       | Update imports + rename                                           |

@@ -206,7 +206,7 @@ The key insight: I was optimizing the wrong thing. I focused on minimizing I/O o
 3. **Streaming APIs exist for a reason**: Don't accumulate what you can stream
 4. **Simple solutions are maintainable solutions**: That clever batching logic? Future me won't thank current me
 
-The next time you're downloading large files in a Tauri (or Electron) app, remember: that progress bar freezing isn't because downloads are slow—it's because your app is drowning in memory. Stream to disk, keep it simple, and let the filesystem do what it does best.
+The next time you're downloading large files in a Tauri (or Electron) app, remember: that progress bar freezing isn't because downloads are slow. It's because your app is drowning in memory. Stream to disk, keep it simple, and let the filesystem do what it does best.
 
 ## Code Reference
 

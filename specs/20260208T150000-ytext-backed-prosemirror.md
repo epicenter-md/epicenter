@@ -4,7 +4,7 @@
 **Status**: Superseded by `specs/20260208T000000-yjs-filesystem-spec.md`
 **Author**: AI-assisted
 
-> **Superseded**: The dual-key approach (Y.XmlFragment for `.md`, Y.Text for code) was kept. Y.Text-only unification is deferred indefinitely — the custom ProseMirror binding it requires (replacing y-prosemirror's cursor/presence, undo/redo, and bidirectional sync) was estimated at 2-4 weeks plus ongoing maintenance. The primary concern (destructive agent writes via clear-and-rebuild) is noted as a future optimization via y-prosemirror's `updateYFragment` (Approach B). See the main filesystem spec for the current design.
+> **Superseded**: The dual-key approach (Y.XmlFragment for `.md`, Y.Text for code) was kept. Y.Text-only unification is deferred indefinitely: the custom ProseMirror binding it requires (replacing y-prosemirror's cursor/presence, undo/redo, and bidirectional sync) was estimated at 2-4 weeks plus ongoing maintenance. The primary concern (destructive agent writes via clear-and-rebuild) is noted as a future optimization via y-prosemirror's `updateYFragment` (Approach B). See the main filesystem spec for the current design.
 
 ## Overview
 
@@ -53,7 +53,7 @@ This creates problems:
 
 3. **Dual-key complexity.** Each content Y.Doc has both `'text'` and `'richtext'` root keys. Convert-on-switch logic handles file extension changes. This exists to support a case (renaming `.txt` ↔ `.md`) that rarely happens.
 
-4. **Tree diffing is impractical.** `RESEARCH_TREE_DIFFING_ANALYSIS.md` concluded that structural tree diffing for Y.XmlFragment is not viable: ProseMirror nodes have no global IDs, tree diffing is O(n^2 log n) minimum, markdown conversion is lossy, and schema constraints require post-diff repair. The clear-and-rebuild approach is the only pragmatic option for XmlFragment — which means agent writes on `.md` will always be destructive.
+4. **Tree diffing is impractical.** `RESEARCH_TREE_DIFFING_ANALYSIS.md` concluded that structural tree diffing for Y.XmlFragment is not viable: ProseMirror nodes have no global IDs, tree diffing is O(n^2 log n) minimum, markdown conversion is lossy, and schema constraints require post-diff repair. The clear-and-rebuild approach is the only pragmatic option for XmlFragment, which means agent writes on `.md` will always be destructive.
 
 ### Desired State
 
@@ -83,7 +83,7 @@ ProseMirror document
     → remark-stringify (unified)        → Markdown string
 ```
 
-Each node/mark schema defines both `parseMarkdown` (MDAST → ProseMirror nodes) and `toMarkdown` (ProseMirror nodes → MDAST). This pipeline already exists and runs on load/save — the proposal extends it to run on every edit.
+Each node/mark schema defines both `parseMarkdown` (MDAST → ProseMirror nodes) and `toMarkdown` (ProseMirror nodes → MDAST). This pipeline already exists and runs on load/save. The proposal extends it to run on every edit.
 
 **Source**: DeepWiki analysis of `Milkdown/milkdown`, `@milkdown/transformer` package.
 
@@ -102,7 +102,7 @@ The binding is bidirectional:
 - **Local edits**: `updateYFragment` diffs ProseMirror doc against Y.XmlFragment, applies Yjs operations
 - **Remote changes**: `_typeChanged` observer reconstructs ProseMirror fragment, dispatches transaction
 
-Cursor/presence code does `instanceof Y.XmlText` / `instanceof Y.XmlElement` checks. This is hardcoded to Y.XmlFragment — there is no configuration to swap it for Y.Text.
+Cursor/presence code does `instanceof Y.XmlText` / `instanceof Y.XmlElement` checks. This is hardcoded to Y.XmlFragment. There is no configuration to swap it for Y.Text.
 
 **Source**: DeepWiki analysis of `yjs/y-prosemirror`, `ProsemirrorBinding` class.
 
@@ -126,9 +126,9 @@ Cursor/presence code does `instanceof Y.XmlText` / `instanceof Y.XmlElement` che
 
 | Approach | Description | Verdict |
 |---|---|---|
-| **A: Y.Text for everything** | ProseMirror serializes to/from markdown string in Y.Text | **Recommended** — unified model, clean agent writes |
-| **B: Fix XmlFragment diffing** | Implement structural tree diff for `updateYXmlFragmentFromString` | Rejected — research concluded tree diffing is impractical |
-| **C: Y.Text, no real-time collab** | Y.Text as source of truth, ProseMirror is local-only rendering | Too much UX loss — cursor jumps on every remote edit |
+| **A: Y.Text for everything** | ProseMirror serializes to/from markdown string in Y.Text | **Recommended**: unified model, clean agent writes |
+| **B: Fix XmlFragment diffing** | Implement structural tree diff for `updateYXmlFragmentFromString` | Rejected: research concluded tree diffing is impractical |
+| **C: Y.Text, no real-time collab** | Y.Text as source of truth, ProseMirror is local-only rendering | Too much UX loss: cursor jumps on every remote edit |
 
 ---
 
@@ -255,8 +255,8 @@ updateYTextFromString(handle.content, content);
 
 ### Phase 2: Integrate with Filesystem
 
-- [ ] **2.1** Update `DocumentHandle` to always use Y.Text — remove `TextDocumentHandle` / `RichTextDocumentHandle` discriminated union
-- [ ] **2.2** Remove dual-key system (`'text'` / `'richtext'`) — single `'text'` key
+- [ ] **2.1** Update `DocumentHandle` to always use Y.Text: remove `TextDocumentHandle` / `RichTextDocumentHandle` discriminated union
+- [ ] **2.2** Remove dual-key system (`'text'` / `'richtext'`): single `'text'` key
 - [ ] **2.3** Remove `updateYXmlFragmentFromString` from `y-doc-sync.ts`
 - [ ] **2.4** Remove convert-on-switch logic from rename operations
 - [ ] **2.5** Update `readFile` / `writeFile` to use single code path
@@ -278,7 +278,7 @@ updateYTextFromString(handle.content, content);
 2. User B simultaneously inserts "world " before "hello"
 3. CRDT merge could produce `**world hello**` or `world **hello**` depending on offsets
 
-This is the same class of problem as concurrent edits in any Y.Text collaborative code editor (e.g., two users editing the same TypeScript file). Markdown syntax can break from concurrent edits near formatting markers. Recovery: the user sees broken markdown rendering momentarily, fixes it manually. No data loss — just a temporary display issue.
+This is the same class of problem as concurrent edits in any Y.Text collaborative code editor (e.g., two users editing the same TypeScript file). Markdown syntax can break from concurrent edits near formatting markers. Recovery: the user sees broken markdown rendering momentarily, fixes it manually. No data loss, just a temporary display issue.
 
 ### First-Write Normalization
 
@@ -314,7 +314,7 @@ This is the hardest part of the implementation. Options:
 
 1. **ProseMirror transaction diffing strategy for inbound changes?**
    - Options: (a) `prosemirror-diff` library, (b) position-mapped region replacement, (c) full doc replacement with cursor restoration
-   - **Recommendation**: Start with (c) as baseline, iterate to (b) using the position mapping table. Full doc replacement with cursor save/restore is simple and correct — optimize only if the cursor jump is noticeable in practice.
+   - **Recommendation**: Start with (c) as baseline, iterate to (b) using the position mapping table. Full doc replacement with cursor save/restore is simple and correct: optimize only if the cursor jump is noticeable in practice.
 
 2. **Undo granularity?**
    - `Y.UndoManager` on Y.Text groups by Yjs transaction. Each keystroke → serialize → diffChars → Y.Text ops is one transaction. This means undo undoes one keystroke at a time.
@@ -348,10 +348,10 @@ This is the hardest part of the implementation. Options:
 
 ## References
 
-- `packages/epicenter/src/shared/y-doc-sync.ts` — Current `updateYTextFromString` and `updateYXmlFragmentFromString` implementations
-- `packages/epicenter/src/shared/y-doc-sync.test.ts` — Test patterns for CRDT identity preservation
-- `specs/20260208T000000-yjs-filesystem-spec.md` — Filesystem architecture (Layer 2 is superseded by this spec)
-- `RESEARCH_TREE_DIFFING_ANALYSIS.md` — Research concluding tree diffing is impractical
-- `packages/epicenter/specs/20251014T105903 bidirectional-markdown-sync.md` — Earlier bidirectional sync work (loop prevention patterns reusable)
-- `@milkdown/transformer` — Milkdown's remark-based serialize/parse pipeline (reused, not replaced)
-- `y-prosemirror` — Current ProseMirror ↔ Y.XmlFragment binding (replaced by custom binding)
+- `packages/epicenter/src/shared/y-doc-sync.ts`: Current `updateYTextFromString` and `updateYXmlFragmentFromString` implementations
+- `packages/epicenter/src/shared/y-doc-sync.test.ts`: Test patterns for CRDT identity preservation
+- `specs/20260208T000000-yjs-filesystem-spec.md`: Filesystem architecture (Layer 2 is superseded by this spec)
+- `RESEARCH_TREE_DIFFING_ANALYSIS.md`: Research concluding tree diffing is impractical
+- `packages/epicenter/specs/20251014T105903 bidirectional-markdown-sync.md`: Earlier bidirectional sync work (loop prevention patterns reusable)
+- `@milkdown/transformer`: Milkdown's remark-based serialize/parse pipeline (reused, not replaced)
+- `y-prosemirror`: Current ProseMirror ↔ Y.XmlFragment binding (replaced by custom binding)

@@ -1,7 +1,7 @@
 # Encrypted Workspace Storage
 
 **Date**: 2026-02-13
-**Status**: Archived — every major decision in this spec has been superseded by later specs (see redirects below)
+**Status**: Archived: every major decision in this spec has been superseded by later specs (see redirects below)
 **Supersedes**: `20260213T030000-encrypted-api-key-vault.md` (original was overengineered; see Analysis section)
 
 ## Where to look instead
@@ -14,20 +14,20 @@ This spec was the starting point for encrypted workspace storage. Every signific
 | Blob format (`{ v: 1, alg, iv, ct }`) | `20260314T230000-bare-uint8array-encrypted-blob.md` | Bare `Uint8Array` with binary header: `[formatVersion][keyVersion][24-byte nonce][ciphertext+tag]` |
 | Key derivation (deployment-wide SHA-256) | `20260314T070000-per-user-workspace-hkdf-key-derivation.md` | Two-level HKDF: server derives per-user key, client derives per-workspace key |
 | Key source (`BETTER_AUTH_SECRET`) | `20260314T070000-per-user-workspace-hkdf-key-derivation.md` | `ENCRYPTION_SECRETS` env var with versioned keyring for rotation support |
-| API key encryption | `20260223T102844-remove-key-store-simplify-api-key-resolution.md` | API key storage removed entirely—keys come from env vars or per-request headers |
+| API key encryption | `20260223T102844-remove-key-store-simplify-api-key-resolution.md` | API key storage removed entirely. Keys come from env vars or per-request headers |
 | Encryption mode system | `20260314T063000-encryption-wrapper-hardening.md` | Mode state machine, error containment, key transition |
 
-The overall concept—value-level encryption where the CRDT structure remains mergeable but values are opaque ciphertext—is still the architecture. The implementation details below are all stale.
+The overall concept is still the architecture: value-level encryption where the CRDT structure remains mergeable but values are opaque ciphertext. The implementation details below are all stale.
 
 ---
 
 ## Historical notes (preserved for context)
 
-> **Note (2026-02-22)**: The API key encryption portions of this spec were superseded by `20260222T195800-server-side-api-key-management.md`, which itself has been superseded by `20260223T102844-remove-key-store-simplify-api-key-resolution.md`. Server-side API key storage has been removed entirely — API keys now come from env vars (operator keys) or per-request headers (user BYOK). The broader value-level workspace encryption described here (for transcriptions, notes, chat histories) remains valid and is a separate concern from API key storage.
+> **Note (2026-02-22)**: The API key encryption portions of this spec were superseded by `20260222T195800-server-side-api-key-management.md`, which itself has been superseded by `20260223T102844-remove-key-store-simplify-api-key-resolution.md`. Server-side API key storage has been removed entirely: API keys now come from env vars (operator keys) or per-request headers (user BYOK). The broader value-level workspace encryption described here (for transcriptions, notes, chat histories) remains valid and is a separate concern from API key storage.
 
 > **Note (2026-03-12)**: The implementation uses `@noble/ciphers` (synchronous AES-256-GCM) instead of Web Crypto API as originally planned. Synchronous encryption preserves the `set()` → `void` API across 394 call sites. See `specs/20260312T120000-y-keyvalue-lww-encrypted.md` for the final implementation spec. The encrypted blob format is now `{ v: 1, ct }` where `ct = base64(nonce(12) || ciphertext || tag(16))`.
 
-> **Note (2026-03-13)**: The `alg` and `iv` fields were later removed from `EncryptedBlob`. The blob format is now `{ v: 1, ct }`—the version field is the sole contract for algorithm and encoding. The `ct` field contains `base64(nonce(12) || ciphertext || tag(16))`. See `specs/20260313T202000-encrypted-blob-pack-nonce.md`.
+> **Note (2026-03-13)**: The `alg` and `iv` fields were later removed from `EncryptedBlob`. The blob format is now `{ v: 1, ct }`: the version field is the sole contract for algorithm and encoding. The `ct` field contains `base64(nonce(12) || ciphertext || tag(16))`. See `specs/20260313T202000-encrypted-blob-pack-nonce.md`.
 > **Note (2026-03-14)**: The key derivation approach has evolved from deployment-wide `SHA-256(BETTER_AUTH_SECRET)` to per-user-per-workspace HKDF derivation with a separate `WORKSPACE_KEY_SECRET`. Blast radius reduced from "all users, all apps" to "one user, one app." Full envelope encryption deferred. See `specs/20260314T070000-per-user-workspace-hkdf-key-derivation.md`.
 > **Note (2026-03-14)**: The `{ v: 1, ct }` object wrapper has been replaced with a bare `Uint8Array` with self-describing binary header. See `specs/20260314T230000-bare-uint8array-encrypted-blob.md`.
 ## Overview
@@ -280,8 +280,8 @@ The original spec (`20260213T030000-encrypted-api-key-vault.md`) used a 3-layer 
 
 A wrapper that intercepts table and KV operations to encrypt/decrypt transparently.
 
-- [ ] `createEncryptedTables(tables, encryptionKey?)` — wraps table helpers with encrypt-on-write, decrypt-on-read
-- [ ] `createEncryptedKv(kv, encryptionKey?)` — wraps KV helpers with encrypt-on-write, decrypt-on-read
+- [ ] `createEncryptedTables(tables, encryptionKey?)`: wraps table helpers with encrypt-on-write, decrypt-on-read
+- [ ] `createEncryptedKv(kv, encryptionKey?)`: wraps KV helpers with encrypt-on-write, decrypt-on-read
 - [ ] When `encryptionKey` is `undefined`, pass through without encryption (the default/no-encryption case)
 - [ ] Ensure `table.observe()` callbacks still work (observers fire on the encrypted Y.Doc, extensions read through the decrypt wrapper)
 - [ ] Tests: write encrypted → read decrypted, no-key passthrough, observer fires correctly
@@ -300,7 +300,7 @@ Where the encryption key comes from, per sync mode.
 Wire the encryption layer into the workspace creation flow.
 
 - [ ] `createWorkspace(definition).withEncryption(key?)` or pass encryption key via extension context
-- [ ] Extensions (SQLite, markdown, persistence) continue to work unchanged — they read through the encrypted table/KV wrappers
+- [ ] Extensions (SQLite, markdown, persistence) continue to work unchanged: they read through the encrypted table/KV wrappers
 - [ ] Migration path for existing unencrypted data: on first encryption setup, read all plaintext values and re-write as encrypted
 
 ### Phase 5: UI
@@ -318,7 +318,7 @@ Derive new key from new password. Read all values with old key, re-encrypt with 
 
 ### Self-hosted: Forgot encryption password
 
-API keys are replaceable (regenerate from provider dashboards in seconds). Other data (transcriptions, notes) is in the local Yjs persistence — if the user has the `.yjs` file, the data is there in the CRDT. The encryption only affects the synced representation. Local persistence can optionally store unencrypted.
+API keys are replaceable (regenerate from provider dashboards in seconds). Other data (transcriptions, notes) is in the local Yjs persistence. If the user has the `.yjs` file, the data is there in the CRDT. The encryption only affects the synced representation. Local persistence can optionally store unencrypted.
 
 ### Cloud: Forgot login password
 
@@ -334,7 +334,7 @@ If Device A has encryption enabled and Device B doesn't, Device B will see encry
 
 ### Concurrent updates
 
-Two devices encrypt the same key simultaneously with different values. LWW resolves by timestamp — the higher `ts` wins. Both devices converge on the same ciphertext. The "loser" is overwritten. No corruption because the entire `{ v: 1, ct }` blob is replaced atomically.
+Two devices encrypt the same key simultaneously with different values. LWW resolves by timestamp. The higher `ts` wins. Both devices converge on the same ciphertext. The "loser" is overwritten. No corruption because the entire `{ v: 1, ct }` blob is replaced atomically.
 
 ### Migration: Existing unencrypted data
 
@@ -381,14 +381,14 @@ In all these cases, the user controls the server. Client-side encryption protect
 
 ## References
 
-- `packages/epicenter/src/dynamic/workspace/create-workspace.ts` — Workspace creation, extension wiring
-- `packages/epicenter/src/dynamic/tables/create-tables.ts` — Table helper creation
-- `packages/epicenter/src/dynamic/kv/create-kv.ts` — KV helper creation
-- `packages/epicenter/src/extensions/sqlite/sqlite.ts` — SQLite materialization (reads through table helpers)
-- `packages/epicenter/src/static/define-kv.ts` — KV schema definition
-- `packages/epicenter/src/shared/y-keyvalue/y-keyvalue-lww.ts` — LWW KV store
-- `specs/20260121T170000-sync-architecture.md` — Sync modes (local, self-hosted, cloud)
-- `specs/20260213T030000-encrypted-api-key-vault.md` — Original spec (superseded)
+- `packages/epicenter/src/dynamic/workspace/create-workspace.ts`: Workspace creation, extension wiring
+- `packages/epicenter/src/dynamic/tables/create-tables.ts`: Table helper creation
+- `packages/epicenter/src/dynamic/kv/create-kv.ts`: KV helper creation
+- `packages/epicenter/src/extensions/sqlite/sqlite.ts`: SQLite materialization (reads through table helpers)
+- `packages/epicenter/src/static/define-kv.ts`: KV schema definition
+- `packages/epicenter/src/shared/y-keyvalue/y-keyvalue-lww.ts`: LWW KV store
+- `specs/20260121T170000-sync-architecture.md`: Sync modes (local, self-hosted, cloud)
+- `specs/20260213T030000-encrypted-api-key-vault.md`: Original spec (superseded)
 
 ## Analysis: Why the Original Spec Was Overengineered
 

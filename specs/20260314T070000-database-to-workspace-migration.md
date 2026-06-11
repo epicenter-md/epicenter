@@ -2,8 +2,8 @@
 
 **Date**: 2026-03-14
 **Status**: Implemented
-**Parent**: [20260312T170000-whispering-workspace-polish-and-migration.md](./20260312T170000-whispering-workspace-polish-and-migration.md) (Wave 3, tasks 3.1–3.3)
-**Prerequisite**: Wave 1 (schema), Wave 2 (settings separation), defineKv defaults — all complete
+**Parent**: [20260312T170000-whispering-workspace-polish-and-migration.md](./20260312T170000-whispering-workspace-polish-and-migration.md) (Wave 3, tasks 3.1-3.3)
+**Prerequisite**: Wave 1 (schema), Wave 2 (settings separation), defineKv defaults: all complete
 
 ## Overview
 
@@ -14,9 +14,9 @@ One-time migration that reads existing recordings and transformations from the o
 - Transformations → `workspace.tables.transformations` + `workspace.tables.transformationSteps`
 
 **What does NOT migrate (and why):**
-- **Transformation runs** — Historical execution logs. Potentially thousands of rows with nested step runs. Low value: users don't revisit old runs. High cost: denormalization + status transform. The app generates new runs going forward via workspace tables.
-- **Audio blobs** — On desktop, BlobStore already reads from the same `recordings/` directory where audio files live (`{id}.webm`). On web, audio stays in Dexie until the user clears it. No copying needed.
-- **Settings** — Already migrated by the settings-data-migration spec (implemented).
+- **Transformation runs**: Historical execution logs. Potentially thousands of rows with nested step runs. Low value: users don't revisit old runs. High cost: denormalization + status transform. The app generates new runs going forward via workspace tables.
+- **Audio blobs**: On desktop, BlobStore already reads from the same `recordings/` directory where audio files live (`{id}.webm`). On web, audio stays in Dexie until the user clears it. No copying needed.
+- **Settings**: Already migrated by the settings-data-migration spec (implemented).
 
 ## Platform-specific data sources
 
@@ -35,7 +35,7 @@ Files live in the platform-specific app data directory:
   transformation-runs/     ← SKIPPED (not migrated)
 ```
 
-The existing `DbServiceLive` (from `db/index.ts`) creates a desktop service that merges IndexedDB + filesystem with FS taking precedence. We read from this service — it handles the dual-read merge for us.
+The existing `DbServiceLive` (from `db/index.ts`) creates a desktop service that merges IndexedDB + filesystem with FS taking precedence. We read from this service. It handles the dual-read merge for us.
 
 **Audio handling**: `createFileSystemBlobStore(basePath)` uses `findMatchingFiles(basePath, id)` which scans for `{id}.*`. The `recordings/` directory is both the old audio location AND the BlobStore location. **Zero audio copying needed on desktop.**
 
@@ -49,7 +49,7 @@ transformations:    &id, createdAt, updatedAt             (+ nested steps[])
 transformationRuns: &id, transformationId, recordingId    (SKIPPED)
 ```
 
-Audio is stored as `serializedAudio: { arrayBuffer: ArrayBuffer, blobType: string }` inline in each recording row. For now, audio stays in Dexie — web users access it via the existing `DbServiceLive` which converts it to Blob on read. No BlobStore migration needed for web v1.
+Audio is stored as `serializedAudio: { arrayBuffer: ArrayBuffer, blobType: string }` inline in each recording row. For now, audio stays in Dexie: web users access it via the existing `DbServiceLive` which converts it to Blob on read. No BlobStore migration needed for web v1.
 
 ## Migration state machine
 
@@ -236,7 +236,7 @@ export async function migrateDatabaseToWorkspace({
 ```
 
 **Steps:**
-1. **Await `workspace.whenReady`** — IndexedDB persistence loads async. Without this, the idempotency check (does this recording already exist?) would see an empty Yjs doc and re-migrate everything. Same pattern as `migrate-settings.ts`.
+1. **Await `workspace.whenReady`**: IndexedDB persistence loads async. Without this, the idempotency check (does this recording already exist?) would see an empty Yjs doc and re-migrate everything. Same pattern as `migrate-settings.ts`.
 2. Read all recordings from `dbService.recordings.getAll()`
 3. Read all transformations from `dbService.transformations.getAll()`
 4. For each recording: transform → `workspace.tables.recordings.set(row)` (skip if exists)
@@ -328,7 +328,7 @@ On app mount:
 3. If `'pending'`: show migration dialog (or toast with "Migrate" button)
 4. If `'done'`: skip
 
-**Note:** `DbServiceLive` is already a module-level singleton that auto-detects platform (desktop vs web). Importing it for the probe is lightweight — it doesn't read data, just checks counts.
+**Note:** `DbServiceLive` is already a module-level singleton that auto-detects platform (desktop vs web). Importing it for the probe is lightweight: it doesn't read data, just checks counts.
 
 **Acceptance:**
 - [x] Fresh install \u2192 no dialog, state set to 'done'
@@ -383,7 +383,7 @@ Tasks 1 and 2 can be done together (same file). Task 3 depends on 1+2. Task 4 de
 ### Transformation has zero steps
 1. Transformation metadata still migrates
 2. No transformationSteps rows created
-3. This is valid — user created an empty transformation
+3. This is valid: user created an empty transformation
 
 ### V1 transformation steps (no Custom provider fields)
 1. The `DbServiceLive` already uses the migrating validator (`TransformationStep` type) which pipes V1 → V2
@@ -392,17 +392,17 @@ Tasks 1 and 2 can be done together (same file). Task 3 depends on 1+2. Task 4 de
 
 ### Recording with 'TRANSCRIBING' status
 1. The upgrade interrupted a live transcription
-2. Set status to `'FAILED'` — the transcription cannot resume after storage migration
+2. Set status to `'FAILED'`: the transcription cannot resume after storage migration
 3. User can re-transcribe from the recording detail page
 
 ### Web: Recording has no serializedAudio
 1. Some recordings may have `serializedAudio: undefined` (audio was deleted or never recorded)
 2. Recording metadata still migrates
-3. Audio is simply not available — same behavior as before migration
+3. Audio is simply not available: same behavior as before migration
 
 ## Why we don't migrate runs
 
-Transformation runs are execution logs — they record that "at 3:47pm, transformation X was applied to recording Y with result Z." They're useful for history but:
+Transformation runs are execution logs. They record that "at 3:47pm, transformation X was applied to recording Y with result Z." They're useful for history but:
 
 1. **Volume**: A user with 100 transformations and 500 recordings could have thousands of runs, each with nested stepRuns. Migrating this is the most data-heavy part.
 2. **Denormalization cost**: Each run's `stepRuns[]` array must be broken into `transformationStepRuns` rows with `transformationRunId`, `order`, and status transforms. Significant code and risk.
@@ -420,19 +420,19 @@ This spec copies data into workspace tables, but the app's read/write path (`$li
 
 ### Markdown materializer extension
 
-A separate spec will cover a Yjs persistence extension that materializes workspace data back to human-readable markdown files on disk (desktop only). When that extension runs, it will naturally overwrite the old `.md` files with workspace data — effectively cleaning up old files without explicit deletion logic.
+A separate spec will cover a Yjs persistence extension that materializes workspace data back to human-readable markdown files on disk (desktop only). When that extension runs, it will naturally overwrite the old `.md` files with workspace data: effectively cleaning up old files without explicit deletion logic.
 
 ## References
 
-- `apps/whispering/src/lib/services/db/web.ts` — Dexie DB definition, version 0.6
-- `apps/whispering/src/lib/services/db/desktop.ts` — Desktop dual-read facade
-- `apps/whispering/src/lib/services/db/models/` — Old model types (Recording, Transformation, TransformationStep V1/V2, TransformationRun)
-- `apps/whispering/src/lib/services/blob-store/` — BlobStore interface + FS/IDB implementations (already exist)
-- `apps/whispering/src/lib/workspace.ts` — Target workspace table schemas
-- `apps/whispering/src/lib/components/MigrationDialog.svelte` — Existing migration dialog (IDB→FS, being repurposed)
-- `apps/whispering/src/lib/constants/paths.ts` — Desktop file paths (appDataDir)
-- `apps/whispering/src/lib/state/migrate-settings.ts` — Settings migration (pattern reference, especially `workspace.whenReady` usage)
-- `specs/20260313T163000-settings-data-migration.md` — Settings migration spec (implemented)
+- `apps/whispering/src/lib/services/db/web.ts`: Dexie DB definition, version 0.6
+- `apps/whispering/src/lib/services/db/desktop.ts`: Desktop dual-read facade
+- `apps/whispering/src/lib/services/db/models/`: Old model types (Recording, Transformation, TransformationStep V1/V2, TransformationRun)
+- `apps/whispering/src/lib/services/blob-store/`: BlobStore interface + FS/IDB implementations (already exist)
+- `apps/whispering/src/lib/workspace.ts`: Target workspace table schemas
+- `apps/whispering/src/lib/components/MigrationDialog.svelte`: Existing migration dialog (IDB→FS, being repurposed)
+- `apps/whispering/src/lib/constants/paths.ts`: Desktop file paths (appDataDir)
+- `apps/whispering/src/lib/state/migrate-settings.ts`: Settings migration (pattern reference, especially `workspace.whenReady` usage)
+- `specs/20260313T163000-settings-data-migration.md`: Settings migration spec (implemented)
 
 ## Review
 
@@ -444,9 +444,9 @@ Implemented a one-time migration from the old DbService storage layer (Dexie Ind
 
 ### Files Changed
 
-- **`apps/whispering/src/lib/state/migrate-database.ts`** (NEW) — Core migration function (`migrateDatabaseToWorkspace`), localStorage state helpers (`getDatabaseMigrationState`, `setDatabaseMigrationState`), probe function (`probeForOldData`), and explicit step field rename mapping
-- **`apps/whispering/src/lib/components/MigrationDialog.svelte`** — Replaced 1418-line IDB→FS dialog with ~410-line workspace migration dialog. Removed old `_migrateRecordings`/`_migrateTransformations`/`_migrateTransformationRuns` internals. New dialog delegates to `migrateDatabaseToWorkspace()` via `startWorkspaceMigration()`. Dev tools (seed/clear) retained.
-- **`apps/whispering/src/routes/(app)/+layout.svelte`** — Added async boot check: on first launch, probes for old data via `probeForOldData(DbServiceLive)` and sets migration state to 'pending' or 'done'. Initializes `migrationDialog.isPending` reactively.
+- **`apps/whispering/src/lib/state/migrate-database.ts`** (NEW): Core migration function (`migrateDatabaseToWorkspace`), localStorage state helpers (`getDatabaseMigrationState`, `setDatabaseMigrationState`), probe function (`probeForOldData`), and explicit step field rename mapping
+- **`apps/whispering/src/lib/components/MigrationDialog.svelte`**: Replaced 1418-line IDB→FS dialog with ~410-line workspace migration dialog. Removed old `_migrateRecordings`/`_migrateTransformations`/`_migrateTransformationRuns` internals. New dialog delegates to `migrateDatabaseToWorkspace()` via `startWorkspaceMigration()`. Dev tools (seed/clear) retained.
+- **`apps/whispering/src/routes/(app)/+layout.svelte`**: Added async boot check: on first launch, probes for old data via `probeForOldData(DbServiceLive)` and sets migration state to 'pending' or 'done'. Initializes `migrationDialog.isPending` reactively.
 
 ### Deviations from Spec
 
@@ -456,6 +456,6 @@ Implemented a one-time migration from the old DbService storage layer (Dexie Ind
 
 ### Follow-up Work
 
-- Query layer switch (separate spec) — switch UI reads from DbService → workspace tables
+- Query layer switch (separate spec): switch UI reads from DbService → workspace tables
 - Manual testing on desktop (filesystem data) and web (Dexie data)
 - Idempotency verification with real data

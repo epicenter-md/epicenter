@@ -12,7 +12,7 @@ Make `.withActions()` on `WorkspaceClientBuilder` non-terminal so it can be call
 
 ### Current State
 
-`.withActions()` is terminal—it returns `WorkspaceClientWithActions` with no builder methods:
+`.withActions()` is terminal. It returns `WorkspaceClientWithActions` with no builder methods:
 
 ```typescript
 // create-workspace.ts
@@ -37,7 +37,7 @@ const ws = createWorkspace(definition)
 
 This creates a problem:
 
-1. **Package authors can't bundle definition + actions**: `@epicenter/skills` exports tables + standalone functions. Consumers must manually wire `importFromDisk(dir, ws)` instead of calling `ws.actions.importFromDisk(...)`. The skills actions only need `tables` and `documents`—they don't depend on extensions—but they can't be declared before extensions because `.withActions()` is terminal.
+1. **Package authors can't bundle definition + actions**: `@epicenter/skills` exports tables + standalone functions. Consumers must manually wire `importFromDisk(dir, ws)` instead of calling `ws.actions.importFromDisk(...)`. The skills actions only need `tables` and `documents`: they don't depend on extensions. But they can't be declared before extensions because `.withActions()` is terminal.
 
 ### Desired State
 
@@ -64,7 +64,7 @@ await ws.actions.importFromDisk({ dir: '.agents/skills' });
 
 ## Architecture
 
-### Builder Chain — Before and After
+### Builder Chain: Before and After
 
 ```
 BEFORE (terminal):
@@ -130,7 +130,7 @@ buildClient(extensions, state, encryptionRuntime?, actions?)
 
 ### Phase 3: Tests
 
-- [ ] **3.1** Add test: `.withActions()` before `.withExtension()` — actions available on final builder
+- [ ] **3.1** Add test: `.withActions()` before `.withExtension()`: actions available on final builder
 - [ ] **3.2** Add test: multiple `.withActions()` calls merge action trees
 - [ ] **3.3** Add test: `.withActions()` factory receives client WITHOUT extensions when called before extensions
 - [ ] **3.4** Add test: `.withActions()` factory receives client WITH extensions when called after extensions
@@ -138,9 +138,9 @@ buildClient(extensions, state, encryptionRuntime?, actions?)
 
 ### Phase 4: Update `@epicenter/skills` to export an actions factory
 
-- [ ] **4.1** Create `packages/skills/src/actions.ts` — exports `skillsActions` factory that wraps `importFromDisk`/`exportToDisk` as `defineMutation` actions
+- [ ] **4.1** Create `packages/skills/src/actions.ts`: exports `skillsActions` factory that wraps `importFromDisk`/`exportToDisk` as `defineMutation` actions
 - [ ] **4.2** Export `skillsActions` from `packages/skills/src/index.ts`
-- [ ] **4.3** Create `packages/skills/src/workspace.ts` — exports `skillsDefinition` via `defineWorkspace()`
+- [ ] **4.3** Create `packages/skills/src/workspace.ts`: exports `skillsDefinition` via `defineWorkspace()`
 - [ ] **4.4** Export `skillsDefinition` from `packages/skills/src/index.ts`
 
 ## Edge Cases
@@ -149,19 +149,19 @@ buildClient(extensions, state, encryptionRuntime?, actions?)
 
 1. First call: `.withActions(() => ({ skills: { import: ... } }))`
 2. Second call: `.withActions(() => ({ skills: { export: ... } }))`
-3. Shallow spread means second `skills` namespace OVERWRITES the first. This matches JavaScript semantics—not a bug, but worth noting. Consumers who need deep merging should use a single `.withActions()` call.
+3. Shallow spread means second `skills` namespace OVERWRITES the first. This matches JavaScript semantics. Not a bug, but worth noting. Consumers who need deep merging should use a single `.withActions()` call.
 
 ### `.withActions()` factory accessing `client.extensions` before extensions exist
 
 1. Call `.withActions(client => { client.extensions.persistence... })` before `.withExtension('persistence', ...)`
-2. `client.extensions` is `{}` at this point — accessing `.persistence` is `undefined`
+2. `client.extensions` is `{}` at this point: accessing `.persistence` is `undefined`
 3. TypeScript catches this: `TExtensions = Record<string, never>` means no properties are accessible. Runtime is safe.
 
 ### Existing tab-manager code using terminal `.withActions()`
 
 1. Tab manager calls `.withActions()` last in the chain
 2. The return type changes from `WorkspaceClientWithActions` to `WorkspaceClientBuilder` (with TActions set)
-3. `WorkspaceClientBuilder` is a superset — all properties from `WorkspaceClientWithActions` still exist, plus builder methods
+3. `WorkspaceClientBuilder` is a superset: all properties from `WorkspaceClientWithActions` still exist, plus builder methods
 4. No breakage unless the type is explicitly annotated as `WorkspaceClientWithActions`
 
 ## Success Criteria
@@ -176,12 +176,12 @@ buildClient(extensions, state, encryptionRuntime?, actions?)
 
 ## References
 
-- `packages/workspace/src/workspace/types.ts` — `WorkspaceClientBuilder`, `WorkspaceClientWithActions`, `WorkspaceClient`
-- `packages/workspace/src/workspace/create-workspace.ts` — `buildClient()`, `withActions()`, `applyWorkspaceExtension()`
-- `packages/workspace/src/shared/actions.ts` — `Actions` type, `defineQuery`, `defineMutation`
-- `packages/workspace/src/workspace/create-workspace.test.ts` — existing tests
-- `packages/skills/src/disk.ts` — `importFromDisk`, `exportToDisk`, `SkillsWorkspaceClient`
-- `packages/skills/src/index.ts` — current exports
+- `packages/workspace/src/workspace/types.ts`: `WorkspaceClientBuilder`, `WorkspaceClientWithActions`, `WorkspaceClient`
+- `packages/workspace/src/workspace/create-workspace.ts`: `buildClient()`, `withActions()`, `applyWorkspaceExtension()`
+- `packages/workspace/src/shared/actions.ts`: `Actions` type, `defineQuery`, `defineMutation`
+- `packages/workspace/src/workspace/create-workspace.test.ts`: existing tests
+- `packages/skills/src/disk.ts`: `importFromDisk`, `exportToDisk`, `SkillsWorkspaceClient`
+- `packages/skills/src/index.ts`: current exports
 
 ## Review
 
@@ -205,7 +205,7 @@ buildClient(extensions, state, encryptionRuntime?, actions?)
 - Added 5 new tests covering: actions before extensions, multiple merging calls, extension visibility at factory time, actions closing over live tables, and continued chaining after `withActions()`
 
 **`packages/skills/src/workspace.ts`** (new)
-- Exports `skillsDefinition` — a `defineWorkspace()` result with `id: 'epicenter.skills'`
+- Exports `skillsDefinition`: a `defineWorkspace()` result with `id: 'epicenter.skills'`
 
 **`packages/skills/src/actions.ts`** (new)
 - Exports `skillsActions` factory wrapping `importFromDisk`/`exportToDisk` as `defineMutation` actions

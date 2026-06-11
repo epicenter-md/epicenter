@@ -2,7 +2,7 @@
 
 **TL;DR**: LLMs are terrible at producing structured tree diffs but excellent at rewriting complete documents. Invert the problem: constrain the output format, let the LLM rewrite everything, then **you diff the result algorithmically**.
 
-> "LLMs are great at rewriting but terrible at patching." — Liveblocks
+> "LLMs are great at rewriting but terrible at patching.": Liveblocks
 
 ## The Problem
 

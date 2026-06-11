@@ -48,7 +48,7 @@ const currentValue = input.value;
 input.setAttribute('value', 'new value');
 ```
 
-The `element.value` property isn't a static field—it's a getter function that V8 calls synchronously when you access it. Under the hood, the DOM uses WebIDL to define these:
+The `element.value` property isn't a static field. It's a getter function that V8 calls synchronously when you access it. Under the hood, the DOM uses WebIDL to define these:
 
 ```webidl
 interface HTMLInputElement : HTMLElement {
@@ -83,7 +83,7 @@ const meta = head.getMeta(); // Feels like an operation, not data access
 head.setMeta({ name: 'author' });
 ```
 
-This is consistent, but `getMeta()` feels heavier than necessary. You're not _doing_ anything—you're just reading. The parentheses add visual noise for a simple read operation.
+This is consistent, but `getMeta()` feels heavier than necessary. You're not _doing_ anything. You're just reading. The parentheses add visual noise for a simple read operation.
 
 ### Symmetric Properties (Full getter/setter)
 
@@ -152,4 +152,4 @@ Use symmetric properties (`get`/`set`) when:
 
 ## Summary
 
-The asymmetric getter/setter pattern isn't a compromise—it's intentional API design that matches how the DOM works. Properties feel like data; methods feel like actions. When reading state is simple but writing state is significant, let the syntax reflect that difference.
+The asymmetric getter/setter pattern isn't a compromise. It's intentional API design that matches how the DOM works. Properties feel like data; methods feel like actions. When reading state is simple but writing state is significant, let the syntax reflect that difference.

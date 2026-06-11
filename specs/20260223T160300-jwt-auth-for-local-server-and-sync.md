@@ -39,7 +39,7 @@ This creates problems:
 2. **Hub-down fragility**: If the hub is unreachable, the local server falls back to stale cache entries only. New tokens cannot be validated at all.
 3. **Environment variable sprawl**: The local server would need `BETTER_AUTH_SECRET` and database access to run Better Auth locally, which defeats the stateless-sidecar design.
 4. **Parallel auth systems**: Sync auth (static token / `getToken`) and HTTP auth (Bearer → hub fetch) are completely separate. A user authenticates twice through different mechanisms.
-5. **No offline grace period**: Once the cache expires, a valid user gets 401'd if the hub is down — even though their session hasn't actually expired.
+5. **No offline grace period**: Once the cache expires, a valid user gets 401'd if the hub is down: even though their session hasn't actually expired.
 
 ### Desired State
 
@@ -74,7 +74,7 @@ The local server's security model relies on network isolation rather than crypto
 - It binds to `localhost` only, preventing external access.
 - CORS is restricted to `tauri://localhost`.
 - Any local process capable of hitting the API could also read the underlying Yjs files or SQLite database directly.
-- Auth on localhost is "defense-in-depth theater" — it adds complexity without a meaningful security gain.
+- Auth on localhost is "defense-in-depth theater": it adds complexity without a meaningful security gain.
 - This matches the security model of Docker Desktop, VS Code Server, Raycast, and Obsidian sync.
 
 ### Better Auth Token Architecture
@@ -131,11 +131,11 @@ The original spec proposed JWT to avoid hub roundtrips on the local server. Howe
 
 ### Exception: Third-Party OAuth Flow (Cross-Origin)
 
-The "no JWT" decision above applies to first-party use: the Tauri app, local sidecar, and hub sync. These are same-origin or trusted-origin contexts where opaque session tokens work perfectly — the hub can always look up a session in its own database.
+The "no JWT" decision above applies to first-party use: the Tauri app, local sidecar, and hub sync. These are same-origin or trusted-origin contexts where opaque session tokens work perfectly. The hub can always look up a session in its own database.
 
-Third-party hosted workspaces (e.g., `myapp.com` embedding Epicenter) are a different scenario. They're cross-origin with the hub, so cookies don't apply, and passing raw session tokens to third-party code would be a credential leak. The standard solution is OAuth: the hub acts as an identity provider, third-party apps are relying parties, and the authorization code flow naturally produces JWTs (`access_token`, `id_token`) scoped for cross-origin use. Better Auth's `oauthProvider` plugin handles this — it's a full OAuth 2.1/OIDC provider that issues JWTs signed with keys available at `/jwks`, verified by the hub on WebSocket upgrade for Yjs sync room access.
+Third-party hosted workspaces (e.g., `myapp.com` embedding Epicenter) are a different scenario. They're cross-origin with the hub, so cookies don't apply, and passing raw session tokens to third-party code would be a credential leak. The standard solution is OAuth: the hub acts as an identity provider, third-party apps are relying parties, and the authorization code flow naturally produces JWTs (`access_token`, `id_token`) scoped for cross-origin use. Better Auth's `oauthProvider` plugin handles this. It's a full OAuth 2.1/OIDC provider that issues JWTs signed with keys available at `/jwks`, verified by the hub on WebSocket upgrade for Yjs sync room access.
 
-This is not the same JWT complexity that was rejected. The rejected pattern was "issue JWTs so the local server can validate without hitting the hub" — that required `jose` on the sidecar, JWKS caching, token refresh, and TTL management for a threat model that didn't need it. The OAuth pattern is "the hub IS the identity provider, and third-party apps receive standard OAuth tokens." No local JWT validation, no `jose` dependency on the sidecar — the hub verifies its own tokens. See `specs/20260225T210000-workspace-apps-orchestrator.md`, section "Third-Party Auth Flow (Login with Epicenter)" for the full design.
+This is not the same JWT complexity that was rejected. The rejected pattern was "issue JWTs so the local server can validate without hitting the hub", that required `jose` on the sidecar, JWKS caching, token refresh, and TTL management for a threat model that didn't need it. The OAuth pattern is "the hub IS the identity provider, and third-party apps receive standard OAuth tokens." No local JWT validation, no `jose` dependency on the sidecar. The hub verifies its own tokens. See `specs/20260225T210000-workspace-apps-orchestrator.md`, section "Third-Party Auth Flow (Login with Epicenter)" for the full design.
 
 ## Design Decisions
 

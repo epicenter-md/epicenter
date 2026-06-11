@@ -10,9 +10,15 @@ metadata:
 
 ## Reference Repositories
 
-- [shadcn-svelte](https://github.com/huntabyte/shadcn-svelte) — Port of shadcn/ui for Svelte with Bits UI primitives
-- [shadcn-svelte-extras](https://github.com/ieedan/shadcn-svelte-extras) — Additional components for shadcn-svelte
-- [Svelte](https://github.com/sveltejs/svelte) — Svelte 5 framework
+- [shadcn-svelte](https://github.com/huntabyte/shadcn-svelte): Port of shadcn/ui for Svelte with Bits UI primitives
+- [shadcn-svelte-extras](https://github.com/ieedan/shadcn-svelte-extras): Additional components for shadcn-svelte
+- [Svelte](https://github.com/sveltejs/svelte): Svelte 5 framework
+
+## Upstream Grounding
+
+When styling behavior depends on shadcn-svelte component structure, class merging, variants, or Bits UI composition, use source-backed grounding before relying on memory. If DeepWiki MCP is available, ask a narrow question against `huntabyte/shadcn-svelte`; for extras component behavior, ask against `ieedan/shadcn-svelte-extras`. If DeepWiki is unavailable or the repo is not indexed, use upstream source or official docs directly. Treat DeepWiki as orientation, then verify decisive details against local `@epicenter/ui` wrappers, installed types, source, or official docs before changing code.
+
+Skip DeepWiki for ordinary Tailwind utilities and repo-local layout rules already documented below.
 
 ## When to Apply This Skill
 
@@ -62,7 +68,7 @@ When an interactive element can be non-interactive (empty section, loading state
 
 ### Why `disabled` Over JS Guards
 
-- `disabled` natively blocks clicks—no `if (!hasItems) return` needed
+- `disabled` natively blocks clicks: no `if (!hasItems) return` needed
 - Enables the `:disabled` CSS pseudo-class for styling
 - Semantically correct for accessibility (screen readers announce "dimmed" or "unavailable")
 - Tailwind's `enabled:` and `group-disabled:` variants compose cleanly
@@ -83,10 +89,10 @@ When an interactive element can be non-interactive (empty section, loading state
 
 ### Key Variants
 
-- `enabled:cursor-pointer` — pointer cursor only when clickable
-- `enabled:hover:bg-accent/50` — hover effects only when interactive
-- `group-disabled:invisible` — hide child elements (e.g., expand chevron) when parent is disabled
-- `disabled:opacity-50` — dim the element when disabled
+- `enabled:cursor-pointer`: pointer cursor only when clickable
+- `enabled:hover:bg-accent/50`: hover effects only when interactive
+- `group-disabled:invisible`: hide child elements (e.g., expand chevron) when parent is disabled
+- `disabled:opacity-50`: dim the element when disabled
 
 ### Anti-Pattern
 
@@ -102,7 +108,7 @@ The JS guard leaves `cursor-pointer` and `hover:opacity-80` active on a non-inte
 
 ## Flex Column Scroll Trap
 
-When a flex child uses `h-full` (height: 100%) but shares a flex column with siblings (headers, toolbars, footers), it computes to the *full parent height*—overflowing past siblings instead of taking the *remaining space*. The content gets clipped or pushes the layout past the viewport, and scroll areas inside never activate.
+When a flex child uses `h-full` (height: 100%) but shares a flex column with siblings (headers, toolbars, footers), it computes to the *full parent height*: overflowing past siblings instead of taking the *remaining space*. The content gets clipped or pushes the layout past the viewport, and scroll areas inside never activate.
 
 This is the single most common layout bug in this codebase. It appears whenever you have:
 
@@ -160,7 +166,7 @@ Paneforge `Pane` components set width via flex ratios but do not constrain heigh
 
 ### With ScrollArea (bits-ui)
 
-`ScrollArea.Root` renders with `position: relative` and its viewport uses `height: 100%`. This breaks the flex sizing chain—the viewport's percentage height resolves against the `relative` parent, which has no explicit height in a flex context. The content expands instead of scrolling.
+`ScrollArea.Root` renders with `position: relative` and its viewport uses `height: 100%`. This breaks the flex sizing chain: the viewport's percentage height resolves against the `relative` parent, which has no explicit height in a flex context. The content expands instead of scrolling.
 
 Two options:
 

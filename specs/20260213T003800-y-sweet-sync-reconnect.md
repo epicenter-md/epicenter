@@ -55,7 +55,7 @@ And `.withExtension()` runs factories once at construction with no re-registrati
 
 This creates two problems:
 
-1. **No way to change sync target at runtime.** Switching from local y-sweet server to cloud (or vice versa) requires destroying the entire workspace client — which tears down persistence, SQLite extensions, and everything else. Wasteful when only the WebSocket target changed.
+1. **No way to change sync target at runtime.** Switching from local y-sweet server to cloud (or vice versa) requires destroying the entire workspace client, which tears down persistence, SQLite extensions, and everything else. Wasteful when only the WebSocket target changed.
 
 2. **Listener leak in YSweetProvider.** The constructor binds two listeners that `destroy()` never removes:
 
@@ -119,8 +119,8 @@ workspace.extensions.sync.reconnect(directAuth('https://cloud.example.com'));
 | Decision                                | Choice                                                                  | Rationale                                                                                                                                                                                                                |
 | --------------------------------------- | ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | Where to put `reconnect`                | On the `ySweetSync` extension exports                                   | The extension owns the provider lifecycle. Adding it here means consumers just call `workspace.extensions.sync.reconnect(...)`. No framework changes needed.                                                             |
-| Reconnect destroys + recreates provider | Destroy old `YSweetProvider`, create new one on same `Y.Doc`            | Simpler than mutating internals of the provider. `destroy()` is safe — it only closes the WebSocket and removes awareness. Does not touch Y.Doc. Avoids the complexity rejected in the supervisor-loop spec.             |
-| Fix listener leak separately            | Patch `YSweetProvider.destroy()` first, then add `reconnect`            | The leak fix is prerequisite — without it, each `reconnect` call accumulates stale listeners. Fixing it first makes `reconnect` clean by default.                                                                        |
+| Reconnect destroys + recreates provider | Destroy old `YSweetProvider`, create new one on same `Y.Doc`            | Simpler than mutating internals of the provider. `destroy()` is safe: it only closes the WebSocket and removes awareness. Does not touch Y.Doc. Avoids the complexity rejected in the supervisor-loop spec.             |
+| Fix listener leak separately            | Patch `YSweetProvider.destroy()` first, then add `reconnect`            | The leak fix is prerequisite: without it, each `reconnect` call accumulates stale listeners. Fixing it first makes `reconnect` clean by default.                                                                        |
 | Store bound references for cleanup      | Save `this.update.bind(this)` to a field so it can be passed to `off()` | `.bind()` creates a new function reference each time. Must store the bound reference at construction to pass the same reference to both `on()` and `off()`.                                                              |
 | Deferred: supervisor loop redesign      | Deferred                                                                | The prior spec (`20260213T000000-fix-disconnect-reconnect-race.md`) analyzed a full supervisor-loop rewrite. That's architecturally better but much larger. `reconnect()` at the extension level is good enough for now. |
 
@@ -179,7 +179,7 @@ Yjs providers are just observers. They:
 - Removes awareness states for this client
 - Removes `doc.on('update')` and `awareness.on('update')` listeners
 - Removes window `online`/`offline` listeners
-- Does **NOT** call `doc.destroy()` — the doc is untouched
+- Does **NOT** call `doc.destroy()`: the doc is untouched
 
 Creating a new provider on the same doc:
 
@@ -224,53 +224,53 @@ Creating a new provider on the same doc:
 
   ```typescript
   export function ySweetSync(config: YSweetSyncConfig): ExtensionFactory {
-  	return ({ ydoc }) => {
-  		let currentAuth = config.auth;
-  		const authEndpoint = () => currentAuth(ydoc.guid);
-  		const hasPersistence = !!config.persistence;
+	return ({ ydoc }) => {
+		let currentAuth = config.auth;
+		const authEndpoint = () => currentAuth(ydoc.guid);
+		const hasPersistence = !!config.persistence;
 
-  		let provider: YSweetProvider = createYjsProvider(
-  			ydoc,
-  			ydoc.guid,
-  			authEndpoint,
-  			{ connect: !hasPersistence },
-  		);
+		let provider: YSweetProvider = createYjsProvider(
+			ydoc,
+			ydoc.guid,
+			authEndpoint,
+			{ connect: !hasPersistence },
+		);
 
-  		let persistenceCleanup: (() => MaybePromise<void>) | undefined;
+		let persistenceCleanup: (() => MaybePromise<void>) | undefined;
 
-  		// whenSynced logic unchanged from current implementation
-  		const whenSynced = hasPersistence
-  			? (async () => {
-  					const p = config.persistence!({ ydoc });
-  					persistenceCleanup = p.destroy;
-  					await p.whenSynced;
-  					provider.connect().catch(() => {});
-  				})()
-  			: waitForFirstSync(provider);
+		// whenSynced logic unchanged from current implementation
+		const whenSynced = hasPersistence
+			? (async () => {
+					const p = config.persistence!({ ydoc });
+					persistenceCleanup = p.destroy;
+					await p.whenSynced;
+					provider.connect().catch(() => {});
+				})()
+			: waitForFirstSync(provider);
 
-  		return defineExports({
-  			provider, // Note: this reference becomes stale after reconnect.
-  			// See Open Questions.
-  			whenSynced,
-  			reconnect(newAuth: (docId: string) => Promise<ClientToken>) {
-  				provider.destroy();
-  				currentAuth = newAuth;
-  				provider = createYjsProvider(ydoc, ydoc.guid, () =>
-  					currentAuth(ydoc.guid),
-  				);
-  				provider.connect();
-  			},
-  			destroy: () => {
-  				persistenceCleanup?.();
-  				provider.destroy();
-  			},
-  		});
-  	};
+		return defineExports({
+			provider, // Note: this reference becomes stale after reconnect.
+			// See Open Questions.
+			whenSynced,
+			reconnect(newAuth: (docId: string) => Promise<ClientToken>) {
+				provider.destroy();
+				currentAuth = newAuth;
+				provider = createYjsProvider(ydoc, ydoc.guid, () =>
+					currentAuth(ydoc.guid),
+				);
+				provider.connect();
+			},
+			destroy: () => {
+				persistenceCleanup?.();
+				provider.destroy();
+			},
+		});
+	};
   }
   ```
 
 - [ ] **2.2** Update the `YSweetSyncConfig` type JSDoc to document the `reconnect` export.
-- [ ] **2.3** Write a test for `reconnect` — verify the old provider is destroyed, new provider connects to a different URL, persistence is untouched, Y.Doc retains all data.
+- [ ] **2.3** Write a test for `reconnect`: verify the old provider is destroyed, new provider connects to a different URL, persistence is untouched, Y.Doc retains all data.
 - [ ] **2.4** Run `bun test` in `packages/epicenter/` to verify no regressions.
 
 ## Edge Cases
@@ -281,15 +281,15 @@ Creating a new provider on the same doc:
 2. `reconnect(newAuth)` is called
 3. Old provider is destroyed → if `whenSynced` was waiting on `waitForFirstSync`, it rejects (provider goes OFFLINE before CONNECTED)
 4. New provider connects to new URL
-5. The original `whenSynced` promise has already resolved or rejected — it's a one-shot promise from initialization. `reconnect` doesn't reset it.
+5. The original `whenSynced` promise has already resolved or rejected: it's a one-shot promise from initialization. `reconnect` doesn't reset it.
 
-**Acceptable behavior.** Consumers who already awaited `whenSynced` are fine. If `whenSynced` was still pending and persistence was provided, it already resolved (persistence resolves first). If no persistence, it may reject — consumer should handle this.
+**Acceptable behavior.** Consumers who already awaited `whenSynced` are fine. If `whenSynced` was still pending and persistence was provided, it already resolved (persistence resolves first). If no persistence, it may reject: consumer should handle this.
 
 ### Reconnect called multiple times rapidly
 
 1. Each call destroys the current provider and creates a new one
 2. The listener leak fix ensures no accumulation
-3. Last writer wins — the final `reconnect` call determines the active connection
+3. Last writer wins: the final `reconnect` call determines the active connection
 
 **Acceptable behavior.** No special debouncing needed. Provider creation is synchronous; connection is async but managed by the provider's internal connect loop.
 
@@ -302,12 +302,12 @@ See Open Questions.
 ## Open Questions
 
 1. **Should `reconnect` return the new provider or a promise?**
-   - Options: (a) Return `void` — fire and forget, (b) Return `Promise<void>` that resolves on first sync of new provider, (c) Return the new `YSweetProvider` instance
+   - Options: (a) Return `void`: fire and forget, (b) Return `Promise<void>` that resolves on first sync of new provider, (c) Return the new `YSweetProvider` instance
    - **Recommendation**: Return `void`. Consumers who need connection status should subscribe to provider events. Keeping it simple.
 
 2. **How to handle the stale `provider` reference on extension exports?**
    - The `provider` property exported via `defineExports` is captured at creation time. After `reconnect`, it points to the destroyed old provider.
-   - Options: (a) Accept staleness — consumers use `reconnect` and don't hold onto `provider`, (b) Use a getter that returns the current provider, (c) Export a `getProvider()` method
+   - Options: (a) Accept staleness: consumers use `reconnect` and don't hold onto `provider`, (b) Use a getter that returns the current provider, (c) Export a `getProvider()` method
    - **Recommendation**: Use a getter. The `defineExports` return object can use `get provider() { return provider; }` to always return the current one. This is transparent to consumers.
 
 3. **Should `reconnect` accept partial config (e.g., just a new URL)?**
@@ -327,10 +327,10 @@ See Open Questions.
 
 ## References
 
-- `packages/y-sweet/src/provider.ts` — YSweetProvider class (listener leak fix)
-- `packages/y-sweet/src/main.ts` — createYjsProvider factory
-- `packages/epicenter/src/extensions/y-sweet-sync.ts` — ySweetSync extension (reconnect method)
-- `packages/epicenter/src/shared/lifecycle.ts` — Lifecycle protocol / defineExports
-- `packages/epicenter/src/dynamic/workspace/create-workspace.ts` — withExtensions (context for why runtime swap isn't possible at framework level)
-- `specs/20260213T000000-fix-disconnect-reconnect-race.md` — Prior analysis identifying listener leak (Part 5, item 2)
-- `specs/20260212T190000-y-sweet-persistence-architecture.md` — Persistence/sync composition architecture
+- `packages/y-sweet/src/provider.ts`: YSweetProvider class (listener leak fix)
+- `packages/y-sweet/src/main.ts`: createYjsProvider factory
+- `packages/epicenter/src/extensions/y-sweet-sync.ts`: ySweetSync extension (reconnect method)
+- `packages/epicenter/src/shared/lifecycle.ts`: Lifecycle protocol / defineExports
+- `packages/epicenter/src/dynamic/workspace/create-workspace.ts`: withExtensions (context for why runtime swap isn't possible at framework level)
+- `specs/20260213T000000-fix-disconnect-reconnect-race.md`: Prior analysis identifying listener leak (Part 5, item 2)
+- `specs/20260212T190000-y-sweet-persistence-architecture.md`: Persistence/sync composition architecture

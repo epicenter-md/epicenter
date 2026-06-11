@@ -2,7 +2,7 @@
 
 ## Goal
 
-Move `packages/epicenter/src/cli/` into a standalone `packages/cli/` package (`@epicenter/cli`). The CLI currently lives inside the core library but has almost zero coupling to its internals — only one non-public import needs resolving.
+Move `packages/epicenter/src/cli/` into a standalone `packages/cli/` package (`@epicenter/cli`). The CLI currently lives inside the core library but has almost zero coupling to its internals, only one non-public import needs resolving.
 
 ## Why This Matters
 
@@ -49,7 +49,7 @@ Only **2 files** import from `@epicenter/workspace` internals:
    // Current
    import type { ProjectDir } from '../shared/types';
    import type { AnyWorkspaceClient } from '../workspace/types';
-   
+
    // Target
    import type { ProjectDir, AnyWorkspaceClient } from '@epicenter/workspace';
    ```
@@ -60,7 +60,7 @@ Only **2 files** import from `@epicenter/workspace` internals:
    import type { Actions } from '../shared/actions';
    import { iterateActions } from '../shared/actions';
    import { standardSchemaToJsonSchema } from '../shared/standard-schema/to-json-schema';
-   
+
    // Target
    import { type Actions, iterateActions, standardSchemaToJsonSchema } from '@epicenter/workspace';
    ```
@@ -219,11 +219,11 @@ All should pass with no type errors or missing imports.
 
 ## What NOT to Do
 
-❌ Don't refactor any CLI logic — pure move + import rewire only  
-❌ Don't rename files or restructure the commands/ folder  
-❌ Don't touch @epicenter/server (CLI dynamically imports it via `await import()` — stays as-is)  
-❌ Don't change any behavior — CLI should work identically after extraction  
-❌ Don't manually copy files — use bun or git operations for precision  
+❌ Don't refactor any CLI logic: pure move + import rewire only
+❌ Don't rename files or restructure the commands/ folder
+❌ Don't touch @epicenter/server (CLI dynamically imports it via `await import()`: stays as-is)
+❌ Don't change any behavior: CLI should work identically after extraction
+❌ Don't manually copy files: use bun or git operations for precision
 
 ## Todo List
 
@@ -243,13 +243,13 @@ All should pass with no type errors or missing imports.
 
 ## Success Criteria
 
-✅ All CLI tests pass  
-✅ No type errors in CLI package  
-✅ No type errors in epicenter package  
-✅ No type errors across entire repo  
-✅ `bun run epicenter --help` works  
-✅ CLI commands execute as before  
-✅ No breaking changes to CLI behavior or API  
+✅ All CLI tests pass
+✅ No type errors in CLI package
+✅ No type errors in epicenter package
+✅ No type errors across entire repo
+✅ `bun run epicenter --help` works
+✅ CLI commands execute as before
+✅ No breaking changes to CLI behavior or API
 
 ## Rollback Strategy
 
@@ -260,11 +260,11 @@ If anything fails:
 3. Remove new package: `rm -rf packages/cli/`
 4. Reinstall: `bun install`
 
-All changes are isolated — no complex merge conflicts expected.
+All changes are isolated, no complex merge conflicts expected.
 
 ## Notes
 
 - The CLI doesn't import from other @epicenter/* packages at the code level (only @epicenter/workspace)
 - Dynamic imports like `await import('@epicenter/server')` will continue to work (that's the design)
-- No changes to the bin entry point — just moved to a new location
+- No changes to the bin entry point: just moved to a new location
 - The workspace ID convention ("epicenter.config.ts") remains unchanged

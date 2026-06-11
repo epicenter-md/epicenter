@@ -16,7 +16,7 @@ One line. The type you already have is the schema.
 
 Most validation libraries are schema-first. You define a schema using their DSL, and then infer the TypeScript type from that schema. This works fine for types you own, but it falls apart when you need to validate data against types from a third-party library like Chrome, Prisma, or AWS.
 
-Typia flips this. It's a TypeScript compiler transformer that hooks into `ts.TypeChecker`—the same engine TypeScript uses to verify your code. Because TypeScript resolves all types (including those in `node_modules`) before Typia even sees them, Typia receives a fully-resolved, flattened representation of the type. It then generates optimized validation code at compile time.
+Typia flips this. It's a TypeScript compiler transformer that hooks into `ts.TypeChecker`: the same engine TypeScript uses to verify your code. Because TypeScript resolves all types (including those in `node_modules`) before Typia even sees them, Typia receives a fully-resolved, flattened representation of the type. It then generates optimized validation code at compile time.
 
 ## The Cost of Redefinition
 
@@ -80,7 +80,7 @@ Typia feels like magic, but it has specific constraints you need to know:
 2. Generics must be concrete at the call site. You can't pass an unresolved `T` to `typia.is<T>()`; the compiler needs to know exactly what `T` is to generate the validation logic.
 3. No runtime schema manipulation. Since the validation code is generated at compile time, you can't build or modify schemas dynamically based on runtime data like you can with Zod or TypeBox.
 
-If you can live with the build step, Typia removes an entire class of busywork. You stop maintaining two parallel definitions of the same shape. The types you already have—the ones the library author already wrote and tested—just work as validators. That's a genuinely different thing from everything else out there.
+If you can live with the build step, Typia removes an entire class of busywork. You stop maintaining two parallel definitions of the same shape. The types you already have. The ones the library author already wrote and tested. Just work as validators. That's a genuinely different thing from everything else out there.
 
 For a broader look at how Typia's TS→JS approach compares to schema-first libraries, see [Typia Goes From TypeScript to JavaScript, Not the Other Way Around](./typia-typescript-to-javascript-validation.md).
 

@@ -39,7 +39,7 @@ describe('populateFragmentFromText', () => {
 		const fragment = createDocFragment((f) => {
 			populateFragmentFromText(f, '');
 		});
-		// '' split by \n gives [''] — one paragraph
+		// '' split by \n gives ['']: one paragraph
 		expect(fragment.length).toBe(1);
 	});
 });

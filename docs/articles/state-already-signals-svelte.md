@@ -92,7 +92,7 @@ The decision comes down to one question: is `$state` the storage?
 
 If yes, `$state` owns the reactivity. Events mutate the proxy, Svelte tracks it, components re-render. `createSubscriber` is redundant.
 
-If no—the value lives in `navigator.onLine`, `matchMedia.matches`, a Yjs CRDT, a third-party database—then `createSubscriber` is the only way Svelte knows to re-read your getter. That's what it was built for.
+If no. The value lives in `navigator.onLine`, `matchMedia.matches`, a Yjs CRDT, a third-party database. Then `createSubscriber` is the only way Svelte knows to re-read your getter. That's what it was built for.
 
 ## Further Reading
 

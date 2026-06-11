@@ -1,4 +1,4 @@
-# Stop Writing Let-Then-Check—Use a Lazy Initializer
+# Stop Writing Let-Then-Check. Use a Lazy Initializer
 
 You've written this pattern. Everyone has. A value that's expensive to compute, only needed sometimes, so you defer it with a `let` and a null check. It works. It just feels slightly wrong every time.
 
@@ -24,7 +24,7 @@ const getEntryIndex = (entry: YKeyValueLwwEntry<T>): number => {
 };
 ```
 
-Two `let` variables, two null checks, one function that calls another. The logic is correct but the structure is noise. The real work—`toArray()` and building the map—is buried under bookkeeping.
+Two `let` variables, two null checks, one function that calls another. The logic is correct but the structure is noise. The real work, `toArray()` and building the map, is buried under bookkeeping.
 
 ## The Abstraction That Was Missing
 
@@ -44,7 +44,7 @@ export function lazy<T>(init: () => T): () => T {
 }
 ```
 
-The `initialized` boolean is deliberate. `??=` would break if `init()` legitimately returns `undefined` or `null`—the null check would re-run the initializer on every call. The boolean flag handles those cases correctly.
+The `initialized` boolean is deliberate. `??=` would break if `init()` legitimately returns `undefined` or `null`: the null check would re-run the initializer on every call. The boolean flag handles those cases correctly.
 
 ## What the Code Looks Like After
 
@@ -63,7 +63,7 @@ const getEntryIndex = (entry: YKeyValueLwwEntry<T>): number =>
   getEntryIndexMap().get(entry) ?? -1;
 ```
 
-The null-tracking variables are gone. Each lazy value declares what it computes, not how it caches. `getEntryIndexMap` calls `getAllEntries()` inside its initializer—if `getAllEntries` hasn't run yet, it runs now. They compose naturally because they're just functions.
+The null-tracking variables are gone. Each lazy value declares what it computes, not how it caches. `getEntryIndexMap` calls `getAllEntries()` inside its initializer. If `getAllEntries` hasn't run yet, it runs now. They compose naturally because they're just functions.
 
 ## Scope Is the Key Property
 

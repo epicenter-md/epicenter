@@ -84,7 +84,7 @@ Own your data. Use any model. Free and open source. ❤️
 
 ## What is Epicenter?
 
-Epicenter is an ecosystem of open-source tools that put you in control of your AI interactions. No middlemen, no subscriptions, no data collection—just direct connections to the AI providers of your choice.
+Epicenter is an ecosystem of open-source tools that put you in control of your AI interactions. No middlemen, no subscriptions, no data collection. Just direct connections to the AI providers of your choice.
 
 ## The Epicenter Ecosystem
 

@@ -8,7 +8,7 @@ Here's what happened.
 
 ## The Problem
 
-I was building OpenCode's web UI and needed to store connection details locally. URL, port, username, password—the basics you need to connect to a server. I called these "workspaces" and saved them to localStorage. Simple enough.
+I was building OpenCode's web UI and needed to store connection details locally. URL, port, username, password. The basics you need to connect to a server. I called these "workspaces" and saved them to localStorage. Simple enough.
 
 ```typescript
 const workspace = {
@@ -21,7 +21,7 @@ const workspace = {
 };
 ```
 
-But then I needed to show whether each workspace was actually connected. And when it was connected, I wanted to display information from the server—the current working directory, git status, available models. This information couldn't be stored locally; it had to come from the server.
+But then I needed to show whether each workspace was actually connected. And when it was connected, I wanted to display information from the server. The current working directory, git status, available models. This information couldn't be stored locally; it had to come from the server.
 
 So now I had two different things:
 1. The configuration I saved locally (connection details)
@@ -31,7 +31,7 @@ But they were both called "workspace".
 
 ## The Confusion
 
-This created a mess. Sometimes `workspace` meant just the config. Sometimes it meant the config plus the server data. Functions like `getWorkspace()` were ambiguous—were they getting the saved config or the live data?
+This created a mess. Sometimes `workspace` meant just the config. Sometimes it meant the config plus the server data. Functions like `getWorkspace()` were ambiguous. Were they getting the saved config or the live data?
 
 ```typescript
 // Which workspace are we talking about?
@@ -84,10 +84,10 @@ Naming isn't just about picking words that sound good. It's about capturing the 
 
 I could have gone with other names:
 - `WorkspaceSettings` and `Workspace`
-- `SavedWorkspace` and `LiveWorkspace`  
+- `SavedWorkspace` and `LiveWorkspace`
 - `WorkspaceConnection` and `Workspace`
 
-But "config" was the right abstraction because that's exactly what I was storing—configuration data. Not the workspace itself, just the instructions for how to connect to one.
+But "config" was the right abstraction because that's exactly what I was storing. Configuration data. Not the workspace itself, just the instructions for how to connect to one.
 
 This kind of precision matters. Bad abstractions create confusion that compounds over time. You write unclear functions. You add unnecessary comments. You second-guess yourself constantly.
 

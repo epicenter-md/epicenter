@@ -6,26 +6,26 @@ Fix 7 code smells: dual-personality components, over-coupled card, repetitive to
 
 ## Changes
 
-### 1. NoteList — props instead of dual-source $derived
+### 1. NoteList: props instead of dual-source $derived
 - Accept `notes: Note[]`, `title: string`, `showControls?: boolean`, `emptyMessage?: string`
 - Parent (+page.svelte) does the view-mode branching, passes appropriate data
 - Data-driven sort dropdown (array + {#each})
 - Pass `isSelected` and `onSelect` to NoteCard
 
-### 2. NoteCard — derive from note, drop viewState
+### 2. NoteCard: derive from note, drop viewState
 - Derive `isDeleted` from `note.deletedAt !== undefined` instead of viewState
 - Accept `isSelected: boolean` and `onSelect: () => void` props
 - Remove viewState import entirely
 
-### 3. +page.svelte — explicit view-mode branching
+### 3. +page.svelte: explicit view-mode branching
 - `{#if viewState.isRecentlyDeletedView}` wraps NoteList with different props
 
-### 4. Editor — snippets for toolbar, extract ternaries
+### 4. Editor: snippets for toolbar, extract ternaries
 - `toggleButton` snippet for inline format buttons
 - `groupItem` snippet for ToggleGroup items
 - Extract `activeHeading` and `activeListType` to $derived variables
 
-### 5. Svelte skill — add 3 new patterns
+### 5. Svelte skill: add 3 new patterns
 - Prop-first data derivation
 - View-mode branching limit
 - Data-driven repetitive markup

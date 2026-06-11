@@ -24,7 +24,7 @@ Every app wires the same `onLogout` callback:
 // apps/{honeycrisp,fuji,opensidian,tab-manager}/src/lib/client.ts
 onLogout() {
   workspace.clearLocalData();
-  workspace.extensions.sync.reconnect(); // useless—token is null
+  workspace.extensions.sync.reconnect(); // useless. Token is null
 }
 ```
 
@@ -67,11 +67,11 @@ The page reload eliminates the need for encryption deactivation, workspace teard
 | Decision | Choice | Rationale |
 |---|---|---|
 | Pre-check mechanism | Snapshot `workspace.extensions.sync.status` at click time | No reactive subscription needed for a one-time check |
-| "Safe to logout" signal | `phase === 'connected' && !hasLocalChanges` | `hasLocalChanges` tracks `localVersion > ackedVersion`—exactly "are all my edits acknowledged?" |
+| "Safe to logout" signal | `phase === 'connected' && !hasLocalChanges` | `hasLocalChanges` tracks `localVersion > ackedVersion`: exactly "are all my edits acknowledged?" |
 | Warning UI | `confirmationDialog.open()` from `@epicenter/ui` | Already used by fuji/opensidian for destructive actions. Imperative API, mounts once in layout. |
 | Typed confirmation input | No | Signing out isn't permanently destructive (server has synced data). A destructive confirm button with clear copy is sufficient. |
 | Post-signout cleanup | `window.location.reload()` | Atomically clears: in-memory Y.Doc, encryption keys, Svelte stores, BroadcastChannel, WebSocket. No partial teardown. |
-| `onLogout` callback role | Fallback for server-initiated revocation | Handles session expiry, admin revocation—cases where the UI handler didn't run. Same flow: clear + reload. |
+| `onLogout` callback role | Fallback for server-initiated revocation | Handles session expiry, admin revocation. Cases where the UI handler didn't run. Same flow: clear + reload. |
 | Zhongwen handling | `onLogout` reload only | No sign-out button exists, no websocket sync (broadcast channel only). Only needs the `onLogout` fallback fix. |
 
 ## Architecture
@@ -97,19 +97,19 @@ The page reload eliminates the need for encryption deactivation, workspace teard
 
 ### Phase 1: Fix `onLogout` in all 5 apps (the fallback path)
 
-- [ ] **1.1** `apps/honeycrisp/src/lib/client.ts` — Replace `onLogout` body: remove `reconnect()`, add `await clearLocalData()` then `window.location.reload()`
-- [ ] **1.2** `apps/fuji/src/lib/client.ts` — Same change
-- [ ] **1.3** `apps/opensidian/src/lib/client.ts` — Same change
-- [ ] **1.4** `apps/tab-manager/src/lib/client.ts` — Same change
-- [ ] **1.5** `apps/zhongwen/src/lib/client.ts` — Same change (zhongwen already omits `reconnect()`, just add reload)
+- [ ] **1.1** `apps/honeycrisp/src/lib/client.ts`: Replace `onLogout` body: remove `reconnect()`, add `await clearLocalData()` then `window.location.reload()`
+- [ ] **1.2** `apps/fuji/src/lib/client.ts`: Same change
+- [ ] **1.3** `apps/opensidian/src/lib/client.ts`: Same change
+- [ ] **1.4** `apps/tab-manager/src/lib/client.ts`: Same change
+- [ ] **1.5** `apps/zhongwen/src/lib/client.ts`: Same change (zhongwen already omits `reconnect()`, just add reload)
 
 ### Phase 2: Add sync status check + confirmation dialog to sign-out buttons (4 apps)
 
-- [ ] **2.1** `apps/honeycrisp` — Mount `<ConfirmationDialog />` in `+layout.svelte` (fuji/opensidian/tab-manager already have it)
-- [ ] **2.2** `apps/honeycrisp/src/lib/components/AccountPopover.svelte` — Replace sign-out click handler with sync check → confirmation dialog → signOut → clearLocalData → reload
-- [ ] **2.3** `apps/fuji/src/lib/components/SyncStatusIndicator.svelte` — Replace sign-out click handler with same pattern
-- [ ] **2.4** `apps/opensidian/src/lib/components/SyncStatusIndicator.svelte` — Same change
-- [ ] **2.5** `apps/tab-manager/src/lib/components/SyncStatusIndicator.svelte` — Same change
+- [ ] **2.1** `apps/honeycrisp`: Mount `<ConfirmationDialog />` in `+layout.svelte` (fuji/opensidian/tab-manager already have it)
+- [ ] **2.2** `apps/honeycrisp/src/lib/components/AccountPopover.svelte`: Replace sign-out click handler with sync check → confirmation dialog → signOut → clearLocalData → reload
+- [ ] **2.3** `apps/fuji/src/lib/components/SyncStatusIndicator.svelte`: Replace sign-out click handler with same pattern
+- [ ] **2.4** `apps/opensidian/src/lib/components/SyncStatusIndicator.svelte`: Same change
+- [ ] **2.5** `apps/tab-manager/src/lib/components/SyncStatusIndicator.svelte`: Same change
 
 ### Phase 3: Verify
 
@@ -155,8 +155,8 @@ The page reload eliminates the need for encryption deactivation, workspace teard
 
 ## References
 
-- `packages/workspace/src/extensions/sync/websocket.ts` — `SyncStatus` type, `hasLocalChanges` field
-- `packages/ui/src/confirmation-dialog/confirmation-dialog.svelte` — Shared confirmation dialog component
-- `packages/svelte-utils/src/auth/create-auth.svelte.ts` — `signOut()` implementation, `onLogout` trigger
-- `packages/workspace/src/workspace/create-workspace.ts` — `clearLocalData()` implementation
-- `apps/fuji/src/lib/components/EntryEditor.svelte` — Example `confirmationDialog.open()` usage pattern to follow
+- `packages/workspace/src/extensions/sync/websocket.ts`: `SyncStatus` type, `hasLocalChanges` field
+- `packages/ui/src/confirmation-dialog/confirmation-dialog.svelte`: Shared confirmation dialog component
+- `packages/svelte-utils/src/auth/create-auth.svelte.ts`: `signOut()` implementation, `onLogout` trigger
+- `packages/workspace/src/workspace/create-workspace.ts`: `clearLocalData()` implementation
+- `apps/fuji/src/lib/components/EntryEditor.svelte`: Example `confirmationDialog.open()` usage pattern to follow

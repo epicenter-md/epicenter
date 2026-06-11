@@ -1,12 +1,12 @@
 # Server Architecture Rethink: Sync-First, Schema-Derived
 
 **Date**: 2026-02-19
-**Status**: Draft — Vision (Layers 0+1 implemented by `specs/20260220T080000-plugin-first-server-architecture.md`)
+**Status**: Draft: Vision (Layers 0+1 implemented by `specs/20260220T080000-plugin-first-server-architecture.md`)
 **Author**: Braden + Claude
 
 ## Overview
 
-`epicenter serve` should boot as a sync relay first and derive everything else from discovered workspace schemas. The server's API surface isn't configured — it's computed from contracts on the filesystem. No contracts found? You still get a working sync server.
+`epicenter serve` should boot as a sync relay first and derive everything else from discovered workspace schemas. The server's API surface isn't configured. It's computed from contracts on the filesystem. No contracts found? You still get a working sync server.
 
 ## Motivation
 
@@ -15,14 +15,14 @@
 Today, `epicenter serve` requires a fully initialized `WorkspaceClient` from `epicenter.config.ts`. The CLI imports the config, which executes user code (creates Yjs docs, initializes extensions, attaches actions), and hands the live client to `createServer()`. The server wraps it with Elysia routes.
 
 ```typescript
-// epicenter.config.ts — must exist, must export a live client
+// epicenter.config.ts: must exist, must export a live client
 export default createWorkspace({ id: 'blog', tables: { ... } })
   .withExtension('persistence', setupPersistence)
   .withActions((client) => ({ ... }));
 ```
 
 ```typescript
-// cli.ts — the serve command
+// cli.ts: the serve command
 const { createServer } = await import('@epicenter/server');
 createServer(client, { port: argv.port }).start();
 ```
@@ -31,7 +31,7 @@ This creates three problems:
 
 1. **No config, no server.** If you just want a sync relay between devices, you still need to write a `epicenter.config.ts`. A user with a Mac Mini and a laptop shouldn't need to define table schemas to sync Yjs docs.
 
-2. **All-or-nothing initialization.** The server can't start until the full client is alive — Yjs doc loaded, extensions initialized, actions attached. If persistence fails or SQLite can't open, the entire server crashes. You can't even sync.
+2. **All-or-nothing initialization.** The server can't start until the full client is alive: Yjs doc loaded, extensions initialized, actions attached. If persistence fails or SQLite can't open, the entire server crashes. You can't even sync.
 
 3. **Static discovery is impossible.** To list available actions for OpenAPI or MCP, you have to execute the config file. There's no way to read action metadata (descriptions, input schemas) without instantiating the entire workspace runtime.
 
@@ -60,7 +60,7 @@ Stage 4: Optional modules (MCP, admin UI)
 Stage 0+2 alone gives you a working sync relay. Stage 3 adds REST. Stage 4 adds extras. A crash in Stage 3 doesn't kill Stage 2.
 
 **Strength**: Clear layering, each stage testable in isolation.
-**Weakness**: Stages imply linear boot — what if you want to add a workspace after boot?
+**Weakness**: Stages imply linear boot: what if you want to add a workspace after boot?
 
 ### Approach B: Reactive Discovery
 
@@ -91,7 +91,7 @@ export default defineWorkspace({
 ```
 
 **Strength**: Single source of truth. The contract IS the server definition.
-**Weakness**: Mixes static metadata with runtime handlers. Contracts should be cheap to parse — adding handlers defeats that. Also, the current action system already handles this via `.withActions()`.
+**Weakness**: Mixes static metadata with runtime handlers. Contracts should be cheap to parse: adding handlers defeats that. Also, the current action system already handles this via `.withActions()`.
 
 ### Approach D: Actor per Workspace
 
@@ -107,7 +107,7 @@ Server (router on :3913)
 Each actor manages its own Yjs doc lifecycle, sync room, and action handlers. Actors can be suspended when idle, resumed on request.
 
 **Strength**: Clean isolation, testable, matches Durable Objects model you already designed for cloud.
-**Weakness**: Actor supervision adds complexity. In practice, most self-hosted deployments have 1-3 workspaces — the overhead might not pay off.
+**Weakness**: Actor supervision adds complexity. In practice, most self-hosted deployments have 1-3 workspaces: the overhead might not pay off.
 
 ### Approach E: Filesystem-as-API
 
@@ -135,7 +135,7 @@ The strongest design takes the staged kernel boot from A, the reactive discovery
 
 ### The Mental Model
 
-The server is a thin router sitting on top of a room manager. Each workspace is a room — an actor that owns a Yjs doc and can optionally have REST routes and actions derived from its contract.
+The server is a thin router sitting on top of a room manager. Each workspace is a room. An actor that owns a Yjs doc and can optionally have REST routes and actions derived from its contract.
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
@@ -186,17 +186,17 @@ The server is a thin router sitting on top of a room manager. Each workspace is 
 
 **Layer 0 (Transport)** starts immediately. No config required. The server is listening within 50ms. It responds to health checks and discovery requests.
 
-**Layer 1 (Room Manager)** is the core sync relay. Any WebSocket connection to `/workspaces/{id}/sync` is accepted. A Yjs room is created on-demand for that workspace ID. If no room exists, one is created with a fresh `Y.Doc`. If a room already exists (from Layer 4 loading a persisted doc), connections join it. This layer is the "sampling server" you mentioned — it's always on, always accepting connections.
+**Layer 1 (Room Manager)** is the core sync relay. Any WebSocket connection to `/workspaces/{id}/sync` is accepted. A Yjs room is created on-demand for that workspace ID. If no room exists, one is created with a fresh `Y.Doc`. If a room already exists (from Layer 4 loading a persisted doc), connections join it. This layer is the "sampling server" you mentioned: it's always on, always accepting connections.
 
-**Layer 2 (Schema Registry)** scans the filesystem at boot. It reads `epicenter.config.ts` files and contract definitions, extracting only the static metadata: workspace ID, table names, field schemas, KV definitions, and action metadata (descriptions, input schemas). Crucially, it does NOT instantiate the Yjs runtime. It reads the contract, not the data. If no configs exist, this layer does nothing — Layer 1 still works.
+**Layer 2 (Schema Registry)** scans the filesystem at boot. It reads `epicenter.config.ts` files and contract definitions, extracting only the static metadata: workspace ID, table names, field schemas, KV definitions, and action metadata (descriptions, input schemas). Crucially, it does NOT instantiate the Yjs runtime. It reads the contract, not the data. If no configs exist, this layer does nothing: Layer 1 still works.
 
-**Layer 3 (API Surface)** is computed from the registry. For each registered workspace, it generates REST routes for tables, action endpoints, and documentation. These routes are "schema-aware" — they know what fields exist, can validate input against the schema, and can generate OpenAPI specs. But they don't need a live Yjs doc to exist.
+**Layer 3 (API Surface)** is computed from the registry. For each registered workspace, it generates REST routes for tables, action endpoints, and documentation. These routes are "schema-aware": they know what fields exist, can validate input against the schema, and can generate OpenAPI specs. But they don't need a live Yjs doc to exist.
 
-**Layer 4 (Runtime)** is where the actual Yjs docs, extensions, and action handlers live. It's lazy — a workspace's runtime is only initialized when someone actually needs to read or write data. A REST `GET /workspaces/blog/tables/posts` request triggers Layer 4 to initialize the blog workspace. Once initialized, it stays alive until idle eviction.
+**Layer 4 (Runtime)** is where the actual Yjs docs, extensions, and action handlers live. It's lazy: a workspace's runtime is only initialized when someone actually needs to read or write data. A REST `GET /workspaces/blog/tables/posts` request triggers Layer 4 to initialize the blog workspace. Once initialized, it stays alive until idle eviction.
 
 ### The Key Insight: Two Kinds of Contract Reading
 
-The fundamental tension you identified — static introspection vs runtime behavior — resolves by splitting contract parsing into two modes:
+The fundamental tension you identified: static introspection vs runtime behavior: resolves by splitting contract parsing into two modes:
 
 **Mode 1: Metadata extraction (cheap, synchronous, no side effects)**
 
@@ -285,7 +285,7 @@ In MCP, sampling means the server requests the client to perform LLM work. The a
 
 These would use a new message type in the y-websocket protocol extension, similar to how `MESSAGE_SYNC_STATUS (102)` already extends the protocol. The client's sync provider would handle these commands.
 
-This is genuinely novel — most CRDT sync servers are passive relays. A server that can request clients to perform maintenance operations is closer to how database clusters work (leader sends replication commands to followers).
+This is genuinely novel: most CRDT sync servers are passive relays. A server that can request clients to perform maintenance operations is closer to how database clusters work (leader sends replication commands to followers).
 
 ### What This Resolves
 
@@ -322,7 +322,7 @@ This is genuinely novel — most CRDT sync servers are passive relays. A server 
 3. **Should the server support JSON-only contracts (no TypeScript)?**
    - This matters for AI-generated workspaces (see spec `20260115T102836-ai-generated-local-first-apps.md`)
    - Options: (a) TypeScript only, (b) JSON + TypeScript, (c) JSON with a TS adapter
-   - **Recommendation**: Support both. JSON contracts are inherently static — perfect for Layer 2 metadata extraction. The server can read a `contract.json` without any TypeScript compilation.
+   - **Recommendation**: Support both. JSON contracts are inherently static: perfect for Layer 2 metadata extraction. The server can read a `contract.json` without any TypeScript compilation.
 
 4. **What's the eviction policy for idle workspace actors?**
    - Options: (a) Timer-based (evict after N minutes idle), (b) Memory-based (evict LRU when memory exceeds threshold), (c) Never evict
@@ -376,7 +376,7 @@ Three workspaces: blog, auth, crm. Auth workspace has a schema error.
 
 ## Implementation Sketch
 
-This is not an implementation plan — it's a sketch of what the implementation would look like, to help think through feasibility.
+This is not an implementation plan. It's a sketch of what the implementation would look like, to help think through feasibility.
 
 ### Room Manager (Layer 1)
 
@@ -471,13 +471,13 @@ Imports the config file, calls `createWorkspace(...).withExtension(...)` etc., a
 
 ## References
 
-- `packages/server/src/server.ts` — Current `createServer()` implementation
-- `packages/server/src/sync/index.ts` — WebSocket sync plugin (room management)
-- `packages/epicenter/src/cli/cli.ts` — Current `serve` command
-- `packages/epicenter/src/cli/discovery.ts` — Config file discovery
-- `specs/20260213T120800-extract-epicenter-server-package.md` — Server extraction (Phase 2 designs room manager)
-- `specs/20260205T120000-static-only-server-architecture.md` — Static API server rewrite
-- `specs/20260205T000000-cli-config-and-composition.md` — Multi-workspace composition
-- `specs/20260203T000000-action-system-v2-context-passing.md` — Action system with `client.actions`
-- `specs/20260115T100800-contract.md` — Contract specification
-- `specs/20260115T102836-ai-generated-local-first-apps.md` — AI-generated workspace vision
+- `packages/server/src/server.ts`: Current `createServer()` implementation
+- `packages/server/src/sync/index.ts`: WebSocket sync plugin (room management)
+- `packages/epicenter/src/cli/cli.ts`: Current `serve` command
+- `packages/epicenter/src/cli/discovery.ts`: Config file discovery
+- `specs/20260213T120800-extract-epicenter-server-package.md`: Server extraction (Phase 2 designs room manager)
+- `specs/20260205T120000-static-only-server-architecture.md`: Static API server rewrite
+- `specs/20260205T000000-cli-config-and-composition.md`: Multi-workspace composition
+- `specs/20260203T000000-action-system-v2-context-passing.md`: Action system with `client.actions`
+- `specs/20260115T100800-contract.md`: Contract specification
+- `specs/20260115T102836-ai-generated-local-first-apps.md`: AI-generated workspace vision

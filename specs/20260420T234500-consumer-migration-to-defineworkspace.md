@@ -1,4 +1,4 @@
-# Consumer migration to `defineWorkspace` — unblock, redesign, execute
+# Consumer migration to `defineWorkspace`: unblock, redesign, execute
 
 **Date**: 2026-04-20
 **Status**: Draft
@@ -6,7 +6,7 @@
 
 ## TL;DR
 
-Spec C (`workspace-as-definedocument`) landed the architectural core —
+Spec C (`workspace-as-definedocument`) landed the architectural core:
 `defineWorkspace` is now a `DocumentFactory`-based factory-of-factories,
 encryption/tables/kv are standalone attachments, and the per-call
 `createWorkspace` builder persists as a transitional shim that keeps
@@ -28,7 +28,7 @@ This spec lands both unblocks and executes the consumer migration in
 one sequenced arc. Three phases, each small; combined they finish the
 work Spec C started.
 
-## Phase 1 — `hasLocalChanges` on `attachSync.SyncStatus`
+## Phase 1: `hasLocalChanges` on `attachSync.SyncStatus`
 
 ### Motivation
 
@@ -38,8 +38,8 @@ signs users out wants to warn before wiping local state with unsynced
 work. The old `createSyncExtension` in `@epicenter/workspace` exposed
 this as `SyncStatus.hasLocalChanges` because the extension chain
 wired the sync-ack protocol visibility through its init chain.
-`attachSync` in `@epicenter/document` — the user-composed replacement
-— dropped this field when the surface simplified.
+`attachSync` in `@epicenter/document`: the user-composed replacement
+Source: dropped this field when the surface simplified.
 
 The protocol already carries the information. The server's
 `SYNC_STATUS` message acknowledges a specific doc version; if the
@@ -53,7 +53,7 @@ between two integers the supervisor already tracks.
   last-acknowledged version from `SYNC_STATUS` messages; expose
   `hasLocalChanges` on the `{ phase: 'connected', ... }` variant of
   `SyncStatus`. Keep `phase: 'offline' | 'connecting'` variants
-  unchanged — `hasLocalChanges` is meaningful only while connected.
+  unchanged: `hasLocalChanges` is meaningful only while connected.
 - Emit a status change whenever the diff flips (true ↔ false).
 - Unit test: simulate a sync-ack round-trip, assert the flag toggles
   correctly.
@@ -82,7 +82,7 @@ Unit test passes; `attachSync` consumers can read
 
 Estimated size: ~30-50 LOC plus one test.
 
-## Phase 2 — `AccountPopover` redesign
+## Phase 2: `AccountPopover` redesign
 
 ### Motivation
 
@@ -95,14 +95,14 @@ interface both need rework.
 
 The structural coupling to the old client shape
 (`workspace.extensions.sync.*`, `workspace.clearLocalData()`) makes
-any single-app migration expensive — the app either reinvents the
+any single-app migration expensive. The app either reinvents the
 legacy surface locally or waits for the popover to be decoupled.
 Decoupling it once, with the right abstraction, unblocks the
 per-app migration cleanly.
 
 ### Design
 
-#### Shape — `SyncView`-bag prop
+#### Shape: `SyncView`-bag prop
 
 The popover consumes sync as a single conceptual bag. Passing it as
 one prop reads better than unwrapping it into four individual
@@ -125,7 +125,7 @@ type AccountPopoverProps = {
 ```
 
 Three conceptual props per app instead of four. The `sync` bag stays
-coherent — an app never pulls `reconnect` out of sync's orbit.
+coherent. An app never pulls `reconnect` out of sync's orbit.
 
 #### Works for both workspace clients during the migration window
 
@@ -147,8 +147,8 @@ Universal local-first behavior; centralizing it gives one place to
 tune copy, retry behavior, dialog styling.
 
 Apps with stricter policies get an escape hatch via an optional
-`canSignOutSafely?: () => boolean` predicate. Default behavior —
-check `phase === 'connected' && !hasLocalChanges` — stays the
+`canSignOutSafely?: () => boolean` predicate. Default behavior:
+check `phase === 'connected' && !hasLocalChanges`: stays the
 component's responsibility.
 
 #### Rename
@@ -171,7 +171,7 @@ Rename matches what it is.
 ### Non-goals
 
 - Changes to the auth client (`createAuth`). The popover's auth
-  interaction surface stays unchanged — sign-in, sign-out, signed-in
+  interaction surface stays unchanged: sign-in, sign-out, signed-in
   state reads.
 - Splitting the popover into separate sync/auth sub-components. The
   popover is a single user-recognizable UI affordance; splitting
@@ -188,7 +188,7 @@ Rename matches what it is.
 Estimated size: ~150 LOC new component (mostly existing popover
 logic reshaped) + tests.
 
-## Phase 3 — Per-app migration + shim deletion
+## Phase 3: Per-app migration + shim deletion
 
 ### Motivation
 
@@ -214,17 +214,17 @@ deleted.
 
 In rough order of complexity:
 
-1. [x] **breddit** — test-only usage; grep and delete.
-2. [x] **zhongwen** — smallest runtime app; uses broadcast, not
+1. [x] **breddit**: test-only usage; grep and delete.
+2. [x] **zhongwen**: smallest runtime app; uses broadcast, not
    websocket. Template for the "no sync extension" case.
-3. [x] **fuji** — mid-complexity, straightforward tables + sync.
+3. [x] **fuji**: mid-complexity, straightforward tables + sync.
    Template for the standard "IDB + sync" composition.
-4. [x] **honeycrisp** — similar to fuji. Straightforward.
-5. [ ] **whispering** — has a custom materializer extension. Materializer
+4. [x] **honeycrisp**: similar to fuji. Straightforward.
+5. [ ] **whispering**: has a custom materializer extension. Materializer
    becomes a user-owned wrapper around the base handle.
-6. [ ] **tab-manager** — sync with RPC dispatch. Actions compose
+6. [ ] **tab-manager**: sync with RPC dispatch. Actions compose
    specially.
-7. [ ] **opensidian** — most complex; sqlite-index extension plus sync.
+7. [ ] **opensidian**: most complex; sqlite-index extension plus sync.
    Sqlite index becomes a user-owned wrapper.
 
 Each app migrates in its own commit with its own PR if useful. The
@@ -255,7 +255,7 @@ After all seven apps migrate:
 - Changes to any app's feature set. This is a plumbing migration
   only.
 - Changes to any app's sync protocol wire format or auth flow.
-- Changes to `packages/cli` or `packages/skills` consumers — those
+- Changes to `packages/cli` or `packages/skills` consumers: those
   follow the same migration pattern, covered implicitly by the "zero
   references to legacy types" success criterion.
 
@@ -290,7 +290,7 @@ After all seven apps migrate:
 Phases are strictly sequenced. Phase 2 depends on Phase 1's
 `hasLocalChanges`. Phase 3 depends on Phase 2's `AccountPopover`. The
 sequence is why this is one spec with three phases rather than three
-separate specs — interleaving phases creates interstitial migrations
+separate specs: interleaving phases creates interstitial migrations
 that cost more than the sum of the parts.
 
 ## Non-Goals (spec-wide)
@@ -299,7 +299,7 @@ that cost more than the sum of the parts.
 - Changes to the crypto layer or encryption semantics.
 - Architectural changes to `defineDocument` or the refcounted cache.
 - Promotion of `EncryptedYKeyValueLww` from `@epicenter/workspace` to
-  `@epicenter/document` — separate spec, flagged in Spec C's
+  `@epicenter/document`: separate spec, flagged in Spec C's
   Execution Notes.
 
 ## References
@@ -339,8 +339,8 @@ that cost more than the sum of the parts.
 
 ### Prior art
 
-- `specs/20260420T230200-workspace-as-definedocument.md` — Spec C,
+- `specs/20260420T230200-workspace-as-definedocument.md`: Spec C,
   this spec's predecessor
-- `specs/20260420T230100-collapse-document-framework.md` — Spec B
-- `specs/20260420T220000-simplify-definedocument-primitive.md` —
+- `specs/20260420T230100-collapse-document-framework.md`: Spec B
+- `specs/20260420T220000-simplify-definedocument-primitive.md`:
   Spec A

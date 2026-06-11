@@ -8,13 +8,13 @@ Follows up on `20260317T120000-eliminate-locked-mode.md`.
 
 After eliminating locked mode, the sign-out lifecycle has two issues:
 
-1. **Key manager reaches into workspace data.** `keyManager.wipe()` calls `client.clearLocalData()` — a workspace concern that doesn't belong in the key manager. The key manager should only manage keys.
+1. **Key manager reaches into workspace data.** `keyManager.wipe()` calls `client.clearLocalData()`: a workspace concern that doesn't belong in the key manager. The key manager should only manage keys.
 
 2. **Browser-state listeners keep firing after sign-out.** Chrome event listeners (`tabs.onCreated`, `tabs.onUpdated`, etc.) write tab data into the new empty workspace as plaintext before the user signs back in. Functionally correct (encrypt-on-activateEncryption handles it) but leaves a window of plaintext data in IndexedDB.
 
 ## Changes
 
-### Phase 1 — Make `reset()` self-contained
+### Phase 1: Make `reset()` self-contained
 
 **`workspace.reset()` absorbs `clearLocalData()`:**
 
@@ -27,7 +27,7 @@ async reset() {
 }
 ```
 
-After reset, the new workspace is a clean slate — empty tables, no encryption, no sync connection. Signing in triggers `activateEncryption()` which sets up encryption.
+After reset, the new workspace is a clean slate: empty tables, no encryption, no sync connection. Signing in triggers `activateEncryption()` which sets up encryption.
 
 **`keyManager.wipe()` → `keyManager.clearKeys()`:**
 
@@ -36,7 +36,7 @@ After reset, the new workspace is a clean slate — empty tables, no encryption,
 async clearKeys() {
     invalidateKey();                    // forget key fingerprint + bump generation
     if (keyCache) await keyCache.clear(); // clear IndexedDB key cache
-    // NO workspace interaction — that's reset()'s job
+    // NO workspace interaction: that's reset()'s job
 }
 ```
 
@@ -84,7 +84,7 @@ await encryption.clearKeys();   // forget key + clear cache
 await workspace.reset();        // clear data + dispose + rebuild
 ```
 
-### Phase 2 — Gate browser-state writes on auth status
+### Phase 2: Gate browser-state writes on auth status
 
 **Guard every Chrome event listener:**
 
@@ -136,20 +136,20 @@ After sign-out, the listeners no-op. When the user signs back in, `onExternalSig
 ## Files touched
 
 Phase 1:
-- `apps/tab-manager/src/lib/workspace.ts` — reset() absorbs clearLocalData
-- `apps/tab-manager/src/lib/state/auth.svelte.ts` — proxy shrinks, wipe→clearKeys
-- `packages/workspace/src/shared/crypto/key-manager.ts` — wipe→clearKeys, remove clearLocalData interaction
-- `packages/workspace/src/shared/crypto/key-manager.test.ts` — update tests
-- `packages/workspace/src/workspace/types.ts` — update JSDoc references
+- `apps/tab-manager/src/lib/workspace.ts`: reset() absorbs clearLocalData
+- `apps/tab-manager/src/lib/state/auth.svelte.ts`: proxy shrinks, wipe→clearKeys
+- `packages/workspace/src/shared/crypto/key-manager.ts`: wipe→clearKeys, remove clearLocalData interaction
+- `packages/workspace/src/shared/crypto/key-manager.test.ts`: update tests
+- `packages/workspace/src/workspace/types.ts`: update JSDoc references
 
 Phase 2:
-- `apps/tab-manager/src/lib/state/browser-state.svelte.ts` — auth guard + seedFromBrowser
+- `apps/tab-manager/src/lib/state/browser-state.svelte.ts`: auth guard + seedFromBrowser
 
 ## Constraints
 
-- `clearLocalData()` stays on the raw `WorkspaceClient` type in `packages/workspace` — other apps (Honeycrisp) may use it directly. Only the tab-manager's wrapper stops exposing it.
-- `dispose()` stays on `WorkspaceClient` — it's the standard teardown primitive.
-- No behavior changes to encryption or sync — only lifecycle orchestration.
+- `clearLocalData()` stays on the raw `WorkspaceClient` type in `packages/workspace`: other apps (Honeycrisp) may use it directly. Only the tab-manager's wrapper stops exposing it.
+- `dispose()` stays on `WorkspaceClient`: it's the standard teardown primitive.
+- No behavior changes to encryption or sync: only lifecycle orchestration.
 - Every change should be as simple as possible.
 
 ## Open Questions

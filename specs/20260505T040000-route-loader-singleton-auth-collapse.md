@@ -548,13 +548,13 @@ Each rollout has app-specific concerns (sync, peer identity, child-doc caches) t
 
 ## References
 
-- `apps/zhongwen/src/lib/zhongwen/browser.ts` — current bundle factory; takes `SignedInAuth`, exposes `wipe` + `forgetDevice`.
-- `apps/zhongwen/src/routes/(authed)/+layout.ts` — current pilot pattern with cache + listener-in-load.
-- `apps/zhongwen/src/routes/(public)/sign-in/+page.svelte` — current sign-in page with own auth client + `$effect` redirect.
-- `apps/zhongwen/src/lib/components/ZhongwenWorkspace.svelte` — current component owning chatState lifecycle.
-- `apps/zhongwen/src/lib/chat/chat-state.svelte.ts` — current chat-state factory taking `auth` as a param.
-- `packages/auth/src/create-auth.ts` — defines `SignedInAuth` and `isSignedIn`.
-- `specs/20260505T030000-browser-workspace-route-loaders.md` — predecessor pilot spec; this spec revises its end shape.
+- `apps/zhongwen/src/lib/zhongwen/browser.ts`: current bundle factory; takes `SignedInAuth`, exposes `wipe` + `forgetDevice`.
+- `apps/zhongwen/src/routes/(authed)/+layout.ts`: current pilot pattern with cache + listener-in-load.
+- `apps/zhongwen/src/routes/(public)/sign-in/+page.svelte`: current sign-in page with own auth client + `$effect` redirect.
+- `apps/zhongwen/src/lib/components/ZhongwenWorkspace.svelte`: current component owning chatState lifecycle.
+- `apps/zhongwen/src/lib/chat/chat-state.svelte.ts`: current chat-state factory taking `auth` as a param.
+- `packages/auth/src/create-auth.ts`: defines `SignedInAuth` and `isSignedIn`.
+- `specs/20260505T030000-browser-workspace-route-loaders.md`: predecessor pilot spec; this spec revises its end shape.
 - SvelteKit load: https://svelte.dev/docs/kit/load
 - SvelteKit navigation: https://svelte.dev/docs/kit/$app-navigation
 - DeepWiki sveltejs/kit query history (in conversation, not committed)

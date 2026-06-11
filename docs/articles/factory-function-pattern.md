@@ -4,7 +4,7 @@ When you need to build on top of an external client or resource, reach for a fac
 
 ## The Scenario
 
-You're using a client from an external library—a database connection, HTTP client, or API wrapper. You want to create functionality that depends on this client. Your first instinct might be to write a function like this:
+You're using a client from an external library. A database connection, HTTP client, or API wrapper. You want to create functionality that depends on this client. Your first instinct might be to write a function like this:
 
 ```typescript
 function doSomething(client, options) {
@@ -108,7 +108,7 @@ Each layer is configured at the right level:
 | Service | `createService(client, serviceOptions)` | Domain-specific setup, defaults, base URLs   |
 | Method  | `service.doSomething(methodOptions)`    | Per-call parameters                          |
 
-Client configuration no longer pipes through your code. When the client library changes, only the `createClient` call changes—your service factory doesn't need to know.
+Client configuration no longer pipes through your code. When the client library changes, only the `createClient` call changes. Your service factory doesn't need to know.
 
 ## The Mental Model
 
@@ -213,7 +213,7 @@ The same principle applies: each client is configured at its own creation time. 
 
 ## Related Patterns
 
-- [The Universal Factory Function Signature](./universal-factory-signature.md) — why every factory uses this signature
-- [Stop Passing Clients as Arguments](./stop-passing-clients-as-arguments.md) — practical guide
-- [Factory Method Patterns](./factory-method-patterns.md) — separating bundled options and method patterns
-- [Factory Function Composition Skill](../../.claude/skills/factory-function-composition/SKILL.md) — quick reference
+- [The Universal Factory Function Signature](./universal-factory-signature.md): why every factory uses this signature
+- [Stop Passing Clients as Arguments](./stop-passing-clients-as-arguments.md): practical guide
+- [Factory Method Patterns](./factory-method-patterns.md): separating bundled options and method patterns
+- [Factory Function Composition Skill](../../.claude/skills/factory-function-composition/SKILL.md): quick reference

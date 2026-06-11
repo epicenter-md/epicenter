@@ -1,9 +1,9 @@
 # Document Architecture v2
 
-**Status**: Design In Progress  
-**Created**: 2026-01-21  
-**Updated**: 2026-01-21  
-**Purpose**: Define the three-doc architecture for local, relay, and cloud modes  
+**Status**: Design In Progress
+**Created**: 2026-01-21
+**Updated**: 2026-01-21
+**Purpose**: Define the three-doc architecture for local, relay, and cloud modes
 **Related**:
 
 - [specs/20260121T170000-sync-architecture.md](./20260121T170000-sync-architecture.md)
@@ -23,10 +23,10 @@ Epicenter uses a **three-document architecture** where each document type has a 
 
 ### Key Changes from v1
 
-1. **Name/icon moved to Head Doc** — Workspace identity is now separate from per-epoch schema
-2. **Cloud uses NanoID doc IDs** — Simpler, globally unique without encoding org
-3. **Registry is local-only in cloud mode** — Cloud workspaces come from server API
-4. **Schema stays per-epoch** — Epochs exist for schema migrations
+1. **Name/icon moved to Head Doc**: Workspace identity is now separate from per-epoch schema
+2. **Cloud uses NanoID doc IDs**: Simpler, globally unique without encoding org
+3. **Registry is local-only in cloud mode**: Cloud workspaces come from server API
+4. **Schema stays per-epoch**: Epochs exist for schema migrations
 
 ---
 
@@ -597,9 +597,9 @@ For existing local workspaces:
 
 **Decision: Plain string.**
 
-Y.Text is for character-level collaborative editing (real-time cursors, concurrent typing). Workspace descriptions are short metadata, not collaborative documents. Last-write-wins semantics are actually better here—if two users edit the description simultaneously, you want one coherent result, not a merged mess. The overhead of Y.Text isn't justified.
+Y.Text is for character-level collaborative editing (real-time cursors, concurrent typing). Workspace descriptions are short metadata, not collaborative documents. Last-write-wins semantics are actually better here. If two users edit the description simultaneously, you want one coherent result, not a merged mess. The overhead of Y.Text isn't justified.
 
-Same logic applies to `name`—it's short metadata, not a document.
+Same logic applies to `name`: it's short metadata, not a document.
 
 ### Q: What should the container map be named?
 
@@ -607,7 +607,7 @@ Same logic applies to `name`—it's short metadata, not a document.
 
 | Name       | Problem                                           |
 | ---------- | ------------------------------------------------- |
-| `identity` | Too specific—doesn't cover all metadata           |
+| `identity` | Too specific. Doesn't cover all metadata           |
 | `info`     | Too generic                                       |
 | `header`   | Implies a UI concept                              |
 | `metadata` | Verbose                                           |

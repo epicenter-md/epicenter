@@ -1,6 +1,6 @@
 # Y.Map Is Not a Hash Map (But It Acts Like One)
 
-When I first dug into Yjs internals, I made a claim: "Y.Map lookup is O(n) because it's a list of operations." I was wrong—but interestingly wrong.
+When I first dug into Yjs internals, I made a claim: "Y.Map lookup is O(n) because it's a list of operations." I was wrong. But interestingly wrong.
 
 Y.Map uses a JavaScript `Map` for lookups (O(1)), but the underlying CRDT is indeed a linked list. Understanding this duality explains both why Y.Map is fast and why it has surprising memory characteristics.
 
@@ -93,7 +93,7 @@ export const typeMapDelete = (transaction, parent, key) => {
 };
 ```
 
-Deletion just marks the item—it doesn't remove it from the linked list.
+Deletion just marks the item. It doesn't remove it from the linked list.
 
 ## The Hidden Cost: Tombstones
 
@@ -147,7 +147,7 @@ Yjs can GC tombstones when enabled:
 const doc = new Y.Doc({ gc: true }); // Default
 ```
 
-With GC enabled, deleted content is replaced with lightweight `GC` structs. But the **structure** (the fact that there was an item there) is preserved—only the content is discarded.
+With GC enabled, deleted content is replaced with lightweight `GC` structs. But the **structure** (the fact that there was an item there) is preserved. Only the content is discarded.
 
 ## Why This Design?
 
@@ -166,7 +166,7 @@ From `INTERNALS.md`:
 
 > All items are referenced in insertion order inside the struct store. This is used to find an item with a given ID (using binary search). It is also used to efficiently gather the operations a peer is missing during sync.
 
-When syncing, Yjs doesn't send the `_map`—it sends the linked list of Items. The receiving client:
+When syncing, Yjs doesn't send the `_map`: it sends the linked list of Items. The receiving client:
 
 1. Integrates each Item into its linked list
 2. Runs CRDT conflict resolution
@@ -187,32 +187,32 @@ This is why Y.Map can sync correctly even with concurrent updates to the same ke
 
 ## The Real Bottleneck
 
-The actual performance issue isn't Y.Map size—it's **client count**. From [Yjs issue #415](https://github.com/yjs/yjs/issues/415):
+The actual performance issue isn't Y.Map size. It's **client count**. From [Yjs issue #415](https://github.com/yjs/yjs/issues/415):
 
 > Slower transactions with many past clients
 
-Every transaction iterates the state vector to find insertion positions. With thousands of unique clients having edited a document, this becomes the bottleneck—not the number of keys in a Y.Map.
+Every transaction iterates the state vector to find insertion positions. With thousands of unique clients having edited a document, this becomes the bottleneck. Not the number of keys in a Y.Map.
 
 ## Practical Takeaways
 
-1. **Y.Map lookups are fast** — O(1), use it like a normal Map
-2. **Updates accumulate** — Each `set()` creates a tombstone
-3. **Memory grows with history** — Not just current state
-4. **GC helps but doesn't eliminate** — Structure is preserved
-5. **Client count matters more** — For very collaborative documents
+1. **Y.Map lookups are fast**: O(1), use it like a normal Map
+2. **Updates accumulate**: Each `set()` creates a tombstone
+3. **Memory grows with history**: Not just current state
+4. **GC helps but doesn't eliminate**: Structure is preserved
+5. **Client count matters more**: For very collaborative documents
 
 ## Related
 
-- [YKeyValue vs Y.Map: Quick Decision Guide](./ykeyvalue-vs-ymap-decision-guide.md) — When to use each data structure
-- [Yjs Storage: The Complete GC On vs Off Guide](./yjs-gc-on-vs-off-storage-guide.md) — How GC affects Y.Map vs YKeyValue storage
+- [YKeyValue vs Y.Map: Quick Decision Guide](./ykeyvalue-vs-ymap-decision-guide.md): When to use each data structure
+- [Yjs Storage: The Complete GC On vs Off Guide](./yjs-gc-on-vs-off-storage-guide.md): How GC affects Y.Map vs YKeyValue storage
 
 ## Sources
 
-- [Yjs INTERNALS.md](https://github.com/yjs/yjs/blob/main/INTERNALS.md) — Official internals documentation
-- [ytype.js](https://github.com/yjs/yjs/blob/main/src/ytype.js) — Y.Map implementation
-- [Item.js](https://github.com/yjs/yjs/blob/main/src/structs/Item.js) — Item integration logic
-- [YATA Paper](https://www.researchgate.net/publication/310212186_Near_Real-Time_Peer-to-Peer_Shared_Editing_on_Extensible_Data_Types) — The underlying CRDT algorithm
-- [Yjs Issue #415](https://github.com/yjs/yjs/issues/415) — Client count performance issue
+- [Yjs INTERNALS.md](https://github.com/yjs/yjs/blob/main/INTERNALS.md): Official internals documentation
+- [ytype.js](https://github.com/yjs/yjs/blob/main/src/ytype.js): Y.Map implementation
+- [Item.js](https://github.com/yjs/yjs/blob/main/src/structs/Item.js): Item integration logic
+- [YATA Paper](https://www.researchgate.net/publication/310212186_Near_Real-Time_Peer-to-Peer_Shared_Editing_on_Extensible_Data_Types): The underlying CRDT algorithm
+- [Yjs Issue #415](https://github.com/yjs/yjs/issues/415): Client count performance issue
 
 ---
 

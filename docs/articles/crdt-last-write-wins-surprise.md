@@ -25,7 +25,7 @@ This is confirmed directly by Kevin Jahns (dmonad), the creator of Yjs:
 
 > "The 'winner' is decided by `ydoc.clientID` of the document (which is a generated number). The higher clientID wins."
 >
-> — [dmonad, GitHub issue #520](https://github.com/yjs/yjs/issues/520)
+> Source: [dmonad, GitHub issue #520](https://github.com/yjs/yjs/issues/520)
 
 You can see this directly in the Yjs source code ([updates.js#L357](https://github.com/yjs/yjs/blob/main/src/utils/updates.js#L357)):
 
@@ -62,7 +62,7 @@ Because timestamps are broken in distributed systems. Here's how dmonad explains
 
 > "Systems for conflict resolution should not rely on time (as in 'wall clock time'). First of all, time is not synced between devices. Secondly, who is to say that changes from desktop client should supersede changes from mobile client just because they happened 'later' (however you wanna measure this)?"
 >
-> — [dmonad, GitHub issue #520](https://github.com/yjs/yjs/issues/520)
+> Source: [dmonad, GitHub issue #520](https://github.com/yjs/yjs/issues/520)
 
 **Clock skew is real:**
 
@@ -84,7 +84,7 @@ As one community member put it:
 
 > "This is expected behavior. CRDT won't guarantee that result is always correct for each round, it only guarantees result is same for every client."
 >
-> — [GitHub issue #520 discussion](https://github.com/yjs/yjs/issues/520)
+> Source: [GitHub issue #520 discussion](https://github.com/yjs/yjs/issues/520)
 
 From the [Yjs INTERNALS.md](https://github.com/yjs/yjs/blob/main/INTERNALS.md):
 

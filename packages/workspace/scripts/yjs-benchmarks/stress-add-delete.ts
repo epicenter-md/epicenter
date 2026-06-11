@@ -15,7 +15,7 @@ import { field } from '@epicenter/field';
 import { formatBytes, measureTime } from './helpers.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// Config — tweak these
+// Config: tweak these
 // ═══════════════════════════════════════════════════════════════════════════════
 
 const EVENTS_PER_CYCLE = 10_000;
@@ -23,7 +23,7 @@ const CYCLES = 5;
 const OUTPUT_PATH = './stress-test-output.yjs';
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// Schema — simulates a command/event log
+// Schema: simulates a command/event log
 // ═══════════════════════════════════════════════════════════════════════════════
 
 const eventDefinition = defineTable({

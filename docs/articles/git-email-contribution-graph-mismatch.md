@@ -43,7 +43,7 @@ GitHub will retroactively attribute all past commits with that email to your acc
 git config --global user.email "your-verified-email@example.com"
 ```
 
-This only affects future commits—past commits keep their original email.
+This only affects future commits. Past commits keep their original email.
 
 ## Which Email Should You Use?
 
@@ -52,7 +52,7 @@ This only affects future commits—past commits keep their original email.
 | Custom domain (`git@yourdomain.com`)                 | Professional, portable across platforms  | Must add to each git hosting service     |
 | GitHub noreply (`123+user@users.noreply.github.com`) | Always works on GitHub, hides real email | GitHub-specific, looks less professional |
 
-**My recommendation:** Use your professional email (`git@yourdomain.com`) and add it to GitHub. It works everywhere—GitHub, GitLab, Bitbucket—and looks better in commit history.
+**My recommendation:** Use your professional email (`git@yourdomain.com`) and add it to GitHub. It works everywhere. GitHub, GitLab, Bitbucket. And looks better in commit history.
 
 ## Verification Checklist
 

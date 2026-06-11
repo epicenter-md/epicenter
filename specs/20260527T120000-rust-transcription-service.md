@@ -446,9 +446,9 @@ For the high end (medium/large), preload moves perceptible latency off the user'
 
 Handy uses take/put-back. The deepwiki citation says it's for mutex poisoning.
 
-But `catch_unwind` under hold-lock prevents poisoning too — the panic is caught inside the guarded region, before the guard drops.
+But `catch_unwind` under hold-lock prevents poisoning too. The panic is caught inside the guarded region, before the guard drops.
 
-Take/put-back also lets other code observe the cache during inference. But nothing in our system needs to — idle watcher uses `try_lock`, setConfig writes to a separate RwLock.
+Take/put-back also lets other code observe the cache during inference. But nothing in our system needs to: idle watcher uses `try_lock`, setConfig writes to a separate RwLock.
 
 **Verdict**: take/put-back is a fine pattern but its specific benefit (slot is None during inference) is unconsumed. Hold-lock + catch_unwind is shorter and covers the same panic-safety property. Take/put-back wins for code that DOES need cache-during-inference observability, which we don't.
 
@@ -502,7 +502,7 @@ Separate file = singleton store. Worth the extra file.
 
 ### What's the riskiest thing about this design?
 
-The `AssertUnwindSafe` claim. If transcribe-rs's engines have any internal state that gets corrupted by a panic mid-inference (e.g., partial buffer write, dangling pointer in C FFI), `catch_unwind` catches the panic but the engine is still corrupt. Dropping the engine after panic mitigates this — the corrupt object goes away. But if the panic happened during model load, the engine doesn't exist yet so this is moot. If during inference, we drop the loaded engine. Either way, the cache ends up clean.
+The `AssertUnwindSafe` claim. If transcribe-rs's engines have any internal state that gets corrupted by a panic mid-inference (e.g., partial buffer write, dangling pointer in C FFI), `catch_unwind` catches the panic but the engine is still corrupt. Dropping the engine after panic mitigates this. The corrupt object goes away. But if the panic happened during model load, the engine doesn't exist yet so this is moot. If during inference, we drop the loaded engine. Either way, the cache ends up clean.
 
 The remaining risk: the C FFI (whisper.cpp) might not be panic-safe in the sense Rust expects. A `&mut` reference to a C struct that the C code partially wrote could leave the C struct in a state the next FFI call panics on. But since we DROP the engine on panic, that struct is freed via Drop. Drop is C code; if Drop itself panics... that's a Rust-level abort, not catchable.
 
@@ -584,11 +584,11 @@ So the whole "panic-safe inference" pitch in the One Sentence is misleading. Wha
 
 Evidence: cjpais/transcribe-rs depends on whisper-rs, which does not catch panics and does not document panic safety; whisper-rs-sys exposes `ggml_abort` directly. transcribe-rs publishes no panic-safety guarantees. ParakeetModel and MoonshineModel hold mutable `KVCache` state during decode; partial mid-decode mutation is a logical-state issue (stale cache), not a UB issue, and dropping the engine on panic resolves it.
 
-Recommended fix: drop the "panic-safe" framing as a top-line claim. Replace with "Rust-panic-recoverable; C aborts still take down the process — this is documented in `transcribe-rs`/`whisper.cpp` and is a known transcription crash class." Add a follow-up note that the only true mitigations are (a) sanitize samples at the Rust boundary before calling whisper (mono f32, 16kHz, non-empty, length cap, no NaN/Inf), (b) subprocess isolation in some future iteration. Option (a) is cheap and worth adding to the spec now. The artifact path already produces decoded samples; verify `read_artifact_samples` enforces these and add a check if not.
+Recommended fix: drop the "panic-safe" framing as a top-line claim. Replace with "Rust-panic-recoverable; C aborts still take down the process. This is documented in `transcribe-rs`/`whisper.cpp` and is a known transcription crash class." Add a follow-up note that the only true mitigations are (a) sanitize samples at the Rust boundary before calling whisper (mono f32, 16kHz, non-empty, length cap, no NaN/Inf), (b) subprocess isolation in some future iteration. Option (a) is cheap and worth adding to the spec now. The artifact path already produces decoded samples; verify `read_artifact_samples` enforces these and add a check if not.
 
 ### 2. CLAIM 2 (extend ModelManager, don't split): SOUND
 
-One-sentence test on the post-change struct: "Owns the resident engine's lifecycle and the state observers see while it runs." Cache + policy + ambient config + preload + event emission all serve that one sentence; they are not five concerns, they are one concern with five mechanisms. A separate `TranscriptionService` wrapping `ModelManager` would be an empty layer — the wrapper would proxy every method and own no new invariant. Cohesion wins. The struct could be renamed to `TranscriptionService` later when "Manager" stops fitting; that is a one-PR cosmetic.
+One-sentence test on the post-change struct: "Owns the resident engine's lifecycle and the state observers see while it runs." Cache + policy + ambient config + preload + event emission all serve that one sentence; they are not five concerns, they are one concern with five mechanisms. A separate `TranscriptionService` wrapping `ModelManager` would be an empty layer. The wrapper would proxy every method and own no new invariant. Cohesion wins. The struct could be renamed to `TranscriptionService` later when "Manager" stops fitting; that is a one-PR cosmetic.
 
 Mild caveat: the struct now reaches further across the app boundary (owns an `AppHandle`). That is mild lifecycle-coupling, not a design smell.
 
@@ -603,26 +603,26 @@ The spec's tiebreaker is preload. Steelman of the alternative (keep per-call con
 
 The honest verdict: ambient is a modest, defensible win driven mostly by FE call-site simplification and the fact that `unloadPolicy` is genuinely ambient state (no caller carries it per-request today). If preload is dropped from scope, the lead disappears. Spec's framing of preload as "the tiebreaker" is correct; do not let that line get cut in revision.
 
-### 4. CLAIM 4 (hold-lock through inference is costless): UNSOUND AS WRITTEN — snapshot becomes a blocking call
+### 4. CLAIM 4 (hold-lock through inference is costless): UNSOUND AS WRITTEN: snapshot becomes a blocking call
 
 The spec adds `get_transcription_state()` to support late-mounted observers, but proposes implementing `snapshot()` by reading `cached` + `config` under their locks. The cache lock is held for the entire inference. So a window opened mid-transcription calls `getTranscriptionState`, the call blocks for the duration of the inference, and then returns. For whisper-medium/large on a long clip, that is 30s+ of FE-side IPC stall. The grilling prompt explicitly flagged this and noted "the spec doesn't add this yet - verify." Verified: spec does not add a lock-free status path.
 
 Two real fixes:
 
-- (a) Track `ModelStatus` in an `Arc<AtomicU8>` (or `Arc<RwLock<ModelStatus>>` — RwLock is fine, status reads are cheap and writes are rare). Snapshot reads status from the atomic/RwLock and reads `engine + model_path` from the *config* RwLock (which is never held across inference). It does NOT touch `cached` Mutex.
-- (b) Less elegant but acceptable: snapshot tries `try_lock` on `cached`; if it fails (inference in progress), report `status: Inferring` and pull engine/path identity from the ambient config. This avoids the lock-free atomic at the cost of "during-inference identity reflects config, not what's actually loaded in memory" — which is fine because config drift triggers reload anyway.
+- (a) Track `ModelStatus` in an `Arc<AtomicU8>` (or `Arc<RwLock<ModelStatus>>`: RwLock is fine, status reads are cheap and writes are rare). Snapshot reads status from the atomic/RwLock and reads `engine + model_path` from the *config* RwLock (which is never held across inference). It does NOT touch `cached` Mutex.
+- (b) Less elegant but acceptable: snapshot tries `try_lock` on `cached`; if it fails (inference in progress), report `status: Inferring` and pull engine/path identity from the ambient config. This avoids the lock-free atomic at the cost of "during-inference identity reflects config, not what's actually loaded in memory": which is fine because config drift triggers reload anyway.
 
 Option (a) is the right shape. Add a `status: Arc<RwLock<ModelStatus>>` field to `ModelManager`, mutate it inside `with_engine` (Loading → Ready → Inferring → Ready, plus Error), and have `snapshot()` read it without touching `cached`. ~20 LOC.
 
 The spec's "hold-lock is costless" line is wrong without this fix. With this fix, it is costless for inference and free for snapshot, with a tiny per-status RwLock write cost that doesn't matter.
 
-Also worth flagging under this claim: `setConfig`'s auto-preload spawns a task that calls `with_engine`, which contends on the cache lock. If a transcribe is in flight when the user changes settings, the preload task blocks on the cache mutex for the full inference duration, then loads the new model. That is correct behavior, but the spec should say so explicitly in the edge-cases table (it already does, mostly — "preload task waits on cache lock" — keep that line).
+Also worth flagging under this claim: `setConfig`'s auto-preload spawns a task that calls `with_engine`, which contends on the cache lock. If a transcribe is in flight when the user changes settings, the preload task blocks on the cache mutex for the full inference duration, then loads the new model. That is correct behavior, but the spec should say so explicitly in the edge-cases table (it already does, mostly: "preload task waits on cache lock": keep that line).
 
 ### 5. CLAIM 5 (events on a single channel with full state are sufficient): MOSTLY SOUND
 
 Events carry full state, so deltas are unnecessary. The `getTranscriptionState` snapshot covers late-mount. The remaining race is `listen()` vs `snapshot()` order at FE mount: the spec's `local-model.svelte.ts` does `snapshot → listen`, which means an event fired *between* those two awaits is dropped. The window is small (single tick of Tauri's IPC) but not zero.
 
-The right order is `listen → snapshot → dedupe by tracking which events arrived during the gap`. Without sequence numbers you cannot dedupe perfectly, but because every event is a full state replacement, the worst case is one stale render — the next event corrects it. Acceptable for v1.
+The right order is `listen → snapshot → dedupe by tracking which events arrived during the gap`. Without sequence numbers you cannot dedupe perfectly, but because every event is a full state replacement, the worst case is one stale render. The next event corrects it. Acceptable for v1.
 
 Sequence numbers would be overkill; do not add them.
 
@@ -676,7 +676,7 @@ This is a real correctness issue, not a nit.
 
 ### Overall
 
-**GO WITH CHANGES.** No design-level blocker. The five claims hold (one with a critical caveat the spec must acknowledge, one with a buried implementation gap the spec must close). The core decision — extend ModelManager, ambient config, events with snapshot — is right. Execute after applying the checklist above.
+**GO WITH CHANGES.** No design-level blocker. The five claims hold (one with a critical caveat the spec must acknowledge, one with a buried implementation gap the spec must close). The core decision: extend ModelManager, ambient config, events with snapshot: is right. Execute after applying the checklist above.
 
 ## Review
 

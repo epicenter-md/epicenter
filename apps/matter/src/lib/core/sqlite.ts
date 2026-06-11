@@ -12,21 +12,26 @@
  * the rows; keeping serialization here makes it unit-testable with no filesystem.
  *
  * Three properties define the table:
- *   - VALID rows only. "valid" means "projects into the typed table" (every modeled
- *     field present and passing its schema), so INVALID / unparseable files are
- *     absent by construction. Agents needing the broken rows read the markdown.
- *   - Every column NOT NULL. A valid row has every required field, so no column is
- *     ever null; nullability was deleted with optionality.
- *   - No CHECK. The projection inserts only already-validated rows, so a SQL CHECK
- *     would guard nothing; validation lives once, at classify time.
+ *   - Every READABLE row, valid or not. A folder of drafts is mostly incomplete, and
+ *     the whole point of the WHERE filter (and of an agent triaging the folder) is to
+ *     find those drafts ("my carousel posts that still need a publishDate"), so a row
+ *     is included whether or not every field is filled. Only unparseable FILES are
+ *     absent, they never became a row; their broken text stays in the markdown.
+ *   - Field columns are nullable. A missing required cell (NEEDS_VALUE) binds NULL; an
+ *     out-of-domain value (INVALID) binds its raw value, which SQLite's flexible typing
+ *     stores regardless of the column's declared affinity. So a draft is still
+ *     filterable on the fields it does have.
+ *   - No CHECK. Validation lives once, at classify time (the grid shows conformance per
+ *     cell, amber for empty, red for out-of-domain); the mirror just mirrors, so a SQL
+ *     CHECK would only reject the very drafts the filter exists to surface.
  */
 
 import type { RowConformance } from './conformance';
 import type { MatterModel } from './model';
 import { storageOf, type Field } from '@epicenter/field';
 
-/** A SQLite-bindable scalar. Valid rows never carry null, so this is string | number. */
-export type SqlValue = string | number;
+/** A SQLite-bindable scalar. A missing (NEEDS_VALUE) cell binds NULL, so values are nullable. */
+export type SqlValue = string | number | null;
 
 /**
  * The pure artifacts a Tauri command needs to materialize the table: exactly its
@@ -39,7 +44,7 @@ export type SqliteProjection = {
 	schema: string;
 	/** `INSERT INTO ... VALUES (?, ?, ...)`: one `?` placeholder per column, bound positionally. */
 	insert: string;
-	/** One tuple per VALID row, positional against the insert's columns. */
+	/** One tuple per readable row, positional against the insert's columns. */
 	rows: SqlValue[][];
 };
 
@@ -62,9 +67,9 @@ export function quoteIdent(name: string): string {
 export const MIRROR_TABLE = 'entries';
 
 /**
- * Serialize one validated cell value to its storage class. The value already passed
- * the field's schema (valid rows only), so the kind determines the encoding:
- * booleans to 0/1, lists to JSON text, everything else to its TEXT/INTEGER/REAL form.
+ * Serialize one OK (validated) cell value to its storage class. The value passed the
+ * field's schema, so the kind determines the encoding: booleans to 0/1, lists to JSON
+ * text, everything else to its TEXT/INTEGER/REAL form.
  */
 function serializeCell(field: Field, value: unknown): SqlValue {
 	switch (field.kind) {
@@ -86,42 +91,65 @@ function serializeCell(field: Field, value: unknown): SqlValue {
 }
 
 /**
+ * Serialize an out-of-domain (INVALID) cell value by its RUNTIME type, not the field's
+ * kind: the value did not match the kind, so a stray float in an integer field stays a
+ * real and a string in a tags field stays text. SQLite stores it regardless of the
+ * column's affinity, so the draft is still findable on that field. NEEDS_VALUE cells
+ * never reach here (they bind NULL directly); the `null` guard is only defensive.
+ */
+function serializeInvalid(value: unknown): SqlValue {
+	if (value == null) return null;
+	if (typeof value === 'boolean') return value ? 1 : 0;
+	if (typeof value === 'number') return value;
+	if (typeof value === 'string') return value;
+	return JSON.stringify(value); // an object / array where a scalar was expected
+}
+
+/**
  * Build the `CREATE TABLE` for a folder: `file` primary key (the row's basename
- * identity), one NOT NULL column per modeled field (typed by its storage class), and an
- * `_extra` JSON column for the unmodeled keys, so an agent can see extras too.
+ * identity), one NULLABLE column per modeled field (typed by its storage class so the
+ * filter coerces by affinity; a missing cell binds NULL), and an `_extra` JSON column
+ * (always present) for the unmodeled keys, so an agent can see extras too.
  */
 function buildDdl(fields: readonly Field[]): string {
 	const defs = [
 		`${quoteIdent('file')} TEXT PRIMARY KEY`,
-		...fields.map(
-			(c) => `${quoteIdent(c.name)} ${storageOf(c.kind)} NOT NULL`,
-		),
+		...fields.map((c) => `${quoteIdent(c.name)} ${storageOf(c.kind)}`),
 		`${quoteIdent('_extra')} TEXT NOT NULL`,
 	];
 	return `CREATE TABLE ${quoteIdent(MIRROR_TABLE)} (${defs.join(', ')})`;
 }
 
 /**
- * Project a classified folder into the SQLite artifacts. Only valid rows are
- * included; each row's modeled values are serialized per storage class and its
- * unmodeled keys are folded into the `_extra` JSON object.
+ * Project a classified folder into the SQLite artifacts. EVERY readable row is included;
+ * each cell is serialized by its conformance state (OK by storage class, INVALID by its
+ * raw value, NEEDS_VALUE as NULL) and its unmodeled keys are folded into the `_extra`
+ * JSON object. The cells are read off `RowConformance.cells`, which classifyRow built in
+ * `model.fields` order, so they line up positionally with the columns below.
  */
 export function projectToSqlite(
 	model: MatterModel,
 	conformance: readonly RowConformance[],
 ): SqliteProjection {
 	const columns = ['file', ...model.fields.map((c) => c.name), '_extra'];
-	const rows = conformance
-		.filter((c) => c.rowValid)
-		.map((c) => {
-			const cells = model.fields.map((field) =>
-				serializeCell(field, c.row.frontmatter[field.name]),
-			);
-			const extra = JSON.stringify(
-				Object.fromEntries(c.extras.map((e) => [e.key, e.value])),
-			);
-			return [c.row.fileName, ...cells, extra];
+	const rows = conformance.map((c) => {
+		const cells = c.cells.map((cell): SqlValue => {
+			switch (cell.state) {
+				case 'NEEDS_VALUE':
+					return null;
+				case 'OK':
+					return serializeCell(cell.field, cell.value);
+				case 'INVALID':
+					return serializeInvalid(cell.raw);
+				default:
+					return cell satisfies never;
+			}
 		});
+		const extra = JSON.stringify(
+			Object.fromEntries(c.extras.map((e) => [e.key, e.value])),
+		);
+		return [c.row.fileName, ...cells, extra];
+	});
 
 	const placeholders = columns.map(() => '?').join(', ');
 	const insert = `INSERT INTO ${quoteIdent(MIRROR_TABLE)} (${columns

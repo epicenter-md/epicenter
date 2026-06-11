@@ -125,7 +125,7 @@
 						<Field.Set>
 							<Field.Legend variant="label">Reset</Field.Legend>
 							<Field.Description>
-								Clears workspace tables and resets localStorage—re-enables the
+								Clears workspace tables and resets localStorage, then re-enables the
 								migration button.
 							</Field.Description>
 							<Button

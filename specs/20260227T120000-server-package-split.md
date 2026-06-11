@@ -14,9 +14,9 @@ Split `@epicenter/server` into three packages: a shared plugin library, a remote
 
 **Packages**: `@epicenter/server`, `@epicenter/server-remote`, `@epicenter/server-local`
 
-**Why `remote` / `local`**: The most universally understood pair in computing. "Remote" describes the relationship to the device, not the hosting provider — even when self-hosted on a Raspberry Pi, it's still remote relative to the laptops and phones connecting to it. The local server runs *on* your device. The remote server runs *somewhere else*.
+**Why `remote` / `local`**: The most universally understood pair in computing. "Remote" describes the relationship to the device, not the hosting provider: even when self-hosted on a Raspberry Pi, it's still remote relative to the laptops and phones connecting to it. The local server runs *on* your device. The remote server runs *somewhere else*.
 
-**Why `server-` prefix**: Creates a visual family. When sorted alphabetically in a file tree or `package.json`, all three cluster together. `server-remote` and `server-local` are self-describing — they're servers, one's remote, one's local. The shared package `@epicenter/server` naturally reads as "the base server stuff" that the other two build on.
+**Why `server-` prefix**: Creates a visual family. When sorted alphabetically in a file tree or `package.json`, all three cluster together. `server-remote` and `server-local` are self-describing: they're servers, one's remote, one's local. The shared package `@epicenter/server` naturally reads as "the base server stuff" that the other two build on.
 
 **Terminology update**: The canonical term changes from "hub server" to "remote server". `createHubServer()` becomes `createRemoteServer()`. All specs, code, and docs should use "remote server" going forward.
 
@@ -61,15 +61,15 @@ packages/
 
 ### Why `packages/`, Not `apps/`
 
-In this monorepo, `apps/` contains things with their own build toolchain and UI: Tauri apps (Vite + SvelteKit), Astro sites, Chrome extensions (WXT). The remote and local servers are Elysia compositions — they export factory functions (`createRemoteServer`, `createLocalServer`) that other packages import. They're libraries first, entry points second. The CLI imports `createLocalServer` programmatically. The Tauri app will spawn the local server as a sidecar. These are library consumers, not standalone apps.
+In this monorepo, `apps/` contains things with their own build toolchain and UI: Tauri apps (Vite + SvelteKit), Astro sites, Chrome extensions (WXT). The remote and local servers are Elysia compositions. They export factory functions (`createRemoteServer`, `createLocalServer`) that other packages import. They're libraries first, entry points second. The CLI imports `createLocalServer` programmatically. The Tauri app will spawn the local server as a sidecar. These are library consumers, not standalone apps.
 
 The thin `start.ts` entry points are dev conveniences, not the primary interface. They stay inside each package as scripts.
 
 ## Package Design
 
-### `@epicenter/server` — Shared Plugins
+### `@epicenter/server`: Shared Plugins
 
-The foundation. Elysia plugins and utilities that both remote and local servers compose from. No server composition of its own — just the building blocks.
+The foundation. Elysia plugins and utilities that both remote and local servers compose from. No server composition of its own, just the building blocks.
 
 ```
 packages/server/
@@ -118,9 +118,9 @@ export { createClientPresence, getDiscoveredDevices, ... } from './discovery';
 
 No Better Auth, no AI adapters, no workspace types. Just Elysia + Yjs.
 
-### `@epicenter/server-remote` — Remote Server
+### `@epicenter/server-remote`: Remote Server
 
-Always-on coordination server: auth, AI, Yjs relay. Zero workspace knowledge. Self-hostable — runs in the cloud or on any always-on machine.
+Always-on coordination server: auth, AI, Yjs relay. Zero workspace knowledge. Self-hostable: runs in the cloud or on any always-on machine.
 
 ```
 packages/server-remote/
@@ -181,7 +181,7 @@ export { createProxyPlugin } from './proxy';
 }
 ```
 
-### `@epicenter/server-local` — Local Server
+### `@epicenter/server-local`: Local Server
 
 Per-device sidecar: workspace CRUD, persisted Y.Docs, extensions, actions.
 
@@ -275,7 +275,7 @@ export { createOpenCodeProcess, ... } from './opencode';
 ```diff
 -import { createSyncPlugin } from '@epicenter/server/sync';
 +import { createSyncPlugin } from '@epicenter/server/sync';
-// unchanged — @epicenter/server still owns this
+// unchanged: @epicenter/server still owns this
 ```
 
 ## `auth/` Split Detail
@@ -315,9 +315,9 @@ The `keys/` subpath export (`@epicenter/server/keys`) needs investigation during
 Currently in `packages/server/src/discovery/`. It provides device presence awareness via Yjs. Both remote and local could theoretically use it, but today it's mainly used by the local server and the Tauri app.
 
 Options:
-- Keep in `@epicenter/server` (shared) — safe default
-- Move to `@epicenter/server-local` — if only local uses it
-- Separate package `@epicenter/discovery` — if it grows
+- Keep in `@epicenter/server` (shared): safe default
+- Move to `@epicenter/server-local`: if only local uses it
+- Separate package `@epicenter/discovery`: if it grows
 
 ### 2. Should the Remote Server Have a Standalone Deploy Story?
 

@@ -52,7 +52,7 @@ Debugging:  Direct, no source maps needed
 
 The TypeScript compiler is the type checker. TypeScript-the-language is the part they skip.
 
-For Yjs specifically, this means you get full IntelliSense, type errors in your editor, and autocomplete on `Y.Doc`, `Y.Map`, `Y.Array`—all generated from JSDoc comments in plain JavaScript files.
+For Yjs specifically, this means you get full IntelliSense, type errors in your editor, and autocomplete on `Y.Doc`, `Y.Map`, `Y.Array`: all generated from JSDoc comments in plain JavaScript files.
 
 ## References
 

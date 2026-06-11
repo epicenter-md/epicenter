@@ -57,11 +57,11 @@ handle.timeline.pushText('hi');
 ```
 
 **Files**:
-- `packages/workspace/src/workspace/types.ts` — Inline `DocumentContent` fields into `DocumentHandle`. Delete `DocumentContent` type.
-- `packages/workspace/src/workspace/create-document.ts` — `makeHandle()` returns flat object (no nested `content`).
-- `packages/workspace/src/workspace/create-document.test.ts` — Update `handle.content.read()` → `handle.read()`, `handle.content.write()` → `handle.write()`.
-- `packages/workspace/src/index.ts` — Remove `DocumentContent` export.
-- `packages/filesystem/src/content/content.ts` — Update all `handle.content.read()` → `handle.read()`, `handle.content.write()` → `handle.write()`, `handle.content.timeline` → `handle.timeline`.
+- `packages/workspace/src/workspace/types.ts`: Inline `DocumentContent` fields into `DocumentHandle`. Delete `DocumentContent` type.
+- `packages/workspace/src/workspace/create-document.ts`: `makeHandle()` returns flat object (no nested `content`).
+- `packages/workspace/src/workspace/create-document.test.ts`: Update `handle.content.read()` → `handle.read()`, `handle.content.write()` → `handle.write()`.
+- `packages/workspace/src/index.ts`: Remove `DocumentContent` export.
+- `packages/filesystem/src/content/content.ts`: Update all `handle.content.read()` → `handle.read()`, `handle.content.write()` → `handle.write()`, `handle.content.timeline` → `handle.timeline`.
 
 **Search for all consumers**: `grep -r "handle\.content\." --include="*.ts" --include="*.svelte"` across the entire repo. Every hit must be updated.
 
@@ -79,17 +79,17 @@ handle.timeline.pushText('hi');
 - `packages/workspace/src/content/timeline.ts`:
   - Delete `pushBinary()` method from `Timeline` type and implementation.
   - Remove `case 'binary'` from `readAsString()` switch.
-  - Remove `case 'binary'` from `readAsBuffer()` switch. **Note**: `readAsBuffer()` itself may no longer be useful without binary—evaluate whether to keep or remove.
+  - Remove `case 'binary'` from `readAsBuffer()` switch. **Note**: `readAsBuffer()` itself may no longer be useful without binary. Evaluate whether to keep or remove.
 
-- `packages/workspace/src/content/index.ts` — Remove `BinaryEntry` export.
-- `packages/workspace/src/index.ts` — Remove `BinaryEntry` export.
+- `packages/workspace/src/content/index.ts`: Remove `BinaryEntry` export.
+- `packages/workspace/src/index.ts`: Remove `BinaryEntry` export.
 
 - `packages/filesystem/src/content/content.ts`:
   - Remove `readBuffer()` method from `ContentHelpers` type and implementation.
   - Remove `Uint8Array` branch from `write()` (it only handles binary).
   - Remove binary branch from `append()` (the `else if (tl.currentType === 'binary')` case).
 
-- `packages/filesystem/src/content/entry-types.ts` — Remove `BinaryEntry` re-export.
+- `packages/filesystem/src/content/entry-types.ts`: Remove `BinaryEntry` re-export.
 
 **Search**: `grep -r "pushBinary\|readBuffer\|BinaryEntry\|'binary'" --include="*.ts"` across the entire repo. Every hit must be addressed.
 
@@ -107,7 +107,7 @@ That's it. One function deletion, four call site removals.
 
 ### 4. Add validated entry reader (eliminate `as` casts)
 
-**Why**: Every timeline entry access uses unsafe `entry.get('content') as Y.Text`. One corrupt entry = runtime crash with zero context. The tables API already validates on read—timeline should too.
+**Why**: Every timeline entry access uses unsafe `entry.get('content') as Y.Text`. One corrupt entry = runtime crash with zero context. The tables API already validates on read. Timeline should too.
 
 **Add to `packages/workspace/src/content/timeline.ts`**:
 
@@ -115,7 +115,7 @@ That's it. One function deletion, four call site removals.
 import * as Y from 'yjs';
 
 /**
- * Validated timeline entry — discriminated union with runtime-checked types.
+ * Validated timeline entry: discriminated union with runtime-checked types.
  * Returned by `readEntry()` instead of raw `Y.Map.get()` + unsafe casts.
  */
 export type ValidatedEntry =
@@ -158,7 +158,7 @@ export function readEntry(entry: Y.Map<unknown> | undefined): ValidatedEntry {
 
 Then update `readAsString()`, `readAsBuffer()`, and `makeHandle()` methods to use `readEntry()` instead of raw `entry.get() as T` casts.
 
-**Also update `packages/filesystem/src/content/content.ts`** — the `write()` and `append()` methods have raw casts like `tl.currentEntry?.get('content') as import('yjs').Text`. These should use `readEntry()` or at minimum `instanceof` checks.
+**Also update `packages/filesystem/src/content/content.ts`**: the `write()` and `append()` methods have raw casts like `tl.currentEntry?.get('content') as import('yjs').Text`. These should use `readEntry()` or at minimum `instanceof` checks.
 
 **Export**: `ValidatedEntry` and `readEntry` from `packages/workspace/src/content/index.ts` and `packages/workspace/src/index.ts`.
 
@@ -186,10 +186,10 @@ type ContentHelpers = {
 };
 ```
 
-- `writeText()` — Delegates to `handle.write(text)`. Works regardless of current mode (creates new text entry if needed).
-- `writeSheet()` — Clears and repopulates the current sheet entry's Y.Maps from CSV. If no sheet entry exists, pushes one first.
-- `append()` — Stays as-is but remove the binary branch.
-- `read()` — Stays as-is.
+- `writeText()`: Delegates to `handle.write(text)`. Works regardless of current mode (creates new text entry if needed).
+- `writeSheet()`: Clears and repopulates the current sheet entry's Y.Maps from CSV. If no sheet entry exists, pushes one first.
+- `append()`: Stays as-is but remove the binary branch.
+- `read()`: Stays as-is.
 
 **Consumers**: Search for `fs.content.write(` and `content.write(` calls across apps. Each call site must choose `writeText()` or `writeSheet()` explicitly. This is a breaking change to the filesystem API surface.
 
@@ -199,14 +199,14 @@ type ContentHelpers = {
 
 **Files**:
 
-- `packages/workspace/src/content/entry-types.ts` — Add `createdAt: number` to each entry type:
+- `packages/workspace/src/content/entry-types.ts`: Add `createdAt: number` to each entry type:
   ```typescript
   export type TextEntry = { type: 'text'; content: Y.Text; createdAt: number };
   export type RichTextEntry = { type: 'richtext'; content: Y.XmlFragment; frontmatter: Y.Map<unknown>; createdAt: number };
   export type SheetEntry = { type: 'sheet'; columns: Y.Map<Y.Map<string>>; rows: Y.Map<Y.Map<string>>; createdAt: number };
   ```
 
-- `packages/workspace/src/content/timeline.ts` — Every `push*()` method sets `entry.set('createdAt', Date.now())`:
+- `packages/workspace/src/content/timeline.ts`: Every `push*()` method sets `entry.set('createdAt', Date.now())`:
   ```typescript
   pushText(content: string): TimelineEntry {
     const entry = new Y.Map();
@@ -242,16 +242,16 @@ Changes are ordered by dependency. Each wave can be committed independently.
 ### Wave 3: Flatten `handle.content` namespace
 - [x] **3a** Inline `DocumentContent` fields into `DocumentHandle` type in `types.ts`. Delete `DocumentContent`.
 - [x] **3b** Update `makeHandle()` in `create-document.ts` to return flat object
-- [x] **3c** Update `create-document.test.ts` — `handle.content.read()` → `handle.read()` etc.
-- [x] **3d** Update `packages/filesystem/src/file-system.ts` — all `handle.content.*` → `handle.*`
+- [x] **3c** Update `create-document.test.ts`: `handle.content.read()` → `handle.read()` etc.
+- [x] **3d** Update `packages/filesystem/src/file-system.ts`: all `handle.content.*` → `handle.*`
   > **Note**: `content.ts` was inlined into `file-system.ts` in a prior refactor.
-- [x] **3e** Search entire repo for `handle.content.` — zero hits in .ts/.svelte files
+- [x] **3e** Search entire repo for `handle.content.`: zero hits in .ts/.svelte files
 - [x] **3f** Remove `DocumentContent` export from `packages/workspace/src/index.ts`
 - [x] **3g** Update AGENTS.md, README.md, workspace README referencing `handle.content`
-- [x] **3h** Verify: `bun test` across workspace and filesystem — 548 tests pass
+- [x] **3h** Verify: `bun test` across workspace and filesystem: 548 tests pass
 
 ### Wave 4: Separate filesystem write methods
-- [~] **4a-4d** Skipped — `content.write()` already accepts `string` only after binary removal.
+- [~] **4a-4d** Skipped: `content.write()` already accepts `string` only after binary removal.
   The existing `write()` method handles text/sheet branching internally. Renaming to
   `writeText()`/`writeSheet()` is a separate, optional cleanup.
 
@@ -266,19 +266,19 @@ Changes are ordered by dependency. Each wave can be committed independently.
 
 ## Out of Scope (separate specs)
 
-- **Reactive handle primitive for UI** — Observable handle that self-manages lifecycle for Svelte components. Separate spec.
-- **Default to single document per table** — Dropping named documents (`client.documents.files.content` → `client.documents.files`). Separate spec, bigger API change.
-- **Full revision history UI** — Viewing/diffing/naming historical timeline entries. Separate spec. This spec only adds `createdAt` metadata as structural groundwork.
-- **`readAsBuffer()` removal** — Evaluate whether this method is still useful after removing binary mode. If all callers are gone, remove it. Handle during implementation.
+- **Reactive handle primitive for UI**: Observable handle that self-manages lifecycle for Svelte components. Separate spec.
+- **Default to single document per table**: Dropping named documents (`client.documents.files.content` → `client.documents.files`). Separate spec, bigger API change.
+- **Full revision history UI**: Viewing/diffing/naming historical timeline entries. Separate spec. This spec only adds `createdAt` metadata as structural groundwork.
+- **`readAsBuffer()` removal**: Evaluate whether this method is still useful after removing binary mode. If all callers are gone, remove it. Handle during implementation.
 
 ## Success Criteria
 
 - [x] `handle.read()` works (no `.content` namespace)
 - [x] No `BinaryEntry`, `pushBinary`, or `readBuffer` in codebase
 - [x] No `migrateIfNeeded` in codebase
-- [x] No unsafe `as Y.Text` casts in timeline readers — all go through `readEntry()`
+- [x] No unsafe `as Y.Text` casts in timeline readers: all go through `readEntry()`
 - [x] All timeline entries created with `createdAt` timestamp
-- [~] Filesystem has `writeText()` and `writeSheet()` — skipped, `write()` already string-only
+- [~] Filesystem has `writeText()` and `writeSheet()`: skipped, `write()` already string-only
 - [x] All tests pass across workspace and filesystem (548 tests)
 - [x] No `handle.content.` references remain in .ts/.svelte files
 
@@ -296,7 +296,7 @@ Also added `createdAt` timestamps to all timeline entries as groundwork for futu
 
 - **Wave 4 (writeText/writeSheet)**: Skipped. After removing binary mode, `write()` already
   only accepts `string`. The text/sheet branching is internal. Renaming would be pure cosmetics
-  with no safety benefit — can be done in a separate pass if desired.
+  with no safety benefit: can be done in a separate pass if desired.
 - **ContentHelpers inlined**: The user inlined `ContentHelpers` directly into `file-system.ts`
   (deleting `content.ts`) in a separate commit, which superseded the spec's Wave 4 plan.
 - **Additional work**: The user also updated Fuji/Honeycrisp apps and tests in separate commits

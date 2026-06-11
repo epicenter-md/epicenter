@@ -1,7 +1,7 @@
 # CLI Scripting-First Redesign
 
 **Date**: 2026-04-21
-**Status**: Draft (v2 — grounded against current `packages/workspace/src/document/define-document.ts` and `packages/cli/src/*`)
+**Status**: Draft (v2: grounded against current `packages/workspace/src/document/define-document.ts` and `packages/cli/src/*`)
 **Author**: AI-assisted (pairing with Braden)
 **Branch**: `braden-w/document-primitive`
 
@@ -9,17 +9,17 @@
 
 ## Overview
 
-Collapse the Epicenter CLI from a framework-shaped command registry (11 commands) to a scripting-first binary with three responsibilities: manage auth sessions, invoke `defineQuery`/`defineMutation` nodes by dot-path, and render a tree view of everything runnable. Everything else — bulk ops, exports, ad-hoc data munging — moves to user-authored `.ts` scripts that import `epicenter.config.ts` and run via `bun run`.
+Collapse the Epicenter CLI from a framework-shaped command registry (11 commands) to a scripting-first binary with three responsibilities: manage auth sessions, invoke `defineQuery`/`defineMutation` nodes by dot-path, and render a tree view of everything runnable. Everything else: bulk ops, exports, ad-hoc data munging: moves to user-authored `.ts` scripts that import `epicenter.config.ts` and run via `bun run`.
 
-This is a **clean break**. No compat shims, no deprecation warnings. The consumers — `apps/whispering`, vault, tab-manager, playgrounds — all live in this repo or on the same cadence.
+This is a **clean break**. No compat shims, no deprecation warnings. The consumers: `apps/whispering`, vault, tab-manager, playgrounds: all live in this repo or on the same cadence.
 
 ---
 
-## Orientation — read this first if you're new
+## Orientation: read this first if you're new
 
 This spec lives at the intersection of several active migrations. Before touching code, understand the sequence:
 
-1. **`defineDocument` is live**, not hypothetical. It's a cached, ref-counted **factory** — not a bundle builder. See `packages/workspace/src/document/define-document.ts:293-423`. The shape that matters:
+1. **`defineDocument` is live**, not hypothetical. It's a cached, ref-counted **factory**: not a bundle builder. See `packages/workspace/src/document/define-document.ts:293-423`. The shape that matters:
 
    ```ts
    // packages/workspace/src/document/define-document.ts:293
@@ -48,7 +48,7 @@ This spec lives at the intersection of several active migrations. Before touchin
    };
    ```
 
-2. **Critical shape discovery: the `id` is NOT on the bundle.** It's the cache key inside the factory. So a user's exported handle has `.ydoc` (via prototype), `.dispose()`, `[Symbol.dispose]`, plus whatever they attached (`tables`, `kv`, `sync`, ...) — but no top-level `id` property. Any duck-type that checks `'id' in record` is wrong against the current primitive.
+2. **Critical shape discovery: the `id` is NOT on the bundle.** It's the cache key inside the factory. So a user's exported handle has `.ydoc` (via prototype), `.dispose()`, `[Symbol.dispose]`, plus whatever they attached (`tables`, `kv`, `sync`, ...): but no top-level `id` property. Any duck-type that checks `'id' in record` is wrong against the current primitive.
 
 3. **What users should export from `epicenter.config.ts`**: **opened handles**, not factories. A factory doesn't know what id to open without a call; a handle is already connected, refcounted, and walkable.
 
@@ -63,7 +63,7 @@ This spec lives at the intersection of several active migrations. Before touchin
 
    The exported `tabManager` reads `tabManager.ydoc`, `tabManager.tables.savedTabs.list(...)` etc. via prototype chain; `.dispose()` releases the refcount.
 
-4. **The lie in the current CLI**: `packages/cli/src/load-config.ts:78-86` requires `'id' in record` AND `'tables' in record`. Neither is guaranteed by `DocumentBundle`. `run.ts:54-66` falls back to `client.extensions.*` — a namespace that no longer exists in the new primitive. `commands/describe.ts` is already deleted with no replacement. The whole CLI surface was written against `createWorkspace()`, which the primitive migration is removing.
+4. **The lie in the current CLI**: `packages/cli/src/load-config.ts:78-86` requires `'id' in record` AND `'tables' in record`. Neither is guaranteed by `DocumentBundle`. `run.ts:54-66` falls back to `client.extensions.*`: a namespace that no longer exists in the new primitive. `commands/describe.ts` is already deleted with no replacement. The whole CLI surface was written against `createWorkspace()`, which the primitive migration is removing.
 
 5. **`createCliUnlock` does not exist in the codebase.** Grep confirms: only referenced in stale specs, `playground/*/epicenter.config.ts`, and the vault config at `~/Code/vault/epicenter.config.ts`. Those consumers are broken. Any `attachCliUnlock` is **genuinely new code**, not a rename, and its shape depends on the parallel encryption-primitive-refactor spec (`20260421T140000-encryption-primitive-refactor.md`).
 
@@ -118,7 +118,7 @@ if (!found) {
 }
 ```
 
-**The stale error hint** at `packages/cli/src/load-config.ts:67-68` pointing users at `createWorkspace()` — an API being removed.
+**The stale error hint** at `packages/cli/src/load-config.ts:67-68` pointing users at `createWorkspace()`: an API being removed.
 
 ### Problems
 
@@ -145,37 +145,37 @@ The config self-loads at import time. The CLI is a thin shell. The real product 
 
 ## Research Findings
 
-### `DocumentBundle` and `DocumentHandle` — the actual contract
+### `DocumentBundle` and `DocumentHandle`: the actual contract
 
 Verified by reading `packages/workspace/src/document/define-document.ts`:
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
 │  DocumentBundle (what your build() returns)                   │
-│    ydoc: Y.Doc                             — required        │
-│    [Symbol.dispose](): void                — required        │
-│    whenReady?: Promise<void>               — user convention │
-│    whenDisposed?: Promise<void>            — async barrier   │
-│    + anything else you attach              — tables, kv, ... │
+│    ydoc: Y.Doc                            : required        │
+│    [Symbol.dispose](): void               : required        │
+│    whenReady?: Promise<void>              : user convention │
+│    whenDisposed?: Promise<void>           : async barrier   │
+│    + anything else you attach             : tables, kv, ... │
 └──────────────────────────────────────────────────────────────┘
                            │
                            │  Object.create(bundle) + inject .dispose
                            ▼
 ┌──────────────────────────────────────────────────────────────┐
 │  DocumentHandle<T> (what factory.open(id) returns)            │
-│    — All bundle props via prototype chain                    │
-│    — PLUS: dispose(): void                  (own property)   │
-│    — PLUS: [Symbol.dispose](): void         (own property)   │
+│   : All bundle props via prototype chain                    │
+│   : PLUS: dispose(): void                  (own property)   │
+│   : PLUS: [Symbol.dispose](): void         (own property)   │
 └──────────────────────────────────────────────────────────────┘
 ```
 
-**Key invariant**: the handle shares every bundle prop via `Object.create`, so `handle.ydoc === bundle.ydoc`, `handle.tables === bundle.tables`, etc. `for...in` does NOT enumerate prototype properties by default, but property access via `.` or `[]` works. This matters for `iterateActions` — which uses `Object.entries(value)` and so would miss prototype-chained properties.
+**Key invariant**: the handle shares every bundle prop via `Object.create`, so `handle.ydoc === bundle.ydoc`, `handle.tables === bundle.tables`, etc. `for...in` does NOT enumerate prototype properties by default, but property access via `.` or `[]` works. This matters for `iterateActions`: which uses `Object.entries(value)` and so would miss prototype-chained properties.
 
 **Implication**: when walking a handle for actions, we must iterate OWN properties of the handle AND of its prototype (the bundle). The cache only injects `dispose` and `[Symbol.dispose]` as own props; everything else is on the bundle prototype. Our `discoverActions` helper must descend one step into the prototype if the top-level `Object.entries` yields only disposers.
 
 Actually simpler: pass `Object.getPrototypeOf(handle)` (the bundle) to `iterateActions`, not the handle itself. The handle's own keys are just `dispose`/`[Symbol.dispose]`.
 
-### `defineQuery` / `defineMutation` — confirmed primitives
+### `defineQuery` / `defineMutation`: confirmed primitives
 
 Location: `packages/workspace/src/shared/actions.ts`
 
@@ -190,7 +190,7 @@ Location: `packages/workspace/src/shared/actions.ts`
 
 All exported from `packages/workspace/src/index.ts:29-38`.
 
-`iterateActions` uses `Object.entries(actions)` and recurses only into `object && !Array && !Promise`. It does NOT traverse prototype chains — so we hand it the bundle (handle's prototype), not the handle.
+`iterateActions` uses `Object.entries(actions)` and recurses only into `object && !Array && !Promise`. It does NOT traverse prototype chains. So we hand it the bundle (handle's prototype), not the handle.
 
 ### What the current CLI already gets right (and we should preserve)
 
@@ -232,7 +232,7 @@ Audit of `packages/cli/src/**/*`:
 
 ### The vault config demonstrates the target pattern
 
-`~/Code/vault/epicenter.config.ts` already self-loads — imports `createSessionStore`, composes sync with the stored token, attaches `createCliUnlock` (which doesn't exist yet — vault is broken until the refactor lands), writes persistence to `EPICENTER_PATHS.persistence(...)`. The config IS the workspace. Running `bun run anything.ts` that imports the config boots the full workspace. **We are formalizing this existing pattern, not inventing it.**
+`~/Code/vault/epicenter.config.ts` already self-loads: imports `createSessionStore`, composes sync with the stored token, attaches `createCliUnlock` (which doesn't exist yet: vault is broken until the refactor lands), writes persistence to `EPICENTER_PATHS.persistence(...)`. The config IS the workspace. Running `bun run anything.ts` that imports the config boots the full workspace. **We are formalizing this existing pattern, not inventing it.**
 
 ### Missing primitive: `attachCliUnlock`
 
@@ -258,7 +258,7 @@ export function attachCliUnlock(
   ydoc: Y.Doc,
   opts: { sessions: ReturnType<typeof createSessionStore>; serverUrl: string },
 ) {
-  // Load session synchronously at construction time — if no session, throw.
+  // Load session synchronously at construction time: if no session, throw.
   // (Not async because bundle build() is synchronous.)
   // The session provides encryptionKeys used by attachEncryption.
   // Implementation depends on encryption-primitive-refactor.
@@ -275,7 +275,7 @@ This is a **thin wrapper over `attachEncryption`** that sources keys from the se
 | ------------------------------------------- | ----------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Invocation verb                             | `run`                                                 | Matches current command; `invoke` longer; `list` is the introspection verb.                                                                         |
 | Introspection verb                          | `list`                                                | Tree view of runnable nodes. Collides with old `list <table>` which is being deleted.                                                               |
-| Scripting command                           | None — use `bun run` directly                         | Config self-loads; `epicenter run file.ts` would reinvent `bun`.                                                                                    |
+| Scripting command                           | None: use `bun run` directly                         | Config self-loads; `epicenter run file.ts` would reinvent `bun`.                                                                                    |
 | Commands to delete                          | `data`/`get`/`count`/`delete`/`tables`/`kv`/`size`/`rpc`/`start`/`init`/`describe` | All speculate on structure `defineDocument` doesn't guarantee.                                                                                      |
 | Keep `auth`                                 | Yes                                                   | Interactive browser flows can't be self-serviced in a `.ts` import.                                                                                 |
 | Export convention                           | Users export **opened handles**, not factories        | Factory needs an id to open; handle has `.ydoc` walkable via prototype, refcount already incremented, sync already connected.                        |
@@ -283,12 +283,12 @@ This is a **thin wrapper over `attachEncryption`** that sources keys from the se
 | Duck-type shape                             | `'ydoc' in handle && Symbol.dispose in handle && typeof handle.dispose === 'function'` | Matches `DocumentHandle` contract. No `id` check (bundles don't have one); no `tables` check.                                                       |
 | Walking a handle for actions                | `iterateActions(Object.getPrototypeOf(handle))`       | The bundle is the prototype; the handle's own keys are just `dispose`/`[Symbol.dispose]`. `iterateActions` uses `Object.entries`, won't see proto.  |
 | Args parsing                                | `typeboxToYargsOptions` for flat schemas              | Already exists and used by current `run.ts`.                                                                                                        |
-| Complex input escape hatch                  | Reuse `parseJsonInput` — positional / `--file` / stdin | Already implemented in `util/parse-input.ts`.                                                                                                       |
+| Complex input escape hatch                  | Reuse `parseJsonInput`: positional / `--file` / stdin | Already implemented in `util/parse-input.ts`.                                                                                                       |
 | Output format                               | Default JSON; `--format jsonl` for arrays              | Already built in `format-output.ts`.                                                                                                                |
 | `util/command.ts` fate                      | Delete entirely                                        | Every helper in it dies or doesn't fit the new commands. Inline whatever each surviving command needs.                                              |
 | Lifecycle pattern per command               | Each command inlines `loadConfig()` + try/finally + `result.dispose()` | Only 3 commands; centralized helper (`runCommand`) obscures control flow.                                                                           |
 | Primitive reorganization                    | None                                                  | `createSessionStore`, `createAuthApi`, `EPICENTER_PATHS`, `loadConfig` already at package root. No `primitives/` directory. |
-| `attachCliUnlock` location                  | `packages/cli/src/attach-cli-unlock.ts` (root)         | Small, visible, exported from `index.ts`. Under 5 primitives total — no subdirectory needed.                                                        |
+| `attachCliUnlock` location                  | `packages/cli/src/attach-cli-unlock.ts` (root)         | Small, visible, exported from `index.ts`. Under 5 primitives total: no subdirectory needed.                                                        |
 | Backwards compat                            | None                                                  | All consumers in-repo or on the same migration cadence. Dual-shape CLI is worse than brief breakage.                                                |
 | Attach primitives' CLI exposure             | Wrap public methods in `defineQuery`/`defineMutation` | Separate workstream (Phase 5); coordinate with attach primitive owners.                                                                             |
 
@@ -326,8 +326,8 @@ epicenter
 │   ├── login --server <url>
 │   ├── logout [--server <url>]
 │   └── status [--server <url>]
-├── list [dot.path]                    ← NEW — tree of exposed actions
-└── run <dot.path> [args...]           ← rewrite — invoke action node
+├── list [dot.path]                    ← NEW: tree of exposed actions
+└── run <dot.path> [args...]           ← rewrite: invoke action node
 ```
 
 ### Before → After (source tree)
@@ -367,12 +367,12 @@ packages/cli/src/                    packages/cli/src/
                                      └── util/command.ts
 ```
 
-### Data flow — `epicenter run tabManager.savedTabs.create --title "Hi" --url "..."`
+### Data flow: `epicenter run tabManager.savedTabs.create --title "Hi" --url "..."`
 
 ```
 STEP 1: Parse argv (permissive)
 ───────────────────────────────
-  Yargs with .strict(false) — schema unknown until path resolves.
+  Yargs with .strict(false): schema unknown until path resolves.
   → { _: ['run', 'tabManager.savedTabs.create'], title: 'Hi', url: '...' }
 
 
@@ -430,7 +430,7 @@ STEP 7: Invoke
   }
 ```
 
-### Data flow — `epicenter list tabManager.savedTabs`
+### Data flow: `epicenter list tabManager.savedTabs`
 
 ```
 STEP 1: Parse argv → path parts
@@ -471,7 +471,7 @@ Author once, three surfaces pick it up. This spec completes the CLI side.
 
 ### `epicenter list [dot.path]`
 
-**No argument** — enumerate all exports, render full trees:
+**No argument**: enumerate all exports, render full trees:
 
 ```
 $ epicenter list
@@ -495,7 +495,7 @@ fuji
     └── search   (query)     FTS5 full-text search
 ```
 
-**Partial path** — subtree:
+**Partial path**: subtree:
 
 ```
 $ epicenter list tabManager.savedTabs
@@ -507,7 +507,7 @@ tabManager.savedTabs
 └── delete   (mutation)  Delete a saved tab
 ```
 
-**Leaf path** — action detail (inline `--help`):
+**Leaf path**: action detail (inline `--help`):
 
 ```
 $ epicenter list tabManager.savedTabs.create
@@ -647,7 +647,7 @@ Run: `bun run scripts/export-tabs.ts`. No CLI involved.
 ### Phase 0: Verify shapes and coordinate
 
 - [ ] **0.1** Grep `packages/workspace/src/` and confirm `DocumentBundle` contract matches what this spec asserts (ydoc, `[Symbol.dispose]`, optional `whenReady`/`whenDisposed`). **Done in spec research. Re-verify before code.**
-- [ ] **0.2** Coordinate with `specs/20260421T140000-encryption-primitive-refactor.md` owner on `attachEncryption` signature. `attachCliUnlock` is a thin wrapper — it must match.
+- [ ] **0.2** Coordinate with `specs/20260421T140000-encryption-primitive-refactor.md` owner on `attachEncryption` signature. `attachCliUnlock` is a thin wrapper: it must match.
 - [ ] **0.3** Decide `attachTable`/`attachKv` exposure convention (see Phase 5). If defer, document `list` will render empty trees until wrappers land.
 
 ### Phase 1: Gut the dead surface
@@ -655,8 +655,8 @@ Run: `bun run scripts/export-tabs.ts`. No CLI involved.
 - [ ] **1.1** Delete `commands/data.ts`, `commands/kv.ts`, `commands/project.ts`, `commands/rpc.ts`, `commands/size.ts`, `commands/start.ts`.
 - [ ] **1.2** Delete `util/command.ts` entirely. Its consumers are the commands we just deleted.
 - [ ] **1.3** Remove deleted command registrations from `cli.ts`. Only `auth` remains pre-rewrite.
-- [ ] **1.4** Rewrite `cli.test.ts` — delete stale docstring; test the 3 surviving commands.
-- [ ] **1.5** `bun test packages/cli` — expect some tests deleted, remaining tests pass. Fix only the tests that test surviving behavior; delete the rest.
+- [ ] **1.4** Rewrite `cli.test.ts`: delete stale docstring; test the 3 surviving commands.
+- [ ] **1.5** `bun test packages/cli`: expect some tests deleted, remaining tests pass. Fix only the tests that test surviving behavior; delete the rest.
 
 ### Phase 2: Rewrite `load-config.ts`
 
@@ -719,20 +719,20 @@ Run: `bun run scripts/export-tabs.ts`. No CLI involved.
 
 **Update (2026-04-22):** Shipped as `attachSessionUnlock` in `packages/cli/src/primitives/attach-session-unlock.ts`. The encryption refactor (`20260421T140000`) completed first; this primitive is a thin consumer of `attachEncryption` + the session store.
 
-- [x] **5.1** Create `attachSessionUnlock` — shipped.
-- [x] **5.2** Export from `packages/cli/src/index.ts` via `src/primitives/index.ts` — shipped.
+- [x] **5.1** Create `attachSessionUnlock`: shipped.
+- [x] **5.2** Export from `packages/cli/src/index.ts` via `src/primitives/index.ts`: shipped.
 - [x] **5.3** ~~Audit `attachTable` and wrap public methods in `defineQuery`/`defineMutation`.~~ **Designed out (2026-04-22).** See "Why no auto-expose" below.
-- [x] **5.4** ~~Document that attach primitives MUST wrap CLI-exposable methods.~~ Superseded — users wrap their own. See CLI README "Exposing operations via CLI."
+- [x] **5.4** ~~Document that attach primitives MUST wrap CLI-exposable methods.~~ Superseded: users wrap their own. See CLI README "Exposing operations via CLI."
 
 #### Why no auto-expose of `attachTable` / `attachKv` methods
 
 After working through the design, the auto-expose direction loses to hand-rolled wraps. The reasoning:
 
-1. **Positional vs. single-object input mismatch.** `table.get(id: string)` takes a positional string; `defineQuery`'s action contract is `(input: Static<TSchema>) => TOutput` — a single input object. Branding the existing Table methods in place would break every existing in-process caller that does `table.get(id)`. Changing the Table API to action-shaped (`table.get({id})`) is a 7-app breaking change. Ruled out.
+1. **Positional vs. single-object input mismatch.** `table.get(id: string)` takes a positional string; `defineQuery`'s action contract is `(input: Static<TSchema>) => TOutput`: a single input object. Branding the existing Table methods in place would break every existing in-process caller that does `table.get(id)`. Changing the Table API to action-shaped (`table.get({id})`) is a 7-app breaking change. Ruled out.
 
-2. **Wrapping layer vs. brand-at-source.** The alternative — a `tableActions(table)` helper that returns action-shaped wrappers around Table methods — is a wrap layer. It adds a second API surface (`tables.savedTabs.get(id)` for in-process, `actions.savedTabs.get({id})` for CLI) that can drift. One helper for every app when most CLI usage is debug/inspection operations that users want to hand-pick anyway.
+2. **Wrapping layer vs. brand-at-source.** The alternative: a `tableActions(table)` helper that returns action-shaped wrappers around Table methods: is a wrap layer. It adds a second API surface (`tables.savedTabs.get(id)` for in-process, `actions.savedTabs.get({id})` for CLI) that can drift. One helper for every app when most CLI usage is debug/inspection operations that users want to hand-pick anyway.
 
-3. **Curated exposure beats default exposure.** `epicenter run` is most valuable for purpose-built debug/inspection/admin actions (e.g., `tabManager.importBackup`, `tabManager.savedTabs.clearOrphans`). Users write those as `defineQuery`/`defineMutation` blocks deliberately. Auto-exposing all of CRUD (`list`, `get`, `count`, `has`, `upsert`, `update`, `delete`, `clear`) puts methods in the CLI tree that nobody asked for. The curated-by-default alternative (expose only some methods) is a design decision the framework can't make well — "which methods get the CLI treatment" is app-specific.
+3. **Curated exposure beats default exposure.** `epicenter run` is most valuable for purpose-built debug/inspection/admin actions (e.g., `tabManager.importBackup`, `tabManager.savedTabs.clearOrphans`). Users write those as `defineQuery`/`defineMutation` blocks deliberately. Auto-exposing all of CRUD (`list`, `get`, `count`, `has`, `upsert`, `update`, `delete`, `clear`) puts methods in the CLI tree that nobody asked for. The curated-by-default alternative (expose only some methods) is a design decision the framework can't make well: "which methods get the CLI treatment" is app-specific.
 
 4. **Scripts cover the power-user case.** Anyone who wants bulk CRUD or arbitrary logic writes a `scripts/*.ts` file that imports the config and uses the full Table API directly. No CLI needed. Auto-exposing CRUD via CLI duplicates capability that scripts already provide better.
 
@@ -748,7 +748,7 @@ Considered and rejected: allowing `export default handle` to make CLI paths addr
 
 1. **Upgrade-path fragility.** A single-workspace config that uses `export default` works fine until the user adds a second workspace. Then either (a) they keep default + add named exports → two addressing conventions in the same config, or (b) they convert default to named → every existing CLI path, script, doc, and CI job silently invalidated with no deprecation. Named-exports-only means day-1 path is identical to day-180 path.
 
-2. **Framework-config precedent doesn't apply.** Vite, Astro, Next, and Svelte use default-export because their config objects are single-instance by design. An Epicenter config is a manifest of workspaces — plural is first-class. The closer precedents are Drizzle schemas and tRPC routers, both of which use named exports exclusively.
+2. **Framework-config precedent doesn't apply.** Vite, Astro, Next, and Svelte use default-export because their config objects are single-instance by design. An Epicenter config is a manifest of workspaces: plural is first-class. The closer precedents are Drizzle schemas and tRPC routers, both of which use named exports exclusively.
 
 3. **The "prefix is ceremony" complaint resolves to naming choice.** Users who want short paths can pick short export names (`tm`, `w`). The framework isn't forcing verbosity; it's making the addressing rule uniform.
 
@@ -758,7 +758,7 @@ This is additive-compatible: if real demand shows up later, default-export short
 
 - [ ] **6.1** Rewrite `~/Code/vault/epicenter.config.ts` to the new shape. Use as smoke test.
   - *Status:* Outside this workspace. Track in the vault repo; not gating this spec.
-- [x] **6.2** ~~Delete or rewrite `playground/*/epicenter.config.ts` files — they reference `createCliUnlock` and the old builder API.~~
+- [x] **6.2** ~~Delete or rewrite `playground/*/epicenter.config.ts` files: they reference `createCliUnlock` and the old builder API.~~
   - *Shipped:* Both `playground/tab-manager-e2e/epicenter.config.ts` and `playground/opensidian-e2e/epicenter.config.ts` already migrated to `defineDocument` + `attachSessionUnlock` + encrypted-attach primitives. Stale `epicenter start` / `epicenter get files` / `epicenter describe` command references in docstrings + `playground/opensidian-e2e/README.md` cleaned up separately.
 - [x] **6.3** ~~Update `apps/whispering` if it consumes `@epicenter/cli` primitives.~~
   - *Non-task:* grep confirms `apps/whispering` does not import from `@epicenter/cli`. Nothing to migrate.
@@ -772,9 +772,9 @@ Grep turned up widespread `defineWorkspace` / `createWorkspace` references in hi
 - `packages/workspace/docs/articles/*` (3 files)
 - `packages/workspace/docs/architecture/action-dispatch.md`
 - `apps/landing/src/content/blog/second-brain-infrastructure.md` (published marketing content)
-- `docs/articles/*` — several including `20251001T180000-plugins-to-workspaces.md` (ironically about the `definePlugin` → `defineWorkspace` rename, now both dead) and `20260127T120000-static-workspace-api-guide.md` (full guide to removed APIs)
+- `docs/articles/*`: several including `20251001T180000-plugins-to-workspaces.md` (ironically about the `definePlugin` → `defineWorkspace` rename, now both dead) and `20260127T120000-static-workspace-api-guide.md` (full guide to removed APIs)
 
-These are point-in-time narrative — dated filenames, historical record of design decisions. Rewriting erases context; deleting erases history. Left as a separate batch decision: keep as-is (dates in filenames let readers infer period), add banners, archive to `docs/articles/archived/`, or delete case-by-case.
+These are point-in-time narrative: dated filenames, historical record of design decisions. Rewriting erases context; deleting erases history. Left as a separate batch decision: keep as-is (dates in filenames let readers infer period), add banners, archive to `docs/articles/archived/`, or delete case-by-case.
 
 ---
 
@@ -784,7 +784,7 @@ These are point-in-time narrative — dated filenames, historical record of desi
 
 1. `loadConfig`'s duck-type rejects factories (no `.ydoc`, no `[Symbol.dispose]` at top level).
 2. `epicenter list` / `run` error: "`<name>` looks like a `defineDocument` factory, not an opened handle. Export `<name>Factory.open('your-id')` instead."
-3. Helpful but explicit — consumers see exactly what to change.
+3. Helpful but explicit: consumers see exactly what to change.
 
 ### Config exports zero handles
 
@@ -792,7 +792,7 @@ These are point-in-time narrative — dated filenames, historical record of desi
 
 ### Config has multiple handles with the same export name
 
-1. `export const tabManager = ...; export { tabManager };` — JS collapses to one. Not a real case.
+1. `export const tabManager = ...; export { tabManager };`: JS collapses to one. Not a real case.
 2. If re-exports do somehow produce duplicates, first-wins. Document.
 
 ### Action thrown during invocation
@@ -805,7 +805,7 @@ These are point-in-time narrative — dated filenames, historical record of desi
 
 1. Handle keys are `dispose`, `[Symbol.dispose]` only (own props); everything else is on the bundle (prototype).
 2. `discoverActions(handle)` would return `[]`.
-3. **Fix**: `discoverActions(Object.getPrototypeOf(handle))` — pass the bundle, not the handle.
+3. **Fix**: `discoverActions(Object.getPrototypeOf(handle))`: pass the bundle, not the handle.
 4. This is a critical implementation detail; test for it explicitly.
 
 ### Action node happens to be a plain object with more actions underneath
@@ -828,7 +828,7 @@ These are point-in-time narrative — dated filenames, historical record of desi
 ### `list` output piped to non-TTY
 
 1. `format-output.ts` already toggles pretty/compact based on `process.stdout.isTTY`.
-2. For `list`, we always render ASCII trees regardless of TTY — it's human output, not data. Use `--format json` explicitly if machine consumption is needed.
+2. For `list`, we always render ASCII trees regardless of TTY: it's human output, not data. Use `--format json` explicitly if machine consumption is needed.
 
 ---
 
@@ -836,7 +836,7 @@ These are point-in-time narrative — dated filenames, historical record of desi
 
 1. **`whenReady` awaiting in `list` vs `run`.**
    - `run` obviously needs `await handle.whenReady` before invoking actions against possibly-unready data.
-   - `list` only inspects shape — does it need `whenReady`? No, probably. But importing the config triggers `.open()` which starts sync; we can't avoid the network either way.
+   - `list` only inspects shape: does it need `whenReady`? No, probably. But importing the config triggers `.open()` which starts sync; we can't avoid the network either way.
    - **Recommendation**: `run` awaits, `list` doesn't. Document both.
 
 2. **Output format defaults.**
@@ -864,7 +864,7 @@ These are point-in-time narrative — dated filenames, historical record of desi
    - Options: (a) accept (simplest), (b) add an `--offline` flag that... does what? `.open()` is already synchronous construction; sync is async but doesn't block list.
    - **Recommendation**: accept. If slowness becomes a real problem, add an env var `EPICENTER_OFFLINE=1` that attach primitives honor by skipping network.
 
-8. **Error handling idiom — wellcrafted Result or throw?**
+8. **Error handling idiom: wellcrafted Result or throw?**
    - `packages/cli` already uses `trySync`/`tryAsync` from wellcrafted in places (`bin.ts:8`, `util/parse-input.ts`).
    - **Recommendation**: use `Result` internally where it clarifies control flow (e.g., `parseJsonInput`); throw at command boundaries where yargs' error handling catches. Match existing patterns per file.
 
@@ -884,23 +884,23 @@ These are point-in-time narrative — dated filenames, historical record of desi
 
 ---
 
-## Clean-break API — if I designed it from scratch
+## Clean-break API: if I designed it from scratch
 
 With what I now know from grounding against the repo:
 
 ```ts
 // @epicenter/cli public API
 
-// Session primitive — keep
+// Session primitive: keep
 export { createSessionStore, type AuthSession } from './auth/store';
 
-// Auth API — keep
+// Auth API: keep
 export { createAuthApi, type AuthApi } from './auth/api';
 
-// Paths — keep
+// Paths: keep
 export { EPICENTER_PATHS } from './paths';
 
-// Config loader — new shape
+// Config loader: new shape
 export { loadConfig, type LoadConfigResult } from './load-config';
 // LoadConfigResult = { configDir, entries: { name, handle }[], dispose(): Promise<void> }
 
@@ -922,7 +922,7 @@ const factory = defineDocument((id) => ({
   [Symbol.dispose]() { ydoc.destroy(); },
 }));
 
-// Export the opened handle — this is what every consumer reads.
+// Export the opened handle: this is what every consumer reads.
 export const notes = factory.open('notes');
 ```
 
@@ -955,23 +955,23 @@ Four primitives shipped from `@epicenter/cli` (session store, auth API, paths, C
 
 ### Read to understand the primitive
 
-- `packages/workspace/src/document/define-document.ts:1-424` — the whole factory-cache design, `DocumentBundle` contract, `DocumentHandle` semantics
-- `packages/workspace/src/shared/actions.ts:270-428` — `defineQuery`/`defineMutation`/`isAction`/`iterateActions`
-- `packages/workspace/src/index.ts` — public surface; grep this to see what's actually exported
+- `packages/workspace/src/document/define-document.ts:1-424`: the whole factory-cache design, `DocumentBundle` contract, `DocumentHandle` semantics
+- `packages/workspace/src/shared/actions.ts:270-428`: `defineQuery`/`defineMutation`/`isAction`/`iterateActions`
+- `packages/workspace/src/index.ts`: public surface; grep this to see what's actually exported
 
 ### Files to rewrite
 
-- `packages/cli/src/load-config.ts` — duck-type + result shape
-- `packages/cli/src/commands/run.ts` — handle-aware dispatch, reuse `parseJsonInput`
-- `packages/cli/src/cli.ts` — shrink command registry
-- `packages/cli/src/cli.test.ts` — new surface
-- `packages/cli/README.md` — rewrite for 3-command + scripting model
+- `packages/cli/src/load-config.ts`: duck-type + result shape
+- `packages/cli/src/commands/run.ts`: handle-aware dispatch, reuse `parseJsonInput`
+- `packages/cli/src/cli.ts`: shrink command registry
+- `packages/cli/src/cli.test.ts`: new surface
+- `packages/cli/README.md`: rewrite for 3-command + scripting model
 
 ### Files to create
 
-- `packages/cli/src/commands/list.ts` — new command
-- `packages/cli/src/util/discover-actions.ts` — thin wrapper over `iterateActions`
-- `packages/cli/src/attach-cli-unlock.ts` — new primitive (coordinate with encryption refactor)
+- `packages/cli/src/commands/list.ts`: new command
+- `packages/cli/src/util/discover-actions.ts`: thin wrapper over `iterateActions`
+- `packages/cli/src/attach-cli-unlock.ts`: new primitive (coordinate with encryption refactor)
 
 ### Files to delete
 

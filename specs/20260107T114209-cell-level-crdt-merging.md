@@ -124,7 +124,7 @@ The `observeChanges` method needs to observe:
 1. Table-level Y.Map for row additions/deletions
 2. Each row's YKeyValue for cell-level changes
 
-This is more complex—may need to track row observers and clean them up.
+This is more complex. May need to track row observers and clean them up.
 
 ### Phase 4: Migration
 
@@ -153,7 +153,7 @@ Recommend option 2 for production systems.
 
 3. **Serialization**: When serializing rows (for SQLite provider, markdown provider), need to reconstruct from YKeyValue format.
 
-4. **Y.Text/Y.Array columns**: These are already stored separately by reference. The new architecture handles them the same way—store the reference ID as the cell value.
+4. **Y.Text/Y.Array columns**: These are already stored separately by reference. The new architecture handles them the same way. Store the reference ID as the cell value.
 
 ## Success Criteria
 

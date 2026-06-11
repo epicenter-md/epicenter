@@ -89,17 +89,17 @@ If your prototype becomes something real, migrate to self-hosted or a commercial
 
 ## When to Use It
 
-✓ **Quick prototypes** — MVP in an afternoon
-✓ **Learning Yjs** — no server setup distraction
-✓ **Testing integrations** — try a binding before committing
-✓ **Hackathons/jamming** — collaborative session for a few hours
-✓ **Demos** — show how collaboration works
-✓ **Proof of concept** — validate an idea before building infrastructure
+✓ **Quick prototypes**: MVP in an afternoon
+✓ **Learning Yjs**: no server setup distraction
+✓ **Testing integrations**: try a binding before committing
+✓ **Hackathons/jamming**: collaborative session for a few hours
+✓ **Demos**: show how collaboration works
+✓ **Proof of concept**: validate an idea before building infrastructure
 
-✗ **Production apps** — needs guarantees
-✗ **Sensitive data** — it's public
-✗ **Long-term persistence** — you need durability
-✗ **Scale** — one shared room gets slow with many clients
+✗ **Production apps**: needs guarantees
+✗ **Sensitive data**: it's public
+✗ **Long-term persistence**: you need durability
+✗ **Scale**: one shared room gets slow with many clients
 
 ## Simple Example: Shared Todo List
 
@@ -191,16 +191,16 @@ wss.on('connection', (conn, req) => {
 })
 ```
 
-That's your server. Persist to a database if you need durability. Add auth if you need access control. But the core architecture is the same—thin relay.
+That's your server. Persist to a database if you need durability. Add auth if you need access control. But the core architecture is the same. Thin relay.
 
 ## Production Alternatives
 
 When you need durability and guarantees:
 
-- **y-sweet** (Jamsocket) — hosted Yjs with persistence and scale
-- **Liveblocks** — commercial sync layer with WebSockets and REST APIs
-- **PartyKit** — Durable Objects on Cloudflare, built for real-time
-- **Self-hosted** — y-websocket server with your database of choice
+- **y-sweet** (Jamsocket): hosted Yjs with persistence and scale
+- **Liveblocks**: commercial sync layer with WebSockets and REST APIs
+- **PartyKit**: Durable Objects on Cloudflare, built for real-time
+- **Self-hosted**: y-websocket server with your database of choice
 
 All speak the same Yjs protocol. Your client code stays identical.
 

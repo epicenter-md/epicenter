@@ -109,7 +109,7 @@ I wrote a series of articles about localhost security before this CVE existed. H
 
 "None" under mitigation. That was accurate.
 
-**[Origin Allowlists Don't Stop XSS](./origin-allowlists-dont-stop-xss.md)** explained why the CORS fix alone isn't enough. OpenCode now allowlists `*.opencode.ai`. If any subdomain of opencode.ai gets XSS'd, the attacker bypasses the origin check entirely. The article's conclusion: the real solution is a secret that JavaScript can't access. Which is exactly what `OPENCODE_SERVER_PASSWORD` provides—a server-side env var that browser JS never sees.
+**[Origin Allowlists Don't Stop XSS](./origin-allowlists-dont-stop-xss.md)** explained why the CORS fix alone isn't enough. OpenCode now allowlists `*.opencode.ai`. If any subdomain of opencode.ai gets XSS'd, the attacker bypasses the origin check entirely. The article's conclusion: the real solution is a secret that JavaScript can't access, which is exactly what `OPENCODE_SERVER_PASSWORD` provides. A server-side env var that browser JS never sees.
 
 **[How OpenCode Web Works](./how-opencode-web-works.md)** documented the architecture that created the attack surface: Bun HTTP server on port 4096, WebSocket PTY connections, the REST API that controls everything. Understanding the surface is the first step to understanding the risk.
 
@@ -123,7 +123,7 @@ OpenCode's [SECURITY.md](https://github.com/anomalyco/opencode/blob/dev/SECURITY
 
 The password is optional. If you don't set it, you get a yellow warning and an open server. The security model went from "no option to secure it" to "option to secure it, but off by default."
 
-The `*.opencode.ai` wildcard in CORS is also worth watching. That regex matches any subdomain. A single XSS on any `*.opencode.ai` page—marketing site, docs, status page—would let an attacker reach every OpenCode server that allows that origin. I wrote about [why this pattern fails](./origin-allowlists-dont-stop-xss.md).
+The `*.opencode.ai` wildcard in CORS is also worth watching. That regex matches any subdomain. A single XSS on any `*.opencode.ai` page. Marketing site, docs, status page. Would let an attacker reach every OpenCode server that allows that origin. I wrote about [why this pattern fails](./origin-allowlists-dont-stop-xss.md).
 
 And the password travels as Base64 in an `Authorization` header over plain HTTP. No TLS by default. On a shared network, that's readable with Wireshark.
 
@@ -133,7 +133,7 @@ And the password travels as Base64 in an `Authorization` header over plain HTTP.
 
 The fix is solid for what it is. Making the server opt-in was the right call; most users never needed it exposed. HTTP Basic Auth is boring and well-understood. The CORS tightening from `*` to an explicit allowlist closed the most obvious browser-based attack.
 
-OpenCode ships fast—[618 releases and counting](./how-opencode-ships-fast.md). The patch went out quickly once the disclosure forced their hand.
+OpenCode ships fast: [618 releases and counting](./how-opencode-ships-fast.md). The patch went out quickly once the disclosure forced their hand.
 
 ---
 

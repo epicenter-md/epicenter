@@ -2,7 +2,7 @@
 
 **Position**: Phase 4 of 4
 **Dependencies**: Phase 1 (Autumn SDK installed, customer sync working)
-**Estimated effort**: ~2–3 days
+**Estimated effort**: ~2-3 days
 **Spec**: [Master plan](./20260319T140000-autumn-billing-overview.md)
 
 ## Goal
@@ -15,7 +15,7 @@ Bill users for Durable Object storage (workspace + document data). After this ph
 
 ## Current State
 
-**What already exists** (this is a strength—we're not starting from zero):
+**What already exists** (this is a strength. We're not starting from zero):
 
 - `apps/api/src/db/schema.ts` defines `durableObjectInstance` with `storageBytes` (bigint), `storageMeasuredAt` (timestamp)
 - `apps/api/src/app.ts` has `upsertDoInstance()` that records `storageBytes` on every workspace/document access
@@ -67,7 +67,7 @@ Add to `apps/api/autumn.config.ts`:
 
 ```ts
 /**
- * Storage metering — cumulative, does not reset monthly.
+ * Storage metering: cumulative, does not reset monthly.
  * `consumable: false` means Autumn treats this as persistent allocation
  * (like seats or storage), not event-based usage.
  */
@@ -82,7 +82,7 @@ export const storageBytes = feature({
 Update plan items:
 
 ```ts
-// Free plan — add storage allowance
+// Free plan: add storage allowance
 export const free = plan({
   id: 'free',
   name: 'Free',
@@ -94,7 +94,7 @@ export const free = plan({
   ],
 });
 
-// Pro plan — add storage allowance with overage
+// Pro plan: add storage allowance with overage
 export const pro = plan({
   id: 'pro',
   name: 'Pro',
@@ -179,7 +179,7 @@ Two strategies (pick one):
 **Strategy A: Sync on DO access (piggyback on existing upsertDoInstance)**
 
 - [ ] **3A.1** After `upsertDoInstance` completes, push `syncUserStorageToAutumn` to afterResponse
-- [ ] **3A.2** Add debouncing—don't sync on every single request. Track a `lastSyncedAt` timestamp per user and only sync if >5 minutes have passed.
+- [ ] **3A.2** Add debouncing. Don't sync on every single request. Track a `lastSyncedAt` timestamp per user and only sync if >5 minutes have passed.
 
 **Strategy B: Scheduled job (Cloudflare Cron Trigger)**
 
@@ -187,7 +187,7 @@ Two strategies (pick one):
 - [ ] **3B.2** In the cron handler, query all users with `storageBytes` changes since last sync
 - [ ] **3B.3** For each changed user, call `syncUserStorageToAutumn`
 
-**Recommendation**: Strategy A for v1. It's simpler—no new cron infrastructure. The debounce ensures we don't over-call Autumn. Strategy B is better at scale but adds operational complexity.
+**Recommendation**: Strategy A for v1. It's simpler. No new cron infrastructure. The debounce ensures we don't over-call Autumn. Strategy B is better at scale but adds operational complexity.
 
 ### Step 4: Gate workspace/document creation
 

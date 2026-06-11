@@ -26,7 +26,7 @@ The static form creates the union in a single call. The chained form creates int
 
 ## `base.merge(type.or(...))` for Discriminated Unions
 
-When all variants share base fields, define the base as a `type()`, then merge it with a union of the variant-specific fields. `.merge()` distributes across the union — it applies to each branch automatically.
+When all variants share base fields, define the base as a `type()`, then merge it with a union of the variant-specific fields. `.merge()` distributes across the union. It applies to each branch automatically.
 
 ```typescript
 const stepBase = type({
@@ -77,7 +77,7 @@ stepBase.merge(type.or(
 ));
 ```
 
-## `type.enumerated()` — Derive from Const Arrays
+## `type.enumerated()`: Derive from Const Arrays
 
 Use `type.enumerated()` to build string literal unions from existing `as const` arrays. This keeps schemas in sync with app constants.
 

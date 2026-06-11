@@ -6,7 +6,7 @@
 
 ## Overview
 
-Fix specific non-idiomatic patterns in Opensidian's UI where hand-written markup reimplements existing shadcn-svelte primitives from `@epicenter/ui`. These are targeted, mechanical fixes—not new features.
+Fix specific non-idiomatic patterns in Opensidian's UI where hand-written markup reimplements existing shadcn-svelte primitives from `@epicenter/ui`. These are targeted, mechanical fixes. Not new features.
 
 ## Motivation
 
@@ -33,7 +33,7 @@ This is literally the `Input` component's class string copy-pasted. If the desig
 
 **Problem 2: Inline SVG icons**
 
-`TreeNode.svelte` defines SVG icons inline (ChevronRight, Folder, FolderOpen, File). Each is 5–10 lines of SVG markup hardcoded in the template. The monorepo already uses icon components elsewhere.
+`TreeNode.svelte` defines SVG icons inline (ChevronRight, Folder, FolderOpen, File). Each is 5-10 lines of SVG markup hardcoded in the template. The monorepo already uses icon components elsewhere.
 
 **Problem 3: Missing `Textarea` component**
 
@@ -104,7 +104,7 @@ These are all standard Lucide icons.
 - [x] **2.3** Replace inline Folder/FolderOpen SVGs with `<Folder>` / `<FolderOpen>`
 - [x] **2.4** Replace inline File SVG with `<FileIcon>` (aliased to avoid name collision)
 - [x] **2.5** Replace any remaining inline SVGs in `Toolbar.svelte` or other components
-  > **Note**: Toolbar.svelte has no inline SVGs—it uses text-only Button components. No changes needed.
+  > **Note**: Toolbar.svelte has no inline SVGs. It uses text-only Button components. No changes needed.
 
 ### Phase 3: Add Missing Primitives
 
@@ -129,7 +129,7 @@ The current `<textarea>` uses `resize: vertical` and fills the available height.
 
 1. **Should we add `lucide-svelte` directly or create a thin icon wrapper in `@epicenter/ui`?**
    - Options: (a) Direct `lucide-svelte` import in Opensidian, (b) Create `@epicenter/ui/icons` that re-exports Lucide icons
-   - **Recommendation**: (a) — direct import. Icon wrapping adds indirection without clear benefit. Other apps can import lucide-svelte independently.
+   - **Recommendation**: (a): direct import. Icon wrapping adds indirection without clear benefit. Other apps can import lucide-svelte independently.
 
 2. **Should `ContentEditor` remain a `Textarea` or should it use a richer editor?**
    - This spec deliberately limits scope to replacing the raw `<textarea>` with the shadcn `Textarea`. A richer editor (CodeMirror, TipTap) is a separate feature spec.
@@ -137,27 +137,27 @@ The current `<textarea>` uses `resize: vertical` and fills the available height.
 
 ## Success Criteria
 
-- [x] Zero raw `<input>` or `<textarea>` elements—all use `@epicenter/ui` components
-- [x] Zero inline SVG icons—all use `lucide-svelte` components
+- [x] Zero raw `<input>` or `<textarea>` elements. All use `@epicenter/ui` components
+- [x] Zero inline SVG icons. All use `lucide-svelte` components
 - [x] Toolbar buttons have tooltips showing their action
 - [x] Dialog form fields have proper labels
 - [x] Empty state uses the `Empty` component
-- [x] Visual appearance is identical (no regressions)—these are primitive swaps, not redesigns
+- [x] Visual appearance is identical (no regressions): these are primitive swaps, not redesigns
 - [x] `svelte-check` passes with no new errors (67 pre-existing errors in packages/ui and packages/workspace, none in changed files)
 
 ## References
 
-- `apps/opensidian/src/lib/components/CreateDialog.svelte` — raw `<input>` on line 49
-- `apps/opensidian/src/lib/components/RenameDialog.svelte` — raw `<input>` on line 42
-- `apps/opensidian/src/lib/components/ContentEditor.svelte` — raw `<textarea>`
-- `apps/opensidian/src/lib/components/TreeNode.svelte` — inline SVGs on lines 81–151
-- `apps/opensidian/src/lib/components/Toolbar.svelte` — toolbar buttons without tooltips
-- `apps/opensidian/src/lib/components/FileTree.svelte` — empty state
-- `packages/ui/src/input/` — Input component
-- `packages/ui/src/textarea/` — Textarea component
-- `packages/ui/src/field/` — Field component
-- `packages/ui/src/tooltip/` — Tooltip component
-- `packages/ui/src/empty/` — Empty component
+- `apps/opensidian/src/lib/components/CreateDialog.svelte`: raw `<input>` on line 49
+- `apps/opensidian/src/lib/components/RenameDialog.svelte`: raw `<input>` on line 42
+- `apps/opensidian/src/lib/components/ContentEditor.svelte`: raw `<textarea>`
+- `apps/opensidian/src/lib/components/TreeNode.svelte`: inline SVGs on lines 81-151
+- `apps/opensidian/src/lib/components/Toolbar.svelte`: toolbar buttons without tooltips
+- `apps/opensidian/src/lib/components/FileTree.svelte`: empty state
+- `packages/ui/src/input/`: Input component
+- `packages/ui/src/textarea/`: Textarea component
+- `packages/ui/src/field/`: Field component
+- `packages/ui/src/tooltip/`: Tooltip component
+- `packages/ui/src/empty/`: Empty component
 
 ## Review
 
@@ -165,7 +165,7 @@ The current `<textarea>` uses `resize: vertical` and fills the available height.
 
 ### Summary
 
-Replaced all hand-written HTML primitives in Opensidian with their `@epicenter/ui` counterparts across 6 component files. Added `lucide-svelte` as the icon library, replacing ~70 lines of inline SVG markup with 4 Lucide component imports. All changes are mechanical swaps—no behavioral changes.
+Replaced all hand-written HTML primitives in Opensidian with their `@epicenter/ui` counterparts across 6 component files. Added `lucide-svelte` as the icon library, replacing ~70 lines of inline SVG markup with 4 Lucide component imports. All changes are mechanical swaps. No behavioral changes.
 
 ### Changes by File
 

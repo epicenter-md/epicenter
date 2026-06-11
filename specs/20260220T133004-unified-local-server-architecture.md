@@ -8,7 +8,7 @@
 
 ## Overview
 
-A Bun HTTP server that serves the Svelte frontend, filesystem/workspace API, and Yjs CRDT sync — running identically whether launched as a Tauri sidecar (desktop mode) or standalone (web mode). Tauri provides the native webview shell and a minimal set of Rust IPC commands for OS-level operations (audio recording, global shortcuts, etc.) that can't be done from JavaScript. The frontend talks to Bun via HTTP/WebSocket and to Rust via `invoke()`, both simultaneously from the same page.
+A Bun HTTP server that serves the Svelte frontend, filesystem/workspace API, and Yjs CRDT sync: running identically whether launched as a Tauri sidecar (desktop mode) or standalone (web mode). Tauri provides the native webview shell and a minimal set of Rust IPC commands for OS-level operations (audio recording, global shortcuts, etc.) that can't be done from JavaScript. The frontend talks to Bun via HTTP/WebSocket and to Rust via `invoke()`, both simultaneously from the same page.
 
 ## Motivation
 
@@ -19,7 +19,7 @@ Epicenter is a Tauri desktop app. The frontend (Svelte) is bundled as static ass
 This creates problems:
 
 1. **No web deployment path**: The app only works inside Tauri. There's no way to access the workspace from a browser without the desktop app installed.
-2. **Tight coupling to Tauri IPC**: Every backend operation goes through `invoke()`, meaning the entire API surface is Tauri-specific. If you want to support a standalone web frontend, you'd need to reimplement every operation as an HTTP endpoint — a second API layer.
+2. **Tight coupling to Tauri IPC**: Every backend operation goes through `invoke()`, meaning the entire API surface is Tauri-specific. If you want to support a standalone web frontend, you'd need to reimplement every operation as an HTTP endpoint: a second API layer.
 3. **No headless/server mode**: For use cases like remote access, CI, or running on a server, there's no way to run the backend without the desktop shell.
 
 ### Desired State
@@ -29,7 +29,7 @@ A single server binary that:
 - Serves the Svelte frontend as static files
 - Exposes workspace/filesystem operations over HTTP
 - Runs embedded inside Tauri (desktop mode) or standalone (web mode)
-- The frontend code is identical in both modes — it just talks to its own origin
+- The frontend code is identical in both modes: it just talks to its own origin
 
 ## Research Findings
 
@@ -54,20 +54,20 @@ Tauri 2 supports two modes for loading frontend content:
 1. **Asset protocol** (default): Static files bundled into the binary, served via `tauri://` custom protocol. Fast initial load, Tauri-specific security model.
 2. **External URL**: Webview navigates to an `http://` URL. Standard web behavior. Configured via `WebviewUrl::External(...)` in Rust setup code.
 
-**Key finding**: Switching from asset protocol to an external URL pointed at a local server is a supported, documented Tauri capability. You lose nothing meaningful — the "performance advantage" of the asset protocol is negligible for localhost.
+**Key finding**: Switching from asset protocol to an external URL pointed at a local server is a supported, documented Tauri capability. You lose nothing meaningful: the "performance advantage" of the asset protocol is negligible for localhost.
 
 ### Port Conflict Strategies
 
 | Strategy                  | How It Works                                     | Port Conflicts?                                | Discovery Needed?                                                          |
 | ------------------------- | ------------------------------------------------ | ---------------------------------------------- | -------------------------------------------------------------------------- |
-| Fixed port (e.g. 7777)    | Hardcoded                                        | Yes — any other process on that port breaks it | No                                                                         |
-| Dynamic port (bind to :0) | OS assigns a free port                           | No — guaranteed free                           | Yes — something needs to learn the port                                    |
-| Unix domain sockets       | Socket file on disk (e.g. `/tmp/epicenter.sock`) | No — file path, not port                       | Yes, but file path is predictable. Browsers can't connect directly though. |
+| Fixed port (e.g. 7777)    | Hardcoded                                        | Yes: any other process on that port breaks it | No                                                                         |
+| Dynamic port (bind to :0) | OS assigns a free port                           | No: guaranteed free                           | Yes: something needs to learn the port                                    |
+| Unix domain sockets       | Socket file on disk (e.g. `/tmp/epicenter.sock`) | No: file path, not port                       | Yes, but file path is predictable. Browsers can't connect directly though. |
 | Fixed + fallback          | Try 7777, then 7778, etc.                        | Reduced but not eliminated                     | Partial                                                                    |
 
 **Key finding**: Dynamic port assignment (`:0`) is the most robust. The only question is how the client discovers it.
 
-**Implication**: If the frontend is served FROM the same server, discovery is a non-issue — the frontend already knows its own origin. This eliminates the entire problem.
+**Implication**: If the frontend is served FROM the same server, discovery is a non-issue: the frontend already knows its own origin. This eliminates the entire problem.
 
 ## Research Findings: Bun as Backend Alternative
 
@@ -92,11 +92,11 @@ Tauri's shell plugin provides first-class sidecar support:
 
 - `externalBin` in `tauri.conf.json` bundles binaries per platform (with `-$TARGET_TRIPLE` suffixes)
 - `Command.sidecar()` spawns the binary from JS or Rust
-- **Tauri automatically kills child processes on app exit** — even if only `shell-sidecar` is enabled
+- **Tauri automatically kills child processes on app exit**: even if only `shell-sidecar` is enabled
 - Cleanup can be opted out via `skip_cleanup_on_drop`
 - Frontend communicates with sidecars two ways simultaneously: shell plugin stdin/stdout (through invoke) AND direct HTTP fetch to the sidecar's localhost port
 
-Bun can compile to standalone binaries via `bun build --compile`, producing a single executable per platform — ideal for Tauri's sidecar system.
+Bun can compile to standalone binaries via `bun build --compile`, producing a single executable per platform: ideal for Tauri's sidecar system.
 
 ### Dual-Backend Communication Model
 
@@ -166,8 +166,8 @@ CSP must also allow both IPC and Bun server connections:
 
 | Decision           | Choice                               | Rationale                                                                                                                                       |
 | ------------------ | ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| Primary backend    | Bun (HTTP server as Tauri sidecar)   | Yjs is a JS library — same code on client and server. Fast iteration with TS. Hot reload in dev. `bun build --compile` for standalone binaries. |
-| Native operations  | Rust via Tauri IPC (`invoke()`)      | OS-level APIs (audio, global shortcuts, tray, file watching) stay in Rust. Minimal Rust surface — only what can't be done from JS.              |
+| Primary backend    | Bun (HTTP server as Tauri sidecar)   | Yjs is a JS library: same code on client and server. Fast iteration with TS. Hot reload in dev. `bun build --compile` for standalone binaries. |
+| Native operations  | Rust via Tauri IPC (`invoke()`)      | OS-level APIs (audio, global shortcuts, tray, file watching) stay in Rust. Minimal Rust surface: only what can't be done from JS.              |
 | Protocol           | HTTP (+ WebSocket for real-time)     | Universal. Works from Tauri webview and browser. Standard tooling (curl, DevTools).                                                             |
 | Port strategy      | Dynamic (`:0`) + discovery file      | Zero port conflicts. Discovery file enables external tooling.                                                                                   |
 | Frontend serving   | Bun serves static files + API        | Same origin for frontend and API. Relative URLs, zero port discovery needed.                                                                    |
@@ -245,8 +245,8 @@ Web:     Just the Bun server. No Tauri, no Rust. Same frontend.
 │  ┌─────────────────────────────────────────────┐                    │
 │  │  WebSocket                                   │                    │
 │  │                                              │                    │
-│  │  /ws/sync  — Yjs sync protocol (native JS!)  │                    │
-│  │  /ws/watch — filesystem change events        │                    │
+│  │  /ws/sync : Yjs sync protocol (native JS!)  │                    │
+│  │  /ws/watch: filesystem change events        │                    │
 │  └─────────────────────────────────────────────┘                    │
 └──────────────────────────────────────────────────────────────────────┘
 
@@ -338,7 +338,7 @@ STEP 2: Prints URL
 "Epicenter running at http://127.0.0.1:54321"
 User opens browser.
 
-invoke() is not available — isTauri is false.
+invoke() is not available: isTauri is false.
 Native-only features show graceful fallbacks.
 Everything else works identically.
 ```
@@ -346,14 +346,14 @@ Everything else works identically.
 ### How Tauri Bootstraps the Bun Sidecar
 
 ```rust
-// src-tauri/src/lib.rs — the entire Rust backend
+// src-tauri/src/lib.rs: the entire Rust backend
 
 use tauri_plugin_shell::ShellExt;
 use tauri::webview::{WebviewWindowBuilder, WebviewUrl};
 
 #[tauri::command]
 fn start_recording(device: String) -> Result<String, String> {
-    // Native audio recording — Rust's domain
+    // Native audio recording: Rust's domain
     Ok("recording_started".into())
 }
 
@@ -431,7 +431,7 @@ API lives at             http://127.0.0.1:54321/api/
 Frontend calls:  fetch('/api/fs/read', ...)
                        ▲
                        │
-                 Relative URL — no port needed!
+                 Relative URL, no port needed!
                  Browser resolves to same origin automatically.
 
 The problem literally does not exist when the frontend
@@ -463,9 +463,9 @@ and API share an origin.
 | Binary size        | Tauri shell (~5MB) + Bun sidecar (~30MB)   | Single binary (~10-15MB)                |
 | Startup time       | ~100-200ms (spawn sidecar, wait for port)  | Instant (same process)                  |
 | Dev experience     | Hot reload, TS, fast iteration             | Must recompile for every backend change |
-| Yjs handling       | Native JS — zero friction                  | yrs bindings, serialization boundary    |
+| Yjs handling       | Native JS: zero friction                  | yrs bindings, serialization boundary    |
 | Process management | Sidecar crash needs handling               | Server dies = app dies (simpler)        |
-| Web mode           | `bun run server.ts` — already works        | Must compile standalone binary          |
+| Web mode           | `bun run server.ts`: already works        | Must compile standalone binary          |
 | Ecosystem          | npm, full JS/TS ecosystem                  | Cargo, Rust ecosystem                   |
 | Packaging          | Bundle Bun binary per platform (3 targets) | One binary, Tauri handles it            |
 
@@ -502,7 +502,7 @@ and API share an origin.
 - [ ] **4.1** Design REST API for filesystem operations (`/api/fs/*`)
 - [ ] **4.2** Implement core filesystem endpoints (read, write, list, delete)
 - [ ] **4.3** Add WebSocket endpoint for real-time filesystem change notifications
-- [ ] **4.4** Add Yjs sync WebSocket endpoint (`/ws/sync`) — native JS Yjs on server
+- [ ] **4.4** Add Yjs sync WebSocket endpoint (`/ws/sync`): native JS Yjs on server
 
 ### Phase 5: Standalone CLI
 
@@ -523,11 +523,11 @@ and API share an origin.
 
 1. User starts two instances of Epicenter (two workspaces)
 2. Each gets its own dynamic port
-3. Discovery file should support multiple instances — keyed by workspace path:
+3. Discovery file should support multiple instances: keyed by workspace path:
    ```json
    {
-   	"/Users/braden/workspace-a": { "port": 54321, "pid": 111 },
-   	"/Users/braden/workspace-b": { "port": 54322, "pid": 222 }
+	"/Users/braden/workspace-a": { "port": 54321, "pid": 111 },
+	"/Users/braden/workspace-b": { "port": 54322, "pid": 222 }
    }
    ```
 
@@ -552,11 +552,11 @@ and API share an origin.
 
 2. **Where should the Bun server code live?**
    - Options: (a) `packages/server/`, (b) `apps/epicenter/server/`, (c) new top-level `server/`
-   - **Recommendation**: `packages/server/` — parallel to `packages/epicenter/` (core library) and `packages/ui/` (components). This makes the server a standalone package that can be imported by the Tauri app's sidecar build or run directly.
+   - **Recommendation**: `packages/server/`: parallel to `packages/epicenter/` (core library) and `packages/ui/` (components). This makes the server a standalone package that can be imported by the Tauri app's sidecar build or run directly.
 
 3. **How should authentication work for standalone web mode?**
    - Options: (a) No auth (localhost only), (b) Token-based (generated on server start, user copies into browser), (c) OS-level (check that connecting process is same user)
-   - **Recommendation**: Start with (a) — no auth, `127.0.0.1` binding. Add token auth later if remote access becomes a requirement.
+   - **Recommendation**: Start with (a): no auth, `127.0.0.1` binding. Add token auth later if remote access becomes a requirement.
 
 4. **How should the Bun sidecar binary be compiled and bundled?**
    - `bun build --compile` produces a standalone binary per platform (~30MB)
@@ -571,7 +571,7 @@ and API share an origin.
 6. **How should sidecar crash recovery work?**
    - If the Bun sidecar crashes, the webview shows a blank page or stale content
    - Options: (a) Tauri detects sidecar exit and restarts it, (b) Show an error page in the webview, (c) Kill the entire Tauri app and let the user relaunch
-   - **Recommendation**: (a) — Detect sidecar exit via the `rx` channel in `setup()`, attempt one restart. If it fails again, show an error dialog and exit.
+   - **Recommendation**: (a): Detect sidecar exit via the `rx` channel in `setup()`, attempt one restart. If it fails again, show an error dialog and exit.
 
 ## Success Criteria
 
@@ -586,13 +586,13 @@ and API share an origin.
 
 ## References
 
-- `apps/epicenter/` — Current Tauri app (will be modified in Phase 2)
-- `apps/epicenter/src-tauri/` — Rust backend (thin shell + native commands only)
-- `packages/epicenter/` — Core TypeScript/Yjs library (runs on both client and Bun server)
-- `packages/ui/` — Svelte UI components (unchanged, served as static files by Bun)
-- `packages/server/` — Bun HTTP server (new — serves frontend, API, WebSocket)
-- [Tauri v2 Sidecar Docs](https://v2.tauri.app/develop/sidecar/) — Embedding external binaries
-- [Tauri v2 Shell Plugin](https://v2.tauri.app/plugin/shell/) — Spawning and managing sidecars
-- [Tauri v2 Localhost Plugin](https://v2.tauri.app/plugin/localhost/) — Reference for External URL pattern
-- [Tauri v2 Capabilities](https://v2.tauri.app/security/capabilities/) — Remote URL IPC access config
-- [Bun Compile](https://bun.sh/docs/bundler/executables) — `bun build --compile` for standalone binaries
+- `apps/epicenter/`: Current Tauri app (will be modified in Phase 2)
+- `apps/epicenter/src-tauri/`: Rust backend (thin shell + native commands only)
+- `packages/epicenter/`: Core TypeScript/Yjs library (runs on both client and Bun server)
+- `packages/ui/`: Svelte UI components (unchanged, served as static files by Bun)
+- `packages/server/`: Bun HTTP server (new: serves frontend, API, WebSocket)
+- [Tauri v2 Sidecar Docs](https://v2.tauri.app/develop/sidecar/): Embedding external binaries
+- [Tauri v2 Shell Plugin](https://v2.tauri.app/plugin/shell/): Spawning and managing sidecars
+- [Tauri v2 Localhost Plugin](https://v2.tauri.app/plugin/localhost/): Reference for External URL pattern
+- [Tauri v2 Capabilities](https://v2.tauri.app/security/capabilities/): Remote URL IPC access config
+- [Bun Compile](https://bun.sh/docs/bundler/executables): `bun build --compile` for standalone binaries

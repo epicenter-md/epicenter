@@ -15,7 +15,7 @@ Replace the blanket `requireApprovalForMutations` option with a progressive trus
 Three overlapping mechanisms control tool approval:
 
 ```typescript
-// 1. Blanket option on the tool bridge (UNUSED — nobody passes true)
+// 1. Blanket option on the tool bridge (UNUSED: nobody passes true)
 actionsToClientTools(actions, { requireApprovalForMutations: true });
 
 // 2. Per-action `destructive` flag (just added)
@@ -28,7 +28,7 @@ defineMutation({ destructive: true, ... });
 Meanwhile, quick actions already have a clean destructive flow:
 
 ```typescript
-// quick-actions.ts — dangerous flag → confirmationDialog
+// quick-actions.ts: dangerous flag → confirmationDialog
 const dedupAction: QuickAction = {
   dangerous: true,
   execute() {
@@ -41,14 +41,14 @@ const dedupAction: QuickAction = {
 };
 ```
 
-But the AI chat has **no approval UI at all**. Tools auto-execute immediately — `ToolCallPart.svelte` shows a spinner, then a result. No gate, no confirmation, nothing.
+But the AI chat has **no approval UI at all**. Tools auto-execute immediately: `ToolCallPart.svelte` shows a spinner, then a result. No gate, no confirmation, nothing.
 
 This creates problems:
 
-1. **`requireApprovalForMutations` is dead code** — nobody passes it, and now that `destructive` exists it's redundant
-2. **`needsApproval` is always set** — the tool bridge currently sets `needsApproval: false` on non-destructive tools instead of omitting it, which sends unnecessary data over the wire
-3. **No approval UI in chat** — even though `destructive` flows to `needsApproval` on the wire, the client never acts on it. TanStack AI's `ChatClient` has a `client.approve(toolCallId)` method that's never called
-4. **Two confirmation systems** — quick actions use `confirmationDialog`; the AI chat will need inline approval. These should share the trust concept but use different UI
+1. **`requireApprovalForMutations` is dead code**: nobody passes it, and now that `destructive` exists it's redundant
+2. **`needsApproval` is always set**: the tool bridge currently sets `needsApproval: false` on non-destructive tools instead of omitting it, which sends unnecessary data over the wire
+3. **No approval UI in chat**: even though `destructive` flows to `needsApproval` on the wire, the client never acts on it. TanStack AI's `ChatClient` has a `client.approve(toolCallId)` method that's never called
+4. **Two confirmation systems**: quick actions use `confirmationDialog`; the AI chat will need inline approval. These should share the trust concept but use different UI
 
 ### Desired State
 
@@ -78,14 +78,14 @@ This creates problems:
 
 ## Research Findings
 
-### TanStack AI Approval API (Phase 3 Research — Confirmed)
+### TanStack AI Approval API (Phase 3 Research: Confirmed)
 
 TanStack AI's `ChatClient` has built-in approval support. Verified from source:
 
-- **Server-side**: `chat()` automatically checks `needsApproval` on tool definitions and emits a `CUSTOM` SSE event named `approval-requested`. No server code changes needed — `apps/api/src/ai-chat.ts` already passes tools through to `chat()`.
-- **`chatClient.addToolApprovalResponse({ id, approved })`** — the approval method. `id` is `part.approval.id` (not `toolCallId`), `approved` is `true`/`false`.
-- **`ToolCallPart.state`** — possible values include `'approval-requested'` (waiting for user) and `'approval-responded'` (user acted).
-- **`ToolCallPart.approval`** — object with `{ id: string, needsApproval: boolean, approved?: boolean }`. `approved` is `undefined` while pending.
+- **Server-side**: `chat()` automatically checks `needsApproval` on tool definitions and emits a `CUSTOM` SSE event named `approval-requested`. No server code changes needed: `apps/api/src/ai-chat.ts` already passes tools through to `chat()`.
+- **`chatClient.addToolApprovalResponse({ id, approved })`**: the approval method. `id` is `part.approval.id` (not `toolCallId`), `approved` is `true`/`false`.
+- **`ToolCallPart.state`**: possible values include `'approval-requested'` (waiting for user) and `'approval-responded'` (user acted).
+- **`ToolCallPart.approval`**: object with `{ id: string, needsApproval: boolean, approved?: boolean }`. `approved` is `undefined` while pending.
 
 **Corrected flow**: LLM calls tool → server detects `needsApproval` → emits `CUSTOM` `approval-requested` SSE event → `ChatClient` updates `part.state` to `'approval-requested'` → UI renders approve/deny → user acts → `addToolApprovalResponse({ id: part.approval.id, approved })` → server resumes or denies.
 
@@ -95,12 +95,12 @@ TanStack AI's `ChatClient` has built-in approval support. Verified from source:
 
 | Product | Approval Model | Progressive Trust? |
 |---|---|---|
-| Claude Desktop (MCP) | "Allow for This Chat" / "Always Allow" per-tool | Yes — two levels |
-| Cursor | Inline approve for terminal, auto-approve for edits | Partial — yolo mode |
-| OpenCode | Inline approve/deny in chat thread | No — per-invocation |
-| ChatGPT Actions | "Always allow [domain]" on first use | Yes — per-domain |
+| Claude Desktop (MCP) | "Allow for This Chat" / "Always Allow" per-tool | Yes: two levels |
+| Cursor | Inline approve for terminal, auto-approve for edits | Partial: yolo mode |
+| OpenCode | Inline approve/deny in chat thread | No: per-invocation |
+| ChatGPT Actions | "Always allow [domain]" on first use | Yes: per-domain |
 
-**Key finding**: "Always Allow" per-tool is the standard pattern. No product does "approve N times then escalate" — it's always a one-click trust decision.
+**Key finding**: "Always Allow" per-tool is the standard pattern. No product does "approve N times then escalate": it's always a one-click trust decision.
 
 **Implication**: Two trust levels is the right model: `ask` (show approval UI) and `always` (auto-approve with indicator).
 
@@ -112,7 +112,7 @@ TanStack AI's `ChatClient` has built-in approval support. Verified from source:
 | AI Tool Calls | `destructive: true` | None (auto-executes) | None |
 | System Prompt | "confirm if count > 5" | AI asks in prose | None |
 
-**Key finding**: The confirmation dialog is wrong for chat context — it breaks conversation flow. Inline approval is the right pattern for streaming chat.
+**Key finding**: The confirmation dialog is wrong for chat context: it breaks conversation flow. Inline approval is the right pattern for streaming chat.
 
 ## Design Decisions
 
@@ -124,7 +124,7 @@ TanStack AI's `ChatClient` has built-in approval support. Verified from source:
 | Trust persistence | Workspace table (`toolTrustTable`) | CRDT-backed, syncs across devices, follows existing workspace data pattern |
 | Trust levels | `ask` / `always` (2 levels) | Matches industry standard; no unnecessary complexity |
 | Trust scope | Per-action name, not per-session | "Always Allow" means always, across conversations |
-| Trust revocation | Settings page toggle | Not in the approval UI itself — too easy to misclick |
+| Trust revocation | Settings page toggle | Not in the approval UI itself: too easy to misclick |
 | Non-destructive tools | No approval ever | Queries and safe mutations auto-execute always |
 
 ## Architecture
@@ -136,7 +136,7 @@ TanStack AI's `ChatClient` has built-in approval support. Verified from source:
 type TrustLevel = 'ask' | 'always';
 
 // Backed by workspace table (toolTrustTable in workspace.ts)
-// CRDT-synced across devices — non-destructive tools are implicitly 'always'
+// CRDT-synced across devices: non-destructive tools are implicitly 'always'
 ```
 
 ### Approval Flow
@@ -200,34 +200,34 @@ Server checks needsApproval on tool definition
 ├─────────────────────────────────────────────────────┤
 │  State: DENIED                                      │
 │                                                     │
-│  ⛔ Close Tabs — denied                             │
+│  ⛔ Close Tabs: denied                             │
 │     └─ Details                                      │
 └─────────────────────────────────────────────────────┘
 ```
 
 ## Implementation Plan
 
-### Phase 1: Cleanup — Remove `requireApprovalForMutations`
+### Phase 1: Cleanup: Remove `requireApprovalForMutations`
 
 - [x] **1.1** Remove `requireApprovalForMutations` option from `actionsToClientTools` in `packages/ai/src/tool-bridge.ts`
 - [x] **1.2** Change `needsApproval` to only be set when `action.destructive` is truthy (conditional spread, not always-set)
 - [x] **1.3** In `toToolDefinitions`, only forward `needsApproval` when truthy (match the conditional pattern)
-- [x] **1.4** Update `tool-bridge.test.ts` — remove the `requireApprovalForMutations` test, keep the `destructive → needsApproval` test, add a test that non-destructive tools omit `needsApproval`
+- [x] **1.4** Update `tool-bridge.test.ts`: remove the `requireApprovalForMutations` test, keep the `destructive → needsApproval` test, add a test that non-destructive tools omit `needsApproval`
 - [x] **1.5** Update the `ToolDefinitionPayload` JSDoc to reflect the simplified model
 - [x] **1.6** Remove the `requireApprovalForMutations` mentions from the previous spec's review section
 
 ### Phase 2: Trust State
 
-- [x] **2.1** Create `apps/tab-manager/src/lib/state/tool-trust.svelte.ts` — reactive trust state backed by workspace table
+- [x] **2.1** Create `apps/tab-manager/src/lib/state/tool-trust.svelte.ts`: reactive trust state backed by workspace table
   > **Deviation**: Changed from localStorage to a `defineTable`-backed workspace table (`toolTrustTable` in `workspace.ts`). This gives per-row CRDT merging across devices and follows the existing workspace data pattern. The table is defined in `apps/tab-manager/src/lib/workspace.ts`.
 - [x] **2.2** Export `getToolTrust(name: string): TrustLevel`, `setToolTrust(name: string, level: TrustLevel)`, and `toolTrustState` (reactive SvelteMap synced via `.observe()`)
 - [x] **2.3** Default: all tools are implicitly `'ask'` unless the user has explicitly trusted them via `setToolTrust`
 
 ### Phase 3: Investigate TanStack AI Approval Integration
 
-- [x] **3.1** Research how TanStack AI's ChatClient signals approval state — confirmed `part.state === 'approval-requested'` and `part.approval` object
-- [x] **3.2** Research how to call approval — confirmed: `chatClient.addToolApprovalResponse({ id: part.approval.id, approved: boolean })`
-- [x] **3.3** Research whether the server needs changes — **No changes needed.** `chat()` auto-handles `needsApproval` and emits `approval-requested` SSE events
+- [x] **3.1** Research how TanStack AI's ChatClient signals approval state: confirmed `part.state === 'approval-requested'` and `part.approval` object
+- [x] **3.2** Research how to call approval: confirmed: `chatClient.addToolApprovalResponse({ id: part.approval.id, approved: boolean })`
+- [x] **3.3** Research whether the server needs changes: **No changes needed.** `chat()` auto-handles `needsApproval` and emits `approval-requested` SSE events
 - [x] **3.4** Document findings and update this spec before proceeding to Phase 4
 
 ### Phase 4: Inline Approval UI
@@ -238,13 +238,13 @@ Server checks needsApproval on tool definition
 - [x] **4.4** Wire [Allow] to `aiChatState.active?.approveToolCall(approval.id, true)`
 - [x] **4.5** Wire [Always Allow] to `setToolTrust(name, 'always')` + `approveToolCall`
 - [x] **4.6** Wire [Deny] to `aiChatState.active?.approveToolCall(approval.id, false)`
-- [x] **4.7** Style the approval UI — ShieldAlert/ShieldCheck icons, outline/ghost buttons, amber/green colors
-- [x] **4.8** Expose `approveToolCall` from chat-state via `ConversationHandle` — delegates to `client.addToolApprovalResponse`
+- [x] **4.7** Style the approval UI: ShieldAlert/ShieldCheck icons, outline/ghost buttons, amber/green colors
+- [x] **4.8** Expose `approveToolCall` from chat-state via `ConversationHandle`: delegates to `client.addToolApprovalResponse`
 
 ### Phase 5: Verification
 
 - [x] **5.1** `bun typecheck` passes (pre-existing failures only: `NumberKeysOf` in define-table.ts, `#/utils.js` in UI package)
-- [x] **5.2** `bun test` passes — tool-bridge (4/4), describe-workspace (9/9)
+- [x] **5.2** `bun test` passes: tool-bridge (4/4), describe-workspace (9/9)
 - [x] **5.3** Manual test: destructive tool in chat shows approval UI
 - [x] **5.4** Manual test: "Always Allow" persists across conversations
 - [x] **5.5** Manual test: non-destructive tools auto-execute without approval
@@ -255,21 +255,21 @@ Server checks needsApproval on tool definition
 1. Developer adds a new `destructive: true` action
 2. User has never seen it → no trust entry in the workspace table
 3. Default behavior: show approval UI (`'ask'`)
-4. This is correct — new destructive actions are untrusted by default
+4. This is correct: new destructive actions are untrusted by default
 
 ### Workspace data reset
 
 1. User resets their workspace or starts fresh
 2. All trust entries are lost (part of the Y.Doc)
 3. Destructive actions revert to `'ask'`
-4. This is acceptable — re-trusting is low friction
+4. This is acceptable: re-trusting is low friction
 
 ### Multiple destructive tool calls in one response
 
 1. AI calls `tabs.close` three times in one response (e.g. closing tabs from different windows)
 2. If trust is `'ask'`: show approval for each tool call independently
 3. If trust is `'always'`: auto-approve all three
-4. No "approve all" batch button — keep it simple for now
+4. No "approve all" batch button: keep it simple for now
 
 ### Server doesn't support APPROVAL_REQUESTED
 
@@ -282,7 +282,7 @@ Server checks needsApproval on tool definition
 1. **Does the API server support `APPROVAL_REQUESTED`?**
    - The server at `apps/api/src/` has no grep hits for `needsApproval`, `approval`, or `executeToolCalls`
    - Phase 3 will investigate whether `chat()` from TanStack AI automatically handles this
-   - **Recommendation**: If not, client-side interception is simpler — wrap `execute` functions with a trust gate
+   - **Recommendation**: If not, client-side interception is simpler: wrap `execute` functions with a trust gate
 
 2. **Should "Always Allow" persist across extension updates?**
    - Workspace table data persists via IndexedDB and Y.Doc sync
@@ -294,7 +294,7 @@ Server checks needsApproval on tool definition
 
 4. **What about the system prompt "confirm if count > 5" guideline?**
    - The system prompt tells the AI to confirm large operations in prose
-   - With proper approval UI, this is redundant — the UI handles it
+   - With proper approval UI, this is redundant: the UI handles it
    - **Recommendation**: Remove that guideline from the system prompt in Phase 1, or defer to a later cleanup
 
 ## Success Criteria
@@ -307,13 +307,13 @@ Server checks needsApproval on tool definition
 - [x] All existing tests pass with no regressions
 ## References
 
-- `packages/ai/src/tool-bridge.ts` — `actionsToClientTools`, `toToolDefinitions`, `needsApproval` logic
-- `packages/ai/src/tool-bridge.test.ts` — Tests for destructive → needsApproval mapping
-- `packages/workspace/src/shared/actions.ts` — `ActionConfig.destructive` definition
-- `apps/tab-manager/src/lib/workspace.ts` — All 13 action definitions with `destructive: true` on `tabs.close`
-- `apps/tab-manager/src/lib/components/chat/ToolCallPart.svelte` — Current tool call rendering (no approval UI)
-- `apps/tab-manager/src/lib/state/chat-state.svelte.ts` — `ChatClient` setup, `workspaceTools` passed as client tools
-- `apps/tab-manager/src/lib/quick-actions.ts` — Existing `dangerous` flag pattern with `confirmationDialog`
-- `packages/ui/src/confirmation-dialog/` — Existing confirmation dialog (for reference, not for reuse in chat)
-- `apps/tab-manager/src/lib/ai/system-prompt.ts` — "confirm if count > 5" guideline to potentially remove
-- `specs/20260312T153000-action-metadata-title-destructive.md` — Previous spec that added `destructive`
+- `packages/ai/src/tool-bridge.ts`: `actionsToClientTools`, `toToolDefinitions`, `needsApproval` logic
+- `packages/ai/src/tool-bridge.test.ts`: Tests for destructive → needsApproval mapping
+- `packages/workspace/src/shared/actions.ts`: `ActionConfig.destructive` definition
+- `apps/tab-manager/src/lib/workspace.ts`: All 13 action definitions with `destructive: true` on `tabs.close`
+- `apps/tab-manager/src/lib/components/chat/ToolCallPart.svelte`: Current tool call rendering (no approval UI)
+- `apps/tab-manager/src/lib/state/chat-state.svelte.ts`: `ChatClient` setup, `workspaceTools` passed as client tools
+- `apps/tab-manager/src/lib/quick-actions.ts`: Existing `dangerous` flag pattern with `confirmationDialog`
+- `packages/ui/src/confirmation-dialog/`: Existing confirmation dialog (for reference, not for reuse in chat)
+- `apps/tab-manager/src/lib/ai/system-prompt.ts`: "confirm if count > 5" guideline to potentially remove
+- `specs/20260312T153000-action-metadata-title-destructive.md`: Previous spec that added `destructive`

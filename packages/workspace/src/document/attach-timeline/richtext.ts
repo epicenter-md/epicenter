@@ -7,7 +7,7 @@
  * no functional difference but simpler mental model).
  *
  * Plaintext *extraction* is exposed as `xmlFragmentToPlaintext` from
- * `@epicenter/workspace` — import it from there.
+ * `@epicenter/workspace`: import it from there.
  *
  * @module
  */

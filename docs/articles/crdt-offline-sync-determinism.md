@@ -66,7 +66,7 @@ Here's how dmonad (Yjs creator) explains it:
 
 > "Systems for conflict resolution should not rely on time (as in 'wall clock time'). First of all, time is not synced between devices. Secondly, who is to say that changes from desktop client should supersede changes from mobile client just because they happened 'later' (however you wanna measure this)?"
 >
-> — [dmonad, GitHub issue #520](https://github.com/yjs/yjs/issues/520)
+> Source: [dmonad, GitHub issue #520](https://github.com/yjs/yjs/issues/520)
 
 ### The core problem with timestamps
 
@@ -136,7 +136,7 @@ For most apps, **clientID ordering + good data modeling** (cell-level granularit
 
 ## The Bottom Line
 
-Design your data so conflicts are rare (different cells = no conflict), and trust the CRDT to handle the rare same-cell case deterministically. Don't add timestamp complexity unless users are actually complaining—and even then, understand you're trading guaranteed convergence for intuitive-but-risky ordering.
+Design your data so conflicts are rare (different cells = no conflict), and trust the CRDT to handle the rare same-cell case deterministically. Don't add timestamp complexity unless users are actually complaining. And even then, understand you're trading guaranteed convergence for intuitive-but-risky ordering.
 
 The goal isn't "fair" conflict resolution. The goal is **every device agreeing on reality**.
 

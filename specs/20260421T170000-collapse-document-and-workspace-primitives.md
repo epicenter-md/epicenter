@@ -17,7 +17,7 @@ shipped_commits:
 
 Two changes, no renames, no app rewrites:
 
-1. **Delete `createWorkspace`** and the entire extensions chain (`~700 lines`). Ten consumers migrate to direct `defineDocument` composition — the pattern seven apps already use in production.
+1. **Delete `createWorkspace`** and the entire extensions chain (`~700 lines`). Ten consumers migrate to direct `defineDocument` composition: the pattern seven apps already use in production.
 2. **Export a `DocumentBundle` type** from `@epicenter/workspace` and have `defineDocument`'s generic constrain to it. Formalizes the contract that already exists implicitly.
 
 ```text
@@ -32,7 +32,7 @@ Two changes, no renames, no app rewrites:
  ├──────────────────────────────────┤      ├──────────────────────────────────┤
  │ defineDocument(build, opts?)     │      │ defineDocument(build, opts?)      │
  │  .open(id) / .close / .closeAll  │      │  .open(id) / .close / .closeAll   │
- │  (unchanged — already universal) │      │  + constrained to DocumentBundle  │
+ │  (unchanged: already universal) │      │  + constrained to DocumentBundle  │
  └──────────────────────────────────┘      └──────────────────────────────────┘
 ```
 
@@ -40,11 +40,11 @@ Two changes, no renames, no app rewrites:
 
 Earlier drafts of this spec proposed splitting `defineDocument` into two primitives (`build*` for singletons, `createDocumentCache` for multi-doc), renaming app-level bindings, and imposing a three-tier taxonomy. After a call-site ergonomics shootout across whispering, fuji, and the other five app clients:
 
-- The split forced a fake distinction. `defineDocument` already serves both cases — singletons just call `.open()` once, multi-doc calls `.open()` N times.
+- The split forced a fake distinction. `defineDocument` already serves both cases: singletons just call `.open()` once, multi-doc calls `.open()` N times.
 - Every concrete rename (`createDocumentCache`, `createDocumentPool`, `createDocumentRegistry`) was honest for multi-doc but dishonest for singletons, and vice versa.
 - The "before → after" diff per app was 4 characters of net change. Not worth touching seven stable files.
 
-`defineDocument` is abstract enough to cover both cases honestly — matching the ecosystem's `define*` pattern (Vue's `defineComponent`, Astro's `defineCollection`, Pinia's `defineStore`), which also commit to neither "one" nor "many." The primitive names the definition; how many instances get opened is usage, not design.
+`defineDocument` is abstract enough to cover both cases honestly: matching the ecosystem's `define*` pattern (Vue's `defineComponent`, Astro's `defineCollection`, Pinia's `defineStore`), which also commit to neither "one" nor "many." The primitive names the definition; how many instances get opened is usage, not design.
 
 This spec therefore does two things and nothing else.
 
@@ -98,10 +98,10 @@ Zero runtime change. Pure additive type constraint. Everything already satisfies
 
 ```text
 packages/workspace/src/workspace/create-workspace.ts     ~459 lines
-packages/workspace/src/workspace/create-workspace.test.ts  ~750 lines (test file — large)
-packages/workspace/src/workspace/lifecycle.ts             — ExtensionFactory, RawExtension, ExtensionContext
+packages/workspace/src/workspace/create-workspace.test.ts  ~750 lines (test file: large)
+packages/workspace/src/workspace/lifecycle.ts            : ExtensionFactory, RawExtension, ExtensionContext
                                                              WorkspaceClientBuilder, SharedExtensionContext
-packages/workspace/src/extensions/                        — entire directory (persistence, sync, materializer)
+packages/workspace/src/extensions/                       : entire directory (persistence, sync, materializer)
                                                              if no other consumer remains after migration
 ```
 
@@ -113,7 +113,7 @@ Plus exports in `packages/workspace/src/index.ts` and `workspace/index.ts`:
 -               WorkspaceClientBuilder, SharedExtensionContext } from './workspace/types';
 ```
 
-## What stays — explicitly
+## What stays: explicitly
 
 | Thing                          | Stays? | Why                                                                 |
 |--------------------------------|:------:|---------------------------------------------------------------------|
@@ -128,7 +128,7 @@ Plus exports in `packages/workspace/src/index.ts` and `workspace/index.ts`:
 
 ## Migration plan
 
-### Phase 1 — migrate the 10 `createWorkspace` consumers
+### Phase 1: migrate the 10 `createWorkspace` consumers
 
 One commit per consumer group for reviewability. Each migration is mechanical:
 
@@ -154,24 +154,24 @@ const client     = { ydoc, tables, kv, encryption, sync,
 
 **Playgrounds** (`playground/opensidian-e2e/*`): same shape as CLI but with `attachSqlite` instead of `attachSync`.
 
-**Tests** (5 files): trivial — they only use `createWorkspace` for `{ id, tables, kv }`, so they flip to `new Y.Doc({ guid: id })` + `attachEncryptedTables` + `attachEncryptedKv`.
+**Tests** (5 files): trivial: they only use `createWorkspace` for `{ id, tables, kv }`, so they flip to `new Y.Doc({ guid: id })` + `attachEncryptedTables` + `attachEncryptedKv`.
 
 **Bench** (`operations.bench.test.ts`): already migrated in commit `730cf72e6`. Verify no re-introduction.
 
 Commits: 4 (CLI, playgrounds, tests, bench-verify).
 
-### Phase 2 — delete `createWorkspace` machinery
+### Phase 2: delete `createWorkspace` machinery
 
 - Delete `create-workspace.ts`, `create-workspace.test.ts`.
 - Delete `lifecycle.ts` types (`ExtensionFactory`, `RawExtension`, `ExtensionContext`, `WorkspaceClientBuilder`, `SharedExtensionContext`).
-- Audit `packages/workspace/src/extensions/` — if every extension module only exports functions consumed by `createWorkspace`, delete the directory. If any extension has a non-createWorkspace consumer (`attachSqlite` etc.), keep it and move it to `document/` (merge spec terminology).
-- Update `packages/workspace/src/index.ts` + `workspace/index.ts` — remove `createWorkspace`, extension types, any builder-pattern re-exports.
-- Run `bun run typecheck` from repo root — clean.
-- Run `bun test --cwd packages/workspace` — all green.
+- Audit `packages/workspace/src/extensions/`: if every extension module only exports functions consumed by `createWorkspace`, delete the directory. If any extension has a non-createWorkspace consumer (`attachSqlite` etc.), keep it and move it to `document/` (merge spec terminology).
+- Update `packages/workspace/src/index.ts` + `workspace/index.ts`: remove `createWorkspace`, extension types, any builder-pattern re-exports.
+- Run `bun run typecheck` from repo root: clean.
+- Run `bun test --cwd packages/workspace`: all green.
 
 Commits: 1.
 
-### Phase 3 — add `DocumentBundle` type
+### Phase 3: add `DocumentBundle` type
 
 - Export `DocumentBundle` from `@epicenter/workspace` root.
 - Tighten `defineDocument`'s generic signature: `T extends { ydoc: Y.Doc } & Disposable` → `T extends DocumentBundle`.
@@ -180,16 +180,16 @@ Commits: 1.
 
 Commits: 1.
 
-### Phase 4 — documentation + dependent consumer cleanup
+### Phase 4: documentation + dependent consumer cleanup
 
 - Update `packages/workspace/README.md`: remove the `createWorkspace` section; add a one-paragraph note on `defineDocument` serving both singleton and multi-doc.
 - Update `.agents/skills/workspace-api/SKILL.md`: drop `createWorkspace` references.
 - Update `AGENTS.md` if it mentions the extension chain.
-- **Rewrite `SyncView` in `packages/svelte-utils/src/account-popover/account-popover.svelte`** (lines ~18–43). The current docstring frames the structural type as "intersection of the legacy extension-chain client (`workspace.extensions.sync`) and a direct `defineDocument` closure bundle (`workspace.sync`), so apps can migrate incrementally without a compat shim." Once `createWorkspace` dies, there is no extension-chain shape — only `workspace.sync`. Collapse the docstring, and if no structural flexibility is still needed, replace `SyncView` with `SyncAttachment` (imported from `@epicenter/workspace`) and update callers. Left in place during the merge because the narrative still held; this phase is the first moment it stops holding.
+- **Rewrite `SyncView` in `packages/svelte-utils/src/account-popover/account-popover.svelte`** (lines ~18-43). The current docstring frames the structural type as "intersection of the legacy extension-chain client (`workspace.extensions.sync`) and a direct `defineDocument` closure bundle (`workspace.sync`), so apps can migrate incrementally without a compat shim." Once `createWorkspace` dies, there is no extension-chain shape: only `workspace.sync`. Collapse the docstring, and if no structural flexibility is still needed, replace `SyncView` with `SyncAttachment` (imported from `@epicenter/workspace`) and update callers. Left in place during the merge because the narrative still held; this phase is the first moment it stops holding.
 
 Commits: 1.
 
-### Phase 5 — directory collapse (optional, low-risk)
+### Phase 5: directory collapse (optional, low-risk)
 
 After `createWorkspace` is gone, `src/workspace/` shrinks to a handful of primitive files that belong alongside the document primitives: `define-kv.ts`, `define-table.ts`, `attach-encryption.ts`, `attach-encrypted.ts`, `encryption-key.ts`, `describe-workspace.ts` (if retained). The `src/document/` vs `src/workspace/` split was load-bearing during the merge; post-createWorkspace it just forces arbitrary pathing decisions on new contributors.
 
@@ -220,9 +220,9 @@ Sequencing rationale:
 |-----------------------------|:------------------------:|:----------:|:-----:|
 | Merge → this spec (recommended) |          Once          |    None    | Low   |
 | This spec → merge           |          Twice          | Minor (imports) | Medium |
-| Single PR combining both    |          Once          |    None    | Higher — bigger blast radius for review |
+| Single PR combining both    |          Once          |    None    | Higher: bigger blast radius for review |
 
-The merge spec's "createWorkspace fate" section already names this spec as its planned follow-up — its Open Question #4 is exactly the scope of this document.
+The merge spec's "createWorkspace fate" section already names this spec as its planned follow-up: its Open Question #4 is exactly the scope of this document.
 
 ### `20260421T010000-collapse-defineworkspace-into-definedocument.md` (predecessor, done)
 
@@ -230,7 +230,7 @@ That spec collapsed `defineWorkspace` into `createWorkspace`. This spec complete
 
 ### `20260421T140000-encryption-primitive-refactor.md` (done)
 
-Not affected. The encryption attach API stays unchanged — `attachEncryption(ydoc)` + `attachEncryptedTable(ydoc, encryption, …)` are exactly what the new inline-composition consumers will use.
+Not affected. The encryption attach API stays unchanged: `attachEncryption(ydoc)` + `attachEncryptedTable(ydoc, encryption, …)` are exactly what the new inline-composition consumers will use.
 
 ## Design decisions
 
@@ -271,22 +271,22 @@ Not affected. The encryption attach API stays unchanged — `attachEncryption(yd
 4. **`defineDocument` vs `defineDocuments`** (plural)?
    Plural would hint "multi-instance factory." But the ecosystem uses singular (`defineComponent`, `defineStore`) and it reads better inline. Keep singular.
 
-5. **`SyncView` in `account-popover.svelte` — structural type or direct `SyncAttachment`?**
+5. **`SyncView` in `account-popover.svelte`: structural type or direct `SyncAttachment`?**
    The current structural shape intersects `workspace.extensions.sync` with `workspace.sync` for migration. Once createWorkspace dies, the only producer is `attachSync`. If every consumer passes an `attachSync` result directly, just type it as `SyncAttachment` and delete `SyncView`. Verify by tracing the prop at every call site during Phase 4.
 
 6. **`src/document/` vs `src/workspace/` after the collapse** (Phase 5): merge or flatten?
    Recommended Option A (merge `workspace/` primitives into `document/`) in the spec above, but the call isn't final until Phase 4 closes and we see what's left in `src/workspace/`. If the remaining files all match the `attach-*` / `define-*` primitive grammar, Option A is obvious. If an oddball survives, it may warrant its own file and the question reopens.
 
-## Out of scope — track separately
+## Out of scope: track separately
 
-- **`packages/workspace/src/document/y-keyvalue/_reference/y-keyvalue.ts`** is marked `@internal Not used in production` in its own JSDoc, yet `y-keyvalue/index.ts` re-exports `YKeyValue` from it. Repo-wide production consumers: zero. References: benchmarks + the LWW variant's tests. Pre-existing from before the merge, not created by it. Separate cleanup: either stop re-exporting from the public barrel or move the file under `scripts/yjs-benchmarks/`. Noted here because Phase 5's directory collapse will walk the `y-keyvalue/` subtree and may tempt the agent to bundle this — don't.
+- **`packages/workspace/src/document/y-keyvalue/_reference/y-keyvalue.ts`** is marked `@internal Not used in production` in its own JSDoc, yet `y-keyvalue/index.ts` re-exports `YKeyValue` from it. Repo-wide production consumers: zero. References: benchmarks + the LWW variant's tests. Pre-existing from before the merge, not created by it. Separate cleanup: either stop re-exporting from the public barrel or move the file under `scripts/yjs-benchmarks/`. Noted here because Phase 5's directory collapse will walk the `y-keyvalue/` subtree and may tempt the agent to bundle this: don't.
 
 ## References
 
-- `packages/workspace/src/workspace/create-workspace.ts` — the 459-line file being deleted
-- `packages/document/src/define-document.ts` — the primitive being kept (post-merge: `packages/workspace/src/document/define-document.ts`)
-- `packages/cli/src/connect.ts` — largest consumer migration
-- `apps/whispering/src/lib/client.ts` — representative singleton call site (unchanged)
-- `packages/filesystem/src/file-content-docs.ts` — representative multi-doc call site (unchanged)
-- `specs/20260421T170000-merge-document-into-workspace.md` — the merge spec this sequences after
-- `specs/20260421T010000-collapse-defineworkspace-into-definedocument.md` — the predecessor (completed)
+- `packages/workspace/src/workspace/create-workspace.ts`: the 459-line file being deleted
+- `packages/document/src/define-document.ts`: the primitive being kept (post-merge: `packages/workspace/src/document/define-document.ts`)
+- `packages/cli/src/connect.ts`: largest consumer migration
+- `apps/whispering/src/lib/client.ts`: representative singleton call site (unchanged)
+- `packages/filesystem/src/file-content-docs.ts`: representative multi-doc call site (unchanged)
+- `specs/20260421T170000-merge-document-into-workspace.md`: the merge spec this sequences after
+- `specs/20260421T010000-collapse-defineworkspace-into-definedocument.md`: the predecessor (completed)

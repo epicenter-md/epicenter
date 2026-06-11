@@ -34,14 +34,14 @@ Local-first apps using YJS need to evolve their data schemas over time. Unlike t
 - Data can arrive from any peer at any schema version
 - YJS uses last-write-wins (LWW) at the **field level**, not row level
 - Old clients may sync with new clients indefinitely
-- There's no single "migration window" — migrations must be safe to run anytime
+- There's no single "migration window": migrations must be safe to run anytime
 
 We need an API that:
 
 1. Makes common schema changes easy (add field, rename, etc.)
 2. Preserves type safety through the migration chain
 3. Works correctly with YJS's conflict resolution
-4. Follows the 80/20 rule — easy for common cases, possible for rare cases
+4. Follows the 80/20 rule: easy for common cases, possible for rare cases
 
 ---
 
@@ -72,7 +72,7 @@ Device B (offline): Edits just the "title" field on v1
 Both sync...
 ```
 
-**Result**: If A's migration wrote the `title` field (even with its old value), A and B both wrote to the same key. YJS picks one — B's edit may be lost.
+**Result**: If A's migration wrote the `title` field (even with its old value), A and B both wrote to the same key. YJS picks one: B's edit may be lost.
 
 ### Root Cause
 
@@ -206,7 +206,7 @@ function saveRow(id: string, row: Todo): void {
 
 - **Excellent ergonomics**: Migration is just a function
 - **Full type safety**: `(TodoV1) => TodoV2` is fully typed
-- **Supports all operations**: Rename, type change, restructure — anything goes
+- **Supports all operations**: Rename, type change, restructure: anything goes
 - **Easy to understand**: No special rules, just transform data
 
 ### Cons
@@ -217,7 +217,7 @@ function saveRow(id: string, row: Todo): void {
 
 ### When to Use
 
-- **Non-collaborative apps**: Single user, no sync — conflicts impossible
+- **Non-collaborative apps**: Single user, no sync: conflicts impossible
 - **Epoch-based migrations**: Bumping epoch means new Y.Doc, no concurrent edits
 - **Infrequent migrations**: If migrations are rare, conflict window is small
 
@@ -366,9 +366,9 @@ function updateRow(id: string, changes: Partial<Todo>): void {
 | Add nullable field     | `(row) => ({ ...row, field: null })`                      | `addFields: () => ({ field: null })`            |
 | Add field with default | `(row) => ({ ...row, field: 'default' })`                 | `addFields: () => ({ field: 'default' })`       |
 | Add computed field     | `(row) => ({ ...row, field: compute(row) })`              | `addFields: (row) => ({ field: compute(row) })` |
-| Rename field           | `(row) => ({ ...row, newName: row.oldName })`             | **Not supported** — use alias or epoch          |
-| Change field type      | `(row) => ({ ...row, field: convert(row.field) })`        | **Not supported** — use epoch                   |
-| Remove field           | `(row) => { const {field, ...rest} = row; return rest; }` | **Not supported** — soft delete only            |
+| Rename field           | `(row) => ({ ...row, newName: row.oldName })`             | **Not supported**: use alias or epoch          |
+| Change field type      | `(row) => ({ ...row, field: convert(row.field) })`        | **Not supported**: use epoch                   |
+| Remove field           | `(row) => { const {field, ...rest} = row; return rest; }` | **Not supported**: soft delete only            |
 
 ---
 
@@ -401,7 +401,7 @@ async function migrateToEpoch2() {
 	const oldClient = await workspace.create({ epoch: oldEpoch });
 	const newClient = await workspaceV2.create({ epoch: newEpoch });
 
-	// Full transform is safe here — new doc, no concurrent edits
+	// Full transform is safe here: new doc, no concurrent edits
 	for (const todo of oldClient.tables.todos.getAll()) {
 		newClient.tables.todos.upsert({
 			...todo,
@@ -670,7 +670,7 @@ export function versionedTable<Name extends string>(name: Name) {
 
 ## Deep Dive Analysis: Do Local-First Apps Actually Need Per-Row Versioning?
 
-**Date**: 2026-01-24  
+**Date**: 2026-01-24
 **Status**: Research Complete
 
 ### Executive Summary
@@ -713,10 +713,10 @@ After extensive analysis consulting multiple perspectives (app developer use cas
 
 #### How Y.Map Conflict Resolution Actually Works
 
-1. **"Last" is NOT wall-clock time** — it's deterministic order from Yjs internal operation IDs
+1. **"Last" is NOT wall-clock time**: it's deterministic order from Yjs internal operation IDs
 2. **Any `set(key, value)` creates a new operation**, even if value is identical
 3. **Concurrent writes to same key**: higher `clientID` tends to win (deterministic but arbitrary)
-4. **No "read without touching"** — the only way to not write is to not call `set()`
+4. **No "read without touching"**: the only way to not write is to not call `set()`
 
 #### The Migration Disaster Scenario
 
@@ -736,7 +736,7 @@ Result: A wrote `title = oldTitle` even though unchanged.
 
 From [discuss.yjs.dev](https://discuss.yjs.dev/t/what-is-the-correct-way-to-apply-document-migrations/2321):
 
-> "Migrations are a huge pain... pretty much the biggest glaring flaw with Yjs. I've lost many days designing around the migration problem—supporting local-first back compat probably makes dev take 50% longer."
+> "Migrations are a huge pain... pretty much the biggest glaring flaw with Yjs. I've lost many days designing around the migration problem. Supporting local-first back compat probably makes dev take 50% longer."
 
 > "A migration can randomly erase data... we wait until server is synced before applying any migration, but then we lose offline-first."
 

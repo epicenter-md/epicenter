@@ -94,10 +94,10 @@ The aggregate union appears at the boundary that needs it. Nobody had to define 
 The rule has an exception: external types you don't own. React's `JSX.IntrinsicElements`, Node's `ErrnoException['code']`, DOM event maps, Web Crypto algorithm names. You can't redefine them. Filtering them into local vocabulary is exactly what `Extract<>` is for.
 
 ```typescript
-// Fine — JSX.IntrinsicElements is React's union
+// Fine: JSX.IntrinsicElements is React's union
 type BlockTag = Extract<keyof JSX.IntrinsicElements, 'div' | 'section' | 'article'>;
 
-// Fine — NodeJS.ErrnoException is Node's
+// Fine: NodeJS.ErrnoException is Node's
 type FsExpectedCode = Extract<NodeJS.ErrnoException['code'], 'ENOENT' | 'EACCES'>;
 ```
 

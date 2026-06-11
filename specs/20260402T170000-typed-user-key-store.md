@@ -13,31 +13,31 @@ Change `UserKeyStore` from an opaque string interface (`set(json: string)` / `ge
 ### Current State
 
 ```typescript
-// user-key-store.ts — interface
+// user-key-store.ts: interface
 export type UserKeyStore = {
   set(keysJson: string): Promise<void>;
   get(): Promise<string | null>;
   delete(): Promise<void>;
 };
 
-// create-workspace.ts — caller must JSON.stringify
+// create-workspace.ts: caller must JSON.stringify
 await config.userKeyStore.set(JSON.stringify(keys));
 
-// create-workspace.ts — caller must JSON.parse + cast
+// create-workspace.ts: caller must JSON.parse + cast
 const keys = JSON.parse(cached) as EncryptionKey[];
 await unlock(keys);
 ```
 
 This creates problems:
 
-1. **Shape errors surface at JSON.parse, not at the boundary.** A corrupt or schema-mismatched string crashes `JSON.parse` or silently produces wrong data. The ArkType `EncryptionKeys` schema exists but is only used in `create-workspace.ts`—the store interface doesn't enforce it.
+1. **Shape errors surface at JSON.parse, not at the boundary.** A corrupt or schema-mismatched string crashes `JSON.parse` or silently produces wrong data. The ArkType `EncryptionKeys` schema exists but is only used in `create-workspace.ts`: the store interface doesn't enforce it.
 2. **Every caller handles serialization.** `create-workspace.ts` does `JSON.stringify` on set and `JSON.parse` + ArkType validation on get. If a second caller ever uses `UserKeyStore`, it would need to duplicate this logic.
-3. **The type signature lies.** `set(keysJson: string)` looks like it accepts any string. The actual contract is "must be `JSON.stringify(EncryptionKeys)`"—invisible to TypeScript.
+3. **The type signature lies.** `set(keysJson: string)` looks like it accepts any string. The actual contract is "must be `JSON.stringify(EncryptionKeys)`". Invisible to TypeScript.
 
 ### Desired State
 
 ```typescript
-// user-key-store.ts — typed interface
+// user-key-store.ts: typed interface
 import type { EncryptionKeys } from './encryption-key.js';
 
 export type UserKeyStore = {
@@ -46,10 +46,10 @@ export type UserKeyStore = {
   delete(): Promise<void>;
 };
 
-// create-workspace.ts — no serialization at call site
+// create-workspace.ts: no serialization at call site
 await config.userKeyStore.set(keys);
 
-// auto-boot — store returns validated data
+// auto-boot: store returns validated data
 const keys = await store.get();
 if (!keys) return;
 await unlock(keys);
@@ -75,7 +75,7 @@ await unlock(keys);
 ### Phase 2: Update store implementations
 
 - [x] **2.1** `indexed-db-key-store.ts` (svelte-utils): `set()` calls `JSON.stringify`, `get()` calls `JSON.parse` + `EncryptionKeys(parsed)` validation, returns `null` on failure
-- [x] **2.2** `key-store.ts` (tab-manager WXT storage): same pattern—serialize on set, validate on get
+- [x] **2.2** `key-store.ts` (tab-manager WXT storage): same pattern. Serialize on set, validate on get
 - [x] **2.3** Run `bun test` on affected packages, `bun typecheck`
 
 ## Edge Cases
@@ -84,7 +84,7 @@ await unlock(keys);
 
 1. User upgrades to new code with old JSON string in IndexedDB
 2. `get()` reads string, `JSON.parse` succeeds, ArkType validation succeeds (schema is unchanged)
-3. Works transparently—no migration needed
+3. Works transparently. No migration needed
 
 ### Corrupt data from manual tampering
 
@@ -103,12 +103,12 @@ await unlock(keys);
 
 ## References
 
-- `packages/workspace/src/workspace/user-key-store.ts` — Interface definition
-- `packages/workspace/src/workspace/encryption-key.ts` — `EncryptionKeys` ArkType schema
-- `packages/workspace/src/workspace/create-workspace.ts` — Primary caller (persistKeys, auto-boot)
-- `packages/workspace/src/workspace/create-workspace.test.ts` — Mock UserKeyStore + assertions
-- `packages/svelte-utils/src/indexed-db-key-store.ts` — IndexedDB implementation
-- `apps/tab-manager/src/lib/state/key-store.ts` — WXT storage implementation
+- `packages/workspace/src/workspace/user-key-store.ts`: Interface definition
+- `packages/workspace/src/workspace/encryption-key.ts`: `EncryptionKeys` ArkType schema
+- `packages/workspace/src/workspace/create-workspace.ts`: Primary caller (persistKeys, auto-boot)
+- `packages/workspace/src/workspace/create-workspace.test.ts`: Mock UserKeyStore + assertions
+- `packages/svelte-utils/src/indexed-db-key-store.ts`: IndexedDB implementation
+- `apps/tab-manager/src/lib/state/key-store.ts`: WXT storage implementation
 
 ## Review
 

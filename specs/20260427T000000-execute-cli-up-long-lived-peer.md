@@ -1,4 +1,4 @@
-# Execution prompt — `epicenter up` long-lived peer + IPC
+# Execution prompt: `epicenter up` long-lived peer + IPC
 
 **Status:** superseded in part by `specs/20260428T140000-cli-mandatory-daemon-collapse.md`. Wave 6 (the `*Core` extraction) and the `tryGetDaemon`/cold-path dispatch in run/list/peers were reverted there; the rest of this spec (socket layout, lifecycle, ps/down/logs, security model, Invariants 1 to 7) still applies.
 
@@ -8,7 +8,7 @@
 **For an implementer with no prior conversation context.** Self-contained brief.
 
 **Read first (source of truth):**
-- `specs/20260426T235000-cli-up-long-lived-peer.md` — the design. Pay close attention to the **Invariants** section near the top; those are non-negotiable lock-downs and several are tested as acceptance criteria.
+- `specs/20260426T235000-cli-up-long-lived-peer.md`: the design. Pay close attention to the **Invariants** section near the top; those are non-negotiable lock-downs and several are tested as acceptance criteria.
 
 **Branch:** create off main. Suggested name: `cli-up-long-lived-peer`.
 
@@ -18,7 +18,7 @@
 
 Add four CLI verbs (`up`, `down`, `ps`, `logs`), a small Unix-socket IPC layer, and auto-detection in three existing verbs (`peers`, `list`, `run`) so that when an `up` daemon is running for a `--dir`, sibling commands transparently use the warm peer instead of standing up a transient one.
 
-**One PR, eight commits.** Each commit independently typechecks and tests green. Wave order is dependency-driven — do not reorder.
+**One PR, eight commits.** Each commit independently typechecks and tests green. Wave order is dependency-driven: do not reorder.
 
 The repro fixture for the whole flow is already in the repo at `examples/notes-cross-peer/`. You will codify its two-terminal dance into an automated end-to-end test in Wave 8.
 
@@ -27,9 +27,9 @@ The repro fixture for the whole flow is already in the repo at `examples/notes-c
 ## Prerequisites already present in the codebase
 
 - `epicenterPaths` helper (`packages/cli/src/auth/paths.ts`) resolves `~/.epicenter/...`. You will add `epicenterPaths.runtime()` and `epicenterPaths.runFile(hash)` here.
-- `loadConfig` (`packages/cli/src/load-config.ts`) — reuse as-is; the daemon loads exactly the same way as today's transient commands.
-- `SyncAttachment.peers/find/observe/rpc` (`packages/workspace/src/document/attach-sync.ts`) — your daemon's IPC handlers dispatch into these, no new workspace surface needed.
-- `describePeer` (`packages/workspace/src/rpc/peer.ts`) — `list --peer` already calls this; you do not modify it.
+- `loadConfig` (`packages/cli/src/load-config.ts`): reuse as-is; the daemon loads exactly the same way as today's transient commands.
+- `SyncAttachment.peers/find/observe/rpc` (`packages/workspace/src/document/attach-sync.ts`): your daemon's IPC handlers dispatch into these, no new workspace surface needed.
+- `describePeer` (`packages/workspace/src/rpc/peer.ts`): `list --peer` already calls this; you do not modify it.
 - `wellcrafted/logger` for structured logging; `wellcrafted/error` `defineErrors` for typed errors; `wellcrafted/result` for Result-returning IPC handlers.
 
 Do **not** invent new abstractions. The daemon is "open the workspace exactly like today, then never close it, and accept IPC."
@@ -76,7 +76,7 @@ No changes outside `packages/cli/`. The workspace package is untouched.
 
 ## The eight commits
 
-### Commit 1 — `feat(cli): runtime-dir + socket-path helpers`
+### Commit 1: `feat(cli): runtime-dir + socket-path helpers`
 
 **New file:** `packages/cli/src/daemon/paths.ts`
 
@@ -127,7 +127,7 @@ export function logPathFor(dir: string): string {
 }
 ```
 
-Also extend `packages/cli/src/auth/paths.ts` (`epicenterPaths`) with `runtime()` and `runFile(hash)` thin wrappers — they should call into the helpers above so there is exactly one source of truth.
+Also extend `packages/cli/src/auth/paths.ts` (`epicenterPaths`) with `runtime()` and `runFile(hash)` thin wrappers. They should call into the helpers above so there is exactly one source of truth.
 
 **Tests** (`paths.test.ts`):
 - `dirHash` is deterministic for the same absolute path.
@@ -137,7 +137,7 @@ Also extend `packages/cli/src/auth/paths.ts` (`epicenterPaths`) with `runtime()`
 
 ---
 
-### Commit 2 — `feat(cli): daemon metadata read/write + orphan detection`
+### Commit 2: `feat(cli): daemon metadata read/write + orphan detection`
 
 **New file:** `packages/cli/src/daemon/metadata.ts`
 
@@ -172,7 +172,7 @@ export type StartupState = 'in-use' | 'orphan' | 'clean';
 export async function inspectExistingDaemon(dir: string): Promise<{ state: StartupState; pid?: number }>;
 ```
 
-`inspectExistingDaemon` does the IPC ping itself (using a 250 ms timeout) — Wave 4 will provide the client. To avoid a circular dep, expose just the ping path from `ipc-client.ts` and import it lazily here, or split the ping into its own tiny `ipc-ping.ts` module. Pick whichever keeps the dependency graph one-directional.
+`inspectExistingDaemon` does the IPC ping itself (using a 250 ms timeout): Wave 4 will provide the client. To avoid a circular dep, expose just the ping path from `ipc-client.ts` and import it lazily here, or split the ping into its own tiny `ipc-ping.ts` module. Pick whichever keeps the dependency graph one-directional.
 
 **Tests** (`metadata.test.ts`):
 - Round-trip write → read.
@@ -183,7 +183,7 @@ export async function inspectExistingDaemon(dir: string): Promise<{ state: Start
 
 ---
 
-### Commit 3 — `feat(cli): newline-JSON IPC server`
+### Commit 3: `feat(cli): newline-JSON IPC server`
 
 **New file:** `packages/cli/src/daemon/ipc-server.ts`
 
@@ -230,7 +230,7 @@ Implementation notes:
 
 ---
 
-### Commit 4 — `feat(cli): IPC client + ping helper`
+### Commit 4: `feat(cli): IPC client + ping helper`
 
 **New file:** `packages/cli/src/daemon/ipc-client.ts`
 
@@ -264,7 +264,7 @@ export async function* ipcStream<T = unknown>(
 - return `false` if the socket exists but `connect` errors (`ECONNREFUSED`, `ENOENT`)
 - return `false` if no `pong` arrives within `timeoutMs` (default 250)
 
-`ipcCall` and `ipcStream` translate connection failures into the `NoDaemon` error variant rather than throwing — call sites can branch on that without try/catch noise.
+`ipcCall` and `ipcStream` translate connection failures into the `NoDaemon` error variant rather than throwing: call sites can branch on that without try/catch noise.
 
 **Tests** (`ipc-client.test.ts`):
 - Stand up a tiny in-process server (using Wave 3's `startIpcServer`) and exercise `ipcPing` (true), then close the server and exercise it again (false).
@@ -274,7 +274,7 @@ export async function* ipcStream<T = unknown>(
 
 ---
 
-### Commit 5 — `feat(cli): epicenter up command (foreground daemon)`
+### Commit 5: `feat(cli): epicenter up command (foreground daemon)`
 
 **New file:** `packages/cli/src/commands/up.ts`
 
@@ -289,19 +289,19 @@ This is the load-bearing one. Pseudocode for `handler`:
      - 'clean'   → continue.
 4. Set up the file logger (Wave 7) tee'd with stderr.
 5. await using config = await loadConfig(dir).
-6. Keep ALL config.entries — the daemon serves every workspace the config
+6. Keep ALL config.entries: the daemon serves every workspace the config
    exports (Invariant 7). No per-entry selection at startup.
 7. Race each entry's workspace.whenReady concurrently against the connect
    timeout (default 10000 ms). One bad workspace fails the whole daemon
-   ("connect failed: <name>: ..." — split configs for resource isolation).
+   ("connect failed: <name>: ...": split configs for resource isolation).
 8. Write metadata JSON (no workspace/deviceId fields; loaded set is
    read from the config file, not the sidecar).
 9. const server = await startIpcServer(socketPath, makeHandler(entries, config));
 10. Print "online (workspaces=[a, b, c])" then the initial peers snapshot
-    per workspace — so the operator sees current state, not just future deltas.
+    per workspace. So the operator sees current state, not just future deltas.
 11. Per loaded entry: subscribe to sync.observe(...) → log "<name>: peer-X
     joined" / "left". Subscribe to sync.onStatusChange(...) → log
-    "<name>: connecting (retry N)" / "connected" / "offline" — these print
+    "<name>: connecting (retry N)" / "connected" / "offline". These print
     regardless of --quiet.
 12. Install SIGINT/SIGTERM handler:
       a. Stop accepting new connections (server.close()).
@@ -318,7 +318,7 @@ This is the load-bearing one. Pseudocode for `handler`:
 | --- | --- |
 | `ping` | reply `{ok:true, data:'pong'}` |
 | `peers` | snapshot `entry.workspace.sync.peers()` |
-| `list` | call into the existing list command's pure section-builder (refactor in Wave 6 — for this commit, stub returns `{ok:false, error:{name:'NotImplemented'}}` and Wave 6 fills it in) |
+| `list` | call into the existing list command's pure section-builder (refactor in Wave 6: for this commit, stub returns `{ok:false, error:{name:'NotImplemented'}}` and Wave 6 fills it in) |
 | `run` | call into the existing run command's invocation section (same staged approach) |
 | `shutdown` | reply `{ok:true}`, then trigger the same teardown as SIGTERM |
 
@@ -326,9 +326,9 @@ Yargs builder additions:
 - `--quiet` (boolean; raises stderr floor to `warn`, but sync state changes still print)
 - (no `--connect-timeout`: 10000 ms is hardcoded as a stopgap; see `20260427T120000-workspace-sync-failed-phase.md` for the fix that deletes it)
 
-(No `--workspace` on `up` — Invariant 7. The daemon serves every workspace the config exports. Sibling commands (`list`, `run`, `peers`) keep `--workspace` to address a specific entry; the daemon dispatches by name.)
+(No `--workspace` on `up`: Invariant 7. The daemon serves every workspace the config exports. Sibling commands (`list`, `run`, `peers`) keep `--workspace` to address a specific entry; the daemon dispatches by name.)
 
-**Tests** (`up.test.ts`) — unit-level only here; the cross-process e2e lands in Wave 8:
+**Tests** (`up.test.ts`): unit-level only here; the cross-process e2e lands in Wave 8:
 - Module-level: build a fake `LoadedWorkspace` with an immediately-resolving `whenReady` and a fake `sync`. Run the handler in-process (without `process.exit`-ing) and assert it calls `startIpcServer`, writes metadata, and replies to ping.
 - Stale-auth fast-fail: fake `whenReady` that never resolves; with a small `deps.connectTimeoutMs` override, assert the handler errors within the timeout with the spec's literal message.
 - "Already running" path: pre-write metadata for `process.pid` and a real listening socket; assert the handler exits 1 with `"daemon already running"`.
@@ -337,7 +337,7 @@ Yargs builder additions:
 
 ---
 
-### Commit 6 — `feat(cli): wire IPC dispatch + sibling auto-detect`
+### Commit 6: `feat(cli): wire IPC dispatch + sibling auto-detect`
 
 Two things, atomically.
 
@@ -372,7 +372,7 @@ packages/cli/src/commands/list.ts:
 
 **(b) In `up.ts`'s `makeHandler`, replace the two `NotImplemented` stubs from Wave 5** with real calls into `listCore` / `runCore` against the daemon's `entry`.
 
-**(c) Workspace routing (Invariant 7)**: the daemon serves every workspace its config exports. Sibling commands forward `--workspace` (or `undefined`) straight to IPC; the daemon resolves the name via `resolveEntry` — the same lookup the cold path uses, so an unknown workspace returns an identical error in either path. There is no "mismatch" concept and no metadata-inheritance step.
+**(c) Workspace routing (Invariant 7)**: the daemon serves every workspace its config exports. Sibling commands forward `--workspace` (or `undefined`) straight to IPC; the daemon resolves the name via `resolveEntry`: the same lookup the cold path uses, so an unknown workspace returns an identical error in either path. There is no "mismatch" concept and no metadata-inheritance step.
 
 **Tests:**
 - `list` and `run` against a non-running daemon work exactly as today (cold path regression).
@@ -381,7 +381,7 @@ packages/cli/src/commands/list.ts:
 
 ---
 
-### Commit 7 — `feat(cli): down + ps + logs + log rotation`
+### Commit 7: `feat(cli): down + ps + logs + log rotation`
 
 **`commands/down.ts`:**
 - Default: stop the daemon for the current `--dir` via `ipcCall(sock, 'shutdown')`.
@@ -391,9 +391,9 @@ packages/cli/src/commands/list.ts:
 
 **`commands/ps.ts`:**
 - Enumerate `*.meta.json`. For each, read metadata + `ipcPing` to confirm liveness.
-- Print a small table: `dir | pid | uptime | configChanged?`. (No workspace/deviceId columns — the daemon serves every workspace its config exports; read the config file to know what's loaded.)
+- Print a small table: `dir | pid | uptime | configChanged?`. (No workspace/deviceId columns: the daemon serves every workspace its config exports; read the config file to know what's loaded.)
 - `configChanged` is `true` iff `statSync(<dir>/epicenter.config.ts).mtimeMs !== meta.configMtime`.
-- Drop entries whose `pid` is dead but whose metadata lingers — opportunistically unlink them (same orphan path as `inspectExistingDaemon`).
+- Drop entries whose `pid` is dead but whose metadata lingers: opportunistically unlink them (same orphan path as `inspectExistingDaemon`).
 
 **`commands/logs.ts`:**
 - `--dir <path>`: tail `logPathFor(dir)`. Without `--dir`, error if there's >1 daemon; succeed by tailing the only one.
@@ -413,7 +413,7 @@ Wire `up.ts` to use the file-logger sink alongside stderr. The structured JSONL 
 
 ---
 
-### Commit 8 — `chore(cli, examples): enforce Invariant 6 + migrate repro README`
+### Commit 8: `chore(cli, examples): enforce Invariant 6 + migrate repro README`
 
 **(a) `commands/peers.ts`:**
 
@@ -439,7 +439,7 @@ Also wire `peers` into the same auto-detect path from Wave 6 (the daemon already
 
 Replace Terminal 1's `epicenter peers --dir peer-a --wait 60000` with `epicenter up --dir peer-a`. Terminal 2 commands stay literally identical (the auto-detect makes them faster automatically).
 
-**(c)** Update `examples/notes-cross-peer/notes.ts` if needed — should be untouched, but verify.
+**(c)** Update `examples/notes-cross-peer/notes.ts` if needed: should be untouched, but verify.
 
 **Tests:**
 - `peers --wait 60000` exits 1 with the literal capped-message.
@@ -448,7 +448,7 @@ Replace Terminal 1's `epicenter peers --dir peer-a --wait 60000` with `epicenter
 
 ---
 
-## Wave 8 isn't a commit — it's the e2e test
+## Wave 8 isn't a commit: it's the e2e test
 
 After Commit 8, before requesting review, write **one** end-to-end test that spawns two CLI processes and exercises the full repro automatically. This is the most valuable single test, because it locks in the failure mode you actually hit today.
 
@@ -470,11 +470,11 @@ After Commit 8, before requesting review, write **one** end-to-end test that spa
 7. SIGINT the up daemon; assert clean exit, no orphan files in runtimeDir.
 ```
 
-This is allowed to be slower than other tests — gate it behind a `e2e` test tag if your runner supports it; otherwise just put it in `packages/cli/test/` so it's distinct from the unit tests under `src/`.
+This is allowed to be slower than other tests: gate it behind a `e2e` test tag if your runner supports it; otherwise just put it in `packages/cli/test/` so it's distinct from the unit tests under `src/`.
 
 ---
 
-## Acceptance criteria — verify before opening the PR
+## Acceptance criteria: verify before opening the PR
 
 Each comes straight from the spec. Mark explicitly:
 
@@ -485,7 +485,7 @@ Each comes straight from the spec. Mark explicitly:
 - [ ] `kill -9 <up-pid>` then `epicenter up --dir peer-a` again logs `"cleaned orphan socket"` and starts cleanly.
 - [ ] Two `up`s same `--dir`: second exits 1 with `"daemon already running (pid=X)"`.
 - [ ] `down --dir peer-a` is graceful; `down --all` stops every daemon for this user.
-- [ ] **Stale-auth fast-fail:** with an expired token, `up` exits within 10 s with `"connect failed: 401 Unauthorized — try \`epicenter auth login\`"` — never an indefinite hang. (This is the bug we're fixing.)
+- [ ] **Stale-auth fast-fail:** with an expired token, `up` exits within 10 s with `"connect failed: 401 Unauthorized: try \`epicenter auth login\`"`: never an indefinite hang. (This is the bug we're fixing.)
 - [ ] **Multi-workspace daemon (Invariant 7):** `up` with a config exporting `alpha` and `beta`, then `list --dir <same> --workspace beta` routes through the daemon to `beta`. Unknown workspace names return the cold-path's `resolveEntry` error.
 - [ ] **Invariant 6:** `peers --wait 60000` exits 1 with the cap message; `--wait 10000` prints the hint; `--wait 1000` is silent.
 

@@ -13,7 +13,7 @@ A workspace extension that auto-materializes Yjs table data into SQLite for SQL 
 
 ### Current State
 
-Workspace persistence stores opaque Yjs binary updates—not queryable table data:
+Workspace persistence stores opaque Yjs binary updates. Not queryable table data:
 
 ```typescript
 // packages/workspace/src/extensions/persistence/sqlite.ts
@@ -21,7 +21,7 @@ db.run('CREATE TABLE IF NOT EXISTS updates (id INTEGER PRIMARY KEY AUTOINCREMENT
 // INSERT INTO updates (data) VALUES (<Yjs binary blob>)
 ```
 
-The only SQLite materialization that exists is the filesystem sqlite-index—a specialized, hardcoded extension for one table (`files`) with derived columns (`path`, `content`):
+The only SQLite materialization that exists is the filesystem sqlite-index. A specialized, hardcoded extension for one table (`files`) with derived columns (`path`, `content`):
 
 ```typescript
 // packages/filesystem/src/extensions/sqlite-index/index.ts
@@ -34,7 +34,7 @@ The only SQLite materialization that exists is the filesystem sqlite-index—a s
 Application data access is all in-memory via Yjs:
 
 ```typescript
-// apps/whispering — every table access pattern
+// apps/whispering: every table access pattern
 workspace.tables.recordings.getAllValid()   // load all rows into memory
 map.get(id)                                // lookup by ID
 runs.filter(r => r.transformationId === id) // client-side JS filter
@@ -51,7 +51,7 @@ This creates problems:
 ### Desired State
 
 ```typescript
-// One line in client.ts — all workspace tables materialized to SQLite
+// One line in client.ts: all workspace tables materialized to SQLite
 export const workspace = createWorkspace(whisperingDefinition)
   .withExtension('persistence', indexeddbPersistence)
   .withWorkspaceExtension('sqlite', createSqliteMirror({
@@ -83,13 +83,13 @@ workspace.extensions.sqlite.search('recordings', 'meeting notes');
 | **Triplit** | Schema → KV store (not relational) | KV backend | None |
 | **TinyBase** | In-memory store, SQLite = optional persistence | Persistence only | None |
 
-**Key finding**: PowerSync's model is closest to what we need—manual schema declaration in code, auto-materialization into SQLite, FTS as a separate trigger-based layer. But we can go further: our workspace schemas already carry enough type information (via JSON Schema from `describeWorkspace()`) to auto-generate DDL without any manual schema declaration.
+**Key finding**: PowerSync's model is closest to what we need. Manual schema declaration in code, auto-materialization into SQLite, FTS as a separate trigger-based layer. But we can go further: our workspace schemas already carry enough type information (via JSON Schema from `describeWorkspace()`) to auto-generate DDL without any manual schema declaration.
 
 **Key finding**: No framework we surveyed auto-generates Drizzle ORM schemas from CRDT definitions. They either require manual SQL/schema declaration or use opaque KV storage. This validates our approach of generating raw DDL and keeping Drizzle as an optional, app-local concern.
 
 ### Turso/libSQL Vector Support
 
-libSQL (Turso's SQLite fork) has native vector search—no extensions:
+libSQL (Turso's SQLite fork) has native vector search. No extensions:
 
 ```sql
 -- Vector column (1536-dim float32)
@@ -136,14 +136,14 @@ const rows = await db.prepare('SELECT * FROM recordings').all();
 
 | Concern | Drizzle | Raw SQL |
 |---|---|---|
-| DDL generation (`CREATE TABLE`) | Requires hand-written schema | Generate from JSON Schema—simpler |
-| INSERT/UPDATE/DELETE sync | `db.insert().values()` | Parameterized SQL—just as easy |
+| DDL generation (`CREATE TABLE`) | Requires hand-written schema | Generate from JSON Schema. Simpler |
+| INSERT/UPDATE/DELETE sync | `db.insert().values()` | Parameterized SQL. Just as easy |
 | FTS5 virtual tables | **Not supported** | Raw SQL (native) |
 | Vector columns | **Not supported** | Raw SQL (native) |
-| Typed SELECT queries | Real value—autocomplete, type safety | Returns `unknown[]` |
+| Typed SELECT queries | Real value. Autocomplete, type safety | Returns `unknown[]` |
 | Agent SQL queries | Agents write raw SQL regardless | Native |
 
-**Key finding**: Drizzle adds no value for the mirror sync engine (DDL + INSERT/UPDATE/DELETE) and doesn't support FTS5 or vectors. Its only value is typed SELECT queries in TypeScript app code—a concern that belongs to the app, not the extension.
+**Key finding**: Drizzle adds no value for the mirror sync engine (DDL + INSERT/UPDATE/DELETE) and doesn't support FTS5 or vectors. Its only value is typed SELECT queries in TypeScript app code. A concern that belongs to the app, not the extension.
 
 **Implication**: The extension core uses raw SQL only. Zero Drizzle dependency. Apps that want typed queries add Drizzle themselves with a hand-written schema against the mirrored tables.
 
@@ -153,13 +153,13 @@ const rows = await db.prepare('SELECT * FROM recordings').all();
 |---|---|---|
 | DDL generation | Auto-generate from workspace JSON Schema | Eliminates schema duplication. `describeWorkspace()` already produces JSON Schema per table. |
 | SQL driver | `@tursodatabase/database` family (injected) | No Drizzle in core. FTS5 and vectors require raw SQL. Driver injection lets consumers choose native vs WASM. `better-sqlite3`-compatible API. |
-| FTS5 | Config option inside the extension | FTS triggers reference mirrored tables—same concern. Separate extension would need to reach into mirror internals. |
+| FTS5 | Config option inside the extension | FTS triggers reference mirrored tables. Same concern. Separate extension would need to reach into mirror internals. |
 | Vectors | `onReady`/`onSync` lifecycle hooks | Vector columns and embeddings are app-specific (which columns, which model, what dimensions). Hooks give full control without baking AI concerns into the core. |
 | Filesystem sqlite-index | Stays separate | It has derived columns (`path`, `content`), custom logic, in-memory storage. It's a specialized projection, not a generic mirror. |
 | Drizzle typed queries | Opt-in, app-local | Apps declare a Drizzle schema locally only when they need typed SELECT queries. Not the extension's concern. |
 | Storage mode | Injected client (caller decides `:memory:` vs file path) | Browser apps may want in-memory; CLI/desktop may want persistent. Extension doesn't decide. |
 | Sync strategy | Observer-based with debounce | Match existing filesystem sqlite-index pattern. `table.observe()` → debounced batch upsert/delete. |
-| `ctx.whenReady` | **Must await** before first sync | If SQLite materializes before Yjs persistence hydrates, we get partial data. The filesystem sqlite-index appears to skip this—we won't. |
+| `ctx.whenReady` | **Must await** before first sync | If SQLite materializes before Yjs persistence hydrates, we get partial data. The filesystem sqlite-index appears to skip this. We won't. |
 
 ## Architecture
 
@@ -239,9 +239,9 @@ FTS5 triggers fire automatically        ← FTS index updated
 Multi-version tables produce `{ "oneOf": [v1Schema, v2Schema] }` from `describeWorkspace()` instead of a flat object schema. The DDL generator must:
 
 1. Detect `oneOf` in the schema
-2. Pick the version with the highest `_v.const` value — the last entry in `oneOf` is always the latest, but we use `_v.const` for safety
+2. Pick the version with the highest `_v.const` value: the last entry in `oneOf` is always the latest, but we use `_v.const` for safety
 3. Generate DDL from that version's `properties` and `required` arrays
-4. This is safe because `table.getAllValid()` runs migrations — all returned rows are already at the latest version
+4. This is safe because `table.getAllValid()` runs migrations: all returned rows are already at the latest version
 
 ```json
 // describeWorkspace() output for a multi-version table
@@ -257,11 +257,11 @@ Multi-version tables produce `{ "oneOf": [v1Schema, v2Schema] }` from `describeW
 
 ### Async Everywhere
 
-Both `@tursodatabase/database` (native) and `@tursodatabase/database-wasm` (browser) use async APIs — `await db.exec()`, `await db.prepare().run()`. The extension uses `async/await` throughout. No sync/async branching needed.
+Both `@tursodatabase/database` (native) and `@tursodatabase/database-wasm` (browser) use async APIs: `await db.exec()`, `await db.prepare().run()`. The extension uses `async/await` throughout. No sync/async branching needed.
 
 ### OPFS Browser Persistence
 
-`@tursodatabase/database-wasm` uses OPFS (Origin Private File System) for persistent browser storage — SQLite files survive page reloads without IndexedDB. This requires COEP/COOP headers:
+`@tursodatabase/database-wasm` uses OPFS (Origin Private File System) for persistent browser storage: SQLite files survive page reloads without IndexedDB. This requires COEP/COOP headers:
 
 ```
 Cross-Origin-Embedder-Policy: require-corp
@@ -429,7 +429,7 @@ import { connect } from '@tursodatabase/database';
 **With optional Drizzle typed queries (app-local, if you really want them):**
 
 ```typescript
-// sqlite/schema.ts — hand-written, opt-in, only if you need typed SELECT queries
+// sqlite/schema.ts: hand-written, opt-in, only if you need typed SELECT queries
 import { sqliteTable, text, integer } from 'drizzle-orm/sqlite-core';
 
 export const recordings = sqliteTable('recordings', {
@@ -475,7 +475,7 @@ queryData: defineQuery({
   - Full load: `table.getAllValid()` → batch `INSERT OR REPLACE INTO`
   - Return `{ db, rebuild }`
 - [x] **1.4** Implement observer-based incremental sync:
-  - `table.observe((changedIds: ReadonlySet<string>) => ...)` per mirrored table — returns unsubscribe fn
+  - `table.observe((changedIds: ReadonlySet<string>) => ...)` per mirrored table: returns unsubscribe fn
   - Debounced batch: collect changed IDs into a Set, then for each ID: `table.get(id)` → `valid` = `INSERT OR REPLACE`, `not_found` = `DELETE`
   - Call `onSync` hook after each batch with `{ table, upserted, deleted }` arrays
 - [x] **1.5** Implement `dispose()`: unsubscribe observers, close client if owned
@@ -490,8 +490,8 @@ queryData: defineQuery({
 
 ### Phase 3: Lifecycle Hooks
 
-- [x] **3.1** Implement `onReady(db)` — called after DDL + full load + FTS setup
-- [x] **3.2** Implement `onSync(db, changes)` — called after each debounced sync batch with change details
+- [x] **3.1** Implement `onReady(db)`: called after DDL + full load + FTS setup
+- [x] **3.2** Implement `onSync(db, changes)`: called after each debounced sync batch with change details
 - [ ] **3.3** Document hook patterns: vector columns, custom indexes, derived columns
 
 ### Phase 4: Integration
@@ -506,9 +506,9 @@ queryData: defineQuery({
 
 1. Workspace created, SQLite mirror extension registered
 2. Persistence extension starts loading Yjs updates from IndexedDB
-3. Mirror extension starts observing—sees partial data
+3. Mirror extension starts observing. Sees partial data
 
-**Mitigation**: Mirror awaits `ctx.whenReady` before subscribing to observers. This ensures Yjs is fully hydrated before the first sync. The filesystem sqlite-index appears to skip this—we won't.
+**Mitigation**: Mirror awaits `ctx.whenReady` before subscribing to observers. This ensures Yjs is fully hydrated before the first sync. The filesystem sqlite-index appears to skip this. We won't.
 
 ### Table schema changes (workspace version migration)
 
@@ -520,8 +520,8 @@ queryData: defineQuery({
 
 ### Encrypted tables
 
-1. Workspace uses `.withEncryption()` — table values in Yjs are ciphertext
-2. Mirror calls `table.getAllValid()` — this returns decrypted rows (the table helper handles decryption)
+1. Workspace uses `.withEncryption()`: table values in Yjs are ciphertext
+2. Mirror calls `table.getAllValid()`: this returns decrypted rows (the table helper handles decryption)
 3. SQLite would contain plaintext
 
 **Consideration**: If the SQLite file is persistent (on-disk), it contains plaintext copies of encrypted workspace data. This may be acceptable (the user's local disk is already trusted) or may need SQLite-level encryption (SQLCipher, libSQL encryption). Left as an open question.
@@ -543,7 +543,7 @@ queryData: defineQuery({
 ## Open Questions
 
 1. **WASM vector support**: Does `@tursodatabase/database-wasm` include `F32_BLOB` columns and `libsql_vector_idx`? DiskANN may require native code not available in WASM. If not, vectors are desktop/server-only.
-   - **Recommendation**: Verify by testing. If WASM lacks vectors, document it. FTS5 works everywhere regardless—that's the primary browser use case.
+   - **Recommendation**: Verify by testing. If WASM lacks vectors, document it. FTS5 works everywhere regardless. That's the primary browser use case.
 
 2. **Encrypted on-disk mirrors**: `@tursodatabase/database-wasm` uses OPFS for browser persistence (survives page reloads). If the workspace uses encryption, the OPFS-persisted SQLite file contains plaintext.
    - Options: (a) Accept plaintext (same trust boundary as IndexedDB), (b) Use libSQL encryption, (c) Only allow `:memory:` for encrypted workspaces
@@ -555,7 +555,7 @@ queryData: defineQuery({
 
 4. **KV store mirroring**: Should KV entries also be materialized to a SQLite table?
    - Options: (a) Tables only, (b) Also mirror KV as a `kv` table with `key TEXT PRIMARY KEY, value TEXT` columns
-   - **Recommendation**: Tables only for v1. KV is settings/preferences—not useful for SQL queries or agent access.
+   - **Recommendation**: Tables only for v1. KV is settings/preferences. Not useful for SQL queries or agent access.
 
 5. **Should the extension own the database lifecycle?**: Currently the caller creates and passes the `Database`. Should the extension optionally accept a path string and create the database internally?
    - Options: (a) Always injected, (b) Accept `db` OR `path`, create database if path given
@@ -564,26 +564,26 @@ queryData: defineQuery({
 ## Success Criteria
 
 - [ ] `createSqliteMirror({ db })` mirrors all workspace tables to SQLite with zero configuration
-- [ ] DDL is auto-generated from workspace JSON Schema—no manual schema declaration required
+- [ ] DDL is auto-generated from workspace JSON Schema. No manual schema declaration required
 - [ ] Incremental sync: Yjs table mutations appear in SQLite within `debounceMs`
 - [ ] `fts` config generates working FTS5 virtual tables with trigger-based sync
 - [ ] `search()` returns ranked results with snippet highlights
 - [ ] `onReady` and `onSync` hooks fire at the right time with the right data
 - [ ] Filesystem sqlite-index coexists as a separate extension on the same workspace
-- [ ] No Drizzle dependency in the extension—raw SQL only
+- [ ] No Drizzle dependency in the extension. Raw SQL only
 - [ ] Tests cover: full load, incremental upsert, incremental delete, FTS search, rebuild, schema migration
 
 ## References
 
-- `packages/workspace/src/extensions/persistence/sqlite.ts` — Current Yjs binary persistence (NOT the mirror)
-- `packages/workspace/src/extensions/materializer/markdown/` — Materializer extension pattern to follow
-- `packages/filesystem/src/extensions/sqlite-index/` — Existing specialized sqlite-index (stays separate)
-- `packages/filesystem/src/extensions/sqlite-index/ddl.ts` — DDL generation from Drizzle (reference for raw DDL approach)
-- `packages/filesystem/src/extensions/sqlite-index/schema.ts` — Hand-written Drizzle schema (what we're replacing with auto-generation)
-- `packages/workspace/src/workspace/describe-workspace.ts` — JSON Schema output for workspace introspection
-- `packages/workspace/src/workspace/types.ts` — `BaseRow`, `TableDefinition`, extension types
-- `packages/workspace/src/workspace/create-workspace.ts` — Extension registration and `ctx.whenReady`
-- `docs/articles/sqlite-is-a-projection-not-a-database.md` — Conceptual article explaining the architecture
+- `packages/workspace/src/extensions/persistence/sqlite.ts`: Current Yjs binary persistence (NOT the mirror)
+- `packages/workspace/src/extensions/materializer/markdown/`: Materializer extension pattern to follow
+- `packages/filesystem/src/extensions/sqlite-index/`: Existing specialized sqlite-index (stays separate)
+- `packages/filesystem/src/extensions/sqlite-index/ddl.ts`: DDL generation from Drizzle (reference for raw DDL approach)
+- `packages/filesystem/src/extensions/sqlite-index/schema.ts`: Hand-written Drizzle schema (what we're replacing with auto-generation)
+- `packages/workspace/src/workspace/describe-workspace.ts`: JSON Schema output for workspace introspection
+- `packages/workspace/src/workspace/types.ts`: `BaseRow`, `TableDefinition`, extension types
+- `packages/workspace/src/workspace/create-workspace.ts`: Extension registration and `ctx.whenReady`
+- `docs/articles/sqlite-is-a-projection-not-a-database.md`: Conceptual article explaining the architecture
 
 ## Review
 
@@ -594,10 +594,10 @@ queryData: defineQuery({
 
 Implemented the SQLite mirror extension across 4 files in `packages/workspace/src/extensions/materializer/sqlite/`:
 
-- `types.ts` — Structural `MirrorDatabase` interface, `SqliteMirrorOptions`, `SyncChange`, `SqliteMirror`, `SearchResult`
-- `ddl.ts` — `generateDdl()` converts JSON Schema from workspace definitions into `CREATE TABLE IF NOT EXISTS` SQL. Handles multi-version tables (oneOf resolution via highest `_v.const`).
-- `create-sqlite-mirror.ts` — Curried factory: `options → context → exports`. Awaits `ctx.whenReady`, auto-generates DDL, full-loads valid rows, sets up FTS5 virtual tables with content-sync triggers, fires `onReady`/`onSync` hooks, and keeps the mirror fresh via debounced `table.observe()` incremental sync.
-- `index.ts` — Barrel exports.
+- `types.ts`: Structural `MirrorDatabase` interface, `SqliteMirrorOptions`, `SyncChange`, `SqliteMirror`, `SearchResult`
+- `ddl.ts`: `generateDdl()` converts JSON Schema from workspace definitions into `CREATE TABLE IF NOT EXISTS` SQL. Handles multi-version tables (oneOf resolution via highest `_v.const`).
+- `create-sqlite-mirror.ts`: Curried factory: `options → context → exports`. Awaits `ctx.whenReady`, auto-generates DDL, full-loads valid rows, sets up FTS5 virtual tables with content-sync triggers, fires `onReady`/`onSync` hooks, and keeps the mirror fresh via debounced `table.observe()` incremental sync.
+- `index.ts`: Barrel exports.
 
 30 tests pass (18 DDL, 12 factory) covering full load, incremental upsert/delete, rebuild, FTS5 search, lifecycle hooks, and dispose.
 
@@ -605,12 +605,12 @@ Implemented the SQLite mirror extension across 4 files in `packages/workspace/sr
 
 - Used `standardSchemaToJsonSchema()` on individual table definitions instead of calling `describeWorkspace()`. Same JSON Schema output, avoids needing the full client.
 - `resolveSchema` returns the first oneOf entry (not the original schema) when all entries lack `_v.const`. Left as a test.todo since this edge case doesn't occur with real workspace tables.
-- The `MirrorDatabase` type uses a structural interface instead of importing `@tursodatabase/database` — keeps the extension zero-dependency.
+- The `MirrorDatabase` type uses a structural interface instead of importing `@tursodatabase/database`: keeps the extension zero-dependency.
 - FTS5 uses content-sync triggers (`content=`, `content_rowid=rowid`) rather than standalone tables, so the FTS index is auto-maintained by SQLite itself on INSERT OR REPLACE.
 
 ### Follow-up Work
 
 - Phase 3.3: Document hook patterns for vectors, custom indexes, derived columns
-- Phase 4: Integration — wire into an app, add MCP query action, verify coexistence with filesystem sqlite-index
+- Phase 4: Integration: wire into an app, add MCP query action, verify coexistence with filesystem sqlite-index
 - Schema migration on startup: compare generated DDL against existing SQLite schema, ALTER TABLE ADD COLUMN for new columns, drop+recreate for breaking changes
 - Batch INSERT optimization: group rows into transactions of 500 for large tables

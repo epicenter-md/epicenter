@@ -535,7 +535,7 @@ Whispering stores as much data as possible locally on your device, including rec
 
 1. **Local Storage**: Voice recordings and transcriptions are stored in IndexedDB, which is used as blob storage and a place to store all of your data like text and transcriptions.
 
-2. **Transcription Service**: The only data sent elsewhere is your recording to an external transcription service—if you choose one. You have the following options:
+2. **Transcription Service**: The only data sent elsewhere is your recording to an external transcription service. If you choose one. You have the following options:
    - External services like OpenAI, Groq, or ElevenLabs (with your own API keys)
    - A local transcription service such as Speaches, which keeps everything on-device
 
@@ -715,35 +715,35 @@ Adding a new transcription service involves four main steps:
 
    // Define your models directly in the service file
    export const YOUR_SERVICE_MODELS = [
-   	{
-   		name: 'model-v1',
-   		description: 'Description of what makes this model special',
-   		cost: '$0.XX/hour',
-   	},
+	{
+		name: 'model-v1',
+		description: 'Description of what makes this model special',
+		cost: '$0.XX/hour',
+	},
    ] as const;
 
    export type YourServiceModel = (typeof YOUR_SERVICE_MODELS)[number];
 
    export const YourServiceTranscriptionServiceLive = {
-   	async transcribe(
-   		audioBlob: Blob,
-   		options: {
-   			prompt: string;
-   			outputLanguage: string;
-   			apiKey: string;
-   			modelName: (string & {}) | YourServiceModel['name'];
-   		},
-   	): Promise<Result<string, YourServiceError>> {
-   		if (!options.apiKey) return YourServiceError.MissingApiKey();
+	async transcribe(
+		audioBlob: Blob,
+		options: {
+			prompt: string;
+			outputLanguage: string;
+			apiKey: string;
+			modelName: (string & {}) | YourServiceModel['name'];
+		},
+	): Promise<Result<string, YourServiceError>> {
+		if (!options.apiKey) return YourServiceError.MissingApiKey();
 
-   		return tryAsync({
-   			try: async () => {
-   				const data = await yourServiceClient.transcribe(audioBlob, options);
-   				return data.text.trim();
-   			},
-   			catch: (error) => YourServiceError.Unexpected({ cause: error }),
-   		});
-   	},
+		return tryAsync({
+			try: async () => {
+				const data = await yourServiceClient.transcribe(audioBlob, options);
+				return data.text.trim();
+			},
+			catch: (error) => YourServiceError.Unexpected({ cause: error }),
+		});
+	},
    };
    ```
 
@@ -755,8 +755,8 @@ Adding a new transcription service involves four main steps:
    import { YourServiceTranscriptionServiceLive } from './cloud/your-service';
 
    export {
-   	// ... existing exports
-   	YourServiceTranscriptionServiceLive as yourservice,
+	// ... existing exports
+	YourServiceTranscriptionServiceLive as yourservice,
    };
    ```
 
@@ -774,47 +774,47 @@ Adding a new transcription service involves four main steps:
 
    // Add import for your models
    import {
-   	YOUR_SERVICE_MODELS,
-   	type YourServiceModel,
+	YOUR_SERVICE_MODELS,
+	type YourServiceModel,
    } from './cloud/your-service';
 
    // Add to the TranscriptionModel union type
    type TranscriptionModel =
-   	| OpenAIModel
-   	| GroqModel
-   	| ElevenLabsModel
-   	| DeepgramModel
-   	| YourServiceModel;
+	| OpenAIModel
+	| GroqModel
+	| ElevenLabsModel
+	| DeepgramModel
+	| YourServiceModel;
 
    // Add to TRANSCRIPTION_SERVICE_IDS array
    export const TRANSCRIPTION_SERVICE_IDS = [
-   	'whispercpp',
-   	'parakeet',
-   	'Groq',
-   	'OpenAI',
-   	'ElevenLabs',
-   	'Deepgram',
-   	'speaches',
-   	'YourService', // Add your service here
+	'whispercpp',
+	'parakeet',
+	'Groq',
+	'OpenAI',
+	'ElevenLabs',
+	'Deepgram',
+	'speaches',
+	'YourService', // Add your service here
    ] as const;
 
    // Add to TRANSCRIPTION_SERVICES array (in the appropriate section)
    export const TRANSCRIPTION_SERVICES = [
-   	// ... existing services
-   	// Add in the cloud services section:
-   	{
-   		id: 'YourService',
-   		name: 'Your Service Name',
-   		icon: yourServiceIcon,
-   		invertInDarkMode: true, // or false, depending on your icon
-   		description: 'Description of what makes your service special',
-   		models: YOUR_SERVICE_MODELS,
-   		defaultModel: YOUR_SERVICE_MODELS[0],
-   		modelSettingKey: 'transcription.yourservice.model',
-   		apiKeyField: 'apiKeys.yourservice',
-   		location: 'cloud', // or 'local' or 'self-hosted'
-   	},
-   	// ... rest of services
+	// ... existing services
+	// Add in the cloud services section:
+	{
+		id: 'YourService',
+		name: 'Your Service Name',
+		icon: yourServiceIcon,
+		invertInDarkMode: true, // or false, depending on your icon
+		description: 'Description of what makes your service special',
+		models: YOUR_SERVICE_MODELS,
+		defaultModel: YOUR_SERVICE_MODELS[0],
+		modelSettingKey: 'transcription.yourservice.model',
+		apiKeyField: 'apiKeys.yourservice',
+		location: 'cloud', // or 'local' or 'self-hosted'
+	},
+	// ... rest of services
    ] as const satisfies SatisfiedTranscriptionService[];
    ```
 
@@ -858,32 +858,32 @@ Adding a new transcription service involves four main steps:
 
    ```svelte
    <script lang="ts">
-   	import { LabeledInput } from '$lib/components/labeled/index.js';
-   	import { Button } from '$lib/components/ui/button/index.js';
-   	import { settings } from '$lib/state/settings.svelte';
+	import { LabeledInput } from '$lib/components/labeled/index.js';
+	import { Button } from '$lib/components/ui/button/index.js';
+	import { settings } from '$lib/state/settings.svelte';
    </script>
 
    <LabeledInput
-   	id="yourservice-api-key"
-   	label="YourService API Key"
-   	type="password"
-   	placeholder="Your YourService API Key"
-   	value={settings.value['apiKeys.yourservice']}
-   	oninput={({ currentTarget: { value } }) => {
-   		settings.updateKey('apiKeys.yourservice', value);
-   	}}
+	id="yourservice-api-key"
+	label="YourService API Key"
+	type="password"
+	placeholder="Your YourService API Key"
+	value={settings.value['apiKeys.yourservice']}
+	oninput={({ currentTarget: { value } }) => {
+		settings.updateKey('apiKeys.yourservice', value);
+	}}
    >
-   	{#snippet description()}
-   		<p class="text-muted-foreground text-sm">
-   			You can find your YourService API key in your <Link
-   				href="https://yourservice.com/api-keys"
-   				target="_blank"
-   				rel="noopener noreferrer"
-   			>
-   				YourService dashboard
-   			</Link>.
-   		</p>
-   	{/snippet}
+	{#snippet description()}
+		<p class="text-muted-foreground text-sm">
+			You can find your YourService API key in your <Link
+				href="https://yourservice.com/api-keys"
+				target="_blank"
+				rel="noopener noreferrer"
+			>
+				YourService dashboard
+			</Link>.
+		</p>
+	{/snippet}
    </LabeledInput>
    ```
 
@@ -914,23 +914,23 @@ AI transformations in Whispering use completion services that can be integrated 
    export type YourProviderError = InferErrors<typeof YourProviderError>;
 
    export const YourProviderCompletionServiceLive = {
-   	async complete(options: {
-   		apiKey: string;
-   		model: string;
-   		systemPrompt: string;
-   		userPrompt: string;
-   		temperature?: number;
-   	}): Promise<Result<string, YourProviderError>> {
-   		if (!options.apiKey) return YourProviderError.MissingApiKey();
+	async complete(options: {
+		apiKey: string;
+		model: string;
+		systemPrompt: string;
+		userPrompt: string;
+		temperature?: number;
+	}): Promise<Result<string, YourProviderError>> {
+		if (!options.apiKey) return YourProviderError.MissingApiKey();
 
-   		return tryAsync({
-   			try: async () => {
-   				const data = await yourProviderClient.complete(options);
-   				return data.text;
-   			},
-   			catch: (error) => YourProviderError.Unexpected({ cause: error }),
-   		});
-   	},
+		return tryAsync({
+			try: async () => {
+				const data = await yourProviderClient.complete(options);
+				return data.text;
+			},
+			catch: (error) => YourProviderError.Unexpected({ cause: error }),
+		});
+	},
    };
    ```
 
@@ -940,8 +940,8 @@ AI transformations in Whispering use completion services that can be integrated 
    import { YourProviderCompletionServiceLive } from './your-provider';
 
    export {
-   	// ... existing exports
-   	YourProviderCompletionServiceLive as yourprovider,
+	// ... existing exports
+	YourProviderCompletionServiceLive as yourprovider,
    };
    ```
 
@@ -1079,7 +1079,7 @@ After running the script, follow the displayed instructions to commit, tag, and 
 - Performance optimizations
 - New transcription or transformation service integrations
 
-Feel free to suggest and implement any features that improve usability—I'll do my best to integrate contributions that make Whispering better for everyone.
+Feel free to suggest and implement any features that improve usability. I'll do my best to integrate contributions that make Whispering better for everyone.
 
 ## Acknowledgments
 

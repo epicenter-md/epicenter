@@ -1,25 +1,25 @@
 # Simplify Y-Sweet API Surface
 
-**Status**: Complete (Superseded by `@epicenter/sync` rewrite — PR #1350)
+**Status**: Complete (Superseded by `@epicenter/sync` rewrite: PR #1350)
 
 Simplify `AuthEndpoint` and `ClientToken` types in `@epicenter/y-sweet` to remove unused fields, dead code paths, and a URL double-encoding bug. This is a follow-up to the backwards-compatibility removal spec.
 
-> **Note (2026-02-14):** This spec's goals were fully achieved, but not through incremental simplification. The entire `@epicenter/y-sweet` package was deleted and replaced with `@epicenter/sync` (a ground-up rewrite with supervisor loop architecture). All problems identified here — dead `ClientToken` fields, string-branch `AuthEndpoint`, double-docId URL bug, dead `Authorization`/`AuthDocRequest` types — no longer exist. The new `SyncProviderConfig` type takes `url` + `token?` + `getToken?` directly, matching the three auth modes from the server spec.
+> **Note (2026-02-14):** This spec's goals were fully achieved, but not through incremental simplification. The entire `@epicenter/y-sweet` package was deleted and replaced with `@epicenter/sync` (a ground-up rewrite with supervisor loop architecture). All problems identified here: dead `ClientToken` fields, string-branch `AuthEndpoint`, double-docId URL bug, dead `Authorization`/`AuthDocRequest` types: no longer exist. The new `SyncProviderConfig` type takes `url` + `token?` + `getToken?` directly, matching the three auth modes from the server spec.
 
 ## Context
 
 After the backwards-compat cleanup, the provider is ~672 lines with a tighter API. But several abstractions still carry baggage from the original Jamsocket SDK that don't match Epicenter's usage:
 
-1. **`AuthEndpoint`** is `string | (() => Promise<ClientToken>)` — the string branch (POST to URL) is never exercised. The extension layer always converts strings to functions before reaching the provider, and direct callers always pass functions. The provider has ~30 lines of dead fetch logic.
+1. **`AuthEndpoint`** is `string | (() => Promise<ClientToken>)`: the string branch (POST to URL) is never exercised. The extension layer always converts strings to functions before reaching the provider, and direct callers always pass functions. The provider has ~30 lines of dead fetch logic.
 
 2. **`ClientToken`** has 5 fields. Only 2 are functionally used:
-   - `baseUrl` — written but never read anywhere in the monorepo
-   - `docId` — redundant with the provider's constructor arg, only used in `validateClientToken` and `generateUrl`
-   - `authorization` — only triggers a `console.warn`, never set to `'read-only'` anywhere
+   - `baseUrl`: written but never read anywhere in the monorepo
+   - `docId`: redundant with the provider's constructor arg, only used in `validateClientToken` and `generateUrl`
+   - `authorization`: only triggers a `console.warn`, never set to `'read-only'` anywhere
 
-3. **Double-docId bug** — Direct mode constructs `url` as `ws://host/d/{docId}/ws`, then `generateUrl()` appends `/{docId}` again → `ws://host/d/{docId}/ws/{docId}`. The Y-Sweet server returns `url` as a base (e.g., `ws://host/d/`) expecting the client to append `{docId}`. Direct mode pre-bakes the full path, causing double-encoding.
+3. **Double-docId bug**: Direct mode constructs `url` as `ws://host/d/{docId}/ws`, then `generateUrl()` appends `/{docId}` again → `ws://host/d/{docId}/ws/{docId}`. The Y-Sweet server returns `url` as a base (e.g., `ws://host/d/`) expecting the client to append `{docId}`. Direct mode pre-bakes the full path, causing double-encoding.
 
-4. **Dead types** — `AuthDocRequest` and `Authorization` are exported but never imported outside the package.
+4. **Dead types**: `AuthDocRequest` and `Authorization` are exported but never imported outside the package.
 
 ## Changes
 
@@ -54,7 +54,7 @@ export type ClientToken = {
 
 Delete `Authorization` and `AuthDocRequest` types entirely.
 
-The `url` field is now the **fully-formed** WebSocket URL — the provider no longer appends docId. This eliminates the double-encoding bug by design and pushes URL construction to the caller (extension layer), where it belongs.
+The `url` field is now the **fully-formed** WebSocket URL. The provider no longer appends docId. This eliminates the double-encoding bug by design and pushes URL construction to the caller (extension layer), where it belongs.
 
 ### 2. Simplify `AuthEndpoint` (`provider.ts`)
 
@@ -72,7 +72,7 @@ export type AuthEndpoint = () => Promise<ClientToken>;
 
 ### 3. Simplify `getClientToken()` (`provider.ts`)
 
-**Before** (lines 89-121): Two branches — function call vs. fetch POST to string URL.
+**Before** (lines 89-121): Two branches: function call vs. fetch POST to string URL.
 
 **After:**
 
@@ -84,7 +84,7 @@ async function getClientToken(
 }
 ```
 
-Or inline it entirely into `ensureClientToken()`. Remove `validateClientToken()` — no `docId` to validate.
+Or inline it entirely into `ensureClientToken()`. Remove `validateClientToken()`: no `docId` to validate.
 
 ### 4. Simplify `generateUrl()` (`provider.ts`)
 
@@ -117,7 +117,7 @@ authEndpoint: string | (() => Promise<ClientToken>);
 authEndpoint: () => Promise<ClientToken>;
 ```
 
-**`buildAuthEndpoint()`** — simplify, no string-to-function conversion needed:
+**`buildAuthEndpoint()`**: simplify, no string-to-function conversion needed:
 
 ```typescript
 function buildAuthEndpoint(
@@ -134,9 +134,9 @@ function buildAuthEndpoint(
 }
 ```
 
-**Delete `createAuthFetcher()`** — consumers who have a URL can write their own async function. The extension doesn't need to provide fetch logic.
+**Delete `createAuthFetcher()`**: consumers who have a URL can write their own async function. The extension doesn't need to provide fetch logic.
 
-**`createDirectClientToken()`** — return simplified type:
+**`createDirectClientToken()`**: return simplified type:
 
 ```typescript
 function createDirectClientToken(
@@ -152,7 +152,7 @@ function createDirectClientToken(
 }
 ```
 
-> **Note to implementer:** Verify the WebSocket path format (`/d/{docId}/ws` vs `/{docId}`) against the running Y-Sweet server. The upstream server returns `url` as a base like `ws://host/d/` and expects `{docId}` appended — but the actual WebSocket route may be `/d/{docId}/ws` or just `/{docId}`. Test the connection end-to-end.
+> **Note to implementer:** Verify the WebSocket path format (`/d/{docId}/ws` vs `/{docId}`) against the running Y-Sweet server. The upstream server returns `url` as a base like `ws://host/d/` and expects `{docId}` appended, but the actual WebSocket route may be `/d/{docId}/ws` or just `/{docId}`. Test the connection end-to-end.
 
 ### 7. Update app layer (`y-sweet-connection.ts`)
 
@@ -192,16 +192,16 @@ The remaining public API:
 
 ## Tasks
 
-- [x] Simplify `ClientToken` in `types.ts` — remove `baseUrl`, `docId`, `authorization`; delete `Authorization` and `AuthDocRequest` types
-- [x] Simplify `AuthEndpoint` in `provider.ts` — remove string branch, make it `() => Promise<ClientToken>` only
-- [x] Simplify or inline `getClientToken()` — remove string fetch logic and `validateClientToken()`
-- [x] Simplify `generateUrl()` — stop appending docId, just append `?token=xxx`
+- [x] Simplify `ClientToken` in `types.ts`: remove `baseUrl`, `docId`, `authorization`; delete `Authorization` and `AuthDocRequest` types
+- [x] Simplify `AuthEndpoint` in `provider.ts`: remove string branch, make it `() => Promise<ClientToken>` only
+- [x] Simplify or inline `getClientToken()`: remove string fetch logic and `validateClientToken()`
+- [x] Simplify `generateUrl()`: stop appending docId, just append `?token=xxx`
 - [x] Remove `authorization` console.warn from `update()` method
-- [x] Update `y-sweet-sync.ts` — simplify `YSweetAuthenticatedConfig`, `buildAuthEndpoint()`, delete `createAuthFetcher()`, update `createDirectClientToken()`
-- [x] Update `y-sweet-connection.ts` — remove `baseUrl` and `docId` from inline ClientToken
+- [x] Update `y-sweet-sync.ts`: simplify `YSweetAuthenticatedConfig`, `buildAuthEndpoint()`, delete `createAuthFetcher()`, update `createDirectClientToken()`
+- [x] Update `y-sweet-connection.ts`: remove `baseUrl` and `docId` from inline ClientToken
 - [x] Remove `AuthDocRequest` and `Authorization` exports from `main.ts`
 - [x] Run `bun run check` to verify no type errors (`@epicenter/y-sweet` compiles clean; pre-existing errors in other packages unrelated to this change)
-- [x] ~~Test WebSocket connection end-to-end against running Y-Sweet server to verify URL format~~ — Superseded: `@epicenter/y-sweet` deleted, replaced by `@epicenter/sync` (PR #1350)
+- [x] ~~Test WebSocket connection end-to-end against running Y-Sweet server to verify URL format~~: Superseded: `@epicenter/y-sweet` deleted, replaced by `@epicenter/sync` (PR #1350)
 
 ## File summary
 

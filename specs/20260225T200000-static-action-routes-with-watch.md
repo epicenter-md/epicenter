@@ -9,12 +9,12 @@
 
 The actions plugin (`packages/server/src/workspace/actions.ts`) used two wildcard routes (`GET /*`, `POST /*`) to handle all actions across all workspaces. This approach:
 
-1. **Lost per-action OpenAPI metadata** — all queries shared one generic description, all mutations shared another
-2. **Broke Eden Treaty type inference** — the wildcard `*` param wasn't typed, requiring `(params as Record<string, string>)['*']` casts
-3. **Fought the framework** — manual path prefix stripping to extract the action path from the raw URL
-4. **No route-level validation** — TypeBox input schemas were checked at runtime inside the handler rather than declared in Elysia's route schema
+1. **Lost per-action OpenAPI metadata**: all queries shared one generic description, all mutations shared another
+2. **Broke Eden Treaty type inference**: the wildcard `*` param wasn't typed, requiring `(params as Record<string, string>)['*']` casts
+3. **Fought the framework**: manual path prefix stripping to extract the action path from the raw URL
+4. **No route-level validation**: TypeBox input schemas were checked at runtime inside the handler rather than declared in Elysia's route schema
 
-The wildcard approach was introduced because actions are nested (e.g., `ai/generate`, `records/create`) and workspaces are resolved dynamically. But tables and KV already solve the dynamic workspace problem with `/:workspaceId/tables/:tableName` — they use parameterized routes with runtime resolution, not wildcards.
+The wildcard approach was introduced because actions are nested (e.g., `ai/generate`, `records/create`) and workspaces are resolved dynamically. But tables and KV already solve the dynamic workspace problem with `/:workspaceId/tables/:tableName`: they use parameterized routes with runtime resolution, not wildcards.
 
 ## Solution
 
@@ -22,12 +22,12 @@ Replaced the wildcard `createActionsPlugin` with per-action static route registr
 
 - **Rich OpenAPI docs** per action (summary, description, namespace tags)
 - **Full Elysia type inference** on each route
-- **Framework-native routing** — Elysia's radix tree does the matching
+- **Framework-native routing**: Elysia's radix tree does the matching
 - **Automatic reload** when actions are added/removed/changed
 
 ## Key Insight
 
-Elysia compiles routes at `.listen()` time and does not support adding routes after startup. But `bun --watch` restarts the entire process on file changes, so the route tree is rebuilt from scratch each time. This means we can register all routes statically at startup and rely on the restart to pick up changes — no hot-reload plumbing needed.
+Elysia compiles routes at `.listen()` time and does not support adding routes after startup. But `bun --watch` restarts the entire process on file changes, so the route tree is rebuilt from scratch each time. This means we can register all routes statically at startup and rely on the restart to pick up changes, no hot-reload plumbing needed.
 
 ## What Changed
 
@@ -41,7 +41,7 @@ Key differences from the old wildcard approach:
 - Routes are registered per unique action path across all workspaces
 - Workspace resolution still happens at request time via `:workspaceId` param
 - Each route gets its own OpenAPI `detail` with summary and namespace tags
-- No manual path prefix stripping — Elysia handles matching
+- No manual path prefix stripping: Elysia handles matching
 - `resolveAction` is still used, but the path is known at registration time
 
 ### 2. Added `--watch` flag to the `serve` command
@@ -58,14 +58,14 @@ The legacy per-single-workspace function was removed. The refactored `createActi
 
 ### 4. No changes needed
 
-- `packages/server/src/workspace/plugin.ts` — already called `createActionsPlugin(workspaces)`, signature unchanged
-- `packages/server/src/workspace/index.ts` — exports unchanged
-- `packages/server/src/local.ts` — no changes needed
+- `packages/server/src/workspace/plugin.ts`: already called `createActionsPlugin(workspaces)`, signature unchanged
+- `packages/server/src/workspace/index.ts`: exports unchanged
+- `packages/server/src/local.ts`: no changes needed
 
 ## Edge Cases Handled
 
 ### Workspaces with different action sets
-If workspace A has `ai/generate` and workspace B has `records/create`, the plugin registers both routes. At request time, `GET /workspaces/A/actions/records/create` returns 404 because workspace A doesn't have that action — `resolveAction` returns undefined.
+If workspace A has `ai/generate` and workspace B has `records/create`, the plugin registers both routes. At request time, `GET /workspaces/A/actions/records/create` returns 404 because workspace A doesn't have that action: `resolveAction` returns undefined.
 
 ### Workspaces with overlapping action paths but different types
 Uses `Map<string, Set<'query' | 'mutation'>>` so if workspace A defines `users/sync` as a query and workspace B defines it as a mutation, both GET and POST routes are registered.

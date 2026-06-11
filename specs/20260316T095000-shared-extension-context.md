@@ -46,7 +46,7 @@ return ({ ydoc, awareness, whenReady }) => {
     const provider = createSyncProvider({
         doc: ydoc,
         url: wsUrl,
-        awareness: awareness?.raw,  // TypeScript FORCES the ?. — correct!
+        awareness: awareness?.raw,  // TypeScript FORCES the ?.: correct!
     });
     // ...
 };
@@ -97,7 +97,7 @@ Every extension factory in the codebase, what it destructures, and how it's regi
 | Decision | Choice | Rationale |
 |---|---|---|
 | SharedExtensionContext field strategy | Optional properties, not intersection | Factories like sync need `awareness` at document scope. Optional typing forces `?.` without losing access. |
-| Which workspace fields to pass at document scope | `awareness` and `definitions` | `awareness` enables collaborative editing features. `definitions` enables schema introspection. NOT `tables`/`kv`/`documents`/`batch`/`loadSnapshot`—scope confusion risk. |
+| Which workspace fields to pass at document scope | `awareness` and `definitions` | `awareness` enables collaborative editing features. `definitions` enables schema introspection. NOT `tables`/`kv`/`documents`/`batch`/`loadSnapshot`: scope confusion risk. |
 | DocumentClient type | Yes, in `types.ts` | Mirrors WorkspaceClient pattern. Foundation for computed DocumentContext. |
 | DocumentContext derivation | `Omit<DocumentClient, 'destroy'>` | Auto-tracks DocumentClient changes, matching how ExtensionContext derives from WorkspaceClient. |
 | DocumentHandle rename `exports` → `extensions` | Deferred | Breaking change to public API. Handle separately to keep this spec focused. |
@@ -192,7 +192,7 @@ SharedExtensionContext receives:
   awareness    ✅ workspace awareness (from closure)
   definitions  ✅ workspace definitions (from closure)
   timeline     ✅ content timeline
-  tables       ✗ undefined (not passed—scope confusion risk)
+  tables       ✗ undefined (not passed. Scope confusion risk)
   kv           ✗ undefined
   documents    ✗ undefined
   batch        ✗ undefined
@@ -204,7 +204,7 @@ SharedExtensionContext receives:
 ### Phase 1: Types
 
 - [ ] **1.1** Add `SharedExtensionContext` type to `types.ts` with all fields from both scopes (workspace fields optional, document fields optional, shared fields required)
-- [ ] **1.2** Add `DocumentClient` type to `types.ts` — `Timeline & { id, extensions, whenReady, destroy }`
+- [ ] **1.2** Add `DocumentClient` type to `types.ts`: `Timeline & { id, extensions, whenReady, destroy }`
 - [ ] **1.3** Move `DocumentContext` from `lifecycle.ts` to `types.ts`, redefine as `Omit<DocumentClient, 'destroy'>`
 - [ ] **1.4** Re-export `DocumentContext` from `lifecycle.ts` for backward compatibility
 - [ ] **1.5** Update `WorkspaceClientBuilder.withExtension` factory param from `ExtensionContext` to `SharedExtensionContext`
@@ -219,14 +219,14 @@ SharedExtensionContext receives:
 
 ### Phase 3: Factory Updates
 
-- [ ] **3.1** Update `createSyncExtension` — change `awareness.raw` to `awareness?.raw` and handle undefined
-- [ ] **3.2** Update `createMarkdownPersistenceExtension` — either move to `withWorkspaceExtension` (preferred, since it fundamentally needs `tables`) or guard with `if (!tables) return;`
+- [ ] **3.1** Update `createSyncExtension`: change `awareness.raw` to `awareness?.raw` and handle undefined
+- [ ] **3.2** Update `createMarkdownPersistenceExtension`: either move to `withWorkspaceExtension` (preferred, since it fundamentally needs `tables`) or guard with `if (!tables) return;`
 - [ ] **3.3** Update any test factories that rely on workspace-only fields being non-optional in `withExtension`
 
 ### Phase 4: Verification
 
-- [ ] **4.1** Run type checker — all existing code compiles
-- [ ] **4.2** Run tests — all pass
+- [ ] **4.1** Run type checker: all existing code compiles
+- [ ] **4.2** Run tests: all pass
 - [ ] **4.3** Verify no `as unknown as` or `as any` casts remain in the extension registration path
 
 ## Edge Cases
@@ -235,16 +235,16 @@ SharedExtensionContext receives:
 
 A factory registered via `withExtension` that requires `tables` (e.g., `createMarkdownPersistenceExtension`):
 
-1. Factory destructures `{ tables }` — TypeScript types it as `TablesHelper | undefined`
+1. Factory destructures `{ tables }`: TypeScript types it as `TablesHelper | undefined`
 2. Factory must guard: `if (!tables) return;` (void return = "not installed")
-3. At document scope, factory returns void — extension is skipped for documents
+3. At document scope, factory returns void: extension is skipped for documents
 4. **Alternative**: Register via `withWorkspaceExtension` + `withDocumentExtension` separately
 
 ### Sync extension at document scope without awareness
 
 1. `createSyncExtension` is dual-registered via `withExtension`
 2. At workspace scope: `awareness` is defined, provider gets awareness
-3. At document scope: `awareness` is passed from workspace closure — still defined
+3. At document scope: `awareness` is passed from workspace closure: still defined
 4. Provider syncs the content Y.Doc with awareness from the workspace
 5. No crash, no type error
 
@@ -261,7 +261,7 @@ A factory registered via `withExtension` that requires `tables` (e.g., `createMa
 
 1. `withDocumentExtension` factory is typed as `(DocumentContext) => ...`
 2. At runtime, the context object may have extra fields (`awareness`, `definitions`) from the shared construction
-3. This is fine — TypeScript's structural typing means extra properties don't break anything
+3. This is fine: TypeScript's structural typing means extra properties don't break anything
 4. The factory's type only promises `DocumentContext` fields; extras are invisible to it
 
 ## Open Questions
@@ -273,7 +273,7 @@ A factory registered via `withExtension` that requires `tables` (e.g., `createMa
 
 2. **Should `tables` and `kv` be passed at document scope?**
    - A document extension that reads workspace tables (e.g., to look up row metadata) has a legitimate use case.
-   - But it blurs the scope boundary — document extensions modifying workspace tables could cause subtle bugs.
+   - But it blurs the scope boundary: document extensions modifying workspace tables could cause subtle bugs.
    - **Recommendation**: Don't pass for now. If needed, a factory can use `withWorkspaceExtension` to get guaranteed `tables` access, or we can add them later.
 
 3. **Should the `extensions` field be typed as `Record<string, unknown>` or preserve generics?**
@@ -286,20 +286,20 @@ A factory registered via `withExtension` that requires `tables` (e.g., `createMa
 - [x] `as unknown as` cast documented and semantically safe (SharedExtensionContext → DocumentContext, not ExtensionContext → DocumentContext)
 - [x] `createSyncExtension` uses `awareness?.raw` (optional chaining, structural typing)
 - [x] A factory that destructures `{ tables }` from `withExtension` gets `TablesHelper | undefined` (not `TablesHelper`)
-- [x] `DocumentContext` manually defined in `types.ts` (not computed — see Deviations)
+- [x] `DocumentContext` manually defined in `types.ts` (not computed: see Deviations)
 - [x] All 218 workspace tests pass with one minor test update (optional field annotation)
 - [x] Type checker passes (only pre-existing errors in unrelated files)
 
 ## References
 
-- `packages/workspace/src/workspace/types.ts` — `ExtensionContext`, `WorkspaceClient`, `DocumentHandle`, `WorkspaceClientBuilder`, `DocumentExtensionRegistration`
-- `packages/workspace/src/workspace/lifecycle.ts` — `DocumentContext`, `Extension`, `defineExtension`
-- `packages/workspace/src/workspace/create-workspace.ts` — `applyWorkspaceExtension`, `buildClient`, the unsafe cast
-- `packages/workspace/src/workspace/create-document.ts` — Document open loop, context construction
-- `packages/workspace/src/extensions/sync.ts` — `createSyncExtension` (destructures `awareness`)
-- `apps/tab-manager-markdown/src/markdown-persistence-extension.ts` — `createMarkdownPersistenceExtension` (destructures `tables`)
-- `packages/filesystem/src/extensions/sqlite-index/index.ts` — `createSqliteIndex` (already `withWorkspaceExtension`)
-- `packages/workspace/src/timeline/timeline.ts` — `Timeline` type (document core surface)
+- `packages/workspace/src/workspace/types.ts`: `ExtensionContext`, `WorkspaceClient`, `DocumentHandle`, `WorkspaceClientBuilder`, `DocumentExtensionRegistration`
+- `packages/workspace/src/workspace/lifecycle.ts`: `DocumentContext`, `Extension`, `defineExtension`
+- `packages/workspace/src/workspace/create-workspace.ts`: `applyWorkspaceExtension`, `buildClient`, the unsafe cast
+- `packages/workspace/src/workspace/create-document.ts`: Document open loop, context construction
+- `packages/workspace/src/extensions/sync.ts`: `createSyncExtension` (destructures `awareness`)
+- `apps/tab-manager-markdown/src/markdown-persistence-extension.ts`: `createMarkdownPersistenceExtension` (destructures `tables`)
+- `packages/filesystem/src/extensions/sqlite-index/index.ts`: `createSqliteIndex` (already `withWorkspaceExtension`)
+- `packages/workspace/src/timeline/timeline.ts`: `Timeline` type (document core surface)
 
 ## Review
 
@@ -337,10 +337,10 @@ DocumentHandle           = Omit<DocumentClient, 'destroy'>
 
 ### Deviations from Spec
 
-- **SharedExtensionContext does not exist.** The spec proposed a union type with optional workspace/document fields. After implementation and Oracle consultation, we determined that `withExtension` was a code smell—one factory serving two fundamentally different contexts. Replaced with `DualScopeContext` (tiny shared contract) + thin sugar.
+- **SharedExtensionContext does not exist.** The spec proposed a union type with optional workspace/document fields. After implementation and Oracle consultation, we determined that `withExtension` was a code smell. One factory serving two fundamentally different contexts. Replaced with `DualScopeContext` (tiny shared contract) + thin sugar.
 - **DocumentContext uses `Pick`, not `Omit`.** The IS-A vs HAS-A tension: `DocumentClient` extends `Timeline` (handle IS a timeline), but factories destructure `{ timeline }` as a field. `Pick` selects the fields factories need without inheriting Timeline methods.
 - **`createSyncExtension` uses `ExtensionFactory`, not `SharedExtensionFactory`.** Sync needs `awareness` (workspace-only). Registered via `withWorkspaceExtension`, not `withExtension`.
-- **No cross-scope field passing.** The spec proposed passing `awareness` and `definitions` from the workspace closure to document scope. This was removed when `withExtension` became thin sugar—dual-scope factories only see `{ ydoc, whenReady }`.
+- **No cross-scope field passing.** The spec proposed passing `awareness` and `definitions` from the workspace closure to document scope. This was removed when `withExtension` became thin sugar. Dual-scope factories only see `{ ydoc, whenReady }`.
 
 ### Follow-up Work
 

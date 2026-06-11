@@ -9,7 +9,7 @@
 
 Whispering is a local-first speech-to-text app. Today it stores all data on-device (filesystem on desktop, IndexedDB on web) with zero networking beyond external transcription API calls. This spec adds optional multi-device sync via `server-remote`, using the `@epicenter/workspace` API as the data layer.
 
-Sync is configured by a single server URL. If a URL is set, sync is on — the client connects via `createSyncExtension` and authenticates with a Better Auth session token. If the URL is absent, sync is off and Whispering works exactly as today. The default URL points to Epicenter Cloud; users who self-host just change it to their own server. Both self-hosted and cloud use the same `server-remote` binary with the same Better Auth sessions — the only difference is who runs the server.
+Sync is configured by a single server URL. If a URL is set, sync is on. The client connects via `createSyncExtension` and authenticates with a Better Auth session token. If the URL is absent, sync is off and Whispering works exactly as today. The default URL points to Epicenter Cloud; users who self-host just change it to their own server. Both self-hosted and cloud use the same `server-remote` binary with the same Better Auth sessions. The only difference is who runs the server.
 
 ## Current State
 
@@ -32,7 +32,7 @@ Sync is configured by a single server URL. If a URL is set, sync is on — the c
 ### What Whispering Does NOT Have
 
 - No sync, no remote connections, no user accounts
-- No Yjs usage (dependency exists but unused — `vite.config.ts` has `resolve: { dedupe: ['yjs'] }` but zero imports in source)
+- No Yjs usage (dependency exists but unused: `vite.config.ts` has `resolve: { dedupe: ['yjs'] }` but zero imports in source)
 - No `@epicenter/workspace` integration
 - No server component
 
@@ -40,7 +40,7 @@ Sync is configured by a single server URL. If a URL is set, sync is on — the c
 
 ### Data Model Migration to @epicenter/workspace
 
-Replace Whispering's flat file / IndexedDB storage with Yjs-backed workspace tables. The schema is **normalized** — every entity type gets its own table. Embedded arrays (`Transformation.steps[]`, `TransformationRun.stepRuns[]`) are extracted into separate tables with foreign keys.
+Replace Whispering's flat file / IndexedDB storage with Yjs-backed workspace tables. The schema is **normalized**: every entity type gets its own table. Embedded arrays (`Transformation.steps[]`, `TransformationRun.stepRuns[]`) are extracted into separate tables with foreign keys.
 
 ```typescript
 // whispering/src/lib/workspace.ts
@@ -82,7 +82,7 @@ const transformations = defineTable(type({
 // `steps[]` array that was previously embedded in Transformation.
 //
 // `order` is a float to allow reordering without renumbering (fractional
-// indexing). All fields for all step types are present — Yjs only stores
+// indexing). All fields for all step types are present: Yjs only stores
 // keys that are explicitly set, so unused fields have minimal overhead.
 
 const transformationSteps = defineTable(type({
@@ -161,7 +161,7 @@ const transformationStepRuns = defineTable(type({
 // ── Synced Settings ────────────────────────────────────────────────────────
 // Preferences that roam across devices. API keys, filesystem paths, hardware
 // device IDs, base URLs pointing to local servers, and global shortcuts are
-// deliberately excluded — they stay in the app's existing localStorage-backed
+// deliberately excluded: they stay in the app's existing localStorage-backed
 // Settings system and are never synced.
 
 const syncedSettings = defineKv(type({
@@ -245,11 +245,11 @@ export default createWorkspace(defineWorkspace({
 These settings stay in the app's existing `localStorage`-backed Settings system. They are never synced because they contain secrets, hardware-bound values, filesystem paths, or base URLs pointing to local servers.
 
 ```
-// API keys — secrets must never travel through Yjs
+// API keys: secrets must never travel through Yjs
 apiKeys.openai, apiKeys.anthropic, apiKeys.groq, apiKeys.google,
 apiKeys.deepgram, apiKeys.elevenlabs, apiKeys.mistral, apiKeys.openrouter, apiKeys.custom
 
-// API endpoint overrides — may point to local infrastructure
+// API endpoint overrides: may point to local infrastructure
 apiEndpoints.openai, apiEndpoints.groq
 
 // Base URLs pointing to local servers
@@ -257,20 +257,20 @@ transcription.speaches.baseUrl        // e.g. localhost:8000
 completion.openrouter.model           // synced (model selection)
 completion.custom.baseUrl             // e.g. localhost:11434 (Ollama)
 
-// Local model paths — filesystem paths that differ per device
+// Local model paths: filesystem paths that differ per device
 transcription.whispercpp.modelPath
 transcription.parakeet.modelPath
 transcription.moonshine.modelPath
 transcription.speaches.modelId
 
-// Recording method & hardware — OS/driver dependent
+// Recording method & hardware: OS/driver dependent
 recording.method                      // cpal | navigator | ffmpeg
 recording.cpal.deviceId, recording.navigator.deviceId, recording.ffmpeg.deviceId
 recording.navigator.bitrateKbps
 recording.cpal.outputFolder, recording.cpal.sampleRate
 recording.ffmpeg.globalOptions, recording.ffmpeg.inputOptions, recording.ffmpeg.outputOptions
 
-// Global shortcuts — system-wide key combos, conflict across OS/keyboard layouts
+// Global shortcuts: system-wide key combos, conflict across OS/keyboard layouts
 shortcuts.global.*
 ```
 
@@ -291,18 +291,18 @@ type BlobStore = {
 
 #### Platform Implementations
 
-**Filesystem (Desktop)** — `createFileSystemBlobStore(basePath: string): BlobStore`
+**Filesystem (Desktop)**: `createFileSystemBlobStore(basePath: string): BlobStore`
 
-Takes a directory path (e.g. `~/Library/Application Support/com.bradenwong.whispering/recordings/`). Stores blobs as `{basePath}/{id}.{ext}` where `ext` is derived from `mimeType` via `mime.getExtension()`. This is what desktop already does today — the factory just wraps it behind the shared interface.
+Takes a directory path (e.g. `~/Library/Application Support/com.bradenwong.whispering/recordings/`). Stores blobs as `{basePath}/{id}.{ext}` where `ext` is derived from `mimeType` via `mime.getExtension()`. This is what desktop already does today. The factory just wraps it behind the shared interface.
 
-**IndexedDB (Web)** — `createIndexedDbBlobStore(dbName: string): BlobStore`
+**IndexedDB (Web)**: `createIndexedDbBlobStore(dbName: string): BlobStore`
 
 Stores blobs as `{ arrayBuffer: ArrayBuffer, blobType: string }` in an IndexedDB object store. Internally the same serialization format web Whispering uses today (`serializedAudio`), just behind the `BlobStore` interface instead of co-located on the recording row.
 
 #### Why a Shared Interface
 
 - Recording metadata moves to Yjs tables; audio blobs must not. Decoupling blob storage from the data layer makes this separation clean.
-- The rest of the app calls `blobStore.get(recordingId)` — it never knows whether it's hitting the filesystem or IndexedDB.
+- The rest of the app calls `blobStore.get(recordingId)`: it never knows whether it's hitting the filesystem or IndexedDB.
 - The UI checks `blobStore.has(recordingId)` to decide whether to show the audio player or "Audio only available on the recording device."
 - During migration, existing audio blobs are copied into the new `BlobStore` (desktop: already in the right place, just needs the interface wrapper; web: move `serializedAudio` from the Dexie recording row into the standalone IndexedDB blob store).
 
@@ -314,7 +314,7 @@ Future: A separate blob sync mechanism (R2 upload, presigned URLs) could sync au
 
 ### Sync Configuration
 
-> **Updated 2026-03-03**: The original spec had three sync modes (off / self-hosted with token / cloud with Better Auth) as a discriminated union. This was based on the assumption that self-hosted servers wouldn't use Better Auth. That assumption was wrong — the [two-mode-auth spec](./20260303T120000-two-mode-auth-with-centralized-oauth.md) removed static token auth entirely, and the [network topology spec](./20260222T195645-network-topology-multi-server-architecture.md) established that both self-hosted and cloud use Better Auth. Since the auth flow is now identical regardless of who runs the server, the three-mode discriminated union collapses to a single nullable URL.
+> **Updated 2026-03-03**: The original spec had three sync modes (off / self-hosted with token / cloud with Better Auth) as a discriminated union. This was based on the assumption that self-hosted servers wouldn't use Better Auth. That assumption was wrong: the [two-mode-auth spec](./20260303T120000-two-mode-auth-with-centralized-oauth.md) removed static token auth entirely, and the [network topology spec](./20260222T195645-network-topology-multi-server-architecture.md) established that both self-hosted and cloud use Better Auth. Since the auth flow is now identical regardless of who runs the server, the three-mode discriminated union collapses to a single nullable URL.
 
 Sync config is a single field in localStorage:
 
@@ -333,11 +333,11 @@ const EPICENTER_CLOUD_URL = 'wss://sync.epicenter.so/rooms/{id}';
 The mapping to the library type (`SyncExtensionConfig`) is trivial:
 
 ```typescript
-// When syncUrl is null — no sync
+// When syncUrl is null: no sync
 config.withExtension('persistence', indexeddbPersistence)
 // No sync extension
 
-// When syncUrl is set (cloud or self-hosted — same wiring)
+// When syncUrl is set (cloud or self-hosted: same wiring)
 config
   .withExtension('persistence', indexeddbPersistence)
   .withExtension('sync', createSyncExtension({
@@ -349,7 +349,7 @@ config
   }))
 ```
 
-The `authClient` is configured with the same base URL as the sync server. When the user signs into their self-hosted server or Epicenter Cloud, they get a Better Auth session. The session token is passed to the sync extension via `getToken`. There is no separate auth flow for self-hosted vs cloud — both use Better Auth sessions, email/password signup, and optional OAuth.
+The `authClient` is configured with the same base URL as the sync server. When the user signs into their self-hosted server or Epicenter Cloud, they get a Better Auth session. The session token is passed to the sync extension via `getToken`. There is no separate auth flow for self-hosted vs cloud: both use Better Auth sessions, email/password signup, and optional OAuth.
 
 #### Why a Nullable URL Instead of a Discriminated Union
 
@@ -380,7 +380,7 @@ Both self-hosted and cloud deployments use the same `createRemoteServer()` facto
 ```typescript
 import { createRemoteServer } from '@epicenter/server-remote';
 
-// Self-hosted — user runs this on their own machine/VPS/LAN
+// Self-hosted: user runs this on their own machine/VPS/LAN
 createRemoteServer({
   port: 3913,
   auth: {
@@ -390,7 +390,7 @@ createRemoteServer({
   },
 })
 
-// Cloud — same factory, different config
+// Cloud: same factory, different config
 createRemoteServer({
   port: 3913,
   auth: {
@@ -402,7 +402,7 @@ createRemoteServer({
 })
 ```
 
-When `config.auth` is provided, `createRemoteServer()` auto-wires sync verification from Better Auth sessions — no explicit `sync.verifyToken` needed. The server validates the session token on every WebSocket connection and REST request automatically.
+When `config.auth` is provided, `createRemoteServer()` auto-wires sync verification from Better Auth sessions, no explicit `sync.verifyToken` needed. The server validates the session token on every WebSocket connection and REST request automatically.
 
 > **Note**: `createRemoteServer({ port: 3913 })` with no `auth` config still works as an open relay for development. But production deployments (self-hosted or cloud) should always configure `auth`.
 
@@ -485,16 +485,16 @@ When `config.auth` is provided, `createRemoteServer()` auto-wires sync verificat
 └─────────────────────────────────────────────────┘
 ```
 
-The "Change Server" action reveals the URL field, pre-filled with the current URL. Changing the URL disconnects from the old server and prompts sign-in at the new one. The Yjs local state is the source of truth — the new server gets bootstrapped from the client's state on first connect (see "Switching Servers" under Constraints).
+The "Change Server" action reveals the URL field, pre-filled with the current URL. Changing the URL disconnects from the old server and prompts sign-in at the new one. The Yjs local state is the source of truth. The new server gets bootstrapped from the client's state on first connect (see "Switching Servers" under Constraints).
 
 ## Authentication
 
 > **Updated 2026-03-03**: The original spec had a "Layered Strategy" with three tiers: open (no auth), static token (`verifyToken`), and Better Auth. The rationale was that self-hosters shouldn't need Better Auth. This was superseded by two changes:
 >
 > 1. **[Two-mode auth](./20260303T120000-two-mode-auth-with-centralized-oauth.md)** removed static token auth from the sync layer entirely. The `{ token: string }` mode in `packages/sync` and the `verifyToken` shortcut in `packages/server` are gone. Sync auth is now: open (no auth) or verify (a function).
-> 2. **[Network topology](./20260222T195645-network-topology-multi-server-architecture.md)** established that both self-hosted and cloud use Better Auth. The hub (now called "remote server") always runs Better Auth — even when self-hosted on a Raspberry Pi.
+> 2. **[Network topology](./20260222T195645-network-topology-multi-server-architecture.md)** established that both self-hosted and cloud use Better Auth. The hub (now called "remote server") always runs Better Auth: even when self-hosted on a Raspberry Pi.
 >
-> The old "self-hosters don't need Better Auth" argument was reasonable but ultimately wrong. Better Auth adds one SQLite file and one environment variable (`BETTER_AUTH_SECRET`). In exchange, it gives session management, multi-device sign-in, and a clean upgrade path to OAuth. The alternative — static shared tokens — required users to manually distribute a secret to every device, had no expiry, no revocation, and no session visibility. Better Auth is less setup than managing shared secrets properly.
+> The old "self-hosters don't need Better Auth" argument was reasonable but ultimately wrong. Better Auth adds one SQLite file and one environment variable (`BETTER_AUTH_SECRET`). In exchange, it gives session management, multi-device sign-in, and a clean upgrade path to OAuth. The alternative: static shared tokens: required users to manually distribute a secret to every device, had no expiry, no revocation, and no session visibility. Better Auth is less setup than managing shared secrets properly.
 
 ### Unified Auth Model
 
@@ -533,7 +533,7 @@ The original spec argued self-hosters don't need auth because they have network-
 
 ### Already Built (packages/server-remote)
 
-- `createRemoteServer({ auth?, sync? })` — configurable auth at both levels
+- `createRemoteServer({ auth?, sync? })`: configurable auth at both levels
 - Auto-wires Better Auth → sync verification when `auth` is provided without `sync.verifyToken`
 - Ephemeral Yjs relay via WebSocket (`/rooms/:room`)
 - REST snapshot/apply (`GET/POST /rooms/:room`)
@@ -546,21 +546,21 @@ The original spec argued self-hosters don't need auth because they have network-
 - `createSyncProvider()` with supervisor loop architecture
 - Two auth modes: open (omit `getToken`) or dynamic `getToken: () => Promise<string>` (static `token` field removed per [two-mode-auth spec](./20260303T120000-two-mode-auth-with-centralized-oauth.md))
 - Token retry: 3 connection attempts per token, then forces `getToken()` refresh
-- `MESSAGE_SYNC_STATUS (102)` heartbeat — drives "Saving..." / "Saved" UI via `onLocalChanges()` callback
+- `MESSAGE_SYNC_STATUS (102)` heartbeat: drives "Saving..." / "Saved" UI via `onLocalChanges()` callback
 - Exponential backoff reconnection (base 1.1, max coefficient 10, 500ms initial delay)
 - Browser online/offline event integration
 
 ### Already Built (packages/epicenter)
 
-- `createSyncExtension(config)` — waits for persistence, then connects; `reconnect()` for hot-swapping URLs
-- `defineTable`, `defineKv`, `defineWorkspace` — schema-first data model with `_v` versioning
+- `createSyncExtension(config)`: waits for persistence, then connects; `reconnect()` for hot-swapping URLs
+- `defineTable`, `defineKv`, `defineWorkspace`: schema-first data model with `_v` versioning
 - Extension lifecycle (`whenReady`, `destroy`, ordered teardown)
 
 ### Already Built (packages/server/src/sync/)
 
-- `protocol.ts` — framework-agnostic encode/decode utilities (`MESSAGE_TYPE`, `encodeSyncStep1/2`, `encodeSyncUpdate`, `encodeSyncStatus`, `handleSyncMessage`)
-- `rooms.ts` — `createRoomManager()` with `join()`, `leave()`, `broadcast()`, `getDoc()`, 60s default eviction
-- `plugin.ts` — Elysia plugin wiring protocol + rooms + `verifyToken` auth (two modes: open or verify function; static token mode removed per [two-mode-auth spec](./20260303T120000-two-mode-auth-with-centralized-oauth.md))
+- `protocol.ts`: framework-agnostic encode/decode utilities (`MESSAGE_TYPE`, `encodeSyncStep1/2`, `encodeSyncUpdate`, `encodeSyncStatus`, `handleSyncMessage`)
+- `rooms.ts`: `createRoomManager()` with `join()`, `leave()`, `broadcast()`, `getDoc()`, 60s default eviction
+- `plugin.ts`: Elysia plugin wiring protocol + rooms + `verifyToken` auth (two modes: open or verify function; static token mode removed per [two-mode-auth spec](./20260303T120000-two-mode-auth-with-centralized-oauth.md))
 
 ### Needs Building
 
@@ -578,7 +578,7 @@ The original spec argued self-hosters don't need auth because they have network-
 
 ### Audio Blobs Don't Sync
 
-Yjs is designed for small, frequent updates (text edits, metadata changes). A 5MB audio file as a Y.Array of bytes would bloat the CRDT state, slow down sync, and break the ephemeral relay model (server-remote doesn't persist — if the DO evicts, the blob is gone).
+Yjs is designed for small, frequent updates (text edits, metadata changes). A 5MB audio file as a Y.Array of bytes would bloat the CRDT state, slow down sync, and break the ephemeral relay model (server-remote doesn't persist. If the DO evicts, the blob is gone).
 
 Audio stays local behind the `BlobStore` abstraction (see "Audio Blobs: Local-Only BlobStore Abstraction" above). The recording table row syncs (metadata, transcription text) but the audio file does not. The UI calls `blobStore.has(recordingId)` to decide whether to show the audio player or an "Audio only available on the recording device" indicator.
 
@@ -588,7 +588,7 @@ Not all settings should sync. The split principle: **secrets and hardware-bound 
 
 **Synced** (in workspace KV): sound toggles, UI preferences, transcription service/model selection, recording mode, output behavior, in-app shortcuts, data retention, analytics.
 
-**Local** (stays in existing Settings system): API keys, API endpoint overrides, base URLs pointing to local servers (Speaches, Ollama), local model paths (filesystem paths differ per device), recording method (cpal/navigator/ffmpeg — OS/driver dependent), audio device IDs, CPAL/FFmpeg config, global shortcuts (system-wide key combos conflict across OS/keyboard layouts).
+**Local** (stays in existing Settings system): API keys, API endpoint overrides, base URLs pointing to local servers (Speaches, Ollama), local model paths (filesystem paths differ per device), recording method (cpal/navigator/ffmpeg: OS/driver dependent), audio device IDs, CPAL/FFmpeg config, global shortcuts (system-wide key combos conflict across OS/keyboard layouts).
 
 ### Conflict Resolution
 
@@ -646,11 +646,11 @@ After migration completes, a summary dialog:
 
 On first launch with workspace integration:
 
-1. **Read all existing data using the desktop dual-read facade** (on desktop) or Dexie (on web). On desktop, this means calling through `desktopDb` which merges filesystem + IndexedDB with filesystem taking precedence — not calling the raw filesystem service, which would miss records that only exist in IndexedDB (pre-filesystem-migration data).
+1. **Read all existing data using the desktop dual-read facade** (on desktop) or Dexie (on web). On desktop, this means calling through `desktopDb` which merges filesystem + IndexedDB with filesystem taking precedence: not calling the raw filesystem service, which would miss records that only exist in IndexedDB (pre-filesystem-migration data).
 
-2. **Validate with failure collection, not silent drops.** The current filesystem `getAll()` silently returns `null` for recordings that fail ArkType validation (no logging — unlike transformations and runs which at least `console.error`). The migration must collect validation failures into a `skippedRecords[]` list rather than discarding them. These are surfaced in the summary dialog.
+2. **Validate with failure collection, not silent drops.** The current filesystem `getAll()` silently returns `null` for recordings that fail ArkType validation (no logging: unlike transformations and runs which at least `console.error`). The migration must collect validation failures into a `skippedRecords[]` list rather than discarding them. These are surfaced in the summary dialog.
 
-3. **Auto-fail in-progress runs.** Any `TransformationRun` or `TransformationStepRun` with `status: 'running'` is set to `status: 'failed'` with `error: 'Migration: run was in progress during data migration'` and `completedAt` set to the migration timestamp. There is no process to resume these — the old execution context is gone.
+3. **Auto-fail in-progress runs.** Any `TransformationRun` or `TransformationStepRun` with `status: 'running'` is set to `status: 'failed'` with `error: 'Migration: run was in progress during data migration'` and `completedAt` set to the migration timestamp. There is no process to resume these: the old execution context is gone.
 
 4. **Write each entity to the appropriate Yjs workspace table** (all wrapped in a single `Y.Doc.transact()` call):
    - `recordings` → `tables.recordings.set()`
@@ -660,7 +660,7 @@ On first launch with workspace integration:
    - `transformationRun.stepRuns[]` → normalize into `tables.transformationStepRuns.set()` (one row per step run, with `transformationRunId` FK injected from parent and `order` derived from array index)
 
 5. **Migrate audio blobs into the BlobStore.**
-   - Desktop: No-op — audio files are already in `recordings/{id}.{ext}` on the filesystem. The `createFileSystemBlobStore` wrapper just points at the same directory.
+   - Desktop: No-op: audio files are already in `recordings/{id}.{ext}` on the filesystem. The `createFileSystemBlobStore` wrapper just points at the same directory.
    - Web: Move `serializedAudio` from each Dexie recording row into the standalone `createIndexedDbBlobStore`. The old Dexie `recordings` table had audio co-located with metadata; the new model separates them.
 
 6. **Extract synced settings** from the flat settings object into the workspace KV.
@@ -671,7 +671,7 @@ On first launch with workspace integration:
 
 ### Ephemeral Relay vs Persistent Cloud
 
-- **Self-hosted server-remote**: Ephemeral. Y.Docs evict 60s after last client disconnects. Data only persists on client devices (via `indexeddbPersistence` or `filePersistence`). If all clients go offline simultaneously, the relay has nothing — next client to connect bootstraps the room from its local state.
+- **Self-hosted server-remote**: Ephemeral. Y.Docs evict 60s after last client disconnects. Data only persists on client devices (via `indexeddbPersistence` or `filePersistence`). If all clients go offline simultaneously, the relay has nothing: next client to connect bootstraps the room from its local state.
 - **Cloud (Durable Objects)**: Persistent. DO SQLite storage holds the Y.Doc state. A client connecting after all others have been offline for days still gets the latest state from the DO.
 
 This is a key UX difference. Self-hosted is fine for "always have at least one device online" users. Cloud guarantees no data loss even if all devices are offline for weeks.
@@ -693,7 +693,7 @@ No data migration needed. The old server's relay state is simply abandoned (it w
 
 server-remote uses Elysia (Bun-native). Cloudflare Workers use the `fetch` handler pattern. The sync protocol and room manager are already framework-agnostic, but the Elysia route wiring doesn't run on Workers.
 
-For the cloud tier, a separate DO adapter wraps the same `protocol.ts` and `rooms.ts` logic in a `DurableObject` class. Per the deployment-targets-research spec, this is the planned approach — not running Elysia on Workers.
+For the cloud tier, a separate DO adapter wraps the same `protocol.ts` and `rooms.ts` logic in a `DurableObject` class. Per the deployment-targets-research spec, this is the planned approach, not running Elysia on Workers.
 
 ## Implementation Phases
 
@@ -713,7 +713,7 @@ For the cloud tier, a separate DO adapter wraps the same `protocol.ts` and `room
   - [ ] Show summary dialog with migrated/skipped/auto-failed counts
   - [ ] Old data left in place as backup; localStorage flag prevents re-import
 
-### Phase 2: Sync (Self-Hosted & Cloud — Same Auth Flow)
+### Phase 2: Sync (Self-Hosted & Cloud: Same Auth Flow)
 
 > **Updated 2026-03-03**: Phases 2 and 3 were originally separate (self-hosted with token, then cloud with Better Auth). Since both now use Better Auth, they're a single phase. The only Phase 3 work remaining is cloud-specific infrastructure (Durable Objects, room namespacing).
 
@@ -741,41 +741,41 @@ For the cloud tier, a separate DO adapter wraps the same `protocol.ts` and `room
 
 Remaining work broken into waves for incremental execution. Each wave produces working code + a commit.
 
-### Wave 2: Workspace-Backed DbService (sequential — single large task)
+### Wave 2: Workspace-Backed DbService (sequential: single large task)
 
-Create a new `DbService` implementation at `apps/whispering/src/lib/services/isomorphic/db/workspace.ts` that implements the existing `DbService` interface (from `types.ts`) using `@epicenter/workspace` table operations + `BlobStore` for audio. This is the biggest single task — it bridges the existing CRUD interface to Yjs-backed tables.
+Create a new `DbService` implementation at `apps/whispering/src/lib/services/isomorphic/db/workspace.ts` that implements the existing `DbService` interface (from `types.ts`) using `@epicenter/workspace` table operations + `BlobStore` for audio. This is the biggest single task. It bridges the existing CRUD interface to Yjs-backed tables.
 
 **Key details:**
-- The `DbService` interface (`types.ts`) is the contract — recordings, transformations, runs CRUD + audio blob methods
+- The `DbService` interface (`types.ts`) is the contract: recordings, transformations, runs CRUD + audio blob methods
 - Recordings/Transformations: straightforward table.set/get/delete mapping
-- TransformationSteps: normalized out of `Transformation.steps[]` into `tables.transformationSteps` — reads must reconstruct the embedded array by querying steps with matching `transformationId`, sorted by `order`
-- TransformationRuns + StepRuns: same normalization — `runs.stepRuns[]` reconstructed from `tables.transformationStepRuns` by `transformationRunId`
+- TransformationSteps: normalized out of `Transformation.steps[]` into `tables.transformationSteps`: reads must reconstruct the embedded array by querying steps with matching `transformationId`, sorted by `order`
+- TransformationRuns + StepRuns: same normalization: `runs.stepRuns[]` reconstructed from `tables.transformationStepRuns` by `transformationRunId`
 - Multi-table mutations (`addStep`, `failStep`, `completeStep`, `complete`) wrapped in `Y.Doc.transact()` for atomicity
 - Audio methods (`getAudioBlob`, `ensureAudioPlaybackUrl`, `revokeAudioUrl`) delegate to BlobStore
 - Import the live workspace client from `$lib/workspace` (schema + persistence already wired there)
 - Update `apps/whispering/src/lib/services/isomorphic/db/index.ts` to use the new workspace-backed implementation
 
 **Files to read first:**
-- `apps/whispering/src/lib/services/isomorphic/db/types.ts` — the DbService interface
-- `apps/whispering/src/lib/services/isomorphic/db/web.ts` — reference implementation (IndexedDB)
-- `apps/whispering/src/lib/services/isomorphic/db/desktop.ts` — dual-read facade pattern
-- `apps/whispering/src/lib/workspace.ts` — workspace schema + live client with persistence (created in Wave 1)
-- `packages/epicenter/src/workspace/` — workspace client API (createWorkspace, table operations)
+- `apps/whispering/src/lib/services/isomorphic/db/types.ts`: the DbService interface
+- `apps/whispering/src/lib/services/isomorphic/db/web.ts`: reference implementation (IndexedDB)
+- `apps/whispering/src/lib/services/isomorphic/db/desktop.ts`: dual-read facade pattern
+- `apps/whispering/src/lib/workspace.ts`: workspace schema + live client with persistence (created in Wave 1)
+- `packages/epicenter/src/workspace/`: workspace client API (createWorkspace, table operations)
 
-### Wave 3: Settings Split (sequential — touches shared settings module)
+### Wave 3: Settings Split (sequential: touches shared settings module)
 
 Split the settings system into synced (workspace KV) and local-only (localStorage).
 
 **Task 3.1:** Separate settings into two categories:
 - Extract synced setting keys (sound toggles, UI prefs, transcription service/model, recording mode, output behavior, in-app shortcuts, data retention, analytics) into workspace KV reads/writes
 - Local-only keys (API keys, endpoint overrides, base URLs, model paths, recording method, device IDs, CPAL/FFmpeg config, global shortcuts) stay in the existing `createPersistedState` localStorage system
-- The `settings` reactive state object must merge both sources transparently — consumers don't change
+- The `settings` reactive state object must merge both sources transparently: consumers don't change
 
 **Files to modify:**
-- `apps/whispering/src/lib/settings/settings.ts` — schema stays (it's the validation source), but add a `SYNCED_KEYS` / `LOCAL_KEYS` partition
-- `apps/whispering/src/lib/state/settings.svelte.ts` — update to read/write synced keys from workspace KV, local keys from localStorage
+- `apps/whispering/src/lib/settings/settings.ts`: schema stays (it's the validation source), but add a `SYNCED_KEYS` / `LOCAL_KEYS` partition
+- `apps/whispering/src/lib/state/settings.svelte.ts`: update to read/write synced keys from workspace KV, local keys from localStorage
 
-### Wave 4: Migration (sequential — depends on Waves 2+3)
+### Wave 4: Migration (sequential: depends on Waves 2+3)
 
 Build one-time leave-in-place migration from old storage to workspace tables.
 
@@ -798,14 +798,14 @@ Build one-time leave-in-place migration from old storage to workspace tables.
 - Summary dialog after: migrated/skipped/auto-failed counts
 - "View Skipped Items" shows raw file paths / IDs
 
-### Wave 5: Sync Settings UI + Wiring (parallel — Phase 2, independent UI work)
+### Wave 5: Sync Settings UI + Wiring (parallel: Phase 2, independent UI work)
 
-> **Updated 2026-03-03**: Waves 5 and 6 merged. Since self-hosted and cloud use the same auth flow, there's no need for a separate "wire sync extension" wave — the wiring is the same regardless of the URL.
+> **Updated 2026-03-03**: Waves 5 and 6 merged. Since self-hosted and cloud use the same auth flow, there's no need for a separate "wire sync extension" wave: the wiring is the same regardless of the URL.
 
 **Task 5.1:** Sync toggle + URL field in settings
 - Toggle: enable/disable sync (`syncUrl: string | null` in localStorage)
 - URL field: pre-filled with `EPICENTER_CLOUD_URL`, editable for self-hosted
-- Better Auth sign-in/sign-up (same UI for both — the auth client targets the server URL)
+- Better Auth sign-in/sign-up (same UI for both: the auth client targets the server URL)
 - Sync config stored in localStorage (device-specific, not workspace data)
 
 **Task 5.2:** Wire `createSyncExtension` in workspace client
@@ -826,24 +826,24 @@ Build one-time leave-in-place migration from old storage to workspace tables.
 
 3. ~~**How should the "connect to server-remote" flow work in the Tauri desktop app vs the web app?**~~ **Resolved**: localStorage for `syncUrl` on both platforms. It's device-specific config (the server URL itself), not workspace data.
 
-4. **What happens when a user switches servers (e.g. self-hosted to cloud)?** Their local Yjs state is the source of truth. Switching the sync URL means the new server gets bootstrapped from the client's local state on first connect. No data loss, but the old server's relay state is abandoned. This just works — Yjs sync protocol handles it. Client sends its full state vector, new server responds with what it's missing (nothing, since it's fresh). The user signs out of the old server and signs into the new one.
+4. **What happens when a user switches servers (e.g. self-hosted to cloud)?** Their local Yjs state is the source of truth. Switching the sync URL means the new server gets bootstrapped from the client's local state on first connect. No data loss, but the old server's relay state is abandoned. This just works: Yjs sync protocol handles it. Client sends its full state vector, new server responds with what it's missing (nothing, since it's fresh). The user signs out of the old server and signs into the new one.
 
-5. **Should self-hosted users need to create an account on their own server?** Yes — `createRemoteServer({ auth })` auto-seeds an admin account on first boot (see `seedAdminIfNeeded()` in the auth plugin). The self-hoster creates one account, signs in on all their devices. This is less friction than managing shared secrets and provides session visibility.
+5. **Should self-hosted users need to create an account on their own server?** Yes: `createRemoteServer({ auth })` auto-seeds an admin account on first boot (see `seedAdminIfNeeded()` in the auth plugin). The self-hoster creates one account, signs in on all their devices. This is less friction than managing shared secrets and provides session visibility.
 
 ## References
 
-- `packages/epicenter/src/extensions/sync.ts` — `createSyncExtension` factory
-- `packages/sync/src/provider.ts` — WebSocket sync provider (two modes: open or `getToken`)
-- `packages/server-remote/src/remote.ts` — `createRemoteServer()` factory with auto-wired auth
-- `packages/server-remote/src/auth/plugin.ts` — Better Auth integration + `auth` macro + `seedAdminIfNeeded()`
-- `packages/server/src/sync/plugin.ts` — shared sync plugin (Elysia) with `verifyToken` option
-- `packages/server/src/sync/protocol.ts` — framework-agnostic y-websocket protocol
-- `packages/server/src/sync/rooms.ts` — room manager with eviction
-- `apps/whispering/ARCHITECTURE.md` — Whispering three-layer architecture
-- `apps/whispering/src/lib/services/isomorphic/db/` — current database service
-- `apps/whispering/src/lib/services/isomorphic/db/models/` — Recording, Transformation, TransformationRun types
-- `apps/whispering/src/lib/settings/settings.ts` — ~60+ key settings schema
-- `specs/20260219T200000-deployment-targets-research.md` — Bun vs CF Workers + DOs
-- `specs/20260222T195645-network-topology-multi-server-architecture.md` — three-tier topology (both modes use Better Auth)
-- `specs/20260227T120000-server-package-split.md` — server → server/server-remote/server-local split
-- `specs/20260303T120000-two-mode-auth-with-centralized-oauth.md` — removed static token auth, simplified to open/verify
+- `packages/epicenter/src/extensions/sync.ts`: `createSyncExtension` factory
+- `packages/sync/src/provider.ts`: WebSocket sync provider (two modes: open or `getToken`)
+- `packages/server-remote/src/remote.ts`: `createRemoteServer()` factory with auto-wired auth
+- `packages/server-remote/src/auth/plugin.ts`: Better Auth integration + `auth` macro + `seedAdminIfNeeded()`
+- `packages/server/src/sync/plugin.ts`: shared sync plugin (Elysia) with `verifyToken` option
+- `packages/server/src/sync/protocol.ts`: framework-agnostic y-websocket protocol
+- `packages/server/src/sync/rooms.ts`: room manager with eviction
+- `apps/whispering/ARCHITECTURE.md`: Whispering three-layer architecture
+- `apps/whispering/src/lib/services/isomorphic/db/`: current database service
+- `apps/whispering/src/lib/services/isomorphic/db/models/`: Recording, Transformation, TransformationRun types
+- `apps/whispering/src/lib/settings/settings.ts`: ~60+ key settings schema
+- `specs/20260219T200000-deployment-targets-research.md`: Bun vs CF Workers + DOs
+- `specs/20260222T195645-network-topology-multi-server-architecture.md`: three-tier topology (both modes use Better Auth)
+- `specs/20260227T120000-server-package-split.md`: server → server/server-remote/server-local split
+- `specs/20260303T120000-two-mode-auth-with-centralized-oauth.md`: removed static token auth, simplified to open/verify

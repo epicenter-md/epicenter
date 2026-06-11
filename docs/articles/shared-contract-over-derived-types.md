@@ -1,6 +1,6 @@
 # Shared Contract Over Derived Types
 
-There's a concept in psychology called the "third variable problem." You observe that A and B are correlated and assume A causes B—or B causes A. But neither is right. A hidden third variable, C, causes both.
+There's a concept in psychology called the "third variable problem." You observe that A and B are correlated and assume A causes B. Or B causes A. But neither is right. A hidden third variable, C, causes both.
 
 Ice cream sales and drowning deaths both spike in summer. Ice cream doesn't cause drowning. Summer causes both.
 
@@ -33,11 +33,11 @@ const client = hc<AppType>('/');
 //    ^ fully typed: client.balance.$get() → typed response
 ```
 
-Elegant—until the dashboard's type checker tried to resolve `AppType`. The type chain goes `AppType` → `Hono<Env>` → `Cloudflare.Env` → `DurableObjectNamespace` → `KVNamespace` → half the Cloudflare Workers runtime. The dashboard doesn't need any of this. It just needs to know "GET /balance returns `{ balance: number }`."
+Elegant. Until the dashboard's type checker tried to resolve `AppType`. The type chain goes `AppType` → `Hono<Env>` → `Cloudflare.Env` → `DurableObjectNamespace` → `KVNamespace` → half the Cloudflare Workers runtime. The dashboard doesn't need any of this. It just needs to know "GET /balance returns `{ balance: number }`."
 
 This is [honojs/hono#2489](https://github.com/honojs/hono/issues/2489). The `hc` client needs the full `AppType` to infer routes, and `AppType` carries the server's entire type universe. The client is forced to resolve types it will never use.
 
-The server didn't cause the client's type error. The client didn't cause the server's Cloudflare dependency. The coupling caused both problems. A causes B? B causes A? Neither. The derived-type relationship—C—causes both.
+The server didn't cause the client's type error. The client didn't cause the server's Cloudflare dependency. The coupling caused both problems. A causes B? B causes A? Neither. The derived-type relationship, C, causes both.
 
 ## The third file
 
@@ -64,7 +64,7 @@ Extract the types into an independent contract that neither side owns:
 The contract file has zero imports. No Cloudflare types, no Hono, no Svelte, no runtime dependencies. Pure type definitions:
 
 ```typescript
-// billing-contract.ts — the shared boundary
+// billing-contract.ts: the shared boundary
 export type BalanceResponse = {
   subscriptions?: Array<{ planId: string; addOn?: boolean }>;
   balances?: Record<string, { balance: number; included_usage: number }>;
@@ -109,7 +109,7 @@ If the server's response shape drifts from the contract, `satisfies` catches it 
 
 ## When the third file wins
 
-This pattern isn't always better. For a small API consumed by a single client in the same package, deriving types directly is simpler—no indirection, no extra file.
+This pattern isn't always better. For a small API consumed by a single client in the same package, deriving types directly is simpler. No indirection, no extra file.
 
 The third file earns its keep when:
 
@@ -119,11 +119,11 @@ The third file earns its keep when:
 
 - **Multiple consumers.** A mobile app, a web dashboard, and a CLI all call the same API. Deriving from the server means all three need the server's type environment. A contract gives each consumer exactly the types it needs.
 
-- **External API responses.** When the response shapes come from a third-party API (in our case, Autumn's billing API), neither our server nor our client defines the shape—it's imposed externally. The contract is a natural place to document those shapes once.
+- **External API responses.** When the response shapes come from a third-party API (in our case, Autumn's billing API), neither our server nor our client defines the shape. It's imposed externally. The contract is a natural place to document those shapes once.
 
 ## The analogy
 
-In psychology, the "third variable problem" warns against assuming direct causation between two correlated variables. The same intellectual move applies to type derivation. When you see two systems that need matching types, the instinct is to derive one from the other. But sometimes the clearest design is to extract the shared structure into an independent third artifact—a contract, a schema, a spec—that both systems implement against.
+In psychology, the "third variable problem" warns against assuming direct causation between two correlated variables. The same intellectual move applies to type derivation. When you see two systems that need matching types, the instinct is to derive one from the other. But sometimes the clearest design is to extract the shared structure into an independent third artifact. A contract, a schema, a spec. That both systems implement against.
 
 The server doesn't own the types. The client doesn't own the types. The contract owns the types. Both sides are consumers.
 

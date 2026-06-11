@@ -6,14 +6,14 @@
 
 ## TL;DR
 
-`defineMutation` / `defineQuery` become **pure passthrough** — the returned action callable IS the handler, with metadata attached. Local callers see the handler's actual return shape (sync if sync, raw if raw, `Result` if explicit). Transport-imposed semantics (`Promise<Result<T, E | RpcError>>`) live at the boundary that has the transport: `createRemoteActions` for the wire, plus a single shared `invokeNormalized` util for in-process consumers (AI bridge, CLI, RPC server-side).
+`defineMutation` / `defineQuery` become **pure passthrough**: the returned action callable IS the handler, with metadata attached. Local callers see the handler's actual return shape (sync if sync, raw if raw, `Result` if explicit). Transport-imposed semantics (`Promise<Result<T, E | RpcError>>`) live at the boundary that has the transport: `createRemoteActions` for the wire, plus a single shared `invokeNormalized` util for in-process consumers (AI bridge, CLI, RPC server-side).
 
 ## Context
 
 Phase 1 (PR landing now) implemented "actions always return `Promise<Result<T, E>>`." The spec author's reasoning:
 1. Unified shape across local, AI, CLI, RPC consumption.
 2. Eliminates the `RemoteReturn` conditional type machinery.
-3. "Two semantic worlds" — handler-shape locally vs wrapped remotely — was hard to reason about.
+3. "Two semantic worlds": handler-shape locally vs wrapped remotely: was hard to reason about.
 
 After implementing, the costs are visible at four Fuji fire-and-forget UI sites that touch operations which genuinely cannot fail (pure Y.Doc writes). Those sites pay an async + Result envelope tax forever, for capabilities the operations don't need locally. The wrap was put at definition time to support remote/AI/CLI consumers; local UI inherited that cost as collateral.
 
@@ -42,9 +42,9 @@ function defineMutation({ handler, ...meta }) {
 
 **Transport-imposed semantics live at boundaries:**
 
-- `createRemoteActions(actions, send)` — already wraps each leaf in `Promise<Result<T, E | RpcError>>`. The mapped type `RemoteActions<A>` uses a 4-branch `WrapAction<F>` conditional that handles sync raw, sync Result, async raw, and async Result handler shapes.
-- `attach-sync.ts:handleRpcRequest` — already normalizes raw → `Ok`, throw → `Err(ActionFailed)`. Unchanged.
-- `tool-bridge.ts:execute` and `cli/run.ts:invokeLocal` — adopt a shared `invokeNormalized(action, input)` util that does the same normalize work uniformly.
+- `createRemoteActions(actions, send)`: already wraps each leaf in `Promise<Result<T, E | RpcError>>`. The mapped type `RemoteActions<A>` uses a 4-branch `WrapAction<F>` conditional that handles sync raw, sync Result, async raw, and async Result handler shapes.
+- `attach-sync.ts:handleRpcRequest`: already normalizes raw → `Ok`, throw → `Err(ActionFailed)`. Unchanged.
+- `tool-bridge.ts:execute` and `cli/run.ts:invokeLocal`: adopt a shared `invokeNormalized(action, input)` util that does the same normalize work uniformly.
 
 The shared util:
 
@@ -76,15 +76,15 @@ Three call sites use it: AI tool bridge, CLI dispatch, and (optionally) `handleR
 `Promise<Result<T, E | RpcError>>` exists because the wire is async (so `Promise`) and can fail in transit (so `Result`, error union widened by `RpcError`). Same-process calls don't have those constraints. Baking transport semantics into the function definition put the concern at the wrong layer.
 
 This aligns with how analogous systems work:
-- **tRPC** — server procedures are plain async functions; the *client proxy* introduces `Promise` (network is async).
-- **TanStack Query** — mutation function returns whatever it returns; `mutate` and `mutateAsync` are wrappers added by the *consumer hook*.
-- **gRPC** — server handlers are sync or async; the generated *client* knows it's network and wraps.
+- **tRPC**: server procedures are plain async functions; the *client proxy* introduces `Promise` (network is async).
+- **TanStack Query**: mutation function returns whatever it returns; `mutate` and `mutateAsync` are wrappers added by the *consumer hook*.
+- **gRPC**: server handlers are sync or async; the generated *client* knows it's network and wraps.
 
 ### 2. Type-system migration is safer than silent semantic absorption
 
 In passthrough world, if `entries.update` later changes from sync void to async `Result<T, E>`:
 - All call sites light up red in TypeScript ("can't destructure a Promise", "cannot read `.id` on `Result`").
-- The fix is mechanical and surgical — every site is identified by the type checker.
+- The fix is mechanical and surgical: every site is identified by the type checker.
 
 In unified world, the same handler change:
 - All call sites keep working.
@@ -97,7 +97,7 @@ I argued in the original spec that unified protects call sites from migration. R
 
 The spec's complaint was about *implicit* conditional types (`RemoteReturn`) that silently rewrote the shape based on whether the caller was local or remote. Authors couldn't tell what shape they'd see without tracing through the conditional.
 
-This design makes the boundaries explicit. `actions.X` is the handler shape. `createRemoteActions(actions, send).X` is the wrapped shape. The factory name tells you which world you're in. That's not the bad kind of "two worlds" — it's two clearly-labeled APIs with different responsibilities.
+This design makes the boundaries explicit. `actions.X` is the handler shape. `createRemoteActions(actions, send).X` is the wrapped shape. The factory name tells you which world you're in. That's not the bad kind of "two worlds". It's two clearly-labeled APIs with different responsibilities.
 
 ### 4. The unified wrap doesn't actually save consumers work
 
@@ -118,7 +118,7 @@ In passthrough, the action's signature reflects what the handler does. Sync if s
 
 If a handler unexpectedly throws (logic bug, not designed failure), the error propagates to the local caller. UI sites that don't `try/catch` may crash visibly. RPC and AI bridge still convert to `Err(ActionFailed)` at their boundaries.
 
-This is the same as any function in JavaScript. Designed failures should be explicit `Err`. Unexpected throws crashing visibly is preferable to silent absorption — bugs get noticed and fixed.
+This is the same as any function in JavaScript. Designed failures should be explicit `Err`. Unexpected throws crashing visibly is preferable to silent absorption: bugs get noticed and fixed.
 
 ### Two callable shapes depending on entry point
 
@@ -128,7 +128,7 @@ This is honest, not hidden. The factory choice is the boundary marker.
 
 ### Conditional types in `RemoteActions<A>`
 
-`WrapAction<F>` is a 4-branch flat conditional (sync raw, sync `Result`, async raw, async `Result`) that derives the wrapped shape from the handler signature. This brings back something `RemoteReturn`-shaped, although structurally simpler — flat, not recursive.
+`WrapAction<F>` is a 4-branch flat conditional (sync raw, sync `Result`, async raw, async `Result`) that derives the wrapped shape from the handler signature. This brings back something `RemoteReturn`-shaped, although structurally simpler: flat, not recursive.
 
 ```ts
 type WrapAction<F> = F extends (...a: infer A) => infer R
@@ -148,7 +148,7 @@ Acceptable. It's idiomatic TypeScript, lives in one file, isolated.
 
 Phased commits, each independently green. Workspace package first (foundation), apps second.
 
-### Phase A — Workspace package
+### Phase A: Workspace package
 
 **A1. Add `invokeNormalized`** in `packages/workspace/src/shared/actions.ts`. Export from barrel. Tests in same file.
 
@@ -171,7 +171,7 @@ Phased commits, each independently green. Workspace package first (foundation), 
 
 After Phase A: `bun test packages/workspace` and `bun test packages/cli` green; `bunx tsc --noEmit -p packages/workspace` clean.
 
-### Phase B — Apps
+### Phase B: Apps
 
 **B1. Fuji `entries-state.svelte.ts:78`:** simplify destructure (raw handler returns `{id}`).
 
@@ -192,41 +192,41 @@ goto(`/entries/${id}`);
 
 After Phase B: `bunx tsc --noEmit -p apps/fuji`, `apps/opensidian`, `apps/honeycrisp`, `apps/tab-manager` clean (modulo unrelated pre-existing errors).
 
-### Phase C — Verification
+### Phase C: Verification
 
-- `bun test packages/workspace` — 541+ tests pass.
-- `bun test packages/cli` — 69 tests pass.
+- `bun test packages/workspace`: 541+ tests pass.
+- `bun test packages/cli`: 69 tests pass.
 - Manual: open Fuji SPA, create / update / delete entries, two-tab sync still works.
 - Manual: tab-manager extension AI tool execution still resolves typed errors.
 
 ### Rollback
 
-Each phase is independently revertible by `git revert`. The riskiest phase is A2 (defineMutation passthrough) — if downstream type errors are unmanageable, revert A2 + A3 + A6 + A7 and keep the audit findings as documentation. Phases A1, A4, A5, B1, B2, B3 are independently safe — they just shift code around with no behavior change.
+Each phase is independently revertible by `git revert`. The riskiest phase is A2 (defineMutation passthrough): if downstream type errors are unmanageable, revert A2 + A3 + A6 + A7 and keep the audit findings as documentation. Phases A1, A4, A5, B1, B2, B3 are independently safe. They just shift code around with no behavior change.
 
 ## Open questions
 
-**`isResult` re-export from `@epicenter/workspace`** — audit shows zero non-framework consumers. Safe to drop. Defer to a follow-up cleanup PR.
+**`isResult` re-export from `@epicenter/workspace`**: audit shows zero non-framework consumers. Safe to drop. Defer to a follow-up cleanup PR.
 
-**`dispatchAction` error handling** — currently throws on path-not-found. The boundary catches and produces `RpcError.ActionNotFound`. Could return `Result` directly for stricter API. Defer; not blocking this ADR.
+**`dispatchAction` error handling**: currently throws on path-not-found. The boundary catches and produces `RpcError.ActionNotFound`. Could return `Result` directly for stricter API. Defer; not blocking this ADR.
 
-**`handleRpcRequest` and `invokeNormalized`** — the RPC server-side handler does its own normalize today. Could be replaced with `invokeNormalized` for consistency, but the inlined version is well-tested and handles the wire-encoding particulars (`encodeRpcResponse`). Leave inline for now; revisit if drift appears.
+**`handleRpcRequest` and `invokeNormalized`**: the RPC server-side handler does its own normalize today. Could be replaced with `invokeNormalized` for consistency, but the inlined version is well-tested and handles the wire-encoding particulars (`encodeRpcResponse`). Leave inline for now; revisit if drift appears.
 
-## Background — earlier formulation (collapsed in from `local-passthrough-remote-result.md`)
+## Background: earlier formulation (collapsed in from `local-passthrough-remote-result.md`)
 
-Before this ADR was written, the same conclusion had been argued in a separate spec (`20260423T020000-local-passthrough-remote-result.md`, now deleted — its content is preserved here so the reasoning isn't lost). That spec framed the problem as **"two type surfaces, not one"**:
+Before this ADR was written, the same conclusion had been argued in a separate spec (`20260423T020000-local-passthrough-remote-result.md`, now deleted: its content is preserved here so the reasoning isn't lost). That spec framed the problem as **"two type surfaces, not one"**:
 
 - **Local** (in-process): the action's signature is literally the handler's signature. Sync stays sync. Raw stays raw. Throws throw. Returned `Result` stays `Result`.
-- **Remote** (RPC proxy / websocket): always `(input) => Promise<Result<T, E | RpcError>>`. Forced async, forced envelope — because transport demands it.
+- **Remote** (RPC proxy / websocket): always `(input) => Promise<Result<T, E | RpcError>>`. Forced async, forced envelope: because transport demands it.
 
-**Why the v0 unified attempt failed (kept here as institutional memory).** A first pass ("`20260422T234500-unified-action-invocation.md`", strict-Result variant) tried to collapse both onto `Promise<Result<T, E | ActionFailed>>` at definition time. The migration showed the cost: every local caller had to `await` and destructure `{data, error}` — even for handlers that literally cannot fail (`() => tables.posts.getAllValid()`). Most handlers in the codebase genuinely have no error channel. Forcing one on them is ergonomic tax with no safety payoff, because locally you can `try/catch` a throw like any other JS function.
+**Why the v0 unified attempt failed (kept here as institutional memory).** A first pass ("`20260422T234500-unified-action-invocation.md`", strict-Result variant) tried to collapse both onto `Promise<Result<T, E | ActionFailed>>` at definition time. The migration showed the cost: every local caller had to `await` and destructure `{data, error}`: even for handlers that literally cannot fail (`() => tables.posts.getAllValid()`). Most handlers in the codebase genuinely have no error channel. Forcing one on them is ergonomic tax with no safety payoff, because locally you can `try/catch` a throw like any other JS function.
 
-**`ActionFailed` (now `RpcError.ActionFailed`) exists to solve a wire problem** — thrown errors don't cross processes. It doesn't need to exist in the local call graph. The decision in this ADR honors that boundary: definers are passthrough; the wire boundary (`createRemoteActions`) and the in-process consumers that simulate a wire boundary (`invokeNormalized`) are where the envelope shows up.
+**`ActionFailed` (now `RpcError.ActionFailed`) exists to solve a wire problem**: thrown errors don't cross processes. It doesn't need to exist in the local call graph. The decision in this ADR honors that boundary: definers are passthrough; the wire boundary (`createRemoteActions`) and the in-process consumers that simulate a wire boundary (`invokeNormalized`) are where the envelope shows up.
 
 The earlier spec also noted the analogy to **tRPC** (server procedures are plain async functions; the client proxy introduces `Promise`), **TanStack Query** (mutation function returns whatever it returns; `mutate`/`mutateAsync` are wrappers), and **gRPC** (server handlers are sync or async; the generated client wraps for the wire). All three put transport semantics at the transport layer, not at the definition layer. This ADR adopts the same split.
 
 ## Cross-references
 
-- `specs/20260424T180000-drop-document-factory-attach-everything.md` — the original "always-async-Result" decision this ADR supersedes. Lines 176-240 (Change 5 design) and 251-252 (design decision summary).
-- ~~`specs/20260425T120000-execution-prompt-phase-1.md`~~ — Phase 1 execution prompt, which landed the unified wrap (§ Change 5). Deleted post-merge per the scaffolding-files convention; Phase 1 commits `fd3a1ce8d` through `88ef425b1` are the durable record.
-- `specs/20260425T210000-remote-action-dispatch.md` — companion design doc for cross-device action execution. Depends on this ADR landing first.
-- ~~`specs/20260423T020000-local-passthrough-remote-result.md`~~ — collapsed into the "Background — earlier formulation" section above; file deleted.
+- `specs/20260424T180000-drop-document-factory-attach-everything.md`: the original "always-async-Result" decision this ADR supersedes. Lines 176-240 (Change 5 design) and 251-252 (design decision summary).
+- ~~`specs/20260425T120000-execution-prompt-phase-1.md`~~: Phase 1 execution prompt, which landed the unified wrap (§ Change 5). Deleted post-merge per the scaffolding-files convention; Phase 1 commits `fd3a1ce8d` through `88ef425b1` are the durable record.
+- `specs/20260425T210000-remote-action-dispatch.md`: companion design doc for cross-device action execution. Depends on this ADR landing first.
+- ~~`specs/20260423T020000-local-passthrough-remote-result.md`~~: collapsed into the "Background: earlier formulation" section above; file deleted.

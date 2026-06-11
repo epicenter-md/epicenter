@@ -1,6 +1,6 @@
 # SvelteMap Over $state for Keyed Collections
 
-When your data has IDs—workspace rows, conversations, recordings—store it in a `SvelteMap`, not a `$state` array. Derive the array form with `$derived` when you need it for rendering.
+When your data has IDs. Workspace rows, conversations, recordings. Store it in a `SvelteMap`, not a `$state` array. Derive the array form with `$derived` when you need it for rendering.
 
 ## The Problem
 
@@ -16,7 +16,7 @@ This works until you need to look one up:
 const metadata = $derived(conversations.find((c) => c.id === conversationId));
 ```
 
-That's O(n) on every access. Worse, Svelte's reactivity tracks the entire array—updating one conversation re-renders everything that reads `conversations`, even if they only care about a single item.
+That's O(n) on every access. Worse, Svelte's reactivity tracks the entire array. Updating one conversation re-renders everything that reads `conversations`, even if they only care about a single item.
 
 ## The Fix: SvelteMap + $derived
 
@@ -28,7 +28,7 @@ const conversations = $derived(
 );
 ```
 
-Two lines. The `SvelteMap` gives you O(1) lookups (`map.get(id)`), and Svelte tracks each key independently—updating conversation A doesn't re-render a component that only reads conversation B.
+Two lines. The `SvelteMap` gives you O(1) lookups (`map.get(id)`), and Svelte tracks each key independently. Updating conversation A doesn't re-render a component that only reads conversation B.
 
 The `$derived` array is a cached materialization. It recomputes only when the map changes, and it gives you a stable reference (critical for TanStack Table, which enters an infinite loop if `get data()` returns a new array on every call).
 
@@ -37,15 +37,15 @@ The `$derived` array is a cached materialization. It recomputes only when the ma
 Every workspace-backed collection in this codebase follows this shape:
 
 ```typescript
-// 1. Map — reactive source (private, suffixed with Map)
+// 1. Map: reactive source (private, suffixed with Map)
 const recordingsMap = fromTable(workspace.tables.recordings);
 
-// 2. Derived array — cached materialization (private, no suffix)
+// 2. Derived array: cached materialization (private, no suffix)
 const recordings = $derived(
     recordingsMap.values().toArray().sort((a, b) => b.timestamp - a.timestamp),
 );
 
-// 3. Getter — public API (matches the derived name)
+// 3. Getter: public API (matches the derived name)
 return {
     get recordings() {
         return recordings;
@@ -73,7 +73,7 @@ export function fromTable<TRow extends BaseRow>(
         map.set(row.id, row);
     }
 
-    // Granular updates — only touch changed rows
+    // Granular updates: only touch changed rows
     const unobserve = table.observe((changedIds) => {
         for (const id of changedIds) {
             const result = table.get(id);
@@ -93,7 +93,7 @@ export function fromTable<TRow extends BaseRow>(
 }
 ```
 
-The observer fires on local writes, remote CRDT sync, and migration. You write to the workspace table (`workspace.tables.X.set()`), the observer picks it up, and the SvelteMap updates. Unidirectional—never write to the SvelteMap directly.
+The observer fires on local writes, remote CRDT sync, and migration. You write to the workspace table (`workspace.tables.X.set()`), the observer picks it up, and the SvelteMap updates. Unidirectional. Never write to the SvelteMap directly.
 
 ## Why Not $state<T[]>?
 
@@ -111,10 +111,10 @@ Three concrete problems:
 
 Not every array needs a SvelteMap. Use `$state<T[]>` when:
 
-- **Items don't have stable IDs.** Terminal history entries, command history strings—sequential data without identity.
+- **Items don't have stable IDs.** Terminal history entries, command history strings. Sequential data without identity.
 - **Order is the primary concern.** Open file tabs (`$state<FileId[]>`) where the position in the array is the point, not keyed lookup.
 - **The list is local UI state.** Small arrays that aren't workspace-backed and don't need granular per-item reactivity.
-- **Primitives.** `$state<string[]>` for a list of tags—no identity, no object structure to track granularly.
+- **Primitives.** `$state<string[]>` for a list of tags. No identity, no object structure to track granularly.
 
 The rule: if items have IDs and you'll ever need `.find()` or `.get()`, use SvelteMap.
 
@@ -129,7 +129,7 @@ User A writes → Yjs CRDT updates → observer fires on User A's device
                                  → SvelteMap.set() → UI re-renders
 ```
 
-Both `fromTable()` and manual `.observe()` implementations follow the same loop: re-read each changed ID from the table, update or delete in the SvelteMap. The table is the source of truth—the SvelteMap is a reactive projection.
+Both `fromTable()` and manual `.observe()` implementations follow the same loop: re-read each changed ID from the table, update or delete in the SvelteMap. The table is the source of truth. The SvelteMap is a reactive projection.
 
 ## Decision Tree
 

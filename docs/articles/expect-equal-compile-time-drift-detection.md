@@ -1,6 +1,6 @@
 # Two Type Utilities Every TypeScript Codebase Should Have
 
-The most useful pair of types I've added to a TypeScript project is `Expect` and `Equal`. Together, they let you assert that two types are exactly the same—and if they're not, the build fails. No runtime cost, no test runner, just a red squiggly in your editor the moment something drifts.
+The most useful pair of types I've added to a TypeScript project is `Expect` and `Equal`. Together, they let you assert that two types are exactly the same. And if they're not, the build fails. No runtime cost, no test runner, just a red squiggly in your editor the moment something drifts.
 
 ## Rolling your own
 
@@ -16,7 +16,7 @@ type Equal<X, Y> =
 
 `Expect` constrains its input to `true`. If you hand it `false`, TypeScript complains. That's it.
 
-`Equal` is the clever one. It wraps both types inside a generic function signature—`<T>() => T extends X ? 1 : 2`—and checks whether the two signatures are identical. This forces TypeScript to compare types for identity rather than assignability. `string` extends `string | number`, but they aren't equal. `any` extends everything, but it isn't equal to `string`. The function trick catches both.
+`Equal` is the clever one. It wraps both types inside a generic function signature, `<T>() => T extends X ? 1 : 2`, and checks whether the two signatures are identical. This forces TypeScript to compare types for identity rather than assignability. `string` extends `string | number`, but they aren't equal. `any` extends everything, but it isn't equal to `string`. The function trick catches both.
 
 You use them together:
 
@@ -28,7 +28,7 @@ If the types match, this is inert. If they don't, the build breaks with `Type 'f
 
 ## Where this gets useful
 
-Any time you're keeping two type definitions in sync—whether across files, across layers, or across package boundaries—`Expect<Equal<>>` acts as a tripwire.
+Any time you're keeping two type definitions in sync, whether across files, across layers, or across package boundaries, `Expect<Equal<>>` acts as a tripwire.
 
 The case that pushed me to add it: we store third-party data as `unknown[]` in a CRDT and cast it back to the library's type on read. The cast always compiles, even if the library changed the type in a new version. So we write down what we expect and check it against reality:
 

@@ -6,7 +6,7 @@
 
 ## Overview
 
-Merge the `Timeline` abstraction into `DocumentHandle` so that the handle IS the timeline—one object instead of two layers of delegation. `DocumentHandle` becomes `Timeline & { exports }`.
+Merge the `Timeline` abstraction into `DocumentHandle` so that the handle IS the timeline. One object instead of two layers of delegation. `DocumentHandle` becomes `Timeline & { exports }`.
 
 ## Motivation
 
@@ -71,7 +71,7 @@ Grepped all `handle.*` access across the monorepo (114 occurrences, 8 files):
 
 | Pattern | Occurrences | Files | Observation |
 |---|---|---|---|
-| `handle.timeline.*` | 18 | 3 files | Escape hatch used heavily—length, currentEntry, push methods |
+| `handle.timeline.*` | 18 | 3 files | Escape hatch used heavily. Length, currentEntry, push methods |
 | `handle.read()` | 7 | 4 files | Core consumer API |
 | `handle.write()` | 14 | 3 files | Core consumer API |
 | `handle.ydoc` | 8 | 2 files | Needed for sync, testing, `restoreFromSnapshot` |
@@ -80,21 +80,21 @@ Grepped all `handle.*` access across the monorepo (114 occurrences, 8 files):
 | `handle.asText/asRichText/asSheet` | 22 | 1 file | Tests + editor binding |
 | `handle.exports` | 12 | 1 file | Extension system |
 
-**Key finding:** `handle.timeline.*` accounts for 16% of all handle access. Every one of those would become a direct property access if the layers were flat. The filesystem package—the most sophisticated consumer—uses `readEntry(handle.timeline.currentEntry)` to do work the handle should be doing natively.
+**Key finding:** `handle.timeline.*` accounts for 16% of all handle access. Every one of those would become a direct property access if the layers were flat. The filesystem package. The most sophisticated consumer. Uses `readEntry(handle.timeline.currentEntry)` to do work the handle should be doing natively.
 
 ### `restoreFromSnapshot` Usage
 
 `restoreFromSnapshot(ydoc, binary)` calls `createTimeline(ydoc)` on both the temp doc and the live doc. It uses only low-level push methods (`replaceCurrentText`, `pushSheetFromCsv`, `pushRichtextFromFragment`). It does NOT need mode conversion or `exports`.
 
-This is fine—`createTimeline` still works standalone. The flattening adds methods to Timeline; it doesn't remove any. `restoreFromSnapshot` keeps calling the same methods it already calls.
+This is fine: `createTimeline` still works standalone. The flattening adds methods to Timeline; it doesn't remove any. `restoreFromSnapshot` keeps calling the same methods it already calls.
 
 ### Getter Spreading Limitation
 
 Timeline's returned object uses `get length()`, `get currentEntry()`, `get currentType()`. JavaScript's `{ ...obj }` evaluates getters (captures values) rather than copying the descriptors. So `{ ...timeline, exports }` would freeze the getter values.
 
 Two approaches:
-- `Object.assign(timeline, { exports })` — adds `exports` to the existing object, preserving getters on the target. Works because Timeline returns a fresh object per call.
-- `Object.defineProperties(...)` — more explicit but verbose.
+- `Object.assign(timeline, { exports })`: adds `exports` to the existing object, preserving getters on the target. Works because Timeline returns a fresh object per call.
+- `Object.defineProperties(...)`: more explicit but verbose.
 
 `Object.assign` is the simple path.
 
@@ -102,7 +102,7 @@ Two approaches:
 
 | Decision | Choice | Rationale |
 |---|---|---|
-| Where mode conversion lives | On Timeline directly | It's just `readEntry()` + conditional push—all timeline primitives. No external dependencies beyond what Timeline already imports. |
+| Where mode conversion lives | On Timeline directly | It's just `readEntry()` + conditional push. All timeline primitives. No external dependencies beyond what Timeline already imports. |
 | Whether Timeline exposes `ydoc` | Yes, as `readonly ydoc` | Consumers need it for sync providers, testing, and `restoreFromSnapshot`. Timeline already has it via closure; exposing it is zero-cost. |
 | How `DocumentHandle` relates to `Timeline` | `Timeline & { exports }` | `exports` is the only lifecycle concern that can't live on Timeline. Everything else is timeline behavior. |
 | What happens to `handle.timeline` | Remove | The handle IS the timeline. An escape hatch to yourself is `this`. Removing it simplifies the type and avoids confusion. |
@@ -188,7 +188,7 @@ One line. Down from 80.
 - [ ] **1.1** Add `ydoc: Y.Doc` to `Timeline` type and `createTimeline` return
 - [ ] **1.2** Add `read()`, `write(text)`, `batch(fn)` to Timeline (transact-wrapped)
 - [ ] **1.3** Add `asText()`, `asRichText()`, `asSheet()` to Timeline (move mode conversion logic from `makeHandle`)
-- [ ] **1.4** Add `mode` getter (alias for `currentType`—decide in Open Questions whether to keep both or pick one name)
+- [ ] **1.4** Add `mode` getter (alias for `currentType`: decide in Open Questions whether to keep both or pick one name)
 - [ ] **1.5** Update `Timeline` type definition with all new methods + JSDoc
 - [ ] **1.6** Update timeline barrel exports (`index.ts`) if needed
 
@@ -218,15 +218,15 @@ One line. Down from 80.
 
 ### `restoreFromSnapshot` uses `createTimeline` on temp docs
 
-The temp doc gets a full Timeline object including the new mode conversion methods. These are unused—zero cost. `restoreFromSnapshot` keeps calling `replaceCurrentText`, `pushSheetFromCsv`, `pushRichtextFromFragment` directly. No change needed.
+The temp doc gets a full Timeline object including the new mode conversion methods. These are unused. Zero cost. `restoreFromSnapshot` keeps calling `replaceCurrentText`, `pushSheetFromCsv`, `pushRichtextFromFragment` directly. No change needed.
 
 ### Consumer destructures handle
 
-If someone writes `const { read, write } = handle`, method shorthands using `this` (inside Timeline) would break. Current codebase never destructures handles—all access is `handle.method()`. Timeline methods that call `this.pushText()` (e.g., `replaceCurrentText`, `pushRichtextFromFragment`) require method-call `this` binding.
+If someone writes `const { read, write } = handle`, method shorthands using `this` (inside Timeline) would break. Current codebase never destructures handles. All access is `handle.method()`. Timeline methods that call `this.pushText()` (e.g., `replaceCurrentText`, `pushRichtextFromFragment`) require method-call `this` binding.
 
 ### `createTimeline` import surface grows
 
-Timeline currently imports `xmlFragmentToPlaintext`, `serializeSheetToCsv` from sibling modules. Adding `asText`/`asRichText`/`asSheet` requires adding `populateFragmentFromText` and `readEntry` (already in same file). The dependency surface grows by one import. This is acceptable—these are all timeline-adjacent concerns in the same package.
+Timeline currently imports `xmlFragmentToPlaintext`, `serializeSheetToCsv` from sibling modules. Adding `asText`/`asRichText`/`asSheet` requires adding `populateFragmentFromText` and `readEntry` (already in same file). The dependency surface grows by one import. This is acceptable. These are all timeline-adjacent concerns in the same package.
 
 ### Package exports change
 
@@ -239,7 +239,7 @@ Timeline currently imports `xmlFragmentToPlaintext`, `serializeSheetToCsv` from 
 1. **Should `mode` and `currentType` coexist?**
    - `currentType` is the Timeline name (explicit). `mode` is the handle name (concise).
    - Options: (a) keep both as aliases, (b) rename to just `mode` everywhere, (c) keep `currentType` and drop `mode`
-   - **Recommendation**: Keep `currentType` as the canonical name. It's more explicit and already used by `restoreFromSnapshot` and all timeline tests. Drop the `mode` alias—one name is better than two.
+   - **Recommendation**: Keep `currentType` as the canonical name. It's more explicit and already used by `restoreFromSnapshot` and all timeline tests. Drop the `mode` alias. One name is better than two.
 
 2. **Should `read()` and `readAsString()` coexist?**
    - Same function, two names. `read()` is concise for consumers. `readAsString()` is explicit about what it does.
@@ -275,9 +275,9 @@ Timeline currently imports `xmlFragmentToPlaintext`, `serializeSheetToCsv` from 
 
 ## References
 
-- `packages/workspace/src/timeline/timeline.ts`—`createTimeline`, `readEntry`, `restoreFromSnapshot`. This file absorbs the mode conversion logic from `makeHandle`.
-- `packages/workspace/src/timeline/entries.ts`—`TextEntry`, `RichTextEntry`, `SheetEntry`, `ContentType`. Return types for push methods.
-- `packages/workspace/src/workspace/create-document.ts`—`makeHandle` factory. Becomes a one-liner.
-- `packages/workspace/src/workspace/types.ts`—`DocumentHandle` type definition. Becomes `Timeline & { exports }`.
-- `packages/filesystem/src/file-system.ts`—Heaviest consumer of `handle.timeline` escape hatch. All 6 occurrences become direct access.
-- `packages/workspace/src/workspace/create-document.test.ts`—22 occurrences of `handle.timeline.*` to migrate.
+- `packages/workspace/src/timeline/timeline.ts`: `createTimeline`, `readEntry`, `restoreFromSnapshot`. This file absorbs the mode conversion logic from `makeHandle`.
+- `packages/workspace/src/timeline/entries.ts`: `TextEntry`, `RichTextEntry`, `SheetEntry`, `ContentType`. Return types for push methods.
+- `packages/workspace/src/workspace/create-document.ts`: `makeHandle` factory. Becomes a one-liner.
+- `packages/workspace/src/workspace/types.ts`: `DocumentHandle` type definition. Becomes `Timeline & { exports }`.
+- `packages/filesystem/src/file-system.ts`: Heaviest consumer of `handle.timeline` escape hatch. All 6 occurrences become direct access.
+- `packages/workspace/src/workspace/create-document.test.ts`: 22 occurrences of `handle.timeline.*` to migrate.

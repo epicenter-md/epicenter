@@ -2,7 +2,7 @@
  * Reactive recording state backed by Yjs workspace tables.
  *
  * Replaces TanStack Query + BlobStore for recording CRUD. SvelteMap provides
- * per-key reactivity—updating one recording doesn't re-render the entire list.
+ * per-key reactivity. Updating one recording doesn't re-render the entire list.
  * The Yjs observer fires on local writes, remote CRDT sync, and migration.
  *
  * Audio blob access still goes through BlobStore (blobs are too large for CRDTs).
@@ -60,7 +60,7 @@ function createRecordings() {
 		/**
 		 * Get a recording by ID. Returns undefined if not found.
 		 *
-		 * Reads from the reactive SvelteMap—triggers re-render if the
+		 * Reads from the reactive SvelteMap. Triggers re-render if the
 		 * recording changes or is deleted.
 		 */
 		get(id: string) {
@@ -70,7 +70,7 @@ function createRecordings() {
 		/**
 		 * All recordings as a sorted array (newest first by recordedAt).
 		 *
-		 * Memoized via `$derived`—returns a stable reference until the
+		 * Memoized via `$derived`. Returns a stable reference until the
 		 * SvelteMap actually changes. This is critical for TanStack Table,
 		 * which uses reference equality to detect data changes.
 		 */
@@ -82,7 +82,7 @@ function createRecordings() {
 		 * Create or update a recording. Writes to Yjs → observer updates SvelteMap.
 		 *
 		 * Accepts a recording without `_v` (version tag is added automatically).
-		 * No manual cache invalidation needed—the observer handles UI updates.
+		 * No manual cache invalidation needed. The observer handles UI updates.
 		 */
 		set(recording: Omit<Recording, '_v'>) {
 			whispering.tables.recordings.set({ ...recording } as Recording);
@@ -101,7 +101,7 @@ function createRecordings() {
 		/**
 		 * Delete a recording by ID.
 		 *
-		 * Fire-and-forget—Yjs observer fires `map.delete(id)` automatically.
+		 * Fire-and-forget. Yjs observer fires `map.delete(id)` automatically.
 		 * Callers should clean up audio URLs before calling this.
 		 */
 		delete(id: string) {

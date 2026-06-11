@@ -7,7 +7,7 @@
 
 ## Overview
 
-Define how changelog entries are authored, collected, and published across the Epicenter monorepo—starting with GitHub Releases at v8 launch, with a path toward a website `/changelog` endpoint.
+Define how changelog entries are authored, collected, and published across the Epicenter monorepo. Starting with GitHub Releases at v8 launch, with a path toward a website `/changelog` endpoint.
 
 ## Motivation
 
@@ -47,18 +47,18 @@ Studied [opencode.ai/changelog](https://opencode.ai/changelog) and [GitHub relea
 
 | Dimension | OpenCode | Notes |
 |---|---|---|
-| Cadence | ~daily, sometimes 2x/day | v1.2.20–v1.2.24 shipped in 4 days |
+| Cadence | ~daily, sometimes 2x/day | v1.2.20. V1.2.24 shipped in 4 days |
 | Format | Bullet points grouped by component (Core, TUI, Desktop, SDK) | Short one-liners |
 | Generation | AI-generated at release time by `opencode-agent` GitHub App | Batch processes commit diffs |
-| Per-PR entries | No—batch generated from commits | Authors don't write entries |
-| Quality | Low—AI hallucinations leak into production | See artifacts below |
+| Per-PR entries | No. Batch generated from commits | Authors don't write entries |
+| Quality | Low. AI hallucinations leak into production | See artifacts below |
 | Community credits | `(@contributor)` links inline | Nice touch |
 | Website | `/changelog` page mirrors GitHub Releases | Same content, different presentation |
 
 **Quality artifacts found in production releases:**
 
-- v1.2.21: *"I need to see the actual commit diff to understand what was fixed and provide an accurate changelog entry."* — raw LLM chain-of-thought
-- v1.2.21: *"Based on the commit message 'fix(app): all panels transition', here's the changelog entry:"* — LLM reasoning leaked
+- v1.2.21: *"I need to see the actual commit diff to understand what was fixed and provide an accurate changelog entry."*: raw LLM chain-of-thought
+- v1.2.21: *"Based on the commit message 'fix(app): all panels transition', here's the changelog entry:"*: LLM reasoning leaked
 
 **Key finding**: Batch AI generation at release time produces inconsistent, sometimes embarrassing results. The person who wrote the code is always better positioned to describe what it does.
 
@@ -68,12 +68,12 @@ Studied [opencode.ai/changelog](https://opencode.ai/changelog) and [GitHub relea
 
 | Tool/Approach | How it works | Tradeoff |
 |---|---|---|
-| [Changesets](https://github.com/changesets/changesets) | Separate `.changeset/*.md` files per PR | Extra file per PR, extra tooling, designed for multi-package publishing—overkill for our monorepo |
-| Conventional changelog | Auto-generate from commit messages | Same problem as OpenCode—developer-facing, not user-facing |
+| [Changesets](https://github.com/changesets/changesets) | Separate `.changeset/*.md` files per PR | Extra file per PR, extra tooling, designed for multi-package publishing. Overkill for our monorepo |
+| Conventional changelog | Auto-generate from commit messages | Same problem as OpenCode. Developer-facing, not user-facing |
 | PR description section | Author writes one-line entry in PR body | Zero tooling, lives where reviewers already look, easy to enforce |
-| GitHub Release auto-generate | GitHub's built-in "Generate release notes" | Lists PR titles verbatim—not user-friendly |
+| GitHub Release auto-generate | GitHub's built-in "Generate release notes" | Lists PR titles verbatim. Not user-friendly |
 
-**Key finding**: PR description sections hit the best tradeoff—zero new tooling, reviewed alongside code, human-written quality.
+**Key finding**: PR description sections hit the best tradeoff. Zero new tooling, reviewed alongside code, human-written quality.
 
 ## Design Decisions
 
@@ -81,7 +81,7 @@ Studied [opencode.ai/changelog](https://opencode.ai/changelog) and [GitHub relea
 |---|---|---|
 | Where entries are authored | PR description `## Changelog` section | Zero tooling, reviewed with code, author writes the "why" |
 | Entry format | One line per user-visible change | Keeps entries scannable, matches OpenCode's readable style without the AI slop |
-| Internal change handling | Omit `## Changelog` section entirely | No noise in releases—`chore:` and `refactor:` still get version bumps but no changelog entry |
+| Internal change handling | Omit `## Changelog` section entirely | No noise in releases-`chore:` and `refactor:` still get version bumps but no changelog entry |
 | Grouping in releases | By conventional commit prefix (feat → New, fix → Fixed) | Already using conventional commits in PR titles |
 | AI involvement | None for generation; optional human-triggered polish | Avoids OpenCode's quality problems |
 | Release body target | GitHub Releases (source of truth) | Already where users look; website pulls from this later |
@@ -204,12 +204,12 @@ This extends Wave 3 of the unified versioning spec.
 1. Author writes `## Changelog` in the PR description
 2. PR is squash-merged, reviewer edits the title
 3. Grouping uses the *merge commit title*, not the original PR title
-4. This is correct behavior—reviewer has final say on categorization
+4. This is correct behavior. Reviewer has final say on categorization
 
 ## Resolved Questions
 
 1. **Enforce `## Changelog` on `feat:` and `fix:` PRs?**
-   → **Warn-only CI check.** No blocking—avoids friction during fast iteration. Upgrade to blocking after the habit develops.
+   → **Warn-only CI check.** No blocking. Avoids friction during fast iteration. Upgrade to blocking after the habit develops.
 
 2. **v8.0.0 release notes auto-generated or hand-written?**
    → **Hand-written narrative.** v8.0.0 is a major milestone and marketing moment. Auto-generation starts at v8.0.1.
@@ -218,7 +218,7 @@ This extends Wave 3 of the unified versioning spec.
    → **Yes.** Append `(@username)` to entries from external contributors. The `gh` API provides author info.
 
 4. **Emoji prefixes in section headers?**
-   → **Plain text.** `## New` / `## Fixed` / `## Improved`—no emojis.
+   → **Plain text.** `## New` / `## Fixed` / `## Improved`: no emojis.
 
 ## Success Criteria
 
@@ -231,12 +231,12 @@ This extends Wave 3 of the unified versioning spec.
 
 ## References
 
-- `specs/20260303T150000-unified-versioning.md` — Wave 3 defines `auto.release.yml` skeleton
-- `specs/20250708T000000-v7-release-notes-improvement.md` — Prior art on user-friendly release notes
-- `scripts/bump-version.ts` — Version stamping utility (already glob-based)
-- `.github/workflows/` — Existing workflow naming convention (`auto.{name}.yml`)
-- [OpenCode changelog](https://opencode.ai/changelog) — Reference for format (not quality)
-- [OpenCode v1.2.24 release](https://github.com/anomalyco/opencode/releases/tag/v1.2.24) — Example of AI-generated release
+- `specs/20260303T150000-unified-versioning.md`: Wave 3 defines `auto.release.yml` skeleton
+- `specs/20250708T000000-v7-release-notes-improvement.md`: Prior art on user-friendly release notes
+- `scripts/bump-version.ts`: Version stamping utility (already glob-based)
+- `.github/workflows/`: Existing workflow naming convention (`auto.{name}.yml`)
+- [OpenCode changelog](https://opencode.ai/changelog): Reference for format (not quality)
+- [OpenCode v1.2.24 release](https://github.com/anomalyco/opencode/releases/tag/v1.2.24): Example of AI-generated release
 
 ## Review
 
@@ -254,7 +254,7 @@ This extends Wave 3 of the unified versioning spec.
 - PR collection uses `git log --merges` to find PR numbers from merge commits since the last tag (more reliable than date-based `gh pr list` search). Falls back to the triggering PR number as a guaranteed inclusion.
 - Changelog extraction uses `awk` to parse `## Changelog` sections from PR bodies, `grep` to filter to bullet lines, and `sed` to strip bullet prefixes.
 - Entries grouped into temp files by PR title prefix (`feat:` → New, `fix:` → Fixed, other → Improved).
-- External contributor detection via `gh api orgs/EpicenterHQ/members/$AUTHOR` — appends `(@username)` for non-members.
+- External contributor detection via `gh api orgs/EpicenterHQ/members/$AUTHOR`: appends `(@username)` for non-members.
 - Release body falls back to "Internal improvements only." when no PRs have changelog sections.
 - Breaking change detection tightened from `grep -q '!'` to `grep -qE '!:'` to avoid false positives on PR titles containing `!` in other contexts.
 
