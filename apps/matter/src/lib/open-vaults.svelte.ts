@@ -19,9 +19,9 @@
  * agree on the open set.
  */
 
+import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { browser } from '$app/environment';
 import { goto } from '$app/navigation';
-import { open as openDialog } from '@tauri-apps/plugin-dialog';
 
 /** One open vault as persisted: an opaque id, the absolute folder path, its basename label. */
 export type OpenVault = { id: string; path: string; folderName: string };
@@ -97,7 +97,11 @@ function createOpenVaults() {
 		}
 		// Opaque, URL-safe, collision-free: the URL carries this, not the raw path (paths
 		// contain `/` and special chars that are fragile in a URL).
-		const vault: OpenVault = { id: crypto.randomUUID(), path, folderName: basename(path) };
+		const vault: OpenVault = {
+			id: crypto.randomUUID(),
+			path,
+			folderName: basename(path),
+		};
 		vaults = [...vaults, vault];
 		persist();
 		await goto(`/vault/${vault.id}`);

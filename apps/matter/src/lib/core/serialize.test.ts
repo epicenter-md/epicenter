@@ -46,7 +46,8 @@ describe('serializeEntry', () => {
  */
 describe('edit cycle (parse -> edit -> serialize -> parse)', () => {
 	test('round-trip identity by VALUE: a no-op cycle preserves every value and the body', () => {
-		const raw = '---\ntitle: My Post\nstatus: draft\ntags:\n  - a\n  - b\n---\n# Body\n\ntext';
+		const raw =
+			'---\ntitle: My Post\nstatus: draft\ntags:\n  - a\n  - b\n---\n# Body\n\ntext';
 		const before = parseMarkdown(raw).data;
 		const after = parseMarkdown(editField(raw, 'status', 'draft')).data;
 		expect(after).toEqual(before);
@@ -79,9 +80,9 @@ describe('edit cycle (parse -> edit -> serialize -> parse)', () => {
 	});
 
 	test('clearing the last field drops the fence to body-only', () => {
-		expect(editField('---\ntitle: Hello\n---\n# Body\ntext', 'title', undefined)).toBe(
-			'# Body\ntext',
-		);
+		expect(
+			editField('---\ntitle: Hello\n---\n# Body\ntext', 'title', undefined),
+		).toBe('# Body\ntext');
 	});
 
 	test('an invalid-against-the-model value survives by value (stays editable)', () => {

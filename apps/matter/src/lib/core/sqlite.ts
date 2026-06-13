@@ -26,9 +26,9 @@
  *     CHECK would only reject the very drafts the filter exists to surface.
  */
 
+import { type Field, storageOf } from '@epicenter/field';
 import type { RowConformance } from './conformance';
 import type { MatterModel } from './model';
-import { storageOf, type Field } from '@epicenter/field';
 
 /** A SQLite-bindable scalar. A missing (NEEDS_VALUE) cell binds NULL, so values are nullable. */
 export type SqlValue = string | number | null;

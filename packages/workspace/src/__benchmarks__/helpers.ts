@@ -5,8 +5,8 @@
  * table definitions, row generators, and formatting helpers.
  */
 
-import { Type } from 'typebox';
 import { field } from '@epicenter/field';
+import { Type } from 'typebox';
 import { defineKv } from '../document/define-kv';
 import { defineTable } from '../document/define-table';
 

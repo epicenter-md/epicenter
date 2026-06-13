@@ -27,13 +27,13 @@
  * carries a bare `kind` and has no `nullable`.
  */
 
+import { compile, type Field, recognize } from '@epicenter/field';
 import {
 	defineErrors,
 	extractErrorMessage,
 	type InferErrors,
 } from 'wellcrafted/error';
 import { Err, Ok, type Result, trySync } from 'wellcrafted/result';
-import { compile, type Field, recognize } from '@epicenter/field';
 
 /** Why a stored `matter.json` could not be read into a usable model at all. */
 export const MatterModelError = defineErrors({
@@ -57,9 +57,7 @@ export type MatterModel = {
 };
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
-	return (
-		typeof value === 'object' && value !== null && !Array.isArray(value)
-	);
+	return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 /**
@@ -102,7 +100,9 @@ export function validateModel(
  * (carrying the parser error as `cause`) rather than throwing, so a junk file degrades
  * to the raw view with a diagnostic.
  */
-export function parseModel(text: string): Result<MatterModel, MatterModelError> {
+export function parseModel(
+	text: string,
+): Result<MatterModel, MatterModelError> {
 	const { data: raw, error } = trySync({
 		try: () => JSON.parse(text) as unknown,
 		catch: (cause) => MatterModelError.InvalidJson({ cause }),

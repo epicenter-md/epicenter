@@ -94,7 +94,9 @@ export type _JsonTypedStatic = Expect<
 		Static<
 			ReturnType<
 				typeof field.json<
-					ReturnType<typeof Type.Object<{ author: ReturnType<typeof Type.String> }>>
+					ReturnType<
+						typeof Type.Object<{ author: ReturnType<typeof Type.String> }>
+					>
 				>
 			>
 		>,
@@ -103,14 +105,18 @@ export type _JsonTypedStatic = Expect<
 >;
 
 // jsonValue: the canonical any-JSON inner, Static = JsonValue (pinned via Type.Unsafe).
-export type _JsonValueStatic = Expect<Equal<Static<typeof jsonValue>, JsonValue>>;
+export type _JsonValueStatic = Expect<
+	Equal<Static<typeof jsonValue>, JsonValue>
+>;
 
 // field.json(Type.Array(jsonValue)): Static = JsonValue[]. The list-of-arbitrary-JSON
 // pattern the apps share; the inner static flows through Array and field.json unchanged.
 export type _JsonArrayStatic = Expect<
 	Equal<
 		Static<
-			ReturnType<typeof field.json<ReturnType<typeof Type.Array<typeof jsonValue>>>>
+			ReturnType<
+				typeof field.json<ReturnType<typeof Type.Array<typeof jsonValue>>>
+			>
 		>,
 		JsonValue[]
 	>

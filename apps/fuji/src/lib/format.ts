@@ -5,8 +5,8 @@
  * components don't duplicate formatting logic.
  */
 
-import { formatDistanceToNowStrict } from 'date-fns';
 import type { IanaTimeZone } from '@epicenter/workspace';
+import { formatDistanceToNowStrict } from 'date-fns';
 
 /**
  * Format a `DateTimeString` as a human-readable relative time, e.g.

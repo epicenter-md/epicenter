@@ -14,8 +14,8 @@ import { expect, test } from 'bun:test';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { nullable } from '@epicenter/workspace';
 import { field } from '@epicenter/field';
+import { nullable } from '@epicenter/workspace';
 import {
 	assembleMarkdown,
 	parseMarkdownFile,

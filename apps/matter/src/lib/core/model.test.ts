@@ -71,7 +71,9 @@ describe('parseModel (raw text)', () => {
 	});
 
 	test('parses a valid file', () => {
-		const { data, error } = parseModel('{"fields":{"title":{"type":"string"}}}');
+		const { data, error } = parseModel(
+			'{"fields":{"title":{"type":"string"}}}',
+		);
 		expect(error).toBeNull();
 		expect(data?.fields).toHaveLength(1);
 	});

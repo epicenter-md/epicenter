@@ -11,11 +11,11 @@ export {
 	Content as TabsContent,
 	List,
 	List as TabsList,
-	type TabsListVariant,
-	tabsListVariants,
 	Root,
 	//
 	Root as Tabs,
+	type TabsListVariant,
 	Trigger,
 	Trigger as TabsTrigger,
+	tabsListVariants,
 };

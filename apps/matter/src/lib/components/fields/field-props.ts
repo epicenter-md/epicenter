@@ -20,8 +20,8 @@
  * wrapper, not the Field).
  */
 
-import type { NeedsValueCell, OkCell } from '$lib/core/conformance';
 import type { Field } from '@epicenter/field';
+import type { NeedsValueCell, OkCell } from '$lib/core/conformance';
 
 /**
  * Commit a new value for this cell's field. The {@link ModeledCell} wrapper binds

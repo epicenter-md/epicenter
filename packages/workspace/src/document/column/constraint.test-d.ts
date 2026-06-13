@@ -10,12 +10,12 @@
  * assertion fails, the type error appears at the offending line during typecheck.
  */
 
+import type { field } from '@epicenter/field';
 import type { Type } from 'typebox';
 import type { Brand } from 'wellcrafted/brand';
 import type { JsonValue } from 'wellcrafted/json';
-import type { field } from '@epicenter/field';
-import type { ColumnError, FlatJsonTSchema } from './constraint';
 import type { nullable } from '../nullable';
+import type { ColumnError, FlatJsonTSchema } from './constraint';
 
 // --------------------------------------------------------------------------
 // Helpers
@@ -97,7 +97,9 @@ export type _RejectObject = Expect<
 // final Static<S> extends JsonValue clause.
 export type _AcceptArrayOfScalar = Expect<
 	Equal<
-		FlatJsonTSchema<ReturnType<typeof Type.Array<ReturnType<typeof Type.Number>>>>,
+		FlatJsonTSchema<
+			ReturnType<typeof Type.Array<ReturnType<typeof Type.Number>>>
+		>,
 		ReturnType<typeof Type.Array<ReturnType<typeof Type.Number>>>
 	>
 >;

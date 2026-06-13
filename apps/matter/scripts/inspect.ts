@@ -15,9 +15,14 @@ import { readFolder } from '../src/lib/core/folder';
 
 const dir = process.argv[2] ?? '../../examples/matter/sample-vault/drafts';
 
-const names = (await readdir(dir)).filter((name) => name.endsWith('.md')).sort();
+const names = (await readdir(dir))
+	.filter((name) => name.endsWith('.md'))
+	.sort();
 const entries = await Promise.all(
-	names.map(async (name) => ({ name, content: await readFile(join(dir, name), 'utf8') })),
+	names.map(async (name) => ({
+		name,
+		content: await readFile(join(dir, name), 'utf8'),
+	})),
 );
 
 // Load the folder's model if it has one, so inspect shows conformance, not just
@@ -36,8 +41,12 @@ const cell = (value: unknown): string => {
 };
 
 console.log(`\nFolder: ${dir}`);
-console.log(`Files: ${entries.length}   Readable rows: ${rows.length}   Unreadable: ${unreadable.length}`);
-console.log(`Mode: ${view.mode}${view.mode === 'unmodeled' && view.modelError ? ` (model error: ${view.modelError.message})` : ''}\n`);
+console.log(
+	`Files: ${entries.length}   Readable rows: ${rows.length}   Unreadable: ${unreadable.length}`,
+);
+console.log(
+	`Mode: ${view.mode}${view.mode === 'unmodeled' && view.modelError ? ` (model error: ${view.modelError.message})` : ''}\n`,
+);
 
 if (view.mode === 'unmodeled') {
 	console.log('No model: raw columns (keys only, no inferred kinds):');
@@ -47,7 +56,9 @@ if (view.mode === 'unmodeled') {
 	const keys = view.columns;
 	console.log('  ' + ['file', ...keys].map((k) => k.padEnd(16)).join(''));
 	for (const row of rows) {
-		const cells = keys.map((k) => cell(row.frontmatter[k]).slice(0, 15).padEnd(16));
+		const cells = keys.map((k) =>
+			cell(row.frontmatter[k]).slice(0, 15).padEnd(16),
+		);
 		console.log('  ' + row.name.padEnd(16) + cells.join(''));
 	}
 } else {
@@ -63,12 +74,15 @@ if (view.mode === 'unmodeled') {
 		const flag = conf.rowValid ? ' ' : '!';
 		const cells = conf.cells.map((c) => c.state.padEnd(16));
 		const extras = conf.extras.length ? `  +${conf.extras.length} extra` : '';
-		console.log(`${flag} ` + conf.row.name.padEnd(16) + cells.join('') + extras);
+		console.log(
+			`${flag} ` + conf.row.name.padEnd(16) + cells.join('') + extras,
+		);
 	}
 }
 
 if (unreadable.length) {
 	console.log('\nUnreadable (would route to "Can\'t read"):');
-	for (const u of unreadable) console.log(`  ${u.name.padEnd(16)} ${u.error.message}`);
+	for (const u of unreadable)
+		console.log(`  ${u.name.padEnd(16)} ${u.error.message}`);
 }
 console.log('');

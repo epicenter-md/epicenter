@@ -16,10 +16,10 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { field } from '@epicenter/field';
 import { IDBKeyRange, indexedDB } from 'fake-indexeddb';
 import { attachBroadcastChannel } from './attach-broadcast-channel.js';
 import { attachIndexedDb } from './attach-indexed-db.js';
-import { field } from '@epicenter/field';
 import { defineTable } from './define-table.js';
 import { createWorkspace } from './workspace.js';
 

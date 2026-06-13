@@ -28,7 +28,11 @@ describe('classifyRow (per-cell conformance, everything required)', () => {
 	});
 
 	test('an absent required field is NEEDS_VALUE (invalid)', () => {
-		const row: Row = { fileName: 'b.md', frontmatter: { title: 'Hi' }, body: '' };
+		const row: Row = {
+			fileName: 'b.md',
+			frontmatter: { title: 'Hi' },
+			body: '',
+		};
 		const c = classifyRow(cols, row);
 		expect(c.cells.map((x) => x.state)).toEqual([
 			'OK',
@@ -53,7 +57,11 @@ describe('classifyRow (per-cell conformance, everything required)', () => {
 	// `title` is absent; both classify identically (NEEDS_VALUE, since required).
 	test('absent key and explicit null are the SAME empty', () => {
 		const absent: Row = { fileName: 'd.md', frontmatter: {}, body: '' };
-		const nul: Row = { fileName: 'e.md', frontmatter: { title: null }, body: '' };
+		const nul: Row = {
+			fileName: 'e.md',
+			frontmatter: { title: null },
+			body: '',
+		};
 		expect(classifyRow(cols, absent).cells[0]?.state).toBe('NEEDS_VALUE');
 		expect(classifyRow(cols, nul).cells[0]?.state).toBe('NEEDS_VALUE');
 	});

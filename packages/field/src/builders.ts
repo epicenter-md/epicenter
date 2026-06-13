@@ -51,8 +51,8 @@ import {
 } from 'typebox';
 import type { Brand } from 'wellcrafted/brand';
 import type { JsonValue } from 'wellcrafted/json';
-import { JSON_SCHEMA_KEYWORD } from './field';
 import type { DateTimeString } from './datetime-string';
+import { JSON_SCHEMA_KEYWORD } from './field';
 
 type BrandedString = string & Brand<string>;
 

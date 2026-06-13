@@ -14,7 +14,9 @@ describe('parseMarkdown', () => {
 	});
 
 	test('no frontmatter is an empty mapping and the whole file is body', () => {
-		const { data, error } = parseMarkdown('# Just a heading\n\nno frontmatter here');
+		const { data, error } = parseMarkdown(
+			'# Just a heading\n\nno frontmatter here',
+		);
 		expect(error).toBeNull();
 		expect(data).toEqual({
 			frontmatter: {},
@@ -34,7 +36,8 @@ describe('parseMarkdown', () => {
 	});
 
 	test('conflict markers are unreadable, never silently parsed', () => {
-		const raw = '---\ntitle: x\n<<<<<<< HEAD\nstatus: a\n=======\nstatus: b\n>>>>>>> other\n---\nbody';
+		const raw =
+			'---\ntitle: x\n<<<<<<< HEAD\nstatus: a\n=======\nstatus: b\n>>>>>>> other\n---\nbody';
 		expect(parseMarkdown(raw).error?.name).toBe('ConflictMarkers');
 	});
 

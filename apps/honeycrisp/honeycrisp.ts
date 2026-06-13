@@ -14,6 +14,7 @@
  *  - `apps/honeycrisp/project.ts`  -> `honeycrisp(opts?)` mount factory
  */
 
+import { field } from '@epicenter/field';
 import {
 	attachRichText,
 	createDisposableCache,
@@ -30,7 +31,6 @@ import {
 	nullable,
 	onLocalUpdate,
 } from '@epicenter/workspace';
-import { field } from '@epicenter/field';
 import Type from 'typebox';
 import type { Brand } from 'wellcrafted/brand';
 import * as Y from 'yjs';

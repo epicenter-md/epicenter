@@ -10,8 +10,8 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { createWorkspace, defineTable } from '../../../index.js';
 import { field } from '@epicenter/field';
+import { createWorkspace, defineTable } from '../../../index.js';
 import { attachMarkdownExport } from './export.js';
 
 const postsTable = defineTable({

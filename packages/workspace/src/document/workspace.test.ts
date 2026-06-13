@@ -7,9 +7,9 @@
 import { describe, expect, test } from 'bun:test';
 import type { Keyring } from '@epicenter/encryption';
 import { bytesToBase64 } from '@epicenter/encryption';
+import { field } from '@epicenter/field';
 import { randomBytes } from '@noble/ciphers/utils.js';
 import { Type } from 'typebox';
-import { field } from '@epicenter/field';
 import { defineKv } from './define-kv.js';
 import { defineTable } from './define-table.js';
 import { createWorkspace } from './workspace.js';

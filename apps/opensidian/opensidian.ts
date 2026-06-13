@@ -14,12 +14,12 @@
  *  - `apps/opensidian/project.ts`                    -> `opensidian()` mount factory
  */
 
+import { field, jsonValue } from '@epicenter/field';
 import {
 	type FileId,
 	fileContentDocGuid,
 	filesTable,
 } from '@epicenter/filesystem';
-import { field, jsonValue } from '@epicenter/field';
 import {
 	attachTimeline,
 	createDisposableCache,

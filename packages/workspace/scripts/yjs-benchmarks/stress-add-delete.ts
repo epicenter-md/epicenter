@@ -9,9 +9,9 @@
  */
 
 import { unlinkSync } from 'node:fs';
+import { field } from '@epicenter/field';
 import * as Y from 'yjs';
 import { createWorkspace, defineTable } from '../../src/index.js';
-import { field } from '@epicenter/field';
 import { formatBytes, measureTime } from './helpers.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════

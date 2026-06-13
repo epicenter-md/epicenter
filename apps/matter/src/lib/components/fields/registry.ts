@@ -14,17 +14,17 @@
  * widget, so `Kind` is exactly the renderable set.
  */
 
-import type { Component } from 'svelte';
 import type { FieldOf, Kind } from '@epicenter/field';
+import type { Component } from 'svelte';
 import BooleanField from './BooleanField.svelte';
 import DateTimeField from './DateTimeField.svelte';
+import type { FieldProps } from './field-props';
 import JsonField from './JsonField.svelte';
 import MultiSelectField from './MultiSelectField.svelte';
 import NumericField from './NumericField.svelte';
 import SelectField from './SelectField.svelte';
 import StringField from './StringField.svelte';
 import TagsField from './TagsField.svelte';
-import type { FieldProps } from './field-props';
 import UrlField from './UrlField.svelte';
 
 /** A per-kind Field widget over the base (full-union) props, the dispatch surface type. */
@@ -61,4 +61,7 @@ const WIDGETS = {
  * exactly one other, `recognize`'s at the model boundary in `@epicenter/field`. It is sound by
  * the indexing invariant above, and every widget body stays narrow and cast-free.
  */
-export const FIELD_COMPONENTS = WIDGETS as unknown as Record<Kind, FieldComponent>;
+export const FIELD_COMPONENTS = WIDGETS as unknown as Record<
+	Kind,
+	FieldComponent
+>;

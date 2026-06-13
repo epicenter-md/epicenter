@@ -21,7 +21,7 @@ import { describe, expect, test } from 'bun:test';
 import { type TSchema, Type } from 'typebox';
 import { Value } from 'typebox/value';
 import { field, jsonValue } from './builders';
-import { type Kind, KINDS, META_BY_KIND, recognize } from './field';
+import { KINDS, type Kind, META_BY_KIND, recognize } from './field';
 
 /**
  * The at-rest form of a built schema: a live TypeBox schema carries a
@@ -44,7 +44,8 @@ function countMatches(schema: unknown): number {
 }
 
 /** The kind `recognize` assigns, or null when the schema is outside the palette. */
-const kindOf = (schema: unknown): Kind | null => recognize(schema)?.kind ?? null;
+const kindOf = (schema: unknown): Kind | null =>
+	recognize(schema)?.kind ?? null;
 
 // ============================================================================
 // Round-trip: field.* builders are the inverse of recognize
@@ -234,9 +235,9 @@ describe('json: the marker-discriminated escape kind', () => {
 	test('the marker is what flips a bare object from raw to json', () => {
 		// same shape, no marker -> raw; with marker -> json
 		expect(kindOf({ type: 'object', properties: {} })).toBeNull();
-		expect(kindOf({ type: 'object', properties: {}, 'x-json-schema': true })).toBe(
-			'json',
-		);
+		expect(
+			kindOf({ type: 'object', properties: {}, 'x-json-schema': true }),
+		).toBe('json');
 	});
 
 	test('jsonValue: field.json(Type.Array(jsonValue)) is the any-JSON-list pattern, kind json', () => {
@@ -273,7 +274,11 @@ describe('refinements and annotations ride along without changing the kind', () 
 	});
 
 	test('a default rides along on a select without tipping the kind', () => {
-		const s = { type: 'string', enum: ['draft', 'published'], default: 'draft' };
+		const s = {
+			type: 'string',
+			enum: ['draft', 'published'],
+			default: 'draft',
+		};
 		expect(kindOf(s)).toBe('select');
 		expect(countMatches(s)).toBe(1);
 	});

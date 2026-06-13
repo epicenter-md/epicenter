@@ -17,6 +17,7 @@
 
 import { Database, type SQLQueryBindings } from 'bun:sqlite';
 import { describe, expect, test } from 'bun:test';
+import { field } from '@epicenter/field';
 import {
 	createDisposableCache,
 	createWorkspace,
@@ -24,7 +25,6 @@ import {
 	type Tables,
 } from '../../../index.js';
 import { isAction, isMutation, isQuery } from '../../../shared/actions.js';
-import { field } from '@epicenter/field';
 import { nullable } from '../../nullable.js';
 import { attachSqliteMaterializerCore } from './core.js';
 

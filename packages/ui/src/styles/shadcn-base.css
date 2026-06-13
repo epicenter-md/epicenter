@@ -4,13 +4,19 @@
 			height: 0;
 		}
 		to {
-			height: var(--bits-accordion-content-height, var(--accordion-panel-height, auto));
+			height: var(
+				--bits-accordion-content-height,
+				var(--accordion-panel-height, auto)
+			);
 		}
 	}
 
 	@keyframes accordion-up {
 		from {
-			height: var(--bits-accordion-content-height, var(--accordion-panel-height, auto));
+			height: var(
+				--bits-accordion-content-height,
+				var(--accordion-panel-height, auto)
+			);
 		}
 		to {
 			height: 0;

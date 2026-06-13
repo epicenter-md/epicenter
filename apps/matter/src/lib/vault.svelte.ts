@@ -22,12 +22,14 @@
  * `bun run tauri dev`.
  */
 
-import { invoke, Channel } from '@tauri-apps/api/core';
+import { Channel, invoke } from '@tauri-apps/api/core';
 import { SvelteMap } from 'svelte/reactivity';
 import { extractErrorMessage } from 'wellcrafted/error';
 import { Err, type Result, tryAsync } from 'wellcrafted/result';
-import { editBody, editField } from './core/serialize';
-import { MIRROR_TABLE, projectToSqlite, quoteIdent } from './core/sqlite';
+// One file's observable state, pushed by `watch_folder` (content / removed /
+// unreadable). Generated from the Rust `FileDelta` enum by ts-rs, so the IPC payload
+// has one source of truth; regenerate with `cargo test` in `src-tauri`.
+import type { FileDelta } from './bindings/FileDelta';
 import {
 	buildView,
 	type FolderRead,
@@ -36,10 +38,8 @@ import {
 	type UnreadableFile,
 } from './core/folder';
 import { parseEntry, type Row } from './core/parse';
-// One file's observable state, pushed by `watch_folder` (content / removed /
-// unreadable). Generated from the Rust `FileDelta` enum by ts-rs, so the IPC payload
-// has one source of truth; regenerate with `cargo test` in `src-tauri`.
-import type { FileDelta } from './bindings/FileDelta';
+import { editBody, editField } from './core/serialize';
+import { MIRROR_TABLE, projectToSqlite, quoteIdent } from './core/sqlite';
 
 /** The vault's own folder name (its basename). Per-file paths are Rust's. */
 const basename = (path: string) => path.split(/[/\\]/).pop() ?? path;
@@ -135,10 +135,11 @@ export function createVault(path: string) {
 	function reconcileMirror(): void {
 		const { view } = read;
 		if (view.mode !== 'modeled') return;
-		const { schema, insert, rows: tuples } = projectToSqlite(
-			view.model,
-			view.conformance,
-		);
+		const {
+			schema,
+			insert,
+			rows: tuples,
+		} = projectToSqlite(view.model, view.conformance);
 		void invoke('write_mirror', { path, schema, insert, rows: tuples })
 			.then(() => {
 				mirrorVersion++; // the file is now fresh: wake any reader keyed on the mirror
@@ -154,7 +155,10 @@ export function createVault(path: string) {
 	 * drains, so the map does not grow with the folder.
 	 */
 	const writeTails = new Map<string, Promise<void>>();
-	function serializeWrite(fileName: string, run: () => Promise<void>): Promise<void> {
+	function serializeWrite(
+		fileName: string,
+		run: () => Promise<void>,
+	): Promise<void> {
 		const tail = (writeTails.get(fileName) ?? Promise.resolve()).then(run);
 		const settled = tail.catch(() => {});
 		writeTails.set(fileName, settled);
@@ -178,11 +182,17 @@ export function createVault(path: string) {
 	 * no second copy to drift. A failed write leaves the map untouched (we apply only
 	 * on success) and surfaces in `writeError`.
 	 */
-	function write(fileName: string, edit: (raw: string) => string): Promise<void> {
+	function write(
+		fileName: string,
+		edit: (raw: string) => string,
+	): Promise<void> {
 		return serializeWrite(fileName, async () => {
 			const { data: next, error: failure } = await tryAsync({
 				try: async () => {
-					const raw = await invoke<string | null>('read_entry', { path, fileName });
+					const raw = await invoke<string | null>('read_entry', {
+						path,
+						fileName,
+					});
 					const text = edit(raw ?? '');
 					await invoke('write_entry', { path, fileName, content: text });
 					return text;
@@ -205,7 +215,11 @@ export function createVault(path: string) {
 	 * not clobbered. Writes to one file are serialized, so two quick edits cannot
 	 * interleave their read-modify-write and drop one of the changes.
 	 */
-	function saveField(fileName: string, key: string, value: unknown): Promise<void> {
+	function saveField(
+		fileName: string,
+		key: string,
+		value: unknown,
+	): Promise<void> {
 		return write(fileName, (raw) => editField(raw, key, value));
 	}
 
@@ -250,11 +264,13 @@ export function createVault(path: string) {
 	channel.onmessage = applyDeltas;
 	let watchId: number | undefined;
 	let disposed = false;
-	const whenReady = invoke<number>('watch_folder', { path, channel }).then((id) => {
-		// Disposed before the id arrived: drop the watcher that just resolved.
-		if (disposed) void invoke('unwatch_folder', { id });
-		else watchId = id;
-	});
+	const whenReady = invoke<number>('watch_folder', { path, channel }).then(
+		(id) => {
+			// Disposed before the id arrived: drop the watcher that just resolved.
+			if (disposed) void invoke('unwatch_folder', { id });
+			else watchId = id;
+		},
+	);
 	/** Stop the OS watch. The keyed route component calls this when it is torn down (a tab switch or close). */
 	function dispose(): void {
 		disposed = true;
@@ -298,4 +314,7 @@ export type Vault = ReturnType<typeof createVault>;
  * the disk lifecycle (`whenReady` / `dispose` / `path`), so the demo is an honest
  * drop-in rather than a vault pretending to watch a folder.
  */
-export type FolderGridVault = Pick<Vault, 'folderName' | 'read' | 'saveField' | 'saveBody'>;
+export type FolderGridVault = Pick<
+	Vault,
+	'folderName' | 'read' | 'saveField' | 'saveBody'
+>;

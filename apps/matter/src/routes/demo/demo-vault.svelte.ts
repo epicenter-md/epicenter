@@ -14,8 +14,8 @@
  */
 
 import { SvelteMap } from 'svelte/reactivity';
-import { editBody, editField } from '$lib/core/serialize';
 import { type FolderRead, readFolder } from '$lib/core/folder';
+import { editBody, editField } from '$lib/core/serialize';
 import type { FolderGridVault } from '$lib/vault.svelte';
 import { DEMO_MODEL_TEXT, DEMO_ROWS } from './fixtures';
 
@@ -27,11 +27,12 @@ export function createDemoVault(folderName = 'sample-vault/drafts') {
 		DEMO_ROWS.map((row) => [row.fileName, row.content]),
 	);
 
-	const read = $derived.by((): FolderRead =>
-		readFolder(
-			[...entries].map(([fileName, content]) => ({ fileName, content })),
-			DEMO_MODEL_TEXT,
-		),
+	const read = $derived.by(
+		(): FolderRead =>
+			readFolder(
+				[...entries].map(([fileName, content]) => ({ fileName, content })),
+				DEMO_MODEL_TEXT,
+			),
 	);
 
 	/** Apply one transform to a file's freshest text, the demo's analog of `write`. */

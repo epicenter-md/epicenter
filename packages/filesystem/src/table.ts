@@ -1,5 +1,9 @@
 import { field } from '@epicenter/field';
-import { defineTable, nullable, type InferTableRow } from '@epicenter/workspace';
+import {
+	defineTable,
+	type InferTableRow,
+	nullable,
+} from '@epicenter/workspace';
 import type { FileId } from './ids.js';
 
 export const filesTable = defineTable({

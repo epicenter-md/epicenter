@@ -9,8 +9,12 @@
  * @module
  */
 
-import { defineTable, nullable, type InferTableRow } from '@epicenter/workspace';
 import { field } from '@epicenter/field';
+import {
+	defineTable,
+	type InferTableRow,
+	nullable,
+} from '@epicenter/workspace';
 
 /**
  * Skills table, one row per skill, 1:1 mapping to SKILL.md.

@@ -20,8 +20,12 @@
  * collaborative or independently-syncing body editing is real.
  */
 
-import { defineTable, type InferTableRow, nullable } from '@epicenter/workspace';
 import { field } from '@epicenter/field';
+import {
+	defineTable,
+	type InferTableRow,
+	nullable,
+} from '@epicenter/workspace';
 import { type TSchema, Type } from 'typebox';
 import type { Brand } from 'wellcrafted/brand';
 import type { JsonObject, JsonValue } from 'wellcrafted/json';

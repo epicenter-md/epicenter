@@ -6,8 +6,8 @@
  * compile-time `FlatJsonTSchema` tests live in `column/constraint.test-d.ts`.
  */
 
-import { field, recognize } from '@epicenter/field';
 import { describe, expect, test } from 'bun:test';
+import { field, recognize } from '@epicenter/field';
 import { Type } from 'typebox';
 import { Value } from 'typebox/value';
 import { nullable } from './nullable';

@@ -3,10 +3,10 @@
  */
 
 import { describe, expect, test } from 'bun:test';
+import { field } from '@epicenter/field';
 import { expectErr, expectOk } from 'wellcrafted/testing';
 import * as Y from 'yjs';
 import { createEncryptedYkvLww } from '../shared/y-keyvalue/y-keyvalue-lww-encrypted.js';
-import { field } from '@epicenter/field';
 import { defineTable } from './define-table.js';
 import { createReadonlyTable, createTable } from './table.js';
 

@@ -14,9 +14,9 @@
  * Run: bun packages/workspace/scripts/yjs-benchmarks/persistence-growth.ts
  */
 
+import { field } from '@epicenter/field';
 import * as Y from 'yjs';
 import { createWorkspace, defineTable } from '../../src/index.js';
-import { field } from '@epicenter/field';
 import { formatBytes } from './helpers.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
