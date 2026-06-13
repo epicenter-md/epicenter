@@ -41,6 +41,7 @@ export function createDurableObjectRooms(
 				sync: (body) => stub.sync(body),
 				getDoc: () => stub.getDoc(),
 				handleUpgrade: (request) => stub.fetch(request),
+				destroy: () => stub.destroy(),
 			} satisfies ResolvedRoom;
 		},
 	} satisfies Rooms;

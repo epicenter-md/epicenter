@@ -56,6 +56,12 @@ export type RoomUpdateLog = {
 	loadAll(): Uint8Array[];
 	/** Append one Yjs update. Sync because the Yjs listener cannot await. */
 	append(update: Uint8Array): void;
+	/**
+	 * Empty the log without compacting. Transaction-free (like {@link append}) so
+	 * a caller owning a wider transaction (room destruction, which empties the log
+	 * and writes a tombstone atomically) can compose it.
+	 */
+	clear(): void;
 	/** Replace the entire log with one compacted blob. Atomic. */
 	replaceAll(compacted: Uint8Array): void;
 	/** Total bytes used by the log; surfaced as `storageBytes` to callers. */
@@ -136,6 +142,17 @@ export type ResolvedRoom = {
 	 * success, or an HTTP error response if the upgrade is malformed.
 	 */
 	handleUpgrade(request: Request): Promise<Response>;
+	/**
+	 * Permanently destroy this room: empty its persisted update log, write a
+	 * durable tombstone so every future `sync`/`getDoc`/upgrade is refused, and
+	 * close any live sockets. Idempotent.
+	 *
+	 * A backend cannot reclaim the room's name (a Cloudflare Durable Object name
+	 * keeps resolving to a live, empty object), so destruction is a logical
+	 * tombstone, not a deallocation. The tombstone is what defeats resurrection
+	 * from a peer that still holds the doc and re-pushes its state.
+	 */
+	destroy(): Promise<void>;
 };
 
 /**

@@ -33,8 +33,14 @@
 import { DurableObject } from 'cloudflare:workers';
 import { asUserId } from '@epicenter/auth';
 import { MAIN_SUBPROTOCOL, parseSubprotocols } from '@epicenter/sync';
+import { Ok } from 'wellcrafted/result';
+import * as Y from 'yjs';
 import type { Connection } from '../../../types.js';
 import { createRoomCore, type RoomCore } from '../../core.js';
+import {
+	createDurableObjectTombstone,
+	type DurableObjectTombstone,
+} from './tombstone.js';
 import { createDurableObjectUpdateLog } from './update-log.js';
 
 /** Delay before alarm-based compaction fires (30 seconds). */
@@ -76,6 +82,28 @@ const CONNECTION_SWEEP_INTERVAL_MS = 5 * 60_000;
  * instead of making the client give up.
  */
 const CONNECTION_LIFETIME_CLOSE_CODE = 4408;
+
+/**
+ * Close code sent to every live socket when a room is destroyed
+ * ({@link Room.destroy}).
+ *
+ * App-defined (4000-4999) and permanent: the client sync supervisor parks on
+ * this code (like the auth-failure 4401) instead of reconnecting, so a device
+ * that still had the doc open does not churn reconnects against the tombstoned
+ * room. The reason is JSON (`{ code }`) to match the supervisor's permanent-
+ * failure parser.
+ */
+const ROOM_GONE_CLOSE_CODE = 4410;
+
+/** JSON close reason paired with {@link ROOM_GONE_CLOSE_CODE}. */
+const ROOM_GONE_CLOSE_REASON = JSON.stringify({ code: 'room_deleted' });
+
+/**
+ * Encoded state of an empty Y.Doc. Returned by {@link Room.getDoc} for a
+ * destroyed room so a racing client hydrates nothing instead of the lingering
+ * in-memory transcript. Computed once at module load.
+ */
+const EMPTY_DOC_SNAPSHOT: Uint8Array = Y.encodeStateAsUpdateV2(new Y.Doc());
 
 /**
  * Yjs sync + dispatch room backed by a Cloudflare Durable Object.
@@ -123,6 +151,26 @@ export class Room extends DurableObject {
 	 */
 	private core!: RoomCore;
 
+	/**
+	 * This room's persisted update log. Held so {@link Room.destroy} can empty it
+	 * through the owner of the `updates` table rather than running raw SQL.
+	 */
+	private updateLog!: ReturnType<typeof createDurableObjectUpdateLog>;
+
+	/**
+	 * Tombstone for this room. Read synchronously in the constructor and marked
+	 * in {@link Room.destroy}. A marked room refuses every doc-touching path.
+	 */
+	private tombstone!: DurableObjectTombstone;
+
+	/**
+	 * Whether this room has been destroyed. Mirrors {@link tombstone} in memory
+	 * so every hot path gates on a field read, not a SQL query. Seeded from the
+	 * tombstone on cold start so a destroyed room stays destroyed across DO
+	 * eviction and reconstruction.
+	 */
+	private destroyed = false;
+
 	constructor(ctx: DurableObjectState, env: Cloudflare.Env) {
 		super(ctx, env);
 
@@ -131,8 +179,10 @@ export class Room extends DurableObject {
 		);
 
 		ctx.blockConcurrencyWhile(async () => {
-			const updateLog = createDurableObjectUpdateLog(ctx.storage);
-			this.core = createRoomCore({ updateLog });
+			this.updateLog = createDurableObjectUpdateLog(ctx.storage);
+			this.tombstone = createDurableObjectTombstone(ctx.storage);
+			this.destroyed = this.tombstone.isDestroyed();
+			this.core = createRoomCore({ updateLog: this.updateLog });
 
 			// Restore connections that survived hibernation. The hibernation
 			// WebSocket structurally satisfies RoomSocket (send/close/
@@ -175,6 +225,12 @@ export class Room extends DurableObject {
 	override async fetch(request: Request): Promise<Response> {
 		if (request.headers.get('Upgrade') !== 'websocket') {
 			return new Response('Method not allowed', { status: 405 });
+		}
+
+		// A destroyed room accepts no new connections: refuse the upgrade so the
+		// client cannot start syncing (and thus cannot re-push) the dead doc.
+		if (this.destroyed) {
+			return new Response('Room destroyed', { status: 410 });
 		}
 
 		const url = new URL(request.url);
@@ -245,6 +301,19 @@ export class Room extends DurableObject {
 		ws: WebSocket,
 		message: ArrayBuffer | string,
 	): Promise<void> {
+		// A destroyed room never applies an inbound update: reaching
+		// `core.handleMessage` -> `applyUpdateV2` -> `updateLog.append` would
+		// resurrect the just-deleted doc. `destroy()` already closed live
+		// sockets; this guards a frame that raced the close. Closing an
+		// already-closed socket throws, so swallow it.
+		if (this.destroyed) {
+			try {
+				ws.close(ROOM_GONE_CLOSE_CODE, ROOM_GONE_CLOSE_REASON);
+			} catch {
+				/* already closed by destroy() or the remote end */
+			}
+			return;
+		}
 		if (this.closeIfExpired(ws, Date.now())) return;
 		this.core.handleMessage(ws, message);
 	}
@@ -306,7 +375,11 @@ export class Room extends DurableObject {
 			/* already closed by the remote end */
 		}
 
-		if (this.core.connectionCount === 0) {
+		// A destroyed room must NOT schedule compaction. Compaction re-encodes the
+		// still-populated in-memory doc and writes it back via `replaceAll`, which
+		// would resurrect the transcript into SQLite after `destroy()` emptied it.
+		// This is the subtle resurrection path; the `alarm()` guard backs it up.
+		if (!this.destroyed && this.core.connectionCount === 0) {
 			void this.ctx.storage.setAlarm(Date.now() + COMPACTION_DELAY_MS);
 		}
 	}
@@ -335,6 +408,9 @@ export class Room extends DurableObject {
 	 * @see https://developers.cloudflare.com/durable-objects/api/alarms/
 	 */
 	override async alarm(): Promise<void> {
+		// A destroyed room neither sweeps nor compacts: compaction would
+		// `replaceAll` the in-memory doc back into the emptied update log.
+		if (this.destroyed) return;
 		const now = Date.now();
 		for (const ws of this.ctx.getWebSockets()) this.closeIfExpired(ws, now);
 		if (this.core.connectionCount > 0) {
@@ -352,6 +428,10 @@ export class Room extends DurableObject {
 	 * body without throwing.
 	 */
 	async sync(body: Uint8Array) {
+		// A destroyed room discards the client's update without applying it (no
+		// resurrection) and reports itself as empty. The client's local copy is
+		// torn down separately once it observes the parent-row tombstone.
+		if (this.destroyed) return Ok({ diff: null, storageBytes: 0 });
 		return this.core.sync(body);
 	}
 
@@ -359,6 +439,43 @@ export class Room extends DurableObject {
 	 * Snapshot bootstrap via RPC. Forwards to {@link RoomCore.getDoc}.
 	 */
 	async getDoc() {
+		// A destroyed room exposes an EMPTY snapshot, never the still-populated
+		// in-memory doc (it lingers until eviction). `destroy()` emptied the
+		// persisted log, so a cold-restarted room returns empty here too.
+		if (this.destroyed) {
+			return { data: EMPTY_DOC_SNAPSHOT, storageBytes: 0 };
+		}
 		return this.core.getDoc();
+	}
+
+	/**
+	 * Permanently destroy this room (RPC, called by the rooms DELETE route).
+	 *
+	 * Order matters and the durable mutation is atomic:
+	 * 1. Flip the in-memory gate so any concurrent RPC starts refusing at once.
+	 * 2. In one `transactionSync`, empty the update log and write the tombstone,
+	 *    so the room can never be observed half-deleted (data gone, mark missing)
+	 *    or half-alive (mark set, data lingering).
+	 * 3. Cancel any pending sweep/compaction alarm so no maintenance writer runs.
+	 * 4. Close every live socket with the permanent room-gone code so connected
+	 *    clients park instead of reconnecting into the 410 upgrade.
+	 *
+	 * Idempotent: a second call empties an already-empty log and re-marks an
+	 * already-marked tombstone.
+	 */
+	async destroy(): Promise<void> {
+		this.destroyed = true;
+		this.ctx.storage.transactionSync(() => {
+			this.updateLog.clear();
+			this.tombstone.mark();
+		});
+		void this.ctx.storage.deleteAlarm();
+		for (const ws of this.ctx.getWebSockets()) {
+			try {
+				ws.close(ROOM_GONE_CLOSE_CODE, ROOM_GONE_CLOSE_REASON);
+			} catch {
+				/* already closed by the remote end */
+			}
+		}
 	}
 }

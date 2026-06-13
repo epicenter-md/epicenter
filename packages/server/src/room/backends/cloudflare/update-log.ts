@@ -51,6 +51,16 @@ export function createDurableObjectUpdateLog(storage: DurableObjectStorage) {
 		},
 
 		/**
+		 * Empty the log without compacting. Transaction-free (like `append`) so a
+		 * caller that owns a wider transaction (room destruction, which must empty
+		 * the log and write the tombstone atomically) can compose it. The `updates`
+		 * table name lives here, not at the call site.
+		 */
+		clear(): void {
+			storage.sql.exec('DELETE FROM updates');
+		},
+
+		/**
 		 * Replace the entire log with one compacted blob. Wrapped in
 		 * `storage.transactionSync` so the DELETE + INSERT is one atomic
 		 * unit with respect to readers.

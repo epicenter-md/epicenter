@@ -22,6 +22,7 @@
 
 import { describe, expect, mock, test } from 'bun:test';
 import {
+	encodeSyncRequest,
 	encodeSyncStep1,
 	encodeSyncUpdate,
 	SYNC_MESSAGE_TYPE,
@@ -121,6 +122,10 @@ type SqlRow = { id: number; data: ArrayBuffer };
 function makeSqlStorage() {
 	const updates: SqlRow[] = [];
 	let nextId = 1;
+	// Models the `room_tombstone` table as a single boolean: destruction writes
+	// one row, `isDestroyed()` counts it. Kept separate from `updates` so the
+	// two COUNT queries route by table name, not by accident.
+	let tombstoned = false;
 
 	function exec(
 		query: string,
@@ -129,6 +134,19 @@ function makeSqlStorage() {
 		const q = query.trim().toUpperCase();
 		if (q.startsWith('CREATE TABLE')) {
 			return { toArray: () => [], one: () => ({ count: 0 }) };
+		}
+		if (q.includes('ROOM_TOMBSTONE')) {
+			if (q.startsWith('SELECT COUNT')) {
+				return {
+					toArray: () => [],
+					one: () => ({ count: tombstoned ? 1 : 0 }),
+				};
+			}
+			if (q.startsWith('INSERT')) {
+				tombstoned = true;
+				return { toArray: () => [], one: () => ({ count: 0 }) };
+			}
+			throw new Error(`Unsupported SQL: ${query}`);
 		}
 		if (q.startsWith('SELECT DATA FROM UPDATES')) {
 			return {
@@ -171,6 +189,12 @@ function makeStorage() {
 	let alarm: number | null = null;
 	return {
 		sql: makeSqlStorage(),
+		// `transactionSync` lives on `ctx.storage` (DurableObjectStorage) in the
+		// real runtime, not on `ctx.storage.sql`. `update-log` replaceAll and
+		// `Room.destroy` both call it there.
+		transactionSync<T>(fn: () => T): T {
+			return fn();
+		},
 		async setAlarm(when: number) {
 			alarm = when;
 		},
@@ -820,5 +844,93 @@ describe('Room dispatch: malformed frames', () => {
 
 		expect(callerWs.closeCalls).toHaveLength(1);
 		expect(callerWs.closeCalls[0]?.code).toBe(4400);
+	});
+});
+
+// ────────────────────────────────────────────────────────────────────────────
+// DESTROY (tombstone)
+// ────────────────────────────────────────────────────────────────────────────
+
+/** HTTP sync body carrying a single `{ m: { k: 'v' } }` update. */
+function populateSyncBody(): Uint8Array {
+	const src = new Y.Doc();
+	src.getMap('m').set('k', 'v');
+	return encodeSyncRequest(
+		Y.encodeStateVector(new Y.Doc()),
+		Y.encodeStateAsUpdateV2(src),
+	);
+}
+
+/** Decode a room's current doc state into a fresh Y.Doc for assertions. */
+async function readRoomValue(room: RoomLike): Promise<unknown> {
+	const doc = new Y.Doc();
+	Y.applyUpdateV2(doc, (await room.getDoc()).data);
+	return doc.getMap('m').get('k');
+}
+
+describe('destroy', () => {
+	test('empties the doc and refuses resurrection from a racing sync', async () => {
+		const { room } = await makeRoom();
+		await room.sync(populateSyncBody());
+		expect(await readRoomValue(room)).toBe('v');
+
+		await room.destroy();
+
+		// getDoc exposes an empty snapshot, never the lingering in-memory doc.
+		expect(await readRoomValue(room)).toBeUndefined();
+
+		// A client that still held the doc and re-pushes it is discarded.
+		const res = await room.sync(populateSyncBody());
+		expect(res.error).toBeNull();
+		expect(res.data.diff).toBeNull();
+		expect(await readRoomValue(room)).toBeUndefined();
+	});
+
+	test('refuses new WebSocket upgrades with 410', async () => {
+		const { room } = await makeRoom();
+		await room.destroy();
+		const res = await room.fetch(upgradeRequest('dev-1'));
+		expect(res.status).toBe(410);
+	});
+
+	test('closes live sockets with the permanent room-gone code', async () => {
+		const { room } = await makeRoom();
+		const ws = await upgrade(room, 'dev-1');
+		await room.destroy();
+		expect(ws.closeCalls.some((c) => c.code === 4410)).toBe(true);
+	});
+
+	test('close + alarm after destroy do not resurrect via compaction', async () => {
+		const { room, ctx } = await makeRoom();
+		const ws = await upgrade(room, 'dev-1');
+		await room.sync(populateSyncBody());
+		await room.destroy();
+
+		// The runtime still delivers the close, then fires the pending alarm. A
+		// non-destroyed room would arm + run compaction, re-encoding the in-memory
+		// doc back into the emptied log. The destroyed room must do neither.
+		await room.webSocketClose(ws, 1000, 'bye', true);
+		await room.alarm();
+
+		expect(await readRoomValue(room)).toBeUndefined();
+		expect(await ctx.storage.getAlarm()).toBeNull();
+	});
+
+	test('a reconstructed room stays destroyed (tombstone persists)', async () => {
+		const { room, ctx } = await makeRoom();
+		await room.sync(populateSyncBody());
+		await room.destroy();
+
+		// Cold start: a fresh Room over the SAME persisted storage must read the
+		// tombstone synchronously in its constructor and refuse from the start.
+		const { Room } = await import('./durable-object.js');
+		const ctx2 = makeCtx();
+		ctx2.storage = ctx.storage;
+		const room2 = new Room(ctx2 as never, {} as never) as RoomLike;
+		await Promise.resolve();
+
+		const res = await room2.sync(populateSyncBody());
+		expect(res.data.diff).toBeNull();
+		expect(await readRoomValue(room2)).toBeUndefined();
 	});
 });

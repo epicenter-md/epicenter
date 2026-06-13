@@ -18,8 +18,8 @@ import {
 } from '@epicenter/workspace/ai';
 import { EventType, type ModelMessage, type StreamChunk } from '@tanstack/ai';
 import * as Y from 'yjs';
-import { createRoomCore } from '../room/core.js';
 import type { RoomUpdateLog } from '../room/contracts.js';
+import { createRoomCore } from '../room/core.js';
 import { runDocGeneration } from './doc-generation.js';
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -32,6 +32,9 @@ function createMemoryUpdateLog(): RoomUpdateLog {
 		loadAll: () => entries,
 		append: (update) => {
 			entries.push(update);
+		},
+		clear: () => {
+			entries = [];
 		},
 		replaceAll: (compacted) => {
 			entries = [compacted];
