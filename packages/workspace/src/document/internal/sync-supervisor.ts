@@ -39,10 +39,17 @@ export type SyncError = { type: 'connection' };
  * Reason a sync entered the terminal `failed` phase.
  *
  * `code` is `string` (not a closed enum): the server is the source of truth
- * for the vocabulary, so unknown codes pass through. Documented codes today:
- * 'invalid_token', 'token_expired', 'deauthorized', 'unknown'.
+ * for the vocabulary, so unknown codes pass through.
+ *
+ * - `auth`: credentials are permanently invalid (close 4401). Documented
+ *   codes: 'invalid_token', 'token_expired', 'deauthorized', 'unknown'.
+ * - `gone`: the room was destroyed server-side (close 4410). The doc no longer
+ *   exists; reconnecting would only hit a 410 upgrade. Documented code:
+ *   'room_deleted'.
  */
-export type SyncFailedReason = { type: 'auth'; code: string };
+export type SyncFailedReason =
+	| { type: 'auth'; code: string }
+	| { type: 'gone'; code: string };
 
 export type SyncStatus =
 	| { phase: 'offline' }
@@ -52,12 +59,17 @@ export type SyncStatus =
 
 /**
  * Thrown via `whenConnected` rejection when the server signals a permanent
- * auth failure (close code 4401). The `code` carries the server's canonical
- * reason string so callers can switch on it without magic strings.
+ * failure: an auth rejection (close 4401) or a destroyed room (close 4410). The
+ * `code` carries the server's canonical reason string so callers can switch on
+ * it without magic strings.
  */
 const SyncFailedError = defineErrors({
 	AuthRejected: ({ code }: { code: string }) => ({
 		message: `[sync] server rejected auth: ${code}`,
+		code,
+	}),
+	RoomGone: ({ code }: { code: string }) => ({
+		message: `[sync] room destroyed: ${code}`,
 		code,
 	}),
 });
@@ -132,32 +144,52 @@ const CONNECT_TIMEOUT_MS = 15_000;
  * transient close codes (1006 network blip, 1011 server error, etc.).
  */
 const PERMANENT_AUTH_CLOSE_CODE = 4401;
+/**
+ * App-defined WebSocket close code signaling the room was destroyed
+ * server-side. Permanent like 4401: the doc no longer exists, so reconnecting
+ * would only hit a 410 upgrade. Paired by the server with a `{ code }` JSON
+ * reason (see `ROOM_GONE_CLOSE_CODE` in the room Durable Object).
+ */
+const PERMANENT_ROOM_GONE_CLOSE_CODE = 4410;
 
 /**
- * Failsafe: returns null when `event` is not a permanent-failure signal,
- * `SyncFailedReason` otherwise. A buggy server that sends 4401 with malformed
- * JSON still produces a usable reason (`code: 'unknown'`); we never throw
- * from here.
+ * Extract the server's canonical reason `code` from a close event's JSON
+ * reason. A buggy server that sends malformed JSON still yields `'unknown'`;
+ * never throws.
  */
-function parsePermanentFailure(event: {
-	code: number;
-	reason: string;
-}): SyncFailedReason | null {
-	if (event.code !== PERMANENT_AUTH_CLOSE_CODE) return null;
+function parseReasonCode(reason: string): string {
 	try {
-		const parsed = JSON.parse(event.reason) as unknown;
+		const parsed = JSON.parse(reason) as unknown;
 		if (
 			parsed !== null &&
 			typeof parsed === 'object' &&
 			'code' in parsed &&
 			typeof parsed.code === 'string'
 		) {
-			return { type: 'auth', code: parsed.code };
+			return parsed.code;
 		}
 	} catch {
 		// fall through to 'unknown'
 	}
-	return { type: 'auth', code: 'unknown' };
+	return 'unknown';
+}
+
+/**
+ * Failsafe: returns null when `event` is not a permanent-failure signal,
+ * `SyncFailedReason` otherwise. Recognizes auth rejection (4401) and room
+ * destruction (4410); we never throw from here.
+ */
+function parsePermanentFailure(event: {
+	code: number;
+	reason: string;
+}): SyncFailedReason | null {
+	if (event.code === PERMANENT_AUTH_CLOSE_CODE) {
+		return { type: 'auth', code: parseReasonCode(event.reason) };
+	}
+	if (event.code === PERMANENT_ROOM_GONE_CLOSE_CODE) {
+		return { type: 'gone', code: parseReasonCode(event.reason) };
+	}
+	return null;
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -327,7 +359,10 @@ export function createSyncSupervisor(
 			if (failure) {
 				setStatus({ phase: 'failed', reason: failure });
 				connected.reject(
-					SyncFailedError.AuthRejected({ code: failure.code }).error,
+					(failure.type === 'gone'
+						? SyncFailedError.RoomGone({ code: failure.code })
+						: SyncFailedError.AuthRejected({ code: failure.code })
+					).error,
 				);
 				log.warn(
 					SyncSupervisorError.PermanentClose({
