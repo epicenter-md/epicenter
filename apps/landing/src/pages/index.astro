@@ -1,704 +1,564 @@
 ---
-import { Badge } from '@epicenter/ui/badge';
-import { Button } from '@epicenter/ui/button';
-import * as Card from '@epicenter/ui/card';
+import { Font } from 'astro:assets';
+import { VERSION } from '@epicenter/constants/versions';
 import {
-	ArrowRight as ArrowRightIcon,
-	Check as CheckIcon,
-	Code as CodeIcon,
-	FolderOpen as FolderOpenIcon,
-	GitFork as GitForkIcon,
-	HardDrive as HardDriveIcon,
-	Link2 as Link2Icon,
-	Rocket as RocketIcon,
-	Sparkles as SparklesIcon,
-	Zap as ZapIcon,
+	FileText as FileTextIcon,
+	Folder as FolderIcon,
+	Mic as MicIcon,
+	NotebookPen as NotebookPenIcon,
+	StickyNote as StickyNoteIcon,
 } from '@lucide/astro';
-import PrinciplesRotatingHeadline from '../components/PrinciplesRotatingHeadline.svelte';
 import BaseLayout from '../layouts/BaseLayout.astro';
 
-const userPrinciples = [
-	{
-		icon: HardDriveIcon,
-		title: 'Own your data',
-		description:
-			'Everything lives as files on your disk. Delete the app, keep your work.',
-	},
-	{
-		icon: SparklesIcon,
-		title: 'Use any model',
-		description: 'OpenAI, Anthropic, local LLMs. Your choice, your API key.',
-	},
-	{
-		icon: Link2Icon,
-		title: 'Preserve authenticity',
-		description: 'No middleman. Direct connection to your tools and models.',
-	},
-];
-
-const developerPrinciples = [
-	{
-		icon: CodeIcon,
-		title: 'Free and open source',
-		description: 'Audit the code. Fork it. Make it yours.',
-	},
-	{
-		icon: ZapIcon,
-		title: 'Blazing fast',
-		description:
-			'Built with Rust, Svelte 5, and obsessive performance optimization.',
-	},
-	{
-		icon: RocketIcon,
-		title: "Built on tomorrow's stack",
-		description:
-			'CRDTs, local-first architecture, and the bleeding edge of web tech.',
-	},
-];
-
-const tools = [
-	{
-		emoji: '🎙️',
-		name: 'Whispering',
-		description:
-			'Fast, minimal transcription that works with local and cloud models',
-		features: ['Choose your model', 'No subscriptions', 'Plain text output'],
-		githubUrl:
-			'https://github.com/EpicenterHQ/epicenter/tree/main/apps/whispering',
-		tryNowUrl: 'https://github.com/EpicenterHQ/epicenter/releases',
-	},
-	{
-		emoji: '💻',
-		name: 'epicenter.sh',
-		description: 'Talk to your codebase from anywhere using your own hardware',
-		features: [
-			'Local OpenCode instance',
-			'Secure tunneling',
-			'Query from any device',
-		],
-		githubUrl:
-			'https://github.com/EpicenterHQ/epicenter/tree/rebuild-assistant',
-		tryNowUrl: 'https://epicenter.sh',
-	},
-];
-
-const ecosystem = [
-	{
-		name: 'Obsidian',
-		icon: '📝',
-		description: 'Edit your notes in your favorite knowledge management tool',
-	},
-	{
-		name: 'grep & ripgrep',
-		icon: '🔍',
-		description: 'Search your entire workspace with blazing fast Unix tools',
-	},
-	{
-		name: 'Git',
-		icon: '🔀',
-		description: 'Version control your ideas, notes, and transcriptions',
-	},
-	{
-		name: 'VS Code',
-		icon: '💻',
-		description: 'Open any file in your preferred code editor',
-	},
-	{
-		name: 'Claude & OpenCode',
-		icon: '🤖',
-		description:
-			'Supercharge your workflow with AI that understands your context',
-	},
-];
-
-const quickstartCodeHtml = `<span class="text-violet-400">import</span> { column, createWorkspace, defineTable } <span class="text-violet-400">from</span> <span class="text-emerald-400">'@epicenter/workspace'</span>
-
-<span class="text-violet-400">const</span> posts = <span class="text-amber-300">defineTable</span>({
-  id: column.<span class="text-amber-300">string</span>(),
-  title: column.<span class="text-amber-300">string</span>(),
-  published: column.<span class="text-amber-300">boolean</span>(),
-})
-
-<span class="text-violet-400">const</span> workspace = <span class="text-amber-300">createWorkspace</span>({
-  id: <span class="text-emerald-400">'my-app'</span>,
-  tables: { posts },
-  kv: {},
-})
-
-workspace.tables.posts.<span class="text-amber-300">set</span>({ id: <span class="text-emerald-400">'hello'</span>, title: <span class="text-emerald-400">'Hello World'</span>, published: <span class="text-amber-300">true</span> })`;
+const year = new Date().getFullYear();
+const releasesUrl = 'https://github.com/EpicenterHQ/epicenter/releases/latest';
+const githubUrl = 'https://github.com/EpicenterHQ/epicenter';
+const discordUrl = 'https://go.epicenter.so/discord';
 ---
 
 <BaseLayout
-	title="Epicenter — Local-First, Open-Source Apps"
-	description="One folder of plain text and SQLite. Every tool shares this memory. Open source, local-first, self-hostable."
+	title="Epicenter: say it once, keep it forever"
+	description="Whispering is a free speech-to-text app that types wherever your cursor is and saves every capture as a plain Markdown file in a folder you own. macOS, Windows, and Linux."
 >
-	<main class="bg-background">
-		<!-- Hero Section -->
-		<header class="relative h-screen flex items-center justify-center">
-			<!-- Subtle gradient background -->
+	<Fragment slot="head">
+		<Font cssVariable="--font-fraunces" preload />
+		<script is:inline>
+			document.documentElement.classList.add('js');
+		</script>
+	</Fragment>
+
+	<main class="page">
+		<!-- Nav: one quiet door for developers, nothing more -->
+		<nav class="mx-auto flex max-w-6xl items-center justify-between px-6 py-5">
+			<a href="/" class="font-display text-xl font-semibold tracking-tight"
+				>Epicenter</a
+			>
+			<div class="flex items-center gap-6 text-sm">
+				<a class="nav-link" href="/whispering">Whispering</a>
+				<a class="nav-link" href="/blog">Blog</a>
+				<a class="nav-link" href={githubUrl}>GitHub</a>
+				<a class="nav-link hidden sm:inline" href={discordUrl}>Discord</a>
+			</div>
+		</nav>
+
+		<!-- Hero: speak, and the words become a file you own -->
+		<header
+			class="mx-auto flex min-h-[90svh] max-w-5xl flex-col items-center justify-center px-6 pb-20 pt-8 text-center"
+		>
+			<p class="eyebrow hero-step" style="--step: 0">Speak it. Keep it.</p>
+			<h1 class="font-display hero-step text-balance" style="--step: 1">
+				Say it once. Keep it forever.
+			</h1>
+			<p class="sub hero-step mx-auto mt-7 max-w-2xl" style="--step: 2">
+				Whispering turns your voice into text wherever your cursor is, and saves
+				every capture as a plain Markdown file in a folder you own. Free, and
+				ready tonight.
+			</p>
 			<div
-				class="absolute inset-0 bg-gradient-to-b from-primary/5 via-background to-background -z-10"
-			></div>
+				class="hero-step mt-10 flex flex-col items-center gap-4 sm:flex-row sm:justify-center"
+				style="--step: 3"
+			>
+				<a class="cta cta-solid" data-download href={releasesUrl}
+					>Download Whispering, free</a
+				>
+				<a class="cta cta-quiet" href="#anywhere">See how it works</a>
+			</div>
+			<p class="fineprint hero-step mt-5" style="--step: 4">
+				Free and open source. macOS, Windows, and Linux.
+			</p>
 
-			<div class="w-full max-w-6xl mx-auto px-6 sm:px-8 md:px-12 text-center">
-				<div>
-					<!-- Main headline -->
-					<h1
-						class="text-4xl md:text-5xl font-bold text-foreground tracking-tight leading-snug md:leading-snug mb-8"
-					>
-						Local-First, Open-Source Apps
-					</h1>
-
-					<!-- Subheadline -->
-					<p
-						class="text-lg md:text-xl text-muted-foreground max-w-2xl mx-auto leading-relaxed mb-12"
-					>
-						One folder of plain text and SQLite on your machine. Every tool we
-						build shares this memory. It's open, tweakable, and yours.
+			<!-- The capture demo: speak on the left, a file lands on the right -->
+			<figure class="cap hero-step mt-14 w-full max-w-3xl" style="--step: 5">
+				<div class="cap-panel cap-mic">
+					<div class="cap-rec"><span class="cap-dot"></span> Listening</div>
+					<p class="cap-text" data-typed>
+						Just left the office, traffic is slow on the bridge. I should be
+						there by seven.
 					</p>
-
-					<!-- CTAs -->
-					<div class="flex flex-col sm:flex-row gap-4 justify-center mb-16">
-						<Button
-							href="https://github.com/EpicenterHQ/epicenter"
-							size="lg"
-							class="font-medium"
-						>
-							Star on GitHub
-							<ArrowRightIcon class="w-4 h-4" />
-						</Button>
-						<Button
-							href="https://go.epicenter.so/discord"
-							variant="outline"
-							size="lg"
-							class="font-medium"
-						>
-							Join the Discord
-						</Button>
+				</div>
+				<div class="cap-arrow" aria-hidden="true">&#8594;</div>
+				<div class="cap-panel demo-window">
+					<div class="demo-titlebar">
+						<span class="demo-dot"></span><span class="demo-dot"></span
+						><span class="demo-dot"></span>
+						<span class="demo-title">my-brain</span>
 					</div>
-
-					<!-- Quick value props -->
-					<div class="flex flex-wrap gap-x-8 gap-y-4 justify-center text-sm">
-						<div class="flex items-center gap-2 text-muted-foreground">
-							<CheckIcon class="w-4 h-4 text-success shrink-0" />
-							<span>100% open source</span>
-						</div>
-						<div class="flex items-center gap-2 text-muted-foreground">
-							<CheckIcon class="w-4 h-4 text-success shrink-0" />
-							<span>Local-first</span>
-						</div>
-						<div class="flex items-center gap-2 text-muted-foreground">
-							<CheckIcon class="w-4 h-4 text-success shrink-0" />
-							<span>Plain text & SQLite</span>
+					<div class="ns-tree bare">
+						<div class="ns-row"><FolderIcon /> apps/</div>
+						<div class="ns-row i1"><FolderIcon /> whispering/</div>
+						<div class="ns-row i2 ns-file cap-file">
+							<FileTextIcon />
+							standup.md
 						</div>
 					</div>
 				</div>
-			</div>
+			</figure>
+			<p class="cap-caption hero-step mono-caption mt-6" style="--step: 6">
+				Hold your shortcut and speak.
+			</p>
 		</header>
 
-		<!-- Product Showcase -->
-		<section
-			class="py-24 md:py-32 bg-gradient-to-b from-muted/10 via-muted/20 to-muted/10"
-		>
-			<div class="max-w-7xl mx-auto px-6">
-				<div class="text-center mb-20">
-					<Badge variant="secondary" class="mb-6 px-4 py-1 text-sm"
-						>Available now</Badge
-					>
-					<h2 class="text-3xl md:text-5xl font-bold text-foreground mb-6">
-						Tools that share your memory
-					</h2>
-					<p
-						class="text-xl text-muted-foreground max-w-3xl mx-auto leading-relaxed"
-					>
-						Record a meeting in Whispering. Edit the transcript in Obsidian.
-						Query it with your AI. No copy-pasting, no exports. Your tools share
-						one memory.
-					</p>
-				</div>
-
-				<div class="grid lg:grid-cols-2 gap-8">
-					{tools.map((tool) => (
-							<Card.Root class="group overflow-hidden border-muted/50 shadow-sm transition-all duration-300 hover:border-primary/20 hover:shadow-xl">
-								<Card.Header class="pb-4">
-									<div class="flex items-start justify-between">
-										<div class="flex items-start gap-4">
-											<div class="text-5xl transition-transform duration-300 group-hover:scale-110">
-												{tool.emoji}
-											</div>
-											<div>
-												<Card.Title class="mb-2 text-2xl">
-													{tool.name}
-												</Card.Title>
-												<Card.Description class="text-base">
-													{tool.description}
-												</Card.Description>
-											</div>
-										</div>
-									</div>
-								</Card.Header>
-								<Card.Content class="py-6">
-									<ul class="space-y-3">
-										{tool.features.map((feature) => (
-											<li class="flex items-center gap-3 text-sm">
-												<div class="shrink-0 rounded-full bg-success/10 p-1">
-													<CheckIcon class="h-3 w-3 text-success" />
-												</div>
-												<span class="text-muted-foreground transition-colors group-hover:text-foreground">
-													{feature}
-												</span>
-											</li>
-										))}
-									</ul>
-								</Card.Content>
-								<Card.Footer class="border-muted/50 border-t pt-4">
-									<div class="flex gap-2">
-										<Button
-											href={tool.tryNowUrl}
-											variant="secondary"
-											class="flex-1 transition-all hover:border-primary hover:bg-primary hover:text-primary-foreground group-hover:border-primary group-hover:bg-primary group-hover:text-primary-foreground"
-										>
-											Try Now
-											<ArrowRightIcon class="h-4 w-4 transition-transform group-hover:translate-x-1" />
-										</Button>
-										<Button
-											href={tool.githubUrl}
-											variant="outline"
-											class="flex-1"
-										>
-											View on GitHub
-										</Button>
-									</div>
-								</Card.Footer>
-							</Card.Root>
-						))}
-				</div>
-
-				<div class="mt-16 text-center">
-					<p class="text-muted-foreground mb-6 text-lg">
-						More tools coming soon
-					</p>
-					<Button
-						href="https://go.epicenter.so/discord"
-						variant="secondary"
-						size="lg"
-						class="shadow-sm hover:shadow-md transition-all"
-					>
-						Get early access
-						<ArrowRightIcon class="w-4 h-4" />
-					</Button>
-				</div>
-			</div>
-		</section>
-
-		<!-- Quick Start -->
-		<section class="py-24 md:py-32">
-			<div class="max-w-4xl mx-auto px-6">
-				<div class="text-center mb-16">
-					<Badge variant="secondary" class="mb-6 px-4 py-1 text-sm"
-						>Quick Start</Badge
-					>
-					<h2 class="text-3xl md:text-5xl font-bold text-foreground mb-6">
-						From zero to workspace in 30 seconds
-					</h2>
-				</div>
-
-				<div class="space-y-4">
-					<div
-						class="rounded-2xl bg-zinc-950 border border-zinc-800 overflow-hidden"
-					>
-						<div
-							class="flex items-center gap-2 px-4 py-3 border-b border-zinc-800"
-						>
-							<div class="w-3 h-3 rounded-full bg-zinc-700"></div>
-							<div class="w-3 h-3 rounded-full bg-zinc-700"></div>
-							<div class="w-3 h-3 rounded-full bg-zinc-700"></div>
-							<span class="ml-2 text-xs text-zinc-500 font-mono">terminal</span>
-						</div>
-						<pre
-							class="p-6 overflow-x-auto"
-						><code class="text-sm font-mono text-zinc-100"><span class="text-zinc-500">$</span> bun add @epicenter/workspace</code></pre>
-					</div>
-
-					<div
-						class="rounded-2xl bg-zinc-950 border border-zinc-800 overflow-hidden"
-					>
-						<div
-							class="flex items-center gap-2 px-4 py-3 border-b border-zinc-800"
-						>
-							<div class="w-3 h-3 rounded-full bg-zinc-700"></div>
-							<div class="w-3 h-3 rounded-full bg-zinc-700"></div>
-							<div class="w-3 h-3 rounded-full bg-zinc-700"></div>
-							<span class="ml-2 text-xs text-zinc-500 font-mono">app.ts</span>
-						</div>
-						<pre
-							class="p-6 overflow-x-auto"
-						><code class="text-sm font-mono text-zinc-100" set:html={quickstartCodeHtml} /></pre>
-					</div>
-				</div>
-			</div>
-		</section>
-
-		<!-- Core Principles -->
-		<section class="py-24 md:py-32">
-			<div class="max-w-5xl mx-auto px-6">
-				<div class="text-center mb-20">
-					<Badge variant="outline" class="mb-6">Core Philosophy</Badge>
-					<PrinciplesRotatingHeadline client:load />
-					<p class="text-xl text-muted-foreground max-w-2xl mx-auto">
-						We believe your tools should amplify your thinking, not fragment it.
-					</p>
-				</div>
-
-				<div class="grid lg:grid-cols-2 gap-12">
-					<!-- User Principles -->
-					<div
-						class="group p-8 rounded-2xl bg-card border border-muted/50 hover:border-primary/20 hover:shadow-lg transition-all duration-300"
-					>
-						<h3
-							class="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-8"
-						>
-							For you
-						</h3>
-						<div class="space-y-6">
-							{userPrinciples.map((principle) => (
-									<div class="flex items-start gap-4">
-									<div class="shrink-0 rounded-xl bg-primary/10 p-3 text-primary transition-colors group-hover:bg-primary/15">
-										<principle.icon class="h-5 w-5" />
-									</div>
-										<div>
-											<h4 class="mb-2 font-semibold text-lg transition-colors group-hover:text-primary">
-												{principle.title}
-											</h4>
-											<p class="text-muted-foreground text-sm leading-relaxed">
-												{principle.description}
-											</p>
-										</div>
-									</div>
-								))}
-						</div>
-					</div>
-
-					<!-- Developer Principles -->
-					<div
-						class="group p-8 rounded-2xl bg-card border border-muted/50 hover:border-primary/20 hover:shadow-lg transition-all duration-300"
-					>
-						<h3
-							class="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-8"
-						>
-							For developers
-						</h3>
-						<div class="space-y-6">
-							{developerPrinciples.map((principle) => (
-									<div class="flex items-start gap-4">
-									<div class="shrink-0 rounded-xl bg-primary/10 p-3 text-primary transition-colors group-hover:bg-primary/15">
-										<principle.icon class="h-5 w-5" />
-									</div>
-										<div>
-											<h4 class="mb-2 font-semibold text-lg transition-colors group-hover:text-primary">
-												{principle.title}
-											</h4>
-											<p class="text-muted-foreground text-sm leading-relaxed">
-												{principle.description}
-											</p>
-										</div>
-									</div>
-								))}
-						</div>
-					</div>
-				</div>
-			</div>
-		</section>
-
-		<!-- Architecture -->
-		<section class="py-24 relative">
-			<div class="max-w-7xl mx-auto px-6">
-				<div class="text-center mb-12">
-					<h2 class="text-3xl md:text-5xl font-bold text-foreground mb-6">
-						Built different from the ground up
-					</h2>
-					<p class="text-xl text-muted-foreground max-w-2xl mx-auto">
-						One architecture, endless possibilities
-					</p>
-				</div>
-
-				<div class="grid md:grid-cols-2 lg:grid-cols-3 gap-8 max-w-6xl mx-auto">
-					<!-- One Folder Card -->
-					<div
-						class="group p-8 rounded-2xl bg-card border border-muted/50 hover:border-primary/20 hover:shadow-lg transition-all duration-300"
-					>
-						<div class="flex items-start gap-4">
-							<div
-								class="shrink-0 rounded-xl bg-primary/10 p-3 text-primary transition-colors group-hover:bg-primary/15"
-							>
-								<FolderOpenIcon class="h-6 w-6" />
-							</div>
-							<div>
-								<h3 class="text-xl font-bold text-foreground mb-3">
-									One folder. All your data.
-								</h3>
-								<p class="text-muted-foreground leading-relaxed">
-									Everything lives in a single directory on your machine. Plain
-									text files and SQLite databases you actually own.
-								</p>
-							</div>
-						</div>
-					</div>
-
-					<!-- Local-first Card -->
-					<div
-						class="group p-8 rounded-2xl bg-card border border-muted/50 hover:border-primary/20 hover:shadow-lg transition-all duration-300"
-					>
-						<div class="flex items-start gap-4">
-							<div
-								class="p-3 rounded-xl bg-primary/10 text-primary group-hover:bg-primary/15 transition-colors shrink-0"
-							>
-								<HardDriveIcon class="w-6 h-6" />
-							</div>
-							<div>
-								<h3 class="text-xl font-bold text-foreground mb-3">
-									Local-first by default
-								</h3>
-								<p class="text-muted-foreground leading-relaxed">
-									Your transcripts, notes, and ideas never leave your machine
-									unless you want them to. No cloud lock-in.
-								</p>
-							</div>
-						</div>
-					</div>
-
-					<!-- Works with Everything Card -->
-					<div
-						class="group p-8 rounded-2xl bg-card border border-muted/50 hover:border-primary/20 hover:shadow-lg transition-all duration-300 md:col-span-2 lg:col-span-1"
-					>
-						<div class="flex items-start gap-4">
-							<div
-								class="p-3 rounded-xl bg-primary/10 text-primary group-hover:bg-primary/15 transition-colors shrink-0"
-							>
-								<GitForkIcon class="w-6 h-6" />
-							</div>
-							<div>
-								<h3 class="text-xl font-bold text-foreground mb-3">
-									Works with tools you already use
-								</h3>
-								<p class="text-muted-foreground leading-relaxed">
-									Because everything is plain text and SQLite, your entire
-									workspace is compatible with the tools you already love.
-								</p>
-							</div>
-						</div>
-					</div>
-				</div>
-			</div>
-		</section>
-
-		<!-- Ecosystem Section -->
-		<section
-			class="py-24 bg-gradient-to-b from-muted/5 via-background to-muted/5"
-		>
-			<div class="max-w-7xl mx-auto px-6">
-				<div class="text-center mb-16">
-					<Badge variant="outline" class="mb-6">Ecosystem</Badge>
-					<h2 class="text-3xl md:text-5xl font-bold text-foreground mb-6">
-						Infinite workflows, zero lock-in
-					</h2>
-					<p class="text-xl text-muted-foreground max-w-3xl mx-auto">
-						Your workspace plays nicely with the tools you already love. Edit in
-						VS Code, search with grep, version control with Git.
-					</p>
-				</div>
-
-				<div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-6 max-w-6xl mx-auto">
-					{ecosystem.map((tool) => (
-							<div class="group cursor-default rounded-xl border border-muted/50 bg-card p-6 transition-all duration-300 hover:shadow-lg">
-								<div class="flex items-start gap-4">
-									<div class="shrink-0 text-4xl transition-transform duration-300 group-hover:scale-110">
-										{tool.icon}
-									</div>
-									<div>
-										<h3 class="mb-2 font-semibold text-foreground text-lg transition-colors group-hover:text-primary">
-											{tool.name}
-										</h3>
-										<p class="text-muted-foreground text-sm leading-relaxed">
-											{tool.description}
-										</p>
-									</div>
-								</div>
-							</div>
-						))}
-
-					<!-- Custom Tool Card -->
-					<div
-						class="group p-6 rounded-xl bg-card border border-muted/50 hover:shadow-lg transition-all duration-300 cursor-default"
-					>
-						<div class="flex items-start gap-4">
-							<div
-								class="text-4xl group-hover:scale-110 transition-transform duration-300 shrink-0"
-							>
-								✨
-							</div>
-							<div>
-								<h3
-									class="text-lg font-semibold text-foreground mb-2 group-hover:text-primary transition-colors"
-								>
-									Your favorite tool
-								</h3>
-								<p class="text-sm text-muted-foreground leading-relaxed">
-									Plain text and SQLite mean your tools work too. No proprietary
-									formats.
-								</p>
-							</div>
-						</div>
-					</div>
-				</div>
-			</div>
-		</section>
-
-		<!-- FAQ -->
-		<section class="py-24 md:py-32">
-			<div class="max-w-4xl mx-auto px-6">
-				<div class="text-center mb-16">
-					<h2 class="text-3xl md:text-5xl font-bold text-foreground mb-6">
-						Frequently asked questions
-					</h2>
-				</div>
-
-				<div class="space-y-6">
-					<div class="p-8 rounded-2xl bg-card border border-muted/50">
-						<h3 class="text-lg font-semibold text-foreground mb-3">
-							How is this different from Obsidian?
-						</h3>
-						<p class="text-muted-foreground leading-relaxed">
-							Obsidian is a Markdown editor with sync. Epicenter is a
-							local-first storage substrate—multiple apps share the same
-							CRDT-backed data folder. Your notes, transcripts, and chat
-							histories all live together and sync conflict-free.
-						</p>
-					</div>
-
-					<div class="p-8 rounded-2xl bg-card border border-muted/50">
-						<h3 class="text-lg font-semibold text-foreground mb-3">
-							Is my data encrypted?
-						</h3>
-						<p class="text-muted-foreground leading-relaxed">
-							Encryption is opt-in per workspace. When enabled, Epicenter uses
-							XChaCha20-Poly1305 for data and HKDF-SHA256 for key derivation.
-							The sync server is a relay—it never sees your content.
-						</p>
-					</div>
-
-					<div class="p-8 rounded-2xl bg-card border border-muted/50">
-						<h3 class="text-lg font-semibold text-foreground mb-3">
-							Can I self-host?
-						</h3>
-						<p class="text-muted-foreground leading-relaxed">
-							Yes. The sync server is open source and runs on Cloudflare Workers
-							or any WebSocket-compatible host. You can also run entirely
-							offline—sync is optional.
-						</p>
-					</div>
-
-					<div class="p-8 rounded-2xl bg-card border border-muted/50">
-						<h3 class="text-lg font-semibold text-foreground mb-3">
-							What happens if I stop using Epicenter?
-						</h3>
-						<p class="text-muted-foreground leading-relaxed">
-							Your data is plain text and SQLite files on your disk. Open them
-							with any text editor, query them with any SQLite tool. No export
-							needed—the files are the product.
-						</p>
-					</div>
-				</div>
-			</div>
-		</section>
-
-		<!-- Vision -->
-		<section
-			class="py-24 md:py-32 bg-gradient-to-b from-background via-muted/10 to-background"
-		>
-			<div class="max-w-4xl mx-auto px-6 text-center">
-				<h2 class="text-3xl md:text-5xl font-bold text-foreground mb-12">
-					Software for people who think
+		<!-- It works in every app: words land at your cursor -->
+		<section id="anywhere">
+			<div class="mx-auto max-w-4xl px-6 py-28 text-center md:py-36">
+				<p class="eyebrow reveal">Works where you already work</p>
+				<h2 class="font-display reveal mt-4 text-balance">
+					It types into whatever app you're in.
 				</h2>
-				<div class="space-y-6 text-lg text-muted-foreground leading-relaxed">
-					<p>
-						We're building an alternative to apps that fragment your thinking
-						across a dozen cloud services. Epicenter is for people who read
-						deeply, write to think, and build to understand.
-					</p>
-					<p>
-						Every tool is open source. Your data stays in plain files you
-						control. Choose your own models, host your own services, or run
-						everything locally.
-					</p>
-					<p class="text-xl text-foreground font-semibold mt-12">
-						Join us in building tools that amplify human agency.
-					</p>
-				</div>
+				<p class="sub reveal mx-auto mt-6 max-w-2xl">
+					No special window, no copy-paste. Hold your shortcut, talk, and the
+					words land at your cursor: email, docs, chat, your editor.
+				</p>
+				<figure class="reveal mx-auto mt-12 w-full max-w-xl text-left">
+					<div class="demo-window">
+						<div class="demo-titlebar">
+							<span class="demo-dot"></span><span class="demo-dot"></span
+							><span class="demo-dot"></span>
+							<span class="demo-title">New Message</span>
+						</div>
+						<div class="demo-field"><span>To:</span> Sam</div>
+						<div class="demo-field"><span>Subject:</span> Running late</div>
+						<p class="demo-body" data-typed>
+							Just left the office, traffic is slow on the bridge. I should be
+							there by seven. Want me to grab dinner on the way?
+						</p>
+						<div class="demo-hint">
+							<span class="demo-mic"></span>
+							<span
+								>Hold your shortcut and talk. Release, and the words type
+								themselves.</span
+							>
+						</div>
+					</div>
+					<figcaption class="fineprint mt-3 text-center">
+						Simulated. It works the same in any text field.
+					</figcaption>
+				</figure>
+			</div>
+		</section>
 
-				<div class="mt-16 flex flex-col sm:flex-row gap-4 justify-center">
-					<Button
-						href="https://github.com/EpicenterHQ/epicenter"
-						size="lg"
-						class="shadow-sm hover:shadow-md transition-all"
-					>
-						Contribute on GitHub
-						<ArrowRightIcon class="w-4 h-4" />
-					</Button>
-					<Button
-						href="https://go.epicenter.so/discord"
-						variant="outline"
-						size="lg"
-						class="hover:bg-muted/50 transition-all"
-					>
-						Join our Discord
-					</Button>
+		<!-- The gag: nothing to export, it was always yours -->
+		<section class="band">
+			<div class="mx-auto max-w-3xl px-6 py-28 text-center md:py-36">
+				<div class="reveal">
+					<button type="button" class="gag-btn font-display">
+						Export your data
+					</button>
+					<p class="gag-fallback font-display">Already done.</p>
+				</div>
+				<p class="sub reveal mx-auto mt-8 max-w-xl">
+					Other apps make you beg for your own data. Epicenter apps keep it as
+					ordinary files in your folder from day one, so there is nothing to
+					export because nothing was held.
+				</p>
+			</div>
+		</section>
+
+		<!-- Zoom out: one folder, every app -->
+		<section id="how">
+			<div class="mx-auto max-w-2xl px-6 py-28 text-center md:py-36">
+				<p class="eyebrow reveal">Zoom out</p>
+				<h2 class="font-display reveal mt-4 text-balance">
+					One folder, every app.
+				</h2>
+				<p class="sub reveal mx-auto mt-6 max-w-xl">
+					Drop an epicenter.config.ts into any folder and Epicenter manages it.
+					Whispering writes here today. Fuji, Honeycrisp, and every app you add
+					write alongside it as Markdown you own.
+				</p>
+				<div class="ns reveal mt-12 w-full text-left">
+					<div class="ns-apps">
+						<span class="ns-chip" data-step="3"><MicIcon /> Whispering</span>
+						<span class="ns-chip" data-step="4"><NotebookPenIcon /> Fuji</span>
+						<span class="ns-chip" data-step="5"
+							><StickyNoteIcon />
+							Honeycrisp</span
+						>
+					</div>
+					<div class="demo-window">
+						<div class="demo-titlebar">
+							<span class="demo-dot"></span><span class="demo-dot"></span
+							><span class="demo-dot"></span>
+							<span class="demo-title">my-brain</span>
+						</div>
+						<div class="ns-tree bare">
+							<div class="ns-row"><FolderIcon /> my-brain/</div>
+							<div class="ns-row i1"><FolderIcon /> journal/</div>
+							<div class="ns-row i1"><FolderIcon /> ideas/</div>
+							<div class="ns-row i1 ns-reserved" data-step="1">
+								<FolderIcon />
+								apps/<span class="ns-tag" data-step="2">Epicenter-managed</span>
+							</div>
+							<div class="ns-row i2 ns-config" data-step="2">
+								<FileTextIcon />
+								epicenter.config.ts
+							</div>
+							<div class="ns-row i2" data-step="3">
+								<FolderIcon />
+								whispering/
+							</div>
+							<div class="ns-row i3 ns-file" data-step="3">
+								<FileTextIcon />
+								standup.md
+							</div>
+							<div class="ns-row i2" data-step="4"><FolderIcon /> fuji/</div>
+							<div class="ns-row i3 ns-file" data-step="4">
+								<FileTextIcon />
+								trip-japan.md
+							</div>
+							<div class="ns-row i2" data-step="5">
+								<FolderIcon />
+								honeycrisp/
+							</div>
+							<div class="ns-row i3 ns-file" data-step="5">
+								<FileTextIcon />
+								meeting-notes.md
+							</div>
+						</div>
+					</div>
+					<p class="ns-caption mono-caption mt-4 text-center">
+						Your own folder of Markdown.
+					</p>
 				</div>
 			</div>
 		</section>
 
-		<!-- Footer -->
-		<footer class="py-16 border-t border-muted/50">
-			<div class="max-w-7xl mx-auto px-6">
-				<div
-					class="flex flex-col md:flex-row justify-between items-center gap-6"
-				>
-					<div class="text-sm text-muted-foreground">
-						© {new Date().getFullYear()} Epicenter. Open source under AGPL-3.0
-						license.
-					</div>
-					<div class="flex gap-8 text-sm">
-						<a
-							href="https://github.com/EpicenterHQ/epicenter"
-							class="text-muted-foreground hover:text-foreground transition-colors font-medium"
-						>
-							GitHub
-						</a>
-						<a
-							href="https://go.epicenter.so/discord"
-							class="text-muted-foreground hover:text-foreground transition-colors font-medium"
-						>
-							Discord
-						</a>
-						<a
-							href="/blog"
-							class="text-muted-foreground hover:text-foreground transition-colors font-medium"
-						>
-							Blog
-						</a>
-					</div>
+		<!-- The guarantee -->
+		<section class="band">
+			<div class="mx-auto max-w-3xl px-6 py-28 text-center md:py-36">
+				<h2 class="font-display reveal text-balance">
+					Apps come and go. Your files shouldn't.
+				</h2>
+				<p class="sub reveal mx-auto mt-6 max-w-2xl">
+					Readable now, readable in twenty years, no account required.
+				</p>
+			</div>
+		</section>
+
+		<!-- The letter -->
+		<section>
+			<div class="mx-auto max-w-2xl px-6 py-28 md:py-36">
+				<p class="eyebrow reveal text-center">A note from the founder</p>
+				<!--
+					Owner-written copy goes here. Placeholder typesetting only; do not
+					ship the final page without Braden's own five lines. The "if we
+					disappeared tomorrow, your files wouldn't notice" beat belongs in this
+					letter and nowhere else.
+				-->
+				<div class="letter reveal mt-10">
+					<p>[Line one: why I built Whispering, in Braden's own words.]</p>
+					<p>[Line two: the folder, lived in: what stays on this computer.]</p>
+					<p>
+						[Line three: the "if we disappeared tomorrow, your files wouldn't
+						notice" beat lives here and nowhere else on the page.]
+					</p>
+					<p>[Line four: what comes next, stated as intent, not promise.]</p>
+					<p>[Line five: an invitation to try it tonight.]</p>
+					<p class="letter-sign">Braden</p>
+				</div>
+				<div class="reveal mt-12 flex flex-col items-center gap-4">
+					<a class="cta cta-solid" data-download href={releasesUrl}
+						>Download Whispering, free</a
+					>
+					<p class="fineprint">Free. macOS, Windows, and Linux.</p>
+				</div>
+			</div>
+		</section>
+
+		<footer class="band">
+			<div
+				class="mx-auto flex max-w-6xl flex-col items-center justify-between gap-6 px-6 py-12 text-sm md:flex-row"
+			>
+				<p class="fineprint">
+					© {year} Epicenter. Open source under the AGPL-3.0 license.
+				</p>
+				<div class="flex flex-wrap justify-center gap-x-7 gap-y-3">
+					<a class="nav-link" href="/whispering#pricing">How is it free?</a>
+					<a class="nav-link" href={githubUrl}>GitHub</a>
+					<a class="nav-link" href={discordUrl}>Discord</a>
+					<a class="nav-link" href="/blog">Blog</a>
 				</div>
 			</div>
 		</footer>
 	</main>
 </BaseLayout>
 
+<script is:inline define:vars={{ version: VERSION }}>
+	const motionOK = matchMedia(
+		'(prefers-reduced-motion: no-preference)',
+	).matches;
+
+	// OS-detected download. The static href already points at the releases
+	// page, so this only ever upgrades the link.
+	const ua = navigator.userAgent.toLowerCase();
+	const asset = (file) =>
+		`https://github.com/EpicenterHQ/epicenter/releases/download/v${version}/${file}`;
+	let downloadHref = null;
+	if (ua.includes('mac'))
+		downloadHref = asset(`Whispering_${version}_aarch64.dmg`);
+	else if (ua.includes('win'))
+		downloadHref = asset(`Whispering_${version}_x64_en-US.msi`);
+	if (downloadHref) {
+		for (const a of document.querySelectorAll('a[data-download]'))
+			a.href = downloadHref;
+	}
+
+	// The export gag: one state change.
+	for (const btn of document.querySelectorAll('.gag-btn')) {
+		btn.addEventListener('click', () => {
+			if (btn.classList.contains('done')) return;
+			btn.classList.add('done');
+			btn.textContent = 'Already done.';
+		});
+	}
+
+	// CSS hides animated elements; JS reveals them. Run fn once, when el is seen.
+	const inView = (el, fn, threshold = 0.25) => {
+		if (!el) return;
+		const io = new IntersectionObserver(
+			(entries) => {
+				if (entries.some((e) => e.isIntersecting)) {
+					io.disconnect();
+					fn();
+				}
+			},
+			{ threshold },
+		);
+		io.observe(el);
+	};
+
+	// Animate from a hidden keyframe to the element's natural state. The forwards
+	// fill keeps the end state and outranks the CSS hidden rule, so there is no
+	// revealed-state rule to keep in sync.
+	const reveal = (el, from, ms = 600) =>
+		el.animate([from, { opacity: 1, filter: 'none', transform: 'none' }], {
+			duration: ms,
+			easing: 'cubic-bezier(0.2, 0.6, 0.2, 1)',
+			fill: 'forwards',
+		});
+
+	// Type a sentence into el, character by character.
+	const type = (el, done) => {
+		const text =
+			el.getAttribute('data-text') ||
+			el.textContent.trim().replace(/\s+/g, ' ');
+		el.setAttribute('data-text', text);
+		if (!motionOK) {
+			el.textContent = text;
+			done && done();
+			return;
+		}
+		el.classList.add('typing');
+		el.textContent = '';
+		let i = 0;
+		const tick = () => {
+			el.textContent = text.slice(0, (i += 1));
+			if (i < text.length) setTimeout(tick, 36 + Math.random() * 44);
+			else {
+				el.classList.remove('typing');
+				done && done();
+			}
+		};
+		tick();
+	};
+
+	// Scroll reveals.
+	for (const el of document.querySelectorAll('.reveal'))
+		inView(
+			el,
+			() =>
+				motionOK && reveal(el, { opacity: 0, transform: 'translateY(16px)' }),
+			0.15,
+		);
+
+	// Hero: speak, and the words become a file you own.
+	const capText = document.querySelector('.cap-text[data-typed]');
+	if (capText) {
+		const file = document.querySelector('.cap-file');
+		const rec = document.querySelector('.cap-rec');
+		const caption = document.querySelector('.cap-caption');
+		if (motionOK && rec) rec.classList.add('on');
+		type(capText, () => {
+			rec && rec.classList.remove('on');
+			if (caption)
+				caption.textContent = 'Release. The words become a file you own.';
+			if (file && motionOK)
+				reveal(file, { opacity: 0, transform: 'translateX(-16px)' });
+		});
+	}
+
+	// Anywhere section: the email types itself when scrolled into view.
+	const email = document.querySelector('.demo-body[data-typed]');
+	if (email) inView(email, () => type(email), 0.4);
+
+	// Zoom out: apps/ folder, then config, then each app, one frame at a time.
+	const ns = document.querySelector('.ns');
+	if (ns && motionOK) {
+		const rows = [...ns.querySelectorAll('.ns-tree [data-step]')];
+		const chips = [...ns.querySelectorAll('.ns-chip')];
+		const caption = ns.querySelector('.ns-caption');
+		const captions = {
+			1: 'Pick any folder in your vault, named whatever you like.',
+			2: 'Drop in epicenter.config.ts. Now the folder is Epicenter-managed.',
+			3: 'Whispering writes its transcripts here.',
+			4: 'Fuji writes its entries here.',
+			5: 'Honeycrisp writes its notes here. Every app you add does the same.',
+		};
+		inView(
+			ns,
+			() => {
+				let step = 0;
+				const advance = () => {
+					step += 1;
+					for (const r of rows)
+						if (+r.dataset.step === step)
+							reveal(r, { opacity: 0, transform: 'translateY(-4px)' });
+					for (const c of chips)
+						if (+c.dataset.step === step)
+							reveal(c, { opacity: 0.4, filter: 'grayscale(1)' });
+					if (caption && captions[step]) caption.textContent = captions[step];
+					if (step < 5) setTimeout(advance, 1100);
+				};
+				advance();
+			},
+			0.2,
+		);
+	}
+</script>
+
 <style>
-	/* Smooth animations */
-	@keyframes fade-in {
+	/* Warm paper, ink, one ember accent. Fraunces carries the headlines. */
+	.page {
+		--paper: #faf5ec;
+		--paper-deep: #f2ead9;
+		--ink: #26221a;
+		--ink-soft: #6f675a;
+		--accent: #bc3f1d;
+		--accent-deep: #9c3215;
+		--line: #e2d8c2;
+		background: var(--paper);
+		color: var(--ink);
+	}
+
+	.font-display {
+		font-family: var(--font-fraunces, Georgia, serif);
+	}
+
+	h1 {
+		font-size: clamp(3rem, 9vw, 5.75rem);
+		font-weight: 600;
+		line-height: 1.02;
+		letter-spacing: -0.02em;
+	}
+
+	h2 {
+		font-size: clamp(2.1rem, 5.5vw, 3.5rem);
+		font-weight: 550;
+		line-height: 1.08;
+		letter-spacing: -0.015em;
+	}
+
+	.sub {
+		font-size: clamp(1.05rem, 2vw, 1.25rem);
+		line-height: 1.65;
+		color: var(--ink-soft);
+	}
+
+	.eyebrow {
+		font-family: ui-monospace, "SF Mono", Menlo, monospace;
+		font-size: 0.8rem;
+		letter-spacing: 0.18em;
+		text-transform: uppercase;
+		color: var(--accent);
+	}
+
+	.fineprint {
+		font-size: 0.85rem;
+		color: var(--ink-soft);
+	}
+
+	.mono-caption {
+		font-family: ui-monospace, "SF Mono", Menlo, monospace;
+		font-size: 0.85rem;
+		color: var(--ink-soft);
+	}
+
+	.band {
+		background: var(--paper-deep);
+		border-top: 1px solid var(--line);
+		border-bottom: 1px solid var(--line);
+	}
+
+	footer.band {
+		border-bottom: none;
+	}
+
+	.nav-link {
+		color: var(--ink-soft);
+		text-decoration: none;
+		transition: color 150ms ease;
+	}
+
+	.nav-link:hover {
+		color: var(--ink);
+	}
+
+	/* CTAs */
+	.cta {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		border-radius: 999px;
+		padding: 0.9rem 1.9rem;
+		font-size: 1rem;
+		font-weight: 600;
+		text-decoration: none;
+		transition:
+			transform 150ms ease,
+			box-shadow 150ms ease,
+			background-color 150ms ease,
+			color 150ms ease;
+	}
+
+	.cta-solid {
+		background: var(--accent);
+		color: var(--paper);
+		box-shadow: 0 2px 0 var(--accent-deep);
+	}
+
+	.cta-solid:hover {
+		background: var(--accent-deep);
+		transform: translateY(-1px);
+		box-shadow: 0 3px 0 var(--accent-deep);
+	}
+
+	.cta-solid:active {
+		transform: translateY(1px);
+		box-shadow: none;
+	}
+
+	.cta-quiet {
+		color: var(--ink);
+		text-decoration: underline;
+		text-underline-offset: 4px;
+		text-decoration-color: var(--accent);
+	}
+
+	.cta-quiet:hover {
+		color: var(--accent);
+	}
+
+	/* Hero load stagger: pure CSS, runs with or without JS */
+	.hero-step {
+		opacity: 0;
+		animation: rise 0.7s ease-out forwards;
+		animation-delay: calc(var(--step) * 110ms);
+	}
+
+	@keyframes rise {
 		from {
 			opacity: 0;
-			transform: translateY(20px);
+			transform: translateY(14px);
 		}
 		to {
 			opacity: 1;
@@ -706,55 +566,371 @@ workspace.tables.posts.<span class="text-amber-300">set</span>({ id: <span class
 		}
 	}
 
-	@keyframes fade-in-scale {
-		from {
+	/* Demo / Finder window */
+	.demo-window {
+		background: #fffdf8;
+		border: 1px solid var(--line);
+		border-radius: 14px;
+		box-shadow:
+			0 1px 2px rgb(38 34 26 / 6%),
+			0 12px 32px rgb(38 34 26 / 8%);
+		overflow: hidden;
+	}
+
+	.demo-titlebar {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		padding: 0.7rem 1rem;
+		border-bottom: 1px solid var(--line);
+	}
+
+	.demo-dot {
+		width: 10px;
+		height: 10px;
+		border-radius: 50%;
+		background: var(--line);
+	}
+
+	.demo-title {
+		margin-left: 0.5rem;
+		font-size: 0.8rem;
+		color: var(--ink-soft);
+	}
+
+	.demo-field {
+		padding: 0.55rem 1.1rem;
+		border-bottom: 1px solid var(--line);
+		font-size: 0.9rem;
+	}
+
+	.demo-field span {
+		color: var(--ink-soft);
+		margin-right: 0.35rem;
+	}
+
+	.demo-body {
+		padding: 1.1rem;
+		min-height: 6.5rem;
+		font-size: 1rem;
+		line-height: 1.6;
+	}
+
+	.demo-body.typing::after,
+	.cap-text.typing::after {
+		content: "";
+		display: inline-block;
+		width: 2px;
+		height: 1em;
+		margin-left: 2px;
+		vertical-align: -0.15em;
+		background: var(--accent);
+		animation: blink 1s steps(1) infinite;
+	}
+
+	@keyframes blink {
+		50% {
 			opacity: 0;
-			transform: scale(0.95);
-		}
-		to {
-			opacity: 1;
-			transform: scale(1);
 		}
 	}
 
-	header > div > div > * {
-		animation: fade-in 0.8s ease-out forwards;
-		opacity: 0;
+	.demo-hint {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		padding: 0.7rem 1.1rem;
+		border-top: 1px solid var(--line);
+		font-size: 0.8rem;
+		color: var(--ink-soft);
 	}
 
-	header h1 {
-		animation-delay: 0ms;
-	}
-	header p {
-		animation-delay: 100ms;
-	}
-	header > div > div > div:nth-of-type(1) {
-		animation-delay: 200ms;
-	}
-	header > div > div > div:nth-of-type(2) {
-		animation-delay: 300ms;
+	.demo-mic {
+		width: 9px;
+		height: 9px;
+		border-radius: 50%;
+		background: var(--accent);
+		animation: pulse 1.6s ease-in-out infinite;
 	}
 
-	/* Smooth scroll behavior */
+	@keyframes pulse {
+		50% {
+			opacity: 0.35;
+		}
+	}
+
+	/* The export gag */
+	.gag-btn {
+		font-size: clamp(1.6rem, 4.5vw, 2.6rem);
+		font-weight: 600;
+		letter-spacing: -0.01em;
+		color: var(--ink);
+		background: var(--paper);
+		border: 2px solid var(--ink);
+		border-radius: 18px;
+		padding: 1.3rem 2.8rem;
+		cursor: pointer;
+		box-shadow: 0 6px 0 var(--ink);
+		transition:
+			transform 120ms ease,
+			box-shadow 120ms ease,
+			color 200ms ease,
+			border-color 200ms ease;
+	}
+
+	.gag-btn:hover {
+		transform: translateY(2px);
+		box-shadow: 0 4px 0 var(--ink);
+	}
+
+	.gag-btn:active {
+		transform: translateY(6px);
+		box-shadow: 0 0 0 var(--ink);
+	}
+
+	.gag-btn.done {
+		color: var(--accent);
+		border-color: var(--accent);
+		box-shadow: 0 6px 0 var(--accent);
+		animation: stamp 350ms ease;
+	}
+
+	@keyframes stamp {
+		0% {
+			transform: scale(1.06) rotate(-1deg);
+		}
+		100% {
+			transform: scale(1) rotate(0);
+		}
+	}
+
+	/* Without JS the punchline prints right below the button. With JS the
+	   click puts it on the button itself, so the static line stays hidden. */
+	.gag-fallback {
+		margin-top: 1rem;
+		font-size: 1.2rem;
+		font-style: italic;
+		color: var(--accent);
+	}
+
+	:global(html.js) .gag-fallback {
+		visibility: hidden;
+	}
+
+	/* Capture demo (hero): speak on the left, a file lands on the right */
+	.cap {
+		display: grid;
+		grid-template-columns: 1fr auto 1fr;
+		gap: clamp(0.8rem, 3vw, 2rem);
+		align-items: center;
+	}
+
+	.cap-panel {
+		background: #fffdf8;
+		border: 1px solid var(--line);
+		border-radius: 14px;
+	}
+
+	.cap-mic {
+		padding: 1.2rem 1.3rem;
+		box-shadow: 0 12px 32px rgb(38 34 26 / 8%);
+		text-align: left;
+	}
+
+	.cap-rec {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.5rem;
+		font-size: 0.78rem;
+		color: var(--ink-soft);
+		margin-bottom: 0.7rem;
+	}
+
+	.cap-dot {
+		width: 9px;
+		height: 9px;
+		border-radius: 50%;
+		background: var(--line);
+	}
+
+	.cap-rec.on .cap-dot {
+		background: var(--accent);
+		animation: pulse 1.4s ease-in-out infinite;
+	}
+
+	.cap-text {
+		font-size: 1rem;
+		line-height: 1.6;
+		min-height: 5rem;
+	}
+
+	.cap-arrow {
+		font-size: 1.7rem;
+		color: var(--ink-soft);
+	}
+
+	/* The created file keeps a faint highlight; it is hidden until JS reveals it. */
+	.cap-file {
+		background: rgb(188 63 29 / 7%);
+		border-radius: 5px;
+	}
+
+	/* Managed-folder tree */
+	.ns-apps {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.5rem;
+		margin-bottom: 1rem;
+	}
+
+	.ns-chip {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.4rem;
+		padding: 0.4rem 0.8rem;
+		border: 1px solid var(--line);
+		border-radius: 999px;
+		background: #fffdf8;
+		font-size: 0.85rem;
+	}
+
+	.ns-chip :global(svg) {
+		width: 1em;
+		height: 1em;
+	}
+
+	.ns-tree {
+		background: #fffdf8;
+		border: 1px solid var(--line);
+		border-radius: 12px;
+		padding: 1.1rem 1.2rem;
+		font-family: ui-monospace, "SF Mono", Menlo, monospace;
+		font-size: 0.85rem;
+	}
+
+	.ns-tree.bare {
+		border: none;
+		border-radius: 0;
+		background: transparent;
+	}
+
+	.ns-row {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		padding: 0.18rem 0;
+		color: var(--ink);
+	}
+
+	.ns-row :global(svg) {
+		width: 1em;
+		height: 1em;
+		color: var(--ink-soft);
+		flex: none;
+	}
+
+	.i1 {
+		padding-left: 1.3rem;
+	}
+
+	.i2 {
+		padding-left: 2.6rem;
+	}
+
+	.i3 {
+		padding-left: 3.9rem;
+	}
+
+	.ns-config {
+		color: var(--accent-deep);
+		font-weight: 600;
+	}
+
+	.ns-config :global(svg) {
+		color: var(--accent);
+	}
+
+	.ns-reserved {
+		color: var(--accent-deep);
+		font-weight: 600;
+	}
+
+	.ns-reserved :global(svg) {
+		color: var(--accent);
+	}
+
+	.ns-tag {
+		font-size: 0.72rem;
+		color: var(--ink-soft);
+		font-weight: 400;
+		margin-left: 0.5rem;
+		padding: 0.05rem 0.4rem;
+		border: 1px dashed var(--line);
+		border-radius: 4px;
+	}
+
+	.ns-file {
+		color: var(--ink-soft);
+	}
+
+	.ns-caption {
+		min-height: 1.2em;
+	}
+
+	/* Animated elements start hidden only when JS can reveal them and motion is
+	   allowed. JS reveals each with the Web Animations API, whose forwards fill
+	   outranks these rules, so there is no revealed-state rule to keep in sync.
+	   Without JS, or with reduced motion, everything is simply visible. */
 	@media (prefers-reduced-motion: no-preference) {
-		html {
-			scroll-behavior: smooth;
+		:global(html.js) .reveal,
+		:global(html.js) .cap-file,
+		:global(html.js) .ns-tree [data-step] {
+			opacity: 0;
+		}
+
+		:global(html.js) .ns-chip {
+			opacity: 0.4;
+			filter: grayscale(1);
 		}
 	}
 
-	/* Success color for checkmarks */
-	.text-success {
-		color: hsl(142, 71%, 45%);
+	/* The letter */
+	.letter {
+		font-family: var(--font-fraunces, Georgia, serif);
+		font-size: 1.15rem;
+		line-height: 1.9;
+		color: var(--ink);
 	}
 
-	/* Better focus states */
-	:focus-visible {
-		outline: 2px solid hsl(var(--primary));
-		outline-offset: 2px;
+	.letter p + p {
+		margin-top: 1.1rem;
 	}
 
-	/* Animate sections on scroll */
-	section {
-		animation: fade-in-scale 0.6s ease-out;
+	.letter-sign {
+		font-style: italic;
+		font-size: 1.4rem;
+		margin-top: 1.6rem;
+	}
+
+	@media (max-width: 640px) {
+		.cap {
+			grid-template-columns: 1fr;
+		}
+
+		.cap-arrow {
+			transform: rotate(90deg);
+			justify-self: center;
+		}
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.hero-step {
+			animation: none;
+			opacity: 1;
+		}
+
+		.demo-mic,
+		.cap-rec.on .cap-dot {
+			animation: none;
+		}
 	}
 </style>

@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://epicenter.so/sitemap.xml
+Sitemap: https://epicenter.so/sitemap-index.xml

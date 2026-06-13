@@ -15,6 +15,7 @@
 	},
 	"dependencies": {
 		"@astrojs/check": "0.9.7",
+		"@astrojs/sitemap": "^3.7.3",
 		"@astrojs/svelte": "8.0.0",
 		"@epicenter/constants": "workspace:*",
 		"@epicenter/ui": "workspace:*",
