@@ -23,7 +23,10 @@ import { randomBytes } from '@noble/ciphers/utils.js';
 import { IDBKeyRange, indexedDB } from 'fake-indexeddb';
 import * as Y from 'yjs';
 import { attachLocalStorage } from './attach-local-storage.js';
-import { wipeLocalStorage } from './wipe-local-storage.js';
+import {
+	clearLocalStorageForDoc,
+	wipeLocalStorage,
+} from './wipe-local-storage.js';
 
 Object.assign(globalThis, { indexedDB, IDBKeyRange });
 
@@ -371,5 +374,38 @@ describe('wipeLocalStorage', () => {
 		expect(remaining).not.toContain(`epicenter/${SERVER}/owners/user-1/doc-a`);
 		expect(remaining).toContain(`epicenter/${SERVER}/owners/user-2/doc-c`);
 		expect(remaining).toContain('unscoped-doc');
+	});
+});
+
+describe('clearLocalStorageForDoc', () => {
+	afterEach(async () => {
+		await Promise.all(
+			(await databaseNames()).map((name) => deleteDatabase(name)),
+		);
+	});
+
+	test('deletes exactly the one database for the guid', async () => {
+		await createDatabase(`epicenter/${SERVER}/owners/user-1/doc-a`);
+		await createDatabase(`epicenter/${SERVER}/owners/user-1/doc-b`);
+
+		await clearLocalStorageForDoc({
+			server: SERVER,
+			ownerId: asOwnerId('user-1'),
+			guid: 'doc-a',
+		});
+
+		const remaining = await databaseNames();
+		expect(remaining).not.toContain(`epicenter/${SERVER}/owners/user-1/doc-a`);
+		expect(remaining).toContain(`epicenter/${SERVER}/owners/user-1/doc-b`);
+	});
+
+	test('is idempotent: clearing an absent database is a no-op', async () => {
+		await expect(
+			clearLocalStorageForDoc({
+				server: SERVER,
+				ownerId: asOwnerId('user-1'),
+				guid: 'never-existed',
+			}),
+		).resolves.toBeUndefined();
 	});
 });

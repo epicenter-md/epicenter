@@ -141,7 +141,8 @@
  *   the cache stays sync, readiness is a value-level concern.
  * - **No max size / LRU eviction.** Out of scope; add when needed.
  * - **No per-id force-close.** One way to release a handle: dispose it.
- *   Two ways means call sites that mismatch open/close.
+ *   Two ways means call sites that mismatch open/close. (`whenReleased(id)`
+ *   only *observes* a release; it never triggers one.)
  * - **No subscriptions / change events.** Just construct, share, dispose.
  *
  * @module
@@ -181,6 +182,8 @@ type CacheEntry<TValue extends Disposable> = {
 	openCount: number;
 	gcTimer: ReturnType<typeof setTimeout> | null;
 	disposed: boolean;
+	/** Resolvers for `whenReleased(id)` callers awaiting this entry's teardown. */
+	releaseWaiters: Array<() => void>;
 };
 
 /**
@@ -224,6 +227,12 @@ export function createDisposableCache<
 		} catch (cause) {
 			log.error(DisposableCacheError.ValueDisposeThrew({ cause }));
 		}
+		// Wake `whenReleased(id)` callers. `[Symbol.dispose]` ran synchronously
+		// above, so the underlying teardown (e.g. `ydoc.destroy()`) has been
+		// invoked before any waiter resumes.
+		const waiters = entry.releaseWaiters;
+		entry.releaseWaiters = [];
+		for (const resolve of waiters) resolve();
 	}
 
 	const cache = {
@@ -246,7 +255,13 @@ export function createDisposableCache<
 				// into the cache; next `open(sameId)` re-runs the closure (no
 				// poisoned entry). The caller sees the thrown error.
 				const value = build(id);
-				entry = { value, openCount: 0, gcTimer: null, disposed: false };
+				entry = {
+					value,
+					openCount: 0,
+					gcTimer: null,
+					disposed: false,
+					releaseWaiters: [],
+				};
 				entries.set(id, entry);
 			}
 
@@ -294,6 +309,25 @@ export function createDisposableCache<
 		/** Whether an instance is currently held (refcounted or in grace window). */
 		has(id: TId) {
 			return entries.has(id);
+		},
+
+		/**
+		 * Resolve once the entry for `id` is no longer held: immediately if it is
+		 * absent or already disposed, otherwise when its grace timer elapses and
+		 * the underlying value is torn down.
+		 *
+		 * Read-only observation, NOT a force-close: it does not trigger disposal,
+		 * it waits for the refcount to reach zero on its own. Callers that must act
+		 * only after a shared resource is fully released (e.g. deleting a Y.Doc's
+		 * local persistence after its handle unmounts) await this instead of
+		 * racing the teardown.
+		 */
+		whenReleased(id: TId): Promise<void> {
+			const entry = entries.get(id);
+			if (entry === undefined || entry.disposed) return Promise.resolve();
+			return new Promise<void>((resolve) => {
+				entry.releaseWaiters.push(resolve);
+			});
 		},
 
 		[Symbol.dispose]() {

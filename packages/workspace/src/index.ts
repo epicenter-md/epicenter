@@ -208,7 +208,10 @@ export {
 // same single URL form is used in both personal and shared modes. Both browser
 // apps and the daemon use this one builder.
 export { type RoomWsUrlOptions, roomWsUrl } from './document/transport.js';
-export { wipeLocalStorage } from './document/wipe-local-storage.js';
+export {
+	clearLocalStorageForDoc,
+	wipeLocalStorage,
+} from './document/wipe-local-storage.js';
 export {
 	type CreateWorkspaceOptions,
 	createWorkspace,

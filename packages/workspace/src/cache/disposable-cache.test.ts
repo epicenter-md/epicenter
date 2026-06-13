@@ -316,3 +316,45 @@ describe('re-entrancy', () => {
 		expect(cache.has('a')).toBe(false);
 	});
 });
+
+// ════════════════════════════════════════════════════════════════════════════
+// whenReleased
+// ════════════════════════════════════════════════════════════════════════════
+
+describe('whenReleased', () => {
+	test('resolves immediately when nothing holds the id', async () => {
+		const cache = makeYDocCache({ gcTime: 0 });
+		await expect(cache.whenReleased('absent')).resolves.toBeUndefined();
+	});
+
+	test('stays pending while held, resolves once the last handle disposes', async () => {
+		const cache = makeYDocCache({ gcTime: 0 });
+		const handle = cache.open('a');
+		const released = cache.whenReleased('a');
+		let settled = false;
+		void released.then(() => {
+			settled = true;
+		});
+
+		await Promise.resolve();
+		expect(settled).toBe(false); // still held
+		expect(handle.ydoc.isDestroyed).toBe(false);
+
+		handle[Symbol.dispose]();
+		await released;
+		expect(settled).toBe(true);
+		// The underlying dispose ran before the waiter resumed: the whole point of
+		// the "dispose before clear" ordering callers depend on.
+		expect(handle.ydoc.isDestroyed).toBe(true);
+	});
+
+	test('observing a release never triggers one', async () => {
+		const cache = makeYDocCache({ gcTime: 0 });
+		const handle = cache.open('a');
+		void cache.whenReleased('a');
+		await Promise.resolve();
+		expect(cache.has('a')).toBe(true);
+		expect(handle.ydoc.isDestroyed).toBe(false);
+		handle[Symbol.dispose]();
+	});
+});
