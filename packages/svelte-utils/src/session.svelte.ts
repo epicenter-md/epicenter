@@ -54,6 +54,13 @@ export type SignedIn = {
 	 * sub site rather than for the publisher's verb.
 	 */
 	onReconnectSignal: SyncAuthClient['onStateChange'];
+	/**
+	 * Auth-owned fetch: attaches the bearer and surfaces auth failures into the
+	 * client's `state`. Use for owner-scoped API calls (e.g. the rooms `DELETE`
+	 * that destroys a child doc's server room) instead of attaching credentials
+	 * by hand.
+	 */
+	fetch: SyncAuthClient['fetch'];
 };
 
 /**
@@ -114,6 +121,7 @@ export function createSession<T extends Disposable>({
 			},
 			openWebSocket: auth.openWebSocket,
 			onReconnectSignal: auth.onStateChange,
+			fetch: auth.fetch,
 		});
 	}
 
