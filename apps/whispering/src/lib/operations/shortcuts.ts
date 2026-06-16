@@ -10,10 +10,7 @@ import {
 	type CommandId,
 	shortcutStringToArray,
 } from '$lib/services/local-shortcut-manager';
-import {
-	DEFAULT_GLOBAL_BINDINGS,
-	deviceConfig,
-} from '$lib/state/device-config.svelte';
+import { deviceConfig } from '$lib/state/device-config.svelte';
 import { settings } from '$lib/state/settings.svelte';
 import type { CommandBinding, KeyBinding } from '$lib/tauri/commands';
 
@@ -39,22 +36,6 @@ export const localShortcuts = {
 	unregisterCommand: async ({ commandId }: { commandId: CommandId }) =>
 		services.localShortcutManager.unregister(commandId),
 };
-
-/**
- * Default values for in-app (local) shortcuts, keyed by command id string. A
- * superset of the current build's commands: `openTransformationPicker` is
- * desktop-only, so on web it sits here unused (the reset loops iterate the
- * platform `commands`). Mirrors `DEFAULT_GLOBAL_BINDINGS`, which is keyed the
- * same way.
- */
-const DEFAULT_LOCAL_SHORTCUTS = {
-	pushToTalk: 'p',
-	toggleManualRecording: ' ',
-	cancelRecording: 'c',
-	toggleVadRecording: 'v',
-	openTransformationPicker: 't',
-	runTransformationOnClipboard: 'r',
-} as const satisfies Record<string, string | null>;
 
 /** Canonical string for a binding, so structurally-equal bindings dedupe. */
 function bindingKey(binding: {
@@ -212,27 +193,27 @@ export function resetGlobalShortcutsToDefaultIfDuplicates(): boolean {
 }
 
 /**
- * Reset all local shortcuts to their default values and re-sync.
+ * Reset all local shortcuts to their schema defaults and re-sync. Defaults come
+ * from the synced workspace definition (`settings.getDefault`), the same source
+ * the settings UI shows, so there is no parallel defaults map to drift.
  */
 export function resetLocalShortcuts() {
 	for (const command of commands) {
-		settings.set(
-			getLocalShortcutKey(command.id),
-			DEFAULT_LOCAL_SHORTCUTS[command.id] ?? null,
-		);
+		const key = getLocalShortcutKey(command.id);
+		settings.set(key, settings.getDefault(key));
 	}
 	void syncLocalShortcutsWithSettings();
 }
 
 /**
- * Reset all global shortcuts to their default values and re-sync.
+ * Reset all global shortcuts to their schema defaults and re-sync. Defaults come
+ * from the device-config definition (`deviceConfig.getDefault`), the same source
+ * the settings UI shows.
  */
 export function resetGlobalShortcuts() {
 	for (const command of commands) {
-		deviceConfig.set(
-			getGlobalShortcutKey(command.id),
-			DEFAULT_GLOBAL_BINDINGS[command.id] ?? null,
-		);
+		const key = getGlobalShortcutKey(command.id);
+		deviceConfig.set(key, deviceConfig.getDefault(key));
 	}
 	void syncGlobalShortcutsWithSettings();
 }

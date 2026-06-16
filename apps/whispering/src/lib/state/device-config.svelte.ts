@@ -37,7 +37,8 @@ const globalBinding = type({
 // cancel gesture since classic Mac OS; Ctrl + Shift + . elsewhere); it carries a
 // modifier so it is safe to hold globally and registers like any other gesture
 // with no session gating. Transformation gestures ship unbound: opt-in only.
-// Exported so the reset path in register-commands shares this one source of truth.
+// This map is the single source for the per-key schema defaults below; the reset
+// path reads them back through `deviceConfig.getDefault`, not this map directly.
 const PUSH_TO_TALK_MODIFIERS: KeyBinding['modifiers'] = os.isApple
 	? ['fn']
 	: ['ctrl', 'meta'];
@@ -50,7 +51,7 @@ const CANCEL_MODIFIERS: KeyBinding['modifiers'] = os.isApple
 	? ['meta']
 	: ['ctrl', 'shift'];
 
-export const DEFAULT_GLOBAL_BINDINGS = {
+const DEFAULT_GLOBAL_BINDINGS = {
 	pushToTalk: { modifiers: PUSH_TO_TALK_MODIFIERS, keys: [] },
 	toggleManualRecording: { modifiers: TOGGLE_MODIFIERS, keys: ['space'] },
 	cancelRecording: { modifiers: CANCEL_MODIFIERS, keys: ['dot'] },
