@@ -1,5 +1,6 @@
+use crate::audio::PcmHandoff;
 use crate::recorder::artifact::{
-    clear_artifacts, delete_artifacts, write_artifact, RecordingArtifact,
+    artifact_handle, clear_artifacts, delete_artifacts, persist_artifact, RecordingArtifact,
 };
 use crate::recorder::recorder::{Recorder, Result};
 use log::{debug, info, warn};
@@ -8,6 +9,19 @@ use std::sync::Mutex;
 use tauri::{AppHandle, Emitter, State};
 
 const RECORDER_STATE_CHANGED: &str = "recorder:state-changed";
+
+/// Event fired when the off-path WAV persist fails. The transcript has
+/// already been produced from the in-memory handoff, so this is a
+/// non-blocking warning, not a failure: the FE surfaces it as a transient
+/// "audio not saved" toast (see `attach-desktop-events`).
+const RECORDER_PERSIST_FAILED: &str = "recorder:persist-failed";
+
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct PersistFailed {
+    recording_id: String,
+    error: String,
+}
 
 #[derive(Serialize, Clone, Copy, Debug)]
 #[serde(rename_all = "UPPERCASE")]
@@ -85,16 +99,24 @@ pub async fn start_recording(
     Ok(())
 }
 
-/// Stop the recorder, write the canonical WAV artifact to
-/// `<appDataDir>/recordings/{id}.wav`, return the small JSON handle.
+/// Stop the recorder and return the small JSON handle, routing the finalized
+/// PCM in-process instead of through disk.
 ///
-/// JS never sees raw PCM samples on the wire: later operations look the
-/// file up by id (`transcribe_recording`, `encode_recording_for_upload`,
-/// and `delete_recording_artifacts`).
+/// The finalized `Vec<f32>` the worker hands back is exactly what the local
+/// model and the Opus encoder consume, so it is stashed in the [`PcmHandoff`]
+/// for the next consumer (`transcribe_recording` local, or
+/// `encode_recording_for_upload` cloud) to take without touching the
+/// filesystem. The durable WAV is still written, but off the critical path
+/// (durable decision 3: the transcript never waits on disk); a persist
+/// failure fires a non-blocking warning rather than failing the recording.
+///
+/// JS never sees raw PCM samples on the wire: it gets the id-handle, and
+/// every later operation looks the recording up by id.
 #[tauri::command]
 #[specta::specta]
 pub async fn stop_recording(
     recorder: State<'_, Mutex<Recorder>>,
+    handoff: State<'_, PcmHandoff>,
     app_handle: AppHandle,
 ) -> Result<RecordingArtifact> {
     info!("Stopping recording");
@@ -109,13 +131,49 @@ pub async fn stop_recording(
         (id, samples)
     };
 
-    let artifact = write_artifact(&app_handle, &recording_id, &samples)?;
+    // The handle is a deterministic function of the sample count, so it is
+    // ready the instant we have the samples; building it here lets stop return
+    // without waiting for (or even requiring) the WAV write.
+    let artifact = artifact_handle(&recording_id, samples.len());
+
+    // Persist the durable WAV off the critical path. The persist task owns its
+    // own copy and runs concurrently with the JS pipeline and inference.
+    spawn_persist(app_handle.clone(), recording_id.clone(), samples.clone());
+
+    // Hand the live PCM to the in-process route. The very next IPC call for
+    // this id takes it in-process; a miss (e.g. a later history re-transcribe)
+    // falls back to decoding the WAV the persist task wrote.
+    handoff.put(recording_id, samples);
+
     emit_recording_state(&app_handle, RecordingState::Idle);
     info!(
         "Recording stopped: id={}, duration_ms={}, bytes={}",
         artifact.id, artifact.duration_ms, artifact.byte_length,
     );
     Ok(artifact)
+}
+
+/// Write the durable WAV off the critical path. On failure, emit a
+/// non-blocking warning the FE surfaces as a transient toast; the transcript
+/// is produced from the in-memory handoff, so a persist failure never blocks
+/// or fails the recording, it only means this recording's audio is absent
+/// from history.
+fn spawn_persist(app_handle: AppHandle, recording_id: String, samples: Vec<f32>) {
+    tauri::async_runtime::spawn_blocking(move || {
+        let result = crate::timing::measure("persist.wav_write+fsync", || {
+            persist_artifact(&app_handle, &recording_id, &samples)
+        });
+        if let Err(error) = result {
+            warn!("[Recorder] failed to persist artifact {recording_id}: {error}");
+            let payload = PersistFailed {
+                recording_id,
+                error,
+            };
+            if let Err(emit_err) = app_handle.emit(RECORDER_PERSIST_FAILED, payload) {
+                warn!("[Recorder] failed to emit {RECORDER_PERSIST_FAILED}: {emit_err}");
+            }
+        }
+    });
 }
 
 #[tauri::command]

@@ -292,7 +292,9 @@ fn run_consumer(
                 }
                 RecorderCmd::Stop(reply) => {
                     is_recording.store(false, Ordering::Release);
-                    let result = finalize(std::mem::take(&mut buffer), device_rate);
+                    let result = crate::timing::measure("finalize", || {
+                        finalize(std::mem::take(&mut buffer), device_rate)
+                    });
                     let _ = reply.send(result);
                     return;
                 }

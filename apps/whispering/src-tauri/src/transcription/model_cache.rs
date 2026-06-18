@@ -345,6 +345,13 @@ impl ModelCache {
                     && current_identity == cached.disk_identity
         );
 
+        if reuse {
+            // The falsification benchmark turns on "is the model already
+            // resident?". A warm reuse means the cold-load cost (PR 2's target)
+            // was zero for this transcription.
+            crate::timing_note!("model.load warm-reuse engine={:?}", spec.engine);
+        }
+
         if !reuse {
             let _ = guard.take();
             self.publish(spec, ModelStatus::Loading, |state| {
@@ -359,6 +366,10 @@ impl ModelCache {
                         model_path.display(),
                         elapsed_ms
                     );
+                    // The single largest removable number for short clips; PR 2
+                    // (prewarm) decides whether to hide it under the user's
+                    // speech. Surface it on the unified timing target too.
+                    crate::timing_note!("model.load COLD {elapsed_ms}ms engine={:?}", spec.engine);
                     *guard = Some(CachedEngine {
                         path: model_path,
                         disk_identity: current_identity,
@@ -409,6 +420,7 @@ impl ModelCache {
         let started = Instant::now();
         let result = use_engine(engine);
         let elapsed_ms = started.elapsed().as_millis() as u64;
+        crate::timing_note!("model.inference {elapsed_ms}ms engine={:?}", spec.engine);
         self.touch_activity();
         match &result {
             Ok(_) => {

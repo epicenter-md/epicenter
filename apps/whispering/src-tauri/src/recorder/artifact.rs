@@ -30,6 +30,16 @@ use crate::audio::decode_to_pcm16k_mono;
 const ARTIFACT_RATE: u32 = 16_000;
 const ARTIFACT_CHANNELS: u16 = 1;
 
+/// Bytes per sample in the IEEE-float WAV this module writes (32-bit floats).
+const BYTES_PER_SAMPLE: u64 = 4;
+
+/// Size of the fixed 16-byte-`fmt` IEEE-float WAV header `write_pcm_as_wav`
+/// emits (`44 = RIFF/size/WAVE + fmt(8+16) + data(8)`). `byte_length` is
+/// derived from this plus the sample data so the artifact handle is known the
+/// instant `finalize` returns, without waiting for (or even requiring) the
+/// file write.
+const WAV_HEADER_BYTES: u64 = 44;
+
 /// File extension Rust writes for cpal artifacts. Other producers
 /// (navigator MediaRecorder via the JS blob store) may write other
 /// extensions; `find_recording_path` resolves by id-prefix regardless.
@@ -183,15 +193,30 @@ fn delete_recording_artifacts_matching(
     Ok(deleted)
 }
 
-/// Synthesize and write a mono 16 kHz IEEE-float WAV from in-memory PCM
-/// samples. Returns the artifact handle. The caller is responsible for
-/// passing samples that are already at `ARTIFACT_RATE` (the recorder
-/// consumer worker resamples at finalize, so this holds for cpal callers).
-pub fn write_artifact(
-    app: &AppHandle,
-    id: &str,
-    samples: &[f32],
-) -> Result<RecordingArtifact, String> {
+/// Build the JS-facing handle for a finalized recording directly from its
+/// sample count. Pure and synchronous: the durable WAV is persisted off the
+/// critical path (`persist_artifact`), so the handle must not depend on the
+/// file existing yet. `byte_length` and `duration_ms` are deterministic
+/// functions of the sample count at the artifact's fixed rate / format.
+pub fn artifact_handle(id: &str, sample_count: usize) -> RecordingArtifact {
+    let byte_length = WAV_HEADER_BYTES + sample_count as u64 * BYTES_PER_SAMPLE;
+    let duration_ms = (sample_count as f64 / ARTIFACT_RATE as f64 * 1000.0).round() as u64;
+    RecordingArtifact {
+        id: id.to_string(),
+        duration_ms,
+        byte_length,
+        mime_type: ARTIFACT_MIME.to_string(),
+    }
+}
+
+/// Persist the finalized PCM as the durable WAV artifact at
+/// `<appDataDir>/recordings/{id}.wav`. Runs off the live path (the in-memory
+/// handoff already fed the model / encoder), so its latency never delays the
+/// transcript. The file is fsynced before returning so it is never observed
+/// half-written. The caller passes samples already at `ARTIFACT_RATE` (the
+/// recorder consumer worker resamples at finalize, so this holds for cpal
+/// callers).
+pub fn persist_artifact(app: &AppHandle, id: &str, samples: &[f32]) -> Result<(), String> {
     let path = recording_path(app, id)?;
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)
@@ -200,18 +225,18 @@ pub fn write_artifact(
 
     write_pcm_as_wav(&path, samples)?;
 
-    let byte_length = std::fs::metadata(&path)
-        .map_err(|e| format!("stat artifact {}: {e}", path.display()))?
-        .len();
+    // The handle's `byte_length` is computed from the sample count without
+    // touching the file (see `artifact_handle`); assert the on-disk size
+    // agrees so a future WAV-format change can't silently desync the two.
+    debug_assert_eq!(
+        std::fs::metadata(&path)
+            .map(|m| m.len())
+            .unwrap_or_default(),
+        WAV_HEADER_BYTES + samples.len() as u64 * BYTES_PER_SAMPLE,
+        "WAV byte length drifted from artifact_handle's formula",
+    );
 
-    let duration_ms = (samples.len() as f64 / ARTIFACT_RATE as f64 * 1000.0).round() as u64;
-
-    Ok(RecordingArtifact {
-        id: id.to_string(),
-        duration_ms,
-        byte_length,
-        mime_type: ARTIFACT_MIME.to_string(),
-    })
+    Ok(())
 }
 
 /// Read and decode an artifact to 16 kHz mono f32 PCM. Shared by the
@@ -348,5 +373,61 @@ mod tests {
         assert_eq!(recording_id_from_artifact_filename("abc.wav"), Some("abc"));
         assert_eq!(recording_id_from_artifact_filename("abc.webm"), Some("abc"));
         assert_eq!(recording_id_from_artifact_filename("abc.md"), None);
+    }
+
+    #[test]
+    fn artifact_handle_byte_length_matches_the_written_file() {
+        // `artifact_handle` derives `byte_length` from the sample count alone
+        // (so the handle is ready before the off-path write); prove that
+        // formula equals the bytes `write_pcm_as_wav` actually emits.
+        for &n in &[0usize, 1, 20_000, 16_000] {
+            let samples = vec![0.0f32; n];
+            let path = std::env::temp_dir().join(format!("whispering_handle_{n}.wav"));
+            write_pcm_as_wav(&path, &samples).expect("write wav");
+            let on_disk = std::fs::metadata(&path).expect("stat wav").len();
+            assert_eq!(artifact_handle("rec", n).byte_length, on_disk);
+            let _ = std::fs::remove_file(&path);
+        }
+    }
+
+    /// Measures exactly what PR 1's in-process handoff removes from the live
+    /// path: WAV write + fsync, then read + Symphonia decode. This is the
+    /// "file round-trip" quantity in the spec's falsification benchmark. Not
+    /// an assertion of speed (hardware varies); it asserts the round-trip is
+    /// lossless and prints the numbers. Run with:
+    ///
+    /// ```sh
+    /// cargo test -p whispering file_roundtrip_overhead -- --nocapture
+    /// ```
+    #[test]
+    fn file_roundtrip_overhead() {
+        use std::time::Instant;
+        let dir = std::env::temp_dir();
+        for &secs in &[5usize, 15, 60] {
+            let n = secs * ARTIFACT_RATE as usize;
+            // A quiet sine so the decode does real work on plausible samples.
+            let samples: Vec<f32> = (0..n).map(|i| (i as f32 * 0.05).sin() * 0.25).collect();
+            let path = dir.join(format!("whispering_roundtrip_{secs}s.wav"));
+
+            let t0 = Instant::now();
+            write_pcm_as_wav(&path, &samples).expect("write wav");
+            let write_ms = t0.elapsed().as_secs_f64() * 1000.0;
+
+            let t1 = Instant::now();
+            let bytes = std::fs::read(&path).expect("read wav");
+            let decoded = decode_to_pcm16k_mono(&bytes).expect("decode wav");
+            let read_decode_ms = t1.elapsed().as_secs_f64() * 1000.0;
+
+            assert_eq!(
+                decoded.len(),
+                samples.len(),
+                "round-trip changed the sample count"
+            );
+            println!(
+                "[roundtrip] {secs:>2}s ({n} samples): write+fsync {write_ms:6.2}ms  read+decode {read_decode_ms:6.2}ms  total {:6.2}ms",
+                write_ms + read_decode_ms
+            );
+            let _ = std::fs::remove_file(&path);
+        }
     }
 }
