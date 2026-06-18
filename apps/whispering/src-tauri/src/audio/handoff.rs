@@ -10,12 +10,23 @@
 //! cloud) takes it in-process. The WAV is still written, off the critical
 //! path, as the durable artifact and the cold / history fallback.
 //!
-//! It is a best-effort optimization cache, never a source of truth: a miss
-//! falls back to decoding the WAV from disk, which is always correct. Because
-//! a miss is safe, the store needs no precise lifecycle. It holds only the
-//! single most recent stop and self-evicts on the next one, so memory is
-//! bounded to one recording even if a stash is never consumed (a recording
-//! stopped but never transcribed).
+//! This is NOT "the AudioEngine" and it does not centralize routing (the
+//! local-vs-cloud decision still lives in the frontend). Its real job is to be
+//! the **synchronization point that makes the off-path WAV write safe**: on the
+//! live path the stash is a guaranteed hit (`put` happens-before `stop_recording`
+//! returns, before the frontend can call `transcribe`), so the live consumer
+//! reads from memory and never races the concurrent persist. Without it, moving
+//! the write off the critical path would be a read-before-write bug.
+//!
+//! Off the live path it is a best-effort cache, never a source of truth: a miss
+//! falls back to decoding the WAV from disk, which is always correct. Because a
+//! miss is safe, the store needs no precise lifecycle. It holds only the single
+//! most recent stop and self-evicts on the next one, so memory is bounded to one
+//! recording even if a stash is never consumed (a recording stopped but never
+//! transcribed). That eviction is a deliberate, documented relaxation of "owned
+//! until persist acks": the only miss it can cause on the live path is a
+//! pathological rapid-fire (stop A, fully start+stop B, then A transcribes),
+//! which degrades to a graceful fall-back decode, never corruption.
 
 use std::sync::Mutex;
 

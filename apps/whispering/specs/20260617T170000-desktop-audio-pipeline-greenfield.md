@@ -5,10 +5,12 @@
 **Owner**: Braden
 **Supersedes**: `specs/transcription-latency-optimization.md` (deleted in PR 1; see "Superseded work")
 
-> **PR 1 landed the in-process handoff + async artifact + instrumentation.** The
-> measured numbers and the resulting PR-2-vs-PR-3 call live in "PR 1 results"
-> below. Promote "Durable decisions" to an ADR once PR 1 merges, then keep this
-> spec In Progress for PR 2 / PR 3.
+> **PR 1 landed the in-process handoff + async artifact + instrumentation.** It
+> measured only the component it removes (the disk round-trip); it did NOT measure
+> stop→delivery, so the PR-2-vs-PR-3 call is **not yet decidable** and waits on the
+> owed measurement (see "PR 1 results" and "Measurement still owed"). Promote
+> "Durable decisions" to an ADR once PR 1 merges, then keep this spec In Progress
+> for PR 2 / PR 3.
 
 ## One sentence
 
@@ -107,9 +109,20 @@ model load (0.3–5 s) is the single largest removable number, and PR 2 owns it.
 2. **Audio bytes never cross the JS/Tauri boundary.** JS sees the id-handle only. (This
    is why the superseded spec's `transcribeRecordingWithBlob(blob)` is rejected.)
 3. **The transcript never waits on disk.** Artifact persistence runs concurrently with
-   inference; the samples are owned until the persist task acks. If persist fails, a
-   non-blocking "audio not saved" warning fires but the transcript still lands. (This
-   weakens the old "recording saved before transcription" guarantee on purpose.)
+   inference. The in-memory `PcmHandoff` is what makes this safe: on the live path the
+   stash is a **guaranteed hit** (the `put` happens-before the return, before JS can
+   call `transcribe`), so the live consumer never reads disk and never races the async
+   write. If persist fails, a non-blocking "audio not saved" warning fires but the
+   transcript still lands. (This weakens the old "recording saved before transcription"
+   guarantee on purpose.)
+   - **Honest relaxation of "owned until persist acks":** the single-slot store evicts
+     on the next `put`, not on the persist ack. The only way the live path misses is a
+     pathological rapid-fire (stop A, fully start+stop B, then A transcribes) that
+     evicts A before its consumer runs. That degrades to a fall-back disk decode that
+     may briefly race A's write and surface a **graceful transcription error, never
+     corruption**. We accept this rather than gold-plate an id-keyed persist-tracking
+     map for a race a human cannot realistically trigger (persist is a few ms; starting
+     and stopping another recording is human-time).
 4. **Refuse streaming / chunked partial transcription.** The user controls stop;
    prewarm + in-process + warm inference makes it unnecessary, and chunk/stitch carries
    a permanent boundary-accuracy tax. Reconsider only if instrumentation shows long-clip
@@ -162,11 +175,17 @@ the instrumentation it adds is what justifies (or kills) PR 2 and PR 3.
 Shape, as built (a few refinements on the sketch above):
 
 - **`audio::PcmHandoff`** (`src-tauri/src/audio/handoff.rs`): a Tauri-managed,
-  single-slot, best-effort cache of the most recent finalized PCM, keyed by
-  recording id. `put` at stop, `take` (consume-once) at transcribe/encode. Disk
-  stays the source of truth: **a miss always falls back to decoding the WAV**, so
-  the store needs no precise lifecycle and self-evicts on the next stop (memory
-  bounded to one recording). This is the embryonic `AudioEngine` routing surface.
+  single-slot store of the most recent finalized PCM, keyed by recording id.
+  `put` at stop, `take` (consume-once) at transcribe/encode. **Call it what it is:
+  this is not "the AudioEngine" and it does not centralize routing** (local-vs-cloud
+  selection still lives in JS). It is the **synchronization point that makes async
+  persistence safe**: it guarantees the live consumer reads from memory, never racing
+  the off-path WAV write. Disk stays the source of truth, so a non-live miss falls
+  back to decoding the WAV; the store self-evicts on the next stop (memory bounded to
+  one recording). Honest cost: this **adds a path** (memory hit ?? disk miss) per
+  consumer rather than collapsing to one. That extra path pays for itself, because it
+  is the only way to move the blocking write off the critical path without a
+  read-before-write race.
 - **`artifact.rs` split**: `artifact_handle(id, sample_count)` (pure, deterministic
   `byte_length = 44 + n*4`) is built synchronously at stop; `persist_artifact`
   (write + fsync) is spawned off the critical path. The handle no longer depends
@@ -200,9 +219,19 @@ NVMe SSD; `cargo test file_roundtrip_overhead -- --nocapture`, 4 runs, this is
 | 60 s | ~27–29 ms | ~48–49 ms | **~75–79 ms** |
 
 This matches the spec's "single-digit-to-tens of ms" prediction and confirms the
-60 s decode (~49 ms) dominates the round-trip on long clips. These are honest
-component numbers measured now; the **end-to-end stop→delivery** delta on real
-hardware is pending (see "Measurement still owed").
+60 s decode (~49 ms) dominates the round-trip on long clips. **These are the only
+measured numbers. The end-to-end stop→delivery delta is NOT measured** (see
+"Measurement still owed"), so this PR makes no claim about what fraction of
+perceived latency it removes. Two honest caveats this dev-box bench cannot capture:
+
+- **The fsync tail is the suspected real lever, and it is invisible here.** This NVMe
+  SSD never spiked; the spec's "spikes 50–100+ ms" live on contended disks (a
+  cloud-synced recordings folder, Windows AV scanning the write, a spinning HDD).
+  Async persist removes that variable blocking write from the path regardless of how
+  bad it gets. Whether that is a big lever depends entirely on the user's disk, which
+  is exactly what the owed measurement must provoke.
+- On a CPU-only box, inference dominates more, so the round-trip is proportionally a
+  smaller share. Good thing this PR is cheap there.
 
 **Measurement still owed (not yet run; needs a human on real hardware):**
 
@@ -215,18 +244,29 @@ hardware is pending (see "Measurement still owed").
   stop→delivery against `origin/main` (which serializes write+fsync before the
   handle and decode before inference).
 
-#### PR-2-vs-PR-3 decision (provisional, from PR 1's removed-cost data)
+#### PR-2-vs-PR-3 decision (NOT YET DECIDABLE — needs the owed measurement)
 
-Per the falsification benchmark: with a **warm** model and a fast engine, the
-removed round-trip (~14–27 ms for typical short clips) is small next to warm
-inference (0.3–1.5 s) — on the order of ~1–7% of stop→delivery, more on a cold
-filesystem with an fsync spike. The single largest removable number remains
-**cold model load (0.3–5 s)**. So the provisional call is **PR 2 (prewarm) next**,
-*conditioned on the owed e2e measurement* showing cold load on a meaningful share
-of recordings under the default `UnloadPolicy`. If the e2e numbers show the model
-stays warm in normal use and the round-trip is <~2% of stop→delivery, PR 1 was the
-perceptible win and PR 2 becomes a smaller polish; PR 3 (Rust VAD) stays gated on
-its own round-trip cost, which PR 1's instrumentation will quantify on the VAD path.
+No honest call can be made from PR 1's data alone, because PR 1 only measured the
+component it removes, not stop→delivery. The reasoning, with numbers kept separate
+from guesses:
+
+- **Known (measured):** the removed round-trip is 14–79 ms on a fast SSD.
+- **Suspected, unmeasured:** the largest *median* removable number is **cold model
+  load (0.3–5 s)**, which PR 2 owns; the largest *tail* number is the fsync spike on
+  contended disks, which PR 1 already removed but which this bench could not size.
+
+So the prior (not a decision) is **PR 2 (prewarm) likely has the bigger median win**,
+*conditioned on* the owed measurement showing cold load on a meaningful share of
+recordings under the default `UnloadPolicy`. The measurement settles it:
+
+- Cold load common → PR 2 is vindicated, do it next.
+- Model stays warm in normal use AND no fsync tail on real user disks → PR 1 was the
+  perceptible win, PR 2 demotes to polish.
+- fsync tail shows up on contended disks → PR 1 was the lever after all, independent
+  of PR 2.
+
+PR 3 (Rust VAD) stays gated on its own round-trip cost, which PR 1's instrumentation
+will quantify on the VAD path.
 
 ### PR 2 — Prewarm on record-start (contended; may land as a refusal)
 
