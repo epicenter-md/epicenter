@@ -1,6 +1,6 @@
 # 0021. A conversation is a synced doc answered only by in-process peers; the cloud is a metered inference stream, not a doc writer
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-06-18
 - **Relates:** [ADR-0019](0019-collaboration-is-addressed-single-writer-regions-in-a-child-doc.md) (the addressed regions a reply is written into), [ADR-0020](0020-answer-bodies-are-native-parts-arrays-streamed-into-y-text.md) (the parts body streamed into Y.Text), [ADR-0010](0010-actions-are-the-only-surface-that-crosses-a-process-boundary.md) (actions are the tools), [ADR-0017](0017-durable-storage-is-one-per-person-coordination-box.md) (the anchor never thinks; reactions are peer spokes), [ADR-0018](0018-agents-are-immutable-capability-bundles.md) (agents), [ADR-0022](0022-the-cloud-doc-generation-queue-is-withdrawn.md) (the withdrawn server-side cloud generation this supersedes)
 

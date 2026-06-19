@@ -92,7 +92,7 @@ Each option and the one reason it lost. Terse. This is not the spec.
 | [0018](0018-agents-are-immutable-capability-bundles.md) | Agents are immutable capability bundles; arbitrary code runs only on a trusted box | Accepted |
 | [0019](0019-collaboration-is-addressed-single-writer-regions-in-a-child-doc.md) | Collaboration is addressed single-writer regions in a child doc | Proposed (supersedes 0015) |
 | [0020](0020-answer-bodies-are-native-parts-arrays-streamed-into-y-text.md) | An answer body is a native parts array; its text streams into Y.Text | Proposed (resolves 0019's streaming open decision) |
-| [0021](0021-a-conversation-has-one-transport-and-two-triggers.md) | A conversation is a synced doc answered only by in-process peers (browser tab or daemon); the cloud is a metered inference stream, not a doc writer; the server doc-generation vertical is deleted | Proposed |
+| [0021](0021-a-conversation-has-one-transport-and-two-triggers.md) | A conversation is a synced doc answered only by in-process peers (browser tab or daemon); the cloud is a metered inference stream, not a doc writer; the server doc-generation vertical is deleted | Accepted |
 | [0022](0022-the-cloud-doc-generation-queue-is-withdrawn.md) | The cloud doc-generation queue is withdrawn: cost was a red herring, durability is the daemon's job, the 402 already lives on the SSE endpoint (superseded by 0021 revised) | Superseded |
 
 When you add an ADR, add its row here.
