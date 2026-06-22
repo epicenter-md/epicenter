@@ -1,5 +1,5 @@
 /**
- * Word-level diff used to show a transformation candidate against the original
+ * Word-level diff used to show a reshaped candidate against the original
  * selection.
  *
  * Delegates to jsdiff's `diffWords` (a Myers diff that matches on words and

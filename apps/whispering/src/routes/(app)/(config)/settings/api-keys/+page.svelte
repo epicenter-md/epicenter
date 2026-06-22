@@ -14,7 +14,9 @@
 		'Deepgram',
 		'Mistral',
 	];
-	const TRANSFORMATION: ProviderConfigId[] = [
+	// Providers that power the AI passes (Polish and recipes), keyed off the
+	// global `completion.*` default. See ADR 0046.
+	const COMPLETION: ProviderConfigId[] = [
 		'Google',
 		'Anthropic',
 		'OpenAI',
@@ -27,13 +29,13 @@
 		{
 			value: 'all',
 			label: 'All',
-			providers: [...new Set([...TRANSCRIPTION, ...TRANSFORMATION])],
+			providers: [...new Set([...TRANSCRIPTION, ...COMPLETION])],
 		},
 		{ value: 'transcription', label: 'Transcription', providers: TRANSCRIPTION },
 		{
-			value: 'transformation',
-			label: 'Transformation',
-			providers: TRANSFORMATION,
+			value: 'completion',
+			label: 'AI',
+			providers: COMPLETION,
 		},
 	];
 </script>

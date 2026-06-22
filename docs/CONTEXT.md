@@ -108,3 +108,18 @@ shapes, see `docs/adr/`.
   workspace code) and composes/loops/dispatches RPC. Reads default to query
   actions; bulk reads drop to the read-only SQLite materializer. The automation
   surface; the CLI is a one-shot shell shortcut, not a place to build automation.
+
+## Whispering dictation
+
+- **Dictionary**: a flat `string[]` of words Whispering should know (proper nouns,
+  domain terms). Injection-only: composed into every AI prompt, never find/replace.
+  See `docs/adr/0041-...`.
+- **Polish**: the always-on, meaning-preserving AI pass run after transcription.
+  On by default, gated on a configured key. Not a Recipe.
+- **Speed mode**: Polish turned off. The raw transcript ships instantly, no AI.
+- **Recipe**: a named reshape (`name` + one instruction), text in and text out,
+  run on demand over already-polished text. Built-ins live in code; the `recipes`
+  table holds customs. Replaces the old "Transformation" and "Format".
+- **take**: one Recipe's output. **picker**: the palette over the Recipe library.
+- **source / trigger / delivery**: the per-host adapter around a Recipe (where the
+  text comes from, what fires it, where the take lands).

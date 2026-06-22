@@ -18,7 +18,7 @@ export type {
  * one place lets delivery and the tap-hold capability derive from the same
  * source instead of hardcoding the scope names.
  */
-const OUTPUT_SCOPES = ['transcription', 'transformation'] as const;
+const OUTPUT_SCOPES = ['transcription', 'recipe'] as const;
 type OutputScope = (typeof OUTPUT_SCOPES)[number];
 
 /**
@@ -69,13 +69,13 @@ export async function deliverTranscriptionResult({
 }
 
 /**
- * Delivers transformed text to the user according to their text output
+ * Delivers a Recipe's output to the user according to their text output
  * preferences. Returns the structured outcome plus a human notice. `recordingId`
  * is the run's link to a recording, or null for ad-hoc runs (clipboard,
  * selection): only a recording-anchored run offers a "go to recordings" action,
  * since an ad-hoc run has no history to open.
  */
-export async function deliverTransformationResult({
+export async function deliverRecipeResult({
 	text,
 	recordingId,
 }: {
@@ -84,8 +84,8 @@ export async function deliverTransformationResult({
 }): Promise<DeliveryResult> {
 	return deliverResult({
 		text,
-		successCopy: '🔄 Transformation complete',
-		settingsScope: 'transformation',
+		successCopy: '🔄 Recipe complete',
+		settingsScope: 'recipe',
 		linkedRecording: recordingId !== null,
 	});
 }

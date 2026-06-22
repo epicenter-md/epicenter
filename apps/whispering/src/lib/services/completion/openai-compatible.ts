@@ -119,13 +119,16 @@ export function createOpenAiCompatibleCompletionService(
 
 			const { data: completion, error: apiError } = await tryAsync({
 				try: () =>
-					client.chat.completions.create({
-						model: params.model,
-						messages: [
-							{ role: 'system', content: params.systemPrompt },
-							{ role: 'user', content: params.userPrompt },
-						],
-					}),
+					client.chat.completions.create(
+						{
+							model: params.model,
+							messages: [
+								{ role: 'system', content: params.systemPrompt },
+								{ role: 'user', content: params.userPrompt },
+							],
+						},
+						{ signal: params.signal },
+					),
 				catch: (error): Err<CompletionError> => {
 					if (error instanceof OpenAI.APIConnectionError) {
 						return CompletionError.ConnectionFailed({ cause: error });

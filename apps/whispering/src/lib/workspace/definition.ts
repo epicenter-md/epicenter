@@ -9,7 +9,7 @@ import {
 	nullable,
 	satisfiesWorkspace,
 } from '@epicenter/workspace';
-import { type Static, type TProperties, Type } from 'typebox';
+import { type TProperties, Type } from 'typebox';
 
 // ── Constant imports ─────────────────────────────────────────────────────────
 
@@ -73,7 +73,14 @@ const recordings = defineTable({
 	title: field.string(),
 	recordedAt: field.instant(),
 	recordedAtZone: field.string<IanaTimeZone>(),
+	// The raw transcript, exactly as the transcriber produced it. Polish layers
+	// correction on top and delivers the polished text, but the raw words stay
+	// here underneath so "show original" is always one click away. See ADR 0046.
 	transcript: field.string(),
+	// The delivered polished text, when a Polish pass ran. Null in speed mode and
+	// on a polish-failure fallback, where no polished version exists. The history
+	// shows this (what was actually delivered) and falls back to `transcript`.
+	polishedTranscript: nullable(field.string()),
 	duration: nullable(field.number()),
 	transcription: nullable(field.json(TranscriptionOutcome)),
 });
@@ -82,87 +89,25 @@ const recordings = defineTable({
 export type Recording = InferTableRow<typeof recordings>;
 
 /**
- * A single deterministic find/replace pair. A list of these runs offline (no API
- * key) before the prompt (`preReplacements`) and after it (`postReplacements`):
- * a small dictionary ("new paragraph" to a newline, filler stripping, proper-noun
- * fixes) covers far more real-world cleanup than a single replacement each.
- */
-const Replacement = Type.Object({
-	find: Type.String(),
-	replace: Type.String(),
-	useRegex: Type.Boolean(),
-});
-
-/** One find/replace pair within a transformation's pre/post phase. */
-export type Replacement = Static<typeof Replacement>;
-
-/**
- * The one optional AI phase of a transformation: a single prompt template run
- * against a single model on a single backend (inference provider). The backend
- * and model live here, on the prompt, not on a separate step row.
- */
-const TransformationPrompt = Type.Object({
-	inferenceProvider: field.select(INFERENCE_PROVIDER_IDS),
-	model: Type.String(),
-	systemPromptTemplate: Type.String(),
-	userPromptTemplate: Type.String(),
-});
-
-/** The single prompt phase of a transformation. */
-export type TransformationPrompt = Static<typeof TransformationPrompt>;
-
-/**
- * User-defined transformations. A transformation is a fixed three-phase shape:
- * deterministic `preReplacements`, one optional AI `prompt`, then deterministic
- * `postReplacements`. At least one phase is present (enforced at write time, not
- * by the schema). This replaces the old arbitrary N-step pipeline: there is no
- * ordered `transformationSteps` table, no per-step model memory, no step editor.
- */
-const transformations = defineTable({
-	id: field.string(),
-	title: field.string(),
-	description: field.string(),
-	preReplacements: field.json(Type.Array(Replacement)),
-	prompt: nullable(field.json(TransformationPrompt)),
-	postReplacements: field.json(Type.Array(Replacement)),
-});
-
-/** Transformation row type inferred from the workspace table schema. */
-export type Transformation = InferTableRow<typeof transformations>;
-
-/**
- * Terminal outcome of a finished transformation run, carrying the produced
- * `output` on success. Built from the shared `terminalOutcome` helper.
+ * A reusable text action: a name and a single instruction, run on demand over
+ * whatever text the host hands it (text in, text out). Recipes are the portable,
+ * plural, on-demand reshape library; they know nothing about voice and carry no
+ * correction plumbing (that is Polish's job, run once before any Recipe). See
+ * ADR 0046.
  *
- * Only terminal outcomes are stored. A run that is currently executing has no
- * `result` (the column is null); liveness is derived from `startedAt` recency,
- * never written. A stored `running` status would wedge on crash: the process
- * that died can no longer write the terminal state, so the row would claim
- * `running` forever. See
- * docs/articles/20260612T190745-liveness-belongs-to-the-process-not-the-row.md.
- *
- * Storage is one nullable JSON-encoded TEXT column (`result`); nothing in the
- * read path filters or sorts on these fields.
+ * Deliberately tiny: no pre/post replacements, no system/user prompt split, no
+ * `{{input}}` placeholder, no per-Recipe model or provider (model comes from the
+ * global `completion.*` default). `icon` is optional; null until one is assigned.
  */
-const TransformationRunResult = terminalOutcome({ output: Type.String() });
-
-/**
- * Execution records for transformations. One run per invocation.
- * State queries filter by top-level `recordingId` / `transformationId` and
- * sort by `startedAt`; the terminal outcome lives inside `result`, which is
- * null while the run is executing or if it was interrupted.
- */
-const transformationRuns = defineTable({
+const recipes = defineTable({
 	id: field.string(),
-	transformationId: field.string(),
-	recordingId: nullable(field.string()),
-	input: field.string(),
-	startedAt: field.instant(),
-	result: nullable(field.json(TransformationRunResult)),
+	name: field.string(),
+	instructions: field.string(),
+	icon: nullable(field.string()),
 });
 
-/** Transformation run row type inferred from the workspace table schema. */
-export type TransformationRun = InferTableRow<typeof transformationRuns>;
+/** Recipe row type inferred from the workspace table schema. */
+export type Recipe = InferTableRow<typeof recipes>;
 
 /**
  * Synced settings stored as individual KV entries with last-write-wins resolution.
@@ -187,16 +132,18 @@ const sound = {
 	'sound.vadCapture': defineKv(field.boolean(), () => true),
 	'sound.vadStop': defineKv(field.boolean(), () => true),
 	'sound.transcriptionComplete': defineKv(field.boolean(), () => true),
-	'sound.transformationComplete': defineKv(field.boolean(), () => true),
+	'sound.recipeComplete': defineKv(field.boolean(), () => true),
 } as const;
 
 /**
- * Output behavior after transcription/transformation completes.
- * Controls clipboard, cursor paste, and simulated Enter key per pipeline stage.
+ * Output behavior after a transcription or a picked Recipe completes. Controls
+ * clipboard, cursor paste, and simulated Enter key per delivery.
  *
- * Uses `output.*` prefix to separate post-processing behavior from service
- * configuration: avoids polluting `transcription.*` and `transformation.*`
- * namespaces with unrelated concerns.
+ * `transcription.*` governs the automatic path: the polished transcript
+ * delivered after every recording. `recipe.*` governs the manual path: a Recipe
+ * take the user picks from the picker (Wave 4). Uses the `output.*` prefix to
+ * keep this post-processing behavior out of the `transcription.*` /
+ * `completion.*` service namespaces.
  *
  * Clipboard is the permission-free default; cursor paste is opt-in. Pasting at
  * the cursor synthesizes a Cmd/Ctrl+V keystroke (`write_text` -> enigo), and on
@@ -204,16 +151,16 @@ const sound = {
  * cursor defaults are `false`: out of the box the transcript lands on the
  * clipboard (no permission, works on first launch) and the user pastes it.
  * Turning cursor paste on is the deliberate step that asks for Accessibility.
- * Transformation cursor also stays off so it cannot double-type over a
- * transcription that already pasted itself once a user turns both on.
+ * Recipe cursor also stays off so it cannot double-type over a transcription
+ * that already pasted itself once a user turns both on.
  */
 const output = {
 	'output.transcription.clipboard': defineKv(field.boolean(), () => true),
 	'output.transcription.cursor': defineKv(field.boolean(), () => false),
 	'output.transcription.enter': defineKv(field.boolean(), () => false),
-	'output.transformation.clipboard': defineKv(field.boolean(), () => true),
-	'output.transformation.cursor': defineKv(field.boolean(), () => false),
-	'output.transformation.enter': defineKv(field.boolean(), () => false),
+	'output.recipe.clipboard': defineKv(field.boolean(), () => true),
+	'output.recipe.cursor': defineKv(field.boolean(), () => false),
+	'output.recipe.enter': defineKv(field.boolean(), () => false),
 } as const;
 
 /**
@@ -295,16 +242,50 @@ function defineTranscriptionSettings(
 	} as const;
 }
 
+/** Default Polish instruction. Kept faithful: fix mechanics, preserve wording. */
+const DEFAULT_POLISH_INSTRUCTIONS =
+	'Fix grammar and punctuation. Keep my wording.';
+
 /**
- * Currently active transformation, used as the dictation default.
- *
- * `selectedId`: FK to `transformations` table. `null` = no transformation selected.
+ * Polish: the always-on, meaning-preserving AI base, run once after every
+ * transcription. One optional pass that fixes grammar and punctuation while
+ * keeping the user's wording. On by default, but it only fires when an AI key is
+ * configured (a runtime gate, not a flag), so a fresh keyless install never pays
+ * a surprise cost. Turn `enabled` off for speed mode: the raw transcript ships
+ * instantly with no AI call. `instructions` is editable under Advanced. Polish is
+ * not a Recipe; it is the base layer every Recipe stands on. See ADR 0046.
  */
-const transformation = {
-	'transformation.selectedId': defineKv(
-		nullable(field.string()),
-		(): string | null => null,
+const polish = {
+	'polish.enabled': defineKv(field.boolean(), () => true),
+	'polish.instructions': defineKv(
+		field.string(),
+		() => DEFAULT_POLISH_INSTRUCTIONS,
 	),
+} as const;
+
+/**
+ * Dictionary: a flat list of words Whispering should know, proper nouns and
+ * domain terms ("Kubernetes", "Braden"). Injection-only: the runtime composes
+ * these terms into every AI prompt (via `buildSystemPrompt`) and, where the
+ * transcription model accepts one, into its `initial_prompt`. It is not
+ * find/replace and not an algorithm; the AI is the matcher. See ADR 0046.
+ */
+const dictionary = {
+	dictionary: defineKv(Type.Array(Type.String()), (): string[] => []),
+} as const;
+
+/**
+ * The single global AI default used for completions: which inference provider
+ * and model the Polish pass and every Recipe run against. Per ADR 0046 there is
+ * no per-Recipe model or provider; this is the one place it lives. API keys and
+ * endpoints stay in deviceConfig (local, never synced).
+ */
+const completion = {
+	'completion.provider': defineKv(
+		field.select(INFERENCE_PROVIDER_IDS),
+		() => 'Google' as const,
+	),
+	'completion.model': defineKv(field.string(), () => 'gemini-2.5-flash'),
 } as const;
 
 /** Anonymized event logging toggle (Aptabase). */
@@ -348,11 +329,11 @@ const shortcuts = {
 		nullable(field.string()),
 		(): string | null => 'v',
 	),
-	'shortcut.openTransformationPicker': defineKv(
+	'shortcut.openRecipePicker': defineKv(
 		nullable(field.string()),
 		(): string | null => 't',
 	),
-	'shortcut.runTransformationOnClipboard': defineKv(
+	'shortcut.runRecipeOnClipboard': defineKv(
 		nullable(field.string()),
 		(): string | null => 'r',
 	),
@@ -377,7 +358,9 @@ export function createWhispering({
 		...dataRetention,
 		...recording,
 		...defineTranscriptionSettings(defaultTranscriptionService),
-		...transformation,
+		...polish,
+		...dictionary,
+		...completion,
 		...analytics,
 		...shortcuts,
 	};
@@ -389,8 +372,7 @@ export function createWhispering({
 		id: 'epicenter-whispering',
 		tables: {
 			recordings,
-			transformations,
-			transformationRuns,
+			recipes,
 		},
 		kv: kvDefinitions,
 	});

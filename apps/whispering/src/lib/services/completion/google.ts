@@ -7,7 +7,13 @@ import type { CompletionService } from './types';
 import { CompletionError } from './types';
 
 export const GoogleCompletionServiceLive = {
-	complete: async ({ apiKey, model: modelName, systemPrompt, userPrompt }) => {
+	complete: async ({
+		apiKey,
+		model: modelName,
+		systemPrompt,
+		userPrompt,
+		signal,
+	}) => {
 		const combinedPrompt = `${systemPrompt}\n${userPrompt}`;
 		const { data: completion, error: completionError } = await tryAsync({
 			try: async () => {
@@ -18,7 +24,9 @@ export const GoogleCompletionServiceLive = {
 					// TODO: Add temperature to step settings
 					generationConfig: { temperature: 0 },
 				});
-				const { response } = await model.generateContent(combinedPrompt);
+				const { response } = await model.generateContent(combinedPrompt, {
+					signal,
+				});
 				return response.text();
 			},
 			catch: (error): Err<CompletionError> => {

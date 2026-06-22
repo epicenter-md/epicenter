@@ -1,5 +1,5 @@
 import type { SatisfiedCommand, ShortcutEventState } from '$lib/commands';
-import { openTransformationPicker } from '$lib/operations/transformation-picker';
+import { openRecipePicker } from '$lib/operations/recipe-picker';
 
 /**
  * Desktop-only commands, spread into the registry by the `#platform/commands`
@@ -9,8 +9,8 @@ import { openTransformationPicker } from '$lib/operations/transformation-picker'
  */
 export const platformCommands = [
 	{
-		id: 'openTransformationPicker',
-		title: 'Open transformation picker',
+		id: 'openRecipePicker',
+		title: 'Open recipe picker',
 		// Fire on release, not press: the global accelerator carries a Cmd/Ctrl+Shift
 		// chord, and capturing on press synthesizes Cmd/Ctrl+C while that chord is
 		// still held, so the foreground app sees Cmd+Shift+C instead of a clean copy.
@@ -19,8 +19,7 @@ export const platformCommands = [
 		// in-app shortcut would never fire. The callback guard runs once, on release.
 		on: ['Pressed', 'Released'],
 		callback: (state?: ShortcutEventState) => {
-			if (state === 'Released' || state === undefined)
-				openTransformationPicker();
+			if (state === 'Released' || state === undefined) openRecipePicker();
 		},
 	},
 ] as const satisfies SatisfiedCommand[];

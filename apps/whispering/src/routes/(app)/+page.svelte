@@ -18,7 +18,6 @@
 	import {
 		TranscriptionRuntimeConfig,
 		TranscriptionSelector,
-		TransformationSelector,
 	} from '$lib/components/settings';
 	import ManualDeviceSelector from '$lib/components/settings/selectors/ManualDeviceSelector.svelte';
 	import VadDeviceSelector from '$lib/components/settings/selectors/VadDeviceSelector.svelte';
@@ -44,7 +43,6 @@
 	import { dictationCapability } from '$lib/state/dictation-capability.svelte';
 	import { manualRecorder } from '$lib/state/manual-recorder.svelte';
 	import { recordings } from '$lib/state/recordings.svelte';
-	import { settings } from '$lib/state/settings.svelte';
 	import { getRecordingShortcutLabel } from '$lib/utils/recording-shortcut';
 	import { viewTransition } from '$lib/utils/viewTransitions';
 	import studioMicrophone from '$lib/assets/studio-microphone.png';
@@ -52,19 +50,11 @@
 	import CaptureBehaviorPopover from './_components/CaptureBehaviorPopover.svelte';
 	import CapturePipeline from './_components/CapturePipeline.svelte';
 	import ManualRecordingAction from './_components/ManualRecordingAction.svelte';
+	import PolishPipelineControl from './_components/PolishPipelineControl.svelte';
 	import VadRecordingAction from './_components/VadRecordingAction.svelte';
 
 	const latestRecording = $derived(recordings.sorted[0]);
 	const transcriptionReadiness = $derived(getTranscriptionReadiness());
-	// The selected transformation's pipeline glyph morphs into that
-	// transformation's row on the /transformations list, so name it with the same
-	// id the row carries. Only the home pipeline opts in; the config topbar leaves
-	// its selector unnamed so it never collides with the rows on /transformations.
-	const transformationViewTransitionName = $derived(
-		viewTransition.transformation(
-			settings.get('transformation.selectedId') ?? null,
-		),
-	);
 	// The recording shortcut that actually fires on this platform, via the
 	// `#platform/shortcuts` label seam: desktop binds push-to-talk (Fn) globally
 	// and ships the toggle unbound, so prefer it; the browser shows the local
@@ -256,9 +246,7 @@
 								variant="pipeline"
 								iconViewTransitionName={viewTransition.pipeline.transcription}
 							/>
-							<TransformationSelector
-								iconViewTransitionName={transformationViewTransitionName}
-							/>
+							<PolishPipelineControl />
 							<CaptureBehaviorPopover />
 						</CapturePipeline>
 					{/snippet}
@@ -287,9 +275,7 @@
 								variant="pipeline"
 								iconViewTransitionName={viewTransition.pipeline.transcription}
 							/>
-							<TransformationSelector
-								iconViewTransitionName={transformationViewTransitionName}
-							/>
+							<PolishPipelineControl />
 							<CaptureBehaviorPopover />
 						</CapturePipeline>
 					{/snippet}
@@ -322,9 +308,7 @@
 						variant="pipeline"
 						iconViewTransitionName={viewTransition.pipeline.transcription}
 					/>
-					<TransformationSelector
-						iconViewTransitionName={transformationViewTransitionName}
-					/>
+					<PolishPipelineControl />
 				</CapturePipeline>
 			</div>
 		{/if}
@@ -334,6 +318,7 @@
 				<TranscriptDialog
 					recordingId={latestRecording.id}
 					transcript={latestRecording.transcript}
+					polishedTranscript={latestRecording.polishedTranscript}
 					rows={1}
 					disabled={!latestRecording.transcript.trim()}
 					onDelete={() => {

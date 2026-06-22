@@ -15,8 +15,8 @@
 	// One scope's full output delivery UI: copy to clipboard, paste at cursor (with
 	// its macOS Accessibility notice), and the dependent "press Enter" sub-toggle.
 	// These three always travel together because delivery.ts routes both the
-	// transcription and transformation scopes through the same path (clipboard,
-	// then a synthetic Cmd+V for cursor, then Enter), so the same trio and the same
+	// transcription and recipe scopes through the same path (clipboard, then a
+	// synthetic Cmd+V for cursor, then Enter), so the same trio and the same
 	// Accessibility caveat apply to both. Driving every surface (the two Settings
 	// output groups and the home capture popover) from this one component keeps the
 	// labels, the remediation copy, and the gating from ever drifting.
@@ -26,7 +26,7 @@
 	// in exactly one place. Paste-at-cursor stays interactive without the grant (it
 	// records intent); the capability recheck on window focus starts the paste the
 	// moment Accessibility lands, with no second visit to flip it back on.
-	type OutputScope = 'transcription' | 'transformation';
+	type OutputScope = 'transcription' | 'recipe';
 	let { scope }: { scope: OutputScope } = $props();
 
 	const SCOPES = {
@@ -36,11 +36,11 @@
 			cursor: 'output.transcription.cursor',
 			enter: 'output.transcription.enter',
 		},
-		transformation: {
-			noun: 'transformed text',
-			clipboard: 'output.transformation.clipboard',
-			cursor: 'output.transformation.cursor',
-			enter: 'output.transformation.enter',
+		recipe: {
+			noun: 'recipe output',
+			clipboard: 'output.recipe.clipboard',
+			cursor: 'output.recipe.cursor',
+			enter: 'output.recipe.enter',
 		},
 	} satisfies Record<
 		OutputScope,

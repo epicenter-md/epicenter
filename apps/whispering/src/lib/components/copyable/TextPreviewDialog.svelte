@@ -6,6 +6,7 @@
 	import { Spinner } from '@epicenter/ui/spinner';
 	import { Textarea } from '@epicenter/ui/textarea';
 	import TrashIcon from '@lucide/svelte/icons/trash';
+	import type { Snippet } from 'svelte';
 	import { createCopyFn } from '$lib/utils/createCopyFn';
 
 	/**
@@ -66,6 +67,8 @@
 		loading = false,
 		/** Optional callback to delete the associated item. When provided, a delete button appears in the dialog footer. */
 		onDelete,
+		/** Optional extra controls rendered on the left of the dialog footer (e.g. a view toggle). */
+		actions,
 	}: {
 		id: string;
 		title: string;
@@ -75,6 +78,7 @@
 		disabled?: boolean;
 		loading?: boolean;
 		onDelete?: () => void;
+		actions?: Snippet;
 	} = $props();
 
 	let isDialogOpen = $state(false);
@@ -126,6 +130,7 @@
 					Delete
 				</Button>
 			{/if}
+			{@render actions?.()}
 			<div class="flex-1"></div>
 			<Button variant="outline" onclick={() => (isDialogOpen = false)}>
 				Close

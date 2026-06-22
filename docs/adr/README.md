@@ -118,5 +118,7 @@ Each option and the one reason it lost. Terse. This is not the spec.
 | [0048](0048-a-conversations-loop-is-chosen-by-whether-its-transcript-syncs.md) | A conversation's loop is chosen by whether its transcript syncs across peers | Accepted |
 | [0049](0049-inference-is-its-own-box-the-daemon-never-infers.md) | Inference is its own box; the daemon never infers; the client loop talks to a swappable inference server | Accepted |
 | [0050](0050-the-inference-contract-is-openai-compatible.md) | The inference contract is OpenAI-compatible Chat Completions; Epicenter's backend is one swappable gateway | Accepted |
+| [0051](0051-one-agent-loop-its-store-seam-chooses-persistence.md) | There is one agent loop; its store seam chooses persistence, so tab-manager needs no second loop | Accepted |
+| [0052](0052-replace-transformations-with-a-dictionary-polish-and-a-portable-recipe-library.md) | Replace Transformations with a Dictionary, an always-on Polish, and a portable Recipe library | Accepted |
 
 When you add an ADR, add its row here.

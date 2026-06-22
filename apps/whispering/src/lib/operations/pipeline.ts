@@ -1,22 +1,19 @@
 import { InstantString } from '@epicenter/field';
 import { IanaTimeZone } from '@epicenter/workspace';
 import { extractErrorMessage } from 'wellcrafted/error';
-import { goto } from '$app/navigation';
 import {
 	deliverTranscriptionResult,
-	deliverTransformationResult,
 	type TranscriptionSource,
 } from '$lib/operations/delivery';
+import { polishWillRun, runPolish } from '$lib/operations/run-polish';
 import { sound } from '$lib/operations/sound';
 import { transcribeAndPersist } from '$lib/operations/transcribe';
-import { runTransformation } from '$lib/operations/transform';
 import { report } from '$lib/report';
 import { services } from '$lib/services';
 import type { RecorderStopResult } from '$lib/services/recorder/types';
 import { dictationLifecycle } from '$lib/state/dictation-lifecycle.svelte';
+import { polishHud } from '$lib/state/polish-hud.svelte';
 import { recordings } from '$lib/state/recordings.svelte';
-import { settings } from '$lib/state/settings.svelte';
-import { transformations } from '$lib/state/transformations.svelte';
 
 /**
  * Argument shape for the pipeline. The recorder produces a
@@ -32,7 +29,7 @@ type PipelineInput = {
 
 /**
  * Processes a recording through the full pipeline: persist artifact,
- * transcribe by id, then transform.
+ * transcribe by id, then polish.
  *
  * Audio bytes never live in pipeline state. For cpal sources Rust has
  * already written the durable artifact at
@@ -64,6 +61,7 @@ export async function processRecordingPipeline({
 		recordedAt: now,
 		recordedAtZone: IanaTimeZone.current(),
 		transcript: '',
+		polishedTranscript: null,
 		duration: durationMs,
 		transcription: null,
 	});
@@ -128,68 +126,67 @@ export async function processRecordingPipeline({
 		return;
 	}
 
+	// Run Polish over the raw transcript, then deliver the POLISHED text. The raw
+	// stays on `recordings.transcript` (persisted by transcribeAndPersist) so
+	// "show original" is recoverable. We hold delivery until Polish finishes and
+	// deliver once, with the final text: delivering the raw and then the polished
+	// version would land two copies (a clipboard the user might paste mid-polish,
+	// or two cursor pastes), the exact race the deliver-after-polish rule exists to
+	// dodge. Polish is the only thing on the automatic path; there is no
+	// auto-running Recipe. See ADR 0046.
+	//
+	// The "Polishing…" HUD and its ship-raw control live on the dictation pill, so
+	// the lifecycle's polishing phase and the abort signal are dictation-only: file
+	// import has no pill to cancel from and keeps its own progress toast. The pill
+	// shows the HUD only when an AI pass actually runs (not in speed mode); begin/end
+	// bracket the call so the controller is dropped on success, failure, or abort.
+	const willPolish = polishWillRun(transcribedText);
+	const showPolishHud = willPolish && isDictation;
+	let signal: AbortSignal | undefined;
+	if (showPolishHud) {
+		dictationLifecycle.markPolishing();
+		signal = polishHud.begin();
+	}
+	const { data: polishedText, error: polishError } = await runPolish({
+		input: transcribedText,
+		signal,
+	});
+	if (showPolishHud) polishHud.end();
+	// Polish is best-effort: a failed AI pass carries the raw transcript in
+	// `fallback`, so a transcript is never lost to a polish error. Surface the
+	// failure without blocking delivery.
+	const deliveredText = polishError ? polishError.fallback : polishedText;
+	if (polishError) {
+		report.info({
+			title: 'Polishing skipped',
+			description: polishError.message,
+		});
+	}
+
+	// Persist the polished text alongside the raw transcript so the history shows
+	// what was actually delivered, with the original one click away. Only write
+	// when a Polish pass actually produced a result: `recordings.set` already left
+	// `polishedTranscript` null, so speed mode (no AI call) and a polish failure
+	// (the fallback delivers the raw words) need no second write.
+	if (willPolish && !polishError) {
+		recordings.update(recordingId, { polishedTranscript: polishedText });
+	}
+
+	// The transcript is "ready" once it is polished and about to be delivered, so
+	// the completion sound and the resolved loading notice both fire here.
 	sound.playSoundIfEnabled('transcriptionComplete');
 	const { outcome: transcriptDelivery, notice: transcribeNotice } =
 		await deliverTranscriptionResult({
-			text: transcribedText,
+			text: deliveredText,
 			source: deliverySource,
 		});
 	if (isDictation) {
-		// The transcript is the dictation receipt; the transformation below, if
-		// any, runs as a background enhancement (logged in transformation runs)
-		// rather than reopening the pill. Every reach is a success (the transcript
-		// is saved), so this is always `delivered`; the reach decides whether the
-		// pill flashes (clean `output`) or persists (a reduced `clipboard`).
+		// The polished transcript is the dictation receipt. Every reach is a success
+		// (the transcript is saved), so this is always `delivered`; the reach decides
+		// whether the pill flashes (clean `output`) or persists (a reduced
+		// `clipboard`).
 		dictationLifecycle.markDelivered(transcriptDelivery.reach);
 	} else {
 		transcribeLoading?.resolve(transcribeNotice);
 	}
-
-	const transformationId = settings.get('transformation.selectedId');
-	if (!transformationId) return;
-
-	const transformation = transformations.get(transformationId);
-	if (!transformation) {
-		settings.set('transformation.selectedId', null);
-		report.info({
-			title: 'No matching transformation found',
-			description:
-				'No matching transformation found. Please select a different transformation.',
-			action: {
-				label: 'Select a different transformation',
-				onClick: () => goto('/transformations'),
-			},
-		});
-		return;
-	}
-
-	const transformLoading = isDictation
-		? null
-		: report.loading({
-				title: '🔄 Running transformation...',
-				description:
-					'Applying your selected transformation to the transcribed text...',
-			});
-
-	const { data: transformedText, error: transformError } =
-		await runTransformation({
-			input: transcribedText,
-			transformation,
-			recordingId,
-		});
-	if (transformError) {
-		// The transformation failed, but the transcript was already delivered, so
-		// the dictation is not a failure: the durable transformation run records
-		// the error. File import surfaces it on its toast.
-		transformLoading?.reject({ cause: transformError });
-		return;
-	}
-
-	sound.playSoundIfEnabled('transformationComplete');
-
-	const { notice: transformNotice } = await deliverTransformationResult({
-		text: transformedText,
-		recordingId,
-	});
-	transformLoading?.resolve(transformNotice);
 }

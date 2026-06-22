@@ -26,8 +26,12 @@ export function projectLifecycleToStatus(
 	if (capture.kind === 'recording') {
 		if (capture.trigger === 'manual')
 			return { phase: 'recording', trigger: 'manual' };
+		// The previous utterance's transcribe or polish rides beside the live meter
+		// as the same spinner pip; both read as "still working on the last phrase".
 		const pip: VadOutcomePip | undefined =
-			outcome.kind === 'transcribing' ? 'transcribing' : undefined;
+			outcome.kind === 'transcribing' || outcome.kind === 'polishing'
+				? 'transcribing'
+				: undefined;
 		return {
 			phase: 'recording',
 			trigger: 'vad',
@@ -43,6 +47,8 @@ export function projectLifecycleToStatus(
 			return null;
 		case 'transcribing':
 			return { phase: 'transcribing' };
+		case 'polishing':
+			return { phase: 'polishing' };
 		case 'delivered':
 			return { phase: 'delivered', reach: outcome.reach };
 		case 'failed':

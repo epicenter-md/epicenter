@@ -11,7 +11,6 @@ These examples are not an ownership map. Check call sites before changing a modu
 | `audio.ts`         | query    | Playback URLs from blob storage                            |
 | `download.ts`      | mutation | Download service lifecycle                                 |
 | `transcription.ts` | mutation | Transcription operation lifecycle and transcribing status   |
-| `transformer.ts`   | mutation | Transformation operation lifecycle                         |
 | `client.ts`        | infra    | `QueryClient` + `defineQuery` / `defineMutation` factories |
 
 ## The `rpc` barrel
@@ -148,10 +147,7 @@ Queries expose `.fetch()` and `.ensure()` for imperative reads. Use `.fetch()` w
 Mutations are callable for imperative writes:
 
 ```ts
-const { error } = await rpc.transformer.transformRecording({
-  recordingId,
-  transformation,
-});
+const { error } = await rpc.transcription.transcribeRecording.execute(recording);
 ```
 
 Prefer plain async functions in `$lib/operations/` for code that is not observed by a component, instead of promoting every workflow into `$lib/rpc`.
@@ -170,7 +166,7 @@ $lib/rpc/*          TanStack adapters (this directory)
   │                 shared UI needs mutation state
   ├──▶
 $lib/operations/*   imperative orchestrations (delivery, recording, upload,
-                    pipeline, transcribe, transform, transformation-clipboard,
+                    pipeline, transcribe, run-recipe, recipe-clipboard,
                     analytics, sound, shortcuts)
   ▼
 $lib/services/*     UI-free, Result-typed

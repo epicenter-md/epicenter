@@ -193,7 +193,7 @@
 				placeholder: 'e.g. http://localhost:11434/v1',
 				configKey: 'providers.custom.endpoint',
 				description: [
-					'URL for OpenAI-compatible endpoints (Ollama, LM Studio, llama.cpp, etc.). Every transformation that uses the Custom provider calls this endpoint.',
+					'URL for OpenAI-compatible endpoints (Ollama, LM Studio, llama.cpp, etc.). Every AI pass (Polish and recipes) that uses the Custom provider calls this endpoint.',
 				],
 			},
 			{

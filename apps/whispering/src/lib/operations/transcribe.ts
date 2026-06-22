@@ -289,6 +289,21 @@ export function prewarmLocalModel(): void {
 	});
 }
 
+/**
+ * Fold the Dictionary terms into the transcription `initial_prompt`. Whisper and
+ * OpenAI accept an initial prompt as a spelling and vocabulary hint, so appending
+ * the user's known terms nudges the transcriber toward them before any Polish
+ * pass runs (Polish gets the same terms separately, via `buildSystemPrompt`). The
+ * default Parakeet ignores `initial_prompt`, so this is harmless there. An empty
+ * dictionary returns the prompt unchanged. See ADR 0046.
+ */
+function withDictionaryTerms(prompt: string, dictionary: string[]): string {
+	if (dictionary.length === 0) return prompt;
+	const glossary = dictionary.join(', ');
+	const trimmed = prompt.trim();
+	return trimmed ? `${trimmed} ${glossary}` : glossary;
+}
+
 async function transcribeLocally(
 	recordingId: string,
 	selectedService: TranscriptionServiceId,
@@ -324,7 +339,10 @@ async function transcribeLocally(
 	// so there is no ambient config to go stale. `auto` language and an empty
 	// prompt map to null (the wire's "unset").
 	const language = settings.get('transcription.language');
-	const prompt = settings.get('transcription.prompt');
+	const prompt = withDictionaryTerms(
+		settings.get('transcription.prompt'),
+		settings.get('dictionary'),
+	);
 	return commands.transcribeRecording(recordingId, {
 		engine: selectedService,
 		modelName,
@@ -342,7 +360,10 @@ async function transcribeViaUpload(
 	if (loadError) return Err(loadError);
 
 	const spokenLanguage = getSpokenLanguage();
-	const prompt = settings.get('transcription.prompt');
+	const prompt = withDictionaryTerms(
+		settings.get('transcription.prompt'),
+		settings.get('dictionary'),
+	);
 	const provider = PROVIDERS[selectedService];
 
 	if (provider.location === 'self-hosted') {

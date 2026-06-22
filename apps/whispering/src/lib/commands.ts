@@ -1,4 +1,5 @@
 import { platformCommands } from '#platform/commands';
+import { runRecipeOnClipboard } from '$lib/operations/recipe-clipboard';
 import {
 	cancelRecording,
 	startManualRecording,
@@ -6,7 +7,6 @@ import {
 	toggleManualRecording,
 	toggleVadRecording,
 } from '$lib/operations/recording';
-import { runTransformationOnClipboard } from '$lib/operations/transformation-clipboard';
 
 /**
  * Registry of available commands in the application.
@@ -18,9 +18,9 @@ import { runTransformationOnClipboard } from '$lib/operations/transformation-cli
  * command registry.
  *
  * Platform split: `sharedCommands` exist in every build. Desktop-only commands
- * (the transformation picker, which captures a selection from another app and
- * opens a Tauri window) come from the `#platform/commands` seam, so a browser
- * build never imports their Tauri-only code and never offers them as shortcuts.
+ * (the recipe picker, which captures a selection from another app and opens a
+ * Tauri window) come from the `#platform/commands` seam, so a browser build
+ * never imports their Tauri-only code and never offers them as shortcuts.
  */
 
 /**
@@ -84,10 +84,10 @@ const sharedCommands = [
 		callback: () => toggleVadRecording(),
 	},
 	{
-		id: 'runTransformationOnClipboard',
-		title: 'Run transformation on clipboard',
+		id: 'runRecipeOnClipboard',
+		title: 'Run recipe on clipboard',
 		on: ['Pressed'],
-		callback: () => runTransformationOnClipboard(),
+		callback: () => runRecipeOnClipboard(),
 	},
 ] as const satisfies SatisfiedCommand[];
 

@@ -480,7 +480,7 @@
 			/>
 			<Field.Description>
 				{currentServiceCapabilities.supportsPrompt
-					? 'Helps services that support prompts recognize specific terms, names, or context during transcription. For rewriting or translation, use Transformations.'
+					? 'Helps services that support prompts recognize specific terms, names, or context during transcription. For rewriting or translation, use recipes.'
 					: 'This transcription service does not support prompts.'}
 			</Field.Description>
 		</Field.Field>

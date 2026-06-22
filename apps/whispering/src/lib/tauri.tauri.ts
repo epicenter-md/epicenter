@@ -467,6 +467,19 @@ const opener = {
 		}),
 };
 
+/**
+ * The app's main window. `focus()` raises and focuses it, used when a global
+ * shortcut needs to surface in-app UI (the recipe picker) over whatever the user
+ * is currently in. A stopgap until the picker becomes its own floating window.
+ */
+const mainWindow = {
+	async focus(): Promise<void> {
+		const window = getCurrentWindow();
+		await window.show();
+		await window.setFocus();
+	},
+};
+
 // barrel ------------------------------------------------------------
 // `tauriOnly` is the non-null namespace for `.tauri.ts` files. The
 // `tauri` export widens it to `Tauri | null` so shared consumers narrow.
@@ -478,6 +491,7 @@ export const tauriOnly = {
 	autostart,
 	media,
 	opener,
+	mainWindow,
 };
 
 /** Shape of the Tauri capability namespace (non-null). */

@@ -62,7 +62,7 @@
 	);
 
 	// The pipeline pill already shows the model name, so its tooltip describes the
-	// action (parallel with the mic and transformation triggers) rather than
+	// action (parallel with the mic and post-processing triggers) rather than
 	// echoing the visible value. The standalone switcher keeps the value, since
 	// there it is the brand icon, not text, that is on screen.
 	const triggerTooltip = $derived.by(() => {

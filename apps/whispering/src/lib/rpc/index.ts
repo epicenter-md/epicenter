@@ -1,7 +1,6 @@
 import { audio } from './audio';
 import { download } from './download';
 import { transcription } from './transcription';
-import { transformer } from './transformer';
 
 /**
  * Cross-platform RPC namespace.
@@ -11,5 +10,4 @@ export const rpc = {
 	audio,
 	download,
 	transcription,
-	transformer,
 };

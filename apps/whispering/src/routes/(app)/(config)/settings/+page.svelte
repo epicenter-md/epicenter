@@ -60,12 +60,12 @@
 		<Field.Separator />
 
 		<Field.Set>
-			<Field.Legend variant="label">Transformation output</Field.Legend>
+			<Field.Legend variant="label">Recipe output</Field.Legend>
 			<Field.Description>
-				Applies after you run a saved transformation on a transcription.
+				Applies after you run a saved recipe on a transcription.
 			</Field.Description>
 			<Field.Group>
-				<OutputDeliveryControls scope="transformation" />
+				<OutputDeliveryControls scope="recipe" />
 			</Field.Group>
 		</Field.Set>
 

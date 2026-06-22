@@ -5,7 +5,7 @@ import type { CompletionService } from './types';
 import { CompletionError } from './types';
 
 export const AnthropicCompletionServiceLive = {
-	async complete({ apiKey, model, systemPrompt, userPrompt }) {
+	async complete({ apiKey, model, systemPrompt, userPrompt, signal }) {
 		const client = new Anthropic({
 			apiKey,
 			dangerouslyAllowBrowser: true,
@@ -14,12 +14,15 @@ export const AnthropicCompletionServiceLive = {
 		// Call Anthropic API
 		const { data: completion, error: anthropicApiError } = await tryAsync({
 			try: () =>
-				client.messages.create({
-					model,
-					system: systemPrompt,
-					messages: [{ role: 'user', content: userPrompt }],
-					max_tokens: 1024,
-				}),
+				client.messages.create(
+					{
+						model,
+						system: systemPrompt,
+						messages: [{ role: 'user', content: userPrompt }],
+						max_tokens: 1024,
+					},
+					{ signal },
+				),
 			catch: (error): Err<CompletionError> => {
 				if (error instanceof Anthropic.APIConnectionError) {
 					return CompletionError.ConnectionFailed({ cause: error });
