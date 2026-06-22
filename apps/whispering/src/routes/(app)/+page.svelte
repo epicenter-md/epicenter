@@ -16,13 +16,6 @@
 	import DictationCapabilityNotice from '$lib/components/DictationCapabilityNotice.svelte';
 	import TranscriptDialog from '$lib/components/copyable/TranscriptDialog.svelte';
 	import {
-		TranscriptionRuntimeConfig,
-		TranscriptionSelector,
-		TransformationSelector,
-	} from '$lib/components/settings';
-	import ManualDeviceSelector from '$lib/components/settings/selectors/ManualDeviceSelector.svelte';
-	import VadDeviceSelector from '$lib/components/settings/selectors/VadDeviceSelector.svelte';
-	import {
 		CAPTURE_SURFACE_META,
 		CAPTURE_SURFACE_OPTIONS,
 		type CaptureSurface,
@@ -44,27 +37,26 @@
 	import { dictationCapability } from '$lib/state/dictation-capability.svelte';
 	import { manualRecorder } from '$lib/state/manual-recorder.svelte';
 	import { recordings } from '$lib/state/recordings.svelte';
-	import { settings } from '$lib/state/settings.svelte';
 	import { getRecordingShortcutLabel } from '$lib/utils/recording-shortcut';
 	import { viewTransition } from '$lib/utils/viewTransitions';
 	import studioMicrophone from '$lib/assets/studio-microphone.png';
 	import { tauri } from '#platform/tauri';
-	import CaptureBehaviorPopover from './_components/CaptureBehaviorPopover.svelte';
 	import CapturePipeline from './_components/CapturePipeline.svelte';
+	import FirstRunSetup from './_components/FirstRunSetup.svelte';
 	import ManualRecordingAction from './_components/ManualRecordingAction.svelte';
 	import VadRecordingAction from './_components/VadRecordingAction.svelte';
 
 	const latestRecording = $derived(recordings.sorted[0]);
-	const transcriptionReadiness = $derived(getTranscriptionReadiness());
-	// The selected transformation's pipeline glyph morphs into that
-	// transformation's row on the /transformations list, so name it with the same
-	// id the row carries. Only the home pipeline opts in; the config topbar leaves
-	// its selector unnamed so it never collides with the rows on /transformations.
-	const transformationViewTransitionName = $derived(
-		viewTransition.transformation(
-			settings.get('transformation.selectedId') ?? null,
-		),
-	);
+	// First-run setup is "active" from mount whenever transcription isn't ready;
+	// the only in-mount transition is the user finishing it (onComplete sets it
+	// false). The initial value is computed once here, synchronously, so there is
+	// no first-paint flash and no $effect latch, and no persisted "seen
+	// onboarding" flag (which would drift from readiness). It never needs to flip
+	// back to true within a mount because nothing on the recorder screen can make
+	// you un-ready; a regression (model deleted in settings) re-activates it for
+	// free, because SvelteKit remounts this page on navigation back to home. So
+	// first run and a later regression show the same flow.
+	let setupActive = $state(!getTranscriptionReadiness().isReady);
 	// The recording shortcut that actually fires on this platform, via the
 	// `#platform/shortcuts` label seam: desktop binds push-to-talk (Fn) globally
 	// and ships the toggle unbound, so prefer it; the browser shows the local
@@ -179,10 +171,8 @@
 
 <svelte:head> <title>Whispering</title> </svelte:head>
 
-<div
-	class="flex flex-1 flex-col items-center justify-start gap-4 w-full max-w-lg mx-auto px-4 pt-6 pb-24 sm:justify-center sm:py-0"
->
-	<SectionHeader.Root class="flex flex-col items-center gap-3">
+{#snippet hero()}
+	<SectionHeader.Root class="flex flex-col items-center gap-3 text-center">
 		<div class="flex items-center gap-3">
 			<img src={studioMicrophone} alt="" class="size-12" />
 			<SectionHeader.Title
@@ -192,237 +182,189 @@
 				Whispering
 			</SectionHeader.Title>
 		</div>
-		<SectionHeader.Description class="text-center">
+		<SectionHeader.Description>
 			Press shortcut → speak → get text. Free and open source ❤️
 		</SectionHeader.Description>
 	</SectionHeader.Root>
+{/snippet}
 
-	<DictationCapabilityNotice />
-
-	{#if !transcriptionReadiness.isReady}
-		<div class="w-full space-y-3">
-			<div class="space-y-1">
-				<h2 class="text-base font-semibold">Set up transcription</h2>
-				<p class="text-sm text-muted-foreground">
-					{transcriptionReadiness.primaryIssue ??
-						'Choose how Whispering turns your speech into text.'}
-				</p>
-			</div>
-			<TranscriptionRuntimeConfig
-				id="home-transcription-service"
-				label="Service"
-				showAdvanced={false}
-			/>
-		</div>
-	{:else}
-		<ToggleGroup.Root
-			type="single"
-			bind:value={() => captureSurface.current,
-				(surface) => {
-					if (!surface) return;
-					void selectCaptureSurface(surface as CaptureSurface);
-				}}
-			class="w-full"
-		>
-			{#each CAPTURE_SURFACE_OPTIONS as option}
-				{@const SurfaceIcon = CAPTURE_SURFACE_META[option.value].Icon}
-				<ToggleGroup.Item
-					value={option.value}
-					aria-label="Switch to {option.label.toLowerCase()}"
-				>
-					<SurfaceIcon class="size-4" />
-					<span class="hidden truncate sm:inline">{option.label}</span>
-				</ToggleGroup.Item>
-			{/each}
-		</ToggleGroup.Root>
-
+<div
+	class="flex flex-1 flex-col items-center justify-center w-full px-4 py-12 sm:py-16"
+>
+	{#if setupActive}
 		<!--
-			The capture pipeline is each recording action's idle footer (the action
-			hides it while live), so it's defined inline per surface. Manual and VAD
-			differ only by their device selector; each owns a distinct one backed by a
-			different recorder config. The shared tail repeats, but that keeps each
-			surface's footer co-located with the branch that already chose it, rather
-			than re-deriving the surface inside a shared snippet.
+			The universal first-run setup flow. Active from mount whenever
+			transcription isn't ready, first launch or a later regression alike; it
+			holds through its post-engine steps after readiness flips true, then
+			`onComplete` releases to the recorder.
 		-->
-		{#if captureSurface.current === 'manual'}
-			<div class="flex w-full flex-col items-center gap-3">
-				<ManualRecordingAction>
-					{#snippet pipeline()}
-						<CapturePipeline>
-							<ManualDeviceSelector
-								iconViewTransitionName={viewTransition.pipeline.device}
-							/>
-							<TranscriptionSelector
-								variant="pipeline"
-								iconViewTransitionName={viewTransition.pipeline.transcription}
-							/>
-							<TransformationSelector
-								iconViewTransitionName={transformationViewTransitionName}
-							/>
-							<CaptureBehaviorPopover />
-						</CapturePipeline>
-					{/snippet}
-				</ManualRecordingAction>
-				{#if manualRecorder.state === 'RECORDING'}
-					<Button
-						tooltip="Cancel recording and discard audio"
-						onclick={() => commandCallbacks.cancelRecording()}
-						variant="ghost-destructive"
-						size="sm"
+		<FirstRunSetup onComplete={() => (setupActive = false)} />
+	{:else}
+		<div class="flex w-full max-w-lg flex-col items-center gap-4">
+			{@render hero()}
+
+			<DictationCapabilityNotice />
+			<ToggleGroup.Root
+				type="single"
+				bind:value={() => captureSurface.current,
+					(surface) => {
+						if (!surface) return;
+						void selectCaptureSurface(surface as CaptureSurface);
+					}}
+				class="w-full"
+			>
+				{#each CAPTURE_SURFACE_OPTIONS as option}
+					{@const SurfaceIcon = CAPTURE_SURFACE_META[option.value].Icon}
+					<ToggleGroup.Item
+						value={option.value}
+						aria-label="Switch to {option.label.toLowerCase()}"
 					>
-						<XIcon class="size-4" />
-						Cancel
-					</Button>
-				{/if}
-			</div>
-		{:else if captureSurface.current === 'vad'}
-			<div class="flex w-full flex-col items-center gap-3">
-				<VadRecordingAction>
-					{#snippet pipeline()}
-						<CapturePipeline>
-							<VadDeviceSelector
-								iconViewTransitionName={viewTransition.pipeline.device}
-							/>
-							<TranscriptionSelector
-								variant="pipeline"
-								iconViewTransitionName={viewTransition.pipeline.transcription}
-							/>
-							<TransformationSelector
-								iconViewTransitionName={transformationViewTransitionName}
-							/>
-							<CaptureBehaviorPopover />
-						</CapturePipeline>
-					{/snippet}
-				</VadRecordingAction>
-			</div>
-		{:else if captureSurface.current === 'import'}
-			<div class="flex w-full flex-col items-center gap-4">
-				<FileDropZone
-					accept={IMPORT_ACCEPT}
-					maxFiles={MAX_IMPORT_FILES}
-					maxFileSize={MAX_IMPORT_FILE_SIZE}
-					onUpload={async (files) => {
-						if (files.length > 0) {
-							await importFiles({ files });
-						}
-					}}
-					onFileRejected={({ file, reason }) => {
-						report.error({
-							cause: PageError.FileRejected({
-								fileName: file.name,
-								reason,
-							}).error,
-							title: 'File rejected',
-						});
-					}}
-					class="h-32 sm:h-36 w-full"
-				/>
-				<CapturePipeline>
-					<TranscriptionSelector
-						variant="pipeline"
-						iconViewTransitionName={viewTransition.pipeline.transcription}
-					/>
-					<TransformationSelector
-						iconViewTransitionName={transformationViewTransitionName}
-					/>
-				</CapturePipeline>
-			</div>
-		{/if}
+						<SurfaceIcon class="size-4" />
+						<span class="hidden truncate sm:inline">{option.label}</span>
+					</ToggleGroup.Item>
+				{/each}
+			</ToggleGroup.Root>
 
-		{#if latestRecording}
-			<div class="flex w-full flex-col gap-2">
-				<TranscriptDialog
-					recordingId={latestRecording.id}
-					transcript={latestRecording.transcript}
-					rows={1}
-					disabled={!latestRecording.transcript.trim()}
-					onDelete={() => {
-						confirmationDialog.open({
-							title: 'Delete recording',
-							description: 'Are you sure you want to delete this recording?',
-							confirm: { text: 'Delete', variant: 'destructive' },
-							onConfirm: () => {
-								services.blobs.audio.revokeUrl(latestRecording.id);
-								recordings.delete(latestRecording.id);
-								report.success({
-									title: 'Deleted recording!',
-									description: 'Your recording has been deleted.',
-								});
-							},
-						});
-					}}
-				/>
-
-				{#if audioPlaybackUrlQuery.data}
-					<audio
-						style:view-transition-name={viewTransition.recording(
-							latestRecording.id,
-						).audio}
-						src={audioPlaybackUrlQuery.data}
-						controls
-						class="h-8 w-full"
-					></audio>
-				{/if}
-			</div>
-		{/if}
-
-		<div class="flex flex-col items-center gap-3">
 			{#if captureSurface.current === 'manual'}
-				<p class="text-foreground/75 text-center text-sm">
-					{#if manualShortcutLabel}
-						Click the microphone to record{tauri ? ' here' : ''}, or press
-						<Link
-							tooltip="Configure the recording shortcut"
-							href="/settings/shortcuts"
+				<div class="flex w-full flex-col items-center gap-3">
+					<ManualRecordingAction />
+					{#if manualRecorder.state === 'RECORDING'}
+						<Button
+							tooltip="Cancel recording and discard audio"
+							onclick={() => commandCallbacks.cancelRecording()}
+							variant="ghost-destructive"
+							size="sm"
 						>
-							<Kbd.Root class={shortcutUnavailable ? 'opacity-50' : undefined}
-								>{manualShortcutLabel}</Kbd.Root>
-						</Link>
-						{tauri ? 'to record from anywhere.' : 'to record.'}
-					{:else if tauri}
-						Click the microphone to record, or
-						<Link tooltip="Set a global shortcut" href="/settings/shortcuts"
-							>set a global shortcut</Link>
-						to record from anywhere.
-					{:else}
-						Click the microphone to start recording.
+							<XIcon class="size-4" />
+							Cancel
+						</Button>
 					{/if}
-				</p>
+				</div>
 			{:else if captureSurface.current === 'vad'}
-				<p class="text-foreground/75 text-center text-sm">
-					{#if vadShortcutLabel}
-						Click the microphone to listen{tauri ? ' here' : ''}, or press
+				<div class="flex w-full flex-col items-center gap-3">
+					<VadRecordingAction />
+				</div>
+			{:else if captureSurface.current === 'import'}
+				<div class="flex w-full flex-col items-center gap-4">
+					<FileDropZone
+						accept={IMPORT_ACCEPT}
+						maxFiles={MAX_IMPORT_FILES}
+						maxFileSize={MAX_IMPORT_FILE_SIZE}
+						onUpload={async (files) => {
+							if (files.length > 0) {
+								await importFiles({ files });
+							}
+						}}
+						onFileRejected={({ file, reason }) => {
+							report.error({
+								cause: PageError.FileRejected({
+									fileName: file.name,
+									reason,
+								}).error,
+								title: 'File rejected',
+							});
+						}}
+						class="h-32 sm:h-36 w-full"
+					/>
+					<CapturePipeline />
+				</div>
+			{/if}
+
+			{#if latestRecording}
+				<div class="flex w-full flex-col gap-2">
+					<TranscriptDialog
+						recordingId={latestRecording.id}
+						transcript={latestRecording.transcript}
+						rows={1}
+						disabled={!latestRecording.transcript.trim()}
+						onDelete={() => {
+							confirmationDialog.open({
+								title: 'Delete recording',
+								description: 'Are you sure you want to delete this recording?',
+								confirm: { text: 'Delete', variant: 'destructive' },
+								onConfirm: () => {
+									services.blobs.audio.revokeUrl(latestRecording.id);
+									recordings.delete(latestRecording.id);
+									report.success({
+										title: 'Deleted recording!',
+										description: 'Your recording has been deleted.',
+									});
+								},
+							});
+						}}
+					/>
+
+					{#if audioPlaybackUrlQuery.data}
+						<audio
+							style:view-transition-name={viewTransition.recording(
+								latestRecording.id,
+							).audio}
+							src={audioPlaybackUrlQuery.data}
+							controls
+							class="h-8 w-full"
+						></audio>
+					{/if}
+				</div>
+			{/if}
+
+			<div class="flex flex-col items-center gap-3">
+				{#if captureSurface.current === 'manual'}
+					<p class="text-foreground/75 text-center text-sm">
+						{#if manualShortcutLabel}
+							Click the microphone to record{tauri ? ' here' : ''}, or press
+							<Link
+								tooltip="Configure the recording shortcut"
+								href="/settings/shortcuts"
+							>
+								<Kbd.Root class={shortcutUnavailable ? 'opacity-50' : undefined}
+									>{manualShortcutLabel}</Kbd.Root>
+							</Link>
+							{tauri ? 'to record from anywhere.' : 'to record.'}
+						{:else if tauri}
+							Click the microphone to record, or
+							<Link tooltip="Set a global shortcut" href="/settings/shortcuts"
+								>set a global shortcut</Link>
+							to record from anywhere.
+						{:else}
+							Click the microphone to start recording.
+						{/if}
+					</p>
+				{:else if captureSurface.current === 'vad'}
+					<p class="text-foreground/75 text-center text-sm">
+						{#if vadShortcutLabel}
+							Click the microphone to listen{tauri ? ' here' : ''}, or press
+							<Link
+								tooltip="Configure the voice activation shortcut"
+								href="/settings/shortcuts"
+							>
+								<Kbd.Root class={shortcutUnavailable ? 'opacity-50' : undefined}
+									>{vadShortcutLabel}</Kbd.Root>
+							</Link>
+							{tauri ? 'to listen from anywhere.' : 'to listen.'}
+						{:else if tauri}
+							Click the microphone to start a voice activated session, or
+							<Link tooltip="Set a global shortcut" href="/settings/shortcuts"
+								>set a global shortcut</Link>
+							to listen from anywhere.
+						{:else}
+							Click the microphone to start a voice activated session.
+						{/if}
+					</p>
+				{/if}
+				<p class="text-muted-foreground text-center text-sm font-light">
+					{#if !tauri}
+						Tired of switching tabs?
 						<Link
-							tooltip="Configure the voice activation shortcut"
-							href="/settings/shortcuts"
+							tooltip="Get Whispering for desktop"
+							href="https://epicenter.so/whispering"
+							target="_blank"
+							rel="noopener noreferrer"
 						>
-							<Kbd.Root class={shortcutUnavailable ? 'opacity-50' : undefined}
-								>{vadShortcutLabel}</Kbd.Root>
+							Get the native desktop app
 						</Link>
-						{tauri ? 'to listen from anywhere.' : 'to listen.'}
-					{:else if tauri}
-						Click the microphone to start a voice activated session, or
-						<Link tooltip="Set a global shortcut" href="/settings/shortcuts"
-							>set a global shortcut</Link>
-						to listen from anywhere.
-					{:else}
-						Click the microphone to start a voice activated session.
 					{/if}
 				</p>
-			{/if}
-			<p class="text-muted-foreground text-center text-sm font-light">
-				{#if !tauri}
-					Tired of switching tabs?
-					<Link
-						tooltip="Get Whispering for desktop"
-						href="https://epicenter.so/whispering"
-						target="_blank"
-						rel="noopener noreferrer"
-					>
-						Get the native desktop app
-					</Link>
-				{/if}
-			</p>
+			</div>
 		</div>
 	{/if}
 </div>

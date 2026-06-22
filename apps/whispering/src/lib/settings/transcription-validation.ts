@@ -62,44 +62,26 @@ export function isTranscriptionServiceConfigured(
 }
 
 export type TranscriptionReadiness = {
-	service: TranscriptionProviderEntry | undefined;
-	isServiceAvailable: boolean;
-	isRuntimeConfigured: boolean;
+	/** True when the selected service is available here and fully configured. */
 	isReady: boolean;
+	/** The single most relevant blocker to show the user, or null when ready. */
 	primaryIssue: string | null;
 };
 
 export function getTranscriptionReadiness(): TranscriptionReadiness {
 	const service = getSelectedTranscriptionProvider();
-	const isServiceAvailable = service
-		? isTranscriptionServiceAvailable(service)
-		: false;
-	const isRuntimeConfigured =
-		service && isServiceAvailable
-			? isTranscriptionServiceConfigured(service)
-			: false;
-
 	if (!service) {
-		return {
-			service,
-			isServiceAvailable,
-			isRuntimeConfigured,
-			isReady: false,
-			primaryIssue: 'Choose a transcription service.',
-		};
+		return { isReady: false, primaryIssue: 'Choose a transcription service.' };
 	}
 
-	if (!isServiceAvailable) {
+	if (!isTranscriptionServiceAvailable(service)) {
 		return {
-			service,
-			isServiceAvailable,
-			isRuntimeConfigured,
 			isReady: false,
 			primaryIssue: `${service.label} is only available in the desktop app.`,
 		};
 	}
 
-	if (!isRuntimeConfigured) {
+	if (!isTranscriptionServiceConfigured(service)) {
 		const primaryIssue = (
 			{
 				cloud: `Add your ${service.label} API key.`,
@@ -108,20 +90,8 @@ export function getTranscriptionReadiness(): TranscriptionReadiness {
 			} as const
 		)[service.location];
 
-		return {
-			service,
-			isServiceAvailable,
-			isRuntimeConfigured,
-			isReady: false,
-			primaryIssue,
-		};
+		return { isReady: false, primaryIssue };
 	}
 
-	return {
-		service,
-		isServiceAvailable,
-		isRuntimeConfigured,
-		isReady: true,
-		primaryIssue: null,
-	};
+	return { isReady: true, primaryIssue: null };
 }

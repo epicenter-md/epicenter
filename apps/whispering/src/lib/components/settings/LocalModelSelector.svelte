@@ -43,6 +43,11 @@
 	 * list (catalog download cards, custom folder entries, the folder help
 	 * box) collapses behind "All models". The list is backed by the engine's
 	 * models folder; the bindable value is the active entry's name.
+	 *
+	 * `compact` drops everything past the hero (the "All models" list, the
+	 * bring-your-own box, the footer, and the summary's "Change" button): the
+	 * first-run wizard wants one action, not the whole library, which stays on
+	 * the settings page where `compact` is false.
 	 */
 	type LocalModelSelectorProps = {
 		/**
@@ -63,6 +68,9 @@
 
 		/** Optional footer content (download sources, naming notes) */
 		footer?: Snippet;
+
+		/** Render the hero only, for the first-run wizard. See the type doc. */
+		compact?: boolean;
 	};
 
 	let {
@@ -71,6 +79,7 @@
 		description,
 		value = $bindable(),
 		footer,
+		compact = false,
 	}: LocalModelSelectorProps = $props();
 
 	const engine = $derived(models[0].engine);
@@ -256,24 +265,25 @@
 				</Item.Content>
 				<Item.Actions>
 					<Badge class="text-xs">Active</Badge>
-					<Button
-						variant="outline"
-						size="sm"
-						onclick={() => (allModelsOpen = true)}
-					>
-						Change
-					</Button>
+					{#if !compact}
+						<Button
+							variant="outline"
+							size="sm"
+							onclick={() => (allModelsOpen = true)}
+						>
+							Change
+						</Button>
+					{/if}
 				</Item.Actions>
 			</Item.Root>
-		{:else if !value && customEntries.length === 0}
-			<Empty.Root class="py-8">
+		{:else if !value && (compact || customEntries.length === 0)}
+			<Empty.Root class="py-6">
 				<Empty.Media variant="icon">
 					<HardDriveDownload class="size-5" />
 				</Empty.Media>
 				<Empty.Title>No local model installed</Empty.Title>
 				<Empty.Description>
-					Runs on this device — private, offline, and free. Download the
-					recommended model to start transcribing.
+					Download the recommended model to start transcribing on this device.
 				</Empty.Description>
 				<Empty.Content>
 					{#if recommendedState.type === 'downloading'}
@@ -299,7 +309,7 @@
 					{:else}
 						<Button onclick={downloadRecommendedModel}>
 							<Download class="size-4" />
-							Download {recommended.name} ({recommended.size})
+							Download recommended model ({recommended.size})
 						</Button>
 					{/if}
 				</Empty.Content>
@@ -312,12 +322,13 @@
 					Selected model is missing
 				</p>
 				<p class="mt-1 text-sm text-muted-foreground">
-					"{value}" is no longer in the models folder. Pick another model under
-					All models, or add yours back and activate it.
+					"{value}" is no longer in the models folder. Download it again, or add
+					your own and activate it.
 				</p>
 			</div>
 		{/if}
 
+		{#if !compact}
 		<Collapsible.Root bind:open={allModelsOpen}>
 			<Collapsible.Trigger
 				class="flex w-full items-center justify-between rounded-lg border px-4 py-3 text-sm font-medium transition-colors hover:bg-muted/50 [&[data-state=open]>svg]:rotate-180"
@@ -406,5 +417,6 @@
 				</div>
 			</Collapsible.Content>
 		</Collapsible.Root>
+		{/if}
 	</Card.Content>
 </Card.Root>

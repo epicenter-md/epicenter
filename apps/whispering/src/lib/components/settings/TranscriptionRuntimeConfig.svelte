@@ -1,3 +1,10 @@
+<!--
+	Runtime config for the currently selected transcription service: the
+	per-service setup (cloud model, local model selector, Speaches steps) plus the
+	shared advanced fields. The service PICKER is the caller's concern, so the
+	settings page renders one above this and the first-run wizard tucks one behind
+	a disclosure.
+-->
 <script lang="ts">
 	import * as Alert from '@epicenter/ui/alert';
 	import { Badge } from '@epicenter/ui/badge';
@@ -9,7 +16,6 @@
 	import { Link } from '@epicenter/ui/link';
 	import * as Select from '@epicenter/ui/select';
 	import { Textarea } from '@epicenter/ui/textarea';
-	import type { Snippet } from 'svelte';
 	import CopyablePre from '$lib/components/copyable/CopyablePre.svelte';
 	import { SUPPORTED_LANGUAGES_OPTIONS } from '$lib/constants/languages';
 	import {
@@ -29,22 +35,19 @@
 	import { tauri } from '#platform/tauri';
 	import LocalModelSelector from './LocalModelSelector.svelte';
 	import ProviderConfigFields from './ProviderConfigFields.svelte';
-	import TranscriptionServiceSelect from './TranscriptionServiceSelect.svelte';
 
 	let {
-		id = 'selected-transcription-service',
-		label = 'Transcription Service',
-		description,
 		showAdvanced = true,
-		class: className,
 	}: {
-		id?: string;
-		label?: string;
-		description?: string | Snippet;
 		/** When false, hide the advanced fields (unload policy, language, prompt). */
 		showAdvanced?: boolean;
-		class?: string;
 	} = $props();
+
+	// The settings page wants the full surface; the first-run wizard wants the
+	// minimal one. The two move together: the only caller that hides the advanced
+	// fields is the wizard, and it also wants the local model selector collapsed
+	// to its download hero. One signal, both behaviors.
+	const compact = $derived(!showAdvanced);
 
 	const currentServiceCapabilities = $derived(
 		PROVIDERS[settings.get('transcription.service')].capabilities,
@@ -85,16 +88,7 @@
 	);
 </script>
 
-<Field.Group class={className}>
-	<TranscriptionServiceSelect
-		{id}
-		{label}
-		{description}
-		bind:selected={() => settings.get('transcription.service'),
-			(selected) =>
-				settings.set('transcription.service', selected)}
-	/>
-
+<Field.Group>
 	{#if isSelectedServiceUnavailable && selectedTranscriptionProvider}
 		<Alert.Root variant="warning">
 			<Alert.Title>Desktop-only service selected</Alert.Title>
@@ -308,6 +302,7 @@
 	{:else if settings.get('transcription.service') === 'whispercpp'}
 		<div class="space-y-4">
 			<LocalModelSelector
+				{compact}
 				models={WHISPER_MODELS}
 				title="Whisper Model"
 				description="Download a pre-built model or add your own to the models folder. Models run locally for private, offline transcription."
@@ -333,6 +328,7 @@
 	{:else if settings.get('transcription.service') === 'parakeet'}
 		<div class="space-y-4">
 			<LocalModelSelector
+				{compact}
 				models={PARAKEET_MODELS}
 				title="Parakeet Model"
 				description="Parakeet is the recommended fast local model. It runs on this device, downloads once, and automatically detects supported spoken languages."
@@ -365,6 +361,7 @@
 	{:else if settings.get('transcription.service') === 'moonshine'}
 		<div class="space-y-4">
 			<LocalModelSelector
+				{compact}
 				models={MOONSHINE_MODELS}
 				title="Moonshine Model"
 				description="Moonshine is an efficient ONNX model by UsefulSensors. English-only with fast inference and small model sizes (~30 MB)."
