@@ -26,7 +26,6 @@
 	"exports": {
 		".": "./src/index.ts",
 		"./agent": "./src/agent/index.ts",
-		"./directory": "./src/directory/index.ts",
 		"./markdown": "./src/markdown/index.ts",
 		"./document/materializer/markdown": "./src/document/materializer/markdown/index.ts",
 		"./daemon": "./src/daemon/index.ts",
