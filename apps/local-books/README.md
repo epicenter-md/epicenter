@@ -89,6 +89,55 @@ Inspect the server without an agent using the MCP Inspector:
 npx @modelcontextprotocol/inspector local-books mcp
 ```
 
+### Reach it from your other devices (over Tailscale)
+
+`local-books mcp` is stdio: it serves the agent on the same machine. To let your
+other devices (a laptop, a phone, the Epicenter web app) reach the same tools,
+run the books as an always-on box and serve them over your tailnet. This is the
+capability plane: the box is reached directly, device to device, and Epicenter
+is never in the call path. The financial data still never leaves the box; a
+remote device only calls the tools.
+
+1. On the box, run the HTTP daemon. It serves the same `query` / `status` /
+   `report` / `sync` (and `recategorize` unless read-only) tools at `/mcp`:
+
+   ```sh
+   local-books daemon --http-port 8787
+   # from the monorepo: bun run /abs/path/apps/local-books/src/bin.ts daemon --http-port 8787
+   ```
+
+2. Expose that port on your tailnet with Tailscale Serve (private HTTPS, tailnet
+   only, no public URL). On a recent Tailscale the port is the whole command:
+
+   ```sh
+   tailscale serve --bg 8787
+   # explicit form, same result: tailscale serve --bg --https=443 http://localhost:8787
+   # check `tailscale serve --help` for your version
+   ```
+
+   Tailscale terminates TLS and forwards `https://<box>.<tailnet>.ts.net/` to
+   `http://localhost:8787/`, so the tools live at
+   `https://<box>.<tailnet>.ts.net/mcp`. That `https://<box>.<tailnet>.ts.net`
+   is the box's one address (`baseUrl`); `/mcp` and the future `/v1` are path
+   suffixes on it.
+
+Authorization is your tailnet: Tailscale ACLs decide which devices can reach the
+box, so there is no bearer token and nothing to store. There is no public
+exposure (no Tailscale Funnel); a device off your tailnet simply cannot reach
+the box.
+
+Browser access is opt-in, and that matters: the box has no auth, so the tailnet
+gates the network but not your own browser. A website you visit on a tailnet
+device could otherwise `fetch` the box and read the response. So the daemon
+serves native MCP clients (Claude Code, a desktop app) by default and grants a
+browser a read only for an origin you list explicitly:
+`LOCAL_BOOKS_CORS_ORIGIN=https://your-epicenter-web-origin` (comma-separated for
+several). With it unset, no browser may read the box.
+
+Prerequisites: MagicDNS enabled and an HTTPS certificate provisioned for the
+tailnet (Tailscale admin console, HTTPS settings). Confirm the box's name with
+`tailscale status`.
+
 ## Keep it fresh
 
 ```sh

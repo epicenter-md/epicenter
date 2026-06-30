@@ -1,5 +1,6 @@
 import ms from 'ms';
 import { runAuth } from './commands/auth.ts';
+import { runDaemon } from './commands/daemon.ts';
 import { runDemo } from './commands/demo.ts';
 import { runMcpServer } from './commands/mcp.ts';
 import { runQuery } from './commands/query.ts';
@@ -18,6 +19,8 @@ export type ParsedArgs = {
 	entities: string[];
 	/** When set, `sync` loops on this interval (ms) instead of running once. */
 	intervalMs?: number;
+	/** The port `daemon` serves its HTTP `/mcp` endpoint on. */
+	httpPort?: number;
 	dataDir?: string;
 	realm?: string;
 	environment?: QbEnvironment;
@@ -46,6 +49,7 @@ Usage:
   local-books recategorize <Purchase|Bill> <id> --to <accountId> [options]
   local-books demo [options]
   local-books mcp [options]
+  local-books daemon --http-port <port> [options]
 
 First run:
   local-books demo                          See it work on a sample company, no QuickBooks needed.
@@ -61,11 +65,13 @@ Commands:
   recategorize  Move an expense to a different account in QuickBooks (then update the local copy).
   demo          Build a sample company you can query right now, with example questions.
   mcp           Serve the read/refresh/write verbs to a coding agent over MCP (stdio). See the README.
+  daemon        Serve the same MCP verbs over a private HTTP /mcp endpoint (for your other devices over Tailscale). See the README.
 
 Options:
   --full                          Force a full pull (sync only).
   --entity <name>                 Limit sync to these record types (repeatable). Default: all.
   --interval <dur>                Keep syncing on a loop, e.g. 30m or 1h (sync only; Ctrl-C to stop).
+  --http-port <port>              Port for the HTTP /mcp endpoint (daemon only).
   --start <YYYY-MM-DD>            Report period start (report only).
   --end <YYYY-MM-DD>              Report period end (report only).
   --method <Cash|Accrual>         Report basis (report only; defaults to the company setting).
@@ -83,6 +89,7 @@ Environment:
   LOCAL_BOOKS_DIR                   Where the local copy lives.
   LOCAL_BOOKS_TOKEN_FILE            Override the credentials file path (default: <data-dir>/credentials.json).
   LOCAL_BOOKS_READ_ONLY             Disable recategorize (reads only).
+  LOCAL_BOOKS_CORS_ORIGIN           Comma-separated browser origin allowlist for the daemon (default: reflect any).
 `;
 
 /** Parse a duration like "30s", "30m", "2h" into ms; a bare number means minutes. */
@@ -150,6 +157,17 @@ export function parseArgs(argv: string[]): ParsedArgs {
 			case '--interval':
 				args.intervalMs = parseInterval(takeValue());
 				break;
+			case '--http-port': {
+				const value = takeValue();
+				const port = Number(value);
+				if (!Number.isInteger(port) || port < 0 || port > 65535) {
+					throw new Error(
+						`--http-port must be a port number (0-65535), got "${value}"`,
+					);
+				}
+				args.httpPort = port;
+				break;
+			}
 			case '--realm':
 				args.realm = takeValue();
 				break;
@@ -221,6 +239,8 @@ export async function runCli(argv: string[]): Promise<number> {
 			return runDemo(args);
 		case 'mcp':
 			return runMcpServer(args);
+		case 'daemon':
+			return runDaemon(args);
 		default:
 			console.error(`Unknown command: ${args.command}\n`);
 			console.log(HELP);
