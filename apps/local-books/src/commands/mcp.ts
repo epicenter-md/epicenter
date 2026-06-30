@@ -223,16 +223,13 @@ function toCallResult({ data, error }: ToolOutcome): CallToolResult {
 	};
 }
 
-export async function runMcpServer(args: ParsedArgs): Promise<number> {
-	// Same precedence the other verbs use (CLI > env > config.json > defaults);
-	// the host typically passes LOCAL_BOOKS_DIR / _TOKEN_FILE / _READ_ONLY / the
-	// realm via the MCP client config's `env`.
-	const config = loadConfig({
-		dataDir: args.dataDir,
-		environment: args.environment,
-		realm: args.realm,
-	});
-
+/**
+ * Build a fully wired stdio MCP `Server` for the given config: filters the
+ * tool catalog for read-only mode, constructs the per-server deps (`store`,
+ * `now`) exactly once, and registers both request handlers. Does not connect
+ * a transport; the caller owns the server's lifecycle.
+ */
+export function buildBooksServer(config: AppConfig): Server {
 	// Read-only mode drops the QuickBooks mutation from the catalog entirely, so a
 	// foreign host never even sees it. This filter is the live gate (the cores stay
 	// the invariant's owner for the CLI path).
@@ -306,6 +303,21 @@ export async function runMcpServer(args: ParsedArgs): Promise<number> {
 		};
 		return toCallResult(await tool.run(ctx, callArgs));
 	});
+
+	return server;
+}
+
+export async function runMcpServer(args: ParsedArgs): Promise<number> {
+	// Same precedence the other verbs use (CLI > env > config.json > defaults);
+	// the host typically passes LOCAL_BOOKS_DIR / _TOKEN_FILE / _READ_ONLY / the
+	// realm via the MCP client config's `env`.
+	const config = loadConfig({
+		dataDir: args.dataDir,
+		environment: args.environment,
+		realm: args.realm,
+	});
+
+	const server = buildBooksServer(config);
 
 	// stdout carries JSON-RPC frames from here on. Block until the host
 	// disconnects, then let bin.ts exit cleanly. A stdio server should exit on
