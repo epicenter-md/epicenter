@@ -1,8 +1,7 @@
 import { Value } from 'typebox/value';
-import { createQbAccess } from '../books/qb-access.ts';
 import { fetchReport, REPORT_NAMES, ReportInput } from '../books/report.ts';
 import type { ParsedArgs } from '../cli.ts';
-import { resolveCompany } from './context.ts';
+import { openCompany } from './context.ts';
 
 /**
  * `local-books report <Name>`: run a computed statement live from QuickBooks
@@ -32,20 +31,16 @@ export async function runReport(args: ParsedArgs): Promise<number> {
 		return 1;
 	}
 
-	const { data: company, error } = resolveCompany(args);
+	const { data: company, error } = openCompany(args);
 	if (error !== null) {
 		console.error(error);
 		return 1;
 	}
-	const { config, realmId, store } = company;
 
-	const openQb = createQbAccess({
-		config,
-		realmId,
-		store,
-		now: () => Date.now(),
+	const { data, error: reportError } = await fetchReport({
+		openQb: company.openQb,
+		input,
 	});
-	const { data, error: reportError } = await fetchReport({ openQb, input });
 	if (reportError !== null) {
 		console.error(reportError.message);
 		return 1;

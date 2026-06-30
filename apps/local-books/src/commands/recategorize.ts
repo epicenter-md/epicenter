@@ -1,12 +1,10 @@
 import { Value } from 'typebox/value';
-import { createQbAccess } from '../books/qb-access.ts';
 import {
 	RecategorizeInput,
 	recategorizeExpense,
 } from '../books/recategorize.ts';
 import type { ParsedArgs } from '../cli.ts';
-import { dbPath } from '../paths.ts';
-import { resolveCompany } from './context.ts';
+import { openCompany } from './context.ts';
 
 /**
  * `local-books recategorize <Purchase|Bill> <id> --to <accountId>`: move an
@@ -39,23 +37,16 @@ export async function runRecategorize(args: ParsedArgs): Promise<number> {
 		return 1;
 	}
 
-	const { data: company, error } = resolveCompany(args);
+	const { data: company, error } = openCompany(args);
 	if (error !== null) {
 		console.error(error);
 		return 1;
 	}
-	const { config, realmId, store } = company;
 
-	const openQb = createQbAccess({
-		config,
-		realmId,
-		store,
-		now: () => Date.now(),
-	});
 	const { data, error: writeError } = await recategorizeExpense({
-		openQb,
-		dbPath: dbPath(config.dataDir, realmId),
-		readOnly: config.readOnly,
+		openQb: company.openQb,
+		dbPath: company.dbPath,
+		readOnly: company.config.readOnly,
 		input,
 	});
 	if (writeError !== null) {

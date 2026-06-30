@@ -1,10 +1,10 @@
 import { readBooksStatus } from '../books/status.ts';
 import type { ParsedArgs } from '../cli.ts';
-import { formatRelative, resolveCompany } from './context.ts';
+import { formatRelative, openCompany } from './context.ts';
 
 /** Report token state and the per-entity mirror state (cursor, counts). */
 export async function runStatus(args: ParsedArgs): Promise<number> {
-	const { data: company, error } = resolveCompany(args);
+	const { data: company, error } = openCompany(args);
 	if (error !== null) {
 		console.error(error);
 		return 1;

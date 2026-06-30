@@ -1,7 +1,9 @@
 import { Err, Ok, type Result } from 'wellcrafted/result';
+import { createQbAccess, type OpenQbClient } from '../books/qb-access.ts';
 import type { ParsedArgs } from '../cli.ts';
 import { resolveRealm } from '../companies.ts';
 import { type AppConfig, loadConfig } from '../config.ts';
+import { dbPath as resolveDbPath } from '../paths.ts';
 import { createFileTokenStore, type TokenStore } from '../token-store.ts';
 
 /** Human-friendly "in 42m" / "3m ago" for the auth and status commands. */
@@ -44,5 +46,30 @@ export function resolveCompany(
 		config,
 		realmId,
 		store: createFileTokenStore(config.credentialsPath),
+	});
+}
+
+/** A resolved company plus its opened QuickBooks access and mirror db path. */
+export type CompanyAccess = CompanyContext & {
+	dbPath: string;
+	openQb: OpenQbClient;
+};
+
+/**
+ * Resolve the target company and open its QuickBooks access in one step: the
+ * shape `report`, `recategorize`, `query`, and `status` all rebuild on top of
+ * {@link resolveCompany} (a `createQbAccess` call with a fresh clock, plus the
+ * mirror's db path). Each CLI command still owns picking which pieces it uses.
+ */
+export function openCompany(args: ParsedArgs): Result<CompanyAccess, string> {
+	const { data: company, error } = resolveCompany(args);
+	if (error !== null) return Err(error);
+	const { config, realmId, store } = company;
+	return Ok({
+		config,
+		realmId,
+		store,
+		dbPath: resolveDbPath(config.dataDir, realmId),
+		openQb: createQbAccess({ config, realmId, store, now: () => Date.now() }),
 	});
 }
