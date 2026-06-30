@@ -27,6 +27,9 @@
  *   Default: a deterministic scripted engine drives the loop so the slice is
  *   verifiable with no API key. Set SUPER_APP_BASE_URL + SUPER_APP_MODEL
  *   (+ optional SUPER_APP_API_KEY) to drive a real OpenAI-compatible model.
+ *   Set SUPER_APP_REMOTE_PORT to also expose the chat over the floor-tier
+ *   WebSocket transport (remote-server.ts) so a second device on the same
+ *   overlay can watch and drive this same conversation (ADR-0080 decision 5a).
  */
 
 import { dirname, join } from 'node:path';
@@ -48,6 +51,7 @@ import {
 	namespaceToolCatalog,
 } from '@epicenter/workspace/agent';
 import { createInMemoryMessageStore } from './message-store.ts';
+import { startRemoteServer } from './remote-server.ts';
 import {
 	createStdioMcpCatalog,
 	type StdioMcpCatalog,
@@ -205,6 +209,26 @@ async function main() {
 		approval: AUTO_APPROVE,
 		generateId: () => crypto.randomUUID(),
 	});
+
+	const remotePort = process.env.SUPER_APP_REMOTE_PORT;
+	if (remotePort) {
+		const remote = startRemoteServer({ chat, port: Number(remotePort) });
+		console.log(
+			`Remote session listening on ws://<this machine's overlay address>:${remote.port}\n` +
+				`Connect with: bun run apps/super-app/remote-client.ts ws://<address>:${remote.port}\n` +
+				'Press Ctrl+C to shut down.\n',
+		);
+		const shutdown = async () => {
+			console.log('\n== host shutting down ==');
+			remote.stop();
+			chat[Symbol.dispose]();
+			for (const a of mcpApps) await a.catalog[Symbol.asyncDispose]();
+			process.exit(0);
+		};
+		process.on('SIGINT', shutdown);
+		process.on('SIGTERM', shutdown);
+		return; // Stay alive; the remote server keeps the event loop open.
+	}
 
 	const prompt = 'Add a todo to reconcile the books, and tell me the books status.';
 	console.log(`> user: ${prompt}\n`);
