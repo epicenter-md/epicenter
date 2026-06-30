@@ -1,0 +1,25 @@
+{
+	"name": "@epicenter/super-app",
+	"description": "Desktop super-app host: one chat that composes the verbs of locally installed apps (ADR-0080)",
+	"private": true,
+	"version": "0.0.0",
+	"type": "module",
+	"scripts": {
+		"derisk": "bun run derisk.ts",
+		"slice": "bun run host.ts",
+		"typecheck": "tsc --noEmit"
+	},
+	"dependencies": {
+		"@epicenter/client": "workspace:*",
+		"@epicenter/honeycrisp": "workspace:*",
+		"@epicenter/todos": "workspace:*",
+		"@epicenter/workspace": "workspace:*",
+		"@modelcontextprotocol/sdk": "catalog:",
+		"typebox": "catalog:",
+		"wellcrafted": "catalog:"
+	},
+	"devDependencies": {
+		"@types/bun": "catalog:",
+		"typescript": "catalog:"
+	}
+}
