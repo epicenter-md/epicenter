@@ -65,14 +65,6 @@ export const ReportInput = Type.Object({
 });
 export type ReportInput = Static<typeof ReportInput>;
 
-/** Validate a raw report name against the closed set, the verb's parse step. */
-export function parseReportName(name: string): Result<ReportName, ReportError> {
-	if ((REPORT_NAMES as readonly string[]).includes(name)) {
-		return Ok(name as ReportName);
-	}
-	return ReportError.UnknownReport({ name });
-}
-
 export async function fetchReport({
 	openQb,
 	input,

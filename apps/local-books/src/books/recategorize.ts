@@ -126,16 +126,6 @@ type ExpenseLine = Record<string, unknown> & {
 	[LINE_DETAIL]?: { AccountRef?: { value?: string; name?: string } };
 };
 
-/** Validate a raw entity name against the closed set, the verb's parse step. */
-export function parseRecategorizeEntity(
-	name: string,
-): Result<RecategorizeEntity, RecategorizeError> {
-	if ((RECATEGORIZE_ENTITIES as readonly string[]).includes(name)) {
-		return Ok(name as RecategorizeEntity);
-	}
-	return RecategorizeError.UnknownEntity({ name });
-}
-
 export async function recategorizeExpense({
 	openQb,
 	dbPath,

@@ -1,6 +1,7 @@
+import { Value } from 'typebox/value';
 import { createQbAccess } from '../books/qb-access.ts';
 import {
-	parseRecategorizeEntity,
+	RecategorizeInput,
 	recategorizeExpense,
 } from '../books/recategorize.ts';
 import type { ParsedArgs } from '../cli.ts';
@@ -22,10 +23,19 @@ export async function runRecategorize(args: ParsedArgs): Promise<number> {
 		return 1;
 	}
 
-	const { data: entity, error: entityError } =
-		parseRecategorizeEntity(entityName);
-	if (entityError !== null) {
-		console.error(entityError.message);
+	const input: Record<string, unknown> = {
+		entity: entityName,
+		id,
+		account_id: args.to,
+	};
+	if (args.toName !== undefined) input.account_name = args.toName;
+	if (args.line !== undefined) input.line_id = args.line;
+
+	if (!Value.Check(RecategorizeInput, input)) {
+		const detail = Value.Errors(RecategorizeInput, input)
+			.map((e) => `${e.instancePath || '/'}: ${e.message}`)
+			.join('; ');
+		console.error(`Invalid recategorize input: ${detail}`);
 		return 1;
 	}
 
@@ -46,13 +56,7 @@ export async function runRecategorize(args: ParsedArgs): Promise<number> {
 		openQb,
 		dbPath: dbPath(config.dataDir, realmId),
 		readOnly: config.readOnly,
-		input: {
-			entity,
-			id,
-			account_id: args.to,
-			account_name: args.toName,
-			line_id: args.line,
-		},
+		input,
 	});
 	if (writeError !== null) {
 		console.error(writeError.message);

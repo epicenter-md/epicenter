@@ -1,5 +1,6 @@
+import { Value } from 'typebox/value';
 import { createQbAccess } from '../books/qb-access.ts';
-import { fetchReport, parseReportName, REPORT_NAMES } from '../books/report.ts';
+import { fetchReport, REPORT_NAMES, ReportInput } from '../books/report.ts';
 import type { ParsedArgs } from '../cli.ts';
 import { resolveCompany } from './context.ts';
 
@@ -18,19 +19,17 @@ export async function runReport(args: ParsedArgs): Promise<number> {
 		return 1;
 	}
 
-	const { data: report, error: nameError } = parseReportName(name);
-	if (nameError !== null) {
-		console.error(nameError.message);
-		return 1;
-	}
+	const input: Record<string, unknown> = { report: name };
+	if (args.start !== undefined) input.start_date = args.start;
+	if (args.end !== undefined) input.end_date = args.end;
+	if (args.method !== undefined) input.accounting_method = args.method;
 
-	let accounting_method: 'Cash' | 'Accrual' | undefined;
-	if (args.method !== undefined) {
-		if (args.method !== 'Cash' && args.method !== 'Accrual') {
-			console.error('--method must be "Cash" or "Accrual".');
-			return 1;
-		}
-		accounting_method = args.method;
+	if (!Value.Check(ReportInput, input)) {
+		const detail = Value.Errors(ReportInput, input)
+			.map((e) => `${e.instancePath || '/'}: ${e.message}`)
+			.join('; ');
+		console.error(`Invalid report input: ${detail}`);
+		return 1;
 	}
 
 	const { data: company, error } = resolveCompany(args);
@@ -46,15 +45,7 @@ export async function runReport(args: ParsedArgs): Promise<number> {
 		store,
 		now: () => Date.now(),
 	});
-	const { data, error: reportError } = await fetchReport({
-		openQb,
-		input: {
-			report,
-			start_date: args.start,
-			end_date: args.end,
-			accounting_method,
-		},
-	});
+	const { data, error: reportError } = await fetchReport({ openQb, input });
 	if (reportError !== null) {
 		console.error(reportError.message);
 		return 1;
