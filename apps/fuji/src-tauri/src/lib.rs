@@ -28,7 +28,12 @@ pub fn run() {
             {
                 use tauri_plugin_deep_link::DeepLinkExt;
 
-                _app.deep_link().register_all()?;
+                // Best-effort: a scheme-registration failure (unwritable registry
+                // or `.desktop` dir) must not abort startup, since sign-in is
+                // optional. Log and continue.
+                if let Err(err) = _app.deep_link().register_all() {
+                    eprintln!("failed to register deep-link schemes: {err}");
+                }
             }
 
             Ok(())

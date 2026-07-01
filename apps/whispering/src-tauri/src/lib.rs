@@ -216,7 +216,26 @@ pub async fn run() {
         }))
         .build();
 
-    let mut builder = tauri::Builder::default().plugin(log_plugin);
+    let mut builder = tauri::Builder::default();
+
+    // Register single-instance first, ahead of every other plugin. A second
+    // launch then forwards its args to the primary and exits before that primary
+    // initializes the rest of the plugin stack, per the plugin's documented
+    // ordering. With the `deep-link` feature this is also the path that forwards
+    // an OAuth callback URL to the already-running app on Linux/Windows; it reads
+    // deep-link state at callback time, so registering the deep-link plugin later
+    // in the chain does not affect forwarding.
+    #[cfg(desktop)]
+    {
+        builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            let _ = app
+                .get_webview_window("main")
+                .expect("no main window")
+                .set_focus();
+        }));
+    }
+
+    builder = builder.plugin(log_plugin);
 
     // Try to get APTABASE_KEY from environment, use empty string if not found
     let aptabase_key = option_env!("APTABASE_KEY").unwrap_or("");
@@ -287,10 +306,17 @@ pub async fn run() {
             // Register the `epicenter-whispering://` scheme at runtime on
             // Windows and Linux (macOS registers it from the bundle plist).
             // Lets the OAuth sign-in deep-link callback reach the running app.
+            // Scheme registration is best-effort: cloud sign-in is optional, so a
+            // failure here (unwritable registry/`.desktop` dir, missing
+            // `update-desktop-database`) must never abort startup. `panic = "abort"`
+            // would turn a propagated error into a hard crash. Log and continue; the
+            // only cost is that the deep-link callback may not resolve.
             #[cfg(any(windows, target_os = "linux"))]
             {
                 use tauri_plugin_deep_link::DeepLinkExt;
-                app.deep_link().register_all()?;
+                if let Err(err) = app.deep_link().register_all() {
+                    warn!("failed to register deep-link schemes; cloud sign-in deep link may not resolve: {err}");
+                }
             }
 
             Ok(())
@@ -304,17 +330,10 @@ pub async fn run() {
 
     #[cfg(desktop)]
     {
-        builder = builder
-            .plugin(tauri_plugin_autostart::init(
-                tauri_plugin_autostart::MacosLauncher::LaunchAgent,
-                None,
-            ))
-            .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-                let _ = app
-                    .get_webview_window("main")
-                    .expect("no main window")
-                    .set_focus();
-            }));
+        builder = builder.plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            None,
+        ));
     }
 
     let builder = builder.invoke_handler(move |invoke| {
