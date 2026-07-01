@@ -154,5 +154,6 @@ Each option and the one reason it lost. Terse. This is not the spec.
 | [0084](0084-super-chat-tools-load-as-vendored-typescript-the-shell-is-a-bun-hosted-local-server.md) | Super Chat's tools load as vendored TypeScript via Bun's native dynamic import; its shell is a Bun-hosted local server, not a bundled SPA | Proposed |
 | [0085](0085-a-box-is-a-role-an-addressable-endpoint-plays-not-a-node-type.md) | A box is a role an addressable endpoint plays, not a distinct node type | Accepted |
 | [0086](0086-no-live-consumer-for-network-reachable-capability-reach-opensidian-is-superseded-not-migrated.md) | There is no live consumer for network-reachable capability reach; opensidian's cross-device tools are superseded by the super app, not migrated | Accepted |
+| [0087](0087-first-party-oauth-clients-are-seeded-without-a-declared-client-type.md) | First-party OAuth clients are seeded without a declared client type; the inert `type` field is refused | Proposed |
 
 When you add an ADR, add its row here.

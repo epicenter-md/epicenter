@@ -94,7 +94,6 @@ export async function issueOAuthTokens(
 		projectTrustedOAuthClientToRow({
 			clientId,
 			name: clientName,
-			type: 'user-agent-based',
 			redirectUris: [OAUTH_TEST_REDIRECT_URI],
 		}),
 	);

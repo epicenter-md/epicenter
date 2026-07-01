@@ -17,28 +17,29 @@ import { OAUTH_ROUTES } from './oauth-routes.js';
 /**
  * Shape of one checked-in first-party public OAuth client.
  *
- * Better Auth calls server-side confidential clients `web`. Epicenter's
- * checked-in trusted clients are public PKCE clients
- * (`tokenEndpointAuthMethod: 'none'`, `public: true`, no client secret), so
- * Better Auth only accepts `native` and `user-agent-based` for this policy.
- * The API seed layer fills in the rest (PKCE required, consent skipped,
- * authorization-code flow, Epicenter scopes).
+ * These are public PKCE clients (`tokenEndpointAuthMethod: 'none'`,
+ * `public: true`, no client secret). They deliberately carry no OIDC client
+ * `type`: the seed writes these rows directly (never through dynamic
+ * registration), and Better Auth reads `type` only on the `/oauth2/register`
+ * path and in a null-safe public-client check, so the field is inert for a
+ * directly-seeded row. Setting it would only force an unanswerable
+ * native-vs-user-agent-based question for the dual-form-factor clients:
+ * Whispering and Fuji ship one client id across a web build (browser) and a
+ * custom-scheme desktop build (native), and no single `type` is honest for a
+ * row whose redirect set spans both. Public-client and PKCE behavior are fixed
+ * by `public` + `tokenEndpointAuthMethod` + `requirePKCE`, not by this label.
+ * See ADR-0087.
  *
  * `redirectUris` is the final resolved list for a specific deployment,
  * built by {@link buildTrustedOAuthClients} from `APPS` plus the
  * deployment's API base URL.
  *
  * Field names stay spelled out instead of using `Pick` or a mapped type so
- * this file reads as config. The Better Auth indexed types keep the field
- * names tied to upstream without making the shape cryptic.
+ * this file reads as config.
  */
 export type TrustedOAuthClient = {
 	clientId: NonNullable<SchemaClient['clientId']>;
 	name: NonNullable<SchemaClient['name']>;
-	type: Extract<
-		NonNullable<SchemaClient['type']>,
-		'native' | 'user-agent-based'
-	>;
 	redirectUris: readonly string[];
 };
 
@@ -82,7 +83,6 @@ export function buildTrustedOAuthClients(apiBaseURL: string) {
 		{
 			clientId: EPICENTER_FUJI_OAUTH_CLIENT_ID,
 			name: 'Fuji',
-			type: 'user-agent-based',
 			redirectUris: [
 				...appCallbacks(APPS.FUJI),
 				EPICENTER_FUJI_TAURI_OAUTH_REDIRECT_URI,
@@ -91,7 +91,6 @@ export function buildTrustedOAuthClients(apiBaseURL: string) {
 		{
 			clientId: EPICENTER_WHISPERING_OAUTH_CLIENT_ID,
 			name: 'Whispering',
-			type: 'user-agent-based',
 			redirectUris: [
 				...appCallbacks(APPS.WHISPERING),
 				EPICENTER_WHISPERING_TAURI_OAUTH_REDIRECT_URI,
@@ -100,31 +99,26 @@ export function buildTrustedOAuthClients(apiBaseURL: string) {
 		{
 			clientId: EPICENTER_HONEYCRISP_OAUTH_CLIENT_ID,
 			name: 'Honeycrisp',
-			type: 'user-agent-based',
 			redirectUris: appCallbacks(APPS.HONEYCRISP),
 		},
 		{
 			clientId: EPICENTER_OPENSIDIAN_OAUTH_CLIENT_ID,
 			name: 'Opensidian',
-			type: 'user-agent-based',
 			redirectUris: appCallbacks(APPS.OPENSIDIAN),
 		},
 		{
 			clientId: EPICENTER_TAB_MANAGER_OAUTH_CLIENT_ID,
 			name: 'Tab Manager extension',
-			type: 'user-agent-based',
 			redirectUris: ['chrome-extension://mkbnicfhpacdofmoocppnjjmdfmkkgda/'],
 		},
 		{
 			clientId: EPICENTER_VOCAB_OAUTH_CLIENT_ID,
 			name: 'Vocab',
-			type: 'user-agent-based',
 			redirectUris: appCallbacks(APPS.VOCAB),
 		},
 		{
 			clientId: EPICENTER_CLI_OAUTH_CLIENT_ID,
 			name: 'Epicenter CLI',
-			type: 'native',
 			redirectUris: [OAUTH_ROUTES.cliCallback.url(apiBaseURL)],
 		},
 	] as const satisfies readonly TrustedOAuthClient[];
@@ -162,7 +156,12 @@ export function projectTrustedOAuthClientToRow(
 		grantTypes: ['authorization_code'],
 		responseTypes: ['code'],
 		public: true,
-		type: client.type,
+		// First-party seeded rows declare no OIDC client type; the column is
+		// NULL. NULL is null-safe in Better Auth's public-client checks, and
+		// keeping `type = EXCLUDED.type` in the seed upsert re-asserts NULL on
+		// every run, so a re-seed also clears any legacy value. See ADR-0087 and
+		// the {@link TrustedOAuthClient} doc.
+		type: null,
 		requirePKCE: true,
 	};
 }
