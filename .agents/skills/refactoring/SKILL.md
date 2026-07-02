@@ -52,6 +52,11 @@ Not every 1-caller function should be inlined. Keep it when:
 - **Complex logic worth naming**: Deep-clone operations, recursive tree walks, or multi-step parsing where the name documents intent.
 - **The calling method is already long**: Inlining 15 lines into a 50-line method hurts readability.
 
+These reasons are about helpers. For whether an abstraction layer earns its
+existence at all (invariants, unsafe interop, domain naming), use the
+[radical-options](../radical-options/SKILL.md) keep list; it is the single
+owner of those criteria.
+
 ## Type Safety Boundaries
 
 All raw/untyped access should go through a single parsing boundary. Everything downstream uses typed results.

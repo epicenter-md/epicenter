@@ -120,15 +120,10 @@ Which calls need `untrack`, and would moving ownership remove that need?
 ```
 
 Count callers for every new or changed helper, component, factory, wrapper, and
-export. A one-caller boundary is guilty until it proves it owns one of these:
-
-```txt
-a lifecycle that must be isolated from parent rerenders
-an unsafe parse, network, storage, or external-library boundary
-a repeated domain operation with several real callers
-a public contract that downstream code imports
-a long imperative block whose helper name explains the phase
-```
+export. A one-caller boundary is guilty until it proves it earns its place;
+judge it with the radical-options keep list cited above and the
+[refactoring](../refactoring/SKILL.md) caller-count table, not a from-memory
+paraphrase of either.
 
 If a boundary only passes a stable handle, callback, or raw library object to
 another one-call wrapper, collapse it. In particular, treat `untrack` inside an

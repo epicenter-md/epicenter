@@ -64,9 +64,9 @@ Ask these questions in order:
 10. Are tests asserting public behavior or implementation trivia?
 
 Do not accept "it is explicit" as a sufficient answer. Explicit code can still
-be the wrong boundary. A state, helper, or type earns its place only when it
-prevents misuse, names real domain vocabulary, isolates unsafe input, or removes
-more confusion than it adds.
+be the wrong boundary. Judge whether a state, helper, or type earns its place
+with the [radical-options](../radical-options/SKILL.md) keep list rather than
+an ad hoc standard.
 
 ## Type Shape Rules
 
@@ -149,15 +149,9 @@ makeInitialState                 1        keep if it names boot semantics
 normalizeResult                  1        inline unless it isolates unsafe input
 ```
 
-Keep one-caller helpers only when they do one of these jobs:
-
-- name a lifecycle transition
-- isolate a parse or network boundary
-- prevent stale async work
-- keep a long method readable
-- match a deliberate family of operations
-
-Inline helpers that only rename simple control flow.
+Judge each one-caller helper with the [refactoring](../refactoring/SKILL.md)
+caller-count table and single-caller reasons; inline helpers that only rename
+simple control flow.
 
 ## Output Shape
 

@@ -418,22 +418,5 @@ Before finishing, grep for old vocabulary, old shapes, old filenames, removed
 exports, fallback parsers, stale comments, and examples. If old names still
 appear outside historical specs or migration notes, the break is incomplete.
 
-Ask:
-
-```txt
-Can I explain the new API without saying "or"?
-Does one layer own each invariant?
-Would a new caller find only one obvious path?
-Are examples free of compatibility shapes?
-Are side effects injected as policy instead of imported as hidden globals?
-Did I move the boundary that caused the smell, or only wrap it?
-Did I delete stale names instead of leaving aliases?
-Did I delete dead paths instead of leaving them unreachable?
-Did the file tree change to match the new ownership?
-Did every validation move to the earliest layer that can know the truth?
-Would mentally inlining each new helper make the code clearer?
-Did I run the asymmetric wins pass before adding another invariant?
-Does Go-to-Def from a typical call site land on the real definition, or on an alias, re-export, or wrapper?
-```
-
-If any answer is no, keep simplifying.
+Then re-run the applicable section checks above instead of a recap list. If
+any check fails, keep simplifying.
