@@ -10,16 +10,9 @@ metadata:
 
 Use this skill for Epicenter workspace definitions, table and KV access, inline action registries, attachment composition, collaboration setup, and workspace connections.
 
-## Reference Repositories
-
-- [Yjs](https://github.com/yjs/yjs): CRDT framework used by the workspace data layer
-- [Yjs Protocols](https://github.com/yjs/y-protocols): sync, awareness, and protocol helpers used around collaboration
-
 ## Upstream Grounding
 
-When workspace behavior depends on Yjs transactions, shared types, update encoding, document lifecycle, or conflict semantics, use source-backed grounding before relying on memory. If DeepWiki MCP is available, ask a narrow question against `yjs/yjs`; for collaboration sync or awareness protocol behavior, ask against `yjs/y-protocols`. If DeepWiki is unavailable or the repo is not indexed, use upstream source or official docs directly. Treat DeepWiki as orientation, then verify decisive details against local workspace code, installed types, tests, or official docs before changing code.
-
-Skip DeepWiki for Epicenter schema, action, migration, and attachment conventions already documented below.
+Grounding repos: `yjs/yjs` for transactions, shared types, update encoding, and conflict semantics; `yjs/y-protocols` for sync and awareness protocol behavior.
 
 ## Related Skills
 
@@ -27,19 +20,6 @@ Skip DeepWiki for Epicenter schema, action, migration, and attachment convention
 - `svelte`: reactive wrappers such as `fromTable` and `fromKv`, plus commit-on-blur workspace inputs
 - `attach-primitive`: the full contract and invariants every `attach*` function must follow
 - `typebox`: TypeBox primitives used by `field.*`, `defineKv`, and action input schemas
-
-## When To Apply This Skill
-
-Use this skill when you are:
-
-- Defining a table or KV store with `defineTable()` or `defineKv()`.
-- Adding a version or migration to an existing table definition.
-- Reading, writing, or observing table or KV data.
-- Creating actions with `defineMutation` or `defineQuery`.
-- Composing a live document with `createWorkspace` and surrounding `attach*` primitives (persistence, sync, materializers).
-- Adding `createDisposableCache(builder)` for per-row or fan-out documents.
-- Attaching persistence, collaboration, or materializers around a workspace.
-- Writing server-side Bun scripts with `connectWorkspace()`.
 
 ## Core Rules
 

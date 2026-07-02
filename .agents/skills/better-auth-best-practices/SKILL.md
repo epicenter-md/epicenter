@@ -1,6 +1,6 @@
 ---
 name: better-auth-best-practices
-description: 'Better Auth server/client setup: `auth.ts`, generated schema, DB adapters, sessions, cookies, env vars, and plugins. Use when mentioning Better Auth, betterauth, auth handlers, OAuth, email/password, or session configuration.'
+description: 'Better Auth library setup: server `auth.ts`, `createAuthClient`, generated schema, DB adapters, Better Auth session and cookie options, env vars, and plugins. Use when mentioning Better Auth, betterauth, or configuring Better Auth handlers, adapters, or plugins. For Epicenter auth clients, `/api/session`, session state, or OAuth app sign-in, use the auth skill instead.'
 metadata:
   author: epicenter
   version: '1.0'

@@ -8,14 +8,9 @@ metadata:
 
 # Turso And libSQL
 
-## Reference Repositories
-
-- [Turso](https://github.com/tursodatabase/turso) - SQLite-compatible database platform and libSQL ecosystem
-- [Drizzle ORM](https://github.com/drizzle-team/drizzle-orm) - ORM commonly used with libSQL and Turso
-
 ## Upstream Grounding
 
-When Turso sync behavior, libSQL driver behavior, embedded replicas, partial sync, concurrency, compatibility, or CLI behavior affects correctness, use source-backed grounding before relying on memory. If DeepWiki MCP is available, ask a narrow question against `tursodatabase/turso`; for Drizzle's libSQL adapter or typed query surface, ask against `drizzle-team/drizzle-orm`. If DeepWiki is unavailable or the repo is not indexed, use upstream source or official docs directly. Treat DeepWiki as orientation, then verify decisive details against local driver versions, installed types, source, or official docs before changing code.
+Grounding repos: `tursodatabase/turso` for sync, embedded replicas, partial sync, and libSQL driver behavior; `drizzle-team/drizzle-orm` for the libSQL adapter.
 
 Use the `drizzle-orm` skill for schema and query builder decisions.
 

@@ -45,8 +45,6 @@ Trigger when any of these hold:
   invokes it, and that caller is the obvious "outer" (a handler, a
   component, a wrapper). The other caller is a test file in the same
   directory.
-- A function accepts an optional `deps` / `overrides` / `injected`
-  parameter whose only non-default value appears in a test file.
 - A helper takes a paired getter and setter (`getX` + `setX`) over the
   same value. The pair describes one slot, not a boundary.
 - A `.test.ts` file is comparable to or larger than the SUT in LOC, and
@@ -56,11 +54,6 @@ Trigger when any of these hold:
   function without naming the outer ("returns rows for the `ps`
   command", "reconciles state for `createSession`"). The inner has no
   product sentence; it's a slice of one.
-
-User phrases that trigger this skill: "is this earning its keep", "why
-is this exported", "trace the callers", "is this split for the test",
-"the test is shaping the API", "could this be one function", "is there
-a better way to structure this", "we extracted this for tests".
 
 ## The Signal vs The Reason
 

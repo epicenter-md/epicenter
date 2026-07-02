@@ -7,12 +7,6 @@ description: Svelte 5 component and state-module patterns for Epicenter apps. Us
 
 Use this skill for Svelte 5 components and Svelte state modules in Epicenter apps. Keep the first pass focused on Svelte runes, component lifecycle, workspace-backed state, TanStack Query usage, and local UI composition.
 
-## Reference Repositories
-
-- [Svelte](https://github.com/sveltejs/svelte): Svelte 5 framework with runes and fine-grained reactivity
-- [shadcn-svelte](https://github.com/huntabyte/shadcn-svelte): Port of shadcn/ui for Svelte with Bits UI primitives
-- [shadcn-svelte-extras](https://github.com/ieedan/shadcn-svelte-extras): Additional components for shadcn-svelte
-
 ## Source Checks
 
 - Check [Svelte `$props`](https://svelte.dev/docs/svelte/$props), [`$bindable`](https://svelte.dev/docs/svelte/$bindable), and [snippets](https://svelte.dev/docs/svelte/snippet) before changing prop ownership, `bind:` APIs, or `children` snippet typing rules.
@@ -24,9 +18,7 @@ Use this skill for Svelte 5 components and Svelte state modules in Epicenter app
 
 ## Upstream Grounding
 
-When Svelte 5 runes, compiler behavior, lifecycle, reactivity, snippets, or template behavior affect correctness, use source-backed grounding before relying on memory. If DeepWiki MCP is available, ask a narrow question against `sveltejs/svelte`; for SvelteKit integration, ask against `sveltejs/kit`; for shadcn-svelte or extras component APIs, ask against `huntabyte/shadcn-svelte` or `ieedan/shadcn-svelte-extras`. If DeepWiki is unavailable or the repo is not indexed, use upstream source or official docs directly. Treat DeepWiki as orientation, then verify decisive details against local installed types, source, or official docs before changing code.
-
-Skip DeepWiki for stable basics and repo-local patterns already documented here or in references.
+Grounding repos: `sveltejs/svelte` for runes, compiler behavior, and reactivity; `sveltejs/kit` for SvelteKit integration; `huntabyte/shadcn-svelte` and `ieedan/shadcn-svelte-extras` for component APIs.
 
 ## Related Skills
 
@@ -39,12 +31,7 @@ Skip DeepWiki for stable basics and repo-local patterns already documented here 
 
 Use this skill when you need to:
 
-- Build or refactor Svelte 5 components using runes.
-- Choose between `$state`, `$derived`, `$effect`, snippets, and keyed blocks.
-- Wire TanStack Query mutations from `.svelte` or `.ts` files.
-- Convert workspace table or KV data into reactive Svelte state.
 - Refactor shallow aliases, repetitive markup, or unstable reactive data sources.
-- Follow shadcn-svelte import and composition patterns.
 - Fix template gotchas such as unicode escapes in HTML context.
 
 ## Svelte 5 Baseline

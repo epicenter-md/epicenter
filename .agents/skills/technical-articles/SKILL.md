@@ -1,6 +1,6 @@
 ---
 name: technical-articles
-description: 'Technical articles and blog posts with honest trade-offs. Use when: "write a blog post", "draft an article", "write about this", creating articles in docs/articles/.'
+description: 'Technical articles and blog posts with honest trade-offs. Use when: "write a blog post", "draft an article", "turn this into an article", creating articles in docs/articles/.'
 metadata:
   author: epicenter
   version: '1.0'
@@ -9,16 +9,6 @@ metadata:
 # Technical Articles
 
 All articles must follow [writing-voice](../writing-voice/SKILL.md) rules. This skill owns article shape; `writing-voice` owns house voice and punctuation.
-
-## When to Apply This Skill
-
-Use this pattern when you need to:
-
-- Write technical articles in `docs/articles/` or blog-style engineering posts.
-- Turn headings and titles into arguments instead of neutral topic labels.
-- Structure prose, code, and visuals with deliberate rhythm and pacing.
-- Open with the core insight first instead of announcing the topic.
-- Edit drafts to remove AI tell patterns and keep writing concrete.
 
 ## Core Principles
 
@@ -78,7 +68,7 @@ ASCII diagrams, tables, and before/after code blocks are tools to reach for when
 
 Use a diagram when showing flow or architecture that's hard to describe linearly. Use a table when there's a genuine comparison with 3+ items. Use before/after code when the contrast IS the point. Skip all of them when the article doesn't need them.
 
-When you have multiple independent reasons for something, write them as regular prose with natural transitions. Don't use numbered bold headings (`**1. Bold heading**` followed by explanation):that pattern is one of the most recognizable AI writing tells.
+When you have multiple independent reasons for something, write them as regular prose with natural transitions. Don't use numbered bold headings (`**1. Bold heading**` followed by explanation). That pattern is one of the most recognizable AI writing tells.
 
 ## Architecture Article Composition
 
@@ -103,7 +93,7 @@ This is the most important section. Good articles alternate between prose and vi
 3. **After a code block, one sentence of explanation is often enough.** If the code is self-explanatory, skip it entirely and bridge to the next idea.
 4. **Use line breaks between distinct thoughts.** Don't pack three ideas into one paragraph. Each paragraph: one idea.
 
-### Good rhythm : prose and code alternate:
+### Good rhythm: prose and code alternate
 
 ```
 [1-2 sentences: what the problem is]
@@ -123,7 +113,7 @@ const result = index.get(id);   // O(1) lookup
 [1-2 sentences: what this means for the reader]
 ```
 
-### Bad rhythm : wall of prose, code at the end:
+### Bad rhythm: wall of prose, code at the end
 
 ```
 [Paragraph explaining the problem]
@@ -154,17 +144,17 @@ The bad version tells the reader what the article is about. The good version tel
 
 ## When the User Gave You the Voice, Use It
 
-If the article originates from a voice transcript, chat brainstorm, or spoken-out-loud reasoning, the user's own phrases ARE the voice of the article. Reconstructing them in "better" English strips out the cadence that made the insight land in the first place : and the user won't recognize their own thought on the page. They'll bounce.
+If the article originates from a voice transcript, chat brainstorm, or spoken-out-loud reasoning, the user's own phrases ARE the voice of the article. Reconstructing them in "better" English strips out the cadence that made the insight land in the first place, and the user won't recognize their own thought on the page. They'll bounce.
 
 The test: would the user, skimming their own article a week later, feel the impetus that made them want to write it? If the opening is polished into generic technical prose, no.
 
 ### Rules
 
-1. **Use the user's exact phrases in the first paragraph.** Not paraphrased, not smoothed. The raw phrase : lightly cleaned for grammar, never for cadence. Even mildly awkward phrasing ("I knew it was a smell because…") is better than a cleaner rewrite, because it's what the user actually thinks and how they'll remember the article.
+1. **Use the user's exact phrases in the first paragraph.** Not paraphrased, not smoothed. The raw phrase, lightly cleaned for grammar, never for cadence. Even mildly awkward phrasing ("I knew it was a smell because…") is better than a cleaner rewrite, because it's what the user actually thinks and how they'll remember the article.
 
 2. **If there's a core code transformation, it lands in the first ~100 words.** Before / after, both visible in the first scroll. The prose explains; the code IS the article. Burying the code transformation below context-setting paragraphs means the reader never reaches it.
 
-3. **Lift specific phrases verbatim from the transcript.** If the user said "I knew I had made a Svelte-specific version" : use that line, don't rewrite it to "I had created a framework-specific adapter." The specificity of the original phrasing is the voice.
+3. **Lift specific phrases verbatim from the transcript.** If the user said "I knew I had made a Svelte-specific version": use that line, don't rewrite it to "I had created a framework-specific adapter." The specificity of the original phrasing is the voice.
 
 4. **Fidelity beats polish.** When you're drafting from a transcript, err on the side of preserving the user's phrasing even when a more elegant sentence is available. The user wrote the insight in their head once; the article should match that mental version so they can still feel it when they re-read.
 
@@ -174,7 +164,7 @@ The test: would the user, skimming their own article a week later, feel the impe
 
 ### Good (the user's actual phrases)
 
-> I realized I had made a Svelte-specific version. I knew it was a smell because I was calling `$effect` just to track `auth.token`. That suggested to me I actually wanted an imperative `onTokenChange` : and the only reason that API didn't exist was that I'd been wrapping Svelte on Svelte.
+> I realized I had made a Svelte-specific version. I knew it was a smell because I was calling `$effect` just to track `auth.token`. That suggested to me I actually wanted an imperative `onTokenChange`, and the only reason that API didn't exist was that I'd been wrapping Svelte on Svelte.
 
 The first version is publishable. The second version sounds like someone thinking out loud, which is what the user was doing when they handed you the transcript.
 
@@ -235,7 +225,7 @@ The shape emerges from the content. If you find yourself adding a diagram or tab
 - Numbered bold headings for multi-part arguments (`**1. Bold heading**` pattern)
 - Summary tables tacked on at the end that restate what the prose already said
 - Marketing language or AI giveaways
-- More than 4-5 sentences of prose without a visual break
+- Long stretches of prose with no visual break (Rhythm and Pacing owns the calibration)
 - Opening that announces the topic instead of delivering the insight
 - Closing that reaches for a grand summary or call to action
 

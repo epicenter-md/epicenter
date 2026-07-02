@@ -1,6 +1,6 @@
 ---
 name: social-media
-description: 'Social media post guidelines for LinkedIn, Reddit, Twitter/X. Use when: "post on LinkedIn", "write a tweet", "draft a Reddit post", "share this", drafting announcements.'
+description: 'Post copy guidelines for LinkedIn, Reddit, Twitter/X. Use when: "post on LinkedIn", "write a tweet", "draft a Reddit post", drafting final announcement copy. For turning an artifact into multi-platform content, use content-distribution; this skill owns the final post copy.'
 metadata:
   author: epicenter
   version: '1.0'
@@ -9,16 +9,6 @@ metadata:
 # Social Media Post Guidelines
 
 Follow [writing-voice](../writing-voice/SKILL.md) for tone.
-
-## When to Apply This Skill
-
-Use this pattern when you need to:
-
-- Draft LinkedIn, Twitter/X, or Reddit posts about product or technical updates.
-- Announce features without hashtags, hype language, or template sections.
-- Share implementation details developers actually care about.
-- Reshape AI-sounding copy into concise, platform-native writing.
-- Build short threads where each post carries a concrete standalone point.
 
 ## Platform-Specific Brevity
 
@@ -40,35 +30,14 @@ Use this pattern when you need to:
 - Specific technical details that developers care about
 - Actual implementation challenges and solutions
 - Links to relevant libraries/APIs used
-- One unique feature detail ("with your model of choice")
-- Disclaimers when recommending tools ("Not affiliated, it just...")
-- Personal standards/opinions ("by my standards", "slated for cleanup")
+- One concrete detail that makes the feature distinct
+- A non-affiliation disclaimer when recommending someone else's tool
+- Honest personal opinions, including admissions that code is rough or unfinished
 - Proper punctuation for transitions (semicolons, periods; not space-hyphens)
 
 ## Examples: Twitter/X
 
-### Single Tweet (Feature Announcement)
-
-Good:
-
-```
-Whispering now does file uploads. Drag audio/video files in, get transcription out. Works with any OpenAI-compatible API.
-
-Open source: github.com/EpicenterHQ/epicenter
-```
-
-Bad:
-
-```
-🚀 Exciting news! Whispering now supports file uploads!
-
-Drag and drop your files for instant AI-powered transcription. This is a game-changer for productivity! 🎯
-
-Try it now 👇
-github.com/EpicenterHQ/epicenter
-
-#OpenSource #AI #Productivity
-```
+For a feature announcement, one tweet is the whole post: what shipped, what it does in plain verbs, one link. No emoji framing, no hashtags, no "try it now."
 
 ### Single Tweet (Technical Insight)
 
@@ -137,6 +106,8 @@ The good thread: each tweet has a concrete fact. The bad thread: tweet 1 is a ho
 
 ### Good (Actual Human Post)
 
+This is one past Whispering post, kept as an example of the shape (feature, plain mechanics, link, done), not a template to reuse.
+
 ```
 Whispering now supports direct file uploads!
 
@@ -168,34 +139,7 @@ GitHub: https://github.com/EpicenterHQ/epicenter
 
 ### Good (Focused on Implementation)
 
-````
-Hey r/sveltejs! Just shipped a file upload feature for Whispering and wanted to share how I implemented drag-and-drop files.
-
-I used the [FileDropZone component from shadcn-svelte-extras](https://www.shadcn-svelte-extras.com/components/file-drop-zone), which provided a clean abstraction that allows users to drop and click to upload files:
-
-```svelte
-<FileDropZone
-  accept="{ACCEPT_AUDIO}, {ACCEPT_VIDEO}"
-  maxFiles={10}
-  maxFileSize={25 * MEGABYTE}
-  onUpload={(files) => {
-    if (files.length > 0) {
-      handleFileUpload(files);
-    }
-  }}
-/>
-```
-
-The component handles web drag-and-drop, but since Whispering is a Tauri desktop app, drag-and-drop functionality didn't work on the desktop (click-to-select still worked fine). So I reached for Tauri's [onDragDropEvent](https://tauri.app/reference/javascript/api/namespacewebviewwindow/#ondragdropevent) to add native support for dragging files anywhere into the application.
-
-You can see the [full implementation here](link) (note that the code is still somewhat messy by my standards; it is slated for cleanup!).
-
-Whispering is a large, open-source, production Svelte 5 + Tauri app: https://github.com/EpicenterHQ/epicenter
-
-Feel free to check it out for more patterns! If you're building Svelte 5 apps and need file uploads, definitely check out shadcn-svelte-extras. Not affiliated, it just saved me hours of implementation time.
-
-Happy to answer any questions about the implementation!
-````
+Write it like a build log from a peer, not an announcement. Greet the sub, say what you shipped and how: name the exact library or component, show one short real code snippet, link the upstream docs, and describe the problem you hit and the fix. Admit honest caveats about the code's state, link the full implementation, disclose non-affiliation when recommending a tool, and close by inviting implementation questions.
 
 ### Bad (Marketing-Focused)
 

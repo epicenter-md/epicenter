@@ -10,16 +10,6 @@ metadata:
 
 Use this skill for project-wide TypeScript conventions before loading narrower skills such as `arktype`, `typebox`, `testing`, or `method-shorthand-jsdoc`.
 
-## When To Apply This Skill
-
-Use this skill when you need to:
-
-- Write or refactor TypeScript with Epicenter naming and style conventions.
-- Decide whether to derive, import, or declare a type.
-- Review type ownership, copied shapes, factory return types, brands, casts, and generic names.
-- Choose clear value-mapping and control-flow patterns for unions and discriminated values.
-- Organize type tests, runtime schemas, or factory-focused refactors.
-
 ## Core Rules
 
 - Try to derive or import a type before declaring a new named type. New named types must earn their place as a real contract, protocol vocabulary, discriminated result union, capability port, or multi-implementation shape.

@@ -12,16 +12,6 @@ When handed a specification document (a `specs/*.md` file), execute it methodica
 
 Commits should follow the shape of the work. Commit after a wave when that wave is a natural review unit. Combine waves into one larger commit when the changes are tightly coupled. Break a large wave into smaller commits when that makes the history easier to audit. The goal is working checkpoints first, readable git history second.
 
-## When to Apply This Skill
-
-Use this pattern when you need to:
-
-- Implement a `specs/*.md` plan end-to-end in structured waves.
-- Decide which spec tasks run in parallel vs sequentially.
-- Update spec checkboxes and implementation notes after each wave.
-- Commit code changes together with spec progress at sensible review boundaries.
-- Finish execution by running `post-implementation-review`, harvesting durable decisions into `docs/adr/`, and deleting the spent spec.
-
 ## The Execution Loop
 
 ```

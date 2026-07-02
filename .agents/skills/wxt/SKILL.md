@@ -8,13 +8,9 @@ metadata:
 
 # WXT Browser Extensions
 
-## Reference Repositories
-
-- [WXT](https://github.com/wxt-dev/wxt) - Browser extension framework used by `apps/tab-manager`
-
 ## Upstream Grounding
 
-When WXT entrypoint discovery, manifest generation, browser targets, storage, content scripts, background service worker lifecycle, or build output affects correctness, ask DeepWiki a narrow question against `wxt-dev/wxt`. Verify decisive details against local `wxt.config.ts` and generated output.
+Grounding repo: `wxt-dev/wxt` for entrypoint discovery, manifest generation, storage, content scripts, and background service worker lifecycle.
 
 ## Epicenter Shape
 

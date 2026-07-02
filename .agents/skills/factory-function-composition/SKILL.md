@@ -17,7 +17,6 @@ This skill helps you apply factory function patterns for clean dependency inject
 Use this pattern when you see:
 
 - A function that takes a client/resource as its first argument
-- Options from different layers (client, service, method) mixed together
 - Client creation happening inside functions that shouldn't own it
 - Functions that are hard to test because they create their own dependencies
 

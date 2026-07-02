@@ -16,8 +16,6 @@ Recurring smell categories worth hunting periodically. Each category has a grep 
 
 Use when:
 
-- Doing a periodic code-quality review pass.
-- Scoping a cleanup PR.
 - After a major refactor, hunting for stale boundaries the new design exposes.
 - Reviewing a PR that touches a primitive: these patterns indicate where new contracts may be leaking into consumers.
 

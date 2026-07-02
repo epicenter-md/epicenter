@@ -12,8 +12,6 @@ Patterns for composing arktype schemas, naming runtime schema values alongside i
 
 ## When to Apply This Skill
 
-- Defining a discriminated union schema (e.g., commands, events, actions)
-- Composing a base type with per-variant fields
 - Working with `defineTable()` schemas that use union types
 - Importing or exporting schema values that share a name with inferred types
 

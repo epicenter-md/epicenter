@@ -15,7 +15,7 @@ function create(itemOrItems: T | T[]): Promise<Result<void, E>> {
 
 1. **Accept `T | T[]`** as the parameter type
 2. **Normalize** with `Array.isArray()` at the top of the function
-3. **All logic** works against the array : one code path
+3. **All logic** works against the array: one code path
 
 ```typescript
 function createServer(clientOrClients: Client | Client[], options?: Options) {
@@ -157,4 +157,4 @@ function create(itemOrItems: T | T[]) {
 
 ## References
 
-- [Full article](../../../../docs/articles/single-or-array-overload-pattern.md) : detailed explanation with more examples
+- [Full article](../../../../docs/articles/single-or-array-overload-pattern.md): detailed explanation with more examples

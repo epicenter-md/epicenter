@@ -17,8 +17,6 @@ Documentation explains **why**, not **what**. Users can read code to see what it
 
 Use this pattern when you need to:
 
-- Write or update folder `README.md` files with architecture intent.
-- Add JSDoc to public APIs with usage context and examples.
 - Review docs/comments that currently restate code without rationale.
 - Add code comments for non-obvious decisions, constraints, or workarounds.
 

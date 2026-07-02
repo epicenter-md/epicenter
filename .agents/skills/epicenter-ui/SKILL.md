@@ -206,16 +206,7 @@ Use different copy for true empty data and filtered empty data:
 
 ## Avoid
 
-- Plain `Loading...` text.
-- Hand-composed full-page `Empty.Root` plus `Spinner` when the standard `Loading` caption shell fits.
 - Raw `Loader2Icon`, `LoaderCircleIcon`, or custom `animate-spin` outside `packages/ui`. Use `Spinner`.
-- Raw `animate-pulse` placeholder blocks. Use `Skeleton`.
-- Loading dots outside chat messages.
-- Empty state copy inside an unstructured centered `div` when `Empty.*` would fit.
-- Tooltip wrappers around `Button` or `Link` when the `tooltip` prop is enough.
-- Extra wrapper `div`s around `Empty.Root` just to center or stack content.
-- Duplicating component internals from shadcn-svelte or extras instead of importing the local `@epicenter/ui` wrapper.
-- App imports from `packages/ui/src` or aliases that bypass `@epicenter/ui/*`.
 
 ## Boundary With Svelte
 

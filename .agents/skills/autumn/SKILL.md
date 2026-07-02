@@ -8,29 +8,11 @@ metadata:
 
 # Autumn Billing Integration Guide
 
-## Reference Repositories
-
-- [Autumn](https://github.com/useautumn/autumn): Usage-based billing platform
-- [Autumn TypeScript SDK + CLI](https://github.com/useautumn/typescript): `autumn-js` SDK and `atmn` CLI
-- [Autumn Docs](https://docs.useautumn.com)
-
 ## Upstream Grounding
 
-When Autumn Product, ProductItem, Feature, Entitlement, Customer, CustomerProduct, pricing, credit checks, SDK calls, CLI behavior, or usage-event semantics affect correctness, use source-backed grounding before relying on memory. If DeepWiki MCP is available, ask a narrow question against `useautumn/autumn`; if it is unavailable or the repo is not indexed, use upstream source or official docs directly. For `autumn-js` SDK or `atmn` CLI behavior, verify against the installed package, `useautumn/typescript`, or official docs. Treat DeepWiki as orientation, then verify decisive details against local billing code, installed types, source, or official docs before changing code.
-
-Skip DeepWiki for hosted-only Epicenter billing boundaries already documented in `AGENTS.md` and below.
+Grounding repos: `useautumn/autumn` for billing platform semantics; `useautumn/typescript` for the `autumn-js` SDK and `atmn` CLI. Official docs: https://docs.useautumn.com.
 
 ---
-
-## When to Apply This Skill
-
-Use this when you need to:
-
-- Define or modify features, credit systems, or plans in `autumn.config.ts`.
-- Add credit checks or usage tracking via the `autumn-js` SDK.
-- Gate API endpoints behind billing (free tier limits, paid plan access).
-- Push/pull billing config with the `atmn` CLI.
-- Debug billing issues (insufficient credits, customer sync, refunds).
 
 ## Domain Model Checks
 

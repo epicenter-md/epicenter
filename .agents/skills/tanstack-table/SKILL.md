@@ -8,14 +8,9 @@ metadata:
 
 # TanStack Table
 
-## Reference Repositories
-
-- [TanStack Table](https://github.com/TanStack/table) - Headless table state and row models
-- [Svelte](https://github.com/sveltejs/svelte) - Svelte 5 component and reactivity model
-
 ## Upstream Grounding
 
-When TanStack Table adapter APIs, row models, controlled state, sorting, filtering, pagination, or Svelte rendering helpers affect correctness, ask DeepWiki a narrow question against `TanStack/table`. Verify against the installed `@tanstack/svelte-table` and `@tanstack/table-core` versions.
+Grounding repos: `TanStack/table` for row models, controlled state, and Svelte rendering helpers; `sveltejs/svelte` for the component and reactivity model.
 
 This skill is for UI table state. Use `workspace-api` for Epicenter CRDT table storage and migrations.
 

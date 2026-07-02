@@ -8,25 +8,9 @@ metadata:
 
 # Hono
 
-## Reference Repositories
-
-- [Hono](https://github.com/honojs/hono) - TypeScript web framework for edge runtimes and Cloudflare Workers
-- [Cloudflare Docs](https://github.com/cloudflare/cloudflare-docs) - Workers, Durable Objects, WebSockets, KV, R2, and deployment docs
-
 ## Upstream Grounding
 
-When Hono route typing, middleware order, context variables, response helpers, streaming, WebSockets, or Cloudflare Worker runtime behavior affects correctness, ask DeepWiki a narrow question against `honojs/hono` or `cloudflare/cloudflare-docs` before relying on memory. Use it to orient, then verify decisive details against local installed types, source, or official docs before changing code.
-
-Skip DeepWiki for stable HTTP basics and repo-local API conventions already visible in the code.
-
-## When to Apply This Skill
-
-Use this pattern when you need to:
-
-- Write or refactor Hono route handlers and middleware.
-- Type request params, query values, context variables, or response bodies.
-- Adapt Hono handlers to Cloudflare Workers runtime constraints.
-- Debug streaming, WebSockets, CORS, auth middleware, or per-route bindings.
+Grounding repos: `honojs/hono` for route typing, middleware, streaming, and WebSockets; `cloudflare/cloudflare-docs` for Worker runtime behavior.
 
 ## Middleware And Context
 

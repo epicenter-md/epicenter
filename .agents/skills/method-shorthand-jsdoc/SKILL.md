@@ -137,7 +137,6 @@ function createService(client) {
 Use this pattern when:
 
 - Helper functions are ONLY used by methods in the return object
-- You want JSDoc visible when consumers hover over the method
 - The helper doesn't need to be called before the return statement
 
 Keep helpers separate when:

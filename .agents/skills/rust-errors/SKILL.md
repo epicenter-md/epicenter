@@ -7,24 +7,14 @@ metadata:
 ---
 
 # Rust to TypeScript Error Handling
-## Reference Repositories
-
-- [Tauri](https://github.com/tauri-apps/tauri): Desktop app framework (source of Rust-to-TypeScript error patterns)
-
 ## Upstream Grounding
 
-When Rust error serialization, Tauri command error transport, IPC payload shape, generated bindings, or frontend invoke error behavior affects correctness, use source-backed grounding before relying on memory. If DeepWiki MCP is available, ask a narrow question against `tauri-apps/tauri`; if it is unavailable or the repo is not indexed, use upstream source or official docs directly. Treat DeepWiki as orientation, then verify decisive details against local Rust code, generated bindings, installed crates, TypeScript types, source, or official docs before changing code.
-
-Skip DeepWiki for local error naming conventions already documented below.
+Grounding repo: `tauri-apps/tauri` for error serialization, command error transport, and IPC payload shape.
 
 ## When to Apply This Skill
 
 Use this pattern when you need to:
 
-- Send Rust errors through Tauri commands to TypeScript clients.
-- Define Rust enums that serialize into discriminated union error shapes.
-- Validate unknown error payloads in TypeScript before switching on variants.
-- Keep cross-language error payloads consistent with `name` and `message` fields.
 - Avoid serde tagging patterns that produce nested, awkward TypeScript shapes.
 
 ## Discriminated Union Pattern for Errors

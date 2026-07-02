@@ -99,7 +99,7 @@ In Svelte, gate once at the root using `@epicenter/ui/spinner` for the loading s
 
 The gate guarantees: by the time any child component's script runs, the async work is complete. Children use sync access without checking readiness.
 
-**Always include `{:catch}`** : if the async seed fails (e.g. `browser.windows.getAll` throws), the user sees an actionable error instead of an infinite spinner.
+**Always include `{:catch}`**: if the async seed fails (e.g. `browser.windows.getAll` throws), the user sees an actionable error instead of an infinite spinner.
 
 ## Implementation
 
@@ -169,11 +169,11 @@ Use `whenReady` when your client has sync methods that depend on initialized sta
 
 ## Related Patterns
 
-- [Lazy Singleton](../../../../docs/articles/lazy-singleton-pattern.md) : when you need race-condition-safe lazy initialization
-- [Don't Use Parallel Maps](../../../../docs/articles/instance-state-attachment-pattern.md) : attach state to instances instead of tracking separately
+- [Lazy Singleton](../../../../docs/articles/lazy-singleton-pattern.md): when you need race-condition-safe lazy initialization
+- [Don't Use Parallel Maps](../../../../docs/articles/instance-state-attachment-pattern.md): attach state to instances instead of tracking separately
 
 ## References
 
-- [Full article](/docs/articles/sync-construction-async-property-ui-render-gate-pattern.md) : detailed explanation with diagrams
-- [Comprehensive guide](/docs/articles/sync-client-initialization.md) : 480-line deep dive with idb example
-- [idb await-in-every-method](/docs/articles/idb-await-every-method-pattern.md) : the sibling pattern for purely async APIs
+- [Full article](/docs/articles/sync-construction-async-property-ui-render-gate-pattern.md): detailed explanation with diagrams
+- [Comprehensive guide](/docs/articles/sync-client-initialization.md): 480-line deep dive with idb example
+- [idb await-in-every-method](/docs/articles/idb-await-every-method-pattern.md): the sibling pattern for purely async APIs

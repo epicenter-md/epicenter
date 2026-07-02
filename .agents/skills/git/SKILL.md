@@ -20,10 +20,7 @@ If the task asks for a PR title, PR body, changelog entry, issue link, username 
 
 Use this pattern when you need to:
 
-- Write commit messages that follow conventional commit rules.
-- Check whether a staged commit is reviewable as a standalone unit.
 - Decide commit type/scope formatting and breaking-change notation.
-- Create or switch branches.
 - Review commit text for anti-patterns like AI/tool attribution.
 
 ## References

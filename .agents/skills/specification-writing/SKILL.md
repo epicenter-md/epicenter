@@ -17,16 +17,6 @@ A specification gives an agent or maintainer the context they need to implement 
 
 > **Note**: This guide uses `[PLACEHOLDER]` markers for content you must fill in. Code blocks show templates; replace all bracketed content with your feature's details.
 
-## When to Apply This Skill
-
-Use this pattern when you need to:
-
-- Plan a feature with a spec that enables autonomous implementation.
-- Document research findings, trade-offs, and design rationale.
-- Define phased implementation tasks with trackable checkboxes.
-- Capture open questions and recommendations without over-prescribing.
-- Lay out architecture with tables/diagrams instead of wall-of-prose plans.
-
 ## References
 
 Load these on demand based on the spec's decision surface:

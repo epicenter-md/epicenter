@@ -8,15 +8,9 @@ metadata:
 
 # Query Layer Patterns
 
-## Reference Repositories
-
-- [TanStack Query](https://github.com/tanstack/query): async state management for data fetching
-
 ## Upstream Grounding
 
-When TanStack Query behavior, Svelte adapter types, cache invalidation semantics, optimistic updates, or mutation lifecycle callbacks affect correctness, ask DeepWiki a narrow question against `TanStack/query` before relying on memory. Use it to orient, then verify decisive details against local installed types, source, or official docs before changing code.
-
-Skip DeepWiki for stable basics and repo-local patterns already documented below.
+Grounding repo: `TanStack/query` for query behavior, Svelte adapter types, cache invalidation, optimistic updates, and mutation lifecycle.
 
 The query/RPC layer is the reactive bridge between UI components and the service layer. It wraps service functions or observable operations with caching, mutation lifecycle state, invalidation, and direct imperative access using TanStack Query and WellCrafted factories.
 
@@ -26,12 +20,8 @@ The query/RPC layer is the reactive bridge between UI components and the service
 
 Use this pattern when you need to:
 
-- Create queries or mutations that consume services
-- Define canonical query and mutation keys with `defineKeys`
 - Decide whether work belongs in `$lib/rpc`, `$lib/operations`, or `$lib/services`
-- Implement runtime service selection based on user settings
 - Add optimistic cache updates for instant UI feedback
-- Understand hook-local adapters and reusable query definitions
 
 ## Core Architecture
 

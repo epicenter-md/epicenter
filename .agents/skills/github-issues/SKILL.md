@@ -8,16 +8,6 @@ metadata:
 
 # GitHub Issue & PR Comment Guidelines
 
-## When to Apply This Skill
-
-Use this pattern when you need to:
-
-- Reply to GitHub issues, PR threads, or feature/bug discussions.
-- Write acknowledgments, follow-up questions, and troubleshooting replies.
-- Announce fixes with clear credit and community-friendly tone.
-- Offer direct debugging help with scheduling links when needed.
-- Avoid over-structured, corporate-style comment responses.
-
 ## Anti-Patterns (Avoid These)
 
 - **Over-structured responses**: Don't use headers, numbered sections, or bullet lists for simple replies. A conversational paragraph is usually better.

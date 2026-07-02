@@ -8,27 +8,17 @@ metadata:
 
 # Styling Guidelines
 
-## Reference Repositories
-
-- [shadcn-svelte](https://github.com/huntabyte/shadcn-svelte): Port of shadcn/ui for Svelte with Bits UI primitives
-- [shadcn-svelte-extras](https://github.com/ieedan/shadcn-svelte-extras): Additional components for shadcn-svelte
-- [Svelte](https://github.com/sveltejs/svelte): Svelte 5 framework
-
 ## Upstream Grounding
 
-When styling behavior depends on shadcn-svelte component structure, class merging, variants, or Bits UI composition, use source-backed grounding before relying on memory. If DeepWiki MCP is available, ask a narrow question against `huntabyte/shadcn-svelte`; for extras component behavior, ask against `ieedan/shadcn-svelte-extras`. If DeepWiki is unavailable or the repo is not indexed, use upstream source or official docs directly. Treat DeepWiki as orientation, then verify decisive details against local `@epicenter/ui` wrappers, installed types, source, or official docs before changing code.
-
-Skip DeepWiki for ordinary Tailwind utilities and repo-local layout rules already documented below.
+Grounding repos: `huntabyte/shadcn-svelte` for component structure, variants, and Bits UI composition; `ieedan/shadcn-svelte-extras` for extras components; `sveltejs/svelte` for framework behavior.
 
 ## When to Apply This Skill
 
 Use this pattern when you need to:
 
-- Write Tailwind/CSS for UI components in this repo.
 - Decide whether a wrapper element is necessary or can be removed.
 - Style interactive disabled states using HTML `disabled` and Tailwind variants.
 - Replace JS click guards with semantic disabled behavior.
-- Build scrollable content areas inside flex columns, resizable panes, or split layouts.
 
 ## Minimize Wrapper Elements
 

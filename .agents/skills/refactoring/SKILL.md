@@ -16,10 +16,6 @@ Systematic approach to auditing and improving code. Every change is evidence-bas
 
 Use this methodology when you need to:
 
-- Audit a module for code smells or unnecessary abstractions
-- Inline single-use helper functions
-- Eliminate raw/untyped access that bypasses a typed boundary
-- Collapse duplicate switch/if branches that do the same thing
 - Refactor function signatures (positional params → parameter objects)
 - Derive types instead of duplicating fields
 

@@ -27,17 +27,6 @@ Use the narrow artifact skill when the user asks for that artifact:
 
 For PR and commit text, the voice rules here still apply, but the product and personal-voice sections further down (landing-page framing, "end with an invitation", first-person story openers) are for marketing and community writing, not for reviewer-facing PRs or commits.
 
-## When to Apply This Skill
-
-Use this pattern when you need to:
-
-- Write user-facing text like UI copy, tooltips, error messages, or prose.
-- Rewrite text that sounds corporate, stilted, or AI-generated.
-- Decide punctuation style in prose, comments, JSDoc, markdown, or commit messages.
-- Explain technical concepts with concrete mechanisms instead of abstract claims.
-- Match the user's tone and pacing in responses.
-- Draft product/open-source writing with honest trade-offs and specifics.
-
 ## The Test
 
 Read it out loud. If it:

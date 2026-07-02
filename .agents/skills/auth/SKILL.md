@@ -31,24 +31,17 @@ Better Auth remains the auth server and session engine. Epicenter extends it
 through plugins and options; it does not replace Better Auth's server-side
 session model.
 
-Use this composition sentence when explaining the architecture:
+The composition: Better Auth provides the auth-server machinery, OAuth covers
+the app/resource boundary, and `AuthState{ownerId}` drives workspace boot.
+Better Auth owns users, account cookies, login, consent, token issuing,
+revocation, JWKS, and metadata. Epicenter clients store `PersistedAuth`, not
+Better Auth sessions. `/api/session` is the adapter that verifies an OAuth
+access token, resolves the request to an `ownerId`, and returns
+`ApiSessionResponse`.
 
-```txt
-Epicenter uses Better Auth for auth-server machinery, OAuth for the app/resource boundary, and AuthState{ownerId} for workspace boot.
-```
-
-That means Better Auth owns users, account cookies, login, consent, token
-issuing, revocation, JWKS, and metadata. Epicenter clients store
-`PersistedAuth`, not Better Auth sessions. `/api/session` is the adapter that
-verifies an OAuth access token, resolves the request to an `ownerId`, and
-returns `ApiSessionResponse`.
-
-When the user asks whether this is idiomatic Better Auth, be precise:
-
-```txt
-It is not the shortest Better Auth browser-cookie path.
-It is an idiomatic composition of Better Auth as the auth server beneath a cross-client OAuth runtime.
-```
+This is not the shortest Better Auth browser-cookie path; it is an idiomatic
+composition of Better Auth as the auth server beneath a cross-client OAuth
+runtime.
 
 Do not suggest removing Better Auth unless the user has a concrete blocker that
 cannot be handled with configuration, a small adapter, or an upstream fix.
@@ -121,8 +114,8 @@ There are no bearer, device-authorization, or custom-session plugins. Local
 email/password is disabled (`emailAndPassword: { enabled: false }`): enabling
 unverified local credentials reopens an account-linking takeover on
 better-auth 1.5.6 (no `requireLocalEmailVerified` gate). Only Google is a
-trusted linking provider; see the `better-auth-security` skill's Account
-Linking note.
+trusted linking provider; see the `better-auth-security-best-practices`
+skill's Account Linking note.
 
 ## Public Surface
 
@@ -518,21 +511,9 @@ mode flag on it.
 
 ## Common Pitfalls
 
-- Do not add `auth.bearerToken` or any token reader. Token reading leaks
-  transport details back into app code.
-- Do not reintroduce cookie-vs-bearer app factories. Better Auth still uses
-  cookies for hosted sign-in pages, but app resources use OAuth access tokens
-  through the one `createOAuthAppAuth` factory.
-- Do not treat `startSignIn()` resolving as signed-in. State is the source of
-  truth; `startSignIn` takes no args.
-- Do not clear local workspace data on refresh failure. Move to
-  `reauth-required` (the runtime pauses network auth) and keep `ownerId`
-  available for local partition selection.
 - Do not let `accessTokenExpiresAt` decide local identity state. It is a
   transport refresh hint only; the resource server is the source of truth for
   token validity.
-- Do not send both cookies and bearer tokens to resource routes.
-  `singleCredential` rejects ambiguity before Better Auth sees it.
 - Do not hide persistence failures in storage adapters. If `set` cannot save
   the refreshed cell, the failure must propagate, not silently look saved.
 - Do not import `requireSignedIn`, `InferSignedIn`, `openFuji`,

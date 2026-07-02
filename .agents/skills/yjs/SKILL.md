@@ -7,17 +7,9 @@ metadata:
 ---
 
 # Yjs CRDT Patterns
-## Reference Repositories
-
-- [Yjs](https://github.com/yjs/yjs): CRDT framework for shared editing and offline-first data
-- [Yjs Protocols](https://github.com/yjs/y-protocols) - Sync, awareness, and auth protocol helpers
-- [Y IndexedDB](https://github.com/yjs/y-indexeddb) - Browser persistence provider for Y.Doc updates
-
 ## Upstream Grounding
 
-When conflict semantics, transaction origins, shared-type behavior, update encoding, storage growth, or shared-type APIs affect correctness, use source-backed grounding before relying on memory. If DeepWiki MCP is available, ask a narrow question against `yjs/yjs`; for sync, awareness, auth protocol helpers, or provider interoperability, ask against `yjs/y-protocols`; for browser persistence behavior, ask against `yjs/y-indexeddb`. If DeepWiki is unavailable or the repo is not indexed, use upstream source or official docs directly. Treat DeepWiki as orientation, then verify decisive details against local installed types, source, or official docs before changing code.
-
-Skip DeepWiki for stable basics and repo-local patterns already documented below.
+Grounding repos: `yjs/yjs` for shared types, transactions, and conflict semantics; `yjs/y-protocols` for sync, awareness, and protocol helpers; `yjs/y-indexeddb` for browser persistence.
 
 > **Related Skills**: See `workspace-api` for the workspace abstraction built on Yjs.
 
@@ -25,8 +17,6 @@ Skip DeepWiki for stable basics and repo-local patterns already documented below
 
 Use this pattern when you need to:
 
-- Design collaborative data models with Y.Map, Y.Array, or Y.Text.
-- Handle conflict-prone updates with single-writer keys or nested maps.
 - Implement drag-and-drop reordering with fractional indexing.
 - Optimize Yjs storage for high-churn key-value workloads.
 - Review boundaries to prevent raw Yjs type leaks into consumer code.

@@ -302,28 +302,6 @@ lifecycle command is `epicenter daemon up`, not `epicenter serve`.
 
 ## Anti-Patterns
 
-- Putting auth, `createPersistedState`, `auth.onStateChange`, or HMR disposal in
-  the browser/extension/tauri factory. Those belong in `src/lib/session.ts`.
-- Naming the singleton `session.svelte.ts`. It is a plain `src/lib/session.ts`.
-- Adding a second singleton home (`client.ts`) to a Shape A app. The singleton
-  already lives in `src/lib/session.ts`.
-- Putting auth subscriptions or workspace construction in a Svelte component.
-  They belong in the session singleton.
-- Branching on platform at a `#platform/*` call site. Import the bare specifier
-  and let the build select the impl.
-- Using `satisfies` on a `#platform/*` impl instead of a `: Contract` annotation.
-- Importing a `.tauri.ts`-only symbol through `#platform/*` (it is `null` on web);
-  import it directly from the `.tauri` module inside another `.tauri.ts` file.
-- Reintroducing `resolve.extensions` suffixes or tsconfig `moduleSuffixes` for
-  platform selection.
-- Dropping `...defaultClientConditions` from the Tauri `conditions` array.
-- Adding a `./browser` package export to honeycrisp/vocab for symmetry
-  with opensidian. Keep the asymmetry; only opensidian has a consumer for it.
-- Adding `./mount` back to honeycrisp. Honeycrisp's integration contract is the
-  package `.` isomorphic workspace export.
-- Placing `daemon.ts` or `script.ts` inside the app package. They live under a
-  project's `workspaces/<app>/` and are registered via `epicenter.config.ts`.
-- Restoring `serve` as the public lifecycle command (it is `epicenter daemon up`).
 - Load-gating a post-auth workspace (its `idb.whenLoaded` does not exist at
   `load` time), or showing a `<Loading>` skeleton for a fast eager-workspace gate
   (the spinner just flashes). Gate where the readiness promise is first

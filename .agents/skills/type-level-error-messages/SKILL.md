@@ -14,7 +14,6 @@ metadata:
 
 Use this pattern when you need to:
 
-- Constrain object keys, string literals, or other literal-type inputs in a helper function and surface a readable error at the call site.
 - Replace a `never` or `string` return in a constraint type with something that points at the bad value.
 - Match the way `arktype`'s internal `ErrorMessage<M>` types behave: visible message, invisible brand.
 - Give app authors edit-site feedback on shape/format rules (snake_case keys, slug formats, semver strings) without forcing every consumer to call a separate `validate()` step.

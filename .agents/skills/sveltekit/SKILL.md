@@ -8,14 +8,9 @@ metadata:
 
 # SvelteKit
 
-## Reference Repositories
-
-- [SvelteKit](https://github.com/sveltejs/kit) - Svelte application framework for routing, server rendering, form actions, and adapters
-- [Svelte](https://github.com/sveltejs/svelte) - Svelte 5 compiler and runtime
-
 ## Upstream Grounding
 
-When SvelteKit load behavior, invalidation, cookies, hooks, env handling, server-only modules, generated `$types`, or adapter behavior affects correctness, ask DeepWiki a narrow question against `sveltejs/kit` before relying on memory. Verify decisive details against local installed types and source.
+Grounding repos: `sveltejs/kit` for load, invalidation, hooks, env, `$types`, and adapters; `sveltejs/svelte` for the compiler and runtime.
 
 Use the `svelte` skill for component runes and template mechanics.
 
