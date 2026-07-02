@@ -1,0 +1,12 @@
+{
+	"$schema": "../gen/schemas/desktop-schema.json",
+	"identifier": "main-window",
+	"description": "Capability for the main Honeycrisp window",
+	"windows": ["main"],
+	"permissions": [
+		"core:default",
+		"deep-link:default",
+		"opener:allow-default-urls",
+		"opener:allow-open-url"
+	]
+}

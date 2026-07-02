@@ -1,6 +1,5 @@
 {
   "lockfileVersion": 1,
-  "configVersion": 0,
   "workspaces": {
     "": {
       "name": "epicenter",
@@ -95,6 +94,9 @@
         "@epicenter/field": "workspace:*",
         "@epicenter/svelte": "workspace:*",
         "@epicenter/workspace": "workspace:*",
+        "@tauri-apps/api": "catalog:",
+        "@tauri-apps/plugin-deep-link": "^2.4.9",
+        "@tauri-apps/plugin-opener": "catalog:",
         "arktype": "catalog:",
         "better-auth": "catalog:",
         "bits-ui": "catalog:",
@@ -122,6 +124,7 @@
         "@sveltejs/kit": "catalog:",
         "@sveltejs/vite-plugin-svelte": "catalog:",
         "@tailwindcss/vite": "catalog:",
+        "@tauri-apps/cli": "catalog:",
         "@types/bun": "catalog:",
         "mode-watcher": "catalog:",
         "svelte": "catalog:",
