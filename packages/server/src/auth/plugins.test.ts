@@ -16,6 +16,7 @@ import { expect, test } from 'bun:test';
 import {
 	EPICENTER_CLI_OAUTH_CLIENT_ID,
 	EPICENTER_HONEYCRISP_OAUTH_CLIENT_ID,
+	EPICENTER_HONEYCRISP_TAURI_OAUTH_REDIRECT_URI,
 	EPICENTER_OAUTH_SCOPES,
 } from '@epicenter/constants/oauth-clients';
 import {
@@ -35,6 +36,7 @@ const trustedClientFixture = {
 	redirectUris: [
 		'http://localhost:5175/auth/callback',
 		'https://honeycrisp.epicenter.so/auth/callback',
+		EPICENTER_HONEYCRISP_TAURI_OAUTH_REDIRECT_URI,
 	],
 } as const satisfies TrustedOAuthClient;
 const redirectUri = trustedClientFixture.redirectUris[0];
@@ -184,6 +186,18 @@ test('buildTrustedOAuthClients gives the CLI a callback at each deployment baseU
 		const cliClient = findCliClient(baseURL);
 		expect(cliClient.redirectUris).toEqual([`${baseURL}/auth/cli-callback`]);
 	}
+});
+
+test('buildTrustedOAuthClients gives Honeycrisp its Tauri deep-link callback', () => {
+	const honeycrispClient = buildTrustedOAuthClients(
+		'http://localhost:47878',
+	).find((client) => client.clientId === EPICENTER_HONEYCRISP_OAUTH_CLIENT_ID);
+	if (!honeycrispClient) {
+		throw new Error('Expected trusted Honeycrisp OAuth client');
+	}
+	expect(honeycrispClient.redirectUris).toContain(
+		EPICENTER_HONEYCRISP_TAURI_OAUTH_REDIRECT_URI,
+	);
 });
 
 test('registered non-trusted OAuth client requires consent', async () => {
