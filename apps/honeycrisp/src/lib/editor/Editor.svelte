@@ -32,6 +32,7 @@
 	} from 'prosemirror-inputrules';
 	import { keymap } from 'prosemirror-keymap';
 	import {
+		type Mark,
 		type MarkSpec,
 		type MarkType,
 		type Node,
@@ -47,7 +48,7 @@
 		splitListItem,
 		wrapInList,
 	} from 'prosemirror-schema-list';
-	import { EditorState, Plugin } from 'prosemirror-state';
+	import { type Command, EditorState, Plugin } from 'prosemirror-state';
 	import { Decoration, DecorationSet, EditorView } from 'prosemirror-view';
 	import 'prosemirror-view/style/prosemirror.css';
 	import { redo, undo, ySyncPlugin, yUndoPlugin } from 'y-prosemirror';
@@ -191,6 +192,198 @@
 		});
 	}
 
+	function setHeadingLevel(level: 1 | 2): Command {
+		return (state, dispatch) =>
+			setBlockType(schema.nodes.heading!, { level })(state, dispatch);
+	}
+
+	const setBodyStyle: Command = (state, dispatch) =>
+		setBlockType(schema.nodes.paragraph!)(state, dispatch);
+
+	function toggleList(listType: NodeType, itemType: NodeType): Command {
+		return (state, dispatch) => {
+			if (nodeActive(state, listType)) {
+				return liftListItem(itemType)(state, dispatch);
+			}
+			return wrapInList(listType)(state, dispatch);
+		};
+	}
+
+	const toggleSelectedTaskItems: Command = (state, dispatch) => {
+		const selectedItems: { node: Node; pos: number }[] = [];
+		const { from, to, empty } = state.selection;
+
+		state.doc.descendants((node, pos) => {
+			if (node.type !== schema.nodes.taskItem) return;
+			const end = pos + node.nodeSize;
+			const containsCaret = empty && pos < from && from < end;
+			const overlapsSelection = !empty && pos < to && end > from;
+			if (containsCaret || overlapsSelection) {
+				selectedItems.push({ node, pos });
+			}
+		});
+
+		if (selectedItems.length === 0) return false;
+
+		const checked = selectedItems.some(({ node }) => !node.attrs.checked);
+		if (dispatch) {
+			let tr = state.tr;
+			for (const { node, pos } of selectedItems) {
+				tr = tr.setNodeMarkup(pos, undefined, {
+					...node.attrs,
+					checked,
+				});
+			}
+			dispatch(tr.scrollIntoView());
+		}
+		return true;
+	};
+
+	function linkMarkRange(state: EditorState): {
+		from: number;
+		to: number;
+		mark: Mark;
+	} | null {
+		const linkMark = schema.marks.link!;
+		const { empty, $from: resolvedFrom } = state.selection;
+		if (!empty) return null;
+
+		let mark = linkMark.isInSet(resolvedFrom.marks());
+		if (!mark) return null;
+
+		const parent = resolvedFrom.parent;
+		let startIndex = resolvedFrom.index();
+		if (
+			startIndex === parent.childCount ||
+			!linkMarksEqual(mark, linkMark.isInSet(parent.child(startIndex).marks))
+		) {
+			startIndex -= 1;
+		}
+		if (startIndex < 0) return null;
+
+		mark = linkMark.isInSet(parent.child(startIndex).marks);
+		if (!mark) return null;
+
+		let endIndex = startIndex + 1;
+		while (
+			startIndex > 0 &&
+			linkMarksEqual(mark, linkMark.isInSet(parent.child(startIndex - 1).marks))
+		) {
+			startIndex -= 1;
+		}
+		while (
+			endIndex < parent.childCount &&
+			linkMarksEqual(mark, linkMark.isInSet(parent.child(endIndex).marks))
+		) {
+			endIndex += 1;
+		}
+
+		let from = resolvedFrom.start();
+		for (let index = 0; index < startIndex; index += 1) {
+			from += parent.child(index).nodeSize;
+		}
+		let to = from;
+		for (let index = startIndex; index < endIndex; index += 1) {
+			to += parent.child(index).nodeSize;
+		}
+		return { from, to, mark };
+	}
+
+	function linkMarksEqual(left: Mark, right: Mark | undefined): right is Mark {
+		return right !== undefined && left.eq(right);
+	}
+
+	function selectedLinkHref(state: EditorState): string {
+		const linkMark = schema.marks.link!;
+		const { from, to } = state.selection;
+		const range = linkMarkRange(state);
+		if (range) {
+			return typeof range.mark.attrs.href === 'string'
+				? range.mark.attrs.href
+				: '';
+		}
+
+		let href = '';
+		state.doc.nodesBetween(from, to, (node) => {
+			const link = linkMark.isInSet(node.marks);
+			if (typeof link?.attrs.href === 'string') {
+				href = link.attrs.href;
+				return false;
+			}
+		});
+		return href;
+	}
+
+	function normalizeWebLink(raw: string): string | null {
+		const trimmed = raw.trim();
+		if (!trimmed) return '';
+
+		const candidate = /^[a-z][a-z\d+.-]*:/i.test(trimmed)
+			? trimmed
+			: `https://${trimmed}`;
+
+		try {
+			const url = new URL(candidate);
+			if (url.protocol !== 'http:' && url.protocol !== 'https:') return null;
+			return url.toString();
+		} catch {
+			return null;
+		}
+	}
+
+	const editWebLink: Command = (state, dispatch) => {
+		const href = selectedLinkHref(state);
+		const raw = window.prompt('Paste a web link', href);
+		if (raw === null) return false;
+
+		const normalized = normalizeWebLink(raw);
+		if (normalized === null) {
+			window.alert('Enter a valid web link.');
+			return true;
+		}
+
+		if (!dispatch) return true;
+
+		const { from, to, empty } = state.selection;
+		const linkMark = schema.marks.link!;
+		const range = linkMarkRange(state);
+		const markFrom = range?.from ?? from;
+		const markTo = range?.to ?? to;
+		let tr = state.tr;
+
+		if (!normalized) {
+			if (range) {
+				tr = tr.removeMark(markFrom, markTo, linkMark);
+			} else if (empty) {
+				tr = tr.removeStoredMark(linkMark);
+			} else {
+				tr = tr.removeMark(from, to, linkMark);
+			}
+			dispatch(tr.scrollIntoView());
+			return true;
+		}
+
+		if (range) {
+			tr = tr
+				.removeMark(markFrom, markTo, linkMark)
+				.addMark(markFrom, markTo, linkMark.create({ href: normalized }));
+		} else if (empty) {
+			tr = tr.insertText(normalized, from);
+			tr = tr.addMark(
+				from,
+				from + normalized.length,
+				linkMark.create({ href: normalized }),
+			);
+		} else {
+			tr = tr
+				.removeMark(from, to, linkMark)
+				.addMark(from, to, linkMark.create({ href: normalized }));
+		}
+
+		dispatch(tr.scrollIntoView());
+		return true;
+	};
+
 	function updateActiveFormats(state: EditorState) {
 		activeFormats = {
 			bold: markActive(state, schema.marks.strong!),
@@ -292,15 +485,40 @@
 						'Mod-i': toggleMark(schema.marks.em!),
 						'Mod-u': toggleMark(schema.marks.underline!),
 						'Mod-Shift-s': toggleMark(schema.marks.strike!),
-						'Mod-Shift-b': () => {
-							if (nodeActive(currentView.state, schema.nodes.blockquote!)) {
-								return lift(currentView.state, currentView.dispatch);
-							}
-							return wrapIn(schema.nodes.blockquote!)(
-								currentView.state,
-								currentView.dispatch,
-							);
-						},
+						'Mod-Shift-S': toggleMark(schema.marks.strike!),
+						'Mod-Shift-t': setHeadingLevel(1),
+						'Mod-Shift-T': setHeadingLevel(1),
+						'Mod-Shift-h': setHeadingLevel(2),
+						'Mod-Shift-H': setHeadingLevel(2),
+						'Mod-Shift-b': setBodyStyle,
+						'Mod-Shift-B': setBodyStyle,
+						'Mod-Shift-l': toggleList(
+							schema.nodes.taskList!,
+							schema.nodes.taskItem!,
+						),
+						'Mod-Shift-L': toggleList(
+							schema.nodes.taskList!,
+							schema.nodes.taskItem!,
+						),
+						'Mod-Shift-u': toggleSelectedTaskItems,
+						'Mod-Shift-U': toggleSelectedTaskItems,
+						'Mod-Shift-7': toggleList(
+							schema.nodes.bullet_list!,
+							schema.nodes.list_item!,
+						),
+						'Mod-&': toggleList(
+							schema.nodes.bullet_list!,
+							schema.nodes.list_item!,
+						),
+						'Mod-Shift-9': toggleList(
+							schema.nodes.ordered_list!,
+							schema.nodes.list_item!,
+						),
+						'Mod-(': toggleList(
+							schema.nodes.ordered_list!,
+							schema.nodes.list_item!,
+						),
+						'Mod-k': editWebLink,
 						Enter: chainCommands(
 							splitListItem(schema.nodes.taskItem!),
 							splitListItem(schema.nodes.list_item!),
@@ -477,7 +695,7 @@
 
 			<Separator orientation="vertical" class="mx-1 h-6" />
 
-			{@render toggleButton(activeFormats.blockquote, () => { if (nodeActive(view!.state, schema.nodes.blockquote!)) { lift(view!.state, view!.dispatch); } else { wrapIn(schema.nodes.blockquote!)(view!.state, view!.dispatch); } view!.focus(); }, QuoteIcon, 'Blockquote (⌘⇧B)')}
+			{@render toggleButton(activeFormats.blockquote, () => { if (nodeActive(view!.state, schema.nodes.blockquote!)) { lift(view!.state, view!.dispatch); } else { wrapIn(schema.nodes.blockquote!)(view!.state, view!.dispatch); } view!.focus(); }, QuoteIcon, 'Blockquote')}
 		</div>
 	{/if}
 	<div bind:this={element} class="flex-1 overflow-y-auto p-8"></div>

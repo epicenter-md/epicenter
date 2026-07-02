@@ -325,7 +325,8 @@ Mechanical, zero behavior change, one PR:
 
 ### Phase 3: Apple Notes polish wave (parallel with Phase 2, one PR per item)
 
-- [ ] **3.1** The confirmed shortcut set (editor styles, lists, indent, search focus).
+- [x] **3.1** The confirmed shortcut set (editor styles, lists, indent, search focus).
+  > **Note**: `Cmd+K` is editor-first. When focus is inside `.ProseMirror`, it edits/inserts a web link; outside the editor, the page-level handler opens the command palette.
 - [ ] **3.2** 30-day auto-purge sweep on workspace open.
 - [ ] **3.3** Empty states + minimal settings modal.
 - [ ] **3.4** Note-list QA pass over existing date groups, Pinned section, and hover-reveal row actions; change only what screenshots or mobile testing prove rough.

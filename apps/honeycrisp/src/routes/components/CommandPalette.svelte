@@ -9,7 +9,7 @@
 	import PlusIcon from '@lucide/svelte/icons/plus';
 	import { honeycrisp } from '$lib/honeycrisp';
 
-	let isOpen = $state(false);
+	let { open = $bindable(false) }: { open?: boolean } = $props();
 
 	const items = $derived.by((): CommandPaletteItem[] => [
 		{
@@ -59,7 +59,8 @@
 
 <UiCommandPalette
 	{items}
-	bind:open={isOpen}
+	bind:open
+	shortcut={null}
 	placeholder="Search notes..."
 	emptyMessage="No results found."
 	title="Search Notes"

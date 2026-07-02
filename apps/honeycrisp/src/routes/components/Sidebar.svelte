@@ -28,6 +28,7 @@
 		</div>
 		<div class="px-2 pb-1">
 			<Sidebar.Input
+				data-honeycrisp-search
 				placeholder="Search notes…"
 				value={honeycrisp.state.view.searchQuery}
 				oninput={(e) => honeycrisp.state.view.setSearchQuery(e.currentTarget.value)}

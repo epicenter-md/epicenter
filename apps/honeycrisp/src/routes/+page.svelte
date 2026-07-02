@@ -6,17 +6,40 @@
 	import NoteBodyPane from './components/NoteBodyPane.svelte';
 	import NoteList from './components/NoteList.svelte';
 	import HoneycripSidebar from './components/Sidebar.svelte';
+
+	let commandPaletteOpen = $state(false);
+
+	function isEditorTarget(target: EventTarget | null): boolean {
+		return target instanceof HTMLElement && target.closest('.ProseMirror') !== null;
+	}
+
+	function focusSearch() {
+		const input = document.querySelector<HTMLInputElement>(
+			'[data-honeycrisp-search]',
+		);
+		input?.focus();
+		input?.select();
+	}
 </script>
 
 <svelte:window
 	onkeydown={(e) => {
 		const meta = e.metaKey || e.ctrlKey;
 		if (!meta) return;
+		const key = e.key.toLowerCase();
 
-		if (e.key === 'n' && e.shiftKey) {
+		if (key === 'f' && e.altKey && !e.shiftKey) {
+			e.preventDefault();
+			commandPaletteOpen = false;
+			focusSearch();
+		} else if (key === 'k') {
+			if (isEditorTarget(e.target)) return;
+			e.preventDefault();
+			commandPaletteOpen = !commandPaletteOpen;
+		} else if (key === 'n' && e.shiftKey) {
 			e.preventDefault();
 			honeycrisp.state.folders.create();
-		} else if (e.key === 'n') {
+		} else if (key === 'n') {
 			e.preventDefault();
 			const { id } = honeycrisp.state.notes.create(honeycrisp.state.view.selectedFolderId);
 			honeycrisp.state.view.selectNote(id);
@@ -51,4 +74,4 @@
 	</main>
 </SidebarProvider>
 
-<CommandPalette />
+<CommandPalette bind:open={commandPaletteOpen} />
