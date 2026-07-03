@@ -91,14 +91,16 @@ export async function bootHarness(opts: {
 	fold: boolean;
 	lmTestDir?: string;
 }): Promise<BootedHarness> {
-	const lmTestDir = opts.lmTestDir ?? process.env.LM_TEST_DIR ?? '/tmp/local-mail-harness';
+	const lmTestDir =
+		opts.lmTestDir ?? process.env.LM_TEST_DIR ?? '/tmp/local-mail-harness';
 	const mockLog = join(lmTestDir, 'modify-log.jsonl');
 
 	const setup = await run(['bash', join(SCRIPT_DIR, 'setup-copy.sh')], {
 		LM_TEST_DIR: lmTestDir,
 	});
 	const mockDb = setup.match(/^MOCK_DB (.+)$/m)?.[1];
-	if (!mockDb) throw new Error(`setup-copy.sh did not print MOCK_DB:\n${setup}`);
+	if (!mockDb)
+		throw new Error(`setup-copy.sh did not print MOCK_DB:\n${setup}`);
 	await Bun.write(mockLog, ''); // reset so assertions only see this run's writes
 
 	const mock = Bun.spawn(['bun', 'run', join(SCRIPT_DIR, 'mock-gmail.ts')], {

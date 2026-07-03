@@ -44,7 +44,9 @@ function resolveChrome(): string {
 	].filter((p): p is string => Boolean(p));
 	const found = candidates.find((p) => existsSync(p));
 	if (!found) {
-		throw new Error(`no Chrome found; set CHROME_PATH. Tried:\n${candidates.join('\n')}`);
+		throw new Error(
+			`no Chrome found; set CHROME_PATH. Tried:\n${candidates.join('\n')}`,
+		);
 	}
 	return found;
 }
@@ -53,10 +55,13 @@ function resolveChrome(): string {
 async function ensureBuilt(): Promise<void> {
 	if (existsSync(join(UI_DIST, 'index.html'))) return;
 	console.log('[browser-smoke] SPA not built; running the UI build (once)...');
-	const build = Bun.spawn(['bun', 'run', '--cwd', join(APP_DIR, 'ui'), 'build'], {
-		stdout: 'inherit',
-		stderr: 'inherit',
-	});
+	const build = Bun.spawn(
+		['bun', 'run', '--cwd', join(APP_DIR, 'ui'), 'build'],
+		{
+			stdout: 'inherit',
+			stderr: 'inherit',
+		},
+	);
 	if ((await build.exited) !== 0) throw new Error('UI build failed');
 }
 
@@ -113,7 +118,9 @@ async function main(): Promise<void> {
 			if (m.type() === 'error') consoleErrors.push(m.text());
 		});
 		page.on('pageerror', (e: unknown) =>
-			consoleErrors.push(`pageerror: ${e instanceof Error ? e.message : String(e)}`),
+			consoleErrors.push(
+				`pageerror: ${e instanceof Error ? e.message : String(e)}`,
+			),
 		);
 
 		// The SPA reads #token, exchanges it for a bearer, and loads the mirror.
@@ -140,9 +147,12 @@ async function main(): Promise<void> {
 			{ timeout: 5_000 },
 		);
 		await page.keyboard.press('Escape');
-		await page.waitForFunction(() => !document.querySelector('[role="dialog"]'), {
-			timeout: 5_000,
-		});
+		await page.waitForFunction(
+			() => !document.querySelector('[role="dialog"]'),
+			{
+				timeout: 5_000,
+			},
+		);
 
 		// --- 2. Archive -> toast -> Undo (+ 3. catching-up chip) --------------
 		await clickButtonByText(page, 'Archive');
@@ -153,7 +163,9 @@ async function main(): Promise<void> {
 				return (
 					!!t &&
 					/Archived/.test(t.textContent ?? '') &&
-					[...t.querySelectorAll('button')].some((b) => /undo/i.test(b.textContent ?? ''))
+					[...t.querySelectorAll('button')].some((b) =>
+						/undo/i.test(b.textContent ?? ''),
+					)
 				);
 			},
 			{ timeout: 5_000 },
@@ -161,8 +173,9 @@ async function main(): Promise<void> {
 		// 3. the folded:false write flipped the mirror chip.
 		await page.waitForFunction(
 			() =>
-				document.querySelector('header span.capitalize')?.textContent?.trim() ===
-				'catching up',
+				document
+					.querySelector('header span.capitalize')
+					?.textContent?.trim() === 'catching up',
 			{ timeout: 5_000 },
 		);
 		// The archive reached the mock as a remove-INBOX.
@@ -172,14 +185,20 @@ async function main(): Promise<void> {
 			'archive at the mock',
 		);
 		const archived = afterArchive[afterArchive.length - 1]!;
-		assert(archived.remove.includes('INBOX'), `archive should remove INBOX, got ${JSON.stringify(archived)}`);
-		assert(archived.folded === false, 'archive should be folded:false in this run');
+		assert(
+			archived.remove.includes('INBOX'),
+			`archive should remove INBOX, got ${JSON.stringify(archived)}`,
+		);
+		assert(
+			archived.folded === false,
+			'archive should be folded:false in this run',
+		);
 
 		// Click Undo; it fires the inverse (add INBOX) at the mock.
 		const undoClicked = await page.evaluate(() => {
-			const undo = [...document.querySelectorAll('[data-sonner-toast] button')].find(
-				(b) => /undo/i.test(b.textContent ?? ''),
-			);
+			const undo = [
+				...document.querySelectorAll('[data-sonner-toast] button'),
+			].find((b) => /undo/i.test(b.textContent ?? ''));
 			if (!(undo instanceof HTMLElement)) return false;
 			undo.click();
 			return true;
@@ -200,20 +219,34 @@ async function main(): Promise<void> {
 			'the `e` key at the mock',
 		);
 		const keyed = afterKey[afterKey.length - 1]!;
-		assert(keyed.remove.includes('INBOX'), `e-archive should remove INBOX, got ${JSON.stringify(keyed)}`);
+		assert(
+			keyed.remove.includes('INBOX'),
+			`e-archive should remove INBOX, got ${JSON.stringify(keyed)}`,
+		);
 
 		// Prove the real mirror is untouched.
 		const after = await fingerprintReal();
-		assert(after === before, `REAL mirror changed!\nbefore:\n${before}\nafter:\n${after}`);
+		assert(
+			after === before,
+			`REAL mirror changed!\nbefore:\n${before}\nafter:\n${after}`,
+		);
 
 		console.log('BROWSER SMOKE PASS');
 		console.log('  1. ? overlay opened');
-		console.log(`  2. archive toast + undo fired inverse add:[INBOX] on ${archived.id}`);
-		console.log('  3. mirror chip flipped to "catching up" on the folded:false write');
+		console.log(
+			`  2. archive toast + undo fired inverse add:[INBOX] on ${archived.id}`,
+		);
+		console.log(
+			'  3. mirror chip flipped to "catching up" on the folded:false write',
+		);
 		console.log(`  4. e key dispatched archive remove:[INBOX] on ${keyed.id}`);
-		console.log(`  real mirror fingerprint unchanged (${before.split('\n').length} files)`);
+		console.log(
+			`  real mirror fingerprint unchanged (${before.split('\n').length} files)`,
+		);
 		if (consoleErrors.length) {
-			console.log(`  note: ${consoleErrors.length} console error(s): ${JSON.stringify(consoleErrors)}`);
+			console.log(
+				`  note: ${consoleErrors.length} console error(s): ${JSON.stringify(consoleErrors)}`,
+			);
 		}
 	} finally {
 		await browser.close();
@@ -225,6 +258,8 @@ try {
 	await main();
 	process.exit(0);
 } catch (err) {
-	console.error(`BROWSER SMOKE FAIL: ${err instanceof Error ? err.message : String(err)}`);
+	console.error(
+		`BROWSER SMOKE FAIL: ${err instanceof Error ? err.message : String(err)}`,
+	);
 	process.exit(1);
 }

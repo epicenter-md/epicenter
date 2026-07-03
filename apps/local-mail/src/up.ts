@@ -94,7 +94,10 @@ function createSyncGate() {
 }
 
 /** Serve the built SPA from disk, falling back to index.html for deep links. */
-async function serveStatic(uiDist: string, pathname: string): Promise<Response> {
+async function serveStatic(
+	uiDist: string,
+	pathname: string,
+): Promise<Response> {
 	const rel = pathname === '/' ? '/index.html' : pathname;
 	// Reject path traversal before touching the filesystem. `join` collapses
 	// `..`, so match on a real separator boundary: a bare `startsWith(uiDist)`
@@ -105,12 +108,17 @@ async function serveStatic(uiDist: string, pathname: string): Promise<Response> 
 	}
 	const file = Bun.file(target);
 	if (await file.exists()) {
-		return new Response(file, { headers: { 'referrer-policy': 'no-referrer' } });
+		return new Response(file, {
+			headers: { 'referrer-policy': 'no-referrer' },
+		});
 	}
 	const index = Bun.file(join(uiDist, 'index.html'));
 	if (await index.exists()) {
 		return new Response(index, {
-			headers: { 'content-type': 'text/html', 'referrer-policy': 'no-referrer' },
+			headers: {
+				'content-type': 'text/html',
+				'referrer-policy': 'no-referrer',
+			},
 		});
 	}
 	return new Response('Not found', { status: 404 });
@@ -122,7 +130,9 @@ export async function runUp(): Promise<number> {
 	// the fetch/handleApi closures below, where only a truthiness guard on the
 	// const survives.
 	if (runtimeError || !runtime) {
-		console.error(runtimeError?.message ?? 'Failed to open local-mail runtime.');
+		console.error(
+			runtimeError?.message ?? 'Failed to open local-mail runtime.',
+		);
 		return 1;
 	}
 
@@ -135,10 +145,13 @@ export async function runUp(): Promise<number> {
 		return 1;
 	}
 
-	const { data: session, error: sessionError } = await openSyncSession(runtime, {
-		gmailLog: (m) => console.error(`[gmail] ${m}`),
-		syncLog: (m) => console.error(`[sync] ${m}`),
-	});
+	const { data: session, error: sessionError } = await openSyncSession(
+		runtime,
+		{
+			gmailLog: (m) => console.error(`[gmail] ${m}`),
+			syncLog: (m) => console.error(`[sync] ${m}`),
+		},
+	);
 	if (sessionError || !session) {
 		lock.release();
 		console.error(sessionError?.message ?? 'Failed to open sync session.');
@@ -229,10 +242,7 @@ export async function runUp(): Promise<number> {
 		}
 
 		if (pathname === '/api/messages' && req.method === 'GET') {
-			const limit = Math.min(
-				Number(url.searchParams.get('limit')) || 100,
-				200,
-			);
+			const limit = Math.min(Number(url.searchParams.get('limit')) || 100, 200);
 			const offset = Math.max(Number(url.searchParams.get('offset')) || 0, 0);
 			const labelId = url.searchParams.get('label') ?? undefined;
 			const search = url.searchParams.get('q')?.trim() || undefined;
@@ -243,7 +253,9 @@ export async function runUp(): Promise<number> {
 
 		const detailMatch = pathname.match(/^\/api\/messages\/([^/]+)$/);
 		if (detailMatch && req.method === 'GET') {
-			const detail = db.getMessageDetail(decodeURIComponent(detailMatch[1] as string));
+			const detail = db.getMessageDetail(
+				decodeURIComponent(detailMatch[1] as string),
+			);
 			if (!detail) return json({ error: 'Message not found.' }, 404);
 			return json(detail);
 		}
@@ -262,7 +274,10 @@ export async function runUp(): Promise<number> {
 				removeLabels?: string[];
 			} | null;
 			if (!body || !Array.isArray(body.ids)) {
-				return json({ error: 'Body must be { ids, addLabels, removeLabels }.' }, 400);
+				return json(
+					{ error: 'Body must be { ids, addLabels, removeLabels }.' },
+					400,
+				);
 			}
 			const { data, error } = await resolveAndModifyMessageLabels({
 				deps: session.deps,

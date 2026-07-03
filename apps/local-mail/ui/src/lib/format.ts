@@ -91,7 +91,10 @@ export function shortDate(epochMs: number | null): string {
 }
 
 /** Full timestamp for the detail header. */
-export function fullDate(epochMs: number | null, fallback: string | null): string {
+export function fullDate(
+	epochMs: number | null,
+	fallback: string | null,
+): string {
 	if (!epochMs) return fallback ?? '';
 	return new Intl.DateTimeFormat(undefined, {
 		dateStyle: 'medium',

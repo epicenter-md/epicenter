@@ -18,7 +18,13 @@ import type { GmailLabel, GmailMessage } from './schema.ts';
 function openTmp(): { db: MailDb; cleanup: () => void } {
 	const dir = mkdtempSync(join(tmpdir(), 'local-mail-read-'));
 	const db = openMailDb({ dataDir: dir, accountEmail: 'you@example.com' });
-	return { db, cleanup: () => { db.close(); rmSync(dir, { recursive: true, force: true }); } };
+	return {
+		db,
+		cleanup: () => {
+			db.close();
+			rmSync(dir, { recursive: true, force: true });
+		},
+	};
 }
 
 const b64url = (s: string) => Buffer.from(s, 'utf8').toString('base64url');
@@ -61,11 +67,18 @@ function seed(db: MailDb) {
 						{ name: 'Date', value: 'Tue, 1 Jul 2026 08:00:00 -0700' },
 					],
 					parts: [
-						{ mimeType: 'text/plain', body: { data: b64url('Please pay the invoice.') } },
+						{
+							mimeType: 'text/plain',
+							body: { data: b64url('Please pay the invoice.') },
+						},
 					],
 				},
 			}),
-			message({ id: 'middle', internalDate: '2000', labelIds: ['CATEGORY_PROMOTIONS'] }),
+			message({
+				id: 'middle',
+				internalDate: '2000',
+				labelIds: ['CATEGORY_PROMOTIONS'],
+			}),
 			message({ id: 'oldest', internalDate: '1000', labelIds: ['INBOX'] }),
 		],
 		new Date().toISOString(),
@@ -97,7 +110,11 @@ describe('listMessages', () => {
 		const { db, cleanup } = openTmp();
 		try {
 			seed(db);
-			const inbox = db.listMessages({ labelId: 'INBOX', limit: 100, offset: 0 });
+			const inbox = db.listMessages({
+				labelId: 'INBOX',
+				limit: 100,
+				offset: 0,
+			});
 			expect(inbox.map((r) => r.id)).toEqual(['newest', 'oldest']);
 			const promos = db.listMessages({
 				labelId: 'CATEGORY_PROMOTIONS',
@@ -115,10 +132,14 @@ describe('listMessages', () => {
 		try {
 			seed(db);
 			expect(
-				db.listMessages({ search: 'invoice', limit: 100, offset: 0 }).map((r) => r.id),
+				db
+					.listMessages({ search: 'invoice', limit: 100, offset: 0 })
+					.map((r) => r.id),
 			).toEqual(['newest']);
 			expect(
-				db.listMessages({ search: 'billing@acme', limit: 100, offset: 0 }).map((r) => r.id),
+				db
+					.listMessages({ search: 'billing@acme', limit: 100, offset: 0 })
+					.map((r) => r.id),
 			).toEqual(['newest']);
 			expect(
 				db.listMessages({ search: 'nomatchxyz', limit: 100, offset: 0 }),
@@ -132,8 +153,12 @@ describe('listMessages', () => {
 		const { db, cleanup } = openTmp();
 		try {
 			seed(db);
-			expect(db.listMessages({ limit: 1, offset: 0 }).map((r) => r.id)).toEqual(['newest']);
-			expect(db.listMessages({ limit: 1, offset: 1 }).map((r) => r.id)).toEqual(['middle']);
+			expect(db.listMessages({ limit: 1, offset: 0 }).map((r) => r.id)).toEqual(
+				['newest'],
+			);
+			expect(db.listMessages({ limit: 1, offset: 1 }).map((r) => r.id)).toEqual(
+				['middle'],
+			);
 		} finally {
 			cleanup();
 		}

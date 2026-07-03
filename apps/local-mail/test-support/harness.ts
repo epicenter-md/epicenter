@@ -23,7 +23,9 @@ const harness = await bootHarness({ fold });
 
 console.log(`URL=${harness.appOrigin}/#token=${harness.bootstrapToken}`);
 console.log(`MOCK_LOG=${harness.mockLog}`);
-console.log(`fold=${fold}${fold ? ' (pass --catching-up for the folded:false chip)' : ''}`);
+console.log(
+	`fold=${fold}${fold ? ' (pass --catching-up for the folded:false chip)' : ''}`,
+);
 if (!existsSync(uiDist)) {
 	console.log('note: SPA not built; the page will be blank. Build it with:');
 	console.log('  bun run --cwd apps/local-mail/ui build');

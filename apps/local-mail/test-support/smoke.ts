@@ -45,7 +45,9 @@ async function main(): Promise<void> {
 		const pick = async (query: string) =>
 			(
 				(await (
-					await fetch(`${harness.appOrigin}/api/messages?${query}`, { headers: auth })
+					await fetch(`${harness.appOrigin}/api/messages?${query}`, {
+						headers: auth,
+					})
 				).json()) as { messages: { id: string; labelIds: string[] }[] }
 			).messages[0];
 		let target = await pick('label=INBOX&limit=1');
@@ -66,23 +68,32 @@ async function main(): Promise<void> {
 			body: JSON.stringify({ ids: [target.id], addLabels, removeLabels }),
 		});
 		const modifyBody = await modifyRes.json();
-		if (!modifyRes.ok) throw new Error(`modify failed: ${JSON.stringify(modifyBody)}`);
+		if (!modifyRes.ok)
+			throw new Error(`modify failed: ${JSON.stringify(modifyBody)}`);
 
 		// Prove the write reached the mock.
 		await sleep(200);
-		const logged = readModifyLog(harness.mockLog).find((e) => e.id === target.id);
+		const logged = readModifyLog(harness.mockLog).find(
+			(e) => e.id === target.id,
+		);
 		if (!logged) throw new Error(`no modify for ${target.id} in the mock log`);
 
 		// Prove the real mirror is untouched.
 		const after = await fingerprintReal();
 		if (after !== before) {
-			throw new Error(`REAL mirror changed!\nbefore:\n${before}\nafter:\n${after}`);
+			throw new Error(
+				`REAL mirror changed!\nbefore:\n${before}\nafter:\n${after}`,
+			);
 		}
 
 		console.log('SMOKE PASS');
-		console.log(`  wrote add=${JSON.stringify(addLabels)} remove=${JSON.stringify(removeLabels)} to ${target.id}`);
+		console.log(
+			`  wrote add=${JSON.stringify(addLabels)} remove=${JSON.stringify(removeLabels)} to ${target.id}`,
+		);
 		console.log(`  mock logged: ${JSON.stringify(logged)}`);
-		console.log(`  real mirror fingerprint unchanged (${before.split('\n').length} files)`);
+		console.log(
+			`  real mirror fingerprint unchanged (${before.split('\n').length} files)`,
+		);
 	} finally {
 		harness.teardown();
 	}
@@ -92,6 +103,8 @@ try {
 	await main();
 	process.exit(0);
 } catch (err) {
-	console.error(`SMOKE FAIL: ${err instanceof Error ? err.message : String(err)}`);
+	console.error(
+		`SMOKE FAIL: ${err instanceof Error ? err.message : String(err)}`,
+	);
 	process.exit(1);
 }

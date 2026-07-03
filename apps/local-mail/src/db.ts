@@ -75,7 +75,9 @@ function parseLabelIds(json: string | null): string[] {
 	if (!json) return [];
 	try {
 		const parsed = JSON.parse(json);
-		return Array.isArray(parsed) ? parsed.filter((v) => typeof v === 'string') : [];
+		return Array.isArray(parsed)
+			? parsed.filter((v) => typeof v === 'string')
+			: [];
 	} catch {
 		return [];
 	}
@@ -433,9 +435,7 @@ export function openMailDb({ dataDir, accountEmail }: MailDbLocation) {
 				params.$labelId = labelId;
 			}
 			if (search) {
-				where.push(
-					`(subject LIKE $q OR sender LIKE $q OR body_text LIKE $q)`,
-				);
+				where.push(`(subject LIKE $q OR sender LIKE $q OR body_text LIKE $q)`);
 				params.$q = `%${search}%`;
 			}
 			const clause = where.length ? `WHERE ${where.join(' AND ')}` : '';
@@ -518,10 +518,9 @@ export function openMailDb({ dataDir, accountEmail }: MailDbLocation) {
 		/** Every mirrored label, for the filter rail and the add/remove menu. */
 		listLabels(): LabelSummary[] {
 			return db
-				.query<
-					{ id: string; name: string | null; type: string | null },
-					[]
-				>(`SELECT id, name, type FROM labels ORDER BY type, name`)
+				.query<{ id: string; name: string | null; type: string | null }, []>(
+					`SELECT id, name, type FROM labels ORDER BY type, name`,
+				)
 				.all();
 		},
 

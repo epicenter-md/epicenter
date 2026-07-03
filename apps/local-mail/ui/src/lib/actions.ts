@@ -20,10 +20,7 @@ export type TriageAction = {
  * derived from whether that label is currently present. */
 export type ToggleVerb = 'inbox' | 'read' | 'star';
 
-export function planToggle(
-	labelIds: string[],
-	verb: ToggleVerb,
-): TriageAction {
+export function planToggle(labelIds: string[], verb: ToggleVerb): TriageAction {
 	const has = (id: string) => labelIds.includes(id);
 	switch (verb) {
 		case 'inbox':
