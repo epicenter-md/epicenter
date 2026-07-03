@@ -23,16 +23,21 @@
 		readOnly,
 		labels,
 		busy,
+		labelsOpen,
 		onDispatch,
+		onLabelsOpenChange,
 	}: {
 		id: string | null;
 		readOnly: boolean;
 		labels: MailLabel[];
 		/** True while a modify is in flight (the page owns the mutation). */
 		busy: boolean;
+		/** Page-owned open state for the Labels menu, so the `l` key can open it. */
+		labelsOpen: boolean;
 		/** Fire a planned triage action; the page runs it, gates read-only, and
 		 * owns the undo toast. Buttons and the keyboard share this one path. */
 		onDispatch: (action: TriageAction) => void;
+		onLabelsOpenChange: (open: boolean) => void;
 	} = $props();
 
 	const message = createQuery(() => ({
@@ -145,7 +150,7 @@
 				toggle('star'),
 			)}
 
-			<DropdownMenu.Root>
+			<DropdownMenu.Root open={labelsOpen} onOpenChange={onLabelsOpenChange}>
 				<DropdownMenu.Trigger disabled={busy || readOnly}>
 					{#snippet child({ props })}
 						<Button

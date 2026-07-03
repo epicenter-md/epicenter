@@ -46,6 +46,7 @@
 				class="pointer-events-none absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground"
 			/>
 			<Input
+				id="mirror-search"
 				value={search}
 				oninput={(e) => onSearch(e.currentTarget.value)}
 				placeholder="Search mirror"

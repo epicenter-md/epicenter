@@ -37,6 +37,15 @@
 	const nameOf = $derived(
 		new Map(labels.map((l) => [l.id, labelDisplayName(l.id, l.name)])),
 	);
+
+	// Keep the keyboard-selected row visible: when the selection moves off the
+	// visible slice (j/k paging past the fold), scroll it just into view.
+	$effect(() => {
+		if (!selectedId) return;
+		document
+			.querySelector(`[data-message-id="${selectedId}"]`)
+			?.scrollIntoView({ block: 'nearest' });
+	});
 </script>
 
 <div class="flex min-w-0 flex-1 flex-col border-r border-border">
@@ -86,6 +95,7 @@
 				{@const chips = chipLabelIds(message.labelIds)}
 				<li>
 					<button
+						data-message-id={message.id}
 						class={cn(
 							'flex w-full items-start gap-2.5 px-3 py-2.5 text-left transition-colors',
 							selectedId === message.id

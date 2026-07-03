@@ -1,8 +1,16 @@
 <script lang="ts">
+	import * as Dialog from '@epicenter/ui/dialog';
+	import { Kbd } from '@epicenter/ui/kbd';
 	import { createMutation, createQuery, useQueryClient } from '@tanstack/svelte-query';
 	import { onDestroy } from 'svelte';
 	import { toast } from 'svelte-sonner';
-	import { invert, isReversible, type TriageAction } from '$lib/actions';
+	import {
+		invert,
+		isReversible,
+		planToggle,
+		type ToggleVerb,
+		type TriageAction,
+	} from '$lib/actions';
 	import LabelRail from '$lib/components/LabelRail.svelte';
 	import MessageDetail from '$lib/components/MessageDetail.svelte';
 	import MessageList from '$lib/components/MessageList.svelte';
@@ -13,6 +21,9 @@
 	let selectedLabel = $state<string | null>('INBOX');
 	let search = $state('');
 	let selectedId = $state<string | null>(null);
+	// Page-owned so the `l` key can open the detail pane's Labels menu.
+	let labelsOpen = $state(false);
+	let shortcutsOpen = $state(false);
 
 	const queryClient = useQueryClient();
 	const status = createQuery(() => ({
@@ -51,10 +62,10 @@
 		onError: (error: Error) => toast.error(error.message),
 	}));
 
-	// The one write path. Both the toolbar (via `onDispatch`) and, later, the
-	// keyboard call this; the read-only gate and the undo toast live here alone.
-	// `id` is explicit so Undo targets the original message even after the
-	// selection has moved on.
+	// The one write path. Both the toolbar (via `onDispatch`) and the keyboard
+	// call this; the read-only gate and the undo toast live here alone. `id` is
+	// explicit so Undo targets the original message even after the selection has
+	// moved on.
 	type ModifyVars = { id: string; action: TriageAction; undoable: boolean };
 	const modify = createMutation(() => ({
 		mutationFn: (v: ModifyVars) =>
@@ -139,7 +150,83 @@
 			selectedId = messageList[0]?.id ?? null;
 		}
 	});
+
+	// --- Keyboard triage -----------------------------------------------------
+	function isTypingTarget(target: EventTarget | null): boolean {
+		if (!(target instanceof HTMLElement)) return false;
+		const tag = target.tagName;
+		return tag === 'INPUT' || tag === 'TEXTAREA' || target.isContentEditable;
+	}
+	function moveSelection(delta: number): void {
+		if (messageList.length === 0) return;
+		const idx = messageList.findIndex((m) => m.id === selectedId);
+		const next = Math.min(
+			Math.max((idx === -1 ? 0 : idx) + delta, 0),
+			messageList.length - 1,
+		);
+		selectedId = messageList[next]?.id ?? null;
+	}
+	function keyToggle(verb: ToggleVerb): void {
+		const summary = messageList.find((m) => m.id === selectedId);
+		if (summary) dispatch(planToggle(summary.labelIds, verb));
+	}
+	function onKeydown(e: KeyboardEvent): void {
+		// `?` toggles the shortcuts overlay from anywhere but a text field.
+		if (e.key === '?' && !isTypingTarget(e.target)) {
+			shortcutsOpen = !shortcutsOpen;
+			e.preventDefault();
+			return;
+		}
+		// Never hijack typing; let an open menu or overlay own the keyboard.
+		if (isTypingTarget(e.target) || shortcutsOpen || labelsOpen) return;
+
+		// Navigation is pure client selection, so it is safe in read-only mode.
+		if (e.key === 'j' || e.key === 'ArrowDown') {
+			moveSelection(1);
+			e.preventDefault();
+			return;
+		}
+		if (e.key === 'k' || e.key === 'ArrowUp') {
+			moveSelection(-1);
+			e.preventDefault();
+			return;
+		}
+		if (e.key === '/') {
+			document.getElementById('mirror-search')?.focus();
+			e.preventDefault();
+			return;
+		}
+
+		// Action keys obey the same read-only gate as the buttons.
+		if (readOnly) return;
+		if (e.key === 'e') {
+			keyToggle('inbox');
+			e.preventDefault();
+		} else if (e.key === 's') {
+			keyToggle('star');
+			e.preventDefault();
+		} else if (e.key === 'U') {
+			keyToggle('read');
+			e.preventDefault();
+		} else if (e.key === 'l') {
+			labelsOpen = true;
+			e.preventDefault();
+		}
+	}
+
+	const shortcuts: { keys: string[]; label: string }[] = [
+		{ keys: ['j'], label: 'Next message' },
+		{ keys: ['k'], label: 'Previous message' },
+		{ keys: ['e'], label: 'Archive / move to inbox' },
+		{ keys: ['s'], label: 'Star / unstar' },
+		{ keys: ['⇧', 'U'], label: 'Mark unread / read' },
+		{ keys: ['l'], label: 'Labels menu' },
+		{ keys: ['/'], label: 'Search' },
+		{ keys: ['?'], label: 'This help' },
+	];
 </script>
+
+<svelte:window onkeydown={onKeydown} />
 
 <div class="flex h-full flex-col">
 	<StatusBar
@@ -175,8 +262,31 @@
 				{readOnly}
 				labels={labelList}
 				busy={modify.isPending}
+				{labelsOpen}
 				onDispatch={dispatch}
+				onLabelsOpenChange={(open) => (labelsOpen = open)}
 			/>
 		{/key}
 	</div>
 </div>
+
+<Dialog.Root open={shortcutsOpen} onOpenChange={(open) => (shortcutsOpen = open)}>
+	<Dialog.Content class="max-w-sm">
+		<Dialog.Header>
+			<Dialog.Title>Keyboard shortcuts</Dialog.Title>
+			<Dialog.Description>Triage without leaving the keyboard.</Dialog.Description>
+		</Dialog.Header>
+		<dl class="mt-2 space-y-1.5">
+			{#each shortcuts as row (row.label)}
+				<div class="flex items-center justify-between gap-4 text-sm">
+					<dt class="text-muted-foreground">{row.label}</dt>
+					<dd class="flex items-center gap-1">
+						{#each row.keys as key (key)}
+							<Kbd>{key}</Kbd>
+						{/each}
+					</dd>
+				</div>
+			{/each}
+		</dl>
+	</Dialog.Content>
+</Dialog.Root>
