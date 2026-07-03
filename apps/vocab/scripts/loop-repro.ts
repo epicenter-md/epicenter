@@ -28,13 +28,8 @@ function inMemoryStore(): RecordsHandle<AgentMessage> & Disposable {
 	const map = new Map<string, AgentMessage>();
 	const handlers = new Set<() => void>();
 	return {
-		get: (k) => map.get(k),
 		set: (k, v) => {
 			map.set(k, v);
-			for (const h of handlers) h();
-		},
-		delete: (k) => {
-			map.delete(k);
 			for (const h of handlers) h();
 		},
 		*entries() {

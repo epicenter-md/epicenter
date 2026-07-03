@@ -37,14 +37,16 @@ import {
 	type YKeyValueLwwEntry,
 } from './y-keyvalue/y-keyvalue-lww.js';
 
-/** The typed surface {@link attachRecords} returns over a child doc. */
+/**
+ * The typed surface {@link attachRecords} returns over a child doc: the minimal
+ * append-and-observe seam its one consumer, the agent loop, actually uses. The
+ * backing {@link YKeyValueLww} can also read by key (`get`) and remove
+ * (`delete`), but no consumer does, so the handle does not advertise them; a
+ * future by-id reader would widen this type alongside a live caller.
+ */
 export type RecordsHandle<T> = {
-	/** The value stored under `key`, or `undefined` when it is absent. */
-	get(key: string): T | undefined;
 	/** Write the complete value under `key`, overwriting any previous one. */
 	set(key: string, value: T): void;
-	/** Remove the value under `key`. */
-	delete(key: string): void;
 	/** Walk every stored value as a `{ key, val }` pair. */
 	entries(): IterableIterator<KvEntry<T>>;
 	/**
@@ -71,9 +73,7 @@ export function attachRecords<T>(
 	const store = new YKeyValueLww<T>(ydoc.getArray<YKeyValueLwwEntry<T>>(key));
 	ydoc.once('destroy', () => store[Symbol.dispose]());
 	return {
-		get: (k) => store.get(k),
 		set: (k, value) => store.set(k, value),
-		delete: (k) => store.delete(k),
 		entries: () => store.entries(),
 		observe: (handler) => store.observe(handler),
 	};

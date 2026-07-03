@@ -85,19 +85,13 @@ export type ConversationHandle = {
 };
 
 /**
- * The loop's persistence seam: the subset of a by-id record store it actually
- * uses. `attachRecords`'s richer {@link RecordsHandle} satisfies this
- * structurally; the loop never reads a value by id (`get`) or removes one
- * (`delete`). It only appends a finished message (`set`), reads the whole
- * transcript (`entries`), and re-reads on change (`observe`). Naming the subset
- * keeps the contract honest about what a store must provide and lets a more
- * minimal backend satisfy it.
+ * The loop's persistence seam: a by-id record store plus disposal. The loop only
+ * appends a finished message (`set`), reads the whole transcript (`entries`), and
+ * re-reads on change (`observe`), which is exactly {@link RecordsHandle}.
+ * `attachRecords` over a synced child doc is one backend; a device-local store
+ * that implements the same handle is another (ADR-0051).
  */
-export type AgentMessageStore = Pick<
-	RecordsHandle<AgentMessage>,
-	'set' | 'entries' | 'observe'
-> &
-	Disposable;
+export type AgentMessageStore = RecordsHandle<AgentMessage> & Disposable;
 
 export type ConversationOptions = {
 	/** The opened `conversations.messages` store, keyed by message id. */
