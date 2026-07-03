@@ -4,10 +4,8 @@
 	import * as DropdownMenu from '@epicenter/ui/dropdown-menu';
 	import * as Empty from '@epicenter/ui/empty';
 	import { Loading } from '@epicenter/ui/loading';
-	import { Separator } from '@epicenter/ui/separator';
 	import ArchiveIcon from '@lucide/svelte/icons/archive';
 	import ArchiveRestoreIcon from '@lucide/svelte/icons/archive-restore';
-	import CheckIcon from '@lucide/svelte/icons/check';
 	import MailOpenIcon from '@lucide/svelte/icons/mail-open';
 	import MailIcon from '@lucide/svelte/icons/mail';
 	import MousePointerClickIcon from '@lucide/svelte/icons/mouse-pointer-click';
@@ -18,7 +16,7 @@
 	import { toast } from 'svelte-sonner';
 	import { api } from '$lib/api';
 	import { fullDate, labelDisplayName } from '$lib/format';
-	import type { MailLabel, ModifyMessageLabelsOutcome } from '$lib/types';
+	import type { MailLabel } from '$lib/types';
 
 	let {
 		id,
@@ -38,13 +36,11 @@
 	}));
 
 	let lastVerb = $state<string | null>(null);
-	let lastOutcome = $state<ModifyMessageLabelsOutcome | null>(null);
 
 	const modify = createMutation(() => ({
 		mutationFn: (input: { addLabels?: string[]; removeLabels?: string[] }) =>
 			api.modify({ ids: id ? [id] : [], ...input }),
 		onSuccess: (outcome) => {
-			lastOutcome = outcome;
 			const failed = outcome.results.filter((r) => r.error).length;
 			const ok = outcome.results.length - failed;
 			if (outcome.aborted) {
@@ -92,13 +88,6 @@
 		if (present) run(`Removed ${name}`, { removeLabels: [labelId] });
 		else run(`Added ${name}`, { addLabels: [labelId] });
 	}
-
-	// Reset the inline outcome strip when a different message opens.
-	$effect(() => {
-		id;
-		lastOutcome = null;
-		lastVerb = null;
-	});
 </script>
 
 {#snippet actionButton(
@@ -233,33 +222,6 @@
 				</DropdownMenu.Content>
 			</DropdownMenu.Root>
 		</div>
-
-		<!-- Last-action outcome strip -->
-		{#if lastOutcome}
-			{@const result = lastOutcome.results[0]}
-			<div
-				class="flex shrink-0 items-center gap-2 border-b px-5 py-1.5 text-xs
-				{lastOutcome.aborted || result?.error
-					? 'border-destructive/30 bg-destructive/10 text-destructive'
-					: result && !result.folded
-						? 'border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-400'
-						: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'}"
-			>
-				{#if lastOutcome.aborted}
-					<TriangleAlertIcon class="size-3.5" />
-					<span>Aborted: {lastOutcome.aborted.message}</span>
-				{:else if result?.error}
-					<TriangleAlertIcon class="size-3.5" />
-					<span>{lastVerb} failed: {result.error.message}</span>
-				{:else if result && !result.folded}
-					<CheckIcon class="size-3.5" />
-					<span>{lastVerb}. Gmail accepted it; the mirror catches up on the next sync (folded: false).</span>
-				{:else}
-					<CheckIcon class="size-3.5" />
-					<span>{lastVerb}. Mirror updated from Gmail's response.</span>
-				{/if}
-			</div>
-		{/if}
 
 		<!-- Body: the pre-extracted plain text; raw HTML is never rendered. -->
 		<div class="flex-1 min-h-0 overflow-y-auto px-5 py-4">

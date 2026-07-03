@@ -22,7 +22,7 @@
 		selectedId,
 		loading,
 		error,
-		isFiltered,
+		mirrorEmpty,
 		onSelect,
 	}: {
 		messages: MessageSummary[];
@@ -30,7 +30,7 @@
 		selectedId: string | null;
 		loading: boolean;
 		error: string | null;
-		isFiltered: boolean;
+		mirrorEmpty: boolean;
 		onSelect: (id: string) => void;
 	} = $props();
 
@@ -63,19 +63,19 @@
 	{:else if messages.length === 0}
 		<Empty.Root class="flex-1 border-0">
 			<Empty.Media variant="icon">
-				{#if isFiltered}
-					<SearchXIcon class="size-5" />
-				{:else}
+				{#if mirrorEmpty}
 					<InboxIcon class="size-5" />
+				{:else}
+					<SearchXIcon class="size-5" />
 				{/if}
 			</Empty.Media>
 			<Empty.Title>
-				{isFiltered ? 'No messages match' : 'No messages mirrored'}
+				{mirrorEmpty ? 'No messages mirrored' : 'No messages match'}
 			</Empty.Title>
 			<Empty.Description>
-				{isFiltered
-					? 'Try a different label or search term.'
-					: 'Run local-mail sync --full to populate the mirror.'}
+				{mirrorEmpty
+					? 'Run local-mail sync --full to populate the mirror.'
+					: 'Try a different label or search term.'}
 			</Empty.Description>
 		</Empty.Root>
 	{:else}
