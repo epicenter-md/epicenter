@@ -4,10 +4,8 @@
 	import * as DropdownMenu from '@epicenter/ui/dropdown-menu';
 	import * as Empty from '@epicenter/ui/empty';
 	import { Loading } from '@epicenter/ui/loading';
-	import { Separator } from '@epicenter/ui/separator';
 	import ArchiveIcon from '@lucide/svelte/icons/archive';
 	import ArchiveRestoreIcon from '@lucide/svelte/icons/archive-restore';
-	import CheckIcon from '@lucide/svelte/icons/check';
 	import MailOpenIcon from '@lucide/svelte/icons/mail-open';
 	import MailIcon from '@lucide/svelte/icons/mail';
 	import MousePointerClickIcon from '@lucide/svelte/icons/mouse-pointer-click';
@@ -224,33 +222,6 @@
 				</DropdownMenu.Content>
 			</DropdownMenu.Root>
 		</div>
-
-		<!-- Last-action outcome strip -->
-		{#if modify.data}
-			{@const result = modify.data.results[0]}
-			<div
-				class="flex shrink-0 items-center gap-2 border-b px-5 py-1.5 text-xs
-				{modify.data.aborted || result?.error
-					? 'border-destructive/30 bg-destructive/10 text-destructive'
-					: result && !result.folded
-						? 'border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-400'
-						: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'}"
-			>
-				{#if modify.data.aborted}
-					<TriangleAlertIcon class="size-3.5" />
-					<span>Aborted: {modify.data.aborted.message}</span>
-				{:else if result?.error}
-					<TriangleAlertIcon class="size-3.5" />
-					<span>{lastVerb} failed: {result.error.message}</span>
-				{:else if result && !result.folded}
-					<CheckIcon class="size-3.5" />
-					<span>{lastVerb}. Gmail accepted it; the mirror catches up on the next sync (folded: false).</span>
-				{:else}
-					<CheckIcon class="size-3.5" />
-					<span>{lastVerb}. Mirror updated from Gmail's response.</span>
-				{/if}
-			</div>
-		{/if}
 
 		<!-- Body: the pre-extracted plain text; raw HTML is never rendered. -->
 		<div class="flex-1 min-h-0 overflow-y-auto px-5 py-4">
