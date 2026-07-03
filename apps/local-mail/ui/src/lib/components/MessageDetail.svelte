@@ -18,7 +18,7 @@
 	import { toast } from 'svelte-sonner';
 	import { api } from '$lib/api';
 	import { fullDate, labelDisplayName } from '$lib/format';
-	import type { MailLabel, ModifyMessageLabelsOutcome } from '$lib/types';
+	import type { MailLabel } from '$lib/types';
 
 	let {
 		id,
@@ -38,13 +38,11 @@
 	}));
 
 	let lastVerb = $state<string | null>(null);
-	let lastOutcome = $state<ModifyMessageLabelsOutcome | null>(null);
 
 	const modify = createMutation(() => ({
 		mutationFn: (input: { addLabels?: string[]; removeLabels?: string[] }) =>
 			api.modify({ ids: id ? [id] : [], ...input }),
 		onSuccess: (outcome) => {
-			lastOutcome = outcome;
 			const failed = outcome.results.filter((r) => r.error).length;
 			const ok = outcome.results.length - failed;
 			if (outcome.aborted) {
@@ -92,13 +90,6 @@
 		if (present) run(`Removed ${name}`, { removeLabels: [labelId] });
 		else run(`Added ${name}`, { addLabels: [labelId] });
 	}
-
-	// Reset the inline outcome strip when a different message opens.
-	$effect(() => {
-		id;
-		lastOutcome = null;
-		lastVerb = null;
-	});
 </script>
 
 {#snippet actionButton(
@@ -235,19 +226,19 @@
 		</div>
 
 		<!-- Last-action outcome strip -->
-		{#if lastOutcome}
-			{@const result = lastOutcome.results[0]}
+		{#if modify.data}
+			{@const result = modify.data.results[0]}
 			<div
 				class="flex shrink-0 items-center gap-2 border-b px-5 py-1.5 text-xs
-				{lastOutcome.aborted || result?.error
+				{modify.data.aborted || result?.error
 					? 'border-destructive/30 bg-destructive/10 text-destructive'
 					: result && !result.folded
 						? 'border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-400'
 						: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'}"
 			>
-				{#if lastOutcome.aborted}
+				{#if modify.data.aborted}
 					<TriangleAlertIcon class="size-3.5" />
-					<span>Aborted: {lastOutcome.aborted.message}</span>
+					<span>Aborted: {modify.data.aborted.message}</span>
 				{:else if result?.error}
 					<TriangleAlertIcon class="size-3.5" />
 					<span>{lastVerb} failed: {result.error.message}</span>
