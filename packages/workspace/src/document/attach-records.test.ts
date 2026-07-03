@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import * as Y from 'yjs';
-import { attachRecords } from './attach-records.js';
+import { attachRecords, type RecordsHandle } from './attach-records.js';
 
 /** A message-shaped value: the per-id JSON blob this layout exists to hold. */
 type Message = {
@@ -13,6 +13,15 @@ function message(id: string, text: string): Message {
 	return { id, role: 'user', parts: [{ type: 'text', text }] };
 }
 
+/**
+ * Read a value by key through the only read the handle exposes, `entries()`.
+ * The handle deliberately omits `get`; tests read the same way its consumer does.
+ */
+function read(store: RecordsHandle<Message>, key: string): Message | undefined {
+	for (const entry of store.entries()) if (entry.key === key) return entry.val;
+	return undefined;
+}
+
 /** Copy every update from `source` into `target`, the way sync would. */
 function sync(source: Y.Doc, target: Y.Doc): void {
 	Y.applyUpdate(target, Y.encodeStateAsUpdate(source));
@@ -23,12 +32,12 @@ describe('attachRecords', () => {
 		const ydoc = new Y.Doc();
 		const store = attachRecords<Message>(ydoc);
 
-		expect(store.get('m1')).toBeUndefined();
+		expect(read(store, 'm1')).toBeUndefined();
 
 		const m1 = message('m1', '你好');
 		store.set('m1', m1);
 
-		expect(store.get('m1')).toEqual(m1);
+		expect(read(store, 'm1')).toEqual(m1);
 		expect([...store.entries()]).toHaveLength(1);
 	});
 
@@ -44,16 +53,6 @@ describe('attachRecords', () => {
 		expect(byId.size).toBe(2);
 		expect(byId.get('m1')).toEqual(message('m1', 'a'));
 		expect(byId.get('m2')).toEqual(message('m2', 'b'));
-	});
-
-	test('delete removes a value', () => {
-		const ydoc = new Y.Doc();
-		const store = attachRecords<Message>(ydoc);
-		store.set('m1', message('m1', 'a'));
-		store.delete('m1');
-
-		expect(store.get('m1')).toBeUndefined();
-		expect([...store.entries()]).toHaveLength(0);
 	});
 
 	test('observe fires on local writes', () => {
@@ -81,7 +80,7 @@ describe('attachRecords', () => {
 		const storeB = attachRecords<Message>(docB);
 		sync(docA, docB);
 
-		expect(storeB.get('m1')).toEqual(message('m1', '你好'));
+		expect(read(storeB, 'm1')).toEqual(message('m1', '你好'));
 	});
 
 	test('concurrent writes to one key converge last-write-wins', () => {
@@ -97,8 +96,8 @@ describe('attachRecords', () => {
 		storeB.set('m1', message('m1', 'from B'));
 		sync(docB, docA);
 
-		expect(storeA.get('m1')).toEqual(message('m1', 'from B'));
-		expect(storeB.get('m1')).toEqual(message('m1', 'from B'));
+		expect(read(storeA, 'm1')).toEqual(message('m1', 'from B'));
+		expect(read(storeB, 'm1')).toEqual(message('m1', 'from B'));
 	});
 
 	test('destroying the doc disposes the store without throwing', () => {

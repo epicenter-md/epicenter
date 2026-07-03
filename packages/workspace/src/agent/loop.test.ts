@@ -130,7 +130,7 @@ describe('createConversation', () => {
 		// Once the turn settles, nothing is streaming and the message persisted.
 		expect(handle.snapshot().streaming).toBeNull();
 		expect(handle.snapshot().messages.map((m) => m.id)).toContain('m2');
-		expect(store.get('m2')).toBeDefined();
+		expect([...store.entries()].some((entry) => entry.key === 'm2')).toBe(true);
 	});
 
 	test('the streaming message gets a fresh identity per delta so reactive views update', async () => {
