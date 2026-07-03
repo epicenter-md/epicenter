@@ -32,13 +32,15 @@ Four independent guarantees keep this from touching anything real:
 
 ## Files
 
-| file             | what it is |
-|------------------|------------|
-| `mock-gmail.ts`  | Mock Gmail REST server. Reads the copy's SQLite to know current labels, applies the modify, logs it, 403s everything else. |
-| `setup-copy.sh`  | Copies the real mirror to `LM_TEST_DIR` and forges dummy credentials. |
-| `fingerprint.sh` | Hashes the real mirror's durable state, for the before/after safety proof. |
-| `harness.sh`     | Boots mock + `up` against the copy and prints a launch URL, for the manual browser loop. |
-| `smoke.ts`       | Headless one-shot: fires one real write through `/api/messages/modify`, asserts it hit the mock, asserts the real mirror is unchanged. |
+| file               | what it is |
+|--------------------|------------|
+| `mock-gmail.ts`    | Mock Gmail REST server. Reads the copy's SQLite to know current labels, applies the modify, logs it, 403s everything else. |
+| `setup-copy.sh`    | Copies the real mirror to `LM_TEST_DIR` and forges dummy credentials. |
+| `fingerprint.sh`   | Hashes the real mirror's durable state, for the before/after safety proof. |
+| `harness.sh`       | Boots mock + `up` against the copy and prints a launch URL, for the manual browser loop. |
+| `boot.ts`          | Shared boot used by both smokes: stands up copy + mock + `up` on ephemeral ports and hands back the launch coordinates. One owner for the safety-critical wiring. |
+| `smoke.ts`         | Headless one-shot: fires one real write through `/api/messages/modify`, asserts it hit the mock, asserts the real mirror is unchanged. |
+| `browser-smoke.ts` | Browser one-shot: drives system Chrome to verify the write UX (undo toast, catching-up chip, shortcuts overlay, keyboard dispatch). |
 
 Runtime artifacts (the copy, the modify log, server logs) live under
 `LM_TEST_DIR`, never inside the repo.
@@ -53,6 +55,28 @@ bun run apps/local-mail/test-support/smoke.ts
 
 On success it prints `SMOKE PASS`, the mock log line for the write, and confirms
 the real mirror fingerprint is unchanged. Exits non-zero on any failure.
+
+## Automated browser smoke (write UX)
+
+Drives the already-installed system Chrome (via `puppeteer-core`, no browser
+download) to verify the four affordances the API smoke can't see, then tears
+itself down:
+
+```sh
+bun run apps/local-mail/test-support/browser-smoke.ts
+```
+
+It boots the mock in `folded:false` mode and asserts, against the live DOM and
+the mock modify log:
+
+1. `?` opens the keyboard-shortcuts overlay
+2. clicking Archive shows an "Archived / Undo" toast, and Undo fires the inverse
+   write (add INBOX) at the mock
+3. the `folded:false` write flips the StatusBar mirror chip to "catching up"
+4. the `e` key dispatches an archive through the same path, hitting the mock
+
+It builds the SPA first if `ui/dist` is missing, and confirms the real mirror
+fingerprint is unchanged. Set `CHROME_PATH` to override the browser binary.
 
 ## Manual browser loop (write UX)
 

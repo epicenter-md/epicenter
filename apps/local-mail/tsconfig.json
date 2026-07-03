@@ -5,5 +5,5 @@
 		"noUnusedLocals": true,
 		"noUnusedParameters": true
 	},
-	"exclude": ["ui"]
+	"exclude": ["ui", "test-support"]
 }

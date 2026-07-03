@@ -1,0 +1,13 @@
+{
+	// The browser smoke drives Chrome through `page.evaluate` callbacks whose
+	// bodies run in the page, so this unit needs the DOM lib. It is kept OUT of
+	// the app's server typecheck (see ../tsconfig.json `exclude`) so DOM globals
+	// never leak into the Gmail engine's Node/Bun source.
+	"extends": "../tsconfig.json",
+	"compilerOptions": {
+		"lib": ["ESNext", "DOM", "DOM.Iterable"]
+	},
+	"include": ["**/*.ts"],
+	// Drop the parent's exclude, which names this very directory.
+	"exclude": []
+}
