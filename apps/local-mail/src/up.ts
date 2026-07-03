@@ -145,13 +145,11 @@ export async function runUp(): Promise<number> {
 		return 1;
 	}
 
-	// Re-bind the non-null values: TS drops the post-guard narrowing of the
-	// destructured `runtime`/`session` bindings inside the fetch/loop/SIGINT
-	// closures below, so capture them here where the narrowing holds.
-	const rt = runtime;
-	const sess = session;
-	const { db } = sess.deps;
-	const readOnly = rt.config.readOnly;
+	// `runtime`/`session` are `const`, so their post-guard non-null narrowing
+	// flows into the closures below (`handleApi` is an arrow, not a hoisted
+	// declaration, so it inherits the narrowing rather than the widened type).
+	const { db } = session.deps;
+	const readOnly = runtime.config.readOnly;
 
 	// The valid-bearer set. Dev pre-seeds the fixed proxy token; prod fills it
 	// only through the bootstrap exchange.
@@ -161,7 +159,7 @@ export async function runUp(): Promise<number> {
 		const devToken = process.env.LOCAL_MAIL_TOKEN;
 		if (!devToken) {
 			lock.release();
-			sess.close();
+			session.close();
 			console.error(
 				'LOCAL_MAIL_DEV=1 requires LOCAL_MAIL_TOKEN so the Vite proxy can authenticate.',
 			);
@@ -183,7 +181,7 @@ export async function runUp(): Promise<number> {
 		return header.slice('Bearer '.length);
 	}
 
-	async function handleApi(req: Request, url: URL): Promise<Response> {
+	const handleApi = async (req: Request, url: URL): Promise<Response> => {
 		const { pathname } = url;
 
 		// The one unauthenticated mutation: exchange the bootstrap for a bearer.
@@ -213,7 +211,7 @@ export async function runUp(): Promise<number> {
 		}
 
 		if (pathname === '/api/status' && req.method === 'GET') {
-			const status = await readMailStatus(rt);
+			const status = await readMailStatus(runtime);
 			return json({
 				accountEmail: status.accountEmail,
 				connected: status.connected,
@@ -252,7 +250,7 @@ export async function runUp(): Promise<number> {
 
 		if (pathname === '/api/sync' && req.method === 'POST') {
 			const outcome = await gate(() =>
-				syncMailbox(sess.deps, { forceFull: false }),
+				syncMailbox(session.deps, { forceFull: false }),
 			);
 			return json(outcome);
 		}
@@ -267,7 +265,7 @@ export async function runUp(): Promise<number> {
 				return json({ error: 'Body must be { ids, addLabels, removeLabels }.' }, 400);
 			}
 			const { data, error } = await resolveAndModifyMessageLabels({
-				deps: sess.deps,
+				deps: session.deps,
 				ids: body.ids,
 				addLabels: body.addLabels ?? [],
 				removeLabels: body.removeLabels ?? [],
@@ -278,7 +276,7 @@ export async function runUp(): Promise<number> {
 		}
 
 		return json({ error: 'Not found.' }, 404);
-	}
+	};
 
 	const server = Bun.serve({
 		hostname: '127.0.0.1',
@@ -302,7 +300,7 @@ export async function runUp(): Promise<number> {
 	// The background sync loop, serialized through the same gate as POST /api/sync.
 	(async () => {
 		while (!controller.signal.aborted) {
-			await gate(() => syncMailbox(sess.deps, { forceFull: false })).catch(
+			await gate(() => syncMailbox(session.deps, { forceFull: false })).catch(
 				(cause) => console.error(`[sync] loop pass failed: ${cause}`),
 			);
 			if (controller.signal.aborted) break;
@@ -333,7 +331,7 @@ export async function runUp(): Promise<number> {
 		process.on('SIGINT', () => {
 			controller.abort();
 			server.stop();
-			sess.close();
+			session.close();
 			lock.release();
 			resolve();
 		});
