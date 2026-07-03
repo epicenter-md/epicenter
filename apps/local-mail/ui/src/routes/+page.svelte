@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { createMutation, createQuery, useQueryClient } from '@tanstack/svelte-query';
+	import { onDestroy } from 'svelte';
 	import { toast } from 'svelte-sonner';
 	import { invert, isReversible, type TriageAction } from '$lib/actions';
 	import LabelRail from '$lib/components/LabelRail.svelte';
@@ -41,6 +42,8 @@
 					`Synced: ${outcome.messagesUpserted} upserted, ${outcome.messagesDeleted} deleted, ${outcome.labelsPatched} labels patched`,
 				);
 			}
+			// A completed sync has folded any pending write, so the mirror is current.
+			clearCatchingUp();
 			queryClient.invalidateQueries({ queryKey: ['messages'] });
 			queryClient.invalidateQueries({ queryKey: ['status'] });
 			queryClient.invalidateQueries({ queryKey: ['labels'] });
@@ -68,15 +71,20 @@
 				toast.error(`${v.action.label} failed`, {
 					description: outcome.results.find((r) => r.error)?.error?.message,
 				});
-			} else if (v.undoable && isReversible(v.action)) {
+			} else {
 				// Success is self-evident from the effect (the row leaves, chips
 				// update). The only transient element that earns its place is Undo.
-				toast.success(v.action.label, {
-					action: {
-						label: 'Undo',
-						onClick: () => runOn(v.id, invert(v.action), false),
-					},
-				});
+				if (v.undoable && isReversible(v.action)) {
+					toast.success(v.action.label, {
+						action: {
+							label: 'Undo',
+							onClick: () => runOn(v.id, invert(v.action), false),
+						},
+					});
+				}
+				// `folded:false` = Gmail accepted it but the mirror row was not
+				// patched. That is a mirror-state fact, so it goes to the chip.
+				if (outcome.results.some((r) => !r.folded)) flashCatchingUp();
 			}
 			queryClient.invalidateQueries({ queryKey: ['messages'] });
 			queryClient.invalidateQueries({ queryKey: ['status'] });
@@ -106,6 +114,20 @@
 		sync.error?.message ?? sync.data?.failure?.message ?? null,
 	);
 
+	// A brief "catching up" flash on the mirror chip after a sync-lagging write.
+	let catchingUp = $state(false);
+	let catchUpTimer: ReturnType<typeof setTimeout> | undefined;
+	function flashCatchingUp(): void {
+		catchingUp = true;
+		clearTimeout(catchUpTimer);
+		catchUpTimer = setTimeout(() => (catchingUp = false), 4000);
+	}
+	function clearCatchingUp(): void {
+		catchingUp = false;
+		clearTimeout(catchUpTimer);
+	}
+	onDestroy(() => clearTimeout(catchUpTimer));
+
 	// Keep the selection valid: default to the first row, and re-resolve when a
 	// filter change drops the current selection out of the list.
 	$effect(() => {
@@ -124,6 +146,7 @@
 		status={status.data}
 		syncing={sync.isPending}
 		{syncError}
+		{catchingUp}
 		onRefresh={() => sync.mutate()}
 	/>
 

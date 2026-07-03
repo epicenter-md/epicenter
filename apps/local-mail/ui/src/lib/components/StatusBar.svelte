@@ -11,21 +11,40 @@
 		status,
 		syncing,
 		syncError,
+		catchingUp,
 		onRefresh,
 	}: {
 		status: MailboxStatus | undefined;
 		syncing: boolean;
 		syncError: string | null;
+		/** A write just landed on Gmail that the mirror has not folded yet
+		 * (a `folded:false` modify). This is a mirror-state fact, so it lives on
+		 * the mirror chip, not in per-action feedback. Brief and self-clearing. */
+		catchingUp: boolean;
 		onRefresh: () => void;
 	} = $props();
 
+	// The mirror chip is the one canonical mirror-state surface. "catching up"
+	// overrides the steady state for the brief window after a sync-lagging write.
 	const mirror = $derived(status?.mirror ?? 'empty');
-	const mirrorTone = $derived(
-		mirror === 'ready'
-			? 'bg-emerald-500'
-			: mirror === 'building'
-				? 'bg-amber-500'
-				: 'bg-muted-foreground',
+	const chip = $derived(
+		catchingUp
+			? {
+					tone: 'bg-amber-500 animate-pulse',
+					label: 'catching up',
+					title:
+						'Gmail accepted a change; the mirror folds it in on the next sync.',
+				}
+			: {
+					tone:
+						mirror === 'ready'
+							? 'bg-emerald-500'
+							: mirror === 'building'
+								? 'bg-amber-500'
+								: 'bg-muted-foreground',
+					label: mirror,
+					title: 'Mirror state',
+				},
 	);
 	const numberFmt = new Intl.NumberFormat();
 </script>
@@ -44,9 +63,9 @@
 
 	<div class="flex items-center gap-3 text-xs text-muted-foreground">
 		{#if status}
-			<span class="flex items-center gap-1.5" title="Mirror state">
-				<span class="size-2 rounded-full {mirrorTone}"></span>
-				<span class="capitalize">{mirror}</span>
+			<span class="flex items-center gap-1.5" title={chip.title}>
+				<span class="size-2 rounded-full {chip.tone}"></span>
+				<span class="capitalize">{chip.label}</span>
 			</span>
 			<span class="tabular-nums">
 				{numberFmt.format(status.rows.messages)} msgs · {status.rows.labels} labels
