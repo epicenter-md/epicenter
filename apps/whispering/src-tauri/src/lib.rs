@@ -131,6 +131,37 @@ mod export_bindings {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 #[tokio::main]
 pub async fn run() {
+    #[cfg(target_os = "linux")]
+    {
+        // WebKitGTK can crash with SIGILL (Illegal Instruction) under remote or virtual sessions.
+        // This occurs when llvmpipe or lavapipe JIT compiles unsupported CPU instructions.
+        // Disabling compositing and the DMABUF renderer avoids hardware-accelerated paths.
+        let is_xrdp = std::env::var("XRDP_SESSION").is_ok()
+            || std::env::var("XRDP_SOCKET_PATH").is_ok()
+            || std::env::var("SESMAN_PORT").is_ok();
+
+        let is_vnc = std::env::var("VNCSESSION").is_ok()
+            || std::env::var("VNC_PORT").is_ok();
+
+        let display = std::env::var("DISPLAY").unwrap_or_default();
+        let is_virtual_display = !display.is_empty() && display != ":0" && display != ":0.0";
+
+        let session_type = std::env::var("XDG_SESSION_TYPE").unwrap_or_default();
+        let session_class = std::env::var("XDG_SESSION_CLASS").unwrap_or_default();
+        let is_remote_session = session_type.contains("rdp")
+            || session_type.contains("vnc")
+            || session_class.contains("remote");
+
+        if is_xrdp || is_vnc || is_virtual_display || is_remote_session {
+            if std::env::var("WEBKIT_DISABLE_COMPOSITING_MODE").is_err() {
+                std::env::set_var("WEBKIT_DISABLE_COMPOSITING_MODE", "1");
+            }
+            if std::env::var("WEBKIT_DISABLE_DMABUF_RENDERER").is_err() {
+                std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
+            }
+        }
+    }
+
     // Set up panic hook to capture crash information before the app exits.
     // The previous hook is preserved so default panic reporting still occurs.
     let previous_hook = std::panic::take_hook();
