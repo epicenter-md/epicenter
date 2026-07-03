@@ -1,82 +1,116 @@
 /**
- * Billing policy orchestration tests.
+ * Billing policy + service tests.
  *
- * Pins the no-overcharge contract for AI: reservations are committed (`confirm`)
- * only on a successful response and rolled back (`release`) otherwise. The
- * service (every Autumn round-trip) is mocked at its module boundary; these
- * tests own only the policy's HTTP orchestration.
+ * These exercise the REAL billing service and the REAL policies. Nothing is
+ * module-mocked; instead we `spyOn` the real `autumn-js` client's methods
+ * (`check` / `track` on `Autumn.prototype`, and `finalize` / `getOrCreate` on the
+ * shared `balances` / `customers` sub-client prototypes), each controllable per
+ * test. Running the real service is deliberate: it is the only way to pin
+ * `trackAiTranscription`'s `track({ async: true })` shape and per-minute credit
+ * math, which a service stub would hide.
  *
- * The reservation object hides the `lockId`: the policy only ever calls
- * `confirm()` / `release()`, so there is no lock action to mispair. The policy
- * pushes the settlement op onto `afterResponse` by calling it, so
- * confirm/release are recorded synchronously during the request.
+ * (Why spies, not a module mock: bun's `mock.module` is a process-global,
+ * hoisted, non-restorable override. Mocking `./service.js` would make the real
+ * service unreachable in every file of the run; mocking `./autumn.js` or
+ * `autumn-js` would break `autumn.test.ts`, which needs their real exports and
+ * error classes. Spying on the real client sidesteps both, so `tryAutumn` and
+ * the provider-error mapping run for real here too.)
  *
- * A worker crash between reserve and finalize is intentionally NOT exercised:
- * that path is covered by Autumn's lock TTL auto-release, not by code here.
+ * What they pin:
+ *   - AI chat reservation: confirm on a 200, release on a >= 400, and a guard
+ *     rejection answers in the OpenAI error shape while reserving nothing.
+ *   - STT metering: a usable-wallet gate before the call, then a per-minute
+ *     `track({ async: true })` settled off the after-response queue on a 200;
+ *     nothing tracked on a denial, a non-200, or a provider outage.
+ *   - The service settles STT as an async usage event (202, no balance body) and
+ *     swallows a post-success metering failure into a `Result`, never a throw.
  */
 
-import { beforeEach, expect, mock, test } from 'bun:test';
-import { AiChatError } from '@epicenter/constants/ai-chat-errors';
+import { afterEach, beforeEach, expect, mock, spyOn, test } from 'bun:test';
+import type { PrincipalId } from '@epicenter/identity';
 import type { CloudEnv } from '@epicenter/server';
+import { Autumn, ConnectionError } from 'autumn-js';
 import { Hono } from 'hono';
-import { Ok, type Result } from 'wellcrafted/result';
-import { BillingError } from './errors.js';
+import {
+	chargeOpenAiCreditsWithAutumn,
+	chargeOpenAiTranscriptionCredits,
+} from './policies.js';
+import { createBillingService } from './service.js';
 
-type AiReserveOutcome = Result<
-	Record<never, never>,
-	| ReturnType<typeof AiChatError.UnknownModel>['error']
-	| ReturnType<typeof AiChatError.InsufficientCredits>['error']
->;
+// ----- Real service + real policies against a spied Autumn client ------------
+//
+// No module is mocked: `autumn.test.ts` needs the real `./autumn.js` and the
+// real `autumn-js` error classes, so instead of swapping a module we spy on the
+// real client's methods. The service constructs its own client internally; these
+// spies (top-level `check` / `track` on `Autumn.prototype`, plus the shared
+// nested `balances` / `customers` sub-client prototypes) intercept every
+// instance, and are restored after each test.
 
+type CheckInput = { featureId: string; requiredBalance?: number };
+type TrackArgs = {
+	customerId: string;
+	featureId: string;
+	value: number;
+	async?: boolean;
+	properties?: Record<string, unknown>;
+};
+
+/** A customer with no subscription resolves to the free plan in the service. */
+let customerState: {
+	subscriptions: Array<{ addOn?: boolean; planId?: string }>;
+} = { subscriptions: [] };
+/** Drives every `autumn.check` (chat reserve lock + STT gate). May throw. */
+let checkImpl: (input: CheckInput) => { allowed: boolean; balance: unknown } =
+	() => ({ allowed: true, balance: 100 });
+/** Drives the post-success `autumn.track`. May throw (provider failure). */
+let trackImpl: (args: TrackArgs) => Promise<unknown> = async () => ({
+	id: 'evt_async',
+});
 const finalizeCalls: Array<'confirm' | 'release'> = [];
-let aiReserveOutcome: AiReserveOutcome = Ok({});
+const trackCalls: TrackArgs[] = [];
 
-type CreditGateOutcome = Result<
-	{ allowed: boolean; balance: unknown },
-	ReturnType<typeof BillingError.ProviderRequestFailed>['error']
->;
-let creditGateOutcome: CreditGateOutcome = Ok({ allowed: true, balance: 100 });
-const trackCalls: Array<{ seconds: number; model: string; provider: string }> =
-	[];
-
-/** A reservation whose confirm/release record the action and resolve Ok. */
-function recordingReservation() {
-	return {
-		confirm: () => {
-			finalizeCalls.push('confirm');
-			return Promise.resolve(Ok(undefined));
-		},
-		release: () => {
-			finalizeCalls.push('release');
-			return Promise.resolve(Ok(undefined));
-		},
-	};
-}
-
-mock.module('./service.js', () => ({
-	createBillingService: () => ({
-		reserveAiChat: async (_input: { model: string }) =>
-			aiReserveOutcome.error ? aiReserveOutcome : Ok(recordingReservation()),
-		checkAiCredits: async () => creditGateOutcome,
-		trackAiTranscription: async (input: {
-			seconds: number;
-			model: string;
-			provider: string;
-		}) => {
-			trackCalls.push(input);
-			return Ok(undefined);
-		},
-	}),
-}));
-
-const { chargeOpenAiCreditsWithAutumn, chargeOpenAiTranscriptionCredits } =
-	await import('./policies.js');
+// The nested sub-clients share one prototype across instances; a sample client
+// hands us the objects to spy on. Cast to the narrow method shapes the service
+// actually calls, so `spyOn` stays typed without touching `autumn-js` internals.
+const clientProto = Autumn.prototype as unknown as {
+	check: (input: CheckInput) => Promise<unknown>;
+	track: (input: TrackArgs) => Promise<unknown>;
+};
+const sampleClient = new Autumn({ secretKey: 'sk_probe' }) as unknown as {
+	balances: object;
+	customers: object;
+};
+const balancesProto = Object.getPrototypeOf(sampleClient.balances) as {
+	finalize: (input: { action: 'confirm' | 'release' }) => Promise<unknown>;
+};
+const customersProto = Object.getPrototypeOf(sampleClient.customers) as {
+	getOrCreate: (...args: unknown[]) => Promise<unknown>;
+};
 
 beforeEach(() => {
+	customerState = { subscriptions: [] };
+	checkImpl = () => ({ allowed: true, balance: 100 });
+	trackImpl = async () => ({ id: 'evt_async' });
 	finalizeCalls.length = 0;
-	aiReserveOutcome = Ok({});
-	creditGateOutcome = Ok({ allowed: true, balance: 100 });
 	trackCalls.length = 0;
+
+	spyOn(clientProto, 'check').mockImplementation(async (input) =>
+		checkImpl(input),
+	);
+	spyOn(clientProto, 'track').mockImplementation(async (input) => {
+		trackCalls.push(input);
+		return trackImpl(input);
+	});
+	spyOn(balancesProto, 'finalize').mockImplementation(async ({ action }) => {
+		finalizeCalls.push(action);
+	});
+	spyOn(customersProto, 'getOrCreate').mockImplementation(
+		async () => customerState,
+	);
+});
+
+afterEach(() => {
+	mock.restore();
 });
 
 function withContext(app: Hono<CloudEnv>) {
@@ -91,9 +125,19 @@ function withContext(app: Hono<CloudEnv>) {
 	return app;
 }
 
-// ----- AI inference policy (the OpenAI-compatible gateway) --------------
+function makeService() {
+	return createBillingService(
+		{ AUTUMN_SECRET_KEY: 'sk_test' },
+		{
+			principalId: 'user_1' as PrincipalId,
+			principalEmail: 'user@example.com',
+		},
+	);
+}
 
-/** Mount the inference policy around a stub completions handler returning `downstreamStatus`. */
+// ----- AI inference policy (the OpenAI-compatible gateway) --------------------
+
+/** Mount the inference policy around a stub completions handler. */
 function makeAiApp(downstreamStatus: 200 | 500) {
 	const app = withContext(new Hono<CloudEnv>());
 	app.use('/v1/chat/completions', chargeOpenAiCreditsWithAutumn);
@@ -102,31 +146,37 @@ function makeAiApp(downstreamStatus: 200 | 500) {
 }
 
 function aiRequest(app: Hono<CloudEnv>, body: unknown) {
-	return app.request('/v1/chat/completions', {
-		method: 'POST',
-		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify(body),
-	});
+	return app.request(
+		'/v1/chat/completions',
+		{
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify(body),
+		},
+		// `c.env` for the real service's `createAutumnClient`; the Autumn client
+		// it builds is intercepted by the prototype spies, so the key is inert.
+		{ AUTUMN_SECRET_KEY: 'sk_test' },
+	);
 }
 
 test('a successful completion (200) confirms the reservation', async () => {
-	const res = await aiRequest(makeAiApp(200), { model: 'gpt' });
+	const res = await aiRequest(makeAiApp(200), { model: 'gpt-5.4-mini' });
 
 	expect(res.status).toBe(200);
 	expect(finalizeCalls).toEqual(['confirm']);
 });
 
 test('a pre-stream failure (>= 400) releases the reservation, never charging', async () => {
-	const res = await aiRequest(makeAiApp(500), { model: 'gpt' });
+	const res = await aiRequest(makeAiApp(500), { model: 'gpt-5.4-mini' });
 
 	expect(res.status).toBe(500);
 	expect(finalizeCalls).toEqual(['release']);
 });
 
 test('a guard rejection answers in the OpenAI error shape and reserves nothing', async () => {
-	aiReserveOutcome = AiChatError.InsufficientCredits({ balance: 0 });
+	checkImpl = () => ({ allowed: false, balance: 0 });
 
-	const res = await aiRequest(makeAiApp(200), { model: 'gpt' });
+	const res = await aiRequest(makeAiApp(200), { model: 'gpt-5.4-mini' });
 
 	expect(res.status).toBe(402);
 	const body = (await res.json()) as {
@@ -137,7 +187,16 @@ test('a guard rejection answers in the OpenAI error shape and reserves nothing',
 	expect(finalizeCalls).toHaveLength(0);
 });
 
-// ----- AI transcription policy (the OpenAI-compatible STT gateway) ------
+test('an unknown model is rejected before any reservation', async () => {
+	const res = await aiRequest(makeAiApp(200), { model: 'not-a-real-model' });
+
+	expect(res.status).toBe(400);
+	const body = (await res.json()) as { error: { code: string } };
+	expect(body.error.code).toBe('UnknownModel');
+	expect(finalizeCalls).toHaveLength(0);
+});
+
+// ----- AI transcription policy (the OpenAI-compatible STT gateway) ------------
 
 /**
  * Mount the transcription policy around a stub STT handler. On 200 the handler
@@ -165,14 +224,18 @@ function sttRequest(app: Hono<CloudEnv>) {
 	const form = new FormData();
 	form.append('file', new File([new Uint8Array([1, 2, 3])], 'audio.webm'));
 	form.append('model', 'whisper-1');
-	return app.request('/v1/audio/transcriptions', {
-		method: 'POST',
-		body: form,
-	});
+	return app.request(
+		'/v1/audio/transcriptions',
+		{
+			method: 'POST',
+			body: form,
+		},
+		{ AUTUMN_SECRET_KEY: 'sk_test' },
+	);
 }
 
 test('an empty wallet is denied (402) before transcribing and nothing is tracked', async () => {
-	creditGateOutcome = Ok({ allowed: false, balance: 0 });
+	checkImpl = () => ({ allowed: false, balance: 0 });
 
 	const res = await sttRequest(makeSttApp({ status: 200, duration: 125 }));
 
@@ -182,13 +245,17 @@ test('an empty wallet is denied (402) before transcribing and nothing is tracked
 	expect(trackCalls).toHaveLength(0);
 });
 
-test('a successful transcription (200) tracks the returned duration after the call', async () => {
+test('a successful transcription (200) tracks the duration as an async usage event', async () => {
 	const res = await sttRequest(makeSttApp({ status: 200, duration: 125 }));
 
 	expect(res.status).toBe(200);
-	expect(trackCalls).toEqual([
-		{ seconds: 125, model: 'whisper-1', provider: 'openai' },
-	]);
+	expect(trackCalls).toHaveLength(1);
+	expect(trackCalls[0]).toMatchObject({
+		featureId: 'ai_usage',
+		value: 3, // ceil(125 / 60)
+		async: true,
+		properties: { model: 'whisper-1', provider: 'openai', seconds: 125 },
+	});
 });
 
 test('a non-200 transcription tracks nothing (no charge on failure)', async () => {
@@ -199,10 +266,67 @@ test('a non-200 transcription tracks nothing (no charge on failure)', async () =
 });
 
 test('a billing-provider outage on the gate fails closed (503) and tracks nothing', async () => {
-	creditGateOutcome = BillingError.ProviderRequestFailed();
+	checkImpl = () => {
+		throw new ConnectionError('Unable to make request');
+	};
 
 	const res = await sttRequest(makeSttApp({ status: 200, duration: 60 }));
 
 	expect(res.status).toBe(503);
 	expect(trackCalls).toHaveLength(0);
+});
+
+// ----- Service STT metering seam (direct, past the policy) --------------------
+
+test('a sub-minute clip floors to a one-credit charge', async () => {
+	await makeService().trackAiTranscription({
+		seconds: 2,
+		model: 'whisper-1',
+		provider: 'openai',
+	});
+
+	expect(trackCalls[0]?.value).toBe(1);
+});
+
+test('a non-finite duration floors to one credit and records zero seconds', async () => {
+	await makeService().trackAiTranscription({
+		seconds: Number.NaN,
+		model: 'whisper-1',
+		provider: 'openai',
+	});
+
+	expect(trackCalls[0]?.value).toBe(1);
+	expect(trackCalls[0]?.properties).toMatchObject({ seconds: 0 });
+});
+
+test('an async 202 ack carries no balances and the service reads none', async () => {
+	// A 202-shaped body: an object with no `balances` map. The service must not
+	// touch a balance, so this resolves Ok regardless of the body.
+	trackImpl = async () => ({ id: 'evt_1', code: 'event_received' });
+
+	const { data, error } = await makeService().trackAiTranscription({
+		seconds: 60,
+		model: 'whisper-1',
+		provider: 'openai',
+	});
+
+	expect(error).toBeNull();
+	expect(data).toBeUndefined();
+});
+
+test('a provider failure during metering fails closed as a Result, never a throw', async () => {
+	// The gateway already answered the user 200; a metering enqueue failure must
+	// be swallowed into a Result the after-response queue logs, not thrown.
+	trackImpl = async () => {
+		throw new ConnectionError('Unable to make request');
+	};
+
+	const { data, error } = await makeService().trackAiTranscription({
+		seconds: 60,
+		model: 'whisper-1',
+		provider: 'openai',
+	});
+
+	expect(data).toBeNull();
+	expect(error).toMatchObject({ name: 'ProviderRequestFailed' });
 });

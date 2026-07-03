@@ -1,7 +1,7 @@
 /**
  * Vocab's wiring of the shared first-sign-in migration
  * (`@epicenter/app-shell/sign-in-migration`): the local-source opener and the
- * words are app-side; the probe, Add, Delete, Keep, and derived child-doc
+ * wording are app-side; the probe, Add, Delete, Keep, and derived child-doc
  * phases are the kit's.
  */
 

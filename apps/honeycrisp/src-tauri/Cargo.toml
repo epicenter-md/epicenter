@@ -1,0 +1,24 @@
+[package]
+name = "honeycrisp"
+version = "0.0.2"
+description = "Local-first notes app"
+authors = ["Epicenter"]
+repository = "https://github.com/EpicenterHQ/epicenter"
+edition = "2021"
+
+[lib]
+name = "honeycrisp_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+log = "0.4"
+serde_json = "1"
+tauri = { version = "2", features = [] }
+tauri-plugin-deep-link = "2"
+tauri-plugin-log = "2"
+tauri-plugin-opener = "2"
+tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
+tauri-plugin-window-state = "2"

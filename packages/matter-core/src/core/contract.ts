@@ -41,6 +41,7 @@ import {
 	type InferErrors,
 } from 'wellcrafted/error';
 import { Ok, type Result, trySync } from 'wellcrafted/result';
+import { parseViews, type ViewError, type ViewSpec } from './view';
 
 /** Why a stored `matter.json` could not be read into a usable contract at all. */
 export const ContractError = defineErrors({
@@ -78,6 +79,14 @@ export type Contract = {
 	 * Always filtered to real columns. Empty means no FTS table is projected for the folder.
 	 */
 	searchable: string[];
+	/**
+	 * The declared editable views (board only today; ADR-0101), parsed here so they can see field
+	 * kinds. Only a typed contract carries views: an untyped marker never reaches this object, so
+	 * a `views` key on an untyped table is ignored. The grid never reads this.
+	 */
+	views: ViewSpec[];
+	/** Malformed `views` entries, dropped at load and surfaced as contract diagnostics. */
+	viewErrors: ViewError[];
 };
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -160,7 +169,18 @@ export function validateContract(
 		columnNames.has(name),
 	);
 
-	return Ok({ fields, untyped, unmatchedOptional, searchable });
+	// Views are per-entry degrade like the palette: a malformed entry is dropped with a
+	// diagnostic, valid entries survive, and the contract itself never errors over them.
+	const { views, errors: viewErrors } = parseViews(raw.views, fields);
+
+	return Ok({
+		fields,
+		untyped,
+		unmatchedOptional,
+		searchable,
+		views,
+		viewErrors,
+	});
 }
 
 /**

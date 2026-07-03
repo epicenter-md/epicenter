@@ -11,10 +11,10 @@
 
 import { expect, test } from 'bun:test';
 import { Principal } from '@epicenter/auth';
-import { OAuthError } from '@epicenter/constants/oauth-errors';
 import { ROOM_ROUTE } from '@epicenter/sync';
 import { Hono } from 'hono';
 import { Ok } from 'wellcrafted/result';
+import { OAuthError } from '../auth/oauth-errors.js';
 import type {
 	Rooms,
 	RoomUpgrade,

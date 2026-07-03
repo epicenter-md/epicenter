@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { VERSION } from '@epicenter/constants/versions';
+	import { VERSION } from '../../version';
 	import { Button } from '@epicenter/ui/button';
 	import { onMount } from 'svelte';
 

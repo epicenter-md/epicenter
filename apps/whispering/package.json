@@ -130,7 +130,7 @@
 		"@tauri-apps/api": "catalog:",
 		"@tauri-apps/plugin-autostart": "^2.0.1",
 		"@tauri-apps/plugin-clipboard-manager": "^2.3.0",
-		"@tauri-apps/plugin-deep-link": "^2.4.9",
+		"@tauri-apps/plugin-deep-link": "catalog:",
 		"@tauri-apps/plugin-dialog": "^2.3.2",
 		"@tauri-apps/plugin-fs": "catalog:",
 		"@tauri-apps/plugin-global-shortcut": "^2.3.0",

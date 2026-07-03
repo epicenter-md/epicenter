@@ -28,7 +28,6 @@
  */
 
 import { API_ROUTES, SHA256_HEX_REGEX } from '@epicenter/constants/api-routes';
-import { BlobError } from '@epicenter/constants/blob-errors';
 import { sValidator } from '@hono/standard-validator';
 import { type } from 'arktype';
 import { Hono, type MiddlewareHandler } from 'hono';
@@ -42,6 +41,7 @@ import {
 	type S3BlobStoreConfig,
 } from '../s3-blob-store.js';
 import type { Env } from '../types.js';
+import { BlobError } from './blob-errors.js';
 
 /** Anchored lowercase-hex sha256, built from the SAME {@link SHA256_HEX_REGEX}
  * the `:sha256` route param is constrained to. The route param is constrained by

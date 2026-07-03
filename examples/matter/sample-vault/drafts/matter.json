@@ -11,5 +11,15 @@
 		"duration": { "type": "integer" },
 		"featured": { "type": "boolean" },
 		"url": { "type": "string", "format": "uri" }
-	}
+	},
+	"views": [
+		{
+			"id": "pipeline",
+			"title": "Pipeline",
+			"type": "board",
+			"groupBy": "status",
+			"columns": ["draft", "ready", "published", "archived"],
+			"card": ["title", "format", "publishDate"]
+		}
+	]
 }

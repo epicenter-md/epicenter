@@ -21,12 +21,12 @@
  */
 
 import { Principal } from '@epicenter/auth';
-import { OAuthError } from '@epicenter/constants/oauth-errors';
 import { verifyJwsAccessToken } from 'better-auth/oauth2';
 import { eq } from 'drizzle-orm';
 import type { Context, MiddlewareHandler } from 'hono';
 import { createMiddleware } from 'hono/factory';
 import { Ok, type Result } from 'wellcrafted/result';
+import { OAuthError } from '../auth/oauth-errors.js';
 import { createOAuthIssuerURL } from '../auth/oauth-metadata.js';
 import { createOAuthUnauthorizedResourceResponse } from '../auth/oauth-resource.js';
 import { parseBearer } from '../auth/parse-bearer.js';

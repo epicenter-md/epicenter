@@ -8,7 +8,13 @@
 	import TerminalIcon from '@lucide/svelte/icons/terminal';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import { routes, TABLE_PARAM, type VaultView, VIEW_PARAM } from '$lib/routes';
+	import {
+		resolveVaultSurface,
+		routes,
+		SWITCH_NAV,
+		TABLE_PARAM,
+		type VaultPanel,
+	} from '$lib/routes';
 	import { createVault } from '$lib/vault.svelte';
 	import DatabaseTab from './DatabaseTab.svelte';
 	import IntegrityPanel from './IntegrityPanel.svelte';
@@ -37,30 +43,18 @@
 			vault.tables[0],
 	);
 
-	// The vault-wide view (`?view=`): the SQL console or the Database panel. Absent means the table
-	// grid. `?view` and `?table` are orthogonal (see `viewHref`): a view keeps the table around as its
-	// default folder, and picking a table clears `?view` to return to the grid.
-	const activeView = $derived.by(() => {
-		const view = page.url.searchParams.get(VIEW_PARAM);
-		return view === 'sql' || view === 'db' ? view : undefined;
-	});
+	// The rendered vault surface: a vault-wide panel from `?panel`, a table-scoped projection from
+	// `?view`, or the default grid. A resolved projection renders through BoardView (see TablePane);
+	// the grid stays the default surface when no projection is selected.
+	const activeSurface = $derived(
+		resolveVaultSurface(page.url.searchParams, activeTable?.read.view),
+	);
 
-	// A table or view switch is a render selection, not navigation: replaceState so each click does not
-	// stack a history entry, keepFocus/noScroll so the switcher stays put and the pane does not jump.
-	const switchNav = {
-		replaceState: true,
-		keepFocus: true,
-		noScroll: true,
-	} as const;
-
-	// Opening a view keeps `?table` so the console defaults to the table you were on (the Database
-	// panel is table-agnostic, so it just ignores it). The two params are orthogonal: `?view` picks
-	// the surface, `?table` the grid's (and the console's default) folder.
-	function viewHref(view: VaultView): string {
-		const table = activeTable?.folderName;
-		return table
-			? `${routes.view(view)}&${TABLE_PARAM}=${encodeURIComponent(table)}`
-			: routes.view(view);
+	// Opening a panel keeps `?table` so the console defaults to the table you were on (the Database
+	// panel is table-agnostic, so it just ignores it). `?panel` owns vault-wide panels; `?view` is
+	// reserved for table-scoped projections.
+	function panelHref(panel: VaultPanel): string {
+		return routes.panel(panel, activeTable?.folderName);
 	}
 
 	// Adopt the root as a table (writes the `{}` marker). The watcher re-scans on the new marker and
@@ -111,10 +105,12 @@
 				<div class="flex flex-1 items-center gap-1 overflow-x-auto">
 					{#each vault.tables as table (table.folderName)}
 						{@const active =
-							!activeView && activeTable?.folderName === table.folderName}
+							activeSurface.kind !== 'panel' &&
+							activeTable?.folderName === table.folderName}
 						<button
 							type="button"
-							onclick={() => goto(routes.table(table.folderName), switchNav)}
+							aria-current={active ? 'true' : undefined}
+							onclick={() => goto(routes.table(table.folderName), SWITCH_NAV)}
 							class={[
 								'shrink-0 rounded-md px-2.5 py-1 text-sm transition',
 								active
@@ -131,10 +127,14 @@
 				<div class="flex shrink-0 items-center gap-1 border-l pl-1">
 					<button
 						type="button"
-						onclick={() => goto(viewHref('sql'), switchNav)}
+						aria-current={activeSurface.kind === 'panel' &&
+						activeSurface.panel === 'sql'
+							? 'true'
+							: undefined}
+						onclick={() => goto(panelHref('sql'), SWITCH_NAV)}
 						class={[
 							'flex shrink-0 items-center gap-1.5 rounded-md px-2.5 py-1 text-sm transition',
-							activeView === 'sql'
+							activeSurface.kind === 'panel' && activeSurface.panel === 'sql'
 								? 'bg-muted font-medium text-foreground'
 								: 'text-muted-foreground hover:bg-muted/50',
 						]}
@@ -144,10 +144,14 @@
 					</button>
 					<button
 						type="button"
-						onclick={() => goto(viewHref('db'), switchNav)}
+						aria-current={activeSurface.kind === 'panel' &&
+						activeSurface.panel === 'db'
+							? 'true'
+							: undefined}
+						onclick={() => goto(panelHref('db'), SWITCH_NAV)}
 						class={[
 							'flex shrink-0 items-center gap-1.5 rounded-md px-2.5 py-1 text-sm transition',
-							activeView === 'db'
+							activeSurface.kind === 'panel' && activeSurface.panel === 'db'
 								? 'bg-muted font-medium text-foreground'
 								: 'text-muted-foreground hover:bg-muted/50',
 						]}
@@ -157,13 +161,19 @@
 					</button>
 				</div>
 			</div>
-			{#if activeView === 'sql'}
+			{#if activeSurface.kind === 'panel' && activeSurface.panel === 'sql'}
 				<SqlConsole {vault} defaultTable={activeTable?.folderName} />
-			{:else if activeView === 'db'}
+			{:else if activeSurface.kind === 'panel' && activeSurface.panel === 'db'}
 				<DatabaseTab {vault} />
 			{:else if activeTable}
 				{#key activeTable}
-					<TablePane {vault} table={activeTable} />
+					<TablePane
+						{vault}
+						table={activeTable}
+						projection={activeSurface.kind === 'projection'
+							? activeSurface.projection
+							: undefined}
+					/>
 				{/key}
 			{/if}
 			<IntegrityPanel integrity={vault.integrity} />

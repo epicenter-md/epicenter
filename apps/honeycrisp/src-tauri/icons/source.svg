@@ -1,0 +1,55 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <!-- Honeycrisp: a warm classic-round apple on a light warm-yellow tile. Matte form-shading
+       (deepened far side) plus a whisper of sheen for roundness; restrained stem and leaf. -->
+  <defs>
+    <linearGradient id="tile" x1="0.14" y1="0" x2="0.86" y2="1">
+      <stop offset="0" stop-color="#FFF6D6"/>
+      <stop offset="1" stop-color="#EFD69A"/>
+    </linearGradient>
+    <linearGradient id="apple" x1="0.26" y1="0.08" x2="0.76" y2="1">
+      <stop offset="0" stop-color="#F79E3B"/>
+      <stop offset="0.47" stop-color="#E4562F"/>
+      <stop offset="1" stop-color="#A62A31"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.3" cy="0.2" r="0.82">
+      <stop offset="0" stop-color="#FFC964" stop-opacity="0.5"/>
+      <stop offset="0.66" stop-color="#FFC964" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="formShade" x1="0.92" y1="0.96" x2="0.4" y2="0.4">
+      <stop offset="0" stop-color="#5C1518" stop-opacity="0.34"/>
+      <stop offset="0.62" stop-color="#5C1518" stop-opacity="0"/>
+    </linearGradient>
+    <radialGradient id="sheen" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="1"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="leaf" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#4F9B62"/>
+      <stop offset="1" stop-color="#2F6E46"/>
+    </linearGradient>
+    <clipPath id="appleClip">
+      <path d="M512 300 C725.3 252,856 362,856 554 C856 762,704 922,512 922 C320 922,168 762,168 554 C168 362,298.7 252,512 300 Z"/>
+    </clipPath>
+  </defs>
+
+  <rect width="1024" height="1024" rx="216" fill="url(#tile)"/>
+
+  <!-- cast shadow -->
+  <ellipse cx="512" cy="944" rx="260" ry="30" fill="#7C241E" opacity="0.12"/>
+
+  <!-- apple body: classic round -->
+  <path d="M512 300 C725.3 252,856 362,856 554 C856 762,704 922,512 922 C320 922,168 762,168 554 C168 362,298.7 252,512 300 Z" fill="url(#apple)"/>
+  <path d="M512 300 C725.3 252,856 362,856 554 C856 762,704 922,512 922 C320 922,168 762,168 554 C168 362,298.7 252,512 300 Z" fill="url(#glow)"/>
+
+  <!-- lighting: matte form-shading on the far side + a whisper of sheen on the lit side -->
+  <g clip-path="url(#appleClip)">
+    <path d="M512 300 C725.3 252,856 362,856 554 C856 762,704 922,512 922 C320 922,168 762,168 554 C168 362,298.7 252,512 300 Z" fill="url(#formShade)"/>
+    <ellipse cx="432" cy="456" rx="256" ry="196" fill="url(#sheen)" opacity="0.16" transform="rotate(-20 432 456)"/>
+  </g>
+
+  <!-- stem -->
+  <path d="M508 300 C498 236,518 192,572 160" fill="none" stroke="#74452D" stroke-width="44" stroke-linecap="round"/>
+
+  <!-- leaf -->
+  <path d="M572 200 C644 144,752 152,816 188 C756 260,664 276,572 200 Z" fill="url(#leaf)"/>
+</svg>

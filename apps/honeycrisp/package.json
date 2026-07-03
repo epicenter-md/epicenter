@@ -9,16 +9,19 @@
 	},
 	"imports": {
 		"#platform/auth": {
+			"tauri": "./src/lib/platform/auth.tauri.ts",
 			"default": "./src/lib/platform/auth.browser.ts"
 		}
 	},
 	"scripts": {
 		"dev": "bun run dev:local",
 		"dev:local": "vite dev",
+		"dev:desktop": "tauri dev",
 		"build": "NODE_ENV=production vite build",
 		"preview": "vite preview",
 		"deploy": "wrangler deploy",
 		"prepare": "svelte-kit sync || echo ''",
+		"tauri": "tauri",
 		"typecheck": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json"
 	},
 	"devDependencies": {
@@ -30,6 +33,7 @@
 		"@sveltejs/kit": "catalog:",
 		"@sveltejs/vite-plugin-svelte": "catalog:",
 		"@tailwindcss/vite": "catalog:",
+		"@tauri-apps/cli": "catalog:",
 		"mode-watcher": "catalog:",
 		"svelte": "catalog:",
 		"svelte-check": "catalog:",
@@ -45,6 +49,9 @@
 		"@epicenter/svelte": "workspace:*",
 		"@epicenter/workspace": "workspace:*",
 		"@epicenter/constants": "workspace:*",
+		"@tauri-apps/api": "catalog:",
+		"@tauri-apps/plugin-deep-link": "catalog:",
+		"@tauri-apps/plugin-opener": "catalog:",
 		"prosemirror-commands": "^1.6.0",
 		"prosemirror-inputrules": "^1.4.0",
 		"prosemirror-keymap": "^1.2.0",

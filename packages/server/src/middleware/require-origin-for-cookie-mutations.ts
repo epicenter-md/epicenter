@@ -1,7 +1,7 @@
-import { RequestGuardError } from '@epicenter/constants/request-guard-errors';
 import { createMiddleware } from 'hono/factory';
 import { parseBearer } from '../auth/parse-bearer.js';
 import type { Env } from '../types.js';
+import { RequestGuardError } from './request-guard-errors.js';
 
 /**
  * CSRF guard for state-changing cookie-auth requests on `/api/*`. Cookies ride

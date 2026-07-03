@@ -16,11 +16,26 @@
 
 use std::path::{Path, PathBuf};
 
+/// Reject a `file_name` that could escape its folder. A matter entry is a flat basename
+/// (`note.md`, `matter.json`); a name carrying a path separator or `..` is never legitimate
+/// and would let an edit read or write OUTSIDE the watched folder (`dir.join("../x")`). The JS
+/// only ever sends basenames, so this is defense in depth: it refuses the bad name before any IO,
+/// the single place both read and write enforce the boundary.
+fn safe_file_name(file_name: &str) -> Result<(), String> {
+    let unsafe_name =
+        file_name.is_empty() || file_name.contains(['/', '\\']) || file_name.contains("..");
+    if unsafe_name {
+        return Err(format!("unsafe entry name: {file_name:?}"));
+    }
+    Ok(())
+}
+
 /// Read one entry's current text. `None` when it does not exist yet (so a write
 /// to a new file starts from an empty document); an `Err` only for a real IO or
 /// decoding failure.
 #[tauri::command]
 pub fn read_entry(path: String, file_name: String) -> Result<Option<String>, String> {
+    safe_file_name(&file_name)?;
     let file = Path::new(&path).join(&file_name);
     match std::fs::read_to_string(&file) {
         Ok(text) => Ok(Some(text)),
@@ -35,6 +50,7 @@ pub fn read_entry(path: String, file_name: String) -> Result<Option<String>, Str
 /// the `.md` destination surfaces as a delta. A failed rename cleans up the temp.
 #[tauri::command]
 pub fn write_entry(path: String, file_name: String, content: String) -> Result<(), String> {
+    safe_file_name(&file_name)?;
     let dir = PathBuf::from(&path);
     let dest = dir.join(&file_name);
     let tmp = dir.join(format!(".{file_name}.tmp"));
@@ -94,5 +110,22 @@ mod tests {
             read_entry(path, "p.md".into()).unwrap(),
             Some("second".into())
         );
+    }
+
+    #[test]
+    fn rejects_traversal_names_on_read_and_write() {
+        let dir = scratch();
+        let path: String = dir.to_string_lossy().into();
+        // A separator or `..` could escape the folder; both commands refuse before touching disk.
+        for bad in ["../escape.md", "..\\escape.md", "sub/dir.md", "..", ""] {
+            assert!(write_entry(path.clone(), bad.into(), "x".into()).is_err());
+            assert!(read_entry(path.clone(), bad.into()).is_err());
+        }
+        // A traversal write must not create anything outside the folder.
+        let parent_escape = std::path::Path::new(&path).join("..").join("escape.md");
+        assert!(!parent_escape.exists());
+        // Legitimate flat basenames still pass.
+        assert!(write_entry(path.clone(), "note.md".into(), "ok".into()).is_ok());
+        assert!(write_entry(path, "matter.json".into(), "{}".into()).is_ok());
     }
 }

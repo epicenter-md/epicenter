@@ -125,6 +125,39 @@ describe('validateContract (the matter.json gate)', () => {
 		expect(data.unmatchedOptional).toEqual(['meta', 'missing']);
 	});
 
+	test('views ride on a typed contract; malformed entries surface as viewErrors', () => {
+		const { data, error } = validateContract({
+			fields: {
+				title: { type: 'string' },
+				status: { type: 'string', enum: ['draft', 'published'] },
+			},
+			views: [
+				{ id: 'pipeline', type: 'board', groupBy: 'status' },
+				{ id: 'broken', type: 'board', groupBy: 'nope' },
+			],
+		});
+		expect(error).toBeNull();
+		if (error) throw new Error(error.message);
+		expect(data.views).toEqual([
+			{ id: 'pipeline', type: 'board', groupBy: 'status' },
+		]);
+		expect(data.viewErrors).toEqual([
+			{
+				view: 'broken',
+				message: 'groupBy field "nope" is not in this contract',
+			},
+		]);
+	});
+
+	test('no views key means an empty views list, not a diagnostic', () => {
+		const { data, error } = validateContract({
+			fields: { title: { type: 'string' } },
+		});
+		if (error) throw new Error(error.message);
+		expect(data.views).toEqual([]);
+		expect(data.viewErrors).toEqual([]);
+	});
+
 	test('rejects a non-object top level', () => {
 		expect(validateContract(42).error?.name).toBe('NotAnObject');
 		expect(validateContract(null).error?.name).toBe('NotAnObject');
@@ -197,6 +230,16 @@ describe('parseContract (raw text classifies the marker)', () => {
 		expect(parsed.kind).toBe('typed');
 		if (parsed.kind !== 'typed') throw new Error('expected typed');
 		expect(parsed.contract.fields).toHaveLength(1);
+	});
+
+	test('views on an untyped table are ignored: the marker stays untyped', () => {
+		// No fields map means untyped, even with a well-formed views array; the views
+		// never parse because there is no contract for them to ride on.
+		expect(
+			parseContract(
+				'{"views":[{"id":"pipeline","type":"board","groupBy":"status"}]}',
+			).kind,
+		).toBe('untyped');
 	});
 
 	test('an empty fields map {"fields":{}} is untyped, same as {}', () => {

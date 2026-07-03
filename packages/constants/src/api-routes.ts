@@ -1,32 +1,43 @@
 /**
  * Wire URL paths and Hono route patterns for the Epicenter API.
  *
- * One source of truth for every server route declaration, deployment
- * middleware pattern, and client fetch URL. Each leaf exposes:
+ * The shared home for API route contracts whose domain has no dedicated shared
+ * package of its own: the session projection, the content-addressed blob store,
+ * and the OpenAI-compatible `/v1` inference gateways. This is not a registry of
+ * every route in the repo. A route whose domain already owns a shared package
+ * lives there instead, beside the protocol it belongs to: `@epicenter/sync`
+ * owns the room route (`ROOM_ROUTE`, `/api/rooms/:roomId`) next to its message
+ * framing, because both the sync server and the workspace client import it.
+ * These leaves live here only because their two sides (server and the client
+ * SDK) share nothing else they could hang the path on.
+ *
+ * Each leaf exposes some of:
  *
  *   - `pattern`        Hono-style route string (`/api/.../:param{regex}`)
  *                      consumed by `subApp.get(...)` declarations and
- *                      deployment `.use(...)` / `.on(...)` mounts.
+ *                      deployment `.use(...)` / `.on(...)` mounts. Server-side.
  *   - `prefixPattern`  Wildcard variant (`/api/.../*`) for prefix-scoped
- *                      `.use(...)` middleware. Present only where the
- *                      surface has subpaths the bare pattern misses.
- *   - `url(...)`       Builder that produces a concrete absolute URL
- *                      from typed inputs. All path parameters are
- *                      `encodeURIComponent`-encoded.
- *
- * URL values here are the public API contract.
+ *                      `.use(...)` middleware. A server mount helper, not a
+ *                      client contract: it lives beside the bare `pattern` only
+ *                      so the shared path literal stays in one place and cannot
+ *                      drift from it. Present only where the surface has
+ *                      subpaths the bare pattern misses; no client reads it.
+ *   - `url(...)`       Builder that produces a concrete absolute URL from typed
+ *                      inputs, all path parameters `encodeURIComponent`-encoded.
+ *                      Client-side; the URL a client fetches is the public
+ *                      contract.
  *
  * @example
  * ```ts
  * // Server route declaration
  * import { API_ROUTES } from '@epicenter/constants/api-routes';
- * export const roomsApp = new Hono<Env>()
+ * const sessionApp = new Hono<Env>()
  *   .get(API_ROUTES.session.pattern, handler);
  *
- * // Deployment middleware
+ * // Deployment middleware (server-only prefixPattern)
  * app.use(API_ROUTES.ai.completions.prefixPattern, requireBearerPrincipal);
  *
- * // Client fetch
+ * // Client fetch (the url() output is the public contract)
  * const res = await fetch(API_ROUTES.session.url(baseURL));
  * ```
  */
@@ -43,10 +54,6 @@ export const API_ROUTES = {
 	session: {
 		pattern: '/api/session',
 		url: (baseURL: string) => `${stripTrailing(baseURL)}/api/session`,
-		stream: {
-			pattern: '/api/session/stream',
-			url: (baseURL: string) => `${stripTrailing(baseURL)}/api/session/stream`,
-		},
 	},
 	/**
 	 * Content-addressed blob store. POST mints an upload ticket (presigned R2

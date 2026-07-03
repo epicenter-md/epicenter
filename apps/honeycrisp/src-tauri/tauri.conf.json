@@ -1,0 +1,70 @@
+{
+	"$schema": "https://schema.tauri.app/config/2",
+	"build": {
+		"beforeDevCommand": "bun run dev:local",
+		"beforeBuildCommand": "bun run build",
+		"devUrl": "http://localhost:5175",
+		"frontendDist": "../build"
+	},
+	"productName": "Honeycrisp",
+	"version": "0.0.2",
+	"identifier": "so.epicenter.honeycrisp",
+	"bundle": {
+		"active": true,
+		"category": "Productivity",
+		"publisher": "Epicenter",
+		"copyright": "Copyright © 2026 Epicenter",
+		"homepage": "https://honeycrisp.epicenter.so",
+		"targets": "all",
+		"icon": [
+			"icons/32x32.png",
+			"icons/128x128.png",
+			"icons/128x128@2x.png",
+			"icons/icon.icns",
+			"icons/icon.ico"
+		],
+		"shortDescription": "Local-first notes app",
+		"macOS": {
+			"hardenedRuntime": true,
+			"minimumSystemVersion": "10.15"
+		},
+		"windows": {
+			"webviewInstallMode": {
+				"type": "embedBootstrapper"
+			},
+			"wix": {
+				"fipsCompliant": true,
+				"language": "en-US"
+			},
+			"nsis": {
+				"compression": "bzip2",
+				"installMode": "currentUser"
+			}
+		}
+	},
+	"plugins": {
+		"deep-link": {
+			"desktop": {
+				"schemes": ["epicenter-honeycrisp"]
+			}
+		}
+	},
+	"app": {
+		"windows": [
+			{
+				"label": "main",
+				"title": "Honeycrisp",
+				"width": 1200,
+				"height": 820,
+				"minWidth": 760,
+				"minHeight": 520,
+				"resizable": true
+			}
+		],
+		"security": {
+			"csp": "default-src 'self'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' ipc: http://ipc.localhost https: http: ws: wss:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'",
+			"devCsp": "default-src 'self'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; connect-src 'self' ipc: http://ipc.localhost https: http: ws: wss:; object-src 'none'; base-uri 'self'",
+			"capabilities": ["main-window"]
+		}
+	}
+}

@@ -21,9 +21,14 @@ export const pinyinRomanizer: Romanizer = (text) => {
 		}
 		const run = match[0];
 		const readings = pinyin(run, { type: 'array' });
-		[...run].forEach((char, j) => {
-			segments.push({ text: char, reading: readings[j] ?? '' });
-		});
+		let charIndex = 0;
+		for (const char of run) {
+			segments.push({
+				text: char,
+				reading: readings[charIndex] ?? '',
+			});
+			charIndex++;
+		}
 		lastIndex = match.index + run.length;
 		match = regex.exec(text);
 	}

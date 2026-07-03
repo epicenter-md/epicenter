@@ -10,7 +10,11 @@
 <script lang="ts">
 	import type { Segment } from './romanizer.js';
 
-	let { segment }: { segment: Segment } = $props();
+	let {
+		segment,
+	}: {
+		segment: Segment;
+	} = $props();
 </script>
 
 {#if segment.reading}<ruby>{segment.text}<rp>(</rp><rt>{segment.reading}</rt><rp>)</rp></ruby>{:else}{segment.text}{/if}

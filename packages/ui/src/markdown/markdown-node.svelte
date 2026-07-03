@@ -17,7 +17,13 @@
 	import type { Romanizer } from './romanizer.js';
 	import Ruby from './ruby.svelte';
 
-	let { token, romanizer }: { token: Token; romanizer: Romanizer } = $props();
+	let {
+		token,
+		romanizer,
+	}: {
+		token: Token;
+		romanizer: Romanizer;
+	} = $props();
 
 	// Schemes that execute when followed. The tree itself is inert DOM, so these
 	// attribute values are the only injection surface (an assistant can echo a

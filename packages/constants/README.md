@@ -1,65 +1,46 @@
 # @epicenter/constants
 
-Shared URLs, ports, and version info for the Epicenter monorepo. Each runtime context gets its own subpath export so bundlers only pull in what they need.
+Shared Epicenter platform contracts: the facts several packages and apps must agree on but none can own, so they live below all of them. Each runtime context gets its own subpath export, so bundlers only pull in what they need.
 
-## Single source of truth
-
-All app metadata lives in `APPS` inside `src/apps.ts`:
-
-```typescript
-export const APPS = {
-  API: { port: 8787, url: 'https://api.epicenter.so' },
-  SH: { port: 5173, url: 'https://epicenter.sh' },
-  WHISPERING: { port: 1420, url: 'https://whispering.epicenter.so' },
-} as const;
-```
-
-Everything else is derived from this.
+This is a floor, not a junk drawer. A fact belongs here only when more than one package (or app) needs it and no single one is its natural owner. Single-owner values live beside their owner instead: HTTP error unions live in `@epicenter/server` and the billing layer, the room route lives in `@epicenter/sync`, and the release version lives in `apps/landing`.
 
 ## Exports
 
+### `@epicenter/constants/apps`
+
+The app origin and port registry (`APPS`), plus the origin helpers CORS and OAuth redirect allowlists derive from it (`localUrl`, `appOrigins`, `prodOrigins`) and the Node API-base default (`EPICENTER_API_URL`). Everything about "where an app answers" is derived from `APPS`.
+
+```typescript
+import { APPS, appOrigins } from '@epicenter/constants/apps';
+```
+
 ### `@epicenter/constants/vite`
 
-For Vite-bundled apps (SvelteKit, Tauri, WXT). Auto-detects dev vs prod via `import.meta.env.MODE`.
+Flat `APP_URLS` resolved at Vite build time (dev localhost vs prod origin, via `import.meta.env.MODE`). For Vite-bundled apps (SvelteKit, Astro, Tauri, WXT).
 
 ```typescript
 import { APP_URLS } from '@epicenter/constants/vite';
 
-const apiUrl = APP_URLS.API;
-// dev:  'http://localhost:8787'
-// prod: 'https://api.epicenter.so'
+const apiUrl = APP_URLS.API; // dev: http://localhost:8787 · prod: https://api.epicenter.so
 ```
 
-### `@epicenter/constants/apps`
+### `@epicenter/constants/api-routes`
 
-For non-Vite contexts (Cloudflare Workers, CLI scripts). Use `APPS` directly.
+`API_ROUTES`: the shared home for API route contracts whose domain has no dedicated shared package (the session projection, the blob store, the `/v1` inference gateways). Each leaf carries the server `pattern`, an optional server-only `prefixPattern` mount helper, and the client `url(...)` builder. Not a registry of every route: routes whose domain owns a shared package live there (`@epicenter/sync` owns `ROOM_ROUTE`).
 
-```typescript
-import { APPS } from '@epicenter/constants/apps';
+### `@epicenter/constants/oauth-routes` and `@epicenter/constants/oauth-clients`
 
-// CORS origins:
-const prodOrigins = Object.values(APPS).flatMap((a) => [
-	a.url,
-	...('aliases' in a ? a.aliases : []),
-]);
-const devOrigins = Object.values(APPS).map(a => `http://localhost:${a.port}`);
+The OAuth endpoints Epicenter clients call (`OAUTH_ROUTES`) and the public first-party client ids and scopes every app presents at sign-in (`oauth-clients`). Shared by `@epicenter/auth` (the clients) and `@epicenter/server` (the authorization server).
 
-// Dev server port:
-server: { port: APPS.WHISPERING.port, strictPort: true }
+### `@epicenter/constants/oauth-seed`
 
-// CLI tool: always local:
-const baseURL = `http://localhost:${APPS.API.port}`;
-```
+`buildTrustedOAuthClients` / `projectTrustedOAuthClientToRow`: project the first-party clients (composed from `APPS`, `oauth-clients`, and `OAUTH_ROUTES`) into the Better Auth `oauth_client` rows. Shared by the server's auth plugin and the `apps/api` deploy seed script, neither of which can own it without a backwards dependency, so it stays on the floor beside its inputs.
 
-### `@epicenter/constants/versions`
+### `@epicenter/constants/ai-providers`
 
-Monorepo-wide version string, stamped by CI on each release.
-
-```typescript
-import { VERSION } from '@epicenter/constants/versions';
-```
+The sellable-model catalog (`AI_MODELS`) and its derivations (`AiProvider`, `MODELS_BY_ID`, `providerLabel`, `toHostedCatalog`). Shared by the server inference gateway (routing), the billing layer (pricing), and the chat apps (model pickers).
 
 ## Adding a new app
 
 1. Add an entry to `APPS` in `src/apps.ts` with `port` and `url`.
-2. Every export picks it up automatically: TypeScript enforces completeness.
+2. Every consumer picks it up automatically: TypeScript enforces completeness.

@@ -6,12 +6,12 @@
  */
 
 import type { Principal } from '@epicenter/auth';
-import type { OAuthError } from '@epicenter/constants/oauth-errors';
 import type { PrincipalId } from '@epicenter/identity';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import type { Context } from 'hono';
 import type { Result } from 'wellcrafted/result';
 import type { CloudAuthBindings, createAuth } from './auth/create-auth.js';
+import type { OAuthError } from './auth/oauth-errors.js';
 import type * as schema from './db/schema/index.js';
 import type { Rooms } from './room/contracts.js';
 import type { ServerBindings } from './server-bindings.js';

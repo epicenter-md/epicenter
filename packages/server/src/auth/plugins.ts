@@ -1,9 +1,9 @@
 import { oauthProvider } from '@better-auth/oauth-provider';
-import { JWT_SIGNING_ALG } from '@epicenter/constants/auth';
 import { EPICENTER_OAUTH_SCOPES } from '@epicenter/constants/oauth-clients';
 import { buildTrustedOAuthClients } from '@epicenter/constants/oauth-seed';
 import type { BetterAuthOptions } from 'better-auth';
 import { jwt } from 'better-auth/plugins/jwt';
+import { JWT_SIGNING_ALG } from './base-config.js';
 
 /**
  * Build the Better Auth plugins that define Epicenter's OAuth server boundary.

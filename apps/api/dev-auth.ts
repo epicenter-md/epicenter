@@ -23,9 +23,12 @@
  */
 
 import { Principal } from '@epicenter/auth';
-import { OAuthError } from '@epicenter/constants/oauth-errors';
 import { asPrincipalId } from '@epicenter/identity';
-import type { CloudEnv, ResolveBearerPrincipal } from '@epicenter/server/bun';
+import {
+	type CloudEnv,
+	OAuthError,
+	type ResolveBearerPrincipal,
+} from '@epicenter/server/bun';
 import { Ok } from 'wellcrafted/result';
 
 const DEV_TOKEN_PREFIX = 'dev:';

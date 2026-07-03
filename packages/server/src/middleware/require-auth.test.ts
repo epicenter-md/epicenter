@@ -18,14 +18,14 @@
 import { expect, test } from 'bun:test';
 import { oauthProvider } from '@better-auth/oauth-provider';
 import { Principal } from '@epicenter/auth';
-import { JWT_SIGNING_ALG } from '@epicenter/constants/auth';
 import { EPICENTER_OAUTH_SCOPES } from '@epicenter/constants/oauth-clients';
-import { OAuthError } from '@epicenter/constants/oauth-errors';
 import { betterAuth } from 'better-auth';
 import { type MemoryDB, memoryAdapter } from 'better-auth/adapters/memory';
 import { jwt } from 'better-auth/plugins';
 import { Hono } from 'hono';
 import { Ok } from 'wellcrafted/result';
+import { JWT_SIGNING_ALG } from '../auth/base-config.js';
+import { OAuthError } from '../auth/oauth-errors.js';
 import {
 	createOAuthTestDb,
 	isAddressInUse,

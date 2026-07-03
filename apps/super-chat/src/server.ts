@@ -15,7 +15,6 @@
  */
 
 import { createHash, timingSafeEqual } from 'node:crypto';
-import { API_ROUTES } from '@epicenter/constants/api-routes';
 import type {
 	ConversationSnapshot,
 	ToolCatalog,
@@ -23,6 +22,7 @@ import type {
 import { Hono } from 'hono';
 import { createBunWebSocket } from 'hono/bun';
 import type { SuperChatHost } from './host.ts';
+import { SESSION_ROUTE, SESSION_STREAM_ROUTE } from './routes.ts';
 
 /** What a WebSocket client may ask of the one chat session. */
 export type ClientCommand =
@@ -92,7 +92,7 @@ export function createSuperChatServer({
 		return c.html(page);
 	});
 
-	app.get(API_ROUTES.session.pattern, (c) =>
+	app.get(SESSION_ROUTE.pattern, (c) =>
 		c.json({
 			tools: listTools(host.tools),
 			snapshot: host.conversation.snapshot(),
@@ -100,7 +100,7 @@ export function createSuperChatServer({
 	);
 
 	app.get(
-		API_ROUTES.session.stream.pattern,
+		SESSION_STREAM_ROUTE.pattern,
 		upgradeWebSocket(() => {
 			let unsubscribe: (() => void) | undefined;
 			const push = (ws: { send(data: string): void }) => {

@@ -9,15 +9,15 @@ import { defineErrors, type InferErrors } from 'wellcrafted/error';
  * Worker decides at ticket-mint and read time. See
  * ADR-0089 (the blob store is a presigned-S3 kernel and the bucket is its only index).
  *
- * Defined once in the shared constants package so the server runtime and any
- * blob client SDK reference the same discriminated union; the serialized
- * envelope is `wellcrafted`'s
- * `{ data: null, error: { name, message, ...fields } }`; each variant bakes
- * in its own HTTP `status`.
+ * Owned by the blobs route ({@link blobs.ts}), its only emitter. The serialized
+ * envelope is `wellcrafted`'s `{ data: null, error: { name, message, ...fields } }`;
+ * each variant bakes in its own HTTP `status`. A blob client branches on
+ * `body.error.name` off the wire; it does not import this union (the client
+ * SDK carries its own transport-level `ClientError`).
  *
  * @example
  * ```ts
- * import { BlobError } from '@epicenter/constants/blob-errors';
+ * import { BlobError } from './blob-errors.js';
  * const err = BlobError.BlobTooLarge({ size: 9e9, maxBytes: 5e9 });
  * return c.json(err, err.error.status); // 413
  * ```

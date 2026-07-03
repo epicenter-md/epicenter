@@ -92,8 +92,8 @@ for (const { path, type } of files) {
 	console.log(`Updated ${path}`);
 }
 
-/** Stamp the VERSION constant in packages/constants/src/versions.ts */
-const versionsPath = join(root, 'packages/constants/src/versions.ts');
+/** Stamp the VERSION constant the landing download links read. */
+const versionsPath = join(root, 'apps/landing/src/version.ts');
 const versionsFile = Bun.file(versionsPath);
 const versionsContent = await versionsFile.text();
 const updatedVersions = versionsContent.replace(
@@ -101,7 +101,7 @@ const updatedVersions = versionsContent.replace(
 	`VERSION = '${newVersion}'`,
 );
 await Bun.write(versionsPath, updatedVersions);
-console.log('Updated packages/constants/src/versions.ts');
+console.log('Updated apps/landing/src/version.ts');
 
 /** Update Cargo.lock for each Tauri app. */
 const cargoTomls = files.filter((f) => f.type === 'toml');

@@ -41,7 +41,7 @@
 	},
 	"devDependencies": {
 		"@tauri-apps/api": "catalog:",
-		"@tauri-apps/plugin-deep-link": "^2.4.9",
+		"@tauri-apps/plugin-deep-link": "catalog:",
 		"@tauri-apps/plugin-opener": "catalog:",
 		"@types/bun": "catalog:",
 		"typescript": "catalog:"

@@ -14,10 +14,14 @@
 		"prepare": "svelte-kit sync || echo ''",
 		"tauri": "tauri",
 		"test": "bun test",
+		"test:rust": "cd src-tauri && cargo test --lib",
+		"test:e2e": "playwright test",
+		"test:matter": "bun run test && bun run test:rust",
 		"typecheck": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json"
 	},
 	"devDependencies": {
 		"@epicenter/ui": "workspace:*",
+		"@playwright/test": "^1.50.0",
 		"@lucide/svelte": "catalog:",
 		"@sveltejs/adapter-static": "catalog:",
 		"@sveltejs/kit": "catalog:",

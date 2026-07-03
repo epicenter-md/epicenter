@@ -26,13 +26,13 @@
  * (deleted spec 20260623T220000 decision 10, recoverable via git history; kernel is ADR-0089); the old asset-table sync is retired.
  */
 
-import { AiChatError } from '@epicenter/constants/ai-chat-errors';
 import {
 	MODELS_BY_ID,
 	type ServableModel,
 } from '@epicenter/constants/ai-providers';
 import type { PrincipalId } from '@epicenter/identity';
 import { Err, Ok, type Result } from 'wellcrafted/result';
+import { AiChatError } from './ai-chat-errors.js';
 import { createAutumnClient, tryAutumn } from './autumn.js';
 import {
 	type CheckoutPlanId,
@@ -183,8 +183,10 @@ export function createBillingService(
 	 * the usage event with `model` and `provider` so the dashboard groups STT
 	 * spend alongside chat (`listUsage` / `listEvents` already group by those
 	 * properties). Called after the gateway answered 200, off the after-response
-	 * queue. A small overspend is possible: the one call that tips a near-empty
-	 * wallet negative. The pre-call `checkAiCredits` gate keeps it to that call.
+	 * queue. The pre-call `checkAiCredits` gate only proves the wallet is non-empty,
+	 * so a bounded overspend is possible: a single long recording can settle a charge
+	 * larger than the balance, and concurrent calls can each pass the gate before any
+	 * usage posts (see ADR-0100).
 	 *
 	 * Enqueued with `async: true`: Autumn records the event and returns 202 with
 	 * no `balances` in the body. SDK response validation still runs, but with no

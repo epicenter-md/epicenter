@@ -3,6 +3,7 @@ import { APPS, appOrigins } from '#apps';
 import {
 	EPICENTER_CLI_OAUTH_CLIENT_ID,
 	EPICENTER_HONEYCRISP_OAUTH_CLIENT_ID,
+	EPICENTER_HONEYCRISP_TAURI_OAUTH_REDIRECT_URI,
 	EPICENTER_OAUTH_SCOPES,
 	EPICENTER_OPENSIDIAN_OAUTH_CLIENT_ID,
 	EPICENTER_TAB_MANAGER_OAUTH_CLIENT_ID,
@@ -89,7 +90,10 @@ export function buildTrustedOAuthClients(apiBaseURL: string) {
 			clientId: EPICENTER_HONEYCRISP_OAUTH_CLIENT_ID,
 			name: 'Honeycrisp',
 			type: 'user-agent-based',
-			redirectUris: appCallbacks(APPS.HONEYCRISP),
+			redirectUris: [
+				...appCallbacks(APPS.HONEYCRISP),
+				EPICENTER_HONEYCRISP_TAURI_OAUTH_REDIRECT_URI,
+			],
 		},
 		{
 			clientId: EPICENTER_OPENSIDIAN_OAUTH_CLIENT_ID,

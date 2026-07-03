@@ -362,4 +362,103 @@ mod tests {
         mark(&dir.join(".git"));
         assert_eq!(scan_vault(&dir).unwrap(), vec![s(&dir.join("pages"))]);
     }
+
+    /// The editable-views loop end to end on the REAL filesystem: a card's status is edited on
+    /// disk, the watcher re-observes it, the mirror reprojects, and a query moves the card between
+    /// buckets. This is the "drag a kanban card -> status: rewrites -> reproject" path with the
+    /// gesture and rendering stripped off, so it runs headless under `cargo test`.
+    ///
+    /// `scan()` stands in for the live watcher: the watcher seeds and streams exactly the deltas
+    /// `scan()` produces (`watch_folder` calls it), so asserting on `scan()` after a disk write is
+    /// asserting on what the UI would receive. The only piece NOT covered here is the `notify`
+    /// debouncer firing on its own (that stays manual QA). The JS projector (`projectToSqlite`)
+    /// is stubbed with representative SQL exactly as the `mirror.rs` tests do; its real output is
+    /// covered by the bun projector round-trip test.
+    #[test]
+    fn disk_edit_reprojects_through_scan_and_mirror() {
+        use crate::entry::write_entry;
+        use crate::mirror::{query_mirror, reset_mirror, write_mirror};
+        use serde_json::json;
+
+        let root = scratch("loop");
+        mark(&root); // a real table folder carries the marker
+        let path: String = s(&root);
+        reset_mirror(path.clone()).unwrap(); // production head-of-chain: makes .matter, empties the db
+
+        // One-column `status` projection. In production matter-core builds this from the parsed
+        // rows; Rust never sees columns, so the test supplies the SQL directly.
+        let schema = "DROP TABLE IF EXISTS \"loop\";\nCREATE TABLE \"loop\" (\"stem\" TEXT PRIMARY KEY, \"status\" TEXT)";
+        let insert = r#"INSERT INTO "loop" ("stem", "status") VALUES (?, ?)"#;
+
+        // The text a saveField edit would write, asserted on disk through the watcher's own `scan()`.
+        fn card_text_has_status(root: &std::path::Path, want: &str) {
+            let card = scan(root)
+                .unwrap()
+                .into_iter()
+                .find_map(|d| match d {
+                    FileDelta::Content { file_name, text } if file_name == "card.md" => Some(text),
+                    _ => None,
+                })
+                .expect("card.md should surface as a Content delta");
+            assert!(
+                card.contains(&format!("status: {want}")),
+                "expected status: {want}, got:\n{card}"
+            );
+        }
+
+        // 1. Create the card with status: todo, project it, assert it is in the todo bucket.
+        write_entry(
+            path.clone(),
+            "card.md".into(),
+            "---\nstatus: todo\n---\n# Card\n".into(),
+        )
+        .unwrap();
+        card_text_has_status(&root, "todo");
+        write_mirror(
+            path.clone(),
+            schema.into(),
+            insert.into(),
+            vec![vec![json!("card"), json!("todo")]],
+        )
+        .unwrap();
+        let todo = query_mirror(
+            path.clone(),
+            r#"SELECT "stem" FROM "loop" WHERE "status" = 'todo'"#.into(),
+            None,
+        )
+        .unwrap();
+        assert_eq!(todo.rows, vec![vec![json!("card")]]);
+
+        // 2. The drag: saveField rewrites status to done on disk (same write_entry path).
+        write_entry(
+            path.clone(),
+            "card.md".into(),
+            "---\nstatus: done\n---\n# Card\n".into(),
+        )
+        .unwrap();
+        card_text_has_status(&root, "done");
+
+        // 3. Reproject this batch: the card leaves todo and lands in done.
+        write_mirror(
+            path.clone(),
+            schema.into(),
+            insert.into(),
+            vec![vec![json!("card"), json!("done")]],
+        )
+        .unwrap();
+        let todo = query_mirror(
+            path.clone(),
+            r#"SELECT "stem" FROM "loop" WHERE "status" = 'todo'"#.into(),
+            None,
+        )
+        .unwrap();
+        assert_eq!(todo.rows.len(), 0, "card should have left the todo bucket");
+        let done = query_mirror(
+            path,
+            r#"SELECT "stem" FROM "loop" WHERE "status" = 'done'"#.into(),
+            None,
+        )
+        .unwrap();
+        assert_eq!(done.rows, vec![vec![json!("card")]]);
+    }
 }

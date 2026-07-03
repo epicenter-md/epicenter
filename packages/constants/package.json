@@ -1,6 +1,6 @@
 {
 	"name": "@epicenter/constants",
-	"description": "Shared URLs, ports, and version info for the Epicenter monorepo",
+	"description": "Shared Epicenter platform contracts: app origins and ports, API and OAuth route surfaces, first-party OAuth clients and their seed projection, Vite build URLs, and the model catalog",
 	"version": "0.1.1",
 	"type": "module",
 	"imports": {
@@ -11,18 +11,12 @@
 	},
 	"exports": {
 		"./apps": "./src/apps.ts",
-		"./auth": "./src/auth.ts",
 		"./oauth-clients": "./src/oauth-clients.ts",
 		"./oauth-seed": "./src/oauth-seed.ts",
 		"./vite": "./src/vite.ts",
-		"./versions": "./src/versions.ts",
-		"./ai-chat-errors": "./src/ai-chat-errors.ts",
 		"./ai-providers": "./src/ai-providers.ts",
 		"./api-routes": "./src/api-routes.ts",
-		"./blob-errors": "./src/blob-errors.ts",
-		"./oauth-errors": "./src/oauth-errors.ts",
-		"./oauth-routes": "./src/oauth-routes.ts",
-		"./request-guard-errors": "./src/request-guard-errors.ts"
+		"./oauth-routes": "./src/oauth-routes.ts"
 	},
 	"devDependencies": {
 		"@better-auth/oauth-provider": "catalog:",

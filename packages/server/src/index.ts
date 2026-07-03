@@ -19,6 +19,11 @@
 // The pure generator + boot entropy gate (`generateInstanceToken`
 // / `assertStrongToken`) live in `@epicenter/auth`.
 export { createEnvTokenResolver } from './auth/instance-token.js';
+// The OAuth resource-boundary error union the bearer resolver emits (401
+// `InvalidToken` / 503 `ServerError`). Re-exported so a deployment's own bearer
+// resolver (e.g. `apps/api`'s dev auth) returns the same variants the request
+// path expects, without reaching into the auth module directly.
+export { OAuthError } from './auth/oauth-errors.js';
 export { connectHyperdriveDb } from './db/backends/cloudflare.js';
 // Database concern (cloud-only). `createDb(client)` wraps a connected pg
 // client/pool in drizzle with the auth schema; a cloud entry hands the result to
@@ -32,8 +37,8 @@ export { rateLimit } from './middleware/rate-limit.js';
 // deployment's own scripts (`apps/api` `oauth:seed:*`), not in this barrel, so
 // `pg` and the drizzle query-builder graph stay out of the worker's module and
 // type programs. The seed builds rows from `projectTrustedOAuthClientToRow` in
-// `@epicenter/constants/oauth` (beside `buildTrustedOAuthClients`, its input),
-// so it never imports this request-path auth barrel.
+// `@epicenter/constants/oauth-seed` (beside `buildTrustedOAuthClients`, its
+// input), so it never imports this request-path auth barrel.
 //
 // Auth middleware + the cloud's OAuth bearer resolver. A deployment passes one of
 // these as the `auth` for each protected mount (the cloud passes

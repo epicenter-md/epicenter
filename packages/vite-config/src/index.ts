@@ -1,6 +1,14 @@
 import { sveltekit } from '@sveltejs/kit/vite';
 import tailwindcss from '@tailwindcss/vite';
-import { searchForWorkspaceRoot, type UserConfig } from 'vite';
+import {
+	defaultClientConditions,
+	searchForWorkspaceRoot,
+	type UserConfig,
+} from 'vite';
+
+type WorkspaceAppViteConfigOptions = {
+	tauri?: boolean;
+};
 
 /**
  * Base Vite config for SvelteKit workspace apps whose package contract and
@@ -16,7 +24,12 @@ import { searchForWorkspaceRoot, type UserConfig } from 'vite';
  * source are unreadable in dev. Adding the workspace root restores both; Vite
  * concatenates it with SvelteKit's entries rather than replacing them.
  */
-export function workspaceAppViteConfig(app: { port: number }): UserConfig {
+export function workspaceAppViteConfig(
+	app: { port: number },
+	options: WorkspaceAppViteConfigOptions = {},
+): UserConfig {
+	const isTauri = options.tauri && process.env.TAURI_ENV_PLATFORM !== undefined;
+
 	return {
 		// Bun can split `vite` into peer-variant installs (`vite@7.3.5+<hashA>`
 		// vs `+<hashB>`), which makes identical `Plugin` types compare unequal
@@ -24,6 +37,9 @@ export function workspaceAppViteConfig(app: { port: number }): UserConfig {
 		// app's plugins come from, instead of leaking the workaround into each app.
 		plugins: [sveltekit(), tailwindcss()] as UserConfig['plugins'],
 		resolve: {
+			// Custom conditions replace Vite's defaults, so keep the default
+			// client conditions when a Tauri build opts into platform DI.
+			...(isTauri && { conditions: ['tauri', ...defaultClientConditions] }),
 			dedupe: ['yjs'],
 		},
 		server: {

@@ -30,8 +30,6 @@
  * `Request` cannot be upgraded.
  */
 
-import { OAuthError } from '@epicenter/constants/oauth-errors';
-import { RequestGuardError } from '@epicenter/constants/request-guard-errors';
 import {
 	BEARER_SUBPROTOCOL_PREFIX,
 	MAIN_SUBPROTOCOL,
@@ -41,9 +39,11 @@ import {
 import { Hono, type MiddlewareHandler } from 'hono';
 import { createMiddleware } from 'hono/factory';
 import { describeRoute } from 'hono-openapi';
+import { OAuthError } from '../auth/oauth-errors.js';
 import { createOAuthUnauthorizedResourceResponse } from '../auth/oauth-resource.js';
 import { parseBearer } from '../auth/parse-bearer.js';
 import { isWebSocketUpgrade } from '../is-websocket-upgrade.js';
+import { RequestGuardError } from '../middleware/request-guard-errors.js';
 import { doName } from '../principal.js';
 import type { Env, ResolveBearerPrincipal } from '../types.js';
 

@@ -25,6 +25,11 @@
 // The pure generator + boot entropy gate (`generateInstanceToken` /
 // `assertStrongToken`) live in `@epicenter/auth`.
 export { createEnvTokenResolver } from './auth/instance-token.js';
+// The OAuth resource-boundary error union the bearer resolver emits. Exported
+// here too (it is not a Cloudflare module) so a Bun entry's dev bearer resolver
+// gets it without importing the main barrel, which would drag in the `Room`
+// Durable Object and its `cloudflare:workers` import.
+export { OAuthError } from './auth/oauth-errors.js';
 export { createDb, type Db } from './db/create-db.js';
 // An opt-in burn-rate cap for the inference `policies` seam (ADR-0076).
 export { rateLimit } from './middleware/rate-limit.js';

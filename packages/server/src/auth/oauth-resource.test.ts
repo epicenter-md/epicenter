@@ -9,8 +9,8 @@
  */
 
 import { expect, test } from 'bun:test';
-import { OAuthError } from '@epicenter/constants/oauth-errors';
 import { Hono } from 'hono';
+import { OAuthError } from './oauth-errors.js';
 import { createOAuthUnauthorizedResourceResponse } from './oauth-resource.js';
 
 test('InvalidToken returns 401 with the invalid_token challenge', async () => {

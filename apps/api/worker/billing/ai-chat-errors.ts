@@ -3,11 +3,12 @@ import { defineErrors, type InferErrors } from 'wellcrafted/error';
 /**
  * Structured error variants for the metered inference path.
  *
- * Defined once in the shared constants package so the gateway and its billing
- * policies reference the same discriminated union. The billing policy calls the
- * factories at runtime (`AiChatError.InsufficientCredits(...)`) and renders them
- * into the OpenAI error envelope (`{ error: { message, code } }`), with the
- * variant `name` as `error.code`.
+ * Owned by the cloud billing layer that emits them: the metering policy calls
+ * the factories at runtime (`AiChatError.InsufficientCredits(...)`) and renders
+ * them into the OpenAI error envelope (`{ error: { message, code } }`), with the
+ * variant `name` as `error.code`. The library gateway
+ * (`@epicenter/server` inference route) stays billing-agnostic and emits its own
+ * OpenAI-shaped errors, so this union is hosted-only, not a shared contract.
  *
  * Each variant's `name` field is the discriminant: use `switch (error.name)`
  * for exhaustive handling with full TypeScript narrowing.
@@ -19,10 +20,7 @@ import { defineErrors, type InferErrors } from 'wellcrafted/error';
  *
  * @example
  * ```ts
- * import {
- *   AiChatError,
- *   AiChatErrorStatus,
- * } from '@epicenter/constants/ai-chat-errors';
+ * import { AiChatError, AiChatErrorStatus } from './ai-chat-errors.js';
  * return c.json(
  *   AiChatError.InsufficientCredits({ balance: 42 }),
  *   AiChatErrorStatus.InsufficientCredits,

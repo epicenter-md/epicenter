@@ -14,33 +14,19 @@ import { defineErrors, type InferErrors } from 'wellcrafted/error';
  *   - `MissingNodeId` (400): route-level input refusal: WebSocket
  *     upgrade is missing the required `nodeId` query parameter.
  *
- * Defined once in the shared constants package so server runtime and
- * any client SDK reference the same discriminated union. The server
- * calls the factories at runtime (`RequestGuardError.OwnerMismatch()`);
- * clients import the type via `InferErrors` for zero-cost narrowing.
+ * Owned by the server middleware that emits them. The server calls the
+ * factories at runtime (`RequestGuardError.OwnerMismatch()`); a client SDK that
+ * only narrows branches on `body.error.name` off the wire.
  *
  * The serialized envelope is `wellcrafted`'s `{ data: null, error: {
- * name, message, ...fields } }`. Receivers branch on `body.error.name`.
- *
- * Each variant carries its own HTTP `status`, so call sites just forward
- * the baked-in code to `c.json`. No external status mapper required.
+ * name, message, ...fields } }`. Each variant carries its own HTTP `status`,
+ * so call sites just forward the baked-in code to `c.json`.
  *
  * @example
  * ```ts
- * // Server: runtime usage
- * import { RequestGuardError } from '@epicenter/constants/request-guard-errors';
+ * import { RequestGuardError } from '../middleware/request-guard-errors.js';
  * const err = RequestGuardError.OwnerMismatch();
  * return c.json(err, err.error.status); // 403, baked into the variant
- *
- * // Client: type-only narrowing
- * import type { RequestGuardError } from '@epicenter/constants/request-guard-errors';
- * function handle(error: RequestGuardError) {
- *   switch (error.name) {
- *     case 'OwnerMismatch':     // wrong URL for this signed-in user
- *     case 'ForbiddenOrigin':   // CSRF: origin missing or not trusted
- *     case 'MissingNodeId':   // WebSocket upgrade without ?nodeId=
- *   }
- * }
  * ```
  */
 export const RequestGuardError = defineErrors({
