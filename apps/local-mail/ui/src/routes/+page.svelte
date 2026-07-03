@@ -49,7 +49,10 @@
 
 	const labelList = $derived(labels.data?.labels ?? []);
 	const messageList = $derived(messages.data?.messages ?? []);
-	const isFiltered = $derived(search.trim().length > 0 || selectedLabel !== null);
+	// True when the mirror holds no messages at all (nothing synced yet), as
+	// opposed to this label/search view simply matching none. Drives which empty
+	// state the list shows: "run sync" vs "no match".
+	const mirrorEmpty = $derived((status.data?.rows.messages ?? 0) === 0);
 	const syncError = $derived(
 		sync.error?.message ?? sync.data?.failure?.message ?? null,
 	);
@@ -90,7 +93,7 @@
 			{selectedId}
 			loading={messages.isPending}
 			error={messages.error?.message ?? null}
-			{isFiltered}
+			{mirrorEmpty}
 			onSelect={(id) => (selectedId = id)}
 		/>
 
