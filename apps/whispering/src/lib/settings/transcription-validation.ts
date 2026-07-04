@@ -19,7 +19,7 @@ export function getSelectedTranscriptionProvider():
 	return TRANSCRIPTION_PROVIDERS.find((s) => s.id === selectedServiceId);
 }
 
-export function isTranscriptionServiceAvailable(
+function isTranscriptionServiceAvailable(
 	service: TranscriptionProviderEntry,
 ): boolean {
 	return Boolean(tauri) || service.access !== 'onDevice';

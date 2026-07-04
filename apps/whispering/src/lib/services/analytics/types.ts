@@ -4,7 +4,7 @@ import {
 	type InferErrors,
 } from 'wellcrafted/error';
 import type { Result } from 'wellcrafted/result';
-import type { TRANSCRIPTION_SERVICE_IDS } from '$lib/services/transcription/providers';
+import type { TranscriptionServiceId } from '$lib/services/transcription/providers';
 
 export const AnalyticsError = defineErrors({
 	LogEventFailed: ({ cause }: { cause: unknown }) => ({
@@ -13,9 +13,6 @@ export const AnalyticsError = defineErrors({
 	}),
 });
 export type AnalyticsError = InferErrors<typeof AnalyticsError>;
-
-// Use the TranscriptionServiceId type directly
-type TranscriptionServiceId = (typeof TRANSCRIPTION_SERVICE_IDS)[number];
 
 // Settings sections that can be logged
 type SettingsSection =
