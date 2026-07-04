@@ -20,10 +20,12 @@ export type AuthFetch = (
 /**
  * Outcome of verifying a client's credential against its star. Exposed only by
  * clients that perform a remote bearer verification at boot (the self-host token
- * client, {@link createInstanceTokenAuth}). A failed verification does NOT change
- * identity {@link AuthState}, which stays `signed-out`, so this is the separate
- * channel a UI reads to explain WHY it is signed out: an unreachable star versus
- * a rejected token.
+ * client, {@link createInstanceTokenAuth}). It rides its own channel because the
+ * boot identity {@link AuthState} is optimistic (signed-in the moment a token is
+ * held, ADR-0075) and most outcomes leave it untouched: an unreachable star keeps
+ * the client signed-in for local-first work, and only a rejected token drops it to
+ * `signed-out`. So this is the separate signal a UI reads to explain connectivity:
+ * still connecting, an unreachable star, or a rejected token.
  */
 export type AuthConnectionState =
 	| { status: 'pending' }

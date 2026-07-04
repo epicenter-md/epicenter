@@ -34,7 +34,6 @@
 	import {
 		type MarkSpec,
 		type MarkType,
-		type Node,
 		type NodeSpec,
 		type NodeType,
 		Schema,
@@ -50,8 +49,19 @@
 	import { EditorState, Plugin } from 'prosemirror-state';
 	import { Decoration, DecorationSet, EditorView } from 'prosemirror-view';
 	import 'prosemirror-view/style/prosemirror.css';
-	import { redo, undo, ySyncPlugin, yUndoPlugin } from 'y-prosemirror';
+	import {
+		redo,
+		undo,
+		ySyncPlugin,
+		ySyncPluginKey,
+		yUndoPlugin,
+	} from 'y-prosemirror';
 	import type * as Y from 'yjs';
+	import {
+		extractNoteMetadata,
+		isDocEmpty,
+		type NoteMetadata,
+	} from './extract-metadata';
 
 	const taskList = {
 		group: 'block',
@@ -207,38 +217,12 @@
 		};
 	}
 
-	/**
-	 * Extract title, preview, and word count from the ProseMirror document.
-	 *
-	 * Title is the first line (up to 80 chars), preview is the first 100 chars,
-	 * and word count is computed by splitting on whitespace.
-	 */
-	function extractTitleAndPreview(doc: Node): {
-		title: string;
-		preview: string;
-		wordCount: number;
-	} {
-		const text = doc.textContent;
-		const firstNewline = text.indexOf('\n');
-		const firstLine = firstNewline === -1 ? text : text.slice(0, firstNewline);
-		const trimmed = text.trim();
-		return {
-			title: firstLine.slice(0, 80).trim(),
-			preview: text.slice(0, 100).trim(),
-			wordCount: trimmed.length === 0 ? 0 : trimmed.split(/\s+/).length,
-		};
-	}
-
 	let {
 		yxmlfragment,
 		onContentChange,
 	}: {
 		yxmlfragment: Y.XmlFragment;
-		onContentChange: (content: {
-			title: string;
-			preview: string;
-			wordCount: number;
-		}) => void;
+		onContentChange: (content: NoteMetadata) => void;
 	} = $props();
 
 	let element: HTMLDivElement | undefined = $state();
@@ -347,24 +331,49 @@
 				],
 			}),
 			attributes: {
-				class:
-					'prose dark:prose-invert max-w-none focus:outline-none min-h-full',
+				// The editor owns its own typography (see the style block below);
+				// it deliberately does not wear the shared `.prose` article styles,
+				// whose 175% line-height and large block margins read as a rendered
+				// document, not a writing surface.
+				class: 'focus:outline-none',
 			},
-			dispatchTransaction(tr) {
-				const newState = currentView.state.apply(tr);
-				currentView.updateState(newState);
+			// `this` is the EditorView (ProseMirror calls
+			// `dispatchTransaction.call(view, tr)`), which is the only handle that
+			// exists during the synchronous `ySyncPlugin` init render: that first
+			// dispatch fires from inside `new EditorView(...)`, before `currentView`
+			// has been assigned, so reading `currentView.state` here would throw and
+			// abort construction. Reading `this.state` is safe at every point.
+			dispatchTransaction(this: EditorView, tr) {
+				const newState = this.state.apply(tr);
+				this.updateState(newState);
 				updateActiveFormats(newState);
-				if (tr.docChanged) {
-					onContentChange(extractTitleAndPreview(newState.doc));
-				}
+				if (!tr.docChanged) return;
+				// A ySync-origin transaction that leaves the document empty is the
+				// sync layer initializing or streaming in the note body, not a user
+				// edit. On a signed-in relogin the editor can mount and render before
+				// the body doc's WebSocket handshake delivers content, so ySync's
+				// initial render (`_forceRerender`, which fires synchronously during
+				// `new EditorView(...)`) and any pre-content sync frame produce an
+				// empty document. Persisting that would overwrite the note's real
+				// title/preview/wordCount on the table row, and last-writer-wins makes
+				// the empty write durable (issue #1590). Skip it: real content arrives
+				// as a later non-empty sync transaction, and genuine user edits
+				// (including clearing a note) are not sync-origin, so both still
+				// persist.
+				const isSyncOrigin =
+					tr.getMeta(ySyncPluginKey)?.isChangeOrigin === true;
+				if (isSyncOrigin && isDocEmpty(newState.doc)) return;
+				onContentChange(extractNoteMetadata(newState.doc));
 			},
 		});
 
 		view = currentView;
 		updateActiveFormats(currentView.state);
-
-		// Fire initial content extraction
-		onContentChange(extractTitleAndPreview(currentView.state.doc));
+		// No explicit initial extraction: ySync's `_forceRerender` already fires a
+		// `docChanged` transaction through `dispatchTransaction` during construction
+		// above, which extracts metadata when content is present and (per #1590)
+		// skips the empty pre-load render. A direct call here would bypass that
+		// guard and clobber real metadata with an empty write.
 
 		return () => {
 			currentView.destroy();
@@ -484,24 +493,114 @@
 </div>
 
 <style>
+	/*
+	 * Editor-owned typography. This is a writing surface, not a rendered
+	 * article, so it sets its own tight rhythm instead of borrowing the shared
+	 * `.prose` styles. Tokens are the app's oklch theme variables, used directly
+	 * (they already carry the color function; do not wrap in `hsl()`).
+	 *
+	 * The text fills the full pane width (left-anchored, no reading-measure cap):
+	 * the writing surface uses the whole resizable pane the way the rest of the
+	 * workspace does, rather than floating a narrow column. Line length is
+	 * governed by how wide the user drags the pane.
+	 */
 	:global(.ProseMirror) {
 		min-height: 100%;
+		color: var(--foreground);
+		font-size: 1rem;
+		line-height: 1.6;
 	}
-	:global(.ProseMirror > *:first-child) {
+
+	/*
+	 * The first block is the note's title (honeycrisp derives the note title
+	 * from the first line). Style it here rather than letting a stray article
+	 * rule decide what looks like a title.
+	 */
+	:global(.ProseMirror > :first-child) {
 		font-size: 1.75rem;
 		font-weight: 700;
-		line-height: 1.2;
+		line-height: 1.25;
+		margin: 0 0 0.75rem;
 	}
+
+	/* Even block rhythm; adjacent vertical margins collapse, so the title's
+	   bottom margin and the next block's top margin do not stack. */
+	:global(.ProseMirror > * + *) {
+		margin-top: 0.6rem;
+	}
+
+	:global(.ProseMirror h1:not(:first-child)) {
+		font-size: 1.5rem;
+		font-weight: 600;
+		line-height: 1.3;
+		margin-top: 1.4rem;
+	}
+	:global(.ProseMirror h2:not(:first-child)) {
+		font-size: 1.25rem;
+		font-weight: 600;
+		line-height: 1.3;
+		margin-top: 1.2rem;
+	}
+	:global(.ProseMirror h3:not(:first-child)) {
+		font-size: 1.1rem;
+		font-weight: 600;
+		line-height: 1.3;
+		margin-top: 1rem;
+	}
+
+	:global(.ProseMirror ul),
+	:global(.ProseMirror ol) {
+		margin: 0;
+		padding-left: 1.4rem;
+	}
+	:global(.ProseMirror ul) {
+		list-style: disc;
+	}
+	:global(.ProseMirror ol) {
+		list-style: decimal;
+	}
+	:global(.ProseMirror li + li) {
+		margin-top: 0.15rem;
+	}
+
+	:global(.ProseMirror blockquote) {
+		margin: 0;
+		border-left: 2px solid var(--border);
+		padding-left: 1rem;
+		color: var(--muted-foreground);
+	}
+
+	:global(.ProseMirror :not(pre) > code) {
+		background: var(--muted);
+		border-radius: 0.25rem;
+		padding: 0.1rem 0.3rem;
+		font-size: 0.875em;
+	}
+	:global(.ProseMirror pre) {
+		background: var(--muted);
+		border-radius: 0.375rem;
+		padding: 0.75rem 1rem;
+		overflow-x: auto;
+	}
+	:global(.ProseMirror pre code) {
+		background: none;
+		padding: 0;
+		font-size: 0.875em;
+	}
+
+	/* Placeholder mirrors the title size on an empty note. */
 	:global(.ProseMirror p.is-editor-empty:first-child::before) {
 		font-size: 1.75rem;
 		font-weight: 700;
-		line-height: 1.2;
-		color: hsl(var(--muted-foreground));
+		line-height: 1.25;
+		color: var(--muted-foreground);
 		content: attr(data-placeholder);
 		float: left;
 		height: 0;
 		pointer-events: none;
 	}
+
+	/* Task lists: a checkbox aligned to the start of its content row. */
 	:global(.ProseMirror ul.task-list) {
 		list-style: none;
 		padding-left: 0;
@@ -512,6 +611,6 @@
 		gap: 0.5rem;
 	}
 	:global(.ProseMirror ul.task-list li > label) {
-		margin-top: 0.25rem;
+		margin-top: 0.3rem;
 	}
 </style>

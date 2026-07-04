@@ -13,7 +13,6 @@
 	 */
 	import {
 		CONNECTION_PRESETS,
-		type Connection,
 		type ListModelsError,
 		type PresetId,
 	} from '@epicenter/client';
@@ -105,21 +104,25 @@
 		return /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])/.test(baseUrl);
 	}
 
+	function localityLabel(baseUrl: string): 'local' | 'cloud' {
+		return isLocal(baseUrl) ? 'local' : 'cloud';
+	}
+
 	// Derive the group label from the stored base URL: match a preset by its full
 	// normalized base URL (so a self-hosted proxy that merely shares a host won't
 	// false-match, and Ollama's :11434 stays distinct from LM Studio's :1234), else
 	// fall back to the URL host. Derived, not stored, so it cannot drift when the
 	// user edits the URL (ADR-0060).
-	function connectionLabel(connection: Connection): string {
-		const normalized = connection.baseUrl.replace(/\/+$/, '');
+	function connectionLabel(baseUrl: string): string {
+		const normalized = baseUrl.replace(/\/+$/, '');
 		const preset = CONNECTION_PRESETS.find(
 			(p) => p.baseUrl.replace(/\/+$/, '') === normalized,
 		);
 		if (preset) return preset.label;
 		try {
-			return new URL(connection.baseUrl).host;
+			return new URL(baseUrl).host;
 		} catch {
-			return connection.baseUrl;
+			return baseUrl;
 		}
 	}
 
@@ -225,6 +228,14 @@
 	});
 </script>
 
+{#snippet localityIcon(baseUrl: string)}
+	{#if isLocal(baseUrl)}
+		<HardDrive class="size-4 shrink-0 opacity-70" />
+	{:else}
+		<Cloud class="size-4 shrink-0 opacity-70" />
+	{/if}
+{/snippet}
+
 <Popover.Root bind:open>
 	<Popover.Trigger>
 		{#snippet child({ props })}
@@ -273,16 +284,12 @@
 
 					{#each connections.custom as connection (connection.baseUrl)}
 						{@const ids = connection.models ?? []}
-						<Command.Group
-							heading="{connectionLabel(connection)} · {isLocal(
-								connection.baseUrl,
-							)
-								? 'local'
-								: 'cloud'}"
-						>
+						{@const label = connectionLabel(connection.baseUrl)}
+						{@const locality = localityLabel(connection.baseUrl)}
+						<Command.Group heading="{label} · {locality}">
 							{#each ids as id (id)}
 								<Command.Item
-									value="{id} {connectionLabel(connection)}"
+									value="{id} {label}"
 									keywords={[id]}
 									onSelect={() => selectModel(id)}
 								>
@@ -291,12 +298,12 @@
 											? 'opacity-100'
 											: 'opacity-0'}"
 									/>
-									{#if isLocal(connection.baseUrl)}
-										<HardDrive class="size-4" />
-									{:else}
-										<Cloud class="size-4" />
-									{/if}
-									<span class="flex-1 truncate">{id}</span>
+									{@render localityIcon(connection.baseUrl)}
+									<span
+										class="line-clamp-2 flex-1 break-all {model === id
+											? 'font-medium'
+											: ''}"
+										title={id}>{id}</span>
 								</Command.Item>
 							{:else}
 								<Command.Item disabled value="{connection.baseUrl} empty">
@@ -315,14 +322,14 @@
 								{:else}
 									<RefreshCw class="size-4" />
 								{/if}
-								<span class="text-xs">Refresh {connectionLabel(connection)}</span>
+								<span class="text-xs">Refresh {label}</span>
 							</Command.Item>
 							<Command.Item
 								value="remove {connection.baseUrl}"
 								onSelect={() => connections.remove(connection.baseUrl)}
 							>
 								<Trash2 class="size-4" />
-								<span class="text-xs">Remove {connectionLabel(connection)}</span>
+								<span class="text-xs">Remove {label}</span>
 							</Command.Item>
 						</Command.Group>
 					{/each}
@@ -352,29 +359,30 @@
 				</div>
 
 				{#if formPreset === null}
-					<div class="space-y-1">
-						{#each CONNECTION_PRESETS as preset (preset.id)}
-							<Button
-								variant="outline"
-								size="sm"
-								class="w-full justify-between"
-								onclick={() => choosePreset(preset.id)}
+					<Command.Root class="rounded-md border">
+						<Command.List>
+							{#each CONNECTION_PRESETS as preset (preset.id)}
+								<Command.Item
+									value={preset.label}
+									onSelect={() => choosePreset(preset.id)}
+								>
+									{@render localityIcon(preset.baseUrl)}
+									<span class="flex-1">{preset.label}</span>
+									<span class="text-xs text-muted-foreground">
+										{localityLabel(preset.baseUrl)}
+									</span>
+								</Command.Item>
+							{/each}
+							<Command.Separator />
+							<Command.Item
+								value="custom url"
+								onSelect={() => choosePreset('custom')}
 							>
-								<span>{preset.label}</span>
-								<span class="text-xs text-muted-foreground">
-									{isLocal(preset.baseUrl) ? 'local' : 'cloud'}
-								</span>
-							</Button>
-						{/each}
-						<Button
-							variant="outline"
-							size="sm"
-							class="w-full justify-start"
-							onclick={() => choosePreset('custom')}
-						>
-							Custom URL
-						</Button>
-					</div>
+								<Plus class="size-4 shrink-0 opacity-70" />
+								<span class="flex-1">Custom URL</span>
+							</Command.Item>
+						</Command.List>
+					</Command.Root>
 				{:else}
 					<div class="space-y-1">
 						<Label for="conn-url" class="text-xs">Base URL</Label>
@@ -420,6 +428,9 @@
 								<LoaderCircle class="size-3.5 animate-spin" /> Loading models...
 							</p>
 						{:else if discovered && discovered.length > 0}
+							<p class="text-xs text-muted-foreground">
+								Pick a model to start using it.
+							</p>
 							<Command.Root class="rounded-md border">
 								<Command.Input placeholder="Search models..." />
 								<Command.List class="max-h-48">
@@ -430,7 +441,7 @@
 											keywords={[id]}
 											onSelect={() => commitConnection(id)}
 										>
-											<span class="truncate">{id}</span>
+											<span class="line-clamp-2 break-all" title={id}>{id}</span>
 										</Command.Item>
 									{/each}
 								</Command.List>

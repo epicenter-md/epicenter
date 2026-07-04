@@ -70,9 +70,9 @@
 		}
 	},
 	"scripts": {
+		"dev": "bun run dev:desktop",
 		"dev:web": "vite dev",
-		"dev": "bun run dev:local",
-		"dev:local": "bun run scripts/launch-dev.ts",
+		"dev:desktop": "bun run scripts/launch-dev.ts",
 		"dev:doctor": "bun run scripts/dev-doctor.ts",
 		"test": "bun test tests/",
 		"build": "NODE_ENV=production vite build",

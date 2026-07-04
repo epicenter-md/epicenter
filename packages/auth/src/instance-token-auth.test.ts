@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { asPrincipalId } from '@epicenter/identity';
+import { asPrincipalId, INSTANCE_PRINCIPAL_ID } from '@epicenter/identity';
 import { BEARER_SUBPROTOCOL_PREFIX } from '@epicenter/sync';
 import type { AuthConnectionState, AuthFetch } from './auth-contract.js';
 import { createInstanceTokenAuth } from './instance-token-auth.js';
@@ -33,7 +33,12 @@ describe('createInstanceTokenAuth', () => {
 		};
 		const auth = createInstanceTokenAuth({ baseURL, token, fetch });
 
-		expect(auth.state.status).toBe('signed-out'); // before the async check resolves
+		// Optimistic boot: signed-in as the instance principal before the async
+		// check resolves, so the workspace opens principal-scoped synchronously.
+		expect(auth.state).toEqual({
+			status: 'signed-in',
+			principalId: INSTANCE_PRINCIPAL_ID,
+		});
 		await flush();
 
 		expect(auth.state).toEqual({
@@ -45,6 +50,31 @@ describe('createInstanceTokenAuth', () => {
 		expect(new Headers(calls[0]?.init?.headers).get('authorization')).toBe(
 			`Bearer ${token}`,
 		);
+	});
+
+	test('a real instance (instance principal) sees no principal change across boot', async () => {
+		// The self-host box resolves every valid bearer to INSTANCE_PRINCIPAL_ID
+		// (ADR-0075), so the optimistic boot identity and the verified identity
+		// match: no `null -> instance` flip, so `reloadOnPrincipalChange` never
+		// reloads the page mid-session. This is the IndexedDB-race fix.
+		const seen: string[] = [];
+		const fetch: AuthFetch = async () => json(sessionBody('instance'));
+		const auth = createInstanceTokenAuth({ baseURL, token, fetch });
+		auth.onStateChange((s) =>
+			seen.push(s.status === 'signed-out' ? 'signed-out' : s.principalId),
+		);
+
+		expect(auth.state).toEqual({
+			status: 'signed-in',
+			principalId: INSTANCE_PRINCIPAL_ID,
+		});
+		await flush();
+		expect(auth.state).toEqual({
+			status: 'signed-in',
+			principalId: INSTANCE_PRINCIPAL_ID,
+		});
+		// The principal id never left `instance`, so nothing a reload key watches changed.
+		expect(seen.every((p) => p === INSTANCE_PRINCIPAL_ID)).toBe(true);
 	});
 
 	test('boots signed-out when /api/session rejects the token (401)', async () => {
@@ -151,7 +181,13 @@ describe('createInstanceTokenAuth', () => {
 		};
 		const auth = createInstanceTokenAuth({ baseURL, token, fetch });
 		await flush();
-		expect(auth.state.status).toBe('signed-out');
+		// An unreachable star leaves the optimistic identity: the self-hoster keeps
+		// their principal-scoped local workspace offline (the `connection` channel,
+		// not `state`, carries the "unreachable" signal).
+		expect(auth.state).toEqual({
+			status: 'signed-in',
+			principalId: INSTANCE_PRINCIPAL_ID,
+		});
 
 		reachable = true;
 		const { error } = await auth.startSignIn();

@@ -52,12 +52,18 @@ Use this pattern when you need to:
 
 Apps use either a single `dev` script (when there is only one sensible local
 workflow) or a `dev:local` alias (kept for symmetry with `:remote` db scripts).
-The suffix convention applies primarily to database commands:
+Tauri desktop apps (honeycrisp, whispering, matter) have two dev surfaces and
+name them explicitly instead: `dev` launches the desktop shell (aliasing
+`dev:desktop`), and `dev:web` runs Vite alone, which each app's
+`tauri.conf.json` invokes as its `beforeDevCommand`. The suffix convention
+applies primarily to database commands:
 
 | Script | Meaning |
 | --- | --- |
 | `dev` | The default local workflow. May still require Infisical login for app secrets (e.g. API keys), but only ever talks to local infrastructure at runtime. |
 | `dev:local` | Used when an app keeps the `dev` -> `dev:local` alias for explicit naming. Equivalent to `dev`. |
+| `dev:web` | Tauri apps: the Vite dev server alone, no desktop shell. Invoked by `tauri.conf.json` as `beforeDevCommand`. |
+| `dev:desktop` | Tauri apps: launches the native desktop app (`tauri dev`). `dev` aliases this. |
 | `db:*:local` | Runs against local Postgres. Works without Infisical login. |
 | `db:*:remote` | Wraps with `infisical run --env=prod`. Production data; treat as admin. |
 

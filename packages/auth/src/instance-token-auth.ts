@@ -1,3 +1,4 @@
+import { INSTANCE_PRINCIPAL_ID } from '@epicenter/identity';
 import { BEARER_SUBPROTOCOL_PREFIX } from '@epicenter/sync';
 import { defineErrors } from 'wellcrafted/error';
 import { createLogger, type Logger } from 'wellcrafted/logger';
@@ -69,11 +70,15 @@ const InstanceTokenAuthError = defineErrors({
  *   - resource calls attach `Authorization: Bearer <token>`, but ONLY to
  *     `baseURL`'s origin (ADR-0053 audience scoping), so handing this `fetch` to
  *     a custom inference backend or any third party can never leak the token.
- *   - identity is resolved by reading `/api/session` once at construction (via
- *     the shared {@link readApiSession}); a 200 installs `signed-in` with the
- *     response's principal id, a rejected token stays `signed-out`.
- *     `startSignIn` re-runs that check so a UI can retry a connection that was
- *     offline at boot.
+ *   - identity boots optimistically `signed-in` as `INSTANCE_PRINCIPAL_ID`
+ *     (ADR-0075): a held instance token is a credential for the single partition,
+ *     whose principal is always that literal, so the local workspace can open
+ *     principal-scoped synchronously (mirroring the OAuth client's boot from its
+ *     persisted grant). `/api/session` is then read once in the background (via
+ *     the shared {@link readApiSession}) to verify: a 200 confirms the identity,
+ *     an unreachable star leaves it (an offline self-hoster keeps their local
+ *     workspace), and only a rejected token drops to `signed-out`. `startSignIn`
+ *     re-runs that check so a UI can retry a connection that was offline at boot.
  *   - `signOut` is local-only: it drops to `signed-out` without a server call,
  *     because there is no grant to revoke. Forgetting the instance itself
  *     (reverting to hosted) is an app-level concern.
@@ -89,12 +94,24 @@ export function createInstanceTokenAuth({
 	log = createLogger('auth/instance-token'),
 }: CreateInstanceTokenAuthConfig): SyncAuthClient {
 	const epicenterOrigin = new URL(baseURL).origin;
-	let state: AuthState = { status: 'signed-out' };
+	// Boot optimistically signed-in as the instance principal, mirroring the OAuth
+	// client's synchronous boot from its persisted grant. The identity is knowable
+	// synchronously (ADR-0075: every valid instance bearer resolves to
+	// `INSTANCE_PRINCIPAL_ID`), so the workspace opens principal-scoped at once and
+	// `confirmSession` only verifies in the background. Booting `signed-out` here
+	// instead would flip the principal null -> instance the moment `/api/session`
+	// resolves, and `reloadOnPrincipalChange` (ADR-0088) would reload the page
+	// mid-session, tearing down the workspace's IndexedDB under any in-flight
+	// write; booting signed-in makes the happy path a no-op.
+	let state: AuthState = {
+		status: 'signed-in',
+		principalId: INSTANCE_PRINCIPAL_ID,
+	};
 	const listeners = new Set<(state: AuthState) => void>();
 	// The boot bearer check verifies against a remote star, so it can be in flight
-	// or fail for a reason `AuthState` cannot carry (a failure keeps `signed-out`).
-	// `connection` runs alongside `state` on its own listener set so a UI can tell
-	// "still connecting" from "unreachable" from "rejected token".
+	// or fail for a reason `AuthState` cannot carry (only a rejected token drops to
+	// `signed-out`). `connection` runs alongside `state` on its own listener set so
+	// a UI can tell "still connecting" from "unreachable" from "rejected token".
 	let connectionState: AuthConnectionState = { status: 'pending' };
 	const connectionListeners = new Set<(state: AuthConnectionState) => void>();
 

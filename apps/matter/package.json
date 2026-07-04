@@ -5,9 +5,9 @@
 	"version": "0.0.2",
 	"type": "module",
 	"scripts": {
-		"dev": "bun run dev:local",
-		"dev:local": "bun tauri dev --config '{\"identifier\": \"so.epicenter.matter.dev\"}'",
+		"dev": "bun run dev:desktop",
 		"dev:web": "vite dev",
+		"dev:desktop": "bun tauri dev --config '{\"identifier\": \"so.epicenter.matter.dev\"}'",
 		"dev:fixture": "bun scripts/dev-fixture.ts",
 		"build": "vite build",
 		"preview": "vite preview",

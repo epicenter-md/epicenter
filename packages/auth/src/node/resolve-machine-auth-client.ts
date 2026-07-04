@@ -62,12 +62,13 @@ export type ResolveMachineAuthClientConfig = {
 /**
  * Pick and construct the machine auth client for this node.
  *
- * A configured static token yields a {@link createInstanceTokenAuth} client; its
- * first `/api/session` confirmation is awaited so the returned client reports a
- * settled `state` (signed-in, or signed-out when the token is unverifiable),
- * matching the OAuth client whose cached cell makes it synchronously signed-in.
- * The daemon and `blobs` read `auth.state` synchronously right after this call,
- * so an unsettled instance client would otherwise always look signed-out.
+ * A configured static token yields a {@link createInstanceTokenAuth} client, which
+ * boots optimistically signed-in as the instance principal (local-first, like the
+ * OAuth client's cached cell). Its first `/api/session` confirmation is awaited so
+ * the returned client reports a settled result: the await only rewrites `state`
+ * when the token is rejected (drops to signed-out); an offline star leaves it
+ * signed-in and cloud sync retries in the background. The daemon and `blobs` read
+ * `auth.state` synchronously right after this call.
  *
  * With no configured token, this is exactly {@link createMachineAuthClient}: the
  * persisted OAuth cell, including its `NoSavedSession` arm (which callers map to
@@ -91,10 +92,11 @@ export async function resolveMachineAuthClient({
 			fetch,
 			log,
 		});
-		// Settle state before the daemon reads it. A failure here (offline, or a
-		// revoked token) leaves the client signed-out, which is a valid daemon
-		// state: local mounts still serve and the operator can see why cloud sync
-		// is idle. We do not turn it into an error.
+		// Settle the connection channel before the daemon reads state. A revoked
+		// token drops to signed-out; an offline star leaves the client optimistically
+		// signed-in (local mounts still serve and cloud sync retries when the network
+		// returns; the `connection` channel carries the "unreachable" reason). Either
+		// way it is a valid daemon state, not an error.
 		const { error } = await client.startSignIn();
 		if (error) {
 			log.debug(
