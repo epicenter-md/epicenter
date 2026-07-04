@@ -129,7 +129,7 @@ export function describeCompletionReadiness(
  * The pipeline-wide privacy sentence for the home chip and Dictation page: where
  * audio goes and where Polish sends transcript text, woven into one line. Audio
  * locality is resolved upstream ({@link TranscriptionLocality}) rather than read
- * from the provider's `access` label, so a BYOE or localhost-overridden
+ * from the provider's `access` label, so an `endpoint` or localhost-overridden
  * transcription endpoint reads on-device here exactly as it does on the
  * Processing surface.
  */

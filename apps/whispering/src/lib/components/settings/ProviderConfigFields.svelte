@@ -1,6 +1,6 @@
 <script lang="ts" module>
 	import type { InferenceProviderId } from '$lib/constants/inference';
-	import type { ByokProviderId } from '$lib/services/transcription/providers';
+	import type { KeyProviderId } from '$lib/services/transcription/providers';
 	import type { DeviceConfigKey } from '$lib/state/device-config.svelte';
 
 	/** Inline description content: plain text or an external link. */
@@ -17,11 +17,11 @@
 
 	/**
 	 * Every provider whose config (API key, endpoint) lives in deviceConfig:
-	 * inference providers plus BYOK transcription providers. Deriving the
+	 * inference providers plus `key` transcription providers. Deriving the
 	 * union keeps PROVIDER_FIELDS exhaustive: adding a provider to either
 	 * registry is a compile error here until its fields exist.
 	 */
-	export type ProviderConfigId = InferenceProviderId | ByokProviderId;
+	export type ProviderConfigId = InferenceProviderId | KeyProviderId;
 
 	const PROVIDER_FIELDS: Record<ProviderConfigId, ProviderField[]> = {
 		OpenAI: [

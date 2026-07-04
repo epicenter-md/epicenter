@@ -68,7 +68,7 @@
 	);
 
 	const cloudProvider = $derived(
-		selectedTranscriptionProvider?.access === 'byok'
+		selectedTranscriptionProvider?.access === 'key'
 			? selectedTranscriptionProvider
 			: null,
 	);

@@ -26,7 +26,7 @@ Here is the shape we want:
                              |
         +---------+----------+-----------+----------+
         |         |                      |          |
-    onDevice    byok                  byoe        star
+    onDevice     key                 endpoint     session
         |         |                      |          |
    on device   user's key        user's service    Epicenter deployment
                                                 hosted or self-host
@@ -40,7 +40,7 @@ Here is the shape we want:
                          credits can 402                      house key pays
 ```
 
-The important move is that `star` is one provider family. It does not split into
+The important move is that `session` is one provider family. It does not split into
 `hostedAccount` and `selfHostGateway`. Those names would preserve the accident.
 Both deployables expose the same OpenAI-compatible `/v1/audio/transcriptions`
 gateway; they differ in the middleware around it.
@@ -81,26 +81,36 @@ Epicenter accounts or Autumn credits, but it still has a star: the deployment th
 client is bonded to. It still has authenticated access. It can still hold a house
 key and proxy the transcription request.
 
-So the provider should name the thing that survives both deployables:
+So the discriminant (`access`) should name the thing that survives both
+deployables: what the user supplies to reach the provider.
 
 ```txt
-byok:
-  user supplies a provider key
+key:
+  user supplies a provider API key
 
-byoe:
-  user brings their own endpoint, such as Speaches
+endpoint:
+  user brings their own server URL, such as Speaches
 
-star:
+session:
   user is authenticated to the Epicenter deployment they are already using
 
 onDevice:
   no network, no credential, just the device
 ```
 
-That taxonomy is not just prettier. `byok` and `byoe` now form a matched pair:
+That taxonomy is not just prettier. `key` and `endpoint` now form a matched pair:
 bring your own key, or bring your own endpoint. `onDevice` says exactly why that
-family is different. `star` stays the platform relationship. Together, they
+family is different. `session` names the platform relationship. Together, they
 delete a branch.
+
+A note on the names. The discriminant member is `session`, not `star`. `star` is
+the platform concept (ADR-0068/0069/0070): the deployment that also holds your
+synced data. A structural type discriminant should name the mechanism it branches
+on, and the mechanism here is a signed-in session, so `session` sits cleanly
+beside `key` and `endpoint` (each named after the thing the user supplies) while
+`star` stays where it belongs, in the docs and the platform vocabulary. Likewise
+`key`/`endpoint` beat `byok`/`byoe`: no abbreviation to expand, and the same
+"bring your own X" pairing survives in plain words.
 
 The tempting fix would have been to keep `account` and add hosted/self-host
 visibility logic:
@@ -158,9 +168,9 @@ Epicenter transcription means transcription through your connected star.
 
 That keeps the product useful in both worlds. Hosted users get credit-metered
 transcription through Epicenter cloud. Self-host operators get the same route on
-their own instance, paid by their own upstream provider account. BYOK and BYOE
-stay separate because they are separate relationships: the user brings a key, or
-the user brings an endpoint.
+their own instance, paid by their own upstream provider account. `key` and
+`endpoint` stay separate because they are separate relationships: the user brings
+a key, or the user brings an endpoint.
 
 The rule I want to remember is simple:
 
@@ -171,6 +181,6 @@ Let billing, metering, and operator cost be deployment policy.
 
 When the name follows the billing accident, the code starts asking "which kind
 of Epicenter is this?" in places that should not care. When the name follows the
-relationship, the UI can stay flat: onDevice, byok, byoe, star.
+relationship, the UI can stay flat: onDevice, key, endpoint, session.
 
 That is the better shape.

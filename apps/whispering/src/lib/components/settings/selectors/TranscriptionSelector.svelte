@@ -73,7 +73,7 @@
 				: 'Choose transcription model';
 		}
 		if (!selectedService) return 'Select transcription service';
-		return selectedService.access === 'byok'
+		return selectedService.access === 'key'
 			? `${selectedService.label} - ${getSelectedModelNameOrUrl(selectedService)}`
 			: selectedService.label;
 	});
@@ -84,9 +84,9 @@
 
 	function getSelectedModelNameOrUrl(service: TranscriptionProviderEntry) {
 		switch (service.access) {
-			case 'byok':
+			case 'key':
 				return settings.get(service.modelSettingKey);
-			case 'byoe':
+			case 'endpoint':
 				return deviceConfig.get(service.endpointConfigKey);
 			case 'onDevice': {
 				// Resolve the opaque catalog id ("{repo}@{rev}/{file}") to its friendly
@@ -95,23 +95,23 @@
 				const id = deviceConfig.get(service.modelConfigKey);
 				return localModels.find(id)?.name ?? id;
 			}
-			case 'star':
+			case 'session':
 				return undefined;
 		}
 	}
 
-	// Epicenter (star) STT is a network provider, available on web and desktop
+	// Epicenter (`session`) STT is a network provider, available on web and desktop
 	// alike, so it is never gated on tauri the way local engines are.
 	const starServices = $derived(
-		TRANSCRIPTION_PROVIDERS.filter((service) => service.access === 'star'),
+		TRANSCRIPTION_PROVIDERS.filter((service) => service.access === 'session'),
 	);
 
 	const cloudServices = $derived(
-		TRANSCRIPTION_PROVIDERS.filter((service) => service.access === 'byok'),
+		TRANSCRIPTION_PROVIDERS.filter((service) => service.access === 'key'),
 	);
 
 	const customServerServices = $derived(
-		TRANSCRIPTION_PROVIDERS.filter((service) => service.access === 'byoe'),
+		TRANSCRIPTION_PROVIDERS.filter((service) => service.access === 'endpoint'),
 	);
 
 	const onDeviceServices = $derived(

@@ -29,11 +29,11 @@
 	);
 
 	const cloudServices = $derived(
-		TRANSCRIPTION_PROVIDERS.filter((service) => service.access === 'byok'),
+		TRANSCRIPTION_PROVIDERS.filter((service) => service.access === 'key'),
 	);
 
 	const selfHostedServices = $derived(
-		TRANSCRIPTION_PROVIDERS.filter((service) => service.access === 'byoe'),
+		TRANSCRIPTION_PROVIDERS.filter((service) => service.access === 'endpoint'),
 	);
 
 	const selectedService = $derived(
@@ -125,7 +125,7 @@
 											{service.description}
 										</div>
 									{/if}
-									{#if service.access === 'byok' && service.models.length > 0}
+									{#if service.access === 'key' && service.models.length > 0}
 										<div class="text-xs text-muted-foreground mt-1">
 											{service.models.length}
 											model{service.models.length > 1

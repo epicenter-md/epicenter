@@ -26,30 +26,28 @@ type CloudModel = { name: string; description: string; cost: string };
 
 /**
  * `access` is the per-family discriminant every dispatcher, selector, and readiness
- * check branches on. Each member bundles how a provider is reached and what the user
- * must supply to make it usable. Three members name a credential; one (`onDevice`)
- * names where the compute runs, because for the bundled engines "no network, no
- * credential" is the whole relationship. What `isTranscriptionServiceConfigured`
- * reads per member:
+ * check branches on. Each member names what the user supplies to make a provider
+ * usable, so it maps one-to-one to what `isTranscriptionServiceConfigured` reads:
  *
- *   - `byok`     the user's own API key (a secret)         -> OpenAI, Groq, ...
- *   - `byoe`     a server URL + model id the user runs     -> Speaches
- *   - `star`     nothing; the session with the Epicenter   -> Epicenter
+ *   - `key`      the user's own API key (a secret)         -> OpenAI, Groq, ...
+ *   - `endpoint` a server URL + model id the user runs     -> Speaches
+ *   - `session`  a signed-in session; the Epicenter        -> Epicenter
  *                deployment you are bonded to is the key
- *   - `onDevice` an on-device model file, no network       -> Local
+ *   - `onDevice` nothing but the device: an on-device       -> Local
+ *                model file, no network
  *
- * `byok` and `byoe` are the matched "bring your own X" pair: both hand a
- * `{ baseUrl, apiKey? }` to an external OpenAI-compatible box, differing only in
- * whether the user brings a key (the vendor's compute) or an endpoint (their own
- * box). `star` follows the platform's own STAR-vs-SERVICES split (ADR-0068/0069/0070):
- * it is the Epicenter deployment that also holds your synced data, reached by your
- * session, on that deployment's house key. Hosted stars meter it (AI credits);
- * self-host stars proxy it unmetered. `byok`/`byoe` are external services.
+ * `key` and `endpoint` are the matched pair: both hand a `{ baseUrl, apiKey? }` to
+ * an external OpenAI-compatible box, differing only in whether the user brings a
+ * key (the vendor's compute) or an endpoint (their own box). `session` is the
+ * platform relationship: it follows the STAR-vs-SERVICES split (ADR-0068/0069/0070),
+ * reaching the Epicenter deployment that also holds your synced data over your
+ * session, on that deployment's house key. Hosted deployments meter it (AI credits);
+ * self-host deployments proxy it unmetered. `key`/`endpoint` are external services.
  */
-type ProviderAccess = 'byok' | 'byoe' | 'star' | 'onDevice';
+type ProviderAccess = 'key' | 'endpoint' | 'session' | 'onDevice';
 
-type ByokProvider = {
-	access: Extract<ProviderAccess, 'byok'>;
+type KeyProvider = {
+	access: Extract<ProviderAccess, 'key'>;
 	label: string;
 	description: string;
 	capabilities: Capabilities;
@@ -95,8 +93,8 @@ type OnDeviceProvider = {
 	modelConfigKey: DeviceConfigKey;
 };
 
-type ByoeProvider = {
-	access: Extract<ProviderAccess, 'byoe'>;
+type EndpointProvider = {
+	access: Extract<ProviderAccess, 'endpoint'>;
 	label: string;
 	description: string;
 	capabilities: Capabilities;
@@ -105,23 +103,25 @@ type ByoeProvider = {
 };
 
 /**
- * Transcription through the Epicenter star this install is bonded to. Unlike a
- * `byok` provider it carries no key or endpoint config: the transport is the
- * star session's audience-scoped fetch (`auth.fetch`), resolved in the dispatcher
- * against `auth.baseURL` (the hosted cloud by default, or a self-host instance if
- * the user pointed there), and the gateway pins its own house model server-side
- * (ADR-0100). So the only fact this entry holds is the single `model` string the
- * wire requires. "Configured" means signed in, not "has a key" (see
+ * The `session` access member: transcription through the Epicenter deployment
+ * (the platform "star", ADR-0068/0069/0070) this install is bonded to. Unlike a
+ * `key` provider it carries no key or endpoint config; the transport is the
+ * signed-in session's audience-scoped fetch (`auth.fetch`), resolved in the
+ * dispatcher against `auth.baseURL` (the hosted cloud by default, or a self-host
+ * instance if the user pointed there), and the gateway pins its own house model
+ * server-side (ADR-0100). So the only fact this entry holds is the single `model`
+ * string the wire requires. "Configured" means signed in, not "has a key" (see
  * `transcription-validation.ts`).
  *
- * The same `/v1/audio/transcriptions` gateway runs on every star (both deployables
- * mount it on the deployment's house key), so this is genuinely star-neutral.
- * Whether a call spends AI credits is a property of the star, surfaced at runtime:
- * a hosted star meters it (402 when out of credits); a self-host star proxies it
- * unmetered (or 503 until the operator sets a house key). Never fixed here.
+ * The same `/v1/audio/transcriptions` gateway runs on every deployment (both
+ * deployables mount it on the deployment's house key), so this is deployment-neutral.
+ * Whether a call spends AI credits is a property of the deployment, surfaced at
+ * runtime: a hosted deployment meters it (402 when out of credits); a self-host
+ * deployment proxies it unmetered (or 503 until the operator sets a house key).
+ * Never fixed here.
  */
-type StarProvider = {
-	access: Extract<ProviderAccess, 'star'>;
+type SessionProvider = {
+	access: Extract<ProviderAccess, 'session'>;
 	label: string;
 	description: string;
 	capabilities: Capabilities;
@@ -131,22 +131,22 @@ type StarProvider = {
 };
 
 type TranscriptionProvider =
-	| ByokProvider
+	| KeyProvider
 	| OnDeviceProvider
-	| ByoeProvider
-	| StarProvider;
+	| EndpointProvider
+	| SessionProvider;
 
 export const PROVIDERS = {
 	epicenter: {
-		access: 'star',
+		access: 'session',
 		label: 'Epicenter',
 		description:
-			'Transcription through your connected Epicenter star. Sign in required.',
+			'Transcription through your connected Epicenter. Sign in required.',
 		capabilities: { supportsPrompt: true, supportsLanguage: true },
 		model: 'whisper-1',
 	},
 	OpenAI: {
-		access: 'byok',
+		access: 'key',
 		label: 'OpenAI',
 		description: 'Industry-standard Whisper API',
 		capabilities: { supportsPrompt: true, supportsLanguage: true },
@@ -180,7 +180,7 @@ export const PROVIDERS = {
 		],
 	},
 	Groq: {
-		access: 'byok',
+		access: 'key',
 		label: 'Groq',
 		description: 'Lightning-fast cloud transcription',
 		capabilities: { supportsPrompt: true, supportsLanguage: true },
@@ -208,7 +208,7 @@ export const PROVIDERS = {
 		],
 	},
 	ElevenLabs: {
-		access: 'byok',
+		access: 'key',
 		label: 'ElevenLabs',
 		description: 'Voice AI platform with transcription',
 		capabilities: { supportsPrompt: true, supportsLanguage: true },
@@ -242,7 +242,7 @@ export const PROVIDERS = {
 		],
 	},
 	Deepgram: {
-		access: 'byok',
+		access: 'key',
 		label: 'Deepgram',
 		description: 'Real-time speech recognition API',
 		capabilities: { supportsPrompt: true, supportsLanguage: true },
@@ -284,7 +284,7 @@ export const PROVIDERS = {
 		],
 	},
 	Mistral: {
-		access: 'byok',
+		access: 'key',
 		label: 'Mistral AI',
 		description: 'Advanced Voxtral speech understanding',
 		capabilities: { supportsPrompt: true, supportsLanguage: true },
@@ -320,7 +320,7 @@ export const PROVIDERS = {
 	},
 
 	speaches: {
-		access: 'byoe',
+		access: 'endpoint',
 		label: 'Speaches',
 		description: 'Self-hosted transcription server',
 		capabilities: { supportsPrompt: true, supportsLanguage: true },
@@ -332,13 +332,14 @@ export const PROVIDERS = {
 export type TranscriptionServiceId = keyof typeof PROVIDERS;
 
 /**
- * The ids of BYOK providers, derived from PROVIDERS. Consumed by the settings UI
- * to type provider config fields. (Transcription routing no longer keys off this:
- * `operations/transcribe.ts` dispatches over a single `UPLOAD_DISPATCH` table that
- * excludes only the on-device ids.)
+ * The ids of `key` providers (the ones that take a user API key), derived from
+ * PROVIDERS. Consumed by the settings UI to type provider config fields.
+ * (Transcription routing no longer keys off this: `operations/transcribe.ts`
+ * dispatches over a single `UPLOAD_DISPATCH` table that excludes only the
+ * on-device ids.)
  */
-export type ByokProviderId = {
-	[K in TranscriptionServiceId]: (typeof PROVIDERS)[K]['access'] extends 'byok'
+export type KeyProviderId = {
+	[K in TranscriptionServiceId]: (typeof PROVIDERS)[K]['access'] extends 'key'
 		? K
 		: never;
 }[TranscriptionServiceId];
@@ -363,11 +364,14 @@ export function isOnDeviceProviderId(
 
 /**
  * The upload providers: every non-on-device id, reached by uploading audio over the
- * wire (byok, byoe, star) rather than the on-device FFI path. "Upload" is
+ * wire (key, endpoint, session) rather than the on-device FFI path. "Upload" is
  * "not on-device", and on-device-ness is the one facet PROVIDERS declares, so the
  * subtraction reads as English. `UPLOAD_DISPATCH` is keyed by exactly this set.
  */
-export type UploadProviderId = Exclude<TranscriptionServiceId, OnDeviceProviderId>;
+export type UploadProviderId = Exclude<
+	TranscriptionServiceId,
+	OnDeviceProviderId
+>;
 
 /** Every provider ID, e.g. for `field.select(TRANSCRIPTION_SERVICE_IDS)`. */
 export const TRANSCRIPTION_SERVICE_IDS = Object.keys(
@@ -396,9 +400,9 @@ export function isLegacyOnDeviceTranscriptionServiceId(
 ): value is LegacyOnDeviceTranscriptionServiceId {
 	return (
 		typeof value === 'string' &&
-		(
-			LEGACY_ON_DEVICE_TRANSCRIPTION_SERVICE_IDS as readonly string[]
-		).includes(value)
+		(LEGACY_ON_DEVICE_TRANSCRIPTION_SERVICE_IDS as readonly string[]).includes(
+			value,
+		)
 	);
 }
 

@@ -42,7 +42,7 @@ export function getSelectedTranscriptionService():
 /**
  * Whether a transcription service is usable right now. The required key is the
  * provider's own config key (apiKey / endpoint / model), read from its registry
- * entry. A BYOK provider's key is a secret read through the credential facade,
+ * entry. A `key` provider's API key is a secret read through the credential facade,
  * so "usable" means `available`.
  *
  * @param service - The transcription service to check
@@ -52,13 +52,13 @@ export function isTranscriptionServiceConfigured(
 	service: TranscriptionProviderEntry,
 ): boolean {
 	switch (service.access) {
-		case 'star':
+		case 'session':
 			// No key to configure: the credential is the signed-in session, so
-			// "configured" is "signed in". Metering and top-up live on the star.
+			// "configured" is "signed in". Metering and top-up live on the deployment.
 			return auth.state.status === 'signed-in';
-		case 'byok':
+		case 'key':
 			return secrets.get(service.apiKeyConfigKey).status === 'available';
-		case 'byoe':
+		case 'endpoint':
 			return (
 				hasValue(deviceConfig.get(service.endpointConfigKey)) &&
 				hasValue(deviceConfig.get(service.modelIdConfigKey))
@@ -91,9 +91,9 @@ export function getTranscriptionReadiness(): TranscriptionReadiness {
 	if (!isTranscriptionServiceConfigured(service)) {
 		const primaryIssue = (
 			{
-				star: 'Sign in to Epicenter to use hosted transcription.',
-				byok: `Add your ${service.label} API key.`,
-				byoe: `Set your ${service.label} endpoint and model ID.`,
+				session: 'Sign in to Epicenter to use hosted transcription.',
+				key: `Add your ${service.label} API key.`,
+				endpoint: `Set your ${service.label} endpoint and model ID.`,
 				onDevice: `Download or select a ${service.label} model.`,
 			} as const
 		)[service.access];

@@ -63,7 +63,7 @@
 	// of rendering a second setup surface here.
 	const inlineKeyProvider = $derived.by(() => {
 		const provider = getSelectedTranscriptionProvider();
-		return provider?.access === 'byok' ? provider : null;
+		return provider?.access === 'key' ? provider : null;
 	});
 	// The verb fragments the hint drops around each key, per mode. `here` and
 	// `anywhere` annotate the in-app and global keys with their reach; `fresh` is the

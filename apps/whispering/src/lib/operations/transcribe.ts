@@ -70,14 +70,14 @@ const TranscriptionOperationError = defineErrors({
  * `in`-guard: one exhaustive switch on `.kind`.
  *
  * The transport is a `resolve` thunk, not static connection data, so each wire entry
- * owns how it becomes a transport (ADR-0060): a `byok`/`byoe` entry resolves a
- * `{ baseUrl, apiKey }` over `customFetch`, while the `star` Epicenter entry closes
+ * owns how it becomes a transport (ADR-0060): a `key`/`endpoint` entry resolves a
+ * `{ baseUrl, apiKey }` over `customFetch`, while the `session` Epicenter entry closes
  * over the signed-in session `fetch` (never connection data). The switch
  * therefore never branches on what kind of transport it got.
  *
  * A bespoke entry closes over its own key and model (from the literal `PROVIDERS.X`
  * pointers, the SSOT) rather than letting the caller read `PROVIDERS[id]`, because
- * switching on `.kind` does not narrow the id back to a ByokProvider. The wire
+ * switching on `.kind` does not narrow the id back to a KeyProvider. The wire
  * entries read the same pointers; the one fact `PROVIDERS` does not hold is the
  * canonical wire base URL (it used to be each SDK's default), so that literal lives
  * here.
@@ -120,11 +120,11 @@ function secretApiKey(key: SecretKey): string | undefined {
  * Token`, ElevenLabs' `xi-api-key`, Mistral's `context_bias`); ADR-0060 blesses it.
  */
 const UPLOAD_DISPATCH = {
-	// Epicenter (star) STT: the transport is the signed-in session fetch against the
-	// star you are bonded to (`auth.baseURL`, so a self-hosted instance's own gateway
-	// is used when connected to one), never a stored key. Both deployables mount this
-	// gateway on their house key; a hosted star meters it (ADR-0100), a self-host star
-	// does not. The model is fixed by the gateway.
+	// Epicenter (`session`) STT: the transport is the signed-in session fetch against
+	// the deployment you are bonded to (`auth.baseURL`, so a self-hosted instance's own
+	// gateway is used when connected to one), never a stored key. Both deployables mount
+	// this gateway on their house key; a hosted deployment meters it (ADR-0100), a
+	// self-host deployment does not. The model is fixed by the gateway.
 	epicenter: {
 		kind: 'wire',
 		resolve: () => ({
@@ -415,10 +415,10 @@ async function transcribeViaUpload(
 				language: spokenLanguage === 'auto' ? undefined : spokenLanguage,
 				prompt: prompt || undefined,
 			});
-			// Only the `star` wire can meter credits, and only when bonded to a hosted
-			// star, so a 402 there is `InsufficientCredits` (ADR-0100). Remap it to a
-			// credit-aware message; every other wire's 402 (none expected) stays a raw
-			// RequestFailed. A self-host star never meters, so it never 402s here.
+			// Only the `session` wire can meter credits, and only when bonded to a hosted
+			// deployment, so a 402 there is `InsufficientCredits` (ADR-0100). Remap it to
+			// a credit-aware message; every other wire's 402 (none expected) stays a raw
+			// RequestFailed. A self-host deployment never meters, so it never 402s here.
 			if (
 				selectedService === 'epicenter' &&
 				result.error?.name === 'RequestFailed' &&

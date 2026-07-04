@@ -12,9 +12,9 @@ import { isLoopbackBaseUrl } from './locality';
  * transcribe call path reads so the surface and the pipeline can never disagree.
  *
  * Locality follows the resolved endpoint host, not the provider's `access`
- * label: a BYOE (Speaches) or BYOK endpoint pointed at loopback keeps
+ * label: an `endpoint` (Speaches) or `key` provider pointed at loopback keeps
  * audio on-device, exactly like a Custom completion at localhost. That is why
- * "BYOE" is not its own locality here; where the bytes go is a property of
+ * `endpoint` is not its own locality here; where the bytes go is a property of
  * the host, and who operates the server is the user's trust call, not a fact this
  * copy can assert.
  */
@@ -52,13 +52,13 @@ export function resolveTranscriptionLocalityFromConfig({
 	if (provider.access === 'onDevice') {
 		return { onDevice: true, name: provider.label };
 	}
-	// BYOK and BYOE providers upload audio to an endpoint. A configured loopback
-	// endpoint keeps it on-device regardless of the provider label. The
+	// `key` and `endpoint` providers upload audio to an endpoint. A configured
+	// loopback endpoint keeps it on-device regardless of the provider label. The
 	// provider type declares `endpointConfigKey` as the wide `DeviceConfigKey`,
 	// but every real value is a `providers.*.endpoint` key.
 	let endpoint = '';
 	if (
-		(provider.access === 'byok' || provider.access === 'byoe') &&
+		(provider.access === 'key' || provider.access === 'endpoint') &&
 		provider.endpointConfigKey
 	) {
 		endpoint = getDeviceConfig(
@@ -68,8 +68,8 @@ export function resolveTranscriptionLocalityFromConfig({
 	if (endpoint && isLoopbackBaseUrl(endpoint)) {
 		return { onDevice: true, name: provider.label };
 	}
-	// A remote BYOE server is the user's own box, not a cloud vendor.
-	if (provider.access === 'byoe') {
+	// A remote `endpoint` server is the user's own box, not a cloud vendor.
+	if (provider.access === 'endpoint') {
 		return { onDevice: false, name: `your ${provider.label} server` };
 	}
 	return { onDevice: false, name: provider.label };
