@@ -29,10 +29,9 @@ Components in this directory:
 
 ```
 settings/
-├── TranscriptionRuntimeConfig.svelte # Audio stage: transcription service + its config (propless)
+├── TranscriptionRuntimeConfig.svelte # Audio stage: access-sectioned transcription setup catalog (propless)
 ├── CompletionRuntimeConfig.svelte    # Text stage: Polish/Recipes AI provider + its config (propless)
 ├── ProviderConfigFields.svelte       # Per-provider API key and endpoint fields (deviceConfig)
-├── TranscriptionServiceSelect.svelte # Grouped local/cloud/self-hosted service picker
 ├── LocalModelSelector.svelte         # Local GGUF model picker (deviceConfig)
 ├── AdvancedDisclosure.svelte         # Collapsible wrapper for advanced fields
 ├── SettingSelect.svelte              # Shared select bound to a settings key
