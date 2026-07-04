@@ -16,8 +16,8 @@ import { RECORDING_TRIGGERS } from '$lib/constants/audio/recording-triggers';
 import { INFERENCE_PROVIDER_IDS } from '$lib/constants/inference';
 import { SUPPORTED_LANGUAGES } from '$lib/constants/languages';
 import {
+	PERSISTED_TRANSCRIPTION_SERVICE_IDS,
 	PROVIDERS,
-	TRANSCRIPTION_SERVICE_IDS,
 	type TranscriptionServiceId,
 } from '$lib/services/transcription/providers';
 
@@ -182,7 +182,12 @@ function defineTranscriptionSettings(
 ) {
 	return {
 		'transcription.service': defineKv(
-			field.select(TRANSCRIPTION_SERVICE_IDS),
+			// Accept legacy multi-engine on-device ids (whispercpp/parakeet/moonshine)
+			// from old synced workspaces so the settings facade can normalize them to
+			// `local` on read; the field stays typed as the canonical id union.
+			Type.Unsafe<TranscriptionServiceId>(
+				field.select(PERSISTED_TRANSCRIPTION_SERVICE_IDS),
+			),
 			() => defaultTranscriptionService,
 		),
 		'transcription.openai.model': defineKv(
