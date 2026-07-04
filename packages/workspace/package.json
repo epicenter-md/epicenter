@@ -37,7 +37,7 @@
 		"./document/presence": "./src/document/presence-protocol.ts",
 		"./document/y-keyvalue/y-keyvalue-lww": "./src/document/y-keyvalue/y-keyvalue-lww.ts",
 		"./shared/y-keyvalue/y-keyvalue-lww-encrypted": "./src/shared/y-keyvalue/y-keyvalue-lww-encrypted.ts",
-		"./document/attach-timeline": "./src/document/attach-timeline/index.ts"
+		"./document/fractional-index": "./src/document/fractional-index.ts"
 	},
 	"license": "MIT",
 	"scripts": {

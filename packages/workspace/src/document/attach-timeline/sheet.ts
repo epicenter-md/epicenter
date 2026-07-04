@@ -1,6 +1,6 @@
 import { customAlphabet } from 'nanoid';
 import * as Y from 'yjs';
-import { generateInitialOrders } from './fractional-index.js';
+import { generateInitialOrders } from '../fractional-index.js';
 
 // Short unique identifier for column/row keys inside a sheet. Scoped to a
 // single sheet's lifetime: not a workspace-wide row id.

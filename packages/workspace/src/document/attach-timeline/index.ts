@@ -12,15 +12,14 @@
  * - `timeline.ts`: core `attachTimeline` + entry types + observe
  * - `sheet.ts`: `SheetBinding` type + CSV serialization helpers
  * - `richtext.ts`: `populateFragmentFromText` authoring helper
- * - `fractional-index.ts`: ordering keys for sheet columns/rows
+ *
+ * Ordering math (`computeMidpoint`, `generateInitialOrders`) is generic, not
+ * timeline-specific: it lives at `../fractional-index.js` and ships from the
+ * `@epicenter/workspace/document/fractional-index` subpath.
  *
  * @module
  */
 
-export {
-	computeMidpoint,
-	generateInitialOrders,
-} from './fractional-index.js';
 export { populateFragmentFromText } from './richtext.js';
 export {
 	parseSheetFromCsv,

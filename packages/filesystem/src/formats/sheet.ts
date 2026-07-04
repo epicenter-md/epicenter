@@ -1,16 +1,16 @@
 /**
- * Sheet helpers: reorder functions stay here, CSV parse/serialize
- * re-exported from @epicenter/workspace.
+ * Sheet helpers: reorder functions stay here; the fractional-index ordering
+ * math is re-exported from `@epicenter/workspace`.
  */
 
-import { computeMidpoint } from '@epicenter/workspace/document/attach-timeline';
+import { computeMidpoint } from '@epicenter/workspace/document/fractional-index';
 import type * as Y from 'yjs';
 
 // Re-export ordering helpers from workspace (canonical location)
 export {
 	computeMidpoint,
 	generateInitialOrders,
-} from '@epicenter/workspace/document/attach-timeline';
+} from '@epicenter/workspace/document/fractional-index';
 
 /**
  * Reorder a row by updating its fractional order property.
