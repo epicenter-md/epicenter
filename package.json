@@ -82,6 +82,7 @@
 			"better-auth": "^1.6.18",
 			"@better-auth/oauth-provider": "^1.6.18",
 			"@better-auth/drizzle-adapter": "^1.6.18",
+			"@better-auth/passkey": "^1.6.18",
 			"jose": "^6.2.2",
 			"jsrepo": "^3.6.2",
 			"@tailwindcss/vite": "^4.1.11",

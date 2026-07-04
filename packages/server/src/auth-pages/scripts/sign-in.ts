@@ -81,5 +81,28 @@ export const SIGN_IN_SCRIPT = raw(`<script>
 	if (microsoftBtn)
 		microsoftBtn.addEventListener('click', () => startSocial('microsoft'));
 	if (appleBtn) appleBtn.addEventListener('click', () => startSocial('apple'));
+
+	// Passkey is a returning-user path: only reveal it when the browser can do
+	// WebAuthn, so first-time users are not offered a dead button. On success
+	// the session cookie is set, so a reload lets the server continue the OAuth
+	// authorize flow (the '?sig=' branch) exactly as a social sign-in would.
+	const passkeySection = document.getElementById('passkey-section');
+	const passkeyBtn = document.getElementById('passkey-btn');
+	if (passkeySection && passkeyBtn && window.epicenterPasskey?.supported()) {
+		passkeySection.classList.remove('hidden');
+		passkeyBtn.addEventListener('click', async () => {
+			clearError();
+			setBusy(true);
+			passkeyBtn.disabled = true;
+			const result = await window.epicenterPasskey.authenticate();
+			if (result.ok) {
+				window.location.reload();
+				return;
+			}
+			showError(result.error);
+			setBusy(false);
+			passkeyBtn.disabled = false;
+		});
+	}
 })();
 </script>`);

@@ -137,6 +137,22 @@ button:focus-visible,.btn:focus-visible{outline:2px solid var(--ring);outline-of
 .btn-provider svg{width:18px;height:18px}
 .btn-provider .btn-label{grid-column:2;text-align:center}
 
+/* ── Passkey (returning-user) section ─────────────────────── */
+/* No display rule here on purpose: the section carries .hidden until the
+   inline script confirms WebAuthn support, and .hidden must win. */
+.passkey-section{margin-top:.75rem}
+.divider{
+	display:flex;
+	align-items:center;
+	gap:.75rem;
+	margin:.5rem 0 .75rem;
+	color:var(--muted-fg);
+	font-size:.6875rem;
+	letter-spacing:.08em;
+	text-transform:uppercase;
+}
+.divider::before,.divider::after{content:"";flex:1;height:1px;background:var(--border)}
+
 /* ── Button row (side-by-side) ────────────────────────────── */
 
 .actions{display:flex;gap:.5rem;margin-top:1.25rem}
