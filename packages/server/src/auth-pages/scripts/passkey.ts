@@ -133,8 +133,13 @@ window.epicenterPasskey = (() => {
 				credentials: 'include',
 				headers: { Accept: 'application/json' },
 			});
-			if (!res.ok)
-				return { ok: false, error: 'Could not start passkey setup. Are you still signed in?' };
+			// Registration needs a FRESH session (Better Auth freshSessionMiddleware,
+			// freshAge default 24h), so a user can be visibly signed in with a
+			// week-old session and still get refused here. Both refusals (401 no
+			// session, 403 stale session) have the same remedy: sign in again.
+			if (res.status === 401 || res.status === 403)
+				return { ok: false, error: 'Sign in again to add a passkey.' };
+			if (!res.ok) return { ok: false, error: 'Could not start passkey setup.' };
 			options = await res.json();
 		} catch {
 			return { ok: false, error: 'Network error starting passkey setup.' };
