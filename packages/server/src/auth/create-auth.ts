@@ -52,6 +52,54 @@ export const CloudAuthBindings = type({
 export type CloudAuthBindings = typeof CloudAuthBindings.infer;
 
 /**
+ * The single owner of "which OAuth providers is this deployment offering":
+ * each provider resolves to its credentials when fully configured and `null`
+ * otherwise. Both readers that must agree consume this one value, so the
+ * presence predicates cannot drift: {@link createAuth} registers exactly the
+ * non-null providers, and the sign-in page (routes/auth.ts) shows a button for
+ * exactly the same set. Apple is present only when all four parts of its
+ * signing material are (the client-secret JWT is minted per request from
+ * them; see {@link generateAppleClientSecret}).
+ */
+export function configuredProviders(env: CloudAuthBindings) {
+	return {
+		google:
+			env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET
+				? {
+						clientId: env.GOOGLE_CLIENT_ID,
+						clientSecret: env.GOOGLE_CLIENT_SECRET,
+					}
+				: null,
+		github:
+			env.GITHUB_CLIENT_ID && env.GITHUB_CLIENT_SECRET
+				? {
+						clientId: env.GITHUB_CLIENT_ID,
+						clientSecret: env.GITHUB_CLIENT_SECRET,
+					}
+				: null,
+		microsoft:
+			env.MICROSOFT_CLIENT_ID && env.MICROSOFT_CLIENT_SECRET
+				? {
+						clientId: env.MICROSOFT_CLIENT_ID,
+						clientSecret: env.MICROSOFT_CLIENT_SECRET,
+					}
+				: null,
+		apple:
+			env.APPLE_CLIENT_ID &&
+			env.APPLE_TEAM_ID &&
+			env.APPLE_KEY_ID &&
+			env.APPLE_PRIVATE_KEY
+				? {
+						clientId: env.APPLE_CLIENT_ID,
+						teamId: env.APPLE_TEAM_ID,
+						keyId: env.APPLE_KEY_ID,
+						privateKey: env.APPLE_PRIVATE_KEY,
+					}
+				: null,
+	};
+}
+
+/**
  * Assemble and return a configured `betterAuth()` instance from runtime deps.
  *
  * Cloudflare Workers doesn't expose `env` or database connections at module scope,
@@ -94,15 +142,12 @@ export function createAuth({
 			'BETTER_AUTH_SECRET is not set: refusing to construct Better Auth with an empty signing secret, which would fall back to a public default and sign forgeable sessions.',
 		);
 	}
-	// Apple needs all four parts of its signing material to be offered at all;
-	// the same flag gates both the provider registration and the trusted-origin
-	// addition below (Apple posts its callback from appleid.apple.com).
-	const appleConfigured = Boolean(
-		env.APPLE_CLIENT_ID &&
-			env.APPLE_TEAM_ID &&
-			env.APPLE_KEY_ID &&
-			env.APPLE_PRIVATE_KEY,
-	);
+	// One presence predicate for all four providers (see configuredProviders).
+	// `apple` is bound to a local so its narrowing survives into the async
+	// client-secret factory below; the same value gates the trusted-origin
+	// addition (Apple posts its callback from appleid.apple.com).
+	const providers = configuredProviders(env);
+	const apple = providers.apple;
 	return betterAuth({
 		...BASE_AUTH_CONFIG,
 		database: drizzleAdapter(db, { provider: 'pg', schema }),
@@ -135,22 +180,8 @@ export function createAuth({
 		// provider (see BASE_AUTH_CONFIG): an unverified GitHub email must not link
 		// into an existing account.
 		socialProviders: {
-			...(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET
-				? {
-						google: {
-							clientId: env.GOOGLE_CLIENT_ID,
-							clientSecret: env.GOOGLE_CLIENT_SECRET,
-						},
-					}
-				: {}),
-			...(env.GITHUB_CLIENT_ID && env.GITHUB_CLIENT_SECRET
-				? {
-						github: {
-							clientId: env.GITHUB_CLIENT_ID,
-							clientSecret: env.GITHUB_CLIENT_SECRET,
-						},
-					}
-				: {}),
+			...(providers.google ? { google: providers.google } : {}),
+			...(providers.github ? { github: providers.github } : {}),
 			// Microsoft (Entra / personal MSA), register-when-present like GitHub.
 			// tenantId defaults to 'common' so both work/school and personal
 			// accounts can sign in. Like GitHub, Microsoft is deliberately NOT a
@@ -158,36 +189,18 @@ export function createAuth({
 			// is not a guaranteed-verified assertion, so an untrusted Microsoft
 			// identity only links to an existing same-email account when Microsoft
 			// itself reports the email verified.
-			...(env.MICROSOFT_CLIENT_ID && env.MICROSOFT_CLIENT_SECRET
-				? {
-						microsoft: {
-							clientId: env.MICROSOFT_CLIENT_ID,
-							clientSecret: env.MICROSOFT_CLIENT_SECRET,
-						},
-					}
-				: {}),
+			...(providers.microsoft ? { microsoft: providers.microsoft } : {}),
 			// Apple's clientSecret is a per-request-minted ES256 JWT, so this is
-			// an async factory rather than a static pair. `appleConfigured`
-			// guarantees the four inputs are present (the `!` are safe under it).
-			// Like GitHub and Microsoft, Apple is NOT a trusted linking provider:
-			// it can issue a private-relay email, so an untrusted Apple identity
-			// only links to an existing same-email account when Apple reports the
-			// email verified.
-			...(appleConfigured
+			// an async factory rather than a static pair over the configured
+			// signing material. Like GitHub and Microsoft, Apple is NOT a trusted
+			// linking provider: it can issue a private-relay email, so an
+			// untrusted Apple identity only links to an existing same-email
+			// account when Apple reports the email verified.
+			...(apple
 				? {
 						apple: async () => ({
-							// biome-ignore lint/style/noNonNullAssertion: guarded by appleConfigured
-							clientId: env.APPLE_CLIENT_ID!,
-							clientSecret: await generateAppleClientSecret({
-								// biome-ignore lint/style/noNonNullAssertion: guarded by appleConfigured
-								clientId: env.APPLE_CLIENT_ID!,
-								// biome-ignore lint/style/noNonNullAssertion: guarded by appleConfigured
-								teamId: env.APPLE_TEAM_ID!,
-								// biome-ignore lint/style/noNonNullAssertion: guarded by appleConfigured
-								keyId: env.APPLE_KEY_ID!,
-								// biome-ignore lint/style/noNonNullAssertion: guarded by appleConfigured
-								privateKey: env.APPLE_PRIVATE_KEY!,
-							}),
+							clientId: apple.clientId,
+							clientSecret: await generateAppleClientSecret(apple),
 						}),
 					}
 				: {}),
@@ -220,7 +233,7 @@ export function createAuth({
 		// Apple posts its OAuth callback from appleid.apple.com (response_mode=
 		// form_post), so that origin must be trusted for the flow to complete.
 		// Only added when Apple is configured, to avoid widening the allow-list.
-		trustedOrigins: appleConfigured
+		trustedOrigins: apple
 			? [...trustedOrigins, APPLE_AUDIENCE]
 			: trustedOrigins,
 		// Postgres is the only auth store: sessions and OAuth verification

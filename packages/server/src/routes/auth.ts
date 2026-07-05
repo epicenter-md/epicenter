@@ -27,6 +27,7 @@ import { type } from 'arktype';
 import { Hono } from 'hono';
 import { secureHeaders } from 'hono/secure-headers';
 import { describeRoute } from 'hono-openapi';
+import { configuredProviders } from '../auth/create-auth.js';
 import {
 	createOAuthIssuerURL,
 	OAUTH_AUTHORIZATION_SERVER_METADATA_PATH,
@@ -70,22 +71,14 @@ export const authApp = new Hono<CloudEnv>()
 				}),
 			);
 		}
+		// Buttons come from the same presence value that registers providers in
+		// createAuth, so the page can never offer a provider the server refuses.
+		const providers = configuredProviders(c.var.authSecrets);
 		return c.html(
 			renderSignInPage({
-				githubEnabled: Boolean(
-					c.var.authSecrets.GITHUB_CLIENT_ID &&
-						c.var.authSecrets.GITHUB_CLIENT_SECRET,
-				),
-				microsoftEnabled: Boolean(
-					c.var.authSecrets.MICROSOFT_CLIENT_ID &&
-						c.var.authSecrets.MICROSOFT_CLIENT_SECRET,
-				),
-				appleEnabled: Boolean(
-					c.var.authSecrets.APPLE_CLIENT_ID &&
-						c.var.authSecrets.APPLE_TEAM_ID &&
-						c.var.authSecrets.APPLE_KEY_ID &&
-						c.var.authSecrets.APPLE_PRIVATE_KEY,
-				),
+				githubEnabled: Boolean(providers.github),
+				microsoftEnabled: Boolean(providers.microsoft),
+				appleEnabled: Boolean(providers.apple),
 			}),
 		);
 	})
