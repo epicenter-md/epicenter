@@ -1,6 +1,7 @@
 /** @jsxImportSource hono/jsx */
 
 import { raw } from 'hono/html';
+import { PASSKEY_SCRIPT } from './scripts/passkey';
 import { SIGN_IN_SCRIPT } from './scripts/sign-in';
 
 /**
@@ -40,6 +41,17 @@ const MICROSOFT_ICON =
 const APPLE_ICON =
 	raw(`<svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" fill="currentColor">
 	<path d="M17.05 12.53c-.02-2.02 1.65-2.99 1.72-3.04-.94-1.37-2.4-1.56-2.92-1.58-1.24-.13-2.42.73-3.05.73-.63 0-1.6-.71-2.63-.69-1.35.02-2.6.79-3.3 2-1.4 2.44-.36 6.05 1 8.03.67.97 1.47 2.06 2.5 2.02 1-.04 1.38-.65 2.6-.65 1.2 0 1.55.65 2.6.63 1.08-.02 1.76-.99 2.42-1.96.76-1.12 1.07-2.2 1.09-2.26-.02-.01-2.09-.8-2.11-3.18zM15.1 6.3c.55-.67.92-1.6.82-2.53-.79.03-1.76.53-2.33 1.19-.51.59-.96 1.54-.84 2.44.88.07 1.79-.44 2.35-1.1z"/>
+</svg>`);
+
+/**
+ * Passkey / fingerprint mark. Inherits the button text color via `currentColor`.
+ */
+const PASSKEY_ICON =
+	raw(`<svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+	<circle cx="10" cy="8" r="4"/>
+	<path d="M10.3 14H8a5 5 0 0 0-5 5v1h9"/>
+	<circle cx="17.5" cy="14.5" r="2.5"/>
+	<path d="M17.5 17v5l-1.2-1.2 1.2-1.2"/>
 </svg>`);
 
 /**
@@ -123,6 +135,21 @@ export function SignInPage({
 				) : null}
 			</div>
 
+			{/* Returning-user path. Hidden until the inline script confirms the
+			    browser supports WebAuthn (see scripts/passkey + sign-in). */}
+			<div id="passkey-section" class="passkey-section hidden">
+				<div class="divider">or</div>
+				<button
+					type="button"
+					class="btn btn-outline btn-provider"
+					id="passkey-btn"
+				>
+					{PASSKEY_ICON}
+					<span class="btn-label">Sign in with a passkey</span>
+				</button>
+			</div>
+
+			{PASSKEY_SCRIPT}
 			{SIGN_IN_SCRIPT}
 		</>
 	);

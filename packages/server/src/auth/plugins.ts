@@ -1,4 +1,5 @@
 import { oauthProvider } from '@better-auth/oauth-provider';
+import { passkey } from '@better-auth/passkey';
 import { EPICENTER_OAUTH_SCOPES } from '@epicenter/constants/oauth-clients';
 import { buildTrustedOAuthClients } from '@epicenter/constants/oauth-seed';
 import type { BetterAuthOptions } from 'better-auth';
@@ -19,6 +20,15 @@ export function authPlugins(apiBaseURL: string) {
 	const trustedOAuthClientIds = new Set(
 		buildTrustedOAuthClients(apiBaseURL).map((client) => client.clientId),
 	);
+	// WebAuthn binds credentials to a Relying Party. Passkeys are only ever
+	// created and used on the hosted auth pages, which the API serves at its own
+	// origin, so the RP is exactly this deployment: `rpID` is the API hostname
+	// (`localhost` in dev, the deployment host in prod) and `origin` is the full
+	// base URL with no trailing slash (what the browser reports and the plugin
+	// checks as `expectedOrigin`). Both derive from `apiBaseURL`, so a preview or
+	// self-host deployment gets a correct RP without extra config.
+	const origin = apiBaseURL.replace(/\/$/, '');
+	const rpID = new URL(origin).hostname;
 	return [
 		// `JWT_SIGNING_ALG` (ES256, P-256 ECDSA) signs the id_token and JWT
 		// access tokens. `id_token_signing_alg_values_supported` on
@@ -75,5 +85,11 @@ export function authPlugins(apiBaseURL: string) {
 			// We already mount both discovery endpoints manually in app.ts.
 			silenceWarnings: { oauthAuthServerConfig: true, openidConfig: true },
 		}),
+		// Passkey (WebAuthn) as a returning-user sign-in method. Registration
+		// requires a session (the plugin default), so it lives on the signed-in
+		// auth page; authentication runs on the sign-in page and, on success,
+		// sets a standard session cookie that the oauthProvider above then uses to
+		// continue the authorize flow. Adds a `passkey` table to the schema.
+		passkey({ rpID, rpName: 'Epicenter', origin }),
 	] satisfies NonNullable<BetterAuthOptions['plugins']>;
 }
