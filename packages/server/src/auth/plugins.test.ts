@@ -10,6 +10,9 @@
  * - Trusted clients skip consent during authorization
  * - Registered non-trusted clients still require consent
  * - A clean JWKS table mints an ES256/P-256 signing key
+ * - Passkey options endpoints keep the REST contract the bundler-free
+ *   auth-pages WebAuthn script (auth-pages/scripts/passkey.ts) is hand-wired
+ *   against
  */
 
 import { expect, test } from 'bun:test';
@@ -200,6 +203,63 @@ test('buildTrustedOAuthClients gives Honeycrisp its Tauri deep-link callback', (
 	);
 });
 
+// The auth pages have no bundler, so auth-pages/scripts/passkey.ts drives the
+// passkey plugin's REST endpoints directly instead of using the plugin's
+// bundled client. These tests pin the slice of that contract a plugin upgrade
+// could silently move: the endpoint paths, the sessionless authenticate
+// ceremony, the session-gated register ceremony, the base64url challenge
+// encoding, and the RP id derived from the API base URL. If one of these
+// fails after a bump, re-verify the inline script against the new dist.
+
+test('passkey authenticate options are mintable without a session', async () => {
+	const setup = createTrustedClientTestAuth();
+
+	const response = await setup.auth.handler(
+		new Request(`${setup.baseURL}/auth/passkey/generate-authenticate-options`),
+	);
+	const body = (await response.json()) as {
+		challenge?: unknown;
+		rpId?: unknown;
+	};
+
+	expect(response.status).toBe(200);
+	expect(body.rpId).toBe('localhost');
+	expect(typeof body.challenge).toBe('string');
+	expect(body.challenge as string).toMatch(/^[A-Za-z0-9_-]+$/);
+});
+
+test('passkey register options require a session', async () => {
+	const setup = createTrustedClientTestAuth();
+
+	const response = await setup.auth.handler(
+		new Request(`${setup.baseURL}/auth/passkey/generate-register-options`),
+	);
+
+	expect(response.status).toBe(401);
+});
+
+test('fresh session mints passkey register options bound to the user', async () => {
+	const setup = createTrustedClientTestAuth();
+
+	const cookie = await signUpTestUser(setup.auth, setup.baseURL);
+	const response = await setup.auth.handler(
+		new Request(`${setup.baseURL}/auth/passkey/generate-register-options`, {
+			headers: { cookie },
+		}),
+	);
+	const body = (await response.json()) as {
+		challenge?: unknown;
+		rp?: { id?: unknown };
+		user?: { id?: unknown };
+	};
+
+	expect(response.status).toBe(200);
+	expect(body.rp?.id).toBe('localhost');
+	expect(typeof body.challenge).toBe('string');
+	expect(body.challenge as string).toMatch(/^[A-Za-z0-9_-]+$/);
+	expect(typeof body.user?.id).toBe('string');
+});
+
 test('registered non-trusted OAuth client requires consent', async () => {
 	const setup = createTrustedClientTestAuth();
 
@@ -244,6 +304,7 @@ function createTrustedClientTestAuth({
 		oauthConsent: [],
 		oauthRefreshToken: [],
 		jwks: [],
+		passkey: [],
 	};
 
 	const auth = betterAuth({
