@@ -3,7 +3,7 @@
  * cli-callback).
  *
  * Mirrors the Epicenter design system tokens from `packages/ui/src/app.css`
- * (its oklch light/dark palettes and system-ui font stack) as plain custom
+ * (its oklch light/dark palettes and sans-serif font stack) as plain custom
  * properties, so these pages theme themselves from `prefers-color-scheme`
  * without pulling in Tailwind or the UI package. Semantic surfaces (alerts)
  * derive their fills from the accent via `color-mix`, so each stays legible in
@@ -25,6 +25,7 @@ export const AUTH_STYLES = `
 	--success:oklch(0.448 0.119 151.328);
 	--danger:oklch(0.577 0.245 27.325);
 	--shadow:0 1px 2px rgb(0 0 0 / .04),0 8px 30px rgb(0 0 0 / .06);
+	--font-sans:system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica Neue,Arial,sans-serif;
 }
 @media (prefers-color-scheme:dark){
 	:root{
@@ -47,7 +48,7 @@ export const AUTH_STYLES = `
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 
 body{
-	font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+	font-family:var(--font-sans);
 	min-height:100vh;
 	display:flex;
 	align-items:center;
@@ -84,13 +85,13 @@ body{
 	box-shadow:var(--shadow);
 }
 
-h1{font-size:1.375rem;font-weight:700;letter-spacing:-.01em;margin-bottom:.25rem}
+h1{font-family:var(--font-sans);font-size:1.375rem;font-weight:700;letter-spacing:-.01em;margin-bottom:.25rem}
 .subtitle{color:var(--muted-fg);font-size:.875rem;margin-bottom:1.75rem}
 
 /* ── Sign-in header (mark lives in the layout above these) ─── */
 
 .signin-head{display:flex;flex-direction:column;align-items:center;text-align:center}
-.wordmark{font-size:1.375rem;font-weight:650;letter-spacing:-.02em;line-height:1.15;margin-bottom:.25rem}
+.wordmark{font-family:var(--font-sans);font-size:1.375rem;font-weight:650;letter-spacing:-.02em;line-height:1.15;margin-bottom:.25rem}
 
 /* ── Buttons ──────────────────────────────────────────────── */
 
@@ -104,7 +105,7 @@ button,.btn{
 	border-radius:10px;
 	font-size:.875rem;
 	font-weight:500;
-	font-family:inherit;
+	font-family:var(--font-sans);
 	color:var(--fg);
 	cursor:pointer;
 	border:1px solid transparent;
