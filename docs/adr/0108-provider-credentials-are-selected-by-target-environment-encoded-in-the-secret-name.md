@@ -8,9 +8,7 @@
 
 Several Epicenter apps authenticate to a third-party provider that has both a
 non-production account and a production account: QuickBooks in `apps/local-books`
-(Intuit's Development vs Production keysets), Gmail in `apps/local-mail` (a
-dev/unverified and a prod/verified Google Desktop OAuth client; only the dev
-client is wired in code today), Plaid in the planned finance app
+(Intuit's Development vs Production keysets), Plaid in the planned finance app
 (sandbox / development / production), and more to come.
 Two orthogonal axes get conflated at the point where a credential is read:
 
@@ -62,8 +60,8 @@ A third-party provider credential is selected by exactly one knob, the app's
    variables. It lives in `@epicenter/constants` (AGPL, already a `local-books`
    dependency, zero runtime deps, `bun build --compile`-safe). The shared package
    owns only the mechanism (the resolver, the `ProviderCredentialSpec` type); each
-   app owns its own `spec` (`QB_SPEC` in `local-books`, `GMAIL_SPEC` in
-   `local-mail`). There is no central provider registry: a spec is app-local code,
+   app owns its own `spec` (`QB_SPEC` in `local-books`). There is no central
+   provider registry: a spec is app-local code,
    not shared config, so no package accretes knowledge of every app's providers.
 
 3. **The minted token carries and asserts its provider environment.** When an
@@ -79,10 +77,9 @@ A third-party provider credential is selected by exactly one knob, the app's
 4. **Provider environment is chosen once, at connect, and persisted, not passed
    per command.** The account/realm records its environment at connect/auth time
    (beside the client identity a token already records), and every later command
-   reads it from that record and asserts it. The selection flag (`--qb-env`,
-   `--gmail-env`) is the connect-time chooser and disambiguator (required only
-   when more than one environment's credentials are present), never a per-run
-   mode knob.
+   reads it from that record and asserts it. The selection flag (`--qb-env`) is
+   the connect-time chooser and disambiguator (required only when more than one
+   environment's credentials are present), never a per-run mode knob.
 
 The app's only portable interface to any secret backend is the flat
 `name -> value` map that Infisical, a `.env` file, Docker secrets, systemd,
@@ -170,7 +167,6 @@ tier surface (ADR-0068).
 - **Drop the single-environment exemption** (force qualified names even for a
   provider with one account). Kept the exemption instead, because a genuinely
   single-account provider gains nothing from an env segment. Note this is a
-  narrow case: `local-mail` has two Google OAuth clients (an unverified dev
-  client and a verified prod client), so it is a two-environment provider and
-  qualifies now (`GMAIL_DEV_*` / `GMAIL_PROD_*`), same as `local-books`. The
-  exemption exists only for a provider that really has one account.
+  narrow case: `local-mail` now uses one BYO Google OAuth Desktop client
+  (`GMAIL_CLIENT_ID` / `GMAIL_CLIENT_SECRET`), so it falls under this exemption.
+  `local-books` remains a two-environment provider and keeps qualified names.

@@ -1,15 +1,10 @@
 import { expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { specToEnvExampleLines } from '@epicenter/constants/provider-credentials';
-import { GMAIL_SPEC } from './gmail-credentials.ts';
 
 /**
- * Drift guard for `.env.example` (ADR-0108): the committed file must document
- * exactly the environment-qualified names `GMAIL_SPEC` resolves. `specToEnvExampleLines`
- * builds those names from the same name-builder the resolver reads through, so
- * this test fails the moment the file lists a stale name (the retired unqualified
- * `GMAIL_CLIENT_ID`) or omits a real one.
+ * Drift guard for `.env.example`: Local Mail's BYO path documents exactly the
+ * single Gmail OAuth Desktop client pair it reads at connect and refresh time.
  */
 
 /** Extract the `NAME=` variable names from `.env.example`-style lines. */
@@ -19,19 +14,12 @@ function envNames(lines: string[]): string[] {
 		.map((line) => line.slice(0, line.indexOf('=')));
 }
 
-test(".env.example lists exactly GMAIL_SPEC's qualified names", () => {
+test('.env.example lists exactly the BYO Gmail OAuth keyset', () => {
 	const file = readFileSync(
 		join(import.meta.dir, '..', '.env.example'),
 		'utf8',
 	);
 	const documented = envNames(file.split('\n'));
-	const expected = envNames(specToEnvExampleLines(GMAIL_SPEC));
 
-	expect(expected).toEqual([
-		'GMAIL_DEV_CLIENT_ID',
-		'GMAIL_DEV_CLIENT_SECRET',
-		'GMAIL_PROD_CLIENT_ID',
-		'GMAIL_PROD_CLIENT_SECRET',
-	]);
-	expect([...documented].sort()).toEqual([...expected].sort());
+	expect(documented).toEqual(['GMAIL_CLIENT_ID', 'GMAIL_CLIENT_SECRET']);
 });

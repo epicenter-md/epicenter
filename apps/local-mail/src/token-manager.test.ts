@@ -17,11 +17,11 @@ import { createTokenManager } from './token-manager.ts';
 import type { TokenStore } from './token-store.ts';
 import type { TokenSet } from './tokens.ts';
 
-// The credential resolver (ADR-0108) reads the Google OAuth keyset from the
-// environment by qualified name; seed the dev keyset these tokens were minted by,
-// unconditionally, so the resolved client id matches `clientIdUsed` exactly.
-process.env.GMAIL_DEV_CLIENT_ID = 'client-id-123';
-process.env.GMAIL_DEV_CLIENT_SECRET = 'client-secret-456';
+// The credential resolver reads the BYO Google OAuth keyset from the
+// environment; seed it unconditionally so the resolved client id matches
+// `clientIdUsed` exactly.
+process.env.GMAIL_CLIENT_ID = 'client-id-123';
+process.env.GMAIL_CLIENT_SECRET = 'client-secret-456';
 
 function config(overrides: Partial<AppConfig>): AppConfig {
 	return {
@@ -43,7 +43,6 @@ function token(overrides: Partial<TokenSet> = {}): TokenSet {
 	return {
 		accountEmail: 'you@example.com',
 		clientIdUsed: 'client-id-123',
-		environment: 'dev',
 		accessToken: 'old-access-token',
 		accessTokenExpiresAt: new Date(0).toISOString(),
 		refreshToken: 'old-refresh-token',

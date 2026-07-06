@@ -61,9 +61,7 @@ export function loadConfig(): AppConfig {
 	return {
 		dataDir,
 		// The Google OAuth client keys are NOT read here: they are resolved lazily
-		// at the connect/refresh site by their environment-qualified names
-		// (GMAIL_DEV_* / GMAIL_PROD_*, ADR-0108), selected by the account's
-		// persisted environment. See `resolveGmailCredentials` in gmail-credentials.ts.
+		// at the connect/refresh site from GMAIL_CLIENT_ID / GMAIL_CLIENT_SECRET.
 		// The env override exists for the MCP subprocess test, which cannot
 		// inject an AppConfig in-process. The OAuth endpoints have no such
 		// consumer: in-process tests override the AppConfig fields directly.

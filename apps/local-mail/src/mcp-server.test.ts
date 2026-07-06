@@ -75,7 +75,6 @@ async function seedToken(dir: string): Promise<void> {
 	const token: TokenSet = {
 		accountEmail: ACCOUNT,
 		clientIdUsed: 'client-id',
-		environment: 'dev',
 		accessToken: 'access-token',
 		refreshToken: 'refresh-token',
 		accessTokenExpiresAt: new Date(Date.now() + 10 * 60_000).toISOString(),

@@ -15,8 +15,7 @@
 		"./http/api": "./src/http/api.ts"
 	},
 	"scripts": {
-		"connect:dev": "infisical run --path=/apps/local-mail -- bun run src/bin.ts connect --gmail-env dev",
-		"connect:prod": "infisical run --path=/apps/local-mail -- bun run src/bin.ts connect --gmail-env prod",
+		"connect": "infisical run --path=/apps/local-mail -- bun run src/bin.ts connect",
 		"sync": "infisical run --path=/apps/local-mail -- bun run src/bin.ts sync",
 		"status": "infisical run --path=/apps/local-mail -- bun run src/bin.ts status",
 		"test": "bun test",

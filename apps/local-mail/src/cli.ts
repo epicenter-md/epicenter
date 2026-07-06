@@ -1,5 +1,4 @@
 import { loadConfig } from './config.ts';
-import { selectGmailEnvironment } from './gmail-credentials.ts';
 import {
 	type ModifyMessageLabelsOutcome,
 	resolveAndModifyMessageLabels,
@@ -10,7 +9,6 @@ import { openLocalMailRuntime, openSyncSession } from './runtime.ts';
 import { type MailStatus, readMailStatus } from './status.ts';
 import { runSyncLoop, type SyncOutcome, syncMailbox } from './sync.ts';
 import { createFileTokenStore } from './token-store.ts';
-import type { GmailEnvironment } from './tokens.ts';
 import { VERSION } from './version.ts';
 
 export type ParsedArgs = {
@@ -21,8 +19,6 @@ export type ParsedArgs = {
 	watchIntervalMs?: number;
 	noOpen: boolean;
 	port?: number;
-	/** The provider-environment chosen at connect/seed time (ADR-0108). */
-	gmailEnv?: GmailEnvironment;
 	addLabels: string[];
 	removeLabels: string[];
 	json: boolean;
@@ -35,8 +31,8 @@ const DEFAULT_WATCH_INTERVAL_MS = 30_000;
 const HELP = `local-mail: keep a private local copy of Gmail for local tools and agents.
 
 Usage:
-  local-mail connect [--gmail-env <dev|prod>]
-  local-mail seed-token <refreshToken> [--gmail-env <dev|prod>]
+  local-mail connect
+  local-mail seed-token <refreshToken>
   local-mail sync [--full] [--watch [intervalMs]] [--json]
   local-mail status [--json]
   local-mail query "<sql>"
@@ -62,8 +58,6 @@ Commands:
   mcp          Serve query/status/sync/modify_labels tools over stdio.
 
 Options:
-  --gmail-env <dev|prod>  Pick the OAuth keyset at connect/seed. Required only when
-                          both GMAIL_DEV_* and GMAIL_PROD_* are present.
   --full                Force a full pull on the first sync pass.
   --watch [intervalMs]  Keep syncing on a loop. Default: 30000.
   --add <label>         Add a Gmail label by exact name or id. Repeatable.
@@ -76,8 +70,7 @@ Options:
   -v, --version         Show version.
 
 Environment:
-  GMAIL_DEV_CLIENT_ID / GMAIL_DEV_CLIENT_SECRET     Dev (unverified) OAuth client keys.
-  GMAIL_PROD_CLIENT_ID / GMAIL_PROD_CLIENT_SECRET   Prod (verified) OAuth client keys.
+  GMAIL_CLIENT_ID / GMAIL_CLIENT_SECRET   Google OAuth Desktop client keys.
   LOCAL_MAIL_ACCOUNT                      Account override when multiple are connected.
   LOCAL_MAIL_DIR                          Where the local copy lives.
   LOCAL_MAIL_TOKEN_FILE                   Override the credentials file path.
@@ -147,16 +140,6 @@ export function parseArgs(argv: string[]): ParsedArgs {
 		};
 
 		switch (name) {
-			case '--gmail-env': {
-				const value = takeValue();
-				if (value !== 'dev' && value !== 'prod') {
-					throw new Error(
-						`--gmail-env must be "dev" or "prod", got "${value}"`,
-					);
-				}
-				args.gmailEnv = value;
-				break;
-			}
 			case '--full':
 				args.full = true;
 				break;
@@ -211,20 +194,9 @@ export function parseArgs(argv: string[]): ParsedArgs {
 	return args;
 }
 
-async function runConnect(args: ParsedArgs): Promise<number> {
+async function runConnect(_args: ParsedArgs): Promise<number> {
 	const config = loadConfig();
-	// The environment is chosen here, at connect, and persisted on the token
-	// (ADR-0108 rule 4). --gmail-env is required only when both keysets are present.
-	const { data: environment, error: envError } = selectGmailEnvironment(
-		args.gmailEnv,
-	);
-	if (envError) {
-		console.error(envError.message);
-		return 1;
-	}
-
 	const { data: token, error } = await runAuthorizationFlow(config, {
-		environment,
 		now: () => Date.now(),
 		log: (message) => console.error(message),
 	});
@@ -235,7 +207,7 @@ async function runConnect(args: ParsedArgs): Promise<number> {
 
 	const store = createFileTokenStore(config.credentialsPath);
 	await store.set(token);
-	console.log(`Connected ${token.accountEmail} (${token.environment}).`);
+	console.log(`Connected ${token.accountEmail}.`);
 	console.log(`Tokens stored in ${config.credentialsPath}.`);
 	console.log(`Next: run "local-mail sync --full".`);
 	return 0;
@@ -250,17 +222,9 @@ async function runSeedToken(args: ParsedArgs): Promise<number> {
 		return 1;
 	}
 	const config = loadConfig();
-	const { data: environment, error: envError } = selectGmailEnvironment(
-		args.gmailEnv,
-	);
-	if (envError) {
-		console.error(envError.message);
-		return 1;
-	}
 	const { data: token, error } = await redeemRefreshToken(
 		config,
 		refreshToken,
-		environment,
 		() => Date.now(),
 	);
 	if (error) {
@@ -269,9 +233,7 @@ async function runSeedToken(args: ParsedArgs): Promise<number> {
 	}
 	const store = createFileTokenStore(config.credentialsPath);
 	await store.set(token);
-	console.log(
-		`Seeded ${token.accountEmail} (${token.environment}) at ${config.credentialsPath}.`,
-	);
+	console.log(`Seeded ${token.accountEmail} at ${config.credentialsPath}.`);
 	console.log(`Next: run "local-mail sync --full".`);
 	return 0;
 }
@@ -467,7 +429,6 @@ function renderStatus(status: MailStatus): string {
 		['data dir', status.dataDir],
 		['token file', status.tokenFile],
 		['connected', status.connected ? 'yes' : 'no'],
-		['environment', status.environment ?? 'none'],
 		['access token', accessToken],
 		['mirror', status.mirror],
 		['schema version', status.schemaVersion ?? 'none'],

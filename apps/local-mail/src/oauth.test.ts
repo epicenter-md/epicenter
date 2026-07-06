@@ -20,12 +20,12 @@ import {
 } from './oauth.ts';
 import type { TokenSet } from './tokens.ts';
 
-// The credential resolver (ADR-0108) reads the Google OAuth keyset from the
-// environment by qualified name. These tests exercise the dev keyset and assert
-// the resolved client id against `clientIdUsed`, so seed it unconditionally to a
-// known value rather than inheriting whatever the ambient environment holds.
-process.env.GMAIL_DEV_CLIENT_ID = 'client-id-123';
-process.env.GMAIL_DEV_CLIENT_SECRET = 'client-secret-456';
+// The credential resolver reads the BYO Google OAuth keyset from the
+// environment. These tests assert the resolved client id against `clientIdUsed`,
+// so seed it unconditionally to a known value rather than inheriting whatever
+// the ambient environment holds.
+process.env.GMAIL_CLIENT_ID = 'client-id-123';
+process.env.GMAIL_CLIENT_SECRET = 'client-secret-456';
 
 function config(overrides: Partial<AppConfig>): AppConfig {
 	return {
@@ -95,7 +95,6 @@ test('runAuthorizationFlow exchanges a PKCE callback and stores the connected Gm
 			tokenUrl: `http://127.0.0.1:${tokenServer.port}/token`,
 		}),
 		{
-			environment: 'dev',
 			now: () => Date.parse('2026-07-01T00:00:00.000Z'),
 			openBrowser: (url) => {
 				authorizeUrl = url;
@@ -164,7 +163,6 @@ test('runAuthorizationFlow reports OAuth error details from the token endpoint',
 			tokenUrl: `http://127.0.0.1:${tokenServer.port}/token`,
 		}),
 		{
-			environment: 'dev',
 			now: () => Date.parse('2026-07-01T00:00:00.000Z'),
 			openBrowser: (url) => {
 				authorizeUrl = url;
@@ -212,7 +210,6 @@ test('refreshAccessToken uses a newly returned refresh token when Google rotates
 		{
 			accountEmail: 'you@example.com',
 			clientIdUsed: 'client-id-123',
-			environment: 'dev',
 			accessToken: 'stale',
 			accessTokenExpiresAt: new Date(0).toISOString(),
 			refreshToken: 'old-refresh-token',
@@ -243,7 +240,6 @@ test('refreshAccessToken maps invalid_grant to ReauthRequired', async () => {
 		{
 			accountEmail: 'you@example.com',
 			clientIdUsed: 'client-id-123',
-			environment: 'dev',
 			accessToken: 'stale',
 			accessTokenExpiresAt: new Date(0).toISOString(),
 			refreshToken: 'dead-refresh-token',
@@ -294,7 +290,6 @@ test('redeemRefreshToken performs the grant now and reads the account email from
 			tokenUrl: `http://127.0.0.1:${tokenServer.port}/token`,
 		}),
 		'seed-refresh-token',
-		'dev',
 		() => Date.parse('2026-07-01T00:00:00.000Z'),
 	);
 
@@ -313,7 +308,6 @@ test('refreshAccessToken refuses a token minted by a different OAuth client, bef
 	const token: TokenSet = {
 		accountEmail: 'you@example.com',
 		clientIdUsed: 'the-original-client',
-		environment: 'dev',
 		accessToken: 'stale',
 		accessTokenExpiresAt: new Date(0).toISOString(),
 		refreshToken: 'a-refresh-token',
@@ -332,19 +326,17 @@ test('refreshAccessToken refuses a token minted by a different OAuth client, bef
 	expect(error?.message).toContain('client-id-123');
 });
 
-test('refreshAccessToken fails loudly when the token environment has no keyset', async () => {
-	// A token minted under prod resolves to a MissingCredentials error naming the
-	// exact prod variables (ADR-0108), before any network call. Clear the prod
-	// keyset so the test holds regardless of the ambient environment.
-	const savedId = process.env.GMAIL_PROD_CLIENT_ID;
-	const savedSecret = process.env.GMAIL_PROD_CLIENT_SECRET;
-	delete process.env.GMAIL_PROD_CLIENT_ID;
-	delete process.env.GMAIL_PROD_CLIENT_SECRET;
+test('refreshAccessToken fails loudly when the Gmail keyset is missing', async () => {
+	// Missing credentials fail before any network call. Clear the keyset so the
+	// test holds regardless of the ambient environment.
+	const savedId = process.env.GMAIL_CLIENT_ID;
+	const savedSecret = process.env.GMAIL_CLIENT_SECRET;
+	delete process.env.GMAIL_CLIENT_ID;
+	delete process.env.GMAIL_CLIENT_SECRET;
 	try {
 		const token: TokenSet = {
 			accountEmail: 'you@example.com',
 			clientIdUsed: 'prod-client',
-			environment: 'prod',
 			accessToken: 'stale',
 			accessTokenExpiresAt: new Date(0).toISOString(),
 			refreshToken: 'a-refresh-token',
@@ -355,11 +347,11 @@ test('refreshAccessToken fails loudly when the token environment has no keyset',
 		);
 		expect(data).toBeNull();
 		expect(error?.name).toBe('MissingCredentials');
-		expect(error?.message).toContain('GMAIL_PROD_CLIENT_ID');
+		expect(error?.message).toContain('GMAIL_CLIENT_ID');
 	} finally {
-		if (savedId === undefined) delete process.env.GMAIL_PROD_CLIENT_ID;
-		else process.env.GMAIL_PROD_CLIENT_ID = savedId;
-		if (savedSecret === undefined) delete process.env.GMAIL_PROD_CLIENT_SECRET;
-		else process.env.GMAIL_PROD_CLIENT_SECRET = savedSecret;
+		if (savedId === undefined) delete process.env.GMAIL_CLIENT_ID;
+		else process.env.GMAIL_CLIENT_ID = savedId;
+		if (savedSecret === undefined) delete process.env.GMAIL_CLIENT_SECRET;
+		else process.env.GMAIL_CLIENT_SECRET = savedSecret;
 	}
 });

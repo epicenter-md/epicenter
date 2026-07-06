@@ -2,8 +2,8 @@
  * Third-party provider credential resolution (ADR-0105).
  *
  * The mechanism only: one pure resolver plus the `ProviderCredentialSpec` type
- * and an `.env.example` formatter. Each app owns its own `spec` (`QB_SPEC` in
- * local-books, `GMAIL_SPEC` in local-mail); there is no central provider
+ * and an `.env.example` formatter. Each multi-environment app owns its own
+ * `spec` (`QB_SPEC` in local-books); there is no central provider
  * registry here, so no package accretes knowledge of every app's providers.
  *
  * A provider credential is selected by exactly one knob, the app's target
@@ -29,7 +29,7 @@ export type CredentialRole = string;
  *  - `sharedRoles`      value is the same across accounts -> `${PREFIX}_${ROLE}`
  *                       (Plaid's client_id: one id, a secret per environment)
  *  - `environmentRoles` value differs per account -> `${PREFIX}_${ENV}_${ROLE}`
- *                       (QB / Gmail: a whole distinct OAuth client per account)
+ *                       (QB: a whole distinct OAuth client per account)
  */
 export type ProviderCredentialSpec<
 	Env extends string = string,

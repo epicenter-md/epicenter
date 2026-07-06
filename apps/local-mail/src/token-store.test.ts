@@ -31,7 +31,6 @@ function token(accountEmail: string): TokenSet {
 	return {
 		accountEmail,
 		clientIdUsed: 'test-client',
-		environment: 'dev',
 		accessToken: 'access-token',
 		accessTokenExpiresAt: new Date(Date.now() + 60_000).toISOString(),
 		refreshToken: 'refresh-token',
@@ -61,7 +60,6 @@ describe('token sets round-trip through the real store', () => {
 		const seeded: TokenSet = {
 			accountEmail: 'you@example.com',
 			clientIdUsed: 'test-client',
-			environment: 'dev',
 			accessToken: 'an-expired-access-token',
 			accessTokenExpiresAt: new Date(0).toISOString(),
 			refreshToken: 'a-real-refresh-token',
@@ -86,7 +84,6 @@ describe('token sets round-trip through the real store', () => {
 		await store.set({
 			accountEmail: 'you@example.com',
 			clientIdUsed: 'test-client',
-			environment: 'dev',
 			accessToken: '',
 			accessTokenExpiresAt: new Date(0).toISOString(),
 			refreshToken: 'a-real-refresh-token',

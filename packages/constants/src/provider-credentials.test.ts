@@ -2,7 +2,7 @@
  * Provider credential resolution mechanism (ADR-0105).
  *
  * Fixtures are declared inline: the shared package owns only the mechanism, so
- * the app specs (`QB_SPEC`, `GMAIL_SPEC`) live in their apps, not here. These
+ * app specs such as `QB_SPEC` live in their apps, not here. These
  * fixtures mirror their real shapes to pin the naming convention: a role that
  * varies per account is env-qualified, a shared role is not, a single-environment
  * provider drops the env segment, and a missing name throws by exact name.
@@ -16,7 +16,7 @@ import {
 	specToEnvExampleLines,
 } from './provider-credentials.ts';
 
-// Two accounts, both roles differ per keyset (QuickBooks / Gmail shape).
+// Two accounts, both roles differ per keyset (QuickBooks shape).
 const TWO_ENV_SPEC = {
 	prefix: 'QB',
 	environments: ['sandbox', 'production'],
