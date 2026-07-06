@@ -452,8 +452,8 @@ You'll need additional API keys for AI transformations. Choose from these provid
 
 #### 🤖 Anthropic
 
-- **API Key:** [console.anthropic.com/settings/keys](https://console.anthropic.com/settings/keys)
-- **Models:** `claude-opus-4-0`, `claude-sonnet-4-0`, `claude-3-7-sonnet-latest`
+- **API Key:** [platform.claude.com/settings/keys](https://platform.claude.com/settings/keys)
+- **Models:** `claude-opus-4-6`, `claude-sonnet-4-6`, `claude-haiku-4-5`
 - **Why:** Excellent writing quality, nuanced understanding
 
 #### ✨ Google Gemini
