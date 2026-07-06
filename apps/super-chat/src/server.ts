@@ -16,8 +16,8 @@
 
 import { createHash, timingSafeEqual } from 'node:crypto';
 import type {
+	AgentToolDefinition,
 	ConversationSnapshot,
-	ToolCatalog,
 } from '@epicenter/workspace/agent';
 import { Hono } from 'hono';
 import { createBunWebSocket } from 'hono/bun';
@@ -34,12 +34,7 @@ export type ClientCommand =
 export type ServerEvent = { type: 'snapshot'; snapshot: ConversationSnapshot };
 
 export type SessionResponse = {
-	tools: Array<{
-		name: string;
-		kind: string;
-		title?: string;
-		description?: string;
-	}>;
+	tools: AgentToolDefinition[];
 	snapshot: ConversationSnapshot;
 };
 
@@ -94,7 +89,7 @@ export function createSuperChatServer({
 
 	app.get(SESSION_ROUTE.pattern, (c) =>
 		c.json({
-			tools: listTools(host.tools),
+			tools: host.tools.definitions(),
 			snapshot: host.conversation.snapshot(),
 		} satisfies SessionResponse),
 	);
@@ -148,15 +143,6 @@ function tokensMatch(candidate: string, expected: string): boolean {
 	const a = createHash('sha256').update(candidate).digest();
 	const b = createHash('sha256').update(expected).digest();
 	return timingSafeEqual(a, b);
-}
-
-function listTools(tools: ToolCatalog): SessionResponse['tools'] {
-	return tools.definitions().map(({ name, kind, title, description }) => ({
-		name,
-		kind,
-		...(title !== undefined && { title }),
-		...(description !== undefined && { description }),
-	}));
 }
 
 function parseCommand(data: unknown): ClientCommand | undefined {

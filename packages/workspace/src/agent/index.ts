@@ -43,5 +43,6 @@ export {
 	type ApprovalDecision,
 	defaultApprovalDecision,
 	NO_TOOLS,
+	resolveApprovedToolCall,
 	type ToolCatalog,
 } from './tools.js';

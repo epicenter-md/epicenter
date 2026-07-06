@@ -30,6 +30,7 @@ import {
 	type Approval,
 	defaultApprovalDecision,
 	NO_TOOLS,
+	resolveApprovedToolCall,
 	type ToolCatalog,
 } from './tools.js';
 
@@ -268,36 +269,14 @@ export function createConversation(
 		calls: AgentToolCall[],
 		signal: AbortSignal,
 	): Promise<void> {
-		const definitions = new Map(
-			tools.definitions().map((definition) => [definition.name, definition]),
-		);
 		for (const call of calls) {
 			if (signal.aborted) return;
-			const definition = definitions.get(call.toolName);
-			const decision = definition ? approval.decide(call, definition) : 'auto';
-
-			if (decision === 'deny') {
-				appendToolResult(assistant, call, 'Denied by policy.', undefined, true);
-				notify();
-				continue;
-			}
-			if (decision === 'ask' && definition) {
-				const approved = await approval.request(call, definition);
-				if (signal.aborted) return;
-				if (!approved) {
-					appendToolResult(
-						assistant,
-						call,
-						'Denied by the user.',
-						undefined,
-						true,
-					);
-					notify();
-					continue;
-				}
-			}
-
-			const outcome = await tools.resolve(call, signal);
+			const outcome = await resolveApprovedToolCall({
+				tools,
+				approval,
+				call,
+				signal,
+			});
 			if (signal.aborted) return;
 			appendToolResult(
 				assistant,

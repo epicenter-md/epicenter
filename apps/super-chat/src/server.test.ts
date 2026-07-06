@@ -24,7 +24,11 @@ import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { AgentEngine, EngineChunk } from '@epicenter/workspace/agent';
+import type {
+	AgentEngine,
+	AgentToolDefinition,
+	EngineChunk,
+} from '@epicenter/workspace/agent';
 import {
 	createSuperChatHost,
 	type SuperChatHost,
@@ -124,10 +128,14 @@ describe('createSuperChatServer', () => {
 			});
 			expect(session.status).toBe(200);
 			const body = (await session.json()) as {
-				tools: Array<{ name: string; kind: string }>;
+				tools: AgentToolDefinition[];
 				snapshot: { messages: unknown[] };
 			};
-			expect(body.tools.map((t) => t.name)).toContain('todos__todos_create');
+			const createTodos = body.tools.find(
+				(t) => t.name === 'todos__todos_create',
+			);
+			expect(createTodos).toBeDefined();
+			expect(createTodos?.inputSchema).toBeDefined();
 			expect(body.snapshot.messages).toEqual([]);
 
 			const oldTools = await fetch(`${server.url.origin}/api/tools`, {
