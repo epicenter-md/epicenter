@@ -46,7 +46,7 @@
 		splitListItem,
 		wrapInList,
 	} from 'prosemirror-schema-list';
-	import { EditorState, Plugin } from 'prosemirror-state';
+	import { EditorState, Plugin, TextSelection } from 'prosemirror-state';
 	import { Decoration, DecorationSet, EditorView } from 'prosemirror-view';
 	import 'prosemirror-view/style/prosemirror.css';
 	import {
@@ -219,9 +219,11 @@
 
 	let {
 		yxmlfragment,
+		focusRequest,
 		onContentChange,
 	}: {
 		yxmlfragment: Y.XmlFragment;
+		focusRequest: number;
 		onContentChange: (content: NoteMetadata) => void;
 	} = $props();
 
@@ -379,6 +381,17 @@
 			currentView.destroy();
 			view = undefined;
 		};
+	});
+
+	$effect(() => {
+		if (!view) return;
+		focusRequest;
+		view.dispatch(
+			view.state.tr
+				.setSelection(TextSelection.atEnd(view.state.doc))
+				.scrollIntoView(),
+		);
+		view.focus();
 	});
 </script>
 

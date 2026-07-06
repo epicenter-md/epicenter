@@ -5,7 +5,8 @@
 	import HoneycripEditor from '$lib/editor/Editor.svelte';
 	import { honeycrisp } from '$lib/honeycrisp';
 
-	let { noteId }: { noteId: NoteId } = $props();
+	let { noteId, focusRequest }: { noteId: NoteId; focusRequest: number } =
+		$props();
 
 	const doc = fromDisposableCache(honeycrisp.tables.notes.docs.body, () => noteId);
 </script>
@@ -15,6 +16,7 @@
 {:then}
 	<HoneycripEditor
 		yxmlfragment={doc.current.binding}
+		{focusRequest}
 		onContentChange={(change) => honeycrisp.state.notes.updateContent(noteId, change)}
 	/>
 {/await}

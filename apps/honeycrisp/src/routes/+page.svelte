@@ -36,7 +36,10 @@
 			<Resizable.Pane defaultSize={65} minSize={30} class="flex flex-col">
 				{#if honeycrisp.state.view.selectedNote && honeycrisp.state.view.selectedNoteId}
 					{#key honeycrisp.state.view.selectedNoteId}
-						<NoteBodyPane noteId={honeycrisp.state.view.selectedNoteId} />
+						<NoteBodyPane
+							noteId={honeycrisp.state.view.selectedNoteId}
+							focusRequest={honeycrisp.state.view.editorFocusRequest}
+						/>
 					{/key}
 				{:else}
 					<div class="flex h-full flex-col items-center justify-center gap-2">

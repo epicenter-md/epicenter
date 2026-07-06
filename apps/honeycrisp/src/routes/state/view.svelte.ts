@@ -6,9 +6,10 @@
  * the user see right now" question (`currentNotes` plus its title and
  * empty-state messaging).
  *
- * State lives in the URL so it's bookmarkable, shareable, and works with
- * browser back/forward. Default values are elided from the URL to keep it
- * clean: `/` means all defaults (all notes, sorted by date edited, no search).
+ * Navigation state lives in the URL so it's bookmarkable, shareable, and
+ * works with browser back/forward. Default values are elided from the URL to
+ * keep it clean: `/` means all defaults (all notes, sorted by date edited, no
+ * search). Transient editor focus requests stay in memory.
  *
  * @example
  * ```svelte
@@ -35,6 +36,8 @@ export function createView({
 	folders: ReturnType<typeof createFolders>;
 	notes: ReturnType<typeof createNotes>;
 }) {
+	let editorFocusRequest = $state(0);
+
 	// ─── Derived State ───────────────────────────────────────────────────
 
 	/** Notes filtered by selected folder and search query, then sorted. */
@@ -83,6 +86,9 @@ export function createView({
 		},
 		get selectedNote() {
 			return selectedNote;
+		},
+		get editorFocusRequest() {
+			return editorFocusRequest;
 		},
 		get searchQuery() {
 			return searchParams.q;
@@ -159,6 +165,7 @@ export function createView({
 		 * ```
 		 */
 		selectNote(noteId: NoteId) {
+			editorFocusRequest += 1;
 			searchParams.update({ note: noteId });
 		},
 
