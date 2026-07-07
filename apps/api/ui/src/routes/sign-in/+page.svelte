@@ -184,13 +184,14 @@
 		</Card.Content>
 		<Card.Footer class="justify-center">
 			<p class="text-sm text-muted-foreground">
-				New to Epicenter?
+				First time? Learn more at
 				<a
-					href="https://epicenter.sh"
+					href="https://epicenter.so"
 					class="font-medium text-foreground underline underline-offset-4"
 				>
-					Learn more
+					epicenter.so
 				</a>
+				.
 			</p>
 		</Card.Footer>
 	{/if}
