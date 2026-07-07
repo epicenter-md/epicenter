@@ -3,9 +3,10 @@
  *
  * Mounts every URL the auth flows live behind:
  *
- *   /sign-in          server-rendered sign-in page (Hono JSX)
- *   /consent          server-rendered OAuth consent page
- *   /auth/cli-callback CLI OOB landing page
+ *   /sign-in          hosted auth UI shell after redirect policy
+ *   /sign-in/context  JSON bootstrap for the hosted sign-in UI
+ *   /consent          hosted consent UI shell after session policy
+ *   /auth/cli-callback CLI OOB landing page shell
  *   /auth/.well-known/openid-configuration   OIDC discovery
  *   /auth/.well-known/oauth-authorization-server   OAuth metadata
  *   /.well-known/oauth-protected-resource   resource server metadata
@@ -22,8 +23,6 @@ import {
 } from '@better-auth/oauth-provider';
 import { oauthProviderResourceClient } from '@better-auth/oauth-provider/resource-client';
 import { OAUTH_ROUTES } from '@epicenter/constants/oauth-routes';
-import { sValidator } from '@hono/standard-validator';
-import { type } from 'arktype';
 import { Hono } from 'hono';
 import { secureHeaders } from 'hono/secure-headers';
 import { describeRoute } from 'hono-openapi';
@@ -34,13 +33,37 @@ import {
 	OAUTH_OPENID_CONFIGURATION_PATH,
 	OAUTH_PROTECTED_RESOURCE_METADATA_PATH,
 } from '../auth/oauth-metadata.js';
-import {
-	renderCliCallbackPage,
-	renderConsentPage,
-	renderSignedInPage,
-	renderSignInPage,
-} from '../auth-pages/index.js';
+import type { CloudAuthBindings } from '../auth/create-auth.js';
 import type { CloudEnv } from '../types.js';
+
+export type SignInContext = {
+	providers: Record<'google' | 'github' | 'microsoft' | 'apple', boolean>;
+	passkeyEnabled: false;
+	session: { name: string; email: string } | null;
+};
+
+function getSignInProviders(
+	authSecrets: CloudAuthBindings,
+): SignInContext['providers'] {
+	return {
+		google: Boolean(
+			authSecrets.GOOGLE_CLIENT_ID && authSecrets.GOOGLE_CLIENT_SECRET,
+		),
+		github: Boolean(
+			authSecrets.GITHUB_CLIENT_ID && authSecrets.GITHUB_CLIENT_SECRET,
+		),
+		microsoft: Boolean(
+			authSecrets.MICROSOFT_CLIENT_ID &&
+				authSecrets.MICROSOFT_CLIENT_SECRET,
+		),
+		apple: Boolean(
+			authSecrets.APPLE_CLIENT_ID &&
+				authSecrets.APPLE_TEAM_ID &&
+				authSecrets.APPLE_KEY_ID &&
+				authSecrets.APPLE_PRIVATE_KEY,
+		),
+	};
+}
 
 /**
  * Auth sub-app. Registration order matters: OAuth discovery routes must
@@ -48,8 +71,31 @@ import type { CloudEnv } from '../types.js';
  * swallows discovery requests.
  */
 export const authApp = new Hono<CloudEnv>()
-	// Server-rendered sign-in page. Re-entry into OAuth happens when the
-	// caller arrives with `?sig=` (signed authorize params).
+	.get(
+		'/sign-in/context',
+		describeRoute({
+			description: 'Hosted sign-in UI bootstrap',
+			tags: ['auth'],
+		}),
+		async (c) => {
+			const session = await c.var.auth.api.getSession({
+				headers: c.req.raw.headers,
+			});
+			return c.json({
+				providers: getSignInProviders(c.var.authSecrets),
+				passkeyEnabled: false,
+				session: session
+					? {
+							name: session.user.name,
+							email: session.user.email,
+						}
+					: null,
+			} satisfies SignInContext);
+		},
+	)
+	// Hosted sign-in UI. Re-entry into OAuth happens when the caller arrives
+	// with `?sig=` (signed authorize params); safe callback URLs are resolved
+	// before the browser shell renders.
 	.get('/sign-in', async (c) => {
 		const session = await c.var.auth.api.getSession({
 			headers: c.req.raw.headers,
@@ -63,53 +109,23 @@ export const authApp = new Hono<CloudEnv>()
 			if (callbackURL?.startsWith('/')) {
 				return c.redirect(callbackURL);
 			}
-			return c.html(
-				renderSignedInPage({
-					name: session.user.name,
-					email: session.user.email,
-				}),
-			);
 		}
-		return c.html(
-			renderSignInPage({
-				githubEnabled: Boolean(
-					c.var.authSecrets.GITHUB_CLIENT_ID &&
-						c.var.authSecrets.GITHUB_CLIENT_SECRET,
-				),
-				microsoftEnabled: Boolean(
-					c.var.authSecrets.MICROSOFT_CLIENT_ID &&
-						c.var.authSecrets.MICROSOFT_CLIENT_SECRET,
-				),
-				appleEnabled: Boolean(
-					c.var.authSecrets.APPLE_CLIENT_ID &&
-						c.var.authSecrets.APPLE_TEAM_ID &&
-						c.var.authSecrets.APPLE_KEY_ID &&
-						c.var.authSecrets.APPLE_PRIVATE_KEY,
-				),
-			}),
-		);
+		return c.var.authUiShell(c);
 	})
-	// Server-rendered consent page. Requires a session; redirects to sign-in
-	// (with a callbackURL pointing back) when missing.
-	.get(
-		'/consent',
-		sValidator('query', type({ 'client_id?': 'string', 'scope?': 'string' })),
-		async (c) => {
-			const session = await c.var.auth.api.getSession({
-				headers: c.req.raw.headers,
-			});
-			if (!session) {
-				const consentUrl = `/consent${new URL(c.req.url).search}`;
-				return c.redirect(
-					`/sign-in?callbackURL=${encodeURIComponent(consentUrl)}`,
-				);
-			}
-			const { client_id: clientId, scope } = c.req.valid('query');
-			return c.html(renderConsentPage({ clientId, scope }));
-		},
-	)
+	// Hosted consent UI. Requires a session; redirects to sign-in (with a
+	// callbackURL pointing back) when missing.
+	.get('/consent', async (c) => {
+		const session = await c.var.auth.api.getSession({
+			headers: c.req.raw.headers,
+		});
+		if (!session) {
+			const consentUrl = `/consent${new URL(c.req.url).search}`;
+			return c.redirect(`/sign-in?callbackURL=${encodeURIComponent(consentUrl)}`);
+		}
+		return c.var.authUiShell(c);
+	})
 	// CLI OOB callback. The code is useless without the CLI's PKCE verifier,
-	// but `Cache-Control: no-store` keeps the edge from caching it anyway.
+	// but `Cache-Control: no-store` keeps the edge from caching the shell.
 	.get(
 		OAUTH_ROUTES.cliCallback.pattern,
 		describeRoute({
@@ -117,16 +133,15 @@ export const authApp = new Hono<CloudEnv>()
 			tags: ['auth', 'oauth'],
 		}),
 		secureHeaders(),
-		(c) => {
-			c.header('Cache-Control', 'no-store, no-transform');
-			return c.html(
-				renderCliCallbackPage({
-					code: c.req.query('code'),
-					state: c.req.query('state'),
-					error: c.req.query('error'),
-					errorDescription: c.req.query('error_description'),
-				}),
-			);
+		async (c) => {
+			const response = await c.var.authUiShell(c);
+			const headers = new Headers(response.headers);
+			headers.set('Cache-Control', 'no-store, no-transform');
+			return new Response(response.body, {
+				status: response.status,
+				statusText: response.statusText,
+				headers,
+			});
 		},
 	)
 	// OAuth discovery. MUST register before /auth/* below; Hono matches in

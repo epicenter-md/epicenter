@@ -144,6 +144,13 @@ export type CloudEnv = {
 		 */
 		authSecrets: CloudAuthBindings;
 		/**
+		 * Deployment-owned static shell for the hosted auth browser surfaces.
+		 * `packages/server` owns auth policy and dispatch, but the deployable owns
+		 * where the built SvelteKit fallback comes from: Workers read ASSETS, Bun
+		 * can point at local dev or a local build.
+		 */
+		authUiShell: (c: Context<CloudEnv>) => Response | Promise<Response>;
+		/**
 		 * Per-request queue of fire-and-forget promises that must outlive the HTTP
 		 * response (billing's Autumn charges). `mountCloudDb` drains the whole queue
 		 * (`Promise.allSettled(...).then(close)`) through the deployment's

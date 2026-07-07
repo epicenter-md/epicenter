@@ -24,6 +24,12 @@ export default defineConfig({
 				target: `http://localhost:${APPS.API.port}`,
 				changeOrigin: true,
 			},
+			// Keep /sign-in as a Svelte route, but fetch its JSON bootstrap
+			// from the API route owner.
+			'/sign-in/context': {
+				target: `http://localhost:${APPS.API.port}`,
+				changeOrigin: true,
+			},
 		},
 	},
 });

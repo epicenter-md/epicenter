@@ -142,6 +142,14 @@ export function startBunApiServer(
 		opts.resolveBearerPrincipal ?? resolveRequestOAuthPrincipal;
 	const cookieOrBearer = requireCookieOrBearerPrincipal(resolveBearerPrincipal);
 	const bearer = requireBearerPrincipal(resolveBearerPrincipal);
+	const serveAuthUiShell = () =>
+		new Response(
+			'Hosted auth UI is served by the SvelteKit app in Bun dev. Use `bun run --cwd apps/api/ui dev` for browser auth surfaces, or `bun run --cwd apps/api dev` for the Worker asset shell.',
+			{
+				status: 503,
+				headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+			},
+		);
 
 	app.get('/', (c) =>
 		c.json({ product: 'hub', version: '0.1.0', runtime: 'bun' }),
@@ -160,7 +168,10 @@ export function startBunApiServer(
 	// (this host and the Worker alike); the dev host differs only in non-Secure
 	// attributes for localhost. The Cloud-only auth secrets come from the
 	// validated `env` closure (ADR-0076), never the portable `ServerBindings`.
-	mountCloudAuth(app, { resolveAuthSecrets: () => env });
+	mountCloudAuth(app, {
+		resolveAuthSecrets: () => env,
+		serveAuthUiShell,
+	});
 	mountSessionApp(app, { auth: cookieOrBearer });
 	// Rooms resolves the bearer itself (WS-aware), so it takes the raw resolver.
 	mountRoomsApp(app, { resolveBearerPrincipal });

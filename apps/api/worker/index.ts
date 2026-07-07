@@ -126,6 +126,7 @@ mountCloudDb(app, {
 // `ServerBindings` (ADR-0076/0066).
 mountCloudAuth(app, {
 	resolveAuthSecrets: (c) => c.env as Cloudflare.Env,
+	serveAuthUiShell: serveUiShell,
 });
 
 // Principal-partitioned reusable surfaces.
@@ -154,10 +155,11 @@ mountTranscriptionApp(app, {
 // dashboard endpoints can't be mounted without it.
 mountBillingApi(app, { auth: cookieOrBearer });
 
-// Dashboard SPA: serve the cloud UI shell for the dashboard URLs. Cloud-only
-// because the `ASSETS` binding lives in this worker's wrangler config; hashed
-// assets (`/_app/*`, favicon) are served by the asset layer before the Worker
-// runs.
+// Dashboard SPA: serve the cloud UI shell for the dashboard URLs. The hosted
+// auth browser surfaces use the same shell through `mountCloudAuth` above.
+// Cloud-only because the `ASSETS` binding lives in this worker's wrangler
+// config; hashed assets (`/_app/*`, favicon) are served by the asset layer
+// before the Worker runs.
 app.on(
 	'GET',
 	['/dashboard', '/dashboard/*'],

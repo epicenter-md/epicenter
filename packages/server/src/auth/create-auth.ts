@@ -116,9 +116,9 @@ export function createAuth({
 		// sign-in POST. An earlier note disabled the cookie check on the theory
 		// that the sign-in POST was a cross-origin fetch whose third-party
 		// Set-Cookie browsers would drop. That is not how this deploys: the only
-		// caller of `/auth/sign-in/social` is the API-hosted sign-in page
-		// (auth-pages/scripts/sign-in.ts), which fetches a same-origin relative
-		// URL, so the state cookie is first-party, stored, and sent on the
+		// caller of `/auth/sign-in/social` is the API-hosted Svelte sign-in page,
+		// which fetches a same-origin relative URL, so the state cookie is
+		// first-party, stored, and sent on the
 		// Google callback navigation. The cookie binds the callback to the
 		// initiating browser (the DB record alone does not), so keeping the check
 		// on restores that login-CSRF / session-fixation defense.

@@ -1,61 +1,42 @@
-# Dashboard
+# Cloud UI
 
-Billing data has one source of truth: the server. Dashboard doesn't pretend otherwise. It's a pure API consumer with no CRDTs, no local state, no sync layer. Just a clean read of what Stripe and the hub already know.
-
-Part of the [Epicenter](https://github.com/EpicenterHQ/epicenter) monorepo. AGPL-3.0 licensed.
-
----
-
-## Architecture
+This package is the hosted API's browser UI. It owns the Svelte surfaces the API serves directly: hosted auth entry, OAuth consent, CLI callback, and the dashboard.
 
 ```
-┌─────────────────────────────────────────────┐
-│  SvelteKit SPA (tabs, charts, plan picker)  │
-├─────────────────────────────────────────────┤
-│  TanStack Query (billing data + mutations)  │
-├─────────────────────────────────────────────┤
-│  Epicenter Hub API (/api, /auth, Stripe)    │
-└─────────────────────────────────────────────┘
+Browser route
+  -> apps/api Worker serves fallback.html
+  -> SvelteKit route renders the UI
+  -> Hono and Better Auth keep owning auth policy and auth semantics
 ```
 
-Unlike every other Epicenter app, there's no workspace here. Billing needs a single authority, so the dashboard fetches everything from the hub API and writes back through Stripe. The diagram is intentionally simple. That's the point.
+Auth pages live here because they are user-facing UI, not auth-server machinery. Hono still owns redirects, route ordering, session checks, provider bootstrap, OAuth metadata, and the Better Auth catch-all. Better Auth still owns sessions, social sign-in, OAuth consent, cookies, and token issuing.
 
----
-
-## How it works
-
-Auth gates the entire app via Google sign-in (`@epicenter/svelte/auth-form`). Once signed in, a tabbed UI shows three views: an overview with credit balance, usage-by-model charts (D3 + layerchart), and a top-10 models table; a model cost guide; and a billing activity feed.
-
-Plan management sits below the tabs. Monthly/annual toggle, prorated charge preview, confirm to upgrade. "Buy 500 credits" opens a Stripe checkout session. "Manage billing" opens the Stripe billing portal.
-
----
+The dashboard remains a pure API consumer. It has no workspace, CRDT, local sync layer, or local billing truth; it reads billing state from the hosted API and writes plan changes through the server.
 
 ## Development
 
-Prerequisites: [Bun](https://bun.sh) and the hub API running locally (see `apps/api`).
+Prerequisites: [Bun](https://bun.sh) and the hosted API Worker running locally.
 
 ```bash
 git clone https://github.com/EpicenterHQ/epicenter.git
 cd epicenter
 bun install
 
-# Start the Worker first (must be running at localhost:8787)
 cd apps/api
 bun run dev
 
-# Then start the dashboard (in another terminal)
-cd apps/api/ui
+cd ui
 bun run dev
 ```
 
-Runs on port 5178. The Vite dev server proxies `/api` and `/auth` to `localhost:8787`.
+Runs on port 5178. The Vite dev server proxies `/api`, `/auth`, and `/sign-in/context` to the local Worker on port 8787.
 
 ```bash
-bun run build    # Static output with /dashboard base path
+bun run build
 ```
 
----
+The static build writes to `apps/api/ui/build`. The Worker serves `fallback.html` for browser-owned routes and lets the assets binding serve hashed files.
 
 ## License
 
-[AGPL-3.0](../../LICENSE). Code Epicenter ships or runs is AGPL-3.0; the MIT surface is the developer toolkit. This app is the hosted API's dashboard, so AGPL-3.0.
+[AGPL-3.0](../../LICENSE). Code Epicenter ships or runs is AGPL-3.0; the MIT surface is the developer toolkit.
