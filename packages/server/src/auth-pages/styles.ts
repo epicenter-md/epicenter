@@ -7,11 +7,20 @@
  * properties, so these pages theme themselves from `prefers-color-scheme`
  * without pulling in Tailwind or the UI package. Semantic surfaces (alerts)
  * derive their fills from the accent via `color-mix`, so each stays legible in
- * both themes from a single hue token. This string is inlined in the `<style>`
- * tag by the layout component.
+ * both themes from a single hue token.
+ *
+ * Two page shapes share this sheet:
+ * - `body.centered` + `.card`: the single centered card (consent, cli-callback)
+ * - `body.split` + `.shell`: the two-pane sign-in surface (brand panel left,
+ *   auth pane right; single column on small screens)
+ *
+ * This string is inlined in the `<style>` tag by the layout component, which
+ * must wrap it in `raw()`: hono/jsx escapes text children, and an escaped
+ * quote (`&quot;Segoe UI&quot;`) invalidates the font-family declaration.
  */
 export const AUTH_STYLES = `
 :root{
+	color-scheme:light dark;
 	--bg:oklch(0.9925 0.001 70);
 	--card:oklch(1 0 0);
 	--fg:oklch(0.129 0.042 264.695);
@@ -49,17 +58,19 @@ export const AUTH_STYLES = `
 body{
 	font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
 	min-height:100vh;
-	display:flex;
-	align-items:center;
-	justify-content:center;
 	background:var(--bg);
 	color:var(--fg);
-	padding:1rem;
 	line-height:1.5;
 	-webkit-font-smoothing:antialiased;
 }
+body.centered{
+	display:flex;
+	align-items:center;
+	justify-content:center;
+	padding:1rem;
+}
 
-/* ── Logo ────────────────────────────────────────────────── */
+/* ── Logo (centered card pages) ───────────────────────────── */
 
 .logo{
 	display:flex;
@@ -72,9 +83,9 @@ body{
 	border-radius:12px;
 }
 
-/* ── Card ────────────────────────────────────────────────── */
+/* ── Cards ────────────────────────────────────────────────── */
 
-.card{
+.card,.auth-panel{
 	background:var(--card);
 	border:1px solid var(--border);
 	border-radius:16px;
@@ -83,14 +94,107 @@ body{
 	width:100%;
 	box-shadow:var(--shadow);
 }
+.auth-panel{
+	max-width:430px;
+}
 
-h1{font-size:1.375rem;font-weight:700;letter-spacing:-.01em;margin-bottom:.25rem}
+h1{font-size:1.375rem;font-weight:650;letter-spacing:-.015em;margin-bottom:.25rem}
 .subtitle{color:var(--muted-fg);font-size:.875rem;margin-bottom:1.75rem}
 
-/* ── Sign-in header (mark lives in the layout above these) ─── */
+/* ── Split shell (sign-in, signed-in) ─────────────────────────
+   Small screens: one column, auth pane directly under the brand
+   lockup so the sign-in action is visible without scrolling; the
+   local-first explanation (.brand-copy) collapses below it via
+   display:contents + order. Wide screens: brand panel left, auth
+   sheet right. */
 
-.signin-head{display:flex;flex-direction:column;align-items:center;text-align:center}
-.wordmark{font-size:1.375rem;font-weight:650;letter-spacing:-.02em;line-height:1.15;margin-bottom:.25rem}
+.shell{
+	min-height:100vh;
+	min-height:100dvh;
+	display:flex;
+	flex-direction:column;
+}
+.brand{display:contents}
+.brand-lockup{
+	display:flex;
+	align-items:center;
+	gap:.625rem;
+	padding:1.25rem 1.5rem .75rem;
+}
+.brand-lockup svg{width:30px;height:30px;border-radius:9px}
+.brand-name{font-size:1.0625rem;font-weight:650;letter-spacing:-.015em}
+
+.brand-copy{
+	order:1;
+	margin-top:auto;
+	padding:2rem 1.5rem 2.5rem;
+	border-top:1px solid var(--border);
+}
+.brand-statement{
+	font-size:1.25rem;
+	font-weight:600;
+	letter-spacing:-.02em;
+	line-height:1.25;
+}
+.brand-support{
+	margin-top:.625rem;
+	color:var(--muted-fg);
+	font-size:.875rem;
+	line-height:1.6;
+	max-width:44ch;
+}
+.brand-proofs{
+	margin-top:1.25rem;
+	list-style:none;
+	display:flex;
+	flex-direction:column;
+	gap:.625rem;
+}
+.brand-proofs li{
+	display:flex;
+	align-items:center;
+	gap:.625rem;
+	color:var(--muted-fg);
+	font-size:.875rem;
+}
+.brand-proofs svg{width:15px;height:15px;color:var(--success);flex:none}
+
+.pane{
+	display:flex;
+	justify-content:center;
+	padding:1.5rem 1.5rem 2.5rem;
+}
+.auth-panel h1,.auth-panel .subtitle{text-align:center}
+
+@media (min-width:900px){
+	.shell{
+		display:grid;
+		grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);
+	}
+	.brand{
+		display:flex;
+		flex-direction:column;
+		padding:2.25rem 3rem 3rem;
+	}
+	.brand-lockup{padding:0}
+	.brand-copy{
+		margin:auto 0;
+		padding:3rem 0;
+		border-top:0;
+	}
+	.brand-statement{
+		font-size:clamp(1.75rem,2.4vw,2.125rem);
+		line-height:1.15;
+		max-width:18ch;
+	}
+	.brand-support{margin-top:1rem;font-size:.9375rem}
+	.brand-proofs{margin-top:2rem;gap:.75rem}
+	.pane{
+		border-left:1px solid var(--border);
+		align-items:center;
+		padding:3rem 2.5rem;
+	}
+}
 
 /* ── Buttons ──────────────────────────────────────────────── */
 
@@ -207,25 +311,14 @@ button:focus-visible,.btn:focus-visible{outline:2px solid var(--ring);outline-of
 
 /* ── Signed-in state ──────────────────────────────────────── */
 
-.signed-in-center{
-	display:flex;
-	flex-direction:column;
-	align-items:center;
-	text-align:center;
-}
-.signed-in-center h1{margin-bottom:.5rem}
+.success-icon{width:40px;height:40px;margin-bottom:1.25rem;display:block}
+.success-icon circle{fill:color-mix(in oklab,var(--success) 16%,var(--card))}
+.success-icon path{stroke:var(--success)}
 
-.success-icon{
-	width:48px;
-	height:48px;
-	margin-bottom:1.25rem;
-}
-
-.signed-in-info{
-	color:var(--muted-fg);
-	font-size:.875rem;
-	margin-top:.125rem;
-}
+.auth-panel .success-icon{margin-left:auto;margin-right:auto}
+.identity-name{font-size:.9375rem;font-weight:500;text-align:center}
+.identity-email{color:var(--muted-fg);font-size:.875rem;text-align:center}
+.ready-line{margin-top:1rem;color:var(--muted-fg);font-size:.8125rem;text-align:center}
 
 .signed-in-actions{
 	margin-top:1.5rem;
@@ -233,6 +326,12 @@ button:focus-visible,.btn:focus-visible{outline:2px solid var(--ring);outline-of
 	flex-direction:column;
 	gap:.5rem;
 	width:100%;
+}
+
+.signed-in-info{
+	color:var(--muted-fg);
+	font-size:.875rem;
+	margin-top:.125rem;
 }
 
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}

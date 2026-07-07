@@ -65,7 +65,7 @@ export const authApp = new Hono<CloudEnv>()
 			}
 			return c.html(
 				renderSignedInPage({
-					displayName: session.user.email,
+					name: session.user.name,
 					email: session.user.email,
 				}),
 			);

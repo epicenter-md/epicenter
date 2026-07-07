@@ -54,8 +54,8 @@ const APPLE_ICON =
  * Auth returns a redirect URL to continue the OAuth flow; for non-OAuth
  * sign-ins the page reloads.
  *
- * The Epicenter mark is rendered above these by {@link AuthLayout}; this page
- * adds the wordmark, so the header reads mark → "epicenter" → subtitle.
+ * The Epicenter mark and wordmark live in the brand panel rendered by
+ * {@link AuthShell}; this page is the auth card itself.
  */
 export function SignInPage({
 	githubEnabled,
@@ -68,16 +68,10 @@ export function SignInPage({
 }) {
 	return (
 		<>
-			<div class="signin-head">
-				<h1 id="heading" class="wordmark">
-					epicenter
-				</h1>
-				<p class="subtitle" id="description">
-					Sign in to your account.
-				</p>
-			</div>
-
-			<div id="msg" class="msg hidden" />
+			<h1 id="heading">epicenter</h1>
+			<p class="subtitle" id="description">
+				Sign in to your account
+			</p>
 
 			<div class="providers">
 				<button
@@ -122,6 +116,8 @@ export function SignInPage({
 					</button>
 				) : null}
 			</div>
+
+			<div id="msg" class="msg hidden" />
 
 			{SIGN_IN_SCRIPT}
 		</>
