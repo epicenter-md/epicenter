@@ -29,7 +29,7 @@
 
 <AuthCard>
 	{#if oauthError}
-		<Card.Header>
+		<Card.Header class="justify-items-center text-center">
 			<Card.Title><h1 class="text-xl">Sign-in failed</h1></Card.Title>
 			<Card.Description>
 				The authorization server rejected the request.
@@ -49,7 +49,7 @@
 			</p>
 		</Card.Content>
 	{:else if !code}
-		<Card.Header>
+		<Card.Header class="justify-items-center text-center">
 			<Card.Title><h1 class="text-xl">Sign-in failed</h1></Card.Title>
 			<Card.Description>
 				This page expects an authorization code from the sign-in flow.
@@ -63,7 +63,7 @@
 			</p>
 		</Card.Content>
 	{:else}
-		<Card.Header>
+		<Card.Header class="justify-items-center text-center">
 			<Card.Title><h1 class="text-xl">Signed in to Epicenter CLI</h1></Card.Title>
 			<Card.Description>
 				Copy this code and paste it into the terminal where you ran
@@ -72,7 +72,7 @@
 		</Card.Header>
 		<Card.Content class="flex flex-col gap-3">
 			<pre
-				class="overflow-x-auto rounded-md border bg-muted/50 p-3 font-mono text-sm break-all whitespace-pre-wrap"><code
+				class="overflow-x-auto rounded-md border bg-muted/50 p-3 text-center font-mono text-sm break-all whitespace-pre-wrap"><code
 					>{code}</code
 				></pre>
 			<CopyButton text={code} variant="default" size="default" class="w-full">

@@ -74,7 +74,7 @@
 <svelte:head><title>Authorize: Epicenter</title></svelte:head>
 
 <AuthCard>
-	<Card.Header>
+	<Card.Header class="justify-items-center text-center">
 		<Card.Title><h1 class="text-xl">Authorize application</h1></Card.Title>
 		<Card.Description>
 			<span class="font-medium text-foreground">
@@ -123,7 +123,7 @@
 			{/if}
 		</Button>
 		<Button
-			variant="destructive"
+			variant="outline"
 			class="flex-1"
 			onclick={() => sendConsent(false)}
 			disabled={pendingDecision !== null}

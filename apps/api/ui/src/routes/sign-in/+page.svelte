@@ -18,8 +18,7 @@
 	import * as Card from '@epicenter/ui/card';
 	import { Spinner } from '@epicenter/ui/spinner';
 	import CircleAlertIcon from '@lucide/svelte/icons/circle-alert';
-	import CircleCheckIcon from '@lucide/svelte/icons/circle-check';
-	import AuthShell from '$lib/auth/AuthShell.svelte';
+	import AuthCard from '$lib/auth/AuthCard.svelte';
 	import ProviderButton from '$lib/auth/ProviderButton.svelte';
 	import { getOAuthQuery } from '$lib/auth/oauth-query';
 	import {
@@ -117,72 +116,82 @@
 
 <svelte:head><title>Sign in: Epicenter</title></svelte:head>
 
-<AuthShell>
-	<Card.Root class="w-full max-w-sm">
-		{#if session}
-			<Card.Header class="items-center text-center">
-				<CircleCheckIcon class="size-10 text-primary" aria-hidden="true" />
-			</Card.Header>
-			<Card.Content class="flex flex-col gap-1 text-center">
+<AuthCard>
+	{#if session}
+		<Card.Header class="justify-items-center text-center">
+			<Card.Title>
 				<h1 class="text-xl font-semibold tracking-tight">You're signed in</h1>
-				{#if hasRealName}
-					<p class="text-sm font-medium">{session.name}</p>
-				{/if}
-				<p class="text-sm text-muted-foreground">{session.email}</p>
-				<p class="pt-2 text-sm text-muted-foreground">
-					This browser is ready for Epicenter.
-				</p>
-			</Card.Content>
-			<Card.Footer class="flex-col gap-3">
-				{#if errorMessage}
-					<Alert.Root variant="destructive">
-						<CircleAlertIcon class="size-4" />
-						<Alert.Description>{errorMessage}</Alert.Description>
-					</Alert.Root>
-				{/if}
-				<Button
-					variant="outline"
-					class="w-full"
-					onclick={signOut}
-					disabled={signingOut}
-				>
-					{#if signingOut}
-						<Spinner class="size-3.5" />
-						<span>Signing out</span>
-					{:else}
-						Sign out
-					{/if}
-				</Button>
-			</Card.Footer>
-		{:else}
-			<Card.Header>
-				<Card.Title><h1 class="text-xl">Sign in to Epicenter</h1></Card.Title>
-				<Card.Description>Continue with your account provider.</Card.Description>
-			</Card.Header>
-			<Card.Content class="flex flex-col gap-3">
-				{#if enabledProviders.length === 0}
-					<Alert.Root variant="destructive">
-						<CircleAlertIcon class="size-4" />
-						<Alert.Description>
-							No sign-in providers are configured for this deployment.
-						</Alert.Description>
-					</Alert.Root>
+			</Card.Title>
+			<Card.Description>This browser is ready for Epicenter.</Card.Description>
+		</Card.Header>
+		<Card.Content class="flex flex-col gap-1 text-center">
+			{#if hasRealName}
+				<p class="text-sm font-medium">{session.name}</p>
+			{/if}
+			<p class="text-sm text-muted-foreground">{session.email}</p>
+		</Card.Content>
+		<Card.Footer class="flex-col gap-3">
+			{#if errorMessage}
+				<Alert.Root variant="destructive">
+					<CircleAlertIcon class="size-4" />
+					<Alert.Description>{errorMessage}</Alert.Description>
+				</Alert.Root>
+			{/if}
+			<Button
+				variant="outline"
+				class="w-full"
+				onclick={signOut}
+				disabled={signingOut}
+			>
+				{#if signingOut}
+					<Spinner class="size-3.5" />
+					<span>Signing out</span>
 				{:else}
-					{#each enabledProviders as provider (provider)}
-						<ProviderButton
-							{provider}
-							disabled={busy}
-							onclick={() => startSocial(provider)}
-						/>
-					{/each}
+					Sign out
 				{/if}
-				{#if errorMessage}
-					<Alert.Root variant="destructive">
-						<CircleAlertIcon class="size-4" />
-						<Alert.Description>{errorMessage}</Alert.Description>
-					</Alert.Root>
-				{/if}
-			</Card.Content>
-		{/if}
-	</Card.Root>
-</AuthShell>
+			</Button>
+		</Card.Footer>
+	{:else}
+		<Card.Header class="justify-items-center text-center">
+			<Card.Title>
+				<h1 class="text-2xl font-semibold tracking-tight">epicenter</h1>
+			</Card.Title>
+			<Card.Description>Sign in to your account</Card.Description>
+		</Card.Header>
+		<Card.Content class="flex flex-col gap-3">
+			{#if enabledProviders.length === 0}
+				<Alert.Root variant="destructive">
+					<CircleAlertIcon class="size-4" />
+					<Alert.Description>
+						No sign-in providers are configured for this deployment.
+					</Alert.Description>
+				</Alert.Root>
+			{:else}
+				{#each enabledProviders as provider (provider)}
+					<ProviderButton
+						{provider}
+						disabled={busy}
+						onclick={() => startSocial(provider)}
+					/>
+				{/each}
+			{/if}
+			{#if errorMessage}
+				<Alert.Root variant="destructive">
+					<CircleAlertIcon class="size-4" />
+					<Alert.Description>{errorMessage}</Alert.Description>
+				</Alert.Root>
+			{/if}
+		</Card.Content>
+		<Card.Footer class="justify-center">
+			<p class="text-sm text-muted-foreground">
+				New to Epicenter?
+				<a
+					href="https://epicenter.sh"
+					class="font-medium text-foreground underline underline-offset-4"
+				>
+					Learn more
+				</a>
+			</p>
+		</Card.Footer>
+	{/if}
+</AuthCard>

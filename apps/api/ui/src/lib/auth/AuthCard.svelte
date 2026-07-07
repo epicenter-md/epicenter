@@ -1,7 +1,7 @@
 <!--
-	Centered card wrapper for the single-purpose auth pages (consent,
-	CLI callback): Epicenter mark on top, page content composed by the caller
-	with Card.Header / Card.Content / Card.Footer.
+	Centered card shell shared by every auth surface (sign-in, consent,
+	CLI callback): Epicenter mark centered on top, page content composed by the
+	caller with Card.Header / Card.Content / Card.Footer.
 -->
 <script lang="ts">
 	import type { Snippet } from 'svelte';
@@ -12,9 +12,9 @@
 </script>
 
 <div class="flex min-h-dvh items-center justify-center p-6">
-	<Card.Root class="w-full max-w-md">
-		<div class="px-6">
-			<EpicenterMark class="size-10 rounded-xl" />
+	<Card.Root class="w-full max-w-sm">
+		<div class="flex justify-center">
+			<EpicenterMark class="size-12 rounded-xl" />
 		</div>
 		{@render children()}
 	</Card.Root>
