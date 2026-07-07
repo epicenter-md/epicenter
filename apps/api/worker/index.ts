@@ -32,6 +32,7 @@ import {
 	resolveRequestOAuthPrincipal,
 	type ServerBindings,
 } from '@epicenter/server';
+import type { Context } from 'hono';
 import { describeRoute } from 'hono-openapi';
 import {
 	chargeOpenAiCreditsWithAutumn,
@@ -75,6 +76,28 @@ const cookieOrBearer = requireCookieOrBearerPrincipal(
 	resolveRequestOAuthPrincipal,
 );
 const bearer = requireBearerPrincipal(resolveRequestOAuthPrincipal);
+
+// The cloud UI (apps/api/ui) is one root-based SvelteKit SPA whose fallback
+// shell (`fallback.html`) the server hands out for the browser surfaces it
+// owns. This helper is the Worker's implementation of "serve the shell":
+// fetch it from the ASSETS binding, forwarding the original request so
+// conditional-request headers still work. The `Cloudflare.Env` cast lives
+// here at the app edge, like ROOM and HYPERDRIVE (ADR-0066). A 503 with the
+// build command beats a blank page when the UI has not been built (local
+// `wrangler dev`).
+const serveUiShell = async (c: Context<CloudEnv>) => {
+	const shellUrl = new URL('/fallback.html', c.req.url);
+	const response = await (c.env as Cloudflare.Env).ASSETS.fetch(
+		new Request(shellUrl.toString(), c.req.raw),
+	);
+	if (!response.ok) {
+		return c.text(
+			'Cloud UI is not built. Run `bun run --cwd apps/api/ui build`.',
+			503,
+		);
+	}
+	return response;
+};
 
 // Public health endpoint at root.
 app.get('/', (c) =>
@@ -131,9 +154,10 @@ mountTranscriptionApp(app, {
 // dashboard endpoints can't be mounted without it.
 mountBillingApi(app, { auth: cookieOrBearer });
 
-// Dashboard SPA: Workers Static Assets binding serves the SvelteKit
-// build. Cloud-only because the `ASSETS` binding lives in this worker's
-// wrangler config; self-hosted deployments ship their own UI surface.
+// Dashboard SPA: serve the cloud UI shell for the dashboard URLs. Cloud-only
+// because the `ASSETS` binding lives in this worker's wrangler config; hashed
+// assets (`/_app/*`, favicon) are served by the asset layer before the Worker
+// runs.
 app.on(
 	'GET',
 	['/dashboard', '/dashboard/*'],
@@ -141,12 +165,7 @@ app.on(
 		description: 'Dashboard SPA static fallback',
 		tags: ['dashboard'],
 	}),
-	async (c) => {
-		const assetsFetcher = c.env.ASSETS;
-		if (!assetsFetcher) return c.notFound();
-		const indexUrl = new URL('/dashboard/index.html', c.req.url);
-		return assetsFetcher.fetch(new Request(indexUrl.toString(), c.req.raw));
-	},
+	serveUiShell,
 );
 
 // Legacy redirect: /billing -> /dashboard.

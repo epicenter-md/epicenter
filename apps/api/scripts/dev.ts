@@ -3,13 +3,26 @@ import { resolve } from 'node:path';
 import { APPS, localUrl } from '@epicenter/constants/apps';
 
 const apiRoot = resolve(import.meta.dir, '..');
-const dashboardBuild = resolve(apiRoot, 'ui/build/dashboard');
+const uiBuild = resolve(apiRoot, 'ui/build');
 const devVars = resolve(apiRoot, '.dev.vars');
 
-// The dashboard SPA is built into apps/api/ui/build/dashboard/ (SvelteKit
-// adapter-static + paths.base='/dashboard'). Wrangler errors if its assets
-// directory does not exist, even when the dashboard has not been built yet.
-await mkdir(dashboardBuild, { recursive: true });
+// The cloud UI SPA is built into apps/api/ui/build/ (SvelteKit
+// adapter-static, fallback.html shell). Wrangler errors if its assets
+// directory does not exist, and the auth surfaces (/sign-in, /consent,
+// /auth/cli-callback) are served from that build, so build it once when the
+// shell is missing. Subsequent boots skip the build to keep the edit loop
+// fast; rerun `bun run --cwd apps/api/ui build` after UI changes you want
+// visible through wrangler dev.
+await mkdir(uiBuild, { recursive: true });
+if (!(await Bun.file(resolve(uiBuild, 'fallback.html')).exists())) {
+	console.log('Cloud UI shell missing; building apps/api/ui once...');
+	const uiBuildRun = await Bun.$`bun run --cwd ui build`.cwd(apiRoot).nothrow();
+	if (uiBuildRun.exitCode !== 0) {
+		console.error(
+			'Cloud UI build failed; /sign-in, /consent, and /dashboard will 503 until `bun run --cwd apps/api/ui build` succeeds.',
+		);
+	}
+}
 
 // Keep local secrets in Infisical, not a checked-out .dev.vars file. Wrangler's
 // `secrets.required` support reads required secrets from process.env during

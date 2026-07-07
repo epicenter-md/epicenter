@@ -9,8 +9,6 @@
 	let { children } = $props();
 </script>
 
-<svelte:head><title>Billing: Epicenter</title></svelte:head>
-
 <QueryClientProvider client={queryClient}>
 	<div class="min-h-screen bg-background text-foreground">
 		{@render children()}

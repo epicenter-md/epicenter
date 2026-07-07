@@ -17,6 +17,8 @@
 	);
 </script>
 
+<svelte:head><title>Billing: Epicenter</title></svelte:head>
+
 {#if auth.state.status === 'signed-in'}
 	<header class="border-b bg-background/95 backdrop-blur">
 		<div class="mx-auto max-w-5xl px-6 flex items-center justify-between h-14">

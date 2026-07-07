@@ -4,14 +4,16 @@ import { vitePreprocess } from '@sveltejs/vite-plugin-svelte';
 /** @type {import('@sveltejs/kit').Config} */
 const config = {
 	kit: {
+		// The cloud UI is one root-based SPA covering every hosted browser
+		// surface (/dashboard, /sign-in, /consent, /auth/cli-callback). The
+		// fallback shell is deliberately NOT index.html: Workers static assets
+		// auto-serve index.html for `/`, which would shadow the Worker's root
+		// health endpoint. Server routes decide which URLs get the shell.
 		adapter: staticAdapter({
-			pages: 'build/dashboard',
-			assets: 'build/dashboard',
-			fallback: 'index.html',
+			pages: 'build',
+			assets: 'build',
+			fallback: 'fallback.html',
 		}),
-		paths: {
-			base: '/dashboard',
-		},
 		alias: {
 			// Sibling Worker code (billing contracts, BILLING_ROUTES, BillingError).
 			// Avoids `../../../../worker/...` and makes the deployment seam visible:
