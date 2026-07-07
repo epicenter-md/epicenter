@@ -19,10 +19,15 @@
 	// Worker runs; UI URLs (/dashboard, /sign-in, /consent, /auth/cli-callback)
 	// match no file and fall through to Hono, which serves fallback.html for
 	// the routes it owns. The shell is deliberately not index.html so the asset
-	// layer never shadows the Worker's `/` route.
+	// layer never shadows the Worker's `/` route. `html_handling: none` keeps
+	// /fallback.html reachable at its literal path; the default
+	// auto-trailing-slash mode 307-redirects it to /fallback, which breaks the
+	// Worker's `ASSETS.fetch('/fallback.html')` shell handoff (a 503, not a
+	// shell). This SPA has no pretty-URL pages, so extension magic buys nothing.
 	"assets": {
 		"directory": "./ui/build",
-		"binding": "ASSETS"
+		"binding": "ASSETS",
+		"html_handling": "none"
 	},
 	// --- Custom domain: api.epicenter.so (auto-creates DNS record on deploy) ---
 	"routes": [
