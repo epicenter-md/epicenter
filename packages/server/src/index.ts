@@ -15,24 +15,42 @@
  */
 
 export {
-	AttachRelay,
-	createDurableObjectAttachRelay,
+	AttachHub,
+	createDurableObjectAttachHub,
+	createDurableObjectHostDirectory,
 } from './attach-relay/cloudflare-do.js';
-// The AttachRelay (ADR-0115): the endpoint-addressed relay that forwards live
-// Super Chat bytes between two authenticated endpoints of one principal. The
+// The AttachHub (ADR-0115): the endpoint-addressed relay that forwards live
+// Super Chat bytes between two authenticated endpoints of one principal, and
+// answers that principal's host discovery, from one per-principal actor. The
 // wire contract (the connect route and the frame delivered to a host) is the
 // shared addressing vocabulary any transport or client speaks; the coordinator
 // itself stays package-internal, the way the room coordinator does. On Cloud the
-// transport is a Durable Object: `createDurableObjectAttachRelay` is the backend
-// a deployment wires into `mountAttachRelayApp`'s `resolveRelay`, and the
-// `AttachRelay` class is re-exported so a deployment's wrangler.jsonc can resolve
-// `class_name: "AttachRelay"` against this entrypoint (the Bun transport lives in
-// the `/bun` barrel instead). The relay forwards opaque bytes for one consumer,
-// Super Chat attach (clause 4); it is never a routing product.
+// transport is a Durable Object: `createDurableObjectAttachHub` is the relay
+// backend a deployment wires into `mountAttachRelayApp`'s `resolveRelay` and
+// `createDurableObjectHostDirectory` the discovery backend it wires into
+// `mountHostDirectoryApp`'s `resolveHostDirectory` (both over the one hub
+// namespace, so liveness is joined against the live socket set with no cross-DO
+// push). The `AttachHub` class is re-exported so a deployment's wrangler.jsonc
+// can resolve `class_name: "AttachHub"` against this entrypoint (the Bun
+// transport lives in the `/bun` barrel instead). The relay forwards opaque bytes
+// for one consumer, Super Chat attach (clause 4); it is never a routing product.
 export {
 	RELAY_CLOSE,
 	type RelayToHostFrame,
 } from './attach-relay/contracts.js';
+// The attach host directory (ADR-0115 clause 3): the closed
+// `{ hostId, label, status }` entry a client discovers a host by, and the read
+// seam a discovery mount drives. The Cloud source is the same per-principal
+// `AttachHub` DO that holds the live sockets (`createDurableObjectHostDirectory`
+// above), the twin of the Bun self-host reader: discovery is a read-time join of
+// retained membership and the live host set, so there is no separate directory
+// actor and no pushed liveness flag.
+export {
+	type AttachHostDirectoryEntry,
+	AttachHostStatus,
+	type HostDirectoryReader,
+} from './attach-relay/host-directory.js';
+export { mountHostDirectoryApp } from './attach-relay/host-directory-app.js';
 export { mountAttachRelayApp } from './attach-relay/mount.js';
 export { ATTACH_RELAY_ROUTE } from './attach-relay/route.js';
 // The single-partition instance's bearer resolver (self-host; ADR-0075). The
