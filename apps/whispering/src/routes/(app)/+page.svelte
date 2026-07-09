@@ -392,8 +392,8 @@
 
 		{#if latestRecording}
 			<RecordingResult
-				recordingId={latestRecording.id}
-				transcript={latestRecording.polishedTranscript ?? latestRecording.transcript}
+				recordingId={latestRecording?.id}
+				transcript={latestRecording?.polishedTranscript ?? latestRecording?.transcript}
 				rows={1}
 				onDelete={() => {
 					confirmationDialog.open({
@@ -401,12 +401,14 @@
 						description: 'Are you sure you want to delete this recording?',
 						confirm: { text: 'Delete', variant: 'destructive' },
 						onConfirm: () => {
-							services.blobs.audio.revokeUrl(latestRecording.id);
-							recordings.delete(latestRecording.id);
-							report.success({
-								title: 'Deleted recording!',
-								description: 'Your recording has been deleted.',
-							});
+							if(latestRecording) {
+                                services.blobs.audio.revokeUrl(latestRecording.id);
+                                recordings.delete(latestRecording.id);
+                                report.success({
+                                    title: 'Deleted recording!',
+                                    description: 'Your recording has been deleted.',
+                                });
+							}
 						},
 					});
 				}}
