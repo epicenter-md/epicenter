@@ -4,6 +4,7 @@
 	import { rpc } from '$lib/query';
 	import { services } from '$lib/services';
 	import { viewTransition } from '$lib/utils/viewTransitions';
+    import AudioPlayer from '$lib/components/audio/AudioPlayer.svelte';
 
 	let { id }: { id: string } = $props();
 
@@ -18,12 +19,5 @@
 </script>
 
 {#if audioUrlQuery.data}
-	<audio
-		class="h-8"
-		style="view-transition-name: {viewTransition.recording(id).audio}"
-		controls
-		src={audioUrlQuery.data}
-	>
-		Your browser does not support the audio element.
-	</audio>
+	<AudioPlayer src={audioUrlQuery.data} />
 {/if}

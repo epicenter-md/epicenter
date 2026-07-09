@@ -43,6 +43,7 @@
 	import { settings } from '$lib/state/settings.svelte';
 	import { vadRecorder } from '$lib/state/vad-recorder.svelte';
 	import { viewTransition } from '$lib/utils/viewTransitions';
+    import AudioPlayer from '$lib/components/audio/AudioPlayer.svelte';
 
 	const latestRecording = $derived(recordings.sorted[0]);
 
@@ -380,17 +381,9 @@
 					});
 				}}
 			/>
-
-			{#if audioPlaybackUrlQuery.data}
-				<audio
-					style="view-transition-name: {viewTransition.recording(
-						latestRecording.id,
-					).audio}"
-					src={audioPlaybackUrlQuery.data}
-					controls
-					class="h-8 w-full"
-				></audio>
-			{/if}
+			<div class="p-2 border border-slate-200 rounded-md">
+				<AudioPlayer src={audioPlaybackUrlQuery.data} title={latestRecording.id + '.wav'}/>
+			</div>
 		</div>
 	{/if}
 
