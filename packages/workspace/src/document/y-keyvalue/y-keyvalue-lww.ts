@@ -205,7 +205,7 @@ type Reconciliation<T> = {
 	deletedEntries: Set<YKeyValueLwwEntry<T>>;
 	origin: unknown;
 	snapshot?: YKeyValueLwwEntry<T>[];
-	cleanupOrigin?: unknown;
+	cleanupOrigin: unknown;
 };
 
 /**
@@ -343,6 +343,7 @@ export class YKeyValueLww<T> implements ObservableKvStore<T>, Disposable {
 			deletedEntries: new Set(),
 			origin: undefined,
 			snapshot,
+			cleanupOrigin: null,
 		});
 
 		// Set up observer for future changes
@@ -398,12 +399,10 @@ export class YKeyValueLww<T> implements ObservableKvStore<T>, Disposable {
 		cleanupOrigin,
 	}: Reconciliation<T>): void {
 		const additionsByKey = new Map<string, YKeyValueLwwEntry<T>[]>();
-		const affectedKeys = new Set<string>();
 
 		// Deleted keys lead so public change ordering matches the previous observer.
-		for (const entry of deletedEntries) affectedKeys.add(entry.key);
+		for (const entry of deletedEntries) additionsByKey.set(entry.key, []);
 		for (const entry of addedEntries) {
-			affectedKeys.add(entry.key);
 			const additions = additionsByKey.get(entry.key);
 			if (additions) additions.push(entry);
 			else additionsByKey.set(entry.key, [entry]);
@@ -433,9 +432,8 @@ export class YKeyValueLww<T> implements ObservableKvStore<T>, Disposable {
 		const changes = new Map<string, KvStoreChange<T>>();
 		const losers: YKeyValueLwwEntry<T>[] = [];
 
-		for (const key of affectedKeys) {
+		for (const [key, additions] of additionsByKey) {
 			const before = this._map.get(key);
-			const additions = additionsByKey.get(key) ?? [];
 			const candidates: YKeyValueLwwEntry<T>[] = [];
 			if (before && !deletedEntries.has(before)) candidates.push(before);
 			candidates.push(...additions);
@@ -476,8 +474,7 @@ export class YKeyValueLww<T> implements ObservableKvStore<T>, Disposable {
 			const deleteLosers = () => {
 				for (const index of indices) this.yarray.delete(index);
 			};
-			if (cleanupOrigin === undefined) this.doc.transact(deleteLosers);
-			else this.doc.transact(deleteLosers, cleanupOrigin);
+			this.doc.transact(deleteLosers, cleanupOrigin);
 		}
 
 		if (changes.size > 0) {
