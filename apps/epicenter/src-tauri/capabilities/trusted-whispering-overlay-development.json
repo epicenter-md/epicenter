@@ -5,7 +5,7 @@
 	"local": false,
 	"windows": ["recording-overlay"],
 	"remote": {
-		"urls": ["http://127.0.0.1:*"]
+		"urls": ["http://127.0.0.1:39131"]
 	},
 	"permissions": [
 		"core:event:allow-emit",

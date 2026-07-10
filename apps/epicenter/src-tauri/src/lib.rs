@@ -1099,7 +1099,7 @@ fn origin(port: u16) -> String {
 
 #[cfg(debug_assertions)]
 fn configured_port() -> Result<u16> {
-    development_port(std::env::var_os("EPICENTER_DEV_PORT").as_deref())
+    Ok(DEVELOPMENT_PORT)
 }
 
 #[cfg(not(debug_assertions))]
@@ -1108,37 +1108,10 @@ fn configured_port() -> Result<u16> {
     Ok(PRODUCTION_PORT)
 }
 
-#[cfg(any(debug_assertions, test))]
-fn development_port(value: Option<&std::ffi::OsStr>) -> Result<u16> {
-    let Some(value) = value else {
-        return Ok(DEVELOPMENT_PORT);
-    };
-    let value = value
-        .to_str()
-        .context("EPICENTER_DEV_PORT must be valid UTF-8")?;
-    let port: u16 = value
-        .parse()
-        .context("EPICENTER_DEV_PORT must be an integer from 1024 through 65535")?;
-    if port < 1_024 {
-        bail!("EPICENTER_DEV_PORT must be an integer from 1024 through 65535");
-    }
-    Ok(port)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::ffi::OsStr;
     use std::io::Cursor;
-
-    #[test]
-    fn development_port_defaults_and_validates_override() {
-        assert_eq!(development_port(None).unwrap(), DEVELOPMENT_PORT);
-        assert_eq!(development_port(Some(OsStr::new("49152"))).unwrap(), 49_152);
-        assert!(development_port(Some(OsStr::new("1023"))).is_err());
-        assert!(development_port(Some(OsStr::new("65536"))).is_err());
-        assert!(development_port(Some(OsStr::new("not-a-port"))).is_err());
-    }
 
     #[test]
     fn production_port_is_stable() {

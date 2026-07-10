@@ -27,8 +27,8 @@ Epicenter ships as one signed Tauri application with bundle identifier
 Bun serves every release-bundled trusted SPA, API, and WebSocket from one
 loopback origin. Production binds exactly `http://127.0.0.1:39130`, ignores port
 overrides, and fails visibly on collision instead of falling back. Development
-defaults to `http://127.0.0.1:39131` and may use `EPICENTER_DEV_PORT`; Rust
-resolves that port once and passes it to Bun.
+binds exactly `http://127.0.0.1:39131` and fails visibly on collision. Rust
+selects the profile's fixed port once and passes it to Bun.
 
 Every Epicenter SPA is fully trusted. Tauri grants the exact production Bun
 origin remote access to focused, input-validating Rust commands. Full trust does
