@@ -2,8 +2,7 @@ import { nanoid } from 'nanoid/non-secure';
 import { defineErrors, extractErrorMessage } from 'wellcrafted/error';
 import { defineKeys } from 'wellcrafted/query';
 import { Err, Ok, type Result } from 'wellcrafted/result';
-import { manualRecorderConfig } from '#platform/manual-recorder-config';
-import { ManualRecorderLive } from '#platform/recorder';
+import { environment } from '#environment';
 import type { WhisperingRecordingState } from '$lib/constants/audio';
 import { defineQuery } from '$lib/rpc/client';
 import type {
@@ -95,15 +94,17 @@ function createManualRecorder() {
 	let bootstrapped: Promise<Result<void, RecorderError>> | null = null;
 
 	function ensureBootstrapped() {
-		bootstrapped ??= ManualRecorderLive.resumeActiveSession().then((result) => {
-			const { data: found, error } = result;
-			if (error) {
-				bootstrapped = null;
-				return Err(error);
-			}
-			if (found) attach(found);
-			return Ok(undefined);
-		});
+		bootstrapped ??= environment.recording
+			.resumeActiveSession()
+			.then((result) => {
+				const { data: found, error } = result;
+				if (error) {
+					bootstrapped = null;
+					return Err(error);
+				}
+				if (found) attach(found);
+				return Ok(undefined);
+			});
 		return bootstrapped;
 	}
 
@@ -125,7 +126,7 @@ function createManualRecorder() {
 		enumerateDevices: defineQuery({
 			queryKey: manualRecorderKeys.devices,
 			queryFn: async () => {
-				const { data, error } = await ManualRecorderLive.enumerateDevices();
+				const { data, error } = await environment.recording.enumerateDevices();
 				if (error)
 					return ManualRecorderError.EnumerateDevicesFailed({ cause: error });
 				return Ok(data);
@@ -142,9 +143,8 @@ function createManualRecorder() {
 				if (bootstrapError) return Err(bootstrapError);
 				if (_current) return ManualRecorderError.AlreadyRecording();
 				const recordingId = nanoid();
-				const params = manualRecorderConfig.resolveStartParams(recordingId);
 				const { data, error: startRecordingError } =
-					await ManualRecorderLive.startRecording(params, callbacks);
+					await environment.recording.startRecording(recordingId, callbacks);
 
 				if (startRecordingError) return Err(startRecordingError);
 

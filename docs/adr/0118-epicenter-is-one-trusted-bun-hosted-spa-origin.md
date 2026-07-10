@@ -37,6 +37,26 @@ executor, or Bun-to-Rust command bridge. The per-launch loopback credential is
 delivered to Bun over stdin and bootstrapped into trusted WebViews without a URL,
 durable browser storage, or logs.
 
+"Fully trusted" authorizes a built-in surface to enter its compiled Epicenter
+capability projection. It does not let a surface assemble Tauri plugins, call a
+generic native primitive, or discover permissions at runtime. The compiled
+surface catalog owns each surface id, route, window label, exact origin, and
+semantic capability projection. The catalog generates or validates the Tauri
+ACL and TypeScript contract for that projection; required capabilities are
+total in the matching build and never represented as nullable runtime state.
+
+Surface code requests product operations such as recording, artifact import or
+export, text delivery, and shortcut replacement. It does not receive arbitrary
+HTTP, filesystem paths, native window constructors, permission names, raw
+`invoke`, or plugin command strings. Rust solely owns machine operations and
+native resource lifecycles. Bun solely owns explicitly modelled desktop
+outbound operations. Neither layer exposes a generic HTTP proxy. Desktop audio
+artifacts are opaque Rust-owned identifiers, never frontend-controlled paths.
+
+Third-party surface sandboxing, dynamic permission negotiation, and runtime
+capability discovery remain deferred. The catalog is a closed, compiled list of
+first-party surfaces.
+
 Rust owns application identity, Bun lifecycle, windows, deep links, recording,
 native audio artifacts, local transcription, global shortcuts, Accessibility,
 clipboard delivery, overlay, tray, autostart, and updates. Bun owns hosting and
@@ -52,6 +72,14 @@ static assets on Cloudflare; its Epicenter build selects focused Tauri
 implementations and is served under `/apps/whispering/`. Epicenter is the only
 native desktop runtime. There is no separately packaged Whispering Tauri app and
 no runtime branch that guesses which host it is running inside.
+
+Whispering composes three distinct availability classes rather than one
+intersected or nullable platform object: one complete portable environment
+selected at build time, one structurally desktop-only capability value, and one
+always-available local-first workspace. Authentication may add account-only
+remote resources, but it does not own or gate the workspace. Build-specific UI
+composition happens at one root shell instead of through feature-level runtime
+platform checks.
 
 The first release is a clean break. It does not read or migrate the old
 Whispering origin, app-data directory, settings, recipes, shortcuts, recordings,

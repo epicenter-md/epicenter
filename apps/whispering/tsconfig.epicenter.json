@@ -1,0 +1,9 @@
+{
+	// Typechecks the Epicenter-hosted build condition. `tsconfig.json` resolves
+	// the default browser implementation; this config flips every build-selected
+	// composition root to its Epicenter implementation.
+	"extends": "./tsconfig.json",
+	"compilerOptions": {
+		"customConditions": ["epicenter"]
+	}
+}

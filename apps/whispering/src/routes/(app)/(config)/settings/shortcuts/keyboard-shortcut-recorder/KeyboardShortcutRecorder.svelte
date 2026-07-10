@@ -7,7 +7,7 @@
 	import Plus from '@lucide/svelte/icons/plus';
 	import XIcon from '@lucide/svelte/icons/x';
 	import { type Command, commands } from '$lib/commands';
-	import { os } from '#platform/os';
+	import { environment } from '#environment';
 	import { shortcuts } from '$lib/platform/shortcuts';
 	import { report } from '$lib/report';
 	import {
@@ -102,7 +102,7 @@
 				description: reason,
 				cause: {
 					name: 'ShortcutConflict',
-					message: `${keyBindingToLabel(next, os.isApple)}: ${reason}`,
+					message: `${keyBindingToLabel(next, environment.os.isApple)}: ${reason}`,
 				},
 			});
 			previewBinding = null;
@@ -111,7 +111,7 @@
 		const realized = shortcuts.reachBadge(command.id, next);
 		await shortcuts.set(command.id, next);
 		report.success({
-			title: `${command.title} set to ${keyBindingToLabel(next, os.isApple)}`,
+			title: `${command.title} set to ${keyBindingToLabel(next, environment.os.isApple)}`,
 			description: reachLabel(realized),
 		});
 		// Closing tears capture down through the effects' cleanup.
@@ -121,7 +121,7 @@
 </script>
 
 {#snippet keyChip(binding: KeyBinding, reach: Reach)}
-	<Kbd.Root>{keyBindingToLabel(binding, os.isApple)}</Kbd.Root>
+	<Kbd.Root>{keyBindingToLabel(binding, environment.os.isApple)}</Kbd.Root>
 	<span
 		class="inline-flex items-center text-muted-foreground"
 		title={reachLabel(reach)}

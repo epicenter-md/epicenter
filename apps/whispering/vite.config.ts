@@ -46,7 +46,7 @@ export default defineConfig(
 			// runtime. The `...defaultClientConditions` spread is load-bearing:
 			// custom conditions REPLACE Vite's defaults.
 			...(isEpicenterSurface && {
-				conditions: ['tauri', ...defaultClientConditions],
+				conditions: ['epicenter', ...defaultClientConditions],
 			}),
 		},
 	}),

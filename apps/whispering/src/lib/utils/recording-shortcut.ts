@@ -1,4 +1,4 @@
-import { os } from '#platform/os';
+import { environment } from '#environment';
 import { systemShortcuts } from '#platform/system-shortcuts';
 import type { Command } from '$lib/commands';
 import { focusedShortcuts } from '$lib/platform/focused-shortcuts';
@@ -42,7 +42,7 @@ function shortcutLabelFor(
 ): string {
 	for (const commandId of RECORDING_SHORTCUT_PREFERENCE[mode]) {
 		const binding = store.current(commandId);
-		if (binding) return keyBindingToLabel(binding, os.isApple);
+		if (binding) return keyBindingToLabel(binding, environment.os.isApple);
 	}
 	return '';
 }
