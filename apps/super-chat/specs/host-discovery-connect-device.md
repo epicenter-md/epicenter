@@ -1,8 +1,9 @@
 # Host discovery and the "Connect device" surface
 
-- **Status:** Draft
+- **Status:** In Progress
 - **Relates:** ADR-0115 (endpoint-addressed trusted relay), ADR-0079 (two planes), ADR-0080 (desktop host; remote is attach to the session), ADR-0075/0092 (self-host is a single-partition instance)
 - **After:** PR #2424, #2426 (AttachRelay backend on Bun + Cloudflare DO, `/attach` mount, device grants). This wave makes remote attach *discoverable* from a phone/client. It reopens no relay transport, sealing, PSK, capability routing, or route registry.
+- **Landed:** self-host `GET /attach/hosts` (Bun) and Cloud `GET /attach/hosts` (the per-principal `AttachHub` DO). Remaining: the Super Chat phone connect UI (PR 3 below).
 
 ## The gap
 
@@ -56,18 +57,28 @@ liveness is a live-plane property (ADR-0079), not durable truth. So the director
 projection, computed per read. (Answers open Q1: **not** workspace/sync-backed; a real
 route over a per-deployment source.)
 
-### 3. The Bun singleton can enumerate a principal's hosts; the Cloudflare DO cannot.
-This is the whole asymmetry. On self-host one in-process coordinator holds every host
-socket in one `hosts` map. On Cloud the relay is **one DO per `(principalId, hostId)`
-pair** (`attachHostDoName = principals/<pid>/attach-hosts/<hostId>`); there is no
-per-principal actor that sees all of P's hosts, and nothing in the codebase does
-cross-DO enumeration. So "list my hosts" is free-ish on self-host and is **new
-infrastructure** on Cloud. One route, two sources, behind `resolveHostDirectory(env)` —
-the honest asymmetry the repo already runs for principal resolution (self-host instance
-vs Cloud OAuth, ADR-0075/0092).
+### 3. One per-principal owner colocates the sockets and the listing, on both deployments.
+Because liveness has one honest source (fact 1), the actor that answers "list my hosts"
+must be the actor that holds the live host sockets. On self-host that is the one
+in-process coordinator (`hosts` map). On Cloud that is **one `AttachHub` DO per
+principal** (`attachHubDoName = principals/<pid>/attach-hub`): every host and client of
+the principal routes to it, so it holds every host socket AND answers `GET /attach/hosts`
+by joining retained membership with its own `liveHostIds`. No separate directory actor,
+no cross-DO liveness push, no stored `live` flag that can drift from the socket that
+forwards frames. One route, two substrates, behind `resolveHostDirectory(env)` — the
+honest asymmetry the repo already runs for principal resolution (self-host instance vs
+Cloud OAuth, ADR-0075/0092).
 
-Keeping the directory out of `core.ts` also preserves the coordinator's deliberate
-frame/directory-blindness (ADR-0115 clause 1) and the Cloud DO's per-pair purity.
+> The first Cloud cut used a relay DO per `(principalId, hostId)` pair plus a separate
+> per-principal directory DO the pairs pushed liveness to. A radical-options review
+> (2026-07-08) collapsed that into the one per-principal `AttachHub`: colocating the read
+> and the sockets deletes the second DO, its binding and migration, and the whole
+> pushed-liveness / `unreachable`-reconciliation debt, and restores fact 1 (liveness is
+> the live socket, never a driftable duplicate). See the ADR-0115 amendment note.
+
+Keeping the directory out of `core.ts` still preserves the coordinator's deliberate
+frame/directory-blindness (ADR-0115 clause 1): the hub joins against `liveHostIds`, it
+never teaches the coordinator what a directory is.
 
 ### Per-deployment source
 
@@ -79,10 +90,12 @@ frame/directory-blindness (ADR-0115 clause 1) and the Cloud DO's per-pair purity
   (see the asymmetric-wins pass below). (Answers open Q3: the human label is the host's
   own label announced at connect; an `offline` host persists for the relay's process
   lifetime, the same durability floor as grants and the coordinator.)
-- **Cloud:** no grants and no per-principal index exist. Discovery needs a new
-  per-principal `HostDirectory` index (a DO named `principals/<pid>/host-directory`, or a
-  KV/D1 row) that the per-pair relay DOs write on host register / deregister. This is a
-  whole PR, not a slice.
+- **Cloud:** the per-principal `AttachHub` DO (`principals/<pid>/attach-hub`) is that
+  one owner. It holds every host and client socket of the principal, records host
+  membership+label in `ctx.storage` when a host wins registration (so an asleep desktop
+  still lists after the hub evicts), and answers `list` by joining that retained
+  membership with its own `liveHostIds`. There is no separate directory DO and no
+  cross-DO write.
 
 ### Asymmetric-wins pass (why no `kind` discriminator, and what we defer not refuse)
 
@@ -97,12 +110,13 @@ Refuse: the host/client discriminator on the grant primitive.
     act (only a role=host connect writes the directory); a client is structurally
     absent. User loss: none. -> REFUSED.
 
-Keep (deferred, not refused): the Cloud per-principal index DO.
-  Refusing it would delete a whole DO, but it kills ADR-0115's headline promise
-  "sign in on your phone and your desktops are just there, no pairing." That
-  promise is load-bearing, so the index is EARNED; ship self-host now, add Cloud
-  discovery in its own PR (nobody loses a working feature: there is no Cloud phone
-  UI yet).
+Refuse: the separate Cloud directory DO and its cross-DO liveness push.
+  Deletion prize: the `AttachHostDirectory` class, the `ATTACH_HOST_DIRECTORY`
+    binding + migration, `recordOpen`/`recordClose`, the stored `live` flag, and
+    the `unreachable`-reconciliation debt. The per-principal `AttachHub` (which
+    already holds the sockets) answers discovery by a read-time join instead.
+    User loss: none (same route, shape, and offline listing). -> REFUSED (the
+    radical-options review that collapsed the two-DO cut into one hub).
 
 Keep: offline rendering (the retained membership map).
   Refusing it (list only live hosts) deletes ~30 lines but shows an empty connect
@@ -126,7 +140,7 @@ already protects the entry shape and is reused verbatim.
 
 ## Implementation split
 
-### PR 1 — Self-host `GET /attach/hosts` (Bun).
+### PR 1 — Self-host `GET /attach/hosts` (Bun). LANDED.
 - `core.ts`: expose the coordinator's conflict-correct live host set for a principal,
   with no new wire field (stays frame- and directory-blind).
 - `host-directory.ts`: add a retained membership+label store (no status stored, no
@@ -146,12 +160,17 @@ already protects the entry shape and is reused verbatim.
   conflict-correct liveness, E2E online -> offline over the real HTTP mount, and
   discovery refused without a device grant.
 
-### PR 2 — Cloud host directory (per-principal index).
-- New per-principal `HostDirectory` DO (`principals/<pid>/host-directory`), written by
-  the per-pair `AttachRelay` DOs on host register / deregister (DO -> DO call). A crash
-  without deregister leaves a stale entry surfaced as `unreachable`, reconciled lazily.
-- Fills `resolveHostDirectory` on Cloud; the route and shape are unchanged from PR 1.
-- Load `durable-objects` skill; wrangler binding + migration like `ATTACH_RELAY`.
+### PR 2 — Cloud host discovery via one per-principal `AttachHub` DO. LANDED.
+- Collapse Cloud attach from a relay DO per `(principalId, hostId)` pair plus a separate
+  directory DO into **one `AttachHub` DO per principal** (`principals/<pid>/attach-hub`).
+  Both `WS /attach` and `GET /attach/hosts` route to it by `principalId` alone.
+- The hub reuses the `createAttachRelay` coordinator verbatim (its `(principalId, hostId)`
+  keying and `liveHostIds` were always multi-host), records host membership+label in
+  `ctx.storage` on a winning registration, and answers `list` by joining that membership
+  with `liveHostIds` — no `recordOpen`/`recordClose`, no stored `live` flag.
+- Fills both `resolveRelay` and `resolveHostDirectory` on Cloud over the one `ATTACH_HUB`
+  binding; the route and shape are unchanged from PR 1. Migration `v4` renames the class
+  `AttachRelay -> AttachHub` (lossless: relay DOs store nothing).
 
 ### PR 3 — Super Chat phone connect UI.
 - A connect screen (a client-mode of the SPA, distinct from the loopback

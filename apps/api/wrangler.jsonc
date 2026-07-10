@@ -50,18 +50,24 @@
 				"name": "ROOM",
 				"class_name": "Room"
 			},
-			// One AttachRelay actor per (principalId, hostId) pair holds the live
-			// Super Chat rendezvous sockets (ADR-0115). It stores no frames and owns
-			// no ctx.storage; the DO is a pure socket router.
+			// One AttachHub actor per principal holds that principal's live Super Chat
+			// rendezvous sockets AND answers its host discovery (ADR-0115). Every host
+			// and client of the principal routes here, so `GET /attach/hosts` joins
+			// retained membership with the live socket set in one actor: no separate
+			// directory DO and no cross-DO liveness push. Its only ctx.storage is the
+			// retained host membership+label; the coordinator stores no frames.
 			{
-				"name": "ATTACH_RELAY",
-				"class_name": "AttachRelay"
+				"name": "ATTACH_HUB",
+				"class_name": "AttachHub"
 			}
 		]
 	},
-	// SQLite-backed DO: persistent storage survives hibernation. AttachRelay
-	// stores nothing, but new DO classes take the SQLite storage backend (the
-	// modern default) whether or not they touch it.
+	// SQLite-backed DO: persistent storage survives hibernation. The AttachHub
+	// keeps only its retained host membership in ctx.storage, but new DO classes
+	// take the SQLite storage backend (the modern default) whether or not they
+	// touch it. v4 renames the per-pair AttachRelay class to the per-principal
+	// AttachHub (a rename, not a new class, so it applies whether or not v3 ever
+	// deployed and carries no state loss: relay DOs store nothing).
 	"migrations": [
 		{
 			"tag": "v1",
@@ -75,6 +81,10 @@
 		{
 			"tag": "v3",
 			"new_sqlite_classes": ["AttachRelay"]
+		},
+		{
+			"tag": "v4",
+			"renamed_classes": [{ "from": "AttachRelay", "to": "AttachHub" }]
 		}
 	],
 	// --- Secrets (set via `wrangler secret put`, typed via `wrangler types`) ---

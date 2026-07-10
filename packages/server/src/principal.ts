@@ -26,14 +26,18 @@ import type { PrincipalId } from '@epicenter/identity';
 export type RoomDoName = `principals/${string}/rooms/${string}`;
 
 /**
- * Durable Object name template for one AttachRelay pair (ADR-0115). One DO per
- * `(principalId, hostId)`: the host and every client of that pair route to the
- * same actor, which is the invariant the in-DO {@link createAttachRelay}
- * coordinator needs to see both sockets. The `principalId` segment is the
- * partition, so a client that guesses another principal's `hostId` still lands
- * in its OWN partition's DO (an empty one) and pairs with no host.
+ * Durable Object name template for one principal's AttachHub (ADR-0115). One DO
+ * per principal: every desktop host and every client of that principal route to
+ * the same actor, which is the invariant the in-DO {@link createAttachRelay}
+ * coordinator needs to see every socket. That one actor owns both the live
+ * rendezvous sockets and the host directory a phone's `GET /attach/hosts` reads,
+ * so liveness is joined against the live socket set with no cross-DO push. There
+ * is no `hostId` segment: one hub holds every host of the principal, not one
+ * pair. The `principalId` segment is the partition, so a client that guesses
+ * another principal's `hostId` still lands in its OWN hub (holding none of the
+ * target's hosts) and pairs with no host.
  */
-export type AttachHostDoName = `principals/${string}/attach-hosts/${string}`;
+export type AttachHubDoName = `principals/${string}/attach-hub`;
 
 /**
  * R2 object key template for a content-addressed blob, single form. The id
@@ -51,12 +55,9 @@ export function doName(principalId: PrincipalId, roomId: string): RoomDoName {
 	return `principals/${principalId}/rooms/${roomId}`;
 }
 
-/** Durable name of one AttachRelay pair's Cloudflare Durable Object. */
-export function attachHostDoName(
-	principalId: PrincipalId,
-	hostId: string,
-): AttachHostDoName {
-	return `principals/${principalId}/attach-hosts/${hostId}`;
+/** Durable name of one principal's AttachHub Cloudflare Durable Object. */
+export function attachHubDoName(principalId: PrincipalId): AttachHubDoName {
+	return `principals/${principalId}/attach-hub`;
 }
 
 /** Durable key of a content-addressed blob's R2 object (id = sha256 hex). */

@@ -141,7 +141,7 @@ function createAttachRelayApp(
  * the same shape {@link createServerApp}'s `resolveRooms` takes: a Bun host
  * closes over its one coordinator (`() => attachRelay`); the Cloud Worker builds
  * a Durable Object registry over its bound namespace
- * (`(env) => createDurableObjectAttachRelay((env as Cloudflare.Env).ATTACH_RELAY)`).
+ * (`(env) => createDurableObjectAttachHub((env as Cloudflare.Env).ATTACH_HUB)`).
  */
 export function mountAttachRelayApp<E extends Env = Env>(
 	app: Hono<E>,

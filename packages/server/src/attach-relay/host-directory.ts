@@ -41,12 +41,17 @@
  *   never a stale `online`: the coordinator drops it, and the retained
  *   membership renders `offline`.
  *
- * The store is in-memory and per-process (a restart forgets membership, exactly
- * as the grant store and coordinator do); persisting it is deferred until a real
- * need earns it. The `unreachable` status is emitted only by a store that can
- * hold "claimed online but the socket is dead" (the Cloud per-principal index,
- * deferred); the Bun self-host reader here emits only `online`/`offline`, and
- * the client's ask-gate treats `offline` and `unreachable` identically.
+ * The Bun store is in-memory and per-process (a restart forgets membership,
+ * exactly as the grant store and coordinator do); persisting it is deferred until
+ * a real need earns it. The `unreachable` status is emitted only by a reader that
+ * reconciles a stored "claimed online" against a dead socket, and neither reader
+ * does so yet. Both instead join retained membership with a live host set in the
+ * one actor that owns the sockets, so liveness is never a stored flag that can go
+ * stale: the Bun self-host reader here joins with the coordinator, and the Cloud
+ * `AttachHub` (`cloudflare-do.ts`) joins its retained membership with the same
+ * coordinator inside one per-principal DO. Both emit only `online`/`offline`. The
+ * `unreachable` state stays reserved for a future reconciler, and the client's
+ * ask-gate already treats `offline` and `unreachable` identically.
  */
 
 import { type } from 'arktype';
@@ -89,9 +94,9 @@ export type AttachHostDirectoryEntry = typeof AttachHostDirectoryEntry.infer;
 /**
  * The read seam a discovery mount drives: given the server-stamped principal,
  * return that principal's host directory entries. One deployment binds one
- * backend behind it (the Bun self-host reader below; a Cloud per-principal index
- * later), exactly the `resolveRelay`/`resolveRooms` shape, so the mount stays
- * backend-blind. Async so a Durable-Object-backed index can satisfy it.
+ * backend behind it (the Bun self-host reader below; the Cloud `AttachHub` DO),
+ * exactly the `resolveRelay`/`resolveRooms` shape, so the mount stays
+ * backend-blind. Async so a Durable-Object-backed hub can satisfy it.
  */
 export type HostDirectoryReader = {
 	list(

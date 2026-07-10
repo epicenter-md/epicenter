@@ -29,9 +29,9 @@ export {
 // self-hosted instance mounts it behind per-device grants (`mountAttachRelayApp`).
 // The coordinator itself (`createAttachRelay`) stays package-internal, the way
 // the room coordinator does; only its transport and mounts are public. The Cloud
-// Durable Object transport (`createDurableObjectAttachRelay`, `AttachRelay`)
-// lives in the main barrel instead: its module imports `cloudflare:workers` and
-// cannot load in a Bun process.
+// Durable Object transport (`createDurableObjectAttachHub`, `AttachHub`) lives in
+// the main barrel instead: its module imports `cloudflare:workers` and cannot
+// load in a Bun process.
 export {
 	RELAY_CLOSE,
 	type RelayToHostFrame,

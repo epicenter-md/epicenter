@@ -15,16 +15,18 @@
 
 import { PRODUCTION_API_URL } from '@epicenter/constants/apps';
 import {
-	AttachRelay,
+	AttachHub,
 	type CloudEnv,
 	connectHyperdriveDb,
-	createDurableObjectAttachRelay,
+	createDurableObjectAttachHub,
+	createDurableObjectHostDirectory,
 	createDurableObjectRooms,
 	createServerApp,
 	mountAttachRelayApp,
 	mountBlobsApp,
 	mountCloudAuth,
 	mountCloudDb,
+	mountHostDirectoryApp,
 	mountInferenceApp,
 	mountRoomsApp,
 	mountSessionApp,
@@ -141,15 +143,27 @@ mountRoomsApp(app, { resolveBearerPrincipal: resolveRequestOAuthPrincipal });
 // live session bytes between a signed-in desktop host and a signed-in client of
 // the same principal. Like rooms it is WS-aware and resolves the OAuth bearer
 // itself; the principal is stamped server-side, never the query. The transport is
-// a Durable Object per `(principalId, hostId)` pair, bound here at the app edge
-// where this Worker's generated `ATTACH_RELAY` binding is typed (ADR-0066, the
-// same edge as ROOM). On Cloud a signed-in bearer is the whole attach
-// authorization: no device-grant store, pairing ceremony, or QR (self-host keeps
-// per-device grants because it has no account substrate).
+// a per-principal `AttachHub` Durable Object, bound here at the app edge where
+// this Worker's generated `ATTACH_HUB` binding is typed (ADR-0066, the same edge
+// as ROOM). On Cloud a signed-in bearer is the whole attach authorization: no
+// device-grant store, pairing ceremony, or QR (self-host keeps per-device grants
+// because it has no account substrate).
 mountAttachRelayApp(app, {
 	resolveBearerPrincipal: resolveRequestOAuthPrincipal,
 	resolveRelay: (env) =>
-		createDurableObjectAttachRelay((env as Cloudflare.Env).ATTACH_RELAY),
+		createDurableObjectAttachHub((env as Cloudflare.Env).ATTACH_HUB),
+});
+// Super Chat host discovery (ADR-0115 clause 3): `GET /attach/hosts` lists this
+// signed-in principal's desktop hosts and each one's `online`/`offline` liveness,
+// the step before attach. Same route and closed `{ hostId, label, status }` shape
+// as self-host; the backend is the honest asymmetry (ADR-0075). Cloud reads the
+// SAME per-principal `AttachHub` DO that holds the live sockets, so liveness is a
+// read-time join against the live socket set, never a pushed flag. The principal
+// is stamped from the OAuth bearer, never the query.
+mountHostDirectoryApp(app, {
+	resolveBearerPrincipal: resolveRequestOAuthPrincipal,
+	resolveHostDirectory: (env) =>
+		createDurableObjectHostDirectory((env as Cloudflare.Env).ATTACH_HUB),
 });
 // Content-addressed blob store (supersedes the retired assets surface). v1 is
 // unmetered (no Autumn policy): Autumn's check() denies by default with no plan
@@ -195,4 +209,4 @@ app.get('/billing', (c) => c.redirect('/dashboard'));
 export default {
 	fetch: app.fetch,
 };
-export { AttachRelay, Room };
+export { AttachHub, Room };
