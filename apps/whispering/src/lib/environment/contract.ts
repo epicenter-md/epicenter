@@ -1,5 +1,8 @@
 import type { Device, DeviceAcquisitionOutcome } from '@epicenter/recorder';
 import type { Result } from 'wellcrafted/result';
+import type { CaptureSurface } from '$lib/constants/audio';
+import type { CursorDelivery } from '$lib/desktop/contract';
+import type { TranscriptionError } from '$lib/operations/transcribe';
 import type { Os, PlatformAuth } from '$lib/platform/types';
 import type { BlobStore } from '$lib/services/blob-store/types';
 import type { DownloadService } from '$lib/services/download/types';
@@ -9,6 +12,8 @@ import type {
 	RecordingSession,
 } from '$lib/services/recorder/contract';
 import type { TextService } from '$lib/services/text/types';
+import type { TranscriptionServiceId } from '$lib/services/transcription/providers';
+import type { LocalModels } from '$lib/state/local-models.svelte';
 
 type StartRecordingResult = Result<
 	{
@@ -38,12 +43,27 @@ export type ManualRecordingEnvironment = {
  * Members belong here only when the product operation exists in both hosts and
  * the implementation changes at build time.
  */
-export type WhisperingEnvironment = {
+export type WhisperingBaseEnvironment = {
 	auth: PlatformAuth;
 	artifacts: BlobStore;
+	captureSurfaces: readonly CaptureSurface[];
 	downloads: DownloadService;
+	delivery: CursorDelivery;
 	notifications: (title: string, body: string | undefined) => void;
 	os: Os;
 	recording: ManualRecordingEnvironment;
 	text: TextService;
+};
+
+export type TranscriptionEnvironment = {
+	providers: readonly TranscriptionServiceId[];
+	localModels: LocalModels;
+	transcribeAndPersist(
+		recordingId: string,
+	): Promise<Result<string, TranscriptionError>>;
+	prewarmSelectedModel(): void;
+};
+
+export type WhisperingEnvironment = WhisperingBaseEnvironment & {
+	transcription: TranscriptionEnvironment;
 };

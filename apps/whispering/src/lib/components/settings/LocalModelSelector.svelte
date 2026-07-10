@@ -13,7 +13,7 @@
 	import HardDriveDownload from '@lucide/svelte/icons/hard-drive-download';
 	import Trash from '@lucide/svelte/icons/trash-2';
 	import X from '@lucide/svelte/icons/x';
-	import { localModels } from '$lib/state/local-models.svelte';
+	import { environment } from '#environment';
 	import type { ModelInfo } from '$lib/tauri/commands.types';
 
 	/**
@@ -28,6 +28,7 @@
 		/** Bindable catalog id of the active model. */
 		value: string;
 	} = $props();
+	const localModels = environment.transcription.localModels;
 
 	// Re-scan on mount and window focus: the shared HF cache can change outside
 	// the app (another HF tool, a manual delete), so the download status stays

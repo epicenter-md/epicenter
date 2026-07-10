@@ -4,7 +4,7 @@
 	import TriangleAlertIcon from '@lucide/svelte/icons/triangle-alert';
 	import { accessibilityGuide } from '$lib/components/MacosAccessibilityGuideDialog.svelte';
 	import { outputWritesToCursor } from '$lib/operations/delivery';
-	import { dictationCapability } from '$lib/state/dictation-capability.svelte';
+	import { dictationCapability } from '#dictation-capability';
 
 	// A home banner that fires ONLY when something the user configured is broken,
 	// never as a feature pitch. The dictation capability Rust owns already encodes

@@ -21,6 +21,9 @@ export const DownloadError = defineErrors({
 		message: `Failed to download in browser: ${extractErrorMessage(cause)}`,
 		cause,
 	}),
+	NotSupported: () => ({
+		message: 'Epicenter V1 does not support exporting files.',
+	}),
 });
 export type DownloadError = InferErrors<typeof DownloadError>;
 

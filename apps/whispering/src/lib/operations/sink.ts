@@ -7,6 +7,7 @@
  * construction, so a sink is reusable outside a settings-backed caller too.
  */
 import { services } from '$lib/services';
+import { environment } from '#environment';
 import type { DeliveryReach } from './delivery-reach';
 
 type SinkKind = 'cursor' | 'clipboard' | 'ledger';
@@ -65,7 +66,7 @@ export function createCursorSink({
 		kind: 'cursor',
 		async deliver(text) {
 			const { data: writeOutcome, error: writeError } =
-				await services.text.writeToCursor(text, keepOnClipboard);
+				await environment.delivery.write(text, keepOnClipboard);
 
 			if (writeError) {
 				// The write failed outright (rare). Ensure the text is at least on
@@ -77,7 +78,7 @@ export function createCursorSink({
 			if (writeOutcome === 'pasted' && pressEnter) {
 				// The Enter keystroke is a nicety on top of a successful write; a
 				// failure here does not change the delivery outcome.
-				await services.text.simulateEnterKeystroke();
+				await environment.delivery.pressEnter();
 			}
 
 			// A clean `pasted` reached the configured output; a `leftOnClipboard`

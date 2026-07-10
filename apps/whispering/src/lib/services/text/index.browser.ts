@@ -1,5 +1,5 @@
-import { Err, Ok, type Result, tryAsync } from 'wellcrafted/result';
-import type { TextService, WriteTextOutcome } from './types';
+import { Err, Ok, tryAsync } from 'wellcrafted/result';
+import type { TextService } from './types';
 import { TextError } from './types';
 
 export type { TextError, TextService } from './types';
@@ -21,36 +21,9 @@ export const TextServiceLive = {
 		});
 
 		if (copyError) {
-			// Extension fallback code commented out for now
-			// Could be re-enabled if extension support is needed
-			return Ok(undefined);
+			return Err(copyError);
 		}
 		return Ok(undefined);
 	},
 
-	writeToCursor: async (
-		text,
-		_keepOnClipboard,
-	): Promise<Result<WriteTextOutcome, TextError>> => {
-		// Browsers cannot programmatically paste for security reasons, so the best we
-		// can do is leave the text on the clipboard for the user to paste manually.
-		// That is the `leftOnClipboard` reach, not a failure. `keepOnClipboard` is
-		// moot here: the text is always left on the clipboard either way.
-		const { error } = await tryAsync({
-			try: () => navigator.clipboard.writeText(text),
-			catch: (error) => TextError.WriteToCursor({ cause: error }),
-		});
-		if (error) return Err(error);
-		return Ok('leftOnClipboard');
-	},
-
-	simulateEnterKeystroke: async () =>
-		TextError.NotSupported({
-			operation: 'Simulating keystrokes',
-		}),
-
-	simulateCopyKeystroke: async () =>
-		TextError.NotSupported({
-			operation: 'Simulating keystrokes',
-		}),
 } satisfies TextService;

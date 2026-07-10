@@ -1,6 +1,6 @@
 import { defineKeys } from 'wellcrafted/query';
 import { Ok, partitionResults } from 'wellcrafted/result';
-import { transcribeAndPersist } from '$lib/operations/transcribe';
+import { environment } from '#environment';
 import { defineMutation, queryClient } from '$lib/rpc/client';
 import type { Recording } from '$lib/state/recordings.svelte';
 
@@ -18,14 +18,17 @@ export const transcription = {
 	},
 	transcribeRecording: defineMutation({
 		mutationKey: transcriptionKeys.isTranscribing,
-		mutationFn: (recording: Recording) => transcribeAndPersist(recording.id),
+		mutationFn: (recording: Recording) =>
+			environment.transcription.transcribeAndPersist(recording.id),
 	}),
 
 	transcribeRecordings: defineMutation({
 		mutationKey: transcriptionKeys.isTranscribing,
 		mutationFn: async (recordings: Recording[]) => {
 			const results = await Promise.all(
-				recordings.map((recording) => transcribeAndPersist(recording.id)),
+				recordings.map((recording) =>
+					environment.transcription.transcribeAndPersist(recording.id),
+				),
 			);
 			return Ok(partitionResults(results));
 		},

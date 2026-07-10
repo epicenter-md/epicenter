@@ -1,6 +1,6 @@
 <script module lang="ts">
 	import { toast } from '@epicenter/ui/sonner';
-	import { tauri } from '#platform/tauri';
+	import { dictationCapability } from '#dictation-capability';
 
 	/**
 	 * Global opener for the macOS Accessibility guide. Mirrors the
@@ -49,9 +49,8 @@
 	 * flips to `active` on its own when the Rust supervisor next sees the grant.
 	 */
 	export async function openSystemSettings() {
-		if (!tauri) return;
-		await tauri.permissions.accessibility.request();
-		const { error } = await tauri.permissions.accessibility.openSettings();
+		await dictationCapability.requestAccess();
+		const { error } = await dictationCapability.openAccessSettings();
 		if (error) {
 			toast.info('Open System Settings manually', {
 				description:
@@ -74,7 +73,6 @@
 	import CheckIcon from '@lucide/svelte/icons/check';
 	import SettingsIcon from '@lucide/svelte/icons/settings';
 	import MacosAccessibilityGuide from '$lib/components/MacosAccessibilityGuide.svelte';
-	import { dictationCapability } from '$lib/state/dictation-capability.svelte';
 
 	// The Rust supervisor pushes the capability change, so the dialog flips to its
 	// granted state the moment the supervisor sees the grant, with no reload.

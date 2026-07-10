@@ -12,10 +12,6 @@
 			"epicenter": "./src/lib/commands.tauri.ts",
 			"default": "./src/lib/commands.browser.ts"
 		},
-		"#platform/http": {
-			"epicenter": "./src/lib/services/http/index.tauri.ts",
-			"default": "./src/lib/services/http/index.browser.ts"
-		},
 		"#platform/os": {
 			"epicenter": "./src/lib/platform/os.tauri.ts",
 			"default": "./src/lib/platform/os.browser.ts"
@@ -23,10 +19,6 @@
 		"#platform/system-shortcuts": {
 			"epicenter": "./src/lib/platform/system-shortcuts.tauri.ts",
 			"default": "./src/lib/platform/system-shortcuts.browser.ts"
-		},
-		"#platform/recording-overlay-owner": {
-			"epicenter": "./src/routes/(app)/_runtime/attach-recording-overlay.tauri.svelte.ts",
-			"default": "./src/routes/(app)/_runtime/attach-recording-overlay.browser.ts"
 		},
 		"#platform/tauri": {
 			"epicenter": "./src/lib/tauri.tauri.ts",
@@ -43,6 +35,30 @@
 		"#environment": {
 			"epicenter": "./src/lib/environment/epicenter.ts",
 			"default": "./src/lib/environment/browser.ts"
+		},
+		"#environment-base": {
+			"epicenter": "./src/lib/environment/base.epicenter.ts",
+			"default": "./src/lib/environment/base.browser.ts"
+		},
+		"#desktop": {
+			"epicenter": "./src/lib/desktop/epicenter.ts",
+			"default": "./src/lib/desktop/unavailable.ts"
+		},
+		"#app-shell": {
+			"epicenter": "./src/lib/app-shell/epicenter.svelte",
+			"default": "./src/lib/app-shell/browser.svelte"
+		},
+		"#dictation-capability": {
+			"epicenter": "./src/lib/state/dictation-capability.epicenter.svelte.ts",
+			"default": "./src/lib/state/dictation-capability.browser.svelte.ts"
+		},
+		"#desktop-promotion": {
+			"epicenter": "./src/lib/app-shell/NoDesktopPromotion.svelte",
+			"default": "./src/lib/app-shell/DesktopPromotion.svelte"
+		},
+		"#completion-transport": {
+			"epicenter": "./src/lib/operations/completion-transport.epicenter.ts",
+			"default": "./src/lib/operations/completion-transport.browser.ts"
 		}
 	},
 	"scripts": {
@@ -99,9 +115,7 @@
 		"@tauri-apps/api": "catalog:",
 		"@tauri-apps/plugin-clipboard-manager": "^2.3.0",
 		"@tauri-apps/plugin-deep-link": "catalog:",
-		"@tauri-apps/plugin-dialog": "^2.3.2",
 		"@tauri-apps/plugin-fs": "catalog:",
-		"@tauri-apps/plugin-http": "2.5.4",
 		"@tauri-apps/plugin-notification": "^2.3.0",
 		"@tauri-apps/plugin-opener": "catalog:",
 		"@tauri-apps/plugin-os": "^2.3.0",

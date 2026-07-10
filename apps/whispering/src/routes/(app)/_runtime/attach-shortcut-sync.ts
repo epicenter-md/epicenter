@@ -1,4 +1,4 @@
-import { tauri } from '#platform/tauri';
+import { desktop } from '#desktop';
 import { shortcuts } from '$lib/platform/shortcuts';
 
 /**
@@ -14,6 +14,6 @@ import { shortcuts } from '$lib/platform/shortcuts';
 export function attachShortcutSync() {
 	void shortcuts.sync();
 	return () => {
-		void tauri?.keyboard.unregisterChords();
+		void desktop.shortcuts.replace([]);
 	};
 }

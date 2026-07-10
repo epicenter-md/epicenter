@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { Button } from '@epicenter/ui/button';
-	import { dictationCapability } from '$lib/state/dictation-capability.svelte';
+	import { dictationCapability } from '#dictation-capability';
 
 	// Dev-only affordance (rendered behind `import.meta.env.DEV` in GlobalDialogs):
 	// cycle the capability override so the notice and guide can be tested on any

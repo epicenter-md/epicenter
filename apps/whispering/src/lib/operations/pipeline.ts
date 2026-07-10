@@ -1,13 +1,13 @@
 import { InstantString } from '@epicenter/field';
 import { IanaTimeZone } from '@epicenter/workspace';
 import { extractErrorMessage } from 'wellcrafted/error';
+import { environment } from '#environment';
 import {
 	deliverTranscriptionResult,
 	type TranscriptionSource,
 } from '$lib/operations/delivery';
 import { polishWillRun, runPolish } from '$lib/operations/run-polish';
 import { sound } from '$lib/operations/sound';
-import { transcribeAndPersist } from '$lib/operations/transcribe';
 import { report } from '$lib/report';
 import { services } from '$lib/services';
 import type { RecorderStopResult } from '$lib/services/recorder/contract';
@@ -112,7 +112,7 @@ export async function processRecordingPipeline({
 			});
 
 	const { data: transcribedText, error: transcribeError } =
-		await transcribeAndPersist(recordingId);
+		await environment.transcription.transcribeAndPersist(recordingId);
 
 	if (transcribeError) {
 		if (isDictation) {

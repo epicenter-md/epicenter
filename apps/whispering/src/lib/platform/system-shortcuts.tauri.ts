@@ -1,11 +1,12 @@
 import { extractErrorMessage } from 'wellcrafted/error';
 import { Err, tryAsync } from 'wellcrafted/result';
+import { desktop } from '#desktop';
 import { type Command, commands } from '$lib/commands';
 import {
 	DEFAULT_GLOBAL_BINDINGS,
 	deviceConfig,
 } from '$lib/state/device-config.svelte';
-import { type ChordRegistration, tauriOnly } from '$lib/tauri.tauri';
+import type { GlobalShortcutRegistration } from '$lib/desktop/contract';
 import {
 	bindingsEqual,
 	isRegistrableChord,
@@ -29,6 +30,8 @@ import type { Shortcuts } from './types';
  */
 
 const globalKey = (id: Command['id']) => `shortcuts.global.${id}` as const;
+
+let triggerListener: Promise<() => void> | null = null;
 
 /**
  * Device-config validates `keys` structurally as `string[]`, so this read is the
@@ -66,7 +69,7 @@ export const systemShortcuts: Shortcuts | null = createShortcuts({
 	},
 	syncErrorTitle: 'Error registering global shortcuts',
 	async push(entries) {
-		const chords: ChordRegistration[] = [];
+		const chords: GlobalShortcutRegistration[] = [];
 		for (const entry of entries) {
 			if (entry.binding === null) continue;
 			const accelerator = keyBindingToAccelerator(entry.binding);
@@ -77,7 +80,13 @@ export const systemShortcuts: Shortcuts | null = createShortcuts({
 		// the whole replace-all; surface it instead of partially binding.
 		const { error } = await tryAsync({
 			try: async () => {
-				await tauriOnly.keyboard.registerChords(chords);
+				triggerListener ??= desktop.shortcuts.onTriggered(async (trigger) => {
+					const { dispatchCommandTrigger } = await import('$lib/commands');
+					dispatchCommandTrigger(trigger.commandId, trigger.state);
+				});
+				await triggerListener;
+				const { error } = await desktop.shortcuts.replace(chords);
+				if (error !== null) throw new Error(error);
 			},
 			catch: (cause) =>
 				Err({

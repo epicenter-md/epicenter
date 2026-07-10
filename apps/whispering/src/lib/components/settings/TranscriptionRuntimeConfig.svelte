@@ -33,12 +33,10 @@
 		type ProviderAccess,
 	} from '$lib/services/transcription/providers';
 	import { deviceConfig } from '$lib/state/device-config.svelte';
-	import { localModels } from '$lib/state/local-models.svelte';
 	import { recordingActive } from '$lib/state/recording-active.svelte';
 	import { settings } from '$lib/state/settings.svelte';
 	import { createCopyFn } from '$lib/utils/createCopyFn';
 	import { environment } from '#environment';
-	import { tauri } from '#platform/tauri';
 	import AdvancedDisclosure from './AdvancedDisclosure.svelte';
 	import LocalModelSelector from './LocalModelSelector.svelte';
 	import ProviderConfigFields from './ProviderConfigFields.svelte';
@@ -74,7 +72,7 @@
 	// apply to whichever route is active.
 	const currentServiceCapabilities = $derived.by(() => {
 		if (activeService === 'local') {
-			const model = localModels.find(
+			const model = environment.transcription.localModels.find(
 				deviceConfig.get(PROVIDERS.local.modelConfigKey),
 			);
 			return {
@@ -85,7 +83,10 @@
 		return PROVIDERS[activeService].capabilities;
 	});
 
-	const isLocalProvider = $derived(Boolean(tauri) && activeAccess === 'onDevice');
+	const isLocalProvider = $derived(
+		environment.transcription.providers.includes(activeService) &&
+			activeAccess === 'onDevice',
+	);
 
 	const spokenLanguageLabel = $derived(
 		SUPPORTED_LANGUAGES_OPTIONS.find(
@@ -110,14 +111,22 @@
 				(typeof ACCESS_GROUPS)[ProviderAccess],
 			][]
 		)
-			.filter(([access]) => access !== 'onDevice' || tauri)
+			.filter(([access]) =>
+				TRANSCRIPTION_PROVIDERS.some(
+					(entry) =>
+						entry.access === access &&
+						environment.transcription.providers.includes(entry.id),
+				),
+			)
 			.map(([access, meta]) => ({ access, ...meta })),
 	);
 
 	/** The keyed providers, one card each; narrowed so `models`/`modelSettingKey` read. */
 	type KeyEntry = Extract<TranscriptionProviderEntry, { access: 'key' }>;
 	const KEY_ENTRIES = TRANSCRIPTION_PROVIDERS.filter(
-		(entry): entry is KeyEntry => entry.access === 'key',
+		(entry): entry is KeyEntry =>
+			entry.access === 'key' &&
+			environment.transcription.providers.includes(entry.id),
 	);
 
 	// Signing in redirects/reloads (Option A), which kills an in-flight browser

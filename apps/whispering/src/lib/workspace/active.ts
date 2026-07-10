@@ -1,5 +1,8 @@
 import { createNodeId } from '@epicenter/workspace';
-import { defaultTranscriptionService, environment } from '#environment';
+import {
+	baseEnvironment,
+	defaultTranscriptionService,
+} from '#environment-base';
 import { openWhisperingBrowser } from './browser';
 
 /**
@@ -7,8 +10,8 @@ import { openWhisperingBrowser } from './browser';
  * Authentication chooses its connection once; it never gates workspace access.
  */
 export const whispering = openWhisperingBrowser({
-	auth: environment.auth,
+	auth: baseEnvironment.auth,
 	nodeId: createNodeId({ storage: window.localStorage }),
 	defaultTranscriptionService,
-	downloads: environment.downloads,
+	downloads: baseEnvironment.downloads,
 });

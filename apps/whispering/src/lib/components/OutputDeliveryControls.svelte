@@ -7,7 +7,7 @@
 	} from '$lib/components/accessibility-feature-copy';
 	import { openSystemSettings } from '$lib/components/MacosAccessibilityGuideDialog.svelte';
 	import { SettingSwitch } from '$lib/components/settings';
-	import { dictationCapability } from '$lib/state/dictation-capability.svelte';
+	import { dictationCapability } from '#dictation-capability';
 	import type { BooleanSettingKey } from '$lib/state/settings.svelte';
 	import { settings } from '$lib/state/settings.svelte';
 	import { tauri } from '#platform/tauri';

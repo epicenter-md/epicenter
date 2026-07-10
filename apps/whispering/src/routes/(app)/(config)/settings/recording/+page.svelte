@@ -28,6 +28,10 @@
 			mutationFn: whispering.actions.recordings_export_markdown,
 		}),
 	);
+	const recordingTriggerOptions = RECORDING_TRIGGER_OPTIONS.filter(
+		(option) =>
+			option.value === 'manual' || environment.captureSurfaces.includes('vad'),
+	);
 </script>
 
 <svelte:head> <title>Recording Settings - Whispering</title> </svelte:head>
@@ -43,8 +47,8 @@
 			store={settings}
 			key="recording.trigger"
 			label="Recording Trigger"
-			items={RECORDING_TRIGGER_OPTIONS}
-			description="Choose how recording starts: {RECORDING_TRIGGER_OPTIONS.map(
+			items={recordingTriggerOptions}
+			description="Choose how recording starts: {recordingTriggerOptions.map(
 				(option) => option.label.toLowerCase(),
 			).join(', ')}"
 		/>

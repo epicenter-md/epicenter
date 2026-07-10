@@ -58,3 +58,9 @@ export type TranscriptionSpec = {
 	language?: string | null;
 	initialPrompt?: string | null;
 };
+
+export type UnloadPolicy =
+	| 'never'
+	| 'immediately'
+	| 'after_5_minutes'
+	| 'after_30_minutes';

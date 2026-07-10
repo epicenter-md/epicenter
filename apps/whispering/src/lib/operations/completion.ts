@@ -1,6 +1,6 @@
 import { CompleteError, complete, resolveConnection } from '@epicenter/client';
 import type { Result } from 'wellcrafted/result';
-import { customFetch } from '#platform/http';
+import { completionFetch } from '#completion-transport';
 import {
 	type CompletionState,
 	resolveCompletionStateFromConfig,
@@ -45,6 +45,13 @@ export function completeWithGlobalDefault({
 	signal?: AbortSignal;
 }): Promise<Result<string, CompleteError>> {
 	const { target } = resolveCompletionState();
+	if (completionFetch === null) {
+		return Promise.resolve(
+			CompleteError.TransportFailed({
+				cause: new Error('Epicenter V1 does not support remote text completion.'),
+			}),
+		);
+	}
 	if (!target) {
 		const provider = settings.get('completion.provider');
 		return Promise.resolve(
@@ -58,7 +65,7 @@ export function completeWithGlobalDefault({
 	return complete(
 		resolveConnection(
 			{ baseUrl: target.baseUrl, apiKey: target.apiKey },
-			customFetch,
+			completionFetch,
 		),
 		{
 			model: settings.get('completion.model').trim(),

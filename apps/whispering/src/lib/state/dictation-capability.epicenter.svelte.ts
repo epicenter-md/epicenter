@@ -1,4 +1,4 @@
-import { tauri } from '#platform/tauri';
+import { desktop } from '#desktop';
 import type { DictationCapability } from '$lib/tauri/commands.types';
 
 const OVERRIDABLE_DICTATION_CAPABILITIES = [
@@ -25,7 +25,6 @@ type DictationCapabilityOverride =
  */
 function createDictationCapability() {
 	let status = $state<DictationCapability>('unknown');
-	let detached = false;
 
 	// Dev-only override to exercise the notice/guide on any build (including web
 	// dev, where the real value is always `unknown`) without touching System
@@ -41,6 +40,8 @@ function createDictationCapability() {
 	}
 
 	return {
+		requestAccess: desktop.dictation.requestAccess,
+		openAccessSettings: desktop.dictation.openAccessSettings,
 		/** Accessibility is trusted: paste at cursor can work. */
 		get isActive(): boolean {
 			return effective() === 'active';
@@ -83,15 +84,13 @@ function createDictationCapability() {
 		 * before the seed resolves is never clobbered by the stale seed.
 		 */
 		attach(): () => void {
-			if (!tauri) return () => {};
-			detached = false;
-			const t = tauri;
+			let detached = false;
 			let unlisten: (() => void) | undefined;
-			void t.keyboard.getDictationCapability().then((capability) => {
+			void desktop.dictation.getCapability().then((capability) => {
 				if (!detached && status === 'unknown') status = capability;
 			});
-			void t.keyboard
-				.onDictationCapabilityChanged((capability) => {
+			void desktop.dictation
+				.onCapabilityChanged((capability) => {
 					status = capability;
 				})
 				.then((fn) => {

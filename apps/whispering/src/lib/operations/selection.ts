@@ -1,6 +1,7 @@
 import type { Result } from 'wellcrafted/result';
 import type { TextError } from '$lib/services/text/types';
 import { services } from '$lib/services';
+import { environment } from '#environment';
 
 /**
  * How long to wait after the synthetic copy before reading the clipboard. The OS
@@ -29,7 +30,7 @@ export async function captureSelection(): Promise<
 	if (saved.error) return saved;
 	const originalClipboard = saved.data;
 
-	const copied = await services.text.simulateCopyKeystroke();
+	const copied = await environment.delivery.copySelection();
 	if (copied.error) return copied;
 
 	await new Promise((resolve) => setTimeout(resolve, COPY_SETTLE_MS));

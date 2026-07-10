@@ -18,11 +18,14 @@ type _EnvironmentIsComplete = Expect<
 		keyof WhisperingEnvironment,
 		| 'auth'
 		| 'artifacts'
+		| 'captureSurfaces'
 		| 'downloads'
+		| 'delivery'
 		| 'notifications'
 		| 'os'
 		| 'recording'
 		| 'text'
+		| 'transcription'
 	>
 >;
 type _EnvironmentHasNoNullableCapabilities = Expect<
@@ -32,7 +35,7 @@ type _EnvironmentHasNoNullableCapabilities = Expect<
 type _DesktopIsComplete = Expect<
 	Equal<
 		keyof WhisperingDesktop,
-		'shortcuts' | 'overlay' | 'autostart' | 'window' | 'delivery'
+		'shortcuts' | 'dictation' | 'localTranscription' | 'delivery'
 	>
 >;
 type _DesktopHasNoNullableCapabilities = Expect<

@@ -1,4 +1,5 @@
 import type { CaptureSurface } from '$lib/constants/audio';
+import { environment } from '#environment';
 import { settings } from '$lib/state/settings.svelte';
 
 /**
@@ -25,9 +26,10 @@ export const captureSurface = {
 	/** The surface on screen now: `import` while the import overlay is open,
 	 *  otherwise the durable recording trigger. */
 	get current(): CaptureSurface {
-		return isImportSurfaceShowing
+		const selected: CaptureSurface = isImportSurfaceShowing
 			? 'import'
 			: settings.get('recording.trigger');
+		return environment.captureSurfaces.includes(selected) ? selected : 'manual';
 	},
 
 	/** Open the file-import overlay over the current trigger. */

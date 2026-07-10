@@ -1,3 +1,3 @@
 export type RuntimeOwner = {
-	attach: () => () => void;
+	attach(): () => void;
 };

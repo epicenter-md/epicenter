@@ -8,7 +8,12 @@ import {
 	vadAssetSources,
 } from '@epicenter/recorder/vad-assets';
 import { workspaceAppViteConfig } from '@epicenter/vite-config';
-import { defaultClientConditions, defineConfig, mergeConfig } from 'vite';
+import {
+	defaultClientConditions,
+	defaultServerConditions,
+	defineConfig,
+	mergeConfig,
+} from 'vite';
 import devtoolsJson from 'vite-plugin-devtools-json';
 import { viteStaticCopy } from 'vite-plugin-static-copy';
 
@@ -49,5 +54,12 @@ export default defineConfig(
 				conditions: ['epicenter', ...defaultClientConditions],
 			}),
 		},
+		...(isEpicenterSurface && {
+			ssr: {
+				resolve: {
+					conditions: ['epicenter', ...defaultServerConditions],
+				},
+			},
+		}),
 	}),
 );

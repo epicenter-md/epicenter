@@ -17,6 +17,7 @@ import type {
 	RecordingArtifact,
 	TranscriptionError,
 	TranscriptionSpec,
+	UnloadPolicy,
 } from './commands';
 import type {
 	CatalogError as SharedCatalogError,
@@ -27,6 +28,7 @@ import type {
 	RecordingArtifact as SharedRecordingArtifact,
 	TranscriptionError as SharedTranscriptionError,
 	TranscriptionSpec as SharedTranscriptionSpec,
+	UnloadPolicy as SharedUnloadPolicy,
 } from './commands.types';
 
 // Helper: a no-op assertion that two types are equal.
@@ -49,6 +51,7 @@ type _SharedContracts = Expect<
 			SharedRecordingArtifact,
 			SharedTranscriptionError,
 			SharedTranscriptionSpec,
+			SharedUnloadPolicy,
 		],
 		[
 			CatalogError,
@@ -59,6 +62,7 @@ type _SharedContracts = Expect<
 			RecordingArtifact,
 			TranscriptionError,
 			TranscriptionSpec,
+			UnloadPolicy,
 		]
 	>
 >;

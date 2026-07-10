@@ -7,7 +7,6 @@ import { whisperingPath } from '$lib/constants/urls';
 import { recordingMedia } from '$lib/operations/media';
 import { processRecordingPipeline } from '$lib/operations/pipeline';
 import { sound } from '$lib/operations/sound';
-import { prewarmOnDeviceModel } from '$lib/operations/transcribe';
 import { log, report } from '$lib/report';
 import { captureSurface } from '$lib/state/capture-surface.svelte';
 import { deviceConfig } from '$lib/state/device-config.svelte';
@@ -80,7 +79,7 @@ export async function startManualRecording(): Promise<string | null> {
 	// Kick off the local model load now, concurrently with bringing up the
 	// recorder, so the ~1 s cold load overlaps the speech you're about to
 	// record rather than being paid after you stop. No-op for cloud/web.
-	prewarmOnDeviceModel();
+	environment.transcription.prewarmSelectedModel();
 
 	// Manual owns playback for the whole recording; drop any leftover VAD
 	// per-utterance resume so it cannot fire mid-recording.
@@ -250,7 +249,7 @@ export async function startVadRecording() {
 	// detected): arming VAD is the "about to dictate" signal, and starting the
 	// load now means the model is ready before the first word, even for a short
 	// utterance. No-op for cloud/web.
-	prewarmOnDeviceModel();
+	environment.transcription.prewarmSelectedModel();
 
 	log.info('Starting voice activated capture');
 
