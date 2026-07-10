@@ -15,7 +15,7 @@ into Rust would split the source of truth, so we keep it in the main window.
 - **Window**: a separate, transparent, undecorated, always-on-top
   `recording-overlay` window, reused (shown/hidden) and positioned centered near
   the bottom of the active monitor. On macOS it is a non-activating `NSPanel`
-  created in Rust (`src-tauri/src/overlay.rs`, via tauri-nspanel) so clicking it
+  created in Rust (`../epicenter/src-tauri/src/overlay.rs`, via tauri-nspanel) so clicking it
   never activates the app or raises the main window; `focusable: false` alone
   does not prevent app activation on click. On Windows and Linux it is a
   `focusable: false` + `alwaysOnTop` `WebviewWindow` created from the frontend.
@@ -52,7 +52,7 @@ into Rust would split the source of truth, so we keep it in the main window.
     the pill and updates the host's reactive meter; the Tauri implementation
     lives with the overlay transport and forwards the sample to its webview.
   - Manual (CPAL/Tauri): the PCM lives only in Rust, so the consumer worker
-    (`src-tauri/src/recorder/recorder.rs`) computes RMS and emits a throttled
+    (`../epicenter/src-tauri/src/recorder/recorder.rs`) computes RMS and emits a throttled
     (~20 Hz) targeted `emit_to("recording-overlay", "mic-level", rms)`, per
     Tauri's guidance for high-frequency events. This is Handy's approach.
 

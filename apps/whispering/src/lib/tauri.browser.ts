@@ -20,14 +20,14 @@ export type { Tauri };
 // violation means the build resolved the `default` (web) condition instead of
 // `tauri`, so `@tauri-apps/*` is missing from the bundle even though the
 // runtime supports it, and the app silently masquerades as the web app. The
-// usual cause is a stale `bun dev:whispering:ui` server squatting on the dev
-// port, which `tauri dev` then connects to instead of its own. Read the raw
+// cause is that Epicenter served browser-built assets instead of the output of
+// `build:epicenter`. Read the raw
 // `__TAURI_INTERNALS__` marker rather than `isTauri()` from `@tauri-apps/api`,
 // which would pull Tauri into the web bundle; `typeof window` keeps it inert
 // during SSR.
 if (typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window) {
 	throw new Error(
-		'Whispering loaded its web build inside a Tauri runtime: the `tauri` Vite condition was not applied, so native capabilities are missing from the bundle. A stale `bun dev:whispering:ui` server is usually squatting on the dev port. Stop all dev servers, delete `apps/whispering/.svelte-kit` and `apps/whispering/node_modules/.vite*`, then relaunch with `bun dev:epicenter` from the repository root.',
+		'Whispering loaded its browser build inside Epicenter: the `tauri` Vite condition was not applied, so native capabilities are missing from the bundle. Rebuild the Epicenter assets and relaunch with `bun dev:epicenter` from the repository root.',
 	);
 }
 

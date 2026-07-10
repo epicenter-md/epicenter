@@ -6,5 +6,5 @@
 		"noUnusedParameters": true
 	},
 	"include": ["scripts/**/*.ts", "src/**/*.ts", "vite.config.ts"],
-	"exclude": ["dist", "src-tauri", "whispering"]
+	"exclude": ["dist", "src-tauri"]
 }

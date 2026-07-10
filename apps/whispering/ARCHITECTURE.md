@@ -1,6 +1,6 @@
 # Whispering Architecture Deep Dive
 
-Whispering uses a clean three-layer architecture that achieves **extensive code sharing** between the desktop app (Tauri) and web app. This is possible because of how we handle platform differences and separate business logic from UI concerns.
+Whispering uses a clean three-layer architecture that shares one SPA between its browser deployment and the Epicenter desktop host. This is possible because platform differences are selected at build time and business logic stays separate from UI concerns.
 
 **Quick Navigation:** [Service Layer](#service-layer---pure-business-logic--platform-abstraction) | [RPC Layer](#rpc-layer---adding-reactivity-and-state-management) | [Error Handling](#error-handling-with-wellcrafted)
 
@@ -16,7 +16,7 @@ Whispering uses a clean three-layer architecture that achieves **extensive code 
 
 ## Workspace Composition
 
-Whispering uses the same workspace composition vocabulary as the rest of the repo, with a Tauri runtime today:
+Whispering uses the same workspace composition vocabulary as the rest of the repo across browser and Epicenter-hosted builds:
 
 ```txt
 defineWorkspace()
@@ -70,19 +70,21 @@ The Tauri build activates the `tauri` condition; the web build falls through to 
 
 ```ts
 // vite.config.ts
-const isTauri = process.env.TAURI_ENV_PLATFORM !== undefined;
+const isEpicenterSurface = process.env.EPICENTER_SURFACE === '1';
 export default defineConfig(async () => ({
   resolve: {
     // The `...defaultClientConditions` spread is load-bearing: custom
     // conditions REPLACE Vite's defaults rather than adding to them.
-    ...(isTauri && { conditions: ['tauri', ...defaultClientConditions] }),
+    ...(isEpicenterSurface && {
+      conditions: ['tauri', ...defaultClientConditions],
+    }),
   },
 }));
 ```
 
 Consumers (for example the services barrel `src/lib/services/index.ts`) import the bare specifier `from '#platform/recorder'` with **no platform branch at the call site**. Vite resolves `index.tauri.ts` on Tauri builds and `index.browser.ts` on web builds; the off-target file is never resolved, so it is physically absent from the bundle (a build-time guarantee, not Rollup tree-shaking). This makes the web bundle structurally unable to ship Tauri APIs and vice versa: a Tauri-only file imported by shared code fails the web build instead of shipping a broken runtime.
 
-This mechanism is scoped to `#platform/*` only; every other bare import resolves normally. The editor and `tsc` need no `moduleSuffixes` and no per-target tsconfig: bundler `moduleResolution` reads the `imports` field and lands on `default` (browser) for typechecking. Each impl is annotated with the shared contract (`export const x: Contract = ...`, not `satisfies`, so the concrete type stays hidden and the variants stay in lockstep).
+This mechanism is scoped to `#platform/*` only; every other bare import resolves normally. The browser typecheck uses the default condition, and `tsconfig.tauri.json` repeats the check with the `tauri` condition. Each impl is annotated with the shared contract (`export const x: Contract = ...`, not `satisfies`, so the concrete type stays hidden and the variants stay in lockstep).
 
 Tauri-only exports (Whispering's `tauriOnly` namespace in `src/lib/tauri.tauri.ts`) are imported **directly** by `.tauri.ts` files (`import { tauriOnly } from '$lib/tauri.tauri'`), not through a `#platform/*` seam, since that seam is null on web. Shared code that only needs the platform boolean reaches it through `import { tauri } from '#platform/tauri'` and checks `if (tauri)`.
 

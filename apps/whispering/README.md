@@ -32,7 +32,7 @@ Selection happens at build time through the `#platform/*` imports in `package.js
 - The `tauri` condition resolves `*.tauri.ts` implementations.
 - Shared code can use the nullable `tauri` capability namespace as a guard, but it does not choose implementations at runtime.
 
-Tauri CLI builds provide `TAURI_ENV_PLATFORM`. Epicenter's direct asset build sets `EPICENTER_SURFACE=1`, which activates the same `tauri` module condition and the `/apps/whispering` asset base.
+Epicenter's asset build sets `EPICENTER_SURFACE=1`, which activates the `tauri` module condition and the `/apps/whispering` asset base. No other build signal selects Whispering's native implementations.
 
 ## Run locally
 

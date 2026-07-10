@@ -29,8 +29,12 @@ describe('Epicenter-hosted Whispering identity', () => {
 
 	test('the browser and Epicenter builds own distinct base paths and outputs', () => {
 		const config = read('svelte.config.js');
+		const vite = read('vite.config.ts');
 		expect(config).toContain("pages: '../epicenter/dist/whispering'");
 		expect(config).toContain("paths: { base: '/apps/whispering' }");
+		expect(vite).toContain("process.env.EPICENTER_SURFACE === '1'");
+		expect(vite).not.toContain('TAURI_ENV_PLATFORM');
+		expect(vite).not.toContain('TAURI_DEV_HOST');
 		expect(read('src/lib/platform/base-path.browser.ts')).toContain(
 			"WHISPERING_BASE_PATHNAME = ''",
 		);

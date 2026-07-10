@@ -58,17 +58,19 @@ Consumers always write `import { TextServiceLive } from '#platform/text'`, with 
 ```ts
 // vite.config.ts (sketch)
 import { defaultClientConditions } from 'vite';
-const isTauri = process.env.TAURI_ENV_PLATFORM !== undefined;
+const isEpicenterSurface = process.env.EPICENTER_SURFACE === '1';
 export default defineConfig({
   resolve: {
     // The `...defaultClientConditions` spread is load-bearing:
     // custom conditions REPLACE Vite's defaults.
-    ...(isTauri && { conditions: ['tauri', ...defaultClientConditions] }),
+    ...(isEpicenterSurface && {
+      conditions: ['tauri', ...defaultClientConditions],
+    }),
   },
 });
 ```
 
-The editor and `tsc` need no `moduleSuffixes` and no per-target tsconfig: `bundler` module resolution reads the `imports` field and lands on `default` (browser) for typecheck. The scope is narrow: only `#platform/*` specifiers are platform-resolved, so nothing else in the bundle is magic.
+The browser typecheck reads the default condition, while `tsconfig.tauri.json` repeats it with the `tauri` condition. Neither config needs `moduleSuffixes`. The scope is narrow: only `#platform/*` specifiers are platform-resolved, so nothing else in the bundle is magic.
 
 Each `#platform/*` impl is annotated against the shared contract with `export const TextServiceLive: TextService = ...` (not `satisfies`, which would leak the concrete type and break lockstep across variants).
 
@@ -119,7 +121,7 @@ Services are UI-free modules that:
 
 ### Platform Detection
 
-The build picks the right file at build time. The Tauri build (`process.env.TAURI_ENV_PLATFORM` set) activates the `tauri` condition; the web build falls through to `default`. Consumers import the bare `#platform/*` specifier without naming the platform:
+The build picks the right file at build time. Epicenter's asset build (`EPICENTER_SURFACE=1`) activates the `tauri` condition; the web build falls through to `default`. Consumers import the bare `#platform/*` specifier without naming the platform:
 
 ```typescript
 // Resolves to services/text/index.browser.ts on web,
