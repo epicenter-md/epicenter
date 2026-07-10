@@ -7,7 +7,9 @@
  *
  * Key behaviors:
  * - Higher timestamps win conflicts regardless of merge ordering.
+ * - Equal timestamps use final Y.Array position, both at construction and sync.
  * - Reads inside caller-owned Yjs transactions include local writes and deletes.
+ * - Reconciliation preserves origins, event batching, and unchanged references.
  *
  * See also:
  * - `y-keyvalue.ts` for positional (rightmost-wins) alternative
@@ -320,6 +322,306 @@ describe('YKeyValueLww', () => {
 			expect(kv.get('x')).toBe('second');
 			expect(yarray.length).toBe(1); // Duplicate should be cleaned up
 		});
+
+		test('live conflicts choose the same rightmost winner as constructor hydration', () => {
+			const { doc1, doc2, array1, array2 } = setupSyncedArrays();
+			array1.push([{ key: 'x', val: 'client-1', ts: 1000 }]);
+			array2.push([{ key: 'x', val: 'client-2', ts: 1000 }]);
+
+			const mergedDoc = new Y.Doc();
+			Y.applyUpdate(mergedDoc, Y.encodeStateAsUpdate(doc1));
+			Y.applyUpdate(mergedDoc, Y.encodeStateAsUpdate(doc2));
+			const mergedEntries = mergedDoc
+				.getArray<YKeyValueLwwEntry<string>>('data')
+				.toArray();
+			const expected = mergedEntries.at(-1)?.val;
+
+			const kv1 = new YKeyValueLww(array1);
+			const kv2 = new YKeyValueLww(array2);
+			syncBoth(doc1, doc2);
+
+			expect(kv1.get('x')).toBe(expected);
+			expect(kv2.get('x')).toBe(expected);
+			expect(array1).toHaveLength(1);
+			expect(array2).toHaveLength(1);
+		});
+	});
+
+	describe('Resolution pipeline contracts', () => {
+		test('nested transactions preserve the outer origin and emit once', () => {
+			const { ydoc, kv } = setupKv();
+			const outerOrigin = Symbol('outer');
+			const innerOrigin = Symbol('inner');
+			const batches: Array<{ changes: Map<string, unknown>; origin: unknown }> =
+				[];
+			kv.observe((changes, origin) => batches.push({ changes, origin }));
+
+			ydoc.transact(() => {
+				kv.set('a', 'first');
+				ydoc.transact(() => kv.set('a', 'second'), innerOrigin);
+				kv.set('b', 'value');
+			}, outerOrigin);
+
+			expect(batches).toHaveLength(1);
+			expect(batches[0]?.origin).toBe(outerOrigin);
+			expect([...(batches[0]?.changes.keys() ?? [])].sort()).toEqual([
+				'a',
+				'b',
+			]);
+		});
+
+		test('remote updates emit their applyUpdate origin', () => {
+			const { doc1, doc2, array1, array2 } = setupSyncedArrays();
+			const kv1 = new YKeyValueLww(array1);
+			const kv2 = new YKeyValueLww(array2);
+			const remoteOrigin = Symbol('remote');
+			const origins: unknown[] = [];
+			kv2.observe((_changes, origin) => origins.push(origin));
+
+			kv1.set('remote', 'value');
+			Y.applyUpdate(doc2, Y.encodeStateAsUpdate(doc1), remoteOrigin);
+
+			expect(origins).toEqual([remoteOrigin]);
+			expect(kv2.get('remote')).toBe('value');
+		});
+
+		test('a lower-timestamp remote loser emits nothing and keeps winner identity', () => {
+			const { doc1, doc2, array1, array2 } = setupSyncedArrays();
+			array1.push([{ key: 'x', val: 'winner', ts: 2000 }]);
+			const kv1 = new YKeyValueLww(array1);
+			const winner = kv1.map.get('x');
+			let observerCalls = 0;
+			kv1.observe(() => observerCalls++);
+
+			array2.push([{ key: 'x', val: 'loser', ts: 1000 }]);
+			Y.applyUpdate(doc1, Y.encodeStateAsUpdate(doc2), Symbol('remote'));
+
+			expect(kv1.map.get('x')).toBe(winner);
+			expect(kv1.get('x')).toBe('winner');
+			expect(array1).toHaveLength(1);
+			expect(observerCalls).toBe(0);
+		});
+
+		test('conflict cleanup adds one private raw transaction but one public batch', () => {
+			const { ydoc, yarray, kv } = setupKv();
+			kv.set('x', 'old');
+			const origin = Symbol('bulk-update');
+			const rawOrigins: unknown[] = [];
+			const publicOrigins: unknown[] = [];
+			yarray.observe((_event, transaction) =>
+				rawOrigins.push(transaction.origin),
+			);
+			kv.observe((_changes, transactionOrigin) =>
+				publicOrigins.push(transactionOrigin),
+			);
+
+			ydoc.transact(() => kv.bulkSet([{ key: 'x', val: 'new' }]), origin);
+
+			expect(publicOrigins).toEqual([origin]);
+			expect(rawOrigins).toHaveLength(2);
+			expect(rawOrigins[0]).toBe(origin);
+			expect(typeof rawOrigins[1]).toBe('symbol');
+		});
+
+		test('constructor conflict cleanup keeps its origin-null raw transaction', () => {
+			const ydoc = new Y.Doc();
+			const yarray = ydoc.getArray<YKeyValueLwwEntry<string>>('data');
+			yarray.push([
+				{ key: 'x', val: 'old', ts: 1 },
+				{ key: 'x', val: 'new', ts: 2 },
+			]);
+			const origins: unknown[] = [];
+			yarray.observe((_event, transaction) => origins.push(transaction.origin));
+
+			const kv = new YKeyValueLww(yarray);
+
+			expect(kv.get('x')).toBe('new');
+			expect(origins).toEqual([null]);
+		});
+
+		test('unchanged entries keep their entry and value references through cleanup', () => {
+			const { kv } = setupKv<{ label: string }>();
+			const stableValue = { label: 'stable' };
+			kv.bulkSet([
+				{ key: 'stable', val: stableValue },
+				{ key: 'changed', val: { label: 'old' } },
+			]);
+			const stableEntry = kv.map.get('stable');
+
+			kv.bulkSet([{ key: 'changed', val: { label: 'new' } }]);
+
+			expect(kv.map.get('stable')).toBe(stableEntry);
+			expect(kv.get('stable')).toBe(stableValue);
+		});
+
+		test('bulk conflict cleanup keeps one entry per key and emits one batch', () => {
+			const { yarray, kv } = setupKv<number>();
+			const count = 1000;
+			const initial = Array.from({ length: count }, (_, index) => ({
+				key: `key-${index}`,
+				val: index,
+			}));
+			kv.bulkSet(initial);
+			const batches: Map<string, unknown>[] = [];
+			kv.observe((changes) => batches.push(changes));
+
+			kv.bulkSet(initial.map(({ key, val }) => ({ key, val: val + 1 })));
+
+			expect(batches).toHaveLength(1);
+			expect(batches[0]?.size).toBe(count);
+			expect(yarray).toHaveLength(count);
+			expect(kv.get('key-999')).toBe(1000);
+		});
+
+		test('bulkSet resolves several versions of one absent key in one pass', () => {
+			const { yarray, kv } = setupKv();
+			const actions: string[] = [];
+			kv.observe((changes) => {
+				const change = changes.get('x');
+				if (change) actions.push(change.action);
+			});
+
+			kv.bulkSet([
+				{ key: 'x', val: 'first' },
+				{ key: 'x', val: 'second' },
+				{ key: 'x', val: 'third' },
+			]);
+
+			expect(kv.get('x')).toBe('third');
+			expect(yarray).toHaveLength(1);
+			expect(actions).toEqual(['update']);
+		});
+
+		test('repeated writes to an absent key retain the update event contract', () => {
+			const { ydoc, kv } = setupKv();
+			const actions: string[] = [];
+			kv.observe((changes) => {
+				const change = changes.get('x');
+				if (change) actions.push(change.action);
+			});
+
+			ydoc.transact(() => {
+				kv.set('x', 'first');
+				kv.set('x', 'second');
+			});
+
+			expect(actions).toEqual(['update']);
+			expect(kv.get('x')).toBe('second');
+		});
+
+		test('bulk writes followed by delete leave an absent key absent', () => {
+			const { ydoc, yarray, kv } = setupKv();
+			const actions: string[] = [];
+			kv.observe((changes) => {
+				const change = changes.get('x');
+				if (change) actions.push(change.action);
+			});
+
+			ydoc.transact(() => {
+				kv.bulkSet([
+					{ key: 'x', val: 'first' },
+					{ key: 'x', val: 'second' },
+				]);
+				kv.delete('x');
+			});
+
+			expect(kv.get('x')).toBeUndefined();
+			expect(yarray).toHaveLength(0);
+			expect(actions).toEqual([]);
+		});
+
+		test('a remote set applied after a local delete in one transaction survives', () => {
+			const { doc1, doc2, array1, array2 } = setupSyncedArrays();
+			const kv1 = new YKeyValueLww(array1);
+			const kv2 = new YKeyValueLww(array2);
+			kv1.set('x', 'original');
+			Y.applyUpdate(doc2, Y.encodeStateAsUpdate(doc1));
+			const doc1State = Y.encodeStateVector(doc1);
+			kv2.set('x', 'remote');
+			const remoteUpdate = Y.encodeStateAsUpdate(doc2, doc1State);
+			const outerOrigin = Symbol('outer');
+			const origins: unknown[] = [];
+			kv1.observe((_changes, origin) => origins.push(origin));
+
+			doc1.transact(() => {
+				kv1.delete('x');
+				Y.applyUpdate(doc1, remoteUpdate, Symbol('nested-remote'));
+			}, outerOrigin);
+
+			expect(kv1.get('x')).toBe('remote');
+			expect(origins).toEqual([outerOrigin]);
+		});
+
+		const permutations = [
+			{
+				name: 'set-delete on an absent key stays absent without an event',
+				initial: undefined,
+				operations: ['set', 'delete'],
+				expected: undefined,
+				actions: [],
+			},
+			{
+				name: 'set-set-delete on an absent key leaves no surviving write',
+				initial: undefined,
+				operations: ['set', 'set', 'delete'],
+				expected: undefined,
+				actions: [],
+			},
+			{
+				name: 'set-delete-set on an absent key emits add for the final value',
+				initial: undefined,
+				operations: ['set', 'delete', 'set'],
+				expected: 'value-1',
+				actions: ['add'],
+			},
+			{
+				name: 'delete-set on an existing key emits update',
+				initial: 'initial',
+				operations: ['delete', 'set'],
+				expected: 'value-0',
+				actions: ['update'],
+			},
+			{
+				name: 'set-delete on an existing key emits delete',
+				initial: 'initial',
+				operations: ['set', 'delete'],
+				expected: undefined,
+				actions: ['delete'],
+			},
+			{
+				name: 'delete-set-delete on an existing key emits delete',
+				initial: 'initial',
+				operations: ['delete', 'set', 'delete'],
+				expected: undefined,
+				actions: ['delete'],
+			},
+		] as const;
+
+		for (const scenario of permutations) {
+			test(scenario.name, () => {
+				const { ydoc, yarray, kv } = setupKv();
+				if (scenario.initial !== undefined) kv.set('x', scenario.initial);
+				const actions: string[] = [];
+				kv.observe((changes) => {
+					const change = changes.get('x');
+					if (change) actions.push(change.action);
+				});
+
+				let setIndex = 0;
+				ydoc.transact(() => {
+					for (const operation of scenario.operations) {
+						if (operation === 'set') kv.set('x', `value-${setIndex++}`);
+						else kv.delete('x');
+					}
+				});
+
+				expect(kv.get('x')).toBe(scenario.expected);
+				expect(actions).toEqual([...scenario.actions]);
+				expect(
+					yarray.toArray().filter((entry) => entry.key === 'x'),
+				).toHaveLength(scenario.expected === undefined ? 0 : 1);
+			});
+		}
 	});
 
 	describe('Transaction-local reads', () => {

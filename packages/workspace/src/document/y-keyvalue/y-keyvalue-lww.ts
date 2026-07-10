@@ -79,19 +79,19 @@
  *
  * Both pairs produce identical results. The difference is internal:
  *
- * **`set()` eagerly cleans up the old entry** before pushing the new one.
- * It calls `deleteEntryByKey()` which scans the Y.Array (O(n)) to find and
- * remove the old entry. The observer then sees a clean add with no conflicts. This
+ * **`set()` eagerly cleans up old entries** before pushing the new one.
+ * It calls `deleteEntriesByKey()` which scans the Y.Array (O(n)) to find and
+ * remove matching entries. The observer then sees a clean add with no conflicts. This
  * is fast for individual calls but O(n²) when called 10K times in a loop,
  * because each call re-scans the (mutating) array.
  *
  * **`bulkSet()` defers cleanup to the observer.** It pushes all entries without
  * deleting old ones, then the observer fires once, builds an entry→index Map from
  * one `toArray()` call, and resolves all conflicts with O(1) Map lookups. Total:
- * O(n) instead of O(n²). The observer's cleanup deletion uses `DEDUP_ORIGIN` to
- * prevent a re-entrant observer call (which would be a no-op anyway).
+ * O(n) instead of O(n²). The observer's cleanup deletion uses `DEDUP_ORIGIN` so
+ * its queued follow-up observer pass can return immediately.
  *
- * **`delete()` eagerly scans** to find and remove one entry. Same O(n) as `set()`.
+ * **`delete()` eagerly scans** to remove matching visible entries. Same O(n) as `set()`.
  *
  * **`bulkDelete()` scans once** to collect all matching indices, then batch-deletes
  * right-to-left. Unlike `bulkSet`, it does NOT defer anything to the observer:
@@ -99,8 +99,8 @@
  *
  * ```
  * Single ops (fine for individual use, O(n²) in a loop):
- *   set():    deleteEntryByKey O(n) + push O(1) → observer: no conflicts
- *   delete(): deleteEntryByKey O(n)              → observer: processes deletion
+ *   set():    deleteEntriesByKey O(n) + push O(1) → observer: no conflicts
+ *   delete(): deleteEntriesByKey O(n)              → observer: processes deletion
  *
  * Bulk ops:
  *   bulkSet():    push × N + observer resolves all via Map   [DEDUP_ORIGIN]
@@ -118,16 +118,16 @@
  *   chunking into groups of 2500. The Yjs linked-list walk compounds when many
  *   deletes happen in a single transaction.
  * - **For `bulkSet`**: Inserting 25K items in one call forces the observer to build
- *   one massive entryIndexMap. Chunking into groups of 1000 is ~10x faster.
+ *   one massive entry-position map. Chunking into groups of 1000 is ~10x faster.
  *
  * Because of this, the `Table` layer (in `create-table.ts`) wraps these
  * methods with chunked async loops. The optimal chunk sizes differ:
  * - `bulkSet`: 1000 (observer conflict resolution is the bottleneck)
  * - `bulkDelete`: 2500 (Yjs linked-list deletion is the bottleneck)
  *
- * The observer's conflict resolution logic is shared with multi-node sync. When
- * two clients set the same key while offline, the observer resolves that conflict
- * using the same entryIndexMap and DEDUP_ORIGIN path that `bulkSet` uses.
+ * Constructor hydration, bulk writes, and multi-node sync all enter the same
+ * reconciliation pipeline. It selects one winner per affected key, updates the
+ * confirmed index, deletes visible losers, and emits one change batch.
  *
  * ## Limitations
  *
@@ -168,34 +168,71 @@ import type {
 export type YKeyValueLwwEntry<T> = { key: string; val: T; ts: number };
 
 /**
- * Transaction origin that marks observer cleanup deletions as "internal."
+ * Transaction origin that marks observer cleanup deletions as internal.
  *
  * ## When this fires
  *
  * The observer resolves LWW conflicts by keeping the winner and deleting losers.
- * That deletion happens in a nested `doc.transact()`. Without this origin, the
- * nested transaction would trigger the observer AGAIN, but the re-entrant call
- * is always a no-op:
- * - `_map` already points to the winner (updated in the first observer pass)
- * - Reference equality `_map.get(key) === loserEntry` fails → nothing happens
- * - No change events emitted
- *
- * Marking the transaction with DEDUP_ORIGIN lets the observer skip the re-entrant
- * call entirely (`if (transaction.origin === DEDUP_ORIGIN) return`).
+ * Yjs queues a transaction opened from an observer until the current transaction
+ * finishes its observer and update lifecycle. The deletion mutates the array
+ * immediately, but its observer notification is a later follow-up pass. This
+ * origin lets that pass return without reconciling an already-confirmed result.
  *
  * ## What triggers conflicts
  *
  * 1. `bulkSet()`: pushes entries without deleting old ones, observer resolves
  * 2. Multi-node sync: two clients set the same key offline, observer resolves
- * 3. Constructor initial dedup: runs before observer is registered, doesn't need this
+ * 3. Constructor initial dedup: runs before this observer is registered
  *
- * Note: `set()` eagerly deletes via `deleteEntryByKey` so the observer sees no
+ * Note: `set()` eagerly deletes via `deleteEntriesByKey` so the observer sees no
  * conflicts. `delete()` and `bulkDelete()` only remove entries, so there are no conflicts.
  * DEDUP_ORIGIN is only relevant for the conflict-resolution path.
  *
  * Keeps the observer from re-processing its own cleanup transaction.
  */
 const DEDUP_ORIGIN = Symbol('dedup');
+
+type PendingIntent<T> =
+	| {
+			action: 'set';
+			entry: YKeyValueLwwEntry<T>;
+			transaction: Y.Transaction;
+	  }
+	| { action: 'delete'; transaction: Y.Transaction };
+
+type Reconciliation<T> = {
+	addedEntries: YKeyValueLwwEntry<T>[];
+	deletedEntries: Set<YKeyValueLwwEntry<T>>;
+	origin: unknown;
+	snapshot?: YKeyValueLwwEntry<T>[];
+	cleanupOrigin?: unknown;
+};
+
+/**
+ * Select one LWW winner. Timestamp is the policy; final Y.Array position is the
+ * deterministic equal-timestamp boundary.
+ */
+function selectWinner<T>(
+	candidates: YKeyValueLwwEntry<T>[],
+	positionOf: (entry: YKeyValueLwwEntry<T>) => number,
+): YKeyValueLwwEntry<T> | undefined {
+	let winner = candidates[0];
+	for (let i = 1; i < candidates.length; i++) {
+		const candidate = candidates[i];
+		if (!candidate || !winner) continue;
+		if (candidate.ts > winner.ts) {
+			winner = candidate;
+			continue;
+		}
+		if (
+			candidate.ts === winner.ts &&
+			positionOf(candidate) > positionOf(winner)
+		) {
+			winner = candidate;
+		}
+	}
+	return winner;
+}
 
 export class YKeyValueLww<T> implements ObservableKvStore<T>, Disposable {
 	/** The underlying Y.Array that stores `{key, val, ts}` entries. */
@@ -214,7 +251,7 @@ export class YKeyValueLww<T> implements ObservableKvStore<T>, Disposable {
 	 * via iteration, `.get()`, and `.size`. The `set()` method never writes to
 	 * this map. The observer is the sole writer.
 	 *
-	 * @see pendingWrites for the transaction-local read overlay
+	 * @see pending for the transaction-local read overlay
 	 */
 	readonly map: ReadonlyMap<string, YKeyValueLwwEntry<T>> = this._map;
 
@@ -229,36 +266,26 @@ export class YKeyValueLww<T> implements ObservableKvStore<T>, Disposable {
 	 * ```text
 	 * caller-owned transaction opens
 	 *   set(key, value)
-	 *     pendingWrites.set(key, entry) // visible to reads now
+	 *     pending.set(key, { action: 'set', entry }) // visible to reads now
 	 *     yarray.push([entry])          // CRDT source-of-truth write
 	 *
 	 *   delete(key) when present
-	 *     pendingWrites.delete(key)
-	 *     pendingDeletes.add(key)       // reads report the key as absent
-	 *     deleteEntryByKey(key)         // finds and deletes the Y.Array index
+	 *     pending.set(key, { action: 'delete' }) // reads report absence
+	 *     deleteEntriesByKey(key)              // deletes visible versions
 	 *
 	 *   read view
-	 *     pendingDeletes hides keys
-	 *     pendingWrites overrides _map
+	 *     a pending delete hides the key
+	 *     a pending set overrides _map
 	 *
 	 * transaction closes
-	 *   observer updates _map and clears the matching overlays
+	 *   observer reconciles _map and acknowledges the transaction overlay
 	 * ```
 	 *
 	 * Outside a caller-owned transaction, `set()` opens and closes its own
 	 * transaction, so the observer normally clears this overlay before `set()`
 	 * returns.
 	 */
-	private pendingWrites: Map<string, YKeyValueLwwEntry<T>> = new Map();
-
-	/**
-	 * Local deletes that have reached the Y.Array but not the observer-backed map.
-	 *
-	 * This is the delete side of the overlay described above. After
-	 * `delete('foo')`, reads report the key as absent even if `_map` still holds the
-	 * old entry until the transaction closes.
-	 */
-	private pendingDeletes: Set<string> = new Set();
+	private readonly pending = new Map<string, PendingIntent<T>>();
 
 	/** Registered change handlers. */
 	private changeHandlers: Set<KvStoreChangeHandler<T>> = new Set();
@@ -310,242 +337,152 @@ export class YKeyValueLww<T> implements ObservableKvStore<T>, Disposable {
 		this.yarray = yarray;
 		this.doc = yarray.doc as Y.Doc;
 
-		const entries = yarray.toArray();
-		const indicesToDelete: number[] = [];
-
-		// First pass: find winners by timestamp
-		for (let i = 0; i < entries.length; i++) {
-			const entry = entries[i];
-			if (!entry) continue;
-			const existing = this._map.get(entry.key);
-
-			if (!existing) {
-				this._map.set(entry.key, entry);
-			} else {
-				if (entry.ts > existing.ts) {
-					// New entry wins, mark old for deletion
-					const oldIndex = entries.indexOf(existing);
-					if (oldIndex !== -1) indicesToDelete.push(oldIndex);
-					this._map.set(entry.key, entry);
-				} else if (entry.ts < existing.ts) {
-					// Old entry wins, mark new for deletion
-					indicesToDelete.push(i);
-				} else {
-					// Equal timestamps: keep later one (rightmost), delete earlier
-					const oldIndex = entries.indexOf(existing);
-					if (oldIndex !== -1 && oldIndex < i) {
-						indicesToDelete.push(oldIndex);
-						this._map.set(entry.key, entry);
-					} else {
-						indicesToDelete.push(i);
-					}
-				}
-			}
-
-			// Track max timestamp for monotonic clock (including remote entries)
-			// This ensures our next local write will have a higher timestamp than
-			// any entry we've seen, preventing us from writing "old" timestamps
-			// that would lose conflicts to nodes with faster clocks
-			if (entry.ts > this.lastTimestamp) this.lastTimestamp = entry.ts;
-		}
-
-		// Delete losers
-		if (indicesToDelete.length > 0) {
-			this.doc.transact(() => {
-				// Sort descending to preserve indices during deletion
-				indicesToDelete.sort((a, b) => b - a);
-				for (const index of indicesToDelete) {
-					yarray.delete(index);
-				}
-			});
-		}
+		const snapshot = yarray.toArray();
+		this.reconcile({
+			addedEntries: snapshot,
+			deletedEntries: new Set(),
+			origin: undefined,
+			snapshot,
+		});
 
 		// Set up observer for future changes
 		this._observer = (event, transaction) => {
-			// Dedup deletions are always no-ops: _map already has the winner.
-			// Skip entirely to avoid useless work on re-entrant observer calls.
+			// Cleanup is a queued follow-up transaction. It cannot acknowledge a
+			// newer overlay created by a change handler, so return before detaching it.
 			if (transaction.origin === DEDUP_ORIGIN) return;
-			const changes = new Map<string, KvStoreChange<T>>();
-			const addedEntries: YKeyValueLwwEntry<T>[] = [];
-			const deletedCurrentKeys = new Set<string>();
 
-			// Collect added entries
-			for (const addedItem of event.changes.added) {
+			// YEvent changes are only safe to derive before another mutation. Capture
+			// the net entries now, before reconciliation deletes any losers.
+			const addedEntries: YKeyValueLwwEntry<T>[] = [];
+			const deletedEntries = new Set<YKeyValueLwwEntry<T>>();
+			const eventChanges = event.changes;
+			for (const addedItem of eventChanges.added) {
 				for (const addedEntry of addedItem.content.getContent() as YKeyValueLwwEntry<T>[]) {
 					addedEntries.push(addedEntry);
-
-					// Track max timestamp from synced entries (self-healing behavior)
-					if (addedEntry.ts > this.lastTimestamp)
-						this.lastTimestamp = addedEntry.ts;
+				}
+			}
+			for (const deletedItem of eventChanges.deleted) {
+				for (const deletedEntry of deletedItem.content.getContent() as YKeyValueLwwEntry<T>[]) {
+					deletedEntries.add(deletedEntry);
 				}
 			}
 
-			// Handle deletions first
-			event.changes.deleted.forEach((deletedItem) => {
-				deletedItem.content
-					.getContent()
-					.forEach((entry: YKeyValueLwwEntry<T>) => {
-						// A deletion for this key has reached the observer. Clear the local
-						// delete overlay even if the deleted entry never reached _map
-						// (for example, set+delete inside one outer transaction).
-						this.pendingDeletes.delete(entry.key);
+			// Acknowledge only intents owned by this transaction. Another observer may
+			// already have queued a later transaction whose read overlay must survive
+			// this pass and the DEDUP follow-up.
+			for (const [key, intent] of this.pending) {
+				if (intent.transaction !== transaction) continue;
+				this.pending.delete(key);
+			}
 
-						// Reference equality: only process if this is the entry we have cached
-						if (this._map.get(entry.key) === entry) {
-							deletedCurrentKeys.add(entry.key);
-							this._map.delete(entry.key);
-							changes.set(entry.key, { action: 'delete' });
-						}
-					});
+			this.reconcile({
+				addedEntries,
+				deletedEntries,
+				origin: transaction.origin,
+				cleanupOrigin: DEDUP_ORIGIN,
 			});
-
-			// Process added entries with LWW logic
-			const indicesToDelete: number[] = [];
-
-			/**
-			 * Once-per-observer memoized array snapshot and entry-to-index map for
-			 * conflict resolution.
-			 *
-			 * Each getter computes its value on first call, then returns the cached
-			 * result on later calls. Neither runs until a conflict forces it, so we
-			 * avoid the O(n) `toArray()` copy entirely when there are no conflicts
-			 * (the common case for bulk inserts of new keys).
-			 *
-			 * `getEntryIndexMap` builds on `getAllEntries`: calling it triggers the
-			 * `toArray()` if it hasn't happened yet, then builds a Map<entry, index>
-			 * for O(1) index lookups. This replaces the old `.indexOf()` calls that
-			 * were O(n) each, which caused O(n²) behavior during bulk updates.
-			 *
-			 * Both caches are local to this single observer invocation. They're
-			 * garbage collected when the callback returns. No manual cleanup needed.
-			 */
-			let allEntries: YKeyValueLwwEntry<T>[] | undefined;
-			const getAllEntries = (): YKeyValueLwwEntry<T>[] =>
-				(allEntries ??= yarray.toArray());
-
-			let entryIndexMap: Map<YKeyValueLwwEntry<T>, number> | undefined;
-			const getEntryIndexMap = (): Map<YKeyValueLwwEntry<T>, number> => {
-				if (!entryIndexMap) {
-					const entries = getAllEntries();
-					entryIndexMap = new Map();
-					for (let i = 0; i < entries.length; i++) {
-						const entry = entries[i];
-						if (entry) entryIndexMap.set(entry, i);
-					}
-				}
-				return entryIndexMap;
-			};
-
-			const getEntryIndex = (entry: YKeyValueLwwEntry<T>): number => {
-				// For small conflict batches (<= 4 added entries, typically a remote
-				// sync of a few changed keys) reference-equality indexOf beats the
-				// Map: indexOf scans only until it hits each target, while the Map
-				// build touches all N entries. Measured 26x-266x faster up to N=25K.
-				// The Map only wins once many keys conflict at once (bulk re-import
-				// over existing keys), where repeated indexOf would be O(n²).
-				if (addedEntries.length <= 4) {
-					return getAllEntries().indexOf(entry);
-				}
-				return getEntryIndexMap().get(entry) ?? -1;
-			};
-
-			for (const newEntry of addedEntries) {
-				const existing = this._map.get(newEntry.key);
-
-				if (!existing) {
-					if (
-						transaction.local &&
-						deletedCurrentKeys.has(newEntry.key) &&
-						this.pendingWrites.get(newEntry.key) !== newEntry
-					) {
-						const newIndex = getEntryIndex(newEntry);
-						if (newIndex !== -1) indicesToDelete.push(newIndex);
-						continue;
-					}
-
-					// New key: just update the map. No array operations needed.
-					const deleteEvent = changes.get(newEntry.key);
-					if (deleteEvent && deleteEvent.action === 'delete') {
-						// Was deleted in same transaction, now re-added
-						changes.set(newEntry.key, {
-							action: 'update',
-							newValue: newEntry.val,
-						});
-					} else {
-						changes.set(newEntry.key, {
-							action: 'add',
-							newValue: newEntry.val,
-						});
-					}
-					this._map.set(newEntry.key, newEntry);
-					this.pendingDeletes.delete(newEntry.key);
-				} else {
-					// Conflict: key exists in map. Must compare timestamps to determine winner,
-					// then find the loser's index in the array to delete it. This is the only
-					// path that calls getAllEntries(), triggering the O(n) toArray() copy.
-					if (newEntry.ts > existing.ts) {
-						// New entry wins: delete old from array
-						changes.set(newEntry.key, {
-							action: 'update',
-							newValue: newEntry.val,
-						});
-
-						// Mark old entry for deletion
-						const oldIndex = getEntryIndex(existing);
-						if (oldIndex !== -1) indicesToDelete.push(oldIndex);
-
-						this._map.set(newEntry.key, newEntry);
-						this.pendingDeletes.delete(newEntry.key);
-					} else if (newEntry.ts < existing.ts) {
-						// Old entry wins: delete new from array
-						const newIndex = getEntryIndex(newEntry);
-						if (newIndex !== -1) indicesToDelete.push(newIndex);
-					} else {
-						// Equal timestamps: positional tiebreaker (rightmost wins)
-						const oldIndex = getEntryIndex(existing);
-						const newIndex = getEntryIndex(newEntry);
-
-						if (newIndex > oldIndex) {
-							// New is rightmost, it wins
-							changes.set(newEntry.key, {
-								action: 'update',
-								newValue: newEntry.val,
-							});
-							if (oldIndex !== -1) indicesToDelete.push(oldIndex);
-							this._map.set(newEntry.key, newEntry);
-							this.pendingDeletes.delete(newEntry.key);
-						} else {
-							// Old is rightmost, delete new
-							if (newIndex !== -1) indicesToDelete.push(newIndex);
-						}
-					}
-				}
-
-				// Clear the write overlay once processed (whether entry won or lost).
-				// Use reference equality to only clear if it's the exact entry we added.
-				if (this.pendingWrites.get(newEntry.key) === newEntry) {
-					this.pendingWrites.delete(newEntry.key);
-				}
-			}
-
-			// Delete loser entries
-			if (indicesToDelete.length > 0) {
-				this.doc.transact(() => {
-					indicesToDelete.sort((a, b) => b - a);
-					for (const index of indicesToDelete) {
-						yarray.delete(index);
-					}
-				}, DEDUP_ORIGIN);
-			}
-
-			// Emit change events
-			if (changes.size > 0) {
-				for (const handler of this.changeHandlers) {
-					handler(changes, transaction.origin);
-				}
-			}
 		};
 		yarray.observe(this._observer);
+	}
+
+	/**
+	 * Reconcile one final Y.Array state through five explicit phases: collect the
+	 * affected candidates, select winners, commit the confirmed index, delete
+	 * losers, and emit the observable change batch.
+	 */
+	private reconcile({
+		addedEntries,
+		deletedEntries,
+		origin,
+		snapshot: initialSnapshot,
+		cleanupOrigin,
+	}: Reconciliation<T>): void {
+		const additionsByKey = new Map<string, YKeyValueLwwEntry<T>[]>();
+		const affectedKeys = new Set<string>();
+
+		// Deleted keys lead so public change ordering matches the previous observer.
+		for (const entry of deletedEntries) affectedKeys.add(entry.key);
+		for (const entry of addedEntries) {
+			affectedKeys.add(entry.key);
+			const additions = additionsByKey.get(entry.key);
+			if (additions) additions.push(entry);
+			else additionsByKey.set(entry.key, [entry]);
+			if (entry.ts > this.lastTimestamp) this.lastTimestamp = entry.ts;
+		}
+
+		// Positions are irrelevant on the no-conflict fast path. When conflicts do
+		// need them, preserve the measured small-batch indexOf optimization and use
+		// one entry-index map for large bulk reconciliation.
+		let snapshot = initialSnapshot;
+		let positions: Map<YKeyValueLwwEntry<T>, number> | undefined;
+		const getSnapshot = (): YKeyValueLwwEntry<T>[] =>
+			(snapshot ??= this.yarray.toArray());
+		const positionOf = (entry: YKeyValueLwwEntry<T>): number => {
+			if (addedEntries.length <= 4) return getSnapshot().indexOf(entry);
+			if (!positions) {
+				positions = new Map();
+				const entries = getSnapshot();
+				for (let i = 0; i < entries.length; i++) {
+					const current = entries[i];
+					if (current) positions.set(current, i);
+				}
+			}
+			return positions.get(entry) ?? -1;
+		};
+
+		const changes = new Map<string, KvStoreChange<T>>();
+		const losers: YKeyValueLwwEntry<T>[] = [];
+
+		for (const key of affectedKeys) {
+			const before = this._map.get(key);
+			const additions = additionsByKey.get(key) ?? [];
+			const candidates: YKeyValueLwwEntry<T>[] = [];
+			if (before && !deletedEntries.has(before)) candidates.push(before);
+			candidates.push(...additions);
+
+			const winner = selectWinner(candidates, positionOf);
+			for (const candidate of candidates) {
+				if (candidate !== winner) losers.push(candidate);
+			}
+
+			if (winner) this._map.set(key, winner);
+			else this._map.delete(key);
+
+			if (winner === before) continue;
+			if (before) {
+				changes.set(
+					key,
+					winner
+						? { action: 'update', newValue: winner.val }
+						: { action: 'delete' },
+				);
+				continue;
+			}
+			if (winner) {
+				// Preserve the existing event contract: if an absent key changes winner
+				// within one transaction, the final action is update rather than add.
+				changes.set(key, {
+					action: winner === additions[0] ? 'add' : 'update',
+					newValue: winner.val,
+				});
+			}
+		}
+
+		if (losers.length > 0) {
+			const indices = losers
+				.map(positionOf)
+				.filter((index) => index !== -1)
+				.sort((a, b) => b - a);
+			const deleteLosers = () => {
+				for (const index of indices) this.yarray.delete(index);
+			};
+			if (cleanupOrigin === undefined) this.doc.transact(deleteLosers);
+			else this.doc.transact(deleteLosers, cleanupOrigin);
+		}
+
+		if (changes.size > 0) {
+			for (const handler of this.changeHandlers) handler(changes, origin);
+		}
 	}
 
 	/**
@@ -581,14 +518,17 @@ export class YKeyValueLww<T> implements ObservableKvStore<T>, Disposable {
 	}
 
 	/**
-	 * Delete the entry with the given key from the Y.Array.
+	 * Delete every visible entry with the given key from the Y.Array.
 	 *
-	 * The data structure maintains at most one entry per key (duplicates are
-	 * cleaned up on construction and during sync), so this only deletes one entry.
+	 * Confirmed state has at most one entry per key, but a caller-owned transaction
+	 * can append several unconfirmed writes before the observer runs. Removing all
+	 * matches makes a final delete authoritative without observer-only repair logic.
 	 */
-	private deleteEntryByKey(key: string): void {
-		const index = this.yarray.toArray().findIndex((e) => e.key === key);
-		if (index !== -1) this.yarray.delete(index);
+	private deleteEntriesByKey(key: string): void {
+		const entries = this.yarray.toArray();
+		for (let i = entries.length - 1; i >= 0; i--) {
+			if (entries[i]?.key === key) this.yarray.delete(i);
+		}
 	}
 
 	/**
@@ -604,7 +544,7 @@ export class YKeyValueLww<T> implements ObservableKvStore<T>, Disposable {
 	 *
 	 * ## Why `set()` eagerly deletes but `bulkSet()` defers
 	 *
-	 * `deleteEntryByKey()` scans the Y.Array to find the old entry: O(n) per call.
+	 * `deleteEntriesByKey()` scans the Y.Array to find old entries: O(n) per call.
 	 * For a single `set()`, that O(n) is fine. For 10K `set()` calls in a loop,
 	 * it's 10K × O(n) = O(n²). `bulkSet` avoids this by pushing all entries first,
 	 * then letting the observer find and remove old entries using a pre-built index
@@ -613,7 +553,7 @@ export class YKeyValueLww<T> implements ObservableKvStore<T>, Disposable {
 	 * ```
 	 * set('foo', newVal) where 'foo' exists:
 	 *   ┌─ same transaction ───────────────────────────────────┐
-	 *   │  deleteEntryByKey('foo')  ← O(n) scan, removes old entry  │
+	 *   │  deleteEntriesByKey('foo') ← O(n) scan, removes old entries │
 	 *   │  yarray.push([newEntry])  ← O(1)                         │
 	 *   └────────────────────────────────────────────────┘
 	 *   observer fires ONCE → sees 1 delete + 1 add → emits 'update'
@@ -623,21 +563,20 @@ export class YKeyValueLww<T> implements ObservableKvStore<T>, Disposable {
 	 *   ┌─ single transaction ─────────────────────────────────┐
 	 *   │  for each: yarray.push([entry])  ← O(1) × 10K, NO delete  │
 	 *   └────────────────────────────────────────────────┘
-	 *   observer fires (1st) → 10K conflicts → entryIndexMap → batch delete losers
+	 *   observer fires (1st) → 10K conflicts → position Map → batch delete losers
 	 *   observer fires (2nd) → DEDUP_ORIGIN → skipped (free)
 	 * ```
 	 */
 	set(key: string, val: T): void {
 		const entry: YKeyValueLwwEntry<T> = { key, val, ts: this.getTimestamp() };
 
-		// Keep reads transaction-local until the observer updates _map.
-		this.pendingWrites.set(key, entry);
-		this.pendingDeletes.delete(key);
-
 		// Yjs reuses an active outer transaction, so this preserves the caller's
 		// origin and batches observer delivery until that transaction closes.
-		this.doc.transact(() => {
-			if (this._map.has(key)) this.deleteEntryByKey(key);
+		this.doc.transact((transaction) => {
+			// Keep reads transaction-local until this transaction's observer updates
+			// the confirmed index.
+			this.pending.set(key, { action: 'set', entry, transaction });
+			if (this._map.has(key)) this.deleteEntriesByKey(key);
 			this.yarray.push([entry]);
 		});
 
@@ -647,15 +586,15 @@ export class YKeyValueLww<T> implements ObservableKvStore<T>, Disposable {
 	/**
 	 * Set many key-value pairs in one transaction.
 	 *
-	 * Unlike {@link set}, this intentionally skips `deleteEntryByKey()` for existing
+	 * Unlike {@link set}, this intentionally skips `deleteEntriesByKey()` for existing
 	 * keys. Instead, all entries are pushed to the Y.Array, and the observer resolves
 	 * duplicate-key conflicts in a single pass when the transaction ends.
 	 *
 	 * ## Why this is faster than calling `set()` in a loop
 	 *
-	 * `set()` calls `deleteEntryByKey()` per key: an O(n) array scan. In a loop:
+	 * `set()` calls `deleteEntriesByKey()` per key: an O(n) array scan. In a loop:
 	 * N calls × O(n) scan = O(n²). `bulkSet` defers all cleanup to the observer,
-	 * which builds an `entryIndexMap` (Map<Entry, index>) from one `toArray()` call
+	 * which builds an entry-position Map from one `toArray()` call
 	 * and resolves each conflict with an O(1) Map lookup. Total: O(n).
 	 *
 	 * The observer's conflict resolution already exists for multi-node sync.
@@ -678,7 +617,7 @@ export class YKeyValueLww<T> implements ObservableKvStore<T>, Disposable {
 	 * ```
 	 */
 	bulkSet(entries: Array<{ key: string; val: T }>): void {
-		this.doc.transact(() => {
+		this.doc.transact((transaction) => {
 			for (const { key, val } of entries) {
 				const entry: YKeyValueLwwEntry<T> = {
 					key,
@@ -686,8 +625,7 @@ export class YKeyValueLww<T> implements ObservableKvStore<T>, Disposable {
 					ts: this.getTimestamp(),
 				};
 
-				this.pendingWrites.set(key, entry);
-				this.pendingDeletes.delete(key);
+				this.pending.set(key, { action: 'set', entry, transaction });
 				this.yarray.push([entry]);
 			}
 		});
@@ -700,23 +638,18 @@ export class YKeyValueLww<T> implements ObservableKvStore<T>, Disposable {
 	 * For bulk deletions (1K+ keys), use {@link bulkDelete} which does
 	 * one scan for all keys instead of one scan per key.
 	 *
-	 * Removes from `pendingWrites` immediately and triggers Y.Array deletion.
-	 * The observer will update `_map` when the deletion is processed.
-	 * Adds the key to `pendingDeletes` so transaction-local reads report the key
-	 * as absent before the observer fires.
+	 * Replaces any pending set intent with a delete intent, removes every visible
+	 * version in one transaction, and lets the observer update `_map`.
 	 */
 	delete(key: string): void {
-		// If this key was set earlier in the same outer transaction, it exists in
-		// the Y.Array but not _map yet. Delete still needs to remove that entry.
-		const hadPendingWrite = this.pendingWrites.delete(key);
+		const pending = this.pending.get(key);
+		if (pending?.action === 'delete') return;
+		if (!this._map.has(key) && pending?.action !== 'set') return;
 
-		// If already pending delete, no-op
-		if (this.pendingDeletes.has(key)) return;
-
-		if (!this._map.has(key) && !hadPendingWrite) return;
-
-		this.pendingDeletes.add(key);
-		this.deleteEntryByKey(key);
+		this.doc.transact((transaction) => {
+			this.pending.set(key, { action: 'delete', transaction });
+			this.deleteEntriesByKey(key);
+		});
 		// DO NOT update this.map here - observer is the sole writer to map
 	}
 
@@ -761,13 +694,16 @@ export class YKeyValueLww<T> implements ObservableKvStore<T>, Disposable {
 			if (!entry || !keySet.has(entry.key)) continue;
 
 			indicesToDelete.push(i);
-			this.pendingDeletes.add(entry.key);
-			this.pendingWrites.delete(entry.key);
 		}
 
 		if (indicesToDelete.length === 0) return;
 
-		this.doc.transact(() => {
+		this.doc.transact((transaction) => {
+			for (const index of indicesToDelete) {
+				const entry = entries[index];
+				if (entry)
+					this.pending.set(entry.key, { action: 'delete', transaction });
+			}
 			for (let i = indicesToDelete.length - 1; i >= 0; i--) {
 				const index = indicesToDelete[i];
 				if (index !== undefined) this.yarray.delete(index);
@@ -780,15 +716,13 @@ export class YKeyValueLww<T> implements ObservableKvStore<T>, Disposable {
 	 *
 	 * Reads the observer-backed map plus the transaction-local overlay.
 	 *
-	 * `pendingDeletes` wins over `pendingWrites`: `set(); delete(); get()` inside one
-	 * outer transaction reads absent, matching the final state after the observer
-	 * catches up.
+	 * A pending delete wins over a pending set: `set(); delete(); get()` inside one
+	 * outer transaction reads absent, matching the final confirmed state.
 	 */
 	get(key: string): T | undefined {
-		if (this.pendingDeletes.has(key)) return undefined;
-
-		const pendingWrite = this.pendingWrites.get(key);
-		if (pendingWrite) return pendingWrite.val;
+		const pending = this.pending.get(key);
+		if (pending?.action === 'delete') return undefined;
+		if (pending?.action === 'set') return pending.entry.val;
 
 		const entry = this._map.get(key);
 		return entry?.val;
@@ -816,14 +750,16 @@ export class YKeyValueLww<T> implements ObservableKvStore<T>, Disposable {
 		const yieldedKeys = new Set<string>();
 
 		// Yield transaction-local writes first because they take precedence.
-		for (const [key, entry] of this.pendingWrites) {
+		for (const [key, intent] of this.pending) {
+			if (intent.action === 'delete') continue;
 			yieldedKeys.add(key);
-			yield { key, val: entry.val };
+			yield { key, val: intent.entry.val };
 		}
 
 		// Then yield indexed entries not replaced or deleted by the overlay.
 		for (const [key, entry] of this._map) {
-			if (yieldedKeys.has(key) || this.pendingDeletes.has(key)) continue;
+			if (yieldedKeys.has(key) || this.pending.get(key)?.action === 'delete')
+				continue;
 			yield { key, val: entry.val };
 		}
 	}
