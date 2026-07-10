@@ -27,11 +27,7 @@ export const EPICENTER_DESKTOP_TAURI_OAUTH_REDIRECT_URI =
 export const EPICENTER_HONEYCRISP_OAUTH_CLIENT_ID = 'epicenter-honeycrisp';
 export const EPICENTER_HONEYCRISP_TAURI_OAUTH_REDIRECT_URI =
 	'epicenter-honeycrisp://oauth/callback';
-// Whispering ships both web and Tauri, so it has a deep-link redirect for
-// the desktop build in addition to its web `/auth/callback` origins.
 export const EPICENTER_WHISPERING_OAUTH_CLIENT_ID = 'epicenter-whispering';
-export const EPICENTER_WHISPERING_TAURI_OAUTH_REDIRECT_URI =
-	'epicenter-whispering://auth/callback';
 export const EPICENTER_OPENSIDIAN_OAUTH_CLIENT_ID = 'epicenter-opensidian';
 export const EPICENTER_TAB_MANAGER_OAUTH_CLIENT_ID = 'epicenter-tab-manager';
 export const EPICENTER_VOCAB_OAUTH_CLIENT_ID = 'epicenter-vocab';
