@@ -74,16 +74,15 @@ The browser typecheck reads the default condition, while `tsconfig.tauri.json` r
 
 Each `#platform/*` impl is annotated against the shared contract with `export const TextServiceLive: TextService = ...` (not `satisfies`, which would leak the concrete type and break lockstep across variants).
 
-Tauri-only capabilities don't live in `services/`. They live in a single file at `$lib/tauri.tauri.ts` with a `$lib/tauri.browser.ts` companion that exports only a `null` namespace. Consumers pick one of three call shapes depending on where they sit:
+The remaining legacy Tauri-only capabilities live in `$lib/tauri.tauri.ts`
+behind `#platform/tauri` while they are moved to focused `#desktop` operations
+or refused. New code must not add members to this namespace.
 
 ```ts
 import { tauri, type Tauri } from '#platform/tauri';
 
 // 1. Shared code (runs on web and Tauri): narrow once.
-if (tauri) {
-  await tauri.fs.pathsToFiles(paths);
-  await tauri.keyboard.setAutoPasteEnabled(true);
-}
+if (tauri) await tauri.autostart.enable();
 
 // 2. Shared helpers called only inside an `if (tauri)` block:
 //    prop-drill the narrowed value.
@@ -425,7 +424,6 @@ User-facing reporting (toast + OS notification) is owned by `$lib/report`, not t
 
 Tauri-only namespace capabilities live inline in one file at `$lib/tauri.tauri.ts`, reached through the `#platform/tauri` seam. The companion `$lib/tauri.browser.ts` resolves to `tauri = null` under the web condition, so `tauriOnly` misuse fails in browser builds. Shared consumers `import { tauri } from '#platform/tauri'` and access via `if (tauri) { tauri.<cap>.method() }`, by prop-drilling the narrowed value, or by importing `tauriOnly` directly from `$lib/tauri.tauri` inside a `.tauri.ts` file.
 
-- `tauri.fs` - Filesystem operations (pathsToFiles)
 - `tauri.permissions` - macOS accessibility/microphone permission flows
 - `tauri.keyboard` - Rust-owned global-shortcut replacement plus the macOS paste-at-cursor grant watch (registerChords, unregisterChords, setAutoPasteEnabled, getDictationCapability, onDictationCapabilityChanged)
 - `tauri.autostart` - Launch-at-login toggle (isEnabled, enable, disable)
