@@ -5,7 +5,7 @@ import {
 } from 'wellcrafted/error';
 import { isErr, Ok, type Result } from 'wellcrafted/result';
 import { buildSystemPrompt } from '$lib/operations/build-system-prompt';
-import { completeWithGlobalDefault } from '$lib/operations/completion';
+import { completeWithGlobalDefault } from '#completion';
 import { settings } from '$lib/state/settings.svelte';
 import type { Recipe } from '$lib/workspace';
 

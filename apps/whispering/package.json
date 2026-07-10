@@ -56,9 +56,9 @@
 			"epicenter": "./src/lib/app-shell/NoDesktopPromotion.svelte",
 			"default": "./src/lib/app-shell/DesktopPromotion.svelte"
 		},
-		"#completion-transport": {
-			"epicenter": "./src/lib/operations/completion-transport.epicenter.ts",
-			"default": "./src/lib/operations/completion-transport.browser.ts"
+		"#completion": {
+			"epicenter": "./src/lib/operations/completion.epicenter.ts",
+			"default": "./src/lib/operations/completion.browser.ts"
 		}
 	},
 	"scripts": {

@@ -9,7 +9,7 @@ import { buildPolishSystemPrompt } from '$lib/operations/build-system-prompt';
 import {
 	completeWithGlobalDefault,
 	resolveCompletionState,
-} from '$lib/operations/completion';
+} from '#completion';
 import { describePolishDestination } from '$lib/operations/completion-target';
 import { resolveTranscriptionLocalityFromConfig } from '$lib/operations/transcription-target';
 import { deviceConfig } from '$lib/state/device-config.svelte';

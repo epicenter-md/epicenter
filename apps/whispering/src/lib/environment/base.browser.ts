@@ -1,3 +1,4 @@
+import { Ok } from 'wellcrafted/result';
 import { auth } from '$lib/platform/auth.browser';
 import { os } from '$lib/platform/os.browser';
 import { reportRecordingMicLevel } from '$lib/recording-pill/mic-level.browser';
@@ -39,4 +40,3 @@ export const baseEnvironment: WhisperingBaseEnvironment = {
 };
 
 export const defaultTranscriptionService = 'OpenAI' as const;
-import { Ok } from 'wellcrafted/result';

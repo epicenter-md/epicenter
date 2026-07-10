@@ -10,7 +10,7 @@
 		INFERENCE_PROVIDER_OPTIONS,
 		type InferenceProviderId,
 	} from '$lib/constants/inference';
-	import { resolveCompletionState } from '$lib/operations/completion';
+	import { resolveCompletionState } from '#completion';
 	import { describeCompletionReadiness } from '$lib/operations/completion-target';
 	import { settings } from '$lib/state/settings.svelte';
 	import AdvancedDisclosure from './AdvancedDisclosure.svelte';
