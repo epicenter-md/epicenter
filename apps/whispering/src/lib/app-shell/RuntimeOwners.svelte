@@ -1,10 +1,15 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import type { RuntimeOwner } from '$lib/runtime/owner';
 
-	let { owners }: { owners: readonly RuntimeOwner[] } = $props();
+	let { owners }: { owners: readonly (() => () => void)[] } = $props();
 	onMount(() => {
-		const detach = owners.map((owner) => owner.attach());
+		const detach: Array<() => void> = [];
+		try {
+			for (const attach of owners) detach.push(attach());
+		} catch (error) {
+			for (const stop of detach.toReversed()) stop();
+			throw error;
+		}
 		return () => {
 			for (const stop of detach.toReversed()) stop();
 		};
