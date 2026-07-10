@@ -1,6 +1,6 @@
 ---
 name: define-errors
-description: 'defineErrors from wellcrafted: variant factories, extractErrorMessage, InferErrors/InferError, call site patterns. Use when creating error types or reviewing error patterns.'
+description: 'Typed error design with wellcrafted/error: defineErrors variant factories, InferErrors/InferError, cause extraction, user-facing messages, and splitting branching or sub-discriminated variants. Use when creating or reviewing error types, naming variants, writing error messages, or fixing constructors with reason/type/operation unions or conditional message logic.'
 metadata:
   author: epicenter
   version: '3.0'
