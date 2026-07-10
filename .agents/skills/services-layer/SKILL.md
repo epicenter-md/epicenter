@@ -1,6 +1,6 @@
 ---
 name: services-layer
-description: 'Service layer patterns: UI-free business logic, namespace exports, Result return types, platform-specific service variants. Use when: "create a service", "service layer", creating or organizing services. For defining error types with defineErrors, use the define-errors skill instead.'
+description: 'Service layer patterns: UI-free business logic, namespace exports, Result return types, and platform-specific variants. Use when creating or organizing a service, separating service logic from UI and RPC layers, or composing desktop and web implementations.'
 metadata:
   author: epicenter
   version: '2.0'
@@ -41,16 +41,13 @@ Every service defines its domain-specific errors in a `defineErrors` namespace, 
 3. **Always return Result types** - Never throw errors
 4. **Use trySync/tryAsync** - See the error-handling skill for details
 5. **Export factory + Live instance** - Factory for testing, Live for production
-6. **Split discriminated union inputs** - Each variant gets its own name and shape. If the constructor branches on its inputs (if/switch/ternary) to decide the message, each branch should be its own variant
 
 ## References
 
 Load these on demand based on what you're working on:
 
-- If working with **error variant anti-patterns** (discriminated union inputs, branching constructors), read [references/error-anti-patterns.md](references/error-anti-patterns.md)
 - If working with **service implementation details** (factory patterns, recorder service examples), read [references/service-implementation-pattern.md](references/service-implementation-pattern.md)
 - If working with **service organization and platform variants** (namespace exports, desktop vs web services), read [references/service-organization-platforms.md](references/service-organization-platforms.md)
-- If working with **error message authoring** (user-friendly/actionable message design), read [references/error-message-best-practices.md](references/error-message-best-practices.md)
 
 - See `apps/whispering/src/lib/services/README.md` for architecture details
 - See the `query-layer` skill for how services are consumed

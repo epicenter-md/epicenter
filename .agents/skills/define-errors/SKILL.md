@@ -10,6 +10,16 @@ metadata:
 
 > **Related Skills**: See `error-handling` for trySync/tryAsync usage and toast-on-error patterns. See `services-layer` for service architecture and namespace exports.
 
+## References
+
+- Read [references/error-anti-patterns.md](references/error-anti-patterns.md)
+  when a variant input contains a sub-discriminant, optional fields, or
+  branching message logic.
+- Read
+  [references/error-message-best-practices.md](references/error-message-best-practices.md)
+  when writing user-facing error messages or choosing between static,
+  field-based, and split variants.
+
 ## Import
 
 ```typescript

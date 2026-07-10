@@ -104,13 +104,33 @@ Asymmetric win surfaced: refusing the feature of "email in chrome" lets the runt
 
 Question: how should a settings screen present downloadable local models when each is a 0.03 to 1.6 GB download?
 
-The comparison spanned local LLM runtimes (Ollama, LM Studio, Jan), local dictation apps (superwhisper, MacWhisper, Handy), and one cloud dictation app (Wispr Flow) as the refusal boundary. The pattern converged on default-first: one recommended model per engine, size visible on the download action, full catalog secondary. Whispering borrowed default-first plus size-on-action and refused the full catalog browser, since its largest catalog is four models. Going cloud would delete the surface entirely, which is not Whispering's category.
+| Comparison at decision time | Pattern | Decision |
+| --- | --- | --- |
+| Ollama and Jan | Recommended starting point; broader library is secondary | Borrow default-first |
+| LM Studio | Full catalog browser | Refuse for a four-model catalog |
+| superwhisper, MacWhisper, and Handy | Recommended local model with download size visible | Borrow size-on-action |
+| Wispr Flow | Cloud transcription, so no local-model picker | Refusal boundary, not Epicenter's category |
+| VoiceInk | Picker behavior was not inspected | Exclude from evidence until verified |
+
+Implication: the verified comparison supported default-first, size-on-action,
+and a secondary full list. It did not support a catalog browser. The table keeps
+unverified candidates visibly outside the conclusion instead of turning a
+research target into evidence.
 
 ## Worked example: macOS Accessibility onboarding (Whispering)
 
 Question: how should Whispering help users recover when macOS Accessibility is missing or stale after install or update?
 
-The comparison put the platform vendor in the table alongside the category: Apple System Settings owns the canonical permission path, and comparable dictation apps (superwhisper, MacWhisper, Handy, VoiceInk, Wispr Flow) are UX references for making that platform requirement survivable. The pattern converged on: written steps, an explicit "Open System Settings" action, granted-state feedback, and optional rich media loaded on demand rather than bundled into the app. The durable lesson is that when the platform owns the surface, the vendor row is the source of truth and peer apps only calibrate the recovery UX.
+| Reference | What it can establish | Evidence boundary |
+| --- | --- | --- |
+| Apple System Settings | Canonical permission location and recovery path | Platform source of truth |
+| Whispering | Written steps, explicit settings action, granted-state feedback, optional hosted video | Current product baseline |
+| superwhisper, MacWhisper, Handy, and Wispr Flow | Ways peer apps explain and sequence recovery | UX calibration only; verify before borrowing |
+| VoiceInk | Candidate peer reference | Not evidence until inspected |
+
+Implication: Apple owns the permission path. Peer apps can calibrate how the
+recovery experience is explained, but they cannot override the platform source
+or count as evidence before inspection.
 
 ## Other questions this lens answers well
 

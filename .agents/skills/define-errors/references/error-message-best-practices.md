@@ -1,11 +1,5 @@
 # Error Message Best Practices
 
-## When to Read This
-
-Read when authoring `defineErrors` messages and choosing between static, field-based, or split variants for clear user-facing and debugging context.
-
-## Error Message Best Practices
-
 Write error messages that are:
 
 - **User-friendly**: Explain what happened in plain language
@@ -16,11 +10,12 @@ Write error messages that are:
 
 - **No-input variants** for static messages (e.g., `Busy: () => ({ message: '...' })`)
 - **Field-based variants** when the message is computed from structured input
-- **Separate variants** when different error conditions need different fields (see Anti-Pattern section above)
+- **Separate variants** when different error conditions need different fields
+  (see [error anti-patterns](error-anti-patterns.md))
 
 ```typescript
 const RecorderError = defineErrors({
-  // Static message — no input needed
+  // Static message: no input needed
   Busy: () => ({
     message: 'A recording is already in progress',
   }),

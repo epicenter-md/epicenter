@@ -128,6 +128,10 @@ judge it with the radical-options keep list cited above and the
 [refactoring](../refactoring/SKILL.md) caller-count table, not a from-memory
 paraphrase of either.
 
+For component boundaries, keep one local exception visible: a lifecycle that
+must survive parent rerenders can earn a dedicated boundary even with one
+caller.
+
 If a boundary only passes a stable handle, callback, or raw library object to
 another one-call wrapper, collapse it. In particular, treat `untrack` inside an
 imperative widget setup as a design prompt: sometimes it is the right tool for a
