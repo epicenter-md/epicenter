@@ -16,8 +16,7 @@
 	import { asDeviceIdentifier } from '@epicenter/recorder';
 	import { deviceConfig } from '$lib/state/device-config.svelte';
 	import { settings } from '$lib/state/settings.svelte';
-	import { os } from '#platform/os';
-	import { manualRecorderConfig } from '#platform/manual-recorder-config';
+	import { environment } from '#environment';
 	import { tauri } from '#platform/tauri';
 	import { whispering } from '$lib/workspace/active';
 	import ManualSelectRecordingDevice from './ManualSelectRecordingDevice.svelte';
@@ -59,13 +58,13 @@
 		{#if settings.get('recording.trigger') === 'manual'}
 			<ManualSelectRecordingDevice
 				bind:selected={() => {
-					const selected = manualRecorderConfig.deviceId;
+					const selected = environment.recording.deviceId;
 					return selected ? asDeviceIdentifier(selected) : null;
 					},
-					(selected) => (manualRecorderConfig.deviceId = selected)}
+					(selected) => (environment.recording.deviceId = selected)}
 			/>
 		{:else if settings.get('recording.trigger') === 'vad'}
-			{#if os.isLinux}
+			{#if environment.os.isLinux}
 				<Alert.Root class="border-red-500/20 bg-red-500/5">
 					<InfoIcon class="size-4 text-red-600 dark:text-red-400" />
 					<Alert.Title class="text-red-600 dark:text-red-400">
@@ -86,7 +85,7 @@
 					</Alert.Description>
 				</Alert.Root>
 			{:else}
-				{#if tauri && os.isApple}
+				{#if tauri && environment.os.isApple}
 					<Alert.Root class="border-warning/20 bg-warning/5">
 						<InfoIcon class="size-4 text-warning dark:text-warning" />
 						<Alert.Title class="text-warning dark:text-warning">

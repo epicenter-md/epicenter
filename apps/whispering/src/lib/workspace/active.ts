@@ -10,4 +10,5 @@ export const whispering = openWhisperingBrowser({
 	auth: environment.auth,
 	nodeId: createNodeId({ storage: window.localStorage }),
 	defaultTranscriptionService,
+	downloads: environment.downloads,
 });

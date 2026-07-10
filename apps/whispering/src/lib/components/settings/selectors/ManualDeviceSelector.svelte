@@ -11,7 +11,7 @@
 	import { createQuery } from '@tanstack/svelte-query';
 	import { report } from '$lib/report';
 	import { tauri } from '#platform/tauri';
-	import { manualRecorderConfig } from '#platform/manual-recorder-config';
+	import { environment } from '#environment';
 	import { manualRecorder } from '$lib/state/manual-recorder.svelte';
 
 	let {
@@ -50,7 +50,7 @@
 		{#snippet child({ props })}
 			<Button
 				{...props}
-				tooltip={manualRecorderConfig.deviceId
+				tooltip={environment.recording.deviceId
 					? 'Change microphone'
 					: 'Choose microphone'}
 				role="combobox"
@@ -62,7 +62,7 @@
 					class="inline-flex shrink-0"
 					style:view-transition-name={iconViewTransitionName}
 				>
-					{#if manualRecorderConfig.deviceId}
+					{#if environment.recording.deviceId}
 						<MicIcon class="size-4 text-green-500" />
 					{:else}
 						<MicIcon class="size-4 text-warning" />
@@ -102,8 +102,8 @@
 							<Command.Item
 								value="device-{device.id} {device.label}"
 								onSelect={() => {
-									manualRecorderConfig.deviceId =
-										manualRecorderConfig.deviceId === device.id
+									environment.recording.deviceId =
+										environment.recording.deviceId === device.id
 											? null
 											: device.id;
 								}}
@@ -112,7 +112,7 @@
 								<CheckIcon
 									class={cn(
 										'size-4 shrink-0',
-										manualRecorderConfig.deviceId === device.id
+										environment.recording.deviceId === device.id
 											? 'opacity-100'
 											: 'opacity-0',
 									)}

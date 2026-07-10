@@ -1,6 +1,7 @@
 import { auth } from '$lib/platform/auth.tauri';
 import { os } from '$lib/platform/os.tauri';
 import { osNotify } from '$lib/report/os-notify.tauri';
+import { reportRecordingMicLevel } from '$lib/recording-overlay/mic-level.tauri';
 import { AudioBlobStoreLive } from '$lib/services/blob-store/index.tauri';
 import { DownloadServiceLive } from '$lib/services/download/index.tauri';
 import { ManualRecorderLive } from '$lib/services/recorder/index.tauri';
@@ -19,6 +20,7 @@ export const environment: WhisperingEnvironment = {
 	recording: createManualRecordingEnvironment({
 		recorder: ManualRecorderLive,
 		config: manualRecorderConfig,
+		reportLevel: reportRecordingMicLevel,
 	}),
 	text: TextServiceLive,
 };

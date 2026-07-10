@@ -102,7 +102,7 @@ See `docs/articles/20260526T012526-tauri-is-both-the-namespace-and-the-platform-
 
 > **💡 Three kinds of dependency injection**
 >
-> - **Build-time platform DI** (`#platform/*` subpath imports): for services that have a real implementation on both platforms. `text`, `os`, `download`, `analytics`, `http`, `blob-store`, `recorder`. Each maps a `#platform/<service>` specifier (in `package.json`'s `imports`) to `index.tauri.ts` + `index.browser.ts`, with a shared `types.ts`. The active build condition picks one.
+> - **Build-time platform DI** (`#platform/*` subpath imports): for services that have a real implementation on both platforms. `text`, `os`, `download`, `http`, `blob-store`, `recorder`. Each maps a `#platform/<service>` specifier (in `package.json`'s `imports`) to `index.tauri.ts` + `index.browser.ts`, with a shared `types.ts`. The active build condition picks one.
 > - **Tauri-only namespace** (`#platform/tauri`): for capabilities that exist only on Tauri (fs, permissions, window, keyboard, autostart). One file (`$lib/tauri.tauri.ts`) holds the current namespace capabilities. Shared consumers reach them through `import { tauri } from '#platform/tauri'` and either narrow with `if (tauri)`, prop-drill the narrowed value into helpers, or import `tauriOnly` directly from `$lib/tauri.tauri` inside a `.tauri.ts` file.
 > - **Runtime DI** (switch on `settings` and `deviceConfig`): for user-pick providers like `transcription`.
 >
@@ -407,7 +407,7 @@ const result = await services.transcription.openai.transcribe({
 
 ## Available Services
 
-The services barrel (`src/lib/services/index.ts`) imports the platform-split services through `#platform/*` (`analytics`, `blob-store`, `download`, `os`, `text`), while non-platform modules (`transcription`, `local-shortcut-manager`, `sound`) stay on relative imports. `recorder` is also a `#platform/*` seam, consumed from `$lib/state/manual-recorder.svelte.ts` rather than the barrel. One-shot AI completion is not a service: it lives in `$lib/operations/completion.ts`, calling `@epicenter/client`'s `complete()`.
+The services barrel (`src/lib/services/index.ts`) imports the platform-split services through `#platform/*` (`blob-store`, `download`, `os`, `text`), while non-platform modules (`transcription`, `local-shortcut-manager`, `sound`) stay on relative imports. `recorder` is also a `#platform/*` seam, consumed from `$lib/state/manual-recorder.svelte.ts` rather than the barrel. One-shot AI completion is not a service: it lives in `$lib/operations/completion.ts`, calling `@epicenter/client`'s `complete()`.
 
 ### Cross-platform (`services/`)
 
@@ -416,7 +416,7 @@ The services barrel (`src/lib/services/index.ts`) imports the platform-split ser
 - `local-shortcut-manager.ts` - In-window keyboard shortcuts
 - `text/` - Clipboard operations
 - `blob-store/` - Audio blob persistence (IndexedDB on web, fs on desktop)
-- `analytics/`, `download/`, `http/`, `os/` - Platform-specific implementations behind a unified interface
+- `download/`, `http/`, `os/` - Platform-specific implementations behind a unified interface
 - `sound/` - Web Audio feedback cues shared by web and desktop builds
 
 User-facing reporting (toast + OS notification) is owned by `$lib/report`, not the services layer.

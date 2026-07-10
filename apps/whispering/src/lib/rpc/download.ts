@@ -1,7 +1,7 @@
 import { defineKeys } from 'wellcrafted/query';
 import { Err, type Result } from 'wellcrafted/result';
-import type { BlobError } from '#platform/blob-store';
-import type { DownloadError } from '#platform/download';
+import type { BlobError } from '$lib/services/blob-store/types';
+import type { DownloadError } from '$lib/services/download/types';
 import { defineMutation } from '$lib/rpc/client';
 import { services } from '$lib/services';
 import type { Recording } from '$lib/state/recordings.svelte';

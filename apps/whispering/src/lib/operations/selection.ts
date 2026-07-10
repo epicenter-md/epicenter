@@ -1,5 +1,5 @@
 import type { Result } from 'wellcrafted/result';
-import type { TextError } from '#platform/text';
+import type { TextError } from '$lib/services/text/types';
 import { services } from '$lib/services';
 
 /**

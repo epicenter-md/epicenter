@@ -1,4 +1,3 @@
-import { AnalyticsServiceLive } from '#platform/analytics';
 import { environment } from '#environment';
 import { LocalShortcutManagerLive } from './local-shortcut-manager';
 import { PlaySoundServiceLive } from './sound';
@@ -8,7 +7,6 @@ import { PlaySoundServiceLive } from './sound';
  * These are available on both web and desktop.
  */
 export const services = {
-	analytics: AnalyticsServiceLive,
 	text: environment.text,
 	blobs: { audio: environment.artifacts },
 	download: environment.downloads,

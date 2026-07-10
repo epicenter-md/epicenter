@@ -34,7 +34,7 @@ const transcribeRecordings = createMutation(
 A module belongs here if it has the **adapter shape**:
 
 - Wraps a single service call, state query, or operation that components need to observe.
-- Keeps UI effects out: no toasts, sounds, analytics, or copy. The only effects allowed here are TanStack cache reads, writes, invalidations, and operation calls whose lifecycle is the thing being observed.
+- Keeps UI effects out: no toasts, sounds, or copy. The only effects allowed here are TanStack cache reads, writes, invalidations, and operation calls whose lifecycle is the thing being observed.
 - Adds a cache key for query or mutation identity.
 - Useful to multiple observers, or earns its own module by participating in cache invalidation.
 
@@ -167,7 +167,7 @@ $lib/rpc/*          TanStack adapters (this directory)
   ├──▶
 $lib/operations/*   imperative orchestrations (delivery, recording, upload,
                     pipeline, transcribe, run-polish, run-recipe,
-                    recipe-clipboard, analytics, sound, shortcuts)
+                    recipe-clipboard, sound, shortcuts)
   ▼
 $lib/services/*     UI-free, Result-typed
 $lib/state/*        reactive (Svelte runes, Yjs)

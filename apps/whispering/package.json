@@ -12,18 +12,6 @@
 			"epicenter": "./src/lib/commands.tauri.ts",
 			"default": "./src/lib/commands.browser.ts"
 		},
-		"#platform/analytics": {
-			"epicenter": "./src/lib/services/analytics/index.tauri.ts",
-			"default": "./src/lib/services/analytics/index.browser.ts"
-		},
-		"#platform/blob-store": {
-			"epicenter": "./src/lib/services/blob-store/index.tauri.ts",
-			"default": "./src/lib/services/blob-store/index.browser.ts"
-		},
-		"#platform/download": {
-			"epicenter": "./src/lib/services/download/index.tauri.ts",
-			"default": "./src/lib/services/download/index.browser.ts"
-		},
 		"#platform/http": {
 			"epicenter": "./src/lib/services/http/index.tauri.ts",
 			"default": "./src/lib/services/http/index.browser.ts"
@@ -36,33 +24,13 @@
 			"epicenter": "./src/lib/platform/system-shortcuts.tauri.ts",
 			"default": "./src/lib/platform/system-shortcuts.browser.ts"
 		},
-		"#platform/recorder": {
-			"epicenter": "./src/lib/services/recorder/index.tauri.ts",
-			"default": "./src/lib/services/recorder/index.browser.ts"
-		},
-		"#platform/recording-mic-level": {
-			"epicenter": "./src/lib/recording-overlay/mic-level.tauri.ts",
-			"default": "./src/lib/recording-pill/mic-level.browser.ts"
-		},
 		"#platform/recording-overlay-owner": {
 			"epicenter": "./src/routes/(app)/_runtime/attach-recording-overlay.tauri.svelte.ts",
 			"default": "./src/routes/(app)/_runtime/attach-recording-overlay.browser.ts"
 		},
-		"#platform/text": {
-			"epicenter": "./src/lib/services/text/index.tauri.ts",
-			"default": "./src/lib/services/text/index.browser.ts"
-		},
-		"#platform/manual-recorder-config": {
-			"epicenter": "./src/lib/state/manual-recorder-config.tauri.ts",
-			"default": "./src/lib/state/manual-recorder-config.browser.ts"
-		},
 		"#platform/tauri": {
 			"epicenter": "./src/lib/tauri.tauri.ts",
 			"default": "./src/lib/tauri.browser.ts"
-		},
-		"#platform/os-notify": {
-			"epicenter": "./src/lib/report/os-notify.tauri.ts",
-			"default": "./src/lib/report/os-notify.browser.ts"
 		},
 		"#platform/base-path": {
 			"epicenter": "./src/lib/platform/base-path.tauri.ts",
@@ -115,7 +83,6 @@
 	},
 	"type": "module",
 	"dependencies": {
-		"@aptabase/web": "^0.4.3",
 		"@epicenter/app-shell": "workspace:*",
 		"@epicenter/auth": "workspace:*",
 		"@epicenter/client": "workspace:*",

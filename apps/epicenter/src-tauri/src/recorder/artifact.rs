@@ -43,7 +43,7 @@ const RECORDINGS_DIR_NAME: &str = "recordings";
 
 /// Serializable handle returned to the JS side. The id is the lookup key
 /// for every later operation; the rest is metadata the UI needs without
-/// having to read the file (duration for analytics, byteLength for artifact
+/// having to read the file (duration and byteLength for artifact
 /// diagnostics, mimeType for the player).
 ///
 /// `mime_type` is `String` rather than `&'static str` so specta's TS

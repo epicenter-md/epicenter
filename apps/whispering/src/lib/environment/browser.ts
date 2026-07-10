@@ -1,6 +1,7 @@
 import { auth } from '$lib/platform/auth.browser';
 import { os } from '$lib/platform/os.browser';
 import { osNotify } from '$lib/report/os-notify.browser';
+import { reportRecordingMicLevel } from '$lib/recording-pill/mic-level.browser';
 import { AudioBlobStoreLive } from '$lib/services/blob-store/index.browser';
 import { DownloadServiceLive } from '$lib/services/download/index.browser';
 import { ManualRecorderLive } from '$lib/services/recorder/index.browser';
@@ -19,6 +20,7 @@ export const environment: WhisperingEnvironment = {
 	recording: createManualRecordingEnvironment({
 		recorder: ManualRecorderLive,
 		config: manualRecorderConfig,
+		reportLevel: reportRecordingMicLevel,
 	}),
 	text: TextServiceLive,
 };

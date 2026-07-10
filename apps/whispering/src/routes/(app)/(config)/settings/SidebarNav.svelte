@@ -20,7 +20,6 @@
 			activePathPrefix: whisperingPath('/settings/shortcuts'),
 		},
 		{ title: 'Sound', href: whisperingPath('/settings/sound') },
-		{ title: 'Analytics', href: whisperingPath('/settings/analytics') },
 		{ title: 'Account', href: whisperingPath('/settings/account') },
 	] satisfies {
 		title: string;

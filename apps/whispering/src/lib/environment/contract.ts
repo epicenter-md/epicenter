@@ -30,6 +30,7 @@ export type ManualRecordingEnvironment = {
 		recordingId: string,
 		callbacks: RecordingCallbacks,
 	): Promise<StartRecordingResult>;
+	reportLevel(level: number): void;
 };
 
 /**

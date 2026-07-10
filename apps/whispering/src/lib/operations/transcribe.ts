@@ -15,7 +15,6 @@ import { environment } from '#environment';
 import { customFetch } from '#platform/http';
 import { tauri } from '#platform/tauri';
 import type { SupportedLanguage } from '$lib/constants/languages';
-import { analytics } from '$lib/operations/analytics';
 import { report } from '$lib/report';
 import { services } from '$lib/services';
 import { DeepgramTranscriptionServiceLive } from '$lib/services/transcription/cloud/deepgram';
@@ -35,7 +34,7 @@ import { settings } from '$lib/state/settings.svelte';
 /**
  * The error any transcription path can surface. Deliberately `AnyTaggedError`
  * rather than the concrete provider-error union: every consumer (toast,
- * failed-row tooltip, practice view, analytics) presents these by `.message`,
+ * failed-row tooltip, and practice view) presents these by `.message`,
  * and none discriminate on `.name`. The user-facing message is curated where
  * the context lives, in each service's `defineErrors` constructors, so this
  * boundary only needs to promise `{ name, message }`. Widening to the full
@@ -221,11 +220,6 @@ async function loadForUpload(
 			title: 'Audio compression skipped',
 			description: `${error}. Uploading uncompressed audio instead.`,
 		});
-		analytics.logEvent({
-			type: 'compression_failed',
-			provider: settings.get('transcription.service'),
-			error_message: error,
-		});
 	}
 
 	return services.blobs.audio.getBlob(recordingId);
@@ -248,36 +242,12 @@ export async function transcribeAudio(
 ): Promise<Result<string, TranscriptionError>> {
 	const selectedService = settings.get('transcription.service');
 
-	const startTime = Date.now();
-	analytics.logEvent({
-		type: 'transcription_requested',
-		provider: selectedService,
-	});
-
 	// The one place on-device-ness is decided. The type guard narrows `selectedService`
 	// to `OnDeviceProviderId` in one arm and `UploadProviderId` in the other, so each
 	// helper receives an already-narrowed id and neither re-checks.
-	const transcriptionResult = isOnDeviceProviderId(selectedService)
+	return isOnDeviceProviderId(selectedService)
 		? await transcribeOnDevice(recordingId, selectedService)
 		: await transcribeViaUpload(recordingId, selectedService);
-
-	const duration = Date.now() - startTime;
-	if (transcriptionResult.error) {
-		analytics.logEvent({
-			type: 'transcription_failed',
-			provider: selectedService,
-			error_name: transcriptionResult.error.name,
-			error_message: transcriptionResult.error.message,
-		});
-	} else {
-		analytics.logEvent({
-			type: 'transcription_completed',
-			provider: selectedService,
-			duration,
-		});
-	}
-
-	return transcriptionResult;
 }
 
 /**

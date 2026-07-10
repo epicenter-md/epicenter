@@ -260,11 +260,6 @@ const polish = {
 	),
 } as const;
 
-/** Anonymized event logging toggle (Aptabase). */
-const analytics = {
-	'analytics.enabled': defineKv(field.boolean(), () => true),
-} as const;
-
 /**
  * A stored in-app shortcut: the structured `KeyBinding` the keydown matcher and
  * the system tier both speak (physical-key space). `modifiers` is enumerated and
@@ -370,7 +365,6 @@ export function defineWhispering(
 			...completion,
 			...dictionary,
 			...polish,
-			...analytics,
 			...shortcuts,
 		},
 	});

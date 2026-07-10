@@ -3,6 +3,7 @@ import { toConnection } from '@epicenter/svelte/auth';
 import type { NodeId } from '@epicenter/workspace';
 import { defineActions, satisfiesWorkspace } from '@epicenter/workspace';
 import type { TranscriptionServiceId } from '$lib/services/transcription/providers';
+import type { DownloadService } from '$lib/services/download/types';
 import { defineRecordingsMarkdownExport } from '$lib/whispering/recordings-markdown-export';
 import { defineWhispering } from './index';
 
@@ -18,16 +19,19 @@ export function openWhisperingBrowser({
 	auth,
 	nodeId,
 	defaultTranscriptionService,
+	downloads,
 }: {
 	auth: SyncAuthClient;
 	nodeId: NodeId;
 	defaultTranscriptionService: TranscriptionServiceId;
+	downloads: DownloadService;
 }) {
 	const model = defineWhispering(defaultTranscriptionService);
 	const bundle = model.connect(toConnection(auth, nodeId), (workspace) => ({
 		actions: defineActions({
 			recordings_export_markdown: defineRecordingsMarkdownExport(
 				workspace.tables.recordings,
+				downloads,
 			),
 		}),
 	}));

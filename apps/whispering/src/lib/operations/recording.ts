@@ -1,11 +1,9 @@
 import type { DeviceAcquisitionOutcome } from '@epicenter/recorder';
 import { nanoid } from 'nanoid/non-secure';
-import { manualRecorderConfig } from '#platform/manual-recorder-config';
-import { reportRecordingMicLevel } from '#platform/recording-mic-level';
+import { environment } from '#environment';
 import { goto } from '$app/navigation';
 import type { CaptureSurface } from '$lib/constants/audio';
 import { whisperingPath } from '$lib/constants/urls';
-import { analytics } from '$lib/operations/analytics';
 import { recordingMedia } from '$lib/operations/media';
 import { processRecordingPipeline } from '$lib/operations/pipeline';
 import { sound } from '$lib/operations/sound';
@@ -93,7 +91,7 @@ export async function startManualRecording(): Promise<string | null> {
 	// its stream to drive this; on desktop the CPAL worker emits the level from
 	// Rust straight to the overlay, so this callback is never invoked there.
 	const { data: outcome, error } = await manualRecorder.startRecording({
-		onLevel: reportRecordingMicLevel,
+		onLevel: environment.recording.reportLevel,
 	});
 
 	if (error) {
@@ -107,7 +105,7 @@ export async function startManualRecording(): Promise<string | null> {
 
 	// The pill shows the live recording; only a device fallback needs a notice.
 	reportDeviceAcquisitionOutcome(outcome, (deviceId) => {
-		manualRecorderConfig.deviceId = deviceId;
+		environment.recording.deviceId = deviceId;
 	});
 
 	log.info('Recording started');
@@ -128,20 +126,11 @@ export async function stopManualRecording() {
 
 	const durationMs =
 		source.kind === 'artifact' ? source.artifact.durationMs : source.durationMs;
-	const byteLength =
-		source.kind === 'artifact' ? source.artifact.byteLength : source.blob.size;
-
 	// The pill carries "stopped -> transcribing"; the transcript landing is the
 	// receipt. No per-step toast.
 	log.info('Recording stopped');
 	sound.playSoundIfEnabled('manual-stop');
 	void recordingMedia.resume();
-
-	analytics.logEvent({
-		type: 'manual_recording_completed',
-		blob_size: byteLength,
-		duration: durationMs ?? undefined,
-	});
 
 	await processRecordingPipeline({
 		source,
@@ -266,7 +255,7 @@ export async function startVadRecording() {
 	log.info('Starting voice activated capture');
 
 	const { data: outcome, error } = await vadRecorder.startActiveListening({
-		onLevel: reportRecordingMicLevel,
+		onLevel: environment.recording.reportLevel,
 		onSpeechStart: () => {
 			// Speaking window opened: pause whatever is playing. The pill's meter
 			// tint shows speech was detected, so there is no toast.
@@ -278,11 +267,6 @@ export async function startVadRecording() {
 			scheduleResumeAfterSpeech();
 			log.info('Voice activated speech captured');
 			sound.playSoundIfEnabled('vad-capture');
-
-			analytics.logEvent({
-				type: 'vad_recording_completed',
-				blob_size: blob.size,
-			});
 
 			await processRecordingPipeline({
 				source: {

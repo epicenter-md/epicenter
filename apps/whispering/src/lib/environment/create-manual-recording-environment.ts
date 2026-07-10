@@ -9,6 +9,7 @@ export function createManualRecordingEnvironment<
 >({
 	recorder,
 	config,
+	reportLevel,
 }: {
 	recorder: RecorderService<TParams>;
 	config: {
@@ -16,6 +17,7 @@ export function createManualRecordingEnvironment<
 		set deviceId(deviceId: string | null);
 		resolveStartParams(recordingId: string): TParams;
 	};
+	reportLevel(level: number): void;
 }): ManualRecordingEnvironment {
 	return {
 		get deviceId() {
@@ -31,5 +33,6 @@ export function createManualRecordingEnvironment<
 				config.resolveStartParams(recordingId),
 				callbacks,
 			),
+		reportLevel,
 	};
 }
