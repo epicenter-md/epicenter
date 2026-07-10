@@ -46,13 +46,6 @@ describe('Epicenter-hosted Whispering identity', () => {
 		expect(normalizeWhisperingPath('/settings')).toBe('/settings');
 	});
 
-	test('the canonical SPA no longer documents the retired native identifier', () => {
-		expect(read('src/lib/services/fs-paths.ts')).not.toContain(
-			'so.epicenter.whispering',
-		);
-		expect(read('src/lib/services/fs-paths.ts')).toContain('so.epicenter');
-	});
-
 	test('OAuth callbacks use the unified Epicenter deep-link scheme', () => {
 		const auth = read('src/lib/platform/auth.tauri.ts');
 		expect(auth).toContain('EPICENTER_DESKTOP_OAUTH_CLIENT_ID');

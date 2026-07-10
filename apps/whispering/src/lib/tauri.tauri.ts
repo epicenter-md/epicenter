@@ -1,6 +1,6 @@
 /**
  * Tauri-only capability namespace. Everything that requires the Tauri
- * runtime lives in this file: fs, permissions, window,
+ * runtime lives in this file: permissions, window,
  * keyboard, autostart. The subset that needs TanStack caching,
  * error transformation, or invalidation is exposed in the same shape
  * (no sub-namespace), with each leaf picking one canonical call form.
@@ -15,19 +15,6 @@
  * type, so consumers always see the full shape regardless of which one
  * resolves.
  *
- * Two patterns, one for each use case:
- *
- *     import { tauri } from '#platform/tauri';
- *     if (tauri) await tauri.fs.pathsToFiles(paths);
- *     // or
- *     await tauri?.fs.pathsToFiles(paths);
- *
- *     // Inside *.tauri.ts files only (build guarantees Tauri runtime).
- *     // `tauriOnly` is imported directly, not through the `#platform/tauri`
- *     // seam, which resolves to `null` on web and does not export it:
- *     import { tauriOnly } from '$lib/tauri.tauri';
- *     await tauriOnly.fs.pathsToFiles(paths);
- *
  * `tauri` doubles as the platform check: truthy means we're on Tauri
  * and the whole namespace is available. There is no separate
  * `__TAURI_INTERNALS__` check; the value IS the check.
@@ -39,12 +26,7 @@
  */
 
 import { Channel } from '@tauri-apps/api/core';
-import { appDataDir, basename, extname, join } from '@tauri-apps/api/path';
-import { getCurrentWebview } from '@tauri-apps/api/webview';
 import { getCurrentWindow } from '@tauri-apps/api/window';
-import { readFile } from '@tauri-apps/plugin-fs';
-import { openPath as revealPath } from '@tauri-apps/plugin-opener';
-import mime from 'mime';
 import { defineErrors, extractErrorMessage } from 'wellcrafted/error';
 import { defineKeys } from 'wellcrafted/query';
 import { Ok, tryAsync } from 'wellcrafted/result';
@@ -62,49 +44,6 @@ import { commands, events } from '$lib/tauri/commands';
  * so `registerChords` registers the string instead of re-deriving it.
  */
 export type ChordRegistration = GlobalShortcutRegistration;
-
-// fs ----------------------------------------------------------------
-const FsError = defineErrors({
-	ReadFilesFailed: ({ paths, cause }: { paths: string[]; cause: unknown }) => ({
-		message: `Failed to read files: ${paths.join(', ')}: ${extractErrorMessage(cause)}`,
-		paths,
-		cause,
-	}),
-});
-
-async function readFileWithMimeType(path: string): Promise<{
-	bytes: Uint8Array<ArrayBuffer>;
-	mimeType: string;
-}> {
-	// Cast is safe: Tauri's readFile always returns ArrayBuffer-backed Uint8Array.
-	const bytes = (await readFile(path)) as Uint8Array<ArrayBuffer>;
-	const mimeType = mime.getType(path) ?? 'application/octet-stream';
-	return { bytes, mimeType };
-}
-
-const fs = {
-	pathsToFiles: (paths: string[]) =>
-		tryAsync({
-			try: () =>
-				Promise.all(
-					paths.map(async (path) => {
-						const { bytes, mimeType } = await readFileWithMimeType(path);
-						const fileName = await basename(path);
-						return new File([bytes], fileName, { type: mimeType });
-					}),
-				),
-			catch: (error) => FsError.ReadFilesFailed({ paths, cause: error }),
-		}),
-	appDataPath: async (...segments: string[]) =>
-		join(await appDataDir(), ...segments),
-	extension: extname,
-	onDragDrop: (handler: (paths: string[]) => void | Promise<void>) =>
-		getCurrentWebview().onDragDropEvent(async (event) => {
-			if (event.payload.type !== 'drop' || event.payload.paths.length === 0)
-				return;
-			await handler(event.payload.paths);
-		}),
-};
 
 // permissions -------------------------------------------------------
 const PermissionsError = defineErrors({
@@ -390,24 +329,6 @@ const transcription = {
 	setUnloadPolicy: commands.setUnloadPolicy,
 };
 
-// opener ------------------------------------------------------------
-const OpenerError = defineErrors({
-	OpenPathFailed: ({ path, cause }: { path: string; cause: unknown }) => ({
-		message: `Failed to open ${path}: ${extractErrorMessage(cause)}`,
-		path,
-		cause,
-	}),
-});
-
-const opener = {
-	/** Reveal a file or folder in the OS file manager (Finder, Explorer). */
-	openPath: (path: string) =>
-		tryAsync({
-			try: () => revealPath(path),
-			catch: (cause) => OpenerError.OpenPathFailed({ path, cause }),
-		}),
-};
-
 /**
  * The app's main window. `focus()` raises and focuses it, used when a global
  * shortcut needs to surface in-app UI (the recipe picker) over whatever the user
@@ -432,14 +353,12 @@ const mainWindow = {
 // `tauriOnly` is the non-null namespace for `.tauri.ts` files. The
 // `tauri` export widens it to `Tauri | null` so shared consumers narrow.
 export const tauriOnly = {
-	fs,
 	permissions,
 	keyring,
 	keyboard,
 	autostart,
 	media,
 	transcription,
-	opener,
 	mainWindow,
 };
 
