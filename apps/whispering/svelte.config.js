@@ -1,16 +1,23 @@
-// Tauri doesn't have a Node.js server to do proper SSR
-// so we will use adapter-static to prerender the app (SSG)
-// This works for both Tauri and Cloudflare Workers + Assets
+// Both hosts consume static SPA assets. The browser build stays at `build/`
+// for Cloudflare Workers + Assets; Epicenter's build writes into its packaged
+// asset tree and serves the SPA below its stable loopback route.
 // See: https://v2.tauri.app/start/frontend/sveltekit/ for more info
 import staticAdapter from '@sveltejs/adapter-static';
 import { vitePreprocess } from '@sveltejs/vite-plugin-svelte';
+
+const isEpicenterSurface = process.env.EPICENTER_SURFACE === '1';
 
 /** @type {import('@sveltejs/kit').Config} */
 const config = {
 	kit: {
 		adapter: staticAdapter({
+			...(isEpicenterSurface && {
+				pages: '../epicenter/dist/whispering',
+				assets: '../epicenter/dist/whispering',
+			}),
 			fallback: 'index.html', // SPA fallback for dynamic routes
 		}),
+		...(isEpicenterSurface && { paths: { base: '/apps/whispering' } }),
 		alias: {
 			$routes: './src/routes',
 		},
@@ -22,8 +29,8 @@ const config = {
 		// get a Report-Only trial out of `kit.csp` for this app. The CSP for
 		// this deploy is delivered entirely via `static/_headers` (a real
 		// `Content-Security-Policy-Report-Only` HTTP header on Cloudflare
-		// Workers Static Assets) instead. See that file for the policy and
-		// rollout plan.
+		// Workers Static Assets) instead. Epicenter likewise owns CSP in its
+		// outer Bun host. See `static/_headers` and the Epicenter server policy.
 	},
 
 	// Consult https://svelte.dev/docs/kit/integrations

@@ -2,6 +2,7 @@
 	import { Loading } from '@epicenter/ui/loading';
 	import { goto } from '$app/navigation';
 	import { auth } from '#platform/auth';
+	import { whisperingPath } from '$lib/constants/urls';
 
 	let errorMessage = $state<string | null>(null);
 
@@ -12,7 +13,7 @@
 				errorMessage = error.message;
 				return;
 			}
-			await goto('/', { replaceState: true });
+			await goto(whisperingPath('/'), { replaceState: true });
 		})();
 	});
 </script>

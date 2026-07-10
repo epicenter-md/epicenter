@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-keyring-write"
+description = "Enables the keyring_write command without any pre-configured scope."
+commands.allow = ["keyring_write"]
+
+[[permission]]
+identifier = "deny-keyring-write"
+description = "Denies the keyring_write command without any pre-configured scope."
+commands.deny = ["keyring_write"]

@@ -5,16 +5,13 @@
   <h1 align="center">Epicenter</h1>
   <p align="center"><strong>Local-first apps that write to files you own.</strong></p>
   <p align="center">Your data lives on your machine as plain Markdown and SQLite: grep it, version it, open it in Obsidian. When an app stops mattering, your files don't.</p>
-  <p align="center">Start with <a href="apps/whispering">Whispering</a>, our desktop speech-to-text app. You can install it today.</p>
+  <p align="center">Start with <a href="https://whispering.epicenter.so">Whispering in the browser</a>, or run it as a native surface inside <a href="apps/epicenter">Epicenter</a>.</p>
   <p align="center">Run the apps freely under AGPL-3.0; build on the developer toolkit freely under MIT. <a href="#license">What that means</a>.</p>
 </p>
 
 <p align="center">
   <a href="https://github.com/EpicenterHQ/epicenter" target="_blank">
     <img alt="GitHub stars" src="https://img.shields.io/github/stars/EpicenterHQ/epicenter?style=flat-square" />
-  </a>
-  <a href="https://github.com/EpicenterHQ/epicenter/releases/latest" target="_blank">
-    <img alt="Latest release" src="https://img.shields.io/github/v/release/EpicenterHQ/epicenter?style=flat-square&label=Latest%20Release&color=brightgreen" />
   </a>
   <a href="#license">
     <img alt="Apps license: AGPL-3.0" src="https://img.shields.io/badge/apps-AGPL--3.0-blue?style=flat-square" />
@@ -25,19 +22,10 @@
   <a href="https://go.epicenter.so/discord" target="_blank">
     <img alt="Discord" src="https://img.shields.io/badge/Discord-Join%20us-5865F2?style=flat-square&logo=discord&logoColor=white" />
   </a>
-  <a href="https://github.com/EpicenterHQ/epicenter/releases" target="_blank">
-    <img alt="macOS" src="https://img.shields.io/badge/-macOS-black?style=flat-square&logo=apple&logoColor=white" />
-  </a>
-  <a href="https://github.com/EpicenterHQ/epicenter/releases" target="_blank">
-    <img alt="Windows" src="https://img.shields.io/badge/-Windows-blue?style=flat-square&logo=windows&logoColor=white" />
-  </a>
-  <a href="https://github.com/EpicenterHQ/epicenter/releases" target="_blank">
-    <img alt="Linux" src="https://img.shields.io/badge/-Linux-yellow?style=flat-square&logo=linux&logoColor=white" />
-  </a>
 </p>
 
 <p align="center">
-  <a href="#install-whispering">Install</a> |
+  <a href="#whispering">Whispering</a> |
   <a href="#build-with-the-toolkit">Toolkit</a> |
   <a href="#how-it-works">How It Works</a> |
   <a href="#status">Status</a> |
@@ -49,19 +37,13 @@
 
 ---
 
-## Install Whispering
+## Whispering
 
-[Whispering](apps/whispering) is Epicenter's desktop speech-to-text app for macOS, Windows, and Linux.
+[Whispering](apps/whispering) is a speech-to-text SPA with two hosts. Open the [hosted browser app](https://whispering.epicenter.so), or run the same source as a native surface inside [Epicenter](apps/epicenter).
 
-```bash
-brew install --cask whispering
-```
+Press record, speak, optionally transform the transcript, and copy or deliver the result. Both hosts support cloud providers and self-hosted endpoints. Epicenter adds system-global shortcuts, native paste delivery, and local GGUF transcription.
 
-On Windows and Linux, download the installer from the [latest release](https://github.com/EpicenterHQ/epicenter/releases/latest).
-
-Press a shortcut, speak, optionally transform the transcript, and paste the result where you were working. No Epicenter account is required. You can run local Whisper C++ for offline transcription, or bring your own API key for providers like Groq, OpenAI, and ElevenLabs.
-
-[Install Whispering](apps/whispering#install-whispering) | [Download latest release](https://github.com/EpicenterHQ/epicenter/releases/latest)
+[Open Whispering](https://whispering.epicenter.so) | [Read the app architecture](apps/whispering)
 
 ## Build With The Toolkit
 
@@ -145,7 +127,7 @@ sqlite3 matter.sqlite 'select "name" from "journal" limit 5;'
 
 ## Status
 
-A refresh of Whispering built on the workspace is in progress, and current installs will receive it through the normal release path.
+Whispering is independently deployable as a browser SPA and is also mounted inside the Epicenter desktop host. Epicenter is the only native runtime; Whispering no longer ships a standalone desktop shell.
 
 The shared workspace for tabs, notes, drafts, and publishing is being built in public around `@epicenter/workspace`. [Matter](apps/matter) is an early app for user-owned Markdown folders: it edits ordinary Markdown directly and keeps `matter.sqlite` as a query mirror. Other app folders are public research and prototypes.
 
@@ -155,7 +137,7 @@ Pick the trust model you want.
 
 | Path | What leaves your device |
 | --- | --- |
-| Whispering with local Whisper C++ | Audio stays on your device when you use local Whisper C++. Transcripts and settings are stored locally by the desktop app. |
+| Whispering in Epicenter with local GGUF transcription | Audio stays on your device. Transcripts and settings use Epicenter's local desktop storage. |
 | Whispering with a cloud transcription provider | Audio goes from your device to the provider you choose. Epicenter servers are not in that transcription path. |
 | Whispering transformations | Transcript text goes to the LLM provider you choose when you enable that step. |
 | Hosted Epicenter API or sync | Workspace updates, account/session data, and enabled hosted feature requests go to Epicenter servers. |
@@ -171,7 +153,8 @@ The detailed privacy notes for Whispering live in [apps/whispering](apps/whisper
 
 | Surface | Status | Notes |
 | --- | --- | --- |
-| [Whispering](apps/whispering) | Installable app | Desktop speech-to-text with local and bring-your-own-provider transcription paths. |
+| [Whispering](apps/whispering) | Browser and Epicenter surface | One speech-to-text SPA with browser-safe providers and Epicenter-only native capabilities. |
+| [Epicenter](apps/epicenter) | Desktop host | The only Tauri runtime. Serves trusted app surfaces, including Whispering, under one native shell. |
 | [Matter](apps/matter) | WIP product work | Typed grid for user-owned Markdown folders. It edits ordinary `.md` files directly; `matter.sqlite` is a disposable query mirror. |
 | [API](apps/api) | Hosted infrastructure | Personal cloud Worker for hosted Epicenter services. Includes hosted-only billing and dashboard code. |
 | [Self-host](apps/self-host) | Reference deployable | Community-supported single-partition instance without hosted billing. |
@@ -233,7 +216,8 @@ Every app starts from the repo root. `bun dev:<app>` runs every process the app 
 | `bun dev:opensidian` | API + Opensidian | 5176 |
 | `bun dev:tab-manager` | API + Tab Manager extension | extension build |
 | `bun dev:vocab` | API + Vocab | 8888 |
-| `bun dev:whispering` | API + Whispering desktop | 1420 |
+| `bun dev:whispering` | API + hosted Whispering browser app | 1420 |
+| `bun dev:epicenter` | Epicenter desktop host, including Whispering | Tauri window |
 | `bun dev:landing` | Landing site, standalone | 4321 |
 | `bun dev:matter` | Matter desktop, standalone | 5180 |
 | `bun dev:posthog-reverse-proxy` | PostHog reverse proxy Worker | wrangler default |
@@ -241,7 +225,7 @@ Every app starts from the repo root. `bun dev:<app>` runs every process the app 
 | `bun dev:skills` | Skills editor, standalone | vite default |
 | `bun dev:todos` | Todos, standalone | 5177 |
 
-The API needs local Postgres and Infisical; see [apps/api/README.md](apps/api/README.md). Rust is needed for the Tauri apps (Whispering, Matter, Honeycrisp). Local Books, Local Mail, and Super Chat run their own multi-process dev flows; their READMEs document them.
+The API needs local Postgres and Infisical; see [apps/api/README.md](apps/api/README.md). Rust is needed for Tauri apps such as Epicenter, Matter, and Honeycrisp. Local Books and Local Mail run their own multi-process dev flows; their READMEs document them.
 
 Useful checks:
 

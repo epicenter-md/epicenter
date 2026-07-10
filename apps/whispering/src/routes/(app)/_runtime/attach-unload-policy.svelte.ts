@@ -1,7 +1,6 @@
 import { tauri } from '#platform/tauri';
 import { report } from '$lib/report';
 import { deviceConfig } from '$lib/state/device-config.svelte';
-import { commands } from '$lib/tauri/commands';
 
 /**
  * Reconcile the local-model unload policy into Rust's idle clock. The frontend
@@ -14,7 +13,7 @@ export function attachUnloadPolicy() {
 	$effect(() => {
 		if (!tauri) return;
 
-		void commands
+		void tauri.transcription
 			.setUnloadPolicy(deviceConfig.get('transcription.localModelUnloadPolicy'))
 			.catch((cause) => {
 				report.error({

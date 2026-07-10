@@ -1,38 +1,26 @@
-import { convertFileSrc } from '@tauri-apps/api/core';
-import {
-	mkdir,
-	readDir,
-	readFile,
-	writeFile as tauriWriteFile,
-} from '@tauri-apps/plugin-fs';
-import mime from 'mime';
 import { tryAsync } from 'wellcrafted/result';
-import { PATHS } from '$lib/services/fs-paths';
 import { commands } from '$lib/tauri/commands';
 import { BlobError, type BlobStore } from './types';
 
+const NATIVE_ARTIFACT_MIME_TYPE = 'audio/wav';
+
 /**
- * File system-based blob store implementation for desktop.
- * Stores audio files on the Tauri filesystem.
+ * Native CPAL artifacts are owned by Rust and addressed only by recording id.
+ * The WebView receives bytes for playback, never a filesystem path.
  *
- * Directory structure:
- * - recordings/
- *   - {id}.{ext} (audio file: .wav, .opus, .mp3, etc.)
+ * Browser Blob, VAD, and import persistence is intentionally deferred for the
+ * first native milestone. Calling `save` reports that unsupported boundary
+ * instead of quietly granting generic filesystem write authority.
  */
 export function createFileSystemBlobStore() {
-	return {
-		async save(key, blob) {
-			return tryAsync({
-				try: async () => {
-					const recordingsPath = await PATHS.DB.RECORDINGS();
-					await mkdir(recordingsPath, { recursive: true });
+	const urlCache = new Map<string, string>();
 
-					const extension = mime.getExtension(blob.type) ?? 'bin';
-					const audioPath = await PATHS.DB.RECORDING_AUDIO(key, extension);
-					const arrayBuffer = await blob.arrayBuffer();
-					await tauriWriteFile(audioPath, new Uint8Array(arrayBuffer));
-				},
-				catch: (error) => BlobError.WriteFailed({ cause: error }),
+	return {
+		async save(_key, _blob) {
+			return BlobError.WriteFailed({
+				cause: new Error(
+					'Desktop Blob, VAD, and import artifact persistence is not available yet',
+				),
 			});
 		},
 
@@ -47,50 +35,44 @@ export function createFileSystemBlobStore() {
 			});
 		},
 
-		async getBlob(key: string) {
+		async getBlob(key) {
 			return tryAsync({
 				try: async () => {
-					const recordingsPath = await PATHS.DB.RECORDINGS();
-					const audioFilename = await findAudioFile(recordingsPath, key);
-
-					if (!audioFilename) {
-						throw new Error(`Audio file not found for key ${key}`);
-					}
-
-					const audioPath = await PATHS.DB.RECORDING_FILE(audioFilename);
-
-					return await readFileAsBlob(audioPath);
+					const { data, error } = await commands.readRecordingArtifact(key);
+					if (error !== null) throw new Error(error);
+					return new Blob([data], { type: NATIVE_ARTIFACT_MIME_TYPE });
 				},
 				catch: (error) => BlobError.ReadFailed({ cause: error }),
 			});
 		},
 
-		async ensurePlaybackUrl(key: string) {
+		async ensurePlaybackUrl(key) {
 			return tryAsync({
 				try: async () => {
-					const recordingsPath = await PATHS.DB.RECORDINGS();
-					const audioFilename = await findAudioFile(recordingsPath, key);
+					const cachedUrl = urlCache.get(key);
+					if (cachedUrl) return cachedUrl;
 
-					if (!audioFilename) {
-						throw new Error(`Audio file not found for key ${key}`);
-					}
+					const { data: blob, error } = await this.getBlob(key);
+					if (error !== null) throw error;
 
-					const audioPath = await PATHS.DB.RECORDING_FILE(audioFilename);
-					const assetUrl = convertFileSrc(audioPath);
-
-					// Return the URL as-is from convertFileSrc()
-					// The Tauri backend handles URL decoding automatically
-					return assetUrl;
+					const url = URL.createObjectURL(blob);
+					urlCache.set(key, url);
+					return url;
 				},
 				catch: (error) => BlobError.ReadFailed({ cause: error }),
 			});
 		},
 
-		revokeUrl(_key: string) {
-			// No-op on desktop, URLs are asset:// protocol managed by Tauri
+		revokeUrl(key) {
+			const url = urlCache.get(key);
+			if (!url) return;
+			URL.revokeObjectURL(url);
+			urlCache.delete(key);
 		},
 
 		async clear() {
+			for (const url of urlCache.values()) URL.revokeObjectURL(url);
+			urlCache.clear();
 			return tryAsync({
 				try: async () => {
 					const { error } = await commands.clearRecordingArtifacts();
@@ -100,28 +82,4 @@ export function createFileSystemBlobStore() {
 			});
 		},
 	} satisfies BlobStore;
-}
-
-function isAudioFilename(filename: string) {
-	return !filename.endsWith('.md');
-}
-
-/**
- * Helper function to find audio file by ID.
- * Reads directory once and finds the matching file by ID prefix.
- * This is much faster than checking every possible extension.
- */
-async function findAudioFile(dir: string, id: string): Promise<string | null> {
-	const files = await readDir(dir);
-	const audioFile = files.find(
-		(f) => f.name.startsWith(`${id}.`) && isAudioFilename(f.name),
-	);
-	return audioFile?.name ?? null;
-}
-
-async function readFileAsBlob(path: string): Promise<Blob> {
-	// Cast is safe: Tauri's readFile always returns ArrayBuffer-backed Uint8Array.
-	const bytes = (await readFile(path)) as Uint8Array<ArrayBuffer>;
-	const mimeType = mime.getType(path) ?? 'application/octet-stream';
-	return new Blob([bytes], { type: mimeType });
 }

@@ -21,7 +21,6 @@
 		"includes": [
 			"**",
 			"!.conductor",
-			"!apps/whispering/src-tauri",
 			"!**/.svelte-kit",
 			"!**/.astro",
 			"!**/.plasmo",

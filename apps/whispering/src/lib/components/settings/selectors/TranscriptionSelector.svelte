@@ -16,6 +16,7 @@
 	import PlusIcon from '@lucide/svelte/icons/plus';
 	import XIcon from '@lucide/svelte/icons/x';
 	import { goto } from '$app/navigation';
+	import { whisperingPath } from '$lib/constants/urls';
 	import { readyModels } from '$lib/settings/transcription-switcher';
 	import {
 		getSelectedTranscriptionService,
@@ -260,7 +261,7 @@
 						<Button
 							variant="outline"
 							onclick={() => {
-								goto('/settings/processing');
+								goto(whisperingPath('/settings/processing'));
 								combobox.closeAndFocusTrigger();
 							}}
 						>
@@ -283,7 +284,7 @@
 					<Command.Item
 						value="add a model settings configure provider"
 						onSelect={() => {
-							goto('/settings/processing');
+							goto(whisperingPath('/settings/processing'));
 							combobox.closeAndFocusTrigger();
 						}}
 						class="flex items-center gap-2 px-2 py-2 text-sm text-muted-foreground"

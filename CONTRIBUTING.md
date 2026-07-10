@@ -36,20 +36,14 @@ Epicenter is a monorepo containing multiple applications. The main application r
    > **Note**: Desktop app development requires external tools not installed by the command above. Install these manually.
    > (For example: [Rust](https://www.rust-lang.org/tools/install) and [CMake](https://cmake.org/download/))
 
-3. **Navigate to the Whispering app**
+3. **Start development from the repository root**
 
    ```bash
-   cd apps/whispering
-   ```
+   # Run the hosted Whispering browser app and local API
+   bun dev:whispering
 
-4. **Start development**
-
-   ```bash
-   # Run both web and desktop mode
-   bun dev
-
-   # Or run just the web version
-   bun dev:web
+   # Or run Whispering inside the Epicenter desktop host
+   bun dev:epicenter
    ```
 
 That's it! You're ready to start contributing.
@@ -62,6 +56,7 @@ This is a monorepo with the following structure:
 epicenter/
 ├── apps/
 │   ├── whispering/     # Main transcription app (ready for contributions)
+│   ├── epicenter/      # Native host for trusted app surfaces
 │   ├── sh/             # Local assistant (in development)
 │   └── ...             # Other apps in various stages
 ├── packages/
@@ -125,13 +120,13 @@ The convention in one line: `:local` works on a fresh clone, `:remote` wraps wit
    ```
 
    Create a PR to merge your fork's branch into `EpicenterHQ/epicenter:main`:
-   Go to [EpicenterHQ/epicenter](https://github.com/EpicenterHQ/epicenter) — GitHub usually shows a "Compare & pull request" banner for recent pushes.
+   Go to [EpicenterHQ/epicenter](https://github.com/EpicenterHQ/epicenter). GitHub usually shows a "Compare & pull request" banner for recent pushes.
 
 ### Changelog Entries
 
 Every PR with a `feat:` or `fix:` prefix should include a `## Changelog` section in the PR description. These entries get aggregated into GitHub Releases automatically.
 
-Write one line per user-visible change, in imperative mood, for end users—not developers. The person who wrote the code is always best positioned to describe what it does.
+Write one line per user-visible change, in imperative mood, for end users, not developers. The person who wrote the code is always best positioned to describe what it does.
 
 **Good entries:**
 
@@ -223,7 +218,7 @@ This section is for maintainers with npm publish access to the `@epicenter` scop
 
 All seven public packages (`@epicenter/workspace`, `@epicenter/cli`, `@epicenter/sync`, `@epicenter/filesystem`, `@epicenter/skills`, `@epicenter/ui`, `@epicenter/svelte`) share a single version number. They move together.
 
-**Apps are completely separate from changesets.** Changesets only touches packages that are (a) not marked `"private": true` and (b) listed under `packages/`. Every app in `apps/` is `"private": true` and has its own deploy mechanism—changesets will never version or publish them. Whispering versions come from `tauri.conf.json` and git tags. Web apps deploy on push to `main`. See [App deployments](#app-deployments) below.
+**Apps are completely separate from changesets.** Changesets only touches packages that are (a) not marked `"private": true` and (b) listed under `packages/`. Every app in `apps/` is `"private": true` and has its own deploy mechanism. Changesets will never version or publish them. Web apps deploy on push to `main`; native packaging belongs to each Tauri host. See [App deployments](#app-deployments) below.
 
 We use [changesets](https://github.com/changesets/changesets) to track changes and publish. Never edit `version` fields in `package.json` by hand.
 
@@ -257,8 +252,9 @@ git push && git push --tags
 
 Apps deploy separately from npm packages:
 
-- **Whispering (desktop)**: Push a `v*` tag. `release.whispering.yml` builds for all four platforms and publishes a GitHub Release draft.
-- **Web apps (Cloudflare Workers)**: Merge to `main`. `deploy.cloudflare.yml` deploys automatically.
+- **Whispering (browser)**: Merge to `main`. `deploy.cloudflare.yml` builds and deploys the static SPA.
+- **Epicenter (desktop)**: Epicenter owns native packaging for Whispering and every other trusted desktop surface. There is no standalone Whispering desktop release workflow.
+- **Other web apps (Cloudflare Workers)**: Merge to `main`. `deploy.cloudflare.yml` deploys automatically.
 
 See [`.github/workflows/README.md`](.github/workflows/README.md) for the full workflow reference.
 ## Coding Standards

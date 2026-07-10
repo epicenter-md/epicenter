@@ -1,7 +1,7 @@
-import { loadPersistedAuthStorage } from '@epicenter/auth';
+import { createSerializedPersistedAuthStorage } from '@epicenter/auth';
 import {
-	EPICENTER_WHISPERING_OAUTH_CLIENT_ID,
-	EPICENTER_WHISPERING_TAURI_OAUTH_REDIRECT_URI,
+	EPICENTER_DESKTOP_OAUTH_CLIENT_ID,
+	EPICENTER_DESKTOP_TAURI_OAUTH_REDIRECT_URI,
 } from '@epicenter/constants/oauth-clients';
 import { APP_URLS } from '@epicenter/constants/vite';
 import { createHostedDeepLinkAuth } from '@epicenter/svelte/auth/tauri';
@@ -15,18 +15,13 @@ import type { PlatformAuth } from './types';
 
 const log = createLogger('whispering/platform/auth');
 
-/**
- * Tolerant like the `localStorage` adapter's `get`: a keychain read failure
- * (locked keychain, platform error) reads as signed-out rather than crashing
- * app boot. The next sign-in re-establishes the grant.
- */
-async function readGrant(): Promise<string | null> {
-	const { data, error } = await tauriOnly.keyring.read();
-	if (error !== null) {
-		log.warn(error);
-		return null;
+declare global {
+	interface Window {
+		__EPICENTER_WHISPERING_AUTH_BOOTSTRAP__?: {
+			serialized: string | null;
+			error: string | null;
+		};
 	}
-	return data;
 }
 
 /**
@@ -39,13 +34,20 @@ async function writeGrant(serialized: string | null): Promise<void> {
 	if (error !== null) throw error;
 }
 
+const bootstrap = window.__EPICENTER_WHISPERING_AUTH_BOOTSTRAP__ ?? {
+	serialized: null,
+	error: 'Epicenter did not preload the Whispering credential store.',
+};
+delete window.__EPICENTER_WHISPERING_AUTH_BOOTSTRAP__;
+if (bootstrap.error !== null) log.warn(new Error(bootstrap.error));
+
 export const auth: PlatformAuth = createHostedDeepLinkAuth({
 	instanceSetting,
-	clientId: EPICENTER_WHISPERING_OAUTH_CLIENT_ID,
-	redirectUri: EPICENTER_WHISPERING_TAURI_OAUTH_REDIRECT_URI,
+	clientId: EPICENTER_DESKTOP_OAUTH_CLIENT_ID,
+	redirectUri: EPICENTER_DESKTOP_TAURI_OAUTH_REDIRECT_URI,
 	api: APP_URLS.API,
-	persistedAuthStorage: await loadPersistedAuthStorage({
-		read: readGrant,
+	persistedAuthStorage: createSerializedPersistedAuthStorage({
+		initial: bootstrap.serialized,
 		write: writeGrant,
 	}),
 });

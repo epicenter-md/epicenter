@@ -37,6 +37,7 @@ export {
 	MIN_INSTANCE_TOKEN_CHARS,
 } from './instance-token.js';
 export {
+	createSerializedPersistedAuthStorage,
 	createWebStoragePersistedAuthStorage,
 	loadPersistedAuthStorage,
 	type PersistedAuthStorage,

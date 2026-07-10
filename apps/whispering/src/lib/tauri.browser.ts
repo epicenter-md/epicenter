@@ -12,7 +12,7 @@
  * import it directly from `./tauri.tauri`. Shared or web code reaching for it
  * fails the build instead of shipping a runtime assertion.
  */
-import type { Tauri } from './tauri.tauri';
+import type { Tauri } from './tauri.types';
 
 export type { Tauri };
 
@@ -20,14 +20,14 @@ export type { Tauri };
 // violation means the build resolved the `default` (web) condition instead of
 // `tauri`, so `@tauri-apps/*` is missing from the bundle even though the
 // runtime supports it, and the app silently masquerades as the web app. The
-// usual cause is a stale `dev:web` server squatting on the dev port, which
-// `tauri dev` then connects to instead of its own. Read the raw
+// usual cause is a stale `bun dev:whispering:ui` server squatting on the dev
+// port, which `tauri dev` then connects to instead of its own. Read the raw
 // `__TAURI_INTERNALS__` marker rather than `isTauri()` from `@tauri-apps/api`,
 // which would pull Tauri into the web bundle; `typeof window` keeps it inert
 // during SSR.
 if (typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window) {
 	throw new Error(
-		'Whispering loaded its web build inside a Tauri runtime: the `tauri` Vite condition was not applied, so native capabilities are missing from the bundle. A stale `vite dev` (from `dev:web`) is usually squatting on the dev port. Stop all dev servers, delete `.svelte-kit` and `node_modules/.vite`, then relaunch with `bun run dev`.',
+		'Whispering loaded its web build inside a Tauri runtime: the `tauri` Vite condition was not applied, so native capabilities are missing from the bundle. A stale `bun dev:whispering:ui` server is usually squatting on the dev port. Stop all dev servers, delete `apps/whispering/.svelte-kit` and `apps/whispering/node_modules/.vite*`, then relaunch with `bun dev:epicenter` from the repository root.',
 	);
 }
 

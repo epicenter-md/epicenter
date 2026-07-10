@@ -89,8 +89,8 @@ function createRecordings() {
 		/**
 		 * Delete a recording by ID.
 		 *
-		 * Fire-and-forget. The view re-reads on the observer signal automatically.
-		 * Callers should clean up audio URLs before calling this.
+		 * Low-level row-only deletion. User and retention flows must use the shared
+		 * recording deletion operation so native artifact failure preserves this row.
 		 */
 		delete(id: string) {
 			whispering.tables.recordings.delete(id);
@@ -100,8 +100,8 @@ function createRecordings() {
 		 * Delete multiple recordings by ID in a single optimized scan.
 		 *
 		 * Uses the workspace table's bulkDelete (O(n) single scan) instead of
-		 * looping delete calls (O(n²)). Callers should clean up audio URLs
-		 * and audio blobs separately via `services.blobs.audio.delete(ids)`.
+		 * looping delete calls (O(n²)). This is the final row-only step of the
+		 * shared recording deletion operation, not a public cleanup workflow.
 		 */
 		async bulkDelete(ids: string[]) {
 			await whispering.tables.recordings.bulkDelete(ids);

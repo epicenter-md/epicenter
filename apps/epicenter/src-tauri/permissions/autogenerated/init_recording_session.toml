@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-init-recording-session"
+description = "Enables the init_recording_session command without any pre-configured scope."
+commands.allow = ["init_recording_session"]
+
+[[permission]]
+identifier = "deny-init-recording-session"
+description = "Denies the init_recording_session command without any pre-configured scope."
+commands.deny = ["init_recording_session"]

@@ -1,6 +1,6 @@
 import type { AnyTaggedError } from 'wellcrafted/error';
 import { osNotify } from '#platform/os-notify';
-import { FAILURE_LABEL } from '$lib/recording-overlay/events';
+import { DICTATION_FAILURE_LABEL } from '$lib/dictation-feedback';
 import { dictationLifecycle } from '$lib/state/dictation-lifecycle.svelte';
 
 /**
@@ -41,7 +41,7 @@ export function attachDictationExceptions() {
 		// already dropped success and progress toasts), so firing it while focused
 		// is a worthwhile floor, not noise. A reduced delivery reach is a success,
 		// not a failure, and never reaches this projection.
-		osNotify(FAILURE_LABEL[outcome.tier], outcome.error.message);
+		osNotify(DICTATION_FAILURE_LABEL[outcome.tier], outcome.error.message);
 	});
 
 	return () => {};

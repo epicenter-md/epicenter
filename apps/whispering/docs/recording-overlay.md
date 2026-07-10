@@ -23,24 +23,34 @@ into Rust would split the source of truth, so we keep it in the main window.
   when none exists, so both paths share one show/hide/position code path.
 - **Route**: `/recording-overlay` renders the pill. It lives in its own webview,
   so it cannot read the recorder state directly.
-- **Seam**: `#platform/recording-overlay` resolves to the Tauri window manager
-  in the desktop build and to a no-op on web (the overlay is desktop-only).
-- **Protocol** (`src/lib/recording-overlay/events.ts`): the main window pushes a
-  `status` to the overlay; the overlay pushes `action` (stop/cancel) and a
-  `ready` handshake back. Actions are routed against the live recorder state in
-  the main window, not the overlay's payload, so a click that races a state
-  change is safe.
+- **Shared pill** (`src/lib/recording-pill/`): owns the platform-free status and
+  action model, lifecycle projection, presentation, direct web host, and meter
+  curve. `RecordingPillHost` reads `dictationLifecycle` directly and renders the
+  in-page pill on web.
+- **Tauri overlay** (`src/lib/recording-overlay/`): owns only the secondary-window
+  event protocol and desktop mic-level transport. On desktop,
+  the Tauri implementation of `#platform/recording-overlay-owner` projects the
+  lifecycle, synchronizes the separate overlay window, and listens for overlay
+  actions and reveal requests. The browser implementation is a no-op because
+  its pill is mounted directly in the app layout.
+- **Protocol** (`src/lib/recording-overlay/events.ts`): binds the shared pill
+  model to Tauri event channels. The main window pushes a `status` to the overlay;
+  the overlay pushes `action` (stop/cancel) and a `ready` handshake back. Actions
+  are routed against the live recorder state in the main window, not the overlay's
+  payload, so a click that races a state change is safe.
 - **Controls**: the stop and cancel buttons are filled chips (stop is red) so
   they read as buttons in the small pill, and they stop click propagation.
   Clicking the pill body anywhere else emits `focus-main`, which brings the main
   Whispering window forward (show + unminimize + setFocus); it is a separate
   gesture from stop/cancel so finishing a recording never yanks the window up.
 - **Mic levels** (`mic-level` channel): the bars reflect real loudness, not a
-  loop. Both producers send a raw RMS amplitude and the overlay applies the
-  perceptual curve + smoothing:
+  loop. Both producers send a raw RMS amplitude and the receiving pill mount
+  applies the shared perceptual curve + smoothing:
   - VAD: RMS computed from the frame `@ricky0123/vad-web` already hands us via
-    `onFrameProcessed` (no second audio graph), forwarded through the seam's
-    `reportLevel`.
+    `onFrameProcessed` (no second audio graph), delivered through the
+    `#platform/recording-mic-level` seam. The browser implementation lives with
+    the pill and updates the host's reactive meter; the Tauri implementation
+    lives with the overlay transport and forwards the sample to its webview.
   - Manual (CPAL/Tauri): the PCM lives only in Rust, so the consumer worker
     (`src-tauri/src/recorder/recorder.rs`) computes RMS and emits a throttled
     (~20 Hz) targeted `emit_to("recording-overlay", "mic-level", rms)`, per

@@ -1,12 +1,13 @@
 <script lang="ts">
 	import * as Sidebar from '@epicenter/ui/sidebar';
 	import { MediaQuery } from 'svelte/reactivity';
+	import { tauri } from '#platform/tauri';
 	import AppRuntime from './_components/AppRuntime.svelte';
 	import BottomNav from './_components/BottomNav.svelte';
 	import ContentShell from './_components/ContentShell.svelte';
 	import GlobalDialogs from './_components/GlobalDialogs.svelte';
 	import VerticalNav from './_components/VerticalNav.svelte';
-	import RecordingPillHost from '$lib/recording-overlay/RecordingPillHost.svelte';
+	import RecordingPillHost from '$lib/recording-pill/RecordingPillHost.svelte';
 
 	let { children } = $props();
 
@@ -42,6 +43,8 @@
 
 <GlobalDialogs />
 
-<!-- The shared dictation pill. Renders only on web (desktop uses a native
-     overlay window); persists across navigation as a session-root sibling. -->
-<RecordingPillHost />
+{#if !tauri}
+	<!-- The browser dictation pill persists across navigation as a session-root
+	     sibling. Desktop uses the native overlay window instead. -->
+	<RecordingPillHost />
+{/if}

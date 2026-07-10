@@ -10,8 +10,8 @@
  *    commands (returning `()`) stay as `Promise<void>`; they are not lied to
  *    by a fake `Ok` wrap.
  *
- * 2. Provide the ONE hand-rolled command for raw byte traffic
- *    (`encodeRecordingForUpload`). The Rust side returns
+ * 2. Provide the hand-rolled commands for raw byte traffic
+ *    (`encodeRecordingForUpload` and `readRecordingArtifact`). The Rust side returns
  *    `tauri::ipc::Response::new(opus_bytes)` for upload-cost reasons;
  *    tauri-specta cannot generate a typed binding for that shape because
  *    `Response` is not `specta::Type`. The handwritten wrapper here is the
@@ -80,7 +80,7 @@ const wrappedGen = Object.fromEntries(
 ) as WrapAll<typeof gen>;
 
 /**
- * Hand-rolled: the only command outside the generated surface. The Rust
+ * Hand-rolled raw-byte command outside the generated surface. The Rust
  * return is a raw IPC byte body (`tauri::ipc::Response::new(opus_bytes)`).
  * The success type is therefore `ArrayBuffer` rather than a serialized
  * struct. Error path is a plain string from Tauri's reject channel.
@@ -99,15 +99,31 @@ async function encodeRecordingForUpload(
 	}
 }
 
+async function readRecordingArtifact(
+	recordingId: string,
+): Promise<Result<ArrayBuffer, string>> {
+	try {
+		return Ok(
+			await rawInvoke<ArrayBuffer>('read_recording_artifact', {
+				recordingId,
+			}),
+		);
+	} catch (e) {
+		return Err(String(e));
+	}
+}
+
 export const commands = {
 	...wrappedGen,
 	encodeRecordingForUpload,
+	readRecordingArtifact,
 };
 
 export type {
 	CatalogError,
 	DictationCapability,
 	DownloadProgress,
+	GlobalShortcutRegistration,
 	ModelInfo,
 	RecorderError as IpcRecorderError,
 	RecordingArtifact,

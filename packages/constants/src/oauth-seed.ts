@@ -2,6 +2,8 @@ import type { SchemaClient } from '@better-auth/oauth-provider';
 import { APPS, appOrigins } from '#apps';
 import {
 	EPICENTER_CLI_OAUTH_CLIENT_ID,
+	EPICENTER_DESKTOP_OAUTH_CLIENT_ID,
+	EPICENTER_DESKTOP_TAURI_OAUTH_REDIRECT_URI,
 	EPICENTER_HONEYCRISP_OAUTH_CLIENT_ID,
 	EPICENTER_HONEYCRISP_TAURI_OAUTH_REDIRECT_URI,
 	EPICENTER_OAUTH_SCOPES,
@@ -77,6 +79,12 @@ export function buildTrustedOAuthClients(apiBaseURL: string) {
 	// with the first-party session cookie (see createSameOriginCookieAuth), so
 	// it is deliberately absent from this trusted-client set.
 	return [
+		{
+			clientId: EPICENTER_DESKTOP_OAUTH_CLIENT_ID,
+			name: 'Epicenter Desktop',
+			type: 'user-agent-based',
+			redirectUris: [EPICENTER_DESKTOP_TAURI_OAUTH_REDIRECT_URI],
+		},
 		{
 			clientId: EPICENTER_WHISPERING_OAUTH_CLIENT_ID,
 			name: 'Whispering',

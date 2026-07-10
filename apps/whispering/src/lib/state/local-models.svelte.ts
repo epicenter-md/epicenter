@@ -20,16 +20,14 @@
  * dispatcher. Presence (this store) and selection (deviceConfig) are different
  * concerns; the selector joins them.
  */
-import { Channel } from '@tauri-apps/api/core';
 import { SvelteMap } from 'svelte/reactivity';
 import { Err, Ok, type Result } from 'wellcrafted/result';
 import { tauri } from '#platform/tauri';
 import {
 	type CatalogError,
-	commands,
 	type DownloadProgress,
 	type ModelInfo,
-} from '$lib/tauri/commands';
+} from '$lib/tauri/commands.types';
 
 export type ModelDownloadState =
 	| { type: 'not-downloaded' }
@@ -65,7 +63,7 @@ function createLocalModels() {
 
 	async function refresh() {
 		if (!tauri) return;
-		models = await commands.listModels();
+		models = await tauri.transcription.listModels();
 	}
 
 	void refresh();
@@ -107,6 +105,7 @@ function createLocalModels() {
 		 * directly on `ready`.
 		 */
 		async download(model: ModelInfo): Promise<ModelDownloadResult> {
+			if (!tauri) return null;
 			if (transfers.has(model.id)) return null;
 			const id = `${model.id}#${++attempts}`;
 			transfers.set(model.id, { id, progress: 0, cancelling: false });
@@ -125,8 +124,7 @@ function createLocalModels() {
 				return null;
 			}
 
-			const onProgress = new Channel<DownloadProgress>();
-			onProgress.onmessage = ({ bytesReceived, totalBytes }) => {
+			const onProgress = ({ bytesReceived, totalBytes }: DownloadProgress) => {
 				// f64 fields arrive as `number | null` (specta guards non-finite
 				// floats). Guard the total anyway.
 				const received = bytesReceived ?? 0;
@@ -138,7 +136,11 @@ function createLocalModels() {
 					transfers.set(model.id, { ...transfer, progress });
 			};
 
-			const { error } = await commands.downloadModel(model.id, id, onProgress);
+			const { error } = await tauri.transcription.downloadModel(
+				model.id,
+				id,
+				onProgress,
+			);
 			if (error) {
 				const wasCancelled = transfers.get(model.id)?.cancelling ?? false;
 				transfers.delete(model.id);
@@ -159,15 +161,18 @@ function createLocalModels() {
 		 * A no-op when nothing is downloading.
 		 */
 		async cancel(model: ModelInfo): Promise<void> {
+			if (!tauri) return;
 			const transfer = transfers.get(model.id);
 			if (!transfer) return;
 			transfers.set(model.id, { ...transfer, cancelling: true });
-			await commands.cancelDownload(transfer.id);
+			await tauri.transcription.cancelDownload(transfer.id);
 		},
 
 		/** Remove a downloaded model's file from the shared HF cache. */
 		async remove(model: ModelInfo): Promise<Result<null, CatalogError>> {
-			const result = await commands.deleteModel(model.id);
+			if (!tauri)
+				throw new Error('Local models require the Epicenter desktop app');
+			const result = await tauri.transcription.deleteModel(model.id);
 			if (!result.error) await refresh();
 			return result;
 		},

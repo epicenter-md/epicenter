@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-read-recording-artifact"
+description = "Enables the read_recording_artifact command without any pre-configured scope."
+commands.allow = ["read_recording_artifact"]
+
+[[permission]]
+identifier = "deny-read-recording-artifact"
+description = "Denies the read_recording_artifact command without any pre-configured scope."
+commands.deny = ["read_recording_artifact"]

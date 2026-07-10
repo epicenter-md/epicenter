@@ -31,7 +31,6 @@ import { deviceConfig } from '$lib/state/device-config.svelte';
 import { recordings } from '$lib/state/recordings.svelte';
 import { type SecretKey, secrets } from '$lib/state/secrets.svelte';
 import { settings } from '$lib/state/settings.svelte';
-import { commands } from '$lib/tauri/commands';
 
 /**
  * The error any transcription path can surface. Deliberately `AnyTaggedError`
@@ -216,7 +215,7 @@ async function loadForUpload(
 ): Promise<Result<Blob, TranscriptionError>> {
 	if (tauri) {
 		const { data: oggBytes, error } =
-			await commands.encodeRecordingForUpload(recordingId);
+			await tauri.transcription.encodeRecordingForUpload(recordingId);
 		if (error === null) return Ok(new Blob([oggBytes], { type: 'audio/ogg' }));
 		report.info({
 			title: 'Audio compression skipped',
@@ -335,7 +334,7 @@ export function prewarmOnDeviceModel(): void {
 	const modelId = deviceConfig.get(PROVIDERS[selectedService].modelConfigKey);
 	if (!modelId) return;
 
-	void commands.prewarmModel({
+	void tauri.transcription.prewarmModel({
 		modelId,
 		language: null,
 		initialPrompt: null,
@@ -383,7 +382,7 @@ async function transcribeOnDevice(
 		settings.get('transcription.prompt'),
 		settings.get('dictionary'),
 	);
-	return commands.transcribeRecording(recordingId, {
+	return tauri.transcription.transcribeRecording(recordingId, {
 		modelId,
 		language: language === 'auto' ? undefined : language,
 		initialPrompt: prompt || undefined,

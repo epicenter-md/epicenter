@@ -65,7 +65,7 @@ jobs:
         #   - Vendored mirrors that intentionally re-declare these paths to
         #     avoid a runtime dependency on @epicenter/constants
         #     (packages/sync/src/room-route.ts, packages/auth/src/routes.ts,
-        #     apps/super-chat/src/routes.ts, whose /api/session is the shell's
+        #     apps/epicenter/src/routes.ts, whose /api/session is the shell's
         #     own loopback contract, not the cloud session endpoint).
         #   - *.test.ts / *.test.tsx (mock URL matchers are allowed to
         #     reference paths verbatim).
@@ -76,7 +76,7 @@ jobs:
               --exclude-dir=node_modules --exclude-dir=dist --exclude-dir=.wrangler --exclude-dir=.next --exclude-dir=.svelte-kit \
               "['\"\`]/api/(session|rooms|blobs|ai)([^a-z]|$)|['\"\`]/auth/(oauth2/[a-z]+|cli-callback)" \
               packages apps \
-              | grep -vE "packages/constants/src/(api|oauth)-routes\.ts|packages/sync/src/room-route\.ts|packages/auth/src/routes\.ts|apps/super-chat/src/routes\.ts|packages/server/src/auth-pages/scripts/" \
+              | grep -vE "packages/constants/src/(api|oauth)-routes\.ts|packages/sync/src/room-route\.ts|packages/auth/src/routes\.ts|apps/epicenter/src/routes\.ts|packages/server/src/auth-pages/scripts/" \
               | grep -vE "^[^:]+:[0-9]+:[[:space:]]*(\*|//|/\*)" ; then
             echo "::error::Hardcoded API path literal found. Use API_ROUTES.* from @epicenter/constants/api-routes or OAUTH_ROUTES.* from @epicenter/constants/oauth-routes instead."
             exit 1

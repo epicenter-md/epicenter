@@ -1,6 +1,6 @@
 /**
  * Tauri-only capability namespace. Everything that requires the Tauri
- * runtime lives in this file: fs, permissions, window, tray,
+ * runtime lives in this file: fs, permissions, window,
  * keyboard, autostart. The subset that needs TanStack caching,
  * error transformation, or invalidation is exposed in the same shape
  * (no sub-namespace), with each leaf picking one canonical call form.
@@ -38,30 +38,22 @@
  * See `specs/20260526T000140-collapse-tauri-only-services-into-namespace.md`.
  */
 
-import { Menu, MenuItem } from '@tauri-apps/api/menu';
-import { basename, resolveResource } from '@tauri-apps/api/path';
-import { TrayIcon } from '@tauri-apps/api/tray';
+import { Channel } from '@tauri-apps/api/core';
+import { appDataDir, basename, extname, join } from '@tauri-apps/api/path';
+import { getCurrentWebview } from '@tauri-apps/api/webview';
 import { getCurrentWindow } from '@tauri-apps/api/window';
-import {
-	disable as disableAutostart,
-	enable as enableAutostart,
-	isEnabled as isAutostartEnabled,
-} from '@tauri-apps/plugin-autostart';
 import { readFile } from '@tauri-apps/plugin-fs';
-import {
-	register as registerShortcut,
-	unregisterAll as unregisterAllShortcuts,
-} from '@tauri-apps/plugin-global-shortcut';
 import { openPath as revealPath } from '@tauri-apps/plugin-opener';
-import { exit } from '@tauri-apps/plugin-process';
 import mime from 'mime';
 import { defineErrors, extractErrorMessage } from 'wellcrafted/error';
 import { defineKeys } from 'wellcrafted/query';
 import { Ok, tryAsync } from 'wellcrafted/result';
-import { goto } from '$app/navigation';
-import type { WhisperingRecordingState } from '$lib/constants/audio';
 import { defineMutation, defineQuery, queryClient } from '$lib/rpc/client';
-import type { DictationCapability } from '$lib/tauri/commands';
+import type {
+	DictationCapability,
+	DownloadProgress,
+	GlobalShortcutRegistration,
+} from '$lib/tauri/commands';
 import { commands, events } from '$lib/tauri/commands';
 
 /**
@@ -69,7 +61,7 @@ import { commands, events } from '$lib/tauri/commands';
  * caller (`platform/system-shortcuts.tauri.ts`) computes each accelerator once,
  * so `registerChords` registers the string instead of re-deriving it.
  */
-export type ChordRegistration = { commandId: string; accelerator: string };
+export type ChordRegistration = GlobalShortcutRegistration;
 
 // fs ----------------------------------------------------------------
 const FsError = defineErrors({
@@ -102,6 +94,15 @@ const fs = {
 					}),
 				),
 			catch: (error) => FsError.ReadFilesFailed({ paths, cause: error }),
+		}),
+	appDataPath: async (...segments: string[]) =>
+		join(await appDataDir(), ...segments),
+	extension: extname,
+	onDragDrop: (handler: (paths: string[]) => void | Promise<void>) =>
+		getCurrentWebview().onDragDropEvent(async (event) => {
+			if (event.payload.type !== 'drop' || event.payload.paths.length === 0)
+				return;
+			await handler(event.payload.paths);
 		}),
 };
 
@@ -211,80 +212,11 @@ const keyring = {
 	},
 };
 
-// tray --------------------------------------------------------------
-const TrayError = defineErrors({
-	SetIcon: ({ cause }: { cause: unknown }) => ({
-		message: `Failed to set tray icon: ${extractErrorMessage(cause)}`,
-		cause,
-	}),
-});
-
-const TRAY_ID = 'whispering-tray';
-let trayPromise: ReturnType<typeof initTray> | null = null;
-
-async function getIconPath(recorderState: WhisperingRecordingState) {
-	const iconPaths = {
-		IDLE: 'recorder-state-icons/studio_microphone.png',
-		RECORDING: 'recorder-state-icons/red_large_square.png',
-	} as const satisfies Record<WhisperingRecordingState, string>;
-	return resolveResource(iconPaths[recorderState]);
-}
-
-async function initTray() {
-	const existing = await TrayIcon.getById(TRAY_ID);
-	if (existing) return existing;
-
-	const trayMenu = await Menu.new({
-		items: [
-			await MenuItem.new({
-				id: 'show',
-				text: 'Show Window',
-				action: () => getCurrentWindow().show(),
-			}),
-			await MenuItem.new({
-				id: 'hide',
-				text: 'Hide Window',
-				action: () => getCurrentWindow().hide(),
-			}),
-			await MenuItem.new({
-				id: 'settings',
-				text: 'Settings',
-				action: () => {
-					goto('/settings');
-					return getCurrentWindow().show();
-				},
-			}),
-			await MenuItem.new({
-				id: 'quit',
-				text: 'Quit',
-				action: () => void exit(0),
-			}),
-		],
-	});
-
-	return TrayIcon.new({
-		id: TRAY_ID,
-		icon: await getIconPath('IDLE'),
-		menu: trayMenu,
-		menuOnLeftClick: false,
-		action: (e) => {
-			if (
-				e.type === 'Click' &&
-				e.button === 'Left' &&
-				e.buttonState === 'Down'
-			) {
-				return true;
-			}
-			return false;
-		},
-	});
-}
-
 // keyboard ----------------------------------------------------------
-// Global-shortcut input is `tauri-plugin-global-shortcut` chords, registered
-// here from `platform/system-shortcuts.tauri.ts`; the plugin's own callback
-// delivers Pressed/Released into `dispatchCommandTrigger`, and no Accessibility
-// grant is needed (ADR-0117). The rest of this namespace is the macOS
+// Global-shortcut input is `tauri-plugin-global-shortcut` chords owned by Rust.
+// This adapter replaces the configured set through one focused command and
+// dispatches Rust's typed Pressed/Released event into `dispatchCommandTrigger`;
+// no Accessibility grant is needed (ADR-0117). The rest of this namespace is the macOS
 // paste-at-cursor grant watch: `setAutoPasteEnabled` tells the Rust supervisor
 // when auto-paste wants the grant, and `getDictationCapability` /
 // `onDictationCapabilityChanged` expose the `DictationCapability` the paste path
@@ -323,7 +255,11 @@ const autostart = {
 		queryKey: autostartKeys.isEnabled,
 		queryFn: () =>
 			tryAsync({
-				try: () => isAutostartEnabled(),
+				try: async () => {
+					const { data, error } = await commands.isAutostartEnabled();
+					if (error !== null) throw new Error(error);
+					return data;
+				},
 				catch: (error) => AutostartError.CheckFailed({ cause: error }),
 			}),
 		// The OS login-item state can change outside the app (System Settings,
@@ -335,7 +271,10 @@ const autostart = {
 		mutationKey: autostartKeys.enable,
 		mutationFn: () =>
 			tryAsync({
-				try: () => enableAutostart(),
+				try: async () => {
+					const { error } = await commands.setAutostartEnabled(true);
+					if (error !== null) throw new Error(error);
+				},
 				catch: (error) => AutostartError.EnableFailed({ cause: error }),
 			}),
 		onSettled: () =>
@@ -345,7 +284,10 @@ const autostart = {
 		mutationKey: autostartKeys.disable,
 		mutationFn: () =>
 			tryAsync({
-				try: () => disableAutostart(),
+				try: async () => {
+					const { error } = await commands.setAutostartEnabled(false);
+					if (error !== null) throw new Error(error);
+				},
 				catch: (error) => AutostartError.DisableFailed({ cause: error }),
 			}),
 		onSettled: () =>
@@ -353,41 +295,38 @@ const autostart = {
 	}),
 };
 
-const tray = {
-	setIcon: ({ icon }: { icon: WhisperingRecordingState }) =>
-		tryAsync({
-			try: async () => {
-				const iconPath = await getIconPath(icon);
-				if (!trayPromise) trayPromise = initTray();
-				const t = await trayPromise;
-				return t.setIcon(iconPath);
-			},
-			catch: (error) => TrayError.SetIcon({ cause: error }),
-		}),
-};
+let shortcutListenerPromise: ReturnType<
+	typeof events.globalShortcutTriggered.listen
+> | null = null;
 
 const keyboard = {
 	/**
-	 * Register the chord backend (`tauri-plugin-global-shortcut`). Replaces
-	 * the whole set: unregister everything, then register each resolved chord
-	 * under its accelerator. The plugin's own callback delivers Pressed/Released,
-	 * which we dispatch into the command layer (the convergence point the browser
+	 * Replace the Rust-owned chord set and subscribe once to its typed trigger
+	 * event. Rust owns plugin registration and rollback; this adapter dispatches
+	 * Pressed/Released into the command layer (the convergence point the browser
 	 * backend also feeds). A binding with no accelerator (Fn or modifier-only) is
 	 * refused upstream, so nothing reaches here but chords. Carbon's
 	 * `RegisterEventHotKey` needs no Accessibility grant.
 	 */
-	registerChords: async (chords: ChordRegistration[]) => {
-		await unregisterAllShortcuts();
-		const { dispatchCommandTrigger } = await import('$lib/commands');
-		for (const { commandId, accelerator } of chords) {
-			await registerShortcut(accelerator, (event) =>
-				dispatchCommandTrigger(commandId, event.state),
+	registerChords: async (chords: GlobalShortcutRegistration[]) => {
+		if (!shortcutListenerPromise) {
+			shortcutListenerPromise = events.globalShortcutTriggered.listen(
+				async ({ payload }) => {
+					const { dispatchCommandTrigger } = await import('$lib/commands');
+					dispatchCommandTrigger(payload.commandId, payload.state);
+				},
 			);
 		}
+		await shortcutListenerPromise;
+		const { error } = await commands.replaceGlobalShortcuts(chords);
+		if (error !== null) throw new Error(error);
 	},
 
 	/** Unregister every plugin-registered chord (teardown). */
-	unregisterChords: () => unregisterAllShortcuts(),
+	unregisterChords: async () => {
+		const { error } = await commands.replaceGlobalShortcuts([]);
+		if (error !== null) throw new Error(error);
+	},
 
 	/**
 	 * Tell the tap supervisor whether auto-paste-at-cursor is on. Paste writes
@@ -427,6 +366,30 @@ const media = {
 	resume: (sessions: string[]) => commands.resumePlayback(sessions),
 };
 
+// transcription ----------------------------------------------------
+// Shared transcription orchestration uses this namespace through the
+// `#platform/tauri` seam. Keeping the raw generated bindings here prevents a
+// browser build from retaining native invoke names merely because it shares the
+// orchestration module with Epicenter.
+const transcription = {
+	encodeRecordingForUpload: commands.encodeRecordingForUpload,
+	listModels: commands.listModels,
+	downloadModel: (
+		modelId: string,
+		downloadId: string,
+		onProgress: (progress: DownloadProgress) => void,
+	) => {
+		const channel = new Channel<DownloadProgress>();
+		channel.onmessage = onProgress;
+		return commands.downloadModel(modelId, downloadId, channel);
+	},
+	deleteModel: commands.deleteModel,
+	cancelDownload: commands.cancelDownload,
+	prewarmModel: commands.prewarmModel,
+	transcribeRecording: commands.transcribeRecording,
+	setUnloadPolicy: commands.setUnloadPolicy,
+};
+
 // opener ------------------------------------------------------------
 const OpenerError = defineErrors({
 	OpenPathFailed: ({ path, cause }: { path: string; cause: unknown }) => ({
@@ -456,6 +419,13 @@ const mainWindow = {
 		await window.show();
 		await window.setFocus();
 	},
+	async reveal(): Promise<void> {
+		const window = getCurrentWindow();
+		await window.show();
+		await window.unminimize();
+		// Raising the window can succeed even when macOS refuses the focus request.
+		await window.setFocus().catch(() => {});
+	},
 };
 
 // barrel ------------------------------------------------------------
@@ -465,10 +435,10 @@ export const tauriOnly = {
 	fs,
 	permissions,
 	keyring,
-	tray,
 	keyboard,
 	autostart,
 	media,
+	transcription,
 	opener,
 	mainWindow,
 };

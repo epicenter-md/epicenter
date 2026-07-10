@@ -1,0 +1,11 @@
+{
+	"$schema": "../gen/schemas/desktop-schema.json",
+	"identifier": "trusted-epicenter-apps-production",
+	"description": "Allows the production Bun-served Epicenter app windows to prove focused native authority.",
+	"local": false,
+	"windows": ["query", "whispering", "mail", "books"],
+	"remote": {
+		"urls": ["http://127.0.0.1:39130"]
+	},
+	"permissions": ["allow-get-runtime-info"]
+}

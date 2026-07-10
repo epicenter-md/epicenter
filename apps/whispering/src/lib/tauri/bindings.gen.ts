@@ -8,51 +8,18 @@ export const commands = {
 	/**
 	 *  Delivers text to the cursor, falling back to the clipboard when it cannot.
 	 *
-	 *  The reach is decided from the live Accessibility *capability* before the
-	 *  keystroke, not from the keystroke's result. A `Broken` grant — one that still
-	 *  reads as trusted via `AXIsProcessTrusted` but whose synthetic events the OS
-	 *  drops — lets the paste return `Ok` while nothing lands, so observing the
-	 *  result is unreliable.
-	 *
-	 *  The clipboard is the paste transport, and `keep_on_clipboard` is the caller's
-	 *  statement of what the clipboard should hold *afterward*:
-	 *
-	 *  - `keep_on_clipboard == true` (clipboard output is on): the transcript is the
-	 *    intended final clipboard state, so we write it, paste, and leave it. No
-	 *    snapshot, no restore.
-	 *  - `keep_on_clipboard == false` (clipboard output is off): we borrow the
-	 *    clipboard. Snapshot what the user had, write the transcript (concealed on
-	 *    macOS so clipboard-history managers skip it), paste, then restore the
-	 *    snapshot — so `write_text` leaves the clipboard exactly as it found it. On
-	 *    macOS the snapshot is full-fidelity native `NSPasteboard` save/restore (see
-	 *    `clipboard.rs`), which fixes the silent loss of a non-text clipboard
-	 *    (image, file); every other platform keeps the text-only plugin save/restore.
-	 *
-	 *  When we cannot paste, or the paste fails, the transcript is left on the
-	 *  clipboard as the fallback (this wins over restoring the snapshot). The
-	 *  transcript is independently saved to history either way, so a fallback is a
-	 *  reduced reach, never data loss.
+	 *  With `keep_on_clipboard`, the transcript is the intended final clipboard
+	 *  state. Otherwise this command borrows the clipboard, pastes, then restores
+	 *  the exact previous macOS pasteboard or the previous text on other platforms.
 	 */
 	writeText: (text: string, keepOnClipboard: boolean) =>
 		typedError<WriteTextOutcome, string>(
 			__TAURI_INVOKE('write_text', { text, keepOnClipboard }),
 		),
-	/**
-	 *  Simulates pressing the Enter/Return key
-	 *
-	 *  This is useful for automatically submitting text in chat applications
-	 *  after transcription has been pasted.
-	 */
+	/**  Simulates pressing the Enter/Return key. */
 	simulateEnterKeystroke: () =>
 		typedError<null, string>(__TAURI_INVOKE('simulate_enter_keystroke')),
-	/**
-	 *  Simulates pressing the copy shortcut (Cmd+C on macOS, Ctrl+C elsewhere)
-	 *
-	 *  This copies the active selection in the foreground app to the clipboard. The
-	 *  frontend pairs it with a clipboard save/read/restore to capture the user's
-	 *  selection without clobbering their clipboard (see the text service's
-	 *  `captureSelection`).
-	 */
+	/**  Simulates the platform copy shortcut with layout-independent key codes. */
 	simulateCopyKeystroke: () =>
 		typedError<null, string>(__TAURI_INVOKE('simulate_copy_keystroke')),
 	getCurrentRecordingId: () =>
@@ -288,12 +255,25 @@ export const commands = {
 	 */
 	getDictationCapability: () =>
 		__TAURI_INVOKE<DictationCapability>('get_dictation_capability'),
+	replaceGlobalShortcuts: (registrations: GlobalShortcutRegistration[]) =>
+		typedError<null, string>(
+			__TAURI_INVOKE('replace_global_shortcuts', { registrations }),
+		),
+	isAutostartEnabled: () =>
+		typedError<boolean, string>(__TAURI_INVOKE('is_autostart_enabled')),
+	setAutostartEnabled: (enabled: boolean) =>
+		typedError<null, string>(
+			__TAURI_INVOKE('set_autostart_enabled', { enabled }),
+		),
 };
 
 /** Events */
 export const events = {
 	dictationCapabilityEvent: makeEvent<DictationCapabilityEvent>(
 		'dictation-capability-event',
+	),
+	globalShortcutTriggered: makeEvent<GlobalShortcutTriggered>(
+		'global-shortcut-triggered',
 	),
 };
 
@@ -304,7 +284,7 @@ export type CatalogError =
 	| { name: 'DeleteFailed'; message: string };
 
 /**
- *  The single source of truth for whether Whispering can paste a transcript at
+ *  The single source of truth for whether Epicenter can paste a transcript at
  *  the cursor: a synthetic Cmd/Ctrl+V that, on macOS, needs the Accessibility
  *  grant. macOS is the only platform that gates it, and the only process that
  *  can authoritatively know is the one holding the tap (this one), so Rust owns
@@ -331,14 +311,14 @@ export type DictationCapability =
 	| 'inactive'
 	/**
 	 *  macOS Accessibility is not granted, so paste at cursor falls back to the
-	 *  clipboard. Turning Whispering on in System Settings unlocks the paste.
+	 *  clipboard. Turning Epicenter on in System Settings unlocks the paste.
 	 */
 	| 'untrusted'
 	/**  The tap is running and the app is trusted: paste at cursor can land. */
 	| 'active'
 	/**
 	 *  macOS reports the app trusted, but the tap keeps dying under the held
-	 *  grant: a stale post-update signature. Removing and re-adding Whispering
+	 *  grant: a stale post-update signature. Removing and re-adding Epicenter
 	 *  in Accessibility is the fix, which `Untrusted`'s "just toggle on" is not.
 	 */
 	| 'broken';
@@ -347,7 +327,7 @@ export type DictationCapability =
  *  Pushed whenever the dictation capability changes. The frontend seeds from
  *  `get_dictation_capability` on attach, then tracks this event for transitions;
  *  it never probes the OS itself. A `tauri_specta::Event`, emitted with
- *  `emit_to(app, MAIN_WINDOW)` (the main webview, not the overlay) and listened
+ *  `emit_to(app, MAIN_WINDOW)` (the Whispering webview, not the overlay) and listened
  *  through the generated `events.dictationCapabilityEvent`.
  */
 export type DictationCapabilityEvent = {
@@ -368,6 +348,18 @@ export type DownloadProgress = {
 	bytesReceived: number | null;
 	/**  Grand total bytes for the whole model (sum of the catalog file sizes). */
 	totalBytes: number | null;
+};
+
+export type GlobalShortcutRegistration = {
+	commandId: string;
+	accelerator: string;
+};
+
+export type GlobalShortcutState = 'Pressed' | 'Released';
+
+export type GlobalShortcutTriggered = {
+	commandId: string;
+	state: GlobalShortcutState;
 };
 
 /**
@@ -498,20 +490,12 @@ export type UnloadPolicy =
 	| 'after_5_minutes'
 	| 'after_30_minutes';
 
-/**
- *  Where `write_text` left the transcript.
- *
- *  - `Pasted`: a synthetic paste landed it at the cursor. When the caller asked
- *    to keep the transcript on the clipboard the transcript stays there;
- *    otherwise the clipboard is restored to whatever the user had (see
- *    `write_text`).
- *  - `LeftOnClipboard`: delivery could not paste (no Accessibility grant, or the
- *    paste itself failed), so the transcript was left on the clipboard as the
- *    fallback — always one ⌘V away.
- *
- *  The frontend maps this to the dictation pill's delivery reach.
- */
-export type WriteTextOutcome = 'pasted' | 'leftOnClipboard';
+/**  Where `write_text` left the transcript. */
+export type WriteTextOutcome =
+	/**  The synthetic paste landed at the cursor. */
+	| 'pasted'
+	/**  Delivery could not paste, so the transcript remains on the clipboard. */
+	| 'leftOnClipboard';
 
 /* Tauri Specta runtime */
 async function typedError<T, E>(

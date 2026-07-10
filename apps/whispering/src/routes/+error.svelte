@@ -2,6 +2,7 @@
 	import { Button } from '@epicenter/ui/button';
 	import * as Empty from '@epicenter/ui/empty';
 	import { page } from '$app/state';
+	import { whisperingPath } from '$lib/constants/urls';
 </script>
 
 <svelte:head>
@@ -25,5 +26,5 @@
 			{/if}
 		</Empty.Description>
 	</Empty.Header>
-	<Empty.Content> <Button href="/">Go Home</Button> </Empty.Content>
+	<Empty.Content> <Button href={whisperingPath('/')}>Go Home</Button> </Empty.Content>
 </Empty.Root>

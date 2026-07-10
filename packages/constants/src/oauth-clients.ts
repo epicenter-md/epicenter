@@ -21,6 +21,9 @@
  * machine, install, or secret. Every CLI install uses the same value.
  */
 export const EPICENTER_CLI_OAUTH_CLIENT_ID = 'epicenter-cli';
+export const EPICENTER_DESKTOP_OAUTH_CLIENT_ID = 'epicenter-desktop';
+export const EPICENTER_DESKTOP_TAURI_OAUTH_REDIRECT_URI =
+	'epicenter://auth/callback';
 export const EPICENTER_HONEYCRISP_OAUTH_CLIENT_ID = 'epicenter-honeycrisp';
 export const EPICENTER_HONEYCRISP_TAURI_OAUTH_REDIRECT_URI =
 	'epicenter-honeycrisp://oauth/callback';

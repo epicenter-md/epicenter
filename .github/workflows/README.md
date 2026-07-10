@@ -13,35 +13,13 @@ All workflows live flat in `.github/workflows/` (GitHub Actions requirement). We
 | `auto.{name}` | Automated repo maintenance | Whole repo |
 | `meta.{name}` | Repo housekeeping | Whole repo |
 
-Tauri desktop apps get **separate per-app workflows** because builds run a 3-platform matrix (macOS Apple Silicon, Ubuntu, Windows) taking 20+ minutes. A PR touching only Whispering shouldn't trigger an Epicenter build.
+Tauri desktop apps get **separate per-app workflows** when their native release
+matrix earns one. Whispering no longer owns a desktop workflow: its only native
+host is Epicenter, while its independent browser build stays in Cloudflare CI.
 
 Web apps (Cloudflare Workers) deploy **together in one workflow** because deploys are fast (~2 min on a single runner) and share the same runtime setup. Each worker's build lives in its own `wrangler.jsonc` `build.command`, which Wrangler runs for both `deploy` and `versions upload`, so production, previews, and local `wrangler deploy` build through one definition. Repo-wide lint, typecheck, and unrelated package builds belong to CI.
 
 ## Workflows
-
-### Desktop Releases
-
-| File | Trigger | What it does |
-|---|---|---|
-| `release.whispering.yml` | `v*` tags, manual | Builds Whispering for 3 platforms, publishes to GitHub Releases as draft. Includes code signing, notarization, and release notes from `docs/release-notes/`. |
-| `pr-preview.whispering.yml` | Pull requests | Builds Whispering for 3 platforms, uploads as PR artifacts. Cancels previous builds via concurrency groups. |
-
-#### macOS release invariant: the `.app` and the `.dmg` must both be notarized
-
-`tauri-action` notarizes and staples the `.app`, then builds the `.dmg` around it and only signs that `.dmg`. So the file users download (the `.dmg`) is "Unnotarized Developer ID" and fails Gatekeeper's open check even though the app inside it passes. The `notarize-whispering-dmg` action closes that gap: after `tauri-action` uploads, it notarizes, staples, and verifies the `.dmg`, then replaces the draft's asset with the stapled copy. It addresses the draft by the `releaseId` and `releaseUploadUrl` that `tauri-action` outputs, not by tag, because `gh release upload <tag>` resolves tags through an endpoint that 404s for drafts. Because the release is a draft, no one can download the unstapled file first, and because `latest.json` references the `.app.tar.gz` updater bundle rather than the `.dmg`, replacing the `.dmg` leaves the updater signature untouched.
-
-Both of these must pass on a release `.dmg` (run against the exact uploaded file, not a local rebuild):
-
-```bash
-xcrun stapler validate -v Whispering_*.dmg
-spctl -a -vvv -t open --context context:primary-signature Whispering_*.dmg   # accepted, Notarized Developer ID
-```
-
-And the app inside it must still pass once the `.dmg` is mounted:
-
-```bash
-spctl -a -vvv -t execute /Volumes/Whispering/Whispering.app                  # accepted, Notarized Developer ID
-```
 
 ### Web Deployment (Cloudflare Workers)
 
@@ -149,8 +127,6 @@ keep `changeset version` (it owns version math and changelogs) but replaced
 | File | Trigger | What it does |
 |---|---|---|
 | `meta.sponsors-readme.yml` | Daily schedule, manual | Updates README sponsors section. |
-| `meta.sync-releases.yml` | Release published/edited, manual | Mirrors releases from EpicenterHQ/epicenter to braden-w/whispering (downstream). |
-| `meta.update-readme-version.yml` | Release published, manual | Updates download link versions in Whispering README via sed. |
 
 ### Uncategorized
 
@@ -166,19 +142,11 @@ keep `changeset version` (it owns version math and changelogs) but replaced
 | `CLOUDFLARE_PREVIEW_API_TOKEN` | `deploy.cloudflare-preview` | Least-privilege Cloudflare API token for PR previews. Custom token, **Account › Workers Scripts › Edit** only (covers Static Assets; no zone/routes/KV/R2/D1), scoped to the one account. Separate from the prod token so a leak from the PR-triggered preview path cannot reach production. |
 | `CLOUDFLARE_ACCOUNT_ID` | `deploy.cloudflare`, `deploy.cloudflare-preview` | Cloudflare account ID |
 | `DISCORD_WEBHOOK_URL` | `deploy.cloudflare` | Discord webhook for deployment notifications (optional) |
-| `TAURI_SIGNING_PRIVATE_KEY` | `release.whispering`, `pr-preview.whispering` | Tauri update signing key |
-| `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | `release.whispering`, `pr-preview.whispering` | Tauri signing key password |
-| `APPLE_CERTIFICATE` | `release.whispering`, `pr-preview.whispering` | macOS code signing certificate (base64) |
-| `APPLE_CERTIFICATE_PASSWORD` | `release.whispering`, `pr-preview.whispering` | macOS certificate password |
-| `APPLE_SIGNING_IDENTITY` | `release.whispering`, `pr-preview.whispering` | macOS signing identity |
-| `APPLE_ID` | `release.whispering`, `pr-preview.whispering` | Apple ID for notarization |
-| `APPLE_PASSWORD` | `release.whispering`, `pr-preview.whispering` | Apple app-specific password |
-| `APPLE_TEAM_ID` | `release.whispering`, `pr-preview.whispering` | Apple Developer team ID |
-| `GH_ACTIONS_PAT` | `auto.release`, `meta.sync-releases`, `meta.sponsors-readme`, `meta.update-readme-version` | PAT with repo + read:org scope for pushing commits/tags and creating releases |
+| `GH_ACTIONS_PAT` | `auto.release`, `meta.sponsors-readme` | PAT with repo + read:org scope for pushing commits/tags and creating releases |
 | `ANTHROPIC_API_KEY` | `auto.label-issues`, `claude` | Anthropic API key for Claude |
 
 ## Rollback
 
 **Web apps**: Revert the commit on `main` and push, or for immediate rollback: `bunx wrangler rollback --name <worker-name>`.
 
-**Desktop releases**: Delete the draft release and re-tag from an earlier commit.
+**Desktop releases**: Follow the owning Tauri app's release workflow. Whispering has no independent desktop release to roll back.

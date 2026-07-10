@@ -13,7 +13,12 @@ import devtoolsJson from 'vite-plugin-devtools-json';
 import { viteStaticCopy } from 'vite-plugin-static-copy';
 
 const host = process.env.TAURI_DEV_HOST;
-const isTauri = process.env.TAURI_ENV_PLATFORM !== undefined;
+// Tauri CLI builds provide TAURI_ENV_PLATFORM. Epicenter's direct asset build
+// names the same trusted target explicitly so `bun run build` does not need to
+// fake an operating-system value.
+const isTauri =
+	process.env.TAURI_ENV_PLATFORM !== undefined ||
+	process.env.EPICENTER_SURFACE === '1';
 
 export default defineConfig(
 	mergeConfig(workspaceAppViteConfig(APPS.WHISPERING), {

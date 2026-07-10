@@ -2,7 +2,7 @@
  * Device-grant store proof (ADR-0115 wave 3): mint, resolve, revoke.
  *
  * What this pins at the unit level (the attach mount's E2E is in
- * `apps/super-chat/src/attach-relay-self-host.test.ts`):
+ * `apps/epicenter/src/attach-relay-self-host.test.ts`):
  * - a minted grant resolves to the one instance principal;
  * - a never-minted bearer and a revoked grant both resolve to `InvalidToken`
  *   (fail closed), so revocation kills the next connect;

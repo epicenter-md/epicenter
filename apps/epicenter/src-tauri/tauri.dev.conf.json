@@ -1,0 +1,13 @@
+{
+	"$schema": "https://schema.tauri.app/config/2",
+	"identifier": "so.epicenter.dev",
+	"app": {
+		"security": {
+			"capabilities": [
+				"trusted-epicenter-apps-development",
+				"trusted-whispering-native-development",
+				"trusted-whispering-overlay-development"
+			]
+		}
+	}
+}

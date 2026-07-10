@@ -15,7 +15,7 @@ mock.module('$app/navigation', () => ({
 }));
 
 mock.module('$lib/constants/urls', () => ({
-	WHISPERING_RECORDINGS_PATHNAME: '/recordings',
+	WHISPERING_RECORDINGS_PATHNAME: '/apps/whispering/recordings',
 }));
 
 mock.module('$lib/state/settings.svelte', () => ({

@@ -1,5 +1,5 @@
 import { tauri } from '#platform/tauri';
-import type { DictationCapability } from '$lib/tauri/commands';
+import type { DictationCapability } from '$lib/tauri/commands.types';
 
 const OVERRIDABLE_DICTATION_CAPABILITIES = [
 	'inactive',
