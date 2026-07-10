@@ -329,17 +329,5 @@ Greenfield pressure does not authorize silent data loss, security changes, or br
 
 ## Final Check
 
-Ask:
-
-```txt
-Can I explain the new API without saying "or"?
-Does one layer own each invariant?
-Would a new caller find only one obvious path?
-Are examples free of compatibility shapes?
-Did I trace high enough to challenge the owner, not just the local helper?
-Did I name at least one asymmetric refusal or explain why none exists?
-Did I stop importing the old path before deleting it?
-Did verification pass before deletion?
-Did I delete stale names instead of leaving aliases?
-Did docs, tests, and examples stop teaching the old shape?
-```
+Re-run the applicable section checks above instead of maintaining a second
+recap list. If any check fails, keep simplifying.
