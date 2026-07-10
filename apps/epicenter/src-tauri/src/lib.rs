@@ -54,8 +54,6 @@ use delivery::{simulate_copy_keystroke, simulate_enter_keystroke, write_text};
 pub mod keyring_storage;
 use keyring_storage::{keyring_read, keyring_write};
 
-pub mod media;
-use media::{pause_playback, resume_playback};
 
 pub mod timing;
 
@@ -277,8 +275,6 @@ fn make_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             download_model,
             delete_model,
             cancel_download,
-            pause_playback,
-            resume_playback,
             keyring_read,
             keyring_write,
             keyboard::commands::set_auto_paste_enabled,

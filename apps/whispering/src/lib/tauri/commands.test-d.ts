@@ -77,17 +77,6 @@ type _StopRecording = Expect<
 	>
 >;
 
-// pause_playback / resume_playback: infallible across IPC. A platform failure
-// is logged in Rust and never surfaces as an error the frontend must handle, so
-// these stay plain Promises with no Result wrap.
-type _PausePlayback = Expect<
-	Equal<ReturnType<typeof commands.pausePlayback>, Promise<string[]>>
->;
-
-type _ResumePlayback = Expect<
-	Equal<ReturnType<typeof commands.resumePlayback>, Promise<void>>
->;
-
 // transcribe_recording: fallible, takes recordingId plus the per-call spec.
 type _TranscribeRecording = Expect<
 	Equal<

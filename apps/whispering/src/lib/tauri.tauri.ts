@@ -300,11 +300,6 @@ const keyboard = {
 };
 
 // media -------------------------------------------------------------
-const media = {
-	pause: () => commands.pausePlayback(),
-	resume: (sessions: string[]) => commands.resumePlayback(sessions),
-};
-
 // transcription ----------------------------------------------------
 // Shared transcription orchestration uses this namespace through the
 // `#platform/tauri` seam. Keeping the raw generated bindings here prevents a
@@ -357,7 +352,6 @@ export const tauriOnly = {
 	keyring,
 	keyboard,
 	autostart,
-	media,
 	transcription,
 	mainWindow,
 };

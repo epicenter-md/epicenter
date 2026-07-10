@@ -201,21 +201,6 @@ export const commands = {
 	cancelDownload: (downloadId: string) =>
 		__TAURI_INVOKE<void>('cancel_download', { downloadId }),
 	/**
-	 *  Pause every system media session currently playing. Returns one opaque token
-	 *  per session paused, to hand back to `resume_playback`. Pausing is gated to
-	 *  never *start* playback: only sessions observed playing are touched, and the
-	 *  dedicated pause command (never a play/pause toggle) is sent.
-	 */
-	pausePlayback: () => __TAURI_INVOKE<string[]>('pause_playback'),
-	/**
-	 *  Resume the sessions named by `sessions`, which must be tokens returned by a
-	 *  prior `pause_playback`. A session that vanished, was already resumed by the
-	 *  user, or can't be resumed is silently skipped. Safety rule: we only ever send
-	 *  *play* to a session we personally paused.
-	 */
-	resumePlayback: (sessions: string[]) =>
-		__TAURI_INVOKE<void>('resume_playback', { sessions }),
-	/**
 	 *  Read the stored secret, or `None` when absent.
 	 *
 	 *  `keyring::Error::NoEntry` (nothing stored yet, or a prior delete) is the
