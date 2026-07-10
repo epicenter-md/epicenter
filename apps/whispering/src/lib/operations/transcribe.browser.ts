@@ -4,15 +4,9 @@ import {
 	transcribe,
 } from '@epicenter/client';
 import { API_ROUTES } from '@epicenter/constants/api-routes';
-import { InstantString } from '@epicenter/field';
-import {
-	type AnyTaggedError,
-	defineErrors,
-	extractErrorMessage,
-} from 'wellcrafted/error';
-import { Err, Ok, type Result } from 'wellcrafted/result';
+import { defineErrors } from 'wellcrafted/error';
+import { Err, type Result } from 'wellcrafted/result';
 import type { SupportedLanguage } from '$lib/constants/languages';
-import type { DesktopLocalTranscription } from '$lib/desktop/contract';
 import type { PlatformAuth } from '$lib/platform/types';
 import type { BlobStore } from '$lib/services/blob-store/types';
 import type { HttpService } from '$lib/services/http/types';
@@ -20,14 +14,11 @@ import { createDeepgramTranscriptionService } from '$lib/services/transcription/
 import { ElevenLabsTranscriptionServiceLive } from '$lib/services/transcription/cloud/elevenlabs';
 import { MistralTranscriptionServiceLive } from '$lib/services/transcription/cloud/mistral';
 import {
-	isOnDeviceProviderId,
-	type OnDeviceProviderId,
 	PROVIDERS,
 	type TranscriptionServiceId,
 	type UploadProviderId,
 } from '$lib/services/transcription/providers';
 import { deviceConfig } from '$lib/state/device-config.svelte';
-import { recordings } from '$lib/state/recordings.svelte';
 import { type SecretKey, secrets } from '$lib/state/secrets.svelte';
 import { settings } from '$lib/state/settings.svelte';
 
@@ -40,7 +31,10 @@ import { settings } from '$lib/state/settings.svelte';
  * boundary only needs to promise `{ name, message }`. Widening to the full
  * union would add error variants no consumer reads.
  */
-export type TranscriptionError = AnyTaggedError;
+import type {
+	TranscriptionEngine,
+	TranscriptionError,
+} from './transcription-use-case';
 
 const TranscriptionOperationError = defineErrors({
 	/** The hosted Epicenter gateway answered 402 (`InsufficientCredits`, ADR-0100):
@@ -50,9 +44,6 @@ const TranscriptionOperationError = defineErrors({
 	InsufficientCredits: () => ({
 		message:
 			"You're out of Epicenter AI credits. Add credits from the dashboard to keep transcribing, or switch to your own provider in settings.",
-	}),
-	LocalModelNotSelected: () => ({
-		message: 'Please select a local model in settings.',
 	}),
 	ProviderUnavailable: ({ provider }: { provider: string }) => ({
 		message: `${provider} is not available in this build.`,
@@ -64,22 +55,31 @@ type CloudTranscriptionTransport = {
 	http: HttpService;
 };
 
-export function createTranscriptionEnvironment({
+export function createBrowserTranscription({
 	auth,
 	artifacts,
 	cloudTransport,
-	localTranscription,
-	providers,
 }: {
 	auth: PlatformAuth;
 	artifacts: BlobStore;
-	cloudTransport: CloudTranscriptionTransport | null;
-	localTranscription: DesktopLocalTranscription | null;
-	providers: readonly TranscriptionServiceId[];
-}) {
-	const deepgram = cloudTransport
-		? createDeepgramTranscriptionService(cloudTransport.http)
-		: null;
+	cloudTransport: CloudTranscriptionTransport;
+}): TranscriptionEngine {
+	const providers = [
+		'epicenter',
+		'OpenAI',
+		'Groq',
+		'ElevenLabs',
+		'Deepgram',
+		'Mistral',
+		'speaches',
+	] as const satisfies readonly TranscriptionServiceId[];
+	const providerSet: ReadonlySet<TranscriptionServiceId> = new Set(providers);
+	function isBrowserProvider(
+		provider: TranscriptionServiceId,
+	): provider is UploadProviderId {
+		return providerSet.has(provider);
+	}
+	const deepgram = createDeepgramTranscriptionService(cloudTransport.http);
 
 	/**
 	 * How an upload (non-on-device) provider is reached. A `wire` provider resolves its own
@@ -204,11 +204,6 @@ export function createTranscriptionEnvironment({
 		Deepgram: {
 			kind: 'bespoke',
 			transcribe: async (audio, { prompt, spokenLanguage }) => {
-				if (!deepgram) {
-					return TranscriptionOperationError.ProviderUnavailable({
-						provider: 'Deepgram',
-					});
-				}
 				return deepgram.transcribe(audio, {
 					prompt,
 					spokenLanguage,
@@ -258,78 +253,13 @@ export function createTranscriptionEnvironment({
 		recordingId: string,
 	): Promise<Result<string, TranscriptionError>> {
 		const selectedService = settings.get('transcription.service');
-		if (!providers.includes(selectedService)) {
+		if (!isBrowserProvider(selectedService)) {
 			return TranscriptionOperationError.ProviderUnavailable({
 				provider: PROVIDERS[selectedService].label,
 			});
 		}
 
-		// The one place on-device-ness is decided. The type guard narrows `selectedService`
-		// to `OnDeviceProviderId` in one arm and `UploadProviderId` in the other, so each
-		// helper receives an already-narrowed id and neither re-checks.
-		return isOnDeviceProviderId(selectedService)
-			? await transcribeOnDevice(recordingId, selectedService)
-			: await transcribeViaUpload(recordingId, selectedService);
-	}
-
-	/**
-	 * Transcribe a saved recording by id and persist the outcome to the recordings
-	 * table: on success the transcript plus a completed outcome, on failure a
-	 * failed outcome carrying the error. Every path that transcribes (the record
-	 * pipeline, manual retry, bulk) goes through here, so the stored outcome can
-	 * never drift between callers.
-	 */
-	async function transcribeAndPersist(
-		recordingId: string,
-	): Promise<Result<string, TranscriptionError>> {
-		const { data: transcribedText, error } = await transcribeAudio(recordingId);
-		if (error) {
-			recordings.update(recordingId, {
-				transcription: {
-					status: 'failed',
-					completedAt: InstantString.now(),
-					error: extractErrorMessage(error),
-				},
-			});
-			return Err(error);
-		}
-		recordings.update(recordingId, {
-			transcript: transcribedText,
-			polishedTranscript: null,
-			transcription: {
-				status: 'completed',
-				completedAt: InstantString.now(),
-			},
-		});
-		return Ok(transcribedText);
-	}
-
-	/**
-	 * Warm the selected local model the instant a capture begins, so the cold
-	 * load (~1 s) overlaps the user's speech instead of being paid after they
-	 * stop. Called fire-and-forget from the manual and VAD start paths.
-	 *
-	 * No-op unless we are on desktop with an on-device provider selected and a model
-	 * chosen: cloud/self-hosted have no on-device model to load, and web has no Rust.
-	 * It resolves the model exactly the way `transcribeOnDevice` does, so it warms
-	 * the same model transcription will use. Failures are swallowed on purpose:
-	 * the worst case is transcription loads the model itself, as it does today.
-	 * `language`/`initialPrompt` are inference params, irrelevant to loading, so
-	 * they are sent null.
-	 */
-	function prewarmSelectedModel(): void {
-		if (!localTranscription) return;
-		const selectedService = settings.get('transcription.service');
-		if (!isOnDeviceProviderId(selectedService)) return;
-
-		const modelId = deviceConfig.get(PROVIDERS[selectedService].modelConfigKey);
-		if (!modelId) return;
-
-		void localTranscription.prewarm({
-			modelId,
-			language: null,
-			initialPrompt: null,
-		});
+		return transcribeViaUpload(recordingId, selectedService);
 	}
 
 	/**
@@ -345,40 +275,6 @@ export function createTranscriptionEnvironment({
 		const glossary = dictionary.join(', ');
 		const trimmed = prompt.trim();
 		return trimmed ? `${trimmed} ${glossary}` : glossary;
-	}
-
-	async function transcribeOnDevice(
-		recordingId: string,
-		selectedService: OnDeviceProviderId,
-	): Promise<Result<string, TranscriptionError>> {
-		// Rust owns model resolution and validation: it resolves this catalog id to a
-		// shared-HF-cache path and reports an unknown or not-downloaded model with a
-		// user-facing message. The FE keeps the one check Rust cannot make as well:
-		// "nothing selected yet" (instant, no IPC).
-		const modelId = deviceConfig.get(PROVIDERS[selectedService].modelConfigKey);
-		if (!modelId) {
-			return TranscriptionOperationError.LocalModelNotSelected();
-		}
-
-		// Read-at-use: the per-call spec is built right here, where it is consumed,
-		// so there is no ambient config to go stale. `auto` language and an empty
-		// prompt map to the wire's "unset" (an omitted optional field). The Dictionary
-		// terms fold into the prompt so local recognition spells them the user's way.
-		const language = settings.get('transcription.language');
-		const prompt = withDictionaryTerms(
-			settings.get('transcription.prompt'),
-			settings.get('dictionary'),
-		);
-		if (!localTranscription) {
-			return TranscriptionOperationError.ProviderUnavailable({
-				provider: PROVIDERS[selectedService].label,
-			});
-		}
-		return localTranscription.transcribe(recordingId, {
-			modelId,
-			language: language === 'auto' ? undefined : language,
-			initialPrompt: prompt || undefined,
-		});
 	}
 
 	async function transcribeViaUpload(
@@ -425,8 +321,6 @@ export function createTranscriptionEnvironment({
 	}
 
 	return {
-		providers,
-		transcribeAndPersist,
-		prewarmSelectedModel,
+		transcribe: transcribeAudio,
 	};
 }

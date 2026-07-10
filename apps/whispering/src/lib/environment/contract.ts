@@ -2,7 +2,7 @@ import type { Device, DeviceAcquisitionOutcome } from '@epicenter/recorder';
 import type { Result } from 'wellcrafted/result';
 import type { CaptureSurface } from '$lib/constants/audio';
 import type { CursorDelivery } from '$lib/desktop/contract';
-import type { TranscriptionError } from '$lib/operations/transcribe';
+import type { TranscriptionError } from '$lib/operations/transcription-use-case';
 import type { Os, PlatformAuth } from '$lib/platform/types';
 import type { BlobStore } from '$lib/services/blob-store/types';
 import type { DownloadService } from '$lib/services/download/types';
