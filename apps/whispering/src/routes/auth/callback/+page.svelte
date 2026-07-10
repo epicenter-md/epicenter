@@ -1,14 +1,14 @@
 <script lang="ts">
 	import { Loading } from '@epicenter/ui/loading';
 	import { goto } from '$app/navigation';
-	import { auth } from '#platform/auth';
+	import { environment } from '#environment';
 	import { whisperingPath } from '$lib/constants/urls';
 
 	let errorMessage = $state<string | null>(null);
 
 	$effect(() => {
 		void (async () => {
-			const { error } = await auth.startSignIn();
+			const { error } = await environment.auth.startSignIn();
 			if (error) {
 				errorMessage = error.message;
 				return;

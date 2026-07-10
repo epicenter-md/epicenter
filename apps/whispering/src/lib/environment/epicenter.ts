@@ -5,6 +5,7 @@ import { AudioBlobStoreLive } from '$lib/services/blob-store/index.tauri';
 import { DownloadServiceLive } from '$lib/services/download/index.tauri';
 import { ManualRecorderLive } from '$lib/services/recorder/index.tauri';
 import { TextServiceLive } from '$lib/services/text/index.tauri';
+import type { TranscriptionServiceId } from '$lib/services/transcription/providers';
 import { manualRecorderConfig } from '$lib/state/manual-recorder-config.tauri';
 import type { WhisperingEnvironment } from './contract';
 import { createManualRecordingEnvironment } from './create-manual-recording-environment';
@@ -21,3 +22,5 @@ export const environment: WhisperingEnvironment = {
 	}),
 	text: TextServiceLive,
 };
+
+export const defaultTranscriptionService: TranscriptionServiceId = 'local';

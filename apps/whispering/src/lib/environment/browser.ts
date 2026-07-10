@@ -5,6 +5,7 @@ import { AudioBlobStoreLive } from '$lib/services/blob-store/index.browser';
 import { DownloadServiceLive } from '$lib/services/download/index.browser';
 import { ManualRecorderLive } from '$lib/services/recorder/index.browser';
 import { TextServiceLive } from '$lib/services/text/index.browser';
+import type { TranscriptionServiceId } from '$lib/services/transcription/providers';
 import { manualRecorderConfig } from '$lib/state/manual-recorder-config.browser';
 import type { WhisperingEnvironment } from './contract';
 import { createManualRecordingEnvironment } from './create-manual-recording-environment';
@@ -21,3 +22,5 @@ export const environment: WhisperingEnvironment = {
 	}),
 	text: TextServiceLive,
 };
+
+export const defaultTranscriptionService: TranscriptionServiceId = 'OpenAI';

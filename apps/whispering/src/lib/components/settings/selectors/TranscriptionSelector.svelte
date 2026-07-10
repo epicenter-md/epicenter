@@ -25,7 +25,7 @@
 	import { deviceConfig } from '$lib/state/device-config.svelte';
 	import { localModels } from '$lib/state/local-models.svelte';
 	import { settings } from '$lib/state/settings.svelte';
-	import { auth } from '#platform/auth';
+	import { environment } from '#environment';
 	import { tauri } from '#platform/tauri';
 	import ModelRow from './ModelRow.svelte';
 
@@ -257,7 +257,7 @@
 						uploads your audio until you choose a provider.
 					</Empty.Description>
 					<Empty.Content class="flex flex-col gap-2">
-						<Button onclick={() => auth.startSignIn()}>Sign in to Epicenter</Button>
+						<Button onclick={() => environment.auth.startSignIn()}>Sign in to Epicenter</Button>
 						<Button
 							variant="outline"
 							onclick={() => {

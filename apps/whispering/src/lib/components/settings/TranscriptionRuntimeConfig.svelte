@@ -37,7 +37,7 @@
 	import { recordingActive } from '$lib/state/recording-active.svelte';
 	import { settings } from '$lib/state/settings.svelte';
 	import { createCopyFn } from '$lib/utils/createCopyFn';
-	import { auth } from '#platform/auth';
+	import { environment } from '#environment';
 	import { tauri } from '#platform/tauri';
 	import AdvancedDisclosure from './AdvancedDisclosure.svelte';
 	import LocalModelSelector from './LocalModelSelector.svelte';
@@ -63,7 +63,7 @@
 			getDeviceConfig: deviceConfig.get,
 			// Session locality follows the bonded deployment. Sign-in status decides
 			// usability elsewhere; locality only needs the base URL.
-			sessionBaseUrl: auth.deployment.baseURL,
+			sessionBaseUrl: environment.auth.deployment.baseURL,
 		}),
 	);
 
@@ -123,12 +123,12 @@
 	// Signing in redirects/reloads (Option A), which kills an in-flight browser
 	// recording, so lock the action while a capture is active. Account settings
 	// owns sign-out; this section only makes the hosted transcription route ready.
-	const isSignedIn = $derived(auth.state.status === 'signed-in');
+	const isSignedIn = $derived(environment.auth.state.status === 'signed-in');
 	const accountLocked = $derived(recordingActive.current);
 	const startSignIn = createMutation(() =>
 		resultMutationOptions({
 			mutationKey: ['transcription-setup', 'startSignIn'],
-			mutationFn: () => auth.startSignIn(),
+			mutationFn: () => environment.auth.startSignIn(),
 		}),
 	);
 </script>
@@ -215,7 +215,7 @@
 				{#if startSignIn.isPending}
 					<Spinner class="size-4" />
 					Signing in...
-				{:else if auth.state.status === 'reauth-required'}
+				{:else if environment.auth.state.status === 'reauth-required'}
 					Reconnect
 				{:else}
 					Sign in with Epicenter

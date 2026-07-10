@@ -1,5 +1,5 @@
 import type { AuthState } from '@epicenter/auth';
-import type { openWhisperingBrowser } from '$lib/whispering/whispering.active';
+import type { openWhisperingBrowser } from '$lib/workspace/browser';
 
 /** The complete local-first product runtime, including while signed out. */
 export type WhisperingWorkspace = ReturnType<typeof openWhisperingBrowser>;

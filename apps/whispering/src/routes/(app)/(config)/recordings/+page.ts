@@ -1,4 +1,4 @@
-import { whispering } from '#platform/whispering';
+import { whispering } from '$lib/workspace/active';
 import type { PageLoad } from './$types';
 
 /**

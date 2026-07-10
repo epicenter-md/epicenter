@@ -8,8 +8,8 @@
 	import { GithubIcon } from '$lib/components/icons';
 	import studioMicrophone from '$lib/assets/studio-microphone.png';
 	import { NAV_ITEMS } from './nav-items';
-	import { auth } from '#platform/auth';
-	import { whispering } from '#platform/whispering';
+	import { environment } from '#environment';
+	import { whispering } from '$lib/workspace/active';
 	import { AccountPopover } from '@epicenter/app-shell/account-popover';
 	import { recordingActive } from '$lib/state/recording-active.svelte';
 	import { instanceSetting } from '$lib/instance';
@@ -76,7 +76,7 @@
 			<!-- Account / sync (route-independent: visible on the bare home page) -->
 			<Sidebar.MenuItem>
 				<AccountPopover
-					{auth}
+					auth={environment.auth}
 					collaboration={whispering.collaboration}
 					syncNoun="recordings"
 					disabledReason={recordingActive.current

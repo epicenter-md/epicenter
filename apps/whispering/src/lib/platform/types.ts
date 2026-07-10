@@ -69,9 +69,8 @@ export type Shortcuts = {
 };
 
 /**
- * Contract for `#platform/auth`. Identical on web and Tauri: both build the
- * same Epicenter OAuth client, differing only in the launcher (a redirect on
- * web, a deep-link round-trip on Tauri).
+ * Authentication capability exposed by the selected Whispering environment.
+ * Browser and Epicenter builds use the same OAuth client with different launchers.
  */
 export type PlatformAuth = ReturnType<typeof createAppAuthClient>;
 

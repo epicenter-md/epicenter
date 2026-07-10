@@ -11,7 +11,7 @@ import {
 	extractErrorMessage,
 } from 'wellcrafted/error';
 import { Err, Ok, type Result } from 'wellcrafted/result';
-import { auth } from '#platform/auth';
+import { environment } from '#environment';
 import { customFetch } from '#platform/http';
 import { tauri } from '#platform/tauri';
 import type { SupportedLanguage } from '$lib/constants/languages';
@@ -127,8 +127,8 @@ const UPLOAD_DISPATCH = {
 	epicenter: {
 		kind: 'wire',
 		resolve: () => ({
-			fetch: auth.fetch,
-			baseURL: API_ROUTES.ai.baseUrl(auth.deployment.baseURL),
+			fetch: environment.auth.fetch,
+			baseURL: API_ROUTES.ai.baseUrl(environment.auth.deployment.baseURL),
 		}),
 		model: () => PROVIDERS.epicenter.model,
 	},

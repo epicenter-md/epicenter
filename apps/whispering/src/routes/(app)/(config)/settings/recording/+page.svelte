@@ -19,7 +19,7 @@
 	import { os } from '#platform/os';
 	import { manualRecorderConfig } from '#platform/manual-recorder-config';
 	import { tauri } from '#platform/tauri';
-	import { whispering } from '#platform/whispering';
+	import { whispering } from '$lib/workspace/active';
 	import ManualSelectRecordingDevice from './ManualSelectRecordingDevice.svelte';
 	import VadSelectRecordingDevice from './VadSelectRecordingDevice.svelte';
 
