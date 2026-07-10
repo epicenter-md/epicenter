@@ -5,7 +5,7 @@
 	// Dev-only affordance (rendered behind `import.meta.env.DEV` in GlobalDialogs):
 	// cycle the capability override so the notice and guide can be tested on any
 	// build, including web dev where the value is otherwise always `unknown`. The
-	// cycle (untrusted, active, broken, unsupported, live) lives in the state
+	// cycle (untrusted, active, broken, live) lives in the state
 	// module; this button just advances it. `null` resumes the live value.
 	const current = $derived(dictationCapability.override);
 </script>

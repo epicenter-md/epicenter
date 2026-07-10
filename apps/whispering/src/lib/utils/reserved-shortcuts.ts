@@ -1,18 +1,22 @@
 /**
  * Reserved-shortcut policy for desktop global gestures (the structured
- * `KeyBinding` the rdev backend matches on, in physical-key space). Pure: no
- * Tauri or DOM dependency.
+ * `KeyBinding` that resolves to tauri-plugin-global-shortcut chords, in
+ * physical-key space). Pure: no Tauri or DOM dependency.
  *
  * Desktop bindings fire system-wide, so a few rules keep a gesture from
  * shadowing something the OS or foreground app owns:
  * - A short list of common OS/app chords (reload, clipboard, undo/redo, close,
  *   quit, app switch, screenshots, system search) is refused outright.
- * - A gesture must carry a modifier or Fn, so it cannot fire on an ordinary
- *   keypress.
+ * - A gesture must be a registrable plugin chord (one key plus a non-Fn
+ *   modifier); a bare key, an Fn hold, and a modifier-only hold are refused
+ *   (ADR-0117).
  */
 
-import type { Modifier } from '$lib/tauri/commands';
-import type { BindingLike } from '$lib/utils/key-binding';
+import {
+	type BindingLike,
+	isRegistrableChord,
+	type Modifier,
+} from './key-binding';
 
 /**
  * `primary` stands for the platform's command modifier: Command on macOS,
@@ -116,8 +120,14 @@ export function validateGlobalBinding(binding: BindingLike): string | null {
 		}
 	}
 
-	if (binding.modifiers.length === 0) {
-		return 'Add a modifier or Fn so the gesture cannot fire on an ordinary keypress.';
+	// A global shortcut must be a registrable plugin chord. Refuse a bare key, an
+	// Fn hold, or a modifier-only hold rather than store a gesture that silently
+	// never registers (ADR-0117).
+	if (!isRegistrableChord(binding)) {
+		if (binding.modifiers.length === 0) {
+			return 'Add a modifier so the gesture cannot fire on an ordinary keypress.';
+		}
+		return 'Only a chord works as a global shortcut: one key with a modifier. Fn and modifier-only holds are not supported.';
 	}
 
 	return null;

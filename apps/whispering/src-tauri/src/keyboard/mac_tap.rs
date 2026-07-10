@@ -21,11 +21,10 @@
 //!   releases the mach port and run-loop source on return, so restarts do not
 //!   leak onto the run loop the way the raw-FFI fork does.
 //!
-//! It produces the same normalized `(Edge, Input)` stream the matcher already
-//! consumes, so `matcher`, `keys`, and `event` are untouched. The macOS
-//! virtual-keycode mapping below is the macOS analogue of `rdev_map::classify`
-//! (which still serves the other platforms): keycodes are the stable Carbon
-//! `kVK_*` values, transcribed from rdev's own table.
+//! It runs purely for its liveness: the supervisor watches whether this tap
+//! stays alive under a still-trusted grant to tell `Active` from `Broken` for
+//! auto-paste-at-cursor (ADR-0117). The tap is passive (`ListenOnly`) and drops
+//! every event; it no longer decodes keys or drives any matcher.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
@@ -35,12 +34,8 @@ use core_foundation::base::TCFType;
 use core_foundation::mach_port::CFMachPortRef;
 use core_foundation::runloop::{kCFRunLoopCommonModes, kCFRunLoopDefaultMode, CFRunLoop};
 use core_graphics::event::{
-    CGEvent, CGEventFlags, CGEventTap, CGEventTapLocation, CGEventTapOptions, CGEventTapPlacement,
-    CGEventType, EventField,
+    CGEventTap, CGEventTapLocation, CGEventTapOptions, CGEventTapPlacement, CGEventType,
 };
-
-use super::keys::{Key, Modifier};
-use super::matcher::{Edge, Input};
 
 // `core-graphics` 0.22 wraps `CGEventTapEnable` only as a method on the tap it
 // owns; we re-enable from the supervisor loop (which holds the port directly),
@@ -72,18 +67,20 @@ static STOP: AtomicBool = AtomicBool::new(false);
 /// thread (`CFRunLoop` is `Send`/`Sync`). `None` whenever no tap is running.
 static ACTIVE_LOOP: Mutex<Option<CFRunLoop>> = Mutex::new(None);
 
-/// Run a passive system-wide keyboard tap on the calling thread, delivering one
-/// normalized `(Edge, Input)` per key transition to `callback`, and block until
-/// the tap is stopped (`stop`) or fails. Returns `Ok(())` on a clean stop and
-/// `Err(TapError)` if the tap could not be created — the same blocking contract
-/// the supervisor expects from `rdev::listen`, but actually honored.
-pub fn listen<F: Fn(Edge, Input)>(callback: F) -> Result<(), TapError> {
+/// Run a passive system-wide keyboard tap on the calling thread and block until
+/// it is stopped (`stop`) or fails. Returns `Ok(())` on a clean stop and
+/// `Err(TapError)` if the tap could not be created. The tap decodes nothing: the
+/// supervisor only needs it to be a real, live tap whose death (under a still-
+/// trusted grant) signals a stale grant. This is a real blocking call the
+/// supervisor can trust, unlike the `rdev::listen` it replaced.
+pub fn listen() -> Result<(), TapError> {
     STOP.store(false, Ordering::SeqCst);
 
-    // `ListenOnly` is load-bearing: a passive listener observes events and
-    // cannot swallow them, so keystrokes still reach the foreground app (this is
-    // `listen`, not `grab`). Modifier-only chords and the Fn key arrive as
-    // `FlagsChanged`, not `KeyDown`, so that type is in the mask.
+    // `ListenOnly` is load-bearing: a passive listener observes events and cannot
+    // swallow them, so keystrokes still reach the foreground app (this is
+    // `listen`, not `grab`). The mask is the minimal keyboard set that keeps this
+    // a keyboard tap; the callback drops every event, since liveness (not input)
+    // is the whole job.
     let tap = CGEventTap::new(
         CGEventTapLocation::Session,
         CGEventTapPlacement::HeadInsertEventTap,
@@ -93,13 +90,8 @@ pub fn listen<F: Fn(Edge, Input)>(callback: F) -> Result<(), TapError> {
             CGEventType::KeyUp,
             CGEventType::FlagsChanged,
         ],
-        move |_proxy, event_type, event| {
-            if let Some((edge, input)) = decode(event_type, event) {
-                callback(edge, input);
-            }
-            // ListenOnly ignores the return value; `None` passes the event on.
-            None
-        },
+        // ListenOnly ignores the return value; `None` passes the event on.
+        move |_proxy, _event_type, _event| None,
     )
     .map_err(|()| TapError::Create)?;
 
@@ -147,194 +139,13 @@ pub fn listen<F: Fn(Edge, Input)>(callback: F) -> Result<(), TapError> {
 }
 
 /// Ask the live tap (if any) to stop and return from `listen`. Safe to call from
-/// any thread and when nothing is running. Called by the supervisor's
-/// `request_tap_stop` when the last tap-needing binding leaves.
+/// any thread and when nothing is running. Called by the supervisor when
+/// auto-paste-at-cursor is disabled.
 pub fn stop() {
     STOP.store(true, Ordering::SeqCst);
     if let Ok(active) = ACTIVE_LOOP.lock() {
         if let Some(run_loop) = active.as_ref() {
             run_loop.stop();
         }
-    }
-}
-
-/// Classify one Quartz event into the matcher's vocabulary, or `None` for events
-/// we do not bind. This is the macOS counterpart of `rdev_map::classify`.
-fn decode(event_type: CGEventType, event: &CGEvent) -> Option<(Edge, Input)> {
-    let keycode = event.get_integer_value_field(EventField::KEYBOARD_EVENT_KEYCODE) as u16;
-    match event_type {
-        // Auto-repeat re-sends `KeyDown` while a key is held; collapse it to a
-        // single press so a held key is one transition (like the modifier path)
-        // and bindings cannot re-fire on repeat.
-        CGEventType::KeyDown => {
-            if event.get_integer_value_field(EventField::KEYBOARD_EVENT_AUTOREPEAT) != 0 {
-                return None;
-            }
-            Some((Edge::Press, Input::Key(key_from_keycode(keycode)?)))
-        }
-        CGEventType::KeyUp => Some((Edge::Release, Input::Key(key_from_keycode(keycode)?))),
-        // Modifiers (incl. Fn) have no KeyUp; they arrive as FlagsChanged. The
-        // keycode says which modifier moved; the flag bit says whether it is now
-        // down. Because our `Modifier` collapses left/right, reading the bit
-        // directly is correct and robust: with two of the same modifier held,
-        // the shared bit stays set until the last release, so the logical
-        // modifier stays pressed exactly as long as either physical key is.
-        CGEventType::FlagsChanged => {
-            let (modifier, flag) = modifier_from_keycode(keycode)?;
-            let edge = if event.get_flags().contains(flag) {
-                Edge::Press
-            } else {
-                Edge::Release
-            };
-            Some((edge, Input::Modifier(modifier)))
-        }
-        _ => None,
-    }
-}
-
-/// Map a modifier virtual keycode to our logical modifier and the device-flag
-/// bit that reports whether it is held. Left/right collapse, matching `rdev_map`.
-/// Caps Lock (57) is a toggle, not a hold, and is not a bindable modifier here.
-fn modifier_from_keycode(keycode: u16) -> Option<(Modifier, CGEventFlags)> {
-    match keycode {
-        56 | 60 => Some((Modifier::Shift, CGEventFlags::CGEventFlagShift)), // Shift / RightShift
-        59 | 62 => Some((Modifier::Ctrl, CGEventFlags::CGEventFlagControl)), // Control / RightControl
-        58 | 61 => Some((Modifier::Alt, CGEventFlags::CGEventFlagAlternate)), // Option / RightOption
-        55 | 54 => Some((Modifier::Meta, CGEventFlags::CGEventFlagCommand)), // Command / RightCommand
-        63 => Some((Modifier::Fn, CGEventFlags::CGEventFlagSecondaryFn)),    // Fn / Globe
-        _ => None,
-    }
-}
-
-/// Map a macOS virtual keycode to our physical `Key`, or `None` for keys we do
-/// not bind. Keycodes are the stable Carbon `kVK_*` values (rdev's macOS table);
-/// keys absent from our `Key` enum (keypad, ISO/JIS extras, F21-F24, which have
-/// no macOS keycode) return `None`.
-fn key_from_keycode(keycode: u16) -> Option<Key> {
-    let key = match keycode {
-        // Letters (kVK_ANSI_*)
-        0 => Key::KeyA,
-        1 => Key::KeyS,
-        2 => Key::KeyD,
-        3 => Key::KeyF,
-        4 => Key::KeyH,
-        5 => Key::KeyG,
-        6 => Key::KeyZ,
-        7 => Key::KeyX,
-        8 => Key::KeyC,
-        9 => Key::KeyV,
-        11 => Key::KeyB,
-        12 => Key::KeyQ,
-        13 => Key::KeyW,
-        14 => Key::KeyE,
-        15 => Key::KeyR,
-        16 => Key::KeyY,
-        17 => Key::KeyT,
-        31 => Key::KeyO,
-        32 => Key::KeyU,
-        34 => Key::KeyI,
-        35 => Key::KeyP,
-        37 => Key::KeyL,
-        38 => Key::KeyJ,
-        40 => Key::KeyK,
-        45 => Key::KeyN,
-        46 => Key::KeyM,
-        // Number row
-        18 => Key::Num1,
-        19 => Key::Num2,
-        20 => Key::Num3,
-        21 => Key::Num4,
-        22 => Key::Num6,
-        23 => Key::Num5,
-        25 => Key::Num9,
-        26 => Key::Num7,
-        28 => Key::Num8,
-        29 => Key::Num0,
-        // Punctuation
-        24 => Key::Equal,
-        27 => Key::Minus,
-        30 => Key::RightBracket,
-        33 => Key::LeftBracket,
-        39 => Key::Quote,
-        41 => Key::SemiColon,
-        42 => Key::BackSlash,
-        43 => Key::Comma,
-        44 => Key::Slash,
-        47 => Key::Dot,
-        50 => Key::BackQuote,
-        // Editing / whitespace
-        36 => Key::Return,
-        48 => Key::Tab,
-        49 => Key::Space,
-        51 => Key::Backspace, // kVK_Delete is the Backspace key
-        53 => Key::Escape,
-        114 => Key::Insert, // kVK_Help
-        115 => Key::Home,
-        116 => Key::PageUp,
-        117 => Key::Delete, // kVK_ForwardDelete
-        119 => Key::End,
-        121 => Key::PageDown,
-        // Arrows
-        123 => Key::LeftArrow,
-        124 => Key::RightArrow,
-        125 => Key::DownArrow,
-        126 => Key::UpArrow,
-        // Function row (macOS has no keycodes for F21-F24)
-        122 => Key::F1,
-        120 => Key::F2,
-        99 => Key::F3,
-        118 => Key::F4,
-        96 => Key::F5,
-        97 => Key::F6,
-        98 => Key::F7,
-        100 => Key::F8,
-        101 => Key::F9,
-        109 => Key::F10,
-        103 => Key::F11,
-        111 => Key::F12,
-        105 => Key::F13,
-        107 => Key::F14,
-        113 => Key::F15,
-        106 => Key::F16,
-        64 => Key::F17,
-        79 => Key::F18,
-        80 => Key::F19,
-        90 => Key::F20,
-        _ => return None,
-    };
-    Some(key)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn maps_letters_numbers_and_specials() {
-        assert_eq!(key_from_keycode(0), Some(Key::KeyA));
-        assert_eq!(key_from_keycode(29), Some(Key::Num0));
-        assert_eq!(key_from_keycode(49), Some(Key::Space));
-        assert_eq!(key_from_keycode(51), Some(Key::Backspace));
-        assert_eq!(key_from_keycode(117), Some(Key::Delete));
-    }
-
-    #[test]
-    fn unbound_keycodes_are_none() {
-        // Keypad 0 (kVK_ANSI_Keypad0 = 82) is not in our `Key` enum.
-        assert_eq!(key_from_keycode(82), None);
-        // kVK_Unknown.
-        assert_eq!(key_from_keycode(0xFFFF), None);
-    }
-
-    #[test]
-    fn fn_and_collapsed_modifiers_map_to_the_right_flag() {
-        assert_eq!(
-            modifier_from_keycode(63),
-            Some((Modifier::Fn, CGEventFlags::CGEventFlagSecondaryFn))
-        );
-        // Left and right Shift collapse to the same logical modifier + flag bit.
-        assert_eq!(modifier_from_keycode(56), modifier_from_keycode(60));
-        // Caps Lock is a toggle, not a bindable hold.
-        assert_eq!(modifier_from_keycode(57), None);
     }
 }

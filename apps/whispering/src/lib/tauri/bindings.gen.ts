@@ -269,37 +269,22 @@ export const commands = {
 	keyringWrite: (value: string | null) =>
 		typedError<null, KeyringError>(__TAURI_INVOKE('keyring_write', { value })),
 	/**
-	 *  Replace the full set of registered global shortcuts. The FE computes the
-	 *  complete list from device-config and pushes it on startup and on every
-	 *  change; the controller swaps its binding set atomically. Replace-all (not
-	 *  per-command register/unregister) keeps the FE the single source of truth for
-	 *  what is bound, with no add/remove bookkeeping to drift.
-	 */
-	setKeyboardShortcuts: (bindings: CommandBinding[]) =>
-		__TAURI_INVOKE<void>('set_keyboard_shortcuts', { bindings }),
-	/**
 	 *  Tell the keyboard supervisor whether auto-paste-at-cursor is enabled. Paste
-	 *  writes a synthetic Cmd/Ctrl+V through the same macOS Accessibility grant the
-	 *  tap reads through, so the supervisor holds the tap whenever paste is on (even
-	 *  with no binding) to track that grant and surface the notice when it is
-	 *  missing. The FE pushes this on startup and whenever the output settings change.
+	 *  writes a synthetic Cmd/Ctrl+V through the macOS Accessibility grant the tap
+	 *  watches, so the supervisor holds the tap whenever paste is on to track that
+	 *  grant (and surface the notice when it is missing or stale). It is the only
+	 *  reason to hold the tap (ADR-0117). The FE pushes this on startup and whenever
+	 *  the output settings change. A no-op off macOS, where paste needs no grant.
 	 */
 	setAutoPasteEnabled: (enabled: boolean) =>
 		__TAURI_INVOKE<void>('set_auto_paste_enabled', { enabled }),
 	/**
-	 *  Enter or leave binding-capture mode for the settings recorder. While
-	 *  capturing, the tap emits the held combo as a `ShortcutCaptureEvent`
-	 *  (which the recorder accumulates) instead of firing command triggers, so the
-	 *  user can record Fn and physical-key bindings the webview cannot see.
-	 */
-	setKeyboardCapturing: (capturing: boolean) =>
-		__TAURI_INVOKE<void>('set_keyboard_capturing', { capturing }),
-	/**
-	 *  The current dictation capability: whether Whispering can tap the keyboard for
-	 *  global shortcuts and paste back. The FE seeds from this on attach, then
-	 *  tracks `DictationCapabilityEvent` for changes; it never probes the OS itself.
-	 *  The Rust supervisor owns the value and the tap's lifecycle, so there is no
-	 *  `start` command for the FE to call.
+	 *  The current paste-at-cursor capability: whether a synthetic Cmd/Ctrl+V can
+	 *  land (on macOS, whether the Accessibility grant is live and the tap is
+	 *  healthy). The FE seeds from this on attach, then tracks
+	 *  `DictationCapabilityEvent` for changes; it never probes the OS itself. The
+	 *  Rust supervisor owns the value and the tap's lifecycle, so there is no `start`
+	 *  command for the FE to call.
 	 */
 	getDictationCapability: () =>
 		__TAURI_INVOKE<DictationCapability>('get_dictation_capability'),
@@ -310,12 +295,6 @@ export const events = {
 	dictationCapabilityEvent: makeEvent<DictationCapabilityEvent>(
 		'dictation-capability-event',
 	),
-	shortcutCaptureEvent: makeEvent<ShortcutCaptureEvent>(
-		'shortcut-capture-event',
-	),
-	shortcutTriggerEvent: makeEvent<ShortcutTriggerEvent>(
-		'shortcut-trigger-event',
-	),
 };
 
 /* Types */
@@ -325,21 +304,11 @@ export type CatalogError =
 	| { name: 'DeleteFailed'; message: string };
 
 /**
- *  One command's binding, as sent from the FE registrar. `command_id` is the
- *  id the trigger event is emitted under; the FE filters by that command's `on`
- *  array and dispatches the callback.
- */
-export type CommandBinding = {
-	commandId: string;
-	binding: KeyBinding;
-};
-
-/**
- *  The single source of truth for whether Whispering can drive its headline
- *  "dictate anywhere" flow: tap the keyboard for global shortcuts and paste a
- *  transcript back. macOS gates that on Accessibility trust, and the only
- *  process that can authoritatively know it is the one holding the rdev tap
- *  (this one), so Rust owns this value and the frontend is a pure view over it.
+ *  The single source of truth for whether Whispering can paste a transcript at
+ *  the cursor: a synthetic Cmd/Ctrl+V that, on macOS, needs the Accessibility
+ *  grant. macOS is the only platform that gates it, and the only process that
+ *  can authoritatively know is the one holding the tap (this one), so Rust owns
+ *  this value and the frontend is a pure view over it (ADR-0117).
  *
  *  It folds two facts the frontend used to infer separately: the macOS trust
  *  probe (`AXIsProcessTrusted`) and the tap's liveness. Crucially `Broken` is
@@ -355,23 +324,17 @@ export type DictationCapability =
 	 */
 	| 'unknown'
 	/**
-	 *  This platform can never tap the keyboard (Linux Wayland: `rdev::listen`
-	 *  receives no events). Terminal for the session.
-	 */
-	| 'unsupported'
-	/**
-	 *  No bound shortcut needs the tap (no Fn or modifier-only binding), so it is
-	 *  deliberately not running and no Accessibility is touched. This is the
-	 *  permission-free floor: chords go through the global-shortcut plugin and
-	 *  the tap stays dormant until the user opts into a binding that needs it.
+	 *  Auto-paste-at-cursor is off, so nothing needs the grant: the tap is
+	 *  deliberately not running and no Accessibility is touched. Global shortcuts
+	 *  are plugin chords and work regardless.
 	 */
 	| 'inactive'
 	/**
-	 *  macOS Accessibility is not granted. The tap is not running; turning
-	 *  Whispering on in System Settings unlocks it.
+	 *  macOS Accessibility is not granted, so paste at cursor falls back to the
+	 *  clipboard. Turning Whispering on in System Settings unlocks the paste.
 	 */
 	| 'untrusted'
-	/**  The tap is running and (on macOS) the app is trusted. Dictation works. */
+	/**  The tap is running and the app is trusted: paste at cursor can land. */
 	| 'active'
 	/**
 	 *  macOS reports the app trusted, but the tap keeps dying under the held
@@ -405,117 +368,6 @@ export type DownloadProgress = {
 	bytesReceived: number | null;
 	/**  Grand total bytes for the whole model (sum of the catalog file sizes). */
 	totalBytes: number | null;
-};
-
-/**
- *  A non-modifier key, named by physical position (Wave 1 Lock: desktop binds
- *  in physical-key space, not produced-character space). Variant names mirror
- *  rdev's `Key` for the keys we support so the rdev mapping is near 1:1, but
- *  this is our own stable enum: the persisted binding format must not depend on
- *  rdev's enum names. Keys outside this set are not bindable (`rdev_map` returns
- *  `None`), which keeps this a pure string union on the TypeScript side.
- */
-export type Key =
-	| 'keyA'
-	| 'keyB'
-	| 'keyC'
-	| 'keyD'
-	| 'keyE'
-	| 'keyF'
-	| 'keyG'
-	| 'keyH'
-	| 'keyI'
-	| 'keyJ'
-	| 'keyK'
-	| 'keyL'
-	| 'keyM'
-	| 'keyN'
-	| 'keyO'
-	| 'keyP'
-	| 'keyQ'
-	| 'keyR'
-	| 'keyS'
-	| 'keyT'
-	| 'keyU'
-	| 'keyV'
-	| 'keyW'
-	| 'keyX'
-	| 'keyY'
-	| 'keyZ'
-	| 'num0'
-	| 'num1'
-	| 'num2'
-	| 'num3'
-	| 'num4'
-	| 'num5'
-	| 'num6'
-	| 'num7'
-	| 'num8'
-	| 'num9'
-	| 'f1'
-	| 'f2'
-	| 'f3'
-	| 'f4'
-	| 'f5'
-	| 'f6'
-	| 'f7'
-	| 'f8'
-	| 'f9'
-	| 'f10'
-	| 'f11'
-	| 'f12'
-	| 'f13'
-	| 'f14'
-	| 'f15'
-	| 'f16'
-	| 'f17'
-	| 'f18'
-	| 'f19'
-	| 'f20'
-	| 'f21'
-	| 'f22'
-	| 'f23'
-	| 'f24'
-	| 'space'
-	| 'return'
-	| 'tab'
-	| 'escape'
-	| 'backspace'
-	| 'delete'
-	| 'insert'
-	| 'upArrow'
-	| 'downArrow'
-	| 'leftArrow'
-	| 'rightArrow'
-	| 'home'
-	| 'end'
-	| 'pageUp'
-	| 'pageDown'
-	| 'minus'
-	| 'equal'
-	| 'leftBracket'
-	| 'rightBracket'
-	| 'semiColon'
-	| 'quote'
-	| 'backQuote'
-	| 'backSlash'
-	| 'comma'
-	| 'dot'
-	| 'slash';
-
-/**
- *  A desktop global binding. It fires when its modifiers and keys are held
- *  exactly (see `Matcher`), matching the existing `arraysMatch` semantics of
- *  `local-shortcut-manager` and the plugin's exact-modifier behavior. An empty
- *  `keys` with non-empty `modifiers` is a modifier-only hold (for example hold
- *  Meta), which was impossible with the plugin. The matcher also accepts a bare
- *  key with no modifiers, but the frontend refuses to *configure* one (a global
- *  gesture must carry a modifier or Fn so it cannot fire on an ordinary
- *  keypress); the matcher stays permissive so the policy lives in one place.
- */
-export type KeyBinding = {
-	modifiers: Modifier[];
-	keys: Key[];
 };
 
 /**
@@ -562,14 +414,6 @@ export type ModelInfo = {
 	downloaded: boolean;
 };
 
-/**
- *  A logical modifier. Left and right are collapsed in v1 (ControlLeft and
- *  ControlRight both become `Ctrl`); the Wayland and left/right gaps are
- *  documented refusals in the spec. `Fn` is the capability the Tauri
- *  global-shortcut plugin could never express.
- */
-export type Modifier = 'ctrl' | 'alt' | 'shift' | 'meta' | 'fn';
-
 export type RecorderError =
 	/**
 	 *  The OS refused microphone access. The frontend checks microphone
@@ -612,34 +456,6 @@ export type RecordingArtifact = {
 	mimeType: string;
 };
 
-/**
- *  Streamed on every change of the currently-held combo while the settings
- *  recorder is capturing a new binding. A dedicated event type (rather than
- *  emitting a bare `KeyBinding`) so capture is a `tauri_specta::Event` like the
- *  trigger, with a generated topic and FE binding. Recording goes through rdev,
- *  not the webview, because only rdev sees the Fn key and physical-key
- *  positions, so the captured binding is exactly what the matcher will later
- *  match. The FE accumulates these snapshots and commits when all keys release.
- */
-export type ShortcutCaptureEvent = {
-	binding: KeyBinding;
-};
-
-/**
- *  Emitted on every binding transition. `command_id` is the id the binding was
- *  registered under; the FE filters by that command's `on` array and dispatches
- *  the callback. Rust stays command-agnostic: it knows the id and the edge, not
- *  which states a given command cares about.
- *
- *  A `tauri_specta::Event`, so the listener emits it with
- *  `trigger.emit_to(app, MAIN_WINDOW)` (targeting the main webview, not the
- *  overlay) and the FE listens through the generated `events.shortcutTriggerEvent`.
- */
-export type ShortcutTriggerEvent = {
-	commandId: string;
-	state: TriggerState;
-};
-
 export type TranscriptionError =
 	| { name: 'AudioReadError'; message: string }
 	| { name: 'ModelLoadError'; message: string }
@@ -667,15 +483,6 @@ export type TranscriptionSpec = {
 	language?: string | null;
 	initialPrompt?: string | null;
 };
-
-/**
- *  Whether a binding just became fully held (`Pressed`) or stopped being fully
- *  held (`Released`). The variant names serialize verbatim to `"Pressed"` /
- *  `"Released"`, which is exactly the `ShortcutEventState` the Tauri
- *  global-shortcut plugin used to deliver, so the command layer (`commands.ts`)
- *  is unchanged: only the producer of these strings changes.
- */
-export type TriggerState = 'Pressed' | 'Released';
 
 /**
  *  How long after the last transcription the resident model should be

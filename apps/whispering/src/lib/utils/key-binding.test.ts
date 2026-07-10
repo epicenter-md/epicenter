@@ -1,70 +1,11 @@
+/** Key binding serialization, capture vocabulary, and realized-reach behavior. */
 import { expect, test } from 'bun:test';
 import {
-	type BindingLike,
-	bindingsOverlap,
 	domCodeToKey,
-	isTierZeroChord,
+	isRegistrableChord,
 	keyBindingToAccelerator,
-	keyCapability,
 	realizedReach,
-	resolveBinding,
 } from './key-binding';
-
-test('a binding overlaps a superset of itself', () => {
-	// Fn (push-to-talk) is contained by Fn+Space, so the pair is unusable.
-	expect(
-		bindingsOverlap(
-			{ modifiers: ['fn'], keys: [] },
-			{ modifiers: ['fn'], keys: ['space'] },
-		),
-	).toBe(true);
-});
-
-test('overlap is symmetric', () => {
-	expect(
-		bindingsOverlap(
-			{ modifiers: ['fn'], keys: ['space'] },
-			{ modifiers: ['fn'], keys: [] },
-		),
-	).toBe(true);
-});
-
-test('equal bindings overlap', () => {
-	expect(
-		bindingsOverlap(
-			{ modifiers: ['meta'], keys: ['dot'] },
-			{ modifiers: ['meta'], keys: ['dot'] },
-		),
-	).toBe(true);
-});
-
-test('a modifier-only hold is contained by any chord that adds to it', () => {
-	expect(
-		bindingsOverlap(
-			{ modifiers: ['meta'], keys: [] },
-			{ modifiers: ['meta'], keys: ['dot'] },
-		),
-	).toBe(true);
-});
-
-test('the shipped defaults do not overlap each other', () => {
-	// Two gestures ship bound by default: toggle and cancel. Push-to-talk ships
-	// unbound (opt into Fn behind the Accessibility tier), so it cannot collide.
-	const toggle: BindingLike = { modifiers: ['meta', 'shift'], keys: ['space'] };
-	const cancel: BindingLike = { modifiers: ['meta'], keys: ['dot'] };
-	expect(bindingsOverlap(toggle, cancel)).toBe(false);
-});
-
-test('sibling chords sharing a modifier but differing in key do not overlap', () => {
-	// Two Ctrl+Shift chords differing only in their final key (e.g. a user-bound
-	// Ctrl+Shift+Space vs the Windows Ctrl+Shift+. cancel default).
-	expect(
-		bindingsOverlap(
-			{ modifiers: ['ctrl', 'shift'], keys: ['space'] },
-			{ modifiers: ['ctrl', 'shift'], keys: ['dot'] },
-		),
-	).toBe(false);
-});
 
 test('a chord maps to a global-hotkey accelerator', () => {
 	// meta -> Super, space -> Space: the default macOS toggle. Modifiers emit in
@@ -90,14 +31,14 @@ test('letter and digit keys map to Code tokens', () => {
 	);
 });
 
-test('an Fn binding is not a Tier-0 accelerator', () => {
-	// Fn has no accelerator spelling; it belongs to the Tier-1 tap.
+test('an Fn binding has no accelerator', () => {
+	// Fn has no accelerator spelling, so it is not a registrable chord.
 	expect(
 		keyBindingToAccelerator({ modifiers: ['fn'], keys: ['space'] }),
 	).toBeNull();
 });
 
-test('a modifier-only hold is not a Tier-0 accelerator', () => {
+test('a modifier-only hold has no accelerator', () => {
 	expect(keyBindingToAccelerator({ modifiers: ['meta'], keys: [] })).toBeNull();
 });
 
@@ -105,30 +46,17 @@ test('a bare key with no modifier is refused', () => {
 	expect(keyBindingToAccelerator({ modifiers: [], keys: ['keyA'] })).toBeNull();
 });
 
-test('resolveBinding routes a chord to the plugin with its accelerator', () => {
+test('isRegistrableChord names the registrable-chord boundary', () => {
+	// A chord (one key plus a non-Fn modifier) is the only registrable global
+	// shape; Fn holds, modifier-only holds, and bare keys are not.
 	expect(
-		resolveBinding({ modifiers: ['meta', 'shift'], keys: ['space'] }),
-	).toEqual({ tier: 'chord', accelerator: 'Shift+Super+Space' });
-});
-
-test('resolveBinding routes Fn and modifier-only holds to the tap', () => {
-	expect(resolveBinding({ modifiers: ['fn'], keys: ['space'] })).toEqual({
-		tier: 'tap',
-	});
-	expect(resolveBinding({ modifiers: ['meta'], keys: [] })).toEqual({
-		tier: 'tap',
-	});
-});
-
-test('isTierZeroChord names the permission-free tier boundary', () => {
-	// A chord (one key plus a non-Fn modifier) is the only Tier-0 shape; Fn holds,
-	// modifier-only holds, and bare keys all fall through to the Tier-1 tap.
-	expect(
-		isTierZeroChord({ modifiers: ['meta', 'shift'], keys: ['space'] }),
+		isRegistrableChord({ modifiers: ['meta', 'shift'], keys: ['space'] }),
 	).toBe(true);
-	expect(isTierZeroChord({ modifiers: ['fn'], keys: ['space'] })).toBe(false);
-	expect(isTierZeroChord({ modifiers: ['meta'], keys: [] })).toBe(false);
-	expect(isTierZeroChord({ modifiers: [], keys: ['keyA'] })).toBe(false);
+	expect(isRegistrableChord({ modifiers: ['fn'], keys: ['space'] })).toBe(
+		false,
+	);
+	expect(isRegistrableChord({ modifiers: ['meta'], keys: [] })).toBe(false);
+	expect(isRegistrableChord({ modifiers: [], keys: ['keyA'] })).toBe(false);
 });
 
 test('domCodeToKey maps physical codes to our Key space', () => {
@@ -177,82 +105,45 @@ test('domCodeToKey is the inverse of acceleratorKey for every chord key', () => 
 	}
 });
 
-test('keyCapability: a chord reaches global with no Accessibility grant', () => {
-	expect(
-		keyCapability({ modifiers: ['meta', 'shift'], keys: ['space'] }),
-	).toEqual({ reach: 'global', needsAccessibility: false });
-});
-
-test('keyCapability: a bare key caps at focused', () => {
-	// A global bare key would swallow that key in every app, so it can only act
-	// in-app no matter the platform.
-	expect(keyCapability({ modifiers: [], keys: ['space'] })).toEqual({
-		reach: 'focused',
-		needsAccessibility: false,
-	});
-});
-
-test('keyCapability: Fn and modifier-only holds reach global behind the grant', () => {
-	expect(keyCapability({ modifiers: ['fn'], keys: [] })).toEqual({
-		reach: 'global',
-		needsAccessibility: true,
-	});
-	expect(keyCapability({ modifiers: ['fn'], keys: ['space'] })).toEqual({
-		reach: 'global',
-		needsAccessibility: true,
-	});
-	expect(keyCapability({ modifiers: ['meta'], keys: [] })).toEqual({
-		reach: 'global',
-		needsAccessibility: true,
-	});
-});
-
 // The worked table from ADR-0052: realizedReach = min(command, key, platform).
 test('realizedReach: a global command on a bare key on web is focused', () => {
 	expect(
 		realizedReach('global', { modifiers: [], keys: ['space'] }, 'focused'),
-	).toEqual({ reach: 'focused', needsAccessibility: false });
+	).toBe('focused');
 });
 
-test('realizedReach: a global command on a chord on desktop is global, no grant', () => {
+test('realizedReach: a global command on a chord on desktop is global', () => {
 	expect(
 		realizedReach(
 			'global',
 			{ modifiers: ['meta', 'shift'], keys: ['space'] },
 			'global',
 		),
-	).toEqual({ reach: 'global', needsAccessibility: false });
+	).toBe('global');
 });
 
 test('realizedReach: a global command on a bare key on desktop is focused', () => {
 	// The key shape, not the platform, is the binding floor here.
 	expect(
 		realizedReach('global', { modifiers: [], keys: ['space'] }, 'global'),
-	).toEqual({ reach: 'focused', needsAccessibility: false });
+	).toBe('focused');
 });
 
 test('realizedReach: a focused command on a chord on desktop stays focused', () => {
-	// The command's nature is the floor: a capable chord cannot escape it, and a
-	// focused result needs no Accessibility grant.
+	// The command's nature is the floor: a capable chord cannot escape it.
 	expect(
 		realizedReach(
 			'focused',
 			{ modifiers: ['meta'], keys: ['comma'] },
 			'global',
 		),
-	).toEqual({ reach: 'focused', needsAccessibility: false });
+	).toBe('focused');
 });
 
-test('realizedReach: a global command on an Fn hold on desktop needs Accessibility', () => {
+test('realizedReach: a refused Fn hold never reaches global', () => {
+	// A hold is not a registrable chord, so its key capability caps at focused
+	// regardless of the platform ceiling.
 	expect(
 		realizedReach('global', { modifiers: ['fn'], keys: [] }, 'global'),
-	).toEqual({ reach: 'global', needsAccessibility: true });
-});
-
-test('realizedReach: clamping a hold down to focused drops the grant requirement', () => {
-	// An Fn hold on web (platform caps at focused): the grant is moot once the
-	// gesture cannot reach past the window.
-	expect(
-		realizedReach('global', { modifiers: ['fn'], keys: [] }, 'focused'),
-	).toEqual({ reach: 'focused', needsAccessibility: false });
+	).toBe('focused');
 });

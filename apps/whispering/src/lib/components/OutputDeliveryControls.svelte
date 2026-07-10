@@ -24,8 +24,8 @@
 	// Scope is the only axis that varies: the keys are `output.<scope>.*` and every
 	// label is the scope's noun plugged into one phrasing, so a label change happens
 	// in exactly one place. Paste-at-cursor stays interactive without the grant (it
-	// records intent); the capability recheck on window focus starts the paste the
-	// moment Accessibility lands, with no second visit to flip it back on.
+	// records intent); Rust's bounded grant watcher notices when Accessibility
+	// lands, with no second visit needed to flip it back on.
 	type OutputScope = 'transcription' | 'recipe';
 	let { scope }: { scope: OutputScope } = $props();
 
@@ -61,7 +61,7 @@
 
 <SettingSwitch key={delivery.cursor} label={`Paste ${delivery.noun} at cursor`} />
 
-{#if tauri && dictationCapability.isUnavailable}
+{#if tauri && dictationCapability.needsAccessibility}
 	<!-- The toggle stays on and interactive (it records intent), but the paste
 	can't fire without the macOS Accessibility grant. Annotate the current
 	capability inline; offer the grant only when there is one to give (untrusted
@@ -71,20 +71,18 @@
 	>
 		<LockIcon class="size-3.5 shrink-0" aria-hidden="true" />
 		<span>{pasteBack} {clipboardFallback}</span>
-		{#if dictationCapability.needsAccessibility}
-			<Button
-				variant="link"
-				class="h-auto p-0 text-sm font-normal"
-				onclick={openSystemSettings}
-			>
-				Open Settings
-			</Button>
-		{/if}
+		<Button
+			variant="link"
+			class="h-auto p-0 text-sm font-normal"
+			onclick={openSystemSettings}
+		>
+			Open Settings
+		</Button>
 	</div>
 {/if}
 
 {#if tauri && settings.get(delivery.cursor)}
-	<div class:opacity-50={dictationCapability.isUnavailable}>
+	<div class:opacity-50={dictationCapability.needsAccessibility}>
 		<SettingSwitch
 			key={delivery.enter}
 			label={`Press Enter after pasting ${delivery.noun}`}

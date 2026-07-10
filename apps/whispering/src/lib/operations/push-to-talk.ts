@@ -3,9 +3,9 @@ import { manualRecorder } from '$lib/state/manual-recorder.svelte';
 import { startManualRecording, stopManualRecordingById } from './recording';
 
 /**
- * Push-to-talk owns the recording it starts. A press starts a session; a release,
- * a synthetic release from the keyboard backend (a tap restart, a binding re-sync,
- * a capture switch), or the 5-minute cap stops only THAT recording, by its id.
+ * Push-to-talk owns the recording it starts. A press starts a session; a release
+ * (the plugin's `Released` edge) or the 5-minute cap stops only THAT recording,
+ * by its id.
  *
  * Two correctness properties, both of which the bare "Released calls stop" model
  * lacked, and whose absence let a lost release edge leave recording stuck on:
@@ -24,7 +24,7 @@ import { startManualRecording, stopManualRecordingById } from './recording';
 
 // Push-to-talk is for held dictation; long-form has the toggle command. The cap is
 // the safety fuse for the one stuck-on path no edge covers (an OS-eaten key-up
-// while the tap stays alive), not the primary stop, so a fixed generous value is
+// from sleep or a lock screen), not the primary stop, so a fixed generous value is
 // enough. Not configurable until real usage asks for it.
 const MAX_HOLD_MS = 5 * 60 * 1000;
 
@@ -103,10 +103,10 @@ function createPushToTalk() {
 	}
 
 	/**
-	 * Stop the owned recording in response to a release or a backend reconcile
-	 * signal. Safe to call when not holding (no-op), when startup is still in
-	 * flight (latches a stop the start completion honors), and when the recording
-	 * already ended (clears the stale session).
+	 * Stop the owned recording in response to a release edge. Safe to call when not
+	 * holding (no-op), when startup is still in flight (latches a stop the start
+	 * completion honors), and when the recording already ended (clears the stale
+	 * session).
 	 */
 	async function stop() {
 		if (!session) return; // not holding anything

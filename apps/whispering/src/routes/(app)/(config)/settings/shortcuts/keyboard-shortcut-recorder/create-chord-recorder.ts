@@ -1,18 +1,22 @@
 import { debounce } from '@epicenter/workspace';
 import { on } from 'svelte/events';
-import type { Key, KeyBinding, Modifier } from '$lib/tauri/commands';
-import { domCodeToKey, eventModifiers } from '$lib/utils/key-binding';
+import {
+	domCodeToKey,
+	eventModifiers,
+	type Key,
+	type KeyBinding,
+	type Modifier,
+} from '$lib/utils/key-binding';
 
 const CAPTURE_WINDOW_MS = 300; // Time to wait for additional keys in a combination.
 
 /**
  * The shared physical chord recorder: captures a gesture straight from the
  * webview's `keydown` stream in physical-key space (modifier flags plus a
- * physical `.code`), producing a `KeyBinding`. Both shortcut recorders use it for
- * capture; what they accept differs by policy, not by capture. It can only see
- * what the browser exposes, so Fn and modifier-only holds are invisible here and
- * stay the global tap's job (the global recorder switches to the native tap once
- * Accessibility is granted); the in-app recorder accepts whatever it yields.
+ * physical `.code`), producing a `KeyBinding`. It can only see what the browser
+ * exposes, so Fn and modifier-only holds are invisible here; that is fine, since
+ * they are refused as global shortcuts anyway (ADR-0117). The global recorder
+ * accepts a chord; the in-app recorder accepts whatever it yields.
  *
  * The completion model: each new key extends a 300ms window, and the gesture
  * commits when every key releases (immediate) or the window expires (the safety
@@ -63,10 +67,10 @@ export function createChordRecorder({
 		// refuse a capture; reset so the next attempt starts clean either way.
 		reset();
 		// The webview recorder yields only bare keys and chords. A capture with no
-		// non-modifier key (a lone modifier tapped, or every non-modifier released
-		// past the window leaving only modifiers held) is the native tap's job (Fn
-		// and modifier-only holds), so it never commits here: a stored modifier-only
-		// binding would fire on every press of that modifier in-app.
+		// non-modifier key (a lone modifier pressed, or every non-modifier released
+		// past the window leaving only modifiers held) is a modifier-only hold,
+		// which is refused (ADR-0117), so it never commits here: a stored
+		// modifier-only binding would fire on every press of that modifier in-app.
 		if (binding.keys.length > 0) onCapture(binding);
 	}
 

@@ -1,11 +1,12 @@
 import { on } from 'svelte/events';
 import type { Brand } from 'wellcrafted/brand';
 import type { ShortcutEventState } from '$lib/commands';
-import type { Key, KeyBinding } from '$lib/tauri/commands';
 import {
 	bindingsEqual,
 	domCodeToKey,
 	eventModifiers,
+	type Key,
+	type KeyBinding,
 } from '$lib/utils/key-binding';
 
 export type CommandId = string & Brand<'CommandId'>;

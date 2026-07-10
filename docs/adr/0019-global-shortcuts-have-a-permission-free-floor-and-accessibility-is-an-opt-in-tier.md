@@ -1,7 +1,8 @@
 # 0019. Global shortcuts have a permission-free floor and Accessibility is an opt-in tier
 
-- **Status:** Accepted
+- **Status:** Superseded
 - **Date:** 2026-06-18
+- **Superseded by:** [ADR-0117](0117-global-shortcut-input-is-plugin-chords-only-and-the-macos-tap-is-just-the-paste-grant-watcher.md)
 
 ## Context
 

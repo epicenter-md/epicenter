@@ -36,7 +36,6 @@
 		getTranscriptionReadiness,
 	} from '$lib/settings/transcription-validation';
 	import { captureSurface } from '$lib/state/capture-surface.svelte';
-	import { dictationCapability } from '$lib/state/dictation-capability.svelte';
 	import { recordings } from '$lib/state/recordings.svelte';
 	import {
 		getRecordingShortcutLabels,
@@ -81,10 +80,9 @@
 	};
 	// A shortcut option in the hint: a bound key (a `Kbd` chip) or a call to set one
 	// up. Both link into /settings/shortcuts, so the hint doubles as the way to
-	// configure each key. `dimmable` is the global key, which dims when its backend
-	// is unavailable; the in-app key needs no grant and never dims.
+	// configure each key.
 	type HintLink =
-		| { kind: 'key'; label: string; tooltip: string; dimmable: boolean }
+		| { kind: 'key'; label: string; tooltip: string }
 		| { kind: 'cta'; label: string; tooltip: string };
 	// One way to start a recording, as a "{lead}{link}{tail}" run. Spaces live inside
 	// `lead`/`tail` so the parts concatenate verbatim when the hint joins them; `link`
@@ -106,7 +104,6 @@
 					kind: 'key',
 					label: focused,
 					tooltip: 'Configure the in-app shortcut',
-					dimmable: false,
 				},
 				tail: ` to ${words.here}`,
 			});
@@ -122,7 +119,6 @@
 								kind: 'key',
 								label: global,
 								tooltip: 'Configure the global shortcut',
-								dimmable: true,
 							},
 							tail: ` to ${words.anywhere}`,
 						}
@@ -149,15 +145,6 @@
 		index === 0 ? '' : index === count - 1 ? ', or ' : ', ';
 	const manualWays = $derived(recordingWays('manual', MANUAL_HINT_WORDS));
 	const vadWays = $derived(recordingWays('vad', VAD_HINT_WORDS));
-	// On desktop the global rdev gesture only fires when the capability is `active`.
-	// When it can't (macOS Accessibility ungranted or stale, or Linux Wayland), we
-	// still show the key so the user learns it, but dim it; the
-	// `DictationCapabilityNotice` above carries the fix. This reads the same
-	// capability fact the notice does, so the two always agree. It dims only the
-	// global key: the in-app key runs on the webview keydown matcher, which needs no
-	// grant. Always false on the browser, where there is no global key at all.
-	const shortcutUnavailable = $derived(dictationCapability.isUnavailable);
-
 	const PageError = defineErrors({
 		DragDropListenerFailed: ({ cause }: { cause: unknown }) => ({
 			message: `Failed to set up drag drop listener: ${extractErrorMessage(cause)}`,
@@ -443,13 +430,11 @@
 </div>
 
 <!-- A shortcut option as a link into settings: a key chip, or the "set one up" call
-to action. The global key dims when its backend is unavailable; nothing else does. -->
+to action. -->
 {#snippet shortcutLink(link: HintLink)}
 	<Link tooltip={link.tooltip} href="/settings/shortcuts">
 		{#if link.kind === 'key'}
-			<Kbd.Root
-				class={link.dimmable && shortcutUnavailable ? 'opacity-50' : undefined}
-				>{link.label}</Kbd.Root>
+			<Kbd.Root>{link.label}</Kbd.Root>
 		{:else}{link.label}{/if}
 	</Link>
 {/snippet}

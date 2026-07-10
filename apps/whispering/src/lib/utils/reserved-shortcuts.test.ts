@@ -1,3 +1,4 @@
+/** Reserved global-chord policy and the shipped-default contract. */
 import { expect, test } from 'bun:test';
 import { validateGlobalBinding } from './reserved-shortcuts';
 
@@ -6,19 +7,24 @@ test('an empty binding is treated as unset and passes', () => {
 });
 
 test('shipped defaults pass the policy', () => {
-	// Two gestures ship bound: push-to-talk and cancel (toggle ships unbound).
-	// macOS defaults: Fn = push-to-talk, Cmd+. = cancel.
-	expect(validateGlobalBinding({ modifiers: ['fn'], keys: [] })).toBeNull();
-	expect(
-		validateGlobalBinding({ modifiers: ['meta'], keys: ['dot'] }),
-	).toBeNull();
-	// Windows/Linux defaults: Ctrl+Win = push-to-talk, Ctrl+Shift+. = cancel.
+	const shippedChords = [
+		{ modifiers: ['meta', 'shift'], keys: ['space'] },
+		{ modifiers: ['meta'], keys: ['dot'] },
+		{ modifiers: ['ctrl', 'shift'], keys: ['space'] },
+		{ modifiers: ['ctrl', 'shift'], keys: ['dot'] },
+	] as const;
+	for (const binding of shippedChords) {
+		expect(validateGlobalBinding(binding)).toBeNull();
+	}
+});
+
+test('Fn and modifier-only holds are refused', () => {
+	expect(validateGlobalBinding({ modifiers: ['fn'], keys: [] })).toContain(
+		'Only a chord',
+	);
 	expect(
 		validateGlobalBinding({ modifiers: ['ctrl', 'meta'], keys: [] }),
-	).toBeNull();
-	expect(
-		validateGlobalBinding({ modifiers: ['ctrl', 'shift'], keys: ['dot'] }),
-	).toBeNull();
+	).toContain('Only a chord');
 });
 
 test('a reserved combo is refused with its label', () => {

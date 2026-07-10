@@ -1,12 +1,119 @@
 /**
- * The shared `KeyBinding` core: parse, serialize, label, and match the
- * structured physical binding both shortcut tiers speak. No Tauri dependency and
- * no DOM side effects; the only DOM contact is reading `KeyboardEvent` fields
+ * The shared `KeyBinding` core: define, parse, serialize, label, and match the
+ * structured physical binding both shortcut reaches speak. No Tauri dependency
+ * and no DOM side effects; the only DOM contact is reading `KeyboardEvent` fields
  * (`.code`, the modifier flags) in {@link domCodeToKey} and {@link eventModifiers},
  * which is the capture side of the same physical-key model.
  */
 
-import type { Key, KeyBinding, Modifier } from '$lib/tauri/commands';
+/**
+ * A physical key in position space (`keyD` is the D-position key regardless of
+ * layout). A stable enum so the persisted binding format never drifts; keys
+ * outside this set are not bindable.
+ */
+export type Key =
+	| 'keyA'
+	| 'keyB'
+	| 'keyC'
+	| 'keyD'
+	| 'keyE'
+	| 'keyF'
+	| 'keyG'
+	| 'keyH'
+	| 'keyI'
+	| 'keyJ'
+	| 'keyK'
+	| 'keyL'
+	| 'keyM'
+	| 'keyN'
+	| 'keyO'
+	| 'keyP'
+	| 'keyQ'
+	| 'keyR'
+	| 'keyS'
+	| 'keyT'
+	| 'keyU'
+	| 'keyV'
+	| 'keyW'
+	| 'keyX'
+	| 'keyY'
+	| 'keyZ'
+	| 'num0'
+	| 'num1'
+	| 'num2'
+	| 'num3'
+	| 'num4'
+	| 'num5'
+	| 'num6'
+	| 'num7'
+	| 'num8'
+	| 'num9'
+	| 'f1'
+	| 'f2'
+	| 'f3'
+	| 'f4'
+	| 'f5'
+	| 'f6'
+	| 'f7'
+	| 'f8'
+	| 'f9'
+	| 'f10'
+	| 'f11'
+	| 'f12'
+	| 'f13'
+	| 'f14'
+	| 'f15'
+	| 'f16'
+	| 'f17'
+	| 'f18'
+	| 'f19'
+	| 'f20'
+	| 'f21'
+	| 'f22'
+	| 'f23'
+	| 'f24'
+	| 'space'
+	| 'return'
+	| 'tab'
+	| 'escape'
+	| 'backspace'
+	| 'delete'
+	| 'insert'
+	| 'upArrow'
+	| 'downArrow'
+	| 'leftArrow'
+	| 'rightArrow'
+	| 'home'
+	| 'end'
+	| 'pageUp'
+	| 'pageDown'
+	| 'minus'
+	| 'equal'
+	| 'leftBracket'
+	| 'rightBracket'
+	| 'semiColon'
+	| 'quote'
+	| 'backQuote'
+	| 'backSlash'
+	| 'comma'
+	| 'dot'
+	| 'slash';
+
+/**
+ * A logical modifier. Left and right collapse (ControlLeft and ControlRight both
+ * become `ctrl`). `fn` has no plugin accelerator spelling, so a binding carrying
+ * it is not a registrable global chord.
+ */
+export type Modifier = 'ctrl' | 'alt' | 'shift' | 'meta' | 'fn';
+
+/**
+ * A shortcut binding. A registrable global chord is exactly one key plus at
+ * least one non-Fn modifier; focused shortcuts may also use bare keys.
+ */
+export type KeyBinding = {
+	modifiers: Modifier[];
+	keys: Key[];
+};
 
 /**
  * How far a shortcut fires, ordered `focused < global`. The one reach scale,
@@ -18,9 +125,8 @@ import type { Key, KeyBinding, Modifier } from '$lib/tauri/commands';
 export type Reach = 'focused' | 'global';
 
 /**
- * A binding for display/dedup purposes. Accepts both the IPC `KeyBinding`
- * (`keys: Key[]`) and the stored shape (`keys: string[]`, validated structurally
- * in device-config and by name in Rust), so the same helpers serve both.
+ * A binding for display and deduplication. Accepts both `KeyBinding` and the
+ * structurally validated device-config shape (`keys: string[]`).
  */
 export type BindingLike = {
 	modifiers: readonly Modifier[];
@@ -106,8 +212,8 @@ export function keyBindingToLabel(
  * Accelerator modifier tokens for `tauri-plugin-global-shortcut`. `meta` becomes
  * `Super`, which the global-hotkey parser maps to Command on macOS and the
  * Super/Windows key elsewhere. `fn` has no accelerator spelling (Carbon's
- * `RegisterEventHotKey` cannot bind it), so a binding that needs Fn is not a
- * Tier-0 chord and {@link keyBindingToAccelerator} returns `null` for it.
+ * `RegisterEventHotKey` cannot bind it), so a binding that carries Fn is not a
+ * registrable chord and {@link keyBindingToAccelerator} returns `null` for it.
  */
 const ACCELERATOR_MODIFIERS: Record<Modifier, string | null> = {
 	ctrl: 'Control',
@@ -158,12 +264,12 @@ function acceleratorKey(key: string): string | null {
 
 /**
  * Render a binding as a `tauri-plugin-global-shortcut` accelerator string (for
- * example `Control+Shift+Space`), or `null` when it is not a Tier-0 chord the
- * plugin can register. A binding is not Tier-0 when it carries Fn (no
- * accelerator spelling) or is not exactly one key plus at least one modifier:
- * Fn holds and modifier-only holds belong to the Tier-1 keyboard tap, which the
- * caller routes separately. Modifiers are emitted in a fixed order so the same
- * binding always produces the same accelerator.
+ * example `Control+Shift+Space`), or `null` when the plugin cannot register it.
+ * A binding has no accelerator when it carries Fn (no accelerator spelling) or is
+ * not exactly one key plus at least one modifier. Fn and modifier-only holds are
+ * refused as a product surface (ADR-0117), so a binding with no accelerator is
+ * simply not a valid global shortcut. Modifiers are emitted in a fixed order so
+ * the same binding always produces the same accelerator.
  */
 export function keyBindingToAccelerator(binding: BindingLike): string | null {
 	const [key, ...rest] = binding.keys;
@@ -173,7 +279,7 @@ export function keyBindingToAccelerator(binding: BindingLike): string | null {
 	for (const modifier of MODIFIER_ORDER) {
 		if (!binding.modifiers.includes(modifier)) continue;
 		const token = ACCELERATOR_MODIFIERS[modifier];
-		if (!token) return null; // fn -> Tier-1 tap, not the plugin
+		if (!token) return null; // fn has no accelerator: not a registrable chord
 		modifiers.push(token);
 	}
 	const keyToken = acceleratorKey(key);
@@ -182,62 +288,25 @@ export function keyBindingToAccelerator(binding: BindingLike): string | null {
 }
 
 /**
- * Which backend can execute a binding. A Tier-0 `chord` registers through the
- * permission-free `tauri-plugin-global-shortcut` and carries the accelerator
- * string it registers under; a `tap` binding (an Fn or modifier-only hold) is
- * owned by the Tier-1 rdev tap behind the Accessibility grant and matched on its
- * structured `KeyBinding`, so it needs no accelerator.
+ * Whether a binding is a registrable global chord: exactly one key plus at least
+ * one non-Fn modifier, which `tauri-plugin-global-shortcut` can register with no
+ * Accessibility grant. An Fn hold, a modifier-only hold, and a bare key are not
+ * registrable global shortcuts.
  */
-export type ResolvedBinding =
-	| { tier: 'chord'; accelerator: string }
-	| { tier: 'tap' };
-
-/**
- * The single owner of the Tier-0/Tier-1 split. Resolves a binding to its backend
- * and, for a chord, computes the accelerator once here so the partition and the
- * plugin registration never re-derive it. {@link isTierZeroChord} is the boolean
- * view of this for callers that only need the predicate.
- */
-export function resolveBinding(binding: BindingLike): ResolvedBinding {
-	const accelerator = keyBindingToAccelerator(binding);
-	return accelerator !== null
-		? { tier: 'chord', accelerator }
-		: { tier: 'tap' };
+export function isRegistrableChord(binding: BindingLike): boolean {
+	return keyBindingToAccelerator(binding) !== null;
 }
-
-/**
- * Whether a binding is a Tier-0 chord: a gesture the permission-free
- * `tauri-plugin-global-shortcut` can register with no Accessibility grant. The
- * boolean view of {@link resolveBinding}; an Fn hold or a modifier-only hold is
- * not Tier-0 and belongs to the Tier-1 keyboard tap.
- */
-export function isTierZeroChord(binding: BindingLike): boolean {
-	return resolveBinding(binding).tier === 'chord';
-}
-
-/**
- * A reach with whether reaching that far needs the macOS Accessibility grant.
- * The shape of both a key's capability and the realized outcome, since the
- * Accessibility need is a property of the gesture that survives (or does not) the
- * reach min().
- */
-export type ReachWithGrant = { reach: Reach; needsAccessibility: boolean };
 
 /**
  * How far a key can fire, by its physical shape alone (the second term of the
- * reach formula, ADR-0052). A chord (a non-Fn modifier plus a key) fires
- * globally with no permission. A bare key (a single key, no modifiers) can only
- * fire in-app: bound globally it would swallow that key in every app, so it caps
- * at `focused`. Everything else (an Fn hold, a modifier-only hold, an Fn+key
- * hold) fires globally but only behind the Accessibility grant (ADR-0019).
- * Callers pass a non-empty binding.
+ * reach formula, ADR-0052). A registrable chord (a non-Fn modifier plus a key)
+ * fires globally with no permission. Anything else (a bare key, or a refused Fn /
+ * modifier-only hold) reaches at most in-app: a global bare key would swallow
+ * that key in every app, and holds are not valid global shortcuts. No shortcut
+ * reach needs an Accessibility grant (ADR-0117). Callers pass a non-empty binding.
  */
-export function keyCapability(binding: BindingLike): ReachWithGrant {
-	if (isTierZeroChord(binding))
-		return { reach: 'global', needsAccessibility: false };
-	const isBareKey = binding.modifiers.length === 0 && binding.keys.length === 1;
-	if (isBareKey) return { reach: 'focused', needsAccessibility: false };
-	return { reach: 'global', needsAccessibility: true };
+function keyCapability(binding: BindingLike): Reach {
+	return isRegistrableChord(binding) ? 'global' : 'focused';
 }
 
 /** `focused` is more restrictive than `global`; the smaller reach wins a min(). */
@@ -251,24 +320,19 @@ function minReach(a: Reach, b: Reach): Reach {
  * The reach a binding actually achieves for a command on a platform: the minimum
  * of the command's intrinsic ceiling, the key's capability, and what the
  * platform allows (web caps at `focused`, desktop reaches `global`). The most
- * restrictive wins, so reach only ever clamps down, never up. The Accessibility
- * grant requirement is carried through only when the realized reach is still
- * `global`; a gesture clamped to `focused` (a hold on web, a chord on a focused
- * command) needs no grant. This is the one place the reach formula lives, fed
- * `command.reach` and a `platformReach` so it stays free of catalog and platform
- * imports. See ADR-0052.
+ * restrictive wins, so reach only ever clamps down, never up. This is the one
+ * place the reach formula lives, fed `command.reach` and a `platformReach` so it
+ * stays free of catalog and platform imports. See ADR-0052.
  */
 export function realizedReach(
 	commandReach: Reach,
 	binding: BindingLike,
 	platformReach: Reach,
-): ReachWithGrant {
-	const key = keyCapability(binding);
-	const reach = minReach(minReach(commandReach, key.reach), platformReach);
-	return {
-		reach,
-		needsAccessibility: reach === 'global' && key.needsAccessibility,
-	};
+): Reach {
+	return minReach(
+		minReach(commandReach, keyCapability(binding)),
+		platformReach,
+	);
 }
 
 /**
@@ -282,12 +346,12 @@ const KEY_BY_ACCELERATOR_CODE: Record<string, string> = Object.fromEntries(
 /**
  * Map a physical `KeyboardEvent.code` (for example `KeyD`, `Digit1`, `Space`)
  * to our `Key`, or `null` when the code is not a bindable key (a modifier code
- * like `MetaLeft`, or anything outside the Tier-0 chord alphabet). Reading
- * `.code` not `.key` keeps capture in physical-key space, matching the rdev tap
- * and sidestepping the macOS Option-character problem the `.key`-based local
- * recorder has to normalize. The accepted set is exactly the one
- * {@link keyBindingToAccelerator} can spell, so a chord captured here always
- * routes to the permission-free plugin. The inverse of {@link acceleratorKey}.
+ * like `MetaLeft`, or anything outside the chord alphabet). Reading `.code` not
+ * `.key` keeps capture in physical-key space, sidestepping the macOS
+ * Option-character problem the `.key`-based local recorder has to normalize. The
+ * accepted set is exactly the one {@link keyBindingToAccelerator} can spell, so a
+ * chord captured here always routes to the plugin. The inverse of
+ * {@link acceleratorKey}.
  */
 export function domCodeToKey(code: string): Key | null {
 	const named = KEY_BY_ACCELERATOR_CODE[code];
@@ -303,9 +367,9 @@ export function domCodeToKey(code: string): Key | null {
  * its `.code`, so a gesture carries its modifiers no matter which key fired and
  * a stuck modifier-keyup can never strand state (the flags are always current).
  * Fn has no flag (and no `.code`), so a webview capture or the browser matcher
- * can never produce an Fn modifier: that is exactly why Fn holds belong to the
- * Tier-1 native tap, not the in-app tier. Shared by the chord recorder and the
- * browser matcher so both read modifiers the same way.
+ * can never produce an Fn modifier: that is exactly why an Fn gesture cannot be
+ * recorded or fire, and is refused as a global shortcut (ADR-0117). Shared by the
+ * chord recorder and the browser matcher so both read modifiers the same way.
  */
 export function eventModifiers(e: KeyboardEvent): Modifier[] {
 	const modifiers: Modifier[] = [];
@@ -330,22 +394,9 @@ function isContainedBy(subset: BindingLike, superset: BindingLike): boolean {
 }
 
 /**
- * Whether two gestures overlap: one is a subset of the other (including equal).
- * The rdev matcher fires on exact set equality with no prefix resolution, so an
- * overlapping pair is unusable: the shorter gesture fires first and shadows the
- * longer. The recorder refuses to save a gesture that overlaps another, which is
- * why a key bound to one gesture (such as the recording key's Fn) cannot appear
- * in any other.
- */
-export function bindingsOverlap(a: BindingLike, b: BindingLike): boolean {
-	return isContainedBy(a, b) || isContainedBy(b, a);
-}
-
-/**
  * Whether two bindings are the same gesture: identical modifier and key sets,
  * order-independent. The browser matcher arms a shortcut when the live held set
- * equals its stored binding, so this is the in-app match test (the rdev tap does
- * the same set-equality natively).
+ * equals its stored binding, so this is the in-app match test.
  */
 export function bindingsEqual(a: BindingLike, b: BindingLike): boolean {
 	return isContainedBy(a, b) && isContainedBy(b, a);

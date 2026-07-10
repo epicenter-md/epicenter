@@ -181,9 +181,9 @@ export async function cancelRecording() {
 	// preference, not
 	// something a cancel keystroke should flip, so cancelling in VAD mode leaves
 	// you in VAD mode, idle and ready to listen again. This is also the global
-	// cancel chord (Cmd + . on macOS), which the rdev hook observes on every
-	// system press without swallowing it, so when nothing is live it stays silent
-	// rather than toasting on an unrelated press.
+	// cancel chord (Cmd + . on macOS), which the global-shortcut plugin fires only
+	// on that exact chord, so when nothing is live it stays silent rather than
+	// toasting on an unrelated press.
 
 	// A manual recording is the live capture: discard it.
 	const { data, error } = await manualRecorder.cancelRecording();

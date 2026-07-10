@@ -5,22 +5,23 @@ import {
 	DEFAULT_GLOBAL_BINDINGS,
 	deviceConfig,
 } from '$lib/state/device-config.svelte';
-import type { CommandBinding, KeyBinding } from '$lib/tauri/commands';
 import { type ChordRegistration, tauriOnly } from '$lib/tauri.tauri';
 import {
-	bindingsOverlap,
-	isEmptyBinding,
-	resolveBinding,
+	bindingsEqual,
+	isRegistrableChord,
+	type KeyBinding,
+	keyBindingToAccelerator,
 } from '$lib/utils/key-binding';
 import { validateGlobalBinding } from '$lib/utils/reserved-shortcuts';
 import { createShortcuts } from './shortcuts.shared';
 import type { Shortcuts } from './types';
 
 /**
- * Tauri build of `#platform/system-shortcuts`: system-global gestures driven by
- * the rdev backend, stored in device-config under `shortcuts.global.*` (never
- * synced across devices). The default bindings live in `DEFAULT_GLOBAL_BINDINGS`
- * because they double as the device-config schema defaults.
+ * Tauri build of `#platform/system-shortcuts`: system-global chords driven by
+ * tauri-plugin-global-shortcut, stored in device-config under
+ * `shortcuts.global.*` (never synced across devices). The default bindings live
+ * in `DEFAULT_GLOBAL_BINDINGS` because they double as the device-config schema
+ * defaults.
  *
  * The reach router (`shortcuts.ts`) composes this with the universal
  * `focusedShortcuts`; the web build of this seam supplies `null` (no system
@@ -30,64 +31,53 @@ import type { Shortcuts } from './types';
 const globalKey = (id: Command['id']) => `shortcuts.global.${id}` as const;
 
 /**
- * The stored shape's `keys` are plain `string[]` (validated structurally in
- * device-config and by name in Rust), so the read crosses into the IPC
- * `KeyBinding` (`keys: Key[]`) with one documented cast at this boundary.
+ * Device-config validates `keys` structurally as `string[]`, so this read is the
+ * boundary that narrows the stored value to `KeyBinding`. The registrability
+ * check below rejects any key string the plugin vocabulary cannot spell.
+ *
+ * A stale persisted binding that is not a registrable plugin chord (a
+ * pre-ADR-0117 Fn or modifier-only hold) is sanitized to `null`: it no longer
+ * registers, so it reads as unset instead of surfacing "Works everywhere" for a
+ * dead gesture or being silently skipped at push time.
  */
 function readBinding(id: Command['id']): KeyBinding | null {
-	return (deviceConfig.get(globalKey(id)) as KeyBinding | null) ?? null;
+	const stored = (deviceConfig.get(globalKey(id)) as KeyBinding | null) ?? null;
+	if (stored === null) return null;
+	return isRegistrableChord(stored) ? stored : null;
 }
 
 export const systemShortcuts: Shortcuts | null = createShortcuts({
 	read: readBinding,
 	getDefault: (id) => DEFAULT_GLOBAL_BINDINGS[id] ?? null,
 	write: (id, binding) => deviceConfig.set(globalKey(id), binding),
-	// The rdev matcher fires on exact set equality with no prefix resolution, so a
-	// gesture that contains (or is contained by) another would shadow it or be
-	// unreachable. Refuse reserved gestures and overlaps, naming the collision.
+	// The plugin matches complete chords. Refuse reserved gestures and exact
+	// duplicates, while allowing distinct chords that share keys or modifiers.
 	findConflict: (id, binding) => {
 		const reserved = validateGlobalBinding(binding);
 		if (reserved) return { kind: 'reserved', reason: reserved };
 		for (const command of commands) {
 			if (command.id === id) continue;
 			const other = readBinding(command.id);
-			if (other && !isEmptyBinding(other) && bindingsOverlap(other, binding)) {
-				return { kind: 'overlap', commandId: command.id, binding: other };
+			if (other && bindingsEqual(other, binding)) {
+				return { kind: 'duplicate', commandId: command.id };
 			}
 		}
 		return null;
 	},
 	syncErrorTitle: 'Error registering global shortcuts',
 	async push(entries) {
-		const bindings: CommandBinding[] = entries
-			.filter((entry) => entry.binding !== null)
-			.map((entry) => ({
-				commandId: entry.command.id,
-				binding: entry.binding as KeyBinding,
-			}));
-		// Partition by what each binding needs. A chord maps to an accelerator and
-		// goes to the permission-free plugin (Tier 0); an Fn or modifier-only hold
-		// maps to none and goes to the tap (Tier 1), which spins up only for these.
-		// Each binding lands in exactly one backend, so the two never double-fire.
 		const chords: ChordRegistration[] = [];
-		const taps: CommandBinding[] = [];
-		for (const entry of bindings) {
-			const resolved = resolveBinding(entry.binding);
-			if (resolved.tier === 'chord') {
-				chords.push({
-					commandId: entry.commandId,
-					accelerator: resolved.accelerator,
-				});
-			} else {
-				taps.push(entry);
-			}
+		for (const entry of entries) {
+			if (entry.binding === null) continue;
+			const accelerator = keyBindingToAccelerator(entry.binding);
+			if (accelerator === null) continue;
+			chords.push({ commandId: entry.command.id, accelerator });
 		}
-		// A plugin register the OS rejects (a chord another app holds) or a bad tap
-		// key fails the whole replace-all; surface it instead of partially binding.
+		// A plugin registration the OS rejects (a chord another app holds) fails
+		// the whole replace-all; surface it instead of partially binding.
 		const { error } = await tryAsync({
 			try: async () => {
 				await tauriOnly.keyboard.registerChords(chords);
-				await tauriOnly.keyboard.setBindings(taps);
 			},
 			catch: (cause) =>
 				Err({

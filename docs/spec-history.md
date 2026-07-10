@@ -16,13 +16,17 @@
 >
 > **Regenerate (deterministic per ref set, lossless):** `bun scripts/generate-spec-history.ts`. The totals track the refs this clone can see; `--all` is deliberate so the timeline recovers specs that only lived on unmerged or deleted branches.
 
-**1368 specs ever** (553 still in tree, 815 removed).
+**1372 specs ever** (553 still in tree, 819 removed).
 
 
 ## 2026
 
 | Date | Spec | State | Path |
 |------|------|-------|------|
+| 2026-07-09 | rdev-tier1-keyboard-runtime-decision | removed | apps/whispering/specs/20260709T010000-rdev-tier1-keyboard-runtime-decision.md |
+| 2026-07-09 | provider-app-and-empty-launch | removed | apps/local-mail/specs/20260709-provider-app-and-empty-launch.md |
+| 2026-07-08 | host-discovery-connect-device | in tree | apps/super-chat/specs/host-discovery-connect-device.md |
+| 2026-07-07 | super-chat-attach-relay-proof | removed | specs/20260707T200000-super-chat-attach-relay-proof.md |
 | 2026-07-06 | cross-device-coordination-vision | in tree | specs/20260706T220000-cross-device-coordination-vision.md |
 | 2026-07-06 | encrypted-job-envelope-strategy | in tree | specs/20260706T233000-encrypted-job-envelope-strategy.md |
 | 2026-07-06 | super-chat-direct-command-forms | in tree | specs/super-chat-direct-command-forms.md |
@@ -114,7 +118,7 @@
 | 2026-06-14 | landing-ecosystem-realignment | removed | specs/20260614T180000-landing-ecosystem-realignment.md |
 | 2026-06-14 | vocab-pronunciation-stt-tts-research | removed | specs/20260614T022000-vocab-pronunciation-stt-tts-research.md |
 | 2026-06-14 | vocab-two-boats-conversation-and-dictionary | removed | specs/20260614T022000-vocab-two-boats-conversation-and-dictionary.md |
-| 2026-06-13 | whispering-desktop-rdev-trigger-backend | in tree | apps/whispering/specs/20260613T094454-whispering-desktop-rdev-trigger-backend.md |
+| 2026-06-13 | whispering-desktop-rdev-trigger-backend | removed | apps/whispering/specs/20260613T094454-whispering-desktop-rdev-trigger-backend.md |
 | 2026-06-13 | epicenter-todos-first-slice | in tree | specs/20260613T224526-epicenter-todos-first-slice.md |
 | 2026-06-13 | whispering-local-model-download-rust | in tree | specs/20260613T234711-whispering-local-model-download-rust.md |
 | 2026-06-13 | vocab-acquisition-through-use | removed | specs/20260613T211000-vocab-acquisition-through-use.md |

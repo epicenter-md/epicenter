@@ -1,11 +1,11 @@
 import type { AnyTaggedError } from 'wellcrafted/error';
 import { type Command, commands } from '$lib/commands';
 import { report } from '$lib/report';
-import type { KeyBinding } from '$lib/tauri/commands';
+import type { KeyBinding } from '$lib/utils/key-binding';
 import type { ShortcutConflict, Shortcuts } from './types';
 
 /** A command paired with its current stored binding (`null` = unbound). */
-export type ShortcutEntry = {
+type ShortcutEntry = {
 	command: Command;
 	binding: KeyBinding | null;
 };
@@ -14,11 +14,11 @@ export type ShortcutEntry = {
  * Per-platform binding adapter. Both shortcut backends now speak the same
  * physical `KeyBinding`; they differ only in where a binding is stored (browser
  * in-app KV vs desktop device-config) and how it is pushed to the runtime
- * (browser keydown matcher vs rdev/plugin). Everything around that (sync
+ * (browser keydown matcher vs the global-shortcut plugin). Everything around that (sync
  * orchestration, reset, label dispatch) is identical and lives in
  * {@link createShortcuts}, so each backend supplies just these primitives.
  */
-export type ShortcutBackend = {
+type ShortcutBackend = {
 	/** This command's currently stored binding (`null` = unbound). */
 	read(commandId: Command['id']): KeyBinding | null;
 	/** This command's default binding (`null` = unbound by default). */
@@ -28,8 +28,8 @@ export type ShortcutBackend = {
 	/**
 	 * Why `binding` cannot be assigned to this command, or `null` when allowed,
 	 * as structured {@link ShortcutConflict} (the recorder renders the message).
-	 * The per-tier conflict policy (set-equality for in-app, reserved + overlap
-	 * for global) lives here, beside the storage the policy reads.
+	 * The per-backend conflict policy (exact duplicates for both, plus OS-reserved
+	 * gestures for global) lives here, beside the storage the policy reads.
 	 */
 	findConflict(
 		commandId: Command['id'],

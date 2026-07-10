@@ -13,7 +13,7 @@ import { emit, emitTo, listen } from '@tauri-apps/api/event';
  *
  * Scope: frontend-to-frontend only (one webview window telling another to do
  * something). Events that cross the Rust boundary stay on the generated Specta
- * `events` (e.g. `shortcutTriggerEvent`), which are typed from the Rust
+ * `events` (e.g. `dictationCapabilityEvent`), which are typed from the Rust
  * definitions. Don't route a window-to-window event through Rust just to borrow
  * Specta's types; Rust has no part in it.
  */

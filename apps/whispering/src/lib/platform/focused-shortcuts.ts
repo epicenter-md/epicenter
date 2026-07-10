@@ -4,8 +4,7 @@ import {
 	LocalShortcutManagerLive,
 } from '$lib/services/local-shortcut-manager';
 import { settings } from '$lib/state/settings.svelte';
-import type { KeyBinding } from '$lib/tauri/commands';
-import { bindingsEqual } from '$lib/utils/key-binding';
+import { bindingsEqual, type KeyBinding } from '$lib/utils/key-binding';
 import { createShortcuts } from './shortcuts.shared';
 import type { Shortcuts } from './types';
 
@@ -26,9 +25,9 @@ import type { Shortcuts } from './types';
 
 const localKey = (id: Command['id']) => `shortcut.${id}` as const;
 
-// The stored value's `keys` are `string[]` (the cell schema validates them
-// structurally; Rust validates the names at the IPC boundary), so the read crosses
-// into `KeyBinding` (`keys: Key[]`) with one documented cast, like the global tier.
+// The cell schema validates stored `keys` structurally as `string[]`, while
+// `KeyBinding` narrows them to `Key[]`, so the read crosses that boundary with one
+// documented cast, like the global tier.
 const readBinding = (id: Command['id']): KeyBinding | null =>
 	settings.get(localKey(id)) as KeyBinding | null;
 

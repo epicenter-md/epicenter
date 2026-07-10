@@ -104,9 +104,9 @@ transcribe-cpp = { version = "0.1.0", default-features = false }
 transcribe-cpp = { version = "0.1.0", default-features = false, features = ["metal"] }
 accessibility-sys =  "0.1.3"
 core-foundation-sys =  "0.8.7"
-# Safe wrappers for the owned CGEventTap (`src/keyboard/mac_tap.rs`, the Tier-1
-# backend). Pinned to the 0.22/0.9 line rdev already pulls in, so the tap shares
-# one version of each in the tree rather than adding a duplicate.
+# Safe wrappers for the owned CGEventTap (`src/keyboard/mac_tap.rs`), which runs
+# solely as the Accessibility-grant liveness watch for auto-paste-at-cursor
+# (ADR-0117). Pinned to the 0.22/0.9 line.
 core-foundation = "0.9"
 core-graphics = "0.22"
 # Non-activating NSPanel for the recording overlay so clicking it never
@@ -139,22 +139,16 @@ transcribe-cpp = { version = "0.1.0", default-features = false, features = [
 zbus = { version = "5", default-features = false, features = ["tokio"] }
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
-# Tier-0 global-shortcut backend: Carbon `RegisterEventHotKey`, which needs no
-# Accessibility grant and delivers both Pressed and Released. It registers a
-# bound chord and sees nothing else, so it is the permission-free default. Fn
-# and modifier-only holds (which it cannot express) fall to the Tier-1 tap in
-# `src/keyboard/`.
+# The sole global-shortcut backend on every platform (ADR-0117): Carbon
+# `RegisterEventHotKey`, which needs no Accessibility grant and delivers both
+# Pressed and Released. It registers a bound chord and sees nothing else. Fn and
+# modifier-only holds are refused as a product surface, so nothing falls through
+# to a raw keyboard listener.
 tauri-plugin-global-shortcut = "2"
 # `deep-link` feature lets the running instance receive OAuth callback URLs on
 # Linux/Windows, where the second launch forwards them through single-instance.
 tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
 tauri-plugin-updater = "2"
-# Low-level global keyboard listener for the desktop trigger backend
-# (`src/keyboard/`). The rustdesk fork (not the unmaintained upstream) is what
-# Handy uses: it sees the Fn key, modifier-only chords, and raw key down/up that
-# `tauri-plugin-global-shortcut` cannot. Pinned to a rev (like `tauri-nspanel`
-# above) so an accidental `cargo update` cannot drift it to a moving branch tip.
-rdev = { git = "https://github.com/rustdesk-org/rdev", rev = "a90dbe1172f8832f54c97c62e823c5a34af5fdfe" }
 
 [profile.dev]
 incremental = true # Compile your binary in smaller steps.

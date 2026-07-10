@@ -94,7 +94,7 @@ durable log and the home of retry.
   not, and a sub-second flash is too easy to miss. A reduced reach is still not a
   failure and fires no notification: the persistent pill tag and the recordings row
   are enough, and the dominant cause, a revoked Accessibility grant
-  (cursor paste-back shares the same trust as the keyboard tap), already raises its
+  (cursor paste-back is guarded by the paste grant watcher), already raises its
   own standing notice. Under ADR-0040 a paste that cannot land falls back to the
   clipboard rather than stranding the transcript, so the reduced reach is always
   recoverable with one ⌘V.
@@ -108,8 +108,8 @@ durable log and the home of retry.
   durable recording row, not an ephemeral event. Transient surfaces point at that
   row; they do not store a parallel copy. There is no separate notification
   center or failure-log popover.
-- **Standing-condition warnings are not failures.** A revoked Accessibility
-  grant, a dead listener, or a disconnected mic is a present condition that
+- **Standing-condition warnings are not failures.** A revoked or stale
+  Accessibility grant, or a disconnected mic, is a present condition that
   self-clears, owned by the pill's degraded state and the existing dedup-by-id
   `report.warning`, not the per-event lifecycle.
 - **A few adjacent notices stay toasts.** A device-fallback notice ("switched to

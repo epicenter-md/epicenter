@@ -15,11 +15,11 @@ const primaryShortcuts = systemShortcuts ?? focusedShortcuts;
  * Preference order for the shortcut that starts each recording mode: the first
  * command with a binding live on this platform wins.
  *
- * Manual recording has two start commands. Push-to-talk (a hold) ships unbound:
- * it needs the native tap and Accessibility, so it is opt-in. The tap-toggle
- * ships bound (Space in-app, a chord globally), so by default the toggle's key is
- * what shows. Push-to-talk still leads the list, so once the user binds it that
- * hold is what we show. VAD has a single command, so its list has one entry.
+ * Manual recording has two start commands. Push-to-talk is a held chord and
+ * ships unbound, so it is opt-in. Toggle recording ships bound (Space in-app, a
+ * chord globally), so its key shows by default. Push-to-talk still leads the
+ * list, so once the user binds it that hold is what we show. VAD has a single
+ * command, so its list has one entry.
  */
 const RECORDING_SHORTCUT_PREFERENCE = {
 	manual: ['pushToTalk', 'toggleManualRecording'],
@@ -31,8 +31,8 @@ export type RecordingShortcutMode = keyof typeof RECORDING_SHORTCUT_PREFERENCE;
 /**
  * The label for the bound gesture this mode starts in one store, picked by walking
  * the preference list (the first bound command wins). Reading a single command
- * (`toggleManualRecording`) rendered an empty key where the toggle ships unbound
- * and another gesture is the live one; the list shows the bound gesture instead.
+ * (`toggleManualRecording`) rendered an empty key when a user cleared the toggle
+ * while another gesture was live; the list shows the bound gesture instead.
  * Returns `''` when nothing in the list is bound. `keyBindingToLabel` formats the
  * physical binding.
  */
@@ -61,11 +61,11 @@ export function getRecordingShortcutLabel(mode: RecordingShortcutMode): string {
  * Both reach slots for this recording mode: the in-app (`focused`) key and the
  * system-global (`global`) key. `focused` is `''` when unbound. `global` is `null`
  * when this platform has no system backend (web), and `''` when it has one but the
- * slot is unbound (desktop): one source of truth for "is there a from-anywhere tier
- * at all" versus "there is, but it needs setting up". The home hint teaches both, so
- * a desktop user learns the quick in-app tap *and* the from-anywhere gesture (and,
- * for VAD, the in-app key the single-label hint never surfaced, since VAD ships no
- * global default).
+ * slot is unbound (desktop): one source of truth for "is there a global backend at
+ * all" versus "there is, but it needs setting up". The home hint teaches both, so
+ * a desktop user learns the quick in-app key *and* the from-anywhere gesture
+ * (and, for VAD, the in-app key the single-label hint never surfaced, since VAD
+ * ships no global default).
  *
  * This is the read-only badge philosophy of ADR-0052 applied to the home screen:
  * the user still expresses reach only by choosing a key, and the hint reflects

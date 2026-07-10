@@ -426,7 +426,7 @@ Tauri-only namespace capabilities live inline in one file at `$lib/tauri.tauri.t
 - `tauri.fs` - Filesystem operations (pathsToFiles)
 - `tauri.permissions` - macOS accessibility/microphone permission flows
 - `tauri.tray` - System tray icon (setIcon)
-- `tauri.keyboard` - Desktop keyboard subsystem: shortcut tiers, dictation capability, and chord capture (setBindings, registerChords, setAutoPasteEnabled, setCapturing, getDictationCapability)
+- `tauri.keyboard` - Global-shortcut chord registration plus the macOS paste-at-cursor grant watch (registerChords, unregisterChords, setAutoPasteEnabled, getDictationCapability, onDictationCapabilityChanged)
 - `tauri.autostart` - Launch-at-login toggle (isEnabled, enable, disable)
 
 App-owned Rust commands that are not general reusable capabilities live in `$lib/tauri/commands`. Accessibility settings and upload encoding are examples: `commands.openAccessibilitySettings` opens System Settings, and `commands.encodeRecordingForUpload` is called by the transcription operation before cloud upload.

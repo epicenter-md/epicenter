@@ -6,7 +6,6 @@ const OVERRIDABLE_DICTATION_CAPABILITIES = [
 	'untrusted',
 	'active',
 	'broken',
-	'unsupported',
 ] as const satisfies readonly DictationCapability[];
 type DictationCapabilityOverride =
 	| (typeof OVERRIDABLE_DICTATION_CAPABILITIES)[number]
@@ -14,13 +13,11 @@ type DictationCapabilityOverride =
 
 /**
  * The frontend's view over the one OS-trust fact Rust owns: whether Whispering
- * can drive its "dictate anywhere" flow (tap the keyboard for global shortcuts
- * and paste back). The Rust supervisor in `src-tauri/src/keyboard` computes the
- * `DictationCapability`, gates the rdev tap on the live macOS Accessibility
- * trust, and restarts a tap that dies under a held grant. This module does NOT
- * probe the OS, infer liveness, or poll for grant changes: it seeds the value
- * once and then tracks the pushed event. The macOS notice, the guide dialog, and
- * the shortcut recorder all READ this single value.
+ * can paste at the cursor when auto-paste is enabled. The Rust supervisor
+ * computes the `DictationCapability` from the live macOS Accessibility trust.
+ * This module does NOT probe the OS, infer liveness, or poll for grant changes:
+ * it seeds the value once and then tracks the pushed event. The macOS notice and
+ * the guide dialog both READ this single value.
  *
  * Off the desktop build there is no Rust tap and no gate, so `attach()` is a
  * no-op and the value stays `unknown`; the browser build handles shortcuts with
@@ -44,7 +41,7 @@ function createDictationCapability() {
 	}
 
 	return {
-		/** The tap is running and trusted: global shortcuts and paste-back work. */
+		/** Accessibility is trusted: paste at cursor can work. */
 		get isActive(): boolean {
 			return effective() === 'active';
 		},
@@ -61,27 +58,6 @@ function createDictationCapability() {
 		get isStale(): boolean {
 			return effective() === 'broken';
 		},
-		/**
-		 * This platform can never tap the keyboard (Linux Wayland). Terminal: there
-		 * is nothing to grant, so the notice explains the limit instead of offering
-		 * a fix.
-		 */
-		get isUnsupported(): boolean {
-			return effective() === 'unsupported';
-		},
-		/**
-		 * The tap cannot fire right now, for any settled reason (`untrusted`,
-		 * `broken`, or `unsupported`). Excludes `active` (it works), `unknown` (the
-		 * pre-seed sub-tick, so the keycap does not flash dim before the first
-		 * value lands), and `inactive` (no Tier-1 binding is bound, so the tap is
-		 * off by design and the chord shortcuts still work through the plugin).
-		 * Views use this to dim the shortcut keycap.
-		 */
-		get isUnavailable(): boolean {
-			const s = effective();
-			return s !== 'active' && s !== 'unknown' && s !== 'inactive';
-		},
-
 		/**
 		 * Dev-only: pin the capability (or `null` to resume the live value) so the
 		 * denied/granted/stale UI can be toggled in real time. No-op in production

@@ -6,8 +6,8 @@
 	 * Global opener for the macOS Accessibility guide. Mirrors the
 	 * `confirmationDialog` idiom: mount `<MacosAccessibilityGuideDialog />` once at
 	 * the app root, then call `accessibilityGuide.open()` from anywhere (the home
-	 * notice, the shortcut recorder) to surface the remove/re-add walkthrough. The
-	 * guide content is fixed, so the store carries no payload: it
+	 * notice) to surface the remove/re-add walkthrough. The guide content is fixed,
+	 * so the store carries no payload: it
 	 * is open or closed and nothing else.
 	 *
 	 * The guide is user-opened, never auto-popped: the ambient "you still need
@@ -98,13 +98,14 @@
 			</Dialog.Title>
 			<Dialog.Description>
 				{#if variant === 're-add'}
-					Whispering already has Accessibility, but it's not firing. That usually
-					means a stale entry from an app update. Open System Settings below, then
-					remove Whispering from the list and add it back.
+					Whispering already has Accessibility, but paste at cursor is not
+					working. That usually means a stale entry from an app update. Open
+					System Settings below, then remove Whispering from the list and add it
+					back.
 				{:else}
-					macOS needs Accessibility before Whispering can fire your global
-					shortcut and paste where you're typing. Open System Settings below, then
-					switch Whispering on. It'll already be in the list.
+					macOS needs Accessibility before Whispering can paste where you're
+					typing. Open System Settings below, then switch Whispering on. It'll
+					already be in the list.
 				{/if}
 			</Dialog.Description>
 		</Dialog.Header>

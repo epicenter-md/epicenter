@@ -10,8 +10,8 @@
 	//   - `first-grant` (never granted): `openSystemSettings` already adds Whispering
 	//     to the list toggled off, so the whole job is flipping its switch. Telling a
 	//     brand-new user to "remove Whispering" is impossible: it isn't there yet.
-	//   - `re-add` (stale grant after an app update): the toggle reads on but the tap
-	//     is dead, and only a remove-and-re-add clears it.
+	//   - `re-add` (stale grant after an app update): the toggle reads on but paste
+	//     at cursor is dead, and only a remove-and-re-add clears it.
 	// Neither variant repeats "navigate to Accessibility": the dialog's Open System
 	// Settings button deep-links there, so the steps describe what to do once you land.
 	let { variant }: { variant: 'first-grant' | 're-add' } = $props();

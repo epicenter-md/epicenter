@@ -20,8 +20,8 @@ export type {
 /**
  * The output scopes Whispering delivers into. Each has its own
  * clipboard/cursor/enter toggles under `output.<scope>.*`. Keeping the list in
- * one place lets delivery and the tap-hold capability derive from the same
- * source instead of hardcoding the scope names.
+ * one place lets delivery and the auto-paste intent derive from the same source
+ * instead of hardcoding the scope names.
  */
 const OUTPUT_SCOPES = ['transcription', 'recipe'] as const;
 type OutputScope = (typeof OUTPUT_SCOPES)[number];

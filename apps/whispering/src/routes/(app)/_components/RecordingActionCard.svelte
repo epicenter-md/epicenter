@@ -4,7 +4,6 @@
 	import { Spinner } from '@epicenter/ui/spinner';
 	import { cn } from '@epicenter/ui/utils';
 	import type { Snippet } from 'svelte';
-	import { dictationCapability } from '$lib/state/dictation-capability.svelte';
 	import type { RecordingActionController } from './recording-action-controller';
 
 	// The controller owns the state machine and every derived label/icon. The card
@@ -95,15 +94,8 @@
 			</span>
 		</span>
 		{#if controller.shortcutLabel}
-			<!-- On desktop the shortcut is the global rdev tap, which only fires when
-			the capability is active. Keep showing the key but dim it whenever the tap
-			can't fire (macOS Accessibility ungranted or stale, or Linux Wayland),
-			reading the same fact the home-page notice does so the two agree. -->
 			<Kbd.Root
-				class={cn(
-					'h-7 max-w-28 shrink-0 rounded-md bg-muted/75 px-2 text-xs text-muted-foreground shadow-none',
-					dictationCapability.isUnavailable && 'opacity-50',
-				)}
+				class="h-7 max-w-28 shrink-0 rounded-md bg-muted/75 px-2 text-xs text-muted-foreground shadow-none"
 			>
 				{controller.shortcutLabel}
 			</Kbd.Root>

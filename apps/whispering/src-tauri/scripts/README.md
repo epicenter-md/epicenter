@@ -2,7 +2,7 @@
 
 `bun run dev` launches Whispering under its own macOS identity,
 `so.epicenter.whispering.dev`, separate from the released **Whispering**
-(`so.epicenter.whispering`). Grant Accessibility once and global shortcuts keep
+(`so.epicenter.whispering`). Grant Accessibility once and paste at cursor keeps
 working across rebuilds.
 
 Because dev runs a bare binary rather than a `.app`, its System Settings entry
@@ -65,6 +65,6 @@ bun run dev:doctor
 
 prints the dev binary path, its signed identifier, signature, designated
 requirement, whether the fixed requirement is present, and the reset command.
-Live trust, the current `DictationCapability`, and the rdev listener's health
+Live trust, the current `DictationCapability`, and the macOS Accessibility-grant watch
 are owned by the running app's supervisor
 (`src/keyboard/mod.rs`) and show up in the app and the Tauri log.

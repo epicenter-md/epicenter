@@ -6,9 +6,9 @@
 	import { type Command, commands } from '$lib/commands';
 
 	// Platform-agnostic chrome: a searchable table of every command. The caller
-	// owns what a row's shortcut control is (the in-app local recorder or the
-	// rdev-backed global recorder) and supplies it through the `row` snippet, so
-	// this component holds no local/global discriminator.
+	// owns what a row's shortcut control is (the reach-routed keyboard recorder)
+	// and supplies it through the `row` snippet, so this component holds no
+	// local/global discriminator.
 	let { row }: { row: Snippet<[Command]> } = $props();
 
 	let searchQuery = $state('');

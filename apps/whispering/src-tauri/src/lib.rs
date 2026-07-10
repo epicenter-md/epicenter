@@ -40,9 +40,10 @@ use media::{pause_playback, resume_playback};
 // recorder, audio, and transcription modules.
 pub mod timing;
 
-// Desktop global keyboard trigger backend (rdev listener + binding matcher).
-// Built in isolation in Wave 2; the FE registrar swap and listener start-up
-// land in Wave 3. Desktop-only because rdev is a desktop-only dependency.
+// The macOS Accessibility-grant watch for auto-paste-at-cursor (ADR-0117):
+// global-shortcut input is plugin chords, so this owns no shortcut input. The
+// tap is macOS-only; off macOS `TapController` is a stub, so the module is
+// compiled on all desktops only for its command surface.
 #[cfg(desktop)]
 pub mod keyboard;
 
@@ -90,20 +91,14 @@ fn make_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             resume_playback,
             keyring_read,
             keyring_write,
-            keyboard::commands::set_keyboard_shortcuts,
             keyboard::commands::set_auto_paste_enabled,
-            keyboard::commands::set_keyboard_capturing,
             keyboard::commands::get_dictation_capability,
         ])
         // The FE listens through the generated `events` object. `collect_events!`
-        // owns each topic name and pulls in the payload types
-        // (`ShortcutTriggerEvent` -> `TriggerState`; `ShortcutCaptureEvent` ->
-        // `KeyBinding`); `set_keyboard_shortcuts` separately pulls in
-        // `CommandBinding` / `Modifier` / `Key`. `run` must call
+        // owns the topic name and pulls in the payload type
+        // (`DictationCapabilityEvent` -> `DictationCapability`). `run` must call
         // `mount_events` so `Event::emit` and the generated listeners resolve.
         .events(tauri_specta::collect_events![
-            keyboard::ShortcutTriggerEvent,
-            keyboard::ShortcutCaptureEvent,
             keyboard::DictationCapabilityEvent,
         ])
         .error_handling(tauri_specta::ErrorHandlingMode::Result)

@@ -61,18 +61,13 @@ import { Ok, tryAsync } from 'wellcrafted/result';
 import { goto } from '$app/navigation';
 import type { WhisperingRecordingState } from '$lib/constants/audio';
 import { defineMutation, defineQuery, queryClient } from '$lib/rpc/client';
-import type {
-	CommandBinding,
-	DictationCapability,
-	KeyBinding,
-} from '$lib/tauri/commands';
+import type { DictationCapability } from '$lib/tauri/commands';
 import { commands, events } from '$lib/tauri/commands';
 
 /**
- * A Tier-0 chord resolved to the accelerator the plugin registers under. The
- * caller (`platform/system-shortcuts.tauri.ts`) resolves each binding once via
- * `resolveBinding`, so `registerChords` registers the string instead of
- * re-deriving it.
+ * A global chord resolved to the accelerator the plugin registers under. The
+ * caller (`platform/system-shortcuts.tauri.ts`) computes each accelerator once,
+ * so `registerChords` registers the string instead of re-deriving it.
  */
 export type ChordRegistration = { commandId: string; accelerator: string };
 
@@ -286,22 +281,14 @@ async function initTray() {
 }
 
 // keyboard ----------------------------------------------------------
-// The desktop keyboard subsystem (mirrors `src-tauri/src/keyboard`): both
-// shortcut tiers, the dictation capability, and chord capture. Two backends
-// feed one convergence point (`dispatchCommandTrigger`):
-//
-//   Tier 0 (default, no permission): `tauri-plugin-global-shortcut`. The
-//     registrar maps each chord binding to an accelerator and registers it; the
-//     plugin's own callback delivers Pressed/Released. This is the floor, so it
-//     needs no Accessibility grant.
-//   Tier 1 (opt-in): the rdev/tap listener in `src-tauri/src/keyboard`, for the
-//     Fn and modifier-only holds the plugin cannot express. It emits a
-//     `{ commandId, state }` event on every transition (`events.shortcutTriggerEvent`)
-//     and reports its `DictationCapability` (`events.dictationCapabilityEvent`).
-//
-// Backend selection lives in `platform/system-shortcuts.tauri.ts`: a binding that maps
-// to an accelerator goes to the plugin, the rest to the tap. No accelerator
-// strings reach the tap; it matches the structured `KeyBinding`.
+// Global-shortcut input is `tauri-plugin-global-shortcut` chords, registered
+// here from `platform/system-shortcuts.tauri.ts`; the plugin's own callback
+// delivers Pressed/Released into `dispatchCommandTrigger`, and no Accessibility
+// grant is needed (ADR-0117). The rest of this namespace is the macOS
+// paste-at-cursor grant watch: `setAutoPasteEnabled` tells the Rust supervisor
+// when auto-paste wants the grant, and `getDictationCapability` /
+// `onDictationCapabilityChanged` expose the `DictationCapability` the paste path
+// gates on.
 
 // autostart ---------------------------------------------------------
 const AutostartError = defineErrors({
@@ -381,13 +368,13 @@ const tray = {
 
 const keyboard = {
 	/**
-	 * Register the Tier-0 chord backend (`tauri-plugin-global-shortcut`). Replaces
+	 * Register the chord backend (`tauri-plugin-global-shortcut`). Replaces
 	 * the whole set: unregister everything, then register each resolved chord
 	 * under its accelerator. The plugin's own callback delivers Pressed/Released,
 	 * which we dispatch into the command layer (the convergence point the browser
-	 * backend also feeds). Bindings with no accelerator (Fn, modifier-only) are
-	 * the Tier-1 tap's job (see `setBindings`). Carbon's `RegisterEventHotKey`
-	 * needs no Accessibility grant, so this is the floor.
+	 * backend also feeds). A binding with no accelerator (Fn or modifier-only) is
+	 * refused upstream, so nothing reaches here but chords. Carbon's
+	 * `RegisterEventHotKey` needs no Accessibility grant.
 	 */
 	registerChords: async (chords: ChordRegistration[]) => {
 		await unregisterAllShortcuts();
@@ -403,66 +390,22 @@ const keyboard = {
 	unregisterChords: () => unregisterAllShortcuts(),
 
 	/**
-	 * Replace the full set of bindings the Tier-1 tap owns (the Fn / modifier-only
-	 * holds; chords go to the plugin). The registrar computes the complete list
-	 * from device-config and pushes it on startup and on every change; replace-all
-	 * keeps the FE the single source of truth with no add/remove bookkeeping. The
-	 * supervisor spins the tap up when this is non-empty and tears it down when it
-	 * empties (unless auto-paste still wants it).
-	 */
-	setBindings: (bindings: CommandBinding[]) =>
-		commands.setKeyboardShortcuts(bindings),
-
-	/**
 	 * Tell the tap supervisor whether auto-paste-at-cursor is on. Paste writes
-	 * through the same macOS Accessibility grant the tap reads through, so when it
-	 * is on the supervisor holds the tap to track that grant (and surface the
-	 * notice if it is missing) even with no binding. Pushed on startup and on
+	 * through the macOS Accessibility grant the tap watches, so when it is on the
+	 * supervisor holds the tap to track that grant (and surface the notice if it
+	 * is missing). It is the only reason the tap runs. Pushed on startup and on
 	 * every output-settings change.
 	 */
 	setAutoPasteEnabled: (enabled: boolean) =>
 		commands.setAutoPasteEnabled(enabled),
 
 	/**
-	 * The current dictation capability, for the FE's seed on attach. The Rust
-	 * supervisor owns the rdev tap's lifecycle and trust gating, so there is no
+	 * The current paste capability, for the FE's seed on attach. The Rust
+	 * supervisor owns the tap's lifecycle and trust gating, so there is no
 	 * `start`: the tap is already running whenever the capability is `active`.
 	 */
 	getDictationCapability: (): Promise<DictationCapability> =>
 		commands.getDictationCapability(),
-
-	/**
-	 * Subscribe to the rdev trigger event and dispatch each into the command
-	 * layer. Returns the unlisten fn. The `on` filter lives in
-	 * `dispatchCommandTrigger`, the single convergence point both trigger
-	 * backends share, so this stays pure transport.
-	 */
-	startTriggerDispatch: async () => {
-		const { dispatchCommandTrigger } = await import('$lib/commands');
-		return events.shortcutTriggerEvent.listen(
-			({ payload: { commandId, state } }) =>
-				dispatchCommandTrigger(commandId, state),
-		);
-	},
-
-	/**
-	 * Enter or leave binding-capture mode. While capturing, the listener streams
-	 * the held combo on the capture event (see `listenForCapture`) instead of
-	 * firing command triggers, so the settings recorder can record Fn and
-	 * physical-key bindings the webview cannot see.
-	 */
-	setCapturing: (capturing: boolean) =>
-		commands.setKeyboardCapturing(capturing),
-
-	/**
-	 * Subscribe to the capture event. The listener emits the currently-held
-	 * combo as a `KeyBinding` on every change while capturing; the recorder
-	 * accumulates them and commits on release. Returns the unlisten fn.
-	 */
-	listenForCapture: (onCombo: (binding: KeyBinding) => void) =>
-		events.shortcutCaptureEvent.listen(({ payload }) =>
-			onCombo(payload.binding),
-		),
 
 	/**
 	 * Subscribe to dictation-capability changes pushed by the Rust supervisor

@@ -5,34 +5,32 @@ import { os } from '#platform/os';
 import { BITRATES_KBPS, DEFAULT_BITRATE_KBPS } from '$lib/constants/audio';
 import { LOCAL_MODEL_UNLOAD_POLICIES } from '$lib/constants/local-model-unload-policy';
 import { log, report } from '$lib/report';
-import type { KeyBinding } from '$lib/tauri/commands';
+import type { KeyBinding } from '$lib/utils/key-binding';
 
 // ── Global shortcut binding shape ────────────────────────────────────────────
 
 /**
  * Runtime shape of a stored global shortcut: the structured `KeyBinding` the
- * desktop rdev backend matches on (physical-key space). `modifiers` is strictly
- * enumerated; `keys` is validated as strings here and against the real `Key`
- * vocabulary by Rust at the IPC boundary (so a bad key is rejected on register,
- * not silently stored as garbage).
+ * frontend resolves to a `tauri-plugin-global-shortcut` accelerator (physical-key
+ * space). `modifiers` is strictly enumerated; `keys` is validated as strings
+ * here. A binding that is not a registrable chord produces no accelerator and is
+ * refused before it registers (ADR-0117), so a bad or unsupported gesture is
+ * never registered.
  */
 const globalBinding = type({
 	modifiers: "('ctrl' | 'alt' | 'shift' | 'meta' | 'fn')[]",
 	keys: 'string[]',
 }).or('null');
 
-// Default global gestures, not mnemonic app hotkeys. These are the Tier-0 floor:
-// plain chords the `tauri-plugin-global-shortcut` backend registers with no
-// Accessibility grant. The matcher fires on exact set equality with no prefix
-// resolution, so no default's keys may be a subset of another's (the shorter
-// would fire first and shadow the longer): every default below is distinct.
+// Default global gestures, not mnemonic app hotkeys. These are plain chords the
+// `tauri-plugin-global-shortcut` backend registers with no Accessibility grant,
+// the only global-shortcut backend on every platform (ADR-0117). Every default
+// binding is distinct.
 //
-// Toggle recording is the out-of-the-box gesture: tap to start, tap to stop. A
-// chord is the right tool for a toggle (its press effort resists accidental
-// triggers). Push-to-talk ships unbound: a good hold key is a single physical
-// key, and the only one a laptop has is Fn, which lives behind the opt-in
-// Accessibility tier. Bind Fn (or a chord) for push-to-talk in settings if you
-// want a held key.
+// Toggle recording is the out-of-the-box gesture: press once to start and again
+// to stop. A chord is the right tool for a toggle; its press effort resists
+// accidental triggers. Push-to-talk ships unbound: bind a chord for it in
+// settings if you want a held key (Fn and modifier-only holds are not supported).
 //
 //   macOS:   Cmd + Shift + Space  = toggle,  Cmd + .          = cancel
 //   Windows: Ctrl + Shift + Space = toggle,  Ctrl + Shift + . = cancel
@@ -154,9 +152,9 @@ const DEVICE_DEFINITIONS = {
 	),
 
 	// ── Global OS shortcuts (device-specific, never synced) ───────────
-	// Structured KeyBinding (physical-key space) for the rdev backend. Old
-	// accelerator-string values are not migrated: they fail this schema and reset
-	// to the defaults (clean break, see the note below the singleton).
+	// Structured KeyBinding (physical-key space) resolved to a plugin accelerator.
+	// Old accelerator-string values are not migrated: they fail this schema and
+	// reset to the defaults (clean break, see the note below the singleton).
 	'shortcuts.global.pushToTalk': defineEntry(
 		globalBinding,
 		DEFAULT_GLOBAL_BINDINGS.pushToTalk,

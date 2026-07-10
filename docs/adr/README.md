@@ -84,7 +84,7 @@ Each option and the one reason it lost. Terse. This is not the spec.
 | [0005](0005-child-docs-are-bound-through-the-workspace.md) | Child docs are bound through the workspace, not the component | Accepted |
 | [0006](0006-schema-evolution-keeps-the-version-tuple-and-refuses-repair-apis.md) | Schema evolution keeps the version tuple and refuses repair APIs | Accepted |
 | [0007](0007-local-shortcuts-sync-global-shortcuts-stay-per-device.md) | Local shortcuts sync, global shortcuts stay per-device | Accepted |
-| [0008](0008-rdev-backs-the-desktop-global-trigger.md) | rdev backs the desktop global trigger | Accepted (macOS path amended by 0020) |
+| [0008](0008-rdev-backs-the-desktop-global-trigger.md) | rdev backs the desktop global trigger | Superseded by 0117 |
 | [0009](0009-the-cli-dispatches-through-a-mandatory-daemon.md) | The CLI dispatches through a mandatory daemon; automation lives in library scripts | Accepted |
 | [0010](0010-whispering-exports-recordings-as-a-zip-continuous-markdown-is-the-mounts-job.md) | Whispering exports recordings as a zip; continuous Markdown is the mount's job | Accepted |
 | [0011](0011-rust-owns-the-macos-dictation-capability.md) | Rust owns the macOS dictation capability; the frontend is a view over it | Accepted |
@@ -95,7 +95,7 @@ Each option and the one reason it lost. Terse. This is not the spec.
 | [0016](0016-prewarm-the-cold-model-load-and-refuse-the-rest-of-the-latency-menu.md) | Prewarm the cold model load and refuse the rest of the latency menu | Accepted |
 | [0017](0017-pause-system-media-playback-while-recording.md) | Pause system media playback while recording through one cross-platform controller | Accepted (VAD timing revised by 0027; default reaffirmed by 0045) |
 | [0018](0018-macos-resume-is-gated-on-a-coreaudio-output-read.md) | macOS resume is gated on a CoreAudio output read, not a MediaRemote read shim | Accepted (no-op consequence corrected by 0045) |
-| [0019](0019-global-shortcuts-have-a-permission-free-floor-and-accessibility-is-an-opt-in-tier.md) | Global shortcuts have a permission-free floor; Accessibility is an opt-in tier | Accepted |
+| [0019](0019-global-shortcuts-have-a-permission-free-floor-and-accessibility-is-an-opt-in-tier.md) | Global shortcuts have a permission-free floor; Accessibility is an opt-in tier | Superseded by 0117 |
 | [0020](0020-macos-drives-its-keyboard-tap-with-an-owned-cgeventtap.md) | macOS drives its keyboard tap with an owned CGEventTap, not the rdev fork | Accepted |
 | [0021](0021-actions-are-the-only-surface-that-crosses-a-process-boundary.md) | Actions are the only surface that crosses a process boundary | Accepted |
 | [0022](0022-rust-owns-the-models-folder-the-webview-owns-the-catalog.md) | Rust owns the models folder, the webview owns the catalog | Accepted |
@@ -193,5 +193,6 @@ Each option and the one reason it lost. Terse. This is not the spec.
 | [0114](0114-hosted-auth-surfaces-are-plain-tool-logins-not-marketing-pages.md) | Hosted auth surfaces are plain tool logins, not marketing pages | Accepted |
 | [0115](0115-super-chat-remote-attach-rides-an-endpoint-addressed-trusted-relay.md) | Super Chat remote attach rides an endpoint-addressed trusted AttachRelay; one consumer, not the deleted route-addressed relay floor | Accepted |
 | [0116](0116-local-mail-is-desktop-first-one-bun-engine-no-background-mail-service.md) | Local Mail is desktop-first: one Bun engine, no background mail service, the open app owns the sync loop | Accepted |
+| [0117](0117-global-shortcut-input-is-plugin-chords-only-and-the-macos-tap-is-just-the-paste-grant-watcher.md) | Global shortcut input is plugin chords only, and the macOS tap is just the paste grant watcher | Accepted |
 
 When you add an ADR, add its row here.

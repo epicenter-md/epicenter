@@ -1,7 +1,8 @@
 # 0008. rdev backs the desktop global trigger
 
-- **Status:** Accepted
+- **Status:** Superseded
 - **Date:** 2026-06-13
+- **Superseded by:** [ADR-0117](0117-global-shortcut-input-is-plugin-chords-only-and-the-macos-tap-is-just-the-paste-grant-watcher.md)
 
 ## Context
 

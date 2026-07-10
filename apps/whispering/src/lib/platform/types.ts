@@ -12,35 +12,32 @@
 
 import type { createAppAuthClient } from '@epicenter/svelte/auth';
 import type { Command } from '$lib/commands';
-import type { KeyBinding } from '$lib/tauri/commands';
+import type { KeyBinding } from '$lib/utils/key-binding';
 
 /**
  * Why a binding cannot be assigned, as structured data rather than prose. The
  * backends and the reach router return this; the recorder renders it to a message
- * (with the command titles and key labels it has on hand) at the one place a
+ * (with the command titles it has on hand) at the one place a
  * conflict is shown, so the policy layer never owns user-facing strings.
  *
  * - `reserved`: an OS-reserved global gesture (`reason` is self-contained).
- * - `duplicate`: the in-app tier already binds this exact gesture to `commandId`.
- * - `overlap`: a global gesture for `commandId` (`binding`) overlaps this one.
+ * - `duplicate`: this backend already binds this exact gesture to `commandId`.
  * - `crossStore`: on desktop, `commandId`'s binding in the OTHER store is the same
  *   gesture, so both would fire in the focused window.
  */
 export type ShortcutConflict =
 	| { kind: 'reserved'; reason: string }
 	| { kind: 'duplicate'; commandId: Command['id'] }
-	| { kind: 'overlap'; commandId: Command['id']; binding: KeyBinding }
 	| { kind: 'crossStore'; commandId: Command['id'] };
 
 /**
  * Contract for a single shortcut backend. Two implement it: `focusedShortcuts`
  * (in-app keydown shortcuts in workspace KV, universal) and `systemShortcuts`
- * (system-global rdev bindings in device-config, Tauri-only). The reach router
+ * (system-global plugin-chord bindings in device-config, Tauri-only). The reach router
  * (`shortcuts.ts`) composes the two and routes each write by realized reach
- * (ADR-0052), so app code talks to the router, not to a backend directly; the
- * settings recorders are handed the specific backend they edit. The trigger
- * dispatch itself converges in `dispatchCommandTrigger`; this owns the binding
- * configuration around it.
+ * (ADR-0052), so app code talks to the router, not to a backend directly. The
+ * trigger dispatch itself converges in `dispatchCommandTrigger`; this owns the
+ * binding configuration around it.
  */
 export type Shortcuts = {
 	/** Push every command's configured binding to this platform's backend. */
@@ -61,10 +58,9 @@ export type Shortcuts = {
 	/**
 	 * Why `binding` cannot be assigned to this command, or `null` when it is
 	 * allowed, as structured {@link ShortcutConflict} (the recorder renders the
-	 * message). The policy is per-tier and lives in the backend: the in-app tier
+	 * message). The policy lives in each backend: the in-app backend
 	 * refuses an exact duplicate (its matcher fires every command whose set
-	 * matches); the global tier refuses a reserved gesture or one that overlaps
-	 * another (its matcher has no prefix resolution).
+	 * matches); the global backend also refuses OS-reserved gestures.
 	 */
 	findConflict(
 		commandId: Command['id'],
