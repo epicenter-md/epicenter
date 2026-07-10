@@ -34,10 +34,10 @@ async function writeGrant(serialized: string | null): Promise<void> {
 	if (error !== null) throw error;
 }
 
-const bootstrap = window.__EPICENTER_WHISPERING_AUTH_BOOTSTRAP__ ?? {
-	serialized: null,
-	error: 'Epicenter did not preload the Whispering credential store.',
-};
+const bootstrap = window.__EPICENTER_WHISPERING_AUTH_BOOTSTRAP__;
+if (!bootstrap) {
+	throw new Error('Epicenter did not preload the Whispering credential store.');
+}
 delete window.__EPICENTER_WHISPERING_AUTH_BOOTSTRAP__;
 if (bootstrap.error !== null) log.warn(new Error(bootstrap.error));
 

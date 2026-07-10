@@ -1,7 +1,6 @@
 const BOOT_START = 'Promise.all([';
 const BOOT_END = ']).then(([kit, app]) => {';
-const CREDENTIAL_READY =
-	'(window.__EPICENTER_WHISPERING_AUTH_READY__ ?? Promise.resolve())';
+const CREDENTIAL_READY = 'window.__EPICENTER_WHISPERING_AUTH_READY__';
 
 /**
  * Hold SvelteKit's module graph until Rust has preloaded the OS-keyring cell.

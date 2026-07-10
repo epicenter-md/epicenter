@@ -16,7 +16,7 @@ describe('gateWhisperingBootstrap', () => {
 		const gated = gateWhisperingBootstrap(INDEX);
 
 		expect(gated).toContain(
-			'(window.__EPICENTER_WHISPERING_AUTH_READY__ ?? Promise.resolve()).then(() => Promise.all([',
+			'window.__EPICENTER_WHISPERING_AUTH_READY__.then(() => Promise.all([',
 		);
 		expect(gated).toContain('])).then(([kit, app]) => {');
 	});
