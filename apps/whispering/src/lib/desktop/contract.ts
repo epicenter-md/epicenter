@@ -2,6 +2,7 @@ import type { Result } from 'wellcrafted/result';
 import type { TextError } from '$lib/services/text/types';
 import type {
 	PlaybackSuppressionLease,
+	PlaybackSuppressionMode,
 	WriteTextOutcome,
 } from '$lib/tauri/bindings.gen';
 import type {
@@ -69,7 +70,10 @@ export type DesktopLocalTranscription = {
 };
 
 export type DesktopPlaybackSuppression = {
-	begin(recordingId: string): Promise<PlaybackSuppressionLease>;
+	begin(
+		recordingId: string,
+		mode: PlaybackSuppressionMode,
+	): Promise<PlaybackSuppressionLease>;
 	end(lease: PlaybackSuppressionLease): Promise<void>;
 };
 

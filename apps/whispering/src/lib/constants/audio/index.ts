@@ -1,4 +1,9 @@
 export {
+	BACKGROUND_AUDIO_SUPPRESSION_OPTIONS,
+	BACKGROUND_AUDIO_SUPPRESSION_VALUES,
+	type BackgroundAudioSuppression,
+} from './background-audio-suppression';
+export {
 	BITRATE_OPTIONS,
 	BITRATES_KBPS,
 	DEFAULT_BITRATE_KBPS,

@@ -6,9 +6,10 @@
 	import InfoIcon from '@lucide/svelte/icons/info';
 	import { createMutation } from '@tanstack/svelte-query';
 	import { resultMutationOptions } from 'wellcrafted/query';
-	import { SettingSelect, SettingSwitch } from '$lib/components/settings';
+	import { SettingSelect } from '$lib/components/settings';
 	import {
 		BITRATE_OPTIONS,
+		BACKGROUND_AUDIO_SUPPRESSION_OPTIONS,
 		RECORDING_TRIGGER_OPTIONS,
 		SAMPLE_RATE_OPTIONS,
 	} from '$lib/constants/audio';
@@ -52,10 +53,12 @@
 			).join(', ')}"
 		/>
 
-		<SettingSwitch
-			key="recording.suppressBackgroundAudio"
-			label="Suppress background audio while recording"
-			description="On desktop, temporarily quiet background audio while a manual recording is active, then restore it when recording ends."
+		<SettingSelect
+			store={settings}
+			key="recording.backgroundAudioSuppression"
+			label="Background audio"
+			items={BACKGROUND_AUDIO_SUPPRESSION_OPTIONS}
+			description="In Epicenter desktop, choose what happens to background audio during manual recordings. Epicenter tries to restore it when recording ends."
 		/>
 
 		{#if settings.get('recording.trigger') === 'manual'}

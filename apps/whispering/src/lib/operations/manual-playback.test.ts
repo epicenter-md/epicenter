@@ -12,7 +12,10 @@
  */
 import { expect, test } from 'bun:test';
 import type { DesktopPlaybackSuppression } from '$lib/desktop/contract';
-import type { PlaybackSuppressionLease } from '$lib/tauri/bindings.gen';
+import type {
+	PlaybackSuppressionLease,
+	PlaybackSuppressionMode,
+} from '$lib/tauri/bindings.gen';
 import { createManualPlayback } from './manual-playback';
 
 function deferred<TValue>() {
@@ -23,12 +26,14 @@ function deferred<TValue>() {
 	return { promise, resolve };
 }
 
-function setup(options: { enabled?: boolean } = {}) {
-	const begun: string[] = [];
+function setup(
+	options: { enabled?: boolean; mode?: PlaybackSuppressionMode } = {},
+) {
+	const begun: { recordingId: string; mode: PlaybackSuppressionMode }[] = [];
 	const ended: PlaybackSuppressionLease[] = [];
 	const playbackSuppression: DesktopPlaybackSuppression = {
-		async begin(recordingId) {
-			begun.push(recordingId);
+		async begin(recordingId, mode) {
+			begun.push({ recordingId, mode });
 			return { id: `lease-${recordingId}` };
 		},
 		async end(lease) {
@@ -37,7 +42,7 @@ function setup(options: { enabled?: boolean } = {}) {
 	};
 	const lifecycle = createManualPlayback({
 		playbackSuppression,
-		isEnabled: () => options.enabled ?? true,
+		mode: () => (options.enabled === false ? null : (options.mode ?? 'duck')),
 		reportFailure() {},
 	});
 	return { begun, ended, lifecycle, playbackSuppression };
@@ -61,6 +66,14 @@ test('ending a recording closes its exact lease once', async () => {
 	await lifecycle.end('recording-1');
 
 	expect(ended).toEqual([{ id: 'lease-recording-1' }]);
+});
+
+test('begin passes the selected suppression mode to the host', async () => {
+	const { begun, lifecycle } = setup({ mode: 'pause' });
+
+	await lifecycle.begin('recording-1');
+
+	expect(begun).toEqual([{ recordingId: 'recording-1', mode: 'pause' }]);
 });
 
 test('lease returned after recording ended is closed immediately', async () => {

@@ -12,6 +12,7 @@ import type { KeyBinding } from '$lib/utils/key-binding';
 
 // ── Constant imports ─────────────────────────────────────────────────────────
 
+import { BACKGROUND_AUDIO_SUPPRESSION_VALUES } from '$lib/constants/audio/background-audio-suppression';
 import { RECORDING_TRIGGERS } from '$lib/constants/audio/recording-triggers';
 import { INFERENCE_PROVIDER_IDS } from '$lib/constants/inference';
 import { SUPPORTED_LANGUAGES } from '$lib/constants/languages';
@@ -157,7 +158,10 @@ const recording = {
 		field.select(RECORDING_TRIGGERS),
 		() => 'manual' as const,
 	),
-	'recording.suppressBackgroundAudio': defineKv(field.boolean(), () => false),
+	'recording.backgroundAudioSuppression': defineKv(
+		field.select(BACKGROUND_AUDIO_SUPPRESSION_VALUES),
+		() => 'off' as const,
+	),
 } as const;
 
 /**

@@ -30,9 +30,11 @@ use windows as platform;
 
 #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
 mod platform {
+    use super::PlaybackSuppressionMode;
+
     pub struct Effect;
 
-    pub async fn suppress() -> Result<Effect, String> {
+    pub async fn suppress(_mode: PlaybackSuppressionMode) -> Result<Effect, String> {
         Ok(Effect)
     }
 
@@ -46,6 +48,16 @@ mod platform {
 pub struct PlaybackSuppressionLease {
     id: String,
 }
+
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub enum PlaybackSuppressionMode {
+    Duck,
+    Mute,
+    Pause,
+}
+
+const DUCK_TARGET: f32 = 0.2;
 
 #[derive(Default)]
 struct LeaseRegistry {
@@ -115,6 +127,7 @@ pub struct PlaybackSuppressionManager {
 #[specta::specta]
 pub async fn begin_playback_suppression(
     recording_id: String,
+    mode: PlaybackSuppressionMode,
     manager: State<'_, PlaybackSuppressionManager>,
     recorder: State<'_, StdMutex<Recorder>>,
 ) -> Result<PlaybackSuppressionLease, String> {
@@ -129,7 +142,7 @@ pub async fn begin_playback_suppression(
     let mut state = manager.state.lock().await;
     let (lease, starts_epoch) = state.leases.acquire(&recording_id);
     if starts_epoch {
-        match platform::suppress().await {
+        match platform::suppress(mode).await {
             Ok(effect) => state.effect = Some(effect),
             Err(error) => log::warn!("background audio suppression failed: {error}"),
         }

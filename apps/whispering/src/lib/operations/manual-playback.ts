@@ -1,9 +1,12 @@
 import type { DesktopPlaybackSuppression } from '$lib/desktop/contract';
-import type { PlaybackSuppressionLease } from '$lib/tauri/bindings.gen';
+import type {
+	PlaybackSuppressionLease,
+	PlaybackSuppressionMode,
+} from '$lib/tauri/bindings.gen';
 
 type ManualPlaybackDependencies = {
 	playbackSuppression: DesktopPlaybackSuppression;
-	isEnabled(): boolean;
+	mode(): PlaybackSuppressionMode | null;
 	reportFailure(error: unknown): void;
 };
 
@@ -14,7 +17,7 @@ type ManualPlaybackDependencies = {
  */
 export function createManualPlayback({
 	playbackSuppression,
-	isEnabled,
+	mode,
 	reportFailure,
 }: ManualPlaybackDependencies) {
 	let generation = 0;
@@ -40,11 +43,12 @@ export function createManualPlayback({
 			const previous = active;
 			active = null;
 			if (previous) await close(previous.lease);
-			if (!isEnabled()) return;
+			const selectedMode = mode();
+			if (selectedMode === null) return;
 
 			let lease: PlaybackSuppressionLease;
 			try {
-				lease = await playbackSuppression.begin(recordingId);
+				lease = await playbackSuppression.begin(recordingId, selectedMode);
 			} catch (error) {
 				reportFailure(error);
 				return;

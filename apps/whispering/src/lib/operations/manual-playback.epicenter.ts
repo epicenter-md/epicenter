@@ -5,7 +5,10 @@ import { createManualPlayback } from './manual-playback';
 
 export const manualPlayback = createManualPlayback({
 	playbackSuppression: desktop.playbackSuppression,
-	isEnabled: () => settings.get('recording.suppressBackgroundAudio'),
+	mode: () => {
+		const mode = settings.get('recording.backgroundAudioSuppression');
+		return mode === 'off' ? null : mode;
+	},
 	reportFailure: (error) => {
 		log.warn(
 			new Error(`Failed to suppress background audio: ${String(error)}`),

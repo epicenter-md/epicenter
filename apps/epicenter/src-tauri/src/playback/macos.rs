@@ -1,14 +1,16 @@
-//! Recording-scoped output ducking through macOS's public CoreAudio API.
+//! Recording-scoped output suppression on macOS.
 
 use core_foundation_sys::base::{CFRelease, CFTypeRef};
 use core_foundation_sys::string::{
     kCFStringEncodingUTF8, CFStringGetCString, CFStringGetLength, CFStringRef,
 };
-use std::ffi::{c_void, CStr};
-use std::os::raw::c_char;
+use std::ffi::{c_char, c_int, c_void, CStr, CString};
 use std::ptr;
+use std::sync::OnceLock;
 use std::thread;
 use std::time::Duration;
+
+use super::{PlaybackSuppressionMode, DUCK_TARGET};
 
 type OSStatus = i32;
 type AudioObjectID = u32;
@@ -31,8 +33,13 @@ const ELEMENT_MAIN: AudioObjectPropertyElement = 0;
 const DEFAULT_OUTPUT_DEVICE: AudioObjectPropertySelector = 0x644f_7574; // 'dOut'
 const DEVICE_UID: AudioObjectPropertySelector = 0x7569_6420; // 'uid '
 const VOLUME_SCALAR: AudioObjectPropertySelector = 0x766f_6c6d; // 'volm'
-const DUCK_TARGET: f32 = 0.2;
+const MUTE: AudioObjectPropertySelector = 0x6d75_7465; // 'mute'
 const VOLUME_EPSILON: f32 = 0.001;
+const MR_COMMAND_PLAY: c_int = 0;
+const MR_COMMAND_PAUSE: c_int = 1;
+const RTLD_NOW: c_int = 2;
+const MEDIA_REMOTE_PATH: &str =
+    "/System/Library/PrivateFrameworks/MediaRemote.framework/MediaRemote";
 
 #[link(name = "CoreAudio", kind = "framework")]
 extern "C" {
@@ -63,16 +70,38 @@ extern "C" {
     ) -> OSStatus;
 }
 
+extern "C" {
+    fn dlopen(filename: *const c_char, flag: c_int) -> *mut c_void;
+    fn dlsym(handle: *mut c_void, symbol: *const c_char) -> *mut c_void;
+}
+
+type SendCommandFn = unsafe extern "C" fn(c_int, *const c_void) -> u8;
+
 #[derive(Debug)]
 pub(super) struct Effect {
-    snapshot: Option<Snapshot>,
+    kind: EffectKind,
 }
 
 #[derive(Debug)]
-struct Snapshot {
+enum EffectKind {
+    Volume(Option<VolumeSnapshot>),
+    Mute(Option<MuteSnapshot>),
+    Pause { command_accepted: bool },
+}
+
+#[derive(Debug)]
+struct VolumeSnapshot {
     device: AudioObjectID,
     device_uid: String,
     controls: Vec<ControlSnapshot>,
+}
+
+#[derive(Debug)]
+struct MuteSnapshot {
+    device: AudioObjectID,
+    device_uid: String,
+    original: bool,
+    applied: bool,
 }
 
 #[derive(Debug)]
@@ -82,13 +111,24 @@ struct ControlSnapshot {
     applied: f32,
 }
 
+pub(super) async fn suppress(mode: PlaybackSuppressionMode) -> Result<Effect, String> {
+    let kind = match mode {
+        PlaybackSuppressionMode::Duck => EffectKind::Volume(suppress_volume()?),
+        PlaybackSuppressionMode::Mute => EffectKind::Mute(suppress_mute()?),
+        PlaybackSuppressionMode::Pause => EffectKind::Pause {
+            command_accepted: send_media_command(MR_COMMAND_PAUSE),
+        },
+    };
+    Ok(Effect { kind })
+}
+
 /// Duck the current default output device without ever increasing its volume.
-pub(super) async fn suppress() -> Result<Effect, String> {
+fn suppress_volume() -> Result<Option<VolumeSnapshot>, String> {
     let Some(device) = default_output_device()? else {
-        return Ok(Effect { snapshot: None });
+        return Ok(None);
     };
     let Some(device_uid) = device_uid(device)? else {
-        return Ok(Effect { snapshot: None });
+        return Ok(None);
     };
 
     let elements = if is_settable_volume(device, ELEMENT_MAIN) {
@@ -103,7 +143,7 @@ pub(super) async fn suppress() -> Result<Effect, String> {
         {
             stereo.to_vec()
         } else {
-            return Ok(Effect { snapshot: None });
+            return Ok(None);
         }
     };
 
@@ -125,18 +165,70 @@ pub(super) async fn suppress() -> Result<Effect, String> {
         });
     }
 
-    Ok(Effect {
-        snapshot: (!controls.is_empty()).then_some(Snapshot {
-            device,
-            device_uid,
-            controls,
-        }),
-    })
+    Ok((!controls.is_empty()).then_some(VolumeSnapshot {
+        device,
+        device_uid,
+        controls,
+    }))
+}
+
+fn suppress_mute() -> Result<Option<MuteSnapshot>, String> {
+    let Some(device) = default_output_device()? else {
+        return Ok(None);
+    };
+    let Some(device_uid) = device_uid(device)? else {
+        return Ok(None);
+    };
+    let address = mute_address();
+    if !is_settable(device, &address) {
+        return Ok(None);
+    }
+    let original = read_bool_property(device, &address)?;
+    if original {
+        return Ok(None);
+    }
+    write_bool_property(device, &address, true)?;
+    let applied = read_applied_mute(device, &address, original);
+    Ok(Some(MuteSnapshot {
+        device,
+        device_uid,
+        original,
+        applied,
+    }))
+}
+
+fn read_applied_mute(
+    device: AudioObjectID,
+    address: &AudioObjectPropertyAddress,
+    original: bool,
+) -> bool {
+    for _ in 0..20 {
+        if let Ok(current) = read_bool_property(device, address) {
+            if current != original {
+                return current;
+            }
+        }
+        thread::sleep(Duration::from_millis(5));
+    }
+    read_bool_property(device, address).unwrap_or(true)
 }
 
 /// Restore only volume values that still equal the values this effect applied.
 pub(super) async fn restore(effect: Effect) -> Result<(), String> {
-    let Some(snapshot) = effect.snapshot else {
+    match effect.kind {
+        EffectKind::Volume(snapshot) => restore_volume(snapshot),
+        EffectKind::Mute(snapshot) => restore_mute(snapshot),
+        EffectKind::Pause { command_accepted } => {
+            if command_accepted {
+                let _ = send_media_command(MR_COMMAND_PLAY);
+            }
+            Ok(())
+        }
+    }
+}
+
+fn restore_volume(snapshot: Option<VolumeSnapshot>) -> Result<(), String> {
+    let Some(snapshot) = snapshot else {
         return Ok(());
     };
     let current_default = default_output_device()?;
@@ -165,6 +257,22 @@ pub(super) async fn restore(effect: Effect) -> Result<(), String> {
     }
 }
 
+fn restore_mute(snapshot: Option<MuteSnapshot>) -> Result<(), String> {
+    let Some(snapshot) = snapshot else {
+        return Ok(());
+    };
+    if default_output_device()? != Some(snapshot.device)
+        || device_uid(snapshot.device)?.as_deref() != Some(snapshot.device_uid.as_str())
+    {
+        return Ok(());
+    }
+    let address = mute_address();
+    if read_bool_property(snapshot.device, &address)? == snapshot.applied {
+        write_bool_property(snapshot.device, &address, snapshot.original)?;
+    }
+    Ok(())
+}
+
 fn default_output_device() -> Result<Option<AudioObjectID>, String> {
     let address = address(DEFAULT_OUTPUT_DEVICE, SCOPE_GLOBAL, ELEMENT_MAIN);
     let mut device = UNKNOWN_OBJECT;
@@ -190,12 +298,44 @@ fn device_uid(device: AudioObjectID) -> Result<Option<String>, String> {
 
 fn is_settable_volume(device: AudioObjectID, element: AudioObjectPropertyElement) -> bool {
     let address = volume_address(element);
+    is_settable(device, &address)
+}
+
+fn is_settable(device: AudioObjectID, address: &AudioObjectPropertyAddress) -> bool {
     if !has_property(device, &address) {
         return false;
     }
     let mut settable = 0;
     // SAFETY: all pointers refer to initialized values for the duration of the call.
-    unsafe { AudioObjectIsPropertySettable(device, &address, &mut settable) == 0 && settable != 0 }
+    unsafe { AudioObjectIsPropertySettable(device, address, &mut settable) == 0 && settable != 0 }
+}
+
+fn read_bool_property(
+    device: AudioObjectID,
+    address: &AudioObjectPropertyAddress,
+) -> Result<bool, String> {
+    let mut value: u32 = 0;
+    get_property(device, address, &mut value)?;
+    Ok(value != 0)
+}
+
+fn write_bool_property(
+    device: AudioObjectID,
+    address: &AudioObjectPropertyAddress,
+    value: bool,
+) -> Result<(), String> {
+    let value = u32::from(value);
+    let status = unsafe {
+        AudioObjectSetPropertyData(
+            device,
+            address,
+            0,
+            ptr::null(),
+            size_of::<u32>() as u32,
+            ptr::addr_of!(value).cast::<c_void>(),
+        )
+    };
+    status_result(status, "set output mute")
 }
 
 fn read_volume(device: AudioObjectID, element: AudioObjectPropertyElement) -> Result<f32, String> {
@@ -287,6 +427,34 @@ fn status_result(status: OSStatus, operation: &str) -> Result<(), String> {
 
 fn volume_address(element: AudioObjectPropertyElement) -> AudioObjectPropertyAddress {
     address(VOLUME_SCALAR, SCOPE_OUTPUT, element)
+}
+
+fn mute_address() -> AudioObjectPropertyAddress {
+    address(MUTE, SCOPE_OUTPUT, ELEMENT_MAIN)
+}
+
+fn send_media_command(command: c_int) -> bool {
+    let Some(send_command) = send_command_fn() else {
+        return false;
+    };
+    unsafe { send_command(command, ptr::null()) != 0 }
+}
+
+fn send_command_fn() -> Option<SendCommandFn> {
+    static SEND_COMMAND: OnceLock<Option<SendCommandFn>> = OnceLock::new();
+    *SEND_COMMAND.get_or_init(|| unsafe {
+        let path = CString::new(MEDIA_REMOTE_PATH).ok()?;
+        let handle = dlopen(path.as_ptr(), RTLD_NOW);
+        if handle.is_null() {
+            return None;
+        }
+        let symbol = CString::new("MRMediaRemoteSendCommand").ok()?;
+        let address = dlsym(handle, symbol.as_ptr());
+        if address.is_null() {
+            return None;
+        }
+        Some(std::mem::transmute::<*mut c_void, SendCommandFn>(address))
+    })
 }
 
 const fn address(

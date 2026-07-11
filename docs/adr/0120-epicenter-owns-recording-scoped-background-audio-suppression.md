@@ -9,8 +9,8 @@
 Whispering benefits from quieting competing audio during dictation, but direct
 pause, play, volume, and mute commands would turn every embedded app into a
 system-media remote. The deleted controller also returned platform session
-identifiers to the webview, and macOS restoration used an untargeted private
-MediaRemote play command that could start unrelated playback.
+identifiers to the webview and implied a stronger restoration guarantee than
+macOS can provide through its untargeted private MediaRemote commands.
 
 The product promise is narrower: while Epicenter remains alive, it may suppress
 background audio for the lifetime of a recording and then make a best-effort
@@ -27,19 +27,23 @@ orphaned suppression window. Platform identities and restoration state never
 cross IPC. Overlapping leases share one suppression epoch, and only the final
 lease restores it.
 
-The user chooses one boolean behavior, `recording.suppressBackgroundAudio`.
-There is no volume level, platform mode, or app-callable pause, play, mute,
-unmute, increase, or decrease operation.
+The user chooses one `recording.backgroundAudioSuppression` policy: `off`,
+`duck`, `mute`, or `pause`. It defaults to `off`. There is no numeric volume
+level or app-callable pause, play, mute, unmute, increase, or decrease
+operation; the selected policy is captured when a lease begins.
 
-- macOS uses public Core Audio to lower the current default output device to a
-  fixed target. It never raises an already-quieter device. Restoration occurs
-  only on the same device and only while its current value still matches what
-  Epicenter applied, preserving user changes made during recording.
-- Linux pauses active MPRIS players and remembers their instance-qualified bus
-  names. It resumes only remembered, still-present players that report paused.
-- Windows pauses active GSMTC sessions and retains the exact WinRT session
-  objects that accepted pause. It resumes only those retained sessions while
-  they still report paused.
+- Duck and mute use guarded output state: Core Audio's default output device on
+  macOS, the default Windows audio endpoint, and writable volume on active
+  MPRIS players on Linux. Duck never raises an already-quieter source. Restore
+  occurs only while the same target still equals what Epicenter applied.
+- Pause uses exact GSMTC session objects on Windows and MPRIS names plus unique
+  D-Bus owners on Linux. It resumes only retained sessions that still report
+  paused.
+- Pause on macOS dynamically resolves the private MediaRemote framework and
+  sends dedicated Pause and Play commands. It is explicitly experimental and
+  best effort because macOS does not expose the exact now-playing identity to a
+  third-party app. A missing framework, symbol, or rejected command is a no-op;
+  restoration can affect whichever media owns the now-playing session then.
 
 Suppression is best effort and never makes recording fail. Epicenter also
 attempts restoration when its native process exits.
@@ -48,15 +52,14 @@ attempts restoration when its native process exits.
 
 - The capability describes one lifecycle promise instead of exposing ambient
   system controls.
-- A volume increase is permitted only as guarded restoration of Epicenter's own
-  earlier reduction.
-- macOS no longer depends on private MediaRemote behavior or an auxiliary
-  daemon.
+- A volume increase or unmute is permitted only as guarded restoration of
+  Epicenter's own earlier change.
+- macOS private MediaRemote use is isolated to the explicitly selected
+  experimental pause policy and is dynamically resolved, never hard-linked.
 - Linux and Windows retain process-local session identities. They deliberately
   refuse a durable recovery protocol: keeping a general media remote or
   repairing playback on a future launch would cost more complexity than this
   convenience earns.
-- Fixed automatic behavior refuses a cross-platform strategy matrix, volume
-  slider, and VAD debounce machinery. Epicenter currently hosts manual capture;
-  VAD suppression can be designed when Epicenter hosts VAD.
+- The fixed duck target refuses a volume slider. Epicenter currently hosts
+  manual capture; VAD suppression can be designed when Epicenter hosts VAD.
 - Browser Whispering can sync the preference but cannot suppress system audio.

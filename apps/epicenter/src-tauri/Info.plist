@@ -4,7 +4,5 @@
 <dict>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Allow Epicenter to access your microphone so Whispering can record and transcribe your speech.</string>
-	<key>NSAppleEventsUsageDescription</key>
-	<string>Allow Epicenter to pause and resume Music or Spotify while Whispering records.</string>
 </dict>
 </plist>
