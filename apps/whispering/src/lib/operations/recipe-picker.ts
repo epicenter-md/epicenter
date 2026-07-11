@@ -1,7 +1,6 @@
-import { tauri } from '#platform/tauri';
+import { presentRecipePicker } from '#recipe-presentation';
 import { captureSelection } from '$lib/operations/selection';
 import { report } from '$lib/report';
-import { recipePicker } from '$lib/state/recipe-picker.svelte';
 
 /**
  * Capture the foreground app's current selection, then raise the in-app recipe
@@ -27,6 +26,5 @@ export async function openRecipePicker() {
 		});
 		return;
 	}
-	await tauri?.mainWindow.focus();
-	recipePicker.open(input);
+	await presentRecipePicker(input);
 }

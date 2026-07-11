@@ -16,10 +16,6 @@ import {
 } from '$lib/services/recorder/contract';
 import { commands } from '$lib/tauri/commands';
 
-// This file is the Tauri impl, so it imports the non-null capability bag
-// directly from the Tauri marker rather than through the `#platform/tauri`
-// seam (which resolves to `null` under the web condition).
-
 const log = createLogger('whispering/recorder/cpal');
 
 /**

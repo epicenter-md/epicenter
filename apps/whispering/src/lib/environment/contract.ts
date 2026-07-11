@@ -25,6 +25,7 @@ type StartRecordingResult = Result<
 
 /** Complete manual-recording capability for the selected hosting environment. */
 export type ManualRecordingEnvironment = {
+	configuration: 'bitrate' | 'sampleRate';
 	get deviceId(): string | null;
 	set deviceId(deviceId: string | null);
 	resumeActiveSession(): Promise<

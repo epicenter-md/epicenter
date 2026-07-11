@@ -17,7 +17,6 @@
 	import { deviceConfig } from '$lib/state/device-config.svelte';
 	import { settings } from '$lib/state/settings.svelte';
 	import { environment } from '#runtime';
-	import { tauri } from '#platform/tauri';
 	import { whispering } from '#runtime';
 	import ManualSelectRecordingDevice from './ManualSelectRecordingDevice.svelte';
 	import VadSelectRecordingDevice from './VadSelectRecordingDevice.svelte';
@@ -83,18 +82,6 @@
 					</Alert.Description>
 				</Alert.Root>
 			{:else}
-				{#if tauri && environment.os.isApple}
-					<Alert.Root class="border-warning/20 bg-warning/5">
-						<InfoIcon class="size-4 text-warning dark:text-warning" />
-						<Alert.Title class="text-warning dark:text-warning">
-							Global Shortcuts May Be Unreliable
-						</Alert.Title>
-						<Alert.Description>
-							VAD uses browser-owned capture. macOS App Nap may delay browser
-							recording logic when Whispering is not in focus.
-						</Alert.Description>
-					</Alert.Root>
-				{/if}
 				<Alert.Root class="border-blue-500/20 bg-blue-500/5">
 					<InfoIcon class="size-4 text-blue-600 dark:text-blue-400" />
 					<Alert.Title class="text-blue-600 dark:text-blue-400">
@@ -118,7 +105,7 @@
 		{/if}
 
 		{#if settings.get('recording.trigger') === 'manual'}
-			{#if !tauri}
+			{#if environment.recording.configuration === 'bitrate'}
 				<SettingSelect
 					store={deviceConfig}
 					key="recording.navigator.bitrateKbps"

@@ -55,6 +55,7 @@ export const desktop: WhisperingDesktop = {
 		setUnloadPolicy: (policy) => commands.setUnloadPolicy(policy),
 	},
 	delivery: {
+		supportsCursor: true,
 		write: async (text, keepOnClipboard) => {
 			const { data, error } = await commands.writeText(text, keepOnClipboard);
 			if (error !== null) return TextError.WriteToCursor({ cause: error });

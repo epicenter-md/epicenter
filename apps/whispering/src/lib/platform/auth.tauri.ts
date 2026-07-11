@@ -7,10 +7,7 @@ import { APP_URLS } from '@epicenter/constants/vite';
 import { createHostedDeepLinkAuth } from '@epicenter/svelte/auth/tauri';
 import { createLogger } from 'wellcrafted/logger';
 import { instanceSetting } from '$lib/instance';
-// This file is the Tauri impl, so it imports the non-null capability bag
-// directly from the Tauri marker rather than through the `#platform/tauri`
-// seam (which resolves to `null` under the web condition).
-import { tauriOnly } from '$lib/tauri.tauri';
+import { commands } from '$lib/tauri/commands';
 import type { PlatformAuth } from './types';
 
 const log = createLogger('whispering/platform/auth');
@@ -30,8 +27,10 @@ declare global {
  * look saved.
  */
 async function writeGrant(serialized: string | null): Promise<void> {
-	const { error } = await tauriOnly.keyring.write(serialized);
-	if (error !== null) throw error;
+	const { error } = await commands.keyringWrite(serialized);
+	if (error !== null) {
+		throw new Error(`Failed to write to the OS keyring: ${error}`);
+	}
 }
 
 const bootstrap = window.__EPICENTER_WHISPERING_AUTH_BOOTSTRAP__;

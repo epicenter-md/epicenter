@@ -20,9 +20,9 @@
 			"epicenter": "./src/lib/platform/system-shortcuts.tauri.ts",
 			"default": "./src/lib/platform/system-shortcuts.browser.ts"
 		},
-		"#platform/tauri": {
-			"epicenter": "./src/lib/tauri.tauri.ts",
-			"default": "./src/lib/tauri.browser.ts"
+		"#recipe-presentation": {
+			"epicenter": "./src/lib/operations/recipe-presentation.epicenter.ts",
+			"default": "./src/lib/operations/recipe-presentation.browser.ts"
 		},
 		"#platform/base-path": {
 			"epicenter": "./src/lib/platform/base-path.tauri.ts",

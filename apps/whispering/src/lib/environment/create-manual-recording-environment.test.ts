@@ -26,6 +26,7 @@ test('manual recording environment owns the microphone access handoff', async ()
 
 	const environment = createManualRecordingEnvironment({
 		recorder,
+		configuration: 'bitrate',
 		config: {
 			deviceId: null,
 			resolveStartParams: (recordingId) => ({

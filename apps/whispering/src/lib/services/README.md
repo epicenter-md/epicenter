@@ -74,35 +74,15 @@ The browser typecheck reads the default condition, while `tsconfig.tauri.json` r
 
 Each `#platform/*` impl is annotated against the shared contract with `export const TextServiceLive: TextService = ...` (not `satisfies`, which would leak the concrete type and break lockstep across variants).
 
-The remaining legacy Tauri-only capabilities live in `$lib/tauri.tauri.ts`
-behind `#platform/tauri` while they are moved to focused `#desktop` operations
-or refused. New code must not add members to this namespace.
-
-```ts
-import { tauri, type Tauri } from '#platform/tauri';
-
-// 1. Shared code (runs on web and Tauri): narrow once.
-if (tauri) await tauri.mainWindow.focus();
-
-// 2. Shared helpers called only inside an `if (tauri)` block:
-//    prop-drill the narrowed value.
-async function focusDesktopWindow(tauri: Tauri) {
-  await tauri.mainWindow.focus();
-}
-
-// 3. Inside *.tauri.ts files (build system already gated): tauriOnly,
-//    imported directly from the Tauri marker, not through `#platform/tauri`
-//    (which resolves to `null` on web).
-import { tauriOnly } from '$lib/tauri.tauri';
-await tauriOnly.keyboard.unregisterChords();
-```
-
-See `docs/articles/20260526T012526-tauri-is-both-the-namespace-and-the-platform-check.md` for the full pattern walkthrough and rationale.
+There is no generic Tauri namespace or runtime platform boolean. Shared code
+enters through complete build-selected product operations such as `#runtime`,
+`#desktop`, and `#recipe-presentation`. Epicenter-only adapters import generated
+commands directly; browser builds never resolve those files.
 
 > **💡 Three kinds of dependency injection**
 >
 > - **Build-time platform DI** (`#platform/*` subpath imports): for services that have a real implementation on both platforms. `text`, `os`, `download`, `http`, `blob-store`, `recorder`. Each maps a `#platform/<service>` specifier (in `package.json`'s `imports`) to `index.tauri.ts` + `index.browser.ts`, with a shared `types.ts`. The active build condition picks one.
-> - **Legacy Tauri-only namespace** (`#platform/tauri`): the remaining window bridge while callers move to focused ownership or are refused. New capabilities do not belong here.
+> - **Epicenter-only operations** (`#desktop`): native capabilities with no browser implementation. Only Epicenter-selected files may import them.
 > - **Runtime DI** (switch on `settings` and `deviceConfig`): for user-pick providers like `transcription`.
 >
 > See `docs/articles/20260526T012650-two-switches-build-time-and-runtime.md` for the platform-vs-settings walkthrough.
@@ -420,15 +400,13 @@ The services barrel (`src/lib/services/index.ts`) imports the platform-split ser
 
 User-facing reporting (toast + OS notification) is owned by `$lib/report`, not the services layer.
 
-### Tauri-only capabilities (`$lib/tauri`)
+### Epicenter-only capabilities (`#desktop`)
 
-Tauri-only namespace capabilities live inline in one file at `$lib/tauri.tauri.ts`, reached through the `#platform/tauri` seam. The companion `$lib/tauri.browser.ts` resolves to `tauri = null` under the web condition, so `tauriOnly` misuse fails in browser builds. Shared consumers `import { tauri } from '#platform/tauri'` and access via `if (tauri) { tauri.<cap>.method() }`, by prop-drilling the narrowed value, or by importing `tauriOnly` directly from `$lib/tauri.tauri` inside a `.tauri.ts` file.
-
-- `tauri.keyboard` - Rust-owned global-shortcut replacement plus the macOS paste-at-cursor grant watch (registerChords, unregisterChords, setAutoPasteEnabled, getDictationCapability, onDictationCapabilityChanged)
+`#desktop` exposes focused native product operations for shortcuts, dictation,
+local transcription, and cursor delivery. Shared components consume semantic
+capabilities from `#runtime`, not a Tauri marker.
 
 App-owned Rust commands that are not general reusable capabilities live in `$lib/tauri/commands`. Accessibility settings and upload encoding are examples: `commands.openAccessibilitySettings` opens System Settings, and `commands.encodeRecordingForUpload` is called by the transcription operation before cloud upload.
-
-Each leaf picks one canonical call form: TanStack-backed (via `defineQuery`/`defineMutation`) where caching, reactivity, or post-mutation invalidation matter; plain Result functions where they don't. There is no separate `tauri.rpc` sub-namespace.
 
 The manual recorder lives under `services/recorder/index.*.ts` because the recorder folder exposes one platform-owned manual recorder through suffix files.
 

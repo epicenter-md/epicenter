@@ -12,6 +12,7 @@ import type {
 } from '$lib/tauri/commands.types';
 
 export type CursorDelivery = {
+	readonly supportsCursor: boolean;
 	write(
 		text: string,
 		keepOnClipboard: boolean,

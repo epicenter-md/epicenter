@@ -32,6 +32,7 @@ const base: WhisperingBaseEnvironment = {
 	recording: createManualRecordingEnvironment({
 		recorder: ManualRecorderLive,
 		config: manualRecorderConfig,
+		configuration: 'sampleRate',
 		reportLevel: reportRecordingMicLevel,
 	}),
 	text: TextServiceLive,

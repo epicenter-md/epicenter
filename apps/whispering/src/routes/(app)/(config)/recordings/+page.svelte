@@ -45,7 +45,6 @@
 	import { createRawSnippet } from 'svelte';
 	import { report } from '$lib/report';
 	import { rpc } from '$lib/rpc';
-	import { tauri } from '#platform/tauri';
 	import { deleteRecordingsWithConfirmation } from '$lib/operations/recordings';
 	import { type Recording, recordings } from '$lib/state/recordings.svelte';
 	import { createCopyFn } from '$lib/utils/createCopyFn';

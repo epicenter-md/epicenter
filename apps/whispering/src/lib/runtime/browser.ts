@@ -29,6 +29,7 @@ const base: WhisperingBaseEnvironment = {
 	captureSurfaces: ['manual', 'vad', 'import'],
 	downloads: DownloadServiceLive,
 	delivery: {
+		supportsCursor: false,
 		async write(text) {
 			const result = await TextServiceLive.copyToClipboard(text);
 			return result.error ? result : Ok('leftOnClipboard');
@@ -45,6 +46,7 @@ const base: WhisperingBaseEnvironment = {
 	recording: createManualRecordingEnvironment({
 		recorder: ManualRecorderLive,
 		config: manualRecorderConfig,
+		configuration: 'bitrate',
 		reportLevel: reportRecordingMicLevel,
 	}),
 	text: TextServiceLive,
