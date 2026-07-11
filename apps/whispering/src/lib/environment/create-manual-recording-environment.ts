@@ -28,6 +28,7 @@ export function createManualRecordingEnvironment<
 		},
 		resumeActiveSession: () => recorder.resumeActiveSession(),
 		enumerateDevices: () => recorder.enumerateDevices(),
+		requestAccess: () => recorder.requestAccess(),
 		startRecording: (recordingId, callbacks) =>
 			recorder.startRecording(
 				config.resolveStartParams(recordingId),

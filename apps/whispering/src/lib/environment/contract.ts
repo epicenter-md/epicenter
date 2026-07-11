@@ -31,6 +31,7 @@ export type ManualRecordingEnvironment = {
 		Result<RecordingSession | null, RecorderError>
 	>;
 	enumerateDevices(): Promise<Result<Device[], RecorderError>>;
+	requestAccess(): Promise<Result<void, RecorderError>>;
 	startRecording(
 		recordingId: string,
 		callbacks: RecordingCallbacks,

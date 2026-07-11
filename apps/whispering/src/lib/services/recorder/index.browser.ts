@@ -118,6 +118,17 @@ function createBrowserRecorder(): RecorderService<NavigatorRecordingParams> {
 	}
 
 	return {
+		requestAccess: async () => {
+			const { data: stream, error } = await tryAsync({
+				try: () => navigator.mediaDevices.getUserMedia({ audio: true }),
+				catch: (cause) =>
+					categorizeBrowserStreamError(cause) ??
+					RecorderError.MicrophonePermissionDenied({ cause }),
+			});
+			if (error) return Err(error);
+			cleanupRecordingStream(stream);
+			return Ok(undefined);
+		},
 		resumeActiveSession: async (): Promise<
 			Result<RecordingSession | null, RecorderError>
 		> => {

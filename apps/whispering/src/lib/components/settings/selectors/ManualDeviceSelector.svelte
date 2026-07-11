@@ -10,7 +10,6 @@
 	import RefreshCwIcon from '@lucide/svelte/icons/refresh-cw';
 	import { createQuery } from '@tanstack/svelte-query';
 	import { report } from '$lib/report';
-	import { tauri } from '#platform/tauri';
 	import { environment } from '#runtime';
 	import { manualRecorder } from '$lib/state/manual-recorder.svelte';
 
@@ -35,8 +34,7 @@
 	});
 
 	async function requestMicrophoneAccess() {
-		if (!tauri) return;
-		const { error } = await tauri.permissions.microphone.request();
+		const { error } = await environment.recording.requestAccess();
 		if (error) {
 			report.error({ cause: error });
 			return;
@@ -87,15 +85,13 @@
 							<p class="text-sm text-destructive">
 								{getDevicesQuery.error.message}
 							</p>
-							{#if tauri}
-								<Button
-									variant="outline"
-									size="sm"
-									onclick={requestMicrophoneAccess}
-								>
-									Grant microphone access
-								</Button>
-							{/if}
+							<Button
+								variant="outline"
+								size="sm"
+								onclick={requestMicrophoneAccess}
+							>
+								Grant microphone access
+							</Button>
 						</div>
 					{:else}
 						{#each getDevicesQuery.data as device (device.id)}

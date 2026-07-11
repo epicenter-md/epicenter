@@ -5,7 +5,7 @@ import {
 } from '@epicenter/recorder';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { createLogger } from 'wellcrafted/logger';
-import { Err, Ok, type Result } from 'wellcrafted/result';
+import { Err, Ok, type Result, tryAsync } from 'wellcrafted/result';
 import type { WhisperingRecordingState } from '$lib/constants/audio';
 import { recorderErrorFromIpc } from '$lib/services/recorder/categorize-error';
 import {
@@ -15,10 +15,10 @@ import {
 	type RecordingSession,
 } from '$lib/services/recorder/contract';
 import { commands } from '$lib/tauri/commands';
+
 // This file is the Tauri impl, so it imports the non-null capability bag
 // directly from the Tauri marker rather than through the `#platform/tauri`
 // seam (which resolves to `null` under the web condition).
-import { tauriOnly } from '$lib/tauri.tauri';
 
 const log = createLogger('whispering/recorder/cpal');
 
@@ -33,12 +33,14 @@ export type CpalRecordingParams = BaseRecordingParams & {
 async function getMicrophonePermissionStatus(): Promise<
 	Result<boolean, RecorderError>
 > {
-	const { data: granted, error } =
-		await tauriOnly.permissions.microphone.check();
+	const { data: status, error } = await tryAsync({
+		try: () => commands.getMicrophonePermission(),
+		catch: (cause) => RecorderError.MicrophonePermissionDenied({ cause }),
+	});
 	if (error) {
-		return RecorderError.MicrophonePermissionDenied({ cause: error });
+		return Err(error);
 	}
-	return Ok(granted);
+	return Ok(status !== 'denied');
 }
 
 async function requireMicrophonePermission(): Promise<
@@ -59,8 +61,7 @@ async function requestMicrophonePermission(): Promise<
 	if (checkError) return Err(checkError);
 	if (alreadyGranted) return Ok(undefined);
 
-	const { error: requestError } =
-		await tauriOnly.permissions.microphone.request();
+	const { error: requestError } = await commands.requestMicrophonePermission();
 	if (requestError) {
 		return RecorderError.MicrophonePermissionDenied({ cause: requestError });
 	}
@@ -218,6 +219,7 @@ function createCpalRecorder() {
 	}
 
 	return {
+		requestAccess: requestMicrophonePermission,
 		resumeActiveSession: async (): Promise<
 			Result<RecordingSession | null, RecorderError>
 		> => {

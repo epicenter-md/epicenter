@@ -45,77 +45,6 @@ import { commands, events } from '$lib/tauri/commands';
  */
 export type ChordRegistration = GlobalShortcutRegistration;
 
-// permissions -------------------------------------------------------
-const PermissionsError = defineErrors({
-	RequestAccessibility: ({ cause }: { cause: unknown }) => ({
-		message: `Failed to request accessibility permissions: ${extractErrorMessage(cause)}`,
-		cause,
-	}),
-	OpenAccessibilitySettings: ({ cause }: { cause: unknown }) => ({
-		message: `Failed to open accessibility settings: ${extractErrorMessage(cause)}`,
-		cause,
-	}),
-	CheckMicrophone: ({ cause }: { cause: unknown }) => ({
-		message: `Failed to check microphone permissions: ${extractErrorMessage(cause)}`,
-		cause,
-	}),
-	RequestMicrophone: ({ cause }: { cause: unknown }) => ({
-		message: `Failed to request microphone permissions: ${extractErrorMessage(cause)}`,
-		cause,
-	}),
-});
-
-const permissions = {
-	accessibility: {
-		// Rust owns the platform dispatch (macOS prompts via the permissions
-		// plugin, elsewhere a no-op), so the FE just calls the command. The prompt
-		// cannot grant in place; the live grant is observed by the Rust tap
-		// supervisor, so the Result here only reports whether the nudge fired.
-		async request() {
-			return tryAsync({
-				try: () => commands.requestAccessibilityPermission(),
-				catch: (error) =>
-					PermissionsError.RequestAccessibility({ cause: error }),
-			});
-		},
-
-		async openSettings() {
-			const { error } = await commands.openAccessibilitySettings();
-			if (error !== null) {
-				return PermissionsError.OpenAccessibilitySettings({ cause: error });
-			}
-			return Ok(undefined);
-		},
-	},
-
-	microphone: {
-		// One transport for every platform: Rust owns "what does the OS say about
-		// mic access" (macOS via the permissions plugin, Windows via the consent
-		// store, `unknown` elsewhere). Only an explicit `denied` gates; `granted`
-		// and `unknown` both read as available, so a missing consent entry never
-		// newly blocks a setup that was recording fine, and the recorder's
-		// stream-open fallback still classifies any real denial.
-		async check() {
-			return tryAsync({
-				try: async () =>
-					(await commands.getMicrophonePermission()) !== 'denied',
-				catch: (error) => PermissionsError.CheckMicrophone({ cause: error }),
-			});
-		},
-
-		// Elicit a grant the way the platform allows (macOS prompt, Windows privacy
-		// page when denied); the caller re-checks afterward. No platform can grant
-		// in place, so this only reports whether the nudge itself succeeded.
-		async request() {
-			const { error } = await commands.requestMicrophonePermission();
-			if (error !== null) {
-				return PermissionsError.RequestMicrophone({ cause: error });
-			}
-			return Ok(undefined);
-		},
-	},
-};
-
 // keyring -------------------------------------------------------------
 const KeyringError = defineErrors({
 	ReadFailed: ({ cause }: { cause: unknown }) => ({
@@ -348,7 +277,6 @@ const mainWindow = {
 // `tauriOnly` is the non-null namespace for `.tauri.ts` files. The
 // `tauri` export widens it to `Tauri | null` so shared consumers narrow.
 export const tauriOnly = {
-	permissions,
 	keyring,
 	keyboard,
 	autostart,
