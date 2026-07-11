@@ -1,9 +1,6 @@
 import { createNodeId } from '@epicenter/workspace';
 import { desktop } from '#desktop';
-import type {
-	WhisperingBaseEnvironment,
-	WhisperingEnvironment,
-} from '$lib/environment/contract';
+import type { WhisperingEnvironment } from '$lib/environment/contract';
 import { createManualRecordingEnvironment } from '$lib/environment/create-manual-recording-environment';
 import { createEpicenterTranscription } from '$lib/operations/transcribe.epicenter';
 import type { TranscriptionSettings } from '$lib/operations/transcription-ports';
@@ -20,29 +17,11 @@ import { createLocalModels } from '$lib/state/local-models.svelte';
 import { manualRecorderConfig } from '$lib/state/manual-recorder-config.tauri';
 import { openWhisperingBrowser } from '$lib/workspace/browser';
 
-const base: WhisperingBaseEnvironment = {
-	auth,
-	artifacts: AudioBlobStoreLive,
-	canSuppressPlayback: true,
-	captureSurfaces: ['manual'],
-	downloads: DownloadServiceLive,
-	delivery: desktop.delivery,
-	notifications: osNotify,
-	os,
-	recording: createManualRecordingEnvironment({
-		recorder: ManualRecorderLive,
-		config: manualRecorderConfig,
-		configuration: 'sampleRate',
-		reportLevel() {},
-	}),
-	text: TextServiceLive,
-};
-
 export const whispering = openWhisperingBrowser({
-	auth: base.auth,
+	auth,
 	nodeId: createNodeId({ storage: window.localStorage }),
 	defaultTranscriptionService: 'local',
-	downloads: base.downloads,
+	downloads: DownloadServiceLive,
 });
 
 const providers = [
@@ -61,7 +40,21 @@ const transcriptionEngine = createEpicenterTranscription(
 );
 
 export const environment: WhisperingEnvironment = {
-	...base,
+	auth,
+	artifacts: AudioBlobStoreLive,
+	canSuppressPlayback: true,
+	captureSurfaces: ['manual'],
+	downloads: DownloadServiceLive,
+	delivery: desktop.delivery,
+	notifications: osNotify,
+	os,
+	recording: createManualRecordingEnvironment({
+		recorder: ManualRecorderLive,
+		config: manualRecorderConfig,
+		configuration: 'sampleRate',
+		reportLevel() {},
+	}),
+	text: TextServiceLive,
 	transcription: {
 		providers,
 		transcribeAndPersist: createTranscriptionUseCase(

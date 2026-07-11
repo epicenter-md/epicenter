@@ -1,9 +1,6 @@
 import { createNodeId } from '@epicenter/workspace';
 import { Ok } from 'wellcrafted/result';
-import type {
-	WhisperingBaseEnvironment,
-	WhisperingEnvironment,
-} from '$lib/environment/contract';
+import type { WhisperingEnvironment } from '$lib/environment/contract';
 import { createManualRecordingEnvironment } from '$lib/environment/create-manual-recording-environment';
 import { createBrowserTranscription } from '$lib/operations/transcribe.browser';
 import type { TranscriptionSettings } from '$lib/operations/transcription-ports';
@@ -23,7 +20,37 @@ import { createLocalModels } from '$lib/state/local-models.svelte';
 import { manualRecorderConfig } from '$lib/state/manual-recorder-config.browser';
 import { openWhisperingBrowser } from '$lib/workspace/browser';
 
-const base: WhisperingBaseEnvironment = {
+export const whispering = openWhisperingBrowser({
+	auth,
+	nodeId: createNodeId({ storage: window.localStorage }),
+	defaultTranscriptionService: 'OpenAI',
+	downloads: DownloadServiceLive,
+});
+
+const providers = [
+	'epicenter',
+	'OpenAI',
+	'Groq',
+	'ElevenLabs',
+	'Deepgram',
+	'Mistral',
+	'speaches',
+] as const satisfies readonly TranscriptionServiceId[];
+const transcriptionSettings = {
+	service: () => whispering.kv.get('transcription.service'),
+	language: () => whispering.kv.get('transcription.language'),
+	prompt: () => whispering.kv.get('transcription.prompt'),
+	dictionary: () => whispering.kv.get('dictionary'),
+	model: (key) => whispering.kv.get(key),
+} satisfies TranscriptionSettings;
+const transcriptionEngine = createBrowserTranscription({
+	auth,
+	artifacts: AudioBlobStoreLive,
+	cloudTransport: { fetch: customFetch, http: HttpServiceLive },
+	settings: transcriptionSettings,
+});
+
+export const environment: WhisperingEnvironment = {
 	auth,
 	artifacts: AudioBlobStoreLive,
 	canSuppressPlayback: false,
@@ -51,40 +78,6 @@ const base: WhisperingBaseEnvironment = {
 		reportLevel: reportRecordingMicLevel,
 	}),
 	text: TextServiceLive,
-};
-
-export const whispering = openWhisperingBrowser({
-	auth: base.auth,
-	nodeId: createNodeId({ storage: window.localStorage }),
-	defaultTranscriptionService: 'OpenAI',
-	downloads: base.downloads,
-});
-
-const providers = [
-	'epicenter',
-	'OpenAI',
-	'Groq',
-	'ElevenLabs',
-	'Deepgram',
-	'Mistral',
-	'speaches',
-] as const satisfies readonly TranscriptionServiceId[];
-const transcriptionSettings = {
-	service: () => whispering.kv.get('transcription.service'),
-	language: () => whispering.kv.get('transcription.language'),
-	prompt: () => whispering.kv.get('transcription.prompt'),
-	dictionary: () => whispering.kv.get('dictionary'),
-	model: (key) => whispering.kv.get(key),
-} satisfies TranscriptionSettings;
-const transcriptionEngine = createBrowserTranscription({
-	auth: base.auth,
-	artifacts: base.artifacts,
-	cloudTransport: { fetch: customFetch, http: HttpServiceLive },
-	settings: transcriptionSettings,
-});
-
-export const environment: WhisperingEnvironment = {
-	...base,
 	transcription: {
 		transcribeAndPersist: createTranscriptionUseCase(
 			transcriptionEngine,

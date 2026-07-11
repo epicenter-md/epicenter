@@ -40,12 +40,22 @@ export type ManualRecordingEnvironment = {
 	reportLevel(level: number): void;
 };
 
+export type TranscriptionEnvironment = {
+	providers: readonly TranscriptionServiceId[];
+	localModels: LocalModels;
+	transcribeAndPersist(
+		recordingId: string,
+	): Promise<Result<string, TranscriptionError>>;
+	prewarmSelectedModel(): void;
+};
+
 /**
- * Product capabilities that are complete in both browser and Epicenter builds.
- * Members belong here only when the product operation exists in both hosts and
- * the implementation changes at build time.
+ * The complete host binding for shared Whispering code. Members belong here
+ * only when the product operation exists in both hosts and the implementation
+ * changes at build time; Epicenter-only operations enter through `#desktop`
+ * instead.
  */
-export type WhisperingBaseEnvironment = {
+export type WhisperingEnvironment = {
 	auth: PlatformAuth;
 	artifacts: BlobStore;
 	/** Whether this host can lower, mute, or pause other apps' audio while recording. */
@@ -57,17 +67,5 @@ export type WhisperingBaseEnvironment = {
 	os: Os;
 	recording: ManualRecordingEnvironment;
 	text: TextService;
-};
-
-export type TranscriptionEnvironment = {
-	providers: readonly TranscriptionServiceId[];
-	localModels: LocalModels;
-	transcribeAndPersist(
-		recordingId: string,
-	): Promise<Result<string, TranscriptionError>>;
-	prewarmSelectedModel(): void;
-};
-
-export type WhisperingEnvironment = WhisperingBaseEnvironment & {
 	transcription: TranscriptionEnvironment;
 };
