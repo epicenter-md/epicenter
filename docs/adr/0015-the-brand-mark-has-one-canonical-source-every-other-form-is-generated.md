@@ -1,7 +1,8 @@
 # 0015. The brand mark has one canonical source; every other form is generated
 
-- **Status:** Proposed
+- **Status:** Superseded
 - **Date:** 2026-06-17
+- **Superseded by:** [ADR-0023](0023-whispering-separates-its-identity-mark-from-lucide-controls.md)
 
 ## Context
 

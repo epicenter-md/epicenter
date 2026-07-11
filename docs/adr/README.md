@@ -91,7 +91,7 @@ Each option and the one reason it lost. Terse. This is not the spec.
 | [0012](0012-transcription-settings-are-read-at-use-not-mirrored-into-rust.md) | Transcription settings are read at use; Rust's model cache owns mechanism, not config | Accepted |
 | [0013](0013-file-import-is-a-surface-not-a-recording-mode.md) | File import is a surface, not a recording mode | Accepted |
 | [0014](0014-view-transitions-morph-a-re-expressed-glyph-not-its-container.md) | View transitions morph a re-expressed glyph, not its container | Accepted |
-| [0015](0015-the-brand-mark-has-one-canonical-source-every-other-form-is-generated.md) | The brand mark has one canonical source; every other form is generated | Proposed |
+| [0015](0015-the-brand-mark-has-one-canonical-source-every-other-form-is-generated.md) | The brand mark has one canonical source; every other form is generated | Superseded by 0023 |
 | [0016](0016-prewarm-the-cold-model-load-and-refuse-the-rest-of-the-latency-menu.md) | Prewarm the cold model load and refuse the rest of the latency menu | Accepted |
 | [0017](0017-pause-system-media-playback-while-recording.md) | Pause system media playback while recording through one cross-platform controller | Superseded by 0119 |
 | [0018](0018-macos-resume-is-gated-on-a-coreaudio-output-read.md) | macOS resume is gated on a CoreAudio output read, not a MediaRemote read shim | Superseded by 0119 |
@@ -100,7 +100,7 @@ Each option and the one reason it lost. Terse. This is not the spec.
 | [0021](0021-actions-are-the-only-surface-that-crosses-a-process-boundary.md) | Actions are the only surface that crosses a process boundary | Accepted |
 | [0022](0022-rust-owns-the-models-folder-the-webview-owns-the-catalog.md) | Rust owns the models folder, the webview owns the catalog | Accepted |
 | [0023](0023-whispering-separates-its-identity-mark-from-lucide-controls.md) | Whispering separates its identity mark from Lucide controls | Accepted |
-| [0024](0024-an-always-on-worker-runs-app-semantics-beside-the-app-blind-anchor.md) | An always-on worker runs app semantics beside the app-blind anchor | Proposed |
+| [0024](0024-an-always-on-worker-runs-app-semantics-beside-the-app-blind-anchor.md) | An always-on worker runs app semantics beside the app-blind anchor | Superseded by 0047 |
 | [0025](0025-agent-conversations-are-durable-child-docs-driven-by-an-observing-worker.md) | Agent conversations are durable child docs driven by an observing worker | Proposed |
 | [0026](0026-matter-vault-sqlite-is-a-projection-never-a-verdict-source.md) | The Matter vault's SQLite mirror is a read-only projection, never a verdict source | Accepted |
 | [0027](0027-playback-pause-tracks-the-speaking-window.md) | Playback pause tracks the speaking window; VAD pauses per utterance | Superseded by 0119 |
