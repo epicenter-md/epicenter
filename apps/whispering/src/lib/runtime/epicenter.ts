@@ -6,7 +6,6 @@ import { createEpicenterTranscription } from '$lib/operations/transcribe.epicent
 import type { TranscriptionSettings } from '$lib/operations/transcription-ports';
 import { createTranscriptionUseCase } from '$lib/operations/transcription-use-case';
 import { log } from '$lib/report/log';
-import { auth } from './auth.epicenter';
 import { osNotify } from '$lib/report/os-notify.tauri';
 import { AudioBlobStoreLive } from '$lib/services/blob-store/index.tauri';
 import { DownloadServiceLive } from '$lib/services/download/index.tauri';
@@ -17,6 +16,7 @@ import { createDictationCapability } from '$lib/state/dictation-capability.svelt
 import { createLocalModels } from '$lib/state/local-models.svelte';
 import { manualRecorderConfig } from '$lib/state/manual-recorder-config.tauri';
 import { openWhisperingBrowser } from '$lib/workspace/browser';
+import { auth } from './auth.epicenter';
 
 export const whispering = openWhisperingBrowser({
 	auth,

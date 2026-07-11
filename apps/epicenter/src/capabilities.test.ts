@@ -11,7 +11,12 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { SURFACE_ROUTES } from './routes.ts';
 
-const CAPABILITIES_DIR = join(import.meta.dir, '..', 'src-tauri', 'capabilities');
+const CAPABILITIES_DIR = join(
+	import.meta.dir,
+	'..',
+	'src-tauri',
+	'capabilities',
+);
 const PAIRS = [
 	'trusted-epicenter-apps',
 	'trusted-whispering-native',

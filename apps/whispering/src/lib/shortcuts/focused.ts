@@ -5,8 +5,8 @@ import {
 } from '$lib/services/local-shortcut-manager';
 import { settings } from '$lib/state/settings.svelte';
 import { bindingsEqual, type KeyBinding } from '$lib/utils/key-binding';
-import { createShortcuts } from './create-shortcuts';
 import type { Shortcuts } from './contract';
+import { createShortcuts } from './create-shortcuts';
 
 /**
  * The focused (in-app) shortcut backend: shortcuts that fire while the Whispering

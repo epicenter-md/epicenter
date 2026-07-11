@@ -6,9 +6,9 @@ import {
 import { APP_URLS } from '@epicenter/constants/vite';
 import { createHostedDeepLinkAuth } from '@epicenter/svelte/auth/tauri';
 import { createLogger } from 'wellcrafted/logger';
+import type { WhisperingAuth } from '$lib/environment/contract';
 import { instanceSetting } from '$lib/instance';
 import { commands } from '$lib/tauri/commands';
-import type { WhisperingAuth } from '$lib/environment/contract';
 
 const log = createLogger('whispering/runtime/auth');
 

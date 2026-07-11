@@ -1,8 +1,8 @@
 /** Reach routing, backend delegation, and cross-store conflict behavior. */
 import { expect, test } from 'bun:test';
 import type { KeyBinding } from '$lib/utils/key-binding';
-import { createReachRouter } from './reach-router';
 import type { ShortcutConflict, Shortcuts } from './contract';
+import { createReachRouter } from './reach-router';
 
 /**
  * The catalog slice the router reads, with a `focused`-ceiling command alongside

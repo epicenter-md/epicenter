@@ -4,9 +4,12 @@ import {
 	type InferErrors,
 } from 'wellcrafted/error';
 import { isErr, Ok, type Result } from 'wellcrafted/result';
-import { completeWithGlobalDefault, resolveCompletionState } from '$lib/operations/completion';
 import { environment } from '#runtime';
 import { buildPolishSystemPrompt } from '$lib/operations/build-system-prompt';
+import {
+	completeWithGlobalDefault,
+	resolveCompletionState,
+} from '$lib/operations/completion';
 import { describePolishDestination } from '$lib/operations/completion-target';
 import { resolveTranscriptionLocalityFromConfig } from '$lib/operations/transcription-target';
 import { deviceConfig } from '$lib/state/device-config.svelte';

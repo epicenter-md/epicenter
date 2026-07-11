@@ -13,8 +13,8 @@ import type {
 	RecordingSession,
 } from '$lib/services/recorder/contract';
 import type { TextService } from '$lib/services/text/types';
-import type { DictationCapabilityState } from '$lib/state/dictation-capability.svelte';
 import type { TranscriptionServiceId } from '$lib/services/transcription/providers';
+import type { DictationCapabilityState } from '$lib/state/dictation-capability.svelte';
 import type { LocalModels } from '$lib/state/local-models.svelte';
 
 /**

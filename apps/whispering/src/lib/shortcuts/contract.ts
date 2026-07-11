@@ -60,4 +60,3 @@ export type Shortcuts = {
 		binding: KeyBinding,
 	): ShortcutConflict | null;
 };
-

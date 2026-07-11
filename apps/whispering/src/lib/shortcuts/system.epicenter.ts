@@ -14,8 +14,8 @@ import {
 	keyBindingToAccelerator,
 } from '$lib/utils/key-binding';
 import { validateGlobalBinding } from '$lib/utils/reserved-shortcuts';
-import { createShortcuts } from './create-shortcuts';
 import type { Shortcuts } from './contract';
+import { createShortcuts } from './create-shortcuts';
 
 /**
  * Epicenter's system-global shortcut backend, driven by

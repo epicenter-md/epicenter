@@ -1,6 +1,6 @@
 import { CompleteError, complete, resolveConnection } from '@epicenter/client';
-import { environment } from '#runtime';
 import type { Result } from 'wellcrafted/result';
+import { environment } from '#runtime';
 import {
 	type CompletionState,
 	resolveCompletionStateFromConfig,

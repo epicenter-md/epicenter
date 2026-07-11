@@ -5,7 +5,6 @@ import { createManualRecordingEnvironment } from '$lib/environment/create-manual
 import { createBrowserTranscription } from '$lib/operations/transcribe.browser';
 import type { TranscriptionSettings } from '$lib/operations/transcription-ports';
 import { createTranscriptionUseCase } from '$lib/operations/transcription-use-case';
-import { auth } from './auth.browser';
 import { reportRecordingMicLevel } from '$lib/recording-pill/mic-level.browser';
 import { osNotify } from '$lib/report/os-notify.browser';
 import { AudioBlobStoreLive } from '$lib/services/blob-store/index.browser';
@@ -19,6 +18,7 @@ import type { DictationCapabilityState } from '$lib/state/dictation-capability.s
 import { createLocalModels } from '$lib/state/local-models.svelte';
 import { manualRecorderConfig } from '$lib/state/manual-recorder-config.browser';
 import { openWhisperingBrowser } from '$lib/workspace/browser';
+import { auth } from './auth.browser';
 
 /** A page can never paste at the cursor; dictation trust never applies. */
 const dictation: DictationCapabilityState = {
