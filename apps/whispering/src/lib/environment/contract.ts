@@ -67,12 +67,12 @@ export type WhisperingEnvironment = {
 	 * Suppress other apps' audio for the life of a recording, keyed by recording
 	 * id. Both verbs are fire-and-forget and idempotent: the host owns every
 	 * lifecycle edge, and a failure never disrupts the recording it accompanies.
-	 * Hosts that cannot touch other apps' audio report `canSuppress: false` and
+	 * Hosts that cannot touch other apps' audio report `supported: false` and
 	 * no-op both verbs.
 	 */
-	playback: {
+	playbackSuppression: {
 		/** Whether this host can lower, mute, or pause other apps' audio while recording. */
-		canSuppress: boolean;
+		supported: boolean;
 		begin(
 			recordingId: string,
 			mode: PlaybackSuppressionSetting,

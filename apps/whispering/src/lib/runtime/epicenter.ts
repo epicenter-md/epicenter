@@ -46,8 +46,8 @@ export const environment: WhisperingEnvironment = {
 	downloads: DownloadServiceLive,
 	delivery: desktop.delivery,
 	notifications: osNotify,
-	playback: {
-		canSuppress: true,
+	playbackSuppression: {
+		supported: true,
 		async begin(recordingId, mode) {
 			if (mode === 'off') return;
 			try {

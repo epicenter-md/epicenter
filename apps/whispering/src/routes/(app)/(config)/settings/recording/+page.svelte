@@ -61,7 +61,7 @@
 			).join(', ')}"
 		/>
 
-		{#if environment.playback.canSuppress}
+		{#if environment.playbackSuppression.supported}
 			<SettingSelect
 				store={settings}
 				key="recording.playbackSuppression"

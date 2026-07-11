@@ -22,7 +22,7 @@ type _EnvironmentIsComplete = Expect<
 		| 'downloads'
 		| 'delivery'
 		| 'notifications'
-		| 'playback'
+		| 'playbackSuppression'
 		| 'recording'
 		| 'text'
 		| 'transcription'

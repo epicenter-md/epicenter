@@ -69,8 +69,8 @@ export const environment: WhisperingEnvironment = {
 	},
 	notifications: osNotify,
 	// Browsers cannot touch other apps' audio, so both verbs are no-ops.
-	playback: {
-		canSuppress: false,
+	playbackSuppression: {
+		supported: false,
 		async begin() {},
 		async end() {},
 	},

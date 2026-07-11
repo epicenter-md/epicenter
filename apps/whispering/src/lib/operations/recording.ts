@@ -104,7 +104,7 @@ export async function startManualRecording(): Promise<string | null> {
 	sound.playSoundIfEnabled('manual-start');
 	const recordingId = manualRecorder.currentRecordingId;
 	if (recordingId) {
-		void environment.playback.begin(
+		void environment.playbackSuppression.begin(
 			recordingId,
 			settings.get('recording.playbackSuppression'),
 		);
@@ -115,7 +115,7 @@ export async function startManualRecording(): Promise<string | null> {
 export async function stopManualRecording() {
 	const recordingId = manualRecorder.currentRecordingId;
 	const { data: source, error } = await manualRecorder.stopRecording();
-	void environment.playback.end(recordingId);
+	void environment.playbackSuppression.end(recordingId);
 
 	if (error) {
 		// Finalizing failed, so the captured audio never reached a row: treat it
@@ -177,7 +177,7 @@ export async function cancelRecording() {
 	// A manual recording is the live capture: discard it.
 	const recordingId = manualRecorder.currentRecordingId;
 	const { data, error } = await manualRecorder.cancelRecording();
-	void environment.playback.end(recordingId);
+	void environment.playbackSuppression.end(recordingId);
 	if (error) {
 		report.error({ title: 'Failed to cancel recording', cause: error });
 		return;
