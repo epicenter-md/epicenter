@@ -1,9 +1,9 @@
 /**
  * URL and pathname constants for the Whispering application
  */
-import { WHISPERING_BASE_PATHNAME } from '#platform/base-path';
-
-export { WHISPERING_BASE_PATHNAME };
+const buildBase = import.meta.env.BASE_URL ?? '/';
+export const WHISPERING_BASE_PATHNAME =
+	buildBase === '/' ? '' : buildBase.replace(/\/$/, '');
 
 export function whisperingPath(pathname: '/' | `/${string}`): string {
 	return pathname === '/'

@@ -24,10 +24,6 @@
 			"epicenter": "./src/lib/operations/recipe-presentation.epicenter.ts",
 			"default": "./src/lib/operations/recipe-presentation.browser.ts"
 		},
-		"#platform/base-path": {
-			"epicenter": "./src/lib/platform/base-path.tauri.ts",
-			"default": "./src/lib/platform/base-path.browser.ts"
-		},
 		"#platform/window-events": {
 			"epicenter": "./src/lib/window-events.tauri.ts",
 			"default": "./src/lib/window-events.browser.ts"

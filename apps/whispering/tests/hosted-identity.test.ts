@@ -35,11 +35,8 @@ describe('Epicenter-hosted Whispering identity', () => {
 		expect(vite).toContain("process.env.EPICENTER_SURFACE === '1'");
 		expect(vite).not.toContain('TAURI_ENV_PLATFORM');
 		expect(vite).not.toContain('TAURI_DEV_HOST');
-		expect(read('src/lib/platform/base-path.browser.ts')).toContain(
-			"WHISPERING_BASE_PATHNAME = ''",
-		);
-		expect(read('src/lib/platform/base-path.tauri.ts')).toContain(
-			"WHISPERING_BASE_PATHNAME = '/apps/whispering'",
+		expect(read('src/lib/constants/urls.ts')).toContain(
+			'import.meta.env.BASE_URL',
 		);
 		expect(whisperingPath('/')).toBe('/');
 		expect(whisperingPath('/recording-overlay')).toBe('/recording-overlay');
