@@ -30,7 +30,7 @@
 	value={selected}
 	onValueChange={(value) => save(values[Number(value)])}
 >
-	<Select.Trigger size="sm" class="w-full">
+	<Select.Trigger size="sm" class="w-full" aria-label="Select {cell.field.name}">
 		{#if isMissing(cell)}
 			<FieldMissing {cell} />
 		{:else}

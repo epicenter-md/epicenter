@@ -1,29 +1,29 @@
 /**
- * The set of open vaults: the tabs.
+ * The set of vaults shown in the workspace sidebar.
  *
  * Multi-vault state is split three ways, and this file owns only the durable slice.
  * WHICH vault is active lives in the URL (`/vault/[id]`); the LIVE watcher lives in
  * the route component (construct on mount, dispose on destroy). All that is left is
- * WHICH vault roots are open: a small persisted list of `{ id, root }` that survives
- * relaunch so the tabs come back. The `id` is opaque and URL-safe so the route can carry
- * it; `/vault/[id]` resolves it back to a `root` via {@link get}. The tab LABEL is not
+ * WHICH vault roots stay in the sidebar: a small persisted list of `{ id, root }` that survives
+ * relaunch. The `id` is opaque and URL-safe so the route can carry it; `/vault/[id]`
+ * resolves it back to a `root` via {@link get}. The sidebar LABEL is not
  * stored: it is `basename(root)`, derived where it renders, so there is no cached copy to
  * keep in sync with the path.
  *
  * Persisted to `open-vaults.json` in the app data dir via `tauri-plugin-store`, a plain
  * inspectable file on disk rather than an opaque webview blob: the same disk-is-truth
  * principle as matter's per-vault `matter.json` / `.matter/matter.sqlite`, applied to the
- * app-level tab set. The home is the app data dir, not a vault, because the open SET spans
+ * app-level vault set. The home is the app data dir, not a vault, because the open SET spans
  * vaults; it is session chrome, not any one vault's data. The store reads async, so the list
  * hydrates once via {@link ensureHydrated}. The `(vaults)` layout `load` awaits that before
- * any route in the group renders, so SvelteKit gates the paint on the real list: the strip
- * shows tabs with no skeleton and no pre-hydration flash, and an id resolves against the real
+ * any route in the group renders, so SvelteKit gates the paint on the real sidebar list with
+ * no pre-hydration flash, and an id resolves against the real
  * list, never a spurious 404. The framework's `load` owns readiness (it gates the paint);
  * `ensureHydrated` is just the memoized read it awaits, not a `whenReady`/`hydrated` signal
  * the UI has to branch on.
  *
  * Replaces the old `vaultSession` singleton: where that held ONE `current` vault and
- * drove its lifetime, this holds only the list of tabs and the open/close actions.
+ * drove its lifetime, this holds only the sidebar list and the open/close actions.
  * SvelteKit's router owns everything else, so there is no `Map<id, TableHandle>`, no
  * `activeId`, and no manual dispose policy here.
  */
@@ -38,13 +38,13 @@ import { browser } from '$app/environment';
 import { goto } from '$app/navigation';
 import { routes } from '$lib/routes';
 
-/** One open vault as persisted: an opaque id and the absolute vault-root path. The tab label is
+/** One open vault as persisted: an opaque id and the absolute vault-root path. The sidebar label is
  *  `basename(root)`, derived at render, not stored. */
 const OpenVault = type({ id: 'string', root: 'string' });
 export type OpenVault = typeof OpenVault.infer;
 
-/** The persisted shape: the tab list, in order. Reading the store back through this is what
- *  turns a stale or hand-edited file into "no tabs" rather than a crash. */
+/** The persisted shape: the sidebar list, in order. Reading the store back through this is what
+ *  turns a stale or hand-edited file into "no vaults" rather than a crash. */
 const OpenVaultList = OpenVault.array();
 
 const STORE_FILE = 'open-vaults.json';
@@ -65,14 +65,14 @@ async function openFolderDialog(): Promise<string | null> {
 
 function createOpenVaults() {
 	const store = new LazyStore(STORE_FILE);
-	// The list IS the tabs, in order. Empty until `ensureHydrated` fills it from disk.
+	// The list IS the sidebar order. Empty until `ensureHydrated` fills it from disk.
 	let vaults = $state<OpenVault[]>([]);
 
-	// Read the persisted tabs from disk into the live list, once. The `(vaults)` layout `load`
+	// Read the persisted vaults from disk into the live list, once. The `(vaults)` layout `load`
 	// awaits this before the group paints, so it is the readiness gate and the strip needs no
 	// skeleton. Memoized via `once`: the read runs once and the SAME promise is cached, so
 	// `read` MUST NOT reject, or every `(vaults)` load would await a permanently-rejected promise.
-	// That is why both failure modes are swallowed into "no tabs" rather than thrown: a malformed
+	// That is why both failure modes are swallowed into "no vaults" rather than thrown: a malformed
 	// shape (rejected by `OpenVaultList`) and an unreadable or corrupt file (`get()` rejects,
 	// caught by `tryAsync`); either way the next `open`/`close` rewrites a clean file.
 	// `LazyStore.get()` loads the file on first access, so there is no separate `load()` step;
@@ -84,26 +84,26 @@ function createOpenVaults() {
 			try: () => store.get(STORE_KEY),
 			catch: (cause) => Err({ message: extractErrorMessage(cause) }),
 		});
-		// An unreadable or corrupt file (`get()` rejects) is "no tabs", like a fresh install.
+		// An unreadable or corrupt file (`get()` rejects) is "no vaults", like a fresh install.
 		if (error) return;
 		const restored = OpenVaultList(raw);
 		if (!(restored instanceof type.errors)) vaults = restored;
 	}
 
-	// Persist the tabs. A fire-and-forget side effect: the store auto-saves 100ms after a
+	// Persist the sidebar list. A fire-and-forget side effect: the store auto-saves 100ms after a
 	// `set` (the plugin default), so no caller awaits the disk write, and a dropped write
-	// only forgets a tab, never real data. `$state.snapshot` hands the store a plain array,
+	// only forgets a vault entry, never real data. `$state.snapshot` hands the store a plain array,
 	// not the reactive proxy.
 	function persist(): void {
 		void store.set(STORE_KEY, $state.snapshot(vaults)).catch(() => {});
 	}
 
 	/**
-	 * Open a vault root as a tab and navigate to it. Opening is always a user action: the
+	 * Add a vault root to the sidebar and navigate to it. Opening is always a user action: the
 	 * native picker cannot be triggered from a URL, so this mints the id the URL will
-	 * carry. Reopening a root already in the list focuses its existing tab instead of
-	 * duplicating it (tabs show one at a time and only the active one is live, so a
-	 * second tab on the same root would be a dead duplicate).
+	 * carry. Reopening a root already in the list focuses its existing entry instead of
+	 * duplicating it (only the active vault is live, so a second entry for the same root
+	 * would be a dead duplicate).
 	 */
 	async function open(): Promise<void> {
 		const root = await openFolderDialog();
@@ -126,8 +126,8 @@ function createOpenVaults() {
 	}
 
 	/**
-	 * Remove a tab. Navigating away from a closed ACTIVE tab is the caller's job (the
-	 * tab strip's `closeTab` navigates to a neighbor). That is what keeps the invariant
+	 * Remove a vault from the sidebar. Navigating away from the ACTIVE vault is the caller's job.
+	 * The sidebar moves to a neighbor, which keeps the invariant
 	 * "the viewed id is always in the list" true: the route's `load` resolves id -> root
 	 * once and is not reactive to this list, so a removal that did NOT navigate would
 	 * leave a now-orphaned vault live until the next navigation.
@@ -143,7 +143,7 @@ function createOpenVaults() {
 	}
 
 	return {
-		/** The open vaults, in tab order. Empty until {@link ensureHydrated} resolves. */
+		/** The open vaults, in sidebar order. Empty until {@link ensureHydrated} resolves. */
 		get list(): OpenVault[] {
 			return vaults;
 		},

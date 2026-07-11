@@ -3,16 +3,12 @@
 	import * as Empty from '@epicenter/ui/empty';
 	import { Loading } from '@epicenter/ui/loading';
 	import FolderOpenIcon from '@lucide/svelte/icons/folder-open';
-	import Grid2x2Icon from '@lucide/svelte/icons/grid-2x2';
-	import KanbanIcon from '@lucide/svelte/icons/kanban';
 	import type { ViewSpec } from '@epicenter/matter-core';
-	import { routes } from '$lib/routes';
 	import BoardView from '$lib/components/BoardView.svelte';
 	import TableGrid from '$lib/components/TableGrid.svelte';
 	import type { TableHandle } from '$lib/table.svelte';
 	import { createTableQuery } from '$lib/table-query.svelte';
 	import type { VaultHandle } from '$lib/vault.svelte';
-	import SurfacePill from './SurfacePill.svelte';
 
 	// One table of the active vault. The Vault constructs and disposes the table (it owns the
 	// watcher lifetime) and owns the shared `.matter` mirror the query reads; this pane just
@@ -29,7 +25,7 @@
 	} = $props();
 
 	// This table's slice of the vault-wide integrity, selected from the one live model the
-	// IntegrityPanel also reads, so the grid's reference chips and the panel's findings agree by
+	// IntegritySheet also reads, so the grid's reference chips and the sheet's findings agree by
 	// construction. Derived here, next to the grid that consumes it, rather than threaded from the
 	// shell: the pane already holds the vault, so the slice is a pure selector with no prop hop.
 	const assessment = $derived(
@@ -54,26 +50,6 @@
 					Couldn't save: {table.writeError}
 				</Alert.Description>
 			</Alert.Root>
-		{/if}
-		{#if table.read.view.mode === 'typed' && table.read.view.contract.views.length}
-			<div class="flex min-h-10 items-center gap-1 overflow-x-auto border-b px-3 py-1">
-				<SurfacePill
-					active={projection === undefined}
-					to={routes.table(table.folderName)}
-				>
-					<Grid2x2Icon class="size-4" />
-					Grid
-				</SurfacePill>
-				{#each table.read.view.contract.views as view (view.id)}
-					<SurfacePill
-						active={projection?.id === view.id}
-						to={routes.projection(table.folderName, view.id)}
-					>
-						<KanbanIcon class="size-4" />
-						{view.title ?? view.id}
-					</SurfacePill>
-				{/each}
-			</div>
 		{/if}
 		{#if projection}
 			<BoardView {table} {projection} {query} />

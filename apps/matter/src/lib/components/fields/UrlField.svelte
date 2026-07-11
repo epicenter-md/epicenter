@@ -22,6 +22,10 @@
 	<input
 		{@attach (node) => node.select()}
 		type="url"
+		name={cell.field.name}
+		aria-label={cell.field.name}
+		autocomplete="off"
+		spellcheck={false}
 		bind:value={edit.draft}
 		onblur={edit.commit}
 		onkeydown={edit.onKeydown}

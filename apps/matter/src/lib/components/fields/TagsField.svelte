@@ -66,8 +66,11 @@
 	{/each}
 	<input
 		type="text"
+		name={cell.field.name}
+		aria-label="Add {cell.field.name}"
+		autocomplete="off"
 		class="min-w-16 flex-1 bg-transparent outline-none placeholder:text-muted-foreground"
-		placeholder={cell.state === 'OK' && values.length === 0 ? 'Add tags...' : ''}
+		placeholder={cell.state === 'OK' && values.length === 0 ? 'Add tags…' : ''}
 		bind:value={draft}
 		onkeydown={onKeydown}
 	/>

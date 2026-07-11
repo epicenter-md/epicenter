@@ -5,7 +5,7 @@
  * over `invoke` + a `Channel`. To drive the real Svelte UI in a plain browser, this stands an
  * in-memory vault behind `mockIPC`, faithful to the EXACT command contract the app uses:
  *
- *   plugin:store|load/get/set...                    -> open-vaults tab state
+ *   plugin:store|load/get/set...                    -> open-vaults sidebar state
  *   watch_vault    { path, channel }            -> id;  channel sends string[]  (table folder paths)
  *   watch_folder   { path, channel }            -> id;  channel sends FileDelta[] (seed + echoes)
  *   read_entry     { path, fileName }           -> string | null

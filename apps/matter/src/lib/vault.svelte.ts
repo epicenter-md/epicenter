@@ -62,7 +62,7 @@ export function createVault(root: string) {
 	 */
 	function reconcile(paths: string[]): void {
 		// A snapshot can still arrive after dispose (the seed, or a debounced batch already in flight
-		// when the tab closed): ignore it, or it would arm a fresh per-folder watch with nothing left
+		// when the vault closed): ignore it, or it would arm a fresh per-folder watch with nothing left
 		// to dispose it. Mirrors the same `disposed` guard the watch-id path below already honors.
 		if (disposed) return;
 		const incoming = new Set(paths);
@@ -99,7 +99,7 @@ export function createVault(root: string) {
 	 * set changes. Every readable table contributes itself (folder name + classified read) to
 	 * `assess`, which resolves references across them; an unreadable folder never reaches here (the
 	 * root watch only lists folders it could stat as directories). The grid, the switcher's
-	 * per-table badges, and the integrity panel are all pure selectors over this.
+	 * per-table badges, and the integrity sheet are all pure selectors over this.
 	 */
 	const integrity = $derived.by(
 		(): VaultIntegrity =>
@@ -156,7 +156,7 @@ export function createVault(root: string) {
 		whenReady,
 		dispose,
 		adopt,
-		/** The vault's SQLite projection. The per-tab WHERE filter queries it; the filter's freshness
+		/** The vault's SQLite projection. The active pane's WHERE filter queries it; the filter's freshness
 		 *  signal (`mirror.version`) and query seam live here, not on the vault. */
 		mirror,
 		/** The vault's live tables, sorted by folder name. A pure read with no side effects. */
