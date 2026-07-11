@@ -19,25 +19,24 @@ in-memory epoch; the operating system remains the durable owner of media state.
 
 ## Decision
 
-Epicenter owns background-audio suppression behind an opaque recording-scoped
-lease. Whispering passes a recording id to begin suppression and returns the
-lease to end it. Reacquiring the same recording id returns the existing lease,
-so a webview reload can reconnect to a native recording without creating an
-orphaned suppression window. Platform identities and restoration state never
-cross IPC. Overlapping leases share one suppression epoch, and only the final
-lease restores it.
+Epicenter's native recorder owns background-audio suppression as recording
+startup policy. Whispering passes the selected mode into `start_recording`;
+there is no separately callable begin or end operation. Rust starts suppression
+only after the recording starts, then restores it on stop, cancel, close,
+supersession, or process exit. A webview reload reconnects to the native
+recording without reacquiring anything. Platform identities and restoration
+state never cross IPC.
 
 The user chooses one `recording.playbackSuppression` policy: `off`, `duck`,
-`mute`, or `pause`. It defaults to `duck` so speaker bleed does not degrade
-first-run transcriptions; `off` keeps other apps playing. There is no numeric
-volume level or app-callable pause, play, mute, unmute, increase, or decrease
-operation; the selected policy is captured when a lease begins. The setting
-renders only in hosts that can suppress playback.
+`mute`, or `pause`. It defaults to `off`, making system playback changes
+explicitly opt in. There is no numeric volume level or app-callable pause,
+play, mute, unmute, increase, or decrease operation; the selected policy is
+captured when recording starts. Browser Whispering may display and sync the
+preference, but only Epicenter's native recorder acts on it.
 
 *Amended 2026-07-11: the persisted key was renamed from
 `recording.backgroundAudioSuppression` ("background audio" read as microphone
-noise suppression) and the default changed from `off` to `duck` while the
-branch was unshipped and the rename was free.*
+noise suppression) while the branch was unshipped and the rename was free.*
 
 - Duck and mute use guarded output state: Core Audio's default output device on
   macOS, the default Windows audio endpoint, and writable volume on active
@@ -57,8 +56,8 @@ attempts restoration when its native process exits.
 
 ## Consequences
 
-- The capability describes one lifecycle promise instead of exposing ambient
-  system controls.
+- The recorder describes one lifecycle promise instead of exposing ambient
+  system controls or a standalone suppression capability.
 - A volume increase or unmute is permitted only as guarded restoration of
   Epicenter's own earlier change.
 - macOS private MediaRemote use is isolated to the explicitly selected

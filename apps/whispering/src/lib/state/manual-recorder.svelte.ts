@@ -4,6 +4,7 @@ import { defineKeys } from 'wellcrafted/query';
 import { Err, Ok, type Result } from 'wellcrafted/result';
 import { environment } from '#runtime';
 import type { WhisperingRecordingState } from '$lib/constants/audio';
+import type { ManualRecordingStartOptions } from '$lib/environment/contract';
 import { defineQuery } from '$lib/rpc/client';
 import type {
 	RecorderError,
@@ -133,7 +134,10 @@ function createManualRecorder() {
 			},
 		}),
 
-		async startRecording(callbacks: RecordingCallbacks) {
+		async startRecording(
+			options: ManualRecordingStartOptions,
+			callbacks: RecordingCallbacks,
+		) {
 			if (_starting) return ManualRecorderError.AlreadyRecording();
 			_starting = true;
 			try {
@@ -144,7 +148,11 @@ function createManualRecorder() {
 				if (_current) return ManualRecorderError.AlreadyRecording();
 				const recordingId = nanoid();
 				const { data, error: startRecordingError } =
-					await environment.recording.startRecording(recordingId, callbacks);
+					await environment.recording.startRecording(
+						recordingId,
+						options,
+						callbacks,
+					);
 
 				if (startRecordingError) return Err(startRecordingError);
 

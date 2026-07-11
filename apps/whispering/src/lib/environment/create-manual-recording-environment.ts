@@ -2,7 +2,10 @@ import type {
 	BaseRecordingParams,
 	RecorderService,
 } from '$lib/services/recorder/contract';
-import type { ManualRecordingEnvironment } from './contract';
+import type {
+	ManualRecordingEnvironment,
+	ManualRecordingStartOptions,
+} from './contract';
 
 export function createManualRecordingEnvironment<
 	TParams extends BaseRecordingParams,
@@ -17,7 +20,10 @@ export function createManualRecordingEnvironment<
 	config: {
 		get deviceId(): string | null;
 		set deviceId(deviceId: string | null);
-		resolveStartParams(recordingId: string): TParams;
+		resolveStartParams(
+			recordingId: string,
+			options: ManualRecordingStartOptions,
+		): TParams;
 	};
 	reportLevel(level: number): void;
 }): ManualRecordingEnvironment {
@@ -32,9 +38,9 @@ export function createManualRecordingEnvironment<
 		resumeActiveSession: () => recorder.resumeActiveSession(),
 		enumerateDevices: () => recorder.enumerateDevices(),
 		requestAccess: () => recorder.requestAccess(),
-		startRecording: (recordingId, callbacks) =>
+		startRecording: (recordingId, options, callbacks) =>
 			recorder.startRecording(
-				config.resolveStartParams(recordingId),
+				config.resolveStartParams(recordingId, options),
 				callbacks,
 			),
 		reportLevel,

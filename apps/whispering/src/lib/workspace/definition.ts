@@ -160,7 +160,7 @@ const recording = {
 	),
 	'recording.playbackSuppression': defineKv(
 		field.select(PLAYBACK_SUPPRESSION_VALUES),
-		() => 'duck' as const,
+		() => 'off' as const,
 	),
 } as const;
 

@@ -42,8 +42,6 @@
 		"allow-get-dictation-capability",
 		"allow-replace-global-shortcuts",
 		"allow-set-recording-overlay-visible",
-		"allow-begin-playback-suppression",
-		"allow-end-playback-suppression",
 		"allow-reveal-whispering-window",
 		"clipboard-manager:allow-read-text",
 		"clipboard-manager:allow-write-text",

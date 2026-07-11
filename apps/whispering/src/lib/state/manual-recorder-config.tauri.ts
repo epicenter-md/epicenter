@@ -1,4 +1,5 @@
 import { asDeviceIdentifier } from '@epicenter/recorder';
+import type { ManualRecordingStartOptions } from '$lib/environment/contract';
 import type { CpalRecordingParams } from '$lib/services/recorder/index.tauri';
 import { deviceConfig } from '$lib/state/device-config.svelte';
 
@@ -29,9 +30,13 @@ export const manualRecorderConfig = {
 	 * Only settings-derived config lives here; live callbacks (the meter sink)
 	 * are passed separately to `startRecording`.
 	 */
-	resolveStartParams(recordingId: string): CpalRecordingParams {
+	resolveStartParams(
+		recordingId: string,
+		{ playbackSuppression }: ManualRecordingStartOptions,
+	): CpalRecordingParams {
 		const deviceId = this.deviceId;
 		return {
+			playbackSuppression,
 			recordingId,
 			selectedDeviceId: deviceId ? asDeviceIdentifier(deviceId) : null,
 			sampleRate: deviceConfig.get('recording.cpal.sampleRate'),

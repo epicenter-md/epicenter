@@ -1,4 +1,4 @@
-use crate::playback::PlaybackSuppressionManager;
+use crate::playback::{PlaybackSuppressionManager, PlaybackSuppressionMode};
 use crate::recorder::artifact::{
     clear_artifacts, delete_artifacts, read_artifact_bytes, write_artifact, RecordingArtifact,
 };
@@ -8,7 +8,7 @@ use log::{debug, info, warn};
 use serde::Serialize;
 use std::sync::Mutex;
 use tauri::ipc::Response;
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 
 const RECORDER_STATE_CHANGED: &str = "recorder:state-changed";
 
@@ -83,15 +83,33 @@ pub async fn init_recording_session(
 pub async fn start_recording(
     recorder: State<'_, Mutex<Recorder>>,
     app_handle: AppHandle,
+    playback_suppression: Option<PlaybackSuppressionMode>,
 ) -> Result<()> {
     info!("Starting recording");
-    {
+    let recording_id = {
         let mut recorder = recorder
             .lock()
             .map_err(|e| RecorderError::failed(format!("Failed to lock recorder: {e}")))?;
+        let recording_id = recorder
+            .session_id()
+            .ok_or_else(|| RecorderError::failed("no initialized recording session at start"))?;
         recorder.start_recording()?;
-    }
+        recording_id
+    };
     emit_recording_state(&app_handle, RecordingState::Recording);
+    if let Some(mode) = playback_suppression {
+        let app = app_handle.clone();
+        tauri::async_runtime::spawn(async move {
+            let playback = app.state::<PlaybackSuppressionManager>();
+            let recorder = app.state::<Mutex<Recorder>>();
+            if let Err(error) = playback
+                .begin_recording(recording_id, mode, recorder.inner())
+                .await
+            {
+                log::warn!("playback suppression unavailable: {error}");
+            }
+        });
+    }
     Ok(())
 }
 

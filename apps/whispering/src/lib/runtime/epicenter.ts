@@ -5,7 +5,6 @@ import { createManualRecordingEnvironment } from '$lib/environment/create-manual
 import { createEpicenterTranscription } from '$lib/operations/transcribe.epicenter';
 import type { TranscriptionSettings } from '$lib/operations/transcription-ports';
 import { createTranscriptionUseCase } from '$lib/operations/transcription-use-case';
-import { log } from '$lib/report/log';
 import { osNotify } from '$lib/report/os-notify.tauri';
 import { AudioBlobStoreLive } from '$lib/services/blob-store/index.tauri';
 import { DownloadServiceLive } from '$lib/services/download/index.tauri';
@@ -48,29 +47,6 @@ export const environment: WhisperingEnvironment = {
 	delivery: desktop.delivery,
 	dictation: createDictationCapability(desktop.dictation),
 	notifications: osNotify,
-	playbackSuppression: {
-		supported: true,
-		async begin(recordingId, mode) {
-			if (mode === 'off') return;
-			try {
-				await desktop.playbackSuppression.begin(recordingId, mode);
-			} catch (error) {
-				log.warn(
-					new Error(`Failed to suppress other apps' audio: ${String(error)}`),
-				);
-			}
-		},
-		async end(recordingId) {
-			if (recordingId === null) return;
-			try {
-				await desktop.playbackSuppression.end(recordingId);
-			} catch (error) {
-				log.warn(
-					new Error(`Failed to restore other apps' audio: ${String(error)}`),
-				);
-			}
-		},
-	},
 	recording: createManualRecordingEnvironment({
 		recorder: ManualRecorderLive,
 		config: manualRecorderConfig,

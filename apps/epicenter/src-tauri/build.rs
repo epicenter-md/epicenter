@@ -23,8 +23,6 @@ const COMMANDS: &[&str] = &[
     "cancel_recording",
     "delete_recording_artifacts",
     "clear_recording_artifacts",
-    "begin_playback_suppression",
-    "end_playback_suppression",
     "read_recording_artifact",
     "encode_recording_for_upload",
     "transcribe_recording",

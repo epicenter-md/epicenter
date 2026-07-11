@@ -61,15 +61,13 @@
 			).join(', ')}"
 		/>
 
-		{#if environment.playbackSuppression.supported}
-			<SettingSelect
-				store={settings}
-				key="recording.playbackSuppression"
-				label="Other apps' audio"
-				items={playbackSuppressionOptions}
-				description="While you record, Whispering can lower, mute, or pause audio from other apps, then restore it when you stop."
-			/>
-		{/if}
+		<SettingSelect
+			store={settings}
+			key="recording.playbackSuppression"
+			label="Other apps' audio"
+			items={playbackSuppressionOptions}
+			description="In Epicenter desktop, choose what happens to other apps' audio during manual recordings. Epicenter tries to restore it when recording ends."
+		/>
 
 		{#if settings.get('recording.trigger') === 'manual'}
 			<ManualSelectRecordingDevice

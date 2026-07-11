@@ -34,7 +34,7 @@ use recorder::commands::{
 use recorder::recorder::Recorder;
 
 mod playback;
-use playback::{begin_playback_suppression, end_playback_suppression, PlaybackSuppressionManager};
+use playback::PlaybackSuppressionManager;
 
 pub mod transcription;
 use transcription::{
@@ -267,8 +267,6 @@ fn make_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             cancel_recording,
             delete_recording_artifacts,
             clear_recording_artifacts,
-            begin_playback_suppression,
-            end_playback_suppression,
             transcribe_recording,
             prewarm_model,
             open_accessibility_settings,

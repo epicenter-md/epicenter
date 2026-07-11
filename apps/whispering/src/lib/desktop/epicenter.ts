@@ -66,16 +66,6 @@ export const desktop: WhisperingDesktop = {
 			commands.transcribeRecording(recordingId, spec),
 		setUnloadPolicy: (policy) => commands.setUnloadPolicy(policy),
 	},
-	playbackSuppression: {
-		begin: async (recordingId, mode) => {
-			await unwrapHostResult(
-				commands.beginPlaybackSuppression(recordingId, mode),
-			);
-		},
-		end: async (recordingId) => {
-			await unwrapHostResult(commands.endPlaybackSuppression(recordingId));
-		},
-	},
 	delivery: {
 		supportsCursor: true,
 		write: async (text, keepOnClipboard) => {

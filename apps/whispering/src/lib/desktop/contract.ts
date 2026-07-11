@@ -1,9 +1,6 @@
 import type { Result } from 'wellcrafted/result';
 import type { TextError } from '$lib/services/text/types';
-import type {
-	PlaybackSuppressionMode,
-	WriteTextOutcome,
-} from '$lib/tauri/bindings.gen';
+import type { WriteTextOutcome } from '$lib/tauri/bindings.gen';
 import type {
 	CatalogError,
 	DictationCapability,
@@ -68,11 +65,6 @@ export type DesktopLocalTranscription = {
 	setUnloadPolicy(policy: UnloadPolicy): Promise<void>;
 };
 
-export type DesktopPlaybackSuppression = {
-	begin(recordingId: string, mode: PlaybackSuppressionMode): Promise<void>;
-	end(recordingId: string): Promise<void>;
-};
-
 /** Complete product operations that exist only in an Epicenter build. */
 export type WhisperingDesktop = {
 	/** Reveal and focus the native Whispering window. */
@@ -80,6 +72,5 @@ export type WhisperingDesktop = {
 	shortcuts: DesktopShortcuts;
 	dictation: DesktopDictation;
 	localTranscription: DesktopLocalTranscription;
-	playbackSuppression: DesktopPlaybackSuppression;
 	delivery: CursorDelivery;
 };

@@ -86,12 +86,6 @@ export const environment: WhisperingEnvironment = {
 		},
 	},
 	notifications: osNotify,
-	// Browsers cannot touch other apps' audio, so both verbs are no-ops.
-	playbackSuppression: {
-		supported: false,
-		async begin() {},
-		async end() {},
-	},
 	recording: createManualRecordingEnvironment({
 		recorder: ManualRecorderLive,
 		config: manualRecorderConfig,

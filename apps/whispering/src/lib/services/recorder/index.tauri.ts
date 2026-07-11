@@ -7,6 +7,7 @@ import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { createLogger } from 'wellcrafted/logger';
 import { Err, Ok, type Result, tryAsync } from 'wellcrafted/result';
 import type { WhisperingRecordingState } from '$lib/constants/audio';
+import type { PlaybackSuppressionSetting } from '$lib/constants/audio/playback-suppression';
 import { recorderErrorFromIpc } from '$lib/services/recorder/categorize-error';
 import {
 	type BaseRecordingParams,
@@ -23,6 +24,7 @@ const log = createLogger('whispering/recorder/cpal');
  * defines only the base params; the native sample-rate knob is this app's.
  */
 export type CpalRecordingParams = BaseRecordingParams & {
+	playbackSuppression: PlaybackSuppressionSetting;
 	sampleRate: string;
 };
 
@@ -244,6 +246,7 @@ function createCpalRecorder() {
 		// one), and callers reach it through the `RecorderService` contract type
 		// the export below publishes, so they still pass both arguments.
 		startRecording: async ({
+			playbackSuppression,
 			selectedDeviceId,
 			recordingId,
 			sampleRate,
@@ -301,7 +304,9 @@ function createCpalRecorder() {
 					})
 				);
 
-			const { error: startRecordingError } = await commands.startRecording();
+			const { error: startRecordingError } = await commands.startRecording(
+				playbackSuppression === 'off' ? null : playbackSuppression,
+			);
 			if (startRecordingError !== null) {
 				// The session was initialized but never started; close it so the
 				// Rust worker and cpal stream don't outlive this failed start

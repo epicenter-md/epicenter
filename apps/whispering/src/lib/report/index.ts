@@ -5,9 +5,30 @@ import { consoleSink, type LogEvent } from 'wellcrafted/logger';
 import { environment } from '#runtime';
 import { moreDetailsDialog } from '$lib/components/MoreDetailsDialog.svelte';
 import { humanize } from './humanize';
-import { SOURCE } from './log';
 
-export { log } from './log';
+const SOURCE = 'whispering/report';
+
+/** Diagnostic-only events that never become a toast or OS notification. */
+export const log = {
+	info(message: string, data?: unknown): void {
+		consoleSink({
+			ts: Date.now(),
+			level: 'info',
+			source: SOURCE,
+			message,
+			data,
+		} satisfies LogEvent);
+	},
+	warn(error: Error, data?: unknown): void {
+		consoleSink({
+			ts: Date.now(),
+			level: 'warn',
+			source: SOURCE,
+			message: error.message,
+			data: data ?? error,
+		} satisfies LogEvent);
+	},
+} as const;
 
 export type NoticeAction = {
 	label: string;

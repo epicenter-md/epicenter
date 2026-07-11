@@ -83,9 +83,14 @@ export async function startManualRecording(): Promise<string | null> {
 	// Feed the pill's meter the live mic level. On web the navigator recorder taps
 	// its stream to drive this; on desktop the CPAL worker emits the level from
 	// Rust straight to the overlay, so this callback is never invoked there.
-	const { data: outcome, error } = await manualRecorder.startRecording({
-		onLevel: environment.recording.reportLevel,
-	});
+	const { data: outcome, error } = await manualRecorder.startRecording(
+		{
+			playbackSuppression: settings.get('recording.playbackSuppression'),
+		},
+		{
+			onLevel: environment.recording.reportLevel,
+		},
+	);
 
 	if (error) {
 		// The recording never started, so there is no artifact to recover: the
@@ -103,19 +108,11 @@ export async function startManualRecording(): Promise<string | null> {
 	log.info('Recording started');
 	sound.playSoundIfEnabled('manual-start');
 	const recordingId = manualRecorder.currentRecordingId;
-	if (recordingId) {
-		void environment.playbackSuppression.begin(
-			recordingId,
-			settings.get('recording.playbackSuppression'),
-		);
-	}
 	return recordingId;
 }
 
 export async function stopManualRecording() {
-	const recordingId = manualRecorder.currentRecordingId;
 	const { data: source, error } = await manualRecorder.stopRecording();
-	void environment.playbackSuppression.end(recordingId);
 
 	if (error) {
 		// Finalizing failed, so the captured audio never reached a row: treat it
@@ -175,9 +172,7 @@ export async function cancelRecording() {
 	// toasting on an unrelated press.
 
 	// A manual recording is the live capture: discard it.
-	const recordingId = manualRecorder.currentRecordingId;
 	const { data, error } = await manualRecorder.cancelRecording();
-	void environment.playbackSuppression.end(recordingId);
 	if (error) {
 		report.error({ title: 'Failed to cancel recording', cause: error });
 		return;
