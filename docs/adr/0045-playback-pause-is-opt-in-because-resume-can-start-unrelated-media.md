@@ -1,7 +1,8 @@
 # 0045. Playback pause ships opt-in because macOS resume can start unrelated media
 
-- **Status:** Accepted
+- **Status:** Superseded
 - **Date:** 2026-06-20
+- **Superseded by:** [ADR-0119](0119-whispering-does-not-control-system-media-playback.md)
 
 ## Context
 

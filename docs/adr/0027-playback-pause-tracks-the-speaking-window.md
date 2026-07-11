@@ -1,7 +1,8 @@
 # 0027. Playback pause tracks the speaking window; VAD pauses per utterance
 
-- **Status:** Accepted
+- **Status:** Superseded
 - **Date:** 2026-06-18
+- **Superseded by:** [ADR-0119](0119-whispering-does-not-control-system-media-playback.md)
 
 ## Context
 

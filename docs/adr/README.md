@@ -93,8 +93,8 @@ Each option and the one reason it lost. Terse. This is not the spec.
 | [0014](0014-view-transitions-morph-a-re-expressed-glyph-not-its-container.md) | View transitions morph a re-expressed glyph, not its container | Accepted |
 | [0015](0015-the-brand-mark-has-one-canonical-source-every-other-form-is-generated.md) | The brand mark has one canonical source; every other form is generated | Proposed |
 | [0016](0016-prewarm-the-cold-model-load-and-refuse-the-rest-of-the-latency-menu.md) | Prewarm the cold model load and refuse the rest of the latency menu | Accepted |
-| [0017](0017-pause-system-media-playback-while-recording.md) | Pause system media playback while recording through one cross-platform controller | Accepted (VAD timing revised by 0027; default reaffirmed by 0045) |
-| [0018](0018-macos-resume-is-gated-on-a-coreaudio-output-read.md) | macOS resume is gated on a CoreAudio output read, not a MediaRemote read shim | Accepted (no-op consequence corrected by 0045) |
+| [0017](0017-pause-system-media-playback-while-recording.md) | Pause system media playback while recording through one cross-platform controller | Superseded by 0119 |
+| [0018](0018-macos-resume-is-gated-on-a-coreaudio-output-read.md) | macOS resume is gated on a CoreAudio output read, not a MediaRemote read shim | Superseded by 0119 |
 | [0019](0019-global-shortcuts-have-a-permission-free-floor-and-accessibility-is-an-opt-in-tier.md) | Global shortcuts have a permission-free floor; Accessibility is an opt-in tier | Superseded by 0117 |
 | [0020](0020-macos-drives-its-keyboard-tap-with-an-owned-cgeventtap.md) | macOS drives its keyboard tap with an owned CGEventTap, not the rdev fork | Accepted |
 | [0021](0021-actions-are-the-only-surface-that-crosses-a-process-boundary.md) | Actions are the only surface that crosses a process boundary | Accepted |
@@ -103,7 +103,7 @@ Each option and the one reason it lost. Terse. This is not the spec.
 | [0024](0024-an-always-on-worker-runs-app-semantics-beside-the-app-blind-anchor.md) | An always-on worker runs app semantics beside the app-blind anchor | Proposed |
 | [0025](0025-agent-conversations-are-durable-child-docs-driven-by-an-observing-worker.md) | Agent conversations are durable child docs driven by an observing worker | Proposed |
 | [0026](0026-matter-vault-sqlite-is-a-projection-never-a-verdict-source.md) | The Matter vault's SQLite mirror is a read-only projection, never a verdict source | Accepted |
-| [0027](0027-playback-pause-tracks-the-speaking-window.md) | Playback pause tracks the speaking window; VAD pauses per utterance | Accepted |
+| [0027](0027-playback-pause-tracks-the-speaking-window.md) | Playback pause tracks the speaking window; VAD pauses per utterance | Superseded by 0119 |
 | [0028](0028-both-shortcut-tiers-share-one-physical-keybinding-model.md) | Both shortcut tiers share one physical KeyBinding model | Accepted |
 | [0029](0029-matter-json-marks-a-table.md) | A matter.json marks a table; matter is a declared store, not a discovered lens | Accepted |
 | [0030](0030-agents-are-immutable-capability-bundles.md) | Agents are immutable capability bundles; arbitrary code runs only on a trusted box | Accepted |
@@ -121,7 +121,7 @@ Each option and the one reason it lost. Terse. This is not the spec.
 | [0042](0042-the-agent-loop-is-the-workers-over-the-doc-as-the-message-array.md) | The agent loop is the worker's, over the doc as the message array | Superseded by 0047 |
 | [0043](0043-an-agent-answers-where-its-capability-lives.md) | An agent answers where its capability lives (supersedes 0041 every-answerer) | Superseded by 0047 |
 | [0044](0044-tool-approval-is-a-per-conversation-policy.md) | Tool approval is a per-conversation policy, resolved per call (auto / ask / deny) | Accepted (design; approval mechanism revised by 0047) |
-| [0045](0045-playback-pause-is-opt-in-because-resume-can-start-unrelated-media.md) | Playback pause ships opt-in because macOS resume can start unrelated media | Accepted |
+| [0045](0045-playback-pause-is-opt-in-because-resume-can-start-unrelated-media.md) | Playback pause ships opt-in because macOS resume can start unrelated media | Superseded by 0119 |
 | [0046](0046-a-capability-free-agent-persists-finished-messages-not-live-doc-streams.md) | A capability-free agent persists finished messages, not live doc streams (scopes 0036) | Superseded by 0047 |
 | [0047](0047-the-agent-loop-runs-in-the-client-and-tools-are-dispatched-actions.md) | The agent loop runs in the client; tools are dispatched actions, and the daemon provides data, not inference | Accepted (design; core deleted as consumers migrate) |
 | [0048](0048-a-conversations-loop-is-chosen-by-whether-its-transcript-syncs.md) | A conversation's loop is chosen by whether its transcript syncs across peers | Superseded by 0051 |
@@ -195,5 +195,6 @@ Each option and the one reason it lost. Terse. This is not the spec.
 | [0116](0116-local-mail-is-desktop-first-one-bun-engine-no-background-mail-service.md) | Local Mail is desktop-first: one Bun engine, no background mail service, the open app owns the sync loop | Accepted |
 | [0117](0117-global-shortcut-input-is-plugin-chords-only-and-the-macos-tap-is-just-the-paste-grant-watcher.md) | Global shortcut input is plugin chords only, and the macOS tap is just the paste grant watcher | Accepted |
 | [0118](0118-epicenter-is-one-trusted-bun-hosted-spa-origin.md) | Epicenter is one trusted Bun-hosted SPA origin | Accepted |
+| [0119](0119-whispering-does-not-control-system-media-playback.md) | Whispering does not control system media playback | Accepted |
 
 When you add an ADR, add its row here.
