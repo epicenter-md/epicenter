@@ -13,12 +13,12 @@
 			"default": "./src/lib/commands.browser.ts"
 		},
 		"#os": {
-			"epicenter": "./src/lib/platform/os.tauri.ts",
-			"default": "./src/lib/platform/os.browser.ts"
+			"epicenter": "./src/lib/os/epicenter.ts",
+			"default": "./src/lib/os/browser.ts"
 		},
 		"#shortcuts": {
-			"epicenter": "./src/lib/platform/shortcuts.epicenter.ts",
-			"default": "./src/lib/platform/shortcuts.browser.ts"
+			"epicenter": "./src/lib/shortcuts/index.epicenter.ts",
+			"default": "./src/lib/shortcuts/index.browser.ts"
 		},
 		"#recording-overlay-surface": {
 			"epicenter": "./src/lib/recording-overlay/Surface.epicenter.svelte",

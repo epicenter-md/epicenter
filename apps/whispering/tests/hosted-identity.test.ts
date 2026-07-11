@@ -44,7 +44,7 @@ describe('Epicenter-hosted Whispering identity', () => {
 	});
 
 	test('OAuth callbacks use the unified Epicenter deep-link scheme', () => {
-		const auth = read('src/lib/platform/auth.tauri.ts');
+		const auth = read('src/lib/runtime/auth.epicenter.ts');
 		expect(auth).toContain('EPICENTER_DESKTOP_OAUTH_CLIENT_ID');
 		expect(auth).toContain('EPICENTER_DESKTOP_TAURI_OAUTH_REDIRECT_URI');
 		expect(auth).not.toContain('EPICENTER_WHISPERING_TAURI_OAUTH_REDIRECT_URI');

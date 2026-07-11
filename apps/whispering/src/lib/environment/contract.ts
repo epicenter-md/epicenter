@@ -1,10 +1,10 @@
 import type { Device, DeviceAcquisitionOutcome } from '@epicenter/recorder';
+import type { createAppAuthClient } from '@epicenter/svelte/auth';
 import type { Result } from 'wellcrafted/result';
 import type { CaptureSurface } from '$lib/constants/audio';
 import type { PlaybackSuppressionSetting } from '$lib/constants/audio/playback-suppression';
 import type { CursorDelivery } from '$lib/desktop/contract';
 import type { TranscriptionError } from '$lib/operations/transcription-use-case';
-import type { PlatformAuth } from '$lib/platform/types';
 import type { BlobStore } from '$lib/services/blob-store/types';
 import type { DownloadService } from '$lib/services/download/types';
 import type {
@@ -16,6 +16,13 @@ import type { TextService } from '$lib/services/text/types';
 import type { DictationCapabilityState } from '$lib/state/dictation-capability.svelte';
 import type { TranscriptionServiceId } from '$lib/services/transcription/providers';
 import type { LocalModels } from '$lib/state/local-models.svelte';
+
+/**
+ * Authentication capability exposed by the selected Whispering environment.
+ * Browser and Epicenter builds use the same OAuth client with different
+ * launchers.
+ */
+export type WhisperingAuth = ReturnType<typeof createAppAuthClient>;
 
 type StartRecordingResult = Result<
 	{
@@ -58,7 +65,7 @@ export type TranscriptionEnvironment = {
  * instead.
  */
 export type WhisperingEnvironment = {
-	auth: PlatformAuth;
+	auth: WhisperingAuth;
 	artifacts: BlobStore;
 	captureSurfaces: readonly CaptureSurface[];
 	downloads: DownloadService;

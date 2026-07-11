@@ -1,13 +1,9 @@
 /**
- * Shared contracts for host-selected operations. Browser and Epicenter
- * implementations conform to these shapes even though each build resolves only
- * its selected composition roots.
- *
- * This file must stay free of `@tauri-apps/*` imports so it type-checks and
- * ships under the web (default) resolution.
+ * Shared contracts for the build-selected shortcut surface. Browser and
+ * Epicenter implementations conform to these shapes even though each build
+ * resolves only its selected composition root.
  */
 
-import type { createAppAuthClient } from '@epicenter/svelte/auth';
 import type { Command } from '$lib/commands';
 import type { KeyBinding } from '$lib/utils/key-binding';
 
@@ -65,26 +61,3 @@ export type Shortcuts = {
 	): ShortcutConflict | null;
 };
 
-/**
- * Authentication capability exposed by the selected Whispering environment.
- * Browser and Epicenter builds use the same OAuth client with different launchers.
- */
-export type PlatformAuth = ReturnType<typeof createAppAuthClient>;
-
-/**
- * Contract for `#os`: host-OS identity, resolved once per build target.
- * The Tauri build reads the real OS natively; the web build infers it from the
- * user agent. Only the two facts the app actually branches on are exposed.
- */
-export type Os = {
-	/**
-	 * An Apple platform: macOS, iOS, or iPadOS. These share the Command (⌘)
-	 * primary modifier and the Option-key character layout, which is what every
-	 * keyboard call site branches on. On the desktop (Tauri) build this is
-	 * exactly macOS, since whispering's desktop targets are macOS, Windows, and
-	 * Linux; iOS only ever appears on the web.
-	 */
-	isApple: boolean;
-	/** Desktop Linux, excluding Android. Gates the Linux-only VAD notice. */
-	isLinux: boolean;
-};

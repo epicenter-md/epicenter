@@ -5,8 +5,8 @@ import { createManualRecordingEnvironment } from '$lib/environment/create-manual
 import { createEpicenterTranscription } from '$lib/operations/transcribe.epicenter';
 import type { TranscriptionSettings } from '$lib/operations/transcription-ports';
 import { createTranscriptionUseCase } from '$lib/operations/transcription-use-case';
-import { auth } from '$lib/platform/auth.tauri';
 import { log } from '$lib/report/log';
+import { auth } from './auth.epicenter';
 import { osNotify } from '$lib/report/os-notify.tauri';
 import { AudioBlobStoreLive } from '$lib/services/blob-store/index.tauri';
 import { DownloadServiceLive } from '$lib/services/download/index.tauri';

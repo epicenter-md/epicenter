@@ -7,7 +7,7 @@ import { API_ROUTES } from '@epicenter/constants/api-routes';
 import { defineErrors } from 'wellcrafted/error';
 import { Err, type Result } from 'wellcrafted/result';
 import type { SupportedLanguage } from '$lib/constants/languages';
-import type { PlatformAuth } from '$lib/platform/types';
+import type { WhisperingAuth } from '$lib/environment/contract';
 import type { BlobStore } from '$lib/services/blob-store/types';
 import type { HttpService } from '$lib/services/http/types';
 import { createDeepgramTranscriptionService } from '$lib/services/transcription/cloud/deepgram';
@@ -61,7 +61,7 @@ export function createBrowserTranscription({
 	cloudTransport,
 	settings,
 }: {
-	auth: PlatformAuth;
+	auth: WhisperingAuth;
 	artifacts: BlobStore;
 	cloudTransport: CloudTranscriptionTransport;
 	settings: TranscriptionSettings;

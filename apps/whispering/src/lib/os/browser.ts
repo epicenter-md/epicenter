@@ -1,4 +1,4 @@
-import type { Os } from './types';
+import type { Os } from './contract';
 
 /**
  * Web build: there is no native OS API, so identity is inferred from the user

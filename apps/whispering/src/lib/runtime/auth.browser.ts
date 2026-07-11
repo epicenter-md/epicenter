@@ -2,9 +2,9 @@ import { EPICENTER_WHISPERING_OAUTH_CLIENT_ID } from '@epicenter/constants/oauth
 import { APP_URLS } from '@epicenter/constants/vite';
 import { createHostedBrowserRedirectAuth } from '@epicenter/svelte/auth';
 import { instanceSetting } from '$lib/instance';
-import type { PlatformAuth } from './types';
+import type { WhisperingAuth } from '$lib/environment/contract';
 
-export const auth: PlatformAuth = createHostedBrowserRedirectAuth({
+export const auth: WhisperingAuth = createHostedBrowserRedirectAuth({
 	instanceSetting,
 	namespace: 'whispering',
 	clientId: EPICENTER_WHISPERING_OAUTH_CLIENT_ID,

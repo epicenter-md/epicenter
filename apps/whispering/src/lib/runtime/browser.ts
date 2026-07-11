@@ -5,7 +5,7 @@ import { createManualRecordingEnvironment } from '$lib/environment/create-manual
 import { createBrowserTranscription } from '$lib/operations/transcribe.browser';
 import type { TranscriptionSettings } from '$lib/operations/transcription-ports';
 import { createTranscriptionUseCase } from '$lib/operations/transcription-use-case';
-import { auth } from '$lib/platform/auth.browser';
+import { auth } from './auth.browser';
 import { reportRecordingMicLevel } from '$lib/recording-pill/mic-level.browser';
 import { osNotify } from '$lib/report/os-notify.browser';
 import { AudioBlobStoreLive } from '$lib/services/blob-store/index.browser';

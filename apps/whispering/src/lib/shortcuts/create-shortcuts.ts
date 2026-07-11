@@ -2,7 +2,7 @@ import type { AnyTaggedError } from 'wellcrafted/error';
 import { type Command, commands } from '$lib/commands';
 import { report } from '$lib/report';
 import type { KeyBinding } from '$lib/utils/key-binding';
-import type { ShortcutConflict, Shortcuts } from './types';
+import type { ShortcutConflict, Shortcuts } from './contract';
 
 /** A command paired with its current stored binding (`null` = unbound). */
 type ShortcutEntry = {

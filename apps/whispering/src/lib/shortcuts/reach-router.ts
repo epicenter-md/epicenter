@@ -8,7 +8,7 @@ import {
 	type Reach,
 	realizedReach,
 } from '../utils/key-binding';
-import type { ShortcutConflict, Shortcuts } from './types';
+import type { ShortcutConflict, Shortcuts } from './contract';
 
 /** The reach ceiling per command, the only slice of the catalog the router reads. */
 type CommandReach = { id: Command['id']; reach: Reach };

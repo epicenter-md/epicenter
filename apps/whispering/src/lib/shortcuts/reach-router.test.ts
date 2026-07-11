@@ -2,7 +2,7 @@
 import { expect, test } from 'bun:test';
 import type { KeyBinding } from '$lib/utils/key-binding';
 import { createReachRouter } from './reach-router';
-import type { ShortcutConflict, Shortcuts } from './types';
+import type { ShortcutConflict, Shortcuts } from './contract';
 
 /**
  * The catalog slice the router reads, with a `focused`-ceiling command alongside

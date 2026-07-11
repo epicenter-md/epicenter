@@ -8,9 +8,9 @@ import { createHostedDeepLinkAuth } from '@epicenter/svelte/auth/tauri';
 import { createLogger } from 'wellcrafted/logger';
 import { instanceSetting } from '$lib/instance';
 import { commands } from '$lib/tauri/commands';
-import type { PlatformAuth } from './types';
+import type { WhisperingAuth } from '$lib/environment/contract';
 
-const log = createLogger('whispering/platform/auth');
+const log = createLogger('whispering/runtime/auth');
 
 declare global {
 	interface Window {
@@ -40,7 +40,7 @@ if (!bootstrap) {
 delete window.__EPICENTER_WHISPERING_AUTH_BOOTSTRAP__;
 if (bootstrap.error !== null) log.warn(new Error(bootstrap.error));
 
-export const auth: PlatformAuth = createHostedDeepLinkAuth({
+export const auth: WhisperingAuth = createHostedDeepLinkAuth({
 	instanceSetting,
 	clientId: EPICENTER_DESKTOP_OAUTH_CLIENT_ID,
 	redirectUri: EPICENTER_DESKTOP_TAURI_OAUTH_REDIRECT_URI,
