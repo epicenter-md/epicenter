@@ -2,11 +2,11 @@ import { extractErrorMessage } from 'wellcrafted/error';
 import { Err, tryAsync } from 'wellcrafted/result';
 import { desktop } from '#desktop';
 import { type Command, commands } from '$lib/commands';
+import type { GlobalShortcutRegistration } from '$lib/desktop/contract';
 import {
 	DEFAULT_GLOBAL_BINDINGS,
 	deviceConfig,
 } from '$lib/state/device-config.svelte';
-import type { GlobalShortcutRegistration } from '$lib/desktop/contract';
 import {
 	bindingsEqual,
 	isRegistrableChord,
@@ -18,15 +18,15 @@ import { createShortcuts } from './shortcuts.shared';
 import type { Shortcuts } from './types';
 
 /**
- * Tauri build of `#platform/system-shortcuts`: system-global chords driven by
+ * Epicenter's system-global shortcut backend, driven by
  * tauri-plugin-global-shortcut, stored in device-config under
  * `shortcuts.global.*` (never synced across devices). The default bindings live
  * in `DEFAULT_GLOBAL_BINDINGS` because they double as the device-config schema
  * defaults.
  *
- * The reach router (`shortcuts.ts`) composes this with the universal
- * `focusedShortcuts`; the web build of this seam supplies `null` (no system
- * backend), which is how the router caps web at focused reach. See ADR-0052.
+ * The Epicenter shortcut composition root combines this with the universal
+ * `focusedShortcuts`. The browser root omits a system backend, which caps its
+ * complete shortcut surface at focused reach. See ADR-0052.
  */
 
 const globalKey = (id: Command['id']) => `shortcuts.global.${id}` as const;
@@ -49,7 +49,7 @@ function readBinding(id: Command['id']): KeyBinding | null {
 	return isRegistrableChord(stored) ? stored : null;
 }
 
-export const systemShortcuts: Shortcuts | null = createShortcuts({
+export const systemShortcuts: Shortcuts = createShortcuts({
 	read: readBinding,
 	getDefault: (id) => DEFAULT_GLOBAL_BINDINGS[id] ?? null,
 	write: (id, binding) => deviceConfig.set(globalKey(id), binding),

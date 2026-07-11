@@ -19,7 +19,7 @@ import type { Shortcuts } from './types';
  *
  * Universal, not a `#platform` seam: the webview matcher runs in the Tauri window
  * too, so this same backend is the focused half on every platform. The reach
- * router (`shortcuts.ts`) composes it with the Tauri-only `systemShortcuts`; on
+ * router composes it with the Epicenter-only `systemShortcuts`; on
  * desktop both run, on web this is the only one. See ADR-0052.
  */
 

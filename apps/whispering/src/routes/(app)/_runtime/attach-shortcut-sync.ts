@@ -1,5 +1,5 @@
 import { desktop } from '#desktop';
-import { shortcuts } from '$lib/platform/shortcuts';
+import { shortcuts } from '#shortcuts';
 
 /**
  * Register the current shortcut bindings on every backend this build runs.

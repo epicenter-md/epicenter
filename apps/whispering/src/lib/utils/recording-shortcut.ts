@@ -1,15 +1,7 @@
 import { environment } from '#runtime';
-import { systemShortcuts } from '#platform/system-shortcuts';
+import { shortcuts } from '#shortcuts';
 import type { Command } from '$lib/commands';
-import { focusedShortcuts } from '$lib/platform/focused-shortcuts';
-import type { Shortcuts } from '$lib/platform/types';
-import { keyBindingToLabel } from '$lib/utils/key-binding';
-
-/**
- * The backend the one-label helper reads: the system (global) key leads on desktop
- * because it fires from anywhere; web has only the focused backend.
- */
-const primaryShortcuts = systemShortcuts ?? focusedShortcuts;
+import { keyBindingToLabel, type Reach } from '$lib/utils/key-binding';
 
 /**
  * Preference order for the shortcut that starts each recording mode: the first
@@ -36,12 +28,9 @@ export type RecordingShortcutMode = keyof typeof RECORDING_SHORTCUT_PREFERENCE;
  * Returns `''` when nothing in the list is bound. `keyBindingToLabel` formats the
  * physical binding.
  */
-function shortcutLabelFor(
-	store: Shortcuts,
-	mode: RecordingShortcutMode,
-): string {
+function shortcutLabelFor(reach: Reach, mode: RecordingShortcutMode): string {
 	for (const commandId of RECORDING_SHORTCUT_PREFERENCE[mode]) {
-		const binding = store.current(commandId);
+		const binding = shortcuts.current(commandId)[reach];
 		if (binding) return keyBindingToLabel(binding, environment.os.isApple);
 	}
 	return '';
@@ -54,7 +43,10 @@ function shortcutLabelFor(
  * {@link getRecordingShortcutLabels}.
  */
 export function getRecordingShortcutLabel(mode: RecordingShortcutMode): string {
-	return shortcutLabelFor(primaryShortcuts, mode);
+	return shortcutLabelFor(
+		shortcuts.supportsGlobal ? 'global' : 'focused',
+		mode,
+	);
 }
 
 /**
@@ -76,7 +68,7 @@ export function getRecordingShortcutLabels(mode: RecordingShortcutMode): {
 	global: string | null;
 } {
 	return {
-		focused: shortcutLabelFor(focusedShortcuts, mode),
-		global: systemShortcuts ? shortcutLabelFor(systemShortcuts, mode) : null,
+		focused: shortcutLabelFor('focused', mode),
+		global: shortcuts.supportsGlobal ? shortcutLabelFor('global', mode) : null,
 	};
 }

@@ -66,6 +66,7 @@ test('a chord on a global command routes the write to the global store (desktop)
 		global: global.surface,
 		commands: CATALOG,
 	});
+	expect(router.supportsGlobal).toBe(true);
 
 	await router.set('toggleManualRecording', CHORD);
 
@@ -111,9 +112,9 @@ test('web has no global backend, so the platform ceiling clamps every write to f
 	const focused = fakeShortcuts();
 	const router = createReachRouter({
 		focused: focused.surface,
-		global: null,
 		commands: CATALOG,
 	});
+	expect(router.supportsGlobal).toBe(false);
 
 	// A chord buys nothing on web: min(global, global, focused) = focused.
 	expect(router.reachBadge('toggleManualRecording', CHORD)).toBe('focused');

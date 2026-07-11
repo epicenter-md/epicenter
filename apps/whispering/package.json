@@ -16,9 +16,9 @@
 			"epicenter": "./src/lib/platform/os.tauri.ts",
 			"default": "./src/lib/platform/os.browser.ts"
 		},
-		"#platform/system-shortcuts": {
-			"epicenter": "./src/lib/platform/system-shortcuts.tauri.ts",
-			"default": "./src/lib/platform/system-shortcuts.browser.ts"
+		"#shortcuts": {
+			"epicenter": "./src/lib/platform/shortcuts.epicenter.ts",
+			"default": "./src/lib/platform/shortcuts.browser.ts"
 		},
 		"#recipe-presentation": {
 			"epicenter": "./src/lib/operations/recipe-presentation.epicenter.ts",

@@ -34,6 +34,8 @@ type CommandBindings = {
  * scheme stay owned by the underlying surfaces; this only routes. See ADR-0052.
  */
 type RoutedShortcuts = {
+	/** Whether this host can register system-global shortcuts. */
+	readonly supportsGlobal: boolean;
 	/** Push every command's bindings to both backends (the global one only on desktop). */
 	sync(): Promise<void>;
 	/** Restore every shortcut in both stores to its default, then re-sync. */
@@ -79,18 +81,18 @@ type RoutedShortcuts = {
  * reach of `global` always implies the global backend exists, so a routed write
  * can never target a missing store.
  *
- * The seam split that supplies both surfaces (the universal `focusedShortcuts`
- * and the Tauri-only `systemShortcuts`, `null` on web) lands in `shortcuts.ts`.
+ * The build-selected composition roots supply the universal `focusedShortcuts`
+ * and, in Epicenter, the system-global backend.
  * The catalog (`commands`) is injected rather than imported so the router stays
  * clear of the operations graph behind it.
  */
 export function createReachRouter({
 	focused,
-	global,
+	global = null,
 	commands,
 }: {
 	focused: Shortcuts;
-	global: Shortcuts | null;
+	global?: Shortcuts | null;
 	commands: readonly CommandReach[];
 }): RoutedShortcuts {
 	const platformReach: Reach = global ? 'global' : 'focused';
@@ -112,6 +114,7 @@ export function createReachRouter({
 	}
 
 	return {
+		supportsGlobal: global !== null,
 		async sync() {
 			await focused.sync();
 			if (global) await global.sync();
