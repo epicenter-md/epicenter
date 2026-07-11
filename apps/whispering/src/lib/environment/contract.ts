@@ -83,6 +83,12 @@ export type WhisperingEnvironment = {
 	 * surface, so this resolves immediately.
 	 */
 	reveal(): Promise<void>;
+	/**
+	 * Whether the global completion provider path (Polish, Recipes) exists in
+	 * this build. Epicenter refuses cloud completion until the host owns
+	 * explicit provider operations.
+	 */
+	supportsCompletion: boolean;
 	text: TextService;
 	transcription: TranscriptionEnvironment;
 };

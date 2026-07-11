@@ -76,6 +76,7 @@ export const environment: WhisperingEnvironment = {
 		reportLevel() {},
 	}),
 	reveal: desktop.reveal,
+	supportsCompletion: false,
 	text: TextServiceLive,
 	transcription: {
 		providers,

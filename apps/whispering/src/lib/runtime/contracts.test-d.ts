@@ -25,6 +25,7 @@ type _EnvironmentIsComplete = Expect<
 		| 'playbackSuppression'
 		| 'recording'
 		| 'reveal'
+		| 'supportsCompletion'
 		| 'text'
 		| 'transcription'
 	>

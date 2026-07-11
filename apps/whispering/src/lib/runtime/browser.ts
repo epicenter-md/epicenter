@@ -82,6 +82,7 @@ export const environment: WhisperingEnvironment = {
 	}),
 	// The page is already the visible surface; nothing to reveal.
 	async reveal() {},
+	supportsCompletion: true,
 	text: TextServiceLive,
 	transcription: {
 		transcribeAndPersist: createTranscriptionUseCase(
