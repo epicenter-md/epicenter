@@ -27,10 +27,17 @@ orphaned suppression window. Platform identities and restoration state never
 cross IPC. Overlapping leases share one suppression epoch, and only the final
 lease restores it.
 
-The user chooses one `recording.backgroundAudioSuppression` policy: `off`,
-`duck`, `mute`, or `pause`. It defaults to `off`. There is no numeric volume
-level or app-callable pause, play, mute, unmute, increase, or decrease
-operation; the selected policy is captured when a lease begins.
+The user chooses one `recording.playbackSuppression` policy: `off`, `duck`,
+`mute`, or `pause`. It defaults to `duck` so speaker bleed does not degrade
+first-run transcriptions; `off` keeps other apps playing. There is no numeric
+volume level or app-callable pause, play, mute, unmute, increase, or decrease
+operation; the selected policy is captured when a lease begins. The setting
+renders only in hosts that can suppress playback.
+
+*Amended 2026-07-11: the persisted key was renamed from
+`recording.backgroundAudioSuppression` ("background audio" read as microphone
+noise suppression) and the default changed from `off` to `duck` while the
+branch was unshipped and the rename was free.*
 
 - Duck and mute use guarded output state: Core Audio's default output device on
   macOS, the default Windows audio endpoint, and writable volume on active
