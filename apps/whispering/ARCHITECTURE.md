@@ -26,7 +26,7 @@ defineWorkspace()
 
 `defineWhispering(defaultTranscriptionService)` in `src/lib/workspace/definition.ts` is the shared model factory. It defines the fixed workspace id, tables, and KV schema with no platform APIs; the platform argument only changes read-side KV defaults.
 
-`openWhisperingBrowser({ auth, nodeId, defaultTranscriptionService })` in `src/lib/workspace/browser.ts` is the shared browser-hosted runtime opener. It connects once at boot with `toConnection(auth, nodeId)`, layers the recording markdown export, and aliases `storage.whenLoaded` as `whenReady`; settings metadata comes from the workspace's own `kv.keys` / `kv.getDefault` / `kv.reset` (ADR-0093). `src/lib/workspace/active.ts` constructs the one always-available workspace for the application boot from the selected environment's auth client and default transcription service. Authentication selects the connection but never gates workspace access.
+`openWhisperingBrowser({ auth, nodeId, defaultTranscriptionService })` in `src/lib/workspace/browser.ts` is the shared browser-hosted runtime opener. It connects once at boot with `toConnection(auth, nodeId)`, layers the recording markdown export, and aliases `storage.whenLoaded` as `whenReady`; settings metadata comes from the workspace's own `kv.keys` / `kv.getDefault` / `kv.reset` (ADR-0093). Each `#runtime` root constructs the one always-available workspace for the application boot from its own auth client and default transcription service. Authentication selects the connection but never gates workspace access.
 
 The rule is the same as Fuji and Honeycrisp:
 
@@ -48,8 +48,17 @@ selects browser recording, persistence, delivery, auth, and remote
 transcription. The Epicenter root selects native recording, filesystem-backed
 artifacts, cursor delivery, desktop auth, and local transcription.
 
-Additional semantic imports select complete focused surfaces such as
-`#shortcuts`, `#os`, and `#recording-overlay-surface`. There is no generic
+Every other build-varying seam sits at one of two altitudes relative to those
+roots. Below them, `#os` states static host facts for modules the roots
+themselves compose (persisted state such as `device-config`), and it is the one
+door for OS facts at every altitude. Above them, surfaces that compose
+commands and operations (which already read `#runtime`) keep their own semantic
+imports, such as `#shortcuts`, `#command-contributions`, and
+`#recording-overlay-surface`; they cannot live in the environment without
+importing the roots back into themselves. An operation belongs in the
+environment when it is complete in both hosts and consumed above the roots;
+implementations take settings as parameters rather than reading them, because
+the settings store reads the workspace from `#runtime`. There is no generic
 platform namespace, nullable native capability bag, or runtime host check.
 
 Services remain narrow I/O contracts below those roots. They accept explicit
