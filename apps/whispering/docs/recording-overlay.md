@@ -18,9 +18,9 @@ into Rust would split the source of truth, so we keep it in the main window.
   created in Rust (`../epicenter/src-tauri/src/overlay.rs`, via tauri-nspanel) so clicking it
   never activates the app or raises the main window; `focusable: false` alone
   does not prevent app activation on click. On Windows and Linux it is a
-  `focusable: false` + `alwaysOnTop` `WebviewWindow` created from the frontend.
-  The window manager finds the macOS panel by label and only creates a window
-  when none exists, so both paths share one show/hide/position code path.
+  `focusable: false` + `alwaysOnTop` `WebviewWindow` created by Epicenter.
+  Whispering finds the host-owned window by label, then owns only its
+  recording-driven visibility, position, status, and actions.
 - **Route**: `/recording-overlay` renders the pill. It lives in its own webview,
   so it cannot read the recorder state directly.
 - **Shared pill** (`src/lib/recording-pill/`): owns the platform-free status and

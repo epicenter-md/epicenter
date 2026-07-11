@@ -49,4 +49,15 @@ describe('Epicenter-hosted Whispering identity', () => {
 		expect(auth).toContain('EPICENTER_DESKTOP_TAURI_OAUTH_REDIRECT_URI');
 		expect(auth).not.toContain('EPICENTER_WHISPERING_TAURI_OAUTH_REDIRECT_URI');
 	});
+
+	test('Epicenter and Whispering each own one half of the recording overlay', () => {
+		const epicenterShell = read('src/lib/app-shell/epicenter.svelte');
+		const browserShell = read('src/lib/app-shell/browser.svelte');
+		const nativeHost = read('../epicenter/src-tauri/src/lib.rs');
+		expect(epicenterShell).toContain('attachRecordingOverlay');
+		expect(browserShell).not.toContain('attachRecordingOverlay');
+		expect(nativeHost).toContain(
+			'create_recording_overlay(&app, port, &token)?',
+		);
+	});
 });

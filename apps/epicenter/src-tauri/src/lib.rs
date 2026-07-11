@@ -54,7 +54,6 @@ use delivery::{simulate_copy_keystroke, simulate_enter_keystroke, write_text};
 pub mod keyring_storage;
 use keyring_storage::{keyring_read, keyring_write};
 
-
 pub mod timing;
 
 mod shell;
@@ -70,6 +69,7 @@ pub mod overlay;
 pub mod clipboard;
 
 const PRODUCT_NAME: &str = "Epicenter";
+const RECORDING_OVERLAY_WINDOW_LABEL: &str = "recording-overlay";
 #[cfg(any(not(debug_assertions), test))]
 const PRODUCTION_PORT: u16 = 39_130;
 #[cfg(any(debug_assertions, test))]
@@ -812,7 +812,6 @@ fn create_surfaces_on_main_thread(
     let token = token.to_string();
     app.clone().run_on_main_thread(move || {
         let result = (|| {
-            #[cfg(target_os = "macos")]
             create_recording_overlay(&app, port, &token)?;
 
             ensure_surface(&app, Surface::Whispering, port, &token, false)?;
@@ -835,6 +834,44 @@ fn create_recording_overlay(app: &DesktopAppHandle, port: u16, token: &str) -> R
     let initialization_script = initialization_script(&origin, token)?;
     overlay::create_recording_overlay(app, url, initialization_script, port)
         .context("create the Whispering recording overlay")
+}
+
+#[cfg(not(target_os = "macos"))]
+fn create_recording_overlay(app: &DesktopAppHandle, port: u16, token: &str) -> Result<()> {
+    if app
+        .get_webview_window(RECORDING_OVERLAY_WINDOW_LABEL)
+        .is_some()
+    {
+        return Ok(());
+    }
+
+    let origin = origin(port);
+    let url: tauri::Url = format!("{origin}/apps/whispering/recording-overlay/").parse()?;
+    let initialization_script = initialization_script(&origin, token)?;
+    WebviewWindowBuilder::new(
+        app,
+        RECORDING_OVERLAY_WINDOW_LABEL,
+        WebviewUrl::External(url),
+    )
+    .title("Recording")
+    .inner_size(224.0, 40.0)
+    .decorations(false)
+    .transparent(true)
+    .shadow(false)
+    .always_on_top(true)
+    .skip_taskbar(true)
+    .resizable(false)
+    .maximizable(false)
+    .minimizable(false)
+    .closable(false)
+    .focusable(false)
+    .visible(false)
+    .initialization_script(initialization_script)
+    .on_navigation(move |url| is_allowed_navigation(url, port))
+    .on_new_window(|_, _| NewWindowResponse::Deny)
+    .build()
+    .context("create the Whispering recording overlay")?;
+    Ok(())
 }
 
 fn ensure_surface(
@@ -895,8 +932,7 @@ fn invalidate_surfaces(app: &DesktopAppHandle) {
                 }
             }
         }
-        #[cfg(target_os = "macos")]
-        if let Some(window) = app.get_webview_window(overlay::WINDOW_LABEL) {
+        if let Some(window) = app.get_webview_window(RECORDING_OVERLAY_WINDOW_LABEL) {
             if window.destroy().is_err() {
                 let _ = window.hide();
             }
