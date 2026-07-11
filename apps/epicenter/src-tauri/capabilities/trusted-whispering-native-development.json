@@ -47,8 +47,6 @@
 		"allow-reveal-whispering-window",
 		"clipboard-manager:allow-read-text",
 		"clipboard-manager:allow-write-text",
-		"dialog:allow-open",
-		"dialog:allow-save",
 		"deep-link:default",
 		"log:default",
 		"macos-permissions:default",

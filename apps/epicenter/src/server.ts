@@ -120,7 +120,7 @@ export function createQueryServer({
 			return c.html(surfacePages[surface.id]);
 		});
 	}
-	app.get('/apps/whispering/*', async (c) => {
+	app.get(`${SURFACE_ROUTES.whispering.pattern}*`, async (c) => {
 		const asset = await staticAssets.resolveWhispering(
 			new URL(c.req.url).pathname,
 		);
