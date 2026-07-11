@@ -1,11 +1,13 @@
 import { Database } from 'bun:sqlite';
 import {
+	ENVELOPE,
 	type LogicalState,
 	type Operation,
 	type PullRequest,
 	type PullResponse,
 	type PushRequest,
 	type PushResponse,
+	type RequestEnvelope,
 	requestRefusal,
 	rowKey,
 	type SnapshotChunk,
@@ -20,8 +22,10 @@ type StoredRow = { cells_json: string; deleted: number };
 
 export class SqliteServer {
 	readonly db: Database;
+	private envelope: RequestEnvelope;
 
-	constructor(path: string) {
+	constructor(path: string, envelope: RequestEnvelope = ENVELOPE) {
+		this.envelope = structuredClone(envelope);
 		this.db = new Database(path, { create: true });
 		this.db.run('PRAGMA journal_mode = WAL');
 		this.db.run(`
@@ -54,7 +58,21 @@ export class SqliteServer {
 				rows_json TEXT NOT NULL,
 				checksum TEXT NOT NULL
 			);
+			CREATE TABLE IF NOT EXISTS sync_identity (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 		`);
+		for (const [key, value] of Object.entries(this.envelope)) {
+			this.db.run('INSERT OR IGNORE INTO sync_identity VALUES (?, ?)', [
+				key,
+				String(value),
+			]);
+			const stored = this.db
+				.query<{ value: string }, [string]>(
+					'SELECT value FROM sync_identity WHERE key = ?',
+				)
+				.get(key)?.value;
+			if (stored !== String(value))
+				throw new Error(`server identity mismatch for ${key}`);
+		}
 	}
 
 	close(): void {
@@ -95,7 +113,7 @@ export class SqliteServer {
 		acceptLimit = Number.POSITIVE_INFINITY,
 		failAfterOperation?: number,
 	): PushResponse {
-		const refusal = requestRefusal(request);
+		const refusal = requestRefusal(request, this.envelope);
 		if (refusal) return { kind: 'push', ok: false, reason: refusal };
 		let response: PushResponse = { kind: 'push', ok: true };
 		const transaction = this.db.transaction(() => {
@@ -149,7 +167,7 @@ export class SqliteServer {
 	}
 
 	pull(request: PullRequest): PullResponse {
-		const refusal = requestRefusal(request);
+		const refusal = requestRefusal(request, this.envelope);
 		if (refusal) return { kind: 'pull', ok: false, reason: refusal };
 		const watermark = this.meta('watermark');
 		if (request.cursor < watermark) {
@@ -285,7 +303,7 @@ export class SqliteServer {
 	}
 
 	snapshotChunk(request: SnapshotChunkRequest): SnapshotChunkResponse {
-		const refusal = requestRefusal(request);
+		const refusal = requestRefusal(request, this.envelope);
 		if (refusal) return { kind: 'snapshotChunk', ok: false, reason: refusal };
 		const manifest = this.currentManifest();
 		if (!manifest || manifest.generation !== request.generation)

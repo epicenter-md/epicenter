@@ -11,6 +11,7 @@ import {
 	type PullResponse,
 	type PushRequest,
 	type PushResponse,
+	type RequestEnvelope,
 	type RowState,
 	requestRefusal,
 	rowKey,
@@ -87,6 +88,7 @@ function classify(
 }
 
 export class RefServer {
+	private envelope: RequestEnvelope;
 	private serverSequence = 0;
 	private watermark = 0;
 	private snapshotGeneration = 0;
@@ -96,11 +98,15 @@ export class RefServer {
 	private manifest: SnapshotManifest | null = null;
 	private chunks: SnapshotChunk[] = [];
 
+	constructor(envelope: RequestEnvelope = ENVELOPE) {
+		this.envelope = structuredClone(envelope);
+	}
+
 	push(
 		request: PushRequest,
 		acceptLimit = Number.POSITIVE_INFINITY,
 	): PushResponse {
-		const refusal = requestRefusal(request);
+		const refusal = requestRefusal(request, this.envelope);
 		if (refusal) return { kind: 'push', ok: false, reason: refusal };
 		let accepted = 0;
 		for (const mutation of request.mutations) {
@@ -122,7 +128,7 @@ export class RefServer {
 	}
 
 	pull(request: PullRequest): PullResponse {
-		const refusal = requestRefusal(request);
+		const refusal = requestRefusal(request, this.envelope);
 		if (refusal) return { kind: 'pull', ok: false, reason: refusal };
 		if (request.cursor < this.watermark) {
 			if (!this.manifest)
@@ -189,7 +195,7 @@ export class RefServer {
 	}
 
 	snapshotChunk(request: SnapshotChunkRequest): SnapshotChunkResponse {
-		const refusal = requestRefusal(request);
+		const refusal = requestRefusal(request, this.envelope);
 		if (refusal) return { kind: 'snapshotChunk', ok: false, reason: refusal };
 		if (!this.manifest || request.generation !== this.manifest.generation)
 			return { kind: 'snapshotChunk', ok: false, reason: 'snapshot-replaced' };
@@ -213,6 +219,7 @@ export class RefServer {
 }
 
 export class RefClient {
+	private envelope: RequestEnvelope;
 	private canonical: LogicalState = {};
 	private outbox: Mutation[] = [];
 	private pullCursor = 0;
@@ -220,7 +227,12 @@ export class RefClient {
 	private stagedManifest: SnapshotManifest | null = null;
 	private stagedChunks = new Map<number, SnapshotChunk>();
 
-	constructor(readonly actorId: string) {}
+	constructor(
+		readonly actorId: string,
+		envelope: RequestEnvelope = ENVELOPE,
+	) {
+		this.envelope = structuredClone(envelope);
+	}
 
 	local(operations: Operation[]): void {
 		const mutation = {
@@ -235,13 +247,13 @@ export class RefClient {
 	pushRequest(): PushRequest {
 		return {
 			kind: 'push',
-			...ENVELOPE,
+			...this.envelope,
 			mutations: structuredClone(this.outbox),
 		};
 	}
 
 	pullRequest(limit = 100): PullRequest {
-		return { kind: 'pull', ...ENVELOPE, cursor: this.pullCursor, limit };
+		return { kind: 'pull', ...this.envelope, cursor: this.pullCursor, limit };
 	}
 
 	applyPull(response: PullResponse): boolean {

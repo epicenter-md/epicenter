@@ -6,6 +6,7 @@ import {
 	type Mutation,
 	type Operation,
 	type PullResponse,
+	type RequestEnvelope,
 	type RowKey,
 	rowKey,
 	type SnapshotChunk,
@@ -22,10 +23,13 @@ import {
 /** Candidate A: canonical schema-blind shadow, typed projection, and outbox. */
 export class SqliteClientA {
 	readonly db: Database;
+	private envelope: RequestEnvelope;
 	constructor(
 		path: string,
 		readonly actorId: string,
+		envelope: RequestEnvelope = ENVELOPE,
 	) {
+		this.envelope = structuredClone(envelope);
 		this.db = new Database(path, { create: true });
 		this.db.run('PRAGMA journal_mode = WAL');
 		this.db.run(`
@@ -44,9 +48,17 @@ export class SqliteClientA {
 			'actor_id',
 			actorId,
 		]);
+		for (const [key, value] of Object.entries(this.envelope))
+			this.db.run('INSERT OR IGNORE INTO meta VALUES (?, ?)', [
+				key,
+				String(value),
+			]);
 		const storedActor = this.meta('actor_id');
 		if (storedActor !== actorId)
 			throw new Error(`actor mismatch: ${storedActor} != ${actorId}`);
+		for (const [key, value] of Object.entries(this.envelope))
+			if (this.meta(key) !== String(value))
+				throw new Error(`client identity mismatch for ${key}`);
 	}
 	close(): void {
 		this.db.close();
@@ -200,12 +212,16 @@ export class SqliteClientA {
 			.immediate();
 	}
 	pushRequest() {
-		return { kind: 'push' as const, ...ENVELOPE, mutations: this.outbox() };
+		return {
+			kind: 'push' as const,
+			...this.envelope,
+			mutations: this.outbox(),
+		};
 	}
 	pullRequest(limit = 100) {
 		return {
 			kind: 'pull' as const,
-			...ENVELOPE,
+			...this.envelope,
 			cursor: Number(this.meta('pull_cursor')),
 			limit,
 		};

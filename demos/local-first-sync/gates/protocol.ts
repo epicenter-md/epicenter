@@ -149,12 +149,15 @@ export function mutationKey(mutation: Mutation): string {
 	return `${mutation.actorId}:${mutation.actorSequence}`;
 }
 
-export function requestRefusal(request: RequestEnvelope): Refusal | null {
-	if (request.protocolMajor !== ENVELOPE.protocolMajor)
+export function requestRefusal(
+	request: RequestEnvelope,
+	expected: RequestEnvelope = ENVELOPE,
+): Refusal | null {
+	if (request.protocolMajor !== expected.protocolMajor)
 		return 'protocol-mismatch';
-	if (request.schemaEpochId !== ENVELOPE.schemaEpochId)
+	if (request.schemaEpochId !== expected.schemaEpochId)
 		return 'schema-epoch-mismatch';
-	if (request.databaseIncarnationId !== ENVELOPE.databaseIncarnationId)
+	if (request.databaseIncarnationId !== expected.databaseIncarnationId)
 		return 'database-incarnation-mismatch';
 	return null;
 }

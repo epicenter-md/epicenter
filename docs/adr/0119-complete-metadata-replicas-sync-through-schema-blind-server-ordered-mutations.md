@@ -35,6 +35,10 @@ transformed canonical snapshot at that head, and atomically activates it only
 after its baseline is sealed. Abandoning or expiring preparation deletes the
 partial target and unfreezes the old incarnation. Replica-private pending intent
 is imported after activation rather than becoming part of the global baseline.
+[Gate 3](../../demos/local-first-sync/gates/GATE3-EVIDENCE.md) proves this
+cutover with independent in-memory and SQLite authorities: preparing state
+records durable row progress, activation refuses an incomplete baseline, and
+lease expiry deletes the partial successor before unfreezing its source.
 Clients send atomic logical mutations to a schema-blind authoritative server;
 the server accepts them into one monotonically ordered sequence, folds them into
 canonical current state, and serves the accepted mutations back through a

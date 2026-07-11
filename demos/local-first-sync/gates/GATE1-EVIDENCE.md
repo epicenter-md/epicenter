@@ -61,7 +61,7 @@ Measured after the same 50-row workload and a WAL checkpoint:
 | --- | ---: | ---: | ---: |
 | SQLite tables | 8 | 7 | B removes 1 table |
 | SQLite bytes | 69,632 | 61,440 | B removes 8,192 bytes (11.8%) |
-| Formatted implementation lines | 426 | 444 | B adds 18 lines (4.2%) |
+| Formatted implementation lines | 442 | 460 | B adds 18 lines (4.1%) |
 
 SQLite byte counts are page-quantized proof-workload measurements, not a scale
 benchmark. The line count is also deliberately unflattering to B: its targeted

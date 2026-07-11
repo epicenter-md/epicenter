@@ -1007,7 +1007,7 @@ Required directed traces:
 The gate must prove a stable logical snapshot protocol. Physical SQLite file
 backup and restore are out of scope.
 
-### Gate 3: Additive schema preservation
+### Gate 3: Exact schema epochs and incarnation cutover
 
 Claim:
 
@@ -1160,11 +1160,11 @@ editor.
 
 ### Wave 3: Gate 3 schema epochs
 
-- [ ] Implement exact schema identity negotiation.
-- [ ] Implement the leased freeze/prepare/activate/abort transition model.
-- [ ] Prove canonical-baseline transformation and per-replica pending-intent
+- [x] Implement exact schema identity negotiation.
+- [x] Implement the leased freeze/prepare/activate/abort transition model.
+- [x] Prove canonical-baseline transformation and per-replica pending-intent
   import remain separate.
-- [ ] Prove zero-to-one identity mapping carries rows and tombstones through
+- [x] Prove zero-to-one identity mapping carries rows and tombstones through
   skipped epochs without resurrection.
 
 ### Wave 4: Shared production core
@@ -1372,7 +1372,8 @@ These questions invite evidence, not speculative framework growth.
   `demos/local-first-sync/gates/GATE1-EVIDENCE.md`.
 - [x] Gate 2 proves permanent log-prefix deletion with stale pending clients;
   evidence is in `demos/local-first-sync/gates/GATE2-EVIDENCE.md`.
-- [ ] Gate 3 proves exact schema fencing and explicit epoch import.
+- [x] Gate 3 proves exact schema fencing and explicit epoch import; evidence is
+  in `demos/local-first-sync/gates/GATE3-EVIDENCE.md`.
 - [ ] The same protocol and fold conformance suite passes through browser, Bun,
   and Durable Object SQLite adapters.
 - [ ] Local-only apps operate without actor identity, outbox, auth, or server.

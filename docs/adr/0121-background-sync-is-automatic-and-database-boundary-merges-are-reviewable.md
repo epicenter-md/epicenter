@@ -41,6 +41,10 @@ replica's private pending overlay. After activation, every replica transforms
 its own visible local state and imports only its difference through this same
 planner. This keeps global cutover resumable and gives no initiating device a
 special merge authority.
+[Gate 3](../../demos/local-first-sync/gates/GATE3-EVIDENCE.md) proves that split:
+the successor baseline contains the frozen canonical value, then the initiating
+replica's transformed private value arrives as an ordinary post-activation
+mutation. Equal content emits no import operation.
 
 A local-only database carries application tables and child documents, but no
 actor identity, cursor, sync outbox, or dormant mutation history. Enabling sync

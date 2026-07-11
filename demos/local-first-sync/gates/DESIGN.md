@@ -49,4 +49,6 @@ then replace accepted state, prune snapshot-contained outbox mutations, replay
 the rest, and advance the cursor in one SQLite transaction. Its measured result
 is recorded in [`GATE2-EVIDENCE.md`](GATE2-EVIDENCE.md).
 
-Gate 3 epoch transitions are intentionally not implemented here.
+Gate 3 adds exact schema identity, new-incarnation cutover, resumable transformed
+baselines, and private-intent import. Its result is recorded in
+[`GATE3-EVIDENCE.md`](GATE3-EVIDENCE.md).
