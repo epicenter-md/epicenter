@@ -39,7 +39,7 @@ OS identity (`os.isApple`, `os.isLinux`) is not a constant in this folder. It is
 import { os } from '#os';
 ```
 
-The seam resolves to a Tauri impl (`@tauri-apps/plugin-os`) or a browser impl (user-agent sniff) at build time via `package.json`'s `imports` field and the `tauri` Vite condition. Each impl detects the OS once at module load and exports a typed `os` object (`isApple` covers macOS plus iOS/iPadOS on the web; `isLinux` is desktop Linux).
+The seam resolves to an Epicenter impl (`@tauri-apps/plugin-os`) or a browser impl (user-agent sniff) at build time via `package.json`'s `imports` field and the `epicenter` Vite condition. Each impl detects the OS once at module load and exports a typed `os` object (`isApple` covers macOS plus iOS/iPadOS on the web; `isLinux` is desktop Linux).
 
 ## Import Patterns
 

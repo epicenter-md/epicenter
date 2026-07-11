@@ -10,7 +10,6 @@ import type { TranscriptionSettings } from '$lib/operations/transcription-ports'
 import { createTranscriptionUseCase } from '$lib/operations/transcription-use-case';
 import { auth } from '$lib/platform/auth.tauri';
 import { os } from '$lib/platform/os.tauri';
-import { reportRecordingMicLevel } from '$lib/recording-overlay/mic-level.tauri';
 import { osNotify } from '$lib/report/os-notify.tauri';
 import { AudioBlobStoreLive } from '$lib/services/blob-store/index.tauri';
 import { DownloadServiceLive } from '$lib/services/download/index.tauri';
@@ -33,7 +32,7 @@ const base: WhisperingBaseEnvironment = {
 		recorder: ManualRecorderLive,
 		config: manualRecorderConfig,
 		configuration: 'sampleRate',
-		reportLevel: reportRecordingMicLevel,
+		reportLevel() {},
 	}),
 	text: TextServiceLive,
 };

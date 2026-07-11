@@ -6,8 +6,8 @@
 ## Context
 
 Whispering ships the local-first thesis literally: it boots into a working
-device-local workspace, and signing in only adds sync (boot-time doc selection
-in `whispering.active.ts`, reload on principal change, a flag-free first-sign-in
+device-local workspace, and signing in only adds sync (boot-time workspace
+selection in the build-selected runtime root, reload on principal change, a flag-free first-sign-in
 migration). Every other workspace app (opensidian, honeycrisp, vocab,
 tab-manager) hard-gates its entire UI behind a `SignedOutScreen`, so the
 codebase carries two composition shapes ("Shape A" auth-gated `createSession`
