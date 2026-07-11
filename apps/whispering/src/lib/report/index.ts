@@ -32,7 +32,6 @@ export type StandingNotice = Notice & { id: string };
 
 type Level = 'error' | 'success' | 'info' | 'warning' | 'loading';
 
-
 const TOAST_DURATION = {
 	error: Number.POSITIVE_INFINITY,
 	success: 3000,

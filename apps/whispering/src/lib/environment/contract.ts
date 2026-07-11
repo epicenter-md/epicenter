@@ -73,10 +73,7 @@ export type WhisperingEnvironment = {
 	playbackSuppression: {
 		/** Whether this host can lower, mute, or pause other apps' audio while recording. */
 		supported: boolean;
-		begin(
-			recordingId: string,
-			mode: PlaybackSuppressionSetting,
-		): Promise<void>;
+		begin(recordingId: string, mode: PlaybackSuppressionSetting): Promise<void>;
 		end(recordingId: string | null): Promise<void>;
 	};
 	recording: ManualRecordingEnvironment;
