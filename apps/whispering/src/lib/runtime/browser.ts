@@ -15,9 +15,26 @@ import { ManualRecorderLive } from '$lib/services/recorder/index.browser';
 import { TextServiceLive } from '$lib/services/text/index.browser';
 import { TextError } from '$lib/services/text/types';
 import type { TranscriptionServiceId } from '$lib/services/transcription/providers';
+import type { DictationCapabilityState } from '$lib/state/dictation-capability.svelte';
 import { createLocalModels } from '$lib/state/local-models.svelte';
 import { manualRecorderConfig } from '$lib/state/manual-recorder-config.browser';
 import { openWhisperingBrowser } from '$lib/workspace/browser';
+
+/** A page can never paste at the cursor; dictation trust never applies. */
+const dictation: DictationCapabilityState = {
+	async requestAccess() {},
+	async openAccessSettings() {
+		return Ok(undefined);
+	},
+	isActive: false,
+	needsAccessibility: false,
+	isStale: false,
+	override: null,
+	cycleOverride() {},
+	attach() {
+		return () => {};
+	},
+};
 
 export const whispering = openWhisperingBrowser({
 	auth,
@@ -54,6 +71,7 @@ export const environment: WhisperingEnvironment = {
 	artifacts: AudioBlobStoreLive,
 	captureSurfaces: ['manual', 'vad', 'import'],
 	downloads: DownloadServiceLive,
+	dictation,
 	delivery: {
 		supportsCursor: false,
 		async write(text) {

@@ -36,10 +36,6 @@
 			"epicenter": "./src/lib/app-shell/epicenter.svelte",
 			"default": "./src/lib/app-shell/browser.svelte"
 		},
-		"#dictation-capability": {
-			"epicenter": "./src/lib/state/dictation-capability.epicenter.svelte.ts",
-			"default": "./src/lib/state/dictation-capability.browser.svelte.ts"
-		},
 		"#desktop-promotion": {
 			"epicenter": "./src/lib/app-shell/NoDesktopPromotion.svelte",
 			"default": "./src/lib/app-shell/DesktopPromotion.svelte"

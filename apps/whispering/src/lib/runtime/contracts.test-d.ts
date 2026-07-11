@@ -21,6 +21,7 @@ type _EnvironmentIsComplete = Expect<
 		| 'captureSurfaces'
 		| 'downloads'
 		| 'delivery'
+		| 'dictation'
 		| 'notifications'
 		| 'playbackSuppression'
 		| 'recording'

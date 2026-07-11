@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { dictationCapability } from '#dictation-capability';
+	import { environment } from '#runtime';
 	import { attachAutoPasteIntent } from '../../routes/(app)/_runtime/attach-auto-paste-intent.svelte';
 	import { attachShortcutSync } from '../../routes/(app)/_runtime/attach-shortcut-sync';
 	import { attachUnloadPolicy } from '../../routes/(app)/_runtime/attach-unload-policy.svelte';
@@ -13,7 +13,7 @@
 		attachUnloadPolicy,
 		attachAutoPasteIntent,
 		attachRecordingOverlay,
-		dictationCapability.attach,
+		environment.dictation.attach,
 	];
 </script>
 

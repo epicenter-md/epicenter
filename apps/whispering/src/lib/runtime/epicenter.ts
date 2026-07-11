@@ -13,6 +13,7 @@ import { DownloadServiceLive } from '$lib/services/download/index.tauri';
 import { ManualRecorderLive } from '$lib/services/recorder/index.tauri';
 import { TextServiceLive } from '$lib/services/text/index.tauri';
 import type { TranscriptionServiceId } from '$lib/services/transcription/providers';
+import { createDictationCapability } from '$lib/state/dictation-capability.svelte';
 import { createLocalModels } from '$lib/state/local-models.svelte';
 import { manualRecorderConfig } from '$lib/state/manual-recorder-config.tauri';
 import { openWhisperingBrowser } from '$lib/workspace/browser';
@@ -45,6 +46,7 @@ export const environment: WhisperingEnvironment = {
 	captureSurfaces: ['manual'],
 	downloads: DownloadServiceLive,
 	delivery: desktop.delivery,
+	dictation: createDictationCapability(desktop.dictation),
 	notifications: osNotify,
 	playbackSuppression: {
 		supported: true,

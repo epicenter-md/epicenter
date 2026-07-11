@@ -7,7 +7,6 @@
 	} from '$lib/components/accessibility-feature-copy';
 	import { openSystemSettings } from '$lib/components/MacosAccessibilityGuideDialog.svelte';
 	import { SettingSwitch } from '$lib/components/settings';
-	import { dictationCapability } from '#dictation-capability';
 	import { environment } from '#runtime';
 	import type { BooleanSettingKey } from '$lib/state/settings.svelte';
 	import { settings } from '$lib/state/settings.svelte';
@@ -62,7 +61,7 @@
 {#if environment.delivery.supportsCursor}
 	<SettingSwitch key={delivery.cursor} label={`Paste ${delivery.noun} at cursor`} />
 
-	{#if dictationCapability.needsAccessibility}
+	{#if environment.dictation.needsAccessibility}
 		<!-- The toggle stays on and interactive (it records intent), but the paste
 		can't fire without the macOS Accessibility grant. Annotate the current
 		capability inline; offer the grant only when there is one to give (untrusted
@@ -83,7 +82,7 @@
 	{/if}
 
 	{#if settings.get(delivery.cursor)}
-		<div class:opacity-50={dictationCapability.needsAccessibility}>
+		<div class:opacity-50={environment.dictation.needsAccessibility}>
 			<SettingSwitch
 				key={delivery.enter}
 				label={`Press Enter after pasting ${delivery.noun}`}

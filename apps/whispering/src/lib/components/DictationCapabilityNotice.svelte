@@ -4,7 +4,7 @@
 	import TriangleAlertIcon from '@lucide/svelte/icons/triangle-alert';
 	import { accessibilityGuide } from '$lib/components/MacosAccessibilityGuideDialog.svelte';
 	import { outputWritesToCursor } from '$lib/operations/delivery';
-	import { dictationCapability } from '#dictation-capability';
+	import { environment } from '#runtime';
 
 	// A home banner that fires ONLY when something the user configured is broken,
 	// never as a feature pitch. The dictation capability Rust owns already encodes
@@ -27,13 +27,13 @@
 	// The detailed steps live in the guide dialog the action opens. The branch order
 	// is load-bearing: `broken` is caught before the plain untrusted paste case.
 	const cursorPasteNotFiring = $derived(
-		dictationCapability.needsAccessibility &&
-			!dictationCapability.isStale &&
+		environment.dictation.needsAccessibility &&
+			!environment.dictation.isStale &&
 			outputWritesToCursor(),
 	);
 </script>
 
-{#if dictationCapability.isStale}
+{#if environment.dictation.isStale}
 	<Item.Root variant="outline" size="sm" class="w-full" role="alert">
 		<Item.Media>
 			<TriangleAlertIcon class="text-warning size-4" aria-hidden="true" />

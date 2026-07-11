@@ -1,13 +1,13 @@
 <script lang="ts">
 	import { Button } from '@epicenter/ui/button';
-	import { dictationCapability } from '#dictation-capability';
+	import { environment } from '#runtime';
 
 	// Dev-only affordance (rendered behind `import.meta.env.DEV` in GlobalDialogs):
 	// cycle the capability override so the notice and guide can be tested on any
 	// build, including web dev where the value is otherwise always `unknown`. The
 	// cycle (untrusted, active, broken, live) lives in the state
 	// module; this button just advances it. `null` resumes the live value.
-	const current = $derived(dictationCapability.override);
+	const current = $derived(environment.dictation.override);
 </script>
 
 <!-- Bottom-right and faint-until-hover so it clears the left sidebar and the
@@ -18,7 +18,7 @@ cycling label is self-documenting, so no tooltip box to collide with content. --
 	variant="outline"
 	size="sm"
 	class="fixed right-3 bottom-3 z-[60] max-md:bottom-[4.75rem] font-mono text-xs opacity-40 hover:opacity-100"
-	onclick={() => dictationCapability.cycleOverride()}
+	onclick={() => environment.dictation.cycleOverride()}
 >
 	AX: {current ?? 'live'}
 </Button>

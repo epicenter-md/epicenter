@@ -13,6 +13,7 @@ import type {
 	RecordingSession,
 } from '$lib/services/recorder/contract';
 import type { TextService } from '$lib/services/text/types';
+import type { DictationCapabilityState } from '$lib/state/dictation-capability.svelte';
 import type { TranscriptionServiceId } from '$lib/services/transcription/providers';
 import type { LocalModels } from '$lib/state/local-models.svelte';
 
@@ -62,6 +63,12 @@ export type WhisperingEnvironment = {
 	captureSurfaces: readonly CaptureSurface[];
 	downloads: DownloadService;
 	delivery: CursorDelivery;
+	/**
+	 * The frontend's view over cursor-delivery trust. Epicenter tracks the
+	 * host's live Accessibility capability; a browser page can never paste at
+	 * the cursor, so its state is constant.
+	 */
+	dictation: DictationCapabilityState;
 	notifications: (title: string, body: string | undefined) => void;
 	/**
 	 * Suppress other apps' audio for the life of a recording, keyed by recording
