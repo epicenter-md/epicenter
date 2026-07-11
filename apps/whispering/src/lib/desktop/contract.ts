@@ -68,7 +68,7 @@ export type DesktopLocalTranscription = {
 	setUnloadPolicy(policy: UnloadPolicy): Promise<void>;
 };
 
-export type DesktopPlayback = {
+export type DesktopPlaybackSuppression = {
 	begin(recordingId: string): Promise<PlaybackSuppressionLease>;
 	end(lease: PlaybackSuppressionLease): Promise<void>;
 };
@@ -78,6 +78,6 @@ export type WhisperingDesktop = {
 	shortcuts: DesktopShortcuts;
 	dictation: DesktopDictation;
 	localTranscription: DesktopLocalTranscription;
-	playback: DesktopPlayback;
+	playbackSuppression: DesktopPlaybackSuppression;
 	delivery: CursorDelivery;
 };

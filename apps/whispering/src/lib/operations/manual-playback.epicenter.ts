@@ -4,7 +4,7 @@ import { settings } from '$lib/state/settings.svelte';
 import { createManualPlayback } from './manual-playback';
 
 export const manualPlayback = createManualPlayback({
-	playback: desktop.playback,
+	playbackSuppression: desktop.playbackSuppression,
 	isEnabled: () => settings.get('recording.suppressBackgroundAudio'),
 	reportFailure: (error) => {
 		log.warn(

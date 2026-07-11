@@ -11,7 +11,7 @@
  * - A stale end cannot close a newer recording's lease
  */
 import { expect, test } from 'bun:test';
-import type { DesktopPlayback } from '$lib/desktop/contract';
+import type { DesktopPlaybackSuppression } from '$lib/desktop/contract';
 import type { PlaybackSuppressionLease } from '$lib/tauri/bindings.gen';
 import { createManualPlayback } from './manual-playback';
 
@@ -26,7 +26,7 @@ function deferred<TValue>() {
 function setup(options: { enabled?: boolean } = {}) {
 	const begun: string[] = [];
 	const ended: PlaybackSuppressionLease[] = [];
-	const playback: DesktopPlayback = {
+	const playbackSuppression: DesktopPlaybackSuppression = {
 		async begin(recordingId) {
 			begun.push(recordingId);
 			return { id: `lease-${recordingId}` };
@@ -36,11 +36,11 @@ function setup(options: { enabled?: boolean } = {}) {
 		},
 	};
 	const lifecycle = createManualPlayback({
-		playback,
+		playbackSuppression,
 		isEnabled: () => options.enabled ?? true,
 		reportFailure() {},
 	});
-	return { begun, ended, lifecycle, playback };
+	return { begun, ended, lifecycle, playbackSuppression };
 }
 
 test('disabled suppression never begins or ends a host lease', async () => {
@@ -65,8 +65,8 @@ test('ending a recording closes its exact lease once', async () => {
 
 test('lease returned after recording ended is closed immediately', async () => {
 	const pending = deferred<PlaybackSuppressionLease>();
-	const { ended, lifecycle, playback } = setup();
-	playback.begin = () => pending.promise;
+	const { ended, lifecycle, playbackSuppression } = setup();
+	playbackSuppression.begin = () => pending.promise;
 
 	const beginning = lifecycle.begin('recording-1');
 	await lifecycle.end('recording-1');

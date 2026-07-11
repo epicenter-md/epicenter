@@ -90,6 +90,20 @@ struct PlaybackSuppressionState {
     effect: Option<platform::Effect>,
 }
 
+impl PlaybackSuppressionState {
+    async fn release(&mut self, lease: &PlaybackSuppressionLease) {
+        if !self.leases.release(lease) || !self.leases.is_empty() {
+            return;
+        }
+        let Some(effect) = self.effect.take() else {
+            return;
+        };
+        if let Err(error) = platform::restore(effect).await {
+            log::warn!("background audio restoration failed: {error}");
+        }
+    }
+}
+
 #[derive(Clone, Default)]
 pub struct PlaybackSuppressionManager {
     state: Arc<Mutex<PlaybackSuppressionState>>,
@@ -128,14 +142,7 @@ pub async fn begin_playback_suppression(
         .as_deref()
         == Some(recording_id.as_str());
     if !still_active {
-        state.leases.release(&lease);
-        if state.leases.is_empty() {
-            if let Some(effect) = state.effect.take() {
-                if let Err(error) = platform::restore(effect).await {
-                    log::warn!("stale background audio restoration failed: {error}");
-                }
-            }
-        }
+        state.release(&lease).await;
         return Err("recording ended while suppressing background audio".to_string());
     }
     Ok(lease)
@@ -150,15 +157,7 @@ pub async fn end_playback_suppression(
     manager: State<'_, PlaybackSuppressionManager>,
 ) -> Result<(), String> {
     let mut state = manager.state.lock().await;
-    if !state.leases.release(&lease) || !state.leases.is_empty() {
-        return Ok(());
-    }
-    let Some(effect) = state.effect.take() else {
-        return Ok(());
-    };
-    if let Err(error) = platform::restore(effect).await {
-        log::warn!("background audio restoration failed: {error}");
-    }
+    state.release(&lease).await;
     Ok(())
 }
 
@@ -169,15 +168,7 @@ impl PlaybackSuppressionManager {
             return;
         };
         let lease = PlaybackSuppressionLease { id };
-        if !state.leases.release(&lease) || !state.leases.is_empty() {
-            return;
-        }
-        let Some(effect) = state.effect.take() else {
-            return;
-        };
-        if let Err(error) = platform::restore(effect).await {
-            log::warn!("background audio restoration failed: {error}");
-        }
+        state.release(&lease).await;
     }
 
     /// Restore any active suppression before the native process exits.

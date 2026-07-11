@@ -63,7 +63,7 @@ export const desktop: WhisperingDesktop = {
 			commands.transcribeRecording(recordingId, spec),
 		setUnloadPolicy: (policy) => commands.setUnloadPolicy(policy),
 	},
-	playback: {
+	playbackSuppression: {
 		begin: (recordingId) =>
 			unwrapHostResult(commands.beginPlaybackSuppression(recordingId)),
 		end: async (lease) => {
