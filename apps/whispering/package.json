@@ -24,9 +24,9 @@
 			"epicenter": "./src/lib/operations/recipe-presentation.epicenter.ts",
 			"default": "./src/lib/operations/recipe-presentation.browser.ts"
 		},
-		"#platform/window-events": {
-			"epicenter": "./src/lib/window-events.tauri.ts",
-			"default": "./src/lib/window-events.browser.ts"
+		"#recording-overlay-surface": {
+			"epicenter": "./src/lib/recording-overlay/Surface.epicenter.svelte",
+			"default": "./src/lib/recording-overlay/Surface.browser.svelte"
 		},
 		"#runtime": {
 			"epicenter": "./src/lib/runtime/epicenter.ts",
