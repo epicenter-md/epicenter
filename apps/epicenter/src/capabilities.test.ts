@@ -38,6 +38,15 @@ describe('trusted-surface capabilities', () => {
 		OVERLAY_WINDOW_LABEL,
 	];
 
+	test('every catalog surface receives the shared-apps capability', () => {
+		const shared = readCapability('trusted-epicenter-apps-development');
+		expect(shared.windows.toSorted()).toEqual(
+			Object.values(SURFACE_ROUTES)
+				.map((surface) => surface.windowLabel)
+				.toSorted(),
+		);
+	});
+
 	for (const pair of PAIRS) {
 		test(`${pair} grants one authority across development and production`, () => {
 			const development = readCapability(`${pair}-development`);
