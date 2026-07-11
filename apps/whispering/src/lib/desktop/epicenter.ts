@@ -26,6 +26,9 @@ async function unwrapHostResult<T>(
  * window-construction, or permission primitive.
  */
 export const desktop: WhisperingDesktop = {
+	async reveal() {
+		await unwrapHostResult(commands.revealWhisperingWindow());
+	},
 	shortcuts: {
 		replace: (registrations) =>
 			unitResult(commands.replaceGlobalShortcuts(registrations)),

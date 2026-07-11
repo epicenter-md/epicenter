@@ -77,6 +77,12 @@ export type WhisperingEnvironment = {
 		end(recordingId: string | null): Promise<void>;
 	};
 	recording: ManualRecordingEnvironment;
+	/**
+	 * Bring the app's surface to the user's attention. Epicenter reveals and
+	 * focuses the native window; in the browser the page is already the
+	 * surface, so this resolves immediately.
+	 */
+	reveal(): Promise<void>;
 	text: TextService;
 	transcription: TranscriptionEnvironment;
 };

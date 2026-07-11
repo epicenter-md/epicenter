@@ -20,10 +20,6 @@
 			"epicenter": "./src/lib/platform/shortcuts.epicenter.ts",
 			"default": "./src/lib/platform/shortcuts.browser.ts"
 		},
-		"#recipe-presentation": {
-			"epicenter": "./src/lib/operations/recipe-presentation.epicenter.ts",
-			"default": "./src/lib/operations/recipe-presentation.browser.ts"
-		},
 		"#recording-overlay-surface": {
 			"epicenter": "./src/lib/recording-overlay/Surface.epicenter.svelte",
 			"default": "./src/lib/recording-overlay/Surface.browser.svelte"

@@ -1,4 +1,4 @@
-import { presentRecipePicker } from '#recipe-presentation';
+import { presentRecipePicker } from '$lib/operations/recipe-presentation';
 import { report } from '$lib/report';
 import { services } from '$lib/services';
 

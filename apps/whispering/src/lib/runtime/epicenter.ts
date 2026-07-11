@@ -75,6 +75,7 @@ export const environment: WhisperingEnvironment = {
 		configuration: 'sampleRate',
 		reportLevel() {},
 	}),
+	reveal: desktop.reveal,
 	text: TextServiceLive,
 	transcription: {
 		providers,

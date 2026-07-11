@@ -75,6 +75,8 @@ export type DesktopPlaybackSuppression = {
 
 /** Complete product operations that exist only in an Epicenter build. */
 export type WhisperingDesktop = {
+	/** Reveal and focus the native Whispering window. */
+	reveal(): Promise<void>;
 	shortcuts: DesktopShortcuts;
 	dictation: DesktopDictation;
 	localTranscription: DesktopLocalTranscription;

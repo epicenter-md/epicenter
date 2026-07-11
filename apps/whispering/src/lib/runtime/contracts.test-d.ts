@@ -24,6 +24,7 @@ type _EnvironmentIsComplete = Expect<
 		| 'notifications'
 		| 'playbackSuppression'
 		| 'recording'
+		| 'reveal'
 		| 'text'
 		| 'transcription'
 	>
@@ -35,6 +36,7 @@ type _EnvironmentHasNoNullableCapabilities = Expect<
 type _DesktopIsComplete = Expect<
 	Equal<
 		keyof WhisperingDesktop,
+		| 'reveal'
 		| 'shortcuts'
 		| 'dictation'
 		| 'localTranscription'

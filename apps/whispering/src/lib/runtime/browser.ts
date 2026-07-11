@@ -80,6 +80,8 @@ export const environment: WhisperingEnvironment = {
 		configuration: 'bitrate',
 		reportLevel: reportRecordingMicLevel,
 	}),
+	// The page is already the visible surface; nothing to reveal.
+	async reveal() {},
 	text: TextServiceLive,
 	transcription: {
 		transcribeAndPersist: createTranscriptionUseCase(
