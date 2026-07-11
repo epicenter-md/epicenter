@@ -17,6 +17,7 @@
 	import { asDeviceIdentifier } from '@epicenter/recorder';
 	import { deviceConfig } from '$lib/state/device-config.svelte';
 	import { settings } from '$lib/state/settings.svelte';
+	import { os } from '#os';
 	import { environment } from '#runtime';
 	import { whispering } from '#runtime';
 	import ManualSelectRecordingDevice from './ManualSelectRecordingDevice.svelte';
@@ -35,7 +36,7 @@
 	// Pausing rides the system media session, which macOS exposes unevenly.
 	const playbackSuppressionOptions = PLAYBACK_SUPPRESSION_OPTIONS.map(
 		(option) =>
-			option.value === 'pause' && environment.os.isApple
+			option.value === 'pause' && os.isApple
 				? { ...option, label: `${option.label} (experimental)` }
 				: option,
 	);
@@ -79,7 +80,7 @@
 					(selected) => (environment.recording.deviceId = selected)}
 			/>
 		{:else if settings.get('recording.trigger') === 'vad'}
-			{#if environment.os.isLinux}
+			{#if os.isLinux}
 				<Alert.Root variant="destructive">
 					<InfoIcon class="size-4" />
 					<Alert.Title>

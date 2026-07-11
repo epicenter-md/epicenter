@@ -1,4 +1,4 @@
-import { environment } from '#runtime';
+import { os } from '#os';
 import { shortcuts } from '#shortcuts';
 import type { Command } from '$lib/commands';
 import { keyBindingToLabel, type Reach } from '$lib/utils/key-binding';
@@ -31,7 +31,7 @@ export type RecordingShortcutMode = keyof typeof RECORDING_SHORTCUT_PREFERENCE;
 function shortcutLabelFor(reach: Reach, mode: RecordingShortcutMode): string {
 	for (const commandId of RECORDING_SHORTCUT_PREFERENCE[mode]) {
 		const binding = shortcuts.current(commandId)[reach];
-		if (binding) return keyBindingToLabel(binding, environment.os.isApple);
+		if (binding) return keyBindingToLabel(binding, os.isApple);
 	}
 	return '';
 }

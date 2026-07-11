@@ -4,7 +4,7 @@ import type { CaptureSurface } from '$lib/constants/audio';
 import type { PlaybackSuppressionSetting } from '$lib/constants/audio/playback-suppression';
 import type { CursorDelivery } from '$lib/desktop/contract';
 import type { TranscriptionError } from '$lib/operations/transcription-use-case';
-import type { Os, PlatformAuth } from '$lib/platform/types';
+import type { PlatformAuth } from '$lib/platform/types';
 import type { BlobStore } from '$lib/services/blob-store/types';
 import type { DownloadService } from '$lib/services/download/types';
 import type {
@@ -63,7 +63,6 @@ export type WhisperingEnvironment = {
 	downloads: DownloadService;
 	delivery: CursorDelivery;
 	notifications: (title: string, body: string | undefined) => void;
-	os: Os;
 	/**
 	 * Suppress other apps' audio for the life of a recording, keyed by recording
 	 * id. Both verbs are fire-and-forget and idempotent: the host owns every

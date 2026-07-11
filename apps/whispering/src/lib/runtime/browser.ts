@@ -6,7 +6,6 @@ import { createBrowserTranscription } from '$lib/operations/transcribe.browser';
 import type { TranscriptionSettings } from '$lib/operations/transcription-ports';
 import { createTranscriptionUseCase } from '$lib/operations/transcription-use-case';
 import { auth } from '$lib/platform/auth.browser';
-import { os } from '$lib/platform/os.browser';
 import { reportRecordingMicLevel } from '$lib/recording-pill/mic-level.browser';
 import { osNotify } from '$lib/report/os-notify.browser';
 import { AudioBlobStoreLive } from '$lib/services/blob-store/index.browser';
@@ -69,7 +68,6 @@ export const environment: WhisperingEnvironment = {
 		},
 	},
 	notifications: osNotify,
-	os,
 	// Browsers cannot touch other apps' audio, so both verbs are no-ops.
 	playback: {
 		canSuppress: false,

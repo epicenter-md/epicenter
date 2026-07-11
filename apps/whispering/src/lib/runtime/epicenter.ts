@@ -6,7 +6,6 @@ import { createEpicenterTranscription } from '$lib/operations/transcribe.epicent
 import type { TranscriptionSettings } from '$lib/operations/transcription-ports';
 import { createTranscriptionUseCase } from '$lib/operations/transcription-use-case';
 import { auth } from '$lib/platform/auth.tauri';
-import { os } from '$lib/platform/os.tauri';
 import { log } from '$lib/report/log';
 import { osNotify } from '$lib/report/os-notify.tauri';
 import { AudioBlobStoreLive } from '$lib/services/blob-store/index.tauri';
@@ -47,7 +46,6 @@ export const environment: WhisperingEnvironment = {
 	downloads: DownloadServiceLive,
 	delivery: desktop.delivery,
 	notifications: osNotify,
-	os,
 	playback: {
 		canSuppress: true,
 		async begin(recordingId, mode) {
