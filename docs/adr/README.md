@@ -195,6 +195,7 @@ Each option and the one reason it lost. Terse. This is not the spec.
 | [0116](0116-local-mail-is-desktop-first-one-bun-engine-no-background-mail-service.md) | Local Mail is desktop-first: one Bun engine, no background mail service, the open app owns the sync loop | Accepted |
 | [0117](0117-global-shortcut-input-is-plugin-chords-only-and-the-macos-tap-is-just-the-paste-grant-watcher.md) | Global shortcut input is plugin chords only, and the macOS tap is just the paste grant watcher | Accepted |
 | [0118](0118-epicenter-is-one-trusted-bun-hosted-spa-origin.md) | Epicenter is one trusted Bun-hosted SPA origin | Accepted |
-| [0119](0119-whispering-does-not-control-system-media-playback.md) | Whispering does not control system media playback | Accepted |
+| [0119](0119-whispering-does-not-control-system-media-playback.md) | Whispering does not control system media playback | Superseded by 0120 |
+| [0120](0120-epicenter-owns-recording-scoped-background-audio-suppression.md) | Epicenter owns recording-scoped background audio suppression | Accepted |
 
 When you add an ADR, add its row here.

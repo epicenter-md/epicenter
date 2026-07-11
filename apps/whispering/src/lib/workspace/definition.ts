@@ -157,6 +157,7 @@ const recording = {
 		field.select(RECORDING_TRIGGERS),
 		() => 'manual' as const,
 	),
+	'recording.suppressBackgroundAudio': defineKv(field.boolean(), () => false),
 } as const;
 
 /**

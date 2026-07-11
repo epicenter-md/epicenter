@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-begin-playback-suppression"
+description = "Enables the begin_playback_suppression command without any pre-configured scope."
+commands.allow = ["begin_playback_suppression"]
+
+[[permission]]
+identifier = "deny-begin-playback-suppression"
+description = "Denies the begin_playback_suppression command without any pre-configured scope."
+commands.deny = ["begin_playback_suppression"]

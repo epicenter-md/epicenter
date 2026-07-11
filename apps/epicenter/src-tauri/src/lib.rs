@@ -33,6 +33,9 @@ use recorder::commands::{
 };
 use recorder::recorder::Recorder;
 
+mod playback;
+use playback::{begin_playback_suppression, end_playback_suppression, PlaybackSuppressionManager};
+
 pub mod transcription;
 use transcription::{
     delete_model, download_model, list_models, prewarm_model, set_unload_policy,
@@ -264,6 +267,8 @@ fn make_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             cancel_recording,
             delete_recording_artifacts,
             clear_recording_artifacts,
+            begin_playback_suppression,
+            end_playback_suppression,
             transcribe_recording,
             prewarm_model,
             open_accessibility_settings,
@@ -352,6 +357,7 @@ pub fn run() {
         .manage(HostState::new(port))
         .manage(GlobalShortcutRegistry::default())
         .manage(Mutex::new(Recorder::new()))
+        .manage(PlaybackSuppressionManager::default())
         .manage(DownloadManager::default());
 
     #[cfg(target_os = "macos")]
@@ -405,7 +411,10 @@ pub fn run() {
         .expect("failed to build Epicenter")
         .run(|app, event| match event {
             RunEvent::Reopen { .. } => request_surface(app, Surface::Query),
-            RunEvent::Exit => shutdown_host(app),
+            RunEvent::Exit => {
+                app.state::<PlaybackSuppressionManager>().restore_on_exit();
+                shutdown_host(app);
+            }
             _ => {}
         });
 }

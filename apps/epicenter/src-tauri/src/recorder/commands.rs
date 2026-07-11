@@ -1,3 +1,4 @@
+use crate::playback::PlaybackSuppressionManager;
 use crate::recorder::artifact::{
     clear_artifacts, delete_artifacts, read_artifact_bytes, write_artifact, RecordingArtifact,
 };
@@ -48,21 +49,27 @@ pub async fn init_recording_session(
     sample_rate: Option<u32>,
     recorder: State<'_, Mutex<Recorder>>,
     app_handle: AppHandle,
+    playback: State<'_, PlaybackSuppressionManager>,
 ) -> Result<()> {
     info!(
         "Initializing recording session: device={device_identifier}, id={recording_id}, sample_rate={sample_rate:?}",
     );
 
-    {
+    let previous_recording_id = {
         let mut recorder = recorder
             .lock()
             .map_err(|e| RecorderError::failed(format!("Failed to lock recorder: {e}")))?;
+        let previous_recording_id = recorder.session_id();
         recorder.init_session(
             device_identifier,
             recording_id,
             sample_rate,
             app_handle.clone(),
         )?;
+        previous_recording_id
+    };
+    if let Some(recording_id) = previous_recording_id {
+        release_playback_in_background(playback.inner().clone(), recording_id);
     }
     // init_session calls close_session internally as cleanup. If the previous
     // session was actively recording, that transition is silent at the domain
@@ -99,6 +106,7 @@ pub async fn start_recording(
 pub async fn stop_recording(
     recorder: State<'_, Mutex<Recorder>>,
     app_handle: AppHandle,
+    playback: State<'_, PlaybackSuppressionManager>,
 ) -> Result<RecordingArtifact> {
     info!("Stopping recording");
     let (recording_id, samples) = {
@@ -111,6 +119,8 @@ pub async fn stop_recording(
         let samples = recorder.stop_recording()?;
         (id, samples)
     };
+
+    release_playback_in_background(playback.inner().clone(), recording_id.clone());
 
     // Measured on the critical path on purpose: this synchronous write + fsync
     // is exactly the cost the parked handoff + async-persist optimization would
@@ -131,13 +141,19 @@ pub async fn stop_recording(
 pub async fn cancel_recording(
     recorder: State<'_, Mutex<Recorder>>,
     app_handle: AppHandle,
+    playback: State<'_, PlaybackSuppressionManager>,
 ) -> Result<()> {
     info!("Cancelling recording");
-    {
+    let recording_id = {
         let mut recorder = recorder
             .lock()
             .map_err(|e| RecorderError::failed(format!("Failed to lock recorder: {e}")))?;
+        let recording_id = recorder.session_id();
         recorder.cancel_recording()?;
+        recording_id
+    };
+    if let Some(recording_id) = recording_id {
+        release_playback_in_background(playback.inner().clone(), recording_id);
     }
     emit_recording_state(&app_handle, RecordingState::Idle);
     Ok(())
@@ -148,16 +164,28 @@ pub async fn cancel_recording(
 pub async fn close_recording_session(
     recorder: State<'_, Mutex<Recorder>>,
     app_handle: AppHandle,
+    playback: State<'_, PlaybackSuppressionManager>,
 ) -> Result<()> {
     info!("Closing recording session");
-    {
+    let recording_id = {
         let mut recorder = recorder
             .lock()
             .map_err(|e| RecorderError::failed(format!("Failed to lock recorder: {e}")))?;
+        let recording_id = recorder.session_id();
         recorder.close_session()?;
+        recording_id
+    };
+    if let Some(recording_id) = recording_id {
+        release_playback_in_background(playback.inner().clone(), recording_id);
     }
     emit_recording_state(&app_handle, RecordingState::Idle);
     Ok(())
+}
+
+fn release_playback_in_background(playback: PlaybackSuppressionManager, recording_id: String) {
+    tauri::async_runtime::spawn(async move {
+        playback.release_recording(&recording_id).await;
+    });
 }
 
 #[tauri::command]

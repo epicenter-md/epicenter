@@ -11,6 +11,14 @@ async function unitResult<TError>(
 	return error === null ? Ok(undefined) : Err(error);
 }
 
+async function unwrapHostResult<T>(
+	result: Promise<Result<T, string>>,
+): Promise<T> {
+	const { data, error } = await result;
+	if (error !== null) throw new Error(error);
+	return data;
+}
+
 /**
  * Complete native product capabilities available to Whispering inside
  * Epicenter. This is the only adapter that groups generated host bindings for
@@ -54,6 +62,13 @@ export const desktop: WhisperingDesktop = {
 		transcribe: (recordingId, spec) =>
 			commands.transcribeRecording(recordingId, spec),
 		setUnloadPolicy: (policy) => commands.setUnloadPolicy(policy),
+	},
+	playback: {
+		begin: (recordingId) =>
+			unwrapHostResult(commands.beginPlaybackSuppression(recordingId)),
+		end: async (lease) => {
+			await unwrapHostResult(commands.endPlaybackSuppression(lease));
+		},
 	},
 	delivery: {
 		supportsCursor: true,

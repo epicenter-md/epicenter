@@ -1,6 +1,6 @@
 # 0119. Whispering does not control system media playback
 
-- **Status:** Accepted
+- **Status:** Superseded by [ADR-0120](0120-epicenter-owns-recording-scoped-background-audio-suppression.md)
 - **Date:** 2026-07-10
 - **Supersedes:** [ADR-0017](0017-pause-system-media-playback-while-recording.md), [ADR-0018](0018-macos-resume-is-gated-on-a-coreaudio-output-read.md), [ADR-0027](0027-playback-pause-tracks-the-speaking-window.md), [ADR-0045](0045-playback-pause-is-opt-in-because-resume-can-start-unrelated-media.md)
 

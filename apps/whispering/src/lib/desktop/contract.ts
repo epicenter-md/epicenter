@@ -1,6 +1,9 @@
 import type { Result } from 'wellcrafted/result';
 import type { TextError } from '$lib/services/text/types';
-import type { WriteTextOutcome } from '$lib/tauri/bindings.gen';
+import type {
+	PlaybackSuppressionLease,
+	WriteTextOutcome,
+} from '$lib/tauri/bindings.gen';
 import type {
 	CatalogError,
 	DictationCapability,
@@ -65,10 +68,16 @@ export type DesktopLocalTranscription = {
 	setUnloadPolicy(policy: UnloadPolicy): Promise<void>;
 };
 
+export type DesktopPlayback = {
+	begin(recordingId: string): Promise<PlaybackSuppressionLease>;
+	end(lease: PlaybackSuppressionLease): Promise<void>;
+};
+
 /** Complete product operations that exist only in an Epicenter build. */
 export type WhisperingDesktop = {
 	shortcuts: DesktopShortcuts;
 	dictation: DesktopDictation;
 	localTranscription: DesktopLocalTranscription;
+	playback: DesktopPlayback;
 	delivery: CursorDelivery;
 };

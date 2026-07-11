@@ -52,6 +52,12 @@
 			).join(', ')}"
 		/>
 
+		<SettingSwitch
+			key="recording.suppressBackgroundAudio"
+			label="Suppress background audio while recording"
+			description="On macOS, temporarily lower background audio while a manual recording is active, then restore it when recording ends."
+		/>
+
 		{#if settings.get('recording.trigger') === 'manual'}
 			<ManualSelectRecordingDevice
 				bind:selected={() => {

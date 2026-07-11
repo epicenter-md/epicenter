@@ -84,6 +84,22 @@ export const commands = {
 			__TAURI_INVOKE('clear_recording_artifacts'),
 		),
 	/**
+	 *  Suppress background audio for `recording_id`, returning the same lease when
+	 *  a reloaded webview reconnects to an already-active native recording.
+	 */
+	beginPlaybackSuppression: (recordingId: string) =>
+		typedError<PlaybackSuppressionLease, string>(
+			__TAURI_INVOKE('begin_playback_suppression', { recordingId }),
+		),
+	/**
+	 *  Release an opaque lease. Unknown and duplicate leases are harmless; only
+	 *  the final active recording restores the platform state Epicenter changed.
+	 */
+	endPlaybackSuppression: (lease: PlaybackSuppressionLease) =>
+		typedError<null, string>(
+			__TAURI_INVOKE('end_playback_suppression', { lease }),
+		),
+	/**
 	 *  Canonical transcribe-by-id path. Resolves the audio file under
 	 *  `<appDataDir>/recordings/{recordingId}.*` (cpal-written WAV,
 	 *  navigator-saved webm/opus/mp4, etc.), decodes, then runs inference using
@@ -389,6 +405,10 @@ export type ModelInfo = {
 	supportsLanguage: boolean;
 	recommended: boolean;
 	downloaded: boolean;
+};
+
+export type PlaybackSuppressionLease = {
+	id: string;
 };
 
 export type RecorderError =

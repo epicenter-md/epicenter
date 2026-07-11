@@ -54,7 +54,6 @@ transcribe-cpp = { version = "0.1.0", default-features = false }
 audiopus = "0.3.0-rc.0"
 
 [target.'cfg(windows)'.dependencies]
-windows = { version = "0.62", features = ["Media_Control", "Foundation", "Foundation_Collections", "Win32_System_Com"] }
 winreg = "0.55"
 
 [target.'cfg(all(windows, target_arch = "x86_64"))'.dependencies]
@@ -76,7 +75,6 @@ transcribe-cpp = { version = "0.1.0", default-features = false, features = ["met
 
 [target.'cfg(target_os = "linux")'.dependencies]
 transcribe-cpp = { version = "0.1.0", default-features = false, features = ["dynamic-backends", "vulkan"] }
-zbus = { version = "5", default-features = false, features = ["tokio"] }
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-single-instance = { version = "2.4", features = ["deep-link"] }

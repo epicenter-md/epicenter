@@ -28,6 +28,10 @@
 			"epicenter": "./src/lib/recording-overlay/Surface.epicenter.svelte",
 			"default": "./src/lib/recording-overlay/Surface.browser.svelte"
 		},
+		"#manual-playback": {
+			"epicenter": "./src/lib/operations/manual-playback.epicenter.ts",
+			"default": "./src/lib/operations/manual-playback.browser.ts"
+		},
 		"#runtime": {
 			"epicenter": "./src/lib/runtime/epicenter.ts",
 			"default": "./src/lib/runtime/browser.ts"

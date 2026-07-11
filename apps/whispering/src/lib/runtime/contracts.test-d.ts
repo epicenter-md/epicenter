@@ -35,7 +35,7 @@ type _EnvironmentHasNoNullableCapabilities = Expect<
 type _DesktopIsComplete = Expect<
 	Equal<
 		keyof WhisperingDesktop,
-		'shortcuts' | 'dictation' | 'localTranscription' | 'delivery'
+		'shortcuts' | 'dictation' | 'localTranscription' | 'playback' | 'delivery'
 	>
 >;
 type _DesktopHasNoNullableCapabilities = Expect<
