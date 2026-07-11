@@ -1,7 +1,6 @@
 import type { Result } from 'wellcrafted/result';
 import type { TextError } from '$lib/services/text/types';
 import type {
-	PlaybackSuppressionLease,
 	PlaybackSuppressionMode,
 	WriteTextOutcome,
 } from '$lib/tauri/bindings.gen';
@@ -70,11 +69,8 @@ export type DesktopLocalTranscription = {
 };
 
 export type DesktopPlaybackSuppression = {
-	begin(
-		recordingId: string,
-		mode: PlaybackSuppressionMode,
-	): Promise<PlaybackSuppressionLease>;
-	end(lease: PlaybackSuppressionLease): Promise<void>;
+	begin(recordingId: string, mode: PlaybackSuppressionMode): Promise<void>;
+	end(recordingId: string): Promise<void>;
 };
 
 /** Complete product operations that exist only in an Epicenter build. */

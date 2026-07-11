@@ -84,23 +84,25 @@ export const commands = {
 			__TAURI_INVOKE('clear_recording_artifacts'),
 		),
 	/**
-	 *  Suppress background audio for `recording_id`, returning the same lease when
-	 *  a reloaded webview reconnects to an already-active native recording.
+	 *  Suppress other apps' audio for `recording_id`. Idempotent per recording, so
+	 *  a reloaded webview reconnecting to an already-active native recording never
+	 *  starts a second suppression epoch.
 	 */
 	beginPlaybackSuppression: (
 		recordingId: string,
 		mode: PlaybackSuppressionMode,
 	) =>
-		typedError<PlaybackSuppressionLease, string>(
+		typedError<null, string>(
 			__TAURI_INVOKE('begin_playback_suppression', { recordingId, mode }),
 		),
 	/**
-	 *  Release an opaque lease. Unknown and duplicate leases are harmless; only
-	 *  the final active recording restores the platform state Epicenter changed.
+	 *  End suppression for `recording_id`. Unknown and duplicate ids are harmless;
+	 *  only the final active recording restores the platform state Epicenter
+	 *  changed.
 	 */
-	endPlaybackSuppression: (lease: PlaybackSuppressionLease) =>
+	endPlaybackSuppression: (recordingId: string) =>
 		typedError<null, string>(
-			__TAURI_INVOKE('end_playback_suppression', { lease }),
+			__TAURI_INVOKE('end_playback_suppression', { recordingId }),
 		),
 	/**
 	 *  Canonical transcribe-by-id path. Resolves the audio file under
@@ -408,10 +410,6 @@ export type ModelInfo = {
 	supportsLanguage: boolean;
 	recommended: boolean;
 	downloaded: boolean;
-};
-
-export type PlaybackSuppressionLease = {
-	id: string;
 };
 
 export type PlaybackSuppressionMode = 'duck' | 'mute' | 'pause';

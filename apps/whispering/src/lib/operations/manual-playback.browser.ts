@@ -1,6 +1,6 @@
 import type { ManualPlayback } from './manual-playback';
 
-/** Browsers do not own system playback, so manual capture has no lease. */
+/** Browsers cannot touch other apps' audio, so both verbs are no-ops. */
 export const manualPlayback: ManualPlayback = {
 	async begin() {},
 	async end() {},

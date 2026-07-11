@@ -64,10 +64,13 @@ export const desktop: WhisperingDesktop = {
 		setUnloadPolicy: (policy) => commands.setUnloadPolicy(policy),
 	},
 	playbackSuppression: {
-		begin: (recordingId, mode) =>
-			unwrapHostResult(commands.beginPlaybackSuppression(recordingId, mode)),
-		end: async (lease) => {
-			await unwrapHostResult(commands.endPlaybackSuppression(lease));
+		begin: async (recordingId, mode) => {
+			await unwrapHostResult(
+				commands.beginPlaybackSuppression(recordingId, mode),
+			);
+		},
+		end: async (recordingId) => {
+			await unwrapHostResult(commands.endPlaybackSuppression(recordingId));
 		},
 	},
 	delivery: {
