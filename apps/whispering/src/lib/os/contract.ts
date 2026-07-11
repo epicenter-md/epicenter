@@ -5,7 +5,7 @@
  */
 export type Os = {
 	/**
-	 * An Apple platform: macOS, iOS, or iPadOS. These share the Command (\u2318)
+	 * An Apple platform: macOS, iOS, or iPadOS. These share the Command (⌘)
 	 * primary modifier and the Option-key character layout, which is what every
 	 * keyboard call site branches on. In the Epicenter build this is exactly
 	 * macOS; iOS only ever appears on the web.
