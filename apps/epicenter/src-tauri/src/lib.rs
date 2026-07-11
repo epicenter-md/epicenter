@@ -57,7 +57,10 @@ use keyring_storage::{keyring_read, keyring_write};
 pub mod timing;
 
 mod shell;
-use shell::{replace_global_shortcuts, GlobalShortcutRegistry, GlobalShortcutTriggered};
+use shell::{
+    replace_global_shortcuts, reveal_whispering_window, set_recording_overlay_visible,
+    GlobalShortcutRegistry, GlobalShortcutTriggered,
+};
 
 #[cfg(desktop)]
 pub mod keyboard;
@@ -277,6 +280,8 @@ fn make_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             keyboard::commands::set_auto_paste_enabled,
             keyboard::commands::get_dictation_capability,
             replace_global_shortcuts,
+            set_recording_overlay_visible,
+            reveal_whispering_window,
         ])
         .events(tauri_specta::collect_events![
             keyboard::DictationCapabilityEvent,

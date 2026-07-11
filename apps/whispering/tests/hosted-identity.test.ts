@@ -53,11 +53,15 @@ describe('Epicenter-hosted Whispering identity', () => {
 	test('Epicenter and Whispering each own one half of the recording overlay', () => {
 		const epicenterShell = read('src/lib/app-shell/epicenter.svelte');
 		const browserShell = read('src/lib/app-shell/browser.svelte');
+		const overlayDriver = read('src/lib/recording-overlay/attach.svelte.ts');
 		const nativeHost = read('../epicenter/src-tauri/src/lib.rs');
 		expect(epicenterShell).toContain('attachRecordingOverlay');
 		expect(browserShell).not.toContain('attachRecordingOverlay');
 		expect(nativeHost).toContain(
 			'create_recording_overlay(&app, port, &token)?',
 		);
+		expect(overlayDriver).toContain('setRecordingOverlayVisible');
+		expect(overlayDriver).not.toContain('@tauri-apps/api/window');
+		expect(overlayDriver).not.toContain('@tauri-apps/api/webviewWindow');
 	});
 });

@@ -19,18 +19,18 @@ into Rust would split the source of truth, so we keep it in the main window.
   never activates the app or raises the main window; `focusable: false` alone
   does not prevent app activation on click. On Windows and Linux it is a
   `focusable: false` + `alwaysOnTop` `WebviewWindow` created by Epicenter.
-  Whispering finds the host-owned window by label, then owns only its
-  recording-driven visibility, position, status, and actions.
+  Whispering sends recording visibility intent through a focused command;
+  Epicenter chooses the monitor and owns positioning, showing, and hiding.
 - **Route**: `/recording-overlay` renders the pill. It lives in its own webview,
   so it cannot read the recorder state directly.
 - **Shared pill** (`src/lib/recording-pill/`): owns the platform-free status and
   action model, lifecycle projection, presentation, direct web host, and meter
   curve. `RecordingPillHost` reads `dictationLifecycle` directly and renders the
   in-page pill on web.
-- **Epicenter overlay** (`src/lib/recording-overlay/`): owns the secondary-window
-  surface, event protocol, and native mic-level transport. The browser build
-  redirects this host-only route because its pill is mounted directly in the app
-  layout.
+- **Epicenter overlay** (`src/lib/recording-overlay/`): Whispering owns the
+  lifecycle projection, status protocol, and pill actions. Epicenter owns the
+  secondary window and native mic-level transport. The browser build redirects
+  this host-only route because its pill is mounted directly in the app layout.
 - **Protocol** (`src/lib/recording-overlay/events.ts`): binds the shared pill
   model to Tauri event channels. The main window pushes a `status` to the overlay;
   the overlay pushes `action` (stop/cancel) and a `ready` handshake back. Actions
@@ -38,8 +38,8 @@ into Rust would split the source of truth, so we keep it in the main window.
   payload, so a click that races a state change is safe.
 - **Controls**: the stop and cancel buttons are filled chips (stop is red) so
   they read as buttons in the small pill, and they stop click propagation.
-  Clicking the pill body anywhere else emits `focus-main`, which brings the main
-  Whispering window forward (show + unminimize + setFocus); it is a separate
+  Clicking the pill body anywhere else asks Epicenter to reveal the main
+  Whispering window; it is a separate
   gesture from stop/cancel so finishing a recording never yanks the window up.
 - **Mic levels** (`mic-level` channel): the bars reflect real loudness, not a
   loop. Both producers send a raw RMS amplitude and the receiving pill mount

@@ -1,0 +1,9 @@
+[[permission]]
+identifier = "allow-reveal-whispering-window"
+description = "Enables the reveal_whispering_window command without any pre-configured scope."
+commands.allow = ["reveal_whispering_window"]
+
+[[permission]]
+identifier = "deny-reveal-whispering-window"
+description = "Denies the reveal_whispering_window command without any pre-configured scope."
+commands.deny = ["reveal_whispering_window"]

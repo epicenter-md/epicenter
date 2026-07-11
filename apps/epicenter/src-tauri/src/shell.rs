@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use tauri::image::Image;
 use tauri::menu::MenuBuilder;
 use tauri::tray::TrayIconBuilder;
-use tauri::{AppHandle, Wry};
+use tauri::{AppHandle, LogicalPosition, Manager, Position, Wry};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState as NativeShortcutState};
 use tauri_specta::Event;
 
@@ -13,6 +13,10 @@ use crate::{request_surface, DesktopAppHandle, Surface};
 
 const TRAY_ID: &str = "epicenter-tray";
 const WHISPERING_WINDOW: &str = "whispering";
+const RECORDING_OVERLAY_WINDOW: &str = "recording-overlay";
+const RECORDING_OVERLAY_WIDTH: f64 = 224.0;
+const RECORDING_OVERLAY_HEIGHT: f64 = 40.0;
+const RECORDING_OVERLAY_BOTTOM_MARGIN: f64 = 72.0;
 
 #[derive(Clone, Debug, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
@@ -36,6 +40,66 @@ pub struct GlobalShortcutTriggered {
 
 #[derive(Default)]
 pub struct GlobalShortcutRegistry(Mutex<Vec<GlobalShortcutRegistration>>);
+
+fn recording_overlay_position(
+    monitor_x: i32,
+    monitor_y: i32,
+    monitor_width: u32,
+    monitor_height: u32,
+    scale: f64,
+) -> LogicalPosition<f64> {
+    LogicalPosition {
+        x: monitor_x as f64 / scale
+            + (monitor_width as f64 / scale - RECORDING_OVERLAY_WIDTH) / 2.0,
+        y: monitor_y as f64 / scale + monitor_height as f64 / scale
+            - RECORDING_OVERLAY_HEIGHT
+            - RECORDING_OVERLAY_BOTTOM_MARGIN,
+    }
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn set_recording_overlay_visible(app: AppHandle<Wry>, visible: bool) -> Result<(), String> {
+    let overlay = app
+        .get_webview_window(RECORDING_OVERLAY_WINDOW)
+        .ok_or_else(|| "recording overlay window is unavailable".to_string())?;
+    if !visible {
+        return overlay.hide().map_err(|error| error.to_string());
+    }
+
+    let monitor = app
+        .get_webview_window(WHISPERING_WINDOW)
+        .and_then(|window| window.current_monitor().ok().flatten())
+        .or_else(|| app.primary_monitor().ok().flatten());
+    if let Some(monitor) = monitor {
+        let scale = monitor.scale_factor();
+        let monitor_position = monitor.position();
+        let monitor_size = monitor.size();
+        let position = recording_overlay_position(
+            monitor_position.x,
+            monitor_position.y,
+            monitor_size.width,
+            monitor_size.height,
+            scale,
+        );
+        overlay
+            .set_position(Position::Logical(position))
+            .map_err(|error| error.to_string())?;
+    }
+    overlay.show().map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn reveal_whispering_window(app: AppHandle<Wry>) -> Result<(), String> {
+    let window = app
+        .get_webview_window(WHISPERING_WINDOW)
+        .ok_or_else(|| "Whispering window is unavailable".to_string())?;
+    window.unminimize().map_err(|error| error.to_string())?;
+    window.show().map_err(|error| error.to_string())?;
+    let _ = window.set_focus();
+    Ok(())
+}
 
 pub fn create_tray(app: &DesktopAppHandle) -> tauri::Result<()> {
     let menu = MenuBuilder::new(app)
@@ -180,5 +244,12 @@ mod tests {
             registration("cancel", "Cmd+R"),
         ];
         assert!(validate_registrations(&duplicate_accelerator).is_err());
+    }
+
+    #[test]
+    fn overlay_position_uses_logical_coordinates_on_offset_monitors() {
+        let position = recording_overlay_position(-1920, 200, 3840, 2160, 2.0);
+        assert_eq!(position.x, -112.0);
+        assert_eq!(position.y, 1068.0);
     }
 }

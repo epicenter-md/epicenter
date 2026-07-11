@@ -244,6 +244,12 @@ export const commands = {
 		typedError<null, string>(
 			__TAURI_INVOKE('replace_global_shortcuts', { registrations }),
 		),
+	setRecordingOverlayVisible: (visible: boolean) =>
+		typedError<null, string>(
+			__TAURI_INVOKE('set_recording_overlay_visible', { visible }),
+		),
+	revealWhisperingWindow: () =>
+		typedError<null, string>(__TAURI_INVOKE('reveal_whispering_window')),
 };
 
 /** Events */
