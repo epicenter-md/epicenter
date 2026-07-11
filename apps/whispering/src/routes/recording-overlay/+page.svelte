@@ -1,24 +1,26 @@
 <script lang="ts">
-	import { type UnlistenFn } from '@tauri-apps/api/event';
+	import type { UnlistenFn } from '@tauri-apps/api/event';
 	import { onDestroy, onMount } from 'svelte';
-	import { revealMainWindow } from '$lib/main-window';
 	import {
 		recordingOverlayAction,
 		recordingOverlayMicLevel,
 		recordingOverlayReady,
 		recordingOverlayStatus,
-		type RecordingOverlayAction,
-		type RecordingOverlayStatus,
+		revealMainWindow,
 	} from '$lib/recording-overlay/events';
-	import { foldMicLevel } from '$lib/recording-overlay/level';
-	import RecordingPill from '$lib/recording-overlay/RecordingPill.svelte';
+	import { foldMicLevel } from '$lib/recording-pill/level';
+	import type {
+		RecordingPillAction,
+		RecordingPillStatus,
+	} from '$lib/recording-pill/model';
+	import RecordingPill from '$lib/recording-pill/RecordingPill.svelte';
 
 	// Tauri adapter for the recording pill. The overlay lives in its own webview,
 	// so it cannot read the recorder state modules directly: the main window
 	// pushes the current status over a Tauri event and we render from that, and
 	// control gestures go back over Tauri events. The pill itself
 	// (`RecordingPill`) is platform-free; this route owns the IPC glue.
-	let status = $state<RecordingOverlayStatus | null>(null);
+	let status = $state<RecordingPillStatus | null>(null);
 
 	// Live, smoothed mic loudness, 0 (silent) to 1 (loud). Driven by the
 	// `mic-level` event: VAD frames in JS for voice-activated capture, the Rust
@@ -28,33 +30,38 @@
 	let level = $state(0);
 
 	const unlisteners: UnlistenFn[] = [];
+	let isDestroyed = false;
+	const trackUnlistener = (unlisten: UnlistenFn) => {
+		if (isDestroyed) unlisten();
+		else unlisteners.push(unlisten);
+	};
 
-	onMount(async () => {
-		unlisteners.push(
-			await recordingOverlayStatus.listen((event) => {
-				status = event.payload;
-			}),
-			await recordingOverlayMicLevel.listen((event) => {
-				level = foldMicLevel(level, event.payload);
-			}),
-		);
-		// Tell the main window we are ready so it re-sends the latest status.
-		// Without this handshake the status emitted right after window creation
-		// can land before our listener is attached.
-		await recordingOverlayReady.emit();
+	onMount(() => {
+		void (async () => {
+			trackUnlistener(
+				await recordingOverlayStatus.listen((event) => {
+					status = event.payload;
+				}),
+			);
+			trackUnlistener(
+				await recordingOverlayMicLevel.listen((event) => {
+					level = foldMicLevel(level, event.payload);
+				}),
+			);
+			// Tell the main window we are ready so it re-sends the latest status.
+			// Without this handshake the status emitted right after window creation
+			// can land before our listener is attached.
+			if (!isDestroyed) await recordingOverlayReady.emit();
+		})();
 	});
 
 	onDestroy(() => {
+		isDestroyed = true;
 		for (const unlisten of unlisteners) unlisten();
 	});
 
-	function sendAction(action: RecordingOverlayAction) {
+	function sendAction(action: RecordingPillAction) {
 		void recordingOverlayAction.emit(action);
-	}
-
-	function focusMainWindow() {
-		// Clicking the pill body raises the main window (the shared reveal).
-		void revealMainWindow.emit({});
 	}
 </script>
 
@@ -68,7 +75,7 @@
 		onStop={() => sendAction('stop')}
 		onCancel={() => sendAction('cancel')}
 		onShipRaw={() => sendAction('ship-raw')}
-		onReveal={focusMainWindow}
+		onReveal={() => void revealMainWindow.emit()}
 	/>
 </div>
 

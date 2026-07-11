@@ -64,14 +64,18 @@ const CONFLICT_MARKER = /^(<<<<<<<|=======|>>>>>>>)/m;
 export function parseMarkdown(
 	raw: string,
 ): Result<ParsedFile, MatterParseError> {
-	if (CONFLICT_MARKER.test(raw)) return MatterParseError.ConflictMarkers();
-
 	const match = raw.match(FRONTMATTER);
 	// No frontmatter is fine: an empty mapping, the whole file is body.
 	if (!match) return Ok({ frontmatter: {}, body: raw });
 
+	// Only frontmatter is structural. Marker examples in the opaque Markdown body
+	// are content, not a parse failure; inspecting the whole file here would make
+	// Matter contradict its own frontmatter/body boundary.
+	const yaml = match[1] ?? '';
+	if (CONFLICT_MARKER.test(yaml)) return MatterParseError.ConflictMarkers();
+
 	const { data: parsed, error } = trySync({
-		try: () => parseYaml(match[1] ?? '') ?? {},
+		try: () => parseYaml(yaml) ?? {},
 		catch: (cause) => MatterParseError.InvalidYaml({ cause }),
 	});
 	if (error) return Err(error);

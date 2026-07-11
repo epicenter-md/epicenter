@@ -14,7 +14,7 @@
 	import Trash from '@lucide/svelte/icons/trash-2';
 	import X from '@lucide/svelte/icons/x';
 	import { localModels } from '$lib/state/local-models.svelte';
-	import type { ModelInfo } from '$lib/tauri/commands';
+	import type { ModelInfo } from '$lib/tauri/commands.types';
 
 	/**
 	 * The one local-model picker: a flat list of Rust-catalog GGUF models, each

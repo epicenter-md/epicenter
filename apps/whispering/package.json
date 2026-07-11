@@ -2,7 +2,7 @@
 	"name": "@epicenter/whispering",
 	"private": true,
 	"version": "7.11.1",
-	"description": "Desktop and web speech-to-text with global shortcuts and AI transformations",
+	"description": "Browser-deployable speech-to-text SPA hosted natively by Epicenter",
 	"exports": {
 		"./commands": "./src/lib/commands.ts",
 		"./workspace": "./src/lib/workspace/index.ts"
@@ -40,9 +40,13 @@
 			"tauri": "./src/lib/services/recorder/index.tauri.ts",
 			"default": "./src/lib/services/recorder/index.browser.ts"
 		},
-		"#platform/recording-overlay": {
-			"tauri": "./src/lib/recording-overlay/index.tauri.ts",
-			"default": "./src/lib/recording-overlay/index.browser.ts"
+		"#platform/recording-mic-level": {
+			"tauri": "./src/lib/recording-overlay/mic-level.tauri.ts",
+			"default": "./src/lib/recording-pill/mic-level.browser.ts"
+		},
+		"#platform/recording-overlay-owner": {
+			"tauri": "./src/routes/(app)/_runtime/attach-recording-overlay.tauri.svelte.ts",
+			"default": "./src/routes/(app)/_runtime/attach-recording-overlay.browser.ts"
 		},
 		"#platform/text": {
 			"tauri": "./src/lib/services/text/index.tauri.ts",
@@ -67,23 +71,27 @@
 		"#platform/auth": {
 			"tauri": "./src/lib/platform/auth.tauri.ts",
 			"default": "./src/lib/platform/auth.browser.ts"
+		},
+		"#platform/base-path": {
+			"tauri": "./src/lib/platform/base-path.tauri.ts",
+			"default": "./src/lib/platform/base-path.browser.ts"
+		},
+		"#platform/window-events": {
+			"tauri": "./src/lib/window-events.tauri.ts",
+			"default": "./src/lib/window-events.browser.ts"
 		}
 	},
 	"scripts": {
-		"dev": "bun run dev:desktop",
-		"dev:web": "vite dev",
-		"dev:desktop": "bun run scripts/launch-dev.ts",
-		"dev:doctor": "bun run scripts/dev-doctor.ts",
+		"dev": "vite dev",
 		"test": "bun test",
 		"build": "NODE_ENV=production vite build",
+		"build:epicenter": "EPICENTER_SURFACE=1 bun run build",
 		"check": "bun run typecheck",
 		"preview": "vite preview",
 		"prepare": "svelte-kit sync || echo ''",
-		"bindings:tauri": "cargo test --manifest-path src-tauri/Cargo.toml export_types",
 		"typecheck": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json && svelte-check --tsconfig ./tsconfig.tauri.json",
 		"typecheck:tauri": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.tauri.json",
 		"typecheck:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
-		"tauri": "tauri",
 		"deploy": "wrangler deploy"
 	},
 	"license": "AGPL-3.0-or-later",
@@ -97,7 +105,6 @@
 		"@sveltejs/vite-plugin-svelte": "catalog:",
 		"@tailwindcss/typography": "catalog:",
 		"@tailwindcss/vite": "catalog:",
-		"@tauri-apps/cli": "catalog:",
 		"@types/js-yaml": "^4.0.9",
 		"mode-watcher": "catalog:",
 		"svelte": "catalog:",
@@ -112,7 +119,6 @@
 	},
 	"type": "module",
 	"dependencies": {
-		"@aptabase/tauri": "^0.4.1",
 		"@aptabase/web": "^0.4.3",
 		"@epicenter/app-shell": "workspace:*",
 		"@epicenter/auth": "workspace:*",
@@ -128,19 +134,14 @@
 		"@tanstack/svelte-table": "catalog:",
 		"@tanstack/table-core": "9.0.0-alpha.10",
 		"@tauri-apps/api": "catalog:",
-		"@tauri-apps/plugin-autostart": "^2.0.1",
 		"@tauri-apps/plugin-clipboard-manager": "^2.3.0",
 		"@tauri-apps/plugin-deep-link": "catalog:",
 		"@tauri-apps/plugin-dialog": "^2.3.2",
 		"@tauri-apps/plugin-fs": "catalog:",
-		"@tauri-apps/plugin-global-shortcut": "^2.3.0",
 		"@tauri-apps/plugin-http": "2.5.4",
-		"@tauri-apps/plugin-log": "~2",
 		"@tauri-apps/plugin-notification": "^2.3.0",
 		"@tauri-apps/plugin-opener": "catalog:",
 		"@tauri-apps/plugin-os": "^2.3.0",
-		"@tauri-apps/plugin-process": "^2.3.0",
-		"@tauri-apps/plugin-updater": "^2.9.0",
 		"arkregex": "catalog:",
 		"arktype": "catalog:",
 		"audio-recorder-polyfill": "^0.4.1",

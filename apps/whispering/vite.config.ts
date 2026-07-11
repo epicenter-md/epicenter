@@ -12,8 +12,7 @@ import { defaultClientConditions, defineConfig, mergeConfig } from 'vite';
 import devtoolsJson from 'vite-plugin-devtools-json';
 import { viteStaticCopy } from 'vite-plugin-static-copy';
 
-const host = process.env.TAURI_DEV_HOST;
-const isTauri = process.env.TAURI_ENV_PLATFORM !== undefined;
+const isEpicenterSurface = process.env.EPICENTER_SURFACE === '1';
 
 export default defineConfig(
 	mergeConfig(workspaceAppViteConfig(APPS.WHISPERING), {
@@ -46,25 +45,9 @@ export default defineConfig(
 			// under the web condition, so it fails at vite build time, not at user
 			// runtime. The `...defaultClientConditions` spread is load-bearing:
 			// custom conditions REPLACE Vite's defaults.
-			...(isTauri && { conditions: ['tauri', ...defaultClientConditions] }),
-		},
-		// Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
-		//
-		// 1. prevent vite from obscuring rust errors
-		clearScreen: false,
-		server: {
-			host: host || false,
-			hmr: host
-				? {
-						protocol: 'ws',
-						host,
-						port: 1421,
-					}
-				: undefined,
-			watch: {
-				// 2. tell vite to ignore watching `src-tauri`
-				ignored: ['**/src-tauri/**'],
-			},
+			...(isEpicenterSurface && {
+				conditions: ['tauri', ...defaultClientConditions],
+			}),
 		},
 	}),
 );

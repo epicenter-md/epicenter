@@ -3,22 +3,21 @@
  *
  * Tauri derives this root from `appDataDir()`, i.e.
  * `${dataDir}/${bundleIdentifier}`. With identifier
- * `so.epicenter.whispering`, that means:
- *   macOS:   ~/Library/Application Support/so.epicenter.whispering/
- *   Windows: %APPDATA%/so.epicenter.whispering/
- *   Linux:   ~/.local/share/so.epicenter.whispering/
+ * `so.epicenter`, that means:
+ *   macOS:   ~/Library/Application Support/so.epicenter/
+ *   Windows: %APPDATA%/so.epicenter/
+ *   Linux:   ~/.local/share/so.epicenter/
  *
- * This module must stay importable from browser builds because Svelte routes
- * and components statically import it while guarding calls with `tauri`. Keep
- * Tauri API loading lazy unless every importer moves behind a `.tauri` suffix.
+ * This module stays importable from browser builds because routes statically
+ * import it while guarding calls with `tauri`; the build-time platform seam
+ * keeps the native path API out of the hosted bundle.
  */
-import { once } from 'wellcrafted/function';
-
-const getTauriPathApi = once(() => import('@tauri-apps/api/path'));
+import { tauri } from '#platform/tauri';
 
 async function appDataPath(...segments: string[]) {
-	const { appDataDir, join } = await getTauriPathApi();
-	return join(await appDataDir(), ...segments);
+	if (!tauri)
+		throw new Error('App data paths require the Epicenter desktop app');
+	return tauri.fs.appDataPath(...segments);
 }
 
 export const PATHS = {

@@ -3,8 +3,8 @@
 /**
  * @fileoverview Version stamping utility for the Epicenter monorepo.
  *
- * Stamps a version number into all package.json, tauri.conf.json, Cargo.toml,
- * and the VERSION constant. Discovers files via glob — no hardcoded list.
+ * Stamps a version number into all package.json, tauri.conf.json, and Cargo.toml
+ * files. Discovers files via glob: no hardcoded list.
  *
  * Git operations (commit, tag, push) are handled by CI, not this script.
  *
@@ -91,17 +91,6 @@ for (const { path, type } of files) {
 
 	console.log(`Updated ${path}`);
 }
-
-/** Stamp the VERSION constant the landing download links read. */
-const versionsPath = join(root, 'apps/landing/src/version.ts');
-const versionsFile = Bun.file(versionsPath);
-const versionsContent = await versionsFile.text();
-const updatedVersions = versionsContent.replace(
-	/VERSION\s*=\s*'[\d.]+'/,
-	`VERSION = '${newVersion}'`,
-);
-await Bun.write(versionsPath, updatedVersions);
-console.log('Updated apps/landing/src/version.ts');
 
 /** Update Cargo.lock for each Tauri app. */
 const cargoTomls = files.filter((f) => f.type === 'toml');

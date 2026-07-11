@@ -12,7 +12,7 @@
  * - set() over same-version, corrupt, or absent rows writes as before
  * - set()/clear() over a fractional `_v` above the latest repair it (a fraction
  *   is corruption, not a newer writer); read and write share one newer rule
- * - the guard reads the pending view inside an open transaction
+ * - the guard sees transaction-local writes inside an open transaction
  * - bulkSet() skips refused rows per chunk and reports them as TableWriteError; onProgress unchanged
  * - clear() skips newer-stamped rows and reports them; delete(id) stays unguarded
  * - update() over a newer-stamped row refuses via NewerWriter (pinned)
@@ -149,12 +149,13 @@ describe('set write guard', () => {
 		expect(table.storedCount()).toBe(0);
 	});
 
-	test('guard reads the pending view inside an open transaction', () => {
+	test('guard sees transaction-local writes inside an open transaction', () => {
 		const { ydoc, ykv, table } = setup();
 
 		ydoc.transact(() => {
-			// Simulate a v2 row landing in the same transaction window: the
-			// observer has not fired, so the value lives only in `pending`.
+			// Simulate a v2 row landing in the same transaction. The observer has
+			// not run yet, so the guard can see the row only through YKeyValueLww's
+			// transaction-local read overlay.
 			ykv.set('1', { id: '1', title: 'newer', rating: 1, _v: 2 });
 			const error = expectErr(table.set({ id: '1', title: 'stale' }));
 			expect(error.name).toBe('NewerWriterRefusal');

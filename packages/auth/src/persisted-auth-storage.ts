@@ -78,6 +78,29 @@ export function createWebStoragePersistedAuthStorage({
 }
 
 /**
+ * Build a persisted-auth adapter from an already-loaded serialized snapshot.
+ *
+ * Desktop bootstraps use this when the native host resolves an asynchronous
+ * credential store before the application module graph starts. The snapshot
+ * stays synchronous for auth construction, while later writes continue to the
+ * native store without copying the grant into Web Storage.
+ */
+export function createSerializedPersistedAuthStorage({
+	initial,
+	write,
+}: {
+	initial: string | null;
+	write: (serialized: string | null) => void | Promise<void>;
+}): PersistedAuthStorage {
+	return {
+		initial: parsePersistedAuth(initial),
+		set(value) {
+			return write(value === null ? null : serializePersistedAuth(value));
+		},
+	};
+}
+
+/**
  * Pre-load an async-backed record into a synchronous {@link PersistedAuthStorage}.
  *
  * The auth runtime reads `initial` once, synchronously, at construction, so an
@@ -95,10 +118,8 @@ export async function loadPersistedAuthStorage(store: {
 	read: () => Promise<string | null>;
 	write: (serialized: string | null) => Promise<void>;
 }): Promise<PersistedAuthStorage> {
-	return {
-		initial: parsePersistedAuth(await store.read()),
-		set(value) {
-			return store.write(value === null ? null : serializePersistedAuth(value));
-		},
-	};
+	return createSerializedPersistedAuthStorage({
+		initial: await store.read(),
+		write: store.write,
+	});
 }

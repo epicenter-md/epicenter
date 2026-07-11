@@ -108,13 +108,23 @@ export type TableAssessment =
 			rows: RowAssessment[];
 	  };
 
+/** A Markdown file that could not become a row, located within its table. */
+export type LocatedUnreadableFile = {
+	table: string;
+	fileName: string;
+	message: string;
+};
+
 /**
  * The one composed structure: every table's assessment, in input order. Deliberately NOT
  * versioned: the prior collapse removed an unread `version` wrapper, and `VaultIntegrity` is an
  * in-memory return, never serialized. The `--json` output serializes the projected violations,
  * not this; a version, if a serialized contract ever needs one, rides on that projection.
  */
-export type VaultIntegrity = { tables: TableAssessment[] };
+export type VaultIntegrity = {
+	tables: TableAssessment[];
+	unreadableFiles: LocatedUnreadableFile[];
+};
 
 /** A table that was read into a {@link TableRead}: the input that contributes rows and stems. */
 type ReadableTable = { name: string; status: 'readable'; read: TableRead };
@@ -150,7 +160,20 @@ export function assess(tables: readonly TableInput[]): VaultIntegrity {
 		);
 	}
 
-	return { tables: tables.map((table) => assessTable(table, rowsByTable)) };
+	const unreadableFiles = tables.flatMap((table) =>
+		table.status === 'readable'
+			? table.read.unreadable.map(({ fileName, error }) => ({
+					table: table.name,
+					fileName,
+					message: error.message,
+				}))
+			: [],
+	);
+
+	return {
+		tables: tables.map((table) => assessTable(table, rowsByTable)),
+		unreadableFiles,
+	};
 }
 
 /** Classify one table into its four-state assessment. */

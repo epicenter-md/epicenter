@@ -8,7 +8,7 @@
  *             and has no marked children is "no tables", not a failure; references un-evaluable in
  *             isolation are a note, not a failure)
  *   - exit 1  a loaded row needs attention, or a cross-table reference does not resolve
- *   - exit 2  a folder is unreadable or a matter.json is a corrupt contract
+ *   - exit 2  a folder or Markdown file is unreadable, or a matter.json is a corrupt contract
  */
 
 import { describe, expect, test } from 'bun:test';
@@ -46,14 +46,16 @@ describe('matter check: single-table scope', () => {
 		expect(result.stdout).toBe('2 ready (1 table, 2 rows)\n');
 	});
 
-	test('exit 1 groups findings for the mixed fixture', async () => {
+	test('exit 2 groups findings and unreadable files for the mixed fixture', async () => {
 		const result = await runCheck([`${fixtureRoot}/mixed`]);
-		expect(result.exitCode).toBe(1);
+		expect(result.exitCode).toBe(2);
 		expect(result.stdout).toContain('needs value');
 		expect(result.stdout).toContain('invalid: got "five", expected integer');
 		expect(result.stdout).toContain(
 			'invalid: got "idea", expected one of draft, ready, published',
 		);
+		expect(result.stdout).toContain('mixed/broken-yaml.md');
+		expect(result.stdout).toContain('1 unreadable file');
 	});
 
 	test('exit 0 treats an untyped folder (a {} marker) as valid', async () => {
@@ -125,6 +127,36 @@ describe('matter check: vault scope', () => {
 });
 
 describe('matter check: fatal tiers', () => {
+	test('exit 2 names a Markdown file that cannot become a row', async () => {
+		const dir = await mkdtemp(join(tmpdir(), 'matter-check-'));
+		try {
+			await writeFile(
+				join(dir, 'matter.json'),
+				JSON.stringify({ fields: { title: { type: 'string' } } }),
+			);
+			await writeFile(join(dir, 'ready.md'), '---\ntitle: Ready\n---');
+			await writeFile(join(dir, 'broken.md'), '---\ntitle: [bad\n---');
+
+			const text = await runCheck([dir]);
+			expect(text.exitCode).toBe(2);
+			expect(text.stdout).toContain('broken.md');
+			expect(text.stdout).toContain('1 unreadable file');
+			expect(text.stdout).toContain('(1 table, 1 row)');
+
+			const json = await runCheck(['--json', dir]);
+			const report = JSON.parse(json.stdout);
+			expect(json.exitCode).toBe(2);
+			expect(report.summary.unreadableFiles).toEqual([
+				expect.objectContaining({
+					fileName: 'broken.md',
+					message: expect.stringContaining('Frontmatter is not valid YAML'),
+				}),
+			]);
+		} finally {
+			await rm(dir, { recursive: true, force: true });
+		}
+	});
+
 	test('exit 2 for a corrupt matter.json', async () => {
 		const dir = await mkdtemp(join(tmpdir(), 'matter-check-'));
 		try {

@@ -266,7 +266,8 @@ describe('summarize', () => {
 			rows: 2,
 			ready: 1,
 			needsAttention: 1,
-			unreadable: 0,
+			unreadableTables: 0,
+			unreadableFiles: 0,
 			invalidContract: 0,
 			untyped: 0,
 		});
@@ -351,8 +352,30 @@ describe('summarize', () => {
 			'unreadable',
 			'invalid-contract',
 		]);
-		expect(summary.totals.unreadable).toBe(1);
+		expect(summary.totals.unreadableTables).toBe(1);
 		expect(summary.totals.invalidContract).toBe(1);
+	});
+
+	test('unreadable files stay named and count separately from unreadable tables', () => {
+		const summary = summarize(
+			assess([
+				loaded('pages', pagesModel, [
+					{ fileName: 'good.md', content: '---\ntitle: Good\n---' },
+					{ fileName: 'broken.md', content: '---\ntitle: [bad\n---' },
+				]),
+			]),
+		);
+
+		expect(summary.unreadableFiles).toEqual([
+			{
+				table: 'pages',
+				fileName: 'broken.md',
+				message: expect.stringContaining('Frontmatter is not valid YAML'),
+			},
+		]);
+		expect(summary.totals.unreadableFiles).toBe(1);
+		expect(summary.totals.unreadableTables).toBe(0);
+		expect(summary.totals.rows).toBe(1);
 	});
 
 	test('an untyped table counts as untyped, valid, never a failure', () => {
@@ -368,7 +391,8 @@ describe('summarize', () => {
 		expect(table?.status).toBe('untyped');
 		expect(summary.totals.untyped).toBe(1);
 		expect(summary.totals.needsAttention).toBe(0);
-		expect(summary.totals.unreadable).toBe(0);
+		expect(summary.totals.unreadableTables).toBe(0);
+		expect(summary.totals.unreadableFiles).toBe(0);
 		expect(summary.totals.invalidContract).toBe(0);
 	});
 

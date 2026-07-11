@@ -7,9 +7,9 @@
 	//
 	// The steps branch on `variant` because the two situations need genuinely
 	// different actions, and showing the wrong one is worse than terse:
-	//   - `first-grant` (never granted): `openSystemSettings` already adds Whispering
+	//   - `first-grant` (never granted): `openSystemSettings` already adds Epicenter
 	//     to the list toggled off, so the whole job is flipping its switch. Telling a
-	//     brand-new user to "remove Whispering" is impossible: it isn't there yet.
+	//     brand-new user to "remove Epicenter" is impossible: it isn't there yet.
 	//   - `re-add` (stale grant after an app update): the toggle reads on but paste
 	//     at cursor is dead, and only a remove-and-re-add clears it.
 	// Neither variant repeats "navigate to Accessibility": the dialog's Open System
@@ -33,10 +33,10 @@
 	{/snippet}
 
 	{#if variant === 're-add'}
-		{@render step(1, removeWhispering)}
-		{@render step(2, readdWhispering)}
+		{@render step(1, removeEpicenter)}
+		{@render step(2, readdEpicenter)}
 	{:else}
-		{@render step(1, findWhispering)}
+		{@render step(1, findEpicenter)}
 		{@render step(2, switchOn)}
 	{/if}
 </ol>
@@ -55,22 +55,22 @@
 	</span>
 {/snippet}
 
-{#snippet findWhispering()}
-	Find {@render term('Whispering')} in the list (we added it for you).
+{#snippet findEpicenter()}
+	Find {@render term('Epicenter')} in the list (we added it for you).
 {/snippet}
 
 {#snippet switchOn()}
 	Switch it {@render term('on')}.
 {/snippet}
 
-{#snippet removeWhispering()}
-	Click {@render term('Whispering')}, then remove it with the {@render control(
+{#snippet removeEpicenter()}
+	Click {@render term('Epicenter')}, then remove it with the {@render control(
 		'−',
 	)} button.
 {/snippet}
 
-{#snippet readdWhispering()}
+{#snippet readdEpicenter()}
 	Press the {@render control('+')} button and re-add {@render term(
-		'Whispering.app',
+		'Epicenter.app',
 	)}.
 {/snippet}

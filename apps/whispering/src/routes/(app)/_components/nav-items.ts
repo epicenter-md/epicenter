@@ -3,6 +3,7 @@ import LayersIcon from '@lucide/svelte/icons/layers';
 import ListIcon from '@lucide/svelte/icons/list';
 import SettingsIcon from '@lucide/svelte/icons/settings';
 import type { Component } from 'svelte';
+import { WHISPERING_BASE_PATHNAME, whisperingPath } from '$lib/constants/urls';
 
 export type NavItem = {
 	label: string;
@@ -24,26 +25,27 @@ const matchesRoute = (href: string) => (pathname: string) =>
 export const NAV_ITEMS = [
 	{
 		label: 'Home',
-		href: '/',
+		href: whisperingPath('/'),
 		icon: HomeIcon,
-		isActive: (pathname) => pathname === '/',
+		isActive: (pathname) =>
+			pathname === WHISPERING_BASE_PATHNAME || pathname === whisperingPath('/'),
 	},
 	{
 		label: 'Recordings',
-		href: '/recordings',
+		href: whisperingPath('/recordings'),
 		icon: ListIcon,
-		isActive: matchesRoute('/recordings'),
+		isActive: matchesRoute(whisperingPath('/recordings')),
 	},
 	{
 		label: 'Recipes',
-		href: '/recipes',
+		href: whisperingPath('/recipes'),
 		icon: LayersIcon,
-		isActive: matchesRoute('/recipes'),
+		isActive: matchesRoute(whisperingPath('/recipes')),
 	},
 	{
 		label: 'Settings',
-		href: '/settings',
+		href: whisperingPath('/settings'),
 		icon: SettingsIcon,
-		isActive: matchesRoute('/settings'),
+		isActive: matchesRoute(whisperingPath('/settings')),
 	},
 ] as const satisfies readonly NavItem[];

@@ -82,7 +82,8 @@ function summaryLine(summary: Summary): string {
 		rows,
 		ready,
 		needsAttention,
-		unreadable,
+		unreadableTables,
+		unreadableFiles,
 		invalidContract,
 		untyped,
 	} = summary.totals;
@@ -93,8 +94,10 @@ function summaryLine(summary: Summary): string {
 			`${needsAttention} ${needsAttention === 1 ? 'needs' : 'need'} attention`,
 		);
 	}
-	if (unreadable > 0)
-		parts.push(plural(unreadable, 'unreadable', 'unreadable'));
+	if (unreadableTables > 0)
+		parts.push(plural(unreadableTables, 'unreadable table'));
+	if (unreadableFiles > 0)
+		parts.push(plural(unreadableFiles, 'unreadable file'));
 	if (invalidContract > 0) parts.push(`${invalidContract} invalid contract`);
 	if (untyped > 0) parts.push(`${untyped} untyped`);
 
@@ -111,6 +114,9 @@ export function formatReport(
 ): string {
 	const sections = [
 		...fatalTableLines(summary),
+		...summary.unreadableFiles.map(
+			(file) => `${file.table}/${file.fileName}\n  can't read: ${file.message}`,
+		),
 		...groupByLocation(violations).map(([location, group]) =>
 			[location, ...group.map(violationLine)].join('\n'),
 		),

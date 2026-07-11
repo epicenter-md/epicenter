@@ -45,6 +45,9 @@
 	<input
 		{@attach (node) => node.select()}
 		{inputmode}
+		name={cell.field.name}
+		aria-label={cell.field.name}
+		autocomplete="off"
 		bind:value={edit.draft}
 		onblur={edit.commit}
 		onkeydown={edit.onKeydown}

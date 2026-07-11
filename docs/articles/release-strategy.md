@@ -40,7 +40,7 @@ npm packages, GitHub Releases, and app deploys are handled by three different sy
 
 **Auto-release** (`auto.release.yml`) handles GitHub Releases. It fires on every merged PR, reads `## Changelog` sections from PR descriptions, and creates a versioned GitHub Release with categorized entries. It's currently disabled (`if: false`) until the v8.0.0 tag is in place and the `GH_ACTIONS_PAT` secret is configured. When re-enabled, it runs on every merge to `main`.
 
-**App deploys** are separate from both. Cloudflare Workers (the API, landing page, Whispering web) deploy on every push to `main` via `deploy.cloudflare.yml`. Tauri desktop builds trigger on `v*` tags via `release.whispering.yml`: a 3-platform matrix (macOS Apple Silicon, Ubuntu, Windows) that takes 20+ minutes and produces signed, notarized binaries.
+**App deploys** are separate from both. Cloudflare Workers (the API, landing page, and Whispering browser app) deploy on every push to `main` via `deploy.cloudflare.yml`. Epicenter owns the native desktop host; Whispering has no standalone Tauri release workflow.
 
 The version number in a GitHub Release and the version number on npm are related but not the same thing. GitHub Releases track the overall project; npm versions track the library API.
 
@@ -74,7 +74,7 @@ bunx changeset publish
 git push --tags
 ```
 
-`changeset publish` builds each package and runs `npm publish`. The `git push --tags` pushes the version tags created during publish, which triggers the Tauri release workflow if the tag matches `v*`.
+`changeset publish` builds each package and runs `npm publish`. The `git push --tags` pushes the version tags created during publish.
 
 ## What changesets touches (and what it doesn't)
 
@@ -82,7 +82,7 @@ Changesets only publishes packages that are (a) not `"private": true` and (b) un
 
 Three packages never publish to npm: `@epicenter/ai`, `@epicenter/constants`, and `@epicenter/vault`. They're internal implementation details. `"private": true` in their `package.json` is all it takes; changesets ignores them automatically.
 
-**Every app in `apps/` is also `"private": true` and completely outside the changeset system.** Whispering versions come from `tauri.conf.json` and `v*` git tags. The API and landing page deploy via Cloudflare Workers on push to `main`. The Chrome extension versions via `manifest.json`. Changesets will never touch any of them. They have their own deploy pipelines documented in `.github/workflows/README.md`.
+**Every app in `apps/` is also `"private": true` and completely outside the changeset system.** Whispering, the API, and the landing page deploy through Cloudflare on push to `main`. Epicenter owns native desktop packaging. The Chrome extension versions via `manifest.json`. Changesets will never touch any of them. Their deploy pipelines are documented in `.github/workflows/README.md`.
 
 The public/private split is intentional. `@epicenter/workspace` is the library other developers build on. The private packages are the internals that make Epicenter's own apps work. Keeping them private means we can change them without worrying about semver contracts.
 

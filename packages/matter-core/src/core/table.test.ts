@@ -9,6 +9,11 @@ describe('readTable', () => {
 			{ fileName: 'broken.md', content: '---\ntitle: [unclosed\n---\nbody' },
 			{
 				fileName: 'conflict.md',
+				content:
+					'---\ntitle: Conflict\n<<<<<<< HEAD\nstatus: a\n=======\nstatus: b\n>>>>>>> z\n---\nbody',
+			},
+			{
+				fileName: 'body-conflict.md',
 				content: '<<<<<<< HEAD\nx\n=======\ny\n>>>>>>> z\n',
 			},
 			{ fileName: 'raw.md', content: '# no frontmatter' },
@@ -17,6 +22,7 @@ describe('readTable', () => {
 		expect(result.rows.map((r) => r.fileName)).toEqual([
 			'a.md',
 			'b.md',
+			'body-conflict.md',
 			'raw.md',
 		]);
 		expect(result.unreadable.map((u) => [u.fileName, u.error.name])).toEqual([

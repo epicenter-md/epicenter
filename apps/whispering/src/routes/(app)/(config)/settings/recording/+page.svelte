@@ -66,9 +66,9 @@
 			/>
 		{:else if settings.get('recording.trigger') === 'vad'}
 			{#if os.isLinux}
-				<Alert.Root class="border-red-500/20 bg-red-500/5">
-					<InfoIcon class="size-4 text-red-600 dark:text-red-400" />
-					<Alert.Title class="text-red-600 dark:text-red-400">
+				<Alert.Root variant="destructive">
+					<InfoIcon class="size-4" />
+					<Alert.Title>
 						Voice Activated not supported on Linux
 					</Alert.Title>
 					<Alert.Description>
@@ -79,7 +79,6 @@
 						<Link
 							href="https://github.com/EpicenterHQ/epicenter/issues/839"
 							target="_blank"
-							class="font-medium underline underline-offset-4 hover:text-red-700 dark:hover:text-red-300"
 						>
 							Learn more →
 						</Link>
@@ -87,9 +86,9 @@
 				</Alert.Root>
 			{:else}
 				{#if tauri && os.isApple}
-					<Alert.Root class="border-warning/20 bg-warning/5">
-						<InfoIcon class="size-4 text-warning dark:text-warning" />
-						<Alert.Title class="text-warning dark:text-warning">
+					<Alert.Root variant="warning">
+						<InfoIcon class="size-4" />
+						<Alert.Title>
 							Global Shortcuts May Be Unreliable
 						</Alert.Title>
 						<Alert.Description>
@@ -98,9 +97,9 @@
 						</Alert.Description>
 					</Alert.Root>
 				{/if}
-				<Alert.Root class="border-blue-500/20 bg-blue-500/5">
-					<InfoIcon class="size-4 text-blue-600 dark:text-blue-400" />
-					<Alert.Title class="text-blue-600 dark:text-blue-400">
+				<Alert.Root>
+					<InfoIcon class="size-4" />
+					<Alert.Title>
 						Voice Activated Detection
 					</Alert.Title>
 					<Alert.Description>

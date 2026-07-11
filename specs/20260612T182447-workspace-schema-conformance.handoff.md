@@ -35,7 +35,7 @@ MODE B (implement): execute the spec wave by wave per its Implementation Plan. E
 
 ## Skills to load
 
-`workspace-api` (always), `yjs` (guard + LWW semantics), `define-errors` and `error-handling` (wave 1 failure channel), `testing` and `tdd` (waves 1-2), `svelte` and `epicenter-ui` and `writing-voice` (wave 3), `standalone-commits` and `git` (every commit), `fresh-eyes-grill` (MODE A), `spec-execution` (MODE B), `post-implementation-review` before handing back.
+`workspace-api` (always), `yjs` (guard + LWW semantics), `define-errors` and `error-handling` (wave 1 failure channel), `testing` and `tdd` (waves 1-2), `svelte` and `ui-design` and `writing-voice` (wave 3), `standalone-commits` and `git` (every commit), `fresh-eyes-grill` (MODE A), `spec-execution` (MODE B), `post-implementation-review` before handing back.
 
 ## Key files
 

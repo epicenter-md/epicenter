@@ -1,5 +1,5 @@
 /**
- * The per-tab unified query over one table's slice of the vault mirror: a WHERE filter, a full-text
+ * The per-pane unified query over one table's slice of the vault mirror: a WHERE filter, a full-text
  * `match`, and a column `sort`, resolved through ONE read-only SQL query to an ordered list of stems.
  *
  * This is the app's read path made coherent (ADR-0065): SQL decides which rows, in what order,
@@ -9,7 +9,7 @@
  * rows in their natural order. SQL runs only once a control is on.
  *
  * The mirror is the query seam (the vault's SQLite projection); `tableName` names which folder's SQL
- * table to query. Both are taken at construction: a tab's table is non-swappable (a table switch
+ * table to query. Both are taken at construction: a pane's table is non-swappable (a table switch
  * remounts TablePane with a fresh query), so there is nothing to re-point at call time. The unit owns
  * its own `$effect`, which Svelte ties to the component that constructs it (the same pattern as
  * `createPressedKeys`), so the caller just writes `const query = createTableQuery(vault.mirror, () =>
@@ -66,7 +66,7 @@ export function createTableQuery(mirror: Mirror, tableName: () => string) {
 				match: matchText || undefined,
 				sort: currentSort,
 			});
-			if (cancelled) return; // a newer control, a rebuild, or this tab being torn down won
+			if (cancelled) return; // a newer control, a rebuild, or this pane being torn down won
 			if (failure) error = failure.message;
 			else {
 				orderedStems = data;
@@ -119,5 +119,5 @@ export function createTableQuery(mirror: Mirror, tableName: () => string) {
 	};
 }
 
-/** A per-tab unified query. The grid takes one to render its controls and order its rows. */
+/** A per-pane unified query. The grid takes one to render its controls and order its rows. */
 export type TableQuery = ReturnType<typeof createTableQuery>;

@@ -1,8 +1,0 @@
-{
-	"$schema": "https://schema.tauri.app/config/2",
-	"build": {
-		"runner": {
-			"cmd": "./scripts/dev-codesign-runner.sh"
-		}
-	}
-}

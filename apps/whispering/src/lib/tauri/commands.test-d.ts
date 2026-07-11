@@ -8,12 +8,26 @@
 
 import type { Result } from 'wellcrafted/result';
 import type {
+	CatalogError,
 	commands,
+	DictationCapability,
+	DownloadProgress,
 	IpcRecorderError,
+	ModelInfo,
 	RecordingArtifact,
 	TranscriptionError,
 	TranscriptionSpec,
 } from './commands';
+import type {
+	CatalogError as SharedCatalogError,
+	DictationCapability as SharedDictationCapability,
+	DownloadProgress as SharedDownloadProgress,
+	IpcRecorderError as SharedIpcRecorderError,
+	ModelInfo as SharedModelInfo,
+	RecordingArtifact as SharedRecordingArtifact,
+	TranscriptionError as SharedTranscriptionError,
+	TranscriptionSpec as SharedTranscriptionSpec,
+} from './commands.types';
 
 // Helper: a no-op assertion that two types are equal.
 type Expect<T extends true> = T;
@@ -21,6 +35,33 @@ type Equal<X, Y> =
 	(<T>() => T extends X ? 1 : 2) extends <T>() => T extends Y ? 1 : 2
 		? true
 		: false;
+
+// Browser-safe copies of generated contracts must move in lockstep with the
+// native bindings without importing their runtime module into the hosted SPA.
+type _SharedContracts = Expect<
+	Equal<
+		[
+			SharedCatalogError,
+			SharedDictationCapability,
+			SharedDownloadProgress,
+			SharedIpcRecorderError,
+			SharedModelInfo,
+			SharedRecordingArtifact,
+			SharedTranscriptionError,
+			SharedTranscriptionSpec,
+		],
+		[
+			CatalogError,
+			DictationCapability,
+			DownloadProgress,
+			IpcRecorderError,
+			ModelInfo,
+			RecordingArtifact,
+			TranscriptionError,
+			TranscriptionSpec,
+		]
+	>
+>;
 
 // stop_recording: fallible, returns the artifact struct. The error is the
 // structured `RecorderError` IPC enum, not a bare string: this assertion is the
@@ -90,6 +131,19 @@ type _EncodeRecordingForUpload = Expect<
 		ReturnType<typeof commands.encodeRecordingForUpload>,
 		Promise<Result<ArrayBuffer, string>>
 	>
+>;
+
+// read_recording_artifact: hand-rolled, raw bytes success path. The only
+// argument is the app-owned recording id; no filesystem path crosses IPC.
+type _ReadRecordingArtifact = Expect<
+	Equal<
+		ReturnType<typeof commands.readRecordingArtifact>,
+		Promise<Result<ArrayBuffer, string>>
+	>
+>;
+
+type _ReadRecordingArtifactArgs = Expect<
+	Equal<Parameters<typeof commands.readRecordingArtifact>, [string]>
 >;
 
 // TranscriptionSpec is the per-call local transcription config.

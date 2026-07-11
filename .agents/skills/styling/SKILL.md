@@ -8,17 +8,11 @@ metadata:
 
 # Styling Guidelines
 
-## Reference Repositories
-
-- [shadcn-svelte](https://github.com/huntabyte/shadcn-svelte): Port of shadcn/ui for Svelte with Bits UI primitives
-- [shadcn-svelte-extras](https://github.com/ieedan/shadcn-svelte-extras): Additional components for shadcn-svelte
-- [Svelte](https://github.com/sveltejs/svelte): Svelte 5 framework
-
-## Upstream Grounding
-
-When styling behavior depends on shadcn-svelte component structure, class merging, variants, or Bits UI composition, use source-backed grounding before relying on memory. If DeepWiki MCP is available, ask a narrow question against `huntabyte/shadcn-svelte`; for extras component behavior, ask against `ieedan/shadcn-svelte-extras`. If DeepWiki is unavailable or the repo is not indexed, use upstream source or official docs directly. Treat DeepWiki as orientation, then verify decisive details against local `@epicenter/ui` wrappers, installed types, source, or official docs before changing code.
-
-Skip DeepWiki for ordinary Tailwind utilities and repo-local layout rules already documented below.
+When styling depends on shadcn-svelte structure, class merging, variants, Bits UI
+composition, or local wrapper behavior, read
+[ui-design's component-system reference](../ui-design/references/component-system.md)
+for upstream grounding. Ordinary Tailwind utilities and the repo-local layout
+rules below need no external lookup.
 
 ## Minimize Wrapper Elements
 
@@ -48,13 +42,14 @@ This principle applies to all elements where the styling doesn't conflict with t
 
 - Use the `cn()` utility from `$lib/utils` for combining classes conditionally
 - Prefer utility classes over custom CSS for local layout and state
+- Prefer shared scale and semantic-token utilities over arbitrary bracketed values and raw colors
 - Use `tailwind-variants` for component variant systems
 - Follow the `background`/`foreground` convention for colors
 - Leverage CSS variables for theme consistency
 
 ## Shared Primitive Overrides
 
-When styling a local `@epicenter/ui` primitive, use `epicenter-ui`'s component anatomy ownership rule. Tailwind classes on shared primitives should usually express parent layout or product state, not redefine the primitive's visual budget.
+When styling a local `@epicenter/ui` primitive, use `ui-design`'s component-system reference. Tailwind classes on shared primitives should usually express parent layout or product state, not redefine the primitive's visual budget.
 
 Good primitive overrides:
 

@@ -1,8 +1,14 @@
 <script lang="ts">
 	import { buildCreateTable } from '@epicenter/matter-core';
-	import { Button } from '@epicenter/ui/button';
-	import CheckIcon from '@lucide/svelte/icons/check';
-	import CopyIcon from '@lucide/svelte/icons/copy';
+	import * as Accordion from '@epicenter/ui/accordion';
+	import { CopyButton } from '@epicenter/ui/copy-button';
+	import * as Empty from '@epicenter/ui/empty';
+	import * as Item from '@epicenter/ui/item';
+	import * as SectionHeader from '@epicenter/ui/section-header';
+	import { Snippet } from '@epicenter/ui/snippet';
+	import DatabaseIcon from '@lucide/svelte/icons/database';
+	import Table2Icon from '@lucide/svelte/icons/table-2';
+	import TerminalIcon from '@lucide/svelte/icons/terminal';
 	import type { VaultHandle } from '$lib/vault.svelte';
 
 	// The "show the database" panel: the one honest surface that says matter IS a SQLite database. It
@@ -27,99 +33,101 @@
 			];
 		}),
 	);
-
-	// Keyed by the copied text itself, so each Copy button reflects only its own click.
-	let copied = $state<string>();
-	let copiedTimeout: ReturnType<typeof setTimeout> | undefined;
-	async function copy(text: string): Promise<void> {
-		try {
-			await navigator.clipboard.writeText(text);
-		} catch {
-			return; // the text stays selectable; a clipboard denial is not worth surfacing
-		}
-		copied = text;
-		clearTimeout(copiedTimeout);
-		copiedTimeout = setTimeout(() => {
-			copied = undefined;
-		}, 1500);
-	}
-
-	// Clear the copied-state timer if the panel is torn down before it fires.
-	$effect(() => () => clearTimeout(copiedTimeout));
 </script>
 
-{#snippet copyButton(text: string, variant: 'outline' | 'ghost')}
-	<Button
-		{variant}
-		size="sm"
-		class="h-8 shrink-0 gap-1.5 text-xs"
-		onclick={() => copy(text)}
-	>
-		{#if copied === text}
-			<CheckIcon class="size-3.5" />
-			Copied
-		{:else}
-			<CopyIcon class="size-3.5" />
-			Copy
-		{/if}
-	</Button>
-{/snippet}
+<div class="min-h-0 flex-1 overflow-y-auto">
+	<div class="mx-auto w-full max-w-4xl space-y-8 p-4">
+		<SectionHeader.Root>
+			<SectionHeader.Title level={2}>SQLite projection</SectionHeader.Title>
+			<SectionHeader.Description>
+				Matter rebuilds this read-only database from the markdown in {vault.folderName}.
+			</SectionHeader.Description>
+		</SectionHeader.Root>
 
-{#snippet copyRow(text: string)}
-	<div class="flex items-center gap-2">
-		<code
-			class="min-w-0 flex-1 overflow-x-auto rounded-md border bg-muted/30 px-3 py-2 font-mono text-xs"
-		>
-			{text}
-		</code>
-		{@render copyButton(text, 'outline')}
-	</div>
-{/snippet}
-
-<div class="flex min-h-0 flex-1 flex-col overflow-auto">
-	<div class="border-b px-4 py-2">
-		<h2 class="text-sm font-semibold">Database</h2>
-		<p class="text-xs text-muted-foreground">
-			{vault.folderName} is a SQLite database you (and your tools) can query directly. It is a
-			read-only projection of the markdown on disk, rebuilt on every change.
-		</p>
-	</div>
-
-	<div class="space-y-6 p-4">
-		<section class="space-y-2">
-			<h3
-				class="text-xs font-medium uppercase tracking-wide text-muted-foreground"
-			>
-				Database file
-			</h3>
-			{@render copyRow(dbPath)}
-			<p class="pt-1 text-xs text-muted-foreground">Open it in your terminal:</p>
-			{@render copyRow(sqliteCommand)}
+		<section class="space-y-3">
+			<SectionHeader.Root>
+				<SectionHeader.Title level={3}>Connect</SectionHeader.Title>
+				<SectionHeader.Description>
+					Copy the database path or open it with the SQLite CLI.
+				</SectionHeader.Description>
+			</SectionHeader.Root>
+			<Item.Group class="gap-2">
+				<Item.Root variant="outline" size="sm">
+					<Item.Media variant="icon"><DatabaseIcon /></Item.Media>
+					<Item.Content class="min-w-0">
+						<Item.Title>Database file</Item.Title>
+						<Item.Description class="line-clamp-1 font-mono text-xs" title={dbPath}>
+							{dbPath}
+						</Item.Description>
+					</Item.Content>
+					<Item.Actions>
+						<CopyButton
+							text={dbPath}
+							size="icon-sm"
+							tabindex={0}
+							aria-label="Copy database path"
+						/>
+					</Item.Actions>
+				</Item.Root>
+				<Item.Root variant="outline" size="sm">
+					<Item.Media variant="icon"><TerminalIcon /></Item.Media>
+					<Item.Content class="min-w-0">
+						<Item.Title>Terminal command</Item.Title>
+						<Item.Description
+							class="line-clamp-1 font-mono text-xs"
+							title={sqliteCommand}
+						>
+							{sqliteCommand}
+						</Item.Description>
+					</Item.Content>
+					<Item.Actions>
+						<CopyButton
+							text={sqliteCommand}
+							size="icon-sm"
+							tabindex={0}
+							aria-label="Copy terminal command"
+						/>
+					</Item.Actions>
+				</Item.Root>
+			</Item.Group>
 		</section>
 
 		<section class="space-y-3">
-			<h3
-				class="text-xs font-medium uppercase tracking-wide text-muted-foreground"
-			>
-				Tables
-			</h3>
+			<SectionHeader.Root>
+				<SectionHeader.Title level={3}>Projected tables</SectionHeader.Title>
+				<SectionHeader.Description>
+					{tableSchemas.length === 0
+						? 'No typed tables are available to SQL.'
+						: `${tableSchemas.length} ${tableSchemas.length === 1 ? 'typed table is' : 'typed tables are'} available to SQL.`}
+				</SectionHeader.Description>
+			</SectionHeader.Root>
 			{#if tableSchemas.length === 0}
-				<p class="text-sm text-muted-foreground">
-					No typed tables yet. Add a matter.json with fields to project one.
-				</p>
+				<Empty.Root class="min-h-48 border-0">
+					<Empty.Media variant="icon"><Table2Icon /></Empty.Media>
+					<Empty.Title>No projected tables</Empty.Title>
+					<Empty.Description>
+						Add a matter.json with typed fields to project a table.
+					</Empty.Description>
+				</Empty.Root>
 			{:else}
-				{#each tableSchemas as schema (schema.name)}
-					<div class="space-y-1.5">
-						<div class="flex items-center justify-between gap-2">
-							<span class="font-mono text-xs font-medium">{schema.name}</span>
-							{@render copyButton(schema.ddl, 'ghost')}
-						</div>
-						<pre
-							class="overflow-x-auto rounded-md border bg-muted/30 p-3 font-mono text-xs"><code
-								>{schema.ddl}</code
-							></pre>
-					</div>
-				{/each}
+				<Accordion.Root type="multiple">
+					{#each tableSchemas as schema (schema.name)}
+						<Accordion.Item value={schema.name}>
+							<Accordion.Trigger>
+								<span class="flex items-center gap-2 font-mono text-sm">
+									<Table2Icon class="size-4 text-muted-foreground" />
+									{schema.name}
+								</span>
+							</Accordion.Trigger>
+							<Accordion.Content class="pb-4">
+								<Snippet
+									text={schema.ddl}
+									copyLabel="Copy {schema.name} schema"
+								/>
+							</Accordion.Content>
+						</Accordion.Item>
+					{/each}
+				</Accordion.Root>
 			{/if}
 		</section>
 	</div>

@@ -37,7 +37,7 @@ Stop and surface, do not guess, if:
 
 ## Skills to load
 
-`workspace-api` (always), `yjs` (LWW + the encrypted-store boundary), `define-errors` and `error-handling` (the error taxonomy and refusal channels, waves 1 and 4), `testing` and `tdd` (waves 1, 2, 4), `encryption` (wave 2, the undecryptable-entry enumeration), `svelte` and `epicenter-ui` and `writing-voice` (wave 5), `greenfield-clean-breaks` (wave 3, the read-surface collapse), `standalone-commits` and `git` (every commit), `spec-execution` (the wave loop), `post-implementation-review` before handing back.
+`workspace-api` (always), `yjs` (LWW + the encrypted-store boundary), `define-errors` and `error-handling` (the error taxonomy and refusal channels, waves 1 and 4), `testing` and `tdd` (waves 1, 2, 4), `encryption` (wave 2, the undecryptable-entry enumeration), `svelte` and `ui-design` and `writing-voice` (wave 5), `greenfield-clean-breaks` (wave 3, the read-surface collapse), `standalone-commits` and `git` (every commit), `spec-execution` (the wave loop), `post-implementation-review` before handing back.
 
 ## Key files
 

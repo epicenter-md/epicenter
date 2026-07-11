@@ -1,6 +1,6 @@
 ---
 name: tanstack-table
-description: TanStack Table UI state patterns for @tanstack/svelte-table, @tanstack/table-core, createTable, ColumnDef, FlexRender, renderComponent, sorting, filtering, pagination, row identity, and @epicenter/ui/table composition. Use when building or reviewing Svelte data tables, not Epicenter workspace storage tables.
+description: TanStack Table UI state patterns for @tanstack/svelte-table, @tanstack/table-core, createTable, ColumnDef, FlexRender, renderComponent, sorting, filtering, pagination, row identity, and local table markup composition. Use when building or reviewing Svelte data tables, not Epicenter workspace storage tables.
 metadata:
   author: epicenter
   version: '1.0'
@@ -52,6 +52,6 @@ import type { ColumnDef } from '@tanstack/table-core';
 - TanStack Table owns row, column, and cell state. `@epicenter/ui/table` owns semantic table markup and styling.
 - Render headers and cells with `FlexRender`.
 - Key rows by `row.id` and cells by `cell.id`.
-- Empty states stay in `epicenter-ui`: when row count is zero, render `Empty.Root` in the table body or surrounding panel.
+- Empty states stay in `ui-design`: when row count is zero, render `Empty.Root` in the table body or surrounding panel.
 - Add explicit keyboard behavior for clickable rows. A click handler alone is not a row interaction model.
 - Use TanStack Virtual separately for large lists. Do not treat virtualization as a built-in table feature.

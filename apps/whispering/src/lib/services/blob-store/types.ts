@@ -24,22 +24,20 @@ export type BlobStore = {
 
 	/**
 	 * Get blob by key. Fetches on-demand.
-	 * - Desktop: Reads file from predictable path in the recordings directory
+	 * - Desktop: Requests raw bytes from the id-scoped native artifact command
 	 * - Web: Fetches from IndexedDB by ID, converts serialized data to Blob
 	 */
 	getBlob(key: string): Promise<Result<Blob, BlobError>>;
 
 	/**
 	 * Get playback URL for blob. Creates and caches URL.
-	 * - Desktop: Uses convertFileSrc() to create asset:// URL
-	 * - Web: Creates and caches object URL, manages lifecycle
+	 * - Desktop and web: Creates and caches an object URL, manages lifecycle
 	 */
 	ensurePlaybackUrl(key: string): Promise<Result<string, BlobError>>;
 
 	/**
 	 * Revoke cached URL if present. Cleanup method.
-	 * - Desktop: No-op (asset:// URLs managed by Tauri)
-	 * - Web: Calls URL.revokeObjectURL() and removes from cache
+	 * Calls URL.revokeObjectURL() and removes the cached URL.
 	 */
 	revokeUrl(key: string): void;
 };

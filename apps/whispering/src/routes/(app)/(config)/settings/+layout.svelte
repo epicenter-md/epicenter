@@ -1,43 +1,15 @@
 <script lang="ts">
 	import { Button } from '@epicenter/ui/button';
 	import { confirmationDialog } from '@epicenter/ui/confirmation-dialog';
-	import { Link } from '@epicenter/ui/link';
 	import * as SectionHeader from '@epicenter/ui/section-header';
 	import { Separator } from '@epicenter/ui/separator';
 	import RotateCcw from '@lucide/svelte/icons/rotate-ccw';
 	import { report } from '$lib/report';
-	import { tauri } from '#platform/tauri';
 	import { deviceConfig } from '$lib/state/device-config.svelte';
 	import { settings } from '$lib/state/settings.svelte';
 	import SidebarNav from './SidebarNav.svelte';
 
 	let { children } = $props();
-
-	const isString = (value: unknown): value is string =>
-		typeof value === 'string';
-	const versionPromise = (async () => {
-		const res = await fetch(
-			'https://api.github.com/repos/EpicenterHQ/epicenter/releases/latest',
-		);
-		const { html_url: latestReleaseUrl, tag_name: latestVersion } =
-			await res.json();
-		if (!isString(latestVersion) || !isString(latestReleaseUrl)) {
-			throw new Error('Failed to fetch latest version');
-		}
-		if (!tauri)
-			return { isOutdated: false, version: latestVersion } as const;
-		const { getVersion } = await import('@tauri-apps/api/app');
-		const currentVersion = `v${await getVersion()}`;
-		if (latestVersion === currentVersion) {
-			return { isOutdated: false, version: currentVersion } as const;
-		}
-		return {
-			isOutdated: true,
-			latestVersion,
-			currentVersion,
-			latestReleaseUrl,
-		} as const;
-	})();
 </script>
 
 <main class="flex w-full flex-1 flex-col pb-4 pt-2 px-4 mx-auto max-w-6xl">
@@ -49,27 +21,7 @@
 				>Settings</SectionHeader.Title
 			>
 			<SectionHeader.Description>
-				{#await versionPromise}
-					Customize your Whispering experience.
-				{:then v}
-					{#if v.isOutdated}
-						{@const { latestVersion, currentVersion, latestReleaseUrl } = v}
-						Customize your experience for Whispering {currentVersion} (latest
-						<Link
-							href={latestReleaseUrl}
-							target="_blank"
-							rel="noopener noreferrer"
-						>
-							{latestVersion}
-						</Link>
-						).
-					{:else}
-						{@const { version } = v}
-						Customize your experience for Whispering {version}.
-					{/if}
-				{:catch error}
-					Customize your Whispering experience.
-				{/await}
+				Customize your Whispering experience.
 			</SectionHeader.Description>
 		</SectionHeader.Root>
 		<Button

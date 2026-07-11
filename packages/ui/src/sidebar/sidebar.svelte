@@ -35,6 +35,7 @@
 	<div
 		bind:this={ref}
 		class="text-sidebar-foreground group peer block"
+		inert={collapsible === 'offcanvas' && sidebar.state === 'collapsed'}
 		data-state={sidebar.state}
 		data-collapsible={sidebar.state === 'collapsed' ? collapsible : ''}
 		data-variant={variant}

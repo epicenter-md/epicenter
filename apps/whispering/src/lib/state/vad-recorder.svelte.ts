@@ -7,6 +7,7 @@ import { defineErrors, extractErrorMessage } from 'wellcrafted/error';
 import { defineKeys } from 'wellcrafted/query';
 import { Ok } from 'wellcrafted/result';
 import type { VadState } from '$lib/constants/audio';
+import { WHISPERING_BASE_PATHNAME } from '$lib/constants/urls';
 import { defineQuery } from '$lib/rpc/client';
 import { deviceConfig } from '$lib/state/device-config.svelte';
 
@@ -40,9 +41,11 @@ const vadKeys = defineKeys({
  * - Enumerate devices: `createQuery(() => vadRecorder.enumerateDevices.options)`
  */
 function createReactiveVadRecorder() {
-	// The package serves its assets from `/vad/` by default, which is where
-	// Whispering's Vite config copies them (see vite.config.ts).
-	const vad = createVadRecorder();
+	// The SPA is mounted below Epicenter's shared origin, so runtime asset fetches
+	// must stay below the Whispering base too.
+	const vad = createVadRecorder({
+		assetBaseUrl: `${WHISPERING_BASE_PATHNAME}/vad/`,
+	});
 	let _state = $state<VadState>('IDLE');
 
 	return {

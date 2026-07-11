@@ -1,7 +1,7 @@
 /**
- * Exit-code tests: the three tiers derived from a {@link Summary}. Fatal (2) for a table that could
- * not load, problems (1) for data that needs attention, clean (0) otherwise. `untyped` is valid,
- * so an untyped-only vault exits 0.
+ * Exit-code tests: the three tiers derived from a {@link Summary}. Fatal (2) for a table or
+ * Markdown file that could not load, problems (1) for data that needs attention, clean (0)
+ * otherwise. `untyped` is valid, so an untyped-only vault exits 0.
  */
 
 import { describe, expect, test } from 'bun:test';
@@ -85,6 +85,17 @@ describe('exitCodeFor', () => {
 			exitCode([
 				loaded('bad', '{ not valid json', [
 					{ fileName: 'b1.md', content: '---\ntitle: X\n---' },
+				]),
+			]),
+		).toBe(2);
+	});
+
+	test('2 when a Markdown file cannot become a row', () => {
+		expect(
+			exitCode([
+				loaded('pages', pagesModel, [
+					{ fileName: 'good.md', content: '---\ntitle: Good\n---' },
+					{ fileName: 'broken.md', content: '---\ntitle: [bad\n---' },
 				]),
 			]),
 		).toBe(2);

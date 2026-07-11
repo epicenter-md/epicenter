@@ -1,5 +1,5 @@
 import { RecorderError } from '$lib/services/recorder/contract';
-import type { IpcRecorderError } from '$lib/tauri/commands';
+import type { IpcRecorderError } from '$lib/tauri/commands.types';
 
 /**
  * Map a structured Rust recorder error (the `{ name, message }` IPC enum) to a

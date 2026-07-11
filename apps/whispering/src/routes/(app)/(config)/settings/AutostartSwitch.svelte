@@ -19,7 +19,7 @@
 	<Field.Content>
 		<Field.Label for="autostart">Launch on Startup</Field.Label>
 		<Field.Description>
-			Automatically open Whispering when you log in
+			Automatically open Epicenter when you log in
 		</Field.Description>
 	</Field.Content>
 	<Switch

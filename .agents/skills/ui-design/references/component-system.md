@@ -1,0 +1,54 @@
+# Epicenter Component-System Collapse
+
+This reference owns the smell and ownership decisions that collapse app-local
+UI into the shared product system. For the exact component catalog, import
+boundary, loading and empty-state guidance, tooltip API, composition ladder,
+vendored-fork differences, and update workflow, read the authoritative
+[`packages/ui/README.md`](../../../../packages/ui/README.md). Do not copy that
+package guide into this reference.
+
+## Collapse Smells
+
+These are high-signal smells, not automatic bans:
+
+- Arbitrary Tailwind values such as `text-[11px]`, `rounded-[7px]`,
+  `max-w-[43rem]`, or other exact values outside the shared scale.
+- Raw hex, RGB, or palette colors where a semantic token should own the role.
+- Stray `div` wrappers whose only job is carrying layout or visual classes.
+- Long class bundles that restyle a primitive's spacing, density, radius,
+  typography, hover, focus, shadow, or transition budget.
+- Local loading, empty, error, confirmation, tooltip, or command markup that a
+  shared component already owns.
+- The same visual bundle copied across screens or apps.
+- One-off responsive branches, hover treatments, or animations preserved only
+  to reproduce the old screen exactly.
+
+For each smell, name the user-visible objective and compare the code with the
+natural component-system composition. If the objective survives without the
+custom detail, delete the detail and its wrappers instead of translating them
+line for line.
+
+An arbitrary value or custom color can survive when it owns precise geometry,
+data visualization, a third-party integration constraint, or another concrete
+product reason that the shared scale cannot express. Name the reason. If the
+value repeats or becomes a reusable visual decision, promote it to a semantic
+token, component variant, or stable primitive.
+
+## What Earns A Custom Shape
+
+Keep a composition in the app when it owns app-specific data, persistence,
+policy, workflow, or product meaning. Its styling should still compose shared
+primitives rather than rebuilding them.
+
+Move a shape into `packages/ui` when it is stable and visual and either:
+
+- several apps need the same product concept; or
+- it owns an accessibility or interaction contract that should not be
+  reimplemented locally.
+
+Do not promote speculative reuse. Do not keep a reusable visual contract local
+merely because the first consumer happened to live in one app.
+
+When a shape moves into `packages/ui`, follow the package guide instead of
+inventing a parallel import, variant, overlay, or vendoring rule. Run
+`bun run check:ui-boundary` after changing package imports or app configuration.

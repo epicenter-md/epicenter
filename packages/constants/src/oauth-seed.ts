@@ -2,6 +2,8 @@ import type { SchemaClient } from '@better-auth/oauth-provider';
 import { APPS, appOrigins } from '#apps';
 import {
 	EPICENTER_CLI_OAUTH_CLIENT_ID,
+	EPICENTER_DESKTOP_OAUTH_CLIENT_ID,
+	EPICENTER_DESKTOP_TAURI_OAUTH_REDIRECT_URI,
 	EPICENTER_HONEYCRISP_OAUTH_CLIENT_ID,
 	EPICENTER_HONEYCRISP_TAURI_OAUTH_REDIRECT_URI,
 	EPICENTER_OAUTH_SCOPES,
@@ -9,7 +11,6 @@ import {
 	EPICENTER_TAB_MANAGER_OAUTH_CLIENT_ID,
 	EPICENTER_VOCAB_OAUTH_CLIENT_ID,
 	EPICENTER_WHISPERING_OAUTH_CLIENT_ID,
-	EPICENTER_WHISPERING_TAURI_OAUTH_REDIRECT_URI,
 } from './oauth-clients.js';
 import { OAUTH_ROUTES } from './oauth-routes.js';
 
@@ -78,13 +79,16 @@ export function buildTrustedOAuthClients(apiBaseURL: string) {
 	// it is deliberately absent from this trusted-client set.
 	return [
 		{
+			clientId: EPICENTER_DESKTOP_OAUTH_CLIENT_ID,
+			name: 'Epicenter Desktop',
+			type: 'user-agent-based',
+			redirectUris: [EPICENTER_DESKTOP_TAURI_OAUTH_REDIRECT_URI],
+		},
+		{
 			clientId: EPICENTER_WHISPERING_OAUTH_CLIENT_ID,
 			name: 'Whispering',
 			type: 'user-agent-based',
-			redirectUris: [
-				...appCallbacks(APPS.WHISPERING),
-				EPICENTER_WHISPERING_TAURI_OAUTH_REDIRECT_URI,
-			],
+			redirectUris: appCallbacks(APPS.WHISPERING),
 		},
 		{
 			clientId: EPICENTER_HONEYCRISP_OAUTH_CLIENT_ID,

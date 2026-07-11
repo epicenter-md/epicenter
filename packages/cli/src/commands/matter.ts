@@ -82,7 +82,7 @@ function writeJson(
  * `--json`, and the exit code, so every surface agrees by construction.
  *
  * Exit codes: 0 every loaded row is healthy; 1 a row needs attention or a reference does not resolve;
- * 2 a folder is unreadable or a `matter.json` is a corrupt contract.
+ * 2 a folder or Markdown file is unreadable, or a `matter.json` is a corrupt contract.
  *
  * A lone table (one folder, no siblings loaded) cannot resolve cross-table references, so every
  * reference reads as `missing-target`: those are surfaced as a note, never a failure.

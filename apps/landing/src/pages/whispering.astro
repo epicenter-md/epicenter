@@ -2,25 +2,18 @@
 import { Button } from '@epicenter/ui/button';
 import * as Card from '@epicenter/ui/card';
 import {
-	Apple as AppleIcon,
 	ArrowRight as ArrowRightIcon,
 	Check as CheckIcon,
 	ChevronDown as ChevronDownIcon,
-	Download as DownloadIcon,
 	ExternalLink as ExternalLinkIcon,
-	Globe as GlobeIcon,
 	Lightbulb as LightbulbIcon,
 	Lock as LockIcon,
 	Mic as MicIcon,
-	Monitor as MonitorIcon,
-	Terminal as TerminalIcon,
 	Zap as ZapIcon,
 } from '@lucide/astro';
 import GitHubStars from '../components/whispering/GitHubStars.astro';
 import MicrophoneHero from '../components/whispering/MicrophoneHero.astro';
-import OSDetector from '../components/whispering/OSDetector.svelte';
 import BaseLayout from '../layouts/BaseLayout.astro';
-import { VERSION } from '../version';
 
 const features = [
 	{
@@ -32,7 +25,8 @@ const features = [
 	{
 		icon: MicIcon,
 		title: 'Keyboard Shortcuts',
-		description: 'Press shortcut, speak, get text anywhere on your system',
+		description:
+			'Use focused shortcuts in the browser and system-global shortcuts in Epicenter',
 	},
 	{
 		icon: LightbulbIcon,
@@ -100,39 +94,6 @@ const faqItems = [
 			'Whispering is optimized for quick transcriptions with keyboard shortcuts. For extended recording sessions, we recommend using a dedicated recording app first, then processing the audio with Whispering.',
 	},
 ];
-
-const downloads = [
-	{
-		platform: 'macOS',
-		description: 'Apple Silicon only',
-		icon: AppleIcon,
-		url: `https://github.com/EpicenterHQ/epicenter/releases/download/v${VERSION}/Whispering_${VERSION}_aarch64.dmg`,
-		extension: '.dmg',
-	},
-	{
-		platform: 'Windows',
-		description: 'Windows 10/11',
-		icon: MonitorIcon,
-		url: `https://github.com/EpicenterHQ/epicenter/releases/download/v${VERSION}/Whispering_${VERSION}_x64_en-US.msi`,
-		extension: '.msi',
-	},
-	{
-		platform: 'Linux',
-		description: 'All distributions',
-		icon: TerminalIcon,
-		url: 'https://github.com/EpicenterHQ/epicenter/releases',
-		extension: 'View Releases',
-		isReleases: true,
-	},
-	{
-		platform: 'Web App',
-		description: 'Try in your browser',
-		icon: GlobeIcon,
-		url: 'https://whispering.epicenter.so',
-		extension: 'Try Now',
-		isWebApp: true,
-	},
-];
 ---
 
 <BaseLayout
@@ -176,19 +137,26 @@ const downloads = [
 					<div
 						class="flex flex-col sm:flex-row items-center justify-center gap-4 animate-fade-up px-4 sm:px-0"
 					>
-						<!-- Primary CTA -->
-						<OSDetector client:load />
+						<Button
+							href="https://whispering.epicenter.so"
+							target="_blank"
+							size="lg"
+							class="w-full sm:w-auto min-w-[200px] min-h-[48px] font-semibold"
+						>
+							<ExternalLinkIcon class="w-5 h-5 mr-2" />
+							Open Whispering
+						</Button>
 
 						<!-- Secondary CTA -->
 						<Button
-							href="https://whispering.epicenter.so"
+							href="https://github.com/EpicenterHQ/epicenter/tree/main/apps/whispering"
 							target="_blank"
 							variant="outline"
 							size="lg"
 							class="w-full sm:w-auto min-w-[200px] min-h-[48px] font-semibold"
 						>
 							<ExternalLinkIcon class="w-5 h-5 mr-2" />
-							Try Whispering Web Version
+							View source
 						</Button>
 					</div>
 
@@ -436,92 +404,6 @@ const downloads = [
 			</div>
 		</section>
 
-		<!-- Download Section -->
-		<section id="download" class="py-24 bg-background">
-			<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-				<div class="text-center mb-16 space-y-6">
-					<h2 class="text-3xl lg:text-5xl font-bold">
-						Download for supported platforms
-					</h2>
-					<p class="text-xl text-foreground/75 max-w-3xl mx-auto">
-						Native desktop builds and browser access
-					</p>
-				</div>
-
-				<div class="grid sm:grid-cols-2 lg:grid-cols-4 gap-8 max-w-6xl mx-auto">
-					{downloads.map((download, index) => {
-							const Icon = download.icon;
-							return (
-								<Card.Root
-									class={`group stagger-item text-center transition-all duration-300 hover:-translate-y-1 hover:shadow-lg stagger-delay-${index} border-0 shadow-sm`}
-								>
-									<Card.Header>
-										<div class="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-primary/10 transition-all duration-300 group-hover:rotate-3 group-hover:bg-primary/20">
-											<Icon class="h-8 w-8 text-primary transition-transform duration-300 group-hover:scale-110" />
-										</div>
-										<Card.Title class="text-xl transition-colors duration-300 group-hover:text-primary">
-											{download.platform}
-										</Card.Title>
-										<Card.Description>{download.description}</Card.Description>
-									</Card.Header>
-									<Card.Content>
-										{download.isWebApp ? (
-											<Button
-												href={download.url}
-												variant="secondary"
-												class="min-h-[44px] w-full transition-shadow duration-300 group-hover:shadow-md"
-											>
-												<ExternalLinkIcon class="mr-2 h-4 w-4 transition-transform duration-300 group-hover:rotate-12" />
-												{download.extension}
-											</Button>
-										) : download.isReleases ? (
-											<Button
-												href={download.url}
-												variant="outline"
-												class="min-h-[44px] w-full transition-shadow duration-300 group-hover:shadow-md"
-											>
-												<ExternalLinkIcon class="mr-2 h-4 w-4 transition-transform duration-300 group-hover:rotate-12" />
-												{download.extension}
-											</Button>
-										) : (
-											<Button
-												href={download.url}
-												class="min-h-[44px] w-full transition-shadow duration-300 group-hover:shadow-md"
-											>
-												<DownloadIcon class="mr-2 h-4 w-4 transition-transform duration-300 group-hover:translate-y-1" />
-												Download {download.extension}
-											</Button>
-										)}
-									</Card.Content>
-								</Card.Root>
-							);
-						})}
-				</div>
-
-				<!-- Version info -->
-				<div class="text-center mt-12">
-					<Card.Root class="inline-block border-0 shadow-sm">
-						<Card.Content class="px-6 py-4">
-							<div
-								class="flex flex-wrap items-center justify-center gap-4 lg:gap-6 text-foreground/70"
-							>
-								<span class="font-medium">Version {VERSION}</span>
-								<span class="hidden sm:inline">•</span>
-								<span>~22MB Install</span>
-								<span class="hidden sm:inline">•</span>
-								<a
-									href="https://www.youtube.com/watch?v=1jYgBMrfVZs"
-									class="text-primary hover:text-primary/80 font-medium transition-colors"
-								>
-									Setup Guide →
-								</a>
-							</div>
-						</Card.Content>
-					</Card.Root>
-				</div>
-			</div>
-		</section>
-
 		<!-- FAQ Section -->
 		<section class="py-24 bg-muted/50">
 			<div class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -572,21 +454,21 @@ const downloads = [
 							class="flex flex-col sm:flex-row items-center justify-center gap-4"
 						>
 							<Button
-								href="https://github.com/EpicenterHQ/epicenter/releases"
+								href="https://whispering.epicenter.so"
 								size="lg"
 								variant="secondary"
 								class="min-w-[180px] min-h-[48px]"
 							>
-								<DownloadIcon class="w-4 h-4 mr-2" />
-								Download Now
+								<ExternalLinkIcon class="w-4 h-4 mr-2" />
+								Open Whispering
 							</Button>
 							<Button
-								href="https://whispering.epicenter.so"
+								href="https://github.com/EpicenterHQ/epicenter/tree/main/apps/whispering"
 								size="lg"
 								class="min-w-[180px] min-h-[48px] bg-white/10 border-2 border-white text-white hover:bg-white hover:text-primary"
 							>
 								<ExternalLinkIcon class="w-4 h-4 mr-2" />
-								Try Whispering on Web
+								View source
 							</Button>
 						</div>
 

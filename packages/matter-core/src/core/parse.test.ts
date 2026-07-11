@@ -41,6 +41,24 @@ describe('parseMarkdown', () => {
 		expect(parseMarkdown(raw).error?.name).toBe('ConflictMarkers');
 	});
 
+	test('conflict-marker examples in the opaque body stay readable and verbatim', () => {
+		const body =
+			'```txt\n<<<<<<< HEAD\nours\n=======\ntheirs\n>>>>>>> other\n```';
+		const raw = `---\ntitle: How conflicts work\n---\n${body}`;
+		const { data, error } = parseMarkdown(raw);
+
+		expect(error).toBeNull();
+		expect(data).toEqual({
+			frontmatter: { title: 'How conflicts work' },
+			body,
+		});
+	});
+
+	test('a body-only conflict-marker example is opaque text', () => {
+		const raw = '<<<<<<< HEAD\nours\n=======\ntheirs\n>>>>>>> other\n';
+		expect(parseMarkdown(raw).data).toEqual({ frontmatter: {}, body: raw });
+	});
+
 	test('malformed YAML is unreadable (and carries the parser error as cause)', () => {
 		const raw = '---\n: : :\n  bad\n indent\n---\nbody';
 		const { error } = parseMarkdown(raw);

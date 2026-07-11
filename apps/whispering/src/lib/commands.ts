@@ -1,5 +1,6 @@
 import { platformCommands } from '#platform/commands';
 import { goto } from '$app/navigation';
+import { whisperingPath } from '$lib/constants/urls';
 import { pushToTalk } from '$lib/operations/push-to-talk';
 import { runRecipeOnClipboard } from '$lib/operations/recipe-clipboard';
 import {
@@ -124,7 +125,7 @@ const sharedCommands = [
 		// registers globally; it fires only with Whispering in front. See ADR-0052.
 		reach: 'focused',
 		on: ['Pressed'],
-		run: () => goto('/settings'),
+		run: () => goto(whisperingPath('/settings')),
 	},
 ] as const satisfies SatisfiedCommand[];
 

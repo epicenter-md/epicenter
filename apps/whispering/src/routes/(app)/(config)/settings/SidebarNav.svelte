@@ -4,20 +4,24 @@
 	import { cubicInOut } from 'svelte/easing';
 	import { crossfade } from 'svelte/transition';
 	import { page } from '$app/state';
+	import { whisperingPath } from '$lib/constants/urls';
 
 	const items = [
-		{ title: 'General', href: '/settings' },
-		{ title: 'Recording', href: '/settings/recording' },
-		{ title: 'Privacy & Processing', href: '/settings/processing' },
-		{ title: 'Dictation', href: '/settings/dictation' },
+		{ title: 'General', href: whisperingPath('/settings') },
+		{ title: 'Recording', href: whisperingPath('/settings/recording') },
+		{
+			title: 'Privacy & Processing',
+			href: whisperingPath('/settings/processing'),
+		},
+		{ title: 'Dictation', href: whisperingPath('/settings/dictation') },
 		{
 			title: 'Shortcuts',
-			href: '/settings/shortcuts',
-			activePathPrefix: '/settings/shortcuts',
+			href: whisperingPath('/settings/shortcuts'),
+			activePathPrefix: whisperingPath('/settings/shortcuts'),
 		},
-		{ title: 'Sound', href: '/settings/sound' },
-		{ title: 'Analytics', href: '/settings/analytics' },
-		{ title: 'Account', href: '/settings/account' },
+		{ title: 'Sound', href: whisperingPath('/settings/sound') },
+		{ title: 'Analytics', href: whisperingPath('/settings/analytics') },
+		{ title: 'Account', href: whisperingPath('/settings/account') },
 	] satisfies {
 		title: string;
 		href: string;

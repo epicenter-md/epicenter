@@ -1,6 +1,6 @@
 # Whispering App
 
-Tauri + Svelte 5 desktop/web app for voice transcription.
+Browser-hostable Svelte 5 speech-to-text SPA. Epicenter owns its only native Tauri runtime.
 
 ## Key Points
 
@@ -25,9 +25,10 @@ capabilities, generated bindings, or platform filesystem behavior. Load
 TypeScript.
 
 Every command change must keep `make_specta_builder()` in
-`src-tauri/src/lib.rs`, generated bindings, and `src/lib/tauri/commands.ts` in
-sync. The command boundary file is the only place in `src/lib/**` that may
-import `invoke` from `@tauri-apps/api/core` for app commands.
+`../epicenter/src-tauri/src/lib.rs`, generated bindings, and
+`src/lib/tauri/commands.ts` in sync. The command boundary file is the only place
+in `src/lib/**` that may import `invoke` from `@tauri-apps/api/core` for app
+commands.
 
 ## Specs and Docs
 

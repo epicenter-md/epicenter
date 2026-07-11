@@ -33,7 +33,7 @@ Skip DeepWiki for stable basics and repo-local patterns already documented here 
 - `query-layer`: TanStack Query integration
 - `error-handling`: `$lib/report`, `extractErrorMessage`, and component error handling
 - `styling`: CSS and Tailwind conventions, including the flex column scroll trap
-- `epicenter-ui`: loading, empty, pending, tooltip, and component selection patterns
+- `ui-design`: visual direction plus loading, empty, pending, tooltip, and component selection patterns
 
 ## Svelte 5 Baseline
 

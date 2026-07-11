@@ -58,17 +58,19 @@ Consumers always write `import { TextServiceLive } from '#platform/text'`, with 
 ```ts
 // vite.config.ts (sketch)
 import { defaultClientConditions } from 'vite';
-const isTauri = process.env.TAURI_ENV_PLATFORM !== undefined;
+const isEpicenterSurface = process.env.EPICENTER_SURFACE === '1';
 export default defineConfig({
   resolve: {
     // The `...defaultClientConditions` spread is load-bearing:
     // custom conditions REPLACE Vite's defaults.
-    ...(isTauri && { conditions: ['tauri', ...defaultClientConditions] }),
+    ...(isEpicenterSurface && {
+      conditions: ['tauri', ...defaultClientConditions],
+    }),
   },
 });
 ```
 
-The editor and `tsc` need no `moduleSuffixes` and no per-target tsconfig: `bundler` module resolution reads the `imports` field and lands on `default` (browser) for typecheck. The scope is narrow: only `#platform/*` specifiers are platform-resolved, so nothing else in the bundle is magic.
+The browser typecheck reads the default condition, while `tsconfig.tauri.json` repeats it with the `tauri` condition. Neither config needs `moduleSuffixes`. The scope is narrow: only `#platform/*` specifiers are platform-resolved, so nothing else in the bundle is magic.
 
 Each `#platform/*` impl is annotated against the shared contract with `export const TextServiceLive: TextService = ...` (not `satisfies`, which would leak the concrete type and break lockstep across variants).
 
@@ -80,13 +82,13 @@ import { tauri, type Tauri } from '#platform/tauri';
 // 1. Shared code (runs on web and Tauri): narrow once.
 if (tauri) {
   await tauri.fs.pathsToFiles(paths);
-  await tauri.tray.setIcon({ icon: 'RECORDING' });
+  await tauri.keyboard.setAutoPasteEnabled(true);
 }
 
 // 2. Shared helpers called only inside an `if (tauri)` block:
 //    prop-drill the narrowed value.
-async function useTrayIcon(tauri: Tauri) {
-  await tauri.tray.setIcon({ icon: 'IDLE' });
+async function focusDesktopWindow(tauri: Tauri) {
+  await tauri.mainWindow.focus();
 }
 
 // 3. Inside *.tauri.ts files (build system already gated): tauriOnly,
@@ -101,7 +103,7 @@ See `docs/articles/20260526T012526-tauri-is-both-the-namespace-and-the-platform-
 > **💡 Three kinds of dependency injection**
 >
 > - **Build-time platform DI** (`#platform/*` subpath imports): for services that have a real implementation on both platforms. `text`, `os`, `download`, `analytics`, `http`, `blob-store`, `recorder`. Each maps a `#platform/<service>` specifier (in `package.json`'s `imports`) to `index.tauri.ts` + `index.browser.ts`, with a shared `types.ts`. The active build condition picks one.
-> - **Tauri-only namespace** (`#platform/tauri`): for capabilities that exist only on Tauri (fs, permissions, window, tray, keyboard, autostart). One file (`$lib/tauri.tauri.ts`) holds the current namespace capabilities. Shared consumers reach them through `import { tauri } from '#platform/tauri'` and either narrow with `if (tauri)`, prop-drill the narrowed value into helpers, or import `tauriOnly` directly from `$lib/tauri.tauri` inside a `.tauri.ts` file.
+> - **Tauri-only namespace** (`#platform/tauri`): for capabilities that exist only on Tauri (fs, permissions, window, keyboard, autostart). One file (`$lib/tauri.tauri.ts`) holds the current namespace capabilities. Shared consumers reach them through `import { tauri } from '#platform/tauri'` and either narrow with `if (tauri)`, prop-drill the narrowed value into helpers, or import `tauriOnly` directly from `$lib/tauri.tauri` inside a `.tauri.ts` file.
 > - **Runtime DI** (switch on `settings` and `deviceConfig`): for user-pick providers like `transcription`.
 >
 > See `docs/articles/20260526T012650-two-switches-build-time-and-runtime.md` for the platform-vs-settings walkthrough.
@@ -119,7 +121,7 @@ Services are UI-free modules that:
 
 ### Platform Detection
 
-The build picks the right file at build time. The Tauri build (`process.env.TAURI_ENV_PLATFORM` set) activates the `tauri` condition; the web build falls through to `default`. Consumers import the bare `#platform/*` specifier without naming the platform:
+The build picks the right file at build time. Epicenter's asset build (`EPICENTER_SURFACE=1`) activates the `tauri` condition; the web build falls through to `default`. Consumers import the bare `#platform/*` specifier without naming the platform:
 
 ```typescript
 // Resolves to services/text/index.browser.ts on web,
@@ -212,9 +214,9 @@ Inline overrides at the call site are how context-specific copy lands ("Authenti
 3. **Map Platform Errors**: Transform platform-specific errors
    ```typescript
    return tryAsync({
-   	try: () => navigator.mediaDevices.getUserMedia(constraints),
-   	catch: (error) =>
-   		DeviceStreamError.PermissionDenied({ cause: error }),
+       try: () => navigator.mediaDevices.getUserMedia(constraints),
+       catch: (error) =>
+           DeviceStreamError.PermissionDenied({ cause: error }),
    });
    ```
 
@@ -425,8 +427,7 @@ Tauri-only namespace capabilities live inline in one file at `$lib/tauri.tauri.t
 
 - `tauri.fs` - Filesystem operations (pathsToFiles)
 - `tauri.permissions` - macOS accessibility/microphone permission flows
-- `tauri.tray` - System tray icon (setIcon)
-- `tauri.keyboard` - Global-shortcut chord registration plus the macOS paste-at-cursor grant watch (registerChords, unregisterChords, setAutoPasteEnabled, getDictationCapability, onDictationCapabilityChanged)
+- `tauri.keyboard` - Rust-owned global-shortcut replacement plus the macOS paste-at-cursor grant watch (registerChords, unregisterChords, setAutoPasteEnabled, getDictationCapability, onDictationCapabilityChanged)
 - `tauri.autostart` - Launch-at-login toggle (isEnabled, enable, disable)
 
 App-owned Rust commands that are not general reusable capabilities live in `$lib/tauri/commands`. Accessibility settings and upload encoding are examples: `commands.openAccessibilitySettings` opens System Settings, and `commands.encodeRecordingForUpload` is called by the transcription operation before cloud upload.

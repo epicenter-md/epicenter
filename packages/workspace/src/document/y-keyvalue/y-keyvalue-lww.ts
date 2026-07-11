@@ -214,65 +214,49 @@ export class YKeyValueLww<T> implements ObservableKvStore<T>, Disposable {
 	 * via iteration, `.get()`, and `.size`. The `set()` method never writes to
 	 * this map. The observer is the sole writer.
 	 *
-	 * @see pending for how immediate reads work after `set()`
+	 * @see pendingWrites for the transaction-local read overlay
 	 */
 	readonly map: ReadonlyMap<string, YKeyValueLwwEntry<T>> = this._map;
 
 	/**
-	 * Pending entries written by `set()` but not yet processed by the observer.
+	 * Local writes that have reached the Y.Array but not the observer-backed map.
 	 *
-	 * ## Why This Exists
+	 * Yjs observers run when the current transaction closes. If a caller opens a
+	 * transaction, `set()` mutates the Y.Array immediately, but `_map` remains one
+	 * observer turn behind. This overlay provides read-your-writes behavior until
+	 * the observer catches up.
 	 *
-	 * When `set()` is called inside a batch/transaction, the observer doesn't fire
-	 * until the outer transaction ends. Without `pending`, `get()` would return
-	 * undefined for values just written.
+	 * ```text
+	 * caller-owned transaction opens
+	 *   set(key, value)
+	 *     pendingWrites.set(key, entry) // visible to reads now
+	 *     yarray.push([entry])          // CRDT source-of-truth write
 	 *
-	 * ## Data Flow
+	 *   delete(key) when present
+	 *     pendingWrites.delete(key)
+	 *     pendingDeletes.add(key)       // reads report the key as absent
+	 *     deleteEntryByKey(key)         // finds and deletes the Y.Array index
 	 *
-	 * ```
-	 * set('foo', 1) is called:
-	 * ─────────────────────────────────────────────────────────────
+	 *   read view
+	 *     pendingDeletes hides keys
+	 *     pendingWrites overrides _map
 	 *
-	 *   set()
-	 *     │
-	 *     ├───► pending.set('foo', entry)    ← For immediate reads
-	 *     │
-	 *     └───► yarray.push(entry)           ← Source of truth (CRDT)
-	 *                 │
-	 *                 │  (observer fires after transaction ends)
-	 *                 ▼
-	 *           Observer
-	 *                 │
-	 *                 ├───► map.set('foo', entry)      ← Observer writes to map
-	 *                 │
-	 *                 └───► pending.delete('foo')      ← Clears pending
-	 *
-	 *
-	 * get('foo') is called:
-	 * ─────────────────────────────────────────────────────────────
-	 *
-	 *   get()
-	 *     │
-	 *     ├───► Check pending.get('foo')  ← If found, return it
-	 *     │
-	 *     └───► Check map.get('foo')      ← Fallback to map
+	 * transaction closes
+	 *   observer updates _map and clears the matching overlays
 	 * ```
 	 *
-	 * ## Who Writes Where
-	 *
-	 * | Writer   | `pending` | `Y.Array` | `map`     |
-	 * |----------|-----------|-----------|-----------|
-	 * | `set()`  | ✅ writes | ✅ writes | ❌ never  |
-	 * | Observer | ❌ never  | ❌ never  | ✅ writes |
+	 * Outside a caller-owned transaction, `set()` opens and closes its own
+	 * transaction, so the observer normally clears this overlay before `set()`
+	 * returns.
 	 */
-	private pending: Map<string, YKeyValueLwwEntry<T>> = new Map();
+	private pendingWrites: Map<string, YKeyValueLwwEntry<T>> = new Map();
 
 	/**
-	 * Keys deleted by `delete()` but not yet processed by the observer.
+	 * Local deletes that have reached the Y.Array but not the observer-backed map.
 	 *
-	 * Symmetric counterpart to `pending`: while `pending` tracks writes not yet
-	 * in `map`, `pendingDeletes` tracks deletions not yet removed from `map`.
-	 * This prevents stale reads after `delete()` during a batch/transaction.
+	 * This is the delete side of the overlay described above. After
+	 * `delete('foo')`, reads report the key as absent even if `_map` still holds the
+	 * old entry until the transaction closes.
 	 */
 	private pendingDeletes: Set<string> = new Set();
 
@@ -401,8 +385,9 @@ export class YKeyValueLww<T> implements ObservableKvStore<T>, Disposable {
 				deletedItem.content
 					.getContent()
 					.forEach((entry: YKeyValueLwwEntry<T>) => {
-						// Always clear pendingDeletes for this key: even if the ref-equality
-						// check fails (e.g. set+delete in same txn where entry never reached map)
+						// A deletion for this key has reached the observer. Clear the local
+						// delete overlay even if the deleted entry never reached _map
+						// (for example, set+delete inside one outer transaction).
 						this.pendingDeletes.delete(entry.key);
 
 						// Reference equality: only process if this is the entry we have cached
@@ -471,7 +456,7 @@ export class YKeyValueLww<T> implements ObservableKvStore<T>, Disposable {
 					if (
 						transaction.local &&
 						deletedCurrentKeys.has(newEntry.key) &&
-						this.pending.get(newEntry.key) !== newEntry
+						this.pendingWrites.get(newEntry.key) !== newEntry
 					) {
 						const newIndex = getEntryIndex(newEntry);
 						if (newIndex !== -1) indicesToDelete.push(newIndex);
@@ -536,10 +521,10 @@ export class YKeyValueLww<T> implements ObservableKvStore<T>, Disposable {
 					}
 				}
 
-				// Clear from pending once processed (whether entry won or lost).
+				// Clear the write overlay once processed (whether entry won or lost).
 				// Use reference equality to only clear if it's the exact entry we added.
-				if (this.pending.get(newEntry.key) === newEntry) {
-					this.pending.delete(newEntry.key);
+				if (this.pendingWrites.get(newEntry.key) === newEntry) {
+					this.pendingWrites.delete(newEntry.key);
 				}
 			}
 
@@ -607,16 +592,6 @@ export class YKeyValueLww<T> implements ObservableKvStore<T>, Disposable {
 	}
 
 	/**
-	 * Check if the Y.Doc is currently inside an active transaction.
-	 *
-	 * Uses Yjs internal `_transaction` property. This is stable across Yjs versions
-	 * but is technically internal API (underscore prefix).
-	 */
-	private isInTransaction(): boolean {
-		return this.doc._transaction !== null;
-	}
-
-	/**
 	 * Set a key-value pair with automatic timestamp.
 	 * The timestamp enables LWW conflict resolution during sync.
 	 *
@@ -655,21 +630,16 @@ export class YKeyValueLww<T> implements ObservableKvStore<T>, Disposable {
 	set(key: string, val: T): void {
 		const entry: YKeyValueLwwEntry<T> = { key, val, ts: this.getTimestamp() };
 
-		// Track in pending for immediate reads via get()
-		this.pending.set(key, entry);
+		// Keep reads transaction-local until the observer updates _map.
+		this.pendingWrites.set(key, entry);
 		this.pendingDeletes.delete(key);
 
-		const doWork = () => {
+		// Yjs reuses an active outer transaction, so this preserves the caller's
+		// origin and batches observer delivery until that transaction closes.
+		this.doc.transact(() => {
 			if (this._map.has(key)) this.deleteEntryByKey(key);
 			this.yarray.push([entry]);
-		};
-
-		// Avoid nested transactions - if already in one, just do the work
-		if (this.isInTransaction()) {
-			doWork();
-		} else {
-			this.doc.transact(doWork);
-		}
+		});
 
 		// DO NOT update this.map here - observer is the sole writer to map
 	}
@@ -693,10 +663,11 @@ export class YKeyValueLww<T> implements ObservableKvStore<T>, Disposable {
 	 *
 	 * ## When to use
 	 *
-	 * - Importing 1K+ rows: `ykv.bulkSet(entries)` in a transaction
+	 * - Importing 1K+ rows: `ykv.bulkSet(entries)` opens one transaction
 	 * - For chunked imports with progress, use `Table.bulkSet()` which wraps
 	 *   this method with chunking, `onProgress`, and event-loop yielding
-	 * - For < 100 rows, `set()` in a `doc.transact()` is simpler and equivalent
+	 * - For fewer than 100 rows, repeated `set()` calls are usually simpler. Wrap
+	 *   them in `doc.transact()` when they form one logical change.
 	 *
 	 * @example
 	 * ```typescript
@@ -715,7 +686,7 @@ export class YKeyValueLww<T> implements ObservableKvStore<T>, Disposable {
 					ts: this.getTimestamp(),
 				};
 
-				this.pending.set(key, entry);
+				this.pendingWrites.set(key, entry);
 				this.pendingDeletes.delete(key);
 				this.yarray.push([entry]);
 			}
@@ -729,20 +700,20 @@ export class YKeyValueLww<T> implements ObservableKvStore<T>, Disposable {
 	 * For bulk deletions (1K+ keys), use {@link bulkDelete} which does
 	 * one scan for all keys instead of one scan per key.
 	 *
-	 * Removes from `pending` immediately and triggers Y.Array deletion.
-	 * The observer will update `map` when the deletion is processed.
-	 * Adds the key to `pendingDeletes` so that `get()`, `has()`, and `entries()`
-	 * return correct results before the observer fires.
+	 * Removes from `pendingWrites` immediately and triggers Y.Array deletion.
+	 * The observer will update `_map` when the deletion is processed.
+	 * Adds the key to `pendingDeletes` so transaction-local reads report the key
+	 * as absent before the observer fires.
 	 */
 	delete(key: string): void {
-		// Remove from pending if present. If it was pending, the entry is in the
-		// Y.Array (set() pushes immediately) but not yet in map (observer deferred).
-		const wasPending = this.pending.delete(key);
+		// If this key was set earlier in the same outer transaction, it exists in
+		// the Y.Array but not _map yet. Delete still needs to remove that entry.
+		const hadPendingWrite = this.pendingWrites.delete(key);
 
 		// If already pending delete, no-op
 		if (this.pendingDeletes.has(key)) return;
 
-		if (!this._map.has(key) && !wasPending) return;
+		if (!this._map.has(key) && !hadPendingWrite) return;
 
 		this.pendingDeletes.add(key);
 		this.deleteEntryByKey(key);
@@ -791,7 +762,7 @@ export class YKeyValueLww<T> implements ObservableKvStore<T>, Disposable {
 
 			indicesToDelete.push(i);
 			this.pendingDeletes.add(entry.key);
-			this.pending.delete(entry.key);
+			this.pendingWrites.delete(entry.key);
 		}
 
 		if (indicesToDelete.length === 0) return;
@@ -807,18 +778,17 @@ export class YKeyValueLww<T> implements ObservableKvStore<T>, Disposable {
 	/**
 	 * Get value by key. O(1) via in-memory Map.
 	 *
-	 * Checks `pendingDeletes` first (a key deleted but not yet observed reads
-	 * absent, even if a stale write still sits in `pending`), then `pending`
-	 * (values written by `set()` but not yet processed by the observer), then
-	 * `map` (the authoritative cache).
+	 * Reads the observer-backed map plus the transaction-local overlay.
+	 *
+	 * `pendingDeletes` wins over `pendingWrites`: `set(); delete(); get()` inside one
+	 * outer transaction reads absent, matching the final state after the observer
+	 * catches up.
 	 */
 	get(key: string): T | undefined {
-		// Deleted but observer hasn't fired yet.
 		if (this.pendingDeletes.has(key)) return undefined;
 
-		// Written by set() but observer hasn't fired yet.
-		const pending = this.pending.get(key);
-		if (pending) return pending.val;
+		const pendingWrite = this.pendingWrites.get(key);
+		if (pendingWrite) return pendingWrite.val;
 
 		const entry = this._map.get(key);
 		return entry?.val;
@@ -830,9 +800,9 @@ export class YKeyValueLww<T> implements ObservableKvStore<T>, Disposable {
 	}
 
 	/**
-	 * Walk every stored entry (both pending and confirmed). `pending` takes
-	 * precedence over `map` for keys in both, so reads inside an open transaction
-	 * see just-written values.
+	 * Walk every stored entry from the observer-backed map plus the
+	 * transaction-local overlay. Pending writes take precedence over `_map`; pending
+	 * deletes hide `_map` entries until the observer catches up.
 	 *
 	 * @example
 	 * ```typescript
@@ -842,20 +812,19 @@ export class YKeyValueLww<T> implements ObservableKvStore<T>, Disposable {
 	 * ```
 	 */
 	*entries(): IterableIterator<KvEntry<T>> {
-		// Track keys we've already yielded from pending
+		// Track keys already yielded from the write overlay.
 		const yieldedKeys = new Set<string>();
 
-		// Yield pending entries first (they take precedence)
-		for (const [key, entry] of this.pending) {
+		// Yield transaction-local writes first because they take precedence.
+		for (const [key, entry] of this.pendingWrites) {
 			yieldedKeys.add(key);
 			yield { key, val: entry.val };
 		}
 
-		// Yield map entries that weren't in pending and aren't pending delete
+		// Then yield indexed entries not replaced or deleted by the overlay.
 		for (const [key, entry] of this._map) {
-			if (!yieldedKeys.has(key) && !this.pendingDeletes.has(key)) {
-				yield { key, val: entry.val };
-			}
+			if (yieldedKeys.has(key) || this.pendingDeletes.has(key)) continue;
+			yield { key, val: entry.val };
 		}
 	}
 

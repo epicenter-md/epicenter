@@ -43,6 +43,7 @@ export {
 export {
 	type AssessedCell,
 	assess,
+	type LocatedUnreadableFile,
 	type ReferenceVerdict,
 	type RowAssessment,
 	type TableAssessment,

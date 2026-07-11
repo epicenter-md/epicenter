@@ -7,8 +7,7 @@ export { BlobError } from './types';
 /**
  * Web blob store: just IndexedDB (via Dexie).
  *
- * On Tauri this is replaced by `index.tauri.ts`, which combines a file
- * system store with the IndexedDB store as a legacy fallback. Both entries
+ * On Tauri this is replaced by the native file-system store. Both entries
  * expose `AudioBlobStoreLive` satisfying `BlobStore` from types.ts.
  */
 export const AudioBlobStoreLive =

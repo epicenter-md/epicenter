@@ -21,6 +21,7 @@
 		LOCAL_MODEL_UNLOAD_POLICY_OPTIONS,
 		type LocalModelUnloadPolicy,
 	} from '$lib/constants/local-model-unload-policy';
+	import { whisperingPath } from '$lib/constants/urls';
 	import { describeTranscriptionDestinationFromConfig } from '$lib/operations/transcription-target';
 	import {
 		ACCESS_GROUPS,
@@ -189,7 +190,7 @@
 				<Field.Label>Signed in</Field.Label>
 				<Field.Description>
 					Your Epicenter account is connected. Manage it in
-					<Link href="/settings/account">Account settings</Link>.
+					<Link href={whisperingPath('/settings/account')}>Account settings</Link>.
 				</Field.Description>
 			</Field.Content>
 			<Badge variant="secondary" class="text-xs">Ready</Badge>

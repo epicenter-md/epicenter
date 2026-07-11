@@ -8,7 +8,7 @@
 
 A dictation moves through one sequence of phases (recording, transcribing,
 delivered or failed), but the app reports it through two unrelated mechanisms.
-The floating pill (`recording-overlay/`) is a projection of recorder state: one
+The floating pill (`recording-pill/`) is a projection of recorder state: one
 self-replacing value, the correct shape. The toasts are fired imperatively, step
 by step, from `operations/recording.ts` and `operations/pipeline.ts`
 ("Stopping..." then "Recording stopped" then "Transcribing..." then a success
@@ -127,9 +127,11 @@ durable log and the home of retry.
   carry it. The `report.error` / `MoreDetailsDialog` failure-detail wiring is
   removed from the dictation flow, replaced by the OS notification plus the
   recordings row, which already owns retry.
-- The browser stops being a second model. `recording-overlay/index.browser.ts`
-  stops being a no-op stub and mounts the shared pill, so desktop and web are
-  identical by construction rather than kept in sync by discipline.
+- The browser stops being a second model. `RecordingPillHost` reads the shared
+  lifecycle directly and mounts the shared pill; only the Tauri runtime owner
+  synchronizes a projected status through `recording-overlay/` transport into a
+  separate webview. Desktop and web are identical by construction rather than
+  kept in sync by discipline.
 - One value has one set of consumers, so "what is my dictation doing" and "what
   failed" each have exactly one home (the pill, the recordings list). Toasts stop
   being an accidental, reload-losing log.

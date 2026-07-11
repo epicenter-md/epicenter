@@ -16,7 +16,7 @@
  * the UI gates on with `{#await}`. `dispose()` stops the OS watch. The keyed route
  * component (`/vault/[id]`) owns one table's lifetime, constructing it on mount and
  * disposing it on destroy, so no module singleton or standing effect drives the
- * watcher; the set of open tabs is just a persisted list (`open-vaults.svelte.ts`).
+ * watcher; the set of open vaults is just a persisted list (`open-vaults.svelte.ts`).
  * A Vault that composes many tables (one per child folder) is the next layer up;
  * see the vault-as-relational-unit spec.
  *
@@ -214,7 +214,7 @@ export function createTable(path: string, onChange: () => void) {
 			else watchId = id;
 		},
 	);
-	/** Stop the OS watch. The keyed route component calls this when it is torn down (a tab switch or close). */
+	/** Stop the OS watch. The keyed route component calls this when it is torn down (a table switch or vault close). */
 	function dispose(): void {
 		disposed = true;
 		if (watchId !== undefined) void invoke('unwatch_folder', { id: watchId });

@@ -6,6 +6,7 @@
 	import KeyRoundIcon from '@lucide/svelte/icons/key-round';
 	import SparklesIcon from '@lucide/svelte/icons/sparkles';
 	import { SettingSwitch } from '$lib/components/settings';
+	import { whisperingPath } from '$lib/constants/urls';
 	import { polishDestination, polishStatus } from '$lib/operations/run-polish';
 	import { settings } from '$lib/state/settings.svelte';
 
@@ -84,7 +85,7 @@
 					<KeyRoundIcon class="mt-0.5 size-4 shrink-0 text-amber-500" />
 					<p>
 						The completion provider is not ready, so transcripts still ship raw. <Link
-							href="/settings/processing">Check completion settings</Link
+							href={whisperingPath('/settings/processing')}>Check completion settings</Link
 						> to start polishing.
 					</p>
 				</div>
@@ -92,7 +93,7 @@
 
 			<p class="text-muted-foreground text-sm">
 				Edit the Polish instruction and Dictionary under <Link
-					href="/settings/dictation">Dictation settings</Link
+					href={whisperingPath('/settings/dictation')}>Dictation settings</Link
 				>.
 			</p>
 		</div>

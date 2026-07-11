@@ -1,4 +1,5 @@
-import { services } from '$lib/services';
+import { deleteRecordings } from '$lib/operations/recordings';
+import { report } from '$lib/report';
 import { recordings } from '$lib/state/recordings.svelte';
 import { settings } from '$lib/state/settings.svelte';
 
@@ -15,8 +16,18 @@ export function attachRecordingRetention() {
 		if (settledIds.length <= maxCount) return;
 
 		const idsToDelete = settledIds.slice(maxCount);
-		services.blobs.audio.delete(idsToDelete);
-		recordings.bulkDelete(idsToDelete);
+		const rowsToDelete = recordings.sorted.filter((recording) =>
+			idsToDelete.includes(recording.id),
+		);
+		void (async () => {
+			const { error } = await deleteRecordings(rowsToDelete);
+			if (error !== null) {
+				report.error({
+					title: 'Failed to apply recording retention',
+					cause: error,
+				});
+			}
+		})();
 	});
 
 	return () => {};

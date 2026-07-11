@@ -209,7 +209,7 @@ Claim: feat(workspace): expose per-table conformance built from existing parse e
 Claim: feat(svelte): surface table conformance in fromTable and render the banner in one app.
 
 - [ ] **3.1** Add a reactive conformance helper next to `fromTable` (`packages/svelte-utils/src/from-table.svelte.ts`; the handoff's `packages/svelte` path does not exist). `fromTable` returns a bare disposable `SvelteMap`, so grafting counts onto it would change its return shape; a sibling `fromTableConformance(table)` with its own observe subscription and debounce is the cleaner shape.
-- [ ] **3.2** One app (fuji recommended) renders: a "N rows do not match the current schema" banner, a "written by a newer version of this app, update to edit" banner, and a minimal queue view with fix/discard actions implemented as the userland `getAllInvalid()` + `set()`/`delete()` loop. The view IS the repair tool; load `epicenter-ui` and `writing-voice` for the surface.
+- [ ] **3.2** One app (fuji recommended) renders: a "N rows do not match the current schema" banner, a "written by a newer version of this app, update to edit" banner, and a minimal queue view with fix/discard actions implemented as the userland `getAllInvalid()` + `set()`/`delete()` loop. The view IS the repair tool; load `ui-design` and `writing-voice` for the surface.
 - [ ] **3.3** Library helper and first consumer ship in the same wave (a helper without a call site is a teaser commit).
 
 ### Wave 4: record the contract

@@ -15,8 +15,8 @@ Co-design turns a rough UI request into a buildable direction. It is not a visua
 Use these skills as the work narrows:
 
 - [comparable-apps](../comparable-apps/SKILL.md): before choosing the UX pattern.
-- [frontend-design](../frontend-design/SKILL.md): when committing to visual direction and implementing UI.
-- [epicenter-ui](../epicenter-ui/SKILL.md): when choosing local Svelte components and state surfaces.
+- [ui-design](../ui-design/SKILL.md): when committing to visual direction,
+  choosing local components, and implementing state surfaces.
 - [prototype](../prototype/SKILL.md): when the answer needs multiple UI variants or a throwaway route.
 - [web-design-guidelines](../web-design-guidelines/SKILL.md): for final accessibility and interface review.
 

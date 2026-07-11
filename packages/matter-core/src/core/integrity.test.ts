@@ -21,7 +21,7 @@ import {
 	type TableInput,
 	type VaultIntegrity,
 } from './integrity';
-import { readTable } from './table';
+import { MatterReadError, readTable } from './table';
 
 type Entries = Parameters<typeof readTable>[0];
 
@@ -315,6 +315,45 @@ describe('assess: table states', () => {
 			status: 'unreadable',
 			message: 'permission denied',
 		});
+	});
+
+	test('a file that cannot become a row stays located in the vault assessment', () => {
+		const v = assess([
+			loaded('pages', pagesModel, [
+				{ fileName: 'good.md', content: '---\ntitle: Good\n---' },
+				{ fileName: 'broken.md', content: '---\ntitle: [bad\n---' },
+			]),
+		]);
+
+		expect(v.unreadableFiles).toEqual([
+			{
+				table: 'pages',
+				fileName: 'broken.md',
+				message: expect.stringContaining('Frontmatter is not valid YAML'),
+			},
+		]);
+		expect(typed(v, 'pages').rows.map(({ row }) => row.fileName)).toEqual([
+			'good.md',
+		]);
+	});
+
+	test('a file read failure follows the same located path as a parse failure', () => {
+		const v = assess([
+			loaded('pages', pagesModel, [
+				{
+					fileName: 'undecodable.md',
+					error: MatterReadError.Undecodable().error,
+				},
+			]),
+		]);
+
+		expect(v.unreadableFiles).toEqual([
+			{
+				table: 'pages',
+				fileName: 'undecodable.md',
+				message: 'File is not readable as UTF-8 text',
+			},
+		]);
 	});
 });
 

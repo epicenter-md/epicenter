@@ -87,4 +87,19 @@ describe('formatReport', () => {
 
 		expect(text).toBe('1 ready (1 table, 1 row)');
 	});
+
+	test('names every unreadable file and counts it in the roll-up', () => {
+		const integrity = assess([
+			loaded('pages', pagesModel, [
+				{ fileName: 'good.md', content: '---\ntitle: Good\nstatus: live\n---' },
+				{ fileName: 'broken.md', content: '---\ntitle: [bad\n---' },
+			]),
+		]);
+		const text = formatReport(toViolations(integrity), summarize(integrity));
+
+		expect(text).toContain('pages/broken.md');
+		expect(text).toContain("can't read: Frontmatter is not valid YAML");
+		expect(text).toContain('1 unreadable file');
+		expect(text).toContain('(1 table, 1 row)');
+	});
 });

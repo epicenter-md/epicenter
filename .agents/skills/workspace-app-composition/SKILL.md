@@ -244,9 +244,10 @@ against `sveltejs/kit`; for the `{#await}` form see the `svelte` skill.
 
 ## Platform DI: the `#platform/*` seam
 
-Multi-platform apps (the app with `src-tauri/`: currently whispering) select
-browser-vs-Tauri implementations at BUILD time via Node-standard `#platform/*`
-subpath imports. This is the canonical mechanism. It replaced the old
+Multi-host SPAs such as Whispering select browser-vs-Epicenter implementations
+at BUILD time via Node-standard `#platform/*` subpath imports. Epicenter owns
+the Tauri runtime; the SPA owns both implementation leaves. This is the
+canonical mechanism. It replaced the old
 `resolve.extensions` / `moduleSuffixes` suffix trick (see "Why not suffixes"
 below).
 
@@ -272,13 +273,15 @@ import { tauri } from '#platform/tauri';
 (browser). The Tauri build activates the `tauri` condition in `vite.config.ts`:
 
 ```ts
-const isTauri = process.env.TAURI_ENV_PLATFORM !== undefined;
+const isEpicenterSurface = process.env.EPICENTER_SURFACE === '1';
 // ...
 resolve: {
 	// Custom conditions REPLACE Vite's defaults, so the
 	// ...defaultClientConditions spread is LOAD-BEARING (drop it and all
 	// dependency resolution breaks).
-	...(isTauri && { conditions: ['tauri', ...defaultClientConditions] }),
+	...(isEpicenterSurface && {
+		conditions: ['tauri', ...defaultClientConditions],
+	}),
 },
 ```
 

@@ -4,7 +4,7 @@ import type { LayoutLoad } from './$types';
 /**
  * Hydrate the open-vault list before the `(vaults)` group paints. The list loads async (a
  * Tauri store read); SvelteKit blocks a route's render until its loads resolve, so awaiting
- * hydration here gates the tab strip's first paint against the real list, with no
+ * hydration here gates the sidebar's first paint against the real list, with no
  * empty-then-populated flash and no skeleton.
  *
  * This gate is about the PAINT, not data correctness. Layout and page loads run concurrently,

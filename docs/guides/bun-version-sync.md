@@ -51,9 +51,6 @@ These workflows and actions now read pinned tool versions:
 - `deploy.cloudflare.yml`
 - `deploy.cloudflare-preview.yml`
 - `ci.format.yml`
-- `release.whispering.yml`
-- `pr-preview.whispering.yml`
-- `.github/actions/setup-whispering-build/action.yml`
 
 Now when you want to upgrade Bun, change one line in `package.json` and everything follows.
 

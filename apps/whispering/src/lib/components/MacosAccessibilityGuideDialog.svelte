@@ -42,7 +42,7 @@
 	 *
 	 * macOS never lets an app grant itself Accessibility, so this is the whole
 	 * "enable" path. The leading `request()` fires only for its first-run side
-	 * effect: it adds Whispering to the Accessibility list (toggle off) so the
+	 * effect: it adds Epicenter to the Accessibility list (toggle off) so the
 	 * user flips a switch instead of hunting with "+", and shows the native prompt
 	 * once (TCC suppresses it after). We discard its Result: it cannot grant in
 	 * place and a failed prompt must not block the deep-link. The capability then
@@ -61,7 +61,7 @@
 			return;
 		}
 		toast.info('System Settings opened', {
-			description: 'Turn on Whispering in Privacy & Security > Accessibility.',
+			description: 'Turn on Epicenter in Privacy & Security > Accessibility.',
 			duration: 8000,
 		});
 	}
@@ -84,7 +84,7 @@
 	// dance; never-granted (and the pre-seed `unknown`) just needs the switch
 	// flipped on a row `openSystemSettings` already added. This drives the title,
 	// the description, and which steps the guide renders, so a first-timer is never
-	// told to remove a Whispering that isn't in their list yet.
+	// told to remove an Epicenter that isn't in their list yet.
 	const variant = $derived(
 		dictationCapability.isStale ? 're-add' : 'first-grant',
 	);
@@ -98,13 +98,13 @@
 			</Dialog.Title>
 			<Dialog.Description>
 				{#if variant === 're-add'}
-					Whispering already has Accessibility, but paste at cursor is not
+					Epicenter already has Accessibility, but paste at cursor is not
 					working. That usually means a stale entry from an app update. Open
-					System Settings below, then remove Whispering from the list and add it
+					System Settings below, then remove Epicenter from the list and add it
 					back.
 				{:else}
-					macOS needs Accessibility before Whispering can paste where you're
-					typing. Open System Settings below, then switch Whispering on. It'll
+					macOS needs Accessibility before Epicenter can paste where you're
+					typing. Open System Settings below, then switch Epicenter on. It'll
 					already be in the list.
 				{/if}
 			</Dialog.Description>

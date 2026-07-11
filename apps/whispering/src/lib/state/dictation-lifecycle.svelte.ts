@@ -1,7 +1,6 @@
 import type { AnyTaggedError } from 'wellcrafted/error';
 import type { VadState } from '$lib/constants/audio';
 import type { DeliveryReach } from '$lib/operations/delivery';
-import type { DictationFailureTier } from '$lib/recording-overlay/events';
 import { manualRecorder } from '$lib/state/manual-recorder.svelte';
 import { vadRecorder } from '$lib/state/vad-recorder.svelte';
 
@@ -19,8 +18,8 @@ import { vadRecorder } from '$lib/state/vad-recorder.svelte';
  *   OS-notification path reads it and wants each distinct failure exactly once.
  *
  * A failure is transient here, not a held state: the pill glances it (manual),
- * the notification fires it (when unfocused), and the recordings row is the
- * durable record. The pill is not a review surface, so there is no failure latch.
+ * the OS notification fires for it, and the recordings row is the durable
+ * record. The pill is not a review surface, so there is no failure latch.
  */
 export type DictationCapture =
 	| { kind: 'idle' }
@@ -38,6 +37,9 @@ export type DictationLifecycle = {
 	capture: DictationCapture;
 	outcome: DictationOutcome;
 };
+
+/** Where a dictation failed, which determines how loudly feedback surfaces it. */
+export type DictationFailureTier = 'silent-loss' | 'transcription';
 
 /** A dictation failure, carrying the live error object for the projection. */
 export type DictationFailure = {
@@ -117,18 +119,17 @@ function createDictationLifecycle() {
 
 		/**
 		 * The transcript landed. `reach` is how far it got toward the configured
-		 * output: a clean `output`, a `clipboard` fallback, or `history`-only when a
-		 * requested channel failed. Every reach is a success (the text is saved), so
-		 * none of them is a dictation failure.
+		 * output: either a clean `output` or a `clipboard` fallback. Both reaches are
+		 * successes because the text is saved, so neither is a dictation failure.
 		 *
 		 * A clean `output` flashes for a beat and retires: the landing text is the
-		 * receipt, so the pill is just a glance. A reduced reach (`clipboard` or
-		 * `history`) instead persists until the next dictation, like a failure does:
+		 * receipt, so the pill is just a glance. The reduced `clipboard` reach instead
+		 * persists until the next dictation, like a failure does:
 		 * the text did not land where the user asked, so the tag carries information
 		 * the text alone does not, and a sub-second flash is too easy to miss. There
 		 * is no notification for a reduced reach (ADR-0039): the persistent pill tag
-		 * and the recordings row are the surfaces, and the dominant `history` cause
-		 * (a revoked Accessibility grant) already raises its own standing notice.
+		 * and the recordings row are the surfaces, and a revoked Accessibility grant
+		 * already raises its own standing notice.
 		 */
 		markDelivered(reach: DeliveryReach): void {
 			clearDeliveredTimer();

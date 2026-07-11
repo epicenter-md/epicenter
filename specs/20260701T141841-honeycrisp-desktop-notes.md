@@ -422,7 +422,7 @@ Orchestrator (main session) keeps: schema and export decisions, ADR wording, pha
 | Phase 2 `src-tauri` scaffold | One agent seeded with the Whispering copy-list (file:line refs in Research Findings); a second grounding agent re-verifies Tauri plugin versions against DeepWiki/docs at implementation time |
 | Phase 2 auth seam + registry | Separate agent from the scaffold (different blast radius: `packages/constants`, `packages/server` test); must not touch `packages/auth` internals, only consume them |
 | Phase 2 desktop smoke | Manual/founder step for the bundled macOS OAuth test; agent prepares the checklist and the build |
-| Phase 3 polish items | One agent per numbered item, parallel, each its own PR; `frontend-design` + `epicenter-ui` skills loaded; screenshots in PR bodies |
+| Phase 3 polish items | One agent per numbered item, parallel, each its own PR; `ui-design` skill loaded; screenshots in PR bodies |
 | Phase 5 editor features | One agent per feature; note-links and find-in-note need a ProseMirror-focused brief; `fresh-eyes-grill` on the note-link node design before merge |
 | Docs hygiene backlog (stale `createHoneycrispWorkspace()` refs in `workspace-api` skill, fuji leftovers in six locations, `workspace-gate` doc comment) | One cleanup agent, separate PR, any time; does not block product phases |
 | Rust second opinions | Codex rescue agent if a `src-tauri` build issue resists diagnosis |

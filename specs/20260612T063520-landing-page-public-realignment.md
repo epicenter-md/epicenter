@@ -185,7 +185,7 @@ They get one quiet door: the footer and nav keep GitHub links, and screen 4's "F
 
 3. **Visual and typography direction**
    - The corpus says text-only heroes work when the headline carries an argument, and abstract mood illustration is the weakest choice. Avoid generic AI-slop aesthetics (no purple gradients, no Inter-by-default).
-   - **Recommendation**: warm, paper-like, characterful type; the recorded demo is the only hero imagery. Run the frontend-design skill at implementation time.
+   - **Recommendation**: warm, paper-like, characterful type; the recorded demo is the only hero imagery. Run the `ui-design` skill at implementation time.
 
 4. **A "How is it free?" link**
    - The marketer's cost-story direction (subscription resentment) was not chosen for the hero, but the question is real for the public.

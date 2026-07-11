@@ -11,9 +11,9 @@
  * A {@link Violation} is a cell whose state needs attention. Only four of the seven `AssessedCell`
  * states project: `ok`, `missing-optional`, and `resolved` are healthy and never appear. `ok` and
  * `missing-optional` not appearing is the proof that this list is a PROJECTION of the cells, not
- * all of them. Table-load failures (`unreadable` / `invalid-contract`) are NOT violations either:
- * they have no cells, and they surface through {@link summarize} and the exit code, where a whole
- * table that could not be read is a different kind of answer than a row with a bad value.
+ * all of them. Table-load failures and Markdown files that could not become rows are NOT violations
+ * either: they have no cells, and they surface through {@link summarize} and the exit code, where
+ * unreadable input is a different kind of answer than a row with a bad value.
  *
  * `expected` is deliberately absent from the `invalid-type` violation: it is a render projection
  * (`describeExpected` in `./expected`), so the violation carries the {@link Field} itself and the
@@ -22,7 +22,11 @@
  */
 
 import type { Field } from '@epicenter/field';
-import type { TableAssessment, VaultIntegrity } from './integrity';
+import type {
+	LocatedUnreadableFile,
+	TableAssessment,
+	VaultIntegrity,
+} from './integrity';
 import { stemOf } from './parse';
 
 /**
@@ -168,6 +172,8 @@ export type ExtraNote = { table: string; row: string; keys: string[] };
 export type Summary = {
 	tables: TableSummary[];
 	extras: ExtraNote[];
+	/** Markdown files that could not become rows, already located by `assess`. */
+	unreadableFiles: LocatedUnreadableFile[];
 	totals: {
 		tables: number;
 		rows: number;
@@ -176,7 +182,9 @@ export type Summary = {
 		/** Typed rows with at least one attention cell (the exit-code signal). */
 		needsAttention: number;
 		/** Tables whose folder could not be read at all (a fatal). */
-		unreadable: number;
+		unreadableTables: number;
+		/** Markdown files omitted from classification because they could not parse or read. */
+		unreadableFiles: number;
 		/** Tables whose matter.json is present but corrupt (a fatal). */
 		invalidContract: number;
 		/** Untyped tables (no matter.json): valid, never a failure. */
@@ -295,14 +303,15 @@ export function summarize(integrity: VaultIntegrity): Summary {
 		rows: 0,
 		ready: 0,
 		needsAttention: 0,
-		unreadable: 0,
+		unreadableTables: 0,
+		unreadableFiles: integrity.unreadableFiles.length,
 		invalidContract: 0,
 		untyped: 0,
 	};
 	for (const table of tables) {
 		switch (table.status) {
 			case 'unreadable':
-				totals.unreadable += 1;
+				totals.unreadableTables += 1;
 				break;
 			case 'invalid-contract':
 				totals.invalidContract += 1;
@@ -319,5 +328,10 @@ export function summarize(integrity: VaultIntegrity): Summary {
 		}
 	}
 
-	return { tables, extras, totals };
+	return {
+		tables,
+		extras,
+		unreadableFiles: integrity.unreadableFiles,
+		totals,
+	};
 }

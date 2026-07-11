@@ -5,7 +5,6 @@
 	import MacosAccessibilityGuideDialog from '$lib/components/MacosAccessibilityGuideDialog.svelte';
 	import MoreDetailsDialog from '$lib/components/MoreDetailsDialog.svelte';
 	import RecipePicker from '$lib/components/RecipePicker.svelte';
-	import UpdateDialog from '$lib/components/UpdateDialog.svelte';
 	import { signInMigration } from '$lib/migration/sign-in-migration';
 </script>
 
@@ -19,7 +18,6 @@
 <MacosAccessibilityGuideDialog />
 <MoreDetailsDialog />
 <RecipePicker />
-<UpdateDialog />
 <SignInMigrationDialog migration={signInMigration} />
 
 {#if import.meta.env.DEV}

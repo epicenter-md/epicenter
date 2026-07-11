@@ -11,6 +11,10 @@ metadata:
 
 Review files for compliance with Web Interface Guidelines.
 
+This adapter owns the external standards audit. Use
+[ui-design](../ui-design/SKILL.md) separately for Epicenter-specific visual
+direction, component-system consistency, and UI pre-flight.
+
 ## How It Works
 
 1. Fetch the latest guidelines from the source URL below
