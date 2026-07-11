@@ -1,72 +1,79 @@
-/**
- * Protocol v2 (gates variant): the hardened shape the decision memo priced.
- *
- * Differences from the demo protocol:
- *  - the sync unit is an atomic MUTATION (UUIDv7 id, server-assigned clientId,
- *    per-client contiguous clientSeq) carrying one or more ops;
- *  - every op addresses a row GENERATION (delete = permanent tombstone,
- *    reinsert = gen + 1, no resurrection);
- *  - pull supports pagination, a compaction watermark, and snapshot-required
- *    bootstrap with checksums.
- */
+/** Gate 1-2 protocol: one exact schema epoch and one database incarnation. */
 
-export type JsonCell = string | number | boolean | null;
-export type CellMap = Record<string, JsonCell>;
-
-export type Op =
-	| { kind: 'row-insert'; rowId: string; rowGen: number; cells: CellMap }
-	| {
-			kind: 'cell';
-			rowId: string;
-			rowGen: number;
-			field: string;
-			value: JsonCell;
-	  }
-	| { kind: 'row-delete'; rowId: string; rowGen: number };
-
-/** The atomic unit of sync. All ops apply in one transition or none. */
-export type Mutation = {
-	mutationId: string; // UUIDv7 (deterministic in the harness)
-	clientId: string; // server-assigned
-	clientSeq: number; // per-client contiguous counter, 1-based
-	ops: Op[];
+export type RequestEnvelope = {
+	protocolMajor: number;
+	schemaEpochId: string;
+	databaseIncarnationId: string;
 };
 
-export type LoggedMutation = Mutation & { seq: number };
+export const ENVELOPE = {
+	protocolMajor: 1,
+	schemaEpochId: 'gate1-notes-v1',
+	databaseIncarnationId: 'gate1-database-1',
+} as const satisfies RequestEnvelope;
 
-/** Canonical row state: tombstones (alive=false) are permanent. */
-export type RowState = { gen: number; alive: boolean; cells: CellMap };
+export type JsonCell = string | number | boolean | null;
+export type Cells = Record<string, JsonCell>;
 
-export type Snapshot = {
-	snapshotSeq: number;
-	/** Includes tombstones — folds must agree across replicas. */
-	rows: Record<string, RowState>;
-	/** As of snapshotSeq, NOT as of the server head. */
-	lastClientSeq: Record<string, number>;
+export type Operation =
+	| { kind: 'patchRow'; table: string; rowId: string; cells: Cells }
+	| { kind: 'deleteRow'; table: string; rowId: string };
+
+/** Actor identity plus its contiguous sequence is the mutation identity. */
+export type Mutation = {
+	actorId: string;
+	actorSequence: number;
+	operations: Operation[];
+};
+
+export type LoggedMutation = Mutation & { serverSequence: number };
+
+export type SnapshotRow = {
+	table: string;
+	rowId: string;
+	deleted: boolean;
+	cells: Cells;
+};
+
+export type SnapshotManifestBody = {
+	generation: number;
+	snapshotSequence: number;
+	chunkChecksums: string[];
+	actorHighWater: Record<string, number>;
+};
+export type SnapshotManifest = SnapshotManifestBody & { checksum: string };
+export type SnapshotChunk = {
+	generation: number;
+	index: number;
+	rows: SnapshotRow[];
 	checksum: string;
 };
 
-export type RegisterRequest = { kind: 'register' };
-export type PushRequest = {
+export type PushRequest = RequestEnvelope & {
 	kind: 'push';
-	schemaMajor: number;
-	clientId: string;
 	mutations: Mutation[];
 };
-export type PullRequest = {
+export type PullRequest = RequestEnvelope & {
 	kind: 'pull';
-	schemaMajor: number;
 	cursor: number;
 	limit: number;
 };
-export type SyncRequest = RegisterRequest | PushRequest | PullRequest;
+export type SnapshotChunkRequest = RequestEnvelope & {
+	kind: 'snapshotChunk';
+	generation: number;
+	index: number;
+};
 
-export type RegisterResponse = { kind: 'register'; clientId: string };
+export type Refusal =
+	| 'protocol-mismatch'
+	| 'schema-epoch-mismatch'
+	| 'database-incarnation-mismatch';
+
 export type PushResponse =
 	| { kind: 'push'; ok: true }
-	| { kind: 'push'; ok: false; reason: 'schema-mismatch' | 'client-seq-gap' };
+	| { kind: 'push'; ok: false; reason: Refusal | 'actor-sequence-gap' };
+
 export type PullResponse =
-	| { kind: 'pull'; ok: true; snapshotRequired: true; snapshot: Snapshot }
 	| {
 			kind: 'pull';
 			ok: true;
@@ -76,18 +83,78 @@ export type PullResponse =
 			newCursor: number;
 			hasMore: boolean;
 	  }
-	| { kind: 'pull'; ok: false; reason: 'schema-mismatch' };
-export type SyncResponse = RegisterResponse | PushResponse | PullResponse;
+	| {
+			kind: 'pull';
+			ok: true;
+			snapshotRequired: true;
+			manifest: SnapshotManifest;
+	  }
+	| { kind: 'pull'; ok: false; reason: Refusal };
 
-export const SERVER_SCHEMA_MAJOR = 2;
+export type SnapshotChunkResponse =
+	| { kind: 'snapshotChunk'; ok: true; chunk: SnapshotChunk }
+	| {
+			kind: 'snapshotChunk';
+			ok: false;
+			reason: Refusal | 'snapshot-replaced' | 'chunk-out-of-range';
+	  };
 
-export type AppVersion = 1 | 2 | 3;
+export type SnapshotInstallResult =
+	| { ok: true }
+	| {
+			ok: false;
+			reason:
+				| 'invalid-manifest'
+				| 'stale-snapshot'
+				| 'wrong-generation'
+				| 'invalid-chunk'
+				| 'incomplete-snapshot';
+	  };
 
-export const KNOWN_FIELDS: Record<AppVersion, readonly string[]> = {
-	1: ['title', 'pinned', 'updatedAt'],
-	2: ['title', 'pinned', 'updatedAt', 'subtitle'],
-	3: ['title', 'pinned', 'updatedAt', 'subtitle', 'futureField'],
+declare const rowKeyBrand: unique symbol;
+export type RowKey = string & { readonly [rowKeyBrand]: true };
+export type RowState = { deleted: boolean; cells: Cells };
+export type LogicalState = Record<RowKey, RowState>;
+
+export type VisibleDump = {
+	rows: LogicalState;
+	quarantine: LogicalState;
+	tombstones: RowKey[];
 };
 
-/** v1 and v2 are additive within major 2; v3 simulates a major bump. */
-export const SCHEMA_MAJOR_OF: Record<AppVersion, number> = { 1: 2, 2: 2, 3: 3 };
+export type ClientDump = VisibleDump & {
+	actorId: string;
+	nextActorSequence: number;
+	pullCursor: number;
+	outbox: Mutation[];
+};
+
+export function rowKey(table: string, rowId: string): RowKey {
+	return `${table.length}:${table}${rowId}` as RowKey;
+}
+
+export function splitRowKey(key: RowKey): [table: string, rowId: string] {
+	const separator = key.indexOf(':');
+	const tableLength = Number(key.slice(0, separator));
+	if (separator < 1 || !Number.isSafeInteger(tableLength) || tableLength < 0)
+		throw new Error(`invalid internal row key: ${key}`);
+	const tableStart = separator + 1;
+	return [
+		key.slice(tableStart, tableStart + tableLength),
+		key.slice(tableStart + tableLength),
+	];
+}
+
+export function mutationKey(mutation: Mutation): string {
+	return `${mutation.actorId}:${mutation.actorSequence}`;
+}
+
+export function requestRefusal(request: RequestEnvelope): Refusal | null {
+	if (request.protocolMajor !== ENVELOPE.protocolMajor)
+		return 'protocol-mismatch';
+	if (request.schemaEpochId !== ENVELOPE.schemaEpochId)
+		return 'schema-epoch-mismatch';
+	if (request.databaseIncarnationId !== ENVELOPE.databaseIncarnationId)
+		return 'database-incarnation-mismatch';
+	return null;
+}

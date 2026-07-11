@@ -10,5 +10,12 @@
 		"types": ["vite/client", "bun"],
 		"allowImportingTsExtensions": true
 	},
-	"include": ["bench", "client", "server", "vite-env.d.ts"]
+	"include": [
+		"api-prototype",
+		"bench",
+		"client",
+		"gates",
+		"server",
+		"vite-env.d.ts"
+	]
 }
