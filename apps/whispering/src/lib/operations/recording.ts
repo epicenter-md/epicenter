@@ -1,6 +1,6 @@
 import type { DeviceAcquisitionOutcome } from '@epicenter/recorder';
 import { nanoid } from 'nanoid/non-secure';
-import { environment } from '#environment';
+import { environment } from '#runtime';
 import { goto } from '$app/navigation';
 import type { CaptureSurface } from '$lib/constants/audio';
 import { whisperingPath } from '$lib/constants/urls';

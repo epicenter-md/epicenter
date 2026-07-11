@@ -20,7 +20,7 @@ import {
 } from '$lib/services/transcription/providers';
 import { deviceConfig } from '$lib/state/device-config.svelte';
 import { type SecretKey, secrets } from '$lib/state/secrets.svelte';
-import { settings } from '$lib/state/settings.svelte';
+import type { TranscriptionSettings } from './transcription-ports';
 
 /**
  * The error any transcription path can surface. Deliberately `AnyTaggedError`
@@ -59,10 +59,12 @@ export function createBrowserTranscription({
 	auth,
 	artifacts,
 	cloudTransport,
+	settings,
 }: {
 	auth: PlatformAuth;
 	artifacts: BlobStore;
 	cloudTransport: CloudTranscriptionTransport;
+	settings: TranscriptionSettings;
 }): TranscriptionEngine {
 	const providers = [
 		'epicenter',
@@ -164,7 +166,7 @@ export function createBrowserTranscription({
 					},
 					cloudTransport?.fetch,
 				),
-			model: () => settings.get(PROVIDERS.OpenAI.modelSettingKey),
+			model: () => settings.model(PROVIDERS.OpenAI.modelSettingKey),
 		},
 		Groq: {
 			kind: 'wire',
@@ -178,7 +180,7 @@ export function createBrowserTranscription({
 					},
 					cloudTransport?.fetch,
 				),
-			model: () => settings.get(PROVIDERS.Groq.modelSettingKey),
+			model: () => settings.model(PROVIDERS.Groq.modelSettingKey),
 		},
 		speaches: {
 			kind: 'wire',
@@ -198,7 +200,7 @@ export function createBrowserTranscription({
 					prompt,
 					spokenLanguage,
 					apiKey: secretApiKey(PROVIDERS.ElevenLabs.apiKeyConfigKey) ?? '',
-					modelName: settings.get(PROVIDERS.ElevenLabs.modelSettingKey),
+					modelName: settings.model(PROVIDERS.ElevenLabs.modelSettingKey),
 				}),
 		},
 		Deepgram: {
@@ -208,7 +210,7 @@ export function createBrowserTranscription({
 					prompt,
 					spokenLanguage,
 					apiKey: secretApiKey(PROVIDERS.Deepgram.apiKeyConfigKey) ?? '',
-					modelName: settings.get(PROVIDERS.Deepgram.modelSettingKey),
+					modelName: settings.model(PROVIDERS.Deepgram.modelSettingKey),
 				});
 			},
 		},
@@ -219,7 +221,7 @@ export function createBrowserTranscription({
 					prompt,
 					spokenLanguage,
 					apiKey: secretApiKey(PROVIDERS.Mistral.apiKeyConfigKey) ?? '',
-					modelName: settings.get(PROVIDERS.Mistral.modelSettingKey),
+					modelName: settings.model(PROVIDERS.Mistral.modelSettingKey),
 				}),
 		},
 	} satisfies Record<UploadProviderId, UploadDispatch>;
@@ -252,7 +254,7 @@ export function createBrowserTranscription({
 	async function transcribeAudio(
 		recordingId: string,
 	): Promise<Result<string, TranscriptionError>> {
-		const selectedService = settings.get('transcription.service');
+		const selectedService = settings.service();
 		if (!isBrowserProvider(selectedService)) {
 			return TranscriptionOperationError.ProviderUnavailable({
 				provider: PROVIDERS[selectedService].label,
@@ -289,10 +291,10 @@ export function createBrowserTranscription({
 		// and the server answers 401, surfaced as a RequestFailed carrying that detail.
 		// The Dictionary terms fold into the prompt so cloud recognition spells them
 		// the user's way.
-		const spokenLanguage = settings.get('transcription.language');
+		const spokenLanguage = settings.language();
 		const prompt = withDictionaryTerms(
-			settings.get('transcription.prompt'),
-			settings.get('dictionary'),
+			settings.prompt(),
+			settings.dictionary(),
 		);
 		const entry = UPLOAD_DISPATCH[selectedService];
 		switch (entry.kind) {

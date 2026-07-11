@@ -1,6 +1,6 @@
 import { defineKeys } from 'wellcrafted/query';
 import { Ok, partitionResults } from 'wellcrafted/result';
-import { environment } from '#environment';
+import { environment } from '#runtime';
 import { defineMutation, queryClient } from '$lib/rpc/client';
 import type { Recording } from '$lib/state/recordings.svelte';
 

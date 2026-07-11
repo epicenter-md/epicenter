@@ -8,8 +8,8 @@
 	import { GithubIcon } from '$lib/components/icons';
 	import studioMicrophone from '$lib/assets/studio-microphone.png';
 	import { NAV_ITEMS } from './nav-items';
-	import { environment } from '#environment';
-	import { whispering } from '$lib/workspace/active';
+	import { environment } from '#runtime';
+	import { whispering } from '#runtime';
 	import { AccountPopover } from '@epicenter/app-shell/account-popover';
 	import { recordingActive } from '$lib/state/recording-active.svelte';
 	import { instanceSetting } from '$lib/instance';

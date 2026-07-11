@@ -1,4 +1,4 @@
-import { environment } from '#environment';
+import { environment } from '#runtime';
 import { systemShortcuts } from '#platform/system-shortcuts';
 import type { Command } from '$lib/commands';
 import { focusedShortcuts } from '$lib/platform/focused-shortcuts';

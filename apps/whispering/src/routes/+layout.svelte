@@ -3,7 +3,7 @@
 	import { QueryClientProvider } from '@tanstack/svelte-query';
 	import { ModeWatcher } from 'mode-watcher';
 	import { onMount } from 'svelte';
-	import { environment } from '#environment';
+	import { environment } from '#runtime';
 	import { onNavigate } from '$app/navigation';
 	import { FlushEditsOnHide } from '@epicenter/svelte';
 	import { reloadOnPrincipalChange } from '@epicenter/svelte/auth';

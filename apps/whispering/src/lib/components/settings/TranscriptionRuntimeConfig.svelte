@@ -36,7 +36,7 @@
 	import { recordingActive } from '$lib/state/recording-active.svelte';
 	import { settings } from '$lib/state/settings.svelte';
 	import { createCopyFn } from '$lib/utils/createCopyFn';
-	import { environment } from '#environment';
+	import { environment } from '#runtime';
 	import AdvancedDisclosure from './AdvancedDisclosure.svelte';
 	import LocalModelSelector from './LocalModelSelector.svelte';
 	import ProviderConfigFields from './ProviderConfigFields.svelte';

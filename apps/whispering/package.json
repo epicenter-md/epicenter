@@ -32,13 +32,9 @@
 			"epicenter": "./src/lib/window-events.tauri.ts",
 			"default": "./src/lib/window-events.browser.ts"
 		},
-		"#environment": {
-			"epicenter": "./src/lib/environment/epicenter.ts",
-			"default": "./src/lib/environment/browser.ts"
-		},
-		"#environment-base": {
-			"epicenter": "./src/lib/environment/base.epicenter.ts",
-			"default": "./src/lib/environment/base.browser.ts"
+		"#runtime": {
+			"epicenter": "./src/lib/runtime/epicenter.ts",
+			"default": "./src/lib/runtime/browser.ts"
 		},
 		"#desktop": {
 			"epicenter": "./src/lib/desktop/epicenter.ts",

@@ -4,7 +4,7 @@ import {
 	type InferErrors,
 } from 'wellcrafted/error';
 import { isErr, Ok, type Result } from 'wellcrafted/result';
-import { environment } from '#environment';
+import { environment } from '#runtime';
 import { buildPolishSystemPrompt } from '$lib/operations/build-system-prompt';
 import {
 	completeWithGlobalDefault,

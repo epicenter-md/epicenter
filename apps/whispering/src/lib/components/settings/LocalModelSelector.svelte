@@ -13,7 +13,7 @@
 	import HardDriveDownload from '@lucide/svelte/icons/hard-drive-download';
 	import Trash from '@lucide/svelte/icons/trash-2';
 	import X from '@lucide/svelte/icons/x';
-	import { environment } from '#environment';
+	import { environment } from '#runtime';
 	import type { ModelInfo } from '$lib/tauri/commands.types';
 
 	/**

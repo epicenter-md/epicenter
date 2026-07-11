@@ -1,4 +1,4 @@
-import { environment } from '#environment';
+import { environment } from '#runtime';
 import { LocalShortcutManagerLive } from './local-shortcut-manager';
 import { PlaySoundServiceLive } from './sound';
 

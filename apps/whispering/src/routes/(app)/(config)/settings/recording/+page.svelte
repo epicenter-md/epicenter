@@ -16,9 +16,9 @@
 	import { asDeviceIdentifier } from '@epicenter/recorder';
 	import { deviceConfig } from '$lib/state/device-config.svelte';
 	import { settings } from '$lib/state/settings.svelte';
-	import { environment } from '#environment';
+	import { environment } from '#runtime';
 	import { tauri } from '#platform/tauri';
-	import { whispering } from '$lib/workspace/active';
+	import { whispering } from '#runtime';
 	import ManualSelectRecordingDevice from './ManualSelectRecordingDevice.svelte';
 	import VadSelectRecordingDevice from './VadSelectRecordingDevice.svelte';
 

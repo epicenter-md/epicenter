@@ -1,7 +1,7 @@
 import { InstantString } from '@epicenter/field';
 import { IanaTimeZone } from '@epicenter/workspace';
 import { extractErrorMessage } from 'wellcrafted/error';
-import { environment } from '#environment';
+import { environment } from '#runtime';
 import {
 	deliverTranscriptionResult,
 	type TranscriptionSource,

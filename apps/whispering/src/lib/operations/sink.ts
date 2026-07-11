@@ -7,7 +7,7 @@
  * construction, so a sink is reusable outside a settings-backed caller too.
  */
 import { services } from '$lib/services';
-import { environment } from '#environment';
+import { environment } from '#runtime';
 import type { DeliveryReach } from './delivery-reach';
 
 type SinkKind = 'cursor' | 'clipboard' | 'ledger';

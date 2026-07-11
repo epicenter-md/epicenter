@@ -2,7 +2,7 @@ import { defineErrors } from 'wellcrafted/error';
 import type { DesktopLocalTranscription } from '$lib/desktop/contract';
 import { PROVIDERS } from '$lib/services/transcription/providers';
 import { deviceConfig } from '$lib/state/device-config.svelte';
-import { settings } from '$lib/state/settings.svelte';
+import type { TranscriptionSettings } from './transcription-ports';
 import type { TranscriptionEngine } from './transcription-use-case';
 
 const LocalTranscriptionError = defineErrors({
@@ -23,6 +23,7 @@ function withDictionaryTerms(prompt: string, dictionary: string[]): string {
 
 export function createEpicenterTranscription(
 	local: DesktopLocalTranscription,
+	settings: TranscriptionSettings,
 ): TranscriptionEngine & { prewarmSelectedModel(): void } {
 	function modelId() {
 		return deviceConfig.get(PROVIDERS.local.modelConfigKey);
@@ -30,25 +31,22 @@ export function createEpicenterTranscription(
 
 	return {
 		async transcribe(recordingId) {
-			if (settings.get('transcription.service') !== 'local') {
+			if (settings.service() !== 'local') {
 				return LocalTranscriptionError.ProviderUnavailable();
 			}
 			const selectedModel = modelId();
 			if (!selectedModel) return LocalTranscriptionError.ModelNotSelected();
 			return local.transcribe(recordingId, {
 				modelId: selectedModel,
-				language:
-					settings.get('transcription.language') === 'auto'
-						? null
-						: settings.get('transcription.language'),
+				language: settings.language() === 'auto' ? null : settings.language(),
 				initialPrompt: withDictionaryTerms(
-					settings.get('transcription.prompt'),
-					settings.get('dictionary'),
+					settings.prompt(),
+					settings.dictionary(),
 				),
 			});
 		},
 		prewarmSelectedModel() {
-			if (settings.get('transcription.service') !== 'local') return;
+			if (settings.service() !== 'local') return;
 			const selectedModel = modelId();
 			if (!selectedModel) return;
 			void local.prewarm({

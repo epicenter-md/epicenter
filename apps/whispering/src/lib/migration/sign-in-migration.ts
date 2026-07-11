@@ -6,8 +6,8 @@
 
 import { createSignInMigration } from '@epicenter/app-shell/sign-in-migration';
 import { attachIndexedDb } from '@epicenter/workspace';
-import { environment } from '#environment';
-import { whispering } from '$lib/workspace/active';
+import { environment } from '#runtime';
+import { whispering } from '#runtime';
 import { defineWhispering } from '$lib/workspace';
 
 /**

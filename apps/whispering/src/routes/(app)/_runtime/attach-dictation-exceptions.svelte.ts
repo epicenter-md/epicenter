@@ -1,5 +1,5 @@
 import type { AnyTaggedError } from 'wellcrafted/error';
-import { environment } from '#environment';
+import { environment } from '#runtime';
 import { DICTATION_FAILURE_LABEL } from '$lib/dictation-feedback';
 import { dictationLifecycle } from '$lib/state/dictation-lifecycle.svelte';
 

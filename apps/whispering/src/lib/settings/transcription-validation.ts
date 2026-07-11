@@ -1,4 +1,4 @@
-import { environment } from '#environment';
+import { environment } from '#runtime';
 import {
 	TRANSCRIPTION_PROVIDERS,
 	type TranscriptionProviderEntry,

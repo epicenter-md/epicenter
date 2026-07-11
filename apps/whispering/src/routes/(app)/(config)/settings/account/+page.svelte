@@ -6,7 +6,7 @@
 	import { createMutation } from '@tanstack/svelte-query';
 	import LogOut from '@lucide/svelte/icons/log-out';
 	import { resultMutationOptions } from 'wellcrafted/query';
-	import { environment } from '#environment';
+	import { environment } from '#runtime';
 	import { recordingActive } from '$lib/state/recording-active.svelte';
 
 	// Identity (email) is shown by the footer AccountPopover, which owns the

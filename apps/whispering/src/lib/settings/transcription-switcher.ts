@@ -15,7 +15,7 @@
  * `auth`, `deviceConfig`, `localModels`) are all reactive, so calling this
  * inside a `$derived` re-runs it when any source changes.
  */
-import { environment } from '#environment';
+import { environment } from '#runtime';
 import {
 	PROVIDER_ICONS,
 	TRANSCRIPTION_PROVIDERS,

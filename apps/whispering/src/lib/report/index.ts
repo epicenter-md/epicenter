@@ -2,7 +2,7 @@ import { toast as sonner } from '@epicenter/ui/sonner';
 import { nanoid } from 'nanoid/non-secure';
 import type { AnyTaggedError } from 'wellcrafted/error';
 import { consoleSink, type LogEvent } from 'wellcrafted/logger';
-import { environment } from '#environment';
+import { environment } from '#runtime';
 import { moreDetailsDialog } from '$lib/components/MoreDetailsDialog.svelte';
 import { humanize } from './humanize';
 

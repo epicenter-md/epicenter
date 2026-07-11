@@ -2,7 +2,7 @@ import { InstantString } from '@epicenter/field';
 import type { AnyTaggedError } from 'wellcrafted/error';
 import { extractErrorMessage } from 'wellcrafted/error';
 import { Err, Ok, type Result } from 'wellcrafted/result';
-import { recordings } from '$lib/state/recordings.svelte';
+import type { RecordingOutcomeWriter } from './transcription-ports';
 
 export type TranscriptionError = AnyTaggedError;
 export type TranscriptionEngine = {
@@ -10,7 +10,10 @@ export type TranscriptionEngine = {
 };
 
 /** Commit the one terminal recording outcome around a host-selected engine. */
-export function createTranscriptionUseCase(engine: TranscriptionEngine) {
+export function createTranscriptionUseCase(
+	engine: TranscriptionEngine,
+	recordings: RecordingOutcomeWriter,
+) {
 	return async function transcribeAndPersist(
 		recordingId: string,
 	): Promise<Result<string, TranscriptionError>> {

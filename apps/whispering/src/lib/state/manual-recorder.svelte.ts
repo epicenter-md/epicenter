@@ -2,7 +2,7 @@ import { nanoid } from 'nanoid/non-secure';
 import { defineErrors, extractErrorMessage } from 'wellcrafted/error';
 import { defineKeys } from 'wellcrafted/query';
 import { Err, Ok, type Result } from 'wellcrafted/result';
-import { environment } from '#environment';
+import { environment } from '#runtime';
 import type { WhisperingRecordingState } from '$lib/constants/audio';
 import { defineQuery } from '$lib/rpc/client';
 import type {

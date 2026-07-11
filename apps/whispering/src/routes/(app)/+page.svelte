@@ -7,7 +7,7 @@
 	import * as ToggleGroup from '@epicenter/ui/toggle-group';
 	import { defineErrors } from 'wellcrafted/error';
 	import DesktopPromotion from '#desktop-promotion';
-	import { environment } from '#environment';
+	import { environment } from '#runtime';
 	import DictationCapabilityNotice from '$lib/components/DictationCapabilityNotice.svelte';
 	import { TranscriptionSelector } from '$lib/components/settings';
 	import ProviderConfigFields from '$lib/components/settings/ProviderConfigFields.svelte';

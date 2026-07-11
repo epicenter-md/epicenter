@@ -7,7 +7,7 @@
 	import Plus from '@lucide/svelte/icons/plus';
 	import XIcon from '@lucide/svelte/icons/x';
 	import { type Command, commands } from '$lib/commands';
-	import { environment } from '#environment';
+	import { environment } from '#runtime';
 	import { shortcuts } from '$lib/platform/shortcuts';
 	import { report } from '$lib/report';
 	import {

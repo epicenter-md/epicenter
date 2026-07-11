@@ -11,7 +11,7 @@
 	import { createQuery } from '@tanstack/svelte-query';
 	import { report } from '$lib/report';
 	import { tauri } from '#platform/tauri';
-	import { environment } from '#environment';
+	import { environment } from '#runtime';
 	import { manualRecorder } from '$lib/state/manual-recorder.svelte';
 
 	let {

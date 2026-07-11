@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { Loading } from '@epicenter/ui/loading';
 	import { goto } from '$app/navigation';
-	import { environment } from '#environment';
+	import { environment } from '#runtime';
 	import { whisperingPath } from '$lib/constants/urls';
 
 	let errorMessage = $state<string | null>(null);

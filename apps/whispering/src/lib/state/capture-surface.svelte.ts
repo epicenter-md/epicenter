@@ -1,5 +1,5 @@
 import type { CaptureSurface } from '$lib/constants/audio';
-import { environment } from '#environment';
+import { environment } from '#runtime';
 import { settings } from '$lib/state/settings.svelte';
 
 /**

@@ -1,5 +1,5 @@
 import { SvelteMap } from 'svelte/reactivity';
-import { whispering } from '$lib/workspace/active';
+import { whispering } from '#runtime';
 
 type Kv = typeof whispering.kv;
 
