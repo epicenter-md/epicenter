@@ -1,153 +1,131 @@
 ---
 name: content-distribution
-description: Turn one real idea, vault page, article, photo, screenshot, code diff, spec excerpt, or diagram into platform-native content for LinkedIn, X, Reddit, TikTok, Instagram Reels, YouTube Shorts, Medium, Substack, or a personal-site article. Use when creating or editing files in variants/, choosing a channel or platform for a page, republishing or updating content that already shipped, or figuring out what's currently live for a given page.
+description: Turn one real idea, vault page, article, photo, screenshot, code diff, spec excerpt, or diagram into platform-native artifacts for LinkedIn, X, Reddit, TikTok, Instagram Reels, YouTube Shorts, Medium, Substack, or a personal-site article. Use when creating or editing vault artifacts, choosing a recipe, preparing a platform payload, publishing or recording a public URL, or figuring out what is live for a page.
 ---
 
 # Content Distribution
 
-Follow [writing-voice](../writing-voice/SKILL.md) for tone. Use [social-media](../social-media/SKILL.md) when drafting final LinkedIn, X, or Reddit post copy.
+Follow [writing-voice](../writing-voice/SKILL.md) for tone. Use
+[social-media](../social-media/SKILL.md) when drafting final LinkedIn, X, or
+Reddit copy. In the vault, read `AGENTS.md` and `CONTEXT.md`; they own the current
+publishing and rendering vocabulary.
 
-## Core Philosophy
+## Product Sentence
 
-The goal is not to become a full-time creator. The goal is to make existing thinking travel farther.
-
-Use one markdown source. Use real artifacts. AI adapts, packages, resizes, rewrites, captions, and formats. AI does not pretend to be the author.
+One authored page can yield several deliberately shaped artifacts. A recipe
+guides the collaboration; the artifact holds the durable payload; successful
+publications are embedded receipts that freeze it.
 
 ```txt
-real idea
-  -> pages/<slug>.md (the private draft)
-  -> variants/<slug>-<channel>-<format>-<version>.md (the shaped artifact)
-       placements: [{platform, published_at, url, caption}] (shipped facts)
-  -> performance notes
-  -> next ideas from replies
+channel ──1:N──► recipe ──1:N──► artifact ◄──N:1── page
+                                    └── publications[platform]
 ```
+
+The vault is curated and flows downward. It does not mirror every remote post,
+import platform state, or maintain a provider synchronization engine.
 
 ## Default Workflow
 
-1. Identify the source artifact: a `pages/` note, article draft, photo, screenshot, code diff, ASCII diagram, spec excerpt, voice note, or product decision.
-2. Distill one content atom: thesis, tension, proof, visual, audience, and desired reaction.
-3. Choose renderers by platform, not by rewriting the idea from scratch.
-4. Preserve the human thesis and concrete examples. Let AI adapt structure and phrasing.
-5. Produce wrappers for each platform: hook, caption, title, CTA, and format.
-6. Keep performance notes simple: hook, visual type, platform, replies, saves, shares, profile clicks, and next variant.
+1. Select one real `pages/` source and preserve its thesis, evidence, and voice.
+2. Choose the recipe for the desired audience promise and payload. Read the
+   recipe body; it is editable collaboration guidance, not executable provenance.
+3. Create one artifact through the canonical publishing model or app. Its UUIDv7
+   filename is opaque identity; its frontmatter points to exactly one `page` and
+   `recipe`.
+4. Work with the author until the artifact body is the complete platform-ready
+   payload. Keep incomplete drafts editable; do not invent status fields.
+5. Invoke explicit deterministic tools only when the recipe calls for them.
+6. Preview the actual delivery surface. The person approves the external action.
+7. Publish manually, through supervised computer use, or through the destination's
+   own deployment command.
+8. Record the resulting public URL. The first receipt freezes the artifact;
+   later receipts may append only for an absent platform declared by the recipe.
 
-## Content Atom
+## Identity Follows Payload Sameness
 
-Before rendering, reduce the source to this shape:
-
-```txt
-Thesis:
-  The claim the post is making.
-
-Tension:
-  Why the claim matters or what common belief it pushes against.
-
-Proof:
-  Concrete artifact, example, diff, screenshot, metric, failure, or quote.
-
-Visual:
-  Real photo, screenshot, diagram, code, spec excerpt, or Marp slide.
-
-Audience:
-  Who should feel seen, challenged, or helped.
-
-Desired reaction:
-  save, argue, try, reply, share, click, subscribe.
-```
-
-## Renderer Decision Tree
+One unchanged payload sent to several declared platforms is one artifact with
+several receipts. A meaningful platform-specific rewrite is another artifact.
 
 ```txt
-Does the user need platform versions?
-  -> Use references/platform-renderers.md.
+same video.mp4 → Instagram + TikTok + YouTube
+  one artifact, three receipts
 
-Does the output need strong opening lines?
-  -> Use references/hooks.md.
-
-Does the output include carousels or short video?
-  -> Use references/marp-remotion-pipeline.md.
+LinkedIn argument ≠ X thread
+  two artifacts, even when both begin from the same page
 ```
 
-## Platform Grouping
+Do not duplicate an identical artifact just to attach another URL. Do not force
+divergent payloads into one artifact merely because they share an idea.
 
-Treat TikTok, Instagram Reels, and YouTube Shorts as one short-video renderer with small platform wrappers:
+## Recipes Compose Tools; They Are Not Plugins
+
+Recipes are Markdown playbooks. Some collaborations are conversational, some
+copy prose almost directly, and some invoke deterministic tools. Do not create a
+universal `executeRecipe()` interface or assume every recipe can be run unattended.
 
 ```txt
-Same:
-  core idea, slides, photos, screenshots, voiceover, captions.
-
-Different:
-  first hook frame, title, caption, CTA, pacing if needed.
+recipe prose
+  ├── agent collaboration
+  ├── vault video tools
+  ├── destination preview/deploy command
+  └── supervised browser action
 ```
 
-Treat Medium and Substack as one article renderer with different relationship posture:
+Shared TypeScript and Remotion own correctness-sensitive mechanics. Recipe prose
+owns editorial intent, questions, review, and handoff.
 
-```txt
-Medium:
-  discovery and searchable article.
+## Canonical Commands
 
-Substack:
-  relationship, continuity, and personal context.
+From the vault:
+
+```bash
+bun run vault check
+bun run vault page show <page>
+
+bun run vault video plan <artifact-id>
+infisical run --env prod --path /vault -- bun run vault video narrate <artifact-id>
+bun run vault video preview <artifact-id>
+
+bun run vault publication record <artifact-id> <platform> <public-url>
 ```
 
-Treat LinkedIn and X as related but not identical:
+`video preview` always builds the coherent short-video outputs: video, cover, and
+review pack. Narration persists paid audio plus caption timing; storyboard cues
+derive from current Markdown plus captions.
 
-```txt
-LinkedIn:
-  canonical concise public argument with one strong visual.
+For a personal-site article, the blog repository owns its external workflow:
 
-X:
-  fragments, threads, sharper hooks, higher frequency.
+```bash
+cd ../blog
+bun run article preview <artifact-id>
+bun run article publish <artifact-id>
 ```
 
-Treat Reddit separately:
+Article publish deploys and verifies the expected public page, then asks the
+vault to record the blog receipt. For manual platforms, copy or upload the payload,
+capture the resulting URL, then run `vault publication record`.
 
-```txt
-Reddit:
-  native subreddit post or comment. Rewrite around the community. Do not dump recycled promo.
+## What Is Live
+
+Use the embedded receipts, never filenames or authored status:
+
+```bash
+bun run vault page show <page>
 ```
 
-## Source Of Truth
-
-`pages/<slug>.md` is the source. `channel` is the content identity (`bradencodes`, `braden-essays`, `epicenter`, ...). In the sibling vault repo, channel promises live at `../vault/specs/20260609T010000-channel-promise-approval-ledger.md`; read that file before picking a channel for a page for the first time because each channel's "what belongs" and "what does not belong" sections are normative. `format` is `article | social-post | short-video`. A `social-post` body is one or more short written segments separated by `---`: one segment is a one-shot post, several are a thread. `platform` is the distribution surface, and each format ships only to its platform class (the lint enforces this matrix):
-
-```txt
-article      → personal-blog | medium | substack | newsletter
-social-post  → x | linkedin | reddit
-short-video  → instagram | tiktok | youtube
-```
-
-A variant's filename is `<page>-<channel>-<format>-<version>` where `version` is the `YYYY-MM-DD` checkpoint the variant was cut from the page:
-
-```txt
-pages/2026-06-15-my-page.md
-  -> variants/2026-06-15-my-page-bradencodes-social-post-2026-06-20.md
-       placements: [{platform: x, published_at, url}]
-  -> variants/2026-06-15-my-page-braden-essays-article-2026-06-20.md
-       placements: [{platform: personal-blog, published_at, url}]
-```
-
-### Freeze-on-supersede
-
-The **latest** variant for a `(page, channel, format)` lineage is living: edit it in place to track the page. Cutting a new version freezes its predecessor — never touch a superseded variant again; it is the curated record of what shipped.
-
-- Content changed enough to preserve the old checkpoint? Cut a **new variant** with today's date as its `version`; the old one freezes.
-- Shipping the living variant somewhere (first ship, update, or repost)? Append a **placement** to its `placements[]` — one object per platform shipment.
-
-**What's currently live** is derived, not stored: for a given platform, the current placement is the one with the latest `published_at` on the latest variant that carries that platform. Older variants and placements are history, not stale data to clean up.
-
-Current vault schema: `pages/matter.json` requires `title`, `date`, `timezone`, and `status`; `variants/matter.json` requires `page`, `version`, `channel`, and `format`, with optional `subtitle` (a channel-specific dek; the page's own `title` stays private and canonical). `placements[]` is validated by `bun run publishing-lint`, not Matter: each object has `platform` plus optional `published_at`, `url`, and `caption`. Leave `published_at` off until content is actually live.
+- No artifact: captured page, not in flight.
+- Artifact without receipts: editable draft.
+- Artifact with at least one receipt: frozen public payload.
+- A correction or second send to the same platform: create another artifact.
 
 ## Do Not
 
-- Do not generate pure AI images or pure AI videos when the user asked for authentic content from existing materials.
-- Do not turn every platform into a separate original writing task.
-- Do not optimize for raw volume before a platform wrapper preserves the author's taste.
-- Do not add fake vulnerability, fake lessons, fake metrics, or invented personal stories.
+- Do not use the retired `variants/`, `placements`, format matrix, dated version
+  filenames, or `published_at` draft slots.
+- Do not add a provider registry, OAuth layer, retry ledger, remote sync, or
+  universal recipe runner.
+- Do not generate fake vulnerability, lessons, metrics, or personal stories.
 - Do not let platform advice override the source thesis.
-
-## Vault References
-
-- `../vault/specs/20260609T010000-channel-promise-approval-ledger.md`: channel promises and what belongs on each channel.
-- `../vault/specs/20260611T230004-channel-routing-cheat-sheet.md`: quick channel routing decisions.
-- `../vault/specs/20260613T181206-channel-routing-test-batch.md`: examples that test the routing rules against real pages.
+- Do not publish or record a receipt before explicit approval and a verified
+  public URL.
+- Do not edit a frozen artifact or an existing receipt; create a new artifact.
