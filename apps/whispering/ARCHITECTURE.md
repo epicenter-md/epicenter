@@ -41,59 +41,20 @@ attach*
   one side-effectful layer
 ```
 
-## Service Layer - Pure Business Logic + Platform Abstraction
+## Host composition and services
 
-The service layer contains all business logic as **pure functions** with zero UI dependencies. Services don't know about reactive Svelte variables, user settings, or UI state. They only accept explicit parameters and return `Result<T, E>` types for consistent error handling.
+`#runtime` is the complete composition root for each host. The browser root
+selects browser recording, persistence, delivery, auth, and remote
+transcription. The Epicenter root selects native recording, filesystem-backed
+artifacts, cursor delivery, desktop auth, and local transcription.
 
-The key innovation is **build-time platform resolution** via Node-standard `#platform/*` subpath imports. Each platform-bound service lives in a folder with both implementations as sibling files plus a shared contract; the app's `package.json` `imports` map points each seam at the matching file per build condition:
+Additional semantic imports select complete focused surfaces such as
+`#shortcuts`, `#os`, and `#recording-overlay-surface`. There is no generic
+platform namespace, nullable native capability bag, or runtime host check.
 
-```
-src/lib/services/recorder/
-  index.browser.ts    Browser MediaRecorder APIs
-  index.tauri.ts      Tauri recorder plugin
-  types.ts            Shared contract both impls are annotated with
-```
-
-```jsonc
-// package.json
-{
-  "imports": {
-    "#platform/recorder": {
-      "tauri": "./src/lib/services/recorder/index.tauri.ts",
-      "default": "./src/lib/services/recorder/index.browser.ts"
-    }
-  }
-}
-```
-
-The Tauri build activates the `tauri` condition; the web build falls through to `default` (browser):
-
-```ts
-// vite.config.ts
-const isEpicenterSurface = process.env.EPICENTER_SURFACE === '1';
-export default defineConfig(async () => ({
-  resolve: {
-    // The `...defaultClientConditions` spread is load-bearing: custom
-    // conditions REPLACE Vite's defaults rather than adding to them.
-    ...(isEpicenterSurface && {
-      conditions: ['tauri', ...defaultClientConditions],
-    }),
-  },
-}));
-```
-
-Consumers (for example the services barrel `src/lib/services/index.ts`) import the bare specifier `from '#platform/recorder'` with **no platform branch at the call site**. Vite resolves `index.tauri.ts` on Tauri builds and `index.browser.ts` on web builds; the off-target file is never resolved, so it is physically absent from the bundle (a build-time guarantee, not Rollup tree-shaking). This makes the web bundle structurally unable to ship Tauri APIs and vice versa: a Tauri-only file imported by shared code fails the web build instead of shipping a broken runtime.
-
-This mechanism is scoped to `#platform/*` only; every other bare import resolves normally. The browser typecheck uses the default condition, and `tsconfig.tauri.json` repeats the check with the `tauri` condition. Each impl is annotated with the shared contract (`export const x: Contract = ...`, not `satisfies`, so the concrete type stays hidden and the variants stay in lockstep).
-
-There is no runtime platform boolean. Shared code enters through complete
-build-selected product operations such as `#runtime`; Epicenter-only adapters
-import `#desktop` or generated commands from files the browser build cannot
-resolve.
-
-Services are **testable** (just pass mock parameters), **reusable** (work identically anywhere via the shared contract in `types.ts`), and **maintainable** (no hidden runtime branches).
-
-The codebase distinguishes two kinds of "which implementation" decisions and uses different mechanisms for each. See `docs/articles/20260526T012650-two-switches-build-time-and-runtime.md` for the walkthrough.
+Services remain narrow I/O contracts below those roots. They accept explicit
+inputs and return typed `Result` values where operations can fail. Settings and
+product policy stay in the runtime or caller.
 
 **→ Learn more:** [Services README](./src/lib/services/README.md) | [Constants Organization](./src/lib/constants/README.md)
 

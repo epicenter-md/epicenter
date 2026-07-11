@@ -27,12 +27,10 @@ into Rust would split the source of truth, so we keep it in the main window.
   action model, lifecycle projection, presentation, direct web host, and meter
   curve. `RecordingPillHost` reads `dictationLifecycle` directly and renders the
   in-page pill on web.
-- **Tauri overlay** (`src/lib/recording-overlay/`): owns only the secondary-window
-  event protocol and desktop mic-level transport. On desktop,
-  the Tauri implementation of `#platform/recording-overlay-owner` projects the
-  lifecycle, synchronizes the separate overlay window, and listens for overlay
-  actions and reveal requests. The browser implementation is a no-op because
-  its pill is mounted directly in the app layout.
+- **Epicenter overlay** (`src/lib/recording-overlay/`): owns the secondary-window
+  surface, event protocol, and native mic-level transport. The browser build
+  redirects this host-only route because its pill is mounted directly in the app
+  layout.
 - **Protocol** (`src/lib/recording-overlay/events.ts`): binds the shared pill
   model to Tauri event channels. The main window pushes a `status` to the overlay;
   the overlay pushes `action` (stop/cancel) and a `ready` handshake back. Actions
@@ -48,9 +46,8 @@ into Rust would split the source of truth, so we keep it in the main window.
   applies the shared perceptual curve + smoothing:
   - VAD: RMS computed from the frame `@ricky0123/vad-web` already hands us via
     `onFrameProcessed` (no second audio graph), delivered through the
-    `#platform/recording-mic-level` seam. The browser implementation lives with
-    the pill and updates the host's reactive meter; the Tauri implementation
-    lives with the overlay transport and forwards the sample to its webview.
+    build-selected runtime. The browser implementation updates the in-page
+    meter; the Epicenter implementation forwards the sample to its webview.
   - Manual (CPAL/Tauri): the PCM lives only in Rust, so the consumer worker
     (`../epicenter/src-tauri/src/recorder/recorder.rs`) computes RMS and emits a throttled
     (~20 Hz) targeted `emit_to("recording-overlay", "mic-level", rms)`, per

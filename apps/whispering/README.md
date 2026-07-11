@@ -18,7 +18,7 @@ Whispering does not own a native shell. Epicenter owns the only Tauri runtime at
 ```text
 apps/whispering/src
 |-- browser condition --> apps/whispering/build --> Cloudflare static assets
-`-- tauri condition ----> apps/epicenter/dist/whispering
+`-- epicenter condition -> apps/epicenter/dist/whispering
                                       |
                                       `--> apps/epicenter/src-tauri
                                            native commands and windows
@@ -26,13 +26,14 @@ apps/whispering/src
 
 The browser is a real product target, not a desktop fallback. It owns browser recording, IndexedDB blobs, browser auth redirects, and web-safe shortcuts. The Epicenter build selects native implementations for system shortcuts, OS permissions, local model transcription, native windows, and app-data files.
 
-Selection happens at build time through the `#platform/*` imports in `package.json`:
+Selection happens at build time through semantic imports in `package.json`,
+including `#runtime`, `#shortcuts`, `#os`, and focused UI surfaces:
 
 - The default condition resolves `*.browser.ts` implementations.
-- The `tauri` condition resolves `*.tauri.ts` implementations.
-- Shared code can use the nullable `tauri` capability namespace as a guard, but it does not choose implementations at runtime.
+- The `epicenter` condition resolves native implementations.
+- Shared code receives complete operations and never checks a runtime platform boolean.
 
-Epicenter's asset build sets `EPICENTER_SURFACE=1`, which activates the `tauri` module condition and the `/apps/whispering` asset base. No other build signal selects Whispering's native implementations.
+Epicenter's asset build sets `EPICENTER_SURFACE=1`, which activates the `epicenter` module condition and the `/apps/whispering` asset base. No other build signal selects Whispering's native implementations.
 
 ## Run locally
 

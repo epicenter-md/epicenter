@@ -6,7 +6,7 @@ Browser-hostable Svelte 5 speech-to-text SPA. Epicenter owns its only native Tau
 
 - Three-layer architecture: Service -> Query -> UI
 - Services are pure functions returning `Result<T, E>`
-- Build-time platform seams use `#platform/*` imports. Load `workspace-app-composition` before changing those seams.
+- Complete host-selected operations use semantic package imports such as `#runtime`, `#shortcuts`, and `#os`. Load `workspace-app-composition` before changing those roots.
 - There is no generic Tauri namespace or runtime platform boolean. Shared code enters through complete build-selected operations such as `#runtime`; Epicenter-only adapters use `#desktop` or generated commands.
 - Query layer handles reactivity, caching, and error transformation
 - See `ARCHITECTURE.md` for detailed patterns

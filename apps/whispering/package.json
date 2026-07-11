@@ -8,11 +8,11 @@
 		"./workspace": "./src/lib/workspace/index.ts"
 	},
 	"imports": {
-		"#platform/commands": {
+		"#command-contributions": {
 			"epicenter": "./src/lib/commands.tauri.ts",
 			"default": "./src/lib/commands.browser.ts"
 		},
-		"#platform/os": {
+		"#os": {
 			"epicenter": "./src/lib/platform/os.tauri.ts",
 			"default": "./src/lib/platform/os.browser.ts"
 		},

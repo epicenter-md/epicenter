@@ -19,7 +19,7 @@ import {
 const TIMESLICE_MS = 1000;
 
 /**
- * Browser branch of the `#platform/recorder` seam: a recorder service backed
+ * Browser manual-recorder implementation, backed
  * by the MediaRecorder API, on top of `@epicenter/recorder`'s stream
  * acquisition. The Tauri branch (`index.tauri.ts`) exports the same
  * `ManualRecorderLive` name backed by CPAL, so `manual-recorder.svelte.ts`

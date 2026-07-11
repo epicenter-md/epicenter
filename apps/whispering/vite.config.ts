@@ -43,10 +43,10 @@ export default defineConfig(
 			exclude: ['onnxruntime-web', 'onnxruntime-web/wasm'],
 		},
 		resolve: {
-			// Build-time platform DI. Each `#platform/*` subpath (package.json
-			// "imports") has a browser impl and a Tauri impl; the Tauri build
-			// activates the `tauri` condition, the web build uses `default`
-			// (browser). A Tauri-only file imported by shared code is unresolvable
+			// Build-time host composition. Semantic subpath imports in package.json
+			// select complete browser or Epicenter operations; the Epicenter build
+			// activates the `epicenter` condition, the web build uses `default`
+			// (browser). An Epicenter-only file imported by shared code is unresolvable
 			// under the web condition, so it fails at vite build time, not at user
 			// runtime. The `...defaultClientConditions` spread is load-bearing:
 			// custom conditions REPLACE Vite's defaults.
