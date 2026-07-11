@@ -64,7 +64,7 @@ extern "C" {
 }
 
 #[derive(Debug)]
-pub struct Effect {
+pub(super) struct Effect {
     snapshot: Option<Snapshot>,
 }
 
@@ -83,7 +83,7 @@ struct ControlSnapshot {
 }
 
 /// Duck the current default output device without ever increasing its volume.
-pub async fn suppress() -> Result<Effect, String> {
+pub(super) async fn suppress() -> Result<Effect, String> {
     let Some(device) = default_output_device()? else {
         return Ok(Effect { snapshot: None });
     };
@@ -135,7 +135,7 @@ pub async fn suppress() -> Result<Effect, String> {
 }
 
 /// Restore only volume values that still equal the values this effect applied.
-pub async fn restore(effect: Effect) -> Result<(), String> {
+pub(super) async fn restore(effect: Effect) -> Result<(), String> {
     let Some(snapshot) = effect.snapshot else {
         return Ok(());
     };
@@ -146,13 +146,23 @@ pub async fn restore(effect: Effect) -> Result<(), String> {
         return Ok(());
     }
 
+    let mut failures = Vec::new();
     for control in snapshot.controls {
-        let current = read_volume(snapshot.device, control.element)?;
-        if approximately_equal(current, control.applied) {
-            set_volume(snapshot.device, control.element, control.original)?;
+        match read_volume(snapshot.device, control.element) {
+            Ok(current) if approximately_equal(current, control.applied) => {
+                if let Err(error) = set_volume(snapshot.device, control.element, control.original) {
+                    failures.push(error);
+                }
+            }
+            Ok(_) => {}
+            Err(error) => failures.push(error),
         }
     }
-    Ok(())
+    if failures.is_empty() {
+        Ok(())
+    } else {
+        Err(failures.join("; "))
+    }
 }
 
 fn default_output_device() -> Result<Option<AudioObjectID>, String> {
