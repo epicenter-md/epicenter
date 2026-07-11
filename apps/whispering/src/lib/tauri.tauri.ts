@@ -1,8 +1,7 @@
 /**
  * Tauri-only capability namespace. Everything that requires the Tauri
- * runtime lives in this file: permissions, window,
- * keyboard, autostart. The subset that needs TanStack caching,
- * error transformation, or invalidation is exposed in the same shape
+ * runtime lives in this file: window, keyboard, and keyring. Each leaf is
+ * exposed in one canonical shape
  * (no sub-namespace), with each leaf picking one canonical call form.
  *
  * Two files, one import path (`#platform/tauri`, declared in package.json
@@ -28,9 +27,7 @@
 import { Channel } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { defineErrors, extractErrorMessage } from 'wellcrafted/error';
-import { defineKeys } from 'wellcrafted/query';
-import { Ok, tryAsync } from 'wellcrafted/result';
-import { defineMutation, defineQuery, queryClient } from '$lib/rpc/client';
+import { Ok } from 'wellcrafted/result';
 import type {
 	DictationCapability,
 	DownloadProgress,
@@ -90,78 +87,11 @@ const keyring = {
 // `onDictationCapabilityChanged` expose the `DictationCapability` the paste path
 // gates on.
 
-// autostart ---------------------------------------------------------
-const AutostartError = defineErrors({
-	CheckFailed: ({ cause }: { cause: unknown }) => ({
-		message: `Failed to check autostart: ${extractErrorMessage(cause)}`,
-		cause,
-	}),
-	EnableFailed: ({ cause }: { cause: unknown }) => ({
-		message: `Failed to enable autostart: ${extractErrorMessage(cause)}`,
-		cause,
-	}),
-	DisableFailed: ({ cause }: { cause: unknown }) => ({
-		message: `Failed to disable autostart: ${extractErrorMessage(cause)}`,
-		cause,
-	}),
-});
-
 // Public namespaces ------------------------------------------------
 // Each capability picks ONE shape per method: TanStack where reactivity,
 // caching, or invalidation is the point; plain Result functions otherwise.
 // One canonical call shape per leaf; no `tauri.X.Y` vs `tauri.rpc.X.Y`
 // duplication.
-
-const autostartKeys = defineKeys({
-	isEnabled: ['autostart', 'isEnabled'],
-	enable: ['autostart', 'enable'],
-	disable: ['autostart', 'disable'],
-});
-
-const autostart = {
-	isEnabled: defineQuery({
-		queryKey: autostartKeys.isEnabled,
-		queryFn: () =>
-			tryAsync({
-				try: async () => {
-					const { data, error } = await commands.isAutostartEnabled();
-					if (error !== null) throw new Error(error);
-					return data;
-				},
-				catch: (error) => AutostartError.CheckFailed({ cause: error }),
-			}),
-		// The OS login-item state can change outside the app (System Settings,
-		// another tool, the platform dropping the entry), so re-read on focus
-		// instead of trusting a stale cached value.
-		refetchOnWindowFocus: true,
-	}),
-	enable: defineMutation({
-		mutationKey: autostartKeys.enable,
-		mutationFn: () =>
-			tryAsync({
-				try: async () => {
-					const { error } = await commands.setAutostartEnabled(true);
-					if (error !== null) throw new Error(error);
-				},
-				catch: (error) => AutostartError.EnableFailed({ cause: error }),
-			}),
-		onSettled: () =>
-			queryClient.invalidateQueries({ queryKey: autostartKeys.isEnabled }),
-	}),
-	disable: defineMutation({
-		mutationKey: autostartKeys.disable,
-		mutationFn: () =>
-			tryAsync({
-				try: async () => {
-					const { error } = await commands.setAutostartEnabled(false);
-					if (error !== null) throw new Error(error);
-				},
-				catch: (error) => AutostartError.DisableFailed({ cause: error }),
-			}),
-		onSettled: () =>
-			queryClient.invalidateQueries({ queryKey: autostartKeys.isEnabled }),
-	}),
-};
 
 let shortcutListenerPromise: ReturnType<
 	typeof events.globalShortcutTriggered.listen
@@ -279,7 +209,6 @@ const mainWindow = {
 export const tauriOnly = {
 	keyring,
 	keyboard,
-	autostart,
 	transcription,
 	mainWindow,
 };

@@ -58,10 +58,7 @@ use keyring_storage::{keyring_read, keyring_write};
 pub mod timing;
 
 mod shell;
-use shell::{
-    is_autostart_enabled, replace_global_shortcuts, set_autostart_enabled, GlobalShortcutRegistry,
-    GlobalShortcutTriggered,
-};
+use shell::{replace_global_shortcuts, GlobalShortcutRegistry, GlobalShortcutTriggered};
 
 #[cfg(desktop)]
 pub mod keyboard;
@@ -280,8 +277,6 @@ fn make_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             keyboard::commands::set_auto_paste_enabled,
             keyboard::commands::get_dictation_capability,
             replace_global_shortcuts,
-            is_autostart_enabled,
-            set_autostart_enabled,
         ])
         .events(tauri_specta::collect_events![
             keyboard::DictationCapabilityEvent,
@@ -349,7 +344,6 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_os::init())
-        .plugin(tauri_plugin_autostart::Builder::new().build())
         .manage(HostState::new(port))
         .manage(GlobalShortcutRegistry::default())
         .manage(Mutex::new(Recorder::new()))

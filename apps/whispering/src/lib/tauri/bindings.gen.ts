@@ -244,12 +244,6 @@ export const commands = {
 		typedError<null, string>(
 			__TAURI_INVOKE('replace_global_shortcuts', { registrations }),
 		),
-	isAutostartEnabled: () =>
-		typedError<boolean, string>(__TAURI_INVOKE('is_autostart_enabled')),
-	setAutostartEnabled: (enabled: boolean) =>
-		typedError<null, string>(
-			__TAURI_INVOKE('set_autostart_enabled', { enabled }),
-		),
 };
 
 /** Events */

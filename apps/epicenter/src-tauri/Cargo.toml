@@ -37,7 +37,6 @@ specta-typescript = "=0.0.12"
 symphonia = { version = "0.5", features = ["mp3", "aac", "isomp4"] }
 tauri = { version = "2.11", features = ["macos-private-api", "image-png", "tray-icon"] }
 tauri-specta = { version = "=2.0.0-rc.25", features = ["derive", "typescript"] }
-tauri-plugin-autostart = "2"
 tauri-plugin-clipboard-manager = "2"
 tauri-plugin-deep-link = "2"
 tauri-plugin-dialog = "2.7"

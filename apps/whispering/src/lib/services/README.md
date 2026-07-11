@@ -82,7 +82,7 @@ or refused. New code must not add members to this namespace.
 import { tauri, type Tauri } from '#platform/tauri';
 
 // 1. Shared code (runs on web and Tauri): narrow once.
-if (tauri) await tauri.autostart.enable();
+if (tauri) await tauri.mainWindow.focus();
 
 // 2. Shared helpers called only inside an `if (tauri)` block:
 //    prop-drill the narrowed value.
@@ -102,7 +102,7 @@ See `docs/articles/20260526T012526-tauri-is-both-the-namespace-and-the-platform-
 > **💡 Three kinds of dependency injection**
 >
 > - **Build-time platform DI** (`#platform/*` subpath imports): for services that have a real implementation on both platforms. `text`, `os`, `download`, `http`, `blob-store`, `recorder`. Each maps a `#platform/<service>` specifier (in `package.json`'s `imports`) to `index.tauri.ts` + `index.browser.ts`, with a shared `types.ts`. The active build condition picks one.
-> - **Tauri-only namespace** (`#platform/tauri`): for capabilities that exist only on Tauri (fs, permissions, window, keyboard, autostart). One file (`$lib/tauri.tauri.ts`) holds the current namespace capabilities. Shared consumers reach them through `import { tauri } from '#platform/tauri'` and either narrow with `if (tauri)`, prop-drill the narrowed value into helpers, or import `tauriOnly` directly from `$lib/tauri.tauri` inside a `.tauri.ts` file.
+> - **Legacy Tauri-only namespace** (`#platform/tauri`): the remaining window bridge while callers move to focused ownership or are refused. New capabilities do not belong here.
 > - **Runtime DI** (switch on `settings` and `deviceConfig`): for user-pick providers like `transcription`.
 >
 > See `docs/articles/20260526T012650-two-switches-build-time-and-runtime.md` for the platform-vs-settings walkthrough.
@@ -424,9 +424,7 @@ User-facing reporting (toast + OS notification) is owned by `$lib/report`, not t
 
 Tauri-only namespace capabilities live inline in one file at `$lib/tauri.tauri.ts`, reached through the `#platform/tauri` seam. The companion `$lib/tauri.browser.ts` resolves to `tauri = null` under the web condition, so `tauriOnly` misuse fails in browser builds. Shared consumers `import { tauri } from '#platform/tauri'` and access via `if (tauri) { tauri.<cap>.method() }`, by prop-drilling the narrowed value, or by importing `tauriOnly` directly from `$lib/tauri.tauri` inside a `.tauri.ts` file.
 
-- `tauri.permissions` - macOS accessibility/microphone permission flows
 - `tauri.keyboard` - Rust-owned global-shortcut replacement plus the macOS paste-at-cursor grant watch (registerChords, unregisterChords, setAutoPasteEnabled, getDictationCapability, onDictationCapabilityChanged)
-- `tauri.autostart` - Launch-at-login toggle (isEnabled, enable, disable)
 
 App-owned Rust commands that are not general reusable capabilities live in `$lib/tauri/commands`. Accessibility settings and upload encoding are examples: `commands.openAccessibilitySettings` opens System Settings, and `commands.encodeRecordingForUpload` is called by the transcription operation before cloud upload.
 

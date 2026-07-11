@@ -6,7 +6,6 @@ use tauri::image::Image;
 use tauri::menu::MenuBuilder;
 use tauri::tray::TrayIconBuilder;
 use tauri::{AppHandle, Wry};
-use tauri_plugin_autostart::ManagerExt as AutostartExt;
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState as NativeShortcutState};
 use tauri_specta::Event;
 
@@ -155,25 +154,6 @@ fn register_all(
             .map_err(|error| error.to_string())?;
     }
     Ok(())
-}
-
-#[tauri::command]
-#[specta::specta]
-pub fn is_autostart_enabled(app: AppHandle<Wry>) -> Result<bool, String> {
-    app.autolaunch()
-        .is_enabled()
-        .map_err(|error| error.to_string())
-}
-
-#[tauri::command]
-#[specta::specta]
-pub fn set_autostart_enabled(app: AppHandle<Wry>, enabled: bool) -> Result<(), String> {
-    if enabled {
-        app.autolaunch().enable()
-    } else {
-        app.autolaunch().disable()
-    }
-    .map_err(|error| error.to_string())
 }
 
 #[cfg(test)]
