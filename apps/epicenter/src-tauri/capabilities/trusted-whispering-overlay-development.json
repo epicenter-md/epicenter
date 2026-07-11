@@ -10,6 +10,7 @@
 	"permissions": [
 		"core:event:allow-emit",
 		"core:event:allow-listen",
+		"allow-reveal-whispering-window",
 		"log:default"
 	]
 }

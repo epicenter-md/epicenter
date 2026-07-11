@@ -95,8 +95,8 @@ pub fn reveal_whispering_window(app: AppHandle<Wry>) -> Result<(), String> {
     let window = app
         .get_webview_window(WHISPERING_WINDOW)
         .ok_or_else(|| "Whispering window is unavailable".to_string())?;
-    window.unminimize().map_err(|error| error.to_string())?;
     window.show().map_err(|error| error.to_string())?;
+    window.unminimize().map_err(|error| error.to_string())?;
     let _ = window.set_focus();
     Ok(())
 }

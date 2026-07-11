@@ -42,9 +42,6 @@ export const recordingOverlayAction = defineWindowEvent<RecordingPillAction>(
 	'recording-overlay:action',
 );
 
-/** overlay -> main: reveal the main Whispering window. */
-export const revealMainWindow = defineWindowSignal('main-window:reveal');
-
 /**
  * overlay -> main: the overlay mounted and its listener is live, so the main
  * window should re-send the latest status.

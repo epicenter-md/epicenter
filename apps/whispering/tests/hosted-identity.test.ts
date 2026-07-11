@@ -54,6 +54,9 @@ describe('Epicenter-hosted Whispering identity', () => {
 		const epicenterShell = read('src/lib/app-shell/epicenter.svelte');
 		const browserShell = read('src/lib/app-shell/browser.svelte');
 		const overlayDriver = read('src/lib/recording-overlay/attach.svelte.ts');
+		const recipePresentation = read(
+			'src/lib/operations/recipe-presentation.epicenter.ts',
+		);
 		const nativeHost = read('../epicenter/src-tauri/src/lib.rs');
 		expect(epicenterShell).toContain('attachRecordingOverlay');
 		expect(browserShell).not.toContain('attachRecordingOverlay');
@@ -63,5 +66,7 @@ describe('Epicenter-hosted Whispering identity', () => {
 		expect(overlayDriver).toContain('setRecordingOverlayVisible');
 		expect(overlayDriver).not.toContain('@tauri-apps/api/window');
 		expect(overlayDriver).not.toContain('@tauri-apps/api/webviewWindow');
+		expect(recipePresentation).toContain('revealWhisperingWindow');
+		expect(recipePresentation).not.toContain('@tauri-apps/api/window');
 	});
 });

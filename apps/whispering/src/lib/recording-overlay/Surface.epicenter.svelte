@@ -1,12 +1,12 @@
 <script lang="ts">
 	import type { UnlistenFn } from '@tauri-apps/api/event';
 	import { onDestroy, onMount } from 'svelte';
+	import { createLogger } from 'wellcrafted/logger';
 	import {
 		recordingOverlayAction,
 		recordingOverlayMicLevel,
 		recordingOverlayReady,
 		recordingOverlayStatus,
-		revealMainWindow,
 	} from './events';
 	import { foldMicLevel } from '$lib/recording-pill/level';
 	import type {
@@ -14,6 +14,9 @@
 		RecordingPillStatus,
 	} from '$lib/recording-pill/model';
 	import RecordingPill from '$lib/recording-pill/RecordingPill.svelte';
+	import { commands } from '$lib/tauri/commands';
+
+	const log = createLogger('whispering/recording-overlay');
 
 	let status = $state<RecordingPillStatus | null>(null);
 	let level = $state(0);
@@ -49,6 +52,11 @@
 	function sendAction(action: RecordingPillAction) {
 		void recordingOverlayAction.emit(action);
 	}
+
+	async function revealWhispering() {
+		const { error } = await commands.revealWhisperingWindow();
+		if (error !== null) log.warn(new Error(error));
+	}
 </script>
 
 <div class="fixed inset-0 flex items-center justify-center">
@@ -58,7 +66,7 @@
 		onStop={() => sendAction('stop')}
 		onCancel={() => sendAction('cancel')}
 		onShipRaw={() => sendAction('ship-raw')}
-		onReveal={() => void revealMainWindow.emit()}
+		onReveal={() => void revealWhispering()}
 	/>
 </div>
 

@@ -9,7 +9,6 @@ import {
 	recordingOverlayAction,
 	recordingOverlayReady,
 	recordingOverlayStatus,
-	revealMainWindow,
 } from './events';
 
 const log = createLogger('whispering/recording-overlay');
@@ -57,13 +56,6 @@ export function attachRecordingOverlay(): () => void {
 	void recordingOverlayAction
 		.listen(({ payload }) => dispatchPillAction(payload))
 		.then(track);
-	void revealMainWindow
-		.listen(async () => {
-			const { error } = await commands.revealWhisperingWindow();
-			if (error !== null) throw new Error(error);
-		})
-		.then(track);
-
 	return () => {
 		destroyed = true;
 		for (const unlisten of unlisteners) unlisten();

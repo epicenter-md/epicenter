@@ -11,8 +11,6 @@
 		"core:default",
 		"core:event:allow-emit",
 		"core:event:allow-listen",
-		"core:window:allow-show",
-		"core:window:allow-set-focus",
 		"allow-write-text",
 		"allow-simulate-enter-keystroke",
 		"allow-simulate-copy-keystroke",

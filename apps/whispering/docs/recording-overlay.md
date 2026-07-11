@@ -39,8 +39,8 @@ into Rust would split the source of truth, so we keep it in the main window.
 - **Controls**: the stop and cancel buttons are filled chips (stop is red) so
   they read as buttons in the small pill, and they stop click propagation.
   Clicking the pill body anywhere else asks Epicenter to reveal the main
-  Whispering window; it is a separate
-  gesture from stop/cancel so finishing a recording never yanks the window up.
+  Whispering window. It is a separate gesture from stop/cancel, so finishing a
+  recording never yanks the window up.
 - **Mic levels** (`mic-level` channel): the bars reflect real loudness, not a
   loop. Both producers send a raw RMS amplitude and the receiving pill mount
   applies the shared perceptual curve + smoothing:
