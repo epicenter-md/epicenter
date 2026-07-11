@@ -2,8 +2,8 @@ import type { SyncAuthClient } from '@epicenter/auth';
 import { toConnection } from '@epicenter/svelte/auth';
 import type { NodeId } from '@epicenter/workspace';
 import { defineActions, satisfiesWorkspace } from '@epicenter/workspace';
-import type { TranscriptionServiceId } from '$lib/services/transcription/providers';
 import type { DownloadService } from '$lib/services/download/types';
+import type { TranscriptionServiceId } from '$lib/services/transcription/providers';
 import { defineRecordingsMarkdownExport } from '$lib/whispering/recordings-markdown-export';
 import { defineWhispering } from './index';
 

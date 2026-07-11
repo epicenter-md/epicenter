@@ -6,8 +6,9 @@
  * resolves the settings once and hands each sink everything it needs at
  * construction, so a sink is reusable outside a settings-backed caller too.
  */
-import { services } from '$lib/services';
+
 import { environment } from '#runtime';
+import { services } from '$lib/services';
 import type { DeliveryReach } from './delivery-reach';
 
 type SinkKind = 'cursor' | 'clipboard' | 'ledger';

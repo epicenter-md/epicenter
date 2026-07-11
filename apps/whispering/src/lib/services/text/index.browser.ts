@@ -25,5 +25,4 @@ export const TextServiceLive = {
 		}
 		return Ok(undefined);
 	},
-
 } satisfies TextService;

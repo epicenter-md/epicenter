@@ -27,9 +27,14 @@ export type GlobalShortcutRegistration = {
 };
 
 export type DesktopShortcuts = {
-	replace(registrations: GlobalShortcutRegistration[]): Promise<Result<void, string>>;
+	replace(
+		registrations: GlobalShortcutRegistration[],
+	): Promise<Result<void, string>>;
 	onTriggered(
-		handler: (trigger: { commandId: string; state: 'Pressed' | 'Released' }) => void,
+		handler: (trigger: {
+			commandId: string;
+			state: 'Pressed' | 'Released';
+		}) => void,
 	): Promise<() => void>;
 };
 

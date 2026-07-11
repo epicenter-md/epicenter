@@ -20,5 +20,4 @@ export const TextServiceLive = {
 			try: () => writeText(text),
 			catch: (error) => TextError.ClipboardWrite({ cause: error }),
 		}),
-
 } satisfies TextService;

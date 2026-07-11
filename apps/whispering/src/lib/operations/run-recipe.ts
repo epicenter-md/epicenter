@@ -4,8 +4,8 @@ import {
 	type InferErrors,
 } from 'wellcrafted/error';
 import { isErr, Ok, type Result } from 'wellcrafted/result';
-import { buildSystemPrompt } from '$lib/operations/build-system-prompt';
 import { completeWithGlobalDefault } from '#completion';
+import { buildSystemPrompt } from '$lib/operations/build-system-prompt';
 import { settings } from '$lib/state/settings.svelte';
 import type { Recipe } from '$lib/workspace';
 

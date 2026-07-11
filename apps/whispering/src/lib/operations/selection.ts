@@ -1,7 +1,7 @@
 import type { Result } from 'wellcrafted/result';
-import type { TextError } from '$lib/services/text/types';
-import { services } from '$lib/services';
 import { environment } from '#runtime';
+import { services } from '$lib/services';
+import type { TextError } from '$lib/services/text/types';
 
 /**
  * How long to wait after the synthetic copy before reading the clipboard. The OS

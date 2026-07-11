@@ -1,8 +1,8 @@
 import { Channel } from '@tauri-apps/api/core';
 import { Err, Ok, type Result } from 'wellcrafted/result';
-import type { WhisperingDesktop } from './contract';
 import { TextError } from '$lib/services/text/types';
 import { commands, events } from '$lib/tauri/commands';
+import type { WhisperingDesktop } from './contract';
 
 async function unitResult<TError>(
 	result: Promise<Result<null, TError>>,
@@ -22,19 +22,20 @@ export const desktop: WhisperingDesktop = {
 		replace: (registrations) =>
 			unitResult(commands.replaceGlobalShortcuts(registrations)),
 		onTriggered: async (handler) => {
-			const unlisten = await events.globalShortcutTriggered.listen(({ payload }) =>
-				handler(payload),
-		);
-		return unlisten;
+			const unlisten = await events.globalShortcutTriggered.listen(
+				({ payload }) => handler(payload),
+			);
+			return unlisten;
 		},
 	},
 	dictation: {
-		setCursorDeliveryEnabled: (enabled) => commands.setAutoPasteEnabled(enabled),
+		setCursorDeliveryEnabled: (enabled) =>
+			commands.setAutoPasteEnabled(enabled),
 		getCapability: () => commands.getDictationCapability(),
 		onCapabilityChanged: async (handler) => {
-			const unlisten = await events.dictationCapabilityEvent.listen(({ payload }) =>
-				handler(payload.capability),
-		);
+			const unlisten = await events.dictationCapabilityEvent.listen(
+				({ payload }) => handler(payload.capability),
+			);
 			return unlisten;
 		},
 		requestAccess: () => commands.requestAccessibilityPermission(),
