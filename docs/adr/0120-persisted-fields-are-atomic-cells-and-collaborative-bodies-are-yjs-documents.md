@@ -68,14 +68,14 @@ are not part of the application schema surface.
   element. Independent contributions belong in independent rows or a Yjs body.
 - A generic database editor and import diff can derive widgets from the same
   field schema that generates SQLite storage and validates values.
-- Tables and KV share one mutation, snapshot, unknown-field, and conflict model.
+- Tables and KV share one mutation, snapshot, and conflict model.
   The public APIs remain different because one addresses rows and the other
   addresses declared singleton keys, not because the wire needs more verbs.
-- Honest clients only emit values valid for their app schema. Schema evolution
-  may add fields and widen understood data, but it does not narrow an existing
-  field into values old clients can no longer represent.
-- Unknown additive fields survive in a reserved local sidecar until an upgraded
-  client can promote them into typed columns. The server remains schema-blind.
+- Honest clients only emit values valid for their exact schema epoch. Any change
+  to synchronized tables, fields, or field meaning creates a new epoch and
+  crosses through logical import; local indexes and internal storage changes do
+  not. Structurally valid but nonconforming input from a buggy or dishonest
+  client remains storable without creating a second cross-version schema path.
 - Existing scalar transcript, note-body, todo-body, and wiki-body columns are
   candidates for a clean move to declared child docs. Existing raw persisted
   TypeBox schemas must move through `field.json` or earn a new closed field kind.

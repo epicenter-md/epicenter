@@ -6,9 +6,11 @@
 
 ## One Sentence
 
-Each Epicenter app keeps a complete local SQLite metadata replica, synchronizes
-atomic fields through a schema-blind server-ordered mutation log, and
-synchronizes mergeable bodies as lazy Yjs documents.
+Each Epicenter app keeps a complete local SQLite replica of one database that
+lives in exactly one schema epoch; every write inside the epoch synchronizes
+silently under server acceptance order, and everything that crosses a database
+boundary (sign-in, restore, endpoint movement, epoch upgrade) arrives through
+one reviewable import applied as ordinary mutations.
 
 ## How to read this spec
 
@@ -70,7 +72,13 @@ The ADR numbers are provisional until merge.
 ### Synchronized operation
 
 - Each logical synchronized database belongs to exactly one principal.
-- The logical database key is `(principalId, appId)`.
+- The logical database family key is `(principalId, appId)`. Each family has
+  exactly one active database incarnation, and each incarnation lives in
+  exactly one schema epoch: an opaque identity derived from the complete
+  canonical synchronized schema plus the ordered authored semantic epoch lineage.
+- A logical schema change never migrates the shared database in place. It
+  creates a new incarnation in the new epoch; old replicas stay readable and
+  exportable and enter the new epoch through an explicit import.
 - Every synchronized device keeps a complete record-metadata replica.
 - A client may remain offline indefinitely and later submit its pending mutations.
 - The server is authoritative by acceptance order, not device clock.
@@ -98,14 +106,23 @@ The ADR numbers are provisional until merge.
 
 ### Explicit database movement
 
-- Import, restore-as-copy, local-to-account migration, and endpoint movement use
-  one logical database merge engine.
-- The merge engine compares compatible source and destination snapshots by
-  table, row, and cell.
-- Users may apply a bulk preference and review only differing cells.
-- Merge output is ordinary mutations, not a second write protocol.
+- Import, restore, local-to-account promotion, endpoint movement,
+  physical-clone adoption, and epoch upgrade use one logical import planner.
+- The planner compares pinned source and destination logical snapshots by
+  table, row, and cell after an optional deterministic identity-preserving
+  transform.
+- Unambiguous work (source-only rows, equal cells, tombstone imports) applies
+  without review. Users apply a bulk preference to differing cells and review
+  only genuine ambiguity. A source row the destination terminally deleted is
+  retained for review but the generic planner lets the deletion win. Restoring
+  it under a new row id is an app-owned copy flow because generic field metadata
+  cannot safely remap inbound references.
+- Plan application revalidates the destination head; cells that changed since
+  planning are re-diffed rather than silently overwritten.
+- Import output is ordinary mutations, not a second write protocol. The source
+  stays intact and read-only until the destination durably accepts the result.
 - Application row identity is portable. Replica actor identity, cursors, and
-  outboxes are not.
+  outboxes are not: every physical restore or copy mints a new actor.
 
 ## Refusals
 
@@ -126,6 +143,10 @@ No server-side app schema or app-specific SQL queries
 No row-level ACLs inside one database
 No reuse of a deleted row identity
 No active clone of one replica identity
+No in-place breaking migration of a shared database
+No actor-preserving physical restore
+No epoch-transform identities derived from mutable cell values
+No rewriting of pending outbox operations, ever
 ```
 
 The costs are explicit:
@@ -137,8 +158,12 @@ The costs are explicit:
 - Server-side app search, indexing, automation, and AI require separate derived
   workers or services.
 - Restoring a deleted record creates a new identity.
-- Copying a physical SQLite file into another active replica requires an
-  import-as-new-replica flow.
+- Opening any physical copy or backup is a boundary import under a new actor,
+  even when the original replica is truly lost.
+- A breaking schema change costs every device an explicit epoch-upgrade import;
+  devices that have not upgraded pause sync (local work continues).
+- Epoch transforms that would merge several source rows into one target row, or
+  key new rows by cell values, are refused in the first wave.
 
 ## Current state
 
@@ -178,7 +203,7 @@ Synchronized app replica
   application SQLite tables
   small internal sync state
   durable mutation outbox
-  unknown additive-field preservation
+  provisional nonconforming-row quarantine
   local lazy Yjs body storage
           |
           | push mutations / pull after cursor
@@ -213,8 +238,8 @@ Server adapter
 Yjs provider
   owns updates, state vectors, persistence, and lazy body synchronization
 
-Merge editor
-  owns explicit source/destination comparison and user choices
+Import planner
+  owns explicit source/destination comparison, plan actions, and user choices
 ```
 
 The sync engine does not own app validation or editor widgets. The field schema
@@ -303,21 +328,45 @@ carry references and metadata, not Yjs history.
 
 ### Mutation
 
-The minimal candidate shape is:
+The minimal shape (2026-07-11 review):
 
 ```ts
 type Mutation = {
-	protocolMajor: number;
-	appId: string;
-	databaseGeneration: string;
 	actorId: string;
 	actorSequence: number;
 	operations: Operation[];
 };
 ```
 
-`(actorId, actorSequence)` is the candidate idempotency key. A separate mutation
-UUID is refused unless a falsification trace proves the composite insufficient.
+`(actorId, actorSequence)` is the idempotency key. A separate mutation UUID is
+refused: retry, duplicate delivery, and lost acknowledgement are handled by
+sequence dedup; clone and restore are handled by the new-actor flow; a
+concurrent service worker allocates its sequence from the database authority
+atomically. A UNIQUE-index-on-UUID "for defense in depth" is exactly the
+retained-metadata smell this design refuses.
+
+`protocolMajor`, `schemaEpochId`, `appId`, and the server-minted
+`databaseIncarnationId` travel once in the request/connection envelope, never
+per mutation: they are negotiation and routing facts shared by every mutation
+a client sends, and copying them into each outbox and log row is dead weight.
+
+`schemaEpochId` replaces the earlier count-derived `appSchemaMajor`. The build
+derives it from the canonical complete synchronized schema plus the ordered
+authored semantic epoch lineage. Structural changes cannot accidentally retain
+compatibility, while a meaning-only or transform change forces a new identity by
+minting a new authored component. The schema-blind server stores the result at incarnation creation and
+compares only opaque equality; mismatch pauses the writer with an explicit
+upgrade-or-export choice.
+
+`databaseIncarnationId` replaces the earlier `databaseId`/`databaseGeneration`
+hypotheses: a random identity the server mints when a database incarnation is
+created. Two events mint a new incarnation: destroying and recreating the
+database (account reset) and an epoch upgrade (the new epoch is a new
+incarnation with a fresh actor set). Actors, cursors, outboxes, and snapshots
+bind to the incarnation. On mismatch the client pauses with an explicit
+import-or-export choice; it never silently reuses a cursor or outbox against a
+different incarnation. In-flight response isolation across profile or database
+switches is a volatile connection epoch, not durable state.
 
 All operations in one mutation commit together. Actor sequence allocation,
 application-table changes, and outbox persistence happen in one local SQLite
@@ -349,6 +398,43 @@ Fold rules:
 
 Within `patchRow`, omitted fields are untouched and named `null` fields are
 cleared. No operation replaces an entire serialized row.
+
+### Semantic fold totality and local constraints
+
+The logical fold is total: every structurally valid accepted operation has a
+deterministic state transition or no-op. Persistence can still fail because of
+disk exhaustion, corruption, or runtime faults; those failures pause and retry
+the database instead of becoming alternate semantics. A schema constraint must
+never reject data another replica already accepted. Consequences:
+
+- Synchronized application tables may mirror exact per-row schema conformance
+  with `NOT NULL` or `CHECK` constraints because classification happens before
+  materialization. They do not enforce cross-row `UNIQUE` or foreign-key
+  constraints that valid independently accepted rows could violate.
+- Validation is a write-API boundary concern. Honest clients never emit
+  invalid cells; dishonest or buggy cells are stored, never crash the fold,
+  and never block sync.
+- Nonconforming rows live in one internal QUARANTINE table (marked
+  provisional, 2026-07-11 pass 3): after applying a whole accepted mutation,
+  the fold validates each affected row against the epoch schema and moves
+  nonconforming rows to `(table, rowId, cells JSON, firstSeenSeq, reason)`;
+  a later patch that completes the row moves it back, in both directions.
+  Quarantine is derived local state and never enters the wire protocol. Every
+  replica in an incarnation uses the same exact logical schema identity, so
+  classification is one deterministic projection rule. The payoff: typed reads
+  and raw SQL over application tables see ONE row population by construction.
+  The rejected alternative (permissive
+  rows filtered at the typed read boundary) makes `sql('SELECT count(*)…')`
+  and `list().length` silently disagree, and honest naming does not fix a
+  count a developer will still trust.
+- UNIQUE beyond `id` is refused as DDL because two offline devices can both
+  take the "unique" value and both writes enter server order. Uniqueness is
+  an application invariant enforced at the write API, advisory only.
+- Secondary indexes are fine and expected; they carry no constraint.
+
+This also answers Open Question 12: incomplete, partial, or malformed creates
+are physically storable as complete quarantine rows; the fold never attempts an
+invalid typed-table insert, and completion promotes them atomically.
 
 ### Server acceptance
 
@@ -414,30 +500,46 @@ invariant and survive a mental-inline pass.
 
 ```txt
 application tables
-  visible, typed, locally queryable state
+  visible, typed, locally queryable conforming state for the exact epoch
 
 __epicenter_state
-  one replica's actor identity, next sequence, cursor, database generation,
-  app schema version, and protocol major
+  one replica's actor identity, next actor sequence, pull cursor, the
+  server-minted database incarnation id, the schema epoch id, applied schema
+  revision, and sync-storage version (a meta row, NOT PRAGMA user_version:
+  Durable Object SQLite does not support that pragma, so all engines share
+  the table mechanism)
 
 __epicenter_outbox
   one immutable row per pending atomic mutation
 
-unknown additive-field storage
-  values the current app schema cannot project yet
+__epicenter_tombstones
+  terminally deleted (table, rowId) pairs; consulted when pending
+  mutations replay so a late patch cannot resurrect a deleted row
+
+__epicenter_quarantine
+  accepted rows, including unknown tables or fields, that do not conform to the
+  exact epoch schema
+  (table, rowId, cells JSON, firstSeenSeq, reason); provisional, see
+  fold totality
 
 Yjs update storage
   separate persistence for opened child docs
 ```
 
-The first gate must determine whether unknown values and terminal tombstones can
-live in reserved internal columns on application rows or earn separate tables.
+The first gate must determine whether nonconforming rows and terminal tombstones
+can live in reserved internal columns on application rows or earn separate tables.
 It must also determine whether application tables can be the only physical
 materialization or whether a schema-blind canonical shadow is unavoidable.
 
 The target starts with no canonical shadow. A proof may earn one by presenting a
 minimal trace where accepted current state cannot be recovered after outbox
 pruning, snapshot installation, or crash.
+
+Gate 1 passed on 2026-07-11 without earning that shadow. The selected client
+shape is typed application tables plus outbox, state, tombstones, and
+quarantine. The control implementation remains in the proof directory, and the
+measurements and scope limits are recorded in
+`demos/local-first-sync/gates/GATE1-EVIDENCE.md`.
 
 ### Server hypothesis
 
@@ -501,17 +603,16 @@ needs deletion knowledge even when the app hides deleted rows. Candidates:
 The choice must preserve non-null typed columns, snapshot replacement, and direct
 local queries without teaching app code about sync tombstones.
 
-### How are unknown fields stored?
+### How are nonconforming rows stored?
 
-An old client must preserve additive fields it cannot project into typed columns.
-The preferred candidate is a reserved JSON sidecar associated with a known row.
-On upgrade, one transaction validates the stored value, writes the typed column,
-and removes the sidecar key.
-
-Unknown tables are a separate decision. The recommended refusal is that adding a
-new synchronized table is an app-schema major change that pauses older clients;
-only additive fields within known tables use the sidecar path. Gate 3 must either
-validate this refusal or demonstrate a smaller safe representation.
+Exact schema epochs remove the cross-version unknown-field and unknown-table
+problem. A structurally valid mutation can still name an unknown table or carry
+invalid cells because the server is schema-blind. The preferred candidate is one
+generic quarantine row keyed by `(table, rowId)` containing the complete logical
+cells plus diagnostic metadata. A later completing patch promotes the row into
+typed storage. Gate 1 compares this focused exceptional representation against
+permissive application rows and a complete canonical shadow; it must not assume
+quarantine wins merely because it is smaller on paper.
 
 ### Does actor sequence replace mutation UUID?
 
@@ -563,38 +664,85 @@ implementation later optimizes the copy.
 
 ### Import and endpoint movement
 
-The merge engine accepts two logical snapshot readers and one mutation writer:
+One import planner owns every explicit database boundary. Its seams (pass 3,
+derived from the enumerated state machine in the review memo):
 
 ```ts
+type LogicalRow =
+	| { kind: 'live'; table: string; rowId: string; cells: Record<string, JsonValue> }
+	| { kind: 'tombstone'; table: string; rowId: string };
+
 type LogicalSnapshotReader = {
-	readTables(): AsyncIterable<LogicalRow>;
+	/** Identifies the pinned, internally consistent read view. */
+	readonly snapshotId: string;
+	readRows(): AsyncIterable<LogicalRow>;
+	readDocumentManifest(): AsyncIterable<DocumentRef>;
 	readDocument(ref: DocumentRef): Promise<Uint8Array | undefined>;
 };
 
 type MergeDestination = {
-	commit(operations: Operation[]): Promise<void>;
+	applyRows(operations: Operation[]): Promise<AcceptanceReceipt>;
+	applyDocuments(writes: DocumentWrite[]): Promise<AcceptanceReceipt>;
 };
 ```
 
-The exact API is not settled. The ownership is: compare logical data, collect
-choices, emit ordinary writes. It does not copy SQLite pages or sync metadata.
+One reader INTERFACE, two reader INSTANCES: comparison needs both the source
+and the destination pinned. The `live | tombstone` row encoding is the same
+logical encoding server snapshots and exports use; the planner does not invent
+a second format. The plan's per-row actions are exactly: no-op (equal,
+absent/absent, absent/anything), auto-apply (source-only rows, source-only
+cells, tombstone imports), bulk-preference-with-review-list (differing cells;
+source-tombstone over destination-live row), review-required (source-live over
+destination-tombstone: restore only under a NEW id), and plan-error
+(transformed source-internal id collisions; any plan error blocks apply).
+
+Bodies ride the SAME plan as a second row-gated lane: a destination-absent doc
+copies, shared Yjs history auto-merges by update application, unrelated
+histories are a review choice (keep destination or merge histories; source-only
+replacement is refused until a document-reset contract exists). Excluding a row
+suppresses its body; restoring over a tombstone remaps the body to the new id.
+
+An empty destination streams imports without materializing a diff — but empty
+means zero live rows AND zero tombstones from one consistent snapshot, and the
+transform preflight (collision check) still runs first. Apply revalidates the
+destination head: cells that changed after planning re-diff instead of being
+silently overwritten. The planner does not copy SQLite pages or sync metadata,
+and it never participates in background synchronization.
 
 ### Replica restore and clone
 
-```txt
-Restore lost replica:
-  original no longer writes
-  physical backup may preserve actor identity and outbox
+The actor-preserving "restore lost replica" path is DELETED (pass 3). Its
+safety preconditions — the restored file is provably the only process that
+will ever submit as that actor, and the server high-water has not passed any
+sequence absent from the backup — are user promises the protocol cannot check:
+the server owns a high-water and an acknowledgement, not payload comparison or
+actor fencing, so it cannot distinguish "restored lost replica" from "live
+clone." The directed trace: backup at seq 1, original pushes seq 2 then dies,
+restored file allocates seq 2 for a DIFFERENT payload, server silently returns
+the existing acknowledgement, echo prunes the restored outbox, the write is
+gone with no error.
 
-Clone while original may write:
-  open through import-as-new-replica
-  preserve app rows and child docs
-  discard old actor identity, cursor, and outbox identity
-  mint/register a new actor
-  emit logical import mutations
+The smallest safe restore contract:
+
+```txt
+Every physical backup or copy opens as a logical import source:
+  discard its actor, next-sequence, cursor, and outbox as identity
+  keep its application tables, tombstones, and lanes as local state
+  mint a new actor
+  compare against the live destination by stable row id and cell
+  unchanged cells emit nothing; differences are the ordinary review
+  retain the source until the emitted mutations are accepted
+
+Reopening the same durable file after a crash is NOT a restore:
+  the actor and outbox continue; sequence dedup absorbs the retry
 ```
 
-The product does not support two live files with one actor identity.
+When the destination is unchanged since the backup, the diff is exactly the
+backup's pending writes and applies without review. When a third device wrote
+the same cell in between, the value resurfaces as a reviewable difference
+instead of being silently deduplicated — which is the honest outcome. The
+product does not support two live files with one actor identity, and no
+sanctioned flow ever presents a copied actor to the server.
 
 ### Service actor
 
@@ -624,15 +772,22 @@ in one server transaction:
   delete mutation_log rows <= snapshotSequence
 ```
 
-Large snapshots must be consistently pageable while new writes continue. The
-candidate is immutable fixed-size chunks with a generation id, sequence, count,
-and cryptographic checksum. A new snapshot is built beside the old generation,
-published atomically, then the old generation is deleted after no bootstrap
-request can reference it or after clients can restart against the new generation.
+The freeze is one invariant, not three: rows, tombstones, AND actor
+high-waters are captured from the same read state at snapshotSequence. A
+builder that copies rows early and reads high-waters at a later head publishes
+a snapshot whose high-water prunes a pending mutation the rows never folded —
+permanent silent loss (directed trace in the pass 3 review). For the same
+reason, ordinary pull pages prune outbox entries only by exact contained
+echoes; a page never carries a head high-water a client could prune by. Only
+an installed snapshot's frozen high-waters prune by containment.
 
-Gate 2 must determine whether one published generation plus an unpublished build
-generation is enough. It must not keep arbitrary historical snapshots merely to
-avoid designing restart semantics.
+Large snapshots must remain consistently pageable while later writes continue.
+Gate 2 selected immutable fixed-size chunks with a generation id, sequence,
+count, and cryptographic checksum. The current-head rows, tombstones, actor
+high-waters, manifest, watermark, and log deletion are captured and published in
+one server transaction. One generation is addressable at a time: after atomic
+replacement, abandoned clients receive `snapshot-replaced` and restart. No
+durable build generation or arbitrary historical generation earned itself.
 
 A stale client:
 
@@ -650,36 +805,126 @@ transition.
 
 ## Schema evolution
 
-Four version axes stay separate:
+Five version axes stay separate:
 
 ```txt
-App schema version
-  typed local tables and field promotion
+App schema revision (local)
+  1 + ordered migrations array length; drives eager local representation
+  migration without a separately maintained version number
+
+Schema epoch (sync compatibility)
+  exact identity derived from the canonical synchronized schema plus an
+  ordered authored semantic epoch lineage; travels in the request envelope; any logical
+  table, field, or meaning change produces a new identity while the
+  schema-blind server performs only opaque equality
+
+Database incarnation (replica coordination universe)
+  server-minted random id; actors, cursors, outboxes, and snapshots bind to
+  it; a new epoch or an account reset mints a new incarnation
 
 Client sync-storage version
-  __epicenter_* local DDL
+  __epicenter_* local DDL (meta-table row)
 
 Server sync-storage version
-  generic canonical/log/snapshot DDL
+  generic canonical/log/snapshot DDL (meta-table row)
 
 Wire protocol major
-  mutation and snapshot encoding
+  mutation and snapshot encoding (request envelope)
 ```
 
 Cloudflare Durable Object class migrations are deployment declarations, not a
-substitute for SQL schema migrations inside each object.
+substitute for SQL schema migrations inside each object. `PRAGMA user_version`
+is not supported in Durable Object SQLite; every engine tracks storage
+versions in a meta table so the mechanism does not fork by runtime.
+
+### Migration model (2026-07-11 pass 3: schema epochs)
+
+Per-row `_v` and migrate-on-read are deleted. The caller census found all 41
+production tables single-version: the per-row machinery has zero
+multi-version producers, hides migration failures inside reads, and its
+version diversity was a Yjs-era artifact (rewriting a CRDT was expensive;
+rewriting SQLite is ordinary).
+
+The earlier in-place breaking model (server pauses lower majors, first
+upgraded replica transforms shared rows as ordinary mutations, client rewrites
+its pending outbox through the transform) is DELETED. The independent second
+review falsified it: deterministic transforms do not commute with concurrent
+new-schema user writes, and arbitrary pending patches cannot generally be
+transformed through a row migration. Pass 3's adversarial seam confirmed no
+counterexample forces it back.
+
+- `defineWorkspace` declares the CURRENT synchronized schema, an authored
+  semantic epoch id, and one ordered migrations array. The local storage
+  revision is derived as `1 + migrations.length`; there is no second version
+  number that can disagree with a sparse manifest. The runtime derives the
+  exact schema identity from the canonical
+  schema plus that authored id. A changed synchronized declaration with the
+  same derived identity fails before opening or connecting.
+- **Representation-only revisions migrate eagerly in place.** Indexes, internal
+  encodings, and other changes that leave the logical synchronized schema
+  identical use the local storage version and a hand-authored `apply(tx)`.
+  Crash mid-migration rolls back and reruns. Adding or changing a synchronized
+  table, field, or meaning is not a representation migration; it creates a new
+  schema epoch.
+- **Every logical schema revision carries an epoch transform** used at import
+  time. A synchronized replica never transforms the shared database in place
+  and never rewrites its outbox. A local-only workspace has one writer and may
+  apply the same transform eagerly in place.
+- **One identity map owns rows and tombstones.** `mapIdentity(table, rowId)`
+  returns zero or one target identity using only the durable source identity,
+  never mutable cells. The row transform receives that mapped identity and
+  changes cells only; tombstones use the same mapping automatically. One-to-many
+  splits and many-to-one merges are refused in the first wave. This removes two
+  independently authored identity transforms and makes resurrection safety
+  mechanically reviewable.
+- **Epoch cutover is a leased server-owned state machine:**
+
+  ```txt
+  ACTIVE old incarnation
+    -> begin(expected active incarnation, target schema identity)
+    -> FROZEN old incarnation at canonical head H
+    -> PREPARING new incarnation under an expiring transition lease
+    -> transform canonical snapshot at H into the target baseline
+    -> seal and verify baseline
+    -> atomically activate new incarnation and retire old incarnation
+
+  abort or lease expiry before activation
+    -> delete partial target
+    -> unfreeze old incarnation
+  ```
+
+  The global baseline comes only from the frozen canonical server snapshot, so
+  another authenticated upgrader can resume an abandoned deterministic build.
+  A creator's private pending overlay never contaminates the shared baseline.
+  After activation, every replica imports its transformed local state through
+  the ordinary planner; equal canonical content becomes a no-op while private
+  pending intent appears as an explicit addition or difference. Only the
+  authenticated principal may initiate, abort, or resume the opaque transition;
+  the server learns no app schema.
+- **A stale old-epoch device returning later** keeps a readable, exportable
+  replica. Its local tables already contain accepted-prefix ⊕ its pending
+  writes; upgrade composes the authored per-epoch transforms across any
+  skipped epochs (the single identity maps compose safely; intermediate deletes
+  arrive in the destination as transformed tombstones) and enters the
+  current epoch through the ordinary import plan. Its old outbox dies with
+  the old incarnation — unrewritten, because its effects are already in the
+  tables the transform reads.
+- Downgrade is refused: a binary older than the local revision opens
+  read-only or refuses.
 
 ### App schema rules
 
-- Additive fields within known tables are compatible.
-- Old clients preserve unknown additive fields without emitting them.
-- Adding a non-null field requires a deterministic local default or migration.
-- Renaming, removing, narrowing, or changing the storage kind of a field is a
-  breaking app-schema migration.
-- Adding a synchronized table is provisionally a breaking app-schema major.
-- An incompatible client pauses remote sync but continues local work.
-- Upgrade promotion from unknown sidecar to typed column is transactional and
-  removes the sidecar copy exactly once.
+- Every logical table or field addition, removal, rename, type change, enum
+  change, nullability change, or semantic reinterpretation creates a new exact
+  schema epoch. Compatible cross-version synchronization is refused initially;
+  it may be earned later from concrete upgrade pressure.
+- Indexes, query plans, and internal SQLite encodings may change within an epoch
+  because they do not change the logical synchronized state.
+- A schema-epoch mismatch pauses remote sync while the old replica continues
+  local work and remains readable and exportable.
+- A logical export and epoch transform read typed rows, quarantine, and
+  tombstones. There are no separate unknown-field or unknown-table promotion
+  paths.
 
 ### Server schema rules
 
@@ -715,7 +960,15 @@ Required directed traces:
 - terminal delete racing late patches;
 - mutation spanning multiple rows and tables;
 - actor sequence duplicate and gap;
+- malformed or partial create quarantined, then promoted when a later patch
+  completes it (sql/list agreement before and after);
+- patch, delete, crash, and pending replay against a quarantined row;
 - full drain convergence across at least three replicas.
+
+Every Gate 1 trace runs within ONE schema epoch and one database incarnation:
+epoch upgrade and boundary import are planner scope, not sync-engine scope,
+and the gate must not smuggle them in. The request envelope under test is
+`{protocolMajor, schemaEpochId, databaseIncarnationId, mutations|cursor}`.
 
 Run the same traces against:
 
@@ -759,20 +1012,28 @@ backup and restore are out of scope.
 Claim:
 
 ```txt
-An old client cannot erase an additive field it does not understand, and an
-upgraded client promotes the value into its typed column exactly once.
+One exact schema identity owns each incarnation; incompatible clients pause,
+and epoch import carries complete current intent without rewriting transport
+history or resurrecting terminal identities.
 ```
 
 Required directed traces:
 
-- new client writes a field unknown to old client;
-- old client pulls, restarts, edits another field, pushes, and exports;
-- old client installs a snapshot containing unknown fields;
-- upgraded client promotes valid unknown values transactionally;
-- invalid promoted value pauses or reports migration without erasing the sidecar;
-- explicit `null` clears an unknown field;
-- schema-major mismatch pauses sync while local writes continue;
-- proposed unknown-table refusal is verified through app-schema major behavior.
+- two builds with different logical schemas cannot connect to one incarnation,
+  including additive field, table, enum, and nullability changes;
+- schema-epoch mismatch pauses sync while local writes continue;
+- transition freezes one canonical head, builds one resumable preparing
+  baseline, activates atomically, and rolls back cleanly on lease expiry;
+- the global target baseline excludes the initiating replica's private pending
+  overlay;
+- after activation, that private overlay enters through ordinary import and
+  equal canonical content becomes a no-op;
+- one identity map carries rows and tombstones consistently; zero-to-one
+  transforms pass while one-to-many and many-to-one transforms fail preflight;
+- a stale replica skips several epochs without resurrecting any carried
+  tombstone;
+- opening a physical copy routes through the import door and mints a new
+  actor; no trace may present a reused actor identity to the server.
 
 ## Harness shape
 
@@ -876,31 +1137,35 @@ editor.
 - [ ] Find every statement that still assumes Yjs owns record metadata.
 - [ ] Run an independent collapse pass over the table-owner inventory and wire
   operation set.
-- [ ] Decide the unknown-table compatibility refusal.
+- [x] Refuse cross-version logical-schema compatibility in the first wave;
+  every synchronized table or field change creates a new exact epoch.
 - [ ] Keep the ADRs Proposed and this spec Draft.
 
 ### Wave 1: Gate 1 reference and SQLite engines
 
-- [ ] Rewrite the hardened gate model around terminal ids, `patchRow`,
+- [x] Rewrite the hardened gate model around terminal ids, `patchRow`,
   `deleteRow`, actor sequence, and no selective rejection.
-- [ ] Implement both candidate client representations.
-- [ ] Generate and minimize adversarial schedules.
-- [ ] Measure code and storage differences.
-- [ ] Select the smallest representation that passes.
+- [x] Implement both candidate client representations.
+- [x] Generate and minimize adversarial schedules.
+- [x] Measure code and storage differences.
+- [x] Select the smallest representation that passes: typed tables without a
+  canonical client shadow.
 
 ### Wave 2: Gate 2 snapshot and compaction
 
-- [ ] Define immutable logical snapshot manifest and chunk encoding.
-- [ ] Implement current-head snapshot publication and log-prefix deletion.
-- [ ] Prove new and stale bootstrap under failure.
-- [ ] Prove actor idempotency and tombstones survive compaction.
+- [x] Define immutable logical snapshot manifest and chunk encoding.
+- [x] Implement current-head snapshot publication and log-prefix deletion.
+- [x] Prove new and stale bootstrap under failure.
+- [x] Prove actor idempotency and tombstones survive compaction.
 
-### Wave 3: Gate 3 schema evolution
+### Wave 3: Gate 3 schema epochs
 
-- [ ] Implement additive unknown-field preservation.
-- [ ] Implement transactional promotion.
-- [ ] Prove old-client restart, patch, export, snapshot, and upgrade.
-- [ ] Prove app-schema major pause behavior.
+- [ ] Implement exact schema identity negotiation.
+- [ ] Implement the leased freeze/prepare/activate/abort transition model.
+- [ ] Prove canonical-baseline transformation and per-replica pending-intent
+  import remain separate.
+- [ ] Prove zero-to-one identity mapping carries rows and tombstones through
+  skipped epochs without resurrection.
 
 ### Wave 4: Shared production core
 
@@ -917,12 +1182,16 @@ editor.
   tables and reactive query invalidation.
 - [ ] Stop importing the old record path, verify, then delete it and its fixtures.
 
-### Wave 6: Lifecycle and merge editor
+### Wave 6: Lifecycle and import review
 
-- [ ] Implement local-only and synchronized database selection at boot.
-- [ ] Implement logical import with source retention through acceptance.
-- [ ] Build the schema-driven table, row, and cell diff surface.
-- [ ] Implement import-as-new-replica and restore-lost-replica workflows.
+- [ ] Implement the two open doors (`openLocalWorkspace`, `openReplica`) at boot.
+- [ ] Implement the logical import planner with source retention through
+  acceptance and destination-head revalidation at apply.
+- [ ] Build the schema-driven plan summary and bulk-preference surface; grow a
+  per-cell editor only when review volume earns it.
+- [ ] Implement physical-copy adoption (import under a new actor) and the
+  epoch-upgrade flow (`planEpochUpgrade`), including server-side freeze and
+  preparing/active incarnation fencing.
 
 ### Wave 7: Accept decisions and delete the spec
 
@@ -951,8 +1220,70 @@ Before implementation acceptance, review at least:
 - ADR-0110: edit timing remains owned by the value owner; the SQLite outbox must
   not introduce a global debounce tier.
 
+The 2026-07-11 review swept the full ADR index and adds:
+
+- Must be superseded by the accepted versions of 0119/0120/0121: ADR-0006
+  (per-row `_v` version tuple), ADR-0077 (parsed-row memoization written
+  against YKeyValueLww internals), ADR-0093 (KV metadata over the Yjs kv
+  namespace).
+- Re-anchor in each app's SQLite wave (decision survives, storage clause
+  changes): ADR-0055 (conversations table), ADR-0102 (vocab entries),
+  ADR-0025 (agent transcripts), ADR-0031 (names YKeyValueLww as the row
+  store), ADR-0087 (the "Yjs wire contract" splits into SQLite metadata plus
+  Yjs bodies). ADR-0074 (secret vault, its own encrypted Yjs LWW-KV doc) may
+  remain a separate plane; flag for consistency only.
+- Not affected: ADR-0026/0029/0065/0101 (Matter's markdown-to-SQLite
+  projection is a different storage stack: disk as truth, disposable mirror).
+- Numbering collisions to resolve before acceptance: 0092, 0079, and 0101
+  each name two files.
+
 Do not edit accepted ADRs to disguise the change. A new accepted ADR must
 supersede or explicitly scope the old decision.
+
+## Developer API target
+
+The 2026-07-11 review made the developer API a first-class design target;
+pass 3 corrected it against the second review's blockers. The selected shape
+is type-checked in `demos/local-first-sync/api-prototype/` and detailed in
+`demos/local-first-sync/REVIEW-2026-07-11.md` (pass 3 addendum):
+
+- `defineWorkspace({ id, name, epoch, tables, kv, migrations })`; the local
+  storage revision is derived as `1 + migrations.length`;
+  `defineTable(columns, { indexes, docs })`; `defineKv(schema, default)`.
+  A KV schema must not admit `null`: the wire encodes clear as
+  `value: null`, so a nullable KV value would collide with cleared. Absence
+  belongs to the default factory or the value's own shape.
+- Opening is TWO doors, not one option: `openLocalWorkspace(definition,
+  { storage })` (no actor, cursor, or outbox exist) and
+  `openReplica(definition, { storage, sync })`. `openWorkspace({ sync? })`
+  dies: it hid a permanent durable-identity choice inside an optional field.
+  Promotion is `openReplica` + `planImport(local)`, never a reopen flag;
+  `connect(connection | null)` does not survive either.
+- Table writes are wire-honest: `put` (write every cell declared by this exact
+  schema; the local image of patchRow-all-declared-cells),
+  `patch` (named cells of a live row; null when absent or deleted), `remove`
+  (terminal). `create` and `upsert` die with `set`: globally exclusive
+  creation is not a promise a distributed patchRow can keep (the fold
+  create-merges on unknown ids), and the protocol has no row-replacement
+  operation. Local double-submit
+  guards are `has()` inside `transact`. Every write, single-verb or
+  `transact(fn)`, is exactly one atomic mutation committed with the outbox
+  row and sequence allocation.
+- Reads: `get` / `list({ where, orderBy, limit })` / `has` / `count` /
+  `observe`, plus one SELECT-only `sql(query, params, schema)` escape hatch
+  with declared result validation and conservative `observeSql(tables, run)`
+  invalidation. Under the quarantine decision, `sql` over application tables
+  and `list` see one row population; `sql` stays an escape hatch because the
+  query itself is untyped and uninvalidated, not because it reads a different
+  dataset. No Drizzle and no bespoke query builder: the deleted 2026 Drizzle
+  layer died as a second consumer-less schema derivation, and field.* must
+  remain canonical, so Drizzle could only return as exactly that second
+  derivation.
+- Boundary doors: `planImport(source)` on any open workspace and
+  `planEpochUpgrade(definition, { storage, sync })` for a superseded-epoch
+  replica. Both return the same reviewable ImportPlan.
+- Child docs: declared as `docs: { body: 'richText' | 'plainText' }` beside
+  the table; opened via one lifecycle owner returning a disposable handle.
 
 ## Open questions
 
@@ -961,29 +1292,35 @@ These questions invite evidence, not speculative framework growth.
 1. **Can the direct typed-table client pass Gate 1 without a canonical shadow?**
    - Recommendation: require a minimal counterexample before adding the shadow.
 
-2. **Where do terminal tombstones and unknown fields live locally?**
+2. **Where do terminal tombstones and nonconforming rows live locally?**
    - Recommendation: choose the smallest representation that keeps app queries
      typed and app code unaware of internal sync rows.
 
-3. **Are new tables app-schema major changes?**
-   - Recommendation: yes. Preserve additive unknown fields, but pause clients
-     that do not know an entire synchronized table.
+3. **Are new tables and fields new schema epochs?**
+   - DECIDED (2026-07-11 correction pass): yes. One incarnation has one exact
+     logical schema identity. This deliberately refuses invisible cross-version
+     synchronization and deletes unknown-field, unknown-row, and promotion
+     machinery. Representation-only SQLite changes remain within the epoch.
 
 4. **Does `(actorId, actorSequence)` completely replace mutation UUID?**
-   - Recommendation: yes unless clone, restore, compaction, or service-worker
-     traces demonstrate a separate invariant.
+   - DECIDED (2026-07-11 review): yes. The UUID is deleted from the protocol;
+     the deletion traces are in the review memo's metadata matrix. Gate 1
+     exercises retry and duplicate delivery. Physical copy, clone, and restore
+     remain Gate 3 import/identity traces and are not claimed as Gate 1 evidence.
 
 5. **How many actor high-water entries may one database retain?**
    - Recommendation: impose a product-level active-replica limit and explicit
      revocation before normalizing hypothetical millions of actors.
 
 6. **How are snapshot generations retired during concurrent bootstrap?**
-   - Recommendation: permit one published and one building generation; clients
-     restart against the published generation after replacement.
+   - DECIDED (2026-07-11 Gate 2): one immutable published generation is
+     addressable. Publication replaces it atomically; requests for the abandoned
+     generation receive `snapshot-replaced` and restart from the current
+     manifest. No separately durable build generation is required.
 
 7. **What exact checksum belongs on snapshot manifests?**
-   - Recommendation: use a standard cryptographic digest for corruption
-     detection rather than FNV-style proof-only checksums.
+   - DECIDED (2026-07-11 review): SHA-256 on the manifest and on each chunk.
+     FNV-style digests keep silent corruption classes.
 
 8. **How does reactive query invalidation observe SQLite changes?**
    - Recommendation: the application transaction reports touched tables/rows;
@@ -1006,11 +1343,15 @@ These questions invite evidence, not speculative framework growth.
 
 12. **How does a typed client hold a newly created row whose first patch is
     incomplete or invalid for its required fields?**
-    - Recommendation: treat honest clients as responsible for complete valid
-      creates, but include malformed, partial, and newer-schema creates in Gate 1
-      and Gate 3. If typed application tables cannot preserve them without a
-      second generic representation, either earn that representation or tighten
-      the operation contract. Do not hide repair in ordinary reads.
+    - DECIDED (2026-07-11 Gate 1): by fold totality plus QUARANTINE. Typed
+      application tables contain conforming rows for the exact epoch. The fold
+      materializes a nonconforming row as one complete internal quarantine row;
+      a completing patch promotes it atomically. `sql` and `list` therefore see
+      the same typed row population. The rejected permissive-read alternative
+      would make raw SQL counts and typed reads silently disagree. Gate 1 proves
+      partial create, pending replay, completion promotion, crash, and delete;
+      Gate 2 covers snapshot reclassification; Gate 3 proves exact schema
+      identity and epoch import.
 
 13. **Which structural limits prevent unbounded rows, fields, JSON values, and
     terminal tombstones?**
@@ -1018,18 +1359,25 @@ These questions invite evidence, not speculative framework growth.
       mutation bytes, rows per account, active actors, and snapshot bytes. Limits
       pause the database before acceptance; they do not selectively remove one
       operation from an accepted mutation.
+    - Platform floor (verified 2026-07-11): Durable Object SQLite caps any
+      row/BLOB at 2 MB and statements at 100 KB, so encoded-mutation and
+      snapshot-chunk byte limits are platform-required, enforced at write
+      time on every engine.
 
 ## Success criteria
 
 - [ ] The three Proposed ADRs survive an independent clean-break review.
 - [ ] Every settled product invariant is represented in an ADR or this spec.
-- [ ] Gate 1 passes or produces a minimal trace that earns a canonical shadow.
-- [ ] Gate 2 proves permanent log-prefix deletion with stale pending clients.
-- [ ] Gate 3 proves additive unknown-field preservation and promotion.
+- [x] Gate 1 passes without earning a canonical shadow; evidence is in
+  `demos/local-first-sync/gates/GATE1-EVIDENCE.md`.
+- [x] Gate 2 proves permanent log-prefix deletion with stale pending clients;
+  evidence is in `demos/local-first-sync/gates/GATE2-EVIDENCE.md`.
+- [ ] Gate 3 proves exact schema fencing and explicit epoch import.
 - [ ] The same protocol and fold conformance suite passes through browser, Bun,
   and Durable Object SQLite adapters.
 - [ ] Local-only apps operate without actor identity, outbox, auth, or server.
-- [ ] Explicit imports and endpoint moves use one logical merge engine.
+- [ ] Explicit imports, endpoint moves, restores, and epoch upgrades use one
+  logical import planner.
 - [ ] Metadata bootstrap does not eagerly open Yjs bodies.
 - [ ] Browser scale reports include 100K and 1M representative rows.
 - [ ] Accepted ADR conflicts are superseded or scoped explicitly.
@@ -1039,6 +1387,11 @@ These questions invite evidence, not speculative framework growth.
 
 ## References
 
+- `demos/local-first-sync/REVIEW-2026-07-11.md`: cold-start architecture
+  review (developer API selection, metadata matrix, ADR sweep, Gate 1
+  handoff) whose decisive findings are folded into this spec.
+- `demos/local-first-sync/api-prototype/`: type-checked disposable prototype
+  of the selected developer API.
 - `demos/local-first-sync/DECISION-MEMO.md`: existing research and comparison.
 - `demos/local-first-sync/gates/DESIGN.md`: earlier three-gate design to revise.
 - `demos/local-first-sync/gates/protocol.ts`: earlier protocol skeleton.

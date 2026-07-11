@@ -2,7 +2,7 @@
 
 - **Status:** Proposed
 - **Date:** 2026-07-11
-- **Relates:** [ADR-0088](0088-sign-in-is-an-enhancement-never-a-door.md), [ADR-0092](0092-sign-in-migration-child-doc-guids-are-derived-from-the-schema.md)
+- **Relates:** [ADR-0088](0088-sign-in-is-an-enhancement-never-a-door.md), [ADR-0092 (sign-in migration child-doc guids)](0092-sign-in-migration-child-doc-guids-are-derived-from-the-schema.md) (note: the number 0092 is currently shared with `0092-identity-is-the-partition.md`; resolve the collision before acceptance)
 
 ## Context
 
@@ -22,12 +22,25 @@ to different cells compose; concurrent assignments to the same cell resolve by
 server acceptance order. Epicenter does not retain a background conflict inbox,
 expose per-edit discard, or promise recovery of every overwritten scalar value.
 
-Explicit database-boundary operations are reviewable logical merges. Import,
-restore-as-copy, local-to-account migration, Cloud-to-self-host movement, and
-self-host-to-Cloud movement compare source and destination application state by
-table, row, and cell. The user may apply a bulk preference and inspect differing
-cells. The selected result is emitted as ordinary `patchRow` and `deleteRow`
-mutations; the sync protocol has no separate merge verb.
+Explicit database-boundary operations go through one reviewable import
+planner. Import, restore, local-to-account promotion, Cloud-to-self-host
+movement, self-host-to-Cloud movement, physical-clone adoption, and
+schema-epoch upgrade compare pinned source and destination logical snapshots
+by table, row, and cell. Unambiguous work applies without review: source-only
+rows, equal cells, and carried tombstones. The user applies a bulk preference
+to differing cells and reviews genuine ambiguity; a source row the destination
+terminally deleted defaults to the deletion and can only be restored under a
+new row id through an app-owned copy flow; the generic first-wave planner does
+not guess how to remap inbound references. Applying a plan revalidates the
+destination head, and the selected result is emitted as ordinary `patchRow` and
+`deleteRow` mutations; the sync protocol has no separate merge verb.
+
+For a schema-epoch upgrade, the new incarnation's global baseline is transformed
+from the old incarnation's frozen canonical server snapshot, never from one
+replica's private pending overlay. After activation, every replica transforms
+its own visible local state and imports only its difference through this same
+planner. This keeps global cutover resumable and gives no initiating device a
+special merge authority.
 
 A local-only database carries application tables and child documents, but no
 actor identity, cursor, sync outbox, or dormant mutation history. Enabling sync
@@ -36,10 +49,14 @@ the local rows and child docs logically, and begins recording normal mutations.
 The source stays intact until the imported mutations are accepted.
 
 Application identity is portable; replica identity is not. Logical exports keep
-stable row ids and content but omit actor identity, cursors, and outboxes. A
-physical backup may restore a lost replica. Opening a copy while the original
-remains writable requires an explicit import-as-new-replica flow that mints a
-new actor identity.
+stable row ids and content but omit actor identity, cursors, and outboxes.
+Every physical restore or copy — including a backup of a genuinely lost
+replica — opens as an import source and mints a new actor identity: the
+protocol cannot distinguish a restored lost replica from a live clone, and an
+actor-preserving restore silently discards divergent writes when a reused
+sequence number was already accepted with a different payload. Reopening the
+same durable file after a crash is not a restore; its actor and outbox
+continue, and sequence deduplication absorbs the retry.
 
 ## Consequences
 
@@ -53,9 +70,11 @@ new actor identity.
 - A signed-in replica may remain offline indefinitely. On return it installs the
   current server snapshot, reapplies its pending mutations, and continues without
   requiring retained log history.
-- The general merge editor is useful beyond sign-in: it can compare compatible
-  local files, backups, Cloud databases, and self-hosted databases through one
-  logical snapshot interface.
+- The import planner is useful beyond sign-in: it compares compatible local
+  files, backups, Cloud databases, self-hosted databases, and superseded-epoch
+  replicas through one logical snapshot interface. The first implementation is
+  a planner with a summary and bulk preference; a per-cell editor is built only
+  when review volume earns it.
 - A development-only observer may count remote operations that overlap a pending
   local cell, but aggregate diagnostics do not create a conflict-review product
   contract.

@@ -2,7 +2,7 @@
 
 - **Status:** Proposed
 - **Date:** 2026-07-11
-- **Relates:** [ADR-0035](0035-durable-storage-is-one-per-person-coordination-box.md), [ADR-0079](0079-cross-device-is-two-planes-epicenter-syncs-the-crdt-the-box-is-reached-directly.md), [ADR-0092](0092-identity-is-the-partition.md)
+- **Relates:** [ADR-0035](0035-durable-storage-is-one-per-person-coordination-box.md), [ADR-0079 (cross-device is two planes)](0079-cross-device-is-two-planes-epicenter-syncs-the-crdt-the-box-is-reached-directly.md), [ADR-0092 (identity is the partition)](0092-identity-is-the-partition.md)
 
 ## Context
 
@@ -16,8 +16,25 @@ exactly one principal and self-hosting provides the custody alternative.
 
 ## Decision
 
-Each `(principal, app)` pair owns one logical metadata database. Every
-synchronized device keeps a complete local SQLite replica of that database.
+Each `(principal, app)` pair owns one logical metadata database. At any time
+that database is one server-minted incarnation living in exactly one schema
+epoch. Its opaque compatibility identity is derived from the complete canonical
+synchronized schema plus the ordered authored semantic epoch lineage, so every
+logical table, field, meaning, or transition change produces a different
+identity while the server remains schema-blind. Actors, cursors, outboxes, and
+snapshots bind to the incarnation;
+the server compares schema identities as opaque strings and pauses writers
+presenting a different one. A logical schema change never migrates the shared
+database in place; it creates a new incarnation in the new epoch, and replicas
+cross that boundary through explicit logical import. Every synchronized device
+keeps a complete local SQLite replica of the active incarnation.
+
+Epoch cutover is a server-owned transition. The authority freezes the active
+incarnation at one head, creates a leased preparing incarnation from the
+transformed canonical snapshot at that head, and atomically activates it only
+after its baseline is sealed. Abandoning or expiring preparation deletes the
+partial target and unfreezes the old incarnation. Replica-private pending intent
+is imported after activation rather than becoming part of the global baseline.
 Clients send atomic logical mutations to a schema-blind authoritative server;
 the server accepts them into one monotonically ordered sequence, folds them into
 canonical current state, and serves the accepted mutations back through a
@@ -40,6 +57,11 @@ replicas, row filters, peer-to-peer merge, or permanent audit log.
 
 - Local reads, filtering, sorting, and indexing use ordinary SQLite even when no
   server exists.
+- A replica materializes live metadata directly in typed application tables.
+  Its durable sync state is the outbox, cursor/actor state, terminal tombstones,
+  and quarantine for nonconforming rows; it does not keep a second canonical
+  client shadow. [Gate 1](../../demos/local-first-sync/gates/GATE1-EVIDENCE.md)
+  found no schedule that earned one.
 - A device synchronizes all metadata for an app database or does not synchronize
   that database. Large bodies and blobs use separate lazy planes.
 - Server acceptance order is the only scalar conflict clock. Device wall clocks,
@@ -54,7 +76,19 @@ replicas, row filters, peer-to-peer merge, or permanent audit log.
   client's outbox.
 - Current state, a compact bootstrap snapshot, per-actor accepted high-water
   marks, terminal row tombstones, and the uncompacted log tail are durable. Old
-  mutation history is not.
+  mutation history is not. Snapshots freeze rows, tombstones, and actor
+  high-water marks from one read state at one server sequence.
+- The server publishes only a current-head logical snapshot. One immutable
+  generation is addressable at a time; a client whose abandoned generation was
+  replaced restarts from the current manifest. Clients stage and verify chunks
+  without changing visible state, then install, prune contained outbox entries,
+  replay remaining pending intent, and advance the cursor atomically.
+  [Gate 2](../../demos/local-first-sync/gates/GATE2-EVIDENCE.md) proves this is
+  sufficient for permanent log-prefix deletion.
+- Terminal tombstones and active actor high-water marks grow with the
+  incarnation's lifetime churn. This is stated cost, not hidden: the bound is
+  per incarnation, and an epoch upgrade starts a fresh actor set while
+  carrying tombstones forward as ordinary deletions.
 - App-specific cloud workers remain outside the sync engine. A worker that writes
   data acts as a named server-side actor and submits an ordinary mutation through
   the owning database authority.
