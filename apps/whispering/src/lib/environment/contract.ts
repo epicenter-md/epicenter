@@ -1,6 +1,7 @@
 import type { Device, DeviceAcquisitionOutcome } from '@epicenter/recorder';
 import type { Result } from 'wellcrafted/result';
 import type { CaptureSurface } from '$lib/constants/audio';
+import type { PlaybackSuppressionSetting } from '$lib/constants/audio/playback-suppression';
 import type { CursorDelivery } from '$lib/desktop/contract';
 import type { TranscriptionError } from '$lib/operations/transcription-use-case';
 import type { Os, PlatformAuth } from '$lib/platform/types';
@@ -58,13 +59,27 @@ export type TranscriptionEnvironment = {
 export type WhisperingEnvironment = {
 	auth: PlatformAuth;
 	artifacts: BlobStore;
-	/** Whether this host can lower, mute, or pause other apps' audio while recording. */
-	canSuppressPlayback: boolean;
 	captureSurfaces: readonly CaptureSurface[];
 	downloads: DownloadService;
 	delivery: CursorDelivery;
 	notifications: (title: string, body: string | undefined) => void;
 	os: Os;
+	/**
+	 * Suppress other apps' audio for the life of a recording, keyed by recording
+	 * id. Both verbs are fire-and-forget and idempotent: the host owns every
+	 * lifecycle edge, and a failure never disrupts the recording it accompanies.
+	 * Hosts that cannot touch other apps' audio report `canSuppress: false` and
+	 * no-op both verbs.
+	 */
+	playback: {
+		/** Whether this host can lower, mute, or pause other apps' audio while recording. */
+		canSuppress: boolean;
+		begin(
+			recordingId: string,
+			mode: PlaybackSuppressionSetting,
+		): Promise<void>;
+		end(recordingId: string | null): Promise<void>;
+	};
 	recording: ManualRecordingEnvironment;
 	text: TextService;
 	transcription: TranscriptionEnvironment;

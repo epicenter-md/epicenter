@@ -53,7 +53,6 @@ const transcriptionEngine = createBrowserTranscription({
 export const environment: WhisperingEnvironment = {
 	auth,
 	artifacts: AudioBlobStoreLive,
-	canSuppressPlayback: false,
 	captureSurfaces: ['manual', 'vad', 'import'],
 	downloads: DownloadServiceLive,
 	delivery: {
@@ -71,6 +70,12 @@ export const environment: WhisperingEnvironment = {
 	},
 	notifications: osNotify,
 	os,
+	// Browsers cannot touch other apps' audio, so both verbs are no-ops.
+	playback: {
+		canSuppress: false,
+		async begin() {},
+		async end() {},
+	},
 	recording: createManualRecordingEnvironment({
 		recorder: ManualRecorderLive,
 		config: manualRecorderConfig,

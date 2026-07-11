@@ -1,6 +1,5 @@
 import type { DeviceAcquisitionOutcome } from '@epicenter/recorder';
 import { nanoid } from 'nanoid/non-secure';
-import { manualPlayback } from '#manual-playback';
 import { environment } from '#runtime';
 import { goto } from '$app/navigation';
 import type { CaptureSurface } from '$lib/constants/audio';
@@ -104,14 +103,19 @@ export async function startManualRecording(): Promise<string | null> {
 	log.info('Recording started');
 	sound.playSoundIfEnabled('manual-start');
 	const recordingId = manualRecorder.currentRecordingId;
-	if (recordingId) void manualPlayback.begin(recordingId);
+	if (recordingId) {
+		void environment.playback.begin(
+			recordingId,
+			settings.get('recording.playbackSuppression'),
+		);
+	}
 	return recordingId;
 }
 
 export async function stopManualRecording() {
 	const recordingId = manualRecorder.currentRecordingId;
 	const { data: source, error } = await manualRecorder.stopRecording();
-	void manualPlayback.end(recordingId);
+	void environment.playback.end(recordingId);
 
 	if (error) {
 		// Finalizing failed, so the captured audio never reached a row: treat it
@@ -173,7 +177,7 @@ export async function cancelRecording() {
 	// A manual recording is the live capture: discard it.
 	const recordingId = manualRecorder.currentRecordingId;
 	const { data, error } = await manualRecorder.cancelRecording();
-	void manualPlayback.end(recordingId);
+	void environment.playback.end(recordingId);
 	if (error) {
 		report.error({ title: 'Failed to cancel recording', cause: error });
 		return;

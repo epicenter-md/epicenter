@@ -5,6 +5,9 @@ import { consoleSink, type LogEvent } from 'wellcrafted/logger';
 import { environment } from '#runtime';
 import { moreDetailsDialog } from '$lib/components/MoreDetailsDialog.svelte';
 import { humanize } from './humanize';
+import { SOURCE } from './log';
+
+export { log } from './log';
 
 export type NoticeAction = {
 	label: string;
@@ -29,7 +32,6 @@ export type StandingNotice = Notice & { id: string };
 
 type Level = 'error' | 'success' | 'info' | 'warning' | 'loading';
 
-const SOURCE = 'whispering/report';
 
 const TOAST_DURATION = {
 	error: Number.POSITIVE_INFINITY,
@@ -74,32 +76,6 @@ export const report = {
 		};
 	},
 };
-
-/**
- * Diagnostic-only logger. Use for events that should appear in console for
- * debugging but should NEVER surface to the user as a toast or OS notification
- * (e.g. "Recording started", "Invalid device config, using default").
- */
-export const log = {
-	info(message: string, data?: unknown): void {
-		consoleSink({
-			ts: Date.now(),
-			level: 'info',
-			source: SOURCE,
-			message,
-			data,
-		} satisfies LogEvent);
-	},
-	warn(error: Error, data?: unknown): void {
-		consoleSink({
-			ts: Date.now(),
-			level: 'warn',
-			source: SOURCE,
-			message: error.message,
-			data: data ?? error,
-		} satisfies LogEvent);
-	},
-} as const;
 
 // ── Internals ─────────────────────────────────────────────────────────────
 
