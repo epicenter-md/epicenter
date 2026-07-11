@@ -18,6 +18,7 @@ type _EnvironmentIsComplete = Expect<
 		keyof WhisperingEnvironment,
 		| 'auth'
 		| 'artifacts'
+		| 'canSuppressPlayback'
 		| 'captureSurfaces'
 		| 'downloads'
 		| 'delivery'

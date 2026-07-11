@@ -5,7 +5,7 @@ import type { ManualPlayback } from './manual-playback';
 
 export const manualPlayback: ManualPlayback = {
 	async begin(recordingId) {
-		const mode = settings.get('recording.backgroundAudioSuppression');
+		const mode = settings.get('recording.playbackSuppression');
 		if (mode === 'off') return;
 		try {
 			await desktop.playbackSuppression.begin(recordingId, mode);

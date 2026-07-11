@@ -23,6 +23,7 @@ import { openWhisperingBrowser } from '$lib/workspace/browser';
 const base: WhisperingBaseEnvironment = {
 	auth,
 	artifacts: AudioBlobStoreLive,
+	canSuppressPlayback: true,
 	captureSurfaces: ['manual'],
 	downloads: DownloadServiceLive,
 	delivery: desktop.delivery,

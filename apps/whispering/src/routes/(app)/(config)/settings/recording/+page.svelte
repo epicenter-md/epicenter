@@ -9,7 +9,7 @@
 	import { SettingSelect } from '$lib/components/settings';
 	import {
 		BITRATE_OPTIONS,
-		BACKGROUND_AUDIO_SUPPRESSION_OPTIONS,
+		PLAYBACK_SUPPRESSION_OPTIONS,
 		RECORDING_TRIGGER_OPTIONS,
 		SAMPLE_RATE_OPTIONS,
 	} from '$lib/constants/audio';
@@ -32,6 +32,13 @@
 		(option) =>
 			option.value === 'manual' || environment.captureSurfaces.includes('vad'),
 	);
+	// Pausing rides the system media session, which macOS exposes unevenly.
+	const playbackSuppressionOptions = PLAYBACK_SUPPRESSION_OPTIONS.map(
+		(option) =>
+			option.value === 'pause' && environment.os.isApple
+				? { ...option, label: `${option.label} (experimental)` }
+				: option,
+	);
 </script>
 
 <svelte:head> <title>Recording Settings - Whispering</title> </svelte:head>
@@ -53,13 +60,15 @@
 			).join(', ')}"
 		/>
 
-		<SettingSelect
-			store={settings}
-			key="recording.backgroundAudioSuppression"
-			label="Background audio"
-			items={BACKGROUND_AUDIO_SUPPRESSION_OPTIONS}
-			description="In Epicenter desktop, choose what happens to background audio during manual recordings. Epicenter tries to restore it when recording ends."
-		/>
+		{#if environment.canSuppressPlayback}
+			<SettingSelect
+				store={settings}
+				key="recording.playbackSuppression"
+				label="Other apps' audio"
+				items={playbackSuppressionOptions}
+				description="While you record, Whispering can lower, mute, or pause audio from other apps, then restore it when you stop."
+			/>
+		{/if}
 
 		{#if settings.get('recording.trigger') === 'manual'}
 			<ManualSelectRecordingDevice

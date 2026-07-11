@@ -48,6 +48,8 @@ export type ManualRecordingEnvironment = {
 export type WhisperingBaseEnvironment = {
 	auth: PlatformAuth;
 	artifacts: BlobStore;
+	/** Whether this host can lower, mute, or pause other apps' audio while recording. */
+	canSuppressPlayback: boolean;
 	captureSurfaces: readonly CaptureSurface[];
 	downloads: DownloadService;
 	delivery: CursorDelivery;

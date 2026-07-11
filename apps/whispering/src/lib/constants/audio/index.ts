@@ -1,9 +1,4 @@
 export {
-	BACKGROUND_AUDIO_SUPPRESSION_OPTIONS,
-	BACKGROUND_AUDIO_SUPPRESSION_VALUES,
-	type BackgroundAudioSuppression,
-} from './background-audio-suppression';
-export {
 	BITRATE_OPTIONS,
 	BITRATES_KBPS,
 	DEFAULT_BITRATE_KBPS,
@@ -13,6 +8,10 @@ export {
 	CAPTURE_SURFACE_OPTIONS,
 	type CaptureSurface,
 } from './capture-surfaces';
+export {
+	PLAYBACK_SUPPRESSION_OPTIONS,
+	PLAYBACK_SUPPRESSION_VALUES,
+} from './playback-suppression';
 export {
 	MANUAL_RECORDING_BUTTON,
 	VAD_RECORDING_BUTTON,
