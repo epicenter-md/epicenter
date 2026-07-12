@@ -75,6 +75,7 @@ function setup() {
 	});
 	const observerErrors: unknown[] = [];
 	const workspace = createApplicationDatabase(definition, sqlite, {
+		kind: 'local',
 		onObserverError: (error) => observerErrors.push(error),
 	});
 	return { database, definition, observerErrors, sqlite, workspace };
@@ -215,7 +216,7 @@ describe('typed rows at rest', () => {
 				tables: { markers: defineTable({ id: field.string() }) },
 			}),
 			createSqlite(database),
-			{ onObserverError() {} },
+			{ kind: 'local', onObserverError() {} },
 		);
 		const changed: string[][] = [];
 		workspace.tables.markers.observe((ids) => changed.push([...ids]));
@@ -353,6 +354,7 @@ describe('transaction and invalidation', () => {
 			},
 		};
 		const workspace = createApplicationDatabase(definition, sqlite, {
+			kind: 'local',
 			coordinator,
 			onObserverError() {},
 		});
@@ -508,6 +510,33 @@ describe('transaction and invalidation', () => {
 });
 
 describe('representation migrations', () => {
+	test('identity inspection and fresh stamping share one immediate transaction', () => {
+		const database = new Database(':memory:');
+		const base = createSqlite(database);
+		let inspectionWasTransactional = false;
+		const sqlite: RecordSyncSqlite = {
+			...base,
+			all(sql, parameters) {
+				if (sql.includes('sqlite_master')) {
+					inspectionWasTransactional = database.inTransaction;
+				}
+				return base.all(sql, parameters);
+			},
+		};
+		createApplicationDatabase(
+			defineWorkspace({
+				id: 'atomic-identity-test',
+				name: 'Atomic identity test',
+				epoch: 'atomic-identity-v1',
+				tables: { rows: defineTable({ id: field.string() }) },
+			}),
+			sqlite,
+			{ kind: 'local', onObserverError() {} },
+		);
+
+		expect(inspectionWasTransactional).toBe(true);
+	});
+
 	test('existing databases run missing apply steps and persist the new revision', () => {
 		const database = new Database(':memory:');
 		const sqlite = createSqlite(database);
@@ -522,6 +551,7 @@ describe('representation migrations', () => {
 			tables: { notes: v1Table },
 		});
 		const old = createApplicationDatabase(v1, sqlite, {
+			kind: 'local',
 			onObserverError() {},
 		});
 		old.tables.notes.put({ id: 'one', title: 'Before' });
@@ -542,6 +572,7 @@ describe('representation migrations', () => {
 			],
 		});
 		const current = createApplicationDatabase(v2, sqlite, {
+			kind: 'local',
 			onObserverError() {},
 		});
 		expect(applyCalls).toBe(1);
@@ -577,6 +608,7 @@ describe('representation migrations', () => {
 			],
 		});
 		createApplicationDatabase(definition, createSqlite(database), {
+			kind: 'local',
 			onObserverError() {},
 		});
 		expect(applyCalls).toBe(0);
@@ -593,7 +625,10 @@ describe('representation migrations', () => {
 			tables: { notes: table },
 			migrations: [{ apply() {} }],
 		});
-		createApplicationDatabase(current, sqlite, { onObserverError() {} });
+		createApplicationDatabase(current, sqlite, {
+			kind: 'local',
+			onObserverError() {},
+		});
 
 		const old = defineWorkspace({
 			id: 'downgrade-test',
@@ -602,7 +637,10 @@ describe('representation migrations', () => {
 			tables: { notes: table },
 		});
 		expect(() =>
-			createApplicationDatabase(old, sqlite, { onObserverError() {} }),
+			createApplicationDatabase(old, sqlite, {
+				kind: 'local',
+				onObserverError() {},
+			}),
 		).toThrow('database revision 2 is newer');
 	});
 
@@ -618,7 +656,7 @@ describe('representation migrations', () => {
 				tables: { notes },
 			}),
 			sqlite,
-			{ onObserverError() {} },
+			{ kind: 'local', onObserverError() {} },
 		);
 		original.tables.notes.put({ id: 'kept', title: 'Kept' });
 		const readPhysicalState = () => ({
@@ -644,7 +682,7 @@ describe('representation migrations', () => {
 					tables: { notes },
 				}),
 				sqlite,
-				{ onObserverError() {} },
+				{ kind: 'local', onObserverError() {} },
 			),
 		).toThrow("belongs to 'identity-test'");
 
@@ -662,10 +700,32 @@ describe('representation migrations', () => {
 					tables: { notes: nullableColumnAdded },
 				}),
 				sqlite,
-				{ onObserverError() {} },
+				{ kind: 'local', onObserverError() {} },
 			),
 		).toThrow('schema identity does not match');
 		expect(readPhysicalState()).toEqual(beforeRefusals);
+	});
+
+	test('database kind permanently fences local and replica lifecycle doors', () => {
+		const database = new Database(':memory:');
+		const sqlite = createSqlite(database);
+		const definition = defineWorkspace({
+			id: 'kind-test',
+			name: 'Kind test',
+			epoch: 'kind-v1',
+			tables: { rows: defineTable({ id: field.string() }) },
+		});
+		createApplicationDatabase(definition, sqlite, {
+			kind: 'local',
+			onObserverError() {},
+		});
+
+		expect(() =>
+			createApplicationDatabase(definition, sqlite, {
+				kind: 'replica',
+				onObserverError() {},
+			}),
+		).toThrow("database is 'local', not 'replica'");
 	});
 
 	test('missing epoch migrations require the explicit epoch-upgrade flow', () => {
@@ -678,7 +738,10 @@ describe('representation migrations', () => {
 			epoch: 'epoch-1',
 			tables: { notes },
 		});
-		createApplicationDatabase(v1, sqlite, { onObserverError() {} });
+		createApplicationDatabase(v1, sqlite, {
+			kind: 'local',
+			onObserverError() {},
+		});
 
 		const v2 = defineWorkspace({
 			id: 'epoch-test',
@@ -688,7 +751,10 @@ describe('representation migrations', () => {
 			migrations: [{ epoch: { id: 'epoch-2' } }],
 		});
 		expect(() =>
-			createApplicationDatabase(v2, sqlite, { onObserverError() {} }),
+			createApplicationDatabase(v2, sqlite, {
+				kind: 'local',
+				onObserverError() {},
+			}),
 		).toThrow('changes schema epoch');
 	});
 });

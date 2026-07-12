@@ -11,27 +11,20 @@ export {
 	type AsyncTables,
 	type AsyncWorkspace,
 	asyncWorkspaceHandle,
-	createWorkspaceClient,
 	type TableCommitDelta,
-	type TableListOptions,
 	type WorkspaceCommitDelta,
-	type WorkspaceMutation,
-	type WorkspaceServicePort,
-	type WorkspaceServiceRequest,
-	type WorkspaceServiceResponse,
 	type WorkspaceWriteBatch,
 } from './client.js';
-export {
-	type ApplicationDatabase,
-	type ApplicationDatabaseOptions,
-	type ApplicationKv,
-	type ApplicationLogicalSnapshot,
-	type ApplicationMutationContext,
-	type ApplicationMutationCoordinator,
-	type ApplicationTable,
-	type ApplicationTables,
-	type ApplicationTransaction,
-	createApplicationDatabase,
+export type {
+	ApplicationDatabase,
+	ApplicationDatabaseOptions,
+	ApplicationKv,
+	ApplicationLogicalSnapshot,
+	ApplicationMutationContext,
+	ApplicationMutationCoordinator,
+	ApplicationTable,
+	ApplicationTables,
+	ApplicationTransaction,
 } from './database.js';
 export {
 	type Columns,
@@ -53,8 +46,3 @@ export {
 	type TableOptions,
 	type WorkspaceDefinition,
 } from './definition.js';
-export {
-	createWorkspaceService,
-	type WorkspaceService,
-	type WorkspaceServiceOptions,
-} from './service.js';

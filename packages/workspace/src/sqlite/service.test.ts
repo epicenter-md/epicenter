@@ -55,10 +55,11 @@ function setup() {
 	});
 	const databaseObserverErrors: unknown[] = [];
 	const database = createApplicationDatabase(definition, sqlite, {
+		kind: 'local',
 		onObserverError: (error) => databaseObserverErrors.push(error),
 	});
 	const serviceObserverErrors: unknown[] = [];
-	const service = createWorkspaceService(definition, database, {
+	const service = createWorkspaceService(database, {
 		onObserverError: (error) => serviceObserverErrors.push(error),
 	});
 	const client = createWorkspaceClient(definition, service);

@@ -26,6 +26,7 @@
 	"exports": {
 		".": "./src/index.ts",
 		"./sqlite": "./src/sqlite/index.ts",
+		"./sqlite/bun": "./src/sqlite/bun.ts",
 		"./agent": "./src/agent/index.ts",
 		"./markdown": "./src/markdown/index.ts",
 		"./document/materializer/markdown": "./src/document/materializer/markdown/index.ts",

@@ -44,6 +44,8 @@ export type ApplicationMutationCoordinator = {
 };
 
 export type ApplicationDatabaseOptions = {
+	/** Permanent durable identity mode for this database file. */
+	kind: 'local' | 'replica';
 	coordinator?: ApplicationMutationCoordinator;
 	/** Receives every observer failure. Must not throw. */
 	onObserverError(error: unknown): void;
@@ -132,6 +134,7 @@ export function createApplicationDatabase<
 	definition: WorkspaceDefinition<TTables, TKv>,
 	sqlite: RecordSyncSqlite,
 	{
+		kind,
 		coordinator = {
 			commit<TResult>(
 				_context: ApplicationMutationContext,
@@ -156,7 +159,7 @@ export function createApplicationDatabase<
 	let activeChanges: Changes | undefined;
 	let activeOperations: Operation[] | undefined;
 
-	initializeDatabase(sqlite, definition);
+	initializeDatabase(sqlite, definition, kind);
 
 	function publish(changes: Changes): void {
 		function notify(run: () => void): void {
@@ -259,6 +262,13 @@ export function createApplicationDatabase<
 	});
 
 	return {
+		definition,
+		identity: {
+			kind,
+			workspaceId: definition.id,
+			schemaIdentity: definition.schemaIdentity,
+		},
+		kind,
 		tables,
 		kv,
 		/** Group every enclosed table and KV write into one SQLite transaction. */
@@ -569,9 +579,10 @@ function createApplicationKv<TKv extends KvDefinitions>({
 function initializeDatabase(
 	sqlite: RecordSyncSqlite,
 	definition: WorkspaceDefinition,
+	kind: 'local' | 'replica',
 ): void {
-	const storedRevision = inspectDatabaseIdentity(sqlite, definition);
 	sqlite.transaction(() => {
+		const storedRevision = inspectDatabaseIdentity(sqlite, definition, kind);
 		sqlite.run(
 			`CREATE TABLE IF NOT EXISTS ${quoteIdentifier(META_TABLE)} ("key" TEXT PRIMARY KEY, "value" TEXT NOT NULL)`,
 		);
@@ -658,12 +669,14 @@ function initializeDatabase(
 		);
 		writeMeta(sqlite, 'workspace_id', definition.id);
 		writeMeta(sqlite, 'schema_identity', definition.schemaIdentity);
+		writeMeta(sqlite, 'database_kind', kind);
 	});
 }
 
 function inspectDatabaseIdentity(
 	sqlite: RecordSyncSqlite,
 	definition: WorkspaceDefinition,
+	kind: 'local' | 'replica',
 ): number | undefined {
 	const userTables = sqlite.all<{ name: string }>(
 		"SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
@@ -681,10 +694,12 @@ function inspectDatabaseIdentity(
 	const storedRevisionText = readMeta(sqlite, 'storage_revision');
 	const storedWorkspaceId = readMeta(sqlite, 'workspace_id');
 	const storedSchemaIdentity = readMeta(sqlite, 'schema_identity');
+	const storedKind = readMeta(sqlite, 'database_kind');
 	if (
 		storedRevisionText === undefined ||
 		storedWorkspaceId === undefined ||
-		storedSchemaIdentity === undefined
+		storedSchemaIdentity === undefined ||
+		storedKind === undefined
 	) {
 		throw new Error(
 			'Workspace database metadata is incomplete; refusing to adopt an unidentified database',
@@ -699,6 +714,11 @@ function inspectDatabaseIdentity(
 	if (storedWorkspaceId !== definition.id) {
 		throw new Error(
 			`Workspace database belongs to '${storedWorkspaceId}', not '${definition.id}'`,
+		);
+	}
+	if (storedKind !== kind) {
+		throw new Error(
+			`Workspace database is '${storedKind}', not '${kind}'; refusing the wrong lifecycle door`,
 		);
 	}
 	if (storedRevision > definition.storageRevision) {

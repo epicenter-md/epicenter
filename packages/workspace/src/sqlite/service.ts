@@ -19,11 +19,7 @@ import type {
 	ApplicationTable,
 	CommittedApplicationChanges,
 } from './database.js';
-import type {
-	KvDefinitions,
-	TableDefinitions,
-	WorkspaceDefinition,
-} from './definition.js';
+import type { KvDefinitions, TableDefinitions } from './definition.js';
 
 type UntypedRow = { id: string } & Record<string, unknown>;
 type UntypedTable = ApplicationTable<UntypedRow>;
@@ -42,10 +38,10 @@ export function createWorkspaceService<
 	TTables extends TableDefinitions,
 	TKv extends KvDefinitions,
 >(
-	definition: WorkspaceDefinition<TTables, TKv>,
 	database: ApplicationDatabase<TTables, TKv>,
 	{ onObserverError }: WorkspaceServiceOptions,
 ) {
+	const definition = database.definition;
 	const observers = new Set<(delta: WorkspaceCommitDelta) => void>();
 	const tables = database.tables as unknown as Record<string, UntypedTable>;
 	const kv = database.kv as unknown as UntypedKv;
@@ -132,6 +128,13 @@ export function createWorkspaceService<
 	): WorkspaceServiceResponse {
 		assertOpen();
 		switch (request.kind) {
+			case 'describe':
+				return {
+					kind: 'workspace',
+					workspaceKind: database.identity.kind,
+					workspaceId: database.identity.workspaceId,
+					schemaIdentity: database.identity.schemaIdentity,
+				};
 			case 'get':
 				return { kind: 'row', row: tableFor(request.table).get(request.rowId) };
 			case 'list':

@@ -26,6 +26,7 @@ export type WorkspaceMutation =
 	| { kind: 'clearKv'; key: string };
 
 export type WorkspaceServiceRequest =
+	| { kind: 'describe' }
 	| { kind: 'get'; table: string; rowId: string }
 	| { kind: 'list'; table: string; options?: TableListOptions }
 	| { kind: 'has'; table: string; rowId: string }
@@ -34,6 +35,12 @@ export type WorkspaceServiceRequest =
 	| { kind: 'mutate'; mutations: readonly WorkspaceMutation[] };
 
 export type WorkspaceServiceResponse =
+	| {
+			kind: 'workspace';
+			workspaceKind: 'local' | 'replica';
+			workspaceId: string;
+			schemaIdentity: string;
+	  }
 	| { kind: 'row'; row: Record<string, unknown> | null }
 	| { kind: 'rows'; rows: Record<string, unknown>[] }
 	| { kind: 'boolean'; value: boolean }
