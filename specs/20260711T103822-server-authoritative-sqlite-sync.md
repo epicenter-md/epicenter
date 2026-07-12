@@ -1329,6 +1329,24 @@ stays open. Production callers cannot delete the Yjs record root until the two
 SQLite lifecycle doors exist, so implementation pulls the first Wave 6 item
 forward before returning to the Wave 5 consumer migration and deletion steps.
 
+Application-foundation checkpoint (2026-07-11):
+
+- [x] Public table creation accepts authored cells only, generates a branded
+  UUID, and returns the committed row. Preserve-id insertion remains below the
+  public client for snapshot, import, and replica projection machinery.
+- [x] Authoritative reads include equality/list reads with offset plus one
+  SQLite-enforced read-only `sql` escape hatch whose rows are validated against
+  a caller-supplied TypeBox schema. `observeSql` reruns only from committed
+  table-scoped invalidation.
+- [x] Workspace definitions declare a separate preference-root incarnation and
+  derive `<workspaceId>.root.<rootDocumentIncarnation>` without changing record
+  schema identity or the four-part child-document guid.
+- [ ] Move record-column FTS into the primary SQLite database and price
+  child-document content indexing explicitly under the lazy document owner.
+- [ ] Make one definition-owned runtime construct standalone or replica SQLite,
+  the eager preference root, child-document openers, readiness, wipe, and
+  disposal.
+
 - [ ] Make `field.*` plus `nullable` the only persisted storage vocabulary.
 - [ ] Move scalar collaborative bodies to declared plain-text or rich-text docs.
 - [ ] Replace Yjs table record persistence with typed SQLite application
