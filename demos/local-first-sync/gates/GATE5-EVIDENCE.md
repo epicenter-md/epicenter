@@ -4,7 +4,7 @@ Date: 2026-07-11
 
 ## Result
 
-The typed SQLite foundation and browser-local lifecycle pass. The full
+The typed SQLite foundation and browser-standalone lifecycle pass. The full
 workspace clean break remains open because production apps still need the
 replica lifecycle before they can stop opening Yjs-backed record roots.
 
@@ -33,7 +33,8 @@ native SQLite owners:
   the commit currently being published;
 - Svelte helpers hydrate one query-scoped cache, buffer pre-hydration deltas,
   and never update optimistically.
-- `openLocalWorkspace` verifies the service's local/replica mode, workspace id,
+- `openStandaloneWorkspace` verifies the service's standalone/replica mode,
+  workspace id,
   and exact schema identity before exposing a typed client;
 - the Bun adapter owns a real file-backed SQLite connection and preserves typed
   rows across close and reopen.
@@ -49,8 +50,9 @@ native SQLite owners:
 - the Vite production build emits the SQLite WASM and OPFS proxy assets and runs
   under the required COOP and COEP headers.
 
-The old Yjs table/KV path and its callers remain until `openReplica` supplies
-the server-authoritative lifecycle and apps migrate to the new workspace API.
+The old Yjs table/KV path and its callers remain until
+`openWorkspaceReplica` supplies the server-authoritative lifecycle and apps
+migrate to the new workspace API.
 
 The browser ownership boundary is:
 
@@ -99,7 +101,7 @@ __epicenter_meta
   storage_revision
   workspace_id
   schema_identity
-  database_kind       local or replica, permanent for this file
+  database_kind       standalone or replica, permanent for this file
 
 __epicenter_kv
   key      TEXT PRIMARY KEY
@@ -143,7 +145,7 @@ Transactional reads are deliberately absent from the public batch callback.
 Preserving them would require either blocking the UI thread or pretending a
 client-side cache is authoritative.
 
-The local coordinator owns only the SQLite transaction. A replica coordinator
+The standalone coordinator owns only the SQLite transaction. A replica coordinator
 can add actor and outbox work before the same commit returns. Observer failures
 go to an injected error sink after commit; they cannot turn durable success into
 an apparent write failure or prevent later observers from running.
@@ -199,7 +201,7 @@ bun run --cwd apps/whispering typecheck
 bun run check:licenses
 ```
 
-Result at the browser-local lifecycle checkpoint: 59 focused SQLite tests
+Result at the browser-standalone lifecycle checkpoint: 59 focused SQLite tests
 passed with 180 assertions. Workspace and browser example typechecks passed.
 The production browser smoke built the real Vite worker bundle, opened two page
 workers against one OPFS file, verified sequential and concurrent cross-worker
@@ -215,7 +217,7 @@ re-evaluate `opfs-wl` when the upstream package changes.
 
 ## Required next step
 
-Implement `openReplica` with durable actor, outbox, cursor, and database
+Implement `openWorkspaceReplica` with durable actor, outbox, cursor, and database
 generation ownership. Reuse the validated service protocol and the rule that
 the worker or native service imports the workspace definition itself. The UI
 sends no executable schema; its opening handshake verifies mode, workspace id,
