@@ -201,6 +201,9 @@ export type WorkspaceDefinition<
 	id: string;
 	name: string;
 	epoch: string;
+	rootDocumentIncarnation: string;
+	/** Derived eager preference-document guid. Independent of the record epoch. */
+	rootDocumentGuid: string;
 	tables: TTables;
 	kv: TKv;
 	migrations: readonly MigrationStep[];
@@ -216,6 +219,7 @@ export function defineWorkspace<
 	id,
 	name,
 	epoch,
+	rootDocumentIncarnation,
 	tables,
 	kv,
 	migrations = [],
@@ -223,6 +227,7 @@ export function defineWorkspace<
 	id: string;
 	name: string;
 	epoch: string;
+	rootDocumentIncarnation: string;
 	tables: TTables;
 	kv?: TKv;
 	migrations?: readonly MigrationStep[];
@@ -230,6 +235,8 @@ export function defineWorkspace<
 	if (id.trim() === '') throw new Error('Workspace id must not be empty');
 	if (name.trim() === '') throw new Error('Workspace name must not be empty');
 	if (epoch.trim() === '') throw new Error('Workspace epoch must not be empty');
+	assertSafeSegment(id, 'workspace id');
+	assertSafeSegment(rootDocumentIncarnation, 'root document incarnation');
 	assertSchemaRecord(tables, 'workspace tables', 'workspace table');
 
 	const epochIds = new Set([epoch]);
@@ -252,7 +259,6 @@ export function defineWorkspace<
 
 	for (const [tableName, table] of Object.entries(tables)) {
 		if (Object.keys(table.options.docs).length > 0) {
-			assertSafeSegment(id, 'workspace id');
 			assertSafeSegment(tableName, 'child document table name');
 		}
 		for (const column of Object.values(table.compiledColumns)) {
@@ -273,6 +279,8 @@ export function defineWorkspace<
 		id,
 		name,
 		epoch,
+		rootDocumentIncarnation,
+		rootDocumentGuid: `${id}.root.${rootDocumentIncarnation}`,
 		tables,
 		kv: declaredKv,
 		migrations,

@@ -21,6 +21,7 @@ test('Bun standalone workspace persists typed rows across service lifecycles', a
 		id: 'bun-local-test',
 		name: 'Bun local test',
 		epoch: 'bun-local-v1',
+		rootDocumentIncarnation: 'sqlite-kv-1',
 		tables: {
 			notes: defineTable({ id: field.string(), title: field.string() }),
 		},
@@ -45,6 +46,7 @@ test('Bun standalone workspace persists typed rows across service lifecycles', a
 			id: 'bun-local-test',
 			name: 'Bun local test',
 			epoch: 'bun-local-v1',
+			rootDocumentIncarnation: 'sqlite-kv-1',
 			tables: {
 				notes: defineTable({
 					id: field.string(),
@@ -80,6 +82,7 @@ test('Bun workspace replicas synchronize automatically through one authority', a
 		id: 'bun-replica-test',
 		name: 'Bun replica test',
 		epoch: 'bun-replica-v1',
+		rootDocumentIncarnation: 'sqlite-kv-1',
 		tables: {
 			notes: defineTable({ id: field.string(), title: field.string() }),
 		},

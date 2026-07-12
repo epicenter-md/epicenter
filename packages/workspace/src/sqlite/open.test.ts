@@ -16,6 +16,7 @@ function setup() {
 		id: 'open-test',
 		name: 'Open test',
 		epoch: 'open-test-v1',
+		rootDocumentIncarnation: 'sqlite-kv-1',
 		tables: { notes: defineTable({ id: field.string() }) },
 	});
 	let disposed = 0;
@@ -183,6 +184,7 @@ function setupWithKv() {
 		id: 'open-kv-test',
 		name: 'Open KV test',
 		epoch: 'open-kv-test-v1',
+		rootDocumentIncarnation: 'sqlite-kv-1',
 		tables: { notes: defineTable({ id: field.string() }) },
 		kv: {
 			theme: defineKv(field.select(['light', 'dark']), () => 'light' as const),

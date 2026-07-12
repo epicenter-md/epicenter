@@ -35,6 +35,7 @@ const definition = defineWorkspace({
 	id: 'replica-tests',
 	name: 'Replica tests',
 	epoch: 'v1',
+	rootDocumentIncarnation: 'sqlite-kv-1',
 	tables: {
 		notes: defineTable({
 			id: field.string(),

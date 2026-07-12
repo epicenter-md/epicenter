@@ -50,6 +50,7 @@ function setup() {
 		id: 'service-test',
 		name: 'Service test',
 		epoch: 'service-1',
+		rootDocumentIncarnation: 'sqlite-kv-1',
 		tables: { labels, notes },
 	});
 	const databaseObserverErrors: unknown[] = [];

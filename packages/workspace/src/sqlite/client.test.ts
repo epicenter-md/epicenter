@@ -42,6 +42,7 @@ test('async client sends one write-only transaction and filters table deltas', a
 		id: 'client-test',
 		name: 'Client test',
 		epoch: 'client-1',
+		rootDocumentIncarnation: 'sqlite-kv-1',
 		tables: { notes },
 	});
 	const client = createWorkspaceClient(definition, port);
@@ -106,6 +107,7 @@ test('create returns committed rows with distinct UUID identities', async () => 
 		id: 'client-create-test',
 		name: 'Client create test',
 		epoch: 'client-create-1',
+		rootDocumentIncarnation: 'sqlite-kv-1',
 		tables: {
 			notes: defineTable({ id: field.string(), title: field.string() }),
 		},
@@ -138,6 +140,7 @@ test('empty and async transaction builders never send a partial mutation', async
 		id: 'client-builder-test',
 		name: 'Client builder test',
 		epoch: 'client-builder-1',
+		rootDocumentIncarnation: 'sqlite-kv-1',
 		tables: {
 			notes: defineTable({ id: field.string(), title: field.string() }),
 		},
@@ -176,6 +179,7 @@ test('typed client rejects malformed rows, deltas, and mutation results', async 
 		id: 'client-validation-test',
 		name: 'Client validation test',
 		epoch: 'client-validation-v1',
+		rootDocumentIncarnation: 'sqlite-kv-1',
 		tables: {
 			notes: defineTable({ id: field.string(), title: field.string() }),
 		},
@@ -214,6 +218,7 @@ test('sql validates every result row against the caller schema', async () => {
 		id: 'client-sql-validation-test',
 		name: 'Client SQL validation test',
 		epoch: 'client-sql-validation-1',
+		rootDocumentIncarnation: 'sqlite-kv-1',
 		tables: {
 			notes: defineTable({ id: field.string(), title: field.string() }),
 		},
@@ -242,6 +247,7 @@ test('tables expose guid-only child-doc identity derived from the definition', (
 		id: 'client-docs-test',
 		name: 'Client docs test',
 		epoch: 'client-docs-1',
+		rootDocumentIncarnation: 'sqlite-kv-1',
 		tables: {
 			notes: defineTable(
 				{ id: field.string(), title: field.string() },

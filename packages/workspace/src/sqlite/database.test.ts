@@ -67,6 +67,7 @@ function setup() {
 		id: 'sqlite-database-test',
 		name: 'SQLite database test',
 		epoch: 'notes-1',
+		rootDocumentIncarnation: 'sqlite-kv-1',
 		tables: { notes },
 		kv: {
 			theme: defineKv(
@@ -230,6 +231,7 @@ describe('typed rows at rest', () => {
 				id: 'id-only-test',
 				name: 'ID-only test',
 				epoch: 'id-only-1',
+				rootDocumentIncarnation: 'sqlite-kv-1',
 				tables: { markers: defineTable({ id: field.string() }) },
 			}),
 			createSqlite(database),
@@ -396,6 +398,7 @@ describe('transaction and invalidation', () => {
 			id: 'coordinator-test',
 			name: 'Coordinator test',
 			epoch: 'coordinator-1',
+			rootDocumentIncarnation: 'sqlite-kv-1',
 			tables: { notes },
 		});
 		let rejectCommit = true;
@@ -458,6 +461,7 @@ describe('transaction and invalidation', () => {
 			id: 'operations-test',
 			name: 'Operations test',
 			epoch: 'operations-1',
+			rootDocumentIncarnation: 'sqlite-kv-1',
 			tables: {
 				notes: defineTable({
 					id: field.string(),
@@ -880,6 +884,7 @@ describe('representation migrations', () => {
 				id: 'atomic-identity-test',
 				name: 'Atomic identity test',
 				epoch: 'atomic-identity-v1',
+				rootDocumentIncarnation: 'sqlite-kv-1',
 				tables: { rows: defineTable({ id: field.string() }) },
 			}),
 			sqlite,
@@ -900,6 +905,7 @@ describe('representation migrations', () => {
 			id: 'migration-test',
 			name: 'Migration test',
 			epoch: 'migration-1',
+			rootDocumentIncarnation: 'sqlite-kv-1',
 			tables: { notes: v1Table },
 		});
 		const old = createApplicationDatabase(v1, sqlite, {
@@ -913,6 +919,7 @@ describe('representation migrations', () => {
 			id: 'migration-test',
 			name: 'Migration test',
 			epoch: 'migration-1',
+			rootDocumentIncarnation: 'sqlite-kv-1',
 			tables: { notes: v1Table },
 			migrations: [
 				{
@@ -948,6 +955,7 @@ describe('representation migrations', () => {
 			id: 'fresh-current',
 			name: 'Fresh current',
 			epoch: 'fresh-1',
+			rootDocumentIncarnation: 'sqlite-kv-1',
 			tables: {
 				notes: defineTable({ id: field.string(), title: field.string() }),
 			},
@@ -974,6 +982,7 @@ describe('representation migrations', () => {
 			id: 'downgrade-test',
 			name: 'Downgrade test',
 			epoch: 'downgrade-1',
+			rootDocumentIncarnation: 'sqlite-kv-1',
 			tables: { notes: table },
 			migrations: [{ apply() {} }],
 		});
@@ -986,6 +995,7 @@ describe('representation migrations', () => {
 			id: 'downgrade-test',
 			name: 'Downgrade test',
 			epoch: 'downgrade-1',
+			rootDocumentIncarnation: 'sqlite-kv-1',
 			tables: { notes: table },
 		});
 		expect(() =>
@@ -1005,6 +1015,7 @@ describe('representation migrations', () => {
 				id: 'identity-test',
 				name: 'Identity test',
 				epoch: 'identity-1',
+				rootDocumentIncarnation: 'sqlite-kv-1',
 				tables: { notes },
 			}),
 			sqlite,
@@ -1031,6 +1042,7 @@ describe('representation migrations', () => {
 					id: 'other-workspace',
 					name: 'Other workspace',
 					epoch: 'identity-1',
+					rootDocumentIncarnation: 'sqlite-kv-1',
 					tables: { notes },
 				}),
 				sqlite,
@@ -1049,6 +1061,7 @@ describe('representation migrations', () => {
 					id: 'identity-test',
 					name: 'Identity test',
 					epoch: 'identity-1',
+					rootDocumentIncarnation: 'sqlite-kv-1',
 					tables: { notes: nullableColumnAdded },
 				}),
 				sqlite,
@@ -1065,6 +1078,7 @@ describe('representation migrations', () => {
 			id: 'kind-test',
 			name: 'Kind test',
 			epoch: 'kind-v1',
+			rootDocumentIncarnation: 'sqlite-kv-1',
 			tables: { rows: defineTable({ id: field.string() }) },
 		});
 		createApplicationDatabase(definition, sqlite, {
@@ -1088,6 +1102,7 @@ describe('representation migrations', () => {
 			id: 'epoch-test',
 			name: 'Epoch test',
 			epoch: 'epoch-1',
+			rootDocumentIncarnation: 'sqlite-kv-1',
 			tables: { notes },
 		});
 		createApplicationDatabase(v1, sqlite, {
@@ -1099,6 +1114,7 @@ describe('representation migrations', () => {
 			id: 'epoch-test',
 			name: 'Epoch test',
 			epoch: 'epoch-1',
+			rootDocumentIncarnation: 'sqlite-kv-1',
 			tables: { notes },
 			migrations: [{ epoch: { id: 'epoch-2' } }],
 		});

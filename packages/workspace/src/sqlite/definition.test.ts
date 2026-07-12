@@ -125,6 +125,7 @@ describe('defineKv', () => {
 			id: 'nullable-kv',
 			name: 'Nullable KV',
 			epoch: 'nullable-kv-v1',
+			rootDocumentIncarnation: 'sqlite-kv-1',
 			tables: { rows: defineTable({ id: field.string() }) },
 			kv: { lastFolder },
 		});
@@ -143,17 +144,21 @@ describe('defineWorkspace', () => {
 			id: 'notes',
 			name: 'Notes',
 			epoch: 'notes-v1',
+			rootDocumentIncarnation: 'sqlite-kv-1',
 			tables: { folders, notes },
 			migrations: [{ apply: () => undefined }, { epoch: { id: 'notes-v2' } }],
 		});
 
 		expect(workspace.storageRevision).toBe(3);
+		expect(workspace.rootDocumentIncarnation).toBe('sqlite-kv-1');
+		expect(workspace.rootDocumentGuid).toBe('notes.root.sqlite-kv-1');
 		expect(workspace.kv).toEqual({});
 		expect(() =>
 			defineWorkspace({
 				id: 'broken',
 				name: 'Broken',
 				epoch: 'broken-v1',
+				rootDocumentIncarnation: 'sqlite-kv-1',
 				tables: {
 					notes: defineTable({
 						id: field.string(),
@@ -169,6 +174,7 @@ describe('defineWorkspace', () => {
 			id: 'notes',
 			name: 'First display name',
 			epoch: 'notes-v1',
+			rootDocumentIncarnation: 'sqlite-kv-1',
 			tables: {
 				notes: defineTable(
 					{ id: field.string(), title: field.string() },
@@ -191,6 +197,7 @@ describe('defineWorkspace', () => {
 			id: 'notes',
 			name: 'Different display name',
 			epoch: 'notes-v1',
+			rootDocumentIncarnation: 'sqlite-kv-1',
 			tables: {
 				folders: defineTable({ id: field.string(), name: field.string() }),
 				notes: defineTable(
@@ -232,6 +239,7 @@ describe('defineWorkspace', () => {
 				id: workspaceId,
 				name: 'Notes',
 				epoch: 'notes-v1',
+				rootDocumentIncarnation: 'sqlite-kv-1',
 				tables: {
 					notes: defineTable(
 						{ id: field.string(), title },
@@ -257,6 +265,7 @@ describe('defineWorkspace', () => {
 				id: 'notes',
 				name: 'Notes',
 				epoch: 'notes-v1',
+				rootDocumentIncarnation: 'sqlite-kv-1',
 				tables: {
 					notes: defineTable({ id: field.string(), title: field.string() }),
 				},
@@ -275,7 +284,30 @@ describe('defineWorkspace', () => {
 		expect(withChangedTheme).toBe(withoutKv);
 	});
 
-	test('child document identity rejects unsafe workspace and table segments', () => {
+	test('root incarnation rotates preferences independently of record identity and epoch', () => {
+		function workspace(rootDocumentIncarnation: string, epoch = 'notes-v1') {
+			return defineWorkspace({
+				id: 'notes',
+				name: 'Notes',
+				epoch,
+				rootDocumentIncarnation,
+				tables: {
+					notes: defineTable({ id: field.string(), title: field.string() }),
+				},
+			});
+		}
+
+		const first = workspace('sqlite-kv-1');
+		const rotated = workspace('sqlite-kv-2');
+		const nextEpoch = workspace('sqlite-kv-1', 'notes-v2');
+
+		expect(rotated.rootDocumentGuid).toBe('notes.root.sqlite-kv-2');
+		expect(rotated.schemaIdentity).toBe(first.schemaIdentity);
+		expect(nextEpoch.rootDocumentGuid).toBe(first.rootDocumentGuid);
+		expect(nextEpoch.schemaIdentity).not.toBe(first.schemaIdentity);
+	});
+
+	test('document identity rejects unsafe workspace, root, and table segments', () => {
 		const documented = defineTable(
 			{ id: field.string() },
 			{ docs: { body: 'plainText' } },
@@ -285,6 +317,7 @@ describe('defineWorkspace', () => {
 				id: 'Unsafe',
 				name: 'Unsafe',
 				epoch: 'unsafe-v1',
+				rootDocumentIncarnation: 'sqlite-kv-1',
 				tables: { notes: documented },
 			}),
 		).toThrow('Invalid workspace id');
@@ -293,6 +326,16 @@ describe('defineWorkspace', () => {
 				id: 'safe',
 				name: 'Safe',
 				epoch: 'safe-v1',
+				rootDocumentIncarnation: 'Unsafe',
+				tables: { notes: documented },
+			}),
+		).toThrow('Invalid root document incarnation');
+		expect(() =>
+			defineWorkspace({
+				id: 'safe',
+				name: 'Safe',
+				epoch: 'safe-v1',
+				rootDocumentIncarnation: 'sqlite-kv-1',
 				tables: { 'bad.table': documented },
 			}),
 		).toThrow('Invalid child document table name');
@@ -305,6 +348,7 @@ describe('defineWorkspace', () => {
 				id: 'rows',
 				name: 'Rows',
 				epoch: 'rows-v1',
+				rootDocumentIncarnation: 'sqlite-kv-1',
 				tables: { constructor: rows },
 			}),
 		).toThrow("workspace table 'constructor' collides with Object.prototype");
@@ -313,6 +357,7 @@ describe('defineWorkspace', () => {
 				id: 'rows',
 				name: 'Rows',
 				epoch: 'rows-v1',
+				rootDocumentIncarnation: 'sqlite-kv-1',
 				tables: { rows },
 				kv: { toString: defineKv(field.string(), () => '') },
 			}),
@@ -322,6 +367,7 @@ describe('defineWorkspace', () => {
 				id: 'rows',
 				name: 'Rows',
 				epoch: 'rows-v1',
+				rootDocumentIncarnation: 'sqlite-kv-1',
 				tables: { rows, __proto__: rows },
 			}),
 		).toThrow('workspace tables must be a plain record');
@@ -330,6 +376,7 @@ describe('defineWorkspace', () => {
 				id: 'rows',
 				name: 'Rows',
 				epoch: 'rows-v1',
+				rootDocumentIncarnation: 'sqlite-kv-1',
 				tables: { rows, ['__proto__']: rows },
 			}),
 		).toThrow("workspace table '__proto__' collides with Object.prototype");
@@ -342,6 +389,7 @@ describe('defineWorkspace', () => {
 				id: 'rows',
 				name: 'Rows',
 				epoch: 'rows-v1',
+				rootDocumentIncarnation: 'sqlite-kv-1',
 				tables: { rows },
 				migrations: [{}],
 			}),
@@ -351,6 +399,7 @@ describe('defineWorkspace', () => {
 				id: 'rows',
 				name: 'Rows',
 				epoch: 'rows-v1',
+				rootDocumentIncarnation: 'sqlite-kv-1',
 				tables: { rows },
 				migrations: [{ epoch: { id: 'rows-v1' } }],
 			}),
