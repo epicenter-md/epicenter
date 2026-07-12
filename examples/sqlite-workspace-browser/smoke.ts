@@ -100,12 +100,10 @@ try {
 		await page.waitForFunction(() => document.body.dataset.ready === 'true');
 	}
 
-	const runId = `${Date.now()}`;
-	const firstId = `first-${runId}`;
-	await first.evaluate(
-		([id]) => window.workspaceSmoke.create({ id, title: 'First page' }),
-		[firstId],
+	const firstRow = await first.evaluate(() =>
+		window.workspaceSmoke.create({ title: 'First page' }),
 	);
+	const firstId = firstRow.id;
 	await second.waitForFunction(
 		(id) => window.workspaceSmoke.observedIds.includes(id),
 		firstId,
@@ -131,25 +129,24 @@ try {
 		`KV preference plane did not round-trip: ${JSON.stringify(themeRoundTrip)}`,
 	);
 
-	const leftIds = Array.from(
-		{ length: 4 },
-		(_, index) => `left-${index}-${runId}`,
-	);
-	const rightIds = Array.from(
-		{ length: 4 },
-		(_, index) => `right-${index}-${runId}`,
-	);
-	await Promise.all(
-		[
-			...leftIds.map((id) => [first, id] as const),
-			...rightIds.map((id) => [second, id] as const),
-		].map(([page, id]) =>
-			page.evaluate(
-				([rowId]) => window.workspaceSmoke.create({ id: rowId, title: rowId }),
-				[id],
+	const leftRows = await Promise.all(
+		Array.from({ length: 4 }, (_, index) =>
+			first.evaluate(
+				(title) => window.workspaceSmoke.create({ title }),
+				`left-${index}`,
 			),
 		),
 	);
+	const rightRows = await Promise.all(
+		Array.from({ length: 4 }, (_, index) =>
+			second.evaluate(
+				(title) => window.workspaceSmoke.create({ title }),
+				`right-${index}`,
+			),
+		),
+	);
+	const leftIds = leftRows.map(({ id }) => id);
+	const rightIds = rightRows.map(({ id }) => id);
 	const leftId = leftIds.at(-1);
 	const rightId = rightIds.at(-1);
 	assert(leftId && rightId, 'Concurrent smoke ids were not created');
@@ -174,15 +171,13 @@ try {
 	}
 
 	await first.evaluate(() => window.workspaceSmoke.dispose());
-	const afterDisposeId = `after-dispose-${runId}`;
-	await second.evaluate(
-		([id]) => window.workspaceSmoke.create({ id, title: 'Still open' }),
-		[afterDisposeId],
+	const afterDispose = await second.evaluate(() =>
+		window.workspaceSmoke.create({ title: 'Still open' }),
 	);
 	await first.evaluate(() => window.workspaceSmoke.reopen());
 	const persisted = await first.evaluate(
 		(id) => window.workspaceSmoke.get(id),
-		afterDisposeId,
+		afterDispose.id,
 	);
 	assert(
 		persisted?.title === 'Still open',
@@ -216,11 +211,10 @@ try {
 			() => document.body.dataset.replicaReady === 'true',
 		);
 	}
-	const replicaId = `replica-${runId}`;
-	await replicaA.evaluate(
-		([id]) => window.workspaceSmoke.replicaCreate({ id, title: 'Replicated' }),
-		[replicaId],
+	const replicaRow = await replicaA.evaluate(() =>
+		window.workspaceSmoke.replicaCreate({ title: 'Replicated' }),
 	);
+	const replicaId = replicaRow.id;
 	let replicated: { id: string; title: string } | null = null;
 	for (let attempt = 0; attempt < 200; attempt++) {
 		replicated = await replicaB.evaluate(

@@ -12,6 +12,7 @@ import { workspaceDefinition } from './workspace.js';
 import WorkspaceWorker from './workspace.worker?worker';
 
 type Note = { id: string; title: string };
+type CreateNote = Omit<Note, 'id'>;
 type Theme = 'light' | 'dark';
 
 // The preference plane lives on the eager root Yjs document, composed on the
@@ -61,7 +62,7 @@ if (replicaName === 'a' || replicaName === 'b') {
 }
 
 window.workspaceSmoke = {
-	create(note: Note) {
+	create(note: CreateNote) {
 		return workspace.tables.notes.create(note);
 	},
 	get(id: string) {
@@ -94,7 +95,7 @@ window.workspaceSmoke = {
 			return error instanceof Error ? error.message : String(error);
 		}
 	},
-	replicaCreate(note: Note) {
+	replicaCreate(note: CreateNote) {
 		if (!replica) throw new Error('Replica is not open');
 		return replica.tables.notes.create(note);
 	},
@@ -116,7 +117,7 @@ if (status) status.textContent = 'OPFS workspace ready';
 declare global {
 	interface Window {
 		workspaceSmoke: {
-			create(note: Note): Promise<void>;
+			create(note: CreateNote): Promise<Note>;
 			get(id: string): Promise<Note | null>;
 			list(): Promise<Note[]>;
 			theme(): Theme;
@@ -125,7 +126,7 @@ declare global {
 			dispose(): Promise<void>;
 			reopen(): Promise<void>;
 			mismatchError(): Promise<string | null>;
-			replicaCreate(note: Note): Promise<void>;
+			replicaCreate(note: CreateNote): Promise<Note>;
 			replicaGet(id: string): Promise<Note | null>;
 			replicaDispose(): Promise<void>;
 		};
