@@ -262,16 +262,12 @@ export function createRedditImport() {
 		kv: {
 			// Singleton values from CSV files
 			statistics: defineKv(
-				field.json(
-					Type.Union([Type.Record(Type.String(), Type.String()), Type.Null()]),
-				),
-				(): Record<string, string> | null => null,
+				field.json(Type.Record(Type.String(), Type.String())),
+				(): Record<string, string> => ({}),
 			),
 			preferences: defineKv(
-				field.json(
-					Type.Union([Type.Record(Type.String(), Type.String()), Type.Null()]),
-				),
-				(): Record<string, string> | null => null,
+				field.json(Type.Record(Type.String(), Type.String())),
+				(): Record<string, string> => ({}),
 			),
 		},
 	});
