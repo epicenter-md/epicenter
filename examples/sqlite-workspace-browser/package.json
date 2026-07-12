@@ -10,7 +10,10 @@
 	},
 	"dependencies": {
 		"@epicenter/field": "workspace:*",
-		"@epicenter/workspace": "workspace:*"
+		"@epicenter/identity": "workspace:*",
+		"@epicenter/server": "workspace:*",
+		"@epicenter/workspace": "workspace:*",
+		"hono": "catalog:"
 	},
 	"devDependencies": {
 		"@types/node": "catalog:",

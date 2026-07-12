@@ -661,7 +661,10 @@
       "version": "0.0.1",
       "dependencies": {
         "@epicenter/field": "workspace:*",
+        "@epicenter/identity": "workspace:*",
+        "@epicenter/server": "workspace:*",
         "@epicenter/workspace": "workspace:*",
+        "hono": "catalog:",
       },
       "devDependencies": {
         "@types/node": "catalog:",
@@ -939,6 +942,7 @@
         "@epicenter/auth": "workspace:*",
         "@epicenter/constants": "workspace:*",
         "@epicenter/identity": "workspace:*",
+        "@epicenter/record-sync": "workspace:*",
         "@epicenter/sync": "workspace:*",
         "@epicenter/workspace": "workspace:*",
         "@hono/standard-validator": "catalog:",

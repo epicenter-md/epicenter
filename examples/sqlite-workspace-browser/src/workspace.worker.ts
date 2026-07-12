@@ -1,7 +1,7 @@
-import { serveLocalWorkspaceWorker } from '@epicenter/workspace/sqlite/browser-worker';
+import { serveStandaloneWorkspaceWorker } from '@epicenter/workspace/sqlite/browser-worker';
 import { workspaceDefinition } from './workspace.js';
 
-serveLocalWorkspaceWorker(workspaceDefinition, {
+serveStandaloneWorkspaceWorker(workspaceDefinition, {
 	storage: { kind: 'opfs', name: 'browser-sqlite-smoke' },
 	onError() {},
 });
