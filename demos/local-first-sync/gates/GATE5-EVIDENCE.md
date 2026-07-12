@@ -21,6 +21,19 @@ The new `@epicenter/workspace/sqlite` boundary proves:
 - logical snapshots use the record-sync `SnapshotRow` shape for live rows,
   tombstones, and KV rows in the reserved namespace.
 
+The next checkpoint also proves the process boundary required by browser and
+native SQLite owners:
+
+- the public workspace client is asynchronous while the SQLite service remains
+  synchronous internally;
+- one write-only client batch becomes one database transaction;
+- committed row, removal, and effective KV deltas publish before the mutation
+  promise resolves;
+- service requests serialize, so an observer-triggered write cannot overtake
+  the commit currently being published;
+- Svelte helpers hydrate one query-scoped cache, buffer pre-hydration deltas,
+  and never update optimistically.
+
 This does not claim that Wave 5 is complete. The old Yjs table/KV path and its
 callers remain until `openLocalWorkspace` and `openReplica` can supply real
 browser and native SQLite lifecycles.
@@ -84,6 +97,21 @@ application transact
   -> publish changed row ids and KV keys
 ```
 
+Across a worker or native service boundary, the public shape is:
+
+```txt
+UI projection after whenReady
+  <- committed delta <- async workspace service <- synchronous SQLite
+
+await table.get/list/put/patch/remove
+await kv.get/set/clear
+await workspace.transact(writeOnlyBatch)
+```
+
+Transactional reads are deliberately absent from the public batch callback.
+Preserving them would require either blocking the UI thread or pretending a
+client-side cache is authoritative.
+
 The local coordinator owns only the SQLite transaction. A replica coordinator
 can add actor and outbox work before the same commit returns. Observer failures
 go to an injected error sink after commit; they cannot turn durable success into
@@ -106,6 +134,11 @@ and corrected these failures:
 - observer exceptions escaped after commit;
 - caught nested transactions could commit their inner writes;
 - KV initially invented a second operation family instead of using `patchRow`.
+- async projections initially subscribed after requesting their snapshots;
+- a disposed service could still accept queued or future writes;
+- the in-process service retained caller-owned request objects by reference;
+- the pre-readiness KV binding type hid its real `undefined` state;
+- schema names could collide with inherited JavaScript record properties.
 
 Focused regression tests now cover each corrected invariant.
 
@@ -125,9 +158,10 @@ bun run --cwd apps/whispering typecheck
 bun run check:licenses
 ```
 
-Result: 34 focused tests passed with 119 assertions. Workspace and affected app
-typechecks passed. Whispering passed both browser and Tauri Svelte checks. The
-MIT package graph remains clear of AGPL dependencies.
+Result at the transport checkpoint: 46 focused tests passed with 163
+assertions. Workspace and Svelte utility typechecks passed. The earlier
+foundation checkpoint also passed the affected app typechecks, both Whispering
+browser and Tauri Svelte checks, and the MIT package license graph.
 
 ## Required next step
 

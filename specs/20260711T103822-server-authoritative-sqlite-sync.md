@@ -1271,26 +1271,35 @@ is type-checked in `demos/local-first-sync/api-prototype/` and detailed in
   dies: it hid a permanent durable-identity choice inside an optional field.
   Promotion is `openReplica` + `planImport(local)`, never a reopen flag;
   `connect(connection | null)` does not survive either.
-- Table writes are wire-honest: `put` (write every cell declared by this exact
-  schema; the local image of patchRow-all-declared-cells),
+- Table writes are wire-honest and asynchronous: `put` (write every cell
+  declared by this exact schema; the local image of
+  patchRow-all-declared-cells),
   `patch` (named cells of a live row; null when absent or deleted), `remove`
   (terminal). `create` and `upsert` die with `set`: globally exclusive
   creation is not a promise a distributed patchRow can keep (the fold
   create-merges on unknown ids), and the protocol has no row-replacement
-  operation. Local double-submit
-  guards are `has()` inside `transact`. Every write, single-verb or
-  `transact(fn)`, is exactly one atomic mutation committed with the outbox
-  row and sequence allocation.
-- Reads: `get` / `list({ where, orderBy, limit })` / `has` / `count` /
-  `observe`, plus one SELECT-only `sql(query, params, schema)` escape hatch
-  with declared result validation and conservative `observeSql(tables, run)`
-  invalidation. Under the quarantine decision, `sql` over application tables
-  and `list` see one row population; `sql` stays an escape hatch because the
-  query itself is untyped and uninvalidated, not because it reads a different
-  dataset. No Drizzle and no bespoke query builder: the deleted 2026 Drizzle
-  layer died as a second consumer-less schema derivation, and field.* must
-  remain canonical, so Drizzle could only return as exactly that second
-  derivation.
+  operation. Local double-submit guards use stable ids or an asynchronous
+  `has()` preflight; they are UX guards, never distributed uniqueness
+  guarantees. Every write, single-verb or `transact(fn)`, is exactly one
+  atomic local commit. For a replica, that same commit includes the outbox row
+  and actor-sequence allocation. The transaction callback is a synchronous,
+  write-only batch builder. It cannot read because the authoritative SQLite
+  connection may live across a worker or native-service boundary. The returned
+  promise resolves only after the committed delta has been published.
+- Authoritative reads are asynchronous: `get` /
+  `list({ where, orderBy, limit })` / `has` / `count`, plus one SELECT-only
+  `sql(query, params, schema)` escape hatch with declared result validation and
+  conservative `observeSql(tables, run)` invalidation. Under the quarantine
+  decision, `sql` over application tables and `list` see one row population;
+  `sql` stays an escape hatch because the query itself is untyped and
+  uninvalidated, not because it reads a different dataset. No Drizzle and no
+  bespoke query builder: the deleted 2026 Drizzle layer died as a second
+  consumer-less schema derivation, and field.* must remain canonical, so
+  Drizzle could only return as exactly that second derivation.
+- UI helpers expose synchronous query-scoped projections after an explicit
+  `whenReady` promise. They hydrate once, buffer committed deltas that race the
+  initial snapshot, and never become a second durable database or update
+  optimistically.
 - Boundary doors: `planImport(source)` on any open workspace and
   `planEpochUpgrade(definition, { storage, sync })` for a superseded-epoch
   replica. Both return the same reviewable ImportPlan.

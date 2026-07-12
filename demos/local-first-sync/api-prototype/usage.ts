@@ -95,9 +95,7 @@ const workspace = defineWorkspace({
 			epoch: {
 				id: 'epk-notes-01j1addstatus',
 				transformCells: (row) =>
-					row.table === 'notes'
-						? { ...row.cells, status: 'draft' }
-						: row.cells,
+					row.table === 'notes' ? { ...row.cells, status: 'draft' } : row.cells,
 			},
 		},
 		// v3 changes title semantics by trimming it, so the authored semantic id
@@ -138,7 +136,7 @@ async function main() {
 	const folderId = 'f_1' as FolderId;
 
 	// ── Point reads ──
-	const note = ws.tables.notes.get(noteId);
+	const note = await ws.tables.notes.get(noteId);
 	if (note) {
 		// Inferred row type: branded id, nullable reference, literal union.
 		const _id: NoteId = note.id;
@@ -147,7 +145,7 @@ async function main() {
 	}
 
 	// ── Typed list reads (indexed) ──
-	const inFolder = ws.tables.notes.list({
+	const inFolder = await ws.tables.notes.list({
 		where: { folderId },
 		orderBy: 'updatedAt',
 		desc: true,
@@ -156,17 +154,19 @@ async function main() {
 	const _titles: string[] = inFolder.map((n) => n.title);
 
 	// ── Expressive relational query via the SELECT-only PHYSICAL escape hatch ──
-	const noteCounts = ws.sql(
+	const noteCounts = await ws.sql(
 		`SELECT f.id AS folderId, count(n.id) AS noteCount
 		 FROM folders f LEFT JOIN notes n ON n.folderId = f.id
 		 GROUP BY f.id ORDER BY f.sortOrder`,
 		[],
 		Type.Object({ folderId: Type.String(), noteCount: Type.Number() }),
 	);
-	const _count: number = noteCounts[0]!.noteCount;
+	const firstCount = noteCounts[0];
+	if (!firstCount) throw new Error('Expected one count row');
+	const _count: number = firstCount.noteCount;
 
 	// ── put: write every declared cell (one atomic mutation, not replacement) ──
-	ws.tables.notes.put({
+	await ws.tables.notes.put({
 		id: noteId,
 		folderId: null,
 		title: 'Hello',
@@ -177,26 +177,22 @@ async function main() {
 	});
 
 	// ── patch: named cells of a live row ──
-	ws.tables.notes.patch(noteId, { pinned: true, status: 'published' });
+	await ws.tables.notes.patch(noteId, { pinned: true, status: 'published' });
 
 	// ── remove: terminal deletion, id never reused ──
-	ws.tables.folders.remove(folderId);
+	await ws.tables.folders.remove(folderId);
 
 	// ── KV set and clear ──
-	ws.kv.set('sidebar.collapsed', true);
-	ws.kv.set('editor.layout', { width: 400, split: true });
-	ws.kv.clear('editor.layout');
+	await ws.kv.set('sidebar.collapsed', true);
+	await ws.kv.set('editor.layout', { width: 400, split: true });
+	await ws.kv.clear('editor.layout');
 	const _layout: { width: number; split: boolean } =
-		ws.kv.get('editor.layout');
+		await ws.kv.get('editor.layout');
 
 	// ── One atomic multi-table + KV transaction (ONE mutation on the wire) ──
-	ws.transact((tx) => {
-		const orphaned = tx.tables.notes.list({ where: { folderId } });
-		for (const n of orphaned) {
-			tx.tables.notes.patch(n.id, { folderId: null });
-		}
-		// Local double-submit guard: exclusivity is a local check, not a verb.
-		if (!tx.tables.folders.has(folderId)) return;
+	const orphaned = await ws.tables.notes.list({ where: { folderId } });
+	await ws.transact((tx) => {
+		for (const n of orphaned) tx.tables.notes.patch(n.id, { folderId: null });
 		tx.tables.folders.remove(folderId);
 		tx.kv.set('sidebar.collapsed', false);
 	});
@@ -210,8 +206,8 @@ async function main() {
 	}
 
 	// ── Reactive observation ──
-	const stopTable = ws.tables.notes.observe((changed) => {
-		void changed.has(noteId);
+	const stopTable = ws.tables.notes.observe((delta) => {
+		void delta.upserted.some((row) => row.id === noteId);
 	});
 	const stopQuery = ws.observeSql(['folders', 'notes'], () => {
 		void ws.sql(
@@ -224,12 +220,18 @@ async function main() {
 	stopQuery();
 
 	// ── Promotion: explicit import into the open replica, never a reopen ──
-	const promotion = await ws.planImport({ kind: 'workspace', workspace: local });
+	const promotion = await ws.planImport({
+		kind: 'workspace',
+		workspace: local,
+	});
 	await promotion.apply(); // empty/unambiguous parts auto-apply
 	// ...retire `local` only after the imported mutations are accepted.
 
 	// ── Restore / clone adoption: same door, reviewable when both sides moved ──
-	const restore = await ws.planImport({ kind: 'file', path: '/backups/notes.db' });
+	const restore = await ws.planImport({
+		kind: 'file',
+		path: '/backups/notes.db',
+	});
 	await restore.apply({ prefer: 'destination' });
 
 	// ── Epoch upgrade: the explicit door for a superseded-epoch replica ──
@@ -280,8 +282,11 @@ async function negatives() {
 	// @ts-expect-error openReplica requires a sync connection
 	await openReplica(workspace, { storage: { kind: 'memory' } });
 
-	// @ts-expect-error a local workspace takes no sync option
-	await openLocalWorkspace(workspace, { storage: { kind: 'memory' }, sync: { baseUrl: 'x' } });
+	await openLocalWorkspace(workspace, {
+		storage: { kind: 'memory' },
+		// @ts-expect-error a local workspace takes no sync option
+		sync: { baseUrl: 'x' },
+	});
 }
 
 void main;

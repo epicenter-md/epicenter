@@ -153,10 +153,7 @@ export type EpochMigration = {
 	 */
 	mapIdentity?(source: RowRef): RowRef | null;
 	/** Transform cells after identity mapping; omission preserves all cells. */
-	transformCells?(
-		row: LogicalRowIn,
-		target: RowRef,
-	): Record<string, unknown>;
+	transformCells?(row: LogicalRowIn, target: RowRef): Record<string, unknown>;
 };
 
 export type MigrationStep = {
@@ -215,19 +212,19 @@ export type RowFor<TDef extends TableDefinition> = RowOf<TDef['columns']> & {
 	id: string;
 };
 
-/** Read surface, available on the workspace and inside transactions. */
+/** Async read surface over the worker or native SQLite service boundary. */
 export type TableReads<TRow extends { id: string }> = {
 	/** Point read; null when absent (absence is not an error). */
-	get(id: TRow['id']): TRow | null;
+	get(id: TRow['id']): Promise<TRow | null>;
 	/** All conforming rows, optionally filtered/ordered via indexed columns. */
 	list(options?: {
 		where?: Partial<TRow>;
 		orderBy?: keyof TRow & string;
 		desc?: boolean;
 		limit?: number;
-	}): TRow[];
-	has(id: TRow['id']): boolean;
-	count(): number;
+	}): Promise<TRow[]>;
+	has(id: TRow['id']): Promise<boolean>;
+	count(): Promise<number>;
 };
 
 /**
@@ -239,40 +236,47 @@ export type TableWrites<TRow extends { id: string }> = {
 	/**
 	 * Write every cell declared by this exact schema. This is not replacement:
 	 * the wire patches cells and has no row-replacement operation. There is no
-	 * globally exclusive create in a distributed patchRow world; guard local
-	 * double-submits with has() inside transact() when an app needs the check.
+	 * globally exclusive create in a distributed patchRow world; use stable ids
+	 * or an async has() preflight for local double-submit UX.
 	 */
-	put(row: TRow): void;
+	put(row: TRow): Promise<void>;
 	/**
 	 * Replace only the named cells of a live row. Local precondition: returns
 	 * null when the row is absent or terminally deleted (the wire's
 	 * create-on-unknown fold exists for import idempotency, not for the
 	 * typed app surface).
 	 */
-	patch(id: TRow['id'], cells: Partial<Omit<TRow, 'id'>>): TRow | null;
+	patch(id: TRow['id'], cells: Partial<Omit<TRow, 'id'>>): Promise<TRow | null>;
 	/** Terminal delete: the id is permanently retired, never reused. */
-	remove(id: TRow['id']): void;
+	remove(id: TRow['id']): Promise<void>;
+};
+
+export type TableCommitDelta<TRow extends { id: string }> = {
+	upserted: readonly TRow[];
+	removed: readonly TRow['id'][];
 };
 
 export type TableHandle<TRow extends { id: string }> = TableReads<TRow> &
 	TableWrites<TRow> & {
-		/** Invalidation signal: fires with changed row ids after any commit
-		 * (local write, remote pull, snapshot install, import apply alike). */
-		observe(
-			callback: (changedIds: ReadonlySet<TRow['id']>) => void,
-		): () => void;
+		/** Effective committed values after local or remote application. */
+		observe(callback: (delta: TableCommitDelta<TRow>) => void): () => void;
 	};
 
 export type KvValue<TDef extends KvDefinition> = Static<TDef['schema']>;
 
 export type KvHandle<TKv extends KvDefinitions> = {
 	/** Declared default when unset or cleared. */
-	get<K extends keyof TKv & string>(key: K): KvValue<TKv[K]>;
-	set<K extends keyof TKv & string>(key: K, value: KvValue<TKv[K]>): void;
+	get<K extends keyof TKv & string>(key: K): Promise<KvValue<TKv[K]>>;
+	set<K extends keyof TKv & string>(
+		key: K,
+		value: KvValue<TKv[K]>,
+	): Promise<void>;
 	/** Return to default. (Wire: value := null.) */
-	clear(key: keyof TKv & string): void;
+	clear(key: keyof TKv & string): Promise<void>;
 	observe(
-		callback: (changedKeys: ReadonlySet<keyof TKv & string>) => void,
+		callback: (
+			values: Readonly<Partial<{ [K in keyof TKv]: KvValue<TKv[K]> }>>,
+		) => void,
 	): () => void;
 };
 
@@ -297,28 +301,35 @@ export type DocHandleFor<L extends DocLayout> = L extends 'plainText'
 	? PlainTextHandle
 	: RichTextHandle;
 
-export type DocsFor<TDef extends TableDefinition> =
-	TDef['options'] extends { docs: infer D extends Record<string, DocLayout> }
-		? {
-				[K in keyof D]: (
-					rowId: RowFor<TDef>['id'],
-				) => Promise<DocHandleFor<D[K]>>;
-			}
-		: Record<never, never>;
+export type DocsFor<TDef extends TableDefinition> = TDef['options'] extends {
+	docs: infer D extends Record<string, DocLayout>;
+}
+	? {
+			[K in keyof D]: (
+				rowId: RowFor<TDef>['id'],
+			) => Promise<DocHandleFor<D[K]>>;
+		}
+	: Record<never, never>;
 
 // ─── Transactions ─────────────────────────────────────────────────────────────
 
 export type TxTables<TTables extends TableDefinitions> = {
-	[K in keyof TTables]: TableReads<RowFor<TTables[K]>> &
-		TableWrites<RowFor<TTables[K]>>;
+	[K in keyof TTables]: {
+		put(row: RowFor<TTables[K]>): void;
+		patch(
+			id: RowFor<TTables[K]>['id'],
+			cells: Partial<Omit<RowFor<TTables[K]>, 'id'>>,
+		): void;
+		remove(id: RowFor<TTables[K]>['id']): void;
+	};
 };
 
-export type Tx<
-	TTables extends TableDefinitions,
-	TKv extends KvDefinitions,
-> = {
+export type Tx<TTables extends TableDefinitions, TKv extends KvDefinitions> = {
 	tables: TxTables<TTables>;
-	kv: Pick<KvHandle<TKv>, 'get' | 'set' | 'clear'>;
+	kv: {
+		set<K extends keyof TKv & string>(key: K, value: KvValue<TKv[K]>): void;
+		clear(key: keyof TKv & string): void;
+	};
 };
 
 // ─── Boundary imports (one planner for every database boundary) ──────────────
@@ -416,7 +427,7 @@ export type WorkspaceData<
 	 * The one write boundary: everything inside commits as ONE atomic
 	 * mutation (single-verb table/kv calls are one-op instances of this).
 	 */
-	transact(fn: (tx: Tx<TTables, TKv>) => void): void;
+	transact(fn: (tx: Tx<TTables, TKv>) => void): Promise<void>;
 
 	/**
 	 * SELECT-only escape hatch over the local replica. Rejects non-read
@@ -430,7 +441,7 @@ export type WorkspaceData<
 		query: string,
 		params: readonly unknown[],
 		schema: S,
-	): Static<S>[];
+	): Promise<Static<S>[]>;
 	/** Conservative invalidation: re-run when any named table changes. */
 	observeSql(
 		tables: readonly (keyof TTables & string)[],
