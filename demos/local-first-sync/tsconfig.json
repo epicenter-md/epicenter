@@ -11,7 +11,6 @@
 		"allowImportingTsExtensions": true
 	},
 	"include": [
-		"api-prototype",
 		"bench",
 		"client",
 		"gates",

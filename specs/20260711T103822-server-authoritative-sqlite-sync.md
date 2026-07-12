@@ -1266,7 +1266,7 @@ checkbox only after re-proof against the three-verb protocol.
 - [x] Measure code and storage differences.
 - [x] Select the smallest representation that passes: typed tables without a
   canonical client shadow.
-- [ ] Re-prove the gate against the three-verb protocol without tombstones,
+- [x] Re-prove the gate against the three-verb protocol without tombstones,
   including the duplicate-create refusal and no-op update/delete traces.
 
 ### Wave 2: Gate 2 snapshot and compaction
@@ -1275,7 +1275,7 @@ checkbox only after re-proof against the three-verb protocol.
 - [x] Implement current-head snapshot publication and log-prefix deletion.
 - [x] Prove new and stale bootstrap under failure.
 - [x] Prove actor idempotency survives compaction.
-- [ ] Re-prove the gate with live-rows-only snapshots: deletion survives
+- [x] Re-prove the gate with live-rows-only snapshots: deletion survives
   compaction as absence, and stale pending updates replay as no-ops.
 
 ### Wave 3: Gate 3 schema epochs
@@ -1284,7 +1284,7 @@ checkbox only after re-proof against the three-verb protocol.
 - [x] Implement the leased freeze/prepare/activate/abort transition model.
 - [x] Prove canonical-baseline transformation and per-replica pending-intent
   import remain separate.
-- [ ] Re-prove skipped-epoch upgrade without tombstone carriage: the identity
+- [x] Re-prove skipped-epoch upgrade without tombstone carriage: the identity
   map moves live rows only, and upstream deletions surface as the
   excluded-by-default review case instead of resurrecting.
 
@@ -1387,9 +1387,12 @@ supersede or explicitly scope the old decision.
 ## Developer API target
 
 The 2026-07-11 review made the developer API a first-class design target;
-pass 3 corrected it against the second review's blockers. The selected shape
-is type-checked in `demos/local-first-sync/api-prototype/` and detailed in
-`demos/local-first-sync/REVIEW-2026-07-11.md` (pass 3 addendum):
+pass 3 corrected it against the second review's blockers, and the late
+revision moved it to explicit creation and the root-document preference
+plane. The implemented shape lives in `packages/workspace/src/sqlite/`; the
+earlier throwaway api-prototype was deleted once the production surface
+superseded it. Details in `demos/local-first-sync/REVIEW-2026-07-11.md`
+(pass 3 addendum, now historical on the KV and upsert points):
 
 - `defineWorkspace({ id, name, epoch, tables, kv, migrations })`; the local
   storage revision is derived as `1 + migrations.length`;
@@ -1537,12 +1540,12 @@ These questions invite evidence, not speculative framework growth.
 
 - [ ] The six Proposed ADRs survive an independent clean-break review.
 - [ ] Every settled product invariant is represented in an ADR or this spec.
-- [ ] Gate 1 passes the three-verb protocol without tombstones or a canonical
+- [x] Gate 1 passes the three-verb protocol without tombstones or a canonical
   shadow; evidence is in `demos/local-first-sync/gates/GATE1-EVIDENCE.md`.
-- [ ] Gate 2 proves permanent log-prefix deletion with live-rows-only
+- [x] Gate 2 proves permanent log-prefix deletion with live-rows-only
   snapshots and stale pending clients; evidence is in
   `demos/local-first-sync/gates/GATE2-EVIDENCE.md`.
-- [ ] Gate 3 proves exact schema fencing and explicit epoch import without
+- [x] Gate 3 proves exact schema fencing and explicit epoch import without
   tombstone carriage; evidence is in
   `demos/local-first-sync/gates/GATE3-EVIDENCE.md`.
 - [ ] The same protocol and fold conformance suite passes through browser, Bun,
@@ -1550,7 +1553,7 @@ These questions invite evidence, not speculative framework growth.
 - [ ] Local-only apps operate without actor identity, outbox, auth, or server.
 - [ ] Explicit imports, endpoint moves, restores, and epoch upgrades use the
   capability-split boundary flows over one logical snapshot vocabulary.
-- [ ] Declared KV lives in the eager root Yjs document; the record plane and
+- [x] Declared KV lives in the eager root Yjs document; the record plane and
   SQLite worker protocol are table-only.
 - [ ] Metadata bootstrap does not eagerly open Yjs bodies.
 - [ ] Browser scale reports include 100K and 1M representative rows.
@@ -1564,8 +1567,6 @@ These questions invite evidence, not speculative framework growth.
 - `demos/local-first-sync/REVIEW-2026-07-11.md`: cold-start architecture
   review (developer API selection, metadata matrix, ADR sweep, Gate 1
   handoff) whose decisive findings are folded into this spec.
-- `demos/local-first-sync/api-prototype/`: type-checked disposable prototype
-  of the selected developer API.
 - `demos/local-first-sync/DECISION-MEMO.md`: existing research and comparison.
 - `demos/local-first-sync/gates/DESIGN.md`: earlier three-gate design to revise.
 - `demos/local-first-sync/gates/protocol.ts`: earlier protocol skeleton.
