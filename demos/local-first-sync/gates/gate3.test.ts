@@ -7,7 +7,9 @@
  * Key behaviors:
  * - one exact schema identity is accepted by one active incarnation;
  * - global baselines exclude private pending overlays;
- * - transforms preserve zero-to-one row and tombstone identity.
+ * - the identity map carries live row identity only: deleted rows are absent
+ *   from the frozen snapshot, and a stale replica's copy of an upstream
+ *   deletion is review-excluded instead of silently resurrected.
  */
 
 import { expect, test } from 'bun:test';
@@ -16,8 +18,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { SqliteClientB } from './engine-client-b';
 import {
-	planImport,
-	planPhysicalCopyImport,
+	planAdoption,
+	planOverlayImport,
+	planPhysicalCopyAdoption,
+	restoreReviewRowAsNew,
 	transformRows,
 } from './epoch-planner';
 import type { BeginTransition, EpochTransform } from './epoch-protocol';
@@ -31,6 +35,7 @@ import type {
 	SnapshotRow,
 } from './protocol';
 import { splitRowKey } from './protocol';
+import { createSnapshotChunk, createSnapshotManifest } from './snapshot-codec';
 import { stableJson } from './util';
 
 const epoch1: RequestEnvelope = {
@@ -129,20 +134,32 @@ function pushRequest(
 
 function visibleRows(dump: ClientDump): SnapshotRow[] {
 	const rows: SnapshotRow[] = [];
-	for (const [key, row] of Object.entries({
+	for (const [key, cells] of Object.entries({
 		...dump.rows,
 		...dump.quarantine,
 	})) {
 		const [table, rowId] = splitRowKey(
 			key as Parameters<typeof splitRowKey>[0],
 		);
-		rows.push({ table, rowId, deleted: false, cells: row.cells });
-	}
-	for (const key of dump.tombstones) {
-		const [table, rowId] = splitRowKey(key);
-		rows.push({ table, rowId, deleted: true, cells: {} });
+		rows.push({ table, rowId, cells });
 	}
 	return rows;
+}
+
+/** Model a replica that synced the canonical baseline before going private. */
+function installBaseline(client: SqliteClientB, rows: SnapshotRow[]): void {
+	const chunk = createSnapshotChunk(1, 0, rows);
+	const manifest = createSnapshotManifest({
+		generation: 1,
+		snapshotSequence: 1,
+		chunkChecksums: [chunk.checksum],
+		actorHighWater: {},
+	});
+	if (!client.beginSnapshot(manifest).ok)
+		throw new Error('baseline begin failed');
+	if (!client.stageSnapshotChunk(chunk).ok)
+		throw new Error('baseline stage failed');
+	if (!client.installSnapshot().ok) throw new Error('baseline install failed');
 }
 
 test('schema mismatch pauses sync while the old replica continues local writes', () => {
@@ -155,7 +172,7 @@ test('schema mismatch pauses sync while the old replica continues local writes',
 	try {
 		client.local([
 			{
-				kind: 'patchRow',
+				kind: 'createRow',
 				table: 'notes',
 				rowId: 'n1',
 				cells: { title: 'local', pinned: false },
@@ -181,7 +198,7 @@ test('schema mismatch pauses sync while the old replica continues local writes',
 
 		client.local([
 			{
-				kind: 'patchRow',
+				kind: 'createRow',
 				table: 'notes',
 				rowId: 'n2',
 				cells: { title: 'still local', pinned: true },
@@ -213,7 +230,6 @@ test('freeze builds canonical baseline and private overlay imports after activat
 		{
 			table: 'notes',
 			rowId: 'n1',
-			deleted: false,
 			cells: { title: 'canonical', pinned: false },
 		},
 	];
@@ -224,12 +240,25 @@ test('freeze builds canonical baseline and private overlay imports after activat
 		epoch1,
 	);
 	try {
+		installBaseline(client, canonical);
+		// The initiator synced everything: its applied cursor equals the head
+		// that freezes below, so its source-only rows are provably its own
+		// pending creations.
+		const appliedCursor = incarnation(reference, 'incarnation-1').head;
 		client.local([
 			{
-				kind: 'patchRow',
+				kind: 'updateRow',
 				table: 'notes',
 				rowId: 'n1',
-				cells: { title: 'private', pinned: false },
+				cells: { title: 'private' },
+			},
+		]);
+		client.local([
+			{
+				kind: 'createRow',
+				table: 'notes',
+				rowId: 'n9',
+				cells: { title: 'fresh', pinned: true },
 			},
 		]);
 		expect(reference.beginTransition(transition())).toEqual(
@@ -242,10 +271,16 @@ test('freeze builds canonical baseline and private overlay imports after activat
 		expect(sqlite.push(client.pushRequest())).toEqual(
 			reference.push(client.pushRequest()),
 		);
+		const frozenHead = incarnation(reference, 'incarnation-1').head;
 		buildAll(reference, sqlite, 'lease-1');
-		expect(incarnation(reference, 'incarnation-2').rows[0].cells.name).toBe(
-			'canonical',
-		);
+		// The global baseline excludes the initiator's private overlay.
+		expect(incarnation(reference, 'incarnation-2').rows).toEqual([
+			{
+				table: 'articles',
+				rowId: 'n1',
+				cells: { name: 'canonical', starred: false },
+			},
+		]);
 		expect(reference.activate('lease-1', 0)).toEqual(
 			sqlite.activate('lease-1', 0),
 		);
@@ -253,13 +288,26 @@ test('freeze builds canonical baseline and private overlay imports after activat
 		const transformed = transformRows(visibleRows(client.dump()), renameNotes);
 		expect(transformed.result).toEqual({ ok: true });
 		const destination = incarnation(reference, 'incarnation-2').rows;
-		const plan = planImport('import-actor', transformed.rows, destination);
+		const plan = planOverlayImport({
+			actorId: 'import-actor',
+			source: transformed.rows,
+			destination,
+			appliedCursor,
+			frozenHead,
+		});
+		expect(plan.review).toEqual([]);
 		expect(plan.operations).toEqual([
 			{
-				kind: 'patchRow',
+				kind: 'updateRow',
 				table: 'articles',
 				rowId: 'n1',
 				cells: { name: 'private' },
+			},
+			{
+				kind: 'createRow',
+				table: 'articles',
+				rowId: 'n9',
+				cells: { name: 'fresh', starred: true },
 			},
 		]);
 		const targetEnvelope: RequestEnvelope = {
@@ -275,9 +323,31 @@ test('freeze builds canonical baseline and private overlay imports after activat
 		);
 		expect(reference.push(request)).toEqual(sqlite.push(request));
 		const updated = incarnation(reference, 'incarnation-2').rows;
-		expect(
-			planImport('import-actor', transformed.rows, updated).operations,
-		).toEqual([]);
+		// Equal canonical content is a no-op on a second comparison.
+		const replan = planOverlayImport({
+			actorId: 'import-actor',
+			source: transformed.rows,
+			destination: updated,
+			appliedCursor,
+			frozenHead,
+		});
+		expect(replan.operations).toEqual([]);
+		expect(replan.review).toEqual([]);
+		// A second import actor recreating the same identity is refused before
+		// acceptance, atomically, on both authorities.
+		const duplicate = pushRequest(targetEnvelope, 'another-import', 1, [
+			{
+				kind: 'createRow',
+				table: 'articles',
+				rowId: 'n9',
+				cells: { name: 'dupe' },
+			},
+		]);
+		expect(reference.push(duplicate)).toEqual({
+			ok: false,
+			reason: 'create-conflict',
+		});
+		expect(sqlite.push(duplicate)).toEqual(reference.push(duplicate));
 		compare(reference, sqlite);
 	} finally {
 		client.close();
@@ -337,8 +407,7 @@ test('preparing baseline resumes from durable row progress after reopen', () => 
 			(rowId): SnapshotRow => ({
 				table: 'notes',
 				rowId,
-				deleted: rowId === 'b',
-				cells: rowId === 'b' ? {} : { title: rowId },
+				cells: { title: rowId },
 			}),
 		),
 	};
@@ -369,8 +438,8 @@ test('preparing baseline resumes from durable row progress after reopen', () => 
 
 test('one-to-many and many-to-one identity transforms fail before freeze', () => {
 	const rows: SnapshotRow[] = [
-		{ table: 'notes', rowId: 'a', deleted: false, cells: { title: 'A' } },
-		{ table: 'notes', rowId: 'b', deleted: true, cells: {} },
+		{ table: 'notes', rowId: 'a', cells: { title: 'A' } },
+		{ table: 'notes', rowId: 'b', cells: { title: 'B' } },
 	];
 	const invalid: Array<{
 		transform: EpochTransform;
@@ -420,17 +489,34 @@ test('one-to-many and many-to-one identity transforms fail before freeze', () =>
 	}
 });
 
-test('skipped epochs carry tombstones and physical copies require a fresh actor', () => {
-	const rows: SnapshotRow[] = [
-		{ table: 'notes', rowId: 'gone', deleted: true, cells: {} },
+test('stale replica skipping epochs reviews upstream deletions and physical copies mint a fresh actor', () => {
+	const initialRows: SnapshotRow[] = [
+		{ table: 'notes', rowId: 'gone', cells: { title: 'Gone', pinned: false } },
+		{ table: 'notes', rowId: 'kept', cells: { title: 'Keep', pinned: false } },
 	];
-	const { reference, sqlite, close } = setup(rows);
+	const { reference, sqlite, close } = setup(initialRows);
 	try {
-		reference.beginTransition(transition());
-		sqlite.beginTransition(transition());
+		// The stale replica synced at head 0 and then went offline with this
+		// frozen local view.
+		const staleLocal = structuredClone(initialRows);
+		const staleCursor = incarnation(reference, 'incarnation-1').head;
+		// The shared database deletes 'gone' physically while it is away.
+		const deleteGone = pushRequest(epoch1, 'deleter', 1, [
+			{ kind: 'deleteRow', table: 'notes', rowId: 'gone' },
+		]);
+		expect(reference.push(deleteGone)).toEqual({ ok: true });
+		expect(sqlite.push(deleteGone)).toEqual({ ok: true });
+
+		// Two epoch upgrades happen without the stale replica.
+		expect(reference.beginTransition(transition())).toEqual(
+			sqlite.beginTransition(transition()),
+		);
+		const frozenHead = incarnation(reference, 'incarnation-1').head;
+		expect(frozenHead).toBeGreaterThan(staleCursor);
 		buildAll(reference, sqlite, 'lease-1');
-		reference.activate('lease-1', 0);
-		sqlite.activate('lease-1', 0);
+		expect(reference.activate('lease-1', 0)).toEqual(
+			sqlite.activate('lease-1', 0),
+		);
 		const secondTransform: EpochTransform = {
 			fromEpochId: 'epoch-2',
 			toEpochId: 'epoch-3',
@@ -455,19 +541,96 @@ test('skipped epochs carry tombstones and physical copies require a fresh actor'
 			sqlite.activate('lease-2', 0),
 		);
 		const active = incarnation(reference, 'incarnation-3');
+		// The deleted row is absent from every frozen snapshot: no tombstone
+		// carries through the transforms.
 		expect(active.rows).toEqual([
-			{ table: 'entries', rowId: 'gone', deleted: true, cells: {} },
+			{
+				table: 'entries',
+				rowId: 'kept',
+				cells: { name: 'Keep', starred: false },
+			},
 		]);
-		expect(() =>
-			planPhysicalCopyImport('copied-actor', 'copied-actor', rows, []),
-		).toThrow('must mint a new actor');
-		const adopted = planPhysicalCopyImport(
-			'copied-actor',
-			'fresh-actor',
-			rows,
-			[],
+
+		// The stale replica composes the skipped identity maps over its local
+		// state and enters through the reviewable comparison.
+		const composed = transformRows(
+			transformRows(staleLocal, renameNotes).rows,
+			secondTransform,
 		);
-		expect(adopted.actorId).toBe('fresh-actor');
+		expect(composed.result).toEqual({ ok: true });
+		const plan = planOverlayImport({
+			actorId: 'import-actor',
+			source: composed.rows,
+			destination: active.rows,
+			appliedCursor: staleCursor,
+			frozenHead,
+		});
+		// Equal content is a no-op; the upstream deletion is review-required
+		// and excluded by default, NOT auto-imported.
+		expect(plan.operations).toEqual([]);
+		expect(plan.review).toEqual([
+			{
+				table: 'entries',
+				rowId: 'gone',
+				cells: { name: 'Gone', starred: false },
+			},
+		]);
+		// Restoring purged content is a new identity.
+		expect(() => restoreReviewRowAsNew(plan.review[0], 'gone')).toThrow(
+			'new row identity',
+		);
+		expect(restoreReviewRowAsNew(plan.review[0], 'gone-2')).toEqual({
+			kind: 'createRow',
+			table: 'entries',
+			rowId: 'gone-2',
+			cells: { name: 'Gone', starred: false },
+		});
+
+		// A physical copy adopts through the import door under a fresh actor.
+		expect(() =>
+			planPhysicalCopyAdoption(
+				'copied-actor',
+				'copied-actor',
+				composed.rows,
+				[],
+			),
+		).toThrow('must mint a new actor');
+		expect(
+			planPhysicalCopyAdoption(
+				'copied-actor',
+				'fresh-actor',
+				composed.rows,
+				[],
+			),
+		).toEqual({
+			ok: true,
+			plan: {
+				actorId: 'fresh-actor',
+				operations: [
+					{
+						kind: 'createRow',
+						table: 'entries',
+						rowId: 'gone',
+						cells: { name: 'Gone', starred: false },
+					},
+					{
+						kind: 'createRow',
+						table: 'entries',
+						rowId: 'kept',
+						cells: { name: 'Keep', starred: false },
+					},
+				],
+			},
+		});
+		// Adoption requires a destination with zero live rows and a
+		// collision-free mapped identity set.
+		expect(planAdoption('fresh-actor', composed.rows, active.rows)).toEqual({
+			ok: false,
+			reason: 'destination-not-empty',
+		});
+		expect(
+			planAdoption('fresh-actor', [...composed.rows, ...composed.rows], []),
+		).toEqual({ ok: false, reason: 'mapped-identity-collision' });
 		compare(reference, sqlite);
 	} finally {
 		close();

@@ -15,8 +15,16 @@ export const ENVELOPE = {
 export type JsonCell = string | number | boolean | null;
 export type Cells = Record<string, JsonCell>;
 
+/**
+ * Three verbs, no tombstones. createRow materializes an absent identity,
+ * updateRow assigns named cells of a live row (null clears, absent row is an
+ * accepted no-op), deleteRow physically removes (absent row is an accepted
+ * no-op). A createRow naming a live identity is never accepted: the server
+ * refuses the whole push and a replica folding it locally is corrupt.
+ */
 export type Operation =
-	| { kind: 'patchRow'; table: string; rowId: string; cells: Cells }
+	| { kind: 'createRow'; table: string; rowId: string; cells: Cells }
+	| { kind: 'updateRow'; table: string; rowId: string; cells: Cells }
 	| { kind: 'deleteRow'; table: string; rowId: string };
 
 /** Actor identity plus its contiguous sequence is the mutation identity. */
@@ -28,10 +36,10 @@ export type Mutation = {
 
 export type LoggedMutation = Mutation & { serverSequence: number };
 
+/** Snapshots carry live rows only; deletion survives compaction as absence. */
 export type SnapshotRow = {
 	table: string;
 	rowId: string;
-	deleted: boolean;
 	cells: Cells;
 };
 
@@ -71,7 +79,11 @@ export type Refusal =
 
 export type PushResponse =
 	| { kind: 'push'; ok: true }
-	| { kind: 'push'; ok: false; reason: Refusal | 'actor-sequence-gap' };
+	| {
+			kind: 'push';
+			ok: false;
+			reason: Refusal | 'actor-sequence-gap' | 'create-conflict';
+	  };
 
 export type PullResponse =
 	| {
@@ -113,13 +125,12 @@ export type SnapshotInstallResult =
 
 declare const rowKeyBrand: unique symbol;
 export type RowKey = string & { readonly [rowKeyBrand]: true };
-export type RowState = { deleted: boolean; cells: Cells };
-export type LogicalState = Record<RowKey, RowState>;
+/** A row exists (its cells) or is absent. There is no deleted state. */
+export type LogicalState = Record<RowKey, Cells>;
 
 export type VisibleDump = {
 	rows: LogicalState;
 	quarantine: LogicalState;
-	tombstones: RowKey[];
 };
 
 export type ClientDump = VisibleDump & {

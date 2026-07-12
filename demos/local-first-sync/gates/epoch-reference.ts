@@ -44,13 +44,32 @@ export class RefEpochAuthority implements EpochAuthority {
 			return { ok: false, reason: 'database-incarnation-mismatch' };
 		if (active.status === 'frozen')
 			return { ok: false, reason: 'transition-frozen' };
+		// createRow(live) refuses the whole push atomically.
+		const rollback = {
+			rows: structuredClone(active.rows),
+			actorHighWater: new Map(active.actorHighWater),
+			head: active.head,
+		};
 		for (const mutation of request.mutations) {
 			const highWater = active.actorHighWater.get(mutation.actorId) ?? 0;
 			if (mutation.actorSequence <= highWater) continue;
 			if (mutation.actorSequence !== highWater + 1)
 				return { ok: false, reason: 'actor-sequence-gap' };
-			for (const operation of mutation.operations)
+			for (const operation of mutation.operations) {
+				if (
+					operation.kind === 'createRow' &&
+					active.rows.some(
+						(row) =>
+							row.table === operation.table && row.rowId === operation.rowId,
+					)
+				) {
+					active.rows = rollback.rows;
+					active.actorHighWater = rollback.actorHighWater;
+					active.head = rollback.head;
+					return { ok: false, reason: 'create-conflict' };
+				}
 				apply(active.rows, operation);
+			}
 			active.actorHighWater.set(mutation.actorId, mutation.actorSequence);
 			active.head += 1;
 		}
@@ -175,35 +194,28 @@ export class RefEpochAuthority implements EpochAuthority {
 }
 
 function apply(rows: SnapshotRow[], operation: Operation): void {
-	let row = rows.find(
+	const index = rows.findIndex(
 		(candidate) =>
 			candidate.table === operation.table &&
 			candidate.rowId === operation.rowId,
 	);
 	if (operation.kind === 'deleteRow') {
-		if (row) {
-			row.deleted = true;
-			row.cells = {};
-		} else {
-			rows.push({
-				table: operation.table,
-				rowId: operation.rowId,
-				deleted: true,
-				cells: {},
-			});
-		}
+		if (index >= 0) rows.splice(index, 1);
 		return;
 	}
-	if (row?.deleted) return;
-	if (!row) {
-		row = {
-			table: operation.table,
-			rowId: operation.rowId,
-			deleted: false,
-			cells: {},
-		};
-		rows.push(row);
+	if (operation.kind === 'createRow') {
+		if (index >= 0)
+			throw new Error(
+				`create-conflict must be refused before apply: ${operation.table}/${operation.rowId}`,
+			);
+		const cells: SnapshotRow['cells'] = {};
+		for (const [field, value] of Object.entries(operation.cells))
+			if (value !== null) cells[field] = value;
+		rows.push({ table: operation.table, rowId: operation.rowId, cells });
+		return;
 	}
+	const row = rows[index];
+	if (!row) return;
 	for (const [field, value] of Object.entries(operation.cells)) {
 		if (value === null) delete row.cells[field];
 		else row.cells[field] = value;

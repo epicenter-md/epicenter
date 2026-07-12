@@ -13,7 +13,7 @@ import { GateHarness } from '../harness';
 import type { Operation } from '../protocol';
 
 const note = (rowId: string, title: string, pinned: boolean): Operation => ({
-	kind: 'patchRow',
+	kind: 'createRow',
 	table: 'notes',
 	rowId,
 	cells: { title, pinned },

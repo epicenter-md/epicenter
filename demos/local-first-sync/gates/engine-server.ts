@@ -1,5 +1,6 @@
 import { Database } from 'bun:sqlite';
 import {
+	type Cells,
 	ENVELOPE,
 	type LogicalState,
 	type Operation,
@@ -18,7 +19,7 @@ import {
 } from './protocol';
 import { createSnapshotChunk, createSnapshotManifest } from './snapshot-codec';
 
-type StoredRow = { cells_json: string; deleted: number };
+const CREATE_CONFLICT = 'create-conflict push refusal';
 
 export class SqliteServer {
 	readonly db: Database;
@@ -42,7 +43,6 @@ export class SqliteServer {
 				table_name TEXT NOT NULL,
 				row_id TEXT NOT NULL,
 				cells_json TEXT NOT NULL,
-				deleted INTEGER NOT NULL,
 				PRIMARY KEY(table_name, row_id)
 			);
 			INSERT OR IGNORE INTO sync_meta(key, value) VALUES ('server_sequence', 0);
@@ -80,31 +80,39 @@ export class SqliteServer {
 	}
 
 	private apply(operation: Operation): void {
-		const stored = this.db
-			.query<StoredRow, [string, string]>(
-				'SELECT cells_json, deleted FROM canonical_rows WHERE table_name = ? AND row_id = ?',
-			)
-			.get(operation.table, operation.rowId);
 		if (operation.kind === 'deleteRow') {
 			this.db.run(
-				`INSERT INTO canonical_rows(table_name, row_id, cells_json, deleted) VALUES (?, ?, '{}', 1)
-				 ON CONFLICT(table_name, row_id) DO UPDATE SET cells_json = '{}', deleted = 1`,
+				'DELETE FROM canonical_rows WHERE table_name = ? AND row_id = ?',
 				[operation.table, operation.rowId],
 			);
 			return;
 		}
-		if (stored?.deleted) return;
-		const cells = stored
-			? (JSON.parse(stored.cells_json) as Record<string, unknown>)
-			: {};
+		const stored = this.db
+			.query<{ cells_json: string }, [string, string]>(
+				'SELECT cells_json FROM canonical_rows WHERE table_name = ? AND row_id = ?',
+			)
+			.get(operation.table, operation.rowId);
+		if (operation.kind === 'createRow') {
+			if (stored) throw new Error(CREATE_CONFLICT);
+			const cells: Cells = {};
+			for (const [field, value] of Object.entries(operation.cells))
+				if (value !== null) cells[field] = value;
+			this.db.run('INSERT INTO canonical_rows VALUES (?, ?, ?)', [
+				operation.table,
+				operation.rowId,
+				JSON.stringify(cells),
+			]);
+			return;
+		}
+		if (!stored) return;
+		const cells = JSON.parse(stored.cells_json) as Record<string, unknown>;
 		for (const [field, value] of Object.entries(operation.cells)) {
 			if (value === null) delete cells[field];
 			else cells[field] = value;
 		}
 		this.db.run(
-			`INSERT INTO canonical_rows(table_name, row_id, cells_json, deleted) VALUES (?, ?, ?, 0)
-			 ON CONFLICT(table_name, row_id) DO UPDATE SET cells_json = excluded.cells_json, deleted = 0`,
-			[operation.table, operation.rowId, JSON.stringify(cells)],
+			'UPDATE canonical_rows SET cells_json = ? WHERE table_name = ? AND row_id = ?',
+			[JSON.stringify(cells), operation.table, operation.rowId],
 		);
 	}
 
@@ -162,7 +170,15 @@ export class SqliteServer {
 			}
 			response = { kind: 'push', ok: true };
 		});
-		transaction.immediate();
+		try {
+			transaction.immediate();
+		} catch (error) {
+			// A live-identity createRow aborts the WHOLE push transaction: no
+			// earlier mutation commits and no actor high-water advances.
+			if (error instanceof Error && error.message === CREATE_CONFLICT)
+				return { kind: 'push', ok: false, reason: 'create-conflict' };
+			throw error;
+		}
 		return response;
 	}
 
@@ -232,14 +248,10 @@ export class SqliteServer {
 			.transaction(() => {
 				const generation = this.meta('snapshot_generation') + 1;
 				const snapshotSequence = this.meta('server_sequence');
+				// Only live rows exist: deletion survives compaction as absence.
 				const rows = this.db
 					.query<
-						{
-							table_name: string;
-							row_id: string;
-							cells_json: string;
-							deleted: number;
-						},
+						{ table_name: string; row_id: string; cells_json: string },
 						[]
 					>('SELECT * FROM canonical_rows ORDER BY table_name, row_id')
 					.all()
@@ -247,7 +259,6 @@ export class SqliteServer {
 						(row): SnapshotRow => ({
 							table: row.table_name,
 							rowId: row.row_id,
-							deleted: Boolean(row.deleted),
 							cells: JSON.parse(row.cells_json),
 						}),
 					);
@@ -352,20 +363,13 @@ export class SqliteServer {
 	dump() {
 		const canonical: LogicalState = {};
 		for (const row of this.db
-			.query<
-				{
-					table_name: string;
-					row_id: string;
-					cells_json: string;
-					deleted: number;
-				},
-				[]
-			>('SELECT * FROM canonical_rows ORDER BY table_name, row_id')
+			.query<{ table_name: string; row_id: string; cells_json: string }, []>(
+				'SELECT * FROM canonical_rows ORDER BY table_name, row_id',
+			)
 			.all()) {
-			canonical[rowKey(row.table_name, row.row_id)] = {
-				deleted: Boolean(row.deleted),
-				cells: JSON.parse(row.cells_json),
-			};
+			canonical[rowKey(row.table_name, row.row_id)] = JSON.parse(
+				row.cells_json,
+			);
 		}
 		const actorHighWater = Object.fromEntries(
 			this.db

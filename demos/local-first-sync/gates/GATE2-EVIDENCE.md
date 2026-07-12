@@ -1,16 +1,19 @@
 # Gate 2 evidence: current-head snapshots permit permanent log deletion
 
-Date: 2026-07-11
+Date: 2026-07-11 (re-proved on the three-verb protocol, no tombstones)
 
 ## Result
 
 Gate 2 passes. The server can permanently delete every accepted mutation
 through snapshot sequence `S` while new, stale, and pending clients retain the
-same visible intent as the pure model.
+same visible intent as the pure model. Snapshots carry LIVE ROWS ONLY:
+deletion survives compaction as absence, and the fold's accepted no-op for
+`updateRow`/`deleteRow` against an absent row replaces the tombstone record
+the previous protocol carried.
 
 ```txt
 server transaction at head S
-  canonical rows + tombstones + actor high-waters
+  live canonical rows + actor high-waters frozen at the same read state
                          |
                          v
               immutable manifest (SHA-256)
@@ -38,7 +41,7 @@ bun x tsc -p demos/local-first-sync/tsconfig.json --noEmit
 bun test demos/local-first-sync/gates/
 ```
 
-Result: 17 tests passed, 0 failed across Gates 1 and 2. Gate 2 specifically
+Result: 27 tests passed, 0 failed across Gates 1-3. Gate 2 specifically
 proves:
 
 - new and stale bootstrap across multiple chunks while later writes continue;
@@ -49,14 +52,24 @@ proves:
 - cursor-before-watermark routing to a snapshot;
 - frozen actor high-water pruning an accepted pending mutation;
 - preservation and replay of a never-accepted pending mutation;
+- a stale retry of an already-accepted create after compaction is absorbed by
+  sequence dedup, not refused as a create conflict;
 - actor high-water persistence after the mutation prefix is deleted;
-- quarantine reclassification and later completing-patch promotion;
-- terminal tombstones rejecting every post-compaction resurrection patch;
+- a row deleted before compaction is absent from every snapshot chunk, and a
+  stale replica's pending update to it survives bootstrap, replays as a local
+  no-op, is accepted by the server as a deterministic no-op, and never
+  resurrects the row on any replica;
+- quarantine reclassification and later completing-update promotion;
 - invalid manifest, in-flight chunk corruption, and post-stage SQLite corruption
   refusing installation without changing visible state;
 - stale manifests refusing rollback after a newer cursor is installed;
 - eight deterministic seeds, each running eight write/compact/drain rounds
-  across three replicas in lockstep.
+  across three replicas in lockstep, with fresh create identities and delayed
+  updates/deletes against possibly compacted-away rows.
+
+Snapshot install also raises the replica's next actor sequence past the frozen
+high-water, so a rebootstrapped replica can never reuse an accepted sequence
+and silently lose a mutation to dedup.
 
 ## Wire and durable shape
 
@@ -71,7 +84,7 @@ SnapshotManifest
 SnapshotChunk
   generation
   index
-  rows[]                 live rows and tombstones use one logical encoding
+  rows[]                 live rows only: {table, rowId, cells}
   checksum
 ```
 

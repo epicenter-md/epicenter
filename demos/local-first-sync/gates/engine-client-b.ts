@@ -1,5 +1,6 @@
 import { Database } from 'bun:sqlite';
 import {
+	type Cells,
 	type ClientDump,
 	ENVELOPE,
 	type LogicalState,
@@ -7,7 +8,6 @@ import {
 	type Operation,
 	type PullResponse,
 	type RequestEnvelope,
-	type RowKey,
 	rowKey,
 	type SnapshotChunk,
 	type SnapshotInstallResult,
@@ -37,7 +37,6 @@ export class SqliteClientB {
 			CREATE TABLE IF NOT EXISTS notes (id TEXT PRIMARY KEY, title TEXT NOT NULL, pinned INTEGER NOT NULL);
 			CREATE TABLE IF NOT EXISTS folders (id TEXT PRIMARY KEY, name TEXT NOT NULL);
 			CREATE TABLE IF NOT EXISTS quarantine (table_name TEXT, row_id TEXT, cells_json TEXT NOT NULL, PRIMARY KEY(table_name,row_id));
-			CREATE TABLE IF NOT EXISTS tombstones (table_name TEXT, row_id TEXT, PRIMARY KEY(table_name,row_id));
 			CREATE TABLE IF NOT EXISTS snapshot_stage (chunk_index INTEGER PRIMARY KEY, generation INTEGER NOT NULL, rows_json TEXT NOT NULL, checksum TEXT NOT NULL);
 			INSERT OR IGNORE INTO meta VALUES ('next_actor_sequence', '1');
 			INSERT OR IGNORE INTO meta VALUES ('pull_cursor', '0');
@@ -103,34 +102,14 @@ export class SqliteClientB {
 				operations: JSON.parse(row.operations_json),
 			}));
 	}
-	private read(
-		table: string,
-		id: string,
-	):
-		| {
-				deleted: boolean;
-				cells: Record<string, string | number | boolean | null>;
-		  }
-		| undefined {
-		if (
-			this.db
-				.query<{ one: number }, [string, string]>(
-					'SELECT 1 one FROM tombstones WHERE table_name=? AND row_id=?',
-				)
-				.get(table, id)
-		)
-			return { deleted: true, cells: {} };
+	private read(table: string, id: string): Cells | undefined {
 		if (table === 'notes') {
 			const row = this.db
 				.query<{ title: string; pinned: number }, [string]>(
 					'SELECT title,pinned FROM notes WHERE id=?',
 				)
 				.get(id);
-			if (row)
-				return {
-					deleted: false,
-					cells: { title: row.title, pinned: Boolean(row.pinned) },
-				};
+			if (row) return { title: row.title, pinned: Boolean(row.pinned) };
 		}
 		if (table === 'folders') {
 			const row = this.db
@@ -138,20 +117,16 @@ export class SqliteClientB {
 					'SELECT name FROM folders WHERE id=?',
 				)
 				.get(id);
-			if (row) return { deleted: false, cells: { name: row.name } };
+			if (row) return { name: row.name };
 		}
 		const row = this.db
 			.query<{ cells_json: string }, [string, string]>(
 				'SELECT cells_json FROM quarantine WHERE table_name=? AND row_id=?',
 			)
 			.get(table, id);
-		if (row) return { deleted: false, cells: JSON.parse(row.cells_json) };
+		if (row) return JSON.parse(row.cells_json);
 	}
-	private materialize(
-		table: string,
-		id: string,
-		cells: Record<string, string | number | boolean | null>,
-	): void {
+	private removeRow(table: string, id: string): void {
 		if (table === 'notes') this.db.run('DELETE FROM notes WHERE id=?', [id]);
 		else if (table === 'folders')
 			this.db.run('DELETE FROM folders WHERE id=?', [id]);
@@ -159,6 +134,9 @@ export class SqliteClientB {
 			table,
 			id,
 		]);
+	}
+	private materialize(table: string, id: string, cells: Cells): void {
+		this.removeRow(table, id);
 		const fields = Object.keys(cells);
 		if (
 			table === 'notes' &&
@@ -185,29 +163,28 @@ export class SqliteClientB {
 			]);
 	}
 	private apply(operation: Operation): void {
-		const existing = this.read(operation.table, operation.rowId);
 		if (operation.kind === 'deleteRow') {
-			if (operation.table === 'notes')
-				this.db.run('DELETE FROM notes WHERE id=?', [operation.rowId]);
-			else if (operation.table === 'folders')
-				this.db.run('DELETE FROM folders WHERE id=?', [operation.rowId]);
-			this.db.run('DELETE FROM quarantine WHERE table_name=? AND row_id=?', [
-				operation.table,
-				operation.rowId,
-			]);
-			this.db.run('INSERT OR IGNORE INTO tombstones VALUES (?,?)', [
-				operation.table,
-				operation.rowId,
-			]);
+			this.removeRow(operation.table, operation.rowId);
 			return;
 		}
-		if (existing?.deleted) return;
-		const cells = existing?.cells ?? {};
-		for (const [field, value] of Object.entries(operation.cells)) {
-			if (value === null) delete cells[field];
-			else cells[field] = value;
+		const existing = this.read(operation.table, operation.rowId);
+		if (operation.kind === 'createRow') {
+			if (existing)
+				throw new Error(
+					`replica corrupt: createRow for live row ${operation.table}/${operation.rowId}`,
+				);
+			const cells: Cells = {};
+			for (const [field, value] of Object.entries(operation.cells))
+				if (value !== null) cells[field] = value;
+			this.materialize(operation.table, operation.rowId, cells);
+			return;
 		}
-		this.materialize(operation.table, operation.rowId, cells);
+		if (!existing) return;
+		for (const [field, value] of Object.entries(operation.cells)) {
+			if (value === null) delete existing[field];
+			else existing[field] = value;
+		}
+		this.materialize(operation.table, operation.rowId, existing);
 	}
 	local(operations: Operation[], failBeforeCommit = false): void {
 		this.db
@@ -247,6 +224,15 @@ export class SqliteClientB {
 			return false;
 		this.db
 			.transaction(() => {
+				// Rows that exist only as optimistic pending creations are removed
+				// first, so an echoed createRow folds into an absent identity and a
+				// remaining pending createRow replays cleanly. A live row that is
+				// NOT explained by a pending creation still trips the corruption
+				// check below when an accepted createRow names it.
+				for (const mutation of this.outbox())
+					for (const operation of mutation.operations)
+						if (operation.kind === 'createRow')
+							this.removeRow(operation.table, operation.rowId);
 				let count = 0;
 				for (const mutation of response.mutations) {
 					for (const operation of mutation.operations) this.apply(operation);
@@ -385,21 +371,26 @@ export class SqliteClientB {
 				this.db.run('DELETE FROM notes');
 				this.db.run('DELETE FROM folders');
 				this.db.run('DELETE FROM quarantine');
-				this.db.run('DELETE FROM tombstones');
-				for (const row of rows) {
-					if (row.deleted)
-						this.db.run('INSERT INTO tombstones VALUES (?, ?)', [
-							row.table,
-							row.rowId,
-						]);
-					else this.materialize(row.table, row.rowId, row.cells);
-				}
+				// Snapshot rows are all live; a row deleted before compaction is
+				// simply absent and stays absent.
+				for (const row of rows)
+					this.materialize(row.table, row.rowId, row.cells);
 				if (failBeforeCommit)
 					throw new Error('injected snapshot install crash');
 				const acceptedThrough = manifest.actorHighWater[this.actorId] ?? 0;
 				this.db.run('DELETE FROM outbox WHERE actor_sequence <= ?', [
 					acceptedThrough,
 				]);
+				this.setMeta(
+					'next_actor_sequence',
+					Math.max(
+						Number(this.meta('next_actor_sequence')),
+						acceptedThrough + 1,
+					),
+				);
+				// Remaining pending mutations replay through the same fold: an
+				// update or delete whose row is absent is a local no-op and a
+				// pending creation applies because its id cannot be live.
 				for (const mutation of this.outbox())
 					for (const operation of mutation.operations) this.apply(operation);
 				this.setMeta('pull_cursor', manifest.snapshotSequence);
@@ -412,40 +403,29 @@ export class SqliteClientB {
 	dump(): ClientDump {
 		const rows: LogicalState = {};
 		const quarantine: LogicalState = {};
-		const tombstones: RowKey[] = [];
 		for (const row of this.db
 			.query<{ id: string; title: string; pinned: number }, []>(
 				'SELECT * FROM notes ORDER BY id',
 			)
 			.all())
 			rows[rowKey('notes', row.id)] = {
-				deleted: false,
-				cells: { title: row.title, pinned: Boolean(row.pinned) },
+				title: row.title,
+				pinned: Boolean(row.pinned),
 			};
 		for (const row of this.db
 			.query<{ id: string; name: string }, []>(
 				'SELECT * FROM folders ORDER BY id',
 			)
 			.all())
-			rows[rowKey('folders', row.id)] = {
-				deleted: false,
-				cells: { name: row.name },
-			};
+			rows[rowKey('folders', row.id)] = { name: row.name };
 		for (const row of this.db
 			.query<{ table_name: string; row_id: string; cells_json: string }, []>(
 				'SELECT * FROM quarantine ORDER BY table_name,row_id',
 			)
 			.all())
-			quarantine[rowKey(row.table_name, row.row_id)] = {
-				deleted: false,
-				cells: JSON.parse(row.cells_json),
-			};
-		for (const row of this.db
-			.query<{ table_name: string; row_id: string }, []>(
-				'SELECT * FROM tombstones ORDER BY table_name,row_id',
-			)
-			.all())
-			tombstones.push(rowKey(row.table_name, row.row_id));
+			quarantine[rowKey(row.table_name, row.row_id)] = JSON.parse(
+				row.cells_json,
+			);
 		return {
 			actorId: this.actorId,
 			nextActorSequence: Number(this.meta('next_actor_sequence')),
@@ -453,7 +433,6 @@ export class SqliteClientB {
 			outbox: this.outbox(),
 			rows,
 			quarantine,
-			tombstones,
 		};
 	}
 }

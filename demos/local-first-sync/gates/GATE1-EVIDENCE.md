@@ -1,24 +1,28 @@
 # Gate 1 evidence: typed tables do not need a canonical client shadow
 
-Date: 2026-07-11
+Date: 2026-07-11 (re-proved on the three-verb protocol, no tombstones)
 
 ## Result
 
-Candidate B passes Gate 1. No tested schedule required a schema-blind canonical
-shadow on the client. The selected client shape is:
+Candidate B passes Gate 1 under the three-verb protocol (`createRow`,
+`updateRow`, `deleteRow`) with no tombstone state anywhere. No tested schedule
+required a schema-blind canonical shadow on the client. The selected client
+shape is:
 
 ```txt
 typed application tables
 __epicenter_outbox
 __epicenter_state
-__epicenter_tombstones
 __epicenter_quarantine
 ```
 
 An accepted pull page is applied directly to typed/quarantined state in one
-SQLite transaction. Exact own echoes are removed from the outbox, then the
-remaining assignment-only outbox is replayed. Terminal tombstones make every
-late patch a no-op. The cursor advances in that same transaction.
+SQLite transaction: rows that exist only as optimistic pending creations are
+removed first, the page folds strictly, exact own echoes leave the outbox, and
+the remaining outbox replays through the same fold. Deletion is physical.
+A delayed `updateRow` or `deleteRow` against an absent row folds to an
+accepted deterministic no-op, so nothing resurrects and no tombstone record is
+needed to block resurrection. The cursor advances in that same transaction.
 
 ## Evidence run
 
@@ -30,28 +34,40 @@ bun test demos/local-first-sync/gates/gate1.test.ts
 bun test ./demos/local-first-sync/gates/__benchmarks__/gate1-physical.bench.ts
 ```
 
-Result: 9 tests passed, 0 failed. The suite ran:
+Result: 13 tests passed, 0 failed. The suite ran:
 
 - successful push with lost acknowledgement and acknowledgement before echo;
 - both same-cell acceptance orders while local intent is pending;
+- physical delete racing a late update: the delayed update is accepted, folds
+  to a no-op on every replica, and the row stays absent everywhere;
+- a create retried after a lost acknowledgement: sequence dedup absorbs it
+  with no `create-conflict` refusal;
+- a duplicate `createRow` from a corrupt replica: the whole push (including a
+  fresh row smuggled in the same batch) is refused with `create-conflict`,
+  the actor's high-water never advances, retries converge to the same
+  refusal, and the replica recovers by discarding state, rebootstrapping from
+  the current snapshot, and continuing past its frozen high-water;
+- folding an accepted duplicate `createRow` locally throws a distinct fatal
+  replica-corruption error in the reference and both SQLite candidates, with
+  the failed transaction rolled back;
 - duplicate and reordered pull pages;
 - crash before and after local commit, midway through a multi-operation server
   mutation, and during pull-page application;
 - database-session generation fencing for stale responses;
-- terminal delete against late patches;
 - one atomic mutation spanning multiple rows and tables;
 - actor-sequence duplicate and gap handling plus schema-identity refusal;
 - collision-free internal comparison keys for arbitrary table and row ids;
-- partial-row quarantine, completing-patch promotion, pending replay, reopen,
-  patch, and delete;
-- 16 deterministic 80-event schedules across three replicas, compared after
-  every event and fully drained to convergence;
+- partial-row quarantine via incomplete `createRow`, completing-update
+  promotion, pending replay, reopen, update, and physical delete;
+- 16 deterministic 80-event schedules across three replicas with fresh
+  identities for every create and delayed updates/deletes against possibly
+  deleted rows, compared after every event and fully drained to convergence;
 - a delta-debug minimizer that runs if a generated schedule fails.
 
 The reference model, Bun SQLite server, Candidate A pull applier, and Candidate
 B pull applier are separate implementations. Lockstep comparison covers server
 canonical state/log/high-waters and each client's visible rows, quarantine,
-tombstones, outbox, next actor sequence, and pull cursor.
+outbox, next actor sequence, and pull cursor.
 
 ## Physical comparison
 
@@ -59,9 +75,9 @@ Measured after the same 50-row workload and a WAL checkpoint:
 
 | Measure | A: canonical + projection | B: typed only | Difference |
 | --- | ---: | ---: | ---: |
-| SQLite tables | 8 | 7 | B removes 1 table |
-| SQLite bytes | 69,632 | 61,440 | B removes 8,192 bytes (11.8%) |
-| Formatted implementation lines | 442 | 460 | B adds 18 lines (4.1%) |
+| SQLite tables | 7 | 6 | B removes 1 table |
+| SQLite bytes | 61,440 | 53,248 | B removes 8,192 bytes (13.3%) |
+| Formatted implementation lines | 421 | 439 | B adds 18 lines (4.3%) |
 
 SQLite byte counts are page-quantized proof-workload measurements, not a scale
 benchmark. The line count is also deliberately unflattering to B: its targeted
@@ -74,8 +90,9 @@ B: typed rows + pending overlay already materialized                 -> query
 ```
 
 A owns three representations of live values (canonical, projection, outbox).
-B owns one live representation plus pending intent and exceptional deletion or
-quarantine state. Both give application queries ordinary typed SQLite tables.
+B owns one live representation plus pending intent and exceptional quarantine
+state. Both give application queries ordinary typed SQLite tables, and neither
+retains any deletion history.
 
 ## What this does not prove
 

@@ -6,12 +6,23 @@ incarnation:
 > No retry, crash, or pull-page schedule makes accepted or pending user intent
 > transiently disappear from visible application state.
 
-The protocol has only two mutation operations: `patchRow` and terminal
-`deleteRow`. A client-minted `actorId` plus a contiguous `actorSequence`
-identifies a mutation. `serverSequence` orders accepted mutations globally.
-`pullCursor` is the largest contiguous accepted server sequence installed by a
-client. A push acknowledgement never deletes the outbox entry; only its ordered
-echo in a pull page does.
+The protocol has three mutation operations: `createRow` materializes an absent
+identity, `updateRow` assigns named cells of a live row, and `deleteRow`
+physically removes it. There is no tombstone state anywhere: absence is the
+only deleted state, and a row identity has one lifetime. The fold is total
+over accepted operations: `updateRow` and `deleteRow` on an absent row are
+accepted deterministic no-ops, which is exactly what makes physical deletion
+safe against delayed edits. `createRow` on a live identity is never accepted:
+the server refuses the whole push atomically (`create-conflict`, high-water
+unchanged, actor paused), and a replica that folds an accepted duplicate
+create locally is corrupt and must discard state and rebootstrap.
+
+A client-minted `actorId` plus a contiguous `actorSequence` identifies a
+mutation, so a create retried after a lost acknowledgement is absorbed by
+sequence dedup, never refused. `serverSequence` orders accepted mutations
+globally. `pullCursor` is the largest contiguous accepted server sequence
+installed by a client. A push acknowledgement never deletes the outbox entry;
+only its ordered echo in a pull page does.
 
 ```txt
                  schema-blind, ordered
@@ -26,13 +37,17 @@ The harness compares three implementations after every event:
 
 1. `reference.ts`: pure in-memory specification.
 2. Candidate A: canonical schema-blind shadow + typed projection + outbox.
-3. Candidate B: typed tables + quarantine + tombstones + outbox, with no
-   canonical client shadow.
+3. Candidate B: typed tables + quarantine + outbox, with no canonical client
+   shadow and no tombstone table.
 
-Both SQLite pull appliers are independent. Candidate B applies the accepted
-page directly, removes echoed mutations, then reapplies the remaining
-assignment-only outbox. This is valid because patches never discard unspecified
-fields and deletes are terminal.
+Both SQLite pull appliers are independent. Candidate B first removes the rows
+that exist only as its own optimistic pending creations, applies the accepted
+page through the strict fold, prunes exact own echoes, then replays the
+remaining outbox through the same fold. This is valid because updates assign
+named cells without discarding unspecified fields, absent-row updates and
+deletes fold to no-ops, and a pending creation's identity cannot be live in
+accepted state unless the replica is corrupt (in which case the strict fold
+throws instead of converging silently).
 
 Run the proof with:
 
@@ -44,14 +59,20 @@ The measured result and its limits are recorded in
 [`GATE1-EVIDENCE.md`](GATE1-EVIDENCE.md).
 
 Gate 2 adds one immutable logical snapshot generation at the current server
-head. Clients stage fixed chunks durably, verify the manifest and every chunk,
-then replace accepted state, prune snapshot-contained outbox mutations, replay
-the rest, and advance the cursor in one SQLite transaction. Its measured result
-is recorded in [`GATE2-EVIDENCE.md`](GATE2-EVIDENCE.md).
+head. Snapshots carry live rows only plus the actor high-waters frozen at the
+same read state: a row deleted before compaction survives as absence. Clients
+stage fixed chunks durably, verify the manifest and every chunk, then replace
+accepted state, prune snapshot-contained outbox mutations, replay the rest
+through the fold, and advance the cursor in one SQLite transaction. Its
+measured result is recorded in [`GATE2-EVIDENCE.md`](GATE2-EVIDENCE.md).
 
-Gate 3 adds exact schema identity, new-incarnation cutover, resumable transformed
-baselines, and private-intent import. Its result is recorded in
-[`GATE3-EVIDENCE.md`](GATE3-EVIDENCE.md).
+Gate 3 adds exact schema identity, new-incarnation cutover, resumable
+transformed baselines, and private-intent import through a capability-split
+planner: fresh-incarnation adoption streams `createRow` mutations into a
+destination with zero live rows, while a replica's post-activation overlay
+enters through a reviewable comparison whose source-only rows auto-apply only
+when the replica's applied cursor equals the frozen head of its old
+incarnation. Its result is recorded in [`GATE3-EVIDENCE.md`](GATE3-EVIDENCE.md).
 
 Wave 4 extracts the portable record protocol, fold, authority, and three SQLite
 adapters. Its result and remaining runtime smoke scope are recorded in

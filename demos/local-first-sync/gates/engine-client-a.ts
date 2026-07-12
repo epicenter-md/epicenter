@@ -1,5 +1,6 @@
 import { Database } from 'bun:sqlite';
 import {
+	type Cells,
 	type ClientDump,
 	ENVELOPE,
 	type LogicalState,
@@ -34,12 +35,11 @@ export class SqliteClientA {
 		this.db.run('PRAGMA journal_mode = WAL');
 		this.db.run(`
 			CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
-			CREATE TABLE IF NOT EXISTS canonical_rows (table_name TEXT, row_id TEXT, cells_json TEXT NOT NULL, deleted INTEGER NOT NULL, PRIMARY KEY(table_name,row_id));
+			CREATE TABLE IF NOT EXISTS canonical_rows (table_name TEXT, row_id TEXT, cells_json TEXT NOT NULL, PRIMARY KEY(table_name,row_id));
 			CREATE TABLE IF NOT EXISTS outbox (actor_sequence INTEGER PRIMARY KEY, operations_json TEXT NOT NULL);
 			CREATE TABLE IF NOT EXISTS notes (id TEXT PRIMARY KEY, title TEXT NOT NULL, pinned INTEGER NOT NULL);
 			CREATE TABLE IF NOT EXISTS folders (id TEXT PRIMARY KEY, name TEXT NOT NULL);
 			CREATE TABLE IF NOT EXISTS quarantine (table_name TEXT, row_id TEXT, cells_json TEXT NOT NULL, PRIMARY KEY(table_name,row_id));
-			CREATE TABLE IF NOT EXISTS tombstones (table_name TEXT, row_id TEXT, PRIMARY KEY(table_name,row_id));
 			CREATE TABLE IF NOT EXISTS snapshot_stage (chunk_index INTEGER PRIMARY KEY, generation INTEGER NOT NULL, rows_json TEXT NOT NULL, checksum TEXT NOT NULL);
 			INSERT OR IGNORE INTO meta VALUES ('next_actor_sequence', '1');
 			INSERT OR IGNORE INTO meta VALUES ('pull_cursor', '0');
@@ -96,20 +96,11 @@ export class SqliteClientA {
 	private readCanonical(): LogicalState {
 		const state: LogicalState = {};
 		for (const row of this.db
-			.query<
-				{
-					table_name: string;
-					row_id: string;
-					cells_json: string;
-					deleted: number;
-				},
-				[]
-			>('SELECT * FROM canonical_rows')
+			.query<{ table_name: string; row_id: string; cells_json: string }, []>(
+				'SELECT * FROM canonical_rows',
+			)
 			.all())
-			state[rowKey(row.table_name, row.row_id)] = {
-				deleted: Boolean(row.deleted),
-				cells: JSON.parse(row.cells_json),
-			};
+			state[rowKey(row.table_name, row.row_id)] = JSON.parse(row.cells_json);
 		return state;
 	}
 	private outbox(): Mutation[] {
@@ -126,31 +117,36 @@ export class SqliteClientA {
 	}
 	private apply(state: LogicalState, operation: Operation): void {
 		const key = rowKey(operation.table, operation.rowId);
-		const existing = state[key];
-		if (operation.kind === 'deleteRow') {
-			state[key] = { deleted: true, cells: {} };
+		if (operation.kind === 'createRow') {
+			if (state[key])
+				throw new Error(
+					`replica corrupt: createRow for live row ${operation.table}/${operation.rowId}`,
+				);
+			const cells: Cells = {};
+			for (const [field, value] of Object.entries(operation.cells))
+				if (value !== null) cells[field] = value;
+			state[key] = cells;
 			return;
 		}
-		if (existing?.deleted) return;
-		const cells = existing?.cells ?? {};
+		if (operation.kind === 'deleteRow') {
+			delete state[key];
+			return;
+		}
+		const cells = state[key];
+		if (!cells) return;
 		for (const [field, value] of Object.entries(operation.cells)) {
 			if (value === null) delete cells[field];
 			else cells[field] = value;
 		}
-		state[key] = { deleted: false, cells };
 	}
 	private writeCanonical(state: LogicalState): void {
 		this.db.run('DELETE FROM canonical_rows');
-		for (const [key, row] of Object.entries(state) as [
-			RowKey,
-			LogicalState[RowKey],
-		][]) {
+		for (const [key, cells] of Object.entries(state) as [RowKey, Cells][]) {
 			const [table, rowId] = splitRowKey(key);
-			this.db.run('INSERT INTO canonical_rows VALUES (?, ?, ?, ?)', [
+			this.db.run('INSERT INTO canonical_rows VALUES (?, ?, ?)', [
 				table,
 				rowId,
-				JSON.stringify(row.cells),
-				Number(row.deleted),
+				JSON.stringify(cells),
 			]);
 		}
 	}
@@ -161,39 +157,31 @@ export class SqliteClientA {
 		this.db.run('DELETE FROM notes');
 		this.db.run('DELETE FROM folders');
 		this.db.run('DELETE FROM quarantine');
-		this.db.run('DELETE FROM tombstones');
-		for (const [key, row] of Object.entries(state) as [
-			RowKey,
-			LogicalState[RowKey],
-		][]) {
+		for (const [key, cells] of Object.entries(state) as [RowKey, Cells][]) {
 			const [table, id] = splitRowKey(key);
-			if (row.deleted) {
-				this.db.run('INSERT INTO tombstones VALUES (?,?)', [table, id]);
-				continue;
-			}
-			const fields = Object.keys(row.cells);
+			const fields = Object.keys(cells);
 			if (
 				table === 'notes' &&
 				fields.every((f) => f === 'title' || f === 'pinned') &&
-				typeof row.cells.title === 'string' &&
-				typeof row.cells.pinned === 'boolean'
+				typeof cells.title === 'string' &&
+				typeof cells.pinned === 'boolean'
 			)
 				this.db.run('INSERT INTO notes VALUES (?,?,?)', [
 					id,
-					row.cells.title,
-					Number(row.cells.pinned),
+					cells.title,
+					Number(cells.pinned),
 				]);
 			else if (
 				table === 'folders' &&
 				fields.length === 1 &&
-				typeof row.cells.name === 'string'
+				typeof cells.name === 'string'
 			)
-				this.db.run('INSERT INTO folders VALUES (?,?)', [id, row.cells.name]);
+				this.db.run('INSERT INTO folders VALUES (?,?)', [id, cells.name]);
 			else
 				this.db.run('INSERT INTO quarantine VALUES (?,?,?)', [
 					table,
 					id,
-					JSON.stringify(row.cells),
+					JSON.stringify(cells),
 				]);
 		}
 	}
@@ -368,11 +356,7 @@ export class SqliteClientA {
 				})
 			)
 				return { ok: false, reason: 'invalid-chunk' };
-			for (const row of rows)
-				next[rowKey(row.table, row.rowId)] = {
-					deleted: row.deleted,
-					cells: row.cells,
-				};
+			for (const row of rows) next[rowKey(row.table, row.rowId)] = row.cells;
 		}
 		this.db
 			.transaction(() => {
@@ -383,6 +367,13 @@ export class SqliteClientA {
 				this.db.run('DELETE FROM outbox WHERE actor_sequence <= ?', [
 					acceptedThrough,
 				]);
+				this.setMeta(
+					'next_actor_sequence',
+					Math.max(
+						Number(this.meta('next_actor_sequence')),
+						acceptedThrough + 1,
+					),
+				);
 				this.setMeta('pull_cursor', manifest.snapshotSequence);
 				this.rebuild();
 				this.db.run('DELETE FROM snapshot_stage');
@@ -394,40 +385,29 @@ export class SqliteClientA {
 	dump(): ClientDump {
 		const rows: LogicalState = {};
 		const quarantine: LogicalState = {};
-		const tombstones: RowKey[] = [];
 		for (const row of this.db
 			.query<{ id: string; title: string; pinned: number }, []>(
 				'SELECT * FROM notes ORDER BY id',
 			)
 			.all())
 			rows[rowKey('notes', row.id)] = {
-				deleted: false,
-				cells: { title: row.title, pinned: Boolean(row.pinned) },
+				title: row.title,
+				pinned: Boolean(row.pinned),
 			};
 		for (const row of this.db
 			.query<{ id: string; name: string }, []>(
 				'SELECT * FROM folders ORDER BY id',
 			)
 			.all())
-			rows[rowKey('folders', row.id)] = {
-				deleted: false,
-				cells: { name: row.name },
-			};
+			rows[rowKey('folders', row.id)] = { name: row.name };
 		for (const row of this.db
 			.query<{ table_name: string; row_id: string; cells_json: string }, []>(
 				'SELECT * FROM quarantine ORDER BY table_name,row_id',
 			)
 			.all())
-			quarantine[rowKey(row.table_name, row.row_id)] = {
-				deleted: false,
-				cells: JSON.parse(row.cells_json),
-			};
-		for (const row of this.db
-			.query<{ table_name: string; row_id: string }, []>(
-				'SELECT * FROM tombstones ORDER BY table_name,row_id',
-			)
-			.all())
-			tombstones.push(rowKey(row.table_name, row.row_id));
+			quarantine[rowKey(row.table_name, row.row_id)] = JSON.parse(
+				row.cells_json,
+			);
 		return {
 			actorId: this.actorId,
 			nextActorSequence: Number(this.meta('next_actor_sequence')),
@@ -435,7 +415,6 @@ export class SqliteClientA {
 			outbox: this.outbox(),
 			rows,
 			quarantine,
-			tombstones,
 		};
 	}
 }

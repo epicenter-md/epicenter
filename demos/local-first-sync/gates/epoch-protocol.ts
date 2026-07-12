@@ -24,6 +24,12 @@ export type TableTransform = {
 	defaults?: Cells;
 };
 
+/**
+ * One identity map owns row identity: each source row maps to zero or one
+ * destination identity derived only from the durable source identity, never
+ * from mutable cells. Deleted rows are physically absent from the frozen
+ * snapshot the transform reads, so there is no deletion mapping.
+ */
 export type EpochTransform = {
 	fromEpochId: string;
 	toEpochId: string;
@@ -63,7 +69,11 @@ export type EpochPushResult =
 	| { ok: true }
 	| {
 			ok: false;
-			reason: Refusal | 'transition-frozen' | 'actor-sequence-gap';
+			reason:
+				| Refusal
+				| 'transition-frozen'
+				| 'actor-sequence-gap'
+				| 'create-conflict';
 	  };
 
 export type IncarnationDump = {
@@ -91,6 +101,26 @@ export type EpochAuthorityDump = {
 export type ImportPlan = {
 	actorId: string;
 	operations: Operation[];
+};
+
+/** Adoption streams transformed rows into a destination with zero live rows. */
+export type AdoptionResult =
+	| { ok: true; plan: ImportPlan }
+	| {
+			ok: false;
+			reason: 'destination-not-empty' | 'mapped-identity-collision';
+	  };
+
+/**
+ * Reviewable overlay comparison. Source-only rows are provably the replica's
+ * pending creations exactly when its applied cursor equals the frozen head of
+ * its old incarnation; otherwise they may be upstream deletions and are
+ * excluded by default, restorable only under a new identity.
+ */
+export type OverlayImportPlan = {
+	actorId: string;
+	operations: Operation[];
+	review: SnapshotRow[];
 };
 
 export type EpochAuthority = {

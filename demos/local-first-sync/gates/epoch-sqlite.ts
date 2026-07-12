@@ -11,6 +11,8 @@ import type {
 } from './epoch-protocol';
 import type { Cells, Operation, PushRequest, SnapshotRow } from './protocol';
 
+const CREATE_CONFLICT = 'create-conflict push refusal';
+
 export class SqliteEpochAuthority implements EpochAuthority {
 	readonly db: Database;
 
@@ -23,7 +25,7 @@ export class SqliteEpochAuthority implements EpochAuthority {
 		this.db.run(`
 			CREATE TABLE IF NOT EXISTS family (id INTEGER PRIMARY KEY CHECK(id=1), active_incarnation_id TEXT NOT NULL);
 			CREATE TABLE IF NOT EXISTS incarnations (id TEXT PRIMARY KEY, epoch_id TEXT NOT NULL, status TEXT NOT NULL, head INTEGER NOT NULL);
-			CREATE TABLE IF NOT EXISTS epoch_rows (incarnation_id TEXT NOT NULL, table_name TEXT NOT NULL, row_id TEXT NOT NULL, deleted INTEGER NOT NULL, cells_json TEXT NOT NULL, PRIMARY KEY(incarnation_id, table_name, row_id));
+			CREATE TABLE IF NOT EXISTS epoch_rows (incarnation_id TEXT NOT NULL, table_name TEXT NOT NULL, row_id TEXT NOT NULL, cells_json TEXT NOT NULL, PRIMARY KEY(incarnation_id, table_name, row_id));
 			CREATE TABLE IF NOT EXISTS epoch_actors (incarnation_id TEXT NOT NULL, actor_id TEXT NOT NULL, sequence INTEGER NOT NULL, PRIMARY KEY(incarnation_id, actor_id));
 			CREATE TABLE IF NOT EXISTS epoch_transition (id INTEGER PRIMARY KEY CHECK(id=1), lease_id TEXT NOT NULL, source_incarnation_id TEXT NOT NULL, target_incarnation_id TEXT NOT NULL, expires_at INTEGER NOT NULL, next_row_index INTEGER NOT NULL, total_rows INTEGER NOT NULL, transform_json TEXT NOT NULL);
 		`);
@@ -48,49 +50,55 @@ export class SqliteEpochAuthority implements EpochAuthority {
 
 	push(request: PushRequest): EpochPushResult {
 		let result: EpochPushResult = { ok: true };
-		this.db
-			.transaction(() => {
-				const active = this.active();
-				if (request.protocolMajor !== 1) {
-					result = { ok: false, reason: 'protocol-mismatch' };
+		const transaction = this.db.transaction(() => {
+			const active = this.active();
+			if (request.protocolMajor !== 1) {
+				result = { ok: false, reason: 'protocol-mismatch' };
+				return;
+			}
+			if (request.schemaEpochId !== active.epoch_id) {
+				result = { ok: false, reason: 'schema-epoch-mismatch' };
+				return;
+			}
+			if (request.databaseIncarnationId !== active.id) {
+				result = { ok: false, reason: 'database-incarnation-mismatch' };
+				return;
+			}
+			if (active.status === 'frozen') {
+				result = { ok: false, reason: 'transition-frozen' };
+				return;
+			}
+			for (const mutation of request.mutations) {
+				const highWater =
+					this.db
+						.query<{ sequence: number }, [string, string]>(
+							'SELECT sequence FROM epoch_actors WHERE incarnation_id = ? AND actor_id = ?',
+						)
+						.get(active.id, mutation.actorId)?.sequence ?? 0;
+				if (mutation.actorSequence <= highWater) continue;
+				if (mutation.actorSequence !== highWater + 1) {
+					result = { ok: false, reason: 'actor-sequence-gap' };
 					return;
 				}
-				if (request.schemaEpochId !== active.epoch_id) {
-					result = { ok: false, reason: 'schema-epoch-mismatch' };
-					return;
-				}
-				if (request.databaseIncarnationId !== active.id) {
-					result = { ok: false, reason: 'database-incarnation-mismatch' };
-					return;
-				}
-				if (active.status === 'frozen') {
-					result = { ok: false, reason: 'transition-frozen' };
-					return;
-				}
-				for (const mutation of request.mutations) {
-					const highWater =
-						this.db
-							.query<{ sequence: number }, [string, string]>(
-								'SELECT sequence FROM epoch_actors WHERE incarnation_id = ? AND actor_id = ?',
-							)
-							.get(active.id, mutation.actorId)?.sequence ?? 0;
-					if (mutation.actorSequence <= highWater) continue;
-					if (mutation.actorSequence !== highWater + 1) {
-						result = { ok: false, reason: 'actor-sequence-gap' };
-						return;
-					}
-					for (const operation of mutation.operations)
-						this.apply(active.id, operation);
-					this.db.run(
-						'INSERT INTO epoch_actors VALUES (?, ?, ?) ON CONFLICT(incarnation_id, actor_id) DO UPDATE SET sequence = excluded.sequence',
-						[active.id, mutation.actorId, mutation.actorSequence],
-					);
-					this.db.run('UPDATE incarnations SET head = head + 1 WHERE id = ?', [
-						active.id,
-					]);
-				}
-			})
-			.immediate();
+				for (const operation of mutation.operations)
+					this.apply(active.id, operation);
+				this.db.run(
+					'INSERT INTO epoch_actors VALUES (?, ?, ?) ON CONFLICT(incarnation_id, actor_id) DO UPDATE SET sequence = excluded.sequence',
+					[active.id, mutation.actorId, mutation.actorSequence],
+				);
+				this.db.run('UPDATE incarnations SET head = head + 1 WHERE id = ?', [
+					active.id,
+				]);
+			}
+		});
+		try {
+			transaction.immediate();
+		} catch (error) {
+			// A live-identity createRow aborts the whole push transaction.
+			if (error instanceof Error && error.message === CREATE_CONFLICT)
+				return { ok: false, reason: 'create-conflict' };
+			throw error;
+		}
 		return result;
 	}
 
@@ -347,62 +355,69 @@ export class SqliteEpochAuthority implements EpochAuthority {
 	private readRows(incarnationId: string): SnapshotRow[] {
 		return this.db
 			.query<
-				{
-					table_name: string;
-					row_id: string;
-					deleted: number;
-					cells_json: string;
-				},
+				{ table_name: string; row_id: string; cells_json: string },
 				[string]
 			>(
-				'SELECT table_name, row_id, deleted, cells_json FROM epoch_rows WHERE incarnation_id = ? ORDER BY table_name, row_id',
+				'SELECT table_name, row_id, cells_json FROM epoch_rows WHERE incarnation_id = ? ORDER BY table_name, row_id',
 			)
 			.all(incarnationId)
 			.map((row) => ({
 				table: row.table_name,
 				rowId: row.row_id,
-				deleted: Boolean(row.deleted),
 				cells: JSON.parse(row.cells_json),
 			}));
 	}
 
 	private writeRows(incarnationId: string, rows: SnapshotRow[]): void {
 		for (const row of rows)
-			this.db.run('INSERT INTO epoch_rows VALUES (?, ?, ?, ?, ?)', [
+			this.db.run('INSERT INTO epoch_rows VALUES (?, ?, ?, ?)', [
 				incarnationId,
 				row.table,
 				row.rowId,
-				Number(row.deleted),
 				JSON.stringify(row.cells),
 			]);
 	}
 
 	private apply(incarnationId: string, operation: Operation): void {
-		const stored = this.db
-			.query<{ deleted: number; cells_json: string }, [string, string, string]>(
-				'SELECT deleted, cells_json FROM epoch_rows WHERE incarnation_id = ? AND table_name = ? AND row_id = ?',
-			)
-			.get(incarnationId, operation.table, operation.rowId);
 		if (operation.kind === 'deleteRow') {
 			this.db.run(
-				"INSERT INTO epoch_rows VALUES (?, ?, ?, 1, '{}') ON CONFLICT(incarnation_id, table_name, row_id) DO UPDATE SET deleted = 1, cells_json = '{}'",
+				'DELETE FROM epoch_rows WHERE incarnation_id = ? AND table_name = ? AND row_id = ?',
 				[incarnationId, operation.table, operation.rowId],
 			);
 			return;
 		}
-		if (stored?.deleted) return;
-		const cells: Cells = stored ? JSON.parse(stored.cells_json) : {};
+		const stored = this.db
+			.query<{ cells_json: string }, [string, string, string]>(
+				'SELECT cells_json FROM epoch_rows WHERE incarnation_id = ? AND table_name = ? AND row_id = ?',
+			)
+			.get(incarnationId, operation.table, operation.rowId);
+		if (operation.kind === 'createRow') {
+			if (stored) throw new Error(CREATE_CONFLICT);
+			const cells: Cells = {};
+			for (const [field, value] of Object.entries(operation.cells))
+				if (value !== null) cells[field] = value;
+			this.db.run('INSERT INTO epoch_rows VALUES (?, ?, ?, ?)', [
+				incarnationId,
+				operation.table,
+				operation.rowId,
+				JSON.stringify(cells),
+			]);
+			return;
+		}
+		if (!stored) return;
+		const cells: Cells = JSON.parse(stored.cells_json);
 		for (const [field, value] of Object.entries(operation.cells)) {
 			if (value === null) delete cells[field];
 			else cells[field] = value;
 		}
 		this.db.run(
-			'INSERT INTO epoch_rows VALUES (?, ?, ?, 0, ?) ON CONFLICT(incarnation_id, table_name, row_id) DO UPDATE SET deleted = 0, cells_json = excluded.cells_json',
-			[incarnationId, operation.table, operation.rowId, JSON.stringify(cells)],
+			'UPDATE epoch_rows SET cells_json = ? WHERE incarnation_id = ? AND table_name = ? AND row_id = ?',
+			[JSON.stringify(cells), incarnationId, operation.table, operation.rowId],
 		);
 	}
 }
 
+/** Independent transform copy: the SQLite authority shares no planner code. */
 function transformRows(
 	rows: SnapshotRow[],
 	transform: EpochTransform,
@@ -436,19 +451,13 @@ function transformRows(
 			};
 		identities.add(key);
 		const cells: Cells = { ...rule.defaults };
-		if (!row.deleted)
-			for (const [field, value] of Object.entries(row.cells)) {
-				const target = Object.hasOwn(rule.fields, field)
-					? rule.fields[field]
-					: field;
-				if (target !== null) cells[target] = value;
-			}
-		output.push({
-			table: destination.table,
-			rowId,
-			deleted: row.deleted,
-			cells: row.deleted ? {} : cells,
-		});
+		for (const [field, value] of Object.entries(row.cells)) {
+			const target = Object.hasOwn(rule.fields, field)
+				? rule.fields[field]
+				: field;
+			if (target !== null) cells[target] = value;
+		}
+		output.push({ table: destination.table, rowId, cells });
 	}
 	return {
 		result: { ok: true },

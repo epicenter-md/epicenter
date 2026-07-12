@@ -2,24 +2,37 @@
  * Gate 2 snapshot and compaction tests.
  *
  * Proves that one immutable current-head logical snapshot can replace an
- * accepted mutation prefix without losing pending intent or terminal deletes.
+ * accepted mutation prefix without losing pending intent or resurrecting
+ * physically deleted rows.
  *
  * Key behaviors:
  * - snapshot chunks stage idempotently and install atomically;
  * - frozen actor high-waters prune accepted, but not unaccepted, outbox rows;
+ * - snapshots carry live rows only: deletion survives compaction as absence;
  * - replacement, corruption, crashes, and writes during bootstrap are safe.
  */
 
 import { expect, test } from 'bun:test';
 import { GateHarness } from './harness';
-import { ENVELOPE, type Operation, rowKey } from './protocol';
+import { type Cells, ENVELOPE, type Operation, rowKey } from './protocol';
 import { Prng } from './util';
 
-const note = (rowId: string, title: string, pinned = false): Operation => ({
-	kind: 'patchRow',
+const create = (rowId: string, title: string, pinned = false): Operation => ({
+	kind: 'createRow',
 	table: 'notes',
 	rowId,
 	cells: { title, pinned },
+});
+const update = (rowId: string, cells: Cells): Operation => ({
+	kind: 'updateRow',
+	table: 'notes',
+	rowId,
+	cells,
+});
+const del = (rowId: string): Operation => ({
+	kind: 'deleteRow',
+	table: 'notes',
+	rowId,
 });
 
 function setup() {
@@ -28,7 +41,7 @@ function setup() {
 
 function seedRows(harness: GateHarness, count = 5): void {
 	for (let index = 0; index < count; index += 1)
-		harness.local(0, [note(`n${index}`, `Note ${index}`, index % 2 === 0)]);
+		harness.local(0, [create(`n${index}`, `Note ${index}`, index % 2 === 0)]);
 	harness.push(0);
 }
 
@@ -51,7 +64,7 @@ test('new stale replica installs multiple chunks while writes continue', () => {
 		expect(harness.stageSnapshotChunk(2, first)).toEqual({ ok: true });
 		expect(harness.stageSnapshotChunk(2, first)).toEqual({ ok: true });
 
-		harness.local(1, [note('tail', 'accepted after snapshot')]);
+		harness.local(1, [create('tail', 'accepted after snapshot')]);
 		harness.push(1);
 		for (let index = 1; index < manifest.chunkChecksums.length; index += 1)
 			expect(
@@ -73,21 +86,27 @@ test('new stale replica installs multiple chunks while writes continue', () => {
 test('snapshot high-water prunes accepted pending mutation and preserves unaccepted mutation', () => {
 	const { harness } = setup();
 	try {
-		harness.local(0, [note('accepted', 'accepted but not echoed')]);
+		harness.local(0, [create('accepted', 'accepted but not echoed')]);
 		const acceptedRequest = structuredClone(
 			harness.replicas[0].a.pushRequest(),
 		);
 		harness.push(0);
-		harness.local(0, [note('pending', 'never pushed')]);
+		harness.local(0, [create('pending', 'never pushed')]);
 		expect(harness.replicas[0].b.dump().outbox).toHaveLength(2);
 
 		const manifest = harness.publishSnapshot(10);
 		expect(manifest.actorHighWater['actor-1']).toBe(1);
 		expect(harness.refServer.dump().actorHighWater['actor-1']).toBe(1);
 		expect(harness.refServer.dump().log).toHaveLength(0);
+		// A stale retry of the already-accepted createRow after compaction is
+		// absorbed by sequence dedup, never by a create-conflict refusal.
 		expect(harness.refServer.push(acceptedRequest)).toEqual(
 			harness.sqlServer.push(acceptedRequest),
 		);
+		expect(harness.refServer.push(acceptedRequest)).toEqual({
+			kind: 'push',
+			ok: true,
+		});
 		expect(harness.refServer.dump().log).toHaveLength(0);
 
 		harness.bootstrapSnapshot(0, harness.snapshotRequired(0));
@@ -134,7 +153,7 @@ test('abandoned snapshot restarts against the only published replacement', () =>
 		harness.beginSnapshot(2, first);
 		harness.stageSnapshotChunk(2, harness.snapshotChunk(first, 0));
 
-		harness.local(0, [note('new-head', 'new generation')]);
+		harness.local(0, [create('new-head', 'new generation')]);
 		harness.push(0);
 		harness.crashDuringSnapshotPublication(2);
 		expect(harness.refServer.dump().manifest).toEqual(first);
@@ -176,7 +195,7 @@ test('snapshot reclassifies quarantine and a later completing patch promotes it'
 	try {
 		harness.local(0, [
 			{
-				kind: 'patchRow',
+				kind: 'createRow',
 				table: 'notes',
 				rowId: 'partial',
 				cells: { title: 'Partial' },
@@ -189,14 +208,7 @@ test('snapshot reclassifies quarantine and a later completing patch promotes it'
 			harness.replicas[2].b.dump().quarantine[rowKey('notes', 'partial')],
 		).toBeDefined();
 
-		harness.local(1, [
-			{
-				kind: 'patchRow',
-				table: 'notes',
-				rowId: 'partial',
-				cells: { pinned: true },
-			},
-		]);
+		harness.local(1, [update('partial', { pinned: true })]);
 		harness.push(1);
 		harness.pull(2);
 		expect(
@@ -215,15 +227,28 @@ test('repeated current-head compaction schedules converge', () => {
 		const { harness } = setup();
 		try {
 			const random = new Prng(seed);
+			const created: string[] = [];
+			let counter = 0;
 			for (let round = 0; round < 8; round += 1) {
 				for (let write = 0; write < 4; write += 1) {
 					const replica = random.int(3);
-					const rowId = `n${random.int(6)}`;
-					harness.local(replica, [
-						random.int(5) === 0
-							? { kind: 'deleteRow', table: 'notes', rowId }
-							: note(rowId, `seed-${seed}-${round}-${write}`),
-					]);
+					const roll = random.int(5);
+					if (roll === 0 && created.length > 0)
+						harness.local(replica, [del(created[random.int(created.length)])]);
+					else if (roll === 1 && created.length > 0)
+						harness.local(replica, [
+							update(created[random.int(created.length)], {
+								title: `seed-${seed}-${round}-${write}`,
+							}),
+						]);
+					else {
+						const rowId = `s${seed}-${counter}`;
+						counter += 1;
+						created.push(rowId);
+						harness.local(replica, [
+							create(rowId, `seed-${seed}-${round}-${write}`),
+						]);
+					}
 					if (random.int(2) === 0) harness.push(replica);
 				}
 				harness.publishSnapshot(random.int(3) + 1);
@@ -258,7 +283,6 @@ test('corrupt manifest or chunk refuses installation without changing visible st
 		corruptChunk.rows.push({
 			table: 'notes',
 			rowId: 'injected',
-			deleted: false,
 			cells: { title: 'corrupt', pinned: false },
 		});
 		expect(harness.stageSnapshotChunk(2, corruptChunk)).toEqual({
@@ -294,28 +318,44 @@ test('corrupt manifest or chunk refuses installation without changing visible st
 	}
 });
 
-test('tombstone in compacted snapshot rejects every later resurrection patch', () => {
+test('row deleted before compaction is absent from the snapshot and cannot resurrect', () => {
 	const { harness } = setup();
 	try {
-		harness.local(0, [note('gone', 'created')]);
+		harness.local(0, [create('gone', 'created')]);
 		harness.push(0);
-		harness.local(0, [{ kind: 'deleteRow', table: 'notes', rowId: 'gone' }]);
+		harness.pull(2);
+		// The stale replica edits the row it can still see, then goes offline.
+		harness.local(2, [update('gone', { title: 'stale pending' })]);
+		harness.local(0, [del('gone')]);
 		harness.push(0);
 		const manifest = harness.publishSnapshot(1);
-		harness.bootstrapSnapshot(2, harness.snapshotRequired(2));
-		expect(harness.replicas[2].b.dump().tombstones).toContain(
-			rowKey('notes', 'gone'),
-		);
+		// The snapshot carries live rows only: the deleted row is simply absent.
+		const chunkRows = harness.refServer
+			.dump()
+			.chunks.flatMap((chunk) => chunk.rows);
+		expect(chunkRows.some((row) => row.rowId === 'gone')).toBeFalse();
+		expect(harness.refServer.dump().log).toHaveLength(0);
+		// The actor high-water survives the permanent log deletion.
+		expect(manifest.actorHighWater['actor-1']).toBe(2);
+		expect(harness.sqlServer.dump().actorHighWater['actor-1']).toBe(2);
 
-		harness.local(1, [note('gone', 'late patch')]);
-		harness.push(1);
-		harness.pull(2);
-		expect(harness.replicas[2].b.dump().tombstones).toContain(
-			rowKey('notes', 'gone'),
-		);
+		harness.bootstrapSnapshot(2, harness.snapshotRequired(2));
+		const dump = harness.replicas[2].b.dump();
+		expect(dump.rows[rowKey('notes', 'gone')]).toBeUndefined();
+		expect(dump.quarantine[rowKey('notes', 'gone')]).toBeUndefined();
+		// The never-accepted pending update survives bootstrap and replays as a
+		// local no-op instead of resurrecting the row.
+		expect(dump.outbox).toHaveLength(1);
+
+		harness.push(2); // accepted deterministic no-op on the server fold
+		harness.drain();
 		expect(
-			harness.replicas[2].b.dump().rows[rowKey('notes', 'gone')],
+			harness.refServer.dump().canonical[rowKey('notes', 'gone')],
 		).toBeUndefined();
+		for (const replica of harness.replicas) {
+			expect(replica.b.dump().rows[rowKey('notes', 'gone')]).toBeUndefined();
+			expect(replica.b.dump().outbox).toHaveLength(0);
+		}
 		expect(harness.refServer.dump().watermark).toBe(manifest.snapshotSequence);
 	} finally {
 		harness.close();

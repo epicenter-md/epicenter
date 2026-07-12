@@ -1,6 +1,7 @@
 import type {
+	AdoptionResult,
 	EpochTransform,
-	ImportPlan,
+	OverlayImportPlan,
 	TableTransform,
 	TransitionResult,
 } from './epoch-protocol';
@@ -10,6 +11,10 @@ function rowKey(row: Pick<SnapshotRow, 'table' | 'rowId'>): string {
 	return JSON.stringify([row.table, row.rowId]);
 }
 
+/**
+ * mapIdentity maps ROW identity only. Every input row is live: deleted rows
+ * are physically absent from the frozen snapshot the transform reads.
+ */
 export function transformRows(
 	rows: SnapshotRow[],
 	transform: EpochTransform,
@@ -45,8 +50,7 @@ export function transformRows(
 		output.push({
 			table: destination.table,
 			rowId,
-			deleted: row.deleted,
-			cells: row.deleted ? {} : transformCells(row.cells, rule),
+			cells: transformCells(row.cells, rule),
 		});
 	}
 	return {
@@ -68,55 +72,123 @@ function transformCells(cells: Cells, rule: TableTransform): Cells {
 	return transformed;
 }
 
-export function planImport(
+/**
+ * Fresh-incarnation adoption: the destination has zero live rows, so every
+ * transformed row streams in as an ordinary createRow mutation. The preflight
+ * refuses a mapped-identity collision instead of merging.
+ */
+export function planAdoption(
 	actorId: string,
 	source: SnapshotRow[],
 	destination: SnapshotRow[],
-): ImportPlan {
-	const destinationByKey = new Map(
-		destination.map((row) => [rowKey(row), row]),
-	);
-	const operations: Operation[] = [];
+): AdoptionResult {
+	if (destination.length > 0)
+		return { ok: false, reason: 'destination-not-empty' };
+	const identities = new Set<string>();
 	for (const row of source) {
-		const current = destinationByKey.get(rowKey(row));
-		if (row.deleted) {
-			if (!current?.deleted)
-				operations.push({
-					kind: 'deleteRow',
+		const key = rowKey(row);
+		if (identities.has(key))
+			return { ok: false, reason: 'mapped-identity-collision' };
+		identities.add(key);
+	}
+	return {
+		ok: true,
+		plan: {
+			actorId,
+			operations: source.map(
+				(row): Operation => ({
+					kind: 'createRow',
 					table: row.table,
 					rowId: row.rowId,
+					cells: { ...row.cells },
+				}),
+			),
+		},
+	};
+}
+
+/**
+ * Reviewable comparison for a replica importing its private overlay after
+ * epoch activation. Equal rows emit nothing and differing cells emit
+ * updateRow. Source-only rows are classified by provable pendingness: when
+ * the replica's applied cursor equals the frozen head of its old incarnation,
+ * its source-only rows are exactly its pending creations and auto-apply as
+ * createRow; otherwise they may be upstream deletions from a skipped epoch
+ * and are review-required, excluded by default.
+ */
+export function planOverlayImport(input: {
+	actorId: string;
+	source: SnapshotRow[];
+	destination: SnapshotRow[];
+	appliedCursor: number;
+	frozenHead: number;
+}): OverlayImportPlan {
+	const destinationByKey = new Map(
+		input.destination.map((row) => [rowKey(row), row]),
+	);
+	const sourceOnlyIsPendingCreation = input.appliedCursor === input.frozenHead;
+	const operations: Operation[] = [];
+	const review: SnapshotRow[] = [];
+	for (const row of input.source) {
+		const current = destinationByKey.get(rowKey(row));
+		if (!current) {
+			if (sourceOnlyIsPendingCreation)
+				operations.push({
+					kind: 'createRow',
+					table: row.table,
+					rowId: row.rowId,
+					cells: { ...row.cells },
 				});
+			else review.push({ ...row, cells: { ...row.cells } });
 			continue;
 		}
-		if (current?.deleted) continue;
 		const cells: Cells = {};
 		const fields = new Set([
 			...Object.keys(row.cells),
-			...Object.keys(current?.cells ?? {}),
+			...Object.keys(current.cells),
 		]);
 		for (const field of fields) {
 			const sourceValue = row.cells[field] ?? null;
-			const destinationValue = current?.cells[field] ?? null;
+			const destinationValue = current.cells[field] ?? null;
 			if (sourceValue !== destinationValue) cells[field] = sourceValue;
 		}
-		if (!current || Object.keys(cells).length > 0)
+		if (Object.keys(cells).length > 0)
 			operations.push({
-				kind: 'patchRow',
+				kind: 'updateRow',
 				table: row.table,
 				rowId: row.rowId,
-				cells: current ? cells : { ...row.cells },
+				cells,
 			});
 	}
-	return { actorId, operations };
+	return { actorId: input.actorId, operations, review };
 }
 
-export function planPhysicalCopyImport(
+/**
+ * Restoring an excluded review row is a NEW identity: it may have been
+ * deleted upstream, and a row identity has one lifetime.
+ */
+export function restoreReviewRowAsNew(
+	row: SnapshotRow,
+	newRowId: string,
+): Operation {
+	if (newRowId === row.rowId)
+		throw new Error('restored review row must mint a new row identity');
+	return {
+		kind: 'createRow',
+		table: row.table,
+		rowId: newRowId,
+		cells: { ...row.cells },
+	};
+}
+
+/** A physical copy adopts through the import door under a fresh actor. */
+export function planPhysicalCopyAdoption(
 	sourceActorId: string,
 	newActorId: string,
 	source: SnapshotRow[],
 	destination: SnapshotRow[],
-): ImportPlan {
+): AdoptionResult {
 	if (sourceActorId === newActorId)
 		throw new Error('physical copy import must mint a new actor');
-	return planImport(newActorId, source, destination);
+	return planAdoption(newActorId, source, destination);
 }
