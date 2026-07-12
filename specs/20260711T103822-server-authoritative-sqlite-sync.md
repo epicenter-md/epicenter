@@ -1337,7 +1337,8 @@ forward before returning to the Wave 5 consumer migration and deletion steps.
 
 ### Wave 6: Lifecycle and import review
 
-- [ ] Implement the two open doors (`openLocalWorkspace`, `openReplica`) at boot.
+- [x] Implement the two open doors (`openStandaloneWorkspace`,
+  `openWorkspaceReplica`) at boot.
 - [ ] Implement fresh-incarnation adoption (streamed `createRow` import with
   the transform preflight) with source retention through acceptance.
 - [ ] Implement reviewable comparison for same-database re-adoption with
@@ -1422,11 +1423,12 @@ superseded it. Details in `demos/local-first-sync/REVIEW-2026-07-11.md`
   plane is not the record wire, so `null` can be a real stored value while
   deleting the key means no override exists. The earlier must-not-admit-null
   rule was a SQLite-wire artifact and is deleted with it.
-- Opening is TWO doors, not one option: `openLocalWorkspace(definition,
+- Opening is TWO doors, not one option: `openStandaloneWorkspace(definition,
   { storage })` (no actor, cursor, or outbox exist) and
-  `openReplica(definition, { storage, sync })`. `openWorkspace({ sync? })`
+  `openWorkspaceReplica(definition, { storage, sync })`.
+  `openWorkspace({ sync? })`
   dies: it hid a permanent durable-identity choice inside an optional field.
-  Promotion is `openReplica` + `planImport(local)`, never a reopen flag;
+  Promotion is `openWorkspaceReplica` + `planImport(local)`, never a reopen flag;
   `connect(connection | null)` does not survive either.
   The SQLite-owning worker or native service imports the workspace definition
   in its own process. Definitions contain validators, default factories, and
