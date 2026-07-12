@@ -337,7 +337,6 @@
         "@epicenter/chat": "workspace:*",
         "@epicenter/client": "workspace:*",
         "@epicenter/constants": "workspace:*",
-        "@epicenter/field": "workspace:*",
         "@epicenter/skills": "workspace:*",
         "@epicenter/svelte": "workspace:*",
         "arktype": "catalog:",

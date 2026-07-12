@@ -29,10 +29,6 @@ function openLocalSource() {
 	};
 }
 
-// Legacy conversations ride along automatically because the local source keeps
-// the table. Their UI is retired (ADR-0086), but the schema still carries the
-// message child docs.
-
 /**
  * Human phrase for what is staged locally, e.g. "3 files".
  */
