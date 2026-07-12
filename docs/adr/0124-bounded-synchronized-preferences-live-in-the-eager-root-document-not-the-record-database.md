@@ -25,6 +25,22 @@ database is table-only. KV does not participate in record schema identity,
 record snapshots, imports, quarantine, worker messages, or record wire
 operations.
 
+The workspace definition declares a separate preference-root incarnation. The
+runtime derives the root document guid as
+`<workspaceId>.root.<rootDocumentIncarnation>`. The workspace id remains the
+record-database family key and the first segment of the unchanged four-part
+child-document guid. The root incarnation is not derived from the record epoch,
+schema identity, server-minted database incarnation, principal, or runtime
+randomness. Changing it is an explicit destructive reset of synchronized
+preferences.
+
+The Yjs-table-to-SQLite application cutover rotates this incarnation once and
+abandons the complete legacy root document, including its old preference
+values. New clients start from declared defaults. They do not open the old root,
+copy KV out of it, retain opaque table structs, or keep a cleanup ledger for
+orphaned documents. This one-time architecture cutover is distinct from
+renaming a preference key within one root incarnation.
+
 Reads validate the stored value against the current declared schema. A missing
 or invalid value reads as a fresh default; the stored bytes are left intact so
 diagnostics can still see the mismatch, and observers are notified of the
@@ -70,6 +86,11 @@ not a preference.
   invariant.
 - The namespace must stay bounded for the eager document to stay cheap;
   unbounded or per-row state is record data, not a preference.
+- Rotating the root incarnation creates a new persistence store and sync room
+  without changing the durable IndexedDB/BroadcastChannel key grammar or server
+  room route. Old stores and rooms remain unreachable by design.
+- Record schema epochs do not reset preferences, and root incarnation changes
+  do not change record identity or child-document guids.
 
 ## Considered alternatives
 
@@ -85,6 +106,12 @@ not a preference.
   generic KV migration engine recreates schema-epoch machinery inside the
   plane whose whole point is validate-or-default reads; new namespaced keys
   version by identity instead.
+- **Reuse the legacy root and ignore its tables.** Rejected: the old table CRDT
+  structs would still hydrate, consume memory, and synchronize as opaque
+  history, so deleting the table API would not collapse the table plane.
+- **Copy preferences out of the legacy root.** Rejected: selective copying is
+  a migration and keeps an old-document reader alive for a one-time reset whose
+  declared defaults are already safe.
 - **Store settings per device only.** Rejected: preferences are part of the
   workspace the user expects to follow them across devices; device-local state
   remains available outside the workspace for values that must not sync.

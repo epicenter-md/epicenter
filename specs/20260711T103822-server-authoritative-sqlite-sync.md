@@ -1,7 +1,7 @@
 # Server-authoritative SQLite synchronization
 
 **Date**: 2026-07-11
-**Status**: Draft
+**Status**: In Progress
 **Owner**: Epicenter
 
 ## One Sentence
@@ -270,7 +270,12 @@ Schema-blind database authority
 
 ```txt
 App schema
-  owns field names, field kinds, nullability, defaults, and child-doc layout
+  owns field names, field kinds, nullability, defaults, child-doc layout,
+  and the explicit preference-root incarnation
+
+Workspace runtime
+  owns local-only versus replica boot, storage identity, the eager preference
+  root, SQLite service lifetime, child-doc openers, readiness, wipe, and disposal
 
 Local SQLite adapter
   owns typed DDL, transactions, local queries, and reactive invalidation
@@ -290,6 +295,14 @@ Import planner
 
 The sync engine does not own app validation or editor widgets. The field schema
 does not own server routing or conflict clocks. Yjs does not own record metadata.
+
+The workspace id remains the record-database family key and the first segment
+of every child-document guid. The eager preference root has a separate authored
+incarnation and the runtime derives its guid as
+`<workspaceId>.root.<rootDocumentIncarnation>`. The incarnation is a declared
+safe segment, not a runtime random value. It is independent of the record epoch,
+schema identity, server-minted database incarnation, and principal. Changing it
+is an explicit destructive preference reset.
 
 ## Field and document model
 
@@ -376,6 +389,12 @@ attachRichText   -> Y.XmlFragment
 The schema owns deterministic child-doc identity. Bodies load and synchronize
 when opened or when an explicit database migration needs them. Record snapshots
 carry references and metadata, not Yjs history.
+
+Child-document guids retain the existing four-part grammar:
+`<workspaceId>.<table>.<rowId>.<field>`. The preference-root incarnation never
+enters this grammar. This clean break abandons the legacy root document, so old
+table structs, old preference values, and child documents reachable only from
+old rows remain orphaned without a reader, copier, or cleanup ledger.
 
 ## Logical mutation protocol
 
@@ -1394,7 +1413,8 @@ earlier throwaway api-prototype was deleted once the production surface
 superseded it. Details in `demos/local-first-sync/REVIEW-2026-07-11.md`
 (pass 3 addendum, now historical on the KV and upsert points):
 
-- `defineWorkspace({ id, name, epoch, tables, kv, migrations })`; the local
+- `defineWorkspace({ id, name, epoch, rootDocumentIncarnation, tables, kv,
+  migrations })`; the local
   storage revision is derived as `1 + migrations.length`;
   `defineTable(columns, { indexes, docs })`; `defineKv(schema, default)`.
   KV keys are excluded from the record schema identity because they are not
@@ -1453,6 +1473,12 @@ superseded it. Details in `demos/local-first-sync/REVIEW-2026-07-11.md`
   differs by door.
 - Child docs: declared as `docs: { body: 'richText' | 'plainText' }` beside
   the table; opened via one lifecycle owner returning a disposable handle.
+
+The root-document incarnation is authored separately from `id` and `epoch`.
+For this clean break every surviving app declares a new incarnation, starts KV
+from declared defaults, and never opens the legacy root. The runtime, not each
+app, derives the root guid, persistence identity, room identity, wipe scope,
+and disposal behavior.
 
 ## Open questions
 
@@ -1535,6 +1561,16 @@ These questions invite evidence, not speculative framework growth.
       row/BLOB at 2 MB and statements at 100 KB, so encoded-mutation and
       snapshot-chunk byte limits are platform-required, enforced at write
       time on every engine.
+
+14. **What identity owns the eager preference root after Yjs tables are
+    removed?**
+    - DECIDED (2026-07-11 application cutover): `definition.id` remains the
+      record family and child-guid prefix. A separate required
+      `rootDocumentIncarnation` safe segment derives
+      `<workspaceId>.root.<rootDocumentIncarnation>`. The application cutover
+      rotates it once and abandons the complete legacy root, including old KV.
+      Record epochs do not rotate preferences; principals and server database
+      incarnations do not enter the root guid.
 
 ## Success criteria
 
