@@ -26,6 +26,7 @@ export { defineKv } from '../document/define-kv.js';
 export type { KvDefinition, KvDefinitions } from '../document/kv.js';
 
 export type Columns = Record<string, TSchema>;
+type TableColumns = Columns & { id: TSchema };
 export type DocLayout = 'plainText' | 'richText';
 
 export type TableOptions<TColumns extends Columns> = {
@@ -43,7 +44,7 @@ export type CompiledColumn = {
 };
 
 export type TableDefinition<
-	TColumns extends Columns = Columns,
+	TColumns extends TableColumns = TableColumns,
 	TDocs extends Readonly<Record<string, DocLayout>> = Readonly<
 		Record<string, DocLayout>
 	>,
@@ -60,8 +61,6 @@ export type TableDefinition<
 export type RowFor<TDefinition extends { schema: TSchema }> = Static<
 	TDefinition['schema']
 > & { id: string };
-
-type TableColumns = Columns & { id: TSchema };
 
 type NullableFieldError =
 	'Fields that admit null must be explicitly wrapped in nullable(...)​';

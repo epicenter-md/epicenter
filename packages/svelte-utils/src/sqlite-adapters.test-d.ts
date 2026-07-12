@@ -44,6 +44,9 @@ void notesList;
 void note;
 
 declare const asyncNotes: AsyncTable<Note>;
+const created: Promise<Note> = asyncNotes.create({ title: 'Created' });
+// @ts-expect-error — public creation owns fresh row identity
+asyncNotes.create({ id: 'caller-supplied', title: 'Invalid' });
 const asyncNoteView = fromTable(asyncNotes);
 const asyncNotesList: readonly Note[] = asyncNoteView.all;
 const asyncNote: Note | undefined = asyncNoteView.byId('note-1');
@@ -52,3 +55,4 @@ const notesReady: Promise<void> = asyncNoteView.whenReady;
 void asyncNotesList;
 void asyncNote;
 void notesReady;
+void created;

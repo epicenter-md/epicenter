@@ -70,8 +70,8 @@ export type AsyncTable<
 	}): Promise<TRow[]>;
 	has(id: TRow['id']): Promise<boolean>;
 	count(): Promise<number>;
-	/** Materialize a new row. The id must be a fresh, never-used identity. */
-	create(row: TRow): Promise<void>;
+	/** Allocate a fresh UUID and return the committed row. */
+	create(cells: CreateInput<TRow>): Promise<TRow>;
 	patch(id: TRow['id'], cells: Partial<Omit<TRow, 'id'>>): Promise<TRow | null>;
 	remove(id: TRow['id']): Promise<void>;
 	observe(callback: (delta: TableCommitDelta<TRow>) => void): () => void;
@@ -87,9 +87,13 @@ export type AsyncTables<TTables extends TableDefinitions> = {
 };
 
 type BatchTable<TRow extends { id: string }> = {
-	create(row: TRow): void;
+	create(cells: CreateInput<TRow>): TRow['id'];
 	patch(id: TRow['id'], cells: Partial<Omit<TRow, 'id'>>): void;
 	remove(id: TRow['id']): void;
+};
+
+type CreateInput<TRow extends { id: string }> = Omit<TRow, 'id'> & {
+	id?: never;
 };
 
 export type WorkspaceWriteBatch<TTables extends TableDefinitions> = {
@@ -151,7 +155,9 @@ export function createWorkspaceClient<TTables extends TableDefinitions>(
 		}
 		for (const [index, mutation] of mutations.entries()) {
 			const result = results[index];
-			if (mutation.kind === 'patch') {
+			if (mutation.kind === 'create') {
+				rowForTable(mutation.table, result, mutation.row.id as string);
+			} else if (mutation.kind === 'patch') {
 				if (result !== null) {
 					rowForTable(mutation.table, result, mutation.rowId);
 				}
@@ -220,14 +226,16 @@ export function createWorkspaceClient<TTables extends TableDefinitions>(
 					});
 					return expectResponse(response, 'count').value;
 				},
-				async create(row) {
-					await sendMutations([
+				async create(cells) {
+					const id = crypto.randomUUID();
+					const results = await sendMutations([
 						{
 							kind: 'create',
 							table: tableName,
-							row: row as Record<string, unknown>,
+							row: { ...cells, id },
 						},
 					]);
+					return results[0] as { id: string } & Record<string, unknown>;
 				},
 				async patch(rowId, cells) {
 					const results = await sendMutations([
@@ -269,8 +277,14 @@ export function createWorkspaceClient<TTables extends TableDefinitions>(
 				Object.keys(definition.tables).map((tableName) => [
 					tableName,
 					{
-						create(row: Record<string, unknown>) {
-							mutations.push({ kind: 'create', table: tableName, row });
+						create(cells: Record<string, unknown>) {
+							const id = crypto.randomUUID();
+							mutations.push({
+								kind: 'create',
+								table: tableName,
+								row: { ...cells, id },
+							});
+							return id;
 						},
 						patch(rowId: string, cells: Record<string, unknown>) {
 							mutations.push({ kind: 'patch', table: tableName, rowId, cells });
@@ -280,7 +294,7 @@ export function createWorkspaceClient<TTables extends TableDefinitions>(
 						},
 					},
 				]),
-			) as WorkspaceWriteBatch<TTables>['tables'];
+			) as unknown as WorkspaceWriteBatch<TTables>['tables'];
 			const result: unknown = build({
 				tables: batchTables,
 			});

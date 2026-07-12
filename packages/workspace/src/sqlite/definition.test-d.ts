@@ -8,12 +8,15 @@
 
 import { field } from '@epicenter/field';
 import { type Static, Type } from 'typebox';
+import type { Brand } from 'wellcrafted/brand';
 import { nullable } from '../document/nullable.js';
 import { defineKv, defineTable, type RowFor } from './definition.js';
 
+type NoteId = string & Brand<'NoteId'>;
+
 const notes = defineTable(
 	{
-		id: field.string(),
+		id: field.string<NoteId>(),
 		title: field.string(),
 		folderId: nullable(field.string()),
 	},
@@ -24,11 +27,12 @@ const notes = defineTable(
 );
 
 const row: RowFor<typeof notes> = {
-	id: 'note-1',
+	id: 'note-1' as NoteId,
 	title: 'Hello',
 	folderId: null,
 };
 const title: string = row.title;
+const noteId: NoteId = row.id;
 const folderId: string | null = row.folderId;
 const docLayout: 'plainText' = notes.options.docs.body;
 const indexedColumn: keyof typeof notes.columns = 'folderId';
@@ -71,6 +75,7 @@ defineTable({
 });
 
 void title;
+void noteId;
 void folderId;
 void docLayout;
 void indexedColumn;

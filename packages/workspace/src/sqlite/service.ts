@@ -112,9 +112,12 @@ export function createWorkspaceService<TTables extends TableDefinitions>(
 			return table;
 		}
 		switch (mutation.kind) {
-			case 'create':
-				transactionTable(mutation.table).create(mutation.row as UntypedRow);
-				return null;
+			case 'create': {
+				const table = transactionTable(mutation.table);
+				const row = mutation.row as UntypedRow;
+				table.create(row);
+				return table.get(row.id);
+			}
 			case 'patch':
 				return transactionTable(mutation.table).patch(
 					mutation.rowId,

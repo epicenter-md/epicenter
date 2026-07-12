@@ -1,3 +1,15 @@
+/**
+ * SQLite Workspace Client Tests
+ *
+ * Verifies fresh-id allocation, serialized mutation batches, response
+ * validation, commit deltas, and child-document identity at the async port.
+ *
+ * Key behaviors:
+ * - create allocates UUID identities and returns committed rows
+ * - transaction builders allocate ids synchronously and send one batch
+ * - malformed service rows and results are rejected
+ */
+
 import { expect, test } from 'bun:test';
 import { field } from '@epicenter/field';
 import { createWorkspaceClient, type WorkspaceServicePort } from './client.js';
@@ -10,7 +22,12 @@ test('async client sends one write-only transaction and filters table deltas', a
 		async request(request) {
 			requests.push(request);
 			if (request.kind === 'mutate') {
-				return { kind: 'mutation', results: request.mutations.map(() => null) };
+				return {
+					kind: 'mutation',
+					results: request.mutations.map((mutation) =>
+						mutation.kind === 'create' ? mutation.row : null,
+					),
+				};
 			}
 			return { kind: 'row', row: null };
 		},
@@ -30,19 +47,27 @@ test('async client sends one write-only transaction and filters table deltas', a
 	const deltas: unknown[] = [];
 	client.tables.notes.observe((delta) => deltas.push(delta));
 
+	let createdId = '';
 	await client.transact((batch) => {
-		batch.tables.notes.create({ id: 'one', title: 'One' });
-		batch.tables.notes.patch('one', { title: 'Updated' });
+		createdId = batch.tables.notes.create({ title: 'One' });
+		batch.tables.notes.patch(createdId, { title: 'Updated' });
 	});
+	expect(createdId).toMatch(
+		/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+	);
 	expect(requests).toEqual([
 		{
 			kind: 'mutate',
 			mutations: [
-				{ kind: 'create', table: 'notes', row: { id: 'one', title: 'One' } },
+				{
+					kind: 'create',
+					table: 'notes',
+					row: { id: createdId, title: 'One' },
+				},
 				{
 					kind: 'patch',
 					table: 'notes',
-					rowId: 'one',
+					rowId: createdId,
 					cells: { title: 'Updated' },
 				},
 			],
@@ -59,6 +84,42 @@ test('async client sends one write-only transaction and filters table deltas', a
 	expect(deltas).toEqual([
 		{ upserted: [{ id: 'one', title: 'Updated' }], removed: [] },
 	]);
+});
+
+test('create returns committed rows with distinct UUID identities', async () => {
+	const port: WorkspaceServicePort = {
+		async request(request) {
+			if (request.kind !== 'mutate') throw new Error('unexpected read');
+			return {
+				kind: 'mutation',
+				results: request.mutations.map((mutation) =>
+					mutation.kind === 'create' ? mutation.row : null,
+				),
+			};
+		},
+		observe() {
+			return () => undefined;
+		},
+	};
+	const definition = defineWorkspace({
+		id: 'client-create-test',
+		name: 'Client create test',
+		epoch: 'client-create-1',
+		tables: {
+			notes: defineTable({ id: field.string(), title: field.string() }),
+		},
+	});
+	const client = createWorkspaceClient(definition, port);
+
+	const first = await client.tables.notes.create({ title: 'Draft' });
+	const second = await client.tables.notes.create({ title: 'Draft' });
+
+	expect(first).toEqual({ id: first.id, title: 'Draft' });
+	expect(second).toEqual({ id: second.id, title: 'Draft' });
+	expect(first.id).not.toBe(second.id);
+	expect(first.id).toMatch(
+		/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+	);
 });
 
 test('empty and async transaction builders never send a partial mutation', async () => {
@@ -85,7 +146,7 @@ test('empty and async transaction builders never send a partial mutation', async
 	await client.transact(() => undefined);
 	await expect(
 		client.transact(async (batch) => {
-			batch.tables.notes.create({ id: 'not-sent', title: 'Not sent' });
+			batch.tables.notes.create({ title: 'Not sent' });
 		}),
 	).rejects.toThrow('must be synchronous');
 
@@ -123,9 +184,9 @@ test('typed client rejects malformed rows, deltas, and mutation results', async 
 	await expect(client.tables.notes.get('one')).rejects.toThrow(
 		"invalid 'notes' row",
 	);
-	await expect(
-		client.tables.notes.create({ id: 'one', title: 'One' }),
-	).rejects.toThrow('wrong mutation result count');
+	await expect(client.tables.notes.create({ title: 'One' })).rejects.toThrow(
+		'wrong mutation result count',
+	);
 
 	client.tables.notes.observe(() => undefined);
 	const [tableObserver] = observers;
