@@ -1,19 +1,6 @@
 import type { InferKvValue, Kv, KvDefinitions } from '@epicenter/workspace';
 import { createSubscriber } from 'svelte/reactivity';
 
-/** A synchronous keyed store with one whole-store change subscription. */
-export type ObservableKv<TValues extends Record<string, unknown>> = {
-	get<TKey extends keyof TValues & string>(key: TKey): TValues[TKey];
-	set<TKey extends keyof TValues & string>(
-		key: TKey,
-		value: TValues[TKey],
-	): void;
-	clear(key: keyof TValues & string): void;
-	observe(
-		callback: (changedKeys: ReadonlySet<keyof TValues & string>) => void,
-	): () => void;
-};
-
 /**
  * Create a reactive binding to a single workspace KV key.
  *
@@ -46,21 +33,8 @@ export type ObservableKv<TValues extends Record<string, unknown>> = {
 export function fromKv<
 	TDefs extends KvDefinitions,
 	K extends keyof TDefs & string,
->(kv: Kv<TDefs>, key: K): { current: InferKvValue<TDefs[K]> };
-export function fromKv<
-	TValues extends Record<string, unknown>,
-	TKey extends keyof TValues & string,
->(kv: ObservableKv<TValues>, key: TKey): { current: TValues[TKey] };
-export function fromKv(
-	kv: ObservableKv<Record<string, unknown>> | Kv<KvDefinitions>,
-	key: string,
-): { current: unknown } {
+>(kv: Kv<TDefs>, key: K): { current: InferKvValue<TDefs[K]> } {
 	const subscribe = createSubscriber((update) => {
-		if ('clear' in kv) {
-			return kv.observe((changedKeys) => {
-				if (changedKeys.has(key)) update();
-			});
-		}
 		return kv.observe(key, update);
 	});
 
@@ -69,7 +43,7 @@ export function fromKv(
 			subscribe();
 			return kv.get(key);
 		},
-		set current(newValue: unknown) {
+		set current(newValue: InferKvValue<TDefs[K]>) {
 			kv.set(key, newValue);
 		},
 	};

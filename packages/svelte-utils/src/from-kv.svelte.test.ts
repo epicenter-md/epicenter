@@ -2,28 +2,9 @@ import { expect, test } from 'bun:test';
 import { field } from '@epicenter/field';
 import type { Kv } from '@epicenter/workspace';
 import { defineKv } from '@epicenter/workspace/sqlite';
-import { fromKv, type ObservableKv } from './from-kv.svelte.js';
+import { fromKv } from './from-kv.svelte.js';
 
-test('observable KV binding reads and writes one declared key', () => {
-	type Values = { theme: 'light' | 'dark'; count: number };
-	const values: Values = { theme: 'dark', count: 0 };
-	const kv: ObservableKv<Values> = {
-		get: (key) => values[key],
-		set: (key, value) => {
-			values[key] = value;
-		},
-		clear: () => {},
-		observe: () => () => {},
-	};
-	const theme = fromKv(kv, 'theme');
-
-	expect(theme.current).toBe('dark');
-	theme.current = 'light';
-	expect(values.theme).toBe('light');
-	expect(theme.current).toBe('light');
-});
-
-test('preference-plane KV binding reads synchronously and observes one key', () => {
+test('KV binding reads synchronously and observes one declared key', () => {
 	const definitions = {
 		theme: defineKv(
 			field.select(['light', 'dark']),
