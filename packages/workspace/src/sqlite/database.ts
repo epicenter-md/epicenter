@@ -102,6 +102,11 @@ export type ApplicationTransaction<
 	kv: ApplicationKv<TKv>;
 };
 
+export type CommittedApplicationChanges = {
+	tables: ReadonlyMap<string, ReadonlySet<string>>;
+	kv: ReadonlySet<string>;
+};
+
 type Changes = {
 	tables: Map<string, Set<string>>;
 	kv: Set<string>;
@@ -145,6 +150,9 @@ export function createApplicationDatabase<
 	const kvObservers = new Set<
 		(changedKeys: ReadonlySet<keyof TKv & string>) => void
 	>();
+	const commitObservers = new Set<
+		(changes: CommittedApplicationChanges) => void
+	>();
 	let activeChanges: Changes | undefined;
 	let activeOperations: Operation[] | undefined;
 
@@ -161,6 +169,17 @@ export function createApplicationDatabase<
 					// The injected sink is explicitly non-throwing. A broken sink must not
 					// turn an already-committed write into an apparent transaction failure.
 				}
+			}
+		}
+		if (changes.tables.size > 0 || changes.kv.size > 0) {
+			const committed: CommittedApplicationChanges = {
+				tables: new Map(
+					[...changes.tables].map(([table, ids]) => [table, new Set(ids)]),
+				),
+				kv: new Set(changes.kv),
+			};
+			for (const observer of [...commitObservers]) {
+				notify(() => observer(committed));
 			}
 		}
 		for (const [tableName, changedIds] of changes.tables) {
@@ -250,6 +269,11 @@ export function createApplicationDatabase<
 				throw new Error('Nested application transactions are not supported');
 			}
 			return mutate(() => run({ tables, kv }));
+		},
+		/** Observe one combined table/KV change set after each successful commit. */
+		observe(callback: (changes: CommittedApplicationChanges) => void) {
+			commitObservers.add(callback);
+			return () => commitObservers.delete(callback);
 		},
 		/** Read logical application state, including terminal tombstones. */
 		readLogicalSnapshot(): ApplicationLogicalSnapshot {

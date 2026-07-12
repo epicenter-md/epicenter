@@ -80,6 +80,7 @@ export function defineTable<
 		: Readonly<Record<never, never>>
 > {
 	const authoredColumns = columns as TColumns;
+	assertSchemaRecord(authoredColumns, 'table columns', 'table column');
 	const compiledColumns = Object.fromEntries(
 		Object.entries(authoredColumns).map(([name, schema]) => [
 			name,
@@ -101,7 +102,7 @@ export function defineTable<
 		}
 		const names = new Set<string>();
 		for (const name of index) {
-			if (!(name in authoredColumns)) {
+			if (!Object.hasOwn(authoredColumns, name)) {
 				throw new Error(`Table index references unknown column '${name}'`);
 			}
 			if (names.has(name)) {
@@ -112,9 +113,10 @@ export function defineTable<
 	}
 
 	const docs = options?.docs ?? {};
+	assertSchemaRecord(docs, 'table documents', 'table document');
 	for (const [name, layout] of Object.entries(docs)) {
 		assertSafeSegment(name, 'child document name');
-		if (name in authoredColumns) {
+		if (Object.hasOwn(authoredColumns, name)) {
 			throw new Error(`Table document '${name}' collides with a column`);
 		}
 		if (layout !== 'plainText' && layout !== 'richText') {
@@ -239,6 +241,7 @@ export function defineWorkspace<
 	if (id.trim() === '') throw new Error('Workspace id must not be empty');
 	if (name.trim() === '') throw new Error('Workspace name must not be empty');
 	if (epoch.trim() === '') throw new Error('Workspace epoch must not be empty');
+	assertSchemaRecord(tables, 'workspace tables', 'workspace table');
 
 	const epochIds = new Set([epoch]);
 	for (const [position, migration] of migrations.entries()) {
@@ -266,7 +269,7 @@ export function defineWorkspace<
 		for (const column of Object.values(table.compiledColumns)) {
 			if (
 				column.referenceTable !== null &&
-				!(column.referenceTable in tables)
+				!Object.hasOwn(tables, column.referenceTable)
 			) {
 				throw new Error(
 					`Table '${tableName}' column '${column.name}' references unknown table '${column.referenceTable}'`,
@@ -276,6 +279,7 @@ export function defineWorkspace<
 	}
 
 	const declaredKv = (kv ?? {}) as TKv;
+	assertSchemaRecord(declaredKv, 'workspace KV', 'workspace KV key');
 	return {
 		id,
 		name,
@@ -296,6 +300,22 @@ export function defineWorkspace<
 			],
 		}),
 	};
+}
+
+function assertSchemaRecord(
+	record: object,
+	containerLabel: string,
+	keyLabel: string,
+): void {
+	const prototype = Object.getPrototypeOf(record);
+	if (prototype !== Object.prototype && prototype !== null) {
+		throw new Error(`${containerLabel} must be a plain record`);
+	}
+	for (const key of Object.keys(record)) {
+		if (Object.hasOwn(Object.prototype, key)) {
+			throw new Error(`${keyLabel} '${key}' collides with Object.prototype`);
+		}
+	}
 }
 
 function compileColumn(name: string, authoredSchema: TSchema): CompiledColumn {

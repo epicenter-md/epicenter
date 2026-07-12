@@ -237,12 +237,22 @@ describe('transaction and invalidation', () => {
 		const { database, workspace } = setup();
 		const tableEvents: string[][] = [];
 		const kvEvents: string[][] = [];
+		const commitEvents: {
+			tables: [string, string[]][];
+			kv: string[];
+		}[] = [];
 		let observerSawCommittedRows = false;
 		workspace.tables.notes.observe((ids) => {
 			tableEvents.push([...ids]);
 			observerSawCommittedRows = database.inTransaction === false;
 		});
 		workspace.kv.observe((keys) => kvEvents.push([...keys]));
+		workspace.observe((changes) => {
+			commitEvents.push({
+				tables: [...changes.tables].map(([table, ids]) => [table, [...ids]]),
+				kv: [...changes.kv],
+			});
+		});
 
 		workspace.transact((tx) => {
 			tx.tables.notes.put({
@@ -267,13 +277,21 @@ describe('transaction and invalidation', () => {
 
 		expect(tableEvents).toEqual([['one', 'two']]);
 		expect(kvEvents).toEqual([['theme', 'layout']]);
+		expect(commitEvents).toEqual([
+			{
+				tables: [['notes', ['one', 'two']]],
+				kv: ['theme', 'layout'],
+			},
+		]);
 		expect(observerSawCommittedRows).toBe(true);
 	});
 
 	test('a thrown transaction rolls back rows and emits no invalidation', () => {
 		const { workspace } = setup();
 		let invalidations = 0;
+		let commitInvalidations = 0;
 		workspace.tables.notes.observe(() => invalidations++);
+		workspace.observe(() => commitInvalidations++);
 
 		expect(() =>
 			workspace.transact((tx) => {
@@ -290,6 +308,7 @@ describe('transaction and invalidation', () => {
 		).toThrow('abort');
 		expect(workspace.tables.notes.get('rolled-back')).toBeNull();
 		expect(invalidations).toBe(0);
+		expect(commitInvalidations).toBe(0);
 	});
 
 	test('KV clear restores a fresh declared default and invalidates only changes', () => {

@@ -63,6 +63,9 @@ describe('defineTable', () => {
 				{ docs: { 'bad.name': 'plainText' } },
 			),
 		).toThrow('Invalid child document name');
+		expect(() =>
+			defineTable({ id: field.string(), constructor: field.string() }),
+		).toThrow("table column 'constructor' collides with Object.prototype");
 	});
 
 	test('requires a non-null string id', () => {
@@ -277,6 +280,43 @@ describe('defineWorkspace', () => {
 				tables: { 'bad.table': documented },
 			}),
 		).toThrow('Invalid child document table name');
+	});
+
+	test('rejects schema names that collide with record prototypes', () => {
+		const rows = defineTable({ id: field.string() });
+		expect(() =>
+			defineWorkspace({
+				id: 'rows',
+				name: 'Rows',
+				epoch: 'rows-v1',
+				tables: { constructor: rows },
+			}),
+		).toThrow("workspace table 'constructor' collides with Object.prototype");
+		expect(() =>
+			defineWorkspace({
+				id: 'rows',
+				name: 'Rows',
+				epoch: 'rows-v1',
+				tables: { rows },
+				kv: { toString: defineKv(field.string(), () => '') },
+			}),
+		).toThrow("workspace KV key 'toString' collides with Object.prototype");
+		expect(() =>
+			defineWorkspace({
+				id: 'rows',
+				name: 'Rows',
+				epoch: 'rows-v1',
+				tables: { rows, __proto__: rows },
+			}),
+		).toThrow('workspace tables must be a plain record');
+		expect(() =>
+			defineWorkspace({
+				id: 'rows',
+				name: 'Rows',
+				epoch: 'rows-v1',
+				tables: { rows, ['__proto__']: rows },
+			}),
+		).toThrow("workspace table '__proto__' collides with Object.prototype");
 	});
 
 	test('rejects inert migrations and duplicate epoch ids', () => {
