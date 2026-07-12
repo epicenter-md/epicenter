@@ -395,13 +395,9 @@
       "name": "@epicenter/reddit",
       "version": "0.0.2",
       "dependencies": {
-        "@epicenter/field": "workspace:*",
-        "@epicenter/workspace": "workspace:*",
         "@sindresorhus/slugify": "catalog:",
         "arktype": "catalog:",
         "fflate": "catalog:",
-        "typebox": "catalog:",
-        "yjs": "catalog:",
       },
       "devDependencies": {
         "@types/bun": "catalog:",

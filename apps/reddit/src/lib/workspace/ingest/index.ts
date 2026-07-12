@@ -13,9 +13,9 @@ export {
 	type ImportProgress,
 	type ImportStats,
 	importRedditExport,
-	previewRedditExport,
-	type RedditImport,
-	redditImport,
+	type RedditImportResult,
+	type RedditMetadata,
+	type RedditTables,
 } from './reddit/index.js';
 // Utilities (for custom importers)
 export { CSV, type CsvOptions, parseCsv } from './utils/csv.js';
