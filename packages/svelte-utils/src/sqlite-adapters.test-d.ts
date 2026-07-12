@@ -2,6 +2,8 @@ import { field } from '@epicenter/field';
 import type {
 	ApplicationKv,
 	ApplicationTable,
+	AsyncKv,
+	AsyncTable,
 } from '@epicenter/workspace/sqlite';
 import {
 	defineKv,
@@ -44,3 +46,28 @@ noteView.nonconforming;
 void currentTheme;
 void notesList;
 void note;
+
+declare const asyncKv: AsyncKv<typeof kvDefinitions>;
+const asyncTheme = fromKv(asyncKv, 'theme');
+const asyncCurrentTheme: 'light' | 'dark' | undefined = asyncTheme.current;
+const themeWrite: Promise<void> = asyncTheme.set('dark');
+const themeClear: Promise<void> = asyncTheme.clear();
+const themeReady: Promise<void> = asyncTheme.whenReady;
+// @ts-expect-error — async authoritative writes cannot hide a Promise in assignment
+asyncTheme.current = 'light';
+// @ts-expect-error — the selected key still controls the async write value
+asyncTheme.set(1);
+
+declare const asyncNotes: AsyncTable<Note>;
+const asyncNoteView = fromTable(asyncNotes);
+const asyncNotesList: readonly Note[] = asyncNoteView.all;
+const asyncNote: Note | undefined = asyncNoteView.byId('note-1');
+const notesReady: Promise<void> = asyncNoteView.whenReady;
+
+void asyncCurrentTheme;
+void themeWrite;
+void themeClear;
+void themeReady;
+void asyncNotesList;
+void asyncNote;
+void notesReady;

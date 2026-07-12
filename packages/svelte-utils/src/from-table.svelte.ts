@@ -4,7 +4,12 @@ import type {
 	TableNewerWriterError,
 	TableParseError,
 } from '@epicenter/workspace';
-import { createSubscriber } from 'svelte/reactivity';
+import {
+	type AsyncTable,
+	asyncWorkspaceHandle,
+	type TableCommitDelta,
+} from '@epicenter/workspace/sqlite';
+import { createSubscriber, SvelteMap } from 'svelte/reactivity';
 
 /** The read and invalidation surface exposed by SQLite workspace tables. */
 export type ObservableTable<TRow extends { id: string }> = {
@@ -17,6 +22,18 @@ export type ObservableTable<TRow extends { id: string }> = {
 export type TableView<TRow extends { id: string }> = {
 	readonly all: readonly TRow[];
 	byId(id: TRow['id']): TRow | undefined;
+};
+
+/**
+ * A synchronous UI projection of an async authoritative table.
+ *
+ * Await `whenReady` before reading the initial snapshot. Later committed
+ * deltas update `all` and `byId` reactively without rescanning the database.
+ * The projection is disposable cache state, never a durable mirror.
+ */
+export type AsyncTableView<TRow extends { id: string }> = TableView<TRow> & {
+	readonly whenReady: Promise<void>;
+	[Symbol.dispose](): void;
 };
 
 /**
@@ -52,6 +69,9 @@ export type ReadonlyTableView<TRow extends BaseRow> = {
  * reads after local writes, remote pulls, snapshots, and imports.
  */
 export function fromTable<TRow extends { id: string }>(
+	table: AsyncTable<TRow>,
+): AsyncTableView<TRow>;
+export function fromTable<TRow extends { id: string }>(
 	table: ObservableTable<TRow>,
 ): TableView<TRow>;
 /** @deprecated Removed with the Yjs record table after app migration. */
@@ -59,15 +79,18 @@ export function fromTable<TRow extends BaseRow>(
 	table: ReadonlyTable<TRow>,
 ): ReadonlyTableView<TRow>;
 export function fromTable<TRow extends BaseRow>(
-	table: ObservableTable<TRow> | ReadonlyTable<TRow>,
-): TableView<TRow> | ReadonlyTableView<TRow> {
+	table: AsyncTable<TRow> | ObservableTable<TRow> | ReadonlyTable<TRow>,
+): AsyncTableView<TRow> | TableView<TRow> | ReadonlyTableView<TRow> {
+	if (asyncWorkspaceHandle in table) {
+		return createAsyncTableView(table as AsyncTable<TRow>);
+	}
 	if ('list' in table) {
 		const subscribe = createSubscriber((update) =>
-			table.observe(() => update()),
+			(table as ObservableTable<TRow>).observe(() => update()),
 		);
 		const listed = $derived.by(() => {
 			subscribe();
-			return table.list();
+			return (table as ObservableTable<TRow>).list();
 		});
 
 		return {
@@ -76,7 +99,7 @@ export function fromTable<TRow extends BaseRow>(
 			},
 			byId(id: TRow['id']): TRow | undefined {
 				subscribe();
-				return table.get(id) ?? undefined;
+				return (table as ObservableTable<TRow>).get(id) ?? undefined;
 			},
 		};
 	}
@@ -104,5 +127,61 @@ export function fromTable<TRow extends BaseRow>(
 			subscribe();
 			return table.get(id).data ?? undefined;
 		},
+	};
+}
+
+function createAsyncTableView<TRow extends { id: string }>(
+	table: AsyncTable<TRow>,
+): AsyncTableView<TRow> {
+	const rows = new SvelteMap<TRow['id'], TRow>();
+	const pendingDeltas: TableCommitDelta<TRow>[] = [];
+	let isHydrated = false;
+	let isDisposed = false;
+
+	function apply(delta: TableCommitDelta<TRow>) {
+		for (const id of delta.removed) rows.delete(id as TRow['id']);
+		for (const row of delta.upserted) rows.set(row.id, row);
+	}
+
+	const unobserve = table.observe((delta) => {
+		if (isDisposed) return;
+		if (!isHydrated) {
+			pendingDeltas.push(delta);
+			return;
+		}
+		apply(delta);
+	});
+	const initialRows = table.list();
+
+	function dispose() {
+		if (isDisposed) return;
+		isDisposed = true;
+		pendingDeltas.length = 0;
+		unobserve();
+	}
+
+	const whenReady = initialRows.then(
+		(snapshot) => {
+			if (isDisposed) return;
+			for (const row of snapshot) rows.set(row.id, row);
+			for (const delta of pendingDeltas) apply(delta);
+			pendingDeltas.length = 0;
+			isHydrated = true;
+		},
+		(error: unknown) => {
+			dispose();
+			throw error;
+		},
+	);
+
+	return {
+		whenReady,
+		get all() {
+			return [...rows.values()];
+		},
+		byId(id) {
+			return rows.get(id);
+		},
+		[Symbol.dispose]: dispose,
 	};
 }

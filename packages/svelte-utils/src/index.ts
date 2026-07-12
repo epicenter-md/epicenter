@@ -5,10 +5,12 @@ export {
 export { default as FlushEditsOnHide } from './flush-edits-on-hide.svelte';
 export { fromDisposableCache } from './from-disposable-cache.svelte.js';
 export {
+	type AsyncKvBinding,
 	fromKv,
 	type ObservableKv,
 } from './from-kv.svelte.js';
 export {
+	type AsyncTableView,
 	fromTable,
 	type ObservableTable,
 	type ReadonlyTableView,
