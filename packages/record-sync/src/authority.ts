@@ -451,16 +451,6 @@ export function createRecordAuthority({
 			if (refusal) return { kind: 'push', ok: false, reason: refusal };
 			let response: PushResponse = { kind: 'push', ok: true };
 			try {
-				applyPush();
-			} catch (error) {
-				if (!(error instanceof CreateConflictError)) throw error;
-				// The thrown sentinel rolled back the whole push, so no mutation
-				// from this batch was accepted and the actor stays paused.
-				return { kind: 'push', ok: false, reason: 'create-conflict' };
-			}
-			return response;
-
-			function applyPush(): void {
 				database.transaction(() => {
 					for (const mutation of request.mutations) {
 						const highWater =
@@ -502,7 +492,13 @@ export function createRecordAuthority({
 						writeMeta(database, 'serverSequence', serverSequence);
 					}
 				});
+			} catch (error) {
+				if (!(error instanceof CreateConflictError)) throw error;
+				// The thrown sentinel rolled back the whole push, so no mutation
+				// from this batch was accepted and the actor stays paused.
+				return { kind: 'push', ok: false, reason: 'create-conflict' };
 			}
+			return response;
 		},
 
 		pull(request: PullRequest): PullResponse {
