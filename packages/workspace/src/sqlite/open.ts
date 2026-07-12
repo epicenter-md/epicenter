@@ -11,38 +11,53 @@ import type {
 
 export type OwnedWorkspaceServicePort = WorkspaceServicePort & AsyncDisposable;
 
-export type OpenLocalWorkspaceOptions = {
+export type OpenWorkspaceFromServiceOptions<
+	TKind extends 'standalone' | 'replica',
+> = {
 	/** A process-local or remote service that owns the SQLite connection. */
 	service: OwnedWorkspaceServicePort;
+	expectedKind: TKind;
 };
 
-export type LocalWorkspace<
+export type OpenedWorkspace<
 	TTables extends TableDefinitions,
 	TKv extends KvDefinitions,
+	TKind extends 'standalone' | 'replica',
 > = AsyncWorkspace<TTables, TKv> &
 	AsyncDisposable & {
-		readonly kind: 'local';
+		readonly kind: TKind;
 	};
 
+export type StandaloneWorkspace<
+	TTables extends TableDefinitions,
+	TKv extends KvDefinitions,
+> = OpenedWorkspace<TTables, TKv, 'standalone'>;
+
+export type WorkspaceReplica<
+	TTables extends TableDefinitions,
+	TKv extends KvDefinitions,
+> = OpenedWorkspace<TTables, TKv, 'replica'>;
+
 /**
- * Open a typed client for a local-only SQLite database service.
+ * Open a typed client for a standalone SQLite database service.
  *
  * The service process loads the same workspace definition itself. The opening
  * handshake prevents a UI build from talking to a worker or native host with a
  * different workspace id or logical schema.
  */
-export async function openLocalWorkspaceFromService<
+export async function openWorkspaceFromService<
 	TTables extends TableDefinitions,
 	TKv extends KvDefinitions,
+	TKind extends 'standalone' | 'replica',
 >(
 	definition: WorkspaceDefinition<TTables, TKv>,
-	{ service }: OpenLocalWorkspaceOptions,
-): Promise<LocalWorkspace<TTables, TKv>> {
+	{ service, expectedKind }: OpenWorkspaceFromServiceOptions<TKind>,
+): Promise<OpenedWorkspace<TTables, TKv, TKind>> {
 	try {
 		const description = await service.request({ kind: 'describe' });
 		if (
 			description.kind !== 'workspace' ||
-			description.workspaceKind !== 'local' ||
+			description.workspaceKind !== expectedKind ||
 			description.workspaceId !== definition.id ||
 			description.schemaIdentity !== definition.schemaIdentity
 		) {
@@ -66,7 +81,7 @@ export async function openLocalWorkspaceFromService<
 	let state: 'open' | 'disposing' | 'closed' = 'open';
 	let disposePromise: Promise<void> | undefined;
 	function disposedError(): Error {
-		return new Error('Local workspace is disposed');
+		return new Error('Workspace is disposed');
 	}
 	const gatedService: WorkspaceServicePort = {
 		request(request) {
@@ -83,7 +98,7 @@ export async function openLocalWorkspaceFromService<
 	const client = createWorkspaceClient(definition, gatedService);
 	return {
 		...client,
-		kind: 'local',
+		kind: expectedKind,
 		async [Symbol.asyncDispose]() {
 			if (disposePromise) return disposePromise;
 			if (state === 'closed') return;

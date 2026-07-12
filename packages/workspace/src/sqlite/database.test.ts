@@ -75,7 +75,7 @@ function setup() {
 	});
 	const observerErrors: unknown[] = [];
 	const workspace = createApplicationDatabase(definition, sqlite, {
-		kind: 'local',
+		kind: 'standalone',
 		onObserverError: (error) => observerErrors.push(error),
 	});
 	return { database, definition, observerErrors, sqlite, workspace };
@@ -216,7 +216,7 @@ describe('typed rows at rest', () => {
 				tables: { markers: defineTable({ id: field.string() }) },
 			}),
 			createSqlite(database),
-			{ kind: 'local', onObserverError() {} },
+			{ kind: 'standalone', onObserverError() {} },
 		);
 		const changed: string[][] = [];
 		workspace.tables.markers.observe((ids) => changed.push([...ids]));
@@ -354,7 +354,7 @@ describe('transaction and invalidation', () => {
 			},
 		};
 		const workspace = createApplicationDatabase(definition, sqlite, {
-			kind: 'local',
+			kind: 'standalone',
 			coordinator,
 			onObserverError() {},
 		});
@@ -499,12 +499,189 @@ describe('transaction and invalidation', () => {
 					cells: {
 						title: 'Live',
 						pinned: false,
-						rating: null,
 						tags: [],
 						metadata: { source: 'local', rank: 1 },
 					},
 				},
 			],
+		});
+	});
+
+	test('replica projection quarantines incomplete rows and promotes completed rows', () => {
+		const { database, workspace } = setup();
+		const observations: string[][] = [];
+		workspace.tables.notes.observe((ids) => observations.push([...ids]));
+
+		workspace.applyReplicaTransaction((projection) => {
+			projection.apply(
+				[
+					{
+						kind: 'patchRow',
+						table: 'notes',
+						rowId: 'remote',
+						cells: { title: 'Incomplete' },
+					},
+				],
+				4,
+			);
+		});
+		expect(workspace.tables.notes.get('remote')).toBeNull();
+		expect(workspace.readLogicalSnapshot()).toEqual({
+			rows: [
+				{
+					table: 'notes',
+					rowId: 'remote',
+					deleted: false,
+					cells: { title: 'Incomplete' },
+				},
+			],
+		});
+		expect(
+			database
+				.query<{ firstSeenSequence: number }, []>(
+					'SELECT first_seen_sequence AS firstSeenSequence FROM __epicenter_quarantine',
+				)
+				.get(),
+		).toEqual({ firstSeenSequence: 4 });
+		expect(() =>
+			workspace.tables.notes.put({
+				id: 'remote',
+				title: 'Typed overwrite',
+				pinned: false,
+				rating: null,
+				tags: [],
+				metadata: { source: 'local', rank: 1 },
+			}),
+		).toThrow('quarantined row');
+
+		workspace.applyReplicaTransaction((projection) => {
+			projection.apply(
+				[
+					{
+						kind: 'patchRow',
+						table: 'notes',
+						rowId: 'remote',
+						cells: {
+							pinned: false,
+							tags: [],
+							metadata: { source: 'remote', rank: 1 },
+						},
+					},
+				],
+				5,
+			);
+		});
+		expect(workspace.tables.notes.get('remote')).toEqual({
+			id: 'remote',
+			title: 'Incomplete',
+			pinned: false,
+			rating: null,
+			tags: [],
+			metadata: { source: 'remote', rank: 1 },
+		});
+		expect(
+			database.query('SELECT * FROM __epicenter_quarantine').all(),
+		).toEqual([]);
+		expect(observations).toEqual([['remote'], ['remote']]);
+	});
+
+	test('typed removal terminally retires a quarantined identity', () => {
+		const { database, workspace } = setup();
+		workspace.applyReplicaTransaction((projection) => {
+			projection.apply(
+				[
+					{
+						kind: 'patchRow',
+						table: 'notes',
+						rowId: 'hidden',
+						cells: { unknown: true },
+					},
+				],
+				1,
+			);
+		});
+
+		workspace.tables.notes.remove('hidden');
+
+		expect(
+			database.query('SELECT * FROM __epicenter_quarantine').all(),
+		).toEqual([]);
+		expect(workspace.readLogicalSnapshot().rows).toEqual([
+			{ table: 'notes', rowId: 'hidden', deleted: true, cells: {} },
+		]);
+	});
+
+	test('replica projection preserves terminal deletion and replaces snapshots atomically', () => {
+		const { workspace } = setup();
+		workspace.applyReplicaTransaction((projection) => {
+			projection.apply(
+				[
+					{ kind: 'deleteRow', table: 'notes', rowId: 'gone' },
+					{
+						kind: 'patchRow',
+						table: 'notes',
+						rowId: 'gone',
+						cells: { title: 'Too late' },
+					},
+				],
+				2,
+			);
+		});
+		expect(workspace.tables.notes.get('gone')).toBeNull();
+		expect(workspace.readLogicalSnapshot().rows).toEqual([
+			{ table: 'notes', rowId: 'gone', deleted: true, cells: {} },
+		]);
+
+		expect(() =>
+			workspace.applyReplicaTransaction((projection) => {
+				projection.replace(
+					[
+						{
+							table: 'notes',
+							rowId: 'snapshot',
+							deleted: false,
+							cells: {
+								title: 'Snapshot',
+								pinned: true,
+								tags: [],
+								metadata: { source: 'remote', rank: 2 },
+							},
+						},
+					],
+					10,
+				);
+				throw new Error('crash before commit');
+			}),
+		).toThrow('crash before commit');
+		expect(workspace.readLogicalSnapshot().rows).toEqual([
+			{ table: 'notes', rowId: 'gone', deleted: true, cells: {} },
+		]);
+
+		workspace.applyReplicaTransaction((projection) => {
+			projection.replace(
+				[
+					{
+						table: 'notes',
+						rowId: 'snapshot',
+						deleted: false,
+						cells: {
+							title: 'Snapshot',
+							pinned: true,
+							tags: [],
+							metadata: { source: 'remote', rank: 2 },
+						},
+					},
+				],
+				10,
+			);
+		});
+		expect(workspace.tables.notes.get('snapshot')).toEqual({
+			id: 'snapshot',
+			title: 'Snapshot',
+			pinned: true,
+			rating: null,
+			tags: [],
+			metadata: { source: 'remote', rank: 2 },
 		});
 	});
 });
@@ -531,7 +708,7 @@ describe('representation migrations', () => {
 				tables: { rows: defineTable({ id: field.string() }) },
 			}),
 			sqlite,
-			{ kind: 'local', onObserverError() {} },
+			{ kind: 'standalone', onObserverError() {} },
 		);
 
 		expect(inspectionWasTransactional).toBe(true);
@@ -551,7 +728,7 @@ describe('representation migrations', () => {
 			tables: { notes: v1Table },
 		});
 		const old = createApplicationDatabase(v1, sqlite, {
-			kind: 'local',
+			kind: 'standalone',
 			onObserverError() {},
 		});
 		old.tables.notes.put({ id: 'one', title: 'Before' });
@@ -572,7 +749,7 @@ describe('representation migrations', () => {
 			],
 		});
 		const current = createApplicationDatabase(v2, sqlite, {
-			kind: 'local',
+			kind: 'standalone',
 			onObserverError() {},
 		});
 		expect(applyCalls).toBe(1);
@@ -608,7 +785,7 @@ describe('representation migrations', () => {
 			],
 		});
 		createApplicationDatabase(definition, createSqlite(database), {
-			kind: 'local',
+			kind: 'standalone',
 			onObserverError() {},
 		});
 		expect(applyCalls).toBe(0);
@@ -626,7 +803,7 @@ describe('representation migrations', () => {
 			migrations: [{ apply() {} }],
 		});
 		createApplicationDatabase(current, sqlite, {
-			kind: 'local',
+			kind: 'standalone',
 			onObserverError() {},
 		});
 
@@ -638,7 +815,7 @@ describe('representation migrations', () => {
 		});
 		expect(() =>
 			createApplicationDatabase(old, sqlite, {
-				kind: 'local',
+				kind: 'standalone',
 				onObserverError() {},
 			}),
 		).toThrow('database revision 2 is newer');
@@ -656,7 +833,7 @@ describe('representation migrations', () => {
 				tables: { notes },
 			}),
 			sqlite,
-			{ kind: 'local', onObserverError() {} },
+			{ kind: 'standalone', onObserverError() {} },
 		);
 		original.tables.notes.put({ id: 'kept', title: 'Kept' });
 		const readPhysicalState = () => ({
@@ -682,7 +859,7 @@ describe('representation migrations', () => {
 					tables: { notes },
 				}),
 				sqlite,
-				{ kind: 'local', onObserverError() {} },
+				{ kind: 'standalone', onObserverError() {} },
 			),
 		).toThrow("belongs to 'identity-test'");
 
@@ -700,13 +877,13 @@ describe('representation migrations', () => {
 					tables: { notes: nullableColumnAdded },
 				}),
 				sqlite,
-				{ kind: 'local', onObserverError() {} },
+				{ kind: 'standalone', onObserverError() {} },
 			),
 		).toThrow('schema identity does not match');
 		expect(readPhysicalState()).toEqual(beforeRefusals);
 	});
 
-	test('database kind permanently fences local and replica lifecycle doors', () => {
+	test('database kind permanently fences standalone and replica lifecycle doors', () => {
 		const database = new Database(':memory:');
 		const sqlite = createSqlite(database);
 		const definition = defineWorkspace({
@@ -716,7 +893,7 @@ describe('representation migrations', () => {
 			tables: { rows: defineTable({ id: field.string() }) },
 		});
 		createApplicationDatabase(definition, sqlite, {
-			kind: 'local',
+			kind: 'standalone',
 			onObserverError() {},
 		});
 
@@ -725,7 +902,7 @@ describe('representation migrations', () => {
 				kind: 'replica',
 				onObserverError() {},
 			}),
-		).toThrow("database is 'local', not 'replica'");
+		).toThrow("database is 'standalone', not 'replica'");
 	});
 
 	test('missing epoch migrations require the explicit epoch-upgrade flow', () => {
@@ -739,7 +916,7 @@ describe('representation migrations', () => {
 			tables: { notes },
 		});
 		createApplicationDatabase(v1, sqlite, {
-			kind: 'local',
+			kind: 'standalone',
 			onObserverError() {},
 		});
 
@@ -752,7 +929,7 @@ describe('representation migrations', () => {
 		});
 		expect(() =>
 			createApplicationDatabase(v2, sqlite, {
-				kind: 'local',
+				kind: 'standalone',
 				onObserverError() {},
 			}),
 		).toThrow('changes schema epoch');

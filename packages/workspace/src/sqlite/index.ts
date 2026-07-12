@@ -46,3 +46,12 @@ export {
 	type TableOptions,
 	type WorkspaceDefinition,
 } from './definition.js';
+export type {
+	StandaloneWorkspace,
+	WorkspaceReplica,
+} from './open.js';
+export type { ReplicaSyncPort } from './replica.js';
+export {
+	type CreateHttpReplicaSyncPortOptions,
+	createHttpReplicaSyncPort,
+} from './replica-http.js';

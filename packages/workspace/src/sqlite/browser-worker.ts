@@ -1,3 +1,4 @@
+import { RECORD_SYNC_PROTOCOL_MAJOR } from '@epicenter/record-sync';
 import {
 	type BrowserSqliteDatabase,
 	createBrowserSqliteAdapter,
@@ -16,6 +17,11 @@ import type {
 	WorkspaceDefinition,
 } from './definition.js';
 import { createInvalidationRefreshQueue } from './invalidation-queue.js';
+import {
+	createReplicaRuntime,
+	type ReplicaSyncPort,
+	startReplicaSyncSupervisor,
+} from './replica.js';
 import { createWorkspaceService } from './service.js';
 import {
 	parseWorkspaceInvalidationMessage,
@@ -23,11 +29,25 @@ import {
 	type WorkspaceInvalidation,
 } from './service-protocol.js';
 
-export type ServeLocalWorkspaceWorkerOptions = {
+export type ServeStandaloneWorkspaceWorkerOptions = {
 	storage: { kind: 'opfs'; name: string };
 	/** Receives worker-side observer, broadcast, and cleanup failures. */
 	onError(error: unknown): void;
 };
+
+export type ServeWorkspaceReplicaWorkerOptions = {
+	storage: { kind: 'opfs'; name: string };
+	sync: ReplicaSyncPort;
+	/** Receives retryable or paused synchronization failures. */
+	onSyncError(error: unknown): void;
+	/** Receives worker-side observer, broadcast, and cleanup failures. */
+	onError(error: unknown): void;
+	pollIntervalMs?: number;
+};
+
+type ServeWorkspaceWorkerOptions =
+	| ({ workspaceKind: 'standalone' } & ServeStandaloneWorkspaceWorkerOptions)
+	| ({ workspaceKind: 'replica' } & ServeWorkspaceReplicaWorkerOptions);
 
 const STORAGE_NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
@@ -56,8 +76,9 @@ async function openOpfsWorkspaceService<
 	TKv extends KvDefinitions,
 >(
 	definition: WorkspaceDefinition<TTables, TKv>,
-	{ storage, onError }: ServeLocalWorkspaceWorkerOptions,
+	options: ServeWorkspaceWorkerOptions,
 ): Promise<WorkerWorkspaceService> {
+	const { storage, onError, workspaceKind } = options;
 	if (!STORAGE_NAME.test(storage.name)) {
 		throw new Error(
 			`Invalid OPFS workspace name '${storage.name}'; expected lowercase letters, digits, and internal hyphens`,
@@ -81,12 +102,24 @@ async function openOpfsWorkspaceService<
 		| undefined;
 	let isDisposed = false;
 	let disposePromise: Promise<void> | undefined;
+	let stopScheduling: (() => void) | undefined;
+	let supervisor: ReturnType<typeof startReplicaSyncSupervisor> | undefined;
 
 	async function disposeResources(): Promise<void> {
 		isDisposed = true;
 		const cleanupErrors: unknown[] = [];
 		try {
 			channel?.close();
+		} catch (error) {
+			cleanupErrors.push(error);
+		}
+		try {
+			stopScheduling?.();
+		} catch (error) {
+			cleanupErrors.push(error);
+		}
+		try {
+			await supervisor?.dispose();
 		} catch (error) {
 			cleanupErrors.push(error);
 		}
@@ -121,18 +154,42 @@ async function openOpfsWorkspaceService<
 			'c',
 			'opfs',
 		) as unknown as BrowserSqliteDatabase & { close(): void };
-		channel = new BroadcastChannel(`epicenter.sqlite.local/${storage.name}`);
+		channel = new BroadcastChannel(
+			`epicenter.sqlite.${workspaceKind}/${storage.name}`,
+		);
 		const senderId = crypto.randomUUID();
 		native.exec({ sql: 'PRAGMA busy_timeout = 5000' });
-		const database = createApplicationDatabase(
-			definition,
-			createBrowserSqliteAdapter(native),
-			{ kind: 'local', onObserverError: (error) => report(onError, error) },
-		);
+		const sqlite = createBrowserSqliteAdapter(native);
+		const replicaRuntime =
+			workspaceKind === 'replica'
+				? await createReplicaRuntime({
+						definition,
+						sqlite,
+						sync: options.sync,
+						protocolMajor: RECORD_SYNC_PROTOCOL_MAJOR,
+						createActorId: () => crypto.randomUUID(),
+						sha256,
+						onObserverError: (error) => report(onError, error),
+					})
+				: undefined;
+		const database =
+			replicaRuntime?.database ??
+			createApplicationDatabase(definition, sqlite, {
+				kind: 'standalone',
+				onObserverError: (error) => report(onError, error),
+			});
 		const openedService = createWorkspaceService(database, {
 			onObserverError: (error) => report(onError, error),
 		});
 		service = openedService;
+		if (workspaceKind === 'replica' && replicaRuntime) {
+			supervisor = startReplicaSyncSupervisor(replicaRuntime, {
+				onError: options.onSyncError,
+				pollIntervalMs: options.pollIntervalMs,
+			});
+			stopScheduling = openedService.observe(() => supervisor?.request());
+			supervisor.request();
+		}
 		refreshQueue = createInvalidationRefreshQueue({
 			tables: new Set(Object.keys(definition.tables)),
 			kv: new Set(Object.keys(definition.kv)),
@@ -185,13 +242,45 @@ async function openOpfsWorkspaceService<
 }
 
 /** Start the worker-side OPFS owner for one app-imported workspace definition. */
-export function serveLocalWorkspaceWorker<
+export function serveStandaloneWorkspaceWorker<
 	TTables extends TableDefinitions,
 	TKv extends KvDefinitions,
 >(
 	definition: WorkspaceDefinition<TTables, TKv>,
-	options: ServeLocalWorkspaceWorkerOptions,
+	options: ServeStandaloneWorkspaceWorkerOptions,
 	scope: WorkspaceWorkerScope = self as unknown as WorkspaceWorkerScope,
 ): void {
-	exposeWorkspaceService(scope, openOpfsWorkspaceService(definition, options));
+	exposeWorkspaceService(
+		scope,
+		openOpfsWorkspaceService(definition, {
+			...options,
+			workspaceKind: 'standalone',
+		}),
+	);
+}
+
+/** Start the worker-side OPFS owner for one synchronized workspace replica. */
+export function serveWorkspaceReplicaWorker<
+	TTables extends TableDefinitions,
+	TKv extends KvDefinitions,
+>(
+	definition: WorkspaceDefinition<TTables, TKv>,
+	options: ServeWorkspaceReplicaWorkerOptions,
+	scope: WorkspaceWorkerScope = self as unknown as WorkspaceWorkerScope,
+): void {
+	exposeWorkspaceService(
+		scope,
+		openOpfsWorkspaceService(definition, {
+			...options,
+			workspaceKind: 'replica',
+		}),
+	);
+}
+
+async function sha256(value: string): Promise<string> {
+	const bytes = new TextEncoder().encode(value);
+	const digest = await crypto.subtle.digest('SHA-256', bytes);
+	return [...new Uint8Array(digest)]
+		.map((byte) => byte.toString(16).padStart(2, '0'))
+		.join('');
 }

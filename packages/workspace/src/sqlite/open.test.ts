@@ -7,7 +7,7 @@ import type {
 import { defineTable, defineWorkspace } from './definition.js';
 import {
 	type OwnedWorkspaceServicePort,
-	openLocalWorkspaceFromService,
+	openWorkspaceFromService,
 } from './open.js';
 
 function setup() {
@@ -24,7 +24,7 @@ function setup() {
 			requests.push(request);
 			return {
 				kind: 'workspace',
-				workspaceKind: 'local',
+				workspaceKind: 'standalone',
 				workspaceId: definition.id,
 				schemaIdentity: definition.schemaIdentity,
 			};
@@ -39,13 +39,14 @@ function setup() {
 	return { definition, service, requests, disposed: () => disposed };
 }
 
-test('local workspace verifies its service before exposing the typed client', async () => {
+test('standalone workspace verifies its service before exposing the typed client', async () => {
 	const { definition, service, requests, disposed } = setup();
-	const workspace = await openLocalWorkspaceFromService(definition, {
+	const workspace = await openWorkspaceFromService(definition, {
 		service,
+		expectedKind: 'standalone',
 	});
 
-	expect(workspace.kind).toBe('local');
+	expect(workspace.kind).toBe('standalone');
 	expect(requests).toEqual([{ kind: 'describe' }]);
 	await workspace[Symbol.asyncDispose]();
 	await workspace[Symbol.asyncDispose]();
@@ -53,14 +54,37 @@ test('local workspace verifies its service before exposing the typed client', as
 	await expect(workspace.tables.notes.count()).rejects.toThrow('disposed');
 });
 
-test('local workspace disposes a mismatched service and refuses to open', async () => {
+test('shared service opener preserves the replica lifecycle kind', async () => {
+	const { definition, service } = setup();
+	const replicaService: OwnedWorkspaceServicePort = {
+		...service,
+		async request(request) {
+			if (request.kind !== 'describe') return service.request(request);
+			return {
+				kind: 'workspace',
+				workspaceKind: 'replica',
+				workspaceId: definition.id,
+				schemaIdentity: definition.schemaIdentity,
+			};
+		},
+	};
+	const replica = await openWorkspaceFromService(definition, {
+		service: replicaService,
+		expectedKind: 'replica',
+	});
+
+	expect(replica.kind).toBe('replica');
+	await replica[Symbol.asyncDispose]();
+});
+
+test('standalone workspace disposes a mismatched service and refuses to open', async () => {
 	const { definition, service, disposed } = setup();
 	const mismatched: OwnedWorkspaceServicePort = {
 		...service,
 		async request() {
 			return {
 				kind: 'workspace',
-				workspaceKind: 'local',
+				workspaceKind: 'standalone',
 				workspaceId: definition.id,
 				schemaIdentity: 'different',
 			};
@@ -68,12 +92,15 @@ test('local workspace disposes a mismatched service and refuses to open', async 
 	};
 
 	await expect(
-		openLocalWorkspaceFromService(definition, { service: mismatched }),
+		openWorkspaceFromService(definition, {
+			service: mismatched,
+			expectedKind: 'standalone',
+		}),
 	).rejects.toThrow('does not match');
 	expect(disposed()).toBe(1);
 });
 
-test('local workspace disposes a service whose handshake fails', async () => {
+test('standalone workspace disposes a service whose handshake fails', async () => {
 	const { definition, service, disposed } = setup();
 	const failed: OwnedWorkspaceServicePort = {
 		...service,
@@ -83,12 +110,15 @@ test('local workspace disposes a service whose handshake fails', async () => {
 	};
 
 	await expect(
-		openLocalWorkspaceFromService(definition, { service: failed }),
+		openWorkspaceFromService(definition, {
+			service: failed,
+			expectedKind: 'standalone',
+		}),
 	).rejects.toThrow('worker failed');
 	expect(disposed()).toBe(1);
 });
 
-test('local workspace preserves handshake failure when cleanup also fails', async () => {
+test('standalone workspace preserves handshake failure when cleanup also fails', async () => {
 	const { definition, service } = setup();
 	const failed: OwnedWorkspaceServicePort = {
 		...service,
@@ -101,7 +131,10 @@ test('local workspace preserves handshake failure when cleanup also fails', asyn
 	};
 
 	try {
-		await openLocalWorkspaceFromService(definition, { service: failed });
+		await openWorkspaceFromService(definition, {
+			service: failed,
+			expectedKind: 'standalone',
+		});
 		expect.unreachable();
 	} catch (error) {
 		expect(error).toBeInstanceOf(AggregateError);
@@ -111,7 +144,7 @@ test('local workspace preserves handshake failure when cleanup also fails', asyn
 	}
 });
 
-test('local workspace settles admitted work while rejecting new work during disposal', async () => {
+test('standalone workspace settles admitted work while rejecting new work during disposal', async () => {
 	const { definition, service } = setup();
 	let resolveCount!: (response: WorkspaceServiceResponse) => void;
 	let resolveDisposal!: () => void;
@@ -129,8 +162,9 @@ test('local workspace settles admitted work while rejecting new work during disp
 			});
 		},
 	};
-	const workspace = await openLocalWorkspaceFromService(definition, {
+	const workspace = await openWorkspaceFromService(definition, {
 		service: delayed,
+		expectedKind: 'standalone',
 	});
 	const count = workspace.tables.notes.count();
 	const disposal = workspace[Symbol.asyncDispose]();

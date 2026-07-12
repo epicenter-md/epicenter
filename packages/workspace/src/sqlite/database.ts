@@ -10,12 +10,14 @@
 import type {
 	Cells,
 	JsonValue,
+	LogicalRow,
 	Operation,
 	RecordSyncSqlite,
 	SnapshotRow,
 	SqliteRow,
 	SqliteValue,
 } from '@epicenter/record-sync';
+import { foldRow } from '@epicenter/record-sync';
 import type { Static, TSchema } from 'typebox';
 import type {
 	CompiledColumn,
@@ -45,7 +47,7 @@ export type ApplicationMutationCoordinator = {
 
 export type ApplicationDatabaseOptions = {
 	/** Permanent durable identity mode for this database file. */
-	kind: 'local' | 'replica';
+	kind: 'standalone' | 'replica';
 	coordinator?: ApplicationMutationCoordinator;
 	/** Receives every observer failure. Must not throw. */
 	onObserverError(error: unknown): void;
@@ -53,6 +55,16 @@ export type ApplicationDatabaseOptions = {
 
 export type ApplicationLogicalSnapshot = {
 	rows: SnapshotRow[];
+};
+
+export type ReplicaProjectionTransaction = {
+	/** Fold accepted or pending logical operations without creating outbox work. */
+	apply(
+		operations: readonly Operation[],
+		firstSeenServerSequence: number,
+	): void;
+	/** Replace accepted logical state before replaying pending outbox operations. */
+	replace(rows: readonly SnapshotRow[], snapshotSequence: number): void;
 };
 
 type TableReads<TRow extends { id: string }> = {
@@ -123,6 +135,7 @@ type ColumnCodec = {
 
 const KV_TABLE = '__epicenter_kv';
 const TOMBSTONE_TABLE = '__epicenter_tombstones';
+const QUARANTINE_TABLE = '__epicenter_quarantine';
 const META_TABLE = '__epicenter_meta';
 const INTERNAL_PREFIX = '__epicenter_';
 
@@ -289,6 +302,47 @@ export function createApplicationDatabase<
 		readLogicalSnapshot(): ApplicationLogicalSnapshot {
 			return readLogicalSnapshot(sqlite, definition, tables);
 		},
+		/**
+		 * Run one replica-owned projection transition and publish only after commit.
+		 * The caller may update cursor and outbox tables through the same SQLite
+		 * connection inside `run`; application callers never receive this surface.
+		 */
+		applyReplicaTransaction<TResult>(
+			run: (projection: ReplicaProjectionTransaction) => TResult,
+		): TResult {
+			if (activeChanges) {
+				throw new Error(
+					'Replica projection cannot run inside an application transaction',
+				);
+			}
+			const changes: Changes = { tables: new Map(), kv: new Set() };
+			const result = sqlite.transaction(() =>
+				run({
+					apply(operations, firstSeenServerSequence) {
+						for (const operation of operations) {
+							applyLogicalOperation({
+								sqlite,
+								definition,
+								operation,
+								firstSeenServerSequence,
+								changes,
+							});
+						}
+					},
+					replace(rows, snapshotSequence) {
+						replaceLogicalRows({
+							sqlite,
+							definition,
+							rows,
+							snapshotSequence,
+							changes,
+						});
+					},
+				}),
+			);
+			publish(changes);
+			return result;
+		},
 	};
 }
 
@@ -419,6 +473,11 @@ function createApplicationTable<TDefinition extends TableDefinition>({
 						`Cannot put terminally deleted row '${tableName}.${row.id}'`,
 					);
 				}
+				if (hasQuarantinedRow(sqlite, tableName, row.id)) {
+					throw new Error(
+						`Cannot put quarantined row '${tableName}.${row.id}' through the typed API`,
+					);
+				}
 				const placeholders = columnNames.map(() => '?').join(', ');
 				const updates = columnNames
 					.filter((column) => column !== 'id')
@@ -485,6 +544,10 @@ function createApplicationTable<TDefinition extends TableDefinition>({
 				if (hasTombstone(sqlite, tableName, id)) return;
 				sqlite.run(`DELETE FROM ${quotedTable} WHERE "id" = ?`, [id]);
 				sqlite.run(
+					`DELETE FROM ${quoteIdentifier(QUARANTINE_TABLE)} WHERE "table_name" = ? AND "row_id" = ?`,
+					[tableName, id],
+				);
+				sqlite.run(
 					`INSERT INTO ${quoteIdentifier(TOMBSTONE_TABLE)} ("table_name", "row_id") VALUES (?, ?)`,
 					[tableName, id],
 				);
@@ -544,6 +607,14 @@ function createApplicationKv<TKv extends KvDefinitions>({
 			const definition = definitionFor(key);
 			assertColumn(definition.compiledValue, value, `KV value '${key}'`);
 			mutate((changes) => {
+				if (hasTombstone(sqlite, KV_TABLE, key)) {
+					throw new Error(`Cannot set terminally deleted KV key '${key}'`);
+				}
+				if (hasQuarantinedRow(sqlite, KV_TABLE, key)) {
+					throw new Error(
+						`Cannot set quarantined KV key '${key}' through the typed API`,
+					);
+				}
 				sqlite.run(
 					`INSERT INTO ${quoteIdentifier(KV_TABLE)} ("key", "value") VALUES (?, ?) ON CONFLICT("key") DO UPDATE SET "value" = excluded."value"`,
 					[key, JSON.stringify(value)],
@@ -560,6 +631,12 @@ function createApplicationKv<TKv extends KvDefinitions>({
 		clear(key) {
 			definitionFor(key);
 			mutate((changes) => {
+				if (hasTombstone(sqlite, KV_TABLE, key)) return;
+				if (hasQuarantinedRow(sqlite, KV_TABLE, key)) {
+					throw new Error(
+						`Cannot clear quarantined KV key '${key}' through the typed API`,
+					);
+				}
 				sqlite.run(`DELETE FROM ${quoteIdentifier(KV_TABLE)} WHERE "key" = ?`, [
 					key,
 				]);
@@ -579,7 +656,7 @@ function createApplicationKv<TKv extends KvDefinitions>({
 function initializeDatabase(
 	sqlite: RecordSyncSqlite,
 	definition: WorkspaceDefinition,
-	kind: 'local' | 'replica',
+	kind: 'standalone' | 'replica',
 ): void {
 	sqlite.transaction(() => {
 		const storedRevision = inspectDatabaseIdentity(sqlite, definition, kind);
@@ -591,6 +668,9 @@ function initializeDatabase(
 		);
 		sqlite.run(
 			`CREATE TABLE IF NOT EXISTS ${quoteIdentifier(TOMBSTONE_TABLE)} ("table_name" TEXT NOT NULL, "row_id" TEXT NOT NULL, PRIMARY KEY ("table_name", "row_id"))`,
+		);
+		sqlite.run(
+			`CREATE TABLE IF NOT EXISTS ${quoteIdentifier(QUARANTINE_TABLE)} ("table_name" TEXT NOT NULL, "row_id" TEXT NOT NULL, "cells_json" TEXT NOT NULL, "first_seen_sequence" INTEGER NOT NULL, "reason" TEXT NOT NULL, PRIMARY KEY ("table_name", "row_id"))`,
 		);
 
 		// A fresh database is created directly at the current representation. An
@@ -676,7 +756,7 @@ function initializeDatabase(
 function inspectDatabaseIdentity(
 	sqlite: RecordSyncSqlite,
 	definition: WorkspaceDefinition,
-	kind: 'local' | 'replica',
+	kind: 'standalone' | 'replica',
 ): number | undefined {
 	const userTables = sqlite.all<{ name: string }>(
 		"SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
@@ -765,7 +845,10 @@ function readLogicalSnapshot<
 		];
 		if (!table) throw new Error(`Snapshot table '${tableName}' is unavailable`);
 		for (const row of table.list({ orderBy: 'id' })) {
-			const { id: rowId, ...cells } = row;
+			const { id: rowId, ...storedCells } = row;
+			const cells = Object.fromEntries(
+				Object.entries(storedCells).filter(([, value]) => value !== null),
+			);
 			rows.push({
 				table: tableName,
 				rowId,
@@ -775,6 +858,22 @@ function readLogicalSnapshot<
 		}
 	}
 
+	rows.push(
+		...sqlite
+			.all<{
+				table: string;
+				rowId: string;
+				cellsJson: string;
+			}>(
+				`SELECT "table_name" AS "table", "row_id" AS "rowId", "cells_json" AS "cellsJson" FROM ${quoteIdentifier(QUARANTINE_TABLE)} ORDER BY "table_name", "row_id"`,
+			)
+			.map(({ table, rowId, cellsJson }) => ({
+				table,
+				rowId,
+				deleted: false as const,
+				cells: JSON.parse(cellsJson) as Cells,
+			})),
+	);
 	rows.push(
 		...sqlite
 			.all<{ table: string; rowId: string }>(
@@ -812,6 +911,313 @@ function readLogicalSnapshot<
 			compareCodeUnits(left.rowId, right.rowId),
 	);
 	return { rows };
+}
+
+function applyLogicalOperation({
+	sqlite,
+	definition,
+	operation,
+	firstSeenServerSequence,
+	changes,
+}: {
+	sqlite: RecordSyncSqlite;
+	definition: WorkspaceDefinition;
+	operation: Operation;
+	firstSeenServerSequence: number;
+	changes: Changes;
+}): void {
+	const current = readProjectionRow(
+		sqlite,
+		definition,
+		operation.table,
+		operation.rowId,
+	);
+	const next = foldRow(current, operation);
+	materializeProjectionRow({
+		sqlite,
+		definition,
+		table: operation.table,
+		rowId: operation.rowId,
+		row: next,
+		firstSeenServerSequence,
+	});
+	markProjectionChange(changes, definition, operation.table, operation.rowId);
+}
+
+function replaceLogicalRows({
+	sqlite,
+	definition,
+	rows,
+	snapshotSequence,
+	changes,
+}: {
+	sqlite: RecordSyncSqlite;
+	definition: WorkspaceDefinition;
+	rows: readonly SnapshotRow[];
+	snapshotSequence: number;
+	changes: Changes;
+}): void {
+	markEveryProjectionRow(sqlite, definition, changes);
+	const identities = new Set<string>();
+	for (const row of rows) {
+		const identity = JSON.stringify([row.table, row.rowId]);
+		if (identities.has(identity)) {
+			throw new Error(
+				`Logical snapshot repeats row '${row.table}.${row.rowId}'`,
+			);
+		}
+		identities.add(identity);
+	}
+
+	for (const table of Object.keys(definition.tables)) {
+		sqlite.run(`DELETE FROM ${quoteIdentifier(table)}`);
+	}
+	sqlite.run(`DELETE FROM ${quoteIdentifier(KV_TABLE)}`);
+	sqlite.run(`DELETE FROM ${quoteIdentifier(TOMBSTONE_TABLE)}`);
+	sqlite.run(`DELETE FROM ${quoteIdentifier(QUARANTINE_TABLE)}`);
+
+	for (const row of rows) {
+		materializeProjectionRow({
+			sqlite,
+			definition,
+			table: row.table,
+			rowId: row.rowId,
+			row: row.deleted
+				? { kind: 'tombstone' }
+				: { kind: 'live', cells: row.cells },
+			firstSeenServerSequence: snapshotSequence,
+		});
+		markProjectionChange(changes, definition, row.table, row.rowId);
+	}
+}
+
+function readProjectionRow(
+	sqlite: RecordSyncSqlite,
+	definition: WorkspaceDefinition,
+	table: string,
+	rowId: string,
+): LogicalRow | undefined {
+	if (hasTombstone(sqlite, table, rowId)) return { kind: 'tombstone' };
+	const quarantined = sqlite.all<{ cellsJson: string }>(
+		`SELECT "cells_json" AS "cellsJson" FROM ${quoteIdentifier(QUARANTINE_TABLE)} WHERE "table_name" = ? AND "row_id" = ?`,
+		[table, rowId],
+	)[0];
+	if (quarantined) {
+		return {
+			kind: 'live',
+			cells: JSON.parse(quarantined.cellsJson) as Cells,
+		};
+	}
+	if (table === KV_TABLE) {
+		const stored = sqlite.all<{ value: string }>(
+			`SELECT "value" FROM ${quoteIdentifier(KV_TABLE)} WHERE "key" = ?`,
+			[rowId],
+		)[0];
+		return stored
+			? {
+					kind: 'live',
+					cells: { value: JSON.parse(stored.value) as JsonValue },
+				}
+			: undefined;
+	}
+	const tableDefinition = definition.tables[table];
+	if (!tableDefinition) return undefined;
+	const columns = tableDefinition.columns as Record<string, TSchema>;
+	const codecs = codecsFor(tableDefinition);
+	const stored = sqlite.all<SqliteRow>(
+		`SELECT ${Object.keys(columns).map(quoteIdentifier).join(', ')} FROM ${quoteIdentifier(table)} WHERE "id" = ?`,
+		[rowId],
+	)[0];
+	if (!stored) return undefined;
+	const { id: _id, ...storedCells } = decodeRow<
+		{ id: string } & Record<string, unknown>
+	>(stored, columns, codecs);
+	const cells = Object.fromEntries(
+		Object.entries(storedCells).filter(([, value]) => value !== null),
+	);
+	return { kind: 'live', cells: cells as Cells };
+}
+
+function materializeProjectionRow({
+	sqlite,
+	definition,
+	table,
+	rowId,
+	row,
+	firstSeenServerSequence,
+}: {
+	sqlite: RecordSyncSqlite;
+	definition: WorkspaceDefinition;
+	table: string;
+	rowId: string;
+	row: LogicalRow;
+	firstSeenServerSequence: number;
+}): void {
+	deleteProjectionRow(sqlite, definition, table, rowId);
+	if (row.kind === 'tombstone') {
+		sqlite.run(
+			`INSERT INTO ${quoteIdentifier(TOMBSTONE_TABLE)} ("table_name", "row_id") VALUES (?, ?)`,
+			[table, rowId],
+		);
+		return;
+	}
+
+	if (table === KV_TABLE) {
+		const kv = definition.kv[rowId];
+		const cellNames = Object.keys(row.cells);
+		if (kv && cellNames.length === 0) return;
+		if (
+			kv &&
+			cellNames.length === 1 &&
+			cellNames[0] === 'value' &&
+			kv.compiledValue.check(row.cells.value)
+		) {
+			sqlite.run(
+				`INSERT INTO ${quoteIdentifier(KV_TABLE)} ("key", "value") VALUES (?, ?)`,
+				[rowId, JSON.stringify(row.cells.value)],
+			);
+			return;
+		}
+	} else {
+		const tableDefinition = definition.tables[table];
+		if (tableDefinition) {
+			const candidate: Record<string, unknown> = { id: rowId, ...row.cells };
+			for (const [column, compiled] of Object.entries(
+				tableDefinition.compiledColumns,
+			)) {
+				if (
+					column !== 'id' &&
+					compiled.isNullable &&
+					!Object.hasOwn(candidate, column)
+				) {
+					candidate[column] = null;
+				}
+			}
+			if (rowConforms(tableDefinition, candidate)) {
+				writeTypedProjectionRow(sqlite, table, tableDefinition, candidate);
+				return;
+			}
+		}
+	}
+
+	sqlite.run(
+		`INSERT INTO ${quoteIdentifier(QUARANTINE_TABLE)} ("table_name", "row_id", "cells_json", "first_seen_sequence", "reason") VALUES (?, ?, ?, ?, ?) ON CONFLICT ("table_name", "row_id") DO UPDATE SET "cells_json" = excluded."cells_json", "reason" = excluded."reason"`,
+		[
+			table,
+			rowId,
+			JSON.stringify(row.cells),
+			firstSeenServerSequence,
+			'row does not conform to this workspace schema',
+		],
+	);
+}
+
+function deleteProjectionRow(
+	sqlite: RecordSyncSqlite,
+	definition: WorkspaceDefinition,
+	table: string,
+	rowId: string,
+): void {
+	if (table === KV_TABLE) {
+		sqlite.run(`DELETE FROM ${quoteIdentifier(KV_TABLE)} WHERE "key" = ?`, [
+			rowId,
+		]);
+	} else if (definition.tables[table]) {
+		sqlite.run(`DELETE FROM ${quoteIdentifier(table)} WHERE "id" = ?`, [rowId]);
+	}
+	sqlite.run(
+		`DELETE FROM ${quoteIdentifier(QUARANTINE_TABLE)} WHERE "table_name" = ? AND "row_id" = ?`,
+		[table, rowId],
+	);
+	sqlite.run(
+		`DELETE FROM ${quoteIdentifier(TOMBSTONE_TABLE)} WHERE "table_name" = ? AND "row_id" = ?`,
+		[table, rowId],
+	);
+}
+
+function rowConforms(
+	definition: TableDefinition,
+	row: Record<string, unknown>,
+): boolean {
+	const columns = definition.compiledColumns as Record<string, CompiledColumn>;
+	const expected = Object.keys(columns);
+	return (
+		Object.keys(row).length === expected.length &&
+		expected.every(
+			(column) =>
+				Object.hasOwn(row, column) && columns[column]?.check(row[column]),
+		)
+	);
+}
+
+function codecsFor(definition: TableDefinition): Record<string, ColumnCodec> {
+	return Object.fromEntries(
+		Object.entries(
+			definition.compiledColumns as Record<string, CompiledColumn>,
+		).map(([name, column]) => [name, createColumnCodec(column)]),
+	);
+}
+
+function writeTypedProjectionRow(
+	sqlite: RecordSyncSqlite,
+	table: string,
+	definition: TableDefinition,
+	row: Record<string, unknown>,
+): void {
+	const columns = Object.keys(definition.columns);
+	const codecs = codecsFor(definition);
+	sqlite.run(
+		`INSERT INTO ${quoteIdentifier(table)} (${columns.map(quoteIdentifier).join(', ')}) VALUES (${columns.map(() => '?').join(', ')})`,
+		columns.map((column) =>
+			codecForStoredColumn(codecs, column).encode(row[column]),
+		),
+	);
+}
+
+function markProjectionChange(
+	changes: Changes,
+	definition: WorkspaceDefinition,
+	table: string,
+	rowId: string,
+): void {
+	if (table === KV_TABLE && definition.kv[rowId]) {
+		changes.kv.add(rowId);
+		return;
+	}
+	if (!definition.tables[table]) return;
+	let ids = changes.tables.get(table);
+	if (!ids) {
+		ids = new Set();
+		changes.tables.set(table, ids);
+	}
+	ids.add(rowId);
+}
+
+function markEveryProjectionRow(
+	sqlite: RecordSyncSqlite,
+	definition: WorkspaceDefinition,
+	changes: Changes,
+): void {
+	for (const table of Object.keys(definition.tables)) {
+		for (const { id } of sqlite.all<{ id: string }>(
+			`SELECT "id" FROM ${quoteIdentifier(table)}`,
+		)) {
+			markProjectionChange(changes, definition, table, id);
+		}
+	}
+	for (const { key } of sqlite.all<{ key: string }>(
+		`SELECT "key" FROM ${quoteIdentifier(KV_TABLE)}`,
+	)) {
+		markProjectionChange(changes, definition, KV_TABLE, key);
+	}
+	for (const { table, rowId } of sqlite.all<{
+		table: string;
+		rowId: string;
+	}>(
+		`SELECT "table_name" AS "table", "row_id" AS "rowId" FROM ${quoteIdentifier(QUARANTINE_TABLE)}`,
+	)) {
+		markProjectionChange(changes, definition, table, rowId);
+	}
 }
 
 function compareCodeUnits(left: string, right: string): number {
@@ -952,6 +1358,19 @@ function hasTombstone(
 	return (
 		sqlite.all<SqliteRow>(
 			`SELECT 1 AS "present" FROM ${quoteIdentifier(TOMBSTONE_TABLE)} WHERE "table_name" = ? AND "row_id" = ? LIMIT 1`,
+			[tableName, rowId],
+		).length > 0
+	);
+}
+
+function hasQuarantinedRow(
+	sqlite: RecordSyncSqlite,
+	tableName: string,
+	rowId: string,
+): boolean {
+	return (
+		sqlite.all<SqliteRow>(
+			`SELECT 1 AS "present" FROM ${quoteIdentifier(QUARANTINE_TABLE)} WHERE "table_name" = ? AND "row_id" = ? LIMIT 1`,
 			[tableName, rowId],
 		).length > 0
 	);

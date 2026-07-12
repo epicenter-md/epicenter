@@ -9,8 +9,8 @@
  * production API lands.
  *
  * Decisions encoded here (evidence in REVIEW-2026-07-11.md pass 3):
- * - Opening is two doors, not one option: `openLocalWorkspace` (no actor,
- *   cursor, or outbox exist) and `openReplica` (a synchronized replica of the
+ * - Opening is two doors, not one option: `openStandaloneWorkspace` (no actor,
+ *   cursor, or outbox exist) and `openWorkspaceReplica` (a synchronized replica of the
  *   account database). Promotion is an explicit import into an open replica,
  *   never a reopen flag. `openWorkspace({ sync? })` is deleted: it hid a
  *   permanent durable-identity choice inside an optional field.
@@ -458,7 +458,7 @@ export type WorkspaceData<
 };
 
 /** A database that never synchronizes: no actor, cursor, or outbox exist. */
-export type LocalWorkspace<
+export type StandaloneWorkspace<
 	TTables extends TableDefinitions,
 	TKv extends KvDefinitions,
 > = WorkspaceData<TTables, TKv> & {
@@ -466,7 +466,7 @@ export type LocalWorkspace<
 };
 
 /** One synchronized replica of the account database for this epoch. */
-export type Replica<
+export type WorkspaceReplica<
 	TTables extends TableDefinitions,
 	TKv extends KvDefinitions,
 > = WorkspaceData<TTables, TKv> & {
@@ -483,13 +483,13 @@ export type SyncConnection = { readonly baseUrl: string };
  * writer, which is the concurrency the shared-database epoch flow exists to
  * avoid.
  */
-export declare function openLocalWorkspace<
+export declare function openStandaloneWorkspace<
 	TTables extends TableDefinitions,
 	TKv extends KvDefinitions,
 >(
 	definition: WorkspaceDefinition<TTables, TKv>,
 	options: { storage: StorageAdapter },
-): Promise<LocalWorkspace<TTables, TKv>>;
+): Promise<StandaloneWorkspace<TTables, TKv>>;
 
 /**
  * Open (or bootstrap) this device's replica of the account database in the
@@ -498,17 +498,17 @@ export declare function openLocalWorkspace<
  * or to a different database incarnation (route through planImport as a new
  * replica). Never silently reuses a cursor or outbox across either boundary.
  *
- * Promoting a previously local database is: openReplica, then
+ * Promoting a previously local database is: openWorkspaceReplica, then
  * planImport({ kind: 'workspace', workspace: local }), then retire the local
  * copy after the imported mutations are accepted. There is no reopen flag.
  */
-export declare function openReplica<
+export declare function openWorkspaceReplica<
 	TTables extends TableDefinitions,
 	TKv extends KvDefinitions,
 >(
 	definition: WorkspaceDefinition<TTables, TKv>,
 	options: { storage: StorageAdapter; sync: SyncConnection },
-): Promise<Replica<TTables, TKv>>;
+): Promise<WorkspaceReplica<TTables, TKv>>;
 
 /**
  * Explicit epoch-upgrade door for a replica whose local data lives in a

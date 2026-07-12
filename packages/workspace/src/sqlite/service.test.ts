@@ -55,7 +55,7 @@ function setup() {
 	});
 	const databaseObserverErrors: unknown[] = [];
 	const database = createApplicationDatabase(definition, sqlite, {
-		kind: 'local',
+		kind: 'standalone',
 		onObserverError: (error) => databaseObserverErrors.push(error),
 	});
 	const serviceObserverErrors: unknown[] = [];

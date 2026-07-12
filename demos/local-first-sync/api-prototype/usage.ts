@@ -13,8 +13,8 @@ import {
 	defineKv,
 	defineTable,
 	defineWorkspace,
-	openLocalWorkspace,
-	openReplica,
+	openStandaloneWorkspace,
+	openWorkspaceReplica,
 	planEpochUpgrade,
 } from './api.ts';
 
@@ -122,12 +122,12 @@ const workspace = defineWorkspace({
 
 async function main() {
 	// Local-only: no actor, cursor, or outbox exist.
-	const local = await openLocalWorkspace(workspace, {
+	const local = await openStandaloneWorkspace(workspace, {
 		storage: { kind: 'opfs' },
 	});
 
 	// Synchronized replica of the account database, current epoch.
-	const ws = await openReplica(workspace, {
+	const ws = await openWorkspaceReplica(workspace, {
 		storage: { kind: 'opfs' },
 		sync: { baseUrl: 'https://api.epicenter.sh' },
 	});
@@ -251,7 +251,7 @@ async function main() {
 // ─── Negative space: these MUST be compile errors ────────────────────────────
 
 async function negatives() {
-	const ws = await openReplica(workspace, {
+	const ws = await openWorkspaceReplica(workspace, {
 		storage: { kind: 'memory' },
 		sync: { baseUrl: 'https://api.epicenter.sh' },
 	});
@@ -279,10 +279,10 @@ async function negatives() {
 	// @ts-expect-error folders declares no child docs
 	ws.docs.folders.body;
 
-	// @ts-expect-error openReplica requires a sync connection
-	await openReplica(workspace, { storage: { kind: 'memory' } });
+	// @ts-expect-error openWorkspaceReplica requires a sync connection
+	await openWorkspaceReplica(workspace, { storage: { kind: 'memory' } });
 
-	await openLocalWorkspace(workspace, {
+	await openStandaloneWorkspace(workspace, {
 		storage: { kind: 'memory' },
 		// @ts-expect-error a local workspace takes no sync option
 		sync: { baseUrl: 'x' },

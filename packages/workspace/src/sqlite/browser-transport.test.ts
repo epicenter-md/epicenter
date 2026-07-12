@@ -106,7 +106,7 @@ function createService(
 
 const description: WorkspaceServiceResponse = {
 	kind: 'workspace',
-	workspaceKind: 'local',
+	workspaceKind: 'standalone',
 	workspaceId: 'transport-test',
 	schemaIdentity: 'transport-schema',
 };

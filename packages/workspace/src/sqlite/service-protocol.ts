@@ -102,7 +102,7 @@ export const WorkspaceServiceResponseSchema = Type.Union([
 		{
 			kind: Type.Literal('workspace'),
 			workspaceKind: Type.Union([
-				Type.Literal('local'),
+				Type.Literal('standalone'),
 				Type.Literal('replica'),
 			]),
 			workspaceId: nonEmptyString,
