@@ -892,6 +892,18 @@
         "typescript": "catalog:",
       },
     },
+    "packages/record-sync": {
+      "name": "@epicenter/record-sync",
+      "version": "0.0.1",
+      "dependencies": {
+        "typebox": "catalog:",
+      },
+      "devDependencies": {
+        "@cloudflare/workers-types": "^4.20260405.1",
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
     "packages/recorder": {
       "name": "@epicenter/recorder",
       "version": "0.0.1",
@@ -1458,6 +1470,8 @@
     "@epicenter/ops": ["@epicenter/ops@workspace:ops"],
 
     "@epicenter/posthog-reverse-proxy": ["@epicenter/posthog-reverse-proxy@workspace:apps/posthog-reverse-proxy"],
+
+    "@epicenter/record-sync": ["@epicenter/record-sync@workspace:packages/record-sync"],
 
     "@epicenter/recorder": ["@epicenter/recorder@workspace:packages/recorder"],
 

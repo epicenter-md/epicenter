@@ -1,0 +1,29 @@
+{
+	"name": "@epicenter/record-sync",
+	"version": "0.0.1",
+	"description": "Portable logical record synchronization protocol and SQLite authority core.",
+	"type": "module",
+	"exports": {
+		".": "./src/index.ts",
+		"./browser": "./src/adapters/browser.ts",
+		"./bun": "./src/adapters/bun.ts",
+		"./durable-object": "./src/adapters/durable-object.ts"
+	},
+	"files": [
+		"src",
+		"!src/**/*.test.ts"
+	],
+	"license": "MIT",
+	"scripts": {
+		"typecheck": "tsc --noEmit",
+		"test": "bun test"
+	},
+	"dependencies": {
+		"typebox": "catalog:"
+	},
+	"devDependencies": {
+		"@cloudflare/workers-types": "^4.20260405.1",
+		"@types/bun": "catalog:",
+		"typescript": "catalog:"
+	}
+}

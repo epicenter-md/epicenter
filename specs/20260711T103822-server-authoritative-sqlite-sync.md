@@ -1169,10 +1169,15 @@ editor.
 
 ### Wave 4: Shared production core
 
-- [ ] Extract protocol schemas, deterministic fold, and conformance tests.
-- [ ] Define the narrow storage transaction boundary from proven operations.
-- [ ] Implement browser SQLite, Bun SQLite, and Durable Object SQLite adapters.
-- [ ] Keep hosted auth/billing outside the shared server library.
+- [x] Extract protocol schemas, deterministic fold, and conformance tests.
+- [x] Define the narrow storage transaction boundary from proven operations.
+- [x] Implement browser SQLite, Bun SQLite, and Durable Object SQLite adapters.
+- [x] Keep hosted auth/billing outside the shared server library.
+
+Wave 4 evidence is in `demos/local-first-sync/gates/GATE4-EVIDENCE.md`. The
+shared suite runs through all three adapter API shapes over real SQLite. It does
+not replace later OPFS and workerd lifecycle smoke tests, so the broader runtime
+parity success criterion remains open.
 
 ### Wave 5: Workspace API clean break
 

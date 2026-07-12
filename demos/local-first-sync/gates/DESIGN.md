@@ -52,3 +52,7 @@ is recorded in [`GATE2-EVIDENCE.md`](GATE2-EVIDENCE.md).
 Gate 3 adds exact schema identity, new-incarnation cutover, resumable transformed
 baselines, and private-intent import. Its result is recorded in
 [`GATE3-EVIDENCE.md`](GATE3-EVIDENCE.md).
+
+Wave 4 extracts the portable record protocol, fold, authority, and three SQLite
+adapters. Its result and remaining runtime smoke scope are recorded in
+[`GATE4-EVIDENCE.md`](GATE4-EVIDENCE.md).

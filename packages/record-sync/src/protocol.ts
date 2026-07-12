@@ -1,0 +1,327 @@
+import { type Static, Type } from 'typebox';
+import { Value } from 'typebox/value';
+
+const CLOSED = { additionalProperties: false } as const;
+const sequence = Type.Integer({ minimum: 0, maximum: Number.MAX_SAFE_INTEGER });
+const positiveSequence = Type.Integer({
+	minimum: 1,
+	maximum: Number.MAX_SAFE_INTEGER,
+});
+
+export type JsonValue =
+	| string
+	| number
+	| boolean
+	| null
+	| JsonValue[]
+	| { [key: string]: JsonValue };
+export type Cells = Record<string, JsonValue>;
+
+// The structural schema is deliberately paired with the recursive JSON check
+// in the parse functions below. Unsafe supplies the honest static cell type.
+const cellsSchema = Type.Unsafe<Cells>(
+	Type.Record(Type.String(), Type.Unknown()),
+);
+const envelopeProperties = {
+	protocolMajor: positiveSequence,
+	schemaEpochId: Type.String({ minLength: 1 }),
+	databaseIncarnationId: Type.String({ minLength: 1 }),
+};
+const mutationProperties = {
+	actorId: Type.String({ minLength: 1 }),
+	actorSequence: positiveSequence,
+	operations: Type.Array(
+		Type.Union([
+			Type.Object(
+				{
+					kind: Type.Literal('patchRow'),
+					table: Type.String({ minLength: 1 }),
+					rowId: Type.String({ minLength: 1 }),
+					cells: cellsSchema,
+				},
+				CLOSED,
+			),
+			Type.Object(
+				{
+					kind: Type.Literal('deleteRow'),
+					table: Type.String({ minLength: 1 }),
+					rowId: Type.String({ minLength: 1 }),
+				},
+				CLOSED,
+			),
+		]),
+		{ minItems: 1 },
+	),
+};
+
+export const RequestEnvelopeSchema = Type.Object(envelopeProperties, CLOSED);
+export type RequestEnvelope = Static<typeof RequestEnvelopeSchema>;
+
+export const OperationSchema = mutationProperties.operations.items;
+export type Operation = Static<typeof OperationSchema>;
+
+export const MutationSchema = Type.Object(mutationProperties, CLOSED);
+export type Mutation = Static<typeof MutationSchema>;
+
+const loggedMutationSchema = Type.Object(
+	{ ...mutationProperties, serverSequence: positiveSequence },
+	CLOSED,
+);
+export type LoggedMutation = Static<typeof loggedMutationSchema>;
+
+export const PushRequestSchema = Type.Object(
+	{
+		...envelopeProperties,
+		kind: Type.Literal('push'),
+		mutations: Type.Array(MutationSchema),
+	},
+	CLOSED,
+);
+export type PushRequest = Static<typeof PushRequestSchema>;
+
+export const PullRequestSchema = Type.Object(
+	{
+		...envelopeProperties,
+		kind: Type.Literal('pull'),
+		cursor: sequence,
+		limit: Type.Integer({ minimum: 1, maximum: 1_000 }),
+	},
+	CLOSED,
+);
+export type PullRequest = Static<typeof PullRequestSchema>;
+
+export const SnapshotChunkRequestSchema = Type.Object(
+	{
+		...envelopeProperties,
+		kind: Type.Literal('snapshotChunk'),
+		generation: positiveSequence,
+		index: sequence,
+	},
+	CLOSED,
+);
+export type SnapshotChunkRequest = Static<typeof SnapshotChunkRequestSchema>;
+
+const snapshotRowSchema = Type.Object(
+	{
+		table: Type.String({ minLength: 1 }),
+		rowId: Type.String({ minLength: 1 }),
+		deleted: Type.Boolean(),
+		cells: cellsSchema,
+	},
+	CLOSED,
+);
+export type SnapshotRow = Static<typeof snapshotRowSchema>;
+
+const snapshotManifestBodyProperties = {
+	generation: positiveSequence,
+	snapshotSequence: sequence,
+	chunkChecksums: Type.Array(Type.String({ minLength: 1 }), { minItems: 1 }),
+	actorHighWater: Type.Record(Type.String(), sequence),
+};
+const snapshotManifestBodySchema = Type.Object(
+	snapshotManifestBodyProperties,
+	CLOSED,
+);
+export type SnapshotManifestBody = Static<typeof snapshotManifestBodySchema>;
+
+const snapshotManifestSchema = Type.Object(
+	{
+		...snapshotManifestBodyProperties,
+		checksum: Type.String({ minLength: 1 }),
+	},
+	CLOSED,
+);
+export type SnapshotManifest = Static<typeof snapshotManifestSchema>;
+
+const snapshotChunkSchema = Type.Object(
+	{
+		generation: positiveSequence,
+		index: sequence,
+		rows: Type.Array(snapshotRowSchema),
+		checksum: Type.String({ minLength: 1 }),
+	},
+	CLOSED,
+);
+export type SnapshotChunk = Static<typeof snapshotChunkSchema>;
+
+const requestRefusalSchema = Type.Union([
+	Type.Literal('protocol-mismatch'),
+	Type.Literal('schema-epoch-mismatch'),
+	Type.Literal('database-incarnation-mismatch'),
+]);
+export type RequestRefusal = Static<typeof requestRefusalSchema>;
+
+export const PushResponseSchema = Type.Union([
+	Type.Object({ kind: Type.Literal('push'), ok: Type.Literal(true) }, CLOSED),
+	Type.Object(
+		{
+			kind: Type.Literal('push'),
+			ok: Type.Literal(false),
+			reason: Type.Union([
+				requestRefusalSchema,
+				Type.Literal('actor-sequence-gap'),
+			]),
+		},
+		CLOSED,
+	),
+]);
+export type PushResponse = Static<typeof PushResponseSchema>;
+
+export const PullResponseSchema = Type.Union([
+	Type.Object(
+		{
+			kind: Type.Literal('pull'),
+			ok: Type.Literal(true),
+			snapshotRequired: Type.Literal(false),
+			fromCursor: sequence,
+			mutations: Type.Array(loggedMutationSchema),
+			newCursor: sequence,
+			hasMore: Type.Boolean(),
+		},
+		CLOSED,
+	),
+	Type.Object(
+		{
+			kind: Type.Literal('pull'),
+			ok: Type.Literal(true),
+			snapshotRequired: Type.Literal(true),
+			manifest: snapshotManifestSchema,
+		},
+		CLOSED,
+	),
+	Type.Object(
+		{
+			kind: Type.Literal('pull'),
+			ok: Type.Literal(false),
+			reason: requestRefusalSchema,
+		},
+		CLOSED,
+	),
+]);
+export type PullResponse = Static<typeof PullResponseSchema>;
+
+export const SnapshotChunkResponseSchema = Type.Union([
+	Type.Object(
+		{
+			kind: Type.Literal('snapshotChunk'),
+			ok: Type.Literal(true),
+			chunk: snapshotChunkSchema,
+		},
+		CLOSED,
+	),
+	Type.Object(
+		{
+			kind: Type.Literal('snapshotChunk'),
+			ok: Type.Literal(false),
+			reason: Type.Union([
+				requestRefusalSchema,
+				Type.Literal('snapshot-replaced'),
+				Type.Literal('chunk-out-of-range'),
+			]),
+		},
+		CLOSED,
+	),
+]);
+export type SnapshotChunkResponse = Static<typeof SnapshotChunkResponseSchema>;
+
+function isJsonValue(
+	value: unknown,
+	ancestors: Set<object>,
+): value is JsonValue {
+	if (value === null || typeof value === 'string' || typeof value === 'boolean')
+		return true;
+	if (typeof value === 'number') return Number.isFinite(value);
+	if (typeof value !== 'object') return false;
+	if (ancestors.has(value)) return false;
+	ancestors.add(value);
+	const valid = Array.isArray(value)
+		? value.every((child) => isJsonValue(child, ancestors))
+		: Object.getPrototypeOf(value) === Object.prototype &&
+			Object.values(value).every((child) => isJsonValue(child, ancestors));
+	ancestors.delete(value);
+	return valid;
+}
+
+function mutationsHaveJsonCells(mutations: Mutation[]): boolean {
+	return mutations.every((mutation) =>
+		mutation.operations.every(
+			(operation) =>
+				operation.kind === 'deleteRow' ||
+				Object.values(operation.cells).every((value) =>
+					isJsonValue(value, new Set()),
+				),
+		),
+	);
+}
+
+function snapshotRowsHaveJsonCells(rows: SnapshotRow[]): boolean {
+	return rows.every(
+		(row) =>
+			(!row.deleted || Object.keys(row.cells).length === 0) &&
+			Object.values(row.cells).every((value) => isJsonValue(value, new Set())),
+	);
+}
+
+export function parsePushRequest(value: unknown): PushRequest {
+	if (
+		!Value.Check(PushRequestSchema, value) ||
+		!mutationsHaveJsonCells(value.mutations)
+	)
+		throw new TypeError('Invalid record-sync push request');
+	return value;
+}
+
+export function parsePullRequest(value: unknown): PullRequest {
+	if (!Value.Check(PullRequestSchema, value))
+		throw new TypeError('Invalid record-sync pull request');
+	return value;
+}
+
+export function parseSnapshotChunkRequest(
+	value: unknown,
+): SnapshotChunkRequest {
+	if (!Value.Check(SnapshotChunkRequestSchema, value))
+		throw new TypeError('Invalid record-sync snapshot chunk request');
+	return value;
+}
+
+export function parsePushResponse(value: unknown): PushResponse {
+	if (!Value.Check(PushResponseSchema, value))
+		throw new TypeError('Invalid record-sync push response');
+	return value;
+}
+
+export function parsePullResponse(value: unknown): PullResponse {
+	if (!Value.Check(PullResponseSchema, value))
+		throw new TypeError('Invalid record-sync pull response');
+	if (
+		value.ok &&
+		!value.snapshotRequired &&
+		!mutationsHaveJsonCells(value.mutations)
+	)
+		throw new TypeError('Invalid record-sync pull response');
+	return value;
+}
+
+export function parseSnapshotChunkResponse(
+	value: unknown,
+): SnapshotChunkResponse {
+	if (!Value.Check(SnapshotChunkResponseSchema, value))
+		throw new TypeError('Invalid record-sync snapshot chunk response');
+	if (value.ok && !snapshotRowsHaveJsonCells(value.chunk.rows))
+		throw new TypeError('Invalid record-sync snapshot chunk response');
+	return value;
+}
+
+export function requestRefusal(
+	request: RequestEnvelope,
+	expected: RequestEnvelope,
+): RequestRefusal | null {
+	if (request.protocolMajor !== expected.protocolMajor)
+		return 'protocol-mismatch';
+	if (request.schemaEpochId !== expected.schemaEpochId)
+		return 'schema-epoch-mismatch';
+	if (request.databaseIncarnationId !== expected.databaseIncarnationId)
+		return 'database-incarnation-mismatch';
+	return null;
+}
