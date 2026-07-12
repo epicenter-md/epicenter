@@ -85,6 +85,19 @@ shapes, see `docs/adr/`.
 
 ## Workspace API
 
+- **Cell**: one named atomic value in a record. An update replaces the complete
+  cell value; values that need structural or character-level merging belong in
+  a child document instead.
+- **Record**: one identified row in a typed table, consisting of a stable row ID
+  and named atomic cells. Records have explicit create, update, and delete
+  lifecycles.
+- **Record table**: one named, typed collection of records. The table defines
+  record fields and may declare separately stored child documents addressed
+  through each record.
+- **Records database**: the complete queryable collection of record tables for
+  one immutable logical schema. Every synchronized device materializes it in
+  local SQLite; the authority stores the same logical records, not the device's
+  SQLite file.
 - **`defineTable` / `defineKv`**: schema builders for a workspace's tables and
   key-value store.
 - **`satisfiesWorkspace`**: the bundle-conformance helper (renamed from the older
