@@ -25,6 +25,7 @@
 	"homepage": "https://epicenter.so",
 	"exports": {
 		".": "./src/index.ts",
+		"./sqlite": "./src/sqlite/index.ts",
 		"./agent": "./src/agent/index.ts",
 		"./markdown": "./src/markdown/index.ts",
 		"./document/materializer/markdown": "./src/document/materializer/markdown/index.ts",
@@ -49,6 +50,7 @@
 		"@epicenter/encryption": "workspace:*",
 		"@epicenter/field": "workspace:*",
 		"@epicenter/identity": "workspace:*",
+		"@epicenter/record-sync": "workspace:*",
 		"@epicenter/sync": "workspace:*",
 		"@sindresorhus/slugify": "catalog:",
 		"@types/bun": "catalog:",
