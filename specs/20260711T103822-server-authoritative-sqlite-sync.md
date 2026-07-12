@@ -1265,11 +1265,12 @@ editor.
 
 - [ ] Review the Proposed ADRs against existing accepted ADRs.
 - [ ] Find every statement that still assumes Yjs owns record metadata.
-- [ ] Run an independent collapse pass over the table-owner inventory and wire
+- [x] Run an independent collapse pass over the table-owner inventory and wire
   operation set.
 - [x] Refuse cross-version logical-schema compatibility in the first wave;
   every synchronized table or field change creates a new exact epoch.
-- [ ] Keep the ADRs Proposed and this spec Draft.
+- [x] Keep the ADRs Proposed until production applications use the new path;
+  move this spec to In Progress when application execution begins.
 
 The gates first passed on 2026-07-11 against the tombstone/upsert model. The
 late revision (create/update/delete, physical deletion, KV out of the record
