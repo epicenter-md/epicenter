@@ -112,8 +112,8 @@ export function createWorkspaceService<TTables extends TableDefinitions>(
 			return table;
 		}
 		switch (mutation.kind) {
-			case 'put':
-				transactionTable(mutation.table).put(mutation.row as UntypedRow);
+			case 'create':
+				transactionTable(mutation.table).create(mutation.row as UntypedRow);
 				return null;
 			case 'patch':
 				return transactionTable(mutation.table).patch(

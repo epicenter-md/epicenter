@@ -154,7 +154,7 @@ test('snapshot publication bounds every encoded chunk by bytes', async () => {
 						actorId: 'actor-1',
 						actorSequence: 1,
 						operations: Array.from({ length: 4 }, (_, index) => ({
-							kind: 'patchRow' as const,
+							kind: 'createRow' as const,
 							table: 'notes',
 							rowId: `note-${index}`,
 							cells: { body: 'x'.repeat(80) },

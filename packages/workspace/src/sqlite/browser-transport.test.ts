@@ -183,7 +183,7 @@ describe('workspace worker transport', () => {
 				kind: 'mutate',
 				mutations: [
 					{
-						kind: 'put',
+						kind: 'create',
 						table: 'notes',
 						row: { id: 'one', title: 'One' },
 					},
@@ -331,7 +331,7 @@ describe('workspace worker transport', () => {
 			if (request.kind === 'describe') return description;
 			if (request.kind === 'mutate') {
 				const mutation = request.mutations[0];
-				capturedTitle = mutation?.kind === 'put' ? mutation.row.title : null;
+				capturedTitle = mutation?.kind === 'create' ? mutation.row.title : null;
 			}
 			service.emit({
 				tables: { notes: { upserted: [{ id: 'one' }], removed: [] } },
@@ -351,7 +351,7 @@ describe('workspace worker transport', () => {
 		const row = { id: 'one', title: 'Before' };
 		const mutation = port.request({
 			kind: 'mutate',
-			mutations: [{ kind: 'put', table: 'notes', row }],
+			mutations: [{ kind: 'create', table: 'notes', row }],
 		});
 		row.title = 'After';
 		await mutation;

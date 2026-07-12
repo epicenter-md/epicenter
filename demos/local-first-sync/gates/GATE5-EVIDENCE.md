@@ -12,14 +12,15 @@ The new `@epicenter/workspace/sqlite` boundary proves:
 
 - `field.*` plus explicit `nullable(...)` compiles to typed SQLite columns;
 - canonical logical schema identity is stable across declaration order and
-  changes when tables, columns, docs, KV, workspace identity, or authored epoch
-  lineage changes;
-- `put`, `patch`, terminal `remove`, KV writes, representation migrations, and
+  changes when tables, columns, docs, workspace identity, or authored epoch
+  lineage changes; declared KV is the root-document preference plane
+  (ADR-0124) and never enters the record schema identity;
+- `create`, `patch`, physical `remove`, representation migrations, and
   post-commit invalidation operate over ordinary SQLite;
 - a replica-supplied coordinator can commit application SQL and canonical
   record-sync operations in one outer transaction;
-- logical snapshots use the record-sync `SnapshotRow` shape for live rows,
-  tombstones, and KV rows in the reserved namespace.
+- logical snapshots use the record-sync `SnapshotRow` shape for the live
+  typed and quarantined rows; deletion is physical absence.
 
 The next checkpoint also proves the process boundary required by browser and
 native SQLite owners:
@@ -27,8 +28,8 @@ native SQLite owners:
 - the public workspace client is asynchronous while the SQLite service remains
   synchronous internally;
 - one write-only client batch becomes one database transaction;
-- committed row, removal, and effective KV deltas publish before the mutation
-  promise resolves;
+- committed row and removal deltas publish before the mutation promise
+  resolves;
 - service requests serialize, so an observer-triggered write cannot overtake
   the commit currently being published;
 - Svelte helpers hydrate one query-scoped cache, buffer pre-hydration deltas,
@@ -103,12 +104,6 @@ __epicenter_meta
   schema_identity
   database_kind       standalone or replica, permanent for this file
 
-__epicenter_kv
-  key      TEXT PRIMARY KEY
-  value    TEXT NOT NULL      canonical JSON value
-
-__epicenter_tombstones
-  table_name + row_id PRIMARY KEY
 ```
 
 There is no serialized row blob and no per-row `_v`. Logical epoch identity
@@ -119,8 +114,8 @@ to `storage_revision`.
 
 ```txt
 application transact
-  -> typed table and KV SQL
-  -> canonical patchRow/deleteRow operations
+  -> typed table SQL
+  -> canonical createRow/updateRow/deleteRow operations
   -> replica coordinator
        BEGIN SQLite
          apply application SQL
@@ -136,9 +131,9 @@ Across a worker or native service boundary, the public shape is:
 UI projection after whenReady
   <- committed delta <- async workspace service <- synchronous SQLite
 
-await table.get/list/put/patch/remove
-await kv.get/set/clear
+await table.get/list/create/patch/remove
 await workspace.transact(writeOnlyBatch)
+workspace.kv.get/set   synchronous, root-document preference plane
 ```
 
 Transactional reads are deliberately absent from the public batch callback.
@@ -150,9 +145,8 @@ can add actor and outbox work before the same commit returns. Observer failures
 go to an injected error sink after commit; they cannot turn durable success into
 an apparent write failure or prevent later observers from running.
 
-KV uses no third wire operation. A stored key is a row in
-`__epicenter_kv`; set is `patchRow(..., { value })`, and clear is
-`patchRow(..., { value: null })`.
+KV is not on the record wire at all: declared keys live in the eager root
+Yjs document (ADR-0124), so no table in this file stores preferences.
 
 ## Adversarial corrections
 
@@ -166,11 +160,14 @@ and corrected these failures:
   extend atomically;
 - observer exceptions escaped after commit;
 - caught nested transactions could commit their inner writes;
-- KV initially invented a second operation family instead of using `patchRow`.
+- KV initially invented a second operation family, then rode the record wire
+  as a reserved table, and finally left the record plane for the root
+  document (ADR-0124).
 - async projections initially subscribed after requesting their snapshots;
 - a disposed service could still accept queued or future writes;
 - the in-process service retained caller-owned request objects by reference;
-- the pre-readiness KV binding type hid its real `undefined` state;
+- the pre-readiness KV binding type hid its real `undefined` state (obsolete
+  once KV became synchronous on the root document);
 - schema names could collide with inherited JavaScript record properties.
 - disposal could reject a mutation after it had committed and suppress its
   delta;

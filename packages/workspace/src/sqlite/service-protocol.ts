@@ -27,7 +27,7 @@ const tableListOptions = Type.Object(
 
 const workspaceMutation = Type.Union([
 	Type.Object(
-		{ kind: Type.Literal('put'), table: nonEmptyString, row: jsonRecord },
+		{ kind: Type.Literal('create'), table: nonEmptyString, row: jsonRecord },
 		CLOSED,
 	),
 	Type.Object(

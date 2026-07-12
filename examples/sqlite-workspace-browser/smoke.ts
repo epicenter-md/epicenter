@@ -103,7 +103,7 @@ try {
 	const runId = `${Date.now()}`;
 	const firstId = `first-${runId}`;
 	await first.evaluate(
-		([id]) => window.workspaceSmoke.put({ id, title: 'First page' }),
+		([id]) => window.workspaceSmoke.create({ id, title: 'First page' }),
 		[firstId],
 	);
 	await second.waitForFunction(
@@ -145,7 +145,7 @@ try {
 			...rightIds.map((id) => [second, id] as const),
 		].map(([page, id]) =>
 			page.evaluate(
-				([rowId]) => window.workspaceSmoke.put({ id: rowId, title: rowId }),
+				([rowId]) => window.workspaceSmoke.create({ id: rowId, title: rowId }),
 				[id],
 			),
 		),
@@ -176,7 +176,7 @@ try {
 	await first.evaluate(() => window.workspaceSmoke.dispose());
 	const afterDisposeId = `after-dispose-${runId}`;
 	await second.evaluate(
-		([id]) => window.workspaceSmoke.put({ id, title: 'Still open' }),
+		([id]) => window.workspaceSmoke.create({ id, title: 'Still open' }),
 		[afterDisposeId],
 	);
 	await first.evaluate(() => window.workspaceSmoke.reopen());
@@ -218,7 +218,7 @@ try {
 	}
 	const replicaId = `replica-${runId}`;
 	await replicaA.evaluate(
-		([id]) => window.workspaceSmoke.replicaPut({ id, title: 'Replicated' }),
+		([id]) => window.workspaceSmoke.replicaCreate({ id, title: 'Replicated' }),
 		[replicaId],
 	);
 	let replicated: { id: string; title: string } | null = null;

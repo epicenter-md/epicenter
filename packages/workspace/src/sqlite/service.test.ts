@@ -87,9 +87,9 @@ describe('workspace service', () => {
 
 		await client
 			.transact((batch) => {
-				batch.tables.notes.put({ id: 'one', title: 'One', pinned: false });
+				batch.tables.notes.create({ id: 'one', title: 'One', pinned: false });
 				batch.tables.notes.patch('one', { title: 'Updated', pinned: true });
-				batch.tables.notes.put({ id: 'removed', title: 'Gone', pinned: false });
+				batch.tables.notes.create({ id: 'removed', title: 'Gone', pinned: false });
 				batch.tables.notes.remove('removed');
 			})
 			.then(() => timeline.push('resolved'));
@@ -110,8 +110,8 @@ describe('workspace service', () => {
 
 	test('serializable reads and patch results round-trip through the client', async () => {
 		const { client } = setup();
-		await client.tables.notes.put({ id: 'one', title: 'One', pinned: false });
-		await client.tables.notes.put({ id: 'two', title: 'Two', pinned: true });
+		await client.tables.notes.create({ id: 'one', title: 'One', pinned: false });
+		await client.tables.notes.create({ id: 'two', title: 'Two', pinned: true });
 
 		expect(await client.tables.notes.get('one')).toEqual({
 			id: 'one',
@@ -138,7 +138,7 @@ describe('workspace service', () => {
 
 		await expect(
 			client.transact((batch) => {
-				batch.tables.notes.put({
+				batch.tables.notes.create({
 					id: 'rolled-back',
 					title: 'Valid',
 					pinned: false,
@@ -162,7 +162,7 @@ describe('workspace service', () => {
 		service.observe(() => peerCalls++);
 
 		await expect(
-			client.tables.notes.put({ id: 'kept', title: 'Kept', pinned: false }),
+			client.tables.notes.create({ id: 'kept', title: 'Kept', pinned: false }),
 		).resolves.toBeUndefined();
 		expect(peerCalls).toBe(1);
 		expect(serviceObserverErrors).toHaveLength(1);
@@ -175,7 +175,7 @@ describe('workspace service', () => {
 		const observedIds: string[] = [];
 		service.observe((delta) => {
 			if (delta.tables.notes?.upserted[0]?.id === 'first') {
-				nestedWrite = client.tables.notes.put({
+				nestedWrite = client.tables.notes.create({
 					id: 'second',
 					title: 'Second',
 					pinned: false,
@@ -187,7 +187,7 @@ describe('workspace service', () => {
 			if (typeof id === 'string') observedIds.push(id);
 		});
 
-		await client.tables.notes.put({
+		await client.tables.notes.create({
 			id: 'first',
 			title: 'First',
 			pinned: false,
@@ -200,7 +200,7 @@ describe('workspace service', () => {
 	test('requests capture caller values before entering the serialized queue', async () => {
 		const { client } = setup();
 		const row = { id: 'captured', title: 'Before', pinned: false };
-		const write = client.tables.notes.put(row);
+		const write = client.tables.notes.create(row);
 		row.title = 'After';
 
 		await write;
@@ -213,7 +213,7 @@ describe('workspace service', () => {
 
 	test('disposal rejects queued and future work and refuses new observers', async () => {
 		const { client, service } = setup();
-		const queued = client.tables.notes.put({
+		const queued = client.tables.notes.create({
 			id: 'zombie',
 			title: 'Zombie',
 			pinned: false,
@@ -227,7 +227,7 @@ describe('workspace service', () => {
 
 	test('external invalidation re-reads effective database state without rebroadcasting it as a commit', async () => {
 		const { client, native, service } = setup();
-		await client.tables.notes.put({
+		await client.tables.notes.create({
 			id: 'external',
 			title: 'Before',
 			pinned: false,

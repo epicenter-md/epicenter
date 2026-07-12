@@ -130,13 +130,13 @@ async function runConformance(open: OpenDatabase) {
 			actorSequence: 1,
 			operations: [
 				{
-					kind: 'patchRow' as const,
+					kind: 'createRow' as const,
 					table: 'notes',
 					rowId: 'n1',
 					cells: { title: 'one', metadata: { tags: ['local-first'] } },
 				},
 				{
-					kind: 'patchRow' as const,
+					kind: 'createRow' as const,
 					table: 'notes',
 					rowId: 'n2',
 					cells: { title: 'two' },
@@ -146,7 +146,16 @@ async function runConformance(open: OpenDatabase) {
 		const second: Mutation = {
 			actorId: 'actor-a',
 			actorSequence: 2,
-			operations: [{ kind: 'deleteRow' as const, table: 'notes', rowId: 'n1' }],
+			operations: [
+				{ kind: 'deleteRow' as const, table: 'notes', rowId: 'n1' },
+				// A delayed edit after physical deletion folds to an accepted no-op.
+				{
+					kind: 'updateRow' as const,
+					table: 'notes',
+					rowId: 'n1',
+					cells: { title: 'cannot resurrect' },
+				},
+			],
 		};
 		expect(
 			authority.push({
@@ -178,6 +187,35 @@ async function runConformance(open: OpenDatabase) {
 			}),
 		).toEqual({ kind: 'push', ok: false, reason: 'schema-identity-mismatch' });
 
+		// A duplicate create with a NEW sequence is a replica invariant
+		// violation: the whole push rolls back and the actor stays paused.
+		expect(
+			authority.push({
+				kind: 'push',
+				...envelope,
+				mutations: [
+					{
+						actorId: 'actor-a',
+						actorSequence: 3,
+						operations: [
+							{
+								kind: 'createRow' as const,
+								table: 'notes',
+								rowId: 'n2',
+								cells: { title: 'duplicate' },
+							},
+						],
+					},
+				],
+			}),
+		).toEqual({ kind: 'push', ok: false, reason: 'create-conflict' });
+		expect(
+			database.all<{ title: string }>(
+				`SELECT json_extract(cells_json, '$.title') AS title
+				 FROM record_sync_canonical_rows WHERE row_id = 'n2'`,
+			)[0]?.title,
+		).toBe('two');
+
 		const pull = authority.pull({
 			kind: 'pull',
 			...envelope,
@@ -199,12 +237,11 @@ async function runConformance(open: OpenDatabase) {
 		});
 		if (!firstChunk.ok) throw new Error(firstChunk.reason);
 		expect(await isValidSnapshotChunk(sha256, firstChunk.chunk)).toBeTrue();
+		// Deletion is physical absence: the snapshot carries live rows only.
 		expect(firstChunk.chunk.rows).toEqual([
-			{ table: 'notes', rowId: 'n1', deleted: true, cells: {} },
 			{
 				table: 'notes',
 				rowId: 'n2',
-				deleted: false,
 				cells: { title: 'two' },
 			},
 		]);

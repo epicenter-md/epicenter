@@ -7,8 +7,9 @@
  *
  * Key behaviors:
  * - Actor sequence and outbox advance in the application transaction
- * - Pull pages atomically advance the projection and durable cursor
- * - Lost acknowledgements, conflicts, tombstones, and snapshots converge
+ * - Pull pages retract pending creations, fold the page, then replay intent
+ * - Lost acknowledgements, remote deletions, and snapshots converge; deletion
+ *   is physical absence, never a tombstone record
  */
 
 import { Database } from 'bun:sqlite';
@@ -22,6 +23,7 @@ import {
 	type RecordAuthority,
 } from '@epicenter/record-sync';
 import { createBunSqliteAdapter } from '@epicenter/record-sync/bun';
+import { ReplicaInvariantViolationError } from './database.js';
 import { defineTable, defineWorkspace } from './definition.js';
 import {
 	createReplicaRuntime,
@@ -96,7 +98,7 @@ test('an existing replica opens and accepts writes while its authority is offlin
 		port: createPort(server.authority),
 		actorId: 'durable-actor',
 	});
-	first.runtime.database.tables.notes.put(note('before', 'online'));
+	first.runtime.database.tables.notes.create(note('before', 'online'));
 
 	const offlinePort: ReplicaSyncPort = {
 		bindWorkspace() {},
@@ -118,7 +120,9 @@ test('an existing replica opens and accepts writes while its authority is offlin
 		port: offlinePort,
 		actorId: 'must-not-replace',
 	});
-	reopened.runtime.database.tables.notes.put(note('offline', 'still writable'));
+	reopened.runtime.database.tables.notes.create(
+		note('offline', 'still writable'),
+	);
 	expect(reopened.runtime.database.tables.notes.get('offline')).toEqual(
 		note('offline', 'still writable'),
 	);
@@ -167,7 +171,7 @@ test('fresh bind persists actor identity and restart preserves its sequence', as
 		port: createPort(server.authority),
 		actorId: 'actor-first',
 	});
-	first.runtime.database.tables.notes.put(note('n1', 'one'));
+	first.runtime.database.tables.notes.create(note('n1', 'one'));
 	expect(first.runtime.inspect()).toMatchObject({
 		actorId: 'actor-first',
 		nextActorSequence: 2,
@@ -197,8 +201,8 @@ test('one application transaction creates one atomic ordered outbox mutation', a
 		actorId: 'actor-a',
 	});
 	runtime.database.transact(({ tables }) => {
-		tables.notes.put(note('n1', 'one'));
-		tables.notes.put(note('n2', 'two', true));
+		tables.notes.create(note('n1', 'one'));
+		tables.notes.create(note('n2', 'two', true));
 	});
 	const [mutation] = runtime.inspect().outbox;
 	expect(mutation).toMatchObject({ actorId: 'actor-a', actorSequence: 1 });
@@ -209,7 +213,7 @@ test('one application transaction creates one atomic ordered outbox mutation', a
 		`CREATE TRIGGER reject_outbox BEFORE INSERT ON __epicenter_replica_outbox BEGIN SELECT RAISE(ABORT, 'reject outbox'); END`,
 	);
 	expect(() =>
-		runtime.database.tables.notes.put(note('rollback', 'no')),
+		runtime.database.tables.notes.create(note('rollback', 'no')),
 	).toThrow('reject outbox');
 	expect(runtime.database.tables.notes.get('rollback')).toBeNull();
 	expect(runtime.inspect().nextActorSequence).toBe(2);
@@ -233,7 +237,7 @@ test('lost push acknowledgement retries safely and own echo prunes outbox', asyn
 		},
 	};
 	const { native, runtime } = await openReplica({ port, actorId: 'actor-a' });
-	runtime.database.tables.notes.put(note('n1', 'one'));
+	runtime.database.tables.notes.create(note('n1', 'one'));
 	await expect(runtime.syncOnce()).rejects.toThrow('connection lost');
 	expect(runtime.inspect().outbox).toHaveLength(1);
 	await runtime.syncOnce();
@@ -241,6 +245,7 @@ test('lost push acknowledgement retries safely and own echo prunes outbox', asyn
 		appliedServerSequence: 1,
 		outbox: [],
 	});
+	expect(runtime.database.tables.notes.get('n1')).toEqual(note('n1', 'one'));
 	native.close();
 	server.native.close();
 });
@@ -255,19 +260,19 @@ test('two replicas converge by server order while different cells merge', async 
 		port: createPort(server.authority),
 		actorId: 'actor-b',
 	});
-	a.runtime.database.tables.notes.put(note('same', 'from-a'));
-	b.runtime.database.tables.notes.put(note('same', 'from-b', true));
+	a.runtime.database.tables.notes.create(note('from-a', 'created by a'));
+	b.runtime.database.tables.notes.create(note('from-b', 'created by b', true));
 	await a.runtime.syncOnce();
 	await b.runtime.syncOnce();
 	await a.runtime.syncOnce();
-	expect(a.runtime.database.tables.notes.get('same')).toEqual(
-		note('same', 'from-b', true),
+	expect(a.runtime.database.tables.notes.get('from-b')).toEqual(
+		note('from-b', 'created by b', true),
 	);
-	expect(b.runtime.database.tables.notes.get('same')).toEqual(
-		note('same', 'from-b', true),
+	expect(b.runtime.database.tables.notes.get('from-a')).toEqual(
+		note('from-a', 'created by a'),
 	);
 
-	a.runtime.database.tables.notes.put(note('merge', 'base'));
+	a.runtime.database.tables.notes.create(note('merge', 'base'));
 	await a.runtime.syncOnce();
 	await b.runtime.syncOnce();
 	a.runtime.database.tables.notes.patch('merge', { title: 'title-a' });
@@ -278,12 +283,136 @@ test('two replicas converge by server order while different cells merge', async 
 	expect(a.runtime.database.tables.notes.get('merge')).toEqual(
 		note('merge', 'title-a', true),
 	);
+	expect(b.runtime.database.tables.notes.get('merge')).toEqual(
+		note('merge', 'title-a', true),
+	);
 	a.native.close();
 	b.native.close();
 	server.native.close();
 });
 
-test('invalid remote rows quarantine, later patches promote, and deletes remain terminal', async () => {
+test('pull retracts pending creations so own echoes fold and pending intent replays', async () => {
+	const server = createServer();
+	const base = createPort(server.authority);
+	const port: ReplicaSyncPort = {
+		...base,
+		// Acknowledge without forwarding: the authority is seeded directly
+		// below, so the second creation stays pending across the pull.
+		async push() {
+			return { kind: 'push', ok: true };
+		},
+	};
+	const { native, runtime } = await openReplica({ port, actorId: 'actor-a' });
+	runtime.database.tables.notes.create(note('accepted-row', 'accepted'));
+	const [first] = runtime.inspect().outbox;
+	if (!first) throw new Error('expected pending mutation');
+	server.authority.push({
+		kind: 'push',
+		...server.envelope,
+		mutations: [first],
+	});
+	server.authority.push({
+		kind: 'push',
+		...server.envelope,
+		mutations: [
+			{
+				actorId: 'remote',
+				actorSequence: 1,
+				operations: [
+					{
+						kind: 'createRow',
+						table: 'notes',
+						rowId: 'remote-row',
+						cells: { title: 'remote', pinned: true },
+					},
+				],
+			},
+		],
+	});
+	runtime.database.tables.notes.create(note('pending-row', 'pending'));
+
+	await runtime.syncOnce();
+
+	// Accepted prefix: the page's own createRow echo and the remote creation
+	// folded onto absent identities because pending creations were retracted.
+	expect(runtime.database.tables.notes.get('accepted-row')).toEqual(
+		note('accepted-row', 'accepted'),
+	);
+	expect(runtime.database.tables.notes.get('remote-row')).toEqual(
+		note('remote-row', 'remote', true),
+	);
+	// Pending intent replayed after the page: still visible, still queued.
+	expect(runtime.database.tables.notes.get('pending-row')).toEqual(
+		note('pending-row', 'pending'),
+	);
+	expect(runtime.inspect()).toMatchObject({ appliedServerSequence: 2 });
+	expect(
+		runtime.inspect().outbox.map(({ actorSequence }) => actorSequence),
+	).toEqual([2]);
+	native.close();
+	server.native.close();
+});
+
+test('a pending updateRow to a remotely deleted row replays as a no-op and never resurrects it', async () => {
+	const server = createServer();
+	const a = await openReplica({
+		port: createPort(server.authority),
+		actorId: 'actor-a',
+	});
+	const b = await openReplica({
+		port: createPort(server.authority),
+		actorId: 'actor-b',
+	});
+	a.runtime.database.tables.notes.create(note('doomed', 'alive'));
+	await a.runtime.syncOnce();
+	await b.runtime.syncOnce();
+	expect(b.runtime.database.tables.notes.get('doomed')).toEqual(
+		note('doomed', 'alive'),
+	);
+
+	a.runtime.database.tables.notes.remove('doomed');
+	await a.runtime.syncOnce();
+	b.runtime.database.tables.notes.patch('doomed', { title: 'zombie' });
+	await b.runtime.syncOnce();
+	await a.runtime.syncOnce();
+
+	expect(b.runtime.database.tables.notes.get('doomed')).toBeNull();
+	expect(a.runtime.database.tables.notes.get('doomed')).toBeNull();
+	expect(b.runtime.inspect().outbox).toEqual([]);
+	a.native.close();
+	b.native.close();
+	server.native.close();
+});
+
+test("a push refused with 'create-conflict' is an invariant violation demanding rebootstrap", async () => {
+	const port: ReplicaSyncPort = {
+		bindWorkspace() {},
+		async openDatabase() {
+			return { databaseIncarnationId: 'database-1' };
+		},
+		async push() {
+			return { kind: 'push', ok: false, reason: 'create-conflict' };
+		},
+		async pull() {
+			throw new Error('pull must not run after a refused push');
+		},
+		async snapshotChunk() {
+			throw new Error('unexpected snapshot chunk request');
+		},
+	};
+	const { native, runtime } = await openReplica({ port, actorId: 'actor-a' });
+	runtime.database.tables.notes.create(note('dup', 'duplicate'));
+
+	const error = await runtime.syncOnce().then(
+		() => undefined,
+		(cause: unknown) => cause,
+	);
+	expect(error).toBeInstanceOf(ReplicaInvariantViolationError);
+	expect((error as Error).message).toContain('rebootstrap');
+	native.close();
+});
+
+test('invalid remote rows quarantine, later updates promote, and deletion is absence', async () => {
 	const server = createServer();
 	const { native, runtime } = await openReplica({
 		port: createPort(server.authority),
@@ -300,7 +429,7 @@ test('invalid remote rows quarantine, later patches promote, and deletes remain 
 		actorSequence: 1,
 		operations: [
 			{
-				kind: 'patchRow',
+				kind: 'createRow',
 				table: 'notes',
 				rowId: 'n1',
 				cells: { title: 'partial' },
@@ -317,7 +446,7 @@ test('invalid remote rows quarantine, later patches promote, and deletes remain 
 		actorSequence: 2,
 		operations: [
 			{
-				kind: 'patchRow',
+				kind: 'updateRow',
 				table: 'notes',
 				rowId: 'n1',
 				cells: { pinned: false },
@@ -338,7 +467,7 @@ test('invalid remote rows quarantine, later patches promote, and deletes remain 
 		actorSequence: 4,
 		operations: [
 			{
-				kind: 'patchRow',
+				kind: 'updateRow',
 				table: 'notes',
 				rowId: 'n1',
 				cells: { title: 'zombie' },
@@ -347,9 +476,17 @@ test('invalid remote rows quarantine, later patches promote, and deletes remain 
 	});
 	await runtime.syncOnce();
 	expect(runtime.database.tables.notes.get('n1')).toBeNull();
+	expect(native.query('SELECT * FROM __epicenter_quarantine').all()).toEqual(
+		[],
+	);
+	// Deletion leaves no residue: there is no tombstone table at all.
 	expect(
-		native.query('SELECT * FROM __epicenter_tombstones').all(),
-	).toHaveLength(1);
+		native
+			.query(
+				"SELECT name FROM sqlite_master WHERE type = 'table' AND name = '__epicenter_tombstones'",
+			)
+			.all(),
+	).toEqual([]);
 	native.close();
 	server.native.close();
 });
@@ -365,7 +502,7 @@ test('corrupt page rolls back projection and cursor together', async () => {
 				actorSequence: 1,
 				operations: [
 					{
-						kind: 'patchRow',
+						kind: 'createRow',
 						table: 'notes',
 						rowId: 'n1',
 						cells: { title: 'one', pinned: false },
@@ -398,7 +535,7 @@ test('verified snapshot installs its high-water and prunes accepted local work',
 	const server = createServer();
 	const port = createPort(server.authority);
 	const { native, runtime } = await openReplica({ port, actorId: 'actor-a' });
-	runtime.database.tables.notes.put(note('local', 'accepted'));
+	runtime.database.tables.notes.create(note('local', 'accepted'));
 	const [pending] = runtime.inspect().outbox;
 	if (!pending) throw new Error('expected pending mutation');
 	server.authority.push({
@@ -406,7 +543,25 @@ test('verified snapshot installs its high-water and prunes accepted local work',
 		...server.envelope,
 		mutations: [pending],
 	});
-	await server.authority.publishSnapshot({ maxChunkBytes: 512 * 1024 });
+	const manifest = await server.authority.publishSnapshot({
+		maxChunkBytes: 512 * 1024,
+	});
+	// Snapshot chunks stage live rows only: {table, rowId, cells}, no
+	// deleted flag and no deletion entries.
+	const chunk = server.authority.snapshotChunk({
+		kind: 'snapshotChunk',
+		...server.envelope,
+		generation: manifest.generation,
+		index: 0,
+	});
+	if (!chunk.ok) throw new Error('expected a staged snapshot chunk');
+	expect(chunk.chunk.rows).toEqual([
+		{
+			table: 'notes',
+			rowId: 'local',
+			cells: { title: 'accepted', pinned: false },
+		},
+	]);
 	await runtime.syncOnce();
 	expect(runtime.inspect()).toMatchObject({
 		appliedServerSequence: 1,
@@ -419,13 +574,56 @@ test('verified snapshot installs its high-water and prunes accepted local work',
 	server.native.close();
 });
 
+test('snapshot install prunes by high-water, replays pending intent, and omitted rows stay absent', async () => {
+	const server = createServer();
+	const { native, runtime } = await openReplica({
+		port: createPort(server.authority),
+		actorId: 'actor-a',
+	});
+	runtime.database.transact(({ tables }) => {
+		tables.notes.create(note('ghost', 'mine'));
+		tables.notes.create(note('kept', 'original'));
+	});
+	await runtime.syncOnce();
+	runtime.database.tables.notes.patch('kept', { title: 'pending-kept' });
+	runtime.database.tables.notes.patch('ghost', { title: 'still mine' });
+	server.authority.push({
+		kind: 'push',
+		...server.envelope,
+		mutations: [
+			{
+				actorId: 'remote',
+				actorSequence: 1,
+				operations: [{ kind: 'deleteRow', table: 'notes', rowId: 'ghost' }],
+			},
+		],
+	});
+	await server.authority.publishSnapshot({ maxChunkBytes: 512 * 1024 });
+
+	await runtime.syncOnce();
+
+	// The snapshot omitted 'ghost': the pending updateRow replayed as a
+	// no-op and did not resurrect the row.
+	expect(runtime.database.tables.notes.get('ghost')).toBeNull();
+	// 'kept' survived the snapshot and the pending update replayed onto it.
+	expect(runtime.database.tables.notes.get('kept')).toEqual(
+		note('kept', 'pending-kept'),
+	);
+	expect(runtime.inspect()).toMatchObject({
+		appliedServerSequence: 4,
+		outbox: [],
+	});
+	native.close();
+	server.native.close();
+});
+
 test('snapshot high-water cannot prune intent the authority never echoed', async () => {
 	const server = createServer();
 	const { native, runtime } = await openReplica({
 		port: createPort(server.authority),
 		actorId: 'actor-a',
 	});
-	runtime.database.tables.notes.put(note('local', 'pending'));
+	runtime.database.tables.notes.create(note('local', 'pending'));
 	server.authority.push({
 		kind: 'push',
 		...server.envelope,
@@ -435,7 +633,7 @@ test('snapshot high-water cannot prune intent the authority never echoed', async
 				actorSequence: 1,
 				operations: [
 					{
-						kind: 'patchRow',
+						kind: 'createRow',
 						table: 'notes',
 						rowId: 'collision-1',
 						cells: { title: 'one', pinned: false },
@@ -447,7 +645,7 @@ test('snapshot high-water cannot prune intent the authority never echoed', async
 				actorSequence: 2,
 				operations: [
 					{
-						kind: 'patchRow',
+						kind: 'createRow',
 						table: 'notes',
 						rowId: 'collision-2',
 						cells: { title: 'two', pinned: false },
@@ -482,7 +680,7 @@ test('actor sequence exhaustion rolls back the application write', async () => {
 		.run(Number.MAX_SAFE_INTEGER);
 
 	expect(() =>
-		runtime.database.tables.notes.put(note('too-late', 'rolled back')),
+		runtime.database.tables.notes.create(note('too-late', 'rolled back')),
 	).toThrow('actor sequence is exhausted');
 	expect(runtime.database.tables.notes.get('too-late')).toBeNull();
 	expect(runtime.inspect().outbox).toEqual([]);

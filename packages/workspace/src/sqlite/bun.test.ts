@@ -32,7 +32,7 @@ test('Bun standalone workspace persists typed rows across service lifecycles', a
 			storage: { kind: 'bun', path },
 			onObserverError: (error) => errors.push(error),
 		});
-		await first.tables.notes.put({ id: 'one', title: 'Persisted' });
+		await first.tables.notes.create({ id: 'one', title: 'Persisted' });
 		await expect(
 			openStandaloneWorkspace(definition, {
 				storage: { kind: 'bun', path },
@@ -130,7 +130,7 @@ test('Bun workspace replicas synchronize automatically through one authority', a
 	});
 
 	try {
-		await first.tables.notes.put({ id: 'shared', title: 'Automatic' });
+		await first.tables.notes.create({ id: 'shared', title: 'Automatic' });
 		await waitUntil(
 			async () =>
 				(await second.tables.notes.get('shared'))?.title === 'Automatic',

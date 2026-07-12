@@ -136,8 +136,8 @@ One application transaction produces at most one outbox mutation:
 
 ```txt
 BEGIN local SQLite
-  apply typed table and KV writes
-  collect canonical patchRow/deleteRow operations
+  apply typed table writes
+  collect canonical createRow/updateRow/deleteRow operations
   read durable actor_id and next_actor_sequence
   append one outbox row
   advance next_actor_sequence
@@ -161,8 +161,14 @@ Synchronization preserves these facts:
   sequences;
 - applying remote operations, pruning exact echoes, replaying pending intent,
   and advancing the cursor happens in one SQLite transaction;
-- terminal deletion remains terminal, including after stale patches and
-  snapshot replacement;
+- deletion is physical absence: a stale update to a deleted row folds to an
+  accepted no-op instead of resurrecting it, including after snapshot
+  replacement, and a replica's own optimistic pending creations are retracted
+  before an accepted page folds so createRow echoes land on absent
+  identities;
+- a duplicate createRow refused by the authority (create-conflict) is a fatal
+  replica invariant violation: the replica pauses for rebootstrap instead of
+  repairing itself;
 - rows that do not satisfy the local schema stay in quarantine and can promote
   when later cells complete them;
 - malformed protocol data and contradictory identity metadata pause sync
@@ -205,7 +211,7 @@ Installation has one commit boundary:
 
 ```txt
 BEGIN local SQLite
-  replace canonical visible rows and tombstones from snapshot
+  replace canonical visible rows from snapshot (live rows only)
   validate this actor's accepted high-water against local sequence facts
   prune only contained outbox rows
   set applied_server_sequence = snapshot_sequence

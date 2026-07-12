@@ -70,7 +70,8 @@ export type AsyncTable<
 	}): Promise<TRow[]>;
 	has(id: TRow['id']): Promise<boolean>;
 	count(): Promise<number>;
-	put(row: TRow): Promise<void>;
+	/** Materialize a new row. The id must be a fresh, never-used identity. */
+	create(row: TRow): Promise<void>;
 	patch(id: TRow['id'], cells: Partial<Omit<TRow, 'id'>>): Promise<TRow | null>;
 	remove(id: TRow['id']): Promise<void>;
 	observe(callback: (delta: TableCommitDelta<TRow>) => void): () => void;
@@ -86,7 +87,7 @@ export type AsyncTables<TTables extends TableDefinitions> = {
 };
 
 type BatchTable<TRow extends { id: string }> = {
-	put(row: TRow): void;
+	create(row: TRow): void;
 	patch(id: TRow['id'], cells: Partial<Omit<TRow, 'id'>>): void;
 	remove(id: TRow['id']): void;
 };
@@ -219,10 +220,10 @@ export function createWorkspaceClient<TTables extends TableDefinitions>(
 					});
 					return expectResponse(response, 'count').value;
 				},
-				async put(row) {
+				async create(row) {
 					await sendMutations([
 						{
-							kind: 'put',
+							kind: 'create',
 							table: tableName,
 							row: row as Record<string, unknown>,
 						},
@@ -268,8 +269,8 @@ export function createWorkspaceClient<TTables extends TableDefinitions>(
 				Object.keys(definition.tables).map((tableName) => [
 					tableName,
 					{
-						put(row: Record<string, unknown>) {
-							mutations.push({ kind: 'put', table: tableName, row });
+						create(row: Record<string, unknown>) {
+							mutations.push({ kind: 'create', table: tableName, row });
 						},
 						patch(rowId: string, cells: Record<string, unknown>) {
 							mutations.push({ kind: 'patch', table: tableName, rowId, cells });

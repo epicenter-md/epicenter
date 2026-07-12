@@ -172,7 +172,7 @@ test('push and pull parse exact protocol requests and return backend responses',
 				actorSequence: 1,
 				operations: [
 					{
-						kind: 'patchRow',
+						kind: 'createRow',
 						table: 'pages',
 						rowId: 'page-1',
 						cells: { title: 'Hello' },

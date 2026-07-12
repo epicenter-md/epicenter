@@ -31,14 +31,14 @@ test('async client sends one write-only transaction and filters table deltas', a
 	client.tables.notes.observe((delta) => deltas.push(delta));
 
 	await client.transact((batch) => {
-		batch.tables.notes.put({ id: 'one', title: 'One' });
+		batch.tables.notes.create({ id: 'one', title: 'One' });
 		batch.tables.notes.patch('one', { title: 'Updated' });
 	});
 	expect(requests).toEqual([
 		{
 			kind: 'mutate',
 			mutations: [
-				{ kind: 'put', table: 'notes', row: { id: 'one', title: 'One' } },
+				{ kind: 'create', table: 'notes', row: { id: 'one', title: 'One' } },
 				{
 					kind: 'patch',
 					table: 'notes',
@@ -85,7 +85,7 @@ test('empty and async transaction builders never send a partial mutation', async
 	await client.transact(() => undefined);
 	await expect(
 		client.transact(async (batch) => {
-			batch.tables.notes.put({ id: 'not-sent', title: 'Not sent' });
+			batch.tables.notes.create({ id: 'not-sent', title: 'Not sent' });
 		}),
 	).rejects.toThrow('must be synchronous');
 
@@ -124,7 +124,7 @@ test('typed client rejects malformed rows, deltas, and mutation results', async 
 		"invalid 'notes' row",
 	);
 	await expect(
-		client.tables.notes.put({ id: 'one', title: 'One' }),
+		client.tables.notes.create({ id: 'one', title: 'One' }),
 	).rejects.toThrow('wrong mutation result count');
 
 	client.tables.notes.observe(() => undefined);

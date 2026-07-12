@@ -6,7 +6,7 @@ export const RECORD_SYNC_ADMISSION_LIMITS = {
 	schemaIdentityBytes: 64 * 1024,
 	mutationsPerPush: 64,
 	operationsPerMutation: 128,
-	cellsPerPatch: 128,
+	cellsPerOperation: 128,
 	jsonDepth: 16,
 	encodedMutationBytes: 64 * 1024,
 	encodedPushBytes: 768 * 1024,
@@ -78,7 +78,8 @@ export function isAdmissibleMutation(mutation: Mutation): boolean {
 			return false;
 		if (operation.kind === 'deleteRow') continue;
 		const cells = Object.entries(operation.cells);
-		if (cells.length > RECORD_SYNC_ADMISSION_LIMITS.cellsPerPatch) return false;
+		if (cells.length > RECORD_SYNC_ADMISSION_LIMITS.cellsPerOperation)
+			return false;
 		for (const [name, value] of cells) {
 			if (!isBoundedIdentifier(name) || !isAdmissibleJsonValue(value))
 				return false;

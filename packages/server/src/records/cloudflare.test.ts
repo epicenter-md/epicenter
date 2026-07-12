@@ -149,7 +149,7 @@ test('database identity and mutation log survive Durable Object restart', async 
 					actorSequence: 1,
 					operations: [
 						{
-							kind: 'patchRow',
+							kind: 'createRow',
 							table: 'pages',
 							rowId: 'page-1',
 							cells: { title: 'Hello' },
@@ -261,7 +261,7 @@ test('production compaction serves a snapshot and chunks to a stale cursor', asy
 				actorSequence: index + 1,
 				operations: [
 					{
-						kind: 'patchRow' as const,
+						kind: 'createRow' as const,
 						table: 'pages',
 						rowId: `page-${index}`,
 						cells: { title: `Page ${index}` },

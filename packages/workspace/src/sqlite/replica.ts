@@ -28,6 +28,7 @@ import {
 	type ApplicationMutationContext,
 	type ApplicationMutationCoordinator,
 	createApplicationDatabase,
+	ReplicaInvariantViolationError,
 } from './database.js';
 import type { TableDefinitions, WorkspaceDefinition } from './definition.js';
 
@@ -189,6 +190,13 @@ export async function createReplicaRuntime<TTables extends TableDefinitions>({
 		};
 		const response = parsePushResponse(await sync.push(request, signal));
 		if (!response.ok) {
+			if (response.reason === 'create-conflict') {
+				// The authority saw this replica submit a createRow for a live
+				// identity. The replica is corrupt; local repair is refused.
+				throw new ReplicaInvariantViolationError(
+					'Replica push refused: create-conflict; discard this replica and rebootstrap from the authority',
+				);
+			}
 			throw new Error(`Replica push refused: ${response.reason}`);
 		}
 	}
@@ -344,6 +352,11 @@ export async function createReplicaRuntime<TTables extends TableDefinitions>({
 				if (current.appliedServerSequence !== request.cursor) {
 					return false;
 				}
+				// Roll back rows that exist only as this replica's optimistic
+				// pending creations. Under the strict fold, the page's own
+				// createRow echoes must land on absent identities; the replay
+				// below recreates whatever this page did not accept.
+				projection.retract(pendingCreations(readOutbox(sqlite)));
 				for (const mutation of response.mutations) {
 					projection.apply(mutation.operations, mutation.serverSequence);
 					if (mutation.actorId === current.actorId) {
@@ -610,6 +623,23 @@ function readOutbox(sqlite: RecordSyncSqlite): Mutation[] {
 				operations: JSON.parse(operationsJson),
 			}),
 		);
+}
+
+function pendingCreations(
+	outbox: readonly Mutation[],
+): { table: string; rowId: string }[] {
+	const seen = new Set<string>();
+	const rows: { table: string; rowId: string }[] = [];
+	for (const mutation of outbox) {
+		for (const operation of mutation.operations) {
+			if (operation.kind !== 'createRow') continue;
+			const key = JSON.stringify([operation.table, operation.rowId]);
+			if (seen.has(key)) continue;
+			seen.add(key);
+			rows.push({ table: operation.table, rowId: operation.rowId });
+		}
+	}
+	return rows;
 }
 
 function assertPullPage(

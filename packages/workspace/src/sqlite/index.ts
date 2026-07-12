@@ -16,15 +16,16 @@ export {
 	type WorkspaceCommitDelta,
 	type WorkspaceWriteBatch,
 } from './client.js';
-export type {
-	ApplicationDatabase,
-	ApplicationDatabaseOptions,
-	ApplicationLogicalSnapshot,
-	ApplicationMutationContext,
-	ApplicationMutationCoordinator,
-	ApplicationTable,
-	ApplicationTables,
-	ApplicationTransaction,
+export {
+	type ApplicationDatabase,
+	type ApplicationDatabaseOptions,
+	type ApplicationLogicalSnapshot,
+	type ApplicationMutationContext,
+	type ApplicationMutationCoordinator,
+	type ApplicationTable,
+	type ApplicationTables,
+	type ApplicationTransaction,
+	ReplicaInvariantViolationError,
 } from './database.js';
 export {
 	type Columns,

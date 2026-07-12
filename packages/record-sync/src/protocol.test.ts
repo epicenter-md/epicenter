@@ -35,7 +35,7 @@ test('protocol parsers accept the closed wire shapes and nested JSON cells', () 
 			actorSequence: 1,
 			operations: [
 				{
-					kind: 'patchRow',
+					kind: 'createRow',
 					table: 'notes',
 					rowId: 'n1',
 					cells: { title: 'one' },
@@ -53,7 +53,7 @@ test('protocol parsers accept the closed wire shapes and nested JSON cells', () 
 					actorSequence: 1,
 					operations: [
 						{
-							kind: 'patchRow',
+							kind: 'updateRow',
 							table: 'notes',
 							rowId: 'n1',
 							cells: { metadata: { tags: ['one', 'two'], rank: 2 } },
@@ -83,7 +83,7 @@ test('mutation parser rejects malformed durable outbox values', () => {
 			actorSequence: 1,
 			operations: [
 				{
-					kind: 'patchRow',
+					kind: 'updateRow',
 					table: 'notes',
 					rowId: 'n1',
 					cells: { score: Number.NaN },
@@ -99,6 +99,9 @@ test('response parsers validate both success and refusal variants', () => {
 		ok: true,
 	});
 	expect(
+		parsePushResponse({ kind: 'push', ok: false, reason: 'create-conflict' }),
+	).toMatchObject({ ok: false, reason: 'create-conflict' });
+	expect(
 		parsePullResponse({
 			kind: 'pull',
 			ok: true,
@@ -111,7 +114,7 @@ test('response parsers validate both success and refusal variants', () => {
 					actorSequence: 1,
 					operations: [
 						{
-							kind: 'patchRow',
+							kind: 'updateRow',
 							table: 'notes',
 							rowId: 'n1',
 							cells: { metadata: { tags: ['one'] } },
@@ -132,10 +135,12 @@ test('response parsers validate both success and refusal variants', () => {
 	).toMatchObject({ ok: false, reason: 'snapshot-replaced' });
 });
 
-test('response parsers reject extra fields and invalid snapshot cells', () => {
+test('response parsers reject extra fields and tombstone-era snapshot rows', () => {
 	expect(() =>
 		parsePushResponse({ kind: 'push', ok: true, acceptedThrough: 3 }),
 	).toThrow();
+	// Snapshots carry live rows only; the removed `deleted` flag is now an
+	// unknown extra property on the closed row shape.
 	expect(() =>
 		parseSnapshotChunkResponse({
 			kind: 'snapshotChunk',
@@ -148,7 +153,7 @@ test('response parsers reject extra fields and invalid snapshot cells', () => {
 						table: 'notes',
 						rowId: 'n1',
 						deleted: true,
-						cells: { title: 'must be empty' },
+						cells: {},
 					},
 				],
 				checksum: 'checksum',
@@ -159,7 +164,7 @@ test('response parsers reject extra fields and invalid snapshot cells', () => {
 
 test('push parsing rejects non-JSON cells, unsafe sequences, and extra keys', () => {
 	const operation = {
-		kind: 'patchRow',
+		kind: 'updateRow',
 		table: 'notes',
 		rowId: 'n1',
 		cells: { title: 'valid' },
@@ -249,13 +254,13 @@ test('mutation parsing rejects operation and cell counts over their ceilings', (
 			actorSequence: 1,
 			operations: [
 				{
-					kind: 'patchRow',
+					kind: 'updateRow',
 					table: 'notes',
 					rowId: 'n1',
 					cells: Object.fromEntries(
 						Array.from(
 							{
-								length: RECORD_SYNC_ADMISSION_LIMITS.cellsPerPatch + 1,
+								length: RECORD_SYNC_ADMISSION_LIMITS.cellsPerOperation + 1,
 							},
 							(_, index) => [`field-${index}`, index],
 						),
@@ -305,7 +310,7 @@ test('mutation parsing rejects JSON deeper than the admission ceiling', () => {
 			actorSequence: 1,
 			operations: [
 				{
-					kind: 'patchRow',
+					kind: 'updateRow',
 					table: 'notes',
 					rowId: 'n1',
 					cells: { metadata: nested },
@@ -322,7 +327,7 @@ test('mutation parsing rejects encoded mutations over the byte ceiling', () => {
 			actorSequence: 1,
 			operations: [
 				{
-					kind: 'patchRow',
+					kind: 'updateRow',
 					table: 'notes',
 					rowId: 'n1',
 					cells: {
@@ -345,7 +350,7 @@ test('push parsing rejects aggregate bytes below the HTTP request ceiling', () =
 				actorSequence: index + 1,
 				operations: [
 					{
-						kind: 'patchRow',
+						kind: 'updateRow',
 						table: 'notes',
 						rowId: `n${index}`,
 						cells: { body },

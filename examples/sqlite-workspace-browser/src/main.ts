@@ -61,8 +61,8 @@ if (replicaName === 'a' || replicaName === 'b') {
 }
 
 window.workspaceSmoke = {
-	put(note: Note) {
-		return workspace.tables.notes.put(note);
+	create(note: Note) {
+		return workspace.tables.notes.create(note);
 	},
 	get(id: string) {
 		return workspace.tables.notes.get(id);
@@ -94,9 +94,9 @@ window.workspaceSmoke = {
 			return error instanceof Error ? error.message : String(error);
 		}
 	},
-	replicaPut(note: Note) {
+	replicaCreate(note: Note) {
 		if (!replica) throw new Error('Replica is not open');
-		return replica.tables.notes.put(note);
+		return replica.tables.notes.create(note);
 	},
 	replicaGet(id: string) {
 		if (!replica) throw new Error('Replica is not open');
@@ -116,7 +116,7 @@ if (status) status.textContent = 'OPFS workspace ready';
 declare global {
 	interface Window {
 		workspaceSmoke: {
-			put(note: Note): Promise<void>;
+			create(note: Note): Promise<void>;
 			get(id: string): Promise<Note | null>;
 			list(): Promise<Note[]>;
 			theme(): Theme;
@@ -125,7 +125,7 @@ declare global {
 			dispose(): Promise<void>;
 			reopen(): Promise<void>;
 			mismatchError(): Promise<string | null>;
-			replicaPut(note: Note): Promise<void>;
+			replicaCreate(note: Note): Promise<void>;
 			replicaGet(id: string): Promise<Note | null>;
 			replicaDispose(): Promise<void>;
 		};

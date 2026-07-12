@@ -1,5 +1,6 @@
 import { isBoundedSchemaIdentity } from './admission.js';
-import { foldRow, type LogicalRow } from './fold.js';
+import { foldRow } from './fold.js';
+import type { Cells } from './protocol.js';
 import type {
 	LoggedMutation,
 	Operation,
@@ -67,7 +68,6 @@ type StoredRow = {
 	table_name: string;
 	row_id: string;
 	cells_json: string;
-	deleted: number;
 };
 type StoredMutation = {
 	server_sequence: number;
@@ -161,7 +161,6 @@ function initialize(
 				table_name TEXT NOT NULL,
 				row_id TEXT NOT NULL,
 				cells_json TEXT NOT NULL,
-				deleted INTEGER NOT NULL,
 				PRIMARY KEY(table_name, row_id)
 			);
 			CREATE TABLE IF NOT EXISTS record_sync_snapshot_manifest (
@@ -229,49 +228,63 @@ function writeMeta(
 	]);
 }
 
-function readLogicalRow(
+function readCanonicalCells(
 	database: RecordSyncSqlite,
 	table: string,
 	rowId: string,
-): LogicalRow | undefined {
+): Cells | undefined {
 	const stored = one<StoredRow>(
 		database,
-		`SELECT table_name, row_id, cells_json, deleted
+		`SELECT table_name, row_id, cells_json
 		 FROM record_sync_canonical_rows
 		 WHERE table_name = ? AND row_id = ?`,
 		[table, rowId],
 	);
-	if (!stored) return undefined;
-	return stored.deleted
-		? { kind: 'tombstone' }
-		: {
-				kind: 'live',
-				cells: JSON.parse(stored.cells_json),
-			};
+	return stored ? JSON.parse(stored.cells_json) : undefined;
+}
+
+/** Internal sentinel that rolls the whole push transaction back. */
+class CreateConflictError extends Error {
+	constructor(operation: Operation) {
+		super(
+			`createRow named live identity '${operation.table}.${operation.rowId}'`,
+		);
+		this.name = 'CreateConflictError';
+	}
 }
 
 function applyOperation(
 	database: RecordSyncSqlite,
 	operation: Operation,
 ): void {
-	const next = foldRow(
-		readLogicalRow(database, operation.table, operation.rowId),
+	const result = foldRow(
+		readCanonicalCells(database, operation.table, operation.rowId),
 		operation,
 	);
-	database.run(
-		`INSERT INTO record_sync_canonical_rows(
-			table_name, row_id, cells_json, deleted
-		) VALUES (?, ?, ?, ?)
-		ON CONFLICT(table_name, row_id) DO UPDATE SET
-			cells_json = excluded.cells_json,
-			deleted = excluded.deleted`,
-		[
-			operation.table,
-			operation.rowId,
-			next.kind === 'live' ? JSON.stringify(next.cells) : '{}',
-			next.kind === 'tombstone' ? 1 : 0,
-		],
-	);
+	switch (result.kind) {
+		case 'created':
+		case 'updated':
+			database.run(
+				`INSERT INTO record_sync_canonical_rows(
+					table_name, row_id, cells_json
+				) VALUES (?, ?, ?)
+				ON CONFLICT(table_name, row_id) DO UPDATE SET
+					cells_json = excluded.cells_json`,
+				[operation.table, operation.rowId, JSON.stringify(result.cells)],
+			);
+			return;
+		case 'deleted':
+			database.run(
+				`DELETE FROM record_sync_canonical_rows
+				 WHERE table_name = ? AND row_id = ?`,
+				[operation.table, operation.rowId],
+			);
+			return;
+		case 'noop':
+			return;
+		case 'create-conflict':
+			throw new CreateConflictError(operation);
+	}
 }
 
 function readManifest(database: RecordSyncSqlite): SnapshotManifest | null {
@@ -288,14 +301,13 @@ function captureSnapshot(database: RecordSyncSqlite): CapturedSnapshot {
 		snapshotSequence: readMeta(database, 'serverSequence'),
 		rows: database
 			.all<StoredRow>(
-				`SELECT table_name, row_id, cells_json, deleted
+				`SELECT table_name, row_id, cells_json
 				 FROM record_sync_canonical_rows
 				 ORDER BY table_name, row_id`,
 			)
 			.map((row) => ({
 				table: row.table_name,
 				rowId: row.row_id,
-				deleted: Boolean(row.deleted),
 				cells: JSON.parse(row.cells_json),
 			})),
 		actorHighWater: Object.fromEntries(
@@ -438,48 +450,59 @@ export function createRecordAuthority({
 			const refusal = requestRefusal(request, envelope);
 			if (refusal) return { kind: 'push', ok: false, reason: refusal };
 			let response: PushResponse = { kind: 'push', ok: true };
-			database.transaction(() => {
-				for (const mutation of request.mutations) {
-					const highWater =
-						one<{ sequence: number }>(
-							database,
-							`SELECT sequence FROM record_sync_actor_high_water
-							 WHERE actor_id = ?`,
-							[mutation.actorId],
-						)?.sequence ?? 0;
-					if (mutation.actorSequence <= highWater) continue;
-					if (mutation.actorSequence !== highWater + 1) {
-						response = {
-							kind: 'push',
-							ok: false,
-							reason: 'actor-sequence-gap',
-						};
-						return;
-					}
-					const serverSequence = readMeta(database, 'serverSequence') + 1;
-					for (const operation of mutation.operations)
-						applyOperation(database, operation);
-					database.run(
-						`INSERT INTO record_sync_mutation_log(
-							server_sequence, actor_id, actor_sequence, operations_json
-						) VALUES (?, ?, ?, ?)`,
-						[
-							serverSequence,
-							mutation.actorId,
-							mutation.actorSequence,
-							JSON.stringify(mutation.operations),
-						],
-					);
-					database.run(
-						`INSERT INTO record_sync_actor_high_water(actor_id, sequence)
-						 VALUES (?, ?)
-						 ON CONFLICT(actor_id) DO UPDATE SET sequence = excluded.sequence`,
-						[mutation.actorId, mutation.actorSequence],
-					);
-					writeMeta(database, 'serverSequence', serverSequence);
-				}
-			});
+			try {
+				applyPush();
+			} catch (error) {
+				if (!(error instanceof CreateConflictError)) throw error;
+				// The thrown sentinel rolled back the whole push, so no mutation
+				// from this batch was accepted and the actor stays paused.
+				return { kind: 'push', ok: false, reason: 'create-conflict' };
+			}
 			return response;
+
+			function applyPush(): void {
+				database.transaction(() => {
+					for (const mutation of request.mutations) {
+						const highWater =
+							one<{ sequence: number }>(
+								database,
+								`SELECT sequence FROM record_sync_actor_high_water
+								 WHERE actor_id = ?`,
+								[mutation.actorId],
+							)?.sequence ?? 0;
+						if (mutation.actorSequence <= highWater) continue;
+						if (mutation.actorSequence !== highWater + 1) {
+							response = {
+								kind: 'push',
+								ok: false,
+								reason: 'actor-sequence-gap',
+							};
+							return;
+						}
+						const serverSequence = readMeta(database, 'serverSequence') + 1;
+						for (const operation of mutation.operations)
+							applyOperation(database, operation);
+						database.run(
+							`INSERT INTO record_sync_mutation_log(
+								server_sequence, actor_id, actor_sequence, operations_json
+							) VALUES (?, ?, ?, ?)`,
+							[
+								serverSequence,
+								mutation.actorId,
+								mutation.actorSequence,
+								JSON.stringify(mutation.operations),
+							],
+						);
+						database.run(
+							`INSERT INTO record_sync_actor_high_water(actor_id, sequence)
+							 VALUES (?, ?)
+							 ON CONFLICT(actor_id) DO UPDATE SET sequence = excluded.sequence`,
+							[mutation.actorId, mutation.actorSequence],
+						);
+						writeMeta(database, 'serverSequence', serverSequence);
+					}
+				});
+			}
 		},
 
 		pull(request: PullRequest): PullResponse {

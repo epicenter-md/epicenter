@@ -7,7 +7,8 @@
  * here.
  *
  * Key behaviors:
- * - CRUD uses typed columns, declared indexes, codecs, and terminal tombstones
+ * - CRUD uses typed columns, declared indexes, codecs, and physical deletion
+ * - mutations record three-verb logical operations (create/update/delete row)
  * - successful transactions invalidate once after commit; rollback is silent
  * - representation migrations advance one persisted storage revision
  */
@@ -15,12 +16,13 @@
 import { Database, type SQLQueryBindings } from 'bun:sqlite';
 import { describe, expect, test } from 'bun:test';
 import { field } from '@epicenter/field';
-import type { RecordSyncSqlite } from '@epicenter/record-sync';
+import type { Operation, RecordSyncSqlite } from '@epicenter/record-sync';
 import { Type } from 'typebox';
 import { nullable } from '../document/nullable.js';
 import {
 	type ApplicationMutationCoordinator,
 	createApplicationDatabase,
+	ReplicaInvariantViolationError,
 } from './database.js';
 import { defineKv, defineTable, defineWorkspace } from './definition.js';
 
@@ -82,9 +84,9 @@ function setup() {
 }
 
 describe('typed rows at rest', () => {
-	test('put, patch, list, and remove operate on typed SQLite columns', () => {
+	test('create, patch, list, and remove operate on typed SQLite columns', () => {
 		const { database, workspace } = setup();
-		workspace.tables.notes.put({
+		workspace.tables.notes.create({
 			id: 'note-1',
 			title: 'First',
 			pinned: false,
@@ -92,7 +94,7 @@ describe('typed rows at rest', () => {
 			tags: ['one', 'two'],
 			metadata: { source: 'local', rank: 2 },
 		});
-		workspace.tables.notes.put({
+		workspace.tables.notes.create({
 			id: 'note-2',
 			title: 'Second',
 			pinned: true,
@@ -115,6 +117,7 @@ describe('typed rows at rest', () => {
 				rating: 3,
 			}),
 		).toMatchObject({ id: 'note-1', pinned: true, rating: 3 });
+		expect(workspace.tables.notes.patch('missing', { title: 'No' })).toBeNull();
 		expect(
 			workspace.tables.notes.list({
 				where: { pinned: true },
@@ -142,18 +145,35 @@ describe('typed rows at rest', () => {
 			metadata: '{"source":"local","rank":2}',
 		});
 
-		workspace.tables.notes.remove('note-1');
-		expect(workspace.tables.notes.get('note-1')).toBeNull();
+		// A live id may not be created again: row ids have one lifetime.
 		expect(() =>
-			workspace.tables.notes.put({
-				id: 'note-1',
-				title: 'Reused',
+			workspace.tables.notes.create({
+				id: 'note-2',
+				title: 'Duplicate',
 				pinned: false,
 				rating: null,
 				tags: [],
 				metadata: { source: 'local', rank: 0 },
 			}),
-		).toThrow('terminally deleted');
+		).toThrow('row ids have one lifetime');
+
+		workspace.tables.notes.remove('note-1');
+		expect(workspace.tables.notes.get('note-1')).toBeNull();
+		// Deletion is physical absence. One-lifetime ids are a caller contract
+		// backstopped by the authority, not a local tombstone guard, so a
+		// removed id can be created again locally.
+		workspace.tables.notes.create({
+			id: 'note-1',
+			title: 'Recreated',
+			pinned: false,
+			rating: null,
+			tags: [],
+			metadata: { source: 'local', rank: 0 },
+		});
+		expect(workspace.tables.notes.get('note-1')).toMatchObject({
+			id: 'note-1',
+			title: 'Recreated',
+		});
 	});
 
 	test('DDL contains one typed column per field, declared indexes, and no row blob or _v', () => {
@@ -192,7 +212,7 @@ describe('typed rows at rest', () => {
 	test('writes reject non-finite numbers and non-plain JSON', () => {
 		const { workspace } = setup();
 		expect(() =>
-			workspace.tables.notes.put({
+			workspace.tables.notes.create({
 				id: 'nan',
 				title: 'NaN',
 				pinned: false,
@@ -203,7 +223,7 @@ describe('typed rows at rest', () => {
 		).toThrow('schema validation');
 	});
 
-	test('put supports id-only tables and deleting an unknown id records terminal intent', () => {
+	test('create supports id-only tables and removing an absent id is a silent no-op', () => {
 		const database = new Database(':memory:');
 		const workspace = createApplicationDatabase(
 			defineWorkspace({
@@ -218,15 +238,18 @@ describe('typed rows at rest', () => {
 		const changed: string[][] = [];
 		workspace.tables.markers.observe((ids) => changed.push([...ids]));
 
-		workspace.tables.markers.put({ id: 'present' });
-		workspace.tables.markers.put({ id: 'present' });
+		workspace.tables.markers.create({ id: 'present' });
+		expect(() => workspace.tables.markers.create({ id: 'present' })).toThrow(
+			'row ids have one lifetime',
+		);
 		expect(workspace.tables.markers.count()).toBe(1);
 
+		// Removing an id that never existed changes nothing and notifies no one.
 		workspace.tables.markers.remove('never-existed');
-		expect(changed).toEqual([['present'], ['present'], ['never-existed']]);
-		expect(() => workspace.tables.markers.put({ id: 'never-existed' })).toThrow(
-			'terminally deleted',
-		);
+		expect(changed).toEqual([['present']]);
+		workspace.tables.markers.create({ id: 'never-existed' });
+		expect(changed).toEqual([['present'], ['never-existed']]);
+		expect(workspace.tables.markers.count()).toBe(2);
 	});
 });
 
@@ -249,7 +272,7 @@ describe('transaction and invalidation', () => {
 		});
 
 		workspace.transact((tx) => {
-			tx.tables.notes.put({
+			tx.tables.notes.create({
 				id: 'one',
 				title: 'One',
 				pinned: false,
@@ -257,7 +280,7 @@ describe('transaction and invalidation', () => {
 				tags: [],
 				metadata: { source: 'local', rank: 1 },
 			});
-			tx.tables.notes.put({
+			tx.tables.notes.create({
 				id: 'two',
 				title: 'Two',
 				pinned: true,
@@ -285,7 +308,7 @@ describe('transaction and invalidation', () => {
 
 		expect(() =>
 			workspace.transact((tx) => {
-				tx.tables.notes.put({
+				tx.tables.notes.create({
 					id: 'rolled-back',
 					title: 'Nope',
 					pinned: false,
@@ -339,14 +362,14 @@ describe('transaction and invalidation', () => {
 		});
 
 		expect(() =>
-			workspace.tables.notes.put({ id: 'rolled-back', title: 'No' }),
+			workspace.tables.notes.create({ id: 'rolled-back', title: 'No' }),
 		).toThrow('journal rejected');
 		expect(workspace.tables.notes.get('rolled-back')).toBeNull();
 		expect(database.query('SELECT * FROM journal').all()).toEqual([]);
 		expect(observations).toEqual([]);
 
 		rejectCommit = false;
-		workspace.tables.notes.put({ id: 'committed', title: 'Yes' });
+		workspace.tables.notes.create({ id: 'committed', title: 'Yes' });
 		expect(observations).toEqual([['committed']]);
 		const operations = database
 			.query<{ operations: string }, []>('SELECT operations FROM journal')
@@ -355,7 +378,7 @@ describe('transaction and invalidation', () => {
 		expect(operations).toEqual([
 			[
 				{
-					kind: 'patchRow',
+					kind: 'createRow',
 					table: 'notes',
 					rowId: 'committed',
 					cells: { title: 'Yes' },
@@ -364,10 +387,55 @@ describe('transaction and invalidation', () => {
 		]);
 	});
 
+	test('recorded operations use the three verbs, omit id and null cells, and skip absent removals', () => {
+		const database = new Database(':memory:');
+		const sqlite = createSqlite(database);
+		const definition = defineWorkspace({
+			id: 'operations-test',
+			name: 'Operations test',
+			epoch: 'operations-1',
+			tables: {
+				notes: defineTable({
+					id: field.string(),
+					title: field.string(),
+					rating: nullable(field.number()),
+				}),
+			},
+		});
+		const committedOperations: unknown[] = [];
+		const coordinator: ApplicationMutationCoordinator = {
+			commit(context, apply) {
+				return sqlite.transaction(() => {
+					const result = apply();
+					committedOperations.push(structuredClone([...context.operations]));
+					return result;
+				});
+			},
+		};
+		const workspace = createApplicationDatabase(definition, sqlite, {
+			kind: 'standalone',
+			coordinator,
+			onObserverError() {},
+		});
+
+		workspace.tables.notes.create({ id: 'n1', title: 'One', rating: null });
+		workspace.tables.notes.patch('n1', { rating: 3 });
+		workspace.tables.notes.remove('n1');
+		// The row is already gone: nothing existed, so nothing is recorded.
+		workspace.tables.notes.remove('n1');
+
+		expect(committedOperations).toEqual([
+			[{ kind: 'createRow', table: 'notes', rowId: 'n1', cells: { title: 'One' } }],
+			[{ kind: 'updateRow', table: 'notes', rowId: 'n1', cells: { rating: 3 } }],
+			[{ kind: 'deleteRow', table: 'notes', rowId: 'n1' }],
+			[],
+		]);
+	});
+
 	test('caught nested transaction refusal never runs or commits the inner body', () => {
 		const { workspace } = setup();
 		workspace.transact((tx) => {
-			tx.tables.notes.put({
+			tx.tables.notes.create({
 				id: 'outer',
 				title: 'Outer',
 				pinned: false,
@@ -377,7 +445,7 @@ describe('transaction and invalidation', () => {
 			});
 			try {
 				workspace.transact((inner) => {
-					inner.tables.notes.put({
+					inner.tables.notes.create({
 						id: 'inner',
 						title: 'Inner',
 						pinned: false,
@@ -403,7 +471,7 @@ describe('transaction and invalidation', () => {
 		workspace.tables.notes.observe(() => secondObserverCalls++);
 
 		expect(() =>
-			workspace.tables.notes.put({
+			workspace.tables.notes.create({
 				id: 'observed',
 				title: 'Observed',
 				pinned: false,
@@ -418,9 +486,9 @@ describe('transaction and invalidation', () => {
 		expect(observerErrors[0]).toBeInstanceOf(Error);
 	});
 
-	test('logical snapshots include live rows and terminal tombstones', () => {
-		const { workspace } = setup();
-		workspace.tables.notes.put({
+	test('logical snapshots carry live rows only: deletion is absence, not a record', () => {
+		const { database, workspace } = setup();
+		workspace.tables.notes.create({
 			id: 'live',
 			title: 'Live',
 			pinned: false,
@@ -428,20 +496,22 @@ describe('transaction and invalidation', () => {
 			tags: [],
 			metadata: { source: 'local', rank: 1 },
 		});
+		workspace.tables.notes.create({
+			id: 'gone',
+			title: 'Gone',
+			pinned: false,
+			rating: null,
+			tags: [],
+			metadata: { source: 'local', rank: 2 },
+		});
 		workspace.tables.notes.remove('gone');
+		workspace.tables.notes.remove('never-existed');
 
 		expect(workspace.readLogicalSnapshot()).toEqual({
 			rows: [
 				{
 					table: 'notes',
-					rowId: 'gone',
-					deleted: true,
-					cells: {},
-				},
-				{
-					table: 'notes',
 					rowId: 'live',
-					deleted: false,
 					cells: {
 						title: 'Live',
 						pinned: false,
@@ -451,6 +521,14 @@ describe('transaction and invalidation', () => {
 				},
 			],
 		});
+		// There is no tombstone table: absence is the only deleted state.
+		expect(
+			database
+				.query(
+					"SELECT name FROM sqlite_master WHERE type = 'table' AND name = '__epicenter_tombstones'",
+				)
+				.all(),
+		).toEqual([]);
 	});
 
 	test('replica projection quarantines incomplete rows and promotes completed rows', () => {
@@ -462,7 +540,7 @@ describe('transaction and invalidation', () => {
 			projection.apply(
 				[
 					{
-						kind: 'patchRow',
+						kind: 'createRow',
 						table: 'notes',
 						rowId: 'remote',
 						cells: { title: 'Incomplete' },
@@ -477,7 +555,6 @@ describe('transaction and invalidation', () => {
 				{
 					table: 'notes',
 					rowId: 'remote',
-					deleted: false,
 					cells: { title: 'Incomplete' },
 				},
 			],
@@ -490,7 +567,7 @@ describe('transaction and invalidation', () => {
 				.get(),
 		).toEqual({ firstSeenSequence: 4 });
 		expect(() =>
-			workspace.tables.notes.put({
+			workspace.tables.notes.create({
 				id: 'remote',
 				title: 'Typed overwrite',
 				pinned: false,
@@ -498,13 +575,13 @@ describe('transaction and invalidation', () => {
 				tags: [],
 				metadata: { source: 'local', rank: 1 },
 			}),
-		).toThrow('quarantined row');
+		).toThrow('row ids have one lifetime');
 
 		workspace.applyReplicaTransaction((projection) => {
 			projection.apply(
 				[
 					{
-						kind: 'patchRow',
+						kind: 'updateRow',
 						table: 'notes',
 						rowId: 'remote',
 						cells: {
@@ -531,13 +608,13 @@ describe('transaction and invalidation', () => {
 		expect(observations).toEqual([['remote'], ['remote']]);
 	});
 
-	test('typed removal terminally retires a quarantined identity', () => {
+	test('typed removal physically deletes a quarantined identity', () => {
 		const { database, workspace } = setup();
 		workspace.applyReplicaTransaction((projection) => {
 			projection.apply(
 				[
 					{
-						kind: 'patchRow',
+						kind: 'createRow',
 						table: 'notes',
 						rowId: 'hidden',
 						cells: { unknown: true },
@@ -552,31 +629,118 @@ describe('transaction and invalidation', () => {
 		expect(
 			database.query('SELECT * FROM __epicenter_quarantine').all(),
 		).toEqual([]);
-		expect(workspace.readLogicalSnapshot().rows).toEqual([
-			{ table: 'notes', rowId: 'hidden', deleted: true, cells: {} },
-		]);
+		expect(workspace.readLogicalSnapshot().rows).toEqual([]);
 	});
 
-	test('replica projection preserves terminal deletion and replaces snapshots atomically', () => {
+	test('updateRow and deleteRow on absent rows are silent no-ops that never resurrect', () => {
 		const { workspace } = setup();
+		const observations: string[][] = [];
+		workspace.tables.notes.observe((ids) => observations.push([...ids]));
+
 		workspace.applyReplicaTransaction((projection) => {
 			projection.apply(
 				[
-					{ kind: 'deleteRow', table: 'notes', rowId: 'gone' },
+					{ kind: 'deleteRow', table: 'notes', rowId: 'missing' },
 					{
-						kind: 'patchRow',
+						kind: 'updateRow',
 						table: 'notes',
-						rowId: 'gone',
+						rowId: 'missing',
 						cells: { title: 'Too late' },
 					},
 				],
 				2,
 			);
 		});
-		expect(workspace.tables.notes.get('gone')).toBeNull();
-		expect(workspace.readLogicalSnapshot().rows).toEqual([
-			{ table: 'notes', rowId: 'gone', deleted: true, cells: {} },
-		]);
+
+		expect(workspace.tables.notes.get('missing')).toBeNull();
+		expect(workspace.readLogicalSnapshot().rows).toEqual([]);
+		expect(observations).toEqual([]);
+	});
+
+	test('an accepted createRow onto a live row is a replica invariant violation', () => {
+		const { workspace } = setup();
+		const createDup: Operation = {
+			kind: 'createRow',
+			table: 'notes',
+			rowId: 'dup',
+			cells: {
+				title: 'Dup',
+				pinned: false,
+				tags: [],
+				metadata: { source: 'remote', rank: 1 },
+			},
+		};
+		workspace.applyReplicaTransaction((projection) => {
+			projection.apply([createDup], 1);
+		});
+		expect(workspace.tables.notes.has('dup')).toBe(true);
+
+		expect(() =>
+			workspace.applyReplicaTransaction((projection) => {
+				projection.apply([createDup], 2);
+			}),
+		).toThrow(ReplicaInvariantViolationError);
+		expect(workspace.tables.notes.get('dup')).toMatchObject({
+			id: 'dup',
+			title: 'Dup',
+		});
+	});
+
+	test('retract removes optimistic typed and quarantined rows before a page folds', () => {
+		const { database, workspace } = setup();
+		workspace.applyReplicaTransaction((projection) => {
+			projection.apply(
+				[
+					{
+						kind: 'createRow',
+						table: 'notes',
+						rowId: 'typed',
+						cells: {
+							title: 'Typed',
+							pinned: false,
+							tags: [],
+							metadata: { source: 'local', rank: 1 },
+						},
+					},
+					{
+						kind: 'createRow',
+						table: 'notes',
+						rowId: 'quarantined',
+						cells: { title: 'Partial' },
+					},
+				],
+				1,
+			);
+		});
+		expect(workspace.tables.notes.has('typed')).toBe(true);
+		expect(
+			database.query('SELECT * FROM __epicenter_quarantine').all(),
+		).toHaveLength(1);
+
+		workspace.applyReplicaTransaction((projection) => {
+			projection.retract([
+				{ table: 'notes', rowId: 'typed' },
+				{ table: 'notes', rowId: 'quarantined' },
+			]);
+		});
+
+		expect(workspace.tables.notes.has('typed')).toBe(false);
+		expect(
+			database.query('SELECT * FROM __epicenter_quarantine').all(),
+		).toEqual([]);
+		expect(workspace.readLogicalSnapshot().rows).toEqual([]);
+	});
+
+	test('replica projection replaces snapshots atomically', () => {
+		const { workspace } = setup();
+		workspace.tables.notes.create({
+			id: 'existing',
+			title: 'Existing',
+			pinned: false,
+			rating: null,
+			tags: [],
+			metadata: { source: 'local', rank: 1 },
+		});
 
 		expect(() =>
 			workspace.applyReplicaTransaction((projection) => {
@@ -585,7 +749,6 @@ describe('transaction and invalidation', () => {
 						{
 							table: 'notes',
 							rowId: 'snapshot',
-							deleted: false,
 							cells: {
 								title: 'Snapshot',
 								pinned: true,
@@ -599,9 +762,11 @@ describe('transaction and invalidation', () => {
 				throw new Error('crash before commit');
 			}),
 		).toThrow('crash before commit');
-		expect(workspace.readLogicalSnapshot().rows).toEqual([
-			{ table: 'notes', rowId: 'gone', deleted: true, cells: {} },
-		]);
+		expect(workspace.tables.notes.get('existing')).toMatchObject({
+			id: 'existing',
+			title: 'Existing',
+		});
+		expect(workspace.tables.notes.has('snapshot')).toBe(false);
 
 		workspace.applyReplicaTransaction((projection) => {
 			projection.replace(
@@ -609,7 +774,6 @@ describe('transaction and invalidation', () => {
 					{
 						table: 'notes',
 						rowId: 'snapshot',
-						deleted: false,
 						cells: {
 							title: 'Snapshot',
 							pinned: true,
@@ -621,6 +785,7 @@ describe('transaction and invalidation', () => {
 				10,
 			);
 		});
+		expect(workspace.tables.notes.has('existing')).toBe(false);
 		expect(workspace.tables.notes.get('snapshot')).toEqual({
 			id: 'snapshot',
 			title: 'Snapshot',
@@ -677,7 +842,7 @@ describe('representation migrations', () => {
 			kind: 'standalone',
 			onObserverError() {},
 		});
-		old.tables.notes.put({ id: 'one', title: 'Before' });
+		old.tables.notes.create({ id: 'one', title: 'Before' });
 
 		let applyCalls = 0;
 		const v2 = defineWorkspace({
@@ -781,7 +946,7 @@ describe('representation migrations', () => {
 			sqlite,
 			{ kind: 'standalone', onObserverError() {} },
 		);
-		original.tables.notes.put({ id: 'kept', title: 'Kept' });
+		original.tables.notes.create({ id: 'kept', title: 'Kept' });
 		const readPhysicalState = () => ({
 			schema: database
 				.query<

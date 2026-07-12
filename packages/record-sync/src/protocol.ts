@@ -34,7 +34,7 @@ export type Cells = Record<string, JsonValue>;
 // in the parse functions below. Unsafe supplies the honest static cell type.
 const cellsSchema = Type.Unsafe<Cells>(
 	Type.Record(Type.String(), Type.Unknown(), {
-		maxProperties: RECORD_SYNC_ADMISSION_LIMITS.cellsPerPatch,
+		maxProperties: RECORD_SYNC_ADMISSION_LIMITS.cellsPerOperation,
 	}),
 );
 const envelopeProperties = {
@@ -52,7 +52,16 @@ const mutationProperties = {
 		Type.Union([
 			Type.Object(
 				{
-					kind: Type.Literal('patchRow'),
+					kind: Type.Literal('createRow'),
+					table: identifier,
+					rowId: identifier,
+					cells: cellsSchema,
+				},
+				CLOSED,
+			),
+			Type.Object(
+				{
+					kind: Type.Literal('updateRow'),
 					table: identifier,
 					rowId: identifier,
 					cells: cellsSchema,
@@ -124,11 +133,12 @@ export const SnapshotChunkRequestSchema = Type.Object(
 );
 export type SnapshotChunkRequest = Static<typeof SnapshotChunkRequestSchema>;
 
+// Snapshots carry live rows only: deletion is physical absence, so snapshot
+// size follows the live dataset instead of lifetime deletion history.
 const snapshotRowSchema = Type.Object(
 	{
 		table: Type.String({ minLength: 1 }),
 		rowId: Type.String({ minLength: 1 }),
-		deleted: Type.Boolean(),
 		cells: cellsSchema,
 	},
 	CLOSED,
@@ -183,6 +193,10 @@ export const PushResponseSchema = Type.Union([
 			reason: Type.Union([
 				requestRefusalSchema,
 				Type.Literal('actor-sequence-gap'),
+				// A createRow named a live identity. The whole push rolls back and
+				// the actor stays paused; the replica must discard its state and
+				// rebootstrap. Never a routine no-op.
+				Type.Literal('create-conflict'),
 			]),
 		},
 		CLOSED,
@@ -254,11 +268,10 @@ function mutationsAreAdmissible(mutations: Mutation[]): boolean {
 function snapshotRowsHaveJsonCells(rows: SnapshotRow[]): boolean {
 	return rows.every(
 		(row) =>
-			(!row.deleted || Object.keys(row.cells).length === 0) &&
 			isBoundedIdentifier(row.table) &&
 			isBoundedIdentifier(row.rowId) &&
 			Object.entries(row.cells).length <=
-				RECORD_SYNC_ADMISSION_LIMITS.cellsPerPatch &&
+				RECORD_SYNC_ADMISSION_LIMITS.cellsPerOperation &&
 			Object.entries(row.cells).every(
 				([name, value]) =>
 					isBoundedIdentifier(name) && isAdmissibleJsonValue(value),
