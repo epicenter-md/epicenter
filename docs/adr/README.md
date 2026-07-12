@@ -198,8 +198,10 @@ Each option and the one reason it lost. Terse. This is not the spec.
 | [0119](0119-complete-metadata-replicas-sync-through-schema-blind-server-ordered-mutations.md) | Complete metadata replicas sync through schema-blind server-ordered mutations | Proposed |
 | [0120](0120-persisted-fields-are-atomic-cells-and-collaborative-bodies-are-yjs-documents.md) | Persisted fields are atomic cells and collaborative bodies are Yjs documents | Proposed |
 | [0121](0121-background-sync-is-automatic-and-database-boundary-merges-are-reviewable.md) | Background sync is automatic and database-boundary merges are reviewable | Proposed |
-| [0122](0122-logical-snapshots-are-the-portable-record-database-format-sqlite-files-are-runtime-state.md) | Logical snapshots are the portable record database format; SQLite files are runtime state | Proposed |
+| [0122](0122-logical-snapshots-are-the-portable-record-database-format-sqlite-files-are-runtime-state.md) | Logical snapshots are the portable records database format; SQLite files are runtime state | Proposed |
 | [0123](0123-bounded-metadata-uses-record-authority-merge-sensitive-state-uses-lazy-child-documents.md) | Bounded metadata uses record authority; merge-sensitive state uses lazy child documents | Proposed |
-| [0124](0124-bounded-synchronized-preferences-live-in-the-eager-root-document-not-the-record-database.md) | Bounded synchronized preferences live in the eager root document, not the record database | Proposed |
+| [0124](0124-workspace-kv-keeps-one-logical-identity-outside-the-record-database.md) | Workspace KV keeps one logical identity outside the records database | Proposed |
+| [0125](0125-record-schemas-are-immutable-evolution-creates-a-successor-database.md) | Records schemas are immutable; evolution creates a successor database | Proposed |
+| [0126](0126-child-documents-use-format-capabilities-and-evolve-outside-records-databases.md) | Child documents use format capabilities and evolve outside records databases | Proposed |
 
 When you add an ADR, add its row here.

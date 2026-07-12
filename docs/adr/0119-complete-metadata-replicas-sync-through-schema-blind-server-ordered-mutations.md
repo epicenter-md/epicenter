@@ -2,7 +2,7 @@
 
 - **Status:** Proposed
 - **Date:** 2026-07-11
-- **Relates:** [ADR-0035](0035-durable-storage-is-one-per-person-coordination-box.md), [ADR-0079 (cross-device is two planes)](0079-cross-device-is-two-planes-epicenter-syncs-the-crdt-the-box-is-reached-directly.md), [ADR-0092 (identity is the partition)](0092-identity-is-the-partition.md)
+- **Relates:** [ADR-0035](0035-durable-storage-is-one-per-person-coordination-box.md), [ADR-0079 (cross-device is two planes)](0079-cross-device-is-two-planes-epicenter-syncs-the-crdt-the-box-is-reached-directly.md), [ADR-0092 (identity is the partition)](0092-identity-is-the-partition.md), [ADR-0125](0125-record-schemas-are-immutable-evolution-creates-a-successor-database.md)
 
 ## Context
 
@@ -16,34 +16,43 @@ exactly one principal and self-hosting provides the custody alternative.
 
 ## Decision
 
-Each `(principal, app)` pair owns one logical metadata database. At any time
-that database is one server-minted incarnation living in exactly one schema
-epoch. Its opaque compatibility identity is derived from the complete canonical
-synchronized schema plus the ordered authored semantic epoch lineage, so every
-logical table, field, meaning, or transition change produces a different
-identity while the server remains schema-blind. Actors, cursors, outboxes, and
-snapshots bind to the incarnation;
-the server compares schema identities as opaque strings and pauses writers
-presenting a different one. A logical schema change never migrates the shared
-database in place; it creates a new incarnation in the new epoch, and replicas
-cross that boundary through explicit logical import. Every synchronized device
-keeps a complete local SQLite replica of the active incarnation.
+Each `(principal, workspace)` pair owns one workspace family that selects one
+current records database. Every records database has one immutable logical
+schema identified by a canonical structural hash. Actors, cursors, outboxes,
+and snapshots bind to the records database; the server compares records schema
+hashes as opaque strings and pauses writers presenting a different one. A logical
+schema change never migrates the shared database in place. It creates a
+successor through explicit logical import, and every synchronized device keeps
+a complete local SQLite replica of the current records database.
 
-Epoch cutover is a server-owned transition. The authority freezes the active
-incarnation at one head, creates a leased preparing incarnation from the
-transformed canonical snapshot at that head, and atomically activates it only
-after its baseline is sealed. Abandoning or expiring preparation deletes the
-partial target and unfreezes the old incarnation. Replica-private pending intent
-is imported after activation rather than becoming part of the global baseline.
-[Gate 3](../../demos/local-first-sync/gates/GATE3-EVIDENCE.md) proves this
-cutover with independent in-memory and SQLite authorities: preparing state
-records durable row progress, activation refuses an incomplete baseline, and
-lease expiry deletes the partial successor before unfreezing its source.
+Schema succession is a user-approved synchronization boundary. The user opens
+the devices they care about, waits until each reports `Synced`, stops editing,
+and approves the update. A current client reads source database A at canonical
+head H, transforms that snapshot into a staged successor B, and asks the
+authority to activate it. The authority atomically selects B and permanently
+fences A only if the family still selects A and A is still at H. A write that
+advances A makes activation fail without changing the family; the client retries
+from the new head. The server does not model device participation or lock A
+during upload, and it does not own the user's synchronization assertion.
+
+[Gate 3](../../demos/local-first-sync/gates/GATE3-EVIDENCE.md) is withdrawn as
+current evidence because it proves post-activation private-overlay import. Its
+resumable candidate upload, completeness, and atomic activation mechanics remain
+test material; the replacement gate must prove head-bound candidates,
+conditional activation, stale-head retry, and permanent supersession.
 Clients send atomic logical mutations to a schema-blind authoritative server;
 the server accepts them into one monotonically ordered sequence, folds them into
 canonical current state, and serves the accepted mutations back through a
 cursor-based pull protocol. A WebSocket is only a wake-up hint to pull after the
 client's cursor.
+
+Every ordinary write transaction participates in the same serialization
+boundary as database activation. It atomically verifies that the workspace
+family still selects the request's records database and that the database is
+writable, folds the mutation, advances that database's head, and commits. If a
+write commits first, the advanced head makes a candidate stale. If activation
+commits first, the source is no longer current and the write is rejected. No
+write admitted against the old database may commit after activation.
 
 The server understands database, table, row, field, JSON value, actor, mutation,
 and sequence identity. It does not understand app-specific schemas or run
@@ -98,10 +107,9 @@ replicas, row filters, peer-to-peer merge, or permanent audit log.
   replay remaining pending intent, and advance the cursor atomically.
   [Gate 2](../../demos/local-first-sync/gates/GATE2-EVIDENCE.md) proves this is
   sufficient for permanent log-prefix deletion.
-- Active actor high-water marks grow with the incarnation's lifetime actor
-  churn. This is stated cost, not hidden: the bound is per incarnation, actor
-  identities never reset within one, and an epoch upgrade starts a fresh actor
-  set in a new incarnation.
+- Active actor high-water marks grow with a records database's lifetime actor
+  churn. This is stated cost, not hidden: the bound is per database, actor
+  identities never reset within one, and a successor starts a fresh actor set.
 - The explicit lifecycle asks more of writers: an update cannot materialize a
   missing row, a purged row identity has exactly one lifetime, and restoring
   purged content copies it into a fresh identity. In exchange the durable
@@ -130,7 +138,7 @@ replicas, row filters, peer-to-peer merge, or permanent audit log.
 - **Fold creation and update into one upsert and retain tombstones.** Rejected:
   an upsert makes absence ambiguous, so permanent deletion must become a second
   kind of durable row that every replica, snapshot, compaction pass, import,
-  and epoch transition carries forever. Splitting creation from update lets a
+  and schema transition carries forever. Splitting creation from update lets a
   delayed edit fold to a no-op and lets deletion mean physical absence again.
 - **Retain an eternal used-identity registry.** Rejected: it defends only
   against a trusted client minting a fresh `createRow` for an old purged UUID,

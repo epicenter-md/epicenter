@@ -1,7 +1,9 @@
 # Gates 1 and 2: client materialization and compaction proof
 
-This directory tests one claim inside one exact schema epoch and one database
-incarnation:
+This directory tests one claim inside one exact records schema and one records
+database. Some implemented source still uses `schemaIdentity` and
+`databaseIncarnationId`; those are legacy implementation names scheduled for
+the Wave 2 family/database protocol, not target vocabulary.
 
 > No retry, crash, or pull-page schedule makes accepted or pending user intent
 > transiently disappear from visible application state.
@@ -66,13 +68,15 @@ accepted state, prune snapshot-contained outbox mutations, replay the rest
 through the fold, and advance the cursor in one SQLite transaction. Its
 measured result is recorded in [`GATE2-EVIDENCE.md`](GATE2-EVIDENCE.md).
 
-Gate 3 adds exact schema identity, new-incarnation cutover, resumable
-transformed baselines, and private-intent import through a capability-split
-planner: fresh-incarnation adoption streams `createRow` mutations into a
-destination with zero live rows, while a replica's post-activation overlay
-enters through a reviewable comparison whose source-only rows auto-apply only
-when the replica's applied cursor equals the frozen head of its old
-incarnation. Its result is recorded in [`GATE3-EVIDENCE.md`](GATE3-EVIDENCE.md).
+Gate 3's original late-overlay model is withdrawn. Its replacement must add
+exact schema identity, head-bound immutable candidate upload, conditional
+activation against the still-current source head, stale-head retry, atomic
+selection, and permanent old-database fencing. It must contain no migration-time
+device or actor state. Ordinary writes must recheck family-current and writable
+inside their fold/head transaction. Activation accepts only `candidateId` and
+derives its source/head/target/successor binding from the sealed server-owned
+manifest. The current evidence status and required traces are recorded in
+[`GATE3-EVIDENCE.md`](GATE3-EVIDENCE.md).
 
 Wave 4 extracts the portable record protocol, fold, authority, and three SQLite
 adapters. Its result and remaining runtime smoke scope are recorded in

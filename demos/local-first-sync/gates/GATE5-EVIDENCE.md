@@ -2,6 +2,12 @@
 
 Date: 2026-07-11
 
+> Checkpoint note: implementation examples below record the API and vocabulary
+> tested on this date. The current target is the active server-authoritative
+> SQLite sync spec. In particular, records identity now excludes documents,
+> workspace identity, KV, indexes, and authored epoch lineage; schema succession
+> uses records databases and structural `recordsSchemaHash`.
+
 ## Result
 
 The typed SQLite foundation and browser-standalone lifecycle pass. The full
@@ -11,16 +17,16 @@ replica lifecycle before they can stop opening Yjs-backed record roots.
 The new `@epicenter/workspace/sqlite` boundary proves:
 
 - `field.*` plus explicit `nullable(...)` compiles to typed SQLite columns;
-- canonical logical schema identity is stable across declaration order and
-  changes when tables, columns, docs, workspace identity, or authored epoch
-  lineage changes; declared KV is the root-document preference plane
-  (ADR-0124) and never enters the record schema identity;
+- canonical records identity is stable across declaration order, changes with
+  synchronized tables and fields, and excludes documents, workspace identity,
+  KV, indexes, and authored epoch lineage;
 - `create`, `patch`, physical `remove`, representation migrations, and
   post-commit invalidation operate over ordinary SQLite;
 - a replica-supplied coordinator can commit application SQL and canonical
   record-sync operations in one outer transaction;
-- logical snapshots use the record-sync `SnapshotRow` shape for the live
-  typed and quarantined rows; deletion is physical absence.
+- logical snapshots use the record-sync `SnapshotRow` shape for every live row,
+  including rows the typed client classifies as quarantined; deletion is
+  physical absence.
 
 The next checkpoint also proves the process boundary required by browser and
 native SQLite owners:
@@ -106,8 +112,8 @@ __epicenter_meta
 
 ```
 
-There is no serialized row blob and no per-row `_v`. Logical epoch identity
-belongs to the complete workspace schema; physical migration progress belongs
+There is no serialized row blob and no per-row `_v`. The records schema hash
+identifies synchronized tables and fields; physical migration progress belongs
 to `storage_revision`.
 
 ## Mutation ownership
@@ -155,7 +161,8 @@ and corrected these failures:
 
 - same-revision schema drift could open without an identity check;
 - a null-admitting JSON schema could bypass `nullable(...)`;
-- epoch-only migrations could be stamped current without transforming data;
+- the discarded epoch-only prototype could be stamped current without
+  transforming data;
 - the application runtime owned an inner transaction that a replica could not
   extend atomically;
 - observer exceptions escaped after commit;
@@ -214,11 +221,13 @@ re-evaluate `opfs-wl` when the upstream package changes.
 
 ## Required next step
 
-Implement `openWorkspaceReplica` with durable actor, outbox, cursor, and database
-generation ownership. Reuse the validated service protocol and the rule that
-the worker or native service imports the workspace definition itself. The UI
-sends no executable schema; its opening handshake verifies mode, workspace id,
-and exact schema identity.
+Implement the Wave 2 family and records-database protocol around the proven
+replica lifecycle. Reuse the validated service protocol and the rule that the
+worker or native service imports the workspace definition itself. The UI sends
+no executable schema; its opening handshake verifies mode, workspace id, and
+exact records schema identity. Schema succession must follow the candidate and
+conditional-activation contract in the active spec, not the discarded epoch or
+incarnation transition prototypes.
 
 Then migrate app definitions and actions, move only proven collaborative bodies
 to declared Yjs docs, stop every old record import, and delete the Yjs table/KV

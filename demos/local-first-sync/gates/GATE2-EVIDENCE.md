@@ -41,8 +41,9 @@ bun x tsc -p demos/local-first-sync/tsconfig.json --noEmit
 bun test demos/local-first-sync/gates/
 ```
 
-Result: 27 tests passed, 0 failed across Gates 1-3. Gate 2 specifically
-proves:
+Historical result on 2026-07-11: 27 tests passed, 0 failed across the then-live
+Gates 1 through 3. That aggregate included the now-withdrawn Gate 3 harness and
+is not current succession evidence. Gate 2 specifically proves:
 
 - new and stale bootstrap across multiple chunks while later writes continue;
 - response loss and duplicate chunk delivery;
@@ -97,5 +98,5 @@ metadata. Staging never changes application-visible state.
 
 Gate 2 proves logical snapshot semantics, not physical SQLite backup/restore,
 browser OPFS resource behavior, Durable Object adapter parity, production byte
-limits, snapshot throughput, or epoch transition. Gate 3 still owns exact-schema
-cutover and logical import across database incarnations.
+limits, snapshot throughput, or records-schema succession. Gate 3 still owns
+conditional activation across records databases.

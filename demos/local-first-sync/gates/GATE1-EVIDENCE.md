@@ -98,8 +98,8 @@ retains any deletion history.
 
 The current measurements include Gate 2's identical client staging table and
 snapshot methods in both candidates. Gate 1 by itself did not prove snapshots;
-that later evidence is in [`GATE2-EVIDENCE.md`](GATE2-EVIDENCE.md). Epoch
-transition/import, browser OPFS behavior, Durable Object parity, scale
+that later evidence is in [`GATE2-EVIDENCE.md`](GATE2-EVIDENCE.md).
+Records-schema succession, browser OPFS behavior, Durable Object parity, scale
 performance, limits, and reactive invalidation remain later work. Candidate A
 remains in this proof directory only as the tested control; it is not selected
 production design.

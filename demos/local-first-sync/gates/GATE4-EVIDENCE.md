@@ -1,5 +1,10 @@
 # Gate 4 evidence: shared production core
 
+> Checkpoint vocabulary note: this dated evidence names the implemented
+> `schemaIdentity` and `databaseIncarnationId` envelope. The target family
+> protocol calls these the records schema hash and records database id. Gate 4
+> does not prove schema succession or candidate activation.
+
 Wave 4 extracted the record synchronization proof into
 `@epicenter/record-sync`. The old gate engines remain independent evidence; the
 production core does not import them.
@@ -9,7 +14,7 @@ production core does not import them.
 ```txt
 @epicenter/record-sync
   protocol.ts    closed request schemas, JSON validation, opaque identity fence
-  fold.ts        one total patch/delete row transition
+  fold.ts        total createRow/updateRow/deleteRow transitions
   authority.ts   canonical rows, actor order, mutation tail, snapshots, compaction
   snapshot.ts    stable encoding plus injected SHA-256
   sqlite.ts      run / all / synchronous transaction
@@ -29,14 +34,14 @@ The same scenario passes through all three adapter surfaces:
 
 - transaction rollback;
 - actor sequence acceptance, duplicate suppression, and gap refusal;
-- exact schema epoch and database incarnation fencing;
+- exact schema identity and database identity fencing;
 - nested JSON cell persistence;
 - terminal deletion;
 - ordered pull;
 - SHA-256 snapshot validation;
 - frozen actor high-water publication;
 - log-prefix compaction and stale-cursor snapshot bootstrap;
-- reopen under the same identity and refusal under a different incarnation.
+- reopen under the same identity and refusal under a different database id.
 
 All adapter tests use a real SQLite engine. The browser and Durable Object cases
 wrap that engine in their native API shapes, so this proves SQL and transaction

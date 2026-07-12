@@ -2,7 +2,7 @@
 
 - **Status:** Proposed
 - **Date:** 2026-07-11
-- **Relates:** [ADR-0005](0005-child-docs-are-bound-through-the-workspace.md), [ADR-0106](0106-a-child-doc-body-owns-one-layout-the-polymorphic-timeline-is-refused-until-a-product-earns-it.md), [ADR-0107](0107-a-child-doc-text-body-is-a-plain-y-text-the-timeline-array-is-deleted.md)
+- **Relates:** [ADR-0005](0005-child-docs-are-bound-through-the-workspace.md), [ADR-0106](0106-a-child-doc-body-owns-one-layout-the-polymorphic-timeline-is-refused-until-a-product-earns-it.md), [ADR-0107](0107-a-child-doc-text-body-is-a-plain-y-text-the-timeline-array-is-deleted.md), [ADR-0125](0125-record-schemas-are-immutable-evolution-creates-a-successor-database.md)
 
 ## Context
 
@@ -11,8 +11,8 @@ replacement and which values need collaborative merge semantics. A configurable
 merge policy per field would recreate several synchronization engines inside one
 schema. The existing `@epicenter/field` package already provides a closed,
 recognizable vocabulary with TypeScript inference, runtime validation, editor
-hints, and SQLite storage classes; table `.docs(...)` declarations already own
-out-of-line Yjs identity and layout.
+hints, and SQLite storage classes. Row-owned Yjs documents need a similarly
+closed format vocabulary without becoming SQLite columns.
 
 ## Decision
 
@@ -55,7 +55,7 @@ generates a fresh UUID internally, and restoring a purged record creates a new
 id. Client-generated ids are retained through sync and logical import.
 
 Declared KV values are not record rows. Bounded synchronized preferences live
-in the workspace's eager root Yjs document under the kv namespace
+in the workspace's eager KV Yjs document
 ([ADR-0093](0093-kv-metadata-belongs-to-the-workspace-kv-namespace.md)), where
 a missing or invalid value honestly reads as a fresh default. A deterministic
 KV key cannot promise first-creation exclusivity across offline devices, so it
@@ -63,10 +63,12 @@ must not ride `createRow`; its last-write-wins document entry carries no row
 lifecycle at all.
 
 Content that needs structural or character-level concurrent merging is not a
-column. It is declared through `table.docs(...)` and stored as a separate lazy
-Yjs document. Normal app schemas choose `Y.Text` for plain collaborative text or
-`Y.XmlFragment` for rich text. Raw Yjs layouts and per-field merge-policy options
-are not part of the application schema surface.
+field. It is declared through a table's `documents` slot and stored as a
+separate lazy Yjs document. Applications choose from Epicenter's closed document
+capability catalog: plain text, canonical rich text, or validated keyed records.
+Each capability owns its Yjs roots, canonical format descriptor, derived format
+hash, and typed attachment. Raw Yjs layouts and per-field merge-policy options
+are not part of the application schema surface (ADR-0126).
 
 ## Consequences
 
@@ -83,14 +85,21 @@ are not part of the application schema surface.
 - Tables and KV share one authoring vocabulary (`field.*`) but not one storage
   plane. Record tables carry the create/update/delete lifecycle, snapshots,
   and server-order conflicts; KV values are last-write-wins entries in the
-  eager root document with defaults on read. Because the root document is not
+  eager KV document with defaults on read. Because the KV document is not
   the record wire, a KV schema may be `nullable(...)`: `null` can be a real
   stored preference, while deleting the key means no override exists.
-- Honest clients only emit values valid for their exact schema epoch. Any change
-  to synchronized tables, fields, or field meaning creates a new epoch and
-  crosses through logical import; local indexes and internal storage changes do
-  not. Structurally valid but nonconforming input from a buggy or dishonest
-  client remains storable without creating a second cross-version schema path.
+- Honest clients only emit values valid for their records database's exact
+  records schema hash. Any change to synchronized tables, fields, or field
+  meaning
+  creates a successor database through logical import; local indexes and
+  internal storage changes do not. Child-document formats evolve under their
+  own format hashes and do not trigger records-database succession.
+  Structurally valid but nonconforming input from a buggy or dishonest client
+  remains storable without creating a second cross-version schema path.
+- A migration client validates every source row against the historical source
+  descriptor before invoking a typed transform. Any nonconforming or quarantined
+  source row blocks succession; it is never silently discarded. The source
+  database remains unchanged and available for diagnosis and logical export.
 - Existing scalar transcript, note-body, todo-body, and wiki-body columns are
   candidates for a clean move to declared child docs. Existing raw persisted
   TypeBox schemas must move through `field.json` or earn a new closed field kind.

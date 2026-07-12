@@ -2,12 +2,19 @@
 
 Date: 2026-07-11
 
+> Checkpoint vocabulary note: this file records the implemented
+> `databaseIncarnationId` lifecycle on that date. The target protocol calls the
+> coordination universe a records database and adds workspace-family selection
+> in Wave 2. The implemented checkpoint does not prove schema succession. Its
+> two opener functions are implementation seams from this checkpoint, not the
+> settled public API; the active spec targets `workspace.connect(...)`.
+
 ## Result
 
-The initial database-incarnation path works through real SQLite, the workspace
+The initial database-identity path works through real SQLite, the workspace
 service boundary, HTTP, and both server deployment adapters. This checkpoint
-proves the synchronized lifecycle door. It does not complete the database
-movement and epoch-transition work that remains in Wave 6.
+proves the synchronized lifecycle door. It does not complete database movement
+or records-schema succession.
 
 The workspace now has two explicit durable lifecycle doors:
 
@@ -226,17 +233,18 @@ crash after it leaves the snapshot, cursor, pruned outbox, and replayed pending
 intent committed together. A stale required snapshot is a protocol error rather
 than a retry loop.
 
-## Naming decision
+## Checkpoint naming, not the target public API
 
-The implemented names are `openStandaloneWorkspace` and
+The checkpoint names are `openStandaloneWorkspace` and
 `openWorkspaceReplica`. They mirror the returned domain nouns:
 `StandaloneWorkspace` is its own authority, while `WorkspaceReplica` is a local
 copy of a server-authoritative workspace database.
 
-The word `local` is not used as the opposite of `replica` because every replica
+Within this checkpoint, `local` is not used as the opposite of `replica` because every replica
 is also physically local and must work offline. `openWorkspaceReplica` keeps
-`WorkspaceReplica` intact as the noun. The two explicit verbs also keep the
-permanent identity choice visible at the call site.
+`WorkspaceReplica` intact as the noun. These lower-level names do not require
+the final application API to expose two openers; the active spec owns that
+public composition decision.
 
 ## Verification
 
@@ -280,24 +288,25 @@ not pretend its local Durable Object harness is a Cloudflare deployment.
 
 ## What this checkpoint does not complete
 
-This is the initial-incarnation integration slice of Wave 6. The following
-database-boundary work remains:
+This initial replica integration slice does not prove workspace-family
+selection, the adjacent migration API and runner, source-row validation,
+successor candidate staging, or conditional activation. Wave 2 must implement
+client-built immutable successor candidates, exact manifest and chunk
+idempotency, candidateId-only activation, and permanent old-database fencing.
+Ordinary writes must atomically recheck family-current and writable before
+folding and advancing the database head.
 
-1. Build the logical import planner with pinned source and destination
-   snapshots, destination-head revalidation, and output expressed only as
-   ordinary mutations.
-2. Build the schema-driven summary and bulk-preference review surface. A
-   per-cell conflict editor remains refused until real review volume earns it.
-3. Implement physical-copy adoption as logical import under a fresh actor. Never
-   reopen a copied SQLite file with its original actor identity.
-4. Implement schema-epoch preparation, deterministic baseline transformation,
-   freeze, lease expiry, activation, and old-incarnation fencing.
+Do not infer a generic import planner, conflict-review product, or second public
+opener family from this checkpoint. Physical-copy adoption and other database
+movement are separate app-owned boundaries. Schema succession adds no source
+freeze/unfreeze, transition lease, server-executed transform,
+device-participation state, or private-overlay reconciliation.
 
-Wave 5 consumer migration and deletion also remain: production apps still need
+Wave 4 consumer migration and deletion also remain: production apps still need
 to stop importing the Yjs table and KV record path before that implementation
 can be removed.
 
-Wave 7 is the acceptance and documentation closeout. Reconcile provisional ADR
+Wave 6 is the acceptance and documentation closeout. Reconcile provisional ADR
 numbers, supersede conflicting accepted decisions explicitly, accept the new
 ADRs only after production behavior lands, move durable protocol facts into
 reference documentation, record the completed spec in history, and delete the

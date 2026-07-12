@@ -1,28 +1,28 @@
-# 0122. Logical snapshots are the portable record database format; SQLite files are runtime state
+# 0122. Logical snapshots are the portable records database format; SQLite files are runtime state
 
 - **Status:** Proposed
 - **Date:** 2026-07-11
-- **Relates:** [ADR-0119](0119-complete-metadata-replicas-sync-through-schema-blind-server-ordered-mutations.md), [ADR-0121](0121-background-sync-is-automatic-and-database-boundary-merges-are-reviewable.md), [ADR-0096](0096-local-workspace-persistence-is-environment-injected.md)
+- **Relates:** [ADR-0119](0119-complete-metadata-replicas-sync-through-schema-blind-server-ordered-mutations.md), [ADR-0121](0121-background-sync-is-automatic-and-database-boundary-merges-are-reviewable.md), [ADR-0096](0096-local-workspace-persistence-is-environment-injected.md), [ADR-0125](0125-record-schemas-are-immutable-evolution-creates-a-successor-database.md)
 
 ## Context
 
 Epicenter materializes record data in ordinary SQLite tables, but a physical
 SQLite file also contains engine-specific pages, indexes, storage migrations,
 and replica-private synchronization state. Bootstrap, import, restore,
-Cloud-to-self-host movement, and schema-epoch transformation need one database
+Cloud-to-self-host movement, and successor-database preparation need one database
 image that crosses those runtime boundaries without copying actor identity,
 cursors, or pending outboxes.
 
 ## Decision
 
-The portable format for an Epicenter record database is a logical snapshot,
+The portable format for an Epicenter records database is a logical snapshot,
 never a physical SQLite file, WAL, or page stream. The snapshot identifies its
-logical schema epoch and carries the live table rows, expressed through the
+records schema hash and carries the live table rows, expressed through the
 same table, row, field, and JSON value vocabulary as the mutation protocol.
 Deletion is physical absence, so a snapshot's size follows the live dataset;
-it carries no deletion history. Preference KV lives in the workspace's eager
-root Yjs document, which has its own portable encoding and is not part of the
-record snapshot.
+it carries no deletion history. Preference KV lives in the workspace's eager KV
+Yjs document, which has its own portable encoding and is not part of the record
+snapshot.
 
 A synchronization checkpoint wraps that logical state with its server sequence,
 actor high-water marks, generation, chunk manifest, and integrity checks. Those
@@ -38,9 +38,9 @@ mechanisms, but they must preserve and verify the same logical image rather than
 becoming a second database format.
 
 Collaborative child documents remain a separate lazy plane with their own
-portable encoding. A record snapshot preserves the row identities from which
-declared child-document identities are derived; it does not inline an eager
-physical copy of every body.
+format hashes and portable encoding. A record snapshot preserves the row
+identities from which child-document addresses are derived; it does not carry
+document format declarations or inline an eager physical copy of every body.
 
 ## Consequences
 
@@ -49,14 +49,14 @@ physical copy of every body.
 - New and stale replicas install a checkpoint, rebuild runtime indexes, reapply
   private pending mutations, and continue from the checkpoint sequence without
   replaying deleted history.
-- Import, restore, endpoint movement, and schema-epoch upgrade compare or
+- Import, restore, endpoint movement, and successor-database creation compare or
   transform logical state instead of copying files or inventing workflow-specific
   formats.
 - Logical exports retain application row identities but omit actor identity,
   cursors, outboxes, and other replica-private state. Adopting a copied
   physical file therefore remains an explicit import under a new actor, and
   because no deletion history exists, that import preserves identities only
-  into a fresh incarnation; merging into a populated database is app-owned.
+  into a fresh records database; merging into a populated database is app-owned.
 - Sync snapshots are transport compaction, not a version-history promise. A
   product that retains historical checkpoints must name and own that retention
   separately.
@@ -72,7 +72,7 @@ physical copy of every body.
 - **Make the SQLite file the portable artifact.** Rejected: it couples every
   runtime to one file representation and mixes application state with indexes,
   storage migrations, cursors, actor identity, and pending intent.
-- **Define a separate format for sync, import, restore, and epoch change.**
+- **Define a separate format for sync, import, restore, and schema succession.**
   Rejected: each format would need its own row, schema, and conflict
   semantics for the same logical database.
 - **Retain every checkpoint as history.** Rejected: portability and retention

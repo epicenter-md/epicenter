@@ -2,7 +2,7 @@
 
 - **Status:** Proposed
 - **Date:** 2026-07-11
-- **Relates:** [ADR-0088](0088-sign-in-is-an-enhancement-never-a-door.md), [ADR-0092 (sign-in migration child-doc guids)](0092-sign-in-migration-child-doc-guids-are-derived-from-the-schema.md) (note: the number 0092 is currently shared with `0092-identity-is-the-partition.md`; resolve the collision before acceptance)
+- **Relates:** [ADR-0088](0088-sign-in-is-an-enhancement-never-a-door.md), [ADR-0092 (sign-in migration child-doc guids)](0092-sign-in-migration-child-doc-guids-are-derived-from-the-schema.md) (note: the number 0092 is currently shared with `0092-identity-is-the-partition.md`; resolve the collision before acceptance), [ADR-0125](0125-record-schemas-are-immutable-evolution-creates-a-successor-database.md)
 
 ## Context
 
@@ -29,11 +29,11 @@ schema-blind planner cannot safely mint fresh ids because references may hide
 in ordinary cells or opaque JSON. So the boundary flows divide by what they
 may honestly promise about identity:
 
-- An epoch upgrade or a whole-database movement into a fresh incarnation
-  (restore, endpoint movement, physical-clone adoption, local-to-account
-  promotion of the first database) starts from zero live rows, so it may
-  preserve row identities or map them through a deterministic identity
-  transform.
+- The generic schema-successor path starts from zero live rows and preserves
+  every surviving row identity. A whole-database movement outside that generic
+  path (restore, endpoint movement, physical-clone adoption, or local-to-account
+  promotion of the first database) may use a separately designed app-owned
+  successor build when identity remapping is required.
 - Copying selected content into an already-populated database is app-owned
   until the schema declares an explicit reference vocabulary; a generic
   planner does not guess how to remap inbound references.
@@ -46,16 +46,21 @@ destination head, and the selected result is emitted as ordinary `createRow`,
 `updateRow`, and `deleteRow` mutations; the sync protocol has no separate
 merge verb.
 
-For a schema-epoch upgrade, the new incarnation's global baseline is transformed
-from the old incarnation's frozen canonical server snapshot, never from one
-replica's private pending overlay. After activation, every replica transforms
-its own visible local state and imports only its difference through the same
-reviewable comparison. This keeps global cutover resumable and gives no
-initiating device a special merge authority.
-[Gate 3](../../demos/local-first-sync/gates/GATE3-EVIDENCE.md) proves that split:
-the successor baseline contains the frozen canonical value, then the initiating
-replica's transformed private value arrives as an ordinary post-activation
-mutation. Equal content emits no import operation.
+Schema succession is not a reviewable merge. It is the user-approved cutover in
+ADR-0125: after the user synchronizes the devices they care about and stops
+editing, a client transforms source A at canonical head H. The authority
+activates the successor only if A is still current and unchanged. The authority
+does not prove device participation. Forgotten private old-schema edits remain
+locally readable and exportable but never automatically enter the successor.
+This refusal removes the private-overlay comparison, deletion-intent recovery,
+and row-resurrection policy from schema migration.
+
+[Gate 3](../../demos/local-first-sync/gates/GATE3-EVIDENCE.md) is withdrawn as
+evidence for the current transition because it proves the rejected late-overlay
+model. Its resumable preparation, completeness, and atomic activation mechanics
+remain useful test material; a replacement gate must prove source-head
+conditional activation, stale-candidate retry, and permanent old-database
+fencing.
 
 A local-only database carries application tables and child documents, but no
 actor identity, cursor, sync outbox, or dormant mutation history. Enabling sync
@@ -68,8 +73,8 @@ accepted.
 
 Application identity is portable; replica identity is not. Logical exports keep
 stable row ids and content but omit actor identity, cursors, and outboxes.
-Every physical restore or copy — including a backup of a genuinely lost
-replica — opens as an import source and mints a new actor identity: the
+Every physical restore or copy, including a backup of a genuinely lost
+replica, opens as an import source and mints a new actor identity: the
 protocol cannot distinguish a restored lost replica from a live clone, and an
 actor-preserving restore silently discards divergent writes when a reused
 sequence number was already accepted with a different payload. Reopening the
@@ -89,9 +94,10 @@ continue, and sequence deduplication absorbs the retry.
   current server snapshot, reapplies its pending mutations, and continues without
   requiring retained log history.
 - Reviewable comparison is useful beyond sign-in: compatible local files,
-  backups, Cloud databases, self-hosted databases, and superseded-epoch
-  replicas all read through one logical snapshot interface, even though the
-  identity policy differs by boundary flow. The first implementation is a
+  backups, Cloud databases, and self-hosted databases all read through one
+  logical snapshot interface, even though the identity policy differs by
+  boundary flow. Superseded-schema replicas are deliberately excluded from this
+  generic merge promise. The first implementation is a
   summary with a bulk preference; a per-cell editor is built only when review
   volume earns it.
 - A development-only observer may count remote operations that overlap a pending
