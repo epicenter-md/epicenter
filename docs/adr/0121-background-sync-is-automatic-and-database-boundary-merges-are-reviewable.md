@@ -22,25 +22,36 @@ to different cells compose; concurrent assignments to the same cell resolve by
 server acceptance order. Epicenter does not retain a background conflict inbox,
 expose per-edit discard, or promise recovery of every overwritten scalar value.
 
-Explicit database-boundary operations go through one reviewable import
-planner. Import, restore, local-to-account promotion, Cloud-to-self-host
-movement, self-host-to-Cloud movement, physical-clone adoption, and
-schema-epoch upgrade compare pinned source and destination logical snapshots
-by table, row, and cell. Unambiguous work applies without review: source-only
-rows, equal cells, and carried tombstones. The user applies a bulk preference
-to differing cells and reviews genuine ambiguity; a source row the destination
-terminally deleted defaults to the deletion and can only be restored under a
-new row id through an app-owned copy flow; the generic first-wave planner does
-not guess how to remap inbound references. Applying a plan revalidates the
-destination head, and the selected result is emitted as ordinary `patchRow` and
-`deleteRow` mutations; the sync protocol has no separate merge verb.
+Explicit database-boundary operations are reviewable and split by capability;
+there is no universal import planner. Without retained deletion history a
+destination cannot distinguish a stale source row from a never-seen one, and a
+schema-blind planner cannot safely mint fresh ids because references may hide
+in ordinary cells or opaque JSON. So the boundary flows divide by what they
+may honestly promise about identity:
+
+- An epoch upgrade or a whole-database movement into a fresh incarnation
+  (restore, endpoint movement, physical-clone adoption, local-to-account
+  promotion of the first database) starts from zero live rows, so it may
+  preserve row identities or map them through a deterministic identity
+  transform.
+- Copying selected content into an already-populated database is app-owned
+  until the schema declares an explicit reference vocabulary; a generic
+  planner does not guess how to remap inbound references.
+
+Reviewable comparison operates on pinned source and destination logical
+snapshots by table, row, and cell. Unambiguous work applies without review:
+source-only rows and equal cells. The user applies a bulk preference to
+differing cells and reviews genuine ambiguity. Applying a plan revalidates the
+destination head, and the selected result is emitted as ordinary `createRow`,
+`updateRow`, and `deleteRow` mutations; the sync protocol has no separate
+merge verb.
 
 For a schema-epoch upgrade, the new incarnation's global baseline is transformed
 from the old incarnation's frozen canonical server snapshot, never from one
 replica's private pending overlay. After activation, every replica transforms
-its own visible local state and imports only its difference through this same
-planner. This keeps global cutover resumable and gives no initiating device a
-special merge authority.
+its own visible local state and imports only its difference through the same
+reviewable comparison. This keeps global cutover resumable and gives no
+initiating device a special merge authority.
 [Gate 3](../../demos/local-first-sync/gates/GATE3-EVIDENCE.md) proves that split:
 the successor baseline contains the frozen canonical value, then the initiating
 replica's transformed private value arrives as an ordinary post-activation
@@ -50,7 +61,10 @@ A local-only database carries application tables and child documents, but no
 actor identity, cursor, sync outbox, or dormant mutation history. Enabling sync
 opens or creates the account database, installs its current snapshot, imports
 the local rows and child docs logically, and begins recording normal mutations.
-The source stays intact until the imported mutations are accepted.
+Promotion into a fresh account database preserves row identities; combining a
+local database with an already-populated account database is the app-owned
+copy flow above. The source stays intact until the imported mutations are
+accepted.
 
 Application identity is portable; replica identity is not. Logical exports keep
 stable row ids and content but omit actor identity, cursors, and outboxes.
@@ -74,11 +88,12 @@ continue, and sequence deduplication absorbs the retry.
 - A signed-in replica may remain offline indefinitely. On return it installs the
   current server snapshot, reapplies its pending mutations, and continues without
   requiring retained log history.
-- The import planner is useful beyond sign-in: it compares compatible local
-  files, backups, Cloud databases, self-hosted databases, and superseded-epoch
-  replicas through one logical snapshot interface. The first implementation is
-  a planner with a summary and bulk preference; a per-cell editor is built only
-  when review volume earns it.
+- Reviewable comparison is useful beyond sign-in: compatible local files,
+  backups, Cloud databases, self-hosted databases, and superseded-epoch
+  replicas all read through one logical snapshot interface, even though the
+  identity policy differs by boundary flow. The first implementation is a
+  summary with a bulk preference; a per-cell editor is built only when review
+  volume earns it.
 - A development-only observer may count remote operations that overlap a pending
   local cell, but aggregate diagnostics do not create a conflict-review product
   contract.

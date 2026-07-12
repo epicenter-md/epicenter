@@ -10,7 +10,7 @@ Each Epicenter app keeps a complete local SQLite replica of one database that
 lives in exactly one schema epoch; every write inside the epoch synchronizes
 silently under server acceptance order, and everything that crosses a database
 boundary (sign-in, restore, endpoint movement, epoch upgrade) arrives through
-one reviewable import applied as ordinary mutations.
+an explicit reviewable boundary flow applied as ordinary mutations.
 
 ## How to read this spec
 
@@ -51,13 +51,22 @@ demo or its current table shapes production truth.
 
 ## Durable decisions
 
-This spec implements and tests three Proposed ADRs:
+This spec implements and tests six Proposed ADRs:
 
 - [ADR-0119](../docs/adr/0119-complete-metadata-replicas-sync-through-schema-blind-server-ordered-mutations.md): complete metadata replicas use schema-blind server-ordered mutations.
 - [ADR-0120](../docs/adr/0120-persisted-fields-are-atomic-cells-and-collaborative-bodies-are-yjs-documents.md): persisted fields are atomic cells and collaborative bodies are Yjs documents.
 - [ADR-0121](../docs/adr/0121-background-sync-is-automatic-and-database-boundary-merges-are-reviewable.md): background sync is automatic and database-boundary merges are reviewable.
+- [ADR-0122](../docs/adr/0122-logical-snapshots-are-the-portable-record-database-format-sqlite-files-are-runtime-state.md): logical snapshots are the portable record database format; SQLite files are runtime state.
+- [ADR-0123](../docs/adr/0123-bounded-metadata-uses-record-authority-merge-sensitive-state-uses-lazy-child-documents.md): bounded metadata uses record authority and merge-sensitive state uses lazy Yjs child documents.
+- [ADR-0124](../docs/adr/0124-bounded-synchronized-preferences-live-in-the-eager-root-document-not-the-record-database.md): bounded synchronized preferences live in the eager root Yjs document; the record database is table-only.
 
 The ADR numbers are provisional until merge.
+
+The 2026-07-11 late revision settled two clean breaks the earlier passes did
+not: the record wire splits upsert into explicit `createRow` and `updateRow`
+so `deleteRow` can mean physical absence (no tombstone state anywhere), and
+declared KV leaves the record database for the eager root Yjs document.
+Sections below are revised to that model.
 
 ## Product contract
 
@@ -84,9 +93,16 @@ The ADR numbers are provisional until merge.
 - The server is authoritative by acceptance order, not device clock.
 - Different-cell assignments compose. Concurrent same-cell assignments resolve
   silently by server acceptance order.
-- Every authenticated, structurally valid mutation enters the canonical order.
-- Semantic inapplicability produces a deterministic no-op. It does not reject one
-  operation while accepting later operations from the mutation.
+- Rows have an explicit lifecycle: `createRow` materializes an absent
+  identity, `updateRow` patches named cells of a live row, `deleteRow`
+  physically removes it. Updating or deleting an absent row is an accepted
+  deterministic no-op; the server never rejects one operation while accepting
+  later operations from the mutation.
+- A `createRow` whose identity is already live is never a routine no-op. It is
+  a replica invariant violation: the push is refused, and the submitting
+  replica discards its state and rebootstraps from the authority.
+- Every other authenticated, structurally valid mutation enters the canonical
+  order.
 - Authentication, corruption, protocol mismatch, actor sequence gaps, and
   account-wide limits pause synchronization at the database boundary.
 - The transport log is compactable and provides no permanent history promise.
@@ -96,27 +112,44 @@ The ADR numbers are provisional until merge.
 - Persisted table and KV schemas use `field.*`, optionally wrapped in
   `nullable(...)`.
 - `field.json(schema)` is the only structured atomic escape hatch.
-- `undefined` is invalid on the wire. `null` means cleared or absent.
+- `undefined` is invalid on the record wire. Within `updateRow`, a named
+  `null` clears the cell.
 - A table column is replaceable scalar or atomic JSON metadata.
 - A collaborative body is a separate `Y.Text` or `Y.XmlFragment` document.
 - A field that cannot tolerate one concurrent assignment losing is not modeled
   as an ordinary cell.
-- Row ids are generated locally, remain stable through logical import, and are
-  never reused after terminal deletion.
+- Row ids are generated locally as fresh UUIDs, remain stable through logical
+  import, and have exactly one lifetime: a purged id is never intentionally
+  reused, and restoring purged content creates a new identity.
+- Reversible trash is ordinary live application data (for example a
+  `deletedAt` cell); only purge emits `deleteRow`. The record protocol does
+  not know the app's retention policy.
+- Declared KV is a preference plane in the eager root Yjs document
+  (ADR-0124): bounded flat dot-namespaced keys, timestamp last-write-wins,
+  validate-on-read with a fresh default when missing or invalid. KV is not
+  part of record schema identity, snapshots, imports, quarantine, worker
+  messages, or record wire operations, and no transaction spans SQLite tables
+  and Yjs KV. Because KV is not on the record wire, a KV schema may be
+  `nullable(...)`; deleting the key means no override exists. A semantic
+  change mints a new dot-namespaced key instead of migrating in place.
 
 ### Explicit database movement
 
-- Import, restore, local-to-account promotion, endpoint movement,
-  physical-clone adoption, and epoch upgrade use one logical import planner.
-- The planner compares pinned source and destination logical snapshots by
-  table, row, and cell after an optional deterministic identity-preserving
-  transform.
-- Unambiguous work (source-only rows, equal cells, tombstone imports) applies
-  without review. Users apply a bulk preference to differing cells and review
-  only genuine ambiguity. A source row the destination terminally deleted is
-  retained for review but the generic planner lets the deletion win. Restoring
-  it under a new row id is an app-owned copy flow because generic field metadata
-  cannot safely remap inbound references.
+- Database-boundary movement is split by what it may honestly promise about
+  identity; there is no universal import planner. Without retained deletion
+  history a destination cannot distinguish a stale source row from a
+  never-seen one, and a schema-blind planner cannot remap references hidden in
+  ordinary cells or opaque JSON.
+- An epoch upgrade or a whole-database movement into a fresh incarnation
+  (restore, endpoint movement, physical-clone adoption, first promotion) may
+  preserve row identities or map them through a deterministic identity
+  transform, because the destination starts with zero live rows.
+- Copying selected content into an already-populated database remains
+  app-owned until the schema declares an explicit reference vocabulary.
+- Reviewable comparison operates on pinned source and destination logical
+  snapshots by table, row, and cell. Unambiguous work (source-only rows,
+  equal cells) applies without review; users apply a bulk preference to
+  differing cells and review only genuine ambiguity.
 - Plan application revalidates the destination head; cells that changed since
   planning are re-diffed rather than silently overwritten.
 - Import output is ordinary mutations, not a second write protocol. The source
@@ -142,6 +175,11 @@ No arbitrary persisted-schema language beside field.*
 No server-side app schema or app-specific SQL queries
 No row-level ACLs inside one database
 No reuse of a deleted row identity
+No tombstone state or retained deletion history
+No upsert operation on the record wire
+No universal import planner across identity capabilities
+No KV rows, operations, or invalidation in the record plane
+No transaction spanning SQLite tables and Yjs KV
 No active clone of one replica identity
 No in-place breaking migration of a shared database
 No actor-preserving physical restore
@@ -158,6 +196,14 @@ The costs are explicit:
 - Server-side app search, indexing, automation, and AI require separate derived
   workers or services.
 - Restoring a deleted record creates a new identity.
+- Callers must say whether they are creating or editing; an update cannot
+  materialize a missing row.
+- A corrupt replica that submits a duplicate `createRow` is not repaired in
+  place; it discards its state, including pending intent, and rebootstraps.
+- Copying selected content into a populated database has no generic planner;
+  it stays app-owned until references have an explicit vocabulary.
+- A KV preference resolves concurrent writes by timestamp last-write-wins and
+  may silently read as a default when its stored value no longer validates.
 - Opening any physical copy or backup is a boundary import under a new actor,
   even when the original replica is truly lost.
 - A breaking schema change costs every device an explicit epoch-upgrade import;
@@ -285,19 +331,26 @@ When independent contributions must compose, model independent rows. A counter
 uses contribution rows or a named domain operation. A financial balance derives
 from ledger rows. A collaborative body uses Yjs.
 
-KV does not add a wire operation. Each declared key compiles to one row in a
-reserved logical namespace:
+KV is not part of the record protocol at all (ADR-0124). Each declared
+dot-namespaced key is one `YKeyValueLww` entry in the workspace's eager root
+Yjs document:
 
 ```txt
-table:  reserved KV namespace
-rowId:  declared dot-namespaced key
-cell:   value
+plane:  eager root Y.Doc, reserved kv namespace
+key:    declared dot-namespaced key
+value:  field.* value, optionally nullable
 ```
 
-`kv.set(key, value)` becomes `patchRow(..., {value})`; clearing a key patches
-`value: null`; the declared default factory supplies the local read default.
-The public table and KV APIs remain distinct ergonomic surfaces over one record
-protocol.
+`kv.set(key, value)` writes a timestamped last-write-wins entry; deleting the
+key means no override exists; the declared default factory supplies the read
+value when the key is absent or its stored value no longer validates. Invalid
+winning values are left intact for diagnostics, and observers receive the
+effective change when a read falls back to the default. Admission is enforced:
+only declared keys, bounded key and encoded-value sizes, and bounded
+timestamps. Hydration completes before absence is treated as the durable
+default. The record protocol never carries KV, and no transaction spans the
+two planes; a deterministic KV key cannot promise first-creation exclusivity,
+which is exactly why it must not ride `createRow`.
 
 ### Child documents
 
@@ -377,7 +430,13 @@ transaction.
 ```ts
 type Operation =
 	| {
-			kind: 'patchRow';
+			kind: 'createRow';
+			table: string;
+			rowId: string;
+			cells: Record<string, JsonValue>;
+	  }
+	| {
+			kind: 'updateRow';
 			table: string;
 			rowId: string;
 			cells: Record<string, JsonValue>;
@@ -389,22 +448,43 @@ type Operation =
 	  };
 ```
 
-Fold rules:
+Fold rules (absence is the only deleted state; there are no tombstones):
 
-| Operation | Unknown row | Live row | Deleted row |
-| --- | --- | --- | --- |
-| `patchRow` | Create with named cells | Replace named cells | No-op |
-| `deleteRow` | Create tombstone | Replace with tombstone | No-op |
+| Operation | Absent row | Live row |
+| --- | --- | --- |
+| `createRow` | Materialize with initial cells | Fatal replica invariant violation |
+| `updateRow` | Accepted no-op | Replace named cells |
+| `deleteRow` | Accepted no-op | Physically remove |
 
-Within `patchRow`, omitted fields are untouched and named `null` fields are
-cleared. No operation replaces an entire serialized row.
+Within `updateRow`, omitted fields are untouched and named `null` fields are
+cleared. No operation replaces an entire serialized row. A schema-aware client
+emits a complete initial row in `createRow`; the schema-blind authority orders
+and stores it without validating domain completeness, so the schema-aware
+quarantine boundary remains.
+
+The `updateRow(absent)` no-op is what lets deletion be physical: a delayed
+edit that arrives after `deleteRow` folds to nothing instead of recreating the
+row, so no tombstone record is needed to block resurrection. The no-op may be
+counted in development diagnostics but is normal distributed behavior.
+
+`createRow(live)` is asymmetric. The submitting replica has already applied
+its creation optimistically, so an ordinary rejection would leave the two
+sides divergent. It is treated as replica corruption: the push is refused, the
+actor pauses, and the replica discards its state and rebootstraps from the
+authority. This is not a defense against reuse of a purged UUID by a hostile
+writer; conforming typed APIs always generate a fresh UUID, and no eternal
+used-id registry is retained.
 
 ### Semantic fold totality and local constraints
 
-The logical fold is total: every structurally valid accepted operation has a
-deterministic state transition or no-op. Persistence can still fail because of
-disk exhaustion, corruption, or runtime faults; those failures pause and retry
-the database instead of becoming alternate semantics. A schema constraint must
+The logical fold is total over accepted operations: every accepted operation
+has a deterministic state transition or no-op. The one semantic refusal
+happens before acceptance: a `createRow` naming a live identity never enters
+the canonical order, so replicas folding the accepted sequence can never
+legitimately observe it; hitting it locally means the replica itself is
+corrupt and must rebootstrap. Persistence can still fail because of disk
+exhaustion, corruption, or runtime faults; those failures pause and retry the
+database instead of becoming alternate semantics. A schema constraint must
 never reject data another replica already accepted. Consequences:
 
 - Synchronized application tables may mirror exact per-row schema conformance
@@ -447,6 +527,8 @@ accept(mutation), in one transaction:
   read accepted high-water for actor
   if actorSequence <= high-water: return existing acknowledgement
   if actorSequence != high-water + 1: pause on actor gap
+  if any createRow names a live identity:
+    roll back, refuse the push as a replica invariant violation
   allocate next server sequence
   append whole mutation to mutation tail
   fold every operation into canonical current rows
@@ -456,7 +538,9 @@ accept(mutation), in one transaction:
 
 The server records accepted mutations even when one or more operations fold to
 no-ops. Every replica that folds the ordered sequence reaches the same logical
-state.
+state. The `createRow` refusal keeps the actor paused (its next sequence would
+still collide); recovery is the replica rebootstrap, never a server-side
+repair of the mutation.
 
 ### Push and acknowledgement
 
@@ -512,10 +596,6 @@ __epicenter_state
 __epicenter_outbox
   one immutable row per pending atomic mutation
 
-__epicenter_tombstones
-  terminally deleted (table, rowId) pairs; consulted when pending
-  mutations replay so a late patch cannot resurrect a deleted row
-
 __epicenter_quarantine
   accepted rows, including unknown tables or fields, that do not conform to the
   exact epoch schema
@@ -523,23 +603,30 @@ __epicenter_quarantine
   fold totality
 
 Yjs update storage
-  separate persistence for opened child docs
+  eager root document (kv namespace) plus separate persistence for opened
+  child docs; not record state
 ```
 
-The first gate must determine whether nonconforming rows and terminal tombstones
-can live in reserved internal columns on application rows or earn separate tables.
-It must also determine whether application tables can be the only physical
-materialization or whether a schema-blind canonical shadow is unavoidable.
+There is no tombstone table: pending replay cannot resurrect a deleted row
+because `updateRow` on an absent row folds to a no-op, and creation is a
+distinct verb. Deletion knowledge lives nowhere because it is not needed.
+
+The first gate must determine whether nonconforming rows can live in reserved
+internal columns on application rows or earn a separate table. It must also
+determine whether application tables can be the only physical materialization
+or whether a schema-blind canonical shadow is unavoidable.
 
 The target starts with no canonical shadow. A proof may earn one by presenting a
 minimal trace where accepted current state cannot be recovered after outbox
 pruning, snapshot installation, or crash.
 
-Gate 1 passed on 2026-07-11 without earning that shadow. The selected client
-shape is typed application tables plus outbox, state, tombstones, and
-quarantine. The control implementation remains in the proof directory, and the
-measurements and scope limits are recorded in
-`demos/local-first-sync/gates/GATE1-EVIDENCE.md`.
+Gate 1 first passed on 2026-07-11 without earning that shadow, with the
+selected client shape as typed application tables plus outbox, state, and
+quarantine. The original pass predates the create/update split and proved the
+tombstone/upsert model; the gate must be re-proved against the three-verb
+protocol before its evidence is cited as final. The control implementation
+remains in the proof directory, and the measurements and scope limits are
+recorded in `demos/local-first-sync/gates/GATE1-EVIDENCE.md`.
 
 ### Server hypothesis
 
@@ -549,7 +636,8 @@ sync_state
   bounded actor high-water map
 
 canonical_rows
-  current generic logical state keyed by table and row id, including tombstones
+  current generic logical state keyed by table and row id; live rows only,
+  deleted identities are physically absent
 
 mutation_log
   whole accepted mutations newer than the compaction watermark
@@ -583,25 +671,23 @@ visible application tables = accepted server prefix folded with pending outbox
 
 The client may be able to apply an incoming accepted operation directly to the
 typed rows and replay remaining pending operations for affected cells in the same
-transaction. Terminal deletion, no selective rejection, no pending-edit discard,
-and assignment-only operations make this plausible.
+transaction. Physical deletion with explicit creation, no selective rejection,
+no pending-edit discard, and assignment-only operations make this plausible.
 
 The proof must cover the hard case: when an outbox entry is pruned, can the typed
 tables reveal the accepted value underneath without a second durable source of
 truth? If not, the canonical shadow earns itself. Convenience for the harness is
 not evidence.
 
-### How are tombstones stored locally?
+### Where does deletion knowledge live?
 
-Deletion permanently retires `(table, rowId)`. A synchronized replica therefore
-needs deletion knowledge even when the app hides deleted rows. Candidates:
-
-- reserved hidden metadata on the typed row;
-- a compact internal tombstone table;
-- a canonical shadow, if Gate 1 independently earns it.
-
-The choice must preserve non-null typed columns, snapshot replacement, and direct
-local queries without teaching app code about sync tombstones.
+RESOLVED (2026-07-11 late revision): nowhere, deliberately. The upsert-era
+model needed a tombstone table so a pending patch replay could not resurrect a
+server-deleted row. With explicit creation, `updateRow` on an absent row folds
+to a no-op, so absence itself is the deletion record. The costs move to the
+edges instead of the steady state: callers must distinguish create from
+update, a purged UUID has one lifetime, and imports into populated databases
+cannot blindly preserve source ids.
 
 ### How are nonconforming rows stored?
 
@@ -664,13 +750,16 @@ implementation later optimizes the copy.
 
 ### Import and endpoint movement
 
-One import planner owns every explicit database boundary. Its seams (pass 3,
-derived from the enumerated state machine in the review memo):
+Database-boundary movement splits by identity capability (2026-07-11 late
+revision); the earlier universal planner is deleted. All flows share one
+logical snapshot reading vocabulary:
 
 ```ts
-type LogicalRow =
-	| { kind: 'live'; table: string; rowId: string; cells: Record<string, JsonValue> }
-	| { kind: 'tombstone'; table: string; rowId: string };
+type LogicalRow = {
+	table: string;
+	rowId: string;
+	cells: Record<string, JsonValue>;
+};
 
 type LogicalSnapshotReader = {
 	/** Identifies the pinned, internally consistent read view. */
@@ -679,35 +768,44 @@ type LogicalSnapshotReader = {
 	readDocumentManifest(): AsyncIterable<DocumentRef>;
 	readDocument(ref: DocumentRef): Promise<Uint8Array | undefined>;
 };
-
-type MergeDestination = {
-	applyRows(operations: Operation[]): Promise<AcceptanceReceipt>;
-	applyDocuments(writes: DocumentWrite[]): Promise<AcceptanceReceipt>;
-};
 ```
 
-One reader INTERFACE, two reader INSTANCES: comparison needs both the source
-and the destination pinned. The `live | tombstone` row encoding is the same
-logical encoding server snapshots and exports use; the planner does not invent
-a second format. The plan's per-row actions are exactly: no-op (equal,
-absent/absent, absent/anything), auto-apply (source-only rows, source-only
-cells, tombstone imports), bulk-preference-with-review-list (differing cells;
-source-tombstone over destination-live row), review-required (source-live over
-destination-tombstone: restore only under a NEW id), and plan-error
-(transformed source-internal id collisions; any plan error blocks apply).
+The row encoding is the same logical encoding server snapshots and exports
+use; no flow invents a second format, and none carries deletion history
+because none exists.
 
-Bodies ride the SAME plan as a second row-gated lane: a destination-absent doc
-copies, shared Yjs history auto-merges by update application, unrelated
-histories are a review choice (keep destination or merge histories; source-only
-replacement is refused until a document-reset contract exists). Excluding a row
-suppresses its body; restoring over a tombstone remaps the body to the new id.
+Two capabilities, not one planner:
 
-An empty destination streams imports without materializing a diff — but empty
-means zero live rows AND zero tombstones from one consistent snapshot, and the
-transform preflight (collision check) still runs first. Apply revalidates the
-destination head: cells that changed after planning re-diff instead of being
-silently overwritten. The planner does not copy SQLite pages or sync metadata,
-and it never participates in background synchronization.
+- **Fresh-incarnation adoption** (epoch upgrade, restore, endpoint movement,
+  physical-clone adoption, first promotion): the destination has zero live
+  rows, so the flow may preserve source row identities or map them through the
+  deterministic identity transform. It streams rows as `createRow` mutations
+  after a transform preflight (collision check). Because every row is a
+  creation into an empty incarnation, no diff materializes.
+- **App-owned copy** into a populated database: generic field metadata cannot
+  remap references hidden in cells or opaque JSON, and without deletion
+  history the destination cannot tell a stale source row from a new one.
+  Copying selected content mints fresh identities and is owned by the app's
+  schema-aware code until references have an explicit vocabulary.
+
+Reviewable comparison (bulk preference over differing cells, review only for
+genuine ambiguity) applies when the same logical database appears on both
+sides, such as re-adopting a backup of the current incarnation: equal cells
+emit nothing and differing cells surface for the bulk choice. A source-only
+row is genuine ambiguity, not auto-apply: without deletion history it may be
+the backup's unaccepted pending creation or a row the destination purged
+after the backup, so it defaults to excluded and restores under a new
+identity when chosen. Apply revalidates the destination head: cells that
+changed after planning re-diff instead of being silently overwritten.
+
+Bodies ride the same row-gated lane: a destination-absent doc copies, shared
+Yjs history auto-merges by update application, unrelated histories are a
+review choice (keep destination or merge histories; source-only replacement is
+refused until a document-reset contract exists). Excluding a row suppresses
+its body; a row imported under a new identity remaps its body to the new id.
+
+No boundary flow copies SQLite pages or sync metadata, and none participates
+in background synchronization.
 
 ### Replica restore and clone
 
@@ -727,22 +825,26 @@ The smallest safe restore contract:
 ```txt
 Every physical backup or copy opens as a logical import source:
   discard its actor, next-sequence, cursor, and outbox as identity
-  keep its application tables, tombstones, and lanes as local state
+  keep its application tables and lanes as local state
   mint a new actor
-  compare against the live destination by stable row id and cell
-  unchanged cells emit nothing; differences are the ordinary review
+  when the original database is gone, adopt into a fresh incarnation,
+    preserving row identities (the destination has zero live rows)
+  when the live destination survives, compare by stable row id and cell:
+    unchanged cells emit nothing; differing cells are the ordinary review;
+    source-only rows are review-required and restore under a NEW id,
+    because absence cannot distinguish "purged since backup" from
+    "backup-pending creation"
   retain the source until the emitted mutations are accepted
 
 Reopening the same durable file after a crash is NOT a restore:
   the actor and outbox continue; sequence dedup absorbs the retry
 ```
 
-When the destination is unchanged since the backup, the diff is exactly the
-backup's pending writes and applies without review. When a third device wrote
-the same cell in between, the value resurfaces as a reviewable difference
-instead of being silently deduplicated — which is the honest outcome. The
-product does not support two live files with one actor identity, and no
-sanctioned flow ever presents a copied actor to the server.
+When a third device wrote the same cell between backup and restore, the value
+resurfaces as a reviewable difference instead of being silently deduplicated —
+which is the honest outcome. The product does not support two live files with
+one actor identity, and no sanctioned flow ever presents a copied actor to the
+server.
 
 ### Service actor
 
@@ -767,13 +869,13 @@ The server snapshots only current canonical head state.
 in one server transaction:
   snapshotSequence = current head
   materialize immutable logical snapshot generation
-  include rows, tombstones, and actor high-water state
+  include live rows and actor high-water state
   publish snapshot generation and watermark
   delete mutation_log rows <= snapshotSequence
 ```
 
-The freeze is one invariant, not three: rows, tombstones, AND actor
-high-waters are captured from the same read state at snapshotSequence. A
+The freeze is one invariant, not two: rows AND actor high-waters are
+captured from the same read state at snapshotSequence. A
 builder that copies rows early and reads high-waters at a later head publishes
 a snapshot whose high-water prunes a pending mutation the rows never folded —
 permanent silent loss (directed trace in the pass 3 review). For the same
@@ -783,7 +885,7 @@ an installed snapshot's frozen high-waters prune by containment.
 
 Large snapshots must remain consistently pageable while later writes continue.
 Gate 2 selected immutable fixed-size chunks with a generation id, sequence,
-count, and cryptographic checksum. The current-head rows, tombstones, actor
+count, and cryptographic checksum. The current-head rows, actor
 high-waters, manifest, watermark, and log deletion are captured and published in
 one server transaction. One generation is addressable at a time: after atomic
 replacement, abandoned clients receive `snapshot-replaced` and restart. No
@@ -870,13 +972,13 @@ counterexample forces it back.
   time. A synchronized replica never transforms the shared database in place
   and never rewrites its outbox. A local-only workspace has one writer and may
   apply the same transform eagerly in place.
-- **One identity map owns rows and tombstones.** `mapIdentity(table, rowId)`
+- **One identity map owns row identity.** `mapIdentity(table, rowId)`
   returns zero or one target identity using only the durable source identity,
   never mutable cells. The row transform receives that mapped identity and
-  changes cells only; tombstones use the same mapping automatically. One-to-many
-  splits and many-to-one merges are refused in the first wave. This removes two
-  independently authored identity transforms and makes resurrection safety
-  mechanically reviewable.
+  changes cells only. One-to-many
+  splits and many-to-one merges are refused in the first wave. There is no
+  separate deletion mapping because deleted rows are physically absent from
+  the frozen snapshot the transform reads.
 - **Epoch cutover is a leased server-owned state machine:**
 
   ```txt
@@ -897,16 +999,18 @@ counterexample forces it back.
   another authenticated upgrader can resume an abandoned deterministic build.
   A creator's private pending overlay never contaminates the shared baseline.
   After activation, every replica imports its transformed local state through
-  the ordinary planner; equal canonical content becomes a no-op while private
-  pending intent appears as an explicit addition or difference. Only the
+  the ordinary reviewable comparison; equal canonical content becomes a no-op
+  while private pending intent appears as an explicit addition or difference. Only the
   authenticated principal may initiate, abort, or resume the opaque transition;
   the server learns no app schema.
 - **A stale old-epoch device returning later** keeps a readable, exportable
   replica. Its local tables already contain accepted-prefix ⊕ its pending
   writes; upgrade composes the authored per-epoch transforms across any
-  skipped epochs (the single identity maps compose safely; intermediate deletes
-  arrive in the destination as transformed tombstones) and enters the
-  current epoch through the ordinary import plan. Its old outbox dies with
+  skipped epochs (the single identity maps compose safely) and enters the
+  current epoch through the ordinary reviewable comparison. A stale row the
+  shared database deleted in a skipped epoch is simply absent from the new
+  baseline, so it surfaces as the source-only review case and is excluded by
+  default rather than silently resurrected. Its old outbox dies with
   the old incarnation — unrewritten, because its effects are already in the
   tables the transform reads.
 - Downgrade is refused: a binary older than the local revision opens
@@ -922,9 +1026,8 @@ counterexample forces it back.
   because they do not change the logical synchronized state.
 - A schema-epoch mismatch pauses remote sync while the old replica continues
   local work and remains readable and exportable.
-- A logical export and epoch transform read typed rows, quarantine, and
-  tombstones. There are no separate unknown-field or unknown-table promotion
-  paths.
+- A logical export and epoch transform read typed rows and quarantine. There
+  are no separate unknown-field or unknown-table promotion paths.
 
 ### Server schema rules
 
@@ -957,7 +1060,12 @@ Required directed traces:
 - crash before and after local mutation commit;
 - crash during pull-page application;
 - profile or database switch with requests in flight;
-- terminal delete racing late patches;
+- physical delete racing late updates: the delayed update folds to an
+  accepted no-op and nothing resurrects;
+- create acknowledged, then retried after a lost acknowledgement: sequence
+  dedup absorbs it without a duplicate-create refusal;
+- duplicate `createRow` from a corrupt replica refused as a replica invariant
+  violation; the replica rebootstraps rather than converging silently;
 - mutation spanning multiple rows and tables;
 - actor sequence duplicate and gap;
 - malformed or partial create quarantined, then promoted when a later patch
@@ -1001,7 +1109,9 @@ Required directed traces:
 - stale client has pending edits already accepted before compaction;
 - stale client has pending edits never accepted before compaction;
 - actor high-water survives log deletion;
-- tombstones prevent late resurrection after compaction;
+- a row deleted before compaction is absent from the snapshot, and a stale
+  replica's pending update to it replays as an accepted no-op instead of
+  resurrecting it;
 - checksum or chunk corruption refuses installation without damaging local data.
 
 The gate must prove a stable logical snapshot protocol. Physical SQLite file
@@ -1028,10 +1138,11 @@ Required directed traces:
   overlay;
 - after activation, that private overlay enters through ordinary import and
   equal canonical content becomes a no-op;
-- one identity map carries rows and tombstones consistently; zero-to-one
+- one identity map carries row identity consistently; zero-to-one
   transforms pass while one-to-many and many-to-one transforms fail preflight;
-- a stale replica skips several epochs without resurrecting any carried
-  tombstone;
+- a stale replica skips several epochs; a row the shared database deleted in a
+  skipped epoch surfaces as the excluded-by-default review case instead of
+  silently resurrecting;
 - opening a physical copy routes through the import door and mints a new
   actor; no trace may present a reused actor identity to the server.
 
@@ -1052,7 +1163,7 @@ Real SQLite server engine
 
 Lockstep comparison
   after every event compare canonical logical state, visible rows, outbox,
-  cursor, tombstones, unknown values, actor high-waters, and snapshot generation
+  cursor, unknown values, actor high-waters, and snapshot generation
 ```
 
 The harness should minimize a failing seeded trace into the smallest directed
@@ -1133,7 +1244,7 @@ editor.
 
 ### Wave 0: Reconcile and falsify the documents
 
-- [ ] Review the three Proposed ADRs against existing accepted ADRs.
+- [ ] Review the Proposed ADRs against existing accepted ADRs.
 - [ ] Find every statement that still assumes Yjs owns record metadata.
 - [ ] Run an independent collapse pass over the table-owner inventory and wire
   operation set.
@@ -1141,22 +1252,31 @@ editor.
   every synchronized table or field change creates a new exact epoch.
 - [ ] Keep the ADRs Proposed and this spec Draft.
 
+The gates first passed on 2026-07-11 against the tombstone/upsert model. The
+late revision (create/update/delete, physical deletion, KV out of the record
+plane) invalidates that evidence as final proof; each gate keeps its passing
+checkbox only after re-proof against the three-verb protocol.
+
 ### Wave 1: Gate 1 reference and SQLite engines
 
-- [x] Rewrite the hardened gate model around terminal ids, `patchRow`,
-  `deleteRow`, actor sequence, and no selective rejection.
+- [x] Rewrite the hardened gate model around one-lifetime ids, `createRow`,
+  `updateRow`, `deleteRow`, actor sequence, and no selective rejection.
 - [x] Implement both candidate client representations.
 - [x] Generate and minimize adversarial schedules.
 - [x] Measure code and storage differences.
 - [x] Select the smallest representation that passes: typed tables without a
   canonical client shadow.
+- [ ] Re-prove the gate against the three-verb protocol without tombstones,
+  including the duplicate-create refusal and no-op update/delete traces.
 
 ### Wave 2: Gate 2 snapshot and compaction
 
 - [x] Define immutable logical snapshot manifest and chunk encoding.
 - [x] Implement current-head snapshot publication and log-prefix deletion.
 - [x] Prove new and stale bootstrap under failure.
-- [x] Prove actor idempotency and tombstones survive compaction.
+- [x] Prove actor idempotency survives compaction.
+- [ ] Re-prove the gate with live-rows-only snapshots: deletion survives
+  compaction as absence, and stale pending updates replay as no-ops.
 
 ### Wave 3: Gate 3 schema epochs
 
@@ -1164,8 +1284,9 @@ editor.
 - [x] Implement the leased freeze/prepare/activate/abort transition model.
 - [x] Prove canonical-baseline transformation and per-replica pending-intent
   import remain separate.
-- [x] Prove zero-to-one identity mapping carries rows and tombstones through
-  skipped epochs without resurrection.
+- [ ] Re-prove skipped-epoch upgrade without tombstone carriage: the identity
+  map moves live rows only, and upstream deletions surface as the
+  excluded-by-default review case instead of resurrecting.
 
 ### Wave 4: Shared production core
 
@@ -1190,20 +1311,24 @@ forward before returning to the Wave 5 consumer migration and deletion steps.
 
 - [ ] Make `field.*` plus `nullable` the only persisted storage vocabulary.
 - [ ] Move scalar collaborative bodies to declared plain-text or rich-text docs.
-- [ ] Replace Yjs table/KV record persistence with typed SQLite application
-  tables and reactive query invalidation.
+- [ ] Replace Yjs table record persistence with typed SQLite application
+  tables and reactive query invalidation; declared KV stays on the eager root
+  document (ADR-0124) and leaves the SQLite worker protocol entirely.
 - [ ] Stop importing the old record path, verify, then delete it and its fixtures.
 
 ### Wave 6: Lifecycle and import review
 
 - [ ] Implement the two open doors (`openLocalWorkspace`, `openReplica`) at boot.
-- [ ] Implement the logical import planner with source retention through
-  acceptance and destination-head revalidation at apply.
-- [ ] Build the schema-driven plan summary and bulk-preference surface; grow a
-  per-cell editor only when review volume earns it.
+- [ ] Implement fresh-incarnation adoption (streamed `createRow` import with
+  the transform preflight) with source retention through acceptance.
+- [ ] Implement reviewable comparison for same-database re-adoption with
+  destination-head revalidation at apply; grow a per-cell editor only when
+  review volume earns it.
 - [ ] Implement physical-copy adoption (import under a new actor) and the
   epoch-upgrade flow (`planEpochUpgrade`), including server-side freeze and
   preparing/active incarnation fencing.
+- [ ] Leave copy-into-populated-database app-owned; do not build a generic
+  reference remapper.
 
 ### Wave 7: Accept decisions and delete the spec
 
@@ -1229,6 +1354,13 @@ Before implementation acceptance, review at least:
 - ADR-0094 and ADR-0096: one connect boot decision and environment-injected
   persistence should survive, but their concrete storage attachments change.
 - ADR-0106 and ADR-0107: closed child-doc layouts and plain `Y.Text` remain.
+- ADR-0123: bounded metadata stays in the record authority while values whose
+  independent operations must compose use lazily loaded Yjs child documents.
+- ADR-0124: bounded synchronized preferences live in the eager root Yjs
+  document; the record database is table-only.
+- ADR-0093: REAFFIRMED, not superseded. The kv namespace owns its keys,
+  defaults, and reset, and KV returns to the root document that ADR already
+  describes; only the SQLite-era detour is deleted.
 - ADR-0110: edit timing remains owned by the value owner; the SQLite outbox must
   not introduce a global debounce tier.
 
@@ -1236,8 +1368,8 @@ The 2026-07-11 review swept the full ADR index and adds:
 
 - Must be superseded by the accepted versions of 0119/0120/0121: ADR-0006
   (per-row `_v` version tuple), ADR-0077 (parsed-row memoization written
-  against YKeyValueLww internals), ADR-0093 (KV metadata over the Yjs kv
-  namespace).
+  against YKeyValueLww internals, table scope only; its KV-adjacent sibling
+  ADR-0093 is reaffirmed above because KV stays on the Yjs kv namespace).
 - Re-anchor in each app's SQLite wave (decision survives, storage clause
   changes): ADR-0055 (conversations table), ADR-0102 (vocab entries),
   ADR-0025 (agent transcripts), ADR-0031 (names YKeyValueLww as the row
@@ -1262,9 +1394,11 @@ is type-checked in `demos/local-first-sync/api-prototype/` and detailed in
 - `defineWorkspace({ id, name, epoch, tables, kv, migrations })`; the local
   storage revision is derived as `1 + migrations.length`;
   `defineTable(columns, { indexes, docs })`; `defineKv(schema, default)`.
-  A KV schema must not admit `null`: the wire encodes clear as
-  `value: null`, so a nullable KV value would collide with cleared. Absence
-  belongs to the default factory or the value's own shape.
+  KV keys are excluded from the record schema identity because they are not
+  record state (ADR-0124). A KV schema MAY be `nullable(...)`: the preference
+  plane is not the record wire, so `null` can be a real stored value while
+  deleting the key means no override exists. The earlier must-not-admit-null
+  rule was a SQLite-wire artifact and is deleted with it.
 - Opening is TWO doors, not one option: `openLocalWorkspace(definition,
   { storage })` (no actor, cursor, or outbox exist) and
   `openReplica(definition, { storage, sync })`. `openWorkspace({ sync? })`
@@ -1278,21 +1412,23 @@ is type-checked in `demos/local-first-sync/api-prototype/` and detailed in
   exact schema identity before the typed client opens. Platform helpers may
   preserve the concise `{ storage }` public shape while owning this service
   construction underneath.
-- Table writes are wire-honest and asynchronous: `put` (write every cell
-  declared by this exact schema; the local image of
-  patchRow-all-declared-cells),
-  `patch` (named cells of a live row; null when absent or deleted), `remove`
-  (terminal). `create` and `upsert` die with `set`: globally exclusive
-  creation is not a promise a distributed patchRow can keep (the fold
-  create-merges on unknown ids), and the protocol has no row-replacement
-  operation. Local double-submit guards use stable ids or an asynchronous
-  `has()` preflight; they are UX guards, never distributed uniqueness
-  guarantees. Every write, single-verb or `transact(fn)`, is exactly one
+- Table writes are wire-honest and asynchronous: `create` (complete initial
+  row with a fresh internally generated id; the local image of `createRow`),
+  `patch` (named cells of a live row; null when absent or deleted; the local
+  image of `updateRow`), `remove` (physical deletion; the local image of
+  `deleteRow`). `put` and `upsert` die: the wire has no create-or-update
+  operation, and a caller must say which it means. Creation against a
+  complete local replica is checked locally; the id is fresh, so a local
+  collision is caller error, and the server-side duplicate-create refusal
+  remains the corruption backstop, never a routine code path. Every write,
+  single-verb or `transact(fn)`, is exactly one
   atomic local commit. For a replica, that same commit includes the outbox row
   and actor-sequence allocation. The transaction callback is a synchronous,
   write-only batch builder. It cannot read because the authoritative SQLite
   connection may live across a worker or native-service boundary. The returned
-  promise resolves only after the committed delta has been published.
+  promise resolves only after the committed delta has been published. The
+  transaction spans SQLite tables only; KV writes are the preference plane
+  and never join a record transaction.
 - Authoritative reads are asynchronous: `get` /
   `list({ where, orderBy, limit })` / `has` / `count`, plus one SELECT-only
   `sql(query, params, schema)` escape hatch with declared result validation and
@@ -1307,9 +1443,11 @@ is type-checked in `demos/local-first-sync/api-prototype/` and detailed in
   `whenReady` promise. They hydrate once, buffer committed deltas that race the
   initial snapshot, and never become a second durable database or update
   optimistically.
-- Boundary doors: `planImport(source)` on any open workspace and
+- Boundary doors: `adoptSnapshot(source)` for fresh-incarnation adoption,
+  `planImport(source)` for same-database reviewable comparison, and
   `planEpochUpgrade(definition, { storage, sync })` for a superseded-epoch
-  replica. Both return the same reviewable ImportPlan.
+  replica. The review surfaces share one plan shape; the identity policy
+  differs by door.
 - Child docs: declared as `docs: { body: 'richText' | 'plainText' }` beside
   the table; opened via one lifecycle owner returning a disposable handle.
 
@@ -1320,9 +1458,12 @@ These questions invite evidence, not speculative framework growth.
 1. **Can the direct typed-table client pass Gate 1 without a canonical shadow?**
    - Recommendation: require a minimal counterexample before adding the shadow.
 
-2. **Where do terminal tombstones and nonconforming rows live locally?**
-   - Recommendation: choose the smallest representation that keeps app queries
-     typed and app code unaware of internal sync rows.
+2. **Where do deletion knowledge and nonconforming rows live locally?**
+   - DECIDED (2026-07-11 late revision): deletion knowledge lives nowhere;
+     explicit creation makes absence the deletion record and deletes the
+     tombstone table. Nonconforming rows keep the internal quarantine table,
+     the smallest representation that keeps app queries typed and app code
+     unaware of internal sync rows.
 
 3. **Are new tables and fields new schema epochs?**
    - DECIDED (2026-07-11 correction pass): yes. One incarnation has one exact
@@ -1381,8 +1522,8 @@ These questions invite evidence, not speculative framework growth.
       Gate 2 covers snapshot reclassification; Gate 3 proves exact schema
       identity and epoch import.
 
-13. **Which structural limits prevent unbounded rows, fields, JSON values, and
-    terminal tombstones?**
+13. **Which structural limits prevent unbounded rows, fields, and JSON
+    values?**
     - Recommendation: define bounded identifiers, cells per mutation, encoded
       mutation bytes, rows per account, active actors, and snapshot bytes. Limits
       pause the database before acceptance; they do not selectively remove one
@@ -1394,19 +1535,23 @@ These questions invite evidence, not speculative framework growth.
 
 ## Success criteria
 
-- [ ] The three Proposed ADRs survive an independent clean-break review.
+- [ ] The six Proposed ADRs survive an independent clean-break review.
 - [ ] Every settled product invariant is represented in an ADR or this spec.
-- [x] Gate 1 passes without earning a canonical shadow; evidence is in
-  `demos/local-first-sync/gates/GATE1-EVIDENCE.md`.
-- [x] Gate 2 proves permanent log-prefix deletion with stale pending clients;
-  evidence is in `demos/local-first-sync/gates/GATE2-EVIDENCE.md`.
-- [x] Gate 3 proves exact schema fencing and explicit epoch import; evidence is
-  in `demos/local-first-sync/gates/GATE3-EVIDENCE.md`.
+- [ ] Gate 1 passes the three-verb protocol without tombstones or a canonical
+  shadow; evidence is in `demos/local-first-sync/gates/GATE1-EVIDENCE.md`.
+- [ ] Gate 2 proves permanent log-prefix deletion with live-rows-only
+  snapshots and stale pending clients; evidence is in
+  `demos/local-first-sync/gates/GATE2-EVIDENCE.md`.
+- [ ] Gate 3 proves exact schema fencing and explicit epoch import without
+  tombstone carriage; evidence is in
+  `demos/local-first-sync/gates/GATE3-EVIDENCE.md`.
 - [ ] The same protocol and fold conformance suite passes through browser, Bun,
   and Durable Object SQLite adapters.
 - [ ] Local-only apps operate without actor identity, outbox, auth, or server.
-- [ ] Explicit imports, endpoint moves, restores, and epoch upgrades use one
-  logical import planner.
+- [ ] Explicit imports, endpoint moves, restores, and epoch upgrades use the
+  capability-split boundary flows over one logical snapshot vocabulary.
+- [ ] Declared KV lives in the eager root Yjs document; the record plane and
+  SQLite worker protocol are table-only.
 - [ ] Metadata bootstrap does not eagerly open Yjs bodies.
 - [ ] Browser scale reports include 100K and 1M representative rows.
 - [ ] Accepted ADR conflicts are superseded or scoped explicitly.
