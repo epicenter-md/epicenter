@@ -17,7 +17,7 @@ import type { RecordSyncSqlite, SqliteValue } from './sqlite.js';
 
 const envelope = {
 	protocolMajor: 1,
-	schemaEpochId: 'notes-v1',
+	schemaIdentity: 'notes-v1',
 	databaseIncarnationId: 'database-1',
 } as const;
 
@@ -173,10 +173,10 @@ async function runConformance(open: OpenDatabase) {
 			authority.push({
 				kind: 'push',
 				...envelope,
-				schemaEpochId: 'wrong',
+				schemaIdentity: 'wrong',
 				mutations: [],
 			}),
-		).toEqual({ kind: 'push', ok: false, reason: 'schema-epoch-mismatch' });
+		).toEqual({ kind: 'push', ok: false, reason: 'schema-identity-mismatch' });
 
 		const pull = authority.pull({
 			kind: 'pull',
@@ -186,7 +186,9 @@ async function runConformance(open: OpenDatabase) {
 		});
 		expect(pull.ok && !pull.snapshotRequired && pull.mutations).toHaveLength(2);
 
-		const manifest = await authority.publishSnapshot(1);
+		const manifest = await authority.publishSnapshot({
+			maxChunkBytes: 1024 * 1024,
+		});
 		expect(manifest.actorHighWater).toEqual({ 'actor-a': 2 });
 		expect(await isValidSnapshotManifest(sha256, manifest)).toBeTrue();
 		const firstChunk = authority.snapshotChunk({
@@ -199,6 +201,12 @@ async function runConformance(open: OpenDatabase) {
 		expect(await isValidSnapshotChunk(sha256, firstChunk.chunk)).toBeTrue();
 		expect(firstChunk.chunk.rows).toEqual([
 			{ table: 'notes', rowId: 'n1', deleted: true, cells: {} },
+			{
+				table: 'notes',
+				rowId: 'n2',
+				deleted: false,
+				cells: { title: 'two' },
+			},
 		]);
 
 		const stalePull = authority.pull({

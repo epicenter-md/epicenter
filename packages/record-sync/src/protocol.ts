@@ -1,11 +1,24 @@
 import { type Static, Type } from 'typebox';
 import { Value } from 'typebox/value';
+import {
+	encodedBytes,
+	isAdmissibleJsonValue,
+	isAdmissibleMutation,
+	isBoundedIdentifier,
+	isBoundedSchemaIdentity,
+	RECORD_SYNC_ADMISSION_LIMITS,
+} from './admission.js';
 
 const CLOSED = { additionalProperties: false } as const;
+export const RECORD_SYNC_PROTOCOL_MAJOR = 1;
 const sequence = Type.Integer({ minimum: 0, maximum: Number.MAX_SAFE_INTEGER });
 const positiveSequence = Type.Integer({
 	minimum: 1,
 	maximum: Number.MAX_SAFE_INTEGER,
+});
+const identifier = Type.String({
+	minLength: 1,
+	maxLength: RECORD_SYNC_ADMISSION_LIMITS.identifierBytes,
 });
 
 export type JsonValue =
@@ -20,23 +33,28 @@ export type Cells = Record<string, JsonValue>;
 // The structural schema is deliberately paired with the recursive JSON check
 // in the parse functions below. Unsafe supplies the honest static cell type.
 const cellsSchema = Type.Unsafe<Cells>(
-	Type.Record(Type.String(), Type.Unknown()),
+	Type.Record(Type.String(), Type.Unknown(), {
+		maxProperties: RECORD_SYNC_ADMISSION_LIMITS.cellsPerPatch,
+	}),
 );
 const envelopeProperties = {
 	protocolMajor: positiveSequence,
-	schemaEpochId: Type.String({ minLength: 1 }),
-	databaseIncarnationId: Type.String({ minLength: 1 }),
+	schemaIdentity: Type.String({
+		minLength: 1,
+		maxLength: RECORD_SYNC_ADMISSION_LIMITS.schemaIdentityBytes,
+	}),
+	databaseIncarnationId: identifier,
 };
 const mutationProperties = {
-	actorId: Type.String({ minLength: 1 }),
+	actorId: identifier,
 	actorSequence: positiveSequence,
 	operations: Type.Array(
 		Type.Union([
 			Type.Object(
 				{
 					kind: Type.Literal('patchRow'),
-					table: Type.String({ minLength: 1 }),
-					rowId: Type.String({ minLength: 1 }),
+					table: identifier,
+					rowId: identifier,
 					cells: cellsSchema,
 				},
 				CLOSED,
@@ -44,13 +62,16 @@ const mutationProperties = {
 			Type.Object(
 				{
 					kind: Type.Literal('deleteRow'),
-					table: Type.String({ minLength: 1 }),
-					rowId: Type.String({ minLength: 1 }),
+					table: identifier,
+					rowId: identifier,
 				},
 				CLOSED,
 			),
 		]),
-		{ minItems: 1 },
+		{
+			minItems: 1,
+			maxItems: RECORD_SYNC_ADMISSION_LIMITS.operationsPerMutation,
+		},
 	),
 };
 
@@ -73,7 +94,9 @@ export const PushRequestSchema = Type.Object(
 	{
 		...envelopeProperties,
 		kind: Type.Literal('push'),
-		mutations: Type.Array(MutationSchema),
+		mutations: Type.Array(MutationSchema, {
+			maxItems: RECORD_SYNC_ADMISSION_LIMITS.mutationsPerPush,
+		}),
 	},
 	CLOSED,
 );
@@ -146,7 +169,7 @@ export type SnapshotChunk = Static<typeof snapshotChunkSchema>;
 
 const requestRefusalSchema = Type.Union([
 	Type.Literal('protocol-mismatch'),
-	Type.Literal('schema-epoch-mismatch'),
+	Type.Literal('schema-identity-mismatch'),
 	Type.Literal('database-incarnation-mismatch'),
 ]);
 export type RequestRefusal = Static<typeof requestRefusalSchema>;
@@ -224,55 +247,56 @@ export const SnapshotChunkResponseSchema = Type.Union([
 ]);
 export type SnapshotChunkResponse = Static<typeof SnapshotChunkResponseSchema>;
 
-function isJsonValue(
-	value: unknown,
-	ancestors: Set<object>,
-): value is JsonValue {
-	if (value === null || typeof value === 'string' || typeof value === 'boolean')
-		return true;
-	if (typeof value === 'number') return Number.isFinite(value);
-	if (typeof value !== 'object') return false;
-	if (ancestors.has(value)) return false;
-	ancestors.add(value);
-	const valid = Array.isArray(value)
-		? value.every((child) => isJsonValue(child, ancestors))
-		: Object.getPrototypeOf(value) === Object.prototype &&
-			Object.values(value).every((child) => isJsonValue(child, ancestors));
-	ancestors.delete(value);
-	return valid;
-}
-
-function mutationsHaveJsonCells(mutations: Mutation[]): boolean {
-	return mutations.every((mutation) =>
-		mutation.operations.every(
-			(operation) =>
-				operation.kind === 'deleteRow' ||
-				Object.values(operation.cells).every((value) =>
-					isJsonValue(value, new Set()),
-				),
-		),
-	);
+function mutationsAreAdmissible(mutations: Mutation[]): boolean {
+	return mutations.every(isAdmissibleMutation);
 }
 
 function snapshotRowsHaveJsonCells(rows: SnapshotRow[]): boolean {
 	return rows.every(
 		(row) =>
 			(!row.deleted || Object.keys(row.cells).length === 0) &&
-			Object.values(row.cells).every((value) => isJsonValue(value, new Set())),
+			isBoundedIdentifier(row.table) &&
+			isBoundedIdentifier(row.rowId) &&
+			Object.entries(row.cells).length <=
+				RECORD_SYNC_ADMISSION_LIMITS.cellsPerPatch &&
+			Object.entries(row.cells).every(
+				([name, value]) =>
+					isBoundedIdentifier(name) && isAdmissibleJsonValue(value),
+			),
 	);
+}
+
+function requestEnvelopeIsAdmissible(value: RequestEnvelope): boolean {
+	return (
+		isBoundedSchemaIdentity(value.schemaIdentity) &&
+		isBoundedIdentifier(value.databaseIncarnationId)
+	);
+}
+
+export function parseMutation(value: unknown): Mutation {
+	if (!Value.Check(MutationSchema, value) || !isAdmissibleMutation(value)) {
+		throw new TypeError('Invalid record-sync mutation');
+	}
+	return value;
 }
 
 export function parsePushRequest(value: unknown): PushRequest {
 	if (
 		!Value.Check(PushRequestSchema, value) ||
-		!mutationsHaveJsonCells(value.mutations)
+		!requestEnvelopeIsAdmissible(value) ||
+		!mutationsAreAdmissible(value.mutations) ||
+		encodedBytes(JSON.stringify(value)) >
+			RECORD_SYNC_ADMISSION_LIMITS.encodedPushBytes
 	)
 		throw new TypeError('Invalid record-sync push request');
 	return value;
 }
 
 export function parsePullRequest(value: unknown): PullRequest {
-	if (!Value.Check(PullRequestSchema, value))
+	if (
+		!Value.Check(PullRequestSchema, value) ||
+		!requestEnvelopeIsAdmissible(value)
+	)
 		throw new TypeError('Invalid record-sync pull request');
 	return value;
 }
@@ -280,7 +304,10 @@ export function parsePullRequest(value: unknown): PullRequest {
 export function parseSnapshotChunkRequest(
 	value: unknown,
 ): SnapshotChunkRequest {
-	if (!Value.Check(SnapshotChunkRequestSchema, value))
+	if (
+		!Value.Check(SnapshotChunkRequestSchema, value) ||
+		!requestEnvelopeIsAdmissible(value)
+	)
 		throw new TypeError('Invalid record-sync snapshot chunk request');
 	return value;
 }
@@ -297,7 +324,7 @@ export function parsePullResponse(value: unknown): PullResponse {
 	if (
 		value.ok &&
 		!value.snapshotRequired &&
-		!mutationsHaveJsonCells(value.mutations)
+		!mutationsAreAdmissible(value.mutations)
 	)
 		throw new TypeError('Invalid record-sync pull response');
 	return value;
@@ -319,8 +346,8 @@ export function requestRefusal(
 ): RequestRefusal | null {
 	if (request.protocolMajor !== expected.protocolMajor)
 		return 'protocol-mismatch';
-	if (request.schemaEpochId !== expected.schemaEpochId)
-		return 'schema-epoch-mismatch';
+	if (request.schemaIdentity !== expected.schemaIdentity)
+		return 'schema-identity-mismatch';
 	if (request.databaseIncarnationId !== expected.databaseIncarnationId)
 		return 'database-incarnation-mismatch';
 	return null;

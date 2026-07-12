@@ -1,3 +1,4 @@
+import { isBoundedSchemaIdentity } from './admission.js';
 import { foldRow, type LogicalRow } from './fold.js';
 import type {
 	LoggedMutation,
@@ -13,7 +14,7 @@ import type {
 	SnapshotManifest,
 	SnapshotRow,
 } from './protocol.js';
-import { requestRefusal } from './protocol.js';
+import { RECORD_SYNC_PROTOCOL_MAJOR, requestRefusal } from './protocol.js';
 import {
 	createSnapshotChunk,
 	createSnapshotManifest,
@@ -22,6 +23,45 @@ import {
 import type { RecordSyncSqlite } from './sqlite.js';
 
 const STORAGE_VERSION = 1;
+
+export type RecordAuthorityBindingRequest = {
+	protocolMajor: number;
+	schemaIdentity: string;
+};
+
+export type RecordAuthorityBindingResult =
+	| { ok: true; databaseIncarnationId: string }
+	| {
+			ok: false;
+			reason: 'protocol-mismatch' | 'schema-identity-mismatch';
+	  };
+
+/** Parse the exact first-open authority binding shared by every transport. */
+export function parseRecordAuthorityBindingRequest(
+	value: unknown,
+): RecordAuthorityBindingRequest {
+	if (
+		typeof value !== 'object' ||
+		value === null ||
+		Array.isArray(value) ||
+		Object.getPrototypeOf(value) !== Object.prototype ||
+		Object.keys(value).length !== 2 ||
+		!Object.hasOwn(value, 'protocolMajor') ||
+		!Object.hasOwn(value, 'schemaIdentity')
+	) {
+		throw new TypeError('Invalid record authority binding request');
+	}
+	const { protocolMajor, schemaIdentity } = value as Record<string, unknown>;
+	if (
+		!Number.isSafeInteger(protocolMajor) ||
+		(protocolMajor as number) < 1 ||
+		typeof schemaIdentity !== 'string' ||
+		!isBoundedSchemaIdentity(schemaIdentity)
+	) {
+		throw new TypeError('Invalid record authority binding request');
+	}
+	return { protocolMajor: protocolMajor as number, schemaIdentity };
+}
 
 type StoredRow = {
 	table_name: string;
@@ -48,6 +88,52 @@ function one<TRow extends Record<string, string | number | null>>(
 	parameters: readonly (string | number | null)[] = [],
 ): TRow | undefined {
 	return database.all<TRow>(sql, parameters)[0];
+}
+
+function readStoredEnvelope(
+	database: RecordSyncSqlite,
+): RequestEnvelope | null {
+	const hasMetadata = one<{ present: number }>(
+		database,
+		`SELECT 1 AS present FROM sqlite_master
+		 WHERE type = 'table' AND name = 'record_sync_meta'`,
+	);
+	if (!hasMetadata) return null;
+	const metadata = Object.fromEntries(
+		database
+			.all<{ key: string; value: string }>(
+				`SELECT key, value FROM record_sync_meta
+				 WHERE key IN ('protocolMajor', 'schemaIdentity', 'databaseIncarnationId')`,
+			)
+			.map(({ key, value }) => [key, value]),
+	);
+	const protocolMajor = Number(metadata.protocolMajor);
+	if (
+		!Number.isSafeInteger(protocolMajor) ||
+		protocolMajor < 1 ||
+		!metadata.schemaIdentity ||
+		!metadata.databaseIncarnationId
+	)
+		throw new Error('Incomplete record-sync identity metadata');
+	return {
+		protocolMajor,
+		schemaIdentity: metadata.schemaIdentity,
+		databaseIncarnationId: metadata.databaseIncarnationId,
+	};
+}
+
+export function recordAuthorityBindingRefusal(
+	request: RecordAuthorityBindingRequest,
+	envelope: RequestEnvelope,
+): Extract<RecordAuthorityBindingResult, { ok: false }> | null {
+	if (
+		request.protocolMajor !== RECORD_SYNC_PROTOCOL_MAJOR ||
+		request.protocolMajor !== envelope.protocolMajor
+	)
+		return { ok: false, reason: 'protocol-mismatch' };
+	if (request.schemaIdentity !== envelope.schemaIdentity)
+		return { ok: false, reason: 'schema-identity-mismatch' };
+	return null;
 }
 
 function initialize(
@@ -93,7 +179,7 @@ function initialize(
 		const identity = {
 			storageVersion: STORAGE_VERSION,
 			protocolMajor: envelope.protocolMajor,
-			schemaEpochId: envelope.schemaEpochId,
+			schemaIdentity: envelope.schemaIdentity,
 			databaseIncarnationId: envelope.databaseIncarnationId,
 		};
 		const initial = {
@@ -227,17 +313,47 @@ function captureSnapshot(database: RecordSyncSqlite): CapturedSnapshot {
 async function encodeSnapshot(
 	sha256: Sha256,
 	capture: CapturedSnapshot,
-	rowsPerChunk: number,
+	maxChunkBytes: number,
 ): Promise<{ manifest: SnapshotManifest; chunks: SnapshotChunk[] }> {
 	const pages: SnapshotRow[][] = [];
-	for (let start = 0; start < capture.rows.length; start += rowsPerChunk)
-		pages.push(capture.rows.slice(start, start + rowsPerChunk));
-	if (pages.length === 0) pages.push([]);
+	let rows: SnapshotRow[] = [];
+	let contentBytes = 0;
+	for (const row of capture.rows) {
+		const rowBytes = encodedBytes(row);
+		const separatorBytes = rows.length === 0 ? 0 : 1;
+		const baseBytes = encodedBytes({
+			generation: capture.generation,
+			index: pages.length,
+			rows: [],
+			checksum: '0'.repeat(64),
+		});
+		if (baseBytes + contentBytes + separatorBytes + rowBytes <= maxChunkBytes) {
+			rows.push(row);
+			contentBytes += separatorBytes + rowBytes;
+			continue;
+		}
+		if (rows.length === 0)
+			throw new Error('Snapshot row exceeds maxChunkBytes');
+		pages.push(rows);
+		rows = [row];
+		contentBytes = rowBytes;
+		const nextBaseBytes = encodedBytes({
+			generation: capture.generation,
+			index: pages.length,
+			rows: [],
+			checksum: '0'.repeat(64),
+		});
+		if (nextBaseBytes + rowBytes > maxChunkBytes)
+			throw new Error('Snapshot row exceeds maxChunkBytes');
+	}
+	pages.push(rows);
 	const chunks = await Promise.all(
-		pages.map((rows, index) =>
-			createSnapshotChunk(sha256, capture.generation, index, rows),
+		pages.map((page, index) =>
+			createSnapshotChunk(sha256, capture.generation, index, page),
 		),
 	);
+	if (chunks.some((chunk) => encodedBytes(chunk) > maxChunkBytes))
+		throw new Error('Snapshot checksum encoding exceeds maxChunkBytes');
 	const manifest = await createSnapshotManifest(sha256, {
 		generation: capture.generation,
 		snapshotSequence: capture.snapshotSequence,
@@ -246,6 +362,18 @@ async function encodeSnapshot(
 	});
 	return { manifest, chunks };
 }
+
+function encodedBytes(value: unknown): number {
+	return new TextEncoder().encode(JSON.stringify(value)).byteLength;
+}
+
+export type SnapshotPublicationOptions = {
+	maxChunkBytes: number;
+};
+
+export type RecordAuthorityCompactionPolicy = SnapshotPublicationOptions & {
+	mutationThreshold: number;
+};
 
 export function createRecordAuthority({
 	database,
@@ -257,6 +385,53 @@ export function createRecordAuthority({
 	sha256: Sha256;
 }) {
 	initialize(database, envelope);
+
+	async function publishSnapshot({
+		maxChunkBytes,
+	}: SnapshotPublicationOptions): Promise<SnapshotManifest> {
+		if (!Number.isSafeInteger(maxChunkBytes) || maxChunkBytes < 1)
+			throw new TypeError('maxChunkBytes must be a positive integer');
+		for (;;) {
+			const capture = captureSnapshot(database);
+			const encoded = await encodeSnapshot(sha256, capture, maxChunkBytes);
+			const published = database.transaction(() => {
+				if (
+					readMeta(database, 'serverSequence') !== capture.snapshotSequence ||
+					readMeta(database, 'snapshotGeneration') + 1 !== capture.generation
+				)
+					return false;
+				database.run('DELETE FROM record_sync_snapshot_chunks');
+				for (const chunk of encoded.chunks)
+					database.run(
+						`INSERT INTO record_sync_snapshot_chunks(
+							chunk_index, generation, rows_json, checksum
+						) VALUES (?, ?, ?, ?)`,
+						[
+							chunk.index,
+							chunk.generation,
+							JSON.stringify(chunk.rows),
+							chunk.checksum,
+						],
+					);
+				database.run(
+					`INSERT INTO record_sync_snapshot_manifest(id, manifest_json)
+					 VALUES (1, ?)
+					 ON CONFLICT(id) DO UPDATE SET
+						manifest_json = excluded.manifest_json`,
+					[JSON.stringify(encoded.manifest)],
+				);
+				writeMeta(database, 'watermark', capture.snapshotSequence);
+				writeMeta(database, 'snapshotGeneration', capture.generation);
+				database.run(
+					`DELETE FROM record_sync_mutation_log
+					 WHERE server_sequence <= ?`,
+					[capture.snapshotSequence],
+				);
+				return true;
+			});
+			if (published) return encoded.manifest;
+		}
+	}
 
 	return {
 		push(request: PushRequest): PushResponse {
@@ -350,49 +525,22 @@ export function createRecordAuthority({
 			});
 		},
 
-		async publishSnapshot(rowsPerChunk: number): Promise<SnapshotManifest> {
-			if (!Number.isSafeInteger(rowsPerChunk) || rowsPerChunk < 1)
-				throw new TypeError('rowsPerChunk must be a positive integer');
-			for (;;) {
-				const capture = captureSnapshot(database);
-				const encoded = await encodeSnapshot(sha256, capture, rowsPerChunk);
-				const published = database.transaction(() => {
-					if (
-						readMeta(database, 'serverSequence') !== capture.snapshotSequence ||
-						readMeta(database, 'snapshotGeneration') + 1 !== capture.generation
-					)
-						return false;
-					database.run('DELETE FROM record_sync_snapshot_chunks');
-					for (const chunk of encoded.chunks)
-						database.run(
-							`INSERT INTO record_sync_snapshot_chunks(
-								chunk_index, generation, rows_json, checksum
-							) VALUES (?, ?, ?, ?)`,
-							[
-								chunk.index,
-								chunk.generation,
-								JSON.stringify(chunk.rows),
-								chunk.checksum,
-							],
-						);
-					database.run(
-						`INSERT INTO record_sync_snapshot_manifest(id, manifest_json)
-						 VALUES (1, ?)
-						 ON CONFLICT(id) DO UPDATE SET
-							manifest_json = excluded.manifest_json`,
-						[JSON.stringify(encoded.manifest)],
-					);
-					writeMeta(database, 'watermark', capture.snapshotSequence);
-					writeMeta(database, 'snapshotGeneration', capture.generation);
-					database.run(
-						`DELETE FROM record_sync_mutation_log
-						 WHERE server_sequence <= ?`,
-						[capture.snapshotSequence],
-					);
-					return true;
-				});
-				if (published) return encoded.manifest;
-			}
+		publishSnapshot,
+
+		async maybePublishSnapshot({
+			mutationThreshold,
+			maxChunkBytes,
+		}: RecordAuthorityCompactionPolicy): Promise<SnapshotManifest | null> {
+			if (!Number.isSafeInteger(mutationThreshold) || mutationThreshold < 1)
+				throw new TypeError('mutationThreshold must be a positive integer');
+			const pending = database.transaction(
+				() =>
+					readMeta(database, 'serverSequence') -
+					readMeta(database, 'watermark'),
+			);
+			return pending < mutationThreshold
+				? null
+				: publishSnapshot({ maxChunkBytes });
 		},
 
 		snapshotChunk(request: SnapshotChunkRequest): SnapshotChunkResponse {
@@ -439,3 +587,66 @@ export function createRecordAuthority({
 }
 
 export type RecordAuthority = ReturnType<typeof createRecordAuthority>;
+
+export type OpenedRecordAuthority = {
+	envelope: RequestEnvelope;
+	authority: RecordAuthority;
+};
+
+/** Restore an authority that was previously bound, or return null if unopened. */
+export function restoreRecordAuthority({
+	database,
+	sha256,
+}: {
+	database: RecordSyncSqlite;
+	sha256: Sha256;
+}): OpenedRecordAuthority | null {
+	const envelope = readStoredEnvelope(database);
+	return envelope
+		? {
+				envelope,
+				authority: createRecordAuthority({ database, envelope, sha256 }),
+			}
+		: null;
+}
+
+/** Bind an authority exactly once, refusing incompatible later open requests. */
+export function openRecordAuthority({
+	database,
+	request,
+	createDatabaseIncarnationId,
+	sha256,
+}: {
+	database: RecordSyncSqlite;
+	request: RecordAuthorityBindingRequest;
+	createDatabaseIncarnationId(): string;
+	sha256: Sha256;
+}):
+	| ({ ok: true; databaseIncarnationId: string } & OpenedRecordAuthority)
+	| Extract<RecordAuthorityBindingResult, { ok: false }> {
+	request = parseRecordAuthorityBindingRequest(request);
+	const stored = readStoredEnvelope(database);
+	if (stored) {
+		const refusal = recordAuthorityBindingRefusal(request, stored);
+		if (refusal) return refusal;
+		return {
+			ok: true,
+			databaseIncarnationId: stored.databaseIncarnationId,
+			envelope: stored,
+			authority: createRecordAuthority({ database, envelope: stored, sha256 }),
+		};
+	}
+	if (request.protocolMajor !== RECORD_SYNC_PROTOCOL_MAJOR)
+		return { ok: false, reason: 'protocol-mismatch' };
+	const databaseIncarnationId = createDatabaseIncarnationId();
+	if (databaseIncarnationId.trim() === '')
+		throw new TypeError('databaseIncarnationId must not be empty');
+	const envelope = { ...request, databaseIncarnationId };
+	const authority = createRecordAuthority({ database, envelope, sha256 });
+	return {
+		ok: true,
+		databaseIncarnationId,
+		envelope,
+		authority,
+	};
+}

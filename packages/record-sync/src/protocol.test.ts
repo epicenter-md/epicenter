@@ -1,5 +1,19 @@
+/**
+ * Record Sync Protocol Tests
+ *
+ * Verifies exact wire parsing and the shared admission ceilings enforced before
+ * any browser, Bun, or Durable Object SQLite adapter receives a mutation.
+ *
+ * Key behaviors:
+ * - Closed request and response shapes reject malformed protocol values
+ * - Mutation identifiers, collection counts, JSON depth, and bytes are bounded
+ * - Nested finite JSON within the admission policy remains valid
+ */
+
 import { expect, test } from 'bun:test';
+import { RECORD_SYNC_ADMISSION_LIMITS } from './admission.js';
 import {
+	parseMutation,
 	parsePullRequest,
 	parsePullResponse,
 	parsePushRequest,
@@ -10,11 +24,25 @@ import {
 
 const envelope = {
 	protocolMajor: 1,
-	schemaEpochId: 'notes-v1',
+	schemaIdentity: 'notes-v1',
 	databaseIncarnationId: 'db-1',
 };
 
 test('protocol parsers accept the closed wire shapes and nested JSON cells', () => {
+	expect(
+		parseMutation({
+			actorId: 'actor-a',
+			actorSequence: 1,
+			operations: [
+				{
+					kind: 'patchRow',
+					table: 'notes',
+					rowId: 'n1',
+					cells: { title: 'one' },
+				},
+			],
+		}),
+	).toMatchObject({ actorId: 'actor-a', actorSequence: 1 });
 	expect(
 		parsePushRequest({
 			kind: 'push',
@@ -46,6 +74,23 @@ test('protocol parsers accept the closed wire shapes and nested JSON cells', () 
 			index: 0,
 		}),
 	).toMatchObject({ generation: 1, index: 0 });
+});
+
+test('mutation parser rejects malformed durable outbox values', () => {
+	expect(() =>
+		parseMutation({
+			actorId: 'actor-a',
+			actorSequence: 1,
+			operations: [
+				{
+					kind: 'patchRow',
+					table: 'notes',
+					rowId: 'n1',
+					cells: { score: Number.NaN },
+				},
+			],
+		}),
+	).toThrow('Invalid record-sync mutation');
 });
 
 test('response parsers validate both success and refusal variants', () => {
@@ -159,4 +204,154 @@ test('push parsing rejects non-JSON cells, unsafe sequences, and extra keys', ()
 			],
 		}),
 	).toThrow();
+});
+
+test('mutation parsing rejects identifiers over the UTF-8 byte ceiling', () => {
+	const oversizedUnicodeId = '😀'.repeat(
+		Math.floor(RECORD_SYNC_ADMISSION_LIMITS.identifierBytes / 4) + 1,
+	);
+	expect(() =>
+		parseMutation({
+			actorId: oversizedUnicodeId,
+			actorSequence: 1,
+			operations: [
+				{
+					kind: 'deleteRow',
+					table: 'notes',
+					rowId: 'n1',
+				},
+			],
+		}),
+	).toThrow('Invalid record-sync mutation');
+});
+
+test('mutation parsing rejects operation and cell counts over their ceilings', () => {
+	const deletion = {
+		kind: 'deleteRow' as const,
+		table: 'notes',
+		rowId: 'n1',
+	};
+	expect(() =>
+		parseMutation({
+			actorId: 'actor-a',
+			actorSequence: 1,
+			operations: Array.from(
+				{
+					length: RECORD_SYNC_ADMISSION_LIMITS.operationsPerMutation + 1,
+				},
+				() => deletion,
+			),
+		}),
+	).toThrow('Invalid record-sync mutation');
+	expect(() =>
+		parseMutation({
+			actorId: 'actor-a',
+			actorSequence: 1,
+			operations: [
+				{
+					kind: 'patchRow',
+					table: 'notes',
+					rowId: 'n1',
+					cells: Object.fromEntries(
+						Array.from(
+							{
+								length: RECORD_SYNC_ADMISSION_LIMITS.cellsPerPatch + 1,
+							},
+							(_, index) => [`field-${index}`, index],
+						),
+					),
+				},
+			],
+		}),
+	).toThrow('Invalid record-sync mutation');
+});
+
+test('push parsing rejects mutation batches over the admission ceiling', () => {
+	const mutation = {
+		actorId: 'actor-a',
+		actorSequence: 1,
+		operations: [
+			{
+				kind: 'deleteRow' as const,
+				table: 'notes',
+				rowId: 'n1',
+			},
+		],
+	};
+	expect(() =>
+		parsePushRequest({
+			kind: 'push',
+			...envelope,
+			mutations: Array.from(
+				{ length: RECORD_SYNC_ADMISSION_LIMITS.mutationsPerPush + 1 },
+				(_, index) => ({ ...mutation, actorSequence: index + 1 }),
+			),
+		}),
+	).toThrow('Invalid record-sync push request');
+});
+
+test('mutation parsing rejects JSON deeper than the admission ceiling', () => {
+	let nested: unknown = 'leaf';
+	for (
+		let depth = 0;
+		depth <= RECORD_SYNC_ADMISSION_LIMITS.jsonDepth;
+		depth += 1
+	) {
+		nested = [nested];
+	}
+	expect(() =>
+		parseMutation({
+			actorId: 'actor-a',
+			actorSequence: 1,
+			operations: [
+				{
+					kind: 'patchRow',
+					table: 'notes',
+					rowId: 'n1',
+					cells: { metadata: nested },
+				},
+			],
+		}),
+	).toThrow('Invalid record-sync mutation');
+});
+
+test('mutation parsing rejects encoded mutations over the byte ceiling', () => {
+	expect(() =>
+		parseMutation({
+			actorId: 'actor-a',
+			actorSequence: 1,
+			operations: [
+				{
+					kind: 'patchRow',
+					table: 'notes',
+					rowId: 'n1',
+					cells: {
+						body: 'x'.repeat(RECORD_SYNC_ADMISSION_LIMITS.encodedMutationBytes),
+					},
+				},
+			],
+		}),
+	).toThrow('Invalid record-sync mutation');
+});
+
+test('push parsing rejects aggregate bytes below the HTTP request ceiling', () => {
+	const body = 'x'.repeat(60 * 1024);
+	expect(() =>
+		parsePushRequest({
+			kind: 'push',
+			...envelope,
+			mutations: Array.from({ length: 13 }, (_, index) => ({
+				actorId: 'actor-a',
+				actorSequence: index + 1,
+				operations: [
+					{
+						kind: 'patchRow',
+						table: 'notes',
+						rowId: `n${index}`,
+						cells: { body },
+					},
+				],
+			})),
+		}),
+	).toThrow('Invalid record-sync push request');
 });

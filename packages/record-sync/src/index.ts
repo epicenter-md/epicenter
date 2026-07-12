@@ -1,4 +1,17 @@
-export { createRecordAuthority, type RecordAuthority } from './authority.js';
+export { RECORD_SYNC_ADMISSION_LIMITS } from './admission.js';
+export {
+	createRecordAuthority,
+	type OpenedRecordAuthority,
+	openRecordAuthority,
+	parseRecordAuthorityBindingRequest,
+	type RecordAuthority,
+	type RecordAuthorityBindingRequest,
+	type RecordAuthorityBindingResult,
+	type RecordAuthorityCompactionPolicy,
+	recordAuthorityBindingRefusal,
+	restoreRecordAuthority,
+	type SnapshotPublicationOptions,
+} from './authority.js';
 export { foldRow, type LogicalRow } from './fold.js';
 export {
 	type Cells,
@@ -16,12 +29,14 @@ export {
 	PushRequestSchema,
 	type PushResponse,
 	PushResponseSchema,
+	parseMutation,
 	parsePullRequest,
 	parsePullResponse,
 	parsePushRequest,
 	parsePushResponse,
 	parseSnapshotChunkRequest,
 	parseSnapshotChunkResponse,
+	RECORD_SYNC_PROTOCOL_MAJOR,
 	type RequestEnvelope,
 	RequestEnvelopeSchema,
 	type RequestRefusal,
