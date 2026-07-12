@@ -1181,6 +1181,13 @@ parity success criterion remains open.
 
 ### Wave 5: Workspace API clean break
 
+Foundation checkpoint (2026-07-11):
+`demos/local-first-sync/gates/GATE5-EVIDENCE.md` records the passing typed
+SQLite schema/runtime and reactive adapter evidence. The clean-break checklist
+stays open. Production callers cannot delete the Yjs record root until the two
+SQLite lifecycle doors exist, so implementation pulls the first Wave 6 item
+forward before returning to the Wave 5 consumer migration and deletion steps.
+
 - [ ] Make `field.*` plus `nullable` the only persisted storage vocabulary.
 - [ ] Move scalar collaborative bodies to declared plain-text or rich-text docs.
 - [ ] Replace Yjs table/KV record persistence with typed SQLite application
