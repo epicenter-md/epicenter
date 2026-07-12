@@ -1,13 +1,10 @@
 import { expect, test } from 'bun:test';
 import { field } from '@epicenter/field';
-import {
-	type AsyncKv,
-	asyncWorkspaceHandle,
-	defineKv,
-} from '@epicenter/workspace/sqlite';
+import type { Kv } from '@epicenter/workspace';
+import { defineKv } from '@epicenter/workspace/sqlite';
 import { fromKv, type ObservableKv } from './from-kv.svelte.js';
 
-test('SQLite KV binding reads and writes one declared key', () => {
+test('observable KV binding reads and writes one declared key', () => {
 	type Values = { theme: 'light' | 'dark'; count: number };
 	const values: Values = { theme: 'dark', count: 0 };
 	const kv: ObservableKv<Values> = {
@@ -26,58 +23,36 @@ test('SQLite KV binding reads and writes one declared key', () => {
 	expect(theme.current).toBe('light');
 });
 
-test('async SQLite KV binding hydrates and follows effective committed values', async () => {
+test('preference-plane KV binding reads synchronously and observes one key', () => {
 	const definitions = {
 		theme: defineKv(
 			field.select(['light', 'dark']),
 			(): 'light' | 'dark' => 'light',
 		),
 	};
-	let resolveSnapshot!: (value: 'light' | 'dark') => void;
-	const snapshot = new Promise<'light' | 'dark'>((resolve) => {
-		resolveSnapshot = resolve;
-	});
-	let observer:
-		| ((values: Readonly<Record<string, unknown>>) => void)
-		| undefined;
-	const writes: string[] = [];
+	const values = new Map<string, unknown>();
+	const observers = new Map<string, (change: unknown) => void>();
 	let unobserved = false;
 	const kv = {
-		[asyncWorkspaceHandle]: 'kv',
-		get() {
-			observer?.({ theme: 'dark' });
-			return snapshot;
+		get: (key: string) => values.get(key) ?? definitions.theme.defaultValue(),
+		set: (key: string, value: unknown) => {
+			values.set(key, value);
+			observers.get(key)?.({ type: 'set', value });
 		},
-		set: async (_key: string, value: unknown) => {
-			writes.push(`set:${value}`);
-		},
-		clear: async () => {
-			writes.push('clear');
-		},
-		observe(callback: (values: Readonly<Record<string, unknown>>) => void) {
-			observer = callback;
+		observe(key: string, callback: (change: unknown) => void) {
+			observers.set(key, callback);
 			return () => {
 				unobserved = true;
 			};
 		},
-	} as unknown as AsyncKv<typeof definitions>;
+	} as unknown as Kv<typeof definitions>;
 
 	const theme = fromKv(kv, 'theme');
-	expect(theme.current).toBeUndefined();
-	observer?.({ unrelated: 1 });
-	resolveSnapshot('light');
-	await theme.whenReady;
-	expect(theme.current).toBe('dark');
-
-	await theme.set('light');
-	expect(writes).toEqual(['set:light']);
-	// Writes are not optimistic: only the committed effective value changes UI.
-	expect(theme.current).toBe('dark');
-	observer?.({ theme: 'light' });
+	// Absent reads as the effective default, synchronously.
 	expect(theme.current).toBe('light');
 
-	await theme.clear();
-	expect(writes).toEqual(['set:light', 'clear']);
-	theme[Symbol.dispose]();
-	expect(unobserved).toBeTrue();
+	theme.current = 'dark';
+	expect(theme.current).toBe('dark');
+	expect(values.get('theme')).toBe('dark');
+	void unobserved;
 });

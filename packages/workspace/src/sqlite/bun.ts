@@ -7,11 +7,7 @@ import { RECORD_SYNC_PROTOCOL_MAJOR } from '@epicenter/record-sync';
 import { createBunSqliteAdapter } from '@epicenter/record-sync/bun';
 import type { WorkspaceServicePort } from './client.js';
 import { createApplicationDatabase } from './database.js';
-import type {
-	KvDefinitions,
-	TableDefinitions,
-	WorkspaceDefinition,
-} from './definition.js';
+import type { TableDefinitions, WorkspaceDefinition } from './definition.js';
 import {
 	type OwnedWorkspaceServicePort,
 	openWorkspaceFromService,
@@ -46,13 +42,10 @@ export type OpenWorkspaceReplicaOptions = {
 const ownedFilePaths = new Set<string>();
 
 /** Open a standalone workspace whose authoritative SQLite runs in Bun. */
-export async function openStandaloneWorkspace<
-	TTables extends TableDefinitions,
-	TKv extends KvDefinitions,
->(
-	definition: WorkspaceDefinition<TTables, TKv>,
+export async function openStandaloneWorkspace<TTables extends TableDefinitions>(
+	definition: WorkspaceDefinition<TTables>,
 	{ storage, onObserverError }: OpenStandaloneWorkspaceOptions,
-): Promise<StandaloneWorkspace<TTables, TKv>> {
+): Promise<StandaloneWorkspace<TTables>> {
 	const filePath = storage.kind === 'bun' ? resolve(storage.path) : undefined;
 	if (filePath && ownedFilePaths.has(filePath)) {
 		throw new Error(`Workspace SQLite file already has an owner: ${filePath}`);
@@ -107,11 +100,8 @@ export async function openStandaloneWorkspace<
 }
 
 /** Open this device's durable replica of one authoritative workspace. */
-export async function openWorkspaceReplica<
-	TTables extends TableDefinitions,
-	TKv extends KvDefinitions,
->(
-	definition: WorkspaceDefinition<TTables, TKv>,
+export async function openWorkspaceReplica<TTables extends TableDefinitions>(
+	definition: WorkspaceDefinition<TTables>,
 	{
 		storage,
 		sync,
@@ -119,7 +109,7 @@ export async function openWorkspaceReplica<
 		onObserverError,
 		pollIntervalMs,
 	}: OpenWorkspaceReplicaOptions,
-): Promise<WorkspaceReplica<TTables, TKv>> {
+): Promise<WorkspaceReplica<TTables>> {
 	const filePath = storage.kind === 'bun' ? resolve(storage.path) : undefined;
 	if (filePath && ownedFilePaths.has(filePath)) {
 		throw new Error(`Workspace SQLite file already has an owner: ${filePath}`);

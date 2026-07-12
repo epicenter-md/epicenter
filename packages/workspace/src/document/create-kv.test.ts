@@ -152,7 +152,7 @@ test('observeAll batches multiple changes in a single callback', () => {
 	unsubscribe();
 });
 
-test('observeAll skips invalid values', () => {
+test('observeAll reports invalid winning values as the effective default', () => {
 	const { ydoc, ykv } = setupYkv();
 	const kv = createKv(ykv, {
 		count: defineKv(Type.Number(), () => 0),
@@ -171,12 +171,15 @@ test('observeAll skips invalid values', () => {
 		kv.set('theme', { mode: 'dark' });
 	});
 
-	// observeAll should only include the valid theme change, not the invalid count
+	// The invalid winner notifies observers with what get() now returns: the
+	// effective default. The stored bytes stay untouched.
 	expect(changes).toHaveLength(1);
 	const firstChange = changes[0];
 	if (!firstChange) throw new Error('Expected first change map');
-	expect(firstChange.has('count')).toBe(false);
+	expect(firstChange.get('count')).toEqual({ type: 'set', value: 0 });
 	expect(firstChange.has('theme')).toBe(true);
+	expect(kv.get('count')).toBe(0);
+	expect(ykv.get('count')).toBe('not-a-number');
 
 	unsubscribe();
 });
@@ -277,4 +280,83 @@ test('observeAll returns an unsubscribe function that works', () => {
 	// Second change should not be observed
 	kv.set('theme', { mode: 'light' });
 	expect(changes).toHaveLength(1);
+});
+
+test('observe reports an invalid winning value as the effective default', () => {
+	const { ydoc, ykv } = setupYkv();
+	const kv = createKv(ykv, {
+		count: defineKv(Type.Number(), () => 0),
+	});
+
+	const changes: unknown[] = [];
+	const unsubscribe = kv.observe('count', (change) => changes.push(change));
+
+	kv.set('count', 5);
+	ydoc.transact(() => {
+		ykv.yarray.push([{ key: 'count', val: 'garbage', ts: Date.now() * 2 }]);
+	});
+
+	// Readers re-render with what get() now returns; stored bytes are intact.
+	expect(changes).toEqual([
+		{ type: 'set', value: 5 },
+		{ type: 'set', value: 0 },
+	]);
+	expect(kv.get('count')).toBe(0);
+	expect(ykv.get('count')).toBe('garbage');
+
+	unsubscribe();
+});
+
+test('every accessor throws on an undeclared key', () => {
+	const { ykv } = setupYkv();
+	const kv = createKv(ykv, {
+		theme: defineKv(themeSchema, themeDefault),
+	});
+	const undeclared = 'missing' as 'theme';
+
+	expect(() => kv.get(undeclared)).toThrow("Unknown KV key 'missing'");
+	expect(() => kv.set(undeclared, { mode: 'dark' })).toThrow(
+		"Unknown KV key 'missing'",
+	);
+	expect(() => kv.getDefault(undeclared)).toThrow("Unknown KV key 'missing'");
+	expect(() => kv.delete(undeclared)).toThrow("Unknown KV key 'missing'");
+	expect(() => kv.observe(undeclared, () => {})).toThrow(
+		"Unknown KV key 'missing'",
+	);
+});
+
+test('declared keys must fit the key byte budget', () => {
+	const { ykv } = setupYkv();
+	const oversizedKey = 'k'.repeat(513);
+
+	expect(() =>
+		createKv(ykv, {
+			[oversizedKey]: defineKv(Type.Number(), () => 0),
+		}),
+	).toThrow('key budget');
+	expect(() =>
+		createKv(ykv, {
+			['k'.repeat(512)]: defineKv(Type.Number(), () => 0),
+		}),
+	).not.toThrow();
+});
+
+test('set and reset enforce the encoded value byte budget', () => {
+	const { ykv } = setupYkv();
+	const kv = createKv(ykv, {
+		note: defineKv(Type.String(), () => ''),
+	});
+
+	const oversized = 'x'.repeat(64 * 1024);
+	expect(() => kv.set('note', oversized)).toThrow('budget');
+	expect(ykv.get('note')).toBeUndefined();
+
+	// A value under the budget still writes.
+	kv.set('note', 'small');
+	expect(kv.get('note')).toBe('small');
+
+	const oversizedDefault = createKv(ykv, {
+		blob: defineKv(Type.String(), () => 'y'.repeat(64 * 1024)),
+	});
+	expect(() => oversizedDefault.reset()).toThrow('budget');
 });

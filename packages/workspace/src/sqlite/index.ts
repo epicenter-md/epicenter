@@ -6,8 +6,9 @@
  */
 
 export {
-	type AsyncKv,
 	type AsyncTable,
+	type AsyncTableDoc,
+	type AsyncTableDocs,
 	type AsyncTables,
 	type AsyncWorkspace,
 	asyncWorkspaceHandle,
@@ -18,7 +19,6 @@ export {
 export type {
 	ApplicationDatabase,
 	ApplicationDatabaseOptions,
-	ApplicationKv,
 	ApplicationLogicalSnapshot,
 	ApplicationMutationContext,
 	ApplicationMutationCoordinator,
@@ -47,7 +47,9 @@ export {
 	type WorkspaceDefinition,
 } from './definition.js';
 export type {
+	OpenedWorkspace,
 	StandaloneWorkspace,
+	WorkspaceKvMount,
 	WorkspaceReplica,
 } from './open.js';
 export type { ReplicaSyncPort } from './replica.js';

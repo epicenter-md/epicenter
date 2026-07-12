@@ -13,7 +13,16 @@ import {
 	type TUnion,
 	Type,
 } from 'typebox';
+import type { KvDefinitions } from '../document/kv.js';
 import { assertSafeSegment } from '../shared/safe-segment.js';
+
+// The preference plane shares one declaration vocabulary across storage
+// planes: `defineKv` lives with the document KV implementation, and this
+// subpath re-exports it so sqlite-path consumers keep one import site.
+// KV schemas may be `nullable(...)`: the preference plane never rides the
+// record wire, so null is an ordinary stored value, not a clear signal.
+export { defineKv } from '../document/define-kv.js';
+export type { KvDefinition, KvDefinitions } from '../document/kv.js';
 
 export type Columns = Record<string, TSchema>;
 export type DocLayout = 'plainText' | 'richText';
@@ -141,46 +150,6 @@ export function defineTable<
 	};
 }
 
-type KvSchemaError =
-	'KV schemas cannot admit null because null is reserved for clear​';
-
-export type KvDefinition<TSchemaValue extends TSchema = TSchema> = {
-	schema: TSchemaValue;
-	defaultValue: () => Static<TSchemaValue>;
-	compiledValue: CompiledColumn;
-};
-
-export function defineKv<
-	const TSchemaValue extends TSchema,
-	const TDefault extends Static<TSchemaValue>,
->(
-	schema: null extends Static<TSchemaValue> ? KvSchemaError : TSchemaValue,
-	defaultValue: () => TDefault,
-): KvDefinition<TSchemaValue> {
-	const compiledValue = compileColumn('value', schema as TSchema);
-	if (compiledValue.check(null)) {
-		throw new Error(
-			'KV schemas cannot admit null because null is reserved for clear',
-		);
-	}
-
-	let initialDefault: unknown;
-	try {
-		initialDefault = defaultValue();
-	} catch (cause) {
-		throw new Error('KV default factory threw during definition', { cause });
-	}
-	if (!compiledValue.check(initialDefault)) {
-		throw new Error('KV default does not satisfy its field schema');
-	}
-
-	return {
-		schema: schema as TSchemaValue,
-		defaultValue,
-		compiledValue,
-	};
-}
-
 export type MigrationTx = {
 	sql(query: string, ...params: unknown[]): unknown[];
 };
@@ -203,7 +172,6 @@ export type MigrationStep = {
 };
 
 export type TableDefinitions = Record<string, TableDefinition>;
-export type KvDefinitions = Record<string, KvDefinition>;
 
 export type WorkspaceDefinition<
 	TTables extends TableDefinitions = TableDefinitions,
@@ -288,10 +256,12 @@ export function defineWorkspace<
 		kv: declaredKv,
 		migrations,
 		storageRevision: 1 + migrations.length,
+		// KV is deliberately absent: the preference plane lives on the eager
+		// root document, not the record database, so it is not part of record
+		// schema identity (ADR-0124).
 		schemaIdentity: createSchemaIdentity({
 			workspaceId: id,
 			tables,
-			kv: declaredKv,
 			epochIds: [
 				epoch,
 				...migrations.flatMap((migration) =>
@@ -355,12 +325,10 @@ function compileColumn(name: string, authoredSchema: TSchema): CompiledColumn {
 function createSchemaIdentity({
 	workspaceId,
 	tables,
-	kv,
 	epochIds,
 }: {
 	workspaceId: string;
 	tables: TableDefinitions;
-	kv: KvDefinitions;
 	epochIds: readonly string[];
 }): string {
 	return canonicalJson({
@@ -384,12 +352,6 @@ function createSchemaIdentity({
 						})),
 				};
 			}),
-		kv: Object.entries(kv)
-			.sort(([left], [right]) => compareCodeUnits(left, right))
-			.map(([key, definition]) => ({
-				key,
-				schema: toAtRestSchema(definition.schema),
-			})),
 		epochIds,
 	});
 }

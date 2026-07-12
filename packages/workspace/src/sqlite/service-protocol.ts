@@ -47,11 +47,6 @@ const workspaceMutation = Type.Union([
 		},
 		CLOSED,
 	),
-	Type.Object(
-		{ kind: Type.Literal('setKv'), key: nonEmptyString, value: Type.Unknown() },
-		CLOSED,
-	),
-	Type.Object({ kind: Type.Literal('clearKv'), key: nonEmptyString }, CLOSED),
 ]);
 
 export const WorkspaceServiceRequestSchema = Type.Union([
@@ -81,7 +76,6 @@ export const WorkspaceServiceRequestSchema = Type.Union([
 		CLOSED,
 	),
 	Type.Object({ kind: Type.Literal('count'), table: nonEmptyString }, CLOSED),
-	Type.Object({ kind: Type.Literal('getKv'), key: nonEmptyString }, CLOSED),
 	Type.Object(
 		{
 			kind: Type.Literal('mutate'),
@@ -123,7 +117,6 @@ export const WorkspaceServiceResponseSchema = Type.Union([
 		},
 		CLOSED,
 	),
-	Type.Object({ kind: Type.Literal('value'), value: Type.Unknown() }, CLOSED),
 	Type.Object(
 		{ kind: Type.Literal('mutation'), results: Type.Array(Type.Unknown()) },
 		CLOSED,
@@ -152,19 +145,16 @@ export type WorkspaceCommitDelta = {
 			}
 		>
 	>;
-	kv: Readonly<Record<string, unknown>>;
 };
 
 export type WorkspaceInvalidation = {
 	tables: Readonly<Record<string, readonly string[]>>;
-	kv: readonly string[];
 };
 
 export const WorkspaceInvalidationSchema = Type.Unsafe<WorkspaceInvalidation>(
 	Type.Object(
 		{
 			tables: Type.Record(Type.String(), Type.Array(nonEmptyString)),
-			kv: Type.Array(nonEmptyString),
 		},
 		CLOSED,
 	),
@@ -174,7 +164,6 @@ export const WorkspaceCommitDeltaSchema = Type.Unsafe<WorkspaceCommitDelta>(
 	Type.Object(
 		{
 			tables: Type.Record(Type.String(), tableCommitDelta),
-			kv: jsonRecord,
 		},
 		CLOSED,
 	),

@@ -29,11 +29,7 @@ import {
 	type ApplicationMutationCoordinator,
 	createApplicationDatabase,
 } from './database.js';
-import type {
-	KvDefinitions,
-	TableDefinitions,
-	WorkspaceDefinition,
-} from './definition.js';
+import type { TableDefinitions, WorkspaceDefinition } from './definition.js';
 
 const SYNC_STORAGE_VERSION = 1;
 const DEFAULT_PULL_LIMIT = 100;
@@ -66,11 +62,8 @@ export type ReplicaSyncPort = {
 	): Promise<unknown>;
 };
 
-export type CreateReplicaRuntimeOptions<
-	TTables extends TableDefinitions,
-	TKv extends KvDefinitions,
-> = {
-	definition: WorkspaceDefinition<TTables, TKv>;
+export type CreateReplicaRuntimeOptions<TTables extends TableDefinitions> = {
+	definition: WorkspaceDefinition<TTables>;
 	sqlite: RecordSyncSqlite;
 	sync: ReplicaSyncPort;
 	protocolMajor: number;
@@ -90,10 +83,7 @@ type ReplicaMeta = {
 };
 
 /** Open one durable replica and bind it to the authority's database incarnation. */
-export async function createReplicaRuntime<
-	TTables extends TableDefinitions,
-	TKv extends KvDefinitions,
->({
+export async function createReplicaRuntime<TTables extends TableDefinitions>({
 	definition,
 	sqlite,
 	sync,
@@ -102,7 +92,7 @@ export async function createReplicaRuntime<
 	sha256,
 	onObserverError,
 	pullLimit = DEFAULT_PULL_LIMIT,
-}: CreateReplicaRuntimeOptions<TTables, TKv>) {
+}: CreateReplicaRuntimeOptions<TTables>) {
 	assertPositiveInteger(protocolMajor, 'protocolMajor');
 	if (!Number.isSafeInteger(pullLimit) || pullLimit < 1 || pullLimit > 1_000) {
 		throw new TypeError('pullLimit must be an integer from 1 through 1000');
@@ -493,10 +483,9 @@ export function startReplicaSyncSupervisor(
 	};
 }
 
-export type ReplicaRuntime<
-	TTables extends TableDefinitions,
-	TKv extends KvDefinitions,
-> = Awaited<ReturnType<typeof createReplicaRuntime<TTables, TKv>>>;
+export type ReplicaRuntime<TTables extends TableDefinitions> = Awaited<
+	ReturnType<typeof createReplicaRuntime<TTables>>
+>;
 
 function initializeReplicaTables(sqlite: RecordSyncSqlite): void {
 	sqlite.transaction(() => {

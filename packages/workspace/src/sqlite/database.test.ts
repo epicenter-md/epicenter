@@ -1,8 +1,10 @@
 /**
  * Typed SQLite Application Database Tests
  *
- * Verifies that workspace rows are stored as typed SQLite columns and that
- * table/KV writes share one post-commit invalidation boundary.
+ * Verifies that workspace rows are stored as typed SQLite columns behind one
+ * post-commit invalidation boundary. The record database is table-only:
+ * declared KV lives on the eager root document (ADR-0124) and never appears
+ * here.
  *
  * Key behaviors:
  * - CRUD uses typed columns, declared indexes, codecs, and terminal tombstones
@@ -57,6 +59,8 @@ function setup() {
 		},
 		{ indexes: [['pinned'], ['rating', 'title']] },
 	);
+	// Declared KV rides along on the definition but is invisible to the
+	// record database: it belongs to the root-document preference plane.
 	const definition = defineWorkspace({
 		id: 'sqlite-database-test',
 		name: 'SQLite database test',
@@ -66,10 +70,6 @@ function setup() {
 			theme: defineKv(
 				field.select(['light', 'dark']),
 				(): 'light' | 'dark' => 'light',
-			),
-			layout: defineKv(
-				field.json(Type.Object({ width: Type.Number() })),
-				() => ({ width: 320 }),
 			),
 		},
 	});
@@ -201,9 +201,6 @@ describe('typed rows at rest', () => {
 				metadata: { source: 'local', rank: 1 },
 			}),
 		).toThrow('schema validation');
-		expect(() =>
-			workspace.kv.set('layout', { width: Number.POSITIVE_INFINITY }),
-		).toThrow('schema validation');
 	});
 
 	test('put supports id-only tables and deleting an unknown id records terminal intent', () => {
@@ -234,24 +231,20 @@ describe('typed rows at rest', () => {
 });
 
 describe('transaction and invalidation', () => {
-	test('table and KV observers fire once after a successful outer commit', () => {
+	test('table observers fire once after a successful outer commit', () => {
 		const { database, workspace } = setup();
 		const tableEvents: string[][] = [];
-		const kvEvents: string[][] = [];
 		const commitEvents: {
 			tables: [string, string[]][];
-			kv: string[];
 		}[] = [];
 		let observerSawCommittedRows = false;
 		workspace.tables.notes.observe((ids) => {
 			tableEvents.push([...ids]);
 			observerSawCommittedRows = database.inTransaction === false;
 		});
-		workspace.kv.observe((keys) => kvEvents.push([...keys]));
 		workspace.observe((changes) => {
 			commitEvents.push({
 				tables: [...changes.tables].map(([table, ids]) => [table, [...ids]]),
-				kv: [...changes.kv],
 			});
 		});
 
@@ -272,16 +265,12 @@ describe('transaction and invalidation', () => {
 				tags: [],
 				metadata: { source: 'local', rank: 2 },
 			});
-			tx.kv.set('theme', 'dark');
-			tx.kv.set('layout', { width: 480 });
 		});
 
 		expect(tableEvents).toEqual([['one', 'two']]);
-		expect(kvEvents).toEqual([['theme', 'layout']]);
 		expect(commitEvents).toEqual([
 			{
 				tables: [['notes', ['one', 'two']]],
-				kv: ['theme', 'layout'],
 			},
 		]);
 		expect(observerSawCommittedRows).toBe(true);
@@ -312,18 +301,6 @@ describe('transaction and invalidation', () => {
 		expect(commitInvalidations).toBe(0);
 	});
 
-	test('KV clear restores a fresh declared default and invalidates only changes', () => {
-		const { workspace } = setup();
-		const events: string[][] = [];
-		workspace.kv.observe((keys) => events.push([...keys]));
-		workspace.kv.set('layout', { width: 640 });
-		expect(workspace.kv.get('layout')).toEqual({ width: 640 });
-		workspace.kv.clear('layout');
-		expect(workspace.kv.get('layout')).toEqual({ width: 320 });
-		workspace.kv.clear('layout');
-		expect(events).toEqual([['layout'], ['layout'], ['layout']]);
-	});
-
 	test('replica coordinator journals logical intent atomically before invalidation', () => {
 		const database = new Database(':memory:');
 		const sqlite = createSqlite(database);
@@ -333,12 +310,6 @@ describe('transaction and invalidation', () => {
 			name: 'Coordinator test',
 			epoch: 'coordinator-1',
 			tables: { notes },
-			kv: {
-				theme: defineKv(
-					field.select(['light', 'dark']),
-					() => 'light' as const,
-				),
-			},
 		});
 		let rejectCommit = true;
 		const coordinator: ApplicationMutationCoordinator = {
@@ -376,8 +347,6 @@ describe('transaction and invalidation', () => {
 
 		rejectCommit = false;
 		workspace.tables.notes.put({ id: 'committed', title: 'Yes' });
-		workspace.kv.set('theme', 'dark');
-		workspace.kv.clear('theme');
 		expect(observations).toEqual([['committed']]);
 		const operations = database
 			.query<{ operations: string }, []>('SELECT operations FROM journal')
@@ -390,22 +359,6 @@ describe('transaction and invalidation', () => {
 					table: 'notes',
 					rowId: 'committed',
 					cells: { title: 'Yes' },
-				},
-			],
-			[
-				{
-					kind: 'patchRow',
-					table: '__epicenter_kv',
-					rowId: 'theme',
-					cells: { value: 'dark' },
-				},
-			],
-			[
-				{
-					kind: 'patchRow',
-					table: '__epicenter_kv',
-					rowId: 'theme',
-					cells: { value: null },
 				},
 			],
 		]);
@@ -465,7 +418,7 @@ describe('transaction and invalidation', () => {
 		expect(observerErrors[0]).toBeInstanceOf(Error);
 	});
 
-	test('logical snapshots include live rows, stored KV, and terminal tombstones', () => {
+	test('logical snapshots include live rows and terminal tombstones', () => {
 		const { workspace } = setup();
 		workspace.tables.notes.put({
 			id: 'live',
@@ -476,16 +429,9 @@ describe('transaction and invalidation', () => {
 			metadata: { source: 'local', rank: 1 },
 		});
 		workspace.tables.notes.remove('gone');
-		workspace.kv.set('theme', 'dark');
 
 		expect(workspace.readLogicalSnapshot()).toEqual({
 			rows: [
-				{
-					table: '__epicenter_kv',
-					rowId: 'theme',
-					deleted: false,
-					cells: { value: 'dark' },
-				},
 				{
 					table: 'notes',
 					rowId: 'gone',

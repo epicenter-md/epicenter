@@ -16,7 +16,7 @@ import { field } from '@epicenter/field';
 import type { RecordSyncSqlite, SqliteRow } from '@epicenter/record-sync';
 import { createWorkspaceClient } from './client.js';
 import { createApplicationDatabase } from './database.js';
-import { defineKv, defineTable, defineWorkspace } from './definition.js';
+import { defineTable, defineWorkspace } from './definition.js';
 import { createWorkspaceService } from './service.js';
 
 function setup() {
@@ -49,9 +49,6 @@ function setup() {
 		name: 'Service test',
 		epoch: 'service-1',
 		tables: { notes },
-		kv: {
-			theme: defineKv(field.select(['light', 'dark']), () => 'light' as const),
-		},
 	});
 	const databaseObserverErrors: unknown[] = [];
 	const database = createApplicationDatabase(definition, sqlite, {
@@ -77,7 +74,7 @@ function setup() {
 }
 
 describe('workspace service', () => {
-	test('one client batch emits final rows, removals, and effective KV before resolving', async () => {
+	test('one client batch emits final rows and removals before resolving', async () => {
 		const setupResult = setup();
 		const { client, service } = setupResult;
 		const transactionsBefore = setupResult.transactionCount;
@@ -94,8 +91,6 @@ describe('workspace service', () => {
 				batch.tables.notes.patch('one', { title: 'Updated', pinned: true });
 				batch.tables.notes.put({ id: 'removed', title: 'Gone', pinned: false });
 				batch.tables.notes.remove('removed');
-				batch.kv.set('theme', 'dark');
-				batch.kv.clear('theme');
 			})
 			.then(() => timeline.push('resolved'));
 
@@ -109,7 +104,6 @@ describe('workspace service', () => {
 						removed: ['removed'],
 					},
 				},
-				kv: { theme: 'light' },
 			},
 		]);
 	});
@@ -132,7 +126,6 @@ describe('workspace service', () => {
 		).toEqual([{ id: 'two', title: 'Two', pinned: true }]);
 		expect(await client.tables.notes.has('one')).toBe(true);
 		expect(await client.tables.notes.count()).toBe(2);
-		expect(await client.kv.get('theme')).toBe('light');
 		expect(
 			await client.tables.notes.patch('one', { title: 'Patched' }),
 		).toEqual({ id: 'one', title: 'Patched', pinned: false });
@@ -246,7 +239,7 @@ describe('workspace service', () => {
 			'external',
 		]);
 
-		await service.refresh({ tables: { notes: ['external'] }, kv: [] });
+		await service.refresh({ tables: { notes: ['external'] } });
 
 		expect(changes).toEqual([
 			{
@@ -257,7 +250,6 @@ describe('workspace service', () => {
 							removed: [],
 						},
 					},
-					kv: {},
 				},
 				source: 'refresh',
 			},

@@ -2,7 +2,6 @@ import type { WorkspaceInvalidation } from './service-protocol.js';
 
 type InvalidationRefreshQueueOptions = {
 	tables: ReadonlySet<string>;
-	kv: ReadonlySet<string>;
 	refresh(invalidation: WorkspaceInvalidation): Promise<void>;
 	onError(error: unknown): void;
 	retryDelaysMs?: readonly number[];
@@ -11,13 +10,11 @@ type InvalidationRefreshQueueOptions = {
 /** Coalesce cross-owner invalidations and retain them until a refresh succeeds. */
 export function createInvalidationRefreshQueue({
 	tables,
-	kv,
 	refresh,
 	onError,
 	retryDelaysMs = [25, 50, 100, 250],
 }: InvalidationRefreshQueueOptions) {
 	const pendingTables = new Map<string, Set<string>>();
-	const pendingKv = new Set<string>();
 	let version = 0;
 	let drainPromise: Promise<void> | undefined;
 	let isDisposed = false;
@@ -32,7 +29,7 @@ export function createInvalidationRefreshQueue({
 	}
 
 	function hasPending(): boolean {
-		return pendingTables.size > 0 || pendingKv.size > 0;
+		return pendingTables.size > 0;
 	}
 
 	function snapshot(): WorkspaceInvalidation {
@@ -40,7 +37,6 @@ export function createInvalidationRefreshQueue({
 			tables: Object.fromEntries(
 				[...pendingTables].map(([table, ids]) => [table, [...ids]]),
 			),
-			kv: [...pendingKv],
 		};
 	}
 
@@ -68,7 +64,6 @@ export function createInvalidationRefreshQueue({
 				failureCount = 0;
 				if (version === targetVersion) {
 					pendingTables.clear();
-					pendingKv.clear();
 				}
 			} catch (error) {
 				report(error);
@@ -106,13 +101,6 @@ export function createInvalidationRefreshQueue({
 				}
 				for (const id of ids) pendingIds.add(id);
 			}
-			for (const key of invalidation.kv) {
-				if (!kv.has(key)) {
-					report(new Error(`Invalidation names unknown KV key '${key}'`));
-					continue;
-				}
-				pendingKv.add(key);
-			}
 			if (!hasPending()) return;
 			version++;
 			startDrain();
@@ -123,7 +111,6 @@ export function createInvalidationRefreshQueue({
 			cancelDelay?.();
 			await drainPromise;
 			pendingTables.clear();
-			pendingKv.clear();
 		},
 	};
 }

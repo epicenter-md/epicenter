@@ -11,11 +11,7 @@ import {
 } from './browser-transport.js';
 import type { WorkspaceCommitDelta } from './client.js';
 import { createApplicationDatabase } from './database.js';
-import type {
-	KvDefinitions,
-	TableDefinitions,
-	WorkspaceDefinition,
-} from './definition.js';
+import type { TableDefinitions, WorkspaceDefinition } from './definition.js';
 import { createInvalidationRefreshQueue } from './invalidation-queue.js';
 import {
 	createReplicaRuntime,
@@ -67,15 +63,11 @@ function invalidationFor(delta: WorkspaceCommitDelta): WorkspaceInvalidation {
 				[...change.upserted.map((row) => row.id), ...change.removed],
 			]),
 		),
-		kv: Object.keys(delta.kv),
 	};
 }
 
-async function openOpfsWorkspaceService<
-	TTables extends TableDefinitions,
-	TKv extends KvDefinitions,
->(
-	definition: WorkspaceDefinition<TTables, TKv>,
+async function openOpfsWorkspaceService<TTables extends TableDefinitions>(
+	definition: WorkspaceDefinition<TTables>,
 	options: ServeWorkspaceWorkerOptions,
 ): Promise<WorkerWorkspaceService> {
 	const { storage, onError, workspaceKind } = options;
@@ -192,7 +184,6 @@ async function openOpfsWorkspaceService<
 		}
 		refreshQueue = createInvalidationRefreshQueue({
 			tables: new Set(Object.keys(definition.tables)),
-			kv: new Set(Object.keys(definition.kv)),
 			refresh: openedService.refresh,
 			onError: (error) => report(onError, error),
 		});
@@ -244,9 +235,8 @@ async function openOpfsWorkspaceService<
 /** Start the worker-side OPFS owner for one app-imported workspace definition. */
 export function serveStandaloneWorkspaceWorker<
 	TTables extends TableDefinitions,
-	TKv extends KvDefinitions,
 >(
-	definition: WorkspaceDefinition<TTables, TKv>,
+	definition: WorkspaceDefinition<TTables>,
 	options: ServeStandaloneWorkspaceWorkerOptions,
 	scope: WorkspaceWorkerScope = self as unknown as WorkspaceWorkerScope,
 ): void {
@@ -260,11 +250,8 @@ export function serveStandaloneWorkspaceWorker<
 }
 
 /** Start the worker-side OPFS owner for one synchronized workspace replica. */
-export function serveWorkspaceReplicaWorker<
-	TTables extends TableDefinitions,
-	TKv extends KvDefinitions,
->(
-	definition: WorkspaceDefinition<TTables, TKv>,
+export function serveWorkspaceReplicaWorker<TTables extends TableDefinitions>(
+	definition: WorkspaceDefinition<TTables>,
 	options: ServeWorkspaceReplicaWorkerOptions,
 	scope: WorkspaceWorkerScope = self as unknown as WorkspaceWorkerScope,
 ): void {

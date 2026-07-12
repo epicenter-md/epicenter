@@ -19,16 +19,11 @@ import type {
 	ApplicationTable,
 	CommittedApplicationChanges,
 } from './database.js';
-import type { KvDefinitions, TableDefinitions } from './definition.js';
+import type { TableDefinitions } from './definition.js';
 import type { WorkspaceInvalidation } from './service-protocol.js';
 
 type UntypedRow = { id: string } & Record<string, unknown>;
 type UntypedTable = ApplicationTable<UntypedRow>;
-type UntypedKv = {
-	get(key: string): unknown;
-	set(key: string, value: unknown): void;
-	clear(key: string): void;
-};
 
 export type WorkspaceServiceOptions = {
 	/** Receives observer failures. Must not throw. */
@@ -46,11 +41,8 @@ type WorkspaceServiceRuntime = WorkspaceServicePort &
 		): () => void;
 	};
 
-export function createWorkspaceService<
-	TTables extends TableDefinitions,
-	TKv extends KvDefinitions,
->(
-	database: ApplicationDatabase<TTables, TKv>,
+export function createWorkspaceService<TTables extends TableDefinitions>(
+	database: ApplicationDatabase<TTables>,
 	{ onObserverError }: WorkspaceServiceOptions,
 ) {
 	const definition = database.definition;
@@ -59,7 +51,6 @@ export function createWorkspaceService<
 		(delta: WorkspaceCommitDelta, source: 'commit' | 'refresh') => void
 	>();
 	const tables = database.tables as unknown as Record<string, UntypedTable>;
-	const kv = database.kv as unknown as UntypedKv;
 	let requestTail: Promise<void> = Promise.resolve();
 	let isDisposed = false;
 
@@ -73,11 +64,6 @@ export function createWorkspaceService<
 			throw new Error(`Unknown workspace table '${name}'`);
 		}
 		return table;
-	}
-
-	function assertKvKey(key: string): void {
-		if (!Object.hasOwn(definition.kv, key))
-			throw new Error(`Unknown workspace KV key '${key}'`);
 	}
 
 	function notify(
@@ -109,14 +95,13 @@ export function createWorkspaceService<
 	}
 
 	const stopDatabaseObserver = database.observe((changes) => {
-		notify(materializeDelta(changes, tables, kv), 'commit');
+		notify(materializeDelta(changes, tables), 'commit');
 	});
 
 	function applyMutation(
 		mutation: WorkspaceMutation,
 		tx: {
 			tables: Record<string, UntypedTable>;
-			kv: UntypedKv;
 		},
 	): unknown {
 		function transactionTable(name: string): UntypedTable {
@@ -137,14 +122,6 @@ export function createWorkspaceService<
 				);
 			case 'remove':
 				transactionTable(mutation.table).remove(mutation.rowId);
-				return null;
-			case 'setKv':
-				assertKvKey(mutation.key);
-				tx.kv.set(mutation.key, mutation.value);
-				return null;
-			case 'clearKv':
-				assertKvKey(mutation.key);
-				tx.kv.clear(mutation.key);
 				return null;
 			default:
 				mutation satisfies never;
@@ -180,9 +157,6 @@ export function createWorkspaceService<
 				};
 			case 'count':
 				return { kind: 'count', value: tableFor(request.table).count() };
-			case 'getKv':
-				assertKvKey(request.key);
-				return { kind: 'value', value: kv.get(request.key) };
 			case 'mutate':
 				return {
 					kind: 'mutation',
@@ -190,7 +164,6 @@ export function createWorkspaceService<
 						request.mutations.map((mutation) =>
 							applyMutation(mutation, {
 								tables: tx.tables as unknown as Record<string, UntypedTable>,
-								kv: tx.kv as unknown as UntypedKv,
 							}),
 						),
 					),
@@ -240,9 +213,8 @@ export function createWorkspaceService<
 						new Set(ids),
 					]),
 				),
-				kv: new Set(captured.kv),
 			};
-			notify(materializeDelta(changes, tables, kv), 'refresh');
+			notify(materializeDelta(changes, tables), 'refresh');
 		});
 	}
 
@@ -278,15 +250,13 @@ export function createWorkspaceService<
 	} satisfies WorkspaceServiceRuntime;
 }
 
-export type WorkspaceService<
-	TTables extends TableDefinitions,
-	TKv extends KvDefinitions,
-> = ReturnType<typeof createWorkspaceService<TTables, TKv>>;
+export type WorkspaceService<TTables extends TableDefinitions> = ReturnType<
+	typeof createWorkspaceService<TTables>
+>;
 
 function materializeDelta(
 	changes: CommittedApplicationChanges,
 	tables: Record<string, UntypedTable>,
-	kv: UntypedKv,
 ): WorkspaceCommitDelta {
 	const tableDeltas: Record<string, TableCommitDelta> = {};
 	for (const [tableName, changedIds] of changes.tables) {
@@ -303,7 +273,5 @@ function materializeDelta(
 		tableDeltas[tableName] = { upserted, removed };
 	}
 
-	const kvDelta: Record<string, unknown> = {};
-	for (const key of changes.kv) kvDelta[key] = kv.get(key);
-	return { tables: tableDeltas, kv: kvDelta };
+	return { tables: tableDeltas };
 }

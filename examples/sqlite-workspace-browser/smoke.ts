@@ -119,6 +119,18 @@ try {
 		`Second connection did not see sequential write: ${JSON.stringify(firstVisibleFromSecond)}`,
 	);
 
+	// The preference plane is synchronous and main-thread local: an absent key
+	// reads as the declared default, and a write reads back immediately.
+	const themeRoundTrip = await first.evaluate(() => {
+		const before = window.workspaceSmoke.theme();
+		window.workspaceSmoke.setTheme('dark');
+		return { before, after: window.workspaceSmoke.theme() };
+	});
+	assert(
+		themeRoundTrip.before === 'light' && themeRoundTrip.after === 'dark',
+		`KV preference plane did not round-trip: ${JSON.stringify(themeRoundTrip)}`,
+	);
+
 	const leftIds = Array.from(
 		{ length: 4 },
 		(_, index) => `left-${index}-${runId}`,

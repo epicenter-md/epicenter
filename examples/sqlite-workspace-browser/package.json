@@ -13,7 +13,8 @@
 		"@epicenter/identity": "workspace:*",
 		"@epicenter/server": "workspace:*",
 		"@epicenter/workspace": "workspace:*",
-		"hono": "catalog:"
+		"hono": "catalog:",
+		"yjs": "catalog:"
 	},
 	"devDependencies": {
 		"@types/node": "catalog:",

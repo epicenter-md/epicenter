@@ -15,7 +15,6 @@ test('invalidation refresh retries, coalesces, and retains work added in flight'
 	let calls = 0;
 	const queue = createInvalidationRefreshQueue({
 		tables: new Set(['notes']),
-		kv: new Set(['theme']),
 		retryDelaysMs: [0],
 		onError: (error) => errors.push(error),
 		async refresh(invalidation) {
@@ -29,15 +28,15 @@ test('invalidation refresh retries, coalesces, and retains work added in flight'
 		},
 	});
 
-	queue.enqueue({ tables: { notes: ['one'] }, kv: [] });
-	queue.enqueue({ tables: { notes: ['two'] }, kv: ['theme'] });
+	queue.enqueue({ tables: { notes: ['one'] } });
+	queue.enqueue({ tables: { notes: ['two'] } });
 	releaseFirst();
 	await recovered;
 	await queue.dispose();
 
 	expect(attempts).toEqual([
-		{ tables: { notes: ['one'] }, kv: [] },
-		{ tables: { notes: ['one', 'two'] }, kv: ['theme'] },
+		{ tables: { notes: ['one'] } },
+		{ tables: { notes: ['one', 'two'] } },
 	]);
 	expect(errors).toHaveLength(1);
 });
@@ -47,16 +46,15 @@ test('invalidation refresh refuses unknown definition names', async () => {
 	let refreshes = 0;
 	const queue = createInvalidationRefreshQueue({
 		tables: new Set(['notes']),
-		kv: new Set(['theme']),
 		onError: (error) => errors.push(error),
 		async refresh() {
 			refreshes++;
 		},
 	});
 
-	queue.enqueue({ tables: { missing: ['one'] }, kv: ['missing'] });
+	queue.enqueue({ tables: { missing: ['one'] } });
 	await queue.dispose();
 
 	expect(refreshes).toBe(0);
-	expect(errors).toHaveLength(2);
+	expect(errors).toHaveLength(1);
 });

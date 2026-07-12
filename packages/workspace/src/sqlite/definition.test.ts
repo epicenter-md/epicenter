@@ -3,8 +3,10 @@
  *
  * Verifies the greenfield persisted-schema boundary before any database opens.
  * The boundary accepts only the closed field vocabulary, compiles value checks,
- * validates table options and references, rejects nullable KV, and derives the
- * workspace storage revision from its ordered migration manifest.
+ * validates table options and references, and derives the workspace storage
+ * revision from its ordered migration manifest. Declared KV rides along as the
+ * preference plane of the eager root document (ADR-0124): it is validated as a
+ * plain record but contributes nothing to record schema identity.
  */
 
 import { describe, expect, test } from 'bun:test';
@@ -110,27 +112,23 @@ describe('defineTable', () => {
 });
 
 describe('defineKv', () => {
-	test('compiles a field and validates its default', () => {
+	test('carries the schema and a factory default', () => {
 		const collapsed = defineKv(field.boolean(), () => false);
-		expect(collapsed.compiledValue.kind).toBe('boolean');
-		expect(collapsed.compiledValue.check(true)).toBe(true);
+		expect(collapsed.schema).toEqual(field.boolean());
 		expect(collapsed.defaultValue()).toBe(false);
-		expect(() => defineKv(field.integer(), () => 1.5)).toThrow(
-			'KV default does not satisfy its field schema',
-		);
 	});
 
-	test('rejects null admitted directly or through field.json', () => {
-		const disguisedNullable = nullable(field.string()) as unknown as TString;
-		const disguisedNullableJson = field.json(
-			Type.Union([Type.String(), Type.Null()]),
-		) as unknown as TString;
-		expect(() => defineKv(disguisedNullable, () => 'not-null')).toThrow(
-			'null is reserved for clear',
-		);
-		expect(() => defineKv(disguisedNullableJson, () => 'ok')).toThrow(
-			'null is reserved for clear',
-		);
+	test('accepts nullable KV: null is a real stored preference off the record wire', () => {
+		const lastFolder = defineKv(nullable(field.string()), () => null);
+		expect(lastFolder.defaultValue()).toBeNull();
+		const workspace = defineWorkspace({
+			id: 'nullable-kv',
+			name: 'Nullable KV',
+			epoch: 'nullable-kv-v1',
+			tables: { rows: defineTable({ id: field.string() }) },
+			kv: { lastFolder },
+		});
+		expect(workspace.kv.lastFolder).toBe(lastFolder);
 	});
 });
 
@@ -217,19 +215,17 @@ describe('defineWorkspace', () => {
 		expect(reordered.schemaIdentity).toBe(first.schemaIdentity);
 	});
 
-	test('schema identity changes with logical schema, docs, KV, epoch lineage, or workspace id', () => {
+	test('schema identity changes with logical schema, docs, epoch lineage, or workspace id', () => {
 		type IdentityOptions = {
 			workspaceId?: string;
 			title?: ReturnType<typeof field.string>;
 			doc?: 'plainText' | 'richText';
-			kv?: ReturnType<typeof field.boolean>;
 			epochId?: string;
 		};
 		function identity({
 			workspaceId = 'notes',
 			title = field.string(),
 			doc = 'plainText' as const,
-			kv = field.boolean(),
 			epochId,
 		}: IdentityOptions = {}) {
 			return defineWorkspace({
@@ -242,7 +238,6 @@ describe('defineWorkspace', () => {
 						{ docs: { body: doc } },
 					),
 				},
-				kv: { enabled: defineKv(kv, () => false) },
 				migrations: epochId === undefined ? [] : [{ epoch: { id: epochId } }],
 			}).schemaIdentity;
 		}
@@ -252,11 +247,32 @@ describe('defineWorkspace', () => {
 			baseline,
 		);
 		expect(identity({ doc: 'richText' })).not.toBe(baseline);
-		expect(
-			identity({ kv: field.boolean({ description: 'changed' }) }),
-		).not.toBe(baseline);
 		expect(identity({ epochId: 'notes-v2' })).not.toBe(baseline);
 		expect(identity({ workspaceId: 'other' })).not.toBe(baseline);
+	});
+
+	test('KV is not record schema identity: definitions differing only in kv share one identity', () => {
+		function withKv(kv: Record<string, ReturnType<typeof defineKv>>) {
+			return defineWorkspace({
+				id: 'notes',
+				name: 'Notes',
+				epoch: 'notes-v1',
+				tables: {
+					notes: defineTable({ id: field.string(), title: field.string() }),
+				},
+				kv,
+			}).schemaIdentity;
+		}
+
+		const withoutKv = withKv({});
+		const withTheme = withKv({
+			theme: defineKv(field.select(['light', 'dark']), () => 'light' as const),
+		});
+		const withChangedTheme = withKv({
+			theme: defineKv(field.boolean(), () => false),
+		});
+		expect(withTheme).toBe(withoutKv);
+		expect(withChangedTheme).toBe(withoutKv);
 	});
 
 	test('child document identity rejects unsafe workspace and table segments', () => {

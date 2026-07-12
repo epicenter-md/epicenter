@@ -9,7 +9,6 @@
 
 import type {
 	Cells,
-	JsonValue,
 	LogicalRow,
 	Operation,
 	RecordSyncSqlite,
@@ -18,11 +17,9 @@ import type {
 	SqliteValue,
 } from '@epicenter/record-sync';
 import { foldRow } from '@epicenter/record-sync';
-import type { Static, TSchema } from 'typebox';
+import type { TSchema } from 'typebox';
 import type {
 	CompiledColumn,
-	KvDefinition,
-	KvDefinitions,
 	RowFor,
 	TableDefinition,
 	TableDefinitions,
@@ -96,34 +93,16 @@ export type ApplicationTables<TTables extends TableDefinitions> = {
 	[K in keyof TTables]: ApplicationTable<RowFor<TTables[K]>>;
 };
 
-export type ApplicationKv<TKv extends KvDefinitions> = {
-	get<TKey extends keyof TKv & string>(key: TKey): Static<TKv[TKey]['schema']>;
-	set<TKey extends keyof TKv & string>(
-		key: TKey,
-		value: Static<TKv[TKey]['schema']>,
-	): void;
-	clear(key: keyof TKv & string): void;
-	observe(
-		callback: (changedKeys: ReadonlySet<keyof TKv & string>) => void,
-	): () => void;
-};
-
-export type ApplicationTransaction<
-	TTables extends TableDefinitions,
-	TKv extends KvDefinitions,
-> = {
+export type ApplicationTransaction<TTables extends TableDefinitions> = {
 	tables: ApplicationTables<TTables>;
-	kv: ApplicationKv<TKv>;
 };
 
 export type CommittedApplicationChanges = {
 	tables: ReadonlyMap<string, ReadonlySet<string>>;
-	kv: ReadonlySet<string>;
 };
 
 type Changes = {
 	tables: Map<string, Set<string>>;
-	kv: Set<string>;
 };
 
 type ColumnCodec = {
@@ -133,18 +112,14 @@ type ColumnCodec = {
 	decode(value: SqliteValue): unknown;
 };
 
-const KV_TABLE = '__epicenter_kv';
 const TOMBSTONE_TABLE = '__epicenter_tombstones';
 const QUARANTINE_TABLE = '__epicenter_quarantine';
 const META_TABLE = '__epicenter_meta';
 const INTERNAL_PREFIX = '__epicenter_';
 
 /** Open typed application tables over an already-open SQLite database. */
-export function createApplicationDatabase<
-	TTables extends TableDefinitions,
-	TKv extends KvDefinitions,
->(
-	definition: WorkspaceDefinition<TTables, TKv>,
+export function createApplicationDatabase<TTables extends TableDefinitions>(
+	definition: WorkspaceDefinition<TTables>,
 	sqlite: RecordSyncSqlite,
 	{
 		kind,
@@ -162,9 +137,6 @@ export function createApplicationDatabase<
 	const tableObservers = new Map<
 		string,
 		Set<(changedIds: ReadonlySet<string>) => void>
-	>();
-	const kvObservers = new Set<
-		(changedKeys: ReadonlySet<keyof TKv & string>) => void
 	>();
 	const commitObservers = new Set<
 		(changes: CommittedApplicationChanges) => void
@@ -187,12 +159,11 @@ export function createApplicationDatabase<
 				}
 			}
 		}
-		if (changes.tables.size > 0 || changes.kv.size > 0) {
+		if (changes.tables.size > 0) {
 			const committed: CommittedApplicationChanges = {
 				tables: new Map(
 					[...changes.tables].map(([table, ids]) => [table, new Set(ids)]),
 				),
-				kv: new Set(changes.kv),
 			};
 			for (const observer of [...commitObservers]) {
 				notify(() => observer(committed));
@@ -204,18 +175,12 @@ export function createApplicationDatabase<
 				notify(() => observer(changedIds));
 			}
 		}
-		if (changes.kv.size > 0) {
-			const changedKeys = changes.kv as ReadonlySet<keyof TKv & string>;
-			for (const observer of [...kvObservers]) {
-				notify(() => observer(changedKeys));
-			}
-		}
 	}
 
 	function mutate<TResult>(run: (changes: Changes) => TResult): TResult {
 		if (activeChanges) return run(activeChanges);
 
-		const changes: Changes = { tables: new Map(), kv: new Set() };
+		const changes: Changes = { tables: new Map() };
 		const operations: Operation[] = [];
 		const result = coordinator.commit({ operations }, () => {
 			activeChanges = changes;
@@ -263,17 +228,6 @@ export function createApplicationDatabase<
 		]),
 	) as ApplicationTables<TTables>;
 
-	const kv = createApplicationKv({
-		sqlite,
-		definitions: definition.kv,
-		mutate,
-		record,
-		observe(callback) {
-			kvObservers.add(callback);
-			return () => kvObservers.delete(callback);
-		},
-	});
-
 	return {
 		definition,
 		identity: {
@@ -283,17 +237,16 @@ export function createApplicationDatabase<
 		},
 		kind,
 		tables,
-		kv,
-		/** Group every enclosed table and KV write into one SQLite transaction. */
+		/** Group every enclosed table write into one SQLite transaction. */
 		transact<TResult>(
-			run: (tx: ApplicationTransaction<TTables, TKv>) => TResult,
+			run: (tx: ApplicationTransaction<TTables>) => TResult,
 		): TResult {
 			if (activeChanges) {
 				throw new Error('Nested application transactions are not supported');
 			}
-			return mutate(() => run({ tables, kv }));
+			return mutate(() => run({ tables }));
 		},
-		/** Observe one combined table/KV change set after each successful commit. */
+		/** Observe one combined table change set after each successful commit. */
 		observe(callback: (changes: CommittedApplicationChanges) => void) {
 			commitObservers.add(callback);
 			return () => commitObservers.delete(callback);
@@ -315,7 +268,7 @@ export function createApplicationDatabase<
 					'Replica projection cannot run inside an application transaction',
 				);
 			}
-			const changes: Changes = { tables: new Map(), kv: new Set() };
+			const changes: Changes = { tables: new Map() };
 			const result = sqlite.transaction(() =>
 				run({
 					apply(operations, firstSeenServerSequence) {
@@ -346,10 +299,9 @@ export function createApplicationDatabase<
 	};
 }
 
-export type ApplicationDatabase<
-	TTables extends TableDefinitions,
-	TKv extends KvDefinitions,
-> = ReturnType<typeof createApplicationDatabase<TTables, TKv>>;
+export type ApplicationDatabase<TTables extends TableDefinitions> = ReturnType<
+	typeof createApplicationDatabase<TTables>
+>;
 
 function createApplicationTable<TDefinition extends TableDefinition>({
 	sqlite,
@@ -561,98 +513,6 @@ function createApplicationTable<TDefinition extends TableDefinition>({
 	};
 }
 
-function createApplicationKv<TKv extends KvDefinitions>({
-	sqlite,
-	definitions,
-	mutate,
-	record,
-	observe,
-}: {
-	sqlite: RecordSyncSqlite;
-	definitions: TKv;
-	mutate: <TResult>(run: (changes: Changes) => TResult) => TResult;
-	record: (operation: Operation) => void;
-	observe: (
-		callback: (changedKeys: ReadonlySet<keyof TKv & string>) => void,
-	) => () => void;
-}): ApplicationKv<TKv> {
-	function definitionFor<TKey extends keyof TKv & string>(
-		key: TKey,
-	): TKv[TKey] {
-		const definition = definitions[key];
-		if (!definition) throw new Error(`Unknown KV key '${key}'`);
-		return definition;
-	}
-
-	return {
-		get(key) {
-			const definition = definitionFor(key);
-			const stored = sqlite.all<{ value: string }>(
-				`SELECT "value" FROM ${quoteIdentifier(KV_TABLE)} WHERE "key" = ?`,
-				[key],
-			)[0];
-			if (!stored) return checkedDefault(key, definition);
-			let value: unknown;
-			try {
-				value = JSON.parse(stored.value);
-			} catch (cause) {
-				throw new Error(`Stored KV value '${key}' is not valid JSON`, {
-					cause,
-				});
-			}
-			assertColumn(definition.compiledValue, value, `KV value '${key}'`);
-			return value as Static<TKv[typeof key]['schema']>;
-		},
-		set(key, value) {
-			const definition = definitionFor(key);
-			assertColumn(definition.compiledValue, value, `KV value '${key}'`);
-			mutate((changes) => {
-				if (hasTombstone(sqlite, KV_TABLE, key)) {
-					throw new Error(`Cannot set terminally deleted KV key '${key}'`);
-				}
-				if (hasQuarantinedRow(sqlite, KV_TABLE, key)) {
-					throw new Error(
-						`Cannot set quarantined KV key '${key}' through the typed API`,
-					);
-				}
-				sqlite.run(
-					`INSERT INTO ${quoteIdentifier(KV_TABLE)} ("key", "value") VALUES (?, ?) ON CONFLICT("key") DO UPDATE SET "value" = excluded."value"`,
-					[key, JSON.stringify(value)],
-				);
-				changes.kv.add(key);
-				record({
-					kind: 'patchRow',
-					table: KV_TABLE,
-					rowId: key,
-					cells: { value: value as JsonValue },
-				});
-			});
-		},
-		clear(key) {
-			definitionFor(key);
-			mutate((changes) => {
-				if (hasTombstone(sqlite, KV_TABLE, key)) return;
-				if (hasQuarantinedRow(sqlite, KV_TABLE, key)) {
-					throw new Error(
-						`Cannot clear quarantined KV key '${key}' through the typed API`,
-					);
-				}
-				sqlite.run(`DELETE FROM ${quoteIdentifier(KV_TABLE)} WHERE "key" = ?`, [
-					key,
-				]);
-				changes.kv.add(key);
-				record({
-					kind: 'patchRow',
-					table: KV_TABLE,
-					rowId: key,
-					cells: { value: null },
-				});
-			});
-		},
-		observe,
-	};
-}
-
 function initializeDatabase(
 	sqlite: RecordSyncSqlite,
 	definition: WorkspaceDefinition,
@@ -662,9 +522,6 @@ function initializeDatabase(
 		const storedRevision = inspectDatabaseIdentity(sqlite, definition, kind);
 		sqlite.run(
 			`CREATE TABLE IF NOT EXISTS ${quoteIdentifier(META_TABLE)} ("key" TEXT PRIMARY KEY, "value" TEXT NOT NULL)`,
-		);
-		sqlite.run(
-			`CREATE TABLE IF NOT EXISTS ${quoteIdentifier(KV_TABLE)} ("key" TEXT PRIMARY KEY, "value" TEXT NOT NULL)`,
 		);
 		sqlite.run(
 			`CREATE TABLE IF NOT EXISTS ${quoteIdentifier(TOMBSTONE_TABLE)} ("table_name" TEXT NOT NULL, "row_id" TEXT NOT NULL, PRIMARY KEY ("table_name", "row_id"))`,
@@ -825,12 +682,9 @@ function inspectDatabaseIdentity(
 	return storedRevision;
 }
 
-function readLogicalSnapshot<
-	TTables extends TableDefinitions,
-	TKv extends KvDefinitions,
->(
+function readLogicalSnapshot<TTables extends TableDefinitions>(
 	sqlite: RecordSyncSqlite,
-	definition: WorkspaceDefinition<TTables, TKv>,
+	definition: WorkspaceDefinition<TTables>,
 	tables: ApplicationTables<TTables>,
 ): ApplicationLogicalSnapshot {
 	type SnapshotTable = {
@@ -885,25 +739,6 @@ function readLogicalSnapshot<
 				deleted: true as const,
 				cells: {},
 			})),
-	);
-	rows.push(
-		...sqlite
-			.all<{ key: string; value: string }>(
-				`SELECT "key", "value" FROM ${quoteIdentifier(KV_TABLE)} ORDER BY "key"`,
-			)
-			.map(({ key, value }) => {
-				const kvDefinition = definition.kv[key];
-				if (!kvDefinition)
-					throw new Error(`Snapshot contains unknown KV key '${key}'`);
-				const decoded: unknown = JSON.parse(value);
-				assertColumn(kvDefinition.compiledValue, decoded, `KV value '${key}'`);
-				return {
-					table: KV_TABLE,
-					rowId: key,
-					deleted: false as const,
-					cells: { value: decoded as JsonValue },
-				};
-			}),
 	);
 	rows.sort(
 		(left, right) =>
@@ -972,7 +807,6 @@ function replaceLogicalRows({
 	for (const table of Object.keys(definition.tables)) {
 		sqlite.run(`DELETE FROM ${quoteIdentifier(table)}`);
 	}
-	sqlite.run(`DELETE FROM ${quoteIdentifier(KV_TABLE)}`);
 	sqlite.run(`DELETE FROM ${quoteIdentifier(TOMBSTONE_TABLE)}`);
 	sqlite.run(`DELETE FROM ${quoteIdentifier(QUARANTINE_TABLE)}`);
 
@@ -1007,18 +841,6 @@ function readProjectionRow(
 			kind: 'live',
 			cells: JSON.parse(quarantined.cellsJson) as Cells,
 		};
-	}
-	if (table === KV_TABLE) {
-		const stored = sqlite.all<{ value: string }>(
-			`SELECT "value" FROM ${quoteIdentifier(KV_TABLE)} WHERE "key" = ?`,
-			[rowId],
-		)[0];
-		return stored
-			? {
-					kind: 'live',
-					cells: { value: JSON.parse(stored.value) as JsonValue },
-				}
-			: undefined;
 	}
 	const tableDefinition = definition.tables[table];
 	if (!tableDefinition) return undefined;
@@ -1062,41 +884,23 @@ function materializeProjectionRow({
 		return;
 	}
 
-	if (table === KV_TABLE) {
-		const kv = definition.kv[rowId];
-		const cellNames = Object.keys(row.cells);
-		if (kv && cellNames.length === 0) return;
-		if (
-			kv &&
-			cellNames.length === 1 &&
-			cellNames[0] === 'value' &&
-			kv.compiledValue.check(row.cells.value)
-		) {
-			sqlite.run(
-				`INSERT INTO ${quoteIdentifier(KV_TABLE)} ("key", "value") VALUES (?, ?)`,
-				[rowId, JSON.stringify(row.cells.value)],
-			);
-			return;
+	const tableDefinition = definition.tables[table];
+	if (tableDefinition) {
+		const candidate: Record<string, unknown> = { id: rowId, ...row.cells };
+		for (const [column, compiled] of Object.entries(
+			tableDefinition.compiledColumns,
+		)) {
+			if (
+				column !== 'id' &&
+				compiled.isNullable &&
+				!Object.hasOwn(candidate, column)
+			) {
+				candidate[column] = null;
+			}
 		}
-	} else {
-		const tableDefinition = definition.tables[table];
-		if (tableDefinition) {
-			const candidate: Record<string, unknown> = { id: rowId, ...row.cells };
-			for (const [column, compiled] of Object.entries(
-				tableDefinition.compiledColumns,
-			)) {
-				if (
-					column !== 'id' &&
-					compiled.isNullable &&
-					!Object.hasOwn(candidate, column)
-				) {
-					candidate[column] = null;
-				}
-			}
-			if (rowConforms(tableDefinition, candidate)) {
-				writeTypedProjectionRow(sqlite, table, tableDefinition, candidate);
-				return;
-			}
+		if (rowConforms(tableDefinition, candidate)) {
+			writeTypedProjectionRow(sqlite, table, tableDefinition, candidate);
+			return;
 		}
 	}
 
@@ -1118,11 +922,7 @@ function deleteProjectionRow(
 	table: string,
 	rowId: string,
 ): void {
-	if (table === KV_TABLE) {
-		sqlite.run(`DELETE FROM ${quoteIdentifier(KV_TABLE)} WHERE "key" = ?`, [
-			rowId,
-		]);
-	} else if (definition.tables[table]) {
+	if (definition.tables[table]) {
 		sqlite.run(`DELETE FROM ${quoteIdentifier(table)} WHERE "id" = ?`, [rowId]);
 	}
 	sqlite.run(
@@ -1180,10 +980,6 @@ function markProjectionChange(
 	table: string,
 	rowId: string,
 ): void {
-	if (table === KV_TABLE && definition.kv[rowId]) {
-		changes.kv.add(rowId);
-		return;
-	}
 	if (!definition.tables[table]) return;
 	let ids = changes.tables.get(table);
 	if (!ids) {
@@ -1204,11 +1000,6 @@ function markEveryProjectionRow(
 		)) {
 			markProjectionChange(changes, definition, table, id);
 		}
-	}
-	for (const { key } of sqlite.all<{ key: string }>(
-		`SELECT "key" FROM ${quoteIdentifier(KV_TABLE)}`,
-	)) {
-		markProjectionChange(changes, definition, KV_TABLE, key);
 	}
 	for (const { table, rowId } of sqlite.all<{
 		table: string;
@@ -1330,15 +1121,6 @@ function assertRow<TDefinition extends TableDefinition>(
 	for (const column of Object.values(definition.compiledColumns)) {
 		assertColumn(column, row[column.name], `Row column '${column.name}'`);
 	}
-}
-
-function checkedDefault<TDefinition extends KvDefinition>(
-	key: string,
-	definition: TDefinition,
-): Static<TDefinition['schema']> {
-	const value = definition.defaultValue();
-	assertColumn(definition.compiledValue, value, `Default for KV key '${key}'`);
-	return value as Static<TDefinition['schema']>;
 }
 
 function assertColumn(

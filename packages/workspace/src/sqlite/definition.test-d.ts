@@ -55,8 +55,12 @@ defineTable(
 	},
 );
 
-// @ts-expect-error — null is reserved for KV clear, not a stored KV value
-defineKv(nullable(field.string()), () => null);
+// Nullable KV is allowed: the preference plane never rides the record wire,
+// so null is an ordinary stored preference (ADR-0124).
+const lastFolder = defineKv(nullable(field.string()), () => null);
+const lastFolderValue: string | null = null as unknown as Static<
+	typeof lastFolder.schema
+>;
 
 // @ts-expect-error — null-admitting table fields require the explicit nullable wrapper
 defineTable({ id: field.string(), payload: field.json(Type.Unknown()) });
@@ -71,3 +75,4 @@ void folderId;
 void docLayout;
 void indexedColumn;
 void enabledValue;
+void lastFolderValue;

@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test';
 import { field } from '@epicenter/field';
 import { createWorkspaceClient, type WorkspaceServicePort } from './client.js';
-import { defineKv, defineTable, defineWorkspace } from './definition.js';
+import { defineTable, defineWorkspace } from './definition.js';
 
 test('async client sends one write-only transaction and filters table deltas', async () => {
 	const requests: unknown[] = [];
@@ -25,7 +25,6 @@ test('async client sends one write-only transaction and filters table deltas', a
 		name: 'Client test',
 		epoch: 'client-1',
 		tables: { notes },
-		kv: { theme: defineKv(field.string(), () => 'light') },
 	});
 	const client = createWorkspaceClient(definition, port);
 	const deltas: unknown[] = [];
@@ -34,7 +33,6 @@ test('async client sends one write-only transaction and filters table deltas', a
 	await client.transact((batch) => {
 		batch.tables.notes.put({ id: 'one', title: 'One' });
 		batch.tables.notes.patch('one', { title: 'Updated' });
-		batch.kv.set('theme', 'dark');
 	});
 	expect(requests).toEqual([
 		{
@@ -47,7 +45,6 @@ test('async client sends one write-only transaction and filters table deltas', a
 					rowId: 'one',
 					cells: { title: 'Updated' },
 				},
-				{ kind: 'setKv', key: 'theme', value: 'dark' },
 			],
 		},
 	]);
@@ -57,7 +54,6 @@ test('async client sends one write-only transaction and filters table deltas', a
 			tables: {
 				notes: { upserted: [{ id: 'one', title: 'Updated' }], removed: [] },
 			},
-			kv: { theme: 'dark' },
 		});
 	}
 	expect(deltas).toEqual([
@@ -83,7 +79,6 @@ test('empty and async transaction builders never send a partial mutation', async
 		tables: {
 			notes: defineTable({ id: field.string(), title: field.string() }),
 		},
-		kv: {},
 	});
 	const client = createWorkspaceClient(definition, port);
 
@@ -97,15 +92,13 @@ test('empty and async transaction builders never send a partial mutation', async
 	expect(requests).toEqual([]);
 });
 
-test('typed client rejects malformed rows, KV values, deltas, and mutation results', async () => {
+test('typed client rejects malformed rows, deltas, and mutation results', async () => {
 	const observers = new Set<Parameters<WorkspaceServicePort['observe']>[0]>();
 	const port: WorkspaceServicePort = {
 		async request(request) {
 			switch (request.kind) {
 				case 'get':
 					return { kind: 'row', row: { id: request.rowId, title: 42 } };
-				case 'getKv':
-					return { kind: 'value', value: 42 };
 				case 'mutate':
 					return { kind: 'mutation', results: [] };
 				default:
@@ -124,30 +117,55 @@ test('typed client rejects malformed rows, KV values, deltas, and mutation resul
 		tables: {
 			notes: defineTable({ id: field.string(), title: field.string() }),
 		},
-		kv: { theme: defineKv(field.string(), () => 'light') },
 	});
 	const client = createWorkspaceClient(definition, port);
 
 	await expect(client.tables.notes.get('one')).rejects.toThrow(
 		"invalid 'notes' row",
 	);
-	await expect(client.kv.get('theme')).rejects.toThrow('invalid KV value');
 	await expect(
 		client.tables.notes.put({ id: 'one', title: 'One' }),
 	).rejects.toThrow('wrong mutation result count');
 
 	client.tables.notes.observe(() => undefined);
-	client.kv.observe(() => undefined);
-	const [tableObserver, kvObserver] = observers;
+	const [tableObserver] = observers;
 	expect(() =>
 		tableObserver?.({
 			tables: {
 				notes: { upserted: [{ id: 'one', title: 42 }], removed: [] },
 			},
-			kv: {},
 		}),
 	).toThrow("invalid 'notes' row");
-	expect(() => kvObserver?.({ tables: {}, kv: { theme: 42 } })).toThrow(
-		'invalid KV value',
+});
+
+test('tables expose guid-only child-doc identity derived from the definition', () => {
+	const port: WorkspaceServicePort = {
+		async request() {
+			throw new Error('guid derivation must not round-trip to the service');
+		},
+		observe() {
+			return () => undefined;
+		},
+	};
+	const definition = defineWorkspace({
+		id: 'client-docs-test',
+		name: 'Client docs test',
+		epoch: 'client-docs-1',
+		tables: {
+			notes: defineTable(
+				{ id: field.string(), title: field.string() },
+				{ docs: { body: 'richText', summary: 'plainText' } },
+			),
+		},
+	});
+	const client = createWorkspaceClient(definition, port);
+
+	const bodyGuid: string = client.tables.notes.docs.body.guid('row-1');
+	const summaryGuid: string = client.tables.notes.docs.summary.guid('row-1');
+	expect(bodyGuid).toBe('client-docs-test.notes.row-1.body');
+	expect(summaryGuid).toBe('client-docs-test.notes.row-1.summary');
+	// The canonical 4-part grammar stays injective: every segment is dot-free.
+	expect(() => client.tables.notes.docs.body.guid('bad.row')).toThrow(
+		'Invalid rowId',
 	);
 });

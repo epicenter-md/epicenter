@@ -1,10 +1,11 @@
 import { expect, test } from 'bun:test';
 import { field } from '@epicenter/field';
+import * as Y from 'yjs';
 import type {
 	WorkspaceServiceRequest,
 	WorkspaceServiceResponse,
 } from './client.js';
-import { defineTable, defineWorkspace } from './definition.js';
+import { defineKv, defineTable, defineWorkspace } from './definition.js';
 import {
 	type OwnedWorkspaceServicePort,
 	openWorkspaceFromService,
@@ -175,4 +176,133 @@ test('standalone workspace settles admitted work while rejecting new work during
 	await disposal;
 
 	await expect(workspace.tables.notes.count()).rejects.toThrow('disposed');
+});
+
+function setupWithKv() {
+	const definition = defineWorkspace({
+		id: 'open-kv-test',
+		name: 'Open KV test',
+		epoch: 'open-kv-test-v1',
+		tables: { notes: defineTable({ id: field.string() }) },
+		kv: {
+			theme: defineKv(field.select(['light', 'dark']), () => 'light' as const),
+		},
+	});
+	const service: OwnedWorkspaceServicePort = {
+		async request(): Promise<WorkspaceServiceResponse> {
+			return {
+				kind: 'workspace',
+				workspaceKind: 'standalone',
+				workspaceId: definition.id,
+				schemaIdentity: definition.schemaIdentity,
+			};
+		},
+		observe() {
+			return () => undefined;
+		},
+		async [Symbol.asyncDispose]() {},
+	};
+	return { definition, service };
+}
+
+test('table-only workspaces expose no kv handle', async () => {
+	const { definition, service } = setup();
+	const workspace = await openWorkspaceFromService(definition, {
+		service,
+		expectedKind: 'standalone',
+	});
+
+	expect(workspace.kv).toBeUndefined();
+	await workspace[Symbol.asyncDispose]();
+});
+
+test('composed kv is a synchronous preference plane over the caller root document', async () => {
+	const { definition, service } = setupWithKv();
+	const doc = new Y.Doc();
+	const workspace = await openWorkspaceFromService(definition, {
+		service,
+		expectedKind: 'standalone',
+		kv: { doc },
+	});
+
+	// Reads are synchronous: absent reads as a fresh default.
+	expect(workspace.kv.get('theme')).toBe('light');
+
+	const changes: unknown[] = [];
+	const stopObserving = workspace.kv.observe('theme', (change) =>
+		changes.push(change),
+	);
+	workspace.kv.set('theme', 'dark');
+	expect(workspace.kv.get('theme')).toBe('dark');
+	expect(changes).toEqual([{ type: 'set', value: 'dark' }]);
+	stopObserving();
+
+	// The stored bytes live in the root document's kv namespace, so a second
+	// mount over the same doc sees the same preference.
+	const entries = doc
+		.getArray<{ key: string; val: unknown }>('kv')
+		.toArray()
+		.map(({ key, val }) => ({ key, val }));
+	expect(entries).toEqual([{ key: 'theme', val: 'dark' }]);
+
+	// Workspace disposal owns the service; the document stays caller-owned.
+	await workspace[Symbol.asyncDispose]();
+	expect(workspace.kv.get('theme')).toBe('dark');
+	doc.destroy();
+});
+
+test('kv hydration is awaited before the workspace opens', async () => {
+	const { definition, service } = setupWithKv();
+	const doc = new Y.Doc();
+	let hydrate!: () => void;
+	const whenHydrated = new Promise<void>((resolve) => {
+		hydrate = resolve;
+	});
+	let opened = false;
+	const opening = openWorkspaceFromService(definition, {
+		service,
+		expectedKind: 'standalone',
+		kv: { doc, whenHydrated },
+	}).then((workspace) => {
+		opened = true;
+		return workspace;
+	});
+
+	await Promise.resolve();
+	await Promise.resolve();
+	expect(opened).toBe(false);
+
+	// Hydration lands a persisted preference before the workspace opens, so
+	// the first read never reports the default in place of durable state.
+	doc
+		.getArray<{ key: string; val: unknown; ts: number }>('kv')
+		.push([{ key: 'theme', val: 'dark', ts: 1 }]);
+	hydrate();
+	const workspace = await opening;
+	expect(opened).toBe(true);
+	expect(workspace.kv.get('theme')).toBe('dark');
+	await workspace[Symbol.asyncDispose]();
+	doc.destroy();
+});
+
+test('a rejected kv hydration disposes the service and refuses to open', async () => {
+	const { definition, service } = setupWithKv();
+	let disposed = 0;
+	const countingService: OwnedWorkspaceServicePort = {
+		...service,
+		async [Symbol.asyncDispose]() {
+			disposed++;
+		},
+	};
+	const doc = new Y.Doc();
+
+	await expect(
+		openWorkspaceFromService(definition, {
+			service: countingService,
+			expectedKind: 'standalone',
+			kv: { doc, whenHydrated: Promise.reject(new Error('hydration failed')) },
+		}),
+	).rejects.toThrow('hydration failed');
+	expect(disposed).toBe(1);
+	doc.destroy();
 });

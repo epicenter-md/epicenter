@@ -665,6 +665,7 @@
         "@epicenter/server": "workspace:*",
         "@epicenter/workspace": "workspace:*",
         "hono": "catalog:",
+        "yjs": "catalog:",
       },
       "devDependencies": {
         "@types/node": "catalog:",

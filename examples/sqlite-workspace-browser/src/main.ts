@@ -4,6 +4,7 @@ import {
 	type StandaloneWorkspace,
 	type WorkspaceReplica,
 } from '@epicenter/workspace/sqlite/browser';
+import * as Y from 'yjs';
 import MismatchWorker from './mismatch.worker?worker';
 import ReplicaAWorker from './replica-a.worker?worker';
 import ReplicaBWorker from './replica-b.worker?worker';
@@ -11,21 +12,25 @@ import { workspaceDefinition } from './workspace.js';
 import WorkspaceWorker from './workspace.worker?worker';
 
 type Note = { id: string; title: string };
+type Theme = 'light' | 'dark';
+
+// The preference plane lives on the eager root Yjs document, composed on the
+// main thread next to the SQLite worker client. A bare Y.Doc is enough for
+// this demo; persistence is environment-injected and out of scope here.
+const preferencesDoc = new Y.Doc();
 
 let workspace: StandaloneWorkspace<
 	typeof workspaceDefinition.tables,
 	typeof workspaceDefinition.kv
 >;
 let stopObserving: (() => void) | undefined;
-let replica: WorkspaceReplica<
-	typeof workspaceDefinition.tables,
-	typeof workspaceDefinition.kv
-> | null = null;
+let replica: WorkspaceReplica<typeof workspaceDefinition.tables> | null = null;
 const observedIds: string[] = [];
 
 async function open() {
 	workspace = await openStandaloneWorkspace(workspaceDefinition, {
 		worker: () => new WorkspaceWorker(),
+		kv: { doc: preferencesDoc },
 		onObserverError(error) {
 			throw error;
 		},
@@ -64,6 +69,13 @@ window.workspaceSmoke = {
 	},
 	list() {
 		return workspace.tables.notes.list({ orderBy: 'id' });
+	},
+	// The kv handle is synchronous: no worker round trip, no promises.
+	theme() {
+		return workspace.kv.get('theme');
+	},
+	setTheme(value: Theme) {
+		workspace.kv.set('theme', value);
 	},
 	observedIds,
 	dispose,
@@ -107,6 +119,8 @@ declare global {
 			put(note: Note): Promise<void>;
 			get(id: string): Promise<Note | null>;
 			list(): Promise<Note[]>;
+			theme(): Theme;
+			setTheme(value: Theme): void;
 			observedIds: string[];
 			dispose(): Promise<void>;
 			reopen(): Promise<void>;

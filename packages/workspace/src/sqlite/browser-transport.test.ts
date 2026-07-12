@@ -148,7 +148,7 @@ describe('workspace worker protocol', () => {
 			parseWorkspaceWorkerEvent({
 				protocol: WORKSPACE_WORKER_PROTOCOL,
 				type: 'delta',
-				delta: { tables: {}, kv: { invalid: Number.NaN } },
+				delta: { tables: { notes: { upserted: [{ id: '' }], removed: [] } } },
 			}),
 		).toThrow('Invalid');
 	});
@@ -168,7 +168,6 @@ describe('workspace worker transport', () => {
 						removed: [],
 					},
 				},
-				kv: {},
 			});
 			return { kind: 'mutation', results: [null] };
 		});
@@ -225,7 +224,7 @@ describe('workspace worker transport', () => {
 		await port.request({ kind: 'describe' });
 		const mutation = port.request({
 			kind: 'mutate',
-			mutations: [{ kind: 'clearKv', key: 'theme' }],
+			mutations: [{ kind: 'remove', table: 'notes', rowId: 'one' }],
 		});
 		await started;
 		const disposal = port[Symbol.asyncDispose]();
@@ -336,7 +335,6 @@ describe('workspace worker transport', () => {
 			}
 			service.emit({
 				tables: { notes: { upserted: [{ id: 'one' }], removed: [] } },
-				kv: {},
 			});
 			return { kind: 'mutation', results: [null] };
 		});

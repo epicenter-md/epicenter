@@ -1,7 +1,8 @@
-import type { Static } from 'typebox';
 import { Value } from 'typebox/value';
+import { docGuid } from '../document/doc-guid.js';
+import type { Guid } from '../shared/id.js';
 import type {
-	KvDefinitions,
+	DocLayout,
 	RowFor,
 	TableDefinitions,
 	WorkspaceDefinition,
@@ -39,7 +40,26 @@ export type WorkspaceServicePort = {
 	observe(callback: (delta: WorkspaceCommitDelta) => void): () => void;
 };
 
-export type AsyncTable<TRow extends { id: string }> = {
+/**
+ * Guid-only handle for one declared child document field. Derived purely from
+ * the workspace definition, so it never needs a service round-trip. The guid
+ * grammar is the canonical 4-part dotted form owned by `docGuid`.
+ */
+export type AsyncTableDoc = {
+	guid(rowId: string): Guid;
+};
+
+export type AsyncTableDocs<TDocs extends Readonly<Record<string, DocLayout>>> =
+	{
+		readonly [K in keyof TDocs]: AsyncTableDoc;
+	};
+
+export type AsyncTable<
+	TRow extends { id: string },
+	TDocs extends Readonly<Record<string, DocLayout>> = Readonly<
+		Record<string, DocLayout>
+	>,
+> = {
 	readonly [asyncWorkspaceHandle]: 'table';
 	get(id: TRow['id']): Promise<TRow | null>;
 	list(options?: {
@@ -54,27 +74,15 @@ export type AsyncTable<TRow extends { id: string }> = {
 	patch(id: TRow['id'], cells: Partial<Omit<TRow, 'id'>>): Promise<TRow | null>;
 	remove(id: TRow['id']): Promise<void>;
 	observe(callback: (delta: TableCommitDelta<TRow>) => void): () => void;
+	/** Child-doc identity per declared doc layout: `docs.<field>.guid(rowId)`. */
+	readonly docs: AsyncTableDocs<TDocs>;
 };
 
 export type AsyncTables<TTables extends TableDefinitions> = {
-	[K in keyof TTables]: AsyncTable<RowFor<TTables[K]>>;
-};
-
-export type AsyncKv<TKv extends KvDefinitions> = {
-	readonly [asyncWorkspaceHandle]: 'kv';
-	get<TKey extends keyof TKv & string>(
-		key: TKey,
-	): Promise<Static<TKv[TKey]['schema']>>;
-	set<TKey extends keyof TKv & string>(
-		key: TKey,
-		value: Static<TKv[TKey]['schema']>,
-	): Promise<void>;
-	clear(key: keyof TKv & string): Promise<void>;
-	observe(
-		callback: (
-			values: Readonly<Partial<{ [K in keyof TKv]: Static<TKv[K]['schema']> }>>,
-		) => void,
-	): () => void;
+	[K in keyof TTables]: AsyncTable<
+		RowFor<TTables[K]>,
+		TTables[K]['options']['docs']
+	>;
 };
 
 type BatchTable<TRow extends { id: string }> = {
@@ -83,39 +91,20 @@ type BatchTable<TRow extends { id: string }> = {
 	remove(id: TRow['id']): void;
 };
 
-export type WorkspaceWriteBatch<
-	TTables extends TableDefinitions,
-	TKv extends KvDefinitions,
-> = {
+export type WorkspaceWriteBatch<TTables extends TableDefinitions> = {
 	tables: { [K in keyof TTables]: BatchTable<RowFor<TTables[K]>> };
-	kv: {
-		set<TKey extends keyof TKv & string>(
-			key: TKey,
-			value: Static<TKv[TKey]['schema']>,
-		): void;
-		clear(key: keyof TKv & string): void;
-	};
 };
 
-export type AsyncWorkspace<
-	TTables extends TableDefinitions,
-	TKv extends KvDefinitions,
-> = {
+export type AsyncWorkspace<TTables extends TableDefinitions> = {
 	tables: AsyncTables<TTables>;
-	kv: AsyncKv<TKv>;
 	/** Build one serializable, write-only atomic mutation. */
-	transact(
-		build: (batch: WorkspaceWriteBatch<TTables, TKv>) => void,
-	): Promise<void>;
+	transact(build: (batch: WorkspaceWriteBatch<TTables>) => void): Promise<void>;
 };
 
-export function createWorkspaceClient<
-	TTables extends TableDefinitions,
-	TKv extends KvDefinitions,
->(
-	definition: WorkspaceDefinition<TTables, TKv>,
+export function createWorkspaceClient<TTables extends TableDefinitions>(
+	definition: WorkspaceDefinition<TTables>,
 	port: WorkspaceServicePort,
-): AsyncWorkspace<TTables, TKv> {
+): AsyncWorkspace<TTables> {
 	function rowForTable(
 		tableName: string,
 		value: unknown,
@@ -134,16 +123,6 @@ export function createWorkspaceClient<
 			);
 		}
 		return row;
-	}
-
-	function kvValue(key: string, value: unknown): unknown {
-		const kv = definition.kv[key];
-		if (!kv?.compiledValue.check(value)) {
-			throw new Error(
-				`Workspace service returned an invalid KV value for '${key}'`,
-			);
-		}
-		return value;
 	}
 
 	function expectResponse<TKind extends WorkspaceServiceResponse['kind']>(
@@ -185,9 +164,27 @@ export function createWorkspaceClient<
 	}
 
 	const tables = Object.fromEntries(
-		Object.keys(definition.tables).map((tableName) => {
+		Object.entries(definition.tables).map(([tableName, tableDefinition]) => {
+			// Child-doc identity is derived from the definition alone. The guid
+			// grammar stays owned by `docGuid`; this only fills in the workspace,
+			// collection, and field segments the definition already fixes.
+			const docs = Object.fromEntries(
+				Object.keys(tableDefinition.options.docs).map((field) => [
+					field,
+					{
+						guid: (rowId: string): Guid =>
+							docGuid({
+								workspaceId: definition.id,
+								collection: tableName,
+								rowId,
+								field,
+							}),
+					} satisfies AsyncTableDoc,
+				]),
+			);
 			const table: AsyncTable<{ id: string }> = {
 				[asyncWorkspaceHandle]: 'table',
+				docs,
 				async get(rowId) {
 					const response = await port.request({
 						kind: 'get',
@@ -263,39 +260,8 @@ export function createWorkspaceClient<
 		}),
 	) as AsyncTables<TTables>;
 
-	const kv: AsyncKv<TKv> = {
-		[asyncWorkspaceHandle]: 'kv',
-		async get(key) {
-			const response = await port.request({ kind: 'getKv', key });
-			return kvValue(key, expectResponse(response, 'value').value) as Static<
-				TKv[typeof key]['schema']
-			>;
-		},
-		async set(key, value) {
-			await sendMutations([{ kind: 'setKv', key, value }]);
-		},
-		async clear(key) {
-			await sendMutations([{ kind: 'clearKv', key }]);
-		},
-		observe(callback) {
-			return port.observe((delta) => {
-				if (Object.keys(delta.kv).length > 0) {
-					for (const [key, value] of Object.entries(delta.kv)) {
-						kvValue(key, value);
-					}
-					callback(
-						delta.kv as Partial<{
-							[K in keyof TKv]: Static<TKv[K]['schema']>;
-						}>,
-					);
-				}
-			});
-		},
-	};
-
 	return {
 		tables,
-		kv,
 		async transact(build) {
 			const mutations: WorkspaceMutation[] = [];
 			const batchTables = Object.fromEntries(
@@ -313,17 +279,9 @@ export function createWorkspaceClient<
 						},
 					},
 				]),
-			) as WorkspaceWriteBatch<TTables, TKv>['tables'];
+			) as WorkspaceWriteBatch<TTables>['tables'];
 			const result: unknown = build({
 				tables: batchTables,
-				kv: {
-					set(key, value) {
-						mutations.push({ kind: 'setKv', key, value });
-					},
-					clear(key) {
-						mutations.push({ kind: 'clearKv', key });
-					},
-				},
 			});
 			if (
 				result &&
