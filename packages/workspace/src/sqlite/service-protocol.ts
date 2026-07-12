@@ -21,6 +21,9 @@ const tableListOptions = Type.Object(
 		limit: Type.Optional(
 			Type.Integer({ minimum: 0, maximum: Number.MAX_SAFE_INTEGER }),
 		),
+		offset: Type.Optional(
+			Type.Integer({ minimum: 0, maximum: Number.MAX_SAFE_INTEGER }),
+		),
 	},
 	CLOSED,
 );
@@ -78,6 +81,16 @@ export const WorkspaceServiceRequestSchema = Type.Union([
 	Type.Object({ kind: Type.Literal('count'), table: nonEmptyString }, CLOSED),
 	Type.Object(
 		{
+			kind: Type.Literal('sql'),
+			query: nonEmptyString,
+			parameters: Type.Array(
+				Type.Union([Type.String(), Type.Number(), Type.Null()]),
+			),
+		},
+		CLOSED,
+	),
+	Type.Object(
+		{
 			kind: Type.Literal('mutate'),
 			mutations: Type.Array(workspaceMutation, { minItems: 1 }),
 		},
@@ -115,6 +128,10 @@ export const WorkspaceServiceResponseSchema = Type.Union([
 			kind: Type.Literal('count'),
 			value: Type.Integer({ minimum: 0, maximum: Number.MAX_SAFE_INTEGER }),
 		},
+		CLOSED,
+	),
+	Type.Object(
+		{ kind: Type.Literal('sql'), rows: Type.Array(jsonRecord) },
 		CLOSED,
 	),
 	Type.Object(

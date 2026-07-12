@@ -14,6 +14,7 @@ import { Database, type SQLQueryBindings } from 'bun:sqlite';
 import { describe, expect, test } from 'bun:test';
 import { field } from '@epicenter/field';
 import type { RecordSyncSqlite, SqliteRow } from '@epicenter/record-sync';
+import { Type } from 'typebox';
 import { createWorkspaceClient } from './client.js';
 import { createApplicationDatabase } from './database.js';
 import { defineTable, defineWorkspace } from './definition.js';
@@ -44,11 +45,12 @@ function setup() {
 		title: field.string(),
 		pinned: field.boolean(),
 	});
+	const labels = defineTable({ id: field.string(), name: field.string() });
 	const definition = defineWorkspace({
 		id: 'service-test',
 		name: 'Service test',
 		epoch: 'service-1',
-		tables: { notes },
+		tables: { labels, notes },
 	});
 	const databaseObserverErrors: unknown[] = [];
 	const database = createApplicationDatabase(definition, sqlite, {
@@ -146,6 +148,54 @@ describe('workspace service', () => {
 		expect(
 			await client.tables.notes.patch(one.id, { title: 'Patched' }),
 		).toEqual({ id: one.id, title: 'Patched', pinned: false });
+	});
+
+	test('validated SQL supports parameters and list offset through the service', async () => {
+		const { client } = setup();
+		await client.tables.notes.create({ title: 'One', pinned: false });
+		await client.tables.notes.create({ title: 'Two', pinned: true });
+		await client.tables.notes.create({ title: 'Three', pinned: true });
+
+		const rows = await client.sql(
+			'SELECT title FROM notes WHERE pinned = ? ORDER BY title',
+			[1],
+			Type.Object({ title: Type.String() }, { additionalProperties: false }),
+		);
+		expect(rows).toEqual([{ title: 'Three' }, { title: 'Two' }]);
+		expect(
+			await client.tables.notes.list({ orderBy: 'title', limit: 1, offset: 1 }),
+		).toEqual([expect.objectContaining({ title: 'Three' })]);
+	});
+
+	test('observeSql runs initially and only after committed changes to named tables', async () => {
+		const { client } = setup();
+		const observedCounts: Promise<number>[] = [];
+		const stop = client.observeSql(['notes'], () => {
+			observedCounts.push(
+				client
+					.sql(
+						'SELECT count(*) AS count FROM notes',
+						[],
+						Type.Object({ count: Type.Number() }),
+					)
+					.then(([row]) => row?.count ?? -1),
+			);
+		});
+
+		await client.tables.notes.create({ title: 'Committed', pinned: false });
+		await client.tables.labels.create({ name: 'Unrelated' });
+		await expect(
+			client.transact((batch) => {
+				const id = batch.tables.notes.create({
+					title: 'Rolled back',
+					pinned: false,
+				});
+				batch.tables.notes.patch(id, { title: 42 as unknown as string });
+			}),
+		).rejects.toThrow('schema validation');
+		stop();
+
+		expect(await Promise.all(observedCounts)).toEqual([0, 1]);
 	});
 
 	test('invalid later writes roll back the whole batch and emit nothing', async () => {

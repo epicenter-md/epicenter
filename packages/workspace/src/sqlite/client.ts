@@ -1,3 +1,4 @@
+import type { Static, TSchema } from 'typebox';
 import { Value } from 'typebox/value';
 import { docGuid } from '../document/doc-guid.js';
 import type { Guid } from '../shared/id.js';
@@ -67,6 +68,7 @@ export type AsyncTable<
 		orderBy?: keyof TRow & string;
 		desc?: boolean;
 		limit?: number;
+		offset?: number;
 	}): Promise<TRow[]>;
 	has(id: TRow['id']): Promise<boolean>;
 	count(): Promise<number>;
@@ -102,6 +104,17 @@ export type WorkspaceWriteBatch<TTables extends TableDefinitions> = {
 
 export type AsyncWorkspace<TTables extends TableDefinitions> = {
 	tables: AsyncTables<TTables>;
+	/** Execute one SELECT and validate every returned row. */
+	sql<TResultSchema extends TSchema>(
+		query: string,
+		parameters: readonly (string | number | null)[],
+		resultSchema: TResultSchema,
+	): Promise<Static<TResultSchema>[]>;
+	/** Run now, then again after commits that touch any declared table. */
+	observeSql(
+		tables: readonly (keyof TTables & string)[],
+		run: () => void,
+	): () => void;
 	/** Build one serializable, write-only atomic mutation. */
 	transact(build: (batch: WorkspaceWriteBatch<TTables>) => void): Promise<void>;
 };
@@ -271,6 +284,40 @@ export function createWorkspaceClient<TTables extends TableDefinitions>(
 
 	return {
 		tables,
+		async sql(query, parameters, resultSchema) {
+			const response = await port.request({
+				kind: 'sql',
+				query,
+				parameters: [...parameters],
+			});
+			const rows = expectResponse(response, 'sql').rows;
+			for (const [index, row] of rows.entries()) {
+				if (!Value.Check(resultSchema, row)) {
+					throw new Error(`sql() returned an invalid row at index ${index}`);
+				}
+			}
+			return rows as Static<typeof resultSchema>[];
+		},
+		observeSql(tableNames, run) {
+			const watched = new Set<string>();
+			for (const tableName of tableNames) {
+				if (!Object.hasOwn(definition.tables, tableName)) {
+					throw new Error(`Unknown workspace table '${tableName}'`);
+				}
+				watched.add(tableName);
+			}
+			const stop = port.observe((delta) => {
+				if (Object.keys(delta.tables).some((table) => watched.has(table)))
+					run();
+			});
+			try {
+				run();
+			} catch (cause) {
+				stop();
+				throw cause;
+			}
+			return stop;
+		},
 		async transact(build) {
 			const mutations: WorkspaceMutation[] = [];
 			const batchTables = Object.fromEntries(

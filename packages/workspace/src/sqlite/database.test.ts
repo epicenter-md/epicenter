@@ -254,6 +254,70 @@ describe('typed rows at rest', () => {
 });
 
 describe('transaction and invalidation', () => {
+	test('sql reads the live typed table population with parameters', () => {
+		const { workspace } = setup();
+		workspace.tables.notes.create({
+			id: 'note-1',
+			title: 'Selected',
+			pinned: true,
+			rating: null,
+			tags: [],
+			metadata: { source: 'local', rank: 1 },
+		});
+
+		expect(
+			workspace.sql('SELECT id, title FROM notes WHERE pinned = ?', [1]),
+		).toEqual([{ id: 'note-1', title: 'Selected' }]);
+	});
+
+	test('sql rejects writes and multiple statements at the database boundary', () => {
+		const { workspace } = setup();
+
+		expect(() =>
+			workspace.sql(
+				"INSERT INTO notes (id, title, pinned, rating, tags, metadata) VALUES ('bad', 'Bad', 0, NULL, '[]', '{}')",
+			),
+		).toThrow('only SELECT');
+		expect(() => workspace.sql('SELECT 1; SELECT 2')).toThrow(
+			'exactly one statement',
+		);
+		expect(() => workspace.sql('SELECT * FROM missing_table')).toThrow();
+		workspace.tables.notes.create({
+			id: 'after-failure',
+			title: 'Writable',
+			pinned: false,
+			rating: null,
+			tags: [],
+			metadata: { source: 'local', rank: 1 },
+		});
+		expect(workspace.tables.notes.count()).toBe(1);
+	});
+
+	test('list offset skips rows with and without an explicit limit', () => {
+		const { workspace } = setup();
+		for (const id of ['a', 'b', 'c']) {
+			workspace.tables.notes.create({
+				id,
+				title: id,
+				pinned: false,
+				rating: null,
+				tags: [],
+				metadata: { source: 'local', rank: 1 },
+			});
+		}
+
+		expect(
+			workspace.tables.notes
+				.list({ orderBy: 'id', offset: 1 })
+				.map(({ id }) => id),
+		).toEqual(['b', 'c']);
+		expect(
+			workspace.tables.notes
+				.list({ orderBy: 'id', limit: 1, offset: 1 })
+				.map(({ id }) => id),
+		).toEqual(['b']);
+	});
+
 	test('table observers fire once after a successful outer commit', () => {
 		const { database, workspace } = setup();
 		const tableEvents: string[][] = [];

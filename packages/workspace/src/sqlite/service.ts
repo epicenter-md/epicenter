@@ -160,6 +160,11 @@ export function createWorkspaceService<TTables extends TableDefinitions>(
 				};
 			case 'count':
 				return { kind: 'count', value: tableFor(request.table).count() };
+			case 'sql':
+				return {
+					kind: 'sql',
+					rows: database.sql(request.query, request.parameters),
+				};
 			case 'mutate':
 				return {
 					kind: 'mutation',

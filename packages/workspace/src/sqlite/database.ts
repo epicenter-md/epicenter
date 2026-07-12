@@ -89,6 +89,7 @@ type TableReads<TRow extends { id: string }> = {
 		orderBy?: keyof TRow & string;
 		desc?: boolean;
 		limit?: number;
+		offset?: number;
 	}): TRow[];
 	has(id: TRow['id']): boolean;
 	count(): number;
@@ -256,6 +257,18 @@ export function createApplicationDatabase<TTables extends TableDefinitions>(
 		},
 		kind,
 		tables,
+		/** Run one conservative, read-only statement against the live app tables. */
+		sql(query: string, parameters: readonly SqliteValue[] = []): SqliteRow[] {
+			assertSelectStatement(query);
+			return sqlite.transaction(() => {
+				sqlite.run('PRAGMA query_only = ON');
+				try {
+					return sqlite.all<SqliteRow>(query, parameters);
+				} finally {
+					sqlite.run('PRAGMA query_only = OFF');
+				}
+			});
+		},
 		/** Group every enclosed table write into one SQLite transaction. */
 		transact<TResult>(
 			run: (tx: ApplicationTransaction<TTables>) => TResult,
@@ -384,6 +397,7 @@ function createApplicationTable<TDefinition extends TableDefinition>({
 			orderBy?: keyof TRow & string;
 			desc?: boolean;
 			limit?: number;
+			offset?: number;
 		} = {},
 	): TRow[] {
 		const clauses: string[] = [];
@@ -414,6 +428,14 @@ function createApplicationTable<TDefinition extends TableDefinition>({
 			}
 			sql += ' LIMIT ?';
 			parameters.push(options.limit);
+		}
+		if (options.offset !== undefined) {
+			if (!Number.isSafeInteger(options.offset) || options.offset < 0) {
+				throw new Error('list() offset must be a non-negative safe integer');
+			}
+			if (options.limit === undefined) sql += ' LIMIT -1';
+			sql += ' OFFSET ?';
+			parameters.push(options.offset);
 		}
 
 		return sqlite
@@ -528,6 +550,20 @@ function createApplicationTable<TDefinition extends TableDefinition>({
 			return observe(callback as (ids: ReadonlySet<string>) => void);
 		},
 	};
+}
+
+function assertSelectStatement(query: string): void {
+	const trimmed = query.trim();
+	if (!/^SELECT(?:\s|$)/i.test(trimmed)) {
+		throw new Error('sql() accepts only SELECT statements');
+	}
+	// SQLite statement separation requires a semicolon. Rejecting every semicolon
+	// is intentionally conservative: query_only below owns write prevention, while
+	// this check ensures adapters cannot silently ignore or execute a trailing
+	// statement.
+	if (trimmed.includes(';')) {
+		throw new Error('sql() accepts exactly one statement');
+	}
 }
 
 function initializeDatabase(

@@ -12,6 +12,7 @@
 
 import { expect, test } from 'bun:test';
 import { field } from '@epicenter/field';
+import { Type } from 'typebox';
 import { createWorkspaceClient, type WorkspaceServicePort } from './client.js';
 import { defineTable, defineWorkspace } from './definition.js';
 
@@ -197,6 +198,35 @@ test('typed client rejects malformed rows, deltas, and mutation results', async 
 			},
 		}),
 	).toThrow("invalid 'notes' row");
+});
+
+test('sql validates every result row against the caller schema', async () => {
+	const port: WorkspaceServicePort = {
+		async request(request) {
+			if (request.kind !== 'sql') throw new Error('unexpected request');
+			return { kind: 'sql', rows: [{ title: 'Valid' }, { title: 42 }] };
+		},
+		observe() {
+			return () => undefined;
+		},
+	};
+	const definition = defineWorkspace({
+		id: 'client-sql-validation-test',
+		name: 'Client SQL validation test',
+		epoch: 'client-sql-validation-1',
+		tables: {
+			notes: defineTable({ id: field.string(), title: field.string() }),
+		},
+	});
+	const client = createWorkspaceClient(definition, port);
+
+	await expect(
+		client.sql(
+			'SELECT title FROM notes',
+			[],
+			Type.Object({ title: Type.String() }),
+		),
+	).rejects.toThrow('invalid row at index 1');
 });
 
 test('tables expose guid-only child-doc identity derived from the definition', () => {
