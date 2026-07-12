@@ -231,4 +231,36 @@ describe('workspace service', () => {
 		await expect(client.tables.notes.count()).rejects.toThrow('disposed');
 		expect(() => service.observe(() => undefined)).toThrow('disposed');
 	});
+
+	test('external invalidation re-reads effective database state without rebroadcasting it as a commit', async () => {
+		const { client, native, service } = setup();
+		await client.tables.notes.put({
+			id: 'external',
+			title: 'Before',
+			pinned: false,
+		});
+		const changes: unknown[] = [];
+		service.observeChanges((delta, source) => changes.push({ delta, source }));
+		native.run('UPDATE notes SET title = ? WHERE id = ?', [
+			'After',
+			'external',
+		]);
+
+		await service.refresh({ tables: { notes: ['external'] }, kv: [] });
+
+		expect(changes).toEqual([
+			{
+				delta: {
+					tables: {
+						notes: {
+							upserted: [{ id: 'external', title: 'After', pinned: false }],
+							removed: [],
+						},
+					},
+					kv: {},
+				},
+				source: 'refresh',
+			},
+		]);
+	});
 });

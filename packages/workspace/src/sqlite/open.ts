@@ -52,31 +52,31 @@ export async function openLocalWorkspaceFromService<
 		try {
 			await service[Symbol.asyncDispose]();
 		} catch (cleanupCause) {
+			const primaryMessage =
+				cause instanceof Error ? cause.message : String(cause);
 			throw new AggregateError(
 				[cause, cleanupCause],
-				'Workspace open failed and service cleanup also failed',
+				`Workspace open failed: ${primaryMessage}; service cleanup also failed`,
 				{ cause },
 			);
 		}
 		throw cause;
 	}
 
-	let isDisposed = false;
+	let state: 'open' | 'disposing' | 'closed' = 'open';
+	let disposePromise: Promise<void> | undefined;
 	function disposedError(): Error {
 		return new Error('Local workspace is disposed');
 	}
 	const gatedService: WorkspaceServicePort = {
 		request(request) {
-			if (isDisposed) return Promise.reject(disposedError());
-			return service.request(request).then((response) => {
-				if (isDisposed) throw disposedError();
-				return response;
-			});
+			if (state !== 'open') return Promise.reject(disposedError());
+			return service.request(request);
 		},
 		observe(callback) {
-			if (isDisposed) throw disposedError();
+			if (state !== 'open') throw disposedError();
 			return service.observe((delta) => {
-				if (!isDisposed) callback(delta);
+				if (state !== 'closed') callback(delta);
 			});
 		},
 	};
@@ -85,9 +85,15 @@ export async function openLocalWorkspaceFromService<
 		...client,
 		kind: 'local',
 		async [Symbol.asyncDispose]() {
-			if (isDisposed) return;
-			isDisposed = true;
-			await service[Symbol.asyncDispose]();
+			if (disposePromise) return disposePromise;
+			if (state === 'closed') return;
+			state = 'disposing';
+			disposePromise = Promise.resolve(service[Symbol.asyncDispose]()).finally(
+				() => {
+					state = 'closed';
+				},
+			);
+			return disposePromise;
 		},
 	};
 }

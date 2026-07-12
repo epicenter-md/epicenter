@@ -20,6 +20,7 @@ import type {
 	CommittedApplicationChanges,
 } from './database.js';
 import type { KvDefinitions, TableDefinitions } from './definition.js';
+import type { WorkspaceInvalidation } from './service-protocol.js';
 
 type UntypedRow = { id: string } & Record<string, unknown>;
 type UntypedTable = ApplicationTable<UntypedRow>;
@@ -34,6 +35,17 @@ export type WorkspaceServiceOptions = {
 	onObserverError(error: unknown): void;
 };
 
+type WorkspaceServiceRuntime = WorkspaceServicePort &
+	Disposable & {
+		refresh(invalidation: WorkspaceInvalidation): Promise<void>;
+		observeChanges(
+			callback: (
+				delta: WorkspaceCommitDelta,
+				source: 'commit' | 'refresh',
+			) => void,
+		): () => void;
+	};
+
 export function createWorkspaceService<
 	TTables extends TableDefinitions,
 	TKv extends KvDefinitions,
@@ -43,6 +55,9 @@ export function createWorkspaceService<
 ) {
 	const definition = database.definition;
 	const observers = new Set<(delta: WorkspaceCommitDelta) => void>();
+	const changeObservers = new Set<
+		(delta: WorkspaceCommitDelta, source: 'commit' | 'refresh') => void
+	>();
 	const tables = database.tables as unknown as Record<string, UntypedTable>;
 	const kv = database.kv as unknown as UntypedKv;
 	let requestTail: Promise<void> = Promise.resolve();
@@ -65,7 +80,10 @@ export function createWorkspaceService<
 			throw new Error(`Unknown workspace KV key '${key}'`);
 	}
 
-	function notify(delta: WorkspaceCommitDelta): void {
+	function notify(
+		delta: WorkspaceCommitDelta,
+		source: 'commit' | 'refresh',
+	): void {
 		for (const observer of [...observers]) {
 			try {
 				observer(structuredClone(delta));
@@ -77,10 +95,21 @@ export function createWorkspaceService<
 				}
 			}
 		}
+		for (const observer of [...changeObservers]) {
+			try {
+				observer(structuredClone(delta), source);
+			} catch (cause) {
+				try {
+					onObserverError(cause);
+				} catch {
+					// A broken error sink must not make committed state look failed.
+				}
+			}
+		}
 	}
 
 	const stopDatabaseObserver = database.observe((changes) => {
-		notify(materializeDelta(changes, tables, kv));
+		notify(materializeDelta(changes, tables, kv), 'commit');
 	});
 
 	function applyMutation(
@@ -182,7 +211,11 @@ export function createWorkspaceService<
 		} catch (cause) {
 			return Promise.reject(cause);
 		}
-		const response = requestTail.then(() => executeRequest(capturedRequest));
+		return enqueue(() => executeRequest(capturedRequest));
+	}
+
+	function enqueue<TResult>(run: () => TResult): Promise<TResult> {
+		const response = requestTail.then(run);
 		requestTail = response.then(
 			() => undefined,
 			() => undefined,
@@ -190,8 +223,32 @@ export function createWorkspaceService<
 		return response;
 	}
 
+	function refresh(invalidation: WorkspaceInvalidation): Promise<void> {
+		let captured: WorkspaceInvalidation;
+		try {
+			assertOpen();
+			captured = structuredClone(invalidation);
+		} catch (cause) {
+			return Promise.reject(cause);
+		}
+		return enqueue(() => {
+			assertOpen();
+			const changes: CommittedApplicationChanges = {
+				tables: new Map(
+					Object.entries(captured.tables).map(([table, ids]) => [
+						table,
+						new Set(ids),
+					]),
+				),
+				kv: new Set(captured.kv),
+			};
+			notify(materializeDelta(changes, tables, kv), 'refresh');
+		});
+	}
+
 	return {
 		request,
+		refresh,
 		observe(callback: (delta: WorkspaceCommitDelta) => void) {
 			assertOpen();
 			observers.add(callback);
@@ -199,13 +256,26 @@ export function createWorkspaceService<
 				observers.delete(callback);
 			};
 		},
+		observeChanges(
+			callback: (
+				delta: WorkspaceCommitDelta,
+				source: 'commit' | 'refresh',
+			) => void,
+		) {
+			assertOpen();
+			changeObservers.add(callback);
+			return () => {
+				changeObservers.delete(callback);
+			};
+		},
 		[Symbol.dispose]() {
 			if (isDisposed) return;
 			isDisposed = true;
 			stopDatabaseObserver();
 			observers.clear();
+			changeObservers.clear();
 		},
-	} satisfies WorkspaceServicePort & Disposable;
+	} satisfies WorkspaceServiceRuntime;
 }
 
 export type WorkspaceService<

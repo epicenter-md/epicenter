@@ -1,52 +1,26 @@
 import type { Static } from 'typebox';
+import { Value } from 'typebox/value';
 import type {
 	KvDefinitions,
 	RowFor,
 	TableDefinitions,
 	WorkspaceDefinition,
 } from './definition.js';
+import type {
+	TableListOptions,
+	WorkspaceCommitDelta,
+	WorkspaceMutation,
+	WorkspaceServiceRequest,
+	WorkspaceServiceResponse,
+} from './service-protocol.js';
 
-export type TableListOptions = {
-	where?: Record<string, unknown>;
-	orderBy?: string;
-	desc?: boolean;
-	limit?: number;
-};
-
-export type WorkspaceMutation =
-	| { kind: 'put'; table: string; row: Record<string, unknown> }
-	| {
-			kind: 'patch';
-			table: string;
-			rowId: string;
-			cells: Record<string, unknown>;
-	  }
-	| { kind: 'remove'; table: string; rowId: string }
-	| { kind: 'setKv'; key: string; value: unknown }
-	| { kind: 'clearKv'; key: string };
-
-export type WorkspaceServiceRequest =
-	| { kind: 'describe' }
-	| { kind: 'get'; table: string; rowId: string }
-	| { kind: 'list'; table: string; options?: TableListOptions }
-	| { kind: 'has'; table: string; rowId: string }
-	| { kind: 'count'; table: string }
-	| { kind: 'getKv'; key: string }
-	| { kind: 'mutate'; mutations: readonly WorkspaceMutation[] };
-
-export type WorkspaceServiceResponse =
-	| {
-			kind: 'workspace';
-			workspaceKind: 'local' | 'replica';
-			workspaceId: string;
-			schemaIdentity: string;
-	  }
-	| { kind: 'row'; row: Record<string, unknown> | null }
-	| { kind: 'rows'; rows: Record<string, unknown>[] }
-	| { kind: 'boolean'; value: boolean }
-	| { kind: 'count'; value: number }
-	| { kind: 'value'; value: unknown }
-	| { kind: 'mutation'; results: readonly unknown[] };
+export type {
+	TableListOptions,
+	WorkspaceCommitDelta,
+	WorkspaceMutation,
+	WorkspaceServiceRequest,
+	WorkspaceServiceResponse,
+} from './service-protocol.js';
 
 /** Runtime brand that lets transitional reactive adapters avoid probe reads. */
 export const asyncWorkspaceHandle = Symbol('epicenter.asyncWorkspaceHandle');
@@ -56,12 +30,6 @@ export type TableCommitDelta<
 > = {
 	upserted: readonly TRow[];
 	removed: readonly string[];
-};
-
-/** One committed database change, projected to values the UI can cache. */
-export type WorkspaceCommitDelta = {
-	tables: Readonly<Record<string, TableCommitDelta>>;
-	kv: Readonly<Record<string, unknown>>;
 };
 
 /** Async boundary implemented by a browser worker, Bun service, or test port. */
@@ -148,6 +116,36 @@ export function createWorkspaceClient<
 	definition: WorkspaceDefinition<TTables, TKv>,
 	port: WorkspaceServicePort,
 ): AsyncWorkspace<TTables, TKv> {
+	function rowForTable(
+		tableName: string,
+		value: unknown,
+		expectedId?: string,
+	): { id: string } & Record<string, unknown> {
+		const table = definition.tables[tableName];
+		if (!table || !Value.Check(table.schema, value)) {
+			throw new Error(
+				`Workspace service returned an invalid '${tableName}' row`,
+			);
+		}
+		const row = value as { id: string } & Record<string, unknown>;
+		if (expectedId !== undefined && row.id !== expectedId) {
+			throw new Error(
+				`Workspace service returned row '${row.id}' for '${tableName}.${expectedId}'`,
+			);
+		}
+		return row;
+	}
+
+	function kvValue(key: string, value: unknown): unknown {
+		const kv = definition.kv[key];
+		if (!kv?.compiledValue.check(value)) {
+			throw new Error(
+				`Workspace service returned an invalid KV value for '${key}'`,
+			);
+		}
+		return value;
+	}
+
 	function expectResponse<TKind extends WorkspaceServiceResponse['kind']>(
 		response: WorkspaceServiceResponse,
 		kind: TKind,
@@ -161,11 +159,29 @@ export function createWorkspaceClient<
 	}
 
 	async function sendMutations(
-		mutations: readonly WorkspaceMutation[],
+		mutations: WorkspaceMutation[],
 	): Promise<readonly unknown[]> {
 		if (mutations.length === 0) return [];
 		const response = await port.request({ kind: 'mutate', mutations });
-		return expectResponse(response, 'mutation').results;
+		const results = expectResponse(response, 'mutation').results;
+		if (results.length !== mutations.length) {
+			throw new Error(
+				'Workspace service returned the wrong mutation result count',
+			);
+		}
+		for (const [index, mutation] of mutations.entries()) {
+			const result = results[index];
+			if (mutation.kind === 'patch') {
+				if (result !== null) {
+					rowForTable(mutation.table, result, mutation.rowId);
+				}
+			} else if (result !== null) {
+				throw new Error(
+					`Workspace service returned a value for '${mutation.kind}'`,
+				);
+			}
+		}
+		return results;
 	}
 
 	const tables = Object.fromEntries(
@@ -178,7 +194,8 @@ export function createWorkspaceClient<
 						table: tableName,
 						rowId,
 					});
-					return expectResponse(response, 'row').row as { id: string } | null;
+					const row = expectResponse(response, 'row').row;
+					return row === null ? null : rowForTable(tableName, row, rowId);
 				},
 				async list(options) {
 					const response = await port.request({
@@ -186,7 +203,9 @@ export function createWorkspaceClient<
 						table: tableName,
 						options: options as TableListOptions | undefined,
 					});
-					return expectResponse(response, 'rows').rows as { id: string }[];
+					return expectResponse(response, 'rows').rows.map((row) =>
+						rowForTable(tableName, row),
+					);
 				},
 				async has(rowId) {
 					const response = await port.request({
@@ -230,7 +249,12 @@ export function createWorkspaceClient<
 					return port.observe((delta) => {
 						const tableDelta = delta.tables[tableName];
 						if (tableDelta) {
-							callback(tableDelta as TableCommitDelta<{ id: string }>);
+							callback({
+								upserted: tableDelta.upserted.map((row) =>
+									rowForTable(tableName, row),
+								),
+								removed: tableDelta.removed,
+							} satisfies TableCommitDelta<{ id: string }>);
 						}
 					});
 				},
@@ -243,7 +267,7 @@ export function createWorkspaceClient<
 		[asyncWorkspaceHandle]: 'kv',
 		async get(key) {
 			const response = await port.request({ kind: 'getKv', key });
-			return expectResponse(response, 'value').value as Static<
+			return kvValue(key, expectResponse(response, 'value').value) as Static<
 				TKv[typeof key]['schema']
 			>;
 		},
@@ -256,6 +280,9 @@ export function createWorkspaceClient<
 		observe(callback) {
 			return port.observe((delta) => {
 				if (Object.keys(delta.kv).length > 0) {
+					for (const [key, value] of Object.entries(delta.kv)) {
+						kvValue(key, value);
+					}
 					callback(
 						delta.kv as Partial<{
 							[K in keyof TKv]: Static<TKv[K]['schema']>;

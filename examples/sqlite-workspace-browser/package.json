@@ -1,0 +1,21 @@
+{
+	"name": "@examples/sqlite-workspace-browser",
+	"version": "0.0.1",
+	"private": true,
+	"type": "module",
+	"scripts": {
+		"build": "vite build",
+		"smoke": "bun run build && bun run smoke.ts",
+		"typecheck": "tsc --noEmit"
+	},
+	"dependencies": {
+		"@epicenter/field": "workspace:*",
+		"@epicenter/workspace": "workspace:*"
+	},
+	"devDependencies": {
+		"@types/node": "catalog:",
+		"playwright": "^1.61.1",
+		"typescript": "catalog:",
+		"vite": "catalog:"
+	}
+}

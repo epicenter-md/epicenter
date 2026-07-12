@@ -96,3 +96,58 @@ test('empty and async transaction builders never send a partial mutation', async
 
 	expect(requests).toEqual([]);
 });
+
+test('typed client rejects malformed rows, KV values, deltas, and mutation results', async () => {
+	const observers = new Set<Parameters<WorkspaceServicePort['observe']>[0]>();
+	const port: WorkspaceServicePort = {
+		async request(request) {
+			switch (request.kind) {
+				case 'get':
+					return { kind: 'row', row: { id: request.rowId, title: 42 } };
+				case 'getKv':
+					return { kind: 'value', value: 42 };
+				case 'mutate':
+					return { kind: 'mutation', results: [] };
+				default:
+					return { kind: 'count', value: 0 };
+			}
+		},
+		observe(callback) {
+			observers.add(callback);
+			return () => observers.delete(callback);
+		},
+	};
+	const definition = defineWorkspace({
+		id: 'client-validation-test',
+		name: 'Client validation test',
+		epoch: 'client-validation-v1',
+		tables: {
+			notes: defineTable({ id: field.string(), title: field.string() }),
+		},
+		kv: { theme: defineKv(field.string(), () => 'light') },
+	});
+	const client = createWorkspaceClient(definition, port);
+
+	await expect(client.tables.notes.get('one')).rejects.toThrow(
+		"invalid 'notes' row",
+	);
+	await expect(client.kv.get('theme')).rejects.toThrow('invalid KV value');
+	await expect(
+		client.tables.notes.put({ id: 'one', title: 'One' }),
+	).rejects.toThrow('wrong mutation result count');
+
+	client.tables.notes.observe(() => undefined);
+	client.kv.observe(() => undefined);
+	const [tableObserver, kvObserver] = observers;
+	expect(() =>
+		tableObserver?.({
+			tables: {
+				notes: { upserted: [{ id: 'one', title: 42 }], removed: [] },
+			},
+			kv: {},
+		}),
+	).toThrow("invalid 'notes' row");
+	expect(() => kvObserver?.({ tables: {}, kv: { theme: 42 } })).toThrow(
+		'invalid KV value',
+	);
+});

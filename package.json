@@ -36,6 +36,7 @@
 			"examples/*"
 		],
 		"catalog": {
+			"@sqlite.org/sqlite-wasm": "^3.53.0-build1",
 			"@types/node": "^24.0.0",
 			"@types/bun": "^1.3.14",
 			"@types/yargs": "^17.0.35",

@@ -111,9 +111,10 @@ test('local workspace preserves handshake failure when cleanup also fails', asyn
 	}
 });
 
-test('local workspace rejects a stale response that resolves after disposal', async () => {
+test('local workspace settles admitted work while rejecting new work during disposal', async () => {
 	const { definition, service } = setup();
 	let resolveCount!: (response: WorkspaceServiceResponse) => void;
+	let resolveDisposal!: () => void;
 	const delayed: OwnedWorkspaceServicePort = {
 		...service,
 		request(request) {
@@ -122,13 +123,22 @@ test('local workspace rejects a stale response that resolves after disposal', as
 				resolveCount = resolve;
 			});
 		},
+		[Symbol.asyncDispose]() {
+			return new Promise((resolve) => {
+				resolveDisposal = resolve;
+			});
+		},
 	};
 	const workspace = await openLocalWorkspaceFromService(definition, {
 		service: delayed,
 	});
 	const count = workspace.tables.notes.count();
-	await workspace[Symbol.asyncDispose]();
+	const disposal = workspace[Symbol.asyncDispose]();
+	await expect(workspace.tables.notes.count()).rejects.toThrow('disposed');
 	resolveCount({ kind: 'count', value: 1 });
+	expect(await count).toBe(1);
+	resolveDisposal();
+	await disposal;
 
-	await expect(count).rejects.toThrow('disposed');
+	await expect(workspace.tables.notes.count()).rejects.toThrow('disposed');
 });
