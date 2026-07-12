@@ -40,8 +40,11 @@ default loses nothing important; anything else belongs in a record table or a
 domain document.
 
 Bounded is enforced, not assumed: only declared keys are admitted, key and
-encoded-value budgets are checked at write time, and last-write-wins
-timestamps are bounded against absurd clocks. Hydration ordering is explicit:
+encoded-value budgets are checked at write time (512-byte keys, 64 KiB
+encoded values), and last-write-wins timestamp adoption into the local
+monotonic clock is clamped to 24 hours of forward skew so a poisoned
+far-future entry cannot drag every later local write timestamp with it;
+stored entries and winner selection are untouched. Hydration ordering is explicit:
 a surface must wait for local hydration before treating absence as the durable
 default. Transactions never span the record database and the preference plane;
 a value that must change atomically with a record is part of the record model,

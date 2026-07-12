@@ -742,6 +742,63 @@ test('sync supervisor retries failures and aborts in-flight disposal', async () 
 	expect(errors).toHaveLength(1);
 });
 
+test('a long-offline outbox drains through admission-sized push batches', async () => {
+	const server = createServer();
+	const native = new Database(':memory:');
+	const pushedBatchSizes: number[] = [];
+	const port = createPort(server.authority);
+	const batchingPort: ReplicaSyncPort = {
+		...port,
+		async push(request) {
+			pushedBatchSizes.push(request.mutations.length);
+			return server.authority.push(request);
+		},
+	};
+	const { runtime } = await openReplica({
+		native,
+		port: batchingPort,
+		actorId: 'batching-actor',
+	});
+	for (let index = 0; index < 70; index++) {
+		runtime.database.tables.notes.create(note(`n${index}`, `title ${index}`));
+	}
+	await runtime.syncOnce();
+	// mutationsPerPush is 64: 70 pending mutations must split across pushes
+	// instead of one oversized request that admission would refuse forever.
+	expect(pushedBatchSizes).toEqual([64, 6]);
+	expect(runtime.inspect().outbox).toHaveLength(0);
+	expect(runtime.database.tables.notes.count()).toBe(70);
+	native.close();
+	server.native.close();
+});
+
+test('sync supervisor stops permanently on a replica invariant violation', async () => {
+	let attempts = 0;
+	const errors: unknown[] = [];
+	const supervisor = startReplicaSyncSupervisor(
+		{
+			async syncOnce() {
+				attempts++;
+				throw new ReplicaInvariantViolationError('replica is corrupt');
+			},
+		},
+		{
+			onError: (error) => errors.push(error),
+			pollIntervalMs: 0,
+			retryDelaysMs: [0],
+		},
+	);
+
+	supervisor.request();
+	await waitFor(() => errors.length === 1);
+	// A later request must not resurrect a corrupt replica's sync loop.
+	supervisor.request();
+	await Bun.sleep(10);
+	expect(attempts).toBe(1);
+	expect(errors[0]).toBeInstanceOf(ReplicaInvariantViolationError);
+	await supervisor.dispose();
+});
+
 async function waitFor(check: () => boolean): Promise<void> {
 	for (let attempt = 0; attempt < 100; attempt++) {
 		if (check()) return;

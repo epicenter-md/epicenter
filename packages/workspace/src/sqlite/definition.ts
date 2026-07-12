@@ -13,6 +13,7 @@ import {
 	type TUnion,
 	Type,
 } from 'typebox';
+import { RECORD_SYNC_ADMISSION_LIMITS } from '@epicenter/record-sync';
 import type { KvDefinitions } from '../document/kv.js';
 import { assertSafeSegment } from '../shared/safe-segment.js';
 
@@ -102,6 +103,27 @@ export function defineTable<
 		throw new Error(
 			"Table column 'id' must be a non-null field.string() schema",
 		);
+	}
+
+	// Fail at definition time instead of a cryptic runtime parseMutation
+	// refusal: every non-id column becomes one wire cell, so the declared
+	// shape must fit the record admission ceilings in every mode.
+	const cellColumnCount = Object.keys(authoredColumns).length - 1;
+	if (cellColumnCount > RECORD_SYNC_ADMISSION_LIMITS.cellsPerOperation) {
+		throw new Error(
+			`Table declares ${cellColumnCount} cell columns; the record protocol admits at most ${RECORD_SYNC_ADMISSION_LIMITS.cellsPerOperation} cells per operation`,
+		);
+	}
+	const encoder = new TextEncoder();
+	for (const name of Object.keys(authoredColumns)) {
+		if (
+			encoder.encode(name).byteLength >
+			RECORD_SYNC_ADMISSION_LIMITS.identifierBytes
+		) {
+			throw new Error(
+				`Table column '${name}' exceeds the ${RECORD_SYNC_ADMISSION_LIMITS.identifierBytes}-byte wire identifier ceiling`,
+			);
+		}
 	}
 
 	const indexes = options?.indexes ?? [];

@@ -81,7 +81,7 @@ Sections below are revised to that model.
 ### Synchronized operation
 
 - Each logical synchronized database belongs to exactly one principal.
-- The logical database family key is `(principalId, appId)`. Each family has
+- The logical database family key is `(principalId, workspaceId)`. Each family has
   exactly one active database incarnation, and each incarnation lives in
   exactly one schema epoch: an opaque identity derived from the complete
   canonical synchronized schema plus the ordered authored semantic epoch lineage.
@@ -398,12 +398,12 @@ concurrent service worker allocates its sequence from the database authority
 atomically. A UNIQUE-index-on-UUID "for defense in depth" is exactly the
 retained-metadata smell this design refuses.
 
-`protocolMajor`, `schemaEpochId`, `appId`, and the server-minted
-`databaseIncarnationId` travel once in the request/connection envelope, never
-per mutation: they are negotiation and routing facts shared by every mutation
+`protocolMajor`, `schemaIdentity` (the exact schema-epoch identity), and the
+server-minted `databaseIncarnationId` travel once in the request envelope,
+never per mutation; the workspace id rides the route, not the envelope: they are negotiation and routing facts shared by every mutation
 a client sends, and copying them into each outbox and log row is dead weight.
 
-`schemaEpochId` replaces the earlier count-derived `appSchemaMajor`. The build
+`schemaIdentity` replaces the earlier count-derived `appSchemaMajor`. The build
 derives it from the canonical complete synchronized schema plus the ordered
 authored semantic epoch lineage. Structural changes cannot accidentally retain
 compatibility, while a meaning-only or transform change forces a new identity by
@@ -1076,7 +1076,7 @@ Required directed traces:
 Every Gate 1 trace runs within ONE schema epoch and one database incarnation:
 epoch upgrade and boundary import are planner scope, not sync-engine scope,
 and the gate must not smuggle them in. The request envelope under test is
-`{protocolMajor, schemaEpochId, databaseIncarnationId, mutations|cursor}`.
+`{protocolMajor, schemaIdentity, databaseIncarnationId, mutations|cursor}`.
 
 Run the same traces against:
 

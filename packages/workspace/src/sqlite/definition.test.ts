@@ -357,3 +357,22 @@ describe('defineWorkspace', () => {
 		).toThrow("epoch id 'rows-v1' is duplicated");
 	});
 });
+
+test('defineTable refuses shapes the record wire cannot admit', () => {
+	const oversizedColumns = Object.fromEntries([
+		['id', field.string()],
+		...Array.from({ length: 129 }, (_, index) => [
+			`column${index}`,
+			field.string(),
+		]),
+	]);
+	expect(() =>
+		defineTable(oversizedColumns as Parameters<typeof defineTable>[0]),
+	).toThrow('cells per operation');
+	expect(() =>
+		defineTable({
+			id: field.string(),
+			['x'.repeat(513)]: field.string(),
+		}),
+	).toThrow('wire identifier ceiling');
+});

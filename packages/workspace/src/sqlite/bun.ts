@@ -1,3 +1,12 @@
+/**
+ * Bun-hosted SQLite workspace doors.
+ *
+ * These doors are table-only: they do not accept the browser doors'
+ * root-document KV mount. A Bun host that needs the preference plane
+ * composes it via openWorkspaceFromService directly with its own Y.Doc
+ * lifecycle; that seam is deliberate, not an oversight.
+ */
+
 import { Database } from 'bun:sqlite';
 import { createHash, randomUUID } from 'node:crypto';
 import { mkdirSync } from 'node:fs';

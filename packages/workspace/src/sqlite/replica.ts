@@ -10,6 +10,7 @@ import {
 	isValidSnapshotChunk,
 	isValidSnapshotManifest,
 	type Mutation,
+	RECORD_SYNC_ADMISSION_LIMITS,
 	type PullRequest,
 	type PushRequest,
 	parseMutation,
@@ -181,23 +182,29 @@ export async function createReplicaRuntime<TTables extends TableDefinitions>({
 	}
 
 	async function push(signal?: AbortSignal): Promise<void> {
+		// Push in admission-sized batches: a long-offline outbox must drain
+		// through many requests instead of exceeding mutationsPerPush or the
+		// encoded push byte ceiling and wedging synchronization forever.
 		const mutations = readOutbox(sqlite);
-		if (mutations.length === 0) return;
-		const request: PushRequest = {
-			kind: 'push',
-			...envelope(),
-			mutations,
-		};
-		const response = parsePushResponse(await sync.push(request, signal));
-		if (!response.ok) {
-			if (response.reason === 'create-conflict') {
-				// The authority saw this replica submit a createRow for a live
-				// identity. The replica is corrupt; local repair is refused.
-				throw new ReplicaInvariantViolationError(
-					'Replica push refused: create-conflict; discard this replica and rebootstrap from the authority',
-				);
+		for (let start = 0; start < mutations.length; ) {
+			const batch = takePushBatch(mutations, start);
+			const request: PushRequest = {
+				kind: 'push',
+				...envelope(),
+				mutations: batch,
+			};
+			const response = parsePushResponse(await sync.push(request, signal));
+			if (!response.ok) {
+				if (response.reason === 'create-conflict') {
+					// The authority saw this replica submit a createRow for a live
+					// identity. The replica is corrupt; local repair is refused.
+					throw new ReplicaInvariantViolationError(
+						'Replica push refused: create-conflict; discard this replica and rebootstrap from the authority',
+					);
+				}
+				throw new Error(`Replica push refused: ${response.reason}`);
 			}
-			throw new Error(`Replica push refused: ${response.reason}`);
+			start += batch.length;
 		}
 	}
 
@@ -407,7 +414,15 @@ export type ReplicaSyncSupervisorOptions = {
 	onError(error: unknown): void;
 };
 
-/** Keep one replica converging without turning transport failures into writes. */
+/**
+ * Keep one replica converging without turning transport failures into writes.
+ *
+ * Transport and transient failures are reported and retried with backoff. A
+ * ReplicaInvariantViolationError is terminal: the supervisor reports it once
+ * and stops scheduling work, because retrying a corrupt replica cannot
+ * converge. Recovery is host-owned: discard the replica database and open a
+ * fresh replica (rebootstrap).
+ */
 export function startReplicaSyncSupervisor(
 	runtime: { syncOnce(signal?: AbortSignal): Promise<void> },
 	{
@@ -420,6 +435,7 @@ export function startReplicaSyncSupervisor(
 		throw new TypeError('pollIntervalMs must be a non-negative safe integer');
 	}
 	let isDisposed = false;
+	let isFatal = false;
 	let requested = false;
 	let failureCount = 0;
 	let timer: ReturnType<typeof setTimeout> | undefined;
@@ -435,7 +451,7 @@ export function startReplicaSyncSupervisor(
 	}
 
 	function schedule(delayMs: number): void {
-		if (isDisposed) return;
+		if (isDisposed || isFatal) return;
 		if (timer) clearTimeout(timer);
 		timer = setTimeout(() => {
 			timer = undefined;
@@ -446,7 +462,7 @@ export function startReplicaSyncSupervisor(
 	function run(): Promise<void> {
 		if (running) return running;
 		running = (async () => {
-			while (requested && !isDisposed) {
+			while (requested && !isDisposed && !isFatal) {
 				requested = false;
 				controller = new AbortController();
 				try {
@@ -455,6 +471,11 @@ export function startReplicaSyncSupervisor(
 				} catch (error) {
 					if (isDisposed && controller.signal.aborted) return;
 					report(error);
+					if (error instanceof ReplicaInvariantViolationError) {
+						// Terminal: retrying a corrupt replica cannot converge.
+						isFatal = true;
+						return;
+					}
 					const delay =
 						retryDelaysMs[
 							Math.min(failureCount, Math.max(0, retryDelaysMs.length - 1))
@@ -469,13 +490,13 @@ export function startReplicaSyncSupervisor(
 			if (!isDisposed && pollIntervalMs > 0) schedule(pollIntervalMs);
 		})().finally(() => {
 			running = undefined;
-			if (requested && !isDisposed) void run();
+			if (requested && !isDisposed && !isFatal) void run();
 		});
 		return running;
 	}
 
 	function request(): void {
-		if (isDisposed) return;
+		if (isDisposed || isFatal) return;
 		requested = true;
 		if (timer) {
 			clearTimeout(timer);
@@ -625,6 +646,37 @@ function readOutbox(sqlite: RecordSyncSqlite): Mutation[] {
 		);
 }
 
+// Room the request envelope and JSON framing may take beside the mutations.
+const PUSH_ENVELOPE_ALLOWANCE_BYTES = 4 * 1024;
+
+function takePushBatch(
+	mutations: readonly Mutation[],
+	start: number,
+): Mutation[] {
+	const budget =
+		RECORD_SYNC_ADMISSION_LIMITS.encodedPushBytes - PUSH_ENVELOPE_ALLOWANCE_BYTES;
+	const batch: Mutation[] = [];
+	let bytes = 0;
+	for (
+		let index = start;
+		index < mutations.length &&
+		batch.length < RECORD_SYNC_ADMISSION_LIMITS.mutationsPerPush;
+		index += 1
+	) {
+		const mutation = mutations[index];
+		if (!mutation) break;
+		const encoded = new TextEncoder().encode(
+			JSON.stringify(mutation),
+		).byteLength;
+		// Every mutation fits alone: commit-time admission caps one encoded
+		// mutation far below the push budget.
+		if (batch.length > 0 && bytes + encoded + 1 > budget) break;
+		batch.push(mutation);
+		bytes += encoded + 1;
+	}
+	return batch;
+}
+
 function pendingCreations(
 	outbox: readonly Mutation[],
 ): { table: string; rowId: string }[] {
@@ -669,8 +721,11 @@ function assertPullPage(
 				!local ||
 				stableJson(local.operations) !== stableJson(mutation.operations)
 			) {
-				throw new Error(
-					'Replica authority returned a mismatched mutation echo',
+				// The authority accepted this actor sequence with a different
+				// payload: two writers share one actor identity (a restored
+				// backup or clone). Local repair is refused.
+				throw new ReplicaInvariantViolationError(
+					'Replica authority returned a mismatched mutation echo; discard this replica and rebootstrap from the authority',
 				);
 			}
 		}
@@ -757,12 +812,16 @@ function validateSnapshotActorHighWater(
 	let expected = firstPending;
 	for (const mutation of outbox) {
 		if (mutation.actorSequence !== expected) {
-			throw new Error('Replica outbox is not a contiguous actor suffix');
+			throw new ReplicaInvariantViolationError(
+				'Replica outbox is not a contiguous actor suffix',
+			);
 		}
 		expected += 1;
 	}
 	if (expected !== meta.nextActorSequence) {
-		throw new Error('Replica outbox does not end at the next actor sequence');
+		throw new ReplicaInvariantViolationError(
+			'Replica outbox does not end at the next actor sequence',
+		);
 	}
 	const previouslyAcceptedThrough = firstPending - 1;
 	const lastAllocated = meta.nextActorSequence - 1;
@@ -770,7 +829,7 @@ function validateSnapshotActorHighWater(
 		acceptedThrough < previouslyAcceptedThrough ||
 		acceptedThrough > lastAllocated
 	) {
-		throw new Error(
+		throw new ReplicaInvariantViolationError(
 			'Replica snapshot actor high-water contradicts local intent',
 		);
 	}
