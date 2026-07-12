@@ -6,6 +6,19 @@ import type {
 } from '@epicenter/workspace';
 import { createSubscriber } from 'svelte/reactivity';
 
+/** The read and invalidation surface exposed by SQLite workspace tables. */
+export type ObservableTable<TRow extends { id: string }> = {
+	get(id: TRow['id']): TRow | null;
+	list(): readonly TRow[];
+	observe(callback: (changedIds: ReadonlySet<TRow['id']>) => void): () => void;
+};
+
+/** A reactive view over rows that conform to one exact workspace schema. */
+export type TableView<TRow extends { id: string }> = {
+	readonly all: readonly TRow[];
+	byId(id: TRow['id']): TRow | undefined;
+};
+
 /**
  * A read-only reactive view of a workspace table: the conforming rows plus the
  * table's two issue buckets, all driven by one `observe()` subscription.
@@ -32,40 +45,42 @@ export type ReadonlyTableView<TRow extends BaseRow> = {
 };
 
 /**
- * Create a read-only reactive view of a workspace table from a single
- * `observe()` subscription.
+ * Create a read-only reactive view of an exact-schema workspace table.
  *
- * `all`, `nonconforming`, and `newerWriter` share one memoized `scan()`: the
- * scan recomputes once when the table changes, not once per surface read. The
- * table caches parsed rows by stored-value identity, so an unchanged row keeps
- * its object reference across scans and only changed rows are reparsed; the view
- * does not need a mirror of its own to stay incremental.
- *
- * `byId` reads straight through the table per call. It is reactive (it
- * subscribes), but coarsely: any table change re-runs it, where a per-key mirror
- * would re-run only on a change to that id. At table sizes below roughly ten
- * thousand rows with human-speed edits this is not worth a per-key subscription;
- * add one keyed by id if profiling ever says otherwise.
- *
- * The view self-manages its lifetime: `observe()` attaches when the first effect
- * starts reading and detaches a microtask after the last one stops. There is no
- * `[Symbol.dispose]` to thread through consumers.
- *
- * Read-only: mutations go through `table.set()`, `table.update()`, etc. The
- * observer picks up changes from both local writes and remote CRDT sync.
- *
- * @example
- * ```typescript
- * const entries = fromTable(workspaceClient.tables.entries);
- *
- * entries.all;                  // TRow[] (reactive)
- * entries.byId(id);             // TRow | undefined (reactive)
- * entries.nonconforming.length; // issue bucket (reactive)
- * ```
+ * The view reads through the table instead of maintaining a second row mirror.
+ * Its one ref-counted subscription invalidates both the memoized list and point
+ * reads after local writes, remote pulls, snapshots, and imports.
  */
+export function fromTable<TRow extends { id: string }>(
+	table: ObservableTable<TRow>,
+): TableView<TRow>;
+/** @deprecated Removed with the Yjs record table after app migration. */
 export function fromTable<TRow extends BaseRow>(
 	table: ReadonlyTable<TRow>,
-): ReadonlyTableView<TRow> {
+): ReadonlyTableView<TRow>;
+export function fromTable<TRow extends BaseRow>(
+	table: ObservableTable<TRow> | ReadonlyTable<TRow>,
+): TableView<TRow> | ReadonlyTableView<TRow> {
+	if ('list' in table) {
+		const subscribe = createSubscriber((update) =>
+			table.observe(() => update()),
+		);
+		const listed = $derived.by(() => {
+			subscribe();
+			return table.list();
+		});
+
+		return {
+			get all() {
+				return listed;
+			},
+			byId(id: TRow['id']): TRow | undefined {
+				subscribe();
+				return table.get(id) ?? undefined;
+			},
+		};
+	}
+
 	const subscribe = createSubscriber((update) => table.observe(update));
 	// One scan feeds every list surface and recomputes once per change. Reading
 	// `scanned` is what registers the dependency, so the list getters need no
