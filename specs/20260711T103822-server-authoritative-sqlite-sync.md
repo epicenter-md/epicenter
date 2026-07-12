@@ -1423,13 +1423,15 @@ superseded it. Details in `demos/local-first-sync/REVIEW-2026-07-11.md`
   plane is not the record wire, so `null` can be a real stored value while
   deleting the key means no override exists. The earlier must-not-admit-null
   rule was a SQLite-wire artifact and is deleted with it.
-- Opening is TWO doors, not one option: `openStandaloneWorkspace(definition,
-  { storage })` (no actor, cursor, or outbox exist) and
-  `openWorkspaceReplica(definition, { storage, sync })`.
-  `openWorkspace({ sync? })`
-  dies: it hid a permanent durable-identity choice inside an optional field.
-  Promotion is `openWorkspaceReplica` + `planImport(local)`, never a reopen flag;
-  `connect(connection | null)` does not survive either.
+- The public definition has one lifecycle entry:
+  `definition.connect({ kind: 'standalone', storage })` or
+  `definition.connect({ kind: 'replica', storage, connection })`. The required
+  discriminant keeps the permanent durable-database choice explicit; there is
+  no optional `sync`, nullable connection, or second public SQLite namespace.
+  The existing `openStandaloneWorkspace` and `openWorkspaceReplica` doors stay
+  as lower-level platform implementation seams until the root runtime owns
+  their worker/native construction. Promotion opens a replica and applies an
+  explicit import plan; it is never a reopen flag.
   The SQLite-owning worker or native service imports the workspace definition
   in its own process. Definitions contain validators, default factories, and
   migration functions, so the UI never attempts to structured-clone them. A
@@ -1464,6 +1466,11 @@ superseded it. Details in `demos/local-first-sync/REVIEW-2026-07-11.md`
   bespoke query builder: the deleted 2026 Drizzle layer died as a second
   consumer-less schema derivation, and field.* must remain canonical, so
   Drizzle could only return as exactly that second derivation.
+- Secondary indexes are non-unique representation aids. A deterministic
+  external identifier is an ordinary indexed column, not row identity. App
+  reconciliation queries by that value and then patches or creates, while
+  tolerating duplicate races: cross-row `UNIQUE` would make the accepted
+  offline fold partial and is therefore not expressible in synchronized DDL.
 - UI helpers expose synchronous query-scoped projections after an explicit
   `whenReady` promise. They hydrate once, buffer committed deltas that race the
   initial snapshot, and never become a second durable database or update
