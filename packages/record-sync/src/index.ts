@@ -12,7 +12,7 @@ export {
 	restoreRecordAuthority,
 	type SnapshotPublicationOptions,
 } from './authority.js';
-export { type FoldResult, foldRow } from './fold.js';
+export { foldRow } from './fold.js';
 export {
 	type Cells,
 	type JsonValue,

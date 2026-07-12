@@ -5,7 +5,7 @@ import type { Cells, Operation } from './protocol.js';
  * deleted row is physically gone, and resurrection is prevented by explicit
  * creation plus one-lifetime row ids, not by tombstone records.
  */
-export type FoldResult =
+type FoldResult =
 	| { kind: 'created'; cells: Cells }
 	| { kind: 'updated'; cells: Cells }
 	| { kind: 'deleted' }
