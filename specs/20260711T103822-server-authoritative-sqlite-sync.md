@@ -1271,6 +1271,13 @@ is type-checked in `demos/local-first-sync/api-prototype/` and detailed in
   dies: it hid a permanent durable-identity choice inside an optional field.
   Promotion is `openReplica` + `planImport(local)`, never a reopen flag;
   `connect(connection | null)` does not survive either.
+  The SQLite-owning worker or native service imports the workspace definition
+  in its own process. Definitions contain validators, default factories, and
+  migration functions, so the UI never attempts to structured-clone them. A
+  lower-level service handshake verifies local/replica mode, workspace id, and
+  exact schema identity before the typed client opens. Platform helpers may
+  preserve the concise `{ storage }` public shape while owning this service
+  construction underneath.
 - Table writes are wire-honest and asynchronous: `put` (write every cell
   declared by this exact schema; the local image of
   patchRow-all-declared-cells),

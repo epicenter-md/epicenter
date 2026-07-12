@@ -33,6 +33,10 @@ native SQLite owners:
   the commit currently being published;
 - Svelte helpers hydrate one query-scoped cache, buffer pre-hydration deltas,
   and never update optimistically.
+- `openLocalWorkspace` verifies the service's local/replica mode, workspace id,
+  and exact schema identity before exposing a typed client;
+- the Bun adapter owns a real file-backed SQLite connection and preserves typed
+  rows across close and reopen.
 
 This does not claim that Wave 5 is complete. The old Yjs table/KV path and its
 callers remain until `openLocalWorkspace` and `openReplica` can supply real
@@ -69,6 +73,7 @@ __epicenter_meta
   storage_revision
   workspace_id
   schema_identity
+  database_kind       local or replica, permanent for this file
 
 __epicenter_kv
   key      TEXT PRIMARY KEY
@@ -158,14 +163,21 @@ bun run --cwd apps/whispering typecheck
 bun run check:licenses
 ```
 
-Result at the transport checkpoint: 46 focused tests passed with 163
+Result at the local lifecycle checkpoint: 54 focused tests passed with 182
 assertions. Workspace and Svelte utility typechecks passed. The earlier
 foundation checkpoint also passed the affected app typechecks, both Whispering
 browser and Tauri Svelte checks, and the MIT package license graph.
 
 ## Required next step
 
-Pull the first Wave 6 item forward: implement `openLocalWorkspace` and
-`openReplica` over real browser and native SQLite lifecycles. Then migrate app
-definitions and actions, move only proven collaborative bodies to declared Yjs
-docs, stop every old record import, and delete the Yjs table/KV implementation.
+Finish the pulled-forward lifecycle work: add the app-specific browser worker
+adapter for `openLocalWorkspace`, then implement `openReplica` with durable
+actor/outbox/cursor ownership. The worker or native service must import the
+workspace definition itself because validators, default factories, and
+migration functions are not structured-clone data. The UI sends no executable
+schema; its opening handshake verifies mode, workspace id, and exact schema
+identity.
+
+Then migrate app definitions and actions, move only proven collaborative bodies
+to declared Yjs docs, stop every old record import, and delete the Yjs table/KV
+implementation.
