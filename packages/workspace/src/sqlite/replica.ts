@@ -64,7 +64,7 @@ export type ReplicaSyncPort = {
 	): Promise<unknown>;
 };
 
-export type CreateReplicaRuntimeOptions<TTables extends TableDefinitions> = {
+type CreateReplicaRuntimeOptions<TTables extends TableDefinitions> = {
 	definition: WorkspaceDefinition<TTables>;
 	sqlite: RecordSyncSqlite;
 	sync: ReplicaSyncPort;

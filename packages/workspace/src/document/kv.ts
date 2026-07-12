@@ -29,10 +29,10 @@ export type KvChange<TValue> =
 // ════════════════════════════════════════════════════════════════════════════
 
 /** Maximum UTF-8 byte length of a declared KV key. */
-export const MAX_KV_KEY_BYTES = 512;
+const MAX_KV_KEY_BYTES = 512;
 
 /** Maximum UTF-8 byte length of one JSON-encoded KV value. */
-export const MAX_KV_VALUE_BYTES = 64 * 1024;
+const MAX_KV_VALUE_BYTES = 64 * 1024;
 
 const utf8 = new TextEncoder();
 

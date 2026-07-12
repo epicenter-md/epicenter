@@ -32,7 +32,7 @@ export type WorkspaceKvMount = {
 	whenHydrated?: Promise<unknown>;
 };
 
-export type OpenWorkspaceFromServiceOptions<
+type OpenWorkspaceFromServiceOptions<
 	TKind extends 'standalone' | 'replica',
 	TKvMount extends WorkspaceKvMount | undefined = undefined,
 > = {

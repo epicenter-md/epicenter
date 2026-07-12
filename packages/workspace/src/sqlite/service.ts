@@ -253,10 +253,6 @@ export function createWorkspaceService<TTables extends TableDefinitions>(
 	} satisfies WorkspaceServiceRuntime;
 }
 
-export type WorkspaceService<TTables extends TableDefinitions> = ReturnType<
-	typeof createWorkspaceService<TTables>
->;
-
 function materializeDelta(
 	changes: CommittedApplicationChanges,
 	tables: Record<string, UntypedTable>,
