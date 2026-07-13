@@ -1,9 +1,9 @@
 # Why Epicenter Uses Numbers Instead of Semantic Versioning
 
-> Historical note: this article talks about workspace-level `version` fields
-> from an older API. Current schema evolution is table-local:
-> `defineTable(v1, v2, ...).migrate(...)`, and `createWorkspace({ id, tables,
-> kv })` has no workspace version option.
+> Historical: this article describes two retired versioning APIs. The target
+> record plane uses immutable SQLite schemas and a separate adjacent
+> `defineRecordsMigration` chain; see
+> [ADR-0125](../../../../docs/adr/0125-record-schemas-are-immutable-evolution-creates-a-successor-database.md).
 
 In Epicenter, workspace versions are just numbers: 1, 2, 3, 4.
 

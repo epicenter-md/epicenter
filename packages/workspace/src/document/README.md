@@ -1,5 +1,10 @@
 # Workspace Document API
 
+> Transition note: this page describes the current production Yjs-record path.
+> The greenfield records model is `@epicenter/workspace/sqlite`, where SQLite
+> owns records and tables declare closed child-document capabilities through
+> `defineTable({ fields, documents, touchOnDocumentEdit })`.
+
 A typed interface over Y.js for apps that need to evolve their data schema over time.
 
 ## The Idea

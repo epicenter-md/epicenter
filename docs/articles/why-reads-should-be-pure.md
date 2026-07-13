@@ -1,5 +1,9 @@
 # Why Reads Should Be Pure
 
+> Historical: this article reasons about the retired migrate-on-read record
+> model. The target builds and validates a complete successor database before
+> activation. See [ADR-0125](../adr/0125-record-schemas-are-immutable-evolution-creates-a-successor-database.md).
+
 When designing Epicenter's migrate-on-read pattern, we faced a question: after reading and migrating old data, should we automatically write the migrated version back to storage?
 
 We decided no. Reads should be pure.

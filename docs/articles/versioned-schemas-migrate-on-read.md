@@ -1,5 +1,9 @@
 # Versioned Schemas with Migrate-on-Read
 
+> Historical: migrate-on-read is not the target records model. Epicenter uses
+> immutable SQLite schemas and builds a complete validated successor database
+> before activation. See [ADR-0125](../adr/0125-record-schemas-are-immutable-evolution-creates-a-successor-database.md).
+
 Most developers struggle with migrations in local-first apps. The core issue: how do you rename columns, change field types, or restructure data when that data is replicated across many clients with different app versions?
 
 Epicenter solves this with a pattern we call **migrate-on-read**: store data in its original schema version, validate and migrate when reading.

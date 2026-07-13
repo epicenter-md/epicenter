@@ -35,6 +35,11 @@ boundary is the same: shared model in the workspace file, runtime wiring in
 
 ## Boundaries
 
+The workflow below describes apps still using the production Yjs-record path.
+The target SQLite contract replaces `table.docs(...)` declarations with the
+single `defineTable({ fields, documents, touchOnDocumentEdit })` shape as each
+app migrates; do not mix both record authorities inside one app.
+
 `workspace.ts` is the sync contract. It defines table shapes, KV schemas, branded IDs, actions, child-doc layouts, and the app's `defineWorkspace(...)` value. Forking that file means forking sync compatibility.
 
 `mount.ts` is the reusable mount factory. It opens the shared workspace with Node-only attachments: Yjs persistence, collaboration, SQLite and Markdown materializers, and app-owned background work.

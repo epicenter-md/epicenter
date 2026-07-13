@@ -1,5 +1,9 @@
 # Schema Evolution Without Migrations
 
+> Historical: this article describes the retired Yjs-record model. Epicenter's
+> target record plane uses immutable SQLite schemas and validated successor
+> databases. See [ADR-0125](../adr/0125-record-schemas-are-immutable-evolution-creates-a-successor-database.md).
+
 Traditional databases have migrations: you write a script, run it against the database, and boom, your schema is updated. Everyone's on the same version.
 
 That doesn't work in a CRDT system.

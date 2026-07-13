@@ -477,16 +477,16 @@
 | 2026-04-22 | workspace-logger | removed | specs/20260422T222216-workspace-logger.md |
 | 2026-04-22 | unified-action-invocation | removed | specs/20260422T234500-unified-action-invocation.md |
 | 2026-04-22 | markdown-materializer-reindex | removed | specs/20260422T175408-markdown-materializer-reindex.md |
-| 2026-04-21 | inline-content-doc-factories | in tree | specs/20260421T000000-inline-content-doc-factories.md |
+| 2026-04-21 | inline-content-doc-factories | removed | specs/20260421T000000-inline-content-doc-factories.md |
 | 2026-04-21 | cli-scripting-first-redesign | in tree | specs/20260421T155436-cli-scripting-first-redesign.md |
 | 2026-04-21 | collapse-defineworkspace-into-definedocument | removed | specs/20260421T010000-collapse-defineworkspace-into-definedocument.md |
 | 2026-04-21 | encryption-primitive-refactor | removed | specs/20260421T140000-encryption-primitive-refactor.md |
 | 2026-04-21 | collapse-document-and-workspace-primitives | removed | specs/20260421T170000-collapse-document-and-workspace-primitives.md |
 | 2026-04-21 | merge-document-into-workspace | removed | specs/20260421T170000-merge-document-into-workspace.md |
-| 2026-04-20 | definedocument-primitive | in tree | specs/20260420T152026-definedocument-primitive.md |
+| 2026-04-20 | definedocument-primitive | removed | specs/20260420T152026-definedocument-primitive.md |
 | 2026-04-20 | document-open-handle-disposable | in tree | specs/20260420T162601-document-open-handle-disposable.md |
 | 2026-04-20 | y-websocket-teardown-fix | in tree | specs/20260420T230000-y-websocket-teardown-fix.md |
-| 2026-04-20 | collapse-document-framework | in tree | specs/20260420T230100-collapse-document-framework.md |
+| 2026-04-20 | collapse-document-framework | removed | specs/20260420T230100-collapse-document-framework.md |
 | 2026-04-20 | workspace-as-definedocument | in tree | specs/20260420T230200-workspace-as-definedocument.md |
 | 2026-04-20 | consumer-migration-to-defineworkspace | in tree | specs/20260420T234500-consumer-migration-to-defineworkspace.md |
 | 2026-04-20 | documents-under-tables-namespace | removed | specs/20260420T120000-documents-under-tables-namespace.md |
@@ -738,7 +738,7 @@
 | 2026-03-05 | neon-to-planetscale-hyperdrive | removed | specs/20260305T180000-neon-to-planetscale-hyperdrive.md |
 | 2026-03-05 | server-remote-adapter-architecture | removed | specs/20260305T180000-server-remote-adapter-architecture.md |
 | 2026-03-04 | platform-agnostic-sync-primitives | in tree | specs/20260304T000000-platform-agnostic-sync-primitives.md |
-| 2026-03-04 | withDocument-onUpdate-callback | in tree | specs/20260304T000000-withDocument-onUpdate-callback.md |
+| 2026-03-04 | withDocument-onUpdate-callback | removed | specs/20260304T000000-withDocument-onUpdate-callback.md |
 | 2026-03-04 | hub-sidecar-architecture | in tree | specs/20260304T120000-hub-sidecar-architecture.md |
 | 2026-03-03 | http-sync-protocol | in tree | specs/20260303T150000-http-sync-protocol.md |
 | 2026-03-03 | unified-versioning | in tree | specs/20260303T150000-unified-versioning.md |
@@ -826,7 +826,7 @@
 | 2026-02-18 | markdown-persistence-extension | in tree | specs/20260218T211400-markdown-persistence-extension.md |
 | 2026-02-18 | tab-manager-markdown-export | removed | specs/20260218T172212-tab-manager-markdown-export.md |
 | 2026-02-18 | tab-manager-markdown-export | removed | docs/specs/20260218T172212-tab-manager-markdown-export.md |
-| 2026-02-17 | table-level-document-api | in tree | specs/20260217T094400-table-level-document-api.md |
+| 2026-02-17 | table-level-document-api | removed | specs/20260217T094400-table-level-document-api.md |
 | 2026-02-17 | tab-manager-popup-to-sidepanel | in tree | specs/20260217T211400-tab-manager-popup-to-sidepanel.md |
 | 2026-02-17 | tab-manager-popup-to-sidepanel | removed | docs/specs/20260217T211400-tab-manager-popup-to-sidepanel.md |
 | 2026-02-16 | component-styling-audit | in tree | specs/20260216T211358-component-styling-audit.md |
