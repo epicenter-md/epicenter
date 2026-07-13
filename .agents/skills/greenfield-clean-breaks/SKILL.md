@@ -7,6 +7,11 @@ description: "Greenfield clean-break review and execution for starting from an u
 
 Use this skill as an operating mode, not a cleanup checklist. Start with the uncompromised greenfield vision, then work backward to the deletion waves, owner changes, and verification needed to make that vision real. The current software is evidence, not a constraint. Previously resolved decisions can be reopened when they make the final system harder to explain, own, test, or delete.
 
+When the destination is genuinely exploratory and the user has not explicitly
+accepted it, run [dialectic](../dialectic/SKILL.md) first. Do not add a dialectic
+round to a settled request. This skill owns the backward transition and
+execution after the destination is clear.
+
 Two pillars:
 
 ```txt
