@@ -38,8 +38,9 @@ notes table
 ```
 
 A cell is atomic because assigning it replaces its complete value. Concurrent
-assignments to different cells can compose. A value that needs character-level
-or structural merging is not a cell; it belongs in a child document.
+assignments to different cells compose; concurrent assignments to the same cell
+resolve by server acceptance order. A value that needs character-level or
+structural merging is not a cell; it belongs in a child document.
 
 A table is the typed collection that organizes records. The records database is
 the complete queryable collection of those tables under one immutable records
@@ -113,9 +114,9 @@ addresses, so renaming either creates new document identities and requires an
 explicit conversion when content must carry forward. Capability-owned internal
 Yjs root names are isolated from both public maps.
 
-Use a child document when concurrent edits must merge inside the value. Do not
-put a large JSON object in one cell and expect its members to merge; an atomic
-JSON cell is still replaced as a whole.
+Use a child document when independent edits inside one value must survive and
+converge. Do not put a large JSON object in one cell and expect its members to
+merge; an atomic JSON cell is still replaced as a whole.
 
 ## The planes compose without sharing lifecycles
 
@@ -164,6 +165,14 @@ its KV preferences, and its child-document addresses remain stable.
 
 ## Placement rule
 
+The merge unit chooses the storage plane. Store a value in records when
+server-ordered replacement of the whole cell preserves acceptable intent. Use a
+child document when independent edits inside one value must survive and
+converge.
+
+Size does not choose the storage plane. Offline availability does not choose it:
+records already support offline work. The required conflict boundary does.
+
 Ask these questions in order:
 
 1. Does this value need an identified create, update, and delete lifecycle, or
@@ -174,6 +183,12 @@ Ask these questions in order:
    workspace KV.
 4. Is it local to one device, secret, or privacy-sensitive? Keep it outside the
    synchronized workspace.
+
+A database-style spreadsheet can remain records when each logical cell is an
+acceptable replacement boundary. A workbook with concurrent structural edits,
+range operations, and collaborative undo may instead earn a dedicated document
+format. The product label "spreadsheet" does not decide the model; its required
+concurrent operations do.
 
 The hard boundary is atomicity. If two values must change atomically, they must
 share an authority. Convenience alone is not a reason to cross storage planes.

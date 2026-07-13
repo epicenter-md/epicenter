@@ -21,6 +21,16 @@ avoid.
 
 ## Decision
 
+The merge unit chooses the storage plane. Store a value in records when
+server-ordered replacement of the whole cell preserves acceptable intent. Use
+a child document when independent edits inside one value must survive and
+converge.
+
+This ADR owns storage placement and the lazy child-document lifecycle.
+[ADR-0120](0120-persisted-fields-are-atomic-cells-and-collaborative-bodies-are-yjs-documents.md)
+owns the underlying record-cell replacement semantics and persisted field
+vocabulary.
+
 The record authority owns bounded, queryable metadata whose cells may be
 replaced atomically. Merge-sensitive state lives in a separately addressed,
 lazily loaded Yjs child document. A record may carry the child document's stable
@@ -56,6 +66,9 @@ not reinterpret them through the record authority's server-order conflict rule.
 - Schema authors decide whether replacement is acceptable before choosing a
   storage primitive. A UI label such as "counter" or "todo list" is not enough;
   the required concurrent operations decide the model.
+- Large values do not automatically become child documents, and offline use
+  does not require Yjs. Records already work offline; a child document earns
+  its cost only when edits below the cell boundary must compose.
 - Server-order replacement remains one honest rule for record cells. Yjs owns
   the smaller set of values where commutative or structural merging is worth its
   memory, history, persistence, and lifecycle costs.

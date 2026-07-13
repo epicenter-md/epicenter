@@ -16,6 +16,15 @@ closed format vocabulary without becoming SQLite columns.
 
 ## Decision
 
+A record cell is the replacement boundary. Store a value in records when
+server-ordered replacement of the whole cell preserves acceptable intent.
+Concurrent assignments to different cells compose; concurrent assignments to
+the same cell resolve by server acceptance order.
+
+This ADR owns that conflict boundary and the persisted field vocabulary.
+[ADR-0123](0123-bounded-metadata-uses-record-authority-merge-sensitive-state-uses-lazy-child-documents.md)
+applies it as the placement rule for records and lazy child documents.
+
 Every persisted table column and KV value is authored with the closed `field.*`
 vocabulary, optionally wrapped in `nullable(...)`. `field.json(schema)` is the
 only structured-value escape hatch. Raw TypeBox schemas remain valid for action
@@ -76,8 +85,8 @@ are not part of the application schema surface (ADR-0126).
   `field.multiSelect`, and `field.json` all share the same sync behavior: the
   complete cell value is replaced. Their distinct kinds earn validation,
   storage, and editor behavior, not separate conflict algorithms.
-- Concurrent assignments to different cells compose. Concurrent assignments to
-  the same cell use server acceptance order.
+- The merge unit, not value size or offline availability, determines whether a
+  value remains a cell or moves to a child document.
 - Arrays in `field.tags`, `field.multiSelect`, and `field.json` do not merge by
   element. Independent contributions belong in independent rows or a Yjs body.
 - A generic database editor and import diff can derive widgets from the same
