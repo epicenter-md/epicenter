@@ -209,5 +209,6 @@ Each option and the one reason it lost. Terse. This is not the spec.
 | [0130](0130-records-replacement-starts-a-new-epoch-without-an-online-succession-protocol.md) | Records replacement starts a new epoch without an online succession protocol | Accepted |
 | [0131](0131-every-durable-records-materialization-carries-its-canonical-descriptor.md) | Every durable records materialization carries its canonical descriptor | Accepted |
 | [0132](0132-an-obsolete-replica-exports-one-read-only-recovery-checkpoint.md) | An obsolete replica exports one read-only recovery checkpoint | Accepted |
+| [0133](0133-ordinary-record-sync-requests-carry-only-the-records-epoch.md) | Ordinary record sync requests carry only the records epoch | Accepted |
 
 When you add an ADR, add its row here.

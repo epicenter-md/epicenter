@@ -85,12 +85,13 @@ export function parseRecordAuthorityOpenRequest(
 	};
 }
 
-type StoredAuthorityIdentity = RequestEnvelope & { recordsDescriptor: string };
+export type RecordAuthorityIdentity = RecordAuthorityDescriptor & {
+	protocolMajor: number;
+};
 
-function envelopeOf(identity: StoredAuthorityIdentity): RequestEnvelope {
+function envelopeOf(identity: RecordAuthorityIdentity): RequestEnvelope {
 	return {
 		protocolMajor: identity.protocolMajor,
-		recordsSchemaHash: identity.recordsSchemaHash,
 		recordsEpoch: identity.recordsEpoch,
 	};
 }
@@ -123,7 +124,7 @@ function one<TRow extends Record<string, string | number | null>>(
 
 function readStoredIdentity(
 	database: RecordSyncSqlite,
-): StoredAuthorityIdentity | null {
+): RecordAuthorityIdentity | null {
 	const hasMetadata = one<{ present: number }>(
 		database,
 		`SELECT 1 AS present FROM sqlite_master
@@ -173,8 +174,9 @@ function recordAuthorityOpenRefusal(
 function currentRequestRefusal(
 	database: RecordSyncSqlite,
 	request: RequestEnvelope,
-	envelope: RequestEnvelope,
+	identity: RecordAuthorityIdentity,
 ): RequestRefusal | null {
+	const envelope = envelopeOf(identity);
 	const refusal = requestRefusal(request, envelope);
 	if (refusal) return refusal;
 	const current = readStoredIdentity(database);
@@ -183,15 +185,18 @@ function currentRequestRefusal(
 		return 'protocol-mismatch';
 	if (current.recordsEpoch !== envelope.recordsEpoch)
 		return 'records-epoch-mismatch';
-	if (current.recordsSchemaHash !== envelope.recordsSchemaHash)
-		return 'records-schema-mismatch';
+	if (
+		current.recordsDescriptor !== identity.recordsDescriptor ||
+		current.recordsSchemaHash !== identity.recordsSchemaHash
+	) {
+		throw new RecordsIdentityChangedError();
+	}
 	return null;
 }
 
 function initialize(
 	database: RecordSyncSqlite,
-	envelope: RequestEnvelope,
-	recordsDescriptor: string,
+	identity: RecordAuthorityIdentity,
 ): void {
 	database.transaction(() => {
 		database.run(`
@@ -228,15 +233,12 @@ function initialize(
 			);
 		`);
 
-		const identity = {
+		const expectedIdentity = {
 			storageVersion: STORAGE_VERSION,
-			protocolMajor: envelope.protocolMajor,
-			recordsDescriptor,
-			recordsSchemaHash: envelope.recordsSchemaHash,
-			recordsEpoch: envelope.recordsEpoch,
+			...identity,
 		};
 		const initial = {
-			...identity,
+			...expectedIdentity,
 			serverSequence: 0,
 			watermark: 0,
 			snapshotGeneration: 0,
@@ -247,7 +249,7 @@ function initialize(
 				[key, String(value)],
 			);
 
-		for (const [key, expected] of Object.entries(identity)) {
+		for (const [key, expected] of Object.entries(expectedIdentity)) {
 			const stored = one<{ value: string }>(
 				database,
 				'SELECT value FROM record_sync_meta WHERE key = ?',
@@ -478,18 +480,19 @@ export type RecordAuthorityCompactionPolicy = SnapshotPublicationOptions & {
 
 export function createRecordAuthority({
 	database,
-	envelope,
-	recordsDescriptor,
+	identity,
 	sha256,
 }: {
 	database: RecordSyncSqlite;
-	envelope: RequestEnvelope;
-	recordsDescriptor: string;
+	identity: RecordAuthorityIdentity;
 	sha256: Sha256;
 }) {
-	if (!isBoundedRecordsDescriptor(recordsDescriptor))
+	if (!isBoundedRecordsDescriptor(identity.recordsDescriptor))
 		throw new TypeError('Invalid records descriptor');
-	initialize(database, envelope, recordsDescriptor);
+	if (!isBoundedRecordsSchemaHash(identity.recordsSchemaHash))
+		throw new TypeError('Invalid records schema hash');
+	const envelope = envelopeOf(identity);
+	initialize(database, identity);
 
 	async function publishSnapshot({
 		maxChunkBytes,
@@ -507,7 +510,7 @@ export function createRecordAuthority({
 			const capture = captureSnapshot(database);
 			const encoded = await encodeSnapshot(sha256, capture, maxChunkBytes);
 			const published = database.transaction(() => {
-				if (currentRequestRefusal(database, envelope, envelope) !== null)
+				if (currentRequestRefusal(database, envelope, identity) !== null)
 					throw new RecordsIdentityChangedError();
 				if (
 					readMeta(database, 'serverSequence') !== capture.snapshotSequence ||
@@ -551,7 +554,7 @@ export function createRecordAuthority({
 		push(request: PushRequest): PushResponse {
 			try {
 				const refused = database.transaction(() => {
-					const refusal = currentRequestRefusal(database, request, envelope);
+					const refusal = currentRequestRefusal(database, request, identity);
 					if (refusal) return refusal;
 					for (const mutation of request.mutations) {
 						const highWater =
@@ -607,7 +610,7 @@ export function createRecordAuthority({
 
 		pull(request: PullRequest): PullResponse {
 			return database.transaction(() => {
-				const refusal = currentRequestRefusal(database, request, envelope);
+				const refusal = currentRequestRefusal(database, request, identity);
 				if (refusal) return { kind: 'pull', ok: false, reason: refusal };
 				if (request.cursor < readMeta(database, 'watermark')) {
 					const manifest = readManifest(database);
@@ -657,7 +660,7 @@ export function createRecordAuthority({
 			if (!Number.isSafeInteger(mutationThreshold) || mutationThreshold < 1)
 				throw new TypeError('mutationThreshold must be a positive integer');
 			const pending = database.transaction(() => {
-				if (currentRequestRefusal(database, envelope, envelope) !== null)
+				if (currentRequestRefusal(database, envelope, identity) !== null)
 					throw new RecordsIdentityChangedError();
 				return (
 					readMeta(database, 'serverSequence') - readMeta(database, 'watermark')
@@ -670,7 +673,7 @@ export function createRecordAuthority({
 
 		snapshotChunk(request: SnapshotChunkRequest): SnapshotChunkResponse {
 			return database.transaction(() => {
-				const refusal = currentRequestRefusal(database, request, envelope);
+				const refusal = currentRequestRefusal(database, request, identity);
 				if (refusal)
 					return { kind: 'snapshotChunk', ok: false, reason: refusal };
 				const manifest = readManifest(database);
@@ -736,8 +739,7 @@ export function restoreRecordAuthority({
 		recordsDescriptor: stored.recordsDescriptor,
 		authority: createRecordAuthority({
 			database,
-			envelope,
-			recordsDescriptor: stored.recordsDescriptor,
+			identity: stored,
 			sha256,
 		}),
 	};
@@ -769,8 +771,7 @@ export function openRecordAuthority({
 			envelope,
 			authority: createRecordAuthority({
 				database,
-				envelope,
-				recordsDescriptor: stored.recordsDescriptor,
+				identity: stored,
 				sha256,
 			}),
 		};
@@ -778,15 +779,16 @@ export function openRecordAuthority({
 	if (request.protocolMajor !== RECORD_SYNC_PROTOCOL_MAJOR)
 		return { ok: false, reason: 'protocol-mismatch' };
 	const recordsEpoch = crypto.randomUUID();
-	const envelope = {
+	const identity = {
 		protocolMajor: request.protocolMajor,
+		recordsDescriptor: request.recordsDescriptor,
 		recordsSchemaHash: request.recordsSchemaHash,
 		recordsEpoch,
 	};
+	const envelope = envelopeOf(identity);
 	const authority = createRecordAuthority({
 		database,
-		envelope,
-		recordsDescriptor: request.recordsDescriptor,
+		identity,
 		sha256,
 	});
 	return {

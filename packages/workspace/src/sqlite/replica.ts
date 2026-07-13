@@ -276,7 +276,7 @@ export async function createReplicaRuntime<TTables extends TableDefinitions>({
 				recordsDescriptor !== definition.recordsDescriptor ||
 				recordsSchemaHash !== definition.recordsSchemaHash
 			) {
-				throw new ReplicaSyncRefusalError('records-schema-mismatch');
+				throw new ReplicaSyncRefusalError('authority-definition-mismatch');
 			}
 			if (meta.recordsEpoch === null) {
 				sqlite.run(`UPDATE ${META_TABLE} SET records_epoch = ? WHERE id = 1`, [
@@ -297,7 +297,6 @@ export async function createReplicaRuntime<TTables extends TableDefinitions>({
 		}
 		return {
 			protocolMajor: meta.protocolMajor,
-			recordsSchemaHash: definition.recordsSchemaHash,
 			recordsEpoch: meta.recordsEpoch,
 		};
 	}
@@ -328,7 +327,6 @@ export async function createReplicaRuntime<TTables extends TableDefinitions>({
 							'Replica push refused: row-too-large; pending mutation preserved for application resolution',
 						);
 					case 'protocol-mismatch':
-					case 'records-schema-mismatch':
 					case 'actor-sequence-gap':
 						throw new ReplicaSyncRefusalError(response.reason);
 					case 'records-epoch-mismatch':
@@ -391,7 +389,6 @@ export async function createReplicaRuntime<TTables extends TableDefinitions>({
 			if (!response.ok) {
 				switch (response.reason) {
 					case 'protocol-mismatch':
-					case 'records-schema-mismatch':
 						throw new ReplicaSyncRefusalError(response.reason);
 					case 'records-epoch-mismatch':
 						return await refuseEpochMismatch(signal);

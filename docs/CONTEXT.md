@@ -161,12 +161,6 @@ shapes, see `docs/adr/`.
   cross-plane atomicity, dual write, rollback, reconciliation, or server-run
   conversion. Source bytes remain retained until separate explicit cleanup, but
   they stop being authoritative after cutover.
-- **Historical records schema**: an inert generated descriptor with phantom row
-  types, conventionally exported as `recordsSchemaV1`, `recordsSchemaV2`, and so
-  on. The supported application workflow imports generated artifacts rather
-  than pairing descriptor strings with handwritten generic types. These names
-  are source-history labels; `recordsSchemaHash` is the authoritative
-  compatibility identity.
 - **`satisfiesWorkspace`**: the bundle-conformance helper (renamed from the older
   `defineWorkspaceBundle`).
 - **Actions and collaboration**: actions live on the workspace bundle;

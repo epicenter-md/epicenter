@@ -18,10 +18,14 @@ import type { RecordSyncSqlite, SqliteValue } from './sqlite.js';
 
 const envelope = {
 	protocolMajor: RECORD_SYNC_PROTOCOL_MAJOR,
-	recordsSchemaHash: 'notes-v1',
 	recordsEpoch: 'epoch-1',
 } as const;
 const recordsDescriptor = 'notes descriptor v1';
+const identity = {
+	...envelope,
+	recordsDescriptor,
+	recordsSchemaHash: 'notes-v1',
+} as const;
 
 const sha256 = async (value: string) =>
 	createHash('sha256').update(value).digest('hex');
@@ -128,8 +132,7 @@ async function runConformance(open: OpenDatabase) {
 
 		const authority = createRecordAuthority({
 			database,
-			envelope,
-			recordsDescriptor,
+			identity,
 			sha256,
 		});
 		const first: Mutation = {
@@ -238,15 +241,6 @@ async function runConformance(open: OpenDatabase) {
 				`SELECT value FROM record_sync_meta WHERE key = 'serverSequence'`,
 			)[0]?.value,
 		).toBe('2');
-		expect(
-			authority.push({
-				kind: 'push',
-				...envelope,
-				recordsSchemaHash: 'wrong',
-				mutations: [],
-			}),
-		).toEqual({ kind: 'push', ok: false, reason: 'records-schema-mismatch' });
-
 		// A duplicate create with a NEW sequence is a replica invariant
 		// violation: the whole push rolls back and the actor stays paused.
 		expect(
@@ -318,12 +312,11 @@ async function runConformance(open: OpenDatabase) {
 			snapshotRequired: true,
 		});
 
-		createRecordAuthority({ database, envelope, recordsDescriptor, sha256 });
+		createRecordAuthority({ database, identity, sha256 });
 		expect(() =>
 			createRecordAuthority({
 				database,
-				envelope: { ...envelope, recordsEpoch: 'wrong' },
-				recordsDescriptor,
+				identity: { ...identity, recordsEpoch: 'wrong' },
 				sha256,
 			}),
 		).toThrow('recordsEpoch');

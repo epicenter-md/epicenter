@@ -295,20 +295,6 @@ describe('Gate 1 directed traces', () => {
 				ok: false,
 				reason: 'actor-sequence-gap',
 			});
-			const wrongSchema = {
-				...request,
-				recordsSchemaHash: 'other',
-			};
-			expect(h.refServer.push(wrongSchema)).toEqual({
-				kind: 'push',
-				ok: false,
-				reason: 'records-schema-mismatch',
-			});
-			expect(h.sqlServer.push(wrongSchema)).toEqual({
-				kind: 'push',
-				ok: false,
-				reason: 'records-schema-mismatch',
-			});
 			const wrongEpoch = { ...request, recordsEpoch: 'other' };
 			expect(h.refServer.push(wrongEpoch)).toEqual({
 				kind: 'push',

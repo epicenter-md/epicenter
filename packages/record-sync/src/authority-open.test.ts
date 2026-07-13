@@ -269,21 +269,21 @@ test('stored schema change without a new epoch fails closed', async () => {
 			"UPDATE record_sync_meta SET value = 'notes-v2' WHERE key = 'recordsSchemaHash'",
 		);
 
-		expect(
+		expect(() =>
 			opened.authority.push({
 				...opened.envelope,
 				kind: 'push',
 				mutations: [],
 			}),
-		).toEqual({ kind: 'push', ok: false, reason: 'records-schema-mismatch' });
-		expect(
+		).toThrow('record-sync identity is no longer current');
+		expect(() =>
 			opened.authority.pull({
 				...opened.envelope,
 				kind: 'pull',
 				cursor: 0,
 				limit: 100,
 			}),
-		).toEqual({ kind: 'pull', ok: false, reason: 'records-schema-mismatch' });
+		).toThrow('record-sync identity is no longer current');
 		await expect(
 			opened.authority.publishSnapshot({ maxChunkBytes: 1_024 }),
 		).rejects.toThrow('record-sync identity is no longer current');

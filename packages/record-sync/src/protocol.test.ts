@@ -25,7 +25,6 @@ import {
 
 const envelope = {
 	protocolMajor: RECORD_SYNC_PROTOCOL_MAJOR,
-	recordsSchemaHash: 'notes-v1',
 	recordsEpoch: 'epoch-1',
 };
 
@@ -182,6 +181,9 @@ test('push parsing rejects non-JSON cells, unsafe sequences, and extra keys', ()
 	};
 	expect(() =>
 		parsePushRequest({ ...base, mutations: [], extra: true }),
+	).toThrow();
+	expect(() =>
+		parsePushRequest({ ...base, recordsSchemaHash: 'obsolete-duplicate' }),
 	).toThrow();
 	expect(() =>
 		parsePushRequest({

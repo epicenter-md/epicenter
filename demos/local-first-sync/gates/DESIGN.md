@@ -1,8 +1,8 @@
 # Record synchronization gates
 
-This directory tests one claim inside one exact records schema and one records
-epoch. Its request envelope uses `recordsSchemaHash` for the portable records
-contract and `recordsEpoch` for one authority lifetime.
+This directory tests one claim inside one immutable records history. Its
+request envelope uses `recordsEpoch` as the opaque fence for both that history
+and its provisioned schema.
 
 > No retry, crash, or pull-page schedule makes accepted or pending user intent
 > transiently disappear from visible application state.

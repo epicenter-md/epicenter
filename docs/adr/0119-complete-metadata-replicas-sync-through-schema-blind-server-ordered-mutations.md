@@ -3,7 +3,7 @@
 - **Status:** Accepted
 - **Date:** 2026-07-11
 - **Relates:** [ADR-0035](0035-durable-storage-is-one-per-person-coordination-box.md), [ADR-0079 (cross-device is two planes)](0079-cross-device-is-two-planes-epicenter-syncs-the-crdt-the-box-is-reached-directly.md), [ADR-0092 (identity is the partition)](0092-identity-is-the-partition.md)
-- **Amended by:** [ADR-0130](0130-records-replacement-starts-a-new-epoch-without-an-online-succession-protocol.md) (database-family succession is replaced by one active records epoch); [ADR-0131](0131-every-durable-records-materialization-carries-its-canonical-descriptor.md) (durable materializations carry the opaque canonical descriptor beside its hash)
+- **Amended by:** [ADR-0130](0130-records-replacement-starts-a-new-epoch-without-an-online-succession-protocol.md) (database-family succession is replaced by one active records epoch); [ADR-0131](0131-every-durable-records-materialization-carries-its-canonical-descriptor.md) (durable materializations carry the opaque canonical descriptor beside its hash); [ADR-0133](0133-ordinary-record-sync-requests-carry-only-the-records-epoch.md) (ordinary sync carries the epoch as its sole schema and history fence)
 
 ## Context
 
@@ -20,9 +20,9 @@ exactly one principal and self-hosting provides the custody alternative.
 Each `(principal, workspace)` pair owns one active records epoch. The epoch
 identifies one continuous records history under one portable records schema
 hash. Actors, cursors, outboxes, mutations, and snapshots bind to that epoch;
-the server compares records schema hashes as opaque strings and pauses writers
-presenting a different one. Every synchronized device keeps a complete local
-SQLite replica of the active records epoch.
+the authority and replicas persist its descriptor and hash, while ordinary
+synchronization requests carry only the opaque epoch. Every synchronized device
+keeps a complete local SQLite replica of the active records epoch.
 
 Every synchronized records schema change, restore, or wholesale replacement
 starts a new records epoch through the administrative boundary in ADR-0130. The

@@ -5,7 +5,6 @@ import {
 	isAdmissibleMutation,
 	isAdmissibleSnapshotRow,
 	isBoundedIdentifier,
-	isBoundedRecordsSchemaHash,
 	RECORD_SYNC_ADMISSION_LIMITS,
 } from './admission.js';
 
@@ -39,10 +38,6 @@ const cellsSchema = Type.Unsafe<Cells>(
 );
 const envelopeProperties = {
 	protocolMajor: positiveSequence,
-	recordsSchemaHash: Type.String({
-		minLength: 1,
-		maxLength: RECORD_SYNC_ADMISSION_LIMITS.recordsSchemaHashBytes,
-	}),
 	recordsEpoch: identifier,
 };
 const mutationProperties = {
@@ -179,7 +174,6 @@ export type SnapshotChunk = Static<typeof snapshotChunkSchema>;
 
 const requestRefusalSchema = Type.Union([
 	Type.Literal('protocol-mismatch'),
-	Type.Literal('records-schema-mismatch'),
 	Type.Literal('records-epoch-mismatch'),
 ]);
 export type RequestRefusal = Static<typeof requestRefusalSchema>;
@@ -273,10 +267,7 @@ function snapshotRowsAreAdmissible(rows: SnapshotRow[]): boolean {
 }
 
 function requestEnvelopeIsAdmissible(value: RequestEnvelope): boolean {
-	return (
-		isBoundedRecordsSchemaHash(value.recordsSchemaHash) &&
-		isBoundedIdentifier(value.recordsEpoch)
-	);
+	return isBoundedIdentifier(value.recordsEpoch);
 }
 
 export function parseMutation(value: unknown): Mutation {
@@ -357,8 +348,6 @@ export function requestRefusal(
 ): RequestRefusal | null {
 	if (request.protocolMajor !== expected.protocolMajor)
 		return 'protocol-mismatch';
-	if (request.recordsSchemaHash !== expected.recordsSchemaHash)
-		return 'records-schema-mismatch';
 	if (request.recordsEpoch !== expected.recordsEpoch)
 		return 'records-epoch-mismatch';
 	return null;

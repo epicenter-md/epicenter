@@ -133,7 +133,6 @@ async function open(
 	if (!result.ok) throw new Error(`Open refused: ${result.reason}`);
 	return {
 		protocolMajor: RECORD_SYNC_PROTOCOL_MAJOR,
-		recordsSchemaHash: result.recordsSchemaHash,
 		recordsEpoch: result.recordsEpoch,
 	};
 }
@@ -197,7 +196,7 @@ test('open describes the stored schema without replacing its identity', async ()
 		ok: true,
 		recordsEpoch: envelope.recordsEpoch,
 		recordsDescriptor: 'schema descriptor 1',
-		recordsSchemaHash: envelope.recordsSchemaHash,
+		recordsSchemaHash: 'schema-1',
 	});
 	expect((await open(records)).recordsEpoch).toBe(envelope.recordsEpoch);
 });

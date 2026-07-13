@@ -1,8 +1,10 @@
 # Gate 4 evidence: shared production core
 
-Gate 4 proves the records-schema and authority-lifetime fences now named
-`recordsSchemaHash` and `recordsEpoch`. It does not prove stale-epoch refusal;
-administrative replacement remains outside the shared protocol.
+Gate 4 originally proved separate records-schema and authority-lifetime fences.
+ADR-0133 later collapsed ordinary requests to one `recordsEpoch`; descriptor
+and hash verification now happens at authority discovery. It does not prove
+stale-epoch refusal; administrative replacement remains outside the shared
+protocol.
 
 Wave 4 extracted the record synchronization proof into
 `@epicenter/record-sync`. The old gate engines remain independent evidence; the
@@ -33,7 +35,7 @@ The same scenario passes through all three adapter surfaces:
 
 - transaction rollback;
 - actor sequence acceptance, duplicate suppression, and gap refusal;
-- exact records schema hash and records epoch identity fencing;
+- exact records epoch identity fencing;
 - nested JSON cell persistence;
 - terminal deletion;
 - ordered pull;

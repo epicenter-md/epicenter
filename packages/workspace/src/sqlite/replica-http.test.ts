@@ -45,7 +45,6 @@ test('HTTP replica port binds one encoded workspace and forwards exact JSON', as
 		{
 			kind: 'push',
 			protocolMajor: 1,
-			recordsSchemaHash: 'schema-1',
 			recordsEpoch: 'epoch-1',
 			mutations: [],
 		},
@@ -67,7 +66,6 @@ test('HTTP replica port binds one encoded workspace and forwards exact JSON', as
 			body: {
 				kind: 'push',
 				protocolMajor: 1,
-				recordsSchemaHash: 'schema-1',
 				recordsEpoch: 'epoch-1',
 				mutations: [],
 			},

@@ -13,6 +13,7 @@ export {
 	type RecordAuthority,
 	type RecordAuthorityCompactionPolicy,
 	type RecordAuthorityDescriptor,
+	type RecordAuthorityIdentity,
 	type RecordAuthorityOpenRequest,
 	type RecordAuthorityOpenResult,
 	restoreRecordAuthority,

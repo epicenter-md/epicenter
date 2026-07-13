@@ -58,7 +58,6 @@ async function openEnvelope(
 	if (!result.ok) throw new Error(`Open refused: ${result.reason}`);
 	return {
 		protocolMajor: RECORD_SYNC_PROTOCOL_MAJOR,
-		recordsSchemaHash: result.recordsSchemaHash,
 		recordsEpoch: result.recordsEpoch,
 	};
 }
@@ -118,7 +117,7 @@ test('open refuses protocol mismatch and describes the stored schema', async () 
 			await context.records.open(partition, {
 				protocolMajor: RECORD_SYNC_PROTOCOL_MAJOR + 1,
 				recordsDescriptor: 'schema descriptor 1',
-				recordsSchemaHash: envelope.recordsSchemaHash,
+				recordsSchemaHash: 'schema-1',
 			}),
 		).toEqual({ ok: false, reason: 'protocol-mismatch' });
 		expect(
@@ -131,7 +130,7 @@ test('open refuses protocol mismatch and describes the stored schema', async () 
 			ok: true,
 			recordsEpoch: envelope.recordsEpoch,
 			recordsDescriptor: 'schema descriptor 1',
-			recordsSchemaHash: envelope.recordsSchemaHash,
+			recordsSchemaHash: 'schema-1',
 		});
 		expect((await openEnvelope(context.records)).recordsEpoch).toBe(
 			envelope.recordsEpoch,

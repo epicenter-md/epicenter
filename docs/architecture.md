@@ -153,6 +153,10 @@ device applies the same ordered stream to its complete local SQLite replica.
 Applications retain typed table helpers and direct SQL queryability without
 making physical SQLite files the wire format.
 
+Authority discovery binds one canonical descriptor and hash to one opaque
+records epoch. Ordinary push, pull, and snapshot requests carry only that epoch;
+there is no second per-request schema identity that can disagree with it.
+
 ```text
 app action / UI event
         |

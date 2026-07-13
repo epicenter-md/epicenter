@@ -72,7 +72,6 @@ function setup() {
 
 const envelope = {
 	protocolMajor: RECORD_SYNC_PROTOCOL_MAJOR,
-	recordsSchemaHash: 'schema-1',
 	recordsEpoch: 'epoch-1',
 };
 

@@ -1,14 +1,12 @@
-/** Gate 1-2 protocol: one exact records schema and one records epoch. */
+/** Gate 1-2 protocol: one immutable records history named by one epoch. */
 
 export type RequestEnvelope = {
 	protocolMajor: number;
-	recordsSchemaHash: string;
 	recordsEpoch: string;
 };
 
 export const ENVELOPE = {
 	protocolMajor: 1,
-	recordsSchemaHash: 'gate1-notes-v1',
 	recordsEpoch: 'gate1-epoch-1',
 } as const satisfies RequestEnvelope;
 
@@ -74,7 +72,6 @@ export type SnapshotChunkRequest = RequestEnvelope & {
 
 export type Refusal =
 	| 'protocol-mismatch'
-	| 'records-schema-mismatch'
 	| 'records-epoch-mismatch';
 
 export type PushResponse =
@@ -166,8 +163,6 @@ export function requestRefusal(
 ): Refusal | null {
 	if (request.protocolMajor !== expected.protocolMajor)
 		return 'protocol-mismatch';
-	if (request.recordsSchemaHash !== expected.recordsSchemaHash)
-		return 'records-schema-mismatch';
 	if (request.recordsEpoch !== expected.recordsEpoch)
 		return 'records-epoch-mismatch';
 	return null;

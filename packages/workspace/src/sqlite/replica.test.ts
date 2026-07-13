@@ -56,13 +56,15 @@ function createServer(recordsEpoch = 'epoch-1') {
 	const native = new Database(':memory:');
 	const envelope = {
 		protocolMajor: 1,
-		recordsSchemaHash: definition.recordsSchemaHash,
 		recordsEpoch,
 	};
 	const authority = createRecordAuthority({
 		database: createBunSqliteAdapter(native),
-		envelope,
-		recordsDescriptor: definition.recordsDescriptor,
+		identity: {
+			...envelope,
+			recordsDescriptor: definition.recordsDescriptor,
+			recordsSchemaHash: definition.recordsSchemaHash,
+		},
 		sha256,
 	});
 	return { native, authority, envelope };
@@ -264,6 +266,32 @@ test('an unbound replica preserves identity and pending work across reopen', asy
 	});
 	expect(reopened.runtime.inspect().outbox).toHaveLength(2);
 	await expect(reopened.runtime.syncOnce()).rejects.toThrow('offline');
+	native.close();
+	server.native.close();
+});
+
+test('authority discovery rejects a descriptor that disagrees with its epoch', async () => {
+	const server = createServer();
+	const base = createPort(server.authority);
+	const port: ReplicaSyncPort = {
+		...base,
+		async openAuthority() {
+			return {
+				recordsEpoch: 'epoch-1',
+				recordsDescriptor: 'different descriptor',
+				recordsSchemaHash: definition.recordsSchemaHash,
+			};
+		},
+	};
+	const { native, runtime } = await openReplica({
+		port,
+		actorId: 'actor-a',
+	});
+
+	await expect(runtime.syncOnce()).rejects.toThrow(
+		'authority-definition-mismatch',
+	);
+	expect(runtime.inspect().recordsEpoch).toBeNull();
 	native.close();
 	server.native.close();
 });
@@ -552,7 +580,6 @@ test("a push refused with 'create-conflict' is an invariant violation demanding 
 test('durable authority refusals stop the sync supervisor instead of retrying', async () => {
 	const reasons = [
 		'protocol-mismatch',
-		'records-schema-mismatch',
 		'records-epoch-mismatch',
 		'actor-sequence-gap',
 	] as const;
