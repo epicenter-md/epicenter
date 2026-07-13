@@ -46,7 +46,7 @@
 			}
 		}
 
-		if ((e.metaKey || e.ctrlKey) && e.key === '`') {
+		if ((e.metaKey || e.ctrlKey) && e.code === 'Backquote')
 			e.preventDefault();
 			if (!opensidian.state.terminal.open) {
 				previousFocus = document.activeElement as HTMLElement | null;
