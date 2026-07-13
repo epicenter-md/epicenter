@@ -1,7 +1,7 @@
 /**
  * SQLite Workspace Definition Type Tests
  *
- * Locks the row, document-format, touch, and KV nullability inference of the
+ * Locks the row, document-format, and KV nullability inference of the
  * terminal declaration API. Runtime recognition of the closed field palette
  * is covered separately in `definition.test.ts`.
  */
@@ -31,7 +31,6 @@ const notes = defineTable({
 		body: document.plainText,
 		summary: document.plainText,
 	},
-	touchOnDocumentEdit: 'updatedAt',
 });
 
 const row: RowFor<typeof notes> = {
@@ -62,8 +61,6 @@ notes.fields.title = field.number();
 notes.documents.body = document.xmlFragment;
 // @ts-expect-error — compiled column properties are immutable
 notes.compiledColumns.title.kind = 'number';
-// @ts-expect-error — table definition properties are immutable
-notes.touchOnDocumentEdit = null;
 // @ts-expect-error — KV definition properties are immutable
 enabled.schema = field.number();
 // @ts-expect-error — workspace definition properties are immutable
@@ -77,7 +74,6 @@ const tableLookalike = {
 	fields: notes.fields,
 	schema: notes.schema,
 	documents: notes.documents,
-	touchOnDocumentEdit: notes.touchOnDocumentEdit,
 	compiledColumns: notes.compiledColumns,
 };
 // @ts-expect-error — only defineTable products carry table-definition identity
@@ -111,17 +107,6 @@ const bodyCell: string = null as unknown as RowFor<
 	typeof overlappingNames
 >['body'];
 const bodyDocument: DocumentFormat = overlappingNames.documents.body;
-
-defineTable({
-	fields: {
-		id: field.string(),
-		title: field.string(),
-		updatedAt: field.instant(),
-	},
-	documents: { body: document.plainText },
-	// @ts-expect-error — touch targets must be field.instant() columns
-	touchOnDocumentEdit: 'title',
-});
 
 // Nullable KV is allowed: the preference plane never rides the record wire,
 // so null is an ordinary stored preference (ADR-0124).

@@ -1,7 +1,7 @@
 # API Design Decisions: defineTable and defineKv
 
 > Historical: the chained version API below is retired. The target is one
-> immutable `defineTable({ fields, documents, touchOnDocumentEdit })`
+> immutable `defineTable({ fields, documents })`
 > declaration plus a separate adjacent records-migration chain. See
 > [ADR-0125](../adr/0125-record-schemas-are-immutable-evolution-creates-a-successor-database.md)
 > and [ADR-0126](../adr/0126-child-documents-use-format-capabilities-and-evolve-outside-records-databases.md).

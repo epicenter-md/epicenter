@@ -90,9 +90,9 @@ The first definition wave deleted app-authored `epoch`,
 `rootDocumentIncarnation`, and mixed migration arrays, added inert historical
 descriptors, and derived `<id>.kv`. Its document, index, and generic
 `schemaHash` surfaces were reopened by the pre-Wave-2 greenfield review. The
-terminal definition instead uses one `{ fields, documents,
-touchOnDocumentEdit }` table shape, a closed document-capability catalog, and a
-records-only `recordsSchemaHash`. Internal replica and authority code still uses
+terminal definition instead uses one `{ fields, documents }` table shape, a
+closed document-capability catalog, and a records-only `recordsSchemaHash`.
+Internal replica and authority code still uses
 `databaseIncarnationId` vocabulary; the Wave 2 rename to records `database`
 state is pending.
 
@@ -362,7 +362,7 @@ temperatureCelsius: field.number();
 
 Changing a table, field name, field kind, nullability, enum, reference, or stored
 meaning creates a different records schema hash. Adding or changing a child
-document, touch policy, or local index does not.
+document or local index does not.
 
 Workspace identity, KV, child documents, indexes, and physical storage do not
 enter the records schema hash. Each document capability derives its own format
@@ -405,10 +405,6 @@ Excluded, with the reason each is excluded:
 - Child-document declarations and format hashes: Yjs rooms have independent
   compatibility identity and lifecycle (ADR-0126).
 - Local indexes: rebuildable runtime query state.
-- `touchOnDocumentEdit` policy: it changes synchronized behavior (which field
-  gets stamped after a local document edit), not stored shape or interpretation.
-  Two binaries that differ only in touch policy stay wire-compatible, so a change
-  never forces database succession.
 - Annotation keywords `title`, `description`, `default`, and `examples` are
   stripped from every column schema root (and nullable branches) before
   canonicalization. They are editor and UI hints; editing a description or
@@ -884,7 +880,6 @@ const notes = defineTable({
 	documents: {
 		body: document.xmlFragment,
 	},
-	touchOnDocumentEdit: 'updatedAt',
 });
 
 export const notesWorkspace = defineWorkspace({
@@ -944,11 +939,9 @@ What one realistic call site teaches:
   namespaces, so `row.body` and `table.docs.body` may coexist. Matching names do
   not imply synchronization or shared authority. Table and document names are
   persistent room-address segments; renaming either creates new document
-  identities. `touchOnDocumentEdit` names one instant field the runtime stamps,
-  coalesced and best-effort, after a local edit to any document on the row. The
-  stamp is not atomic with the Yjs edit, proof of durability, or a complete
-  cross-device modification timestamp. It enters neither compatibility
-  identity.
+  identities. The table declaration does not promise a record patch after a
+  document edit; an application that needs such a projection owns its observer,
+  coalescing policy, and record writer.
 - `defineWorkspace` describes only the current workspace. The records migration
   bundle is a separate declaration registered with the lifecycle; application
   code does not execute it. Each adjacent step names only changed-table
@@ -1124,7 +1117,7 @@ boundary to remain public or mutable.
   unrepresentable in the replacement type tests.
 - [x] Make workspace `name` optional display metadata.
 - [x] Replace `(fields, options)` with one
-  `defineTable({ fields, documents?, touchOnDocumentEdit? })` shape.
+  `defineTable({ fields, documents? })` shape.
 - [x] Keep field and document declarations as independent namespaces; prove a
   same-named cell and child document remain separately typed and addressable.
 - [x] Add the closed branded `document` capability catalog with plain text,

@@ -43,7 +43,7 @@ export type WorkspaceServicePort = {
 };
 
 /** One declared child document, openable when the workspace has a runtime. */
-export type AsyncTableDoc<
+type AsyncTableDoc<
 	TFormat extends DocumentFormat = DocumentFormat,
 	TRowId extends string = string,
 	TWorkspaceDocuments extends WorkspaceDocuments | undefined = undefined,
@@ -53,7 +53,7 @@ export type AsyncTableDoc<
 	? { open(rowId: TRowId): OpenedDocument<TFormat> }
 	: object);
 
-export type AsyncTableDocs<
+type AsyncTableDocs<
 	TDocs extends Readonly<Record<string, DocumentFormat>>,
 	TRowId extends string = string,
 	TWorkspaceDocuments extends WorkspaceDocuments | undefined = undefined,

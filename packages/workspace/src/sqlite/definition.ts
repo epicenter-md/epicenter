@@ -41,21 +41,6 @@ export type Fields = Record<string, TSchema>;
 type TableFields = Fields & { id: TSchema };
 type DocumentFormats = Record<string, DocumentFormat>;
 
-/**
- * The table's `InstantString` columns, by name: every non-`id` column whose
- * value (ignoring `null`) is an instant. The valid targets for `touch`.
- * Collapses to `never` for a table with no instant column, so `touch` simply
- * is not offered there.
- */
-type InstantColumnKey<TColumns extends TableFields> = {
-	[K in Exclude<keyof TColumns, 'id'>]-?: NonNullable<
-		Static<TColumns[K]>
-	> extends InstantString
-		? K
-		: never;
-}[Exclude<keyof TColumns, 'id'>] &
-	string;
-
 export type CompiledColumn = {
 	readonly name: string;
 	readonly kind: Kind;
@@ -75,7 +60,6 @@ export type TableDefinition<
 	readonly fields: Readonly<TColumns>;
 	readonly schema: TObject<TColumns>;
 	readonly documents: Readonly<TDocuments>;
-	readonly touchOnDocumentEdit: string | null;
 	readonly compiledColumns: Readonly<{
 		[TName in keyof TColumns]: CompiledColumn;
 	}>;
@@ -106,8 +90,6 @@ type TableConfig<
 > = {
 	fields: TColumns;
 	documents?: TDocuments;
-	/** Instant field stamped, best-effort, after a local edit to any child document. */
-	touchOnDocumentEdit?: InstantColumnKey<TColumns>;
 };
 
 export function defineTable<
@@ -173,20 +155,6 @@ export function defineTable<
 		}
 	}
 	const ownedDocuments = Object.freeze({ ...authoredDocuments }) as TDocuments;
-	const touch = config.touchOnDocumentEdit ?? null;
-	if (touch !== null && Object.keys(ownedDocuments).length === 0) {
-		throw new Error('touchOnDocumentEdit requires at least one document');
-	}
-	if (touch !== null) {
-		const target = (
-			compiledColumns as Record<string, CompiledColumn | undefined>
-		)[touch];
-		if (touch === 'id' || target === undefined || target.kind !== 'instant') {
-			throw new Error(
-				`touchOnDocumentEdit target '${touch}' must be a field.instant() column`,
-			);
-		}
-	}
 
 	const definition = Object.freeze({
 		fields: ownedColumns,
@@ -194,7 +162,6 @@ export function defineTable<
 			Type.Object(ownedColumns, { additionalProperties: false }),
 		),
 		documents: ownedDocuments,
-		touchOnDocumentEdit: touch,
 		compiledColumns,
 	}) as TableDefinition<TColumns, Readonly<TDocuments>>;
 	tableDefinitions.add(definition);
@@ -314,7 +281,7 @@ export function defineWorkspace<
 	}
 	const ownedKv = Object.freeze({ ...declaredKv }) as TKv;
 
-	// KV, documents, display name, and touch policy are deliberately absent.
+	// KV, documents, and display name are deliberately absent.
 	// They have independent identities or are runtime behavior, not accepted
 	// SQLite record state.
 	const recordsDescriptor = createRecordsDescriptor(

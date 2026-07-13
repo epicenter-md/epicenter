@@ -202,7 +202,8 @@ Each option and the one reason it lost. Terse. This is not the spec.
 | [0123](0123-bounded-metadata-uses-record-authority-merge-sensitive-state-uses-lazy-child-documents.md) | Bounded metadata uses record authority; merge-sensitive state uses lazy child documents | Accepted |
 | [0124](0124-workspace-kv-keeps-one-logical-identity-outside-the-record-database.md) | Workspace KV keeps one logical identity outside the records database | Proposed |
 | [0125](0125-record-schemas-are-immutable-evolution-creates-a-successor-database.md) | Records schemas are immutable; evolution creates a successor database | Proposed |
-| [0126](0126-child-documents-use-format-capabilities-and-evolve-outside-records-databases.md) | Child documents use format capabilities and evolve outside records databases | Accepted |
+| [0126](0126-child-documents-use-format-capabilities-and-evolve-outside-records-databases.md) | Child documents use format capabilities and evolve outside records databases | Accepted (touch policy amended by 0128) |
 | [0127](0127-chat-streams-live-turns-in-client-state-and-stores-finished-messages-as-records.md) | Chat streams live turns in client state and stores finished messages as records | Proposed |
+| [0128](0128-tables-do-not-declare-document-edit-touch-policy-without-a-runtime-owner.md) | Tables do not declare document-edit touch policy without a runtime owner | Accepted |
 
 When you add an ADR, add its row here.

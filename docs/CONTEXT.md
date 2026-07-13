@@ -133,7 +133,7 @@ shapes, see `docs/adr/`.
   pages, indexes, actor identity, cursors, outboxes, or deleted history.
 - **`defineTable` / `defineKv`**: schema builders for a workspace's current
   records tables and permanent synchronized key-value preferences. A table has
-  one `{ fields, documents, touchOnDocumentEdit }` declaration; indexes are
+  one `{ fields, documents }` declaration; indexes are
   physical storage policy, not logical table schema. Every `define*` call
   snapshots caller-owned inputs into a framework-owned immutable definition.
   Fields and documents are separate namespaces, so the same semantic name may

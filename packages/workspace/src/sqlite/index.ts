@@ -7,8 +7,6 @@
 
 export {
 	type AsyncTable,
-	type AsyncTableDoc,
-	type AsyncTableDocs,
 	type AsyncTables,
 	type AsyncWorkspace,
 	asyncWorkspaceHandle,

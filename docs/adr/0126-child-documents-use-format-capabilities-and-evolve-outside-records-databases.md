@@ -2,6 +2,7 @@
 
 - **Status:** Accepted
 - **Date:** 2026-07-12
+- **Amended by:** [ADR-0128](0128-tables-do-not-declare-document-edit-touch-policy-without-a-runtime-owner.md) (the inert `touchOnDocumentEdit` declaration is withdrawn; document formats, addressing, openers, and conversion ownership are unchanged)
 - **Supersedes:** [ADR-0005](0005-child-docs-are-bound-through-the-workspace.md)
 - **Relates:** [ADR-0120](0120-persisted-fields-are-atomic-cells-and-collaborative-bodies-are-yjs-documents.md), [ADR-0125](0125-record-schemas-are-immutable-evolution-creates-a-successor-database.md)
 

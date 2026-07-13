@@ -3,7 +3,7 @@
  *
  * This root entrypoint is the current production Yjs-record API. The
  * greenfield records contract is exported from `@epicenter/workspace/sqlite`;
- * its tables use one `{ fields, documents, touchOnDocumentEdit }` declaration.
+ * its tables use one `{ fields, documents }` declaration.
  * Keep examples below as migration context until their consumers move.
  *
  * `@epicenter/workspace` builds typed Yjs-backed workspaces: tables, KV,

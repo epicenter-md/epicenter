@@ -41,30 +41,6 @@ describe('defineTable', () => {
 		expect(notes.documents.body).toBe(document.xmlFragment);
 	});
 
-	test('validates the table-level document touch target', () => {
-		const notes = defineTable({
-			fields: {
-				id: field.string(),
-				title: field.string(),
-				updatedAt: field.instant(),
-			},
-			documents: { body: document.xmlFragment },
-			touchOnDocumentEdit: 'updatedAt',
-		});
-		expect(notes.touchOnDocumentEdit).toBe('updatedAt');
-
-		expect(() =>
-			defineTable({
-				fields: { id: field.string(), title: field.string() },
-				documents: { body: document.xmlFragment },
-				// biome-ignore lint/suspicious/noExplicitAny: runtime guard for JS callers
-				touchOnDocumentEdit: 'title' as any,
-			}),
-		).toThrow(
-			"touchOnDocumentEdit target 'title' must be a field.instant() column",
-		);
-	});
-
 	test('keeps field and document names in separate namespaces', () => {
 		const notes = defineTable({
 			fields: { id: field.string(), body: field.string() },
@@ -245,7 +221,7 @@ describe('defineWorkspace', () => {
 		expect(descriptor).toMatchObject({ format: 'epicenter.record-schema/1' });
 	});
 
-	test('recordsSchemaHash is stable across declaration order, display name, kv, documents, and touch', () => {
+	test('recordsSchemaHash is stable across declaration order, display name, kv, and documents', () => {
 		const first = defineWorkspace({
 			id: 'notes',
 			name: 'First display name',
@@ -290,7 +266,6 @@ describe('defineWorkspace', () => {
 						body: document.xmlFragment,
 						summary: document.plainText,
 					},
-					touchOnDocumentEdit: 'updatedAt',
 				}),
 			},
 			kv: {},
@@ -518,7 +493,6 @@ describe('renderHistoricalSchemaModule', () => {
 						payload: nullable(field.json(Type.Unknown())),
 					},
 					documents: { body: document.xmlFragment },
-					touchOnDocumentEdit: 'updatedAt',
 				}),
 			},
 		});
