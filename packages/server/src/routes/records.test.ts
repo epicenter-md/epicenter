@@ -28,7 +28,11 @@ function setup() {
 	const records: Records = {
 		async open(partition) {
 			partitions.push(partition);
-			return { ok: true, databaseIncarnationId: 'database-1' };
+			return {
+				ok: true,
+				recordsEpoch: 'epoch-1',
+				recordsSchemaHash: 'schema-1',
+			};
 		},
 		async push(partition) {
 			partitions.push(partition);
@@ -67,8 +71,8 @@ function setup() {
 
 const envelope = {
 	protocolMajor: RECORD_SYNC_PROTOCOL_MAJOR,
-	schemaIdentity: 'schema-1',
-	databaseIncarnationId: 'database-1',
+	recordsSchemaHash: 'schema-1',
+	recordsEpoch: 'epoch-1',
 };
 
 function post(
@@ -89,12 +93,13 @@ test('open stamps the authenticated principal and path workspace onto the backen
 	const { app, partitions } = setup();
 	const response = await post(app, 'open', {
 		protocolMajor: RECORD_SYNC_PROTOCOL_MAJOR,
-		schemaIdentity: 'schema-1',
+		recordsSchemaHash: 'schema-1',
 	});
 
 	expect(response.status).toBe(200);
 	expect((await response.json()) as unknown).toEqual({
-		databaseIncarnationId: 'database-1',
+		recordsEpoch: 'epoch-1',
+		recordsSchemaHash: 'schema-1',
 	});
 	expect(partitions).toEqual([
 		{
@@ -108,7 +113,7 @@ test('open rejects extra client-owned partition fields', async () => {
 	const { app, partitions } = setup();
 	const response = await post(app, 'open', {
 		protocolMajor: RECORD_SYNC_PROTOCOL_MAJOR,
-		schemaIdentity: 'schema-1',
+		recordsSchemaHash: 'schema-1',
 		principalId: 'mallory',
 	});
 
@@ -153,7 +158,7 @@ test('oversized workspace identity is rejected before backend work', async () =>
 		headers: { 'content-type': 'application/json' },
 		body: JSON.stringify({
 			protocolMajor: RECORD_SYNC_PROTOCOL_MAJOR,
-			schemaIdentity: 'schema-1',
+			recordsSchemaHash: 'schema-1',
 		}),
 	});
 

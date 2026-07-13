@@ -1,8 +1,9 @@
-import type { RecordAuthorityBindingRequest } from '@epicenter/record-sync';
+import type { RecordAuthorityOpenRequest } from '@epicenter/record-sync';
 import type {
-	ReplicaDatabaseBindingRequest,
+	ReplicaAuthorityOpenRequest,
 	ReplicaSyncPort,
 } from './replica.js';
+import { ReplicaSyncRefusalError } from './replica.js';
 
 export type CreateHttpReplicaSyncPortOptions = {
 	baseUrl: string;
@@ -20,7 +21,7 @@ export function createHttpReplicaSyncPort({
 
 	function route(action: string): URL {
 		if (!workspaceId) {
-			throw new Error('Replica HTTP port has not opened a workspace database');
+			throw new Error('Replica HTTP port is not bound to a workspace');
 		}
 		return new URL(
 			`/api/records/${encodeURIComponent(workspaceId)}/${action}`,
@@ -49,6 +50,9 @@ export function createHttpReplicaSyncPort({
 			});
 		}
 		if (!response.ok) {
+			if (isProtocolMismatch(value)) {
+				throw new ReplicaSyncRefusalError('protocol-mismatch');
+			}
 			throw new Error(`Record sync HTTP ${response.status}: ${text}`);
 		}
 		return value;
@@ -63,7 +67,7 @@ export function createHttpReplicaSyncPort({
 			}
 			workspaceId = nextWorkspaceId;
 		},
-		async openDatabase(request, signal) {
+		async openAuthority(request, signal) {
 			this.bindWorkspace(request.workspaceId);
 			return post(route('open'), openRequestBody(request), signal);
 		},
@@ -79,9 +83,22 @@ export function createHttpReplicaSyncPort({
 	} satisfies ReplicaSyncPort;
 }
 
+function isProtocolMismatch(
+	value: unknown,
+): value is { error: { name: 'ProtocolMismatch' } } {
+	return (
+		typeof value === 'object' &&
+		value !== null &&
+		Object.hasOwn(value, 'error') &&
+		typeof (value as { error?: unknown }).error === 'object' &&
+		(value as { error: { name?: unknown } }).error !== null &&
+		(value as { error: { name?: unknown } }).error.name === 'ProtocolMismatch'
+	);
+}
+
 function openRequestBody({
 	protocolMajor,
-	schemaIdentity,
-}: ReplicaDatabaseBindingRequest): RecordAuthorityBindingRequest {
-	return { protocolMajor, schemaIdentity };
+	recordsSchemaHash,
+}: ReplicaAuthorityOpenRequest): RecordAuthorityOpenRequest {
+	return { protocolMajor, recordsSchemaHash };
 }

@@ -4,8 +4,8 @@ import type {
 	PullResponse,
 	PushRequest,
 	PushResponse,
-	RecordAuthorityBindingRequest,
-	RecordAuthorityBindingResult,
+	RecordAuthorityOpenRequest,
+	RecordAuthorityOpenResult,
 	SnapshotChunkRequest,
 	SnapshotChunkResponse,
 } from '@epicenter/record-sync';
@@ -20,8 +20,8 @@ export type RecordsPartition = {
 export type Records = {
 	open(
 		partition: RecordsPartition,
-		request: RecordAuthorityBindingRequest,
-	): Promise<RecordAuthorityBindingResult>;
+		request: RecordAuthorityOpenRequest,
+	): Promise<RecordAuthorityOpenResult>;
 	push(
 		partition: RecordsPartition,
 		request: PushRequest,

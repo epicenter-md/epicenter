@@ -1,6 +1,6 @@
 # 0124. Workspace KV keeps one logical identity outside the records database
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-07-12
 - **Relates:** [ADR-0093](0093-kv-metadata-belongs-to-the-workspace-kv-namespace.md) (reaffirmed), [ADR-0119](0119-complete-metadata-replicas-sync-through-schema-blind-server-ordered-mutations.md), [ADR-0120](0120-persisted-fields-are-atomic-cells-and-collaborative-bodies-are-yjs-documents.md), [ADR-0123](0123-bounded-metadata-uses-record-authority-merge-sensitive-state-uses-lazy-child-documents.md)
 

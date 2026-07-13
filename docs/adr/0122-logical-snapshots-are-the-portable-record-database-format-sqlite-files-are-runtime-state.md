@@ -1,15 +1,16 @@
 # 0122. Logical snapshots are the portable records database format; SQLite files are runtime state
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-07-11
-- **Relates:** [ADR-0119](0119-complete-metadata-replicas-sync-through-schema-blind-server-ordered-mutations.md), [ADR-0121](0121-background-sync-is-automatic-and-database-boundary-merges-are-reviewable.md), [ADR-0096](0096-local-workspace-persistence-is-environment-injected.md), [ADR-0125](0125-record-schemas-are-immutable-evolution-creates-a-successor-database.md)
+- **Relates:** [ADR-0119](0119-complete-metadata-replicas-sync-through-schema-blind-server-ordered-mutations.md), [ADR-0121](0121-background-sync-is-automatic-and-database-boundary-merges-are-reviewable.md), [ADR-0096](0096-local-workspace-persistence-is-environment-injected.md)
+- **Amended by:** [ADR-0130](0130-records-replacement-starts-a-new-epoch-without-an-online-succession-protocol.md) (replacement reuses the logical snapshot format but has no shared staging protocol)
 
 ## Context
 
 Epicenter materializes record data in ordinary SQLite tables, but a physical
 SQLite file also contains engine-specific pages, indexes, storage migrations,
 and replica-private synchronization state. Bootstrap, import, restore,
-Cloud-to-self-host movement, and successor-database preparation need one database
+Cloud-to-self-host movement, and administrative replacement need one database
 image that crosses those runtime boundaries without copying actor identity,
 cursors, or pending outboxes.
 
@@ -49,7 +50,7 @@ document format declarations or inline an eager physical copy of every body.
 - New and stale replicas install a checkpoint, rebuild runtime indexes, reapply
   private pending mutations, and continue from the checkpoint sequence without
   replaying deleted history.
-- Import, restore, endpoint movement, and successor-database creation compare or
+- Import, restore, endpoint movement, and records-epoch replacement compare or
   transform logical state instead of copying files or inventing workflow-specific
   formats.
 - Logical exports retain application row identities but omit actor identity,
@@ -72,7 +73,7 @@ document format declarations or inline an eager physical copy of every body.
 - **Make the SQLite file the portable artifact.** Rejected: it couples every
   runtime to one file representation and mixes application state with indexes,
   storage migrations, cursors, actor identity, and pending intent.
-- **Define a separate format for sync, import, restore, and schema succession.**
+- **Define a separate format for sync, import, restore, and replacement.**
   Rejected: each format would need its own row, schema, and conflict
   semantics for the same logical database.
 - **Retain every checkpoint as history.** Rejected: portability and retention

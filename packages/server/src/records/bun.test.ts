@@ -5,7 +5,7 @@
  * backend, including durable identity and authenticated partition isolation.
  *
  * Key behaviors:
- * - Database incarnation and mutations survive closing and reopening
+ * - Records epoch and mutations survive closing and reopening
  * - Protocol and schema mismatches refuse without replacing stored identity
  * - Principal and workspace pairs use independent SQLite authorities
  * - Production compaction sends stale cursors through bounded snapshots
@@ -48,21 +48,21 @@ function setup(hash = sha256) {
 async function openEnvelope(
 	records: ReturnType<typeof createBunRecords>['records'],
 	target = partition,
-	schemaIdentity = 'schema-1',
+	recordsSchemaHash = 'schema-1',
 ): Promise<RequestEnvelope> {
 	const result = await records.open(target, {
 		protocolMajor: RECORD_SYNC_PROTOCOL_MAJOR,
-		schemaIdentity,
+		recordsSchemaHash,
 	});
 	if (!result.ok) throw new Error(`Open refused: ${result.reason}`);
 	return {
 		protocolMajor: RECORD_SYNC_PROTOCOL_MAJOR,
-		schemaIdentity,
-		databaseIncarnationId: result.databaseIncarnationId,
+		recordsSchemaHash: result.recordsSchemaHash,
+		recordsEpoch: result.recordsEpoch,
 	};
 }
 
-test('database identity and mutation log survive closing and reopening', async () => {
+test('records epoch and mutation log survive closing and reopening', async () => {
 	const first = setup();
 	try {
 		const envelope = await openEnvelope(first.records);
@@ -91,9 +91,7 @@ test('database identity and mutation log survive closing and reopening', async (
 		const second = createBunRecords({ dir: first.dir, sha256 });
 		try {
 			const reopened = await openEnvelope(second.records);
-			expect(reopened.databaseIncarnationId).toBe(
-				envelope.databaseIncarnationId,
-			);
+			expect(reopened.recordsEpoch).toBe(envelope.recordsEpoch);
 			const pulled = await second.records.pull(partition, {
 				...reopened,
 				kind: 'pull',
@@ -111,31 +109,35 @@ test('database identity and mutation log survive closing and reopening', async (
 	}
 });
 
-test('protocol and schema refusals do not replace stored identity', async () => {
+test('open refuses protocol mismatch and describes the stored schema', async () => {
 	const context = setup();
 	try {
 		const envelope = await openEnvelope(context.records);
 		expect(
 			await context.records.open(partition, {
 				protocolMajor: RECORD_SYNC_PROTOCOL_MAJOR + 1,
-				schemaIdentity: envelope.schemaIdentity,
+				recordsSchemaHash: envelope.recordsSchemaHash,
 			}),
 		).toEqual({ ok: false, reason: 'protocol-mismatch' });
 		expect(
 			await context.records.open(partition, {
 				protocolMajor: RECORD_SYNC_PROTOCOL_MAJOR,
-				schemaIdentity: 'different-schema',
+				recordsSchemaHash: 'different-schema',
 			}),
-		).toEqual({ ok: false, reason: 'schema-identity-mismatch' });
-		expect((await openEnvelope(context.records)).databaseIncarnationId).toBe(
-			envelope.databaseIncarnationId,
+		).toEqual({
+			ok: true,
+			recordsEpoch: envelope.recordsEpoch,
+			recordsSchemaHash: envelope.recordsSchemaHash,
+		});
+		expect((await openEnvelope(context.records)).recordsEpoch).toBe(
+			envelope.recordsEpoch,
 		);
 	} finally {
 		context.cleanup();
 	}
 });
 
-test('principal and workspace pairs own independent database incarnations', async () => {
+test('principal and workspace pairs own independent records epochs', async () => {
 	const context = setup();
 	try {
 		const aliceWiki = await openEnvelope(context.records, partition);
@@ -150,9 +152,9 @@ test('principal and workspace pairs own independent database incarnations', asyn
 
 		expect(
 			new Set([
-				aliceWiki.databaseIncarnationId,
-				bobWiki.databaseIncarnationId,
-				aliceNotes.databaseIncarnationId,
+				aliceWiki.recordsEpoch,
+				bobWiki.recordsEpoch,
+				aliceNotes.recordsEpoch,
 			]).size,
 		).toBe(3);
 	} finally {

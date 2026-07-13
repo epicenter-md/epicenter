@@ -20,12 +20,13 @@ import {
 	parsePushResponse,
 	parseSnapshotChunkRequest,
 	parseSnapshotChunkResponse,
+	RECORD_SYNC_PROTOCOL_MAJOR,
 } from './protocol.js';
 
 const envelope = {
-	protocolMajor: 1,
-	schemaIdentity: 'notes-v1',
-	databaseIncarnationId: 'db-1',
+	protocolMajor: RECORD_SYNC_PROTOCOL_MAJOR,
+	recordsSchemaHash: 'notes-v1',
+	recordsEpoch: 'epoch-1',
 };
 
 test('protocol parsers accept the closed wire shapes and nested JSON cells', () => {

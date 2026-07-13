@@ -2,19 +2,16 @@
 
 Date: 2026-07-11
 
-> Checkpoint vocabulary note: this file records the implemented
-> `databaseIncarnationId` lifecycle on that date. The target protocol calls the
-> coordination universe a records database and adds workspace-family selection
-> in Wave 2. The implemented checkpoint does not prove schema succession. Its
-> two opener functions are implementation seams from this checkpoint, not the
-> settled public API; the active spec targets `workspace.connect(...)`.
+This checkpoint proves the `recordsEpoch` lifecycle through the workspace,
+HTTP, and server adapters. It does not prove deployment-owned administrative
+replacement.
 
 ## Result
 
-The initial database-identity path works through real SQLite, the workspace
+The initial records-epoch path works through real SQLite, the workspace
 service boundary, HTTP, and both server deployment adapters. This checkpoint
 proves the synchronized lifecycle door. It does not complete database movement
-or records-schema succession.
+or records-epoch replacement.
 
 The workspace now has two explicit durable lifecycle doors:
 
@@ -25,7 +22,7 @@ openWorkspaceReplica(definition, { storage, sync, ...runtimeOptions });
 
 `openStandaloneWorkspace` creates a database with application state and no
 actor, cursor, or outbox. `openWorkspaceReplica` creates or reopens a complete
-local SQLite replica of one server-authoritative database incarnation. A SQLite
+local SQLite replica of one server-authoritative records epoch. A SQLite
 file cannot cross between those modes. The application metadata records its
 mode permanently and refuses the wrong opener.
 
@@ -69,8 +66,8 @@ and snapshot generation. The server never imports an app definition and never
 runs app-specific SQL.
 
 Authentication selects the principal outside the record-sync request. The URL
-selects the workspace. The request envelope then fences protocol major, schema
-identity, and database incarnation. A client cannot choose another principal by
+selects the workspace. The request envelope then fences protocol major, records
+schema hash, and records epoch. A client cannot choose another principal by
 placing identity fields in JSON.
 
 ## SQLite at rest
@@ -86,14 +83,15 @@ application tables
 __epicenter_meta
   storage_revision
   workspace_id
-  schema_identity
+  schema_hash
   database_kind = replica
 
 __epicenter_replica                         one singleton row
   actor_id                                  durable device writer identity
   next_actor_sequence                       next mutation number to allocate
   applied_server_sequence                   pull cursor installed in projection
-  database_incarnation_id                   server-minted database identity
+  records_epoch                             server-minted records epoch identity
+  epoch_mismatch_json                       durable stop and recovery evidence
   protocol_major                            outbox encoding fence
   sync_storage_version                      local sync-table format
 
@@ -109,16 +107,17 @@ __epicenter_replica_snapshot_chunks
   chunk_json                                verified resumable staging chunk
 ```
 
-Actor id is stored once. Outbox rows do not repeat it. Schema identity is also
-stored once by `__epicenter_meta`; replica metadata does not create a second
-owner. `applied_server_sequence` is the pull cursor: every server mutation at or
-below that sequence has been durably folded into the local projection.
+Actor id is stored once. Outbox rows do not repeat it. The records schema hash
+is also stored once by `__epicenter_meta`; replica metadata does not create a
+second owner. `applied_server_sequence` is the pull cursor: every server
+mutation at or below that sequence has been durably folded into the local
+projection.
 
 The authority stores a different physical model:
 
 ```txt
 record_sync_meta
-  storage version, protocol major, schema identity, database incarnation
+  storage version, protocol major, records schema hash, records epoch
   server sequence, compaction watermark, snapshot generation
 
 record_sync_actor_high_water
@@ -128,7 +127,7 @@ record_sync_mutation_log
   server_sequence, actor_id, actor_sequence, operations_json
 
 record_sync_canonical_rows
-  table_name, row_id, cells_json, deleted
+  table_name, row_id, cells_json
 
 record_sync_snapshot_manifest
 record_sync_snapshot_chunks
@@ -191,19 +190,20 @@ the replica already knows the authority accepted.
 ## Offline reopen
 
 An existing replica opens from its local SQLite identity without contacting the
-authority. Reads, queries, and writes remain available while signed in but
-offline. New writes continue the same durable actor sequence and enter the same
-outbox.
+authority. Until it has observed an epoch mismatch, reads, queries, and writes
+remain available while signed in but offline. New writes continue the same
+durable actor sequence and enter the same outbox.
 
-The first synchronization attempt verifies the stored database incarnation
-against the authority before pushing or pulling. A different account database,
-reset authority, or replaced incarnation pauses sync. It does not silently
-rebind the file, mint a replacement actor, or discard pending edits.
+Every synchronization attempt verifies the stored records epoch against the
+authority before pushing or pulling. A different current epoch durably freezes
+sync and later local writes, including after restart. It does not silently
+rebind the file, mint a replacement actor, or discard pending edits. Reads and
+logical recovery remain available.
 
-A brand-new replica is different. It has no database incarnation to preserve,
-so its first open must reach the authority, receive the server-minted
-incarnation, and atomically create its local actor binding. Local-only creation
-uses `openStandaloneWorkspace` instead.
+A brand-new replica is different. It has no records epoch to preserve, so its
+first synchronization reaches the authority, receives the server-minted epoch,
+and atomically records its local binding. Local-only creation uses
+`openStandaloneWorkspace` instead.
 
 ## Snapshot restart and installation
 
@@ -240,11 +240,11 @@ The checkpoint names are `openStandaloneWorkspace` and
 `StandaloneWorkspace` is its own authority, while `WorkspaceReplica` is a local
 copy of a server-authoritative workspace database.
 
-Within this checkpoint, `local` is not used as the opposite of `replica` because every replica
-is also physically local and must work offline. `openWorkspaceReplica` keeps
-`WorkspaceReplica` intact as the noun. These lower-level names do not require
-the final application API to expose two openers; the active spec owns that
-public composition decision.
+Within this checkpoint, `local` is not used as the opposite of `replica` because
+every replica is also physically local and must work offline.
+`openWorkspaceReplica` keeps `WorkspaceReplica` intact as the noun. These
+lower-level names do not require the final application API to expose two
+openers; public composition belongs to the workspace API.
 
 ## Verification
 
@@ -286,28 +286,21 @@ adapter against real SQLite through the Durable Object storage contract. A
 deployed workerd smoke remains a separate runtime-parity check; the test does
 not pretend its local Durable Object harness is a Cloudflare deployment.
 
-## What this checkpoint does not complete
+## What this checkpoint did not complete
 
-This initial replica integration slice does not prove workspace-family
-selection, the adjacent migration API and runner, source-row validation,
-successor candidate staging, or conditional activation. Wave 2 must implement
-client-built immutable successor candidates, exact manifest and chunk
-idempotency, candidateId-only activation, and permanent old-database fencing.
-Ordinary writes must atomically recheck family-current and writable before
-folding and advancing the database head.
+This initial replica integration slice did not prove the records-epoch fence,
+the adjacent migration API and runner, source-row validation, or administrative
+replacement. The later epoch-fence proof is recorded in
+[`GATE3-EVIDENCE.md`](GATE3-EVIDENCE.md): ordinary writes atomically recheck the
+current epoch before folding and advancing its sequence.
 
 Do not infer a generic import planner, conflict-review product, or second public
 opener family from this checkpoint. Physical-copy adoption and other database
-movement are separate app-owned boundaries. Schema succession adds no source
+movement are separate app-owned boundaries. Records replacement adds no source
 freeze/unfreeze, transition lease, server-executed transform,
 device-participation state, or private-overlay reconciliation.
 
-Wave 4 consumer migration and deletion also remain: production apps still need
-to stop importing the Yjs table and KV record path before that implementation
-can be removed.
-
-Wave 6 is the acceptance and documentation closeout. Reconcile provisional ADR
-numbers, supersede conflicting accepted decisions explicitly, accept the new
-ADRs only after production behavior lands, move durable protocol facts into
-reference documentation, record the completed spec in history, and delete the
-spent spec.
+Consumer migration and deletion remain separate: production apps still need to
+stop importing the Yjs table and KV record path before that implementation can
+be removed. Durable protocol facts now live in the records ADRs and reference
+documentation; the completed implementation spec and handoff were deleted.

@@ -42,8 +42,8 @@ bun test demos/local-first-sync/gates/
 ```
 
 Historical result on 2026-07-11: 27 tests passed, 0 failed across the then-live
-Gates 1 through 3. That aggregate included the now-withdrawn Gate 3 harness and
-is not current succession evidence. Gate 2 specifically proves:
+Gates 1 through 3. That aggregate included the deleted Gate 3 harness and is not
+current epoch-fence evidence. Gate 2 specifically proves:
 
 - new and stale bootstrap across multiple chunks while later writes continue;
 - response loss and duplicate chunk delivery;
@@ -98,5 +98,6 @@ metadata. Staging never changes application-visible state.
 
 Gate 2 proves logical snapshot semantics, not physical SQLite backup/restore,
 browser OPFS resource behavior, Durable Object adapter parity, production byte
-limits, snapshot throughput, or records-schema succession. Gate 3 still owns
-conditional activation across records databases.
+limits, snapshot throughput, or records-epoch replacement. ADR-0130 assigns the
+portable protocol only the epoch fence; deployment administration owns
+replacement.

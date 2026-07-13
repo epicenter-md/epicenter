@@ -1,76 +1,55 @@
-# Gate 3 evidence withdrawn: optimistic conditional activation needs a new proof
+# Gate 3 evidence: records epochs keep histories separate
 
-Date withdrawn: 2026-07-12
+Date: 2026-07-13
 
 ## Result
 
-Gate 3 does not yet pass the current product contract. The deleted 2026-07-11
-harness proved an earlier frozen-source transition with server-executed
-transforms and post-activation private-overlay import. A later unimplemented
-device-participation design was also superseded. ADRs 0119, 0121, and 0125 now
-require neither model.
+Gate 3 passes through production tests. One records epoch carries one records
+schema hash and one sequence space. Push, pull, snapshot publication, and chunk
+reads reject work after the authority selects another epoch. A replica that
+discovers the mismatch before or during synchronization durably freezes later
+writes, preserves its local rows and outbox across restart, and requires
+explicit recovery.
 
-The old harness remains available in git history as implementation material for
-candidate upload, completeness checks, atomic family selection, and permanent
-superseded-database rejection. It is not current evidence.
+Gate 3 has no standalone transition harness. The earlier harness modeled online
+database succession with candidates and activation. ADR-0130 rejects that
+product. Schema changes, restore, and wholesale replacement are deployment
+administration; the shared sync engine owns only the epoch fence.
 
-## Replacement gate
+## Evidence
 
-The replacement must prove this smallest transition with independent in-memory
-and SQLite authorities:
+- [authority-open.test.ts](../../../packages/record-sync/src/authority-open.test.ts)
+  proves that a stored epoch change fences stale writes, cursors, snapshot
+  publication, and chunk reads. It also proves that a partial administrative
+  transition which changes only the schema hash fails closed.
+- [conformance.test.ts](../../../packages/record-sync/src/conformance.test.ts)
+  runs the same authority contract through Bun SQLite, browser SQLite OO1, and
+  Durable Object SQLite.
+- [replica.test.ts](../../../packages/workspace/src/sqlite/replica.test.ts)
+  proves that an epoch mismatch during discovery, push, pull, or snapshot
+  download freezes edits while preserving pending local work across restart,
+  and that a fresh replica bootstraps the current epoch.
+- [bun.test.ts](../../../packages/server/src/records/bun.test.ts) and
+  [cloudflare.test.ts](../../../packages/server/src/records/cloudflare.test.ts)
+  prove that both deployments persist and descriptively report the current
+  epoch and schema hash.
+- Route and export searches prove the absence of candidate, stage, upload,
+  seal, activate, discard, and succession surfaces in the shared protocol.
 
-```txt
-ACTIVE source A at head H
-  -> client reads canonical snapshot A/H
-  -> client transforms and uploads immutable candidate B bound to A/H
-  -> authority seals B after manifest completeness and integrity checks
-  -> activate(candidateId)
-       success: atomically select B and permanently supersede A
-       stale: change nothing, let staging clean up B, and retry from the new head
+Run the focused proof with:
+
+```sh
+bun test packages/record-sync/src/authority-open.test.ts \
+  packages/record-sync/src/conformance.test.ts
+bun test packages/workspace/src/sqlite/replica.test.ts
+bun test packages/server/src/records/bun.test.ts \
+  packages/server/src/records/cloudflare.test.ts \
+  packages/server/src/routes/records.test.ts
 ```
 
-The sealed server-owned manifest is the source of truth for A, H, the target
-records-schema hash, and successor binding. Activation accepts no caller copy of
-those operands.
+## Limit
 
-Required traces:
-
-- stage a candidate over several idempotent chunk requests;
-- replay the same candidate manifest and same chunk bytes successfully, while
-  rejecting candidate-id or chunk-index reuse with different content;
-- reject missing, duplicate-identity, count-mismatched, digest-mismatched, or
-  unsealed candidates;
-- compute the manifest digest from canonical JSON with fixed fields and chunks
-  sorted by index; reject duplicate chunk indexes and duplicate `(table, rowId)`
-  identities across chunks;
-- reseal a sealed candidate successfully;
-- keep every candidate invisible before activation;
-- accept ordinary source writes throughout upload;
-- force both write/activation serialization orders: write-first advances A and
-  makes activation stale; activation-first makes A non-current and rejects the
-  old-database write;
-- let two complete candidates race from A/H and admit exactly one through the
-  family-selection and source-head compare-and-swap;
-- retry a committed activation and return `already-activated`;
-- expire and garbage-collect stale, failed, and abandoned candidates under
-  bounded candidate/chunk/row/byte quotas without touching A; serialize expiry,
-  sealing, activation, and cleanup so cleanup cannot delete a winning candidate
-  and activation cannot revive an expired candidate;
-- activate a complete client-uploaded logical baseline without giving the
-  schema-blind authority application transform code;
-- block the entire succession when any canonical source row fails the
-  historical source descriptor, report its identity, and leave A unchanged;
-- permanently reject every post-activation write to superseded A;
-- retain forgotten old local databases for read and logical export while
-  providing no automatic merge or generic re-import.
-
-The replacement must also prove an absence: migration requests, authority
-tables, and state transitions contain no device-participation or source-locking
-state. `actorId` and `actorSequence` remain only in ordinary retry-safe
-synchronization tests.
-
-## Scope
-
-The user owns the assertion that important devices showed `Synced` before
-approval. KV and independently addressed Yjs child documents continue syncing;
-conditional activation changes only the selected records database.
+This gate does not prove how an administrator uploads, validates, rolls back, or
+retains replacement data. Those are deployment-owned operations. If a concrete
+hosted or self-hosted workflow earns shared behavior later, it must be designed
+without weakening the epoch fence.

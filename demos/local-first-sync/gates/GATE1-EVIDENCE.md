@@ -55,7 +55,7 @@ Result: 13 tests passed, 0 failed. The suite ran:
   mutation, and during pull-page application;
 - database-session generation fencing for stale responses;
 - one atomic mutation spanning multiple rows and tables;
-- actor-sequence duplicate and gap handling plus schema-identity refusal;
+- actor-sequence duplicate and gap handling plus records-schema refusal;
 - collision-free internal comparison keys for arbitrary table and row ids;
 - partial-row quarantine via incomplete `createRow`, completing-update
   promotion, pending replay, reopen, update, and physical delete;
@@ -99,7 +99,7 @@ retains any deletion history.
 The current measurements include Gate 2's identical client staging table and
 snapshot methods in both candidates. Gate 1 by itself did not prove snapshots;
 that later evidence is in [`GATE2-EVIDENCE.md`](GATE2-EVIDENCE.md).
-Records-schema succession, browser OPFS behavior, Durable Object parity, scale
+Records-epoch replacement, browser OPFS behavior, Durable Object parity, scale
 performance, limits, and reactive invalidation remain later work. Candidate A
 remains in this proof directory only as the tested control; it is not selected
 production design.

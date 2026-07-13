@@ -67,6 +67,7 @@ export {
 export { renderHistoricalSchemaModule } from './render-historical-schema.js';
 export {
 	ReplicaAdmissionConflictError,
+	ReplicaRecordsEpochMismatchError,
 	type ReplicaSyncPort,
 } from './replica.js';
 export {

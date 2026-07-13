@@ -1,5 +1,5 @@
 /**
- * Canonical records descriptor and `recordsSchemaHash` derivation (ADR-0125).
+ * Canonical records descriptor and `recordsSchemaHash` derivation (ADR-0130).
  *
  * The descriptor is designed first and the hash is derived from it: a
  * format-versioned canonical JSON document over the workspace's synchronized
@@ -12,19 +12,19 @@
  *   (kind, nullability wrapper, enum members in authored order, validation
  *   constraints, `x-ref` reference targets, `field.json` payload schemas),
  *
- * - Excluded: the workspace id (family routing binds databases to workspaces
- *   at separate seams), display name, KV declarations (they survive records
- *   succession, ADR-0124), child-document declarations (they have independent
+ * - Excluded: the workspace id (authority routing binds records to workspaces
+ *   at separate seams), display name, KV declarations (they keep their own
+ *   identity, ADR-0124), child-document declarations (they have independent
  *   format-addressed identity, ADR-0126), local indexes (rebuildable runtime
- *   state), `touch` policy (synchronized behavior, not stored shape), and the annotation
- *   keywords `title` / `description` / `default` / `examples` (editor hints;
- *   editing one must never force database succession).
+ *   state), `touch` policy (synchronized behavior, not stored shape), and the
+ *   annotation keywords `title` / `description` / `default` / `examples`
+ *   (editor hints; editing one must never start a new records epoch).
  *
  * Annotations are stripped at the column root and inside the two branches of
  * the explicit `nullable(...)` wrapper, not recursively. Because
  * `field.json(schema)` spreads its payload onto the column root, the
- * payload's own root-level annotations are stripped too. This is correct under this
- * rule, since a root `default` or `title` changes no accepted value.
+ * payload's own root-level annotations are stripped too. This is correct under
+ * this rule, since a root `default` or `title` changes no accepted value.
  * Annotations nested deeper inside a `field.json` payload (for example on a
  * property schema) do remain identity; that asymmetry is the stated cost of
  * refusing recursive JSON-schema surgery. Array order inside a schema (for

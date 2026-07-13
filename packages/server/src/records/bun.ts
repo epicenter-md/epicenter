@@ -5,8 +5,6 @@ import { join } from 'node:path';
 import {
 	openRecordAuthority,
 	type RecordAuthority,
-	type RequestEnvelope,
-	recordAuthorityBindingRefusal,
 	restoreRecordAuthority,
 	type Sha256,
 } from '@epicenter/record-sync';
@@ -16,7 +14,6 @@ import type { Records, RecordsPartition } from './contracts.js';
 
 type OpenAuthority = {
 	database: Database;
-	envelope: RequestEnvelope;
 	authority: RecordAuthority;
 	compaction?: Promise<void>;
 };
@@ -60,7 +57,7 @@ export function createBunRecords({
 				throw new Error(
 					'Records workspace must be opened before synchronization',
 				);
-			const opened = { database, ...restored };
+			const opened = { database, authority: restored.authority };
 			authorities.set(key, opened);
 			return opened;
 		} catch (error) {
@@ -75,12 +72,18 @@ export function createBunRecords({
 			const key = partitionKey(partition);
 			const cached = authorities.get(key);
 			if (cached) {
-				return (
-					recordAuthorityBindingRefusal(request, cached.envelope) ?? {
-						ok: true,
-						databaseIncarnationId: cached.envelope.databaseIncarnationId,
-					}
-				);
+				const opened = openRecordAuthority({
+					database: createBunSqliteAdapter(cached.database),
+					request,
+					sha256,
+				});
+				if (!opened.ok) return opened;
+				cached.authority = opened.authority;
+				return {
+					ok: true,
+					recordsEpoch: opened.recordsEpoch,
+					recordsSchemaHash: opened.recordsSchemaHash,
+				};
 			}
 			const database = new Database(join(dir, databaseFilename(partition)), {
 				create: true,
@@ -90,7 +93,6 @@ export function createBunRecords({
 				const opened = openRecordAuthority({
 					database: createBunSqliteAdapter(database),
 					request,
-					createDatabaseIncarnationId: () => crypto.randomUUID(),
 					sha256,
 				});
 				if (!opened.ok) {
@@ -99,12 +101,12 @@ export function createBunRecords({
 				}
 				authorities.set(key, {
 					database,
-					envelope: opened.envelope,
 					authority: opened.authority,
 				});
 				return {
 					ok: true,
-					databaseIncarnationId: opened.databaseIncarnationId,
+					recordsEpoch: opened.recordsEpoch,
+					recordsSchemaHash: opened.recordsSchemaHash,
 				};
 			} catch (error) {
 				database.close();

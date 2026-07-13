@@ -1,9 +1,8 @@
-# Gates 1 and 2: client materialization and compaction proof
+# Record synchronization gates
 
 This directory tests one claim inside one exact records schema and one records
-database. Some implemented source still uses `schemaIdentity` and
-`databaseIncarnationId`; those are legacy implementation names scheduled for
-the Wave 2 family/database protocol, not target vocabulary.
+epoch. Its request envelope uses `recordsSchemaHash` for the portable records
+contract and `recordsEpoch` for one authority lifetime.
 
 > No retry, crash, or pull-page schedule makes accepted or pending user intent
 > transiently disappear from visible application state.
@@ -68,14 +67,13 @@ accepted state, prune snapshot-contained outbox mutations, replay the rest
 through the fold, and advance the cursor in one SQLite transaction. Its
 measured result is recorded in [`GATE2-EVIDENCE.md`](GATE2-EVIDENCE.md).
 
-Gate 3's original late-overlay model is withdrawn. Its replacement must add
-exact schema identity, head-bound immutable candidate upload, conditional
-activation against the still-current source head, stale-head retry, atomic
-selection, and permanent old-database fencing. It must contain no migration-time
-device or actor state. Ordinary writes must recheck family-current and writable
-inside their fold/head transaction. Activation accepts only `candidateId` and
-derives its source/head/target/successor binding from the sealed server-owned
-manifest. The current evidence status and required traces are recorded in
+The withdrawn Gate 3 harness modeled online database succession. ADR-0130
+deletes that product contract. Its replacement proof lives in production tests:
+every request and cursor is qualified by a records epoch, stale-epoch work is
+rejected transactionally, replica mismatch preserves local pending work, and a
+fresh replica uses the ordinary snapshot bootstrap path. Schema changes,
+restore, and wholesale replacement are deployment administration, not a new
+portable gate protocol. The proof index is recorded in
 [`GATE3-EVIDENCE.md`](GATE3-EVIDENCE.md).
 
 Wave 4 extracts the portable record protocol, fold, authority, and three SQLite

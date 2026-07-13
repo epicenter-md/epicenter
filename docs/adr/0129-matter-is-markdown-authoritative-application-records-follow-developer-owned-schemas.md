@@ -1,6 +1,6 @@
 # 0129. Matter is Markdown-authoritative; application records follow developer-owned schemas
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-07-13
 - **Relates:** [ADR-0065](0065-matter-is-a-standalone-disk-as-truth-tool-its-sqlite-is-a-read-only-query-surface.md), [ADR-0119](0119-complete-metadata-replicas-sync-through-schema-blind-server-ordered-mutations.md), [ADR-0122](0122-logical-snapshots-are-the-portable-record-database-format-sqlite-files-are-runtime-state.md)
 

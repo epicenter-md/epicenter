@@ -333,7 +333,7 @@ describe('defineWorkspace', () => {
 		}
 
 		// The payload spreads onto the column root, so a root default or title
-		// is a stripped editor hint: no accepted value changes, no succession.
+		// is a stripped editor hint: no accepted value changes, no new epoch.
 		const baseline = hashWithPayload(Type.Object({ level: Type.Number() }));
 		expect(
 			hashWithPayload(

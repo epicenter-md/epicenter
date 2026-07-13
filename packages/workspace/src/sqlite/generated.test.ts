@@ -7,7 +7,7 @@
  * Key behaviors:
  * - Historical endpoints are complete immutable values
  * - Generated modules import the explicit generated-artifact constructor subpath
- * - The application barrel excludes succession execution plumbing
+ * - The application barrel excludes replacement execution plumbing
  */
 
 import { describe, expect, test } from 'bun:test';
@@ -47,7 +47,7 @@ describe('generated historical schema boundary', () => {
 		);
 	});
 
-	test('application barrel excludes succession execution plumbing', () => {
+	test('application barrel excludes replacement execution plumbing', () => {
 		expect(Object.hasOwn(sqlite, 'historicalSchema')).toBe(false);
 		expect(Object.hasOwn(sqlite, 'runRecordsMigration')).toBe(false);
 		expect(Object.hasOwn(sqlite, 'RecordsMigrationSourceBlockedError')).toBe(

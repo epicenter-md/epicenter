@@ -1,15 +1,15 @@
-/** Gate 1-2 protocol: one exact records schema and one records database. */
+/** Gate 1-2 protocol: one exact records schema and one records epoch. */
 
 export type RequestEnvelope = {
 	protocolMajor: number;
-	schemaEpochId: string;
-	databaseIncarnationId: string;
+	recordsSchemaHash: string;
+	recordsEpoch: string;
 };
 
 export const ENVELOPE = {
 	protocolMajor: 1,
-	schemaEpochId: 'gate1-notes-v1',
-	databaseIncarnationId: 'gate1-database-1',
+	recordsSchemaHash: 'gate1-notes-v1',
+	recordsEpoch: 'gate1-epoch-1',
 } as const satisfies RequestEnvelope;
 
 export type JsonCell = string | number | boolean | null;
@@ -74,8 +74,8 @@ export type SnapshotChunkRequest = RequestEnvelope & {
 
 export type Refusal =
 	| 'protocol-mismatch'
-	| 'schema-epoch-mismatch'
-	| 'database-incarnation-mismatch';
+	| 'records-schema-mismatch'
+	| 'records-epoch-mismatch';
 
 export type PushResponse =
 	| { kind: 'push'; ok: true }
@@ -166,9 +166,9 @@ export function requestRefusal(
 ): Refusal | null {
 	if (request.protocolMajor !== expected.protocolMajor)
 		return 'protocol-mismatch';
-	if (request.schemaEpochId !== expected.schemaEpochId)
-		return 'schema-epoch-mismatch';
-	if (request.databaseIncarnationId !== expected.databaseIncarnationId)
-		return 'database-incarnation-mismatch';
+	if (request.recordsSchemaHash !== expected.recordsSchemaHash)
+		return 'records-schema-mismatch';
+	if (request.recordsEpoch !== expected.recordsEpoch)
+		return 'records-epoch-mismatch';
 	return null;
 }

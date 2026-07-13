@@ -1,9 +1,9 @@
 # 0127. Chat streams live turns in client state and stores finished messages as records
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-07-12
 - **Supersedes:** [ADR-0055](0055-conversation-storage-is-one-canonical-table-every-surface-syncs.md) (the canonical `@epicenter/chat` ownership and synchronized transcript promise carry forward; the keyed child-document store does not)
-- **Relates:** [ADR-0047](0047-the-agent-loop-runs-in-the-client-and-tools-are-dispatched-actions.md), [ADR-0123](0123-bounded-metadata-uses-record-authority-merge-sensitive-state-uses-lazy-child-documents.md), [ADR-0125](0125-record-schemas-are-immutable-evolution-creates-a-successor-database.md)
+- **Relates:** [ADR-0047](0047-the-agent-loop-runs-in-the-client-and-tools-are-dispatched-actions.md), [ADR-0123](0123-bounded-metadata-uses-record-authority-merge-sensitive-state-uses-lazy-child-documents.md), [ADR-0130](0130-records-replacement-starts-a-new-epoch-without-an-online-succession-protocol.md)
 
 ## Context
 
@@ -80,8 +80,9 @@ table.
 
 ## Consequences
 
-- Conversations and messages participate in records-schema identity,
-  succession, logical export, validation, search, retention, and row deletion.
+- Conversations and messages participate in records-schema identity, logical
+  export, validation, search, retention, row deletion, and any administrative
+  replacement of their records epoch.
 - Message and turn IDs make concurrent appends independent. A product that
   needs causal branches beyond one turn and its steps must model an explicit
   parent identity rather than relying on storage insertion order.

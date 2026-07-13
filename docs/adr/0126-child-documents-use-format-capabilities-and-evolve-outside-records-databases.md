@@ -4,7 +4,7 @@
 - **Date:** 2026-07-12
 - **Amended by:** [ADR-0128](0128-tables-do-not-declare-document-edit-touch-policy-without-a-runtime-owner.md) (the inert `touchOnDocumentEdit` declaration is withdrawn; document formats, addressing, openers, and conversion ownership are unchanged)
 - **Supersedes:** [ADR-0005](0005-child-docs-are-bound-through-the-workspace.md)
-- **Relates:** [ADR-0120](0120-persisted-fields-are-atomic-cells-and-collaborative-bodies-are-yjs-documents.md), [ADR-0125](0125-record-schemas-are-immutable-evolution-creates-a-successor-database.md)
+- **Relates:** [ADR-0120](0120-persisted-fields-are-atomic-cells-and-collaborative-bodies-are-yjs-documents.md), [ADR-0130](0130-records-replacement-starts-a-new-epoch-without-an-online-succession-protocol.md)
 
 ## Context
 
@@ -13,7 +13,7 @@ but its `.docs({ field: layout })` builder accepts executable attachment
 functions and leaves format compatibility implicit. The first SQLite definition
 prototype replaced those functions with strings and included the strings in the
 records schema hash. That makes independently stored Yjs formats depend on a
-central switch and forces an unrelated records-database succession whenever a
+central switch and forces an unrelated records replacement whenever a
 document declaration changes.
 
 ## Decision
@@ -70,7 +70,7 @@ address segments, not display labels. Renaming either creates new child-document
 addresses. Changing a document format also creates a new child document. An
 explicit capability-specific application converter may open one old room and
 initialize its new format-addressed room. This is per-document conversion, not
-records-schema succession. Old room bytes remain retained. Version one has no
+records replacement. Old room bytes remain retained. Version one has no
 generic document migration registry, cross-format graph, or workspace-wide scan
 that discovers and opens every lazy child document.
 
@@ -141,8 +141,7 @@ document-format identity.
 
 - `.docs(...)`, symbolic layout strings, raw table-level attachment functions,
   per-document touch objects, and the central layout switch disappear.
-- Adding or changing a child document does not create a successor records
-  database.
+- Adding or changing a child document does not start a new records epoch.
 - Record fields and child documents may use the same declaration name because
   their maps and public access paths remain distinct.
 - Renaming a table or document changes child-document identity and requires
@@ -154,7 +153,7 @@ document-format identity.
   accepted stored content remains compatible. A format change changes its
   descriptor and therefore its address.
 - Text to rich text is document conversion. Rich text to text is a potentially
-  lossy document projection. Neither operation is records-schema succession.
+  lossy document projection. Neither operation replaces records.
 - A cross-plane transfer cannot claim atomicity across SQLite and Yjs. The app
   owns its cutover and one final authority; old bytes remain retained until
   separate explicit cleanup.

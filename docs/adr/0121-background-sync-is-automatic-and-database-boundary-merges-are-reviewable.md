@@ -1,8 +1,9 @@
 # 0121. Background sync is automatic and database-boundary merges are reviewable
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-07-11
-- **Relates:** [ADR-0088](0088-sign-in-is-an-enhancement-never-a-door.md), [ADR-0092 (sign-in migration child-doc guids)](0092-sign-in-migration-child-doc-guids-are-derived-from-the-schema.md) (note: the number 0092 is currently shared with `0092-identity-is-the-partition.md`; resolve the collision before acceptance), [ADR-0125](0125-record-schemas-are-immutable-evolution-creates-a-successor-database.md)
+- **Relates:** [ADR-0088](0088-sign-in-is-an-enhancement-never-a-door.md)
+- **Amended by:** [ADR-0130](0130-records-replacement-starts-a-new-epoch-without-an-online-succession-protocol.md) (schema change and records replacement start a new records epoch)
 
 ## Context
 
@@ -29,11 +30,10 @@ schema-blind planner cannot safely mint fresh ids because references may hide
 in ordinary cells or opaque JSON. So the boundary flows divide by what they
 may honestly promise about identity:
 
-- The generic schema-successor path starts from zero live rows and preserves
-  every surviving row identity. A whole-database movement outside that generic
-  path (restore, endpoint movement, physical-clone adoption, or local-to-account
-  promotion of the first database) may use a separately designed app-owned
-  successor build when identity remapping is required.
+- A disruptive administrative replacement starts a new records epoch from one
+  complete logical snapshot. Restore, endpoint movement, physical-clone
+  adoption, or local-to-account promotion may each impose a different review
+  and identity policy outside the sync engine.
 - Copying selected content into an already-populated database is app-owned
   until the schema declares an explicit reference vocabulary; a generic
   planner does not guess how to remap inbound references.
@@ -46,21 +46,12 @@ destination head, and the selected result is emitted as ordinary `createRow`,
 `updateRow`, and `deleteRow` mutations; the sync protocol has no separate
 merge verb.
 
-Schema succession is not a reviewable merge. It is the user-approved cutover in
-ADR-0125: after the user synchronizes the devices they care about and stops
-editing, a client transforms source A at canonical head H. The authority
-activates the successor only if A is still current and unchanged. The authority
-does not prove device participation. Forgotten private old-schema edits remain
-locally readable and exportable but never automatically enter the successor.
-This refusal removes the private-overlay comparison, deletion-intent recovery,
-and row-resurrection policy from schema migration.
-
-[Gate 3](../../demos/local-first-sync/gates/GATE3-EVIDENCE.md) is withdrawn as
-evidence for the current transition because it proves the rejected late-overlay
-model. Its resumable preparation, completeness, and atomic activation mechanics
-remain useful test material; a replacement gate must prove source-head
-conditional activation, stale-candidate retry, and permanent old-database
-fencing.
+A synchronized records schema change, restore, or wholesale replacement is not
+a reviewable background merge. The administrator briefly rejects writes,
+installs a complete logical snapshot as a new records epoch, and requires
+replicas to resynchronize. Forgotten private work remains local and never enters
+the new epoch automatically. The shared protocol owns only the epoch fence; it
+does not own preparation, review, byte staging, or rollback policy.
 
 A local-only database carries application tables and child documents, but no
 actor identity, cursor, sync outbox, or dormant mutation history. Enabling sync
@@ -96,8 +87,8 @@ continue, and sequence deduplication absorbs the retry.
 - Reviewable comparison is useful beyond sign-in: compatible local files,
   backups, Cloud databases, and self-hosted databases all read through one
   logical snapshot interface, even though the identity policy differs by
-  boundary flow. Superseded-schema replicas are deliberately excluded from this
-  generic merge promise. The first implementation is a
+  boundary flow. Replicas bound to an old records epoch are deliberately
+  excluded from this generic merge promise. The first implementation is a
   summary with a bulk preference; a per-cell editor is built only when review
   volume earns it.
 - A development-only observer may count remote operations that overlap a pending

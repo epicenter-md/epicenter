@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test';
+import { ReplicaSyncRefusalError } from './replica.js';
 import { createHttpReplicaSyncPort } from './replica-http.js';
 
 test('HTTP replica port binds one encoded workspace and forwards exact JSON', async () => {
@@ -14,7 +15,7 @@ test('HTTP replica port binds one encoded workspace and forwards exact JSON', as
 			});
 			return Response.json(
 				requests.length === 1
-					? { databaseIncarnationId: 'db-1' }
+					? { recordsEpoch: 'epoch-1', recordsSchemaHash: 'schema-1' }
 					: { kind: 'push', ok: true },
 			);
 		},
@@ -22,21 +23,21 @@ test('HTTP replica port binds one encoded workspace and forwards exact JSON', as
 	const controller = new AbortController();
 
 	expect(
-		await port.openDatabase(
+		await port.openAuthority(
 			{
 				workspaceId: 'notes/2026',
 				protocolMajor: 1,
-				schemaIdentity: 'schema-1',
+				recordsSchemaHash: 'schema-1',
 			},
 			controller.signal,
 		),
-	).toEqual({ databaseIncarnationId: 'db-1' });
+	).toEqual({ recordsEpoch: 'epoch-1', recordsSchemaHash: 'schema-1' });
 	await port.push(
 		{
 			kind: 'push',
 			protocolMajor: 1,
-			schemaIdentity: 'schema-1',
-			databaseIncarnationId: 'db-1',
+			recordsSchemaHash: 'schema-1',
+			recordsEpoch: 'epoch-1',
 			mutations: [],
 		},
 		controller.signal,
@@ -45,7 +46,7 @@ test('HTTP replica port binds one encoded workspace and forwards exact JSON', as
 	expect(requests).toEqual([
 		{
 			url: 'https://api.example.test/api/records/notes%2F2026/open',
-			body: { protocolMajor: 1, schemaIdentity: 'schema-1' },
+			body: { protocolMajor: 1, recordsSchemaHash: 'schema-1' },
 			signal: controller.signal,
 		},
 		{
@@ -53,18 +54,18 @@ test('HTTP replica port binds one encoded workspace and forwards exact JSON', as
 			body: {
 				kind: 'push',
 				protocolMajor: 1,
-				schemaIdentity: 'schema-1',
-				databaseIncarnationId: 'db-1',
+				recordsSchemaHash: 'schema-1',
+				recordsEpoch: 'epoch-1',
 				mutations: [],
 			},
 			signal: controller.signal,
 		},
 	]);
 	await expect(
-		port.openDatabase({
+		port.openAuthority({
 			workspaceId: 'other',
 			protocolMajor: 1,
-			schemaIdentity: 'schema-1',
+			recordsSchemaHash: 'schema-1',
 		}),
 	).rejects.toThrow('already bound');
 });
@@ -82,17 +83,43 @@ test('HTTP replica port reports non-success and malformed responses', async () =
 	});
 
 	await expect(
-		port.openDatabase({
+		port.openAuthority({
 			workspaceId: 'notes',
 			protocolMajor: 1,
-			schemaIdentity: 'schema-1',
+			recordsSchemaHash: 'schema-1',
 		}),
 	).rejects.toThrow('non-JSON HTTP 503');
 	await expect(
-		port.openDatabase({
+		port.openAuthority({
 			workspaceId: 'notes',
 			protocolMajor: 1,
-			schemaIdentity: 'schema-1',
+			recordsSchemaHash: 'schema-1',
 		}),
 	).rejects.toThrow('non-JSON HTTP 200');
+});
+
+test('HTTP protocol mismatch remains a terminal replica refusal', async () => {
+	const port = createHttpReplicaSyncPort({
+		baseUrl: 'https://api.example.test',
+		async fetch() {
+			return Response.json(
+				{
+					error: {
+						name: 'ProtocolMismatch',
+						message: 'The record synchronization protocol is incompatible.',
+						status: 409,
+					},
+				},
+				{ status: 409 },
+			);
+		},
+	});
+
+	await expect(
+		port.openAuthority({
+			workspaceId: 'notes',
+			protocolMajor: 3,
+			recordsSchemaHash: 'schema-1',
+		}),
+	).rejects.toBeInstanceOf(ReplicaSyncRefusalError);
 });

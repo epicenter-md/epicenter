@@ -17,7 +17,8 @@ import {
 	parsePushResponse,
 	parseSnapshotChunkResponse,
 	RECORD_SYNC_ADMISSION_LIMITS,
-	type RecordAuthorityBindingRequest,
+	type RecordAuthorityDescriptor,
+	type RecordAuthorityOpenRequest,
 	type RecordSyncSqlite,
 	type RequestEnvelope,
 	type Sha256,
@@ -33,27 +34,54 @@ import {
 } from './database.js';
 import type { TableDefinitions, WorkspaceDefinition } from './definition.js';
 
-const SYNC_STORAGE_VERSION = 1;
+const SYNC_STORAGE_VERSION = 2;
 const DEFAULT_PULL_LIMIT = 100;
 const META_TABLE = '__epicenter_replica';
 const OUTBOX_TABLE = '__epicenter_replica_outbox';
 const SNAPSHOT_TABLE = '__epicenter_replica_snapshot';
 const SNAPSHOT_CHUNK_TABLE = '__epicenter_replica_snapshot_chunks';
 
-export type ReplicaDatabaseBindingRequest = RecordAuthorityBindingRequest & {
+export type ReplicaAuthorityOpenRequest = RecordAuthorityOpenRequest & {
 	workspaceId: string;
 };
 
-type ReplicaDatabaseBinding = {
-	databaseIncarnationId: string;
-};
+/** The authority has moved on; this replica remains intact for recovery. */
+export class ReplicaRecordsEpochMismatchError extends Error {
+	readonly localRecordsEpoch: string;
+	readonly currentRecordsEpoch: string | null;
+	readonly currentRecordsSchemaHash: string | null;
+	readonly pendingMutationCount: number;
+
+	constructor({
+		localRecordsEpoch,
+		currentRecordsEpoch,
+		currentRecordsSchemaHash,
+		pendingMutationCount,
+	}: {
+		localRecordsEpoch: string;
+		currentRecordsEpoch: string | null;
+		currentRecordsSchemaHash: string | null;
+		pendingMutationCount: number;
+	}) {
+		super(
+			currentRecordsEpoch === null
+				? `Replica records epoch '${localRecordsEpoch}' was refused as stale; local state is preserved for recovery`
+				: `Replica records epoch '${localRecordsEpoch}' no longer matches current epoch '${currentRecordsEpoch}'; local state is preserved for recovery`,
+		);
+		this.name = 'ReplicaRecordsEpochMismatchError';
+		this.localRecordsEpoch = localRecordsEpoch;
+		this.currentRecordsEpoch = currentRecordsEpoch;
+		this.currentRecordsSchemaHash = currentRecordsSchemaHash;
+		this.pendingMutationCount = pendingMutationCount;
+	}
+}
 
 /** Network boundary implemented by the hosted or self-hosted sync client. */
 export type ReplicaSyncPort = {
 	/** Select the workspace route locally without performing network I/O. */
 	bindWorkspace(workspaceId: string): void;
-	openDatabase(
-		request: ReplicaDatabaseBindingRequest,
+	openAuthority(
+		request: ReplicaAuthorityOpenRequest,
 		signal?: AbortSignal,
 	): Promise<unknown>;
 	push(request: PushRequest, signal?: AbortSignal): Promise<unknown>;
@@ -79,16 +107,22 @@ type ReplicaMeta = {
 	actorId: string;
 	nextActorSequence: number;
 	appliedServerSequence: number;
-	databaseIncarnationId: string | null;
+	recordsEpoch: string | null;
+	epochMismatch: ReplicaEpochMismatch | null;
 	protocolMajor: number;
 	syncStorageVersion: number;
 };
 
+type ReplicaEpochMismatch = {
+	currentRecordsEpoch: string | null;
+	currentRecordsSchemaHash: string | null;
+};
+
 /** A durable authority refusal that cannot converge through transport retries. */
-class ReplicaSyncRefusalError extends Error {
+export class ReplicaSyncRefusalError extends Error {
 	constructor(reason: string) {
 		super(
-			`Replica push refused: ${reason}; synchronization is stopped until the authority binding or local replica is replaced`,
+			`Replica synchronization refused: ${reason}; synchronization is stopped until the authority binding or local replica is replaced`,
 		);
 		this.name = 'ReplicaSyncRefusalError';
 	}
@@ -109,11 +143,13 @@ export async function createReplicaRuntime<TTables extends TableDefinitions>({
 	if (!Number.isSafeInteger(pullLimit) || pullLimit < 1 || pullLimit > 1_000) {
 		throw new TypeError('pullLimit must be an integer from 1 through 1000');
 	}
+	let epochMismatch: ReplicaRecordsEpochMismatchError | undefined;
 	const coordinator: ApplicationMutationCoordinator = {
 		commit<TResult>(
 			context: ApplicationMutationContext,
 			apply: () => TResult,
 		): TResult {
+			if (epochMismatch) throw epochMismatch;
 			return sqlite.transaction(() => {
 				const result = apply();
 				if (context.operations.length === 0) return result;
@@ -150,47 +186,111 @@ export async function createReplicaRuntime<TTables extends TableDefinitions>({
 	} else {
 		createReplicaMeta({ sqlite, protocolMajor, createActorId });
 	}
+	const storedMeta = readMeta(sqlite);
+	if (storedMeta.epochMismatch) {
+		if (storedMeta.recordsEpoch === null) {
+			throw new ReplicaInvariantViolationError(
+				'Replica epoch mismatch exists without a local records epoch',
+			);
+		}
+		epochMismatch = new ReplicaRecordsEpochMismatchError({
+			localRecordsEpoch: storedMeta.recordsEpoch,
+			...storedMeta.epochMismatch,
+			pendingMutationCount: readOutbox(sqlite).length,
+		});
+	}
 
 	const bindingRequest = {
 		workspaceId: definition.id,
-		schemaIdentity: definition.recordsSchemaHash,
+		recordsSchemaHash: definition.recordsSchemaHash,
 		protocolMajor,
 	};
 	sync.bindWorkspace(bindingRequest.workspaceId);
-	let isAuthorityBindingVerified = false;
 
-	async function verifyAuthorityBinding(signal?: AbortSignal): Promise<void> {
-		if (isAuthorityBindingVerified) return;
-		const { databaseIncarnationId } = parseDatabaseBinding(
-			await sync.openDatabase(bindingRequest, signal),
+	async function readAuthorityDescriptor(
+		signal?: AbortSignal,
+	): Promise<RecordAuthorityDescriptor> {
+		const { recordsEpoch, recordsSchemaHash } = parseAuthorityDescriptor(
+			await sync.openAuthority(bindingRequest, signal),
 		);
-		assertNonEmpty(databaseIncarnationId, 'databaseIncarnationId');
-		sqlite.transaction(() => {
+		assertNonEmpty(recordsEpoch, 'recordsEpoch');
+		assertNonEmpty(recordsSchemaHash, 'recordsSchemaHash');
+		return { recordsEpoch, recordsSchemaHash };
+	}
+
+	function enterEpochMismatch(
+		descriptor: RecordAuthorityDescriptor | null,
+	): ReplicaRecordsEpochMismatchError {
+		return sqlite.transaction(() => {
 			const meta = readMeta(sqlite);
-			if (meta.databaseIncarnationId === null) {
-				sqlite.run(
-					`UPDATE ${META_TABLE} SET database_incarnation_id = ? WHERE id = 1`,
-					[databaseIncarnationId],
-				);
-				return;
-			}
-			if (databaseIncarnationId !== meta.databaseIncarnationId) {
+			if (meta.recordsEpoch === null)
 				throw new ReplicaInvariantViolationError(
-					'Replica database incarnation no longer matches authority; discard this replica and rebootstrap from the authority',
+					'Replica cannot enter epoch mismatch before binding an epoch',
 				);
-			}
+			const persisted = {
+				currentRecordsEpoch: descriptor?.recordsEpoch ?? null,
+				currentRecordsSchemaHash: descriptor?.recordsSchemaHash ?? null,
+			} satisfies ReplicaEpochMismatch;
+			sqlite.run(
+				`UPDATE ${META_TABLE} SET epoch_mismatch_json = ? WHERE id = 1`,
+				[JSON.stringify(persisted)],
+			);
+			return new ReplicaRecordsEpochMismatchError({
+				localRecordsEpoch: meta.recordsEpoch,
+				...persisted,
+				pendingMutationCount: readOutbox(sqlite).length,
+			});
 		});
-		isAuthorityBindingVerified = true;
+	}
+
+	async function refuseEpochMismatch(signal?: AbortSignal): Promise<never> {
+		epochMismatch = enterEpochMismatch(null);
+		let descriptor: RecordAuthorityDescriptor;
+		try {
+			descriptor = await readAuthorityDescriptor(signal);
+		} catch {
+			throw epochMismatch;
+		}
+		const localRecordsEpoch = readMeta(sqlite).recordsEpoch;
+		if (descriptor.recordsEpoch !== localRecordsEpoch) {
+			epochMismatch = enterEpochMismatch(descriptor);
+		}
+		throw epochMismatch;
+	}
+
+	async function discoverAuthority(signal?: AbortSignal): Promise<void> {
+		if (epochMismatch) throw epochMismatch;
+		const { recordsEpoch, recordsSchemaHash } =
+			await readAuthorityDescriptor(signal);
+		const mismatch = sqlite.transaction(() => {
+			const meta = readMeta(sqlite);
+			if (meta.recordsEpoch !== null && recordsEpoch !== meta.recordsEpoch) {
+				return { recordsEpoch, recordsSchemaHash };
+			}
+			if (recordsSchemaHash !== definition.recordsSchemaHash) {
+				throw new ReplicaSyncRefusalError('records-schema-mismatch');
+			}
+			if (meta.recordsEpoch === null) {
+				sqlite.run(`UPDATE ${META_TABLE} SET records_epoch = ? WHERE id = 1`, [
+					recordsEpoch,
+				]);
+			}
+			return undefined;
+		});
+		if (mismatch) {
+			epochMismatch = enterEpochMismatch(mismatch);
+			throw epochMismatch;
+		}
 	}
 
 	function envelope(meta = readMeta(sqlite)): RequestEnvelope {
-		if (meta.databaseIncarnationId === null) {
+		if (meta.recordsEpoch === null) {
 			throw new Error('Replica authority binding is missing');
 		}
 		return {
 			protocolMajor: meta.protocolMajor,
-			schemaIdentity: definition.recordsSchemaHash,
-			databaseIncarnationId: meta.databaseIncarnationId,
+			recordsSchemaHash: definition.recordsSchemaHash,
+			recordsEpoch: meta.recordsEpoch,
 		};
 	}
 
@@ -220,10 +320,11 @@ export async function createReplicaRuntime<TTables extends TableDefinitions>({
 							'Replica push refused: row-too-large; pending mutation preserved for application resolution',
 						);
 					case 'protocol-mismatch':
-					case 'schema-identity-mismatch':
-					case 'database-incarnation-mismatch':
+					case 'records-schema-mismatch':
 					case 'actor-sequence-gap':
 						throw new ReplicaSyncRefusalError(response.reason);
+					case 'records-epoch-mismatch':
+						await refuseEpochMismatch(signal);
 				}
 			}
 			start += batch.length;
@@ -280,7 +381,18 @@ export async function createReplicaRuntime<TTables extends TableDefinitions>({
 				await sync.snapshotChunk(request, signal),
 			);
 			if (!response.ok) {
-				throw new Error(`Replica snapshot chunk refused: ${response.reason}`);
+				switch (response.reason) {
+					case 'protocol-mismatch':
+					case 'records-schema-mismatch':
+						throw new ReplicaSyncRefusalError(response.reason);
+					case 'records-epoch-mismatch':
+						return await refuseEpochMismatch(signal);
+					case 'snapshot-replaced':
+					case 'chunk-out-of-range':
+						throw new Error(
+							`Replica snapshot chunk refused: ${response.reason}`,
+						);
+				}
 			}
 			const chunk = response.chunk;
 			if (
@@ -369,7 +481,10 @@ export async function createReplicaRuntime<TTables extends TableDefinitions>({
 			};
 			const response = parsePullResponse(await sync.pull(request, signal));
 			if (!response.ok) {
-				throw new Error(`Replica pull refused: ${response.reason}`);
+				if (response.reason === 'records-epoch-mismatch') {
+					await refuseEpochMismatch(signal);
+				}
+				throw new ReplicaSyncRefusalError(response.reason);
 			}
 			if (response.snapshotRequired) {
 				await installSnapshot(response.manifest, signal);
@@ -415,7 +530,7 @@ export async function createReplicaRuntime<TTables extends TableDefinitions>({
 		async syncOnce(signal?: AbortSignal): Promise<void> {
 			const run = async () => {
 				signal?.throwIfAborted();
-				await verifyAuthorityBinding(signal);
+				await discoverAuthority(signal);
 				await push(signal);
 				await pull(signal);
 			};
@@ -425,7 +540,14 @@ export async function createReplicaRuntime<TTables extends TableDefinitions>({
 		},
 		/** Inspect durable protocol state for diagnostics and tests. */
 		inspect() {
-			return { ...readMeta(sqlite), outbox: readOutbox(sqlite) };
+			return {
+				...readMeta(sqlite),
+				outbox: readOutbox(sqlite),
+				epochMismatch: epochMismatch && {
+					currentRecordsEpoch: epochMismatch.currentRecordsEpoch,
+					currentRecordsSchemaHash: epochMismatch.currentRecordsSchemaHash,
+				},
+			};
 		},
 	};
 }
@@ -451,9 +573,9 @@ export class ReplicaAdmissionConflictError extends Error {
  * Keep one replica converging without turning transport failures into writes.
  *
  * Transport and transient failures are reported and retried with backoff.
- * Replica invariant violations and admission conflicts are terminal: the
- * supervisor reports them once and stops scheduling work because retrying the
- * same durable state cannot converge.
+ * Replica invariant violations, epoch mismatches, and durable refusals are
+ * terminal: the supervisor reports them once and stops scheduling work because
+ * retrying the same durable state cannot converge.
  */
 export function startReplicaSyncSupervisor(
 	runtime: { syncOnce(signal?: AbortSignal): Promise<void> },
@@ -506,6 +628,7 @@ export function startReplicaSyncSupervisor(
 					if (
 						error instanceof ReplicaInvariantViolationError ||
 						error instanceof ReplicaAdmissionConflictError ||
+						error instanceof ReplicaRecordsEpochMismatchError ||
 						error instanceof ReplicaSyncRefusalError
 					) {
 						// Terminal: retrying the same durable state cannot converge.
@@ -565,12 +688,12 @@ function initializeReplicaTables(sqlite: RecordSyncSqlite): void {
 				actor_id TEXT NOT NULL,
 				next_actor_sequence INTEGER NOT NULL CHECK(next_actor_sequence >= 1),
 				applied_server_sequence INTEGER NOT NULL CHECK(applied_server_sequence >= 0),
-				database_incarnation_id TEXT,
+				records_epoch TEXT,
+				epoch_mismatch_json TEXT,
 				protocol_major INTEGER NOT NULL CHECK(protocol_major >= 1),
 				sync_storage_version INTEGER NOT NULL CHECK(sync_storage_version >= 1)
 			)`,
 		);
-		migrateNullableDatabaseIncarnation(sqlite);
 		sqlite.run(
 			`CREATE TABLE IF NOT EXISTS ${OUTBOX_TABLE}(
 				actor_sequence INTEGER PRIMARY KEY,
@@ -592,32 +715,6 @@ function initializeReplicaTables(sqlite: RecordSyncSqlite): void {
 	});
 }
 
-function migrateNullableDatabaseIncarnation(sqlite: RecordSyncSqlite): void {
-	const incarnationColumn = sqlite
-		.all<{ name: string; notnull: number }>(`PRAGMA table_info(${META_TABLE})`)
-		.find(({ name }) => name === 'database_incarnation_id');
-	if (!incarnationColumn) {
-		throw new Error('Replica metadata database incarnation column is missing');
-	}
-	if (incarnationColumn.notnull === 0) return;
-	sqlite.run(
-		`CREATE TABLE __epicenter_replica_next(
-			id INTEGER PRIMARY KEY CHECK(id = 1),
-			actor_id TEXT NOT NULL,
-			next_actor_sequence INTEGER NOT NULL CHECK(next_actor_sequence >= 1),
-			applied_server_sequence INTEGER NOT NULL CHECK(applied_server_sequence >= 0),
-			database_incarnation_id TEXT,
-			protocol_major INTEGER NOT NULL CHECK(protocol_major >= 1),
-			sync_storage_version INTEGER NOT NULL CHECK(sync_storage_version >= 1)
-		)`,
-	);
-	sqlite.run(
-		`INSERT INTO __epicenter_replica_next SELECT * FROM ${META_TABLE}`,
-	);
-	sqlite.run(`DROP TABLE ${META_TABLE}`);
-	sqlite.run(`ALTER TABLE __epicenter_replica_next RENAME TO ${META_TABLE}`);
-}
-
 function createReplicaMeta({
 	sqlite,
 	protocolMajor,
@@ -632,8 +729,8 @@ function createReplicaMeta({
 	sqlite.run(
 		`INSERT INTO ${META_TABLE}(
 			id, actor_id, next_actor_sequence, applied_server_sequence,
-			database_incarnation_id, protocol_major, sync_storage_version
-		) VALUES (1, ?, 1, 0, NULL, ?, ?)`,
+			records_epoch, epoch_mismatch_json, protocol_major, sync_storage_version
+		) VALUES (1, ?, 1, 0, NULL, NULL, ?, ?)`,
 		[actorId, protocolMajor, SYNC_STORAGE_VERSION],
 	);
 }
@@ -654,7 +751,8 @@ type ReplicaMetaRow = {
 	actor_id: string;
 	next_actor_sequence: number;
 	applied_server_sequence: number;
-	database_incarnation_id: string | null;
+	records_epoch: string | null;
+	epoch_mismatch_json: string | null;
 	protocol_major: number;
 	sync_storage_version: number;
 };
@@ -679,19 +777,65 @@ function decodeMeta(row: ReplicaMetaRow): ReplicaMeta {
 	) {
 		throw new Error('Stored appliedServerSequence is invalid');
 	}
-	if (row.database_incarnation_id !== null) {
-		assertNonEmpty(row.database_incarnation_id, 'stored databaseIncarnationId');
+	if (row.records_epoch !== null) {
+		assertNonEmpty(row.records_epoch, 'stored recordsEpoch');
 	}
+	const epochMismatch = parseStoredEpochMismatch(row.epoch_mismatch_json);
 	assertPositiveInteger(row.protocol_major, 'stored protocolMajor');
 	assertPositiveInteger(row.sync_storage_version, 'stored syncStorageVersion');
 	return {
 		actorId: row.actor_id,
 		nextActorSequence: row.next_actor_sequence,
 		appliedServerSequence: row.applied_server_sequence,
-		databaseIncarnationId: row.database_incarnation_id,
+		recordsEpoch: row.records_epoch,
+		epochMismatch,
 		protocolMajor: row.protocol_major,
 		syncStorageVersion: row.sync_storage_version,
 	};
+}
+
+function parseStoredEpochMismatch(
+	value: string | null,
+): ReplicaEpochMismatch | null {
+	if (value === null) return null;
+	const parsed: unknown = JSON.parse(value);
+	if (
+		typeof parsed !== 'object' ||
+		parsed === null ||
+		Array.isArray(parsed) ||
+		Object.keys(parsed).length !== 2 ||
+		!Object.hasOwn(parsed, 'currentRecordsEpoch') ||
+		!Object.hasOwn(parsed, 'currentRecordsSchemaHash')
+	) {
+		throw new ReplicaInvariantViolationError(
+			'Stored replica epoch mismatch is invalid',
+		);
+	}
+	const mismatch = parsed as ReplicaEpochMismatch;
+	if (
+		(mismatch.currentRecordsEpoch === null) !==
+		(mismatch.currentRecordsSchemaHash === null)
+	) {
+		throw new ReplicaInvariantViolationError(
+			'Stored replica epoch mismatch descriptor is incomplete',
+		);
+	}
+	if (mismatch.currentRecordsEpoch !== null) {
+		if (
+			typeof mismatch.currentRecordsEpoch !== 'string' ||
+			typeof mismatch.currentRecordsSchemaHash !== 'string'
+		) {
+			throw new ReplicaInvariantViolationError(
+				'Stored replica epoch mismatch descriptor is invalid',
+			);
+		}
+		assertNonEmpty(mismatch.currentRecordsEpoch, 'stored currentRecordsEpoch');
+		assertNonEmpty(
+			mismatch.currentRecordsSchemaHash,
+			'stored currentRecordsSchemaHash',
+		);
+	}
+	return mismatch;
 }
 
 function readOutbox(sqlite: RecordSyncSqlite): Mutation[] {
@@ -926,17 +1070,19 @@ function assertNonEmpty(value: string, label: string): void {
 	if (value.trim() === '') throw new TypeError(`${label} must not be empty`);
 }
 
-function parseDatabaseBinding(value: unknown): ReplicaDatabaseBinding {
+function parseAuthorityDescriptor(value: unknown): RecordAuthorityDescriptor {
 	if (
 		typeof value !== 'object' ||
 		value === null ||
 		Array.isArray(value) ||
-		Object.keys(value).length !== 1 ||
-		!Object.hasOwn(value, 'databaseIncarnationId') ||
-		typeof (value as { databaseIncarnationId?: unknown })
-			.databaseIncarnationId !== 'string'
+		Object.keys(value).length !== 2 ||
+		!Object.hasOwn(value, 'recordsEpoch') ||
+		!Object.hasOwn(value, 'recordsSchemaHash') ||
+		typeof (value as { recordsEpoch?: unknown }).recordsEpoch !== 'string' ||
+		typeof (value as { recordsSchemaHash?: unknown }).recordsSchemaHash !==
+			'string'
 	) {
-		throw new TypeError('Invalid replica database binding response');
+		throw new TypeError('Invalid replica authority descriptor');
 	}
-	return value as ReplicaDatabaseBinding;
+	return value as RecordAuthorityDescriptor;
 }

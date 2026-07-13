@@ -88,11 +88,11 @@ test('Bun workspace replicas synchronize automatically through one authority', a
 		},
 	});
 	const authorityDatabase = new Database(':memory:');
-	const databaseIncarnationId = 'bun-replica-incarnation';
+	const recordsEpoch = 'bun-replica-epoch';
 	const envelope = {
 		protocolMajor: RECORD_SYNC_PROTOCOL_MAJOR,
-		schemaIdentity: definition.recordsSchemaHash,
-		databaseIncarnationId,
+		recordsSchemaHash: definition.recordsSchemaHash,
+		recordsEpoch,
 	};
 	const authority = createRecordAuthority({
 		database: createBunSqliteAdapter(authorityDatabase),
@@ -101,8 +101,8 @@ test('Bun workspace replicas synchronize automatically through one authority', a
 	});
 	const sync = {
 		bindWorkspace() {},
-		async openDatabase() {
-			return { databaseIncarnationId };
+		async openAuthority() {
+			return { recordsEpoch, recordsSchemaHash: definition.recordsSchemaHash };
 		},
 		async push(request: Parameters<typeof authority.push>[0]) {
 			return authority.push(request);

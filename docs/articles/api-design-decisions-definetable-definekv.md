@@ -3,7 +3,7 @@
 > Historical: the chained version API below is retired. The target is one
 > immutable `defineTable({ fields, documents })`
 > declaration plus a separate adjacent records-migration chain. See
-> [ADR-0125](../adr/0125-record-schemas-are-immutable-evolution-creates-a-successor-database.md)
+> [ADR-0130](../adr/0130-records-replacement-starts-a-new-epoch-without-an-online-succession-protocol.md)
 > and [ADR-0126](../adr/0126-child-documents-use-format-capabilities-and-evolve-outside-records-databases.md).
 
 Designing an API is about trade-offs. Every choice closes some doors and opens others. Here's the reasoning behind Epicenter's versioned schema API.

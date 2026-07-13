@@ -8,7 +8,7 @@ import type {
 /** Shared admission ceiling applied before any record-sync storage adapter. */
 export const RECORD_SYNC_ADMISSION_LIMITS = {
 	identifierBytes: 512,
-	schemaIdentityBytes: 64 * 1024,
+	recordsSchemaHashBytes: 64 * 1024,
 	mutationsPerPush: 64,
 	operationsPerMutation: 128,
 	cellsPerOperation: 128,
@@ -34,10 +34,10 @@ export function isBoundedIdentifier(value: string): boolean {
 	);
 }
 
-export function isBoundedSchemaIdentity(value: string): boolean {
+export function isBoundedRecordsSchemaHash(value: string): boolean {
 	return (
 		value.length > 0 &&
-		encodedBytes(value) <= RECORD_SYNC_ADMISSION_LIMITS.schemaIdentityBytes
+		encodedBytes(value) <= RECORD_SYNC_ADMISSION_LIMITS.recordsSchemaHashBytes
 	);
 }
 

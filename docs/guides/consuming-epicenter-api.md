@@ -28,8 +28,8 @@ collaborative documents attached to record identities. Each plane has one
 distinct lifecycle and synchronization model.
 
 ```text
-workspace family
-|-- records database: typed tables of identified records and atomic cells
+workspace
+|-- records: one active epoch of typed tables and atomic cells
 |-- synchronized KV: bounded preferences with defaults
 `-- child documents: lazy Yjs content addressed through table rows
 ```

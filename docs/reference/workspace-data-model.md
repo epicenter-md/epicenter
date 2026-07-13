@@ -8,19 +8,20 @@ That sentence is the target architecture. It is also the rule for deciding
 where new data belongs.
 
 ```text
-workspace family
-|-- current records database
-|   `-- record tables
-|       `-- records
-|           |-- stable row id
-|           `-- named atomic cells
+workspace
+|-- active records epoch
+|   `-- records database
+|       `-- record tables
+|           `-- records
+|               |-- stable row id
+|               `-- named atomic cells
 |-- synchronized KV
 `-- child-document namespace
     `-- documents addressed through table + row id + document name + format
 ```
 
-An app may compose several workspaces. Each workspace keeps one stable family
-identity while its three storage planes evolve independently.
+An app may compose several workspaces. Each workspace keeps one stable identity
+while its three storage planes evolve independently.
 
 ## Records are identified rows of atomic cells
 
@@ -62,8 +63,8 @@ record can be primary product data, not merely metadata.
 
 ## KV is the stable preference plane
 
-Workspace KV is a bounded set of synchronized preferences. It keeps one logical
-identity across records-database succession.
+Workspace KV is a bounded set of synchronized preferences. Its identity is
+independent of the active records epoch.
 
 ```text
 editor.theme
@@ -74,7 +75,7 @@ transcription.language
 KV has no row identity or record lifecycle. Missing or invalid values read as
 fresh defaults, and a semantic change normally uses a new dot-namespaced key.
 KV does not participate in records snapshots, imports, schema hashes, or
-successor-database activation.
+records-epoch replacement.
 
 Use KV for bounded settings and preferences that do not need to change
 atomically with a record. A value that must commit with a record belongs in
@@ -104,7 +105,7 @@ disposal.
 Not every table declares documents, and a declared document remains unopened
 until a caller needs it. Child-document formats have compatibility identities
 independent of the records schema. Adding a document or changing its format
-does not create a successor records database.
+does not replace records or start a new records epoch.
 
 Fields and documents use separate declaration namespaces. A field and a child
 document may both be named `body`: callers still distinguish `row.body` from
@@ -120,11 +121,11 @@ merge; an atomic JSON cell is still replaced as a whole.
 
 ## The planes compose without sharing lifecycles
 
-The workspace family is the stable owner that composes the three planes:
+The workspace is the stable owner that composes the three planes:
 
 | Plane | Unit | Best for | Evolution |
 | --- | --- | --- | --- |
-| Records database | Identified record | Queryable product facts and metadata | Replace with a successor database under a new records schema hash |
+| Records epoch | Identified record | Queryable product facts and metadata | Ordinary mutations; disruptive replacement starts a new epoch |
 | Synchronized KV | Declared key | Bounded preferences with defaults | Keep the stable KV identity; use a new key for a new meaning |
 | Child documents | Format-addressed Yjs document | Merge-sensitive bodies and collections | Convert one document explicitly into a new format-addressed document |
 
@@ -159,9 +160,10 @@ KV preferences          -> stable workspace KV identity
 physical SQLite layout  -> runtime storage version
 ```
 
-When the record tables or fields change, the workspace family selects a fresh
-records database built from a validated logical snapshot. The family itself,
-its KV preferences, and its child-document addresses remain stable.
+Ordinary record changes use ordinary mutations. A synchronized schema change,
+restore, or wholesale rewrite installs a complete logical snapshot as a new
+records epoch. The workspace, its KV preferences, and its child-document
+addresses remain stable.
 
 ## Placement rule
 

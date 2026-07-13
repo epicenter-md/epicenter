@@ -1,9 +1,8 @@
 # Gate 4 evidence: shared production core
 
-> Checkpoint vocabulary note: this dated evidence names the implemented
-> `schemaIdentity` and `databaseIncarnationId` envelope. The target family
-> protocol calls these the records schema hash and records database id. Gate 4
-> does not prove schema succession or candidate activation.
+Gate 4 proves the records-schema and authority-lifetime fences now named
+`recordsSchemaHash` and `recordsEpoch`. It does not prove stale-epoch refusal;
+administrative replacement remains outside the shared protocol.
 
 Wave 4 extracted the record synchronization proof into
 `@epicenter/record-sync`. The old gate engines remain independent evidence; the
@@ -34,14 +33,14 @@ The same scenario passes through all three adapter surfaces:
 
 - transaction rollback;
 - actor sequence acceptance, duplicate suppression, and gap refusal;
-- exact schema identity and database identity fencing;
+- exact records schema hash and records epoch identity fencing;
 - nested JSON cell persistence;
 - terminal deletion;
 - ordered pull;
 - SHA-256 snapshot validation;
 - frozen actor high-water publication;
 - log-prefix compaction and stale-cursor snapshot bootstrap;
-- reopen under the same identity and refusal under a different database id.
+- reopen under the same identity and refusal under a different records epoch.
 
 All adapter tests use a real SQLite engine. The browser and Durable Object cases
 wrap that engine in their native API shapes, so this proves SQL and transaction

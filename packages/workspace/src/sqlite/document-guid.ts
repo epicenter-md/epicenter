@@ -12,7 +12,7 @@ import {
  *
  * The established four owner segments remain readable from the left. The final
  * digest segment fences incompatible document formats without coupling them to
- * records-database succession:
+ * records-epoch changes:
  *
  * `<workspace>.<table>.<row-id digest>.<document>.<format digest>`
  *

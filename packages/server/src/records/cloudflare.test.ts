@@ -5,7 +5,7 @@
  * registry that routes authenticated partitions to deterministic object names.
  *
  * Key behaviors:
- * - The first open mints and durably preserves one database incarnation
+ * - The first open mints and durably preserves one records epoch
  * - Schema mismatches cannot replace the stored identity
  * - Failed first initialization can retry without a half-open object
  * - Principal and workspace pairs route to independent Durable Objects
@@ -116,27 +116,27 @@ const partition = {
 };
 const bindingRequest = {
 	protocolMajor: RECORD_SYNC_PROTOCOL_MAJOR,
-	schemaIdentity: 'schema-1',
+	recordsSchemaHash: 'schema-1',
 };
 
 async function open(
 	records: Awaited<ReturnType<typeof setup>>['records'],
 	target = partition,
-	schemaIdentity = 'schema-1',
+	recordsSchemaHash = 'schema-1',
 ): Promise<RequestEnvelope> {
 	const result = await records.open(target, {
 		protocolMajor: RECORD_SYNC_PROTOCOL_MAJOR,
-		schemaIdentity,
+		recordsSchemaHash,
 	});
 	if (!result.ok) throw new Error(`Open refused: ${result.reason}`);
 	return {
 		protocolMajor: RECORD_SYNC_PROTOCOL_MAJOR,
-		schemaIdentity,
-		databaseIncarnationId: result.databaseIncarnationId,
+		recordsSchemaHash: result.recordsSchemaHash,
+		recordsEpoch: result.recordsEpoch,
 	};
 }
 
-test('database identity and mutation log survive Durable Object restart', async () => {
+test('records epoch and mutation log survive Durable Object restart', async () => {
 	const context = await setup();
 	const envelope = await open(context.records);
 	expect(
@@ -170,7 +170,7 @@ test('database identity and mutation log survive Durable Object restart', async 
 	);
 
 	const reopened = await open(context.records);
-	expect(reopened.databaseIncarnationId).toBe(envelope.databaseIncarnationId);
+	expect(reopened.recordsEpoch).toBe(envelope.recordsEpoch);
 	const pulled = await context.records.pull(partition, {
 		...reopened,
 		kind: 'pull',
@@ -182,18 +182,20 @@ test('database identity and mutation log survive Durable Object restart', async 
 	).toHaveLength(1);
 });
 
-test('schema mismatch refuses without replacing the stored identity', async () => {
+test('open describes the stored schema without replacing its identity', async () => {
 	const { records } = await setup();
 	const envelope = await open(records);
 	expect(
 		await records.open(partition, {
 			protocolMajor: RECORD_SYNC_PROTOCOL_MAJOR,
-			schemaIdentity: 'different-schema',
+			recordsSchemaHash: 'different-schema',
 		}),
-	).toEqual({ ok: false, reason: 'schema-identity-mismatch' });
-	expect((await open(records)).databaseIncarnationId).toBe(
-		envelope.databaseIncarnationId,
-	);
+	).toEqual({
+		ok: true,
+		recordsEpoch: envelope.recordsEpoch,
+		recordsSchemaHash: envelope.recordsSchemaHash,
+	});
+	expect((await open(records)).recordsEpoch).toBe(envelope.recordsEpoch);
 });
 
 test('failed first initialization leaves the Durable Object retryable', async () => {
@@ -225,7 +227,7 @@ test('failed first initialization leaves the Durable Object retryable', async ()
 	expect(
 		await object.push({
 			...bindingRequest,
-			databaseIncarnationId: reopened.databaseIncarnationId,
+			recordsEpoch: reopened.recordsEpoch,
 			kind: 'push',
 			mutations: [],
 		}),

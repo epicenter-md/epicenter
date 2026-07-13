@@ -54,7 +54,7 @@ export function createDocumentReference<const TFormat extends DocumentFormat>({
  * Name one retained old child-document endpoint for explicit conversion.
  *
  * This creates no registry and opens nothing. The current workspace's document
- * runtime may open it only when `workspaceId` matches the workspace family it
+ * runtime may open it only when `workspaceId` matches the workspace it
  * already owns.
  */
 export function historicalDocument<const TFormat extends DocumentFormat>(

@@ -1,7 +1,8 @@
 # 0125. Records schemas are immutable; evolution creates a successor database
 
-- **Status:** Proposed
+- **Status:** Superseded
 - **Date:** 2026-07-12
+- **Superseded by:** [ADR-0130](0130-records-replacement-starts-a-new-epoch-without-an-online-succession-protocol.md)
 - **Supersedes:** [ADR-0006](0006-schema-evolution-keeps-the-version-tuple-and-refuses-repair-apis.md)
 - **Relates:** [ADR-0119](0119-complete-metadata-replicas-sync-through-schema-blind-server-ordered-mutations.md), [ADR-0121](0121-background-sync-is-automatic-and-database-boundary-merges-are-reviewable.md), [ADR-0122](0122-logical-snapshots-are-the-portable-record-database-format-sqlite-files-are-runtime-state.md), [ADR-0124](0124-workspace-kv-keeps-one-logical-identity-outside-the-record-database.md)
 

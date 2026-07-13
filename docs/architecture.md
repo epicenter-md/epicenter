@@ -1,8 +1,8 @@
 # Epicenter architecture
 
-Epicenter is a local-first workspace platform. Apps define stable workspace
-families, clients keep complete local data, and a hosted or self-hosted star
-keeps devices synchronized while they sleep.
+Epicenter is a local-first workspace platform. Apps define stable workspaces,
+clients keep complete local data, and a hosted or self-hosted star keeps devices
+synchronized while they sleep.
 
 The workspace model is the center of the architecture:
 
@@ -50,26 +50,27 @@ orders logical record mutations; Yjs sync carries KV and child-document
 updates. Middleware turns those capabilities into reactive state, filesystems,
 agent tools, and other app-shaped surfaces.
 
-## A workspace family composes three storage planes
+## A workspace composes three storage planes
 
-The workspace family is the stable app-defined identity and access-policy
-boundary. It owns the selection of one current records database, one stable KV
-namespace, and a namespace of child documents.
+The workspace is the stable app-defined identity and access-policy boundary. It
+owns one active records epoch, one stable KV namespace, and a namespace of child
+documents.
 
 ```text
-workspace family
-|-- current records database
-|   `-- tables
-|       `-- records
-|           |-- stable row id
-|           `-- named atomic cells
+workspace
+|-- active records epoch
+|   `-- records database
+|       `-- tables
+|           `-- records
+|               |-- stable row id
+|               `-- named atomic cells
 |-- synchronized KV
 `-- child-document namespace
     `-- format-addressed Yjs documents reached through records
 ```
 
-A records schema change replaces the selected records database. It does not
-replace the workspace family, reset preferences, or rename child documents.
+A records replacement starts a new records epoch. It does not replace the
+workspace, reset preferences, or rename child documents.
 
 ### Records are queryable product facts
 
@@ -87,7 +88,7 @@ records schema.
 ### KV is for bounded synchronized preferences
 
 Workspace KV stores declared preferences such as theme, language, or collapsed
-UI state. It has one stable logical identity across records-database changes.
+UI state. Its identity does not change when records start a new epoch.
 Missing or invalid values read as defaults; a new meaning normally gets a new
 dot-namespaced key.
 
@@ -110,7 +111,7 @@ records schema hash.
 
 ## Definitions travel; runtimes connect them
 
-The shared workspace definition is pure. It names the family, tables, KV
+The shared workspace definition is pure. It names the workspace, tables, KV
 preferences, actions, and child-document declarations without opening storage
 or a network connection.
 
@@ -144,7 +145,7 @@ updateRow(table, rowId, changed cells)
 deleteRow(table, rowId)
 ```
 
-The authority orders accepted mutations and advances the database head. Each
+The authority orders accepted mutations and advances the epoch sequence. Each
 device applies the same ordered stream to its complete local SQLite replica.
 Applications retain typed table helpers and direct SQL queryability without
 making physical SQLite files the wire format.
@@ -171,33 +172,33 @@ Child-document edits follow their own Yjs path. KV edits use the eager KV Yjs
 document. The workspace composes these paths but does not pretend they have one
 conflict model.
 
-## Schema evolution creates a successor
+## Replacement starts a new records epoch
 
-One records database has one immutable logical schema, identified by a
-canonical hash of record tables and fields. A stored meaning change must be
-visible in that schema.
+One records epoch has one portable records schema hash. Every synchronized
+schema change, restore, or wholesale rewrite begins a new epoch through a
+disruptive administrative operation. Epicenter does not synchronize mixed
+schemas or translate mutations between them.
 
-After user approval, a trusted client reads a canonical logical snapshot,
-validates its records against the historical descriptor, and builds a complete
-successor database. The authority activates that successor only if the family
-still selects the source database and its canonical head has not changed.
+The administrator briefly rejects writes, prepares one complete logical
+snapshot, installs it as a new records epoch, and requires replicas to
+resynchronize. Hosted and self-hosted deployments share the epoch fence. They do
+not share a candidate upload or activation protocol.
 
 ```text
-source database A at head H
+active records epoch A
         |
-        | validate + transform records
+        | reject writes; install complete logical snapshot
         v
-candidate database B
+active records epoch B
         |
-        | activate only if A is still current at H
-        v
-workspace family selects B; A is fenced
+        `-- old-epoch requests are rejected
 ```
 
-`defineRecordsMigration` owns this records-only transformation. It never opens
-child documents or migrates KV. Child-document format conversion is explicit
-and per-document. Moving authority between records and documents is an
-app-owned maintenance operation rather than a universal migration feature.
+Historical descriptors and pure records transforms may help an administrative
+tool prepare the snapshot. They do not create a shared online lifecycle.
+Child-document format conversion is explicit and per-document. Moving authority
+between records and documents is an app-owned maintenance operation rather than
+a universal migration feature.
 
 ## The star owns availability, not application meaning
 
@@ -205,9 +206,9 @@ A star is the runnable deployment that holds a person's synchronized data. The
 hosted Cloud app and the self-hosted instance use the same shared server library
 but resolve principals differently.
 
-The records authority owns ordering, canonical heads, candidate storage, and
-conditional activation. It remains schema-blind: trusted application clients
-own field validation and migration code. Yjs rooms carry KV and child-document
+The records authority owns ordering, the current records epoch, and ordinary
+snapshot bootstrap. It remains schema-blind. Deployment-specific administration
+owns any temporary replacement storage. Yjs rooms carry KV and child-document
 updates. The blob store holds large binaries by reference.
 
 This separation keeps the privacy question concrete. Epicenter can run the
@@ -222,6 +223,6 @@ root Y.Doc. The older path is implementation history, not the target ownership
 model described here.
 
 During the transition, use the code and accepted ADRs as current implementation
-truth. Use this architecture and the proposed records ADRs to judge the final
-API, delete legacy branches, and prevent the root-Y.Doc topology from leaking
-back into the product vocabulary.
+truth. Use this architecture and the records ADRs to judge the final API, delete
+legacy branches, and prevent the root-Y.Doc topology from leaking back into the
+product vocabulary.

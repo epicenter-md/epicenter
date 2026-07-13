@@ -218,7 +218,7 @@ export type WorkspaceDefinition<
 	TKv extends KvDefinitions = KvDefinitions,
 > = RecordsSchemaRef<RecordsMigrationCells<TTables>, 'current'> & {
 	/**
-	 * The stable app-defined workspace-family namespace: it keys local
+	 * The stable app-defined workspace namespace: it keys local
 	 * persistence, sync routing, the KV document, and child-doc guids.
 	 */
 	readonly id: string;
@@ -228,7 +228,7 @@ export type WorkspaceDefinition<
 	readonly kv: Readonly<TKv>;
 	/**
 	 * Eager preference-document guid: `<id>.kv` (ADR-0124). Stable across
-	 * records-database succession; applications author no incarnation.
+	 * records epochs; applications do not author epoch values.
 	 */
 	readonly kvDocumentGuid: string;
 };

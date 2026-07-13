@@ -61,7 +61,7 @@ export type WorkspaceDocuments = {
 	): OpenedDocument<TFormat>;
 };
 
-/** @internal Bind nominal references to one workspace family's runtime. */
+/** @internal Bind nominal references to one workspace runtime. */
 export function createWorkspaceDocuments(
 	workspaceId: string,
 	runtime: WorkspaceDocumentRuntime,

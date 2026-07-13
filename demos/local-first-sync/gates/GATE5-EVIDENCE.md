@@ -2,11 +2,10 @@
 
 Date: 2026-07-11
 
-> Checkpoint note: implementation examples below record the API and vocabulary
-> tested on this date. The current target is the active server-authoritative
-> SQLite sync spec. In particular, records identity now excludes documents,
-> workspace identity, KV, indexes, and authored epoch lineage; schema succession
-> uses records databases and structural `recordsSchemaHash`.
+> Transition note: implementation examples below record the API tested on this
+> date. The accepted protocol uses a system-owned `recordsEpoch` and a
+> portable `recordsSchemaHash`. The hash excludes documents, workspace
+> identity, KV, indexes, and authored schema lineage.
 
 ## Result
 
@@ -42,7 +41,7 @@ native SQLite owners:
   and never update optimistically.
 - `openStandaloneWorkspace` verifies the service's standalone/replica mode,
   workspace id,
-  and exact schema identity before exposing a typed client;
+  and exact records schema hash before exposing a typed client;
 - the Bun adapter owns a real file-backed SQLite connection and preserves typed
   rows across close and reopen.
 - an app-owned module Worker owns SQLite WASM and the OPFS connection while the
@@ -219,16 +218,14 @@ This is a scoped compatibility decision, not a claim that standard `opfs` is
 universally superior. The gate keeps explicit contention handling and can
 re-evaluate `opfs-wl` when the upstream package changes.
 
-## Required next step
+## Subsequent production work
 
-Implement the Wave 2 family and records-database protocol around the proven
-replica lifecycle. Reuse the validated service protocol and the rule that the
-worker or native service imports the workspace definition itself. The UI sends
-no executable schema; its opening handshake verifies mode, workspace id, and
-exact records schema identity. Schema succession must follow the candidate and
-conditional-activation contract in the active spec, not the discarded epoch or
-incarnation transition prototypes.
+The subsequent replica integration reused the validated service protocol and
+the rule that the worker or native service imports the workspace definition
+itself. The UI sends no executable schema; its opening handshake verifies mode,
+workspace id, records epoch, and exact records schema hash. Restore and
+wholesale replacement stay outside the portable sync protocol.
 
-Then migrate app definitions and actions, move only proven collaborative bodies
-to declared Yjs docs, stop every old record import, and delete the Yjs table/KV
-implementation.
+Consumer migration remains separate from this dated gate: app definitions and
+actions still have to move before the old Yjs record implementation can be
+deleted.

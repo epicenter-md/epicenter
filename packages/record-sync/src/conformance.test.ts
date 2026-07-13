@@ -12,14 +12,14 @@ import {
 } from './adapters/durable-object.js';
 import { RECORD_SYNC_ADMISSION_LIMITS } from './admission.js';
 import { createRecordAuthority } from './authority.js';
-import type { Mutation } from './protocol.js';
+import { type Mutation, RECORD_SYNC_PROTOCOL_MAJOR } from './protocol.js';
 import { isValidSnapshotChunk, isValidSnapshotManifest } from './snapshot.js';
 import type { RecordSyncSqlite, SqliteValue } from './sqlite.js';
 
 const envelope = {
-	protocolMajor: 1,
-	schemaIdentity: 'notes-v1',
-	databaseIncarnationId: 'database-1',
+	protocolMajor: RECORD_SYNC_PROTOCOL_MAJOR,
+	recordsSchemaHash: 'notes-v1',
+	recordsEpoch: 'epoch-1',
 } as const;
 
 const sha256 = async (value: string) =>
@@ -236,10 +236,10 @@ async function runConformance(open: OpenDatabase) {
 			authority.push({
 				kind: 'push',
 				...envelope,
-				schemaIdentity: 'wrong',
+				recordsSchemaHash: 'wrong',
 				mutations: [],
 			}),
-		).toEqual({ kind: 'push', ok: false, reason: 'schema-identity-mismatch' });
+		).toEqual({ kind: 'push', ok: false, reason: 'records-schema-mismatch' });
 
 		// A duplicate create with a NEW sequence is a replica invariant
 		// violation: the whole push rolls back and the actor stays paused.
@@ -316,10 +316,10 @@ async function runConformance(open: OpenDatabase) {
 		expect(() =>
 			createRecordAuthority({
 				database,
-				envelope: { ...envelope, databaseIncarnationId: 'wrong' },
+				envelope: { ...envelope, recordsEpoch: 'wrong' },
 				sha256,
 			}),
-		).toThrow('databaseIncarnationId');
+		).toThrow('recordsEpoch');
 	} finally {
 		close();
 	}

@@ -31,7 +31,7 @@ function setup() {
 				kind: 'workspace',
 				workspaceKind: 'standalone',
 				workspaceId: definition.id,
-				schemaIdentity: definition.recordsSchemaHash,
+				recordsSchemaHash: definition.recordsSchemaHash,
 			};
 		},
 		observe() {
@@ -69,7 +69,7 @@ test('shared service opener preserves the replica lifecycle kind', async () => {
 				kind: 'workspace',
 				workspaceKind: 'replica',
 				workspaceId: definition.id,
-				schemaIdentity: definition.recordsSchemaHash,
+				recordsSchemaHash: definition.recordsSchemaHash,
 			};
 		},
 	};
@@ -91,7 +91,7 @@ test('standalone workspace disposes a mismatched service and refuses to open', a
 				kind: 'workspace',
 				workspaceKind: 'standalone',
 				workspaceId: definition.id,
-				schemaIdentity: 'different',
+				recordsSchemaHash: 'different',
 			};
 		},
 	};
@@ -197,7 +197,7 @@ function setupWithKv() {
 				kind: 'workspace',
 				workspaceKind: 'standalone',
 				workspaceId: definition.id,
-				schemaIdentity: definition.recordsSchemaHash,
+				recordsSchemaHash: definition.recordsSchemaHash,
 			};
 		},
 		observe() {
@@ -326,7 +326,7 @@ test('document runtime opens retained historical and current format endpoints ex
 				kind: 'workspace',
 				workspaceKind: 'standalone',
 				workspaceId: definition.id,
-				schemaIdentity: definition.recordsSchemaHash,
+				recordsSchemaHash: definition.recordsSchemaHash,
 			};
 		},
 		observe() {

@@ -295,12 +295,31 @@ describe('Gate 1 directed traces', () => {
 				ok: false,
 				reason: 'actor-sequence-gap',
 			});
-			const wrongEpoch = {
+			const wrongSchema = {
 				...request,
-				schemaEpochId: 'other',
+				recordsSchemaHash: 'other',
 			};
-			expect(h.refServer.push(wrongEpoch).ok).toBeFalse();
-			expect(h.sqlServer.push(wrongEpoch).ok).toBeFalse();
+			expect(h.refServer.push(wrongSchema)).toEqual({
+				kind: 'push',
+				ok: false,
+				reason: 'records-schema-mismatch',
+			});
+			expect(h.sqlServer.push(wrongSchema)).toEqual({
+				kind: 'push',
+				ok: false,
+				reason: 'records-schema-mismatch',
+			});
+			const wrongEpoch = { ...request, recordsEpoch: 'other' };
+			expect(h.refServer.push(wrongEpoch)).toEqual({
+				kind: 'push',
+				ok: false,
+				reason: 'records-epoch-mismatch',
+			});
+			expect(h.sqlServer.push(wrongEpoch)).toEqual({
+				kind: 'push',
+				ok: false,
+				reason: 'records-epoch-mismatch',
+			});
 
 			// A createRow naming a live identity refuses the WHOLE push: the
 			// earlier fresh row in the batch never commits and the actor's

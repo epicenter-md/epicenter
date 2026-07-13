@@ -1,13 +1,13 @@
 /**
- * Record Authority Binding Tests
+ * Record Authority Open Tests
  *
- * Verifies that the record-sync core exclusively owns discovery and binding of
- * authority identity metadata across every SQLite adapter.
+ * Verifies that the record-sync core owns authority discovery and records-epoch
+ * fencing across every SQLite adapter.
  *
  * Key behaviors:
- * - First open mints and persists exactly one database incarnation
- * - Restore reconstructs an authority without minting another identity
- * - Protocol and schema refusals leave durable identity unchanged
+ * - First open mints and persists exactly one records epoch
+ * - Open descriptively reports the stored schema and epoch
+ * - Stale durable identity writes, cursors, snapshots, and chunks are fenced
  * - Refusing an unopened database does not partially initialize storage
  * - Published snapshot chunks stay within their encoded byte limit
  */
@@ -24,7 +24,7 @@ const sha256 = async (value: string) =>
 	createHash('sha256').update(value).digest('hex');
 const request = {
 	protocolMajor: RECORD_SYNC_PROTOCOL_MAJOR,
-	schemaIdentity: 'notes-v1',
+	recordsSchemaHash: 'notes-v1',
 };
 
 function setup() {
@@ -35,30 +35,30 @@ function setup() {
 	};
 }
 
-test('first open persists one incarnation and restore reuses it', () => {
+test('first open persists one records epoch and restore reuses it', () => {
 	const { database, native } = setup();
-	let minted = 0;
 	try {
 		const opened = openRecordAuthority({
 			database,
 			request,
-			createDatabaseIncarnationId: () => `database-${++minted}`,
 			sha256,
 		});
 		expect(opened.ok).toBe(true);
 		if (!opened.ok) throw new Error('Expected authority to open');
-		expect(opened.databaseIncarnationId).toBe('database-1');
+		expect(opened.recordsEpoch).toMatch(
+			/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+		);
+		expect(opened.recordsSchemaHash).toBe('notes-v1');
 
 		const reopened = openRecordAuthority({
 			database,
 			request,
-			createDatabaseIncarnationId: () => `database-${++minted}`,
 			sha256,
 		});
 		expect(reopened.ok).toBe(true);
 		if (!reopened.ok) throw new Error('Expected authority to reopen');
-		expect(reopened.databaseIncarnationId).toBe('database-1');
-		expect(minted).toBe(1);
+		expect(reopened.recordsEpoch).toBe(opened.recordsEpoch);
+		expect(reopened.recordsSchemaHash).toBe('notes-v1');
 		expect(restoreRecordAuthority({ database, sha256 })?.envelope).toEqual(
 			opened.envelope,
 		);
@@ -67,24 +67,47 @@ test('first open persists one incarnation and restore reuses it', () => {
 	}
 });
 
-test('binding refusals preserve existing authority identity', () => {
+test('restore refuses durable identity outside the wire contract', () => {
+	const { database, native } = setup();
+	try {
+		const opened = openRecordAuthority({ database, request, sha256 });
+		if (!opened.ok) throw new Error('Expected authority to open');
+		database.run(
+			"UPDATE record_sync_meta SET value = ? WHERE key = 'recordsEpoch'",
+			['x'.repeat(RECORD_SYNC_ADMISSION_LIMITS.identifierBytes + 1)],
+		);
+
+		expect(() => restoreRecordAuthority({ database, sha256 })).toThrow(
+			'Invalid record-sync identity metadata',
+		);
+		expect(() => openRecordAuthority({ database, request, sha256 })).toThrow(
+			'Invalid record-sync identity metadata',
+		);
+	} finally {
+		native.close();
+	}
+});
+
+test('open reports the stored descriptor without replacing the records epoch', () => {
 	const { database, native } = setup();
 	try {
 		const opened = openRecordAuthority({
 			database,
 			request,
-			createDatabaseIncarnationId: () => 'database-1',
 			sha256,
 		});
 		if (!opened.ok) throw new Error('Expected authority to open');
 		expect(
 			openRecordAuthority({
 				database,
-				request: { ...request, schemaIdentity: 'different' },
-				createDatabaseIncarnationId: () => 'must-not-mint',
+				request: { ...request, recordsSchemaHash: 'different' },
 				sha256,
 			}),
-		).toEqual({ ok: false, reason: 'schema-identity-mismatch' });
+		).toMatchObject({
+			ok: true,
+			recordsEpoch: opened.recordsEpoch,
+			recordsSchemaHash: 'notes-v1',
+		});
 		expect(restoreRecordAuthority({ database, sha256 })?.envelope).toEqual(
 			opened.envelope,
 		);
@@ -103,7 +126,6 @@ test('unsupported protocol refuses without initializing an empty database', () =
 					...request,
 					protocolMajor: RECORD_SYNC_PROTOCOL_MAJOR + 1,
 				},
-				createDatabaseIncarnationId: () => 'must-not-mint',
 				sha256,
 			}),
 		).toEqual({ ok: false, reason: 'protocol-mismatch' });
@@ -113,7 +135,7 @@ test('unsupported protocol refuses without initializing an empty database', () =
 	}
 });
 
-test('invalid binding input refuses before initializing storage', () => {
+test('invalid open input refuses before initializing storage', () => {
 	const { database, native } = setup();
 	try {
 		expect(() =>
@@ -121,15 +143,125 @@ test('invalid binding input refuses before initializing storage', () => {
 				database,
 				request: {
 					...request,
-					schemaIdentity: 'x'.repeat(
-						RECORD_SYNC_ADMISSION_LIMITS.schemaIdentityBytes + 1,
+					recordsSchemaHash: 'x'.repeat(
+						RECORD_SYNC_ADMISSION_LIMITS.recordsSchemaHashBytes + 1,
 					),
 				},
-				createDatabaseIncarnationId: () => 'must-not-mint',
 				sha256,
 			}),
-		).toThrow('Invalid record authority binding request');
+		).toThrow('Invalid record authority open request');
 		expect(restoreRecordAuthority({ database, sha256 })).toBeNull();
+	} finally {
+		native.close();
+	}
+});
+
+test('stored epoch change fences stale writes, cursors, snapshots, and chunks', async () => {
+	const { database, native } = setup();
+	try {
+		const opened = openRecordAuthority({
+			database,
+			request,
+			sha256,
+		});
+		if (!opened.ok) throw new Error('Expected authority to open');
+		const manifest = await opened.authority.publishSnapshot({
+			maxChunkBytes: 1_024,
+		});
+		database.run(
+			"UPDATE record_sync_meta SET value = 'epoch-2' WHERE key = 'recordsEpoch'",
+		);
+
+		expect(
+			opened.authority.push({
+				...opened.envelope,
+				kind: 'push',
+				mutations: [
+					{
+						actorId: 'stale-actor',
+						actorSequence: 1,
+						operations: [
+							{
+								kind: 'createRow',
+								table: 'notes',
+								rowId: 'must-not-commit',
+								cells: { title: 'stale' },
+							},
+						],
+					},
+				],
+			}),
+		).toEqual({ kind: 'push', ok: false, reason: 'records-epoch-mismatch' });
+		expect(
+			database.all<{ count: number }>(
+				"SELECT COUNT(*) AS count FROM record_sync_canonical_rows WHERE row_id = 'must-not-commit'",
+			)[0]?.count,
+		).toBe(0);
+		expect(
+			opened.authority.pull({
+				...opened.envelope,
+				kind: 'pull',
+				cursor: 0,
+				limit: 100,
+			}),
+		).toEqual({ kind: 'pull', ok: false, reason: 'records-epoch-mismatch' });
+		expect(
+			opened.authority.snapshotChunk({
+				...opened.envelope,
+				kind: 'snapshotChunk',
+				generation: manifest.generation,
+				index: 0,
+			}),
+		).toEqual({
+			kind: 'snapshotChunk',
+			ok: false,
+			reason: 'records-epoch-mismatch',
+		});
+		await expect(
+			opened.authority.publishSnapshot({ maxChunkBytes: 1_024 }),
+		).rejects.toThrow('record-sync identity is no longer current');
+		await expect(
+			opened.authority.maybePublishSnapshot({
+				mutationThreshold: 100,
+				maxChunkBytes: 1_024,
+			}),
+		).rejects.toThrow('record-sync identity is no longer current');
+	} finally {
+		native.close();
+	}
+});
+
+test('stored schema change without a new epoch fails closed', async () => {
+	const { database, native } = setup();
+	try {
+		const opened = openRecordAuthority({
+			database,
+			request,
+			sha256,
+		});
+		if (!opened.ok) throw new Error('Expected authority to open');
+		database.run(
+			"UPDATE record_sync_meta SET value = 'notes-v2' WHERE key = 'recordsSchemaHash'",
+		);
+
+		expect(
+			opened.authority.push({
+				...opened.envelope,
+				kind: 'push',
+				mutations: [],
+			}),
+		).toEqual({ kind: 'push', ok: false, reason: 'records-schema-mismatch' });
+		expect(
+			opened.authority.pull({
+				...opened.envelope,
+				kind: 'pull',
+				cursor: 0,
+				limit: 100,
+			}),
+		).toEqual({ kind: 'pull', ok: false, reason: 'records-schema-mismatch' });
+		await expect(
+			opened.authority.publishSnapshot({ maxChunkBytes: 1_024 }),
+		).rejects.toThrow('record-sync identity is no longer current');
 	} finally {
 		native.close();
 	}
@@ -141,7 +273,6 @@ test('snapshot publication bounds every encoded chunk by bytes', async () => {
 		const opened = openRecordAuthority({
 			database,
 			request,
-			createDatabaseIncarnationId: () => 'database-1',
 			sha256,
 		});
 		if (!opened.ok) throw new Error('Expected authority to open');
@@ -189,7 +320,6 @@ test('snapshot publication cannot exceed the protocol chunk ceiling', async () =
 		const opened = openRecordAuthority({
 			database,
 			request,
-			createDatabaseIncarnationId: () => 'database-1',
 			sha256,
 		});
 		if (!opened.ok) throw new Error('Expected authority to open');
@@ -210,7 +340,6 @@ test('push rejects a patch that would make the canonical row unsnapshotable', ()
 		const opened = openRecordAuthority({
 			database,
 			request,
-			createDatabaseIncarnationId: () => 'database-1',
 			sha256,
 		});
 		if (!opened.ok) throw new Error('Expected authority to open');

@@ -1,8 +1,8 @@
 # Why Reads Should Be Pure
 
 > Historical: this article reasons about the retired migrate-on-read record
-> model. The target builds and validates a complete successor database before
-> activation. See [ADR-0125](../adr/0125-record-schemas-are-immutable-evolution-creates-a-successor-database.md).
+> model. The target uses records epochs; disruptive replacement starts a new
+> epoch outside the sync protocol. See [ADR-0130](../adr/0130-records-replacement-starts-a-new-epoch-without-an-online-succession-protocol.md).
 
 When designing Epicenter's migrate-on-read pattern, we faced a question: after reading and migrating old data, should we automatically write the migrated version back to storage?
 

@@ -1,8 +1,9 @@
 # 0120. Persisted fields are atomic cells and collaborative bodies are Yjs documents
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-07-11
-- **Relates:** [ADR-0005](0005-child-docs-are-bound-through-the-workspace.md), [ADR-0106](0106-a-child-doc-body-owns-one-layout-the-polymorphic-timeline-is-refused-until-a-product-earns-it.md), [ADR-0107](0107-a-child-doc-text-body-is-a-plain-y-text-the-timeline-array-is-deleted.md), [ADR-0125](0125-record-schemas-are-immutable-evolution-creates-a-successor-database.md)
+- **Relates:** [ADR-0005](0005-child-docs-are-bound-through-the-workspace.md), [ADR-0106](0106-a-child-doc-body-owns-one-layout-the-polymorphic-timeline-is-refused-until-a-product-earns-it.md), [ADR-0107](0107-a-child-doc-text-body-is-a-plain-y-text-the-timeline-array-is-deleted.md)
+- **Amended by:** [ADR-0130](0130-records-replacement-starts-a-new-epoch-without-an-online-succession-protocol.md) (records replacement starts a new epoch without shared succession machinery)
 
 ## Context
 
@@ -97,18 +98,16 @@ are not part of the application schema surface (ADR-0126).
   eager KV document with defaults on read. Because the KV document is not
   the record wire, a KV schema may be `nullable(...)`: `null` can be a real
   stored preference, while deleting the key means no override exists.
-- Honest clients only emit values valid for their records database's exact
-  records schema hash. Any change to synchronized tables, fields, or field
-  meaning
-  creates a successor database through logical import; local indexes and
-  internal storage changes do not. Child-document formats evolve under their
-  own format hashes and do not trigger records-database succession.
+- Honest clients only emit values valid for the active records epoch's exact
+  records schema hash. Every synchronized records schema change, wholesale
+  rewrite, or restore starts a new records epoch through an administrative
+  operation; local indexes and internal storage changes do not. Child-document
+  formats evolve under their own format hashes and do not replace records.
   Structurally valid but nonconforming input from a buggy or dishonest client
   remains storable without creating a second cross-version schema path.
-- A migration client validates every source row against the historical source
-  descriptor before invoking a typed transform. Any nonconforming or quarantined
-  source row blocks succession; it is never silently discarded. The source
-  database remains unchanged and available for diagnosis and logical export.
+- An administrative replacement tool may validate source rows against a
+  historical descriptor before invoking a typed transform. That tool owns its
+  failure and retention policy; the synchronization protocol does not.
 - Existing scalar transcript, note-body, todo-body, and wiki-body columns are
   candidates for a clean move to declared child docs. Existing raw persisted
   TypeBox schemas must move through `field.json` or earn a new closed field kind.

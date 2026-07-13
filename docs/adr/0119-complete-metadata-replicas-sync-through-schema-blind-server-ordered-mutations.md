@@ -1,8 +1,9 @@
 # 0119. Complete metadata replicas sync through schema-blind server-ordered mutations
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-07-11
-- **Relates:** [ADR-0035](0035-durable-storage-is-one-per-person-coordination-box.md), [ADR-0079 (cross-device is two planes)](0079-cross-device-is-two-planes-epicenter-syncs-the-crdt-the-box-is-reached-directly.md), [ADR-0092 (identity is the partition)](0092-identity-is-the-partition.md), [ADR-0125](0125-record-schemas-are-immutable-evolution-creates-a-successor-database.md)
+- **Relates:** [ADR-0035](0035-durable-storage-is-one-per-person-coordination-box.md), [ADR-0079 (cross-device is two planes)](0079-cross-device-is-two-planes-epicenter-syncs-the-crdt-the-box-is-reached-directly.md), [ADR-0092 (identity is the partition)](0092-identity-is-the-partition.md)
+- **Amended by:** [ADR-0130](0130-records-replacement-starts-a-new-epoch-without-an-online-succession-protocol.md) (database-family succession is replaced by one active records epoch)
 
 ## Context
 
@@ -16,43 +17,29 @@ exactly one principal and self-hosting provides the custody alternative.
 
 ## Decision
 
-Each `(principal, workspace)` pair owns one workspace family that selects one
-current records database. Every records database has one immutable logical
-schema identified by a canonical structural hash. Actors, cursors, outboxes,
-and snapshots bind to the records database; the server compares records schema
-hashes as opaque strings and pauses writers presenting a different one. A logical
-schema change never migrates the shared database in place. It creates a
-successor through explicit logical import, and every synchronized device keeps
-a complete local SQLite replica of the current records database.
+Each `(principal, workspace)` pair owns one active records epoch. The epoch
+identifies one continuous records history under one portable records schema
+hash. Actors, cursors, outboxes, mutations, and snapshots bind to that epoch;
+the server compares records schema hashes as opaque strings and pauses writers
+presenting a different one. Every synchronized device keeps a complete local
+SQLite replica of the active records epoch.
 
-Schema succession is a user-approved synchronization boundary. The user opens
-the devices they care about, waits until each reports `Synced`, stops editing,
-and approves the update. A current client reads source database A at canonical
-head H, transforms that snapshot into a staged successor B, and asks the
-authority to activate it. The authority atomically selects B and permanently
-fences A only if the family still selects A and A is still at H. A write that
-advances A makes activation fail without changing the family; the client retries
-from the new head. The server does not model device participation or lock A
-during upload, and it does not own the user's synchronization assertion.
+Every synchronized records schema change, restore, or wholesale replacement
+starts a new records epoch through the administrative boundary in ADR-0130. The
+shared synchronization protocol does not stage or activate a successor. It only
+discovers the current epoch and rejects work bound to another one.
 
-[Gate 3](../../demos/local-first-sync/gates/GATE3-EVIDENCE.md) is withdrawn as
-current evidence because it proves post-activation private-overlay import. Its
-resumable candidate upload, completeness, and atomic activation mechanics remain
-test material; the replacement gate must prove head-bound candidates,
-conditional activation, stale-head retry, and permanent supersession.
 Clients send atomic logical mutations to a schema-blind authoritative server;
 the server accepts them into one monotonically ordered sequence, folds them into
 canonical current state, and serves the accepted mutations back through a
 cursor-based pull protocol. A WebSocket is only a wake-up hint to pull after the
 client's cursor.
 
-Every ordinary write transaction participates in the same serialization
-boundary as database activation. It atomically verifies that the workspace
-family still selects the request's records database and that the database is
-writable, folds the mutation, advances that database's head, and commits. If a
-write commits first, the advanced head makes a candidate stale. If activation
-commits first, the source is no longer current and the write is rejected. No
-write admitted against the old database may commit after activation.
+Every ordinary write transaction atomically verifies that the request names the
+active records epoch, folds the mutation, advances that epoch's sequence, and
+commits. A replacement operation briefly rejects writes while it installs and
+selects a new epoch. No write admitted against the old epoch may commit after
+that selection.
 
 The server understands database, table, row, field, JSON value, actor, mutation,
 and sequence identity. It does not understand app-specific schemas or run
@@ -107,9 +94,9 @@ replicas, row filters, peer-to-peer merge, or permanent audit log.
   replay remaining pending intent, and advance the cursor atomically.
   [Gate 2](../../demos/local-first-sync/gates/GATE2-EVIDENCE.md) proves this is
   sufficient for permanent log-prefix deletion.
-- Active actor high-water marks grow with a records database's lifetime actor
-  churn. This is stated cost, not hidden: the bound is per database, actor
-  identities never reset within one, and a successor starts a fresh actor set.
+- Active actor high-water marks grow with a records epoch's lifetime actor
+  churn. This is stated cost, not hidden: the bound is per epoch, actor
+  identities never reset within one, and a replacement starts a fresh actor set.
 - The explicit lifecycle asks more of writers: an update cannot materialize a
   missing row, a purged row identity has exactly one lifetime, and restoring
   purged content copies it into a fresh identity. In exchange the durable

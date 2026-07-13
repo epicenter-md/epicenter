@@ -5,7 +5,7 @@ import {
 	isAdmissibleMutation,
 	isAdmissibleSnapshotRow,
 	isBoundedIdentifier,
-	isBoundedSchemaIdentity,
+	isBoundedRecordsSchemaHash,
 	RECORD_SYNC_ADMISSION_LIMITS,
 } from './admission.js';
 
@@ -39,11 +39,11 @@ const cellsSchema = Type.Unsafe<Cells>(
 );
 const envelopeProperties = {
 	protocolMajor: positiveSequence,
-	schemaIdentity: Type.String({
+	recordsSchemaHash: Type.String({
 		minLength: 1,
-		maxLength: RECORD_SYNC_ADMISSION_LIMITS.schemaIdentityBytes,
+		maxLength: RECORD_SYNC_ADMISSION_LIMITS.recordsSchemaHashBytes,
 	}),
-	databaseIncarnationId: identifier,
+	recordsEpoch: identifier,
 };
 const mutationProperties = {
 	actorId: identifier,
@@ -179,8 +179,8 @@ export type SnapshotChunk = Static<typeof snapshotChunkSchema>;
 
 const requestRefusalSchema = Type.Union([
 	Type.Literal('protocol-mismatch'),
-	Type.Literal('schema-identity-mismatch'),
-	Type.Literal('database-incarnation-mismatch'),
+	Type.Literal('records-schema-mismatch'),
+	Type.Literal('records-epoch-mismatch'),
 ]);
 export type RequestRefusal = Static<typeof requestRefusalSchema>;
 
@@ -274,8 +274,8 @@ function snapshotRowsAreAdmissible(rows: SnapshotRow[]): boolean {
 
 function requestEnvelopeIsAdmissible(value: RequestEnvelope): boolean {
 	return (
-		isBoundedSchemaIdentity(value.schemaIdentity) &&
-		isBoundedIdentifier(value.databaseIncarnationId)
+		isBoundedRecordsSchemaHash(value.recordsSchemaHash) &&
+		isBoundedIdentifier(value.recordsEpoch)
 	);
 }
 
@@ -357,9 +357,9 @@ export function requestRefusal(
 ): RequestRefusal | null {
 	if (request.protocolMajor !== expected.protocolMajor)
 		return 'protocol-mismatch';
-	if (request.schemaIdentity !== expected.schemaIdentity)
-		return 'schema-identity-mismatch';
-	if (request.databaseIncarnationId !== expected.databaseIncarnationId)
-		return 'database-incarnation-mismatch';
+	if (request.recordsSchemaHash !== expected.recordsSchemaHash)
+		return 'records-schema-mismatch';
+	if (request.recordsEpoch !== expected.recordsEpoch)
+		return 'records-epoch-mismatch';
 	return null;
 }

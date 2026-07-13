@@ -1,7 +1,7 @@
 # Workspaces Were Documents All Along
 
 > **Historical note (2026-07-12):** This article traces the earlier root-Y.Doc
-> workspace architecture. The target workspace family composes a records
+> workspace architecture. The target workspace composes a records
 > database, stable synchronized KV, and format-addressed child documents as
 > separate storage planes. See
 > [Workspace data model](../reference/workspace-data-model.md).
