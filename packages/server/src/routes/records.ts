@@ -2,7 +2,7 @@ import {
 	parseCandidateManifest,
 	parsePullRequest,
 	parsePushRequest,
-	parseRecordAuthorityBindingRequest,
+	parseRecordAuthorityOpenRequest,
 	parseSnapshotChunk,
 	parseSnapshotChunkRequest,
 	RECORD_SYNC_ADMISSION_LIMITS,
@@ -125,7 +125,7 @@ function createRecordsApp<E extends Env>(
 
 	return app
 		.post(`${RECORDS_ROUTE}/open`, async (c) => {
-			const parsed = await parseJson(c, parseRecordAuthorityBindingRequest);
+			const parsed = await parseJson(c, parseRecordAuthorityOpenRequest);
 			if (!parsed.ok) {
 				return invalidRequest(c, parsed.reason);
 			}
@@ -134,11 +134,12 @@ function createRecordsApp<E extends Env>(
 				parsed.value,
 			);
 			if (result.ok) {
-				return c.json({ databaseId: result.databaseId });
+				return c.json({
+					databaseId: result.databaseId,
+					recordsSchemaHash: result.recordsSchemaHash,
+				});
 			}
-			const error = RecordsError.DatabaseBindingMismatch({
-				reason: result.reason,
-			});
+			const error = RecordsError.ProtocolMismatch();
 			return c.json(error, error.error.status);
 		})
 		.post(`${RECORDS_ROUTE}/push`, async (c) => {

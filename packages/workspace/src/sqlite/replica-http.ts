@@ -1,8 +1,5 @@
-import type { RecordAuthorityBindingRequest } from '@epicenter/record-sync';
-import type {
-	ReplicaDatabaseBindingRequest,
-	ReplicaSyncPort,
-} from './replica.js';
+import type { RecordAuthorityOpenRequest } from '@epicenter/record-sync';
+import type { ReplicaDatabaseOpenRequest, ReplicaSyncPort } from './replica.js';
 
 export type CreateHttpReplicaSyncPortOptions = {
 	baseUrl: string;
@@ -82,6 +79,6 @@ export function createHttpReplicaSyncPort({
 function openRequestBody({
 	protocolMajor,
 	recordsSchemaHash,
-}: ReplicaDatabaseBindingRequest): RecordAuthorityBindingRequest {
+}: ReplicaDatabaseOpenRequest): RecordAuthorityOpenRequest {
 	return { protocolMajor, recordsSchemaHash };
 }

@@ -7,7 +7,7 @@ import {
 	openRecordAuthority,
 	type RecordAuthority,
 	type RequestEnvelope,
-	recordAuthorityBindingRefusal,
+	recordAuthorityOpenRefusal,
 	restoreRecordAuthority,
 	type Sha256,
 } from '@epicenter/record-sync';
@@ -85,9 +85,10 @@ export function createBunRecords({
 			const cached = authorities.get(key);
 			if (cached) {
 				return (
-					recordAuthorityBindingRefusal(request, cached.envelope) ?? {
+					recordAuthorityOpenRefusal(request, cached.envelope) ?? {
 						ok: true,
 						databaseId: cached.envelope.databaseId,
+						recordsSchemaHash: cached.envelope.recordsSchemaHash,
 					}
 				);
 			}
@@ -118,6 +119,7 @@ export function createBunRecords({
 				return {
 					ok: true,
 					databaseId: opened.databaseId,
+					recordsSchemaHash: opened.recordsSchemaHash,
 				};
 			} catch (error) {
 				database.close();

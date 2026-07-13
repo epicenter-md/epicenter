@@ -1502,6 +1502,18 @@ request a prototype are implementation proof, not unresolved product approval.
       `pull`, or a second installed-generation coordinate merely to preserve a
       head-0 aesthetic distinction.
 
+14. **Authority discovery** (resolved 2026-07-13)
+    - Decision: `open` always reports the family-selected database id and
+      records-schema hash. The caller's hash initializes an empty family but is
+      not a condition on later discovery. A differing hash is lifecycle input,
+      not a server error. The exact candidate head H is the initiating
+      replica's cursor after its outbox is empty and pull reaches quiescence;
+      discovery never reports a head that could become stale before capture.
+    - Refusal: do not encode schema succession as an HTTP conflict, add head to
+      the open response, or create a dedicated source-export endpoint when the
+      ordinary synchronized local materialization already owns the exact rows
+      at H.
+
 ## Success criteria
 
 - [ ] App definitions contain no epoch, root incarnation, or row-version API.

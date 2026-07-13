@@ -140,7 +140,7 @@ test('family selection fences an already-open source database', async () => {
 	}
 });
 
-test('binding refusals preserve existing authority identity', () => {
+test('open reports the stored descriptor without replacing authority identity', () => {
 	const { database, native } = setup();
 	try {
 		const opened = openRecordAuthority({
@@ -157,7 +157,11 @@ test('binding refusals preserve existing authority identity', () => {
 				createDatabaseId: () => 'must-not-mint',
 				sha256,
 			}),
-		).toEqual({ ok: false, reason: 'records-schema-mismatch' });
+		).toMatchObject({
+			ok: true,
+			databaseId: opened.databaseId,
+			recordsSchemaHash: request.recordsSchemaHash,
+		});
 		expect(restoreRecordAuthority({ database, sha256 })?.envelope).toEqual(
 			opened.envelope,
 		);

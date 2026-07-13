@@ -28,7 +28,11 @@ function setup() {
 	const records: Records = {
 		async open(partition) {
 			partitions.push(partition);
-			return { ok: true, databaseId: 'database-1' };
+			return {
+				ok: true,
+				databaseId: 'database-1',
+				recordsSchemaHash: 'schema-1',
+			};
 		},
 		async push(partition) {
 			partitions.push(partition);
@@ -111,6 +115,7 @@ test('open stamps the authenticated principal and path workspace onto the backen
 	expect(response.status).toBe(200);
 	expect((await response.json()) as unknown).toEqual({
 		databaseId: 'database-1',
+		recordsSchemaHash: 'schema-1',
 	});
 	expect(partitions).toEqual([
 		{

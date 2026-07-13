@@ -80,7 +80,7 @@ function createPort(
 				recordsSchemaHash: definition.recordsSchemaHash,
 				protocolMajor: 2,
 			});
-			return { databaseId };
+			return { databaseId, recordsSchemaHash: definition.recordsSchemaHash };
 		},
 		async push(request) {
 			return authority.push(request);
@@ -514,7 +514,10 @@ test("a push refused with 'create-conflict' is an invariant violation demanding 
 	const port: ReplicaSyncPort = {
 		bindWorkspace() {},
 		async openDatabase() {
-			return { databaseId: 'database-1' };
+			return {
+				databaseId: 'database-1',
+				recordsSchemaHash: definition.recordsSchemaHash,
+			};
 		},
 		async push() {
 			return { kind: 'push', ok: false, reason: 'create-conflict' };
@@ -551,7 +554,10 @@ test('durable authority refusals stop the sync supervisor instead of retrying', 
 		const port: ReplicaSyncPort = {
 			bindWorkspace() {},
 			async openDatabase() {
-				return { databaseId: 'database-1' };
+				return {
+					databaseId: 'database-1',
+					recordsSchemaHash: definition.recordsSchemaHash,
+				};
 			},
 			async push() {
 				pushAttempts++;
@@ -593,7 +599,10 @@ test("a push refused with 'row-too-large' stops retries and preserves pending in
 	const port: ReplicaSyncPort = {
 		bindWorkspace() {},
 		async openDatabase() {
-			return { databaseId: 'database-1' };
+			return {
+				databaseId: 'database-1',
+				recordsSchemaHash: definition.recordsSchemaHash,
+			};
 		},
 		async push() {
 			pushAttempts++;

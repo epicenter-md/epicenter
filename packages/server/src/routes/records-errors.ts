@@ -9,17 +9,10 @@ export const RecordsError = defineErrors({
 		message: 'The record synchronization request is too large.',
 		status: 413 as const,
 	}),
-	DatabaseBindingMismatch: ({
-		reason,
-	}: {
-		reason: 'protocol-mismatch' | 'records-schema-mismatch';
-	}) => ({
-		message:
-			reason === 'protocol-mismatch'
-				? 'The record synchronization protocol is incompatible.'
-				: 'The workspace schema does not match the authoritative database.',
+	ProtocolMismatch: () => ({
+		message: 'The record synchronization protocol is incompatible.',
 		status: 409 as const,
-		reason,
+		reason: 'protocol-mismatch' as const,
 	}),
 });
 

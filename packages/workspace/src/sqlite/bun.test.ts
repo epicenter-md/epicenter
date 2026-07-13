@@ -102,7 +102,7 @@ test('Bun workspace replicas synchronize automatically through one authority', a
 	const sync = {
 		bindWorkspace() {},
 		async openDatabase() {
-			return { databaseId };
+			return { databaseId, recordsSchemaHash: definition.recordsSchemaHash };
 		},
 		async push(request: Parameters<typeof authority.push>[0]) {
 			return authority.push(request);

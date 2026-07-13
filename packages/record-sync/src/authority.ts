@@ -29,22 +29,24 @@ import type { RecordSyncSqlite } from './sqlite.js';
 
 const STORAGE_VERSION = 1;
 
-export type RecordAuthorityBindingRequest = {
+export type RecordAuthorityOpenRequest = {
 	protocolMajor: number;
 	recordsSchemaHash: string;
 };
 
-export type RecordAuthorityBindingResult =
-	| { ok: true; databaseId: string }
-	| {
-			ok: false;
-			reason: 'protocol-mismatch' | 'records-schema-mismatch';
-	  };
+export type RecordAuthorityDescriptor = {
+	databaseId: string;
+	recordsSchemaHash: string;
+};
 
-/** Parse the exact first-open authority binding shared by every transport. */
-export function parseRecordAuthorityBindingRequest(
+export type RecordAuthorityOpenResult =
+	| ({ ok: true } & RecordAuthorityDescriptor)
+	| { ok: false; reason: 'protocol-mismatch' };
+
+/** Parse the exact authority-open request shared by every transport. */
+export function parseRecordAuthorityOpenRequest(
 	value: unknown,
-): RecordAuthorityBindingRequest {
+): RecordAuthorityOpenRequest {
 	if (
 		typeof value !== 'object' ||
 		value === null ||
@@ -124,17 +126,15 @@ function readStoredEnvelope(
 		: null;
 }
 
-export function recordAuthorityBindingRefusal(
-	request: RecordAuthorityBindingRequest,
+export function recordAuthorityOpenRefusal(
+	request: RecordAuthorityOpenRequest,
 	envelope: RequestEnvelope,
-): Extract<RecordAuthorityBindingResult, { ok: false }> | null {
+): Extract<RecordAuthorityOpenResult, { ok: false }> | null {
 	if (
 		request.protocolMajor !== RECORD_SYNC_PROTOCOL_MAJOR ||
 		request.protocolMajor !== envelope.protocolMajor
 	)
 		return { ok: false, reason: 'protocol-mismatch' };
-	if (request.recordsSchemaHash !== envelope.recordsSchemaHash)
-		return { ok: false, reason: 'records-schema-mismatch' };
 	return null;
 }
 
@@ -781,20 +781,21 @@ export function openRecordAuthority({
 	sha256,
 }: {
 	database: RecordSyncSqlite;
-	request: RecordAuthorityBindingRequest;
+	request: RecordAuthorityOpenRequest;
 	createDatabaseId(): string;
 	sha256: Sha256;
 }):
-	| ({ ok: true; databaseId: string } & OpenedRecordAuthority)
-	| Extract<RecordAuthorityBindingResult, { ok: false }> {
-	request = parseRecordAuthorityBindingRequest(request);
+	| ({ ok: true } & RecordAuthorityDescriptor & OpenedRecordAuthority)
+	| Extract<RecordAuthorityOpenResult, { ok: false }> {
+	request = parseRecordAuthorityOpenRequest(request);
 	const stored = readStoredEnvelope(database);
 	if (stored) {
-		const refusal = recordAuthorityBindingRefusal(request, stored);
+		const refusal = recordAuthorityOpenRefusal(request, stored);
 		if (refusal) return refusal;
 		return {
 			ok: true,
 			databaseId: stored.databaseId,
+			recordsSchemaHash: stored.recordsSchemaHash,
 			envelope: stored,
 			authority: createRecordAuthority({ database, envelope: stored, sha256 }),
 		};
@@ -809,6 +810,7 @@ export function openRecordAuthority({
 	return {
 		ok: true,
 		databaseId,
+		recordsSchemaHash: request.recordsSchemaHash,
 		envelope,
 		authority,
 	};

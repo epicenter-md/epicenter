@@ -17,7 +17,7 @@ import {
 	parsePushResponse,
 	parseSnapshotChunkResponse,
 	RECORD_SYNC_ADMISSION_LIMITS,
-	type RecordAuthorityBindingRequest,
+	type RecordAuthorityOpenRequest,
 	type RecordSyncSqlite,
 	type RequestEnvelope,
 	type Sha256,
@@ -40,12 +40,13 @@ const OUTBOX_TABLE = '__epicenter_replica_outbox';
 const SNAPSHOT_TABLE = '__epicenter_replica_snapshot';
 const SNAPSHOT_CHUNK_TABLE = '__epicenter_replica_snapshot_chunks';
 
-export type ReplicaDatabaseBindingRequest = RecordAuthorityBindingRequest & {
+export type ReplicaDatabaseOpenRequest = RecordAuthorityOpenRequest & {
 	workspaceId: string;
 };
 
-type ReplicaDatabaseBinding = {
+type ReplicaDatabaseDescriptor = {
 	databaseId: string;
+	recordsSchemaHash: string;
 };
 
 /** Network boundary implemented by the hosted or self-hosted sync client. */
@@ -53,7 +54,7 @@ export type ReplicaSyncPort = {
 	/** Select the workspace route locally without performing network I/O. */
 	bindWorkspace(workspaceId: string): void;
 	openDatabase(
-		request: ReplicaDatabaseBindingRequest,
+		request: ReplicaDatabaseOpenRequest,
 		signal?: AbortSignal,
 	): Promise<unknown>;
 	push(request: PushRequest, signal?: AbortSignal): Promise<unknown>;
@@ -161,10 +162,14 @@ export async function createReplicaRuntime<TTables extends TableDefinitions>({
 
 	async function verifyAuthorityBinding(signal?: AbortSignal): Promise<void> {
 		if (isAuthorityBindingVerified) return;
-		const { databaseId } = parseDatabaseBinding(
+		const { databaseId, recordsSchemaHash } = parseDatabaseDescriptor(
 			await sync.openDatabase(bindingRequest, signal),
 		);
 		assertNonEmpty(databaseId, 'databaseId');
+		assertNonEmpty(recordsSchemaHash, 'recordsSchemaHash');
+		if (recordsSchemaHash !== definition.recordsSchemaHash) {
+			throw new ReplicaSyncRefusalError('records-schema-mismatch');
+		}
 		sqlite.transaction(() => {
 			const meta = readMeta(sqlite);
 			if (meta.databaseId === null) {
@@ -925,16 +930,19 @@ function assertNonEmpty(value: string, label: string): void {
 	if (value.trim() === '') throw new TypeError(`${label} must not be empty`);
 }
 
-function parseDatabaseBinding(value: unknown): ReplicaDatabaseBinding {
+function parseDatabaseDescriptor(value: unknown): ReplicaDatabaseDescriptor {
 	if (
 		typeof value !== 'object' ||
 		value === null ||
 		Array.isArray(value) ||
-		Object.keys(value).length !== 1 ||
+		Object.keys(value).length !== 2 ||
 		!Object.hasOwn(value, 'databaseId') ||
-		typeof (value as { databaseId?: unknown }).databaseId !== 'string'
+		!Object.hasOwn(value, 'recordsSchemaHash') ||
+		typeof (value as { databaseId?: unknown }).databaseId !== 'string' ||
+		typeof (value as { recordsSchemaHash?: unknown }).recordsSchemaHash !==
+			'string'
 	) {
 		throw new TypeError('Invalid replica database binding response');
 	}
-	return value as ReplicaDatabaseBinding;
+	return value as ReplicaDatabaseDescriptor;
 }

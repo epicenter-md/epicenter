@@ -192,7 +192,7 @@ test('database identity and mutation log survive Durable Object restart', async 
 	).toHaveLength(1);
 });
 
-test('schema mismatch refuses without replacing the stored identity', async () => {
+test('open reports a different stored schema without replacing its identity', async () => {
 	const { records } = await setup();
 	const envelope = await open(records);
 	expect(
@@ -200,7 +200,11 @@ test('schema mismatch refuses without replacing the stored identity', async () =
 			protocolMajor: RECORD_SYNC_PROTOCOL_MAJOR,
 			recordsSchemaHash: 'different-schema',
 		}),
-	).toEqual({ ok: false, reason: 'records-schema-mismatch' });
+	).toEqual({
+		ok: true,
+		databaseId: envelope.databaseId,
+		recordsSchemaHash: envelope.recordsSchemaHash,
+	});
 	expect((await open(records)).databaseId).toBe(envelope.databaseId);
 });
 

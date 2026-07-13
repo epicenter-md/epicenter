@@ -111,7 +111,7 @@ test('database identity and mutation log survive closing and reopening', async (
 	}
 });
 
-test('protocol and schema refusals do not replace stored identity', async () => {
+test('protocol refusal and schema discovery preserve stored identity', async () => {
 	const context = setup();
 	try {
 		const envelope = await openEnvelope(context.records);
@@ -126,7 +126,11 @@ test('protocol and schema refusals do not replace stored identity', async () => 
 				protocolMajor: RECORD_SYNC_PROTOCOL_MAJOR,
 				recordsSchemaHash: 'different-schema',
 			}),
-		).toEqual({ ok: false, reason: 'records-schema-mismatch' });
+		).toEqual({
+			ok: true,
+			databaseId: envelope.databaseId,
+			recordsSchemaHash: envelope.recordsSchemaHash,
+		});
 		expect((await openEnvelope(context.records)).databaseId).toBe(
 			envelope.databaseId,
 		);

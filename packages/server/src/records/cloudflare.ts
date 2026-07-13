@@ -10,8 +10,8 @@ import {
 	type PushRequest,
 	type PushResponse,
 	type RecordAuthority,
-	type RecordAuthorityBindingRequest,
-	type RecordAuthorityBindingResult,
+	type RecordAuthorityOpenRequest,
+	type RecordAuthorityOpenResult,
 	restoreRecordAuthority,
 	type SealCandidateResult,
 	type SnapshotChunk,
@@ -58,8 +58,8 @@ export class RecordAuthorityDurableObject extends DurableObject {
 	}
 
 	async open(
-		request: RecordAuthorityBindingRequest,
-	): Promise<RecordAuthorityBindingResult> {
+		request: RecordAuthorityOpenRequest,
+	): Promise<RecordAuthorityOpenResult> {
 		const opened = openRecordAuthority({
 			database: createDurableObjectSqliteAdapter(this.ctx.storage),
 			request,
@@ -71,6 +71,7 @@ export class RecordAuthorityDurableObject extends DurableObject {
 		return {
 			ok: true,
 			databaseId: opened.databaseId,
+			recordsSchemaHash: opened.recordsSchemaHash,
 		};
 	}
 
@@ -146,9 +147,7 @@ export class RecordAuthorityDurableObject extends DurableObject {
 }
 
 type RecordsRpc = {
-	open(
-		request: RecordAuthorityBindingRequest,
-	): Promise<RecordAuthorityBindingResult>;
+	open(request: RecordAuthorityOpenRequest): Promise<RecordAuthorityOpenResult>;
 	push(request: PushRequest): Promise<PushResponse>;
 	pull(request: PullRequest): Promise<PullResponse>;
 	snapshotChunk(request: SnapshotChunkRequest): Promise<SnapshotChunkResponse>;
