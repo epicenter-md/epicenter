@@ -67,6 +67,79 @@ test('first open persists one database id and restore reuses it', () => {
 	}
 });
 
+test('family selection fences an already-open source database', async () => {
+	const { database, native } = setup();
+	try {
+		const opened = openRecordAuthority({
+			database,
+			request,
+			createDatabaseId: () => 'database-a',
+			sha256,
+		});
+		if (!opened.ok) throw new Error('Expected authority to open');
+		expect(
+			opened.authority.push({
+				kind: 'push',
+				...opened.envelope,
+				mutations: [
+					{
+						actorId: 'actor-a',
+						actorSequence: 1,
+						operations: [
+							{
+								kind: 'createRow',
+								table: 'notes',
+								rowId: 'n1',
+								cells: { title: 'Retained source' },
+							},
+						],
+					},
+				],
+			}),
+		).toEqual({ kind: 'push', ok: true });
+
+		database.transaction(() => {
+			database.run(
+				`INSERT INTO record_sync_databases(
+					database_id, storage_version, protocol_major, records_schema_hash,
+					status, server_sequence, watermark, snapshot_generation
+				) VALUES ('database-b', 1, ?, 'notes-v2', 'live', 0, 0, 0)`,
+				[RECORD_SYNC_PROTOCOL_MAJOR],
+			);
+			database.run(
+				"UPDATE record_sync_databases SET status = 'fenced' WHERE database_id = 'database-a'",
+			);
+			database.run(
+				"UPDATE record_sync_family SET current_database_id = 'database-b' WHERE id = 1",
+			);
+		});
+
+		expect(
+			opened.authority.push({
+				kind: 'push',
+				...opened.envelope,
+				mutations: [],
+			}),
+		).toEqual({ kind: 'push', ok: false, reason: 'database-id-mismatch' });
+		await expect(
+			opened.authority.publishSnapshot({ maxChunkBytes: 1024 }),
+		).rejects.toThrow('no longer current');
+		expect(restoreRecordAuthority({ database, sha256 })?.envelope).toEqual({
+			protocolMajor: RECORD_SYNC_PROTOCOL_MAJOR,
+			recordsSchemaHash: 'notes-v2',
+			databaseId: 'database-b',
+		});
+		expect(
+			database.all<{ title: string }>(
+				`SELECT json_extract(cells_json, '$.title') AS title
+				 FROM record_sync_canonical_rows WHERE database_id = 'database-a'`,
+			),
+		).toEqual([{ title: 'Retained source' }]);
+	} finally {
+		native.close();
+	}
+});
+
 test('binding refusals preserve existing authority identity', () => {
 	const { database, native } = setup();
 	try {

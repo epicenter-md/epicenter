@@ -97,33 +97,31 @@ function one<TRow extends Record<string, string | number | null>>(
 function readStoredEnvelope(
 	database: RecordSyncSqlite,
 ): RequestEnvelope | null {
-	const hasMetadata = one<{ present: number }>(
+	const initialized = one<{ present: number }>(
 		database,
 		`SELECT 1 AS present FROM sqlite_master
-		 WHERE type = 'table' AND name = 'record_sync_meta'`,
+		 WHERE type = 'table' AND name = 'record_sync_family'`,
 	);
-	if (!hasMetadata) return null;
-	const metadata = Object.fromEntries(
-		database
-			.all<{ key: string; value: string }>(
-				`SELECT key, value FROM record_sync_meta
-				 WHERE key IN ('protocolMajor', 'recordsSchemaHash', 'databaseId')`,
-			)
-			.map(({ key, value }) => [key, value]),
+	if (!initialized) return null;
+	const stored = one<{
+		database_id: string;
+		protocol_major: number;
+		records_schema_hash: string;
+	}>(
+		database,
+		`SELECT d.database_id, d.protocol_major, d.records_schema_hash
+		 FROM record_sync_family AS f
+		 JOIN record_sync_databases AS d
+		   ON d.database_id = f.current_database_id
+		 WHERE f.id = 1`,
 	);
-	const protocolMajor = Number(metadata.protocolMajor);
-	if (
-		!Number.isSafeInteger(protocolMajor) ||
-		protocolMajor < 1 ||
-		!metadata.recordsSchemaHash ||
-		!metadata.databaseId
-	)
-		throw new Error('Incomplete record-sync identity metadata');
-	return {
-		protocolMajor,
-		recordsSchemaHash: metadata.recordsSchemaHash,
-		databaseId: metadata.databaseId,
-	};
+	return stored
+		? {
+				protocolMajor: stored.protocol_major,
+				recordsSchemaHash: stored.records_schema_hash,
+				databaseId: stored.database_id,
+			}
+		: null;
 }
 
 export function recordAuthorityBindingRefusal(
@@ -140,100 +138,137 @@ export function recordAuthorityBindingRefusal(
 	return null;
 }
 
+function currentRequestRefusal(
+	database: RecordSyncSqlite,
+	request: RequestEnvelope,
+	envelope: RequestEnvelope,
+) {
+	const refusal = requestRefusal(request, envelope);
+	if (refusal) return refusal;
+	const current = one<{ current_database_id: string }>(
+		database,
+		'SELECT current_database_id FROM record_sync_family WHERE id = 1',
+	)?.current_database_id;
+	return current === envelope.databaseId ? null : 'database-id-mismatch';
+}
+
 function initialize(
 	database: RecordSyncSqlite,
 	envelope: RequestEnvelope,
 ): void {
 	database.transaction(() => {
 		database.run(`
-			CREATE TABLE IF NOT EXISTS record_sync_meta (
-				key TEXT PRIMARY KEY,
-				value TEXT NOT NULL
+			CREATE TABLE IF NOT EXISTS record_sync_family (
+				id INTEGER PRIMARY KEY CHECK(id = 1),
+				current_database_id TEXT NOT NULL
+			);
+			CREATE TABLE IF NOT EXISTS record_sync_databases (
+				database_id TEXT PRIMARY KEY,
+				storage_version INTEGER NOT NULL,
+				protocol_major INTEGER NOT NULL,
+				records_schema_hash TEXT NOT NULL,
+				status TEXT NOT NULL CHECK(status IN ('live', 'fenced')),
+				server_sequence INTEGER NOT NULL,
+				watermark INTEGER NOT NULL,
+				snapshot_generation INTEGER NOT NULL
 			);
 			CREATE TABLE IF NOT EXISTS record_sync_actor_high_water (
-				actor_id TEXT PRIMARY KEY,
-				sequence INTEGER NOT NULL
+				database_id TEXT NOT NULL,
+				actor_id TEXT NOT NULL,
+				sequence INTEGER NOT NULL,
+				PRIMARY KEY(database_id, actor_id)
 			);
 			CREATE TABLE IF NOT EXISTS record_sync_mutation_log (
-				server_sequence INTEGER PRIMARY KEY,
+				database_id TEXT NOT NULL,
+				server_sequence INTEGER NOT NULL,
 				actor_id TEXT NOT NULL,
 				actor_sequence INTEGER NOT NULL,
 				operations_json TEXT NOT NULL,
-				UNIQUE(actor_id, actor_sequence)
+				PRIMARY KEY(database_id, server_sequence),
+				UNIQUE(database_id, actor_id, actor_sequence)
 			);
 			CREATE TABLE IF NOT EXISTS record_sync_canonical_rows (
+				database_id TEXT NOT NULL,
 				table_name TEXT NOT NULL,
 				row_id TEXT NOT NULL,
 				cells_json TEXT NOT NULL,
-				PRIMARY KEY(table_name, row_id)
+				PRIMARY KEY(database_id, table_name, row_id)
 			);
 			CREATE TABLE IF NOT EXISTS record_sync_snapshot_manifest (
-				id INTEGER PRIMARY KEY CHECK(id = 1),
+				database_id TEXT PRIMARY KEY,
 				manifest_json TEXT NOT NULL
 			);
 			CREATE TABLE IF NOT EXISTS record_sync_snapshot_chunks (
-				chunk_index INTEGER PRIMARY KEY,
+				database_id TEXT NOT NULL,
+				chunk_index INTEGER NOT NULL,
 				generation INTEGER NOT NULL,
 				rows_json TEXT NOT NULL,
-				checksum TEXT NOT NULL
+				checksum TEXT NOT NULL,
+				PRIMARY KEY(database_id, chunk_index)
 			);
 		`);
-
-		const identity = {
-			storageVersion: STORAGE_VERSION,
-			protocolMajor: envelope.protocolMajor,
-			recordsSchemaHash: envelope.recordsSchemaHash,
-			databaseId: envelope.databaseId,
-		};
-		const initial = {
-			...identity,
-			serverSequence: 0,
-			watermark: 0,
-			snapshotGeneration: 0,
-		};
-		for (const [key, value] of Object.entries(initial))
+		const family = one<{ current_database_id: string }>(
+			database,
+			'SELECT current_database_id FROM record_sync_family WHERE id = 1',
+		);
+		if (!family) {
 			database.run(
-				'INSERT OR IGNORE INTO record_sync_meta(key, value) VALUES (?, ?)',
-				[key, String(value)],
+				`INSERT INTO record_sync_databases(
+					database_id, storage_version, protocol_major, records_schema_hash,
+					status, server_sequence, watermark, snapshot_generation
+				) VALUES (?, ?, ?, ?, 'live', 0, 0, 0)`,
+				[
+					envelope.databaseId,
+					STORAGE_VERSION,
+					envelope.protocolMajor,
+					envelope.recordsSchemaHash,
+				],
 			);
-
-		for (const [key, expected] of Object.entries(identity)) {
-			const stored = one<{ value: string }>(
-				database,
-				'SELECT value FROM record_sync_meta WHERE key = ?',
-				[key],
-			)?.value;
-			if (stored !== String(expected))
-				throw new Error(`record-sync identity mismatch for ${key}`);
+			database.run('INSERT INTO record_sync_family VALUES (1, ?)', [
+				envelope.databaseId,
+			]);
+			return;
 		}
+		if (family.current_database_id !== envelope.databaseId)
+			throw new Error('record-sync current databaseId mismatch');
+		const stored = readStoredEnvelope(database);
+		if (!stored || requestRefusal(stored, envelope))
+			throw new Error('record-sync database identity mismatch');
 	});
 }
 
-function readMeta(database: RecordSyncSqlite, key: string): number {
-	const value = one<{ value: string }>(
+type DatabaseCounter = 'server_sequence' | 'watermark' | 'snapshot_generation';
+
+function readMeta(
+	database: RecordSyncSqlite,
+	databaseId: string,
+	key: DatabaseCounter,
+): number {
+	const value = one<{ value: number }>(
 		database,
-		'SELECT value FROM record_sync_meta WHERE key = ?',
-		[key],
+		`SELECT ${key} AS value FROM record_sync_databases WHERE database_id = ?`,
+		[databaseId],
 	)?.value;
-	const parsed = Number(value);
-	if (!Number.isSafeInteger(parsed) || parsed < 0)
+	if (!Number.isSafeInteger(value) || (value ?? -1) < 0)
 		throw new Error(`Invalid record-sync metadata: ${key}`);
-	return parsed;
+	return value as number;
 }
 
 function writeMeta(
 	database: RecordSyncSqlite,
-	key: string,
+	databaseId: string,
+	key: DatabaseCounter,
 	value: number,
 ): void {
-	database.run('UPDATE record_sync_meta SET value = ? WHERE key = ?', [
-		String(value),
-		key,
-	]);
+	database.run(
+		`UPDATE record_sync_databases SET ${key} = ? WHERE database_id = ?`,
+		[value, databaseId],
+	);
 }
 
 function readCanonicalCells(
 	database: RecordSyncSqlite,
+	databaseId: string,
 	table: string,
 	rowId: string,
 ): Cells | undefined {
@@ -241,8 +276,8 @@ function readCanonicalCells(
 		database,
 		`SELECT table_name, row_id, cells_json
 		 FROM record_sync_canonical_rows
-		 WHERE table_name = ? AND row_id = ?`,
-		[table, rowId],
+		 WHERE database_id = ? AND table_name = ? AND row_id = ?`,
+		[databaseId, table, rowId],
 	);
 	return stored ? JSON.parse(stored.cells_json) : undefined;
 }
@@ -275,12 +310,21 @@ class ActorSequenceGapError extends Error {
 	}
 }
 
+/** Internal sentinel that stops compaction after database succession. */
+class DatabaseFencedError extends Error {
+	constructor() {
+		super('record-sync database is no longer current');
+		this.name = 'DatabaseFencedError';
+	}
+}
+
 function applyOperation(
 	database: RecordSyncSqlite,
+	databaseId: string,
 	operation: Operation,
 ): void {
 	const result = foldRow(
-		readCanonicalCells(database, operation.table, operation.rowId),
+		readCanonicalCells(database, databaseId, operation.table, operation.rowId),
 		operation,
 	);
 	switch (result.kind) {
@@ -297,18 +341,23 @@ function applyOperation(
 			}
 			database.run(
 				`INSERT INTO record_sync_canonical_rows(
-					table_name, row_id, cells_json
-				) VALUES (?, ?, ?)
-				ON CONFLICT(table_name, row_id) DO UPDATE SET
+					database_id, table_name, row_id, cells_json
+				) VALUES (?, ?, ?, ?)
+				ON CONFLICT(database_id, table_name, row_id) DO UPDATE SET
 					cells_json = excluded.cells_json`,
-				[operation.table, operation.rowId, JSON.stringify(result.cells)],
+				[
+					databaseId,
+					operation.table,
+					operation.rowId,
+					JSON.stringify(result.cells),
+				],
 			);
 			return;
 		case 'deleted':
 			database.run(
 				`DELETE FROM record_sync_canonical_rows
-				 WHERE table_name = ? AND row_id = ?`,
-				[operation.table, operation.rowId],
+				 WHERE database_id = ? AND table_name = ? AND row_id = ?`,
+				[databaseId, operation.table, operation.rowId],
 			);
 			return;
 		case 'noop':
@@ -318,23 +367,33 @@ function applyOperation(
 	}
 }
 
-function readManifest(database: RecordSyncSqlite): SnapshotManifest | null {
+function readManifest(
+	database: RecordSyncSqlite,
+	databaseId: string,
+): SnapshotManifest | null {
 	const stored = one<{ manifest_json: string }>(
 		database,
-		'SELECT manifest_json FROM record_sync_snapshot_manifest WHERE id = 1',
+		`SELECT manifest_json FROM record_sync_snapshot_manifest
+		 WHERE database_id = ?`,
+		[databaseId],
 	);
 	return stored ? JSON.parse(stored.manifest_json) : null;
 }
 
-function captureSnapshot(database: RecordSyncSqlite): CapturedSnapshot {
+function captureSnapshot(
+	database: RecordSyncSqlite,
+	databaseId: string,
+): CapturedSnapshot {
 	return database.transaction(() => ({
-		generation: readMeta(database, 'snapshotGeneration') + 1,
-		snapshotSequence: readMeta(database, 'serverSequence'),
+		generation: readMeta(database, databaseId, 'snapshot_generation') + 1,
+		snapshotSequence: readMeta(database, databaseId, 'server_sequence'),
 		rows: database
 			.all<StoredRow>(
 				`SELECT table_name, row_id, cells_json
 				 FROM record_sync_canonical_rows
+				 WHERE database_id = ?
 				 ORDER BY table_name, row_id`,
+				[databaseId],
 			)
 			.map((row) => ({
 				table: row.table_name,
@@ -346,7 +405,9 @@ function captureSnapshot(database: RecordSyncSqlite): CapturedSnapshot {
 				.all<{ actor_id: string; sequence: number }>(
 					`SELECT actor_id, sequence
 					 FROM record_sync_actor_high_water
+					 WHERE database_id = ?
 					 ORDER BY actor_id`,
+					[databaseId],
 				)
 				.map((row) => [row.actor_id, row.sequence]),
 		),
@@ -442,21 +503,29 @@ export function createRecordAuthority({
 			);
 		}
 		for (;;) {
-			const capture = captureSnapshot(database);
+			const capture = captureSnapshot(database, envelope.databaseId);
 			const encoded = await encodeSnapshot(sha256, capture, maxChunkBytes);
 			const published = database.transaction(() => {
+				if (currentRequestRefusal(database, envelope, envelope) !== null)
+					throw new DatabaseFencedError();
 				if (
-					readMeta(database, 'serverSequence') !== capture.snapshotSequence ||
-					readMeta(database, 'snapshotGeneration') + 1 !== capture.generation
+					readMeta(database, envelope.databaseId, 'server_sequence') !==
+						capture.snapshotSequence ||
+					readMeta(database, envelope.databaseId, 'snapshot_generation') + 1 !==
+						capture.generation
 				)
 					return false;
-				database.run('DELETE FROM record_sync_snapshot_chunks');
+				database.run(
+					'DELETE FROM record_sync_snapshot_chunks WHERE database_id = ?',
+					[envelope.databaseId],
+				);
 				for (const chunk of encoded.chunks)
 					database.run(
 						`INSERT INTO record_sync_snapshot_chunks(
-							chunk_index, generation, rows_json, checksum
-						) VALUES (?, ?, ?, ?)`,
+							database_id, chunk_index, generation, rows_json, checksum
+						) VALUES (?, ?, ?, ?, ?)`,
 						[
+							envelope.databaseId,
 							chunk.index,
 							chunk.generation,
 							JSON.stringify(chunk.rows),
@@ -464,18 +533,28 @@ export function createRecordAuthority({
 						],
 					);
 				database.run(
-					`INSERT INTO record_sync_snapshot_manifest(id, manifest_json)
-					 VALUES (1, ?)
-					 ON CONFLICT(id) DO UPDATE SET
+					`INSERT INTO record_sync_snapshot_manifest(database_id, manifest_json)
+					 VALUES (?, ?)
+					 ON CONFLICT(database_id) DO UPDATE SET
 						manifest_json = excluded.manifest_json`,
-					[JSON.stringify(encoded.manifest)],
+					[envelope.databaseId, JSON.stringify(encoded.manifest)],
 				);
-				writeMeta(database, 'watermark', capture.snapshotSequence);
-				writeMeta(database, 'snapshotGeneration', capture.generation);
+				writeMeta(
+					database,
+					envelope.databaseId,
+					'watermark',
+					capture.snapshotSequence,
+				);
+				writeMeta(
+					database,
+					envelope.databaseId,
+					'snapshot_generation',
+					capture.generation,
+				);
 				database.run(
 					`DELETE FROM record_sync_mutation_log
-					 WHERE server_sequence <= ?`,
-					[capture.snapshotSequence],
+					 WHERE database_id = ? AND server_sequence <= ?`,
+					[envelope.databaseId, capture.snapshotSequence],
 				);
 				return true;
 			});
@@ -485,30 +564,32 @@ export function createRecordAuthority({
 
 	return {
 		push(request: PushRequest): PushResponse {
-			const refusal = requestRefusal(request, envelope);
-			if (refusal) return { kind: 'push', ok: false, reason: refusal };
 			try {
-				database.transaction(() => {
+				const refused = database.transaction(() => {
+					const refusal = currentRequestRefusal(database, request, envelope);
+					if (refusal) return refusal;
 					for (const mutation of request.mutations) {
 						const highWater =
 							one<{ sequence: number }>(
 								database,
 								`SELECT sequence FROM record_sync_actor_high_water
-								 WHERE actor_id = ?`,
-								[mutation.actorId],
+								 WHERE database_id = ? AND actor_id = ?`,
+								[envelope.databaseId, mutation.actorId],
 							)?.sequence ?? 0;
 						if (mutation.actorSequence <= highWater) continue;
 						if (mutation.actorSequence !== highWater + 1) {
 							throw new ActorSequenceGapError();
 						}
-						const serverSequence = readMeta(database, 'serverSequence') + 1;
+						const serverSequence =
+							readMeta(database, envelope.databaseId, 'server_sequence') + 1;
 						for (const operation of mutation.operations)
-							applyOperation(database, operation);
+							applyOperation(database, envelope.databaseId, operation);
 						database.run(
 							`INSERT INTO record_sync_mutation_log(
-								server_sequence, actor_id, actor_sequence, operations_json
-							) VALUES (?, ?, ?, ?)`,
+								database_id, server_sequence, actor_id, actor_sequence, operations_json
+							) VALUES (?, ?, ?, ?, ?)`,
 							[
+								envelope.databaseId,
 								serverSequence,
 								mutation.actorId,
 								mutation.actorSequence,
@@ -516,14 +597,21 @@ export function createRecordAuthority({
 							],
 						);
 						database.run(
-							`INSERT INTO record_sync_actor_high_water(actor_id, sequence)
-							 VALUES (?, ?)
-							 ON CONFLICT(actor_id) DO UPDATE SET sequence = excluded.sequence`,
-							[mutation.actorId, mutation.actorSequence],
+							`INSERT INTO record_sync_actor_high_water(database_id, actor_id, sequence)
+							 VALUES (?, ?, ?)
+							 ON CONFLICT(database_id, actor_id) DO UPDATE SET sequence = excluded.sequence`,
+							[envelope.databaseId, mutation.actorId, mutation.actorSequence],
 						);
-						writeMeta(database, 'serverSequence', serverSequence);
+						writeMeta(
+							database,
+							envelope.databaseId,
+							'server_sequence',
+							serverSequence,
+						);
 					}
+					return null;
 				});
+				if (refused) return { kind: 'push', ok: false, reason: refused };
 			} catch (error) {
 				if (error instanceof ActorSequenceGapError) {
 					return { kind: 'push', ok: false, reason: 'actor-sequence-gap' };
@@ -540,11 +628,13 @@ export function createRecordAuthority({
 		},
 
 		pull(request: PullRequest): PullResponse {
-			const refusal = requestRefusal(request, envelope);
-			if (refusal) return { kind: 'pull', ok: false, reason: refusal };
 			return database.transaction(() => {
-				if (request.cursor < readMeta(database, 'watermark')) {
-					const manifest = readManifest(database);
+				const refusal = currentRequestRefusal(database, request, envelope);
+				if (refusal) return { kind: 'pull', ok: false, reason: refusal };
+				if (
+					request.cursor < readMeta(database, envelope.databaseId, 'watermark')
+				) {
+					const manifest = readManifest(database, envelope.databaseId);
 					if (!manifest)
 						throw new Error('record-sync watermark has no snapshot');
 					return {
@@ -558,10 +648,10 @@ export function createRecordAuthority({
 					.all<StoredMutation>(
 						`SELECT server_sequence, actor_id, actor_sequence, operations_json
 						 FROM record_sync_mutation_log
-						 WHERE server_sequence > ?
+						 WHERE database_id = ? AND server_sequence > ?
 						 ORDER BY server_sequence
 						 LIMIT ?`,
-						[request.cursor, request.limit],
+						[envelope.databaseId, request.cursor, request.limit],
 					)
 					.map((row) => ({
 						serverSequence: row.server_sequence,
@@ -577,7 +667,9 @@ export function createRecordAuthority({
 					fromCursor: request.cursor,
 					mutations,
 					newCursor,
-					hasMore: newCursor < readMeta(database, 'serverSequence'),
+					hasMore:
+						newCursor <
+						readMeta(database, envelope.databaseId, 'server_sequence'),
 				};
 			});
 		},
@@ -592,8 +684,8 @@ export function createRecordAuthority({
 				throw new TypeError('mutationThreshold must be a positive integer');
 			const pending = database.transaction(
 				() =>
-					readMeta(database, 'serverSequence') -
-					readMeta(database, 'watermark'),
+					readMeta(database, envelope.databaseId, 'server_sequence') -
+					readMeta(database, envelope.databaseId, 'watermark'),
 			);
 			return pending < mutationThreshold
 				? null
@@ -601,10 +693,11 @@ export function createRecordAuthority({
 		},
 
 		snapshotChunk(request: SnapshotChunkRequest): SnapshotChunkResponse {
-			const refusal = requestRefusal(request, envelope);
-			if (refusal) return { kind: 'snapshotChunk', ok: false, reason: refusal };
 			return database.transaction(() => {
-				const manifest = readManifest(database);
+				const refusal = currentRequestRefusal(database, request, envelope);
+				if (refusal)
+					return { kind: 'snapshotChunk', ok: false, reason: refusal };
+				const manifest = readManifest(database, envelope.databaseId);
 				if (!manifest || manifest.generation !== request.generation)
 					return {
 						kind: 'snapshotChunk',
@@ -619,8 +712,8 @@ export function createRecordAuthority({
 					database,
 					`SELECT generation, rows_json, checksum
 					 FROM record_sync_snapshot_chunks
-					 WHERE chunk_index = ?`,
-					[request.index],
+					 WHERE database_id = ? AND chunk_index = ?`,
+					[envelope.databaseId, request.index],
 				);
 				if (!stored)
 					return {

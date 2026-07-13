@@ -228,10 +228,12 @@ async function runConformance(open: OpenDatabase) {
 			)[0]?.count,
 		).toBe(0);
 		expect(
-			database.all<{ value: string }>(
-				`SELECT value FROM record_sync_meta WHERE key = 'serverSequence'`,
-			)[0]?.value,
-		).toBe('2');
+			database.all<{ server_sequence: number }>(
+				`SELECT server_sequence FROM record_sync_databases
+				 WHERE database_id = ?`,
+				[envelope.databaseId],
+			)[0]?.server_sequence,
+		).toBe(2);
 		expect(
 			authority.push({
 				kind: 'push',
