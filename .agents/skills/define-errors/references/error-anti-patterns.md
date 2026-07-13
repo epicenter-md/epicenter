@@ -1,9 +1,5 @@
 # Error Anti-Patterns
 
-## When to Read This
-
-Read when defining error variants with `defineErrors` and you need to avoid sub-discriminants, dishonest optional fields, or constructor branching that should be split into separate variants.
-
 ## Anti-Pattern: Discriminated Union Inputs
 
 **String literal unions inside error factory inputs are a code smell.** When a variant's input contains a field like `reason: 'a' | 'b' | 'c'` or `operation: 'x' | 'y' | 'z'`, you're creating a sub-discriminant that duplicates what `defineErrors` already provides at the top level.
@@ -30,7 +26,7 @@ const ShortcutError = defineErrors({
 **Why this is bad:**
 1. **Double narrowing**: Consumers must narrow on `error.name` then on `error.reason`
 2. **Dishonest types**: `accelerator` is optional because some reasons don't need it, but the type doesn't express which ones do
-3. **Obscured intent**: The `reason` field is doing the discriminant's job — that's what variant names are for
+3. **Obscured intent**: The `reason` field is doing the discriminant's job; that is what variant names are for
 
 ### The Fix: Split Into Separate Variants
 
@@ -51,7 +47,7 @@ const ShortcutError = defineErrors({
 ```
 
 **Why this is better:**
-- **Single narrowing**: `error.name === 'NoKeyCode'` — done
+- **Single narrowing**: `error.name === 'NoKeyCode'`, done
 - **Honest types**: `InvalidFormat` requires `accelerator`, `NoKeyCode` takes nothing
 - **Self-documenting**: Variant names describe the error, no lookup table needed
 
@@ -67,7 +63,8 @@ The whole point of `defineErrors` is that each variant is a first-class citizen 
 
 ### Exception: When It's Genuinely One Error
 
-If the string literal truly is a *field* and not a sub-discriminant — e.g., the consumer doesn't switch on it — then it's fine:
+If the string literal truly is a *field* and not a sub-discriminant (for
+example, the consumer does not switch on it), then it is fine:
 
 ```typescript
 // OK: 'operation' is metadata for logging, not a sub-discriminant
@@ -87,12 +84,15 @@ const FsError = defineErrors({
 
 ## Anti-Pattern: Conditional Logic on Factory Inputs
 
-**If a variant constructor uses if/switch on its own input fields to decide the message or behavior, each branch should be its own variant.** This is a generalization of the string literal union rule above — any branching inside a constructor means multiple errors are hiding in one variant.
+**If a variant constructor uses if/switch on its own input fields to decide the
+message or behavior, each branch should be its own variant.** This generalizes
+the string literal union rule above: branching inside a constructor means
+multiple errors are hiding in one variant.
 
 ### The Problem
 
 ```typescript
-// BAD: Constructor branches on inputs — multiple errors hiding in one variant
+// BAD: Constructor branches on inputs, so multiple errors hide in one variant
 const FormError = defineErrors({
   Validation: ({ field, value, receivedType }: {
     field?: string;     // Optional because not every branch uses it
@@ -116,8 +116,8 @@ const FormError = defineErrors({
 ```
 
 **Symptoms:**
-1. **Dishonest optionals**: Fields are optional because no single call site uses them all — the type lies about what each error actually carries
-2. **Hidden branching**: Consumers must inspect fields beyond `name` to know the real error kind — `name === 'Validation'` tells you nothing
+1. **Dishonest optionals**: Fields are optional because no single call site uses them all; the type lies about what each error actually carries
+2. **Hidden branching**: Consumers must inspect fields beyond `name` to know the real error kind; `name === 'Validation'` tells you nothing
 3. **Untypeable messages**: The message depends on runtime field combinations, so TypeScript can't narrow to a specific message shape
 
 ### The Fix: Flatten Each Branch Into Its Own Variant
@@ -146,7 +146,7 @@ const FormError = defineErrors({
 ```
 
 **Why this is better:**
-- **Honest types**: `InvalidEmail` requires `value`, `WeakPassword` takes nothing — no dishonest optionals
+- **Honest types**: `InvalidEmail` requires `value`, while `WeakPassword` takes nothing; there are no dishonest optionals
 - **Single narrowing**: `error.name === 'InvalidEmail'` tells you everything
 - **Typeable messages**: Each variant has a deterministic message shape
 
@@ -159,5 +159,3 @@ This applies to:
 - **Switch statements** on input fields
 - **Ternary expressions** that pick between fundamentally different messages
 - **Lookup tables** keyed on input fields (covered by the string literal union rule above)
-
-> See also: `docs/core/error-system.mdx` § "3b. Avoid Conditional Logic on Factory Inputs" for the canonical reference with full examples.

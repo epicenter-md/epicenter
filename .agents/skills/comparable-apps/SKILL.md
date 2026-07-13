@@ -102,36 +102,35 @@ Asymmetric win surfaced: refusing the feature of "email in chrome" lets the runt
 
 ## Worked example: local model pickers (Whispering)
 
-Question: how should a settings screen present downloadable local models (Whisper, Parakeet, Moonshine) when each is a 0.03 to 1.6 GB download?
+Question: how should a settings screen present downloadable local models when each is a 0.03 to 1.6 GB download?
 
-| App | Category | Picker pattern | Size on action? |
-| --- | --- | --- | --- |
-| Ollama desktop | Local LLM runtime | Picks a default model, downloads on first use; library is secondary | Yes |
-| LM Studio | Local LLM catalog | Full catalog browser with search; "Staff pick" badge | Yes, on every download button |
-| Jan | Local LLM app | Hub with "Recommended" tags | Yes |
-| superwhisper | Local dictation | Onboarding recommends one model with its size; others in a secondary list | Yes |
-| MacWhisper | Local dictation | Model tiers with sizes; recommended default | Yes |
-| Handy | Local dictation (OSS) | Flat model list, recommended default preselected | Yes |
-| VoiceInk | Local dictation | Reference target for the next local-dictation pass; model-picker details not yet captured in-repo | Verify before relying on it |
-| Wispr Flow | Dictation (cloud) | No model picker at all; the surface does not exist | n/a |
+| Comparison at decision time | Pattern | Decision |
+| --- | --- | --- |
+| Ollama and Jan | Recommended starting point; broader library is secondary | Borrow default-first |
+| LM Studio | Full catalog browser | Refuse for a four-model catalog |
+| superwhisper, MacWhisper, and Handy | Recommended local model with download size visible | Borrow size-on-action |
+| Wispr Flow | Cloud transcription, so no local-model picker | Refusal boundary, not Epicenter's category |
+| VoiceInk | Picker behavior was not inspected | Exclude from evidence until verified |
 
-Implication: local-model apps converge on default-first (one recommended model per engine, size visible on the download action, full catalog secondary). Whispering borrowed default-first plus size-on-action and refused LM Studio's catalog browser, since its largest catalog is four models. Wispr Flow is the refusal boundary: going cloud deletes the surface entirely, which is not Whispering's category. VoiceInk is in the reference set now, but not yet evidence for the model-picker claim until someone captures its current picker behavior. Resulting design: a status hero plus one "All models" disclosure (first built in PR #1922, then rebuilt on the folder-backed selector from PR #1923; see `specs/20260612T164300-local-model-recommended-defaults-rebuild.md`).
+Implication: the verified comparison supported default-first, size-on-action,
+and a secondary full list. It did not support a catalog browser. The table keeps
+unverified candidates visibly outside the conclusion instead of turning a
+research target into evidence.
 
 ## Worked example: macOS Accessibility onboarding (Whispering)
 
-Question: how should Whispering help users recover when macOS Accessibility is missing or stale after install/update?
+Question: how should Whispering help users recover when macOS Accessibility is missing or stale after install or update?
 
-| App | Category | Surface to inspect | Repo-local status |
-| --- | --- | --- | --- |
-| Apple System Settings | Platform convention | Privacy & Security > Accessibility, including remove/re-add behavior after app changes | Current source of truth for the settings path |
-| Whispering | Local dictation | In-app guide with written steps, "Open System Settings", and optional hosted video | Implemented in `MacosAccessibilityGuide.svelte` and `MacosAccessibilityGuideDialog.svelte` |
-| Handy | Local dictation (OSS) | Permission, recorder, shortcut, and local transcription architecture | Already used as a technical reference in Whispering specs and comments |
-| superwhisper | Local dictation | Permission onboarding and recovery flow | Existing comparable-apps reference only |
-| MacWhisper | Local transcription | Permission onboarding and recovery flow | Existing comparable-apps reference only |
-| VoiceInk | Local dictation | Permission onboarding and recovery flow | New reference target; no previous repo references |
-| Wispr Flow | Dictation (cloud) | Permission onboarding and recovery flow | Existing comparable-apps reference only |
+| Reference | What it can establish | Evidence boundary |
+| --- | --- | --- |
+| Apple System Settings | Canonical permission location and recovery path | Platform source of truth |
+| Whispering | Written steps, explicit settings action, granted-state feedback, optional hosted video | Current product baseline |
+| superwhisper, MacWhisper, Handy, and Wispr Flow | Ways peer apps explain and sequence recovery | UX calibration only; verify before borrowing |
+| VoiceInk | Candidate peer reference | Not evidence until inspected |
 
-Implication: Apple owns the canonical permission path; dictation apps are UX references for how to make that platform requirement survivable. Whispering's current shape is a good baseline: text steps, an explicit System Settings action, granted-state feedback, and an optional video loaded from release assets rather than bundled into the app. Before changing the onboarding or recovery flow, capture what VoiceInk does alongside superwhisper, MacWhisper, Handy, and Wispr Flow in the relevant spec.
+Implication: Apple owns the permission path. Peer apps can calibrate how the
+recovery experience is explained, but they cannot override the platform source
+or count as evidence before inspection.
 
 ## Other questions this lens answers well
 

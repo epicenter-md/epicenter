@@ -50,7 +50,13 @@ Not every 1-caller function should be inlined. Keep it when:
 
 - **Part of a family**: `pushText`, `pushSheet`, `pushRichtext` all follow the same structure. Inlining one breaks the visual symmetry.
 - **Complex logic worth naming**: Deep-clone operations, recursive tree walks, or multi-step parsing where the name documents intent.
+- **Names an imperative phase**: A long setup, migration, or teardown block is easier to follow when the helper names the phase.
 - **The calling method is already long**: Inlining 15 lines into a 50-line method hurts readability.
+
+These reasons are about helpers. For whether an abstraction layer earns its
+existence at all (invariants, unsafe interop, domain naming), use the
+[radical-options](../radical-options/SKILL.md) keep list; it is the single
+owner of those criteria.
 
 ## Type Safety Boundaries
 

@@ -72,9 +72,9 @@ Ask these questions in order:
 10. Are tests asserting public behavior or implementation trivia?
 
 Do not accept "it is explicit" as a sufficient answer. Explicit code can still
-be the wrong boundary. A state, helper, or type earns its place only when it
-prevents misuse, names real domain vocabulary, isolates unsafe input, or removes
-more confusion than it adds.
+be the wrong boundary. Judge whether a state, helper, or type earns its place
+with the [radical-options](../radical-options/SKILL.md) keep list rather than
+an ad hoc standard.
 
 ## Output Shape
 
