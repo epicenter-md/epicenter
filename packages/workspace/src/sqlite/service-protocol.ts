@@ -1,5 +1,6 @@
 import { type Static, type TSchema, Type } from 'typebox';
 import { Value } from 'typebox/value';
+import { RecordsRecoveryCheckpointSchema } from './recovery-checkpoint.js';
 
 const CLOSED = { additionalProperties: false } as const;
 const requestId = Type.Integer({
@@ -54,6 +55,7 @@ const workspaceMutation = Type.Union([
 
 export const WorkspaceServiceRequestSchema = Type.Union([
 	Type.Object({ kind: Type.Literal('describe') }, CLOSED),
+	Type.Object({ kind: Type.Literal('readRecoveryCheckpoint') }, CLOSED),
 	Type.Object(
 		{
 			kind: Type.Literal('get'),
@@ -113,6 +115,7 @@ export const WorkspaceServiceResponseSchema = Type.Union([
 				Type.Literal('replica'),
 			]),
 			workspaceId: nonEmptyString,
+			recordsDescriptor: nonEmptyString,
 			recordsSchemaHash: nonEmptyString,
 		},
 		CLOSED,
@@ -132,6 +135,13 @@ export const WorkspaceServiceResponseSchema = Type.Union([
 	),
 	Type.Object(
 		{ kind: Type.Literal('sql'), rows: Type.Array(jsonRecord) },
+		CLOSED,
+	),
+	Type.Object(
+		{
+			kind: Type.Literal('recoveryCheckpoint'),
+			checkpoint: RecordsRecoveryCheckpointSchema,
+		},
 		CLOSED,
 	),
 	Type.Object(

@@ -197,6 +197,11 @@ active records epoch B
         `-- old-epoch requests are rejected
 ```
 
+An epoch-fenced replica remains locally readable but refuses writes and sync.
+It can export one self-describing recovery checkpoint containing its local rows
+and pending logical mutations. The checkpoint has no shared import or replay
+operation; it exposes obsolete work without translating it into the new epoch.
+
 Applications may retain old descriptors and write one-off transforms to prepare
 the snapshot. Epicenter does not provide a shared migration or online lifecycle.
 Child-document format conversion is explicit and per-document. Moving authority

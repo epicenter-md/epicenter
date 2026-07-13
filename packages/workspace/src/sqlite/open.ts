@@ -18,6 +18,7 @@ import {
 	type WorkspaceDocuments,
 	type WorkspaceDocumentsFor,
 } from './document-client.js';
+import type { RecordsRecoveryCheckpoint } from './recovery-checkpoint.js';
 
 export type OwnedWorkspaceServicePort = WorkspaceServicePort & AsyncDisposable;
 
@@ -88,7 +89,9 @@ export type OpenedWorkspace<
 	AsyncDisposable & {
 		readonly kind: TKind;
 		readonly kv: TKv extends KvDefinitions ? Kv<TKv> : undefined;
-	};
+	} & (TKind extends 'replica'
+		? { readRecoveryCheckpoint(): Promise<RecordsRecoveryCheckpoint> }
+		: object);
 
 export type StandaloneWorkspace<
 	TTables extends TableDefinitions,
@@ -144,6 +147,7 @@ export async function openWorkspaceFromService<
 			description.kind !== 'workspace' ||
 			description.workspaceKind !== expectedKind ||
 			description.workspaceId !== definition.id ||
+			description.recordsDescriptor !== definition.recordsDescriptor ||
 			description.recordsSchemaHash !== definition.recordsSchemaHash
 		) {
 			throw new Error('Workspace service definition does not match the client');
@@ -201,8 +205,28 @@ export async function openWorkspaceFromService<
 	const client = workspaceDocuments
 		? createWorkspaceClient(definition, gatedService, workspaceDocuments)
 		: createWorkspaceClient(definition, gatedService);
+	const recovery = (
+		expectedKind === 'replica'
+			? {
+					async readRecoveryCheckpoint(): Promise<RecordsRecoveryCheckpoint> {
+						const response = await gatedService.request({
+							kind: 'readRecoveryCheckpoint',
+						});
+						if (response.kind !== 'recoveryCheckpoint') {
+							throw new Error(
+								`Workspace service returned '${response.kind}' for a recovery checkpoint request`,
+							);
+						}
+						return response.checkpoint;
+					},
+				}
+			: {}
+	) as TKind extends 'replica'
+		? { readRecoveryCheckpoint(): Promise<RecordsRecoveryCheckpoint> }
+		: object;
 	return {
 		...client,
+		...recovery,
 		kind: expectedKind,
 		kv: kvHandle,
 		async [Symbol.asyncDispose]() {

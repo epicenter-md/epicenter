@@ -172,6 +172,7 @@ async function openOpfsWorkspaceService<TTables extends TableDefinitions>(
 			});
 		const openedService = createWorkspaceService(database, {
 			onObserverError: (error) => report(onError, error),
+			readRecoveryCheckpoint: replicaRuntime?.readRecoveryCheckpoint,
 		});
 		service = openedService;
 		if (workspaceKind === 'replica' && replicaRuntime) {

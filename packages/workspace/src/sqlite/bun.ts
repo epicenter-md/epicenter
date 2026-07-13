@@ -218,7 +218,10 @@ export async function openWorkspaceReplica<
 			sha256: async (value) => createHash('sha256').update(value).digest('hex'),
 			onObserverError,
 		});
-		service = createWorkspaceService(runtime.database, { onObserverError });
+		service = createWorkspaceService(runtime.database, {
+			onObserverError,
+			readRecoveryCheckpoint: runtime.readRecoveryCheckpoint,
+		});
 		supervisor = startReplicaSyncSupervisor(runtime, {
 			onError: onSyncError,
 			pollIntervalMs,

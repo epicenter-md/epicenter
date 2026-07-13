@@ -943,6 +943,9 @@ test('epoch mismatch freezes writes and preserves pending local work', async () 
 		port,
 		actorId: 'actor-a',
 	});
+	expect(() => first.runtime.readRecoveryCheckpoint()).toThrow(
+		'only after an epoch mismatch',
+	);
 	await first.runtime.syncOnce();
 	first.runtime.database.tables.notes.create(note('pending', 'local recovery'));
 	const replacement = createServer('epoch-2');
@@ -964,6 +967,35 @@ test('epoch mismatch freezes writes and preserves pending local work', async () 
 		recordsEpoch: 'epoch-1',
 		outbox: [{ actorId: 'actor-a', actorSequence: 1 }],
 		epochMismatch: { currentRecordsEpoch: 'epoch-2' },
+	});
+	const checkpoint = first.runtime.readRecoveryCheckpoint();
+	expect(checkpoint).toEqual({
+		format: 'epicenter.records-recovery/1',
+		workspaceId: definition.id,
+		recordsEpoch: 'epoch-1',
+		recordsDescriptor: definition.recordsDescriptor,
+		recordsSchemaHash: definition.recordsSchemaHash,
+		rows: [
+			{
+				table: 'notes',
+				rowId: 'pending',
+				cells: { title: 'local recovery', pinned: false },
+			},
+		],
+		pendingMutations: [
+			{
+				actorId: 'actor-a',
+				actorSequence: 1,
+				operations: [
+					{
+						kind: 'createRow',
+						table: 'notes',
+						rowId: 'pending',
+						cells: { title: 'local recovery', pinned: false },
+					},
+				],
+			},
+		],
 	});
 	expect(() =>
 		first.runtime.database.tables.notes.create(note('blocked', 'too late')),
@@ -988,6 +1020,7 @@ test('epoch mismatch freezes writes and preserves pending local work', async () 
 			note('still-blocked', 'restart cannot unfreeze'),
 		),
 	).toThrow(ReplicaRecordsEpochMismatchError);
+	expect(reopened.runtime.readRecoveryCheckpoint()).toEqual(checkpoint);
 	native.close();
 	firstServer.native.close();
 	replacement.native.close();

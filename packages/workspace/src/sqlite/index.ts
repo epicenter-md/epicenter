@@ -66,6 +66,11 @@ export {
 	type ReplicaSyncPort,
 } from './replica.js';
 export {
+	RECORDS_RECOVERY_CHECKPOINT_FORMAT,
+	type RecordsRecoveryCheckpoint,
+	RecordsRecoveryCheckpointSchema,
+} from './recovery-checkpoint.js';
+export {
 	type CreateHttpReplicaSyncPortOptions,
 	createHttpReplicaSyncPort,
 } from './replica-http.js';

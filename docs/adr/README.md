@@ -208,5 +208,6 @@ Each option and the one reason it lost. Terse. This is not the spec.
 | [0129](0129-matter-is-markdown-authoritative-application-records-follow-developer-owned-schemas.md) | Matter is Markdown-authoritative; application records follow developer-owned schemas | Accepted |
 | [0130](0130-records-replacement-starts-a-new-epoch-without-an-online-succession-protocol.md) | Records replacement starts a new epoch without an online succession protocol | Accepted |
 | [0131](0131-every-durable-records-materialization-carries-its-canonical-descriptor.md) | Every durable records materialization carries its canonical descriptor | Accepted |
+| [0132](0132-an-obsolete-replica-exports-one-read-only-recovery-checkpoint.md) | An obsolete replica exports one read-only recovery checkpoint | Accepted |
 
 When you add an ADR, add its row here.

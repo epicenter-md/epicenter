@@ -21,6 +21,7 @@ import type {
 } from './database.js';
 import type { TableDefinitions } from './definition.js';
 import type { WorkspaceInvalidation } from './service-protocol.js';
+import type { RecordsRecoveryCheckpoint } from './recovery-checkpoint.js';
 
 type UntypedRow = { id: string } & Record<string, unknown>;
 type UntypedTable = ApplicationTable<UntypedRow>;
@@ -28,6 +29,8 @@ type UntypedTable = ApplicationTable<UntypedRow>;
 export type WorkspaceServiceOptions = {
 	/** Receives observer failures. Must not throw. */
 	onObserverError(error: unknown): void;
+	/** Present only when a replica runtime owns a frozen recovery checkpoint. */
+	readRecoveryCheckpoint?(): RecordsRecoveryCheckpoint;
 };
 
 type WorkspaceServiceRuntime = WorkspaceServicePort &
@@ -43,7 +46,7 @@ type WorkspaceServiceRuntime = WorkspaceServicePort &
 
 export function createWorkspaceService<TTables extends TableDefinitions>(
 	database: ApplicationDatabase<TTables>,
-	{ onObserverError }: WorkspaceServiceOptions,
+	{ onObserverError, readRecoveryCheckpoint }: WorkspaceServiceOptions,
 ) {
 	const definition = database.definition;
 	const observers = new Set<(delta: WorkspaceCommitDelta) => void>();
@@ -142,7 +145,16 @@ export function createWorkspaceService<TTables extends TableDefinitions>(
 					kind: 'workspace',
 					workspaceKind: database.identity.kind,
 					workspaceId: database.identity.workspaceId,
+					recordsDescriptor: database.identity.recordsDescriptor,
 					recordsSchemaHash: database.identity.recordsSchemaHash,
+				};
+			case 'readRecoveryCheckpoint':
+				if (!readRecoveryCheckpoint) {
+					throw new Error('Workspace is not a synchronized replica');
+				}
+				return {
+					kind: 'recoveryCheckpoint',
+					checkpoint: readRecoveryCheckpoint(),
 				};
 			case 'get':
 				return { kind: 'row', row: tableFor(request.table).get(request.rowId) };

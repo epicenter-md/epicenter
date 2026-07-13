@@ -13,6 +13,7 @@ import type {
 import {
 	parseWorkspaceWorkerCommand,
 	parseWorkspaceWorkerEvent,
+	type WorkspaceWorkerEvent,
 	WORKSPACE_WORKER_PROTOCOL,
 } from './service-protocol.js';
 
@@ -108,6 +109,7 @@ const description: WorkspaceServiceResponse = {
 	kind: 'workspace',
 	workspaceKind: 'standalone',
 	workspaceId: 'transport-test',
+	recordsDescriptor: 'transport descriptor',
 	recordsSchemaHash: 'transport-schema',
 };
 
@@ -149,6 +151,43 @@ describe('workspace worker protocol', () => {
 				protocol: WORKSPACE_WORKER_PROTOCOL,
 				type: 'delta',
 				delta: { tables: { notes: { upserted: [{ id: '' }], removed: [] } } },
+			}),
+		).toThrow('Invalid');
+		const recoveryReply = {
+			protocol: WORKSPACE_WORKER_PROTOCOL,
+			type: 'reply',
+			requestId: 2,
+			ok: true,
+			response: {
+				kind: 'recoveryCheckpoint',
+				checkpoint: {
+					format: 'epicenter.records-recovery/1',
+					workspaceId: 'notes',
+					recordsEpoch: 'epoch-1',
+					recordsDescriptor: 'descriptor-1',
+					recordsSchemaHash: 'schema-1',
+					rows: [],
+					pendingMutations: [],
+				},
+			},
+		} satisfies WorkspaceWorkerEvent;
+		expect(parseWorkspaceWorkerEvent(recoveryReply)).toEqual(recoveryReply);
+		expect(() =>
+			parseWorkspaceWorkerEvent({
+				...recoveryReply,
+				response: {
+					...recoveryReply.response,
+					checkpoint: {
+						...recoveryReply.response.checkpoint,
+						pendingMutations: [
+							{
+								actorId: 'actor-a',
+								actorSequence: 0,
+								operations: [],
+							},
+						],
+					},
+				},
 			}),
 		).toThrow('Invalid');
 	});

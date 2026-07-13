@@ -31,6 +31,7 @@ function setup() {
 				kind: 'workspace',
 				workspaceKind: 'standalone',
 				workspaceId: definition.id,
+				recordsDescriptor: definition.recordsDescriptor,
 				recordsSchemaHash: definition.recordsSchemaHash,
 			};
 		},
@@ -64,11 +65,26 @@ test('shared service opener preserves the replica lifecycle kind', async () => {
 	const replicaService: OwnedWorkspaceServicePort = {
 		...service,
 		async request(request) {
+			if (request.kind === 'readRecoveryCheckpoint') {
+				return {
+					kind: 'recoveryCheckpoint',
+					checkpoint: {
+						format: 'epicenter.records-recovery/1',
+						workspaceId: definition.id,
+						recordsEpoch: 'epoch-1',
+						recordsDescriptor: definition.recordsDescriptor,
+						recordsSchemaHash: definition.recordsSchemaHash,
+						rows: [],
+						pendingMutations: [],
+					},
+				};
+			}
 			if (request.kind !== 'describe') return service.request(request);
 			return {
 				kind: 'workspace',
 				workspaceKind: 'replica',
 				workspaceId: definition.id,
+				recordsDescriptor: definition.recordsDescriptor,
 				recordsSchemaHash: definition.recordsSchemaHash,
 			};
 		},
@@ -79,6 +95,11 @@ test('shared service opener preserves the replica lifecycle kind', async () => {
 	});
 
 	expect(replica.kind).toBe('replica');
+	expect(await replica.readRecoveryCheckpoint()).toMatchObject({
+		format: 'epicenter.records-recovery/1',
+		workspaceId: definition.id,
+		recordsEpoch: 'epoch-1',
+	});
 	await replica[Symbol.asyncDispose]();
 });
 
@@ -91,6 +112,7 @@ test('standalone workspace disposes a mismatched service and refuses to open', a
 				kind: 'workspace',
 				workspaceKind: 'standalone',
 				workspaceId: definition.id,
+				recordsDescriptor: definition.recordsDescriptor,
 				recordsSchemaHash: 'different',
 			};
 		},
@@ -197,6 +219,7 @@ function setupWithKv() {
 				kind: 'workspace',
 				workspaceKind: 'standalone',
 				workspaceId: definition.id,
+				recordsDescriptor: definition.recordsDescriptor,
 				recordsSchemaHash: definition.recordsSchemaHash,
 			};
 		},
@@ -326,6 +349,7 @@ test('document runtime opens retained historical and current format endpoints ex
 				kind: 'workspace',
 				workspaceKind: 'standalone',
 				workspaceId: definition.id,
+				recordsDescriptor: definition.recordsDescriptor,
 				recordsSchemaHash: definition.recordsSchemaHash,
 			};
 		},

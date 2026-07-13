@@ -263,6 +263,7 @@ export function createApplicationDatabase<TTables extends TableDefinitions>(
 		identity: {
 			kind,
 			workspaceId: definition.id,
+			recordsDescriptor: definition.recordsDescriptor,
 			recordsSchemaHash: definition.recordsSchemaHash,
 		},
 		kind,

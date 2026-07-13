@@ -55,6 +55,7 @@ export {
 	type SnapshotManifest,
 	type SnapshotManifestBody,
 	type SnapshotRow,
+	SnapshotRowSchema,
 } from './protocol.js';
 export {
 	createSnapshotChunk,

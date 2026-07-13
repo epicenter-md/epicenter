@@ -33,6 +33,10 @@ import {
 	ReplicaInvariantViolationError,
 } from './database.js';
 import type { TableDefinitions, WorkspaceDefinition } from './definition.js';
+import {
+	RECORDS_RECOVERY_CHECKPOINT_FORMAT,
+	type RecordsRecoveryCheckpoint,
+} from './recovery-checkpoint.js';
 
 const SYNC_STORAGE_VERSION = 2;
 const DEFAULT_PULL_LIMIT = 100;
@@ -541,6 +545,31 @@ export async function createReplicaRuntime<TTables extends TableDefinitions>({
 			const result = syncTail.then(run, run);
 			syncTail = result.catch(() => {});
 			await result;
+		},
+		/** Read one atomic recovery artifact after this replica is epoch-fenced. */
+		readRecoveryCheckpoint(): RecordsRecoveryCheckpoint {
+			if (!epochMismatch) {
+				throw new Error(
+					'Recovery checkpoints are available only after an epoch mismatch',
+				);
+			}
+			return sqlite.transaction(() => {
+				const meta = readMeta(sqlite);
+				if (meta.recordsEpoch === null) {
+					throw new ReplicaInvariantViolationError(
+						'Replica recovery requires a bound records epoch',
+					);
+				}
+				return {
+					format: RECORDS_RECOVERY_CHECKPOINT_FORMAT,
+					workspaceId: definition.id,
+					recordsEpoch: meta.recordsEpoch,
+					recordsDescriptor: definition.recordsDescriptor,
+					recordsSchemaHash: definition.recordsSchemaHash,
+					rows: database.readLogicalSnapshot().rows,
+					pendingMutations: readOutbox(sqlite),
+				};
+			});
 		},
 		/** Inspect durable protocol state for diagnostics and tests. */
 		inspect() {

@@ -143,9 +143,10 @@ shapes, see `docs/adr/`.
   provides no shared migration chain, generated historical endpoint, or generic
   transformation runner. Nonconforming or quarantined rows block replacement;
   synchronization does not hide or repair them.
-- **Logical recovery export**: portable logical schema and row state without
-  SQLite pages, indexes, cursors, outboxes, or replica identity. It is an
-  explicit recovery artifact, not a readable old-epoch mode in sync.
+- **Recovery checkpoint**: a read-only export from an epoch-fenced replica. It
+  carries the obsolete epoch, canonical descriptor and hash, complete local
+  logical rows, and pending logical mutations. It contains no SQLite pages,
+  indexes, cursors, or automatic replay instruction.
 - **Child-document format conversion**: an explicit per-document application
   operation that reads one old format-addressed room and initializes one new
   room through capability-specific code. Old room bytes remain retained; there

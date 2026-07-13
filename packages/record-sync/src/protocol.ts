@@ -135,7 +135,7 @@ export type SnapshotChunkRequest = Static<typeof SnapshotChunkRequestSchema>;
 
 // Snapshots carry live rows only: deletion is physical absence, so snapshot
 // size follows the live dataset instead of lifetime deletion history.
-const snapshotRowSchema = Type.Object(
+export const SnapshotRowSchema = Type.Object(
 	{
 		table: Type.String({ minLength: 1 }),
 		rowId: Type.String({ minLength: 1 }),
@@ -143,7 +143,7 @@ const snapshotRowSchema = Type.Object(
 	},
 	CLOSED,
 );
-export type SnapshotRow = Static<typeof snapshotRowSchema>;
+export type SnapshotRow = Static<typeof SnapshotRowSchema>;
 
 const snapshotManifestBodyProperties = {
 	generation: positiveSequence,
@@ -170,7 +170,7 @@ const snapshotChunkSchema = Type.Object(
 	{
 		generation: positiveSequence,
 		index: sequence,
-		rows: Type.Array(snapshotRowSchema),
+		rows: Type.Array(SnapshotRowSchema),
 		checksum: Type.String({ minLength: 1 }),
 	},
 	CLOSED,
