@@ -1,6 +1,6 @@
 import { CompleteError, complete, resolveConnection } from '@epicenter/client';
 import type { Result } from 'wellcrafted/result';
-import { customFetch } from '#platform/http';
+import { environment } from '#runtime';
 import {
 	type CompletionState,
 	resolveCompletionStateFromConfig,
@@ -17,6 +17,9 @@ import { settings } from '$lib/state/settings.svelte';
  * endpoint configured), the one genuinely un-runnable state.
  */
 export function resolveCompletionState(): CompletionState {
+	if (!environment.supportsCompletion) {
+		return { target: null, canRun: false, textStaysOnDevice: true };
+	}
 	return resolveCompletionStateFromConfig({
 		provider: settings.get('completion.provider'),
 		getDeviceConfig: deviceConfig.get,
@@ -44,6 +47,15 @@ export function completeWithGlobalDefault({
 	userPrompt: string;
 	signal?: AbortSignal;
 }): Promise<Result<string, CompleteError>> {
+	if (!environment.supportsCompletion) {
+		return Promise.resolve(
+			CompleteError.TransportFailed({
+				cause: new Error(
+					'Text completion is not available in this Epicenter build yet.',
+				),
+			}),
+		);
+	}
 	const { target } = resolveCompletionState();
 	if (!target) {
 		const provider = settings.get('completion.provider');
@@ -58,7 +70,7 @@ export function completeWithGlobalDefault({
 	return complete(
 		resolveConnection(
 			{ baseUrl: target.baseUrl, apiKey: target.apiKey },
-			customFetch,
+			undefined,
 		),
 		{
 			model: settings.get('completion.model').trim(),

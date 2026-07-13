@@ -2,9 +2,33 @@ import { toast as sonner } from '@epicenter/ui/sonner';
 import { nanoid } from 'nanoid/non-secure';
 import type { AnyTaggedError } from 'wellcrafted/error';
 import { consoleSink, type LogEvent } from 'wellcrafted/logger';
-import { osNotify } from '#platform/os-notify';
+import { environment } from '#runtime';
 import { moreDetailsDialog } from '$lib/components/MoreDetailsDialog.svelte';
 import { humanize } from './humanize';
+
+const SOURCE = 'whispering/report';
+
+/** Diagnostic-only events that never become a toast or OS notification. */
+export const log = {
+	info(message: string, data?: unknown): void {
+		consoleSink({
+			ts: Date.now(),
+			level: 'info',
+			source: SOURCE,
+			message,
+			data,
+		} satisfies LogEvent);
+	},
+	warn(error: Error, data?: unknown): void {
+		consoleSink({
+			ts: Date.now(),
+			level: 'warn',
+			source: SOURCE,
+			message: error.message,
+			data: data ?? error,
+		} satisfies LogEvent);
+	},
+} as const;
 
 export type NoticeAction = {
 	label: string;
@@ -28,8 +52,6 @@ export type Problem = Notice & { cause: AnyTaggedError };
 export type StandingNotice = Notice & { id: string };
 
 type Level = 'error' | 'success' | 'info' | 'warning' | 'loading';
-
-const SOURCE = 'whispering/report';
 
 const TOAST_DURATION = {
 	error: Number.POSITIVE_INFINITY,
@@ -75,32 +97,6 @@ export const report = {
 	},
 };
 
-/**
- * Diagnostic-only logger. Use for events that should appear in console for
- * debugging but should NEVER surface to the user as a toast or OS notification
- * (e.g. "Recording started", "Invalid device config, using default").
- */
-export const log = {
-	info(message: string, data?: unknown): void {
-		consoleSink({
-			ts: Date.now(),
-			level: 'info',
-			source: SOURCE,
-			message,
-			data,
-		} satisfies LogEvent);
-	},
-	warn(error: Error, data?: unknown): void {
-		consoleSink({
-			ts: Date.now(),
-			level: 'warn',
-			source: SOURCE,
-			message: error.message,
-			data: data ?? error,
-		} satisfies LogEvent);
-	},
-} as const;
-
 // ── Internals ─────────────────────────────────────────────────────────────
 
 /**
@@ -134,7 +130,7 @@ function emit(level: Level, notice: Notice, id?: string): void {
 	});
 
 	if (level === 'error' && !document.hasFocus()) {
-		void osNotify(title, description);
+		environment.notifications(title, description);
 	}
 }
 

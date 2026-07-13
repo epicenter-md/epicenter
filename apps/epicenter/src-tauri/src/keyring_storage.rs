@@ -32,8 +32,8 @@ const KEYRING_ACCOUNT: &str = "auth-grant";
 
 /// Structured failure for both commands.
 ///
-/// Only one variant: the frontend adapter (`tauriOnly.keyring` in
-/// `tauri.tauri.ts`) does not branch on a finer taxonomy. It logs and treats a
+/// Only one variant: the frontend auth adapter does not branch on a finer
+/// taxonomy. It logs and treats a
 /// read failure as signed-out, and propagates a write failure, exactly like
 /// the `localStorage`-backed `PersistedAuthStorage` adapter it replaces. The
 /// detail still travels in `message`.

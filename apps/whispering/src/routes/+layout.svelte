@@ -3,7 +3,7 @@
 	import { QueryClientProvider } from '@tanstack/svelte-query';
 	import { ModeWatcher } from 'mode-watcher';
 	import { onMount } from 'svelte';
-	import { auth } from '#platform/auth';
+	import { environment } from '#runtime';
 	import { onNavigate } from '$app/navigation';
 	import { FlushEditsOnHide } from '@epicenter/svelte';
 	import { reloadOnPrincipalChange } from '@epicenter/svelte/auth';
@@ -18,7 +18,7 @@
 
 	// Option A: the active preset is picked once at boot; a
 	// principal identity change reloads so the next boot rebuilds the right doc.
-	onMount(() => reloadOnPrincipalChange(auth));
+	onMount(() => reloadOnPrincipalChange(environment.auth));
 
 	onNavigate((navigation) => {
 		if (!document.startViewTransition) return;

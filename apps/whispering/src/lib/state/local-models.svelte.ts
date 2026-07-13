@@ -22,7 +22,7 @@
  */
 import { SvelteMap } from 'svelte/reactivity';
 import { Err, Ok, type Result } from 'wellcrafted/result';
-import { tauri } from '#platform/tauri';
+import type { DesktopLocalTranscription } from '$lib/desktop/contract';
 import {
 	type CatalogError,
 	type DownloadProgress,
@@ -44,11 +44,13 @@ export type ModelDownloadResult = Result<
 	CatalogError
 > | null;
 
-function createLocalModels() {
+export function createLocalModels(
+	localTranscription: DesktopLocalTranscription | null,
+) {
 	// CATALOG STATE. `null` until the first load so the UI can tell "loading"
 	// from "empty". Each entry carries its own `downloaded` verdict from the one
 	// Rust scan, so "ready" is a pure read with no second source to drift from.
-	let models = $state<ModelInfo[] | null>(null);
+	let models = $state<ModelInfo[] | null>(localTranscription ? null : []);
 
 	// IN-FLIGHT TRANSFERS, keyed by model id. The map IS the re-entry gate: a key
 	// present means a transfer owns that model, cleared only when that same run
@@ -62,8 +64,8 @@ function createLocalModels() {
 	let attempts = 0;
 
 	async function refresh() {
-		if (!tauri) return;
-		models = await tauri.transcription.listModels();
+		if (!localTranscription) return;
+		models = await localTranscription.listModels();
 	}
 
 	void refresh();
@@ -105,7 +107,6 @@ function createLocalModels() {
 		 * directly on `ready`.
 		 */
 		async download(model: ModelInfo): Promise<ModelDownloadResult> {
-			if (!tauri) return null;
 			if (transfers.has(model.id)) return null;
 			const id = `${model.id}#${++attempts}`;
 			transfers.set(model.id, { id, progress: 0, cancelling: false });
@@ -136,7 +137,8 @@ function createLocalModels() {
 					transfers.set(model.id, { ...transfer, progress });
 			};
 
-			const { error } = await tauri.transcription.downloadModel(
+			if (!localTranscription) return null;
+			const { error } = await localTranscription.downloadModel(
 				model.id,
 				id,
 				onProgress,
@@ -161,23 +163,20 @@ function createLocalModels() {
 		 * A no-op when nothing is downloading.
 		 */
 		async cancel(model: ModelInfo): Promise<void> {
-			if (!tauri) return;
 			const transfer = transfers.get(model.id);
 			if (!transfer) return;
 			transfers.set(model.id, { ...transfer, cancelling: true });
-			await tauri.transcription.cancelDownload(transfer.id);
+			await localTranscription?.cancelDownload(transfer.id);
 		},
 
 		/** Remove a downloaded model's file from the shared HF cache. */
-		async remove(model: ModelInfo): Promise<Result<null, CatalogError>> {
-			if (!tauri)
-				throw new Error('Local models require the Epicenter desktop app');
-			const result = await tauri.transcription.deleteModel(model.id);
+		async remove(model: ModelInfo): Promise<Result<void, CatalogError>> {
+			if (!localTranscription) return Ok(undefined);
+			const result = await localTranscription.deleteModel(model.id);
 			if (!result.error) await refresh();
 			return result;
 		},
 	};
 }
 
-/** The one shared local-models store. */
-export const localModels = createLocalModels();
+export type LocalModels = ReturnType<typeof createLocalModels>;

@@ -1,7 +1,4 @@
-import { AnalyticsServiceLive } from '#platform/analytics';
-import { AudioBlobStoreLive } from '#platform/blob-store';
-import { DownloadServiceLive } from '#platform/download';
-import { TextServiceLive } from '#platform/text';
+import { environment } from '#runtime';
 import { LocalShortcutManagerLive } from './local-shortcut-manager';
 import { PlaySoundServiceLive } from './sound';
 
@@ -10,10 +7,9 @@ import { PlaySoundServiceLive } from './sound';
  * These are available on both web and desktop.
  */
 export const services = {
-	analytics: AnalyticsServiceLive,
-	text: TextServiceLive,
-	blobs: { audio: AudioBlobStoreLive },
-	download: DownloadServiceLive,
+	text: environment.text,
+	blobs: { audio: environment.artifacts },
+	download: environment.downloads,
 	localShortcutManager: LocalShortcutManagerLive,
 	sound: PlaySoundServiceLive,
 } as const;

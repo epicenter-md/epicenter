@@ -19,7 +19,7 @@
 
 import { fromTable } from '@epicenter/svelte';
 import { nanoid } from 'nanoid/non-secure';
-import { whispering } from '#platform/whispering';
+import { whispering } from '#runtime';
 import { BUILTIN_RECIPES } from '$lib/state/builtin-recipes';
 import type { Recipe } from '$lib/workspace';
 

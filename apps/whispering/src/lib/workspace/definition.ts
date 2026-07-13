@@ -12,6 +12,7 @@ import type { KeyBinding } from '$lib/utils/key-binding';
 
 // ── Constant imports ─────────────────────────────────────────────────────────
 
+import { PLAYBACK_SUPPRESSION_VALUES } from '$lib/constants/audio/playback-suppression';
 import { RECORDING_TRIGGERS } from '$lib/constants/audio/recording-triggers';
 import { INFERENCE_PROVIDER_IDS } from '$lib/constants/inference';
 import { SUPPORTED_LANGUAGES } from '$lib/constants/languages';
@@ -157,16 +158,10 @@ const recording = {
 		field.select(RECORDING_TRIGGERS),
 		() => 'manual' as const,
 	),
-	// Pause system media playback while your voice is being captured, resume it
-	// after. Off by default (opt-in): the resume cannot keep its promise on macOS,
-	// where MediaRemote's Play is single-target so it can wake whatever app the OS
-	// last marked now-playing, not the app we actually paused (see ADR-0045). A
-	// convenience that can occasionally start unrelated media should be chosen, not
-	// sprung. Discoverable via the settings toggle's description and the home-row
-	// quick toggle, both of which explain it at the moment you turn it on. A
-	// roaming preference, not a per-device capability, so it follows you across
-	// machines like the sound toggles.
-	'recording.pausePlayback': defineKv(field.boolean(), () => false),
+	'recording.playbackSuppression': defineKv(
+		field.select(PLAYBACK_SUPPRESSION_VALUES),
+		() => 'off' as const,
+	),
 } as const;
 
 /**
@@ -258,11 +253,6 @@ const polish = {
 		field.string(),
 		() => DEFAULT_POLISH_INSTRUCTIONS,
 	),
-} as const;
-
-/** Anonymized event logging toggle (Aptabase). */
-const analytics = {
-	'analytics.enabled': defineKv(field.boolean(), () => true),
 } as const;
 
 /**
@@ -370,7 +360,6 @@ export function defineWhispering(
 			...completion,
 			...dictionary,
 			...polish,
-			...analytics,
 			...shortcuts,
 		},
 	});

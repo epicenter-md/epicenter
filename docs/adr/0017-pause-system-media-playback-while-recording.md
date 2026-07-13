@@ -1,7 +1,8 @@
 # 0017. Whispering pauses system media playback while recording through one cross-platform controller
 
-- **Status:** Accepted
+- **Status:** Superseded
 - **Date:** 2026-06-16
+- **Superseded by:** [ADR-0119](0119-whispering-does-not-control-system-media-playback.md)
 
 ## Context
 

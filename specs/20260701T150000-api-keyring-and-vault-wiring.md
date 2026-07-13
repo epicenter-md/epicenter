@@ -238,4 +238,4 @@ export function mountSessionApp<E extends Env = Env>(
 - `packages/server/src/routes/session.ts` — the mount pattern to mirror.
 - `packages/server/src/server-bindings.ts` — where `ENCRYPTION_SECRETS?` joins.
 - `apps/whispering/src/lib/state/secrets.svelte.ts` — the facade whose JSDoc already narrates this exact wave.
-- `apps/whispering/src/lib/platform/auth.tauri.ts` — the existing consumer of the keyring commands; the desktop keyring cache mirrors its `tauriOnly.keyring` usage.
+- `apps/whispering/src/lib/runtime/auth.epicenter.ts` — the existing consumer of the keyring commands; the desktop keyring cache mirrors its `tauriOnly.keyring` usage.

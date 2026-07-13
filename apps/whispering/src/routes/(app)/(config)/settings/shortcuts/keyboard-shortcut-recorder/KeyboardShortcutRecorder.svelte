@@ -7,8 +7,8 @@
 	import Plus from '@lucide/svelte/icons/plus';
 	import XIcon from '@lucide/svelte/icons/x';
 	import { type Command, commands } from '$lib/commands';
-	import { os } from '#platform/os';
-	import { shortcuts } from '$lib/platform/shortcuts';
+	import { os } from '#os';
+	import { shortcuts } from '#shortcuts';
 	import { report } from '$lib/report';
 	import {
 		isEmptyBinding,

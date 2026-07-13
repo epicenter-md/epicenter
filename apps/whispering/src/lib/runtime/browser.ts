@@ -1,0 +1,108 @@
+import { createNodeId } from '@epicenter/workspace';
+import { Ok } from 'wellcrafted/result';
+import type { WhisperingEnvironment } from '$lib/environment/contract';
+import { createManualRecordingEnvironment } from '$lib/environment/create-manual-recording-environment';
+import { createBrowserTranscription } from '$lib/operations/transcribe.browser';
+import type { TranscriptionSettings } from '$lib/operations/transcription-ports';
+import { createTranscriptionUseCase } from '$lib/operations/transcription-use-case';
+import { reportRecordingMicLevel } from '$lib/recording-pill/mic-level.browser';
+import { osNotify } from '$lib/report/os-notify.browser';
+import { AudioBlobStoreLive } from '$lib/services/blob-store/index.browser';
+import { DownloadServiceLive } from '$lib/services/download/index.browser';
+import { customFetch, HttpServiceLive } from '$lib/services/http/index.browser';
+import { ManualRecorderLive } from '$lib/services/recorder/index.browser';
+import { TextServiceLive } from '$lib/services/text/index.browser';
+import { TextError } from '$lib/services/text/types';
+import type { TranscriptionServiceId } from '$lib/services/transcription/providers';
+import type { DictationCapabilityState } from '$lib/state/dictation-capability.svelte';
+import { createLocalModels } from '$lib/state/local-models.svelte';
+import { manualRecorderConfig } from '$lib/state/manual-recorder-config.browser';
+import { openWhisperingBrowser } from '$lib/workspace/browser';
+import { auth } from './auth.browser';
+
+/** A page can never paste at the cursor; dictation trust never applies. */
+const dictation: DictationCapabilityState = {
+	async requestAccess() {},
+	async openAccessSettings() {
+		return Ok(undefined);
+	},
+	isActive: false,
+	needsAccessibility: false,
+	isStale: false,
+	override: null,
+	cycleOverride() {},
+	attach() {
+		return () => {};
+	},
+};
+
+export const whispering = openWhisperingBrowser({
+	auth,
+	nodeId: createNodeId({ storage: window.localStorage }),
+	defaultTranscriptionService: 'OpenAI',
+	downloads: DownloadServiceLive,
+});
+
+const providers = [
+	'epicenter',
+	'OpenAI',
+	'Groq',
+	'ElevenLabs',
+	'Deepgram',
+	'Mistral',
+	'speaches',
+] as const satisfies readonly TranscriptionServiceId[];
+const transcriptionSettings = {
+	service: () => whispering.kv.get('transcription.service'),
+	language: () => whispering.kv.get('transcription.language'),
+	prompt: () => whispering.kv.get('transcription.prompt'),
+	dictionary: () => whispering.kv.get('dictionary'),
+	model: (key) => whispering.kv.get(key),
+} satisfies TranscriptionSettings;
+const transcriptionEngine = createBrowserTranscription({
+	auth,
+	artifacts: AudioBlobStoreLive,
+	cloudTransport: { fetch: customFetch, http: HttpServiceLive },
+	settings: transcriptionSettings,
+});
+
+export const environment: WhisperingEnvironment = {
+	auth,
+	artifacts: AudioBlobStoreLive,
+	captureSurfaces: ['manual', 'vad', 'import'],
+	downloads: DownloadServiceLive,
+	dictation,
+	delivery: {
+		supportsCursor: false,
+		async write(text) {
+			const result = await TextServiceLive.copyToClipboard(text);
+			return result.error ? result : Ok('leftOnClipboard');
+		},
+		async pressEnter() {
+			return TextError.NotSupported({ operation: 'Simulating keystrokes' });
+		},
+		async copySelection() {
+			return TextError.NotSupported({ operation: 'Simulating keystrokes' });
+		},
+	},
+	notifications: osNotify,
+	recording: createManualRecordingEnvironment({
+		recorder: ManualRecorderLive,
+		config: manualRecorderConfig,
+		configuration: 'bitrate',
+		reportLevel: reportRecordingMicLevel,
+	}),
+	// The page is already the visible surface; nothing to reveal.
+	async reveal() {},
+	supportsCompletion: true,
+	text: TextServiceLive,
+	transcription: {
+		transcribeAndPersist: createTranscriptionUseCase(
+			transcriptionEngine,
+			whispering.tables.recordings,
+		),
+		prewarmSelectedModel() {},
+		providers,
+		localModels: createLocalModels(null),
+	},
+};

@@ -33,12 +33,10 @@
 		type ProviderAccess,
 	} from '$lib/services/transcription/providers';
 	import { deviceConfig } from '$lib/state/device-config.svelte';
-	import { localModels } from '$lib/state/local-models.svelte';
 	import { recordingActive } from '$lib/state/recording-active.svelte';
 	import { settings } from '$lib/state/settings.svelte';
 	import { createCopyFn } from '$lib/utils/createCopyFn';
-	import { auth } from '#platform/auth';
-	import { tauri } from '#platform/tauri';
+	import { environment } from '#runtime';
 	import AdvancedDisclosure from './AdvancedDisclosure.svelte';
 	import LocalModelSelector from './LocalModelSelector.svelte';
 	import ProviderConfigFields from './ProviderConfigFields.svelte';
@@ -63,7 +61,7 @@
 			getDeviceConfig: deviceConfig.get,
 			// Session locality follows the bonded deployment. Sign-in status decides
 			// usability elsewhere; locality only needs the base URL.
-			sessionBaseUrl: auth.deployment.baseURL,
+			sessionBaseUrl: environment.auth.deployment.baseURL,
 		}),
 	);
 
@@ -74,7 +72,7 @@
 	// apply to whichever route is active.
 	const currentServiceCapabilities = $derived.by(() => {
 		if (activeService === 'local') {
-			const model = localModels.find(
+			const model = environment.transcription.localModels.find(
 				deviceConfig.get(PROVIDERS.local.modelConfigKey),
 			);
 			return {
@@ -85,7 +83,10 @@
 		return PROVIDERS[activeService].capabilities;
 	});
 
-	const isLocalProvider = $derived(Boolean(tauri) && activeAccess === 'onDevice');
+	const isLocalProvider = $derived(
+		environment.transcription.providers.includes(activeService) &&
+			activeAccess === 'onDevice',
+	);
 
 	const spokenLanguageLabel = $derived(
 		SUPPORTED_LANGUAGES_OPTIONS.find(
@@ -110,25 +111,33 @@
 				(typeof ACCESS_GROUPS)[ProviderAccess],
 			][]
 		)
-			.filter(([access]) => access !== 'onDevice' || tauri)
+			.filter(([access]) =>
+				TRANSCRIPTION_PROVIDERS.some(
+					(entry) =>
+						entry.access === access &&
+						environment.transcription.providers.includes(entry.id),
+				),
+			)
 			.map(([access, meta]) => ({ access, ...meta })),
 	);
 
 	/** The keyed providers, one card each; narrowed so `models`/`modelSettingKey` read. */
 	type KeyEntry = Extract<TranscriptionProviderEntry, { access: 'key' }>;
 	const KEY_ENTRIES = TRANSCRIPTION_PROVIDERS.filter(
-		(entry): entry is KeyEntry => entry.access === 'key',
+		(entry): entry is KeyEntry =>
+			entry.access === 'key' &&
+			environment.transcription.providers.includes(entry.id),
 	);
 
 	// Signing in redirects/reloads (Option A), which kills an in-flight browser
 	// recording, so lock the action while a capture is active. Account settings
 	// owns sign-out; this section only makes the hosted transcription route ready.
-	const isSignedIn = $derived(auth.state.status === 'signed-in');
+	const isSignedIn = $derived(environment.auth.state.status === 'signed-in');
 	const accountLocked = $derived(recordingActive.current);
 	const startSignIn = createMutation(() =>
 		resultMutationOptions({
 			mutationKey: ['transcription-setup', 'startSignIn'],
-			mutationFn: () => auth.startSignIn(),
+			mutationFn: () => environment.auth.startSignIn(),
 		}),
 	);
 </script>
@@ -215,7 +224,7 @@
 				{#if startSignIn.isPending}
 					<Spinner class="size-4" />
 					Signing in...
-				{:else if auth.state.status === 'reauth-required'}
+				{:else if environment.auth.state.status === 'reauth-required'}
 					Reconnect
 				{:else}
 					Sign in with Epicenter

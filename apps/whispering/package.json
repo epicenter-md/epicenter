@@ -8,77 +8,37 @@
 		"./workspace": "./src/lib/workspace/index.ts"
 	},
 	"imports": {
-		"#platform/commands": {
-			"tauri": "./src/lib/commands.tauri.ts",
+		"#command-contributions": {
+			"epicenter": "./src/lib/commands.tauri.ts",
 			"default": "./src/lib/commands.browser.ts"
 		},
-		"#platform/analytics": {
-			"tauri": "./src/lib/services/analytics/index.tauri.ts",
-			"default": "./src/lib/services/analytics/index.browser.ts"
+		"#os": {
+			"epicenter": "./src/lib/os/epicenter.ts",
+			"default": "./src/lib/os/browser.ts"
 		},
-		"#platform/blob-store": {
-			"tauri": "./src/lib/services/blob-store/index.tauri.ts",
-			"default": "./src/lib/services/blob-store/index.browser.ts"
+		"#shortcuts": {
+			"epicenter": "./src/lib/shortcuts/index.epicenter.ts",
+			"default": "./src/lib/shortcuts/index.browser.ts"
 		},
-		"#platform/download": {
-			"tauri": "./src/lib/services/download/index.tauri.ts",
-			"default": "./src/lib/services/download/index.browser.ts"
+		"#recording-overlay-surface": {
+			"epicenter": "./src/lib/recording-overlay/Surface.epicenter.svelte",
+			"default": "./src/lib/recording-overlay/Surface.browser.svelte"
 		},
-		"#platform/http": {
-			"tauri": "./src/lib/services/http/index.tauri.ts",
-			"default": "./src/lib/services/http/index.browser.ts"
+		"#runtime": {
+			"epicenter": "./src/lib/runtime/epicenter.ts",
+			"default": "./src/lib/runtime/browser.ts"
 		},
-		"#platform/os": {
-			"tauri": "./src/lib/platform/os.tauri.ts",
-			"default": "./src/lib/platform/os.browser.ts"
+		"#desktop": {
+			"epicenter": "./src/lib/desktop/epicenter.ts",
+			"default": "./src/lib/desktop/unavailable.ts"
 		},
-		"#platform/system-shortcuts": {
-			"tauri": "./src/lib/platform/system-shortcuts.tauri.ts",
-			"default": "./src/lib/platform/system-shortcuts.browser.ts"
+		"#app-shell": {
+			"epicenter": "./src/lib/app-shell/epicenter.svelte",
+			"default": "./src/lib/app-shell/browser.svelte"
 		},
-		"#platform/recorder": {
-			"tauri": "./src/lib/services/recorder/index.tauri.ts",
-			"default": "./src/lib/services/recorder/index.browser.ts"
-		},
-		"#platform/recording-mic-level": {
-			"tauri": "./src/lib/recording-overlay/mic-level.tauri.ts",
-			"default": "./src/lib/recording-pill/mic-level.browser.ts"
-		},
-		"#platform/recording-overlay-owner": {
-			"tauri": "./src/routes/(app)/_runtime/attach-recording-overlay.tauri.svelte.ts",
-			"default": "./src/routes/(app)/_runtime/attach-recording-overlay.browser.ts"
-		},
-		"#platform/text": {
-			"tauri": "./src/lib/services/text/index.tauri.ts",
-			"default": "./src/lib/services/text/index.browser.ts"
-		},
-		"#platform/manual-recorder-config": {
-			"tauri": "./src/lib/state/manual-recorder-config.tauri.ts",
-			"default": "./src/lib/state/manual-recorder-config.browser.ts"
-		},
-		"#platform/whispering": {
-			"tauri": "./src/lib/whispering/whispering.tauri.ts",
-			"default": "./src/lib/whispering/whispering.browser.ts"
-		},
-		"#platform/tauri": {
-			"tauri": "./src/lib/tauri.tauri.ts",
-			"default": "./src/lib/tauri.browser.ts"
-		},
-		"#platform/os-notify": {
-			"tauri": "./src/lib/report/os-notify.tauri.ts",
-			"default": "./src/lib/report/os-notify.browser.ts"
-		},
-		"#platform/auth": {
-			"tauri": "./src/lib/platform/auth.tauri.ts",
-			"default": "./src/lib/platform/auth.browser.ts"
-		},
-		"#platform/base-path": {
-			"tauri": "./src/lib/platform/base-path.tauri.ts",
-			"default": "./src/lib/platform/base-path.browser.ts"
-		},
-		"#platform/window-events": {
-			"tauri": "./src/lib/window-events.tauri.ts",
-			"default": "./src/lib/window-events.browser.ts"
+		"#desktop-promotion": {
+			"epicenter": "./src/lib/app-shell/NoDesktopPromotion.svelte",
+			"default": "./src/lib/app-shell/DesktopPromotion.svelte"
 		}
 	},
 	"scripts": {
@@ -89,8 +49,8 @@
 		"check": "bun run typecheck",
 		"preview": "vite preview",
 		"prepare": "svelte-kit sync || echo ''",
-		"typecheck": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json && svelte-check --tsconfig ./tsconfig.tauri.json",
-		"typecheck:tauri": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.tauri.json",
+		"typecheck": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json && svelte-check --tsconfig ./tsconfig.epicenter.json",
+		"typecheck:epicenter": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.epicenter.json",
 		"typecheck:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
 		"deploy": "wrangler deploy"
 	},
@@ -119,7 +79,6 @@
 	},
 	"type": "module",
 	"dependencies": {
-		"@aptabase/web": "^0.4.3",
 		"@epicenter/app-shell": "workspace:*",
 		"@epicenter/auth": "workspace:*",
 		"@epicenter/client": "workspace:*",
@@ -136,11 +95,7 @@
 		"@tauri-apps/api": "catalog:",
 		"@tauri-apps/plugin-clipboard-manager": "^2.3.0",
 		"@tauri-apps/plugin-deep-link": "catalog:",
-		"@tauri-apps/plugin-dialog": "^2.3.2",
-		"@tauri-apps/plugin-fs": "catalog:",
-		"@tauri-apps/plugin-http": "2.5.4",
 		"@tauri-apps/plugin-notification": "^2.3.0",
-		"@tauri-apps/plugin-opener": "catalog:",
 		"@tauri-apps/plugin-os": "^2.3.0",
 		"arkregex": "catalog:",
 		"arktype": "catalog:",

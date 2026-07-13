@@ -4,11 +4,6 @@ import {
 	type InferErrors,
 } from 'wellcrafted/error';
 import type { Result } from 'wellcrafted/result';
-import type { WriteTextOutcome } from '$lib/tauri/bindings.gen';
-
-export type { WriteTextOutcome };
-
-type MaybePromise<T> = T | Promise<T>;
 
 export const TextError = defineErrors({
 	ClipboardRead: ({ cause }: { cause: unknown }) => ({
@@ -65,10 +60,6 @@ export type TextService = {
 	 * @param keepOnClipboard Whether to leave the transcript on the clipboard after
 	 *   pasting (clipboard output on) instead of restoring the user's clipboard.
 	 */
-	writeToCursor: (
-		text: string,
-		keepOnClipboard: boolean,
-	) => MaybePromise<Result<WriteTextOutcome, TextError>>;
 
 	/**
 	 * Simulates pressing the Enter/Return key.
@@ -77,7 +68,6 @@ export type TextService = {
 	 * Note: This is only supported on desktop (Tauri). Web browsers cannot simulate keystrokes
 	 * for security reasons.
 	 */
-	simulateEnterKeystroke: () => Promise<Result<void, TextError>>;
 
 	/**
 	 * Simulates pressing the copy shortcut (Cmd+C on macOS, Ctrl+C elsewhere) to
@@ -88,5 +78,4 @@ export type TextService = {
 	 * Note: This is only supported on desktop (Tauri). Web browsers cannot
 	 * simulate keystrokes for security reasons.
 	 */
-	simulateCopyKeystroke: () => Promise<Result<void, TextError>>;
 };

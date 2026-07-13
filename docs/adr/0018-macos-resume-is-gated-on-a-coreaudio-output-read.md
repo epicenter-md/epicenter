@@ -1,7 +1,8 @@
 # 0018. macOS resume is gated on a CoreAudio output read, not a MediaRemote read shim
 
-- **Status:** Accepted
+- **Status:** Superseded
 - **Date:** 2026-06-16
+- **Superseded by:** [ADR-0119](0119-whispering-does-not-control-system-media-playback.md)
 
 ## Context
 

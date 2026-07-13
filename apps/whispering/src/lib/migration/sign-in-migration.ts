@@ -6,8 +6,7 @@
 
 import { createSignInMigration } from '@epicenter/app-shell/sign-in-migration';
 import { attachIndexedDb } from '@epicenter/workspace';
-import { auth } from '#platform/auth';
-import { whispering } from '#platform/whispering';
+import { environment, whispering } from '#runtime';
 import { defineWhispering } from '$lib/workspace';
 
 /**
@@ -52,7 +51,7 @@ function describeLocalContents(counts: Record<string, number>): string {
 }
 
 export const signInMigration = createSignInMigration({
-	auth,
+	auth: environment.auth,
 	openLocalSource,
 	target: whispering,
 	describe: describeLocalContents,

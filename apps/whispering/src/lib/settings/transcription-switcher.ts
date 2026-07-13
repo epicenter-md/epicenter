@@ -15,7 +15,7 @@
  * `auth`, `deviceConfig`, `localModels`) are all reactive, so calling this
  * inside a `$derived` re-runs it when any source changes.
  */
-import { tauri } from '#platform/tauri';
+import { environment } from '#runtime';
 import {
 	PROVIDER_ICONS,
 	TRANSCRIPTION_PROVIDERS,
@@ -23,7 +23,6 @@ import {
 } from '$lib/services/transcription/provider-ui';
 import type { TranscriptionServiceId } from '$lib/services/transcription/providers';
 import { deviceConfig } from '$lib/state/device-config.svelte';
-import { localModels } from '$lib/state/local-models.svelte';
 import { settings } from '$lib/state/settings.svelte';
 import type { ModelInfo } from '$lib/tauri/commands.types';
 import { isTranscriptionServiceConfigured } from './transcription-validation';
@@ -147,11 +146,15 @@ function toLocalLeaf(model: ModelInfo): SwitcherLeaf {
  * the raw deviceConfig pointer.
  */
 export function readyModels(): SwitcherLeaf[] {
-	const remote = REMOTE_ENTRIES.filter(isTranscriptionServiceConfigured).map(
-		toRemoteLeaf,
-	);
-	const onDevice = tauri
-		? localModels.models.filter((model) => model.downloaded).map(toLocalLeaf)
+	const remote = REMOTE_ENTRIES.filter(isTranscriptionServiceConfigured)
+		.map(toRemoteLeaf)
+		.filter((leaf) =>
+			environment.transcription.providers.includes(leaf.providerId),
+		);
+	const onDevice = environment.transcription.providers.includes('local')
+		? environment.transcription.localModels.models
+				.filter((model) => model.downloaded)
+				.map(toLocalLeaf)
 		: [];
 	return [...onDevice, ...remote];
 }

@@ -33,6 +33,9 @@ use recorder::commands::{
 };
 use recorder::recorder::Recorder;
 
+mod playback;
+use playback::PlaybackSuppressionManager;
+
 pub mod transcription;
 use transcription::{
     delete_model, download_model, list_models, prewarm_model, set_unload_policy,
@@ -54,15 +57,12 @@ use delivery::{simulate_copy_keystroke, simulate_enter_keystroke, write_text};
 pub mod keyring_storage;
 use keyring_storage::{keyring_read, keyring_write};
 
-pub mod media;
-use media::{pause_playback, resume_playback};
-
 pub mod timing;
 
 mod shell;
 use shell::{
-    is_autostart_enabled, replace_global_shortcuts, set_autostart_enabled, GlobalShortcutRegistry,
-    GlobalShortcutTriggered,
+    replace_global_shortcuts, reveal_whispering_window, set_recording_overlay_visible,
+    GlobalShortcutRegistry, GlobalShortcutTriggered,
 };
 
 #[cfg(desktop)]
@@ -75,6 +75,7 @@ pub mod overlay;
 pub mod clipboard;
 
 const PRODUCT_NAME: &str = "Epicenter";
+const RECORDING_OVERLAY_WINDOW_LABEL: &str = "recording-overlay";
 #[cfg(any(not(debug_assertions), test))]
 const PRODUCTION_PORT: u16 = 39_130;
 #[cfg(any(debug_assertions, test))]
@@ -277,15 +278,13 @@ fn make_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             download_model,
             delete_model,
             cancel_download,
-            pause_playback,
-            resume_playback,
             keyring_read,
             keyring_write,
             keyboard::commands::set_auto_paste_enabled,
             keyboard::commands::get_dictation_capability,
             replace_global_shortcuts,
-            is_autostart_enabled,
-            set_autostart_enabled,
+            set_recording_overlay_visible,
+            reveal_whispering_window,
         ])
         .events(tauri_specta::collect_events![
             keyboard::DictationCapabilityEvent,
@@ -353,10 +352,10 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_os::init())
-        .plugin(tauri_plugin_autostart::Builder::new().build())
         .manage(HostState::new(port))
         .manage(GlobalShortcutRegistry::default())
         .manage(Mutex::new(Recorder::new()))
+        .manage(PlaybackSuppressionManager::default())
         .manage(DownloadManager::default());
 
     #[cfg(target_os = "macos")]
@@ -410,7 +409,10 @@ pub fn run() {
         .expect("failed to build Epicenter")
         .run(|app, event| match event {
             RunEvent::Reopen { .. } => request_surface(app, Surface::Query),
-            RunEvent::Exit => shutdown_host(app),
+            RunEvent::Exit => {
+                app.state::<PlaybackSuppressionManager>().restore_on_exit();
+                shutdown_host(app);
+            }
             _ => {}
         });
 }
@@ -822,7 +824,6 @@ fn create_surfaces_on_main_thread(
     let token = token.to_string();
     app.clone().run_on_main_thread(move || {
         let result = (|| {
-            #[cfg(target_os = "macos")]
             create_recording_overlay(&app, port, &token)?;
 
             ensure_surface(&app, Surface::Whispering, port, &token, false)?;
@@ -845,6 +846,44 @@ fn create_recording_overlay(app: &DesktopAppHandle, port: u16, token: &str) -> R
     let initialization_script = initialization_script(&origin, token)?;
     overlay::create_recording_overlay(app, url, initialization_script, port)
         .context("create the Whispering recording overlay")
+}
+
+#[cfg(not(target_os = "macos"))]
+fn create_recording_overlay(app: &DesktopAppHandle, port: u16, token: &str) -> Result<()> {
+    if app
+        .get_webview_window(RECORDING_OVERLAY_WINDOW_LABEL)
+        .is_some()
+    {
+        return Ok(());
+    }
+
+    let origin = origin(port);
+    let url: tauri::Url = format!("{origin}/apps/whispering/recording-overlay/").parse()?;
+    let initialization_script = initialization_script(&origin, token)?;
+    WebviewWindowBuilder::new(
+        app,
+        RECORDING_OVERLAY_WINDOW_LABEL,
+        WebviewUrl::External(url),
+    )
+    .title("Recording")
+    .inner_size(224.0, 40.0)
+    .decorations(false)
+    .transparent(true)
+    .shadow(false)
+    .always_on_top(true)
+    .skip_taskbar(true)
+    .resizable(false)
+    .maximizable(false)
+    .minimizable(false)
+    .closable(false)
+    .focusable(false)
+    .visible(false)
+    .initialization_script(initialization_script)
+    .on_navigation(move |url| is_allowed_navigation(url, port))
+    .on_new_window(|_, _| NewWindowResponse::Deny)
+    .build()
+    .context("create the Whispering recording overlay")?;
+    Ok(())
 }
 
 fn ensure_surface(
@@ -905,8 +944,7 @@ fn invalidate_surfaces(app: &DesktopAppHandle) {
                 }
             }
         }
-        #[cfg(target_os = "macos")]
-        if let Some(window) = app.get_webview_window(overlay::WINDOW_LABEL) {
+        if let Some(window) = app.get_webview_window(RECORDING_OVERLAY_WINDOW_LABEL) {
             if window.destroy().is_err() {
                 let _ = window.hide();
             }
@@ -1099,7 +1137,7 @@ fn origin(port: u16) -> String {
 
 #[cfg(debug_assertions)]
 fn configured_port() -> Result<u16> {
-    development_port(std::env::var_os("EPICENTER_DEV_PORT").as_deref())
+    Ok(DEVELOPMENT_PORT)
 }
 
 #[cfg(not(debug_assertions))]
@@ -1108,37 +1146,10 @@ fn configured_port() -> Result<u16> {
     Ok(PRODUCTION_PORT)
 }
 
-#[cfg(any(debug_assertions, test))]
-fn development_port(value: Option<&std::ffi::OsStr>) -> Result<u16> {
-    let Some(value) = value else {
-        return Ok(DEVELOPMENT_PORT);
-    };
-    let value = value
-        .to_str()
-        .context("EPICENTER_DEV_PORT must be valid UTF-8")?;
-    let port: u16 = value
-        .parse()
-        .context("EPICENTER_DEV_PORT must be an integer from 1024 through 65535")?;
-    if port < 1_024 {
-        bail!("EPICENTER_DEV_PORT must be an integer from 1024 through 65535");
-    }
-    Ok(port)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::ffi::OsStr;
     use std::io::Cursor;
-
-    #[test]
-    fn development_port_defaults_and_validates_override() {
-        assert_eq!(development_port(None).unwrap(), DEVELOPMENT_PORT);
-        assert_eq!(development_port(Some(OsStr::new("49152"))).unwrap(), 49_152);
-        assert!(development_port(Some(OsStr::new("1023"))).is_err());
-        assert!(development_port(Some(OsStr::new("65536"))).is_err());
-        assert!(development_port(Some(OsStr::new("not-a-port"))).is_err());
-    }
 
     #[test]
     fn production_port_is_stable() {

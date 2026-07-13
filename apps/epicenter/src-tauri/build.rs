@@ -36,8 +36,6 @@ const COMMANDS: &[&str] = &[
     "download_model",
     "delete_model",
     "cancel_download",
-    "pause_playback",
-    "resume_playback",
     "keyring_read",
     "keyring_write",
     "set_auto_paste_enabled",

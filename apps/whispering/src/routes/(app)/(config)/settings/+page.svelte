@@ -2,9 +2,7 @@
 	import * as Field from '@epicenter/ui/field';
 	import OutputDeliveryControls from '$lib/components/OutputDeliveryControls.svelte';
 	import { SettingSelect, SettingSwitch } from '$lib/components/settings';
-	import { tauri } from '#platform/tauri';
 	import { settings } from '$lib/state/settings.svelte';
-	import AutostartSwitch from './AutostartSwitch.svelte';
 
 	const retentionItems = [
 		{ value: 'keep-forever', label: 'Keep All Recordings' },
@@ -83,8 +81,5 @@
 			/>
 		{/if}
 
-		{#if tauri}
-			<AutostartSwitch autostart={tauri.autostart} />
-		{/if}
 	</Field.Group>
 </Field.Set>

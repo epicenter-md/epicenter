@@ -17,6 +17,7 @@ import type {
 	RecordingArtifact,
 	TranscriptionError,
 	TranscriptionSpec,
+	UnloadPolicy,
 } from './commands';
 import type {
 	CatalogError as SharedCatalogError,
@@ -27,6 +28,7 @@ import type {
 	RecordingArtifact as SharedRecordingArtifact,
 	TranscriptionError as SharedTranscriptionError,
 	TranscriptionSpec as SharedTranscriptionSpec,
+	UnloadPolicy as SharedUnloadPolicy,
 } from './commands.types';
 
 // Helper: a no-op assertion that two types are equal.
@@ -49,6 +51,7 @@ type _SharedContracts = Expect<
 			SharedRecordingArtifact,
 			SharedTranscriptionError,
 			SharedTranscriptionSpec,
+			SharedUnloadPolicy,
 		],
 		[
 			CatalogError,
@@ -59,6 +62,7 @@ type _SharedContracts = Expect<
 			RecordingArtifact,
 			TranscriptionError,
 			TranscriptionSpec,
+			UnloadPolicy,
 		]
 	>
 >;
@@ -71,17 +75,6 @@ type _StopRecording = Expect<
 		ReturnType<typeof commands.stopRecording>,
 		Promise<Result<RecordingArtifact, IpcRecorderError>>
 	>
->;
-
-// pause_playback / resume_playback: infallible across IPC. A platform failure
-// is logged in Rust and never surfaces as an error the frontend must handle, so
-// these stay plain Promises with no Result wrap.
-type _PausePlayback = Expect<
-	Equal<ReturnType<typeof commands.pausePlayback>, Promise<string[]>>
->;
-
-type _ResumePlayback = Expect<
-	Equal<ReturnType<typeof commands.resumePlayback>, Promise<void>>
 >;
 
 // transcribe_recording: fallible, takes recordingId plus the per-call spec.

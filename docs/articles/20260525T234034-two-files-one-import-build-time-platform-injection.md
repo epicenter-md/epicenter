@@ -114,45 +114,14 @@ export const ClipboardServiceLive = {
 
 Both files share the `ClipboardService` interface from `types.ts`. If one drifts, TypeScript complains in that file, not at the call site.
 
-## The Tauri-only case
+## The Epicenter-only case
 
-Dual-impl services are the easy half. Some capabilities have no web counterpart: the file system, the system tray, global shortcut registration. There's nothing reasonable to stub with `navigator` APIs.
-
-Stuffing those into the same per-service folder pattern made them lie. The "browser implementation" was a throwing stub whose only job was to satisfy Vite's resolver on web. After several iterations, we collapsed all of them into one namespace file:
-
-```ts
-// $lib/tauri.tauri.ts
-export const tauriOnly = {
-  fs: { pathsToFiles },
-  permissions: { accessibility, microphone },
-  window: { setAlwaysOnTop },
-  tray: { setIcon },
-  globalShortcuts: { registerCommand, unregisterCommand, unregisterAll },
-  autostart: { isEnabled, enable, disable },
-};
-
-export type Tauri = typeof tauriOnly;
-export const tauri: Tauri | null = tauriOnly;
-```
-
-The companion is one line:
-
-```ts
-// $lib/tauri.browser.ts
-export const tauri = null;
-```
-
-Consumers do:
-
-```ts
-import { tauri } from '$lib/tauri';
-
-if (tauri) await tauri.fs.pathsToFiles(paths);
-// or
-await tauri?.fs.pathsToFiles(paths);
-```
-
-The variable doubles as both the namespace and the platform boolean. `if (tauri)` answers "are we on Tauri?" and gives you the namespace in the same line. No separate `window.__TAURI_INTERNALS__` check, no separate import, no separate stub per capability.
+Some operations have no browser counterpart: native shortcut registration,
+local transcription, and cursor delivery. Shared code does not probe for Tauri
+or receive a throwing browser stub. Epicenter-selected adapters import the
+focused `#desktop` contract or generated commands directly; browser builds
+cannot resolve those files. Shared UI reads semantic capability facts from the
+complete `#runtime` environment.
 
 ## The dual-impl pattern stays for genuine duals
 
@@ -203,16 +172,16 @@ Build-time DI doesn't fit every "which implementation" decision. Some choices th
 
 Transcription provider is the obvious one. The user picks OpenAI or Groq in settings. Both implementations have to be in the bundle, because the user can switch mid-session. That's runtime DI, and it stays runtime. We have a separate article on that: `20260526T030000-bind-platform-once-bind-settings-every-time.md`.
 
-The clean test: can the answer change between now and the next call? If yes, runtime. If the answer is fixed once you know "Tauri or web," build-time.
+The clean test: can the answer change between now and the next call? If yes, runtime. If the answer is fixed once you know "Epicenter or browser," build-time.
 
 ## If you want to copy this
 
-The whole pattern is about 60 lines of Vite config plus filename discipline. The hardest part isn't the mechanism; it's deciding which services to split and which to leave alone. Our rule of thumb: split if both platforms have a real implementation. Use the `$lib/tauri` namespace when a capability is Tauri-only and reachable from shared code.
+The whole pattern is about 60 lines of Vite config plus filename discipline. The hardest part isn't the mechanism; it's deciding which services to split and which to leave alone. Split if both hosts have a real implementation. Put Epicenter-only product operations behind `#desktop`; never introduce a generic native namespace or runtime platform check.
 
 If you want to see the actual code, the relevant files are:
 
 - `apps/whispering/vite.config.ts` for the `resolve.extensions` switch.
-- `apps/whispering/src/lib/tauri.tauri.ts` and `tauri.browser.ts` for the Tauri-only namespace.
+- `apps/whispering/src/lib/desktop/` for Epicenter-only product operations.
 - Any service folder under `apps/whispering/src/lib/services/` for a dual-impl example.
 
 Fork it, break it, ship your own version. The setup is small enough that you can read the whole thing in five minutes.

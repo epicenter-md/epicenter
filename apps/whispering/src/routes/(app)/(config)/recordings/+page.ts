@@ -1,4 +1,4 @@
-import { whispering } from '#platform/whispering';
+import { whispering } from '#runtime';
 import type { PageLoad } from './$types';
 
 /**

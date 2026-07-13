@@ -6,9 +6,10 @@
 	import InfoIcon from '@lucide/svelte/icons/info';
 	import { createMutation } from '@tanstack/svelte-query';
 	import { resultMutationOptions } from 'wellcrafted/query';
-	import { SettingSelect, SettingSwitch } from '$lib/components/settings';
+	import { SettingSelect } from '$lib/components/settings';
 	import {
 		BITRATE_OPTIONS,
+		PLAYBACK_SUPPRESSION_OPTIONS,
 		RECORDING_TRIGGER_OPTIONS,
 		SAMPLE_RATE_OPTIONS,
 	} from '$lib/constants/audio';
@@ -16,10 +17,9 @@
 	import { asDeviceIdentifier } from '@epicenter/recorder';
 	import { deviceConfig } from '$lib/state/device-config.svelte';
 	import { settings } from '$lib/state/settings.svelte';
-	import { os } from '#platform/os';
-	import { manualRecorderConfig } from '#platform/manual-recorder-config';
-	import { tauri } from '#platform/tauri';
-	import { whispering } from '#platform/whispering';
+	import { os } from '#os';
+	import { environment } from '#runtime';
+	import { whispering } from '#runtime';
 	import ManualSelectRecordingDevice from './ManualSelectRecordingDevice.svelte';
 	import VadSelectRecordingDevice from './VadSelectRecordingDevice.svelte';
 
@@ -28,6 +28,17 @@
 			mutationKey: ['recordings', 'export'],
 			mutationFn: whispering.actions.recordings_export_markdown,
 		}),
+	);
+	const recordingTriggerOptions = RECORDING_TRIGGER_OPTIONS.filter(
+		(option) =>
+			option.value === 'manual' || environment.captureSurfaces.includes('vad'),
+	);
+	// Pausing rides the system media session, which macOS exposes unevenly.
+	const playbackSuppressionOptions = PLAYBACK_SUPPRESSION_OPTIONS.map(
+		(option) =>
+			option.value === 'pause' && os.isApple
+				? { ...option, label: `${option.label} (experimental)` }
+				: option,
 	);
 </script>
 
@@ -44,25 +55,27 @@
 			store={settings}
 			key="recording.trigger"
 			label="Recording Trigger"
-			items={RECORDING_TRIGGER_OPTIONS}
-			description="Choose how recording starts: {RECORDING_TRIGGER_OPTIONS.map(
+			items={recordingTriggerOptions}
+			description="Choose how recording starts: {recordingTriggerOptions.map(
 				(option) => option.label.toLowerCase(),
 			).join(', ')}"
 		/>
 
-		<SettingSwitch
-			key="recording.pausePlayback"
-			label="Pause playback while recording"
-			description="Whispering pauses media playing on your computer (music, video, browser tabs) while your voice is being captured, then tries to resume it after. In voice activated mode it pauses only while you actually speak, so music keeps playing between phrases. Works with most apps in your system media controls. A few can't be paused, and on macOS the resume can occasionally wake a different app that was already paused."
+		<SettingSelect
+			store={settings}
+			key="recording.playbackSuppression"
+			label="Other apps' audio"
+			items={playbackSuppressionOptions}
+			description="In Epicenter desktop, choose what happens to other apps' audio during manual recordings. Epicenter tries to restore it when recording ends."
 		/>
 
 		{#if settings.get('recording.trigger') === 'manual'}
 			<ManualSelectRecordingDevice
 				bind:selected={() => {
-					const selected = manualRecorderConfig.deviceId;
+					const selected = environment.recording.deviceId;
 					return selected ? asDeviceIdentifier(selected) : null;
 					},
-					(selected) => (manualRecorderConfig.deviceId = selected)}
+					(selected) => (environment.recording.deviceId = selected)}
 			/>
 		{:else if settings.get('recording.trigger') === 'vad'}
 			{#if os.isLinux}
@@ -85,18 +98,6 @@
 					</Alert.Description>
 				</Alert.Root>
 			{:else}
-				{#if tauri && os.isApple}
-					<Alert.Root variant="warning">
-						<InfoIcon class="size-4" />
-						<Alert.Title>
-							Global Shortcuts May Be Unreliable
-						</Alert.Title>
-						<Alert.Description>
-							VAD uses browser-owned capture. macOS App Nap may delay browser
-							recording logic when Whispering is not in focus.
-						</Alert.Description>
-					</Alert.Root>
-				{/if}
 				<Alert.Root>
 					<InfoIcon class="size-4" />
 					<Alert.Title>
@@ -120,7 +121,7 @@
 		{/if}
 
 		{#if settings.get('recording.trigger') === 'manual'}
-			{#if !tauri}
+			{#if environment.recording.configuration === 'bitrate'}
 				<SettingSelect
 					store={deviceConfig}
 					key="recording.navigator.bitrateKbps"

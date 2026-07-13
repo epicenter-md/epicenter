@@ -1,4 +1,4 @@
-import { tauri } from '#platform/tauri';
+import type { DesktopDictation } from '$lib/desktop/contract';
 import type { DictationCapability } from '$lib/tauri/commands.types';
 
 const OVERRIDABLE_DICTATION_CAPABILITIES = [
@@ -19,13 +19,12 @@ type DictationCapabilityOverride =
  * it seeds the value once and then tracks the pushed event. The macOS notice and
  * the guide dialog both READ this single value.
  *
- * Off the desktop build there is no Rust tap and no gate, so `attach()` is a
- * no-op and the value stays `unknown`; the browser build handles shortcuts with
- * in-app keydown and never mounts the macOS surfaces.
+ * Only the Epicenter composition root constructs this; the browser environment
+ * supplies a constant `dictation` value because a page can never paste at the
+ * cursor and never mounts the macOS surfaces.
  */
-function createDictationCapability() {
+export function createDictationCapability(dictation: DesktopDictation) {
 	let status = $state<DictationCapability>('unknown');
-	let detached = false;
 
 	// Dev-only override to exercise the notice/guide on any build (including web
 	// dev, where the real value is always `unknown`) without touching System
@@ -41,6 +40,8 @@ function createDictationCapability() {
 	}
 
 	return {
+		requestAccess: dictation.requestAccess,
+		openAccessSettings: dictation.openAccessSettings,
 		/** Accessibility is trusted: paste at cursor can work. */
 		get isActive(): boolean {
 			return effective() === 'active';
@@ -83,15 +84,13 @@ function createDictationCapability() {
 		 * before the seed resolves is never clobbered by the stale seed.
 		 */
 		attach(): () => void {
-			if (!tauri) return () => {};
-			detached = false;
-			const t = tauri;
+			let detached = false;
 			let unlisten: (() => void) | undefined;
-			void t.keyboard.getDictationCapability().then((capability) => {
+			void dictation.getCapability().then((capability) => {
 				if (!detached && status === 'unknown') status = capability;
 			});
-			void t.keyboard
-				.onDictationCapabilityChanged((capability) => {
+			void dictation
+				.onCapabilityChanged((capability) => {
 					status = capability;
 				})
 				.then((fn) => {
@@ -106,4 +105,6 @@ function createDictationCapability() {
 	};
 }
 
-export const dictationCapability = createDictationCapability();
+export type DictationCapabilityState = ReturnType<
+	typeof createDictationCapability
+>;

@@ -5,10 +5,10 @@
 	import { Spinner } from '@epicenter/ui/spinner';
 	import { createQuery } from '@tanstack/svelte-query';
 	import { report } from '$lib/report';
+	import { environment } from '#runtime';
 	import type { DeviceIdentifier } from '@epicenter/recorder';
 	import { asDeviceIdentifier } from '@epicenter/recorder';
 	import { manualRecorder } from '$lib/state/manual-recorder.svelte';
-	import { tauri } from '#platform/tauri';
 
 	let {
 		selected = $bindable(),
@@ -39,8 +39,7 @@
 	);
 
 	async function requestMicrophoneAccess() {
-		if (!tauri) return;
-		const { error } = await tauri.permissions.microphone.request();
+		const { error } = await environment.recording.requestAccess();
 		if (error) {
 			report.error({ cause: error });
 			return;
@@ -66,11 +65,9 @@
 		<Field.Label for="manual-recording-device">Recording Device</Field.Label>
 		<div class="space-y-3">
 			<p class="text-sm text-red-500">{getDevicesQuery.error.message}</p>
-			{#if tauri}
-				<Button variant="outline" size="sm" onclick={requestMicrophoneAccess}>
-					Grant microphone access
-				</Button>
-			{/if}
+			<Button variant="outline" size="sm" onclick={requestMicrophoneAccess}>
+				Grant microphone access
+			</Button>
 		</div>
 	</Field.Field>
 {:else}

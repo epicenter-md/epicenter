@@ -7,15 +7,19 @@
 	import CheckIcon from '@lucide/svelte/icons/check';
 	import ChevronDown from '@lucide/svelte/icons/chevron-down';
 	import { CAPTURE_SURFACE_OPTIONS } from '$lib/constants/audio';
+	import { environment } from '#runtime';
 	import { selectCaptureSurface } from '$lib/operations/recording';
 	import { captureSurface } from '$lib/state/capture-surface.svelte';
 
 	let { class: className }: { class?: string } = $props();
 
 	const combobox = useCombobox();
+	const availableSurfaces = CAPTURE_SURFACE_OPTIONS.filter((surface) =>
+		environment.captureSurfaces.includes(surface.value),
+	);
 
 	const current = $derived(
-		CAPTURE_SURFACE_OPTIONS.find(
+		availableSurfaces.find(
 			(surface) => surface.value === captureSurface.current,
 		),
 	);
@@ -43,7 +47,7 @@
 		<Command.Root loop>
 			<Command.List>
 				<Command.Group>
-					{#each CAPTURE_SURFACE_OPTIONS as surface (surface.value)}
+					{#each availableSurfaces as surface (surface.value)}
 						{@const isSelected = captureSurface.current === surface.value}
 						{@const SurfaceIcon = surface.Icon}
 						<Command.Item

@@ -9,6 +9,10 @@ export {
 	type CaptureSurface,
 } from './capture-surfaces';
 export {
+	PLAYBACK_SUPPRESSION_OPTIONS,
+	PLAYBACK_SUPPRESSION_VALUES,
+} from './playback-suppression';
+export {
 	MANUAL_RECORDING_BUTTON,
 	VAD_RECORDING_BUTTON,
 } from './recording-buttons';

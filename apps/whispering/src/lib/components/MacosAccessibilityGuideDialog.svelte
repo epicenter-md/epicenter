@@ -1,6 +1,6 @@
 <script module lang="ts">
 	import { toast } from '@epicenter/ui/sonner';
-	import { tauri } from '#platform/tauri';
+	import { environment } from '#runtime';
 
 	/**
 	 * Global opener for the macOS Accessibility guide. Mirrors the
@@ -49,9 +49,8 @@
 	 * flips to `active` on its own when the Rust supervisor next sees the grant.
 	 */
 	export async function openSystemSettings() {
-		if (!tauri) return;
-		await tauri.permissions.accessibility.request();
-		const { error } = await tauri.permissions.accessibility.openSettings();
+		await environment.dictation.requestAccess();
+		const { error } = await environment.dictation.openAccessSettings();
 		if (error) {
 			toast.info('Open System Settings manually', {
 				description:
@@ -74,11 +73,10 @@
 	import CheckIcon from '@lucide/svelte/icons/check';
 	import SettingsIcon from '@lucide/svelte/icons/settings';
 	import MacosAccessibilityGuide from '$lib/components/MacosAccessibilityGuide.svelte';
-	import { dictationCapability } from '$lib/state/dictation-capability.svelte';
 
 	// The Rust supervisor pushes the capability change, so the dialog flips to its
 	// granted state the moment the supervisor sees the grant, with no reload.
-	const isGranted = $derived(dictationCapability.isActive);
+	const isGranted = $derived(environment.dictation.isActive);
 
 	// A stale grant (`broken`) is the only case that needs the remove-and-re-add
 	// dance; never-granted (and the pre-seed `unknown`) just needs the switch
@@ -86,7 +84,7 @@
 	// the description, and which steps the guide renders, so a first-timer is never
 	// told to remove an Epicenter that isn't in their list yet.
 	const variant = $derived(
-		dictationCapability.isStale ? 're-add' : 'first-grant',
+		environment.dictation.isStale ? 're-add' : 'first-grant',
 	);
 </script>
 

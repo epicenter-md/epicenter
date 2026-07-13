@@ -7,11 +7,27 @@
  * noted. Presentation vocabulary lives in `recording-pill/model.ts`; this
  * module only binds those payloads to transport channels.
  */
-import { defineWindowEvent, defineWindowSignal } from '#platform/window-events';
+import type { EventCallback } from '@tauri-apps/api/event';
+import { emit, emitTo, listen } from '@tauri-apps/api/event';
 import type {
 	RecordingPillAction,
 	RecordingPillStatus,
 } from '$lib/recording-pill/model';
+
+function defineWindowEvent<T>(name: string) {
+	return {
+		emit: (payload: T) => emit(name, payload),
+		emitTo: (label: string, payload: T) => emitTo(label, name, payload),
+		listen: (handler: EventCallback<T>) => listen<T>(name, handler),
+	};
+}
+
+function defineWindowSignal(name: string) {
+	return {
+		emit: () => emit(name),
+		listen: (handler: () => void) => listen(name, handler),
+	};
+}
 
 /** Stable Tauri label for the secondary recording pill webview. */
 export const RECORDING_OVERLAY_WINDOW_LABEL = 'recording-overlay';
@@ -25,9 +41,6 @@ export const recordingOverlayStatus = defineWindowEvent<RecordingPillStatus>(
 export const recordingOverlayAction = defineWindowEvent<RecordingPillAction>(
 	'recording-overlay:action',
 );
-
-/** overlay -> main: reveal the main Whispering window. */
-export const revealMainWindow = defineWindowSignal('main-window:reveal');
 
 /**
  * overlay -> main: the overlay mounted and its listener is live, so the main

@@ -5,8 +5,7 @@ import {
 	type InferErrors,
 } from 'wellcrafted/error';
 import { Ok, type Result } from 'wellcrafted/result';
-import { HttpServiceLive } from '#platform/http';
-import type { HttpError } from '$lib/services/http/types';
+import type { HttpError, HttpService } from '$lib/services/http/types';
 
 const MAX_FILE_SIZE_MB = 500 as const;
 
@@ -83,41 +82,41 @@ export const DeepgramError = defineErrors({
 });
 export type DeepgramError = InferErrors<typeof DeepgramError>;
 
-export const DeepgramTranscriptionServiceLive = {
-	async transcribe(
-		audioBlob: Blob,
-		options: {
-			prompt: string;
-			spokenLanguage: string;
-			apiKey: string;
-			modelName: string;
-		},
-	): Promise<Result<string, DeepgramError>> {
-		if (!options.apiKey) return DeepgramError.MissingApiKey();
+export function createDeepgramTranscriptionService(http: HttpService) {
+	return {
+		async transcribe(
+			audioBlob: Blob,
+			options: {
+				prompt: string;
+				spokenLanguage: string;
+				apiKey: string;
+				modelName: string;
+			},
+		): Promise<Result<string, DeepgramError>> {
+			if (!options.apiKey) return DeepgramError.MissingApiKey();
 
-		const sizeMb = audioBlob.size / (1024 * 1024);
-		if (sizeMb > MAX_FILE_SIZE_MB) {
-			return DeepgramError.FileTooLarge({ sizeMb, maxMb: MAX_FILE_SIZE_MB });
-		}
+			const sizeMb = audioBlob.size / (1024 * 1024);
+			if (sizeMb > MAX_FILE_SIZE_MB) {
+				return DeepgramError.FileTooLarge({ sizeMb, maxMb: MAX_FILE_SIZE_MB });
+			}
 
-		const params = new URLSearchParams({
-			model: options.modelName,
-			smart_format: 'true',
-			punctuate: 'true',
-			paragraphs: 'true',
-		});
+			const params = new URLSearchParams({
+				model: options.modelName,
+				smart_format: 'true',
+				punctuate: 'true',
+				paragraphs: 'true',
+			});
 
-		if (options.spokenLanguage !== 'auto') {
-			params.append('language', options.spokenLanguage);
-		}
+			if (options.spokenLanguage !== 'auto') {
+				params.append('language', options.spokenLanguage);
+			}
 
-		if (options.prompt) {
-			const isNova3 = options.modelName.toLowerCase().includes('nova-3');
-			params.append(isNova3 ? 'keyterm' : 'keywords', options.prompt);
-		}
+			if (options.prompt) {
+				const isNova3 = options.modelName.toLowerCase().includes('nova-3');
+				params.append(isNova3 ? 'keyterm' : 'keywords', options.prompt);
+			}
 
-		const { data: deepgramResponse, error: httpError } =
-			await HttpServiceLive.post({
+			const { data: deepgramResponse, error: httpError } = await http.post({
 				url: `https://api.deepgram.com/v1/listen?${params.toString()}`,
 				body: audioBlob,
 				headers: {
@@ -127,46 +126,47 @@ export const DeepgramTranscriptionServiceLive = {
 				schema: DeepgramResponse,
 			});
 
-		if (httpError) {
-			switch (httpError.name) {
-				case 'Connection':
-					return DeepgramError.Connection({ cause: httpError });
-				case 'Parse':
-					return DeepgramError.Parse({ cause: httpError });
-				case 'Response': {
-					const { status } = httpError;
-					switch (status) {
-						case 400:
-							return DeepgramError.BadRequest({ cause: httpError });
-						case 401:
-							return DeepgramError.Unauthorized({ cause: httpError });
-						case 403:
-							return DeepgramError.Forbidden({ cause: httpError });
-						case 413:
-							return DeepgramError.PayloadTooLarge({ cause: httpError });
-						case 415:
-							return DeepgramError.UnsupportedMediaType({ cause: httpError });
-						case 429:
-							return DeepgramError.RateLimit({ cause: httpError });
-						default:
-							if (status >= 500) {
-								return DeepgramError.ServiceUnavailable({
-									cause: httpError,
-									status,
-								});
-							}
-							return DeepgramError.Unexpected({ cause: httpError });
+			if (httpError) {
+				switch (httpError.name) {
+					case 'Connection':
+						return DeepgramError.Connection({ cause: httpError });
+					case 'Parse':
+						return DeepgramError.Parse({ cause: httpError });
+					case 'Response': {
+						const { status } = httpError;
+						switch (status) {
+							case 400:
+								return DeepgramError.BadRequest({ cause: httpError });
+							case 401:
+								return DeepgramError.Unauthorized({ cause: httpError });
+							case 403:
+								return DeepgramError.Forbidden({ cause: httpError });
+							case 413:
+								return DeepgramError.PayloadTooLarge({ cause: httpError });
+							case 415:
+								return DeepgramError.UnsupportedMediaType({ cause: httpError });
+							case 429:
+								return DeepgramError.RateLimit({ cause: httpError });
+							default:
+								if (status >= 500) {
+									return DeepgramError.ServiceUnavailable({
+										cause: httpError,
+										status,
+									});
+								}
+								return DeepgramError.Unexpected({ cause: httpError });
+						}
 					}
 				}
 			}
-		}
 
-		const transcript = deepgramResponse.results?.channels
-			?.at(0)
-			?.alternatives?.at(0)?.transcript;
+			const transcript = deepgramResponse.results?.channels
+				?.at(0)
+				?.alternatives?.at(0)?.transcript;
 
-		if (!transcript) return DeepgramError.NoTranscriptDetected();
+			if (!transcript) return DeepgramError.NoTranscriptDetected();
 
-		return Ok(transcript.trim());
-	},
-};
+			return Ok(transcript.trim());
+		},
+	};
+}

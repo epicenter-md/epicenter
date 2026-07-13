@@ -1,4 +1,4 @@
-import { tauri } from '#platform/tauri';
+import { desktop } from '#desktop';
 import { report } from '$lib/report';
 import { deviceConfig } from '$lib/state/device-config.svelte';
 
@@ -11,9 +11,7 @@ import { deviceConfig } from '$lib/state/device-config.svelte';
  */
 export function attachUnloadPolicy() {
 	$effect(() => {
-		if (!tauri) return;
-
-		void tauri.transcription
+		void desktop.localTranscription
 			.setUnloadPolicy(deviceConfig.get('transcription.localModelUnloadPolicy'))
 			.catch((cause) => {
 				report.error({

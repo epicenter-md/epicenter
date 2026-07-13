@@ -5,10 +5,9 @@
 	import { Link } from '@epicenter/ui/link';
 	import * as SectionHeader from '@epicenter/ui/section-header';
 	import * as ToggleGroup from '@epicenter/ui/toggle-group';
-	import type { UnlistenFn } from '@tauri-apps/api/event';
-	import { onDestroy, onMount } from 'svelte';
-	import { defineErrors, extractErrorMessage } from 'wellcrafted/error';
-	import { tryAsync } from 'wellcrafted/result';
+	import { defineErrors } from 'wellcrafted/error';
+	import DesktopPromotion from '#desktop-promotion';
+	import { environment } from '#runtime';
 	import DictationCapabilityNotice from '$lib/components/DictationCapabilityNotice.svelte';
 	import { TranscriptionSelector } from '$lib/components/settings';
 	import ProviderConfigFields from '$lib/components/settings/ProviderConfigFields.svelte';
@@ -21,8 +20,6 @@
 	} from '$lib/constants/audio';
 	import {
 		IMPORT_ACCEPT,
-		IMPORTABLE_AUDIO_EXTENSIONS,
-		IMPORTABLE_VIDEO_EXTENSIONS,
 		MAX_IMPORT_FILES,
 		MAX_IMPORT_FILE_SIZE,
 	} from '$lib/constants/import-formats';
@@ -43,7 +40,6 @@
 	} from '$lib/utils/recording-shortcut';
 	import { viewTransition } from '$lib/utils/viewTransitions';
 	import studioMicrophone from '$lib/assets/studio-microphone.png';
-	import { tauri } from '#platform/tauri';
 	import CaptureBehaviorPopover from './_components/CaptureBehaviorPopover.svelte';
 	import CapturePipeline from './_components/CapturePipeline.svelte';
 	import ManualRecordingAction from './_components/ManualRecordingAction.svelte';
@@ -52,6 +48,9 @@
 	import VadRecordingAction from './_components/VadRecordingAction.svelte';
 
 	const latestRecording = $derived(recordings.sorted[0]);
+	const captureSurfaceOptions = CAPTURE_SURFACE_OPTIONS.filter((option) =>
+		environment.captureSurfaces.includes(option.value),
+	);
 	const transcriptionReadiness = $derived(getTranscriptionReadiness());
 	// Home is onboarding, not configuration: when transcription is not ready, ask
 	// for only the one required credential inline. A cloud provider needs a single
@@ -146,10 +145,6 @@
 	const manualWays = $derived(recordingWays('manual', MANUAL_HINT_WORDS));
 	const vadWays = $derived(recordingWays('vad', VAD_HINT_WORDS));
 	const PageError = defineErrors({
-		DragDropListenerFailed: ({ cause }: { cause: unknown }) => ({
-			message: `Failed to set up drag drop listener: ${extractErrorMessage(cause)}`,
-			cause,
-		}),
 		FileRejected: ({
 			fileName,
 			reason,
@@ -163,71 +158,6 @@
 		}),
 	});
 
-	let unlistenDragDrop: UnlistenFn | undefined;
-
-	onMount(async () => {
-		const desktop = tauri;
-		if (!desktop) return;
-		const { error } = await tryAsync({
-			try: async () => {
-				const isAudio = async (path: string) =>
-					IMPORTABLE_AUDIO_EXTENSIONS.includes(
-						(await desktop.fs.extension(
-							path,
-						)) as (typeof IMPORTABLE_AUDIO_EXTENSIONS)[number],
-					);
-				const isVideo = async (path: string) =>
-					IMPORTABLE_VIDEO_EXTENSIONS.includes(
-						(await desktop.fs.extension(
-							path,
-						)) as (typeof IMPORTABLE_VIDEO_EXTENSIONS)[number],
-					);
-
-				unlistenDragDrop = await desktop.fs.onDragDrop(
-					async (paths) => {
-						const pathResults = await Promise.all(
-							paths.map(async (path) => ({
-								path,
-								isValid: (await isAudio(path)) || (await isVideo(path)),
-							})),
-						);
-						const validPaths = pathResults
-							.filter(({ isValid }) => isValid)
-							.map(({ path }) => path);
-
-						if (validPaths.length === 0) {
-							report.info({
-								title: 'No valid files',
-								description: 'Please drop audio or video files',
-							});
-							return;
-						}
-
-						const { data: files, error } =
-							await desktop.fs.pathsToFiles(validPaths);
-
-						if (error) {
-							report.error({ cause: error, title: 'Failed to read files' });
-							return;
-						}
-
-						if (files.length > 0) {
-							await importFiles({ files });
-						}
-					},
-				);
-			},
-			catch: (error) =>
-				PageError.DragDropListenerFailed({
-					cause: error,
-				}),
-		});
-		if (error) report.error({ cause: error });
-	});
-
-	onDestroy(() => {
-		unlistenDragDrop?.();
-	});
 </script>
 
 <svelte:head> <title>Whispering</title> </svelte:head>
@@ -288,7 +218,7 @@
 				}}
 			class="w-full"
 		>
-			{#each CAPTURE_SURFACE_OPTIONS as option}
+			{#each captureSurfaceOptions as option}
 				{@const SurfaceIcon = CAPTURE_SURFACE_META[option.value].Icon}
 				<ToggleGroup.Item
 					value={option.value}
@@ -398,17 +328,7 @@
 				</p>
 			{/if}
 			<p class="text-muted-foreground text-center text-sm font-light">
-				{#if !tauri}
-					Tired of switching tabs?
-					<Link
-						tooltip="Get Whispering for desktop"
-						href="https://epicenter.so/whispering"
-						target="_blank"
-						rel="noopener noreferrer"
-					>
-						Get the native desktop app
-					</Link>
-				{/if}
+				<DesktopPromotion />
 			</p>
 		</div>
 	{/if}

@@ -1,15 +1,11 @@
 import type { DeviceAcquisitionOutcome } from '@epicenter/recorder';
 import { nanoid } from 'nanoid/non-secure';
-import { manualRecorderConfig } from '#platform/manual-recorder-config';
-import { reportRecordingMicLevel } from '#platform/recording-mic-level';
+import { environment } from '#runtime';
 import { goto } from '$app/navigation';
 import type { CaptureSurface } from '$lib/constants/audio';
 import { whisperingPath } from '$lib/constants/urls';
-import { analytics } from '$lib/operations/analytics';
-import { recordingMedia } from '$lib/operations/media';
 import { processRecordingPipeline } from '$lib/operations/pipeline';
 import { sound } from '$lib/operations/sound';
-import { prewarmOnDeviceModel } from '$lib/operations/transcribe';
 import { log, report } from '$lib/report';
 import { captureSurface } from '$lib/state/capture-surface.svelte';
 import { deviceConfig } from '$lib/state/device-config.svelte';
@@ -82,22 +78,21 @@ export async function startManualRecording(): Promise<string | null> {
 	// Kick off the local model load now, concurrently with bringing up the
 	// recorder, so the ~1 s cold load overlaps the speech you're about to
 	// record rather than being paid after you stop. No-op for cloud/web.
-	prewarmOnDeviceModel();
-
-	// Manual owns playback for the whole recording; drop any leftover VAD
-	// per-utterance resume so it cannot fire mid-recording.
-	cancelPendingVadResume();
-	recordingMedia.pause();
+	environment.transcription.prewarmSelectedModel();
 
 	// Feed the pill's meter the live mic level. On web the navigator recorder taps
 	// its stream to drive this; on desktop the CPAL worker emits the level from
 	// Rust straight to the overlay, so this callback is never invoked there.
-	const { data: outcome, error } = await manualRecorder.startRecording({
-		onLevel: reportRecordingMicLevel,
-	});
+	const { data: outcome, error } = await manualRecorder.startRecording(
+		{
+			playbackSuppression: settings.get('recording.playbackSuppression'),
+		},
+		{
+			onLevel: environment.recording.reportLevel,
+		},
+	);
 
 	if (error) {
-		void recordingMedia.resume();
 		// The recording never started, so there is no artifact to recover: the
 		// loudest tier. The pill glances it and the OS notification always fires, so
 		// there is no toast.
@@ -107,19 +102,19 @@ export async function startManualRecording(): Promise<string | null> {
 
 	// The pill shows the live recording; only a device fallback needs a notice.
 	reportDeviceAcquisitionOutcome(outcome, (deviceId) => {
-		manualRecorderConfig.deviceId = deviceId;
+		environment.recording.deviceId = deviceId;
 	});
 
 	log.info('Recording started');
 	sound.playSoundIfEnabled('manual-start');
-	return manualRecorder.currentRecordingId;
+	const recordingId = manualRecorder.currentRecordingId;
+	return recordingId;
 }
 
 export async function stopManualRecording() {
 	const { data: source, error } = await manualRecorder.stopRecording();
 
 	if (error) {
-		void recordingMedia.resume();
 		// Finalizing failed, so the captured audio never reached a row: treat it
 		// as a silent loss rather than a retryable transcription.
 		dictationLifecycle.markFailed({ tier: 'silent-loss', error });
@@ -128,20 +123,10 @@ export async function stopManualRecording() {
 
 	const durationMs =
 		source.kind === 'artifact' ? source.artifact.durationMs : source.durationMs;
-	const byteLength =
-		source.kind === 'artifact' ? source.artifact.byteLength : source.blob.size;
-
 	// The pill carries "stopped -> transcribing"; the transcript landing is the
 	// receipt. No per-step toast.
 	log.info('Recording stopped');
 	sound.playSoundIfEnabled('manual-stop');
-	void recordingMedia.resume();
-
-	analytics.logEvent({
-		type: 'manual_recording_completed',
-		blob_size: byteLength,
-		duration: durationMs ?? undefined,
-	});
 
 	await processRecordingPipeline({
 		source,
@@ -193,7 +178,6 @@ export async function cancelRecording() {
 		return;
 	}
 	if (data.status === 'cancelled') {
-		void recordingMedia.resume();
 		// The pill vanishing plus the cancel sound is the confirmation; no toast.
 		sound.playSoundIfEnabled('manual-cancel');
 		log.info('Recording cancelled');
@@ -209,46 +193,6 @@ export async function cancelRecording() {
 	if (isVadRecordingActive()) await stopVadRecording();
 }
 
-// VAD pauses playback per utterance (the speaking window), not for the whole
-// armed session: music keeps playing while you are armed-and-silent and stops
-// only while you actually speak. A return to listening (speech end or a misfire)
-// schedules a debounced resume so back-to-back utterances do not flutter the
-// music; the next speech start cancels that pending resume. Ending the session
-// resumes immediately. See ADR-0027.
-let vadResumeTimer: ReturnType<typeof setTimeout> | undefined;
-const VAD_RESUME_DELAY_MS = 1500;
-
-function pausePlaybackForSpeech() {
-	clearTimeout(vadResumeTimer);
-	vadResumeTimer = undefined;
-	recordingMedia.pause();
-}
-
-function scheduleResumeAfterSpeech() {
-	clearTimeout(vadResumeTimer);
-	vadResumeTimer = setTimeout(() => {
-		vadResumeTimer = undefined;
-		void recordingMedia.resume();
-	}, VAD_RESUME_DELAY_MS);
-}
-
-/** Resume now and drop any pending debounce: the VAD session is ending. */
-function resumePlaybackForVadEnd() {
-	clearTimeout(vadResumeTimer);
-	vadResumeTimer = undefined;
-	void recordingMedia.resume();
-}
-
-/**
- * Drop a pending VAD resume without resuming. Used when a manual recording
- * starts: manual owns playback for its whole window, so a debounce left over
- * from a prior VAD utterance must not fire and resume music mid-recording.
- */
-function cancelPendingVadResume() {
-	clearTimeout(vadResumeTimer);
-	vadResumeTimer = undefined;
-}
-
 export async function startVadRecording() {
 	settings.set('recording.trigger', 'vad');
 	// A new dictation session is starting: clear any lingering terminal state.
@@ -261,28 +205,16 @@ export async function startVadRecording() {
 	// detected): arming VAD is the "about to dictate" signal, and starting the
 	// load now means the model is ready before the first word, even for a short
 	// utterance. No-op for cloud/web.
-	prewarmOnDeviceModel();
+	environment.transcription.prewarmSelectedModel();
 
 	log.info('Starting voice activated capture');
 
 	const { data: outcome, error } = await vadRecorder.startActiveListening({
-		onLevel: reportRecordingMicLevel,
-		onSpeechStart: () => {
-			// Speaking window opened: pause whatever is playing. The pill's meter
-			// tint shows speech was detected, so there is no toast.
-			pausePlaybackForSpeech();
-		},
+		onLevel: environment.recording.reportLevel,
+		onSpeechStart: () => {},
 		onSpeechEnd: async (blob) => {
-			// Speaking window closed: resume after a short debounce so a quick
-			// next utterance does not flutter the music.
-			scheduleResumeAfterSpeech();
 			log.info('Voice activated speech captured');
 			sound.playSoundIfEnabled('vad-capture');
-
-			analytics.logEvent({
-				type: 'vad_recording_completed',
-				blob_size: blob.size,
-			});
 
 			await processRecordingPipeline({
 				source: {
@@ -294,15 +226,10 @@ export async function startVadRecording() {
 				durationMs: null,
 			});
 		},
-		onVADMisfire: () => {
-			// False start: schedule the same debounced resume as a real speech
-			// end, so an immediate retry does not flutter the music.
-			scheduleResumeAfterSpeech();
-		},
+		onVADMisfire: () => {},
 	});
 
 	if (error) {
-		resumePlaybackForVadEnd();
 		// Listening never armed, so nothing was captured: a silent loss.
 		dictationLifecycle.markFailed({ tier: 'silent-loss', error });
 		return;
@@ -321,9 +248,6 @@ export async function stopVadRecording() {
 
 	log.info('Stopping voice activated capture');
 	const { data, error } = await vadRecorder.stopActiveListening();
-	// Disarming ends the session: restore playback now, do not wait on the
-	// per-utterance debounce.
-	resumePlaybackForVadEnd();
 	if (error) {
 		// Stop is an operation with no capture/outcome phase, so the pill cannot
 		// carry it: a failed disarm keeps a toast (ADR-0039's operation-condition

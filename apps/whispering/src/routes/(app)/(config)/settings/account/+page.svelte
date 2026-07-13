@@ -6,13 +6,13 @@
 	import { createMutation } from '@tanstack/svelte-query';
 	import LogOut from '@lucide/svelte/icons/log-out';
 	import { resultMutationOptions } from 'wellcrafted/query';
-	import { auth } from '#platform/auth';
+	import { environment } from '#runtime';
 	import { recordingActive } from '$lib/state/recording-active.svelte';
 
 	// Identity (email) is shown by the footer AccountPopover, which owns the
 	// /api/session query. This page is for the sign in / sign out actions, so it
 	// reads auth.state directly and does not re-fetch the profile.
-	const isSignedIn = $derived(auth.state.status === 'signed-in');
+	const isSignedIn = $derived(environment.auth.state.status === 'signed-in');
 
 	// Sign in/out reloads the page (Option A) and a reload kills an in-flight
 	// browser recording, so block account changes while a capture is active.
@@ -21,14 +21,14 @@
 	const startSignIn = createMutation(() =>
 		resultMutationOptions({
 			mutationKey: ['account', 'startSignIn'],
-			mutationFn: () => auth.startSignIn(),
+			mutationFn: () => environment.auth.startSignIn(),
 		}),
 	);
 
 	const signOut = createMutation(() =>
 		resultMutationOptions({
 			mutationKey: ['account', 'signOut'],
-			mutationFn: () => auth.signOut(),
+			mutationFn: () => environment.auth.signOut(),
 			onError: (error) => toastOnError(error, 'Failed to sign out'),
 		}),
 	);
@@ -86,7 +86,7 @@
 					{#if startSignIn.isPending}
 						<Spinner class="size-4" />
 						Signing in...
-					{:else if auth.state.status === 'reauth-required'}
+					{:else if environment.auth.state.status === 'reauth-required'}
 						Reconnect
 					{:else}
 						Sign in with Epicenter

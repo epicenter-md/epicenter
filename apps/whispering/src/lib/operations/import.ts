@@ -6,7 +6,6 @@ import {
 	MAX_IMPORT_FILE_SIZE,
 	MAX_IMPORT_FILES,
 } from '$lib/constants/import-formats';
-import { analytics } from '$lib/operations/analytics';
 import { processRecordingPipeline } from '$lib/operations/pipeline';
 import { report } from '$lib/report';
 
@@ -103,11 +102,6 @@ export async function importFiles({ files }: { files: File[] }): Promise<void> {
 		valid.map(async (file) => {
 			const arrayBuffer = await file.arrayBuffer();
 			const audioBlob = new Blob([arrayBuffer], { type: file.type });
-
-			analytics.logEvent({
-				type: 'file_import_completed',
-				blob_size: audioBlob.size,
-			});
 
 			await processRecordingPipeline({
 				source: {

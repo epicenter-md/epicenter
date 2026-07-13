@@ -2,7 +2,7 @@ import type { SatisfiedCommand, ShortcutEventState } from '$lib/commands';
 import { openRecipePicker } from '$lib/operations/recipe-picker';
 
 /**
- * Desktop-only commands, spread into the registry by the `#platform/commands`
+ * Epicenter-only commands, spread into the registry by `#command-contributions`
  * seam on Tauri builds. Keeping the picker here (rather than in the shared
  * `commands.ts`) is what stops a browser build from importing the Tauri-only
  * selection capture and from offering a shortcut that can only error on the web.

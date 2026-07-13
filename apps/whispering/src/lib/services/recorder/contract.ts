@@ -167,6 +167,9 @@ export type RecordingSession = {
  * whose methods are bound to the implementation that produced it.
  */
 export type RecorderService<RecordingParams extends BaseRecordingParams> = {
+	/** Prompt for microphone access and report whether recording may proceed. */
+	requestAccess(): Promise<Result<void, RecorderError>>;
+
 	/**
 	 * Recover a RecordingSession that may have survived a JS reload.
 	 *

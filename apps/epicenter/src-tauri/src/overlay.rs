@@ -7,11 +7,10 @@
 //! with `can_become_key_window: false` never activates the app, so the
 //! overlay's buttons work without stealing focus or raising the Whispering window.
 //!
-//! The panel is created hidden at startup and registered under the same
-//! `recording-overlay` label the JS window manager looks up, so the frontend
-//! drives show/hide/position/levels exactly as it does for the plain
-//! `WebviewWindow` on other platforms (the manager already prefers an existing
-//! window via `getByLabel` before creating one).
+//! The panel is created hidden at startup under the same `recording-overlay`
+//! label as Epicenter's plain `WebviewWindow` on other desktop platforms.
+//! Whispering looks up that host-owned window and drives only presentation:
+//! position, visibility, status, and levels.
 
 // `Manager` is needed in scope because the `tauri_panel!` macro expands to code
 // that calls `.app_handle()` on the window.
@@ -34,8 +33,8 @@ tauri_panel! {
     })
 }
 
-/// Create the recording overlay panel, hidden. The frontend repositions and
-/// shows it once recording starts, so the initial position here is unused.
+/// Create the recording overlay panel, hidden. Whispering repositions and shows
+/// the host-owned panel once recording starts, so this position is unused.
 pub fn create_recording_overlay(
     app: &AppHandle,
     url: tauri::Url,

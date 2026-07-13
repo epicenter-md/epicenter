@@ -44,7 +44,7 @@ apps/honeycrisp
 apps/whispering
   -> auth.tauri.ts
     -> passes Whispering constants
-    -> Specta/tauriOnly IPC adapter
+    -> direct Specta commands adapter
   -> keyring_storage.rs
     -> service = "whispering"
     -> account = "auth-grant"

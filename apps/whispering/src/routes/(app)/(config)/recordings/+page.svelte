@@ -19,7 +19,6 @@
 	import ChevronDownIcon from '@lucide/svelte/icons/chevron-down';
 	import CopyIcon from '@lucide/svelte/icons/copy';
 	import EllipsisIcon from '@lucide/svelte/icons/ellipsis';
-	import ExternalLinkIcon from '@lucide/svelte/icons/external-link';
 	import MicIcon from '@lucide/svelte/icons/mic';
 	import StartTranscriptionIcon from '@lucide/svelte/icons/play';
 	import RetryTranscriptionIcon from '@lucide/svelte/icons/repeat';
@@ -44,10 +43,8 @@
 	} from '@tanstack/table-core';
 	import { type } from 'arktype';
 	import { createRawSnippet } from 'svelte';
-	import { PATHS } from '$lib/services/fs-paths';
 	import { report } from '$lib/report';
 	import { rpc } from '$lib/rpc';
-	import { tauri } from '#platform/tauri';
 	import { deleteRecordingsWithConfirmation } from '$lib/operations/recordings';
 	import { type Recording, recordings } from '$lib/state/recordings.svelte';
 	import { createCopyFn } from '$lib/utils/createCopyFn';
@@ -334,11 +331,6 @@
 		return transcriptions.join(delimiter);
 	});
 
-	async function openRecordingsFolder() {
-		if (!tauri) return;
-		const { error } = await tauri.opener.openPath(await PATHS.DB.RECORDINGS());
-		if (error) report.error({ title: 'Failed to open folder', cause: error });
-	}
 </script>
 
 <svelte:head> <title>All Recordings</title> </svelte:head>
@@ -352,8 +344,7 @@
 			Recordings
 		</SectionHeader.Title>
 		<SectionHeader.Description>
-			Your latest recordings and transcriptions, stored locally
-			{tauri ? 'on your file system' : 'in IndexedDB'}.
+			Your latest recordings and transcriptions, stored locally.
 		</SectionHeader.Description>
 	</SectionHeader.Root>
 	<Card class="flex flex-col gap-4 p-6">
@@ -504,17 +495,6 @@
 							)}
 					>
 						<TrashIcon class="size-4" />
-					</Button>
-				{/if}
-
-				{#if tauri}
-					<Button
-						tooltip="Open recordings folder"
-						variant="outline"
-						size="icon"
-						onclick={openRecordingsFolder}
-					>
-						<ExternalLinkIcon class="size-4" />
 					</Button>
 				{/if}
 

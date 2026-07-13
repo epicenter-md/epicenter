@@ -1,5 +1,5 @@
-import { tauri } from '#platform/tauri';
-import { shortcuts } from '$lib/platform/shortcuts';
+import { desktop } from '#desktop';
+import { shortcuts } from '#shortcuts';
 
 /**
  * Register the current shortcut bindings on every backend this build runs.
@@ -14,6 +14,6 @@ import { shortcuts } from '$lib/platform/shortcuts';
 export function attachShortcutSync() {
 	void shortcuts.sync();
 	return () => {
-		void tauri?.keyboard.unregisterChords();
+		void desktop.shortcuts.replace([]);
 	};
 }

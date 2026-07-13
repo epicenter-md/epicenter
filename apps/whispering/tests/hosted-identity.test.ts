@@ -35,28 +35,36 @@ describe('Epicenter-hosted Whispering identity', () => {
 		expect(vite).toContain("process.env.EPICENTER_SURFACE === '1'");
 		expect(vite).not.toContain('TAURI_ENV_PLATFORM');
 		expect(vite).not.toContain('TAURI_DEV_HOST');
-		expect(read('src/lib/platform/base-path.browser.ts')).toContain(
-			"WHISPERING_BASE_PATHNAME = ''",
-		);
-		expect(read('src/lib/platform/base-path.tauri.ts')).toContain(
-			"WHISPERING_BASE_PATHNAME = '/apps/whispering'",
+		expect(read('src/lib/constants/urls.ts')).toContain(
+			'import.meta.env.BASE_URL',
 		);
 		expect(whisperingPath('/')).toBe('/');
 		expect(whisperingPath('/recording-overlay')).toBe('/recording-overlay');
 		expect(normalizeWhisperingPath('/settings')).toBe('/settings');
 	});
 
-	test('the canonical SPA no longer documents the retired native identifier', () => {
-		expect(read('src/lib/services/fs-paths.ts')).not.toContain(
-			'so.epicenter.whispering',
-		);
-		expect(read('src/lib/services/fs-paths.ts')).toContain('so.epicenter');
-	});
-
 	test('OAuth callbacks use the unified Epicenter deep-link scheme', () => {
-		const auth = read('src/lib/platform/auth.tauri.ts');
+		const auth = read('src/lib/runtime/auth.epicenter.ts');
 		expect(auth).toContain('EPICENTER_DESKTOP_OAUTH_CLIENT_ID');
 		expect(auth).toContain('EPICENTER_DESKTOP_TAURI_OAUTH_REDIRECT_URI');
 		expect(auth).not.toContain('EPICENTER_WHISPERING_TAURI_OAUTH_REDIRECT_URI');
+	});
+
+	test('Epicenter and Whispering each own one half of the recording overlay', () => {
+		const epicenterShell = read('src/lib/app-shell/epicenter.svelte');
+		const browserShell = read('src/lib/app-shell/browser.svelte');
+		const overlayDriver = read('src/lib/recording-overlay/attach.svelte.ts');
+		const desktopAdapter = read('src/lib/desktop/epicenter.ts');
+		const nativeHost = read('../epicenter/src-tauri/src/lib.rs');
+		expect(epicenterShell).toContain('attachRecordingOverlay');
+		expect(browserShell).not.toContain('attachRecordingOverlay');
+		expect(nativeHost).toContain(
+			'create_recording_overlay(&app, port, &token)?',
+		);
+		expect(overlayDriver).toContain('setRecordingOverlayVisible');
+		expect(overlayDriver).not.toContain('@tauri-apps/api/window');
+		expect(overlayDriver).not.toContain('@tauri-apps/api/webviewWindow');
+		expect(desktopAdapter).toContain('revealWhisperingWindow');
+		expect(desktopAdapter).not.toContain('@tauri-apps/api/window');
 	});
 });

@@ -2,7 +2,7 @@
  * The single source of truth for transcription providers. One entry per
  * provider owns every fact: label, access, models, capabilities, and the
  * deviceConfig/settings key NAMES used to read its config (never the values,
- * which the dispatcher in `operations/transcribe.ts` reads).
+ * which the selected transcription engine reads).
  *
  * Pointer-field naming: the suffix names the store. A `*ConfigKey` field
  * holds the name of a `deviceConfig` entry (device-local, never synced); a
@@ -334,9 +334,8 @@ export type TranscriptionServiceId = keyof typeof PROVIDERS;
 /**
  * The ids of `key` providers (the ones that take a user API key), derived from
  * PROVIDERS. Consumed by the settings UI to type provider config fields.
- * (Transcription routing no longer keys off this: `operations/transcribe.ts`
- * dispatches over a single `UPLOAD_DISPATCH` table that excludes only the
- * on-device ids.)
+ * Transcription routing does not key off this union; each build-selected engine
+ * owns its supported provider set.
  */
 export type KeyProviderId = {
 	[K in TranscriptionServiceId]: (typeof PROVIDERS)[K]['access'] extends 'key'

@@ -1,7 +1,6 @@
-import { tauri } from '#platform/tauri';
+import { presentRecipePicker } from '$lib/operations/recipe-presentation';
 import { report } from '$lib/report';
 import { services } from '$lib/services';
-import { recipePicker } from '$lib/state/recipe-picker.svelte';
 
 /**
  * Read the clipboard, then raise the in-app recipe picker over it. The user
@@ -23,6 +22,5 @@ export async function runRecipeOnClipboard() {
 		});
 		return;
 	}
-	await tauri?.mainWindow.focus();
-	recipePicker.open(input);
+	await presentRecipePicker(input);
 }

@@ -1,4 +1,4 @@
-import { platformCommands } from '#platform/commands';
+import { platformCommands } from '#command-contributions';
 import { goto } from '$app/navigation';
 import { whisperingPath } from '$lib/constants/urls';
 import { pushToTalk } from '$lib/operations/push-to-talk';
@@ -21,7 +21,7 @@ import type { Reach } from '$lib/utils/key-binding';
  *
  * Platform split: `sharedCommands` exist in every build. Desktop-only commands
  * (the recipe picker, which captures a selection from another app and raises the
- * in-app palette over it) come from the `#platform/commands` seam, so a browser
+ * in-app palette over it) come from the `#command-contributions` seam, so a browser
  * build never imports their Tauri-only code and never offers them as shortcuts.
  */
 

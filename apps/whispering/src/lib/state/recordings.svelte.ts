@@ -20,7 +20,7 @@
  * ```
  */
 import { fromTable } from '@epicenter/svelte';
-import { whispering } from '#platform/whispering';
+import { whispering } from '#runtime';
 import type { Recording } from '$lib/workspace';
 
 /** Re-exported from the workspace definition for consumer convenience. */

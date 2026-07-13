@@ -1,4 +1,4 @@
-import { tauri } from '#platform/tauri';
+import { desktop } from '#desktop';
 import { outputWritesToCursor } from '$lib/operations/delivery';
 
 /**
@@ -13,11 +13,8 @@ import { outputWritesToCursor } from '$lib/operations/delivery';
  * with the runtime; the returned cleanup is a no-op.
  */
 export function attachAutoPasteIntent() {
-	if (!tauri) return () => {};
-	const t = tauri;
-
 	$effect(() => {
-		void t.keyboard.setAutoPasteEnabled(outputWritesToCursor());
+		void desktop.dictation.setCursorDeliveryEnabled(outputWritesToCursor());
 	});
 
 	return () => {};

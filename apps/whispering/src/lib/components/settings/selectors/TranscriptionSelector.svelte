@@ -23,10 +23,8 @@
 		getTranscriptionReadiness,
 	} from '$lib/settings/transcription-validation';
 	import { deviceConfig } from '$lib/state/device-config.svelte';
-	import { localModels } from '$lib/state/local-models.svelte';
 	import { settings } from '$lib/state/settings.svelte';
-	import { auth } from '#platform/auth';
-	import { tauri } from '#platform/tauri';
+	import { environment } from '#runtime';
 	import ModelRow from './ModelRow.svelte';
 
 	let {
@@ -97,11 +95,14 @@
 	// on-device download; web offers sign-in or an API key. Never auto-selects a
 	// remote provider.
 	const recommended = $derived(
-		localModels.models.find((model) => model.recommended) ??
-			localModels.models[0],
+		environment.transcription.localModels.models.find(
+			(model) => model.recommended,
+		) ?? environment.transcription.localModels.models[0],
 	);
 	const recommendedState = $derived(
-		recommended ? localModels.stateOf(recommended) : null,
+		recommended
+			? environment.transcription.localModels.stateOf(recommended)
+			: null,
 	);
 
 	function formatSize(bytes: number | null): string {
@@ -112,7 +113,8 @@
 
 	async function downloadRecommended() {
 		if (!recommended) return;
-		const result = await localModels.download(recommended);
+		const result =
+			await environment.transcription.localModels.download(recommended);
 		if (!result) return;
 		if (result.error) {
 			toast.error('Failed to download model', {
@@ -210,7 +212,7 @@
 		{#if leaves.length === 0}
 			<!-- Signed out with nothing set up: privacy-forward on desktop, remote
 			setup on web. Never auto-selects a provider. -->
-			{#if tauri && recommended && recommendedState}
+			{#if environment.transcription.providers.includes('local') && recommended && recommendedState}
 				<Empty.Root class="py-8">
 					<Empty.Media variant="icon">
 						<HardDriveDownloadIcon class="size-5" />
@@ -229,7 +231,7 @@
 								<Button
 									variant="ghost"
 									size="sm"
-									onclick={() => localModels.cancel(recommended)}
+									onclick={() => environment.transcription.localModels.cancel(recommended)}
 									disabled={recommendedState.cancelling}
 								>
 									<XIcon class="size-4" />
@@ -244,7 +246,7 @@
 						{/if}
 					</Empty.Content>
 				</Empty.Root>
-			{:else if tauri && !localModels.loaded}
+			{:else if environment.transcription.providers.includes('local') && !environment.transcription.localModels.loaded}
 				<Loading class="py-8" label="Loading on-device models" />
 			{:else}
 				<Empty.Root class="py-8">
@@ -257,7 +259,7 @@
 						uploads your audio until you choose a provider.
 					</Empty.Description>
 					<Empty.Content class="flex flex-col gap-2">
-						<Button onclick={() => auth.startSignIn()}>Sign in to Epicenter</Button>
+						<Button onclick={() => environment.auth.startSignIn()}>Sign in to Epicenter</Button>
 						<Button
 							variant="outline"
 							onclick={() => {

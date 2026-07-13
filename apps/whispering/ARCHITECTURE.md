@@ -26,7 +26,7 @@ defineWorkspace()
 
 `defineWhispering(defaultTranscriptionService)` in `src/lib/workspace/definition.ts` is the shared model factory. It defines the fixed workspace id, tables, and KV schema with no platform APIs; the platform argument only changes read-side KV defaults.
 
-`openWhisperingBrowser({ auth, nodeId, defaultTranscriptionService })` in `src/lib/whispering/whispering.active.ts` is the shared browser/Tauri runtime opener. It connects once at boot with `toConnection(auth, nodeId)`, layers the recording markdown export, and aliases `storage.whenLoaded` as `whenReady`; settings metadata comes from the workspace's own `kv.keys` / `kv.getDefault` / `kv.reset` (ADR-0093). The `#platform/whispering` leaves supply the auth client, stable node id, and default transcription service.
+`openWhisperingBrowser({ auth, nodeId, defaultTranscriptionService })` in `src/lib/workspace/browser.ts` is the shared browser-hosted runtime opener. It connects once at boot with `toConnection(auth, nodeId)`, layers the recording markdown export, and aliases `storage.whenLoaded` as `whenReady`; settings metadata comes from the workspace's own `kv.keys` / `kv.getDefault` / `kv.reset` (ADR-0093). Each `#runtime` root constructs the one always-available workspace for the application boot from its own auth client and default transcription service. Authentication selects the connection but never gates workspace access.
 
 The rule is the same as Fuji and Honeycrisp:
 
@@ -41,56 +41,29 @@ attach*
   one side-effectful layer
 ```
 
-## Service Layer - Pure Business Logic + Platform Abstraction
+## Host composition and services
 
-The service layer contains all business logic as **pure functions** with zero UI dependencies. Services don't know about reactive Svelte variables, user settings, or UI state. They only accept explicit parameters and return `Result<T, E>` types for consistent error handling.
+`#runtime` is the complete composition root for each host. The browser root
+selects browser recording, persistence, delivery, auth, and remote
+transcription. The Epicenter root selects native recording, filesystem-backed
+artifacts, cursor delivery, desktop auth, and local transcription.
 
-The key innovation is **build-time platform resolution** via Node-standard `#platform/*` subpath imports. Each platform-bound service lives in a folder with both implementations as sibling files plus a shared contract; the app's `package.json` `imports` map points each seam at the matching file per build condition:
+Every other build-varying seam sits at one of two altitudes relative to those
+roots. Below them, `#os` states static host facts for modules the roots
+themselves compose (persisted state such as `device-config`), and it is the one
+door for OS facts at every altitude. Above them, surfaces that compose
+commands and operations (which already read `#runtime`) keep their own semantic
+imports, such as `#shortcuts`, `#command-contributions`, and
+`#recording-overlay-surface`; they cannot live in the environment without
+importing the roots back into themselves. An operation belongs in the
+environment when it is complete in both hosts and consumed above the roots;
+implementations take settings as parameters rather than reading them, because
+the settings store reads the workspace from `#runtime`. There is no generic
+platform namespace, nullable native capability bag, or runtime host check.
 
-```
-src/lib/services/recorder/
-  index.browser.ts    Browser MediaRecorder APIs
-  index.tauri.ts      Tauri recorder plugin
-  types.ts            Shared contract both impls are annotated with
-```
-
-```jsonc
-// package.json
-{
-  "imports": {
-    "#platform/recorder": {
-      "tauri": "./src/lib/services/recorder/index.tauri.ts",
-      "default": "./src/lib/services/recorder/index.browser.ts"
-    }
-  }
-}
-```
-
-The Tauri build activates the `tauri` condition; the web build falls through to `default` (browser):
-
-```ts
-// vite.config.ts
-const isEpicenterSurface = process.env.EPICENTER_SURFACE === '1';
-export default defineConfig(async () => ({
-  resolve: {
-    // The `...defaultClientConditions` spread is load-bearing: custom
-    // conditions REPLACE Vite's defaults rather than adding to them.
-    ...(isEpicenterSurface && {
-      conditions: ['tauri', ...defaultClientConditions],
-    }),
-  },
-}));
-```
-
-Consumers (for example the services barrel `src/lib/services/index.ts`) import the bare specifier `from '#platform/recorder'` with **no platform branch at the call site**. Vite resolves `index.tauri.ts` on Tauri builds and `index.browser.ts` on web builds; the off-target file is never resolved, so it is physically absent from the bundle (a build-time guarantee, not Rollup tree-shaking). This makes the web bundle structurally unable to ship Tauri APIs and vice versa: a Tauri-only file imported by shared code fails the web build instead of shipping a broken runtime.
-
-This mechanism is scoped to `#platform/*` only; every other bare import resolves normally. The browser typecheck uses the default condition, and `tsconfig.tauri.json` repeats the check with the `tauri` condition. Each impl is annotated with the shared contract (`export const x: Contract = ...`, not `satisfies`, so the concrete type stays hidden and the variants stay in lockstep).
-
-Tauri-only exports (Whispering's `tauriOnly` namespace in `src/lib/tauri.tauri.ts`) are imported **directly** by `.tauri.ts` files (`import { tauriOnly } from '$lib/tauri.tauri'`), not through a `#platform/*` seam, since that seam is null on web. Shared code that only needs the platform boolean reaches it through `import { tauri } from '#platform/tauri'` and checks `if (tauri)`.
-
-Services are **testable** (just pass mock parameters), **reusable** (work identically anywhere via the shared contract in `types.ts`), and **maintainable** (no hidden runtime branches).
-
-The codebase distinguishes two kinds of "which implementation" decisions and uses different mechanisms for each. See `docs/articles/20260526T012650-two-switches-build-time-and-runtime.md` for the walkthrough.
+Services remain narrow I/O contracts below those roots. They accept explicit
+inputs and return typed `Result` values where operations can fail. Settings and
+product policy stay in the runtime or caller.
 
 **→ Learn more:** [Services README](./src/lib/services/README.md) | [Constants Organization](./src/lib/constants/README.md)
 

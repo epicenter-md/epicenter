@@ -1,11 +1,9 @@
-import { auth } from '#platform/auth';
-import { tauri } from '#platform/tauri';
+import { environment } from '#runtime';
 import {
 	TRANSCRIPTION_PROVIDERS,
 	type TranscriptionProviderEntry,
 } from '$lib/services/transcription/provider-ui';
 import { deviceConfig } from '$lib/state/device-config.svelte';
-import { localModels } from '$lib/state/local-models.svelte';
 import { secrets } from '$lib/state/secrets.svelte';
 import { settings } from '$lib/state/settings.svelte';
 
@@ -30,8 +28,10 @@ export type LocalSelectionState = 'ready' | 'missing' | 'unset' | 'loading';
 export function isLocalSelectionRunnable(): LocalSelectionState {
 	const id = deviceConfig.get('transcription.local.selectedModel');
 	if (!hasValue(id)) return 'unset';
-	if (!localModels.loaded) return 'loading';
-	return localModels.find(id)?.downloaded ? 'ready' : 'missing';
+	if (!environment.transcription.localModels.loaded) return 'loading';
+	return environment.transcription.localModels.find(id)?.downloaded
+		? 'ready'
+		: 'missing';
 }
 
 export function getSelectedTranscriptionProvider():
@@ -44,7 +44,7 @@ export function getSelectedTranscriptionProvider():
 function isTranscriptionServiceAvailable(
 	service: TranscriptionProviderEntry,
 ): boolean {
-	return Boolean(tauri) || service.access !== 'onDevice';
+	return environment.transcription.providers.includes(service.id);
 }
 
 /**
@@ -77,7 +77,7 @@ export function isTranscriptionServiceConfigured(
 		case 'session':
 			// No key to configure: the credential is the signed-in session, so
 			// "configured" is "signed in". Metering and top-up live on the deployment.
-			return auth.state.status === 'signed-in';
+			return environment.auth.state.status === 'signed-in';
 		case 'key':
 			return secrets.get(service.apiKeyConfigKey).status === 'available';
 		case 'endpoint':
