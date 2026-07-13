@@ -68,7 +68,8 @@ export class RecordAuthorityDurableObject extends DurableObject {
 			const compaction = (this.compaction ?? Promise.resolve())
 				.catch(() => {})
 				.then(() => authority.maybePublishSnapshot(RECORDS_COMPACTION_POLICY))
-				.then(() => {});
+				.then(() => {})
+				.catch(() => {});
 			this.compaction = compaction;
 			try {
 				await compaction;

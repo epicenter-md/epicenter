@@ -9,6 +9,7 @@
  * - Protocol and schema mismatches refuse without replacing stored identity
  * - Principal and workspace pairs use independent SQLite authorities
  * - Production compaction sends stale cursors through bounded snapshots
+ * - Compaction failure cannot change an already accepted push into a failure
  */
 
 import { expect, test } from 'bun:test';
@@ -31,9 +32,9 @@ const partition: RecordsPartition = {
 	workspaceId: 'wiki',
 };
 
-function setup() {
+function setup(hash = sha256) {
 	const dir = mkdtempSync(join(tmpdir(), 'epicenter-records-'));
-	const opened = createBunRecords({ dir, sha256 });
+	const opened = createBunRecords({ dir, sha256: hash });
 	return {
 		dir,
 		...opened,
@@ -197,6 +198,49 @@ test('production compaction serves a snapshot and chunks to a stale cursor', asy
 			index: 0,
 		});
 		expect(chunk.ok).toBe(true);
+	} finally {
+		context.cleanup();
+	}
+});
+
+test('snapshot compaction failure preserves the accepted push response and log', async () => {
+	let failSnapshotHash = false;
+	const context = setup(async (value) => {
+		if (failSnapshotHash) throw new Error('injected snapshot hash failure');
+		return sha256(value);
+	});
+	try {
+		const envelope = await openEnvelope(context.records);
+		failSnapshotHash = true;
+		expect(
+			await context.records.push(partition, {
+				...envelope,
+				kind: 'push',
+				mutations: Array.from({ length: 1_000 }, (_, index) => ({
+					actorId: 'actor-failed-compaction',
+					actorSequence: index + 1,
+					operations: [
+						{
+							kind: 'createRow' as const,
+							table: 'pages',
+							rowId: `page-${index}`,
+							cells: { title: `Page ${index}` },
+						},
+					],
+				})),
+			}),
+		).toEqual({ kind: 'push', ok: true });
+
+		const pulled = await context.records.pull(partition, {
+			...envelope,
+			kind: 'pull',
+			cursor: 0,
+			limit: 100,
+		});
+		expect(pulled.ok && !pulled.snapshotRequired).toBe(true);
+		if (!pulled.ok || pulled.snapshotRequired)
+			throw new Error('Expected the uncompacted mutation log');
+		expect(pulled.mutations).toHaveLength(100);
 	} finally {
 		context.cleanup();
 	}

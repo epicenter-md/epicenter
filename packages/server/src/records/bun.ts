@@ -120,7 +120,8 @@ export function createBunRecords({
 					.then(() =>
 						opened.authority.maybePublishSnapshot(RECORDS_COMPACTION_POLICY),
 					)
-					.then(() => {});
+					.then(() => {})
+					.catch(() => {});
 				opened.compaction = compaction;
 				try {
 					await compaction;
