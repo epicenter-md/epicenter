@@ -202,7 +202,12 @@ export async function createReplicaRuntime<TTables extends TableDefinitions>({
 					// The authority saw this replica submit a createRow for a live
 					// identity. The replica is corrupt; local repair is refused.
 					throw new ReplicaInvariantViolationError(
-						'Replica push refused: create-conflict; discard this replica and rebootstrap from the authority',
+						`Replica push refused: ${response.reason}; discard this replica and rebootstrap from the authority`,
+					);
+				}
+				if (response.reason === 'row-too-large') {
+					throw new ReplicaAdmissionConflictError(
+						'Replica push refused: row-too-large; pending mutation preserved for application resolution',
 					);
 				}
 				throw new Error(`Replica push refused: ${response.reason}`);
@@ -418,13 +423,23 @@ export type ReplicaSyncSupervisorOptions = {
 };
 
 /**
+ * The authority cannot fold a pending mutation under record admission limits.
+ * The outbox remains intact for application-owned conflict resolution.
+ */
+export class ReplicaAdmissionConflictError extends Error {
+	constructor(message: string) {
+		super(message);
+		this.name = 'ReplicaAdmissionConflictError';
+	}
+}
+
+/**
  * Keep one replica converging without turning transport failures into writes.
  *
- * Transport and transient failures are reported and retried with backoff. A
- * ReplicaInvariantViolationError is terminal: the supervisor reports it once
- * and stops scheduling work, because retrying a corrupt replica cannot
- * converge. Recovery is host-owned: discard the replica database and open a
- * fresh replica (rebootstrap).
+ * Transport and transient failures are reported and retried with backoff.
+ * Replica invariant violations and admission conflicts are terminal: the
+ * supervisor reports them once and stops scheduling work because retrying the
+ * same durable state cannot converge.
  */
 export function startReplicaSyncSupervisor(
 	runtime: { syncOnce(signal?: AbortSignal): Promise<void> },
@@ -474,8 +489,11 @@ export function startReplicaSyncSupervisor(
 				} catch (error) {
 					if (isDisposed && controller.signal.aborted) return;
 					report(error);
-					if (error instanceof ReplicaInvariantViolationError) {
-						// Terminal: retrying a corrupt replica cannot converge.
+					if (
+						error instanceof ReplicaInvariantViolationError ||
+						error instanceof ReplicaAdmissionConflictError
+					) {
+						// Terminal: retrying the same durable state cannot converge.
 						isFatal = true;
 						return;
 					}

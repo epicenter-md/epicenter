@@ -1,4 +1,9 @@
-export { RECORD_SYNC_ADMISSION_LIMITS } from './admission.js';
+export {
+	isAdmissibleCellValue,
+	isAdmissibleOperationSet,
+	isAdmissibleSnapshotRow,
+	RECORD_SYNC_ADMISSION_LIMITS,
+} from './admission.js';
 export {
 	createRecordAuthority,
 	type OpenedRecordAuthority,

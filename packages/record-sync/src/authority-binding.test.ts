@@ -182,3 +182,81 @@ test('snapshot publication bounds every encoded chunk by bytes', async () => {
 		native.close();
 	}
 });
+
+test('snapshot publication cannot exceed the protocol chunk ceiling', async () => {
+	const { database, native } = setup();
+	try {
+		const opened = openRecordAuthority({
+			database,
+			request,
+			createDatabaseIncarnationId: () => 'database-1',
+			sha256,
+		});
+		if (!opened.ok) throw new Error('Expected authority to open');
+		await expect(
+			opened.authority.publishSnapshot({
+				maxChunkBytes:
+					RECORD_SYNC_ADMISSION_LIMITS.encodedSnapshotChunkBytes + 1,
+			}),
+		).rejects.toThrow('maxChunkBytes must be an integer');
+	} finally {
+		native.close();
+	}
+});
+
+test('push rejects a patch that would make the canonical row unsnapshotable', () => {
+	const { database, native } = setup();
+	try {
+		const opened = openRecordAuthority({
+			database,
+			request,
+			createDatabaseIncarnationId: () => 'database-1',
+			sha256,
+		});
+		if (!opened.ok) throw new Error('Expected authority to open');
+		const body = 'x'.repeat(RECORD_SYNC_ADMISSION_LIMITS.encodedCellBytes);
+
+		expect(
+			opened.authority.push({
+				...opened.envelope,
+				kind: 'push',
+				mutations: [
+					{
+						actorId: 'actor-1',
+						actorSequence: 1,
+						operations: [
+							{
+								kind: 'createRow',
+								table: 'notes',
+								rowId: 'note-1',
+								cells: { one: body },
+							},
+						],
+					},
+				],
+			}),
+		).toEqual({ kind: 'push', ok: true });
+		expect(
+			opened.authority.push({
+				...opened.envelope,
+				kind: 'push',
+				mutations: [
+					{
+						actorId: 'actor-1',
+						actorSequence: 2,
+						operations: [
+							{
+								kind: 'updateRow',
+								table: 'notes',
+								rowId: 'note-1',
+								cells: { two: body },
+							},
+						],
+					},
+				],
+			}),
+		).toEqual({ kind: 'push', ok: false, reason: 'row-too-large' });
+	} finally {
+		native.close();
+	}
+});

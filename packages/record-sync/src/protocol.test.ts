@@ -11,7 +11,7 @@
  */
 
 import { expect, test } from 'bun:test';
-import { RECORD_SYNC_ADMISSION_LIMITS } from './admission.js';
+import { encodedBytes, RECORD_SYNC_ADMISSION_LIMITS } from './admission.js';
 import {
 	parseMutation,
 	parsePullRequest,
@@ -318,6 +318,171 @@ test('mutation parsing rejects JSON deeper than the admission ceiling', () => {
 			],
 		}),
 	).toThrow('Invalid record-sync mutation');
+});
+
+test('cell admission counts ASCII and multibyte UTF-8 at the exact boundary', () => {
+	const parseBody = (body: string) =>
+		parseMutation({
+			actorId: 'actor-a',
+			actorSequence: 1,
+			operations: [
+				{
+					kind: 'updateRow',
+					table: 'notes',
+					rowId: 'n1',
+					cells: { body },
+				},
+			],
+		});
+	const limit = RECORD_SYNC_ADMISSION_LIMITS.encodedCellBytes;
+
+	expect(parseBody('x'.repeat(limit))).toBeDefined();
+	expect(() => parseBody('x'.repeat(limit + 1))).toThrow(
+		'Invalid record-sync mutation',
+	);
+	expect(parseBody('😀'.repeat(limit / 4))).toBeDefined();
+	expect(() => parseBody(`${'😀'.repeat(limit / 4)}a`)).toThrow(
+		'Invalid record-sync mutation',
+	);
+});
+
+test('mutation admission accepts the exact byte ceiling and rejects one-byte overflow', () => {
+	const firstBody = 'x'.repeat(RECORD_SYNC_ADMISSION_LIMITS.encodedCellBytes);
+	const base = {
+		actorId: 'actor-a',
+		actorSequence: 1,
+		operations: [
+			{
+				kind: 'updateRow' as const,
+				table: 'notes',
+				rowId: 'n1',
+				cells: { body: firstBody },
+			},
+			{
+				kind: 'updateRow' as const,
+				table: 'notes',
+				rowId: 'n2',
+				cells: { body: '' },
+			},
+		],
+	};
+	const remaining =
+		RECORD_SYNC_ADMISSION_LIMITS.encodedMutationBytes -
+		encodedBytes(JSON.stringify(base));
+	const exact = {
+		...base,
+		operations: [
+			base.operations[0]!,
+			{ ...base.operations[1]!, cells: { body: 'x'.repeat(remaining) } },
+		],
+	};
+
+	expect(encodedBytes(JSON.stringify(exact))).toBe(
+		RECORD_SYNC_ADMISSION_LIMITS.encodedMutationBytes,
+	);
+	expect(parseMutation(exact)).toBeDefined();
+	expect(
+		parsePullResponse({
+			kind: 'pull',
+			ok: true,
+			snapshotRequired: false,
+			fromCursor: 0,
+			newCursor: 1,
+			hasMore: false,
+			mutations: [{ ...exact, serverSequence: 1 }],
+		}),
+	).toBeDefined();
+	expect(() =>
+		parseMutation({
+			...exact,
+			operations: [
+				exact.operations[0]!,
+				{
+					...exact.operations[1]!,
+					cells: { body: `${exact.operations[1]!.cells.body}x` },
+				},
+			],
+		}),
+	).toThrow('Invalid record-sync mutation');
+});
+
+test('snapshot parsing rejects a cell or accumulated row over its byte ceiling', () => {
+	const response = (cells: Record<string, string>) => ({
+		kind: 'snapshotChunk' as const,
+		ok: true as const,
+		chunk: {
+			generation: 1,
+			index: 0,
+			rows: [{ table: 'notes', rowId: 'n1', cells }],
+			checksum: 'checksum',
+		},
+	});
+
+	expect(() =>
+		parseSnapshotChunkResponse(
+			response({
+				body: 'x'.repeat(RECORD_SYNC_ADMISSION_LIMITS.encodedCellBytes + 1),
+			}),
+		),
+	).toThrow('Invalid record-sync snapshot chunk response');
+	expect(() =>
+		parseSnapshotChunkResponse(
+			response({
+				one: 'x'.repeat(RECORD_SYNC_ADMISSION_LIMITS.encodedCellBytes),
+				two: 'x'.repeat(RECORD_SYNC_ADMISSION_LIMITS.encodedCellBytes),
+			}),
+		),
+	).toThrow('Invalid record-sync snapshot chunk response');
+});
+
+test('snapshot parsing accepts the exact chunk ceiling and rejects one-byte overflow', () => {
+	const firstBody = 'x'.repeat(RECORD_SYNC_ADMISSION_LIMITS.encodedCellBytes);
+	const baseChunk = {
+		generation: 1,
+		index: 0,
+		rows: [
+			{ table: 'notes', rowId: 'n1', cells: { body: firstBody } },
+			{ table: 'notes', rowId: 'n2', cells: { body: '' } },
+		],
+		checksum: 'checksum',
+	};
+	const remaining =
+		RECORD_SYNC_ADMISSION_LIMITS.encodedSnapshotChunkBytes -
+		encodedBytes(JSON.stringify(baseChunk));
+	const exactChunk = {
+		...baseChunk,
+		rows: [
+			baseChunk.rows[0]!,
+			{
+				...baseChunk.rows[1]!,
+				cells: { body: 'x'.repeat(remaining) },
+			},
+		],
+	};
+	const response = (chunk: typeof exactChunk) => ({
+		kind: 'snapshotChunk' as const,
+		ok: true as const,
+		chunk,
+	});
+
+	expect(encodedBytes(JSON.stringify(exactChunk))).toBe(
+		RECORD_SYNC_ADMISSION_LIMITS.encodedSnapshotChunkBytes,
+	);
+	expect(parseSnapshotChunkResponse(response(exactChunk))).toBeDefined();
+	expect(() =>
+		parseSnapshotChunkResponse(
+			response({
+				...exactChunk,
+				rows: [
+					exactChunk.rows[0]!,
+					{
+						...exactChunk.rows[1]!,
+						cells: { body: `${exactChunk.rows[1]!.cells.body}x` },
+					},
+				],
+			}),
+		),
+	).toThrow('Invalid record-sync snapshot chunk response');
 });
 
 test('mutation parsing rejects encoded mutations over the byte ceiling', () => {

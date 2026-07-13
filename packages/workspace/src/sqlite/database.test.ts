@@ -16,7 +16,11 @@
 import { Database, type SQLQueryBindings } from 'bun:sqlite';
 import { describe, expect, test } from 'bun:test';
 import { field } from '@epicenter/field';
-import type { Operation, RecordSyncSqlite } from '@epicenter/record-sync';
+import {
+	type Operation,
+	RECORD_SYNC_ADMISSION_LIMITS,
+	type RecordSyncSqlite,
+} from '@epicenter/record-sync';
 import { Type } from 'typebox';
 import { nullable } from '../document/nullable.js';
 import {
@@ -172,6 +176,71 @@ describe('typed rows at rest', () => {
 			id: 'note-1',
 			title: 'Recreated',
 		});
+	});
+
+	test('standalone writes enforce authored and universal byte admission', () => {
+		const native = new Database(':memory:');
+		const workspace = createApplicationDatabase(
+			defineWorkspace({
+				id: 'byte-admission',
+				tables: {
+					texts: defineTable({
+						fields: {
+							id: field.string(),
+							body: field.string({ maxBytes: 4 }),
+						},
+					}),
+					cells: defineTable({
+						fields: { id: field.string(), body: field.string() },
+					}),
+				},
+			}),
+			createSqlite(native),
+			{ kind: 'standalone', onObserverError: () => {} },
+		);
+
+		workspace.tables.texts.create({ id: 'ascii', body: 'abcd' });
+		workspace.tables.texts.create({ id: 'unicode', body: '😀' });
+		expect(() =>
+			workspace.tables.texts.create({ id: 'overflow', body: '😀a' }),
+		).toThrow('schema validation');
+		expect(workspace.tables.texts.get('overflow')).toBeNull();
+
+		const limit = RECORD_SYNC_ADMISSION_LIMITS.encodedCellBytes;
+		workspace.tables.cells.create({ id: 'boundary', body: 'x'.repeat(limit) });
+		expect(() =>
+			workspace.tables.cells.patch('boundary', {
+				body: 'x'.repeat(limit + 1),
+			}),
+		).toThrow('schema validation');
+		expect(workspace.tables.cells.get('boundary')?.body.length).toBe(limit);
+		native.close();
+	});
+
+	test('standalone transactions reject unsynchronizable aggregate bytes atomically', () => {
+		const native = new Database(':memory:');
+		const workspace = createApplicationDatabase(
+			defineWorkspace({
+				id: 'aggregate-admission',
+				tables: {
+					cells: defineTable({
+						fields: { id: field.string(), body: field.string() },
+					}),
+				},
+			}),
+			createSqlite(native),
+			{ kind: 'standalone', onObserverError: () => {} },
+		);
+		const body = 'x'.repeat(255 * 1024);
+
+		expect(() =>
+			workspace.transact(({ tables }) => {
+				tables.cells.create({ id: 'one', body });
+				tables.cells.create({ id: 'two', body });
+			}),
+		).toThrow('Application mutation exceeds record admission limits');
+		expect(workspace.tables.cells.count()).toBe(0);
+		native.close();
 	});
 
 	test('DDL contains one typed column per field and no row blob, _v, or app indexes', () => {

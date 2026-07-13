@@ -12,6 +12,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import { field } from '@epicenter/field';
+import { RECORD_SYNC_ADMISSION_LIMITS } from '@epicenter/record-sync';
 import { type TObject, type TString, Type } from 'typebox';
 import { Value } from 'typebox/value';
 import { nullable } from '../document/nullable.js';
@@ -219,6 +220,26 @@ describe('defineWorkspace', () => {
 		);
 		const descriptor: unknown = JSON.parse(workspace.recordsDescriptor);
 		expect(descriptor).toMatchObject({ format: 'epicenter.record-schema/1' });
+	});
+
+	test('string maxBytes participates in records identity and cannot exceed sync admission', () => {
+		const hash = (maxBytes: number) =>
+			defineWorkspace({
+				id: 'notes',
+				tables: {
+					notes: defineTable({
+						fields: {
+							id: field.string(),
+							body: field.string({ maxBytes }),
+						},
+					}),
+				},
+			}).recordsSchemaHash;
+
+		expect(hash(4)).not.toBe(hash(5));
+		expect(() =>
+			hash(RECORD_SYNC_ADMISSION_LIMITS.encodedCellBytes + 1),
+		).toThrow('maxBytes exceeds');
 	});
 
 	test('recordsSchemaHash is stable across declaration order, display name, kv, and documents', () => {

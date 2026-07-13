@@ -15,7 +15,11 @@ import type {
 	SqliteRow,
 	SqliteValue,
 } from '@epicenter/record-sync';
-import { foldRow } from '@epicenter/record-sync';
+import {
+	foldRow,
+	isAdmissibleOperationSet,
+	isAdmissibleSnapshotRow,
+} from '@epicenter/record-sync';
 import type { TSchema } from 'typebox';
 import type {
 	CompiledColumn,
@@ -206,7 +210,13 @@ export function createApplicationDatabase<TTables extends TableDefinitions>(
 			activeChanges = changes;
 			activeOperations = operations;
 			try {
-				return run(changes);
+				const value = run(changes);
+				if (operations.length > 0 && !isAdmissibleOperationSet(operations)) {
+					throw new Error(
+						'Application mutation exceeds record admission limits',
+					);
+				}
+				return value;
 			} finally {
 				activeChanges = undefined;
 				activeOperations = undefined;
@@ -462,7 +472,7 @@ function createApplicationTable<TDefinition extends TableDefinition>({
 			);
 		},
 		create(row) {
-			assertRow(definition, row);
+			assertRow(tableName, definition, row);
 			mutate((changes) => {
 				if (
 					sqlite.all<SqliteRow>(
@@ -505,7 +515,7 @@ function createApplicationTable<TDefinition extends TableDefinition>({
 				const current = get(id);
 				if (!current) return null;
 				const next = { ...current, ...cells };
-				assertRow(definition, next);
+				assertRow(tableName, definition, next);
 				const assignments = entries.map(([column]) => {
 					if (!codecs[column]) {
 						throw new Error(`Unknown column '${tableName}.${column}'`);
@@ -1099,6 +1109,7 @@ function codecForStoredColumn(
 }
 
 function assertRow<TDefinition extends TableDefinition>(
+	tableName: string,
 	definition: TDefinition,
 	row: unknown,
 ): asserts row is RowFor<TDefinition> {
@@ -1113,6 +1124,20 @@ function assertRow<TDefinition extends TableDefinition>(
 	}
 	for (const column of Object.values(definition.compiledColumns)) {
 		assertColumn(column, row[column.name], `Row column '${column.name}'`);
+	}
+	const { id, ...cells } = row;
+	if (typeof id !== 'string')
+		throw new Error("Row column 'id' must be a string");
+	if (
+		!isAdmissibleSnapshotRow({
+			table: tableName,
+			rowId: id,
+			cells: Object.fromEntries(
+				Object.entries(cells).filter(([, value]) => value !== null),
+			) as Cells,
+		})
+	) {
+		throw new Error('Row exceeds record admission limits');
 	}
 }
 

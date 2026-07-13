@@ -29,6 +29,7 @@ import { ReplicaInvariantViolationError } from './database.js';
 import { defineTable, defineWorkspace } from './definition.js';
 import {
 	createReplicaRuntime,
+	ReplicaAdmissionConflictError,
 	type ReplicaSyncPort,
 	startReplicaSyncSupervisor,
 } from './replica.js';
@@ -536,6 +537,44 @@ test("a push refused with 'create-conflict' is an invariant violation demanding 
 	);
 	expect(error).toBeInstanceOf(ReplicaInvariantViolationError);
 	expect((error as Error).message).toContain('rebootstrap');
+	native.close();
+});
+
+test("a push refused with 'row-too-large' stops retries and preserves pending intent", async () => {
+	let pushAttempts = 0;
+	const port: ReplicaSyncPort = {
+		bindWorkspace() {},
+		async openDatabase() {
+			return { databaseIncarnationId: 'database-1' };
+		},
+		async push() {
+			pushAttempts++;
+			return { kind: 'push', ok: false, reason: 'row-too-large' };
+		},
+		async pull() {
+			throw new Error('pull must not run after a refused push');
+		},
+		async snapshotChunk() {
+			throw new Error('unexpected snapshot chunk request');
+		},
+	};
+	const { native, runtime } = await openReplica({ port, actorId: 'actor-a' });
+	runtime.database.tables.notes.create(note('large', 'pending'));
+	const errors: unknown[] = [];
+	const supervisor = startReplicaSyncSupervisor(runtime, {
+		onError: (error) => errors.push(error),
+		pollIntervalMs: 0,
+		retryDelaysMs: [0],
+	});
+
+	supervisor.request();
+	await waitFor(() => errors.length === 1);
+	supervisor.request();
+	await Bun.sleep(10);
+	expect(pushAttempts).toBe(1);
+	expect(errors[0]).toBeInstanceOf(ReplicaAdmissionConflictError);
+	expect(runtime.inspect().outbox).toHaveLength(1);
+	await supervisor.dispose();
 	native.close();
 });
 

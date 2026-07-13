@@ -7,7 +7,10 @@ import {
 	recognize,
 	storageOf,
 } from '@epicenter/field';
-import { RECORD_SYNC_ADMISSION_LIMITS } from '@epicenter/record-sync';
+import {
+	isAdmissibleCellValue,
+	RECORD_SYNC_ADMISSION_LIMITS,
+} from '@epicenter/record-sync';
 import {
 	type Static,
 	type TNull,
@@ -344,6 +347,15 @@ function compileColumn(name: string, authoredSchema: TSchema): CompiledColumn {
 		);
 	}
 	const isNullable = nullableInner !== null;
+	if (
+		'maxBytes' in recognized.schema &&
+		recognized.schema.maxBytes !== undefined &&
+		recognized.schema.maxBytes > RECORD_SYNC_ADMISSION_LIMITS.encodedCellBytes
+	) {
+		throw new Error(
+			`Persisted field '${name}' maxBytes exceeds the ${RECORD_SYNC_ADMISSION_LIMITS.encodedCellBytes}-byte synchronization ceiling`,
+		);
+	}
 	return {
 		name,
 		kind: recognized.kind,
@@ -354,7 +366,7 @@ function compileColumn(name: string, authoredSchema: TSchema): CompiledColumn {
 				? recognized.schema[REFERENCE_KEYWORD]
 				: null,
 		check(value) {
-			if (!isJsonValue(value)) return false;
+			if (!isJsonValue(value) || !isAdmissibleCellValue(value)) return false;
 			if (value === null && nullableInner !== null) return true;
 			return checkInner(value);
 		},

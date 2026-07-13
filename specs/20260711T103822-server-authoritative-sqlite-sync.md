@@ -240,6 +240,37 @@ notify reactive queries after commit
 A mutation is atomic across all of its row operations. The outbox uses
 `(actorId, actorSequence)` for identity and ordering; there is no mutation UUID.
 
+### Size admission
+
+The same byte admission runs before standalone commits, replica outbox commits,
+authority folds, pull parsing, and snapshot installation. Limits count UTF-8
+bytes, not JavaScript characters:
+
+| Value | Limit |
+| --- | ---: |
+| One logical cell | 256 KiB |
+| One canonical snapshot row | 508 KiB |
+| One encoded mutation | 512 KiB |
+| One encoded push | 768 KiB |
+| One records HTTP request | 1 MiB |
+| One encoded snapshot chunk | 512 KiB |
+
+For a string cell, the cell limit counts the raw UTF-8 string. For other JSON
+cells, it counts their JSON encoding. `field.string({ maxBytes })` may set a
+smaller authored raw-string limit; that constraint enters the canonical records
+descriptor and schema hash. A declared `maxBytes` cannot exceed the universal
+cell ceiling.
+
+The row ceiling reserves 4 KiB below the snapshot chunk ceiling for generation,
+index, checksum, and JSON framing. The authority checks the complete folded row,
+not only the cells named by the current patch, so separately accepted updates
+cannot accumulate an unsnapshotable row. A concurrent patch that would cross
+the row ceiling is a terminal admission conflict: the replica stops retrying and
+preserves its outbox for application-owned resolution. Standalone transactions
+validate their complete logical operation set before commit. A value or
+transaction accepted while signed out therefore remains encodable after
+sign-in.
+
 ### Push
 
 Every ordinary write uses the same serialization boundary as database

@@ -1,7 +1,11 @@
-import { isBoundedSchemaIdentity } from './admission.js';
+import {
+	isAdmissibleSnapshotRow,
+	isBoundedSchemaIdentity,
+	RECORD_SYNC_ADMISSION_LIMITS,
+} from './admission.js';
 import { foldRow } from './fold.js';
-import type { Cells } from './protocol.js';
 import type {
+	Cells,
 	LoggedMutation,
 	Operation,
 	PullRequest,
@@ -253,6 +257,16 @@ class CreateConflictError extends Error {
 	}
 }
 
+/** Internal sentinel that rolls back a row that snapshots cannot carry. */
+class RowTooLargeError extends Error {
+	constructor(operation: Operation) {
+		super(
+			`row exceeds snapshot admission at '${operation.table}.${operation.rowId}'`,
+		);
+		this.name = 'RowTooLargeError';
+	}
+}
+
 function applyOperation(
 	database: RecordSyncSqlite,
 	operation: Operation,
@@ -264,6 +278,15 @@ function applyOperation(
 	switch (result.kind) {
 		case 'created':
 		case 'updated':
+			if (
+				!isAdmissibleSnapshotRow({
+					table: operation.table,
+					rowId: operation.rowId,
+					cells: result.cells,
+				})
+			) {
+				throw new RowTooLargeError(operation);
+			}
 			database.run(
 				`INSERT INTO record_sync_canonical_rows(
 					table_name, row_id, cells_json
@@ -401,8 +424,15 @@ export function createRecordAuthority({
 	async function publishSnapshot({
 		maxChunkBytes,
 	}: SnapshotPublicationOptions): Promise<SnapshotManifest> {
-		if (!Number.isSafeInteger(maxChunkBytes) || maxChunkBytes < 1)
-			throw new TypeError('maxChunkBytes must be a positive integer');
+		if (
+			!Number.isSafeInteger(maxChunkBytes) ||
+			maxChunkBytes < 1 ||
+			maxChunkBytes > RECORD_SYNC_ADMISSION_LIMITS.encodedSnapshotChunkBytes
+		) {
+			throw new TypeError(
+				`maxChunkBytes must be an integer from 1 through ${RECORD_SYNC_ADMISSION_LIMITS.encodedSnapshotChunkBytes}`,
+			);
+		}
 		for (;;) {
 			const capture = captureSnapshot(database);
 			const encoded = await encodeSnapshot(sha256, capture, maxChunkBytes);
@@ -493,6 +523,9 @@ export function createRecordAuthority({
 					}
 				});
 			} catch (error) {
+				if (error instanceof RowTooLargeError) {
+					return { kind: 'push', ok: false, reason: 'row-too-large' };
+				}
 				if (!(error instanceof CreateConflictError)) throw error;
 				// The thrown sentinel rolled back the whole push, so no mutation
 				// from this batch was accepted and the actor stays paused.

@@ -2,8 +2,8 @@ import { type Static, Type } from 'typebox';
 import { Value } from 'typebox/value';
 import {
 	encodedBytes,
-	isAdmissibleJsonValue,
 	isAdmissibleMutation,
+	isAdmissibleSnapshotRow,
 	isBoundedIdentifier,
 	isBoundedSchemaIdentity,
 	RECORD_SYNC_ADMISSION_LIMITS,
@@ -197,6 +197,9 @@ export const PushResponseSchema = Type.Union([
 				// the actor stays paused; the replica must discard its state and
 				// rebootstrap. Never a routine no-op.
 				Type.Literal('create-conflict'),
+				// Folding this otherwise valid patch would make the canonical row
+				// impossible to publish inside the snapshot-row ceiling.
+				Type.Literal('row-too-large'),
 			]),
 		},
 		CLOSED,
@@ -265,18 +268,8 @@ function mutationsAreAdmissible(mutations: Mutation[]): boolean {
 	return mutations.every(isAdmissibleMutation);
 }
 
-function snapshotRowsHaveJsonCells(rows: SnapshotRow[]): boolean {
-	return rows.every(
-		(row) =>
-			isBoundedIdentifier(row.table) &&
-			isBoundedIdentifier(row.rowId) &&
-			Object.entries(row.cells).length <=
-				RECORD_SYNC_ADMISSION_LIMITS.cellsPerOperation &&
-			Object.entries(row.cells).every(
-				([name, value]) =>
-					isBoundedIdentifier(name) && isAdmissibleJsonValue(value),
-			),
-	);
+function snapshotRowsAreAdmissible(rows: SnapshotRow[]): boolean {
+	return rows.every(isAdmissibleSnapshotRow);
 }
 
 function requestEnvelopeIsAdmissible(value: RequestEnvelope): boolean {
@@ -348,7 +341,12 @@ export function parseSnapshotChunkResponse(
 ): SnapshotChunkResponse {
 	if (!Value.Check(SnapshotChunkResponseSchema, value))
 		throw new TypeError('Invalid record-sync snapshot chunk response');
-	if (value.ok && !snapshotRowsHaveJsonCells(value.chunk.rows))
+	if (
+		value.ok &&
+		(!snapshotRowsAreAdmissible(value.chunk.rows) ||
+			encodedBytes(JSON.stringify(value.chunk)) >
+				RECORD_SYNC_ADMISSION_LIMITS.encodedSnapshotChunkBytes)
+	)
 		throw new TypeError('Invalid record-sync snapshot chunk response');
 	return value;
 }

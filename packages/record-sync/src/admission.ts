@@ -1,4 +1,9 @@
-import type { JsonValue, Mutation } from './protocol.js';
+import type {
+	JsonValue,
+	Mutation,
+	Operation,
+	SnapshotRow,
+} from './protocol.js';
 
 /** Shared admission ceiling applied before any record-sync storage adapter. */
 export const RECORD_SYNC_ADMISSION_LIMITS = {
@@ -8,7 +13,11 @@ export const RECORD_SYNC_ADMISSION_LIMITS = {
 	operationsPerMutation: 128,
 	cellsPerOperation: 128,
 	jsonDepth: 16,
-	encodedMutationBytes: 64 * 1024,
+	encodedCellBytes: 256 * 1024,
+	// Leaves 4 KiB for snapshot chunk framing under the production 512 KiB cap.
+	encodedSnapshotRowBytes: 508 * 1024,
+	encodedSnapshotChunkBytes: 512 * 1024,
+	encodedMutationBytes: 512 * 1024,
 	encodedPushBytes: 768 * 1024,
 } as const;
 
@@ -63,30 +72,87 @@ export function isAdmissibleJsonValue(value: unknown): value is JsonValue {
 	return isBoundedJsonValueAtDepth(value, 0, new Set());
 }
 
+/** Bound one logical cell by UTF-8 payload bytes, before JSON framing. */
+export function isAdmissibleCellValue(value: unknown): value is JsonValue {
+	if (!isAdmissibleJsonValue(value)) return false;
+	const encoded = typeof value === 'string' ? value : JSON.stringify(value);
+	return encodedBytes(encoded) <= RECORD_SYNC_ADMISSION_LIMITS.encodedCellBytes;
+}
+
+export function isAdmissibleSnapshotRow(row: SnapshotRow): boolean {
+	if (!isBoundedIdentifier(row.table) || !isBoundedIdentifier(row.rowId)) {
+		return false;
+	}
+	const cells = Object.entries(row.cells);
+	return (
+		cells.length <= RECORD_SYNC_ADMISSION_LIMITS.cellsPerOperation &&
+		cells.every(
+			([name, value]) =>
+				isBoundedIdentifier(name) && isAdmissibleCellValue(value),
+		) &&
+		encodedBytes(JSON.stringify(row)) <=
+			RECORD_SYNC_ADMISSION_LIMITS.encodedSnapshotRowBytes
+	);
+}
+
+function isAdmissibleOperation(operation: Operation): boolean {
+	if (
+		!isBoundedIdentifier(operation.table) ||
+		!isBoundedIdentifier(operation.rowId)
+	) {
+		return false;
+	}
+	if (operation.kind === 'deleteRow') return true;
+	return isAdmissibleSnapshotRow({
+		table: operation.table,
+		rowId: operation.rowId,
+		cells: operation.cells,
+	});
+}
+
+/**
+ * Validate a complete local operation set with conservative mutation-envelope
+ * room, so a signed-out write remains encodable after a replica actor is bound.
+ */
+export function isAdmissibleOperationSet(
+	operations: readonly Operation[],
+): boolean {
+	if (
+		operations.length === 0 ||
+		operations.length > RECORD_SYNC_ADMISSION_LIMITS.operationsPerMutation ||
+		!operations.every(isAdmissibleOperation)
+	) {
+		return false;
+	}
+	const mutationWithMaximumActor: Mutation = {
+		// NUL is one UTF-8 byte but six JSON bytes, the worst valid identifier
+		// framing admitted by the byte-only identifier policy.
+		actorId: '\0'.repeat(RECORD_SYNC_ADMISSION_LIMITS.identifierBytes),
+		actorSequence: Number.MAX_SAFE_INTEGER,
+		operations: [...operations],
+	};
+	return (
+		encodedBytes(JSON.stringify(mutationWithMaximumActor)) <=
+		RECORD_SYNC_ADMISSION_LIMITS.encodedMutationBytes
+	);
+}
+
 export function isAdmissibleMutation(mutation: Mutation): boolean {
 	if (
 		!isBoundedIdentifier(mutation.actorId) ||
+		mutation.operations.length === 0 ||
 		mutation.operations.length >
 			RECORD_SYNC_ADMISSION_LIMITS.operationsPerMutation
 	)
 		return false;
-	for (const operation of mutation.operations) {
-		if (
-			!isBoundedIdentifier(operation.table) ||
-			!isBoundedIdentifier(operation.rowId)
-		)
-			return false;
-		if (operation.kind === 'deleteRow') continue;
-		const cells = Object.entries(operation.cells);
-		if (cells.length > RECORD_SYNC_ADMISSION_LIMITS.cellsPerOperation)
-			return false;
-		for (const [name, value] of cells) {
-			if (!isBoundedIdentifier(name) || !isAdmissibleJsonValue(value))
-				return false;
-		}
-	}
+	if (!mutation.operations.every(isAdmissibleOperation)) return false;
+	const canonicalMutation: Mutation = {
+		actorId: mutation.actorId,
+		actorSequence: mutation.actorSequence,
+		operations: mutation.operations,
+	};
 	return (
-		encodedBytes(JSON.stringify(mutation)) <=
+		encodedBytes(JSON.stringify(canonicalMutation)) <=
 		RECORD_SYNC_ADMISSION_LIMITS.encodedMutationBytes
 	);
 }

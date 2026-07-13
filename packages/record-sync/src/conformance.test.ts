@@ -10,6 +10,7 @@ import {
 	createDurableObjectSqliteAdapter,
 	type DurableObjectSqliteStorage,
 } from './adapters/durable-object.js';
+import { RECORD_SYNC_ADMISSION_LIMITS } from './admission.js';
 import { createRecordAuthority } from './authority.js';
 import type { Mutation } from './protocol.js';
 import { isValidSnapshotChunk, isValidSnapshotManifest } from './snapshot.js';
@@ -225,7 +226,7 @@ async function runConformance(open: OpenDatabase) {
 		expect(pull.ok && !pull.snapshotRequired && pull.mutations).toHaveLength(2);
 
 		const manifest = await authority.publishSnapshot({
-			maxChunkBytes: 1024 * 1024,
+			maxChunkBytes: RECORD_SYNC_ADMISSION_LIMITS.encodedSnapshotChunkBytes,
 		});
 		expect(manifest.actorHighWater).toEqual({ 'actor-a': 2 });
 		expect(await isValidSnapshotManifest(sha256, manifest)).toBeTrue();

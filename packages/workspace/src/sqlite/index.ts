@@ -65,7 +65,10 @@ export {
 	defineRecordsMigrations,
 } from './records-migration.js';
 export { renderHistoricalSchemaModule } from './render-historical-schema.js';
-export type { ReplicaSyncPort } from './replica.js';
+export {
+	ReplicaAdmissionConflictError,
+	type ReplicaSyncPort,
+} from './replica.js';
 export {
 	type CreateHttpReplicaSyncPortOptions,
 	createHttpReplicaSyncPort,
