@@ -30,6 +30,7 @@ import { defineTable, defineWorkspace } from './definition.js';
 import {
 	createReplicaRuntime,
 	ReplicaAdmissionConflictError,
+	ReplicaDatabaseSupersededError,
 	type ReplicaSyncPort,
 	startReplicaSyncSupervisor,
 } from './replica.js';
@@ -956,7 +957,7 @@ test('legacy bound metadata reopens after the nullable representation migration'
 	server.native.close();
 });
 
-test('restart treats a contradictory authority database as fatal corruption', async () => {
+test('remote succession freezes the old replica and preserves pending work for export', async () => {
 	const firstServer = createServer('database-1');
 	const native = new Database(':memory:');
 	const first = await openReplica({
@@ -965,6 +966,9 @@ test('restart treats a contradictory authority database as fatal corruption', as
 		actorId: 'actor-a',
 	});
 	await first.runtime.syncOnce();
+	first.runtime.database.tables.notes.create(
+		note('pending', 'not synchronized'),
+	);
 	const replacement = createServer('database-2');
 	const restarted = await openReplica({
 		native,
@@ -975,9 +979,25 @@ test('restart treats a contradictory authority database as fatal corruption', as
 		() => undefined,
 		(cause: unknown) => cause,
 	);
-	expect(error).toBeInstanceOf(ReplicaInvariantViolationError);
-	expect((error as Error).message).toContain('database identity');
-	expect((error as Error).message).toContain('rebootstrap');
+	expect(error).toBeInstanceOf(ReplicaDatabaseSupersededError);
+	expect(error).toMatchObject({
+		localDatabaseId: 'database-1',
+		currentDatabaseId: 'database-2',
+		pendingMutationCount: 1,
+	});
+	expect(restarted.runtime.inspect()).toMatchObject({
+		databaseId: 'database-1',
+		outbox: [{ actorId: 'actor-a', actorSequence: 1 }],
+		superseded: { currentDatabaseId: 'database-2' },
+	});
+	expect(() =>
+		restarted.runtime.database.tables.notes.create(
+			note('blocked', 'cannot edit export-only state'),
+		),
+	).toThrow(ReplicaDatabaseSupersededError);
+	expect(restarted.runtime.database.tables.notes.get('pending')).toEqual(
+		note('pending', 'not synchronized'),
+	);
 	native.close();
 	firstServer.native.close();
 	replacement.native.close();

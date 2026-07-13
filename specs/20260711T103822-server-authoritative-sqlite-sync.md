@@ -1514,6 +1514,16 @@ request a prototype are implementation proof, not unresolved product approval.
       ordinary synchronized local materialization already owns the exact rows
       at H.
 
+15. **Superseded replica containment** (resolved 2026-07-13)
+    - Decision: every synchronization pass reopens the family descriptor. If
+      the selected database or schema differs, the old replica becomes
+      export-only immediately: synchronization stops, application writes are
+      refused, and the local rows plus outbox remain intact. A replacement
+      lifecycle may bootstrap the successor, but it never deletes or rewrites
+      forgotten local intent.
+    - Refusal: a changed database id is not corruption, and the runtime never
+      responds by discarding or silently rebootstrapping the old replica.
+
 ## Success criteria
 
 - [ ] App definitions contain no epoch, root incarnation, or row-version API.

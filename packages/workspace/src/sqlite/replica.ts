@@ -49,6 +49,35 @@ type ReplicaDatabaseDescriptor = {
 	recordsSchemaHash: string;
 };
 
+/** The authority selected another immutable database; local state is export-only. */
+export class ReplicaDatabaseSupersededError extends Error {
+	readonly localDatabaseId: string | null;
+	readonly currentDatabaseId: string;
+	readonly currentRecordsSchemaHash: string;
+	readonly pendingMutationCount: number;
+
+	constructor({
+		localDatabaseId,
+		currentDatabaseId,
+		currentRecordsSchemaHash,
+		pendingMutationCount,
+	}: {
+		localDatabaseId: string | null;
+		currentDatabaseId: string;
+		currentRecordsSchemaHash: string;
+		pendingMutationCount: number;
+	}) {
+		super(
+			`Replica database '${localDatabaseId ?? 'unbound'}' was superseded by '${currentDatabaseId}'; local state is preserved for logical export`,
+		);
+		this.name = 'ReplicaDatabaseSupersededError';
+		this.localDatabaseId = localDatabaseId;
+		this.currentDatabaseId = currentDatabaseId;
+		this.currentRecordsSchemaHash = currentRecordsSchemaHash;
+		this.pendingMutationCount = pendingMutationCount;
+	}
+}
+
 /** Network boundary implemented by the hosted or self-hosted sync client. */
 export type ReplicaSyncPort = {
 	/** Select the workspace route locally without performing network I/O. */
@@ -110,11 +139,13 @@ export async function createReplicaRuntime<TTables extends TableDefinitions>({
 	if (!Number.isSafeInteger(pullLimit) || pullLimit < 1 || pullLimit > 1_000) {
 		throw new TypeError('pullLimit must be an integer from 1 through 1000');
 	}
+	let superseded: ReplicaDatabaseSupersededError | undefined;
 	const coordinator: ApplicationMutationCoordinator = {
 		commit<TResult>(
 			context: ApplicationMutationContext,
 			apply: () => TResult,
 		): TResult {
+			if (superseded) throw superseded;
 			return sqlite.transaction(() => {
 				const result = apply();
 				if (context.operations.length === 0) return result;
@@ -158,33 +189,36 @@ export async function createReplicaRuntime<TTables extends TableDefinitions>({
 		protocolMajor,
 	};
 	sync.bindWorkspace(bindingRequest.workspaceId);
-	let isAuthorityBindingVerified = false;
-
 	async function verifyAuthorityBinding(signal?: AbortSignal): Promise<void> {
-		if (isAuthorityBindingVerified) return;
 		const { databaseId, recordsSchemaHash } = parseDatabaseDescriptor(
 			await sync.openDatabase(bindingRequest, signal),
 		);
 		assertNonEmpty(databaseId, 'databaseId');
 		assertNonEmpty(recordsSchemaHash, 'recordsSchemaHash');
-		if (recordsSchemaHash !== definition.recordsSchemaHash) {
-			throw new ReplicaSyncRefusalError('records-schema-mismatch');
-		}
-		sqlite.transaction(() => {
+		const changed = sqlite.transaction(() => {
 			const meta = readMeta(sqlite);
+			if (
+				recordsSchemaHash !== definition.recordsSchemaHash ||
+				(meta.databaseId !== null && databaseId !== meta.databaseId)
+			) {
+				return new ReplicaDatabaseSupersededError({
+					localDatabaseId: meta.databaseId,
+					currentDatabaseId: databaseId,
+					currentRecordsSchemaHash: recordsSchemaHash,
+					pendingMutationCount: readOutbox(sqlite).length,
+				});
+			}
 			if (meta.databaseId === null) {
 				sqlite.run(`UPDATE ${META_TABLE} SET database_id = ? WHERE id = 1`, [
 					databaseId,
 				]);
-				return;
 			}
-			if (databaseId !== meta.databaseId) {
-				throw new ReplicaInvariantViolationError(
-					'Replica database identity no longer matches authority; discard this replica and rebootstrap from the authority',
-				);
-			}
+			return undefined;
 		});
-		isAuthorityBindingVerified = true;
+		if (changed) {
+			superseded = changed;
+			throw changed;
+		}
 	}
 
 	function envelope(meta = readMeta(sqlite)): RequestEnvelope {
@@ -429,7 +463,14 @@ export async function createReplicaRuntime<TTables extends TableDefinitions>({
 		},
 		/** Inspect durable protocol state for diagnostics and tests. */
 		inspect() {
-			return { ...readMeta(sqlite), outbox: readOutbox(sqlite) };
+			return {
+				...readMeta(sqlite),
+				outbox: readOutbox(sqlite),
+				superseded: superseded && {
+					currentDatabaseId: superseded.currentDatabaseId,
+					currentRecordsSchemaHash: superseded.currentRecordsSchemaHash,
+				},
+			};
 		},
 	};
 }
@@ -510,6 +551,7 @@ export function startReplicaSyncSupervisor(
 					if (
 						error instanceof ReplicaInvariantViolationError ||
 						error instanceof ReplicaAdmissionConflictError ||
+						error instanceof ReplicaDatabaseSupersededError ||
 						error instanceof ReplicaSyncRefusalError
 					) {
 						// Terminal: retrying the same durable state cannot converge.
