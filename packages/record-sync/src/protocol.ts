@@ -166,7 +166,7 @@ const snapshotManifestSchema = Type.Object(
 );
 export type SnapshotManifest = Static<typeof snapshotManifestSchema>;
 
-const snapshotChunkSchema = Type.Object(
+export const SnapshotChunkSchema = Type.Object(
 	{
 		generation: positiveSequence,
 		index: sequence,
@@ -175,7 +175,7 @@ const snapshotChunkSchema = Type.Object(
 	},
 	CLOSED,
 );
-export type SnapshotChunk = Static<typeof snapshotChunkSchema>;
+export type SnapshotChunk = Static<typeof SnapshotChunkSchema>;
 
 const requestRefusalSchema = Type.Union([
 	Type.Literal('protocol-mismatch'),
@@ -245,7 +245,7 @@ export const SnapshotChunkResponseSchema = Type.Union([
 		{
 			kind: Type.Literal('snapshotChunk'),
 			ok: Type.Literal(true),
-			chunk: snapshotChunkSchema,
+			chunk: SnapshotChunkSchema,
 		},
 		CLOSED,
 	),
@@ -348,6 +348,17 @@ export function parseSnapshotChunkResponse(
 				RECORD_SYNC_ADMISSION_LIMITS.encodedSnapshotChunkBytes)
 	)
 		throw new TypeError('Invalid record-sync snapshot chunk response');
+	return value;
+}
+
+export function parseSnapshotChunk(value: unknown): SnapshotChunk {
+	if (
+		!Value.Check(SnapshotChunkSchema, value) ||
+		!snapshotRowsAreAdmissible(value.rows) ||
+		encodedBytes(JSON.stringify(value)) >
+			RECORD_SYNC_ADMISSION_LIMITS.encodedSnapshotChunkBytes
+	)
+		throw new TypeError('Invalid record-sync snapshot chunk');
 	return value;
 }
 

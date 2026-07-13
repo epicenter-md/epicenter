@@ -287,7 +287,7 @@ export function createGate3Sqlite(
 					"UPDATE gate3_databases SET status = 'fenced' WHERE id = ?",
 					[source.id],
 				);
-				database.run('INSERT INTO gate3_databases VALUES (?, ?, ?, 0)', [
+				database.run('INSERT INTO gate3_databases VALUES (?, ?, ?, 1)', [
 					candidateId,
 					manifest.targetSchemaHash,
 					'live',

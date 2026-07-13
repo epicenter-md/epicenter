@@ -207,7 +207,7 @@ test('sealed content-addressed chunks activate as the successor checkpoint', () 
 			snapshot: {
 				databaseId: candidate.manifest.candidateId,
 				schemaHash: 'schema-b',
-				head: 0,
+				head: 1,
 				rows: targetRows,
 			},
 		});

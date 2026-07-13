@@ -15,7 +15,7 @@ LIVE source A at head H
   -> upload and seal immutable chunks
   -> activate(candidateId)
        if family.current == A and A.head == H:
-         select B at head 0 and permanently fence A
+         select B at transition 1 and permanently fence A
        otherwise:
          change nothing; rebuild from the current source
 ```
@@ -23,7 +23,7 @@ LIVE source A at head H
 The authority never stores application transform code. Candidate manifests and
 chunks are authenticated by SHA-256 over canonical JSON. A pending upload is
 not a database and cannot be read or written. Atomic activation creates B from
-the verified chunks, which become B's initial head-0 checkpoint.
+the verified chunks, which become B's initial transition-1 checkpoint.
 
 ## Asymmetric refusal
 

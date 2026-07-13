@@ -651,9 +651,11 @@ authority loads the sealed manifest and derives source database A, source head
 H, target records-schema hash, and the candidate's successor binding from
 server-owned state. It
 revalidates that binding, candidate state, family selection, and A's head before
-selecting B and fencing A. The verified uploaded chunks become B's initial
-head-0 checkpoint; the authority does not copy them through another baseline
-representation during activation.
+selecting B and fencing A. Activation is B's first authoritative state
+transition: B begins at head and watermark 1, and the verified uploaded chunks
+become its snapshot at sequence 1. A cursor-0 replica therefore installs the
+baseline through the ordinary snapshot-required pull path. The authority does
+not copy the rows through another baseline representation during activation.
 
 Staging has fixed chunk, row, and byte limits. The one-slot rule bounds aggregate
 temporary storage without candidate TTLs, expiry state, garbage collection, or
@@ -1489,6 +1491,16 @@ request a prototype are implementation proof, not unresolved product approval.
       synchronized succession is an explicit, rare maintenance event.
     - Falsifier: a concrete product workflow requires concurrent independent
       succession preparation rather than one approved lifecycle owner.
+
+13. **Successor bootstrap sequence** (resolved 2026-07-13)
+    - Decision: activation is authoritative state transition 1 for the
+      successor. B begins with server sequence 1, watermark 1, snapshot
+      generation 1, and the uploaded baseline as snapshot sequence 1. A fresh
+      cursor-0 replica receives it through the existing snapshot-required pull
+      path. The first client mutation is sequence 2.
+    - Refusal: do not add a bootstrap manifest to `open`, a bootstrap flag to
+      `pull`, or a second installed-generation coordinate merely to preserve a
+      head-0 aesthetic distinction.
 
 ## Success criteria
 

@@ -121,7 +121,7 @@ export function createGate3Reference(initial: {
 				id: candidateId,
 				schemaHash: manifest.targetSchemaHash,
 				status: 'live',
-				head: 0,
+				head: 1,
 				rows: chunks.flatMap((chunk) => structuredClone(chunk.rows)),
 			});
 			checkpoints.set(candidateId, chunks);

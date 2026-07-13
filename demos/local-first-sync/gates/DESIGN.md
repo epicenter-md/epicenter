@@ -78,7 +78,7 @@ creates the successor database from its verified chunks. Databases therefore
 have only `live` and `fenced` states. Ordinary writes recheck family-current and writable inside their
 fold/head transaction. Activation accepts only `candidateId`, derives its
 source/head/target binding from the sealed server-owned manifest, and reuses the
-verified uploaded chunks as the successor's initial head-0 checkpoint. The
+verified uploaded chunks as the successor's initial transition-1 checkpoint. The
 measured result is recorded in [`GATE3-EVIDENCE.md`](GATE3-EVIDENCE.md).
 
 Wave 4 extracts the portable record protocol, fold, authority, and three SQLite

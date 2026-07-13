@@ -160,7 +160,8 @@ function initialize(
 		database.run(`
 			CREATE TABLE IF NOT EXISTS record_sync_family (
 				id INTEGER PRIMARY KEY CHECK(id = 1),
-				current_database_id TEXT NOT NULL
+				current_database_id TEXT NOT NULL,
+				staged_candidate_id TEXT
 			);
 			CREATE TABLE IF NOT EXISTS record_sync_databases (
 				database_id TEXT PRIMARY KEY,
@@ -206,6 +207,18 @@ function initialize(
 				checksum TEXT NOT NULL,
 				PRIMARY KEY(database_id, chunk_index)
 			);
+			CREATE TABLE IF NOT EXISTS record_sync_candidate_manifests (
+				candidate_id TEXT PRIMARY KEY,
+				manifest_json TEXT NOT NULL,
+				sealed INTEGER NOT NULL CHECK(sealed IN (0, 1)),
+				snapshot_manifest_json TEXT
+			);
+			CREATE TABLE IF NOT EXISTS record_sync_candidate_chunks (
+				candidate_id TEXT NOT NULL,
+				chunk_index INTEGER NOT NULL,
+				chunk_json TEXT NOT NULL,
+				PRIMARY KEY(candidate_id, chunk_index)
+			);
 		`);
 		const family = one<{ current_database_id: string }>(
 			database,
@@ -224,7 +237,7 @@ function initialize(
 					envelope.recordsSchemaHash,
 				],
 			);
-			database.run('INSERT INTO record_sync_family VALUES (1, ?)', [
+			database.run('INSERT INTO record_sync_family VALUES (1, ?, NULL)', [
 				envelope.databaseId,
 			]);
 			return;
