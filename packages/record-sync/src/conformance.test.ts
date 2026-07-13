@@ -21,6 +21,7 @@ const envelope = {
 	recordsSchemaHash: 'notes-v1',
 	recordsEpoch: 'epoch-1',
 } as const;
+const recordsDescriptor = 'notes descriptor v1';
 
 const sha256 = async (value: string) =>
 	createHash('sha256').update(value).digest('hex');
@@ -125,7 +126,12 @@ async function runConformance(open: OpenDatabase) {
 			)[0]?.count,
 		).toBe(0);
 
-		const authority = createRecordAuthority({ database, envelope, sha256 });
+		const authority = createRecordAuthority({
+			database,
+			envelope,
+			recordsDescriptor,
+			sha256,
+		});
 		const first: Mutation = {
 			actorId: 'actor-a',
 			actorSequence: 1,
@@ -312,11 +318,12 @@ async function runConformance(open: OpenDatabase) {
 			snapshotRequired: true,
 		});
 
-		createRecordAuthority({ database, envelope, sha256 });
+		createRecordAuthority({ database, envelope, recordsDescriptor, sha256 });
 		expect(() =>
 			createRecordAuthority({
 				database,
 				envelope: { ...envelope, recordsEpoch: 'wrong' },
+				recordsDescriptor,
 				sha256,
 			}),
 		).toThrow('recordsEpoch');

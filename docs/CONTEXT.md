@@ -111,6 +111,11 @@ shapes, see `docs/adr/`.
   interpretation. Workspace identity, KV, child documents, local indexes,
   physical storage, and the records epoch do not enter it. Applications author
   neither the hash nor the epoch.
+- **Records descriptor**: canonical, hash-bound JSON that explains the record
+  tables, fields, and code-independent constraints. Every authority epoch and
+  durable SQLite materialization stores it beside the hash. It contains no
+  executable actions, permissions, KV, child-document contents, or replica
+  transport state.
 - **Document format**: one Epicenter-owned collaborative Yjs representation. A
   format capability carries a canonical descriptor, a derived format hash, and
   the function that attaches its typed handle to an open Y.Doc. Document format

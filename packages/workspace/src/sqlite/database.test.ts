@@ -946,6 +946,11 @@ describe('database identity', () => {
 	test('identity inspection and fresh stamping share one immediate transaction', () => {
 		const database = new Database(':memory:');
 		const base = createSqlite(database);
+		const definition = defineWorkspace({
+			id: 'atomic-identity-test',
+			name: 'Atomic identity test',
+			tables: { rows: defineTable({ fields: { id: field.string() } }) },
+		});
 		let inspectionWasTransactional = false;
 		const sqlite: RecordSyncSqlite = {
 			...base,
@@ -957,16 +962,19 @@ describe('database identity', () => {
 			},
 		};
 		createApplicationDatabase(
-			defineWorkspace({
-				id: 'atomic-identity-test',
-				name: 'Atomic identity test',
-				tables: { rows: defineTable({ fields: { id: field.string() } }) },
-			}),
+			definition,
 			sqlite,
 			{ kind: 'standalone', onObserverError() {} },
 		);
 
 		expect(inspectionWasTransactional).toBe(true);
+		expect(
+			database
+				.query<{ value: string }, []>(
+					"SELECT value FROM __epicenter_meta WHERE key = 'records_descriptor'",
+				)
+				.get()?.value,
+		).toBe(definition.recordsDescriptor);
 	});
 
 	test('same-revision workspace and schema mismatches refuse typed access', () => {

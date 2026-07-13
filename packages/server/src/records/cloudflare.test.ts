@@ -116,6 +116,7 @@ const partition = {
 };
 const bindingRequest = {
 	protocolMajor: RECORD_SYNC_PROTOCOL_MAJOR,
+	recordsDescriptor: 'schema descriptor 1',
 	recordsSchemaHash: 'schema-1',
 };
 
@@ -126,6 +127,7 @@ async function open(
 ): Promise<RequestEnvelope> {
 	const result = await records.open(target, {
 		protocolMajor: RECORD_SYNC_PROTOCOL_MAJOR,
+		recordsDescriptor: 'schema descriptor 1',
 		recordsSchemaHash,
 	});
 	if (!result.ok) throw new Error(`Open refused: ${result.reason}`);
@@ -188,11 +190,13 @@ test('open describes the stored schema without replacing its identity', async ()
 	expect(
 		await records.open(partition, {
 			protocolMajor: RECORD_SYNC_PROTOCOL_MAJOR,
+			recordsDescriptor: 'different descriptor',
 			recordsSchemaHash: 'different-schema',
 		}),
 	).toEqual({
 		ok: true,
 		recordsEpoch: envelope.recordsEpoch,
+		recordsDescriptor: 'schema descriptor 1',
 		recordsSchemaHash: envelope.recordsSchemaHash,
 	});
 	expect((await open(records)).recordsEpoch).toBe(envelope.recordsEpoch);

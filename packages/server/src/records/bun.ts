@@ -82,6 +82,7 @@ export function createBunRecords({
 				return {
 					ok: true,
 					recordsEpoch: opened.recordsEpoch,
+					recordsDescriptor: opened.recordsDescriptor,
 					recordsSchemaHash: opened.recordsSchemaHash,
 				};
 			}
@@ -106,6 +107,7 @@ export function createBunRecords({
 				return {
 					ok: true,
 					recordsEpoch: opened.recordsEpoch,
+					recordsDescriptor: opened.recordsDescriptor,
 					recordsSchemaHash: opened.recordsSchemaHash,
 				};
 			} catch (error) {

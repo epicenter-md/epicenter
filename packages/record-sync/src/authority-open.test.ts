@@ -24,6 +24,7 @@ const sha256 = async (value: string) =>
 	createHash('sha256').update(value).digest('hex');
 const request = {
 	protocolMajor: RECORD_SYNC_PROTOCOL_MAJOR,
+	recordsDescriptor: 'notes descriptor v1',
 	recordsSchemaHash: 'notes-v1',
 };
 
@@ -49,6 +50,12 @@ test('first open persists one records epoch and restore reuses it', () => {
 			/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
 		);
 		expect(opened.recordsSchemaHash).toBe('notes-v1');
+		expect(opened.recordsDescriptor).toBe('notes descriptor v1');
+		expect(
+			database.all<{ value: string }>(
+				"SELECT value FROM record_sync_meta WHERE key = 'recordsDescriptor'",
+			),
+		).toEqual([{ value: 'notes descriptor v1' }]);
 
 		const reopened = openRecordAuthority({
 			database,
@@ -59,6 +66,7 @@ test('first open persists one records epoch and restore reuses it', () => {
 		if (!reopened.ok) throw new Error('Expected authority to reopen');
 		expect(reopened.recordsEpoch).toBe(opened.recordsEpoch);
 		expect(reopened.recordsSchemaHash).toBe('notes-v1');
+		expect(reopened.recordsDescriptor).toBe('notes descriptor v1');
 		expect(restoreRecordAuthority({ database, sha256 })?.envelope).toEqual(
 			opened.envelope,
 		);
@@ -97,15 +105,20 @@ test('open reports the stored descriptor without replacing the records epoch', (
 			sha256,
 		});
 		if (!opened.ok) throw new Error('Expected authority to open');
-		expect(
-			openRecordAuthority({
-				database,
-				request: { ...request, recordsSchemaHash: 'different' },
+			expect(
+				openRecordAuthority({
+					database,
+					request: {
+						...request,
+						recordsDescriptor: 'different descriptor',
+						recordsSchemaHash: 'different',
+					},
 				sha256,
 			}),
 		).toMatchObject({
 			ok: true,
 			recordsEpoch: opened.recordsEpoch,
+			recordsDescriptor: 'notes descriptor v1',
 			recordsSchemaHash: 'notes-v1',
 		});
 		expect(restoreRecordAuthority({ database, sha256 })?.envelope).toEqual(
@@ -145,6 +158,18 @@ test('invalid open input refuses before initializing storage', () => {
 					...request,
 					recordsSchemaHash: 'x'.repeat(
 						RECORD_SYNC_ADMISSION_LIMITS.recordsSchemaHashBytes + 1,
+					),
+				},
+				sha256,
+			}),
+		).toThrow('Invalid record authority open request');
+		expect(() =>
+			openRecordAuthority({
+				database,
+				request: {
+					...request,
+					recordsDescriptor: 'x'.repeat(
+						RECORD_SYNC_ADMISSION_LIMITS.recordsDescriptorBytes + 1,
 					),
 				},
 				sha256,

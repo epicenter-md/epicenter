@@ -2,6 +2,7 @@ export {
 	isAdmissibleCellValue,
 	isAdmissibleOperationSet,
 	isAdmissibleSnapshotRow,
+	isBoundedRecordsDescriptor,
 	RECORD_SYNC_ADMISSION_LIMITS,
 } from './admission.js';
 export {

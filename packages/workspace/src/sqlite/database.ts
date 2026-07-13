@@ -628,6 +628,7 @@ function initializeDatabase(
 			[String(APPLICATION_STORAGE_REVISION)],
 		);
 		writeMeta(sqlite, 'workspace_id', definition.id);
+		writeMeta(sqlite, 'records_descriptor', definition.recordsDescriptor);
 		writeMeta(sqlite, 'schema_hash', definition.recordsSchemaHash);
 		writeMeta(sqlite, 'database_kind', kind);
 	});
@@ -661,11 +662,13 @@ function inspectDatabaseIdentity(
 
 	const storedRevisionText = readMeta(sqlite, 'storage_revision');
 	const storedWorkspaceId = readMeta(sqlite, 'workspace_id');
+	const storedRecordsDescriptor = readMeta(sqlite, 'records_descriptor');
 	const storedRecordsSchemaHash = readMeta(sqlite, 'schema_hash');
 	const storedKind = readMeta(sqlite, 'database_kind');
 	if (
 		storedRevisionText === undefined ||
 		storedWorkspaceId === undefined ||
+		storedRecordsDescriptor === undefined ||
 		storedRecordsSchemaHash === undefined ||
 		storedKind === undefined
 	) {
@@ -697,6 +700,11 @@ function inspectDatabaseIdentity(
 	if (storedRecordsSchemaHash !== definition.recordsSchemaHash) {
 		throw new Error(
 			'Workspace schema hash does not match the database; refusing typed access',
+		);
+	}
+	if (storedRecordsDescriptor !== definition.recordsDescriptor) {
+		throw new Error(
+			'Workspace records descriptor does not match the database; refusing typed access',
 		);
 	}
 }

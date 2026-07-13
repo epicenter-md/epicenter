@@ -81,9 +81,12 @@ immutable logical schema.
 
 Every synchronized device materializes the records database in local SQLite.
 The authority stores the same logical records, mutations, snapshots, and
-canonical head. It does not synchronize a device's SQLite file. Local indexes,
-pages, triggers, cursors, and outboxes are runtime state rather than part of the
-records schema.
+canonical head. Every durable materialization also stores the canonical records
+descriptor beside its hash, so the tables and portable constraints remain
+understandable without the application bundle. The authority treats that
+descriptor as opaque text. It does not synchronize a device's SQLite file.
+Local indexes, pages, triggers, cursors, and outboxes are runtime state rather
+than part of the records schema.
 
 ### KV is for bounded synchronized preferences
 

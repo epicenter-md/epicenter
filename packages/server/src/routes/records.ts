@@ -88,6 +88,7 @@ function createRecordsApp<E extends Env>(
 			if (result.ok) {
 				return c.json({
 					recordsEpoch: result.recordsEpoch,
+					recordsDescriptor: result.recordsDescriptor,
 					recordsSchemaHash: result.recordsSchemaHash,
 				});
 			}

@@ -57,6 +57,7 @@ export class RecordAuthorityDurableObject extends DurableObject {
 		return {
 			ok: true,
 			recordsEpoch: opened.recordsEpoch,
+			recordsDescriptor: opened.recordsDescriptor,
 			recordsSchemaHash: opened.recordsSchemaHash,
 		};
 	}

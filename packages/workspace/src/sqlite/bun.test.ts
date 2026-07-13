@@ -97,12 +97,17 @@ test('Bun workspace replicas synchronize automatically through one authority', a
 	const authority = createRecordAuthority({
 		database: createBunSqliteAdapter(authorityDatabase),
 		envelope,
+		recordsDescriptor: definition.recordsDescriptor,
 		sha256: async (value) => createHash('sha256').update(value).digest('hex'),
 	});
 	const sync = {
 		bindWorkspace() {},
 		async openAuthority() {
-			return { recordsEpoch, recordsSchemaHash: definition.recordsSchemaHash };
+			return {
+				recordsEpoch,
+				recordsDescriptor: definition.recordsDescriptor,
+				recordsSchemaHash: definition.recordsSchemaHash,
+			};
 		},
 		async push(request: Parameters<typeof authority.push>[0]) {
 			return authority.push(request);

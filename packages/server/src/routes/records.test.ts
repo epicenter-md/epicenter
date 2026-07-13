@@ -31,6 +31,7 @@ function setup() {
 			return {
 				ok: true,
 				recordsEpoch: 'epoch-1',
+				recordsDescriptor: 'schema descriptor 1',
 				recordsSchemaHash: 'schema-1',
 			};
 		},
@@ -93,12 +94,14 @@ test('open stamps the authenticated principal and path workspace onto the backen
 	const { app, partitions } = setup();
 	const response = await post(app, 'open', {
 		protocolMajor: RECORD_SYNC_PROTOCOL_MAJOR,
+		recordsDescriptor: 'schema descriptor 1',
 		recordsSchemaHash: 'schema-1',
 	});
 
 	expect(response.status).toBe(200);
 	expect((await response.json()) as unknown).toEqual({
 		recordsEpoch: 'epoch-1',
+		recordsDescriptor: 'schema descriptor 1',
 		recordsSchemaHash: 'schema-1',
 	});
 	expect(partitions).toEqual([

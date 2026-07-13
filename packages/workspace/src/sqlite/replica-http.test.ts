@@ -15,7 +15,11 @@ test('HTTP replica port binds one encoded workspace and forwards exact JSON', as
 			});
 			return Response.json(
 				requests.length === 1
-					? { recordsEpoch: 'epoch-1', recordsSchemaHash: 'schema-1' }
+					? {
+						recordsEpoch: 'epoch-1',
+						recordsDescriptor: 'schema descriptor 1',
+						recordsSchemaHash: 'schema-1',
+					}
 					: { kind: 'push', ok: true },
 			);
 		},
@@ -27,11 +31,16 @@ test('HTTP replica port binds one encoded workspace and forwards exact JSON', as
 			{
 				workspaceId: 'notes/2026',
 				protocolMajor: 1,
+				recordsDescriptor: 'schema descriptor 1',
 				recordsSchemaHash: 'schema-1',
 			},
 			controller.signal,
 		),
-	).toEqual({ recordsEpoch: 'epoch-1', recordsSchemaHash: 'schema-1' });
+	).toEqual({
+		recordsEpoch: 'epoch-1',
+		recordsDescriptor: 'schema descriptor 1',
+		recordsSchemaHash: 'schema-1',
+	});
 	await port.push(
 		{
 			kind: 'push',
@@ -46,7 +55,11 @@ test('HTTP replica port binds one encoded workspace and forwards exact JSON', as
 	expect(requests).toEqual([
 		{
 			url: 'https://api.example.test/api/records/notes%2F2026/open',
-			body: { protocolMajor: 1, recordsSchemaHash: 'schema-1' },
+			body: {
+				protocolMajor: 1,
+				recordsDescriptor: 'schema descriptor 1',
+				recordsSchemaHash: 'schema-1',
+			},
 			signal: controller.signal,
 		},
 		{
@@ -65,6 +78,7 @@ test('HTTP replica port binds one encoded workspace and forwards exact JSON', as
 		port.openAuthority({
 			workspaceId: 'other',
 			protocolMajor: 1,
+			recordsDescriptor: 'schema descriptor 1',
 			recordsSchemaHash: 'schema-1',
 		}),
 	).rejects.toThrow('already bound');
@@ -86,6 +100,7 @@ test('HTTP replica port reports non-success and malformed responses', async () =
 		port.openAuthority({
 			workspaceId: 'notes',
 			protocolMajor: 1,
+			recordsDescriptor: 'schema descriptor 1',
 			recordsSchemaHash: 'schema-1',
 		}),
 	).rejects.toThrow('non-JSON HTTP 503');
@@ -93,6 +108,7 @@ test('HTTP replica port reports non-success and malformed responses', async () =
 		port.openAuthority({
 			workspaceId: 'notes',
 			protocolMajor: 1,
+			recordsDescriptor: 'schema descriptor 1',
 			recordsSchemaHash: 'schema-1',
 		}),
 	).rejects.toThrow('non-JSON HTTP 200');
@@ -119,6 +135,7 @@ test('HTTP protocol mismatch remains a terminal replica refusal', async () => {
 		port.openAuthority({
 			workspaceId: 'notes',
 			protocolMajor: 3,
+			recordsDescriptor: 'schema descriptor 1',
 			recordsSchemaHash: 'schema-1',
 		}),
 	).rejects.toBeInstanceOf(ReplicaSyncRefusalError);

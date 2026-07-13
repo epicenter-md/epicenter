@@ -202,6 +202,7 @@ export async function createReplicaRuntime<TTables extends TableDefinitions>({
 
 	const bindingRequest = {
 		workspaceId: definition.id,
+		recordsDescriptor: definition.recordsDescriptor,
 		recordsSchemaHash: definition.recordsSchemaHash,
 		protocolMajor,
 	};
@@ -210,12 +211,12 @@ export async function createReplicaRuntime<TTables extends TableDefinitions>({
 	async function readAuthorityDescriptor(
 		signal?: AbortSignal,
 	): Promise<RecordAuthorityDescriptor> {
-		const { recordsEpoch, recordsSchemaHash } = parseAuthorityDescriptor(
-			await sync.openAuthority(bindingRequest, signal),
-		);
+		const { recordsEpoch, recordsDescriptor, recordsSchemaHash } =
+			parseAuthorityDescriptor(await sync.openAuthority(bindingRequest, signal));
 		assertNonEmpty(recordsEpoch, 'recordsEpoch');
+		assertNonEmpty(recordsDescriptor, 'recordsDescriptor');
 		assertNonEmpty(recordsSchemaHash, 'recordsSchemaHash');
-		return { recordsEpoch, recordsSchemaHash };
+		return { recordsEpoch, recordsDescriptor, recordsSchemaHash };
 	}
 
 	function enterEpochMismatch(
@@ -260,14 +261,17 @@ export async function createReplicaRuntime<TTables extends TableDefinitions>({
 
 	async function discoverAuthority(signal?: AbortSignal): Promise<void> {
 		if (epochMismatch) throw epochMismatch;
-		const { recordsEpoch, recordsSchemaHash } =
+		const { recordsEpoch, recordsDescriptor, recordsSchemaHash } =
 			await readAuthorityDescriptor(signal);
 		const mismatch = sqlite.transaction(() => {
 			const meta = readMeta(sqlite);
 			if (meta.recordsEpoch !== null && recordsEpoch !== meta.recordsEpoch) {
-				return { recordsEpoch, recordsSchemaHash };
+				return { recordsEpoch, recordsDescriptor, recordsSchemaHash };
 			}
-			if (recordsSchemaHash !== definition.recordsSchemaHash) {
+			if (
+				recordsDescriptor !== definition.recordsDescriptor ||
+				recordsSchemaHash !== definition.recordsSchemaHash
+			) {
 				throw new ReplicaSyncRefusalError('records-schema-mismatch');
 			}
 			if (meta.recordsEpoch === null) {
@@ -1075,10 +1079,13 @@ function parseAuthorityDescriptor(value: unknown): RecordAuthorityDescriptor {
 		typeof value !== 'object' ||
 		value === null ||
 		Array.isArray(value) ||
-		Object.keys(value).length !== 2 ||
+		Object.keys(value).length !== 3 ||
 		!Object.hasOwn(value, 'recordsEpoch') ||
+		!Object.hasOwn(value, 'recordsDescriptor') ||
 		!Object.hasOwn(value, 'recordsSchemaHash') ||
 		typeof (value as { recordsEpoch?: unknown }).recordsEpoch !== 'string' ||
+		typeof (value as { recordsDescriptor?: unknown }).recordsDescriptor !==
+			'string' ||
 		typeof (value as { recordsSchemaHash?: unknown }).recordsSchemaHash !==
 			'string'
 	) {

@@ -98,7 +98,8 @@ function isProtocolMismatch(
 
 function openRequestBody({
 	protocolMajor,
+	recordsDescriptor,
 	recordsSchemaHash,
 }: ReplicaAuthorityOpenRequest): RecordAuthorityOpenRequest {
-	return { protocolMajor, recordsSchemaHash };
+	return { protocolMajor, recordsDescriptor, recordsSchemaHash };
 }

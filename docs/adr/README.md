@@ -207,5 +207,6 @@ Each option and the one reason it lost. Terse. This is not the spec.
 | [0128](0128-tables-do-not-declare-document-edit-touch-policy-without-a-runtime-owner.md) | Tables do not declare document-edit touch policy without a runtime owner | Accepted |
 | [0129](0129-matter-is-markdown-authoritative-application-records-follow-developer-owned-schemas.md) | Matter is Markdown-authoritative; application records follow developer-owned schemas | Accepted |
 | [0130](0130-records-replacement-starts-a-new-epoch-without-an-online-succession-protocol.md) | Records replacement starts a new epoch without an online succession protocol | Accepted |
+| [0131](0131-every-durable-records-materialization-carries-its-canonical-descriptor.md) | Every durable records materialization carries its canonical descriptor | Accepted |
 
 When you add an ADR, add its row here.

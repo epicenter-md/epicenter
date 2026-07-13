@@ -3,7 +3,7 @@
 - **Status:** Accepted
 - **Date:** 2026-07-11
 - **Relates:** [ADR-0035](0035-durable-storage-is-one-per-person-coordination-box.md), [ADR-0079 (cross-device is two planes)](0079-cross-device-is-two-planes-epicenter-syncs-the-crdt-the-box-is-reached-directly.md), [ADR-0092 (identity is the partition)](0092-identity-is-the-partition.md)
-- **Amended by:** [ADR-0130](0130-records-replacement-starts-a-new-epoch-without-an-online-succession-protocol.md) (database-family succession is replaced by one active records epoch)
+- **Amended by:** [ADR-0130](0130-records-replacement-starts-a-new-epoch-without-an-online-succession-protocol.md) (database-family succession is replaced by one active records epoch); [ADR-0131](0131-every-durable-records-materialization-carries-its-canonical-descriptor.md) (durable materializations carry the opaque canonical descriptor beside its hash)
 
 ## Context
 

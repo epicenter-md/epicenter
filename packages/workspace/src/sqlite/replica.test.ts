@@ -62,6 +62,7 @@ function createServer(recordsEpoch = 'epoch-1') {
 	const authority = createRecordAuthority({
 		database: createBunSqliteAdapter(native),
 		envelope,
+		recordsDescriptor: definition.recordsDescriptor,
 		sha256,
 	});
 	return { native, authority, envelope };
@@ -78,11 +79,13 @@ function createPort(
 		async openAuthority(request) {
 			expect(request).toEqual({
 				workspaceId: definition.id,
+				recordsDescriptor: definition.recordsDescriptor,
 				recordsSchemaHash: definition.recordsSchemaHash,
 				protocolMajor: 1,
 			});
 			return {
 				recordsEpoch,
+				recordsDescriptor: definition.recordsDescriptor,
 				recordsSchemaHash: definition.recordsSchemaHash,
 			};
 		},
@@ -520,6 +523,7 @@ test("a push refused with 'create-conflict' is an invariant violation demanding 
 		async openAuthority() {
 			return {
 				recordsEpoch: 'epoch-1',
+				recordsDescriptor: definition.recordsDescriptor,
 				recordsSchemaHash: definition.recordsSchemaHash,
 			};
 		},
@@ -560,6 +564,7 @@ test('durable authority refusals stop the sync supervisor instead of retrying', 
 			async openAuthority() {
 				return {
 					recordsEpoch: 'epoch-1',
+					recordsDescriptor: definition.recordsDescriptor,
 					recordsSchemaHash: definition.recordsSchemaHash,
 				};
 			},
@@ -609,6 +614,7 @@ test("a push refused with 'row-too-large' stops retries and preserves pending in
 		async openAuthority() {
 			return {
 				recordsEpoch: 'epoch-1',
+				recordsDescriptor: definition.recordsDescriptor,
 				recordsSchemaHash: definition.recordsSchemaHash,
 			};
 		},
