@@ -205,5 +205,6 @@ Each option and the one reason it lost. Terse. This is not the spec.
 | [0126](0126-child-documents-use-format-capabilities-and-evolve-outside-records-databases.md) | Child documents use format capabilities and evolve outside records databases | Accepted (touch policy amended by 0128) |
 | [0127](0127-chat-streams-live-turns-in-client-state-and-stores-finished-messages-as-records.md) | Chat streams live turns in client state and stores finished messages as records | Proposed |
 | [0128](0128-tables-do-not-declare-document-edit-touch-policy-without-a-runtime-owner.md) | Tables do not declare document-edit touch policy without a runtime owner | Accepted |
+| [0129](0129-matter-is-markdown-authoritative-application-records-follow-developer-owned-schemas.md) | Matter is Markdown-authoritative; application records follow developer-owned schemas | Proposed |
 
 When you add an ADR, add its row here.

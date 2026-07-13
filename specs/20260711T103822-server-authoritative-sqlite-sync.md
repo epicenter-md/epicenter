@@ -62,6 +62,7 @@ files own current acceptance status:
 - [ADR-0125](../docs/adr/0125-record-schemas-are-immutable-evolution-creates-a-successor-database.md): record schemas are immutable; evolution creates a successor database.
 - [ADR-0126](../docs/adr/0126-child-documents-use-format-capabilities-and-evolve-outside-records-databases.md): child documents use format capabilities and evolve outside records databases.
 - [ADR-0127](../docs/adr/0127-chat-streams-live-turns-in-client-state-and-stores-finished-messages-as-records.md): chat streams live turns in client state and stores finished messages as records.
+- [ADR-0129](../docs/adr/0129-matter-is-markdown-authoritative-application-records-follow-developer-owned-schemas.md): Matter remains Markdown-authoritative; this spec owns only developer-shaped application records.
 
 ADR numbers allocated on this branch remain provisional until merge.
 
@@ -159,6 +160,19 @@ blobs
 There is no generic root document. KV earns one eager document; child bodies earn
 separate lazy documents; records earn SQLite.
 
+### Source authority boundary
+
+This spec applies to developer-shaped application sources. Their TypeScript
+definitions generate mandatory portable descriptors, and their logical records
+materialize into complete local SQLite databases.
+
+Matter is a separate source kind. User-authored Markdown remains authoritative;
+an optional folder-level `matter.json` describes a lens, and any SQLite mirror
+is a disposable read-only query projection. The two source kinds share the
+closed `field.*` vocabulary, not an authority model. There is no bidirectional
+Markdown and SQLite materialization, generic source registry, cross-source
+reference, or cross-source transaction in this work.
+
 ### Trust model
 
 The authority stores plaintext cells. This preserves the current trusted-server
@@ -190,6 +204,22 @@ small and implements no app-specific search, migration, AI, or query layer.
 - Concurrent assignments to different cells compose.
 - WebSockets are wake-up hints; cursor-based pull carries durable state.
 - The transport log is compactable and promises no permanent history.
+
+### Agent interaction
+
+An agent may inspect the portable records descriptor and query or export the
+complete local SQLite materialization without the original application. Writes
+do not target the SQLite file or transport outbox directly. The agent submits a
+portable proposal containing `createRow`, `updateRow`, and `deleteRow` changes;
+a trusted application surface reviews it and, after approval, commits through
+the same local transaction and outbox as a human edit.
+
+The first proposal contract is records-only. One proposal cannot span records,
+KV, child documents, or blobs, and it cannot invoke application code. Expected
+old values may reject a stale proposal at approval time. The observed server
+sequence is diagnostic context, not a second compare-and-swap condition.
+App-specific executable actions remain separately approved tools around the
+opened source; they are not portable workspace data.
 
 ### Row lifecycle
 
@@ -1096,6 +1126,8 @@ No live mutable definition after a `define*` call returns
 No no-op records migration step
 No permanent cross-plane dual write, generic rollback, or reconciliation
 No atomic transaction across SQLite records and Yjs documents
+No agent proposal spanning records, KV, child documents, or blobs
+No executable action encoded in the portable records descriptor
 No server-executed application conversion
 No app-authored epoch, revision, or incarnation
 No physical restore that preserves replica actor identity
