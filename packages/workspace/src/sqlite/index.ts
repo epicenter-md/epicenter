@@ -61,11 +61,6 @@ export type {
 	WorkspaceReplica,
 } from './open.js';
 export {
-	defineRecordsMigration,
-	defineRecordsMigrations,
-} from './records-migration.js';
-export { renderHistoricalSchemaModule } from './render-historical-schema.js';
-export {
 	ReplicaAdmissionConflictError,
 	ReplicaRecordsEpochMismatchError,
 	type ReplicaSyncPort,

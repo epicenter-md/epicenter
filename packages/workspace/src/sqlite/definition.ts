@@ -1,7 +1,5 @@
 import {
 	compile,
-	type DateTimeString,
-	type InstantString,
 	type Kind,
 	REFERENCE_KEYWORD,
 	recognize,
@@ -19,17 +17,13 @@ import {
 	type TUnion,
 	Type,
 } from 'typebox';
-import type { Brand } from 'wellcrafted/brand';
 import { isKvDefinition } from '../document/define-kv.js';
 import type { KvDefinitions } from '../document/kv.js';
 import { assertSafeSegment } from '../shared/safe-segment.js';
 import { type DocumentFormat, isDocumentFormat } from './document-format.js';
 import {
 	createRecordsDescriptor,
-	type RecordsSchemaRef,
 	recordsSchemaHashOf,
-	recordsSchemaRef,
-	sealRecordsSchemaIdentity,
 } from './schema-descriptor.js';
 
 // The preference plane shares one declaration vocabulary across storage
@@ -173,50 +167,12 @@ export function defineTable<
 
 export type TableDefinitions = Record<string, TableDefinition>;
 
-type NonNullSchema<TSchemaValue extends TSchema> =
-	TSchemaValue extends TUnion<infer TMembers>
-		? Exclude<TMembers[number], TNull>
-		: TSchemaValue;
-
-type IsNullableSchema<TSchemaValue extends TSchema> =
-	TSchemaValue extends TUnion<infer TMembers>
-		? Extract<TMembers[number], TNull> extends never
-			? false
-			: true
-		: false;
-
-type NormalizeAtRestValue<TValue> = [TValue] extends [InstantString]
-	? InstantString
-	: [TValue] extends [DateTimeString]
-		? DateTimeString
-		: [TValue] extends [string & Brand<infer _TBrand>]
-			? string
-			: TValue;
-
-type AtRestNonNullValue<TSchemaValue extends TSchema> =
-	NonNullSchema<TSchemaValue> extends {
-		readonly 'x-json-schema': unknown;
-	}
-		? unknown
-		: NormalizeAtRestValue<Static<NonNullSchema<TSchemaValue>>>;
-
-type AtRestValue<TSchemaValue extends TSchema> =
-	IsNullableSchema<TSchemaValue> extends true
-		? AtRestNonNullValue<TSchemaValue> | null
-		: AtRestNonNullValue<TSchemaValue>;
-
-type RecordsMigrationCells<TTables extends TableDefinitions> = {
-	[TTable in keyof TTables]: {
-		[TColumn in Exclude<keyof TTables[TTable]['fields'], 'id'>]: AtRestValue<
-			TTables[TTable]['fields'][TColumn]
-		>;
-	};
-};
-
 export type WorkspaceDefinition<
 	TTables extends TableDefinitions = TableDefinitions,
 	TKv extends KvDefinitions = KvDefinitions,
-> = RecordsSchemaRef<RecordsMigrationCells<TTables>, 'current'> & {
+> = {
+	readonly recordsDescriptor: string;
+	readonly recordsSchemaHash: string;
 	/**
 	 * The stable app-defined workspace namespace: it keys local
 	 * persistence, sync routing, the KV document, and child-doc guids.
@@ -300,18 +256,15 @@ export function defineWorkspace<
 	);
 	const recordsSchemaHash = recordsSchemaHashOf(recordsDescriptor);
 
-	return Object.freeze(
-		sealRecordsSchemaIdentity({
-			id,
-			name: displayName,
-			tables: ownedTables,
-			kv: ownedKv,
-			kvDocumentGuid: `${id}.kv`,
-			recordsDescriptor,
-			recordsSchemaHash,
-			[recordsSchemaRef]: { kind: 'current' },
-		}),
-	);
+	return Object.freeze({
+		id,
+		name: displayName,
+		tables: ownedTables,
+		kv: ownedKv,
+		kvDocumentGuid: `${id}.kv`,
+		recordsDescriptor,
+		recordsSchemaHash,
+	});
 }
 
 function assertSchemaRecord(

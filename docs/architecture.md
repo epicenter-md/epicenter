@@ -194,8 +194,8 @@ active records epoch B
         `-- old-epoch requests are rejected
 ```
 
-Historical descriptors and pure records transforms may help an administrative
-tool prepare the snapshot. They do not create a shared online lifecycle.
+Applications may retain old descriptors and write one-off transforms to prepare
+the snapshot. Epicenter does not provide a shared migration or online lifecycle.
 Child-document format conversion is explicit and per-document. Moving authority
 between records and documents is an app-owned maintenance operation rather than
 a universal migration feature.

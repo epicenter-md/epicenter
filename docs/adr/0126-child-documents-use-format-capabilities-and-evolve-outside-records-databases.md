@@ -114,7 +114,7 @@ cross-plane migration, permanent dual write, automatic rollback, generic
 reconciliation, or server-executed application conversion. Transfers such as a
 counter document into a SQLite cell, a SQLite cell into an initialized counter
 document, or a Yjs keyed collection into a SQLite table do not enter
-`defineRecordsMigration`. Source bytes remain retained until a separate explicit
+any shared records migration framework. Source bytes remain retained until a separate explicit
 cleanup, but retention never makes the old plane authoritative after cutover.
 
 The cohesion rule is: same plane and same authority may earn a framework

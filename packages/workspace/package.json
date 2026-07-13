@@ -26,7 +26,6 @@
 	"exports": {
 		".": "./src/index.ts",
 		"./sqlite": "./src/sqlite/index.ts",
-		"./sqlite/generated": "./src/sqlite/generated.ts",
 		"./sqlite/browser": "./src/sqlite/browser.ts",
 		"./sqlite/browser-worker": "./src/sqlite/browser-worker.ts",
 		"./sqlite/bun": "./src/sqlite/bun.ts",

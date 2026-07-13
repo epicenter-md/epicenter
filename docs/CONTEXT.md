@@ -133,28 +133,11 @@ shapes, see `docs/adr/`.
   exist in both and remains explicit as `row.<name>` versus
   `table.docs.<name>`. Table and document names are persistent identity, not
   display labels; renaming either creates new child-document addresses.
-- **Records migration chain**: a separate declarative linear list of
-  adjacent `defineRecordsMigration({ from, to, transform, discard })` steps. It
-  is not workspace definition or sync-protocol state. An administrative tool
-  may use generated history and semantic transforms while preparing a complete
-  replacement snapshot. `defineRecordsMigrations(steps)` validates one path from
-  the source hash to the current schema.
-- **Generated historical endpoint**: a committed module emitted from a records
-  definition and imported by application migrations. This is the sole supported
-  and documented historical-schema workflow. Its constructor lives at
-  `@epicenter/workspace/sqlite/generated` so generated TypeScript can resolve it;
-  that explicit subpath signals ownership but cannot prevent deliberate imports,
-  edits, casts, or generic row types that disagree with their descriptors.
-- **Records migration table rule**: a canonically identical same-named table
-  copies automatically. A changed same-named table requires one row transform;
-  a source-only table requires explicit `discard`; a target-only table begins
-  empty. A transform may omit a row with `null`, but it cannot change its table
-  or id, split it, merge it, or aggregate across rows.
-- **Records migration source conformance**: the trusted client validates every
-  canonical source row against its historical descriptor before running a
-  transform. An administrative tool decides whether nonconforming or
-  quarantined rows block replacement; synchronization does not hide or repair
-  them.
+- **Records transformation**: app-owned one-off code may read a complete logical
+  export and prepare a replacement dataset for a new records epoch. Epicenter
+  provides no shared migration chain, generated historical endpoint, or generic
+  transformation runner. Nonconforming or quarantined rows block replacement;
+  synchronization does not hide or repair them.
 - **Logical recovery export**: portable logical schema and row state without
   SQLite pages, indexes, cursors, outboxes, or replica identity. It is an
   explicit recovery artifact, not a readable old-epoch mode in sync.

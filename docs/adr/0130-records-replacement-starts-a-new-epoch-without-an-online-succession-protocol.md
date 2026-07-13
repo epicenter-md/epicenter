@@ -84,8 +84,8 @@ values.
 - Every synchronized records schema change starts a new epoch. The application
   or deployment may prepare transformed logical rows, but the shared sync
   engine sees only a complete replacement and the new epoch.
-- Historical descriptors and pure row transforms may support an administrative
-  tool, but they do not create a shared online succession API.
+- Applications may preserve old descriptors and write one-off row transforms,
+  but Epicenter provides no shared migration or online succession API.
 - The SQLite records protocol is unreleased, so the clean break keeps no aliases,
   fallback readers, or compatibility routes for database-family vocabulary.
 

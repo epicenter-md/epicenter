@@ -113,7 +113,7 @@ table.
   does not make a side-effecting tool exactly-once; the tool still owns
   idempotency or a durable receipt.
 - Moving existing chat history is an explicit app-owned cross-plane conversion,
-  not `defineRecordsMigration`. The converter enumerates known conversations,
+  not a shared records migration. The converter enumerates known conversations,
   opens each retained keyed message room, validates and bounds every finished
   message, builds the complete target rows, and transfers authority to the
   record tables only after the import succeeds. Old rooms remain retained for

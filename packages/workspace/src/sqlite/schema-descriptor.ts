@@ -34,51 +34,6 @@
 
 import { sha256Hex } from '../shared/sha256.js';
 
-/** @internal Records migration cell shapes, keyed by table name. */
-export type RecordsSchemaCells = Record<string, Record<string, unknown>>;
-
-/** @internal Shared nominal endpoint for current and historical schemas. */
-export const recordsSchemaRef: unique symbol = Symbol('recordsSchemaRef');
-
-/** @internal */
-export type RecordsSchemaRef<
-	TCells extends RecordsSchemaCells,
-	TKind extends 'current' | 'historical',
-> = {
-	readonly recordsDescriptor: string;
-	readonly recordsSchemaHash: string;
-	/** Phantom only: migration cell types. Never a runtime value. */
-	readonly cellTypes?: TCells;
-	readonly [recordsSchemaRef]: { readonly kind: TKind };
-};
-
-/**
- * Seal the execution-relevant identity of a records schema without freezing
- * the rest of a workspace definition. Migrations retain these exact endpoint
- * objects, so their descriptor, hash, and nominal kind must never diverge from
- * the identity validated at definition time.
- */
-export function sealRecordsSchemaIdentity<
-	TRef extends RecordsSchemaRef<RecordsSchemaCells, 'current' | 'historical'>,
->(ref: TRef): TRef {
-	const kind = Object.freeze(ref[recordsSchemaRef]);
-	Object.defineProperties(ref, {
-		recordsDescriptor: sealedProperty(ref.recordsDescriptor),
-		recordsSchemaHash: sealedProperty(ref.recordsSchemaHash),
-		[recordsSchemaRef]: sealedProperty(kind),
-	});
-	return ref;
-}
-
-function sealedProperty(value: unknown): PropertyDescriptor {
-	return {
-		configurable: false,
-		enumerable: true,
-		value,
-		writable: false,
-	};
-}
-
 /**
  * Format tag hashed with the rest of the descriptor. Bump only when the
  * canonicalization rules themselves change; that is a new identity universe,
@@ -121,20 +76,6 @@ export function createRecordsDescriptor(
 					})),
 			})),
 	});
-}
-
-/** @internal Read canonical per-table fingerprints for migration validation. */
-export function readCanonicalDescriptorTables(descriptor: string): readonly {
-	name: string;
-	fingerprint: string;
-	fields: readonly { name: string; schema: unknown }[];
-}[] {
-	const parsed = parseCanonicalRecordsDescriptor(descriptor);
-	return parsed.tables.map((table) => ({
-		name: table.name,
-		fingerprint: canonicalJson(table),
-		fields: table.fields,
-	}));
 }
 
 /** Reject hand-authored, malformed, duplicate, unsorted, or noncanonical descriptors. */

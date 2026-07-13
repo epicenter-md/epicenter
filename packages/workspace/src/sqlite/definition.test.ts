@@ -19,8 +19,6 @@ import { nullable } from '../document/nullable.js';
 import { sha256Hex } from '../shared/sha256.js';
 import { defineKv, defineTable, defineWorkspace } from './definition.js';
 import { document } from './document-format.js';
-import { historicalSchema } from './historical-schema.js';
-import { renderHistoricalSchemaModule } from './render-historical-schema.js';
 
 describe('defineTable', () => {
 	test('compiles fields and accepts closed document capabilities', () => {
@@ -497,82 +495,6 @@ describe('defineWorkspace', () => {
 				kv: { theme: { ...theme } },
 			}),
 		).toThrow("Workspace KV key 'theme' must use defineKv()");
-	});
-});
-
-describe('renderHistoricalSchemaModule', () => {
-	test('emits an inert module whose literals round-trip through historicalSchema', () => {
-		const definition = defineWorkspace({
-			id: 'notes',
-			tables: {
-				notes: defineTable({
-					fields: {
-						id: field.string(),
-						title: field.string(),
-						status: field.select(['open', 'done']),
-						updatedAt: field.instant(),
-						payload: nullable(field.json(Type.Unknown())),
-					},
-					documents: { body: document.xmlFragment },
-				}),
-			},
-		});
-
-		const moduleText = renderHistoricalSchemaModule({
-			definition,
-			exportName: 'recordsSchemaV1',
-		});
-		expect(moduleText).toContain(JSON.stringify(definition.recordsDescriptor));
-		expect(moduleText).not.toContain('recordsSchemaHash:');
-		expect(moduleText).toContain('"open" | "done"');
-		expect(moduleText).toContain('updatedAt: InstantString;');
-		expect(moduleText).toContain('payload: unknown | null;');
-		expect(moduleText).not.toContain('id:');
-		expect(moduleText).not.toContain('defineTable');
-
-		expect(() =>
-			renderHistoricalSchemaModule({ definition, exportName: 'bad name' }),
-		).toThrow('is not a valid identifier');
-	});
-
-	test('historical schema derives its hash from its sole descriptor', () => {
-		const descriptor = '{"format":"epicenter.record-schema/1","tables":[]}';
-		const historical = historicalSchema(descriptor);
-		expect(historical.recordsDescriptor).toBe(descriptor);
-		expect(historical.recordsSchemaHash).toBe(
-			`sha256:${sha256Hex(descriptor)}`,
-		);
-	});
-
-	test('historical schema refuses malformed and noncanonical descriptor strings', () => {
-		expect(() => historicalSchema('not json')).toThrow('not valid JSON');
-		expect(() =>
-			historicalSchema(
-				'{ "format": "epicenter.record-schema/1", "tables": [] }',
-			),
-		).toThrow('not in canonical form');
-		expect(() =>
-			historicalSchema(
-				'{"format":"epicenter.record-schema/1","tables":[{"fields":[],"name":"notes"},{"fields":[],"name":"notes"}]}',
-			),
-		).toThrow('malformed table');
-	});
-
-	test('generated descriptors are byte-stable for one logical schema', () => {
-		const render = (name: string) =>
-			renderHistoricalSchemaModule({
-				definition: defineWorkspace({
-					id: 'notes',
-					name,
-					tables: {
-						notes: defineTable({
-							fields: { id: field.string(), title: field.string() },
-						}),
-					},
-				}),
-				exportName: 'recordsSchemaV1',
-			});
-		expect(render('One label')).toBe(render('Another label'));
 	});
 });
 
