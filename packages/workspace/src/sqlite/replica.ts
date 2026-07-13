@@ -84,6 +84,16 @@ type ReplicaMeta = {
 	syncStorageVersion: number;
 };
 
+/** A durable authority refusal that cannot converge through transport retries. */
+class ReplicaSyncRefusalError extends Error {
+	constructor(reason: string) {
+		super(
+			`Replica push refused: ${reason}; synchronization is stopped until the authority binding or local replica is replaced`,
+		);
+		this.name = 'ReplicaSyncRefusalError';
+	}
+}
+
 /** Open one durable replica; authority binding is deferred until synchronization. */
 export async function createReplicaRuntime<TTables extends TableDefinitions>({
 	definition,
@@ -198,19 +208,23 @@ export async function createReplicaRuntime<TTables extends TableDefinitions>({
 			};
 			const response = parsePushResponse(await sync.push(request, signal));
 			if (!response.ok) {
-				if (response.reason === 'create-conflict') {
-					// The authority saw this replica submit a createRow for a live
-					// identity. The replica is corrupt; local repair is refused.
-					throw new ReplicaInvariantViolationError(
-						`Replica push refused: ${response.reason}; discard this replica and rebootstrap from the authority`,
-					);
+				switch (response.reason) {
+					case 'create-conflict':
+						// The authority saw this replica submit a createRow for a live
+						// identity. The replica is corrupt; local repair is refused.
+						throw new ReplicaInvariantViolationError(
+							`Replica push refused: ${response.reason}; discard this replica and rebootstrap from the authority`,
+						);
+					case 'row-too-large':
+						throw new ReplicaAdmissionConflictError(
+							'Replica push refused: row-too-large; pending mutation preserved for application resolution',
+						);
+					case 'protocol-mismatch':
+					case 'schema-identity-mismatch':
+					case 'database-incarnation-mismatch':
+					case 'actor-sequence-gap':
+						throw new ReplicaSyncRefusalError(response.reason);
 				}
-				if (response.reason === 'row-too-large') {
-					throw new ReplicaAdmissionConflictError(
-						'Replica push refused: row-too-large; pending mutation preserved for application resolution',
-					);
-				}
-				throw new Error(`Replica push refused: ${response.reason}`);
 			}
 			start += batch.length;
 		}
@@ -491,7 +505,8 @@ export function startReplicaSyncSupervisor(
 					report(error);
 					if (
 						error instanceof ReplicaInvariantViolationError ||
-						error instanceof ReplicaAdmissionConflictError
+						error instanceof ReplicaAdmissionConflictError ||
+						error instanceof ReplicaSyncRefusalError
 					) {
 						// Terminal: retrying the same durable state cannot converge.
 						isFatal = true;

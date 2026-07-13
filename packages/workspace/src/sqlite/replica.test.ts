@@ -540,6 +540,56 @@ test("a push refused with 'create-conflict' is an invariant violation demanding 
 	native.close();
 });
 
+test('durable authority refusals stop the sync supervisor instead of retrying', async () => {
+	const reasons = [
+		'protocol-mismatch',
+		'schema-identity-mismatch',
+		'database-incarnation-mismatch',
+		'actor-sequence-gap',
+	] as const;
+
+	for (const reason of reasons) {
+		let pushAttempts = 0;
+		const port: ReplicaSyncPort = {
+			bindWorkspace() {},
+			async openDatabase() {
+				return { databaseIncarnationId: 'database-1' };
+			},
+			async push() {
+				pushAttempts++;
+				return { kind: 'push' as const, ok: false as const, reason };
+			},
+			async pull() {
+				throw new Error('pull must not run after a refused push');
+			},
+			async snapshotChunk() {
+				throw new Error('unexpected snapshot chunk request');
+			},
+		};
+		const { native, runtime } = await openReplica({
+			port,
+			actorId: `actor-${reason}`,
+		});
+		runtime.database.tables.notes.create(note('pending', reason));
+		const errors: unknown[] = [];
+		const supervisor = startReplicaSyncSupervisor(runtime, {
+			onError: (error) => errors.push(error),
+			pollIntervalMs: 0,
+			retryDelaysMs: [0],
+		});
+
+		supervisor.request();
+		await waitFor(() => errors.length === 1);
+		supervisor.request();
+		await Bun.sleep(10);
+		expect(pushAttempts).toBe(1);
+		expect((errors[0] as Error).name).toBe('ReplicaSyncRefusalError');
+		expect(runtime.inspect().outbox).toHaveLength(1);
+		await supervisor.dispose();
+		native.close();
+	}
+});
+
 test("a push refused with 'row-too-large' stops retries and preserves pending intent", async () => {
 	let pushAttempts = 0;
 	const port: ReplicaSyncPort = {
