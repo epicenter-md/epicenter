@@ -288,6 +288,79 @@ test('second scan advances only as the target stream is consumed', async () => {
 	expect(secondScanRows).toBe(1_000);
 });
 
+test('source content mutation between scans fails even when ordered keys stay unchanged', async () => {
+	const { migrations, v1 } = defineChain();
+	let scans = 0;
+	const source = {
+		recordsSchemaHash: v1.recordsSchemaHash,
+		async *scan(): AsyncIterable<RecordsMigrationSourceEntry> {
+			scans++;
+			yield {
+				kind: 'row',
+				table: 'notes',
+				rowId: 'note-1',
+				cells: { title: scans === 1 ? 'Before' : 'After' },
+			};
+		},
+	};
+
+	await expect(
+		collect(runRecordsMigration({ migrations, source })),
+	).rejects.toThrow('source snapshot content changed between scans');
+});
+
+test('runner rejects a canonical source descriptor whose reference target is absent', () => {
+	const sourceDefinition = defineWorkspace({
+		id: 'references',
+		tables: {
+			notes: defineTable({
+				fields: {
+					id: field.string(),
+					parentId: nullable(field.reference('notes')),
+				},
+			}),
+		},
+	});
+	const malformedDescriptor = sourceDefinition.recordsDescriptor.replace(
+		'"x-ref":"notes"',
+		'"x-ref":"missing"',
+	);
+	if (malformedDescriptor === sourceDefinition.recordsDescriptor) {
+		throw new Error('Expected reference target in source descriptor');
+	}
+	const source = historicalSchema<{
+		notes: { parentId: string | null };
+	}>(malformedDescriptor);
+	const current = defineWorkspace({
+		id: 'references',
+		tables: {
+			notes: defineTable({
+				fields: {
+					id: field.string(),
+					parentId: nullable(field.reference('notes')),
+					pinned: field.boolean(),
+				},
+			}),
+		},
+	});
+	const migrations = defineRecordsMigrations([
+		defineRecordsMigration({
+			from: source,
+			to: current,
+			transform: {
+				notes: ({ cells }) => ({ ...cells, pinned: false }),
+			},
+		}),
+	]);
+
+	expect(() =>
+		runRecordsMigration({
+			migrations,
+			source: sourceSnapshot(source.recordsSchemaHash, []),
+		}),
+	).toThrow("references unknown table 'missing'");
+});
+
 test('unknown, current, and out-of-order sources are refused', async () => {
 	const { current, migrations, v1 } = defineChain();
 	expect(() =>

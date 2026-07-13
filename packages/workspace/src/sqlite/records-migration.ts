@@ -1,5 +1,6 @@
-import { compile, recognize } from '@epicenter/field';
+import { compile, REFERENCE_KEYWORD, recognize } from '@epicenter/field';
 import type { JsonValue, SnapshotRow } from '@epicenter/record-sync';
+import { sha256Hex } from '../shared/sha256.js';
 import {
 	type RecordsSchemaCells,
 	type RecordsSchemaRef,
@@ -26,8 +27,8 @@ export type RecordsMigrationSourceEntry =
  *
  * The snapshot owner must enforce immutability across both scans, for example
  * with an authority snapshot at one head or a local read transaction. The
- * runner deliberately does not retain or hash the complete source to re-prove
- * that storage guarantee.
+ * runner also compares bounded-memory canonical content digests so a broken
+ * snapshot owner cannot silently change row contents between scans.
  */
 export type RecordsMigrationSourceSnapshot = {
 	recordsSchemaHash: string;
@@ -507,6 +508,7 @@ type CompiledTable = {
 type CompiledField = {
 	name: string;
 	isNullable: boolean;
+	referenceTable: string | null;
 	check(value: unknown): boolean;
 };
 
@@ -557,18 +559,29 @@ export function runRecordsMigration<
 	async function* migrate(): AsyncGenerator<SnapshotRow> {
 		const blockers: RecordsMigrationSourceBlocker[] = [];
 		let blockedRowCount = 0;
+		let expectedSourceDigest = SOURCE_DIGEST_SEED;
 		let previousIdentity: readonly [string, string] | undefined;
 		for await (const entry of source.scan()) {
 			const isOrdered = follows(previousIdentity, entry);
 			previousIdentity = [entry.table, entry.rowId];
+			const normalized =
+				entry.kind === 'row'
+					? validateRow(compiledSourceEndpoint, entry)
+					: null;
 			const reason = !isOrdered
 				? 'out-of-order'
 				: entry.kind === 'quarantined'
 					? 'quarantined'
-					: validateRow(compiledSourceEndpoint, entry) === null
+					: normalized === null
 						? 'nonconforming'
 						: undefined;
-			if (reason === undefined) continue;
+			if (reason === undefined) {
+				expectedSourceDigest = extendSourceDigest(
+					expectedSourceDigest,
+					normalized!,
+				);
+				continue;
+			}
 			blockedRowCount++;
 			if (blockers.length < MAX_REPORTED_SOURCE_BLOCKERS) {
 				blockers.push({ table: entry.table, rowId: entry.rowId, reason });
@@ -579,6 +592,7 @@ export function runRecordsMigration<
 		}
 
 		previousIdentity = undefined;
+		let actualSourceDigest = SOURCE_DIGEST_SEED;
 		for await (const entry of source.scan()) {
 			if (!follows(previousIdentity, entry) || entry.kind === 'quarantined') {
 				throw new Error(
@@ -592,6 +606,7 @@ export function runRecordsMigration<
 					`Records migration source snapshot changed at '${entry.table}.${entry.rowId}' between scans`,
 				);
 			}
+			actualSourceDigest = extendSourceDigest(actualSourceDigest, normalized);
 
 			let row: SnapshotRow | null = normalized;
 			for (const step of path) {
@@ -630,7 +645,20 @@ export function runRecordsMigration<
 			}
 			if (row !== null) yield canonicalizeRow(row);
 		}
+		if (actualSourceDigest !== expectedSourceDigest) {
+			throw new Error(
+				'Records migration source snapshot content changed between scans',
+			);
+		}
 	}
+}
+
+const SOURCE_DIGEST_SEED = sha256Hex('epicenter.records-migration-source/1');
+
+function extendSourceDigest(previous: string, row: SnapshotRow): string {
+	return sha256Hex(
+		`epicenter.records-migration-source/1\0${previous}\0${canonicalJson(row)}`,
+	);
 }
 
 function readValidatedChain(
@@ -668,6 +696,15 @@ function compileEndpoint(ref: AnyRecordsSchemaRef): CompiledEndpoint {
 			id,
 		});
 	}
+	for (const [tableName, table] of tables) {
+		for (const field of [table.id, ...table.cells.values()]) {
+			if (field.referenceTable !== null && !tables.has(field.referenceTable)) {
+				throw new Error(
+					`Records schema '${ref.recordsSchemaHash}' field '${tableName}.${field.name}' references unknown table '${field.referenceTable}'`,
+				);
+			}
+		}
+	}
 	return tables;
 }
 
@@ -681,6 +718,10 @@ function compileDescriptorField(name: string, schema: unknown): CompiledField {
 	return {
 		name,
 		isNullable: nullableInner !== null,
+		referenceTable:
+			recognized.kind === 'reference'
+				? recognized.schema[REFERENCE_KEYWORD]
+				: null,
 		check(value) {
 			return (
 				isJsonValue(value) &&
@@ -688,6 +729,20 @@ function compileDescriptorField(name: string, schema: unknown): CompiledField {
 			);
 		},
 	};
+}
+
+function canonicalJson(value: JsonValue | SnapshotRow): string {
+	if (value === null || typeof value !== 'object') return JSON.stringify(value);
+	if (Array.isArray(value)) {
+		return `[${value.map((item) => canonicalJson(item)).join(',')}]`;
+	}
+	return `{${Object.entries(value)
+		.sort(([left], [right]) => compareCodeUnits(left, right))
+		.map(
+			([key, child]) =>
+				`${JSON.stringify(key)}:${canonicalJson(child as JsonValue)}`,
+		)
+		.join(',')}}`;
 }
 
 function validateRow(
