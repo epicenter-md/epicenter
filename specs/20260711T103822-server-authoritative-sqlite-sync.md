@@ -61,6 +61,7 @@ files own current acceptance status:
 - [ADR-0124](../docs/adr/0124-workspace-kv-keeps-one-logical-identity-outside-the-record-database.md): workspace KV keeps one logical identity outside records databases.
 - [ADR-0125](../docs/adr/0125-record-schemas-are-immutable-evolution-creates-a-successor-database.md): record schemas are immutable; evolution creates a successor database.
 - [ADR-0126](../docs/adr/0126-child-documents-use-format-capabilities-and-evolve-outside-records-databases.md): child documents use format capabilities and evolve outside records databases.
+- [ADR-0127](../docs/adr/0127-chat-streams-live-turns-in-client-state-and-stores-finished-messages-as-records.md): chat streams live turns in client state and stores finished messages as records.
 
 ADR numbers allocated on this branch remain provisional until merge.
 
@@ -1037,9 +1038,13 @@ Internal protocol code may use `databaseId`, `recordsSchemaHash`,
 `documentFormatHash`, `storageVersion`, and
 `protocolMajor`; they name real runtime invariants and do not enter app schemas.
 
-`@epicenter/chat` migrates through `document.keyed(agentMessageSchema)`. The
-runtime schema participates in its document descriptor and validates stored
-values; an erased `document.keyed<AgentMessage>()` generic is refused.
+`@epicenter/chat` migrates conversations and finished messages into SQLite
+record tables
+([ADR-0127](../docs/adr/0127-chat-streams-live-turns-in-client-state-and-stores-finished-messages-as-records.md)).
+The live turn stays in client state; each finished message is one bounded atomic
+record value validated by a runtime schema.
+`document.keyed(...)` remains available for bounded merge-sensitive collections,
+but it is not a second message-table system.
 
 ## Refusals
 
@@ -1219,6 +1224,14 @@ boundary to remain public or mutable.
 ### Wave 4: Stop importing the old records path
 
 - [ ] Move production app record metadata to typed SQLite.
+- [ ] Move `@epicenter/chat` conversations and finished messages to SQLite
+  record tables. Replace the synchronous keyed store with asynchronous atomic
+  turn persistence, add explicit turn/step ordering, make conversation deletion
+  remove its message rows transactionally, keep the live turn in client state,
+  and remove the keyed message child document.
+- [ ] Convert retained keyed chat rooms through an app-owned one-time import
+  before authority cutover. This cross-plane conversion is not a records
+  migration; retain old rooms for export and make old binaries fail closed.
 - [ ] Move merge-sensitive scalar bodies to declared child docs where earned.
 - [ ] Keep synchronized preferences on `workspace.kv`.
 - [ ] Stop importing Yjs table persistence and per-row `_v` from migrated apps.
@@ -1247,6 +1260,8 @@ boundary to remain public or mutable.
 - [ ] Flip the remaining Proposed ADRs in 0119 through 0126 to Accepted as
   their production facts land. ADRs 0123 and 0126 already own the settled
   storage-plane and document-capability decisions.
+- [ ] Accept ADR-0127 and mark ADR-0055 superseded after every chat surface uses
+  record-backed messages.
 - [ ] Move current protocol facts into `docs/reference/`.
 - [ ] Add this spec to `docs/spec-history.md` and delete it.
 
@@ -1272,6 +1287,9 @@ boundary to remain public or mutable.
 | Document changes do not succeed records | Add/change/remove document leaves `recordsSchemaHash` unchanged |
 | Storage paths stay adapter-owned | No app call site supplies an OPFS name, file path, or database suffix |
 | Files are not portable identity | Physical-copy import mints a new actor test |
+| Chat persistence is honest | User row commits before inference; one completed assistant turn commits atomically; live token deltas never enter records |
+| Chat conversion changes authority once | Every retained keyed room validates into target rows before cutover; old clients fail closed and old rooms remain exportable |
+| Chat deletion has one owner | One records transaction deletes a conversation's message rows and then its conversation row |
 | Runtime parity holds | Same fold and transition suite through Browser, Bun, and DO SQLite |
 
 ## ADR reconciliation
@@ -1280,6 +1298,8 @@ boundary to remain public or mutable.
 - ADR-0126 proposes superseding ADR-0005's builder/function shape while keeping
   its workspace-owned opener and closed-palette decision. ADR-0106 and ADR-0107
   keep one body format and plain-text storage semantics.
+- ADR-0127 proposes superseding ADR-0055's keyed child-document storage while
+  keeping one canonical `@epicenter/chat` owner and synchronized transcripts.
 - ADR-0035 remains the deployment topology, but record metadata stops using the
   Yjs anchor path.
 - ADR-0068 remains the privacy posture: hosted is trusted plaintext; self-host
@@ -1375,6 +1395,20 @@ request a prototype are implementation proof, not unresolved product approval.
       logical export, not opened as an old-schema compatibility mode. Version
       one has no generic SQLite editor, repair UI, merge, or re-import path.
 
+11. **Chat transcript storage** (direction resolved 2026-07-12)
+    - Decision: keep the live turn in client state and store conversations and
+      finished messages as complete-replica SQLite rows. The transcript port is
+      asynchronous; the user message commits before inference and every
+      completed assistant turn commits atomically. Explicit turn and step fields
+      own causal ordering. Conversation deletion owns transactional cleanup of
+      message rows.
+    - Existing keyed Yjs rooms move through one app-owned cross-plane import,
+      not records succession. Complete transcript replication is the accepted
+      price for direct local query, search, retention, and export.
+    - Falsifier: measured transcript volume makes a complete per-device replica
+      untenable. Reopen chat retention or storage topology with that evidence;
+      do not infer that mutable Yjs rooms are the replacement.
+
 ## Success criteria
 
 - [ ] App definitions contain no epoch, root incarnation, or row-version API.
@@ -1421,6 +1455,8 @@ request a prototype are implementation proof, not unresolved product approval.
 - [ ] Incompatible child-document formats cannot enter one Yjs room, and adding
   a document does not create a successor records database.
 - [ ] Production apps use typed SQLite records, permanent KV, and lazy child docs.
+- [ ] Chat persists conversations and finished messages as SQLite records; live
+  turns remain client state and no chat transcript uses a keyed child document.
 - [ ] The old Yjs records and migrate-on-read paths are unimported, verified, and deleted.
 - [ ] Durable decisions are accepted, current facts are in reference docs, and this spec is deleted.
 
@@ -1434,6 +1470,7 @@ request a prototype are implementation proof, not unresolved product approval.
 - `docs/adr/0124-workspace-kv-keeps-one-logical-identity-outside-the-record-database.md`
 - `docs/adr/0125-record-schemas-are-immutable-evolution-creates-a-successor-database.md`
 - `docs/adr/0126-child-documents-use-format-capabilities-and-evolve-outside-records-databases.md`
+- `docs/adr/0127-chat-streams-live-turns-in-client-state-and-stores-finished-messages-as-records.md`
 - `demos/local-first-sync/gates/GATE1-EVIDENCE.md`
 - `demos/local-first-sync/gates/GATE2-EVIDENCE.md`
 - `demos/local-first-sync/gates/GATE3-EVIDENCE.md`
