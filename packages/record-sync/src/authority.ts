@@ -267,6 +267,14 @@ class RowTooLargeError extends Error {
 	}
 }
 
+/** Internal sentinel that rolls the whole push transaction back. */
+class ActorSequenceGapError extends Error {
+	constructor() {
+		super('actor sequence gap');
+		this.name = 'ActorSequenceGapError';
+	}
+}
+
 function applyOperation(
 	database: RecordSyncSqlite,
 	operation: Operation,
@@ -479,7 +487,6 @@ export function createRecordAuthority({
 		push(request: PushRequest): PushResponse {
 			const refusal = requestRefusal(request, envelope);
 			if (refusal) return { kind: 'push', ok: false, reason: refusal };
-			let response: PushResponse = { kind: 'push', ok: true };
 			try {
 				database.transaction(() => {
 					for (const mutation of request.mutations) {
@@ -492,12 +499,7 @@ export function createRecordAuthority({
 							)?.sequence ?? 0;
 						if (mutation.actorSequence <= highWater) continue;
 						if (mutation.actorSequence !== highWater + 1) {
-							response = {
-								kind: 'push',
-								ok: false,
-								reason: 'actor-sequence-gap',
-							};
-							return;
+							throw new ActorSequenceGapError();
 						}
 						const serverSequence = readMeta(database, 'serverSequence') + 1;
 						for (const operation of mutation.operations)
@@ -523,6 +525,9 @@ export function createRecordAuthority({
 					}
 				});
 			} catch (error) {
+				if (error instanceof ActorSequenceGapError) {
+					return { kind: 'push', ok: false, reason: 'actor-sequence-gap' };
+				}
 				if (error instanceof RowTooLargeError) {
 					return { kind: 'push', ok: false, reason: 'row-too-large' };
 				}
@@ -531,7 +536,7 @@ export function createRecordAuthority({
 				// from this batch was accepted and the actor stays paused.
 				return { kind: 'push', ok: false, reason: 'create-conflict' };
 			}
-			return response;
+			return { kind: 'push', ok: true };
 		},
 
 		pull(request: PullRequest): PullResponse {

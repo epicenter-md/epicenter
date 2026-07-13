@@ -183,6 +183,59 @@ async function runConformance(open: OpenDatabase) {
 			authority.push({
 				kind: 'push',
 				...envelope,
+				mutations: [
+					{
+						actorId: 'actor-gap',
+						actorSequence: 1,
+						operations: [
+							{
+								kind: 'createRow',
+								table: 'notes',
+								rowId: 'must-roll-back',
+								cells: { title: 'uncommitted prefix' },
+							},
+						],
+					},
+					{
+						actorId: 'actor-gap',
+						actorSequence: 3,
+						operations: [
+							{
+								kind: 'createRow',
+								table: 'notes',
+								rowId: 'gap',
+								cells: { title: 'gap' },
+							},
+						],
+					},
+				],
+			}),
+		).toEqual({
+			kind: 'push',
+			ok: false,
+			reason: 'actor-sequence-gap',
+		});
+		expect(
+			database.all<{ count: number }>(
+				`SELECT COUNT(*) AS count FROM record_sync_canonical_rows
+				 WHERE row_id IN ('must-roll-back', 'gap')`,
+			)[0]?.count,
+		).toBe(0);
+		expect(
+			database.all<{ count: number }>(
+				`SELECT COUNT(*) AS count FROM record_sync_actor_high_water
+				 WHERE actor_id = 'actor-gap'`,
+			)[0]?.count,
+		).toBe(0);
+		expect(
+			database.all<{ value: string }>(
+				`SELECT value FROM record_sync_meta WHERE key = 'serverSequence'`,
+			)[0]?.value,
+		).toBe('2');
+		expect(
+			authority.push({
+				kind: 'push',
+				...envelope,
 				schemaIdentity: 'wrong',
 				mutations: [],
 			}),
