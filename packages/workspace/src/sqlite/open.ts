@@ -144,7 +144,7 @@ export async function openWorkspaceFromService<
 			description.kind !== 'workspace' ||
 			description.workspaceKind !== expectedKind ||
 			description.workspaceId !== definition.id ||
-			description.schemaIdentity !== definition.recordsSchemaHash
+			description.recordsSchemaHash !== definition.recordsSchemaHash
 		) {
 			throw new Error('Workspace service definition does not match the client');
 		}

@@ -1,8 +1,8 @@
 # Gates 1 and 2: client materialization and compaction proof
 
 This directory tests one claim inside one exact records schema and one records
-database. Some implemented source still uses `schemaIdentity` and
-`databaseIncarnationId`; those are legacy implementation names scheduled for
+database. Some implemented source still uses `recordsSchemaHash` and
+`databaseId`; those are legacy implementation names scheduled for
 the Wave 2 family/database protocol, not target vocabulary.
 
 > No retry, crash, or pull-page schedule makes accepted or pending user intent
@@ -68,7 +68,7 @@ accepted state, prune snapshot-contained outbox mutations, replay the rest
 through the fold, and advance the cursor in one SQLite transaction. Its
 measured result is recorded in [`GATE2-EVIDENCE.md`](GATE2-EVIDENCE.md).
 
-Gate 3 proves exact schema identity, head-bound immutable candidate upload,
+Gate 3 proves exact records schema hash, head-bound immutable candidate upload,
 conditional activation against the still-current source head, stale-head retry,
 atomic selection, and permanent old-database fencing. Each family has one
 content-addressed staging slot: a different manifest replaces it. This refuses

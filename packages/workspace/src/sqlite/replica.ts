@@ -45,7 +45,7 @@ export type ReplicaDatabaseBindingRequest = RecordAuthorityBindingRequest & {
 };
 
 type ReplicaDatabaseBinding = {
-	databaseIncarnationId: string;
+	databaseId: string;
 };
 
 /** Network boundary implemented by the hosted or self-hosted sync client. */
@@ -79,7 +79,7 @@ type ReplicaMeta = {
 	actorId: string;
 	nextActorSequence: number;
 	appliedServerSequence: number;
-	databaseIncarnationId: string | null;
+	databaseId: string | null;
 	protocolMajor: number;
 	syncStorageVersion: number;
 };
@@ -153,7 +153,7 @@ export async function createReplicaRuntime<TTables extends TableDefinitions>({
 
 	const bindingRequest = {
 		workspaceId: definition.id,
-		schemaIdentity: definition.recordsSchemaHash,
+		recordsSchemaHash: definition.recordsSchemaHash,
 		protocolMajor,
 	};
 	sync.bindWorkspace(bindingRequest.workspaceId);
@@ -161,22 +161,21 @@ export async function createReplicaRuntime<TTables extends TableDefinitions>({
 
 	async function verifyAuthorityBinding(signal?: AbortSignal): Promise<void> {
 		if (isAuthorityBindingVerified) return;
-		const { databaseIncarnationId } = parseDatabaseBinding(
+		const { databaseId } = parseDatabaseBinding(
 			await sync.openDatabase(bindingRequest, signal),
 		);
-		assertNonEmpty(databaseIncarnationId, 'databaseIncarnationId');
+		assertNonEmpty(databaseId, 'databaseId');
 		sqlite.transaction(() => {
 			const meta = readMeta(sqlite);
-			if (meta.databaseIncarnationId === null) {
-				sqlite.run(
-					`UPDATE ${META_TABLE} SET database_incarnation_id = ? WHERE id = 1`,
-					[databaseIncarnationId],
-				);
+			if (meta.databaseId === null) {
+				sqlite.run(`UPDATE ${META_TABLE} SET database_id = ? WHERE id = 1`, [
+					databaseId,
+				]);
 				return;
 			}
-			if (databaseIncarnationId !== meta.databaseIncarnationId) {
+			if (databaseId !== meta.databaseId) {
 				throw new ReplicaInvariantViolationError(
-					'Replica database incarnation no longer matches authority; discard this replica and rebootstrap from the authority',
+					'Replica database identity no longer matches authority; discard this replica and rebootstrap from the authority',
 				);
 			}
 		});
@@ -184,13 +183,13 @@ export async function createReplicaRuntime<TTables extends TableDefinitions>({
 	}
 
 	function envelope(meta = readMeta(sqlite)): RequestEnvelope {
-		if (meta.databaseIncarnationId === null) {
+		if (meta.databaseId === null) {
 			throw new Error('Replica authority binding is missing');
 		}
 		return {
 			protocolMajor: meta.protocolMajor,
-			schemaIdentity: definition.recordsSchemaHash,
-			databaseIncarnationId: meta.databaseIncarnationId,
+			recordsSchemaHash: definition.recordsSchemaHash,
+			databaseId: meta.databaseId,
 		};
 	}
 
@@ -220,8 +219,8 @@ export async function createReplicaRuntime<TTables extends TableDefinitions>({
 							'Replica push refused: row-too-large; pending mutation preserved for application resolution',
 						);
 					case 'protocol-mismatch':
-					case 'schema-identity-mismatch':
-					case 'database-incarnation-mismatch':
+					case 'records-schema-mismatch':
+					case 'database-id-mismatch':
 					case 'actor-sequence-gap':
 						throw new ReplicaSyncRefusalError(response.reason);
 				}
@@ -565,12 +564,12 @@ function initializeReplicaTables(sqlite: RecordSyncSqlite): void {
 				actor_id TEXT NOT NULL,
 				next_actor_sequence INTEGER NOT NULL CHECK(next_actor_sequence >= 1),
 				applied_server_sequence INTEGER NOT NULL CHECK(applied_server_sequence >= 0),
-				database_incarnation_id TEXT,
+				database_id TEXT,
 				protocol_major INTEGER NOT NULL CHECK(protocol_major >= 1),
 				sync_storage_version INTEGER NOT NULL CHECK(sync_storage_version >= 1)
 			)`,
 		);
-		migrateNullableDatabaseIncarnation(sqlite);
+		migrateNullableDatabaseId(sqlite);
 		sqlite.run(
 			`CREATE TABLE IF NOT EXISTS ${OUTBOX_TABLE}(
 				actor_sequence INTEGER PRIMARY KEY,
@@ -592,21 +591,21 @@ function initializeReplicaTables(sqlite: RecordSyncSqlite): void {
 	});
 }
 
-function migrateNullableDatabaseIncarnation(sqlite: RecordSyncSqlite): void {
-	const incarnationColumn = sqlite
+function migrateNullableDatabaseId(sqlite: RecordSyncSqlite): void {
+	const databaseIdColumn = sqlite
 		.all<{ name: string; notnull: number }>(`PRAGMA table_info(${META_TABLE})`)
-		.find(({ name }) => name === 'database_incarnation_id');
-	if (!incarnationColumn) {
-		throw new Error('Replica metadata database incarnation column is missing');
+		.find(({ name }) => name === 'database_id');
+	if (!databaseIdColumn) {
+		throw new Error('Replica metadata database identity column is missing');
 	}
-	if (incarnationColumn.notnull === 0) return;
+	if (databaseIdColumn.notnull === 0) return;
 	sqlite.run(
 		`CREATE TABLE __epicenter_replica_next(
 			id INTEGER PRIMARY KEY CHECK(id = 1),
 			actor_id TEXT NOT NULL,
 			next_actor_sequence INTEGER NOT NULL CHECK(next_actor_sequence >= 1),
 			applied_server_sequence INTEGER NOT NULL CHECK(applied_server_sequence >= 0),
-			database_incarnation_id TEXT,
+			database_id TEXT,
 			protocol_major INTEGER NOT NULL CHECK(protocol_major >= 1),
 			sync_storage_version INTEGER NOT NULL CHECK(sync_storage_version >= 1)
 		)`,
@@ -632,7 +631,7 @@ function createReplicaMeta({
 	sqlite.run(
 		`INSERT INTO ${META_TABLE}(
 			id, actor_id, next_actor_sequence, applied_server_sequence,
-			database_incarnation_id, protocol_major, sync_storage_version
+			database_id, protocol_major, sync_storage_version
 		) VALUES (1, ?, 1, 0, NULL, ?, ?)`,
 		[actorId, protocolMajor, SYNC_STORAGE_VERSION],
 	);
@@ -654,7 +653,7 @@ type ReplicaMetaRow = {
 	actor_id: string;
 	next_actor_sequence: number;
 	applied_server_sequence: number;
-	database_incarnation_id: string | null;
+	database_id: string | null;
 	protocol_major: number;
 	sync_storage_version: number;
 };
@@ -679,8 +678,8 @@ function decodeMeta(row: ReplicaMetaRow): ReplicaMeta {
 	) {
 		throw new Error('Stored appliedServerSequence is invalid');
 	}
-	if (row.database_incarnation_id !== null) {
-		assertNonEmpty(row.database_incarnation_id, 'stored databaseIncarnationId');
+	if (row.database_id !== null) {
+		assertNonEmpty(row.database_id, 'stored databaseId');
 	}
 	assertPositiveInteger(row.protocol_major, 'stored protocolMajor');
 	assertPositiveInteger(row.sync_storage_version, 'stored syncStorageVersion');
@@ -688,7 +687,7 @@ function decodeMeta(row: ReplicaMetaRow): ReplicaMeta {
 		actorId: row.actor_id,
 		nextActorSequence: row.next_actor_sequence,
 		appliedServerSequence: row.applied_server_sequence,
-		databaseIncarnationId: row.database_incarnation_id,
+		databaseId: row.database_id,
 		protocolMajor: row.protocol_major,
 		syncStorageVersion: row.sync_storage_version,
 	};
@@ -932,9 +931,8 @@ function parseDatabaseBinding(value: unknown): ReplicaDatabaseBinding {
 		value === null ||
 		Array.isArray(value) ||
 		Object.keys(value).length !== 1 ||
-		!Object.hasOwn(value, 'databaseIncarnationId') ||
-		typeof (value as { databaseIncarnationId?: unknown })
-			.databaseIncarnationId !== 'string'
+		!Object.hasOwn(value, 'databaseId') ||
+		typeof (value as { databaseId?: unknown }).databaseId !== 'string'
 	) {
 		throw new TypeError('Invalid replica database binding response');
 	}

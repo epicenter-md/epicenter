@@ -78,7 +78,7 @@ export function createBunRecords({
 				return (
 					recordAuthorityBindingRefusal(request, cached.envelope) ?? {
 						ok: true,
-						databaseIncarnationId: cached.envelope.databaseIncarnationId,
+						databaseId: cached.envelope.databaseId,
 					}
 				);
 			}
@@ -90,7 +90,7 @@ export function createBunRecords({
 				const opened = openRecordAuthority({
 					database: createBunSqliteAdapter(database),
 					request,
-					createDatabaseIncarnationId: () => crypto.randomUUID(),
+					createDatabaseId: () => crypto.randomUUID(),
 					sha256,
 				});
 				if (!opened.ok) {
@@ -104,7 +104,7 @@ export function createBunRecords({
 				});
 				return {
 					ok: true,
-					databaseIncarnationId: opened.databaseIncarnationId,
+					databaseId: opened.databaseId,
 				};
 			} catch (error) {
 				database.close();

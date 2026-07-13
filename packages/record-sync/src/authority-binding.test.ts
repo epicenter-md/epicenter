@@ -5,7 +5,7 @@
  * authority identity metadata across every SQLite adapter.
  *
  * Key behaviors:
- * - First open mints and persists exactly one database incarnation
+ * - First open mints and persists exactly one database identity
  * - Restore reconstructs an authority without minting another identity
  * - Protocol and schema refusals leave durable identity unchanged
  * - Refusing an unopened database does not partially initialize storage
@@ -24,7 +24,7 @@ const sha256 = async (value: string) =>
 	createHash('sha256').update(value).digest('hex');
 const request = {
 	protocolMajor: RECORD_SYNC_PROTOCOL_MAJOR,
-	schemaIdentity: 'notes-v1',
+	recordsSchemaHash: 'notes-v1',
 };
 
 function setup() {
@@ -35,29 +35,29 @@ function setup() {
 	};
 }
 
-test('first open persists one incarnation and restore reuses it', () => {
+test('first open persists one database id and restore reuses it', () => {
 	const { database, native } = setup();
 	let minted = 0;
 	try {
 		const opened = openRecordAuthority({
 			database,
 			request,
-			createDatabaseIncarnationId: () => `database-${++minted}`,
+			createDatabaseId: () => `database-${++minted}`,
 			sha256,
 		});
 		expect(opened.ok).toBe(true);
 		if (!opened.ok) throw new Error('Expected authority to open');
-		expect(opened.databaseIncarnationId).toBe('database-1');
+		expect(opened.databaseId).toBe('database-1');
 
 		const reopened = openRecordAuthority({
 			database,
 			request,
-			createDatabaseIncarnationId: () => `database-${++minted}`,
+			createDatabaseId: () => `database-${++minted}`,
 			sha256,
 		});
 		expect(reopened.ok).toBe(true);
 		if (!reopened.ok) throw new Error('Expected authority to reopen');
-		expect(reopened.databaseIncarnationId).toBe('database-1');
+		expect(reopened.databaseId).toBe('database-1');
 		expect(minted).toBe(1);
 		expect(restoreRecordAuthority({ database, sha256 })?.envelope).toEqual(
 			opened.envelope,
@@ -73,18 +73,18 @@ test('binding refusals preserve existing authority identity', () => {
 		const opened = openRecordAuthority({
 			database,
 			request,
-			createDatabaseIncarnationId: () => 'database-1',
+			createDatabaseId: () => 'database-1',
 			sha256,
 		});
 		if (!opened.ok) throw new Error('Expected authority to open');
 		expect(
 			openRecordAuthority({
 				database,
-				request: { ...request, schemaIdentity: 'different' },
-				createDatabaseIncarnationId: () => 'must-not-mint',
+				request: { ...request, recordsSchemaHash: 'different' },
+				createDatabaseId: () => 'must-not-mint',
 				sha256,
 			}),
-		).toEqual({ ok: false, reason: 'schema-identity-mismatch' });
+		).toEqual({ ok: false, reason: 'records-schema-mismatch' });
 		expect(restoreRecordAuthority({ database, sha256 })?.envelope).toEqual(
 			opened.envelope,
 		);
@@ -103,7 +103,7 @@ test('unsupported protocol refuses without initializing an empty database', () =
 					...request,
 					protocolMajor: RECORD_SYNC_PROTOCOL_MAJOR + 1,
 				},
-				createDatabaseIncarnationId: () => 'must-not-mint',
+				createDatabaseId: () => 'must-not-mint',
 				sha256,
 			}),
 		).toEqual({ ok: false, reason: 'protocol-mismatch' });
@@ -121,11 +121,11 @@ test('invalid binding input refuses before initializing storage', () => {
 				database,
 				request: {
 					...request,
-					schemaIdentity: 'x'.repeat(
-						RECORD_SYNC_ADMISSION_LIMITS.schemaIdentityBytes + 1,
+					recordsSchemaHash: 'x'.repeat(
+						RECORD_SYNC_ADMISSION_LIMITS.recordsSchemaHashBytes + 1,
 					),
 				},
-				createDatabaseIncarnationId: () => 'must-not-mint',
+				createDatabaseId: () => 'must-not-mint',
 				sha256,
 			}),
 		).toThrow('Invalid record authority binding request');
@@ -141,7 +141,7 @@ test('snapshot publication bounds every encoded chunk by bytes', async () => {
 		const opened = openRecordAuthority({
 			database,
 			request,
-			createDatabaseIncarnationId: () => 'database-1',
+			createDatabaseId: () => 'database-1',
 			sha256,
 		});
 		if (!opened.ok) throw new Error('Expected authority to open');
@@ -189,7 +189,7 @@ test('snapshot publication cannot exceed the protocol chunk ceiling', async () =
 		const opened = openRecordAuthority({
 			database,
 			request,
-			createDatabaseIncarnationId: () => 'database-1',
+			createDatabaseId: () => 'database-1',
 			sha256,
 		});
 		if (!opened.ok) throw new Error('Expected authority to open');
@@ -210,7 +210,7 @@ test('push rejects a patch that would make the canonical row unsnapshotable', ()
 		const opened = openRecordAuthority({
 			database,
 			request,
-			createDatabaseIncarnationId: () => 'database-1',
+			createDatabaseId: () => 'database-1',
 			sha256,
 		});
 		if (!opened.ok) throw new Error('Expected authority to open');

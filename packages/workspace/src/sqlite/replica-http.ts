@@ -81,7 +81,7 @@ export function createHttpReplicaSyncPort({
 
 function openRequestBody({
 	protocolMajor,
-	schemaIdentity,
+	recordsSchemaHash,
 }: ReplicaDatabaseBindingRequest): RecordAuthorityBindingRequest {
-	return { protocolMajor, schemaIdentity };
+	return { protocolMajor, recordsSchemaHash };
 }

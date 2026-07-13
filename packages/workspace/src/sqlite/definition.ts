@@ -228,7 +228,7 @@ export type WorkspaceDefinition<
 	readonly kv: Readonly<TKv>;
 	/**
 	 * Eager preference-document guid: `<id>.kv` (ADR-0124). Stable across
-	 * records-database succession; applications author no incarnation.
+	 * records-database succession; applications author no database generation.
 	 */
 	readonly kvDocumentGuid: string;
 };

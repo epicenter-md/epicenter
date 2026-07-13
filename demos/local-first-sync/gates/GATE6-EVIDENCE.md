@@ -3,7 +3,7 @@
 Date: 2026-07-11
 
 > Checkpoint vocabulary note: this file records the implemented
-> `databaseIncarnationId` lifecycle on that date. The target protocol calls the
+> `databaseId` lifecycle on that date. The target protocol calls the
 > coordination universe a records database and adds workspace-family selection
 > in Wave 2. The implemented checkpoint does not prove schema succession. Its
 > two opener functions are implementation seams from this checkpoint, not the
@@ -25,7 +25,7 @@ openWorkspaceReplica(definition, { storage, sync, ...runtimeOptions });
 
 `openStandaloneWorkspace` creates a database with application state and no
 actor, cursor, or outbox. `openWorkspaceReplica` creates or reopens a complete
-local SQLite replica of one server-authoritative database incarnation. A SQLite
+local SQLite replica of one server-authoritative database identity. A SQLite
 file cannot cross between those modes. The application metadata records its
 mode permanently and refuses the wrong opener.
 
@@ -70,7 +70,7 @@ runs app-specific SQL.
 
 Authentication selects the principal outside the record-sync request. The URL
 selects the workspace. The request envelope then fences protocol major, schema
-identity, and database incarnation. A client cannot choose another principal by
+identity, and database identity. A client cannot choose another principal by
 placing identity fields in JSON.
 
 ## SQLite at rest
@@ -86,14 +86,14 @@ application tables
 __epicenter_meta
   storage_revision
   workspace_id
-  schema_identity
+  records_schema_hash
   database_kind = replica
 
 __epicenter_replica                         one singleton row
   actor_id                                  durable device writer identity
   next_actor_sequence                       next mutation number to allocate
   applied_server_sequence                   pull cursor installed in projection
-  database_incarnation_id                   server-minted database identity
+  database_id                   server-minted database identity
   protocol_major                            outbox encoding fence
   sync_storage_version                      local sync-table format
 
@@ -118,7 +118,7 @@ The authority stores a different physical model:
 
 ```txt
 record_sync_meta
-  storage version, protocol major, schema identity, database incarnation
+  storage version, protocol major, records schema hash, database identity
   server sequence, compaction watermark, snapshot generation
 
 record_sync_actor_high_water
@@ -195,14 +195,14 @@ authority. Reads, queries, and writes remain available while signed in but
 offline. New writes continue the same durable actor sequence and enter the same
 outbox.
 
-The first synchronization attempt verifies the stored database incarnation
+The first synchronization attempt verifies the stored database identity
 against the authority before pushing or pulling. A different account database,
-reset authority, or replaced incarnation pauses sync. It does not silently
+reset authority, or replaced database pauses sync. It does not silently
 rebind the file, mint a replacement actor, or discard pending edits.
 
-A brand-new replica is different. It has no database incarnation to preserve,
+A brand-new replica is different. It has no database identity to preserve,
 so its first open must reach the authority, receive the server-minted
-incarnation, and atomically create its local actor binding. Local-only creation
+database identity, and atomically create its local actor binding. Local-only creation
 uses `openStandaloneWorkspace` instead.
 
 ## Snapshot restart and installation

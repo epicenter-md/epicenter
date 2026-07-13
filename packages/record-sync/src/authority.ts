@@ -1,6 +1,6 @@
 import {
 	isAdmissibleSnapshotRow,
-	isBoundedSchemaIdentity,
+	isBoundedRecordsSchemaHash,
 	RECORD_SYNC_ADMISSION_LIMITS,
 } from './admission.js';
 import { foldRow } from './fold.js';
@@ -31,14 +31,14 @@ const STORAGE_VERSION = 1;
 
 export type RecordAuthorityBindingRequest = {
 	protocolMajor: number;
-	schemaIdentity: string;
+	recordsSchemaHash: string;
 };
 
 export type RecordAuthorityBindingResult =
-	| { ok: true; databaseIncarnationId: string }
+	| { ok: true; databaseId: string }
 	| {
 			ok: false;
-			reason: 'protocol-mismatch' | 'schema-identity-mismatch';
+			reason: 'protocol-mismatch' | 'records-schema-mismatch';
 	  };
 
 /** Parse the exact first-open authority binding shared by every transport. */
@@ -52,20 +52,20 @@ export function parseRecordAuthorityBindingRequest(
 		Object.getPrototypeOf(value) !== Object.prototype ||
 		Object.keys(value).length !== 2 ||
 		!Object.hasOwn(value, 'protocolMajor') ||
-		!Object.hasOwn(value, 'schemaIdentity')
+		!Object.hasOwn(value, 'recordsSchemaHash')
 	) {
 		throw new TypeError('Invalid record authority binding request');
 	}
-	const { protocolMajor, schemaIdentity } = value as Record<string, unknown>;
+	const { protocolMajor, recordsSchemaHash } = value as Record<string, unknown>;
 	if (
 		!Number.isSafeInteger(protocolMajor) ||
 		(protocolMajor as number) < 1 ||
-		typeof schemaIdentity !== 'string' ||
-		!isBoundedSchemaIdentity(schemaIdentity)
+		typeof recordsSchemaHash !== 'string' ||
+		!isBoundedRecordsSchemaHash(recordsSchemaHash)
 	) {
 		throw new TypeError('Invalid record authority binding request');
 	}
-	return { protocolMajor: protocolMajor as number, schemaIdentity };
+	return { protocolMajor: protocolMajor as number, recordsSchemaHash };
 }
 
 type StoredRow = {
@@ -107,7 +107,7 @@ function readStoredEnvelope(
 		database
 			.all<{ key: string; value: string }>(
 				`SELECT key, value FROM record_sync_meta
-				 WHERE key IN ('protocolMajor', 'schemaIdentity', 'databaseIncarnationId')`,
+				 WHERE key IN ('protocolMajor', 'recordsSchemaHash', 'databaseId')`,
 			)
 			.map(({ key, value }) => [key, value]),
 	);
@@ -115,14 +115,14 @@ function readStoredEnvelope(
 	if (
 		!Number.isSafeInteger(protocolMajor) ||
 		protocolMajor < 1 ||
-		!metadata.schemaIdentity ||
-		!metadata.databaseIncarnationId
+		!metadata.recordsSchemaHash ||
+		!metadata.databaseId
 	)
 		throw new Error('Incomplete record-sync identity metadata');
 	return {
 		protocolMajor,
-		schemaIdentity: metadata.schemaIdentity,
-		databaseIncarnationId: metadata.databaseIncarnationId,
+		recordsSchemaHash: metadata.recordsSchemaHash,
+		databaseId: metadata.databaseId,
 	};
 }
 
@@ -135,8 +135,8 @@ export function recordAuthorityBindingRefusal(
 		request.protocolMajor !== envelope.protocolMajor
 	)
 		return { ok: false, reason: 'protocol-mismatch' };
-	if (request.schemaIdentity !== envelope.schemaIdentity)
-		return { ok: false, reason: 'schema-identity-mismatch' };
+	if (request.recordsSchemaHash !== envelope.recordsSchemaHash)
+		return { ok: false, reason: 'records-schema-mismatch' };
 	return null;
 }
 
@@ -182,8 +182,8 @@ function initialize(
 		const identity = {
 			storageVersion: STORAGE_VERSION,
 			protocolMajor: envelope.protocolMajor,
-			schemaIdentity: envelope.schemaIdentity,
-			databaseIncarnationId: envelope.databaseIncarnationId,
+			recordsSchemaHash: envelope.recordsSchemaHash,
+			databaseId: envelope.databaseId,
 		};
 		const initial = {
 			...identity,
@@ -671,15 +671,15 @@ export function restoreRecordAuthority({
 export function openRecordAuthority({
 	database,
 	request,
-	createDatabaseIncarnationId,
+	createDatabaseId,
 	sha256,
 }: {
 	database: RecordSyncSqlite;
 	request: RecordAuthorityBindingRequest;
-	createDatabaseIncarnationId(): string;
+	createDatabaseId(): string;
 	sha256: Sha256;
 }):
-	| ({ ok: true; databaseIncarnationId: string } & OpenedRecordAuthority)
+	| ({ ok: true; databaseId: string } & OpenedRecordAuthority)
 	| Extract<RecordAuthorityBindingResult, { ok: false }> {
 	request = parseRecordAuthorityBindingRequest(request);
 	const stored = readStoredEnvelope(database);
@@ -688,21 +688,21 @@ export function openRecordAuthority({
 		if (refusal) return refusal;
 		return {
 			ok: true,
-			databaseIncarnationId: stored.databaseIncarnationId,
+			databaseId: stored.databaseId,
 			envelope: stored,
 			authority: createRecordAuthority({ database, envelope: stored, sha256 }),
 		};
 	}
 	if (request.protocolMajor !== RECORD_SYNC_PROTOCOL_MAJOR)
 		return { ok: false, reason: 'protocol-mismatch' };
-	const databaseIncarnationId = createDatabaseIncarnationId();
-	if (databaseIncarnationId.trim() === '')
-		throw new TypeError('databaseIncarnationId must not be empty');
-	const envelope = { ...request, databaseIncarnationId };
+	const databaseId = createDatabaseId();
+	if (databaseId.trim() === '')
+		throw new TypeError('databaseId must not be empty');
+	const envelope = { ...request, databaseId };
 	const authority = createRecordAuthority({ database, envelope, sha256 });
 	return {
 		ok: true,
-		databaseIncarnationId,
+		databaseId,
 		envelope,
 		authority,
 	};

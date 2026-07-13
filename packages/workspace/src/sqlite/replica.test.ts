@@ -7,7 +7,7 @@
  *
  * Key behaviors:
  * - Fresh replicas create durable local identity and outbox state without network I/O
- * - First synchronization permanently binds the replica to one authority incarnation
+ * - First synchronization permanently binds the replica to one authority database
  * - Actor sequence and outbox advance in the application transaction
  * - Pull pages retract pending creations, fold the page, then replay intent
  * - Lost acknowledgements, remote deletions, and snapshots converge; deletion
@@ -51,12 +51,12 @@ const definition = defineWorkspace({
 const sha256 = async (value: string) =>
 	createHash('sha256').update(value).digest('hex');
 
-function createServer(databaseIncarnationId = 'database-1') {
+function createServer(databaseId = 'database-1') {
 	const native = new Database(':memory:');
 	const envelope = {
-		protocolMajor: 1,
-		schemaIdentity: definition.recordsSchemaHash,
-		databaseIncarnationId,
+		protocolMajor: 2,
+		recordsSchemaHash: definition.recordsSchemaHash,
+		databaseId,
 	};
 	const authority = createRecordAuthority({
 		database: createBunSqliteAdapter(native),
@@ -68,7 +68,7 @@ function createServer(databaseIncarnationId = 'database-1') {
 
 function createPort(
 	authority: RecordAuthority,
-	databaseIncarnationId = 'database-1',
+	databaseId = 'database-1',
 ): ReplicaSyncPort {
 	return {
 		bindWorkspace(workspaceId) {
@@ -77,10 +77,10 @@ function createPort(
 		async openDatabase(request) {
 			expect(request).toEqual({
 				workspaceId: definition.id,
-				schemaIdentity: definition.recordsSchemaHash,
-				protocolMajor: 1,
+				recordsSchemaHash: definition.recordsSchemaHash,
+				protocolMajor: 2,
 			});
-			return { databaseIncarnationId };
+			return { databaseId };
 		},
 		async push(request) {
 			return authority.push(request);
@@ -127,11 +127,9 @@ test('fresh replica writes offline, then binds before draining and pulling', asy
 			calls.push('push');
 			expect(
 				native
-					.query(
-						'SELECT database_incarnation_id FROM __epicenter_replica WHERE id = 1',
-					)
+					.query('SELECT database_id FROM __epicenter_replica WHERE id = 1')
 					.get(),
-			).toEqual({ database_incarnation_id: 'database-1' });
+			).toEqual({ database_id: 'database-1' });
 			return base.push(request, signal);
 		},
 		async pull(request, signal) {
@@ -148,7 +146,7 @@ test('fresh replica writes offline, then binds before draining and pulling', asy
 	expect(calls).toEqual([]);
 	expect(runtime.inspect()).toMatchObject({
 		actorId: 'offline-actor',
-		databaseIncarnationId: null,
+		databaseId: null,
 		outbox: [],
 	});
 	runtime.database.tables.notes.create(note('local', 'created offline'));
@@ -161,7 +159,7 @@ test('fresh replica writes offline, then binds before draining and pulling', asy
 
 	expect(calls).toEqual(['open', 'push', 'pull']);
 	expect(runtime.inspect()).toMatchObject({
-		databaseIncarnationId: 'database-1',
+		databaseId: 'database-1',
 		appliedServerSequence: 2,
 		outbox: [],
 	});
@@ -200,7 +198,7 @@ test('failed first binding preserves local work and the next sync retries', asyn
 		note('pending', 'survives'),
 	);
 	expect(runtime.inspect()).toMatchObject({
-		databaseIncarnationId: null,
+		databaseId: null,
 		outbox: [{ actorId: 'retry-actor', actorSequence: 1 }],
 	});
 	expect(pushAttempts).toBe(0);
@@ -209,7 +207,7 @@ test('failed first binding preserves local work and the next sync retries', asyn
 	expect(openAttempts).toBe(2);
 	expect(pushAttempts).toBe(1);
 	expect(runtime.inspect()).toMatchObject({
-		databaseIncarnationId: 'database-1',
+		databaseId: 'database-1',
 		outbox: [],
 	});
 	native.close();
@@ -255,7 +253,7 @@ test('an unbound replica preserves identity and pending work across reopen', asy
 	expect(reopened.runtime.inspect()).toMatchObject({
 		actorId: 'durable-actor',
 		nextActorSequence: 3,
-		databaseIncarnationId: null,
+		databaseId: null,
 	});
 	expect(reopened.runtime.inspect().outbox).toHaveLength(2);
 	await expect(reopened.runtime.syncOnce()).rejects.toThrow('offline');
@@ -278,7 +276,7 @@ async function openReplica({
 		definition,
 		sqlite: createBunSqliteAdapter(native),
 		sync: port,
-		protocolMajor: 1,
+		protocolMajor: 2,
 		createActorId: () => actorId,
 		sha256,
 		onObserverError: () => {},
@@ -516,7 +514,7 @@ test("a push refused with 'create-conflict' is an invariant violation demanding 
 	const port: ReplicaSyncPort = {
 		bindWorkspace() {},
 		async openDatabase() {
-			return { databaseIncarnationId: 'database-1' };
+			return { databaseId: 'database-1' };
 		},
 		async push() {
 			return { kind: 'push', ok: false, reason: 'create-conflict' };
@@ -543,8 +541,8 @@ test("a push refused with 'create-conflict' is an invariant violation demanding 
 test('durable authority refusals stop the sync supervisor instead of retrying', async () => {
 	const reasons = [
 		'protocol-mismatch',
-		'schema-identity-mismatch',
-		'database-incarnation-mismatch',
+		'records-schema-mismatch',
+		'database-id-mismatch',
 		'actor-sequence-gap',
 	] as const;
 
@@ -553,7 +551,7 @@ test('durable authority refusals stop the sync supervisor instead of retrying', 
 		const port: ReplicaSyncPort = {
 			bindWorkspace() {},
 			async openDatabase() {
-				return { databaseIncarnationId: 'database-1' };
+				return { databaseId: 'database-1' };
 			},
 			async push() {
 				pushAttempts++;
@@ -595,7 +593,7 @@ test("a push refused with 'row-too-large' stops retries and preserves pending in
 	const port: ReplicaSyncPort = {
 		bindWorkspace() {},
 		async openDatabase() {
-			return { databaseIncarnationId: 'database-1' };
+			return { databaseId: 'database-1' };
 		},
 		async push() {
 			pushAttempts++;
@@ -920,7 +918,7 @@ test('legacy bound metadata reopens after the nullable representation migration'
 			actor_id TEXT NOT NULL,
 			next_actor_sequence INTEGER NOT NULL CHECK(next_actor_sequence >= 1),
 			applied_server_sequence INTEGER NOT NULL CHECK(applied_server_sequence >= 0),
-			database_incarnation_id TEXT NOT NULL,
+			database_id TEXT NOT NULL,
 			protocol_major INTEGER NOT NULL CHECK(protocol_major >= 1),
 			sync_storage_version INTEGER NOT NULL CHECK(sync_storage_version >= 1)
 		);
@@ -935,13 +933,13 @@ test('legacy bound metadata reopens after the nullable representation migration'
 	});
 	expect(restarted.runtime.inspect()).toMatchObject({
 		actorId: 'legacy-actor',
-		databaseIncarnationId: 'database-1',
+		databaseId: 'database-1',
 		syncStorageVersion: 1,
 	});
 	expect(
 		native
 			.query(
-				`SELECT "notnull" FROM pragma_table_info('__epicenter_replica') WHERE name = 'database_incarnation_id'`,
+				`SELECT "notnull" FROM pragma_table_info('__epicenter_replica') WHERE name = 'database_id'`,
 			)
 			.get(),
 	).toEqual({ notnull: 0 });
@@ -949,7 +947,7 @@ test('legacy bound metadata reopens after the nullable representation migration'
 	server.native.close();
 });
 
-test('restart treats a contradictory authority incarnation as fatal corruption', async () => {
+test('restart treats a contradictory authority database as fatal corruption', async () => {
 	const firstServer = createServer('database-1');
 	const native = new Database(':memory:');
 	const first = await openReplica({
@@ -969,7 +967,7 @@ test('restart treats a contradictory authority incarnation as fatal corruption',
 		(cause: unknown) => cause,
 	);
 	expect(error).toBeInstanceOf(ReplicaInvariantViolationError);
-	expect((error as Error).message).toContain('database incarnation');
+	expect((error as Error).message).toContain('database identity');
 	expect((error as Error).message).toContain('rebootstrap');
 	native.close();
 	firstServer.native.close();

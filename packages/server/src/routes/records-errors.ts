@@ -12,7 +12,7 @@ export const RecordsError = defineErrors({
 	DatabaseBindingMismatch: ({
 		reason,
 	}: {
-		reason: 'protocol-mismatch' | 'schema-identity-mismatch';
+		reason: 'protocol-mismatch' | 'records-schema-mismatch';
 	}) => ({
 		message:
 			reason === 'protocol-mismatch'

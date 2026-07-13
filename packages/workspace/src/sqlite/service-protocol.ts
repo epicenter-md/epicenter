@@ -113,7 +113,7 @@ export const WorkspaceServiceResponseSchema = Type.Union([
 				Type.Literal('replica'),
 			]),
 			workspaceId: nonEmptyString,
-			schemaIdentity: nonEmptyString,
+			recordsSchemaHash: nonEmptyString,
 		},
 		CLOSED,
 	),

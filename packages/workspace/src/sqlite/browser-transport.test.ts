@@ -108,7 +108,7 @@ const description: WorkspaceServiceResponse = {
 	kind: 'workspace',
 	workspaceKind: 'standalone',
 	workspaceId: 'transport-test',
-	schemaIdentity: 'transport-schema',
+	recordsSchemaHash: 'transport-schema',
 };
 
 describe('workspace worker protocol', () => {

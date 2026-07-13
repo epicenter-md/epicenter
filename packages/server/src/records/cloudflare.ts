@@ -50,14 +50,14 @@ export class RecordAuthorityDurableObject extends DurableObject {
 		const opened = openRecordAuthority({
 			database: createDurableObjectSqliteAdapter(this.ctx.storage),
 			request,
-			createDatabaseIncarnationId: () => crypto.randomUUID(),
+			createDatabaseId: () => crypto.randomUUID(),
 			sha256,
 		});
 		if (!opened.ok) return opened;
 		this.authority = opened.authority;
 		return {
 			ok: true,
-			databaseIncarnationId: opened.databaseIncarnationId,
+			databaseId: opened.databaseId,
 		};
 	}
 

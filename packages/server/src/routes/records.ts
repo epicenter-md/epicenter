@@ -86,7 +86,7 @@ function createRecordsApp<E extends Env>(
 				parsed.value,
 			);
 			if (result.ok) {
-				return c.json({ databaseIncarnationId: result.databaseIncarnationId });
+				return c.json({ databaseId: result.databaseId });
 			}
 			const error = RecordsError.DatabaseBindingMismatch({
 				reason: result.reason,

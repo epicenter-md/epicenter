@@ -5,12 +5,12 @@ import {
 	isAdmissibleMutation,
 	isAdmissibleSnapshotRow,
 	isBoundedIdentifier,
-	isBoundedSchemaIdentity,
+	isBoundedRecordsSchemaHash,
 	RECORD_SYNC_ADMISSION_LIMITS,
 } from './admission.js';
 
 const CLOSED = { additionalProperties: false } as const;
-export const RECORD_SYNC_PROTOCOL_MAJOR = 1;
+export const RECORD_SYNC_PROTOCOL_MAJOR = 2;
 const sequence = Type.Integer({ minimum: 0, maximum: Number.MAX_SAFE_INTEGER });
 const positiveSequence = Type.Integer({
 	minimum: 1,
@@ -39,11 +39,11 @@ const cellsSchema = Type.Unsafe<Cells>(
 );
 const envelopeProperties = {
 	protocolMajor: positiveSequence,
-	schemaIdentity: Type.String({
+	recordsSchemaHash: Type.String({
 		minLength: 1,
-		maxLength: RECORD_SYNC_ADMISSION_LIMITS.schemaIdentityBytes,
+		maxLength: RECORD_SYNC_ADMISSION_LIMITS.recordsSchemaHashBytes,
 	}),
-	databaseIncarnationId: identifier,
+	databaseId: identifier,
 };
 const mutationProperties = {
 	actorId: identifier,
@@ -179,8 +179,8 @@ export type SnapshotChunk = Static<typeof snapshotChunkSchema>;
 
 const requestRefusalSchema = Type.Union([
 	Type.Literal('protocol-mismatch'),
-	Type.Literal('schema-identity-mismatch'),
-	Type.Literal('database-incarnation-mismatch'),
+	Type.Literal('records-schema-mismatch'),
+	Type.Literal('database-id-mismatch'),
 ]);
 export type RequestRefusal = Static<typeof requestRefusalSchema>;
 
@@ -274,8 +274,8 @@ function snapshotRowsAreAdmissible(rows: SnapshotRow[]): boolean {
 
 function requestEnvelopeIsAdmissible(value: RequestEnvelope): boolean {
 	return (
-		isBoundedSchemaIdentity(value.schemaIdentity) &&
-		isBoundedIdentifier(value.databaseIncarnationId)
+		isBoundedRecordsSchemaHash(value.recordsSchemaHash) &&
+		isBoundedIdentifier(value.databaseId)
 	);
 }
 
@@ -357,9 +357,8 @@ export function requestRefusal(
 ): RequestRefusal | null {
 	if (request.protocolMajor !== expected.protocolMajor)
 		return 'protocol-mismatch';
-	if (request.schemaIdentity !== expected.schemaIdentity)
-		return 'schema-identity-mismatch';
-	if (request.databaseIncarnationId !== expected.databaseIncarnationId)
-		return 'database-incarnation-mismatch';
+	if (request.recordsSchemaHash !== expected.recordsSchemaHash)
+		return 'records-schema-mismatch';
+	if (request.databaseId !== expected.databaseId) return 'database-id-mismatch';
 	return null;
 }

@@ -23,9 +23,9 @@ import {
 } from './protocol.js';
 
 const envelope = {
-	protocolMajor: 1,
-	schemaIdentity: 'notes-v1',
-	databaseIncarnationId: 'db-1',
+	protocolMajor: 2,
+	recordsSchemaHash: 'notes-v1',
+	databaseId: 'db-1',
 };
 
 test('protocol parsers accept the closed wire shapes and nested JSON cells', () => {

@@ -42,7 +42,7 @@ native SQLite owners:
   and never update optimistically.
 - `openStandaloneWorkspace` verifies the service's standalone/replica mode,
   workspace id,
-  and exact schema identity before exposing a typed client;
+  and exact records schema hash before exposing a typed client;
 - the Bun adapter owns a real file-backed SQLite connection and preserves typed
   rows across close and reopen.
 - an app-owned module Worker owns SQLite WASM and the OPFS connection while the
@@ -107,7 +107,7 @@ notes
 __epicenter_meta
   storage_revision
   workspace_id
-  schema_identity
+  records_schema_hash
   database_kind       standalone or replica, permanent for this file
 
 ```
@@ -225,9 +225,9 @@ Implement the Wave 2 family and records-database protocol around the proven
 replica lifecycle. Reuse the validated service protocol and the rule that the
 worker or native service imports the workspace definition itself. The UI sends
 no executable schema; its opening handshake verifies mode, workspace id, and
-exact records schema identity. Schema succession must follow the candidate and
+exact records records schema hash. Schema succession must follow the candidate and
 conditional-activation contract in the active spec, not the discarded epoch or
-incarnation transition prototypes.
+database succession prototypes.
 
 Then migrate app definitions and actions, move only proven collaborative bodies
 to declared Yjs docs, stop every old record import, and delete the Yjs table/KV

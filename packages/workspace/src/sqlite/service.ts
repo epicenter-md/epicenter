@@ -142,7 +142,7 @@ export function createWorkspaceService<TTables extends TableDefinitions>(
 					kind: 'workspace',
 					workspaceKind: database.identity.kind,
 					workspaceId: database.identity.workspaceId,
-					schemaIdentity: database.identity.schemaIdentity,
+					recordsSchemaHash: database.identity.recordsSchemaHash,
 				};
 			case 'get':
 				return { kind: 'row', row: tableFor(request.table).get(request.rowId) };

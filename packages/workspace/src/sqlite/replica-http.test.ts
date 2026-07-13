@@ -14,7 +14,7 @@ test('HTTP replica port binds one encoded workspace and forwards exact JSON', as
 			});
 			return Response.json(
 				requests.length === 1
-					? { databaseIncarnationId: 'db-1' }
+					? { databaseId: 'db-1' }
 					: { kind: 'push', ok: true },
 			);
 		},
@@ -25,18 +25,18 @@ test('HTTP replica port binds one encoded workspace and forwards exact JSON', as
 		await port.openDatabase(
 			{
 				workspaceId: 'notes/2026',
-				protocolMajor: 1,
-				schemaIdentity: 'schema-1',
+				protocolMajor: 2,
+				recordsSchemaHash: 'schema-1',
 			},
 			controller.signal,
 		),
-	).toEqual({ databaseIncarnationId: 'db-1' });
+	).toEqual({ databaseId: 'db-1' });
 	await port.push(
 		{
 			kind: 'push',
-			protocolMajor: 1,
-			schemaIdentity: 'schema-1',
-			databaseIncarnationId: 'db-1',
+			protocolMajor: 2,
+			recordsSchemaHash: 'schema-1',
+			databaseId: 'db-1',
 			mutations: [],
 		},
 		controller.signal,
@@ -45,16 +45,16 @@ test('HTTP replica port binds one encoded workspace and forwards exact JSON', as
 	expect(requests).toEqual([
 		{
 			url: 'https://api.example.test/api/records/notes%2F2026/open',
-			body: { protocolMajor: 1, schemaIdentity: 'schema-1' },
+			body: { protocolMajor: 2, recordsSchemaHash: 'schema-1' },
 			signal: controller.signal,
 		},
 		{
 			url: 'https://api.example.test/api/records/notes%2F2026/push',
 			body: {
 				kind: 'push',
-				protocolMajor: 1,
-				schemaIdentity: 'schema-1',
-				databaseIncarnationId: 'db-1',
+				protocolMajor: 2,
+				recordsSchemaHash: 'schema-1',
+				databaseId: 'db-1',
 				mutations: [],
 			},
 			signal: controller.signal,
@@ -63,8 +63,8 @@ test('HTTP replica port binds one encoded workspace and forwards exact JSON', as
 	await expect(
 		port.openDatabase({
 			workspaceId: 'other',
-			protocolMajor: 1,
-			schemaIdentity: 'schema-1',
+			protocolMajor: 2,
+			recordsSchemaHash: 'schema-1',
 		}),
 	).rejects.toThrow('already bound');
 });
@@ -84,15 +84,15 @@ test('HTTP replica port reports non-success and malformed responses', async () =
 	await expect(
 		port.openDatabase({
 			workspaceId: 'notes',
-			protocolMajor: 1,
-			schemaIdentity: 'schema-1',
+			protocolMajor: 2,
+			recordsSchemaHash: 'schema-1',
 		}),
 	).rejects.toThrow('non-JSON HTTP 503');
 	await expect(
 		port.openDatabase({
 			workspaceId: 'notes',
-			protocolMajor: 1,
-			schemaIdentity: 'schema-1',
+			protocolMajor: 2,
+			recordsSchemaHash: 'schema-1',
 		}),
 	).rejects.toThrow('non-JSON HTTP 200');
 });

@@ -1,7 +1,7 @@
 # Gate 4 evidence: shared production core
 
 > Checkpoint vocabulary note: this dated evidence names the implemented
-> `schemaIdentity` and `databaseIncarnationId` envelope. The target family
+> `recordsSchemaHash` and `databaseId` envelope. The target family
 > protocol calls these the records schema hash and records database id. Gate 4
 > does not prove schema succession or candidate activation.
 
@@ -34,7 +34,7 @@ The same scenario passes through all three adapter surfaces:
 
 - transaction rollback;
 - actor sequence acceptance, duplicate suppression, and gap refusal;
-- exact schema identity and database identity fencing;
+- exact records schema hash and database identity fencing;
 - nested JSON cell persistence;
 - terminal deletion;
 - ordered pull;
