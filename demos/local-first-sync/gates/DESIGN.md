@@ -68,15 +68,18 @@ accepted state, prune snapshot-contained outbox mutations, replay the rest
 through the fold, and advance the cursor in one SQLite transaction. Its
 measured result is recorded in [`GATE2-EVIDENCE.md`](GATE2-EVIDENCE.md).
 
-Gate 3's original late-overlay model is withdrawn. Its replacement must add
-exact schema identity, head-bound immutable candidate upload, conditional
-activation against the still-current source head, stale-head retry, atomic
-selection, and permanent old-database fencing. It must contain no migration-time
-device or actor state. Ordinary writes must recheck family-current and writable
-inside their fold/head transaction. Activation accepts only `candidateId` and
-derives its source/head/target/successor binding from the sealed server-owned
-manifest. The current evidence status and required traces are recorded in
-[`GATE3-EVIDENCE.md`](GATE3-EVIDENCE.md).
+Gate 3 proves exact schema identity, head-bound immutable candidate upload,
+conditional activation against the still-current source head, stale-head retry,
+atomic selection, and permanent old-database fencing. Each family has one
+content-addressed staging slot: a different manifest replaces it. This refuses
+candidate plurality, expiry, cleanup workers, and migration-time device or actor
+state. The slot is a pending upload, not a database; only atomic activation
+creates the successor database from its verified chunks. Databases therefore
+have only `live` and `fenced` states. Ordinary writes recheck family-current and writable inside their
+fold/head transaction. Activation accepts only `candidateId`, derives its
+source/head/target binding from the sealed server-owned manifest, and reuses the
+verified uploaded chunks as the successor's initial head-0 checkpoint. The
+measured result is recorded in [`GATE3-EVIDENCE.md`](GATE3-EVIDENCE.md).
 
 Wave 4 extracts the portable record protocol, fold, authority, and three SQLite
 adapters. Its result and remaining runtime smoke scope are recorded in

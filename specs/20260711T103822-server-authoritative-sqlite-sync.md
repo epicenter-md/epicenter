@@ -582,7 +582,7 @@ ACTIVE source database at schema A
        if family.current == A and A.head == H:
          atomically select B and permanently supersede A
        otherwise:
-         change nothing; let staging clean up B and retry from the new current head
+         change nothing; replace staging from the new current head and retry
 ```
 
 The user, not the authority, owns the assertion that important devices have
@@ -607,21 +607,24 @@ completeness, and performs conditional activation. A continues accepting
 ordinary writes while candidates upload. Any accepted write advances A beyond
 H and safely invalidates those candidates.
 
-Temporary staging is required for databases that exceed one request. A
-candidate is a generic immutable logical-baseline upload with this server-owned
-state:
+Temporary staging is required for databases that exceed one request. Each
+family has exactly one staging slot. A candidate is a generic immutable
+logical-baseline upload with this server-owned state:
 
 ```txt
-candidate id
+candidate id derived from the canonical manifest body
 source database id
 source head
 target records-schema hash
-immutable manifest digest
 ordered chunk identities and content digests
 row and byte counts
-expiry
 state: open | sealed
 ```
+
+The slot is not a database. It has no records table, readable snapshot, sync
+head, or write path. Records databases have only `live` and terminal `fenced`
+states. Atomic activation creates B from the sealed upload; before that moment,
+B does not exist as a database.
 
 The manifest digest is SHA-256 over the UTF-8 bytes of canonical JSON for the
 immutable manifest body, excluding the digest field itself. The protocol fixes
@@ -631,31 +634,33 @@ identities across the complete candidate. Sealing verifies that every declared
 chunk exists, digests and counts match, row identities are unique, and values
 satisfy generic wire limits.
 
-Idempotency is exact:
+Idempotency and replacement are exact:
 
 ```txt
 same candidate id + identical manifest -> replay
-same candidate id + different manifest -> conflict
+different manifest -> replace the one staging slot
 same chunk index + identical bytes -> replay
 same chunk index + different bytes -> conflict
 reseal sealed candidate -> success
 retry committed activation -> already-activated
-genuinely stale candidate -> change nothing
+genuinely stale candidate -> change nothing; rebuild and replace staging
 ```
 
 Activation accepts only `candidateId`. Inside the activation transaction, the
 authority loads the sealed manifest and derives source database A, source head
 H, target records-schema hash, and the candidate's successor binding from
 server-owned state. It
-revalidates that binding, candidate state and expiry, family selection, and A's
-head before selecting B and fencing A.
+revalidates that binding, candidate state, family selection, and A's head before
+selecting B and fencing A. The verified uploaded chunks become B's initial
+head-0 checkpoint; the authority does not copy them through another baseline
+representation during activation.
 
-Staging has bounded candidate, chunk, row, byte, and lifetime quotas. The
-authority owns cleanup. Expiry, sealing, activation, and cleanup serialize on
-candidate and family state: cleanup cannot delete a winning candidate,
-activation cannot revive an expired candidate, and an activation receipt
-survives deletion of staged bytes. A sealed candidate is invisible until
-activation and safe to garbage-collect if abandoned or stale.
+Staging has fixed chunk, row, and byte limits. The one-slot rule bounds aggregate
+temporary storage without candidate TTLs, expiry state, garbage collection, or
+a cleanup worker. A second attempt replaces the prior slot. An abandoned upload
+remains until replacement or explicit discard. A sealed candidate is invisible
+until activation. The family current selection itself proves a committed
+activation and makes an immediate replay idempotent without a second receipt.
 
 The schema-blind authority verifies transport completeness and integrity. The
 trusted application client validates every canonical source row against the
@@ -668,9 +673,15 @@ Raw table names, row ids, and validation reasons appear only in bounded
 technical details or a diagnostic export. This system has no generic repair
 editor.
 
-Candidates require no exclusive owner. Several clients may prepare from the
-same H; the first successful activation changes the family selection, so every
-other activation fails its compare-and-swap without special race state.
+Succession has one preparer at a time. Concurrent preparation is deliberately
+unsupported: a later manifest replaces the staging slot. This is acceptable
+because synchronized succession is an explicit, rare maintenance event, and it
+deletes candidate collections, race arbitration, expiry, and cleanup lifecycle.
+The maintenance UI must make quiescence concrete: synchronize important devices,
+stop editing on them, then approve. Another accepted write can repeatedly make
+activation stale and force a complete rebuild. Version one refuses source locks,
+quiesce RPCs, delta transforms, and cross-attempt chunk reuse; measured failure
+of this foreground workflow is required before adding any of them.
 
 | Invariant | Owner |
 | --- | --- |
@@ -678,7 +689,7 @@ other activation fails its compare-and-swap without special race state.
 | Stop-editing instruction and explicit approval | Migration UI |
 | Canonical source snapshot and its head H | Records authority |
 | Source and target schema validation, semantic completeness, and trusted transform execution | Migration client |
-| Candidate binding, upload completeness, chunk integrity, and cleanup | Records authority staging |
+| Candidate binding, upload completeness, chunk integrity, one-slot replacement, and discard | Records authority staging |
 | Current/writable write admission, fold, and head advance | Records-database authority transaction |
 | Candidate binding revalidation and `(family.current == A && A.head == H)` | Workspace-family authority transaction |
 | Atomic selection and permanent supersession | Workspace-family authority transaction |
@@ -1226,13 +1237,14 @@ boundary to remain public or mutable.
 - [x] Require historical source-row validation and block succession on any
   nonconforming or quarantined row.
 - [x] Specify atomic ordinary-write versus activation serialization.
-- [x] Specify candidateId-only activation, immutable manifest binding,
-  canonical digests, exact idempotency, quotas, expiry, and cleanup ownership.
+- [x] Specify candidateId-only activation, content-addressed immutable manifest
+  binding, canonical digests, exact idempotency, one-slot replacement, and
+  fixed per-candidate limits.
 - [x] Reconcile CONTEXT, ADRs, this active spec, gate evidence, historical
   labeling, and the implementation handoff around one target model.
-- [ ] Re-run Gate 3 against structural records schema hashes, client-run
-  adjacent migration chains, and the final candidate protocol. This is Wave 2
-  proof work, not evidence supplied by this documentation wave.
+- [x] Re-run Gate 3 against the final one-slot candidate protocol with
+  independent in-memory and SQLite authorities. The proof covers conditional
+  activation and durable fencing; client-run transforms remain lifecycle work.
 
 ### Wave 2: Build database succession
 
@@ -1250,19 +1262,20 @@ boundary to remain public or mutable.
 - [x] Implement and prove the bounded-memory adjacent records-migration runner.
   Keep it internal to lifecycle orchestration and do not reuse compaction
   snapshot manifests as successor candidates.
-- [ ] Implement immutable candidate manifests, idempotent chunk upload, upload
-  completeness/integrity sealing, and safe abandoned-candidate cleanup.
+- [x] Prove immutable content-addressed candidate manifests, idempotent chunk
+  upload, completeness/integrity sealing, one-slot replacement, and discard in
+  independent in-memory and SQLite authorities.
 - [ ] Make every ordinary write atomically require family-current and writable,
   fold its mutation, advance the selected database head, and commit.
 - [ ] Implement `activate(candidateId)` by deriving and revalidating A, H,
   target hash, and successor binding from the sealed server-owned manifest; the
   authority never stores or runs application transforms.
-- [ ] Enforce candidate replay/conflict rules, TTL and aggregate quotas, and
-  serialization between expiry, sealing, cleanup, and activation.
+- [x] Enforce candidate replay, content-integrity refusal, fixed chunk/row/byte
+  limits, and one-slot replacement without TTL or cleanup lifecycle in Gate 3.
 - [ ] Validate every source row before transform and every output row before
   upload; surface nonconforming source rows as a blocking diagnostic.
-- [ ] Prove concurrent candidates race only at the family-selection and
-  source-head compare-and-swap.
+- [x] Refuse concurrent candidate preparation; prove that a different manifest
+  replaces the one staging slot and stale-head activation changes nothing.
 - [ ] Fence superseded databases from further synchronization.
 - [ ] Make local-only succession automatic and synchronized succession
   approval-gated through the workspace lifecycle.
@@ -1329,12 +1342,12 @@ boundary to remain public or mutable.
 | Same mutation is accepted once | Actor-sequence duplicate and response-loss tests |
 | Deleted rows do not resurrect | Delayed update/delete and compaction traces |
 | Snapshot replaces old log safely | Stale actor high-water and remaining-outbox tests |
-| Partial successor never activates | Missing chunk, digest/count mismatch, failed seal, and abandoned-candidate cleanup tests |
+| Partial successor never activates | Missing chunk, digest/count mismatch, failed seal, replacement, and discard tests |
 | Source writes cannot be lost during migration | Force both serialization orders: write-first advances A and makes activation stale; activation-first makes A non-current and rejects the write |
-| Candidate retries are idempotent | Identical candidate/chunk replay, conflicting manifest/chunk refusal, reseal success, already-activated receipt, and stale no-op tests |
-| Candidate cleanup is bounded and serialized | TTL and aggregate quota tests plus expiry/seal/activation/cleanup race traces |
+| Candidate retries are idempotent | Identical candidate/chunk replay, content-integrity refusal, reseal success, already-activated receipt, and stale no-op tests |
+| Candidate storage is bounded | One staging slot plus fixed chunk, row, and byte limits; a different manifest replaces the slot |
 | Invalid source rows never disappear | Historical validation blocks the whole succession, reports row identities, and leaves A unchanged |
-| Migration race has one winner | Concurrent sealed candidates from A/H; one conditional activation succeeds |
+| Succession has one preparer | A different manifest replaces the one staging slot; concurrent candidate arbitration is unsupported |
 | Device participation is not protocol state | Migration requests and authority tables contain no device-participation fields |
 | Forgotten local work has the stated loss | Superseded local database can produce a logical export; the current app cannot open it, merge it, or generically re-import it |
 | Old records schema cannot keep syncing | Records-schema mismatch and superseded-database fencing test |
@@ -1465,6 +1478,18 @@ request a prototype are implementation proof, not unresolved product approval.
       untenable. Reopen chat retention or storage topology with that evidence;
       do not infer that mutable Yjs rooms are the replacement.
 
+12. **Succession staging cardinality** (resolved 2026-07-13)
+    - Decision: each workspace family has one content-addressed staging slot.
+      The same manifest replays; a different manifest replaces the slot. Fixed
+      chunk, row, and byte limits bound storage. There is no candidate list,
+      expiry, garbage collector, cleanup worker, or concurrent-preparer
+      arbitration. An abandoned upload persists until replacement or discard.
+    - User-visible loss: two clients cannot prepare successors concurrently; a
+      later attempt replaces the earlier upload. This is accepted because
+      synchronized succession is an explicit, rare maintenance event.
+    - Falsifier: a concrete product workflow requires concurrent independent
+      succession preparation rather than one approved lifecycle owner.
+
 ## Success criteria
 
 - [ ] App definitions contain no epoch, root incarnation, or row-version API.
@@ -1494,8 +1519,8 @@ request a prototype are implementation proof, not unresolved product approval.
   still exactly at the snapshot head H.
 - [ ] Ordinary writes recheck currentness and writability in the same
   transaction that folds and advances the database head.
-- [ ] Candidate creation, chunks, sealing, activation retries, expiry, and
-  cleanup follow the specified replay/conflict and serialization rules.
+- [ ] Candidate creation, chunks, sealing, activation retries, one-slot
+  replacement, and discard follow the specified replay and integrity rules.
 - [ ] Records succession authority state contains no device-participation or
   source-locking lifecycle.
 - [ ] The runtime retains forgotten old-schema work for logical export, but it

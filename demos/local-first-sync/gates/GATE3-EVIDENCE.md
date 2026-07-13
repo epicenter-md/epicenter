@@ -1,76 +1,73 @@
-# Gate 3 evidence withdrawn: optimistic conditional activation needs a new proof
+# Gate 3 evidence: one-slot conditional database succession
 
-Date withdrawn: 2026-07-12
+Date passed: 2026-07-13
 
 ## Result
 
-Gate 3 does not yet pass the current product contract. The deleted 2026-07-11
-harness proved an earlier frozen-source transition with server-executed
-transforms and post-activation private-overlay import. A later unimplemented
-device-participation design was also superseded. ADRs 0119, 0121, and 0125 now
-require neither model.
-
-The old harness remains available in git history as implementation material for
-candidate upload, completeness checks, atomic family selection, and permanent
-superseded-database rejection. It is not current evidence.
-
-## Replacement gate
-
-The replacement must prove this smallest transition with independent in-memory
-and SQLite authorities:
+Gate 3 passes the collapsed succession contract with independent in-memory and
+SQLite authorities:
 
 ```txt
-ACTIVE source A at head H
-  -> client reads canonical snapshot A/H
-  -> client transforms and uploads immutable candidate B bound to A/H
-  -> authority seals B after manifest completeness and integrity checks
+LIVE source A at head H
+  -> client reads canonical A/H
+  -> client transforms rows locally
+  -> stage one content-addressed candidate B bound to A/H
+  -> upload and seal immutable chunks
   -> activate(candidateId)
-       success: atomically select B and permanently supersede A
-       stale: change nothing, let staging clean up B, and retry from the new head
+       if family.current == A and A.head == H:
+         select B at head 0 and permanently fence A
+       otherwise:
+         change nothing; rebuild from the current source
 ```
 
-The sealed server-owned manifest is the source of truth for A, H, the target
-records-schema hash, and successor binding. Activation accepts no caller copy of
-those operands.
+The authority never stores application transform code. Candidate manifests and
+chunks are authenticated by SHA-256 over canonical JSON. A pending upload is
+not a database and cannot be read or written. Atomic activation creates B from
+the verified chunks, which become B's initial head-0 checkpoint.
 
-Required traces:
+## Asymmetric refusal
 
-- stage a candidate over several idempotent chunk requests;
-- replay the same candidate manifest and same chunk bytes successfully, while
-  rejecting candidate-id or chunk-index reuse with different content;
-- reject missing, duplicate-identity, count-mismatched, digest-mismatched, or
-  unsealed candidates;
-- compute the manifest digest from canonical JSON with fixed fields and chunks
-  sorted by index; reject duplicate chunk indexes and duplicate `(table, rowId)`
-  identities across chunks;
-- reseal a sealed candidate successfully;
-- keep every candidate invisible before activation;
-- accept ordinary source writes throughout upload;
-- force both write/activation serialization orders: write-first advances A and
-  makes activation stale; activation-first makes A non-current and rejects the
-  old-database write;
-- let two complete candidates race from A/H and admit exactly one through the
-  family-selection and source-head compare-and-swap;
-- retry a committed activation and return `already-activated`;
-- expire and garbage-collect stale, failed, and abandoned candidates under
-  bounded candidate/chunk/row/byte quotas without touching A; serialize expiry,
-  sealing, activation, and cleanup so cleanup cannot delete a winning candidate
-  and activation cannot revive an expired candidate;
-- activate a complete client-uploaded logical baseline without giving the
-  schema-blind authority application transform code;
-- block the entire succession when any canonical source row fails the
-  historical source descriptor, report its identity, and leave A unchanged;
-- permanently reject every post-activation write to superseded A;
-- retain forgotten old local databases for read and logical export while
-  providing no automatic merge or generic re-import.
+Each family has one staging slot. Staging the same manifest replays. Staging a
+different manifest replaces the slot and its uploaded chunks. There is no
+candidate collection, race arbitration, expiry, garbage collector, or cleanup
+worker.
 
-The replacement must also prove an absence: migration requests, authority
-tables, and state transitions contain no device-participation or source-locking
-state. `actorId` and `actorSequence` remain only in ordinary retry-safe
-synchronization tests.
+This deliberately refuses concurrent preparation by several clients. A second
+attempt replaces the first, and an abandoned upload remains until the next
+attempt or explicit discard. Storage remains bounded by one candidate plus
+fixed chunk, row, and byte limits.
 
-## Scope
+## Traces proved
 
-The user owns the assertion that important devices showed `Synced` before
-approval. KV and independently addressed Yjs child documents continue syncing;
-conditional activation changes only the selected records database.
+- exact manifest and chunk replay;
+- multi-chunk upload and missing-chunk refusal;
+- tampered chunk refusal;
+- duplicate and out-of-order row identity refusal across chunks;
+- candidate invisibility before activation;
+- pending-upload read and write refusal by construction;
+- authenticated manifest totals and a valid empty schema-only successor;
+- write-first serialization: A advances and candidate activation becomes stale;
+- activation-first serialization: B becomes current and A rejects every write;
+- committed activation replay returns `already-active`;
+- re-staging an already-created database id returns a defined refusal;
+- a stale candidate can be replaced by one rebuilt from the new head;
+- SQLite restart preserves current selection, idempotent activation, source fence,
+  and B's initial checkpoint;
+- succession state contains no actor, device, or source-locking lifecycle.
+
+Run:
+
+```sh
+bun test demos/local-first-sync/gates/gate3.test.ts
+```
+
+Measured result on 2026-07-13: 6 tests, 125 assertions, all passing. Repository
+typecheck and focused Biome checks also pass.
+
+## Limits
+
+The proof uses small limits to exercise boundary behavior. Production adapters
+must choose measured request and storage limits. Historical source validation,
+client-side transforms, lifecycle approval, and real app wiring remain later
+waves. Gate 3 proves only the schema-blind authority transition and its durable
+SQLite state.
