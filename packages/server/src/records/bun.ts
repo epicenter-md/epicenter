@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import {
+	createRecordSuccession,
 	openRecordAuthority,
 	type RecordAuthority,
 	type RequestEnvelope,
@@ -18,6 +19,7 @@ type OpenAuthority = {
 	database: Database;
 	envelope: RequestEnvelope;
 	authority: RecordAuthority;
+	succession: ReturnType<typeof createRecordSuccession>;
 	compaction?: Promise<void>;
 };
 
@@ -60,7 +62,14 @@ export function createBunRecords({
 				throw new Error(
 					'Records workspace must be opened before synchronization',
 				);
-			const opened = { database, ...restored };
+			const opened = {
+				database,
+				...restored,
+				succession: createRecordSuccession({
+					database: createBunSqliteAdapter(database),
+					sha256,
+				}),
+			};
 			authorities.set(key, opened);
 			return opened;
 		} catch (error) {
@@ -101,6 +110,10 @@ export function createBunRecords({
 					database,
 					envelope: opened.envelope,
 					authority: opened.authority,
+					succession: createRecordSuccession({
+						database: createBunSqliteAdapter(database),
+						sha256,
+					}),
 				});
 				return {
 					ok: true,
@@ -136,6 +149,32 @@ export function createBunRecords({
 		},
 		async snapshotChunk(partition, request) {
 			return load(partition).authority.snapshotChunk(request);
+		},
+		async stageCandidate(partition, manifest) {
+			return load(partition).succession.stage(manifest);
+		},
+		async uploadCandidateChunk(partition, candidateId, chunk) {
+			return load(partition).succession.upload(candidateId, chunk);
+		},
+		async sealCandidate(partition, candidateId) {
+			return load(partition).succession.seal(candidateId);
+		},
+		async activateCandidate(partition, candidateId) {
+			const opened = load(partition);
+			const result = opened.succession.activate(candidateId);
+			if (result.ok) {
+				const restored = restoreRecordAuthority({
+					database: createBunSqliteAdapter(opened.database),
+					sha256,
+				});
+				if (!restored) throw new Error('Activated records database is missing');
+				opened.envelope = restored.envelope;
+				opened.authority = restored.authority;
+			}
+			return result;
+		},
+		async discardCandidate(partition, candidateId) {
+			return load(partition).succession.discard(candidateId);
 		},
 	};
 

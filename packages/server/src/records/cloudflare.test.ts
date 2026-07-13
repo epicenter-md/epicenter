@@ -17,9 +17,19 @@ import { Database } from 'bun:sqlite';
 import { expect, mock, test } from 'bun:test';
 import { asPrincipalId } from '@epicenter/identity';
 import {
+	createCandidateManifest,
+	createSnapshotChunk,
 	RECORD_SYNC_PROTOCOL_MAJOR,
 	type RequestEnvelope,
 } from '@epicenter/record-sync';
+
+const sha256 = async (value: string) =>
+	Array.from(
+		new Uint8Array(
+			await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value)),
+		),
+		(byte) => byte.toString(16).padStart(2, '0'),
+	).join('');
 
 mock.module('cloudflare:workers', () => ({
 	DurableObject: class {
@@ -192,6 +202,56 @@ test('schema mismatch refuses without replacing the stored identity', async () =
 		}),
 	).toEqual({ ok: false, reason: 'records-schema-mismatch' });
 	expect((await open(records)).databaseId).toBe(envelope.databaseId);
+});
+
+test('database succession refreshes the Durable Object authority', async () => {
+	const { records } = await setup();
+	const source = await open(records);
+	const chunks = [
+		await createSnapshotChunk(sha256, 1, 0, [
+			{ table: 'pages', rowId: 'page-1', cells: { title: 'Migrated' } },
+		]),
+	];
+	const manifest = await createCandidateManifest({
+		sha256,
+		sourceDatabaseId: source.databaseId,
+		sourceHead: 0,
+		targetRecordsSchemaHash: 'schema-2',
+		chunks,
+	});
+
+	expect(await records.stageCandidate(partition, manifest)).toMatchObject({
+		ok: true,
+	});
+	for (const chunk of chunks) {
+		expect(
+			await records.uploadCandidateChunk(
+				partition,
+				manifest.candidateId,
+				chunk,
+			),
+		).toEqual({ ok: true });
+	}
+	expect(await records.sealCandidate(partition, manifest.candidateId)).toEqual({
+		ok: true,
+	});
+	expect(
+		await records.activateCandidate(partition, manifest.candidateId),
+	).toEqual({ ok: true, status: 'activated' });
+	const successor = await open(records, partition, 'schema-2');
+	expect(successor.databaseId).toBe(manifest.candidateId);
+	expect(
+		await records.pull(partition, {
+			...successor,
+			kind: 'pull',
+			cursor: 0,
+			limit: 100,
+		}),
+	).toMatchObject({
+		ok: true,
+		snapshotRequired: true,
+		manifest: { snapshotSequence: 1 },
+	});
 });
 
 test('failed first initialization leaves the Durable Object retryable', async () => {

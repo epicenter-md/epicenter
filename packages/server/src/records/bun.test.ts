@@ -19,6 +19,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { asPrincipalId } from '@epicenter/identity';
 import {
+	createCandidateManifest,
+	createSnapshotChunk,
 	RECORD_SYNC_PROTOCOL_MAJOR,
 	type RequestEnvelope,
 } from '@epicenter/record-sync';
@@ -236,6 +238,75 @@ test('snapshot compaction failure preserves the accepted push response and log',
 		if (!pulled.ok || pulled.snapshotRequired)
 			throw new Error('Expected the uncompacted mutation log');
 		expect(pulled.mutations).toHaveLength(100);
+	} finally {
+		context.cleanup();
+	}
+});
+
+test('database succession refreshes the cached authority and bootstraps the successor', async () => {
+	const context = setup();
+	try {
+		const source = await openEnvelope(context.records);
+		const chunks = [
+			await createSnapshotChunk(sha256, 1, 0, [
+				{
+					table: 'pages',
+					rowId: 'page-1',
+					cells: { title: 'Migrated' },
+				},
+			]),
+		];
+		const manifest = await createCandidateManifest({
+			sha256,
+			sourceDatabaseId: source.databaseId,
+			sourceHead: 0,
+			targetRecordsSchemaHash: 'schema-2',
+			chunks,
+		});
+
+		expect(
+			await context.records.stageCandidate(partition, manifest),
+		).toMatchObject({ ok: true });
+		for (const chunk of chunks) {
+			expect(
+				await context.records.uploadCandidateChunk(
+					partition,
+					manifest.candidateId,
+					chunk,
+				),
+			).toEqual({ ok: true });
+		}
+		expect(
+			await context.records.sealCandidate(partition, manifest.candidateId),
+		).toEqual({ ok: true });
+		expect(
+			await context.records.activateCandidate(partition, manifest.candidateId),
+		).toEqual({ ok: true, status: 'activated' });
+		expect(
+			await context.records.push(partition, {
+				...source,
+				kind: 'push',
+				mutations: [],
+			}),
+		).toEqual({ kind: 'push', ok: false, reason: 'records-schema-mismatch' });
+
+		const successor = await openEnvelope(
+			context.records,
+			partition,
+			'schema-2',
+		);
+		expect(successor.databaseId).toBe(manifest.candidateId);
+		const bootstrap = await context.records.pull(partition, {
+			...successor,
+			kind: 'pull',
+			cursor: 0,
+			limit: 100,
+		});
+		expect(bootstrap).toMatchObject({
+			ok: true,
+			snapshotRequired: true,
+			manifest: { snapshotSequence: 1 },
+		});
 	} finally {
 		context.cleanup();
 	}

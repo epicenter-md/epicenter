@@ -53,6 +53,22 @@ function setup() {
 				reason: 'snapshot-replaced',
 			};
 		},
+		async stageCandidate(partition, manifest) {
+			partitions.push(partition);
+			return { ok: true, candidateId: manifest.candidateId, replaced: false };
+		},
+		async uploadCandidateChunk() {
+			return { ok: true };
+		},
+		async sealCandidate() {
+			return { ok: true };
+		},
+		async activateCandidate() {
+			return { ok: true, status: 'activated' };
+		},
+		async discardCandidate() {
+			return { ok: true };
+		},
 	};
 	const app = new Hono<Env>();
 	mountRecordsApp(app, {
@@ -214,4 +230,41 @@ test('push and pull parse exact protocol requests and return backend responses',
 			workspaceId: 'wiki',
 		},
 	]);
+});
+
+test('succession stage parses one exact manifest and derives the partition', async () => {
+	const { app, partitions } = setup();
+	const response = await post(app, 'succession/stage', {
+		format: 1,
+		sourceDatabaseId: 'database-1',
+		sourceHead: 4,
+		targetRecordsSchemaHash: 'schema-2',
+		chunks: [{ index: 0, checksum: 'chunk-1', rowCount: 1, encodedBytes: 128 }],
+		rowCount: 1,
+		encodedBytes: 128,
+		candidateId: 'candidate-1',
+	});
+
+	expect(response.status).toBe(200);
+	expect((await response.json()) as unknown).toEqual({
+		ok: true,
+		candidateId: 'candidate-1',
+		replaced: false,
+	});
+	expect(partitions).toEqual([
+		{
+			principalId: asPrincipalId('authenticated-alice'),
+			workspaceId: 'wiki',
+		},
+	]);
+});
+
+test('succession action rejects an oversized candidate identity', async () => {
+	const { app, partitions } = setup();
+	const response = await post(app, 'succession/activate', {
+		candidateId: 'c'.repeat(513),
+	});
+
+	expect(response.status).toBe(400);
+	expect(partitions).toEqual([]);
 });

@@ -1,5 +1,9 @@
 import { DurableObject } from 'cloudflare:workers';
 import {
+	type ActivateCandidateResult,
+	type CandidateManifest,
+	createRecordSuccession,
+	type DiscardCandidateResult,
 	openRecordAuthority,
 	type PullRequest,
 	type PullResponse,
@@ -9,8 +13,12 @@ import {
 	type RecordAuthorityBindingRequest,
 	type RecordAuthorityBindingResult,
 	restoreRecordAuthority,
+	type SealCandidateResult,
+	type SnapshotChunk,
 	type SnapshotChunkRequest,
 	type SnapshotChunkResponse,
+	type StageCandidateResult,
+	type UploadCandidateChunkResult,
 } from '@epicenter/record-sync';
 import { createDurableObjectSqliteAdapter } from '@epicenter/record-sync/durable-object';
 import { RECORDS_COMPACTION_POLICY } from './compaction.js';
@@ -33,6 +41,7 @@ async function sha256(value: string): Promise<string> {
 /** One server-owned logical-record authority backed by Durable Object SQLite. */
 export class RecordAuthorityDurableObject extends DurableObject {
 	private authority: RecordAuthority | null;
+	private readonly succession;
 	private compaction: Promise<void> | undefined;
 
 	constructor(ctx: DurableObjectState, env: Cloudflare.Env) {
@@ -42,6 +51,10 @@ export class RecordAuthorityDurableObject extends DurableObject {
 				database: createDurableObjectSqliteAdapter(ctx.storage),
 				sha256,
 			})?.authority ?? null;
+		this.succession = createRecordSuccession({
+			database: createDurableObjectSqliteAdapter(ctx.storage),
+			sha256,
+		});
 	}
 
 	async open(
@@ -90,6 +103,39 @@ export class RecordAuthorityDurableObject extends DurableObject {
 		return this.requireAuthority().snapshotChunk(request);
 	}
 
+	async stageCandidate(manifest: CandidateManifest) {
+		this.requireAuthority();
+		return this.succession.stage(manifest);
+	}
+
+	async uploadCandidateChunk(candidateId: string, chunk: SnapshotChunk) {
+		this.requireAuthority();
+		return this.succession.upload(candidateId, chunk);
+	}
+
+	async sealCandidate(candidateId: string) {
+		this.requireAuthority();
+		return this.succession.seal(candidateId);
+	}
+
+	async activateCandidate(candidateId: string) {
+		this.requireAuthority();
+		const result = this.succession.activate(candidateId);
+		if (result.ok) {
+			this.authority =
+				restoreRecordAuthority({
+					database: createDurableObjectSqliteAdapter(this.ctx.storage),
+					sha256,
+				})?.authority ?? null;
+		}
+		return result;
+	}
+
+	async discardCandidate(candidateId: string) {
+		this.requireAuthority();
+		return this.succession.discard(candidateId);
+	}
+
 	private requireAuthority(): RecordAuthority {
 		if (!this.authority)
 			throw new Error(
@@ -106,6 +152,14 @@ type RecordsRpc = {
 	push(request: PushRequest): Promise<PushResponse>;
 	pull(request: PullRequest): Promise<PullResponse>;
 	snapshotChunk(request: SnapshotChunkRequest): Promise<SnapshotChunkResponse>;
+	stageCandidate(manifest: CandidateManifest): Promise<StageCandidateResult>;
+	uploadCandidateChunk(
+		candidateId: string,
+		chunk: SnapshotChunk,
+	): Promise<UploadCandidateChunkResult>;
+	sealCandidate(candidateId: string): Promise<SealCandidateResult>;
+	activateCandidate(candidateId: string): Promise<ActivateCandidateResult>;
+	discardCandidate(candidateId: string): Promise<DiscardCandidateResult>;
 };
 
 /** Build the portable records backend over the hosted Worker's DO namespace. */
@@ -127,5 +181,15 @@ export function createDurableObjectRecords(
 		pull: (partition, request) => get(partition).pull(request),
 		snapshotChunk: (partition, request) =>
 			get(partition).snapshotChunk(request),
+		stageCandidate: (partition, manifest) =>
+			get(partition).stageCandidate(manifest),
+		uploadCandidateChunk: (partition, candidateId, chunk) =>
+			get(partition).uploadCandidateChunk(candidateId, chunk),
+		sealCandidate: (partition, candidateId) =>
+			get(partition).sealCandidate(candidateId),
+		activateCandidate: (partition, candidateId) =>
+			get(partition).activateCandidate(candidateId),
+		discardCandidate: (partition, candidateId) =>
+			get(partition).discardCandidate(candidateId),
 	};
 }
