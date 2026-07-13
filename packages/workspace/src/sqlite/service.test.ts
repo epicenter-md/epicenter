@@ -41,16 +41,18 @@ function setup() {
 		},
 	};
 	const notes = defineTable({
-		id: field.string(),
-		title: field.string(),
-		pinned: field.boolean(),
+		fields: {
+			id: field.string(),
+			title: field.string(),
+			pinned: field.boolean(),
+		},
 	});
-	const labels = defineTable({ id: field.string(), name: field.string() });
+	const labels = defineTable({
+		fields: { id: field.string(), name: field.string() },
+	});
 	const definition = defineWorkspace({
 		id: 'service-test',
 		name: 'Service test',
-		epoch: 'service-1',
-		rootDocumentIncarnation: 'sqlite-kv-1',
 		tables: { labels, notes },
 	});
 	const databaseObserverErrors: unknown[] = [];

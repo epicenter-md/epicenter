@@ -1,4 +1,4 @@
-/** Gate 1-2 protocol: one exact schema epoch and one database incarnation. */
+/** Gate 1-2 protocol: one exact records schema and one records database. */
 
 export type RequestEnvelope = {
 	protocolMajor: number;

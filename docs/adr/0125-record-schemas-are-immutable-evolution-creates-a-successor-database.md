@@ -25,11 +25,33 @@ be visible in the schema, for example by renaming
 `temperatureFahrenheit` to `temperatureCelsius`; two schemas with the same
 canonical structure are compatible by definition.
 
-A logical schema change is an explicit, user-approved synchronization boundary.
+Schema declarations have value semantics. `defineTable`, `defineKv`, document
+capabilities, and `defineWorkspace` consume mutable authoring objects and return
+framework-owned immutable definitions. The descriptor, compiled validators,
+runtime tables, KV declarations, and document formats cannot diverge after
+definition. Mutating an object previously passed to a `define*` function does
+not change the definition.
+
+Historical records schemas are generated, committed artifacts. Importing those
+artifacts and authoring adjacent semantic transforms is the only supported and
+documented application workflow. The generated TypeScript must resolve its
+constructor, so that constructor is exported from the explicit
+`@epicenter/workspace/sqlite/generated` subpath and omitted from the ordinary
+SQLite barrel. This is an ownership and friction boundary, not a security or
+type-soundness boundary: deliberate code can import the subpath, edit generated
+output, use casts, or supply a generic row type that disagrees with the
+descriptor. The immutable source-snapshot capability, migration runner,
+candidate protocol, and activation machinery remain runtime internals, not
+application-facing succession tools. The workspace lifecycle detects a
+recognized old schema and owns the one succession path.
+
+A synchronized logical schema change is an explicit, user-approved boundary.
 The migration screen tells the user to open the devices they care about, wait
 until each reports `Synced`, stop editing, and approve the update. That assertion
 belongs to the user. The authority does not enumerate devices or actors, prove
 that every replica participated, or store device-participation state.
+Choosing not to update closes that workspace in the current application. The
+new binary does not offer an old-schema read-only compatibility mode.
 
 After approval, one current client reads a canonical logical snapshot of source
 database A at server sequence H and transforms it into a fresh successor B. The
@@ -55,12 +77,13 @@ the database head, and commits. A write that commits first advances A beyond H,
 so activation is stale. Activation that commits first makes A non-current, so
 the old-database write is rejected.
 
-A local-only workspace follows the same logical rule without a server head: one
-runtime takes a short local exclusive cutover, builds and verifies a fresh
-database, atomically selects it in local metadata, and retains the source for
-read or export. A crash before selection leaves the source current on reopen.
-It does not persist cross-device source-locking state or rewrite mixed-version rows
-in place.
+A local-only workspace follows the same logical rule without a server head, but
+the lifecycle performs the update automatically because no other device can
+contribute forgotten work. One runtime takes a short local exclusive cutover,
+builds and verifies a fresh database, atomically selects it in local metadata,
+and retains the source for logical export. A crash before selection leaves the
+source current on reopen. It does not persist cross-device source-locking state
+or rewrite mixed-version rows in place.
 
 The server stores plaintext canonical cells but remains schema-blind. It owns A's
 canonical head, temporary candidate storage, upload completeness and integrity,
@@ -71,6 +94,10 @@ against its historical source descriptor before invoking a typed transform and
 validates every emitted row against the target descriptor before upload. A
 nonconforming or quarantined source row blocks succession; it is never silently
 discarded. A remains unchanged and available for diagnosis and logical export.
+The ordinary user surface reports the blocker count and unchanged-source
+outcome. Table names, row ids, and validation reasons appear only in bounded
+technical details or a diagnostic export. Version one has no generic repair
+editor.
 
 A candidate may be larger than one request, so temporary staging is retained as
 one generic immutable logical-baseline upload object. Its server-owned manifest
@@ -104,17 +131,24 @@ stage candidates; at most one can win the conditional activation.
 
 Activation permanently fences synchronization against the superseded database.
 An old offline replica may contain writes the user did not synchronize before
-approval. Those bytes remain locally readable and logically exportable, but
-version one provides no automatic merge or generic in-product re-import into B.
-The runtime never deletes them automatically.
+approval. The runtime retains that local database and can read it to produce a
+logical export, but the current application does not open it as an old-schema
+workspace. Version one provides no automatic merge or generic in-product
+re-import into B. The runtime never deletes the retained source automatically.
+Recovery tooling operates on logical exports, never on live SQLite files. A
+generic SQLite editor would expose physical tables, indexes, replica state,
+outboxes, and adapter details that are not portable records state, so it is not
+part of the product. A later app-owned recovery service may consume a logical
+export only when a concrete workflow earns it.
 
 Historical schemas are inert canonical descriptors, not executable old
 `defineTable` calls coupled to the current builder API. Migrations are a
-separate, explicitly invoked linear chain of adjacent schema steps, not a member
-of `defineWorkspace`. The runtime composes the unique source-to-current path in
-memory during one migration attempt and one database cutover; it does not activate
-intermediate databases. Branches, shortcuts, cycles, and multiple paths are
-refused. The first system has no automatic migration-prefix retirement: hosted
+separate declarative linear chain of adjacent schema steps, not a member of
+`defineWorkspace`. The workspace lifecycle invokes the runtime, which composes
+the unique source-to-current path in memory during one migration attempt and
+one database cutover; it does not activate intermediate databases. Branches,
+shortcuts, cycles, and multiple paths are refused. The first system has no
+automatic migration-prefix retirement: hosted
 authority data cannot prove non-use across independent self-hosted instances.
 Removing an old step is a later release-policy decision with deployment-specific
 evidence, not sync-engine behavior. Forgotten local bytes remain export-only and
@@ -126,7 +160,7 @@ supported schema. Adjacent steps keep authored history linear and are composed
 client-side into one candidate. A direct-to-current registry would make each new
 schema re-author every supported historical path.
 
-The application API is
+The application declaration API is
 `defineRecordsMigration({ from, to, transform, discard })` and
 `defineRecordsMigrations(steps)`. The scoped name is deliberate: the workspace
 package also contains physical storage evolution and child-document formats,
@@ -143,6 +177,9 @@ separate app-owned successor build or logical export/import boundary. Moving
 data between records and child documents changes the authoritative storage
 plane and belongs to an explicit app-owned maintenance operation. Neither
 boundary is designed here.
+
+`defineRecordsMigration` rejects equal source and target hashes. A no-op is not
+an adjacent schema migration and is invalid before chain construction.
 
 Transforms should be synchronous, pure, and deterministic so retries are easy
 to reason about. This is trusted application guidance, not an enforceable
@@ -164,11 +201,17 @@ network, or the filesystem.
   lease or coordinator election is required.
 - A source write during preparation is safe: it advances A beyond H, makes
   activation fail, and forces a fresh snapshot and transform.
+- Local-only succession is automatic. Synchronized succession requires
+  approval because activation permanently excludes forgotten old-schema work.
+- Declining a synchronized update closes that workspace in the current binary;
+  it does not create a historical compatibility mode.
 - Candidate creation, chunk upload, sealing, and activation have explicit
   replay/conflict behavior; a lost activation response never turns success into
   a false stale result.
 - Nonconforming or quarantined source rows block succession. `discard` and
   `return null` are authored migration semantics, never an implicit repair path.
+- Blocking identities are technical diagnostics. The default user surface
+  reports counts and confirms that the source was not changed.
 - There is no post-activation private-overlay import, three-way comparison,
   deletion-intent recovery, row-resurrection policy, or migration-time device
   participation state.
@@ -185,6 +228,9 @@ network, or the filesystem.
 - Version one retains the superseded canonical server database but provides no
   server-export UI or automatic deletion policy. Measured storage cost may earn
   cleanup later; local logical export is the first recovery surface.
+- The portable recovery surface is a logical export. Epicenter provides no
+  generic SQLite editor, old-schema application mode, automatic merge, or
+  generic re-import.
 
 ## Considered alternatives
 
@@ -207,6 +253,18 @@ network, or the filesystem.
   readable and exportable.
 - **Lock A while B uploads.** Rejected because comparing A's head with H at
   activation protects canonical writes without a source-locking lifecycle.
+- **Open the old database read-only in the current application.** Rejected
+  because it would require historical app queries, rendering, disabled-write
+  states, and indefinite compatibility behavior. Declining the update closes
+  the workspace; retained old state remains available for logical export.
+- **Provide a generic SQLite recovery editor.** Rejected because SQLite files
+  contain runtime representation and replica state, not the portable records
+  contract. Future shared recovery tooling may inspect logical exports without
+  writing live databases.
+- **Expose source snapshots, migration execution, and candidate upload as an
+  application toolkit.** Rejected because applications own schema meaning, not
+  succession lifecycle or protocol state. The runtime owns the operation after
+  applications register generated history and adjacent transforms.
 - **Require one-request candidate creation.** Rejected because database size
   would become a request-size and transaction-duration limit. Immutable staged
   chunks retain atomic visibility without creating device coordination state.

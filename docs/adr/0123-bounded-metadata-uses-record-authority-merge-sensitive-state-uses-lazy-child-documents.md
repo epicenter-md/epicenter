@@ -1,6 +1,6 @@
 # 0123. Bounded metadata uses record authority; merge-sensitive state uses lazy child documents
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-07-11
 - **Relates:** [ADR-0106](0106-a-child-doc-body-owns-one-layout-the-polymorphic-timeline-is-refused-until-a-product-earns-it.md), [ADR-0119](0119-complete-metadata-replicas-sync-through-schema-blind-server-ordered-mutations.md), [ADR-0120](0120-persisted-fields-are-atomic-cells-and-collaborative-bodies-are-yjs-documents.md)
 
@@ -27,27 +27,22 @@ lazily loaded Yjs child document. A record may carry the child document's stable
 identity and summary metadata, but it does not mirror the child's live state or
 pretend to resolve its operations.
 
-Choose a child document's shared type from the concurrency semantics:
+Choose a child-document capability from the concurrency semantics:
 
-- Use `Y.Text` for collaboratively edited plain text or code.
-- Use `Y.XmlFragment` for editor-owned rich prose and document structure.
-- Use `Y.Map` for bounded keyed state whose independent keys should compose.
-- Model a grow-only distributed counter as one nondecreasing component per
-  stable writer identity in a `Y.Map`; read the counter as the sum of all
-  components. A decrementable counter uses separate increment and decrement
-  components. Reset is not an assignment to the sum and must earn an explicit
-  domain operation or a new counter identity.
+- Use `document.plainText` for collaboratively edited plain text or code.
+- Use `document.xmlFragment` for editor-owned document structure. The raw XML
+  fragment does not claim a canonical rich-text node vocabulary.
+- Use `document.keyed(schema)` for a bounded keyed collection whose independent
+  entries should compose and whose complete values conform to one runtime
+  schema.
 
-The counter key is Epicenter's durable replica or actor identity, not an
-ephemeral `Y.Doc.clientID`. A Yjs client ID identifies one document instance and
-may change when that instance is recreated. Each writer changes only its own
-component, so concurrent increments do not contend on one map key.
-
-A collaborative collection uses stable item identities. Independent items may
-occupy independent `Y.Map` keys, and independently edited properties may use
-nested shared types when that extra merge granularity carries product value.
-Ordinary collections that only need row-level creation, patching, querying, and
-deletion remain record tables; `Y.Map` is not a second default table system.
+Applications do not author raw `Y.Text`, `Y.XmlFragment`, or `Y.Map` layouts in
+table definitions. A distributed counter is deliberately absent from the
+catalog. It must earn a framework-owned capability after a product specifies
+writer identity, decrement and reset behavior, precision, and compaction.
+Ordinary collections that need row-level creation, patching, querying, and
+deletion remain record tables; a keyed child document is not a second default
+table system.
 
 Child documents use the existing child-document identity, persistence, and sync
 lifecycle. They are loaded when a surface opens the content, not as part of the

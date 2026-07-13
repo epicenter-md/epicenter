@@ -1,10 +1,9 @@
 /**
  * Bun-hosted SQLite workspace doors.
  *
- * These doors are table-only: they do not accept the browser doors'
- * root-document KV mount. A Bun host that needs the preference plane
- * composes it via openWorkspaceFromService directly with its own Y.Doc
- * lifecycle; that seam is deliberate, not an oversight.
+ * These doors open SQLite tables and may compose child-document runtimes, but
+ * they do not accept the browser doors' root-document KV mount. KV composition
+ * remains internal until a Bun-specific public lifecycle earns that surface.
  */
 
 import { Database } from 'bun:sqlite';
@@ -16,8 +15,18 @@ import { RECORD_SYNC_PROTOCOL_MAJOR } from '@epicenter/record-sync';
 import { createBunSqliteAdapter } from '@epicenter/record-sync/bun';
 import type { WorkspaceServicePort } from './client.js';
 import { createApplicationDatabase } from './database.js';
-import type { TableDefinitions, WorkspaceDefinition } from './definition.js';
+import type {
+	KvDefinitions,
+	TableDefinitions,
+	WorkspaceDefinition,
+} from './definition.js';
+import type {
+	WorkspaceDocumentRuntime,
+	WorkspaceDocumentRuntimeOption,
+	WorkspaceDocumentsFor,
+} from './document-client.js';
 import {
+	type OpenWorkspaceFromServiceOptions,
 	type OwnedWorkspaceServicePort,
 	openWorkspaceFromService,
 	type StandaloneWorkspace,
@@ -32,13 +41,17 @@ import { createWorkspaceService } from './service.js';
 
 export type { StandaloneWorkspace, WorkspaceReplica } from './open.js';
 
-export type OpenStandaloneWorkspaceOptions = {
+export type OpenStandaloneWorkspaceOptions<
+	TDocumentRuntime extends WorkspaceDocumentRuntime | undefined = undefined,
+> = WorkspaceDocumentRuntimeOption<TDocumentRuntime> & {
 	storage: { kind: 'bun'; path: string } | { kind: 'memory' };
 	/** Receives post-commit observer failures. Must not throw. */
 	onObserverError(error: unknown): void;
 };
 
-export type OpenWorkspaceReplicaOptions = {
+export type OpenWorkspaceReplicaOptions<
+	TDocumentRuntime extends WorkspaceDocumentRuntime | undefined = undefined,
+> = WorkspaceDocumentRuntimeOption<TDocumentRuntime> & {
 	storage: { kind: 'bun'; path: string } | { kind: 'memory' };
 	sync: ReplicaSyncPort;
 	/** Receives automatic synchronization failures. Must not throw. */
@@ -51,10 +64,20 @@ export type OpenWorkspaceReplicaOptions = {
 const ownedFilePaths = new Set<string>();
 
 /** Open a standalone workspace whose authoritative SQLite runs in Bun. */
-export async function openStandaloneWorkspace<TTables extends TableDefinitions>(
+export async function openStandaloneWorkspace<
+	TTables extends TableDefinitions,
+	TDocumentRuntime extends WorkspaceDocumentRuntime | undefined = undefined,
+>(
 	definition: WorkspaceDefinition<TTables>,
-	{ storage, onObserverError }: OpenStandaloneWorkspaceOptions,
-): Promise<StandaloneWorkspace<TTables>> {
+	options: OpenStandaloneWorkspaceOptions<TDocumentRuntime>,
+): Promise<
+	StandaloneWorkspace<
+		TTables,
+		undefined,
+		WorkspaceDocumentsFor<TDocumentRuntime>
+	>
+> {
+	const { storage, onObserverError } = options;
 	const filePath = storage.kind === 'bun' ? resolve(storage.path) : undefined;
 	if (filePath && ownedFilePaths.has(filePath)) {
 		throw new Error(`Workspace SQLite file already has an owner: ${filePath}`);
@@ -98,10 +121,23 @@ export async function openStandaloneWorkspace<TTables extends TableDefinitions>(
 				close();
 			},
 		} satisfies WorkspaceServicePort & AsyncDisposable;
-		return await openWorkspaceFromService(definition, {
+		const openOptions = {
+			...options,
 			service: ownedService,
 			expectedKind: 'standalone',
-		});
+			kv: undefined,
+		} as unknown as OpenWorkspaceFromServiceOptions<
+			'standalone',
+			undefined,
+			TDocumentRuntime
+		>;
+		return await openWorkspaceFromService<
+			TTables,
+			KvDefinitions,
+			'standalone',
+			undefined,
+			TDocumentRuntime
+		>(definition, openOptions);
 	} catch (cause) {
 		close();
 		throw cause;
@@ -109,16 +145,17 @@ export async function openStandaloneWorkspace<TTables extends TableDefinitions>(
 }
 
 /** Open this device's durable replica of one authoritative workspace. */
-export async function openWorkspaceReplica<TTables extends TableDefinitions>(
+export async function openWorkspaceReplica<
+	TTables extends TableDefinitions,
+	TDocumentRuntime extends WorkspaceDocumentRuntime | undefined = undefined,
+>(
 	definition: WorkspaceDefinition<TTables>,
-	{
-		storage,
-		sync,
-		onSyncError,
-		onObserverError,
-		pollIntervalMs,
-	}: OpenWorkspaceReplicaOptions,
-): Promise<WorkspaceReplica<TTables>> {
+	options: OpenWorkspaceReplicaOptions<TDocumentRuntime>,
+): Promise<
+	WorkspaceReplica<TTables, undefined, WorkspaceDocumentsFor<TDocumentRuntime>>
+> {
+	const { storage, sync, onSyncError, onObserverError, pollIntervalMs } =
+		options;
 	const filePath = storage.kind === 'bun' ? resolve(storage.path) : undefined;
 	if (filePath && ownedFilePaths.has(filePath)) {
 		throw new Error(`Workspace SQLite file already has an owner: ${filePath}`);
@@ -192,10 +229,23 @@ export async function openWorkspaceReplica<TTables extends TableDefinitions>(
 			observe: service.observe,
 			[Symbol.asyncDispose]: dispose,
 		};
-		const workspace = await openWorkspaceFromService(definition, {
+		const openOptions = {
+			...options,
 			service: ownedService,
 			expectedKind: 'replica',
-		});
+			kv: undefined,
+		} as unknown as OpenWorkspaceFromServiceOptions<
+			'replica',
+			undefined,
+			TDocumentRuntime
+		>;
+		const workspace = await openWorkspaceFromService<
+			TTables,
+			KvDefinitions,
+			'replica',
+			undefined,
+			TDocumentRuntime
+		>(definition, openOptions);
 		supervisor.request();
 		return workspace;
 	} catch (cause) {

@@ -6,6 +6,8 @@
  * protocol validation, convergence, and verified snapshot replacement.
  *
  * Key behaviors:
+ * - Fresh replicas create durable local identity and outbox state without network I/O
+ * - First synchronization permanently binds the replica to one authority incarnation
  * - Actor sequence and outbox advance in the application transaction
  * - Pull pages retract pending creations, fold the page, then replay intent
  * - Lost acknowledgements, remote deletions, and snapshots converge; deletion
@@ -34,13 +36,13 @@ import {
 const definition = defineWorkspace({
 	id: 'replica-tests',
 	name: 'Replica tests',
-	epoch: 'v1',
-	rootDocumentIncarnation: 'sqlite-kv-1',
 	tables: {
 		notes: defineTable({
-			id: field.string(),
-			title: field.string(),
-			pinned: field.boolean(),
+			fields: {
+				id: field.string(),
+				title: field.string(),
+				pinned: field.boolean(),
+			},
 		}),
 	},
 });
@@ -52,7 +54,7 @@ function createServer(databaseIncarnationId = 'database-1') {
 	const native = new Database(':memory:');
 	const envelope = {
 		protocolMajor: 1,
-		schemaIdentity: definition.schemaIdentity,
+		schemaIdentity: definition.recordsSchemaHash,
 		databaseIncarnationId,
 	};
 	const authority = createRecordAuthority({
@@ -74,7 +76,7 @@ function createPort(
 		async openDatabase(request) {
 			expect(request).toEqual({
 				workspaceId: definition.id,
-				schemaIdentity: definition.schemaIdentity,
+				schemaIdentity: definition.recordsSchemaHash,
 				protocolMajor: 1,
 			});
 			return { databaseIncarnationId };
@@ -91,7 +93,129 @@ function createPort(
 	};
 }
 
-test('an existing replica opens and accepts writes while its authority is offline', async () => {
+test('fresh replica writes offline, then binds before draining and pulling', async () => {
+	const server = createServer();
+	server.authority.push({
+		kind: 'push',
+		...server.envelope,
+		mutations: [
+			{
+				actorId: 'remote',
+				actorSequence: 1,
+				operations: [
+					{
+						kind: 'createRow',
+						table: 'notes',
+						rowId: 'remote',
+						cells: { title: 'from authority', pinned: true },
+					},
+				],
+			},
+		],
+	});
+	const native = new Database(':memory:');
+	const calls: string[] = [];
+	const base = createPort(server.authority);
+	const port: ReplicaSyncPort = {
+		...base,
+		async openDatabase(request, signal) {
+			calls.push('open');
+			return base.openDatabase(request, signal);
+		},
+		async push(request, signal) {
+			calls.push('push');
+			expect(
+				native
+					.query(
+						'SELECT database_incarnation_id FROM __epicenter_replica WHERE id = 1',
+					)
+					.get(),
+			).toEqual({ database_incarnation_id: 'database-1' });
+			return base.push(request, signal);
+		},
+		async pull(request, signal) {
+			calls.push('pull');
+			return base.pull(request, signal);
+		},
+	};
+	const { runtime } = await openReplica({
+		native,
+		port,
+		actorId: 'offline-actor',
+	});
+
+	expect(calls).toEqual([]);
+	expect(runtime.inspect()).toMatchObject({
+		actorId: 'offline-actor',
+		databaseIncarnationId: null,
+		outbox: [],
+	});
+	runtime.database.tables.notes.create(note('local', 'created offline'));
+	expect(runtime.database.tables.notes.get('local')).toEqual(
+		note('local', 'created offline'),
+	);
+	expect(runtime.inspect().outbox).toHaveLength(1);
+
+	await runtime.syncOnce();
+
+	expect(calls).toEqual(['open', 'push', 'pull']);
+	expect(runtime.inspect()).toMatchObject({
+		databaseIncarnationId: 'database-1',
+		appliedServerSequence: 2,
+		outbox: [],
+	});
+	expect(runtime.database.tables.notes.get('remote')).toEqual(
+		note('remote', 'from authority', true),
+	);
+	native.close();
+	server.native.close();
+});
+
+test('failed first binding preserves local work and the next sync retries', async () => {
+	const server = createServer();
+	const base = createPort(server.authority);
+	let openAttempts = 0;
+	let pushAttempts = 0;
+	const port: ReplicaSyncPort = {
+		...base,
+		async openDatabase(request, signal) {
+			openAttempts++;
+			if (openAttempts === 1) throw new Error('offline during bind');
+			return base.openDatabase(request, signal);
+		},
+		async push(request, signal) {
+			pushAttempts++;
+			return base.push(request, signal);
+		},
+	};
+	const { native, runtime } = await openReplica({
+		port,
+		actorId: 'retry-actor',
+	});
+	runtime.database.tables.notes.create(note('pending', 'survives'));
+
+	await expect(runtime.syncOnce()).rejects.toThrow('offline during bind');
+	expect(runtime.database.tables.notes.get('pending')).toEqual(
+		note('pending', 'survives'),
+	);
+	expect(runtime.inspect()).toMatchObject({
+		databaseIncarnationId: null,
+		outbox: [{ actorId: 'retry-actor', actorSequence: 1 }],
+	});
+	expect(pushAttempts).toBe(0);
+
+	await runtime.syncOnce();
+	expect(openAttempts).toBe(2);
+	expect(pushAttempts).toBe(1);
+	expect(runtime.inspect()).toMatchObject({
+		databaseIncarnationId: 'database-1',
+		outbox: [],
+	});
+	native.close();
+	server.native.close();
+});
+
+test('an unbound replica preserves identity and pending work across reopen', async () => {
 	const server = createServer();
 	const native = new Database(':memory:');
 	const first = await openReplica({
@@ -130,7 +254,9 @@ test('an existing replica opens and accepts writes while its authority is offlin
 	expect(reopened.runtime.inspect()).toMatchObject({
 		actorId: 'durable-actor',
 		nextActorSequence: 3,
+		databaseIncarnationId: null,
 	});
+	expect(reopened.runtime.inspect().outbox).toHaveLength(2);
 	await expect(reopened.runtime.syncOnce()).rejects.toThrow('offline');
 	native.close();
 	server.native.close();
@@ -164,7 +290,7 @@ function note(id: string, title: string, pinned = false) {
 	return { id, title, pinned };
 }
 
-test('fresh bind persists actor identity and restart preserves its sequence', async () => {
+test('fresh local identity persists and restart preserves its sequence', async () => {
 	const server = createServer();
 	const native = new Database(':memory:');
 	const first = await openReplica({
@@ -689,23 +815,73 @@ test('actor sequence exhaustion rolls back the application write', async () => {
 	server.native.close();
 });
 
-test('restart opens locally but refuses to sync a different authority incarnation', async () => {
+test('legacy bound metadata reopens after the nullable representation migration', async () => {
+	const server = createServer();
+	const native = new Database(':memory:');
+	const first = await openReplica({
+		native,
+		port: createPort(server.authority),
+		actorId: 'legacy-actor',
+	});
+	await first.runtime.syncOnce();
+	native.exec(`
+		ALTER TABLE __epicenter_replica RENAME TO __epicenter_replica_nullable;
+		CREATE TABLE __epicenter_replica(
+			id INTEGER PRIMARY KEY CHECK(id = 1),
+			actor_id TEXT NOT NULL,
+			next_actor_sequence INTEGER NOT NULL CHECK(next_actor_sequence >= 1),
+			applied_server_sequence INTEGER NOT NULL CHECK(applied_server_sequence >= 0),
+			database_incarnation_id TEXT NOT NULL,
+			protocol_major INTEGER NOT NULL CHECK(protocol_major >= 1),
+			sync_storage_version INTEGER NOT NULL CHECK(sync_storage_version >= 1)
+		);
+		INSERT INTO __epicenter_replica SELECT * FROM __epicenter_replica_nullable;
+		DROP TABLE __epicenter_replica_nullable;
+	`);
+
+	const restarted = await openReplica({
+		native,
+		port: createPort(server.authority),
+		actorId: 'must-not-replace',
+	});
+	expect(restarted.runtime.inspect()).toMatchObject({
+		actorId: 'legacy-actor',
+		databaseIncarnationId: 'database-1',
+		syncStorageVersion: 1,
+	});
+	expect(
+		native
+			.query(
+				`SELECT "notnull" FROM pragma_table_info('__epicenter_replica') WHERE name = 'database_incarnation_id'`,
+			)
+			.get(),
+	).toEqual({ notnull: 0 });
+	native.close();
+	server.native.close();
+});
+
+test('restart treats a contradictory authority incarnation as fatal corruption', async () => {
 	const firstServer = createServer('database-1');
 	const native = new Database(':memory:');
-	await openReplica({
+	const first = await openReplica({
 		native,
 		port: createPort(firstServer.authority, 'database-1'),
 		actorId: 'actor-a',
 	});
+	await first.runtime.syncOnce();
 	const replacement = createServer('database-2');
 	const restarted = await openReplica({
 		native,
 		port: createPort(replacement.authority, 'database-2'),
 		actorId: 'actor-b',
 	});
-	await expect(restarted.runtime.syncOnce()).rejects.toThrow(
-		'database incarnation',
+	const error = await restarted.runtime.syncOnce().then(
+		() => undefined,
+		(cause: unknown) => cause,
 	);
+	expect(error).toBeInstanceOf(ReplicaInvariantViolationError);
+	expect((error as Error).message).toContain('database incarnation');
+	expect((error as Error).message).toContain('rebootstrap');
 	native.close();
 	firstServer.native.close();
 	replacement.native.close();

@@ -28,31 +28,45 @@ export {
 	ReplicaInvariantViolationError,
 } from './database.js';
 export {
-	type Columns,
 	type CompiledColumn,
-	type DocLayout,
 	defineKv,
 	defineTable,
 	defineWorkspace,
-	type EpochMigration,
+	type Fields,
 	type KvDefinition,
 	type KvDefinitions,
-	type LogicalRow,
-	type MigrationStep,
-	type MigrationTx,
 	type RowFor,
-	type RowRef,
 	type TableDefinition,
 	type TableDefinitions,
-	type TableOptions,
 	type WorkspaceDefinition,
 } from './definition.js';
+export type {
+	OpenedDocument,
+	WorkspaceDocumentRuntime,
+	WorkspaceDocumentSession,
+	WorkspaceDocuments,
+} from './document-client.js';
+export {
+	type DocumentFormat,
+	type DocumentHandle,
+	document,
+} from './document-format.js';
+export {
+	type DocumentReference,
+	type HistoricalDocumentDefinition,
+	historicalDocument,
+} from './document-reference.js';
 export type {
 	OpenedWorkspace,
 	StandaloneWorkspace,
 	WorkspaceKvMount,
 	WorkspaceReplica,
 } from './open.js';
+export {
+	defineRecordsMigration,
+	defineRecordsMigrations,
+} from './records-migration.js';
+export { renderHistoricalSchemaModule } from './render-historical-schema.js';
 export type { ReplicaSyncPort } from './replica.js';
 export {
 	type CreateHttpReplicaSyncPortOptions,

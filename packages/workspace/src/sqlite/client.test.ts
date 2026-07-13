@@ -13,8 +13,10 @@
 import { expect, test } from 'bun:test';
 import { field } from '@epicenter/field';
 import { Type } from 'typebox';
+import { sha256Hex } from '../shared/sha256.js';
 import { createWorkspaceClient, type WorkspaceServicePort } from './client.js';
 import { defineTable, defineWorkspace } from './definition.js';
+import { document, inspectDocumentFormat } from './document-format.js';
 
 test('async client sends one write-only transaction and filters table deltas', async () => {
 	const requests: unknown[] = [];
@@ -37,12 +39,12 @@ test('async client sends one write-only transaction and filters table deltas', a
 			return () => observers.delete(callback);
 		},
 	};
-	const notes = defineTable({ id: field.string(), title: field.string() });
+	const notes = defineTable({
+		fields: { id: field.string(), title: field.string() },
+	});
 	const definition = defineWorkspace({
 		id: 'client-test',
 		name: 'Client test',
-		epoch: 'client-1',
-		rootDocumentIncarnation: 'sqlite-kv-1',
 		tables: { notes },
 	});
 	const client = createWorkspaceClient(definition, port);
@@ -106,10 +108,10 @@ test('create returns committed rows with distinct UUID identities', async () => 
 	const definition = defineWorkspace({
 		id: 'client-create-test',
 		name: 'Client create test',
-		epoch: 'client-create-1',
-		rootDocumentIncarnation: 'sqlite-kv-1',
 		tables: {
-			notes: defineTable({ id: field.string(), title: field.string() }),
+			notes: defineTable({
+				fields: { id: field.string(), title: field.string() },
+			}),
 		},
 	});
 	const client = createWorkspaceClient(definition, port);
@@ -139,10 +141,10 @@ test('empty and async transaction builders never send a partial mutation', async
 	const definition = defineWorkspace({
 		id: 'client-builder-test',
 		name: 'Client builder test',
-		epoch: 'client-builder-1',
-		rootDocumentIncarnation: 'sqlite-kv-1',
 		tables: {
-			notes: defineTable({ id: field.string(), title: field.string() }),
+			notes: defineTable({
+				fields: { id: field.string(), title: field.string() },
+			}),
 		},
 	});
 	const client = createWorkspaceClient(definition, port);
@@ -178,10 +180,10 @@ test('typed client rejects malformed rows, deltas, and mutation results', async 
 	const definition = defineWorkspace({
 		id: 'client-validation-test',
 		name: 'Client validation test',
-		epoch: 'client-validation-v1',
-		rootDocumentIncarnation: 'sqlite-kv-1',
 		tables: {
-			notes: defineTable({ id: field.string(), title: field.string() }),
+			notes: defineTable({
+				fields: { id: field.string(), title: field.string() },
+			}),
 		},
 	});
 	const client = createWorkspaceClient(definition, port);
@@ -217,10 +219,10 @@ test('sql validates every result row against the caller schema', async () => {
 	const definition = defineWorkspace({
 		id: 'client-sql-validation-test',
 		name: 'Client SQL validation test',
-		epoch: 'client-sql-validation-1',
-		rootDocumentIncarnation: 'sqlite-kv-1',
 		tables: {
-			notes: defineTable({ id: field.string(), title: field.string() }),
+			notes: defineTable({
+				fields: { id: field.string(), title: field.string() },
+			}),
 		},
 	});
 	const client = createWorkspaceClient(definition, port);
@@ -234,10 +236,16 @@ test('sql validates every result row against the caller schema', async () => {
 	).rejects.toThrow('invalid row at index 1');
 });
 
-test('tables expose guid-only child-doc identity derived from the definition', () => {
+test('same-named cells and documents coexist with format-addressed identity', async () => {
 	const port: WorkspaceServicePort = {
-		async request() {
-			throw new Error('guid derivation must not round-trip to the service');
+		async request(request) {
+			if (request.kind === 'get') {
+				return {
+					kind: 'row',
+					row: { id: request.rowId, body: 'record body' },
+				};
+			}
+			throw new Error('document guid derivation must not use the service');
 		},
 		observe() {
 			return () => undefined;
@@ -246,23 +254,34 @@ test('tables expose guid-only child-doc identity derived from the definition', (
 	const definition = defineWorkspace({
 		id: 'client-docs-test',
 		name: 'Client docs test',
-		epoch: 'client-docs-1',
-		rootDocumentIncarnation: 'sqlite-kv-1',
 		tables: {
-			notes: defineTable(
-				{ id: field.string(), title: field.string() },
-				{ docs: { body: 'richText', summary: 'plainText' } },
-			),
+			notes: defineTable({
+				fields: { id: field.string(), body: field.string() },
+				documents: {
+					body: document.xmlFragment,
+					summary: document.plainText,
+				},
+			}),
 		},
 	});
 	const client = createWorkspaceClient(definition, port);
+	const row = await client.tables.notes.get('row-1');
 
 	const bodyGuid: string = client.tables.notes.docs.body.guid('row-1');
 	const summaryGuid: string = client.tables.notes.docs.summary.guid('row-1');
-	expect(bodyGuid).toBe('client-docs-test.notes.row-1.body');
-	expect(summaryGuid).toBe('client-docs-test.notes.row-1.summary');
-	// The canonical 4-part grammar stays injective: every segment is dot-free.
-	expect(() => client.tables.notes.docs.body.guid('bad.row')).toThrow(
-		'Invalid rowId',
+	const rowDigest = sha256Hex(
+		`epicenter.document-row/1\0${JSON.stringify('row-1')}`,
+	);
+	expect(bodyGuid).toBe(
+		`client-docs-test.notes.${rowDigest}.body.${inspectDocumentFormat(document.xmlFragment).formatHash.slice('sha256:'.length)}`,
+	);
+	expect(row?.body).toBe('record body');
+	expect(summaryGuid).toBe(
+		`client-docs-test.notes.${rowDigest}.summary.${inspectDocumentFormat(document.plainText).formatHash.slice('sha256:'.length)}`,
+	);
+	expect(bodyGuid).not.toBe(summaryGuid);
+	// Record ids are values, not address grammar, so imported ids remain valid.
+	expect(client.tables.notes.docs.body.guid('bad.row')).toContain(
+		sha256Hex(`epicenter.document-row/1\0${JSON.stringify('bad.row')}`),
 	);
 });

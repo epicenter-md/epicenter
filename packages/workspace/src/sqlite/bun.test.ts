@@ -20,10 +20,10 @@ test('Bun standalone workspace persists typed rows across service lifecycles', a
 	const definition = defineWorkspace({
 		id: 'bun-local-test',
 		name: 'Bun local test',
-		epoch: 'bun-local-v1',
-		rootDocumentIncarnation: 'sqlite-kv-1',
 		tables: {
-			notes: defineTable({ id: field.string(), title: field.string() }),
+			notes: defineTable({
+				fields: { id: field.string(), title: field.string() },
+			}),
 		},
 	});
 	const errors: unknown[] = [];
@@ -45,13 +45,13 @@ test('Bun standalone workspace persists typed rows across service lifecycles', a
 		const mismatched = defineWorkspace({
 			id: 'bun-local-test',
 			name: 'Bun local test',
-			epoch: 'bun-local-v1',
-			rootDocumentIncarnation: 'sqlite-kv-1',
 			tables: {
 				notes: defineTable({
-					id: field.string(),
-					title: field.string(),
-					body: field.string(),
+					fields: {
+						id: field.string(),
+						title: field.string(),
+						body: field.string(),
+					},
 				}),
 			},
 		});
@@ -60,7 +60,7 @@ test('Bun standalone workspace persists typed rows across service lifecycles', a
 				storage: { kind: 'bun', path },
 				onObserverError: (error) => errors.push(error),
 			}),
-		).rejects.toThrow('schema identity does not match');
+		).rejects.toThrow('schema hash does not match');
 
 		const reopened = await openStandaloneWorkspace(definition, {
 			storage: { kind: 'bun', path },
@@ -81,17 +81,17 @@ test('Bun workspace replicas synchronize automatically through one authority', a
 	const definition = defineWorkspace({
 		id: 'bun-replica-test',
 		name: 'Bun replica test',
-		epoch: 'bun-replica-v1',
-		rootDocumentIncarnation: 'sqlite-kv-1',
 		tables: {
-			notes: defineTable({ id: field.string(), title: field.string() }),
+			notes: defineTable({
+				fields: { id: field.string(), title: field.string() },
+			}),
 		},
 	});
 	const authorityDatabase = new Database(':memory:');
 	const databaseIncarnationId = 'bun-replica-incarnation';
 	const envelope = {
 		protocolMajor: RECORD_SYNC_PROTOCOL_MAJOR,
-		schemaIdentity: definition.schemaIdentity,
+		schemaIdentity: definition.recordsSchemaHash,
 		databaseIncarnationId,
 	};
 	const authority = createRecordAuthority({

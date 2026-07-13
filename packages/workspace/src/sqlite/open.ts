@@ -11,6 +11,13 @@ import {
 	type WorkspaceServicePort,
 } from './client.js';
 import type { TableDefinitions, WorkspaceDefinition } from './definition.js';
+import {
+	createWorkspaceDocuments,
+	type WorkspaceDocumentRuntime,
+	type WorkspaceDocumentRuntimeOption,
+	type WorkspaceDocuments,
+	type WorkspaceDocumentsFor,
+} from './document-client.js';
 
 export type OwnedWorkspaceServicePort = WorkspaceServicePort & AsyncDisposable;
 
@@ -32,28 +39,52 @@ export type WorkspaceKvMount = {
 	whenHydrated?: Promise<unknown>;
 };
 
-type OpenWorkspaceFromServiceOptions<
+/** @internal Exact subsystem composition accepted by the shared opener. */
+export type OpenWorkspaceFromServiceOptions<
 	TKind extends 'standalone' | 'replica',
-	TKvMount extends WorkspaceKvMount | undefined = undefined,
+	TKvMount extends WorkspaceKvMount | undefined,
+	TDocumentRuntime extends WorkspaceDocumentRuntime | undefined,
 > = {
 	/** A process-local or remote service that owns the SQLite connection. */
 	service: OwnedWorkspaceServicePort;
 	expectedKind: TKind;
-	/** Optional preference plane; omitted means a table-only workspace. */
-	kv?: TKvMount;
-};
+} & WorkspaceKvMountOption<TKvMount> &
+	WorkspaceDocumentRuntimeOption<TDocumentRuntime>;
+
+/** @internal Typed KV surface contributed when a root-document mount is present. */
+export type WorkspaceKvFor<
+	TKvMount extends WorkspaceKvMount | undefined,
+	TKv extends KvDefinitions,
+> = [TKvMount] extends [undefined]
+	? undefined
+	: undefined extends TKvMount
+		? TKv | undefined
+		: TKv;
+
+/** @internal Require the KV mount exactly when the generic says it is present. */
+export type WorkspaceKvMountOption<
+	TKvMount extends WorkspaceKvMount | undefined,
+> = TKvMount extends WorkspaceKvMount
+	? {
+			/** Preference plane composed over the caller's root Y.Doc. */
+			kv: TKvMount;
+		}
+	: {
+			/** Omit for a workspace without mounted KV. */
+			kv?: undefined;
+		};
 
 /**
  * An opened workspace: async record tables behind their service boundary,
- * plus, when the caller composed one, a synchronous `kv` preference handle
- * over the eager root document. Table-only callers get `kv: undefined` and
- * pay nothing.
+ * plus the KV and child-document surfaces the caller explicitly composed.
+ * Without a document runtime, declared child documents expose identity only.
  */
 export type OpenedWorkspace<
 	TTables extends TableDefinitions,
 	TKv extends KvDefinitions | undefined,
 	TKind extends 'standalone' | 'replica',
-> = AsyncWorkspace<TTables> &
+	TWorkspaceDocuments extends WorkspaceDocuments | undefined = undefined,
+> = AsyncWorkspace<TTables, TWorkspaceDocuments> &
 	AsyncDisposable & {
 		readonly kind: TKind;
 		readonly kv: TKv extends KvDefinitions ? Kv<TKv> : undefined;
@@ -62,12 +93,14 @@ export type OpenedWorkspace<
 export type StandaloneWorkspace<
 	TTables extends TableDefinitions,
 	TKv extends KvDefinitions | undefined = undefined,
-> = OpenedWorkspace<TTables, TKv, 'standalone'>;
+	TWorkspaceDocuments extends WorkspaceDocuments | undefined = undefined,
+> = OpenedWorkspace<TTables, TKv, 'standalone', TWorkspaceDocuments>;
 
 export type WorkspaceReplica<
 	TTables extends TableDefinitions,
 	TKv extends KvDefinitions | undefined = undefined,
-> = OpenedWorkspace<TTables, TKv, 'replica'>;
+	TWorkspaceDocuments extends WorkspaceDocuments | undefined = undefined,
+> = OpenedWorkspace<TTables, TKv, 'replica', TWorkspaceDocuments>;
 
 /**
  * Open a typed client for a SQLite database service.
@@ -81,33 +114,37 @@ export type WorkspaceReplica<
  * store over `doc.getArray('kv')` is wrapped with the definition's declared
  * KV record into a synchronous `kv` handle. Its disposal follows the
  * caller-owned document (`doc.once('destroy', ...)`), not the service.
+ *
+ * Each document open returns a caller-owned session lease. Disposing its handle
+ * releases that lease; the runtime may cache or share the underlying Y.Doc.
+ * Workspace disposal blocks new opens but does not dispose handles the caller
+ * already opened.
  */
 export async function openWorkspaceFromService<
 	TTables extends TableDefinitions,
 	TKv extends KvDefinitions,
-	TKind extends 'standalone' | 'replica',
-	TKvMount extends WorkspaceKvMount | undefined = undefined,
+	const TKind extends 'standalone' | 'replica',
+	TKvMount extends WorkspaceKvMount | undefined,
+	TDocumentRuntime extends WorkspaceDocumentRuntime | undefined,
 >(
 	definition: WorkspaceDefinition<TTables, TKv>,
-	{
-		service,
-		expectedKind,
-		kv,
-	}: OpenWorkspaceFromServiceOptions<TKind, TKvMount>,
+	options: OpenWorkspaceFromServiceOptions<TKind, TKvMount, TDocumentRuntime>,
 ): Promise<
 	OpenedWorkspace<
 		TTables,
-		TKvMount extends WorkspaceKvMount ? TKv : undefined,
-		TKind
+		WorkspaceKvFor<TKvMount, TKv>,
+		TKind,
+		WorkspaceDocumentsFor<TDocumentRuntime>
 	>
 > {
+	const { service, expectedKind, kv, documents } = options;
 	try {
 		const description = await service.request({ kind: 'describe' });
 		if (
 			description.kind !== 'workspace' ||
 			description.workspaceKind !== expectedKind ||
 			description.workspaceId !== definition.id ||
-			description.schemaIdentity !== definition.schemaIdentity
+			description.schemaIdentity !== definition.recordsSchemaHash
 		) {
 			throw new Error('Workspace service definition does not match the client');
 		}
@@ -156,7 +193,14 @@ export async function openWorkspaceFromService<
 			});
 		},
 	};
-	const client = createWorkspaceClient(definition, gatedService);
+	const workspaceDocuments = documents
+		? createWorkspaceDocuments(definition.id, documents, () => {
+				if (state !== 'open') throw disposedError();
+			})
+		: undefined;
+	const client = workspaceDocuments
+		? createWorkspaceClient(definition, gatedService, workspaceDocuments)
+		: createWorkspaceClient(definition, gatedService);
 	return {
 		...client,
 		kind: expectedKind,
@@ -174,7 +218,8 @@ export async function openWorkspaceFromService<
 		},
 	} as unknown as OpenedWorkspace<
 		TTables,
-		TKvMount extends WorkspaceKvMount ? TKv : undefined,
-		TKind
+		WorkspaceKvFor<TKvMount, TKv>,
+		TKind,
+		WorkspaceDocumentsFor<TDocumentRuntime>
 	>;
 }

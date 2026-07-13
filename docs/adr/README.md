@@ -81,7 +81,7 @@ Each option and the one reason it lost. Terse. This is not the spec.
 | [0002](0002-four-visible-read-states.md) | Stored entries reconcile to four visible read states | Superseded by 0003 |
 | [0003](0003-three-read-states-after-encryption-removal.md) | Stored entries reconcile to three visible read states | Accepted |
 | [0004](0004-trust-the-relay-reject-zero-knowledge.md) | Trust the relay; reject zero-knowledge | Accepted |
-| [0005](0005-child-docs-are-bound-through-the-workspace.md) | Child docs are bound through the workspace, not the component | Accepted |
+| [0005](0005-child-docs-are-bound-through-the-workspace.md) | Child docs are bound through the workspace, not the component | Superseded by 0126 |
 | [0006](0006-schema-evolution-keeps-the-version-tuple-and-refuses-repair-apis.md) | Schema evolution keeps the version tuple and refuses repair APIs | Accepted |
 | [0007](0007-local-shortcuts-sync-global-shortcuts-stay-per-device.md) | Local shortcuts sync, global shortcuts stay per-device | Accepted |
 | [0008](0008-rdev-backs-the-desktop-global-trigger.md) | rdev backs the desktop global trigger | Superseded by 0117 |
@@ -199,9 +199,9 @@ Each option and the one reason it lost. Terse. This is not the spec.
 | [0120](0120-persisted-fields-are-atomic-cells-and-collaborative-bodies-are-yjs-documents.md) | Persisted fields are atomic cells and collaborative bodies are Yjs documents | Proposed |
 | [0121](0121-background-sync-is-automatic-and-database-boundary-merges-are-reviewable.md) | Background sync is automatic and database-boundary merges are reviewable | Proposed |
 | [0122](0122-logical-snapshots-are-the-portable-record-database-format-sqlite-files-are-runtime-state.md) | Logical snapshots are the portable records database format; SQLite files are runtime state | Proposed |
-| [0123](0123-bounded-metadata-uses-record-authority-merge-sensitive-state-uses-lazy-child-documents.md) | Bounded metadata uses record authority; merge-sensitive state uses lazy child documents | Proposed |
+| [0123](0123-bounded-metadata-uses-record-authority-merge-sensitive-state-uses-lazy-child-documents.md) | Bounded metadata uses record authority; merge-sensitive state uses lazy child documents | Accepted |
 | [0124](0124-workspace-kv-keeps-one-logical-identity-outside-the-record-database.md) | Workspace KV keeps one logical identity outside the records database | Proposed |
 | [0125](0125-record-schemas-are-immutable-evolution-creates-a-successor-database.md) | Records schemas are immutable; evolution creates a successor database | Proposed |
-| [0126](0126-child-documents-use-format-capabilities-and-evolve-outside-records-databases.md) | Child documents use format capabilities and evolve outside records databases | Proposed |
+| [0126](0126-child-documents-use-format-capabilities-and-evolve-outside-records-databases.md) | Child documents use format capabilities and evolve outside records databases | Accepted |
 
 When you add an ADR, add its row here.

@@ -7,10 +7,17 @@ import type {
 	TableDefinitions,
 	WorkspaceDefinition,
 } from './definition.js';
+import type {
+	WorkspaceDocumentRuntime,
+	WorkspaceDocumentRuntimeOption,
+	WorkspaceDocumentsFor,
+} from './document-client.js';
 import {
 	type OpenedWorkspace,
 	openWorkspaceFromService,
+	type WorkspaceKvFor,
 	type WorkspaceKvMount,
+	type WorkspaceKvMountOption,
 } from './open.js';
 
 export type {
@@ -21,80 +28,94 @@ export type {
 
 export type OpenStandaloneWorkspaceOptions<
 	TKvMount extends WorkspaceKvMount | undefined = undefined,
-> = WorkspaceWorkerPortOptions & {
-	/** Create the app-owned module Worker that imports this definition. */
-	worker(): Worker;
-	/** Optional preference plane composed over the caller's root Y.Doc. */
-	kv?: TKvMount;
-};
+	TDocumentRuntime extends WorkspaceDocumentRuntime | undefined = undefined,
+> = WorkspaceWorkerPortOptions &
+	WorkspaceKvMountOption<TKvMount> &
+	WorkspaceDocumentRuntimeOption<TDocumentRuntime> & {
+		/** Create the app-owned module Worker that imports this definition. */
+		worker(): Worker;
+	};
 
 /** Open a standalone OPFS workspace through its app-owned module Worker. */
 export async function openStandaloneWorkspace<
 	TTables extends TableDefinitions,
 	TKv extends KvDefinitions,
 	TKvMount extends WorkspaceKvMount | undefined = undefined,
+	TDocumentRuntime extends WorkspaceDocumentRuntime | undefined = undefined,
 >(
 	definition: WorkspaceDefinition<TTables, TKv>,
-	{
-		worker: createWorker,
-		kv,
-		...transportOptions
-	}: OpenStandaloneWorkspaceOptions<TKvMount>,
+	options: OpenStandaloneWorkspaceOptions<TKvMount, TDocumentRuntime>,
 ): Promise<
 	OpenedWorkspace<
 		TTables,
-		TKvMount extends WorkspaceKvMount ? TKv : undefined,
-		'standalone'
+		WorkspaceKvFor<TKvMount, TKv>,
+		'standalone',
+		WorkspaceDocumentsFor<TDocumentRuntime>
 	>
 > {
+	const { worker: createWorker } = options;
 	const worker = createWorker();
-	const service = createWorkspaceWorkerPort(worker, transportOptions);
-	return openWorkspaceFromService<TTables, TKv, 'standalone', TKvMount>(
-		definition,
-		{
-			service,
-			expectedKind: 'standalone',
-			kv,
-		},
-	);
+	const service = createWorkspaceWorkerPort(worker, {
+		startupTimeoutMs: options.startupTimeoutMs,
+		disposeTimeoutMs: options.disposeTimeoutMs,
+		onObserverError: options.onObserverError,
+	});
+	return openWorkspaceFromService<
+		TTables,
+		TKv,
+		'standalone',
+		TKvMount,
+		TDocumentRuntime
+	>(definition, {
+		...options,
+		service,
+		expectedKind: 'standalone',
+	});
 }
 
 export type OpenWorkspaceReplicaOptions<
 	TKvMount extends WorkspaceKvMount | undefined = undefined,
-> = WorkspaceWorkerPortOptions & {
-	/** Create the app-owned module Worker that imports this definition. */
-	worker(): Worker;
-	/** Optional preference plane composed over the caller's root Y.Doc. */
-	kv?: TKvMount;
-};
+	TDocumentRuntime extends WorkspaceDocumentRuntime | undefined = undefined,
+> = WorkspaceWorkerPortOptions &
+	WorkspaceKvMountOption<TKvMount> &
+	WorkspaceDocumentRuntimeOption<TDocumentRuntime> & {
+		/** Create the app-owned module Worker that imports this definition. */
+		worker(): Worker;
+	};
 
 /** Open this browser storage scope's replica through its app-owned Worker. */
 export async function openWorkspaceReplica<
 	TTables extends TableDefinitions,
 	TKv extends KvDefinitions,
 	TKvMount extends WorkspaceKvMount | undefined = undefined,
+	TDocumentRuntime extends WorkspaceDocumentRuntime | undefined = undefined,
 >(
 	definition: WorkspaceDefinition<TTables, TKv>,
-	{
-		worker: createWorker,
-		kv,
-		...transportOptions
-	}: OpenWorkspaceReplicaOptions<TKvMount>,
+	options: OpenWorkspaceReplicaOptions<TKvMount, TDocumentRuntime>,
 ): Promise<
 	OpenedWorkspace<
 		TTables,
-		TKvMount extends WorkspaceKvMount ? TKv : undefined,
-		'replica'
+		WorkspaceKvFor<TKvMount, TKv>,
+		'replica',
+		WorkspaceDocumentsFor<TDocumentRuntime>
 	>
 > {
+	const { worker: createWorker } = options;
 	const worker = createWorker();
-	const service = createWorkspaceWorkerPort(worker, transportOptions);
-	return openWorkspaceFromService<TTables, TKv, 'replica', TKvMount>(
-		definition,
-		{
-			service,
-			expectedKind: 'replica',
-			kv,
-		},
-	);
+	const service = createWorkspaceWorkerPort(worker, {
+		startupTimeoutMs: options.startupTimeoutMs,
+		disposeTimeoutMs: options.disposeTimeoutMs,
+		onObserverError: options.onObserverError,
+	});
+	return openWorkspaceFromService<
+		TTables,
+		TKv,
+		'replica',
+		TKvMount,
+		TDocumentRuntime
+	>(definition, {
+		...options,
+		service,
+		expectedKind: 'replica',
+	});
 }

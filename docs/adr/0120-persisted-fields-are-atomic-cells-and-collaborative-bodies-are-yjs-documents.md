@@ -65,7 +65,7 @@ lifecycle at all.
 Content that needs structural or character-level concurrent merging is not a
 field. It is declared through a table's `documents` slot and stored as a
 separate lazy Yjs document. Applications choose from Epicenter's closed document
-capability catalog: plain text, canonical rich text, or validated keyed records.
+capability catalog: plain text, an XML fragment, or validated keyed records.
 Each capability owns its Yjs roots, canonical format descriptor, derived format
 hash, and typed attachment. Raw Yjs layouts and per-field merge-policy options
 are not part of the application schema surface (ADR-0126).

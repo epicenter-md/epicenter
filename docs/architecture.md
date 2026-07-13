@@ -100,12 +100,13 @@ belong in device storage.
 
 A table may declare child-document slots for its records. Each opened child is
 a separate lazy Yjs document with an Epicenter-owned format capability, such as
-plain text, canonical rich text, or validated keyed records.
+plain text, an XML fragment, or validated keyed records.
 
 The record gives the document its product relationship and row identity, but
 the document bytes do not live in the record. Its address includes the
-workspace, table, row ID, document name, and document format hash. Document
-format identity is independent of the records schema hash.
+workspace, table, a collision-resistant digest of the full row ID, document
+name, and document format hash. Document format identity is independent of the
+records schema hash.
 
 ## Definitions travel; runtimes connect them
 

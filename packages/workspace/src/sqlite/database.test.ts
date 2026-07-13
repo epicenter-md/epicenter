@@ -10,7 +10,7 @@
  * - CRUD uses typed columns, declared indexes, codecs, and physical deletion
  * - mutations record three-verb logical operations (create/update/delete row)
  * - successful transactions invalidate once after commit; rollback is silent
- * - representation migrations advance one persisted storage revision
+ * - schema identity and storage revision fence incompatible databases
  */
 
 import { Database, type SQLQueryBindings } from 'bun:sqlite';
@@ -48,8 +48,8 @@ function createSqlite(database: Database): RecordSyncSqlite {
 function setup() {
 	const database = new Database(':memory:');
 	const sqlite = createSqlite(database);
-	const notes = defineTable(
-		{
+	const notes = defineTable({
+		fields: {
 			id: field.string(),
 			title: field.string(),
 			pinned: field.boolean(),
@@ -59,15 +59,12 @@ function setup() {
 				Type.Object({ source: Type.String(), rank: Type.Number() }),
 			),
 		},
-		{ indexes: [['pinned'], ['rating', 'title']] },
-	);
+	});
 	// Declared KV rides along on the definition but is invisible to the
 	// record database: it belongs to the root-document preference plane.
 	const definition = defineWorkspace({
 		id: 'sqlite-database-test',
 		name: 'SQLite database test',
-		epoch: 'notes-1',
-		rootDocumentIncarnation: 'sqlite-kv-1',
 		tables: { notes },
 		kv: {
 			theme: defineKv(
@@ -177,7 +174,7 @@ describe('typed rows at rest', () => {
 		});
 	});
 
-	test('DDL contains one typed column per field, declared indexes, and no row blob or _v', () => {
+	test('DDL contains one typed column per field and no row blob, _v, or app indexes', () => {
 		const { database } = setup();
 		const columns = database
 			.query<{ name: string; type: string; notnull: number; pk: number }, []>(
@@ -206,8 +203,7 @@ describe('typed rows at rest', () => {
 			.query<{ name: string }, []>('PRAGMA index_list("notes")')
 			.all()
 			.map(({ name }) => name);
-		expect(indexes).toContain('__epicenter_idx_notes_0');
-		expect(indexes).toContain('__epicenter_idx_notes_1');
+		expect(indexes).toEqual(['sqlite_autoindex_notes_1']);
 	});
 
 	test('writes reject non-finite numbers and non-plain JSON', () => {
@@ -230,9 +226,7 @@ describe('typed rows at rest', () => {
 			defineWorkspace({
 				id: 'id-only-test',
 				name: 'ID-only test',
-				epoch: 'id-only-1',
-				rootDocumentIncarnation: 'sqlite-kv-1',
-				tables: { markers: defineTable({ id: field.string() }) },
+				tables: { markers: defineTable({ fields: { id: field.string() } }) },
 			}),
 			createSqlite(database),
 			{ kind: 'standalone', onObserverError() {} },
@@ -393,12 +387,12 @@ describe('transaction and invalidation', () => {
 	test('replica coordinator journals logical intent atomically before invalidation', () => {
 		const database = new Database(':memory:');
 		const sqlite = createSqlite(database);
-		const notes = defineTable({ id: field.string(), title: field.string() });
+		const notes = defineTable({
+			fields: { id: field.string(), title: field.string() },
+		});
 		const definition = defineWorkspace({
 			id: 'coordinator-test',
 			name: 'Coordinator test',
-			epoch: 'coordinator-1',
-			rootDocumentIncarnation: 'sqlite-kv-1',
 			tables: { notes },
 		});
 		let rejectCommit = true;
@@ -460,13 +454,13 @@ describe('transaction and invalidation', () => {
 		const definition = defineWorkspace({
 			id: 'operations-test',
 			name: 'Operations test',
-			epoch: 'operations-1',
-			rootDocumentIncarnation: 'sqlite-kv-1',
 			tables: {
 				notes: defineTable({
-					id: field.string(),
-					title: field.string(),
-					rating: nullable(field.number()),
+					fields: {
+						id: field.string(),
+						title: field.string(),
+						rating: nullable(field.number()),
+					},
 				}),
 			},
 		});
@@ -493,8 +487,22 @@ describe('transaction and invalidation', () => {
 		workspace.tables.notes.remove('n1');
 
 		expect(committedOperations).toEqual([
-			[{ kind: 'createRow', table: 'notes', rowId: 'n1', cells: { title: 'One' } }],
-			[{ kind: 'updateRow', table: 'notes', rowId: 'n1', cells: { rating: 3 } }],
+			[
+				{
+					kind: 'createRow',
+					table: 'notes',
+					rowId: 'n1',
+					cells: { title: 'One' },
+				},
+			],
+			[
+				{
+					kind: 'updateRow',
+					table: 'notes',
+					rowId: 'n1',
+					cells: { rating: 3 },
+				},
+			],
 			[{ kind: 'deleteRow', table: 'notes', rowId: 'n1' }],
 			[],
 		]);
@@ -865,7 +873,7 @@ describe('transaction and invalidation', () => {
 	});
 });
 
-describe('representation migrations', () => {
+describe('database identity', () => {
 	test('identity inspection and fresh stamping share one immediate transaction', () => {
 		const database = new Database(':memory:');
 		const base = createSqlite(database);
@@ -883,9 +891,7 @@ describe('representation migrations', () => {
 			defineWorkspace({
 				id: 'atomic-identity-test',
 				name: 'Atomic identity test',
-				epoch: 'atomic-identity-v1',
-				rootDocumentIncarnation: 'sqlite-kv-1',
-				tables: { rows: defineTable({ id: field.string() }) },
+				tables: { rows: defineTable({ fields: { id: field.string() } }) },
 			}),
 			sqlite,
 			{ kind: 'standalone', onObserverError() {} },
@@ -894,128 +900,16 @@ describe('representation migrations', () => {
 		expect(inspectionWasTransactional).toBe(true);
 	});
 
-	test('existing databases run missing apply steps and persist the new revision', () => {
-		const database = new Database(':memory:');
-		const sqlite = createSqlite(database);
-		const v1Table = defineTable({
-			id: field.string(),
-			title: field.string(),
-		});
-		const v1 = defineWorkspace({
-			id: 'migration-test',
-			name: 'Migration test',
-			epoch: 'migration-1',
-			rootDocumentIncarnation: 'sqlite-kv-1',
-			tables: { notes: v1Table },
-		});
-		const old = createApplicationDatabase(v1, sqlite, {
-			kind: 'standalone',
-			onObserverError() {},
-		});
-		old.tables.notes.create({ id: 'one', title: 'Before' });
-
-		let applyCalls = 0;
-		const v2 = defineWorkspace({
-			id: 'migration-test',
-			name: 'Migration test',
-			epoch: 'migration-1',
-			rootDocumentIncarnation: 'sqlite-kv-1',
-			tables: { notes: v1Table },
-			migrations: [
-				{
-					apply(tx) {
-						applyCalls++;
-						tx.sql('CREATE INDEX notes_title_physical ON notes(title)');
-					},
-				},
-			],
-		});
-		const current = createApplicationDatabase(v2, sqlite, {
-			kind: 'standalone',
-			onObserverError() {},
-		});
-		expect(applyCalls).toBe(1);
-		expect(current.tables.notes.get('one')).toEqual({
-			id: 'one',
-			title: 'Before',
-		});
-		expect(
-			database
-				.query<{ value: string }, []>(
-					"SELECT value FROM __epicenter_meta WHERE key = 'storage_revision'",
-				)
-				.get()?.value,
-		).toBe('2');
-	});
-
-	test('fresh databases start at the current revision without replaying migrations', () => {
-		const database = new Database(':memory:');
-		let applyCalls = 0;
-		const definition = defineWorkspace({
-			id: 'fresh-current',
-			name: 'Fresh current',
-			epoch: 'fresh-1',
-			rootDocumentIncarnation: 'sqlite-kv-1',
-			tables: {
-				notes: defineTable({ id: field.string(), title: field.string() }),
-			},
-			migrations: [
-				{
-					apply() {
-						applyCalls++;
-					},
-				},
-			],
-		});
-		createApplicationDatabase(definition, createSqlite(database), {
-			kind: 'standalone',
-			onObserverError() {},
-		});
-		expect(applyCalls).toBe(0);
-	});
-
-	test('opening with an older definition refuses a stored newer revision', () => {
-		const database = new Database(':memory:');
-		const sqlite = createSqlite(database);
-		const table = defineTable({ id: field.string(), title: field.string() });
-		const current = defineWorkspace({
-			id: 'downgrade-test',
-			name: 'Downgrade test',
-			epoch: 'downgrade-1',
-			rootDocumentIncarnation: 'sqlite-kv-1',
-			tables: { notes: table },
-			migrations: [{ apply() {} }],
-		});
-		createApplicationDatabase(current, sqlite, {
-			kind: 'standalone',
-			onObserverError() {},
-		});
-
-		const old = defineWorkspace({
-			id: 'downgrade-test',
-			name: 'Downgrade test',
-			epoch: 'downgrade-1',
-			rootDocumentIncarnation: 'sqlite-kv-1',
-			tables: { notes: table },
-		});
-		expect(() =>
-			createApplicationDatabase(old, sqlite, {
-				kind: 'standalone',
-				onObserverError() {},
-			}),
-		).toThrow('database revision 2 is newer');
-	});
-
 	test('same-revision workspace and schema mismatches refuse typed access', () => {
 		const database = new Database(':memory:');
 		const sqlite = createSqlite(database);
-		const notes = defineTable({ id: field.string(), title: field.string() });
+		const notes = defineTable({
+			fields: { id: field.string(), title: field.string() },
+		});
 		const original = createApplicationDatabase(
 			defineWorkspace({
 				id: 'identity-test',
 				name: 'Identity test',
-				epoch: 'identity-1',
-				rootDocumentIncarnation: 'sqlite-kv-1',
 				tables: { notes },
 			}),
 			sqlite,
@@ -1041,8 +935,6 @@ describe('representation migrations', () => {
 				defineWorkspace({
 					id: 'other-workspace',
 					name: 'Other workspace',
-					epoch: 'identity-1',
-					rootDocumentIncarnation: 'sqlite-kv-1',
 					tables: { notes },
 				}),
 				sqlite,
@@ -1051,23 +943,23 @@ describe('representation migrations', () => {
 		).toThrow("belongs to 'identity-test'");
 
 		const nullableColumnAdded = defineTable({
-			id: field.string(),
-			title: field.string(),
-			summary: nullable(field.string()),
+			fields: {
+				id: field.string(),
+				title: field.string(),
+				summary: nullable(field.string()),
+			},
 		});
 		expect(() =>
 			createApplicationDatabase(
 				defineWorkspace({
 					id: 'identity-test',
 					name: 'Identity test',
-					epoch: 'identity-1',
-					rootDocumentIncarnation: 'sqlite-kv-1',
 					tables: { notes: nullableColumnAdded },
 				}),
 				sqlite,
 				{ kind: 'standalone', onObserverError() {} },
 			),
-		).toThrow('schema identity does not match');
+		).toThrow('schema hash does not match');
 		expect(readPhysicalState()).toEqual(beforeRefusals);
 	});
 
@@ -1077,9 +969,7 @@ describe('representation migrations', () => {
 		const definition = defineWorkspace({
 			id: 'kind-test',
 			name: 'Kind test',
-			epoch: 'kind-v1',
-			rootDocumentIncarnation: 'sqlite-kv-1',
-			tables: { rows: defineTable({ id: field.string() }) },
+			tables: { rows: defineTable({ fields: { id: field.string() } }) },
 		});
 		createApplicationDatabase(definition, sqlite, {
 			kind: 'standalone',
@@ -1092,37 +982,5 @@ describe('representation migrations', () => {
 				onObserverError() {},
 			}),
 		).toThrow("database is 'standalone', not 'replica'");
-	});
-
-	test('missing epoch migrations require the explicit epoch-upgrade flow', () => {
-		const database = new Database(':memory:');
-		const sqlite = createSqlite(database);
-		const notes = defineTable({ id: field.string(), title: field.string() });
-		const v1 = defineWorkspace({
-			id: 'epoch-test',
-			name: 'Epoch test',
-			epoch: 'epoch-1',
-			rootDocumentIncarnation: 'sqlite-kv-1',
-			tables: { notes },
-		});
-		createApplicationDatabase(v1, sqlite, {
-			kind: 'standalone',
-			onObserverError() {},
-		});
-
-		const v2 = defineWorkspace({
-			id: 'epoch-test',
-			name: 'Epoch test',
-			epoch: 'epoch-1',
-			rootDocumentIncarnation: 'sqlite-kv-1',
-			tables: { notes },
-			migrations: [{ epoch: { id: 'epoch-2' } }],
-		});
-		expect(() =>
-			createApplicationDatabase(v2, sqlite, {
-				kind: 'standalone',
-				onObserverError() {},
-			}),
-		).toThrow('changes schema epoch');
 	});
 });

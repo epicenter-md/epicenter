@@ -253,8 +253,17 @@ export const jsonValue: TUnsafe<JsonValue> = Type.Unsafe<JsonValue>(Type.Any());
  * leaf): a non-JSON inner (e.g. `Type.Date`) flows through as `TUnsafe<Date>` and is caught
  * by `FlatJsonTSchema` at the `defineTable` boundary, where column safety belongs.
  */
-function json<S extends TSchema>(inner: S): TUnsafe<Static<S>> {
-	return Type.Unsafe<Static<S>>({ ...inner, [JSON_SCHEMA_KEYWORD]: true });
+type TJson<S extends TSchema> = TUnsafe<Static<S>> & {
+	// Keep the real wire marker visible to schema-aware type consumers while
+	// `Static<TJson<S>>` remains exactly `Static<S>` for ordinary application data.
+	readonly [JSON_SCHEMA_KEYWORD]: true;
+};
+
+function json<S extends TSchema>(inner: S): TJson<S> {
+	return Type.Unsafe<Static<S>>({
+		...inner,
+		[JSON_SCHEMA_KEYWORD]: true,
+	}) as TJson<S>;
 }
 
 /**

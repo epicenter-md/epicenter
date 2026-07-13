@@ -4,6 +4,7 @@
 
 import { expect, test } from 'bun:test';
 import { Type } from 'typebox';
+import { Value } from 'typebox/value';
 import * as Y from 'yjs';
 import { defineKv } from './define-kv.js';
 import { KV_KEY } from './keys.js';
@@ -21,6 +22,23 @@ function setupYkv() {
 	const ykv = new YKeyValueLww<unknown>(yarray);
 	return { ydoc, ykv };
 }
+
+test('defineKv owns an immutable schema snapshot', () => {
+	const count = Type.Number({ minimum: 0 });
+	const schema = Type.Object({ count });
+	const definition = defineKv(schema, () => ({ count: 0 }));
+
+	Object.assign(count, { minimum: 10 });
+	Object.assign(schema.properties, { count: Type.String() });
+
+	expect(definition.schema).not.toBe(schema);
+	expect(Value.Check(definition.schema, { count: 1 })).toBe(true);
+	expect(Value.Check(definition.schema, { count: -1 })).toBe(false);
+	expect(Value.Check(definition.schema, { count: '1' })).toBe(false);
+	expect(Object.isFrozen(definition)).toBe(true);
+	expect(Object.isFrozen(definition.schema)).toBe(true);
+	expect(Object.isFrozen(definition.schema.properties.count)).toBe(true);
+});
 
 test('set stores a value that get returns', () => {
 	const { ykv } = setupYkv();

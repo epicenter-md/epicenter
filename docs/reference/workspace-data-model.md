@@ -83,8 +83,8 @@ storage, not workspace KV.
 ## Child documents hold merge-sensitive content
 
 A table may declare child-document slots for its records. A child document is a
-separate, lazy Yjs document with a format capability such as plain text, rich
-text, or validated keyed records.
+separate, lazy Yjs document with a format capability such as plain text, an XML
+fragment, or validated keyed records.
 
 ```text
 note record
@@ -94,14 +94,24 @@ note record
 
 The record supplies the product relationship and part of the address, but it
 does not contain the document bytes. The workspace derives a document address
-from the workspace, table, row ID, document name, and format identity. Opening
-the document owns its persistence, synchronization, caching, readiness, and
+from the workspace, table, a collision-resistant digest of the full row ID,
+document name, and format identity. The digest accepts application IDs without
+turning the room-address grammar into a record-schema restriction. Opening the
+document owns its persistence, synchronization, caching, readiness, and
 disposal.
 
 Not every table declares documents, and a declared document remains unopened
 until a caller needs it. Child-document formats have compatibility identities
 independent of the records schema. Adding a document or changing its format
 does not create a successor records database.
+
+Fields and documents use separate declaration namespaces. A field and a child
+document may both be named `body`: callers still distinguish `row.body` from
+`table.docs.body`. Matching names do not make the two planes consistent or
+choose an authority. Table and document names participate in persistent room
+addresses, so renaming either creates new document identities and requires an
+explicit conversion when content must carry forward. Capability-owned internal
+Yjs root names are isolated from both public maps.
 
 Use a child document when concurrent edits must merge inside the value. Do not
 put a large JSON object in one cell and expect its members to merge; an atomic
@@ -122,6 +132,16 @@ lazy documents, coordinate different authorities, support cross-plane
 transactions, and reconcile dual writers. Epicenter refuses that abstraction.
 Moving data between records and child documents is an explicit app-owned
 authority transfer that chooses one authoritative plane after cutover.
+
+The current table path opens the declared target. A converter uses
+`historicalDocument(...)` to name one retained source and
+`workspace.documents.open(reference, rowId)` to open it through the same
+workspace runtime. Both handles are typed by their format capabilities. This is
+not a registry or scan: the application must know the old coordinates and the
+row ID. Format hashing prevents incompatible bytes from mixing; by itself it
+does not copy content, acknowledge target durability, atomically switch
+authority, or stop old clients editing the old room. Opening both handles is a
+copy and initialization seam, not a completed authority transfer.
 
 ## Schema identity follows the owned data
 

@@ -27,8 +27,10 @@ theme.current = 1;
 fromKv(kv, 'missing');
 
 const notesDefinition = defineTable({
-	id: field.string(),
-	title: field.string(),
+	fields: {
+		id: field.string(),
+		title: field.string(),
+	},
 });
 type Note = RowFor<typeof notesDefinition>;
 declare const notes: ApplicationTable<Note>;

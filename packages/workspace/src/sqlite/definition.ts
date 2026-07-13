@@ -1,10 +1,13 @@
 import {
 	compile,
+	type DateTimeString,
+	type InstantString,
 	type Kind,
 	REFERENCE_KEYWORD,
 	recognize,
 	storageOf,
 } from '@epicenter/field';
+import { RECORD_SYNC_ADMISSION_LIMITS } from '@epicenter/record-sync';
 import {
 	type Static,
 	type TNull,
@@ -13,9 +16,18 @@ import {
 	type TUnion,
 	Type,
 } from 'typebox';
-import { RECORD_SYNC_ADMISSION_LIMITS } from '@epicenter/record-sync';
+import type { Brand } from 'wellcrafted/brand';
+import { isKvDefinition } from '../document/define-kv.js';
 import type { KvDefinitions } from '../document/kv.js';
 import { assertSafeSegment } from '../shared/safe-segment.js';
+import { type DocumentFormat, isDocumentFormat } from './document-format.js';
+import {
+	createRecordsDescriptor,
+	type RecordsSchemaRef,
+	recordsSchemaHashOf,
+	recordsSchemaRef,
+	sealRecordsSchemaIdentity,
+} from './schema-descriptor.js';
 
 // The preference plane shares one declaration vocabulary across storage
 // planes: `defineKv` lives with the document KV implementation, and this
@@ -25,37 +37,49 @@ import { assertSafeSegment } from '../shared/safe-segment.js';
 export { defineKv } from '../document/define-kv.js';
 export type { KvDefinition, KvDefinitions } from '../document/kv.js';
 
-export type Columns = Record<string, TSchema>;
-type TableColumns = Columns & { id: TSchema };
-export type DocLayout = 'plainText' | 'richText';
+export type Fields = Record<string, TSchema>;
+type TableFields = Fields & { id: TSchema };
+type DocumentFormats = Record<string, DocumentFormat>;
 
-export type TableOptions<TColumns extends Columns> = {
-	indexes?: readonly (readonly (keyof TColumns & string)[])[];
-	docs?: Readonly<Record<string, DocLayout>>;
-};
+/**
+ * The table's `InstantString` columns, by name: every non-`id` column whose
+ * value (ignoring `null`) is an instant. The valid targets for `touch`.
+ * Collapses to `never` for a table with no instant column, so `touch` simply
+ * is not offered there.
+ */
+type InstantColumnKey<TColumns extends TableFields> = {
+	[K in Exclude<keyof TColumns, 'id'>]-?: NonNullable<
+		Static<TColumns[K]>
+	> extends InstantString
+		? K
+		: never;
+}[Exclude<keyof TColumns, 'id'>] &
+	string;
 
 export type CompiledColumn = {
-	name: string;
-	kind: Kind;
-	storage: ReturnType<typeof storageOf>;
-	isNullable: boolean;
-	referenceTable: string | null;
+	readonly name: string;
+	readonly kind: Kind;
+	readonly storage: ReturnType<typeof storageOf>;
+	readonly isNullable: boolean;
+	readonly referenceTable: string | null;
 	check(value: unknown): boolean;
 };
 
+declare const tableDefinitionBrand: unique symbol;
+const tableDefinitions = new WeakSet<object>();
+
 export type TableDefinition<
-	TColumns extends TableColumns = TableColumns,
-	TDocs extends Readonly<Record<string, DocLayout>> = Readonly<
-		Record<string, DocLayout>
-	>,
+	TColumns extends TableFields = TableFields,
+	TDocuments extends DocumentFormats = DocumentFormats,
 > = {
-	columns: TColumns;
-	schema: TObject<TColumns>;
-	options: {
-		indexes: readonly (readonly (keyof TColumns & string)[])[];
-		docs: TDocs;
-	};
-	compiledColumns: { [TName in keyof TColumns]: CompiledColumn };
+	readonly fields: Readonly<TColumns>;
+	readonly schema: TObject<TColumns>;
+	readonly documents: Readonly<TDocuments>;
+	readonly touchOnDocumentEdit: string | null;
+	readonly compiledColumns: Readonly<{
+		[TName in keyof TColumns]: CompiledColumn;
+	}>;
+	readonly [tableDefinitionBrand]: true;
 };
 
 export type RowFor<TDefinition extends { schema: TSchema }> = Static<
@@ -72,30 +96,45 @@ type ConstrainNullAxis<TSchemaValue extends TSchema> =
 			: NullableFieldError
 		: TSchemaValue;
 
-type ConstrainTableColumns<TColumns extends TableColumns> = {
+type ConstrainTableColumns<TColumns extends TableFields> = {
 	[TName in keyof TColumns]: ConstrainNullAxis<TColumns[TName]>;
 };
 
+type TableConfig<
+	TColumns extends TableFields = TableFields,
+	TDocuments extends DocumentFormats = DocumentFormats,
+> = {
+	fields: TColumns;
+	documents?: TDocuments;
+	/** Instant field stamped, best-effort, after a local edit to any child document. */
+	touchOnDocumentEdit?: InstantColumnKey<TColumns>;
+};
+
 export function defineTable<
-	const TColumns extends TableColumns,
-	const TOptions extends TableOptions<TColumns> = Record<never, never>,
+	const TColumns extends TableFields,
+	const TDocuments extends DocumentFormats = Readonly<Record<never, never>>,
 >(
-	columns: ConstrainTableColumns<TColumns>,
-	options?: TOptions,
-): TableDefinition<
-	TColumns,
-	TOptions extends { docs: infer TDocs extends Record<string, DocLayout> }
-		? TDocs
-		: Readonly<Record<never, never>>
-> {
-	const authoredColumns = columns as TColumns;
+	config: Omit<TableConfig<TColumns, TDocuments>, 'fields'> & {
+		fields: ConstrainTableColumns<TColumns>;
+	},
+): TableDefinition<TColumns, Readonly<TDocuments>> {
+	const authoredColumns = config.fields as TColumns;
 	assertSchemaRecord(authoredColumns, 'table columns', 'table column');
+	const ownedColumns = Object.freeze(
+		Object.fromEntries(
+			Object.entries(authoredColumns).map(([name, schema]) => [
+				name,
+				snapshotSchema(schema),
+			]),
+		),
+	) as TColumns;
 	const compiledColumns = Object.fromEntries(
-		Object.entries(authoredColumns).map(([name, schema]) => [
+		Object.entries(ownedColumns).map(([name, schema]) => [
 			name,
-			compileColumn(name, schema),
+			Object.freeze(compileColumn(name, schema)),
 		]),
 	) as { [TName in keyof TColumns]: CompiledColumn };
+	Object.freeze(compiledColumns);
 
 	const id = compiledColumns.id;
 	if (id.kind !== 'string' || id.isNullable) {
@@ -107,14 +146,14 @@ export function defineTable<
 	// Fail at definition time instead of a cryptic runtime parseMutation
 	// refusal: every non-id column becomes one wire cell, so the declared
 	// shape must fit the record admission ceilings in every mode.
-	const cellColumnCount = Object.keys(authoredColumns).length - 1;
+	const cellColumnCount = Object.keys(ownedColumns).length - 1;
 	if (cellColumnCount > RECORD_SYNC_ADMISSION_LIMITS.cellsPerOperation) {
 		throw new Error(
 			`Table declares ${cellColumnCount} cell columns; the record protocol admits at most ${RECORD_SYNC_ADMISSION_LIMITS.cellsPerOperation} cells per operation`,
 		);
 	}
 	const encoder = new TextEncoder();
-	for (const name of Object.keys(authoredColumns)) {
+	for (const name of Object.keys(ownedColumns)) {
 		if (
 			encoder.encode(name).byteLength >
 			RECORD_SYNC_ADMISSION_LIMITS.identifierBytes
@@ -125,91 +164,103 @@ export function defineTable<
 		}
 	}
 
-	const indexes = options?.indexes ?? [];
-	for (const [indexPosition, index] of indexes.entries()) {
-		if (index.length === 0) {
-			throw new Error(`Table index ${indexPosition + 1} must name a column`);
-		}
-		const names = new Set<string>();
-		for (const name of index) {
-			if (!Object.hasOwn(authoredColumns, name)) {
-				throw new Error(`Table index references unknown column '${name}'`);
-			}
-			if (names.has(name)) {
-				throw new Error(`Table index repeats column '${name}'`);
-			}
-			names.add(name);
+	const authoredDocuments = config.documents ?? ({} as TDocuments);
+	assertSchemaRecord(authoredDocuments, 'table documents', 'table document');
+	for (const [name, type] of Object.entries(authoredDocuments)) {
+		assertSafeSegment(name, 'child document name');
+		if (!isDocumentFormat(type)) {
+			throw new Error(`Table document '${name}' must use document.*`);
 		}
 	}
-
-	const docs = options?.docs ?? {};
-	assertSchemaRecord(docs, 'table documents', 'table document');
-	for (const [name, layout] of Object.entries(docs)) {
-		assertSafeSegment(name, 'child document name');
-		if (Object.hasOwn(authoredColumns, name)) {
-			throw new Error(`Table document '${name}' collides with a column`);
-		}
-		if (layout !== 'plainText' && layout !== 'richText') {
+	const ownedDocuments = Object.freeze({ ...authoredDocuments }) as TDocuments;
+	const touch = config.touchOnDocumentEdit ?? null;
+	if (touch !== null && Object.keys(ownedDocuments).length === 0) {
+		throw new Error('touchOnDocumentEdit requires at least one document');
+	}
+	if (touch !== null) {
+		const target = (
+			compiledColumns as Record<string, CompiledColumn | undefined>
+		)[touch];
+		if (touch === 'id' || target === undefined || target.kind !== 'instant') {
 			throw new Error(
-				`Table document '${name}' has unknown layout '${layout}'`,
+				`touchOnDocumentEdit target '${touch}' must be a field.instant() column`,
 			);
 		}
 	}
 
-	return {
-		columns: authoredColumns,
-		schema: Type.Object(authoredColumns, { additionalProperties: false }),
-		options: { indexes, docs } as TableDefinition<
-			TColumns,
-			TOptions extends {
-				docs: infer TDocs extends Record<string, DocLayout>;
-			}
-				? TDocs
-				: Readonly<Record<never, never>>
-		>['options'],
+	const definition = Object.freeze({
+		fields: ownedColumns,
+		schema: freezeOwnedJson(
+			Type.Object(ownedColumns, { additionalProperties: false }),
+		),
+		documents: ownedDocuments,
+		touchOnDocumentEdit: touch,
 		compiledColumns,
-	};
+	}) as TableDefinition<TColumns, Readonly<TDocuments>>;
+	tableDefinitions.add(definition);
+	return definition;
 }
 
-export type MigrationTx = {
-	sql(query: string, ...params: unknown[]): unknown[];
-};
-
-export type RowRef = { table: string; rowId: string };
-
-export type LogicalRow = RowRef & {
-	cells: Record<string, unknown>;
-};
-
-export type EpochMigration = {
-	id: string;
-	mapIdentity?(source: RowRef): RowRef | null;
-	transformCells?(row: LogicalRow, target: RowRef): Record<string, unknown>;
-};
-
-export type MigrationStep = {
-	apply?(tx: MigrationTx): void;
-	epoch?: EpochMigration;
-};
-
 export type TableDefinitions = Record<string, TableDefinition>;
+
+type NonNullSchema<TSchemaValue extends TSchema> =
+	TSchemaValue extends TUnion<infer TMembers>
+		? Exclude<TMembers[number], TNull>
+		: TSchemaValue;
+
+type IsNullableSchema<TSchemaValue extends TSchema> =
+	TSchemaValue extends TUnion<infer TMembers>
+		? Extract<TMembers[number], TNull> extends never
+			? false
+			: true
+		: false;
+
+type NormalizeAtRestValue<TValue> = [TValue] extends [InstantString]
+	? InstantString
+	: [TValue] extends [DateTimeString]
+		? DateTimeString
+		: [TValue] extends [string & Brand<infer _TBrand>]
+			? string
+			: TValue;
+
+type AtRestNonNullValue<TSchemaValue extends TSchema> =
+	NonNullSchema<TSchemaValue> extends {
+		readonly 'x-json-schema': unknown;
+	}
+		? unknown
+		: NormalizeAtRestValue<Static<NonNullSchema<TSchemaValue>>>;
+
+type AtRestValue<TSchemaValue extends TSchema> =
+	IsNullableSchema<TSchemaValue> extends true
+		? AtRestNonNullValue<TSchemaValue> | null
+		: AtRestNonNullValue<TSchemaValue>;
+
+type RecordsMigrationCells<TTables extends TableDefinitions> = {
+	[TTable in keyof TTables]: {
+		[TColumn in Exclude<keyof TTables[TTable]['fields'], 'id'>]: AtRestValue<
+			TTables[TTable]['fields'][TColumn]
+		>;
+	};
+};
 
 export type WorkspaceDefinition<
 	TTables extends TableDefinitions = TableDefinitions,
 	TKv extends KvDefinitions = KvDefinitions,
-> = {
-	id: string;
-	name: string;
-	epoch: string;
-	rootDocumentIncarnation: string;
-	/** Derived eager preference-document guid. Independent of the record epoch. */
-	rootDocumentGuid: string;
-	tables: TTables;
-	kv: TKv;
-	migrations: readonly MigrationStep[];
-	storageRevision: number;
-	/** Canonical JSON material for exact logical-schema compatibility. */
-	schemaIdentity: string;
+> = RecordsSchemaRef<RecordsMigrationCells<TTables>, 'current'> & {
+	/**
+	 * The stable app-defined workspace-family namespace: it keys local
+	 * persistence, sync routing, the KV document, and child-doc guids.
+	 */
+	readonly id: string;
+	/** Display label only (mount labels, sign-in copy). Defaults to `id`. */
+	readonly name: string;
+	readonly tables: Readonly<TTables>;
+	readonly kv: Readonly<TKv>;
+	/**
+	 * Eager preference-document guid: `<id>.kv` (ADR-0124). Stable across
+	 * records-database succession; applications author no incarnation.
+	 */
+	readonly kvDocumentGuid: string;
 };
 
 export function defineWorkspace<
@@ -218,53 +269,34 @@ export function defineWorkspace<
 >({
 	id,
 	name,
-	epoch,
-	rootDocumentIncarnation,
 	tables,
 	kv,
-	migrations = [],
 }: {
 	id: string;
-	name: string;
-	epoch: string;
-	rootDocumentIncarnation: string;
+	name?: string;
 	tables: TTables;
 	kv?: TKv;
-	migrations?: readonly MigrationStep[];
 }): WorkspaceDefinition<TTables, TKv> {
 	if (id.trim() === '') throw new Error('Workspace id must not be empty');
-	if (name.trim() === '') throw new Error('Workspace name must not be empty');
-	if (epoch.trim() === '') throw new Error('Workspace epoch must not be empty');
 	assertSafeSegment(id, 'workspace id');
-	assertSafeSegment(rootDocumentIncarnation, 'root document incarnation');
-	assertSchemaRecord(tables, 'workspace tables', 'workspace table');
-
-	const epochIds = new Set([epoch]);
-	for (const [position, migration] of migrations.entries()) {
-		if (migration.apply === undefined && migration.epoch === undefined) {
-			throw new Error(`Workspace migration ${position + 1} does no work`);
-		}
-		const migrationEpoch = migration.epoch?.id;
-		if (migrationEpoch === undefined) continue;
-		if (migrationEpoch.trim() === '') {
-			throw new Error(
-				`Workspace migration ${position + 1} has an empty epoch id`,
-			);
-		}
-		if (epochIds.has(migrationEpoch)) {
-			throw new Error(`Workspace epoch id '${migrationEpoch}' is duplicated`);
-		}
-		epochIds.add(migrationEpoch);
+	const displayName = name ?? id;
+	if (displayName.trim() === '') {
+		throw new Error('Workspace name must not be empty');
 	}
+	assertSchemaRecord(tables, 'workspace tables', 'workspace table');
+	const ownedTables = Object.freeze({ ...tables }) as TTables;
 
-	for (const [tableName, table] of Object.entries(tables)) {
-		if (Object.keys(table.options.docs).length > 0) {
+	for (const [tableName, table] of Object.entries(ownedTables)) {
+		if (!tableDefinitions.has(table)) {
+			throw new Error(`Workspace table '${tableName}' must use defineTable()`);
+		}
+		if (Object.keys(table.documents).length > 0) {
 			assertSafeSegment(tableName, 'child document table name');
 		}
 		for (const column of Object.values(table.compiledColumns)) {
 			if (
 				column.referenceTable !== null &&
-				!Object.hasOwn(tables, column.referenceTable)
+				!Object.hasOwn(ownedTables, column.referenceTable)
 			) {
 				throw new Error(
 					`Table '${tableName}' column '${column.name}' references unknown table '${column.referenceTable}'`,
@@ -275,30 +307,41 @@ export function defineWorkspace<
 
 	const declaredKv = (kv ?? {}) as TKv;
 	assertSchemaRecord(declaredKv, 'workspace KV', 'workspace KV key');
-	return {
-		id,
-		name,
-		epoch,
-		rootDocumentIncarnation,
-		rootDocumentGuid: `${id}.root.${rootDocumentIncarnation}`,
-		tables,
-		kv: declaredKv,
-		migrations,
-		storageRevision: 1 + migrations.length,
-		// KV is deliberately absent: the preference plane lives on the eager
-		// root document, not the record database, so it is not part of record
-		// schema identity (ADR-0124).
-		schemaIdentity: createSchemaIdentity({
-			workspaceId: id,
-			tables,
-			epochIds: [
-				epoch,
-				...migrations.flatMap((migration) =>
-					migration.epoch === undefined ? [] : [migration.epoch.id],
-				),
-			],
+	for (const [key, definition] of Object.entries(declaredKv)) {
+		if (!isKvDefinition(definition)) {
+			throw new Error(`Workspace KV key '${key}' must use defineKv()`);
+		}
+	}
+	const ownedKv = Object.freeze({ ...declaredKv }) as TKv;
+
+	// KV, documents, display name, and touch policy are deliberately absent.
+	// They have independent identities or are runtime behavior, not accepted
+	// SQLite record state.
+	const recordsDescriptor = createRecordsDescriptor(
+		Object.entries(ownedTables).map(([tableName, table]) => ({
+			name: tableName,
+			fields: Object.fromEntries(
+				Object.entries(table.fields).map(([columnName, schema]) => [
+					columnName,
+					toAtRestSchema(schema),
+				]),
+			),
+		})),
+	);
+	const recordsSchemaHash = recordsSchemaHashOf(recordsDescriptor);
+
+	return Object.freeze(
+		sealRecordsSchemaIdentity({
+			id,
+			name: displayName,
+			tables: ownedTables,
+			kv: ownedKv,
+			kvDocumentGuid: `${id}.kv`,
+			recordsDescriptor,
+			recordsSchemaHash,
+			[recordsSchemaRef]: { kind: 'current' },
 		}),
-	};
+	);
 }
 
 function assertSchemaRecord(
@@ -351,64 +394,6 @@ function compileColumn(name: string, authoredSchema: TSchema): CompiledColumn {
 	};
 }
 
-function createSchemaIdentity({
-	workspaceId,
-	tables,
-	epochIds,
-}: {
-	workspaceId: string;
-	tables: TableDefinitions;
-	epochIds: readonly string[];
-}): string {
-	return canonicalJson({
-		workspaceId,
-		tables: Object.entries(tables)
-			.sort(([left], [right]) => compareCodeUnits(left, right))
-			.map(([tableName, table]) => {
-				return {
-					name: tableName,
-					columns: Object.entries(table.columns)
-						.sort(([left], [right]) => compareCodeUnits(left, right))
-						.map(([columnName, schema]) => ({
-							name: columnName,
-							schema: toAtRestSchema(schema),
-						})),
-					docs: Object.entries(table.options.docs)
-						.sort(([left], [right]) => compareCodeUnits(left, right))
-						.map(([docName, layout]) => ({
-							name: docName,
-							layout,
-						})),
-				};
-			}),
-		epochIds,
-	});
-}
-
-function compareCodeUnits(left: string, right: string): number {
-	return left < right ? -1 : left > right ? 1 : 0;
-}
-
-function canonicalJson(value: unknown): string {
-	if (value === null || typeof value !== 'object') {
-		const encoded = JSON.stringify(value);
-		if (encoded === undefined) {
-			throw new Error('Schema identity material must be JSON serializable');
-		}
-		return encoded;
-	}
-	if (Array.isArray(value)) {
-		return `[${value.map(canonicalJson).join(',')}]`;
-	}
-	return `{${Object.keys(value)
-		.sort()
-		.map(
-			(key) =>
-				`${JSON.stringify(key)}:${canonicalJson((value as Record<string, unknown>)[key])}`,
-		)
-		.join(',')}}`;
-}
-
 function toAtRestSchema(schema: TSchema): unknown {
 	try {
 		return JSON.parse(JSON.stringify(schema));
@@ -417,6 +402,20 @@ function toAtRestSchema(schema: TSchema): unknown {
 			cause,
 		});
 	}
+}
+
+function snapshotSchema<TSchemaValue extends TSchema>(
+	schema: TSchemaValue,
+): TSchemaValue {
+	return freezeOwnedJson(toAtRestSchema(schema)) as TSchemaValue;
+}
+
+function freezeOwnedJson<TValue>(value: TValue): TValue {
+	if (value === null || typeof value !== 'object' || Object.isFrozen(value)) {
+		return value;
+	}
+	for (const child of Object.values(value)) freezeOwnedJson(child);
+	return Object.freeze(value);
 }
 
 function readNullableInner(schema: unknown): unknown | null {

@@ -10,13 +10,13 @@ import {
 	isValidSnapshotChunk,
 	isValidSnapshotManifest,
 	type Mutation,
-	RECORD_SYNC_ADMISSION_LIMITS,
 	type PullRequest,
 	type PushRequest,
 	parseMutation,
 	parsePullResponse,
 	parsePushResponse,
 	parseSnapshotChunkResponse,
+	RECORD_SYNC_ADMISSION_LIMITS,
 	type RecordAuthorityBindingRequest,
 	type RecordSyncSqlite,
 	type RequestEnvelope,
@@ -79,12 +79,12 @@ type ReplicaMeta = {
 	actorId: string;
 	nextActorSequence: number;
 	appliedServerSequence: number;
-	databaseIncarnationId: string;
+	databaseIncarnationId: string | null;
 	protocolMajor: number;
 	syncStorageVersion: number;
 };
 
-/** Open one durable replica and bind it to the authority's database incarnation. */
+/** Open one durable replica; authority binding is deferred until synchronization. */
 export async function createReplicaRuntime<TTables extends TableDefinitions>({
 	definition,
 	sqlite,
@@ -134,30 +134,20 @@ export async function createReplicaRuntime<TTables extends TableDefinitions>({
 		onObserverError,
 	});
 	initializeReplicaTables(sqlite);
-
-	const bindingRequest = {
-		workspaceId: definition.id,
-		schemaIdentity: definition.schemaIdentity,
-		protocolMajor,
-	};
-	sync.bindWorkspace(bindingRequest.workspaceId);
 	const existing = readMetaIfPresent(sqlite);
-	let isAuthorityBindingVerified = false;
 	if (existing) {
 		assertStoredReplicaCompatibility(existing, protocolMajor);
 	} else {
-		const { databaseIncarnationId } = parseDatabaseBinding(
-			await sync.openDatabase(bindingRequest),
-		);
-		assertNonEmpty(databaseIncarnationId, 'databaseIncarnationId');
-		createReplicaBinding({
-			sqlite,
-			protocolMajor,
-			databaseIncarnationId,
-			createActorId,
-		});
-		isAuthorityBindingVerified = true;
+		createReplicaMeta({ sqlite, protocolMajor, createActorId });
 	}
+
+	const bindingRequest = {
+		workspaceId: definition.id,
+		schemaIdentity: definition.recordsSchemaHash,
+		protocolMajor,
+	};
+	sync.bindWorkspace(bindingRequest.workspaceId);
+	let isAuthorityBindingVerified = false;
 
 	async function verifyAuthorityBinding(signal?: AbortSignal): Promise<void> {
 		if (isAuthorityBindingVerified) return;
@@ -165,18 +155,31 @@ export async function createReplicaRuntime<TTables extends TableDefinitions>({
 			await sync.openDatabase(bindingRequest, signal),
 		);
 		assertNonEmpty(databaseIncarnationId, 'databaseIncarnationId');
-		if (databaseIncarnationId !== readMeta(sqlite).databaseIncarnationId) {
-			throw new Error(
-				'Replica database incarnation no longer matches authority',
-			);
-		}
+		sqlite.transaction(() => {
+			const meta = readMeta(sqlite);
+			if (meta.databaseIncarnationId === null) {
+				sqlite.run(
+					`UPDATE ${META_TABLE} SET database_incarnation_id = ? WHERE id = 1`,
+					[databaseIncarnationId],
+				);
+				return;
+			}
+			if (databaseIncarnationId !== meta.databaseIncarnationId) {
+				throw new ReplicaInvariantViolationError(
+					'Replica database incarnation no longer matches authority; discard this replica and rebootstrap from the authority',
+				);
+			}
+		});
 		isAuthorityBindingVerified = true;
 	}
 
 	function envelope(meta = readMeta(sqlite)): RequestEnvelope {
+		if (meta.databaseIncarnationId === null) {
+			throw new Error('Replica authority binding is missing');
+		}
 		return {
 			protocolMajor: meta.protocolMajor,
-			schemaIdentity: definition.schemaIdentity,
+			schemaIdentity: definition.recordsSchemaHash,
 			databaseIncarnationId: meta.databaseIncarnationId,
 		};
 	}
@@ -529,11 +532,12 @@ function initializeReplicaTables(sqlite: RecordSyncSqlite): void {
 				actor_id TEXT NOT NULL,
 				next_actor_sequence INTEGER NOT NULL CHECK(next_actor_sequence >= 1),
 				applied_server_sequence INTEGER NOT NULL CHECK(applied_server_sequence >= 0),
-				database_incarnation_id TEXT NOT NULL,
+				database_incarnation_id TEXT,
 				protocol_major INTEGER NOT NULL CHECK(protocol_major >= 1),
 				sync_storage_version INTEGER NOT NULL CHECK(sync_storage_version >= 1)
 			)`,
 		);
+		migrateNullableDatabaseIncarnation(sqlite);
 		sqlite.run(
 			`CREATE TABLE IF NOT EXISTS ${OUTBOX_TABLE}(
 				actor_sequence INTEGER PRIMARY KEY,
@@ -555,15 +559,39 @@ function initializeReplicaTables(sqlite: RecordSyncSqlite): void {
 	});
 }
 
-function createReplicaBinding({
+function migrateNullableDatabaseIncarnation(sqlite: RecordSyncSqlite): void {
+	const incarnationColumn = sqlite
+		.all<{ name: string; notnull: number }>(`PRAGMA table_info(${META_TABLE})`)
+		.find(({ name }) => name === 'database_incarnation_id');
+	if (!incarnationColumn) {
+		throw new Error('Replica metadata database incarnation column is missing');
+	}
+	if (incarnationColumn.notnull === 0) return;
+	sqlite.run(
+		`CREATE TABLE __epicenter_replica_next(
+			id INTEGER PRIMARY KEY CHECK(id = 1),
+			actor_id TEXT NOT NULL,
+			next_actor_sequence INTEGER NOT NULL CHECK(next_actor_sequence >= 1),
+			applied_server_sequence INTEGER NOT NULL CHECK(applied_server_sequence >= 0),
+			database_incarnation_id TEXT,
+			protocol_major INTEGER NOT NULL CHECK(protocol_major >= 1),
+			sync_storage_version INTEGER NOT NULL CHECK(sync_storage_version >= 1)
+		)`,
+	);
+	sqlite.run(
+		`INSERT INTO __epicenter_replica_next SELECT * FROM ${META_TABLE}`,
+	);
+	sqlite.run(`DROP TABLE ${META_TABLE}`);
+	sqlite.run(`ALTER TABLE __epicenter_replica_next RENAME TO ${META_TABLE}`);
+}
+
+function createReplicaMeta({
 	sqlite,
 	protocolMajor,
-	databaseIncarnationId,
 	createActorId,
 }: {
 	sqlite: RecordSyncSqlite;
 	protocolMajor: number;
-	databaseIncarnationId: string;
 	createActorId(): string;
 }): void {
 	const actorId = createActorId();
@@ -572,8 +600,8 @@ function createReplicaBinding({
 		`INSERT INTO ${META_TABLE}(
 			id, actor_id, next_actor_sequence, applied_server_sequence,
 			database_incarnation_id, protocol_major, sync_storage_version
-		) VALUES (1, ?, 1, 0, ?, ?, ?)`,
-		[actorId, databaseIncarnationId, protocolMajor, SYNC_STORAGE_VERSION],
+		) VALUES (1, ?, 1, 0, NULL, ?, ?)`,
+		[actorId, protocolMajor, SYNC_STORAGE_VERSION],
 	);
 }
 
@@ -593,7 +621,7 @@ type ReplicaMetaRow = {
 	actor_id: string;
 	next_actor_sequence: number;
 	applied_server_sequence: number;
-	database_incarnation_id: string;
+	database_incarnation_id: string | null;
 	protocol_major: number;
 	sync_storage_version: number;
 };
@@ -618,7 +646,9 @@ function decodeMeta(row: ReplicaMetaRow): ReplicaMeta {
 	) {
 		throw new Error('Stored appliedServerSequence is invalid');
 	}
-	assertNonEmpty(row.database_incarnation_id, 'stored databaseIncarnationId');
+	if (row.database_incarnation_id !== null) {
+		assertNonEmpty(row.database_incarnation_id, 'stored databaseIncarnationId');
+	}
 	assertPositiveInteger(row.protocol_major, 'stored protocolMajor');
 	assertPositiveInteger(row.sync_storage_version, 'stored syncStorageVersion');
 	return {
@@ -654,7 +684,8 @@ function takePushBatch(
 	start: number,
 ): Mutation[] {
 	const budget =
-		RECORD_SYNC_ADMISSION_LIMITS.encodedPushBytes - PUSH_ENVELOPE_ALLOWANCE_BYTES;
+		RECORD_SYNC_ADMISSION_LIMITS.encodedPushBytes -
+		PUSH_ENVELOPE_ALLOWANCE_BYTES;
 	const batch: Mutation[] = [];
 	let bytes = 0;
 	for (

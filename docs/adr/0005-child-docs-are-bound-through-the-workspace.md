@@ -1,6 +1,7 @@
 # 0005. Child docs are bound through the workspace, not the component
 
-- **Status:** Accepted
+- **Status:** Superseded
+- **Superseded by:** [ADR-0126](0126-child-documents-use-format-capabilities-and-evolve-outside-records-databases.md)
 - **Date:** 2026-06-15
 
 ## Context

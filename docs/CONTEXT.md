@@ -134,17 +134,29 @@ shapes, see `docs/adr/`.
 - **`defineTable` / `defineKv`**: schema builders for a workspace's current
   records tables and permanent synchronized key-value preferences. A table has
   one `{ fields, documents, touchOnDocumentEdit }` declaration; indexes are
-  physical storage policy, not logical table schema.
+  physical storage policy, not logical table schema. Every `define*` call
+  snapshots caller-owned inputs into a framework-owned immutable definition.
+  Fields and documents are separate namespaces, so the same semantic name may
+  exist in both and remains explicit as `row.<name>` versus
+  `table.docs.<name>`. Table and document names are persistent identity, not
+  display labels; renaming either creates new child-document addresses.
 - **Records-schema succession**: the first-class typed database-wide operation
   that transforms canonical records database A at head H into complete
   successor B for conditional authority activation. It never opens child
   documents.
-- **Records migration chain**: a separate explicitly invoked linear list of
+- **Records migration chain**: a separate declarative linear list of
   adjacent `defineRecordsMigration({ from, to, transform, discard })` steps. It
-  is not workspace definition state. `defineRecordsMigrations(steps)` validates
-  one path from the family's selected source hash to the current schema; the
-  runtime composes that path during one user-approved cutover and never
-  activates intermediate databases.
+  is not workspace definition state. Applications register generated history
+  and semantic transforms; the workspace lifecycle owns execution.
+  `defineRecordsMigrations(steps)` validates one path from the family's selected
+  source hash to the current schema; the runtime composes that path during one
+  cutover and never activates intermediate databases.
+- **Generated historical endpoint**: a committed module emitted from a records
+  definition and imported by application migrations. This is the sole supported
+  and documented historical-schema workflow. Its constructor lives at
+  `@epicenter/workspace/sqlite/generated` so generated TypeScript can resolve it;
+  that explicit subpath signals ownership but cannot prevent deliberate imports,
+  edits, casts, or generic row types that disagree with their descriptors.
 - **Records migration table rule**: a canonically identical same-named table
   copies automatically. A changed same-named table requires one row transform;
   a source-only table requires explicit `discard`; a target-only table begins
@@ -154,10 +166,26 @@ shapes, see `docs/adr/`.
   canonical source row against its historical descriptor before running a
   transform. Any nonconforming or quarantined row blocks succession and leaves
   the source database unchanged for diagnosis and export.
+- **Local-only records succession**: an automatic lifecycle update that builds
+  and selects a fresh local database while retaining the source for logical
+  export. It needs no user approval because no other device can contribute
+  forgotten work.
+- **Synchronized records succession**: an approval-gated lifecycle update. The
+  user synchronizes the devices whose work matters before activation
+  permanently fences the old database. Declining closes that workspace in the
+  current application.
+- **Logical recovery export**: the portable recovery surface for retained old
+  or blocked records. It contains logical schema and row state, never SQLite
+  pages, indexes, cursors, outboxes, or replica identity. Version one has no
+  old-schema compatibility viewer, generic SQLite editor, merge, or re-import.
 - **Child-document format conversion**: an explicit per-document application
   operation that reads one old format-addressed room and initializes one new
   room through capability-specific code. Old room bytes remain retained; there
   is no generic registry or workspace-wide document scan.
+  `historicalDocument(...)` names one retained old endpoint, while
+  `workspace.documents.open(reference, rowId)` and the current declared
+  `table.docs.<name>.open(rowId)` open the two sides explicitly. Opening does not
+  copy, enumerate, fence, reconcile, or choose authority.
 - **Cross-plane authority transfer**: explicit app-owned maintenance that moves
   data between records and child documents using ordinary typed readers and
   writers, then chooses exactly one authoritative plane. It has no generic
@@ -166,8 +194,10 @@ shapes, see `docs/adr/`.
   they stop being authoritative after cutover.
 - **Historical records schema**: an inert generated descriptor with phantom row
   types, conventionally exported as `recordsSchemaV1`, `recordsSchemaV2`, and so
-  on. These names are source-history labels; `recordsSchemaHash` is the
-  authoritative compatibility identity.
+  on. The supported application workflow imports generated artifacts rather
+  than pairing descriptor strings with handwritten generic types. These names
+  are source-history labels; `recordsSchemaHash` is the authoritative
+  compatibility identity.
 - **`satisfiesWorkspace`**: the bundle-conformance helper (renamed from the older
   `defineWorkspaceBundle`).
 - **Actions and collaboration**: actions live on the workspace bundle;
@@ -181,8 +211,9 @@ shapes, see `docs/adr/`.
   rows surface in `scan()`, never silently dropped.
 - **Child document**: a separate, lazy Y.Doc owned by one row and reached through
   `ws.tables.X.docs.name.open(rowId)`. The workspace derives its address from the
-  workspace, table, row, document name, and document format hash; the format
-  capability attaches the typed content handle after the runtime opens the doc.
+  workspace, table, a collision-resistant digest of the full row ID, document
+  name, and document format hash; the format capability attaches the typed
+  content handle after the runtime opens the doc.
 - **Worker**: running behavior that observes workspace state and writes results
   back. Workers may be local (every node runs them) or agent-bound (one
   configured agent answers). A conversation is answered by the client agent loop

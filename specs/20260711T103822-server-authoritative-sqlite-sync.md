@@ -6,10 +6,11 @@
 
 ## One Sentence
 
-A user-approved update rebuilds the current records database under a new
-immutable records schema; a trusted application client prepares a complete
-successor from canonical database A at head H, and the schema-blind authority
-activates it only if A is still current and unchanged.
+A synchronized workspace update rebuilds the current records database under a
+new immutable records schema after explicit approval; a trusted application
+client prepares a complete successor from canonical database A at head H, and
+the schema-blind authority activates it only if A is still current and
+unchanged. A local-only workspace performs the same replacement automatically.
 
 ## How to read this spec
 
@@ -49,7 +50,8 @@ portable contract.
 
 ## Durable decisions
 
-This spec implements and tests these Proposed ADRs:
+This spec implements and tests the following ADR decisions. Their individual
+files own current acceptance status:
 
 - [ADR-0119](../docs/adr/0119-complete-metadata-replicas-sync-through-schema-blind-server-ordered-mutations.md): complete metadata replicas use server-ordered logical mutations.
 - [ADR-0120](../docs/adr/0120-persisted-fields-are-atomic-cells-and-collaborative-bodies-are-yjs-documents.md): record fields are atomic cells; collaborative bodies are Yjs documents.
@@ -60,7 +62,7 @@ This spec implements and tests these Proposed ADRs:
 - [ADR-0125](../docs/adr/0125-record-schemas-are-immutable-evolution-creates-a-successor-database.md): record schemas are immutable; evolution creates a successor database.
 - [ADR-0126](../docs/adr/0126-child-documents-use-format-capabilities-and-evolve-outside-records-databases.md): child documents use format capabilities and evolve outside records databases.
 
-The ADR numbers remain provisional until merge.
+ADR numbers allocated on this branch remain provisional until merge.
 
 ## Current state
 
@@ -171,6 +173,8 @@ small and implements no app-specific search, migration, AI, or query layer.
 - Local reads and queries never require a server.
 - A local write commits to application SQLite before the UI reports success.
 - A local-only database has no dormant actor, cursor, or synchronization outbox.
+- A recognized local-only schema change updates automatically through a fresh
+  successor database. Failure leaves the retained source selected on reopen.
 
 ### Synchronized operation
 
@@ -361,8 +365,9 @@ document, touch policy, or local index does not.
 
 Workspace identity, KV, child documents, indexes, and physical storage do not
 enter the records schema hash. Each document capability derives its own format
-hash from its canonical descriptor. Its address combines workspace, table, row,
-document name, and format hash; runtime `databaseId` never enters that address.
+hash from its canonical descriptor. Its address combines workspace, table, a
+collision-resistant digest of the full row ID, document name, and format hash;
+runtime `databaseId` never enters that address.
 A format change therefore opens a new room. Capability-specific application
 code may convert one document into that room while retaining the old room; this
 does not succeed the SQLite records database.
@@ -441,10 +446,11 @@ Epicenter separates three operations:
    reads an external Yjs room, or migrates document bytes.
 2. **Child-document format conversion** is explicit and per document. A format
    change creates a separately format-addressed room. Capability-specific
-   application code may read one old room and initialize one new room. Old room
-   bytes remain retained. Version one has no generic document migration
-   registry, cross-format graph, or workspace-wide scan that discovers and
-   opens every lazy document.
+   application code may name one old endpoint with `historicalDocument(...)`,
+   open it through `workspace.documents.open(reference, rowId)`, and initialize
+   the new declared room. Old room bytes remain retained. Version one has no
+   generic document migration registry, cross-format graph, or workspace-wide
+   scan that discovers and opens every lazy document.
 3. **Cross-plane authority transfer** moves data between records and child
    documents through an explicit app-owned maintenance or successor operation.
    The app may use ordinary typed readers and writers, but it must choose
@@ -528,6 +534,15 @@ state.
 `actorId` and `actorSequence` remain ordinary retry-safe synchronization state
 and do not enter migration requests.
 
+The current binary treats a recognized old synchronized schema as a workspace
+compatibility boundary. It explains that the user must synchronize the devices
+whose changes matter, stop editing, and approve the update. Choosing `Not now`
+closes only that workspace. The current application does not open the retained
+old database as a read-only historical mode. During preparation the workspace
+is unavailable for editing in that client. A source-head race restarts from a
+fresh snapshot; repeated races surface the instruction to stop editing rather
+than a merge or conflict workflow.
+
 The server never executes app migration code. It publishes a canonical snapshot
 at H, accepts immutable candidate chunks, verifies upload integrity and declared
 completeness, and performs conditional activation. A continues accepting
@@ -590,8 +605,10 @@ historical source descriptor before invoking typed transforms, then validates
 every emitted row against the target descriptor before upload. Any
 nonconforming or quarantined source row blocks succession. It is never silently
 discarded; A remains unchanged and available for diagnosis and logical export.
-The UI may report counts and row identities, but this wave does not design a
-repair system.
+The ordinary UI reports the blocker count and confirms that nothing changed.
+Raw table names, row ids, and validation reasons appear only in bounded
+technical details or a diagnostic export. This system has no generic repair
+editor.
 
 Candidates require no exclusive owner. Several clients may prepare from the
 same H; the first successful activation changes the family selection, so every
@@ -608,22 +625,23 @@ other activation fails its compare-and-swap without special race state.
 | Candidate binding revalidation and `(family.current == A && A.head == H)` | Workspace-family authority transaction |
 | Atomic selection and permanent supersession | Workspace-family authority transaction |
 | Actor id, actor sequence, cursor, and outbox retry semantics | Ordinary sync protocol, outside migration |
-| Forgotten old bytes, read-only open, and logical export | Local storage owner |
+| Forgotten old bytes, retention, and logical export | Local storage owner |
 
 The conditional update changes only the records database selection. Permanent
 KV and independently addressed Yjs child documents continue syncing normally.
 
 A local-only workspace uses the same logical transform without server
-coordination:
+coordination or user approval:
 
 ```txt
 current local database at schema A
+  -> lifecycle recognizes the source and starts automatically
   -> take one short process-local exclusive cutover
   -> create fresh local database at schema B
   -> transform the logical source snapshot directly to B
   -> verify the complete target
   -> atomically select the target in local runtime metadata
-  -> retain the source for read/export until explicit cleanup
+  -> retain the source for logical export until explicit cleanup
 ```
 
 This is still database succession, not an eager rewrite of mixed-version rows.
@@ -638,9 +656,11 @@ physical storage, KV, and child-document formats, so generic
 `defineMigration`/`defineMigrations` names would imply a universal abstraction
 that does not exist.
 
-Records migrations are not permanent behavior on `defineWorkspace`. A release
-exports a separate, explicitly invoked linear chain of adjacent steps. Every
-step binds one inert source descriptor to one target descriptor. The runtime
+Records migrations are not behavior on `defineWorkspace`. A release exports a
+separate declarative linear chain of adjacent steps and registers it with the
+workspace lifecycle. Application code does not invoke a row runner, construct a
+source snapshot, upload a candidate, or activate a database. Every step binds
+one generated inert source descriptor to one target descriptor. The runtime
 finds and composes the unique path from the family authority's selected source
 hash to the current workspace hash during one migration attempt. It does not
 create or activate intermediate databases. Branches, shortcuts, cycles, and
@@ -681,6 +701,8 @@ that a source-only table intentionally does not enter the successor; it never
 means silent handling of a nonconforming row. A transform receives `{ id,
 cells }` and returns exact target cells or `null`. The runtime carries the source
 row id. A records transform cannot open a child document or external Yjs room.
+Equal source and target hashes are rejected by `defineRecordsMigration`; a
+no-op is not an adjacent schema step.
 
 The generic path refuses, at compile time where the type system can carry it:
 
@@ -700,14 +722,20 @@ randomness, network, or filesystem access. It does enforce descriptor
 continuity, source and target row validation, same-table routing, zero-or-one
 output, and id preservation.
 
-Historical modules store the canonical descriptor as truth and derive its hash;
-they never call old `defineTable` builders. Source-code history labels use
-`recordsSchemaV1`, `recordsSchemaV2`, and so on. These labels are not
-compatibility identity; `recordsSchemaHash` is authoritative. The first system
-does not automatically retire chain prefixes because hosted authority data
-cannot prove non-use across independent self-hosted instances. Any later
-removal is release policy with explicit deployment-support evidence, not a
-sync-engine inference.
+Historical modules are generated, committed artifacts. They store the canonical
+descriptor as truth, derive its hash, and never call old `defineTable` builders.
+Importing generated endpoints is the sole supported and documented application
+workflow. Generated TypeScript resolves its constructor through
+`@epicenter/workspace/sqlite/generated`; the ordinary SQLite barrel does not
+export it. The explicit subpath creates ownership friction, not a security or
+type-soundness boundary. Deliberate code can still import the constructor, edit
+generated output, cast values, or supply a generic that disagrees with the
+descriptor. Source-code history labels use `recordsSchemaV1`, `recordsSchemaV2`,
+and so on. These labels are not compatibility identity; `recordsSchemaHash` is
+authoritative. The first system does not automatically retire chain prefixes
+because hosted authority data cannot prove non-use across independent
+self-hosted instances. Any later removal is release policy with explicit
+deployment-support evidence, not a sync-engine inference.
 
 The generic migration path deliberately refuses table routing, renames, splits,
 merges, aggregation, and id changes. A remodel that needs those operations uses
@@ -719,11 +747,13 @@ its API and recovery UX are outside this wave.
 
 There is no private-work migration phase. The user approved from canonical head
 H after synchronizing the devices they cared about. A forgotten old replica may
-open its old local database read-only and display or logically export it, but
-the authority permanently rejects writes to the superseded database and version
+retain and read its old local database only to produce a logical export. The
+current application does not display it as an old-schema workspace. The
+authority permanently rejects writes to the superseded database, and version
 one never transforms, compares, merges, or generically re-imports its old-schema
 overlay. Recovery beyond logical export is app-owned and outside schema
-succession.
+succession. A generic recovery tool, if later earned, reads logical exports; it
+does not edit live SQLite files.
 
 ## Physical storage migrations
 
@@ -819,6 +849,13 @@ principal, schema, or database identifiers into a file path.
 The public API should expose app concepts only. This is the target for review,
 not a claim about the current implementation.
 
+Every `define*` call has value semantics. It snapshots the declaration into
+framework-owned immutable state; later mutation of caller-owned schema maps,
+table maps, KV maps, document maps, or schema objects cannot change the
+definition. Generated historical modules are the only supported application
+workflow for historical endpoints. Low-level source scans, row runners,
+candidate upload, and activation remain internal to the workspace lifecycle.
+
 ### Define the current schema
 
 ```ts
@@ -902,12 +939,18 @@ What one realistic call site teaches:
   addressed per-row Yjs documents. `body` is an app-authored name, not a
   built-in. A capability owns its canonical descriptor, derived format hash,
   and typed `attach(ydoc)` implementation; no string switch or arbitrary raw
-  attach function enters the schema. `touchOnDocumentEdit` names one instant
-  field the runtime stamps, coalesced and best-effort, after a local edit to any
-  document on the row. It enters neither compatibility identity.
+  attach function enters the schema. Fields and documents are separate
+  namespaces, so `row.body` and `table.docs.body` may coexist. Matching names do
+  not imply synchronization or shared authority. Table and document names are
+  persistent room-address segments; renaming either creates new document
+  identities. `touchOnDocumentEdit` names one instant field the runtime stamps,
+  coalesced and best-effort, after a local edit to any document on the row. The
+  stamp is not atomic with the Yjs edit, proof of durability, or a complete
+  cross-device modification timestamp. It enters neither compatibility
+  identity.
 - `defineWorkspace` describes only the current workspace. The records migration
-  bundle is separate because succession is an explicit user-approved operation,
-  not normal boot behavior. Each adjacent step names only changed-table
+  bundle is a separate declaration registered with the lifecycle; application
+  code does not execute it. Each adjacent step names only changed-table
   transforms and explicit source-only `discard` entries. Descriptor-identical
   tables copy automatically, target-only tables begin empty, and the runtime
   composes the unique chain without activating intermediate databases.
@@ -1018,18 +1061,47 @@ No generic splits, merges, or reference remapper
 No generic child-document migration hidden inside record succession
 No universal migration registry across records and Yjs documents
 No document enumeration or workspace-wide lazy-document scan
+No application-facing source scanner, row runner, candidate uploader, or activator
+No supported hand-authored historical descriptor/generic pairing in application code
+No live mutable definition after a `define*` call returns
+No no-op records migration step
 No permanent cross-plane dual write, generic rollback, or reconciliation
 No atomic transaction across SQLite records and Yjs documents
 No server-executed application conversion
 No app-authored epoch, revision, or incarnation
 No physical restore that preserves replica actor identity
 No KV rows or KV migration in the records plane
+No old-schema compatibility mode in the current application
+No generic SQLite recovery editor or live-database repair UI
+No automatic merge or generic re-import of forgotten old-schema work
 ```
 
 These are deletion decisions, not missing placeholders. A future product may
 earn one back only with a concrete consumer and a new decision.
 
 ## Implementation waves
+
+Build backward from the product promise, not forward from the existing public
+plumbing:
+
+1. Close the declaration boundary. Definitions have value semantics,
+   historical endpoints are generated artifacts, no-op steps are invalid, and
+   lifecycle machinery is not an application API.
+2. Establish an honest source. The storage owner can identify and repeatedly
+   scan the exact immutable `A@H` in canonical order without materializing it.
+3. Establish an honest destination. The lifecycle owner stages, seals, and
+   verifies a complete immutable candidate without reusing sync-compaction
+   manifests.
+4. Serialize cutover. Current-database write admission, head-conditional
+   activation, and permanent fencing make the authority transition exact.
+5. Add the product lifecycle. Local-only succession runs automatically;
+   synchronized succession asks for approval; blockers and logical recovery
+   export remain bounded technical surfaces.
+6. Convert applications only after the new path is complete, then delete every
+   superseded compatibility and storage path.
+
+This order is a dependency rule. A later slice must not force an earlier owner
+boundary to remain public or mutable.
 
 ### Wave 0: Build the records definition foundation
 
@@ -1040,14 +1112,16 @@ earn one back only with a concrete consumer and a new decision.
 - [x] Separate runtime storage migrations from app schema definitions.
 - [x] Add inert historical schema descriptors and the generated-module renderer
   (`renderHistoricalSchemaModule`).
-- [ ] Replace the invalidated `defineWorkspace.imports` prototype with a
+- [x] Replace the invalidated `defineWorkspace.imports` prototype with a
   separate linear adjacent records migration bundle and same-table-only
   transforms.
-- [ ] Make split, merge, table-routing, and id-changing migration results
+- [x] Make split, merge, table-routing, and id-changing migration results
   unrepresentable in the replacement type tests.
 - [x] Make workspace `name` optional display metadata.
 - [x] Replace `(fields, options)` with one
   `defineTable({ fields, documents?, touchOnDocumentEdit? })` shape.
+- [x] Keep field and document declarations as independent namespaces; prove a
+  same-named cell and child document remain separately typed and addressable.
 - [x] Add the closed branded `document` capability catalog with plain text,
   an XML-fragment-backed rich-text candidate, and validated keyed records.
 - [x] Give each document capability a canonical descriptor, derived format hash,
@@ -1055,9 +1129,20 @@ earn one back only with a concrete consumer and a new decision.
 - [x] Exclude documents from `recordsDescriptor` and `recordsSchemaHash`.
 - [x] Put document format identity at the child-document admission/address seam
   and prove it fences incompatible Yjs rooms.
+- [x] Hash the complete row ID into a fixed-size room segment so valid record
+  IDs do not inherit the room-address grammar.
+- [x] Add one nominal historical-document reference and explicit typed opener
+  without adding a registry, scan, or conversion runner.
 - [x] Remove application indexes from logical table definitions.
 - [x] Rename generic `schemaDescriptor` / `schemaHash` vocabulary to
   `recordsDescriptor` / `recordsSchemaHash` across the SQLite path.
+- [x] Give every definition factory value semantics: snapshot caller-owned
+  schema and declaration inputs, freeze framework-owned outputs, and prove
+  later caller mutation cannot change runtime behavior or identity.
+- [x] Make generated historical modules the only supported application workflow
+  for old endpoints; expose the constructor only through the explicit
+  generated-artifact subpath and omit it from the ordinary SQLite barrel.
+- [x] Reject equal source and target hashes in `defineRecordsMigration`.
 - [ ] Update real app definitions as API proof, starting with Honeycrisp.
   (Deferred to the app-by-app records migration: no production app is on the
   SQLite path yet, so the Wave 1 proof is Honeycrisp-shaped definition tests.)
@@ -1090,6 +1175,9 @@ earn one back only with a concrete consumer and a new decision.
 
 ### Wave 2: Build database succession
 
+- [x] Stop exporting source-snapshot, row-runner, candidate-upload, and
+  activation plumbing as application API. The workspace lifecycle owns
+  execution after an app registers generated history and adjacent transforms.
 - [ ] Introduce environment-owned workspace storage capabilities. Browser and
   host callers provide at most one root; no app supplies a per-workspace path,
   OPFS name, schema suffix, or database suffix.
@@ -1098,8 +1186,9 @@ earn one back only with a concrete consumer and a new decision.
 - [ ] Rename authority and replica `incarnation` state to records `database` state.
 - [ ] Implement family `current_database_id` selection.
 - [ ] Publish canonical source snapshots with an exact server head H.
-- [ ] Implement the separate adjacent records-migration API and runner. Do not
-  reuse compaction snapshot manifests as successor candidates.
+- [x] Implement and prove the bounded-memory adjacent records-migration runner.
+  Keep it internal to lifecycle orchestration and do not reuse compaction
+  snapshot manifests as successor candidates.
 - [ ] Implement immutable candidate manifests, idempotent chunk upload, upload
   completeness/integrity sealing, and safe abandoned-candidate cleanup.
 - [ ] Make every ordinary write atomically require family-current and writable,
@@ -1114,8 +1203,11 @@ earn one back only with a concrete consumer and a new decision.
 - [ ] Prove concurrent candidates race only at the family-selection and
   source-head compare-and-swap.
 - [ ] Fence superseded databases from further synchronization.
-- [ ] Preserve forgotten old local databases for read/export only; provide no
-  automatic old-schema reconciliation path.
+- [ ] Make local-only succession automatic and synchronized succession
+  approval-gated through the workspace lifecycle.
+- [ ] Preserve forgotten old local databases for logical export only. Provide
+  no current-app compatibility viewer, generic SQLite editor, automatic merge,
+  or generic re-import path.
 
 ### Wave 3: Prove ordinary synchronization
 
@@ -1152,7 +1244,9 @@ earn one back only with a concrete consumer and a new decision.
   readers, and caller-authored mirror-path helpers after their imports stop.
 - [ ] Delete unused epoch/root-incarnation adapters, fixtures, and docs.
 - [ ] Supersede ADR-0006 when the replacement behavior lands.
-- [ ] Flip ADRs 0119 through 0126 to Accepted as their production facts land.
+- [ ] Flip the remaining Proposed ADRs in 0119 through 0126 to Accepted as
+  their production facts land. ADRs 0123 and 0126 already own the settled
+  storage-plane and document-capability decisions.
 - [ ] Move current protocol facts into `docs/reference/`.
 - [ ] Add this spec to `docs/spec-history.md` and delete it.
 
@@ -1171,7 +1265,7 @@ earn one back only with a concrete consumer and a new decision.
 | Invalid source rows never disappear | Historical validation blocks the whole succession, reports row identities, and leaves A unchanged |
 | Migration race has one winner | Concurrent sealed candidates from A/H; one conditional activation succeeds |
 | Device participation is not protocol state | Migration requests and authority tables contain no device-participation fields |
-| Forgotten local work has the stated loss | Superseded local database remains readable/exportable; no automatic merge or generic re-import path |
+| Forgotten local work has the stated loss | Superseded local database can produce a logical export; the current app cannot open it, merge it, or generically re-import it |
 | Old records schema cannot keep syncing | Records-schema mismatch and superseded-database fencing test |
 | Document implementation refactor is compatible | Same descriptor yields the same format hash and address |
 | Incompatible document formats never share a room | Different descriptors yield different format-addressed guids |
@@ -1207,13 +1301,14 @@ These decisions are settled unless their listed falsifier appears. Items that
 request a prototype are implementation proof, not unresolved product approval.
 
 1. **Records migration API ownership and shape** (direction resolved 2026-07-12)
-   - Decision: delete `defineWorkspace.imports`. Define a separate explicitly
-     invoked linear adjacent chain using
+   - Decision: delete `defineWorkspace.imports`. Define a separate declarative
+     linear adjacent chain registered with the workspace lifecycle using
      `defineRecordsMigration({ from, to, transform, discard })` and
      `defineRecordsMigrations(steps)`. Descriptor-identical same-named tables copy
      automatically; changed same-named tables require a transform; source-only
      tables require `discard`; target-only tables begin empty. The runtime owns
-     ids and composes one path to current during one user-approved cutover.
+     ids and composes one path to current during one lifecycle-owned cutover;
+     synchronized cutover requires approval and local-only cutover is automatic.
    - Keep generated inert descriptors as the sole authored truth and derive
      their hashes. Use `recordsSchemaV1` source-history labels; hashes remain
      authoritative. Refuse table routing, renames, splits, merges, aggregation,
@@ -1234,8 +1329,8 @@ request a prototype are implementation proof, not unresolved product approval.
      writers in one Yjs room.
 
 4. **Records migration surface proof**
-   - Prototype the separate adjacent-chain API against the existing negative
-     type gates before implementation. Prove chain linearity, derived
+   - The adjacent-chain API and bounded runner tests prove chain linearity,
+     derived
      source-table totality, same-table routing, exact target cells, implicit
      descriptor-equal copy, explicit discard, runtime-owned ids, row omission,
      and descriptor-derived hashes.
@@ -1247,9 +1342,10 @@ request a prototype are implementation proof, not unresolved product approval.
      cleanup policy later.
 
 6. **Forgotten old-schema work** (resolved 2026-07-12)
-   - Decision: it remains locally readable/exportable and never rejoins
-     automatically. Recovery is an explicit app-owned export/import operation,
-     not schema succession or a framework conflict-review product.
+   - Decision: the runtime retains it for logical export and it never rejoins
+     automatically. Version one exposes logical export only. A later app-owned
+     recovery service may consume that export when a concrete workflow earns
+     it; this is not schema succession or a framework conflict-review product.
 
 7. **Database authority topology**
    - Current recommendation: one principal/workspace authority with several
@@ -1263,19 +1359,46 @@ request a prototype are implementation proof, not unresolved product approval.
      Epicenter owns a persisted node and mark vocabulary. Editor UI and its
      higher-level rich-text schema remain app-owned.
 
+9. **Definition and succession ownership** (resolved 2026-07-12)
+   - Decision: `define*` calls produce framework-owned immutable values.
+     Historical endpoints are generated artifacts. Applications register the
+     current definition and adjacent semantic transforms; the workspace
+     lifecycle owns source snapshots, row execution, candidates, and
+     activation. Equal-hash steps are invalid at `defineRecordsMigration`.
+
+10. **Succession user contract** (resolved 2026-07-12)
+    - Decision: local-only succession runs automatically. Synchronized
+      succession requires approval because activation can exclude forgotten
+      device work permanently. `Not now` closes the workspace in the current
+      binary. Blocking counts are user-facing; row identities and validation
+      reasons are technical details. Forgotten old local state is retained for
+      logical export, not opened as an old-schema compatibility mode. Version
+      one has no generic SQLite editor, repair UI, merge, or re-import path.
+
 ## Success criteria
 
 - [ ] App definitions contain no epoch, root incarnation, or row-version API.
+- [ ] Every definition is a framework-owned immutable value; mutating authored
+  inputs after `define*` returns changes neither identity nor runtime behavior.
+- [ ] Application migrations import committed generated historical endpoints;
+  the renderer uses the generated-artifact subpath and the ordinary SQLite
+  barrel does not export the historical constructor.
 - [ ] Records migration definitions use only
   `defineRecordsMigration({ from, to, transform, discard })` and
   `defineRecordsMigrations(steps)` with implicit descriptor-equal copy.
 - [ ] Records transforms cannot open child documents or external Yjs rooms;
   document conversion and cross-plane transfer remain explicit app operations.
+- [x] A narrow historical-document reference lets explicit converter code
+  address both the retained old room and the new declared room. It introduces
+  no generic registry, scan, authority cutover, or conversion runner.
 - [ ] Each records database accepts exactly one canonical records schema hash.
 - [ ] The server stages and conditionally activates but never runs app migration
   code.
 - [ ] Every source row validates against its historical descriptor before a
   transform runs; nonconforming rows block succession without changing A.
+- [ ] Succession execution plumbing is internal; applications register current
+  schema and adjacent transforms but never construct source scans, invoke row
+  runners, upload candidates, or activate databases.
 - [ ] Schema succession activates one complete target atomically.
 - [ ] Activation succeeds only when the family still selects source A and A is
   still exactly at the snapshot head H.
@@ -1285,8 +1408,12 @@ request a prototype are implementation proof, not unresolved product approval.
   cleanup follow the specified replay/conflict and serialization rules.
 - [ ] Records succession authority state contains no device-participation or
   source-locking lifecycle.
-- [ ] Forgotten old-schema work remains locally readable/exportable but cannot
-  automatically synchronize into the successor.
+- [ ] The runtime retains forgotten old-schema work for logical export, but it
+  cannot automatically synchronize into the successor.
+- [ ] Local-only succession is automatic; synchronized succession requires
+  approval, and declining closes only that workspace.
+- [ ] Recovery exports logical records. The current application does not open
+  retained old schemas, and no generic SQLite editor or repair UI exists.
 - [ ] Logical snapshots are the only portable records format.
 - [ ] Browser, Bun, and Durable Object adapters pass one conformance suite.
 - [ ] App call sites never author SQLite file paths, OPFS names, schema suffixes,

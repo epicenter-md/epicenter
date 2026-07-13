@@ -46,9 +46,13 @@ const utf8 = new TextEncoder();
  * `defaultValue` is always a factory: the library calls it on every default
  * firing, so each call returns a fresh value safe to mutate.
  */
+/** Nominal identity carried only by defineKv factory products. */
+declare const kvDefinitionBrand: unique symbol;
+
 export type KvDefinition<S extends TSchema = TSchema> = {
-	schema: S;
-	defaultValue: () => Static<S>;
+	readonly schema: S;
+	readonly defaultValue: () => Static<S>;
+	readonly [kvDefinitionBrand]: true;
 };
 
 /** Extract the value type from a KvDefinition. */

@@ -253,7 +253,7 @@ export function createApplicationDatabase<TTables extends TableDefinitions>(
 		identity: {
 			kind,
 			workspaceId: definition.id,
-			schemaIdentity: definition.schemaIdentity,
+			schemaIdentity: definition.recordsSchemaHash,
 		},
 		kind,
 		tables,
@@ -354,7 +354,7 @@ function createApplicationTable<TDefinition extends TableDefinition>({
 	observe: (callback: (changedIds: ReadonlySet<string>) => void) => () => void;
 }): ApplicationTable<RowFor<TDefinition>> {
 	type TRow = RowFor<TDefinition>;
-	const columns = definition.columns as Record<string, TSchema>;
+	const columns = definition.fields as Record<string, TSchema>;
 	const compiledColumns = definition.compiledColumns as Record<
 		string,
 		CompiledColumn
@@ -572,34 +572,13 @@ function initializeDatabase(
 	kind: 'standalone' | 'replica',
 ): void {
 	sqlite.transaction(() => {
-		const storedRevision = inspectDatabaseIdentity(sqlite, definition, kind);
+		inspectDatabaseIdentity(sqlite, definition, kind);
 		sqlite.run(
 			`CREATE TABLE IF NOT EXISTS ${quoteIdentifier(META_TABLE)} ("key" TEXT PRIMARY KEY, "value" TEXT NOT NULL)`,
 		);
 		sqlite.run(
 			`CREATE TABLE IF NOT EXISTS ${quoteIdentifier(QUARANTINE_TABLE)} ("table_name" TEXT NOT NULL, "row_id" TEXT NOT NULL, "cells_json" TEXT NOT NULL, "first_seen_sequence" INTEGER NOT NULL, "reason" TEXT NOT NULL, PRIMARY KEY ("table_name", "row_id"))`,
 		);
-
-		// A fresh database is created directly at the current representation. An
-		// existing database runs only its missing authored representation steps.
-		// Epoch transforms belong to database-boundary import and never run here.
-		if (storedRevision !== undefined) {
-			for (
-				let revision = storedRevision + 1;
-				revision <= definition.storageRevision;
-				revision++
-			) {
-				const migration = definition.migrations[revision - 2];
-				migration?.apply?.({
-					sql(query, ...parameters) {
-						return sqlite.all<SqliteRow>(
-							query,
-							parameters.map(asSqliteValue),
-						) as unknown[];
-					},
-				});
-			}
-		}
 
 		for (const [tableName, tableDefinition] of Object.entries(
 			definition.tables,
@@ -609,7 +588,7 @@ function initializeDatabase(
 					`Table name '${tableName}' uses the reserved internal prefix`,
 				);
 			}
-			const columns = tableDefinition.columns as Record<string, TSchema>;
+			const columns = tableDefinition.fields as Record<string, TSchema>;
 			const compiledColumns = tableDefinition.compiledColumns as Record<
 				string,
 				CompiledColumn
@@ -632,39 +611,31 @@ function initializeDatabase(
 			sqlite.run(
 				`CREATE TABLE IF NOT EXISTS ${quoteIdentifier(tableName)} (${columnDdl.join(', ')})`,
 			);
-
-			for (const [
-				index,
-				columns,
-			] of tableDefinition.options.indexes.entries()) {
-				for (const column of columns) {
-					if (!tableDefinition.columns[column]) {
-						throw new Error(
-							`Index on '${tableName}' names unknown column '${column}'`,
-						);
-					}
-				}
-				sqlite.run(
-					`CREATE INDEX IF NOT EXISTS ${quoteIdentifier(`${INTERNAL_PREFIX}idx_${tableName}_${index}`)} ON ${quoteIdentifier(tableName)} (${columns.map(quoteIdentifier).join(', ')})`,
-				);
-			}
 		}
 
 		sqlite.run(
 			`INSERT INTO ${quoteIdentifier(META_TABLE)} ("key", "value") VALUES ('storage_revision', ?) ON CONFLICT("key") DO UPDATE SET "value" = excluded."value"`,
-			[String(definition.storageRevision)],
+			[String(APPLICATION_STORAGE_REVISION)],
 		);
 		writeMeta(sqlite, 'workspace_id', definition.id);
-		writeMeta(sqlite, 'schema_identity', definition.schemaIdentity);
+		writeMeta(sqlite, 'schema_hash', definition.recordsSchemaHash);
 		writeMeta(sqlite, 'database_kind', kind);
 	});
 }
+
+/**
+ * Runtime-owned physical revision of the application-table layout. App
+ * definitions no longer author representation migrations (ADR-0125); when
+ * this runtime changes its own DDL it bumps this constant and owns the
+ * in-place migration.
+ */
+const APPLICATION_STORAGE_REVISION = 1;
 
 function inspectDatabaseIdentity(
 	sqlite: RecordSyncSqlite,
 	definition: WorkspaceDefinition,
 	kind: 'standalone' | 'replica',
-): number | undefined {
+): void {
 	const userTables = sqlite.all<{ name: string }>(
 		"SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
 	);
@@ -675,17 +646,17 @@ function inspectDatabaseIdentity(
 				'Workspace database has no identity metadata; refusing to adopt a non-empty database',
 			);
 		}
-		return undefined;
+		return;
 	}
 
 	const storedRevisionText = readMeta(sqlite, 'storage_revision');
 	const storedWorkspaceId = readMeta(sqlite, 'workspace_id');
-	const storedSchemaIdentity = readMeta(sqlite, 'schema_identity');
+	const storedRecordsSchemaHash = readMeta(sqlite, 'schema_hash');
 	const storedKind = readMeta(sqlite, 'database_kind');
 	if (
 		storedRevisionText === undefined ||
 		storedWorkspaceId === undefined ||
-		storedSchemaIdentity === undefined ||
+		storedRecordsSchemaHash === undefined ||
 		storedKind === undefined
 	) {
 		throw new Error(
@@ -708,28 +679,16 @@ function inspectDatabaseIdentity(
 			`Workspace database is '${storedKind}', not '${kind}'; refusing the wrong lifecycle door`,
 		);
 	}
-	if (storedRevision > definition.storageRevision) {
+	if (storedRevision > APPLICATION_STORAGE_REVISION) {
 		throw new Error(
-			`Workspace database revision ${storedRevision} is newer than this definition's revision ${definition.storageRevision}`,
+			`Workspace database revision ${storedRevision} is newer than this runtime's revision ${APPLICATION_STORAGE_REVISION}`,
 		);
 	}
-	for (
-		let revision = storedRevision + 1;
-		revision <= definition.storageRevision;
-		revision++
-	) {
-		if (definition.migrations[revision - 2]?.epoch !== undefined) {
-			throw new Error(
-				`Workspace revision ${revision} changes schema epoch; open it through the explicit epoch-upgrade/import flow`,
-			);
-		}
-	}
-	if (storedSchemaIdentity !== definition.schemaIdentity) {
+	if (storedRecordsSchemaHash !== definition.recordsSchemaHash) {
 		throw new Error(
-			'Workspace schema identity does not match the database; refusing typed access',
+			'Workspace schema hash does not match the database; refusing typed access',
 		);
 	}
-	return storedRevision;
 }
 
 function readLogicalSnapshot<TTables extends TableDefinitions>(
@@ -897,7 +856,7 @@ function readProjectionCells(
 	if (quarantined) return JSON.parse(quarantined.cellsJson) as Cells;
 	const tableDefinition = definition.tables[table];
 	if (!tableDefinition) return undefined;
-	const columns = tableDefinition.columns as Record<string, TSchema>;
+	const columns = tableDefinition.fields as Record<string, TSchema>;
 	const codecs = codecsFor(tableDefinition);
 	const stored = sqlite.all<SqliteRow>(
 		`SELECT ${Object.keys(columns).map(quoteIdentifier).join(', ')} FROM ${quoteIdentifier(table)} WHERE "id" = ?`,
@@ -1006,7 +965,7 @@ function writeTypedProjectionRow(
 	definition: TableDefinition,
 	row: Record<string, unknown>,
 ): void {
-	const columns = Object.keys(definition.columns);
+	const columns = Object.keys(definition.fields);
 	const codecs = codecsFor(definition);
 	sqlite.run(
 		`INSERT INTO ${quoteIdentifier(table)} (${columns.map(quoteIdentifier).join(', ')}) VALUES (${columns.map(() => '?').join(', ')})`,
@@ -1068,14 +1027,6 @@ function writeMeta(sqlite: RecordSyncSqlite, key: string, value: string): void {
 	sqlite.run(
 		`INSERT INTO ${quoteIdentifier(META_TABLE)} ("key", "value") VALUES (?, ?) ON CONFLICT("key") DO UPDATE SET "value" = excluded."value"`,
 		[key, value],
-	);
-}
-
-function asSqliteValue(value: unknown): SqliteValue {
-	if (value === null || typeof value === 'string') return value;
-	if (typeof value === 'number' && Number.isFinite(value)) return value;
-	throw new Error(
-		'Migration SQL parameters must be finite numbers, strings, or null',
 	);
 }
 
