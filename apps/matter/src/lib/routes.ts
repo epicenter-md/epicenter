@@ -1,7 +1,7 @@
 /**
  * The app's URL grammar in one place. Every link, redirect, and `goto` builds its path here
  * instead of hand-writing `/vault/${id}`, so the route shape has a single owner: change it once
- * and the compiler finds every caller. Pure and stateless (the tab LIST is `open-vaults`', the
+ * and the compiler finds every caller. Pure and stateless (the sidebar LIST is `open-vaults`', the
  * active vault is the URL's, the active table is the URL's too via `?table=`), so this is
  * functions, not a store. Callers pass these strings straight to `goto`, `<a href>`, or `redirect`.
  */
@@ -72,7 +72,7 @@ export const SWITCH_NAV = {
 export const routes = {
 	/** The onboarding index, shown only when no vault is open. */
 	home: () => '/',
-	/** A vault tab, addressed by its opaque persisted id. */
+	/** An open vault, addressed by its opaque persisted id. */
 	vault: (id: string) => `/vault/${id}`,
 	/**
 	 * Select a table within the active vault. A relative query (no id), so switching tables stays

@@ -1,4 +1,4 @@
-import { attachRecordingOverlay } from '#platform/recording-overlay-owner';
+import { recordingOverlayRuntimeOwner } from '#platform/recording-overlay-owner';
 import { dictationCapability } from '$lib/state/dictation-capability.svelte';
 import { attachAnalytics } from './attach-analytics.svelte';
 import { attachAutoPasteIntent } from './attach-auto-paste-intent.svelte';
@@ -16,7 +16,7 @@ export const runtimeOwners = [
 	{ attach: attachAnalytics },
 	{ attach: attachLocalShortcutListener },
 	{ attach: attachShortcutSync },
-	{ attach: attachRecordingOverlay },
+	...(recordingOverlayRuntimeOwner ? [recordingOverlayRuntimeOwner] : []),
 	{ attach: attachDictationExceptions },
 	{ attach: attachUnloadPolicy },
 	{ attach: attachRecordingRetention },

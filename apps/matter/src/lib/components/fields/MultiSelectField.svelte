@@ -62,12 +62,13 @@
 				size="sm"
 				role="combobox"
 				aria-expanded={combobox.open}
+				aria-label="Select {cell.field.name}"
 				class="h-auto min-h-8 w-full justify-between gap-2 font-normal"
 			>
 				{#if isMissing(cell)}
 					<FieldMissing {cell} />
 				{:else if selected.length === 0}
-					<span class="text-muted-foreground">Select...</span>
+					<span class="text-muted-foreground">Select…</span>
 				{:else}
 					<span class="flex flex-wrap gap-1">
 						{#each selected as item (String(item))}
@@ -87,7 +88,7 @@
 		class="w-[--bits-popover-anchor-width] min-w-[14rem] p-0"
 	>
 		<Command.Root>
-			<Command.Input placeholder="Search options..." />
+			<Command.Input placeholder="Search options…" />
 			<Command.List>
 				<Command.Empty>No options.</Command.Empty>
 				{#each options as option (String(option))}

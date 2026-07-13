@@ -15,9 +15,10 @@ into Rust would split the source of truth, so we keep it in the main window.
 - **Window**: a separate, transparent, undecorated, always-on-top
   `recording-overlay` window, reused (shown/hidden) and positioned centered near
   the bottom of the active monitor. On macOS it is a non-activating `NSPanel`
-  created in Rust (`../epicenter/src-tauri/src/overlay.rs`, via tauri-nspanel) so clicking it
-  never activates the app or raises the main window; `focusable: false` alone
-  does not prevent app activation on click. On Windows and Linux it is a
+  created in Rust (`../../epicenter/src-tauri/src/overlay.rs`, via
+  tauri-nspanel) so clicking it never activates the app or raises the main
+  window; `focusable: false` alone does not prevent app activation on click. On
+  Windows and Linux it is a
   `focusable: false` + `alwaysOnTop` `WebviewWindow` created from the frontend.
   The window manager finds the macOS panel by label and only creates a window
   when none exists, so both paths share one show/hide/position code path.
@@ -31,8 +32,8 @@ into Rust would split the source of truth, so we keep it in the main window.
   event protocol and desktop mic-level transport. On desktop,
   the Tauri implementation of `#platform/recording-overlay-owner` projects the
   lifecycle, synchronizes the separate overlay window, and listens for overlay
-  actions and reveal requests. The browser implementation is a no-op because
-  its pill is mounted directly in the app layout.
+  actions and reveal requests. The browser implementation exports no runtime
+  owner because its pill is mounted directly in the app layout.
 - **Protocol** (`src/lib/recording-overlay/events.ts`): binds the shared pill
   model to Tauri event channels. The main window pushes a `status` to the overlay;
   the overlay pushes `action` (stop/cancel) and a `ready` handshake back. Actions
@@ -40,9 +41,10 @@ into Rust would split the source of truth, so we keep it in the main window.
   payload, so a click that races a state change is safe.
 - **Controls**: the stop and cancel buttons are filled chips (stop is red) so
   they read as buttons in the small pill, and they stop click propagation.
-  Clicking the pill body anywhere else emits `focus-main`, which brings the main
-  Whispering window forward (show + unminimize + setFocus); it is a separate
-  gesture from stop/cancel so finishing a recording never yanks the window up.
+  Clicking the pill body anywhere else emits `main-window:reveal`, which brings
+  the main Whispering window forward (show + unminimize + setFocus); it is a
+  separate gesture from stop/cancel so finishing a recording never yanks the
+  window up.
 - **Mic levels** (`mic-level` channel): the bars reflect real loudness, not a
   loop. Both producers send a raw RMS amplitude and the receiving pill mount
   applies the shared perceptual curve + smoothing:
@@ -52,9 +54,10 @@ into Rust would split the source of truth, so we keep it in the main window.
     the pill and updates the host's reactive meter; the Tauri implementation
     lives with the overlay transport and forwards the sample to its webview.
   - Manual (CPAL/Tauri): the PCM lives only in Rust, so the consumer worker
-    (`../epicenter/src-tauri/src/recorder/recorder.rs`) computes RMS and emits a throttled
-    (~20 Hz) targeted `emit_to("recording-overlay", "mic-level", rms)`, per
-    Tauri's guidance for high-frequency events. This is Handy's approach.
+    (`../../epicenter/src-tauri/src/recorder/recorder.rs`) computes RMS and emits
+    a throttled (~20 Hz) targeted
+    `emit_to("recording-overlay", "mic-level", rms)`, per Tauri's guidance for
+    high-frequency events. This is Handy's approach.
 
 The single source of recorder state means no parallel recording lifecycle is
 introduced: the overlay only reflects and triggers the existing operations.

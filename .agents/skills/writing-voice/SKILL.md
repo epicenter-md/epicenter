@@ -1,89 +1,57 @@
 ---
 name: writing-voice
-description: 'House voice for substantial prose: clear, direct, natural, and read-aloud friendly. Use for voice passes, tone work, rewrites, or prose that sounds corporate or AI-shaped.'
-metadata:
-  author: epicenter
-  version: '1.1'
+description: "House voice for substantial prose: clear, direct, natural, and read-aloud friendly. Use for voice passes, tone work, rewrites, or prose that sounds corporate or AI-shaped."
 ---
 
 # Writing Voice
 
-Write for the ear, not just the eyes. Prose should sound like a person explaining something to a colleague.
+## Write for the Ear
 
-This skill owns house voice, punctuation judgment, and anti-AI prose. Other writing skills own artifact shape, not a competing voice.
+Compose prose as speech the writer would naturally say and stand behind.
+Preserve their cadence, vocabulary, emotional temperature, and strength of
+claim.
 
-## Composition
+This skill owns sound: voice, cadence, punctuation, and the ear pass. The skill
+for the destination owns the document's shape.
 
-Use the artifact skill for artifact-specific best practices: [technical-articles](../technical-articles/SKILL.md), [pull-request](../pull-request/SKILL.md), [documentation](../documentation/SKILL.md), [github-issues](../github-issues/SKILL.md), or [notebook-explanation](../notebook-explanation/SKILL.md). Use [references/discord-voice.md](references/discord-voice.md) for casual team chat.
+## Ear Pass
 
-| Skill | Owns |
-| --- | --- |
-| [notebook-explanation](../notebook-explanation/SKILL.md) | Live-understanding explanation posture for complicated code and systems. |
-| [technical-articles](../technical-articles/SKILL.md) | Public article shape: title as argument, opening, rhythm between prose and code, section claims, closing. |
-| [pull-request](../pull-request/SKILL.md) | PR title, PR body, changelog, issue links, merge strategy, durable reviewer context. |
-| [documentation](../documentation/SKILL.md) | Folder READMEs, JSDoc, and comments that explain why rather than restating code. |
-| [github-issues](../github-issues/SKILL.md) | Public issue and PR-thread replies with maintainer context. |
-| [references/discord-voice.md](references/discord-voice.md) | Casual team chat and Discord messages. |
+After the draft has a coherent shape, read it at speaking speed.
 
-For PRs and commits, keep the prose clear and direct. Product and personal-voice guidance belongs to public writing, not reviewer-facing PRs or commits.
+1. Mark where the rhythm catches, the language turns generic, or the sentence
+   becomes something the writer would not naturally say or stand behind.
+2. Revise those passages while preserving the writer's vocabulary, emotional
+   temperature, and strongest claim. Keep intentional roughness or unusual
+   phrasing when smoothing it would make the prose less recognizable.
+3. Stop when the prose sounds natural and specific, not merely smooth.
 
-## Voice Pass
+## Working Style
 
-Before shipping substantial prose:
-
-1. Read it out loud.
-2. If it sounds like a press release, corporate memo, or generic AI answer, rewrite it.
-3. Lead with the point.
-4. Replace abstract claims with concrete mechanisms.
-5. Match the user's tone and pacing.
-6. Check punctuation.
-
-## Default Style
-
-- Vary sentence length. Short sentences punch; longer ones carry nuance.
-- Respect the reader's time. Give the answer, then explain why.
-- Assume competence. Do not over-explain fundamentals.
-- Present trade-offs honestly. Do not pretend a choice is perfect.
-- Avoid emojis in headings and formal content unless explicitly requested.
+- Give the answer, then explain why.
+- Vary sentence length. Short sentences punch; longer ones carry motion or
+  nuance.
+- Assume competence and show the mechanism.
+- Present tradeoffs honestly.
+- Remove throat-clearing, recap, template headings, and presentation scaffolding.
+- Prefer the writer's specific nouns and verbs over polished abstractions.
 
 ## Punctuation
 
-Use punctuation to clarify, not decorate.
+Use punctuation to make the spoken movement legible. Prefer periods. Use colons
+when the second half names or explains the first, semicolons for closely related
+independent clauses, and parentheses for real asides.
 
-Prefer periods first. Use colons for explanations, semicolons for related independent clauses, parentheses for asides, and commas for short qualifiers.
+Avoid en dashes. Default away from em dashes; keep one only when the sentence
+contains a genuine interruption or high-emphasis aside. When in doubt, use a
+period.
 
-Avoid en dash characters (`U+2013`). Default away from em dash characters (`U+2014`); use one only for a real interruption, appositive, or high-emphasis aside. In UI strings, headings, docs tables, commit messages, comments, and JSDoc, use a period, colon, semicolon, comma, or parentheses instead.
+## Generic-Language Pass
 
-When in doubt, use a period.
+Cut phrases that announce the sentence instead of saying it: "it is important to
+note," "what this means is," "in order to," "going forward," and "we need to make
+sure." Replace words such as "leverage," "utilize," and "facilitate" with the
+plain verb that describes what happens.
 
-## AI Dead Giveaways
-
-Watch for bold formatting everywhere, everything as bullets, marketing words, template headers, vague superlatives, dramatic hyperbole, AI adjectives, space-hyphen-space punctuation, overused fragments, staccato buildup, and forced specificity.
-
-## Common Rewrite Moves
-
-Use these mechanical substitutions:
-
-| If you wrote | Rewrite to |
-| --- | --- |
-| It is important to note that X | X |
-| In order to achieve Y, we need to Z | Z gives us Y |
-| The reason this works is because | This works because |
-| What this means is that | State it directly |
-| Basically, X | X |
-| This allows us to | We can now, or say what now works |
-| We need to make sure that | X must, or just do it |
-| Going forward, we will | Next, or describe the action |
-| leverage or utilize | use |
-| facilitate | let, enable, or allow |
-| implement a solution | fix it, build it, or say what changed |
-
-## Technical Explanations
-
-Show the mechanism, not the marketing. Lead with what happens, then why.
-
-Good:
-
-> Yjs with LWW timestamps gave us the best conflict resolution. We tried CRDTs without timestamps, operational transforms, and manual merge strategies; none matched it for correctness with this little code.
-
-For architecture, auth, APIs, ownership, or design trade-offs, use [notebook-explanation](../notebook-explanation/SKILL.md) for shape. Read [references/technical-explanation.md](references/technical-explanation.md) for longer explanations, tutorials, architecture notes, or conceptual docs.
+Watch for marketing words, vague superlatives, dramatic buildup, forced
+specificity, bold formatting everywhere, and prose broken into bullets merely to
+look organized.

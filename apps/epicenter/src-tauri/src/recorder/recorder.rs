@@ -42,8 +42,8 @@ const TARGET_RATE: u32 = 16_000;
 
 /// Overlay window label and event name for live mic levels. The recording
 /// overlay (a separate webview) renders these into its meter bars. Kept in
-/// sync with the JS window manager's `WINDOW_LABEL` and the `mic-level`
-/// channel in `src/lib/recording-overlay/`.
+/// sync with `RECORDING_OVERLAY_WINDOW_LABEL` and the `mic-level` channel in
+/// Whispering's `recording-overlay/events.ts`.
 const OVERLAY_WINDOW_LABEL: &str = "recording-overlay";
 const MIC_LEVEL_EVENT: &str = "mic-level";
 

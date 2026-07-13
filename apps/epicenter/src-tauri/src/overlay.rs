@@ -19,8 +19,8 @@ use tauri::webview::NewWindowResponse;
 use tauri::{AppHandle, Manager, WebviewUrl};
 use tauri_nspanel::{tauri_panel, CollectionBehavior, PanelBuilder, PanelLevel, StyleMask};
 
-// Must stay in sync with the JS window manager's `WINDOW_LABEL` and the pill's
-// size in `src/lib/recording-overlay/`.
+// Must stay in sync with `RECORDING_OVERLAY_WINDOW_LABEL` and the pill's size in
+// Whispering's `recording-overlay/window-manager.tauri.ts`.
 pub const WINDOW_LABEL: &str = "recording-overlay";
 const OVERLAY_WIDTH: f64 = 224.0;
 const OVERLAY_HEIGHT: f64 = 40.0;

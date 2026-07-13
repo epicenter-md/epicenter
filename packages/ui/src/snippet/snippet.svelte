@@ -25,6 +25,7 @@
 	export type SnippetProps = {
 		variant?: Variant;
 		text: string | string[];
+		copyLabel?: string;
 		class?: string;
 		onCopy?: (status: UseClipboard['status']) => void;
 	};
@@ -33,6 +34,7 @@
 <script lang="ts">
 	let {
 		text,
+		copyLabel = 'Copy',
 		variant = 'default',
 		onCopy,
 		class: className,
@@ -63,6 +65,7 @@
 	<CopyButton
 		class="hover:text-opacity-80 absolute top-1/2 right-2 size-7 -translate-y-1/2 transition-opacity ease-in-out hover:bg-transparent dark:hover:bg-transparent"
 		text={typeof text === 'string' ? text : text.join('\n')}
+		aria-label={copyLabel}
 		size="icon"
 		variant="ghost"
 		{...onCopy ? { onCopy } : {}}

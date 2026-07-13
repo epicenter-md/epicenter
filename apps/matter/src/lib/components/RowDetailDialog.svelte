@@ -1,7 +1,9 @@
 <script lang="ts">
 	import { Badge } from '@epicenter/ui/badge';
 	import * as Dialog from '@epicenter/ui/dialog';
+	import * as Item from '@epicenter/ui/item';
 	import { Label } from '@epicenter/ui/label';
+	import * as SectionHeader from '@epicenter/ui/section-header';
 	import * as Separator from '@epicenter/ui/separator';
 	import { Switch } from '@epicenter/ui/switch';
 	import type { RowConformance } from '@epicenter/matter-core';
@@ -40,90 +42,93 @@
 
 <Dialog.Root bind:open>
 	<Dialog.Content
-		class="grid-rows-[auto_minmax(0,1fr)] h-[calc(100vh-2rem)] max-h-[calc(100vh-2rem)] w-[calc(100vw-2rem)] max-w-7xl gap-0 overflow-hidden p-0 sm:max-w-7xl"
+		class="grid-rows-[auto_minmax(0,1fr)] h-[calc(100vh-2rem)] max-h-[calc(100vh-2rem)] w-[calc(100vw-2rem)] max-w-7xl overflow-hidden p-0 sm:max-w-7xl"
 	>
-		<div class="border-b px-6 py-5">
-			<Dialog.Header class="gap-3">
-				<div class="flex flex-wrap items-start justify-between gap-4 pr-8">
-					<div class="min-w-0 space-y-2">
-						<Dialog.Title class="truncate font-mono text-xl leading-tight">
-							{row.fileName}
-						</Dialog.Title>
-						<div class="flex flex-wrap gap-1.5">
-							<Badge variant={conformance.rowValid ? 'secondary' : 'outline'}>
-								{conformance.rowValid ? 'Ready' : 'Needs attention'}
-							</Badge>
-							<Badge variant="secondary">
-								{cellCounts.ok} of {conformance.cells.length} fields filled
-							</Badge>
-							{#if cellCounts.missingRequired}
-								<Badge
-									class="border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-400"
-									variant="outline"
-								>
-									{cellCounts.missingRequired} missing
-								</Badge>
-							{/if}
-							{#if cellCounts.invalid}
-								<Badge variant="destructive">{cellCounts.invalid} invalid</Badge>
-							{/if}
-							{#if conformance.extras.length}
-								<Badge variant="outline">{conformance.extras.length} extra keys</Badge>
-							{/if}
-						</div>
-					</div>
+		<Dialog.Header class="gap-3 border-b px-6 py-5 pr-14 text-left">
+			<div class="min-w-0 space-y-2">
+				<Dialog.Title class="truncate font-mono text-xl leading-tight">
+					{row.fileName}
+				</Dialog.Title>
+				<Dialog.Description class="sr-only">
+					Edit frontmatter fields and the Markdown body for {row.fileName}.
+				</Dialog.Description>
+				<div class="flex flex-wrap gap-1.5">
+					<Badge variant={conformance.rowValid ? 'secondary' : 'outline'}>
+						{conformance.rowValid ? 'Ready' : 'Needs attention'}
+					</Badge>
+					<Badge variant="secondary">
+						{cellCounts.ok} of {conformance.cells.length} fields filled
+					</Badge>
+					{#if cellCounts.missingRequired}
+						<Badge
+							class="border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-400"
+							variant="outline"
+						>
+							{cellCounts.missingRequired} missing
+						</Badge>
+					{/if}
+					{#if cellCounts.invalid}
+						<Badge variant="destructive">{cellCounts.invalid} invalid</Badge>
+					{/if}
+					{#if conformance.extras.length}
+						<Badge variant="outline">{conformance.extras.length} extra keys</Badge>
+					{/if}
 				</div>
-			</Dialog.Header>
-		</div>
+			</div>
+		</Dialog.Header>
 
 		<div class="min-h-0 overflow-y-auto">
 			<div class="mx-auto grid w-full max-w-6xl gap-8 px-6 py-7">
 				<section class="grid gap-3">
-					<div>
-						<h2 class="text-sm font-semibold">Frontmatter</h2>
-					</div>
+					<SectionHeader.Root>
+						<SectionHeader.Title level={3}>Frontmatter</SectionHeader.Title>
+					</SectionHeader.Root>
 					<div class="grid gap-2">
 						{#each conformance.cells as cell (cell.field.name)}
-							<div
-								class="grid gap-3 rounded-md border bg-background px-3 py-3 sm:grid-cols-[11rem_1fr] sm:items-center"
+							<Item.Root
+								variant="outline"
+								size="sm"
+								class="gap-3 sm:flex-nowrap"
 								aria-invalid={cell.state === 'INVALID' || cell.state === 'MISSING_REQUIRED'}
 							>
-								<div class="min-w-0">
-									<div class="truncate text-sm font-medium">{cell.field.name}</div>
-									<div class="text-xs uppercase tracking-wide text-muted-foreground">
+								<Item.Content class="min-w-40 flex-none">
+									<Item.Title>{cell.field.name}</Item.Title>
+									<Item.Description class="uppercase tracking-wide">
 										{cell.field.kind}
-									</div>
-								</div>
-								<div class="min-w-0">
+									</Item.Description>
+								</Item.Content>
+								<Item.Content class="min-w-0">
 									<ModeledCell
 										{cell}
 										mode="detail"
 										save={(value) => onSaveField(row.fileName, cell.field.name, value)}
 										clear={() => onSaveField(row.fileName, cell.field.name, undefined)}
 									/>
-								</div>
-							</div>
+								</Item.Content>
+							</Item.Root>
 						{/each}
 					</div>
 				</section>
 
 				{#if conformance.extras.length}
 					<section class="grid gap-3">
-						<div>
-							<h2 class="text-sm font-semibold">Extra keys</h2>
-						</div>
+						<SectionHeader.Root>
+							<SectionHeader.Title level={3}>Extra keys</SectionHeader.Title>
+						</SectionHeader.Root>
 						<div class="grid gap-2">
 							{#each conformance.extras as extra (extra.key)}
-								<div
-									class="grid gap-3 rounded-md border bg-muted/20 px-3 py-2 sm:grid-cols-[11rem_1fr]"
-								>
-									<span class="truncate font-mono text-xs text-muted-foreground">
+							<Item.Root variant="muted" size="sm" class="gap-3 sm:flex-nowrap">
+								<Item.Content class="min-w-40 flex-none">
+									<Item.Title class="font-mono text-xs text-muted-foreground">
 										{extra.key}
-									</span>
+									</Item.Title>
+								</Item.Content>
+								<Item.Content>
 									<code class="min-w-0 truncate text-xs">
 										{formatExtraValue(extra.value)}
 									</code>
-								</div>
+									</Item.Content>
+								</Item.Root>
 							{/each}
 						</div>
 					</section>
@@ -133,7 +138,9 @@
 
 				<section class="grid gap-3">
 					<div class="flex items-center justify-between gap-3">
-						<h2 class="text-sm font-semibold">Body</h2>
+						<SectionHeader.Root>
+							<SectionHeader.Title level={3}>Body</SectionHeader.Title>
+						</SectionHeader.Root>
 						<div class="flex items-center gap-2">
 							<Label for="matter-vim-mode" class="text-xs text-muted-foreground">Vim</Label>
 							<Switch

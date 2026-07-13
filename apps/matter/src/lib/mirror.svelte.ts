@@ -12,7 +12,7 @@
  * applied link; the WHERE filter reads it to re-query only once the file it reads is actually fresh.
  *
  * The Vault is its sole owner: it composes one mirror per root, calls {@link syncTable} from each
- * Table's onChange, {@link dropTable} when a folder leaves, and exposes the handle so the per-tab
+ * Table's onChange, {@link dropTable} when a folder leaves, and exposes the handle so the active-pane
  * query state can {@link runQuery} it. Desktop-only: it talks to Tauri directly (no platform seam), mirroring
  * {@link createVault} / {@link createTable}.
  */
@@ -146,5 +146,5 @@ export function createMirror(root: string) {
  *  every match. */
 export const CONSOLE_LIMIT = 1000;
 
-/** A live vault mirror. The Vault composes one; the per-tab query state drives it. */
+/** A live vault mirror. The Vault composes one; the active pane's query state drives it. */
 export type Mirror = ReturnType<typeof createMirror>;

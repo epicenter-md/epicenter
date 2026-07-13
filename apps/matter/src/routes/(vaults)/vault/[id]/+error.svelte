@@ -9,7 +9,7 @@
 	<Empty.Media variant="icon"><FolderOpenIcon /></Empty.Media>
 	<Empty.Title>This vault isn't open</Empty.Title>
 	<Empty.Description>
-		It may have been closed, or the link is stale. Open a folder to start a new tab.
+		It may have been closed, or the link is stale. Open a folder to add it to the workspace.
 	</Empty.Description>
 	<Empty.Content>
 		<Button onclick={openVaults.open}>
